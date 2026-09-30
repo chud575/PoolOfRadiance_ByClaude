@@ -2,8 +2,10 @@ import * as THREE from 'three';
 import { createSkyDome, createTorch, createFlame, flicker } from '../../render/lighting.js';
 import { getMaterial, preloadMaterials } from '../../render/materials.js';
 import { getGlowTexture } from '../../render/textures/index.js';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { CLOTH_COLORS, defaultLook } from '../../ui/components/portraitPainter.js';
+import { buildMiniature, miniatureEnvironment } from '../../ui/components/Miniature.js';
+import { clothSet } from '../../ui/components/miniatureTextures.js';
+import { isAlive } from '../../rules/character.js';
 
 /** Deterministic hash → [0,1). */
 const hrand = (i, s = 0) => {
@@ -24,7 +26,14 @@ function jaggedWall(w, h, seed) {
   s.lineTo(0, 0);
   const g = new THREE.ExtrudeGeometry(s, { depth: 0.55, bevelEnabled: false });
   const uv = g.attributes.uv;
-  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 0.5, uv.getY(i) * 0.5);
+  const p = g.attributes.position;
+  const c = [];
+  for (let i = 0; i < uv.count; i++) {
+    uv.setXY(i, uv.getX(i) / 3, uv.getY(i) / 3);
+    const ao = 0.45 + 0.55 * Math.min(1, p.getY(i) / 1.4);
+    c.push(ao, ao, ao);
+  }
+  g.setAttribute('color', new THREE.Float32BufferAttribute(c, 3));
   return g;
 }
 
@@ -35,7 +44,7 @@ function jaggedWall(w, h, seed) {
  * @param {{party: object[], hour: number}} o
  */
 export async function buildCamp(scene, { party, hour, renderer }) {
-  await preloadMaterials(['floor_rubble', 'wall_ruin', 'prop_wood', 'prop_stone', 'prop_burlap', 'wall_stone']);
+  await preloadMaterials(['arch_flags', 'arch_mud', 'arch_ruin', 'prop_wood', 'prop_stone', 'prop_burlap', 'arch_stone', 'prop_rubble']);
   const geos = [];
   const mats = [];
   const track = (g) => (geos.push(g), g);
@@ -44,11 +53,9 @@ export async function buildCamp(scene, { party, hour, renderer }) {
 
   let env = null;
   if (renderer) {
-    const pm = new THREE.PMREMGenerator(renderer);
-    env = pm.fromScene(new RoomEnvironment(), 0.04).texture;
-    pm.dispose();
+    env = miniatureEnvironment(renderer, { warm: 0xff8a40, cool: 0x3a5aa0 });
     scene.environment = env;
-    scene.environmentIntensity = night ? 0.06 : 0.3;
+    scene.environmentIntensity = night ? 0.35 : 0.8;
   }
   const sky = createSkyDome({ hour, cloud: 0.35 });
   scene.add(sky);
@@ -58,11 +65,20 @@ export async function buildCamp(scene, { party, hour, renderer }) {
   moon.position.set(-8, 12, -6);
   scene.add(moon);
 
-  // Ground with a scuffed clearing.
-  const ground = new THREE.Mesh(track(new THREE.CircleGeometry(40, 64)), getMaterial('floor_rubble'));
+  // Ground: trodden mud with a scuffed clearing (world-scaled UVs + white AO colours for the arch_ shader).
+  const groundGeo = track(new THREE.CircleGeometry(40, 64));
+  {
+    const p = groundGeo.attributes.position;
+    const uv = groundGeo.attributes.uv;
+    const c = [];
+    for (let i = 0; i < p.count; i++) {
+      uv.setXY(i, p.getX(i) / 3, p.getY(i) / 3);
+      c.push(1, 1, 1);
+    }
+    groundGeo.setAttribute('color', new THREE.Float32BufferAttribute(c, 3));
+  }
+  const ground = new THREE.Mesh(groundGeo, getMaterial('arch_flags'));
   ground.rotation.x = -Math.PI / 2;
-  const uv = ground.geometry.attributes.uv;
-  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 34, uv.getY(i) * 34);
   ground.receiveShadow = true;
   scene.add(ground);
   const ash = new THREE.Mesh(track(new THREE.CircleGeometry(1.25, 32)), trackM(new THREE.MeshStandardMaterial({ color: 0x0c0a08, roughness: 1, transparent: true, opacity: 0.85 })));
@@ -71,7 +87,7 @@ export async function buildCamp(scene, { party, hour, renderer }) {
   scene.add(ash);
 
   // Ruined walls ringing the camp.
-  const wallMat = getMaterial('wall_ruin');
+  const wallMat = getMaterial('arch_ruin');
   const walls = [
     [-5.5, -4.5, 0.5, 5, 3.4], [-1.2, -7, 0.05, 6, 4.2], [4.8, -5.2, -0.6, 4.5, 3.0], [7.6, -1.2, -1.3, 3.2, 2.2], [-8.2, -0.8, 1.2, 3.6, 2.4],
   ];
@@ -84,9 +100,10 @@ export async function buildCamp(scene, { party, hour, renderer }) {
     scene.add(m);
   });
   // A broken column pair on the skyline.
-  const colGeo = track(new THREE.CylinderGeometry(0.32, 0.38, 1, 12));
+  const colGeo = track(new THREE.CylinderGeometry(0.32, 0.38, 1, 16));
+  colGeo.setAttribute('color', new THREE.Float32BufferAttribute(new Array(colGeo.attributes.position.count * 3).fill(0.85), 3));
   for (const [x, z, hh] of [[2.2, -9.5, 4.6], [-4.2, -10.5, 2.4], [9.5, -7.5, 3.4]]) {
-    const c = new THREE.Mesh(colGeo, getMaterial('wall_stone'));
+    const c = new THREE.Mesh(colGeo, getMaterial('arch_stone'));
     c.scale.set(1, hh, 1);
     c.position.set(x, hh / 2, z);
     c.castShadow = true;
@@ -107,7 +124,8 @@ export async function buildCamp(scene, { party, hour, renderer }) {
     scene.add(st);
   }
   const logGeo = track(new THREE.CylinderGeometry(0.07, 0.09, 1.0, 8));
-  const logMat = getMaterial('prop_wood');
+  const wood = getMaterial('prop_wood');
+  const logMat = trackM(new THREE.MeshStandardMaterial({ color: 0x3a2a20, roughness: 1, map: wood.map, normalMap: wood.normalMap, emissive: 0xff4a10, emissiveIntensity: 0.25, emissiveMap: wood.map }));
   for (let i = 0; i < 6; i++) {
     const l = new THREE.Mesh(logGeo, logMat);
     const a = (i / 6) * Math.PI * 2 + 0.3;
@@ -122,9 +140,9 @@ export async function buildCamp(scene, { party, hour, renderer }) {
   coals.position.y = 0.03;
   scene.add(coals);
 
-  const fire = createTorch({ intensity: night ? 46 : 20, distance: 20, color: 0xff8a3a, seed: 5, flame: true, flameScale: 0.95 });
+  const fire = createTorch({ intensity: night ? 30 : 16, distance: 20, color: 0xff8a3a, seed: 5, flame: true, flameScale: 0.8 });
   fire.position.y = 0.12;
-  fire.userData.sprite.scale.setScalar(2.6);
+  fire.userData.sprite.scale.setScalar(1.9);
   fire.userData.sprite.position.y = 0.6;
   fire.userData.light.position.y = 0.7;
   fire.userData.light.castShadow = true;
@@ -133,7 +151,7 @@ export async function buildCamp(scene, { party, hour, renderer }) {
   scene.add(fire);
   const extraFlames = [];
   for (let i = 0; i < 3; i++) {
-    const f = createFlame(0.55 + i * 0.1);
+    const f = createFlame(0.42 + i * 0.08);
     const a = (i / 3) * Math.PI * 2;
     f.position.set(Math.cos(a) * 0.14, 0.1, Math.sin(a) * 0.14);
     scene.add(f);
@@ -160,68 +178,114 @@ export async function buildCamp(scene, { party, hour, renderer }) {
     smoke.push(s);
   }
 
-  // Bedrolls + packs for each party member (not on the camera side).
-  const angles = [3.45, 3.95, 4.45, 4.98, 5.48, 5.98];
-  const rollGeo = track(new THREE.CapsuleGeometry(0.28, 1.25, 4, 10));
-  const pillowGeo = track(new THREE.BoxGeometry(0.46, 0.2, 0.3));
-  party.forEach((ch, i) => {
-    const look = defaultLook(ch);
-    const color = new THREE.Color(CLOTH_COLORS[look.cloth % CLOTH_COLORS.length][1]);
-    const mat = trackM(new THREE.MeshStandardMaterial({ color, roughness: 0.95 }));
-    const a = angles[i % angles.length];
-    const r = 2.35 + hrand(i, 9) * 0.35;
-    const g = new THREE.Group();
-    const roll = new THREE.Mesh(rollGeo, mat);
-    roll.rotation.z = Math.PI / 2;
-    roll.scale.set(0.55, 1, 1);
-    roll.position.y = 0.14;
-    roll.castShadow = true;
-    roll.receiveShadow = true;
-    g.add(roll);
-    const pillow = new THREE.Mesh(pillowGeo, getMaterial('prop_burlap'));
-    pillow.position.set(0.95, 0.12, 0);
-    pillow.rotation.y = 0.2;
-    pillow.castShadow = true;
-    g.add(pillow);
-    g.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
-    g.rotation.y = -a + Math.PI / 2 + (hrand(i, 5) - 0.5) * 0.4;
-    scene.add(g);
+  // The party itself, as miniatures: most sit around the fire on their
+  // bedrolls; the first able fighter stands watch at the edge of the light.
+  const minis = [];
+  const living = party.filter((ch) => isAlive(ch));
+  const sentryIdx = living.findIndex((ch) => String(ch.classSpec).includes('fighter'));
+  const seats = [200, 238, 302, 338, 160, 22].map((d) => (d * Math.PI) / 180);
+  const clothTex = clothSet();
+  const burlap = getMaterial('prop_burlap');
+  const packMat = trackM(new THREE.MeshStandardMaterial({ color: 0x6a5a44, roughness: 1, map: burlap.map, normalMap: burlap.normalMap }));
+  let seat = 0;
+  living.forEach((ch, i) => {
+    const sentry = i === sentryIdx && living.length > 2;
+    const m = buildMiniature(ch, { pose: sentry ? 'guard' : 'sit', base: false, merge: true });
+    if (sentry) {
+      m.position.set(2.35, 0, -2.2);
+      m.rotation.y = 2.5;
+    } else {
+      const a = seats[seat++ % seats.length];
+      const r = 2.15;
+      m.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
+      m.rotation.y = Math.atan2(-m.position.x, -m.position.z);
+      // Bedroll beneath and behind the sitter, a pack at its head.
+      const look = defaultLook(ch);
+      const color = new THREE.Color(CLOTH_COLORS[(look.cloth + 3) % CLOTH_COLORS.length][1]).multiplyScalar(0.8);
+      const bm = trackM(new THREE.MeshStandardMaterial({ color, roughness: 1, map: clothTex.map, normalMap: clothTex.normalMap }));
+      const roll = new THREE.Group();
+      const blanket = new THREE.Mesh(track(new THREE.BoxGeometry(0.72, 0.07, 1.7, 4, 1, 8)), bm);
+      {
+        const p = blanket.geometry.attributes.position;
+        for (let k = 0; k < p.count; k++) {
+          const x = p.getX(k);
+          const z = p.getZ(k);
+          p.setY(k, p.getY(k) + 0.025 * Math.sin(z * 9 + x * 4 + i) + (Math.abs(x) > 0.3 ? -0.03 : 0));
+        }
+        blanket.geometry.computeVertexNormals();
+      }
+      blanket.position.set(0, 0.04, -0.55);
+      blanket.receiveShadow = true;
+      blanket.castShadow = true;
+      roll.add(blanket);
+      const rolled = new THREE.Mesh(track(new THREE.CylinderGeometry(0.13, 0.13, 0.74, 14)), bm);
+      rolled.rotation.z = Math.PI / 2;
+      rolled.position.set(0, 0.13, -1.4);
+      rolled.castShadow = true;
+      roll.add(rolled);
+      const pack = new THREE.Mesh(track(new THREE.LatheGeometry([[0.001, 0], [0.16, 0.01], [0.2, 0.12], [0.17, 0.26], [0.07, 0.33], [0.05, 0.38], [0.001, 0.38]].map(([x, y]) => new THREE.Vector2(x, y)), 12)), packMat);
+      pack.rotation.z = 1.2;
+      pack.position.y = 0.05;
+      pack.position.set(0.45, 0.16, -1.2);
+      pack.castShadow = true;
+      roll.add(pack);
+      roll.position.copy(m.position);
+      roll.rotation.y = m.rotation.y;
+      scene.add(roll);
+    }
+    scene.add(m);
+    minis.push(m);
   });
 
-  // A tent at the back left, a sword planted in the earth, a shield leaning on a stone.
-  const tentMat = trackM(new THREE.MeshStandardMaterial({ color: 0x8a7a5a, roughness: 1, side: THREE.DoubleSide, map: getMaterial('prop_burlap').map }));
-  const tent = new THREE.Mesh(track(new THREE.ConeGeometry(1.5, 1.8, 4, 1, true)), tentMat);
-  tent.position.set(-3.6, 0.9, -2.4);
-  tent.rotation.y = 0.5;
-  tent.castShadow = true;
-  tent.receiveShadow = true;
+  // A lean-to tent behind the circle: two canvas planes on a ridge pole.
+  const canvasMat = trackM(new THREE.MeshStandardMaterial({ color: 0x9a8a68, roughness: 1, side: THREE.DoubleSide, map: getMaterial('prop_burlap').map, normalMap: getMaterial('prop_burlap').normalMap }));
+  const tent = new THREE.Group();
+  for (const s of [-1, 1]) {
+    const g = track(new THREE.PlaneGeometry(2.0, 1.55, 8, 6));
+    const p = g.attributes.position;
+    for (let k = 0; k < p.count; k++) p.setZ(k, 0.05 * Math.sin(p.getX(k) * 5) * (0.5 - p.getY(k) / 1.55));
+    g.computeVertexNormals();
+    const pl = new THREE.Mesh(g, canvasMat);
+    pl.position.set(0, 0.62, s * 0.55);
+    pl.rotation.set(s * -0.78, 0, 0);
+    pl.castShadow = true;
+    pl.receiveShadow = true;
+    tent.add(pl);
+  }
+  const pole = new THREE.Mesh(track(new THREE.CylinderGeometry(0.03, 0.03, 2.3, 8)), getMaterial('prop_wood'));
+  pole.rotation.z = Math.PI / 2;
+  pole.position.y = 1.18;
+  tent.add(pole);
+  for (const x of [-1.05, 1.05]) {
+    const up = new THREE.Mesh(track(new THREE.CylinderGeometry(0.03, 0.035, 1.2, 8)), getMaterial('prop_wood'));
+    up.position.set(x, 0.6, 0);
+    up.castShadow = true;
+    tent.add(up);
+  }
+  tent.position.set(3.4, 0, -3.3);
+  tent.rotation.y = -0.5;
   scene.add(tent);
-  const steel = trackM(new THREE.MeshStandardMaterial({ color: 0xc8ccd4, metalness: 0.55, roughness: 0.35 }));
-  const blade = new THREE.Mesh(track(new THREE.BoxGeometry(0.06, 0.9, 0.015)), steel);
-  blade.position.set(1.7, 0.38, 1.2);
-  blade.rotation.z = 0.12;
-  blade.castShadow = true;
-  scene.add(blade);
-  const guard = new THREE.Mesh(track(new THREE.BoxGeometry(0.28, 0.04, 0.05)), trackM(new THREE.MeshStandardMaterial({ color: 0xd8b25a, metalness: 1, roughness: 0.35 })));
-  guard.position.set(1.755, 0.84, 1.2);
-  guard.rotation.z = 0.12;
-  scene.add(guard);
-  const shield = new THREE.Mesh(track(new THREE.CylinderGeometry(0.34, 0.34, 0.05, 24)), trackM(new THREE.MeshStandardMaterial({ color: 0x1f3a7c, roughness: 0.6, metalness: 0.2 })));
-  shield.position.set(-2.3, 0.36, 0.2);
-  shield.rotation.set(Math.PI / 2 - 0.35, 0, 0.5);
-  shield.castShadow = true;
-  scene.add(shield);
-  const boss = new THREE.Mesh(track(new THREE.SphereGeometry(0.09, 12, 8)), trackM(new THREE.MeshStandardMaterial({ color: 0xd8b25a, metalness: 1, roughness: 0.3 })));
-  boss.position.copy(shield.position).add(new THREE.Vector3(0.02, 0.03, 0.03));
-  scene.add(boss);
+
+  // Firewood stacked by the tent and a lantern hung on the ruined wall.
+  const logGeo2 = track(new THREE.CylinderGeometry(0.08, 0.08, 0.9, 8));
+  for (let k = 0; k < 7; k++) {
+    const l = new THREE.Mesh(logGeo2, getMaterial('prop_wood'));
+    const row = k < 4 ? 0 : k < 6 ? 1 : 2;
+    const col = row === 0 ? k : row === 1 ? k - 4 : 0;
+    l.rotation.x = Math.PI / 2;
+    l.position.set(2.2 + col * 0.17 + row * 0.085, 0.08 + row * 0.15, -3.0);
+    l.castShadow = true;
+    scene.add(l);
+  }
 
   const update = (time) => {
     fire.userData.update(time);
+    for (const m of minis) m.userData.update(time);
     const f = flicker(time, 5);
     coalMat.emissiveIntensity = 1.2 + 0.6 * f;
     sky.userData.update?.(time);
     extraFlames.forEach((fl, i) => {
-      fl.scale.y = (0.55 + i * 0.1) * (0.9 + 0.15 * Math.sin(time * (7 + i * 2.3) + i));
+      fl.scale.y = (0.42 + i * 0.08) * (0.9 + 0.15 * Math.sin(time * (7 + i * 2.3) + i));
     });
     for (let i = 0; i < N; i++) {
       const sp = 0.25 + hrand(i, 1) * 0.35;
@@ -250,6 +314,7 @@ export async function buildCamp(scene, { party, hour, renderer }) {
       for (const g of geos) g.dispose();
       for (const m of mats) m.dispose();
       env?.dispose();
+      for (const m of minis) m.userData.dispose();
       sky.geometry.dispose();
       sky.material.dispose();
     },

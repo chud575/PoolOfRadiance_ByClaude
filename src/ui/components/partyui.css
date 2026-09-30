@@ -333,3 +333,17 @@
 .pc-order-row .b { display: flex; gap: 0.25em; }
 .pc-order-row .b button { font: inherit; font-size: 0.8em; padding: 0.2em 0.5em; border-radius: 2px; border: 1px solid var(--por-gilt-lo); background: rgba(20, 34, 80, 0.7); color: var(--por-text); cursor: pointer; }
 .pc-order-row .b button:disabled { opacity: 0.3; }
+
+/* ---- creation card: ability strip; compact likeness picker ---- */
+.cc-abstrip { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0.3em; }
+.cc-ab { display: flex; flex-direction: column; align-items: center; padding: 0.35em 0 0.3em; border: 1px solid rgba(216, 178, 90, 0.22); border-radius: 2px; background: linear-gradient(180deg, rgba(20, 30, 70, 0.55), rgba(6, 9, 22, 0.6)); cursor: help; }
+.cc-ab .v { font-family: var(--font-num); font-size: 1.05em; color: #fff; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cc-ab .k { font-family: var(--font-display); font-size: 0.58em; letter-spacing: 0.16em; color: var(--por-gilt); margin-top: 0.15em; }
+.cc-ab.hi .v { color: var(--por-amber); text-shadow: 0 0 10px rgba(255, 200, 97, 0.35); }
+.cc-ab.lo .v { color: #ff9a86; }
+.cc-likeness .cc-thumbs { grid-template-columns: repeat(4, 1fr); }
+.cc-likeness .cc-thumbs .cc-thumb { aspect-ratio: 1 / 1; }
+.cc-likeness .cc-thumbs .cc-thumb img { object-position: 50% 28%; }
+.cc-likeness .cc-thumbs.body { grid-template-columns: repeat(8, 1fr); gap: 0.3em; }
+.cc-likeness .cc-thumbs.body .cc-thumb img { object-position: 50% 100%; }
+.cc-likeness .cc-thumbs.body .cc-thumb span { font-size: 0.5em; letter-spacing: 0.06em; }

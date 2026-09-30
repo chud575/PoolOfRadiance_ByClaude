@@ -26,7 +26,7 @@ export default class CampScene extends Scene {
     for (const ch of game.party) if (castingClassesOf(ch).length && !Object.values(ch.spells?.prepared ?? {}).some((l) => l.length)) autoPrepare(ch);
 
     await this._build3d();
-    this.post = { bloomStrength: 0.95, bloomThreshold: 0.72, vignette: 0.62, exposure: 1.05 };
+    this.post = { bloomStrength: 0.7, bloomThreshold: 0.9, vignette: 0.62, exposure: 1.0 };
     this._buildUI();
     this.listen('input:action', ({ action }) => this._onAction(action));
     this.listen('time:changed', () => this._refreshStatus());

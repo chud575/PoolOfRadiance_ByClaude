@@ -11,9 +11,8 @@ import { STARTING_KITS } from '../../data/items.js';
 import { portraitURL, HEADS, BODIES, RACE_SKINS, SKIN_TONES, HAIR_COLORS, EYE_COLORS, CLOTH_COLORS, defaultLook } from '../../ui/components/portraitPainter.js';
 import { portraitEl, miniPortrait, abilityMods } from '../../ui/components/CharacterSheet.js';
 import { openCharacterView } from '../../ui/components/CharacterView.js';
-import { STAT_TIPS, ALIGNMENT_TEXT, levelLimitText } from '../../ui/components/rulesText.js';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { buildFigure } from './Figure.js';
+import { STAT_TIPS, ALIGNMENT_TEXT, levelLimitText, abilityTip } from '../../ui/components/rulesText.js';
+import { buildMiniature, miniatureEnvironment } from '../../ui/components/Miniature.js';
 import { CREATE_TEXT, NAMES } from './createData.js';
 
 const STEPS = [['race', 'Race'], ['class', 'Class'], ['align', 'Alignment'], ['stats', 'Abilities'], ['portrait', 'Portrait'], ['name', 'Name']];
@@ -36,7 +35,7 @@ export default class CreateScene extends Scene {
     const { render } = this.ctx;
     this.rng = this.ctx.rng;
     await this._build3d();
-    this.post = { bloomStrength: 0.8, bloomThreshold: 0.75, vignette: 0.6, exposure: 1.08 };
+    this.post = { bloomStrength: 0.5, bloomThreshold: 0.92, vignette: 0.62, exposure: 1.08 };
 
     this.newParty = [...this.ctx.game.party];
     this.roster = this._loadRoster();
@@ -61,6 +60,12 @@ export default class CreateScene extends Scene {
     const step = params.step ?? 'party';
     if (step !== 'party' && step !== 'race') {
       Object.assign(this.draft, { name: 'Taran', race: 'human', gender: 'male', classSpec: 'fighter', alignment: 'LG' });
+      // Debug/gallery overrides: &race=dwarf&gender=female&cls=cleric&head=3&body=1&cloth=2
+      const raw = this.ctx.debug?.raw ?? {};
+      if (raw.race) this.draft.race = raw.race;
+      if (raw.gender) this.draft.gender = raw.gender;
+      if (raw.cls) this.draft.classSpec = raw.cls;
+      for (const k of ['head', 'body', 'cloth', 'hair', 'skin']) if (raw[k] != null) this.draft.look[k] = Number(raw[k]);
       this.roll();
     }
     this.show(step);
@@ -79,11 +84,9 @@ export default class CreateScene extends Scene {
     s.fog = new THREE.FogExp2(0x05060c, 0.075);
     s.add(new THREE.HemisphereLight(0x3a4a80, 0x0a0806, 0.35));
     // Studio reflections so the miniature's steel and gilt read as metal.
-    const pm = new THREE.PMREMGenerator(render.renderer);
-    this._env = pm.fromScene(new RoomEnvironment(), 0.04).texture;
-    pm.dispose();
+    this._env = miniatureEnvironment(render.renderer);
     s.environment = this._env;
-    s.environmentIntensity = 0.28;
+    s.environmentIntensity = 0.9;
     this._geos = [];
     const G = (g) => (this._geos.push(g), g);
     const floor = new THREE.Mesh(G(new THREE.PlaneGeometry(40, 40)), getMaterial('floor_flag'));
@@ -145,6 +148,13 @@ export default class CreateScene extends Scene {
     cam.aspect = this.ctx.render.aspect;
     cam.position.set(0, 2.1, 7.6);
     cam.lookAt(0, 1.3, 0);
+    if (this.ctx.debug?.raw?.figcam === 'close') {
+      cam.position.set(0, 2.72, 1.2);
+      cam.lookAt(0, 2.66, 0);
+      cam.clearViewOffset();
+      cam.updateProjectionMatrix();
+      return;
+    }
     // Shift the projection so the plinth sits at ~57% of the screen width.
     const w = 1000;
     cam.setViewOffset(w * cam.aspect, w, -w * cam.aspect * 0.075, 0, w * cam.aspect, w);
@@ -161,8 +171,8 @@ export default class CreateScene extends Scene {
       c.userData.dispose?.();
       this.figureRoot.remove(c);
     }
-    const f = buildFigure(d);
-    f.scale.setScalar(1.5);
+    const f = buildMiniature(d, { pose: 'stand' });
+    f.scale.setScalar(1.28);
     this.figureRoot.add(f);
   }
 
@@ -358,6 +368,16 @@ export default class CreateScene extends Scene {
         h('div.pc-big', { dataset: { tip: STAT_TIPS.ac(s).text } }, [h('span.n', [String(s.ac)]), h('span.l', ['AC'])]),
         h('div.pc-big', { dataset: { tip: STAT_TIPS.thac0(s).text } }, [h('span.n', [String(s.thac0)]), h('span.l', ['THAC0'])]),
       ]));
+      // The six scores at a glance (hover for the rules).
+      const a = pv.abilities;
+      b.append(h('div.cc-abstrip', ['str', 'int', 'wis', 'dex', 'con', 'cha'].map((k) => {
+        const v = a[k];
+        const tip = abilityTip(k, a, d.classSpec);
+        return h(`div.cc-ab${v >= 16 ? '.hi' : v <= 6 ? '.lo' : ''}`, { dataset: { tip: tip.text, tipTitle: tip.title } }, [
+          h('span.v', [k === 'str' ? formatStr(v, a.strPct) : String(v)]),
+          h('span.k', [k.toUpperCase()]),
+        ]);
+      })));
     }
     b.append(h('div', { style: { flex: '1' } }));
     b.append(h('div.pc-sect-h', [h('span', [`Party ${this.newParty.length}/6`])]));
@@ -527,16 +547,16 @@ export default class CreateScene extends Scene {
     this.main.title.textContent = 'Portrait';
     const look = (d.look = defaultLook(d));
     b.append(h('div.cc-title', ['Choose a Likeness']), h('p.cc-lead', [CREATE_TEXT.portrait]));
-    const thumbs = (list, key, mk) => h('div.cc-thumbs', list.map((it, i) => h(`button.cc-thumb${look[key] === i ? '.sel' : ''}`, { onclick: () => { d.look = { ...look, [key]: i }; this.show('portrait'); } }, [
+    const thumbs = (list, key, mk, cls = '') => h(`div.cc-thumbs${cls}`, list.map((it, i) => h(`button.cc-thumb${look[key] === i ? '.sel' : ''}`, { onclick: () => { d.look = { ...look, [key]: i }; this.show('portrait'); }, dataset: { tip: it.name } }, [
       h('img', { src: portraitURL(mk(i), 0.34), alt: '' }), h('span', [it.name]),
     ])));
     const sw = (colors, key) => h('div.cc-sw', colors.map((c, i) => h(`button${look[key] === i ? '.sel' : ''}`, { style: { background: c }, onclick: () => { d.look = { ...look, [key]: i }; this.show('portrait'); } })));
     const skins = (RACE_SKINS[d.race] ?? RACE_SKINS.human).map((k) => SKIN_TONES[k]);
-    b.append(h('div.cc-scroll', [
+    b.append(h('div.cc-scroll.cc-likeness', [
       h('div.pc-sect-h.left', [h('span', ['Head'])]),
       thumbs(HEADS[d.gender], 'head', (i) => ({ ...d, look: { ...look, head: i } })),
       h('div.pc-sect-h.left', { style: { marginTop: '0.8em' } }, [h('span', ['Body'])]),
-      thumbs(BODIES, 'body', (i) => ({ ...d, look: { ...look, body: i } })),
+      thumbs(BODIES, 'body', (i) => ({ ...d, look: { ...look, body: i } }), '.body'),
       h('div.pc-sect', { style: { marginTop: '0.8em' } }, [
         h('div.cc-row', [h('span.k', ['Skin']), sw(skins, 'skin')]),
         h('div.cc-row', [h('span.k', ['Hair']), sw(HAIR_COLORS.map((x) => x[1]), 'hair')]),
@@ -678,7 +698,10 @@ export default class CreateScene extends Scene {
   update() {
     const t = this.ctx.clock.time;
     for (const tr of this.torches) tr.userData.update(t);
-    if (this.figureRoot) this.figureRoot.rotation.y = -0.5 + Math.sin(t * 0.35) * 0.5;
+    if (this.figureRoot) {
+      this.figureRoot.rotation.y = this.ctx.debug?.raw?.figcam === 'close' ? 0 : -0.5 + Math.sin(t * 0.35) * 0.5;
+      for (const c of this.figureRoot.children) c.userData.update?.(t);
+    }
   }
 
   exit() {

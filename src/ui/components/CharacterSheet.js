@@ -127,6 +127,7 @@ export function renderSheet(ch) {
       ...kv('Damage', `${s.damage}${s.dmgBonus ? sgn(s.dmgBonus) : ''}`, STAT_TIPS.damage(s)),
       ...kv('To hit', sgn(s.hitBonus), STAT_TIPS.thac0(s)),
       ...kv('Attacks', `${s.attacks}/round`, STAT_TIPS.attacks(s)),
+      ...kv('AC rear · missile', `${s.acRear ?? s.ac} · ${s.acMissile ?? s.ac}`, { title: 'Rear and missile armour class', text: 'Attacks from behind ignore the shield and dexterity bonus, and thieves may backstab: keep your fighters between the foe and your casters. Missile AC applies to arrows, bolts and sling stones.' }),
       ...kv('Movement', s.move, STAT_TIPS.move(s)),
       ...kv('Burden', `${s.weight} cn`, STAT_TIPS.enc(s)),
     ]),
@@ -169,11 +170,20 @@ export function renderSheet(ch) {
     h('span', { style: { color: 'var(--por-text)' } }, [itemName(e), (e.qty ?? 1) > 1 ? ` ×${e.qty}` : '']),
   ])) : [h('div.pc-rest-note', ['Nothing readied.'])]);
   const langs = sect('Languages', [h('div', race.languages.map((l) => h('span.pc-chip', [l])))]);
+  // ---- record: experience, limits, wealth
+  const totalXp = classes.reduce((t, c) => t + (ch.xp[c] ?? 0), 0);
+  const caps = classes.map((c) => `${CLASSES[c].name.split('-')[0]} ${maxLevel(ch, c)}`).join(' · ');
+  const record = sect('Record', [h('div.pc-kv', [
+    ...kv('Experience', totalXp.toLocaleString('en-US'), { title: 'Experience', text: 'Earned by defeating foes and recovering treasure. Multi-class characters split every award between their classes. Levels are gained by training at a hall once enough is banked.' }),
+    ...kv('Level limit', caps, { title: 'Level limits', text: `Demi-humans are capped by race (and exceptional ability scores raise the cap). In the ruins of Phlan the Council's trainers teach only so far: fighters to 8th, clerics and magic-users to 6th, thieves to 9th.` }),
+    ...kv('Training', '1,000 gp', { title: 'Training', text: 'A level-up costs 1,000 gold pieces at the Training Hall, one level per visit. Experience beyond one level short of the next is not banked.' }),
+    ...kv('Purse', `${(ch.gold ?? 0).toLocaleString('en-US')} gp`, { title: 'Purse', text: 'Coins weigh 1 coin-weight (cn) each and count toward encumbrance. Pool gold or split it evenly from the ITEMS screen.' }),
+  ])]);
   const side = [saves, ...extra.slice(0, 2)];
   if (side.length < 3) side.push(langs);
   return h('div.pc-sheet', [
     id,
-    h('div.pc-col', [abil, cls]),
+    h('div.pc-col', [abil, cls, record]),
     h('div.pc-col', [combat, kit]),
     h('div.pc-col', side),
   ]);

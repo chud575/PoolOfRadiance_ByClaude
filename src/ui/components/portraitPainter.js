@@ -41,24 +41,24 @@ export const CLOTH_COLORS = [
 /** Head templates per gender (8 each). The race modifies proportions and beards. */
 export const HEADS = {
   male: [
-    { name: 'Soldier', hair: 'short', beard: 'none' },
-    { name: 'Wanderer', hair: 'swept', beard: 'full' },
-    { name: 'Noble', hair: 'long', beard: 'goatee' },
-    { name: 'Veteran', hair: 'bald', beard: 'full', scar: true, age: 0.7 },
-    { name: 'Guardsman', hair: 'short', beard: 'moustache', helm: true },
-    { name: 'Rogue', hair: 'topknot', beard: 'stubble' },
-    { name: 'Hooded', hair: 'hood', beard: 'stubble' },
-    { name: 'Sage', hair: 'long', beard: 'long', age: 1 },
+    { name: 'Soldier', hair: 'short', beard: 'none', face: { jaw: 1.08, chin: 1.12 } },
+    { name: 'Wanderer', hair: 'swept', beard: 'full', face: { w: 0.97, nose: 1.12, eye: 0.94 } },
+    { name: 'Noble', hair: 'long', beard: 'goatee', face: { w: 0.92, jaw: 0.9, chin: 0.85, nose: 1.1, long: 1.07 } },
+    { name: 'Veteran', hair: 'bald', beard: 'full', scar: true, age: 0.7, face: { w: 1.05, jaw: 1.12, brow: 1.35, nose: 1.18 } },
+    { name: 'Guardsman', hair: 'short', beard: 'moustache', helm: true, face: { jaw: 1.12, chin: 1.1, mouth: 1.08 } },
+    { name: 'Rogue', hair: 'topknot', beard: 'stubble', face: { w: 0.93, jaw: 0.86, chin: 0.78, eye: 0.9, long: 1.04 } },
+    { name: 'Hooded', hair: 'hood', beard: 'stubble', face: { w: 0.95, nose: 1.08 } },
+    { name: 'Sage', hair: 'long', beard: 'long', age: 1, face: { w: 0.95, nose: 1.22, long: 1.05, eye: 0.92 } },
   ],
   female: [
     { name: 'Maiden', hair: 'long', beard: 'none' },
-    { name: 'Ranger', hair: 'braid', beard: 'none' },
-    { name: 'Priestess', hair: 'bun', beard: 'none' },
-    { name: 'Duelist', hair: 'bob', beard: 'none' },
-    { name: 'Sorceress', hair: 'wavy', beard: 'none' },
-    { name: 'Shieldmaiden', hair: 'long', beard: 'none', helm: true },
+    { name: 'Ranger', hair: 'braid', beard: 'none', face: { w: 0.97, jaw: 0.95, nose: 1.05 } },
+    { name: 'Priestess', hair: 'bun', beard: 'none', face: { w: 1.03, chin: 0.88, eye: 1.05 } },
+    { name: 'Duelist', hair: 'bob', beard: 'none', face: { w: 0.94, jaw: 0.86, nose: 1.06, eye: 0.93, mouth: 0.92 } },
+    { name: 'Sorceress', hair: 'wavy', beard: 'none', face: { w: 0.93, long: 1.06, eye: 1.1, chin: 0.85 } },
+    { name: 'Shieldmaiden', hair: 'long', beard: 'none', helm: true, face: { jaw: 1.06, chin: 1.05 } },
     { name: 'Hooded', hair: 'hood', beard: 'none' },
-    { name: 'Mercenary', hair: 'crop', beard: 'none', scar: true },
+    { name: 'Mercenary', hair: 'crop', beard: 'none', scar: true, face: { jaw: 1.1, brow: 1.35, w: 1.02, eye: 0.92 } },
   ],
 };
 /** Bodies (8), usable by anyone; defaults follow the class. */
@@ -287,25 +287,27 @@ function faceGeometry(race, gender, R, head) {
   const fem = gender === 'female';
   const cx = 150;
   const cy = race === 'dwarf' || race === 'gnome' || race === 'halfling' ? 168 : 160;
-  const hw = s.hw * (fem ? 0.94 : 1) * (0.97 + R() * 0.06);
+  const fc = head.face ?? {};
+  const hw = s.hw * (fem ? 0.94 : 1) * (0.97 + R() * 0.06) * (fc.w ?? 1);
+  const lg = fc.long ?? 1;
   const F = {
     cx, cy, hw, race, fem, head,
-    top: cy - s.top * (fem ? 0.97 : 1),
+    top: cy - s.top * (fem ? 0.97 : 1) * lg,
     jawY: cy + 46,
-    jawW: hw * s.jaw * (fem ? 0.9 : 1) * (0.96 + R() * 0.08),
-    chinY: cy + s.chin * (fem ? 0.9 : 1),
-    chinW: hw * (fem ? 0.26 : 0.36) * (0.9 + R() * 0.25),
+    jawW: hw * s.jaw * (fem ? 0.9 : 1) * (0.96 + R() * 0.08) * (fc.jaw ?? 1),
+    chinY: cy + s.chin * (fem ? 0.9 : 1) * lg,
+    chinW: hw * (fem ? 0.26 : 0.36) * (0.9 + R() * 0.25) * (fc.chin ?? 1),
     eyeY: cy - 2,
     eyeDX: hw * s.eye,
-    eyeW: (race === 'elf' ? 15 : 13.5) * (fem ? 1.05 : 1),
-    eyeH: fem ? 6.4 : 5.6,
+    eyeW: (race === 'elf' ? 15 : 13.5) * (fem ? 1.05 : 1) * (fc.eye ?? 1),
+    eyeH: (fem ? 6.4 : 5.6) * (fc.eye ?? 1),
     tilt: race === 'elf' ? 2.6 : race === 'halfElf' ? 1.2 : 0,
     noseY: cy + (race === 'dwarf' || race === 'gnome' ? 28 : 30),
-    noseW: 10 * s.nose * (fem ? 0.88 : 1) * (0.92 + R() * 0.2),
-    noseLen: s.nose,
-    mouthY: cy + (race === 'dwarf' || race === 'gnome' || race === 'halfling' ? 47 : 51),
-    mouthW: (fem ? 17 : 19) * (0.92 + R() * 0.16),
-    brow: fem ? 1.6 : race === 'dwarf' ? 3.4 : 2.6,
+    noseW: 10 * s.nose * (fem ? 0.88 : 1) * (0.92 + R() * 0.2) * (fc.nose ?? 1),
+    noseLen: s.nose * (fc.nose ?? 1),
+    mouthY: cy + (race === 'dwarf' || race === 'gnome' || race === 'halfling' ? 47 : 51) * (0.5 + lg * 0.5),
+    mouthW: (fem ? 17 : 19) * (0.92 + R() * 0.16) * (fc.mouth ?? 1),
+    brow: (fem ? 1.6 : race === 'dwarf' ? 3.4 : 2.6) * (fc.brow ?? 1),
     ear: s.ear,
     age: head.age ?? 0,
   };
