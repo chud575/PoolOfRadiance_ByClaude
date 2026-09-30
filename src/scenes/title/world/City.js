@@ -26,6 +26,7 @@ export function createCity({ seed = 1988 } = {}) {
   const lamps = [];
   const banners = [];
   const disposables = [];
+  const cityTime = { value: 0 };
 
   const stoneCols = [0x8a8076, 0x7a7068, 0x958778, 0x6f675f, 0x857a6b];
   const roofCols = [0xb0705a, 0x9a6050, 0xc08a6a, 0x8f5a48];
@@ -356,6 +357,34 @@ export function createCity({ seed = 1988 } = {}) {
     for (let k = 0; k < 4; k++) flameItems.push({ pos: new THREE.Vector3(p.x + R.range(-1.2, 1.2), p.y - 0.5, p.z + R.range(-1.2, 1.2)), scale: R.range(1.2, 2.4) });
   });
   if (flameItems.length) group.add(createFlameBatch(flameItems));
+  // street lanterns and hearth-glows twinkling across New Phlan
+  {
+    const n = 220;
+    const pos = new Float32Array(n * 3);
+    const seed = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const west = R.chance(0.82);
+      pos.set([west ? R.range(-170, 12) : R.range(12, 170), GROUND + R.range(1.5, 4.5), R.range(-150, -34)], i * 3);
+      seed[i] = R.next();
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1));
+    const m = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      uniforms: { uTime: cityTime },
+      vertexShader: /* glsl */ `attribute float aSeed; uniform float uTime; varying float vF;
+        void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv;
+          vF = 0.75 + 0.25 * sin(uTime * (3.0 + aSeed * 5.0) + aSeed * 40.0);
+          gl_PointSize = clamp(2400.0 / -mv.z, 1.5, 22.0) * (0.6 + aSeed * 0.6); }`,
+      fragmentShader: /* glsl */ `varying float vF; void main(){ vec2 d = gl_PointCoord - 0.5; float r = length(d) * 2.0;
+          float k = exp(-r * r * 10.0) + exp(-r * r * 2.5) * 0.25; gl_FragColor = vec4(vec3(1.6, 0.85, 0.35) * k * vF, 1.0); }`,
+    });
+    const pts = new THREE.Points(g, m);
+    pts.frustumCulled = false;
+    group.add(pts);
+    disposables.push(g, m);
+  }
   const smoke = createSmoke(fires.slice(0, -1), R);
   group.add(smoke.mesh);
   disposables.push(smoke.mesh.geometry, smoke.mesh.material);
@@ -371,6 +400,7 @@ export function createCity({ seed = 1988 } = {}) {
     ground: GROUND,
     update(t) {
       smoke.update(t);
+      cityTime.value = t;
       for (const s of glows) {
         const f = 0.85 + 0.1 * Math.sin(t * 7 + s.userData.seed) + 0.05 * Math.sin(t * 17.3 + s.userData.seed * 3);
         s.scale.setScalar(s.userData.base * f);

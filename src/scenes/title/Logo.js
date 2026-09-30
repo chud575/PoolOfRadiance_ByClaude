@@ -267,13 +267,23 @@ export function createLogo() {
         vec3 env = mix(vec3(0.09, 0.035, 0.008), vec3(0.85, 0.55, 0.2), smoothstep(-0.3, 0.02, ry));
         env = mix(env, vec3(1.25, 0.95, 0.5), smoothstep(0.2, 0.7, ry));
         env += vec3(1.2, 0.55, 0.2) * exp(-abs(ry - 0.02) * 22.0) * 0.6;
+        // the main title gets the classic engraved-metal band: bright sky above a
+        // dark horizon line, warm bronze below (per-glyph vertical gradient)
+        if (vUv.y > 0.525 && vUv.y < 0.73) {
+          float band = clamp((vUv.y - 0.541) / 0.166, 0.0, 1.0);
+          vec3 flat_ = mix(vec3(0.62, 0.3, 0.07), vec3(1.0, 0.64, 0.2), smoothstep(0.0, 0.42, band));
+          flat_ = mix(flat_, vec3(0.3, 0.13, 0.03), smoothstep(0.44, 0.5, band) * (1.0 - smoothstep(0.5, 0.58, band)));
+          flat_ = mix(flat_, vec3(1.35, 1.08, 0.62), smoothstep(0.55, 0.95, band));
+          float bevel = clamp(length(n.xy) * 2.5, 0.0, 1.0);
+          env = mix(flat_, env, bevel);
+        }
         vec3 goldAlb = vec3(1.0, 0.7, 0.28);
         vec3 gold = goldAlb * (env * 0.9 + diff * 0.22) + vec3(1.0, 0.85, 0.6) * spec * 0.8;
         // enamel: red for the TSR line, teal for Forgotten Realms, deep blue jewel
-        vec3 enCol = vUv.y > 0.8 ? vec3(0.62, 0.05, 0.04) : (vUv.y < 0.38 ? vec3(0.05, 0.42, 0.46) : vec3(0.04, 0.55, 0.75));
+        vec3 enCol = vUv.y > 0.8 ? vec3(0.95, 0.1, 0.06) : (vUv.y < 0.38 ? vec3(0.05, 0.42, 0.46) : vec3(0.04, 0.55, 0.75));
         vec3 enamelC = enCol * (0.55 + 0.6 * diff) + vec3(1.0, 0.95, 0.9) * spec * 0.55 + enCol * env * 0.25;
         // bevelled gilt rim around enamel letters
-        float rim = enamel * (1.0 - smoothstep(0.35, 0.75, hgt));
+        float rim = enamel * (1.0 - smoothstep(0.12, 0.34, hgt));
         vec3 col = mix(gold, enamelC, enamel * (1.0 - rim));
         col = mix(col, gold * 1.05, rim * 0.85);
         // cyan under-light from the pool

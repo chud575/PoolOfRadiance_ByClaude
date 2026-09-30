@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { getTextureSet, getGlowTexture } from '../../../render/textures/index.js';
+import { getTextureSet, getGlowTexture, getGrassTexture } from '../../../render/textures/index.js';
 import { createTorch, FLAME_UNIFORMS } from '../../../render/lighting.js';
 import { NOISE } from './glsl.js';
 import { prng, ni, worldUV, tint, merge } from './geom.js';
@@ -365,6 +365,75 @@ export function createTerrace({ seed = 7 } = {}) {
   ruinMesh.receiveShadow = true;
   group.add(ruinMesh);
   disposables.push(ruin);
+
+  // ---- grime, moss and weeds so the flagstones read as centuries old ----------------
+  {
+    const c = document.createElement('canvas');
+    c.width = c.height = 512;
+    const x = c.getContext('2d');
+    x.fillStyle = '#000';
+    x.fillRect(0, 0, 512, 512);
+    // blotches (alpha in the red channel → used as alphaMap via green)
+    for (let i = 0; i < 260; i++) {
+      const px = R.range(0, 512), py = R.range(0, 512), r = R.range(6, 46);
+      const g = x.createRadialGradient(px, py, 0, px, py, r);
+      const a = R.range(0.08, 0.35);
+      g.addColorStop(0, `rgba(255,255,255,${a})`);
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      x.fillStyle = g;
+      x.fillRect(px - r, py - r, r * 2, r * 2);
+    }
+    // heavier grime toward the broken edge (top of the canvas = far edge) and the sides
+    const eg = x.createLinearGradient(0, 0, 0, 512);
+    eg.addColorStop(0, 'rgba(255,255,255,0.45)');
+    eg.addColorStop(0.25, 'rgba(255,255,255,0.08)');
+    eg.addColorStop(1, 'rgba(255,255,255,0.12)');
+    x.fillStyle = eg;
+    x.fillRect(0, 0, 512, 512);
+    // keep the pool's surrounds clean-ish (worn by pilgrims)
+    const pg = x.createRadialGradient(256, 150, 20, 256, 150, 110);
+    pg.addColorStop(0, 'rgba(0,0,0,0.9)');
+    pg.addColorStop(1, 'rgba(0,0,0,0)');
+    x.fillStyle = pg;
+    x.fillRect(0, 0, 512, 512);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.NoColorSpace;
+    const g = new THREE.PlaneGeometry(90, 40);
+    g.rotateX(-Math.PI / 2);
+    g.translate(0, 0.012, 11); // z from -9 to 31
+    const m = new THREE.MeshStandardMaterial({ color: 0x1e1c14, roughness: 1, alphaMap: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 });
+    const decal = new THREE.Mesh(g, m);
+    decal.receiveShadow = true;
+    group.add(decal);
+    disposables.push(g, m, tex);
+  }
+  {
+    const tufts = [];
+    for (let i = 0; i < 170; i++) {
+      // along the broken edge, round column plinths, and in random cracks
+      let x, z;
+      const k = R.next();
+      if (k < 0.45) { x = R.range(-40, 40); z = -8.6 + R.range(0, 1.6); }
+      else if (k < 0.7) { const c = R.pick([[-13, -6], [-9.2, -8.2], [12.5, -6.6], [16.5, -4], [-17, 2]]); const a = R.range(0, 6.28); x = c[0] + Math.cos(a) * 1.1; z = c[1] + Math.sin(a) * 1.1; }
+      else { x = R.range(-30, 30); z = R.range(-8, 7); }
+      if (Math.hypot(x, z) < 5.2) continue;
+      tufts.push([x, z, R.range(0.35, 0.8), R.range(0, Math.PI)]);
+    }
+    const g = new THREE.PlaneGeometry(1, 1);
+    g.translate(0, 0.5, 0);
+    const gm = new THREE.MeshStandardMaterial({ map: getGrassTexture(), alphaTest: 0.4, side: THREE.DoubleSide, roughness: 1, color: 0x8a9a6a });
+    const inst = new THREE.InstancedMesh(g, gm, tufts.length * 2);
+    const mtx = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    tufts.forEach(([x, z, sc, ry], i) => {
+      for (let j = 0; j < 2; j++) {
+        q.setFromEuler(new THREE.Euler(0, ry + j * Math.PI / 2, 0));
+        inst.setMatrixAt(i * 2 + j, mtx.compose(new THREE.Vector3(x, 0, z), q, new THREE.Vector3(sc * 1.3, sc, sc)));
+      }
+    });
+    group.add(inst);
+    disposables.push(g, gm);
+  }
 
   // soft glow at the heart of the pool
   const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: getGlowTexture(), color: 0x9ff6ff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.12 }));

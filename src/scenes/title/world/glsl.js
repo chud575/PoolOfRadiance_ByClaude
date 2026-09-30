@@ -44,10 +44,10 @@ vec3 duskSky(vec3 d, vec3 sd, float t, float cloudAmt) {
   // cooler, darker away from the sunset
   c = mix(c, c * vec3(0.45, 0.55, 1.05), (1.0 - az) * 0.75);
   // horizon glow toward the sun
-  c += vec3(0.85, 0.36, 0.16) * exp(-hh * 20.0) * (0.15 + 0.85 * az3);
+  c += vec3(0.8, 0.28, 0.09) * exp(-hh * 20.0) * (0.15 + 0.85 * az3);
   c += vec3(0.8, 0.3, 0.2) * exp(-hh * 6.0) * az3 * 0.25;
   // sun halo + disc (half-set on the sea)
-  c += vec3(1.3, 0.6, 0.26) * pow(sunDot, 90.0) * 0.8;
+  c += vec3(1.3, 0.55, 0.2) * pow(sunDot, 120.0) * 0.7;
   c += vec3(0.7, 0.28, 0.16) * pow(sunDot, 6.0) * 0.18;
   c += vec3(5.0, 2.8, 1.3) * smoothstep(0.99955, 0.99975, sunDot);
 

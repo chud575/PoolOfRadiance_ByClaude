@@ -76,7 +76,7 @@
 .por-mm-list .por-menu-item:disabled { opacity: 0.32; }
 .por-mm-list .por-menu-item .por-hk { text-decoration-thickness: 2px; }
 .por-mm-list:focus-visible { box-shadow: none; }
-.por-mm-list:focus-visible .por-menu-item.hl::after { box-shadow: 0 0 0 1px rgba(245, 217, 139, 0.35); }
+.por-mm-list:focus-visible .por-menu-item.hl::after { box-shadow: -6px 0 14px -6px rgba(255, 220, 140, 0.8); }
 .por-mm-rule { width: 16em; height: 0.9em; margin: 1.1em 0 0.6em 1.9em; background: var(--filigree-rule) left center / 100% 100% no-repeat; opacity: 0.6; }
 .por-mm-desc {
   padding-left: 2.4em; min-height: 3em; max-width: 24em;

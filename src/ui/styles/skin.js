@@ -48,7 +48,7 @@ function noiseTexture(size, { seed = 1, base, amp, octaves = 5, scale = 4, fibre
       n /= tot;
       // fibres: stretched high-frequency streaks
       let fb = 0;
-      if (fibres) fb = (valueNoise((i / size) * 64, (j / size) * 6, seed + 9, 64) - 0.5) * fibres;
+      if (fibres) fb = (valueNoise((i / size) * 32, (j / size) * 32, seed + 9, 32) - 0.5) * fibres;
       let m = 0;
       if (mottle) m = (valueNoise((i / size) * 3, (j / size) * 3, seed + 17, 3) - 0.5) * mottle;
       const k = (n - 0.5) * amp + fb + m;
@@ -156,7 +156,7 @@ export function installSkin() {
   installed = true;
   const root = document.documentElement.style;
   try {
-    root.setProperty('--tex-parchment', `url(${noiseTexture(256, { seed: 11, base: [226, 208, 168], amp: 0.34, scale: 3, fibres: 0.1, mottle: 0.16 })})`);
+    root.setProperty('--tex-parchment', `url(${noiseTexture(256, { seed: 11, base: [228, 210, 170], amp: 0.22, scale: 4, fibres: 0.05, mottle: 0.22 })})`);
     root.setProperty('--tex-leather', `url(${noiseTexture(256, { seed: 23, base: [26, 30, 52], amp: 0.16, scale: 16, octaves: 4, mottle: 0.08 })})`);
     root.setProperty('--tex-grain', `url(${grainTexture(128)})`);
   } catch {
