@@ -672,7 +672,8 @@ export function addWeapon(R, bone, kind, s, m) {
 }
 
 function addShield(R, bone, kind, s, kit, m) {
-  const face = new THREE.MeshStandardMaterial({ map: heraldry(kit.color, kit.device ?? 'chevron'), roughness: 0.75, metalness: 0.05 });
+  // Heroes carry painted heraldry; monsters carry battered planks.
+  const face = kit.race === 'monster' ? pbr('plank', 0x8a6a4a) : new THREE.MeshStandardMaterial({ map: heraldry(kit.color, kit.device ?? 'chevron'), roughness: 0.75, metalness: 0.05 });
   // In the guard pose the hand's -Y axis points forward; the shield faces that way.
   const place = { p: [0.03 * s, -0.1 * s, 0.02 * s], r: [0, 0, 0] };
   if (kind === 'round') {

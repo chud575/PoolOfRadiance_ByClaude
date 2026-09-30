@@ -230,11 +230,11 @@ function firePuff(seed, additive = true) {
     fragmentShader: `${NOISE_GLSL}
       varying vec2 vUv; uniform float uT, uHeat, uA, uSeed;
       void main(){ vec2 p = vUv * 2.0 - 1.0; float r = length(p);
-        float n = fbm3(vec3(p * 1.7, uT * 0.9 + uSeed)) * 0.5 + 0.5;
-        float d = fbm3(vec3(p * 5.0 + 11.0, uT * 1.8 + uSeed * 1.7)) * 0.5 + 0.5;
-        float shape = r + (n - 0.5) * 1.1 + (d - 0.5) * 0.35;
-        float body = 1.0 - smoothstep(0.45, 0.95, shape);
-        float h = uHeat * (1.25 - shape * 0.9) * (0.7 + d * 0.6);
+        float n = fbm3(vec3(p * 1.9, uT * 0.9 + uSeed)) * 0.5 + 0.5;
+        float d = fbm3(vec3(p * 6.5 + 11.0, uT * 2.2 + uSeed * 1.7)) * 0.5 + 0.5;
+        float shape = r + (n - 0.5) * 1.2 + (d - 0.5) * 0.45;
+        float body = 1.0 - smoothstep(0.58, 0.8, shape);
+        float h = uHeat * (1.3 - shape * 1.1) * (0.45 + d * 1.0);
         vec3 c = vec3(0.07, 0.05, 0.04);
         c = mix(c, vec3(0.45, 0.07, 0.02), smoothstep(0.08, 0.3, h));
         c = mix(c, vec3(1.0, 0.36, 0.05), smoothstep(0.3, 0.6, h));
@@ -578,12 +578,12 @@ export class VFX {
     this.add(T, 4, () => ({ list: [scorch, ring, dust, ...smokes, core, ...fires, flash, embers, debris] }), (age) => {
       const grow = 1 - Math.exp(-age * 7);
       // Core: a brief white-hot sphere.
-      const cr = R * (0.2 + 0.45 * (1 - Math.exp(-age * 14)));
+      const cr = R * (0.15 + 0.3 * (1 - Math.exp(-age * 14)));
       core.position.set(to.x, to.y + 0.2, to.z);
       core.scale.setScalar(cr);
       core.material.uniforms.uT.value = age;
       core.material.uniforms.uHeat.value = Math.max(0, 1.55 - age * 2.4);
-      core.material.uniforms.uAlpha.value = Math.max(0, 1 - age * 1.7);
+      core.material.uniforms.uAlpha.value = Math.max(0, 0.85 - age * 1.9);
       core.visible = age < 0.6;
       // Billowing fire puffs thrown outward and up.
       for (let k = 0; k < N; k++) {
@@ -608,7 +608,7 @@ export class VFX {
       ring.scale.setScalar((R * 0.4 + (1 - Math.exp(-age * 5)) * R * 1.3) * 2);
       ring.position.set(to.x, 0.07, to.z);
       ring.material.uniforms.uR.value = 0.85;
-      ring.material.uniforms.uW.value = 0.07;
+      ring.material.uniforms.uW.value = 0.045;
       ring.material.uniforms.uA.value = Math.max(0, 1 - age / 0.6) * 0.55;
       ring.visible = age < 0.75;
       flash.position.set(to.x, to.y + 0.5, to.z);

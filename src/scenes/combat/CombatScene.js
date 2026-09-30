@@ -46,6 +46,7 @@ export default class CombatScene extends Scene {
     if (this.speedIdx < 0) this.speedIdx = 1;
     this.demo = params.demo ? DEMOS[params.demo] : null;
 
+    performance.mark?.('combat:enter');
     // Shared procedural textures generate in parallel workers while we build.
     const texReady = Promise.resolve(TexLib.preloadTextureSets?.(['floor_cobble', 'floor_rubble', 'floor_flag', 'wall_stone', 'wall_timber', 'wall_ruin', 'door_wood'])).catch(() => {});
 
@@ -84,29 +85,6 @@ export default class CombatScene extends Scene {
     s.add(createSkyDome({ hour }));
     this._envMap(hour);
 
-    // ------------------------------------------------ diorama
-    await texReady;
-    this.diorama = buildDiorama(this.field, { hour, seed: 11 });
-    s.add(this.diorama.group);
-    // Real lights for the three most central flames (a brazier first).
-    this.torchLights = [];
-    const flames = [...this.diorama.torches].sort((a, b) => (b.brazier ? 1 : 0) - (a.brazier ? 1 : 0) || Math.hypot(a.x - this.center.x, a.z - this.center.z) - Math.hypot(b.x - this.center.x, b.z - this.center.z)).slice(0, 3);
-    flames.forEach((f, i) => {
-      const l = new THREE.PointLight(0xff9a48, (this.night ? 30 : 7) * (f.brazier ? 1.4 : 1), f.brazier ? 13 : 10, 1.8);
-      l.position.set(f.x, f.y, f.z);
-      l.userData.base = l.intensity;
-      l.userData.seed = i * 2.3;
-      s.add(l);
-      this.torchLights.push(l);
-    });
-    // Soft camera-side fill so figures read against the ground (a classic tactics-cam trick).
-    this.fill = new THREE.DirectionalLight(this.night ? 0x6a80c0 : 0xfff2e0, this.night ? 0.35 : 0.55);
-    s.add(this.fill, this.fill.target);
-    // Rim light from behind the fight: separates figures from the ground.
-    this.rim = new THREE.DirectionalLight(this.night ? 0x8fb0ff : 0xffe8c8, this.night ? 0.9 : 0.8);
-    s.add(this.rim, this.rim.target);
-    this.vfx = new VFX(s);
-
     // ------------------------------------------------ combatants
     const partyChars = game.party.length ? game.party : [];
     this.party = partyChars.map((ch) => combatantFromCharacter(ch));
@@ -120,6 +98,36 @@ export default class CombatScene extends Scene {
         for (let i = 0; i < n; i++) this.monsters.push(combatantFromMonster(rng, g.monster, i + 1));
       }
     }
+    // Build the figure models while the shared textures generate in workers.
+    const models = new Map();
+    [...this.party, ...this.monsters].forEach((c, i) => models.set(c.id, makeFigureModel(c, c.side === 'party' ? this.party.indexOf(c) : i)));
+
+    // ------------------------------------------------ diorama
+    performance.mark?.('combat:models');
+    await texReady;
+    performance.mark?.('combat:textures');
+    this.diorama = buildDiorama(this.field, { hour, seed: 11 });
+    s.add(this.diorama.group);
+    // Real lights for the three most central flames (a brazier first).
+    this.torchLights = [];
+    const flames = [...this.diorama.torches].sort((a, b) => (b.brazier ? 1 : 0) - (a.brazier ? 1 : 0) || Math.hypot(a.x - this.center.x, a.z - this.center.z) - Math.hypot(b.x - this.center.x, b.z - this.center.z)).slice(0, 3);
+    flames.forEach((f, i) => {
+      const l = new THREE.PointLight(0xff9a48, (this.night ? 30 : 7) * (f.brazier ? 1.4 : 1), f.brazier ? 13 : 10, 1.8);
+      l.position.set(f.x, f.y, f.z);
+      l.userData.base = l.intensity;
+      l.userData.seed = i * 2.3;
+      s.add(l);
+      this.torchLights.push(l);
+      f.light = l;
+    });
+    // Soft camera-side fill so figures read against the ground (a classic tactics-cam trick).
+    this.fill = new THREE.DirectionalLight(this.night ? 0x6a80c0 : 0xfff2e0, this.night ? 0.35 : 0.55);
+    s.add(this.fill, this.fill.target);
+    // Rim light from behind the fight: separates figures from the ground.
+    this.rim = new THREE.DirectionalLight(this.night ? 0x8fb0ff : 0xffe8c8, this.night ? 0.9 : 0.8);
+    s.add(this.rim, this.rim.target);
+    this.vfx = new VFX(s);
+
     this._placeCombatants();
     this.engine = new CombatEngine({ rng, field: this.field, party: this.party, monsters: this.monsters });
     this.engine.startRound();
@@ -133,7 +141,7 @@ export default class CombatScene extends Scene {
     this.proxies = [];
     const all = [...this.party, ...this.monsters];
     all.forEach((c, i) => {
-      const model = makeFigureModel(c, c.side === 'party' ? this.party.indexOf(c) : i);
+      const model = models.get(c.id);
       const fig = new Figure(model, { seed: i * 13.7 + 1 });
       const p = sq2w(c.x, c.y);
       fig.place(p.x, p.z, facingYaw(c.facing));
@@ -154,6 +162,7 @@ export default class CombatScene extends Scene {
       this.proxies.push(proxy);
     });
 
+    performance.mark?.('combat:figures');
     // ------------------------------------------------ HUD
     const zone = loc.map?.zoneAt?.(loc.at.x, loc.at.y) ?? 'Phlan';
     this.hud = new CombatHud(this.ctx, { location: zone, sub: `${this.encounter.name} · ${String(Math.floor(hour)).padStart(2, '0')}:00` });
@@ -166,6 +175,7 @@ export default class CombatScene extends Scene {
     this.cam.maxDist = this.cam.dist * 1.2;
     this.cam.minDist = 8;
     this._frameCombatants(true);
+    if (!this.demo) this._chooseYaw();
     this.post = { bloomStrength: this.night ? 0.75 : 0.42, bloomThreshold: this.night ? 0.72 : 0.85, bloomRadius: 0.55, vignette: this.night ? 0.5 : 0.36, exposure: this.night ? 1.12 : 1.0, contrast: 1.06, saturation: this.night ? 0.98 : 1.06 };
     this._updateCamera(0, true);
 
@@ -193,6 +203,7 @@ export default class CombatScene extends Scene {
       this._updateFigures();
       return;
     }
+    performance.mark?.('combat:built');
     this.director = this._run();
     this.director.catch((e) => console.error('[combat] director failed', e));
     if (this.frozen) await this._idle;
@@ -1296,6 +1307,18 @@ export default class CombatScene extends Scene {
     this._refresh(this.engine.active());
   }
 
+  /** Persistent ground decal (blood pool, bone dust, scorch). */
+  _decal(pos, kind, size = 1) {
+    const tex = decalTexture(kind);
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(size * 1.6, size * 1.6).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: tex, transparent: true, depthWrite: false, roughness: kind === 'blood' ? 0.25 : 1, color: kind === 'blood' ? 0x5a0806 : kind === 'scorch' ? 0x080604 : 0xb8b0a0, polygonOffset: true, polygonOffsetFactor: -1 }));
+    m.position.set(pos.x + (Math.sin(pos.x * 7) * 0.2), 0.02 + (this._decals?.length ?? 0) * 0.0005, pos.z + (Math.cos(pos.z * 5) * 0.2));
+    m.rotation.y = pos.x * 3.1;
+    m.renderOrder = 1;
+    m.receiveShadow = true;
+    this.scene3d.add(m);
+    (this._decals ??= []).push(m);
+  }
+
   _maybeRevive(id) {
     const c = this.engine.byId(id);
     const f = this.figures.get(id);
@@ -1312,6 +1335,7 @@ export default class CombatScene extends Scene {
     // Topple away from the nearest enemy.
     const foe = this.engine.all.filter((o) => o.side !== c.side && !o.fled).sort((a, b) => Battlefield.dist(a.x, a.y, c.x, c.y) - Battlefield.dist(b.x, b.y, c.x, c.y))[0];
     const from = foe ? sq2w(foe.x, foe.y) : fig.root.position.clone().add(new THREE.Vector3(0, 0, -1));
+    this._decal(fig.root.position, c.monsterId === 'skeleton' || c.monsterId === 'zombie' ? 'dust' : 'blood', c.size === 'L' ? 1.6 : c.size === 'S' ? 0.9 : 1.2);
     if (this.snap) {
       fig.die(this.time - 10, from.x, from.z, { holy: ev.holy });
     } else {
@@ -1355,7 +1379,10 @@ export default class CombatScene extends Scene {
     const T = this.time;
     switch (tact.vfx) {
       case 'missile': delay = this.vfx.magicMissile(T, hand, tgtPos, ev.hits?.[0]?.bolts?.length ?? 1, this._seed()); break;
-      case 'fireball': delay = this.vfx.fireball(T, hand, centre.clone().setY(0.9), (tact.size + 0.5) * TILE, this._seed()).detonate; break;
+      case 'fireball':
+        delay = this.vfx.fireball(T, hand, centre.clone().setY(0.9), (tact.size + 0.5) * TILE, this._seed()).detonate;
+        this._decal(centre, 'scorch', (tact.size + 0.5) * TILE * 0.85);
+        break;
       case 'cone': delay = this.vfx.coneFire(T, hand, fig.yaw, (tact.size + 0.5) * TILE, this._seed()); break;
       case 'lightning': {
         const last = sq[sq.length - 1] ?? ev.at;
@@ -1432,6 +1459,8 @@ export default class CombatScene extends Scene {
       z1 = Math.max(z1, p.z);
     }
     const m = 2.6;
+    // Extra room on the far side for the figures' heights.
+    z0 -= 1.4;
     const hw = (x1 - x0) / 2 + m;
     const hd = (z1 - z0) / 2 + m;
     const sa = this._safeArea();
@@ -1469,14 +1498,32 @@ export default class CombatScene extends Scene {
     }
   }
 
+  /** Pick the opening camera bearing that hides the fewest buildings (least cut-away). */
+  _chooseYaw() {
+    const pts = [];
+    for (const c of this.engine.all) {
+      if (this.engine.out(c)) continue;
+      const p = sq2w(c.x, c.y);
+      pts.push(new THREE.Vector3(p.x, 0.2, p.z), new THREE.Vector3(p.x, 1.6, p.z));
+    }
+    let best = null;
+    for (const yaw of [0.32, -0.32, 0, 0.62, -0.62]) {
+      const off = new THREE.Vector3(Math.sin(yaw) * Math.cos(this.cam.pitch), Math.sin(this.cam.pitch), Math.cos(yaw) * Math.cos(this.cam.pitch)).multiplyScalar(this.cam.goalDist);
+      const pos = this.cam.goalTarget.clone().add(off);
+      const n = this.diorama.occluders(pos, pts) + Math.abs(yaw - 0.32) * 2;
+      if (!best || n < best.n) best = { n, yaw };
+    }
+    this.cam.yaw = this.cam.goalYaw = best.yaw;
+  }
+
   /** Fraction of the screen not covered by HUD chrome, and its centre offset. */
   _safeArea() {
     const W = window.innerWidth;
     const H = window.innerHeight;
     const em = Math.max(12, Math.min(25.6, 16 * (H / 900)));
     const right = 19.5 * em;
-    const top = 7 * em;
-    const bottom = 10 * em;
+    const top = 8.5 * em;
+    const bottom = 12 * em;
     return { w: (W - right) / W, h: (H - top - bottom) / H, ox: right / 2, oy: (bottom - top) / 2, W, H };
   }
 
@@ -1589,7 +1636,9 @@ export default class CombatScene extends Scene {
     }
     if (this._frames === 2) {
       this._updateFigures();
+      performance.mark?.('combat:frame1');
       this._renderPortraits();
+      performance.mark?.('combat:portraits');
     }
     // Hit-stop briefly slows combat time for punch.
     let scale = this.speed >= 2.4 ? 1 : 1;
@@ -1609,14 +1658,16 @@ export default class CombatScene extends Scene {
       for (const w of due) w.res();
     }
     this._updateFigures();
-    this.diorama.update(t);
+    const rr = this.ctx.render;
+    const pixNow = (rr.height * rr.renderer.getPixelRatio()) / (2 * Math.tan((this.camera.fov * Math.PI) / 360));
+    this.diorama.update(t, pixNow);
     this.fill.position.copy(this.camera.position);
     this.fill.target.position.copy(this.cam.target);
     this.rim.position.set(this.cam.target.x * 2 - this.camera.position.x, this.camera.position.y * 0.6, this.cam.target.z * 2 - this.camera.position.z);
     this.rim.target.position.copy(this.cam.target);
     for (const l of this.torchLights) {
       const s = l.userData.seed;
-      l.intensity = l.userData.base * (0.86 + 0.09 * Math.sin(t * 11 + s) + 0.05 * Math.sin(t * 23.7 + s * 3));
+      l.intensity = l.userData.hidden ? 0 : l.userData.base * (0.86 + 0.09 * Math.sin(t * 11 + s) + 0.05 * Math.sin(t * 23.7 + s * 3));
     }
     this.overlay.update(t);
     this._updateCamera(dt);
@@ -1686,12 +1737,56 @@ export default class CombatScene extends Scene {
     this.diorama?.dispose();
     this._blobGeo?.dispose();
     this._blobMat?.dispose();
+    for (const d of this._decals ?? []) {
+      d.geometry.dispose();
+      d.material.dispose();
+    }
   }
 }
 
 function facingYaw(f) {
   const [dx, dy] = DIR8[f ?? 0];
   return Math.atan2(dx, dy);
+}
+
+const _decalTex = {};
+function decalTexture(kind) {
+  if (_decalTex[kind]) return _decalTex[kind];
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const rnd = (i) => {
+    const x = Math.sin(i * 127.1 + kind.length * 31.7) * 43758.5453;
+    return x - Math.floor(x);
+  };
+  g.fillStyle = '#fff';
+  const blobs = kind === 'scorch' ? 26 : 14;
+  for (let i = 0; i < blobs; i++) {
+    const a = rnd(i) * Math.PI * 2;
+    const r = (kind === 'scorch' ? 12 : 6) + rnd(i + 50) * 30;
+    const x = 64 + Math.cos(a) * r * (i ? 1 : 0);
+    const y = 64 + Math.sin(a) * r * (i ? 1 : 0);
+    const rad = (i ? 6 + rnd(i + 99) * 14 : 26) * (kind === 'scorch' ? 1.4 : 1);
+    const grd = g.createRadialGradient(x, y, 0, x, y, rad);
+    grd.addColorStop(0, `rgba(255,255,255,${kind === 'scorch' ? 0.55 : 0.9})`);
+    grd.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grd;
+    g.beginPath();
+    g.arc(x, y, rad, 0, Math.PI * 2);
+    g.fill();
+  }
+  // Splatter droplets.
+  for (let i = 0; i < 40; i++) {
+    const a = rnd(i + 300) * Math.PI * 2;
+    const r = 30 + rnd(i + 400) * 30;
+    g.fillStyle = `rgba(255,255,255,${0.4 + rnd(i + 500) * 0.5})`;
+    g.beginPath();
+    g.arc(64 + Math.cos(a) * r, 64 + Math.sin(a) * r, 1 + rnd(i + 600) * 2.5, 0, Math.PI * 2);
+    g.fill();
+  }
+  const t = new THREE.CanvasTexture(c);
+  _decalTex[kind] = t;
+  return t;
 }
 
 let _blob = null;

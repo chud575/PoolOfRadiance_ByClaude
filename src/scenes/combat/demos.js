@@ -55,6 +55,7 @@ function setActive(sc, c) {
 }
 
 function kill(sc, c, t, from) {
+  sc._decal(sc.figures.get(c.id).root.position, 'blood', c.size === 'L' ? 1.6 : 1.2);
   c.hp.cur = Math.min(0, c.hp.cur);
   if (c.side === 'monster') c.status = 'dead';
   const f = sc.figures.get(c.id);
@@ -256,7 +257,7 @@ export const DEMOS = {
       sc.cam.goalTarget.copy(midW);
       sc.cam.target.copy(midW);
       sc.cam.goalDist = sc.cam.dist = Math.max(11, sc.cam.dist * 0.5);
-      sc.cam.goalYaw = sc.cam.yaw = -0.35;
+      sc.cam.goalYaw = sc.cam.yaw = Number.isFinite(+sc.params.yaw) && sc.params.yaw !== undefined ? +sc.params.yaw : 2.4;
       sc.cam.goalPitch = sc.cam.pitch = 0.72;
       sc._refresh(hero);
     },

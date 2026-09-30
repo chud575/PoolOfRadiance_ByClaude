@@ -67,7 +67,7 @@ export function buildDiorama(field, o = {}) {
   const map = field.map;
   const W = field.w * TILE;
   const H = field.h * TILE;
-  const RING = 4; // context cells around the window
+  const RING = 6; // context cells around the window
   const batch = new Batcher();
   const cutBatch = { full: [], cut: [] };
   const houses = [];
@@ -220,7 +220,7 @@ export function buildDiorama(field, o = {}) {
         if (wR > 0.001) gr = mix(gr, texture2D(rough2, uv2).g, wR);
         if (wF > 0.001) gr = mix(gr, texture2D(rough3, uv3).g, wF);
         float roughnessFactor = roughness * gr;
-        roughnessFactor = mix(roughnessFactor, 0.06, wet);
+        roughnessFactor = mix(roughnessFactor, 0.22, wet);
       `)
       .replace('#include <normal_fragment_maps>', `
         vec3 mapN = texture2D(normalMap, uv1).xyz * 2.0 - 1.0;
@@ -801,14 +801,18 @@ export function buildDiorama(field, o = {}) {
     // Bracket.
     const bx = t.x - Math.sin(t.yaw) * 0.2;
     const bz = t.z - Math.cos(t.yaw) * 0.2;
-    batch.add(worldBox(0.08, 0.5, 0.08, 1), ironMat, { p: [bx, t.y - 0.35, bz] }, { cast: false });
-    batch.add(new THREE.CylinderGeometry(0.06, 0.035, 0.34, 8), darkWood, { p: [t.x, t.y - 0.05, t.z] }, { cast: false });
-    batch.add(new THREE.CylinderGeometry(0.075, 0.07, 0.08, 8), ironMat, { p: [t.x, t.y + 0.1, t.z] }, { cast: false });
+    // Bracket and torch belong to the house, so they vanish with its cut-away.
+    const B = t.house?.full ?? batch;
+    B.add(worldBox(0.08, 0.5, 0.08, 1), ironMat, { p: [bx, t.y - 0.35, bz] }, { cast: false });
+    B.add(new THREE.CylinderGeometry(0.06, 0.035, 0.34, 8), darkWood, { p: [t.x, t.y - 0.05, t.z] }, { cast: false });
+    B.add(new THREE.CylinderGeometry(0.075, 0.07, 0.08, 8), ironMat, { p: [t.x, t.y + 0.1, t.z] }, { cast: false });
     const f = makeFlame(0.34, torches.length * 1.7);
     f.position.set(t.x, t.y + 0.3, t.z);
     group.add(f);
     flames.push(f);
-    torches.push({ x: t.x, y: t.y + 0.35, z: t.z, house: t.house });
+    const torch = { x: t.x, y: t.y + 0.35, z: t.z, house: t.house, flame: f };
+    torches.push(torch);
+    if (t.house) (t.house.torches ??= []).push(torch);
   }
   // Braziers beside walls near the fight (always lit, great for night).
   if (field.features.props) {
@@ -887,6 +891,43 @@ export function buildDiorama(field, o = {}) {
     }
   }
 
+  // ---------------------------------------------------------------- far city
+  // A far ground apron and a skyline of Phlan's rooftops and towers, lost in haze,
+  // so the view never runs off into empty sky.
+  {
+    const far = new THREE.Mesh(new THREE.PlaneGeometry(420, 420), new THREE.MeshStandardMaterial({ map: rub.map, color: night ? 0x3a3a44 : 0x6a6258, roughness: 1 }));
+    far.material.map = rub.map.clone();
+    far.material.map.repeat.set(120, 120);
+    far.material.map.needsUpdate = true;
+    far.rotation.x = -Math.PI / 2;
+    far.position.set(W / 2, -0.04, H / 2);
+    group.add(far);
+    disposables.push(far.geometry, far.material, far.material.map);
+    const skyMat = new THREE.MeshStandardMaterial({ color: night ? 0x1a1e2a : 0x6a645c, roughness: 1 });
+    const roofDark = new THREE.MeshStandardMaterial({ color: night ? 0x141620 : 0x5a3a30, roughness: 1 });
+    disposables.push(skyMat, roofDark);
+    const extent = (RING + 1) * CELLM;
+    for (let k = 0; k < 90; k++) {
+      const a = (k / 90) * Math.PI * 2 + hash(k, 1, 881) * 0.05;
+      const d = Math.max(W, H) / 2 + extent + 8 + hash(k, 2, 881) * 55;
+      const x = W / 2 + Math.sin(a) * d;
+      const z = H / 2 + Math.cos(a) * d;
+      const tower = hash(k, 3, 881) > 0.9;
+      const hgt = tower ? 16 + hash(k, 4, 881) * 14 : 5 + hash(k, 4, 881) * 7;
+      const wdt = tower ? 5 : 6 + hash(k, 5, 881) * 8;
+      if (tower) {
+        batch.add(new THREE.CylinderGeometry(wdt / 2, wdt / 2 + 0.4, hgt, 10), skyMat, { p: [x, hgt / 2, z] }, { cast: false });
+        batch.add(new THREE.ConeGeometry(wdt / 2 + 0.6, wdt * 1.1, 10), roofDark, { p: [x, hgt + wdt * 0.55, z] }, { cast: false });
+      } else {
+        batch.add(new THREE.BoxGeometry(wdt, hgt, wdt * 0.8), skyMat, { p: [x, hgt / 2, z], r: [0, a, 0] }, { cast: false });
+        const roof = new THREE.ConeGeometry(wdt * 0.75, wdt * 0.5, 4);
+        roof.rotateY(Math.PI / 4);
+        roof.scale(1, 1, 0.75);
+        batch.add(roof, roofDark, { p: [x, hgt + wdt * 0.25, z], r: [0, a, 0] }, { cast: false });
+      }
+    }
+  }
+
   // ---------------------------------------------------------------- flush
   batch.flush(group);
   const houseGroups = [];
@@ -954,11 +995,77 @@ export function buildDiorama(field, o = {}) {
       }
       g.full.visible = !hides;
       g.cut.visible = hides;
+      for (const tc of g.h?.torches ?? []) {
+        tc.flame.visible = !hides;
+        tc.hidden = hides;
+        if (tc.light) tc.light.userData.hidden = hides;
+      }
     }
   }
 
-  function update(t) {
+  // ---------------------------------------------------------------- ambient life
+  const ambient = [];
+  // Embers rising from every brazier; sparks from torches.
+  for (const tc of torches) {
+    const e = loopingParticles({ count: tc.brazier ? 26 : 8, at: new THREE.Vector3(tc.x, tc.y - (tc.brazier ? 0.35 : 0.1), tc.z), spread: tc.brazier ? 0.35 : 0.08, vel: [0, tc.brazier ? 1.3 : 0.8, 0], turb: 0.35, life: tc.brazier ? 2.2 : 1.4, size: 0.05, color: 0xffa040, additive: true, seed: tc.x * 3 + tc.z });
+    group.add(e.obj);
+    ambient.push(e);
+  }
+  // Chimney smoke.
+  for (const hs of houses) {
+    if (!hs.chimney) continue;
+    const sm = loopingParticles({ count: 10, at: new THREE.Vector3(hs.chimney.x, hs.chimney.y, hs.chimney.z), spread: 0.15, vel: [0.25, 0.7, 0.12], turb: 0.3, life: 7, size: 1.1, grow: 2.5, color: night ? 0x1c1e24 : 0x5a5854, additive: false, alpha: night ? 0.3 : 0.2, seed: hs.seed * 50 });
+    group.add(sm.obj);
+    ambient.push(sm);
+  }
+  // Dust motes hanging in the air over the fight (day) / drifting ash (night).
+  {
+    const d = loopingParticles({ count: 90, at: new THREE.Vector3(W / 2, 1.6, H / 2), spread: Math.max(W, H) * 0.5, spreadY: 1.4, vel: [0.08, 0.05, 0.04], turb: 0.25, life: 9, size: 0.035, color: night ? 0x9ab0ff : 0xfff0d0, additive: true, alpha: night ? 0.5 : 0.35, seed: 7 });
+    group.add(d.obj);
+    ambient.push(d);
+  }
+  // Low ground mist at night.
+  if (night) {
+    const mist = new THREE.Mesh(new THREE.PlaneGeometry(SW * TILE, SH * TILE).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      uniforms: { uT: { value: 0 }, tNoise: { value: noiseTexture() } },
+      vertexShader: 'varying vec3 vW; void main(){ vW = (modelMatrix * vec4(position,1.0)).xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+      fragmentShader: `varying vec3 vW; uniform float uT; uniform sampler2D tNoise;
+        void main(){ float a = texture2D(tNoise, vW.xz * 0.015 + vec2(uT * 0.004, uT * 0.002)).r;
+          float b = texture2D(tNoise, vW.xz * 0.04 - vec2(uT * 0.006, 0.0)).r;
+          float m = smoothstep(0.35, 0.8, a * 0.7 + b * 0.5);
+          gl_FragColor = vec4(vec3(0.3, 0.36, 0.52), m * 0.16); }`,
+    }));
+    mist.position.set(originX + (SW * TILE) / 2, 0.35, originZ + (SH * TILE) / 2);
+    mist.renderOrder = 4;
+    group.add(mist);
+    disposables.push(mist.material, mist.geometry);
+    ambient.push({ update: (t) => (mist.material.uniforms.uT.value = t), dispose: () => {} });
+  }
+
+  /** How many houses/walls would have to be cut away to see `points` from camPos. */
+  function occluders(camPos, points) {
+    let n = 0;
+    for (const g of [...houseGroups, ...wallGroups]) {
+      if (g.w?.city) continue;
+      for (const p of points) {
+        _ray.origin.copy(p);
+        _ray.direction.subVectors(camPos, p).normalize();
+        if (g.box.containsPoint(p)) continue;
+        const hit = _ray.intersectBox(g.box, _v);
+        if (hit && hit.distanceTo(p) < camPos.distanceTo(p)) {
+          n += g.h ? (g.h.x1 - g.h.x0) * (g.h.z1 - g.h.z0) : 4;
+          break;
+        }
+      }
+    }
+    return n;
+  }
+
+  function update(t, pix) {
     for (const f of flames) f.userData.update(t);
+    for (const a of ambient) a.update(t, pix);
   }
 
   function dispose() {
@@ -966,9 +1073,11 @@ export function buildDiorama(field, o = {}) {
       if (obj.isMesh || obj.isInstancedMesh) obj.geometry?.dispose();
     });
     for (const d of disposables) d.dispose?.();
+    for (const a of ambient) a.dispose();
+    for (const f of flames) f.userData.dispose?.();
   }
 
-  return { group, torches, flames, houses, update, setView, bounds: { w: W, h: H }, dispose };
+  return { group, torches, flames, houses, update, setView, occluders, bounds: { w: W, h: H }, dispose };
 }
 
 // ------------------------------------------------------------------ helpers
@@ -996,6 +1105,57 @@ function mergeTwo(a, b) {
   g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
   g.setIndex(idx);
   return g;
+}
+
+/**
+ * Endlessly looping particles (embers, smoke, motes): each particle's age is
+ * (t + phase) mod life, evaluated in the shader — cheap and freeze-safe.
+ */
+function loopingParticles(o) {
+  const n = o.count;
+  const pos = new Float32Array(n * 3);
+  const dat = new Float32Array(n * 4);
+  for (let i = 0; i < n; i++) {
+    const r = (k) => hash(i * 7 + k, Math.floor(o.seed * 13), 101);
+    pos.set([o.at.x + (r(1) - 0.5) * 2 * o.spread, o.at.y + (r(2) - 0.5) * 2 * (o.spreadY ?? o.spread * 0.3), o.at.z + (r(3) - 0.5) * 2 * o.spread], i * 3);
+    dat.set([r(4) * o.life, o.size * (0.6 + r(5) * 0.8), r(6), r(7)], i * 4);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('aD', new THREE.BufferAttribute(dat, 4));
+  const mat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: o.additive ? THREE.AdditiveBlending : THREE.NormalBlending,
+    uniforms: { uT: { value: 0 }, uLife: { value: o.life }, uVel: { value: new THREE.Vector3(...o.vel) }, uTurb: { value: o.turb ?? 0 }, uGrow: { value: o.grow ?? 0 }, uPix: { value: 700 }, uColor: { value: new THREE.Color(o.color) }, uAlpha: { value: o.alpha ?? 1 }, uGlow: { value: o.additive ? 1 : 0 } },
+    vertexShader: `attribute vec4 aD; uniform float uT, uLife, uTurb, uGrow, uPix; uniform vec3 uVel; varying float vL; varying float vS;
+      void main(){ float age = mod(uT + aD.x, uLife); float l = age / uLife; vL = l; vS = aD.z;
+        vec3 p = position + uVel * age;
+        p.x += sin(age * 1.7 + aD.z * 30.0) * uTurb * (0.3 + l);
+        p.z += cos(age * 1.3 + aD.w * 30.0) * uTurb * (0.3 + l);
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        gl_Position = projectionMatrix * mv;
+        gl_PointSize = aD.y * (1.0 + uGrow * l) * uPix / max(0.1, -mv.z); }`,
+    fragmentShader: `uniform vec3 uColor; uniform float uAlpha, uGlow; varying float vL; varying float vS;
+      void main(){ float r = length(gl_PointCoord - 0.5) * 2.0; float d = 1.0 - smoothstep(0.2, 1.0, r); if (d <= 0.0) discard;
+        float a = d * smoothstep(0.0, 0.15, vL) * (1.0 - smoothstep(0.55, 1.0, vL)) * uAlpha;
+        float tw = 0.7 + 0.3 * sin(vL * 40.0 + vS * 20.0);
+        gl_FragColor = vec4(uColor * mix(1.0, 1.2 + tw * 0.6, uGlow), a); }`,
+  });
+  const pts = new THREE.Points(g, mat);
+  pts.frustumCulled = false;
+  pts.renderOrder = 6;
+  return {
+    obj: pts,
+    update: (t, pix) => {
+      mat.uniforms.uT.value = t;
+      if (pix) mat.uniforms.uPix.value = pix;
+    },
+    dispose: () => {
+      g.dispose();
+      mat.dispose();
+    },
+  };
 }
 
 let _noiseTex = null;
