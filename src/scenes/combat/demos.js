@@ -62,6 +62,7 @@ function kill(sc, c, t, from) {
   f.die(t, from.x, from.z);
   sc.overlay.teamRing(c.id, c.side).visible = false;
   f.blob.visible = false;
+  if (f.eyeGlow) f.eyeGlow.visible = false;
 }
 
 export const DEMOS = {

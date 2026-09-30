@@ -418,7 +418,7 @@ export class VFX {
   hitSparks(t, at, { blood = true, crit = false, seed = 1, bone = false } = {}) {
     this.add(t, 0.9, () => ({
       list: [
-        particleBurst({ at, count: crit ? 28 : 18, speed: crit ? 6.5 : 5, life: 0.35, size: 0.04, drag: 3, gravity: 9, colors: [0xffffff, 0xffd070, 0xff6010], intensity: 3, seed, floor: 0.02 }),
+        particleBurst({ at, count: crit ? 24 : 16, speed: crit ? 7 : 5.5, life: 0.32, size: 0.03, drag: 2.5, gravity: 9, colors: [0xffffff, 0xffc060, 0xff5010], intensity: 2.2, seed, floor: 0.02, spread: 0.12 }),
         ...(blood && !bone ? [particleBurst({ at, count: crit ? 26 : 14, speed: 2.2, life: 0.7, size: 0.07, drag: 1.5, gravity: 9.8, colors: [0x7a0a06, 0x4a0504, 0x2a0303], additive: false, intensity: 1, soft: 0.3, seed: seed + 7, floor: 0.02 })] : []),
         ...(bone ? [particleBurst({ at, count: 16, speed: 2.5, life: 0.8, size: 0.06, drag: 1.2, gravity: 9.8, colors: [0xe8e0c8, 0xc8b898, 0x8a7a60], additive: false, intensity: 1, soft: 0.2, seed: seed + 9, floor: 0.02 })] : []),
         glowSprite(0xffc070, crit ? 0.9 : 0.6, 0.7),
@@ -426,7 +426,7 @@ export class VFX {
     }), (age, parts) => {
       const sp = parts.list[parts.list.length - 1];
       sp.position.copy(at);
-      sp.material.opacity = Math.max(0, 1 - age / 0.12) * 0.7;
+      sp.material.opacity = Math.max(0, 1 - age / 0.08) * 0.5;
       sp.scale.setScalar((crit ? 0.9 : 0.6) * (1 + age * 3));
     });
   }

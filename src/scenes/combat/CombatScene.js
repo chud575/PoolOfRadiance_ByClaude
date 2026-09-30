@@ -3,6 +3,7 @@ import { Scene } from '../../core/Scene.js';
 import { h } from '../../ui/UI.js';
 import { createOutdoorRig, createSkyDome, timeOfDayKeys } from '../../render/lighting.js';
 import * as TexLib from '../../render/textures/index.js';
+import { getGlowTexture } from '../../render/textures/index.js';
 import { getEncounter, ENCOUNTERS } from '../../data/encounters.js';
 import { getMap, hasMap } from '../../data/maps/index.js';
 import { SPELLS } from '../../data/spells.js';
@@ -148,6 +149,14 @@ export default class CombatScene extends Scene {
       s.add(fig.root);
       this.figures.set(c.id, fig);
       if (isDown(c)) fig.lieDead(this.time);
+      // Glowing eyes read across the dark (undead, kobolds, rats...).
+      if (model.eyesColor != null && fig.b.head && c.side === 'monster') {
+        const glow = new THREE.Sprite(this._eyeMat?.[model.eyesColor] ?? ((this._eyeMat ??= {})[model.eyesColor] = new THREE.SpriteMaterial({ map: getGlowTexture(), color: model.eyesColor, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: this.night ? 0.6 : 0.22 })));
+        glow.scale.setScalar(0.13 * (model.scale ?? 1));
+        glow.position.set(0, model.rig === 'biped' ? 0.11 * (model.scale ?? 1) : 0.04, model.rig === 'biped' ? 0.12 * (model.scale ?? 1) : 0.12);
+        fig.b.head.add(glow);
+        fig.eyeGlow = glow;
+      }
       // Blob contact shadow.
       const blob = new THREE.Mesh(this._blobGeo ??= new THREE.CircleGeometry(0.55, 24).rotateX(-Math.PI / 2), this._blobMat ??= new THREE.MeshBasicMaterial({ map: blobTexture(), transparent: true, depthWrite: false, opacity: 0.6, color: 0x000000 }));
       blob.renderOrder = 1;
@@ -266,7 +275,8 @@ export default class CombatScene extends Scene {
         const c = fl.cost[f.idx(x, y)];
         if (!Number.isFinite(c) || !f.isFree(x, y) || !notRim(x, y)) continue;
         const openN = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => f.isFree(x + dx, y + dy)).length;
-        cands.push({ x, y, score: -Math.abs(c - 9) + openN * 0.4 + ((x * 7 + y * 13) % 5) * 0.05 });
+        const straight = Math.max(Math.abs(x - start[0]), Math.abs(y - start[1]));
+        cands.push({ x, y, score: -Math.abs(c - 9) - Math.max(0, straight - 8) * 1.5 - Math.max(0, c - straight - 3) * 1.2 + openN * 0.4 + ((x * 7 + y * 13) % 5) * 0.05 });
       }
     }
     cands.sort((a, b) => b.score - a.score);
@@ -796,6 +806,27 @@ export default class CombatScene extends Scene {
     // Gamepad: d-pad moves / aims, A confirms, B cancels, shoulders cycle targets.
     this.listen('input:action', ({ action, code }) => {
       if (!String(code).startsWith('pad:')) return;
+      // A popup menu (commands, spells, items) takes the pad while open.
+      const menu = this.hud.menu?.menu;
+      if (menu) {
+        if (action === 'forward') menu.highlight(menu._step(menu.index, -1));
+        else if (action === 'back') menu.highlight(menu._step(menu.index, 1));
+        else if (action === 'confirm') menu.select(menu.index);
+        else if (action === 'cancel') {
+          this.hud.closeMenu();
+          if (this.turnDone && !this.busy) this._enterMode('move');
+        }
+        return;
+      }
+      if (action === 'encamp' || action === 'area') {
+        // Start / Select: the classic command line as a pad-friendly menu.
+        const items = (this._cmdList ?? []).filter((c) => !c.disabled).map((c) => ({ id: c.id, label: c.label, key: c.key, hint: c.tip?.slice(0, 40) }));
+        this.hud.openMenu('Commands', items, (it) => {
+          this.hud.closeMenu();
+          this._cmdList.find((c) => c.id === it.id)?.onSelect();
+        }, () => {});
+        return;
+      }
       const dirs = { forward: [0, -1], back: [0, 1], turnLeft: [-1, 0], turnRight: [1, 0] };
       if (dirs[action]) this._dirInput(...dirs[action]);
       else if (action === 'confirm') this._confirm();
@@ -1345,6 +1376,7 @@ export default class CombatScene extends Scene {
     }
     this.overlay.teamRing(c.id, c.side).visible = false;
     fig.blob.visible = false;
+    if (fig.eyeGlow) fig.eyeGlow.visible = false;
     this._refresh(this.engine.active());
   }
 
@@ -1471,14 +1503,14 @@ export default class CombatScene extends Scene {
     const dD = (hd * Math.sin(pitch)) / Math.tan(fov / 2) + hd * Math.cos(pitch);
     // Keep figures large enough to read (~110 px at 1080p): cap the pull-back and
     // favour the party when the whole fight doesn't fit.
-    const cap = 28;
+    const cap = 34;
     let dist = Math.min(this.cam.maxDist, Math.max(13, dW, dD) * 1.02);
     if (dist > cap) {
       const party = live.filter((c) => c.side === 'party');
       if (party.length) {
         const px = party.reduce((a, c) => a + sq2w(c.x, c.y).x, 0) / party.length;
         const pz = party.reduce((a, c) => a + sq2w(c.x, c.y).z, 0) / party.length;
-        const k = Math.min(0.45, (dist - cap) / dist);
+        const k = Math.min(0.3, (dist - cap) / dist);
         x0 += (px - x0) * k;
         x1 += (px - x1) * k;
         z0 += (pz - z0) * k;
@@ -1737,6 +1769,7 @@ export default class CombatScene extends Scene {
     this.diorama?.dispose();
     this._blobGeo?.dispose();
     this._blobMat?.dispose();
+    for (const m of Object.values(this._eyeMat ?? {})) m.dispose();
     for (const d of this._decals ?? []) {
       d.geometry.dispose();
       d.material.dispose();

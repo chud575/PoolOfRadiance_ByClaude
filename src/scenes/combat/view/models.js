@@ -341,8 +341,22 @@ function buildBiped(o) {
   if (kit.cape) {
     const capeMat = pbr('cloth', kit.color);
     const capeW = 0.42 * s * w;
+    // Cape panels with vertical folds that deepen toward the hem.
+    let hem = 0;
     const panel = (len, wTop, wBot) => {
-      const g = new THREE.CylinderGeometry(wTop, wBot, len, 10, 1, true, Math.PI * 0.6, Math.PI * 0.8);
+      const g = new THREE.CylinderGeometry(wTop, wBot, len, 22, 3, true, Math.PI * 0.6, Math.PI * 0.8);
+      const pos = g.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i);
+        const y = pos.getY(i);
+        const z = pos.getZ(i);
+        const th = Math.atan2(x, z);
+        const depth = hem + (0.5 - y / len) * 0.35;
+        const k = 1 + Math.sin(th * 9) * 0.045 * (0.4 + depth);
+        pos.setXYZ(i, x * k, y, z * k);
+      }
+      hem += 0.35;
+      g.computeVertexNormals();
       g.scale(1, 1, 0.35);
       g.translate(0, -len / 2, 0.02 * s);
       return g;
@@ -368,6 +382,21 @@ function buildBiped(o) {
     R.part('chest', torus(0.36 * s, 0.012 * s, 5, 20, Math.PI * 0.8), wood, { p: [0.02 * s, 0.08 * s, -0.16 * s], r: [0, 0, -Math.PI * 0.9 + 0.5] });
   }
   if (kit.cleric) R.part('chest', torus(0.03 * s, 0.006 * s, 5, 12), gold, { p: [0, 0.14 * s, 0.14 * s] });
+  // Adventurer's kit: bedroll and pack for the road-worn, a scabbard at the hip.
+  if (kit.race && kit.race !== 'monster') {
+    if (!kit.cape && !kit.mage) {
+      R.part('chest', rbox(0.26 * s * w, 0.3 * s, 0.14 * s, 0.04 * s), leather, { p: [0, 0.1 * s, -0.17 * s] });
+      R.part('chest', cyl(0.06 * s, 0.06 * s, 0.34 * s * w, 12), pbr('cloth', 0x6a5a40), { p: [0, 0.3 * s, -0.17 * s], r: [0, 0, Math.PI / 2] });
+      for (const sx of [1, -1]) R.part('chest', box(0.025 * s, 0.34 * s, 0.012 * s), darkLeather, { p: [sx * 0.09 * s * w, 0.1 * s, 0.13 * s], r: [0.15, 0, 0] });
+    }
+    if (kit.weapon === 'longSword' || kit.weapon === 'shortSword' || kit.weapon === 'greatSword') {
+      R.part('hips', cyl(0.022 * s, 0.016 * s, 0.62 * s, 8), darkLeather, { p: [0.19 * s * w, -0.26 * s, -0.04 * s], r: [0.35, 0, 0.12] });
+      R.part('hips', cyl(0.024 * s, 0.024 * s, 0.03 * s, 8), gold, { p: [0.19 * s * w, 0.03 * s, 0.06 * s], r: [0.35, 0, 0.12] });
+    }
+    if (kit.thief) R.part('hips', cyl(0.016 * s, 0.012 * s, 0.28 * s, 6), darkLeather, { p: [-0.18 * s * w, -0.12 * s, 0.05 * s], r: [-0.3, 0, -0.2] });
+    // Coif of mail for armoured fighters without a helm.
+    if (!kit.helm && kit.armor === 'chain' && !kit.cleric) R.part('neck', lathe([[0.1, -0.02], [0.085, 0.06], [0.07, 0.1]].map(([r, y]) => [r * s, y * s]), 14, { zs: 0.9 }), pbr('chain', 0x9aa0a8));
+  }
   if (kit.mage) {
     // Scroll case + belt book.
     R.part('hips', rbox(0.1 * s, 0.13 * s, 0.04 * s, 0.01 * s), pbr('leather', 0x4a2a3a), { p: [-0.15 * s * w, -0.03 * s, 0.03 * s], r: [0, -0.5, 0] });
