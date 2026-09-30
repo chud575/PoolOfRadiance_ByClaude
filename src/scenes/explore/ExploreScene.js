@@ -52,12 +52,12 @@ export default class ExploreScene extends Scene {
 
     this.hud = createStandardHud(this.ctx, {
       commands: [
-        { id: 'area', label: 'Area', key: 'A', tip: 'Overhead map (M)', onSelect: () => this.cmdArea() },
-        { id: 'cast', label: 'Cast', key: 'C', tip: 'Cast a spell', onSelect: () => this.cmdCast() },
-        { id: 'view', label: 'View', key: 'V', tip: 'View character', onSelect: () => this.cmdView() },
-        { id: 'encamp', label: 'Encamp', key: 'E', tip: 'Make camp: rest, save, memorize', onSelect: () => this.cmdEncamp() },
-        { id: 'search', label: 'Search', key: 'S', tip: 'Search for secret doors', onSelect: () => this.cmdSearch() },
-        { id: 'look', label: 'Look', key: 'L', tip: 'Examine what lies ahead', onSelect: () => this.cmdLook() },
+        { id: 'area', label: 'Area', key: this.ctx.input.label('area'), action: 'area', tip: 'Overhead map', onSelect: () => this.cmdArea() },
+        { id: 'cast', label: 'Cast', key: this.ctx.input.label('cast'), action: 'cast', tip: 'Cast a spell', onSelect: () => this.cmdCast() },
+        { id: 'view', label: 'View', key: this.ctx.input.label('view'), action: 'view', tip: 'View character', onSelect: () => this.cmdView() },
+        { id: 'encamp', label: 'Encamp', key: this.ctx.input.label('encamp'), action: 'encamp', tip: 'Make camp: rest, save, memorize', onSelect: () => this.cmdEncamp() },
+        { id: 'search', label: 'Search', key: this.ctx.input.label('search'), action: 'search', tip: 'Search for secret doors', onSelect: () => this.cmdSearch() },
+        { id: 'look', label: 'Look', key: this.ctx.input.label('look'), action: 'look', tip: 'Examine what lies ahead', onSelect: () => this.cmdLook() },
       ],
     });
     this.own(() => this.hud.dispose());

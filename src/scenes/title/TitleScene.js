@@ -94,7 +94,7 @@ export default class TitleScene extends Scene {
     const menu = new Menu(
       [
         { id: 'continue', label: 'Continue', key: 'C', disabled: !hasSave, hint: hasSave ? 'autosave' : '' },
-        { id: 'new', label: 'Create Party', key: 'N', hint: 'roll your adventurers' },
+        { id: 'new', label: 'Create Party', key: 'P', hint: 'roll your adventurers' },
         { id: 'quick', label: 'Quick Start', key: 'Q', hint: 'prebuilt party' },
         { id: 'options', label: 'Options', key: 'O' },
       ],

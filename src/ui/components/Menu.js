@@ -23,11 +23,22 @@ export class Menu {
         type: 'button',
         disabled: !!it.disabled,
         onclick: () => this.select(i),
-        onmouseenter: () => this.highlight(i),
+        onmouseenter: () => !it.disabled && this.highlight(i),
       }, [hotkeyLabel(it.label, it.key), it.hint ? h('span.por-menu-hint', [it.hint]) : null]),
     );
     this.el.append(...this._rows);
-    this.highlight(Math.min(this.index, items.length - 1));
+    const start = Math.min(this.index, items.length - 1);
+    this.highlight(this.items[start]?.disabled ? this._step(start, 1) : start);
+  }
+
+  /** Next enabled row from `from` in direction `d` (±1), wrapping; `from` if none. */
+  _step(from, d) {
+    const n = this.items.length;
+    for (let k = 1; k <= n; k++) {
+      const i = (((from + d * k) % n) + n) % n;
+      if (!this.items[i].disabled) return i;
+    }
+    return from;
   }
 
   highlight(i) {
@@ -42,8 +53,9 @@ export class Menu {
 
   _onKey(e) {
     const n = this.items.length;
-    if (e.key === 'ArrowDown') this.highlight((this.index + 1) % n);
-    else if (e.key === 'ArrowUp') this.highlight((this.index + n - 1) % n);
+    if (!n) return;
+    if (e.key === 'ArrowDown') this.highlight(this._step(this.index, 1));
+    else if (e.key === 'ArrowUp') this.highlight(this._step(this.index, -1));
     else if (e.key === 'Enter' || e.key === ' ') this.select(this.index);
     else {
       const i = this.items.findIndex((it) => it.key && it.key.toUpperCase() === e.key.toUpperCase());

@@ -54,11 +54,12 @@ function partyList(e, party) {
 }
 
 /** First-person wire/flat EGA view of the grid map, Gold Box style. */
-function drawView(e, map, px, py, dir) {
+function drawView(e, map, px, py, dir, hour = 8) {
   e.clip = [VIEW.x, VIEW.y, VIEW.x + VIEW.w, VIEW.y + VIEW.h];
   e.rect(VIEW.x, VIEW.y, VIEW.w, VIEW.h, C.black);
   // sky & ground bands (city)
-  e.rect(VIEW.x, VIEW.y, VIEW.w, VIEW.h / 2, C.blue);
+  const night = hour < 6 || hour > 19; // the EGA original simply blacks out the sky at night
+  e.rect(VIEW.x, VIEW.y, VIEW.w, VIEW.h / 2, night ? C.black : C.blue);
   e.rect(VIEW.x, VIEW.y + VIEW.h / 2, VIEW.w, VIEW.h / 2, C.darkGray);
   const cx = VIEW.x + VIEW.w / 2;
   const cy = VIEW.y + VIEW.h / 2;
@@ -147,6 +148,7 @@ function paramsOf(q) {
     x: Number(q.get('x') ?? 7),
     y: Number(q.get('y') ?? 11),
     dir: q.get('dir') ?? 'N',
+    hour: Math.floor(Number(q.get('hour') ?? 8)) % 24,
     encounter: q.get('encounter') ?? 'kobolds_1',
     shop: q.get('shop') ?? 'phlan_armory',
   };
@@ -159,9 +161,9 @@ export const SCREENS = {
     const party = buildParty('default', 1);
     e.cls(C.black);
     standardFrame(e);
-    drawView(e, map, p.x, p.y, p.dir);
+    drawView(e, map, p.x, p.y, p.dir, p.hour);
     partyList(e, party);
-    e.textAt(1, 13, `${p.x},${p.y} ${p.dir} 8:00`, C.white);
+    e.textAt(1, 13, `${p.x},${p.y} ${p.dir} ${p.hour}:00`, C.white);
     e.textAt(14, 13, 'SEARCH OFF', C.white);
     e.textAt(1, 16, map.zoneAt(p.x, p.y).toUpperCase(), C.lightCyan);
     e.textAt(1, 18, 'THE STREETS ARE STREWN WITH', C.white);

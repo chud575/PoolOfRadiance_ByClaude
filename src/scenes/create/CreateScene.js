@@ -43,7 +43,9 @@ export default class CreateScene extends Scene {
     this.draft = { race: 'human', classSpec: 'fighter', gender: 'male', alignment: 'LG', name: '', abilities: null };
     this.newParty = [...this.ctx.game.party];
     this.panel = Frame({ title: 'Create Character', variant: 'blue' });
-    this.panel.el.style.cssText = 'position:absolute;left:4vw;top:8vh;width:min(46em,55vw);max-height:84vh;overflow:auto;';
+    this.panel.el.style.cssText = 'position:absolute;left:4vw;top:8vh;width:min(46em,55vw);';
+    // Scroll the body, not the frame: overflow on the frame would clip its title tab and corners.
+    this.panel.body.style.cssText = 'max-height:calc(84vh - 3em);overflow-y:auto;';
     this.side = Frame({ title: 'Party', variant: 'dark' });
     this.side.el.style.cssText = 'position:absolute;right:4vw;top:8vh;width:22em;';
     this.ctx.ui.mount(this.panel.el);

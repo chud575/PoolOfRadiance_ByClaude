@@ -3,7 +3,12 @@ import { h, clear, hotkeyLabel } from '../dom.js';
 /**
  * The classic Gold Box command line ("AREA CAST VIEW ENCAMP SEARCH LOOK"),
  * clickable, with hotkey letters highlighted and keyboard shortcuts.
- * commands: [{id, label, key, disabled?, onSelect}]
+ * commands: [{id, label, key, action?, disabled?, onSelect}]
+ *
+ * A command with `action` names an InputManager action: the scene already handles
+ * that action (with its rebindable keys), so the bar does NOT also bind `key` as a
+ * letter hotkey (that would double-fire, or collide with WASD/QE movement). `key`
+ * is then only displayed: underlined if the label contains it, else as a key badge.
  */
 export class CommandBar {
   constructor(commands = [], { title = '' } = {}) {
@@ -24,7 +29,9 @@ export class CommandBar {
         disabled: !!c.disabled,
         dataset: { tip: c.tip ?? '', cmd: c.id },
         onclick: () => !c.disabled && c.onSelect?.(c),
-      }, [hotkeyLabel(c.label, c.key)]);
+      }, c.action && c.key && !c.label.toUpperCase().includes(c.key.toUpperCase())
+        ? [h('span', [c.label]), h('span.por-hk-badge', [c.key])]
+        : [hotkeyLabel(c.label, c.key)]);
       this.el.append(b);
     }
   }
@@ -33,7 +40,7 @@ export class CommandBar {
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const k = e.key.toUpperCase();
-    const c = this.commands.find((x) => x.key && x.key.toUpperCase() === k && !x.disabled);
+    const c = this.commands.find((x) => !x.action && x.key && x.key.toUpperCase() === k && !x.disabled);
     if (c) {
       e.preventDefault();
       c.onSelect?.(c);

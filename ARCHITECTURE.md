@@ -17,6 +17,7 @@ npm run shot -- --url "scene=explore&x=7&y=11&dir=N&t=2" --out shots/x.png
 node tools/shotall.mjs      # homage gallery      → shots/<name>.png
 node tools/refshot.mjs      # 1988 EGA reference  → reference/<name>.png
 node tools/smoke.mjs        # end-to-end vertical slice (title→explore→combat→explore)
+node tools/determinism.mjs  # shoots every gallery URL twice, pixel-compares (must be identical)
 ```
 
 ## Module map
@@ -107,7 +108,12 @@ GameContext (`ctx`): `bus, clock, input, settings, saves, game, scenes, render, 
 ### Input actions
 forward, back, turnLeft, turnRight, strafeLeft, strafeRight, turnAround, confirm, cancel, area, cast,
 view, encamp, search, look, prevMember, nextMember, quicksave (F5), quickload (F9), toggleClassic (F2), debug.
-Command bars additionally bind their highlighted hotkey letters.
+Command bars additionally bind their highlighted hotkey letters, except for commands that declare
+`action` (e.g. explore's AREA/ENCAMP/SEARCH): those are fired by the InputManager binding only, and the bar
+just displays the bound key (underlined, or as a badge such as `AREA [M]`). This keeps WASD/QE movement
+from colliding with the classic A/E/S letters and prevents double-firing.
+Explore defaults: move W/S/arrows, turn A/D, strafe Q/E, about-face X, Area M/Tab, Cast C, View V,
+Encamp K, Search F, Look L.
 
 ## Debug / screenshot URL API
 
@@ -138,7 +144,10 @@ default party loaded for in-game scenes).
   starts (or reuses) a Vite dev server (5173; `--preview` serves dist/ on 4173), waits for `__READY`,
   prints console errors, exits 1 on page errors. `--ref` targets the reference renderer.
 * `node tools/shotall.mjs [--only a,b] [--out dir]` → `shots/<name>.png` for every entry in `tools/gallery.mjs`.
-* `node tools/refshot.mjs [--only a,b]` → `reference/<name>.png` (same names, same params).
+* `node tools/refshot.mjs [--only a,b]` → `reference/<name>.png` (same names, same params; the reference
+  honours `map/x/y/dir/hour/encounter/shop`).
+* `node tools/determinism.mjs [--only a,b] [--port N]` captures each gallery URL twice and diffs the pixels;
+  exits 1 on any drift. All 10 gallery shots are currently byte-identical run to run.
 * Gallery names: `title create explore explore_door explore_night combat automap camp dialogue shop`.
   Add new entries to `tools/gallery.mjs`; `refshot` maps `explore_foo` → reference screen `explore`.
 * Chromium: `/opt/pw-browsers/chromium-1194/chrome-linux/chrome` with SwiftShader args (see `tools/lib/browser.mjs`).

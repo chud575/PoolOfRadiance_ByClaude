@@ -115,6 +115,11 @@ html, body {
   box-shadow: 0 0 12px rgba(245, 217, 139, 0.25);
 }
 .por-cmd:disabled { opacity: 0.35; cursor: default; }
+.por-hk-badge {
+  display: inline-block; margin-left: 0.45em; padding: 0 0.3em; min-width: 1.1em; text-align: center;
+  font-size: 0.72em; letter-spacing: 0; line-height: 1.35; vertical-align: 0.12em;
+  color: var(--por-gilt); border: 1px solid var(--por-gilt-lo); border-radius: 2px;
+}
 
 /* ---------- Roster ---------- */
 .por-roster { font-size: 0.95em; min-width: 15em; }
@@ -207,6 +212,7 @@ html, body {
 .por-stat-val { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
 .por-h2 { font-family: var(--font-display); letter-spacing: 0.2em; text-transform: uppercase; color: var(--por-gilt-hi); margin: 0 0 0.6em; font-size: 1.1em; font-weight: 600; }
 .por-muted { color: var(--por-text-dim); }
+.por-frame--parchment .por-muted { color: rgba(42, 29, 16, 0.72); font-style: italic; }
 .por-choice-row { display: flex; flex-wrap: wrap; gap: 0.4em; }
 .por-chip { font: inherit; font-family: var(--font-display); letter-spacing: 0.08em; font-size: 0.9em; padding: 0.4em 0.9em; border: 1px solid var(--por-gilt-lo); border-radius: 2px; background: rgba(20, 34, 80, 0.6); color: var(--por-text); cursor: pointer; }
 .por-chip.sel { background: var(--gilt-grad); color: #1b1206; border-color: #000; }
