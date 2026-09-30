@@ -244,12 +244,16 @@ export function getFlameMaterial() {
       varying vec2 vUv; varying float vSeed;
       void main(){
         vUv = uv;
-        vec4 c = modelMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+        mat4 mm = modelMatrix;
+        #ifdef USE_INSTANCING
+          mm = modelMatrix * instanceMatrix;
+        #endif
+        vec4 c = mm * vec4(0.0, 0.0, 0.0, 1.0);
         vSeed = fract(sin(dot(c.xyz, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
         vec3 camR = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
         vec3 up = vec3(0.0, 1.0, 0.0);
-        float sx = length(modelMatrix[0].xyz);
-        float sy = length(modelMatrix[1].xyz);
+        float sx = length(mm[0].xyz);
+        float sy = length(mm[1].xyz);
         vec3 wp = c.xyz + camR * position.x * sx + up * position.y * sy;
         gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
       }`,
@@ -275,6 +279,77 @@ export function getFlameMaterial() {
       }`,
   });
   return flameMat;
+}
+
+/**
+ * Many flames in one draw call. items: [{pos: Vector3, scale: number}]
+ * @returns {THREE.InstancedMesh}
+ */
+export function createFlameBatch(items) {
+  const g = new THREE.PlaneGeometry(1, 1.6);
+  g.translate(0, 0.8, 0);
+  const mesh = new THREE.InstancedMesh(g, getFlameMaterial(), Math.max(1, items.length));
+  const m = new THREE.Matrix4();
+  items.forEach((it, i) => mesh.setMatrixAt(i, m.compose(it.pos, new THREE.Quaternion(), new THREE.Vector3(it.scale, it.scale, it.scale))));
+  mesh.count = items.length;
+  mesh.renderOrder = 5;
+  mesh.frustumCulled = false;
+  return mesh;
+}
+
+/**
+ * Many flickering additive glows in one draw call (points).
+ * items: [{pos, size (world m), color, seed, opacity}]
+ */
+export function createGlowBatch(items) {
+  const n = items.length;
+  const pos = new Float32Array(n * 3);
+  const col = new Float32Array(n * 3);
+  const extra = new Float32Array(n * 3);
+  const c = new THREE.Color();
+  items.forEach((it, i) => {
+    pos.set([it.pos.x, it.pos.y, it.pos.z], i * 3);
+    c.set(it.color ?? 0xffa050);
+    col.set([c.r, c.g, c.b], i * 3);
+    extra.set([it.size ?? 0.8, it.seed ?? 0, it.opacity ?? 1], i * 3);
+  });
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.setAttribute('aExtra', new THREE.Float32BufferAttribute(extra, 3));
+  const mat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    uniforms: { uTime: FLAME_UNIFORMS.uTime, uScale: { value: 450 }, uMap: { value: getGlowTexture() } },
+    vertexShader: /* glsl */ `
+      uniform float uTime; uniform float uScale; attribute vec3 aExtra; attribute vec3 color;
+      varying vec3 vColor; varying float vA;
+      void main(){
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        gl_Position = projectionMatrix * mv;
+        float s = aExtra.y;
+        float f = 0.86 + 0.08 * sin(uTime * 13.0 + s) + 0.05 * sin(uTime * 29.7 + s * 3.0) + 0.04 * sin(uTime * 7.3 + s * 1.7);
+        vA = (0.7 + 0.3 * f) * aExtra.z;
+        vColor = color;
+        gl_PointSize = clamp(aExtra.x * uScale / max(-mv.z, 0.05), 0.0, 900.0);
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform sampler2D uMap; varying vec3 vColor; varying float vA;
+      void main(){
+        vec4 t = texture2D(uMap, gl_PointCoord);
+        gl_FragColor = vec4(vColor * t.rgb * vA, t.a * vA);
+      }`,
+  });
+  const pts = new THREE.Points(geo, mat);
+  pts.frustumCulled = false;
+  pts.renderOrder = 6;
+  pts.userData.setScale = (v) => (mat.uniforms.uScale.value = v);
+  pts.userData.dispose = () => {
+    geo.dispose();
+    mat.dispose();
+  };
+  return pts;
 }
 
 /** A camera-facing flame quad (origin at flame base). */

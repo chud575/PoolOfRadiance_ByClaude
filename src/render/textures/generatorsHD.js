@@ -365,7 +365,7 @@ export function dungeonFloor({ seed = 91 } = {}) {
     let col = mix3(dirt, c, stone);
     col = mul3(col, 1 - wet * 0.3);
     const h = stone * (0.55 + bevel * 0.25 + n * 0.1) + (1 - stone) * 0.1;
-    const r = lerp(lerp(0.96, 0.78 + n * 0.1, stone), 0.12, wet);
+    const r = lerp(lerp(0.96, 0.8 + n * 0.1, stone), 0.42, wet);
     return { c: col, h, r };
   };
 }

@@ -43,6 +43,7 @@ export function buildBlock(map, opts = {}) {
   const group = new THREE.Group();
   group.name = `block:${map.id}`;
   const g = new GeoBuilder();
+  const panes = new GeoBuilder();
   const indoor = !ts.outdoors;
   const ceilH = ts.ceilH;
   if (indoor) {
@@ -765,27 +766,15 @@ export function buildBlock(map, opts = {}) {
     localBox(f, fk, s0, s1, y0 + (y1 - y0) * 0.62 - 0.03, y0 + (y1 - y0) * 0.62 + 0.03, midD - 0.03, midD + 0.03, { uv: u });
     // glass panes: exterior-facing (lit at night) and interior-facing (daylight)
     const paneD = dOut - outSign * 0.12;
-    const quad = (sign, mat) => {
-      const pts = [[s0, y0], [s1, y0], [s1, y1], [s0, y1]].map(([s, y]) => new THREE.Vector3(s, y, paneD + sign * 0.004).applyMatrix4(f.basis));
-      const geo = new THREE.BufferGeometry();
-      // face normal must point toward `sign`
-      const order = sign * 1 > 0 ? [0, 1, 2, 0, 2, 3] : [0, 2, 1, 0, 3, 2];
-      const pos = [];
-      const uv = [];
-      const uvs = [[0, 0], [1, 0], [1, 1], [0, 1]];
-      for (const i of order) {
-        pos.push(pts[i].x, pts[i].y, pts[i].z);
-        uv.push(sign > 0 ? uvs[i][0] : 1 - uvs[i][0], uvs[i][1]);
-      }
-      geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-      geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-      geo.computeVertexNormals();
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.receiveShadow = false;
-      group.add(mesh);
+    // panes are merged per side into one mesh each (see assemble)
+    const quad = (sign, key) => {
+      const p = [[s0, y0], [s1, y0], [s1, y1], [s0, y1]].map(([s, y]) => new THREE.Vector3(s, y, paneD + sign * 0.004).applyMatrix4(f.basis));
+      const u = sign > 0 ? [[0, 0], [1, 0], [1, 1], [0, 1]] : [[1, 0], [0, 0], [0, 1], [1, 1]];
+      if (sign > 0) panes.quad(key, p[0], p[1], p[2], p[3], u, { ao: 1 });
+      else panes.quad(key, p[1], p[0], p[3], p[2], [u[1], u[0], u[3], u[2]], { ao: 1 });
     };
-    if (!indoor) quad(outSign, getWindowMaterial('ext'));
-    if (!o.upper) quad(-outSign, getWindowMaterial('int'));
+    if (!indoor) quad(outSign, 'win_ext');
+    if (!o.upper) quad(-outSign, 'win_int');
     // shutters (exterior, some windows), opened at an angle
     const r = hash(e.key, o.y0, 'sh');
     const templeWall = [sides[0], sides[1]].some((sd) => compAt(sd.cx, sd.cy)?.temple);
@@ -1180,6 +1169,13 @@ export function buildBlock(map, opts = {}) {
     mesh.renderOrder = mesh.castShadow ? 1 : 2;
     group.add(mesh);
     meshes.push(mesh);
+  }
+  for (const [key, geo] of panes.build()) {
+    geo.deleteAttribute('color');
+    const mesh = new THREE.Mesh(geo, getWindowMaterial(key === 'win_ext' ? 'ext' : 'int'));
+    mesh.name = key;
+    mesh.renderOrder = 1;
+    group.add(mesh);
   }
   return { group, doors, torches, windows, chimneys, spots, tileset: ts, meshes, comps, compAt, covered };
 }

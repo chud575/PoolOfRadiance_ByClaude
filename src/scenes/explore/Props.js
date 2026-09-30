@@ -340,7 +340,7 @@ export function buildProps(map, block, opts = {}) {
   }
   // puddles (glossy decals that reflect the environment)
   if (puddles.length) {
-    const mat = new THREE.MeshStandardMaterial({ color: 0x08090a, roughness: ts.outdoors ? 0.06 : 0.2, metalness: 0.0, transparent: true, alphaMap: getPuddleTexture(), depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, envMapIntensity: 0.7 });
+    const mat = new THREE.MeshStandardMaterial({ color: 0x08090a, roughness: ts.outdoors ? 0.06 : 0.38, metalness: 0.0, transparent: true, alphaMap: getPuddleTexture(), depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, envMapIntensity: 0.7 });
     mat.opacity = 0.6;
     const b = new GeoBuilder();
     for (const p of puddles) {

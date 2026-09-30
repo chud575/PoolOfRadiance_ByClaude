@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { Scene } from '../../core/Scene.js';
 import { getMap, hasMap } from '../../data/maps/index.js';
 import { DIRS, DIR_YAW, DIR_VEC, EDGE, EDGE_NAMES, turnLeft, turnRight, OPPOSITE } from '../../data/maps/MapGrid.js';
-import { createSkyDome, createTorch, timeOfDayKeys, setSurfaceAtmosphere, FLAME_UNIFORMS, flicker } from '../../render/lighting.js';
+import { createSkyDome, createFlameBatch, createGlowBatch, timeOfDayKeys, setSurfaceAtmosphere, FLAME_UNIFORMS, flicker } from '../../render/lighting.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { preloadMaterials, setWindowGlow, getLampGlassMaterial, getWindowMaterial } from '../../render/materials.js';
 import { preloadTextureSets } from '../../render/textures/index.js';
 import { createStandardHud } from '../../ui/StandardHud.js';
@@ -169,7 +170,7 @@ export default class ExploreScene extends Scene {
       }
       s.fog = new THREE.FogExp2(dungeon ? 0x07080b : 0x1a120c, dungeon ? 0.055 : 0.025);
       s.background = new THREE.Color(dungeon ? 0x020203 : 0x0a0604);
-      setSurfaceAtmosphere({ sunDir: new THREE.Vector3(0, 1, 0), sunColor: 0x000000, scatter: 0, heightFog: dungeon ? 0.35 : 0.08, heightFalloff: 0.8, grimeTint: ts.grime, mossTint: ts.moss, wet: dungeon ? 0.45 : 0 });
+      setSurfaceAtmosphere({ sunDir: new THREE.Vector3(0, 1, 0), sunColor: 0x000000, scatter: 0, heightFog: dungeon ? 0.35 : 0.08, heightFalloff: 0.8, grimeTint: ts.grime, mossTint: ts.moss, wet: dungeon ? 0.3 : 0 });
     }
     // pooled torch lights (constant count → no shader recompiles)
     this.poolLights = [];
@@ -325,40 +326,36 @@ export default class ExploreScene extends Scene {
     // light sources: sconces + lamps + candles
     this.sources = [...this.block.torches, ...this.props.lamps];
     this.sourceVis = new THREE.Group();
-    const glass = getLampGlassMaterial();
-    const lampGeo = new THREE.BoxGeometry(0.2, 0.3, 0.2);
-    this._lampGeo = lampGeo;
+    // all flames / glows / lamp glass batched into three draw calls
+    const flames = [];
+    const glows = [];
+    const glassGeos = [];
+    const indoorGlow = this.tileset.outdoors ? 0.85 : 0.5;
     for (const src of this.sources) {
       const candle = src.kind === 'candle';
-      const color = candle ? 0xffb868 : src.kind === 'lamp' ? 0xffc070 : 0xff9a48;
-      if (src.kind === 'hearth') {
-        // a bed of flames + a big warm glow
-        for (const [dx, sc] of [[-0.22, 0.42], [0.05, 0.55], [0.26, 0.38]]) {
-          const t = createTorch({ light: false, glow: dx === 0.05, flame: true, flameScale: sc, color: 0xff7a30, seed: src.seed + dx * 10 });
-          t.position.copy(src.pos).add(new THREE.Vector3(src.N.z * dx, -0.1, -src.N.x * dx));
-          if (t.userData.sprite) {
-            t.userData.sprite.scale.setScalar(1.6);
-            t.userData.glowScale = 0.5;
-          }
-          if (!src.vis) src.vis = t;
-          else (src.extra ??= []).push(t);
-          this.sourceVis.add(t);
-        }
-        continue;
-      }
       if (src.kind === 'lamp') {
-        const box = new THREE.Mesh(lampGeo, glass);
-        box.position.copy(src.pos);
-        this.sourceVis.add(box);
+        const b = new THREE.BoxGeometry(0.2, 0.3, 0.2);
+        b.translate(src.pos.x, src.pos.y, src.pos.z);
+        glassGeos.push(b);
       }
       if (!src.lit) continue;
-      const t = createTorch({ light: false, glow: true, flame: src.kind !== 'lamp', flameScale: candle ? 0.07 : 0.24, color, seed: src.seed });
-      t.position.copy(src.pos);
-      t.userData.sprite.scale.setScalar(candle ? 0.3 : src.kind === 'lamp' ? 0.9 : this.tileset.outdoors ? 0.75 : 0.55);
-      t.userData.glowScale = this.tileset.outdoors ? 0.85 : 0.5;
-      if (t.userData.flame) t.userData.flame.position.y = candle ? 0 : -0.1;
-      src.vis = t;
-      this.sourceVis.add(t);
+      if (src.kind === 'hearth') {
+        for (const [dx, sc] of [[-0.22, 0.42], [0.05, 0.55], [0.26, 0.38]]) flames.push({ pos: src.pos.clone().add(new THREE.Vector3(src.N.z * dx, -0.1, -src.N.x * dx)), scale: sc });
+        glows.push({ pos: src.pos.clone().add(new THREE.Vector3(0, 0.3, 0)), size: 1.6, color: 0xff7a30, seed: src.seed, opacity: 0.5 });
+        continue;
+      }
+      if (src.kind !== 'lamp') flames.push({ pos: src.pos.clone().add(new THREE.Vector3(0, candle ? 0 : -0.1, 0)), scale: candle ? 0.07 : 0.24 });
+      glows.push({ pos: src.pos, size: candle ? 0.3 : src.kind === 'lamp' ? 0.9 : this.tileset.outdoors ? 0.75 : 0.55, color: candle ? 0xffb868 : src.kind === 'lamp' ? 0xffc070 : 0xff9a48, seed: src.seed, opacity: indoorGlow });
+    }
+    if (flames.length) this.sourceVis.add(createFlameBatch(flames));
+    if (glows.length) {
+      this.glowBatch = createGlowBatch(glows);
+      this.sourceVis.add(this.glowBatch);
+    }
+    if (glassGeos.length) {
+      this._lampGeo = mergeGeometries(glassGeos);
+      glassGeos.forEach((g) => g.dispose());
+      this.sourceVis.add(new THREE.Mesh(this._lampGeo, getLampGlassMaterial()));
     }
     this.scene3d.add(this.sourceVis);
     if (this.particles) this._rebuildEmbers();
@@ -379,8 +376,10 @@ export default class ExploreScene extends Scene {
     if (this.block) disposeBlock(this.block);
     this.props?.dispose();
     if (this.sourceVis) {
+      this.glowBatch?.userData.dispose();
+      this.glowBatch = null;
       this.sourceVis.traverse((o) => {
-        if (o.isSprite) o.material.dispose();
+        if (o.isInstancedMesh) o.geometry.dispose();
       });
       this.sourceVis.removeFromParent();
     }
@@ -736,10 +735,7 @@ export default class ExploreScene extends Scene {
     this.sky?.userData.update(time);
     if (this.skyline?.water?.normalMap) this.skyline.water.normalMap.offset.set(time * 0.004, time * 0.0025);
     // light sources
-    for (const src of this.sources) {
-      src.vis?.userData.update(time);
-      if (src.extra) for (const t of src.extra) t.userData.update(time);
-    }
+    if (this.glowBatch) this.glowBatch.userData.setScale(this.ctx.render.height * this.ctx.render.renderer.getPixelRatio() / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2)));
     for (const l of this.poolLights) {
       const src = l.userData.src;
       if (!src) continue;
