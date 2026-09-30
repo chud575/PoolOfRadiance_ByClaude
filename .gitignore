@@ -7,3 +7,4 @@ reference/*
 *.log
 .vite/
 .DS_Store
+scratch_*/
