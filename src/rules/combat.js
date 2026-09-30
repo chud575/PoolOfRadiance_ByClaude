@@ -134,11 +134,53 @@ export function resolveAttack(rng, attacker, defender, opts = {}) {
   let killed = false;
   if (hit) {
     const dice = defender.size === 'L' && attacker.attacksLarge ? attacker.attacksLarge : attacker.attacks[opts.attackIndex ?? 0];
-    damage = Math.max(1, roll(rng, dice) + attacker.dmgBonus);
+    damage = Math.max(1, roll(rng, dice) + attacker.dmgBonus + (opts.dmgMod ?? 0));
     if (opts.backstab) damage *= opts.backstabMult ?? 2;
     killed = dealDamage(defender, damage);
   }
   return { roll: r, needed, hit, damage, killed, crit: r === 20 };
+}
+
+/**
+ * Probability (0..1) that one attack hits, with the nat-20/nat-1 house rule.
+ * @param {number} [mods] situational to-hit modifiers (rear, bless, cover...)
+ */
+export function hitChance(attacker, defender, mods = 0, opts = {}) {
+  const sleepy = defender.conditions?.includes('asleep') || defender.conditions?.includes('held') ? 4 : 0;
+  const needed = toHitNeeded(attacker, defender, mods + sleepy);
+  const p = (21 - needed) / 20;
+  return opts.strict1e ? Math.max(0, Math.min(1, p)) : Math.max(0.05, Math.min(0.95, p));
+}
+
+/**
+ * AD&D 1e Turn Undead matrix (DMG). Rows by undead type, columns by cleric
+ * level 1..14+. Number = d20 needed, 'T' = turned automatically, 'D' = destroyed, '-' = no effect.
+ */
+export const TURN_UNDEAD = {
+  skeleton: [10, 7, 4, 'T', 'T', 'D', 'D', 'D', 'D', 'D', 'D', 'D', 'D', 'D'],
+  zombie: [13, 10, 7, 'T', 'T', 'D', 'D', 'D', 'D', 'D', 'D', 'D', 'D', 'D'],
+  ghoul: [16, 13, 10, 4, 'T', 'T', 'D', 'D', 'D', 'D', 'D', 'D', 'D', 'D'],
+  shadow: [19, 16, 13, 7, 4, 'T', 'T', 'D', 'D', 'D', 'D', 'D', 'D', 'D'],
+  wight: [20, 19, 16, 10, 7, 4, 'T', 'T', 'D', 'D', 'D', 'D', 'D', 'D'],
+  ghast: ['-', 20, 19, 13, 10, 7, 4, 'T', 'T', 'D', 'D', 'D', 'D', 'D'],
+  wraith: ['-', '-', 20, 16, 13, 10, 7, 4, 'T', 'T', 'D', 'D', 'D', 'D'],
+  mummy: ['-', '-', '-', 20, 16, 13, 10, 7, 4, 'T', 'T', 'D', 'D', 'D'],
+};
+
+/**
+ * Attempt to turn one class of undead. Returns what happened; the caller picks
+ * which creatures are affected (2d6 of them, nearest first).
+ * @returns {{result:'none'|'fail'|'turned'|'destroyed', roll:number|null, needed:number|string, count:number}}
+ */
+export function turnUndead(rng, clericLevel, undeadType) {
+  const row = TURN_UNDEAD[undeadType] ?? TURN_UNDEAD.zombie;
+  const v = row[Math.max(0, Math.min(row.length - 1, clericLevel - 1))];
+  if (v === '-') return { result: 'none', roll: null, needed: v, count: 0 };
+  const count = roll(rng, '2d6');
+  if (v === 'T') return { result: 'turned', roll: null, needed: v, count };
+  if (v === 'D') return { result: 'destroyed', roll: null, needed: v, count };
+  const r = rng.die(20);
+  return { result: r >= v ? 'turned' : 'fail', roll: r, needed: v, count: r >= v ? count : 0 };
 }
 
 /** Apply damage to a combatant; returns true if it went down. */

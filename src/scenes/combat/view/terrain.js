@@ -1,0 +1,1116 @@
+import * as THREE from 'three';
+import { getTextureSet } from '../../../render/textures/index.js';
+import { getGlowTexture } from '../../../render/textures/index.js';
+import { CELL, EDGE } from '../../../data/maps/MapGrid.js';
+import { SUB } from '../logic/battlefield.js';
+import { Batcher, worldBox, wallQuad } from './batch.js';
+import { pbr } from './textures.js';
+
+export const TILE = 1.5;
+const CELLM = TILE * SUB;
+
+const hash = (x, y, s = 0) => {
+  let h = (x * 374761393 + y * 668265263 + s * 982451653) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+};
+
+/** Textured PBR material from the shared library set, tinted (own instance). */
+const libCache = new Map();
+function libMat(set, color = 0xffffff, o = {}) {
+  const key = `${set}|${color}|${o.rough ?? ''}`;
+  if (libCache.has(key)) return libCache.get(key);
+  const t = getTextureSet(set);
+  const m = new THREE.MeshStandardMaterial({ map: t.map, normalMap: t.normalMap, roughnessMap: t.roughnessMap, color, roughness: o.rough ?? 1, metalness: 0 });
+  libCache.set(key, m);
+  return m;
+}
+
+/**
+ * Build the tactical diorama for a battlefield: splatted cobble/rubble/flagstone
+ * ground, houses (with roofs, windows, doors; cut-away when they would hide the
+ * fight), ruined walls, arches, props, torches, and the surrounding city.
+ *
+ * @returns {{group:THREE.Group, torches:object[], flames:object[], update:(t:number)=>void,
+ *   setView:(dirX:number, dirZ:number)=>void, bounds:{w:number,h:number}, dispose:()=>void}}
+ */
+export function buildDiorama(field, o = {}) {
+  const group = new THREE.Group();
+  const night = o.hour < 6 || o.hour > 19.5;
+  const map = field.map;
+  const W = field.w * TILE;
+  const H = field.h * TILE;
+  const RING = 4; // context cells around the window
+  const batch = new Batcher();
+  const cutBatch = { full: [], cut: [] };
+  const houses = [];
+  const flames = [];
+  const torchSpots = [];
+  const disposables = [];
+
+  // ---------------------------------------------------------------- cells
+  const cellX0 = field.cx0 - RING;
+  const cellY0 = field.cy0 - RING;
+  const cellsW = field.cellsW + RING * 2;
+  const cellsH = field.cellsH + RING * 2;
+  const inWin = (mx, my) => mx >= field.cx0 && my >= field.cy0 && mx < field.cx0 + field.cellsW && my < field.cy0 + field.cellsH;
+  const reach = (mx, my) => field.reachCells?.has(`${mx},${my}`) ?? (inWin(mx, my));
+  const inMap = (mx, my) => (map ? map.inBounds(mx, my) : true);
+  const cellType = (mx, my) => (map ? map.getCell(mx, my) : CELL.STREET);
+  /** solid = rendered as a building mass */
+  const solid = (mx, my) => {
+    if (!inMap(mx, my)) return false;
+    if (inWin(mx, my)) return !reach(mx, my) && cellType(mx, my) !== CELL.WATER;
+    return cellType(mx, my) === CELL.INTERIOR;
+  };
+  // Cell centre → world.
+  const cw = (mx) => (mx - field.cx0) * CELLM;
+  const ch = (my) => (my - field.cy0) * CELLM;
+
+  // ---------------------------------------------------------------- ground
+  const margin = RING * SUB; // squares
+  const SW = field.w + margin * 2;
+  const SH = field.h + margin * 2;
+  const RES = 4;
+  const sp = new Uint8Array(SW * RES * SH * RES * 4);
+  // Kind per square in the extended area.
+  const kindAt = (sx, sy) => {
+    const mx = field.cx0 + Math.floor(sx / SUB);
+    const my = field.cy0 + Math.floor(sy / SUB);
+    if (!inMap(mx, my)) return 'outside';
+    const c = cellType(mx, my);
+    if (inWin(mx, my) && reach(mx, my)) return c === CELL.RUBBLE ? 'rubble' : c === CELL.COURTYARD ? 'flag' : c === CELL.INTERIOR ? 'room' : 'street';
+    if (c === CELL.INTERIOR || solid(mx, my)) return 'house';
+    return c === CELL.RUBBLE ? 'rubble' : c === CELL.COURTYARD ? 'flag' : c === CELL.WATER ? 'water' : 'street';
+  };
+  // Blocking for AO: houses and walls.
+  const aoBlock = (sx, sy) => {
+    const k = kindAt(sx, sy);
+    return k === 'house';
+  };
+  for (let ty = 0; ty < SH * RES; ty++) {
+    for (let tx = 0; tx < SW * RES; tx++) {
+      const sx = tx / RES - margin;
+      const sy = ty / RES - margin;
+      const k = kindAt(Math.floor(sx), Math.floor(sy));
+      const i = (ty * SW * RES + tx) * 4;
+      // AO: distance to nearest house square (in squares), sampled.
+      let ao = 1;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const qx = Math.floor(sx) + dx;
+          const qy = Math.floor(sy) + dy;
+          if (!aoBlock(qx, qy)) continue;
+          const nx = Math.max(qx, Math.min(qx + 1, sx));
+          const ny = Math.max(qy, Math.min(qy + 1, sy));
+          const d = Math.hypot(sx - nx, sy - ny);
+          ao = Math.min(ao, 0.45 + 0.55 * Math.min(1, d / 0.9));
+        }
+      }
+      // Walls inside the field also darken their feet.
+      const fx = Math.floor(sx);
+      const fy = Math.floor(sy);
+      if (field.inBounds(fx, fy)) {
+        const lx = sx - fx;
+        const ly = sy - fy;
+        const idx = field.idx(fx, fy);
+        if (field.wallE[idx]) ao = Math.min(ao, 0.55 + 0.45 * Math.min(1, (1 - lx) / 0.4));
+        if (field.wallS[idx]) ao = Math.min(ao, 0.55 + 0.45 * Math.min(1, (1 - ly) / 0.4));
+        if (fx > 0 && field.wallE[field.idx(fx - 1, fy)]) ao = Math.min(ao, 0.55 + 0.45 * Math.min(1, lx / 0.4));
+        if (fy > 0 && field.wallS[field.idx(fx, fy - 1)]) ao = Math.min(ao, 0.55 + 0.45 * Math.min(1, ly / 0.4));
+      }
+      const n = hash(tx >> 2, ty >> 2, 77);
+      const rub = k === 'rubble' ? 1 : k === 'outside' ? 0.85 : k === 'house' ? 0.5 : 0;
+      void n;
+      const flag = k === 'flag' || k === 'room' ? 1 : 0;
+      // Puddles in low spots of the street.
+      const pn = hash(Math.floor(sx / 2), Math.floor(sy / 2), 91);
+      const wet = (k === 'street' || k === 'flag') && pn > (night ? 0.8 : 0.86) ? 180 : 0;
+      sp[i] = ao * 255;
+      sp[i + 1] = rub * 255;
+      sp[i + 2] = flag * 255;
+      sp[i + 3] = wet;
+    }
+  }
+  const splat = new THREE.DataTexture(sp, SW * RES, SH * RES, THREE.RGBAFormat);
+  splat.magFilter = THREE.LinearFilter;
+  splat.minFilter = THREE.LinearFilter;
+  splat.needsUpdate = true;
+  disposables.push(splat);
+  const cob = getTextureSet('floor_cobble');
+  const rub = getTextureSet('floor_rubble');
+  const flg = getTextureSet('floor_flag');
+  const groundMat = new THREE.MeshStandardMaterial({ map: cob.map, normalMap: cob.normalMap, roughnessMap: cob.roughnessMap, roughness: 1, metalness: 0, normalScale: new THREE.Vector2(1.3, 1.3) });
+  const originX = -margin * TILE;
+  const originZ = -margin * TILE;
+  groundMat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, {
+      tSplat: { value: splat },
+      uOrigin: { value: new THREE.Vector2(originX, originZ) },
+      uSize: { value: new THREE.Vector2(SW * TILE, SH * TILE) },
+      map2: { value: rub.map }, normal2: { value: rub.normalMap }, rough2: { value: rub.roughnessMap },
+      map3: { value: flg.map }, normal3: { value: flg.normalMap }, rough3: { value: flg.roughnessMap },
+    });
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;')
+      .replace('#include <fog_vertex>', '#include <fog_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+        varying vec3 vWPos;
+        uniform sampler2D tSplat, map2, normal2, rough2, map3, normal3, rough3;
+        uniform vec2 uOrigin, uSize;
+        float gHash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float gNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
+          return mix(mix(gHash(i), gHash(i+vec2(1,0)), f.x), mix(gHash(i+vec2(0,1)), gHash(i+vec2(1,1)), f.x), f.y); }
+        float gFbm(vec2 p){ return gNoise(p)*0.5 + gNoise(p*2.03)*0.25 + gNoise(p*4.01)*0.125 + gNoise(p*8.1)*0.0625; }
+      `)
+      .replace('#include <map_fragment>', `
+        vec2 gsp = (vWPos.xz - uOrigin) / uSize;
+        float gn = gFbm(vWPos.xz * 0.45);
+        vec4 gs = texture2D(tSplat, gsp + (vec2(gn, gFbm(vWPos.xz*0.45+7.1)) - 0.5) * 0.01);
+        float gAO = gs.r;
+        float wR = smoothstep(0.25, 0.75, gs.g + (gn - 0.5) * 0.7);
+        float wF = smoothstep(0.35, 0.65, gs.b + (gn - 0.5) * 0.25);
+        float wet = smoothstep(0.35, 0.6, gs.a + (gFbm(vWPos.xz * 0.9) - 0.5) * 0.6);
+        vec2 uv1 = vec2(vWPos.x, -vWPos.z) / 2.6;
+        vec2 uv2 = vec2(vWPos.x, -vWPos.z) / 3.2 + 0.37;
+        vec2 uv3 = vec2(vWPos.x, -vWPos.z) / 3.0;
+        vec4 gc = mix(mix(texture2D(map, uv1), texture2D(map2, uv2), wR), texture2D(map3, uv3), wF);
+        float mac = gFbm(vWPos.xz * 0.07);
+        gc.rgb *= 0.78 + 0.42 * mac;
+        gc.rgb = mix(gc.rgb, gc.rgb * vec3(0.95, 0.9, 0.82), smoothstep(0.55, 0.8, gFbm(vWPos.xz * 0.21 + 3.0)) * 0.6);
+        gc.rgb *= mix(1.0, 0.42, wet);
+        gc.rgb *= mix(0.35, 1.0, gAO);
+        diffuseColor *= gc;
+      `)
+      .replace('#include <roughnessmap_fragment>', `
+        float gr = mix(mix(texture2D(roughnessMap, uv1).g, texture2D(rough2, uv2).g, wR), texture2D(rough3, uv3).g, wF);
+        float roughnessFactor = roughness * gr;
+        roughnessFactor = mix(roughnessFactor, 0.06, wet);
+      `)
+      .replace('#include <normal_fragment_maps>', `
+        vec3 gn1 = texture2D(normalMap, uv1).xyz * 2.0 - 1.0;
+        vec3 gn2 = texture2D(normal2, uv2).xyz * 2.0 - 1.0;
+        vec3 gn3 = texture2D(normal3, uv3).xyz * 2.0 - 1.0;
+        vec3 mapN = normalize(mix(mix(gn1, gn2, wR), gn3, wF));
+        mapN.xy *= normalScale * (1.0 - wet * 0.9);
+        normal = normalize( tbn * mapN );
+      `)
+      .replace('#include <aomap_fragment>', `#include <aomap_fragment>
+        reflectedLight.indirectDiffuse *= mix(0.5, 1.0, gAO);
+      `);
+  };
+  groundMat.customProgramCacheKey = () => 'combat-ground-v2';
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(SW * TILE, SH * TILE, 1, 1), groundMat);
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.set(originX + (SW * TILE) / 2, 0, originZ + (SH * TILE) / 2);
+  ground.receiveShadow = true;
+  group.add(ground);
+  disposables.push(ground.geometry, groundMat);
+
+  // Room floors (reachable interiors) — planks.
+  const plank = pbr('plank', 0xb89a80);
+  for (const r of field.features.rooms ?? []) {
+    const g = new THREE.PlaneGeometry(CELLM, CELLM);
+    const uv = g.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 1.6, uv.getY(i) * 1.6);
+    g.rotateX(-Math.PI / 2);
+    batch.add(g, plank, { p: [cw(r.mx) + CELLM / 2, 0.012, ch(r.my) + CELLM / 2] }, { cast: false });
+  }
+
+  // ---------------------------------------------------------------- materials
+  const wallMats = [libMat('wall_stone', 0xd8d0c4), libMat('wall_timber', 0xe8e0d0), libMat('wall_ruin', 0xc8beb0)];
+  const plinthMat = libMat('wall_stone', 0x8a8278);
+  const capMat = libMat('wall_ruin', 0x6a6258);
+  const roofMat = pbr('roof', 0xe0c8b8);
+  const thatchMat = pbr('thatch', 0xd8c8a0);
+  const woodMat = pbr('wood', 0x5a3a22);
+  const darkWood = pbr('wood', 0x3a2414);
+  const doorMat = libMat('door_wood', 0xd0b8a0);
+  const ironMat = pbr('metal', 0x3a3a40);
+  const barrelMat = pbr('plank', 0xc8a080);
+  const crateMat = pbr('plank', 0xd8b890);
+  const glassLit = new THREE.MeshStandardMaterial({ color: 0x201008, emissive: 0xffa040, emissiveIntensity: night ? 2.6 : 0.25, roughness: 0.4 });
+  const glassDark = new THREE.MeshStandardMaterial({ color: 0x0a0c10, roughness: 0.15, metalness: 0.2 });
+  disposables.push(glassLit, glassDark);
+
+  // ---------------------------------------------------------------- houses
+  // Connected components of solid cells in the extended region.
+  const seen = new Set();
+  const comps = [];
+  for (let my = cellY0; my < cellY0 + cellsH; my++) {
+    for (let mx = cellX0; mx < cellX0 + cellsW; mx++) {
+      const k = `${mx},${my}`;
+      if (seen.has(k) || !solid(mx, my)) continue;
+      const cells = [];
+      const q = [[mx, my]];
+      seen.add(k);
+      while (q.length) {
+        const [x, y] = q.pop();
+        cells.push([x, y]);
+        for (const [dx, dy, d] of [[1, 0, 'E'], [-1, 0, 'W'], [0, 1, 'S'], [0, -1, 'N']]) {
+          const nx = x + dx;
+          const ny = y + dy;
+          const nk = `${nx},${ny}`;
+          if (seen.has(nk) || nx < cellX0 || ny < cellY0 || nx >= cellX0 + cellsW || ny >= cellY0 + cellsH) continue;
+          if (!solid(nx, ny)) continue;
+          // Separate buildings divided by a wall line belong to different houses.
+          if (map && map.getEdge(x, y, d) !== EDGE.OPEN && inMap(nx, ny)) continue;
+          seen.add(nk);
+          q.push([nx, ny]);
+        }
+      }
+      comps.push(cells);
+    }
+  }
+  for (const cells of comps) {
+    const xs = cells.map((c) => c[0]);
+    const ys = cells.map((c) => c[1]);
+    const x0 = Math.min(...xs);
+    const y0 = Math.min(...ys);
+    const x1 = Math.max(...xs);
+    const y1 = Math.max(...ys);
+    const filled = cells.length === (x1 - x0 + 1) * (y1 - y0 + 1);
+    const rects = filled ? [[x0, y0, x1, y1]] : cells.map(([x, y]) => [x, y, x, y]);
+    for (const r of rects) houses.push(makeHouse(r));
+  }
+
+  function houseStyle(r) {
+    if (!map) return 0;
+    const [x0, y0, x1, y1] = r;
+    for (let x = x0; x <= x1; x++) {
+      for (const [y, d] of [[y0, 'N'], [y1, 'S']]) if (map.getEdge(x, y, d) !== EDGE.OPEN) return map.getEdgeStyle(x, y, d);
+    }
+    for (let y = y0; y <= y1; y++) {
+      for (const [x, d] of [[x0, 'W'], [x1, 'E']]) if (map.getEdge(x, y, d) !== EDGE.OPEN) return map.getEdgeStyle(x, y, d);
+    }
+    return 0;
+  }
+
+  function makeHouse(r) {
+    const [x0, y0, x1, y1] = r;
+    const style = houseStyle(r);
+    const ruined = style === 2;
+    const hx0 = cw(x0) + 0.12;
+    const hz0 = ch(y0) + 0.12;
+    const hx1 = cw(x1 + 1) - 0.12;
+    const hz1 = ch(y1 + 1) - 0.12;
+    const seed = hash(x0, y0, 5);
+    const height = ruined ? 2.2 + seed * 1.4 : 4.4 + seed * 1.8 + (x1 - x0 + y1 - y0) * 0.2;
+    const house = { r, style, ruined, x0: hx0, z0: hz0, x1: hx1, z1: hz1, height, seed, full: new Batcher(), cut: new Batcher() };
+    // Faces: [dir, from, to, fixed coord, normal]
+    const faces = [
+      { d: 'S', ax: 'x', a: hx0, b: hx1, c: hz1, n: [0, 1] },
+      { d: 'N', ax: 'x', a: hx1, b: hx0, c: hz0, n: [0, -1] },
+      { d: 'E', ax: 'z', a: hz1, b: hz0, c: hx1, n: [1, 0] },
+      { d: 'W', ax: 'z', a: hz0, b: hz1, c: hx0, n: [-1, 0] },
+    ];
+    const wallMat = wallMats[style] ?? wallMats[0];
+    for (const f of faces) {
+      const len = Math.abs(f.b - f.a);
+      // Transform: local X along the face (from a to b), +Z outward.
+      const yaw = Math.atan2(f.n[0], f.n[1]);
+      const ox = f.ax === 'x' ? f.a : f.c;
+      const oz = f.ax === 'x' ? f.c : f.a;
+      const place = (g, lx, ly, lz = 0) => {
+        const m = new THREE.Matrix4().makeRotationY(yaw);
+        m.setPosition(ox + Math.cos(yaw) * lx + Math.sin(yaw) * lz, ly, oz - Math.sin(yaw) * lx + Math.cos(yaw) * lz);
+        g.applyMatrix4(m);
+        return g;
+      };
+      // Door positions on this face from the map.
+      const doors = [];
+      if (map) {
+        const cellsAlong = f.ax === 'x' ? [x0, x1] : [y0, y1];
+        for (let k = cellsAlong[0]; k <= cellsAlong[1]; k++) {
+          const mx = f.ax === 'x' ? k : f.d === 'E' ? x1 : x0;
+          const my = f.ax === 'z' ? k : f.d === 'S' ? y1 : y0;
+          const e = map.getEdge(mx, my, f.d);
+          if (e === EDGE.DOOR || e === EDGE.LOCKED || e === EDGE.ARCH) {
+            const centre = f.ax === 'x' ? cw(mx) + CELLM / 2 : ch(my) + CELLM / 2;
+            doors.push({ at: Math.abs(centre - f.a), type: e });
+          }
+        }
+      }
+      for (const variant of ['full', 'cut']) {
+        const B = house[variant];
+        const hh = variant === 'cut' ? 1.05 + seed * 0.25 : height;
+        if (ruined && variant === 'full') {
+          // Jagged broken wall top.
+          const segs = Math.max(2, Math.round(len / 1.1));
+          for (let k = 0; k < segs; k++) {
+            const sh = hh * (0.55 + hash(k, f.d.charCodeAt(0), seed * 100) * 0.45) * (k === 0 || k === segs - 1 ? 1 : 1);
+            const sl = len / segs;
+            B.add(place(worldBox(sl + 0.02, sh, 0.34, 2.5), k * sl + sl / 2, sh / 2, -0.17), wallMat);
+          }
+        } else {
+          B.add(place(wallQuad(len, hh, 2.6), 0, 0, 0), wallMat);
+          // Back faces so cut-aways read as thick walls.
+          if (variant === 'cut') {
+            B.add(place(worldBox(len, 0.08, 0.34, 2.5), len / 2, hh, -0.17), capMat);
+            B.add(place(wallQuad(len, hh, 2.6).rotateY(Math.PI).translate(len, 0, -0.34), 0, 0, 0), wallMat);
+          }
+        }
+        // Plinth.
+        B.add(place(worldBox(len + 0.1, 0.45, 0.1, 2.5), len / 2, 0.225, 0.03), plinthMat);
+        if (variant === 'full' && !ruined) {
+          // Corner quoins / timber posts.
+          B.add(place(worldBox(0.26, hh, 0.26, 2.5), 0, hh / 2, -0.06), style === 1 ? darkWood : plinthMat);
+          // Upper-floor string course.
+          B.add(place(worldBox(len, 0.16, 0.12, 2.5), len / 2, 2.7, 0.05), style === 1 ? darkWood : plinthMat);
+          // Windows along the upper floor, and the ground floor away from doors.
+          const nWin = Math.max(1, Math.floor(len / 2.3));
+          for (let k = 0; k < nWin; k++) {
+            const at = (k + 0.5) * (len / nWin);
+            for (const floorY of [3.35, 1.45]) {
+              if (floorY > hh - 0.9) continue;
+              if (floorY < 2 && doors.some((d) => Math.abs(d.at - at) < 1.3)) continue;
+              if (hash(k, floorY * 10, seed * 999 + f.d.charCodeAt(0)) < (floorY < 2 ? 0.45 : 0.2)) continue;
+              const lit = hash(k, floorY * 7, seed * 313) > (night ? 0.45 : 0.8);
+              B.add(place(worldBox(0.7, 0.95, 0.06, 1), at, floorY, -0.02), lit ? glassLit : glassDark, { cast: false });
+              B.add(place(worldBox(0.86, 0.1, 0.16, 1), at, floorY - 0.52, 0.04), darkWood);
+              B.add(place(worldBox(0.86, 0.1, 0.1, 1), at, floorY + 0.52, 0.03), darkWood);
+              B.add(place(worldBox(0.06, 0.95, 0.06, 1), at, floorY, 0.03), darkWood, { cast: false });
+              // Shutters, some hanging askew.
+              if (hash(k, 3, seed * 77) > 0.4) {
+                const ang = hash(k, 4, seed) * 0.6;
+                B.add(place(worldBox(0.36, 0.95, 0.04, 1).rotateY(0.9 + ang), at - 0.62, floorY, 0.2), woodMat);
+              }
+              if (lit && night && flames.length < 0) void 0;
+            }
+          }
+          // Doors.
+          for (const d of doors) {
+            B.add(place(worldBox(1.15, 2.05, 0.08, 1.2), d.at, 1.03, 0.01), d.type === EDGE.ARCH ? glassDark : doorMat);
+            B.add(place(worldBox(1.45, 0.2, 0.2, 1), d.at, 2.15, 0.06), style === 1 ? darkWood : plinthMat);
+            for (const sx of [-1, 1]) B.add(place(worldBox(0.16, 2.1, 0.18, 1), d.at + sx * 0.66, 1.05, 0.05), style === 1 ? darkWood : plinthMat);
+            B.add(place(worldBox(1.5, 0.12, 0.5, 1), d.at, 0.06, 0.25), plinthMat);
+            B.add(place(new THREE.TorusGeometry(0.07, 0.015, 5, 10), d.at + 0.35, 1.05, 0.07), ironMat, { cast: false });
+            torchSpots.push({ x: ox + Math.cos(yaw) * (d.at + 1.0) + Math.sin(yaw) * 0.35, z: oz - Math.sin(yaw) * (d.at + 1.0) + Math.cos(yaw) * 0.35, y: 2.35, yaw, house });
+          }
+          if (!doors.length && len > 3) torchSpots.push({ x: ox + Math.cos(yaw) * (len / 2) + Math.sin(yaw) * 0.35, z: oz - Math.sin(yaw) * (len / 2) + Math.cos(yaw) * 0.35, y: 2.4, yaw, house });
+        }
+      }
+    }
+    // Interior floor for cut-aways, and a roof for full houses.
+    const iw = hx1 - hx0;
+    const id = hz1 - hz0;
+    const floor = new THREE.PlaneGeometry(iw - 0.6, id - 0.6);
+    floor.rotateX(-Math.PI / 2);
+    const fuv = floor.attributes.uv;
+    for (let i = 0; i < fuv.count; i++) fuv.setXY(i, fuv.getX(i) * iw / 1.1, fuv.getY(i) * id / 1.1);
+    house.cut.add(floor, plank, { p: [(hx0 + hx1) / 2, 0.03, (hz0 + hz1) / 2] }, { cast: false });
+    furnish(house, iw, id);
+    if (!ruined) {
+      const alongX = iw >= id;
+      const span = alongX ? id : iw;
+      const len = alongX ? iw : id;
+      const rise = span * 0.42;
+      const over = 0.45;
+      const roofM = style === 1 && seed > 0.55 ? thatchMat : roofMat;
+      for (const side of [-1, 1]) {
+        const slope = Math.hypot(span / 2 + over, rise);
+        const g = new THREE.PlaneGeometry(len + over * 2, slope);
+        const uv = g.attributes.uv;
+        for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * (len + over * 2) / 3.2, uv.getY(i) * slope / 3.2);
+        const ang = Math.atan2(rise, span / 2 + over);
+        g.rotateX(-Math.PI / 2);
+        g.rotateX(side * ang);
+        g.translate(0, rise / 2, side * (span / 2 + over) / 2);
+        if (!alongX) g.rotateY(Math.PI / 2);
+        house.full.add(g, roofM, { p: [(hx0 + hx1) / 2, height - 0.05, (hz0 + hz1) / 2] });
+        // Underside so the eaves aren't see-through.
+        const gu = g.clone();
+        gu.scale(1, 1, 1);
+        const idx = gu.index.array;
+        for (let i = 0; i < idx.length; i += 3) [idx[i], idx[i + 2]] = [idx[i + 2], idx[i]];
+        gu.computeVertexNormals();
+        house.full.add(gu, darkWood, { p: [(hx0 + hx1) / 2, height - 0.07, (hz0 + hz1) / 2] }, { cast: false });
+      }
+      // Gable ends.
+      for (const end of [-1, 1]) {
+        const shp = new THREE.Shape([new THREE.Vector2(-span / 2, 0), new THREE.Vector2(span / 2, 0), new THREE.Vector2(0, rise)]);
+        const g = new THREE.ShapeGeometry(shp);
+        const uv = g.attributes.uv;
+        const pos = g.attributes.position;
+        for (let i = 0; i < uv.count; i++) uv.setXY(i, pos.getX(i) / 2.6, pos.getY(i) / 2.6);
+        if (end < 0) g.rotateY(Math.PI);
+        g.translate(0, 0, end * len / 2);
+        if (!alongX) g.rotateY(Math.PI / 2);
+        house.full.add(g, wallMat, { p: [(hx0 + hx1) / 2, height - 0.02, (hz0 + hz1) / 2] });
+      }
+      // Ridge beam + chimney.
+      const ridge = worldBox(alongX ? len + over * 2 : 0.22, 0.22, alongX ? 0.22 : len + over * 2, 1);
+      house.full.add(ridge, darkWood, { p: [(hx0 + hx1) / 2, height + rise, (hz0 + hz1) / 2] });
+      if (seed > 0.35) {
+        const cx = alongX ? hx0 + iw * (0.2 + seed * 0.5) : (hx0 + hx1) / 2 + span * 0.2;
+        const cz = alongX ? (hz0 + hz1) / 2 + span * 0.2 : hz0 + id * (0.2 + seed * 0.5);
+        house.full.add(worldBox(0.7, rise + 1.4, 0.7, 2), plinthMat, { p: [cx, height + (rise + 1.4) / 2 - 0.2, cz] });
+        house.full.add(worldBox(0.84, 0.15, 0.84, 2), capMat, { p: [cx, height + rise + 1.2, cz] });
+        house.chimney = { x: cx, y: height + rise + 1.3, z: cz };
+      }
+    } else {
+      // Ruin: rubble heaps inside & a dark floor.
+      for (let k = 0; k < 6; k++) {
+        const px = hx0 + 0.5 + hash(k, 11, seed * 7) * (iw - 1);
+        const pz = hz0 + 0.5 + hash(k, 12, seed * 7) * (id - 1);
+        house.full.add(rockGeo(hash(k, 13, seed), 0.4 + hash(k, 14, seed) * 0.5), capMat, { p: [px, 0.1, pz] });
+      }
+      house.full.add(floor.clone(), libMat('floor_rubble', 0x9a8a7a), { p: [(hx0 + hx1) / 2, 0.02, (hz0 + hz1) / 2] }, { cast: false });
+    }
+    // The house has content solid under roofs; a dark core block keeps shadow casting honest.
+    return house;
+  }
+
+  /** Dollhouse interiors for cut-away houses: partitions, beds, tables, hearths, rugs. */
+  function furnish(house, iw, id) {
+    const B = house.cut;
+    const { x0, z0, x1, z1, seed } = house;
+    const inset = 0.45;
+    const ix0 = x0 + inset;
+    const iz0 = z0 + inset;
+    const ix1 = x1 - inset;
+    const iz1 = z1 - inset;
+    const occ = [];
+    const free = (ax, az, bx, bz) => ax >= ix0 && az >= iz0 && bx <= ix1 && bz <= iz1 && !occ.some((o) => ax < o[2] && bx > o[0] && az < o[3] && bz > o[1]);
+    const take = (ax, az, bx, bz) => occ.push([ax - 0.15, az - 0.15, bx + 0.15, bz + 0.15]);
+    const cutH = 1.1 + seed * 0.25;
+    // Partition wall across long houses, with a doorway.
+    const alongX = iw >= id;
+    if ((alongX ? iw : id) > 7) {
+      const at = alongX ? x0 + iw * (0.4 + seed * 0.2) : z0 + id * (0.4 + seed * 0.2);
+      const span = alongX ? id : iw;
+      const door = 0.35 + hash(1, 2, seed * 91) * 0.3;
+      for (const [a, b] of [[0, door - 0.12], [door + 0.12, 1]]) {
+        const len = (b - a) * span;
+        if (len < 0.2) continue;
+        const mid = (a + b) / 2 * span;
+        const g = worldBox(alongX ? 0.2 : len, cutH * 0.95, alongX ? len : 0.2, 2.5);
+        B.add(g, wallMats[house.style === 1 ? 1 : 0], { p: [alongX ? at : x0 + mid, (cutH * 0.95) / 2, alongX ? z0 + mid : at] });
+        B.add(worldBox(alongX ? 0.24 : len, 0.06, alongX ? len : 0.24, 2.5), capMat, { p: [alongX ? at : x0 + mid, cutH * 0.95 + 0.03, alongX ? z0 + mid : at] });
+      }
+      if (alongX) take(at - 0.1, z0, at + 0.1, z1);
+      else take(x0, at - 0.1, x1, at + 0.1);
+    }
+    // Hearth against a wall.
+    const hearthSide = Math.floor(hash(3, 4, seed * 17) * 4);
+    const hx = hearthSide === 0 ? ix0 + 0.5 : hearthSide === 1 ? ix1 - 0.5 : (ix0 + ix1) / 2;
+    const hz = hearthSide === 2 ? iz0 + 0.5 : hearthSide === 3 ? iz1 - 0.5 : (iz0 + iz1) / 2;
+    if (free(hx - 0.7, hz - 0.7, hx + 0.7, hz + 0.7)) {
+      B.add(worldBox(1.3, 0.5, 1.3, 1.5), plinthMat, { p: [hx, 0.25, hz] });
+      B.add(worldBox(0.9, 0.08, 0.9, 1.5), pbr('glow', 0x100400, { emissive: 0xff4a10, emissiveIntensity: night ? 2.2 : 0.8 }), { p: [hx, 0.52, hz] }, { cast: false });
+      for (let k = 0; k < 3; k++) B.add(new THREE.CylinderGeometry(0.05, 0.05, 0.6, 6).rotateZ(Math.PI / 2).rotateY(k * 1.1), darkWood, { p: [hx, 0.6, hz] });
+      take(hx - 0.7, hz - 0.7, hx + 0.7, hz + 0.7);
+      house.hearth = { x: hx, y: 0.7, z: hz };
+    }
+    // Furniture pieces placed along the walls.
+    const blanket = [0x7a2a24, 0x2a4a7a, 0x4a6a2a, 0x6a4a1a][Math.floor(seed * 4)];
+    const pieces = ['bed', 'table', 'barrels', 'chest', 'shelf', 'bed', 'crates', 'table'];
+    let tries = 0;
+    for (const kind of pieces) {
+      for (let k = 0; k < 12 && tries < 200; k++, tries++) {
+        const r1 = hash(tries, 7, seed * 1000);
+        const r2 = hash(tries, 8, seed * 1000);
+        const side = Math.floor(r1 * 4);
+        const w = kind === 'bed' ? 1.0 : kind === 'table' ? 1.5 : kind === 'shelf' ? 1.2 : 0.9;
+        const d = kind === 'bed' ? 2.0 : kind === 'table' ? 1.0 : kind === 'shelf' ? 0.4 : 0.8;
+        const vert = side < 2; // along W/E walls: long axis along z
+        const ww = vert ? d : w;
+        const dd = vert ? w : d;
+        const cx = side === 0 ? ix0 + ww / 2 : side === 1 ? ix1 - ww / 2 : ix0 + ww / 2 + r2 * Math.max(0, (ix1 - ix0) - ww);
+        const cz = side === 2 ? iz0 + dd / 2 : side === 3 ? iz1 - dd / 2 : iz0 + dd / 2 + r2 * Math.max(0, (iz1 - iz0) - dd);
+        if (kind === 'table') {
+          // Tables stand free in the room.
+          const tx = ix0 + 1 + r1 * Math.max(0, ix1 - ix0 - 2);
+          const tz = iz0 + 1 + r2 * Math.max(0, iz1 - iz0 - 2);
+          if (!free(tx - 1.1, tz - 0.9, tx + 1.1, tz + 0.9)) continue;
+          B.add(worldBox(1.5, 0.08, 0.85, 1), woodMat, { p: [tx, 0.76, tz] });
+          for (const [dx, dz] of [[-0.62, -0.32], [0.62, -0.32], [-0.62, 0.32], [0.62, 0.32]]) B.add(worldBox(0.08, 0.72, 0.08, 1), darkWood, { p: [tx + dx, 0.36, tz + dz] });
+          for (const [dx, dz] of [[-0.4, -0.75], [0.4, 0.75], [0.0, -0.75]]) {
+            B.add(worldBox(0.42, 0.06, 0.42, 1), woodMat, { p: [tx + dx, 0.46, tz + dz] });
+            for (const [ex, ez] of [[-0.17, -0.17], [0.17, -0.17], [-0.17, 0.17], [0.17, 0.17]]) B.add(worldBox(0.05, 0.44, 0.05, 1), darkWood, { p: [tx + dx + ex, 0.22, tz + dz + ez] }, { cast: false });
+          }
+          // Tankard and candle.
+          B.add(new THREE.CylinderGeometry(0.05, 0.05, 0.12, 8), ironMat, { p: [tx + 0.3, 0.86, tz + 0.1] }, { cast: false });
+          B.add(new THREE.CylinderGeometry(0.03, 0.03, 0.14, 6), pbr('glow', 0xeee0c0, { emissive: 0xffb050, emissiveIntensity: night ? 1.5 : 0.2 }), { p: [tx - 0.2, 0.87, tz - 0.1] }, { cast: false });
+          take(tx - 1.1, tz - 0.9, tx + 1.1, tz + 0.9);
+          break;
+        }
+        if (!free(cx - ww / 2, cz - dd / 2, cx + ww / 2, cz + dd / 2)) continue;
+        if (kind === 'bed') {
+          B.add(worldBox(ww, 0.3, dd, 1), darkWood, { p: [cx, 0.2, cz] });
+          B.add(worldBox(ww - 0.1, 0.16, dd - 0.1, 1), pbr('cloth', 0xd8ccb0), { p: [cx, 0.42, cz] });
+          const bx = vert ? ww - 0.06 : ww * 0.98;
+          const bz = vert ? dd * 0.62 : dd - 0.06;
+          B.add(worldBox(bx, 0.06, bz, 1), pbr('cloth', blanket), { p: [cx + (vert ? 0 : 0), 0.52, cz + (vert ? (side === 0 ? 0.3 : 0.3) : 0.3)] });
+          B.add(worldBox(vert ? 0.6 : 0.5, 0.12, vert ? 0.35 : 0.6, 1), pbr('cloth', 0xe8e0d0), { p: [cx + (vert ? 0 : -ww * 0.3), 0.56, cz + (vert ? -dd * 0.36 : 0)] });
+        } else if (kind === 'barrels') {
+          B.add(barrelGeo(), barrelMat, { p: [cx - 0.2, 0, cz], s: 0.9 });
+          B.add(barrelHoops(), ironMat, { p: [cx - 0.2, 0, cz], s: 0.9 });
+          if (r2 > 0.4) B.add(barrelGeo(), barrelMat, { p: [cx + 0.35, 0, cz + 0.2], s: 0.75 });
+        } else if (kind === 'chest') {
+          B.add(worldBox(ww * 0.8, 0.5, dd * 0.7, 1), woodMat, { p: [cx, 0.25, cz] });
+          B.add(worldBox(ww * 0.82, 0.06, dd * 0.72, 1), ironMat, { p: [cx, 0.48, cz] });
+        } else if (kind === 'shelf') {
+          B.add(worldBox(ww, 1.9, dd, 1), darkWood, { p: [cx, 0.95, cz] });
+          for (let k2 = 0; k2 < 6; k2++) B.add(worldBox(0.12, 0.22, 0.12, 1), k2 % 2 ? barrelMat : pbr('cloth', 0x8a6a4a), { p: [cx + (vert ? 0 : (k2 - 2.5) * 0.18), 0.5 + (k2 % 3) * 0.5, cz + (vert ? (k2 - 2.5) * 0.18 : 0)] }, { cast: false });
+        } else if (kind === 'crates') {
+          B.add(worldBox(0.7, 0.7, 0.7, 1.2), crateMat, { p: [cx, 0.35, cz], r: [0, r1, 0] });
+          B.add(crateFrame(0.7), darkWood, { p: [cx, 0.35, cz], r: [0, r1, 0] });
+        }
+        take(cx - ww / 2, cz - dd / 2, cx + ww / 2, cz + dd / 2);
+        break;
+      }
+    }
+    // A rug in the middle of the floor.
+    const rw = Math.min(2.6, iw * 0.4);
+    const rd = Math.min(1.8, id * 0.35);
+    const rug = new THREE.PlaneGeometry(rw, rd).rotateX(-Math.PI / 2);
+    B.add(rug, rugMaterial(Math.floor(seed * 3)), { p: [(x0 + x1) / 2 + (seed - 0.5), 0.04, (z0 + z1) / 2] }, { cast: false });
+  }
+
+  // ---------------------------------------------------------------- edge walls in the field
+  const edgeWalls = [];
+  for (const e of field.features.edgeWalls ?? []) {
+    const style = e.style;
+    const mat = wallMats[style] ?? wallMats[0];
+    const ruined = style === 2;
+    // Wall runs along the E or S side of cell (cx,cy) (window coords).
+    const x0 = e.cx * CELLM;
+    const z0 = e.cy * CELLM;
+    const horiz = e.dir === 'S';
+    const ox = horiz ? x0 : x0 + CELLM;
+    const oz = horiz ? z0 + CELLM : z0;
+    const gap = e.type === EDGE.DOOR || e.type === EDGE.ARCH;
+    const wall = { horiz, full: new Batcher(), cut: new Batcher(), e };
+    for (const variant of ['full', 'cut']) {
+      const B = wall[variant];
+      const segs = [];
+      if (gap) segs.push([0, TILE - 0.05], [TILE * 2 + 0.05, CELLM]);
+      else segs.push([0, CELLM]);
+      for (const [a, b] of segs) {
+        const n = Math.max(1, Math.round((b - a) / 0.75));
+        for (let k = 0; k < n; k++) {
+          const sa = a + ((b - a) * k) / n;
+          const sl = (b - a) / n;
+          const base = variant === 'cut' ? 0.95 : ruined ? 1.3 : 2.8;
+          const hh = ruined ? base * (0.5 + hash(e.cx * 7 + k, e.cy * 3 + (horiz ? 1 : 0), 17) * 0.8) : base;
+          const g = worldBox(horiz ? sl + 0.01 : 0.42, hh, horiz ? 0.42 : sl + 0.01, 2.5);
+          B.add(g, mat, { p: [horiz ? ox + sa + sl / 2 : ox, hh / 2, horiz ? oz : oz + sa + sl / 2] });
+          if (!ruined || variant === 'cut') B.add(worldBox(horiz ? sl + 0.02 : 0.5, 0.08, horiz ? 0.5 : sl + 0.02, 2.5), capMat, { p: [horiz ? ox + sa + sl / 2 : ox, hh + 0.04, horiz ? oz : oz + sa + sl / 2] });
+        }
+      }
+      if (gap && e.type === EDGE.ARCH && variant === 'full') {
+        // Stone arch over the gap.
+        const ax = horiz ? ox + TILE * 1.5 : ox;
+        const az = horiz ? oz : oz + TILE * 1.5;
+        const arch = new THREE.TorusGeometry(TILE / 2 + 0.1, 0.22, 6, 14, Math.PI);
+        arch.scale(1, 1, 1.8);
+        if (!horiz) arch.rotateY(Math.PI / 2);
+        B.add(arch, plinthMat, { p: [ax, 2.4, az] });
+        B.add(worldBox(horiz ? TILE + 0.6 : 0.5, 0.6, horiz ? 0.5 : TILE + 0.6, 2.5), mat, { p: [ax, 3.35, az] });
+      }
+      if (gap && e.type === EDGE.DOOR && variant === 'full') {
+        // An open door leaf swung inward.
+        const ax = horiz ? ox + TILE - 0.05 : ox;
+        const az = horiz ? oz : oz + TILE - 0.05;
+        const leaf = worldBox(horiz ? 0.08 : 1.3, 2.1, horiz ? 1.3 : 0.08, 1.2);
+        leaf.translate(horiz ? 0 : 0.65, 1.05, horiz ? 0.65 : 0);
+        B.add(leaf, doorMat, { p: [ax, 0, az], r: [0, horiz ? -0.5 : 0.5, 0] });
+      }
+      if (ruined && variant === 'full') {
+        for (let k = 0; k < 3; k++) {
+          const t = hash(e.cx, e.cy * 5 + k, 23) * CELLM;
+          const off = (hash(e.cx * 3, e.cy + k, 29) - 0.5) * 1.6;
+          B.add(rockGeo(hash(k, e.cx, e.cy), 0.25 + hash(e.cy, k, 31) * 0.3), capMat, { p: [horiz ? ox + t : ox + off, 0.08, horiz ? oz + off : oz + t] });
+        }
+      }
+    }
+    edgeWalls.push(wall);
+  }
+
+  // ---------------------------------------------------------------- city wall beyond the map border
+  if (map) {
+    const wallMat = libMat('wall_stone', 0xb8b0a4);
+    const borderCells = [];
+    for (let my = cellY0; my < cellY0 + cellsH; my++) {
+      for (let mx = cellX0; mx < cellX0 + cellsW; mx++) {
+        if (!inMap(mx, my)) continue;
+        for (const [d, dx, dy] of [['N', 0, -1], ['S', 0, 1], ['W', -1, 0], ['E', 1, 0]]) {
+          if (inMap(mx + dx, my + dy)) continue;
+          borderCells.push({ mx, my, d, gate: map.getEdge(mx, my, d) === EDGE.ARCH });
+        }
+      }
+    }
+    for (const b of borderCells) {
+      const horiz = b.d === 'N' || b.d === 'S';
+      const x = cw(b.mx) + (b.d === 'E' ? CELLM + 0.9 : b.d === 'W' ? -0.9 : CELLM / 2);
+      const z = ch(b.my) + (b.d === 'S' ? CELLM + 0.9 : b.d === 'N' ? -0.9 : CELLM / 2);
+      const hh = 6.5;
+      const w = CELLM + 0.02;
+      const wall = { horiz, city: true, full: new Batcher(), cut: new Batcher(), e: { dir: b.d } };
+      for (const variant of ['full', 'cut']) {
+        const B = wall[variant];
+        const h2 = variant === 'cut' ? 1.3 : hh;
+        if (b.gate) {
+          for (const sgn of [-1, 1]) B.add(worldBox(horiz ? 1.3 : 1.8, h2, horiz ? 1.8 : 1.3, 2.5), wallMat, { p: [x + (horiz ? sgn * (CELLM / 2 - 0.65) : 0), h2 / 2, z + (horiz ? 0 : sgn * (CELLM / 2 - 0.65))] });
+          if (variant === 'full') {
+            const arch = new THREE.TorusGeometry(CELLM / 2 - 1.3, 0.5, 6, 16, Math.PI);
+            arch.scale(1, 1.2, 3.4);
+            if (!horiz) arch.rotateY(Math.PI / 2);
+            B.add(arch, plinthMat, { p: [x, 3.6, z] });
+            B.add(worldBox(horiz ? w : 1.8, 2.2, horiz ? 1.8 : w, 2.5), wallMat, { p: [x, hh - 1.1, z] });
+          }
+        } else {
+          B.add(worldBox(horiz ? w : 1.8, h2, horiz ? 1.8 : w, 2.5), wallMat, { p: [x, h2 / 2, z] });
+        }
+        if (variant === 'full') {
+          // Crenellations.
+          for (let k = 0; k < 4; k++) {
+            const t = -CELLM / 2 + (k + 0.5) * (CELLM / 4);
+            B.add(worldBox(horiz ? 0.6 : 1.9, 0.7, horiz ? 1.9 : 0.6, 2.5), wallMat, { p: [x + (horiz ? t : 0), hh + 0.35, z + (horiz ? 0 : t)] });
+          }
+        }
+      }
+      edgeWalls.push(wall);
+    }
+  }
+
+  // ---------------------------------------------------------------- props
+  const rockMat = libMat('wall_ruin', 0xa89c8c);
+  for (const p of field.features.props ?? []) {
+    const x = p.x * TILE + TILE / 2;
+    const z = p.y * TILE + TILE / 2;
+    const r = p.r;
+    if (p.type === 'barrel') {
+      batch.add(barrelGeo(), barrelMat, { p: [x + (r - 0.5) * 0.3, 0, z], r: [0, r * 6, 0] });
+      batch.add(barrelHoops(), ironMat, { p: [x + (r - 0.5) * 0.3, 0, z] });
+      if (r < 0.02) batch.add(barrelGeo(), barrelMat, { p: [x + 0.4, 0, z + 0.3], r: [0, r * 9, 0], s: 0.85 });
+    } else if (p.type === 'crate') {
+      const s = 0.8 + r * 3;
+      batch.add(worldBox(s, s, s, 1.2), crateMat, { p: [x, s / 2, z], r: [0, r * 20, 0] });
+      batch.add(crateFrame(s), darkWood, { p: [x, s / 2, z], r: [0, r * 20, 0] });
+      if (r > 0.055) batch.add(worldBox(0.6, 0.6, 0.6, 1.2), crateMat, { p: [x + 0.1, s + 0.3, z], r: [0, r * 40, 0] });
+    } else if (p.type === 'rubble') {
+      for (let k = 0; k < 5; k++) batch.add(rockGeo(hash(p.x, p.y + k, 3), 0.25 + hash(p.x + k, p.y, 4) * 0.35), rockMat, { p: [x + (hash(k, p.x, 5) - 0.5) * 0.9, 0.05, z + (hash(k, p.y, 6) - 0.5) * 0.9] });
+    } else if (p.type === 'column') {
+      const hh = 1.2 + r * 30 % 2.2;
+      batch.add(new THREE.CylinderGeometry(0.34, 0.38, hh, 14), libMat('wall_stone', 0xe0d8c8), { p: [x, hh / 2 + 0.3, z] });
+      batch.add(worldBox(0.95, 0.3, 0.95, 1), plinthMat, { p: [x, 0.15, z] });
+    } else if (p.type === 'debris') {
+      for (let k = 0; k < 4; k++) batch.add(worldBox(1.1, 0.06, 0.16, 1), woodMat, { p: [x + (hash(k, 1, p.x) - 0.5) * 0.7, 0.05 + k * 0.05, z + (hash(k, 2, p.y) - 0.5) * 0.7], r: [0, hash(k, 3, p.x) * 3, 0.1] });
+    }
+  }
+  // Scatter loose stones / weeds near walls and in rubble (non-blocking decoration).
+  const grassMat = makeGrassMaterial();
+  disposables.push(grassMat);
+  const tufts = [];
+  for (let y = -margin; y < field.h + margin; y++) {
+    for (let x = -margin; x < field.w + margin; x++) {
+      const k = kindAt(x, y);
+      if (k === 'house' || k === 'water') continue;
+      const nearHouse = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => kindAt(x + dx, y + dy) === 'house');
+      const r = hash(x + 900, y + 900, 41);
+      const pRate = k === 'rubble' || k === 'outside' ? 0.5 : nearHouse ? 0.35 : 0.06;
+      if (r < pRate) {
+        const n = 1 + Math.floor(hash(x, y, 43) * 3);
+        for (let i = 0; i < n; i++) tufts.push([x * TILE + hash(x, y + i, 44) * TILE, y * TILE + hash(x + i, y, 45) * TILE, 0.25 + hash(x + i, y + i, 46) * 0.35, hash(i, x, y) * 6]);
+      }
+      if (k !== 'room' && hash(x, y, 47) < (k === 'rubble' ? 0.5 : 0.12)) {
+        batch.add(rockGeo(hash(x, y, 48), 0.07 + hash(x, y, 49) * 0.12), rockMat, { p: [x * TILE + hash(x, y, 50) * TILE, 0.0, y * TILE + hash(x, y, 51) * TILE] }, { cast: false });
+      }
+    }
+  }
+  if (tufts.length) {
+    const tg = new THREE.PlaneGeometry(1, 1);
+    tg.translate(0, 0.5, 0);
+    const tg2 = tg.clone().rotateY(Math.PI / 2);
+    const tuft = mergeTwo(tg, tg2);
+    const inst = new THREE.InstancedMesh(tuft, grassMat, tufts.length);
+    const m = new THREE.Matrix4();
+    tufts.forEach(([x, z, s, a], i) => {
+      m.compose(new THREE.Vector3(x, 0, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), a), new THREE.Vector3(s * 1.4, s, s * 1.4));
+      inst.setMatrixAt(i, m);
+    });
+    inst.receiveShadow = true;
+    group.add(inst);
+    disposables.push(tuft);
+  }
+
+  // ---------------------------------------------------------------- torches & braziers
+  // Choose torch spots on faces that look onto the fight, spread apart.
+  const inField = (x, z) => x > -2 && z > -2 && x < W + 2 && z < H + 2;
+  const cands = torchSpots.filter((t) => inField(t.x, t.z));
+  const chosen = [];
+  const ranked = cands.map((t) => ({ t, k: hash(Math.round(t.x * 3), Math.round(t.z * 3), 61) })).sort((a, b) => a.k - b.k);
+  for (const { t } of ranked) {
+    if (chosen.length >= 7) break;
+    if (chosen.some((c) => Math.hypot(c.x - t.x, c.z - t.z) < 6)) continue;
+    chosen.push(t);
+  }
+  const torches = [];
+  for (const t of chosen) {
+    // Bracket.
+    const bx = t.x - Math.sin(t.yaw) * 0.2;
+    const bz = t.z - Math.cos(t.yaw) * 0.2;
+    batch.add(worldBox(0.08, 0.5, 0.08, 1), ironMat, { p: [bx, t.y - 0.35, bz] }, { cast: false });
+    batch.add(new THREE.CylinderGeometry(0.06, 0.035, 0.34, 8), darkWood, { p: [t.x, t.y - 0.05, t.z] }, { cast: false });
+    batch.add(new THREE.CylinderGeometry(0.075, 0.07, 0.08, 8), ironMat, { p: [t.x, t.y + 0.1, t.z] }, { cast: false });
+    const f = makeFlame(0.34, torches.length * 1.7);
+    f.position.set(t.x, t.y + 0.3, t.z);
+    group.add(f);
+    flames.push(f);
+    torches.push({ x: t.x, y: t.y + 0.35, z: t.z, house: t.house });
+  }
+  // Braziers beside walls near the fight (always lit, great for night).
+  if (field.features.props) {
+    const pcx = (field.partyCell.x - field.cx0) * SUB + 1;
+    const pcy = (field.partyCell.y - field.cy0) * SUB + 1;
+    const cands = [];
+    for (let y = 0; y < field.h; y++) {
+      for (let x = 0; x < field.w; x++) {
+        const i = field.idx(x, y);
+        if (!field.isFree(x, y) || field.exitMask[i]) continue;
+        const cell = field.cellOf(x, y);
+        if (cell.x === field.partyCell.x && cell.y === field.partyCell.y) continue;
+        const nearBlock = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => !field.inBounds(x + dx, y + dy) || field.block[field.idx(x + dx, y + dy)] === 1);
+        const nearWall = field.wallE[i] || field.wallS[i] || (x > 0 && field.wallE[field.idx(x - 1, y)]) || (y > 0 && field.wallS[field.idx(x, y - 1)]);
+        if (!nearBlock && !nearWall) continue;
+        const d = Math.hypot(x - pcx, y - pcy);
+        cands.push({ x, y, score: -Math.abs(d - 5) + hash(x, y, 71) * 1.5 });
+      }
+    }
+    cands.sort((a, b) => b.score - a.score);
+    const placed = [];
+    for (const c of cands) {
+      if (placed.length >= (night ? 2 : 1)) break;
+      if (placed.some((p) => Math.hypot(p.x - c.x, p.y - c.y) < 7)) continue;
+      placed.push(c);
+      const { x, y } = c;
+      field.block[field.idx(x, y)] = 2;
+      field.features.props.push({ x, y, type: 'brazier', r: 0 });
+      const px = x * TILE + TILE / 2;
+      const pz = y * TILE + TILE / 2;
+      batch.add(new THREE.CylinderGeometry(0.42, 0.28, 0.32, 14, 1, true), ironMat, { p: [px, 0.95, pz] });
+      batch.add(new THREE.TorusGeometry(0.42, 0.03, 5, 18).rotateX(Math.PI / 2), ironMat, { p: [px, 1.11, pz] });
+      for (let k = 0; k < 3; k++) {
+        const a = (k / 3) * Math.PI * 2;
+        batch.add(worldBox(0.06, 0.95, 0.06, 1), ironMat, { p: [px + Math.cos(a) * 0.26, 0.47, pz + Math.sin(a) * 0.26], r: [Math.sin(a) * 0.2, 0, -Math.cos(a) * 0.2] });
+      }
+      batch.add(new THREE.CircleGeometry(0.38, 14).rotateX(-Math.PI / 2), pbr('glow', 0x100400, { emissive: 0xff5010, emissiveIntensity: 2.5 }), { p: [px, 1.05, pz] }, { cast: false });
+      for (let k = 0; k < 5; k++) batch.add(rockGeo(hash(k, x, y), 0.09), pbr('glow', 0x200800, { emissive: 0xff3a08, emissiveIntensity: 1.6 }), { p: [px + (hash(k, 1, x) - 0.5) * 0.4, 1.08, pz + (hash(k, 2, y) - 0.5) * 0.4] }, { cast: false });
+      const f = makeFlame(0.8, 9.1 + placed.length * 3);
+      f.position.set(px, 1.35, pz);
+      group.add(f);
+      flames.push(f);
+      torches.unshift({ x: px, y: 1.8, z: pz, brazier: true });
+    }
+  }
+
+  // Temple furniture: altar with candles and a statue of Tyr.
+  for (const p of field.features.props ?? []) {
+    const x = p.x * TILE + TILE / 2;
+    const z = p.y * TILE + TILE / 2;
+    if (p.type === 'altar') {
+      batch.add(worldBox(1.4, 0.95, 0.85, 1.5), libMat('wall_stone', 0xe8e0d0), { p: [x, 0.475, z] });
+      batch.add(worldBox(1.55, 0.1, 1.0, 1.5), plinthMat, { p: [x, 1.0, z] });
+      batch.add(worldBox(0.5, 0.02, 1.02, 1), pbr('cloth', 0x8a1a18), { p: [x, 1.06, z] }, { cast: false });
+      for (const dx of [-0.55, 0.55]) {
+        batch.add(new THREE.CylinderGeometry(0.035, 0.04, 0.22, 8), pbr('glow', 0xf0e8d0, { emissive: 0xffc070, emissiveIntensity: 0.6 }), { p: [x + dx, 1.17, z] }, { cast: false });
+        const fl = makeFlame(0.12, x + dx);
+        fl.position.set(x + dx, 1.3, z);
+        group.add(fl);
+        flames.push(fl);
+      }
+    } else if (p.type === 'statue') {
+      const stone = libMat('wall_stone', 0xd8d4cc);
+      batch.add(worldBox(1.2, 0.6, 1.2, 1.5), plinthMat, { p: [x, 0.3, z] });
+      const robe = new THREE.LatheGeometry([[0.001, 0], [0.42, 0], [0.36, 0.8], [0.3, 1.5], [0.22, 1.9], [0.12, 2.0]].map(([r, y]) => new THREE.Vector2(r, y)), 16);
+      batch.add(robe, stone, { p: [x, 0.6, z] });
+      batch.add(new THREE.SphereGeometry(0.17, 14, 10), stone, { p: [x, 2.8, z] });
+      batch.add(worldBox(0.36, 0.06, 0.1, 1), pbr('cloth', 0x2a2a2a), { p: [x, 2.82, z + 0.13] }, { cast: false });
+      // Arms outstretched holding the scales of justice.
+      batch.add(new THREE.CylinderGeometry(0.05, 0.05, 1.2, 8).rotateZ(Math.PI / 2), stone, { p: [x, 2.35, z + 0.12] });
+      batch.add(new THREE.CylinderGeometry(0.018, 0.018, 1.4, 6).rotateZ(Math.PI / 2), pbr('gold', 0xb8923a), { p: [x, 2.6, z + 0.25] });
+      for (const dx of [-0.65, 0.65]) {
+        batch.add(new THREE.SphereGeometry(0.14, 12, 6, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), pbr('gold', 0xb8923a), { p: [x + dx, 2.3, z + 0.25] });
+        batch.add(new THREE.CylinderGeometry(0.006, 0.006, 0.3, 4), pbr('gold', 0xb8923a), { p: [x + dx, 2.45, z + 0.25] }, { cast: false });
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------- flush
+  batch.flush(group);
+  const houseGroups = [];
+  for (const hs of houses) {
+    const gFull = new THREE.Group();
+    const gCut = new THREE.Group();
+    hs.full.flush(gFull);
+    hs.cut.flush(gCut);
+    group.add(gFull, gCut);
+    gCut.visible = false;
+    houseGroups.push({ h: hs, full: gFull, cut: gCut });
+  }
+  const wallGroups = [];
+  for (const w of edgeWalls) {
+    const gFull = new THREE.Group();
+    const gCut = new THREE.Group();
+    w.full.flush(gFull);
+    w.cut.flush(gCut);
+    group.add(gFull, gCut);
+    gCut.visible = false;
+    wallGroups.push({ w, full: gFull, cut: gCut });
+  }
+
+  // Bounding boxes for occlusion tests.
+  for (const hg of houseGroups) {
+    const hs = hg.h;
+    const top = hs.ruined ? hs.height : hs.height + Math.min(hs.x1 - hs.x0, hs.z1 - hs.z0) * 0.45 + (hs.chimney ? 1.2 : 0);
+    hg.box = new THREE.Box3(new THREE.Vector3(hs.x0 - 0.5, 0, hs.z0 - 0.5), new THREE.Vector3(hs.x1 + 0.5, top, hs.z1 + 0.5));
+  }
+  for (const wg of wallGroups) {
+    wg.box = new THREE.Box3();
+    wg.full.updateMatrixWorld(true);
+    wg.box.setFromObject(wg.full);
+    wg.box.expandByScalar(0.2);
+  }
+  const _ray = new THREE.Ray();
+  const _v = new THREE.Vector3();
+  /**
+   * Cut away houses and walls that would hide any of `points` (combatants,
+   * cursor) from the camera — a dollhouse view that keeps the fight readable.
+   */
+  function setView(camPos, points) {
+    for (const g of [...houseGroups, ...wallGroups]) {
+      let hides = false;
+      for (const p of points) {
+        _ray.origin.copy(p);
+        _ray.direction.subVectors(camPos, p).normalize();
+        if (g.box.containsPoint(p)) continue;
+        const hit = _ray.intersectBox(g.box, _v);
+        if (hit && hit.distanceTo(p) < camPos.distanceTo(p)) {
+          hides = true;
+          break;
+        }
+      }
+      g.full.visible = !hides;
+      g.cut.visible = hides;
+    }
+  }
+
+  function update(t) {
+    for (const f of flames) f.userData.update(t);
+  }
+
+  function dispose() {
+    group.traverse((obj) => {
+      if (obj.isMesh || obj.isInstancedMesh) obj.geometry?.dispose();
+    });
+    for (const d of disposables) d.dispose?.();
+  }
+
+  return { group, torches, flames, houses, update, setView, bounds: { w: W, h: H }, dispose };
+}
+
+// ------------------------------------------------------------------ helpers
+function mergeTwo(a, b) {
+  const g = new THREE.BufferGeometry();
+  const pa = a.attributes.position.array;
+  const pb = b.attributes.position.array;
+  const pos = new Float32Array(pa.length + pb.length);
+  pos.set(pa);
+  pos.set(pb, pa.length);
+  const ua = a.attributes.uv.array;
+  const ub = b.attributes.uv.array;
+  const uv = new Float32Array(ua.length + ub.length);
+  uv.set(ua);
+  uv.set(ub, ua.length);
+  const na = a.attributes.normal.array;
+  const nb = b.attributes.normal.array;
+  const nor = new Float32Array(na.length + nb.length);
+  nor.set(na);
+  nor.set(nb, na.length);
+  const off = a.attributes.position.count;
+  const idx = [...a.index.array, ...b.index.array.map((i) => i + off)];
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  g.setIndex(idx);
+  return g;
+}
+
+const _rugs = [];
+function rugMaterial(k) {
+  if (_rugs[k]) return _rugs[k];
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 176;
+  const g = c.getContext('2d');
+  const pal = [['#6a1a18', '#c89a3a', '#2a1a40'], ['#1a3a5a', '#d8b870', '#5a1a18'], ['#3a4a1a', '#c8a050', '#2a1a10']][k % 3];
+  g.fillStyle = pal[0];
+  g.fillRect(0, 0, 256, 176);
+  g.strokeStyle = pal[1];
+  g.lineWidth = 6;
+  g.strokeRect(10, 10, 236, 156);
+  g.lineWidth = 2;
+  g.strokeRect(22, 22, 212, 132);
+  g.fillStyle = pal[2];
+  g.beginPath();
+  g.moveTo(128, 40); g.lineTo(190, 88); g.lineTo(128, 136); g.lineTo(66, 88); g.closePath();
+  g.fill();
+  g.strokeStyle = pal[1];
+  g.stroke();
+  for (let i = 0; i < 400; i++) {
+    g.fillStyle = `rgba(0,0,0,${hash(i, 1, 9) * 0.12})`;
+    g.fillRect(hash(i, 2, 9) * 256, hash(i, 3, 9) * 176, 2, 2);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  _rugs[k] = new THREE.MeshStandardMaterial({ map: t, roughness: 0.95 });
+  return _rugs[k];
+}
+
+let _grassTex = null;
+function makeGrassMaterial() {
+  if (!_grassTex) {
+    const c = document.createElement('canvas');
+    c.width = 128;
+    c.height = 128;
+    const g = c.getContext('2d');
+    for (let i = 0; i < 38; i++) {
+      const x = 10 + hash(i, 1, 3) * 108;
+      const h = 50 + hash(i, 2, 3) * 70;
+      const bend = (hash(i, 3, 3) - 0.5) * 40;
+      const gg = 90 + hash(i, 4, 3) * 80;
+      g.strokeStyle = `rgb(${gg * 0.55 | 0},${gg | 0},${gg * 0.35 | 0})`;
+      g.lineWidth = 2 + hash(i, 5, 3) * 2;
+      g.beginPath();
+      g.moveTo(x, 128);
+      g.quadraticCurveTo(x + bend * 0.3, 128 - h * 0.6, x + bend, 128 - h);
+      g.stroke();
+    }
+    _grassTex = new THREE.CanvasTexture(c);
+    _grassTex.colorSpace = THREE.SRGBColorSpace;
+  }
+  return new THREE.MeshStandardMaterial({ map: _grassTex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.9, color: 0xa8b088 });
+}
+
+function barrelGeo() {
+  const pts = [];
+  for (let i = 0; i <= 8; i++) {
+    const y = (i / 8) * 1.0;
+    pts.push(new THREE.Vector2(0.34 + Math.sin((i / 8) * Math.PI) * 0.07, y));
+  }
+  pts.unshift(new THREE.Vector2(0.001, 0));
+  pts.push(new THREE.Vector2(0.001, 1.0));
+  const g = new THREE.LatheGeometry(pts, 16);
+  const uv = g.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 2.4, uv.getY(i) * 0.9);
+  return g;
+}
+
+function barrelHoops() {
+  const parts = [0.12, 0.5, 0.88].map((y) => {
+    const r = 0.345 + Math.sin(y * Math.PI) * 0.07;
+    const t = new THREE.TorusGeometry(r, 0.018, 4, 20);
+    t.rotateX(Math.PI / 2);
+    t.translate(0, y, 0);
+    return t;
+  });
+  return mergeList(parts);
+}
+
+function crateFrame(s) {
+  const e = 0.07;
+  const parts = [];
+  for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    const g = new THREE.BoxGeometry(e, s + 0.01, e);
+    g.translate((x * (s - e)) / 2 + x * 0.005, 0, (z * (s - e)) / 2 + z * 0.005);
+    parts.push(g);
+  }
+  for (const y of [-1, 1]) {
+    for (const [w, d, x, z] of [[s, e, 0, -1], [s, e, 0, 1], [e, s, -1, 0], [e, s, 1, 0]]) {
+      const g = new THREE.BoxGeometry(w + 0.01, e, d + 0.01);
+      g.translate((x * (s - e)) / 2, (y * (s - e)) / 2, (z * (s - e)) / 2);
+      parts.push(g);
+    }
+  }
+  return mergeList(parts);
+}
+
+function mergeList(list) {
+  let g = list[0];
+  for (let i = 1; i < list.length; i++) g = mergeTwo(g, list[i]);
+  return g;
+}
+
+/** Irregular rock: jittered icosahedron. */
+function rockGeo(seed, size) {
+  const g = new THREE.IcosahedronGeometry(size, 1);
+  const pos = g.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    const k = 0.7 + hash(Math.round(x * 50), Math.round(y * 50) + Math.round(z * 50) * 7, Math.floor(seed * 1000)) * 0.55;
+    pos.setXYZ(i, x * k * 1.2, Math.max(-size * 0.2, y * k * 0.6), z * k);
+  }
+  g.computeVertexNormals();
+  const uv = g.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, pos.getX(i) * 1.5, pos.getZ(i) * 1.5 + pos.getY(i));
+  return g;
+}
+
+/**
+ * Animated flame billboard (noise-shaped fire in a shader) + glow halo.
+ * userData.update(t) animates it from absolute time (freeze-safe).
+ */
+export function makeFlame(size = 0.4, seed = 0) {
+  const grp = new THREE.Group();
+  const mat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    uniforms: { uTime: { value: 0 }, uSeed: { value: seed } },
+    vertexShader: `varying vec2 vUv; void main(){ vUv = uv;
+      vec4 mv = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+      vec2 sc = vec2(length(modelMatrix[0].xyz), length(modelMatrix[1].xyz));
+      mv.xy += position.xy * sc;
+      gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `varying vec2 vUv; uniform float uTime, uSeed;
+      float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453); }
+      float n(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(h(i),h(i+vec2(1,0)),f.x), mix(h(i+vec2(0,1)),h(i+vec2(1,1)),f.x), f.y); }
+      void main(){
+        vec2 uv = vUv;
+        float t = uTime * 2.2 + uSeed;
+        float turb = n(vec2(uv.x * 4.0, uv.y * 3.0 - t * 1.6)) * 0.6 + n(vec2(uv.x * 9.0, uv.y * 7.0 - t * 2.7)) * 0.4;
+        float x = (uv.x - 0.5) * 2.0;
+        float shape = 1.0 - smoothstep(0.0, 1.0, abs(x) / (0.9 * (1.0 - uv.y) + 0.05));
+        float body = shape * smoothstep(1.0, 0.1, uv.y + turb * 0.55 - 0.2) * smoothstep(0.0, 0.12, uv.y);
+        vec3 c = mix(vec3(1.0, 0.25, 0.03), vec3(1.0, 0.8, 0.35), smoothstep(0.35, 0.9, body));
+        c = mix(c, vec3(1.0, 0.97, 0.85), smoothstep(0.85, 1.0, body));
+        gl_FragColor = vec4(c * body * 2.2, body);
+      }`,
+  });
+  const quad = new THREE.Mesh(new THREE.PlaneGeometry(1, 1.6).translate(0, 0.55, 0), mat);
+  quad.scale.setScalar(size);
+  quad.renderOrder = 5;
+  quad.frustumCulled = false;
+  grp.add(quad);
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: getGlowTexture(), color: 0xff8030, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.55 }));
+  glow.scale.setScalar(size * 4.5);
+  glow.position.y = size * 0.4;
+  grp.add(glow);
+  grp.userData.update = (t) => {
+    mat.uniforms.uTime.value = t;
+    const f = 0.85 + 0.1 * Math.sin(t * 13 + seed) + 0.05 * Math.sin(t * 29.7 + seed * 3);
+    glow.material.opacity = 0.4 * f;
+    quad.scale.set(size * (0.95 + 0.08 * Math.sin(t * 9 + seed)), size * (0.95 + 0.12 * Math.sin(t * 7.3 + seed * 2)), 1);
+  };
+  grp.userData.dispose = () => {
+    mat.dispose();
+    quad.geometry.dispose();
+    glow.material.dispose();
+  };
+  return grp;
+}
