@@ -258,12 +258,15 @@ export default class CampScene extends Scene {
     ]);
     this.ctx.ui.layers.toast.append(veil);
     requestAnimationFrame(() => { veil.style.opacity = '1'; });
-    this.busy = { veil, clock, from, to: from + minutes, start: this.ctx.clock.time, dur: Math.min(2.2, 0.8 + minutes / 600) };
+    const busy = (this.busy = { veil, clock, from, to: from + minutes, start: this.ctx.clock.time, dur: Math.min(2.2, 0.8 + minutes / 600) });
+    // Wall-clock fallback: never leave the party stuck resting if frames stall (hidden tab).
+    setTimeout(() => { if (this.busy === busy) this._finishRest(); }, busy.dur * 1000 + 600);
     game.notifyPartyChanged();
   }
 
   _finishRest() {
     const b = this.busy;
+    if (!b) return;
     this.busy = null;
     b.veil.style.opacity = '0';
     setTimeout(() => b.veil.remove(), 400);

@@ -118,7 +118,7 @@ export default class CreateScene extends Scene {
     trim.position.y = 0.5;
     s.add(trim);
     // Key spot from above, torches on the wall, cool rim from behind.
-    const spot = new THREE.SpotLight(0xffe2b0, 24, 14, 0.36, 0.6, 1.4);
+    const spot = new THREE.SpotLight(0xffe2b0, 15, 14, 0.36, 0.6, 1.4);
     spot.position.set(1.4, 6.2, 3.0);
     spot.target.position.set(0, 1, 0);
     spot.castShadow = true;
@@ -497,7 +497,29 @@ export default class CreateScene extends Scene {
         ['Move', s.move], ['Age', pv.age], ['Gold', pv.gold], ['Level cap', splitClasses(d.classSpec).map((c) => Math.min(PR_LEVEL_CAPS[c], RACES[d.race].levelLimits[c] ?? 99)).join('/')],
       ].map(([l, v]) => h('div.pc-big', [h('span.n', { style: { fontSize: '1.25em' } }, [String(v)]), h('span.l', [l])]))) : null,
       probs.length ? h('p', { style: { color: '#ff9a86', fontSize: '0.85em', marginTop: '0.6em' } }, [`Not allowed: ${probs.join('; ')}.`]) : null,
+      this._requirements(),
     ]));
+  }
+
+  _requirements() {
+    const d = this.draft;
+    const a = d.abilities;
+    const cs = splitClasses(d.classSpec);
+    const lines = cs.map((c) => h('div.cc-row', [
+      h('span.k', [CLASSES[c].name]),
+      h('span', Object.entries(CLASSES[c].minAbilities).map(([k, v]) => h(`span.pc-chip${a[k] >= v ? '.good' : '.warn'}`, [`${k.toUpperCase()} ${v}+ ${a[k] >= v ? '✓' : '✗'}`]))),
+    ]));
+    const notes = [];
+    if (cs.length === 1) {
+      const pr = CLASSES[cs[0]].primeReq[0];
+      notes.push(a[pr] >= 16 ? `Prime requisite ${pr.toUpperCase()} ${a[pr]}: +10% experience.` : `A prime requisite (${pr.toUpperCase()}) of 16+ would grant +10% experience.`);
+    } else notes.push('Multi-class characters earn no prime requisite bonus.');
+    if (cs.includes('fighter')) notes.push(a.str === 18 ? `Exceptional strength 18/${a.strPct === 100 ? '00' : String(a.strPct).padStart(2, '0')}.` : 'Fighters with 18 strength roll exceptional strength (18/01–18/00).');
+    return h('div.pc-sect', { style: { marginTop: '0.8em' } }, [
+      h('div.pc-sect-h', [h('span', ['Requirements'])]),
+      ...lines,
+      h('p.pc-rest-note', { style: { margin: '0.5em 0 0' } }, [notes.join(' ')]),
+    ]);
   }
 
   _mainPortrait(b) {

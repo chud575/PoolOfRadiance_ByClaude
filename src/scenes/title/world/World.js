@@ -21,7 +21,7 @@ export function preloadWorld() {
 export function createWorld() {
   const scene = new THREE.Scene();
   const U = createWorldUniforms(SUN_DIR);
-  scene.fog = new THREE.FogExp2(0x3a2038, 0.0042);
+  scene.fog = new THREE.FogExp2(0x3a2240, 0.0034);
   scene.background = new THREE.Color(0x0a0714);
 
   const sky = createSky(U);
@@ -44,13 +44,44 @@ export function createWorld() {
   sun.shadow.bias = -0.0008;
   sun.shadow.normalBias = 0.04;
   scene.add(sun, sun.target);
-  const fill = new THREE.DirectionalLight(0x5a6ac0, 0.35);
+  const fill = new THREE.DirectionalLight(0x6070c8, 0.6);
   fill.position.set(8, 12, 30);
   scene.add(fill);
   // warm spill from City Hall's open doors (lights the portico in the prologue)
   const hall = new THREE.PointLight(0xffa860, 30, 22, 1.6);
   hall.position.set(-20, -11.2, -50.5);
   scene.add(hall);
+
+  // ---- low sun raking through the ruined colonnade: soft volumetric shafts ----------
+  const shaftMat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    uniforms: { uTime: U.uTime },
+    vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /* glsl */ `uniform float uTime; varying vec2 vUv;
+      float h(float x){ return fract(sin(x * 91.7) * 43758.5); }
+      void main(){
+        float edge = smoothstep(0.0, 0.35, vUv.x) * smoothstep(1.0, 0.65, vUv.x);
+        float along = smoothstep(0.0, 0.12, vUv.y) * pow(1.0 - vUv.y, 1.6);
+        float flick = 0.8 + 0.2 * sin(uTime * 0.4 + vUv.y * 3.0);
+        gl_FragColor = vec4(vec3(1.0, 0.55, 0.25) * edge * along * flick * 0.075, 1.0);
+      }`,
+  });
+  const shafts = new THREE.Group();
+  const toCam = new THREE.Vector3(-SUN_DIR.x, 0.0, -SUN_DIR.z).normalize();
+  for (const [x, z, w] of [[-11.1, -7.2, 2.4], [-15, -4.5, 1.6], [14.5, -5.2, 1.8]]) {
+    const len = 26;
+    const g = new THREE.PlaneGeometry(w, len);
+    g.translate(0, len / 2, 0);
+    const m = new THREE.Mesh(g, shaftMat);
+    // lie the plane along the (slightly descending) sun direction, then stand it up
+    const dir = new THREE.Vector3(toCam.x, -0.28, toCam.z).normalize();
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+    m.rotateY(Math.PI / 2);
+    m.position.set(x, 9.5, z);
+    m.renderOrder = 3;
+    shafts.add(m);
+  }
+  scene.add(shafts);
 
   // ---- particles ------------------------------------------------------------------
   const motes = createParticles({
@@ -99,6 +130,8 @@ export function createWorld() {
       terrace.dispose();
       dragon.dispose();
       for (const s of systems) s.dispose();
+      shaftMat.dispose();
+      shafts.children.forEach((m) => m.geometry.dispose());
       sky.geometry.dispose();
       sky.material.dispose();
       sea.geometry.dispose();

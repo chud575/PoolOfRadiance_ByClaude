@@ -31,7 +31,7 @@ export function buildFigure(ch) {
   const clothC = new THREE.Color(CLOTH_COLORS[look.cloth % CLOTH_COLORS.length][1]);
   const cloth = M({ color: clothC, roughness: 0.85 });
   const clothDark = M({ color: clothC.clone().multiplyScalar(0.55), roughness: 0.9 });
-  const steel = M({ color: 0x9aa0aa, metalness: 0.9, roughness: 0.38 });
+  const steel = M({ color: 0x8a9099, metalness: 0.9, roughness: 0.46 });
   const mail = M({ color: 0x8a9098, metalness: 0.85, roughness: 0.55 });
   const leather = M({ color: 0x5a3a1e, roughness: 0.75 });
   const gilt = M({ color: 0xd8b25a, metalness: 1, roughness: 0.3 });

@@ -871,6 +871,21 @@ function paintFace(g, R, F, skin) {
     ellipse(g, x, y, 1 + R() * 3, 1 + R() * 2);
     g.fill();
   }
+  // Painterly skin: warm impasto on the lit planes, cool strokes in the shadows.
+  for (let i = 0; i < 260; i++) {
+    const x = cx - hw + R() * hw * 2;
+    const y = top + 10 + R() * (chinY - top - 10);
+    const lit = x < cx + hw * 0.1;
+    const ang = Math.atan2(y - cy, x - cx) + Math.PI / 2 + (R() - 0.5) * 0.5;
+    const L = 3 + R() * 7;
+    g.strokeStyle = lit ? col(skin, 1.1 + R() * 0.25, 0.1, WARM, 0.25) : col(skin, 0.6 + R() * 0.2, 0.1, '#5060a0', 0.25);
+    g.lineWidth = 1.5 + R() * 2.5;
+    g.lineCap = 'round';
+    g.beginPath();
+    g.moveTo(x - Math.cos(ang) * L, y - Math.sin(ang) * L);
+    g.lineTo(x + Math.cos(ang) * L, y + Math.sin(ang) * L);
+    g.stroke();
+  }
   // Age lines.
   if (F.age > 0) {
     g.strokeStyle = col(skin, 0.55, 0.35 * F.age);
@@ -1046,8 +1061,8 @@ function paintNose(g, F, skin) {
     g.fill();
   }
   // Nostril wings.
-  g.strokeStyle = col(skin, 0.42, 0.75, '#401010', 0.2);
-  g.lineWidth = 1.5;
+  g.strokeStyle = col(skin, 0.5, 0.35, '#401010', 0.2);
+  g.lineWidth = 1.1;
   for (const s of [-1, 1]) {
     g.beginPath();
     g.moveTo(cx + s * noseW * 0.95, noseY - 3);
@@ -1208,9 +1223,16 @@ function paintFrontHair(g, R, F, style, hairCol) {
   if (style === 'hood') return;
   if (style === 'short' || style === 'crop' || style === 'topknot' || style === 'swept') {
     const lineY = top + (style === 'swept' ? 30 : 36);
+    // Short hair: strands spring from the hairline and sweep up and back over the skull.
     for (const s of [-1, 1]) {
-      const flow = style === 'swept' ? -s * 8 : 0;
-      capHalf(s, [[cx + flow * 0.5 - s * 4, lineY + (style === 'crop' ? 4 : 0)], [cx + s * hw * 0.5, lineY - 4], [cx + s * hw * 0.92, cy - 36], [cx + s * hw * 1.0, cy - 8]], flow);
+      const flow = style === 'swept' ? -s * 10 : 0;
+      const ly = lineY + (style === 'crop' ? 4 : 0);
+      lock(g, R, {
+        root: [[cx - s * 6, ly], [cx + s * hw * 0.5, ly - 4], [cx + s * hw * 0.92, cy - 36], [cx + s * hw * 1.0, cy - 8]],
+        mid: [[cx - s * 4 + flow, ly - 22], [cx + s * hw * 0.62 + flow, top + 2], [cx + s * hw * 1.1, cy - 52], [cx + s * hw * 1.12, cy - 26]],
+        tip: [[cx - s * 2 + flow * 1.5, top - (style === 'swept' ? 12 : 6)], [cx + s * hw * 0.45 + flow, top - 4], [cx + s * hw * 0.9, top + 14], [cx + s * hw * 1.06, cy - 50]],
+        color: hairCol, strands: 110, width: [1, 2.4], light, shadow: false, wisps: 22,
+      });
     }
     if (style === 'topknot') {
       lock(g, R, {
