@@ -47,6 +47,10 @@ export function createWorld() {
   const fill = new THREE.DirectionalLight(0x5a6ac0, 0.35);
   fill.position.set(8, 12, 30);
   scene.add(fill);
+  // warm spill from City Hall's open doors (lights the portico in the prologue)
+  const hall = new THREE.PointLight(0xffa860, 30, 22, 1.6);
+  hall.position.set(-20, -11.2, -50.5);
+  scene.add(hall);
 
   // ---- particles ------------------------------------------------------------------
   const motes = createParticles({

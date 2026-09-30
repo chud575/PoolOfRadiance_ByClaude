@@ -29,14 +29,14 @@ const SHOTS = [
   },
   {
     t: [16.4, 24.4],
-    keys: [{ p: V(-78, 5, -122), l: V(-42, -5, -94) }, { p: V(-46, 0, -80), l: V(-22, -8, -58) }],
+    keys: [{ p: V(-104, 9, -84), l: V(-30, -9, -58) }, { p: V(-70, 2, -66), l: V(-20, -9, -58) }],
     caption: 'New Phlan',
     sub: 'Behind the patchwork wall',
     text: 'Merchants of the Moonsea have taken back one corner of the city. New Phlan huddles behind its patchwork wall — and it needs swords.',
   },
   {
     t: [24.4, 32.4],
-    keys: [{ p: V(-27, -8.2, -38), l: V(-20, -8.5, -58) }, { p: V(-21.5, -8.9, -46.5), l: V(-20, -8.4, -58) }],
+    keys: [{ p: V(-30, -9.2, -34), l: V(-19, -8, -58) }, { p: V(-23, -9.8, -42), l: V(-19.5, -7.6, -58) }],
     caption: 'City Hall',
     sub: 'The Council of Phlan',
     text: 'The City Council pays in gold for every block of the old city made safe again. Its clerk keeps a ledger of the brave, and of the dead.',
@@ -114,11 +114,8 @@ export class IntroCinematic {
     camera.lookAt(look);
 
     // crossfades between shots (and out at the very end)
-    let f = 0;
-    for (const sh of SHOTS) {
-      f = Math.max(f, 1 - smooth(sh.t[0], sh.t[0] + 0.7, lt));
-      if (sh !== SHOTS[SHOTS.length - 1]) f = Math.max(f, smooth(sh.t[1] - 0.55, sh.t[1], lt));
-    }
+    let f = 1 - smooth(s.t[0], s.t[0] + 0.7, lt);
+    if (i < SHOTS.length - 1) f = Math.max(f, smooth(s.t[1] - 0.55, s.t[1], lt));
     this.fade.style.opacity = String(f);
 
     // captions + typed text

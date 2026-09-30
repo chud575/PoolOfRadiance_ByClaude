@@ -101,12 +101,11 @@ export default class TitleScene extends Scene {
     this.cardEl = h('section.por-title-card', [
       h('div.por-title-prompt', [
         h('span.por-title-prompt-text', ['Press any key']),
-        h('span.por-title-prompt-keys', [h('span.por-keycap', ['Enter']), h('span.sep', ['or']), h('span.por-keycap.pad.a', ['A'])]),
       ]),
     ]);
     this.menuEl = h('section.por-title-menu', [
       h('div.por-mm', [
-        h('div.por-mm-kicker', ['The Moonsea · Year of the Worm']),
+        h('div.por-mm-kicker', ['Phlan · Year of the Worm']),
         this.menu.el,
         h('div.por-mm-rule'),
         this.descEl,
@@ -206,7 +205,7 @@ export default class TitleScene extends Scene {
 
   // ------------------------------------------------------------------- input
   _onKey(e) {
-    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.ctrlKey || e.metaKey || e.altKey || this.ctx.ui.layers.modal.children.length) return;
     if (this.mode === 'card') {
       if (['F2', 'F5', 'F9', 'Tab', 'Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
       const it = this.menuItems.find((x) => x.key && x.key.toUpperCase() === e.key.toUpperCase() && !x.disabled);

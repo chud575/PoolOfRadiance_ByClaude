@@ -80,7 +80,7 @@ function grainTexture(size, seed = 3) {
   return c.toDataURL('image/png');
 }
 
-const GILT_DEFS = (id) => `<defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff1c4"/><stop offset=".35" stop-color="#e2bb62"/><stop offset=".6" stop-color="#9a7230"/><stop offset="1" stop-color="#f0d283"/></linearGradient></defs>`;
+const GILT_DEFS = (id, w = 64, hh = 64) => `<defs><linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="${w}" y2="${hh}"><stop offset="0" stop-color="#fff1c4"/><stop offset=".35" stop-color="#e2bb62"/><stop offset=".6" stop-color="#9a7230"/><stop offset="1" stop-color="#f0d283"/></linearGradient></defs>`;
 
 /** Spiral polyline points (Archimedean-ish, tightening), for scroll curls. */
 function spiral(cx, cy, r0, turns, dir = 1, start = 0) {
@@ -129,7 +129,7 @@ function ruleSVG() {
   const w = 320, h = 20, c = w / 2;
   const l = spiral(c - 22, 10, 5, 1.1, 1, 0);
   const r = spiral(c + 22, 10, 5, 1.1, -1, Math.PI);
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" preserveAspectRatio="none">${GILT_DEFS('g')}
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" preserveAspectRatio="none">${GILT_DEFS('g', w, h)}
     <g fill="none" stroke="url(#g)" stroke-linecap="round">
       <path d="M0 10 H${c - 34}" stroke-width="1.2"/><path d="M${c + 34} 10 H${w}" stroke-width="1.2"/>
       <path d="M${c - 34} 10 C${c - 30} 4 ${c - 24} 4 ${c - 20} 8" stroke-width="1.2"/>
@@ -143,7 +143,7 @@ function ruleSVG() {
 /** Small scroll flourish used as a heading ornament (left; mirror for right). */
 function flourishSVG() {
   const sp = spiral(10, 9, 6, 1.2, 1, Math.PI);
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 18" width="60" height="18">${GILT_DEFS('g')}
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 18" width="60" height="18">${GILT_DEFS('g', 60, 18)}
     <g fill="none" stroke="url(#g)" stroke-linecap="round"><path d="M58 9 C44 9 30 3 18 8" stroke-width="1.4"/><path d="${P(sp)}" stroke-width="1.3"/><path d="M40 9 C34 14 28 15 24 13" stroke-width="1"/></g>
     <path d="M56 5 L60 9 L56 13 L52 9 Z" fill="url(#g)"/></svg>`;
 }

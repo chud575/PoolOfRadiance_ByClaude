@@ -139,14 +139,14 @@ html, body {
 .por-frame--parchment::after { mix-blend-mode: multiply; opacity: 0.35; }
 .por-frame > * { position: relative; z-index: 1; }
 .por-corner {
-  position: absolute !important; z-index: 2 !important; width: 2.1em; height: 2.1em; pointer-events: none;
+  position: absolute !important; z-index: 2 !important; width: 2.6em; height: 2.6em; pointer-events: none;
   background: var(--filigree-corner) center / contain no-repeat;
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.85));
 }
-.por-corner.tl { top: -0.42em; left: -0.42em; }
-.por-corner.tr { top: -0.42em; right: -0.42em; transform: scaleX(-1); }
-.por-corner.bl { bottom: -0.42em; left: -0.42em; transform: scaleY(-1); }
-.por-corner.br { bottom: -0.42em; right: -0.42em; transform: scale(-1, -1); }
+.por-corner.tl { top: -0.5em; left: -0.5em; }
+.por-corner.tr { top: -0.5em; right: -0.5em; transform: scaleX(-1); }
+.por-corner.bl { bottom: -0.5em; left: -0.5em; transform: scaleY(-1); }
+.por-corner.br { bottom: -0.5em; right: -0.5em; transform: scale(-1, -1); }
 .por-frame-title {
   position: absolute !important; top: -0.95em; left: 50%; transform: translateX(-50%);
   padding: 0.2em 1.5em 0.16em; white-space: nowrap;
@@ -272,6 +272,7 @@ html, body {
 .por-menu-item.hl::before { transform: rotate(45deg) scale(1); }
 .por-menu-item:disabled { opacity: 0.34; cursor: default; }
 .por-menu-item:focus-visible { box-shadow: var(--focus-ring); }
+.por-menu-desc { display: none; }
 .por-menu-hint { color: var(--por-text-dim); font-family: var(--font-body); font-weight: 400; letter-spacing: 0; font-size: 0.85em; font-style: italic; }
 
 /* ---------- Buttons ---------- */

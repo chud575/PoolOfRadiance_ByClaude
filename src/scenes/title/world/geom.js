@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
+/** Non-indexed copy (no-op if already non-indexed). */
+export const ni = (g) => (g.index ? g.toNonIndexed() : g);
+
 /** Deterministic mulberry32 PRNG (visual placement only). */
 export function prng(seed) {
   let a = seed >>> 0;
@@ -84,7 +87,7 @@ export function gable(w, d, rise, { x = 0, y = 0, z = 0, ry = 0, o = 0.35 } = {}
   g.rotateY(Math.PI / 2);
   g.rotateY(ry);
   g.translate(x, y, z);
-  return g.toNonIndexed();
+  return ni(g);
 }
 
 /** Hip/pyramid roof (4-sided cone). */
@@ -92,19 +95,19 @@ export function pyramid(w, rise, { x = 0, y = 0, z = 0, ry = 0 } = {}) {
   const g = new THREE.ConeGeometry(w * 0.72, rise, 4, 1, true);
   g.rotateY(Math.PI / 4 + ry);
   g.translate(x, y + rise / 2, z);
-  return g.toNonIndexed();
+  return ni(g);
 }
 
 export function cylinder(rt, rb, h, seg, { x = 0, y = 0, z = 0, open = false } = {}) {
   const g = new THREE.CylinderGeometry(rt, rb, h, seg, 1, open);
   g.translate(x, y + h / 2, z);
-  return g.toNonIndexed();
+  return ni(g);
 }
 
 export function cone(r, h, seg, { x = 0, y = 0, z = 0 } = {}) {
   const g = new THREE.ConeGeometry(r, h, seg, 1, true);
   g.translate(x, y + h / 2, z);
-  return g.toNonIndexed();
+  return ni(g);
 }
 
 /** Merge a list of geometries (normalising index/attributes). */

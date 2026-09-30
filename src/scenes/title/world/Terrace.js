@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { getTextureSet, getGlowTexture } from '../../../render/textures/index.js';
 import { createTorch, FLAME_UNIFORMS } from '../../../render/lighting.js';
 import { NOISE } from './glsl.js';
-import { prng, worldUV, tint, merge } from './geom.js';
+import { prng, ni, worldUV, tint, merge } from './geom.js';
 
 export const TERRACE_TEXTURES = ['hd_crazy', 'hd_limestone', 'hd_rubble'];
 
@@ -57,6 +57,45 @@ export function createTerrace({ seed = 7 } = {}) {
     const lm = new THREE.Mesh(lip, stoneMat);
     group.add(lm);
     disposables.push(lip);
+  }
+
+  // ---- the retaining walls of the temple acropolis (seen from the city) ----------
+  {
+    const parts = [];
+    const top = -1.2, base = -15;
+    const hgt = top - base;
+    const wall = new THREE.BoxGeometry(124, hgt, 1.6);
+    wall.translate(0, base + hgt / 2, -10.4);
+    parts.push(tint(worldUV(wall, 3), 0x9a8f80, { aoBottom: base, aoTop: base + 5 }));
+    for (const sx of [-1, 1]) {
+      const side = new THREE.BoxGeometry(1.6, hgt, 42);
+      side.translate(sx * 61.2, base + hgt / 2, 10);
+      parts.push(tint(worldUV(side, 3), 0x958a7b, { aoBottom: base, aoTop: base + 5 }));
+    }
+    for (let x = -58; x <= 58; x += 9.5) {
+      const b = new THREE.CylinderGeometry(0.9, 1.6, hgt - 0.6, 4, 1);
+      b.rotateY(Math.PI / 4);
+      b.scale(1.1, 1, 1.4);
+      b.translate(x, base + (hgt - 0.6) / 2, -11.4);
+      parts.push(tint(worldUV(ni(b), 3), 0x8e8475, { aoBottom: base, aoTop: base + 5 }));
+    }
+    // a string course of dentils under the lip
+    for (let x = -61; x <= 61; x += 1.2) {
+      const d = new THREE.BoxGeometry(0.6, 0.45, 0.5);
+      d.translate(x, top - 0.55, -11.3);
+      parts.push(tint(worldUV(d, 2), 0xa89d8c));
+    }
+    for (let i = 0; i < 60; i++) {
+      const s = R.range(0.5, 1.8);
+      const g = new THREE.IcosahedronGeometry(s, 0);
+      g.scale(R.range(0.8, 1.5), 0.6, R.range(0.8, 1.3));
+      g.translate(R.range(-60, 60), base + s * 0.25, -12 - R.range(0, 5));
+      parts.push(tint(worldUV(ni(g), 2), 0x7d7468));
+    }
+    const g = merge(parts);
+    const m = new THREE.Mesh(g, stoneMat);
+    group.add(m);
+    disposables.push(g);
   }
 
   // ---- the pool rim (lathe) ----------------------------------------------------

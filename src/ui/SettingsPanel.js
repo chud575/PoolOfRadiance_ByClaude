@@ -347,7 +347,7 @@ export class SettingsPanel {
         };
         const row = h('div.por-bind-row', { dataset: { action } }, [
           h('span.por-bind-label', [label]), slot(0), slot(1),
-          h('span.por-bind-pad', pads.length ? pads.map((p) => h(`span.por-keycap.pad${'ABXY'.includes(p) && p.length === 1 ? `.${p.toLowerCase()}` : ''}`, [p])) : ['—']),
+          h('span.por-bind-pad', pads.length ? pads.map((p) => h(p.length === 1 ? `span.por-keycap.pad${'ABXY'.includes(p) ? `.${p.toLowerCase()}` : ''}` : 'span.por-keycap', [p])) : ['—']),
         ]);
         row._activate = () => this._beginCapture(action, 0);
         row.addEventListener('mouseenter', () => this._setFocus(this.rowEls.indexOf(row)));

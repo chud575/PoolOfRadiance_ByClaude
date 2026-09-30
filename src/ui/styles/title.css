@@ -22,7 +22,7 @@
 .por-title[data-mode='intro'] .por-title-scrim { opacity: 0; }
 
 /* ---------- title card ---------- */
-.por-title-card { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding-bottom: 7.4em; opacity: 0; transition: opacity 0.6s var(--ease); }
+.por-title-card { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding-bottom: 4.1em; opacity: 0; transition: opacity 0.6s var(--ease); }
 .por-title[data-mode='card'].booted .por-title-card { opacity: 1; }
 .por-title-prompt { display: flex; flex-direction: column; align-items: center; gap: 0.7em; text-align: center; }
 .por-title-prompt-text {
@@ -62,7 +62,7 @@
 .por-mm-list .por-menu-item {
   font-size: 1.42em; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase;
   padding: 0.34em 0.9em 0.34em 1.35em; border: none; background: none; box-shadow: none;
-  color: rgba(241, 234, 214, 0.78); text-shadow: 0 2px 4px rgba(0, 0, 0, 0.85);
+  color: rgba(241, 234, 214, 0.78); text-shadow: 0 2px 4px rgba(0, 0, 0, 0.85); z-index: 0;
 }
 .por-mm-list .por-menu-item::before { left: 0.33em; width: 0.4em; height: 0.4em; margin-top: -0.2em; }
 .por-mm-list .por-menu-item::after {
