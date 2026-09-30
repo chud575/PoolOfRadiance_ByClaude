@@ -7,6 +7,7 @@
 export const GALLERY = [
   { name: 'title', query: 'scene=title&t=6&seed=1' },
   { name: 'create', query: 'scene=create&step=stats&t=2&seed=1' },
+  { name: 'create_portrait', query: 'scene=create&step=portrait&t=2&seed=1' },
   { name: 'explore', query: 'scene=explore&map=phlan_slums&x=7&y=11&dir=N&hour=10&t=2&seed=1' },
   { name: 'explore_door', query: 'scene=explore&map=phlan_slums&x=8&y=11&dir=S&hour=10&t=2&seed=1' },
   { name: 'explore_night', query: 'scene=explore&map=phlan_slums&x=1&y=14&dir=E&hour=22&t=2&seed=1' },
@@ -19,7 +20,10 @@ export const GALLERY = [
   { name: 'combat_melee', query: 'scene=combat&encounter=orcs_1&demo=melee&t=0.46&seed=1' },
   { name: 'combat_night', query: 'scene=combat&encounter=skeletons_1&hour=22&t=2&seed=1' },
   { name: 'automap', query: 'scene=automap&map=phlan_slums&x=7&y=11&dir=N&t=1&seed=1' },
-  { name: 'camp', query: 'scene=camp&t=2&seed=1' },
+  { name: 'camp', query: 'scene=camp&hour=21.5&t=2&seed=1' },
+  { name: 'charsheet', query: 'scene=camp&panel=view&member=0&hour=21.5&t=2&seed=1' },
+  { name: 'inventory', query: 'scene=camp&panel=items&member=0&hour=21.5&t=2&seed=1' },
+  { name: 'memorize', query: 'scene=camp&panel=magic&member=1&hour=21.5&t=2&seed=1' },
   { name: 'dialogue', query: 'scene=dialogue&encounter=kobolds_1&t=1&seed=1' },
   { name: 'shop', query: 'scene=shop&shop=phlan_armory&t=1&seed=1' },
 ];

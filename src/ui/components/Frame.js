@@ -1,8 +1,13 @@
 import { h } from '../dom.js';
+import { installSkin } from '../styles/skin.js';
+
+// Generate the skin's procedural textures/filigree once, as soon as any UI loads.
+installSkin();
 
 /**
  * Gilt-framed panel. variant: 'blue' (default, Gold Box deep blue),
  * 'parchment', 'dark'. Returns {el, body, title}.
+ * Corners carry procedural filigree (see styles/skin.js).
  */
 export function Frame({ title = '', variant = 'blue', className = '', children = [] } = {}) {
   const body = h('div.por-frame-body', children);

@@ -1,0 +1,112 @@
+import * as THREE from 'three';
+import { DUSK_SKY } from './glsl.js';
+
+/** Shared world uniforms (time + sun) for the title world shaders. */
+export function createWorldUniforms(sunDir) {
+  return {
+    uTime: { value: 0 },
+    uSunDir: { value: sunDir.clone().normalize() },
+  };
+}
+
+/**
+ * Dusk sky dome: set sun on the Moonsea, lit cloud streaks, first stars,
+ * crepuscular rays. Follows the camera (call update(camera)).
+ */
+export function createSky(U, { radius = 900, cloud = 1 } = {}) {
+  const mat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    fog: false,
+    uniforms: { ...U, uCloud: { value: cloud } },
+    vertexShader: /* glsl */ `
+      varying vec3 vDir;
+      void main() {
+        vDir = normalize(position);
+        vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        gl_Position = vec4(p.xy, p.w * 0.99999, p.w);
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform float uTime, uCloud; uniform vec3 uSunDir; varying vec3 vDir;
+      ${DUSK_SKY}
+      void main() {
+        vec3 d = normalize(vDir);
+        vec3 c = duskSky(d, uSunDir, uTime, uCloud);
+        // crepuscular rays fanning up from the set sun
+        vec3 sd = uSunDir;
+        vec3 rel = d - sd * dot(d, sd);
+        float ang = atan(rel.y, dot(rel, normalize(cross(sd, vec3(0.0, 1.0, 0.0)))));
+        float dist = acos(clamp(dot(d, sd), -1.0, 1.0));
+        float rays = vnoise(vec2(ang * 22.0, uTime * 0.05)) * vnoise(vec2(ang * 57.0 + 3.0, uTime * 0.03));
+        float fan = smoothstep(0.1, 0.9, rays) * exp(-dist * 2.4) * step(0.0, d.y) * smoothstep(0.0, 0.06, d.y);
+        c += vec3(1.0, 0.5, 0.26) * fan * 0.28;
+        // below the horizon (hidden by the sea, but keep it coherent)
+        if (d.y < 0.0) c = mix(c, vec3(0.05, 0.03, 0.06), smoothstep(0.0, -0.05, d.y));
+        gl_FragColor = vec4(c, 1.0);
+      }`,
+  });
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 64, 32), mat);
+  mesh.renderOrder = -10;
+  mesh.frustumCulled = false;
+  mesh.userData.update = (camera) => mesh.position.copy(camera.position);
+  return mesh;
+}
+
+/**
+ * The Moonsea: reflects the dusk sky with a sun glitter path; wind ripples.
+ * A large plane at `level`, starting at `nearZ` and running to the horizon.
+ */
+export function createSea(U, { level = -15, nearZ = -150, width = 6000, depth = 5000 } = {}) {
+  const geo = new THREE.PlaneGeometry(width, depth, 1, 1);
+  geo.rotateX(-Math.PI / 2);
+  geo.translate(0, level, nearZ - depth / 2);
+  const mat = new THREE.ShaderMaterial({
+    fog: false,
+    uniforms: { ...U },
+    vertexShader: /* glsl */ `
+      varying vec3 vWorld;
+      void main() {
+        vec4 w = modelMatrix * vec4(position, 1.0);
+        vWorld = w.xyz;
+        gl_Position = projectionMatrix * viewMatrix * w;
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform float uTime; uniform vec3 uSunDir; varying vec3 vWorld;
+      ${DUSK_SKY}
+      float waves(vec2 p) {
+        float t = uTime;
+        return fbm3(p * vec2(0.08, 0.22) + vec2(t * 0.05, t * 0.02)) * 0.6
+             + vnoise(p * vec2(0.35, 0.9) - vec2(t * 0.12, 0.0)) * 0.4;
+      }
+      void main() {
+        vec3 v = normalize(vWorld - cameraPosition);
+        float dist = length(vWorld.xz - cameraPosition.xz);
+        vec2 p = vWorld.xz;
+        float e = 0.6;
+        float h0 = waves(p);
+        float hx = waves(p + vec2(e, 0.0));
+        float hz = waves(p + vec2(0.0, e));
+        float amp = 0.55 / (1.0 + dist * 0.004);
+        vec3 n = normalize(vec3((h0 - hx) * amp * 3.0, 1.0, (h0 - hz) * amp * 3.0));
+        vec3 r = reflect(v, n);
+        r.y = abs(r.y) + 0.004;
+        float fres = 0.04 + 0.96 * pow(1.0 - max(dot(-v, n), 0.0), 5.0);
+        vec3 sky = duskSky(normalize(r), uSunDir, uTime, 0.6);
+        vec3 deep = vec3(0.012, 0.02, 0.045);
+        vec3 c = mix(deep, sky, clamp(fres * 1.15, 0.0, 1.0));
+        // sun glitter path
+        float g = pow(max(dot(normalize(r), uSunDir), 0.0), 900.0);
+        float spark = step(0.55, vnoise(p * vec2(1.4, 3.5) + uTime * vec2(0.6, 0.2)));
+        c += vec3(9.0, 5.0, 2.2) * g * (0.35 + spark * 1.4);
+        c += vec3(1.2, 0.55, 0.25) * pow(max(dot(normalize(r), uSunDir), 0.0), 60.0) * 0.35;
+        // haze toward the horizon
+        vec3 hor = duskSky(normalize(vec3(v.x, 0.001, v.z)), uSunDir, uTime, 0.0);
+        c = mix(c, hor, smoothstep(300.0, 2400.0, dist) * 0.9);
+        gl_FragColor = vec4(c, 1.0);
+      }`,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.renderOrder = -5;
+  mesh.frustumCulled = false;
+  return mesh;
+}
