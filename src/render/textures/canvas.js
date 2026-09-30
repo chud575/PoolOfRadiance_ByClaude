@@ -83,3 +83,74 @@ export function materialCanvases(size, fn, { normalStrength = 2.5 } = {}) {
   };
   return { color: toCanvas(color), normal: toCanvas(normal), rough: toCanvas(rough), height };
 }
+
+/**
+ * Worker-friendly variant of materialCanvases(): returns raw RGBA byte arrays
+ * (no DOM). Rows are stored bottom-up (row 0 = v 1.0 of the generator) so the
+ * arrays can be uploaded directly as a THREE.DataTexture (flipY=false) and read
+ * with the same orientation as the canvas path (generator v=0 is the top).
+ * Also produces an ambient-occlusion-ish cavity term folded into the albedo
+ * (`cavity` 0..1) which darkens crevices derived from the height field.
+ * @returns {{size:number, color:Uint8ClampedArray, normal:Uint8ClampedArray, rough:Uint8ClampedArray}}
+ */
+export function materialData(size, fn, { normalStrength = 2.5, cavity = 0.35 } = {}) {
+  const n = size * size;
+  const height = new Float32Array(n);
+  const col = new Float32Array(n * 3);
+  const rgh = new Float32Array(n);
+  const emi = new Float32Array(n);
+  let hasEmi = false;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const s = fn(x / size, y / size, x, y);
+      const i = y * size + x;
+      height[i] = s.h;
+      col[i * 3] = s.c[0];
+      col[i * 3 + 1] = s.c[1];
+      col[i * 3 + 2] = s.c[2];
+      rgh[i] = s.r ?? 0.85;
+      if (s.a !== undefined) {
+        emi[i] = s.a;
+        hasEmi = true;
+      } else emi[i] = 1;
+    }
+  }
+  const H = (x, y) => height[((y + size) % size) * size + ((x + size) % size)];
+  const color = new Uint8ClampedArray(n * 4);
+  const normal = new Uint8ClampedArray(n * 4);
+  const rough = new Uint8ClampedArray(n * 4);
+  const ns = normalStrength * (size / 256);
+  for (let y = 0; y < size; y++) {
+    const oy = size - 1 - y; // bottom-up storage
+    for (let x = 0; x < size; x++) {
+      const i = y * size + x;
+      const dx = (H(x + 1, y - 1) + 2 * H(x + 1, y) + H(x + 1, y + 1)) - (H(x - 1, y - 1) + 2 * H(x - 1, y) + H(x - 1, y + 1));
+      const dy = (H(x - 1, y + 1) + 2 * H(x, y + 1) + H(x + 1, y + 1)) - (H(x - 1, y - 1) + 2 * H(x, y - 1) + H(x + 1, y - 1));
+      let nx = -dx * ns * 0.25;
+      let ny = dy * ns * 0.25;
+      let nz = 1;
+      const l = Math.hypot(nx, ny, nz);
+      nx /= l;
+      ny /= l;
+      nz /= l;
+      // cavity: local height below the 5x5 neighbourhood average darkens albedo
+      const avg = (H(x - 2, y) + H(x + 2, y) + H(x, y - 2) + H(x, y + 2) + H(x - 1, y - 1) + H(x + 1, y + 1) + H(x - 1, y + 1) + H(x + 1, y - 1)) / 8;
+      const cav = Math.max(0, Math.min(1, 1 - (avg - height[i]) * cavity * 6));
+      const o = (oy * size + x) * 4;
+      color[o] = col[i * 3] * cav * 255;
+      color[o + 1] = col[i * 3 + 1] * cav * 255;
+      color[o + 2] = col[i * 3 + 2] * cav * 255;
+      color[o + 3] = hasEmi ? emi[i] * 255 : 255;
+      normal[o] = (nx * 0.5 + 0.5) * 255;
+      normal[o + 1] = (ny * 0.5 + 0.5) * 255;
+      normal[o + 2] = (nz * 0.5 + 0.5) * 255;
+      normal[o + 3] = 255;
+      const r = rgh[i] * 255;
+      rough[o] = r;
+      rough[o + 1] = r;
+      rough[o + 2] = r;
+      rough[o + 3] = 255;
+    }
+  }
+  return { size, color, normal, rough };
+}

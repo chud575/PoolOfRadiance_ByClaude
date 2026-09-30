@@ -77,7 +77,8 @@ export default class CombatScene extends Scene {
       this.rig.hemi.color.set(0x4a5a9a);
       s.fog = new THREE.FogExp2(0x0a1124, 0.016);
     } else {
-      this.rig.sun.intensity *= 1.05;
+      this.rig.sun.intensity *= 1.1;
+      this.rig.hemi.intensity *= 1.35;
       s.fog = new THREE.FogExp2(keys.fog, 0.0085);
     }
     s.add(createSkyDome({ hour }));
@@ -107,9 +108,14 @@ export default class CombatScene extends Scene {
     const partyChars = game.party.length ? game.party : [];
     this.party = partyChars.map((ch) => combatantFromCharacter(ch));
     this.monsters = [];
-    for (const g of this.encounter.groups) {
-      const n = typeof g.count === 'number' ? g.count : roll(rng, g.count);
-      for (let i = 0; i < n; i++) this.monsters.push(combatantFromMonster(rng, g.monster, i + 1));
+    if (params.monsters) {
+      // Debug: ?monsters=kobold,orc,... overrides the encounter's line-up.
+      String(params.monsters).split(',').forEach((id, i) => this.monsters.push(combatantFromMonster(rng, id, i + 1)));
+    } else {
+      for (const g of this.encounter.groups) {
+        const n = typeof g.count === 'number' ? g.count : roll(rng, g.count);
+        for (let i = 0; i < n; i++) this.monsters.push(combatantFromMonster(rng, g.monster, i + 1));
+      }
     }
     this._placeCombatants();
     this.engine = new CombatEngine({ rng, field: this.field, party: this.party, monsters: this.monsters });
@@ -153,7 +159,7 @@ export default class CombatScene extends Scene {
     this._frames = 0;
 
     // ------------------------------------------------ camera
-    this.cam = { yaw: 0, pitch: 0.95, dist: Math.max(W * 0.95, H * 1.35) + 4, target: this.center.clone(), goalTarget: this.center.clone(), goalYaw: 0, goalDist: 0, goalPitch: 0.95 };
+    this.cam = { yaw: 0, pitch: 0.86, dist: Math.max(W * 0.95, H * 1.35) + 4, target: this.center.clone(), goalTarget: this.center.clone(), goalYaw: 0, goalDist: 0, goalPitch: 0.86 };
     this.cam.maxDist = this.cam.dist * 1.2;
     this.cam.minDist = 8;
     this._frameCombatants(true);
@@ -1390,7 +1396,23 @@ export default class CombatScene extends Scene {
     const pitch = this.cam.goalPitch;
     const dW = hw / Math.tan(hf / 2) + hd * Math.cos(pitch) * 0.5;
     const dD = (hd * Math.sin(pitch)) / Math.tan(fov / 2) + hd * Math.cos(pitch);
-    const dist = Math.min(this.cam.maxDist, Math.max(13, dW, dD) * 1.02);
+    // Keep figures large enough to read (~110 px at 1080p): cap the pull-back and
+    // favour the party when the whole fight doesn't fit.
+    const cap = 28;
+    let dist = Math.min(this.cam.maxDist, Math.max(13, dW, dD) * 1.02);
+    if (dist > cap) {
+      const party = live.filter((c) => c.side === 'party');
+      if (party.length) {
+        const px = party.reduce((a, c) => a + sq2w(c.x, c.y).x, 0) / party.length;
+        const pz = party.reduce((a, c) => a + sq2w(c.x, c.y).z, 0) / party.length;
+        const k = Math.min(0.45, (dist - cap) / dist);
+        x0 += (px - x0) * k;
+        x1 += (px - x1) * k;
+        z0 += (pz - z0) * k;
+        z1 += (pz - z1) * k;
+      }
+      dist = cap;
+    }
     // Bias the view a little down-screen so the HUD at the top doesn't cover the fight.
     const cx = (x0 + x1) / 2;
     const cz = (z0 + z1) / 2;

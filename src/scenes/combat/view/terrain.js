@@ -15,6 +15,31 @@ const hash = (x, y, s = 0) => {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 };
 
+/**
+ * World-space macro variation (breaks up texture repetition) + grime creeping up
+ * from the ground, injected into a standard material.
+ */
+function addMacro(mat, { scale = 0.18, amount = 0.45, grime = 0.35, key = 'macro' } = {}) {
+  mat.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vMWPos;')
+      .replace('#include <fog_vertex>', '#include <fog_vertex>\nvMWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+        varying vec3 vMWPos;
+        float mHash(vec3 p){ return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+        float mNoise(vec3 p){ vec3 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
+          return mix(mix(mix(mHash(i), mHash(i+vec3(1,0,0)), f.x), mix(mHash(i+vec3(0,1,0)), mHash(i+vec3(1,1,0)), f.x), f.y),
+                     mix(mix(mHash(i+vec3(0,0,1)), mHash(i+vec3(1,0,1)), f.x), mix(mHash(i+vec3(0,1,1)), mHash(i+vec3(1,1,1)), f.x), f.y), f.z); }`)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+        float mn = mNoise(vMWPos * ${scale.toFixed(3)}) * 0.6 + mNoise(vMWPos * ${(scale * 2.7).toFixed(3)}) * 0.4;
+        diffuseColor.rgb *= ${(1 - amount / 2).toFixed(3)} + ${amount.toFixed(3)} * mn;
+        diffuseColor.rgb *= mix(${(1 - grime).toFixed(3)}, 1.0, smoothstep(0.0, 1.4, vMWPos.y));`);
+  };
+  mat.customProgramCacheKey = () => `${key}-${scale}-${amount}-${grime}`;
+  return mat;
+}
+
 /** Textured PBR material from the shared library set, tinted (own instance). */
 const libCache = new Map();
 function libMat(set, color = 0xffffff, o = {}) {
@@ -22,6 +47,7 @@ function libMat(set, color = 0xffffff, o = {}) {
   if (libCache.has(key)) return libCache.get(key);
   const t = getTextureSet(set);
   const m = new THREE.MeshStandardMaterial({ map: t.map, normalMap: t.normalMap, roughnessMap: t.roughnessMap, color, roughness: o.rough ?? 1, metalness: 0 });
+  addMacro(m, { key: 'lib' });
   libCache.set(key, m);
   return m;
 }
@@ -222,8 +248,11 @@ export function buildDiorama(field, o = {}) {
   const wallMats = [libMat('wall_stone', 0xd8d0c4), libMat('wall_timber', 0xe8e0d0), libMat('wall_ruin', 0xc8beb0)];
   const plinthMat = libMat('wall_stone', 0x8a8278);
   const capMat = libMat('wall_ruin', 0x6a6258);
-  const roofMat = pbr('roof', 0xe0c8b8);
-  const thatchMat = pbr('thatch', 0xd8c8a0);
+  const roofMat = addMacro(pbr('roof', 0xb09a8c).clone(), { scale: 0.22, amount: 0.6, grime: 0, key: 'roof' });
+  const slateMat = addMacro(pbr('roof', 0x5a6470).clone(), { scale: 0.22, amount: 0.5, grime: 0, key: 'slate' });
+  disposables.push(slateMat);
+  const thatchMat = addMacro(pbr('thatch', 0xd8c8a0).clone(), { scale: 0.25, amount: 0.5, grime: 0, key: 'thatch' });
+  disposables.push(roofMat, thatchMat);
   const woodMat = pbr('wood', 0x5a3a22);
   const darkWood = pbr('wood', 0x3a2414);
   const doorMat = libMat('door_wood', 0xd0b8a0);
@@ -407,7 +436,7 @@ export function buildDiorama(field, o = {}) {
       const len = alongX ? iw : id;
       const rise = span * 0.42;
       const over = 0.45;
-      const roofM = style === 1 && seed > 0.55 ? thatchMat : roofMat;
+      const roofM = style === 1 && seed > 0.5 ? thatchMat : seed < 0.4 ? slateMat : roofMat;
       for (const side of [-1, 1]) {
         const slope = Math.hypot(span / 2 + over, rise);
         const g = new THREE.PlaneGeometry(len + over * 2, slope);
@@ -881,7 +910,18 @@ export function buildDiorama(field, o = {}) {
    * cursor) from the camera — a dollhouse view that keeps the fight readable.
    */
   function setView(camPos, points) {
+    const cdx = camPos.x - W / 2;
+    const cdz = camPos.z - H / 2;
+    const cl = Math.hypot(cdx, cdz) || 1;
     for (const g of [...houseGroups, ...wallGroups]) {
+      if (g.w?.city) {
+        // City walls on the camera's side are always lowered (dollhouse view).
+        const on = { N: [0, -1], S: [0, 1], E: [1, 0], W: [-1, 0] }[g.w.e.dir];
+        const cut = (on[0] * cdx + on[1] * cdz) / cl > 0.35;
+        g.full.visible = !cut;
+        g.cut.visible = cut;
+        continue;
+      }
       let hides = false;
       for (const p of points) {
         _ray.origin.copy(p);

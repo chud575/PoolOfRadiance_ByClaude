@@ -221,7 +221,7 @@ function firePuff(seed, additive = true) {
   const mat = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
-    blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
+    blending: THREE.NormalBlending,
     uniforms: { uT: { value: 0 }, uHeat: { value: 1 }, uA: { value: 1 }, uSeed: { value: seed } },
     vertexShader: `varying vec2 vUv; void main(){ vUv = uv;
       vec4 mv = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
@@ -236,7 +236,7 @@ function firePuff(seed, additive = true) {
         vec3 c = mix(vec3(0.25, 0.04, 0.01), vec3(0.95, 0.28, 0.04), smoothstep(0.1, 0.45, h));
         c = mix(c, vec3(1.0, 0.7, 0.2), smoothstep(0.45, 0.85, h));
         c = mix(c, vec3(1.0, 0.95, 0.8), smoothstep(0.85, 1.3, h));
-        ${additive ? 'gl_FragColor = vec4(c * body * (0.22 + h * 1.0) * uA * 0.75, 1.0);' : 'gl_FragColor = vec4(vec3(0.07, 0.06, 0.055) * (0.6 + n * 0.8), body * uA * 0.85);'}
+        ${additive ? 'gl_FragColor = vec4(c * (0.5 + h * 2.2), body * uA * 0.8);' : 'gl_FragColor = vec4(vec3(0.07, 0.06, 0.055) * (0.6 + n * 0.8), body * uA * 0.85);'}
       }`,
   });
   const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
@@ -416,13 +416,13 @@ export class VFX {
         particleBurst({ at, count: crit ? 40 : 22, speed: crit ? 6 : 4.5, life: 0.35, size: 0.05, drag: 3, gravity: 9, colors: [0xffffff, 0xffd070, 0xff6010], intensity: 3, seed, floor: 0.02 }),
         ...(blood && !bone ? [particleBurst({ at, count: crit ? 26 : 14, speed: 2.2, life: 0.7, size: 0.07, drag: 1.5, gravity: 9.8, colors: [0x7a0a06, 0x4a0504, 0x2a0303], additive: false, intensity: 1, soft: 0.3, seed: seed + 7, floor: 0.02 })] : []),
         ...(bone ? [particleBurst({ at, count: 16, speed: 2.5, life: 0.8, size: 0.06, drag: 1.2, gravity: 9.8, colors: [0xe8e0c8, 0xc8b898, 0x8a7a60], additive: false, intensity: 1, soft: 0.2, seed: seed + 9, floor: 0.02 })] : []),
-        glowSprite(0xffc070, crit ? 1.6 : 1.0, 0.9),
+        glowSprite(0xffc070, crit ? 0.9 : 0.6, 0.7),
       ],
     }), (age, parts) => {
       const sp = parts.list[parts.list.length - 1];
       sp.position.copy(at);
-      sp.material.opacity = Math.max(0, 1 - age / 0.15);
-      sp.scale.setScalar((crit ? 1.6 : 1.0) * (1 + age * 3));
+      sp.material.opacity = Math.max(0, 1 - age / 0.12) * 0.7;
+      sp.scale.setScalar((crit ? 0.9 : 0.6) * (1 + age * 3));
     });
   }
 
@@ -600,7 +600,7 @@ export class VFX {
         sm.material.uniforms.uA.value = clamp01((age - 0.25) * 2.5) * Math.max(0, 1 - (age - 1.2) * 0.4);
         sm.visible = age > 0.2 && age < 3.8;
       }
-      ring.scale.setScalar((R * 0.5 + age * 12) * 2);
+      ring.scale.setScalar((R * 0.4 + (1 - Math.exp(-age * 5)) * R * 1.3) * 2);
       ring.position.set(to.x, 0.07, to.z);
       ring.material.uniforms.uR.value = 0.85;
       ring.material.uniforms.uW.value = 0.07;

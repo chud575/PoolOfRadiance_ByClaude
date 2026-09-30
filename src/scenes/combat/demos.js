@@ -64,6 +64,28 @@ function kill(sc, c, t, from) {
 }
 
 export const DEMOS = {
+  /** Debug line-up of every figure for model review (?demo=lineup&monsters=...). */
+  lineup: {
+    async stage(sc) {
+      const all = [...sc.party, ...sc.monsters];
+      const y0 = Math.floor(sc.field.h / 2);
+      all.forEach((c, i) => {
+        const row = i < sc.party.length ? 0 : 1;
+        const col = i < sc.party.length ? i : i - sc.party.length;
+        moveTo(sc, c, 2 + col * 2, y0 - 2 + row * 3);
+        const f = sc.figures.get(c.id);
+        f.place(f.pos.x, f.pos.z, 0);
+        c.facing = 4;
+      });
+      sc.cam.goalTarget.set(10 * TILE, 0, (y0 - 1) * TILE);
+      sc.cam.target.copy(sc.cam.goalTarget);
+      sc.cam.goalDist = sc.cam.dist = 17;
+      sc.cam.goalPitch = sc.cam.pitch = 0.42;
+      sc.cam.goalYaw = sc.cam.yaw = 0;
+      sc.demoActive = sc.party[0];
+    },
+  },
+
   fireball: {
     async stage(sc) {
       const e = sc.engine;

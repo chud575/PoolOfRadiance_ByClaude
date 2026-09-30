@@ -106,8 +106,9 @@ const GEN = {
     const lip = smooth(0.0, 0.18, fy);
     const n = fbm(u * 6, v * 6, { octaves: 5, period: 6, seed: 52 });
     const moss = smooth(0.58, 0.78, fbm(u * 3, v * 3, { octaves: 4, period: 3, seed: 53 }));
-    let c = [0.52 + id * 0.12, 0.26 + id * 0.06, 0.16 + id * 0.03];
-    c = c.map((x) => x * (0.7 + curve * 0.35) * (0.65 + lip * 0.35) * (0.85 + n * 0.3));
+    const soot = smooth(0.5, 0.8, fbm(u * 2, v * 2, { octaves: 3, period: 2, seed: 54 }));
+    let c = [0.5 + id * 0.14, 0.3 + id * 0.08, 0.22 + id * 0.05];
+    c = c.map((x) => x * (0.75 + curve * 0.3) * (0.72 + lip * 0.28) * (0.8 + n * 0.35) * (1 - soot * 0.35));
     c = [lerp(c[0], 0.22, moss * 0.7), lerp(c[1], 0.28, moss * 0.7), lerp(c[2], 0.12, moss * 0.7)];
     return { c, h: curve * 0.6 * lip + (1 - lip) * 0.1 + n * 0.1, r: lerp(0.75, 0.95, moss) };
   },
