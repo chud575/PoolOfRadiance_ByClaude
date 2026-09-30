@@ -5,6 +5,7 @@ import { CELL, EDGE } from '../../../data/maps/MapGrid.js';
 import { SUB } from '../logic/battlefield.js';
 import { Batcher, worldBox, wallQuad } from './batch.js';
 import { pbr } from './textures.js';
+import { fbm } from '../../../render/textures/noise.js';
 
 export const TILE = 1.5;
 const CELLM = TILE * SUB;
@@ -172,6 +173,7 @@ export function buildDiorama(field, o = {}) {
   groundMat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, {
       tSplat: { value: splat },
+      tNoise: { value: noiseTexture() },
       uOrigin: { value: new THREE.Vector2(originX, originZ) },
       uSize: { value: new THREE.Vector2(SW * TILE, SH * TILE) },
       map2: { value: rub.map }, normal2: { value: rub.normalMap }, rough2: { value: rub.roughnessMap },
@@ -188,7 +190,9 @@ export function buildDiorama(field, o = {}) {
         float gHash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float gNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
           return mix(mix(gHash(i), gHash(i+vec2(1,0)), f.x), mix(gHash(i+vec2(0,1)), gHash(i+vec2(1,1)), f.x), f.y); }
-        float gFbm(vec2 p){ return gNoise(p)*0.5 + gNoise(p*2.03)*0.25 + gNoise(p*4.01)*0.125 + gNoise(p*8.1)*0.0625; }
+        uniform sampler2D tNoise;
+        // Pre-baked tileable fBm (period 8 lattice units) — one texture fetch instead of 16 hashes.
+        float gFbm(vec2 p){ return texture2D(tNoise, p * 0.125).r; }
       `)
       .replace('#include <map_fragment>', `
         vec2 gsp = (vWPos.xz - uOrigin) / uSize;
@@ -201,7 +205,9 @@ export function buildDiorama(field, o = {}) {
         vec2 uv1 = vec2(vWPos.x, -vWPos.z) / 2.6;
         vec2 uv2 = vec2(vWPos.x, -vWPos.z) / 3.2 + 0.37;
         vec2 uv3 = vec2(vWPos.x, -vWPos.z) / 3.0;
-        vec4 gc = mix(mix(texture2D(map, uv1), texture2D(map2, uv2), wR), texture2D(map3, uv3), wF);
+        vec4 gc = texture2D(map, uv1);
+        if (wR > 0.001) gc = mix(gc, texture2D(map2, uv2), wR);
+        if (wF > 0.001) gc = mix(gc, texture2D(map3, uv3), wF);
         float mac = gFbm(vWPos.xz * 0.07);
         gc.rgb *= 0.78 + 0.42 * mac;
         gc.rgb = mix(gc.rgb, gc.rgb * vec3(0.95, 0.9, 0.82), smoothstep(0.55, 0.8, gFbm(vWPos.xz * 0.21 + 3.0)) * 0.6);
@@ -210,15 +216,17 @@ export function buildDiorama(field, o = {}) {
         diffuseColor *= gc;
       `)
       .replace('#include <roughnessmap_fragment>', `
-        float gr = mix(mix(texture2D(roughnessMap, uv1).g, texture2D(rough2, uv2).g, wR), texture2D(rough3, uv3).g, wF);
+        float gr = texture2D(roughnessMap, uv1).g;
+        if (wR > 0.001) gr = mix(gr, texture2D(rough2, uv2).g, wR);
+        if (wF > 0.001) gr = mix(gr, texture2D(rough3, uv3).g, wF);
         float roughnessFactor = roughness * gr;
         roughnessFactor = mix(roughnessFactor, 0.06, wet);
       `)
       .replace('#include <normal_fragment_maps>', `
-        vec3 gn1 = texture2D(normalMap, uv1).xyz * 2.0 - 1.0;
-        vec3 gn2 = texture2D(normal2, uv2).xyz * 2.0 - 1.0;
-        vec3 gn3 = texture2D(normal3, uv3).xyz * 2.0 - 1.0;
-        vec3 mapN = normalize(mix(mix(gn1, gn2, wR), gn3, wF));
+        vec3 mapN = texture2D(normalMap, uv1).xyz * 2.0 - 1.0;
+        if (wR > 0.001) mapN = mix(mapN, texture2D(normal2, uv2).xyz * 2.0 - 1.0, wR);
+        if (wF > 0.001) mapN = mix(mapN, texture2D(normal3, uv3).xyz * 2.0 - 1.0, wF);
+        mapN = normalize(mapN);
         mapN.xy *= normalScale * (1.0 - wet * 0.9);
         normal = normalize( tbn * mapN );
       `)
@@ -226,7 +234,7 @@ export function buildDiorama(field, o = {}) {
         reflectedLight.indirectDiffuse *= mix(0.5, 1.0, gAO);
       `);
   };
-  groundMat.customProgramCacheKey = () => 'combat-ground-v2';
+  groundMat.customProgramCacheKey = () => 'combat-ground-v3';
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(SW * TILE, SH * TILE, 1, 1), groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(originX + (SW * TILE) / 2, 0, originZ + (SH * TILE) / 2);
@@ -235,13 +243,16 @@ export function buildDiorama(field, o = {}) {
   disposables.push(ground.geometry, groundMat);
 
   // Room floors (reachable interiors) — planks.
-  const plank = pbr('plank', 0xb89a80);
-  for (const r of field.features.rooms ?? []) {
+  const plank = pbr('plank', 0x9a8878);
+  const hall = (field.features.rooms ?? []).length >= 6;
+  const roomFloor = hall ? libMat('floor_flag', 0xd8d0c4) : plank;
+  // Halls/temples keep the splatted flagstone ground (with its contact shadows); houses get planks.
+  for (const r of hall ? [] : field.features.rooms ?? []) {
     const g = new THREE.PlaneGeometry(CELLM, CELLM);
     const uv = g.attributes.uv;
     for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 1.6, uv.getY(i) * 1.6);
     g.rotateX(-Math.PI / 2);
-    batch.add(g, plank, { p: [cw(r.mx) + CELLM / 2, 0.012, ch(r.my) + CELLM / 2] }, { cast: false });
+    batch.add(g, roomFloor, { p: [cw(r.mx) + CELLM / 2, 0.012, ch(r.my) + CELLM / 2] }, { cast: false });
   }
 
   // ---------------------------------------------------------------- materials
@@ -504,23 +515,25 @@ export function buildDiorama(field, o = {}) {
     const free = (ax, az, bx, bz) => ax >= ix0 && az >= iz0 && bx <= ix1 && bz <= iz1 && !occ.some((o) => ax < o[2] && bx > o[0] && az < o[3] && bz > o[1]);
     const take = (ax, az, bx, bz) => occ.push([ax - 0.15, az - 0.15, bx + 0.15, bz + 0.15]);
     const cutH = 1.1 + seed * 0.25;
-    // Partition wall across long houses, with a doorway.
-    const alongX = iw >= id;
-    if ((alongX ? iw : id) > 7) {
-      const at = alongX ? x0 + iw * (0.4 + seed * 0.2) : z0 + id * (0.4 + seed * 0.2);
-      const span = alongX ? id : iw;
-      const door = 0.35 + hash(1, 2, seed * 91) * 0.3;
-      for (const [a, b] of [[0, door - 0.12], [door + 0.12, 1]]) {
+    // Partition walls along the map-cell lines split big houses into rooms, each with a doorway.
+    const partition = (alongX, at, a0, a1, salt) => {
+      const span = a1 - a0;
+      const door = 0.25 + hash(salt, 2, seed * 91) * 0.5;
+      const dw = 1.1 / span;
+      for (const [a, b] of [[0, door - dw / 2], [door + dw / 2, 1]]) {
         const len = (b - a) * span;
         if (len < 0.2) continue;
-        const mid = (a + b) / 2 * span;
+        const mid = a0 + ((a + b) / 2) * span;
         const g = worldBox(alongX ? 0.2 : len, cutH * 0.95, alongX ? len : 0.2, 2.5);
-        B.add(g, wallMats[house.style === 1 ? 1 : 0], { p: [alongX ? at : x0 + mid, (cutH * 0.95) / 2, alongX ? z0 + mid : at] });
-        B.add(worldBox(alongX ? 0.24 : len, 0.06, alongX ? len : 0.24, 2.5), capMat, { p: [alongX ? at : x0 + mid, cutH * 0.95 + 0.03, alongX ? z0 + mid : at] });
+        B.add(g, wallMats[house.style === 1 ? 1 : 0], { p: [alongX ? at : mid, (cutH * 0.95) / 2, alongX ? mid : at] });
+        B.add(worldBox(alongX ? 0.24 : len, 0.06, alongX ? len : 0.24, 2.5), capMat, { p: [alongX ? at : mid, cutH * 0.95 + 0.03, alongX ? mid : at] });
       }
-      if (alongX) take(at - 0.1, z0, at + 0.1, z1);
-      else take(x0, at - 0.1, x1, at + 0.1);
-    }
+      if (alongX) take(at - 0.12, a0, at + 0.12, a0 + span * (door - dw / 2)), take(at - 0.12, a0 + span * (door + dw / 2), at + 0.12, a1);
+      else take(a0, at - 0.12, a0 + span * (door - dw / 2), at + 0.12), take(a0 + span * (door + dw / 2), at - 0.12, a1, at + 0.12);
+    };
+    const [rx0, ry0, rx1, ry1] = house.r;
+    for (let mx = rx0 + 1; mx <= rx1; mx++) partition(true, cw(mx), z0, z1, mx * 7);
+    for (let my = ry0 + 1; my <= ry1; my++) partition(false, ch(my), x0, x1, my * 13);
     // Hearth against a wall.
     const hearthSide = Math.floor(hash(3, 4, seed * 17) * 4);
     const hx = hearthSide === 0 ? ix0 + 0.5 : hearthSide === 1 ? ix1 - 0.5 : (ix0 + ix1) / 2;
@@ -534,7 +547,10 @@ export function buildDiorama(field, o = {}) {
     }
     // Furniture pieces placed along the walls.
     const blanket = [0x7a2a24, 0x2a4a7a, 0x4a6a2a, 0x6a4a1a][Math.floor(seed * 4)];
-    const pieces = ['bed', 'table', 'barrels', 'chest', 'shelf', 'bed', 'crates', 'table'];
+    const nRooms = (house.r[2] - house.r[0] + 1) * (house.r[3] - house.r[1] + 1);
+    const base = ['bed', 'table', 'barrels', 'chest', 'shelf', 'crates'];
+    const pieces = [];
+    for (let k = 0; k < Math.min(18, 3 + nRooms * 3); k++) pieces.push(base[Math.floor(hash(k, 5, seed * 333) * base.length)]);
     let tries = 0;
     for (const kind of pieces) {
       for (let k = 0; k < 12 && tries < 200; k++, tries++) {
@@ -591,11 +607,14 @@ export function buildDiorama(field, o = {}) {
         break;
       }
     }
-    // A rug in the middle of the floor.
-    const rw = Math.min(2.6, iw * 0.4);
-    const rd = Math.min(1.8, id * 0.35);
-    const rug = new THREE.PlaneGeometry(rw, rd).rotateX(-Math.PI / 2);
-    B.add(rug, rugMaterial(Math.floor(seed * 3)), { p: [(x0 + x1) / 2 + (seed - 0.5), 0.04, (z0 + z1) / 2] }, { cast: false });
+    // Rugs in some rooms.
+    for (let mx = rx0; mx <= rx1; mx++) {
+      for (let my = ry0; my <= ry1; my++) {
+        if (hash(mx, my, seed * 71) > 0.55) continue;
+        const rug = new THREE.PlaneGeometry(2.2, 1.5).rotateX(-Math.PI / 2);
+        B.add(rug, rugMaterial(Math.floor(hash(mx, my, 3) * 3)), { p: [cw(mx) + CELLM / 2, 0.04, ch(my) + CELLM / 2], r: [0, hash(mx, my, 9) > 0.5 ? Math.PI / 2 : 0, 0] }, { cast: false });
+      }
+    }
   }
 
   // ---------------------------------------------------------------- edge walls in the field
@@ -977,6 +996,31 @@ function mergeTwo(a, b) {
   g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
   g.setIndex(idx);
   return g;
+}
+
+let _noiseTex = null;
+/** Tileable fBm noise texture (256², period 8) for cheap shader noise. */
+function noiseTexture() {
+  if (_noiseTex) return _noiseTex;
+  const N = 256;
+  const data = new Uint8Array(N * N * 4);
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      const u = (x / N) * 8;
+      const v = (y / N) * 8;
+      const n = fbm(u, v, { octaves: 4, period: 8, seed: 5 });
+      const i = (y * N + x) * 4;
+      data[i] = data[i + 1] = data[i + 2] = n * 255;
+      data[i + 3] = 255;
+    }
+  }
+  _noiseTex = new THREE.DataTexture(data, N, N, THREE.RGBAFormat);
+  _noiseTex.wrapS = _noiseTex.wrapT = THREE.RepeatWrapping;
+  _noiseTex.magFilter = THREE.LinearFilter;
+  _noiseTex.minFilter = THREE.LinearMipmapLinearFilter;
+  _noiseTex.generateMipmaps = true;
+  _noiseTex.needsUpdate = true;
+  return _noiseTex;
 }
 
 const _rugs = [];

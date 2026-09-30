@@ -16,7 +16,7 @@ export const GALLERY = [
   { name: 'explore_interior', query: 'scene=explore&map=demo_interior&x=2&y=1&dir=W&hour=11&t=2&seed=1' },
   { name: 'combat', query: 'scene=combat&encounter=kobolds_1&t=2&seed=1' },
   { name: 'combat_spell', query: 'scene=combat&encounter=orcs_1&party=veterans&demo=fireball&map=phlan_slums&x=4&y=4&t=0.75&seed=1' },
-  { name: 'combat_melee', query: 'scene=combat&encounter=orcs_1&demo=melee&t=0.42&seed=1' },
+  { name: 'combat_melee', query: 'scene=combat&encounter=orcs_1&demo=melee&t=0.46&seed=1' },
   { name: 'combat_night', query: 'scene=combat&encounter=skeletons_1&hour=22&t=2&seed=1' },
   { name: 'automap', query: 'scene=automap&map=phlan_slums&x=7&y=11&dir=N&t=1&seed=1' },
   { name: 'camp', query: 'scene=camp&t=2&seed=1' },

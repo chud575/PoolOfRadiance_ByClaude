@@ -707,7 +707,7 @@ export class CombatEngine {
       }
       case 'mirrorImage': {
         c.fx.mirror = roll(this.rng, '1d4');
-        hits.push({ id: c.id, effect: 'mirror', text: `${c.fx.mirror} images of ${c.name} appear.` });
+        hits.push({ id: c.id, effect: 'mirror', text: `${c.fx.mirror} image${c.fx.mirror > 1 ? 's' : ''} of ${c.name} appear${c.fx.mirror > 1 ? '' : 's'}.` });
         break;
       }
       case 'dispelMagic': {

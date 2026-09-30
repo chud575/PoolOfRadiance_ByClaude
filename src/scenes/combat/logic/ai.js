@@ -146,7 +146,7 @@ function pickSpell(engine, c, foes) {
   const f = engine.field;
   // Heal a badly wounded ally in reach.
   if (has('cureLightWounds')) {
-    const hurt = engine.alliesOf(c).concat([c]).filter((a) => a.side === 'party' && a.hp.cur / a.hp.max < 0.45).sort((a, b) => a.hp.cur - b.hp.cur)[0];
+    const hurt = engine.party.filter((a) => !a.fled && a.ref.status !== 'dead' && a.hp.cur / a.hp.max < 0.45).sort((a, b) => a.hp.cur - b.hp.cur)[0];
     if (hurt) {
       if (hurt === c || engine.adjacent(c, hurt)) return { kind: 'cast', spell: 'cureLightWounds', at: { x: hurt.x, y: hurt.y }, path: [] };
       const p = pathAdjacent(engine, c, hurt);

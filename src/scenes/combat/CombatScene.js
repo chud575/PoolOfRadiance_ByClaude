@@ -102,6 +102,9 @@ export default class CombatScene extends Scene {
     // Soft camera-side fill so figures read against the ground (a classic tactics-cam trick).
     this.fill = new THREE.DirectionalLight(this.night ? 0x6a80c0 : 0xfff2e0, this.night ? 0.35 : 0.55);
     s.add(this.fill, this.fill.target);
+    // Rim light from behind the fight: separates figures from the ground.
+    this.rim = new THREE.DirectionalLight(this.night ? 0x8fb0ff : 0xffe8c8, this.night ? 0.9 : 0.8);
+    s.add(this.rim, this.rim.target);
     this.vfx = new VFX(s);
 
     // ------------------------------------------------ combatants
@@ -159,7 +162,7 @@ export default class CombatScene extends Scene {
     this._frames = 0;
 
     // ------------------------------------------------ camera
-    this.cam = { yaw: 0, pitch: 0.86, dist: Math.max(W * 0.95, H * 1.35) + 4, target: this.center.clone(), goalTarget: this.center.clone(), goalYaw: 0, goalDist: 0, goalPitch: 0.86 };
+    this.cam = { yaw: 0.32, pitch: 0.86, dist: Math.max(W * 0.95, H * 1.35) + 4, target: this.center.clone(), goalTarget: this.center.clone(), goalYaw: 0.32, goalDist: 0, goalPitch: 0.86 };
     this.cam.maxDist = this.cam.dist * 1.2;
     this.cam.minDist = 8;
     this._frameCombatants(true);
@@ -345,7 +348,7 @@ export default class CombatScene extends Scene {
       if (fig.rig === 'biped') head.y += 0.07 * sc;
       const d = fig.rig === 'biped' ? 1.0 * sc : 1.2 * Math.max(0.6, fig.model.height);
       // Three-quarter view from the figure's weapon side (the shield would hide the face).
-      const yaw = fig.yaw - 0.5;
+      const yaw = fig.yaw - 0.3;
       key.set(Math.sin(yaw), 0, Math.cos(yaw));
       cam.position.set(head.x + key.x * d, head.y + d * 0.12, head.z + key.z * d);
       cam.lookAt(head.x, head.y - 0.04 * sc, head.z);
@@ -614,7 +617,7 @@ export default class CombatScene extends Scene {
     const spells = this.engine.spellsOf(c);
     const counts = new Map();
     for (const s of spells) counts.set(s.id, (counts.get(s.id) ?? 0) + 1);
-    const items = [...counts.entries()].map(([id, n], i) => ({ id, label: `${SPELLS[id].name}${n > 1 ? ` ×${n}` : ''}`, key: String(i + 1), hint: `L${SPELLS[id].level} ${SPELLS[id].school === 'cleric' ? 'Cleric' : 'Mage'}` }));
+    const items = [...counts.entries()].map(([id, n], i) => ({ id, label: `${i + 1}  ${SPELLS[id].name}${n > 1 ? ` (${n})` : ''}`, key: String(i + 1), hint: `L${SPELLS[id].level} ${SPELLS[id].school === 'cleric' ? 'Cleric' : 'Mage'} · ${SPELL_TACTICS[id].range ? `range ${SPELL_TACTICS[id].range}` : 'self'}` }));
     this.hud.openMenu('Cast', items, (it) => {
       this.hud.closeMenu();
       this._beginSpell(it.id, SPELLS[it.id].name);
@@ -629,14 +632,32 @@ export default class CombatScene extends Scene {
       return;
     }
     const foes = this.engine.enemiesOf(c).sort((a, b) => Battlefield.dist(c.x, c.y, a.x, a.y) - Battlefield.dist(c.x, c.y, b.x, b.y));
-    const allies = this.engine.alliesOf(c).concat([c]).sort((a, b) => a.hp.cur / a.hp.max - b.hp.cur / b.hp.max);
-    const first = t.target === 'ally' ? allies[0] : foes[0];
+    // Healing may target fallen (not dead) friends too; the most hurt comes first.
+    const allies = this.engine.all.filter((o) => !this.engine.hostileTo(c, o) && !o.fled && (!isDown(o) || (o.side === 'party' && o.ref.status !== 'dead')))
+      .sort((a, b) => a.hp.cur / a.hp.max - b.hp.cur / b.hp.max);
+    const pool = t.target === 'ally' ? allies : foes;
+    const valid = pool.filter((o) => this.engine.canCast(c, spell, { x: o.x, y: o.y }).ok);
+    // Area spells: aim at the foe that catches the most enemies and no friends.
+    let first = valid[0] ?? pool[0];
+    if (t.shape !== 'single' && t.target === 'square' && valid.length) {
+      let best = -1;
+      for (const o of valid) {
+        const area = new Set(this.engine.spellArea(c, spell, { x: o.x, y: o.y }).map((q) => `${q.x},${q.y}`));
+        const inside = this.engine.all.filter((a) => !this.engine.out(a) && area.has(`${a.x},${a.y}`));
+        const score = inside.filter((a) => this.engine.hostileTo(c, a)).length * 2 - inside.filter((a) => !this.engine.hostileTo(c, a)).length * 3;
+        if (score > best) {
+          best = score;
+          first = o;
+        }
+      }
+    }
+    if (!valid.length && t.target !== 'direction') this.ctx.ui.message('No valid target in range or sight — move the cursor, or Esc to cancel.', 'warn');
     this._enterMode('target', { spell, label, source, start: first ? { x: first.x, y: first.y } : { x: c.x, y: c.y } });
   }
 
   _cmdUse() {
     const c = this.cur;
-    const items = this.engine.usableItems(c).map(({ e, i, def }, k) => ({ id: String(i), label: `${e.identified === false ? def.unidName ?? def.name : def.name}${e.charges ? ` (${e.charges})` : ''}`, key: String(k + 1), def, index: i }));
+    const items = this.engine.usableItems(c).map(({ e, i, def }, k) => ({ id: String(i), label: `${k + 1}  ${e.identified === false ? def.unidName ?? def.name : def.name}${e.charges ? ` (${e.charges})` : ''}`, key: String(k + 1), def, index: i }));
     this.hud.openMenu('Use', items, (it) => {
       this.hud.closeMenu();
       if (it.def.type === 'potion') this._act(() => this.engine.use(c, it.index));
@@ -1027,7 +1048,12 @@ export default class CombatScene extends Scene {
     const occ = e.occupantAt(sq.x, sq.y);
     if (this.mode === 'target') {
       const spell = this.modeData.spell;
-      if (!e.canCast(c, spell, sq).ok) return;
+      const can = e.canCast(c, spell, sq);
+      if (!can.ok) {
+        this.ctx.ui.message(`${this.modeData.label}: ${can.reason}.`, 'warn');
+        this.ctx.audio.sfx('bump');
+        return;
+      }
       const src = this.modeData.source;
       this._act(() => (src ? e.use(c, src.index, sq) : e.cast(c, spell, sq)));
       return;
@@ -1117,6 +1143,7 @@ export default class CombatScene extends Scene {
           break;
         case 'heal':
           if (ev.text) this._log(ev.text, 'combat');
+          this._maybeRevive(ev.id);
           if (fig) {
             this.hud.float(`+${ev.amount}`, 'heal', this._head(fig), this.time);
             this.vfx.heal(this.time, fig.root.position.clone(), this._seed());
@@ -1246,6 +1273,11 @@ export default class CombatScene extends Scene {
     const at = fd.root.position.clone();
     at.y = fd.model.height * 0.62;
     const t = this.time;
+    if (this.snap) {
+      // Instant resolution: no frozen sparks or numbers littering the screen.
+      this._refresh(this.engine.active());
+      return;
+    }
     if (ev.hit) {
       fd.play('hit', t, 0.5 / this.speed, { power: ev.crit ? 1.6 : ev.dmg > 5 ? 1.2 : 0.9 });
       const bone = def.monsterId === 'skeleton';
@@ -1262,6 +1294,15 @@ export default class CombatScene extends Scene {
       this.ctx.audio.sfx('miss');
     }
     this._refresh(this.engine.active());
+  }
+
+  _maybeRevive(id) {
+    const c = this.engine.byId(id);
+    const f = this.figures.get(id);
+    if (!c || !f || !f.death || isDown(c)) return;
+    f.revive(this.time);
+    f.blob.visible = true;
+    this.hud.float('Revived', 'status', this._head(f), this.time + 0.2);
   }
 
   _down(ev) {
@@ -1345,7 +1386,10 @@ export default class CombatScene extends Scene {
         this.hud.float(String(hh.dmg), 'dmg', this._head(f2), this.time + Math.random() * 0 + (hh.saved ? 0.05 : 0), { cls: e.byId(hh.id).side === 'party' ? 'party' : '' });
         if (tact.vfx === 'missile') this.vfx.hitSparks(this.time, this._head(f2).add(new THREE.Vector3(0, -0.5, 0)), { blood: false, seed: this._seed() });
       }
-      if (hh.heal) this.hud.float(`+${hh.heal}`, 'heal', this._head(f2), this.time);
+      if (hh.heal) {
+        this.hud.float(`+${hh.heal}`, 'heal', this._head(f2), this.time);
+        this._maybeRevive(hh.id);
+      }
       if (hh.effect === 'asleep') {
         f2.setState('asleep');
         this.hud.float('Asleep', 'status', this._head(f2), this.time + 0.2);
@@ -1568,6 +1612,8 @@ export default class CombatScene extends Scene {
     this.diorama.update(t);
     this.fill.position.copy(this.camera.position);
     this.fill.target.position.copy(this.cam.target);
+    this.rim.position.set(this.cam.target.x * 2 - this.camera.position.x, this.camera.position.y * 0.6, this.cam.target.z * 2 - this.camera.position.z);
+    this.rim.target.position.copy(this.cam.target);
     for (const l of this.torchLights) {
       const s = l.userData.seed;
       l.intensity = l.userData.base * (0.86 + 0.09 * Math.sin(t * 11 + s) + 0.05 * Math.sin(t * 23.7 + s * 3));

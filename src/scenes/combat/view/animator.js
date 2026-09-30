@@ -122,6 +122,14 @@ export class Figure {
     this.state = s;
   }
 
+  /** Back on their feet (healed from unconsciousness): rise from the ground. */
+  revive(t) {
+    if (!this.death) return;
+    this.death = null;
+    this.state = 'idle';
+    this.play('kneel', t - 0.35, 1.1);
+  }
+
   /** Impact moment of the current attack clip (absolute time). */
   static impactFrac(type) {
     return type === 'shoot' ? 0.62 : type === 'cast' ? 0.55 : type === 'bite' ? 0.45 : 0.46;

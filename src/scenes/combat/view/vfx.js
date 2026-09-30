@@ -230,13 +230,18 @@ function firePuff(seed, additive = true) {
     fragmentShader: `${NOISE_GLSL}
       varying vec2 vUv; uniform float uT, uHeat, uA, uSeed;
       void main(){ vec2 p = vUv * 2.0 - 1.0; float r = length(p);
-        float n = fbm3(vec3(p * 2.2, uT * 1.3 + uSeed)) * 0.5 + 0.5;
-        float body = smoothstep(1.0, 0.15, r + (n - 0.5) * 0.9);
-        float h = uHeat * (0.55 + n * 0.8) * (1.15 - r * 0.6);
-        vec3 c = mix(vec3(0.25, 0.04, 0.01), vec3(0.95, 0.28, 0.04), smoothstep(0.1, 0.45, h));
-        c = mix(c, vec3(1.0, 0.7, 0.2), smoothstep(0.45, 0.85, h));
-        c = mix(c, vec3(1.0, 0.95, 0.8), smoothstep(0.85, 1.3, h));
-        ${additive ? 'gl_FragColor = vec4(c * (0.5 + h * 2.2), body * uA * 0.8);' : 'gl_FragColor = vec4(vec3(0.07, 0.06, 0.055) * (0.6 + n * 0.8), body * uA * 0.85);'}
+        float n = fbm3(vec3(p * 1.7, uT * 0.9 + uSeed)) * 0.5 + 0.5;
+        float d = fbm3(vec3(p * 5.0 + 11.0, uT * 1.8 + uSeed * 1.7)) * 0.5 + 0.5;
+        float shape = r + (n - 0.5) * 1.1 + (d - 0.5) * 0.35;
+        float body = 1.0 - smoothstep(0.45, 0.95, shape);
+        float h = uHeat * (1.25 - shape * 0.9) * (0.7 + d * 0.6);
+        vec3 c = vec3(0.07, 0.05, 0.04);
+        c = mix(c, vec3(0.45, 0.07, 0.02), smoothstep(0.08, 0.3, h));
+        c = mix(c, vec3(1.0, 0.36, 0.05), smoothstep(0.3, 0.6, h));
+        c = mix(c, vec3(1.0, 0.72, 0.28), smoothstep(0.6, 0.95, h));
+        c = mix(c, vec3(1.0, 0.95, 0.8), smoothstep(0.95, 1.35, h));
+        float emit = 0.5 + smoothstep(0.75, 1.3, h) * 1.3;
+        ${additive ? 'gl_FragColor = vec4(c * emit, body * uA * 0.9);' : 'gl_FragColor = vec4(vec3(0.07, 0.06, 0.055) * (0.6 + n * 0.8), body * uA * 0.85);'}
       }`,
   });
   const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
@@ -413,7 +418,7 @@ export class VFX {
   hitSparks(t, at, { blood = true, crit = false, seed = 1, bone = false } = {}) {
     this.add(t, 0.9, () => ({
       list: [
-        particleBurst({ at, count: crit ? 40 : 22, speed: crit ? 6 : 4.5, life: 0.35, size: 0.05, drag: 3, gravity: 9, colors: [0xffffff, 0xffd070, 0xff6010], intensity: 3, seed, floor: 0.02 }),
+        particleBurst({ at, count: crit ? 28 : 18, speed: crit ? 6.5 : 5, life: 0.35, size: 0.04, drag: 3, gravity: 9, colors: [0xffffff, 0xffd070, 0xff6010], intensity: 3, seed, floor: 0.02 }),
         ...(blood && !bone ? [particleBurst({ at, count: crit ? 26 : 14, speed: 2.2, life: 0.7, size: 0.07, drag: 1.5, gravity: 9.8, colors: [0x7a0a06, 0x4a0504, 0x2a0303], additive: false, intensity: 1, soft: 0.3, seed: seed + 7, floor: 0.02 })] : []),
         ...(bone ? [particleBurst({ at, count: 16, speed: 2.5, life: 0.8, size: 0.06, drag: 1.2, gravity: 9.8, colors: [0xe8e0c8, 0xc8b898, 0x8a7a60], additive: false, intensity: 1, soft: 0.2, seed: seed + 9, floor: 0.02 })] : []),
         glowSprite(0xffc070, crit ? 0.9 : 0.6, 0.7),
@@ -556,7 +561,7 @@ export class VFX {
     const flash = glowSprite(0xffd8a0, R * 2.6, 1);
     const scorch = new THREE.Mesh(new THREE.CircleGeometry(1, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: scorchTexture(), transparent: true, depthWrite: false, color: 0x000000, opacity: 0.8 }));
     scorch.renderOrder = 1;
-    const N = 18;
+    const N = 26;
     const fires = [];
     const smokes = [];
     const dirs = [];
@@ -577,19 +582,19 @@ export class VFX {
       core.position.set(to.x, to.y + 0.2, to.z);
       core.scale.setScalar(cr);
       core.material.uniforms.uT.value = age;
-      core.material.uniforms.uHeat.value = Math.max(0, 1.4 - age * 3.2);
-      core.material.uniforms.uAlpha.value = Math.max(0, 0.9 - age * 2.4);
-      core.visible = age < 0.45;
+      core.material.uniforms.uHeat.value = Math.max(0, 1.55 - age * 2.4);
+      core.material.uniforms.uAlpha.value = Math.max(0, 1 - age * 1.7);
+      core.visible = age < 0.6;
       // Billowing fire puffs thrown outward and up.
       for (let k = 0; k < N; k++) {
         const d = dirs[k];
         const reach = R * (0.35 + hashf(seed + k * 9.1) * 0.55) * grow;
         const f = fires[k];
         f.position.set(to.x + d.x * reach, to.y + 0.1 + d.y * reach * 0.8 + age * 0.9, to.z + d.z * reach);
-        const sz = R * (0.38 + hashf(seed + k * 4.7) * 0.3) * (0.5 + grow * 0.7);
+        const sz = R * (0.32 + hashf(seed + k * 4.7) * 0.28) * (0.45 + grow * 0.75);
         f.scale.set(sz, sz, 1);
         f.material.uniforms.uT.value = age + k;
-        f.material.uniforms.uHeat.value = Math.max(0, 1.25 - age * 1.35 - hashf(seed + k) * 0.25);
+        f.material.uniforms.uHeat.value = Math.max(0, 1.02 - age * 1.25 - hashf(seed + k) * 0.3);
         f.material.uniforms.uA.value = Math.max(0, 1 - Math.max(0, age - 0.5) * 1.3);
         f.visible = age < 1.3;
         const sm = smokes[k];
@@ -597,14 +602,14 @@ export class VFX {
         const ss = sz * (1.1 + age * 0.5);
         sm.scale.set(ss, ss, 1);
         sm.material.uniforms.uT.value = age * 0.5 + k;
-        sm.material.uniforms.uA.value = clamp01((age - 0.25) * 2.5) * Math.max(0, 1 - (age - 1.2) * 0.4);
-        sm.visible = age > 0.2 && age < 3.8;
+        sm.material.uniforms.uA.value = clamp01((age - 0.12) * 3) * Math.max(0, 1 - (age - 1.2) * 0.4);
+        sm.visible = age > 0.1 && age < 3.8;
       }
       ring.scale.setScalar((R * 0.4 + (1 - Math.exp(-age * 5)) * R * 1.3) * 2);
       ring.position.set(to.x, 0.07, to.z);
       ring.material.uniforms.uR.value = 0.85;
       ring.material.uniforms.uW.value = 0.07;
-      ring.material.uniforms.uA.value = Math.max(0, 1 - age / 0.7);
+      ring.material.uniforms.uA.value = Math.max(0, 1 - age / 0.6) * 0.55;
       ring.visible = age < 0.75;
       flash.position.set(to.x, to.y + 0.5, to.z);
       flash.material.opacity = Math.max(0, 1 - age / 0.2) * 0.9;
@@ -612,7 +617,7 @@ export class VFX {
       scorch.position.set(to.x, 0.03, to.z);
       scorch.scale.setScalar(R * 0.95);
       scorch.material.opacity = clamp01(age * 5) * 0.75;
-      const li = age < 0.06 ? 55 * (age / 0.06) : 55 * Math.exp(-(age - 0.06) * 2.6);
+      const li = age < 0.06 ? 40 * (age / 0.06) : 40 * Math.exp(-(age - 0.06) * 2.8);
       return { light: { i: li, color: 0xff8a30, pos: new THREE.Vector3(to.x, to.y + 1.8, to.z) } };
     });
     this.addShake(T, 0.35, 0.6);

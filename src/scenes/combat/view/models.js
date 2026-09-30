@@ -209,6 +209,8 @@ function buildBiped(o) {
     R.part('spine', lathe([[0.15, -0.02], [0.15 * bellyK, 0.08], [0.155, 0.2], [0.15, 0.24]].map(([r, y]) => [r * s, y * s]), 16, { xs: w, zs: 0.7 * (o.belly ? 1.25 : 1) }), torsoMat);
     R.part('chest', lathe([[0.15, -0.03], [0.175, 0.07], [0.19, 0.15], [0.17, 0.2], [0.1, 0.235], [0.05, 0.245]].map(([r, y]) => [r * s, y * s]), 16, { xs: w * 1.08, zs: 0.66 }), torsoMat);
     R.part('neck', cyl(0.05 * s, 0.056 * s, 0.1 * s, 10), skinMat, { p: [0, 0.03 * s, 0] });
+    // Trapezius slope from neck to shoulders.
+    R.part('chest', lathe([[0.17, 0.17], [0.13, 0.215], [0.07, 0.25], [0.05, 0.27]].map(([r, y]) => [r * s, y * s]), 14, { xs: w * 1.1, zs: 0.62 }), torsoMat);
   }
 
   // Arms & legs.
@@ -226,6 +228,8 @@ function buildBiped(o) {
     }
     const armMat = kit.armor === 'chain' || kit.armor === 'plate' ? pbr('chain', 0x9a9ea6) : kit.armor === 'robe' || kit.armor === 'tunic' ? clothMat : skinMat;
     const bw = Math.sqrt(w);
+    // Deltoid: rounds the shoulder into the arm.
+    R.part(`upperArm${side}`, sphere(0.066 * s * bw, 12, 10), armMat, { p: [sx * 0.008 * s, -0.012 * s, 0], s: [1, 1.1, 1] });
     R.part(`upperArm${side}`, limb(0.055 * s * bw, 0.045 * s * bw, armU), armMat);
     R.part(`foreArm${side}`, limb(0.046 * s * bw, 0.036 * s * bw, armF), kit.armor === 'robe' ? clothMat : o.claws || kit.armor === 'loincloth' || kit.armor === 'scraps' || kit.armor === 'none' ? skinMat : kit.armor === 'chain' || kit.armor === 'plate' ? armMat : skinMat);
     // Hand: palm + thumb; claws for beasts.
@@ -403,15 +407,19 @@ function buildHead(R, o, s, skinMat) {
   switch (o.head) {
     case 'human': {
       const female = kit.female;
-      R.part('head', sphere(0.105 * hs, 20, 16), skinMat, { p: [0, hy, 0], s: [0.9, 1.06, 1.0] });
-      // Jaw & chin.
-      R.part('head', sphere(0.08 * hs, 14, 10), skinMat, { p: [0, hy - 0.05 * hs, 0.03 * hs], s: [0.95, 0.75, 0.95] });
-      // Nose, brows, eyes, ears.
-      R.part('head', cone(0.018 * hs, 0.05 * hs, 6), skinMat, { p: [0, hy - 0.005 * hs, 0.105 * hs], r: [Math.PI / 2 - 0.3, 0, 0] });
+      // Skull: a lathed head (cranium, cheekbones, tapering jaw), deeper front-to-back.
+      R.part('head', lathe([[0.001, -0.118], [0.035, -0.112], [0.062, -0.088], [0.08, -0.048], [0.092, -0.005], [0.098, 0.035], [0.094, 0.07], [0.075, 0.1], [0.04, 0.12], [0.001, 0.126]].map(([r, y]) => [r * hs, y * hs]), 20, { xs: female ? 0.84 : 0.88, zs: 0.96 }), skinMat, { p: [0, hy, -0.004 * hs] });
+      // Cheekbones, brow ridge and chin give the face planes that read in light.
+      for (const sx of [1, -1]) R.part('head', sphere(0.028 * hs, 10, 8), skinMat, { p: [sx * 0.048 * hs, hy - 0.016 * hs, 0.058 * hs], s: [1, 0.8, 0.75] });
+      R.part('head', sphere(0.024 * hs, 10, 8), skinMat, { p: [0, hy - 0.094 * hs, 0.046 * hs], s: [1.25, 0.8, 0.9] });
+      R.part('head', box(0.096 * hs, 0.02 * hs, 0.026 * hs), skinMat, { p: [0, hy + 0.027 * hs, 0.076 * hs], r: [0.25, 0, 0] });
+      // Nose (bridge + tip), eyes set into the brow shadow, brows, ears.
+      R.part('head', blade([[-0.012, 0], [0.012, 0], [0.004, 0.052], [-0.004, 0.052]].map(([x, y]) => [x * hs, y * hs]), 0.024 * hs, 0.006 * hs), skinMat, { p: [0, hy + 0.02 * hs, 0.086 * hs], r: [Math.PI + 0.35, 0, 0] });
+      R.part('head', sphere(0.013 * hs, 8, 6), skinMat, { p: [0, hy - 0.026 * hs, 0.1 * hs] });
       for (const sx of [1, -1]) {
-        R.part('head', sphere(0.016 * hs, 8, 6), white, { p: [sx * 0.037 * hs, hy + 0.012 * hs, 0.083 * hs] });
-        R.part('head', sphere(0.009 * hs, 8, 6), eyeMat, { p: [sx * 0.037 * hs, hy + 0.012 * hs, 0.096 * hs] });
-        R.part('head', box(0.04 * hs, 0.01 * hs, 0.015 * hs), hairMat, { p: [sx * 0.037 * hs, hy + 0.036 * hs, 0.09 * hs], r: [0, 0, sx * -0.12] });
+        R.part('head', sphere(0.016 * hs, 10, 8), white, { p: [sx * 0.034 * hs, hy + 0.008 * hs, 0.074 * hs] });
+        R.part('head', sphere(0.0085 * hs, 8, 6), eyeMat, { p: [sx * 0.034 * hs, hy + 0.008 * hs, 0.087 * hs] });
+        R.part('head', box(0.036 * hs, 0.009 * hs, 0.014 * hs), hairMat, { p: [sx * 0.035 * hs, hy + 0.03 * hs, 0.085 * hs], r: [0.2, sx * -0.2, sx * -0.14] });
         const elfEar = kit.race === 'elf' || kit.race === 'halfElf';
         R.part('head', elfEar ? cone(0.018 * hs, 0.09 * hs, 5) : sphere(0.022 * hs, 8, 6), skinMat, elfEar
           ? { p: [sx * 0.1 * hs, hy + 0.03 * hs, -0.01 * hs], r: [-0.4, 0, sx * -1.1] }
@@ -432,7 +440,7 @@ function buildHead(R, o, s, skinMat) {
         R.part('head', cyl(0.2 * hs, 0.2 * hs, 0.012 * hs, 24), pbr('cloth', new THREE.Color(kit.color).multiplyScalar(0.6).getHex()), { p: [0, hy + 0.07 * hs, 0] });
         R.part('head', lathe([[0.115, 0], [0.1, 0.08], [0.06, 0.18], [0.02, 0.27], [0.002, 0.3]].map(([r, y]) => [r * hs, y * hs]), 16), pbr('cloth', new THREE.Color(kit.color).multiplyScalar(0.6).getHex()), { p: [0, hy + 0.07 * hs, -0.01 * hs], r: [-0.25, 0, 0.1] });
         R.part('head', torus(0.11 * hs, 0.01 * hs, 5, 20), pbr('gold', 0xd8b25a), { p: [0, hy + 0.08 * hs, 0], r: [Math.PI / 2, 0, 0] });
-        R.part('head', sphere(0.112 * hs, 16, 12, { thetaLength: Math.PI * 0.7 }), hairMat, { p: [0, hy + 0.004 * hs, -0.012 * hs], s: [1.02, 1.05, 1.05] });
+        R.part('head', sphere(0.104 * hs, 16, 12, { thetaLength: Math.PI * 0.6 }), hairMat, { p: [0, hy + 0.006 * hs, -0.014 * hs], r: [-0.55, 0, 0], s: [0.98, 1.05, 1.06] });
         R.part('head', limb(0.08 * hs, 0.05 * hs, 0.3 * hs, { seg: 10, zs: 0.5 }), hairMat, { p: [0, hy - 0.02 * hs, -0.07 * hs] });
       } else if (h.hood) {
         R.part('head', sphere(0.125 * hs, 16, 12, { thetaLength: Math.PI * 0.62 }), pbr('cloth', h.hood), { p: [0, hy + 0.01 * hs, -0.015 * hs], r: [-0.3, 0, 0], s: [1, 1.08, 1.1] });
@@ -447,8 +455,16 @@ function buildHead(R, o, s, skinMat) {
         R.part('head', torus(0.095 * hs, 0.022 * hs, 6, 20), hairMat, { p: [0, hy + 0.035 * hs, -0.008 * hs], r: [Math.PI / 2 + 0.15, 0, 0] });
       } else {
         const long = female || kit.race === 'elf';
-        R.part('head', sphere(0.112 * hs, 16, 12, { thetaLength: Math.PI * (long ? 0.62 : 0.52) }), hairMat, { p: [0, hy + 0.005 * hs, -0.012 * hs], r: [-0.25, 0, 0], s: [1.03, 1.06, 1.08] });
-        if (long) R.part('head', limb(0.085 * hs, 0.04 * hs, 0.34 * hs, { seg: 10, zs: 0.45 }), hairMat, { p: [0, hy - 0.01 * hs, -0.075 * hs] });
+        R.part('head', sphere(0.104 * hs, 16, 12, { thetaLength: Math.PI * 0.58 }), hairMat, { p: [0, hy + 0.01 * hs, -0.012 * hs], r: [-0.5, 0, 0], s: [0.96, 1.06, 1.06] });
+        // Clumped locks for volume.
+        for (let k = 0; k < 7; k++) {
+          const a = (k / 6 - 0.5) * 2.4;
+          R.part('head', sphere(0.04 * hs, 8, 6), hairMat, { p: [Math.sin(a) * 0.075 * hs, hy + 0.085 * hs - Math.abs(a) * 0.025 * hs, Math.cos(a) * 0.03 * hs - 0.025 * hs], s: [1, 0.8, 1.1] });
+        }
+        if (long) {
+          R.part('head', limb(0.09 * hs, 0.045 * hs, 0.36 * hs, { seg: 12, zs: 0.45 }), hairMat, { p: [0, hy - 0.0 * hs, -0.07 * hs], r: [-0.12, 0, 0] });
+          for (const sx of [1, -1]) R.part('head', limb(0.03 * hs, 0.02 * hs, 0.2 * hs, { seg: 8 }), hairMat, { p: [sx * 0.085 * hs, hy - 0.01 * hs, 0.0], r: [0, 0, sx * 0.08] });
+        }
         if (h.bandana) R.part('head', sphere(0.114 * hs, 16, 10, { thetaLength: Math.PI * 0.45 }), pbr('cloth', h.bandana), { p: [0, hy + 0.01 * hs, -0.01 * hs], r: [-0.2, 0, 0] });
       }
       // Beards.
