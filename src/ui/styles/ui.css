@@ -1,0 +1,213 @@
+/* ==========================================================================
+   Pool of Radiance homage — UI skin ("Gilded Gold Box")
+   Owned by: title/intro/menus/UI-skin workstream. Scenes use these classes.
+   ========================================================================== */
+:root {
+  --por-midnight: #0b1026;
+  --por-deep: #111c42;
+  --por-royal: #1f3a7a;
+  --por-royal-hi: #2d52a3;
+  --por-gilt: #d8b25a;
+  --por-gilt-hi: #f5d98b;
+  --por-gilt-lo: #8a6a2a;
+  --por-parchment: #efe2c0;
+  --por-parchment-lo: #d9c597;
+  --por-ink: #2a1d10;
+  --por-blood: #b8322b;
+  --por-green: #7fe08a;
+  --por-amber: #ffc861;
+  --por-cyan: #8ff0ff;
+  --por-text: #f1ead6;
+  --por-text-dim: #b7b0a0;
+  --font-display: 'Cinzel', 'Trajan Pro', 'Cormorant SC', 'Palatino Linotype', 'Book Antiqua', Palatino, 'URW Palladio L', 'TeX Gyre Pagella', Georgia, 'DejaVu Serif', serif;
+  --font-body: 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Palatino, 'URW Palladio L', Georgia, 'DejaVu Serif', serif;
+  --font-num: 'Palatino Linotype', Georgia, 'DejaVu Serif', serif;
+  --ui-scale: clamp(0.75, calc(100vh / 900), 1.6);
+  --gilt-grad: linear-gradient(180deg, #fbe7a8 0%, #d8b25a 38%, #9c7430 62%, #e6c877 100%);
+  --panel-grad: linear-gradient(180deg, rgba(31, 50, 108, 0.94) 0%, rgba(14, 24, 58, 0.95) 100%);
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; height: 100%; overflow: hidden;
+  background: #03040a; color: var(--por-text);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+}
+#app { position: fixed; inset: 0; }
+#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#ui-root { position: absolute; inset: 0; pointer-events: none; font-size: calc(16px * var(--ui-scale)); }
+.por-layer { position: absolute; inset: 0; }
+.por-layer > * { pointer-events: auto; }
+.por-layer-tooltip, .por-layer-toast { pointer-events: none; }
+.por-layer-tooltip > *, .por-layer-toast > * { pointer-events: none; }
+
+/* ---------- Frame (gilt double border) ---------- */
+.por-frame {
+  position: relative;
+  padding: 0.9em 1em;
+  border: 2px solid var(--por-gilt);
+  border-radius: 3px;
+  box-shadow:
+    0 0 0 1px #000,
+    0 0 0 4px var(--por-deep),
+    0 0 0 5px var(--por-gilt-lo),
+    0 12px 40px rgba(0, 0, 0, 0.6),
+    inset 0 0 0 1px rgba(255, 230, 160, 0.25),
+    inset 0 0 30px rgba(0, 0, 0, 0.35);
+}
+.por-frame--blue { background: var(--panel-grad); }
+.por-frame--dark { background: linear-gradient(180deg, rgba(10, 12, 22, 0.92), rgba(4, 5, 10, 0.94)); }
+.por-frame--parchment {
+  color: var(--por-ink);
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(255, 255, 255, 0.35), transparent 60%),
+    radial-gradient(ellipse at 80% 90%, rgba(120, 80, 30, 0.25), transparent 60%),
+    linear-gradient(180deg, var(--por-parchment), var(--por-parchment-lo));
+  border-color: var(--por-gilt-lo);
+}
+.por-corner {
+  position: absolute; width: 14px; height: 14px;
+  background: var(--gilt-grad);
+  transform: rotate(45deg);
+  box-shadow: 0 0 0 1px #000, 0 0 8px rgba(245, 217, 139, 0.45);
+}
+.por-corner.tl { top: -8px; left: -8px; }
+.por-corner.tr { top: -8px; right: -8px; }
+.por-corner.bl { bottom: -8px; left: -8px; }
+.por-corner.br { bottom: -8px; right: -8px; }
+.por-frame-title {
+  position: absolute; top: -0.85em; left: 50%; transform: translateX(-50%);
+  padding: 0.1em 0.9em; white-space: nowrap;
+  font-family: var(--font-display); font-size: 0.85em; letter-spacing: 0.18em; text-transform: uppercase;
+  color: #1b1206; background: var(--gilt-grad);
+  border: 1px solid #000; border-radius: 2px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+.por-frame-body { position: relative; }
+
+/* ---------- Gilt text ---------- */
+.por-gilt-text {
+  font-family: var(--font-display);
+  background: var(--gilt-grad); -webkit-background-clip: text; background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 2px 0 #2a1a05) drop-shadow(0 0 12px rgba(245, 200, 110, 0.35));
+}
+.por-hk { color: var(--por-amber); text-decoration: underline; text-decoration-color: rgba(255, 200, 97, 0.5); text-underline-offset: 0.15em; }
+
+/* ---------- Command bar ---------- */
+.por-commandbar {
+  display: flex; gap: 0.25em; align-items: center; justify-content: center; flex-wrap: wrap;
+  padding: 0.35em 0.6em;
+  background: linear-gradient(180deg, rgba(8, 12, 30, 0.95), rgba(3, 5, 14, 0.97));
+  border-top: 1px solid var(--por-gilt-lo);
+  box-shadow: inset 0 1px 0 rgba(245, 217, 139, 0.25);
+}
+.por-cmd-title { font-family: var(--font-display); color: var(--por-gilt); letter-spacing: 0.15em; margin-right: 0.8em; font-size: 0.9em; }
+.por-cmd {
+  font: inherit; font-family: var(--font-display); letter-spacing: 0.14em; text-transform: uppercase; font-size: 0.92em;
+  color: var(--por-text); background: transparent; border: 1px solid transparent; border-radius: 2px;
+  padding: 0.3em 0.75em; cursor: pointer; transition: all 0.12s ease;
+}
+.por-cmd:hover:not(:disabled), .por-cmd:focus-visible {
+  border-color: var(--por-gilt); color: #fff; outline: none;
+  background: linear-gradient(180deg, rgba(45, 82, 163, 0.7), rgba(20, 34, 80, 0.7));
+  box-shadow: 0 0 12px rgba(245, 217, 139, 0.25);
+}
+.por-cmd:disabled { opacity: 0.35; cursor: default; }
+
+/* ---------- Roster ---------- */
+.por-roster { font-size: 0.95em; min-width: 15em; }
+.por-roster-head, .por-roster-row { display: grid; grid-template-columns: 1fr 2.4em 2.8em; gap: 0.4em; align-items: center; padding: 0.18em 0.45em; }
+.por-roster-head { font-family: var(--font-display); font-size: 0.72em; letter-spacing: 0.2em; text-transform: uppercase; color: var(--por-gilt); border-bottom: 1px solid rgba(216, 178, 90, 0.35); margin-bottom: 0.2em; }
+.por-roster-row { position: relative; cursor: pointer; border-radius: 2px; color: var(--por-green); }
+.por-roster-row .ac, .por-roster-row .hp, .por-roster-head .ac, .por-roster-head .hp { text-align: right; font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.por-roster-row .ac { color: var(--por-text); }
+.por-roster-row.active { background: linear-gradient(90deg, rgba(245, 217, 139, 0.22), rgba(245, 217, 139, 0.02)); color: #fff; box-shadow: inset 2px 0 0 var(--por-gilt-hi); }
+.por-roster-row:hover { background: rgba(255, 255, 255, 0.06); }
+.por-roster-row.st-low .hp { color: var(--por-amber); }
+.por-roster-row.st-unconscious, .por-roster-row.st-dying { color: var(--por-blood); }
+.por-roster-row.st-dead { color: #777; text-decoration: line-through; }
+.por-roster-row .bar { grid-column: 1 / -1; height: 2px; background: rgba(0, 0, 0, 0.5); margin-top: 1px; }
+.por-roster-row .bar i { display: block; height: 100%; background: linear-gradient(90deg, #3fae55, #9df0a0); }
+.por-roster-row.st-low .bar i { background: linear-gradient(90deg, #c77a1c, #ffc861); }
+
+/* ---------- Message log ---------- */
+.por-log { --lines: 4; max-height: calc(var(--lines) * 1.45em + 0.4em); overflow-y: auto; line-height: 1.45; padding: 0.2em 0.1em; scrollbar-width: thin; scrollbar-color: var(--por-gilt-lo) transparent; }
+.por-log-line { opacity: 0.92; }
+.por-log-line:last-child { opacity: 1; }
+.por-log--combat { color: #ffd9c9; }
+.por-log--loot { color: var(--por-amber); }
+.por-log--warn { color: #ff8a7a; }
+.por-log--lore { color: var(--por-parchment); font-style: italic; }
+.por-log--system { color: var(--por-cyan); }
+
+/* ---------- Menu ---------- */
+.por-menu { display: flex; flex-direction: column; gap: 0.2em; outline: none; }
+.por-menu-item {
+  font: inherit; font-family: var(--font-display); letter-spacing: 0.12em; text-align: left;
+  color: var(--por-text); background: transparent; border: 1px solid transparent; border-radius: 2px;
+  padding: 0.45em 1em; cursor: pointer; display: flex; justify-content: space-between; gap: 2em;
+}
+.por-menu-item.hl { border-color: var(--por-gilt); background: linear-gradient(90deg, rgba(45, 82, 163, 0.8), rgba(20, 34, 80, 0.2)); color: #fff; box-shadow: 0 0 14px rgba(245, 217, 139, 0.2); }
+.por-menu-item:disabled { opacity: 0.35; }
+.por-menu-hint { color: var(--por-text-dim); font-family: var(--font-body); letter-spacing: 0; font-size: 0.85em; }
+
+/* ---------- Buttons ---------- */
+.por-btn {
+  font: inherit; font-family: var(--font-display); letter-spacing: 0.12em; text-transform: uppercase; font-size: 0.85em;
+  padding: 0.5em 1.2em; border-radius: 2px; cursor: pointer;
+  color: var(--por-text); background: linear-gradient(180deg, #2a3d78, #152150); border: 1px solid var(--por-gilt-lo);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15), 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+.por-btn:hover { border-color: var(--por-gilt-hi); color: #fff; }
+.por-btn.primary { color: #1b1206; background: var(--gilt-grad); border-color: #000; }
+
+/* ---------- Modal ---------- */
+.por-modal-backdrop { position: absolute; inset: 0; display: grid; place-items: center; background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.75)); }
+.por-dialog { min-width: 24em; max-width: 36em; padding: 1.6em 1.8em 1.2em; }
+.por-dialog p { margin: 0.2em 0 1em; line-height: 1.5; }
+.por-dialog-buttons { display: flex; gap: 0.6em; justify-content: flex-end; }
+
+/* ---------- Tooltip / toast ---------- */
+.por-tooltip { position: fixed; left: 0; top: 0; max-width: 22em; padding: 0.4em 0.7em; font-size: 0.85em; color: var(--por-text); background: rgba(8, 12, 28, 0.96); border: 1px solid var(--por-gilt-lo); border-radius: 2px; opacity: 0; transition: opacity 0.12s; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6); }
+.por-tooltip.show { opacity: 1; }
+.por-layer-toast { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding-top: 4.5em; gap: 0.5em; }
+.por-toast { font-family: var(--font-display); letter-spacing: 0.12em; padding: 0.5em 1.4em; color: #1b1206; background: var(--gilt-grad); border: 1px solid #000; border-radius: 2px; opacity: 0; transform: translateY(-8px); transition: all 0.3s ease; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6); }
+.por-toast.show { opacity: 1; transform: none; }
+
+/* ---------- Standard HUD layout (explore & friends) ---------- */
+.por-hud { position: absolute; inset: 0; pointer-events: none; }
+.por-hud > * { pointer-events: auto; }
+.por-hud-top { position: absolute; top: 1em; left: 1.2em; right: 1.2em; display: flex; justify-content: space-between; align-items: flex-start; pointer-events: none; }
+.por-hud-top > * { pointer-events: auto; }
+.por-location { font-family: var(--font-display); letter-spacing: 0.18em; text-transform: uppercase; }
+.por-location .name { font-size: 1.25em; }
+.por-location .sub { font-family: var(--font-body); letter-spacing: 0.05em; text-transform: none; color: var(--por-text-dim); font-size: 0.9em; margin-top: 0.15em; text-shadow: 0 1px 2px #000; }
+.por-hud-right { position: absolute; top: 1.2em; right: 1.2em; width: 17em; }
+.por-hud-bottom { position: absolute; left: 0; right: 0; bottom: 0; }
+.por-hud-bottom .por-log-wrap { margin: 0 auto 0.5em; width: min(60em, 70vw); padding: 0.5em 1em; background: linear-gradient(180deg, rgba(5, 8, 20, 0), rgba(5, 8, 20, 0.75) 30%); border-radius: 3px; text-shadow: 0 1px 2px #000; }
+.por-compass { width: 4.2em; height: 4.2em; }
+
+/* ---------- Title ---------- */
+.por-title-screen { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 6vh 0 5vh; pointer-events: none; }
+.por-title-screen > * { pointer-events: auto; }
+.por-title-logo { text-align: center; }
+.por-title-logo .pre { font-family: var(--font-display); letter-spacing: 0.5em; font-size: 0.95em; color: var(--por-gilt); text-transform: uppercase; opacity: 0.85; }
+.por-title-logo h1 { margin: 0.1em 0 0; font-size: 5.2em; line-height: 1; letter-spacing: 0.06em; font-weight: 700; }
+.por-title-logo .sub { font-family: var(--font-display); letter-spacing: 0.35em; text-transform: uppercase; color: var(--por-parchment); font-size: 0.95em; margin-top: 0.8em; text-shadow: 0 2px 6px #000; }
+.por-title-menu { min-width: 20em; }
+.por-footnote { font-size: 0.75em; color: var(--por-text-dim); letter-spacing: 0.08em; text-shadow: 0 1px 2px #000; }
+
+/* ---------- Generic scene panels ---------- */
+.por-center { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+.por-center > * { pointer-events: auto; }
+.por-grid2 { display: grid; grid-template-columns: auto auto; gap: 0.2em 1.4em; }
+.por-stat-label { font-family: var(--font-display); letter-spacing: 0.15em; color: var(--por-gilt); font-size: 0.85em; }
+.por-stat-val { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.por-h2 { font-family: var(--font-display); letter-spacing: 0.2em; text-transform: uppercase; color: var(--por-gilt-hi); margin: 0 0 0.6em; font-size: 1.1em; font-weight: 600; }
+.por-muted { color: var(--por-text-dim); }
+.por-choice-row { display: flex; flex-wrap: wrap; gap: 0.4em; }
+.por-chip { font: inherit; font-family: var(--font-display); letter-spacing: 0.08em; font-size: 0.9em; padding: 0.4em 0.9em; border: 1px solid var(--por-gilt-lo); border-radius: 2px; background: rgba(20, 34, 80, 0.6); color: var(--por-text); cursor: pointer; }
+.por-chip.sel { background: var(--gilt-grad); color: #1b1206; border-color: #000; }
+.por-input { font: inherit; padding: 0.4em 0.6em; background: rgba(0, 0, 0, 0.35); color: #fff; border: 1px solid var(--por-gilt-lo); border-radius: 2px; }
