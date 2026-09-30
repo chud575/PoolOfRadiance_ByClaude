@@ -44,10 +44,10 @@ export default class CampScene extends Scene {
     const { render, game } = this.ctx;
     const s = (this.scene3d = new THREE.Scene());
     this.camera = new THREE.PerspectiveCamera(46, render.aspect, 0.1, 600);
-    this.camera.position.set(0, 2.25, 6.4);
-    this.camera.lookAt(0, 0.75, 0);
+    this.camera.position.set(0, 1.75, 5.2);
+    this.camera.lookAt(0, 0.95, -0.6);
     this.hour = game.clock.hour + game.clock.minute / 60;
-    this.camp = await buildCamp(s, { party: game.party, hour: this.hour });
+    this.camp = await buildCamp(s, { party: game.party, hour: this.hour, renderer: render.renderer });
   }
 
   _buildUI() {

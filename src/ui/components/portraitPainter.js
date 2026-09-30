@@ -200,28 +200,32 @@ function lock(g, R, o) {
       const t = R();
       const pts = strandPts(t, 12);
       const jit = (o.jitter ?? 1.5) * (R() - 0.5) * 2;
-      const [mx, my] = pts[6];
-      const L = light(mx, my);
-      let k;
-      let a;
-      if (pass === 0) { k = 0.45 + R() * 0.25; a = 0.7; }
-      else if (pass === 1) { k = (0.75 + R() * 0.45) * L; a = 0.55; }
-      else { k = (1.15 + R() * 0.5) * L; a = 0.35 * Math.max(0, L - 0.55); }
-      if (a <= 0.01) continue;
-      const tint = L > 1 ? WARM : COOL;
-      g.strokeStyle = col(base, k, a, tint, Math.min(0.25, Math.abs(L - 1) * 0.3));
-      g.lineWidth = w0 + (w1 - w0) * R() * (pass === 2 ? 0.6 : 1);
-      g.lineCap = 'round';
-      g.beginPath();
+      const kr = R();
       const s0 = pass === 2 ? Math.floor(R() * 5) : 0;
       const s1 = pass === 2 ? Math.min(12, s0 + 3 + Math.floor(R() * 5)) : 12 - Math.floor(R() * 3);
-      for (let j = s0; j <= s1; j++) {
-        const [x, y] = pts[j];
-        const wob = Math.sin(j * 0.9 + t * 40) * jit;
-        if (j === s0) g.moveTo(x + wob, y);
-        else g.lineTo(x + wob, y);
+      const lw = w0 + (w1 - w0) * R() * (pass === 2 ? 0.6 : 1);
+      const segs = pass === 2 ? [[s0, s1]] : [[s0, 4], [4, 8], [8, s1]];
+      g.lineCap = 'round';
+      g.lineWidth = lw;
+      for (const [a0, a1] of segs) {
+        const [mx, my] = pts[Math.round((a0 + a1) / 2)];
+        const L = light(mx, my);
+        let k;
+        let al;
+        if (pass === 0) { k = 0.45 + kr * 0.25; al = 0.7; }
+        else if (pass === 1) { k = (0.75 + kr * 0.45) * L; al = 0.55; }
+        else { k = (1.15 + kr * 0.5) * L; al = 0.35 * Math.max(0, L - 0.55); }
+        if (al <= 0.01) continue;
+        g.strokeStyle = col(base, k, al, L > 1 ? WARM : COOL, Math.min(0.25, Math.abs(L - 1) * 0.3));
+        g.beginPath();
+        for (let j = a0; j <= a1; j++) {
+          const [x, y] = pts[j];
+          const wob = Math.sin(j * 0.9 + t * 40) * jit;
+          if (j === a0) g.moveTo(x + wob, y);
+          else g.lineTo(x + wob, y);
+        }
+        g.stroke();
       }
-      g.stroke();
     }
   }
   g.restore();
@@ -1115,7 +1119,7 @@ function hairLight(F) {
   return (x, y) => {
     const lx = (F.cx - x) / (F.hw * 1.3); // + on the lit left side
     const band = Math.exp(-(((y - (F.top + 18)) / 34) ** 2));
-    return 0.82 + 0.38 * lx + 0.35 * band * (lx > -0.3 ? 1 : 0.4);
+    return 0.9 + 0.24 * lx + 0.38 * band * (0.7 + 0.3 * Math.max(-1, Math.min(1, lx)));
   };
 }
 
@@ -1171,6 +1175,14 @@ function paintFrontHair(g, R, F, style, hairCol) {
     tip: hairline,
     color: hairCol, strands: n, width: [1, 2.4], light, shadow: false,
   });
+  if (style !== 'bald' && style !== 'hood') {
+    // Crown underlayer so the two halves of the cap meet without a gap.
+    soft(g, 2, () => {
+      g.fillStyle = col(hairCol, 0.62);
+      ellipse(g, cx, top + 12, hw * 0.42, 16);
+      g.fill();
+    });
+  }
   if (style === 'bald') {
     // Crown sheen + a fringe of cropped hair at the sides.
     g.save();

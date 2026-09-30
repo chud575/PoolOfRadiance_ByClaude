@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { createSkyDome, createTorch, createFlame, flicker } from '../../render/lighting.js';
 import { getMaterial, preloadMaterials } from '../../render/materials.js';
 import { getGlowTexture } from '../../render/textures/index.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { CLOTH_COLORS, defaultLook } from '../../ui/components/portraitPainter.js';
 
 /** Deterministic hash → [0,1). */
@@ -33,7 +34,7 @@ function jaggedWall(w, h, seed) {
  * @param {THREE.Scene} scene
  * @param {{party: object[], hour: number}} o
  */
-export async function buildCamp(scene, { party, hour }) {
+export async function buildCamp(scene, { party, hour, renderer }) {
   await preloadMaterials(['floor_rubble', 'wall_ruin', 'prop_wood', 'prop_stone', 'prop_burlap', 'wall_stone']);
   const geos = [];
   const mats = [];
@@ -41,6 +42,14 @@ export async function buildCamp(scene, { party, hour }) {
   const trackM = (m) => (mats.push(m), m);
   const night = hour < 6 || hour >= 19 ? 1 : hour < 7 || hour >= 18 ? 0.5 : 0;
 
+  let env = null;
+  if (renderer) {
+    const pm = new THREE.PMREMGenerator(renderer);
+    env = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+    pm.dispose();
+    scene.environment = env;
+    scene.environmentIntensity = night ? 0.06 : 0.3;
+  }
   const sky = createSkyDome({ hour, cloud: 0.35 });
   scene.add(sky);
   scene.fog = new THREE.FogExp2(night ? 0x070a16 : 0x5a6a80, night ? 0.045 : 0.02);
@@ -53,7 +62,7 @@ export async function buildCamp(scene, { party, hour }) {
   const ground = new THREE.Mesh(track(new THREE.CircleGeometry(40, 64)), getMaterial('floor_rubble'));
   ground.rotation.x = -Math.PI / 2;
   const uv = ground.geometry.attributes.uv;
-  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 14, uv.getY(i) * 14);
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 34, uv.getY(i) * 34);
   ground.receiveShadow = true;
   scene.add(ground);
   const ash = new THREE.Mesh(track(new THREE.CircleGeometry(1.25, 32)), trackM(new THREE.MeshStandardMaterial({ color: 0x0c0a08, roughness: 1, transparent: true, opacity: 0.85 })));
@@ -152,14 +161,14 @@ export async function buildCamp(scene, { party, hour }) {
   }
 
   // Bedrolls + packs for each party member (not on the camera side).
-  const angles = [-2.35, -1.75, -1.15, -0.4, 0.25, 0.85].slice(0, Math.max(1, party.length));
+  const angles = [3.45, 3.95, 4.45, 4.98, 5.48, 5.98];
   const rollGeo = track(new THREE.CapsuleGeometry(0.28, 1.25, 4, 10));
   const pillowGeo = track(new THREE.BoxGeometry(0.46, 0.2, 0.3));
   party.forEach((ch, i) => {
     const look = defaultLook(ch);
     const color = new THREE.Color(CLOTH_COLORS[look.cloth % CLOTH_COLORS.length][1]);
     const mat = trackM(new THREE.MeshStandardMaterial({ color, roughness: 0.95 }));
-    const a = angles[i % angles.length] - Math.PI / 2;
+    const a = angles[i % angles.length];
     const r = 2.35 + hrand(i, 9) * 0.35;
     const g = new THREE.Group();
     const roll = new THREE.Mesh(rollGeo, mat);
@@ -187,7 +196,7 @@ export async function buildCamp(scene, { party, hour }) {
   tent.castShadow = true;
   tent.receiveShadow = true;
   scene.add(tent);
-  const steel = trackM(new THREE.MeshStandardMaterial({ color: 0xc8ccd4, metalness: 0.9, roughness: 0.3 }));
+  const steel = trackM(new THREE.MeshStandardMaterial({ color: 0xc8ccd4, metalness: 0.55, roughness: 0.35 }));
   const blade = new THREE.Mesh(track(new THREE.BoxGeometry(0.06, 0.9, 0.015)), steel);
   blade.position.set(1.7, 0.38, 1.2);
   blade.rotation.z = 0.12;
@@ -197,8 +206,8 @@ export async function buildCamp(scene, { party, hour }) {
   guard.position.set(1.755, 0.84, 1.2);
   guard.rotation.z = 0.12;
   scene.add(guard);
-  const shield = new THREE.Mesh(track(new THREE.CylinderGeometry(0.42, 0.42, 0.05, 24)), trackM(new THREE.MeshStandardMaterial({ color: 0x1f3a7c, roughness: 0.6, metalness: 0.2 })));
-  shield.position.set(-1.75, 0.4, 1.25);
+  const shield = new THREE.Mesh(track(new THREE.CylinderGeometry(0.34, 0.34, 0.05, 24)), trackM(new THREE.MeshStandardMaterial({ color: 0x1f3a7c, roughness: 0.6, metalness: 0.2 })));
+  shield.position.set(-2.3, 0.36, 0.2);
   shield.rotation.set(Math.PI / 2 - 0.35, 0, 0.5);
   shield.castShadow = true;
   scene.add(shield);
@@ -240,6 +249,7 @@ export async function buildCamp(scene, { party, hour }) {
     dispose() {
       for (const g of geos) g.dispose();
       for (const m of mats) m.dispose();
+      env?.dispose();
       sky.geometry.dispose();
       sky.material.dispose();
     },

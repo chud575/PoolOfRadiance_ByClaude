@@ -7,6 +7,8 @@ import { CLASSES, ALIGNMENT_NAMES, SAVE_KEYS, SAVE_SHORT, THIEF_SKILL_IDS, THIEF
 import { describeEffects } from '../../rules/conditions.js';
 import { itemName } from '../../rules/items.js';
 import { spellLevel } from '../../rules/spells.js';
+import { ITEMS } from '../../data/items.js';
+import { itemIconURL, iconFor } from './itemIcons.js';
 import { portraitURL } from './portraitPainter.js';
 import { abilityTip, STAT_TIPS } from './rulesText.js';
 
@@ -161,10 +163,18 @@ export function renderSheet(ch) {
   if (race.canDualClass) traits.push(['Dual class', 'able', 'Humans may abandon their class for a new one and later regain the old abilities.']);
   extra.push(sect('Racial Traits', [h('div.pc-kv', traits.flatMap(([k, v, t]) => kv(k, v, { title: k, text: t })))]));
 
+  const gear = ch.inventory.filter((e) => e.equipped && ITEMS[e.id]);
+  const kit = sect('Readied', gear.length ? gear.map((e) => h('div', { style: { display: 'flex', alignItems: 'center', gap: '0.6em', padding: '0.12em 0' }, dataset: lore({ title: itemName(e), text: `Readied ${ITEMS[e.id].type}. Open ITEMS to change equipment.` }) }, [
+    h('img', { src: itemIconURL(iconFor(ITEMS[e.id])), alt: '', style: { width: '1.9em', height: '1.9em' } }),
+    h('span', { style: { color: 'var(--por-text)' } }, [itemName(e), (e.qty ?? 1) > 1 ? ` ×${e.qty}` : '']),
+  ])) : [h('div.pc-rest-note', ['Nothing readied.'])]);
+  const langs = sect('Languages', [h('div', race.languages.map((l) => h('span.pc-chip', [l])))]);
+  const side = [saves, ...extra.slice(0, 2)];
+  if (side.length < 3) side.push(langs);
   return h('div.pc-sheet', [
     id,
     h('div.pc-col', [abil, cls]),
-    h('div.pc-col', [combat]),
-    h('div.pc-col', [saves, ...extra.slice(0, 2)]),
+    h('div.pc-col', [combat, kit]),
+    h('div.pc-col', side),
   ]);
 }

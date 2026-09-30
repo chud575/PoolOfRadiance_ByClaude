@@ -124,9 +124,9 @@ export class SpellPanel {
         const sp = getSpell(id);
         const count = prepared.filter((x) => x === id).length;
         const full = free[i] <= 0;
-        lists.push(h(`div.pc-spell${this.focus === id ? '.sel' : ''}${full ? '.dis' : ''}`, {
+        lists.push(h(`div.pc-spell${this.focus === id ? '.sel' : ''}`, {
           dataset: lore(spellTip(id, cls)),
-          onclick: () => { this.focus = id; if (!full) this.add(id); else this.render(); },
+          onclick: () => { this.focus = id; if (!full) this.add(id); else { this.ctx.ui.toast(`No free level ${ROMAN[i + 1]} slots — remove a spell first.`); this.render(); } },
         }, [
           h(`span.gl.${cls}`, [ROMAN[i + 1]]),
           h('span', [h('div.nm', [sp.name]), h('div.tg', [sp.tip ?? ''])]),

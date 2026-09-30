@@ -10,6 +10,7 @@ export const GALLERY = [
   { name: 'settings', query: 'scene=title&view=settings&tab=graphics&t=6&seed=1' },
   { name: 'intro', query: 'scene=title&view=intro&t=13.5&seed=1' },
   { name: 'create', query: 'scene=create&step=stats&t=2&seed=1' },
+  { name: 'create_party', query: 'scene=create&party=default&t=2&seed=1' },
   { name: 'create_portrait', query: 'scene=create&step=portrait&t=2&seed=1' },
   { name: 'explore', query: 'scene=explore&map=phlan_slums&x=7&y=11&dir=N&hour=10&t=2&seed=1' },
   { name: 'explore_door', query: 'scene=explore&map=phlan_slums&x=8&y=11&dir=S&hour=10&t=2&seed=1' },
