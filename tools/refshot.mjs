@@ -17,7 +17,7 @@ const only = opt('only', '')?.split(',').filter(Boolean);
 const outDir = opt('out', 'reference');
 const w = Number(opt('w', 1600));
 const h = Number(opt('h', 900));
-const srv = await ensureServer({ preview: a.includes('--preview') });
+const srv = await ensureServer({ preview: a.includes('--preview'), port: opt('port', null) ? Number(opt('port')) : undefined });
 const browser = await launch();
 let failures = 0;
 try {
