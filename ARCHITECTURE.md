@@ -37,13 +37,23 @@ src/core/                  engine plumbing (no game rules, no visuals)
   GameState.js             party, location, time, flags, explored cells (serialisable)
   debug.js                 URL debug/shot API parser
   context.js               GameContext typedef
-src/rules/                 AD&D 1e engine — pure, deterministic, unit-tested, no DOM/three
+src/rules/                 AD&D 1e engine — pure, deterministic, unit-tested, no DOM/three (see "Rules engine API")
   dice.js                  seeded Rng (mulberry32), roll('3d6+1'), parseDice
-  abilities.js             STR/DEX/CON/WIS tables, 18/xx strength
-  races.js                 6 races: adjustments, class options, level limits, thief adj
-  classes.js               fighter/cleric/magicUser/thief: XP, THAC0, saves, slots, thief skills
-  character.js             create/derive/equip/xp/train/damage/heal (plain JSON characters)
-  combat.js                combatants, initiative, attack/damage, saves, autoResolve
+  abilities.js             full PHB ability tables (STR 18/xx + giant, INT, WIS, DEX, CON, CHA)
+  races.js                 6 races: adjustments, min/max (by gender), classes, ability-dependent level limits, thief adj, ages
+  classes.js               XP, THAC0 (DMG matrices), saves, slots, thief skills, turn undead, alignments, PoR level caps
+  tohit.js                 neededToHit() with the 1e repeating-20 rule
+  conditions.js            condition registry + timed effects (bless, held, asleep, poisoned...) and their modifiers
+  items.js                 +N enchantments, item names/values/weights, rate of fire, armour move, encumbrance
+  character.js             create/derive/equip/xp/train/dual-class/damage/heal/bleed/raise (plain JSON characters)
+  creature.js              uniform view over Character / Combatant / monster (tags, saves, AC, damage, heal)
+  saves.js                 rollSave() with WIS/DEX/element/prot-from-evil situational bonuses
+  spells.js                ALL PoR spells (cleric 1-3, MU 1-3, temple 4-5) as data + castSpell() resolver
+  camp.js                  memorization load-outs, 1e rest/memorize timing, natural healing, learning spells
+  magicItems.js            useItem (potions/scrolls/wands), scribeScroll, identify, detect magic
+  treasure.js              MM treasure types A-Z, gems, jewelry, magic items, coin sharing
+  temple.js                temple services (cures, raise dead, stone to flesh, identify)
+  combat.js                combatants, initiative, attacks (with live effects), saves, poison, turning, upkeep, autoResolve
   party.js                 prebuilt parties
   index.js                 public re-exports
 src/data/                  content tables (plain JS objects; see schema.js typedefs)
@@ -80,6 +90,68 @@ Dependency direction (enforced by convention): `scenes → ui/render/audio/rules
 `ui → rules/data`, `rules → data`, `data → (nothing)`, `core → data (MapGrid consts), scenes/registry`.
 **Scenes never import other scenes.** `tools/reference` may import `src/data`, `src/rules`,
 `src/render/palette.js` and `src/render/bitmapFont5x7.js` only.
+
+## Rules engine API
+
+`import * as R from './rules/index.js'` (or the individual modules). Everything is pure and takes an `Rng`
+for randomness; characters are plain JSON and derived numbers always come from `deriveStats(ch)`.
+Durations are combat rounds (1 round = 1 minute; 1 turn = 10 rounds). Ranges/areas are battle squares.
+
+**Creation & sheet**
+* `rollLegalAbilities(rng, race, classSpec, method?, gender?)`, `applyRace`, `validateConcept({race, classSpec, alignment, abilities, gender})`
+* `createCharacter({rng, name, race, classSpec, abilities?, gender?, alignment?, items?, level?, spellbook?})`
+* `deriveStats(ch)` → `{thac0, ac, acRear, acMissile, saves, hitBonus, dmgBonus, weapon, weaponMagic, ranged, damage, attacks,
+  move, baseMove, weight, encumbrance, spellSlots, canCastArcane, thief, backstab, abilities (effective), mods (effects), ...}`
+* Tables for tooltips: `abilitySummary(abilities)`, `strengthTable`, `intelligenceTable`, `constitutionTable`, `charismaTable`,
+  `THIEF_SKILL_NAMES`, `SAVE_NAMES`, `CONDITIONS[id].{name,desc}`, `describeEffects(ch)`, `statusLabel(ch)`.
+* Races/classes: `RACES`, `CLASSES`, `racialLevelLimit(race, cls, abilities)`, `allowedAlignments(spec)`, `PR_LEVEL_CAPS`
+  (fighter 8, cleric 6, magic-user 6, thief 9), `thac0For`, `savesFor`, `spellSlots`, `thiefSkills`, `turnNeeded`.
+
+**Equipment**: `addItem(ch, id, {equip, magic, spells, cursed})`, `equipItem`, `unequipItem`, `removeItem`, `canEquip`,
+`equipProblem` (reason string for the UI), `itemName(entry)` (honours identification and `entry.magic` overrides),
+`itemValue`, `itemWeight`, `carriedWeight`, `encumbranceCategory`. Inventory entries may carry `magic` (+N) so treasure
+can make "Long Sword +2" from `longSword`. Optional ItemDef fields the rules understand: `magic`, `magicVs`, `acBase`
+(bracers), `acBonus`, `saveBonus`, `setStr` (gauntlets of ogre power), `rateOfFire`, `cursed`, `classes`, `slot`,
+`casterLevel`; potion `effect` strings `heal:<dice>`, `giantStrength:<str>`, `speed`, `neutralize`, or a spell id.
+
+**Experience & training**: `awardXp(ch, xp)` (splits multiclass, +10% prime requisite, banks at most one point short
+of the level after next — Gold Box training rule), `trainableClasses(ch)`, `trainingCost(ch)` (PoR: 1,000 gp),
+`trainLevels(ch, rng)` (one level per visit, capped by race and PoR caps), `maxLevel(ch, cls)`,
+`dualClassProblem(ch, cls)` / `dualClass(ch, cls)` (humans).
+
+**Health**: `applyDamage` (0 unconscious, −1…−9 dying, ≤ −10 dead; wakes sleepers), `bleed(ch)` (1 hp/round),
+`bandage(ch)`, `heal`, `raiseDead(rng, ch)` (resurrection survival, −1 CON), `stoneToFlesh`, `isConscious`, `isAlive`.
+
+**Conditions**: `addEffect(target, id, {rounds, source, level, mods, data})`, `removeEffect`, `hasEffect`, `getEffect`,
+`effectMods(target)`, `tickEffects(target, rounds)`, `isIncapacitated`, `isHelpless`, `conditionsAllowCasting`,
+`clearCombatEffects`. Effects live in `target.effects`; `target.conditions` mirrors their ids as strings.
+Party combatants share `hp`, `conditions` and `effects` with their Character.
+
+**Spells** (`SPELL_RULES`, 54 spells incl. temple-only cures/raise dead)
+* `spellsForClass(cls, level)`, `getSpell(id)` (rules + data display merged: `name, desc, tip, schools, usable, ...`),
+  `spellLevel(id, cls)`, `spellTargeting(id, casterLevel, cls)` → `{target, range, shape, size, maxTargets, hostile, duration}`.
+* `castProblem(caster, id, {context})` → reason or null (memorized, silence/held, armour for arcane, camp/combat usability).
+* `castSpell(rng, id, caster, targets, {consume, context, level})` → `{ok, reason, level, results:[{target, affected, saved,
+  save, resisted, immune, missed, damage, healed, applied, removed, down, charmed}], flags, log}`. The caller picks
+  targets from the template (primary/nearest first); the engine filters by `affects`, applies `maxTargets`, saves
+  (WIS vs mind magic, DEX vs fireball/lightning, hold person's −2 alone), elf/half-elf sleep-charm resistance, undead
+  immunity, shield vs magic missile, and returns terse Gold Box log lines. Utility spells report `flags`
+  (`detectMagic`, `findTraps`, `unlock`, `readMagic`, `raiseDead`, `poisonCured`...).
+* Memorization (camp.js): `knownSpells(ch, cls)`, `slotsFor`, `checkLoadout`, `prepareSpells(ch, cls, ids)`, `autoPrepare(ch)`,
+  `spellsToMemorize`, `memorizationTime(ch)` (1e: 4/6/8 h rest + 15 min per spell level), `rest(party, minutes)` →
+  `{healed, memorized, expired, died}` (1 hp/day natural healing, `healPerDay` option), `learnSpell`. Model:
+  `ch.spells.prepared[cls]` = chosen load-out, `ch.spells.memorized[cls]` = still in memory (casting removes).
+
+**Combat** (combat.js, co-owned): `combatantFromCharacter`, `combatantFromMonster`, `rollInitiative`, `canAct`, `resolveAttack(rng,
+a, d, {mods, dmgMod, backstab, rear, ranged})` (applies live effects: bless/prayer, shield, invisibility, blink, mirror
+image, prot. from evil/missiles, helpless +4), `hitChance`, `attacksFor(c, round)` (3/2 alternation), `sweepAttacks(ch, hd)`
+(fighters vs < 1 HD), `savingThrow`, `poison(rng, target, {mode:'deadly'|'damage'})`, `turnUndead(rng, level, type)`,
+`endOfRound(c)` (bleeding, poison onset, effect expiry), `endCombat(party)`, `rollSurprise`, `moraleCheck`,
+`xpForVictory`, `autoResolve`.
+
+**Items, treasure, temple**: `useItem(rng, ch, index, targets, {spellId})`, `scribeScroll`, `identifyItem`, `detectMagicIn`;
+`generateTreasure(rng, types, {scale, count})` → `{coins, gems, jewelry, items}`, `rollMagicItem`, `treasureValue`,
+`shareCoins`; `TEMPLE_SERVICES`, `serviceApplies(id, ch)`, `performService(rng, id, ch)`.
 
 ## Scene contract
 
@@ -219,7 +291,7 @@ premium modern release, i.e.:
 
 * Combat: only QUICK/FLEE work; MOVE/AIM/CAST etc. are disabled placeholders; figures are primitives.
 * Explore: one block (`phlan_slums`), exits to unbuilt maps, no roofs/skyline beyond block walls, no props.
-* Spells: data only, no casting engine; no memorization UI.
+* Spells: full rules engine (castSpell, memorization, rest); combat still uses its own resolver for some spells; no memorization UI yet.
 * Shops: buy only; temple/training services not implemented.
 * Audio: procedural sfx only; music is a stub.
 * UI: no inventory/character sheet screens; settings/options UI minimal; no rebinding UI (API exists).
