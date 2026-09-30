@@ -18,6 +18,9 @@ export function preloadWorld() {
  * Ruined Phlan at dusk, assembled: sky, Moonsea, city, temple terrace with
  * the Pool of Radiance, a dragon over the sea, embers and motes.
  */
+const LOOK_FOG = new THREE.Color(0x5a3552);
+const LOOK_FILL = new THREE.Color(0x9a92b8);
+
 export function createWorld() {
   const scene = new THREE.Scene();
   const U = createWorldUniforms(SUN_DIR);
@@ -117,6 +120,23 @@ export function createWorld() {
     sun,
     sky,
     dragonPath,
+    hemi,
+    fill,
+    /**
+     * Blend the atmosphere for cinematic shots: k=0 is the title look, k=1 the
+     * aerial "city" look (denser mauve aerial perspective, brighter sky fill,
+     * a cool rim from the east so roofs read against the haze).
+     */
+    setLook(k) {
+      k = Math.max(0, Math.min(1, k));
+      scene.fog.density = 0.0034 + k * 0.0042;
+      scene.fog.color.setHex(0x3a2240).lerp(LOOK_FOG, k);
+      hemi.intensity = 0.75 + k * 0.85;
+      fill.intensity = 0.6 + k * 0.9;
+      fill.color.setHex(0x6070c8).lerp(LOOK_FILL, k);
+      fill.position.set(8 + k * 60, 12 + k * 20, 30 + k * 10);
+      sun.intensity = 2.2 + k * 1.2;
+    },
     update(t, camera, px = 1) {
       U.uTime.value = t;
       sky.userData.update(camera);

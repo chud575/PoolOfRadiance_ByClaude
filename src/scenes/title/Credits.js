@@ -2,7 +2,6 @@ import { h } from '../../ui/UI.js';
 
 /** Credits text (plain data; the crawl renders it). */
 const CREDITS = [
-  ['h', 'Pool of Radiance'],
   ['s', 'A modern homage'],
   ['gap'],
   ['r', 'In memory of the original', 'Pool of Radiance (1988)\nStrategic Simulations, Inc. · TSR, Inc.'],

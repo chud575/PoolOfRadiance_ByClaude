@@ -16,6 +16,7 @@ const SHOTS = [
   {
     t: [0, 8.2],
     keys: [{ p: V(-70, -11.5, -430), l: V(-25, -8, -150) }, { p: V(-48, -9.5, -318), l: V(-12, -6, -140) }],
+    look: 0.35,
     caption: 'The Moonsea',
     sub: 'Year of the Worm',
     text: 'Your ship noses through the evening swell toward Phlan — or what the dragons and the goblin hordes have left of it.',
@@ -23,6 +24,7 @@ const SHOTS = [
   {
     t: [8.2, 16.4],
     keys: [{ p: V(96, 13, -118), l: V(44, -10, -66) }, { p: V(58, 9, -86), l: V(12, -12, -44) }],
+    look: 1,
     caption: 'The Old City',
     sub: 'Fallen these fifty years',
     text: 'Once the jewel of the northern shore, Phlan was lost half a century ago. Its ruins belong to monsters now, and to whatever commands them.',
@@ -30,6 +32,7 @@ const SHOTS = [
   {
     t: [16.4, 24.4],
     keys: [{ p: V(-104, 9, -84), l: V(-30, -9, -58) }, { p: V(-70, 2, -66), l: V(-20, -9, -58) }],
+    look: 1,
     caption: 'New Phlan',
     sub: 'Behind the patchwork wall',
     text: 'Merchants of the Moonsea have taken back one corner of the city. New Phlan huddles behind its patchwork wall — and it needs swords.',
@@ -37,6 +40,7 @@ const SHOTS = [
   {
     t: [24.4, 32.4],
     keys: [{ p: V(-30, -9.2, -34), l: V(-19, -8, -58) }, { p: V(-23, -9.8, -42), l: V(-19.5, -7.6, -58) }],
+    look: 0.55,
     caption: 'City Hall',
     sub: 'The Council of Phlan',
     text: 'The City Council pays in gold for every block of the old city made safe again. Its clerk keeps a ledger of the brave, and of the dead.',
@@ -44,6 +48,7 @@ const SHOTS = [
   {
     t: [32.4, INTRO_LENGTH],
     keys: [{ p: V(0, 34, 46), l: V(0, 0, -6) }, { p: V(0, 3.6, 12.5), l: V(0, 1.08, -27.5) }],
+    look: [0.9, 0],
     caption: '',
     sub: '',
     text: '“Welcome to Phlan, adventurers. Sign here — and may your blades stay sharp.”',
@@ -112,6 +117,8 @@ export class IntroCinematic {
     camera.position.y += Math.sin(lt * 0.7) * 0.08;
     const look = new THREE.Vector3().lerpVectors(a.l, b.l, e);
     camera.lookAt(look);
+    const L = Array.isArray(s.look) ? s.look[0] + (s.look[1] - s.look[0]) * e : s.look;
+    this.world?.setLook?.(L);
 
     // crossfades between shots (and out at the very end)
     let f = 1 - smooth(s.t[0], s.t[0] + 0.7, lt);
@@ -158,6 +165,7 @@ export class IntroCinematic {
   }
 
   dispose() {
+    this.world?.setLook?.(0);
     this.el.remove();
   }
 }

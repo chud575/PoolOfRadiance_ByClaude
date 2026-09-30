@@ -106,7 +106,9 @@
 /* key bindings */
 .por-bind { display: flex; flex-direction: column; }
 .por-bind-head, .por-bind-row { display: grid; grid-template-columns: 1fr 8.5em 8.5em 6.5em; gap: 0.6em; align-items: center; padding: 0.28em 0.9em 0.28em 1.1em; }
-.por-bind-head { font-family: var(--font-display); font-weight: 700; font-size: 0.7em; letter-spacing: 0.24em; text-transform: uppercase; color: var(--por-gilt); padding-top: 0; padding-bottom: 0.5em; }
+.por-bind-head { font-family: var(--font-display); font-weight: 700; letter-spacing: 0.24em; text-transform: uppercase; color: var(--por-gilt); padding-top: 0; padding-bottom: 0.5em; }
+.por-bind-head > span { font-size: 0.7em; }
+.por-bind-head > span:nth-child(2), .por-bind-head > span:nth-child(3) { text-align: center; }
 .por-bind-group { font-family: var(--font-display); font-weight: 700; font-size: 0.74em; letter-spacing: 0.3em; text-transform: uppercase; color: var(--por-gilt-hi); padding: 0.9em 0 0.35em 1.1em; border-bottom: 1px solid rgba(216, 178, 90, 0.2); margin-bottom: 0.2em; }
 .por-bind-row { position: relative; border-radius: 2px; border: 1px solid transparent; transition: background 0.15s var(--ease); }
 .por-bind-row::before { content: ''; position: absolute; left: 0; top: 0.35em; bottom: 0.35em; width: 2px; background: var(--por-gilt-hi); transform: scaleY(0); transition: transform 0.2s var(--ease); }
