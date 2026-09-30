@@ -11,6 +11,7 @@ import { ITEMS } from '../../data/items.js';
 import { itemIconURL, iconFor } from './itemIcons.js';
 import { portraitURL } from './portraitPainter.js';
 import { abilityTip, STAT_TIPS } from './rulesText.js';
+import { miniatureSnapshot } from './Miniature.js';
 
 const sgn = (n) => (n > 0 ? `+${n}` : String(n));
 const ORD = (n) => `${n}${n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th'}`;
@@ -84,6 +85,13 @@ export function renderSheet(ch) {
       ...effects.filter((e) => e.kind !== 'status' || e.id !== 'ok').slice(0, 4).map((e) => h('span.pc-chip', { dataset: lore({ title: e.name, text: e.desc }) }, [e.name])),
     ]),
   ]);
+  const icon = miniatureSnapshot(ch);
+  if (icon) {
+    id.append(h('div.pc-icon', { dataset: lore({ title: 'Combat icon', text: 'Your miniature on the battlefield, dressed in whatever is readied. Change its look with MODIFY at the party screen.' }) }, [
+      h('img', { src: icon, alt: '', draggable: false }),
+      h('span', ['Combat icon']),
+    ]));
+  }
 
   // ---- abilities + class
   const abil = sect('Abilities', ABILITIES.map((k) => {
