@@ -443,7 +443,7 @@ export function floorBoards({ seed = 121, count = 9, base = [0.34, 0.22, 0.13] }
       c = [0.08, 0.07, 0.06];
       h = 0.62;
     }
-    return { c: mul3(c, lerp(0.25, 1, gap)), h, r: lerp(0.7, 0.45, wear) - g2 * 0.1 };
+    return { c: mul3(c, lerp(0.25, 1, gap)), h, r: lerp(0.86, 0.66, wear) - g2 * 0.06 };
   };
 }
 

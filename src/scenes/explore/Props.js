@@ -614,8 +614,8 @@ export function buildLightShafts(windows, sunDir, { color = 0xfff0d8, strength =
     vertexShader: 'varying vec2 vUv; varying vec3 vW; void main(){ vUv = uv; vec4 w = modelMatrix * vec4(position,1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }',
     fragmentShader: `uniform vec3 uColor; uniform float uStrength; uniform float uTime; varying vec2 vUv; varying vec3 vW;
       void main(){
-        float edge = smoothstep(0.0, 0.35, vUv.x) * smoothstep(1.0, 0.65, vUv.x);
-        float along = smoothstep(0.0, 0.08, vUv.y) * pow(1.0 - vUv.y, 1.6);
+        float edge = pow(sin(3.14159 * clamp(vUv.x, 0.0, 1.0)), 2.0);
+        float along = smoothstep(0.0, 0.12, vUv.y) * pow(1.0 - vUv.y, 2.2);
         float motes = 0.85 + 0.15 * sin(vW.x * 7.0 + vW.y * 5.0 + uTime * 0.6) * sin(vW.z * 6.0 - uTime * 0.4);
         gl_FragColor = vec4(uColor * edge * along * uStrength * motes, 1.0);
       }`,

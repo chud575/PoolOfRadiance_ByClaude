@@ -195,6 +195,7 @@ export function buildBlock(map, opts = {}) {
     const seedE = hash(map.id, e.key);
     // openings shared through the wall
     const openings = [];
+    const hearthEdge = isHearthEdge(e.x, e.y, e.dir);
     if (isDoor) openings.push({ s0: -DOOR_W / 2, s1: DOOR_W / 2, y0: 0, y1: DOOR_H, kind: 'door' });
     if (isArch) openings.push({ s0: -ARCH_W / 2, s1: ARCH_W / 2, y0: 0, y1: ARCH_SPRING + ARCH_W / 2, kind: 'arch' });
     const inA = map.inBounds(sides[0].cx, sides[0].cy);
@@ -211,7 +212,6 @@ export function buildBlock(map, opts = {}) {
       openings.push({ s0: -w, s1: w, y0: 3.55, y1: faceExtH >= 7 ? 5.4 : 4.6, kind: 'window', upper: true });
     }
     // interior tileset: daylight windows in the outer border
-    const hearthEdge = isHearthEdge(e.x, e.y, e.dir);
     if (indoor && ts.id === 'interior' && (!inA || !inB) && !isDoor && !hearthEdge && seedE < 0.55) openings.push({ s0: -0.5, s1: 0.5, y0: 1.0, y1: 2.35, kind: 'window', ground: true, border: true });
     // ruin: jagged profile shared by both faces
     const jag = makeJag(e, seedE);

@@ -355,11 +355,11 @@ export function getGrassTexture() {
       const x = w * (0.2 + r() * 0.6);
       const bh = h * (0.3 + r() * 0.65);
       const bend = (r() - 0.5) * 40;
-      const gcol = [85 + r() * 60, 115 + r() * 60, 35 + r() * 35];
-      if (r() < 0.3) {
-        gcol[0] += 70;
-        gcol[1] += 40;
-        gcol[2] += 10;
+      const gcol = [70 + r() * 40, 95 + r() * 45, 40 + r() * 25];
+      if (r() < 0.25) {
+        gcol[0] += 50;
+        gcol[1] += 25;
+        gcol[2] += 15;
       }
       g.strokeStyle = `rgb(${gcol[0] | 0},${gcol[1] | 0},${gcol[2] | 0})`;
       g.lineWidth = 1.5 + r() * 2;

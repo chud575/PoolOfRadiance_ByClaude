@@ -110,7 +110,7 @@ export default class ExploreScene extends Scene {
       this.sky = createSkyDome({ hour: this.hour, cloud: 0.46 });
       this.sky.renderOrder = 20; // last opaque: early-z rejects everything already covered
       s.add(this.sky);
-      this.hemi = new THREE.HemisphereLight(k.sky, new THREE.Color(k.ground).multiplyScalar(k.night > 0.5 ? 1 : 2.2), k.hemi * (k.night > 0.5 ? 1.6 : 2.1));
+      this.hemi = new THREE.HemisphereLight(k.night > 0.5 ? k.sky : new THREE.Color(k.sky).lerp(new THREE.Color(0xffffff), 0.35).getHex(), new THREE.Color(k.ground).multiplyScalar(k.night > 0.5 ? 1 : 2.4), k.hemi * (k.night > 0.5 ? 1.6 : 2.8));
       s.add(this.hemi);
       const night = k.night > 0.5;
       this.sun = new THREE.DirectionalLight(night ? 0x9db4ff : k.sun, night ? 0.8 : k.sunI * 1.05);
@@ -248,7 +248,7 @@ export default class ExploreScene extends Scene {
     }
     if (this.night > 0.5) return { bloomStrength: 0.75, bloomThreshold: 0.62, bloomRadius: 0.55, exposure: 1.3, vignette: 0.45, saturation: 1.05, contrast: 1.05 };
     if (this.keys.scatter > 0.8) return { bloomStrength: 0.5, bloomThreshold: 0.8, bloomRadius: 0.6, exposure: 1.05, vignette: 0.38, saturation: 1.08 };
-    return { bloomStrength: 0.32, bloomThreshold: 0.9, bloomRadius: 0.55, exposure: 1.0, vignette: 0.32, saturation: 1.06, contrast: 1.05 };
+    return { bloomStrength: 0.32, bloomThreshold: 0.9, bloomRadius: 0.55, exposure: 1.06, vignette: 0.32, saturation: 1.06, contrast: 1.05 };
   }
 
   _setupParticles() {
@@ -371,7 +371,7 @@ export default class ExploreScene extends Scene {
       this.shafts = null;
     }
     if (this.tileset.outdoors || !this.sun || !this.sun.intensity) return;
-    this.shafts = buildLightShafts(this.block.windows.filter((w) => !w.upper), this.sunDir, { strength: 0.09 });
+    this.shafts = buildLightShafts(this.block.windows.filter((w) => !w.upper), this.sunDir, { strength: 0.05, length: 3.8 });
     if (this.shafts) this.scene3d.add(this.shafts);
   }
 
@@ -433,7 +433,7 @@ export default class ExploreScene extends Scene {
    */
   render() {
     const frozen = this.ctx.clock.frozen;
-    if (frozen && !this.tween && (this._settled ?? 0) >= 6) return;
+    if (frozen && !this.tween && (this._settled ?? 0) >= 3) return;
     super.render();
     this._settled = frozen ? (this._settled ?? 0) + 1 : 0;
   }
