@@ -61,6 +61,7 @@ const DEFS = {
   prop_wood: { tex: 'hd_beam', fx: { macro: 0.2 } },
   prop_stone: { tex: 'hd_ashlar', fx: { macro: 0.25, moss: 0.5 } },
   prop_bone: { color: 0xcfc3a6, roughness: 0.7, fx: {} },
+  prop_limestone: { tex: 'hd_limestone', texScale: 1.5, fx: { macro: 0.25, moss: 0.6 } },
 };
 
 /** Texture sets each tileset needs (for preloading). */

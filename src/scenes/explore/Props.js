@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { CELL } from '../../data/maps/MapGrid.js';
+import { CELL, EDGE } from '../../data/maps/MapGrid.js';
 import { getMaterial, getLampGlassMaterial, SURFACE_UNIFORMS } from '../../render/materials.js';
-import { getBannerTexture, getGrassTexture, getIvyTexture, getCobwebTexture, getPuddleTexture, getSoftTexture } from '../../render/textures/index.js';
+import { getBannerTexture, getGrassTexture, getIvyTexture, getCobwebTexture, getPuddleTexture, getSoftTexture, getRugTexture } from '../../render/textures/index.js';
 import { GeoBuilder, hash } from './GeoBuilder.js';
 import { CELL_SIZE, WALL_T } from './BlockBuilder.js';
 
@@ -34,6 +34,7 @@ export function buildProps(map, block, opts = {}) {
   const puddles = [];
   const pools = [];
   const banners = [[], [], [], []];
+  const rugs = [];
 
   const place = (face, s, d, rot = 0) => {
     const m = new THREE.Matrix4().multiplyMatrices(face.basis, new THREE.Matrix4().makeTranslation(s, 0, d));
@@ -166,7 +167,22 @@ export function buildProps(map, block, opts = {}) {
   // ivy on ruined faces
   for (const f of block.spots.ivy) {
     if (hash(f.seed, 'ivy') > 0.5) continue;
-    ivyCards.push({ face: f, s: (hash(f.seed, 'is') - 0.5) * 1.4, w: 1.2 + hash(f.seed, 'iw') * 1.2, h: 1.4 + hash(f.seed, 'ih') * 1.4, top: f.H * (0.5 + hash(f.seed, 'it') * 0.25) });
+    const top = f.H * (0.5 + hash(f.seed, 'it') * 0.25);
+    const h = 1.4 + hash(f.seed, 'ih') * 1.4;
+    // keep clear of doors, arches and windows
+    const ops = f.openings.filter((o) => o.y1 > top - h && o.y0 < top).sort((a, b) => a.s0 - b.s0);
+    const spans = [];
+    let s0 = -1.5;
+    for (const o of ops) {
+      if (o.s0 - 0.25 > s0) spans.push([s0, o.s0 - 0.25]);
+      s0 = Math.max(s0, o.s1 + 0.25);
+    }
+    if (s0 < 1.5) spans.push([s0, 1.5]);
+    const best = spans.sort((a, b) => b[1] - b[0] - (a[1] - a[0]))[0];
+    if (!best || best[1] - best[0] < 0.7) continue;
+    const w = Math.min(best[1] - best[0], 1.2 + hash(f.seed, 'iw') * 1.2);
+    const c = best[0] + w / 2 + (best[1] - best[0] - w) * hash(f.seed, 'is');
+    ivyCards.push({ face: f, s: c, w, h, top });
   }
   // flower boxes
   for (const sp of block.spots.lamp) {
@@ -194,10 +210,35 @@ export function buildProps(map, block, opts = {}) {
       }
     }
     if (ts.id === 'interior' && hash(fc.x, fc.y, 'rug') < 0.2 && !fc.edge) {
-      const m = new THREE.Matrix4().makeTranslation(cx, 0.012, cz).multiply(new THREE.Matrix4().makeRotationY(hash(fc.x, fc.y) < 0.5 ? 0 : Math.PI / 2));
-      g.box('prop_burlap', { matrix: m, s: [1.8, 0.015, 1.2], uv: 'local', tint: [0.75, 0.25, 0.18], ao: 1 });
+      const m = new THREE.Matrix4().makeTranslation(cx, 0.008, cz).multiply(new THREE.Matrix4().makeRotationY(hash(fc.x, fc.y) < 0.5 ? 0 : Math.PI / 2));
+      rugs.push({ m, v: hash(fc.x, fc.y, 'rv') < 0.5 ? 0 : 1 });
     }
   }
+  // fallen column drums and broken shafts in temple precincts
+  for (const fc of block.spots.floorCells) {
+    if (fc.covered || !/temple|shrine/i.test(map.zoneAt(fc.x, fc.y) ?? '')) continue;
+    const h = hash(map.id, fc.x, fc.y, 'col');
+    if (h > 0.5) continue;
+    // only against a wall, never in the walkway
+    const walls = [['N', 0, -1], ['S', 0, 1], ['W', -1, 0], ['E', 1, 0]].filter(([d]) => map.getEdge(fc.x, fc.y, d) === EDGE.WALL);
+    if (!walls.length) continue;
+    const [, wx, wy] = walls[Math.floor(hash(fc.x, fc.y, 'w') * walls.length)];
+    const along = (hash(fc.x, fc.y, 'al') - 0.5) * 1.4;
+    const cx = fc.x * S + S / 2 + wx * (S / 2 - T / 2 - 0.75) + wy * along;
+    const cz = fc.y * S + S / 2 + wy * (S / 2 - T / 2 - 0.75) + wx * along;
+    const m = new THREE.Matrix4().makeTranslation(cx, 0, cz).multiply(new THREE.Matrix4().makeRotationY(Math.atan2(wx, wy) + Math.PI / 2 + (hash(fc.x, fc.y, 'r') - 0.5) * 0.5));
+    if (h < 0.2) {
+      // drum lying on its side
+      g.geometry('prop_limestone', geos.drum, m.clone().multiply(new THREE.Matrix4().makeTranslation(-0.45, 0.36, 0)).multiply(new THREE.Matrix4().makeRotationZ(Math.PI / 2)), { uvScale: [2, 1] });
+      g.geometry('prop_limestone', geos.drum, m.clone().multiply(new THREE.Matrix4().makeTranslation(0.45, 0.34, 0.12)).multiply(new THREE.Matrix4().makeRotationZ(Math.PI / 2 + 0.08)).multiply(new THREE.Matrix4().makeRotationX(0.5)), { uvScale: [2, 1] });
+    } else {
+      // broken shaft on its plinth
+      g.box('prop_limestone', { matrix: m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.2, 0)), s: [0.95, 0.4, 0.95], chamfer: 0.05, uv: 'local' });
+      g.geometry('prop_limestone', geos.shaft, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.4, 0)), { uvScale: [2, 1.2] });
+    }
+    addRubble(m, h * 100, 5, 0.9, 0.8);
+  }
+
   // warm light pools under lit windows at night
   if (night > 0.3 && ts.outdoors) {
     for (const w of block.windows) {
@@ -299,7 +340,7 @@ export function buildProps(map, block, opts = {}) {
   }
   // puddles (glossy decals that reflect the environment)
   if (puddles.length) {
-    const mat = new THREE.MeshStandardMaterial({ color: 0x08090a, roughness: 0.06, metalness: 0.0, transparent: true, alphaMap: getPuddleTexture(), depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, envMapIntensity: 0.7 });
+    const mat = new THREE.MeshStandardMaterial({ color: 0x08090a, roughness: ts.outdoors ? 0.06 : 0.2, metalness: 0.0, transparent: true, alphaMap: getPuddleTexture(), depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, envMapIntensity: 0.7 });
     mat.opacity = 0.6;
     const b = new GeoBuilder();
     for (const p of puddles) {
@@ -326,6 +367,17 @@ export function buildProps(map, block, opts = {}) {
     }
     const geo = b.build().get('pool');
     const mesh = new THREE.Mesh(geo, mat);
+    mesh.renderOrder = 2;
+    group.add(mesh);
+    own.push(geo, mat);
+  }
+  // rugs
+  for (const r of rugs) {
+    const mat = new THREE.MeshStandardMaterial({ map: getRugTexture(r.v), roughness: 0.95 });
+    const geo = new THREE.BoxGeometry(2.0, 0.016, 1.4);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.applyMatrix4(r.m);
+    mesh.receiveShadow = true;
     mesh.renderOrder = 2;
     group.add(mesh);
     own.push(geo, mat);
@@ -399,9 +451,23 @@ function makePropGeometries() {
   hub.rotateX(Math.PI / 2);
   const pot = new THREE.CylinderGeometry(0.1, 0.07, 0.24, 10);
   pot.translate(0, 0.12, 0);
+  const drum = new THREE.CylinderGeometry(0.36, 0.36, 0.72, 16, 1);
+  for (let i = 0, p = drum.attributes.position; i < p.count; i++) {
+    // fluting
+    const a = Math.atan2(p.getZ(i), p.getX(i));
+    const f = 1 - 0.04 * Math.max(0, Math.cos(a * 8));
+    if (Math.hypot(p.getX(i), p.getZ(i)) > 0.3) p.setXYZ(i, p.getX(i) * f, p.getY(i), p.getZ(i) * f);
+  }
+  drum.computeVertexNormals();
+  const shaft = new THREE.CylinderGeometry(0.34, 0.36, 1.6, 16, 3);
+  for (let i = 0, p = shaft.attributes.position; i < p.count; i++) {
+    if (p.getY(i) > 0.7) p.setY(i, 0.8 - hash(Math.round(Math.atan2(p.getZ(i), p.getX(i)) * 5), 'brk') * 0.6);
+  }
+  shaft.translate(0, 0.8, 0);
+  shaft.computeVertexNormals();
   const skull = new THREE.SphereGeometry(0.1, 10, 8);
   skull.scale(1, 0.9, 1.15);
-  return { barrel: [body, hoop, lid], crate, sack, rock, link, candle, wheel, hub, pot, skull };
+  return { barrel: [body, hoop, lid], crate, sack, rock, link, candle, wheel, hub, pot, skull, drum, shaft };
 }
 
 function mergeSimple(list) {

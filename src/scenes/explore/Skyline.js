@@ -55,6 +55,21 @@ export function buildSkyline(map, ts, opts = {}) {
     }
   }
 
+  // ---------------------------------------------------------- streets beyond the block
+  {
+    const y = -0.02;
+    const X0 = -170;
+    const X1 = W + 170;
+    const Z0 = -170;
+    const Z1 = H + 24;
+    const q = (a, b, c, d) => g.quad('arch_cobble', new THREE.Vector3(a, y, d), new THREE.Vector3(c, y, d), new THREE.Vector3(c, y, b), new THREE.Vector3(a, y, b), null, { ao: 0.85 });
+    q(X0, Z0, X1, 0); // north
+    // south: slopes down to the harbour
+    g.quad('arch_cobble', new THREE.Vector3(X0, -2.5, Z1), new THREE.Vector3(X1, -2.5, Z1), new THREE.Vector3(X1, y, H), new THREE.Vector3(X0, y, H), null, { ao: 0.85 });
+    q(X0, 0, 0, H); // west
+    q(W, 0, X1, H); // east
+  }
+
   // ---------------------------------------------------------- city wall
   const wallR = band + 6;
   const segs = [

@@ -477,3 +477,109 @@ export function getGrimeTexture() {
     }
   });
 }
+
+/** Carved stone inscription panel (weathered, engraved capitals). Cached by text. */
+export function getInscriptionTexture(text) {
+  const key = `inscr_${text}`;
+  return canvasTex(key, 512, 128, (g, w, h) => {
+    const r = rng(text.length * 13 + 5);
+    const grd = g.createLinearGradient(0, 0, 0, h);
+    grd.addColorStop(0, '#9c9384');
+    grd.addColorStop(1, '#7d7568');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 2500; i++) {
+      g.fillStyle = `rgba(${r() < 0.5 ? '40,34,28' : '220,210,190'},${r() * 0.12})`;
+      g.fillRect(r() * w, r() * h, 1 + r() * 3, 1 + r() * 2);
+    }
+    // border moulding
+    g.strokeStyle = 'rgba(40,32,24,0.6)';
+    g.lineWidth = 4;
+    g.strokeRect(10, 10, w - 20, h - 20);
+    g.strokeStyle = 'rgba(230,220,200,0.35)';
+    g.lineWidth = 2;
+    g.strokeRect(14, 14, w - 28, h - 28);
+    // engraved letters: dark cut + light lower lip
+    g.font = `600 60px Georgia, 'Times New Roman', serif`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    const sx = Math.min(1, (w - 80) / Math.max(1, g.measureText(text).width));
+    g.save();
+    g.translate(w / 2, h / 2);
+    g.scale(sx, 1);
+    g.fillStyle = 'rgba(235,225,205,0.55)';
+    g.fillText(text, 1, 3);
+    g.fillStyle = 'rgba(30,24,18,0.92)';
+    g.fillText(text, 0, 1);
+    g.restore();
+    // wear: chip some of the letters away
+    g.globalCompositeOperation = 'source-atop';
+    for (let i = 0; i < 60; i++) {
+      g.fillStyle = `rgba(150,142,128,${0.3 + r() * 0.5})`;
+      g.beginPath();
+      g.arc(r() * w, r() * h, 2 + r() * 7, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.globalCompositeOperation = 'source-over';
+  });
+}
+
+/** Woven rug with border bands and a central medallion. */
+export function getRugTexture(variant = 0) {
+  return canvasTex(`rug_${variant}`, 256, 192, (g, w, h) => {
+    const r = rng(101 + variant);
+    const pals = [['#6e1f1a', '#c89a4a', '#1f2a48', '#e0cfa0'], ['#1f3050', '#b88a40', '#6a1c18', '#d8c8a0']];
+    const [field, gold, dark, pale] = pals[variant % pals.length];
+    g.fillStyle = field;
+    g.fillRect(0, 0, w, h);
+    const band = (i, col) => {
+      g.strokeStyle = col;
+      g.lineWidth = 6;
+      g.strokeRect(i, i, w - 2 * i, h - 2 * i);
+    };
+    band(8, dark);
+    band(16, gold);
+    band(24, dark);
+    // zig-zag border motif
+    g.strokeStyle = pale;
+    g.lineWidth = 2;
+    g.beginPath();
+    for (let x = 30; x < w - 30; x += 10) g.lineTo(x, 34 + ((x / 10) % 2) * 6);
+    g.stroke();
+    g.beginPath();
+    for (let x = 30; x < w - 30; x += 10) g.lineTo(x, h - 34 - ((x / 10) % 2) * 6);
+    g.stroke();
+    // medallion
+    g.save();
+    g.translate(w / 2, h / 2);
+    g.fillStyle = dark;
+    g.beginPath();
+    g.moveTo(0, -42);
+    g.lineTo(62, 0);
+    g.lineTo(0, 42);
+    g.lineTo(-62, 0);
+    g.closePath();
+    g.fill();
+    g.fillStyle = gold;
+    g.beginPath();
+    g.moveTo(0, -26);
+    g.lineTo(38, 0);
+    g.lineTo(0, 26);
+    g.lineTo(-38, 0);
+    g.closePath();
+    g.fill();
+    g.fillStyle = field;
+    g.fillRect(-8, -8, 16, 16);
+    g.restore();
+    // weave noise + wear
+    for (let i = 0; i < 5000; i++) {
+      g.fillStyle = `rgba(${r() < 0.5 ? '0,0,0' : '255,240,210'},${r() * 0.08})`;
+      g.fillRect(r() * w, r() * h, 1 + r() * 2, 1);
+    }
+    const grd = g.createRadialGradient(w / 2, h / 2, 10, w / 2, h / 2, w * 0.6);
+    grd.addColorStop(0, 'rgba(230,210,170,0.18)');
+    grd.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, w, h);
+  });
+}

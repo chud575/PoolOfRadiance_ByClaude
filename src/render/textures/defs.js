@@ -45,6 +45,7 @@ export const TEXTURE_DEFS = {
   hd_burlap: { size: 256, gen: () => HD.burlap({ seed: 161 }), normalStrength: 2 },
   hd_rubble: { size: 256, gen: () => HD.rubbleStones({ seed: 171 }), normalStrength: 5 },
   hd_mud: { size: 512, gen: () => HD.mudGround({ seed: 181 }), normalStrength: 5 },
+  hd_limestone: { size: 256, gen: () => HD.limestone({ seed: 211 }), normalStrength: 2.5 },
   hd_water: { size: 256, gen: () => HD.waterWaves({ seed: 201 }), normalStrength: 3 },
 };
 

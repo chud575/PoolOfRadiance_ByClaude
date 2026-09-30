@@ -107,10 +107,10 @@ export default class ExploreScene extends Scene {
     const k = this.keys;
     const s = this.scene3d;
     if (ts.outdoors) {
-      this.sky = createSkyDome({ hour: this.hour, cloud: 0.46 });
+      this.sky = createSkyDome({ hour: this.hour, cloud: 0.55 });
       this.sky.renderOrder = 20; // last opaque: early-z rejects everything already covered
       s.add(this.sky);
-      this.hemi = new THREE.HemisphereLight(k.night > 0.5 ? k.sky : new THREE.Color(k.sky).lerp(new THREE.Color(0xffffff), 0.35).getHex(), new THREE.Color(k.ground).multiplyScalar(k.night > 0.5 ? 1 : 2.4), k.hemi * (k.night > 0.5 ? 1.6 : 2.8));
+      this.hemi = new THREE.HemisphereLight(k.night > 0.5 ? k.sky : new THREE.Color(k.sky).lerp(new THREE.Color(0xfff4e8), 0.5).getHex(), new THREE.Color(k.ground).multiplyScalar(k.night > 0.5 ? 1 : 2.6), k.hemi * (k.night > 0.5 ? 1.6 : 3.3));
       s.add(this.hemi);
       const night = k.night > 0.5;
       this.sun = new THREE.DirectionalLight(night ? 0x9db4ff : k.sun, night ? 0.8 : k.sunI * 1.05);
@@ -169,7 +169,7 @@ export default class ExploreScene extends Scene {
       }
       s.fog = new THREE.FogExp2(dungeon ? 0x07080b : 0x1a120c, dungeon ? 0.055 : 0.025);
       s.background = new THREE.Color(dungeon ? 0x020203 : 0x0a0604);
-      setSurfaceAtmosphere({ sunDir: new THREE.Vector3(0, 1, 0), sunColor: 0x000000, scatter: 0, heightFog: dungeon ? 0.35 : 0.08, heightFalloff: 0.8, grimeTint: ts.grime, mossTint: ts.moss, wet: dungeon ? 0.8 : 0 });
+      setSurfaceAtmosphere({ sunDir: new THREE.Vector3(0, 1, 0), sunColor: 0x000000, scatter: 0, heightFog: dungeon ? 0.35 : 0.08, heightFalloff: 0.8, grimeTint: ts.grime, mossTint: ts.moss, wet: dungeon ? 0.45 : 0 });
     }
     // pooled torch lights (constant count → no shader recompiles)
     this.poolLights = [];
@@ -184,7 +184,7 @@ export default class ExploreScene extends Scene {
     // party lantern
     const lanternI = ts.outdoors ? this.night * 6 : ts.id === 'dungeon' ? 5 : 2.5;
     this.lantern = new THREE.PointLight(0xffb070, lanternI, 12, 1.6);
-    this.lantern.position.set(0.3, -0.2, -0.25);
+    this.lantern.position.set(0.7, 0.15, 0.2);
     this.lantern.userData.base = lanternI;
     if (needLights) this.camera.add(this.lantern);
     setWindowGlow(this.skyNight, 1);

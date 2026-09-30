@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { EDGE, CELL } from '../../data/maps/MapGrid.js';
 import { getMaterial, getWindowMaterial } from '../../render/materials.js';
+import { getInscriptionTexture } from '../../render/textures/index.js';
 import { GeoBuilder, hash } from './GeoBuilder.js';
 import { TILESETS } from './tilesets.js';
 
@@ -139,6 +140,15 @@ export function buildBlock(map, opts = {}) {
     return i < W ? { x: i, y: j, dir: 'W' } : { x: W - 1, y: j, dir: 'E' };
   };
   const edgeKey = (e) => `${e.x},${e.y},${e.dir}`;
+  /** Edges that carry an inscription plaque (keep the wall above them clear). */
+  const signEdges = new Set();
+  for (const ev of map.events ?? []) {
+    if (ev.type !== 'sign' || !/["“]/.test(ev.text ?? '')) continue;
+    for (const [d, dx, dy] of [['N', 0, -1], ['S', 0, 1], ['W', -1, 0], ['E', 1, 0]]) {
+      signEdges.add(`${ev.x},${ev.y},${d}`);
+      signEdges.add(`${ev.x + dx},${ev.y + dy},${{ N: 'S', S: 'N', E: 'W', W: 'E' }[d]}`);
+    }
+  }
   const edgeInfo = new Map();
 
   const secretFound = (x, y, dir) => opts.foundSecrets?.has(`${x},${y},${dir}`);
@@ -207,7 +217,7 @@ export function buildBlock(map, opts = {}) {
     const buildingWall = !indoor && (covA !== covB) && inA && inB;
     const faceExtH = e.H;
     if (!isDoor && !isArch && buildingWall && !hearthEdge && seedE < 0.62) openings.push({ s0: -0.46, s1: 0.46, y0: 1.05, y1: 2.2, kind: 'window', ground: true });
-    if (buildingWall && faceExtH >= 5 && hash(e.key, 'up', map.id) < 0.85) {
+    if (buildingWall && faceExtH >= 5 && !((isArch || isDoor) && signEdges.has(e.key)) && hash(e.key, 'up', map.id) < 0.85) {
       const w = faceExtH >= 7 ? 0.6 : 0.46;
       openings.push({ s0: -w, s1: w, y0: 3.55, y1: faceExtH >= 7 ? 5.4 : 4.6, kind: 'window', upper: true });
     }
@@ -232,6 +242,7 @@ export function buildBlock(map, opts = {}) {
         e, basis, N: sd.N, T: Tn, M, interior: interiorFace, recipe, H: Hf, openings, jag, horizontal,
         cell: { x: sd.cx, y: sd.cy, type: map.getCell(sd.cx, sd.cy) },
         tint: c?.tint ?? PLASTER_TINTS[Math.floor(seedE * PLASTER_TINTS.length)],
+        temple: !interiorFace && !!c?.temple,
         ends: {},
         seed: hash(e.key, si, map.id),
       };
@@ -390,6 +401,7 @@ export function buildBlock(map, opts = {}) {
         slab(f, 'arch_trim', H - 0.28, H, T / 2, T / 2 + 0.12, { chamfer: 0.04 });
       }
       quoins(f, 'arch_trim');
+      if (f.temple) templeOrder(f);
     },
     timber(f) {
       const H = f.H;
@@ -532,6 +544,19 @@ export function buildBlock(map, opts = {}) {
     }
   }
 
+  /** Engaged pilasters with bases and capitals (temple facades). */
+  function templeOrder(f) {
+    const H = f.H;
+    for (const end of [-1, 1]) {
+      if (f.ends[end] === 'inside') continue;
+      const s = end * (S / 2 - 0.05);
+      if (f.openings.some((o) => o.s0 - 0.3 < s && o.s1 + 0.3 > s)) continue;
+      localBox(f, 'arch_trim', s - 0.26, s + 0.26, 0.42, H - 0.3, T / 2, T / 2 + 0.12, { chamfer: 0.03 });
+      localBox(f, 'arch_trim', s - 0.34, s + 0.34, 0.42, 0.75, T / 2, T / 2 + 0.18, { chamfer: 0.04 });
+      localBox(f, 'arch_trim', s - 0.36, s + 0.36, H - 0.62, H - 0.3, T / 2, T / 2 + 0.2, { chamfer: 0.04 });
+    }
+  }
+
   /** Alternating long/short quoin blocks at convex corners. */
   function quoins(f, key) {
     for (const end of [-1, 1]) {
@@ -608,6 +633,22 @@ export function buildBlock(map, opts = {}) {
     for (const yy of [0.35, lh - 0.4]) {
       for (const z of [th / 2 + 0.006, -th / 2 - 0.006]) lg.box('prop_iron', { c: [lw * 0.42, yy, z], s: [lw * 0.8, 0.07, 0.012] });
       lg.box('prop_iron', { c: [0.02, yy, 0], s: [0.08, 0.1, th + 0.04], chamfer: 0.01 });
+    }
+    // nail studs along the straps and a barred judas grille at eye level
+    for (const yy of [0.35, lh - 0.4]) {
+      for (let k = 0; k < 6; k++) {
+        const x = 0.12 + k * ((lw * 0.78) / 5);
+        for (const z of [th / 2 + 0.012, -th / 2 - 0.012]) lg.box('prop_iron', { c: [x, yy, z], s: [0.035, 0.035, 0.012] });
+      }
+    }
+    if (hash(e.key, 'grille') < 0.6) {
+      const gy = 1.55;
+      const gx = lw / 2;
+      for (const z of [th / 2 + 0.01, -th / 2 - 0.01]) {
+        lg.box('prop_iron', { c: [gx, gy + 0.13, z], s: [0.3, 0.03, 0.02] });
+        lg.box('prop_iron', { c: [gx, gy - 0.13, z], s: [0.3, 0.03, 0.02] });
+        for (const bx of [-0.07, 0, 0.07]) lg.box('prop_iron', { c: [gx + bx, gy, z], s: [0.018, 0.26, 0.018] });
+      }
     }
     const ringGeo = new THREE.TorusGeometry(0.075, 0.013, 4, 12);
     for (const z of [th / 2 + 0.025, -th / 2 - 0.025]) {
@@ -747,7 +788,8 @@ export function buildBlock(map, opts = {}) {
     if (!o.upper) quad(-outSign, getWindowMaterial('int'));
     // shutters (exterior, some windows), opened at an angle
     const r = hash(e.key, o.y0, 'sh');
-    if (!indoor && r < 0.55) {
+    const templeWall = [sides[0], sides[1]].some((sd) => compAt(sd.cx, sd.cy)?.temple);
+    if (!indoor && !templeWall && r < 0.55) {
       const sw = (s1 - s0) / 2 + 0.05;
       for (const sgn of [-1, 1]) {
         const hingeS = sgn < 0 ? s0 - 0.09 : s1 + 0.09;
@@ -759,14 +801,14 @@ export function buildBlock(map, opts = {}) {
       }
     }
     // ground-floor iron bars on some windows
-    if (!indoor && !o.upper && r > 0.8) {
+    if (!indoor && !o.upper && (r > 0.8 || templeWall)) {
       for (let s = s0 + 0.12; s < s1 - 0.05; s += 0.16) {
         const m = localMatrix(f, s, (y0 + y1) / 2, dOut + outSign * 0.02);
         g.box('arch_iron', { matrix: m, s: [0.025, y1 - y0, 0.025] });
       }
     }
     // flower box on some upper windows
-    if (!indoor && o.upper && hash(e.key, 'fb') < 0.35) {
+    if (!indoor && !templeWall && o.upper && hash(e.key, 'fb') < 0.35) {
       localBox(f, 'arch_beam', s0 - 0.05, s1 + 0.05, y0 - 0.34, y0 - 0.1, outSign > 0 ? dOut + 0.02 : dOut - 0.26, outSign > 0 ? dOut + 0.26 : dOut - 0.02, { uv: 'along', skip: ['nz'] });
       spots.lamp.push({ kind: 'flowers', pos: new THREE.Vector3((s0 + s1) / 2, y0 - 0.1, dOut + outSign * 0.14).applyMatrix4(f.basis), T: f.T.clone(), w: s1 - s0 });
     }
@@ -811,6 +853,11 @@ export function buildBlock(map, opts = {}) {
       if (r > 0.62) return;
       const s = (r < 0.31 ? -1 : 1) * (face.e.type === EDGE.ARCH ? ARCH_W / 2 + 0.75 : DOOR_W / 2 + 0.5);
       addSconce(face, s, 2.35, lit);
+      return;
+    }
+    if (indoor && nearOpening && face.e.type !== EDGE.SECRET) {
+      const r = hash(face.seed, 'dsc');
+      if (r < 0.55) addSconce(face, (r < 0.27 ? -1 : 1) * (face.e.type === EDGE.ARCH ? ARCH_W / 2 + 0.6 : DOOR_W / 2 + 0.45), ts.id === 'dungeon' ? 2.05 : 1.9, true, ts.id === 'interior' ? 'candle' : 'torch');
       return;
     }
     if (indoor && !nearOpening) {
@@ -919,6 +966,34 @@ export function buildBlock(map, opts = {}) {
           }
         }
       }
+    }
+  }
+
+  // ------------------------------------------------------------ inscriptions
+  // A 'sign' event whose text quotes an inscription gets a carved plaque over
+  // the adjacent arch/door of that cell.
+  for (const ev of map.events ?? []) {
+    if (ev.type !== 'sign' || !ev.text) continue;
+    const m = /["“]([^"”]{2,40})["”]/.exec(ev.text);
+    if (!m) continue;
+    for (const [d, dx, dy] of [['N', 0, -1], ['S', 0, 1], ['W', -1, 0], ['E', 1, 0]]) {
+      const type = map.getEdge(ev.x, ev.y, d);
+      if (type !== EDGE.ARCH && type !== EDGE.DOOR) continue;
+      // face on the sign's side: basis with N pointing into (ev.x, ev.y)
+      const N = new THREE.Vector3(-dx, 0, -dy);
+      const M = new THREE.Vector3((ev.x + 0.5 + dx * 0.5) * S, 0, (ev.y + 0.5 + dy * 0.5) * S);
+      const Tn = new THREE.Vector3().crossVectors(UP, N);
+      const basis = new THREE.Matrix4().makeBasis(Tn, UP, N).setPosition(M);
+      const top = type === EDGE.ARCH ? ARCH_SPRING + ARCH_W / 2 + 0.55 : DOOR_H + 0.42;
+      const f = { basis };
+      localBox(f, 'arch_trim', -1.05, 1.05, top - 0.06, top + 0.52, T / 2 - 0.02, T / 2 + 0.07, { chamfer: 0.03 });
+      const mat = new THREE.MeshStandardMaterial({ map: getInscriptionTexture(m[1].toUpperCase()), roughness: 0.92 });
+      const geo = new THREE.PlaneGeometry(1.9, 0.46);
+      const plane = new THREE.Mesh(geo, mat);
+      plane.applyMatrix4(new THREE.Matrix4().multiplyMatrices(basis, new THREE.Matrix4().makeTranslation(0, top + 0.23, T / 2 + 0.075)));
+      plane.receiveShadow = true;
+      plane.userData.ownMaterial = true;
+      group.add(plane);
     }
   }
 
@@ -1111,7 +1186,10 @@ export function buildBlock(map, opts = {}) {
 
 export function disposeBlock(block) {
   block.group.traverse((o) => {
-    if (o.isMesh) o.geometry.dispose();
+    if (o.isMesh) {
+      o.geometry.dispose();
+      if (o.userData.ownMaterial) o.material.dispose();
+    }
   });
   block.group.removeFromParent();
 }
