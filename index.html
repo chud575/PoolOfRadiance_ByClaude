@@ -3,15 +3,59 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#0a0e22" />
   <title>Pool of Radiance — Homage</title>
-  <link rel="icon" href="data:," />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3CradialGradient id='g'%3E%3Cstop offset='0' stop-color='%23f2ffff'/%3E%3Cstop offset='.45' stop-color='%238ff0ff'/%3E%3Cstop offset='1' stop-color='%23123a5a'/%3E%3C/radialGradient%3E%3C/defs%3E%3Cpath d='M16 2 L28 16 L16 30 L4 16 Z' fill='%23d8b25a' stroke='%234a3512' stroke-width='1.5'/%3E%3Cellipse cx='16' cy='17' rx='7' ry='4.5' fill='url(%23g)'/%3E%3C/svg%3E" />
   <meta name="description" content="A modern Three.js homage to the 1988 Gold Box CRPG Pool of Radiance." />
+  <style>
+    /* pre-boot splash (removed as soon as the first scene mounts) */
+    #por-splash { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: radial-gradient(ellipse at 50% 60%, #121a3a 0%, #05060f 70%); transition: opacity 0.9s ease; }
+    #por-splash.gone { opacity: 0; pointer-events: none; }
+    #por-splash .gem { width: 44px; height: 44px; transform: rotate(45deg); border: 2px solid #d8b25a; box-shadow: 0 0 0 1px #000, 0 0 18px rgba(216, 178, 90, 0.4); position: relative; animation: por-spin 2.6s cubic-bezier(.6, 0, .4, 1) infinite; }
+    #por-splash .gem::after { content: ''; position: absolute; inset: 9px; background: radial-gradient(circle, #f2ffff, #8ff0ff 45%, #1a4a70); box-shadow: 0 0 16px #8ff0ff; animation: por-glow 1.3s ease-in-out infinite alternate; }
+    #por-splash .txt { margin-top: 30px; font: 600 13px/1 'Palatino Linotype', Palatino, 'FreeSerif', Georgia, serif; letter-spacing: 0.5em; text-transform: uppercase; color: #b3ab99; text-align: center; }
+    #por-splash .wrap { display: flex; flex-direction: column; align-items: center; }
+    @keyframes por-spin { 0% { transform: rotate(45deg); } 50%, 100% { transform: rotate(225deg); } }
+    @keyframes por-glow { from { opacity: 0.55; } to { opacity: 1; } }
+  </style>
+  <script>
+    // Apply UI/accessibility settings before first paint (mirrors src/ui/styles/skin.js).
+    (function () {
+      try {
+        var s = JSON.parse(localStorage.getItem('por.settings') || '{}');
+        var el = document.documentElement;
+        var fs = { small: 0.9, normal: 1, large: 1.14, huge: 1.3 };
+        el.style.setProperty('--ui-user-scale', String(s.uiScale || 1));
+        el.style.setProperty('--text-scale', String(fs[s.fontSize] || 1));
+        el.dataset.palette = s.colorblind || 'off';
+        el.dataset.contrast = s.highContrast ? 'high' : 'normal';
+        el.dataset.motion = s.reduceMotion ? 'reduce' : 'full';
+        el.dataset.font = s.readableFont ? 'readable' : 'classic';
+      } catch (e) { /* storage unavailable */ }
+    })();
+  </script>
 </head>
 <body>
   <div id="app">
     <canvas id="gl"></canvas>
     <div id="ui-root"></div>
   </div>
+  <div id="por-splash" aria-hidden="true"><div class="wrap"><div class="gem"></div><div class="txt">Phlan awaits</div></div></div>
+  <script>
+    (function () {
+      var sp = document.getElementById('por-splash');
+      // Debug/screenshot URLs never show the splash.
+      if (/[?&]scene=/.test(location.search)) { sp.remove(); return; }
+      var done = function () { sp.classList.add('gone'); setTimeout(function () { sp.remove(); }, 1000); };
+      var mo = new MutationObserver(function () {
+        var layer = document.querySelector('.por-layer-scene');
+        if ((layer && layer.children.length) || window.__READY) { mo.disconnect(); done(); }
+      });
+      mo.observe(document.getElementById('ui-root'), { childList: true, subtree: true });
+      setTimeout(done, 30000);
+    })();
+  </script>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>
