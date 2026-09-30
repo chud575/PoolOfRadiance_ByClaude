@@ -1,0 +1,9 @@
+node_modules/
+dist/
+shots/*
+!shots/.gitkeep
+reference/*
+!reference/.gitkeep
+*.log
+.vite/
+.DS_Store
