@@ -48,6 +48,7 @@ export default class CampScene extends Scene {
     this.camera.lookAt(0, 0.95, -0.6);
     this.hour = game.clock.hour + game.clock.minute / 60;
     this.camp = await buildCamp(s, { party: game.party, hour: this.hour, renderer: render.renderer });
+    if (this.params.sleep) this.camp.setResting(true);
   }
 
   _buildUI() {
@@ -253,11 +254,12 @@ export default class CampScene extends Scene {
     for (const l of lines) ui.message(l, 'system');
     // Time-lapse overlay.
     const clock = h('div', { style: { fontFamily: 'var(--font-num)', fontSize: '2.6em', color: '#fff', letterSpacing: '0.08em', textShadow: '0 0 20px rgba(245,217,139,0.4)' } });
-    const veil = h('div', { style: { position: 'absolute', inset: '0', display: 'grid', placeItems: 'center', background: 'radial-gradient(ellipse at center, rgba(2,3,10,0.72), rgba(0,0,0,0.94))', opacity: '0', transition: 'opacity 0.35s ease', pointerEvents: 'none' } }, [
+    const veil = h('div', { style: { position: 'absolute', inset: '0', display: 'grid', placeItems: 'center', background: 'radial-gradient(ellipse at center, rgba(2,3,10,0.25), rgba(0,0,0,0.85))', opacity: '0', transition: 'opacity 0.35s ease', pointerEvents: 'none' } }, [
       h('div', { style: { textAlign: 'center' } }, [h('div.por-gilt-text', { style: { fontSize: '1.6em', letterSpacing: '0.35em', textTransform: 'uppercase' } }, ['Resting']), clock]),
     ]);
     this.ctx.ui.layers.toast.append(veil);
     requestAnimationFrame(() => { veil.style.opacity = '1'; });
+    this.camp?.setResting(true);
     const busy = (this.busy = { veil, clock, from, to: from + minutes, start: this.ctx.clock.time, dur: Math.min(2.2, 0.8 + minutes / 600) });
     // Wall-clock fallback: never leave the party stuck resting if frames stall (hidden tab).
     setTimeout(() => { if (this.busy === busy) this._finishRest(); }, busy.dur * 1000 + 600);
@@ -268,6 +270,7 @@ export default class CampScene extends Scene {
     const b = this.busy;
     if (!b) return;
     this.busy = null;
+    this.camp?.setResting(false);
     b.veil.style.opacity = '0';
     setTimeout(() => b.veil.remove(), 400);
     // New hour → rebuild the sky/light if day and night have turned.

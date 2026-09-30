@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { SKIN_TONES, RACE_SKINS, HAIR_COLORS, EYE_COLORS, CLOTH_COLORS, BODIES, HEADS, defaultLook } from './portraitPainter.js';
 import * as TX from './miniatureTextures.js';
+import { ITEMS } from '../../data/items.js';
 
 /**
  * Articulated, textured 3D miniatures of player characters — the "combat
@@ -40,6 +41,12 @@ const POSES = {
     shoulderR: [-0.15, 0, -0.1], elbowR: [-0.5, 0, 0], shoulderL: [-0.2, 0, 0.18], elbowL: [-0.7, 0.3, 0],
     footL: [0, 0, 0], footR: [0, 0, 0],
   },
+  sleep: {
+    pelvis: 0.95, spine: [0, 0, 0], neck: [0.1, 0, 0], head: [0.1, 0.5, 0.2],
+    thighL: [-0.25, 0, 0.04], kneeL: [0.5, 0, 0], thighR: [-0.05, 0, -0.04], kneeR: [0.15, 0, 0],
+    shoulderR: [-0.1, 0, -0.05], elbowR: [-0.5, 0, 0], shoulderL: [-0.35, 0, 0.1], elbowL: [-1.4, 0, 0],
+    footL: [0.3, 0, 0], footR: [0.4, 0, 0],
+  },
   sit: {
     pelvis: 0.2, spine: [0.3, 0, 0], neck: [0.05, 0, 0], head: [0.12, 0, 0],
     thighL: [-1.75, 0.12, 0.24], kneeL: [2.0, 0, 0], thighR: [-1.6, -0.15, -0.26], kneeR: [1.95, 0, 0],
@@ -70,35 +77,73 @@ function limbGeo(len, radii, segs = 14) {
  * Sculpt a head from a sphere: brow ridge, eye sockets, nose, cheekbones,
  * tapered jaw and chin. The UVs stay spherical so faceTexture() lines up.
  */
+function sculpt(v, o, shell = 0) {
+  const G = (x, y, cx, cy, sx, sy) => Math.exp(-(((x - cx) / sx) ** 2) - (((y - cy) / sy) ** 2));
+  const { x, y, z } = v;
+  const front = Math.max(0, z);
+  let r = 1 + shell;
+  if (!shell) {
+    r += 0.07 * G(x, y, 0, 0.2, 0.45, 0.07) * front; // brow ridge
+    r -= 0.075 * (G(x, y, 0.35, 0.05, 0.14, 0.09) + G(x, y, -0.35, 0.05, 0.14, 0.09)) * front; // sockets
+    r += o.nose * 0.24 * G(x, y, 0, -0.14, 0.07, 0.15) * front ** 3; // nose ridge
+    r += o.nose * 0.05 * G(x, y, 0, -0.26, 0.08, 0.05) * front; // nose tip / wings
+    r += 0.05 * (G(x, y, 0.5, -0.14, 0.14, 0.1) + G(x, y, -0.5, -0.14, 0.14, 0.1)) * front; // cheekbones
+    r += 0.04 * G(x, y, 0, -0.46, 0.2, 0.06) * front; // lips
+  }
+  r += 0.06 * o.chin * G(x, y, 0, -0.74, 0.18, 0.1) * front; // chin
+  v.multiplyScalar(r);
+  // Lower face: bring the jaw forward (faces are flatter than spheres) and narrow it.
+  if (v.y < -0.1) {
+    const t = Math.min(1, (-v.y - 0.1) / 0.9);
+    v.x *= 1 - t * t * (1 - o.jaw) * 1.4;
+    if (v.z > 0) v.z += 0.1 * t * front;
+    else v.z *= 1 - t * 0.35;
+  }
+  // Skull: fuller at the back, slight flattening of the sides.
+  if (v.z < 0) v.z *= 1.08;
+  v.x *= 0.84;
+  v.y *= 1.1;
+  return v;
+}
+
+/**
+ * Sculpt a head from a sphere: brow ridge, eye sockets, nose, cheekbones,
+ * tapered jaw and chin. The UVs stay spherical so faceTexture() lines up.
+ */
 function headGeo(o) {
   const g = new THREE.SphereGeometry(1, 48, 36);
   const p = g.attributes.position;
   const v = new THREE.Vector3();
-  const G = (x, y, cx, cy, sx, sy) => Math.exp(-(((x - cx) / sx) ** 2) - (((y - cy) / sy) ** 2));
+  for (let i = 0; i < p.count; i++) {
+    sculpt(v.fromBufferAttribute(p, i), o);
+    p.setXYZ(i, v.x, v.y, v.z);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+
+/**
+ * A beard as a shell over the jaw (sideburns → chin), with the mouth left
+ * clear; `length` draws it down into a point (dwarves, sages).
+ */
+function beardGeo(o, length) {
+  const g = new THREE.SphereGeometry(1, 40, 28, -Math.PI * 0.12, Math.PI * 1.24, Math.PI * 0.53, Math.PI * 0.45);
+  const p = g.attributes.position;
+  const v = new THREE.Vector3();
   for (let i = 0; i < p.count; i++) {
     v.fromBufferAttribute(p, i);
-    const { x, y, z } = v;
-    const front = Math.max(0, z);
-    let r = 1;
-    r += 0.07 * G(x, y, 0, 0.2, 0.45, 0.07) * front; // brow ridge
-    r -= 0.075 * (G(x, y, 0.35, 0.05, 0.14, 0.09) + G(x, y, -0.35, 0.05, 0.14, 0.09)) * front; // sockets
-    r += o.nose * 0.26 * G(x, y, 0, -0.15, 0.075, 0.15) * front ** 3; // nose ridge
-    r += o.nose * 0.08 * G(x, y, 0, -0.26, 0.09, 0.05) * front; // nose tip / wings
-    r += 0.05 * (G(x, y, 0.5, -0.14, 0.14, 0.1) + G(x, y, -0.5, -0.14, 0.14, 0.1)) * front; // cheekbones
-    r += 0.04 * G(x, y, 0, -0.46, 0.2, 0.06) * front; // lips
-    r += 0.06 * o.chin * G(x, y, 0, -0.74, 0.18, 0.1) * front; // chin
-    v.multiplyScalar(r);
-    // Lower face: bring the jaw forward (faces are flatter than spheres) and narrow it.
-    if (v.y < -0.1) {
-      const t = Math.min(1, (-v.y - 0.1) / 0.9);
-      v.x *= 1 - t * t * (1 - o.jaw) * 1.4;
-      if (v.z > 0) v.z += 0.1 * t * front;
-      else v.z *= 1 - t * 0.35;
+    const front = Math.max(0, v.z);
+    // Mouth opening: tuck the shell inside the face around the lips.
+    const mouth = Math.exp(-((v.x / 0.2) ** 2) - (((v.y + 0.45) / 0.09) ** 2)) * front
+      + (Math.abs(v.x) < 0.42 && v.y > -0.4 ? front : 0);
+    const back = v.z < -0.2 ? 1 : 0;
+    sculpt(v, o, 0.07 - mouth * 0.16 - back * 0.1 + 0.03 * Math.sin(v.x * 30 + v.y * 11));
+    if (v.y < -0.55) {
+      const t = -v.y - 0.55;
+      v.y -= t * length * 2.2;
+      v.z += t * length * 0.9 * front;
+      v.x *= 1 - Math.min(0.7, t * length * 1.6);
     }
-    // Skull: fuller at the back, slight flattening of the sides.
-    if (v.z < 0) v.z *= 1.08;
-    v.x *= 0.84;
-    v.y *= 1.1;
     p.setXYZ(i, v.x, v.y, v.z);
   }
   g.computeVertexNormals();
@@ -153,20 +198,42 @@ function cloakGeo(len, width, flare, sit) {
   return g;
 }
 
+const ARMOR_BODY = { plate: 'plate', banded: 'plate', splint: 'plate', chain: 'chain', ring: 'chain', scale: 'scale', leather: 'leather', padded: 'leather', studded: 'leather' };
+
+/**
+ * What a character actually has readied, in miniature terms. Null when the
+ * character has no inventory (a creation draft): then the look and class decide.
+ * @returns {{body:string|null, weapon:string|null, shield:boolean, helm:boolean}|null}
+ */
+export function miniatureGear(ch) {
+  if (!Array.isArray(ch.inventory)) return null;
+  const eq = ch.inventory.filter((e) => e.equipped && ITEMS[e.id]).map((e) => ITEMS[e.id]);
+  const armor = eq.find((d) => d.type === 'armor');
+  const wpn = eq.find((d) => d.type === 'weapon');
+  return {
+    body: armor ? ARMOR_BODY[armor.armorGroup] ?? 'chain' : null,
+    weapon: wpn ? ({ sword: 'sword', dagger: 'dagger', mace: 'mace', axe: 'axe', staff: 'staff', spear: 'spear', bow: 'bow', sling: null }[wpn.icon] ?? 'sword') : null,
+    shield: eq.some((d) => d.type === 'shield'),
+    helm: eq.some((d) => d.type === 'helm'),
+  };
+}
+
 /**
  * Build a miniature.
  * @param {{race:string, gender?:string, classSpec:string, look?:object, name?:string}} ch
- * @param {{pose?: Pose, base?: boolean, merge?: boolean}} [opt]
+ * @param {{pose?: Pose, base?: boolean, merge?: boolean, gear?: boolean}} [opt]  gear: dress from readied equipment (default when the character has an inventory)
  * @returns {THREE.Group & {userData:{dispose:()=>void, update:(t:number)=>void, height:number}}}
  */
 export function buildMiniature(ch, opt = {}) {
   const poseName = opt.pose ?? 'stand';
-  const pose = POSES[poseName === 'sleep' ? 'stand' : poseName] ?? POSES.stand;
+  const pose = POSES[poseName] ?? POSES.stand;
   const look = defaultLook(ch);
   const gender = ch.gender === 'female' ? 'female' : 'male';
   const fem = gender === 'female';
   const head = HEADS[gender][look.head % 8];
-  const body = BODIES[look.body % BODIES.length].id;
+  const gear = opt.gear === false ? null : miniatureGear(ch);
+  const lookBody = BODIES[look.body % BODIES.length].id;
+  const body = !gear ? lookBody : gear.body ?? (['robe', 'vestments'].includes(lookBody) ? lookBody : 'robe');
   const cls = String(ch.classSpec).split('/');
   const has = (c) => cls.includes(c);
   const build = RACE_BUILD[ch.race] ?? RACE_BUILD.human;
@@ -224,8 +291,8 @@ export function buildMiniature(ch, opt = {}) {
   const fur = M({ color: 0x8a7258, roughness: 1, ...tex(TX.furSet(), 3, 1) });
   const linen = M({ color: 0xe8e0cc, roughness: 1, side: THREE.DoubleSide, ...tex(TX.clothSet(), 3, 3) });
 
-  steel.normalScale.setScalar(0.35);
-  darkSteel.normalScale.setScalar(0.35);
+  steel.side = THREE.DoubleSide;
+  scaleM.side = THREE.DoubleSide;
   const torsoMat = {
     plate: steel, chain: mail, scale: scaleM, leather, robe: cloth, tabard: mail, fur: leather, vestments: linen,
   }[body] ?? cloth;
@@ -356,7 +423,9 @@ export function buildMiniature(ch, opt = {}) {
     add(limbGeo(0.29 * L, [0.062, 0.058, 0.052, 0.045]), sleeve, sh);
     if (body === 'plate' || body === 'scale') {
       // Layered pauldrons.
-      for (let i = 0; i < 3; i++) add(new THREE.SphereGeometry(0.085 - i * 0.006, 20, 12), body === 'plate' ? steel : scaleM, sh, s * (0.012 + i * 0.006), 0.03 - i * 0.042, 0, 0, 0, s * (0.1 + i * 0.08), 1.12, 0.5, 1.0);
+      const pm = body === 'plate' ? steel : scaleM;
+      add(new THREE.SphereGeometry(0.1, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.5), pm, sh, s * 0.012, 0.02, 0, 0, 0, s * 0.22, 1.12, 0.8, 1.05);
+      add(new THREE.SphereGeometry(0.098, 24, 10, 0, Math.PI * 2, 0, Math.PI * 0.42), pm, sh, s * 0.03, -0.035, 0, 0, 0, s * 0.42, 1.05, 0.7, 1.0);
     }
     const el = joint(sh, 0, -0.29 * L, 0, pose[`elbow${side}`]);
     const fore = robe ? cloth : body === 'plate' ? steel : leather;
@@ -394,7 +463,7 @@ export function buildMiniature(ch, opt = {}) {
   }
   // Hair, helm or hood.
   const style = head.hair;
-  if (head.helm) {
+  if (head.helm || gear?.helm) {
     add(new THREE.SphereGeometry(1.14, 28, 16, 0, Math.PI * 2, 0, Math.PI * 0.52), steel, skull, 0, 0.02, -0.02, 0, 0, 0, 0.9, 1.1, 1.05);
     add(new THREE.TorusGeometry(1.03, 0.07, 8, 32), steel, skull, 0, 0.02, -0.02, Math.PI / 2, 0, 0, 0.9, 1.05, 1);
     add(new THREE.BoxGeometry(0.12, 0.62, 0.08), steel, skull, 0, -0.18, 1.02, -0.12);
@@ -419,14 +488,14 @@ export function buildMiniature(ch, opt = {}) {
   // Beards: dwarves always, elves and halflings never.
   const beardStyle = ch.race === 'dwarf' && !fem ? (head.beard === 'none' || head.beard === 'stubble' || head.beard === 'moustache' ? 'full' : head.beard) : fem || ch.race === 'elf' || ch.race === 'halfling' ? 'none' : head.beard;
   if (beardStyle === 'full' || beardStyle === 'long') {
-    const long = beardStyle === 'long' || ch.race === 'dwarf';
-    add(lathe([[0.001, 0.25], [0.55, 0.2], [0.72, -0.1], [0.6, -0.5], long ? [0.42, -1.1] : [0.35, -0.75], [0.001, long ? -1.35 : -0.85]].reverse(), 20), hair, skull, 0, -0.36, 0.42, 0.28, 0, 0, 1, 1, 0.75);
-    add(new THREE.TorusGeometry(0.2, 0.07, 8, 16, Math.PI), hair, skull, 0, -0.33, 0.92, 0, 0, Math.PI, 1, 0.7, 1);
+    const len = beardStyle === 'long' || ch.race === 'dwarf' ? 0.9 : 0.25;
+    add(beardGeo(shape, len), hair, skull).material.side = THREE.DoubleSide;
+    add(new THREE.TorusGeometry(0.2, 0.06, 8, 16, Math.PI), hair, skull, 0, -0.34, 0.95, 0, 0, Math.PI, 1, 0.7, 1);
   } else if (beardStyle === 'goatee') {
-    add(new THREE.ConeGeometry(0.2, 0.55, 12), hair, skull, 0, -0.95, 0.62, Math.PI + 0.3);
-    add(new THREE.TorusGeometry(0.2, 0.055, 8, 16, Math.PI), hair, skull, 0, -0.33, 0.93, 0, 0, Math.PI, 1, 0.7, 1);
+    add(new THREE.ConeGeometry(0.16, 0.5, 12), hair, skull, 0, -0.98, 0.62, Math.PI + 0.35);
+    add(new THREE.TorusGeometry(0.2, 0.05, 8, 16, Math.PI), hair, skull, 0, -0.34, 0.95, 0, 0, Math.PI, 1, 0.7, 1);
   } else if (beardStyle === 'moustache') {
-    add(new THREE.TorusGeometry(0.22, 0.06, 8, 16, Math.PI), hair, skull, 0, -0.36, 0.93, 0, 0, Math.PI, 1.1, 0.8, 1);
+    add(new THREE.TorusGeometry(0.22, 0.06, 8, 16, Math.PI), hair, skull, 0, -0.36, 0.95, 0, 0, Math.PI, 1.1, 0.8, 1);
   }
 
   // ---------------------------------------------------------------- cloak
@@ -461,11 +530,17 @@ export function buildMiniature(ch, opt = {}) {
   };
 
   const sitting = poseName === 'sit';
+  const asleep = poseName === 'sleep';
   const mu = has('magicUser') && !has('fighter');
   const cl = has('cleric') && !has('fighter');
   const thiefOnly = has('thief') && !has('fighter');
+  const weapon = gear ? gear.weapon : mu ? 'staff' : cl ? 'mace' : thiefOnly ? 'dagger' : 'sword';
+  const wantShield = gear ? gear.shield : (has('fighter') || has('cleric')) && !mu;
+  const roundShield = cl || has('cleric') && !has('fighter');
   const wpn = new THREE.Group();
-  if (mu) {
+  if (asleep || !weapon) {
+    // Arms stowed beside the bedroll (or bare hands).
+  } else if (weapon === 'staff') {
     // Gnarled staff with a glowing crystal.
     const prof = [];
     for (let i = 0; i <= 16; i++) {
@@ -480,18 +555,33 @@ export function buildMiniature(ch, opt = {}) {
     wpn.userData.crystal = crystal;
     attachOriented(wpn, arms.R.hand, sitting ? [0.15, 0, -0.25] : [0.08, 0, -0.08]);
     if (sitting) wpn.position.y = 0.25;
-    // Spellbook at the hip.
-    add(new THREE.BoxGeometry(0.1, 0.13, 0.04), M({ color: 0x5a1e1a, roughness: 1, ...tex(TX.leatherSet(), 1, 1) }), pelvis, 0.15, beltY - 0.05, 0.02, 0, -1.2, 0.1);
-  } else if (cl) {
-    // Flanged mace.
-    add(new THREE.CylinderGeometry(0.014, 0.016, 0.42, 10), wood, wpn, 0, 0.14, 0);
+  } else if (weapon === 'mace' || weapon === 'axe') {
+    // Flanged mace, or a bearded axe.
+    add(new THREE.CylinderGeometry(0.014, 0.016, 0.46, 10), wood, wpn, 0, 0.16, 0);
     add(new THREE.CylinderGeometry(0.019, 0.019, 0.1, 10), darkLeather, wpn, 0, -0.02, 0);
-    add(new THREE.SphereGeometry(0.04, 14, 10), steel, wpn, 0, 0.36, 0, 0, 0, 0, 1, 1.2, 1);
-    for (let i = 0; i < 6; i++) add(new THREE.BoxGeometry(0.012, 0.1, 0.05), steel, wpn, Math.cos(i * 1.047) * 0.035, 0.36, Math.sin(i * 1.047) * 0.035, 0, -i * 1.047, 0);
+    if (weapon === 'mace') {
+      add(new THREE.SphereGeometry(0.04, 14, 10), steel, wpn, 0, 0.38, 0, 0, 0, 0, 1, 1.2, 1);
+      for (let i = 0; i < 6; i++) add(new THREE.BoxGeometry(0.012, 0.1, 0.05), steel, wpn, Math.cos(i * 1.047) * 0.035, 0.38, Math.sin(i * 1.047) * 0.035, 0, -i * 1.047, 0);
+    } else {
+      const ax = new THREE.Shape();
+      ax.moveTo(0, 0.05);
+      ax.quadraticCurveTo(0.08, 0.07, 0.13, 0.12);
+      ax.quadraticCurveTo(0.1, 0, 0.13, -0.1);
+      ax.quadraticCurveTo(0.07, -0.04, 0, -0.03);
+      add(new THREE.ExtrudeGeometry(ax, { depth: 0.006, bevelEnabled: true, bevelThickness: 0.004, bevelSize: 0.004, bevelSegments: 1 }), steel, wpn, 0.01, 0.34, -0.005);
+    }
     attachOriented(wpn, arms.R.hand, sitting ? [-1.5, 0.3, 0] : [0.15, 0, -0.2]);
+  } else if (weapon === 'spear') {
+    add(new THREE.CylinderGeometry(0.013, 0.015, 1.5, 8), wood, wpn, 0, 0.3, 0);
+    add(new THREE.ConeGeometry(0.03, 0.16, 4), steel, wpn, 0, 1.12, 0, 0, Math.PI / 4, 0, 1, 1, 0.35);
+    attachOriented(wpn, arms.R.hand, sitting ? [-1.2, 0, 0.25] : [0.08, 0, -0.06]);
+  } else if (weapon === 'bow') {
+    add(new THREE.TorusGeometry(0.42, 0.011, 6, 28, Math.PI * 0.85), wood, wpn, -0.13, 0, 0, 0, 0, Math.PI * 0.575);
+    add(new THREE.CylinderGeometry(0.002, 0.002, 0.82, 4), linen, wpn, 0.25, 0, 0);
+    attachOriented(wpn, arms.R.hand, sitting ? [-1.4, 0, 1.4] : [0, 0.3, 0]);
   } else {
     // Sword: diamond-section blade, crossguard, wrapped grip, pommel.
-    const bl = thiefOnly ? 0.4 : 0.66;
+    const bl = weapon === 'dagger' ? 0.3 : thiefOnly ? 0.42 : 0.66;
     const bs = new THREE.Shape();
     bs.moveTo(-0.022, 0);
     bs.lineTo(-0.019, bl * 0.82);
@@ -512,13 +602,15 @@ export function buildMiniature(ch, opt = {}) {
     // Sheathed dagger on thieves.
     if (has('thief')) add(new THREE.CylinderGeometry(0.014, 0.008, 0.2, 8), darkLeather, pelvis, 0.13, beltY - 0.1, 0.06, 0.3, 0, 0.3);
   }
-  // Shields for fighters and clerics.
-  if ((has('fighter') || has('cleric')) && !mu) {
+  // Spellbook at the hip for arcane casters.
+  if (has('magicUser')) add(new THREE.BoxGeometry(0.1, 0.13, 0.04), M({ color: 0x5a1e1a, roughness: 1, ...tex(TX.leatherSet(), 1, 1) }), pelvis, 0.15, beltY - 0.05, 0.02, 0, -1.2, 0.1);
+  // Shields: fighters and clerics by default, or whatever is readied.
+  if (wantShield && !asleep) {
     const shG = new THREE.Group();
-    const kind = cl ? 'cleric' : 'fighter';
+    const kind = roundShield ? 'cleric' : 'fighter';
     const faceTex = TX.shieldFaceTexture(clothHex, kind);
     const faceMat = M({ map: faceTex, roughness: 0.5, metalness: 0.1 });
-    if (cl) {
+    if (roundShield) {
       // Round shield.
       const d = add(new THREE.CylinderGeometry(0.2, 0.2, 0.03, 36), [darkLeather, faceMat, darkLeather], shG, 0, 0, 0, Math.PI / 2, 0, 0);
       d.geometry.rotateY(-Math.PI / 2);
@@ -560,7 +652,7 @@ export function buildMiniature(ch, opt = {}) {
     }
   }
   // Thieves: a short bow slung on the back; clerics: holy symbol pendant.
-  if (has('thief') && !sitting) {
+  if (has('thief') && !sitting && !asleep) {
     const bow = add(new THREE.TorusGeometry(0.34, 0.01, 6, 24, Math.PI * 0.9), wood, spine, 0.02, 0.28, -0.16, 0, 0, Math.PI * 0.55 + 0.4);
     void bow;
   }
@@ -672,4 +764,74 @@ export function miniatureEnvironment(renderer, o = {}) {
   geo.dispose();
   mat.dispose();
   return tex;
+}
+
+// ------------------------------------------------------------------ snapshots
+
+let snap = null;
+const snapCache = new Map();
+
+/**
+ * Render a character's miniature (dressed in its readied gear) to an image
+ * URL, for 2D UI such as the ITEMS paperdoll. Uses one small private WebGL
+ * context, cached per look + gear. Returns null if WebGL is unavailable.
+ * @param {object} ch
+ * @param {{w?: number, h?: number}} [o]
+ * @returns {string|null}
+ */
+export function miniatureSnapshot(ch, o = {}) {
+  const w = o.w ?? 300;
+  const h = o.h ?? 520;
+  const key = JSON.stringify([ch.race, ch.gender, ch.classSpec, defaultLook(ch), miniatureGear(ch), w, h]);
+  if (snapCache.has(key)) return snapCache.get(key);
+  try {
+    if (!snap) {
+      const canvas = document.createElement('canvas');
+      const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, preserveDrawingBuffer: true });
+      renderer.setPixelRatio(1);
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.1;
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      const scene = new THREE.Scene();
+      scene.environment = miniatureEnvironment(renderer);
+      scene.environmentIntensity = 0.9;
+      scene.add(new THREE.HemisphereLight(0x5a6aa0, 0x100c08, 0.5));
+      const key2 = new THREE.SpotLight(0xfff0dc, 42, 12, 0.5, 0.6, 1.5);
+      key2.position.set(1.6, 3.6, 2.8);
+      key2.target.position.set(0, 0.9, 0);
+      key2.castShadow = true;
+      key2.shadow.mapSize.set(1024, 1024);
+      key2.shadow.bias = -0.0015;
+      scene.add(key2, key2.target);
+      const rim = new THREE.DirectionalLight(0x7f9fff, 1.6);
+      rim.position.set(-2.5, 2.5, -3);
+      scene.add(rim);
+      const warm = new THREE.PointLight(0xffa050, 1.4, 6, 1.6);
+      warm.position.set(-1.6, 0.8, 1.4);
+      scene.add(warm);
+      const camera = new THREE.PerspectiveCamera(26, 1, 0.1, 50);
+      snap = { renderer, scene, camera };
+    }
+    const { renderer, scene, camera } = snap;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.position.set(0, 1.2, 4.1);
+    camera.lookAt(0, 0.97, 0);
+    camera.updateProjectionMatrix();
+    const m = buildMiniature(ch, { pose: 'stand', base: true });
+    m.rotation.y = -0.32;
+    scene.add(m);
+    renderer.setClearColor(0x000000, 0);
+    renderer.render(scene, camera);
+    const url = renderer.domElement.toDataURL('image/png');
+    scene.remove(m);
+    m.userData.dispose();
+    if (snapCache.size > 24) snapCache.delete(snapCache.keys().next().value);
+    snapCache.set(key, url);
+    return url;
+  } catch {
+    return null;
+  }
 }

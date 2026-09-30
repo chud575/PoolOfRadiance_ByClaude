@@ -1,4 +1,5 @@
 import './partyui.css';
+import { miniatureSnapshot } from './Miniature.js';
 import { h, clear } from '../dom.js';
 import { ITEMS } from '../../data/items.js';
 import {
@@ -209,8 +210,14 @@ export class InventoryPanel {
         dataset: lore(e ? { title: itemName(e), text: `${label} slot. ${itemStatLine(def, e)}` } : { title: `${label} slot`, text: 'Nothing readied here. Select an item and choose READY.' }),
       }, [h('img', { src: e ? itemIconURL(iconFor(def), { magic }) : itemIconURL(ghost, { ghost: true }), alt: '' }), h('span.lab', [label])]);
     };
-    const fig = h('canvas');
-    paintDoll(fig, ch);
+    // The character's own miniature, dressed in what is readied; painted silhouette as a fallback.
+    const snapUrl = miniatureSnapshot(ch);
+    let fig;
+    if (snapUrl) fig = h('img.pc-doll-mini', { src: snapUrl, alt: '', draggable: false });
+    else {
+      fig = h('canvas');
+      paintDoll(fig, ch);
+    }
     const doll = h('div.pc-sect', { style: { display: 'flex', flexDirection: 'column' } }, [
       h('div.pc-sect-h', [h('span', ['Equipped'])]),
       h('div.pc-doll', { style: { flex: '1' } }, [

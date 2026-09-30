@@ -181,61 +181,106 @@ export async function buildCamp(scene, { party, hour, renderer }) {
   // The party itself, as miniatures: most sit around the fire on their
   // bedrolls; the first able fighter stands watch at the edge of the light.
   const minis = [];
+  const partyGroup = new THREE.Group();
+  scene.add(partyGroup);
   const living = party.filter((ch) => isAlive(ch));
   const sentryIdx = living.findIndex((ch) => String(ch.classSpec).includes('fighter'));
   const seats = [200, 238, 302, 338, 160, 22].map((d) => (d * Math.PI) / 180);
   const clothTex = clothSet();
   const burlap = getMaterial('prop_burlap');
   const packMat = trackM(new THREE.MeshStandardMaterial({ color: 0x6a5a44, roughness: 1, map: burlap.map, normalMap: burlap.normalMap }));
-  let seat = 0;
-  living.forEach((ch, i) => {
-    const sentry = i === sentryIdx && living.length > 2;
-    const m = buildMiniature(ch, { pose: sentry ? 'guard' : 'sit', base: false, merge: true });
-    if (sentry) {
-      m.position.set(2.35, 0, -2.2);
-      m.rotation.y = 2.5;
-    } else {
+  const blanketGeo = track(new THREE.BoxGeometry(0.72, 0.07, 1.7, 4, 1, 8));
+  {
+    const p = blanketGeo.attributes.position;
+    for (let k = 0; k < p.count; k++) {
+      const x = p.getX(k);
+      const z = p.getZ(k);
+      p.setY(k, p.getY(k) + 0.025 * Math.sin(z * 9 + x * 4) + (Math.abs(x) > 0.3 ? -0.03 : 0));
+    }
+    blanketGeo.computeVertexNormals();
+  }
+  // A blanket drawn over a sleeper: a sheet humped over the body, hems on the ground.
+  const coverGeo = track(new THREE.PlaneGeometry(0.95, 1.25, 12, 14));
+  {
+    coverGeo.rotateX(-Math.PI / 2);
+    const p = coverGeo.attributes.position;
+    for (let k = 0; k < p.count; k++) {
+      const x = p.getX(k);
+      const z = p.getZ(k);
+      const hump = Math.exp(-((x / 0.24) ** 2)) * (0.2 + 0.03 * Math.sin(z * 7)) * (z < -0.5 ? 1 - (-0.5 - z) * 2 : 1);
+      p.setY(k, 0.02 + Math.max(0, hump) + 0.012 * Math.sin(x * 20 + z * 6));
+    }
+    coverGeo.computeVertexNormals();
+  }
+  const rolledGeo = track(new THREE.CylinderGeometry(0.13, 0.13, 0.74, 14));
+  const packGeo = track(new THREE.LatheGeometry([[0.001, 0], [0.16, 0.01], [0.2, 0.12], [0.17, 0.26], [0.07, 0.33], [0.05, 0.38], [0.001, 0.38]].map(([x, y]) => new THREE.Vector2(x, y)), 12));
+  const bedMats = living.map((ch) => {
+    const look = defaultLook(ch);
+    const color = new THREE.Color(CLOTH_COLORS[(look.cloth + 3) % CLOTH_COLORS.length][1]).multiplyScalar(0.8);
+    return trackM(new THREE.MeshStandardMaterial({ color, roughness: 1, map: clothTex.map, normalMap: clothTex.normalMap }));
+  });
+
+  /** (Re)place the party: sitting around the fire, or asleep on their bedrolls with one on watch. */
+  const placeParty = (resting) => {
+    for (const m of minis) m.userData.dispose();
+    minis.length = 0;
+    partyGroup.clear();
+    let seat = 0;
+    living.forEach((ch, i) => {
+      const sentry = i === sentryIdx && living.length > 2;
+      if (sentry) {
+        const m = buildMiniature(ch, { pose: 'guard', base: false, merge: true });
+        m.position.set(2.35, 0, -2.2);
+        m.rotation.y = 2.5;
+        partyGroup.add(m);
+        minis.push(m);
+        return;
+      }
       const a = seats[seat++ % seats.length];
       const r = 2.15;
-      m.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
-      m.rotation.y = Math.atan2(-m.position.x, -m.position.z);
+      const x = Math.cos(a) * r;
+      const z = Math.sin(a) * r;
+      const ry = Math.atan2(-x, -z);
       // Bedroll beneath and behind the sitter, a pack at its head.
-      const look = defaultLook(ch);
-      const color = new THREE.Color(CLOTH_COLORS[(look.cloth + 3) % CLOTH_COLORS.length][1]).multiplyScalar(0.8);
-      const bm = trackM(new THREE.MeshStandardMaterial({ color, roughness: 1, map: clothTex.map, normalMap: clothTex.normalMap }));
       const roll = new THREE.Group();
-      const blanket = new THREE.Mesh(track(new THREE.BoxGeometry(0.72, 0.07, 1.7, 4, 1, 8)), bm);
-      {
-        const p = blanket.geometry.attributes.position;
-        for (let k = 0; k < p.count; k++) {
-          const x = p.getX(k);
-          const z = p.getZ(k);
-          p.setY(k, p.getY(k) + 0.025 * Math.sin(z * 9 + x * 4 + i) + (Math.abs(x) > 0.3 ? -0.03 : 0));
-        }
-        blanket.geometry.computeVertexNormals();
-      }
+      const blanket = new THREE.Mesh(blanketGeo, bedMats[i]);
       blanket.position.set(0, 0.04, -0.55);
       blanket.receiveShadow = true;
       blanket.castShadow = true;
       roll.add(blanket);
-      const rolled = new THREE.Mesh(track(new THREE.CylinderGeometry(0.13, 0.13, 0.74, 14)), bm);
+      const rolled = new THREE.Mesh(rolledGeo, bedMats[i]);
       rolled.rotation.z = Math.PI / 2;
       rolled.position.set(0, 0.13, -1.4);
       rolled.castShadow = true;
       roll.add(rolled);
-      const pack = new THREE.Mesh(track(new THREE.LatheGeometry([[0.001, 0], [0.16, 0.01], [0.2, 0.12], [0.17, 0.26], [0.07, 0.33], [0.05, 0.38], [0.001, 0.38]].map(([x, y]) => new THREE.Vector2(x, y)), 12)), packMat);
+      const pack = new THREE.Mesh(packGeo, packMat);
       pack.rotation.z = 1.2;
-      pack.position.y = 0.05;
-      pack.position.set(0.45, 0.16, -1.2);
+      pack.position.set(0.45, 0.05, -1.2);
       pack.castShadow = true;
       roll.add(pack);
-      roll.position.copy(m.position);
-      roll.rotation.y = m.rotation.y;
-      scene.add(roll);
-    }
-    scene.add(m);
-    minis.push(m);
-  });
+      roll.position.set(x, 0, z);
+      roll.rotation.y = ry;
+      partyGroup.add(roll);
+      const m = buildMiniature(ch, { pose: resting ? 'sleep' : 'sit', base: false, merge: true });
+      if (resting) {
+        // Lie along the bedroll, head toward the rolled blanket.
+        const off = new THREE.Vector3(0, 0.07, -0.5).applyAxisAngle(new THREE.Vector3(0, 1, 0), ry);
+        m.position.set(x + off.x, off.y, z + off.z);
+        m.rotation.y = ry - Math.PI / 2;
+        const cover = new THREE.Mesh(coverGeo, bedMats[i]);
+        cover.position.set(0, 0.03, -0.3);
+        cover.castShadow = true;
+        cover.receiveShadow = true;
+        roll.add(cover);
+      } else {
+        m.position.set(x, 0, z);
+        m.rotation.y = ry;
+      }
+      partyGroup.add(m);
+      minis.push(m);
+    });
+  };
+  placeParty(false);
 
   // A lean-to tent behind the circle: two canvas planes on a ridge pole.
   const canvasMat = trackM(new THREE.MeshStandardMaterial({ color: 0x9a8a68, roughness: 1, side: THREE.DoubleSide, map: getMaterial('prop_burlap').map, normalMap: getMaterial('prop_burlap').normalMap }));
@@ -310,6 +355,7 @@ export async function buildCamp(scene, { party, hour, renderer }) {
     fire,
     sky,
     update,
+    setResting: (r) => placeParty(!!r),
     dispose() {
       for (const g of geos) g.dispose();
       for (const m of mats) m.dispose();

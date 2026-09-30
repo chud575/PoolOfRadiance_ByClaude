@@ -3,6 +3,7 @@ import { Scene } from '../../core/Scene.js';
 import { h, clear, Frame, CommandBar } from '../../ui/UI.js';
 import { createTorch } from '../../render/lighting.js';
 import { getMaterial, preloadMaterials } from '../../render/materials.js';
+import { getBannerTexture, getGlowTexture } from '../../render/textures/index.js';
 import { RACES, RACE_IDS, raceAbilityCaps } from '../../rules/races.js';
 import { CLASSES, ALIGNMENTS, ALIGNMENT_NAMES, PR_LEVEL_CAPS, classSpecName, splitClasses, allowedAlignments } from '../../rules/classes.js';
 import { ABILITIES, ABILITY_NAMES, ABILITY_ABBR, formatStr } from '../../rules/abilities.js';
@@ -76,41 +77,90 @@ export default class CreateScene extends Scene {
 
   async _build3d() {
     const { render } = this.ctx;
-    await preloadMaterials(['floor_flag', 'wall_stone', 'arch_stone']);
+    await preloadMaterials(['arch_flags', 'arch_stone', 'arch_trim']);
     const s = (this.scene3d = new THREE.Scene());
     this.camera = new THREE.PerspectiveCamera(34, render.aspect, 0.1, 200);
     this._frameCamera();
-    s.background = new THREE.Color(0x05060c);
-    s.fog = new THREE.FogExp2(0x05060c, 0.075);
-    s.add(new THREE.HemisphereLight(0x3a4a80, 0x0a0806, 0.35));
-    // Studio reflections so the miniature's steel and gilt read as metal.
+    s.background = new THREE.Color(0x04050a);
+    s.fog = new THREE.FogExp2(0x04050a, 0.085);
+    s.add(new THREE.HemisphereLight(0x33406a, 0x0a0806, 0.3));
     this._env = miniatureEnvironment(render.renderer);
     s.environment = this._env;
     s.environmentIntensity = 0.9;
     this._geos = [];
+    this._mats = [];
     const G = (g) => (this._geos.push(g), g);
-    const floor = new THREE.Mesh(G(new THREE.PlaneGeometry(40, 40)), getMaterial('floor_flag'));
+    /** World-scaled UVs (metres / texScale) + an AO gradient in vertex colours for the arch_ shader. */
+    const archify = (geo, scale, aoFn) => {
+      const p = geo.attributes.position;
+      const uv = geo.attributes.uv;
+      const c = [];
+      const v = new THREE.Vector3();
+      for (let i = 0; i < p.count; i++) {
+        v.fromBufferAttribute(p, i);
+        if (uv) uv.setXY(i, uv.getX(i) * scale[0], uv.getY(i) * scale[1]);
+        const ao = aoFn ? aoFn(v) : 1;
+        c.push(ao, ao, ao);
+      }
+      geo.setAttribute('color', new THREE.Float32BufferAttribute(c, 3));
+      return geo;
+    };
+    const floorGeo = archify(G(new THREE.PlaneGeometry(40, 40, 40, 40)), [40 / 3, 40 / 3], (v) => Math.min(1, 0.55 + Math.hypot(v.x, v.y) * 0.25));
+    const floor = new THREE.Mesh(floorGeo, getMaterial('arch_flags'));
     floor.rotation.x = -Math.PI / 2;
-    const uv = floor.geometry.attributes.uv;
-    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 12, uv.getY(i) * 12);
     floor.receiveShadow = true;
     s.add(floor);
-    const wall = new THREE.Mesh(G(new THREE.PlaneGeometry(30, 10)), getMaterial('wall_stone'));
-    const wuv = wall.geometry.attributes.uv;
-    for (let i = 0; i < wuv.count; i++) wuv.setXY(i, wuv.getX(i) * 9, wuv.getY(i) * 3);
+    // Back wall of dressed ashlar, darkening toward floor and vault.
+    const wallGeo = archify(G(new THREE.PlaneGeometry(30, 10, 30, 10)), [10, 10 / 3], (v) => 0.35 + 0.65 * Math.min(1, (v.y + 5) / 2.2) * Math.min(1, (5 - v.y) / 4));
+    const wall = new THREE.Mesh(wallGeo, getMaterial('arch_stone'));
     wall.position.set(0, 5, -3.2);
     wall.receiveShadow = true;
     s.add(wall);
-    // Pillars flanking the plinth.
+    // Pillars flanking the plinth, with plinth bases and capitals.
     for (const x of [-2.6, 2.6]) {
-      const p = new THREE.Mesh(G(new THREE.CylinderGeometry(0.34, 0.4, 7, 16)), getMaterial('wall_stone'));
+      const shaft = archify(G(new THREE.CylinderGeometry(0.3, 0.34, 7, 20, 7)), [2, 7 / 1.5], (v) => 0.5 + 0.5 * Math.min(1, (v.y + 3.5) / 1.5));
+      const p = new THREE.Mesh(shaft, getMaterial('arch_trim'));
       p.position.set(x, 3.5, -2.3);
       p.castShadow = true;
       p.receiveShadow = true;
       s.add(p);
+      const base = archify(G(new THREE.BoxGeometry(0.9, 0.35, 0.9)), [0.6, 0.25], () => 0.7);
+      const b = new THREE.Mesh(base, getMaterial('arch_trim'));
+      b.position.set(x, 0.175, -2.3);
+      b.castShadow = true;
+      b.receiveShadow = true;
+      s.add(b);
     }
+    // Heraldic banners hung between the pillars and the wall.
+    for (const [x, v] of [[-1.3, 1], [1.3, 0]]) {
+      const bm = new THREE.MeshStandardMaterial({ map: getBannerTexture(v), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.85 });
+      this._mats.push(bm);
+      const bg = G(new THREE.PlaneGeometry(0.8, 2.2, 6, 12));
+      const bp = bg.attributes.position;
+      for (let i = 0; i < bp.count; i++) bp.setZ(i, 0.05 * Math.sin(bp.getX(i) * 7 + bp.getY(i) * 1.3) * (1.3 - bp.getY(i)) * 0.5);
+      bg.computeVertexNormals();
+      const banner = new THREE.Mesh(bg, bm);
+      banner.position.set(x, 2.45, -3.05);
+      banner.castShadow = true;
+      banner.receiveShadow = true;
+      s.add(banner);
+      const rod = new THREE.Mesh(G(new THREE.CylinderGeometry(0.02, 0.02, 1.0, 8)), getMaterial('gilt'));
+      rod.rotation.z = Math.PI / 2;
+      rod.position.set(x, 3.56, -3.02);
+      s.add(rod);
+    }
+    // Dust motes drifting in the spotlight.
+    const N = 70;
+    const mg = G(new THREE.BufferGeometry());
+    this._motePos = new Float32Array(N * 3);
+    mg.setAttribute('position', new THREE.BufferAttribute(this._motePos, 3));
+    const mm = new THREE.PointsMaterial({ map: getGlowTexture(), color: 0xffe0a8, size: 0.05, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending });
+    this._mats.push(mm);
+    this._motes = new THREE.Points(mg, mm);
+    this._motes.frustumCulled = false;
+    s.add(this._motes);
     // Plinth.
-    const plinth = new THREE.Mesh(G(new THREE.CylinderGeometry(0.75, 0.85, 0.5, 40)), getMaterial('arch_stone'));
+    const plinth = new THREE.Mesh(archify(G(new THREE.CylinderGeometry(0.75, 0.85, 0.5, 48)), [3, 0.35], (v) => 0.55 + (v.y + 0.25) * 0.9), getMaterial('arch_trim'));
     plinth.position.y = 0.25;
     plinth.castShadow = true;
     plinth.receiveShadow = true;
@@ -121,7 +171,7 @@ export default class CreateScene extends Scene {
     trim.position.y = 0.5;
     s.add(trim);
     // Key spot from above, torches on the wall, cool rim from behind.
-    const spot = new THREE.SpotLight(0xffe2b0, 15, 14, 0.36, 0.6, 1.4);
+    const spot = new THREE.SpotLight(0xfff0dc, 15, 14, 0.36, 0.6, 1.4);
     spot.position.set(1.4, 6.2, 3.0);
     spot.target.position.set(0, 1, 0);
     spot.castShadow = true;
@@ -132,7 +182,7 @@ export default class CreateScene extends Scene {
     rim.position.set(-3, 3, -4);
     s.add(rim);
     this.torches = [-2.6, 2.6].map((x, i) => {
-      const t = createTorch({ intensity: 9, distance: 9, seed: i * 7 + 1, flame: true, flameScale: 0.3 });
+      const t = createTorch({ intensity: 7, distance: 9, seed: i * 7 + 1, flame: true, flameScale: 0.3 });
       t.position.set(x, 2.5, -1.85);
       s.add(t);
       return t;
@@ -344,6 +394,7 @@ export default class CreateScene extends Scene {
           h('div.pc-big', [h('span.n', [String(s.ac)]), h('span.l', ['AC'])]),
           h('div.pc-big', [h('span.n', [String(s.thac0)]), h('span.l', ['THAC0'])]),
         ]));
+        b.append(this._abStrip(s.abilities, ch.classSpec));
       } else {
         b.append(h('p.cc-lead', { style: { textAlign: 'center', marginTop: '2em' } }, [CREATE_TEXT.emptyParty]));
       }
@@ -368,20 +419,23 @@ export default class CreateScene extends Scene {
         h('div.pc-big', { dataset: { tip: STAT_TIPS.ac(s).text } }, [h('span.n', [String(s.ac)]), h('span.l', ['AC'])]),
         h('div.pc-big', { dataset: { tip: STAT_TIPS.thac0(s).text } }, [h('span.n', [String(s.thac0)]), h('span.l', ['THAC0'])]),
       ]));
-      // The six scores at a glance (hover for the rules).
-      const a = pv.abilities;
-      b.append(h('div.cc-abstrip', ['str', 'int', 'wis', 'dex', 'con', 'cha'].map((k) => {
-        const v = a[k];
-        const tip = abilityTip(k, a, d.classSpec);
-        return h(`div.cc-ab${v >= 16 ? '.hi' : v <= 6 ? '.lo' : ''}`, { dataset: { tip: tip.text, tipTitle: tip.title } }, [
-          h('span.v', [k === 'str' ? formatStr(v, a.strPct) : String(v)]),
-          h('span.k', [k.toUpperCase()]),
-        ]);
-      })));
+      b.append(this._abStrip(pv.abilities, d.classSpec));
     }
     b.append(h('div', { style: { flex: '1' } }));
     b.append(h('div.pc-sect-h', [h('span', [`Party ${this.newParty.length}/6`])]));
     b.append(h('div.cc-party', Array.from({ length: 6 }, (_, i) => (this.newParty[i] ? miniPortrait(this.newParty[i], { tip: this.newParty[i].name }) : h('div.slot-empty', [String(i + 1)])))));
+  }
+
+  /** The six scores at a glance (hover for the rules). */
+  _abStrip(a, classSpec) {
+    return h('div.cc-abstrip', ['str', 'int', 'wis', 'dex', 'con', 'cha'].map((k) => {
+      const v = a[k];
+      const tip = abilityTip(k, a, classSpec);
+      return h(`div.cc-ab${v >= 16 ? '.hi' : v <= 6 ? '.lo' : ''}`, { dataset: { tip: tip.text, tipTitle: tip.title } }, [
+        h(`span.v${k === 'str' && v === 18 && a.strPct ? '.long' : ''}`, [k === 'str' ? formatStr(v, a.strPct) : String(v)]),
+        h('span.k', [k.toUpperCase()]),
+      ]);
+    }));
   }
 
   // ------------------------------------------------------------------ main panel
@@ -431,6 +485,8 @@ export default class CreateScene extends Scene {
           h('div.cc-grid.c2', singles.map(opt)),
           multis.length ? h('div.pc-sect-h.left', { style: { marginTop: '0.9em' } }, [h('span', [`Multi-class (${r.name} only)`])]) : null,
           multis.length ? h('div.cc-grid.c2', multis.map(opt)) : null,
+          multis.length ? null : h('div.pc-sect-h.left', { style: { marginTop: '0.9em' } }, [h('span', ['Dual class'])]),
+          multis.length ? null : h('p.pc-rest-note', { style: { margin: '0.2em 0 0' } }, ['Humans cannot multi-class. Instead a human of 15+ in the old prime requisite and 17+ in the new may later abandon one calling for another at the Training Hall, regaining the old skills once the new class surpasses it.']),
           this._classInfo(),
         ]));
       },
@@ -698,6 +754,20 @@ export default class CreateScene extends Scene {
   update() {
     const t = this.ctx.clock.time;
     for (const tr of this.torches) tr.userData.update(t);
+    if (this._motePos) {
+      const p = this._motePos;
+      for (let i = 0; i < p.length / 3; i++) {
+        const h1 = Math.sin(i * 12.9898) * 43758.5453;
+        const r1 = h1 - Math.floor(h1);
+        const h2 = Math.sin(i * 78.233) * 12543.1;
+        const r2 = h2 - Math.floor(h2);
+        const ph = (t * (0.02 + r2 * 0.03) + r1) % 1;
+        p[i * 3] = Math.sin(r1 * 40 + t * 0.2) * (0.3 + r2 * 1.1);
+        p[i * 3 + 1] = 0.6 + ph * 3.6;
+        p[i * 3 + 2] = Math.cos(r2 * 40 + t * 0.17) * (0.3 + r1 * 0.9);
+      }
+      this._motes.geometry.attributes.position.needsUpdate = true;
+    }
     if (this.figureRoot) {
       this.figureRoot.rotation.y = this.ctx.debug?.raw?.figcam === 'close' ? 0 : -0.5 + Math.sin(t * 0.35) * 0.5;
       for (const c of this.figureRoot.children) c.userData.update?.(t);
@@ -708,6 +778,7 @@ export default class CreateScene extends Scene {
     for (const c of this.figureRoot?.children ?? []) c.userData.dispose?.();
     for (const g of this._geos ?? []) g.dispose();
     this._trimMat?.dispose();
+    for (const m of this._mats ?? []) m.dispose();
     this._env?.dispose();
     super.exit();
   }

@@ -28,6 +28,7 @@ export const GALLERY = [
   { name: 'combat_night', query: 'scene=combat&encounter=skeletons_1&hour=22&t=2&seed=1' },
   { name: 'automap', query: 'scene=automap&map=phlan_slums&x=7&y=11&dir=N&t=1&seed=1' },
   { name: 'camp', query: 'scene=camp&hour=21.5&t=2&seed=1' },
+  { name: 'camp_rest', query: 'scene=camp&hour=2&sleep=1&t=2&seed=1' },
   { name: 'charsheet', query: 'scene=camp&panel=view&member=0&hour=21.5&t=2&seed=1' },
   { name: 'inventory', query: 'scene=camp&panel=items&member=0&hour=21.5&t=2&seed=1' },
   { name: 'memorize', query: 'scene=camp&panel=magic&member=1&hour=21.5&t=2&seed=1' },

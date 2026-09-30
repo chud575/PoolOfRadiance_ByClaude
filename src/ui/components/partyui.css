@@ -347,3 +347,5 @@
 .cc-likeness .cc-thumbs.body { grid-template-columns: repeat(8, 1fr); gap: 0.3em; }
 .cc-likeness .cc-thumbs.body .cc-thumb img { object-position: 50% 100%; }
 .cc-likeness .cc-thumbs.body .cc-thumb span { font-size: 0.5em; letter-spacing: 0.06em; }
+.pc-doll-fig img.pc-doll-mini { width: 100%; height: auto; max-height: 100%; object-fit: contain; filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.6)); }
+.cc-ab .v.long { font-size: 0.78em; line-height: 1.35; }
