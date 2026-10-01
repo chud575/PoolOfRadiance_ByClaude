@@ -63,6 +63,14 @@ export default class AutomapScene extends Scene {
       else this.sv.focus(this.sv.tcx, this.sv.tcy, z, true);
     }
     if (this.mode === 'diorama') await this._enterDiorama(Number.isFinite(z) ? z : 1);
+    // squares surveyed since the map was last opened ink themselves in
+    this.fresh = this._freshCells();
+    this.openedAt = this.ctx.clock.time;
+    // the sheet settles onto the desk (skipped when the clock is frozen)
+    if (!this.ctx.clock.frozen) {
+      this.sv.zoom *= 0.94;
+      this.sv.cy += 28;
+    }
     this._refreshUi();
     this._draw();
 
@@ -204,6 +212,25 @@ export default class AutomapScene extends Scene {
     this.sv.setSheet(this.world, WORLD);
     this.hover = null;
     this._closeEditor();
+  }
+
+  /** Cells explored since the last time this map was viewed (then remember the current state). */
+  _freshCells() {
+    const { game } = this.ctx;
+    const m = getMap(game.location.map);
+    const last = ((game.flags.automapViewed ??= {})[m.id] ??= []);
+    const out = [];
+    const now = [];
+    for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) {
+      const i = y * m.w + x;
+      const seen = game.isExplored(m.id, x, y, m.w);
+      if (seen) now[i >> 5] = (now[i >> 5] ?? 0) | (1 << (i & 31));
+      const was = ((last[i >> 5] ?? 0) & (1 << (i & 31))) !== 0;
+      if (seen && !was) out.push({ x, y, d: Math.hypot(x - game.location.x, y - game.location.y) });
+    }
+    game.flags.automapViewed[m.id] = now;
+    // the very first look at a block shows it as it is
+    return last.length && !this.reveal ? out : [];
   }
 
   get isHome() {
@@ -629,6 +656,25 @@ export default class AutomapScene extends Scene {
       g.lineWidth = 2.2 / s * 1.4;
       g.strokeRect(X(x) + 1, Y(y) + 1, cs - 2, cs - 2);
       g.restore();
+    }
+    // newly surveyed squares: paper cover fading out, nearest the party first
+    if (this.isHome && this.fresh?.length && !this.ctx.clock.frozen) {
+      const age = t - this.openedAt;
+      let any = false;
+      for (const f of this.fresh) {
+        const a = 1 - Math.min(1, Math.max(0, (age - 0.2 - f.d * 0.07) / 0.7));
+        if (a <= 0) continue;
+        any = true;
+        const cx = X(f.x) + cs / 2;
+        const cy = Y(f.y) + cs / 2;
+        const gr = g.createRadialGradient(cx, cy, cs * 0.2, cx, cy, cs * 0.95);
+        gr.addColorStop(0, `rgba(212,192,150,${(a * 0.95).toFixed(3)})`);
+        gr.addColorStop(0.6, `rgba(212,192,150,${(a * 0.8).toFixed(3)})`);
+        gr.addColorStop(1, 'rgba(212,192,150,0)');
+        g.fillStyle = gr;
+        g.fillRect(cx - cs, cy - cs, cs * 2, cs * 2);
+      }
+      if (!any) this.fresh = null;
     }
     // party (view cone + arrow)
     if (this.isHome) {
