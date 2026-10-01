@@ -303,7 +303,7 @@ export class Diorama {
 
     // ---------- props: candle, inkwell & quill ----------
     const candle = new THREE.Group();
-    const wax = T(new THREE.MeshStandardMaterial({ color: 0xefe3c8, roughness: 0.6 }));
+    const wax = T(new THREE.MeshStandardMaterial({ color: 0xcdbb98, roughness: 0.55 }));
     const brass = goldMat;
     const dish = new THREE.Mesh(T(new THREE.CylinderGeometry(0.9, 1.0, 0.12, 32)), brass);
     dish.position.y = 0.06;
@@ -313,7 +313,7 @@ export class Diorama {
     drip.rotation.x = Math.PI / 2;
     drip.position.y = 2.5;
     const flameMat = T(new THREE.MeshBasicMaterial({ color: 0xffd9a0 }));
-    flameMat.color.multiplyScalar(4);
+    flameMat.color.multiplyScalar(2.2);
     const flame = new THREE.Mesh(T(new THREE.SphereGeometry(0.1, 16, 12)), flameMat);
     flame.scale.set(1, 2.4, 1);
     flame.position.y = 2.82;
@@ -322,12 +322,12 @@ export class Diorama {
     candle.position.set(-3.0, 0, 6.8);
     scene.add(candle);
     this.flame = flame;
-    const candleLight = new THREE.PointLight(0xff9448, 26, 42, 1.6);
-    candleLight.position.set(-3.0, 3.1, 6.8);
+    const candleLight = new THREE.PointLight(0xff9448, 16, 42, 1.4);
+    candleLight.position.set(-2.4, 3.6, 7.2);
     scene.add(candleLight);
     this.candleLight = candleLight;
     const halo = new THREE.Sprite(T(new THREE.SpriteMaterial({ map: this.marker?.glow.material.map ?? null, color: 0xffb070, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.55 })));
-    halo.scale.set(2.2, 2.2, 1);
+    halo.scale.set(1.3, 1.3, 1);
     halo.position.set(-3.0, 2.85, 6.8);
     scene.add(halo);
 
@@ -434,7 +434,7 @@ export class Diorama {
     }
     if (this.candleLight) {
       const f = 0.86 + 0.1 * Math.sin(t * 11.3) + 0.06 * Math.sin(t * 23.7 + 1.3) + 0.05 * (hash2(Math.floor(t * 18), 3, 1) - 0.5);
-      this.candleLight.intensity = 26 * f;
+      this.candleLight.intensity = 16 * f;
       this.flame.scale.set(1, 2.4 * (0.92 + f * 0.1), 1);
     }
   }

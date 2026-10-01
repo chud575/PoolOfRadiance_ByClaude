@@ -208,7 +208,7 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
           }
         } else {
           // cobbles: tiny rounded stones
-          w.strokeStyle = 'rgba(110,80,45,0.26)';
+          w.strokeStyle = 'rgba(110,80,45,0.38)';
           w.lineWidth = 0.6;
           for (let i = 0; i < 7; i++) {
             const px = X + cs * (0.1 + r() * 0.8);
@@ -454,6 +454,44 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
   g.letterSpacing = '0px';
   g.restore();
 
+  // ---------- terra incognita: label the largest unexplored tract ----------
+  {
+    let best = null;
+    const unseen = (x, y) => !seenCell(x, y) && !info.isRock(x, y);
+    for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) {
+      for (let h2 = 1; y + h2 <= map.h; h2++) {
+        let ok = true;
+        let w2 = 0;
+        for (; x + w2 < map.w; w2++) {
+          let col = true;
+          for (let j = y; j < y + h2; j++) if (!unseen(x + w2, j)) { col = false; break; }
+          if (!col) break;
+        }
+        if (w2 === 0) ok = false;
+        if (!ok) break;
+        // keep the row width as the minimum over rows (scan above checks all rows per column)
+        if (w2 >= 4 && h2 >= 2 && (!best || w2 * h2 > best.w * best.h)) best = { x, y, w: w2, h: h2 };
+      }
+    }
+    if (best && best.w * best.h >= 10) {
+      g.save();
+      g.translate(CX(best.x + best.w / 2), CY(best.y + best.h / 2));
+      g.rotate(-0.06);
+      const fs = Math.min(cs * 0.62, (best.w * cs) / 7.5);
+      g.font = `italic ${Math.round(fs)}px ${SERIF}`;
+      g.letterSpacing = `${(fs * 0.12).toFixed(1)}px`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillStyle = 'rgba(80,50,25,0.42)';
+      g.fillText('Unexplored', 0, 0);
+      g.font = `italic ${Math.round(fs * 0.42)}px ${SERIF}`;
+      g.letterSpacing = '1px';
+      g.fillStyle = 'rgba(80,50,25,0.38)';
+      if (best.h >= 3) g.fillText('so far as the Company knows', 0, fs * 0.85);
+      g.restore();
+    }
+  }
+
   // ---------- border with coordinate ruler ----------
   g.save();
   g.strokeStyle = INK.ink;
@@ -464,15 +502,18 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
   g.strokeRect(MX - 27, MY - 27, MS + 54, MS + 54);
   // alternating ruler bars between the rules
   for (let i = 0; i < map.w; i++) {
-    if (i % 2) continue;
-    g.fillStyle = 'rgba(43,26,13,0.8)';
+    g.fillStyle = i % 2 ? 'rgba(168,50,40,0.85)' : 'rgba(44,74,140,0.85)';
     g.fillRect(CX(i), MY - 22, cs, 6);
     g.fillRect(CX(i), MY + MS + 16, cs, 6);
     g.fillRect(MX - 22, CY(i), 6, cs);
     g.fillRect(MX + MS + 16, CY(i), 6, cs);
+    g.fillStyle = INK.goldHi;
+    for (const [px, py] of [[CX(i), MY - 19], [CX(i), MY + MS + 19], [MX - 19, CY(i)], [MX + MS + 19, CY(i)]]) {
+      g.beginPath(); g.arc(px, py, 1.6, 0, Math.PI * 2); g.fill();
+    }
   }
-  g.font = `italic ${Math.round(cs * 0.26)}px ${SERIF}`;
-  g.fillStyle = '#4a3320';
+  g.font = `italic ${Math.round(cs * 0.28)}px ${SERIF}`;
+  g.fillStyle = '#7a2a1c';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   for (let i = 0; i < map.w; i++) {

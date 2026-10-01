@@ -474,6 +474,9 @@ function drawRibbon(g, cx, cy, text, { known, here }) {
   g.restore();
 }
 
+const infoCache = new Map();
+const info0 = (m) => infoCache.get(m.id) ?? (infoCache.set(m.id, analyseMap(m)), infoCache.get(m.id));
+
 /** A block as a miniature survey square. */
 function drawMiniBlock(g, b, m, { seen, secrets, known, here }) {
   const { x, y, s } = b;
@@ -486,7 +489,24 @@ function drawMiniBlock(g, b, m, { seen, secrets, known, here }) {
   g.fillStyle = known ? 'rgba(246,234,204,0.95)' : 'rgba(230,214,176,0.6)';
   g.fillRect(x, y, s, s);
   if (!known) {
-    hatchRect(g, x, y, s, s, { seed: [...b.id].length * 17, size: 12, width: 0.6, color: '#6a5a44', alpha: 0.4 });
+    // the council's old pre-ruin plan, in faint graphite
+    const cs0 = s / m.w;
+    g.strokeStyle = 'rgba(70,60,50,0.32)';
+    g.lineWidth = 0.8;
+    g.beginPath();
+    for (let j = 0; j < m.h; j++) for (let i = 0; i < m.w; i++) {
+      if (info0(m).isRock(i, j)) continue;
+      for (const d of ['N', 'W']) {
+        const e = m.getEdge(i, j, d);
+        if (e === EDGE.OPEN || e === EDGE.ARCH) continue;
+        const X = x + i * cs0;
+        const Y = y + j * cs0;
+        if (d === 'N') { g.moveTo(X, Y); g.lineTo(X + cs0, Y); } else { g.moveTo(X, Y); g.lineTo(X, Y + cs0); }
+      }
+    }
+    g.stroke();
+    g.fillStyle = 'rgba(120,100,70,0.12)';
+    g.fillRect(x, y, s, s);
     g.setLineDash([4, 4]);
     g.strokeStyle = 'rgba(80,65,50,0.6)';
     g.lineWidth = 1.2;
@@ -495,7 +515,7 @@ function drawMiniBlock(g, b, m, { seen, secrets, known, here }) {
     g.font = `italic 44px ${SERIF}`;
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    g.fillStyle = 'rgba(80,65,50,0.35)';
+    g.fillStyle = 'rgba(110,40,25,0.4)';
     g.fillText('?', b.cx, b.cy + 2);
     g.restore();
     return;

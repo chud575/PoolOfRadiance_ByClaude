@@ -191,6 +191,18 @@ export class SheetView {
     g.setTransform(d * s, 0, 0, d * s, d * ox, d * oy);
     const k = this.sheet.k;
     g.drawImage(this.sheet.canvas, 0, 0, this.sheet.canvas.width, this.sheet.canvas.height, -M, -M, this.sheet.canvas.width / k, this.sheet.canvas.height / k);
+    // candle light falling across the sheet: warm centre, deepening toward the far corners
+    {
+      const lx = W * 0.42;
+      const ly = H * 0.42;
+      const R = Math.hypot(W, H) * 0.75;
+      const gr = g.createRadialGradient(lx, ly, R * 0.15, lx, ly, R);
+      gr.addColorStop(0, 'rgba(255,214,150,0.07)');
+      gr.addColorStop(0.55, 'rgba(60,30,8,0.0)');
+      gr.addColorStop(1, 'rgba(40,18,4,0.32)');
+      g.fillStyle = gr;
+      g.fillRect(0, 0, W, H);
+    }
     if (overlay) {
       g.save();
       overlay(g, s);
