@@ -301,3 +301,14 @@
 .por-frame.dlg-logframe > .por-frame-body { justify-content: flex-start !important; }
 .dlg-logframe .por-log-line { padding: 0.08em 0; border-bottom: 1px solid rgba(216, 178, 90, 0.08); }
 .dlg-logframe .por-log--system { color: #a8c0f0; }
+
+/* ---------- the Journal as a physical book ---------- */
+.jr-book { background: radial-gradient(ellipse at 50% 0%, rgba(255, 200, 120, 0.1), transparent 60%), linear-gradient(180deg, #4a1e14, #2a0e08); gap: 0; }
+.jr-page { background-color: transparent !important; background-size: 100% 100% !important; background-repeat: no-repeat !important; box-shadow: none !important; border-radius: 0 !important; }
+.jr-page.left { padding: 2.4em 3.2em 2.2em 3em; }
+.jr-page.right { padding: 2.4em 3em 2.2em 3.2em; }
+.jr-book::after { content: ''; position: absolute; top: 1.2em; bottom: 1.2em; left: calc(50% - 1.4em); width: 2.8em; pointer-events: none; z-index: 2;
+  background: linear-gradient(90deg, transparent, rgba(30, 14, 4, 0.35) 42%, rgba(10, 4, 0, 0.55) 50%, rgba(30, 14, 4, 0.35) 58%, transparent); }
+.jr-plate { margin: 0.8em 0 0.2em; padding: 0; text-align: center; }
+.jr-plate img { display: block; width: 100%; mix-blend-mode: multiply; opacity: 0.92; filter: contrast(1.05); }
+.jr-plate figcaption { margin-top: 0.3em; font-family: var(--font-display); font-size: 0.72em; letter-spacing: 0.3em; text-transform: uppercase; color: #6a4a28; }

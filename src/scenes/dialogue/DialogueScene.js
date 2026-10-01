@@ -13,6 +13,7 @@ import { addItem } from '../../rules/character.js';
 import { paintPanel, framedPortraitURL, PanelOverlay, LIGHTS, npcActor, ghostActor } from '../../ui/art/index.js';
 import { paintCreature, CREATURE_IDS, renderCreature, lightRig, flattenSprite } from '../../ui/art/creatures.js';
 import { SETTING_IDS } from '../../ui/art/settings.js';
+import { engravedPlate, pageTexture } from './journalArt.js';
 import { apply, test, check, payRewards, spendGold, partyGold, living, addJournal, journalList } from './effects.js';
 
 /**
@@ -372,7 +373,10 @@ export default class DialogueScene extends Scene {
       zone = m.zoneAt(loc.x, loc.y);
       text ??= m.name;
     }
-    this.sideInfo.append(h('div.dlg-place', [h('b', [zone ?? title]), text ?? '']));
+    const head = zone ?? title;
+    if (text && head && text.toLowerCase() === String(head).toLowerCase()) text = hasMap(loc.map) ? getMap(loc.map).name : '';
+    if (text && head && text.toLowerCase() === String(head).toLowerCase()) text = '';
+    this.sideInfo.append(h('div.dlg-place', [h('b', [head]), text ?? '']));
   }
 
   _sideEncounter(enc) {
@@ -428,6 +432,10 @@ export default class DialogueScene extends Scene {
     const spec = { setting: art.setting ?? 'slums', light: art.light, monsters, deity: art.deity, actorId };
     await this._showArt(spec, s.title, s.subtitle ?? '');
     this._setSpeaker(node.speaker ?? null);
+    if (initial && node.speaker && NPCS[node.speaker]) {
+      const npc = NPCS[node.speaker];
+      this.ctx.ui.message(`${s.title}: ${npc.name}${npc.title ? `, ${npc.title}` : ''}.`, 'lore');
+    }
     if (node.journal && addJournal(this.ctx.game, node.journal)) this.ctx.ui.message(`Journal entry ${node.journal} recorded.`, 'lore');
     if (node.do) apply(this.ctx, node.do);
     const paras = [].concat(node.text ?? []);
@@ -674,8 +682,8 @@ export default class DialogueScene extends Scene {
     const unread = new Set(game.flags.journalUnread ?? []);
     let sel = entry ?? found[found.length - 1] ?? null;
     const root = h('div.jr-root', { style: { position: 'absolute', inset: '0', zIndex: '20', background: standalone ? 'rgba(2,3,8,0.35)' : 'rgba(2,3,8,0.72)' } });
-    const left = h('div.jr-page.left');
-    const right = h('div.jr-page.right');
+    const left = h('div.jr-page.left', { style: { backgroundImage: `url(${pageTexture('left')})` } });
+    const right = h('div.jr-page.right', { style: { backgroundImage: `url(${pageTexture('right')})` } });
     const tabs = h('div.jr-tabs');
     const book = h('div.jr-book', [tabs, h('i.jr-ribbon'), left, right]);
     const close = h('button.por-btn.jr-close', { onclick: () => (standalone ? this.leave() : this.closeJournal()) }, ['Close  ', h('span.por-keycap', ['Esc'])]);
@@ -770,36 +778,10 @@ export default class DialogueScene extends Scene {
 
 // ------------------------------------------------------------------ helpers
 
-const PLATE_SETTING = {
-  1: 'docks', 2: 'docks', 3: 'cityhall', 4: 'cityhall', 5: 'slums', 6: 'keep', 7: 'chapel', 8: 'well_head', 9: 'plaza', 10: 'library', 11: 'library', 12: 'textile',
-  13: 'temple_bane', 14: 'graveyard', 15: 'castle', 16: 'gate', 17: 'temple_bane', 18: 'pool', 19: 'wilds', 20: 'tavern', 21: 'well', 22: 'plaza', 23: 'textile',
-  24: 'graveyard', 25: 'keep', 26: 'cityhall', 27: 'temple', 28: 'temple', 29: 'alley', 30: 'textile',
-};
-const plateCache = new Map();
-/** A sepia ink-wash plate illustrating a journal entry. */
+/** The engraved plate illustrating a journal entry. */
 function journalPlate(n) {
-  const setting = PLATE_SETTING[n];
-  if (!setting) return null;
-  if (!plateCache.has(setting)) {
-    const { canvas } = paintPanel({ setting, w: 720, h: 300, seed: n * 17 });
-    const c = document.createElement('canvas');
-    c.width = 720;
-    c.height = 300;
-    const g = c.getContext('2d');
-    g.filter = 'grayscale(1) sepia(0.85) contrast(1.15) brightness(1.05)';
-    g.drawImage(canvas, 0, 0);
-    g.filter = 'none';
-    // feather the edges into the page
-    g.globalCompositeOperation = 'destination-in';
-    const gr = g.createRadialGradient(360, 150, 90, 360, 150, 400);
-    gr.addColorStop(0, 'rgba(0,0,0,1)');
-    gr.addColorStop(0.7, 'rgba(0,0,0,0.9)');
-    gr.addColorStop(1, 'rgba(0,0,0,0)');
-    g.fillStyle = gr;
-    g.fillRect(0, 0, 720, 300);
-    plateCache.set(setting, c.toDataURL('image/png'));
-  }
-  return h('img.jr-plate', { src: plateCache.get(setting), alt: '' });
+  const url = engravedPlate(n);
+  return url ? h('figure.jr-plate', [h('img', { src: url, alt: '' }), h('figcaption', [`Plate ${romanize(n)}`])]) : null;
 }
 
 /**
