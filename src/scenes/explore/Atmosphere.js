@@ -56,8 +56,8 @@ export function buildSunShafts(map, block, o) {
   cands.sort((p, q) => p.k - q.k);
   const chosen = [];
   for (const c of cands) {
-    if (chosen.length >= 26) break;
-    if (chosen.some((d) => Math.hypot(d.x - c.x, d.z - c.z) < 2.6)) continue;
+    if (chosen.length >= 40) break;
+    if (chosen.some((d) => Math.hypot(d.x - c.x, d.z - c.z) < 1.6)) continue;
     chosen.push(c);
   }
   if (!chosen.length) return null;
@@ -68,7 +68,7 @@ export function buildSunShafts(map, block, o) {
   const seed = [];
   for (const c of chosen) {
     // broad, soft shafts (a thin ribbon reads as a lens streak, not as light in air)
-    const w = 1.6 + c.k * 2.6;
+    const w = 1.0 + c.k * 2.2;
     const len = (maxH * 0.7) / sun.y;
     const off = c.side * w * 0.5;
     const p0 = new THREE.Vector3(c.x + perp.x * off, 0.05, c.z + perp.y * off);
@@ -110,7 +110,7 @@ export function buildSunShafts(map, block, o) {
       varying vec2 vUv; varying float vSeed; varying vec3 vW;
       void main(){
         float xc = (clamp(vUv.x, 0.0, 1.0) - 0.5) * 2.0;
-        float across = exp(-xc * xc * 3.2) * (1.0 - xc * xc);
+        float across = exp(-xc * xc * 4.0) * (1.0 - xc * xc);
         float along = smoothstep(0.0, 0.08, vUv.y) * (1.0 - smoothstep(0.35, 1.0, vUv.y));
         float streak = 0.8 + 0.2 * sin(vUv.x * 7.0 + vSeed) * sin(vUv.x * 13.0 + vSeed * 1.7);
         // density modulation along the shaft (drifting dust and mist)

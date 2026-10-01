@@ -449,18 +449,36 @@ export function dressDungeon(map, block, opts = {}) {
     if (banners.length) {
       const mat = new THREE.MeshStandardMaterial({ map: getBaneBannerTexture(), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.82, color: 0xe0d0d0 });
       clothSway(mat);
-      const b = new GeoBuilder();
+      const pos = [];
+      const uvs = [];
+      const idx = [];
       for (const bn of banners) {
         const { f, s, top } = bn;
         const w = 1.0;
         const h = 2.7;
-        const segs = 8;
+        const NU = 20;
+        const NV = 12;
         const d = T / 2 + 0.06;
-        for (let k = 0; k < segs; k++) {
-          const s0 = s - w / 2 + (w * k) / segs;
-          const s1 = s - w / 2 + (w * (k + 1)) / segs;
-          const fold = (q) => 0.012 + 0.03 * Math.abs(Math.sin((q / segs) * Math.PI * 2.5));
-          b.quad('ban', P(f, s0, top - h, d + fold(k) * 0.4), P(f, s1, top - h, d + fold(k + 1) * 0.4), P(f, s1, top, d + fold(k + 1)), P(f, s0, top, d + fold(k)), [[k / segs, 0], [(k + 1) / segs, 0], [(k + 1) / segs, 1], [k / segs, 1]], { ao: 1 });
+        const ph = hash(f.seed, 'fold') * 6.3;
+        const base = pos.length / 3;
+        // heavy wool hanging from the rod: gathered into soft vertical folds that deepen toward
+        // the hem, the hem itself swinging slightly out from the wall (smooth-shaded)
+        for (let j = 0; j <= NV; j++) {
+          for (let i = 0; i <= NU; i++) {
+            const u = i / NU;
+            const v = j / NV; // 0 = top
+            const fold = Math.sin(u * Math.PI * 5 + ph) * (0.025 + 0.045 * v) + Math.sin(u * Math.PI * 11 + ph * 2) * 0.008 * v;
+            const sv = s - w / 2 + w * u + Math.sin(u * Math.PI * 5 + ph) * 0.01 * v;
+            const p = P(f, sv, top - h * v, d + 0.04 + fold + v * v * 0.05);
+            pos.push(p.x, p.y, p.z);
+            uvs.push(u, 1 - v);
+          }
+        }
+        for (let j = 0; j < NV; j++) {
+          for (let i = 0; i < NU; i++) {
+            const a = base + j * (NU + 1) + i;
+            idx.push(a, a + NU + 1, a + 1, a + 1, a + NU + 1, a + NU + 2);
+          }
         }
         // iron rod with finials, on two brackets
         g.box('prop_iron', { matrix: onFace(f, s, top + 0.03, d + 0.03), s: [w + 0.24, 0.035, 0.035] });
@@ -469,8 +487,11 @@ export function dressDungeon(map, block, opts = {}) {
           g.box('prop_iron', { matrix: onFace(f, s + e * (w / 2 - 0.05), top + 0.03, T / 2 + 0.04), s: [0.025, 0.025, 0.09] });
         }
       }
-      const geo = b.build().get('ban');
-      geo.deleteAttribute('color');
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+      geo.setIndex(idx);
+      geo.computeVertexNormals();
       const mesh = new THREE.Mesh(geo, mat);
       mesh.castShadow = true;
       mesh.receiveShadow = true;

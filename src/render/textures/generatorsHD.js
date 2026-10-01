@@ -606,15 +606,26 @@ export function mudGround({ seed = 181, grass = 0.5 } = {}) {
   return (u, v) => {
     const n = wfbm(u, v, 4, seed, 6, 0.5);
     const f = fbm(u * 40, v * 40, { octaves: 3, period: 40, seed: seed + 1 });
-    const w = worley(u * 24, v * 24, 24, seed + 2);
-    const pebble = (1 - smooth(0.1, 0.22, w.f1)) * (w.id > 0.55 ? 1 : 0);
+    // stones trodden into the mud: clustered (not a grid), of very different sizes, half sunk
+    const w = worley(u * 22 + (f - 0.5) * 2.5, v * 22 + (n - 0.5) * 2.5, 22, seed + 2);
+    const cluster = smooth(0.42, 0.62, fbm(u * 6, v * 6, { octaves: 3, period: 6, seed: seed + 4 }));
+    const pr = 0.06 + w.id * w.id * 0.22;
+    const pebble = (1 - smooth(pr * 0.6, pr, w.f1)) * (w.id > 0.82 - cluster * 0.35 ? 1 : 0);
+    // grit: fine gravel speckle, denser where stones are
+    const gw = worley(u * 90, v * 90, 90, seed + 5);
+    const grit = (1 - smooth(0.12, 0.3, gw.f1)) * (gw.id > 0.7 - cluster * 0.3 ? 1 : 0);
+    // hoof and boot prints: shallow dents with a darker, wetter floor
+    const pw = worley(u * 14, v * 14, 14, seed + 6);
+    const print = (1 - smooth(0.12, 0.28, Math.hypot((pw.f1 - 0) * 1, 0))) * (pw.id > 0.86 ? 1 : 0);
     let c = mul3([0.28, 0.23, 0.17], 0.7 + n * 0.5 + (f - 0.5) * 0.2);
+    c = mix3(c, mul3([0.4, 0.37, 0.32], 0.75 + w.id * 0.4), grit * 0.6);
+    c = mul3(c, 1 - print * 0.25);
     c = mix3(c, mul3([0.44, 0.42, 0.38], 0.6 + w.id * 0.5), pebble);
     const gr = smooth(0.55, 0.68, fbm(u * 5, v * 5, { octaves: 5, period: 5, seed: seed + 3 })) * grass;
     c = mix3(c, mul3([0.19, 0.26, 0.1], 0.7 + f * 0.6), gr * 0.85);
     const wet = smooth(0.66, 0.72, n) * (1 - gr);
     c = mul3(c, 1 - wet * 0.35);
-    return { c, h: n * 0.4 + pebble * 0.35 + f * 0.08 + gr * 0.1, r: lerp(0.95, 0.25, wet) };
+    return { c, h: n * 0.4 + pebble * 0.3 * (0.6 + w.id * 0.6) + grit * 0.05 - print * 0.06 + f * 0.08 + gr * 0.1, r: lerp(0.95, 0.25, Math.max(wet, print * 0.5)) };
   };
 }
 

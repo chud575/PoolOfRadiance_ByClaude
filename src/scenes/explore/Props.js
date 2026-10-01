@@ -836,7 +836,7 @@ export function atticBase(R = 0.36) {
  * facets, jittered, with a flat seat; flat-shaded.
  */
 export function fracturedRock(seed, block) {
-  const base = block ? new THREE.BoxGeometry(1, 0.62, 0.72, 3, 2, 2) : new THREE.IcosahedronGeometry(0.5, 2);
+  const base = block ? new THREE.BoxGeometry(1, 0.62, 0.72, 6, 4, 4) : new THREE.IcosahedronGeometry(0.5, 3);
   const g = base.index ? base.toNonIndexed() : base;
   if (g !== base) base.dispose();
   const p = g.attributes.position;
@@ -861,6 +861,15 @@ export function fracturedRock(seed, block) {
       for (const pl of planes) {
         const dd = out.dot(pl.n) - pl.d;
         if (dd > 0) out.addScaledVector(pl.n, -dd);
+      }
+      // break the cleavage planes up: conchoidal ripples and pitting, so facets are never glass-flat
+      // and edges read as chipped rather than razor-cut
+      {
+        const q = out;
+        const n1 = Math.sin(q.x * 17 + seed) * Math.sin(q.y * 15 + seed * 2) * Math.sin(q.z * 19 + seed * 3);
+        const n2 = hash(seed, key, 'pt') - 0.5;
+        const len = q.length() || 1;
+        q.multiplyScalar(1 + (n1 * 0.035 + n2 * 0.025) * (block ? 0.6 : 1) / Math.max(0.3, len));
       }
       if (out.y < -0.24) out.y = -0.24 - (out.y + 0.24) * 0.1;
       cache.set(key, out);

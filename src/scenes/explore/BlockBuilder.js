@@ -199,6 +199,37 @@ export function buildBlock(map, opts = {}) {
     return getEdgeInfo(e);
   };
 
+  /** A land cell standing out into the harbour (water on two or more sides): built as a timber pier. */
+  const waterAt = (x, y) => (map.inBounds(x, y) ? map.getCell(x, y) === CELL.WATER : !!map.harbour && y >= Hh);
+  const isPier = (x, y) => {
+    if (indoor || !map.harbour || !map.inBounds(x, y) || map.getCell(x, y) === CELL.WATER) return false;
+    let n = 0;
+    for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) if (waterAt(x + dx, y + dy)) n++;
+    return n >= 2;
+  };
+  /** Round timber pile from below the water up to `top` (a mooring post when it stands proud of the deck). */
+  function pile(x, z, top, r = 0.13, seed = 0) {
+    const geo = new THREE.CylinderGeometry(r * 0.92, r, top + 2.4, 9, 1);
+    g.geometry('prop_wood', geo, new THREE.Matrix4().makeTranslation(x, (top - 2.4) / 2, z).multiply(new THREE.Matrix4().makeRotationZ((hash(seed, 'pl') - 0.5) * 0.05)), { uv: 'world', tint: [0.62, 0.55, 0.48], ao: (p) => (p.y < -0.3 ? 0.35 : 0.55 + 0.45 * THREE.MathUtils.smoothstep(p.y, -0.3, 0.6)) });
+    geo.dispose();
+    if (top > 0.3) {
+      // weathered cap and a few turns of rope
+      const cap = new THREE.SphereGeometry(r * 0.95, 9, 5, 0, Math.PI * 2, 0, Math.PI / 2);
+      g.geometry('prop_wood', cap, new THREE.Matrix4().makeTranslation(x, top, z), { uv: 'world', tint: [0.5, 0.45, 0.4] });
+      cap.dispose();
+      for (let k = 0; k < 3; k++) {
+        const t = new THREE.TorusGeometry(r + 0.02, 0.018, 5, 14);
+        t.rotateX(Math.PI / 2);
+        g.geometry('prop_burlap', t, new THREE.Matrix4().makeTranslation(x, top - 0.18 - k * 0.04, z), { uv: 'world', tint: [0.75, 0.66, 0.5] });
+        t.dispose();
+      }
+    }
+    // weed and wet darkening at the waterline
+    const ring = new THREE.CylinderGeometry(r * 1.04, r * 1.06, 0.35, 9, 1, true);
+    g.geometry('prop_wood', ring, new THREE.Matrix4().makeTranslation(x, -0.35, z), { uv: 'world', tint: [0.2, 0.24, 0.16], ao: 0.6 });
+    ring.dispose();
+  }
+
   // collect all wall edges once
   const allEdges = [];
   for (let j = 0; j <= Hh; j++) for (let i = 0; i < W; i++) { const e = getEdgeInfo(edgeH(i, j)); if (e) allEdges.push({ ...e, hv: 'H', i, j }); }
@@ -241,6 +272,25 @@ export function buildBlock(map, opts = {}) {
         const sd = landA ? sides[0] : sides[1];
         const Tn = new THREE.Vector3().crossVectors(UP, sd.N);
         const pf = { basis: new THREE.Matrix4().makeBasis(Tn, UP, sd.N).setPosition(M) };
+        if (isPier(sd.cx, sd.cy)) {
+          // timber pier edge: a fascia over the piles, piles every 1.5 m (proud as mooring posts at the
+          // corners), and a low kerb log along the deck edge with gaps where the lines run out
+          localBox(pf, 'prop_wood', -S / 2, S / 2, -0.32, -0.02, T / 2 - 0.02, T / 2 + 0.08, { uv: 'along', tint: [0.55, 0.48, 0.42] });
+          for (let k = 0; k < 3; k++) {
+            const sv = -S / 2 + 0.15 + k * ((S - 0.3) / 2);
+            const corner = k !== 1 && hash(e.key, k, 'mp') < 0.75;
+            const pp = new THREE.Vector3(sv, 0, T / 2 - 0.1).applyMatrix4(pf.basis);
+            pile(pp.x, pp.z, corner ? 0.55 + hash(e.key, k, 'mh') * 0.25 : -0.04, corner ? 0.16 : 0.12, seedE + k);
+          }
+          let a = -S / 2 + 0.35;
+          for (let k = 0; a < S / 2 - 0.4; k++) {
+            const l = Math.min(S / 2 - 0.35 - a, 0.7 + hash(e.key, k, 'kl') * 0.6);
+            localBox(pf, 'prop_wood', a, a + l, 0.0, 0.13, T / 2 - 0.2, T / 2 - 0.04, { uv: 'along', chamfer: 0.02, tint: [0.66, 0.58, 0.5] });
+            a += l + 0.25;
+          }
+          spots.wallBase.push({ face: { ...pf, N: sd.N, T: Tn, M, e, H: 0.3, openings: [], ends: {}, seed: seedE, cell: { x: sd.cx, y: sd.cy, type: map.getCell(sd.cx, sd.cy) }, quay: true, pier: true }, cell: { x: sd.cx, y: sd.cy, type: map.getCell(sd.cx, sd.cy) }, style: e.style, recipe: 'quay' });
+          return;
+        }
         // battered face into the water, then a dwarf wall with a moulded coping
         localBox(pf, 'arch_stone_cold', -S / 2 - T / 2, S / 2 + T / 2, -1.6, 0.0, -T / 2 - 0.2, T / 2, { tint: [0.72, 0.74, 0.7] });
         localBox(pf, 'arch_stone', -S / 2 - T / 2, S / 2 + T / 2, 0.0, 0.62, -T / 2 + 0.06, T / 2);
@@ -559,7 +609,7 @@ export function buildBlock(map, opts = {}) {
     ruin_timber(f) {
       slab(f, 'arch_ruin', 0, Math.min(1.2, f.H), 0, T / 2 + 0.03, { chamfer: 0.03 });
       slab(f, 'arch_plaster', 1.2, f.H, 0, T / 2, { jag: true, tint: [0.8, 0.76, 0.7] });
-      frameBays(f, 1.2, f.H * 0.8, T / 2, 'arch_beam_dark');
+      ruinFrame(f);
     },
     cave(f) {
       slab(f, 'arch_ruin', 0, f.H, 0, T / 2);
@@ -642,6 +692,71 @@ export function buildBlock(map, opts = {}) {
       slab(f, 'arch_trim', 0, 0.3, T / 2, T / 2 + 0.05, { chamfer: 0.02 });
     },
   };
+
+  /**
+   * The burnt-out frame of a ruined timber house: a broken sill, a few surviving posts at uneven
+   * spacing (others gone), each snapped off at its own height and angle with a charred, splintered
+   * end, the odd stub of rail, and at most one sagging brace that ends in the air — never a tidy
+   * pair of verticals joined by a diagonal (those read as letters).
+   */
+  function ruinFrame(f) {
+    const H = f.H;
+    const d0 = T / 2 - 0.02;
+    const d1 = T / 2 + 0.05;
+    const sd = f.seed;
+    const plasterTop = (sv) => (f.jag ? 1.2 + (H - 1.2) * f.jag(sv) : H);
+    const clear = (sv, w) => !f.openings.some((o) => sv + w > o.s0 - 0.05 && sv - w < o.s1 + 0.05);
+    const char = [0.13, 0.11, 0.1];
+    const wood = [0.85, 0.8, 0.76];
+    // sill: two lengths, the shorter one dropped at one end
+    const cut = -0.4 + hash(sd, 'sc') * 0.8;
+    localBox(f, 'arch_beam_dark', -S / 2, cut - 0.06, 1.2, 1.36, d0, d1, { uv: 'along', skip: ['nz'], tint: wood });
+    beam(f, 'arch_beam_dark', [cut + 0.04, 1.28], [S / 2, 1.28 - 0.08 - hash(sd, 'sd') * 0.1], 0.15, d0, d1, { tint: wood });
+    // surviving posts
+    const cand = [-S / 2 + 0.12, -0.75 + hash(sd, 'p1') * 0.3, 0.35 + hash(sd, 'p2') * 0.4, S / 2 - 0.12];
+    let kept = 0;
+    const posts = [];
+    cand.forEach((sv, k) => {
+      if (!clear(sv, 0.1)) return;
+      if (hash(sd, k, 'keep') < 0.38 && kept + (cand.length - k) > 1) return;
+      kept++;
+      const pt = plasterTop(sv);
+      const top = Math.min(H - 0.05, Math.max(1.6, pt + (hash(sd, k, 'ht') - 0.35) * 1.3));
+      const lean = (hash(sd, k, 'ln') - 0.5) * 0.12;
+      const w = 0.15 + hash(sd, k, 'w') * 0.04;
+      const len = top - 1.36;
+      const m = localMatrix(f, sv, 1.36 + len / 2, (d0 + d1) / 2, lean);
+      g.box('arch_beam_dark', { matrix: m, s: [w, len, d1 - d0], uv: 'along', skip: ['nz'], tint: wood });
+      // charred, snapped end: a blackened collar and a splinter standing off one side at an angle
+      const cm = localMatrix(f, sv - Math.sin(lean) * (len / 2 - 0.12), top - 0.12, (d0 + d1) / 2, lean);
+      g.box('arch_beam_dark', { matrix: cm, s: [w + 0.012, 0.26, d1 - d0 + 0.012], uv: 'along', skip: ['nz'], tint: char });
+      const side = hash(sd, k, 'sp') < 0.5 ? -1 : 1;
+      const spl = 0.12 + hash(sd, k, 'sl') * 0.22;
+      const sm = localMatrix(f, sv - Math.sin(lean) * len / 2 + side * w * 0.25, top + spl / 2 - 0.02, (d0 + d1) / 2, lean + side * (0.1 + hash(sd, k, 'sa') * 0.25));
+      g.box('arch_beam_dark', { matrix: sm, s: [w * 0.4, spl, (d1 - d0) * 0.8], uv: 'along', skip: ['nz'], tint: char });
+      posts.push({ sv, top });
+    });
+    // one stub of rail off a post, sagging, burnt at its free end
+    if (posts.length && hash(sd, 'rail') < 0.6) {
+      const p0 = posts[Math.floor(hash(sd, 'rp') * posts.length)];
+      const y = Math.min(p0.top - 0.3, 2.2 + hash(sd, 'ry') * 0.3);
+      if (y > 1.7) {
+        const dir = p0.sv > 0 ? -1 : 1;
+        const len = 0.35 + hash(sd, 'rl') * 0.45;
+        beam(f, 'arch_beam_dark', [p0.sv, y], [p0.sv + dir * len, y - 0.06 - hash(sd, 'rs') * 0.12], 0.14, d0 + 0.005, d1 - 0.005, { tint: wood });
+        localBox(f, 'arch_beam_dark', p0.sv + dir * len - 0.07, p0.sv + dir * len + 0.07, y - 0.24, y - 0.04, d0 + 0.004, d1 - 0.004, { rotZ: dir * 0.3, uv: 'along', skip: ['nz'], tint: char });
+      }
+    }
+    // at most one brace, at a shallow sag, rising from a post foot and ending in mid-air
+    if (posts.length && hash(sd, 'br') < 0.45) {
+      const p0 = posts[Math.floor(hash(sd, 'bp') * posts.length)];
+      const dir = p0.sv > 0 ? -1 : 1;
+      const ang = 0.35 + hash(sd, 'ba') * 0.25;
+      const len = 0.7 + hash(sd, 'bl') * 0.5;
+      const b = [p0.sv + dir * Math.cos(ang) * len, 1.36 + Math.sin(ang) * len];
+      beam(f, 'arch_beam_dark', [p0.sv + dir * 0.06, 1.38], b, 0.12, d0 + 0.01, d1 - 0.01, { tint: wood });
+    }
+  }
 
   /** Timber framing: posts, rails, braces over the free bays of a storey. */
   function frameBays(f, y0, y1, d, key, upper = false) {
@@ -809,29 +924,48 @@ export function buildBlock(map, opts = {}) {
           const long = (k + (sgn > 0 ? 1 : 0)) % 2 === 0;
           const ext = long ? 0.06 + hash(e.key, sgn, k, 'je') * 0.06 : 0.0;
           const proud = hash(e.key, sgn, k, 'jp') * 0.018; // some blocks sit a hair proud of the others
-          const cham = 0.012 + hash(e.key, sgn, k, 'jc') * 0.035;
+          const cham = 0.006 + hash(e.key, sgn, k, 'jc') * 0.012;
           const s0 = sgn < 0 ? a - ext : a;
           const s1 = sgn < 0 ? b : b + ext;
           const m = localMatrix(f, (s0 + s1) / 2, y + bh / 2, 0, (hash(e.key, sgn, k, 'jr') - 0.5) * 0.012);
-          g.box(blockKey, { matrix: m, s: [s1 - s0 - 0.012, bh - 0.014, fd1 - fd0 - 0.05 + proud * 2 + (long ? 0 : -0.015)], chamfer: cham, ao: revealAO, tint: tone(k, sgn) });
+          g.box(blockKey, { matrix: m, s: [s1 - s0 - 0.006, bh - 0.007, fd1 - fd0 - 0.05 + proud * 2 + (long ? 0 : -0.015)], chamfer: cham, ao: revealAO, tint: tone(k, sgn) });
           y += bh;
         }
+        // mortar bed behind the dressings: the joints show lime, never daylight or a void
+        localBox(f, 'arch_trim', sgn < 0 ? a - 0.03 : a + 0.004, sgn < 0 ? b - 0.004 : b + 0.03, 0, h, fd0 + 0.045, fd1 - 0.045, { tint: [0.42, 0.4, 0.37], ao: 0.6 });
       } else localBox(f, frameKey, a, b, 0, h, fd0, fd1, { chamfer: 0.03, uv: fu, ao: revealAO });
     }
     if (stoneFrame) {
       // stone lintel under the arch (the voussoirs bear on it; no daylight between them and the door)
       localBox(f, blockKey, -w / 2 - 0.08, w / 2 + 0.08, h - 0.02, h + 0.12, fd0 + 0.03, fd1 - 0.03, { chamfer: 0.015, ao: revealAO, tint: [0.84, 0.8, 0.76] });
-      // flat (jack) arch: voussoirs fanning from a centre below the opening, keystone proud
-      const n = 7;
-      const span = w + 0.5;
-      const cy = h - 6;
+      // segmental relieving arch over the lintel: wedge voussoirs on a true arc (each cut as a
+      // trapezoid so joints stay tight and radial), a proud keystone, set in a lime bed with a
+      // tympanum of small rubble between arch and lintel
+      const n = 9;
+      const span = w + 0.42;
+      const th0 = 0.62;
+      const R = span / 2 / Math.sin(th0);
+      const cyA = h + 0.12 - R * Math.cos(th0) + 0.02;
+      const vd = fd1 - fd0 - 0.07;
+      localBox(f, 'arch_trim', -span / 2 - 0.05, span / 2 + 0.05, h + 0.12, h + 0.12 + 0.18 + (R - R * Math.cos(th0)), fd0 + 0.04, fd1 - 0.04, { tint: [0.4, 0.38, 0.35], ao: 0.6 });
       for (let k = 0; k < n; k++) {
-        const sm = -span / 2 + (span * (k + 0.5)) / n;
+        const a0 = -th0 + (2 * th0 * k) / n + 0.004;
+        const a1 = -th0 + (2 * th0 * (k + 1)) / n - 0.004;
         const key = k === (n - 1) / 2;
-        const ang = -Math.atan2(sm, h + 0.2 - cy);
-        const vh = key ? 0.46 : 0.38 + hash(e.key, k, 'vh') * 0.03;
-        const m = localMatrix(f, sm, h + 0.12 + vh / 2 - (key ? 0.04 : 0), 0, ang);
-        g.box(blockKey, { matrix: m, s: [span / n - 0.006, vh, fd1 - fd0 - 0.07 + (key ? 0.05 : hash(e.key, k, 'vp') * 0.012)], chamfer: 0.008 + hash(e.key, k, 'vc') * 0.014, ao: revealAO, tint: tone(k, 7) });
+        const vh = (key ? 0.44 : 0.34 + hash(e.key, k, 'vh') * 0.04);
+        const r0 = R;
+        const r1 = R + vh;
+        const pr = (rr, aa) => [Math.sin(aa) * rr, cyA + Math.cos(aa) * rr];
+        const shp = new THREE.Shape();
+        const q = [pr(r0, a0), pr(r0, a1), pr(r1, a1), pr(r1, a0)];
+        shp.moveTo(q[0][0], q[0][1]);
+        for (let i = 1; i < 4; i++) shp.lineTo(q[i][0], q[i][1]);
+        shp.closePath();
+        const dep = vd + (key ? 0.05 : hash(e.key, k, 'vp') * 0.012);
+        const geo = new THREE.ExtrudeGeometry(shp, { depth: dep - 0.016, bevelEnabled: true, bevelThickness: 0.008, bevelSize: 0.008, bevelSegments: 1, curveSegments: 1 });
+        geo.translate(0, 0, -(dep - 0.016) / 2);
+        g.geometry(blockKey, geo, f.basis, { uv: 'world', ao: revealAO, tint: tone(k, 7) });
+        geo.dispose();
       }
     } else localBox(f, frameKey, -w / 2 - 0.32, w / 2 + 0.32, h, h + 0.26, fd0 - 0.02, fd1 + 0.02, { chamfer: 0.035, uv: fu, ao: revealAO });
     localBox(f, stoneFrame ? blockKey : 'arch_trim', -w / 2 - 0.05, w / 2 + 0.05, 0, 0.06, fd0 - 0.12, fd1 + 0.12, { chamfer: 0.02, tint: [0.8, 0.78, 0.74] }); // worn threshold step
@@ -1369,6 +1503,26 @@ export function buildBlock(map, opts = {}) {
         return a;
       };
       const fy = cell === CELL.WATER ? -0.45 : 0;
+      if (isPier(x, y)) {
+        // deck planks across the pier on two stringers, ends staggered, a few boards sprung or missing
+        const alongX = waterAt(x, y - 1) || waterAt(x, y + 1);
+        const n = Math.round(S / 0.3);
+        for (let k = 0; k < n; k++) {
+          if (hash(map.id, x, y, k, 'gone') < 0.03) continue;
+          const t = (k + 0.5) * (S / n);
+          const w = S / n - 0.025;
+          const lift = (hash(map.id, x, y, k, 'lf') - 0.5) * 0.012;
+          const tint = 0.78 + hash(map.id, x, y, k, 'tn') * 0.3;
+          const c = alongX ? [x0 + t, -0.025 + lift, z0 + S / 2] : [x0 + S / 2, -0.025 + lift, z0 + t];
+          g.box('arch_boards', { c, s: alongX ? [w, 0.06, S + 0.02] : [S + 0.02, 0.06, w], uv: 'world', tint: [tint, tint * 0.95, tint * 0.88], rotY: (hash(map.id, x, y, k, 'ry') - 0.5) * 0.01, ao: (p, nn) => (nn.y > 0.5 ? 0.95 : 0.5) });
+        }
+        for (const o of [-0.9, 0.9]) {
+          const c = alongX ? [x0 + S / 2, -0.17, z0 + S / 2 + o] : [x0 + S / 2 + o, -0.17, z0 + S / 2];
+          g.box('prop_wood', { c, s: alongX ? [S, 0.22, 0.2] : [0.2, 0.22, S], uv: 'along', tint: [0.45, 0.4, 0.35], ao: 0.5 });
+        }
+        spots.floorCells.push({ x, y, cell, covered: false, pier: true });
+        continue;
+      }
       for (let j = 0; j < SUB; j++) {
         if (cell === CELL.WATER && map.harbour) break; // the open sea plane runs under the quay
         for (let i = 0; i < SUB; i++) {

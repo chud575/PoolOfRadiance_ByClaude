@@ -89,22 +89,47 @@ export function buildCog(g, M, o, out) {
   const at = (x, y, z, rz = 0) => M.clone().multiply(new THREE.Matrix4().makeTranslation(x, y, z)).multiply(new THREE.Matrix4().makeRotationZ(rz));
   g.box('arch_beam_dark', { matrix: at(L / 2 + 0.2, (F + sheer) / 2 - D * 0.3, 0, -0.45), s: [0.3, F + sheer + D, 0.28], ao: 0.8 });
   g.box('arch_beam_dark', { matrix: at(-L / 2 - 0.1, (F + sheer) / 2 - D * 0.3, 0, 0.2), s: [0.3, F + sheer + D, 0.28], ao: 0.8 });
-  // castles: a boxy aftcastle with a crenellated rail, and a smaller triangular forecastle
+  // castles: planked platforms on posts with open railings (rail, stanchions, a few shields hung
+  // on the aft rail) — joinery, not crates
   const sternTop = F + sheer;
   const acL = L * 0.24;
   const acX = -L / 2 + acL / 2 + 0.3;
   const acW = Math.max(station(0.12).half, station(0.2).half * 0.9) * 2.05; // sits on the gunwales, no overhang
-  g.box('arch_beam_dark', { matrix: at(acX, sternTop + 0.65, 0), s: [acL, 1.3, acW], chamfer: 0.05, ao: 0.85, tint: [0.9, 0.82, 0.72] });
-  g.box('arch_beam', { matrix: at(acX, sternTop + 1.33, 0), s: [acL + 0.3, 0.08, acW + 0.3], ao: 0.9, tint: [0.7, 0.62, 0.52] });
-  for (let k = 0; k < 7; k++) {
-    for (const side of [-1, 1]) g.box('arch_beam_dark', { matrix: at(acX - acL / 2 + (k + 0.5) * (acL / 7), sternTop + 1.62, side * (acW / 2 + 0.1)), s: [acL / 7 - 0.12, 0.55, 0.1], ao: 0.85, tint: k % 2 ? [0.55, 0.12, 0.1] : [0.85, 0.75, 0.6] });
-  }
-  for (const side of [-1, 1]) for (let k = 0; k < 3; k++) g.box('arch_beam_dark', { matrix: at(acX - acL / 2 + 0.05, sternTop + 1.62, side * (k - 1) * (acW / 3)), s: [0.1, 0.55, acW / 3 - 0.12], ao: 0.85 });
+  const castle = (cxp, len, wid, y0, hgt, shields) => {
+    // planked sides (clinker-toned strakes) up to the deck, then an open rail above it
+    for (let k = 0; k < 3; k++) {
+      const yy = y0 + (k + 0.5) * (hgt / 3);
+      for (const side of [-1, 1]) g.box('arch_beam_dark', { matrix: at(cxp, yy, side * (wid / 2)), s: [len, hgt / 3 + 0.03, 0.07], ao: 0.85, tint: k % 2 ? [0.78, 0.7, 0.62] : [0.9, 0.82, 0.72] });
+      g.box('arch_beam_dark', { matrix: at(cxp - len / 2, yy, 0), s: [0.07, hgt / 3 + 0.03, wid], ao: 0.85, tint: k % 2 ? [0.78, 0.7, 0.62] : [0.9, 0.82, 0.72] });
+    }
+    // deck planking overhanging a little, on beam ends
+    g.box('arch_beam', { matrix: at(cxp, y0 + hgt + 0.04, 0), s: [len + 0.25, 0.08, wid + 0.22], ao: 0.9, tint: [0.72, 0.64, 0.54] });
+    for (let k = 0; k < 4; k++) for (const side of [-1, 1]) g.box('arch_beam_dark', { matrix: at(cxp - len / 2 + (k + 0.5) * (len / 4), y0 + hgt - 0.08, side * (wid / 2 + 0.1)), s: [0.12, 0.12, 0.2], ao: 0.8 });
+    // open rail: top rail + stanchions every ~0.4 m on three sides
+    const ry = y0 + hgt + 0.08;
+    const rh = 0.7;
+    for (const side of [-1, 1]) {
+      g.box('arch_beam_dark', { matrix: at(cxp, ry + rh, side * (wid / 2 + 0.06)), s: [len + 0.2, 0.08, 0.1], ao: 0.9, tint: [0.7, 0.6, 0.5] });
+      const n = Math.max(3, Math.round(len / 0.42));
+      for (let k = 0; k <= n; k++) g.box('arch_beam_dark', { matrix: at(cxp - len / 2 + (k * len) / n, ry + rh / 2, side * (wid / 2 + 0.06)), s: [0.05, rh, 0.05], ao: 0.85 });
+      if (shields) {
+        for (let k = 0; k < 3; k++) {
+          const sh = new THREE.CylinderGeometry(0.3, 0.3, 0.05, 12);
+          sh.rotateX(Math.PI / 2);
+          const col = [[0.55, 0.12, 0.1], [0.82, 0.74, 0.58], [0.2, 0.26, 0.45]][(k + seed) % 3];
+          g.geometry('arch_beam_dark', sh, at(cxp - len / 3 + (k * len) / 3, ry + rh * 0.55, side * (wid / 2 + 0.13)), { uv: 'world', tint: col, ao: 0.9 });
+          sh.dispose();
+        }
+      }
+    }
+    g.box('arch_beam_dark', { matrix: at(cxp - len / 2 - 0.05, ry + rh, 0), s: [0.1, 0.08, wid + 0.2], ao: 0.9, tint: [0.7, 0.6, 0.5] });
+    for (let k = 0; k <= 4; k++) g.box('arch_beam_dark', { matrix: at(cxp - len / 2 - 0.05, ry + rh / 2, -wid / 2 + (k * wid) / 4), s: [0.05, rh, 0.05], ao: 0.85 });
+  };
+  castle(acX, acL, acW, sternTop - 0.1, 1.25, true);
   const fcX = L / 2 - L * 0.12;
   const bowTop = F + sheer + 0.25;
   const fcW = station(0.86).half * 2.0;
-  g.box('arch_beam_dark', { matrix: at(fcX, bowTop + 0.3, 0), s: [L * 0.16, 0.9, fcW], chamfer: 0.05, ao: 0.85, tint: [0.9, 0.82, 0.72] });
-  g.box('arch_beam', { matrix: at(fcX, bowTop + 0.78, 0), s: [L * 0.18, 0.07, fcW + 0.2], ao: 0.9, tint: [0.7, 0.62, 0.52] });
+  castle(fcX, L * 0.16, fcW, bowTop - 0.2, 0.75, false);
   // mast, top and yard
   const mastH = L * 1.05;
   const mastX = L * 0.04;
@@ -157,16 +182,22 @@ export function buildCog(g, M, o, out) {
     }
   } else {
     // sail furled on the yard: a lumpy roll of canvas with gaskets
-    const roll = new THREE.CylinderGeometry(0.3, 0.3, yardL * 0.92, 8, 6);
+    // a fat bunt in the middle, tapering to the yardarms, sagging between the gaskets
+    const roll = new THREE.CylinderGeometry(0.5, 0.5, yardL * 0.94, 10, 16);
     const rp = roll.attributes.position;
+    const hl = (yardL * 0.94) / 2;
     for (let i = 0; i < rp.count; i++) {
-      const k = 1 + 0.25 * Math.sin(rp.getY(i) * 2.3 + seed) + 0.1 * Math.sin(rp.getY(i) * 7.1);
+      const yy = rp.getY(i);
+      const t = Math.abs(yy) / hl;
+      const gasket = 1 - 0.22 * Math.pow(Math.max(0, Math.cos(yy * 2.6 + seed)), 12);
+      const k = (1 - 0.7 * t * t) * gasket * (1 + 0.12 * Math.sin(yy * 4.1 + seed * 2));
       rp.setX(i, rp.getX(i) * k);
-      rp.setZ(i, rp.getZ(i) * k * 1.2);
+      rp.setZ(i, rp.getZ(i) * k * 1.15 + 0.18 * (1 - t * t)); // (becomes -y: the bunt hangs below the yard)
     }
     roll.computeVertexNormals();
     roll.rotateX(Math.PI / 2);
-    g.geometry('arch_plaster', roll, at(mastX + 0.25, yardY - 0.32, 0), { uv: 'world', ao: 0.85, tint: [0.92, 0.88, 0.8] });
+    roll.rotateY(Math.PI / 2);
+    g.geometry('arch_plaster', roll, at(mastX + 0.25, yardY - 0.3, 0).multiply(new THREE.Matrix4().makeRotationY(Math.PI / 2)), { uv: 'world', ao: 0.85, tint: [0.95, 0.9, 0.82] });
     roll.dispose();
   }
   // standing rigging: shrouds to the channels with ratlines, fore- and backstay

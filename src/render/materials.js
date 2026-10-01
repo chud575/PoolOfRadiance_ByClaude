@@ -34,13 +34,13 @@ const DEFS = {
   arch_dressed: { tex: 'hd2_dressed', texScale: 1.5, vc: true, color: 0xe6ded2, fx: { macro: 0.2, grime: 0.45, moss: 0.4 } },
   arch_ruin: { tex: 'hd2_ruin', texScale: 3, vc: true, fx: { macro: 0.35, grime: 0.7, moss: 0.9 } },
   arch_plaster: { tex: 'hd2_plaster', texScale: 3.7, vc: true, fx: { macro: 0.4, grime: 0.85, moss: 0.15, streak: 0.7 } },
-  arch_plaster_int: { tex: 'hd2_plaster_int', texScale: 3, vc: true, fx: { macro: 0.32, grime: 0.6, streak: 0.35 } },
+  arch_plaster_int: { tex: 'hd2_plaster_int', texScale: 3, vc: true, fx: { macro: 0.32, grime: 0.6, streak: 0.25, soot: 1 } },
   arch_beam: { tex: 'hd_beam', texScale: 1.2, vc: true, fx: { macro: 0.18, grime: 0.2, moss: 0.2 } },
   arch_beam_dark: { tex: 'hd_beam_dark', texScale: 1.2, vc: true, fx: { macro: 0.12 } },
   arch_roof_slate: { tex: 'hd_roof_slate', texScale: 2, vc: true, fx: { macro: 0.3, moss: 0.25 } },
   arch_roof_clay: { tex: 'hd_roof_clay', texScale: 2, vc: true, fx: { macro: 0.3, moss: 0.2 } },
   arch_roof_shake: { tex: 'hd_roof_shake', texScale: 2, vc: true, fx: { macro: 0.3, moss: 0.3 } },
-  arch_cobble: { tex: 'hd_cobble', texScale: 2, vc: true, fx: { macro: 0.4, floor: 1 } },
+  arch_cobble: { tex: 'hd2_cobble', texScale: 2, vc: true, fx: { macro: 0.4, floor: 1 } },
   arch_flags: { tex: 'hd2_flags', texScale: 3.45, vc: true, fx: { macro: 0.36, floor: 1 } },
   arch_mud: { tex: 'hd_mud', texScale: 3, vc: true, fx: { macro: 0.3, floor: 1 } },
   arch_boards: { tex: 'hd_boards', texScale: 2, vc: true, fx: { macro: 0.15, floor: 1 } },
@@ -134,6 +134,8 @@ function applySurfaceFX(mat, fx) {
   const dust = (fx.dust ?? 0).toFixed(3);
   const grain = (fx.grain ?? 0).toFixed(3);
   const streak = (fx.streak ?? 0).toFixed(3);
+  const fogCap = (fx.fogCap ?? 1).toFixed(3);
+  const soot = (fx.soot ?? 0).toFixed(3);
   mat.onBeforeCompile = (shader) => {
     if (!SURFACE_UNIFORMS.uFxNoiseTex.value) SURFACE_UNIFORMS.uFxNoiseTex.value = getFxNoiseTexture();
     Object.assign(shader.uniforms, SURFACE_UNIFORMS);
@@ -198,9 +200,23 @@ function applySurfaceFX(mat, fx) {
             vFxWet = max(vFxWet, damp * 0.6 * ${streak});
           }
           #endif
+          #if ${soot === '0.000' ? 0 : 1}
+          {
+            // lived-in plaster: smoke-browned toward the ceiling (patchy), a greasy band of wear at
+            // shoulder height where backs and hands rub, and the odd hairline crack
+            float sootK = smoothstep(1.9, 3.25, wp.y) * (0.55 + 0.45 * nz.a) * vert;
+            diffuseColor.rgb *= 1.0 - sootK * 0.5 * ${soot};
+            diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.86, 0.8, 0.7), sootK * 0.6 * ${soot});
+            float band = smoothstep(1.05, 1.3, wp.y) * (1.0 - smoothstep(1.5, 1.75, wp.y)) * smoothstep(0.35, 0.65, nz.g) * vert;
+            diffuseColor.rgb *= 1.0 - band * 0.16 * ${soot};
+            float cr = abs(texture2D(uFxNoiseTex, vec2((wp.x + wp.z) * 0.21, wp.y * 0.13)).g - 0.5);
+            float crack = (1.0 - smoothstep(0.0, 0.012, cr)) * smoothstep(0.55, 0.7, nz.r) * vert;
+            diffuseColor.rgb *= 1.0 - crack * 0.4 * ${soot};
+          }
+          #endif
           float fl = ${floor};
           diffuseColor.rgb *= mix(1.0, 0.8 + nz.a * 0.4, fl);
-          vFxWet = max(vFxWet, smoothstep(0.54, 0.62, nz.r) * (0.6 + 0.4 * smoothstep(0.4, 0.7, nz.g)) * fl);
+          vFxWet = max(vFxWet, smoothstep(0.6, 0.66, nz.r) * smoothstep(0.45, 0.62, nz.g) * fl);
           vFxFloor = fl;
         }`,
       )
@@ -251,7 +267,7 @@ function applySurfaceFX(mat, fx) {
             float fxF = smoothstep(fogNear, fogFar, fxD);
           #endif
           float hf = uFxHeightFog * (1.0 - exp(-fxD * 0.08)) * exp(-max(vFxWorldPos.y, 0.0) * uFxHeightFalloff);
-          fxF = clamp(fxF + hf * (1.0 - fxF), 0.0, 1.0);
+          fxF = clamp(fxF + hf * (1.0 - fxF), 0.0, ${fogCap});
           float sunAmt = pow(max(dot(fxV / max(fxD, 1e-4), uFxSunDir), 0.0), 6.0) * uFxScatter;
           vec3 fxFogCol = fogColor + uFxSunColor * sunAmt;
           gl_FragColor.rgb = mix(gl_FragColor.rgb, fxFogCol, fxF);
@@ -259,7 +275,7 @@ function applySurfaceFX(mat, fx) {
         #endif`,
       );
   };
-  mat.customProgramCacheKey = () => `fx:${macro}:${grime}:${moss}:${floor}:${dust}:${grain}:${streak}`;
+  mat.customProgramCacheKey = () => `fx:${macro}:${grime}:${moss}:${floor}:${dust}:${grain}:${streak}:${fogCap}:${soot}`;
 }
 
 const cache = new Map();
@@ -295,7 +311,8 @@ export function getLambertMaterial(key) {
   const m = new THREE.MeshLambertMaterial({ color: d.color ?? 0xffffff, vertexColors: !!d.vc });
   if (d.tex) m.map = getTextureSet(d.tex).map;
   m.name = `${key}_lambert`;
-  applySurfaceFX(m, d.fx ?? {});
+  // backdrop: fog never quite swallows a silhouette (distant towers stay readable shapes, not ghosts)
+  applySurfaceFX(m, { ...(d.fx ?? {}), fogCap: 0.8 });
   const base = m.customProgramCacheKey;
   m.customProgramCacheKey = () => `L${base()}`;
   lambertCache.set(key, m);

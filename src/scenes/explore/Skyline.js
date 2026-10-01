@@ -23,6 +23,8 @@ export function buildSkyline(map, ts, opts = {}) {
   group.name = 'skyline';
   const g = new GeoBuilder();
   g.aoFn = (p) => 0.55 + 0.45 * THREE.MathUtils.smoothstep(p.y, -1, 4);
+  // ruined Phlan: what still stands of its towers has lost its roofs
+  g.noCones = ts.skyline === 'ruins';
   const own = [];
   const W = map.w * S;
   const H = map.h * S;
@@ -191,16 +193,16 @@ export function buildSkyline(map, ts, opts = {}) {
   let beacon = null;
   if (harbour) {
     // moored and anchored cogs (clinker hulls, castles, set or furled sails, shrouds with ratlines)
-    for (let k = 0; k < 6; k++) {
-      const x = cx + (k - 2.5) * 22 + (hash(seedBase, k, 'hx') - 0.5) * 10;
-      const z = H + 22 + (k % 3) * 16 + hash(seedBase, k, 'hz') * 10;
-      const len = 13 + hash(k, 'hl') * 6;
-      const rot = Math.PI / 2 + (hash(k, 'hr') - 0.5) * 1.4 + (k % 2 ? Math.PI : 0);
+    // an anchorage, not a parade: cogs at staggered depths, swinging to their cables at different
+    // headings, sails set on some and furled on others (dx from the block centre, dz past the quay)
+    const FLEET = [[-4, 26, 2.25, 17, true], [-30, 44, 0.95, 14, false], [14, 64, 3.9, 13, true], [34, 36, 1.35, 15, false], [-52, 84, 2.75, 12, true], [52, 96, 0.4, 13, false]];
+    FLEET.forEach(([dx, dz, rot, len, set], k) => {
+      const x = cx + dx + (hash(seedBase, k, 'hx') - 0.5) * 4;
+      const z = H + dz + (hash(seedBase, k, 'hz') - 0.5) * 4;
       const M = new THREE.Matrix4().makeTranslation(x, -0.2, z).multiply(new THREE.Matrix4().makeRotationY(rot)).multiply(new THREE.Matrix4().makeRotationX((hash(k, 'heel') - 0.5) * 0.06));
-      buildCog(g, M, { len, seed: k + 1, set: k === 1 || k === 4 }, rig);
-      // the hull's reflection darkens the water under it
-      shadows.push([x, z, len * 0.7]);
-    }
+      buildCog(g, M, { len, seed: k + 1, set }, rig);
+      shadows.push([x, z, len * 0.62, rot]);
+    });
     // breakwater running out into the bay: rough blocks with a paved top and a beacon tower at its head
     {
       const bx = cx - 70;
@@ -299,21 +301,42 @@ export function buildSkyline(map, ts, opts = {}) {
     own.push(lg, lm);
   }
   if (shadows.length) {
-    // dark reflections of the hulls on the water (cheap stand-in for planar reflection)
+    // dark reflections of the hulls on the water (cheap stand-in for planar reflection): a soft dark
+    // pool along the hull, streaked toward the viewer, plus a broken ring of foam/wavelets at the
+    // waterline so each hull sits *in* the water
     const pos = [];
-    for (const [x, z, r] of shadows) {
-      for (const [a, c] of [[-1, -1], [1, 1], [1, -1], [-1, -1], [-1, 1], [1, 1]]) pos.push(x + a * r, -0.38, z + c * r * 0.45);
+    const uvs = [];
+    const fpos = [];
+    const fuv = [];
+    for (const [x, z, r, rot] of shadows) {
+      const ca = Math.cos(rot);
+      const sa = Math.sin(rot);
+      const P2 = (u, v, k = 1) => [x + (u * ca + v * sa) * k, z + (-u * sa + v * ca) * k];
+      for (const [a, c] of [[-1, -1], [1, 1], [1, -1], [-1, -1], [-1, 1], [1, 1]]) {
+        const [px, pz] = P2(a * r, c * r * 0.5);
+        pos.push(px, -0.38, pz - (c > 0 ? 0 : r * 0.5));
+        uvs.push((a + 1) / 2, (c + 1) / 2);
+        const [fx, fz] = P2(a * r * 1.12, c * r * 0.46);
+        fpos.push(fx, -0.37, fz);
+        fuv.push((a + 1) / 2, (c + 1) / 2);
+      }
     }
     const sg = new THREE.BufferGeometry();
     sg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    const uvs = [];
-    for (let i = 0; i < shadows.length; i++) for (const [a, c] of [[0, 0], [1, 1], [1, 0], [0, 0], [0, 1], [1, 1]]) uvs.push(a, c);
     sg.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-    const sm = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false, alphaMap: softAlpha() });
+    const sm = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.5, depthWrite: false, alphaMap: softAlpha() });
     const mesh = new THREE.Mesh(sg, sm);
     mesh.renderOrder = 7;
     group.add(mesh);
     own.push(sg, sm);
+    const fg = new THREE.BufferGeometry();
+    fg.setAttribute('position', new THREE.Float32BufferAttribute(fpos, 3));
+    fg.setAttribute('uv', new THREE.Float32BufferAttribute(fuv, 2));
+    const fm = new THREE.MeshBasicMaterial({ color: night > 0.5 ? 0x30384a : 0xd8d4cc, transparent: true, opacity: night > 0.5 ? 0.25 : 0.42, depthWrite: false, alphaMap: foamAlpha() });
+    const fmesh = new THREE.Mesh(fg, fm);
+    fmesh.renderOrder = 7;
+    group.add(fmesh);
+    own.push(fg, fm);
   }
   if (beacon && (night > 0.2 || (opts.hour ?? 12) > 16.5)) {
     const fl = createFlameBatch([{ pos: beacon, scale: 2.6 }]);
@@ -374,6 +397,29 @@ function sunGlitter(mat, sunDir, sunColor) {
       );
   };
   mat.customProgramCacheKey = () => 'sea_glitter';
+}
+
+let _foamAlpha = null;
+/** Broken elliptical ring of foam (alpha): bright at the hull line, flecked and fading outward. */
+function foamAlpha() {
+  if (_foamAlpha) return _foamAlpha;
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = '#000';
+  g.fillRect(0, 0, 128, 128);
+  let s = 5;
+  const r = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 900; i++) {
+    const a = r() * Math.PI * 2;
+    const rr = 0.66 + Math.pow(r(), 2.5) * 0.3;
+    const x = 64 + Math.cos(a) * rr * 60;
+    const y = 64 + Math.sin(a) * rr * 60;
+    g.fillStyle = `rgba(255,255,255,${(1 - (rr - 0.66) / 0.3) * (0.25 + r() * 0.5)})`;
+    g.fillRect(x, y, 1 + r() * 3, 1 + r() * 2);
+  }
+  _foamAlpha = new THREE.CanvasTexture(c);
+  return _foamAlpha;
 }
 
 let _softAlpha = null;
@@ -450,6 +496,28 @@ function house(g, winLit, winDark, x, y0, z, w, d, h, rotX, ruined, id, night, c
     const out = A.clone().multiplyScalar(sa);
     g.tri(wallKey, n.dot(out) > 0 ? [q0, q1, q2] : [q0, q2, q1], null, { ao: 0.9, tint });
   }
+  // ridge tiles, fascia boards under the eaves and bargeboards up the gables
+  {
+    const ridgeC = P(0, top + rise + 0.05, 0);
+    g.box(rk, { c: [ridgeC.x, ridgeC.y, ridgeC.z], s: rotX ? [la * 2 + 0.1, 0.22, 0.3] : [0.3, 0.22, la * 2 + 0.1], ao: 0.8, tint: [0.75, 0.72, 0.7] });
+    for (const sb of [-1, 1]) {
+      const e = P(0, top - 0.42, sb * (lb - 0.02));
+      g.box('arch_beam_dark', { c: [e.x, e.y, e.z], s: rotX ? [la * 2, 0.2, 0.08] : [0.08, 0.2, la * 2], ao: 0.7 });
+    }
+    for (const sa of [-1, 1]) {
+      for (const sb of [-1, 1]) {
+        const a0 = P(sa * (la + 0.02), top - 0.3, sb * lb);
+        const a1 = P(sa * (la + 0.02), top + rise, 0);
+        const mid = a0.clone().lerp(a1, 0.5);
+        const len = a0.distanceTo(a1);
+        const ang = Math.atan2(rise + 0.3, lb);
+        const m = new THREE.Matrix4().makeTranslation(mid.x, mid.y, mid.z);
+        if (rotX) m.multiply(new THREE.Matrix4().makeRotationX(sb * ang));
+        else m.multiply(new THREE.Matrix4().makeRotationZ(-sb * ang));
+        g.box('arch_beam_dark', { matrix: m, s: rotX ? [0.08, 0.22, len] : [len, 0.22, 0.08], ao: 0.75 });
+      }
+    }
+  }
   if (hash(id, 'ch') < 0.45) {
     const p = P(la * 0.5, top + rise * 0.7, lb * 0.3);
     g.box('arch_brick', { c: [p.x, p.y + 0.6, p.z], s: [0.7, rise * 0.6 + 1.4, 0.7], ao: 0.8 });
@@ -473,7 +541,9 @@ function house(g, winLit, winDark, x, y0, z, w, d, h, rotX, ruined, id, night, c
         const P1 = new THREE.Vector3(px, wy, pz).addScaledVector(T, 0.35);
         const P2 = P1.clone().setY(wy + 1.1);
         const P3 = P0.clone().setY(wy + 1.1);
-        const lit = night > 0.3 && hash(id, f, c, 'lit') < 0.45;
+        // by day every pane is glazing that reflects the sky (the ext window material); by night
+        // some glow and the rest go dark
+        const lit = night <= 0.3 || hash(id, f, c, 'lit') < 0.45;
         (lit ? winLit : winDark).quad('win', P1, P0, P3, P2, [[0, 0], [1, 0], [1, 1], [0, 1]], { ao: 1 });
         // frame, mullion and sill so windows read as joinery, not holes
         const fk = plaster ? 'arch_beam_dark' : 'arch_trim';
@@ -535,8 +605,8 @@ function tower(g, x, z, r, h, broken, id, night, winLit, base = -0.5) {
       g.box('arch_beam_dark', { c: [x + Math.cos(a) * (r + 0.02), base + h * (0.25 + k * 0.22), z + Math.sin(a) * (r + 0.02)], s: [0.25, 1.1, 0.3], rotY: -a, tint: [0.15, 0.12, 0.1] });
     }
     // corbelled parapet + merlons, or a conical roof
-    if (hash(id, 'cone') < 0.5 && id !== 'beacon') {
-      const cone = new THREE.ConeGeometry(r * 1.25, r * 2.4, sides, 1, true);
+    if (hash(id, 'cone') < 0.5 && id !== 'beacon' && !g.noCones) {
+      const cone = new THREE.ConeGeometry(r * 1.25, r * 2.4, 20, 3, true);
       g.geometry('arch_roof_slate', cone, new THREE.Matrix4().makeTranslation(x, base + h + r * 1.2, z), { uv: 'world', ao: 0.85 });
       cone.dispose();
     } else {
