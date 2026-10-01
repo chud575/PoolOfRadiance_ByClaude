@@ -32,7 +32,7 @@ const DEFS = {
   arch_stone_cold: { tex: 'hd_ashlar_cold', texScale: 3, vc: true, fx: { macro: 0.3, grime: 0.6, moss: 0.5 } },
   arch_trim: { tex: 'hd_ashlar', texScale: 1.5, vc: true, color: 0xd8d0c4, fx: { macro: 0.2, grime: 0.4, moss: 0.5 } },
   arch_ruin: { tex: 'hd_ruin', texScale: 3, vc: true, fx: { macro: 0.35, grime: 0.7, moss: 0.9 } },
-  arch_plaster: { tex: 'hd_plaster', texScale: 3, vc: true, fx: { macro: 0.22, grime: 0.5, moss: 0.15 } },
+  arch_plaster: { tex: 'hd_plaster', texScale: 3, vc: true, fx: { macro: 0.22, grime: 0.75, moss: 0.15 } },
   arch_plaster_int: { tex: 'hd_plaster_int', texScale: 3, vc: true, fx: { macro: 0.12, grime: 0.25 } },
   arch_beam: { tex: 'hd_beam', texScale: 1.2, vc: true, fx: { macro: 0.18, grime: 0.2, moss: 0.2 } },
   arch_beam_dark: { tex: 'hd_beam_dark', texScale: 1.2, vc: true, fx: { macro: 0.12 } },
@@ -46,22 +46,23 @@ const DEFS = {
   arch_ceiling: { tex: 'hd_ceiling', texScale: 3, vc: true, color: 0xcccccc, fx: { macro: 0.1 } },
   arch_dungeon: { tex: 'hd_dungeon', texScale: 3, vc: true, fx: { macro: 0.3, grime: 0.6, moss: 0.4 } },
   arch_dungeon_floor: { tex: 'hd_dungeon_floor', texScale: 3, vc: true, fx: { macro: 0.3, floor: 1 } },
-  arch_brick: { tex: 'hd_brick', texScale: 1, vc: true, fx: { macro: 0.2, grime: 0.4 } },
+  arch_brick: { tex: 'hd_brick', texScale: 1, vc: true, fx: { macro: 0.3, grime: 0.5 } },
   arch_wainscot: { tex: 'hd_wainscot', texScale: 1.5, vc: true, fx: { macro: 0.1 } },
-  arch_iron: { tex: 'hd_iron', texScale: 0.5, vc: true, metalness: 0.7, fx: {} },
-  arch_door: { tex: 'door_wood', texScale: 0, vc: false, fx: { macro: 0.15 } },
+  arch_iron: { tex: 'hd_iron', texScale: 0.5, vc: true, metalness: 0.75, fx: {} },
+  arch_door: { tex: 'hd_door', texScale: 0, vc: false, fx: { macro: 0.1 } },
   arch_water: { color: 0x10202a, roughness: 0.04, metalness: 0.0, vc: true, fx: {} },
 
   // ---- props (instanced; no vertex colours) ----
   prop_staves: { tex: 'hd_staves', fx: { macro: 0.2 } },
   prop_crate: { tex: 'hd_crate', fx: { macro: 0.2 } },
-  prop_iron: { tex: 'hd_iron', metalness: 0.65, fx: {} },
+  prop_iron: { tex: 'hd_iron', metalness: 0.75, fx: {} },
   prop_burlap: { tex: 'hd_burlap', fx: { macro: 0.2 } },
-  prop_rubble: { tex: 'hd_rubble', fx: { macro: 0.3, moss: 0.6 } },
+  prop_rubble: { tex: 'hd_rock', fx: { macro: 0.35, moss: 0.5, dust: 1 } },
+  prop_rock: { tex: 'hd_rock', vc: true, fx: { macro: 0.35, moss: 0.4, dust: 1 } },
   prop_wood: { tex: 'hd_beam', fx: { macro: 0.2 } },
   prop_stone: { tex: 'hd_ashlar', fx: { macro: 0.25, moss: 0.5 } },
   prop_bone: { color: 0xcfc3a6, roughness: 0.7, fx: {} },
-  prop_limestone: { tex: 'hd_limestone', texScale: 1.5, fx: { macro: 0.25, moss: 0.6 } },
+  prop_limestone: { tex: 'hd_limestone', texScale: 1.5, vc: true, fx: { macro: 0.3, grime: 0.8, moss: 0.8, dust: 0.6 } },
 };
 
 /** Texture sets each tileset needs (for preloading). */
@@ -121,6 +122,8 @@ function applySurfaceFX(mat, fx) {
   const grime = (fx.grime ?? 0).toFixed(3);
   const moss = (fx.moss ?? 0).toFixed(3);
   const floor = (fx.floor ?? 0).toFixed(3);
+  const dust = (fx.dust ?? 0).toFixed(3);
+  const grain = (fx.grain ?? 0).toFixed(3);
   mat.onBeforeCompile = (shader) => {
     if (!SURFACE_UNIFORMS.uFxNoiseTex.value) SURFACE_UNIFORMS.uFxNoiseTex.value = getFxNoiseTexture();
     Object.assign(shader.uniforms, SURFACE_UNIFORMS);
@@ -170,10 +173,36 @@ function applySurfaceFX(mat, fx) {
           float dampMoss = (1.0 - smoothstep(0.0, 0.5 + mN * 0.7, wp.y)) * smoothstep(0.42, 0.62, nz.g) * vert;
           float topMoss = smoothstep(0.55, 0.9, up) * smoothstep(0.4, 0.62, nz.g) * step(0.3, wp.y);
           diffuseColor.rgb = mix(diffuseColor.rgb, uFxMossTint * (0.7 + nz.b * 0.6), clamp((dampMoss * 0.8 + topMoss) * ${moss}, 0.0, 0.85));
+          // dust settled on upward-facing surfaces of props
+          float dustAmt = smoothstep(0.35, 0.85, up) * (0.55 + 0.45 * nz.g) * ${dust};
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.46, 0.42, 0.36) * (0.85 + nz.b * 0.3), dustAmt * 0.6);
           float fl = ${floor};
           diffuseColor.rgb *= mix(1.0, 0.8 + nz.a * 0.4, fl);
           vFxWet = smoothstep(0.5, 0.62, nz.r) * fl;
         }`,
+      )
+      .replace(
+        '#include <normal_fragment_maps>',
+        `#include <normal_fragment_maps>
+        #if ${grain === '0.000' ? 0 : 1}
+        {
+          // close-up micro relief (≈1 cm grit) as a derivative bump in world space
+          vec3 gp = vFxWorldPos * 0.9;
+          vec2 gq = abs(vFxWorldNormal.y) > 0.6 ? gp.xz : vec2(gp.x + gp.z * 0.93, gp.y);
+          float gh = texture2D(uFxNoiseTex, gq).b * 0.6 + texture2D(uFxNoiseTex, gq * 2.7 + 0.37).b * 0.4;
+          // only up close: fade out before the grit drops below a few pixels (no shimmer at range)
+          float gFade = (1.0 - smoothstep(1.2, 3.5, length(vViewPosition))) * smoothstep(0.25, 0.6, abs(dot(normal, normalize(vViewPosition))));
+          vec2 dH = vec2(dFdx(gh), dFdy(gh)) * ${grain} * 0.35 * gFade;
+          vec3 vSigmaX = dFdx(-vViewPosition);
+          vec3 vSigmaY = dFdy(-vViewPosition);
+          vec3 vN = normal;
+          vec3 R1 = cross(vSigmaY, vN);
+          vec3 R2 = cross(vN, vSigmaX);
+          float fDet = dot(vSigmaX, R1);
+          vec3 vGrad = sign(fDet) * (dH.x * R1 + dH.y * R2);
+          normal = normalize(abs(fDet) * vN - vGrad);
+        }
+        #endif`,
       )
       .replace(
         '#include <roughnessmap_fragment>',
@@ -200,7 +229,7 @@ function applySurfaceFX(mat, fx) {
         #endif`,
       );
   };
-  mat.customProgramCacheKey = () => `fx:${macro}:${grime}:${moss}:${floor}`;
+  mat.customProgramCacheKey = () => `fx:${macro}:${grime}:${moss}:${floor}:${dust}:${grain}`;
 }
 
 const cache = new Map();
@@ -304,7 +333,7 @@ export function setWindowGlow(night, flicker = 1) {
   ext.color.setHex(night > 0.5 ? 0x101418 : 0x1a232c);
   // from inside by day, windows glow with daylight
   int.emissive.setHex(night > 0.5 ? 0x223355 : 0xdde8ff);
-  int.emissiveIntensity = night > 0.5 ? 0.25 : 1.6;
+  int.emissiveIntensity = night > 0.5 ? 0.25 : 0.95;
   const lamp = getLampGlassMaterial();
   lamp.emissiveIntensity = (0.2 + night * 4) * flicker;
 }

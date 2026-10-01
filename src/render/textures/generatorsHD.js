@@ -77,63 +77,88 @@ function masonryLayout({ rows, seed, minW, maxW }) {
 }
 
 /**
- * Weathered ashlar (dressed stone) — irregular courses, chipped arrises,
- * recessed lime mortar, pitting, lichen and rain streaks.
- * Tile ≈ 3 m.
+ * Weathered ashlar (dressed stone) — irregular courses, per-stone colour,
+ * roughness, face dressing (smooth / pillowed / rock-faced) and arris wear,
+ * chipped corners and spalls, recessed lime mortar with losses, pitting,
+ * lichen and rain streaks. Tile ≈ 3 m.
  */
 export function ashlar({ seed = 21, rows = 8, minW = 0.18, maxW = 0.34, palette = 'warm', mortarW = 0.011, erosion = 1, moss = 0.35 } = {}) {
   const lay = masonryLayout({ rows, seed, minW, maxW });
   const pals = {
-    warm: [[0.52, 0.48, 0.42], [0.48, 0.45, 0.4], [0.55, 0.5, 0.42], [0.47, 0.45, 0.42], [0.5, 0.46, 0.39]],
-    cold: [[0.38, 0.39, 0.4], [0.33, 0.34, 0.35], [0.42, 0.41, 0.39], [0.3, 0.31, 0.33], [0.36, 0.37, 0.36]],
-    dark: [[0.28, 0.27, 0.26], [0.24, 0.24, 0.24], [0.31, 0.29, 0.26], [0.22, 0.22, 0.23], [0.27, 0.26, 0.25]],
+    warm: [[0.52, 0.48, 0.42], [0.47, 0.44, 0.4], [0.56, 0.5, 0.41], [0.45, 0.44, 0.42], [0.5, 0.45, 0.37], [0.58, 0.54, 0.47], [0.42, 0.39, 0.35]],
+    cold: [[0.38, 0.39, 0.4], [0.33, 0.34, 0.35], [0.42, 0.41, 0.39], [0.3, 0.31, 0.33], [0.36, 0.37, 0.36], [0.4, 0.38, 0.35], [0.28, 0.29, 0.3]],
+    dark: [[0.28, 0.27, 0.26], [0.24, 0.24, 0.24], [0.31, 0.29, 0.26], [0.22, 0.22, 0.23], [0.27, 0.26, 0.25], [0.33, 0.31, 0.28], [0.2, 0.2, 0.2]],
   };
   const pal = pals[palette] ?? pals.warm;
+  const palMean = mul3(pal.reduce((a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]], [0, 0, 0]), 1 / pal.length);
   const mortar = palette === 'dark' ? [0.2, 0.19, 0.17] : [0.5, 0.47, 0.41];
   return (u, v) => {
     const L = lay(u, v);
+    const sid = L.id;
+    const sA = hash2(L.row * 57 + L.col, 3, seed + 41); // dressing
+    const sB = hash2(L.row * 57 + L.col, 5, seed + 43); // wear
+    const sC = hash2(L.row * 57 + L.col, 9, seed + 47); // tone shift
     const chip = wfbm(u, v, 14, seed + 5, 4, 0.4);
-    const edgeNoise = (chip - 0.5) * 0.006 * erosion;
-    const e = Math.min(L.dx * 1.0, L.dy * 1.0) + edgeNoise; // in tile units (~3 m)
-    const inStone = smooth(mortarW, mortarW + 0.004, e);
-    const bevel = smooth(mortarW, mortarW + 0.02, e);
+    const chipF = fbm(u * 60, v * 60, { octaves: 3, period: 60, seed: seed + 6 });
+    // worn arrises: per-stone erosion amount, much stronger on some stones
+    const wear = (0.4 + sB * sB * 2.2) * erosion;
+    const edgeNoise = (chip - 0.5) * 0.007 * wear + (chipF - 0.5) * 0.003 * wear;
+    // distances in tile units; corners chip more
+    const cornerD = Math.hypot(Math.min(L.fx, 1 - L.fx) * L.bw, Math.min(L.fy, 1 - L.fy) * L.bh);
+    const cornerChip = (1 - smooth(0.0, 0.02 + sB * 0.035, cornerD)) * 0.012 * (0.5 + chipF);
+    const e = Math.min(L.dx, L.dy) + edgeNoise - cornerChip;
+    const mw = mortarW * (0.8 + hash2(L.row, 19, seed) * 0.5);
+    const inStone = smooth(mw, mw + 0.003, e);
+    const bevelW = 0.008 + sA * 0.03;
+    const bevel = smooth(mw, mw + bevelW, e);
     const big = fbm(u * 6, v * 6, { octaves: 4, period: 6, seed });
     const fine = fbm(u * 48, v * 48, { octaves: 3, period: 48, seed: seed + 3 });
+    const micro = valueNoise(u * 300, v * 300, 300, seed + 8);
     const pits = worley(u * 70, v * 70, 70, seed + 9);
-    const pit = (1 - smooth(0.0, 0.08 + pits.id * 0.1, pits.f1)) * (pits.id > 0.8 ? 0.6 : 0) * smooth(0.35, 0.6, big);
-    // stone base colour per block
-    const pi = Math.floor(L.id * pal.length);
-    let c = pal[pi];
-    c = mul3(c, 0.88 + hash2(L.row, L.col, seed + 1) * 0.2);
-    c = mul3(c, 0.8 + big * 0.35 + (fine - 0.5) * 0.22);
-    // tooling: faint diagonal chisel striations
-    c = mul3(c, 1 + (valueNoise((u + v) * 260, (u - v) * 18, 1000, seed + 31) - 0.5) * 0.06);
-    // pillowed face: slight darkening toward block centre shadows, lighter worn arrises
-    c = mul3(c, 1 + (1 - bevel) * 0.12 * inStone);
+    const pit = (1 - smooth(0.0, 0.08 + pits.id * 0.1, pits.f1)) * (pits.id > 0.78 ? 0.7 : 0) * (0.3 + sB);
+    // stone base colour per block (+ per-stone hue drift)
+    let c = mix3(palMean, pal[Math.floor(sid * pal.length)], 0.55);
+    c = mul3(c, 0.9 + hash2(L.row, L.col, seed + 1) * 0.16);
+    c = [c[0] * (1 + (sC - 0.5) * 0.08), c[1], c[2] * (1 - (sC - 0.5) * 0.08)];
+    c = mul3(c, 0.8 + big * 0.35 + (fine - 0.5) * 0.24 + (micro - 0.5) * 0.03);
+    // dressing: tooled (fine chisel striations), pillowed, or rock-faced (coarse hammer dressing)
+    const rockFaced = sA > 0.78;
+    const pillowAmt = sA < 0.35 ? 0.0 : sA < 0.78 ? (sA - 0.35) * 0.18 : 0.04;
+    const tool = valueNoise((u + v * (sC > 0.5 ? 1 : -1)) * 260, (u - v) * 18, 1000, seed + 31);
+    c = mul3(c, 1 + (tool - 0.5) * (sA < 0.35 ? 0.09 : 0.03));
+    const rockN = rockFaced ? fbm(u * 26, v * 26, { octaves: 4, period: 26, seed: seed + 51 }) : 0.5;
+    // worn arrises are lighter (exposed fresh stone) and smoother
+    c = mul3(c, 1 + (1 - bevel) * 0.1 * inStone);
     // rain streaks
     const streak = fbm(u * 36, v * 2.2, { octaves: 3, period: 36, seed: seed + 13 });
-    c = mul3(c, 1 - smooth(0.55, 0.8, streak) * 0.22);
-    // lichen (yellow-green / grey patches)
+    c = mul3(c, 1 - smooth(0.55, 0.8, streak) * 0.24);
+    // lichen (yellow-green / grey patches) + white crustose dots
     const lich = wfbm(u, v, 5, seed + 17, 5);
     c = mix3(c, [0.42, 0.44, 0.3], smooth(0.62, 0.72, lich) * 0.55 * moss);
-    c = mix3(c, [0.62, 0.6, 0.52], smooth(0.7, 0.78, fbm(u * 18, v * 18, { octaves: 3, period: 18, seed: seed + 19 })) * 0.35);
+    c = mix3(c, [0.64, 0.62, 0.54], smooth(0.72, 0.8, fbm(u * 18, v * 18, { octaves: 3, period: 18, seed: seed + 19 })) * 0.32);
     c = mul3(c, 1 - pit * 0.45);
-    // mortar
+    // mortar: recessed, partly lost (dark voids), mossy in places
     const mn = fbm(u * 60, v * 60, { octaves: 2, period: 60, seed: seed + 23 });
+    const loss = smooth(0.55, 0.7, fbm(u * 9, v * 9, { octaves: 3, period: 9, seed: seed + 29 }));
     let mc = mul3(mortar, 0.7 + mn * 0.4);
+    mc = mix3(mc, mul3(mortar, 0.35), loss * 0.8);
     mc = mix3(mc, [0.2, 0.26, 0.14], smooth(0.55, 0.75, big) * moss);
     const col = mix3(mc, c, inStone);
     const pillow = Math.sin(Math.PI * clamp01(L.fx)) * Math.sin(Math.PI * clamp01(L.fy));
-    const h = inStone * (0.6 + bevel * 0.16 + pillow * 0.06 + big * 0.12 + fine * 0.06 - pit * 0.1) + (1 - inStone) * (0.12 + mn * 0.1);
-    const r = lerp(0.97, 0.8 + fine * 0.14 - pit * 0.1, inStone);
+    const tilt = ((L.fx - 0.5) * (hash2(L.row, L.col, seed + 61) - 0.5) + (L.fy - 0.5) * (hash2(L.row, L.col, seed + 62) - 0.5)) * 0.05;
+    const stoneH = 0.6 + bevel * 0.14 + pillow * pillowAmt + tilt + big * 0.08 + fine * 0.05 + micro * 0.006 + (rockN - 0.5) * 0.12 - pit * 0.1;
+    const h = inStone * stoneH + (1 - inStone) * (0.12 + mn * 0.08 - loss * 0.07);
+    const sr = 0.74 + sB * 0.16 + (rockFaced ? 0.06 : 0);
+    const r = lerp(0.97, clamp01(sr + fine * 0.1 - pit * 0.1 - (1 - bevel) * 0.08), inStone);
     return { c: col, h, r };
   };
 }
 
 /**
  * Lime plaster / daub between timber framing: trowel texture, water stains,
- * hairline cracks and patches where the render has fallen away exposing
- * wattle or rubble stone. Tile ≈ 3 m.
+ * fine hairline craquelure (≈ 5–30 cm cells, only in patches) and small
+ * spalls where the render has fallen away exposing riven oak lath.
+ * Tile ≈ 3 m.
  */
 export function plaster({ seed = 31, base = [0.78, 0.72, 0.6], decay = 1, interior = false } = {}) {
   return (u, v) => {
@@ -141,34 +166,49 @@ export function plaster({ seed = 31, base = [0.78, 0.72, 0.6], decay = 1, interi
     const mid = fbm(u * 12, v * 12, { octaves: 4, period: 12, seed: seed + 1 });
     const trowel = fbm(u * 30, v * 10, { octaves: 3, period: 30, seed: seed + 2 });
     const fine = valueNoise(u * 200, v * 200, 200, seed + 3);
-    let c = mul3(base, 0.88 + (big - 0.5) * 0.25 + (mid - 0.5) * 0.12 + (fine - 0.5) * 0.05);
-    // yellowed stains and soot
-    const stain = smooth(0.5, 0.75, fbm(u * 4, v * 4, { octaves: 4, period: 4, seed: seed + 4 }));
-    c = mix3(c, mul3([0.62, 0.52, 0.36], 0.9), stain * 0.3 * decay);
-    const drip = fbm(u * 28, v * 1.6, { octaves: 3, period: 28, seed: seed + 5 });
-    c = mul3(c, 1 - smooth(0.6, 0.85, drip) * 0.12 * decay);
-    let h = 0.6 + trowel * 0.06 + mid * 0.05 + fine * 0.01;
-    let r = 0.92 - fine * 0.05;
-    // hairline cracks
-    const w = worley(u * 7 + (mid - 0.5) * 0.6, v * 7 + (trowel - 0.5) * 0.6, 7, seed + 6);
-    const crackMask = smooth(0.55, 0.7, fbm(u * 3, v * 3, { octaves: 3, period: 3, seed: seed + 7 }));
-    const crack = (1 - smooth(0.0, 0.025, w.f2 - w.f1)) * crackMask * decay;
-    c = mul3(c, 1 - crack * 0.55);
-    h -= crack * 0.15;
-    // spalled patches exposing wattle/rubble underneath
+    const sweep = fbm(u * 22 + v * 9, v * 22 - u * 6, { octaves: 2, period: 22, seed: seed + 12 });
+    let c = mul3(base, 0.88 + (big - 0.5) * 0.22 + (mid - 0.5) * 0.1 + (fine - 0.5) * 0.05 + (sweep - 0.5) * 0.05);
+    // limewash build-up: subtle lighter/darker brush patches
+    c = mix3(c, mul3(base, 1.08), smooth(0.55, 0.75, fbm(u * 6, v * 6, { octaves: 3, period: 6, seed: seed + 13 })) * 0.35);
+    // yellowed water stains + drips
+    const stain = smooth(0.52, 0.78, fbm(u * 4, v * 4, { octaves: 4, period: 4, seed: seed + 4 }));
+    c = mix3(c, mul3([0.62, 0.53, 0.38], 0.92), stain * 0.26 * decay);
+    const drip = fbm(u * 40, v * 1.4, { octaves: 3, period: 40, seed: seed + 5 });
+    c = mul3(c, 1 - smooth(0.62, 0.86, drip) * 0.1 * decay);
+    let h = 0.6 + trowel * 0.05 + mid * 0.04 + fine * 0.012 + sweep * 0.02;
+    let r = 0.9 - fine * 0.05;
+    // fine hairline craquelure: warped small cells, thin lines, only in patches
+    const wu = u + (fbm(u * 18, v * 18, { octaves: 2, period: 18, seed: seed + 14 }) - 0.5) * 0.02;
+    const wv = v + (fbm(u * 18 + 3.1, v * 18, { octaves: 2, period: 18, seed: seed + 15 }) - 0.5) * 0.02;
+    const w = worley(wu * 22, wv * 22, 22, seed + 6);
+    const crackMask = smooth(0.6, 0.72, fbm(u * 5, v * 5, { octaves: 3, period: 5, seed: seed + 7 })) * smooth(0.25, 0.6, w.id + 0.2);
+    const crack = (1 - smooth(0.0, 0.012, w.f2 - w.f1)) * crackMask * decay;
+    // a few longer settlement cracks (wandering lines, very thin)
+    const sl = fbm(u * 3, v * 8, { octaves: 4, period: 3, seed: seed + 16 });
+    const settle = (1 - smooth(0.0, 0.006, Math.abs(sl - 0.5))) * smooth(0.6, 0.7, fbm(u * 4, v * 4, { octaves: 2, period: 4, seed: seed + 17 })) * decay;
+    const ck = Math.max(crack * 0.7, settle);
+    c = mul3(c, 1 - ck * 0.4);
+    h -= ck * 0.06;
+    // small spalls exposing riven oak lath (with dark gaps) behind the render
     if (!interior) {
-      const sp = wfbm(u, v, 4, seed + 8, 5, 0.6);
-      const spall = smooth(0.71, 0.725, sp) * decay;
+      const sp = wfbm(u, v, 9, seed + 8, 4, 0.5);
+      const spMask = smooth(0.5, 0.65, fbm(u * 2, v * 2, { octaves: 2, period: 2, seed: seed + 18 }));
+      const spall = smooth(0.735, 0.745, sp) * decay * spMask;
       if (spall > 0) {
-        const rub = worley(u * 26, v * 26, 26, seed + 9);
-        const stone = smooth(0.03, 0.12, rub.f2 - rub.f1);
-        const under = mix3([0.18, 0.15, 0.12], mul3([0.46, 0.4, 0.33], 0.7 + rub.id * 0.5), stone);
-        const rim = smooth(0.7, 0.72, sp) - smooth(0.72, 0.75, sp);
+        const lv = v * 70 + (fbm(u * 8, v * 8, { octaves: 2, period: 8, seed: seed + 9 }) - 0.5) * 2;
+        const lf = lv - Math.floor(lv);
+        const lath = smooth(0.08, 0.2, lf) * (1 - smooth(0.72, 0.85, lf));
+        const grain = valueNoise(u * 300, lv * 2, 1000, seed + 10);
+        const wood = mul3([0.3, 0.22, 0.15], 0.7 + grain * 0.5);
+        const under = mix3([0.08, 0.07, 0.06], wood, lath);
         c = mix3(c, under, spall);
-        c = mul3(c, 1 - rim * 0.25);
-        h = lerp(h, 0.25 + stone * 0.2, spall);
+        h = lerp(h, 0.3 + lath * 0.18, spall);
         r = lerp(r, 0.95, spall);
       }
+      // raised rim of render around each spall (broken edge)
+      const rim = smooth(0.72, 0.735, sp) * (1 - smooth(0.735, 0.745, sp)) * spMask * decay;
+      c = mul3(c, 1 + rim * 0.08);
+      h += rim * 0.05;
     }
     return { c, h, r };
   };
@@ -308,18 +348,20 @@ export function crazyFlags({ seed = 71, scale = 5, base = [0.5, 0.47, 0.42], wee
  * streaks and white efflorescence. Tile ≈ 3 m.
  */
 export function dungeonStone({ seed = 81 } = {}) {
-  const base = ashlar({ seed, rows: 6, minW: 0.2, maxW: 0.38, palette: 'dark', mortarW: 0.009, erosion: 1.0, moss: 0.25 });
+  const base = ashlar({ seed, rows: 6, minW: 0.2, maxW: 0.38, palette: 'dark', mortarW: 0.009, erosion: 1.6, moss: 0.25 });
   return (u, v, x, y) => {
     const s = base(u, v, x, y);
     const rough = fbm(u * 14, v * 14, { octaves: 4, period: 14, seed: seed + 1 });
-    s.h += (rough - 0.5) * 0.05;
-    s.c = mul3(s.c, 0.85 + rough * 0.3);
-    const damp = smooth(0.45, 0.75, fbm(u * 10, v * 1.5, { octaves: 4, period: 10, seed: seed + 2 }));
-    s.c = mix3(s.c, mul3(s.c, 0.55), damp * 0.6);
-    s.r = lerp(s.r, 0.35, damp * 0.7);
+    const grit = valueNoise(u * 420, v * 420, 420, seed + 4);
+    s.h += (rough - 0.5) * 0.06 + (grit - 0.5) * 0.02;
+    s.c = mul3(s.c, 0.85 + rough * 0.3 + (grit - 0.5) * 0.08);
+    const damp = smooth(0.5, 0.78, fbm(u * 10, v * 1.5, { octaves: 4, period: 10, seed: seed + 2 }));
+    s.c = mix3(s.c, mul3(s.c, 0.62), damp * 0.55);
+    // matte, porous stone: only the dampest seams get a faint sheen
+    s.r = clamp01(Math.max(s.r, 0.82) - damp * 0.18 + (grit - 0.5) * 0.06);
     const eff = smooth(0.7, 0.85, fbm(u * 20, v * 6, { octaves: 3, period: 20, seed: seed + 3 }));
     s.c = mix3(s.c, [0.62, 0.62, 0.58], eff * 0.35);
-    s.c = mix3(s.c, [0.24, 0.27, 0.22], 0.25);
+    s.c = mix3(s.c, [0.26, 0.27, 0.24], 0.2);
     return s;
   };
 }
@@ -497,9 +539,12 @@ export function rustyIron({ seed = 151 } = {}) {
   return (u, v) => {
     const n = wfbm(u, v, 6, seed, 5, 0.5);
     const f = fbm(u * 40, v * 40, { octaves: 3, period: 40, seed: seed + 1 });
-    const rust = smooth(0.5, 0.7, n);
-    const c = mix3(mul3([0.09, 0.09, 0.1], 0.8 + f * 0.5), mul3([0.34, 0.17, 0.08], 0.7 + f * 0.5), rust);
-    return { c, h: 0.5 + rust * 0.2 + f * 0.1, r: lerp(0.45, 0.95, rust) };
+    const pit = valueNoise(u * 128, v * 128, 128, seed + 2);
+    const rust = smooth(0.48, 0.66, n + (pit - 0.5) * 0.1);
+    // forged iron: dark blue-grey with lighter hammer-polished highs, rust bloom in the lows
+    const metal = mul3([0.2, 0.2, 0.22], 0.75 + f * 0.6);
+    const c = mix3(metal, mul3([0.36, 0.18, 0.08], 0.65 + f * 0.6), rust);
+    return { c, h: 0.5 + rust * 0.2 + f * 0.1 + pit * 0.04, r: lerp(0.38, 0.95, rust) };
   };
 }
 
@@ -578,7 +623,7 @@ export function waterWaves({ seed = 201 } = {}) {
 }
 
 /** Weathered limestone/marble for columns and statuary (monolithic, no joints). Tile ≈ 1.5 m. */
-export function limestone({ seed = 211, base = [0.72, 0.69, 0.62] } = {}) {
+export function limestone({ seed = 211, base = [0.5, 0.47, 0.41] } = {}) {
   return (u, v) => {
     const big = wfbm(u, v, 3, seed, 5, 0.5);
     const mid = fbm(u * 14, v * 14, { octaves: 4, period: 14, seed: seed + 1 });
@@ -592,5 +637,145 @@ export function limestone({ seed = 211, base = [0.72, 0.69, 0.62] } = {}) {
     c = mix3(c, [0.8, 0.78, 0.66], smooth(0.75, 0.82, mid) * 0.3);
     c = mul3(c, 1 - pit * 0.35);
     return { c, h: 0.6 + mid * 0.1 + fine * 0.03 - pit * 0.2, r: 0.8 + fine * 0.1 };
+  };
+}
+
+/**
+ * Courtyard flagstones: mixed sizes in running-bond courses (some stones split
+ * into two smaller ones), per-stone tilt/height, chipped corners, worn arrises,
+ * wide dirt/moss-filled joints, lichen and stains. Tile ≈ 3 m.
+ */
+export function flagstones({ seed = 77, rows = 8, base = [0.5, 0.47, 0.42], weeds = 0.7 } = {}) {
+  const lay = masonryLayout({ rows, seed, minW: 0.14, maxW: 0.34 });
+  return (u, v) => {
+    let L = lay(u, v);
+    let id = L.id;
+    // split some stones into two (vertical or horizontal) → mixed sizes
+    const sp = hash2(L.row * 71 + L.col, 2, seed + 9);
+    let fx = L.fx;
+    let fy = L.fy;
+    let bw = L.bw;
+    let bh = L.bh;
+    if (sp < 0.3 && bw > 0.2) {
+      const cut = 0.4 + hash2(L.row, L.col, seed + 10) * 0.2;
+      const right = fx > cut;
+      fx = right ? (fx - cut) / (1 - cut) : fx / cut;
+      bw = right ? bw * (1 - cut) : bw * cut;
+      id = hash2(Math.floor(id * 1e6), right ? 1 : 0, seed + 11);
+    } else if (sp > 0.82) {
+      const top = fy > 0.5;
+      fy = top ? (fy - 0.5) * 2 : fy * 2;
+      bh *= 0.5;
+      id = hash2(Math.floor(id * 1e6), top ? 3 : 4, seed + 12);
+    }
+    const dx = Math.min(fx, 1 - fx) * bw;
+    const dy = Math.min(fy, 1 - fy) * bh;
+    const n = fbm(u * 30, v * 30, { octaves: 4, period: 30, seed: seed + 1 });
+    const nf = fbm(u * 90, v * 90, { octaves: 2, period: 90, seed: seed + 13 });
+    const wearS = hash2(Math.floor(id * 1e6), 5, seed);
+    const cornerD = Math.hypot(dx, dy);
+    const chipR = 0.008 + wearS * 0.03;
+    const corner = (1 - smooth(chipR * 0.5, chipR * (1.2 + n), cornerD)) * 0.014;
+    const e = Math.min(dx, dy) + (n - 0.5) * 0.008 * (0.6 + wearS * 1.4) + (nf - 0.5) * 0.003 - corner;
+    const jw = 0.006 + wearS * 0.004;
+    const stone = smooth(jw, jw + 0.003, e);
+    const bevel = smooth(jw, jw + 0.012 + wearS * 0.02, e);
+    const big = wfbm(u, v, 3, seed + 2);
+    const tones = [[1, 1, 1], [1.06, 0.98, 0.88], [0.9, 0.93, 0.97], [1.03, 0.95, 0.84], [0.85, 0.84, 0.82], [1.1, 1.05, 0.95], [0.78, 0.76, 0.72]];
+    const tn = tones[Math.floor(id * tones.length)];
+    let c = [base[0] * tn[0], base[1] * tn[1], base[2] * tn[2]];
+    c = mul3(c, 0.78 + hash2(Math.floor(id * 1e5), 7, seed) * 0.3 + (n - 0.5) * 0.22 + (big - 0.5) * 0.16 + (nf - 0.5) * 0.06);
+    // worn, slightly polished centres; lighter fresh chips at arrises
+    c = mul3(c, 1 + (1 - bevel) * 0.1 * stone);
+    // occasional hairline crack through a slab
+    const cw = worley(u * 12, v * 12, 12, seed + 3);
+    const crack = (1 - smooth(0, 0.012, cw.f2 - cw.f1)) * (id > 0.8 ? 1 : 0);
+    c = mul3(c, 1 - crack * 0.45);
+    // lichen rosettes and dark stains
+    const lw = worley(u * 40, v * 40, 40, seed + 14);
+    const lich = (1 - smooth(0.12, 0.3, lw.f1)) * (lw.id > 0.86 ? 1 : 0);
+    c = mix3(c, [0.62, 0.62, 0.5], lich * 0.45);
+    c = mul3(c, 1 - smooth(0.6, 0.8, fbm(u * 5, v * 5, { octaves: 3, period: 5, seed: seed + 15 })) * 0.22);
+    // joints: compacted dirt, grit, moss/weeds in places
+    const jn = valueNoise(u * 260, v * 260, 260, seed + 16);
+    let jc = mul3([0.16, 0.14, 0.11], 0.75 + jn * 0.5);
+    jc = mix3(jc, mul3([0.17, 0.25, 0.09], 0.8 + jn * 0.4), smooth(0.4, 0.62, big) * weeds);
+    const halo = (1 - smooth(jw, jw + 0.02, e)) * 0.35; // dirt creeping onto the stone edge
+    c = mix3(c, mul3(jc, 1.3), halo * (1 - bevel));
+    const col = mix3(jc, c, stone);
+    // per-stone tilt + settle (reads through the normal map as uneven paving)
+    const tx = (hash2(Math.floor(id * 1e5), 21, seed) - 0.5) * 0.14;
+    const ty = (hash2(Math.floor(id * 1e5), 22, seed) - 0.5) * 0.14;
+    const settle = (hash2(Math.floor(id * 1e5), 23, seed) - 0.5) * 0.06;
+    const sh = 0.6 + settle + (fx - 0.5) * tx * bw * 4 + (fy - 0.5) * ty * bh * 4 + bevel * 0.12 + n * 0.06 + nf * 0.02 - crack * 0.1;
+    const h = stone * sh + (1 - stone) * (0.1 + jn * 0.06);
+    const r = lerp(0.97, 0.72 + n * 0.16 + wearS * 0.08 - (1 - bevel) * 0.05, stone);
+    return { c: col, h, r };
+  };
+}
+
+/**
+ * Vertical door planks (tile = one door leaf, local UVs): per-plank tone,
+ * flowing grain with knots, end checks at top/bottom, weathered grey edges,
+ * dark joints. Roughness follows wear.
+ */
+export function doorPlanks({ seed = 221, count = 5, base = [0.3, 0.18, 0.1] } = {}) {
+  return (u, v) => {
+    const p = Math.floor(u * count);
+    const fu = u * count - p;
+    const id = hash2(p, 1, seed);
+    // knots: a couple per plank
+    let kx = 0;
+    let kAmt = 0;
+    for (let k = 0; k < 2; k++) {
+      const ky = hash2(p, 10 + k, seed);
+      const kxp = 0.25 + hash2(p, 20 + k, seed) * 0.5;
+      const dxk = (fu - kxp) * 1.0;
+      const dyk = (v - ky) * count * 1.2;
+      const d = Math.hypot(dxk, dyk);
+      const infl = Math.exp(-d * d * 18);
+      kx += infl * Math.sign(dxk || 1) * 0.25 * (1 - Math.min(1, d * 2));
+      kAmt = Math.max(kAmt, 1 - smooth(0.03, 0.07, d));
+    }
+    const g1 = fbm(fu * 3 + id * 9, v * 4, { octaves: 3, period: 1000, seed: seed + 1 });
+    const gx = fu + kx + (g1 - 0.5) * 0.3;
+    const ring = Math.sin((gx * 9 + id * 7) * Math.PI * 2) * 0.5 + 0.5;
+    const fine = valueNoise(gx * 120, v * 14, 1000, seed + 2);
+    const pore = valueNoise(gx * 400, v * 60, 1000, seed + 3);
+    let c = mul3(base, 0.7 + id * 0.4);
+    c = mul3(c, 0.78 + ring * 0.16 + fine * 0.14 + (pore - 0.5) * 0.08);
+    // knots: dark core with a ring
+    c = mix3(c, mul3(base, 0.35), kAmt * 0.9);
+    // weathering: greyed silver near plank edges and bottom (splash zone)
+    const edge = 1 - smooth(0.0, 0.12, Math.min(fu, 1 - fu));
+    const grey = clamp01(edge * 0.6 + (1 - smooth(0.0, 0.25, v)) * 0.5 + smooth(0.55, 0.8, fbm(u * 3, v * 3, { octaves: 3, period: 3, seed: seed + 4 })) * 0.4);
+    c = mix3(c, mul3([0.36, 0.33, 0.29], 0.8 + fine * 0.3), grey * 0.45);
+    // end checks: radial splits from top and bottom ends
+    const endD = Math.min(v, 1 - v);
+    const chk = valueNoise(fu * 7 + p * 3.1, 0.5, 1000, seed + 5);
+    const check = (1 - smooth(0.0, 0.025, Math.abs(chk - 0.5))) * (1 - smooth(0.02, 0.09 + id * 0.06, endD));
+    // long drying checks along the grain
+    const lchk = (1 - smooth(0.0, 0.012, Math.abs(valueNoise(gx * 6 + 0.5, v * 1.2, 1000, seed + 6) - 0.5))) * smooth(0.55, 0.75, valueNoise(gx * 3, v * 2, 1000, seed + 7));
+    const ck = Math.max(check, lchk * 0.8);
+    c = mul3(c, 1 - ck * 0.7);
+    const gap = smooth(0.0, 0.03, Math.min(fu, 1 - fu));
+    c = mul3(c, lerp(0.2, 1, gap));
+    const h = gap * (0.62 + ring * 0.05 + fine * 0.04 + pore * 0.01 - ck * 0.25 + kAmt * 0.04);
+    const r = clamp01(0.72 + grey * 0.18 + pore * 0.06 - kAmt * 0.15);
+    return { c, h, r };
+  };
+}
+
+/** Fractured rock / broken masonry surface (no joints) for rubble meshes. Tile ≈ 1 m. */
+export function rockFace({ seed = 231, base = [0.46, 0.43, 0.38] } = {}) {
+  return (u, v) => {
+    const big = wfbm(u, v, 4, seed, 5, 0.5);
+    const mid = fbm(u * 16, v * 16, { octaves: 4, period: 16, seed: seed + 1 });
+    const grit = valueNoise(u * 256, v * 256, 256, seed + 2);
+    const strata = Math.sin((v * 9 + big * 2.5) * Math.PI * 2) * 0.5 + 0.5;
+    let c = mul3(base, 0.78 + (big - 0.5) * 0.35 + (mid - 0.5) * 0.18 + (grit - 0.5) * 0.1 + strata * 0.05);
+    c = mix3(c, [0.56, 0.54, 0.47], smooth(0.7, 0.8, fbm(u * 10, v * 10, { octaves: 3, period: 10, seed: seed + 3 })) * 0.3);
+    c = mix3(c, [0.33, 0.36, 0.24], smooth(0.66, 0.76, big) * 0.35);
+    return { c, h: 0.5 + big * 0.2 + mid * 0.12 + grit * 0.04 + strata * 0.03, r: 0.86 + grit * 0.1 };
   };
 }

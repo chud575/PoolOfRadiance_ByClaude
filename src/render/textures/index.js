@@ -478,14 +478,18 @@ export function getGrimeTexture() {
   });
 }
 
-/** Carved stone inscription panel (weathered, engraved capitals). Cached by text. */
-export function getInscriptionTexture(text) {
-  const key = `inscr_${text}`;
+/**
+ * Carved stone inscription panel (weathered, engraved capitals). Cached by text.
+ * `weathered`: ruin variant — cracked through, a corner broken away (alpha),
+ * lichen and soot staining, letters partly lost.
+ */
+export function getInscriptionTexture(text, { weathered = false } = {}) {
+  const key = `inscr_${text}${weathered ? '_w' : ''}`;
   return canvasTex(key, 512, 128, (g, w, h) => {
-    const r = rng(text.length * 13 + 5);
+    const r = rng(text.length * 13 + 5 + (weathered ? 101 : 0));
     const grd = g.createLinearGradient(0, 0, 0, h);
-    grd.addColorStop(0, '#9c9384');
-    grd.addColorStop(1, '#7d7568');
+    grd.addColorStop(0, weathered ? '#8a8476' : '#9c9384');
+    grd.addColorStop(1, weathered ? '#6a6458' : '#7d7568');
     g.fillStyle = grd;
     g.fillRect(0, 0, w, h);
     for (let i = 0; i < 2500; i++) {
@@ -509,18 +513,302 @@ export function getInscriptionTexture(text) {
     g.scale(sx, 1);
     g.fillStyle = 'rgba(235,225,205,0.55)';
     g.fillText(text, 1, 3);
-    g.fillStyle = 'rgba(30,24,18,0.92)';
+    g.fillStyle = weathered ? 'rgba(30,24,18,0.75)' : 'rgba(30,24,18,0.92)';
     g.fillText(text, 0, 1);
     g.restore();
     // wear: chip some of the letters away
     g.globalCompositeOperation = 'source-atop';
-    for (let i = 0; i < 60; i++) {
-      g.fillStyle = `rgba(150,142,128,${0.3 + r() * 0.5})`;
+    for (let i = 0; i < (weathered ? 160 : 60); i++) {
+      g.fillStyle = `rgba(${weathered ? '128,122,108' : '150,142,128'},${0.3 + r() * 0.5})`;
       g.beginPath();
-      g.arc(r() * w, r() * h, 2 + r() * 7, 0, Math.PI * 2);
+      g.arc(r() * w, r() * h, 2 + r() * (weathered ? 11 : 7), 0, Math.PI * 2);
       g.fill();
     }
     g.globalCompositeOperation = 'source-over';
+    if (weathered) {
+      // lichen rosettes and rain/soot streaks
+      for (let i = 0; i < 26; i++) {
+        const x = r() * w;
+        const y = r() * h;
+        const rad = 4 + r() * 16;
+        const lg = g.createRadialGradient(x, y, 0, x, y, rad);
+        const c = r() < 0.6 ? '150,150,96' : '200,196,160';
+        lg.addColorStop(0, `rgba(${c},0.75)`);
+        lg.addColorStop(1, `rgba(${c},0)`);
+        g.fillStyle = lg;
+        g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+      }
+      for (let i = 0; i < 40; i++) {
+        g.fillStyle = `rgba(20,16,12,${0.05 + r() * 0.12})`;
+        g.fillRect(r() * w, 0, 1 + r() * 4, h * (0.4 + r() * 0.6));
+      }
+      // a crack running through the slab
+      g.strokeStyle = 'rgba(18,14,10,0.85)';
+      g.lineWidth = 2.2;
+      g.beginPath();
+      let x = w * (0.55 + r() * 0.1);
+      let y = 0;
+      g.moveTo(x, y);
+      while (y < h) {
+        x += (r() - 0.5) * 22;
+        y += 6 + r() * 10;
+        g.lineTo(x, y);
+      }
+      g.stroke();
+      g.strokeStyle = 'rgba(230,220,200,0.25)';
+      g.lineWidth = 1;
+      g.stroke();
+      // broken-off corner (cut out of the alpha channel with a ragged edge)
+      g.globalCompositeOperation = 'destination-out';
+      g.fillStyle = 'rgba(0,0,0,1)';
+      g.beginPath();
+      g.moveTo(w, h * 0.18);
+      let cx = w;
+      let cy = h * 0.18;
+      for (let k = 0; k < 9; k++) {
+        cx -= 6 + r() * 12;
+        cy += 6 + r() * 9;
+        g.lineTo(cx + (r() - 0.5) * 8, cy);
+      }
+      g.lineTo(w * 0.8, h);
+      g.lineTo(w, h);
+      g.closePath();
+      g.fill();
+      g.globalCompositeOperation = 'source-over';
+    }
+  });
+}
+
+/**
+ * Ivy leaf cluster (alpha): dense five-lobed leaves around a few stems, ragged
+ * organic outline, a few dead/russet leaves. Cards of this overlap into mats.
+ */
+export function getIvyClusterTexture(variant = 0) {
+  return canvasTex(`ivyc_${variant}`, 256, 256, (g, w, h) => {
+    const r = rng(311 + variant * 17);
+    g.clearRect(0, 0, w, h);
+    g.strokeStyle = 'rgb(62,48,30)';
+    g.lineCap = 'round';
+    const tips = [];
+    for (let i = 0; i < 5; i++) {
+      let x = w * 0.5 + (r() - 0.5) * 40;
+      let y = h * 0.5 + (r() - 0.5) * 40;
+      const a0 = r() * Math.PI * 2;
+      g.lineWidth = 1.5 + r() * 1.5;
+      g.beginPath();
+      g.moveTo(x, y);
+      for (let k = 0; k < 7; k++) {
+        const a = a0 + (r() - 0.5) * 1.2;
+        x += Math.cos(a) * (10 + r() * 8);
+        y += Math.sin(a) * (10 + r() * 8);
+        g.lineTo(x, y);
+        tips.push([x, y]);
+      }
+      g.stroke();
+    }
+    const leaf = (x, y, s, rot, col) => {
+      g.save();
+      g.translate(x, y);
+      g.rotate(rot);
+      g.fillStyle = col;
+      g.beginPath();
+      // five-lobed ivy leaf
+      for (let k = 0; k <= 10; k++) {
+        const a = -Math.PI / 2 + (k / 10) * Math.PI * 2;
+        const lobe = k % 2 === 0 ? 1 : 0.52;
+        const rr = s * lobe * (k === 0 || k === 10 ? 1.15 : 1);
+        g.lineTo(Math.cos(a) * rr, Math.sin(a) * rr * 0.95);
+      }
+      g.closePath();
+      g.fill();
+      g.strokeStyle = 'rgba(200,220,150,0.25)';
+      g.lineWidth = 0.8;
+      g.beginPath();
+      g.moveTo(0, s * 0.6);
+      g.lineTo(0, -s * 0.9);
+      g.stroke();
+      g.restore();
+    };
+    for (let i = 0; i < 260; i++) {
+      // radial falloff → ragged, roughly round cluster
+      const a = r() * Math.PI * 2;
+      const d = Math.pow(r(), 0.65) * w * 0.42;
+      const [tx, ty] = tips[Math.floor(r() * tips.length)];
+      const useTip = r() < 0.35;
+      const x = useTip ? tx + (r() - 0.5) * 18 : w / 2 + Math.cos(a) * d;
+      const y = useTip ? ty + (r() - 0.5) * 18 : h / 2 + Math.sin(a) * d;
+      if (Math.hypot(x - w / 2, y - h / 2) > w * 0.47) continue;
+      const t = r();
+      const shade = 0.7 + (1 - d / (w * 0.42)) * 0.3;
+      let col = [(48 + t * 58) * shade, (86 + t * 78) * shade, (28 + t * 30) * shade];
+      if (r() < 0.06) col = [120 + r() * 40, 58 + r() * 30, 26];
+      leaf(x, y, 7 + r() * 9, r() * Math.PI * 2, `rgb(${col[0] | 0},${col[1] | 0},${col[2] | 0})`);
+    }
+  });
+}
+
+/** Soft soot plume (alpha map: luminance in G) for above hearths: dense at the bottom, spreading up. */
+export function getSootTexture() {
+  return canvasTex('soot', 128, 256, (g, w, h) => {
+    const r = rng(29);
+    g.fillStyle = '#000';
+    g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 70; i++) {
+      const t = r();
+      const y = h * (1 - t * 0.95);
+      const x = w / 2 + (r() - 0.5) * w * (0.2 + t * 0.7);
+      const rad = w * (0.12 + t * 0.35);
+      const gr = g.createRadialGradient(x, y, 0, x, y, rad);
+      gr.addColorStop(0, `rgba(255,255,255,${0.16 * (1 - t * 0.7)})`);
+      gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gr;
+      g.fillRect(0, 0, w, h);
+    }
+  }, { srgb: false });
+}
+
+/** Radial falloff as an alpha map (luminance in G): contact shadows, halos. */
+export function getBlobTexture() {
+  return canvasTex('blob', 128, 128, (g) => {
+    g.fillStyle = '#000';
+    g.fillRect(0, 0, 128, 128);
+    const grd = g.createRadialGradient(64, 64, 0, 64, 64, 63);
+    grd.addColorStop(0, 'rgb(255,255,255)');
+    grd.addColorStop(0.45, 'rgb(170,170,170)');
+    grd.addColorStop(1, 'rgb(0,0,0)');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, 128, 128);
+  }, { srgb: false });
+}
+
+/** Glowing ember bed (emissive map): coals with hot cracks. */
+export function getEmberTexture() {
+  return canvasTex('embers', 128, 128, (g, w, h) => {
+    const r = rng(83);
+    g.fillStyle = '#000';
+    g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 140; i++) {
+      const x = r() * w;
+      const y = r() * h;
+      const rad = 3 + r() * 9;
+      const hot = r();
+      const gr = g.createRadialGradient(x, y, 0, x, y, rad);
+      gr.addColorStop(0, hot > 0.7 ? 'rgba(255,200,90,1)' : 'rgba(255,90,20,0.9)');
+      gr.addColorStop(0.6, 'rgba(160,30,5,0.6)');
+      gr.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = gr;
+      g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+    }
+    // dark coal crusts on top
+    for (let i = 0; i < 90; i++) {
+      g.fillStyle = `rgba(10,6,4,${0.5 + r() * 0.5})`;
+      g.beginPath();
+      g.arc(r() * w, r() * h, 2 + r() * 6, 0, Math.PI * 2);
+      g.fill();
+    }
+  });
+}
+
+/** Woven wall tapestry: border, millefleur field, a stag beneath a tree. */
+export function getTapestryTexture(variant = 0) {
+  return canvasTex(`tapestry_${variant}`, 256, 384, (g, w, h) => {
+    const r = rng(141 + variant);
+    const pals = [['#5a1a18', '#2a3a26', '#c8a050', '#e8d8b0'], ['#1c2c48', '#4a2a20', '#c09848', '#e0d0a8']];
+    const [border, field, gold, pale] = pals[variant % pals.length];
+    g.fillStyle = border;
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = field;
+    g.fillRect(18, 18, w - 36, h - 50);
+    g.strokeStyle = gold;
+    g.lineWidth = 3;
+    g.strokeRect(14, 14, w - 28, h - 42);
+    // millefleur
+    for (let i = 0; i < 260; i++) {
+      const x = 22 + r() * (w - 44);
+      const y = 22 + r() * (h - 60);
+      g.fillStyle = ['#c8a050', '#b04030', '#d8d0b0', '#6a8a50'][Math.floor(r() * 4)];
+      g.globalAlpha = 0.55;
+      g.fillRect(x, y, 2 + r() * 2, 2 + r() * 2);
+    }
+    g.globalAlpha = 1;
+    // tree
+    g.fillStyle = '#3a2a1a';
+    g.fillRect(w / 2 - 6, h * 0.3, 12, h * 0.36);
+    g.fillStyle = '#3e5a30';
+    for (let i = 0; i < 40; i++) {
+      g.beginPath();
+      g.arc(w / 2 + (r() - 0.5) * 120, h * 0.26 + (r() - 0.5) * 80, 10 + r() * 14, 0, Math.PI * 2);
+      g.fill();
+    }
+    // stag
+    g.fillStyle = pale;
+    g.save();
+    g.translate(w / 2, h * 0.74);
+    g.beginPath();
+    g.ellipse(0, 0, 40, 16, 0, 0, Math.PI * 2);
+    g.fill();
+    g.fillRect(-34, 6, 6, 32);
+    g.fillRect(-20, 8, 6, 30);
+    g.fillRect(18, 8, 6, 30);
+    g.fillRect(30, 6, 6, 32);
+    g.beginPath();
+    g.moveTo(30, -8);
+    g.lineTo(52, -34);
+    g.lineTo(60, -28);
+    g.lineTo(40, 0);
+    g.fill();
+    g.strokeStyle = pale;
+    g.lineWidth = 3;
+    g.beginPath();
+    g.moveTo(54, -32);
+    g.lineTo(46, -58);
+    g.moveTo(50, -46);
+    g.lineTo(38, -52);
+    g.moveTo(58, -32);
+    g.lineTo(70, -56);
+    g.moveTo(64, -44);
+    g.lineTo(76, -46);
+    g.stroke();
+    g.restore();
+    // fringe + weave texture + fading
+    g.fillStyle = gold;
+    for (let x = 4; x < w; x += 6) g.fillRect(x, h - 26, 3, 22 + r() * 4);
+    for (let i = 0; i < 9000; i++) {
+      g.fillStyle = `rgba(${r() < 0.5 ? '0,0,0' : '255,240,210'},${r() * 0.07})`;
+      g.fillRect(r() * w, r() * h, 1, 1 + r() * 2);
+    }
+  });
+}
+
+/** Parchment notices pinned to a board (alpha-free, includes the board). */
+export function getNoticeTexture() {
+  return canvasTex('notices', 256, 192, (g, w, h) => {
+    const r = rng(171);
+    g.fillStyle = '#4a3220';
+    g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 6; i++) {
+      g.fillStyle = `rgba(0,0,0,${0.1 + r() * 0.1})`;
+      g.fillRect(0, i * 32 + 30, w, 2);
+    }
+    for (let i = 0; i < 7; i++) {
+      const pw = 46 + r() * 36;
+      const ph = 52 + r() * 40;
+      const x = 10 + r() * (w - pw - 20);
+      const y = 10 + r() * (h - ph - 20);
+      g.save();
+      g.translate(x + pw / 2, y + ph / 2);
+      g.rotate((r() - 0.5) * 0.25);
+      const t = 200 + r() * 40;
+      g.fillStyle = `rgb(${t | 0},${(t * 0.92) | 0},${(t * 0.74) | 0})`;
+      g.fillRect(-pw / 2, -ph / 2, pw, ph);
+      g.fillStyle = 'rgba(60,40,20,0.75)';
+      for (let l = 0; l < 7; l++) g.fillRect(-pw / 2 + 6, -ph / 2 + 10 + l * 7, (pw - 12) * (0.5 + r() * 0.5), 2);
+      g.fillStyle = '#7a1a10';
+      g.beginPath();
+      g.arc(0, -ph / 2 + 4, 3, 0, Math.PI * 2);
+      g.fill();
+      g.restore();
+    }
   });
 }
 

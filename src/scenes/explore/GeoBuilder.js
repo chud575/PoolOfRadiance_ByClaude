@@ -51,7 +51,7 @@ export class GeoBuilder {
       if (uvs) b.uv.push(uvs[i][0], uvs[i][1]);
       else {
         const [u, v] = planarUV(q, _n, ts);
-        b.uv.push(u, v);
+        b.uv.push(u + (opts.uvOff ? opts.uvOff[0] : 0), v + (opts.uvOff ? opts.uvOff[1] : 0));
       }
       const a = typeof ao === 'number' ? ao : typeof ao === 'function' ? ao(q, _n) : this.aoFn(q, _n);
       b.col.push(tint[0] * a, tint[1] * a, tint[2] * a);
@@ -91,6 +91,10 @@ export class GeoBuilder {
       let uvs = null;
       if (mode === 'along' || mode === 'local') {
         uvs = f.v.map((p) => localUV(p, f.n, long, [hx, hy, hz], mode, ts));
+        if (o.uvRect) {
+          const [u0, v0, u1, v1] = o.uvRect;
+          uvs = uvs.map(([u, v]) => [u0 + u * (u1 - u0), v0 + v * (v1 - v0)]);
+        }
       }
       if (f.v.length === 3) this.tri(key, wp, uvs, o);
       else this.quad(key, wp[0], wp[1], wp[2], wp[3], uvs, o);

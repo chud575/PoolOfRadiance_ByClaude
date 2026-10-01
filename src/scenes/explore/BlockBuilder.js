@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { EDGE, CELL } from '../../data/maps/MapGrid.js';
 import { getMaterial, getWindowMaterial } from '../../render/materials.js';
-import { getInscriptionTexture } from '../../render/textures/index.js';
-import { GeoBuilder, hash } from './GeoBuilder.js';
+import { getInscriptionTexture, getEmberTexture, getSootTexture } from '../../render/textures/index.js';
+import { GeoBuilder, hash, defaultAO } from './GeoBuilder.js';
 import { TILESETS } from './tilesets.js';
 
 /** World scale (metres). One grid cell = CELL_SIZE x CELL_SIZE. */
@@ -109,9 +109,17 @@ export function buildBlock(map, opts = {}) {
         const ruined = style === 2 || ts.id === 'ruins';
         const hs = ts.buildingH;
         let H = hs[Math.floor(hash(map.id, id, 'h') * hs.length)];
-        if (temple) H = 7.2;
+        if (temple) H = 5.8;
+        // which way does the entrance face? (temples turn their pediment to it)
+        let frontAxis = null;
+        for (const [cx, cy] of cells) {
+          for (const d of ['N', 'S', 'E', 'W']) {
+            const t = map.getEdge(cx, cy, d);
+            if (t === EDGE.ARCH || t === EDGE.DOOR || t === EDGE.LOCKED) frontAxis = d === 'N' || d === 'S' ? 'z' : 'x';
+          }
+        }
         if (style === 1 && H < 5) H = 5.4;
-        comps.push({ id, cells, style, ruined, H, temple, roofKind: ['arch_roof_slate', 'arch_roof_clay', 'arch_roof_shake'][Math.floor(hash(map.id, id, 'roof') * 3)], tint: PLASTER_TINTS[Math.floor(hash(map.id, id, 'tint') * PLASTER_TINTS.length)] });
+        comps.push({ id, cells, style, ruined, H, temple, frontAxis, roofKind: ['arch_roof_slate', 'arch_roof_clay', 'arch_roof_shake'][Math.floor(hash(map.id, id, 'roof') * 3)], tint: PLASTER_TINTS[Math.floor(hash(map.id, id, 'tint') * PLASTER_TINTS.length)] });
       }
     }
   }
@@ -247,6 +255,8 @@ export function buildBlock(map, opts = {}) {
         ends: {},
         seed: hash(e.key, si, map.id),
       };
+      // per-face texture offset: no two walls show the same stones / plaster blemishes
+      face.uvOff = [Math.floor(hash(face.seed, 'uo') * 97) / 7.3, Math.floor(hash(face.seed, 'vo') * 13) / 3.7];
       // corner classification at both ends
       for (const end of [-1, 1]) face.ends[end] = classifyEnd(e, sd.N, Tn, end, horizontal);
       RECIPES[recipe]?.(face);
@@ -302,21 +312,53 @@ export function buildBlock(map, opts = {}) {
     return 'free';
   }
 
+  /**
+   * Broken-wall profile shared by both faces of a ruined edge: a walk of
+   * sloped breaks and course-height steps (missing stones), as a fraction of
+   * the wall height.
+   */
   function makeJag(e, seed) {
     const ruinish = (ts.walls[e.style] === 'ruin' || ts.walls[e.style] === 'cave' || ts.walls[e.style] === 'ruin_timber') && !indoor;
     if (!ruinish) return null;
-    const n = 6 + Math.floor(seed * 4);
-    const cols = [];
-    let h = 0.6 + hash(e.key, 'j0') * 0.4;
-    for (let k = 0; k < n; k++) {
-      h += (hash(e.key, 'j', k) - 0.5) * 0.45;
-      h = THREE.MathUtils.clamp(h, 0.28, 1);
-      cols.push(h);
+    const sa = -S / 2 - T / 2;
+    const sb = S / 2 + T / 2;
+    const n = 5 + Math.floor(seed * 3);
+    const course = 0.3 / Math.max(1, e.H);
+    const xs = [];
+    const hs = [];
+    const step = [];
+    let h = 0.55 + hash(e.key, 'j0') * 0.4;
+    for (let k = 0; k <= n; k++) {
+      xs.push(sa + ((sb - sa) * k) / n + (k > 0 && k < n ? (hash(e.key, 'jx', k) - 0.5) * ((sb - sa) / n) * 0.6 : 0));
+      h += (hash(e.key, 'j', k) - 0.5) * 0.5;
+      h = THREE.MathUtils.clamp(h, 0.3, 1);
+      hs.push(h);
+      step.push(hash(e.key, 'js', k) < 0.4);
     }
     return (s) => {
-      const t = THREE.MathUtils.clamp((s + S / 2 + T / 2) / (S + T), 0, 0.9999);
-      return cols[Math.floor(t * n)];
+      let k = 0;
+      while (k < n - 1 && s > xs[k + 1]) k++;
+      const t = THREE.MathUtils.clamp((s - xs[k]) / (xs[k + 1] - xs[k]), 0, 1);
+      if (step[k]) {
+        // stepped course: stones missing in whole-course units
+        const a = Math.round(hs[k] / course) * course;
+        const b = Math.round(hs[k + 1] / course) * course;
+        const nSteps = Math.max(1, Math.round(Math.abs(b - a) / course));
+        return Math.min(1, a + (b - a) * Math.min(1, Math.floor(t * (nSteps + 1)) / nSteps));
+      }
+      return hs[k] + (hs[k + 1] - hs[k]) * t;
     };
+  }
+
+  /** Wall chunk with a sloped top (p..q along the face), rubble core on top. */
+  function prism(f, key, p, q, yb, tp, tq, d0, d1, o) {
+    const P = (sv, y, d) => new THREE.Vector3(sv, y, d).applyMatrix4(f.basis);
+    g.quad(key, P(p, yb, d1), P(q, yb, d1), P(q, tq, d1), P(p, tp, d1), null, o);
+    g.quad(key, P(q, yb, d0), P(p, yb, d0), P(p, tp, d0), P(q, tq, d0), null, o);
+    g.quad(key, P(p, yb, d0), P(p, yb, d1), P(p, tp, d1), P(p, tp, d0), null, o);
+    g.quad(key, P(q, yb, d1), P(q, yb, d0), P(q, tq, d0), P(q, tq, d1), null, o);
+    // exposed rubble-and-mortar core on the broken top
+    g.quad('prop_rock', P(p, tp, d1), P(q, tq, d1), P(q, tq, d0), P(p, tp, d0), null, { ao: 0.8 });
   }
 
   // ------------------------------------------------------------ slab helpers
@@ -349,7 +391,8 @@ export function buildBlock(map, opts = {}) {
    * Slab on a face between heights y0..y1 and depths d0..d1 (d measured from
    * wall centre toward the face's cell), with the edge's openings cut out.
    */
-  function slab(f, key, y0, y1, d0, d1, o = {}) {
+  function slab(f, key, y0, y1, d0, d1, o0 = {}) {
+    const o = f.uvOff ? { uvOff: f.uvOff, ...o0 } : o0;
     const sa = -S / 2 - endExt(f, -1, d0, d1) - (o.extra ?? 0);
     const sb = S / 2 + endExt(f, 1, d0, d1) + (o.extra ?? 0);
     const ops = (o.noOpenings ? [] : f.openings).filter((op) => op.y1 > y0 && op.y0 < y1 && (!op.border || true));
@@ -359,7 +402,7 @@ export function buildBlock(map, opts = {}) {
       if (op.s1 > sa && op.s1 < sb) br.add(op.s1);
     }
     const jag = o.jag ? f.jag : null;
-    if (jag) for (let k = 0; k <= 12; k++) br.add(THREE.MathUtils.lerp(sa, sb, k / 12));
+    if (jag) for (let k = 0; k <= 24; k++) br.add(THREE.MathUtils.lerp(sa, sb, k / 24));
     const xs = [...br].sort((a, b) => a - b);
     for (let k = 0; k < xs.length - 1; k++) {
       const p = xs[k];
@@ -374,7 +417,25 @@ export function buildBlock(map, opts = {}) {
         if (c0 > yy) localBox(f, key, p, q, yy, c0, d0, d1, o);
         yy = Math.max(yy, c1);
       }
-      if (top > yy) localBox(f, key, p, q, yy, top, d0, d1, o);
+      if (jag && !cuts.length) {
+        const tp = Math.min(y1, y0 + (y1 - y0) * jag(p + 1e-4));
+        const tq = Math.min(y1, y0 + (y1 - y0) * jag(q - 1e-4));
+        prism(f, key, p, q, yy, tp, tq, d0, d1, o);
+      } else if (top > yy) localBox(f, key, p, q, yy, top, d0, d1, o);
+    }
+    if (jag && key === 'arch_ruin') {
+      // loose and half-dislodged stones along the break (stone-scale silhouette)
+      const n = 4 + Math.floor(hash(f.seed, 'ln') * 4);
+      for (let k = 0; k < n; k++) {
+        const sv = THREE.MathUtils.lerp(sa + 0.2, sb - 0.2, (k + hash(f.seed, k, 'lsx')) / n);
+        if (ops.some((op) => op.s0 - 0.3 < sv && op.s1 + 0.3 > sv)) continue;
+        const top = y0 + (y1 - y0) * jag(sv);
+        const lw = 0.28 + hash(f.seed, k, 'lw') * 0.26;
+        const lh = 0.18 + hash(f.seed, k, 'lh') * 0.1;
+        const m = localMatrix(f, sv, top + lh * (0.1 + hash(f.seed, k, 'ly') * 0.3), (d0 + d1) / 2 + (hash(f.seed, k, 'lz') - 0.5) * 0.06, (hash(f.seed, k, 'lr') - 0.5) * 0.5);
+        m.multiply(new THREE.Matrix4().makeRotationY((hash(f.seed, k, 'lry') - 0.5) * 0.4));
+        g.box(key, { matrix: m, s: [lw, lh, Math.max(0.12, d1 - d0 + 0.03)], chamfer: 0.03, uvOff: o.uvOff });
+      }
     }
   }
   const freeSpans = (f, y) => {
@@ -617,44 +678,103 @@ export function buildBlock(map, opts = {}) {
     const frameKey = stoneFrame ? 'arch_trim' : 'arch_beam_dark';
     const fd0 = -T / 2 - 0.05;
     const fd1 = T / 2 + 0.05;
-    localBox(f, frameKey, -w / 2 - 0.2, -w / 2, 0, h, fd0, fd1, { chamfer: 0.03, uv: stoneFrame ? 'world' : 'along' });
-    localBox(f, frameKey, w / 2, w / 2 + 0.2, 0, h, fd0, fd1, { chamfer: 0.03, uv: stoneFrame ? 'world' : 'along' });
-    localBox(f, frameKey, -w / 2 - 0.32, w / 2 + 0.32, h, h + 0.26, fd0 - 0.02, fd1 + 0.02, { chamfer: 0.035, uv: stoneFrame ? 'world' : 'along' });
+    // ambient occlusion in the reveal: jamb faces turned toward the opening and the soffit are shaded
+    const Tl = f.T;
+    const revealAO = (p, n) => {
+      let a = defaultAO(p, n);
+      if (Math.abs(n.x * Tl.x + n.z * Tl.z) > 0.6) a *= 0.55;
+      if (n.y < -0.5) a *= 0.45;
+      return a;
+    };
+    const fu = stoneFrame ? 'world' : 'along';
+    // jambs built from alternating long/short blocks (stone) or a single post (timber)
+    for (const sgn of [-1, 1]) {
+      const a = sgn < 0 ? -w / 2 - 0.2 : w / 2;
+      const b = sgn < 0 ? -w / 2 : w / 2 + 0.2;
+      if (stoneFrame) {
+        let y = 0;
+        for (let k = 0; y < h - 0.01; k++) {
+          const bh = Math.min(h - y, 0.36 + hash(e.key, sgn, k, 'jb') * 0.16);
+          const long = (k + (sgn > 0 ? 1 : 0)) % 2 === 0;
+          const ext = long ? 0.12 : 0;
+          localBox(f, frameKey, sgn < 0 ? a - ext : a, sgn < 0 ? b : b + ext, y + 0.006, y + bh - 0.006, fd0 + (long ? 0 : 0.015), fd1 - (long ? 0 : 0.015), { chamfer: 0.025 + hash(e.key, sgn, k, 'jc') * 0.02, uv: fu, ao: revealAO });
+          y += bh;
+        }
+      } else localBox(f, frameKey, a, b, 0, h, fd0, fd1, { chamfer: 0.03, uv: fu, ao: revealAO });
+    }
+    localBox(f, frameKey, -w / 2 - 0.32, w / 2 + 0.32, h, h + 0.26, fd0 - 0.02, fd1 + 0.02, { chamfer: 0.035, uv: fu, ao: revealAO });
     if (stoneFrame) localBox(f, 'arch_trim', -0.14, 0.14, h + 0.02, h + 0.3, fd0 - 0.04, fd1 + 0.04, { chamfer: 0.03 }); // keystone
     localBox(f, 'arch_trim', -w / 2 - 0.05, w / 2 + 0.05, 0, 0.06, fd0 - 0.12, fd1 + 0.12, { chamfer: 0.02 }); // threshold step
 
-    // door leaf (own mesh so it can swing)
+    // door leaf (own mesh so it can swing): five planks, battens, forged strap hinges with rivets
     const lg = new GeoBuilder();
-    lg.aoFn = () => 1;
     const lw = w - 0.03;
     const lh = h - 0.03;
     const th = 0.08;
-    lg.box('arch_door', { c: [lw / 2, lh / 2, 0], s: [lw, lh, th], uv: 'local', chamfer: 0.012 });
-    // iron straps + studs + ring pulls on both sides
-    for (const yy of [0.35, lh - 0.4]) {
-      for (const z of [th / 2 + 0.006, -th / 2 - 0.006]) lg.box('prop_iron', { c: [lw * 0.42, yy, z], s: [lw * 0.8, 0.07, 0.012] });
-      lg.box('prop_iron', { c: [0.02, yy, 0], s: [0.08, 0.1, th + 0.04], chamfer: 0.01 });
-    }
-    // nail studs along the straps and a barred judas grille at eye level
-    for (const yy of [0.35, lh - 0.4]) {
-      for (let k = 0; k < 6; k++) {
-        const x = 0.12 + k * ((lw * 0.78) / 5);
-        for (const z of [th / 2 + 0.012, -th / 2 - 0.012]) lg.box('prop_iron', { c: [x, yy, z], s: [0.035, 0.035, 0.012] });
+    // occlusion: darker toward the lintel and the jambs, as in a deep reveal
+    lg.aoFn = (p) => {
+      const top = 1 - 0.42 * THREE.MathUtils.smoothstep(p.y, lh - 0.55, lh);
+      const side = 0.78 + 0.22 * THREE.MathUtils.smoothstep(Math.min(p.x, lw - p.x), 0.0, 0.18);
+      return top * side * (0.8 + 0.2 * THREE.MathUtils.smoothstep(p.y, 0, 0.3));
+    };
+    const np = 5;
+    const pw = lw / np;
+    for (let k = 0; k < np; k++) {
+      const x0 = k * pw + 0.004;
+      const x1 = (k + 1) * pw - 0.004;
+      const tk = th - hash(e.key, k, 'pt') * 0.012;
+      const dz = (hash(e.key, k, 'pz') - 0.5) * 0.006;
+      // vertical segments concentrate vertex AO near the head of the door
+      for (const [y0, y1] of [[0, 0.32], [0.32, lh - 0.6], [lh - 0.6, lh - 0.18], [lh - 0.18, lh - hash(e.key, k, 'ph') * 0.02]]) {
+        lg.box('arch_door', { c: [(x0 + x1) / 2, (y0 + y1) / 2, dz], s: [x1 - x0, y1 - y0, tk], uv: 'local', chamfer: 0.006, uvRect: [x0 / lw, y0 / lh, x1 / lw, y1 / lh], skip: y0 > 0 ? ['ny'] : y1 < lh - 0.1 ? ['py'] : [] });
       }
     }
+    const rivet = new THREE.SphereGeometry(0.016, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2);
+    rivet.rotateX(Math.PI / 2);
+    const rivetBack = rivet.clone().rotateY(Math.PI);
+    const strapYs = [0.38, lh - 0.42];
+    for (const yy of strapYs) {
+      for (const sgnZ of [1, -1]) {
+        const z = sgnZ * (th / 2 + 0.008);
+        // strap tapering to a spearhead end
+        lg.box('prop_iron', { c: [lw * 0.38, yy, z], s: [lw * 0.74, 0.075, 0.014], chamfer: 0.004 });
+        const tipM = new THREE.Matrix4().makeTranslation(lw * 0.76, yy, z).multiply(new THREE.Matrix4().makeRotationZ(Math.PI / 4));
+        lg.box('prop_iron', { matrix: tipM, s: [0.075, 0.075, 0.014], chamfer: 0.004 });
+        // rivet heads along the strap
+        for (let k = 0; k < 6; k++) {
+          const x = 0.1 + k * ((lw * 0.62) / 5);
+          lg.geometry('prop_iron', sgnZ > 0 ? rivet : rivetBack, new THREE.Matrix4().makeTranslation(x, yy + (k % 2 ? 0.012 : -0.012), z + sgnZ * 0.007), { ao: 1 });
+        }
+      }
+      // hinge knuckle wrapping the leaf edge + pintle on the jamb
+      lg.box('prop_iron', { c: [0.012, yy, 0], s: [0.05, 0.12, th + 0.04], chamfer: 0.012 });
+    }
+    // clout nails in a grid on the face (both sides)
+    for (let r = 0; r < 4; r++) {
+      for (let k = 0; k < np; k++) {
+        const x = (k + 0.5) * pw;
+        const y = 0.75 + r * ((lh - 1.55) / 3);
+        for (const sgnZ of [1, -1]) lg.geometry('prop_iron', sgnZ > 0 ? rivet : rivetBack, new THREE.Matrix4().makeTranslation(x, y, sgnZ * (th / 2 + 0.002)), { ao: 0.9 });
+      }
+    }
+    rivet.dispose();
+    rivetBack.dispose();
     if (hash(e.key, 'grille') < 0.6) {
       const gy = 1.55;
       const gx = lw / 2;
       for (const z of [th / 2 + 0.01, -th / 2 - 0.01]) {
-        lg.box('prop_iron', { c: [gx, gy + 0.13, z], s: [0.3, 0.03, 0.02] });
-        lg.box('prop_iron', { c: [gx, gy - 0.13, z], s: [0.3, 0.03, 0.02] });
-        for (const bx of [-0.07, 0, 0.07]) lg.box('prop_iron', { c: [gx + bx, gy, z], s: [0.018, 0.26, 0.018] });
+        lg.box('prop_iron', { c: [gx, gy + 0.14, z], s: [0.34, 0.035, 0.022], chamfer: 0.006 });
+        lg.box('prop_iron', { c: [gx, gy - 0.14, z], s: [0.34, 0.035, 0.022], chamfer: 0.006 });
+        for (const bx of [-0.15, 0.15]) lg.box('prop_iron', { c: [gx + bx, gy, z], s: [0.035, 0.31, 0.022], chamfer: 0.006 });
+        for (const bx of [-0.07, 0, 0.07]) lg.box('prop_iron', { c: [gx + bx, gy, z], s: [0.02, 0.26, 0.02] });
       }
+      lg.box('arch_beam_dark', { c: [gx, gy, 0], s: [0.26, 0.24, th * 0.6], uv: 'local', ao: 0.25 }); // dark void behind
     }
-    const ringGeo = new THREE.TorusGeometry(0.075, 0.013, 4, 12);
+    const ringGeo = new THREE.TorusGeometry(0.075, 0.013, 6, 14);
     for (const z of [th / 2 + 0.025, -th / 2 - 0.025]) {
       lg.geometry('prop_iron', ringGeo, new THREE.Matrix4().makeTranslation(lw - 0.24, 1.0, z), { ao: 1 });
-      lg.box('prop_iron', { c: [lw - 0.24, 1.08, z * 0.8], s: [0.06, 0.06, 0.03], chamfer: 0.01 });
+      lg.box('prop_iron', { c: [lw - 0.24, 1.08, z * 0.8], s: [0.07, 0.07, 0.03], chamfer: 0.012 });
+      lg.box('prop_iron', { c: [lw - 0.24, 1.25, z * 0.8], s: [0.09, 0.16, 0.012], chamfer: 0.006 }); // escutcheon
     }
     ringGeo.dispose();
     const pivot = new THREE.Group();
@@ -814,34 +934,61 @@ export function buildBlock(map, opts = {}) {
     const depth = 0.6;
     localBox(f, 'arch_trim', -1.2, 1.2, 0, 0.09, d, d + depth + 0.35, { chamfer: 0.03 });
     // chimney breast with firebox opening
-    localBox(f, 'arch_stone', -1.05, -0.62, 0, 1.2, d, d + depth, { chamfer: 0.03 });
-    localBox(f, 'arch_stone', 0.62, 1.05, 0, 1.2, d, d + depth, { chamfer: 0.03 });
-    localBox(f, 'arch_stone', -0.95, 0.95, 1.2, H, d, d + depth - 0.08);
+    localBox(f, 'arch_trim', -1.05, -0.62, 0, 1.2, d, d + depth, { chamfer: 0.03, tint: [0.78, 0.74, 0.7] });
+    localBox(f, 'arch_trim', 0.62, 1.05, 0, 1.2, d, d + depth, { chamfer: 0.03, tint: [0.78, 0.74, 0.7] });
+    localBox(f, 'arch_trim', -0.95, 0.95, 1.2, H, d, d + depth - 0.08, { tint: [0.72, 0.68, 0.64] });
     localBox(f, 'arch_brick', -0.62, 0.62, 0.09, 1.2, d, d + 0.06, { tint: [0.35, 0.3, 0.28] });
     localBox(f, 'arch_brick', -0.62, 0.62, 1.05, 1.2, d, d + depth - 0.02, { tint: [0.3, 0.26, 0.24] });
     // mantel
     localBox(f, 'arch_beam_dark', -1.25, 1.25, 1.2, 1.42, d, d + depth + 0.14, { chamfer: 0.02, uv: 'along' });
-    // logs + andirons
-    for (const [a, r] of [[-0.12, 0.25], [0.12, -0.2]]) {
-      const m = localMatrix(f, a, 0.2, d + 0.32, 0);
-      m.multiply(new THREE.Matrix4().makeRotationY(r)).multiply(new THREE.Matrix4().makeRotationZ(0.1));
-      g.box('arch_beam_dark', { matrix: m, s: [0.85, 0.14, 0.14], uv: 'along', tint: [0.35, 0.28, 0.25] });
+    // logs (round, barked, charred ends) on andirons over a glowing ember bed
+    const logGeo = new THREE.CylinderGeometry(0.075, 0.085, 0.82, 9);
+    logGeo.rotateZ(Math.PI / 2);
+    for (const [a, yy, r, dz] of [[-0.1, 0.2, 0.22, 0.28], [0.12, 0.21, -0.18, 0.4], [0.0, 0.34, 0.05, 0.33]]) {
+      const m = localMatrix(f, a, yy, d + dz, 0);
+      m.multiply(new THREE.Matrix4().makeRotationY(r)).multiply(new THREE.Matrix4().makeRotationZ(yy > 0.3 ? 0.12 : 0.04));
+      g.geometry('arch_beam_dark', logGeo, m, { uv: 'world', tint: [0.42, 0.33, 0.28], ao: 0.85 });
     }
-    for (const a of [-0.35, 0.35]) localBox(f, 'arch_iron', a - 0.03, a + 0.03, 0.09, 0.32, d + 0.1, d + 0.55);
-    // soot above the opening
+    logGeo.dispose();
+    for (const a of [-0.35, 0.35]) {
+      localBox(f, 'arch_iron', a - 0.025, a + 0.025, 0.09, 0.3, d + 0.12, d + 0.56);
+      localBox(f, 'arch_iron', a - 0.03, a + 0.03, 0.09, 0.42, d + 0.53, d + 0.58, { chamfer: 0.01 });
+    }
+    {
+      const emat = new THREE.MeshStandardMaterial({ color: 0x050302, emissive: new THREE.Color(0xff6a24), emissiveMap: getEmberTexture(), emissiveIntensity: 2.6, roughness: 1 });
+      const egeo = new THREE.PlaneGeometry(1.0, 0.42);
+      egeo.rotateX(-Math.PI / 2);
+      const em = new THREE.Mesh(egeo, emat);
+      em.applyMatrix4(localMatrix(f, 0, 0.1, d + 0.3, 0));
+      em.userData.ownMaterial = true;
+      group.add(em);
+      // soot plume up the chimney breast above the firebox
+      const smat = new THREE.MeshStandardMaterial({ color: 0x050403, alphaMap: getSootTexture(), transparent: true, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2 });
+      const sgeo = new THREE.PlaneGeometry(1.5, 2.2);
+      const sm = new THREE.Mesh(sgeo, smat);
+      sm.applyMatrix4(localMatrix(f, 0, 1.42 + 1.1 - 0.15, d + depth - 0.08 + 0.004, 0));
+      sm.userData.ownMaterial = true;
+      sm.renderOrder = 3;
+      group.add(sm);
+      const sm2 = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 1.1), smat);
+      sm2.applyMatrix4(localMatrix(f, 0, 0.75, d + 0.064, 0));
+      sm2.renderOrder = 3;
+      group.add(sm2);
+    }
     const pos = new THREE.Vector3(0, 0.22, d + 0.32).applyMatrix4(f.basis);
     torches.push({ pos, base: pos.clone(), N: f.N.clone(), lit: true, kind: 'hearth', seed: 77 });
   }
 
   // ------------------------------------------------------------ sconces
   function placeSconces(face, nearOpening) {
-    const lit = indoor || night > 0.35;
+    const lit = indoor || night > 0.15;
     if (!face.interior && ts.outdoors) {
       if (!nearOpening) return;
       const r = hash(face.seed, 'sconce');
       if (r > 0.62) return;
-      const s = (r < 0.31 ? -1 : 1) * (face.e.type === EDGE.ARCH ? ARCH_W / 2 + 0.75 : DOOR_W / 2 + 0.5);
-      addSconce(face, s, 2.35, lit);
+      // on the viewer's left of the opening (the party roster covers the upper right of the view)
+      const s = -(face.e.type === EDGE.ARCH ? ARCH_W / 2 + 0.75 : DOOR_W / 2 + 0.5);
+      addSconce(face, s, 2.2, true);
       return;
     }
     if (indoor && nearOpening && face.e.type !== EDGE.SECRET) {
@@ -850,6 +997,11 @@ export function buildBlock(map, opts = {}) {
       return;
     }
     if (indoor && !nearOpening) {
+      if (face.e.type === EDGE.WALL || face.e.type === EDGE.SECRET) {
+        const k = `${face.cell.x},${face.cell.y}`;
+        if (!plainFaces.has(k)) plainFaces.set(k, []);
+        plainFaces.get(k).push(face);
+      }
       const r = hash(face.seed, 'isc');
       if (r < (ts.id === 'dungeon' ? 0.13 : 0.1)) addSconce(face, 0, ts.id === 'dungeon' ? 2.05 : 1.9, true, ts.id === 'interior' ? 'candle' : 'torch');
     }
@@ -885,7 +1037,26 @@ export function buildBlock(map, opts = {}) {
     g.box('arch_iron', { matrix: new THREE.Matrix4().compose(mid, q, new THREE.Vector3(1, 1, 1)), s: [0.03, len, 0.03] });
   }
 
+  const plainFaces = new Map();
   for (const e of allEdges) buildEdge(e);
+
+  // Dungeons: guarantee a lit sconce within reach of every walkable cell
+  // (content maps rarely place lights; the lantern alone leaves voids).
+  if (ts.id === 'dungeon') {
+    const reach = 1.55 * S;
+    for (let y = 0; y < Hh; y++) {
+      for (let x = 0; x < W; x++) {
+        if (solidCell(x, y)) continue;
+        const cx = x * S + S / 2;
+        const cz = y * S + S / 2;
+        if (torches.some((t) => t.lit && Math.abs(t.pos.x - cx) < reach && Math.abs(t.pos.z - cz) < reach)) continue;
+        const faces = plainFaces.get(`${x},${y}`);
+        if (!faces?.length) continue;
+        const f = faces[Math.floor(hash(map.id, x, y, 'autosc') * faces.length)];
+        addSconce(f, (hash(map.id, x, y, 'aso') - 0.5) * 0.8, 2.05, true, 'torch');
+      }
+    }
+  }
 
   // ------------------------------------------------------------ floors & ceilings
   const SUB = 4;
@@ -915,6 +1086,7 @@ export function buildBlock(map, opts = {}) {
       };
       const fy = cell === CELL.WATER ? -0.45 : 0;
       for (let j = 0; j < SUB; j++) {
+        if (cell === CELL.WATER && map.harbour) break; // the open sea plane runs under the quay
         for (let i = 0; i < SUB; i++) {
           const ax = x0 + (i / SUB) * S;
           const bx = x0 + ((i + 1) / SUB) * S;
@@ -976,10 +1148,13 @@ export function buildBlock(map, opts = {}) {
       const top = type === EDGE.ARCH ? ARCH_SPRING + ARCH_W / 2 + 0.55 : DOOR_H + 0.42;
       const f = { basis };
       localBox(f, 'arch_trim', -1.05, 1.05, top - 0.06, top + 0.52, T / 2 - 0.02, T / 2 + 0.07, { chamfer: 0.03 });
-      const mat = new THREE.MeshStandardMaterial({ map: getInscriptionTexture(m[1].toUpperCase()), roughness: 0.92 });
+      const ruinPlaque = ts.id === 'ruins';
+      const mat = new THREE.MeshStandardMaterial({ map: getInscriptionTexture(m[1].toUpperCase(), { weathered: ruinPlaque }), roughness: 0.92, alphaTest: 0.5 });
       const geo = new THREE.PlaneGeometry(1.9, 0.46);
       const plane = new THREE.Mesh(geo, mat);
-      plane.applyMatrix4(new THREE.Matrix4().multiplyMatrices(basis, new THREE.Matrix4().makeTranslation(0, top + 0.23, T / 2 + 0.075)));
+      // in a ruin the slab has slipped in its frame
+      const tilt = ruinPlaque ? new THREE.Matrix4().makeRotationZ(-0.05) : new THREE.Matrix4();
+      plane.applyMatrix4(new THREE.Matrix4().multiplyMatrices(basis, new THREE.Matrix4().makeTranslation(0, top + 0.23 - (ruinPlaque ? 0.03 : 0), T / 2 + 0.075).multiply(tilt)));
       plane.receiveShadow = true;
       plane.userData.ownMaterial = true;
       group.add(plane);
@@ -1014,13 +1189,13 @@ export function buildBlock(map, opts = {}) {
     const X1 = (x + w) * S;
     const Z0 = y * S;
     const Z1 = (y + h) * S;
-    const alongX = X1 - X0 >= Z1 - Z0;
+    const alongX = c.temple && c.frontAxis ? c.frontAxis === 'z' ? false : true : X1 - X0 >= Z1 - Z0;
     const timber = c.style === 1;
     const off = timber ? JETTY : 0;
     const He = c.H;
     const spanB = (alongX ? Z1 - Z0 : X1 - X0) / 2 + T / 2 + off;
     const spanA = (alongX ? X1 - X0 : Z1 - Z0) / 2 + T / 2;
-    const pitch = THREE.MathUtils.degToRad(c.temple ? 34 : 40 + hash(c.id, 'p') * 10);
+    const pitch = THREE.MathUtils.degToRad(c.temple ? 21 : 40 + hash(c.id, 'p') * 10);
     const oh = 0.5;
     const rise = spanB * Math.tan(pitch);
     const cx = (X0 + X1) / 2;
@@ -1091,7 +1266,7 @@ export function buildBlock(map, opts = {}) {
       const n = new THREE.Vector3().subVectors(q1, q0).cross(new THREE.Vector3().subVectors(q2, q0));
       const outward = A.clone().multiplyScalar(sa);
       const tri = n.dot(outward) > 0 ? [q0, q1, q2] : [q0, q2, q1];
-      g.tri(gKey, tri, null, { ao: 0.95, tint: timber ? c.tint : undefined });
+      g.tri(gKey, tri, null, { ao: 0.95, tint: timber ? c.tint : undefined, uvOff: [hash(c.id, sa, x, y, 'gu') * 9.1, hash(c.id, sa, 'gv') * 3.3] });
       // back side (attic) to avoid see-through from odd angles
       const back = tri.map((p) => p.clone().addScaledVector(outward, -0.15));
       g.tri(gKey, [back[0], back[2], back[1]], null, { ao: 0.4 });
@@ -1111,6 +1286,37 @@ export function buildBlock(map, opts = {}) {
         beamW(Pd(-spanB * 0.5, He + rise * 0.5), Pd(spanB * 0.5, He + rise * 0.5), 0.14);
         beamW(Pd(-spanB * 0.5, He + 0.2), Pd(0, He + rise * 0.5), 0.13);
         beamW(Pd(spanB * 0.5, He + 0.2), Pd(0, He + rise * 0.5), 0.13);
+      } else if (c.temple) {
+        // classical pediment: raking + horizontal cornices, acroteria and an oculus
+        const out = (k) => outward.clone().multiplyScalar(k);
+        const apex = P(aa, He + rise, 0);
+        for (const sb of [-1, 1]) {
+          const e0 = P(aa, He + 0.12, sb * (spanB + 0.25)).add(out(0.14));
+          const a1 = apex.clone().add(new THREE.Vector3(0, 0.12, 0)).add(out(0.14));
+          alongBox('arch_trim', e0, a1, outward, [0.42, 0.32], { chamfer: 0.04, ao: 0.95 });
+          const cb = P(aa, He + 0.2, sb * (spanB + 0.2)).add(out(0.2));
+          const mm = new THREE.Matrix4().compose(cb, new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), outward), new THREE.Vector3(1, 1, 1));
+          g.box('arch_trim', { matrix: mm, s: [0.5, 0.42, 0.5], chamfer: 0.05, ao: 0.9 }); // corner acroterion plinth
+        }
+        {
+          const mid = P(aa, He - 0.05, 0).add(out(0.16));
+          const mm = new THREE.Matrix4().compose(mid, new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), outward), new THREE.Vector3(1, 1, 1));
+          g.box('arch_trim', { matrix: mm, s: [2 * spanB + 0.6, 0.34, 0.42], chamfer: 0.04, ao: 0.9 });
+          g.box('arch_trim', { matrix: mm.clone().multiply(new THREE.Matrix4().makeTranslation(0, -0.27, -0.06)), s: [2 * spanB + 0.3, 0.2, 0.3], chamfer: 0.03, ao: 0.8 });
+          const ap = apex.clone().add(new THREE.Vector3(0, 0.38, 0)).add(out(0.14));
+          const am = new THREE.Matrix4().compose(ap, new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), outward), new THREE.Vector3(1, 1, 1));
+          g.box('arch_trim', { matrix: am, s: [0.46, 0.5, 0.4], chamfer: 0.06, ao: 0.95 });
+          // oculus
+          const oc = P(aa, He + rise * 0.4, 0).add(out(0.04));
+          const om = new THREE.Matrix4().compose(oc, new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), outward), new THREE.Vector3(1, 1, 1));
+          const ring = new THREE.TorusGeometry(0.36, 0.08, 6, 18);
+          g.geometry('arch_trim', ring, om, { uv: 'world', ao: 0.9 });
+          ring.dispose();
+          const disc = new THREE.CircleGeometry(0.33, 18);
+          g.geometry('arch_iron', disc, om.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0, -0.03)), { uv: 'world', ao: 0.35 });
+          disc.dispose();
+          for (let k = 0; k < 4; k++) g.box('arch_iron', { matrix: om.clone().multiply(new THREE.Matrix4().makeRotationZ((k * Math.PI) / 4)), s: [0.66, 0.025, 0.03], ao: 0.6 });
+        }
       } else {
         // small louvred vent in stone gables
         if (rise > 2.2) {
@@ -1177,7 +1383,41 @@ export function buildBlock(map, opts = {}) {
     mesh.renderOrder = 1;
     group.add(mesh);
   }
-  return { group, doors, torches, windows, chimneys, spots, tileset: ts, meshes, comps, compAt, covered };
+  // coarse occluder height field (for sun-shaft placement): walls, roofed buildings, and the
+  // surrounding city beyond the block edge
+  const HR = 4; // samples per metre
+  const hfW = W * S * HR;
+  const hfH = Hh * S * HR;
+  const hf = new Float32Array(hfW * hfH);
+  if (!indoor) {
+    for (const c of comps) {
+      if (c.ruined) continue;
+      for (const [cx, cy] of c.cells) {
+        for (let j = 0; j < S * HR; j++) for (let i = 0; i < S * HR; i++) hf[(cy * S * HR + j) * hfW + cx * S * HR + i] = c.H + 1.5;
+      }
+    }
+    for (const e of allEdges) {
+      const x0 = e.hv === 'H' ? e.i * S : e.i * S - T / 2;
+      const x1 = e.hv === 'H' ? (e.i + 1) * S : e.i * S + T / 2;
+      const z0 = e.hv === 'H' ? e.j * S - T / 2 : e.j * S;
+      const z1 = e.hv === 'H' ? e.j * S + T / 2 : (e.j + 1) * S;
+      const hgt = e.type === EDGE.ARCH || e.type === EDGE.DOOR ? e.H * 0.9 : e.H * (f0(e) ? 0.75 : 1);
+      for (let z = Math.max(0, Math.floor(z0 * HR)); z < Math.min(hfH, Math.ceil(z1 * HR)); z++) {
+        for (let x = Math.max(0, Math.floor(x0 * HR)); x < Math.min(hfW, Math.ceil(x1 * HR)); x++) hf[z * hfW + x] = Math.max(hf[z * hfW + x], hgt);
+      }
+    }
+  }
+  function f0(e) {
+    return ts.walls[e.style] === 'ruin';
+  }
+  /** Occluder height at world (x, z); beyond the block the city stands ~6 m tall. */
+  const heightAt = (x, z) => {
+    const ix = Math.floor(x * HR);
+    const iz = Math.floor(z * HR);
+    if (ix < 0 || iz < 0 || ix >= hfW || iz >= hfH) return map.harbour && z > Hh * S - 1 ? 0 : 6.5;
+    return hf[iz * hfW + ix];
+  };
+  return { group, doors, torches, windows, chimneys, spots, tileset: ts, meshes, comps, compAt, covered, heightAt };
 }
 
 export function disposeBlock(block) {

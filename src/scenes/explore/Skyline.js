@@ -25,6 +25,7 @@ export function buildSkyline(map, ts, opts = {}) {
   const cx = W / 2;
   const cz = H / 2;
   const ruins = ts.skyline === 'ruins';
+  const harbour = !!map.harbour; // the block itself is the waterfront: open water to the south
   const seedBase = map.id;
   const winLit = new GeoBuilder();
   const winDark = new GeoBuilder();
@@ -42,6 +43,7 @@ export function buildSkyline(map, ts, opts = {}) {
       if (insideMap(x, z, 3.2)) continue;
       // south: the harbour slope then the Moonsea
       if (z > H + 24) continue;
+      if (harbour && z > H - 6) continue;
       const dist = Math.max(-x, x - W, -z, z - H, 0);
       const r = hash(seedBase, gx, gz, 'lot');
       if (r < 0.12) continue;
@@ -65,7 +67,7 @@ export function buildSkyline(map, ts, opts = {}) {
     const q = (a, b, c, d) => g.quad('arch_cobble', new THREE.Vector3(a, y, d), new THREE.Vector3(c, y, d), new THREE.Vector3(c, y, b), new THREE.Vector3(a, y, b), null, { ao: 0.85 });
     q(X0, Z0, X1, 0); // north
     // south: slopes down to the harbour
-    g.quad('arch_cobble', new THREE.Vector3(X0, -2.5, Z1), new THREE.Vector3(X1, -2.5, Z1), new THREE.Vector3(X1, y, H), new THREE.Vector3(X0, y, H), null, { ao: 0.85 });
+    if (!harbour) g.quad('arch_cobble', new THREE.Vector3(X0, -2.5, Z1), new THREE.Vector3(X1, -2.5, Z1), new THREE.Vector3(X1, y, H), new THREE.Vector3(X0, y, H), null, { ao: 0.85 });
     q(X0, 0, 0, H); // west
     q(W, 0, X1, H); // east
   }
@@ -115,7 +117,7 @@ export function buildSkyline(map, ts, opts = {}) {
     const rr = Math.max(W, H) * 0.5 + 18 + hash(seedBase, k, 'tr') * 36;
     const x = cx + Math.cos(a) * rr;
     const z = cz + Math.sin(a) * rr;
-    if (z > H + 20) continue;
+    if (z > H + 20 || (harbour && z > H - 12)) continue;
     tower(g, x, z, 2.4 + hash(k, 'rad') * 1.5, 15 + hash(k, 'hh') * 14, hash(k, 'broken') < (ruins ? 0.85 : 0.45), `t${k}`, night, winLit);
   }
   // Valjevo Castle on its hill, north-east
@@ -172,15 +174,44 @@ export function buildSkyline(map, ts, opts = {}) {
   const uv = wgeo.attributes.uv;
   for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 160, uv.getY(i) * 90);
   const wmesh = new THREE.Mesh(wgeo, water);
-  wmesh.position.set(cx, -2.6, H + 26 + 450);
+  wmesh.position.set(cx, harbour ? -0.42 : -2.6, harbour ? H + 442 : H + 26 + 450);
   wmesh.receiveShadow = false;
   wmesh.renderOrder = 6;
   group.add(wmesh);
   own.push(wgeo, water);
   // quay wall along the harbour
-  g.box('arch_stone_cold', { c: [cx, -2.2, H + 26], s: [800, 1.4, 1.6], ao: 0.8 });
+  if (!harbour) g.box('arch_stone_cold', { c: [cx, -2.2, H + 26], s: [800, 1.4, 1.6], ao: 0.8 });
+  if (harbour) {
+    // moored and anchored cogs: hull, castles, mast, yard, furled sail, stays
+    for (let k = 0; k < 7; k++) {
+      const x = cx + (hash(seedBase, k, 'hx') - 0.5) * 120;
+      const z = H + 14 + k * 9 + hash(seedBase, k, 'hz') * 10;
+      const len = 9 + hash(k, 'hl') * 5;
+      const rot = (hash(k, 'hr') - 0.5) * 0.8;
+      const M = (dx, dy, dz) => new THREE.Matrix4().makeTranslation(x, 0, z).multiply(new THREE.Matrix4().makeRotationY(rot)).multiply(new THREE.Matrix4().makeTranslation(dx, dy, dz));
+      g.box('arch_beam_dark', { matrix: M(0, 0.1, 0), s: [len * 0.8, 2.2, 3.2], chamfer: 0.7, ao: 0.7 });
+      g.box('arch_beam_dark', { matrix: M(len * 0.42, 0.5, 0).multiply(new THREE.Matrix4().makeRotationZ(0.35)), s: [len * 0.3, 1.6, 2.6], chamfer: 0.6, ao: 0.7 });
+      g.box('arch_beam_dark', { matrix: M(-len * 0.42, 0.45, 0).multiply(new THREE.Matrix4().makeRotationZ(-0.3)), s: [len * 0.25, 1.6, 2.8], chamfer: 0.5, ao: 0.7 });
+      g.box('arch_beam_dark', { matrix: M(len * 0.38, 1.2, 0), s: [len * 0.22, 1.2, 2.6], chamfer: 0.15, ao: 0.75 });
+      g.box('arch_beam_dark', { matrix: M(-len * 0.4, 1.0, 0), s: [len * 0.18, 0.9, 2.4], chamfer: 0.15, ao: 0.75 });
+      g.box('arch_beam_dark', { matrix: M(0, 6.5, 0), s: [0.28, 12, 0.28], ao: 0.7 });
+      g.box('arch_beam_dark', { matrix: M(0, 10.5, 0), s: [0.16, 0.16, 6.5], ao: 0.7 });
+      g.box('arch_plaster', { matrix: M(0, 10.2, 0), s: [0.4, 0.5, 6.2], chamfer: 0.15, ao: 0.85 });
+      g.box('arch_beam_dark', { matrix: M(len * 0.25, 6.2, 0).multiply(new THREE.Matrix4().makeRotationZ(-0.62)), s: [0.05, 13, 0.05], ao: 0.7 });
+      g.box('arch_beam_dark', { matrix: M(-len * 0.25, 6.2, 0).multiply(new THREE.Matrix4().makeRotationZ(0.62)), s: [0.05, 13, 0.05], ao: 0.7 });
+    }
+    // breakwater running out into the bay with a beacon tower at its head
+    g.box('arch_stone_cold', { c: [cx - 70, -0.2, H + 70], s: [6, 1.6, 120], rotY: 0.5, ao: 0.75 });
+    tower(g, cx - 40, H + 122, 3.2, 16, false, 'beacon', night, winLit, -0.6);
+    // the far shore: a low blue line of hills across the water
+    for (let k = 0; k < 24; k++) {
+      const x0 = cx - 600 + k * 50;
+      const hh = 4 + noise1(k * 0.7 + 3.3) * 10;
+      g.quad('arch_mud', new THREE.Vector3(x0, -0.5, H + 520), new THREE.Vector3(x0 + 52, -0.5, H + 520), new THREE.Vector3(x0 + 52, hh * 0.8, H + 520), new THREE.Vector3(x0, hh, H + 520), null, { ao: 0.5 });
+    }
+  }
   // a few moored cogs' masts as silhouettes
-  for (let k = 0; k < 6; k++) {
+  for (let k = 0; k < (harbour ? 0 : 6); k++) {
     const x = cx + (hash(seedBase, k, 'ship') - 0.5) * 140;
     const z = H + 34 + hash(seedBase, k, 'sz') * 30;
     g.box('arch_beam_dark', { c: [x, -1.6, z], s: [7, 1.6, 2.4], chamfer: 0.4, ao: 0.6 });

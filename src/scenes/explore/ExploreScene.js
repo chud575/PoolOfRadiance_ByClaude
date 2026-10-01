@@ -4,13 +4,14 @@ import { getMap, hasMap } from '../../data/maps/index.js';
 import { DIRS, DIR_YAW, DIR_VEC, EDGE, EDGE_NAMES, turnLeft, turnRight, OPPOSITE } from '../../data/maps/MapGrid.js';
 import { createSkyDome, createFlameBatch, createGlowBatch, timeOfDayKeys, setSurfaceAtmosphere, FLAME_UNIFORMS, flicker } from '../../render/lighting.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { preloadMaterials, setWindowGlow, getLampGlassMaterial, getWindowMaterial } from '../../render/materials.js';
+import { preloadMaterials, setWindowGlow, getLampGlassMaterial, getWindowMaterial, getMaterial } from '../../render/materials.js';
 import { preloadTextureSets } from '../../render/textures/index.js';
 import { createStandardHud } from '../../ui/StandardHud.js';
 import { buildBlock, disposeBlock, cellCenter, EYE_H, CELL_SIZE } from './BlockBuilder.js';
 import { buildProps, buildLightShafts, PROP_UNIFORMS } from './Props.js';
 import { buildSkyline } from './Skyline.js';
 import { createParticles } from './Particles.js';
+import { buildSunShafts } from './Atmosphere.js';
 import { tilesetFor, tilesetMaterials } from './tilesets.js';
 import { hasDemoMap, getDemoMap } from './demoMaps.js';
 import { deriveStats } from '../../rules/character.js';
@@ -111,11 +112,17 @@ export default class ExploreScene extends Scene {
       this.sky = createSkyDome({ hour: this.hour, cloud: 0.55 });
       this.sky.renderOrder = 20; // last opaque: early-z rejects everything already covered
       s.add(this.sky);
-      this.hemi = new THREE.HemisphereLight(k.night > 0.5 ? k.sky : new THREE.Color(k.sky).lerp(new THREE.Color(0xfff4e8), 0.5).getHex(), new THREE.Color(k.ground).multiplyScalar(k.night > 0.5 ? 1 : 2.6), k.hemi * (k.night > 0.5 ? 1.6 : 3.3));
-      s.add(this.hemi);
       const night = k.night > 0.5;
-      this.sun = new THREE.DirectionalLight(night ? 0x9db4ff : k.sun, night ? 0.8 : k.sunI * 1.05);
+      // grade: warm key, cool sky fill — a clear sun-to-ambient ratio by day
+      const skyFill = night ? new THREE.Color(k.sky) : new THREE.Color(k.sky).lerp(new THREE.Color(0xd6dce6), 0.5);
+      // sunlit paving bounces warm light up into the shade
+      const bounce = night ? new THREE.Color(k.ground).multiplyScalar(1.2) : new THREE.Color(k.ground).lerp(new THREE.Color(0x9a8064), 0.75).lerp(new THREE.Color(k.sun), 0.15);
+      this.hemi = new THREE.HemisphereLight(skyFill, bounce, k.hemi * (night ? 2.3 : 2.0));
+      s.add(this.hemi);
+      const sunCol = night ? new THREE.Color(0x9db4ff) : new THREE.Color(k.sun).lerp(new THREE.Color(0xffd6a0), 0.3);
+      this.sun = new THREE.DirectionalLight(sunCol, night ? 1.15 : k.sunI * 1.85);
       this.sunDir = (night ? k.moonDir : k.trueSunDir).clone();
+      if (!night) this.sunDir.y *= 0.75; // lower arc → longer, more legible shadows
       if (this.sunDir.y < 0.2) this.sunDir.y = 0.2;
       this.sunDir.normalize();
       this.sun.castShadow = true;
@@ -131,11 +138,11 @@ export default class ExploreScene extends Scene {
       this.sun.shadow.normalBias = 0.035;
       this.sun.shadow.radius = 2.5;
       s.add(this.sun, this.sun.target);
-      // sky/ground bounce from the side away from the sun (no shadows)
-      this.fill = new THREE.DirectionalLight(night ? 0x5a6a9a : new THREE.Color(k.sun).lerp(new THREE.Color(0xb09a80), 0.55).getHex(), night ? 0.25 : k.sunI * 0.32);
+      // cool sky bounce from the side away from the sun (no shadows)
+      this.fill = new THREE.DirectionalLight(night ? 0x5a6a9a : 0x9cb2d8, night ? 0.3 : k.sunI * 0.14);
       this.fill.position.set(-this.sunDir.x * 50, 30, -this.sunDir.z * 50);
       s.add(this.fill);
-      s.fog = new THREE.FogExp2(k.fog, k.fogDensity * 0.72);
+      s.fog = new THREE.FogExp2(k.fog, k.fogDensity * (this.map.harbour ? 0.38 : 0.72));
       setSurfaceAtmosphere({
         sunDir: k.trueSunDir.y > -0.05 ? k.trueSunDir : k.moonDir,
         sunColor: k.sunCol,
@@ -148,7 +155,8 @@ export default class ExploreScene extends Scene {
       });
     } else {
       const dungeon = ts.id === 'dungeon';
-      this.hemi = new THREE.HemisphereLight(dungeon ? 0x46506a : 0xffd8b0, dungeon ? 0x100c08 : 0x3a2414, dungeon ? 0.55 : 1.5);
+      // raised ambient floor so silhouettes always read, even far from a torch
+      this.hemi = new THREE.HemisphereLight(dungeon ? 0x5a6684 : 0xffd8b0, dungeon ? 0x1c150e : 0x3a2414, dungeon ? 1.05 : 1.5);
       s.add(this.hemi);
       if (!dungeon) {
         // daylight falling through the windows (shadowed so it only enters through openings)
@@ -175,17 +183,17 @@ export default class ExploreScene extends Scene {
     // pooled torch lights (constant count → no shader recompiles)
     this.poolLights = [];
     // by day in the open the sconces are unlit: skip point lights entirely (cheaper shading)
-    const needLights = !ts.outdoors || this.night > 0.3;
+    const needLights = !ts.outdoors || this.night > 0.12;
     for (let i = 0; i < (needLights ? POOL_LIGHTS : 0); i++) {
       const l = new THREE.PointLight(0xff9a48, 0, 11, 1.7);
       l.userData = { src: null, fade: 1 };
       s.add(l);
       this.poolLights.push(l);
     }
-    // party lantern
-    const lanternI = ts.outdoors ? this.night * 6 : ts.id === 'dungeon' ? 5 : 2.5;
-    this.lantern = new THREE.PointLight(0xffb070, lanternI, 12, 1.6);
-    this.lantern.position.set(0.7, 0.15, 0.2);
+    // party lantern: carried a little ahead and to the right, warm, ~5 m reach
+    const lanternI = ts.outdoors ? this.night * 7 : ts.id === 'dungeon' ? 15 : 3;
+    this.lantern = new THREE.PointLight(0xffb468, lanternI, ts.outdoors ? 12 : 15, ts.outdoors ? 1.6 : 1.45);
+    this.lantern.position.set(0.45, -0.25, -0.15);
     this.lantern.userData.base = lanternI;
     if (needLights) this.camera.add(this.lantern);
     setWindowGlow(this.skyNight, 1);
@@ -218,7 +226,8 @@ export default class ExploreScene extends Scene {
     // Only glossy surfaces sample the environment (a scene-wide PMREM lookup on
     // every rough stone pixel is expensive and adds little over the hemi fill).
     this.envTex = rt.texture;
-    this.envMats = [getWindowMaterial('ext'), getWindowMaterial('int'), getLampGlassMaterial()];
+    // glass, water and forged iron need reflections to read as such
+    this.envMats = [getWindowMaterial('ext'), getWindowMaterial('int'), getLampGlassMaterial(), getMaterial('prop_iron'), getMaterial('arch_iron')];
     if (this.skyline?.water) this.envMats.push(this.skyline.water);
     this.scene3d.traverse((o) => {
       if (o.isMesh && o.material?.roughness !== undefined && o.material.roughness < 0.2 && !this.envMats.includes(o.material)) this.envMats.push(o.material);
@@ -346,6 +355,9 @@ export default class ExploreScene extends Scene {
       }
       if (src.kind !== 'lamp') flames.push({ pos: src.pos.clone().add(new THREE.Vector3(0, candle ? 0 : -0.1, 0)), scale: candle ? 0.07 : 0.24 });
       glows.push({ pos: src.pos, size: candle ? 0.3 : src.kind === 'lamp' ? 0.9 : this.tileset.outdoors ? 0.75 : 0.55, color: candle ? 0xffb868 : src.kind === 'lamp' ? 0xffc070 : 0xff9a48, seed: src.seed, opacity: indoorGlow });
+      // night air: a wide, faint halo of light scattered in the damp around each lamp
+      if (this.tileset.outdoors && this.night > 0.3 && !candle) glows.push({ pos: src.pos, size: src.kind === 'lamp' ? 3.4 : 2.6, color: 0xff9a50, seed: src.seed + 3, opacity: 0.16 * this.night });
+      else if (!this.tileset.outdoors && !candle) glows.push({ pos: src.pos, size: 1.9, color: 0xff8a40, seed: src.seed + 3, opacity: 0.09 });
     }
     if (flames.length) this.sourceVis.add(createFlameBatch(flames));
     if (glows.length) {
@@ -367,8 +379,19 @@ export default class ExploreScene extends Scene {
       this.shafts.userData.dispose();
       this.shafts = null;
     }
+    if (this.sunShafts) {
+      this.sunShafts.removeFromParent();
+      this.sunShafts.userData.dispose();
+      this.sunShafts = null;
+    }
+    if (this.tileset.outdoors && this.keys.night < 0.5) {
+      // crepuscular rays through the gaps between buildings (strongest at low sun)
+      const low = this.keys.scatter > 0.8 || this.sunDir.y < 0.4;
+      this.sunShafts = buildSunShafts(this.map, this.block, { sunDir: this.sunDir, color: new THREE.Color(this.keys.sunCol).lerp(new THREE.Color(0xfff0d8), 0.3), strength: low ? 0.2 : 0.075, time: PROP_UNIFORMS.uTime });
+      if (this.sunShafts) this.scene3d.add(this.sunShafts);
+    }
     if (this.tileset.outdoors || !this.sun || !this.sun.intensity) return;
-    this.shafts = buildLightShafts(this.block.windows.filter((w) => !w.upper), this.sunDir, { strength: 0.05, length: 3.8 });
+    this.shafts = buildLightShafts(this.block.windows.filter((w) => !w.upper), this.sunDir, { strength: 0.032, length: 3.6 });
     if (this.shafts) this.scene3d.add(this.shafts);
   }
 
@@ -458,7 +481,8 @@ export default class ExploreScene extends Scene {
     const c = cellCenter(x, y);
     // stand slightly behind cell centre so the facing wall frames nicely
     this.camera.position.set(c.x + Math.sin(yaw) * 0.55, EYE_H + bob, c.z + Math.cos(yaw) * 0.55);
-    this.camera.rotation.set(0, yaw, roll, 'YXZ');
+    // a slight upward tilt frames facades against the sky (and vaults overhead)
+    this.camera.rotation.set(this.tileset.outdoors ? 0.065 : 0.03, yaw, roll, 'YXZ');
     this.hud?.compass.set(yaw);
   }
 
@@ -772,6 +796,7 @@ export default class ExploreScene extends Scene {
     this._disposeBlock();
     for (const p of this.particles ?? []) p.userData.dispose();
     this.shafts?.userData.dispose();
+    this.sunShafts?.userData.dispose();
     this.skyline?.dispose();
     if (this.sky) {
       this.sky.geometry.dispose();

@@ -111,7 +111,7 @@ export function tilesetFor(map, override) {
 /** Every material key a tileset may need. */
 export function tilesetMaterials(ts) {
   const keys = new Set(['arch_door', 'arch_iron', 'arch_beam', 'arch_beam_dark', 'arch_trim', 'arch_stone', 'arch_brick',
-    'prop_staves', 'prop_crate', 'prop_iron', 'prop_burlap', 'prop_rubble', 'prop_wood', 'prop_stone', 'prop_limestone']);
+    'prop_staves', 'prop_crate', 'prop_iron', 'prop_burlap', 'prop_rubble', 'prop_rock', 'prop_wood', 'prop_stone', 'prop_limestone']);
   for (const w of ts.walls) for (const k of RECIPE_MATERIALS[w] ?? []) keys.add(k);
   for (const k of RECIPE_MATERIALS[ts.interiorFace] ?? []) keys.add(k);
   for (const k of Object.values(ts.floors)) keys.add(k);

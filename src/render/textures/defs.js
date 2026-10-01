@@ -31,7 +31,7 @@ export const TEXTURE_DEFS = {
   hd_roof_clay: { size: 512, gen: () => HD.roofTiles({ seed: 52, kind: 'clay', courses: 12, perCourse: 10 }), normalStrength: 7 },
   hd_roof_shake: { size: 512, gen: () => HD.roofTiles({ seed: 53, kind: 'shake', courses: 12, perCourse: 11, moss: 0.8 }), normalStrength: 6 },
   hd_cobble: { size: 512, gen: () => HD.cobbleSetts({ seed: 61 }), normalStrength: 6, cavity: 0.25 },
-  hd_flags: { size: 512, gen: () => HD.pavers({ seed: 71 }), normalStrength: 4, cavity: 0.2 },
+  hd_flags: { size: 512, gen: () => HD.flagstones({ seed: 71 }), normalStrength: 5, cavity: 0.22 },
   hd_crazy: { size: 512, gen: () => HD.crazyFlags({ seed: 72, scale: 8 }), normalStrength: 4, cavity: 0.2 },
   hd_dungeon: { size: 512, gen: () => HD.dungeonStone({ seed: 81 }), normalStrength: 3, cavity: 0.12 },
   hd_dungeon_floor: { size: 512, gen: () => HD.dungeonFloor({ seed: 91 }), normalStrength: 4, cavity: 0.2 },
@@ -46,6 +46,8 @@ export const TEXTURE_DEFS = {
   hd_rubble: { size: 256, gen: () => HD.rubbleStones({ seed: 171 }), normalStrength: 5 },
   hd_mud: { size: 512, gen: () => HD.mudGround({ seed: 181 }), normalStrength: 5 },
   hd_limestone: { size: 256, gen: () => HD.limestone({ seed: 211 }), normalStrength: 2.5 },
+  hd_door: { size: 512, gen: () => HD.doorPlanks({ seed: 221 }), normalStrength: 3, cavity: 0.25 },
+  hd_rock: { size: 256, gen: () => HD.rockFace({ seed: 231 }), normalStrength: 4, cavity: 0.2 },
   hd_water: { size: 256, gen: () => HD.waterWaves({ seed: 201 }), normalStrength: 3 },
 };
 

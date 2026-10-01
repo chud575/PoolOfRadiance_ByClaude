@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { CELL, EDGE } from '../../data/maps/MapGrid.js';
 import { getMaterial, getLampGlassMaterial, SURFACE_UNIFORMS } from '../../render/materials.js';
-import { getBannerTexture, getGrassTexture, getIvyTexture, getCobwebTexture, getPuddleTexture, getSoftTexture, getRugTexture } from '../../render/textures/index.js';
+import { getBannerTexture, getGrassTexture, getIvyClusterTexture, getCobwebTexture, getPuddleTexture, getSoftTexture, getRugTexture, getTapestryTexture, getNoticeTexture, getBlobTexture } from '../../render/textures/index.js';
 import { GeoBuilder, hash } from './GeoBuilder.js';
 import { CELL_SIZE, WALL_T } from './BlockBuilder.js';
 
@@ -35,6 +35,10 @@ export function buildProps(map, block, opts = {}) {
   const pools = [];
   const banners = [[], [], [], []];
   const rugs = [];
+  const aoBlobs = []; // soft contact shadows under props
+  const tapestries = [[], []];
+  const notices = [];
+  const blob = (x, z, r, a = 0.55) => aoBlobs.push({ x, z, r, a });
 
   const place = (face, s, d, rot = 0) => {
     const m = new THREE.Matrix4().multiplyMatrices(face.basis, new THREE.Matrix4().makeTranslation(s, 0, d));
@@ -43,32 +47,49 @@ export function buildProps(map, block, opts = {}) {
   };
   const addBarrel = (m, scale = 1) => {
     const mm = m.clone().multiply(new THREE.Matrix4().makeScale(scale, scale, scale));
+    const bc = new THREE.Vector3().applyMatrix4(m);
+    if (bc.y < 0.1) blob(bc.x, bc.z, 0.48 * scale, 0.5);
     g.geometry('prop_staves', geos.barrel[0], mm, { uvScale: [1, 1] });
     g.geometry('prop_iron', geos.barrel[1], mm, { uv: 'world' });
     g.geometry('prop_wood', geos.barrel[2], mm, { uvScale: [0.6, 0.6] });
   };
   const addCrate = (m, size) => {
+    const cc = new THREE.Vector3().applyMatrix4(m);
+    if (cc.y < 0.1) blob(cc.x, cc.z, size * 0.85, 0.45);
     g.geometry('prop_crate', geos.crate, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, size / 2, 0)).multiply(new THREE.Matrix4().makeScale(size, size, size)));
   };
   const addSack = (m, scale) => g.geometry('prop_burlap', geos.sack, m.clone().multiply(new THREE.Matrix4().makeScale(scale, scale * (0.85 + (scale % 0.1)), scale)), { uvScale: [2, 2] });
   const addRubble = (m, seed, n, spread, big = 1) => {
+    // a heap: larger fractured blocks first, then smaller stones and chips around them
     for (let i = 0; i < n; i++) {
       const a = hash(seed, i, 'ra') * Math.PI * 2;
       const r = Math.sqrt(hash(seed, i, 'rr')) * spread;
-      const sc = (0.25 + hash(seed, i, 'rs') * 0.6) * big * (1 - (r / spread) * 0.5);
-      const mm = m.clone().multiply(new THREE.Matrix4().makeTranslation(Math.cos(a) * r, sc * 0.18, Math.sin(a) * r * 0.6));
-      mm.multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(hash(seed, i, 'x') * 3, hash(seed, i, 'y') * 6, hash(seed, i, 'z') * 3)));
+      const sc = (0.2 + hash(seed, i, 'rs') * 0.55) * big * (1 - (r / spread) * 0.6) * (i < 2 ? 1.5 : 1);
+      const chunk = hash(seed, i, 'ck') < 0.3;
+      const geo = chunk ? geos.chunk[i % geos.chunk.length] : geos.rock[i % geos.rock.length];
+      const mm = m.clone().multiply(new THREE.Matrix4().makeTranslation(Math.cos(a) * r, sc * 0.17, Math.sin(a) * r * 0.6));
+      mm.multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler((hash(seed, i, 'x') - 0.5) * 0.5, hash(seed, i, 'y') * 6.3, (hash(seed, i, 'z') - 0.5) * 0.5)));
       mm.multiply(new THREE.Matrix4().makeScale(sc, sc * 0.7, sc));
-      g.geometry(i % 3 === 0 ? 'prop_stone' : 'prop_rubble', geos.rock[i % geos.rock.length], mm, { uv: 'world' });
+      const t = 0.72 + hash(seed, i, 'tn') * 0.4;
+      const warm = hash(seed, i, 'tw') - 0.5;
+      g.geometry(chunk ? 'arch_trim' : 'prop_rock', geo, mm, { uv: 'world', tint: [t * (1 + warm * 0.08), t, t * (1 - warm * 0.1)], ao: (p) => 0.55 + 0.45 * THREE.MathUtils.smoothstep(p.y, 0.0, 0.35) });
     }
+    const c = new THREE.Vector3().applyMatrix4(m);
+    blob(c.x, c.z, spread * 1.4 + 0.3, 0.5);
   };
   const addBlock = (m, seed) => {
     const mm = m.clone().multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(0, hash(seed, 'by') * 1.2 - 0.6, hash(seed, 'bz') * 0.3)));
     g.box('prop_stone', { matrix: mm.multiply(new THREE.Matrix4().makeTranslation(0, 0.2, 0)), s: [0.7 + hash(seed, 'bl') * 0.4, 0.4, 0.45], chamfer: 0.05 });
   };
+  /** A clump of weeds: a few cards of varied size, tallest in the middle. */
   const addGrass = (face, s, d, scale, seed) => {
-    const p = new THREE.Vector3(s, 0, d).applyMatrix4(face.basis);
-    grassCards.push({ p, scale, rot: hash(seed, 'gr') * Math.PI });
+    const n = 2 + Math.floor(hash(seed, 'gn') * 4);
+    for (let k = 0; k < n; k++) {
+      const off = (hash(seed, k, 'go') - 0.5) * scale * 2.2;
+      const dd = d + hash(seed, k, 'gd2') * scale * 0.8;
+      const p = new THREE.Vector3(s + off, 0, dd).applyMatrix4(face.basis);
+      grassCards.push({ p, scale: scale * (k === 0 ? 1.1 : 0.55 + hash(seed, k, 'gsz') * 0.45), rot: hash(seed, k, 'gr') * Math.PI });
+    }
   };
 
   // ------------------------------------------------------------ wall-base clutter
@@ -100,16 +121,31 @@ export function buildProps(map, block, opts = {}) {
       } else if (r < 0.58) {
         addCrate(place(f, sPos, T / 2 + 0.35, (seed - 0.5) * 0.4), 0.6);
         addSack(place(f, sPos + 0.55, T / 2 + 0.3, seed * 5), 0.9);
+      } else if (r < 0.68 && f.recipe !== 'int_panel') {
+        tapestries[Math.floor(hash(seed, 'tv') * 2)].push({ face: f, s: sPos * 0.5, w: 1.15, h: 1.7, y: 1.25 });
+      } else if (r < 0.76) {
+        weaponRack(g, place(f, sPos * 0.5, T / 2 + 0.02), seed);
+      } else if (r < 0.83) {
+        notices.push({ face: f, s: sPos * 0.5 });
+        g.box('prop_wood', { matrix: place(f, sPos * 0.5, T / 2 + 0.03).multiply(new THREE.Matrix4().makeTranslation(0, 1.55, 0)), s: [1.08, 0.82, 0.05], chamfer: 0.012, uv: 'along' });
       }
       continue;
     }
     if (dungeon) {
+      // a floor drain under some walls
+      if (hash(seed, 'drain') < 0.12) {
+        const dm = place(f, sPos * 0.6, T / 2 + 0.22);
+        for (let k = 0; k < 5; k++) g.box('prop_iron', { matrix: dm.clone().multiply(new THREE.Matrix4().makeTranslation(-0.16 + k * 0.08, 0.012, 0)), s: [0.025, 0.02, 0.3] });
+        g.box('prop_iron', { matrix: dm.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.008, 0)), s: [0.4, 0.012, 0.34] });
+        const dc = new THREE.Vector3().applyMatrix4(dm);
+        blob(dc.x, dc.z, 0.5, 0.7);
+      }
       if (r < 0.14) addRubble(place(f, sPos, T / 2 + 0.4), seed, 9, 0.6);
       else if (r < 0.22) {
         addBarrel(place(f, sPos, T / 2 + 0.35, seed * 5), 0.95);
         addCrate(place(f, sPos + 0.7, T / 2 + 0.38, 0.3), 0.62);
-      } else if (r < 0.3) bones(g, place(f, sPos, T / 2 + 0.35, seed * 6), seed, geos);
-      else if (r < 0.36) {
+      } else if (r < 0.32) bones(g, place(f, sPos, T / 2 + 0.35, seed * 6), seed, geos);
+      else if (r < 0.42) {
         // hanging chains with shackles
         for (const o of [-0.3, 0.3]) {
           const m = place(f, sPos + o, T / 2 + 0.06);
@@ -117,13 +153,13 @@ export function buildProps(map, block, opts = {}) {
         }
       }
       // cobwebs in inside corners near the ceiling
-      for (const end of [-1, 1]) if (f.ends[end] === 'inside' && hash(seed, end, 'web') < 0.35) webCards.push({ face: f, end });
+      for (const end of [-1, 1]) if (f.ends[end] === 'inside' && hash(seed, end, 'web') < 0.5) webCards.push({ face: f, end });
       continue;
     }
     // ---- outdoors
     const ruinish = spot.recipe === 'ruin' || ts.id === 'ruins';
     if (ruinish || rubble) {
-      if (r < 0.55) addRubble(place(f, sPos, T / 2 + 0.45), seed, 8 + Math.floor(hash(seed, 'n') * 8), 0.8, 1.1);
+      if (r < (f.jag ? 0.9 : 0.55)) addRubble(place(f, sPos, T / 2 + 0.45), seed, 9 + Math.floor(hash(seed, 'n') * 9), 0.85, 1.15);
       if (r > 0.3 && r < 0.5) addBlock(place(f, -sPos * 0.8, T / 2 + 0.5), seed);
       if (r > 0.75 && r < 0.85) {
         // fallen beam leaning on the wall
@@ -158,31 +194,40 @@ export function buildProps(map, block, opts = {}) {
       }
     }
     // weeds at the foot of outdoor walls
-    const nG = ruinish || rubble ? 4 : 2;
+    const nG = ruinish || rubble ? 3 : 2;
     for (let k = 0; k < nG; k++) {
-      if (hash(seed, k, 'g') > (ruinish || rubble ? 0.7 : 0.4)) continue;
-      addGrass(f, (hash(seed, k, 'gs') - 0.5) * 2.6, T / 2 + 0.04 + hash(seed, k, 'gd') * 0.1, 0.16 + hash(seed, k, 'gz') * 0.2, seed + k);
+      if (hash(seed, k, 'g') > (ruinish || rubble ? 0.65 : 0.35)) continue;
+      // weeds take hold in the corners and along the wall foot, not out on the paving
+      const corner = [-1, 1].find((end) => f.ends[end] === 'inside' && hash(seed, k, end, 'gc') < 0.7);
+      const sx = corner ? corner * (S / 2 - T / 2 - 0.15 - hash(seed, k, 'gco') * 0.3) : (hash(seed, k, 'gs') - 0.5) * 2.4;
+      addGrass(f, sx, T / 2 + 0.03 + hash(seed, k, 'gd') * 0.06, 0.13 + hash(seed, k, 'gz') * 0.16, seed + k);
     }
   }
-  // ivy on ruined faces
+  // ivy on ruined faces: clustered leaf cards climbing from the wall foot and
+  // draping down from the broken top, following the wall's edges
   for (const f of block.spots.ivy) {
-    if (hash(f.seed, 'ivy') > 0.5) continue;
-    const top = f.H * (0.5 + hash(f.seed, 'it') * 0.25);
-    const h = 1.4 + hash(f.seed, 'ih') * 1.4;
-    // keep clear of doors, arches and windows
-    const ops = f.openings.filter((o) => o.y1 > top - h && o.y0 < top).sort((a, b) => a.s0 - b.s0);
-    const spans = [];
-    let s0 = -1.5;
-    for (const o of ops) {
-      if (o.s0 - 0.25 > s0) spans.push([s0, o.s0 - 0.25]);
-      s0 = Math.max(s0, o.s1 + 0.25);
+    if (hash(f.seed, 'ivy') > 0.55) continue;
+    const ops = f.openings;
+    const clear = (sv, y) => !ops.some((o) => sv > o.s0 - 0.15 && sv < o.s1 + 0.15 && y > o.y0 - 0.15 && y < o.y1 + 0.15);
+    const topAt = (sv) => (f.jag ? f.H * f.jag(sv) : f.H);
+    const nStems = 1 + Math.floor(hash(f.seed, 'ivn') * 2);
+    for (let st = 0; st < nStems; st++) {
+      let sv = (hash(f.seed, st, 'ivs') - 0.5) * 2.4;
+      let y = 0.1;
+      const top = topAt(sv) - 0.05;
+      for (let k = 0; y < top && k < 30; k++) {
+        if (clear(sv, y)) ivyCards.push({ face: f, s: sv, y, size: 0.32 + hash(f.seed, st, k, 'iz') * 0.28, rot: hash(f.seed, st, k, 'ir') * 6.3, v: k % 2, out: 0.02 + hash(f.seed, st, k, 'io') * 0.06 });
+        sv += (hash(f.seed, st, k, 'iw') - 0.5) * 0.35;
+        sv = THREE.MathUtils.clamp(sv, -1.45, 1.45);
+        y += 0.16 + hash(f.seed, st, k, 'iy') * 0.12;
+      }
+      for (let k = 0; k < 10; k++) {
+        const s2 = THREE.MathUtils.clamp(sv + (hash(f.seed, st, k, 'ts') - 0.5) * 1.6, -1.5, 1.5);
+        const t2 = topAt(s2);
+        const y2 = t2 - 0.05 - hash(f.seed, st, k, 'td') * 0.9 * (k % 3 === 0 ? 1.4 : 1);
+        if (y2 > 0 && clear(s2, y2)) ivyCards.push({ face: f, s: s2, y: y2, size: 0.3 + hash(f.seed, st, k, 'tz') * 0.3, rot: hash(f.seed, st, k, 'tr') * 6.3, v: (k + 1) % 2, out: 0.03 + hash(f.seed, st, k, 'to') * 0.08 });
+      }
     }
-    if (s0 < 1.5) spans.push([s0, 1.5]);
-    const best = spans.sort((a, b) => b[1] - b[0] - (a[1] - a[0]))[0];
-    if (!best || best[1] - best[0] < 0.7) continue;
-    const w = Math.min(best[1] - best[0], 1.2 + hash(f.seed, 'iw') * 1.2);
-    const c = best[0] + w / 2 + (best[1] - best[0] - w) * hash(f.seed, 'is');
-    ivyCards.push({ face: f, s: c, w, h, top });
   }
   // flower boxes
   for (const sp of block.spots.lamp) {
@@ -204,14 +249,46 @@ export function buildProps(map, block, opts = {}) {
       addRubble(new THREE.Matrix4().makeTranslation(cx + (hash(fc.x, fc.y, 'rx') - 0.5) * 1.4, 0, cz + (hash(fc.x, fc.y, 'rz') - 0.5) * 1.4), hash(fc.x, fc.y, 'rs'), 6, 0.7, 0.8);
     }
     if ((fc.cell === CELL.RUBBLE || fc.cell === CELL.COURTYARD) && ts.outdoors) {
+      // sparse tufts in paving joints (courtyards) or patches on rubble ground
       for (let k = 0; k < 3; k++) {
-        if (hash(fc.x, fc.y, k, 'fg') > (fc.cell === CELL.RUBBLE ? 0.5 : 0.2)) continue;
-        grassCards.push({ p: new THREE.Vector3(cx + (hash(fc.x, fc.y, k, 'x') - 0.5) * 2.6, 0, cz + (hash(fc.x, fc.y, k, 'z') - 0.5) * 2.6), scale: 0.12 + hash(fc.x, fc.y, k) * 0.14, rot: k });
+        if (hash(fc.x, fc.y, k, 'fg') > (fc.cell === CELL.RUBBLE ? 0.45 : 0.06)) continue;
+        const px = cx + (hash(fc.x, fc.y, k, 'x') - 0.5) * 2.4;
+        const pz = cz + (hash(fc.x, fc.y, k, 'z') - 0.5) * 2.4;
+        for (let q = 0; q < 3; q++) grassCards.push({ p: new THREE.Vector3(px + (hash(fc.x, fc.y, k, q, 'qx') - 0.5) * 0.25, 0, pz + (hash(fc.x, fc.y, k, q, 'qz') - 0.5) * 0.25), scale: (0.08 + hash(fc.x, fc.y, k, q) * 0.1), rot: k + q });
       }
     }
     if (ts.id === 'interior' && hash(fc.x, fc.y, 'rug') < 0.2 && !fc.edge) {
       const m = new THREE.Matrix4().makeTranslation(cx, 0.008, cz).multiply(new THREE.Matrix4().makeRotationY(hash(fc.x, fc.y) < 0.5 ? 0 : Math.PI / 2));
       rugs.push({ m, v: hash(fc.x, fc.y, 'rv') < 0.5 ? 0 : 1 });
+    }
+  }
+  // waterfront: mooring bollards along the quay edge, cargo waiting to be loaded
+  if (map.harbour) {
+    for (const fc of block.spots.floorCells) {
+      if (map.getCell(fc.x, fc.y + 1) !== CELL.WATER || fc.cell === CELL.WATER) continue;
+      const ez = (fc.y + 1) * S - 0.45;
+      const cx = fc.x * S + S / 2;
+      if (fc.x % 2 === 0) {
+        const bm = new THREE.Matrix4().makeTranslation(cx + (hash(fc.x, 'bo') - 0.5), 0, ez);
+        const post = new THREE.CylinderGeometry(0.14, 0.17, 0.62, 10);
+        g.geometry('prop_iron', post, bm.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.31, 0)), { uv: 'world' });
+        post.dispose();
+        const cap = new THREE.SphereGeometry(0.19, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2);
+        g.geometry('prop_iron', cap, bm.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.6, 0)), { uv: 'world' });
+        cap.dispose();
+        if (hash(fc.x, 'rope') < 0.6) {
+          const rope = new THREE.TorusGeometry(0.22, 0.045, 6, 16);
+          g.geometry('prop_burlap', rope, bm.clone().multiply(new THREE.Matrix4().makeTranslation(0.45, 0.05, -0.2)).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2)), { uv: 'world' });
+          g.geometry('prop_burlap', rope, bm.clone().multiply(new THREE.Matrix4().makeTranslation(0.45, 0.12, -0.2)).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2)).multiply(new THREE.Matrix4().makeScale(0.85, 0.85, 1)), { uv: 'world' });
+          rope.dispose();
+        }
+        blob(cx, ez, 0.4, 0.5);
+      } else if (hash(fc.x, fc.y, 'cargo') < 0.55) {
+        const m = new THREE.Matrix4().makeTranslation(cx, 0, ez - 0.9).multiply(new THREE.Matrix4().makeRotationY(hash(fc.x, 'cr') * 0.6 - 0.3));
+        addCrate(m, 0.7);
+        addCrate(m.clone().multiply(new THREE.Matrix4().makeTranslation(0.75, 0, 0.1)), 0.6);
+        addBarrel(m.clone().multiply(new THREE.Matrix4().makeTranslation(-0.7, 0, 0.15)), 0.95);
+      }
     }
   }
   // fallen column drums and broken shafts in temple precincts
@@ -233,8 +310,15 @@ export function buildProps(map, block, opts = {}) {
       g.geometry('prop_limestone', geos.drum, m.clone().multiply(new THREE.Matrix4().makeTranslation(0.45, 0.34, 0.12)).multiply(new THREE.Matrix4().makeRotationZ(Math.PI / 2 + 0.08)).multiply(new THREE.Matrix4().makeRotationX(0.5)), { uvScale: [2, 1] });
     } else {
       // broken shaft on its plinth
-      g.box('prop_limestone', { matrix: m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.2, 0)), s: [0.95, 0.4, 0.95], chamfer: 0.05, uv: 'local' });
-      g.geometry('prop_limestone', geos.shaft, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.4, 0)), { uvScale: [2, 1.2] });
+      const colAO = (p) => 0.5 + 0.5 * THREE.MathUtils.smoothstep(p.y, 0.0, 0.9);
+      g.box('prop_limestone', { matrix: m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.2, 0)), s: [0.95, 0.4, 0.95], chamfer: 0.05, uv: 'local', ao: colAO });
+      g.box('prop_limestone', { matrix: m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.45, 0)), s: [0.82, 0.1, 0.82], chamfer: 0.03, uv: 'local', ao: colAO });
+      const sh = geos.shaft[Math.floor(hash(fc.x, fc.y, 'sv') * geos.shaft.length)];
+      g.geometry('prop_limestone', sh, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.5, 0)).multiply(new THREE.Matrix4().makeRotationY(hash(fc.x, fc.y, 'sr') * 6.3)), { uvScale: [2, 1.2], ao: colAO });
+    }
+    {
+      const mc = new THREE.Vector3().applyMatrix4(m);
+      blob(mc.x, mc.z, 0.9, 0.55);
     }
     addRubble(m, h * 100, 5, 0.9, 0.8);
   }
@@ -257,6 +341,70 @@ export function buildProps(map, block, opts = {}) {
     mesh.renderOrder = 2;
     group.add(mesh);
     own.push(geo);
+  }
+
+  // soft contact shadows (ambient occlusion) under props
+  if (aoBlobs.length) {
+    const pos = [];
+    const uv = [];
+    const col = [];
+    for (const bl of aoBlobs) {
+      for (const [a, c] of [[-1, -1], [1, 1], [1, -1], [-1, -1], [-1, 1], [1, 1]]) {
+        pos.push(bl.x + a * bl.r, 0.012, bl.z + c * bl.r);
+        uv.push((a + 1) / 2, (c + 1) / 2);
+        col.push(1, 1, 1, bl.a);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
+    const mat = new THREE.MeshBasicMaterial({ alphaMap: getBlobTexture(), color: 0x000000, transparent: true, vertexColors: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.renderOrder = 3;
+    group.add(mesh);
+    own.push(geo, mat);
+  }
+  // tapestries (cloth hanging from a rod, gentle folds)
+  tapestries.forEach((list, v) => {
+    if (!list.length) return;
+    const mat = new THREE.MeshStandardMaterial({ map: getTapestryTexture(v), roughness: 0.95, side: THREE.DoubleSide });
+    const b = new GeoBuilder();
+    for (const t of list) {
+      const f = t.face;
+      const d = T / 2 + 0.03;
+      const segs = 6;
+      const P = (sv, y, dd) => new THREE.Vector3(sv, y, dd).applyMatrix4(f.basis);
+      for (let k = 0; k < segs; k++) {
+        const s0 = t.s - t.w / 2 + (t.w * k) / segs;
+        const s1 = t.s - t.w / 2 + (t.w * (k + 1)) / segs;
+        const w0 = 0.02 + 0.025 * Math.sin((k / segs) * Math.PI * 3);
+        const w1 = 0.02 + 0.025 * Math.sin(((k + 1) / segs) * Math.PI * 3);
+        b.quad('tap', P(s0, t.y, d + w0), P(s1, t.y, d + w1), P(s1, t.y + t.h, d), P(s0, t.y + t.h, d), [[k / segs, 0], [(k + 1) / segs, 0], [(k + 1) / segs, 1], [k / segs, 1]], { ao: 1 });
+      }
+      g.box('prop_wood', { matrix: new THREE.Matrix4().multiplyMatrices(f.basis, new THREE.Matrix4().makeTranslation(t.s, t.y + t.h + 0.03, d + 0.02)), s: [t.w + 0.2, 0.05, 0.05], uv: 'along' });
+    }
+    const geo = b.build().get('tap');
+    geo.deleteAttribute('color');
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.receiveShadow = true;
+    mesh.castShadow = true;
+    group.add(mesh);
+    own.push(geo, mat);
+  });
+  if (notices.length) {
+    const mat = new THREE.MeshStandardMaterial({ map: getNoticeTexture(), roughness: 0.9 });
+    const b = new GeoBuilder();
+    for (const n of notices) {
+      const P = (sv, y) => new THREE.Vector3(sv, y, T / 2 + 0.058).applyMatrix4(n.face.basis);
+      b.quad('nt', P(n.s - 0.5, 1.17), P(n.s + 0.5, 1.17), P(n.s + 0.5, 1.93), P(n.s - 0.5, 1.93), [[0, 0], [1, 0], [1, 1], [0, 1]], { ao: 1 });
+    }
+    const geo = b.build().get('nt');
+    geo.deleteAttribute('color');
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.receiveShadow = true;
+    group.add(mesh);
+    own.push(geo, mat);
   }
 
   // grass cards (alpha tested, wind sway)
@@ -296,23 +444,25 @@ export function buildProps(map, block, opts = {}) {
     group.add(mesh);
     own.push(geo, mat);
   }
-  // ivy sheets
-  if (ivyCards.length) {
-    const mat = new THREE.MeshStandardMaterial({ map: getIvyTexture(), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.8, color: 0xa8b098 });
+  // ivy clusters (two texture variants, one draw call each)
+  for (const v of [0, 1]) {
+    const list = ivyCards.filter((c) => c.v === v);
+    if (!list.length) continue;
+    const mat = new THREE.MeshStandardMaterial({ map: getIvyClusterTexture(v), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.7, color: 0xe0e8d0 });
     const b = new GeoBuilder();
-    for (const c of ivyCards) {
+    for (const c of list) {
       const f = c.face;
-      const d = T / 2 + 0.015;
-      const P = (s, y) => new THREE.Vector3(s, y, d).applyMatrix4(f.basis);
-      const s0 = c.s - c.w / 2;
-      const s1 = c.s + c.w / 2;
-      const y1 = c.top;
-      const y0 = Math.max(0, y1 - c.h);
-      b.quad('ivy', P(s0, y0), P(s1, y0), P(s1, y1), P(s0, y1), [[0, 0], [1, 0], [1, 1], [0, 1]], { ao: 1 });
+      const hw = c.size / 2;
+      const ca = Math.cos(c.rot) * hw;
+      const sa = Math.sin(c.rot) * hw;
+      const P = (ds, dy, out) => new THREE.Vector3(c.s + ds, c.y + dy, T / 2 + out).applyMatrix4(f.basis);
+      b.quad('ivy', P(-ca + sa, -sa - ca, c.out + 0.05), P(ca + sa, sa - ca, c.out + 0.05), P(ca - sa, sa + ca, c.out), P(-ca - sa, -sa + ca, c.out), [[0, 0], [1, 0], [1, 1], [0, 1]], { ao: 1 });
     }
     const geo = b.build().get('ivy');
+    geo.deleteAttribute('color');
     const mesh = new THREE.Mesh(geo, mat);
     mesh.receiveShadow = true;
+    mesh.castShadow = true;
     group.add(mesh);
     own.push(geo, mat);
   }
@@ -374,7 +524,8 @@ export function buildProps(map, block, opts = {}) {
   // rugs
   for (const r of rugs) {
     const mat = new THREE.MeshStandardMaterial({ map: getRugTexture(r.v), roughness: 0.95 });
-    const geo = new THREE.BoxGeometry(2.0, 0.016, 1.4);
+    const geo = new THREE.BoxGeometry(2.0, 0.028, 1.4);
+    geo.translate(0, 0.006, 0);
     const mesh = new THREE.Mesh(geo, mat);
     mesh.applyMatrix4(r.m);
     mesh.receiveShadow = true;
@@ -425,22 +576,10 @@ function makePropGeometries() {
   const sackPts = [[0, 0], [0.18, 0.01], [0.24, 0.08], [0.25, 0.2], [0.22, 0.34], [0.14, 0.42], [0.06, 0.48], [0.07, 0.54], [0, 0.56]].map(([r, y]) => new THREE.Vector2(r, y));
   const sack = new THREE.LatheGeometry(sackPts, 12);
   const rock = [];
-  for (let k = 0; k < 3; k++) {
-    const d0 = new THREE.DodecahedronGeometry(0.5, 0);
-    const d = d0.index ? d0.toNonIndexed() : d0;
-    const p = d.attributes.position;
-    const seen = new Map();
-    for (let i = 0; i < p.count; i++) {
-      const key = `${p.getX(i).toFixed(3)},${p.getY(i).toFixed(3)},${p.getZ(i).toFixed(3)}`;
-      let f = seen.get(key);
-      if (f === undefined) {
-        f = 0.75 + hash(k, key) * 0.45;
-        seen.set(key, f);
-      }
-      p.setXYZ(i, p.getX(i) * f, p.getY(i) * f * (k === 1 ? 0.7 : 1), p.getZ(i) * f);
-    }
-    d.computeVertexNormals();
-    rock.push(d);
+  const chunk = [];
+  for (let k = 0; k < 5; k++) {
+    rock.push(fracturedRock(k, false));
+    if (k < 3) chunk.push(fracturedRock(k + 10, true));
   }
   const link = new THREE.TorusGeometry(0.04, 0.012, 5, 10);
   link.scale(1, 1.4, 1);
@@ -459,15 +598,101 @@ function makePropGeometries() {
     if (Math.hypot(p.getX(i), p.getZ(i)) > 0.3) p.setXYZ(i, p.getX(i) * f, p.getY(i), p.getZ(i) * f);
   }
   drum.computeVertexNormals();
-  const shaft = new THREE.CylinderGeometry(0.34, 0.36, 1.6, 16, 3);
-  for (let i = 0, p = shaft.attributes.position; i < p.count; i++) {
-    if (p.getY(i) > 0.7) p.setY(i, 0.8 - hash(Math.round(Math.atan2(p.getZ(i), p.getX(i)) * 5), 'brk') * 0.6);
+  // broken column shafts: fluted, each with its own fracture (sloped shear, jagged, stump)
+  const shaft = [];
+  for (let v = 0; v < 3; v++) {
+    const hgt = [1.6, 1.25, 0.9][v];
+    const sg = new THREE.CylinderGeometry(0.32, 0.34, hgt, 20, 6);
+    const p = sg.attributes.position;
+    const slopeA = hash(v, 'sa') * Math.PI * 2;
+    for (let i = 0; i < p.count; i++) {
+      const a = Math.atan2(p.getZ(i), p.getX(i));
+      const rr = Math.hypot(p.getX(i), p.getZ(i));
+      if (rr > 0.25) {
+        const fl = 1 - 0.05 * Math.max(0, Math.cos(a * 10));
+        p.setX(i, p.getX(i) * fl);
+        p.setZ(i, p.getZ(i) * fl);
+      }
+      if (p.getY(i) > hgt / 2 - 0.01) {
+        const shear = Math.cos(a - slopeA) * (v === 0 ? 0.35 : 0.18);
+        const jag = (hash(v, Math.round(a * 6), 'jg') - 0.5) * (v === 1 ? 0.4 : 0.14);
+        p.setY(i, hgt / 2 - 0.25 + shear + jag);
+      }
+    }
+    sg.translate(0, hgt / 2, 0);
+    const ni = sg.toNonIndexed();
+    sg.dispose();
+    ni.computeVertexNormals();
+    shaft.push(ni);
   }
-  shaft.translate(0, 0.8, 0);
-  shaft.computeVertexNormals();
   const skull = new THREE.SphereGeometry(0.1, 10, 8);
   skull.scale(1, 0.9, 1.15);
-  return { barrel: [body, hoop, lid], crate, sack, rock, link, candle, wheel, hub, pot, skull, drum, shaft };
+  const bottle = new THREE.LatheGeometry([[0, 0], [0.045, 0], [0.05, 0.02], [0.05, 0.14], [0.02, 0.19], [0.015, 0.25], [0, 0.25]].map(([r, y]) => new THREE.Vector2(r, y)), 8);
+  const jar = new THREE.LatheGeometry([[0, 0], [0.07, 0], [0.09, 0.06], [0.08, 0.14], [0.05, 0.17], [0.055, 0.19], [0, 0.19]].map(([r, y]) => new THREE.Vector2(r, y)), 10);
+  const plate = new THREE.CylinderGeometry(0.11, 0.09, 0.02, 14);
+  return { barrel: [body, hoop, lid], crate, sack, rock, chunk, link, candle, wheel, hub, pot, skull, drum, shaft, bottle, jar, plate };
+}
+
+/**
+ * Fractured stone: a sphere (or block) cut by random cleavage planes into flat
+ * facets, jittered, with a flat seat; flat-shaded.
+ */
+function fracturedRock(seed, block) {
+  const base = block ? new THREE.BoxGeometry(1, 0.62, 0.72, 3, 2, 2) : new THREE.IcosahedronGeometry(0.5, 2);
+  const g = base.index ? base.toNonIndexed() : base;
+  if (g !== base) base.dispose();
+  const p = g.attributes.position;
+  const planes = [];
+  const np = block ? 3 : 7;
+  for (let k = 0; k < np; k++) {
+    const th = hash(seed, k, 'pt') * Math.PI * 2;
+    const ph = Math.acos(1 - 2 * hash(seed, k, 'pp'));
+    const n = new THREE.Vector3(Math.sin(ph) * Math.cos(th), Math.cos(ph) * 0.8, Math.sin(ph) * Math.sin(th)).normalize();
+    planes.push({ n, d: (block ? 0.28 : 0.3) + hash(seed, k, 'pd') * 0.15 });
+  }
+  const v = new THREE.Vector3();
+  const cache = new Map();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i);
+    const key = `${v.x.toFixed(3)},${v.y.toFixed(3)},${v.z.toFixed(3)}`;
+    let out = cache.get(key);
+    if (!out) {
+      out = v.clone();
+      if (!block) out.multiplyScalar(1 + (hash(seed, key, 'j') - 0.5) * 0.12);
+      else out.add(new THREE.Vector3((hash(seed, key, 'x') - 0.5) * 0.05, (hash(seed, key, 'y') - 0.5) * 0.04, (hash(seed, key, 'z') - 0.5) * 0.05));
+      for (const pl of planes) {
+        const dd = out.dot(pl.n) - pl.d;
+        if (dd > 0) out.addScaledVector(pl.n, -dd);
+      }
+      if (out.y < -0.24) out.y = -0.24 - (out.y + 0.24) * 0.1;
+      cache.set(key, out);
+    }
+    p.setXYZ(i, out.x, out.y, out.z);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+
+/** Wall-mounted weapon rack: two spears, a sword and a round shield. */
+function weaponRack(g, m, seed) {
+  g.box('prop_wood', { matrix: m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 1.9, 0.06)), s: [1.1, 0.08, 0.1], chamfer: 0.01, uv: 'along' });
+  g.box('prop_wood', { matrix: m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.9, 0.06)), s: [1.1, 0.08, 0.1], chamfer: 0.01, uv: 'along' });
+  for (const [x, lean] of [[-0.38, 0.06], [-0.18, -0.04]]) {
+    const sm = m.clone().multiply(new THREE.Matrix4().makeTranslation(x, 1.25, 0.14)).multiply(new THREE.Matrix4().makeRotationZ(lean));
+    g.box('prop_wood', { matrix: sm, s: [0.035, 2.4, 0.035], uv: 'along' });
+    g.box('prop_iron', { matrix: sm.clone().multiply(new THREE.Matrix4().makeTranslation(0, 1.28, 0)), s: [0.06, 0.24, 0.015], chamfer: 0.006 });
+  }
+  const sw = m.clone().multiply(new THREE.Matrix4().makeTranslation(0.18, 1.35, 0.13));
+  g.box('prop_iron', { matrix: sw, s: [0.05, 0.85, 0.01], chamfer: 0.004 });
+  g.box('prop_iron', { matrix: sw.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.45, 0)), s: [0.24, 0.035, 0.03] });
+  g.box('prop_wood', { matrix: sw.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.56, 0)), s: [0.035, 0.18, 0.035], uv: 'along' });
+  const shm = m.clone().multiply(new THREE.Matrix4().makeTranslation(0.42, 1.3, 0.1)).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2));
+  const disc = new THREE.CylinderGeometry(0.28, 0.28, 0.035, 18);
+  g.geometry(hash(seed, 'sh') < 0.5 ? 'prop_crate' : 'prop_wood', disc, shm, { uv: 'world' });
+  disc.dispose();
+  const boss = new THREE.SphereGeometry(0.07, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2);
+  g.geometry('prop_iron', boss, m.clone().multiply(new THREE.Matrix4().makeTranslation(0.42, 1.3, 0.12)).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2)), { uv: 'world' });
+  boss.dispose();
 }
 
 function mergeSimple(list) {
@@ -507,14 +732,36 @@ function table(g, m, seed) {
 
 function shelf(g, m, seed, geos) {
   for (const x of [-0.7, 0.7]) g.box('prop_wood', { matrix: m.clone().multiply(new THREE.Matrix4().makeTranslation(x, 0.95, 0)), s: [0.06, 1.9, 0.4], uv: 'along' });
+  g.box('prop_wood', { matrix: m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.95, -0.19)), s: [1.4, 1.9, 0.02], uv: 'along' });
   for (const y of [0.1, 0.7, 1.3, 1.85]) {
     g.box('prop_wood', { matrix: m.clone().multiply(new THREE.Matrix4().makeTranslation(0, y, 0)), s: [1.46, 0.04, 0.4], uv: 'along' });
     if (y > 1.8) continue;
-    for (let k = 0; k < 4; k++) {
-      if (hash(seed, y, k) < 0.3) continue;
-      const x = -0.55 + k * 0.36 + (hash(seed, y, k, 'x') - 0.5) * 0.1;
-      const sc = 0.7 + hash(seed, y, k, 's') * 0.6;
-      g.geometry(hash(seed, y, k, 'm') < 0.5 ? 'arch_brick' : 'prop_iron', geos.pot, m.clone().multiply(new THREE.Matrix4().makeTranslation(x, y + 0.02, 0)).multiply(new THREE.Matrix4().makeScale(sc, sc, sc)), { uv: 'world' });
+    let x = -0.62;
+    for (let k = 0; x < 0.6 && k < 12; k++) {
+      const kind = hash(seed, y, k, 'kind');
+      const sc = 0.8 + hash(seed, y, k, 's') * 0.5;
+      const tm = (dx) => m.clone().multiply(new THREE.Matrix4().makeTranslation(x + dx, y + 0.02, (hash(seed, y, k, 'z') - 0.5) * 0.12));
+      if (kind < 0.25) {
+        // a row of books, the last one leaning
+        const nb = 3 + Math.floor(hash(seed, y, k, 'nb') * 5);
+        for (let b = 0; b < nb; b++) {
+          const bh = 0.2 + hash(seed, y, k, b, 'bh') * 0.12;
+          g.box(hash(seed, y, k, b, 'bk') < 0.5 ? 'prop_burlap' : 'prop_crate', { matrix: tm(b * 0.045).multiply(new THREE.Matrix4().makeTranslation(0, bh / 2, 0)).multiply(new THREE.Matrix4().makeRotationZ(b === nb - 1 ? -0.25 : 0)), s: [0.04, bh, 0.16 + hash(seed, y, k, b) * 0.05], uv: 'local' });
+        }
+        x += nb * 0.045 + 0.06;
+      } else if (kind < 0.45) {
+        g.geometry('prop_iron', geos.bottle, tm(0.03).multiply(new THREE.Matrix4().makeScale(sc, sc, sc)), { uv: 'world' });
+        x += 0.12;
+      } else if (kind < 0.65) {
+        g.geometry('arch_brick', geos.jar, tm(0.06).multiply(new THREE.Matrix4().makeScale(sc, sc, sc)), { uv: 'world' });
+        x += 0.2 * sc;
+      } else if (kind < 0.78) {
+        for (let q = 0; q < 3; q++) g.geometry('prop_bone', geos.plate, tm(0.1).multiply(new THREE.Matrix4().makeTranslation(0, 0.012 + q * 0.022, 0)), { uv: 'world' });
+        x += 0.24;
+      } else if (kind < 0.9) {
+        g.geometry(hash(seed, y, k, 'm') < 0.5 ? 'arch_brick' : 'prop_iron', geos.pot, tm(0.06).multiply(new THREE.Matrix4().makeScale(sc, sc, sc)), { uv: 'world' });
+        x += 0.18;
+      } else x += 0.15;
     }
   }
 }
@@ -552,17 +799,39 @@ function cart(g, m, seed, geos) {
 }
 
 function lampPost(g, m, lamps, seed, night) {
-  g.box('prop_stone', { matrix: m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.2, 0)), s: [0.34, 0.4, 0.34], chamfer: 0.04 });
-  g.box('prop_iron', { matrix: m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 1.6, 0)), s: [0.08, 2.8, 0.08], chamfer: 0.015 });
-  g.box('prop_iron', { matrix: m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 2.95, 0)), s: [0.16, 0.06, 0.16], chamfer: 0.01 });
-  // lantern cage
-  const lm = m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 3.2, 0));
-  for (const [x, z] of [[-0.12, -0.12], [0.12, -0.12], [0.12, 0.12], [-0.12, 0.12]]) g.box('prop_iron', { matrix: lm.clone().multiply(new THREE.Matrix4().makeTranslation(x, 0, z)), s: [0.025, 0.36, 0.025] });
-  g.box('prop_iron', { matrix: lm.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.22, 0)), s: [0.34, 0.06, 0.34], chamfer: 0.02 });
-  g.box('prop_iron', { matrix: lm.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.3, 0)), s: [0.18, 0.1, 0.18], chamfer: 0.03 });
-  g.box('prop_iron', { matrix: lm.clone().multiply(new THREE.Matrix4().makeTranslation(0, -0.2, 0)), s: [0.28, 0.04, 0.28] });
+  const at = (x, y, z) => m.clone().multiply(new THREE.Matrix4().makeTranslation(x, y, z));
+  // octagonal stone plinth
+  const plinth = new THREE.CylinderGeometry(0.2, 0.24, 0.42, 8);
+  g.geometry('prop_stone', plinth, at(0, 0.21, 0).multiply(new THREE.Matrix4().makeRotationY(Math.PI / 8)), { uv: 'world', ao: (p) => 0.6 + 0.4 * THREE.MathUtils.smoothstep(p.y, 0, 0.4) });
+  plinth.dispose();
+  // tapered wrought-iron post with collars
+  const post = new THREE.CylinderGeometry(0.035, 0.055, 2.6, 10);
+  g.geometry('prop_iron', post, at(0, 1.72, 0), { uv: 'world' });
+  post.dispose();
+  for (const [y, r] of [[0.46, 0.07], [0.62, 0.05], [2.7, 0.055], [2.98, 0.08]]) {
+    const c = new THREE.CylinderGeometry(r, r, 0.05, 10);
+    g.geometry('prop_iron', c, at(0, y, 0), { uv: 'world' });
+    c.dispose();
+  }
+  // scroll brackets under the lantern
+  for (const a of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) {
+    const bm = at(0, 2.92, 0).multiply(new THREE.Matrix4().makeRotationY(a)).multiply(new THREE.Matrix4().makeTranslation(0.07, 0, 0)).multiply(new THREE.Matrix4().makeRotationZ(-0.7));
+    g.box('prop_iron', { matrix: bm, s: [0.16, 0.018, 0.018] });
+  }
+  // lantern: base plate, corner stiles, glass (emissive, added by the scene), hipped cap + finial
+  const lm = at(0, 3.2, 0);
+  g.box('prop_iron', { matrix: lm.clone().multiply(new THREE.Matrix4().makeTranslation(0, -0.19, 0)), s: [0.3, 0.035, 0.3], chamfer: 0.008 });
+  for (const [x, z] of [[-0.12, -0.12], [0.12, -0.12], [0.12, 0.12], [-0.12, 0.12]]) g.box('prop_iron', { matrix: lm.clone().multiply(new THREE.Matrix4().makeTranslation(x, 0, z)), s: [0.022, 0.36, 0.022] });
+  for (const y of [-0.15, 0.16]) for (const [x, z, sx, sz] of [[0, -0.12, 0.26, 0.016], [0, 0.12, 0.26, 0.016], [-0.12, 0, 0.016, 0.26], [0.12, 0, 0.016, 0.26]]) g.box('prop_iron', { matrix: lm.clone().multiply(new THREE.Matrix4().makeTranslation(x, y, z)), s: [sx, 0.016, sz] });
+  const cap = new THREE.ConeGeometry(0.25, 0.2, 4, 1);
+  g.geometry('prop_iron', cap, lm.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.28, 0)).multiply(new THREE.Matrix4().makeRotationY(Math.PI / 4)), { uv: 'world' });
+  cap.dispose();
+  const fin = new THREE.SphereGeometry(0.035, 8, 6);
+  g.geometry('prop_iron', fin, lm.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.42, 0)), { uv: 'world' });
+  fin.dispose();
+  g.box('prop_iron', { matrix: lm.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.19, 0)), s: [0.3, 0.025, 0.3] });
   const pos = new THREE.Vector3(0, 3.2, 0).applyMatrix4(m);
-  lamps.push({ pos, kind: 'lamp', lit: night > 0.35, seed: Math.floor(seed * 997), glass: true });
+  lamps.push({ pos, kind: 'lamp', lit: night > 0.12, seed: Math.floor(seed * 997), glass: true });
 }
 
 function banner(g, f, s, y, d, list) {

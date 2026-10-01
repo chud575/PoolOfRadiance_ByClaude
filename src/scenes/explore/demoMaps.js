@@ -70,7 +70,32 @@ export function buildDemoInterior() {
   return m;
 }
 
-const DEMO = { demo_dungeon: buildDemoDungeon, demo_interior: buildDemoInterior };
+/**
+ * Waterfront showcase (explore_harbour): a quay street open to the south,
+ * where the Moonsea runs to the horizon past moored cogs and the breakwater.
+ */
+export function buildDemoQuay() {
+  const m = new MapGrid({ id: 'demo_quay', name: 'The Moonsea Quay', kind: 'city', outdoors: true, wallSet: 'phlan_stone', start: { x: 7, y: 12, dir: 'S' } });
+  m.tileset = 'city';
+  m.harbour = true;
+  m.fill(0, 0, 16, 16, CELL.STREET);
+  for (let x = 0; x < 16; x++) m.setEdge(x, 0, 'N', EDGE.WALL, 0);
+  for (let y = 0; y < 13; y++) {
+    m.setEdge(0, y, 'W', EDGE.WALL, 0);
+    m.setEdge(15, y, 'E', EDGE.WALL, 0);
+  }
+  m.building(1, 1, 4, 3, { style: 1, doors: [{ x: 2, y: 3, dir: 'S' }] });
+  m.building(6, 1, 3, 3, { style: 0, doors: [{ x: 7, y: 3, dir: 'S' }] });
+  m.building(10, 1, 5, 4, { style: 1, doors: [{ x: 12, y: 4, dir: 'S' }] });
+  m.building(1, 6, 3, 4, { style: 0, doors: [{ x: 3, y: 7, dir: 'E' }] }); // harbour warehouse
+  m.building(11, 7, 4, 3, { style: 1, doors: [{ x: 11, y: 8, dir: 'W' }] });
+  m.fill(0, 14, 16, 2, CELL.WATER);
+  m.fill(0, 13, 2, 1, CELL.WATER);
+  m.zone('The Moonsea Quay', 0, 10, 16, 6);
+  return m;
+}
+
+const DEMO = { demo_dungeon: buildDemoDungeon, demo_interior: buildDemoInterior, demo_quay: buildDemoQuay };
 const cache = new Map();
 export function hasDemoMap(id) {
   return id in DEMO;
