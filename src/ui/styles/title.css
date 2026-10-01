@@ -105,7 +105,7 @@
 /* ---------- footer (Gold Box command line flavour) ---------- */
 .por-title-footer {
   position: absolute; left: 0; right: 0; bottom: 0; height: 3em; padding: 0 2em;
-  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 1em;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 1em;
   font-size: 0.8em; color: var(--por-text-dim); letter-spacing: 0.06em;
   background: linear-gradient(0deg, rgba(3, 4, 12, 0.82), rgba(3, 4, 12, 0));
   pointer-events: none; opacity: 0; transition: opacity 0.8s var(--ease);
@@ -113,7 +113,7 @@
 .por-title.booted .por-title-footer { opacity: 1; }
 .por-title[data-mode='intro'] .por-title-footer { opacity: 0; }
 .por-title-footer > * { pointer-events: auto; }
-.por-title-foot-l { font-style: italic; text-shadow: 0 1px 2px #000; }
+.por-title-foot-l { font-style: italic; text-shadow: 0 1px 2px #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .por-title-foot-r { text-align: right; font-family: var(--font-display); letter-spacing: 0.2em; text-transform: uppercase; font-size: 0.85em; }
 .por-title-legend { display: flex; gap: 1.6em; font-family: var(--font-display); font-weight: 700; text-transform: uppercase; letter-spacing: 0.16em; font-size: 0.9em; color: var(--por-parchment); }
 .por-title-legend-item { display: inline-flex; align-items: center; gap: 0.45em; font: inherit; color: inherit; letter-spacing: inherit; text-transform: inherit; background: none; border: 1px solid transparent; border-radius: 2px; padding: 0.25em 0.5em; }
