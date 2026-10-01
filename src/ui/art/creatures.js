@@ -867,70 +867,183 @@ function centipede(g, sp, h, L) {
   for (const d of [-1, 1]) { g.beginPath(); g.moveTo(d * h * 0.04, -h * 0.64); g.quadraticCurveTo(d * h * 0.12, -h * 0.58, d * h * 0.06, -h * 0.54); g.stroke(); }
 }
 
-/** Great bronze dragon rising: neck, head, wings. h = full height. */
+/** Great bronze dragon rising from the Pool: wings, coiled body, neck, head. h = full height. */
 function dragon(g, sp, h, L) {
   const col = sp.skin;
-  // wings
+  const dk = mix(col, '#2a1004', 0.5);
+  // wings: spars and scalloped membranes
   for (const d of [-1, 1]) {
+    const tip = [d * h * 0.98, -h * 1.12];
+    const elbow = [d * h * 0.5, -h * 0.92];
+    const root = [d * h * 0.12, -h * 0.5];
+    const fingers = [[d * h * 1.02, -h * 0.62], [d * h * 0.86, -h * 0.4], [d * h * 0.62, -h * 0.26]];
     const wp = () => {
       g.beginPath();
-      g.moveTo(d * h * 0.12, -h * 0.55);
-      g.lineTo(d * h * 0.7, -h * 1.0);
-      g.lineTo(d * h * 0.95, -h * 0.85);
-      for (let i = 0; i < 4; i++) g.quadraticCurveTo(d * h * (0.85 - i * 0.18), -h * (0.55 - i * 0.02), d * h * (0.78 - i * 0.2), -h * (0.4 + (i % 2) * 0.05));
-      g.lineTo(d * h * 0.14, -h * 0.35);
+      g.moveTo(root[0], root[1]);
+      g.quadraticCurveTo(d * h * 0.3, -h * 0.9, elbow[0], elbow[1]);
+      g.lineTo(tip[0], tip[1]);
+      let prev = tip;
+      for (const f of fingers) {
+        g.quadraticCurveTo((prev[0] + f[0]) / 2 - d * h * 0.06, (prev[1] + f[1]) / 2 + h * 0.03, f[0], f[1]);
+        prev = f;
+      }
+      g.quadraticCurveTo(d * h * 0.4, -h * 0.26, d * h * 0.1, -h * 0.25);
       g.closePath();
     };
-    shaded(g, wp, d < 0 ? -h * 0.95 : 0, d < 0 ? 0 : h * 0.95, mix(col, '#3a1a08', 0.45), L, { tex: 0.5, seed: 41 });
-    g.strokeStyle = rgba(col, 1, 0.5);
+    shaded(g, wp, d < 0 ? -h : 0, d < 0 ? 0 : h, mix(col, '#4a1e08', 0.55), L, { tex: 0.5, seed: 41 });
+    g.save();
+    wp();
+    g.clip();
+    g.fillStyle = 'rgba(255,190,90,0.12)';
+    g.fillRect(d < 0 ? -h : 0, -h * 1.2, h, h);
+    g.restore();
+    g.strokeStyle = rgba(dk, 1);
+    g.lineCap = 'round';
+    g.lineWidth = h * 0.022;
+    g.beginPath();
+    g.moveTo(root[0], root[1]);
+    g.quadraticCurveTo(d * h * 0.3, -h * 0.9, elbow[0], elbow[1]);
+    g.lineTo(tip[0], tip[1]);
+    g.stroke();
     g.lineWidth = h * 0.012;
-    for (let i = 0; i < 4; i++) { g.beginPath(); g.moveTo(d * h * 0.7, -h * 1.0); g.lineTo(d * h * (0.78 - i * 0.2), -h * (0.4 + (i % 2) * 0.05)); g.stroke(); }
+    for (const f of fingers) { g.beginPath(); g.moveTo(elbow[0], elbow[1]); g.lineTo(f[0], f[1]); g.stroke(); }
   }
-  // body
-  shaded(g, () => { g.beginPath(); g.ellipse(0, -h * 0.22, h * 0.38, h * 0.22, 0, 0, Math.PI * 2); }, -h * 0.38, h * 0.38, col, L, { tex: 0.6, spec: 0.35, seed: 43 });
-  // neck
+  // coiled body, half in the Pool
+  shaded(g, () => { g.beginPath(); g.ellipse(0, -h * 0.17, h * 0.4, h * 0.16, 0, 0, Math.PI * 2); }, -h * 0.4, h * 0.4, col, L, { tex: 0.5, spec: 0.3, seed: 43 });
+  g.save();
+  g.beginPath();
+  g.ellipse(0, -h * 0.17, h * 0.4, h * 0.16, 0, 0, Math.PI * 2);
+  g.clip();
+  scales(g, -h * 0.4, -h * 0.33, h * 0.8, h * 0.32, h * 0.04);
+  g.restore();
+  // forelegs gripping the rim
+  for (const d of [-1, 1]) {
+    shaded(g, limbPath(g, d * h * 0.2, -h * 0.22, d * h * 0.3, -h * 0.03, h * 0.09, h * 0.06), d * h * 0.1, d * h * 0.35, col, L);
+    for (let i = -1; i <= 1; i++) crease(g, [[d * h * 0.3 + i * h * 0.02, -h * 0.03], [d * h * 0.31 + i * h * 0.03, 0]], h * 0.01, 0.9);
+  }
+  // S-curved neck
   const neck = () => {
     g.beginPath();
-    g.moveTo(-h * 0.14, -h * 0.35);
-    g.bezierCurveTo(-h * 0.2, -h * 0.6, h * 0.12, -h * 0.66, h * 0.02, -h * 0.84);
-    g.lineTo(h * 0.14, -h * 0.82);
-    g.bezierCurveTo(h * 0.26, -h * 0.62, -h * 0.02, -h * 0.56, h * 0.14, -h * 0.35);
+    g.moveTo(-h * 0.13, -h * 0.26);
+    g.bezierCurveTo(-h * 0.24, -h * 0.5, h * 0.12, -h * 0.6, -h * 0.02, -h * 0.82);
+    g.lineTo(h * 0.13, -h * 0.82);
+    g.bezierCurveTo(h * 0.26, -h * 0.58, -h * 0.04, -h * 0.5, h * 0.13, -h * 0.26);
     g.closePath();
   };
-  shaded(g, neck, -h * 0.2, h * 0.26, col, L, { tex: 0.5, spec: 0.3, seed: 45 });
-  g.strokeStyle = 'rgba(40,20,6,0.5)';
-  g.lineWidth = 1.5;
-  for (let i = 0; i < 10; i++) { const y = -h * (0.4 + i * 0.045); g.beginPath(); g.moveTo(-h * 0.1 + i * 0.012 * h, y); g.lineTo(h * 0.1 + i * 0.008 * h, y - h * 0.01); g.stroke(); }
-  dragonHead(g, h * 0.08, -h * 0.9, h * 0.15, col, sp.eyes, L);
+  shaded(g, neck, -h * 0.22, h * 0.26, col, L, { tex: 0.4, spec: 0.3, seed: 45 });
+  g.save();
+  neck();
+  g.clip();
+  scales(g, -h * 0.25, -h * 0.85, h * 0.5, h * 0.6, h * 0.035);
+  // pale belly plates down the throat
+  for (let i = 0; i < 9; i++) {
+    const t = i / 9;
+    const x = -h * 0.05 + Math.sin(t * Math.PI * 1.2) * h * 0.05;
+    g.fillStyle = 'rgba(240,210,150,0.35)';
+    g.fillRect(x - h * 0.05, -h * (0.32 + t * 0.48), h * 0.1, h * 0.022);
+  }
+  g.restore();
+  dragonHead(g, h * 0.055, -h * 0.92, h * 0.17, col, sp.eyes, L);
 }
 
+/** Rows of overlapping scales (clip to the shape first). */
+function scales(g, x, y, w, h, size, dark = 'rgba(40,18,4,0.45)', light = 'rgba(255,220,150,0.18)') {
+  for (let row = 0, yy = y; yy < y + h; yy += size * 0.55, row++) {
+    for (let xx = x - size + (row % 2) * size * 0.5; xx < x + w + size; xx += size) {
+      g.strokeStyle = dark;
+      g.lineWidth = Math.max(0.8, size * 0.09);
+      g.beginPath();
+      g.arc(xx, yy, size * 0.5, 0.15 * Math.PI, 0.85 * Math.PI);
+      g.stroke();
+      g.strokeStyle = light;
+      g.lineWidth = Math.max(0.6, size * 0.05);
+      g.beginPath();
+      g.arc(xx, yy - size * 0.08, size * 0.42, 1.15 * Math.PI, 1.6 * Math.PI);
+      g.stroke();
+    }
+  }
+}
+
+/** Frontal head of a great bronze dragon, looking down at the viewer. s ≈ half-width. */
 export function dragonHead(g, cx, cy, s, col, eyeCol, L) {
-  // horns
-  for (const d of [-1, 1]) shaded(g, () => { g.beginPath(); g.moveTo(cx + d * s * 0.3, cy - s * 0.3); g.quadraticCurveTo(cx + d * s * 1.1, cy - s * 0.9, cx + d * s * 1.2, cy - s * 1.5); g.quadraticCurveTo(cx + d * s * 0.8, cy - s * 0.8, cx + d * s * 0.5, cy - s * 0.05); g.closePath(); }, cx - s * 1.2, cx + s * 1.2, '#d8c090', L);
-  // head plate
-  const hp = () => {
+  const dk = mix(col, '#1a0a02', 0.55);
+  // swept-back horns
+  for (const d of [-1, 1]) {
+    shaded(g, () => {
+      g.beginPath();
+      g.moveTo(cx + d * s * 0.45, cy - s * 0.25);
+      g.bezierCurveTo(cx + d * s * 1.1, cy - s * 0.55, cx + d * s * 1.55, cy - s * 1.1, cx + d * s * 1.35, cy - s * 1.9);
+      g.bezierCurveTo(cx + d * s * 1.25, cy - s * 1.2, cx + d * s * 0.95, cy - s * 0.6, cx + d * s * 0.62, cy + s * 0.05);
+      g.closePath();
+    }, cx - s * 1.6, cx + s * 1.6, '#e2cc98', L, { spec: 0.35 });
+    // cheek spikes
+    for (let i = 0; i < 3; i++) {
+      shaded(g, () => poly(g, [[cx + d * s * (0.78 - i * 0.08), cy + s * (0.15 + i * 0.28)], [cx + d * s * (1.25 - i * 0.12), cy + s * (0.0 + i * 0.3)], [cx + d * s * (0.74 - i * 0.08), cy + s * (0.32 + i * 0.28)]]), cx - s * 1.3, cx + s * 1.3, '#cdb684', L);
+    }
+  }
+  // frill behind the jaw
+  for (const d of [-1, 1]) shaded(g, () => { g.beginPath(); g.moveTo(cx + d * s * 0.6, cy - s * 0.1); g.quadraticCurveTo(cx + d * s * 1.15, cy + s * 0.3, cx + d * s * 0.95, cy + s * 0.95); g.lineTo(cx + d * s * 0.5, cy + s * 0.6); g.closePath(); }, cx - s * 1.2, cx + s * 1.2, dk, L, { tex: 0.4 });
+  // skull and snout
+  const head = () => {
     g.beginPath();
-    g.moveTo(cx - s * 0.6, cy - s * 0.35);
-    g.quadraticCurveTo(cx, cy - s * 0.7, cx + s * 0.6, cy - s * 0.35);
-    g.lineTo(cx + s * 0.45, cy + s * 0.5);
-    g.quadraticCurveTo(cx + s * 0.3, cy + s * 1.1, cx, cy + s * 1.2);
-    g.quadraticCurveTo(cx - s * 0.3, cy + s * 1.1, cx - s * 0.45, cy + s * 0.5);
+    g.moveTo(cx - s * 0.62, cy - s * 0.42);
+    g.quadraticCurveTo(cx, cy - s * 0.78, cx + s * 0.62, cy - s * 0.42);
+    g.quadraticCurveTo(cx + s * 0.9, cy + s * 0.05, cx + s * 0.72, cy + s * 0.38);
+    g.quadraticCurveTo(cx + s * 0.42, cy + s * 0.8, cx + s * 0.34, cy + s * 1.18);
+    g.quadraticCurveTo(cx, cy + s * 1.36, cx - s * 0.34, cy + s * 1.18);
+    g.quadraticCurveTo(cx - s * 0.42, cy + s * 0.8, cx - s * 0.72, cy + s * 0.38);
+    g.quadraticCurveTo(cx - s * 0.9, cy + s * 0.05, cx - s * 0.62, cy - s * 0.42);
     g.closePath();
   };
-  shaded(g, hp, cx - s * 0.6, cx + s * 0.6, col, L, { tex: 0.5, spec: 0.4, seed: 47 });
-  // frills
-  for (const d of [-1, 1]) shaded(g, () => poly(g, [[cx + d * s * 0.55, cy - s * 0.2], [cx + d * s * 1.0, cy + s * 0.1], [cx + d * s * 0.5, cy + s * 0.5]]), cx - s, cx + s, mix(col, '#3a1a08', 0.4), L);
-  // brow ridges + eyes
-  g.fillStyle = rgba(col, 1, 0.5);
-  for (const d of [-1, 1]) { g.beginPath(); g.ellipse(cx + d * s * 0.28, cy - s * 0.08, s * 0.24, s * 0.1, d * 0.4, 0, Math.PI * 2); g.fill(); }
-  eyes(g, cx, cy + s * 0.04, s * 0.27, s * 0.08, eyeCol, { slit: true });
-  glow(g, cx, cy, s * 2.2, '#ff9a30', 0.25);
-  // nostrils & teeth
-  g.fillStyle = '#1a0a04';
-  for (const d of [-1, 1]) { g.beginPath(); g.ellipse(cx + d * s * 0.12, cy + s * 1.0, s * 0.06, s * 0.04, 0, 0, Math.PI * 2); g.fill(); }
-  g.fillStyle = '#f0e8d0';
-  for (let i = -2; i <= 2; i++) poly(g, [[cx + i * s * 0.12 - s * 0.03, cy + s * 0.85], [cx + i * s * 0.12 + s * 0.03, cy + s * 0.85], [cx + i * s * 0.12, cy + s * 0.98]]);
-  g.fill();
+  shaded(g, head, cx - s * 0.9, cx + s * 0.9, col, L, { spec: 0.3, tex: 0.3, seed: 47 });
+  g.save();
+  head();
+  g.clip();
+  scales(g, cx - s, cy - s * 0.8, s * 2, s * 2.2, s * 0.16);
+  // snout ridge plates
+  for (let i = 0; i < 5; i++) {
+    const y = cy + s * (0.05 + i * 0.2);
+    g.fillStyle = rgba(col, 1, 1.25 - i * 0.05);
+    g.beginPath();
+    g.ellipse(cx, y, s * (0.16 - i * 0.015), s * 0.07, 0, 0, Math.PI * 2);
+    g.fill();
+  }
+  // form shadow under the brows and down the snout's right side
+  g.fillStyle = linGrad(g, cx - s, 0, cx + s, 0, [[0, 'rgba(0,0,0,0)'], [0.55, 'rgba(0,0,0,0.05)'], [1, 'rgba(10,2,0,0.55)']]);
+  g.fillRect(cx - s, cy - s, s * 2, s * 2.5);
+  g.restore();
+  // heavy brow ridges
+  for (const d of [-1, 1]) {
+    shaded(g, () => { g.beginPath(); g.moveTo(cx + d * s * 0.08, cy - s * 0.12); g.quadraticCurveTo(cx + d * s * 0.4, cy - s * 0.38, cx + d * s * 0.78, cy - s * 0.12); g.quadraticCurveTo(cx + d * s * 0.42, cy - s * 0.2, cx + d * s * 0.08, cy - s * 0.02); g.closePath(); }, cx - s, cx + s, dk, L);
+  }
+  // open jaw: fire-lit mouth and teeth
+  const my = cy + s * 1.05;
+  g.save();
+  g.beginPath();
+  g.ellipse(cx, my, s * 0.3, s * 0.14, 0, 0, Math.PI * 2);
+  g.clip();
+  g.fillStyle = '#2a0600';
+  g.fillRect(cx - s, my - s, s * 2, s * 2);
+  glow(g, cx, my + s * 0.06, s * 0.4, '#ff8a20', 0.9);
+  g.restore();
+  g.fillStyle = '#f2ead6';
+  for (let i = -3; i <= 3; i++) {
+    poly(g, [[cx + i * s * 0.075 - s * 0.025, my - s * 0.12], [cx + i * s * 0.075 + s * 0.025, my - s * 0.12], [cx + i * s * 0.075, my - s * 0.02]]);
+    g.fill();
+    poly(g, [[cx + i * s * 0.075 - s * 0.022, my + s * 0.13], [cx + i * s * 0.075 + s * 0.022, my + s * 0.13], [cx + i * s * 0.075, my + s * 0.05]]);
+    g.fill();
+  }
+  // nostrils with a wisp of smoke
+  g.fillStyle = '#140600';
+  for (const d of [-1, 1]) {
+    g.beginPath();
+    g.ellipse(cx + d * s * 0.13, cy + s * 0.88, s * 0.05, s * 0.032, d * 0.4, 0, Math.PI * 2);
+    g.fill();
+    glow(g, cx + d * s * 0.2, cy + s * 0.78, s * 0.22, '#c8b8a0', 0.12, 'screen');
+  }
+  // burning eyes
+  eyes(g, cx, cy - s * 0.04, s * 0.4, s * 0.075, eyeCol, { slit: true });
+  glow(g, cx, cy, s * 2.4, '#ff9a30', 0.18);
 }
 
 // ------------------------------------------------------------------ lighting

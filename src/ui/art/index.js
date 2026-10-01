@@ -70,13 +70,14 @@ function placeGroup(g, W, H, groups, info, light, seed) {
   const floor = info.floorY ?? H * 0.64;
   const L = LIGHTS[light] ?? LIGHTS.dusk;
   const hazeColor = info.sky?.fog ?? (light === 'green' ? '#0a2010' : '#1a1410');
-  const human = H * 0.52;
+  const biggest = Math.max(...shown.map((id) => creatureScale(id)));
+  const human = Math.min(H * 0.52, (H * 0.64) / Math.max(1, biggest));
   const depth = (t) => floor + (H - floor) * t;
   // slots: [x (0..1), depth t, scale, haze]
   const front = [[0.5, 0.95, 1.0, 0], [0.3, 0.8, 0.9, 0.04], [0.7, 0.82, 0.9, 0.04]];
   const back = [[0.4, 0.42, 0.66, 0.3], [0.6, 0.45, 0.66, 0.3], [0.19, 0.5, 0.68, 0.28], [0.81, 0.5, 0.68, 0.28]];
   const n = shown.length;
-  const slots = n === 1 && shown[0] === 'ghostKnight' ? [[0.5, 0.3, 0.82, 0]] : n === 1 ? [[0.5, 0.92, 1.05, 0]] : n === 2 ? [[0.4, 0.9, 1, 0], [0.62, 0.84, 0.95, 0.03]] : [...front, ...back].slice(0, n);
+  const slots = n === 1 && shown[0] === 'tyranthraxus' ? [[0.5, 0.25, 0.6, 0]] : n === 1 && shown[0] === 'ghostKnight' ? [[0.5, 0.3, 0.82, 0]] : n === 1 ? [[0.5, 0.92, 1.05, 0]] : n === 2 ? [[0.4, 0.9, 1, 0], [0.62, 0.84, 0.95, 0.03]] : [...front, ...back].slice(0, n);
   const items = shown.map((id, i) => ({ id, slot: slots[i], i }));
   // paint far to near
   items.sort((a, b) => a.slot[1] - b.slot[1]);
@@ -120,8 +121,21 @@ export function paintNpcPortrait(npc, scale = 1) {
     g.fillStyle = bg;
     g.fillRect(0, 0, W, H);
     glow(g, W / 2, H, H * 0.8, '#ffd060', 0.5);
-    dragonHead(g, W / 2, H * 0.36, W * 0.24, '#b07a3a', '#ffe080', LIGHTS.gold);
-    vignette(g, W, H, 0.6);
+    // neck rising out of frame
+    const ng = g.createLinearGradient(W * 0.3, 0, W * 0.7, 0);
+    ng.addColorStop(0, '#8a5a24');
+    ng.addColorStop(0.5, '#5a3612');
+    ng.addColorStop(1, '#1e1006');
+    g.fillStyle = ng;
+    g.beginPath();
+    g.moveTo(W * 0.3, H);
+    g.quadraticCurveTo(W * 0.34, H * 0.62, W * 0.42, H * 0.5);
+    g.lineTo(W * 0.6, H * 0.5);
+    g.quadraticCurveTo(W * 0.68, H * 0.66, W * 0.72, H);
+    g.closePath();
+    g.fill();
+    dragonHead(g, W / 2, H * 0.34, W * 0.27, '#b07a3a', '#ffe080', LIGHTS.gold);
+    vignette(g, W, H, 0.55);
   } else if (npc.kind === 'monster') {
     c = makeCanvas(W, H);
     const g = c.getContext('2d');

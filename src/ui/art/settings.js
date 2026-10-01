@@ -1235,10 +1235,18 @@ S.smithy = (g, W, H, R) => {
   lights.push({ x: fx, y: fy - 16, s: 34, kind: 'flame', color: '#ff6a18' });
   glow(g, fx, fy - 20, 520, '#ff6a20', 0.4);
   glowEllipse(g, fx + 100, H * 0.9, 480, 110, '#ff6a20', 0.3);
-  // hood
-  g.fillStyle = '#1a1612';
-  poly(g, [[fx - 100, fy - 170], [fx + 100, fy - 170], [fx + 40, 0], [fx - 40, 0]]);
-  g.fill();
+  // stone chimney hood, soot-blackened, lit from below
+  g.save();
+  poly(g, [[fx - 104, fy - 168], [fx + 104, fy - 168], [fx + 46, 0], [fx - 46, 0]]);
+  g.clip();
+  masonry(g, fx - 110, 0, 220, fy - 166, { base: '#3e3630', course: 16, blockW: 30, seed: 112 });
+  g.fillStyle = linGrad(g, 0, 0, 0, fy - 168, [[0, 'rgba(0,0,0,0.85)'], [0.7, 'rgba(0,0,0,0.45)'], [1, 'rgba(255,110,40,0.25)']]);
+  g.fillRect(fx - 110, 0, 220, fy - 166);
+  g.restore();
+  g.fillStyle = '#2a221c';
+  g.fillRect(fx - 112, fy - 176, 224, 10);
+  g.fillStyle = 'rgba(255,140,60,0.35)';
+  g.fillRect(fx - 112, fy - 167, 224, 2);
   P.weaponRack(g, W * 0.52, H * 0.22, W * 0.22, H * 0.34, 7);
   P.anvil(g, W * 0.55, H * 0.9, 120);
   P.armourStand(g, W * 0.84, H * 0.97, 150, { plate: true });

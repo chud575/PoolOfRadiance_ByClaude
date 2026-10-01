@@ -157,7 +157,8 @@ export default class DialogueScene extends Scene {
     const { day, hour, minute } = this.ctx.game.clock;
     const loc = this.ctx.game.location;
     const where = hasMap(loc.map) ? getMap(loc.map).zoneAt(loc.x, loc.y) : 'Phlan';
-    this.log.push({ text: `Day ${day}, ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')} — ${where}.`, kind: 'system' });
+    void where;
+    this.log.push({ text: `Day ${day}, ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}.`, kind: 'system' });
     this.own(() => {
       this.roster.dispose();
       this.log.dispose();
@@ -353,8 +354,9 @@ export default class DialogueScene extends Scene {
     if (!node) return this.leave();
     this.nodeId = id;
     const art = { ...(s.art ?? {}), ...(node.art ?? {}) };
-    const ghost = art.npc && NPCS[art.npc]?.kind === 'ghost';
-    const spec = { setting: art.setting ?? 'slums', light: art.light, monsters: art.monster ? [{ id: art.monster, count: art.count ?? 1 }] : ghost ? [{ id: 'ghostKnight', count: 1 }] : null, deity: art.deity };
+    const kind = art.npc ? NPCS[art.npc]?.kind : null;
+    const figure = art.monster ?? (kind === 'ghost' ? 'ghostKnight' : kind === 'dragon' ? 'tyranthraxus' : null);
+    const spec = { setting: art.setting ?? 'slums', light: art.light, monsters: figure ? [{ id: figure, count: art.monster ? art.count ?? 1 : 1 }] : null, deity: art.deity };
     await this._showArt(spec, s.title, s.subtitle ?? '');
     this._setSpeaker(node.speaker ?? null);
     if (node.do) apply(this.ctx, node.do);
@@ -412,7 +414,7 @@ export default class DialogueScene extends Scene {
 
   _zoneName() {
     const loc = this.ctx.game.location;
-    return hasMap(loc.map) ? getMap(loc.map).zoneAt(loc.x, loc.y) : '';
+    return this.eventId && hasMap(loc.map) ? getMap(loc.map).zoneAt(loc.x, loc.y) : '';
   }
 
   encounterChoice(o) {

@@ -229,6 +229,8 @@ export default class ShopScene extends Scene {
       ]);
       this.listEl.append(el);
     }
+    const selEl = this.listEl.querySelector('.shp-item.sel');
+    if (selEl) requestAnimationFrame(() => selEl.scrollIntoView({ block: 'nearest' }));
     if (!items.length) this.listEl.append(h('div.shp-empty', [this.tab === 'sell' ? `${ch?.name ?? 'No one'} carries nothing ${this.shop.name} will buy.` : 'Nothing for sale.']));
   }
 
@@ -403,7 +405,7 @@ export default class ShopScene extends Scene {
     for (const [ic, t, c, d, fn] of opts) {
       this.listEl.append(h('div.shp-row', [h('span.ic', [ic]), h('span.t', [t]), h('span.d', [d]), h('span.c', [c]), h('button.por-btn', { onclick: fn }, ['Choose'])]));
     }
-    if (this.lastRumour) this.listEl.append(h('div.shp-rumor', [this.lastRumour]));
+    this.listEl.append(h('div.shp-rumor', [this.lastRumour ?? this.shop.ambience ?? 'The room is loud with dice and old songs. Someone is always just about to tell a story.']));
   }
 
   round() {

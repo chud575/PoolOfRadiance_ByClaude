@@ -110,6 +110,7 @@ export const SHOPS = {
     setting: 'tavern',
     greeting: 'Sit, sit. Ale\'s a copper, stew\'s two, and gossip is free if you drink enough of the first.',
     drink: 1,
+    ambience: 'Smoke hangs under the beams. A dwarf is losing at dice to a halfling who is not cheating, quite; two off-duty watchmen argue about the Slum Wall; by the fire an old sailor waits for someone to buy him a drink and ask for a story.',
     rumors: [
       { journal: 8, text: 'An old guard stirs his stew. "Kuto\'s Well? The kobolds use it like a front door."' },
       { journal: 20, text: 'An old sailor clears his throat. "You want a story? I\'ll tell you a story."' },
@@ -129,6 +130,7 @@ export const SHOPS = {
     setting: 'tavern',
     greeting: 'Sailors\' bar. Sailors\' rules. Don\'t whistle, don\'t sing, and don\'t ask about the island.',
     drink: 2,
+    ambience: 'Tar, salt and wet wool. The sailors drink with their backs to the wall and their eyes on the door, and nobody looks out of the window toward the island.',
     rumors: [
       { journal: 6, text: '"Sokol Keep? Lights on the walls, no moon. No crew\'ll anchor under it. I\'ll row you, mind. Rowing\'s different."' },
       { text: '"The Moonsea freezes early this year. Get your business done before the ice, or wait till spring."' },
