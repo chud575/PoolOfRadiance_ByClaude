@@ -3,8 +3,8 @@ import { EDGE, CELL } from '../../data/maps/MapGrid.js';
 import { SHEET, collectEdges, mergeRuns } from './BlockSheet.js';
 import { makeCanvas, makeDesk, grainTile, prng } from './ink.js';
 import { PIN_KINDS, drawPin } from './glyphs.js';
-import { SERIF, wrapText } from './ornaments.js';
-import { hash2 } from '../../render/textures/noise.js';
+import { SERIF } from './ornaments.js';
+import { hash2, fbm } from '../../render/textures/noise.js';
 import { preloadTextureSets, getTextureSet } from '../../render/textures/index.js';
 
 /** Shared procedural material sets the miniature is built from (cached library sets; never disposed here). */
@@ -40,7 +40,7 @@ class Batch {
    * Box centred at (cx, cy, cz) with size (sx, sy, sz), yawed by ry.
    * uv: 'world' (scale us per unit) or 'local' (0..1 across each face).
    */
-  box(cx, cy, cz, sx, sy, sz, { ry = 0, us = 1.6, uo = 0, vo = 0, uv = 'world', ao = 0.45, aoH = 0.09, tint = 1, top = true } = {}) {
+  box(cx, cy, cz, sx, sy, sz, { ry = 0, us = 1.6, uo = 0, vo = 0, uv = 'world', ao = 0.45, aoH = 0.09, tint = 1, top = true, uvFn = null } = {}) {
     const cr = Math.cos(ry);
     const sr = Math.sin(ry);
     const W = (lx, ly, lz) => [cx + lx * cr + lz * sr, cy + ly, cz - lx * sr + lz * cr];
@@ -69,7 +69,9 @@ class Batch {
           const P = W(lx, ly, lz);
           let u;
           let v;
-          if (uv === 'local') {
+          if (uvFn) {
+            [u, v] = uvFn(P[0], P[2]);
+          } else if (uv === 'local') {
             u = (s + 1) / 2;
             v = (ly + hy) / sy;
           } else {
@@ -86,8 +88,9 @@ class Batch {
     if (top) {
       const q = [[-hx, -hz], [hx, -hz], [hx, hz], [-hx, hz]].map(([lx, lz]) => {
         const P = W(lx, hy, lz);
-        const u = uv === 'local' ? (lx + hx) / sx : P[0] * us + uo;
-        const v = uv === 'local' ? (lz + hz) / sz : P[2] * us + vo;
+        let u = uv === 'local' ? (lx + hx) / sx : P[0] * us + uo;
+        let v = uv === 'local' ? (lz + hz) / sz : P[2] * us + vo;
+        if (uvFn) [u, v] = uvFn(P[0], P[2]);
         return this._v(P[0], P[1], P[2], 0, 1, 0, u, v, tint);
       });
       this.quad(q[3], q[2], q[1], q[0]);
@@ -108,6 +111,12 @@ class Batch {
     m.receiveShadow = true;
     return m;
   }
+}
+
+let needleMatCache = null;
+function needleMatShared() {
+  needleMatCache ??= new THREE.MeshStandardMaterial({ color: 0xcfd3d8, roughness: 0.25, metalness: 1 });
+  return needleMatCache;
 }
 
 /**
@@ -206,23 +215,23 @@ export class Diorama {
     const wild = map.tileset === 'wilderness' || map.tileset === 'graveyard';
 
     // ---------- desk: walnut planks ----------
-    const deskCanvas = makeDesk(1024, 1024, { lit: false, seed: 9, tone: [124, 80, 44] });
+    const deskCanvas = makeDesk(1024, 1024, { lit: false, seed: 9, tone: [70, 48, 32] });
     const deskTex = T(new THREE.CanvasTexture(deskCanvas));
     deskTex.colorSpace = THREE.SRGBColorSpace;
     deskTex.wrapS = deskTex.wrapT = THREE.RepeatWrapping;
-    deskTex.repeat.set(2.2, 2.2);
+    deskTex.repeat.set(3.5, 3.5);
     deskTex.anisotropy = maxAniso;
     const deskBump = T(new THREE.CanvasTexture(deskCanvas));
     deskBump.wrapS = deskBump.wrapT = THREE.RepeatWrapping;
     deskBump.repeat.copy(deskTex.repeat);
-    const desk = new THREE.Mesh(T(new THREE.PlaneGeometry(150, 150)), T(new THREE.MeshStandardMaterial({ map: deskTex, bumpMap: deskBump, bumpScale: 1.2, roughness: 0.38, metalness: 0, envMapIntensity: 0.6 })));
+    const desk = new THREE.Mesh(T(new THREE.PlaneGeometry(150, 150)), T(new THREE.MeshStandardMaterial({ map: deskTex, bumpMap: deskBump, bumpScale: 2.2, roughness: 0.6, metalness: 0, envMapIntensity: 0.22 })));
     desk.rotation.x = -Math.PI / 2;
     desk.position.set(10, -0.03, 8);
     desk.receiveShadow = true;
     scene.add(desk);
 
     // ---------- the parchment sheet, corners curling ----------
-    const tex = T(new THREE.CanvasTexture(sheet.canvas));
+    const tex = T(new THREE.CanvasTexture(this._paperWithContactShadows(map, sheet, seenCell, secrets)));
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = maxAniso;
     const pw = (W + 2 * M) / cs;
@@ -234,7 +243,7 @@ export class Diorama {
       const dv = Math.min(v, 1 - v);
       const corner = Math.max(0, 0.2 - Math.hypot(du * 1.1, dv * 1.35)) / 0.2;
       const edge = Math.max(0, 0.045 - Math.min(du, dv)) / 0.045;
-      const fold = Math.exp(-(((u - 0.5) * 60) ** 2)) * 0.06 + Math.exp(-(((v - 0.5) * 60) ** 2)) * 0.05;
+      const fold = Math.exp(-(((u - 0.5) * 60) ** 2)) * 0.025 + Math.exp(-(((v - 0.5) * 60) ** 2)) * 0.02;
       // the north-east corner has curled the most (it was rolled that way)
       const ne = u > 0.5 && v < 0.5 ? 1.5 : u < 0.5 && v > 0.5 ? 0.8 : 1.1;
       return corner ** 2.2 * 1.9 * ne + edge * 0.1 + fold;
@@ -259,6 +268,8 @@ export class Diorama {
     paper.castShadow = true;
     scene.add(paper);
     this.bounds = [];
+    this.sheetBox = { x0: px0, z0: pz0, x1: px0 + pw, z1: pz0 + ph };
+    this.paperTex = tex;
     for (const [bx, bz] of [[px0, pz0], [px0 + pw, pz0], [px0, pz0 + ph], [px0 + pw, pz0 + ph]]) {
       this.bounds.push(new THREE.Vector3(bx, 0, bz), new THREE.Vector3(bx, 1.4, bz));
     }
@@ -282,6 +293,8 @@ export class Diorama {
       iron: pbr('hd_iron', { metalness: 0.75, roughness: 0.55, envMapIntensity: 0.9 }),
       secret: pbr('hd_ashlar', { color: 0xf0b898 }, 1.7),
       gold: T(new THREE.MeshStandardMaterial({ color: 0xd8b25a, roughness: 0.28, metalness: 1, envMapIntensity: 1.2 })),
+      // building floors: raised plinths carrying the inked floor plan itself
+      floor: T(new THREE.MeshStandardMaterial({ map: tex, vertexColors: true, roughness: 0.9, metalness: 0, envMapIntensity: 0.3 })),
     };
     const B = {};
     const batch = (k) => (B[k] ??= new Batch());
@@ -296,19 +309,31 @@ export class Diorama {
       const horiz = Math.abs(z1 - z0) < 1e-6;
       return { cx: (x0 + x1) / 2, cz: (z0 + z1) / 2, sx: horiz ? Math.abs(x1 - x0) : th, sz: horiz ? th : Math.abs(z1 - z0), horiz, len: Math.hypot(x1 - x0, z1 - z0) };
     };
-    /** A stone wall run with a slightly chipped, uneven top. */
-    const stoneRun = (x0, z0, x1, z1, { h = wallH, th = 0.12, key = 'stone', ext = th / 2 } = {}) => {
+    /**
+     * A stone wall run: coursed blocks of slightly varied height, each capped
+     * with a bevelled coping (an overhanging cap and a narrower ridge), the odd
+     * stone chipped away.
+     */
+    const stoneRun = (x0, z0, x1, z1, { h = wallH, th = 0.12, key = 'stone', ext = th / 2, cap = true, vary = true } = {}) => {
       const s = span(x0, z0, x1, z1, th);
       const L = s.len + ext * 2;
-      const n = Math.max(1, Math.round(L / 0.28));
+      const n = Math.max(1, Math.round(L / 0.3));
       const b = batch(key);
+      const runH = vary ? h * (0.92 + rr() * 0.16) : h;
       for (let i = 0; i < n; i++) {
         const a = -L / 2 + (i / n) * L;
         const len = L / n;
-        const chip = rr() < 0.16;
-        const hh = h + (rr() - 0.5) * 0.028 - (chip ? 0.035 + rr() * 0.03 : 0);
+        const chip = rr() < 0.14;
+        const hh = runH + (vary ? (rr() - 0.5) * 0.05 - (chip ? 0.04 + rr() * 0.03 : 0) : (rr() - 0.5) * 0.02);
         const c = a + len / 2;
-        b.box(s.cx + (s.horiz ? c : 0), hh / 2, s.cz + (s.horiz ? 0 : c), s.horiz ? len : th, hh, s.horiz ? th : len, { tint: 0.9 + rr() * 0.12 });
+        const X = s.cx + (s.horiz ? c : 0);
+        const Z = s.cz + (s.horiz ? 0 : c);
+        b.box(X, hh / 2, Z, s.horiz ? len - 0.004 : th, hh, s.horiz ? th : len - 0.004, { tint: 0.86 + rr() * 0.16 });
+        if (!cap || chip) continue;
+        // coping: an overhanging cap stone, then a narrower ridge (reads as a bevel)
+        const ct = th * 1.28;
+        b.box(X, hh + 0.012, Z, s.horiz ? len + 0.002 : ct, 0.024, s.horiz ? ct : len + 0.002, { ao: 0.9, tint: 1.05 + rr() * 0.06 });
+        b.box(X, hh + 0.031, Z, s.horiz ? len : th * 0.62, 0.016, s.horiz ? th * 0.62 : len, { ao: 1, tint: 1.12 });
       }
     };
     /** Timber & plaster: limewashed infill between dark oak posts, sill and wall-plate. */
@@ -333,7 +358,7 @@ export class Diorama {
       const th = 0.2;
       const h = 0.74;
       const s = span(x0, z0, x1, z1, th);
-      stoneRun(x0, z0, x1, z1, { h, th, key: 'city', ext: th / 2 });
+      stoneRun(x0, z0, x1, z1, { h, th, key: 'city', ext: th / 2, cap: false, vary: false });
       const b = batch('city');
       const L = s.len + th;
       b.box(s.cx, 0.04, s.cz, s.horiz ? L : th + 0.07, 0.08, s.horiz ? th + 0.07 : L, { ao: 0.5 });
@@ -441,6 +466,16 @@ export class Diorama {
       const hh = wallH * (0.9 + hash2(x, y, 4) * 0.25);
       batch('rock').box(x + 0.5, hh / 2, y + 0.5, 1.0, hh, 1.0, { us: 1.1, tint: 0.85 + hash2(x, y, 6) * 0.15 });
     }
+    // ---------- building floors: each explored room raised as a plinth ----------
+    {
+      const uvFn = (x, z) => [(x - px0) / pw, 1 - (z - pz0) / ph];
+      const fl = batch('floor');
+      const fh = 0.06;
+      for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) {
+        if (!seenCell(x, y) || map.getCell(x, y) !== CELL.INTERIOR) continue;
+        fl.box(x + 0.5, fh / 2, y + 0.5, 1.002, fh, 1.002, { uvFn, ao: 0.35, aoH: fh, tint: 1 });
+      }
+    }
     for (const [k, b] of Object.entries(B)) {
       const m = b.mesh(M_[k]);
       if (!m) continue;
@@ -472,16 +507,49 @@ export class Diorama {
       scene.add(wm);
     }
 
-    // ---------- name scrolls floating above the zones ----------
+    // ---------- fog of war: drifting veils of mist over the unexplored squares ----------
+    this.veils = [];
+    if (sheet.fog) {
+      const mc = makeCanvas(512);
+      const mg = mc.getContext('2d');
+      mg.fillStyle = '#000';
+      mg.fillRect(0, 0, 512, 512);
+      mg.drawImage(sheet.fog, MX, MY, sheet.cs * map.w, sheet.cs * map.h, 0, 0, 512, 512);
+      const maskTex = T(new THREE.CanvasTexture(mc));
+      [[0.05, 0.55, 0x7c8698, 1], [0.2, 0.34, 0x8c96a6, 2], [0.42, 0.22, 0x9aa2b0, 3]].forEach(([y, op, col, sd]) => {
+        const nTex = T(new THREE.CanvasTexture(this._mistCanvas(sd)));
+        nTex.wrapS = nTex.wrapT = THREE.RepeatWrapping;
+        nTex.repeat.set(1.6, 1.6);
+        const mat = T(new THREE.MeshLambertMaterial({ color: col, map: nTex, alphaMap: maskTex, transparent: true, opacity: op, depthWrite: false }));
+        const veil = new THREE.Mesh(T(new THREE.PlaneGeometry(map.w + 0.6, map.h + 0.6)), mat);
+        veil.rotation.x = -Math.PI / 2;
+        veil.position.set(map.w / 2, y, map.h / 2);
+        veil.renderOrder = 2 + sd;
+        scene.add(veil);
+        this.veils.push({ tex: nTex, speed: 0.004 * sd, phase: sd * 1.7 });
+      });
+    }
+
+    // ---------- zone names: paper flags on pins stuck into the sheet ----------
     for (const z of sheet.labels ?? []) {
-      const sp = this._labelSprite(z.name);
-      const cx = z.x + z.w / 2;
-      const cz = z.y + z.h / 2;
-      let lz = cz + Math.min(1.2, z.h * 0.3);
-      // never float a name over the party's token
-      if (party && Math.abs(party.x + 0.5 - cx) < 1.8 && Math.abs(party.y + 0.5 - lz) < 1.3) lz = party.y + 0.5 + (party.y > 2 ? -1.5 : 1.5);
-      sp.position.set(cx, z.h <= 1 ? 0.95 : 1.1, lz);
-      scene.add(sp);
+      // stick the flag into the zone's largest explored building, else its middle
+      let best = null;
+      for (const rg of sheet.regions?.list ?? []) {
+        if (rg.type !== CELL.INTERIOR) continue;
+        const cells = rg.cells.filter(([x, y]) => x >= z.x && y >= z.y && x < z.x + z.w && y < z.y + z.h && seenCell(x, y));
+        if (cells.length && (!best || cells.length > best.length)) best = cells;
+      }
+      let fx = z.x + z.w / 2;
+      let fz = z.y + z.h / 2;
+      if (best) {
+        fx = best.reduce((a2, c) => a2 + c[0] + 0.5, 0) / best.length;
+        fz = best.reduce((a2, c) => a2 + c[1] + 0.5, 0) / best.length;
+      }
+      if (party && Math.abs(party.x + 0.5 - fx) < 1.4 && Math.abs(party.y + 0.5 - fz) < 1.4) fz += party.y + 0.5 > fz ? -1.2 : 1.2;
+      const flag = this._flagLabel(z.name, T, needleMatShared(T));
+      flag.position.set(fx, 0, fz);
+      flag.rotation.y = this.az * 0.6;
+      scene.add(flag);
     }
 
     // ---------- party token: painted arrow on a brass base, with a pennant ----------
@@ -532,7 +600,16 @@ export class Diorama {
       flag.castShadow = true;
       grp.add(base, disc, head, pole, finial, flag);
       grp.position.set(party.x + 0.5, 0, party.y + 0.5);
-      grp.scale.setScalar(1.75);
+      // a soft gilt glow ring on the paper under the token, so it is found at once
+      const ring = new THREE.Mesh(T(new THREE.RingGeometry(0.4, 0.47, 48)), T(new THREE.MeshBasicMaterial({ color: 0xffc070, transparent: true, opacity: 0.85, depthWrite: false })));
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.012;
+      const glow = new THREE.Mesh(T(new THREE.CircleGeometry(0.62, 48)), T(new THREE.MeshBasicMaterial({ map: this._glowTexture(T), color: 0xffb060, transparent: true, opacity: 0.7, depthWrite: false, blending: THREE.AdditiveBlending })));
+      glow.rotation.x = -Math.PI / 2;
+      glow.position.y = 0.01;
+      grp.add(ring, glow);
+      grp.scale.setScalar(2.35);
+      this.partyRing = ring;
       scene.add(grp);
       this.marker = { grp, flag, flagGeo };
     }
@@ -540,7 +617,7 @@ export class Diorama {
     // ---------- note pins with their seals as flags ----------
     const needleMat = T(new THREE.MeshStandardMaterial({ color: 0xcfd3d8, roughness: 0.25, metalness: 1 }));
     const needleGeo = T(new THREE.CylinderGeometry(0.014, 0.004, 0.6, 6));
-    const headGeo = T(new THREE.SphereGeometry(0.15, 20, 14));
+    const headGeo = T(new THREE.SphereGeometry(0.11, 20, 14));
     for (const n of notes ?? []) {
       const kind = PIN_KINDS[n.kind] ?? PIN_KINDS.note;
       const mat = T(new THREE.MeshStandardMaterial({ color: new THREE.Color(kind.color), roughness: 0.3, metalness: 0.05 }));
@@ -551,11 +628,11 @@ export class Diorama {
       needle.rotation.z = 0.1;
       needle.castShadow = true;
       const head = new THREE.Mesh(headGeo, mat);
-      head.position.set(px - 0.03, 0.6, pz);
+      head.position.set(px - 0.03, 0.58, pz);
       head.castShadow = true;
       const seal = new THREE.Sprite(T(new THREE.SpriteMaterial({ map: this._pinTexture(n.kind, T), depthWrite: false, sizeAttenuation: false })));
-      seal.scale.set(0.055, 0.055, 1);
-      seal.position.set(px - 0.03, 1.15, pz);
+      seal.scale.set(0.028, 0.028, 1);
+      seal.position.set(px - 0.03, 0.82, pz);
       scene.add(needle, head, seal);
     }
 
@@ -564,8 +641,8 @@ export class Diorama {
     this.bounds.push(new THREE.Vector3(-4.5, 0, 1.6), new THREE.Vector3(-3.3, 3.3, 1.6), new THREE.Vector3(-3.9, 0, 15.4), new THREE.Vector3(-3.6, 3.2, 12.4));
 
     // ---------- lights ----------
-    scene.add(new THREE.HemisphereLight(0x8a98b8, 0x4a2c14, 0.4));
-    const key = new THREE.DirectionalLight(0xffcf98, 2.2);
+    scene.add(new THREE.HemisphereLight(0xa8b0c0, 0x2a2018, 0.34));
+    const key = new THREE.DirectionalLight(0xffe4c4, 2.7);
     key.position.set(-14, 22, 14);
     key.target.position.set(9, 0, 8);
     key.castShadow = true;
@@ -574,13 +651,13 @@ export class Diorama {
     sc.left = -22; sc.right = 22; sc.top = 20; sc.bottom = -20; sc.near = 1; sc.far = 80;
     key.shadow.bias = -0.0004;
     key.shadow.normalBias = 0.02;
-    key.shadow.radius = 3;
+    key.shadow.radius = 2;
     scene.add(key, key.target);
-    const moon = new THREE.DirectionalLight(0x9aaed8, 0.65);
+    const moon = new THREE.DirectionalLight(0x9aaed8, 0.35);
     moon.position.set(26, 16, -14);
     moon.target.position.set(8, 0, 8);
     scene.add(moon, moon.target);
-    const bounce = new THREE.PointLight(0xffa860, 4, 40, 1.2);
+    const bounce = new THREE.PointLight(0xffc090, 1.4, 40, 1.2);
     bounce.position.set(8, 6, 26);
     scene.add(bounce);
 
@@ -589,6 +666,149 @@ export class Diorama {
     this.target.set(px0 + pw / 2, 0, pz0 + ph / 2);
     this._fitted = false;
     this._refit(true);
+  }
+
+  /** A tileable cloudy alpha field for the mist veils. */
+  _mistCanvas(seed) {
+    const S = 256;
+    const c = makeCanvas(S);
+    const g = c.getContext('2d');
+    const img = g.createImageData(S, S);
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+      const n = fbm(x / 32, y / 32, { period: 8, octaves: 4, seed: 300 + seed * 11 });
+      const i = (y * S + x) * 4;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = 255;
+      img.data[i + 3] = Math.max(0, Math.min(255, (0.5 + (n - 0.5) * 3.2) * 255));
+    }
+    g.putImageData(img, 0, 0);
+    return c;
+  }
+
+  _glowTexture(T) {
+    const c = makeCanvas(128);
+    const g = c.getContext('2d');
+    const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+    gr.addColorStop(0, 'rgba(255,230,170,1)');
+    gr.addColorStop(0.5, 'rgba(255,170,90,0.35)');
+    gr.addColorStop(1, 'rgba(255,150,60,0)');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, 128, 128);
+    return T(new THREE.CanvasTexture(c));
+  }
+
+  /**
+   * The sheet as laid on the desk: a copy of the survey with soft contact
+   * shadows inked under every raised wall and plinth (south-east of them,
+   * away from the desk light), so the miniature sits on the paper.
+   */
+  _paperWithContactShadows(map, sheet, seenCell, secrets) {
+    const src = sheet.canvas;
+    const k = sheet.k;
+    const { M, MX, MY } = SHEET;
+    const cs = sheet.cs;
+    const out = makeCanvas(src.width, src.height);
+    const g = out.getContext('2d');
+    g.drawImage(src, 0, 0);
+    const q = 4; // shadow layer at quarter resolution
+    const sc = makeCanvas(Math.ceil(src.width / q), Math.ceil(src.height / q));
+    const sg = sc.getContext('2d');
+    const P = (x, y) => [((M + MX + x * cs) * k) / q, ((M + MY + y * cs) * k) / q];
+    sg.filter = `blur(${(cs * k / q * 0.09).toFixed(1)}px)`;
+    sg.strokeStyle = 'rgba(30,16,6,0.85)';
+    sg.lineCap = 'round';
+    sg.lineWidth = (cs * k / q) * 0.26;
+    const off = 0.08;
+    sg.beginPath();
+    const { segs, effective } = collectEdges(map, sheet.info, seenCell, secrets);
+    for (const sgm of segs) {
+      if (effective(sgm) === EDGE.OPEN) continue;
+      const [ax, ay] = P(sgm.x0 + off, sgm.y0 + off);
+      const [bx, by] = P(sgm.x1 + off, sgm.y1 + off);
+      sg.moveTo(ax, ay);
+      sg.lineTo(bx, by);
+    }
+    sg.stroke();
+    // plinth shadows: a thin offset rim on the south and east of each building floor
+    sg.fillStyle = 'rgba(30,16,6,0.55)';
+    for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) {
+      if (!seenCell(x, y) || map.getCell(x, y) !== CELL.INTERIOR) continue;
+      const [ax, ay] = P(x + 0.06, y + 0.06);
+      const [bx, by] = P(x + 1.06, y + 1.06);
+      sg.fillRect(ax, ay, bx - ax, by - ay);
+    }
+    sg.filter = 'none';
+    g.save();
+    g.globalCompositeOperation = 'multiply';
+    g.globalAlpha = 0.75;
+    g.imageSmoothingEnabled = true;
+    g.drawImage(sc, 0, 0, out.width, out.height);
+    g.restore();
+    return out;
+  }
+
+  /**
+   * A zone name as a paper flag on a steel pin pushed into the sheet: a
+   * swallow-tailed slip of parchment with the name inked on both faces,
+   * gently curled, casting its own shadow.
+   */
+  _flagLabel(text, T, needleMat) {
+    const grp = new THREE.Group();
+    const fs = 56;
+    const probe = makeCanvas(8).getContext('2d');
+    probe.font = `bold ${fs}px ${SERIF}`;
+    probe.letterSpacing = '6px';
+    const label = text.toUpperCase();
+    const tw = probe.measureText(label).width;
+    const W = Math.ceil(tw + 120);
+    const H = 104;
+    const c = makeCanvas(W, H);
+    const g = c.getContext('2d');
+    // paper slip with a swallowtail
+    g.beginPath();
+    g.moveTo(0, 6); g.lineTo(W - 4, 6); g.lineTo(W - 40, H / 2); g.lineTo(W - 4, H - 6); g.lineTo(0, H - 6); g.closePath();
+    const body = g.createLinearGradient(0, 0, 0, H);
+    body.addColorStop(0, '#f4e8cc');
+    body.addColorStop(1, '#ddc79a');
+    g.fillStyle = body;
+    g.fill();
+    g.strokeStyle = 'rgba(43,26,13,0.9)';
+    g.lineWidth = 3;
+    g.stroke();
+    g.strokeStyle = 'rgba(43,26,13,0.45)';
+    g.lineWidth = 1.5;
+    g.strokeRect(12, 16, W - 70, H - 32);
+    g.fillStyle = 'rgba(120,80,40,0.12)';
+    for (let i = 0; i < 30; i++) g.fillRect((i * 97) % W, 8 + ((i * 53) % (H - 16)), 3 + (i % 5), 1);
+    g.font = `bold ${fs}px ${SERIF}`;
+    g.letterSpacing = '6px';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillStyle = '#3e1a0c';
+    g.fillText(label, (W - 40) / 2 + 6, H / 2 + 3);
+    const tex = T(new THREE.CanvasTexture(c));
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 8;
+    const fh = 0.56;
+    const fw = fh * (W / H);
+    const geo = T(new THREE.PlaneGeometry(fw, fh, 16, 1));
+    const p = geo.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const u = p.getX(i) / fw + 0.5;
+      p.setX(i, p.getX(i) + fw / 2);
+      p.setZ(i, Math.sin(u * Math.PI * 1.2) * 0.05 * u);
+    }
+    geo.computeVertexNormals();
+    const mat = T(new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide, alphaTest: 0.5, roughness: 0.9, envMapIntensity: 0.4 }));
+    const flag = new THREE.Mesh(geo, mat);
+    flag.position.set(0.012, 1.06, 0);
+    flag.castShadow = true;
+    const needle = new THREE.Mesh(T(new THREE.CylinderGeometry(0.01, 0.004, 1.3, 6)), needleMat);
+    needle.position.y = 0.65;
+    needle.castShadow = true;
+    const head = new THREE.Mesh(T(new THREE.SphereGeometry(0.035, 12, 8)), needleMat);
+    head.position.y = 1.3;
+    grp.add(flag, needle, head);
+    return grp;
   }
 
   _pennantTexture(T) {
@@ -615,59 +835,6 @@ export class Diorama {
     const t = T(new THREE.CanvasTexture(c));
     t.colorSpace = THREE.SRGBColorSpace;
     return t;
-  }
-
-  /** A little parchment scroll carrying a zone name, as a billboard that always reads. */
-  _labelSprite(text) {
-    const T = this._track.bind(this);
-    const fs = 44;
-    const probe = makeCanvas(8).getContext('2d');
-    probe.font = `italic ${fs}px ${SERIF}`;
-    const lines = wrapText(probe, text, 420);
-    const tw = Math.max(...lines.map((l) => probe.measureText(l).width));
-    const w = Math.ceil(tw + 110);
-    const h = Math.ceil(lines.length * fs * 1.1 + 34);
-    const c = makeCanvas(w, h + 10);
-    const g = c.getContext('2d');
-    // ribbon with forked tails
-    g.save();
-    g.shadowColor = 'rgba(0,0,0,0.45)';
-    g.shadowBlur = 8;
-    g.shadowOffsetY = 4;
-    g.fillStyle = '#b89a68';
-    for (const s of [-1, 1]) {
-      const x = s < 0 ? 4 : w - 4;
-      g.beginPath();
-      g.moveTo(w / 2 + s * (w / 2 - 40), 14);
-      g.lineTo(x, 14);
-      g.lineTo(x - s * 20, h / 2 + 2);
-      g.lineTo(x, h - 6);
-      g.lineTo(w / 2 + s * (w / 2 - 40), h - 6);
-      g.closePath();
-      g.fill();
-    }
-    const body = g.createLinearGradient(0, 4, 0, h);
-    body.addColorStop(0, '#f6ead0');
-    body.addColorStop(1, '#e2cc9e');
-    g.fillStyle = body;
-    g.fillRect(26, 4, w - 52, h - 14);
-    g.restore();
-    g.strokeStyle = 'rgba(43,26,13,0.85)';
-    g.lineWidth = 2;
-    g.strokeRect(26, 4, w - 52, h - 14);
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.font = `italic ${fs}px ${SERIF}`;
-    g.fillStyle = '#2b1a0d';
-    lines.forEach((l, i) => g.fillText(l, w / 2, 4 + (h - 14) / 2 + (i - (lines.length - 1) / 2) * fs * 1.1));
-    const t = T(new THREE.CanvasTexture(c));
-    t.colorSpace = THREE.SRGBColorSpace;
-    t.anisotropy = 4;
-    const sp = new THREE.Sprite(T(new THREE.SpriteMaterial({ map: t, depthTest: false, depthWrite: false, transparent: true, sizeAttenuation: false })));
-    const sh = 0.017 * (h + 10) / 70;
-    sp.scale.set(sh * (w / (h + 10)), sh, 1);
-    sp.renderOrder = 10;
-    return sp;
   }
 
   _props(scene, T, M_) {
@@ -898,20 +1065,22 @@ export class Diorama {
       this.panBy(-dx * this.dist * 0.0022, -dy * this.dist * 0.0022);
       return;
     }
-    this.az -= dx * 0.006;
-    this.el = Math.max(0.32, Math.min(1.45, this.el + dy * 0.004));
+    // the board never turns its back or tips out of frame
+    this.az = Math.max(-0.75, Math.min(0.5, this.az - dx * 0.006));
+    this.el = Math.max(0.55, Math.min(1.42, this.el + dy * 0.004));
   }
 
   /** Pan in the ground plane relative to the view (units). */
   panBy(dx, dz) {
     const s = Math.sin(this.az);
     const c = Math.cos(this.az);
-    this.target.x = Math.max(-3, Math.min(this.map.w + 8, this.target.x + dx * c + dz * s));
-    this.target.z = Math.max(-3, Math.min(this.map.h + 3, this.target.z - dx * s + dz * c));
+    const b = this.sheetBox ?? { x0: -3, z0: -3, x1: this.map.w + 8, z1: this.map.h + 3 };
+    this.target.x = Math.max(b.x0 + 3, Math.min(b.x1 - 3, this.target.x + dx * c + dz * s));
+    this.target.z = Math.max(b.z0 + 3, Math.min(b.z1 - 3, this.target.z - dx * s + dz * c));
   }
 
   dolly(f) {
-    this.dist = Math.max(this.fitDist * 0.18, Math.min(this.fitDist * 1.5, this.dist * f));
+    this.dist = Math.max(this.fitDist * 0.22, Math.min(this.fitDist * 1.12, this.dist * f));
     this.zoomLevel = this.fitDist / this.dist;
   }
 
@@ -937,6 +1106,8 @@ export class Diorama {
     c.target.lerp(this.target, a);
     this._applyCamera();
     if (this.marker) this.marker.flag.rotation.y = Math.sin(t * 1.7) * 0.12;
+    for (const v of this.veils ?? []) v.tex.offset.set(t * v.speed + v.phase, t * v.speed * 0.6);
+    if (this.partyRing) this.partyRing.material.opacity = 0.6 + 0.3 * Math.sin(t * 2.6);
     if (this.candleLight) {
       const f = 0.86 + 0.1 * Math.sin(t * 11.3) + 0.06 * Math.sin(t * 23.7 + 1.3) + 0.05 * (hash2(Math.floor(t * 18), 3, 1) - 0.5);
       this.candleLight.intensity = 14 * f;

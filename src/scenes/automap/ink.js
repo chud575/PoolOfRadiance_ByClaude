@@ -343,32 +343,42 @@ export function makeParchment(w, h, { seed = 1, margin = 0, tone = [238, 222, 18
 export function makeDesk(w, h, { cx = 0.45, cy = 0.45, seed = 4, lit = true, tone = [70, 40, 22] } = {}) {
   const c = makeCanvas(w, h);
   const g = c.getContext('2d');
-  const lw = Math.ceil(w / 3);
-  const lh = Math.ceil(h / 3);
+  // the grain runs along the planks (x), so the field is sampled coarsely in x and
+  // finely in y, then stretched: long flowing figure, fine growth rings, crisp seams
+  const lw = Math.max(64, Math.ceil(w / 4));
+  const lh = Math.max(64, Math.ceil(h / 1.5));
   const low = makeCanvas(lw, lh);
   const lg = low.getContext('2d');
   const img = lg.createImageData(lw, lh);
-  const plank = lh / 4.3;
+  const plankPx = Math.max(40, lh / 5.2);
   for (let y = 0; y < lh; y++) {
-    const pi = Math.floor(y / plank);
-    const py = (y % plank) / plank;
+    const pi = Math.floor(y / plankPx);
+    const py = (y % plankPx) / plankPx;
+    const pv = 0.86 + hash2(pi, seed, 3) * 0.28; // each plank its own board
     for (let x = 0; x < lw; x++) {
-      const u = x / lw;
-      const grain = fbm(u * 3 + pi * 7.3, y / 26 + pi * 3.1, { period: 256, octaves: 4, seed: seed + pi });
-      const ring = Math.sin((grain * 16 + y / 5.5 + pi * 9) * 1.3) * 0.5 + 0.5;
-      const knot = fbm(u * 1.5, y / 60, { period: 64, octaves: 2, seed: seed + 40 });
-      let v = 0.5 + (grain - 0.5) * 0.7 + ring * 0.16 + (knot - 0.5) * 0.2;
-      const seam = Math.min(py, 1 - py);
-      if (seam < 0.035) v *= 0.35 + seam / 0.035 * 0.65;
+      const u = x / lw * 4;
+      // butt joints, staggered per plank
+      const joint = (u * 0.55 + hash2(pi, seed, 7) * 3) % 1.6;
+      const warp = fbm(u * 0.9 + pi * 7.3, y / 70, { period: 256, octaves: 3, seed: seed + pi });
+      const ringPos = y / 1.9 + warp * 16 + Math.sin(u * 1.7 + pi) * 2;
+      const ring = Math.pow(Math.abs(Math.sin(ringPos)), 8) * 0.55 + Math.pow(Math.abs(Math.sin(ringPos * 2.7 + 1)), 12) * 0.25;
+      const fine = hash2(Math.floor(u * 40), y, seed + 11);
+      const figure = fbm(u * 2.2, y / 14 + pi * 3.1, { period: 256, octaves: 2, seed: seed + 40 });
+      let v = (0.62 + (figure - 0.5) * 0.42 - ring * 0.2 + (fine - 0.5) * 0.08) * pv;
+      const seam = Math.min(py, 1 - py) * plankPx;
+      if (seam < 2.2) v *= 0.3 + (seam / 2.2) * 0.7;
+      else if (seam < 4) v *= 1.06; // bevelled arris catching the light
+      if (joint < 0.012) v *= 0.45;
       const i = (y * lw + x) * 4;
-      img.data[i] = tone[0] * v + 8;
-      img.data[i + 1] = tone[1] * v + 5;
-      img.data[i + 2] = tone[2] * v + 3;
+      img.data[i] = tone[0] * v * 1.9 + 6;
+      img.data[i + 1] = tone[1] * v * 1.9 + 4;
+      img.data[i + 2] = tone[2] * v * 1.9 + 3;
       img.data[i + 3] = 255;
     }
   }
   lg.putImageData(img, 0, 0);
   g.imageSmoothingEnabled = true;
+  g.imageSmoothingQuality = 'high';
   g.drawImage(low, 0, 0, w, h);
   if (!lit) return c;
   // varnish sheen streak
@@ -382,8 +392,8 @@ export function makeDesk(w, h, { cx = 0.45, cy = 0.45, seed = 4, lit = true, ton
   // candle pool
   const R = Math.max(w, h);
   const pool = g.createRadialGradient(w * cx, h * cy, 0, w * cx, h * cy, R * 0.7);
-  pool.addColorStop(0, 'rgba(255,170,90,0.30)');
-  pool.addColorStop(0.5, 'rgba(255,140,60,0.08)');
+  pool.addColorStop(0, 'rgba(255,180,100,0.34)');
+  pool.addColorStop(0.45, 'rgba(255,150,70,0.12)');
   pool.addColorStop(1, 'rgba(255,140,60,0)');
   g.fillStyle = pool;
   g.fillRect(0, 0, w, h);

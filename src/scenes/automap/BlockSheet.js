@@ -2,7 +2,9 @@ import { EDGE, CELL, DIRS } from '../../data/maps/MapGrid.js';
 import { getMap, hasMap } from '../../data/maps/index.js';
 import { TRAVEL } from '../../data/travel.js';
 import { INK, makeCanvas, makeParchment, quillStroke, planWall, pencilShade, hatchRect, lineShade, stipple, featherMask, prng } from './ink.js';
-import { regions, washRegion, hatchBand, cobbleRegion, scatter, deckleMask } from './paint.js';
+import { regions, washRegion, hatchBand, cobbleRegion, scatter } from './paint.js';
+import { fogCoverage, setOutline } from './fog.js';
+import { drawFloor, wallShadow, furnish, partition, themeOf } from './plan.js';
 import { drawMarker } from './glyphs.js';
 import { SERIF, drawCompassRose, drawCartouche, drawIlluminatedInitial, drawFlourish, fitFont, wrapText, haloText, goldGradient } from './ornaments.js';
 
@@ -148,33 +150,40 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
   g.stroke();
   g.restore();
 
-  // ---------- fog mask (explored cells, feathered then deckled) ----------
+  // ---------- fog of war: explored cells, soft-edged, tied to the grid ----------
   const mk = 1; // mask resolution (px per unit)
   const rects = [];
   const nearSeen = (x, y) => {
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (seenCell(x + dx, y + dy)) return true;
     return false;
   };
+  const known = (x, y) => map.inBounds(x, y) && (seenCell(x, y) || (info.isRock(x, y) && nearSeen(x, y)));
   for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) {
-    if (seenCell(x, y) || (info.isRock(x, y) && nearSeen(x, y))) rects.push([CX(x) * mk, CY(y) * mk, cs * mk, cs * mk]);
+    if (known(x, y)) rects.push([CX(x) * mk, CY(y) * mk, cs * mk, cs * mk]);
   }
-  const soft = featherMask(W * mk, H * mk, rects, { blur: cs * mk * 0.2, grow: cs * mk * 0.16 });
-  const { mask, edge: tideLine } = deckleMask(soft, { seed: seed + 5, scale: cs * mk * 0.45, amount: 0.6 });
+  // the wash/ink mask: a hair inside the cells' edge, softened by ~0.3 cell
+  const mask = featherMask(W * mk, H * mk, rects, { blur: cs * mk * 0.11, grow: cs * mk * 0.04 });
+  const fogArea = [MX, MY, MS, MS];
+  const fogCov = fogCoverage(W, H, rects.map(([x, y, w2, h2]) => [x - cs * 0.04, y - cs * 0.04, w2 + cs * 0.08, h2 + cs * 0.08]), fogArea, { soft: cs * 0.3 });
 
-  // unexplored tone: a faint sepia wash + graphite hatching everywhere the ink hasn't reached
+  // unexplored tone: a cool grey-blue vellum wash with a faint graphite stipple
+  // (the calm pencil hatching over it is laid live, in screen space, by the viewer)
   const fog = makeCanvas(W * k, H * k);
   {
     const f = fog.getContext('2d');
     f.scale(k, k);
-    // the unknown stays cool grey pencil; the survey is warm ink and wash
-    f.fillStyle = 'rgba(78,72,66,0.2)';
+    f.fillStyle = 'rgba(104,118,140,0.2)';
     f.fillRect(MX, MY, MS, MS);
-    pencilShade(f, MX, MY, MS, MS, { gap: 5.2, angle: -Math.PI / 3.2, color: '#3c3a3c', width: 0.55, alpha: 0.32, seed: seed + 21 });
-    pencilShade(f, MX, MY, MS, MS, { gap: 12, angle: Math.PI / 3.4, color: '#3c3a3c', width: 0.45, alpha: 0.14, seed: seed + 22 });
+    const vg = f.createRadialGradient(MX + MS / 2, MY + MS / 2, MS * 0.1, MX + MS / 2, MY + MS / 2, MS * 0.75);
+    vg.addColorStop(0, 'rgba(150,160,176,0.0)');
+    vg.addColorStop(1, 'rgba(70,80,100,0.1)');
+    f.fillStyle = vg;
+    f.fillRect(MX, MY, MS, MS);
+    stipple(f, MX, MY, MS, MS, { seed: seed + 21, count: 2600, r: 0.55, color: '#3c4458', alpha: 0.28 });
     f.setTransform(1, 0, 0, 1, 0, 0);
-    f.globalCompositeOperation = 'destination-out';
+    f.globalCompositeOperation = 'destination-in';
     f.imageSmoothingEnabled = true;
-    f.drawImage(mask, 0, 0, W * k, H * k);
+    f.drawImage(fogCov, 0, 0, W * k, H * k);
   }
   g.drawImage(fog, 0, 0, W, H);
 
@@ -221,8 +230,7 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
         // roofs and floors: each building its own pigment
         const pal = rg.style === 1 ? ROOF_TIMBER : rg.style === 2 ? ROOF_RUIN : ROOF_STONE;
         const base = pal[Math.floor(rr() * pal.length)];
-        washRegion(w, rg.cells, { ...P, color: jit(base, 0.5, 0.22), alpha: 0.48 + rr() * 0.16, seed: rs, edge: 0.55 + rr() * 0.2, blooms: rr() < 0.6 ? 1 : 0, mottle: 0.18 + rr() * 0.14, gran: 0.22 + rr() * 0.15, glaze: 0.35 + rr() * 0.35, second: SECOND[Math.floor(rr() * SECOND.length)] });
-        hatchBand(w, rg.cells, { ...P, seed: rs + 1, angle: 0.5 + rr() * 0.7, band: 0.22 + rr() * 0.14, alpha: 0.3 + rr() * 0.15, color: '#4a1e12' });
+        washRegion(w, rg.cells, { ...P, color: jit(base, 0.5, 0.22), alpha: 0.34 + rr() * 0.12, seed: rs, edge: 0.45 + rr() * 0.2, blooms: rr() < 0.6 ? 1 : 0, mottle: 0.18 + rr() * 0.14, gran: 0.22 + rr() * 0.15, glaze: 0.3 + rr() * 0.3, second: SECOND[Math.floor(rr() * SECOND.length)] });
       } else if (t === CELL.RUBBLE) {
         washRegion(w, rg.cells, { ...P, color: jit([150, 130, 104], 0.3, 0.15), alpha: 0.3, seed: rs, edge: 0.35, mottle: 0.5, gran: 0.5 });
       } else if (t === CELL.COURTYARD) {
@@ -263,8 +271,45 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
   g.globalCompositeOperation = 'multiply';
   g.drawImage(wash, 0, 0, W, H);
   g.restore();
-  // dried tide line where the survey's wash meets bare paper
-  g.drawImage(tideLine, 0, 0, W, H);
+
+  // ---------- floor plans: paving / boards, partitions, furniture, wall shadow (masked) ----------
+  {
+    const det = makeCanvas(W * k, H * k);
+    const d = det.getContext('2d');
+    d.scale(k, k);
+    const busy = new Set();
+    for (const ev of map.events) if (eventMarker(ev, !!spent[ev.id])) busy.add(`${ev.x},${ev.y}`);
+    for (const t of info.travel) busy.add(`${t.at.x},${t.at.y}`);
+    for (const rg of reg.list) {
+      if (rg.type !== CELL.INTERIOR) continue;
+      if (!rg.cells.some(([x, y]) => seenCell(x, y))) continue;
+      const rs = seed * 13 + rg.index * 71;
+      const [ax, ay] = rg.cells[Math.floor(rg.cells.length / 2)];
+      const ruined = rg.style === 2 && !dungeon;
+      const kind = dungeon ? 'flags' : ruined ? 'broken' : rg.style === 1 ? 'planks' : (rs % 3 === 0 ? 'planks' : 'flags');
+      drawFloor(d, rg.cells, { CX, CY, cs, seed: rs, kind });
+      if (!dungeon) {
+        wallShadow(d, rg.cells, { CX, CY, cs, seed: rs + 2, walled: P.walled });
+        if (!ruined) partition(d, rg.cells, { CX, CY, cs, seed: rs + 3 });
+        furnish(d, rg.cells, { CX, CY, cs, seed: rs + 5, map, theme: themeOf(map.zoneAt(ax, ay)), ruined, avoid: (x, y) => busy.has(`${x},${y}`) });
+      }
+    }
+    d.setTransform(1, 0, 0, 1, 0, 0);
+    d.globalCompositeOperation = 'destination-in';
+    d.imageSmoothingEnabled = true;
+    d.drawImage(mask, 0, 0, W * k, H * k);
+    g.drawImage(det, 0, 0, W, H);
+  }
+  // the surveyor's limit: a fine dashed line along the edge of the explored cells
+  g.save();
+  g.strokeStyle = 'rgba(70,52,40,0.62)';
+  g.lineWidth = 0.9;
+  g.setLineDash([5, 3.5]);
+  g.lineCap = 'butt';
+  g.beginPath();
+  for (const [x0, y0, x1, y1] of setOutline(map.w, map.h, known)) { g.moveTo(CX(x0), CY(y0)); g.lineTo(CX(x1), CY(y1)); }
+  g.stroke();
+  g.restore();
 
   // ---------- walls: a surveyor's drafted plan on its own ink layer ----------
   const wallW = cs * 0.13;
@@ -658,56 +703,56 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
   drawFlourish(g, RX + RW / 2, 262, RW * 0.6, { color: '#5a3a1c' });
   g.restore();
 
-  drawCompassRose(g, RX + RW / 2, 450, 104);
+  drawCompassRose(g, RX + RW / 2, 428, 92);
 
-  // key
-  const KY = 600;
+  // key: few entries, lettered large enough to read at a glance
+  const KY = 560;
   g.save();
   g.textBaseline = 'middle';
   g.textAlign = 'center';
   g.fillStyle = INK.ink;
-  g.font = `bold 17px ${SERIF}`;
-  g.letterSpacing = '5px';
-  g.fillText('KEY', RX + RW / 2, KY);
+  g.font = `bold 21px ${SERIF}`;
+  g.letterSpacing = '6px';
+  g.fillText('KEY', RX + RW / 2 + 3, KY);
   g.letterSpacing = '0px';
-  drawFlourish(g, RX + RW / 2, KY + 16, RW * 0.5, { color: '#5a3a1c', width: 1 });
+  drawFlourish(g, RX + RW / 2, KY + 18, RW * 0.5, { color: '#5a3a1c', width: 1 });
   const rows = [
-    ['wall', 'Wall'], ['door', 'Door'], ['locked', 'Locked door'], ['secret', 'Secret door (found)'], ['arch', 'Archway / gate'],
-    ['exit', 'Way out'], ['sign', 'Inscription'], ['text', 'Writing'], ['battle', 'Battle won'], ['treasure', 'Treasure taken'], ['rock', 'Solid rock'],
+    ['wall', 'Wall'], ['door', 'Door'], ['locked', 'Locked'], ['secret', 'Secret door'], ['arch', 'Archway'],
+    ['exit', 'Way out'], ['sign', 'Inscription'], ['battle', 'Battle won'], ['treasure', 'Treasure'], ['rock', 'Solid rock'],
   ];
-  const rowH = 27;
+  const rowH = 38;
   rows.forEach(([key, label], i) => {
-    const col = i < 6 ? 0 : 1;
-    const row = col ? i - 6 : i;
-    const x = RX + 10 + col * (RW / 2);
-    const y = KY + 44 + row * rowH;
-    drawKeySwatch(g, key, x + 16, y, 26);
-    g.font = `italic 14px ${SERIF}`;
+    const col = i < 5 ? 0 : 1;
+    const row = col ? i - 5 : i;
+    const x = RX + 2 + col * (RW / 2 + 4);
+    const y = KY + 50 + row * rowH;
+    drawKeySwatch(g, key, x + 17, y, 30);
+    g.font = `20px ${SERIF}`;
     g.textAlign = 'left';
-    g.fillStyle = '#3b2412';
-    const lines = wrapText(g, label, RW / 2 - 44);
-    lines.forEach((l, j) => g.fillText(l, x + 34, y + (j - (lines.length - 1) / 2) * 14));
+    g.fillStyle = '#2e1b0d';
+    g.fillText(label, x + 38, y + 1);
   });
   // scale bar
-  const sy = KY + 44 + 6 * rowH + 18;
+  const sy = KY + 50 + 5 * rowH + 22;
   g.strokeStyle = INK.ink;
   g.lineWidth = 1;
   const bx = RX + RW / 2 - cs * 2;
   for (let i = 0; i < 4; i++) {
     g.fillStyle = i % 2 ? '#efe0bb' : INK.ink;
-    g.fillRect(bx + i * cs, sy, cs, 6);
-    g.strokeRect(bx + i * cs, sy, cs, 6);
+    g.fillRect(bx + i * cs, sy, cs, 7);
+    g.strokeRect(bx + i * cs, sy, cs, 7);
   }
-  g.fillStyle = '#3b2412';
-  g.font = `italic 13px ${SERIF}`;
+  g.fillStyle = '#2e1b0d';
+  g.font = `18px ${SERIF}`;
   g.textAlign = 'center';
-  ['0', '10', '20', '30', '40'].forEach((t, i) => g.fillText(t, bx + i * cs, sy - 9));
-  g.fillText('paces  (one square, ten paces)', RX + RW / 2, sy + 20);
+  ['0', '10', '20', '30', '40'].forEach((t, i) => g.fillText(t, bx + i * cs, sy - 12));
+  g.font = `italic 18px ${SERIF}`;
+  g.fillText('paces · a square is ten', RX + RW / 2, sy + 26);
   g.restore();
 
   g.restore();
   const wallRects = segs.filter((q) => effective(q) !== EDGE.OPEN).map((q) => [Math.min(q.x0, q.x1) - wallW, Math.min(q.y0, q.y1) - wallW, Math.abs(q.x1 - q.x0) + wallW * 2, Math.abs(q.y1 - q.y0) + wallW * 2]);
-  return { canvas, k, cs, info, seenCell, wallRects, cellRect: (x, y) => [M + CX(x), M + CY(y), cs, cs], seed, labels, markerSpots, regions: reg };
+  return { canvas, k, cs, info, seenCell, fog: fogCov, fogArea, wallRects, cellRect: (x, y) => [M + CX(x), M + CY(y), cs, cs], seed, labels, markerSpots, regions: reg };
 }
 
 /** Small legend swatch drawn in sheet units. */

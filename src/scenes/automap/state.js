@@ -99,6 +99,9 @@ export function applyDemoExploration(game, mapId) {
       ...walkable(m, 4, 10, 6),
       ...walkable(m, 7, 9, 3),
       ...walkable(m, 11, 6, 3),
+      // a look inside the counting-house door and the ruin on the corner
+      ...walkable(m, 8, 12, 2),
+      ...walkable(m, 13, 12, 1),
     ]);
     for (let x = 1; x <= 14; x++) cells.add(`${x},15`);
     markAll(game, m, cells);

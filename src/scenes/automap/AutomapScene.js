@@ -8,9 +8,11 @@ import { WORLD, LAYOUT, buildWorldSheet } from './WorldSheet.js';
 import { SheetView } from './SheetView.js';
 import { drawPartyArrow, partyConeCanvas, drawPin, drawMarker, PIN_KINDS, PIN_ORDER, glyphDataURL } from './glyphs.js';
 import { SERIF, wrapText, haloText } from './ornaments.js';
-import { INK } from './ink.js';
+import { INK, makeParchment } from './ink.js';
+import { drawFogHatch } from './fog.js';
 import { foundSecrets, notesFor, setNote, removeNote, exploredStats, applyDemoExploration } from './state.js';
 
+let locatorPaper = null;
 const DIR_NAMES = { N: 'North', E: 'East', S: 'South', W: 'West' };
 const DIR_ANGLE = { N: 0, E: Math.PI / 2, S: Math.PI, W: -Math.PI / 2 };
 const CELL_NAMES = { [CELL.STREET]: 'Street', [CELL.INTERIOR]: 'Indoors', [CELL.RUBBLE]: 'Rubble', [CELL.WATER]: 'Water', [CELL.COURTYARD]: 'Flagstones' };
@@ -661,53 +663,127 @@ export default class AutomapScene extends Scene {
     const { game } = this.ctx;
     const c = h('canvas.am-locator', { dataset: { tip: 'Overview of Phlan (O)' }, onclick: () => this._toWorld() });
     const W = 300;
-    const H = 128;
+    const H = 150;
     const dpr = 2;
     c.width = W * dpr;
     c.height = H * dpr;
     const g = c.getContext('2d');
     g.scale(dpr, dpr);
-    const sx = (x) => 12 + ((x - 180) / 1040) * (W - 24);
-    const sy = (y) => 10 + ((y - 110) / 840) * (H - 20);
-    const k = (W - 24) / 1040;
-    // the Moonsea
-    const sea = g.createLinearGradient(0, sy(790), 0, H);
-    sea.addColorStop(0, 'rgba(40,80,110,0.55)');
-    sea.addColorStop(1, 'rgba(20,40,70,0.75)');
-    g.fillStyle = sea;
-    g.fillRect(0, sy(795), W, H);
-    g.strokeStyle = 'rgba(216,178,90,0.35)';
-    g.lineWidth = 0.7;
-    for (let i = 0; i < 4; i++) {
+    const sx = (x) => 6 + ((x - 150) / 1080) * (W - 12);
+    const sy = (y) => 6 + ((y - 90) / 860) * (H - 12);
+    const k = (W - 12) / 1080;
+    // the paper: a scrap of the same parchment as the overview
+    locatorPaper ??= makeParchment(W * 2, H * 2, { seed: 1341, tone: [236, 220, 180], age: 0.9, ring: null });
+    g.drawImage(locatorPaper, 0, 0, W, H);
+    // the Moonsea: a blue wash with the engraver's swell lines
+    const coast = (x) => sy(800) + Math.sin(x / 23) * 1.6;
+    g.save();
+    g.beginPath();
+    g.moveTo(0, coast(0));
+    for (let x = 0; x <= W; x += 6) g.lineTo(x, coast(x));
+    g.lineTo(W, H); g.lineTo(0, H); g.closePath();
+    g.globalCompositeOperation = 'multiply';
+    g.fillStyle = 'rgba(96,136,168,0.55)';
+    g.fill();
+    g.globalCompositeOperation = 'source-over';
+    g.strokeStyle = 'rgba(43,26,13,0.85)';
+    g.lineWidth = 1;
+    g.beginPath();
+    for (let x = 0; x <= W; x += 6) (x ? g.lineTo(x, coast(x)) : g.moveTo(x, coast(x)));
+    g.stroke();
+    g.strokeStyle = 'rgba(30,60,100,0.45)';
+    g.lineWidth = 0.6;
+    for (let i = 1; i < 4; i++) {
       g.beginPath();
-      for (let x = 0; x <= W; x += 6) g.lineTo(x, sy(805) + i * 7 + Math.sin(x / 9 + i) * 1.2);
+      for (let x = 4 + i * 7; x < W - 4; x += 14) { g.moveTo(x, coast(x) + i * 5); g.quadraticCurveTo(x + 3.5, coast(x) + i * 5 - 1.6, x + 7, coast(x) + i * 5); }
       g.stroke();
     }
-    // river
-    g.strokeStyle = 'rgba(70,120,150,0.8)';
+    g.restore();
+    // the river, meandering down to the sea
+    g.save();
+    g.strokeStyle = 'rgba(80,124,160,0.75)';
     g.lineWidth = 4;
-    g.beginPath(); g.moveTo(sx(965), 0); g.quadraticCurveTo(sx(990), sy(400), sx(955), sy(800)); g.stroke();
-    // old wall
-    g.strokeStyle = 'rgba(216,178,90,0.45)';
-    g.lineWidth = 1;
-    g.setLineDash([3, 2]);
-    g.strokeRect(sx(150), sy(52), (905 - 150) * k, sy(780) - sy(52));
-    g.setLineDash([]);
+    g.lineCap = 'round';
+    g.beginPath();
+    for (let y = 0; y <= sy(800); y += 3) {
+      const x = sx(965 + Math.sin(y / 9) * 14);
+      if (y === 0) g.moveTo(x, y); else g.lineTo(x, y);
+    }
+    g.stroke();
+    g.strokeStyle = 'rgba(43,26,13,0.55)';
+    g.lineWidth = 0.6;
+    g.stroke();
+    g.restore();
+    // the old wall: an inked rule with round towers
+    g.save();
+    g.strokeStyle = 'rgba(74,50,32,0.85)';
+    g.lineWidth = 1.4;
+    const wx0 = sx(150); const wy0 = sy(52); const wx1 = sx(905); const wy1 = sy(780);
+    g.strokeRect(wx0, wy0, wx1 - wx0, wy1 - wy0);
+    g.fillStyle = '#e2cfa2';
+    g.lineWidth = 0.8;
+    for (const [tx, ty] of [[wx0, wy0], [wx1, wy0], [wx0, wy1], [wx1, wy1], [(wx0 + wx1) / 2, wy0], [wx0, (wy0 + wy1) / 2], [wx1, (wy0 + wy1) / 2]]) {
+      g.beginPath(); g.arc(tx, ty, 2.3, 0, Math.PI * 2); g.fill(); g.stroke();
+    }
+    g.restore();
     for (const [id, [cx, cy, shape]] of Object.entries(LAYOUT)) {
       if (!hasMap(id)) continue;
       const known = this.reveal || id === game.location.map || exploredStats(game, getMap(id)).seen > 0;
       const here = id === this.map.id;
-      const r = (shape === 'round' ? 52 : 66) * k;
+      const r = (shape === 'round' ? 50 : 66) * k;
+      const X = sx(cx);
+      const Y = sy(cy);
+      g.save();
       g.beginPath();
-      if (shape === 'round') g.arc(sx(cx), sy(cy), r, 0, Math.PI * 2); else g.rect(sx(cx) - r, sy(cy) - r, r * 2, r * 2);
-      g.fillStyle = here ? 'rgba(200,64,46,0.9)' : known ? 'rgba(216,178,90,0.32)' : 'rgba(255,255,255,0.04)';
-      g.fill();
-      g.setLineDash(known || here ? [] : [2, 2]);
-      g.strokeStyle = here ? '#f5d98b' : known ? 'rgba(245,217,139,0.85)' : 'rgba(216,178,90,0.35)';
-      g.lineWidth = here ? 1.6 : 1;
-      g.stroke();
-      g.setLineDash([]);
+      if (shape === 'round') g.arc(X, Y, r, 0, Math.PI * 2); else g.rect(X - r, Y - r, r * 2, r * 2);
+      if (known || here) {
+        g.fillStyle = 'rgba(40,20,6,0.18)';
+        g.save(); g.translate(1, 1.4); g.fill(); g.restore();
+        g.fillStyle = shape === 'round' ? '#2c3040' : 'rgba(250,240,214,0.95)';
+        g.fill();
+        if (shape !== 'round') {
+          // a few washed roofs, like the overview's little plans
+          const rr = (n) => ((Math.sin(n * 91.7 + cx * 0.37 + cy) * 43758.5) % 1 + 1) % 1;
+          g.save(); g.clip();
+          for (let i = 0; i < 6; i++) {
+            g.fillStyle = `rgba(${170 + rr(i) * 40 | 0},${100 + rr(i + 9) * 50 | 0},${70 + rr(i + 3) * 30 | 0},0.55)`;
+            g.fillRect(X - r + rr(i + 1) * r * 1.5, Y - r + rr(i + 2) * r * 1.5, r * (0.3 + rr(i + 4) * 0.3), r * (0.25 + rr(i + 5) * 0.3));
+          }
+          g.restore();
+        }
+        g.strokeStyle = here ? INK.vermilion : 'rgba(43,26,13,0.9)';
+        g.lineWidth = here ? 2 : 1;
+        g.stroke();
+        if (here) {
+          g.strokeStyle = 'rgba(201,160,69,0.95)';
+          g.lineWidth = 1;
+          g.beginPath();
+          if (shape === 'round') g.arc(X, Y, r + 2.5, 0, Math.PI * 2); else g.rect(X - r - 2.5, Y - r - 2.5, r * 2 + 5, r * 2 + 5);
+          g.stroke();
+        }
+      } else {
+        g.setLineDash([2, 2]);
+        g.strokeStyle = 'rgba(74,50,32,0.55)';
+        g.lineWidth = 0.8;
+        g.stroke();
+        g.setLineDash([]);
+        g.fillStyle = 'rgba(150,34,26,0.75)';
+        g.beginPath(); g.arc(X, Y, 2.2, 0, Math.PI * 2); g.fill();
+      }
+      g.restore();
     }
+    // the party
+    if (this.isHome && LAYOUT[this.map.id]) {
+      const [cx, cy] = LAYOUT[this.map.id];
+      const S2 = 66 * k;
+      const px = sx(cx) - S2 + ((game.location.x + 0.5) / this.map.w) * S2 * 2;
+      const py = sy(cy) - S2 + ((game.location.y + 0.5) / this.map.h) * S2 * 2;
+      drawPartyArrow(g, px, py, 13, DIR_ANGLE[game.location.dir], { glow: 0.5 });
+    }
+    // inner frame
+    g.strokeStyle = 'rgba(43,26,13,0.7)';
+    g.lineWidth = 1;
+    g.strokeRect(2.5, 2.5, W - 5, H - 5);
     return c;
   }
 
@@ -811,6 +887,11 @@ export default class AutomapScene extends Scene {
     const X = (x) => SHEET.MX + x * cs;
     const Y = (y) => SHEET.MY + y * cs;
     const { game } = this.ctx;
+    // fog of war: calm pencil hatching at a constant on-screen density
+    if (this.sheet.fog) {
+      this._fogLayer ??= document.createElement('canvas');
+      drawFogHatch(g, this._fogLayer, this.sheet.fog, this.sheet.fogArea, SHEET, { dpr: this.sv.dpr });
+    }
     // hover
     if (this.hover && !this.editor) {
       const { x, y } = this.hover;
@@ -856,8 +937,29 @@ export default class AutomapScene extends Scene {
       const R = cs * 2.6;
       g.drawImage(partyConeCanvas(), -R, -R, R * 2, R * 2);
       g.restore();
-      const pulse = 0.55 + 0.45 * Math.sin(t * 3.2);
-      drawPartyArrow(g, cx, cy, cs * (0.86 + pulse * 0.04), a, { glow: pulse });
+      const frozen = this.ctx.clock.frozen;
+      const pulse = frozen ? 0.6 : 0.55 + 0.45 * Math.sin(t * 3.2);
+      // a vermilion halo and a gilt survey ring under the token, so the party is found at a glance
+      g.save();
+      const hr = cs * 0.95;
+      const halo = g.createRadialGradient(cx, cy, cs * 0.1, cx, cy, hr);
+      halo.addColorStop(0, `rgba(255,236,190,${(0.55 + pulse * 0.15).toFixed(3)})`);
+      halo.addColorStop(0.55, 'rgba(232,150,90,0.22)');
+      halo.addColorStop(1, 'rgba(200,80,40,0)');
+      g.fillStyle = halo;
+      g.beginPath(); g.arc(cx, cy, hr, 0, Math.PI * 2); g.fill();
+      const ring = cs * (0.66 + (frozen ? 0 : 0.06 * Math.sin(t * 2.2)));
+      g.strokeStyle = 'rgba(168,40,24,0.85)';
+      g.lineWidth = Math.max(1.6, 2.4 / s);
+      g.setLineDash([cs * 0.12, cs * 0.07]);
+      g.lineDashOffset = frozen ? 0 : -t * cs * 0.15;
+      g.beginPath(); g.arc(cx, cy, ring, 0, Math.PI * 2); g.stroke();
+      g.setLineDash([]);
+      g.strokeStyle = 'rgba(201,160,69,0.9)';
+      g.lineWidth = Math.max(0.8, 1.2 / s);
+      g.beginPath(); g.arc(cx, cy, ring + cs * 0.07, 0, Math.PI * 2); g.stroke();
+      g.restore();
+      drawPartyArrow(g, cx, cy, cs * (1.28 + pulse * 0.05), a, { glow: pulse });
     }
     this._drawZoneLabels(g, s);
     // pins
@@ -884,7 +986,7 @@ export default class AutomapScene extends Scene {
     const obs = [...(this.sheet.markerSpots ?? [])];
     const walls = this.sheet.wallRects ?? [];
     for (const n of notesFor(game, m.id)) obs.push([X(n.x) + cs * 0.36, Y(n.y) - cs * 0.06, cs * 0.72, cs * 0.72]);
-    if (this.isHome) obs.push([X(game.location.x) + cs * 0.1, Y(game.location.y) + cs * 0.05, cs * 0.8, cs * 0.9]);
+    if (this.isHome) obs.push([X(game.location.x) - cs * 0.2, Y(game.location.y) - cs * 0.2, cs * 1.4, cs * 1.4]);
     const pad = 12;
     const vr = this.viewRect;
     const [vx0, vy0] = this.sv.screenToUnits(vr.x + pad, vr.y + pad);
@@ -896,13 +998,37 @@ export default class AutomapScene extends Scene {
     g.save();
     g.textAlign = 'center';
     g.textBaseline = 'middle';
+    // keep every name inside the map's inner border as well as the view
+    const bx0 = Math.max(vx0, SHEET.MX + 4);
+    const by0 = Math.max(vy0, SHEET.MY + 4);
+    const bx1 = Math.min(vx1, SHEET.MX + SHEET.MS - 4);
+    const by1 = Math.min(vy1, SHEET.MY + SHEET.MS - 4);
+    const reg = this.sheet.regions;
+    const seen = (x, y) => this.sheet.seenCell(x, y);
     for (const z of labels) {
-      const zx0 = X(z.x);
-      const zy0 = Y(z.y);
-      const zx1 = X(z.x + z.w);
-      const zy1 = Y(z.y + z.h);
+      let zx0 = X(z.x);
+      let zy0 = Y(z.y);
+      let zx1 = X(z.x + z.w);
+      let zy1 = Y(z.y + z.h);
       if (zx1 < vx0 || zx0 > vx1 || zy1 < vy0 || zy0 > vy1) continue;
-      const base = Math.min(cs * 0.42, Math.max(cs * 0.32, (z.w * cs * 0.92) / 7));
+      // a district that holds a building is named on the building itself
+      const inZone = (x, y) => x >= z.x && y >= z.y && x < z.x + z.w && y < z.y + z.h;
+      let home = null;
+      for (const rg of reg?.list ?? []) {
+        if (rg.type !== CELL.INTERIOR) continue;
+        const cells = rg.cells.filter(([x, y]) => inZone(x, y));
+        if (cells.length < 2 || !cells.some(([x, y]) => seen(x, y))) continue;
+        if (!home || cells.length > home.length) home = cells;
+      }
+      const onHome = home ? new Set(home.map(([x, y]) => `${x},${y}`)) : null;
+      if (home) {
+        zx0 = X(Math.min(...home.map((c) => c[0])));
+        zy0 = Y(Math.min(...home.map((c) => c[1])));
+        zx1 = X(Math.max(...home.map((c) => c[0])) + 1);
+        zy1 = Y(Math.max(...home.map((c) => c[1])) + 1);
+      }
+      const zw = (zx1 - zx0) / cs;
+      const base = Math.min(cs * 0.42, Math.max(cs * 0.3, (zw * cs * 0.92) / 7));
       const fs = Math.max(base * zoom ** -0.42, 17 / this.sv.scaleAt());
       // district names in the surveyor's spaced capitals, inked in sepia
       const caps = fs * 0.8;
@@ -910,23 +1036,25 @@ export default class AutomapScene extends Scene {
       g.letterSpacing = `${(caps * 0.16).toFixed(2)}px`;
       const lh = caps * 1.3;
       let best = null;
-      // try the name on one line and wrapped narrower; keep the placement that sits
-      // inside its district on open ground, clear of walls, pins, markers and other names
-      const wraps = [Math.max(z.w * cs * 0.9, cs * 1.8), Math.max(z.w * cs * 0.55, cs * 1.4)];
-      for (const [wi, wrapW] of wraps.entries()) {
-        const lines = wrapText(g, z.name.toUpperCase(), wrapW);
+      // try the name on one line and balanced over two or three; keep the placement that
+      // sits inside its building or district, clear of walls, pins, markers and other names
+      const name = z.name.toUpperCase();
+      const options = [1, 2, 3].map((n) => balancedLines(g, name, n)).filter((o, i, a) => i === 0 || o.length > a[i - 1].length);
+      for (const [wi, lines] of options.entries()) {
         const lw = Math.max(...lines.map((l) => g.measureText(l).width));
         const bh = lines.length * lh;
-        for (const [fx, fy] of [[0, 0], [0, -0.4], [0, 0.4], [0, -0.75], [0, 0.75], [-0.35, 0], [0.35, 0], [0, -1.2], [0, 1.2]]) {
-          const cx = clamp((zx0 + zx1) / 2 + fx * (zx1 - zx0) * 0.5, vx0 + lw / 2, vx1 - lw / 2);
-          const cy = clamp((zy0 + zy1) / 2 + fy * Math.max(zy1 - zy0, cs * 1.2) * 0.5, vy0 + bh / 2, vy1 - bh / 2);
+        const tooWide = Math.max(0, lw - (zx1 - zx0) * 0.94) / cs;
+        for (const [fx, fy] of [[0, 0], [0, -0.35], [0, 0.35], [0, -0.7], [0, 0.7], [-0.3, 0], [0.3, 0], [0, -1.15], [0, 1.15]]) {
+          const cx = clamp((zx0 + zx1) / 2 + fx * (zx1 - zx0) * 0.5, bx0 + lw / 2, bx1 - lw / 2);
+          const cy = clamp((zy0 + zy1) / 2 + fy * Math.max(zy1 - zy0, cs * 1.2) * 0.5, by0 + bh / 2, by1 - bh / 2);
           const box = [cx - lw / 2 - fs * 0.15, cy - bh / 2, lw + fs * 0.3, bh];
           const area = box[2] * box[3];
-          let score = Math.abs(fx) * 0.6 + Math.abs(fy) * 0.5 + wi * 0.35 + (lines.length - 1) * 0.15;
+          let score = Math.abs(fx) * 0.6 + Math.abs(fy) * 0.5 + wi * 0.6 + tooWide * 0.45;
           for (const o of obs) score += (overlap(box, o) / area) * 12;
           for (const o of placed) score += (overlap(box, o) / area) * 12;
-          for (const o of walls) if (overlap(box, o) > 0) score += 0.9;
+          for (const o of walls) if (overlap(box, o) > 0) score += 0.6;
           if (cx < zx0 || cx > zx1 || cy < zy0 || cy > zy1) score += 1.5;
+          if (onHome && !onHome.has(`${Math.floor((cx - SHEET.MX) / cs)},${Math.floor((cy - SHEET.MY) / cs)}`)) score += 2;
           if (!best || score < best.score) best = { cx, cy, box, score, lines, bh };
         }
       }
@@ -974,6 +1102,30 @@ export default class AutomapScene extends Scene {
     this._layout();
     this._draw();
   }
+}
+
+/** Split a name over n lines at word breaks, as evenly as the words allow (no orphans). */
+function balancedLines(g, text, n) {
+  const words = text.split(/\s+/);
+  if (n <= 1 || words.length < 2) return [text];
+  n = Math.min(n, words.length);
+  let best = null;
+  const rec = (start, left, acc) => {
+    if (left === 1) {
+      const lines = [...acc, words.slice(start).join(' ')];
+      const ws = lines.map((l) => g.measureText(l).width);
+      // the widest line decides, and a line of one short word is penalised
+      const cost = Math.max(...ws) + lines.reduce((a, l) => a + (l.length <= 3 ? 400 : 0), 0);
+      if (!best || cost < best.cost) best = { cost, lines };
+      return;
+    }
+    for (let i = start + 1; i <= words.length - left + 1 - 0; i++) {
+      if (words.length - i < left - 1) break;
+      rec(i, left - 1, [...acc, words.slice(start, i).join(' ')]);
+    }
+  };
+  rec(0, n, []);
+  return best ? best.lines : [text];
 }
 
 function helpRow(k, v) {

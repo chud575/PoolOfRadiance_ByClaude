@@ -176,6 +176,30 @@ export class SheetView {
     const { W, H, M } = this.dims;
     const s = this.scaleAt();
     const [ox, oy] = this.origin();
+    // a deep, soft contact shadow: the sheets lie on the desk, lit from the upper left
+    {
+      if (!this._shadow) {
+        const S = 160;
+        const c = document.createElement('canvas');
+        c.width = S;
+        c.height = S;
+        const sg = c.getContext('2d');
+        sg.filter = 'blur(9px)';
+        sg.fillStyle = '#000';
+        sg.fillRect(24, 24, S - 48, S - 48);
+        this._shadow = c;
+      }
+      g.save();
+      g.setTransform(d * s, 0, 0, d * s, d * ox, d * oy);
+      const pad = 0.2 * 160 / 112; // the sprite's blurred border, as a fraction of the box
+      const bw = W * 1.06;
+      const bh = H * 1.05;
+      g.globalAlpha = 0.72;
+      g.drawImage(this._shadow, -W * 0.03 + 14 - bw * pad, -H * 0.02 + 22 - bh * pad, bw * (1 + 2 * pad), bh * (1 + 2 * pad));
+      g.globalAlpha = 0.5;
+      g.drawImage(this._shadow, 4 - W * 0.06, 6 - H * 0.06, W * 1.12, H * 1.12);
+      g.restore();
+    }
     // an older survey sheet peeking out beneath
     if (this.under) {
       g.save();

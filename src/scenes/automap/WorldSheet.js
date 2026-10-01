@@ -3,6 +3,7 @@ import { getMap, hasMap } from '../../data/maps/index.js';
 import { TRAVEL } from '../../data/travel.js';
 import { INK, makeCanvas, makeParchment, inkLine, quillStroke, lineShade, featherMask, mottleTile, prng, wobblePoints } from './ink.js';
 import { regions, washRegion, hatchBand, deckleMask } from './paint.js';
+import { hatchTile } from './fog.js';
 import { drawMarker } from './glyphs.js';
 import { analyseMap, collectEdges, mergeRuns } from './BlockSheet.js';
 import { SERIF, drawCompassRose, drawCartouche, drawIlluminatedInitial, drawFlourish, haloText, goldGradient, fitFont } from './ornaments.js';
@@ -238,34 +239,106 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
     else rock(g, px, py, 3 + r() * 4, r);
   }
   g.restore();
-  // river Stojanow: a band from the north down to the sea east of the gate
-  const riverX = (y) => 965 + Math.sin(y / 130) * 26 + (fbm(y / 200, 1, { period: 64, octaves: 3, seed: 5 }) - 0.5) * 30;
-  const rw = (y) => 18 + y * 0.018;
+  // river Stojanow: rising from a mere in the north woods, meandering down to the sea
+  const LAKE = { x: 962, y: 262, rx: 46, ry: 19 };
+  const riverTop = LAKE.y + LAKE.ry - 3;
+  const riverX = (y) => {
+    const t = Math.max(0, y - riverTop);
+    return 962 + Math.sin(t / 64) * 26 * Math.min(1, t / 60) + Math.sin(t / 23 + 1) * 5 + (fbm(y / 180, 1, { period: 64, octaves: 3, seed: 5 }) - 0.5) * 22;
+  };
+  const rw = (y) => (y < riverTop ? -40 : 3.5 + Math.min(1, (y - riverTop) / 40) * 2 + (y - riverTop) * 0.03);
+  const riverEnd = coastY(riverX(830)) + 6;
   const river = new Path2D();
-  river.moveTo(riverX(-10) - rw(-10), -10);
-  for (let y = -10; y <= 820; y += 10) river.lineTo(riverX(y) - rw(y), y);
-  for (let y = 820; y >= -10; y -= 10) river.lineTo(riverX(y) + rw(y), y);
+  const bankL = [];
+  const bankR = [];
+  for (let y = riverTop; y <= riverEnd; y += 6) {
+    // the mouth flares into a little delta of sandbars
+    const flare = Math.max(0, y - (riverEnd - 40)) ** 1.6 * 0.12;
+    bankL.push([riverX(y) - rw(y) - flare, y]);
+    bankR.push([riverX(y) + rw(y) + flare, y]);
+  }
+  river.moveTo(bankL[0][0], bankL[0][1] - 8);
+  for (const [x, y] of bankL) river.lineTo(x, y);
+  for (let i = bankR.length - 1; i >= 0; i--) river.lineTo(bankR[i][0], bankR[i][1]);
+  river.lineTo(bankR[0][0], bankR[0][1] - 8);
   river.closePath();
+  const lake = new Path2D();
+  for (let i = 0; i <= 64; i++) {
+    const a2 = (i / 64) * Math.PI * 2;
+    const q = 1 + (fbm(Math.cos(a2) * 1.4 + 3, Math.sin(a2) * 1.4 + 3, { period: 64, octaves: 3, seed: 17 }) - 0.5) * 0.5;
+    const px = LAKE.x + Math.cos(a2) * LAKE.rx * q;
+    const py = LAKE.y + Math.sin(a2) * LAKE.ry * q;
+    if (i === 0) lake.moveTo(px, py); else lake.lineTo(px, py);
+  }
+  lake.closePath();
   g.save();
+  // reeds and a damp margin along the banks
+  g.strokeStyle = 'rgba(70,84,40,0.55)';
+  g.lineWidth = 0.6;
+  const rr0 = prng(808);
+  for (let i = 0; i < bankL.length; i += 2) {
+    for (const [bx, by, side] of [[...bankL[i], -1], [...bankR[i], 1]]) {
+      if (rr0() < 0.55) continue;
+      for (let k2 = 0; k2 < 3; k2++) {
+        const x0 = bx + side * (2 + rr0() * 4);
+        const y0 = by + (rr0() - 0.5) * 6;
+        g.beginPath(); g.moveTo(x0, y0); g.lineTo(x0 + side * 1.2, y0 - 3 - rr0() * 3); g.stroke();
+      }
+    }
+  }
   g.globalCompositeOperation = 'multiply';
-  g.fillStyle = 'rgba(80,130,165,0.5)';
+  g.fillStyle = 'rgba(78,128,165,0.55)';
   g.fill(river);
+  g.fill(lake);
   g.globalCompositeOperation = 'source-over';
+  // banks: a firm ink line and a fainter water-line just inside it
   g.strokeStyle = INK.ink;
-  g.lineWidth = 1.6;
-  g.stroke(river);
+  g.lineWidth = 1.3;
+  g.lineJoin = 'round';
+  for (const bank of [bankL, bankR]) {
+    g.beginPath();
+    bank.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
+    g.stroke();
+  }
+  g.stroke(lake);
+  g.strokeStyle = 'rgba(28,58,98,0.5)';
+  g.lineWidth = 0.6;
+  for (const [bank, side] of [[bankL, 1], [bankR, -1]]) {
+    g.beginPath();
+    bank.forEach(([x, y], i) => {
+      const w2 = Math.min(2.4, rw(y) * 0.35);
+      return i ? g.lineTo(x + side * w2, y) : g.moveTo(x + side * w2, y);
+    });
+    g.stroke();
+  }
+  g.save();
+  g.translate(LAKE.x, LAKE.y);
+  g.scale(1, LAKE.ry / LAKE.rx);
+  for (const q of [0.78, 0.58]) { g.beginPath(); g.arc(0, 0, LAKE.rx * q, 0, Math.PI * 2); g.stroke(); }
+  g.restore();
+  // current: short strokes down the middle of the stream
+  g.save();
   g.clip(river);
   g.strokeStyle = 'rgba(30,60,100,0.45)';
-  g.lineWidth = 0.7;
-  for (let y = 0; y < 820; y += 16) {
+  g.lineWidth = 0.6;
+  for (let y = riverTop + 14; y < riverEnd - 10; y += 15) {
+    const cx = riverX(y);
+    const w2 = Math.max(2, rw(y) * 0.5);
     g.beginPath();
-    g.moveTo(riverX(y) - 8, y);
-    g.quadraticCurveTo(riverX(y), y - 4, riverX(y) + 8, y);
+    g.moveTo(cx - w2, y);
+    g.quadraticCurveTo(cx, y - 3, cx + w2, y);
     g.stroke();
   }
   g.restore();
+  // two brooks feeding the mere, tapering out into the woods like a pen flourish
+  for (const [pts, w0] of [[[[1010, 254], [1040, 246], [1066, 252], [1094, 240]], 2.6], [[[930, 270], [906, 274], [894, 262]], 2]]) {
+    for (let i = 0; i < pts.length - 1; i++) {
+      quillStroke(g, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], { width: w0 * (1 - i / pts.length), color: '#3c5a78', amp: 0.8, seed: 31 + i, pool: 0, taper: 0.6, alpha: 0.85 });
+    }
+  }
+  g.restore();
   g.save();
-  g.translate(riverX(560) + 34, 560);
+  g.translate(riverX(560) + 30, 560);
   g.rotate(Math.PI / 2 - 0.1);
   g.font = `italic 17px ${SERIF}`;
   g.textAlign = 'center';
@@ -284,23 +357,24 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
     const y = 250 + tr() * 520;
     if (y > coastY(x) - 26) continue;
     if (Math.abs(x - 70) < 34 && Math.abs(y - 520) < 104) continue; // keep the hills' name legible
-    hills.push([x, y, 26 + tr() * 22, 14 + tr() * 12]);
+    hills.push([x, y, 26 + tr() * 32, 9 + tr() ** 1.5 * 16]);
   }
   for (let i = 0; i < 14; i++) hills.push([200 + tr() * 680, 22 + tr() * 18, 22 + tr() * 16, 10 + tr() * 8]);
   hills.filter(([x, y]) => !inCartouche(x, y)).sort((a, b) => a[1] - b[1]).forEach(([x, y, w, hh]) => hill(g, x, y, w, hh, tr));
   // the Quivering Forest east of the river, clustered by noise
   const trees = [];
-  for (let i = 0; i < 900; i++) {
+  for (let i = 0; i < 1500; i++) {
     const x = 1000 + tr() * 290;
     const y = 250 + tr() * 560;
     if (y > coastY(x) - 14) continue;
     if (Math.abs(x - riverX(y)) < rw(y) + 16) continue;
+    if (Math.hypot((x - LAKE.x) / (LAKE.rx + 16), (y - LAKE.y) / (LAKE.ry + 14)) < 1) continue;
     if (avoid(x, y, 26) || inCartouche(x, y)) continue;
     if (Math.abs(x - 1135) < 122 && y > 618 && y < 676) continue; // a clearing for the forest's name
     const n = fbm(x / 70, y / 70, { period: 64, octaves: 3, seed: 12 });
     if (n < 0.46 || tr() > (n - 0.46) * 4) continue;
-    if (trees.some(([tx, ty]) => Math.hypot(tx - x, (ty - y) * 1.5) < 8.5)) continue;
-    trees.push([x, y, 6 + tr() * 3.6]);
+    if (trees.some(([tx, ty]) => Math.hypot(tx - x, (ty - y) * 1.5) < 9.5)) continue;
+    trees.push([x, y, 4.6 + tr() ** 1.6 * 6]);
   }
   // a few copses west and north, and along the river
   for (let i = 0; i < 160; i++) {
@@ -311,7 +385,7 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
     const nearRiver = Math.abs(x - riverX(y)) < rw(y) + 34 && Math.abs(x - riverX(y)) > rw(y) + 8;
     if (inWall || (!nearRiver && tr() < 0.75)) continue;
     if (trees.some(([tx, ty]) => Math.hypot(tx - x, (ty - y) * 1.4) < 11)) continue;
-    trees.push([x, y, 5.5 + tr() * 3]);
+    trees.push([x, y, 4.5 + tr() * 4]);
   }
   // marsh by the river mouth
   for (let i = 0; i < 70; i++) {
@@ -530,16 +604,16 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
   g.save();
   g.textAlign = 'center';
   g.font = `italic 34px ${SERIF}`;
-  g.letterSpacing = '16px';
-  haloText(g, 'THE MOONSEA', 820, 912, { color: '#1f3358', halo: 'rgba(220,226,222,0.6)', width: 5 });
+  g.letterSpacing = '14px';
+  haloText(g, 'THE MOONSEA', 770, 872, { color: '#1f3358', halo: 'rgba(220,226,222,0.6)', width: 5 });
   g.letterSpacing = '3px';
   g.font = `italic 20px ${SERIF}`;
   g.translate(364, 888);
   g.rotate(Math.PI / 2);
   haloText(g, 'Thorn Island', 0, 0, { color: '#2c3518', halo: 'rgba(236,226,200,0.8)', width: 5 });
   g.restore();
-  drawShip(g, 490, 925, 52);
-  drawSerpent(g, 655, 968, 52);
+  drawShip(g, 520, 938, 88);
+  drawSerpent(g, 830, 978, 80);
   drawCompassRose(g, 1175, 860, 72);
   // scale of leagues
   g.save();
@@ -552,11 +626,12 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
     g.fillRect(sx0 + i * 34, sy0, 34, 5);
     g.strokeRect(sx0 + i * 34, sy0, 34, 5);
   }
-  g.font = `italic 12px ${SERIF}`;
+  g.font = `16px ${SERIF}`;
   g.textAlign = 'center';
   g.fillStyle = '#2b1a0d';
-  ['0', '½', '1', '1½', '2'].forEach((t, i) => g.fillText(t, sx0 + i * 34, sy0 - 4));
-  g.fillText('miles', sx0 + 68, sy0 + 17);
+  ['0', '1', '2'].forEach((t, i) => g.fillText(t, sx0 + i * 68, sy0 - 6));
+  g.font = `italic 16px ${SERIF}`;
+  g.fillText('miles', sx0 + 68, sy0 + 21);
   g.restore();
 
   // ---------------- cartouche ----------------
@@ -664,9 +739,13 @@ function drawMiniBlock(g, b, m, { seen, secrets, known, here, k }) {
   {
     const f = fog.getContext('2d');
     f.scale(k, k);
-    f.fillStyle = 'rgba(110,80,46,0.2)';
+    // the same cool vellum and pencil patches as the block sheets
+    f.fillStyle = 'rgba(104,118,140,0.22)';
     f.fillRect(0, 0, s, s);
-    lineShade(f, 0, 0, s, s, { gap: 2.6, angle: -Math.PI / 3.2, color: '#4a3826', width: 0.5, alpha: 0.45 });
+    const hp = f.createPattern(hatchTile(1), 'repeat');
+    hp.setTransform(new DOMMatrix().scaleSelf(0.42));
+    f.fillStyle = hp;
+    f.fillRect(0, 0, s, s);
     f.setTransform(1, 0, 0, 1, 0, 0);
     f.globalCompositeOperation = 'destination-out';
     f.drawImage(mask, 0, 0);
@@ -752,35 +831,61 @@ function drawUnknownBlock(g, b, m, { k }) {
   lg.scale(k, k);
   const CX = (i) => i * cs;
   const CY = (j) => j * cs;
-  // engraved hatching on the old buildings, then the walls as fine rules
+  // a guessed street plan, pencilled from hearsay: loose house outlines where the
+  // old city's buildings are said to stand, a few struck through, nothing ruled
+  const gr = prng(seed + 9);
+  lg.lineCap = 'round';
+  lg.lineJoin = 'round';
   for (const rg of regs0(m).list) {
-    if (rg.type !== CELL.INTERIOR) continue;
-    for (const [i, j] of rg.cells) lineShade(lg, CX(i), CY(j), cs, cs, { gap: 1.9, angle: -Math.PI / 4, color: '#3a2a1a', width: 0.45, alpha: 0.55 });
-  }
-  lg.strokeStyle = '#2b1a0d';
-  lg.lineWidth = 0.9;
-  lg.beginPath();
-  for (let j = 0; j < m.h; j++) for (let i = 0; i < m.w; i++) {
-    if (info.isRock(i, j)) continue;
-    for (const d of ['N', 'W']) {
-      const e = m.getEdge(i, j, d);
-      if (e === EDGE.OPEN || e === EDGE.ARCH) continue;
-      if (d === 'N') { lg.moveTo(CX(i), CY(j)); lg.lineTo(CX(i + 1), CY(j)); } else { lg.moveTo(CX(i), CY(j)); lg.lineTo(CX(i), CY(j + 1)); }
+    if (rg.type !== CELL.INTERIOR || rg.cells.length < 2) continue;
+    let x0 = 99; let y0 = 99; let x1 = -1; let y1 = -1;
+    for (const [i, j] of rg.cells) { x0 = Math.min(x0, i); y0 = Math.min(y0, j); x1 = Math.max(x1, i + 1); y1 = Math.max(y1, j + 1); }
+    const j = () => (gr() - 0.5) * cs * 0.6;
+    const pts = [[CX(x0) + j(), CY(y0) + j()], [CX(x1) + j(), CY(y0) + j()], [CX(x1) + j(), CY(y1) + j()], [CX(x0) + j(), CY(y1) + j()]];
+    lg.strokeStyle = 'rgba(70,46,24,0.75)';
+    lg.lineWidth = 0.7;
+    // each side drawn as its own stroke that overshoots a little, as a quick sketch does
+    for (let q = 0; q < 4; q++) {
+      if (gr() < 0.18) continue;
+      const [ax, ay] = pts[q];
+      const [bx, by] = pts[(q + 1) % 4];
+      const ox = (bx - ax) * 0.08;
+      const oy = (by - ay) * 0.08;
+      lg.beginPath();
+      lg.moveTo(ax - ox, ay - oy);
+      lg.quadraticCurveTo((ax + bx) / 2 + (gr() - 0.5) * 2, (ay + by) / 2 + (gr() - 0.5) * 2, bx + ox, by + oy);
+      lg.stroke();
+    }
+    if (gr() < 0.35) {
+      lg.strokeStyle = 'rgba(70,46,24,0.35)';
+      lg.lineWidth = 0.5;
+      const w = pts[1][0] - pts[0][0];
+      for (let t = 0.15; t < 1; t += 0.18) { lg.beginPath(); lg.moveTo(pts[0][0] + w * t, pts[0][1] + 1); lg.lineTo(pts[0][0] + w * (t - 0.15), pts[3][1] - 1); lg.stroke(); }
     }
   }
-  lg.stroke();
+  // the streets as dotted pencil lanes
+  lg.strokeStyle = 'rgba(70,46,24,0.4)';
+  lg.lineWidth = 0.6;
+  lg.setLineDash([1.5, 2.5]);
+  for (let q = 0; q < 2; q++) {
+    const t = 0.3 + gr() * 0.4;
+    lg.beginPath();
+    if ((seed + q) % 2) { lg.moveTo(0, s * t); lg.bezierCurveTo(s * 0.3, s * (t + 0.05), s * 0.7, s * (t - 0.05), s, s * t); } else { lg.moveTo(s * t, 0); lg.bezierCurveTo(s * (t - 0.05), s * 0.3, s * (t + 0.05), s * 0.7, s * t, s); }
+    lg.stroke();
+  }
+  lg.setLineDash([]);
   // age: the engraving has faded unevenly and worn away toward its edges
   lg.setTransform(1, 0, 0, 1, 0, 0);
   lg.globalCompositeOperation = 'destination-out';
   const p = lg.createPattern(mottleTile(), 'repeat');
   p.setTransform(new DOMMatrix().translateSelf(seed % 200, (seed * 7) % 200).scaleSelf(0.8));
-  lg.globalAlpha = 0.85;
+  lg.globalAlpha = 0.55;
   lg.fillStyle = p;
   lg.fillRect(0, 0, L, L);
   lg.globalAlpha = 1;
-  const fade = lg.createRadialGradient(L / 2, L / 2, L * 0.15, L / 2, L / 2, L * 0.72);
-  fade.addColorStop(0, 'rgba(0,0,0,0.35)');
-  fade.addColorStop(1, 'rgba(0,0,0,0.95)');
+  const fade = lg.createRadialGradient(L / 2, L / 2, L * 0.2, L / 2, L / 2, L * 0.74);
+  fade.addColorStop(0, 'rgba(0,0,0,0.1)');
+  fade.addColorStop(1, 'rgba(0,0,0,0.9)');
   lg.fillStyle = fade;
   lg.fillRect(0, 0, L, L);
   g.save();
@@ -794,17 +899,36 @@ function drawUnknownBlock(g, b, m, { k }) {
   for (const [ax, ay, bx, by] of [[6, 0, s - 6, 0], [s, 6, s, s - 6], [s - 6, s, 6, s], [0, s - 6, 0, 6]]) {
     g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke();
   }
-  g.font = `italic 15px ${SERIF}`;
+  const note = HEARSAY[b.id] ?? 'terra incognita';
+  g.font = `italic 16px ${SERIF}`;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.save();
-  g.translate(s / 2, s * 0.73);
-  g.rotate(-0.06);
-  haloText(g, 'terra incognita', 0, 0, { color: 'rgba(80,44,20,0.95)', halo: 'rgba(240,228,196,0.9)', width: 6 });
+  g.translate(s / 2, s * 0.76);
+  g.rotate(((seed % 7) - 3) * 0.018);
+  haloText(g, note, 0, 0, { color: 'rgba(80,44,20,0.95)', halo: 'rgba(240,228,196,0.9)', width: 6 });
   g.restore();
-  drawSeal(g, s / 2, s * 0.42, 21, m.name.replace(/^The\s+/i, '')[0], { seed });
+  const wax = WAX[seed % WAX.length];
+  g.save();
+  g.translate(s / 2 + ((seed % 5) - 2) * 4, s * 0.42 + ((seed % 3) - 1) * 4);
+  g.rotate(((seed % 9) - 4) * 0.08);
+  drawSeal(g, 0, 0, 19 + (seed % 4), m.name.replace(/^The\s+/i, '')[0], { seed, color: wax });
+  g.restore();
   g.restore();
 }
+
+/** What the council's clerks wrote across the blocks no one has walked. */
+const HEARSAY = {
+  valhingen_graveyard: 'the dead walk here',
+  stojanow_gate: 'held by a war-band',
+  valjevo_castle: 'its lord is not seen',
+  cadorna_textile: 'chained from within',
+  mendors_library: 'fire-scarred stacks',
+  wilderness: 'the river road, wild',
+  kutos_well: 'kobolds, they say',
+  podol_plaza: 'tolls are taken',
+};
+const WAX = [[150, 34, 26], [104, 26, 30], [52, 82, 52], [120, 70, 30], [128, 30, 60]];
 
 /** A red wax seal pressed with a letter or emblem. */
 function drawSeal(g, x, y, r, letter, { seed = 1, color = [150, 34, 26], emblem = null } = {}) {
@@ -934,113 +1058,250 @@ function drawMedallion(g, b, m, { seen, secrets, known }) {
     }
     g.stroke();
   } else {
-    // dark stone ground, engraved rays, and the seal in the middle
+    // each sealed dungeon its own stone, engraving, motto and wax
+    const md = MEDALS[b.id] ?? MEDALS.kutos_warrens;
     const stone = g.createRadialGradient(cx - r * 0.3, cy - r * 0.35, r * 0.1, cx, cy, r);
-    stone.addColorStop(0, '#5a5048');
-    stone.addColorStop(1, '#2a241e');
+    stone.addColorStop(0, md.stone[0]);
+    stone.addColorStop(1, md.stone[1]);
     g.fillStyle = stone;
     g.fill();
     g.stroke();
     g.clip();
-    g.strokeStyle = 'rgba(240,220,180,0.16)';
+    g.strokeStyle = 'rgba(240,220,180,0.17)';
     g.lineWidth = 0.7;
-    for (let i = 0; i < 36; i++) {
-      const a = (i / 36) * Math.PI * 2;
-      g.beginPath(); g.moveTo(cx + Math.cos(a) * r * 0.5, cy + Math.sin(a) * r * 0.5); g.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); g.stroke();
+    if (md.engrave === 'rays') {
+      for (let i = 0; i < 36; i++) {
+        const a = (i / 36) * Math.PI * 2;
+        g.beginPath(); g.moveTo(cx + Math.cos(a) * r * 0.5, cy + Math.sin(a) * r * 0.5); g.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); g.stroke();
+      }
+    } else if (md.engrave === 'rings') {
+      for (let q = 0.52; q < 1; q += 0.07) { g.beginPath(); g.arc(cx, cy, r * q, 0, Math.PI * 2); g.stroke(); }
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2;
+        g.fillStyle = 'rgba(240,220,180,0.22)';
+        g.beginPath(); g.arc(cx + Math.cos(a) * r * 0.86, cy + Math.sin(a) * r * 0.86, 1.6, 0, Math.PI * 2); g.fill();
+      }
+    } else {
+      // a field of engraved stars, like a night sky over the black temple
+      const sr = prng(b.cx * 3 + 1);
+      for (let i = 0; i < 26; i++) {
+        const a = sr() * Math.PI * 2;
+        const d = r * (0.5 + sr() * 0.45);
+        const px = cx + Math.cos(a) * d;
+        const py = cy + Math.sin(a) * d;
+        const q = 1.2 + sr() * 1.6;
+        g.beginPath(); g.moveTo(px - q, py); g.lineTo(px + q, py); g.moveTo(px, py - q); g.lineTo(px, py + q); g.stroke();
+      }
     }
-    g.font = `italic 8.5px ${SERIF}`;
-    g.fillStyle = 'rgba(240,220,180,0.6)';
-    g.textAlign = 'center';
-    g.letterSpacing = '1px';
-    g.fillText('HIC SVNT MONSTRA', cx, cy + r * 0.74);
-    g.letterSpacing = '0px';
     g.restore();
     g.save();
-    drawSeal(g, cx, cy - 2, r * 0.48, '?', { seed: r * 13 + cx, color: [128, 26, 22], emblem: EMBLEMS[b.id] ?? null });
+    // the motto, cut around the lower rim
+    arcText(g, md.motto, cx, cy, r * 0.8, Math.PI / 2, { font: `italic 11px ${SERIF}`, color: 'rgba(244,226,188,0.85)', spacing: md.motto.length > 13 ? 0.4 : 1.4 });
+    drawSeal(g, cx, cy - 4, r * 0.46, '?', { seed: r * 13 + cx, color: md.wax, emblem: EMBLEMS[b.id] ?? null });
+  }
+  g.restore();
+}
+
+const MEDALS = {
+  kutos_warrens: { motto: 'SVBTER TERRAM', stone: ['#62584c', '#2a241e'], wax: [128, 26, 22], engrave: 'rings' },
+  temple_bane: { motto: 'HIC SVNT MONSTRA', stone: ['#3e4a48', '#141c1c'], wax: [44, 40, 46], engrave: 'stars' },
+  pool_pyramid: { motto: 'HIC SVNT DRACONES', stone: ['#6a5238', '#2a1a10'], wax: [176, 128, 40], engrave: 'rays' },
+};
+
+/** Letters set around a circle, centred on an angle (reading left to right along the bottom). */
+function arcText(g, text, cx, cy, R, at, { font, color, spacing = 1 } = {}) {
+  g.save();
+  g.font = font;
+  g.fillStyle = color;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  const widths = [...text].map((ch) => g.measureText(ch).width + spacing);
+  const total = widths.reduce((a, w) => a + w, 0);
+  // along the bottom the text runs right-to-left in angle, so it reads upright
+  let a = at + total / R / 2;
+  for (const [i, ch] of [...text].entries()) {
+    const da = widths[i] / R;
+    a -= da / 2;
+    g.save();
+    g.translate(cx + Math.cos(a) * R, cy + Math.sin(a) * R);
+    g.rotate(a - Math.PI / 2);
+    g.fillText(ch, 0, 0);
+    g.restore();
+    a -= da / 2;
   }
   g.restore();
 }
 
 // ---------------------------------------------------------------- countryside glyphs
 
-/** A hachured hill: a mound outline with shading strokes falling on its lee (east) side. */
+/**
+ * A hill in the engraver's manner: an irregular one- or two-peaked profile,
+ * a ridge line falling from the summit, and hachures laid down the shadowed
+ * (east) flank, denser near the crest.
+ */
 function hill(g, x, y, w, h, r) {
   g.save();
-  const P = (t) => {
-    const a = 1 - t;
-    return [a * a * (x - w / 2) + 2 * a * t * (x - w * 0.12) + t * t * (x + w / 2), a * a * y + 2 * a * t * (y - h * 1.3) + t * t * y];
-  };
-  g.beginPath();
-  g.moveTo(x - w / 2, y);
-  g.quadraticCurveTo(x - w * 0.12, y - h * 1.3, x + w / 2, y);
-  g.closePath();
-  g.fillStyle = 'rgba(222,200,152,0.95)';
-  g.fill();
-  g.save();
-  g.clip();
-  g.fillStyle = 'rgba(120,84,40,0.22)';
-  g.fillRect(x + w * 0.02, y - h * 1.4, w, h * 1.5);
-  g.restore();
-  g.strokeStyle = INK.ink;
-  g.lineWidth = 1.1;
-  g.beginPath();
-  g.moveTo(x - w / 2, y);
-  g.quadraticCurveTo(x - w * 0.12, y - h * 1.3, x + w / 2, y);
-  g.stroke();
-  g.lineWidth = 0.55;
-  g.strokeStyle = 'rgba(43,26,13,0.8)';
-  for (let t = 0.45; t < 0.97; t += 0.045 + r() * 0.02) {
-    const [px, py] = P(t);
-    g.beginPath(); g.moveTo(px, py + 1); g.lineTo(px + w * 0.05, py + (y - py) * (0.55 + r() * 0.3)); g.stroke();
+  const peaks = [{ u: 0.38 + (r() - 0.5) * 0.25, hgt: 1 }];
+  if (r() < 0.45) peaks.push({ u: peaks[0].u + (r() < 0.5 ? -1 : 1) * (0.25 + r() * 0.12), hgt: 0.5 + r() * 0.3 });
+  const N = 22;
+  const prof = [];
+  for (let i = 0; i <= N; i++) {
+    const u = i / N;
+    let v = 0;
+    for (const pk of peaks) {
+      const d = Math.abs(u - pk.u) / (u < pk.u ? pk.u + 0.02 : 1.02 - pk.u);
+      v = Math.max(v, pk.hgt * Math.max(0, 1 - d * d) ** 1.6);
+    }
+    v *= 1 + (r() - 0.5) * 0.12;
+    prof.push([x - w / 2 + u * w, y - v * h]);
   }
-  g.strokeStyle = 'rgba(43,26,13,0.4)';
-  for (let t = 0.12; t < 0.4; t += 0.09) {
-    const [px, py] = P(t);
-    g.beginPath(); g.moveTo(px, py + 1.5); g.lineTo(px + w * 0.03, py + (y - py) * 0.35); g.stroke();
+  const shape = new Path2D();
+  shape.moveTo(prof[0][0], y);
+  for (const [px, py] of prof) shape.lineTo(px, py);
+  shape.lineTo(prof[N][0], y);
+  shape.closePath();
+  g.fillStyle = 'rgba(226,206,160,0.96)';
+  g.fill(shape);
+  g.save();
+  g.clip(shape);
+  // a light wash on the shadowed flank of each summit
+  for (const pk of peaks) {
+    const px = x - w / 2 + pk.u * w;
+    g.fillStyle = 'rgba(122,88,46,0.2)';
+    g.beginPath(); g.moveTo(px, y - pk.hgt * h - 2); g.lineTo(px + w * 0.7, y + 1); g.lineTo(px + w * 0.02, y + 1); g.closePath(); g.fill();
+  }
+  // hachures down the east flanks
+  g.strokeStyle = 'rgba(43,26,13,0.75)';
+  g.lineCap = 'round';
+  for (let i = 1; i < N; i++) {
+    const [px, py] = prof[i];
+    const [qx, qy] = prof[i + 1];
+    if (qy <= py) continue; // only where the profile falls away to the east
+    const depth = y - py;
+    if (depth < 2) continue;
+    for (let k = 0; k < 2; k++) {
+      const sx = px + (qx - px) * (k * 0.5 + r() * 0.2);
+      const sy = py + (qy - py) * (k * 0.5) + 0.8;
+      const L = depth * (0.45 + r() * 0.35);
+      g.lineWidth = 0.45 + r() * 0.25;
+      g.beginPath(); g.moveTo(sx, sy); g.lineTo(sx + L * 0.28, sy + L); g.stroke();
+    }
+  }
+  g.restore();
+  // outline (heavier on the shadow side), ridge line from each summit
+  g.strokeStyle = INK.ink;
+  g.lineJoin = 'round';
+  g.lineWidth = 1.05;
+  g.beginPath();
+  prof.forEach(([px, py], i) => (i ? g.lineTo(px, py) : g.moveTo(px, py)));
+  g.stroke();
+  g.lineWidth = 0.6;
+  for (const pk of peaks) {
+    const px = x - w / 2 + pk.u * w;
+    const py = y - pk.hgt * h;
+    g.beginPath();
+    g.moveTo(px, py + 1);
+    g.quadraticCurveTo(px + w * 0.05, py + (y - py) * 0.5, px + w * (0.02 + r() * 0.08), y - 1);
+    g.stroke();
+  }
+  // scrub at the foot
+  g.strokeStyle = 'rgba(43,26,13,0.5)';
+  g.lineWidth = 0.5;
+  for (let i = 0; i < 3; i++) {
+    const sx = x - w / 2 + r() * w;
+    g.beginPath(); g.moveTo(sx, y + 1.5); g.lineTo(sx + 1, y - 1); g.moveTo(sx + 1.6, y + 1.5); g.lineTo(sx + 2.2, y - 0.6); g.stroke();
   }
   g.restore();
 }
 
-/** A tree: inked lumpy canopy with a shaded flank, a trunk and a cast shadow. */
+const TREE_TONES = [[98, 112, 60], [72, 92, 58], [126, 124, 70], [88, 104, 72]];
+
+/**
+ * A tree in the engraver's manner: broadleaf crowns built from a few lobes
+ * or a tiered conifer, in one of several muted greens, inked, with shadow
+ * hatching on the lee (south-east) side and a cast shadow.
+ */
 function tree(g, x, y, s, r) {
   g.save();
-  g.fillStyle = 'rgba(70,46,20,0.2)';
-  g.beginPath(); g.ellipse(x + s * 0.55, y + s * 0.1, s * 1.05, s * 0.38, -0.15, 0, Math.PI * 2); g.fill();
-  g.strokeStyle = INK.ink;
-  g.lineWidth = 0.9;
-  g.beginPath(); g.moveTo(x, y); g.lineTo(x, y - s * 0.6); g.stroke();
-  const cy = y - s * 1.15;
-  const n = 7;
-  const canopy = new Path2D();
-  const rot = r() * Math.PI;
-  for (let i = 0; i <= n; i++) {
-    const a = rot + (i / n) * Math.PI * 2;
-    const q = s * (0.82 + r() * 0.2);
-    const px = x + Math.cos(a) * q;
-    const py = cy + Math.sin(a) * q * 0.9;
-    if (i === 0) canopy.moveTo(px, py);
-    else {
-      const am = a - Math.PI / n;
-      canopy.quadraticCurveTo(x + Math.cos(am) * s * 1.28, cy + Math.sin(am) * s * 1.15, px, py);
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  const tone = TREE_TONES[Math.floor(r() * TREE_TONES.length)];
+  const v = 0.88 + r() * 0.22;
+  const fill = `rgba(${(tone[0] * v) | 0},${(tone[1] * v) | 0},${(tone[2] * v) | 0},0.95)`;
+  g.fillStyle = 'rgba(70,46,20,0.22)';
+  g.beginPath(); g.ellipse(x + s * 0.7, y + s * 0.05, s * 1.0, s * 0.32, -0.12, 0, Math.PI * 2); g.fill();
+  if (r() < 0.24) {
+    // conifer: three ragged tiers on a short trunk
+    const H = s * (2.3 + r() * 0.6);
+    const W = s * (0.9 + r() * 0.2);
+    const crown = new Path2D();
+    crown.moveTo(x, y - H);
+    for (let t = 0; t < 3; t++) {
+      const ty = y - H + (H * 0.85) * ((t + 1) / 3);
+      const tw = W * (0.55 + t * 0.22);
+      crown.lineTo(x + tw, ty);
+      crown.lineTo(x + tw * 0.45, ty - H * 0.06);
     }
+    crown.lineTo(x - W * 0.99 * 0.45, y - H * 0.15 - H * 0.06);
+    for (let t = 2; t >= 0; t--) {
+      const ty = y - H + (H * 0.85) * ((t + 1) / 3);
+      const tw = W * (0.55 + t * 0.22);
+      crown.lineTo(x - tw, ty);
+      if (t) crown.lineTo(x - tw * 0.45, ty - H * 0.28 + H * 0.06);
+    }
+    crown.closePath();
+    g.strokeStyle = INK.ink; g.lineWidth = 0.8;
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x, y - H * 0.18); g.stroke();
+    g.fillStyle = fill;
+    g.fill(crown);
+    g.save();
+    g.clip(crown);
+    g.strokeStyle = 'rgba(24,34,16,0.7)';
+    g.lineWidth = 0.5;
+    for (let i = 0; i < 9; i++) { const hx = x + W * 0.05 + i * W * 0.11; g.beginPath(); g.moveTo(hx, y - H); g.lineTo(hx + W * 0.25, y); g.stroke(); }
+    g.restore();
+    g.strokeStyle = INK.ink; g.lineWidth = 0.85;
+    g.stroke(crown);
+    g.restore();
+    return;
   }
-  canopy.closePath();
-  const v = 0.85 + r() * 0.3;
-  g.fillStyle = `rgba(${(112 * v) | 0},${(132 * v) | 0},${(66 * v) | 0},0.92)`;
-  g.fill(canopy);
+  // broadleaf: 3-5 overlapping lobes
+  const lobes = [];
+  const n = 3 + Math.floor(r() * 3);
+  const cy = y - s * 1.05;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + r() * 0.8;
+    const d = s * (0.3 + r() * 0.2);
+    lobes.push([x + Math.cos(a) * d, cy + Math.sin(a) * d * 0.8, s * (0.48 + r() * 0.22)]);
+  }
+  lobes.push([x, cy - s * 0.1, s * (0.55 + r() * 0.15)]);
+  const crown = new Path2D();
+  for (const [lx, ly, lr] of lobes) { crown.moveTo(lx + lr, ly); crown.arc(lx, ly, lr, 0, Math.PI * 2); }
+  g.strokeStyle = INK.ink; g.lineWidth = 0.85;
+  g.beginPath(); g.moveTo(x, y); g.lineTo(x - s * 0.04, y - s * 0.55); g.stroke();
+  // outline first (thick), then the fill covers the inner overlaps: one inked silhouette
+  g.lineWidth = 1.7;
+  g.stroke(crown);
+  g.fillStyle = fill;
+  g.fill(crown);
   g.save();
-  g.clip(canopy);
-  g.fillStyle = 'rgba(30,44,18,0.45)';
-  g.beginPath(); g.arc(x + s * 0.55, cy + s * 0.5, s * 1.05, 0, Math.PI * 2); g.fill();
-  g.strokeStyle = 'rgba(30,40,16,0.5)';
+  g.clip(crown);
+  // lee-side hatching and a few leaf scallops
+  g.strokeStyle = 'rgba(22,32,14,0.7)';
   g.lineWidth = 0.5;
-  for (let i = 0; i < 4; i++) { g.beginPath(); g.moveTo(x + s * (0.1 + i * 0.2), cy + s * 0.9); g.lineTo(x + s * (0.4 + i * 0.2), cy + s * 0.1); g.stroke(); }
-  g.fillStyle = 'rgba(230,240,190,0.25)';
-  g.beginPath(); g.arc(x - s * 0.35, cy - s * 0.35, s * 0.35, 0, Math.PI * 2); g.fill();
+  for (let i = 0; i < 8; i++) {
+    const hx = x - s * 0.05 + i * s * 0.17;
+    g.beginPath(); g.moveTo(hx, cy + s * 1.1); g.lineTo(hx + s * 0.55, cy - s * 0.2); g.stroke();
+  }
+  g.strokeStyle = 'rgba(22,32,14,0.45)';
+  for (let i = 0; i < 4; i++) {
+    const lx = x + (r() - 0.6) * s * 0.9;
+    const ly = cy + (r() - 0.5) * s * 0.8;
+    g.beginPath(); g.arc(lx, ly, s * 0.18, Math.PI * 0.1, Math.PI * 0.9); g.stroke();
+  }
+  g.fillStyle = 'rgba(240,236,200,0.18)';
+  g.beginPath(); g.arc(x - s * 0.3, cy - s * 0.35, s * 0.3, 0, Math.PI * 2); g.fill();
   g.restore();
-  g.strokeStyle = INK.ink;
-  g.lineWidth = 0.9;
-  g.stroke(canopy);
   g.restore();
 }
 
@@ -1108,53 +1369,54 @@ function ruinHouse(g, x, y, w, h, r) {
 
 function drawKey(g, x, y, w, h) {
   g.save();
-  g.fillStyle = 'rgba(246,234,204,0.85)';
+  g.fillStyle = 'rgba(246,234,204,0.88)';
   g.fillRect(x, y, w, h);
   g.strokeStyle = INK.ink;
   g.lineWidth = 1.6;
   g.strokeRect(x, y, w, h);
   g.lineWidth = 0.7;
   g.strokeRect(x + 5, y + 5, w - 10, h - 10);
-  g.font = `bold 15px ${SERIF}`;
-  g.letterSpacing = '5px';
+  g.font = `bold 20px ${SERIF}`;
+  g.letterSpacing = '6px';
   g.textAlign = 'center';
   g.fillStyle = INK.ink;
-  g.fillText('KEY', x + w / 2, y + 26);
+  g.fillText('KEY', x + w / 2 + 3, y + 30);
   g.letterSpacing = '0px';
-  drawFlourish(g, x + w / 2, y + 38, 120, { color: '#5a3a1c', width: 1 });
+  drawFlourish(g, x + w / 2, y + 44, 120, { color: '#5a3a1c', width: 1 });
+  // few entries, lettered large
   const rows = [
-    ['block', 'Surveyed block'], ['unknown', 'Not yet explored'], ['road', 'Road or lane'], ['sea', 'Sea passage'],
-    ['under', 'Stair below ground'], ['wall', 'The old city wall'], ['here', 'Your block'], ['party', 'The party'],
+    ['block', 'Surveyed'], ['unknown', 'Unexplored'], ['road', 'Road'], ['sea', 'Sea route'],
+    ['under', 'Stair down'], ['here', 'You are here'],
   ];
   g.textAlign = 'left';
   g.textBaseline = 'middle';
   rows.forEach(([k, label], i) => {
     const col = i % 2;
     const row = Math.floor(i / 2);
-    const cx = x + 24 + col * (w / 2 - 6);
-    const cy = y + 62 + row * 32;
+    const cx = x + 30 + col * (w / 2 - 8);
+    const cy = y + 76 + row * 40;
     g.save();
     switch (k) {
-      case 'block': g.fillStyle = 'rgba(248,238,212,0.9)'; g.fillRect(cx - 10, cy - 8, 20, 16); g.fillStyle = 'rgba(190,96,70,0.6)'; g.fillRect(cx - 7, cy - 5, 8, 6); g.fillRect(cx + 2, cy, 6, 5); g.strokeStyle = INK.ink; g.lineWidth = 1.2; g.strokeRect(cx - 10, cy - 8, 20, 16); break;
-      case 'unknown': g.strokeStyle = 'rgba(80,65,50,0.6)'; g.strokeRect(cx - 10, cy - 8, 20, 16); lineShade(g, cx - 10, cy - 8, 20, 16, { gap: 2, angle: -Math.PI / 4, color: '#3a2a1a', width: 0.4, alpha: 0.4 }); drawSeal(g, cx, cy, 6, '', { seed: 3 }); break;
-      case 'road': g.strokeStyle = '#4a3220'; g.lineWidth = 7; g.beginPath(); g.moveTo(cx - 12, cy); g.lineTo(cx + 12, cy); g.stroke(); g.strokeStyle = '#e9d6a8'; g.lineWidth = 4; g.stroke(); break;
-      case 'sea': g.setLineDash([4, 4]); g.strokeStyle = 'rgba(40,40,60,0.8)'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(cx - 12, cy); g.lineTo(cx + 12, cy); g.stroke(); break;
-      case 'under': drawMarker(g, 'stairs', cx, cy, 20, { color: INK.vermilion }); break;
-      case 'wall': g.strokeStyle = '#4a3220'; g.lineWidth = 4; g.beginPath(); g.moveTo(cx - 12, cy); g.lineTo(cx + 12, cy); g.stroke(); g.fillStyle = '#d9c49a'; g.lineWidth = 1.2; g.strokeStyle = '#3a2716'; g.beginPath(); g.arc(cx, cy, 5, 0, Math.PI * 2); g.fill(); g.stroke(); break;
-      case 'here': g.fillStyle = '#c0402e'; g.fillRect(cx - 12, cy - 6, 24, 12); g.strokeStyle = INK.ink; g.lineWidth = 1; g.strokeRect(cx - 12, cy - 6, 24, 12); break;
-      case 'party': {
+      case 'block': g.fillStyle = 'rgba(248,238,212,0.9)'; g.fillRect(cx - 13, cy - 10, 26, 20); g.fillStyle = 'rgba(190,96,70,0.6)'; g.fillRect(cx - 9, cy - 6, 10, 7); g.fillRect(cx + 3, cy, 7, 6); g.strokeStyle = INK.ink; g.lineWidth = 1.2; g.strokeRect(cx - 13, cy - 10, 26, 20); break;
+      case 'unknown': g.strokeStyle = 'rgba(80,65,50,0.6)'; g.strokeRect(cx - 13, cy - 10, 26, 20); drawSeal(g, cx, cy, 7.5, '', { seed: 3 }); break;
+      case 'road': g.strokeStyle = '#4a3220'; g.lineWidth = 8; g.beginPath(); g.moveTo(cx - 15, cy); g.lineTo(cx + 15, cy); g.stroke(); g.strokeStyle = '#e9d6a8'; g.lineWidth = 5; g.stroke(); break;
+      case 'sea': g.setLineDash([5, 4]); g.strokeStyle = 'rgba(40,40,60,0.85)'; g.lineWidth = 1.8; g.beginPath(); g.moveTo(cx - 15, cy); g.lineTo(cx + 15, cy); g.stroke(); break;
+      case 'under': drawMarker(g, 'stairs', cx, cy, 24, { color: INK.vermilion }); break;
+      case 'here': {
+        g.fillStyle = 'rgba(248,238,212,0.9)'; g.fillRect(cx - 13, cy - 10, 26, 20);
+        g.strokeStyle = INK.vermilion; g.lineWidth = 2; g.strokeRect(cx - 13, cy - 10, 26, 20);
         g.translate(cx, cy);
         g.fillStyle = '#c63a28';
-        g.beginPath(); g.moveTo(0, -10); g.lineTo(7, 8); g.lineTo(0, 4); g.lineTo(-7, 8); g.closePath(); g.fill();
-        g.strokeStyle = INK.goldLo; g.lineWidth = 1.2; g.stroke();
+        g.beginPath(); g.moveTo(0, -8); g.lineTo(5.5, 6); g.lineTo(0, 3); g.lineTo(-5.5, 6); g.closePath(); g.fill();
+        g.strokeStyle = INK.ink; g.lineWidth = 0.8; g.stroke();
         break;
       }
       default:
     }
     g.restore();
-    g.font = `italic 14px ${SERIF}`;
-    g.fillStyle = '#3b2412';
-    g.fillText(label, cx + 20, cy);
+    g.font = `20px ${SERIF}`;
+    g.fillStyle = '#2e1b0d';
+    g.fillText(label, cx + 24, cy + 1);
   });
   g.restore();
 }
@@ -1185,7 +1447,7 @@ function drawShip(g, x, y, s) {
   hull.lineTo(-18, -2);
   hull.lineTo(-20, -10);
   hull.closePath();
-  g.fillStyle = '#8a5a2c';
+  g.fillStyle = '#b08250';
   g.fill(hull);
   g.save();
   g.clip(hull);
@@ -1250,7 +1512,7 @@ function drawSerpent(g, x, y, s) {
   g.scale(s / 60, s / 60);
   g.lineJoin = 'round';
   g.lineCap = 'round';
-  const body = '#5f7f62';
+  const body = '#8fa486';
   const coil = (hx, w, h) => {
     const outer = new Path2D();
     outer.moveTo(hx - w / 2, 2);
