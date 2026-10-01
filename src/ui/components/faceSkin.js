@@ -73,7 +73,7 @@ export function paintFaceSkin(app, o = {}) {
     g.fillStyle = 'rgba(214,170,96,0.16)';
     ell(0, 0.055, 0.06, 0.035);
     g.fill();
-    g.fillStyle = `rgba(196,74,58,${app.fem ? 0.2 : 0.16})`;
+    g.fillStyle = `rgba(196,74,58,${o.portrait ? (app.fem ? 0.1 : 0.07) : app.fem ? 0.2 : 0.16})`;
     ell(0, -0.018, 0.05, 0.022);
     g.fill();
     for (const sg of [-1, 1]) { ell(sg * 0.07, 0.0, 0.01, 0.03); g.fill(); }
@@ -82,7 +82,7 @@ export function paintFaceSkin(app, o = {}) {
       ell(0, -0.088, 0.05, 0.028);
       g.fill();
     }
-    g.fillStyle = 'rgba(90,40,70,0.12)';
+    g.fillStyle = `rgba(90,40,70,${o.portrait ? 0.04 : 0.12})`;
     for (const sg of [-1, 1]) { ell(sg * ex, eyeY + 0.004, 0.02, 0.012); g.fill(); }
   });
   // Shadow under the cheekbones (models the face like a painter would).
@@ -96,10 +96,10 @@ export function paintFaceSkin(app, o = {}) {
   // ---- glazes: eye sockets, cheeks, lips area, temples
   soft(S / 90, () => {
     for (const sg of [-1, 1]) {
-      g.fillStyle = rgba(dark, 0.32);
+      g.fillStyle = rgba(dark, o.portrait ? 0.08 : 0.32);
       ell(sg * ex, eyeY + 0.008, 0.019, 0.011);
       g.fill();
-      g.fillStyle = rgba([200, 90, 80], app.fem ? 0.2 : 0.13);
+      g.fillStyle = rgba([200, 90, 80], o.portrait ? (app.fem ? 0.1 : 0.05) : app.fem ? 0.2 : 0.13);
       ell(sg * 0.046, -0.028, 0.02, 0.014);
       g.fill();
       // Temple shadow.
@@ -143,7 +143,7 @@ export function paintFaceSkin(app, o = {}) {
       g.closePath();
     };
     // Lids: skin over the eyeball, a little darker and cooler in the socket.
-    const lidC = [Math.round(skin[0] * 0.74), Math.round(skin[1] * 0.66), Math.round(skin[2] * 0.66)];
+    const lidC = o.portrait ? [Math.round(skin[0] * 0.94), Math.round(skin[1] * 0.9), Math.round(skin[2] * 0.9)] : [Math.round(skin[0] * 0.74), Math.round(skin[1] * 0.66), Math.round(skin[2] * 0.66)];
     const lg = g.createRadialGradient(X(cx), Y(eyeY), 0, X(cx), Y(eyeY), 0.0158 * U);
     lg.addColorStop(0, rgba(lidC, 1));
     lg.addColorStop(0.72, rgba(lidC, 1));
@@ -151,7 +151,7 @@ export function paintFaceSkin(app, o = {}) {
     g.fillStyle = lg;
     ell(cx, eyeY, 0.0158, 0.0158);
     g.fill();
-    soft(S / 300, () => {
+    if (!o.portrait) soft(S / 300, () => {
       g.fillStyle = rgba([90, 50, 60], 0.22);
       ell(cx, eyeY + 0.006, 0.0148, 0.006);
       g.fill();
@@ -231,6 +231,7 @@ export function paintFaceSkin(app, o = {}) {
   // ---- brows: strokes of hair along an arc shaped by the expression
   const tilt = F.browTilt;
   for (const sg of [-1, 1]) {
+    if (o.portrait) break;
     const mass = fp.brow * (app.fem ? 0.75 : 1);
     const inner = [sg * (ex - 0.013), 0.0215 - tilt * 0.012 + (app.expr === 'proud' ? 0.002 : 0)];
     const peak = [sg * (ex + 0.002), 0.0262 - tilt * 0.002 + (app.fem ? 0.0015 : 0)];

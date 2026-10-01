@@ -166,13 +166,15 @@ export function renderSheet(ch) {
     })));
   }
   const traits = [];
-  if (race.infravision) traits.push(['Infravision', `${race.infravision}'`, 'Sees the heat of living things in darkness.']);
+  traits.push(['Infravision', race.infravision ? `${race.infravision}'` : 'none', race.infravision ? 'Sees the heat of living things in darkness.' : 'Humans see only by torch, lantern and moon.']);
   if (race.resistSleepCharm) traits.push(['Sleep/charm resist', `${race.resistSleepCharm}%`, 'Chance to shrug off sleep and charm spells outright.']);
   if (race.saveBonusCon) traits.push(['Stout', 'saves', 'Bonus to saves against magic (and poison for dwarves and halflings), from constitution.']);
   if (race.missileBonus) traits.push(['Sling & bow', `+${race.missileBonus}`, 'Halflings are deadly with slings and bows.']);
   if (race.vsGiants) traits.push(['Giant-wary', '−4', 'Giants, ogres and trolls suffer −4 to hit this small folk.']);
   if (race.canDualClass) traits.push(['Dual class', 'able', 'Humans may abandon their class for a new one and later regain the old abilities.']);
-  extra.push(sect('Racial Traits', [h('div.pc-kv', traits.flatMap(([k, v, t]) => kv(k, v, { title: k, text: t })))]));
+  traits.push(['Level limits', ch.race === 'human' ? 'none' : 'by race', ch.race === 'human' ? 'Humans may rise as far in any class as training allows (in Phlan: fighters 8th, clerics and magic-users 6th, thieves 9th).' : 'Demi-humans reach only so far in each class; exceptional prime requisites raise the cap.']);
+  extra.push(sect('Racial Traits', [h('div.pc-kv', traits.flatMap(([k, v, t]) => kv(k, v, { title: k, text: t }))),
+    h('div', { style: { marginTop: '0.45em' } }, race.languages.map((l) => h('span.pc-chip', { dataset: lore({ title: 'Languages', text: `${ch.name} speaks ${race.languages.join(', ')}. Intelligence allows more tongues to be learned.` }) }, [l])))]));
 
   const gear = ch.inventory.filter((e) => e.equipped && ITEMS[e.id]);
   const kit = sect('Readied', gear.length ? gear.map((e) => h('div', { style: { display: 'flex', alignItems: 'center', gap: '0.6em', padding: '0.12em 0' }, dataset: lore({ title: itemName(e), text: `Readied ${ITEMS[e.id].type}. Open ITEMS to change equipment.` }) }, [
@@ -201,7 +203,7 @@ export function renderSheet(ch) {
     h('div.pc-rest-note', { style: { marginTop: '0.35em' } }, [`${pack.length} item${pack.length === 1 ? '' : 's'} in the pack · ${s.weight} cn carried · ${s.encumbrance.label.toLowerCase()}`]),
   ]);
   const side = [saves, ...extra.slice(0, 2)];
-  if (side.length < 3) side.push(langs);
+  void langs;
   side.push(cond, packSect);
   const sheet = h('div.pc-sheet', [
     id,

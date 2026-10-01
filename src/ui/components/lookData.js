@@ -55,14 +55,14 @@ export const HEADS = {
     { name: 'Sage', hair: 'long', beard: 'long', age: 1, expr: 'kind', face: { w: 0.94, nose: 1.28, tip: 1.2, long: 1.06, eye: 0.9, lid: 0.45, brow: 1.2, cheek: 0.9 } },
   ],
   female: [
-    { name: 'Maiden', hair: 'long', beard: 'none', expr: 'kind', face: { w: 0.97, cheek: 1.12, nose: 0.88, eye: 1.08, lips: 1.15, chin: 0.85 } },
-    { name: 'Ranger', hair: 'braid', beard: 'none', expr: 'stern', face: { w: 0.96, jaw: 0.98, nose: 1.05, bridge: 1.05, cheek: 1.15, brow: 0.95, sp: 1.02 } },
-    { name: 'Priestess', hair: 'bun', beard: 'none', expr: 'neutral', face: { w: 1.03, chin: 0.85, eye: 1.08, lid: 0.35, cheek: 1.0, lips: 1.05 } },
+    { name: 'Maiden', hair: 'long', beard: 'none', expr: 'kind', face: { w: 0.96, cheek: 1.1, nose: 0.84, eye: 1.14, lips: 1.18, chin: 0.82, long: 0.95 } },
+    { name: 'Ranger', hair: 'braid', beard: 'none', expr: 'stern', age: 0.15, face: { w: 0.94, jaw: 1.04, nose: 1.1, bridge: 1.1, cheek: 1.2, brow: 1.05, sp: 1.02, long: 1.04 } },
+    { name: 'Priestess', hair: 'bun', beard: 'none', expr: 'kind', age: 0.3, face: { w: 1.05, chin: 0.88, eye: 1.0, lid: 0.45, cheek: 0.95, lips: 1.0, long: 0.96 } },
     { name: 'Duelist', hair: 'bob', beard: 'none', expr: 'smirk', face: { w: 0.93, jaw: 0.86, nose: 1.08, eye: 0.94, mouth: 0.92, cheek: 1.22, sp: 0.96 } },
     { name: 'Sorceress', hair: 'wavy', beard: 'none', expr: 'proud', face: { w: 0.92, long: 1.07, eye: 1.12, chin: 0.82, cheek: 1.3, nose: 0.95, lips: 1.2, lid: 0.3 } },
     { name: 'Shieldmaiden', hair: 'long', beard: 'none', helm: true, expr: 'stern', face: { jaw: 1.08, chin: 1.08, brow: 1.1, nose: 1.02 } },
     { name: 'Hooded', hair: 'hood', beard: 'none', expr: 'weary', face: { w: 0.95, lid: 0.5, cheek: 1.05, nose: 0.95 } },
-    { name: 'Mercenary', hair: 'crop', beard: 'none', scar: true, expr: 'scowl', age: 0.2, face: { jaw: 1.12, brow: 1.35, w: 1.02, eye: 0.9, nose: 1.1, bridge: 1.2, lips: 0.85 } },
+    { name: 'Mercenary', hair: 'crop', beard: 'none', scar: true, expr: 'scowl', age: 0.35, face: { jaw: 1.16, brow: 1.4, w: 1.04, eye: 0.88, nose: 1.14, bridge: 1.25, lips: 0.82, chin: 1.1 } },
   ],
 };
 /** Bodies (8), usable by anyone; defaults follow the class. */
@@ -154,6 +154,18 @@ const hexToLin = (c) => {
   return v.map((x) => (x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4));
 };
 
+/** Complexion by head template: weathered, ruddy, pale or sun-browned (subtle). */
+const TONE = {
+  Soldier: [0.98, 0.94, 0.9], Wanderer: [0.93, 0.87, 0.8], Noble: [1.03, 1.0, 0.99], Veteran: [1.02, 0.9, 0.84],
+  Guardsman: [0.99, 0.95, 0.92], Rogue: [0.95, 0.92, 0.88], Hooded: [0.94, 0.92, 0.9], Sage: [1.0, 0.95, 0.91],
+  Maiden: [1.03, 1.0, 0.98], Ranger: [0.95, 0.9, 0.84], Priestess: [1.02, 0.99, 0.97], Duelist: [0.99, 0.95, 0.92],
+  Sorceress: [1.03, 1.0, 1.0], Shieldmaiden: [1.0, 0.94, 0.9], Mercenary: [0.95, 0.89, 0.83],
+};
+function toned(hex, t) {
+  const v = [1, 3, 5].map((i, j) => Math.max(0, Math.min(255, Math.round(parseInt(hex.slice(i, i + 2), 16) * t[j]))));
+  return `#${v.map((x) => x.toString(16).padStart(2, '0')).join('')}`;
+}
+
 /**
  * The resolved appearance shared by the portrait and the miniature.
  * @param {{race:string, gender?:string, classSpec?:string, look?:object, name?:string, inventory?:object[]}} ch
@@ -191,7 +203,7 @@ export function resolveAppearance(ch, o = {}) {
   const hairStyle = head.hair;
   const helm = !!(head.helm || gear?.helm);
   const skins = RACE_SKINS[race];
-  const skinHex = SKIN_TONES[skins[look.skin % skins.length]];
+  const skinHex = toned(SKIN_TONES[skins[look.skin % skins.length]], TONE[head.name] ?? [1, 1, 1]);
   const hairHex = HAIR_COLORS[look.hair % HAIR_COLORS.length][1];
   const age = head.age ?? 0;
   return {

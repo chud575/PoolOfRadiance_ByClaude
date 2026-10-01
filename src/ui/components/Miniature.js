@@ -96,6 +96,7 @@ varying vec3 vFace;
 varying vec3 vObj;
 varying vec3 vObjN;
 uniform sampler2D faceMap;
+uniform vec3 uSkin;
 uniform float uDetail;
 float mh3(vec3 p) { p = fract(p * 0.3183099 + vec3(0.71, 0.113, 0.419)); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
 float vn3(vec3 x) {
@@ -182,12 +183,14 @@ function blankFaceTexture() {
  * The miniature material (vertex-painted, detailed in the shader).
  * @param {THREE.Texture|null} faceTex
  */
-export function figureMaterial(faceTex) {
+export function figureMaterial(faceTex, skinLin = null) {
   const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0 });
   m.userData.faceMap = { value: faceTex ?? blankFaceTexture() };
-  m.customProgramCacheKey = () => 'por-mini-v3';
+  m.userData.uSkin = { value: new THREE.Vector3(...(skinLin ?? [0.6, 0.4, 0.3])) };
+  m.customProgramCacheKey = () => 'por-mini-v4';
   m.onBeforeCompile = (sh) => {
     sh.uniforms.faceMap = m.userData.faceMap;
+    sh.uniforms.uSkin = m.userData.uSkin;
     sh.uniforms.uDetail = { value: 1 };
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec4 aMat;\nattribute vec3 aFace;\nvarying vec4 vMat;\nvarying vec3 vFace;\nvarying vec3 vObj;\nvarying vec3 vObjN;')
@@ -198,7 +201,11 @@ export function figureMaterial(faceTex) {
         float pid = floor(vMat.x + 0.5);
         vec4 fcol = texture2D(faceMap, vFace.xy);
         float faceW = fcol.a * vFace.z;
-        diffuseColor.rgb = mix(diffuseColor.rgb, fcol.rgb * fcol.rgb, faceW);
+        // On skin the painted face is a tint relative to the base skin, so the
+        // baked wash and occlusion survive (no pale 'mask' where it is painted).
+        vec3 fLin = fcol.rgb * fcol.rgb;
+        vec3 painted = (pid > 8.5 && pid < 9.5) ? diffuseColor.rgb * clamp(fLin / max(uSkin, vec3(0.02)), 0.0, 1.6) : fLin;
+        diffuseColor.rgb = mix(diffuseColor.rgb, painted, faceW);
         float miniH; float miniAlb; float miniR;
         miniPattern(pid, miniH, miniAlb, miniR);
         diffuseColor.rgb *= mix(miniAlb, 1.0, faceW);`)
@@ -370,12 +377,14 @@ export function buildMiniature(ch, opt = {}) {
   const disposables = [];
   const geo = geometryOf(d);
   disposables.push(geo);
-  const faceCanvas = paintFaceSkin(app, { size: opt.faceSize ?? (cell < 0.008 ? 512 : 256), asleep: fr.asleep });
+  const faceCanvas = paintFaceSkin(app, { size: opt.faceSize ?? (cell < 0.008 ? 512 : 256), asleep: fr.asleep, portrait: pose === 'portrait' });
   const faceTex = new THREE.CanvasTexture(faceCanvas);
   faceTex.colorSpace = THREE.NoColorSpace;
   faceTex.anisotropy = 4;
   disposables.push(faceTex);
-  const mat = figureMaterial(faceTex);
+  const sl = app.lin(app.skinHex);
+  const sgy = (sl[0] + sl[1] + sl[2]) / 3;
+  const mat = figureMaterial(faceTex, sl.map((v) => v + (sgy - v) * 0.18));
   disposables.push(mat);
   const body = new THREE.Mesh(geo, mat);
   body.castShadow = true;

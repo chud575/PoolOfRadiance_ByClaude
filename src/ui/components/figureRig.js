@@ -44,15 +44,18 @@ export function faceParams(app) {
   const f = { w: 1, jaw: 1, chin: 1, cheek: 1, nose: 1, bridge: 1, tip: 1, eye: 1, sp: 1, brow: 1, lips: 1, mouth: 1, long: 1, lid: 0, slant: 0, ears: 1 };
   const t = app.face ?? {};
   const r = RACE_FACE[app.race] ?? {};
+  // Template deviations are exaggerated (as a caricaturist would) so the
+  // heads read apart at thumbnail size; race shapes apply on top.
+  const EX = 1.75;
   for (const k of Object.keys(f)) {
-    if (k === 'lid' || k === 'slant') f[k] = (t[k] ?? 0) + (r[k] ?? 0);
-    else f[k] = (t[k] ?? 1) * (r[k] ?? 1);
+    if (k === 'lid' || k === 'slant') f[k] = (t[k] ?? 0) * 1.3 + (r[k] ?? 0);
+    else f[k] = Math.max(0.55, 1 + ((t[k] ?? 1) - 1) * EX) * (r[k] ?? 1);
   }
   if (app.fem) {
     f.jaw *= 0.84; f.chin *= 0.8; f.brow *= 0.55; f.nose *= 0.88; f.bridge *= 0.85; f.lips *= 1.06; f.cheek *= 1.06; f.w *= 0.95; f.eye *= 1.05;
   }
   if (app.expr === 'weary') f.lid += 0.4;
-  f.brow = Math.min(1.45, f.brow);
+  f.brow = Math.min(1.7, f.brow);
   return f;
 }
 
@@ -406,41 +409,48 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
   const sk = M.skin;
   // Cranium and face masses.
   hE([0, 0.026, -0.014], [0.074 * fw, 0.094, 0.097], null, sk, { k: 0.02 * hs });
-  hE([0, -0.022 * fl, 0.03], [0.056 * fw, 0.068 * fl, 0.064], null, sk, { k: 0.025 * hs });
+  hE([0, -0.024 * fl, 0.027], [0.053 * fw, 0.072 * fl, 0.066], null, sk, { k: 0.045 * hs });
+  // Temples and zygomatic arches fill the seam between skull and face masses.
+  for (const sg of [-1, 1]) hE([sg * 0.047 * fw, 0.006, 0.024], [0.017, 0.038, 0.042], null, sk, { k: 0.036 * hs });
   // Cheekbones (high on elves, round on halflings).
   const ckY = -0.006 + (fp.cheek - 1) * 0.012;
-  for (const sg of [-1, 1]) hE([sg * 0.043 * fw, ckY, 0.06], [0.021 * fp.cheek ** 0.5, 0.015 * fp.cheek, 0.019], mEulerSafe(0, 0, sg * -0.3), sk, { k: 0.016 * hs });
+  for (const sg of [-1, 1]) hE([sg * 0.043 * fw, ckY, 0.058], [0.021 * fp.cheek ** 0.5, 0.016 * fp.cheek, 0.019], mEulerSafe(0, 0, sg * -0.3), sk, { k: 0.026 * hs });
   if (app.race === 'halfling') for (const sg of [-1, 1]) hE([sg * 0.04, -0.035, 0.06], [0.026, 0.022, 0.022], null, sk, { k: 0.02 * hs });
   // Jaw and chin.
   const jw = fp.jaw;
   // Jaw: a bony line from the angle below the ear to the chin.
   for (const sg of [-1, 1]) {
-    hCone([sg * 0.047 * fw * (0.88 + 0.12 * jw), -0.045 * fl, -0.008], [sg * 0.03 * fw * jw, -0.088 * fl, 0.045], 0.016 * (0.85 + 0.15 * jw), 0.014, sk, { k: 0.02 * hs });
-    hCone([sg * 0.03 * fw * jw, -0.088 * fl, 0.045], [sg * 0.01, -0.1 * fl, 0.066], 0.014, 0.013 * fp.chin, sk, { k: 0.016 * hs });
+    hCone([sg * 0.046 * fw * (0.88 + 0.12 * jw), -0.045 * fl, -0.008], [sg * 0.03 * fw * jw, -0.087 * fl, 0.044], 0.0135 * (0.85 + 0.15 * jw), 0.012, sk, { k: 0.03 * hs });
+    hCone([sg * 0.03 * fw * jw, -0.087 * fl, 0.044], [sg * 0.01, -0.099 * fl, 0.064], 0.012, 0.012 * fp.chin, sk, { k: 0.026 * hs });
   }
+  // Gonial angles: the corners of the jaw (squarer on men and dwarves).
+  if (!app.fem) for (const sg of [-1, 1]) hE([sg * 0.044 * fw * (0.9 + 0.1 * jw), -0.074 * fl, 0.006], [0.012 * jw, 0.013, 0.016], null, sk, { k: 0.022 * hs });
   hE([0, -0.096 * fl, 0.066 - (1 - fp.chin) * 0.01], [0.019 * fp.chin * (0.85 + 0.15 * jw), 0.016 * fp.chin, 0.018], null, sk, { k: 0.016 * hs });
   // Muzzle (between nose and chin).
-  hE([0, -0.054 * fl, 0.061], [0.031 * fw, 0.03 * fl, 0.026], null, sk, { k: 0.018 * hs });
+  hE([0, -0.054 * fl, 0.06], [0.03 * fw, 0.03 * fl, 0.026], null, sk, { k: 0.028 * hs });
   // Cheeks either side of the mouth.
-  for (const sg of [-1, 1]) hE([sg * 0.034 * fw, -0.03 * fl, 0.058], [0.017, 0.02, 0.018], null, sk, { k: 0.02 * hs });
+  for (const sg of [-1, 1]) hE([sg * 0.033 * fw, -0.032 * fl, 0.054], [0.014, 0.018, 0.015], null, sk, { k: 0.03 * hs });
   // Brow ridge — scowls pinch it down at the centre, weary eyes let the outer ends sag.
   const ex = 0.0305 * fp.sp * fw;
   const eyeY = 0.006;
   const browTilt = app.expr === 'scowl' ? 0.32 : app.expr === 'weary' ? -0.18 : app.expr === 'proud' ? -0.06 : app.expr === 'stern' ? 0.12 : 0;
   for (const sg of [-1, 1]) {
-    hE([sg * ex * 0.95, 0.024 - (app.expr === 'scowl' ? 0.003 : 0), 0.078], [0.028 * fw, 0.0095 * fp.brow, 0.015 + 0.004 * (fp.brow - 1)], mEulerSafe(0, sg * -0.25, sg * browTilt), sk, { k: 0.012 * hs });
+    hE([sg * ex * 0.95, 0.025 - (app.expr === 'scowl' ? 0.003 : 0), 0.0745], [0.027 * fw, 0.0085 * fp.brow, 0.0125 + 0.004 * (fp.brow - 1)], mEulerSafe(0, sg * -0.25, sg * browTilt), sk, { k: 0.012 * hs });
   }
   hE([0, 0.03, 0.08], [0.016, 0.012, 0.012], null, sk, { k: 0.014 * hs });
   // Eye sockets carved, eyeballs set in, lids over them.
   const er = 0.0112 * fp.eye ** 0.5;
   const lidDrop = fp.lid * 0.004;
   for (const sg of [-1, 1]) {
-    sc.ellipsoid(headLocal([sg * ex, eyeY + 0.003, 0.084]), vscale([0.0175 * fp.eye ** 0.5, 0.0125, 0.017], hs), HR, { mat: sk, g: GR.body, k: 0.009 * hs, sub: true });
-    sc.sphere(headLocal([sg * ex, eyeY, 0.0725]), er * hs, { mat: M.eye, g: GR.eyes });
+    sc.ellipsoid(headLocal([sg * ex, eyeY + 0.002, 0.0845]), vscale([0.0155 * fp.eye ** 0.5, 0.0102, 0.011], hs), HR, { mat: sk, g: GR.body, k: 0.012 * hs, sub: true });
+    sc.sphere(headLocal([sg * ex, eyeY, 0.0712]), er * hs, { mat: M.eye, g: GR.eyes });
     if (!asleep) {
       // Upper lid (droops for weary faces), lower lid.
       // A soft upper-lid fold above the eyeball (the opening itself is painted).
-      hE([sg * ex, eyeY + 0.0098 - lidDrop, 0.0742], [0.0148 * fp.eye ** 0.5, 0.0046 + lidDrop * 0.5, 0.0098], mEulerSafe(-0.2, 0, sg * fp.slant * -0.15), sk, { k: 0.005 * hs });
+      // Thin lids that hug the eyeball: an upper cap whose edge is the lash
+      // line, and a narrow lower rim (no swollen fold above the eye).
+      sc.sphere(headLocal([sg * ex, eyeY + 0.0004, 0.0716]), (er + 0.0018) * hs, { mat: sk, g: GR.body, k: 0.004 * hs, clip: hClip([[0, -1, 0.12 * sg * fp.slant, -(eyeY + 0.0042 - lidDrop)]]), clipK: 0.0015 * hs });
+      sc.sphere(headLocal([sg * ex, eyeY, 0.0714]), (er + 0.001) * hs, { mat: sk, g: GR.body, k: 0.003 * hs, clip: hClip([[0, 1, 0, eyeY - 0.0056]]), clipK: 0.0012 * hs });
     } else {
       hE([sg * ex, eyeY - 0.0005, 0.0748], [0.0145, 0.0115, 0.0112], null, sk, { k: 0.004 * hs });
     }
@@ -486,20 +496,20 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
   if (app.hood) {
     // Hood: a cloth shell around the head with the face left open, falling into a cowl.
     const hoodR = [0.1, 0.128, 0.122];
-    const shell = sc.ellipsoid(headLocal([0, 0.024, -0.012]), vscale(hoodR, hs), HR, { mat: M.cloth, g: GR.cloak, k: 0, shell: 0.0065 * hs, disp: grooveH(0.0014, 7) , amp: 0.002 * hs });
+    const shell = sc.ellipsoid(headLocal([0, 0.024, -0.012]), vscale(hoodR, hs), HR, { mat: M.cloth, g: GR.cloak, k: 0, shell: 0.0065 * hs, disp: grooveH(0.0014, 7), amp: 0.002 * hs, clip: hClip([[0, -0.32, 1, 0.052]]), clipK: 0.004 * hs });
     void shell;
-    sc.ellipsoid(headLocal([0, -0.012, 0.11]), vscale([0.072 * fw, 0.098, 0.1], hs), HR, { g: GR.cloak, sub: true, k: 0.012 * hs });
+    sc.ellipsoid(headLocal([0, -0.022, 0.11]), vscale([0.077 * fw, 0.112, 0.1], hs), HR, { g: GR.cloak, sub: true, k: 0.012 * hs });
     sc.ellipsoid(headLocal([0, -0.03, -0.06]), vscale([0.11, 0.09, 0.09], hs), HR, { g: GR.cloak, sub: true, k: 0.01 * hs });
   } else if (hairOn && app.hair !== 'bald') {
     const style = app.hair;
     const tight = style === 'crop' || (style === 'short' && !app.fem);
     const r = tight ? [0.0795, 0.1005, 0.103] : [0.083, 0.104, 0.107];
     const sideClip = style === 'bob' ? 0.05 : style === 'long' || style === 'wavy' || style === 'braid' ? 0.016 : -0.012;
-    const front = style === 'swept' ? 0.04 : style === 'crop' ? 0.03 : 0.034;
+    const front = style === 'swept' ? 0.022 : style === 'crop' ? 0.01 : style === 'long' || style === 'wavy' || style === 'bob' ? 0.018 : 0.014;
     // The hair is an offset of the skull whose thickness tapers to nothing at
     // a natural hairline (receding at the temples), so it grows out of the
     // scalp instead of sitting on it like a cap.
-    const T = (tight ? 0.0055 : style === 'swept' || style === 'long' || style === 'wavy' ? 0.011 : 0.009) * hs;
+    const T = (tight ? 0.0082 : style === 'swept' || style === 'long' || style === 'wavy' ? 0.0125 : 0.0105) * hs;
     const cran = sdEllipsoid(headLocal([0, 0.026, -0.014]), vscale([0.074 * fw, 0.094, 0.097], hs), HR);
     const fr0 = front;
     const sd0 = sideClip;
@@ -550,15 +560,20 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
       }, bbOf(headLocal([0, 0.0, -0.01]), 0.16 * hs), { ...hairG });
     }
     if (style === 'braid') {
-      for (let i = 0; i < 9; i++) {
-        const y = -0.04 - i * 0.034;
-        const z = -0.1 - i * 0.012 + Math.min(i, 3) * 0.004;
-        hE([Math.sin(i * 1.7) * 0.006, y, z], [0.021 - i * 0.0012, 0.022, 0.019 - i * 0.0009], mEulerSafe(0.2, 0, (i % 2 ? 1 : -1) * 0.5), M.hair, { k: 0.006 * hs });
+      // A thick plait drawn forward over the left shoulder (it frames the face).
+      for (let i = 0; i < 10; i++) {
+        const t = i / 9;
+        const x = (0.072 + 0.03 * t) * fw;
+        const y = -0.02 - t * 0.3;
+        const z = -0.01 + 0.075 * Math.min(1, t * 1.6);
+        hE([x + Math.sin(i * 1.9) * 0.004, y, z], [0.02 - t * 0.006, 0.021, 0.018 - t * 0.004], mEulerSafe(0.1, 0, (i % 2 ? 1 : -1) * 0.5), M.hair, { k: 0.006 * hs });
       }
-      hE([0, -0.06, -0.085], [0.05, 0.05, 0.04], null, M.hair, { k: 0.02 * hs, disp: grooveH(0.002, 20), amp: 0.003 * hs });
+      hE([0.1 * fw, -0.335, 0.07], [0.008, 0.012, 0.008], null, M.leather, { k: 0.003 * hs });
+      hE([0, -0.03, -0.08], [0.06, 0.06, 0.045], null, M.hair, { k: 0.02 * hs, disp: grooveH(0.002, 20), amp: 0.003 * hs });
     }
     if (style === 'bun') {
-      hE([0, 0.05, -0.11], [0.036, 0.034, 0.03], null, M.hair, { k: 0.015 * hs, disp: grooveH(0.002, 14), amp: 0.003 * hs });
+      // A high crown bun, visible above the head.
+      hE([0, 0.132, -0.068], [0.04, 0.034, 0.038], null, M.hair, { k: 0.015 * hs, disp: grooveH(0.002, 14), amp: 0.003 * hs });
       hE([0, 0.0, -0.075], [0.078, 0.06, 0.05], null, M.hair, { k: 0.02 * hs, disp: grooveH(0.002, 20), amp: 0.003 * hs });
     }
     if (style === 'topknot') {

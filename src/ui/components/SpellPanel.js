@@ -94,7 +94,6 @@ export class SpellPanel {
       })),
       h('div', { style: { flex: '1' } }),
       this._grimoire(ch, classes),
-      this._restNote(),
     ]);
 
     if (!cls) {
@@ -169,6 +168,7 @@ export class SpellPanel {
         h('div.pc-sect-h', [h('span', [`${ch.name}'s ${cls === 'cleric' ? 'prayers' : 'spells'}`])]),
         this._sockets(ch, cls, slots, prepared),
         h('div.pc-spell-scroll.pc-memo-list', rows.length ? rows : [h('div.empty', ['No spells chosen. Pick from the list, or AUTO.'])]),
+        this._restPlan(partyNeed),
         h('div.pc-rest-note', { style: { marginTop: '0.5em' } }, need
           ? [`${ch.name} needs `, h('b', [fmtMinutes(need)]), ` to memorize ${nToLearn} spell${nToLearn === 1 ? '' : 's'} (1e: ${need > 300 ? 6 : 4} hours of sleep, then 15 minutes per spell level).`, partyNeed > need ? [' The party rests ', h('b', [fmtMinutes(partyNeed)]), ' for its slowest caster.'] : null]
           : [partyNeed ? ['All chosen spells are in memory. The party still needs ', h('b', [fmtMinutes(partyNeed)]), ' for the others.'] : 'All chosen spells are in memory.']),
@@ -279,10 +279,39 @@ export class SpellPanel {
     ]);
   }
 
-  _restNote() {
+  /**
+   * The night's rest as a timeline: for each caster, the hours of sleep the
+   * 1e rules ask for, then their study, against the party's one rest length
+   * (the same number as the camp panel and the REST button).
+   */
+  _restPlan(partyNeed) {
     const party = this.ctx.game.party;
-    const need = partyMemorizationTime(party);
-    return h('div.pc-rest-note', need ? ['The party must rest ', h('b', [fmtMinutes(need)]), ' for every caster to finish memorizing.'] : ['Every caster has memorized their spells.']);
+    const casters = party.filter((c) => castingClassesOf(c).length);
+    if (!casters.length) return null;
+    const span = Math.max(partyNeed, 240);
+    const hours = Math.ceil(span / 60);
+    const pct = (m) => `${Math.min(100, (m / (hours * 60)) * 100).toFixed(2)}%`;
+    const rows = casters.map((c) => {
+      const need = memorizationTime(c);
+      const todo = spellsToMemorize(c);
+      const n = Object.values(todo).flat().length;
+      const levels = Object.entries(todo).reduce((a, [cl, ids]) => a + ids.reduce((b, id) => b + spellLevel(id, cl), 0), 0);
+      const study = Math.min(need, 15 * levels);
+      const sleep = Math.max(0, need - study);
+      return h(`div.pc-plan-row${c === this.ch ? '.me' : ''}`, { dataset: { tip: need ? `${c.name}: ${fmtMinutes(sleep)} of sleep, then ${fmtMinutes(study)} of study for ${n} spell${n === 1 ? '' : 's'}.` : `${c.name} has nothing to memorize.` } }, [
+        h('span.nm', [c.name.split(' ').pop()]),
+        h('span.bar', [
+          need ? h('i.sleep', { style: { width: pct(sleep) } }) : null,
+          need ? h('i.study', { style: { left: pct(sleep), width: pct(study) } }) : h('i.done', { style: { width: '100%' } }),
+        ]),
+        h('span.t', [need ? fmtMinutes(need) : '—']),
+      ]);
+    });
+    return h('div.pc-plan', [
+      h('div.pc-plan-h', [h('span', ['Tonight\'s rest']), h('span.k', [h('i.sleep'), 'sleep', h('i.study'), 'study'])]),
+      ...rows,
+      h('div.pc-plan-axis', Array.from({ length: hours + 1 }, (_, i) => h('span', { style: { left: pct(i * 60) } }, [`${i}h`]))),
+    ]);
   }
 
   _renderCast(casters, sub, ch, cls) {

@@ -516,3 +516,22 @@
 .pc-icon img { object-fit: contain; object-position: 50% 100%; }
 .pc-doll-fig { background: #07060a; }
 .pc-doll-mini { object-fit: cover; object-position: 50% 100%; }
+
+/* Tonight's rest: sleep then study per caster, on one timeline. */
+.pc-plan { margin-top: 0.6em; padding: 0.55em 0.7em 1.5em; border-radius: 3px; border: 1px solid rgba(216, 178, 90, 0.22);
+  background: linear-gradient(180deg, rgba(10, 16, 40, 0.55), rgba(0, 0, 0, 0.35)), repeating-linear-gradient(90deg, transparent 0 39px, rgba(216, 178, 90, 0.05) 39px 40px); position: relative; }
+.pc-plan-h { display: flex; justify-content: space-between; align-items: center; font-family: var(--por-font-display, serif); letter-spacing: 0.14em; text-transform: uppercase; font-size: 0.72em; color: var(--por-gold, #d8b25a); margin-bottom: 0.45em; }
+.pc-plan-h .k { display: flex; gap: 0.4em; align-items: center; letter-spacing: 0.06em; color: var(--por-text-dim); text-transform: none; font-size: 1.05em; }
+.pc-plan-h .k i { display: inline-block; width: 0.9em; height: 0.5em; border-radius: 2px; margin-left: 0.4em; }
+.pc-plan i.sleep { background: linear-gradient(90deg, #2b3f7a, #4a64b0); }
+.pc-plan i.study { background: linear-gradient(90deg, #b8862e, #f0cf78); }
+.pc-plan i.done { background: rgba(120, 200, 140, 0.25); }
+.pc-plan-row { display: grid; grid-template-columns: 5.2em 1fr 4.6em; align-items: center; gap: 0.5em; font-size: 0.82em; padding: 0.12em 0; color: var(--por-text-dim); }
+.pc-plan-row.me { color: var(--por-text); }
+.pc-plan-row .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pc-plan-row .t { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pc-plan-row .bar { position: relative; height: 0.62em; border-radius: 3px; background: rgba(0, 0, 0, 0.45); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6); overflow: hidden; }
+.pc-plan-row .bar i { position: absolute; top: 0; bottom: 0; left: 0; }
+.pc-plan-row.me .bar { outline: 1px solid rgba(240, 207, 120, 0.45); }
+.pc-plan-axis { position: absolute; left: calc(0.854em + 5.7em); right: calc(0.854em + 5.1em); bottom: 0.25em; height: 1.2em; font-size: 0.82em; color: var(--por-text-dim); }
+.pc-plan-axis span { position: absolute; transform: translateX(-50%); font-size: 0.85em; }
