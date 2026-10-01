@@ -9,7 +9,9 @@ import { itemName, itemValue, itemWeight, isMagical } from '../../rules/items.js
 import { useItem } from '../../rules/magicItems.js';
 import { strengthTable } from '../../rules/abilities.js';
 import { itemIconURL, iconFor } from './itemIcons.js';
-import { lore } from './CharacterSheet.js';
+import { lore, miniPortrait } from './CharacterSheet.js';
+
+const miniPortraitImg = (c) => miniPortrait(c);
 
 /** Paperdoll slots: [slot, label, icon for the empty ghost, column]. */
 const DOLL = [
@@ -35,6 +37,62 @@ export function itemStatLine(def, entry) {
   if (def.effect && def.type === 'potion') bits.push(def.effect.startsWith('heal:') ? `Heals ${def.effect.slice(5)}` : def.effect);
   if (def.type === 'wand' && entry?.charges != null) bits.push(`${entry.charges} charges`);
   return bits.join(' · ');
+}
+
+const avgDice = (d) => {
+  const m = /^(\d+)d(\d+)([+-]\d+)?$/.exec(String(d ?? '').trim());
+  return m ? (Number(m[1]) * (Number(m[2]) + 1)) / 2 + Number(m[3] ?? 0) : 0;
+};
+/** Rarity frame for an inventory entry: mundane, magic, unknown (unidentified magic), cursed, treasure. */
+export function itemRarity(entry) {
+  const def = ITEMS[entry.id];
+  if (!def) return 'mundane';
+  if (entry.cursed && entry.identified !== false) return 'cursed';
+  if (isMagical(entry)) return entry.identified === false ? 'unknown' : 'magic';
+  if (def.type === 'treasure') return 'treasure';
+  return 'mundane';
+}
+/**
+ * Compare an unreadied weapon/armour/shield with what fills its slot now.
+ * @returns {{against: string, bits: {text: string, good: boolean}[]}|null}
+ */
+export function compareItem(ch, entry) {
+  const def = ITEMS[entry.id];
+  if (!def || entry.equipped || !['weapon', 'armor', 'shield'].includes(def.type)) return null;
+  const cur = ch.inventory.find((e) => e.equipped && ITEMS[e.id] && slotOf(ITEMS[e.id]) === slotOf(def));
+  const cdef = cur && ITEMS[cur.id];
+  const bits = [];
+  const mag = (e, d) => e?.magic ?? d?.magic ?? 0;
+  if (def.type === 'weapon') {
+    const a = avgDice(def.damage) + mag(entry, def);
+    const b = cdef ? avgDice(cdef.damage) + mag(cur, cdef) : 1.5;
+    const dd = a - b;
+    if (Math.abs(dd) >= 0.05) bits.push({ text: `${dd > 0 ? '+' : ''}${dd.toFixed(1)} avg damage`, good: dd > 0 });
+    const hit = mag(entry, def) - mag(cur, cdef);
+    if (hit) bits.push({ text: `${hit > 0 ? '+' : ''}${hit} to hit`, good: hit > 0 });
+    if (def.ranged && !cdef?.ranged) bits.push({ text: 'ranged', good: true });
+    if (def.twoHanded && !cdef?.twoHanded) bits.push({ text: 'two-handed: no shield', good: false });
+  } else if (def.type === 'armor') {
+    const a = def.ac - mag(entry, def);
+    const b = cdef ? cdef.ac - mag(cur, cdef) : 10;
+    if (a !== b) bits.push({ text: `AC ${b > a ? '−' : '+'}${Math.abs(b - a)}`, good: a < b });
+  } else if (def.type === 'shield') {
+    const a = (def.acBonus ?? 1) + mag(entry, def);
+    const b = cdef ? (cdef.acBonus ?? 1) + mag(cur, cdef) : 0;
+    if (a !== b) bits.push({ text: `AC ${a > b ? '−' : '+'}${Math.abs(a - b)}`, good: a > b });
+  }
+  const dw = (def.weight ?? 0) - (cdef?.weight ?? 0);
+  if (dw) bits.push({ text: `${dw > 0 ? '+' : '−'}${Math.abs(dw)} cn`, good: dw < 0 });
+  return { against: cdef ? itemName(cur) : 'nothing readied', bits };
+}
+/** Ammunition readied without a launcher that shoots it. */
+export function ammoProblem(ch) {
+  const eq = ch.inventory.filter((e) => e.equipped && ITEMS[e.id]);
+  const ammo = eq.find((e) => ITEMS[e.id].type === 'ammo');
+  if (!ammo) return null;
+  const launcher = eq.find((e) => ITEMS[e.id].type === 'weapon' && ITEMS[e.id].ammo === ammo.id);
+  if (launcher) return null;
+  return `${itemName(ammo)} readied, but no ${ammo.id === 'quarrels' ? 'crossbow' : 'bow'} to shoot them`;
 }
 
 /** Paint the paperdoll figure, dressed in what is equipped. */
@@ -205,13 +263,16 @@ export class InventoryPanel {
       const e = inv[i];
       const def = e && ITEMS[e.id];
       const magic = e && isMagical(e) && e.identified !== false;
-      return h(`div.pc-slot${e ? '.full' : ''}${magic ? '.magic' : ''}${e && i === this.sel ? '.sel' : ''}`, {
-        onclick: () => { if (e) { this.sel = i; this.render(); } },
-        dataset: lore(e ? { title: itemName(e), text: `${label} slot. ${itemStatLine(def, e)}` } : { title: `${label} slot`, text: 'Nothing readied here. Select an item and choose READY.' }),
-      }, [h('img', { src: e ? itemIconURL(iconFor(def), { magic }) : itemIconURL(ghost, { ghost: true }), alt: '' }), h('span.lab', [label])]);
+      return h('div.pc-slotw', [
+        h(`div.pc-slot${e ? '.full' : ''}${magic ? '.magic' : ''}${e && i === this.sel ? '.sel' : ''}${e ? `.r-${itemRarity(e)}` : ''}`, {
+          tabindex: '0', dataset: { ...lore(e ? { title: itemName(e), text: `${label} slot. ${itemStatLine(def, e)}` } : { title: `${label} slot`, text: 'Nothing readied here. Select an item and choose READY.' }), nav: '1' },
+          onclick: () => { if (e) { this.sel = i; this.render(); } },
+        }, [h('img', { src: e ? itemIconURL(iconFor(def), { magic }) : itemIconURL(ghost, { ghost: true }), alt: '' })]),
+        h('span.lab', [label]),
+      ]);
     };
     // The character's own miniature, dressed in what is readied; painted silhouette as a fallback.
-    const snapUrl = miniatureSnapshot(ch);
+    const snapUrl = miniatureSnapshot(ch, { w: 340, h: 600 });
     let fig;
     if (snapUrl) fig = h('img.pc-doll-mini', { src: snapUrl, alt: '', draggable: false });
     else {
@@ -225,6 +286,7 @@ export class InventoryPanel {
         h('div.pc-doll-fig', [fig]),
         h('div.pc-doll-col', DOLL.filter((d) => d[3] === 'R').map(slotEl)),
       ]),
+      ammoProblem(ch) ? h('div.pc-warn', { dataset: lore({ title: 'Ammunition', text: 'Arrows need a bow and quarrels a crossbow readied in the weapon hand; otherwise they cannot be fired.' }) }, ['⚠ ', ammoProblem(ch)]) : null,
       h('div.pc-bigrow', { style: { marginTop: '0.6em', marginBottom: 0 } }, [
         h('div.pc-big', [h('span.n', [String(s.ac)]), h('span.l', ['AC'])]),
         h('div.pc-big', [h('span.n', [`${s.damage}${s.dmgBonus ? (s.dmgBonus > 0 ? `+${s.dmgBonus}` : s.dmgBonus) : ''}`]), h('span.l', ['Damage'])]),
@@ -232,26 +294,34 @@ export class InventoryPanel {
       ]),
     ]);
 
-    // ---- item list
-    const rows = inv.map((e, i) => {
+    // ---- the pack: a grid of item tiles in rarity frames, with room to spare
+    const tiles = inv.map((e, i) => {
       const def = ITEMS[e.id];
       const prob = equipProblem(ch, e.id);
       const magic = isMagical(e) && e.identified !== false;
-      return h(`div.pc-item${i === this.sel ? '.sel' : ''}${e.equipped ? '.ready' : ''}${magic ? '.magic' : ''}${prob && slotOf(def) ? '.bad' : ''}`, {
+      const cmp = compareItem(ch, e);
+      const tip = `${itemName(e)}${itemStatLine(def, e) ? ` — ${itemStatLine(def, e)}` : ''}${cmp && cmp.bits.length ? `. vs ${cmp.against}: ${cmp.bits.map((b) => b.text).join(', ')}` : ''}`;
+      return h(`button.pc-tile.r-${itemRarity(e)}${i === this.sel ? '.sel' : ''}${e.equipped ? '.ready' : ''}${prob && slotOf(def) ? '.bad' : ''}`, {
+        draggable: true,
+        ondragstart: (ev) => { this.sel = i; ev.dataTransfer?.setData('text/plain', String(i)); },
         onclick: () => { this.sel = i; this.render(); },
         ondblclick: () => { this.sel = i; this.ready(); },
+        dataset: { tip },
       }, [
-        h('img', { src: itemIconURL(iconFor(def), { magic }), alt: '' }),
-        h('span.nm', [itemName(e), (e.qty ?? 1) > 1 ? ` ×${e.qty}` : '']),
-        h('span.rd', [e.equipped ? 'READY' : '']),
-        h('span.wt', [String(itemWeight(e))]),
-        h('span.gp', [String(itemValue(e))]),
+        h('span.ic', [h('img', { src: itemIconURL(iconFor(def), { magic }), alt: '' })]),
+        (e.qty ?? 1) > 1 ? h('span.qty', [`×${e.qty}`]) : null,
+        e.equipped ? h('span.rd', ['Ready']) : null,
+        h('span.nm', [itemName(e)]),
       ]);
     });
+    const capacity = Math.max(18, Math.ceil((inv.length + 1) / 6) * 6);
+    for (let k = inv.length; k < capacity; k++) tiles.push(h('div.pc-tile.empty'));
+    const weightNow = carriedWeight(ch);
     const list = h('div.pc-sect.pc-items', [
-      h('div.pc-sect-h', [h('span', [`Pack · ${inv.length} items`])]),
-      h('div.pc-items-head', [h('span'), h('span', ['Item']), h('span', ['']), h('span', ['Wt']), h('span', ['Value'])]),
-      h('div.pc-items-list', rows.length ? rows : [h('div.pc-rest-note', { style: { padding: '0.6em' } }, ['The pack is empty.'])]),
+      h('div.pc-sect-h', [h('span', [`Pack · ${inv.length} item${inv.length === 1 ? '' : 's'} · ${weightNow} cn`])]),
+      h('div.pc-pack', tiles),
+      h('div.pc-legend', [['mundane', 'Common'], ['magic', 'Magic'], ['unknown', 'Unidentified'], ['cursed', 'Cursed'], ['treasure', 'Treasure']].map(([k, l]) => h(`span.r-${k}`, [h('i'), l]))),
+      this._tradeStrip(ch),
     ]);
 
     // ---- detail + actions
@@ -262,7 +332,7 @@ export class InventoryPanel {
       const prob = equipProblem(ch, e.id);
       const magic = isMagical(e) && e.identified !== false;
       detail.push(h('div.pc-detail-card', [
-        h('img', { src: itemIconURL(iconFor(def), { magic }), alt: '' }),
+        h(`span.ic.r-${itemRarity(e)}`, [h('img', { src: itemIconURL(iconFor(def), { magic }), alt: '' })]),
         h('div', [
           h('div.t', [itemName(e)]),
           h('div.s', [`${TYPE_NAMES[def.type] ?? def.type}${e.equipped ? ' · readied' : ''}`]),
@@ -274,6 +344,13 @@ export class InventoryPanel {
         h('span.k', ['Value']), h('span.v', [`${itemValue(e)} gp`]),
         h('span.k', ['Usable']), h('span.v', { style: { color: prob && slotOf(def) ? '#ff9a86' : 'var(--por-green)' } }, [slotOf(def) ? (prob ? prob : 'yes') : def.type === 'potion' || def.type === 'scroll' || def.type === 'wand' ? 'use' : '—']),
       ]));
+      const cmp = compareItem(ch, e);
+      if (cmp) {
+        detail.push(h('div.pc-compare', [
+          h('div.h', [`Compared with ${cmp.against}`]),
+          cmp.bits.length ? h('div.b', cmp.bits.map((b) => h(`span.${b.good ? 'up' : 'down'}`, [b.good ? '▲ ' : '▼ ', b.text]))) : h('div.b', [h('span', ['No difference'])]),
+        ]));
+      }
       const usable = ['potion', 'scroll', 'wand'].includes(def.type);
       const qty = e.qty ?? 1;
       const joinable = inv.some((o, j) => j !== this.sel && o.id === e.id && !o.equipped);
@@ -309,6 +386,42 @@ export class InventoryPanel {
     ]);
     const side = h('div.pc-detail', [h('div.pc-sect', { style: { display: 'flex', flexDirection: 'column', gap: '0.7em' } }, [h('div.pc-sect-h', [h('span', ['Item'])]), ...detail]), enc, purse]);
     this.el.append(doll, list, side);
+  }
+
+  /** Companions as trade targets: click (or drop an item on) a portrait to hand the selected item over. */
+  _tradeStrip(ch) {
+    const others = this.ctx.game.party.filter((c) => c !== ch && c.status !== 'dead');
+    if (!others.length) return null;
+    return h('div.pc-trade', [
+      h('div.h', ['Hand to a companion — click a portrait, or drag an item onto it']),
+      h('div.row', others.map((c) => {
+        const s2 = deriveStats(c);
+        const w = carriedWeight(c);
+        const cap = 1500 + (strengthTable(s2.abilities.str, s2.abilities.strPct).weight ?? 0);
+        const give = () => this.giveTo(c);
+        return h('button.pc-tradee', {
+          onclick: give,
+          ondragover: (ev) => ev.preventDefault(),
+          ondrop: (ev) => { ev.preventDefault(); const i = Number(ev.dataTransfer?.getData('text/plain')); if (!Number.isNaN(i)) this.sel = i; give(); },
+          dataset: { tip: `Give the selected item to ${c.name} (${w} cn carried)` },
+        }, [
+          miniPortraitImg(c),
+          h('span.nm', [c.name.split(' ').slice(-1)[0]]),
+          h('span.pc-bar.enc', [h('i', { style: { width: `${Math.min(100, (w / cap) * 100)}%` } })]),
+        ]);
+      })),
+    ]);
+  }
+
+  giveTo(to) {
+    const ch = this.ch;
+    const e = ch.inventory[this.sel];
+    if (!e || !to) return;
+    if (e.equipped && !unequipItem(ch, this.sel)) return this.ctx.ui.toast('It will not come off — cursed!');
+    const moved = removeItem(ch, this.sel);
+    if (!moved) return;
+    to.inventory.push({ ...moved, equipped: false });
+    this._changed(`${ch.name} hands the ${itemName(moved)} to ${to.name}.`);
   }
 
   _changed(msg, kind = 'info') {

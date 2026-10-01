@@ -394,3 +394,125 @@
 .cc-kit { display: grid; grid-template-columns: 1fr 1fr; gap: 0.3em 0.6em; }
 .cc-kit-row { display: flex; align-items: center; gap: 0.45em; padding: 0.2em 0.35em; border: 1px solid rgba(216, 178, 90, 0.18); border-radius: 2px; background: rgba(8, 12, 30, 0.6); font-size: 0.82em; }
 .cc-kit-row img { width: 1.9em; height: 1.9em; }
+
+/* ---- magic: glyphs, sockets, grimoire ---- */
+.pc-spell img.gl { width: 2.15em; height: 2.15em; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7)); }
+.pc-spell { grid-template-columns: 2.3em 1fr auto; }
+.pc-spell.full { opacity: 0.55; }
+.pc-sockets { display: flex; flex-direction: column; gap: 0.35em; margin-bottom: 0.6em; padding: 0.5em 0.6em; border-radius: 3px; background: radial-gradient(ellipse at 50% 0%, rgba(245, 217, 139, 0.08), rgba(0, 0, 0, 0.35)); border: 1px solid rgba(216, 178, 90, 0.2); }
+.pc-socket-row { display: grid; grid-template-columns: 1.8em 1fr auto; align-items: center; gap: 0.5em; }
+.pc-socket-row .lv { font-family: var(--font-display); color: var(--por-gilt); letter-spacing: 0.1em; text-align: center; }
+.pc-socket-row .cells { display: flex; gap: 0.35em; flex-wrap: wrap; }
+.pc-socket-row .ct { font-family: var(--font-num); color: var(--por-text-dim); font-size: 0.85em; }
+.pc-socket { width: 2.4em; height: 2.4em; border-radius: 50%; display: grid; place-items: center; cursor: pointer; box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(216, 178, 90, 0.45); background: radial-gradient(circle at 50% 40%, #121a36, #04060e); }
+.pc-socket img { width: 2.25em; height: 2.25em; }
+.pc-socket.empty { cursor: default; box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(216, 178, 90, 0.25); background: repeating-conic-gradient(from 0deg, rgba(216, 178, 90, 0.18) 0 8deg, transparent 8deg 22deg), radial-gradient(circle, #0a0f22, #03050c); }
+.pc-socket.ready { box-shadow: 0 0 0 1px #000, 0 0 10px rgba(245, 217, 139, 0.45); }
+.pc-grimoire { margin: 0.4em 0 0.6em; text-align: center; }
+.pc-grimoire img { width: 100%; max-width: 15em; display: block; margin: 0 auto 0.3em; filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.6)); }
+.pc-grimoire .cap { font-family: var(--font-display); letter-spacing: 0.1em; color: var(--por-gilt-hi); font-size: 0.86em; }
+.pc-grimoire .sub { color: var(--por-text-dim); font-size: 0.75em; margin-top: 0.15em; }
+
+/* ---- items: paperdoll, pack grid, rarity frames, compare ---- */
+.pc-inv { grid-template-columns: 25em 1fr 19em; }
+.pc-doll { grid-template-columns: 4.2em 1fr 4.2em; }
+.pc-slotw { display: flex; flex-direction: column; align-items: center; gap: 0.15em; }
+.pc-slotw .lab { font-family: var(--font-display); font-size: max(10.5px, 0.66em); letter-spacing: 0.08em; color: var(--por-text-dim); text-transform: uppercase; line-height: 1; }
+.pc-slot { width: 3.4em; height: 3.4em; }
+.pc-slot img { inset: 4%; width: 92%; height: 92%; }
+.pc-slot .lab { display: none; }
+.pc-doll-fig { border-radius: 4px; overflow: hidden; box-shadow: inset 0 0 0 1px rgba(216, 178, 90, 0.25), inset 0 0 30px rgba(0, 0, 0, 0.6); }
+.pc-doll-mini { width: 100%; height: 100%; object-fit: contain; display: block; }
+.pc-warn { margin-top: 0.5em; padding: 0.35em 0.6em; border: 1px solid rgba(255, 170, 90, 0.55); border-radius: 2px; background: rgba(90, 40, 10, 0.45); color: #ffc890; font-size: 0.82em; }
+.r-mundane { --rar: #a07a48; --rar-glow: rgba(160, 122, 72, 0.25); }
+.r-magic { --rar: #6ab0ff; --rar-glow: rgba(106, 176, 255, 0.45); }
+.r-unknown { --rar: #b48aff; --rar-glow: rgba(180, 138, 255, 0.4); }
+.r-cursed { --rar: #ff6a5a; --rar-glow: rgba(255, 106, 90, 0.4); }
+.r-treasure { --rar: #f5d98b; --rar-glow: rgba(245, 217, 139, 0.45); }
+.pc-slot.full { border-color: var(--rar, var(--por-gilt)); }
+.pc-pack { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0.5em; align-content: start; overflow-y: auto; flex: 1; min-height: 0; padding: 0.2em; scrollbar-width: thin; }
+.pc-tile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 0.25em; padding: 0.45em 0.3em 0.35em; border-radius: 3px; cursor: pointer; font: inherit; color: var(--por-text); text-align: center;
+  border: 1px solid var(--rar, rgba(216, 178, 90, 0.3));
+  background: radial-gradient(circle at 50% 30%, rgba(60, 80, 140, 0.35), rgba(5, 8, 20, 0.92));
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.7), inset 0 0 14px var(--rar-glow, transparent), 0 2px 4px rgba(0, 0, 0, 0.5); }
+.pc-tile .ic { width: 3.3em; height: 3.3em; display: grid; place-items: center; }
+.pc-tile .ic img { width: 3.2em; height: 3.2em; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.8)); }
+.pc-tile .nm { font-size: 0.72em; line-height: 1.15; max-height: 2.3em; overflow: hidden; color: var(--por-text); }
+.pc-tile.r-magic .nm { color: var(--por-cyan); }
+.pc-tile.r-cursed .nm { color: #ffb0a0; }
+.pc-tile .qty { position: absolute; top: 0.25em; right: 0.35em; font-family: var(--font-num); font-size: 0.75em; color: #fff; text-shadow: 0 1px 2px #000; }
+.pc-tile .rd { position: absolute; top: 0.3em; left: 0.3em; font-family: var(--font-display); font-size: 0.55em; letter-spacing: 0.12em; text-transform: uppercase; color: #0e2a14; background: linear-gradient(180deg, #b8f0b0, #5ab060); padding: 0.1em 0.4em; border-radius: 2px; }
+.pc-tile.sel { outline: 2px solid var(--por-gilt-hi); outline-offset: 1px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.7), inset 0 0 18px var(--rar-glow, transparent), 0 0 14px rgba(245, 217, 139, 0.35); }
+.pc-tile.bad .ic img { filter: grayscale(0.8) brightness(0.7); }
+.pc-tile:hover { background: radial-gradient(circle at 50% 30%, rgba(80, 104, 170, 0.45), rgba(8, 12, 28, 0.92)); }
+.pc-tile.empty { cursor: default; min-height: 5.2em; border: 1px dashed rgba(216, 178, 90, 0.14); background: rgba(3, 5, 14, 0.45); box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.6); }
+.pc-legend { display: flex; gap: 1em; justify-content: center; margin-top: 0.5em; font-size: 0.72em; color: var(--por-text-dim); }
+.pc-legend span { display: inline-flex; align-items: center; gap: 0.35em; }
+.pc-legend i { width: 0.8em; height: 0.8em; border-radius: 2px; border: 1px solid var(--rar); box-shadow: inset 0 0 4px var(--rar-glow); display: inline-block; }
+.pc-detail-card .ic { width: 4.6em; height: 4.6em; display: grid; place-items: center; border-radius: 3px; border: 2px solid var(--rar, var(--por-gilt-lo)); background: radial-gradient(circle at 50% 35%, rgba(60, 80, 140, 0.5), rgba(6, 9, 24, 0.9)); box-shadow: inset 0 0 14px var(--rar-glow, transparent); }
+.pc-detail-card .ic img { width: 4.2em; height: 4.2em; border: 0; background: none; }
+.pc-compare { padding: 0.45em 0.6em; border-radius: 2px; border: 1px solid rgba(216, 178, 90, 0.22); background: rgba(0, 0, 0, 0.3); }
+.pc-compare .h { font-family: var(--font-display); font-size: 0.66em; letter-spacing: 0.16em; text-transform: uppercase; color: var(--por-gilt); margin-bottom: 0.25em; }
+.pc-compare .b { display: flex; flex-wrap: wrap; gap: 0.3em 0.8em; font-size: 0.84em; }
+.pc-compare .up { color: var(--por-green); }
+.pc-compare .down { color: #ff9a86; }
+
+/* ---- sheet: combat icon on its plinth, condition, pack ---- */
+.pc-icon { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; border-radius: 3px; overflow: hidden; box-shadow: inset 0 0 0 1px rgba(216, 178, 90, 0.3), 0 4px 12px rgba(0, 0, 0, 0.5); }
+.pc-icon img { width: 100%; height: 100%; min-height: 0; object-fit: cover; object-position: 50% 70%; display: block; }
+.pc-icon span { font-family: var(--font-display); font-size: 0.64em; letter-spacing: 0.24em; color: var(--por-gilt); text-transform: uppercase; padding: 0.3em 0; }
+.pc-id .pc-portrait { width: 86%; margin: 0 auto; }
+.pc-sheet .pc-ab .mods { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pc-cond { display: grid; grid-template-columns: auto 1fr; gap: 0.6em; align-items: baseline; padding: 0.2em 0; border-bottom: 1px dotted rgba(216, 178, 90, 0.14); }
+.pc-cond .n { font-family: var(--font-display); letter-spacing: 0.08em; color: #ffb0a0; font-size: 0.86em; }
+.pc-cond.ok .n { color: var(--por-green); }
+.pc-cond .d { color: var(--por-text-dim); font-size: 0.78em; line-height: 1.3; }
+.pc-packline { display: flex; flex-wrap: wrap; gap: 0.35em; }
+.pc-packi { position: relative; width: 2.6em; height: 2.6em; border-radius: 3px; display: grid; place-items: center; border: 1px solid rgba(216, 178, 90, 0.3); background: radial-gradient(circle at 50% 35%, rgba(60, 80, 140, 0.4), rgba(6, 9, 24, 0.9)); }
+.pc-packi img { width: 2.3em; height: 2.3em; }
+.pc-packi b { position: absolute; right: 0.15em; bottom: 0; font-family: var(--font-num); font-weight: normal; font-size: 0.68em; color: #fff; text-shadow: 0 1px 2px #000; }
+
+/* ---- material treatment: tooled-leather panels, illuminated headers ---- */
+.pc-view .pc-sect {
+  background:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.62  0 0 0 0 0.5  0 0 0 0 0.32  0 0 0 0.07 0'/></filter><rect width='220' height='220' filter='url(%23n)'/></svg>"),
+    radial-gradient(ellipse at 50% 0%, rgba(245, 217, 139, 0.07), transparent 60%),
+    linear-gradient(170deg, rgba(22, 28, 58, 0.92), rgba(8, 11, 28, 0.96));
+  border: 1px solid rgba(216, 178, 90, 0.4);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.75), inset 0 0 0 3px rgba(216, 178, 90, 0.08), inset 0 0 26px rgba(0, 0, 0, 0.55), 0 3px 10px rgba(0, 0, 0, 0.55);
+}
+.pc-view .pc-sect::before { content: ''; position: absolute; inset: 4px; border: 1px solid rgba(216, 178, 90, 0.12); border-radius: 2px; pointer-events: none; }
+.pc-view .pc-sect-h > span {
+  padding: 0.18em 0.9em; border-radius: 2px; color: #f6e2a8;
+  background: linear-gradient(180deg, #5a1e14, #3a120c);
+  border: 1px solid rgba(216, 178, 90, 0.55);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 220, 160, 0.18);
+  text-shadow: 0 1px 1px #000;
+}
+.pc-view .pc-sect-h > span::first-letter { color: #ffd97a; font-size: 1.25em; }
+
+/* ---- magic: spell card, layout containment ---- */
+.pc-spells > * { min-height: 0; overflow: hidden; }
+.pc-grimoire img { max-width: 11em; }
+.pc-spellcard { display: grid; grid-template-columns: 4.6em 1fr; gap: 0.8em; margin-top: 0.6em; padding: 0.7em 0.8em; border-radius: 3px;
+  background: radial-gradient(ellipse at 20% 0%, rgba(255, 255, 255, 0.28), transparent 60%), linear-gradient(180deg, #ecdfbc, #d2bd8c);
+  border: 1px solid var(--por-gilt-lo); box-shadow: inset 0 0 16px rgba(120, 80, 30, 0.35), 0 3px 10px rgba(0, 0, 0, 0.5); color: var(--por-ink, #2a1c0c); }
+.pc-spellcard img { width: 4.6em; height: 4.6em; filter: drop-shadow(0 2px 3px rgba(60, 30, 0, 0.5)); }
+.pc-spellcard .t { font-family: var(--font-display); font-size: 1.15em; letter-spacing: 0.06em; color: #5a1a0a; }
+.pc-spellcard .s { font-size: 0.78em; color: #6a4a2a; letter-spacing: 0.04em; margin: 0.1em 0 0.35em; }
+.pc-spellcard .kv { display: flex; flex-wrap: wrap; gap: 0.2em 1em; font-size: 0.8em; color: #3a2a14; }
+.pc-spellcard .kv b { font-family: var(--font-display); font-weight: normal; letter-spacing: 0.1em; color: #8a3a1a; font-size: 0.85em; text-transform: uppercase; }
+.pc-spellcard .d { font-size: 0.85em; line-height: 1.35; margin-top: 0.35em; font-style: italic; }
+/* ---- items: trade strip ---- */
+.pc-trade { margin-top: 0.6em; padding-top: 0.5em; border-top: 1px solid rgba(216, 178, 90, 0.2); }
+.pc-trade .h { font-family: var(--font-display); font-size: 0.64em; letter-spacing: 0.16em; text-transform: uppercase; color: var(--por-gilt); margin-bottom: 0.4em; text-align: center; }
+.pc-trade .row { display: flex; gap: 0.5em; justify-content: center; }
+.pc-tradee { display: flex; flex-direction: column; align-items: center; gap: 0.2em; width: 5.2em; padding: 0.3em; border-radius: 3px; border: 1px solid rgba(216, 178, 90, 0.25); background: rgba(6, 10, 26, 0.7); cursor: pointer; font: inherit; color: var(--por-text); }
+.pc-tradee:hover { border-color: var(--por-gilt); background: rgba(30, 48, 100, 0.6); }
+.pc-tradee .pc-mini { width: 3em; }
+.pc-tradee .nm { font-size: 0.72em; }
+.pc-tradee .pc-bar { width: 100%; height: 0.32em; }
+.pc-pack { max-height: 21em; }
+.pc-icon img { object-fit: contain; object-position: 50% 100%; }
+.pc-doll-fig { background: #07060a; }
+.pc-doll-mini { object-fit: cover; object-position: 50% 100%; }

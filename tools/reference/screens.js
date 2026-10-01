@@ -420,3 +420,7 @@ export const SCREENS = {
     commandLine(e, ['BUY', 'SELL', 'VIEW', 'TAKE', 'POOL', 'EXIT']);
   },
 };
+
+// Party workstream screens (creation, ENCAMP, VIEW, ITEMS, MEMORIZE).
+import { PARTY_SCREENS } from './partyScreens.js';
+Object.assign(SCREENS, PARTY_SCREENS);

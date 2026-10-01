@@ -8,6 +8,7 @@ import { InventoryPanel } from './Inventory.js';
 import { SpellPanel } from './SpellPanel.js';
 import { STAT_TIPS } from './rulesText.js';
 import { deriveStats } from '../../rules/character.js';
+import { UINav } from './uiNav.js';
 
 const TABS = [['sheet', 'Sheet', 'V'], ['items', 'Items', 'I'], ['spells', 'Magic', 'M']];
 
@@ -54,6 +55,14 @@ export function openCharacterView(ctx, o = {}) {
       } else setLore(tab === 'items' ? 'Items' : 'Magic', tab === 'items' ? 'Select an item. READY equips it; TRADE hands it to a companion; DROP leaves it behind.' : 'Clerics pray for spells; magic-users study their books. Choose the load-out, then rest to memorize.');
     }
   };
+  body.addEventListener('focusin', (e) => {
+    const t = e.target.closest?.('[data-lore]');
+    if (!t) return;
+    body.querySelectorAll('.lore-hl').forEach((x) => x.classList.remove('lore-hl'));
+    t.classList.add('lore-hl');
+    const [title, text] = t.dataset.lore.split('|');
+    setLore(title, text);
+  });
   body.addEventListener('mouseover', (e) => {
     const t = e.target.closest?.('[data-lore]');
     if (!t) return;
@@ -68,7 +77,7 @@ export function openCharacterView(ctx, o = {}) {
     head.append(
       h('div.pc-tabs', TABS.map(([id, label, key]) => h(`button.pc-tab${id === tab ? '.sel' : ''}`, { onclick: () => setTab(id) }, [label, h('span.por-hk-badge', [key])]))),
       h('div.pc-view-title', [ch ? `${ch.name} — ${RACES[ch.race].name} ${classSpecName(ch.classSpec)}` : '']),
-      h('div.pc-strip', ctx.game.party.map((c, i) => miniPortrait(c, { selected: i === index, onclick: () => setMember(i), tip: c.name }))),
+      h('div.pc-strip', ctx.game.party.map((c, i) => { const m = miniPortrait(c, { selected: i === index, onclick: () => setMember(i), tip: c.name }); m.tabIndex = 0; m.dataset.nav = '1'; return m; })),
       h('button.pc-close', { onclick: () => close() }, ['Close ', h('span.por-hk-badge', ['Esc'])]),
     );
   };
@@ -107,17 +116,18 @@ export function openCharacterView(ctx, o = {}) {
     const n = ctx.game.party.length;
     const k = e.key;
     let used = true;
+    const focused = frame.el.contains(document.activeElement) && document.activeElement !== document.body ? document.activeElement : null;
     if (k === 'Escape') close();
-    else if (k === 'ArrowRight' || k === ']' || k === 'Tab') setMember((index + 1) % n);
-    else if (k === 'ArrowLeft' || k === '[') setMember((index + n - 1) % n);
+    else if (k === ']' || k === 'Tab' || k === 'PageDown') setMember((index + 1) % n);
+    else if (k === '[' || k === 'PageUp') setMember((index + n - 1) % n);
+    else if (k.startsWith('Arrow')) {
+      // Arrows walk a focus ring over the screen's controls (lists, slots, sockets, tabs).
+      nav.move(k === 'ArrowLeft' ? -1 : k === 'ArrowRight' ? 1 : 0, k === 'ArrowUp' ? -1 : k === 'ArrowDown' ? 1 : 0);
+    } else if ((k === 'Enter' || k === ' ') && focused && !(k === 'Enter' && focused.tagName === 'BUTTON')) focused.click();
     else if (k === 'v' || k === 'V' || k === '1') setTab('sheet');
     else if (k === 'i' || k === 'I' || k === '2') setTab('items');
     else if (k === 'm' || k === 'M' || k === '3') setTab('spells');
-    else if (tab === 'items' && panel && (k === 'ArrowDown' || k === 'ArrowUp')) {
-      panel.sel = Math.max(0, Math.min(ctx.game.party[index].inventory.length - 1, panel.sel + (k === 'ArrowDown' ? 1 : -1)));
-      panel.render();
-      defaultLore();
-    } else if (tab === 'items' && panel && (k === 'r' || k === 'R' || k === 'Enter')) panel.ready();
+    else if (tab === 'items' && panel && (k === 'r' || k === 'R' || (k === 'Enter' && !focused))) panel.ready();
     else if (tab === 'items' && panel && (k === 'u' || k === 'U')) panel.use();
     else if (tab === 'items' && panel && (k === 't' || k === 'T')) panel.trade();
     else if (tab === 'items' && panel && (k === 'd' || k === 'D' || k === 'Delete')) panel.drop();
@@ -137,14 +147,17 @@ export function openCharacterView(ctx, o = {}) {
     if (closed || ctx.ui.layers.modal.lastElementChild !== back) return;
     const n = ctx.game.party.length;
     if (action === 'cancel') close();
-    else if (action === 'nextMember' || action === 'turnRight') setMember((index + 1) % n);
-    else if (action === 'prevMember' || action === 'turnLeft') setMember((index + n - 1) % n);
+    else if (action === 'nextMember' || action === 'strafeRight') setMember((index + 1) % n);
+    else if (action === 'prevMember' || action === 'strafeLeft') setMember((index + n - 1) % n);
     else if (action === 'area') setTab(TABS[(TABS.findIndex((t) => t[0] === tab) + 1) % TABS.length][0]);
   });
+  // D-pad / A on a gamepad: the same focus ring (keyboard arrows are handled in onKey).
+  const nav = new UINav(ctx, { roots: () => (closed || ctx.ui.layers.modal.lastElementChild !== back ? [] : [frame.el]), modal: true });
   let closed = false;
   function close() {
     if (closed) return;
     closed = true;
+    nav.dispose();
     keyHost.removeEventListener('keydown', onKey, true);
     offParty();
     offPad();

@@ -44,7 +44,7 @@ export function lore(t) {
 export function abilityMods(k, a, classSpec) {
   const fighter = splitClasses(classSpec).includes('fighter');
   switch (k) {
-    case 'str': { const t = strengthTable(a.str, a.strPct); return `hit ${sgn(t.hit)} · dmg ${sgn(t.dmg)} · carry ${sgn(t.weight)}`; }
+    case 'str': { const t = strengthTable(a.str, a.strPct); return `hit ${sgn(t.hit)} · dmg ${sgn(t.dmg)} · ${sgn(t.weight)} cn`; }
     case 'int': { const t = intelligenceTable(a.int); return t.maxSpellLevel ? `spells to L${t.maxSpellLevel} · learn ${t.knowChance}%` : 'cannot learn spells'; }
     case 'wis': return `mind saves ${sgn(wisdomSaveAdj(a.wis))}`;
     case 'dex': { const t = dexterityMods(a.dex); return `AC ${sgn(t.ac)} · missile ${sgn(t.missile)}`; }
@@ -87,7 +87,7 @@ export function renderSheet(ch) {
       ...effects.filter((e) => e.kind !== 'status' || e.id !== 'ok').slice(0, 4).map((e) => h('span.pc-chip', { dataset: lore({ title: e.name, text: e.desc }) }, [e.name])),
     ]),
   ]);
-  const icon = miniatureSnapshot(ch);
+  const icon = miniatureSnapshot(ch, { w: 300, h: 400 });
   if (icon) {
     id.append(h('div.pc-icon', { dataset: lore({ title: 'Combat icon', text: 'Your miniature on the battlefield, dressed in whatever is readied. Change its look with MODIFY at the party screen.' }) }, [
       h('img', { src: icon, alt: '', draggable: false }),
@@ -189,12 +189,30 @@ export function renderSheet(ch) {
     ...kv('Training', '1,000 gp', { title: 'Training', text: 'A level-up costs 1,000 gold pieces at the Training Hall, one level per visit. Experience beyond one level short of the next is not banked.' }),
     ...kv('Purse', `${(ch.gold ?? 0).toLocaleString('en-US')} gp`, { title: 'Purse', text: 'Coins weigh 1 coin-weight (cn) each and count toward encumbrance. Pool gold or split it evenly from the ITEMS screen.' }),
   ])]);
+  // Condition: lingering effects, or a clean bill of health.
+  const fx = effects.filter((e) => !(e.kind === 'status' && e.id === 'ok'));
+  const cond = sect('Condition', fx.length
+    ? fx.slice(0, 5).map((e) => h('div.pc-cond', { dataset: lore({ title: e.name, text: e.desc }) }, [h('span.n', [e.name]), h('span.d', [e.desc])]))
+    : [h('div.pc-cond.ok', [h('span.n', [ch.hp.cur >= ch.hp.max ? 'Hale' : 'Wounded']), h('span.d', [ch.hp.cur >= ch.hp.max ? 'No wounds, curses or lingering magic.' : `Down ${ch.hp.max - ch.hp.cur} hp. Rest heals 1 hp a day; clerics heal faster.`])])]);
+  // Pack summary: what is carried beyond the readied kit.
+  const pack = ch.inventory.filter((e) => !e.equipped && ITEMS[e.id]);
+  const packSect = sect('Pack', [
+    h('div.pc-packline', pack.length ? pack.slice(0, 8).map((e) => h('span.pc-packi', { dataset: lore({ title: itemName(e), text: 'Carried in the pack. Open ITEMS to ready, use, trade or drop it.' }) }, [h('img', { src: itemIconURL(iconFor(ITEMS[e.id])), alt: '' }), (e.qty ?? 1) > 1 ? h('b', [String(e.qty)]) : null])) : [h('span.pc-rest-note', ['Nothing else carried.'])]),
+    h('div.pc-rest-note', { style: { marginTop: '0.35em' } }, [`${pack.length} item${pack.length === 1 ? '' : 's'} in the pack · ${s.weight} cn carried · ${s.encumbrance.label.toLowerCase()}`]),
+  ]);
   const side = [saves, ...extra.slice(0, 2)];
   if (side.length < 3) side.push(langs);
-  return h('div.pc-sheet', [
+  side.push(cond, packSect);
+  const sheet = h('div.pc-sheet', [
     id,
     h('div.pc-col', [abil, cls, record]),
     h('div.pc-col', [combat, kit]),
     h('div.pc-col', side),
   ]);
+  // Every rules-bearing row takes keyboard focus, so arrows walk the sheet and the lore strip follows.
+  for (const el of sheet.querySelectorAll('.pc-ab, .pc-big, .pc-cls, .pc-kv > .k, .pc-cond, .pc-packi')) {
+    el.tabIndex = 0;
+    el.dataset.nav = '1';
+  }
+  return sheet;
 }

@@ -8,6 +8,9 @@ import { getSpell, spellLevel, castProblem, castSpell, isMemorized, consumeMemor
 import { scribeScroll } from '../../rules/magicItems.js';
 import { itemName } from '../../rules/items.js';
 import { miniPortrait, lore } from './CharacterSheet.js';
+import { spellGlyphURL, spellFamilyName } from './spellArt.js';
+import { SPELLS as SPELL_DATA } from '../../data/spells.js';
+import { intelligenceTable } from '../../rules/abilities.js';
 
 const CASTERS = ['cleric', 'magicUser'];
 const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
@@ -29,7 +32,7 @@ function spellTip(id, cls) {
   const s = getSpell(id);
   if (!s) return { title: id, text: '' };
   const where = { both: 'combat or camp', combat: 'combat only', camp: 'camp only' }[s.usable] ?? '';
-  return { title: `${s.name} · ${CLASSES[cls]?.name ?? ''} level ${spellLevel(id, cls)}`, text: `${s.tip ?? ''} ${s.flavor && s.flavor !== s.tip ? s.flavor : ''} (${where})`.trim() };
+  return { title: `${s.name} · ${spellFamilyName(id)} · ${CLASSES[cls]?.name ?? ''} level ${spellLevel(id, cls)}`, text: `${s.tip ?? ''} ${s.flavor && s.flavor !== s.tip ? s.flavor : ''} (${where})`.trim() };
 }
 
 /**
@@ -82,6 +85,7 @@ export class SpellPanel {
         const cc = castingClassesOf(c);
         const mem = Object.values(c.spells?.memorized ?? {}).flat().length;
         return h(`div.pc-caster${i === this.index ? '.sel' : ''}${cc.length ? '' : '.off'}`, {
+          tabindex: '0', dataset: { nav: '1' },
           onclick: () => { if (cc.length || this.o.lockMember) { this.setMember(i); this.o.onSelectMember?.(i); } },
         }, [
           miniPortrait(c),
@@ -89,6 +93,7 @@ export class SpellPanel {
         ]);
       })),
       h('div', { style: { flex: '1' } }),
+      this._grimoire(ch, classes),
       this._restNote(),
     ]);
 
@@ -124,11 +129,11 @@ export class SpellPanel {
         const sp = getSpell(id);
         const count = prepared.filter((x) => x === id).length;
         const full = free[i] <= 0;
-        lists.push(h(`div.pc-spell${this.focus === id ? '.sel' : ''}`, {
-          dataset: lore(spellTip(id, cls)),
+        lists.push(h(`div.pc-spell${this.focus === id ? '.sel' : ''}${full && !count ? '.full' : ''}`, {
+          tabindex: '0', dataset: { ...lore(spellTip(id, cls)), nav: '1' },
           onclick: () => { this.focus = id; if (!full) this.add(id); else { this.ctx.ui.toast(`No free level ${ROMAN[i + 1]} slots — remove a spell first.`); this.render(); } },
         }, [
-          h(`span.gl.${cls}`, [ROMAN[i + 1]]),
+          h('img.gl', { src: spellGlyphURL(id), alt: '' }),
           h('span', [h('div.nm', [sp.name]), h('div.tg', [sp.tip ?? ''])]),
           h('span.ct', [count ? `×${count}` : '']),
         ]));
@@ -139,6 +144,7 @@ export class SpellPanel {
       sub,
       h('div.pc-sect-h.left', [h('span', [`${cls === 'cleric' ? 'Prayers granted by the gods' : 'Spells in the book'} · click to memorize`])]),
       h('div.pc-spell-scroll', lists),
+      this._spellCard(this.focus && known.includes(this.focus) ? this.focus : prepared[0] ?? known[0], cls),
     ]);
 
     // ---- load-out
@@ -148,8 +154,8 @@ export class SpellPanel {
       const ready = mi >= 0;
       if (ready) memo.splice(mi, 1);
       const sp = getSpell(id);
-      return h(`div.pc-spell${this.focus === id ? '.sel' : ''}`, { dataset: lore(spellTip(id, cls)), onclick: () => this.remove(k) }, [
-        h(`span.gl.${cls}`, { style: ready ? {} : { opacity: 0.45 } }, [ROMAN[spellLevel(id, cls)]]),
+      return h(`div.pc-spell${this.focus === id ? '.sel' : ''}`, { tabindex: '0', dataset: { ...lore(spellTip(id, cls)), nav: '1' }, onclick: () => this.remove(k) }, [
+        h('img.gl', { src: spellGlyphURL(id, { dim: !ready }), alt: '' }),
         h('span', [h('div.nm', { style: ready ? {} : { color: 'var(--por-cyan)' } }, [sp.name]), h('div.tg', [ready ? 'memorized' : 'to be memorized on rest'])]),
         h('span.x', ['✕']),
       ]);
@@ -161,6 +167,7 @@ export class SpellPanel {
     const loadout = h('div.pc-memo', [
       h('div.pc-sect', { style: { flex: '1', display: 'flex', flexDirection: 'column', minHeight: '0' } }, [
         h('div.pc-sect-h', [h('span', [`${ch.name}'s ${cls === 'cleric' ? 'prayers' : 'spells'}`])]),
+        this._sockets(ch, cls, slots, prepared),
         h('div.pc-spell-scroll.pc-memo-list', rows.length ? rows : [h('div.empty', ['No spells chosen. Pick from the list, or AUTO.'])]),
         h('div.pc-rest-note', { style: { marginTop: '0.5em' } }, need
           ? [`${ch.name} needs `, h('b', [fmtMinutes(need)]), ` to memorize ${nToLearn} spell${nToLearn === 1 ? '' : 's'} (1e: ${need > 300 ? 6 : 4} hours of sleep, then 15 minutes per spell level).`, partyNeed > need ? [' The party rests ', h('b', [fmtMinutes(partyNeed)]), ' for its slowest caster.'] : null]
@@ -173,6 +180,103 @@ export class SpellPanel {
       ]),
     ]);
     this.el.append(casters, knownCol, loadout);
+  }
+
+  /** The focused spell, illuminated: glyph, family, level, range, area, duration, save and lore. */
+  _spellCard(id, cls) {
+    if (!id) return null;
+    const sp = getSpell(id);
+    const d = SPELL_DATA[id] ?? {};
+    const save = { none: 'none', 'neg:sp': 'spell negates', 'half:sp': 'spell for half', 'neg:ppdm': 'poison negates' }[d.save] ?? d.save ?? 'none';
+    const where = { both: 'combat or camp', combat: 'combat only', camp: 'camp only' }[sp?.usable ?? d.usable] ?? '';
+    return h('div.pc-spellcard', [
+      h('img', { src: spellGlyphURL(id), alt: '' }),
+      h('div.body', [
+        h('div.t', [sp?.name ?? id]),
+        h('div.s', [`${spellFamilyName(id)} · ${CLASSES[cls]?.name ?? ''} level ${ROMAN[spellLevel(id, cls)]} · ${where}`]),
+        h('div.kv', [['Range', d.range ?? '—'], ['Area', d.area ?? 'one'], ['Duration', d.duration ?? 'instant'], ['Save', save]].map(([k, v]) => h('span', [h('b', [k]), ` ${v}`]))),
+        h('div.d', [sp?.flavor && sp.flavor !== sp.tip ? sp.flavor : sp?.tip ?? d.desc ?? '']),
+      ]),
+    ]);
+  }
+
+  /** Memorization sockets per spell level: filled with the chosen spells' glyphs (dim until memorized). */
+  _sockets(ch, cls, slots, prepared) {
+    const memo = [...(ch.spells?.memorized?.[cls] ?? [])];
+    const rows = [];
+    slots.forEach((n, i) => {
+      if (!n) return;
+      const lvl = i + 1;
+      const picks = prepared.map((id, k) => [id, k]).filter(([id]) => spellLevel(id, cls) === lvl);
+      const cells = Array.from({ length: n }, (_, j) => {
+        const p = picks[j];
+        if (!p) return h('span.pc-socket.empty', { dataset: { tip: `Empty level ${ROMAN[lvl]} slot — pick a spell` } });
+        const [id, k] = p;
+        const mi = memo.indexOf(id);
+        const ready = mi >= 0;
+        if (ready) memo.splice(mi, 1);
+        return h(`span.pc-socket${ready ? '.ready' : '.pending'}`, { tabindex: '0', dataset: { nav: '1', tip: `${getSpell(id)?.name ?? id}${ready ? ' — memorized' : ' — memorized after rest'} (click to remove)` }, onclick: () => this.remove(k) }, [
+          h('img', { src: spellGlyphURL(id, { dim: !ready }), alt: '' }),
+        ]);
+      });
+      rows.push(h('div.pc-socket-row', [h('span.lv', [ROMAN[lvl]]), h('span.cells', cells), h('span.ct', [`${picks.length}/${n}`])]));
+    });
+    return h('div.pc-sockets', rows);
+  }
+
+  /** The caster's book or prayer roll: a small illuminated grimoire with what they know. */
+  _grimoire(ch, classes) {
+    if (!classes.length) return null;
+    const c = document.createElement('canvas');
+    c.width = 220;
+    c.height = 120;
+    const g = c.getContext('2d');
+    const arcane = classes.includes('magicUser');
+    // Open book: two pages with ruled text, an illuminated initial, a ribbon.
+    g.fillStyle = 'rgba(0,0,0,0.5)';
+    g.beginPath(); g.ellipse(110, 108, 100, 9, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = arcane ? '#3a1414' : '#2a2416';
+    g.beginPath(); g.moveTo(8, 18); g.quadraticCurveTo(110, 4, 212, 18); g.lineTo(212, 104); g.quadraticCurveTo(110, 92, 8, 104); g.closePath(); g.fill();
+    for (const side of [-1, 1]) {
+      const pg = g.createLinearGradient(110, 0, 110 + side * 98, 0);
+      pg.addColorStop(0, '#b8a37a'); pg.addColorStop(0.12, '#ecdcb6'); pg.addColorStop(1, '#d6c293');
+      g.fillStyle = pg;
+      g.beginPath();
+      g.moveTo(110, 14); g.quadraticCurveTo(110 + side * 50, 6, 110 + side * 96, 14);
+      g.lineTo(110 + side * 96, 98); g.quadraticCurveTo(110 + side * 50, 90, 110, 98); g.closePath(); g.fill();
+      g.strokeStyle = 'rgba(70,40,20,0.35)';
+      g.lineWidth = 1;
+      for (let y = 26; y < 92; y += 6) {
+        g.beginPath();
+        const x0 = 110 + side * (y < 46 && side < 0 ? 36 : 12);
+        g.moveTo(x0, y + (side < 0 ? 0 : 0));
+        g.lineTo(110 + side * (88 - ((y * 7) % 13)), y);
+        g.stroke();
+      }
+    }
+    // Illuminated initial and a little diagram.
+    g.fillStyle = arcane ? '#2a4a9a' : '#9a2a1a';
+    g.fillRect(28, 22, 22, 22);
+    g.strokeStyle = '#d8b25a';
+    g.lineWidth = 1.5;
+    g.strokeRect(28, 22, 22, 22);
+    g.fillStyle = '#f0d27a';
+    g.font = 'bold 18px serif';
+    g.fillText(arcane ? 'M' : 'P', 32, 40);
+    g.strokeStyle = arcane ? 'rgba(40,60,140,0.7)' : 'rgba(140,40,20,0.7)';
+    g.beginPath(); g.arc(160, 52, 18, 0, Math.PI * 2); g.stroke();
+    g.beginPath();
+    for (let k = 0; k < 5; k++) { const a = -Math.PI / 2 + k * (Math.PI * 4 / 5); g[k ? 'lineTo' : 'moveTo'](160 + Math.cos(a) * 18, 52 + Math.sin(a) * 18); }
+    g.closePath(); g.stroke();
+    g.fillStyle = '#8a1a1a';
+    g.fillRect(118, 92, 6, 22);
+    const known = classes.map((cl) => knownSpells(ch, cl).length).reduce((a, b) => a + b, 0);
+    const int = intelligenceTable(ch.abilities?.int ?? 10);
+    return h('div.pc-grimoire', [
+      h('img', { src: c.toDataURL(), alt: '' }),
+      h('div.cap', [arcane ? `Spell book · ${ch.spells?.book?.length ?? known} spells` : `Prayers · ${known} granted`]),
+      h('div.sub', [arcane ? `INT ${ch.abilities?.int ?? '?'}: learns to level ${int.maxSpellLevel ?? '—'}, ${int.knowChance ?? '—'}% to know` : `WIS ${ch.abilities?.wis ?? '?'}: bonus prayers for high wisdom`]),
+    ]);
   }
 
   _restNote() {
@@ -190,7 +294,7 @@ export class SpellPanel {
       return h(`div.pc-spell${this.focus === id ? '.sel' : ''}${prob ? '.dis' : ''}`, {
         dataset: lore(spellTip(id, cls)),
         onclick: () => { this.focus = id; this.render(); },
-      }, [h(`span.gl.${cls}`, [ROMAN[spellLevel(id, cls)]]), h('span', [h('div.nm', [sp.name]), h('div.tg', [prob ?? sp.tip ?? ''])]), h('span.ct', [`×${mem.filter((x) => x === id).length}`])]);
+      }, [h('img.gl', { src: spellGlyphURL(id, { dim: !!prob }), alt: '' }), h('span', [h('div.nm', [sp.name]), h('div.tg', [prob ?? sp.tip ?? ''])]), h('span.ct', [`×${mem.filter((x) => x === id).length}`])]);
     });
     const left = h('div.pc-sect', { style: { display: 'flex', flexDirection: 'column', minHeight: '0' } }, [
       sub,
@@ -229,7 +333,7 @@ export class SpellPanel {
       sub,
       h('div.pc-sect-h.left', [h('span', ['Scrolls in the pack'])]),
       h('div.pc-spell-scroll', scrolls.length ? scrolls.map(({ i, id, e, s }) => h('div.pc-spell', { dataset: lore(spellTip(id, 'magicUser')), onclick: () => this.scribe(i, id) }, [
-        h('span.gl.magicUser', [ROMAN[s.schools.magicUser]]),
+        h('img.gl', { src: spellGlyphURL(id), alt: '' }),
         h('span', [h('div.nm', [s.name]), h('div.tg', [itemName(e)])]),
         h('span.ct', [ch.spells.book.includes(id) ? 'known' : 'scribe']),
       ])) : [h('div.pc-rest-note', ['No magic-user scrolls. Treasure and shops may yield some.'])]),
