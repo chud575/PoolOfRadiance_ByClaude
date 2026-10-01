@@ -2081,7 +2081,19 @@ export default class CombatScene extends Scene {
     this.hud.update(t, this.camera, window.innerWidth, window.innerHeight);
   }
 
+  /**
+   * Frozen clock (screenshots): the 3D frame is identical from the first frame
+   * on, so after two settled renders the canvas simply keeps its last image —
+   * a software-GL frame costs seconds and the HUD lives in the DOM anyway.
+   */
+  render() {
+    if (this.frozen && (this._renders ?? 0) >= 2 && this._frames > 2) return;
+    this._renders = (this._renders ?? 0) + 1;
+    super.render();
+  }
+
   onResize() {
+    this._renders = 0;
     this.camera.aspect = this.ctx.render.aspect;
     this._applyViewOffset();
     this.camera.updateProjectionMatrix();
