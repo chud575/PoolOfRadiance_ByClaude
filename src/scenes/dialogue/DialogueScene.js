@@ -1,129 +1,781 @@
+import './dialogue.css';
 import { Scene } from '../../core/Scene.js';
-import { h, Frame, CommandBar, PartyRoster } from '../../ui/UI.js';
-import { getEncounter } from '../../data/encounters.js';
+import { h, clear, Frame, CommandBar, PartyRoster, MessageLog } from '../../ui/UI.js';
+import { ENCOUNTERS, getEncounter } from '../../data/encounters.js';
 import { MONSTERS } from '../../data/monsters.js';
+import { DIALOGUES } from '../../data/dialogue.js';
+import { NPCS } from '../../data/npcs.js';
+import { JOURNAL, getJournalEntry } from '../../data/journal.js';
+import { QUEST_LIST, QUESTS, PROCLAMATIONS, questStatus } from '../../data/quests.js';
+import { getMap, hasMap } from '../../data/maps/index.js';
+import { ITEMS } from '../../data/items.js';
+import { addItem } from '../../rules/character.js';
+import { paintPanel, framedPortraitURL, PanelOverlay, LIGHTS } from '../../ui/art/index.js';
+import { paintCreature, CREATURE_IDS } from '../../ui/art/creatures.js';
+import { SETTING_IDS } from '../../ui/art/settings.js';
+import { apply, test, check, payRewards, spendGold, partyGold, living, addJournal, journalList } from './effects.js';
 
 /**
- * Encounter / dialogue screen: illustrated window, narrative text and the
- * classic COMBAT / WAIT / FLEE / PARLAY choices.
- * params: {encounter: string}
- * Owned by the world-content workstream (text) + UI skin (presentation).
+ * Encounter / dialogue / journal screen.
+ *
+ * params:
+ *   encounter  encounter id (monster encounter, or a scripted event via `dialogue`)
+ *   script     dialogue script id (data/dialogue.js); `node` overrides the start node
+ *   view       'journal' — the Adventurer's Journal (`entry` = selected entry, `tab` = 'quests')
+ *   parley=1   (debug) open straight onto the PARLAY attitudes
+ *   flags      (debug) comma list of game flags to set;  quests=id:status,...;  journal=1,2,3|all
+ *
+ * The painted panel shows the setting (and the monsters, for encounters); a
+ * parchment box reveals the terse Gold Box prose with a typewriter; choices sit
+ * on the classic command line with hotkeys. Combat victories started from here
+ * are resolved by a small hook (see installVictoryHook) when the party returns.
  */
 export default class DialogueScene extends Scene {
   async enter(params = {}) {
-    const enc = (this.encounter = getEncounter(params.encounter ?? 'kobolds_1'));
+    const { ctx } = this;
+    installVictoryHook(ctx);
     this.post = {};
-    const art = h('canvas', { width: 960, height: 540, style: { width: '100%', display: 'block', borderRadius: '2px' } });
-    drawEncounterArt(art, enc, this.ctx.rng.fork(7));
-    const text = h('p', { style: { fontSize: '1.15em', lineHeight: '1.6', margin: '0.8em 0 0.2em' } }, [enc.intro ?? `You encounter ${enc.name}.`]);
-    const counts = enc.groups.map((g) => `${g.count} ${MONSTERS[g.monster].plural}`).join(', ');
-    const sub = h('div.por-muted', { style: { fontStyle: 'italic' } }, [`You see: ${counts}.`]);
-    const frame = Frame({ title: enc.name, variant: 'blue', children: [art, text, sub] });
-    frame.el.style.cssText = 'position:absolute;left:4vw;top:7vh;width:min(58em,64vw);';
-    const roster = new PartyRoster(this.ctx);
-    const rf = Frame({ title: 'Party', children: [roster.el] });
-    rf.el.style.cssText = 'position:absolute;right:4vw;top:7vh;width:17em;';
-    const opts = enc.options ?? ['combat', 'flee'];
-    const labels = { combat: ['Combat', 'C'], wait: ['Wait', 'W'], flee: ['Flee', 'F'], parley: ['Parlay', 'P'] };
-    const bar = new CommandBar(opts.map((o) => ({ id: o, label: labels[o][0], key: labels[o][1], onSelect: () => this.choose(o) })));
-    const bottom = h('div.por-hud-bottom', [bar.el]);
-    this.ctx.ui.mount(frame.el);
-    this.ctx.ui.mount(rf.el);
-    this.ctx.ui.mount(bottom);
-    this.own(() => { roster.dispose(); bar.dispose(); });
-    this.ctx.audio.playMusic('encounter');
+    this._applyDebug(params);
+    this.t0 = ctx.clock.time;
+    this.reveal = { el: null, text: '', shown: 0, total: 0 };
+    this.artKey = '';
+    this.fade = null;
+    this._buildDom();
+    this.listen('input:action', ({ action }) => this._onAction(action));
+
+    if (params.view === 'bestiary' || params.view === 'settings') {
+      this._debugSheet(params.view, params);
+      return;
+    }
+    if (params.view === 'journal') {
+      this.returnTo = params.returnTo ?? null;
+      await this._showArt({ setting: 'library', light: 'dim' }, 'The Adventurer\'s Journal');
+      this.openJournal({ entry: Number(params.entry) || null, tab: params.tab, standalone: true });
+      this.ctx.audio.playMusic?.('town');
+      return;
+    }
+    const encId = params.encounter ?? (params.script ? null : 'kobolds_1');
+    this.encounter = encId ? getEncounter(encId) : null;
+    this.eventId = this._findEventId(encId);
+    const scriptId = params.script ?? this.encounter?.dialogue;
+    if (scriptId) {
+      this.script = DIALOGUES[scriptId];
+      if (!this.script) throw new Error(`Unknown dialogue "${scriptId}"`);
+      await this.gotoNode(params.node ?? this.script.start, { initial: true });
+      ctx.audio.playMusic?.(this.script.id.startsWith('go_') ? 'explore' : 'town');
+    } else {
+      await this.encounterIntro({ parley: params.parley === '1' || params.parley === 1 });
+      ctx.audio.playMusic?.('encounter');
+    }
   }
 
-  choose(o) {
-    const { scenes, ui, rng } = this.ctx;
-    if (o === 'combat') scenes.goto('combat', { encounter: this.encounter.id });
-    else if (o === 'flee') {
-      if (rng.chance(60)) {
-        ui.message('You escape into the ruins.', 'info');
-        scenes.goto('explore', {});
-      } else {
-        ui.message('You cannot escape!', 'warn');
-        scenes.goto('combat', { encounter: this.encounter.id });
+  // ------------------------------------------------------------------ debug
+  /** Debug contact sheets: every creature, or every setting (view=bestiary|settings). */
+  _debugSheet(view, p) {
+    clear(this.root);
+    const grid = h('div', { style: { position: 'absolute', inset: '0', display: 'grid', gridTemplateColumns: view === 'bestiary' ? 'repeat(8, 1fr)' : 'repeat(6, 1fr)', gap: '4px', padding: '4px', background: '#222', overflow: 'hidden' } });
+    if (view === 'bestiary') {
+      const ids = (p.ids ? String(p.ids).split(',') : CREATURE_IDS);
+      for (const id of ids) {
+        const c = h('canvas', { width: 200, height: 290, style: { width: '100%', background: 'linear-gradient(#3a3a46,#15151c)' } });
+        const g = c.getContext('2d');
+        const f = paintCreature(id, id === 'tyranthraxus' ? 110 : 230, LIGHTS[p.light ?? 'dusk'], 3);
+        g.drawImage(f.canvas, 100 - f.ox, 280 - f.oy);
+        g.fillStyle = '#fff';
+        g.font = '14px sans-serif';
+        g.fillText(id, 6, 16);
+        grid.append(c);
       }
-    } else if (o === 'wait') {
-      ui.message('Both sides regard each other warily... then they attack!', 'warn');
-      scenes.goto('combat', { encounter: this.encounter.id });
-    } else if (o === 'parley') {
-      ui.message('Your words fall on deaf ears.', 'warn');
-      scenes.goto('combat', { encounter: this.encounter.id });
+    } else {
+      for (const id of (p.ids ? String(p.ids).split(',') : SETTING_IDS)) {
+        const { canvas } = paintPanel({ setting: id, w: 640, h: 300 });
+        canvas.style.width = '100%';
+        grid.append(h('div', { style: { color: '#fff', font: '12px sans-serif' } }, [canvas, id]));
+      }
+    }
+    this.root.append(grid);
+  }
+
+  _applyDebug(p) {
+    const { game } = this.ctx;
+    if (p.flags) for (const f of String(p.flags).split(',').filter(Boolean)) game.flags[f] = true;
+    if (p.quests) {
+      const q = (game.flags.quests ??= {});
+      for (const kv of String(p.quests).split(',')) {
+        const [id, st] = kv.split(':');
+        if (QUESTS[id]) q[id] = st ?? 'active';
+      }
+    }
+    if (p.journal) {
+      const nums = p.journal === 'all' ? JOURNAL.filter((j) => !j.false).map((j) => j.n) : String(p.journal).split(',').map(Number);
+      for (const n of nums) addJournal(game, n);
+      game.flags.journalUnread = nums.slice(-2);
+    }
+  }
+
+  _findEventId(encId) {
+    if (!encId) return null;
+    const loc = this.ctx.game.location;
+    if (!hasMap(loc.map)) return null;
+    const m = getMap(loc.map);
+    return m.eventsAt(loc.x, loc.y).find((e) => e.ref === encId)?.id ?? null;
+  }
+
+  // ------------------------------------------------------------------ DOM
+  _buildDom() {
+    const { ui } = this.ctx;
+    this.bgCanvas = h('canvas', { width: 320, height: 150 });
+    this.root = h('div.dlg-root');
+    const bg = h('div.dlg-bg', [this.bgCanvas]);
+    // painted panel
+    this.artView = h('div.dlg-art-view');
+    this.artSub = h('div.dlg-art-sub');
+    this.artFrame = Frame({ title: ' ', variant: 'dark', className: 'dlg-art', children: [this.artView, this.artSub] });
+    // parchment text
+    this.portrait = h('div.dlg-portrait');
+    this.speaker = h('div.dlg-speaker');
+    this.prose = h('div.dlg-prose');
+    this.chipRow = h('div');
+    this.body = h('div.dlg-body', [this.speaker, this.prose, this.chipRow]);
+    this.textFrame = Frame({ variant: 'parchment', className: 'dlg-text', children: [this.portrait, this.body] });
+    this.main = h('div.dlg-main', [this.artFrame.el, this.textFrame.el]);
+    // side
+    this.roster = new PartyRoster(this.ctx);
+    this.sideInfo = h('div');
+    this.infoFrame = Frame({ title: 'Encounter', children: [this.sideInfo] });
+    this.log = new MessageLog(this.ctx.bus, { lines: 6 });
+    this.logFrame = Frame({ title: 'Chronicle', className: 'dlg-logframe', children: [this.log.el] });
+    this.hints = h('div.dlg-hints', [
+      h('span', [h('span.por-keycap', ['J']), 'Journal']),
+      h('span', [h('span.por-keycap', ['Enter']), 'Skip text']),
+    ]);
+    this.side = h('div.dlg-side', [Frame({ title: 'Party', children: [this.roster.el] }).el, this.infoFrame.el, this.logFrame.el, this.hints]);
+    this.bar = new CommandBar([]);
+    this.barWrap = h('div.por-hud-bottom.dlg-bar', [this.bar.el]);
+    this.root.append(bg, this.main, this.side, this.barWrap);
+    ui.mount(this.root);
+    const { day, hour, minute } = this.ctx.game.clock;
+    const loc = this.ctx.game.location;
+    const where = hasMap(loc.map) ? getMap(loc.map).zoneAt(loc.x, loc.y) : 'Phlan';
+    this.log.push({ text: `Day ${day}, ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')} — ${where}.`, kind: 'system' });
+    this.own(() => {
+      this.roster.dispose();
+      this.log.dispose();
+      this.bar.dispose();
+      this.docEl?.remove();
+    });
+    this.textFrame.el.addEventListener('click', () => this.skipReveal());
+    this._onKeyJ = (e) => {
+      if (e.key === 'j' || e.key === 'J') {
+        if (this.journalEl) this.closeJournal();
+        else if (!this.bar.commands.some((c) => c.key?.toUpperCase() === 'J')) this.openJournal({});
+      }
+    };
+    window.addEventListener('keydown', this._onKeyJ);
+    this.own(() => window.removeEventListener('keydown', this._onKeyJ));
+  }
+
+  /** Paint (or reuse) the panel art and cross-fade it in. */
+  async _showArt(spec, title, sub = '') {
+    this.artFrame.title.textContent = title ?? ' ';
+    this.artSub.textContent = sub;
+    const key = JSON.stringify(spec);
+    if (key === this.artKey) return;
+    this.artKey = key;
+    const { canvas, info } = paintPanel({ ...spec, w: 1280, h: 600 });
+    canvas.className = 'dlg-art-cur';
+    const prev = this.artView.querySelector('.dlg-art-cur');
+    for (const old of this.artView.querySelectorAll('.dlg-art-prev, .dlg-art-fx')) old.remove();
+    if (prev) prev.className = 'dlg-art-prev';
+    const fx = h('canvas.dlg-art-fx', { width: 1280, height: 600 });
+    this.artView.append(canvas, fx);
+    this.overlay = new PanelOverlay(fx, info, 3);
+    this.artCanvas = canvas;
+    this.fade = { t0: this.ctx.clock.time, el: canvas, prev };
+    // ambient background
+    const bg = this.bgCanvas.getContext('2d');
+    bg.drawImage(canvas, 0, 0, this.bgCanvas.width, this.bgCanvas.height);
+    this._settleArt();
+  }
+
+  _settleArt() {
+    if (this.ctx.clock.frozen && this.fade) {
+      this.fade.el.style.opacity = '1';
+      this.fade.prev?.remove();
+      this.fade = null;
+    }
+    this.overlay?.draw(this.ctx.clock.time);
+  }
+
+  _setSpeaker(npcId) {
+    clear(this.portrait);
+    clear(this.speaker);
+    const npc = npcId ? NPCS[npcId] : null;
+    this.textFrame.el.classList.toggle('has-portrait', !!npc);
+    this.portrait.style.display = npc ? '' : 'none';
+    this.portrait.classList.toggle('ghost', npc?.kind === 'ghost');
+    if (npc) {
+      // an <img> (not a live canvas) keeps the text box on one raster layer
+      this.portrait.append(h('img', { src: framedPortraitURL(npc), alt: npc.name, }));
+      this.speaker.append(npc.name, npc.title ? h('small', [npc.title]) : null);
+    }
+    this.speaker.style.display = npc ? '' : 'none';
+  }
+
+  /** Show prose with a typewriter reveal. paragraphs: string[]; extra: trailing nodes. */
+  _setText(paragraphs, { journal = null, see = null } = {}) {
+    clear(this.prose);
+    clear(this.chipRow);
+    const leader = this.ctx.game.activeCharacter?.name ?? 'the party';
+    const text = paragraphs.map((p) => p.replace(/\{leader\}/g, leader).replace(/\{gold\}/g, String(partyGold(this.ctx.game))));
+    const ps = text.map((t, i) => {
+      const shown = h('span');
+      const hidden = h('span.dlg-hidden', [t]);
+      const p = h(`p${i === 0 ? '.dlg-first' : ''}`, [shown, hidden]);
+      this.prose.append(p);
+      return { shown, hidden, text: t };
+    });
+    if (see) this.prose.append(h('p.dlg-see', [see]));
+    this.reveal = { ps, shown: 0, total: text.reduce((t, s) => t + s.length, 0) };
+    if (journal) {
+      const e = getJournalEntry(journal);
+      const chip = h('div.dlg-journal-chip', { onclick: (ev) => { ev.stopPropagation(); this.openJournal({ entry: journal }); }, dataset: { tip: 'Read it in the Journal (J)' } }, [`Journal Entry ${journal}${e ? ` · ${e.title}` : ''}`]);
+      this.chipRow.append(chip);
+    }
+    this.prose.scrollTop = 0;
+    if (this.ctx.clock.frozen) this.skipReveal();
+    else this._renderReveal();
+  }
+
+  _renderReveal() {
+    let left = Math.floor(this.reveal.shown);
+    for (const p of this.reveal.ps) {
+      const n = Math.max(0, Math.min(p.text.length, left));
+      p.shown.textContent = p.text.slice(0, n);
+      p.hidden.textContent = p.text.slice(n);
+      left -= p.text.length;
+    }
+  }
+
+  skipReveal() {
+    this.reveal.shown = this.reveal.total;
+    this._renderReveal();
+  }
+
+  _setChoices(choices) {
+    const used = new Set();
+    const cmds = choices.map((c, i) => {
+      let key = c.key;
+      if (!key || used.has(key.toUpperCase())) key = [...c.label.toUpperCase()].find((ch) => /[A-Z]/.test(ch) && !used.has(ch)) ?? String(i + 1);
+      used.add(key.toUpperCase());
+      return { id: `c${i}`, label: c.label, key, disabled: !!c.disabled, tip: c.tip, onSelect: () => this._choose(c) };
+    });
+    this.bar.set(cmds);
+    this.choices = choices;
+  }
+
+  _choose(c) {
+    if (this.busy) return;
+    this.skipReveal();
+    this.ctx.audio.sfx?.('click');
+    c.run?.();
+  }
+
+  _onAction(action) {
+    if (this.journalEl) {
+      if (action === 'cancel') this.closeJournal();
+      return;
+    }
+    if (action === 'confirm') {
+      if (this.reveal.shown < this.reveal.total) this.skipReveal();
+      else if (this.choices?.length === 1) this._choose(this.choices[0]);
+    } else if (action === 'cancel') {
+      const leave = this.choices?.find((c) => c.isLeave);
+      if (leave) this._choose(leave);
+    }
+  }
+
+  // ------------------------------------------------------------------ side info
+  _sidePlace(title, text) {
+    this.infoFrame.title.textContent = 'Location';
+    clear(this.sideInfo);
+    const loc = this.ctx.game.location;
+    let zone = title;
+    if (hasMap(loc.map) && (this.eventId || text === undefined)) {
+      const m = getMap(loc.map);
+      zone = m.zoneAt(loc.x, loc.y);
+      text ??= m.name;
+    }
+    this.sideInfo.append(h('div.dlg-place', [h('b', [zone ?? title]), text ?? '']));
+  }
+
+  _sideEncounter(enc) {
+    this.infoFrame.title.textContent = 'Encounter';
+    clear(this.sideInfo);
+    const list = h('div.dlg-enc-list');
+    let hd = 0;
+    for (const g of enc.groups) {
+      const m = MONSTERS[g.monster];
+      const n = typeof g.count === 'number' ? g.count : 4;
+      hd += Math.max(0.5, m.hd + (m.hpBonus ?? 0) / 4) * n;
+      const icon = h('div.dlg-enc-icon');
+      const fig = paintCreature(g.monster, 200, LIGHTS.torch, 7);
+      const c = h('canvas', { width: 96, height: 96 });
+      const cg = c.getContext('2d');
+      const big = ['giantRat', 'wolf', 'giantSpider', 'giantFrog', 'giantCentipede'].includes(g.monster);
+      const s = big ? 0.42 : 0.9;
+      cg.drawImage(fig.canvas, 48 - fig.ox * s, (big ? 88 : 140) - fig.oy * s, fig.canvas.width * s, fig.canvas.height * s);
+      icon.append(c);
+      list.append(h('div.dlg-enc-row', { dataset: { tip: m.desc ?? m.name } }, [icon, h('div.dlg-enc-name', [n === 1 ? m.name : m.plural, h('small', [sizeWord(m)])]), h('div.dlg-enc-count', [String(n)])]));
+    }
+    const lv = living(this.ctx.game).reduce((t, c) => t + Math.max(...Object.values(c.levels)), 0) || 1;
+    const ratio = hd / lv;
+    const tier = ratio < 0.45 ? 0 : ratio < 0.9 ? 1 : ratio < 1.6 ? 2 : 3;
+    const names = ['Easy', 'Fair', 'Hard', 'Deadly'];
+    const cols = [['#3fae55', '#9df0a0'], ['#c8a030', '#ffe08a'], ['#d0702a', '#ffb070'], ['#b02020', '#ff6a5a']][tier];
+    const pips = h('div.pips', Array.from({ length: 4 }, (_, i) => h(`i${i <= tier ? '.on' : ''}`)));
+    const threat = h('div.dlg-threat', { style: { '--c1': cols[0], '--c2': cols[1] }, dataset: { tip: 'Estimated from the monsters\' hit dice against your party\'s levels.' } }, [h('span.lbl', ['Threat']), pips, h('span.val', { style: { color: cols[1] } }, [names[tier]])]);
+    threat.style.setProperty('--c1', cols[0]);
+    threat.style.setProperty('--c2', cols[1]);
+    this.sideInfo.append(list, threat);
+  }
+
+  // ------------------------------------------------------------------ scripts
+  async gotoNode(id, { initial = false } = {}) {
+    const s = this.script;
+    let node = s.nodes[id];
+    for (let guard = 0; node?.branch && guard < 8; guard++) {
+      const b = node.branch.find((x) => test(this.ctx.game, x.if));
+      if (!b) break;
+      id = b.goto;
+      node = s.nodes[id];
+    }
+    if (!node) return this.leave();
+    this.nodeId = id;
+    const art = { ...(s.art ?? {}), ...(node.art ?? {}) };
+    const ghost = art.npc && NPCS[art.npc]?.kind === 'ghost';
+    const spec = { setting: art.setting ?? 'slums', light: art.light, monsters: art.monster ? [{ id: art.monster, count: art.count ?? 1 }] : ghost ? [{ id: 'ghostKnight', count: 1 }] : null, deity: art.deity };
+    await this._showArt(spec, s.title, s.subtitle ?? '');
+    this._setSpeaker(node.speaker ?? null);
+    if (node.do) apply(this.ctx, node.do);
+    if (node.journal && addJournal(this.ctx.game, node.journal)) this.ctx.ui.message(`Journal entry ${node.journal} recorded.`, 'lore');
+    const paras = [].concat(node.text ?? []);
+    this._setText(paras, { journal: node.journal ?? node.do?.find((e) => e.journal)?.journal ?? null });
+    this._sidePlace(s.title, this.eventId ? undefined : s.subtitle ?? s.title);
+    this.docEl?.remove();
+    this.docEl = null;
+    if (node.panel) this._showPanel(node.panel);
+    // choices
+    const ch = [];
+    for (const c of node.choices ?? []) {
+      if (c.if && !test(this.ctx.game, c.if)) continue;
+      ch.push({ label: c.label, key: c.key, isLeave: !!c.end, run: () => this._runChoice(c) });
+    }
+    if (node.next) ch.push({ label: 'Continue', key: 'C', run: () => this.gotoNode(node.next) });
+    if (node.end) ch.push({ label: 'Leave', key: 'L', isLeave: true, run: () => this.leave() });
+    if (!ch.length) ch.push({ label: 'Leave', key: 'L', isLeave: true, run: () => this.leave() });
+    this._setChoices(ch);
+    void initial;
+  }
+
+  _runChoice(c) {
+    if (c.do) apply(this.ctx, c.do);
+    if (c.check) {
+      const r = check(this.ctx, c.check.stat, c.check.dc ?? 0);
+      if (r.who) this.ctx.ui.message(`${r.who.name} tries${r.ok ? ' — and succeeds.' : ' — and fails.'}`, r.ok ? 'info' : 'warn');
+      return this.gotoNode(r.ok ? c.check.pass : c.check.fail);
+    }
+    if (c.combat) return this.startCombat(c.combat, c.win);
+    if (c.travel) return this.travel(c.travel);
+    if (c.shop) return this.ctx.scenes.goto('shop', { shop: c.shop });
+    if (c.goto) return this.gotoNode(c.goto);
+    return this.leave();
+  }
+
+  // ------------------------------------------------------------------ encounters
+  async encounterIntro({ parley = false } = {}) {
+    const enc = this.encounter;
+    if (!this._announced) {
+      this._announced = true;
+      this.ctx.ui.message(enc.options?.includes('parley') ? 'Something stirs in the shadows...' : 'Danger! The party is set upon.', 'warn');
+      this.ctx.ui.message(`${enc.name}: ${enc.groups.map((gr) => `${gr.count} ${MONSTERS[gr.monster][gr.count === 1 ? 'name' : 'plural']}`).join(', ')}.`, 'combat');
+    }
+    const art = enc.art ?? {};
+    await this._showArt({ setting: art.setting ?? 'slums', light: art.light, monsters: enc.groups.map((g) => ({ id: g.monster, count: typeof g.count === 'number' ? g.count : 4 })) }, enc.name, this._zoneName());
+    this._setSpeaker(null);
+    this._sideEncounter(enc);
+    if (parley) return this.parleyMenu();
+    this._setText([enc.intro ?? `You encounter ${enc.name}.`], { see: youSee(enc) });
+    const labels = { combat: ['Combat', 'C'], wait: ['Wait', 'W'], flee: ['Flee', 'F'], parley: ['Parlay', 'P'] };
+    this._setChoices((enc.options ?? ['combat', 'flee']).map((o) => ({ label: labels[o][0], key: labels[o][1], isLeave: false, run: () => this.encounterChoice(o) })));
+  }
+
+  _zoneName() {
+    const loc = this.ctx.game.location;
+    return hasMap(loc.map) ? getMap(loc.map).zoneAt(loc.x, loc.y) : '';
+  }
+
+  encounterChoice(o) {
+    const { rng } = this.ctx;
+    const enc = this.encounter;
+    if (o === 'combat') return this.startCombat(enc.id);
+    if (o === 'flee') {
+      if (rng.chance(60)) {
+        this._unspend();
+        this.ctx.ui.message('You escape into the ruins.', 'info');
+        return this.ctx.scenes.goto('explore', {});
+      }
+      this._setText(['You turn to run — but they are faster. There is no escape!']);
+      return this._setChoices([{ label: 'Combat', key: 'C', run: () => this.startCombat(enc.id) }]);
+    }
+    if (o === 'wait') {
+      const morale = Math.min(...enc.groups.map((g) => MONSTERS[g.monster].morale ?? 50));
+      if (rng.chance(Math.max(10, 70 - morale))) {
+        this._setText(['Both sides regard each other warily. At last, muttering, they lose interest and slink away into the ruins.']);
+        return this._setChoices([{ label: 'Continue', key: 'C', isLeave: true, run: () => this.leave() }]);
+      }
+      this._setText(['Both sides regard each other warily... then, with a howl, they attack!']);
+      return this._setChoices([{ label: 'Combat', key: 'C', run: () => this.startCombat(enc.id) }]);
+    }
+    if (o === 'parley') return this.parleyMenu();
+    return null;
+  }
+
+  parleyMenu() {
+    const enc = this.encounter;
+    this._setText([`How will ${this.ctx.game.activeCharacter?.name ?? 'the party'} address them?`], { see: youSee(enc) });
+    const tips = {
+      haughty: 'Proud and commanding. Cows the weak; angers the strong.',
+      sly: 'Cunning and flattering. Works on the greedy.',
+      nice: 'Friendly and open. Works on the reasonable.',
+      meek: 'Humble and yielding. Invites demands.',
+      abusive: 'Threats and insults. Rarely wise.',
+    };
+    const att = ['haughty', 'sly', 'nice', 'meek', 'abusive'];
+    this._setChoices([
+      ...att.map((a) => ({ label: a[0].toUpperCase() + a.slice(1), key: a[0].toUpperCase(), tip: tips[a], run: () => this.parley(a) })),
+      { label: 'Back', key: 'B', run: () => this.encounterIntro() },
+    ]);
+  }
+
+  parley(att) {
+    const enc = this.encounter;
+    const r = enc.parley?.[att] ?? 'fight';
+    const [kind, arg] = r.split(':');
+    const who = enc.groups.length ? (enc.groups[0].count === 1 ? MONSTERS[enc.groups[0].monster].name : `The ${MONSTERS[enc.groups[0].monster].plural.toLowerCase()}`) : 'They';
+    const line = enc.parleyText?.[kind] ?? enc.parleyText?.[att];
+    if (kind === 'fight') {
+      this._setText([line ?? `${who} snarl${who.startsWith('The') ? '' : 's'} with contempt. Your words have only made them angry.`]);
+      return this._setChoices([{ label: 'Combat', key: 'C', run: () => this.startCombat(enc.id) }]);
+    }
+    if (kind === 'leave') {
+      this._setText([line ?? `${who} exchange${who.startsWith('The') ? '' : 's'} glances, shrug, and let you pass. There will be other prey tonight.`]);
+      return this._setChoices([{ label: 'Continue', key: 'C', isLeave: true, run: () => this.leave() }]);
+    }
+    if (kind === 'flee') {
+      this._setText([line ?? `${who} decide${who.startsWith('The') ? '' : 's'} that you are more trouble than you are worth, and flee.`]);
+      return this._setChoices([{ label: 'Continue', key: 'C', isLeave: true, run: () => this.leave() }]);
+    }
+    if (kind === 'bribe') {
+      const gp = Number(arg);
+      this._setText([line ?? `${who} consider${who.startsWith('The') ? '' : 's'} your words. "Pay the toll," the leader growls, "${gp} gold, and walk away."`]);
+      return this._setChoices([
+        { label: `Pay ${gp} gp`, key: 'P', disabled: partyGold(this.ctx.game) < gp, run: () => { spendGold(this.ctx.game, gp); this.ctx.game.notifyPartyChanged(); this.ctx.ui.message(`The party pays ${gp} gold pieces.`, 'warn'); this.leave(); } },
+        { label: 'Refuse', key: 'R', run: () => this.startCombat(enc.id) },
+      ]);
+    }
+    if (kind === 'talk') {
+      this.script = DIALOGUES[arg];
+      return this.gotoNode(this.script.start);
+    }
+    return null;
+  }
+
+  // ------------------------------------------------------------------ transitions
+  startCombat(encId, win = null) {
+    const { game } = this.ctx;
+    const enc = ENCOUNTERS[encId];
+    game.flags._pendingFight = {
+      encounter: encId,
+      eventId: this.eventId,
+      xp: game.party.reduce((t, c) => t + Object.values(c.xp).reduce((a, b) => a + b, 0), 0),
+      win: [...(win ?? []), ...(enc?.onWin ?? [])],
+      items: enc?.treasure?.items ?? [],
+    };
+    this.busy = true;
+    this.ctx.scenes.goto('combat', { encounter: encId });
+  }
+
+  travel(t) {
+    const { game } = this.ctx;
+    if (t.minutes) game.advanceTime(t.minutes);
+    this.busy = true;
+    game.setLocation({ map: t.map, x: t.x, y: t.y, dir: t.dir });
+    this.ctx.scenes.goto('explore', { map: t.map, x: t.x, y: t.y, dir: t.dir });
+  }
+
+  _unspend() {
+    if (this.eventId) delete this.ctx.game.spentEvents[this.eventId];
+  }
+
+  leave() {
+    if (this.busy) return;
+    this.busy = true;
+    if (this.returnTo === 'pop') this.ctx.scenes.pop();
+    else this.ctx.scenes.goto('explore', {});
+  }
+
+  // ------------------------------------------------------------------ City Hall boards
+  _showPanel(kind) {
+    const { game } = this.ctx;
+    const view = this.artView.parentElement;
+    const scrim = h('div.dlg-doc-scrim');
+    const doc = h('div.dlg-doc');
+    const wrap = h('div', { style: { position: 'absolute', inset: '0', zIndex: '5' } }, [scrim, doc]);
+    if (kind === 'proclamations') {
+      const board = h('div.dlg-board');
+      PROCLAMATIONS.forEach((p, i) => board.append(h('div.dlg-notice', { style: { '--rot': `${[-2.2, 1.4, -0.8, 2, -1.6, 0.9][i % 6]}deg` } }, [h('h4', [p.title]), p.text, i % 2 === 0 ? h('i.seal') : null])));
+      for (const n of board.querySelectorAll('.dlg-notice')) n.style.setProperty('--rot', n.style.getPropertyValue('--rot'));
+      doc.append(board);
+    } else if (kind === 'commissions' || kind === 'report') {
+      const paid = kind === 'report' ? payRewards(this.ctx) : [];
+      const led = h('div.dlg-ledger');
+      led.append(h('h3', [kind === 'report' ? 'Report to the Council' : 'Commissions of the Council']), h('div.sub', [kind === 'report' ? (paid.length ? 'The Clerk counts out your reward in good Phlan gold.' : 'The Clerk finds nothing in your report that the Council owes you for. Yet.') : 'Signed and sealed; payable at this desk upon proof.']));
+      const rows = h('div.rows');
+      const sealed = QUEST_LIST.filter((q) => questStatus(game.flags, q.id) === 'locked').length;
+      QUEST_LIST.forEach((q, i) => {
+        const st = questStatus(game.flags, q.id);
+        if (st === 'locked') return;
+        if (kind === 'report' && st !== 'rewarded' && st !== 'done' && st !== 'active') return;
+        const stampText = { locked: 'Sealed', offered: '', active: 'Accepted', done: 'Complete', rewarded: 'Paid' }[st];
+        const accept = st === 'offered'
+          ? h('button.por-btn', { onclick: () => { (game.flags.quests ??= {})[q.id] = 'active'; addJournal(game, q.journal); this.ctx.ui.message(`Commission accepted: ${q.title}. Journal entry ${q.journal} recorded.`, 'lore'); this._showPanel(kind); } }, ['Accept'])
+          : h(`span.dlg-stamp.${st === 'offered' ? 'active' : st}`, [stampText]);
+        rows.append(h(`div.dlg-lrow${st === 'locked' ? '.locked' : ''}`, [
+          h('span.n', [romanize(i + 1)]),
+          h('div.t', [st === 'locked' ? 'Under seal' : q.title, h('small', [st === 'locked' ? 'The Council will open this commission when you have proven yourselves.' : q.summary])]),
+          h('div.r', [`${q.reward.gold.toLocaleString('en-US')} gp`, h('em', [`${q.reward.xp} xp each`])]),
+          accept,
+        ]));
+      });
+      if (sealed && kind !== 'report') {
+        rows.append(h('div.dlg-lrow.locked', [
+          h('span.n', ['⁂']),
+          h('div.t', [`${sealed} further commissions remain under seal`, h('small', ['The Council will open them when you have proven yourselves.'])]),
+          h('div.r', ['']),
+          h('span.dlg-stamp.locked', ['Sealed']),
+        ]));
+      }
+      if (kind === 'report' && paid.length) {
+        const total = paid.reduce((t, p) => t + p.gold, 0);
+        rows.append(h('div', { style: { textAlign: 'center', marginTop: '0.8em', fontFamily: 'var(--font-display)', letterSpacing: '0.12em', color: '#5a1a0e' } }, [`Paid: ${total.toLocaleString('en-US')} gold pieces`]));
+      }
+      led.append(rows);
+      led.append(h('div.dlg-sign', [h('span', ['By order of the Council of New Phlan']), h('em', ['— A. Vellum, Clerk']), h('i.dlg-wax')]));
+      doc.append(led);
+    } else if (kind === 'heroes') {
+      const led = h('div.dlg-ledger');
+      const roll = h('div.dlg-roll');
+      const heroes = QUEST_LIST.filter((q) => questStatus(game.flags, q.id) === 'rewarded').map((q) => `${game.party[0]?.name ?? 'Unknown'}'s company — ${q.title}`);
+      const fallen = ['Sir Aldous Venn, of Hillsfar', 'The Brothers Mott', 'Kestrel, a ranger', 'Maud of the Three Rivers', 'Oskar Dunmere and company', 'An elf who would not give her name', 'Havel the Bold', 'Tobin Greaves', 'The Company of the Red Lantern'];
+      roll.append(h('div', { style: { fontFamily: 'var(--font-display)', letterSpacing: '0.2em', color: '#2a4a2a', marginBottom: '0.4em' } }, ['The Victorious']));
+      if (!heroes.length) roll.append(h('div', { style: { fontStyle: 'italic', color: '#6a4a28' } }, ['(no names yet)']));
+      for (const n of heroes) roll.append(h('div', [n]));
+      roll.append(h('div', { style: { fontFamily: 'var(--font-display)', letterSpacing: '0.2em', color: '#7a1e12', margin: '0.8em 0 0.4em' } }, ['Those Who Tried']));
+      for (const n of fallen) roll.append(h('div.dead', [n]));
+      led.append(h('h3', ['The Hall of Heroes']), h('div.sub', ['Written in the Clerk\'s own hand']), roll);
+      doc.append(led);
+    }
+    this.docEl?.remove();
+    this.docEl = wrap;
+    view.append(wrap);
+  }
+
+  // ------------------------------------------------------------------ Journal
+  openJournal({ entry = null, tab = 'journal', standalone = false } = {}) {
+    const { game } = this.ctx;
+    this.closeJournal();
+    const found = journalList(game).slice().sort((a, b) => a - b);
+    const unread = new Set(game.flags.journalUnread ?? []);
+    let sel = entry ?? found[found.length - 1] ?? null;
+    const root = h('div.jr-root', { style: { position: 'absolute', inset: '0', zIndex: '20', background: standalone ? 'rgba(2,3,8,0.35)' : 'rgba(2,3,8,0.72)' } });
+    const left = h('div.jr-page.left');
+    const right = h('div.jr-page.right');
+    const tabs = h('div.jr-tabs');
+    const book = h('div.jr-book', [tabs, h('i.jr-ribbon'), left, right]);
+    const close = h('button.por-btn.jr-close', { onclick: () => (standalone ? this.leave() : this.closeJournal()) }, ['Close  ', h('span.por-keycap', ['Esc'])]);
+    book.append(close);
+    root.append(book);
+    const render = () => {
+      clear(left);
+      clear(right);
+      clear(tabs);
+      for (const [id, label] of [['journal', 'Journal'], ['quests', 'Commissions']]) tabs.append(h(`button.jr-tab${tab === id ? '.on' : ''}`, { onclick: () => { tab = id; render(); } }, [label]));
+      if (tab === 'quests') {
+        left.append(h('div.jr-title', ['Commissions']), h('div.jr-subtitle', ['of the Council of New Phlan']), h('div.jr-rule'));
+        const list = h('div.jr-list');
+        for (const q of QUEST_LIST) {
+          const st = questStatus(game.flags, q.id);
+          if (st === 'locked' || st === 'offered') continue;
+          list.append(h('div.jr-quest', [h('div.qt', [q.title]), h('div.qs', [q.summary]), h(`span.dlg-stamp.${st}`, [{ active: 'Accepted', done: 'Complete', rewarded: 'Paid' }[st]])]));
+        }
+        if (!list.children.length) list.append(h('div.jr-empty', ['No commissions accepted. Visit the Clerk at City Hall.']));
+        left.append(list);
+        const known = QUEST_LIST.filter((q) => questStatus(game.flags, q.id) === 'offered');
+        right.append(h('div.jr-title', ['Offered']), h('div.jr-subtitle', ['Awaiting your signature at City Hall']), h('div.jr-rule'));
+        const l2 = h('div.jr-list');
+        for (const q of known) l2.append(h('div.jr-quest', [h('div.qt', [q.title]), h('div.qs', [`${q.summary} Reward: ${q.reward.gold.toLocaleString('en-US')} gp.`])]));
+        if (!known.length) l2.append(h('div.jr-empty', ['Nothing further is offered at present.']));
+        right.append(l2);
+        return;
+      }
+      left.append(h('div.jr-title', ['The Journal']), h('div.jr-subtitle', ['of the Adventurer in Phlan']), h('div.jr-rule'));
+      const list = h('div.jr-list');
+      for (const n of found) {
+        const e = getJournalEntry(n);
+        list.append(h(`div.jr-item${n === sel ? '.on' : ''}${unread.has(n) ? '.unread' : ''}`, { onclick: () => { sel = n; unread.delete(n); render(); } }, [h('span.num', [String(n)]), h('span.tt', [e.title, e.where ? h('small', [e.where]) : null])]));
+      }
+      if (!found.length) list.append(h('div.jr-empty', ['The pages are blank. Your story in Phlan has yet to begin.']));
+      left.append(list, h('div.jr-folio', [`${found.length} of ${JOURNAL.length} entries`]));
+      const e = sel ? getJournalEntry(sel) : null;
+      if (e) {
+        right.append(h('div.jr-entry-head', [h('span.jr-entry-num', [String(e.n)]), h('span.jr-entry-title', [e.title])]));
+        if (e.where) right.append(h('div.jr-entry-where', [e.where]));
+        right.append(h('div.jr-rule'));
+        right.append(h('div.jr-entry-text', [...e.text.map((p) => h('p', [p])), journalPlate(e.n)]));
+        right.append(h('div.jr-folio', [`— ${romanize(e.n)} —`]));
+      } else right.append(h('div.jr-empty', ['Select an entry.']));
+      game.flags.journalUnread = [...unread];
+    };
+    render();
+    this.journalEl = root;
+    this.root.classList.toggle('dlg-journal-only', standalone);
+    this.root.append(root);
+  }
+
+  closeJournal() {
+    this.journalEl?.remove();
+    this.journalEl = null;
+  }
+
+  // ------------------------------------------------------------------ frame
+  update(dt) {
+    const { clock } = this.ctx;
+    const t = clock.time;
+    if (this.reveal.shown < this.reveal.total) {
+      if (clock.frozen) this.skipReveal();
+      else {
+        const speed = 55 * (this.ctx.settings.get('textSpeed') ?? 1);
+        this.reveal.shown = Math.min(this.reveal.total, this.reveal.shown + dt * speed);
+        this._renderReveal();
+      }
+    }
+    if (this.fade) {
+      const k = clock.frozen ? 1 : Math.min(1, (t - this.fade.t0) / 0.6);
+      const e = k * k * (3 - 2 * k);
+      this.fade.el.style.opacity = String(e);
+      if (k >= 1) {
+        this.fade.prev?.remove();
+        this.fade = null;
+      }
+    }
+    // slow push-in on the painting (idle life)
+    if (this.artCanvas) {
+      const s = 1.015 + Math.sin(t * 0.07) * 0.012;
+      const tx = Math.sin(t * 0.05) * 0.6;
+      this.artCanvas.style.transform = `scale(${s.toFixed(4)}) translateX(${tx.toFixed(2)}%)`;
+    }
+    if (this.overlay && (dt > 0 || !this._drawnFrozen)) {
+      this.overlay.draw(t);
+      this._drawnFrozen = dt === 0;
     }
   }
 }
 
-/** Placeholder illustration: moody alley with silhouetted figures. */
-function drawEncounterArt(canvas, enc, rng) {
-  const g = canvas.getContext('2d');
-  const W = canvas.width;
-  const H = canvas.height;
-  const sky = g.createLinearGradient(0, 0, 0, H);
-  sky.addColorStop(0, '#0d1430');
-  sky.addColorStop(0.6, '#3a2a3a');
-  sky.addColorStop(1, '#120c10');
-  g.fillStyle = sky;
-  g.fillRect(0, 0, W, H);
-  // moon
-  const moon = g.createRadialGradient(W * 0.78, H * 0.2, 0, W * 0.78, H * 0.2, 90);
-  moon.addColorStop(0, 'rgba(230,235,255,1)');
-  moon.addColorStop(0.3, 'rgba(200,210,255,0.5)');
-  moon.addColorStop(1, 'rgba(200,210,255,0)');
-  g.fillStyle = moon;
-  g.fillRect(0, 0, W, H);
-  // ruined skyline
-  g.fillStyle = '#07080f';
-  g.beginPath();
-  g.moveTo(0, H * 0.62);
-  let x = 0;
-  while (x < W) {
-    const w = 40 + rng.next() * 90;
-    const top = H * (0.3 + rng.next() * 0.3);
-    g.lineTo(x, top);
-    g.lineTo(x + w * (0.4 + rng.next() * 0.3), top - rng.next() * 30);
-    g.lineTo(x + w, top + rng.next() * 20);
-    x += w;
+// ------------------------------------------------------------------ helpers
+
+const PLATE_SETTING = {
+  1: 'docks', 2: 'docks', 3: 'cityhall', 4: 'cityhall', 5: 'slums', 6: 'keep', 7: 'chapel', 8: 'well_head', 9: 'plaza', 10: 'library', 11: 'library', 12: 'textile',
+  13: 'temple_bane', 14: 'graveyard', 15: 'castle', 16: 'gate', 17: 'temple_bane', 18: 'pool', 19: 'wilds', 20: 'tavern', 21: 'well', 22: 'plaza', 23: 'textile',
+  24: 'graveyard', 25: 'keep', 26: 'cityhall', 27: 'temple', 28: 'temple', 29: 'alley', 30: 'textile',
+};
+const plateCache = new Map();
+/** A sepia ink-wash plate illustrating a journal entry. */
+function journalPlate(n) {
+  const setting = PLATE_SETTING[n];
+  if (!setting) return null;
+  if (!plateCache.has(setting)) {
+    const { canvas } = paintPanel({ setting, w: 720, h: 300, seed: n * 17 });
+    const c = document.createElement('canvas');
+    c.width = 720;
+    c.height = 300;
+    const g = c.getContext('2d');
+    g.filter = 'grayscale(1) sepia(0.85) contrast(1.15) brightness(1.05)';
+    g.drawImage(canvas, 0, 0);
+    g.filter = 'none';
+    // feather the edges into the page
+    g.globalCompositeOperation = 'destination-in';
+    const gr = g.createRadialGradient(360, 150, 90, 360, 150, 400);
+    gr.addColorStop(0, 'rgba(0,0,0,1)');
+    gr.addColorStop(0.7, 'rgba(0,0,0,0.9)');
+    gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, 720, 300);
+    plateCache.set(setting, c.toDataURL('image/png'));
   }
-  g.lineTo(W, H);
-  g.lineTo(0, H);
-  g.fill();
-  // ground glow
-  const fog = g.createLinearGradient(0, H * 0.6, 0, H);
-  fog.addColorStop(0, 'rgba(120,90,110,0.25)');
-  fog.addColorStop(1, 'rgba(10,8,12,0.9)');
-  g.fillStyle = fog;
-  g.fillRect(0, H * 0.6, W, H * 0.4);
-  // figures
-  const n = Math.min(8, enc.groups.reduce((t, gr) => t + (typeof gr.count === 'number' ? gr.count : 4), 0));
-  for (let i = 0; i < n; i++) {
-    const fx = W * (0.18 + (i / Math.max(1, n - 1)) * 0.64) + (rng.next() - 0.5) * 30;
-    const s = 0.8 + rng.next() * 0.3;
-    const fy = H * 0.9 - (i % 2) * 20;
-    g.fillStyle = '#020203';
-    g.beginPath();
-    g.ellipse(fx, fy - 70 * s, 16 * s, 18 * s, 0, 0, Math.PI * 2); // head
-    g.moveTo(fx - 24 * s, fy);
-    g.lineTo(fx - 18 * s, fy - 55 * s);
-    g.lineTo(fx + 18 * s, fy - 55 * s);
-    g.lineTo(fx + 24 * s, fy);
-    g.fill();
-    g.strokeStyle = '#020203';
-    g.lineWidth = 4 * s;
-    g.beginPath();
-    g.moveTo(fx + 18 * s, fy - 45 * s);
-    g.lineTo(fx + 40 * s, fy - 90 * s);
-    g.stroke();
-    // glowing eyes
-    g.fillStyle = 'rgba(255,90,40,0.95)';
-    g.fillRect(fx - 7 * s, fy - 74 * s, 4 * s, 3 * s);
-    g.fillRect(fx + 3 * s, fy - 74 * s, 4 * s, 3 * s);
-  }
-  // vignette
-  const v = g.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, W * 0.7);
-  v.addColorStop(0, 'rgba(0,0,0,0)');
-  v.addColorStop(1, 'rgba(0,0,0,0.7)');
-  g.fillStyle = v;
-  g.fillRect(0, 0, W, H);
+  return h('img.jr-plate', { src: plateCache.get(setting), alt: '' });
+}
+
+function youSee(enc) {
+  const parts = enc.groups.map((g) => {
+    const m = MONSTERS[g.monster];
+    const n = typeof g.count === 'number' ? g.count : 'several';
+    return `${n} ${n === 1 ? m.name : m.plural}`;
+  });
+  return h('span', ['You see ', h('b', [parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts[0]]), '.']);
+}
+
+function sizeWord(m) {
+  const s = { S: 'small', M: 'man-sized', L: 'large' }[m.size] ?? '';
+  const u = m.special?.includes('undead') ? ' · undead' : '';
+  return `${s}${u}`;
+}
+
+function romanize(n) {
+  const map = [[10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']];
+  let out = '';
+  for (const [v, s] of [[50, 'L'], [40, 'XL'], ...map]) while (n >= v) { out += s; n -= v; }
+  return out;
+}
+
+// ------------------------------------------------------------------ victory hook
+
+let hookInstalled = false;
+/**
+ * Combat does not report its outcome, so fights started from an encounter or
+ * script leave a note in game.flags._pendingFight. When the party next enters
+ * any other scene we compare experience: a gain means victory (apply the
+ * script's `win` effects, the encounter's `onWin`, and its treasure items);
+ * otherwise the party fled, and the once-only map event is re-armed.
+ */
+function installVictoryHook(ctx) {
+  if (hookInstalled) return;
+  hookInstalled = true;
+  ctx.bus.on('scene:enter', ({ name }) => {
+    const p = ctx.game.flags._pendingFight;
+    if (!p || name === 'combat' || name === 'dialogue') return;
+    delete ctx.game.flags._pendingFight;
+    if (name === 'title') return;
+    const xp = ctx.game.party.reduce((t, c) => t + Object.values(c.xp).reduce((a, b) => a + b, 0), 0);
+    if (xp > p.xp) {
+      if (p.win?.length) apply(ctx, p.win);
+      const who = living(ctx.game)[0];
+      for (const id of p.items ?? []) {
+        if (!who || !ITEMS[id]) continue;
+        addItem(who, id);
+        ctx.ui.message(`Among the spoils: ${ITEMS[id].name}.`, 'loot');
+      }
+      ctx.game.notifyPartyChanged();
+    } else if (p.eventId) delete ctx.game.spentEvents[p.eventId];
+  });
 }

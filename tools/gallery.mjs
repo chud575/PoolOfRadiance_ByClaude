@@ -33,5 +33,9 @@ export const GALLERY = [
   { name: 'inventory', query: 'scene=camp&panel=items&member=0&hour=21.5&t=2&seed=1' },
   { name: 'memorize', query: 'scene=camp&panel=magic&member=1&hour=21.5&t=2&seed=1' },
   { name: 'dialogue', query: 'scene=dialogue&encounter=kobolds_1&t=1&seed=1' },
+  { name: 'dialogue_npc', query: 'scene=dialogue&script=ferran&t=2&seed=1' },
+  { name: 'cityhall', query: 'scene=dialogue&script=city_hall&node=commissions&flags=met_clerk,slums_cleared&quests=clear_slums:done,sokol_keep:active&t=2&seed=1' },
+  { name: 'journal', query: 'scene=dialogue&view=journal&journal=1,2,3,4,5,6,7,8,13,21&entry=7&t=2&seed=1' },
   { name: 'shop', query: 'scene=shop&shop=phlan_armory&t=1&seed=1' },
+  { name: 'temple', query: 'scene=shop&shop=temple_tyr&party=wounded&t=1&seed=1' },
 ];
