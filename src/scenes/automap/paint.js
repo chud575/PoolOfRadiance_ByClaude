@@ -117,8 +117,8 @@ export function washRegion(g, cells, { CX, CY, cs, k = 2, color, alpha = 0.4, se
     const rad = cs * (0.22 + rnd() * 0.25);
     g.globalCompositeOperation = 'destination-out';
     const gr = g.createRadialGradient(cx, cy, 0, cx, cy, rad);
-    gr.addColorStop(0, 'rgba(0,0,0,0.32)');
-    gr.addColorStop(0.75, 'rgba(0,0,0,0.2)');
+    gr.addColorStop(0, 'rgba(0,0,0,0.16)');
+    gr.addColorStop(0.75, 'rgba(0,0,0,0.1)');
     gr.addColorStop(1, 'rgba(0,0,0,0)');
     g.fillStyle = gr;
     g.fillRect(cx - rad, cy - rad, rad * 2, rad * 2);
@@ -132,8 +132,8 @@ export function washRegion(g, cells, { CX, CY, cs, k = 2, color, alpha = 0.4, se
       const py = cy + Math.sin(a) * q;
       if (j === 0) g.moveTo(px, py); else g.lineTo(px, py);
     }
-    g.strokeStyle = rgba(dark, edge * 0.35);
-    g.lineWidth = cs * 0.018;
+    g.strokeStyle = rgba(dark, edge * 0.28);
+    g.lineWidth = cs * 0.014;
     g.stroke();
   }
   if (gran > 0) {

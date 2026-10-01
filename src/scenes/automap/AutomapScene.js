@@ -728,6 +728,20 @@ export default class AutomapScene extends Scene {
         ]);
       })),
       h('div.am-empty', [`${this.world.blocks.length - items.length} places still unknown.`]),
+      ...(() => {
+        const unknown = this.world.blocks.filter((b) => !b.known && b.rumour);
+        if (!unknown.length) return [];
+        return [
+          h('div.am-sec', ['Rumours']),
+          h('ul.am-notes.am-rumours', unknown.slice(0, 4).map((b) => h('li.am-note', {
+            onclick: () => this.sv.focus(b.cx, b.cy, Math.max(this.sv.tZoom, 2)),
+            dataset: { tip: 'Show on the overview' },
+          }, [
+            h('span.am-seal', [getMap(b.id).name.replace(/^The\s+/i, '')[0]]),
+            h('span.am-note-text', [h('b', [getMap(b.id).name]), h('i.am-where', [` · ${b.rumour}`])]),
+          ]))),
+        ];
+      })(),
       h('div.am-sec', ['Controls']),
       h('div.am-help', [helpRow('Click', 'open a block map'), helpRow('Drag / Wheel', 'pan · zoom'), helpRow('B / Esc', 'back to the block')]),
     );
@@ -868,7 +882,7 @@ export default class AutomapScene extends Scene {
       const zy1 = Y(z.y + z.h);
       if (zx1 < vx0 || zx0 > vx1 || zy1 < vy0 || zy0 > vy1) continue;
       const base = Math.min(cs * 0.4, Math.max(cs * 0.27, (z.w * cs * 0.92) / 7));
-      const fs = base * zoom ** -0.42;
+      const fs = Math.max(base * zoom ** -0.42, 14 / this.sv.scaleAt());
       g.font = `italic ${fs.toFixed(2)}px ${SERIF}`;
       g.letterSpacing = `${(fs * 0.05).toFixed(2)}px`;
       const lines = wrapText(g, z.name, Math.max(z.w * cs * 0.9, cs * 1.8));
