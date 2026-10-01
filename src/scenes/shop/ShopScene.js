@@ -66,6 +66,8 @@ export default class ShopScene extends Scene {
     this._say(this.shop.greeting);
     this.refresh();
     ctx.audio.playMusic?.(kind === 'tavern' ? 'tavern' : 'town');
+    // resolve only once every portrait/icon has decoded, so the first frame is final
+    await Promise.all([...this.root.querySelectorAll('img')].map((i) => i.decode?.().catch(() => {})));
   }
 
   // ------------------------------------------------------------------ DOM
@@ -109,7 +111,7 @@ export default class ShopScene extends Scene {
 
   /** Keeper speech with a short typewriter. */
   _say(text) {
-    this.say = { text, shown: this.ctx.clock.frozen ? text.length : 0 };
+    this.say = { text, shown: this.ctx.clock.frozen ? text.length + 2 : 0 };
     clear(this.sayEl);
     this.sayShown = h('span');
     this.sayHid = h('span.hid', [`“${text}”`]);

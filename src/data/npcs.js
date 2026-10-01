@@ -23,7 +23,7 @@
 export const NPCS = {
   clerk: {
     id: 'clerk', name: 'Auric Vellum', title: 'Clerk of the Council', race: 'human', gender: 'male',
-    look: { seed: 4101, head: 7, body: 4, hair: 7, cloth: 1, skin: 1, eyes: 4 }, aura: '#ffcf8a',
+    look: { seed: 4101, head: 3, body: 4, hair: 8, cloth: 6, skin: 1, eyes: 4 }, aura: '#ffcf8a',
     desc: 'A stooped, ink-stained man with spectacles on a ribbon and a ledger never far from his hand.',
   },
   councilman: {
@@ -57,7 +57,7 @@ export const NPCS = {
   },
   curio: {
     id: 'curio', name: 'Old Nesmith', title: 'Scribe & Curio Dealer', race: 'gnome', gender: 'male',
-    look: { seed: 6305, head: 7, body: 4, hair: 9, cloth: 3, skin: 0, eyes: 5 }, aura: '#a8c8ff',
+    look: { seed: 6305, head: 2, body: 4, hair: 8, cloth: 3, skin: 0, eyes: 5 }, aura: '#a8c8ff',
   },
   barkeep: {
     id: 'barkeep', name: 'Mother Gedda', title: 'Keeper of the Gilded Tankard', race: 'human', gender: 'female',

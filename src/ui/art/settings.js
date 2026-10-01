@@ -1548,49 +1548,107 @@ S.temple_bane = (g, W, H, R) => {
   return { ...rm, lights, motes: { color: '#7dff9a', count: 60, rise: 0.25 }, floorY: rm.by1 };
 };
 
-S.well = (g, W, H, R, o) => {
-  // natural cave with black water
-  const lights = [];
-  g.fillStyle = '#0a0a0c';
-  g.fillRect(0, 0, W, H);
-  masonry(g, 0, 0, W, H, { base: '#3a3632', course: 60, blockW: 90, jitter: 0.3, seed: 141, mortar: 'rgba(10,8,6,0.8)' });
-  texture(g, 0, 0, W, H, { alpha: 0.7, mode: 'multiply', cells: 3, octaves: 5, seed: 142 });
-  // cave mouth shape: dark vignette ring
-  const gr = g.createRadialGradient(W / 2, H * 0.55, H * 0.2, W / 2, H * 0.55, W * 0.6);
-  gr.addColorStop(0, 'rgba(0,0,0,0)');
-  gr.addColorStop(1, 'rgba(0,0,0,0.92)');
-  g.fillStyle = gr;
-  g.fillRect(0, 0, W, H);
-  // water
-  const wy = H * 0.72;
-  g.fillStyle = linGrad(g, 0, wy, 0, H, [[0, '#0e1618'], [1, '#020405']]);
-  g.fillRect(0, wy, W, H - wy);
-  for (let i = 0; i < 120; i++) {
-    g.fillStyle = `rgba(160,200,200,${0.04 + R() * 0.08})`;
-    g.fillRect(R() * W, wy + R() * (H - wy), 10 + R() * 40, 1);
-  }
-  // stalactites
-  g.fillStyle = '#16140f';
-  for (let i = 0; i < 26; i++) {
-    const x = R() * W;
-    const h = 20 + R() * 90;
-    poly(g, [[x - 8 - R() * 8, 0], [x + 8 + R() * 8, 0], [x, h]]);
+/** Natural rock: layered noise, strata and lit facets. */
+function rockWall(g, x, y, w, h, R, base = '#3a342c') {
+  g.fillStyle = base;
+  g.fillRect(x, y, w, h);
+  texture(g, x, y, w, h, { alpha: 0.8, mode: 'multiply', cells: 3, octaves: 5, seed: R.int(1, 99), scale: 2 });
+  texture(g, x, y, w, h, { alpha: 0.5, mode: 'overlay', cells: 10, octaves: 4, seed: R.int(1, 99) });
+  for (let i = 0; i < 70; i++) {
+    const fx = x + R() * w;
+    const fy = y + R() * h;
+    const fs = 20 + R() * 70;
+    g.fillStyle = linGrad(g, fx - fs, fy - fs, fx + fs, fy + fs, [[0, 'rgba(255,220,170,0.10)'], [0.5, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0.35)']]);
+    poly(g, [[fx - fs, fy], [fx - fs * 0.3, fy - fs * 0.6], [fx + fs * 0.7, fy - fs * 0.4], [fx + fs, fy + fs * 0.2], [fx + fs * 0.2, fy + fs * 0.5]]);
     g.fill();
   }
-  // shore rocks
-  P.rubble(g, W * 0.15, H * 0.8, 80, { seed: 143, base: '#3a3630' });
-  P.rubble(g, W * 0.86, H * 0.78, 70, { seed: 144, base: '#3a3630' });
-  if (o.light === 'torch') {
+  g.strokeStyle = 'rgba(0,0,0,0.3)';
+  g.lineWidth = 2;
+  for (let i = 0; i < 8; i++) {
+    const sy = y + (i / 8) * h + R() * 20;
+    g.beginPath();
+    g.moveTo(x, sy);
+    for (let sx = x; sx <= x + w; sx += 40) g.lineTo(sx, sy + Math.sin(sx * 0.01 + i) * 10 + (R() - 0.5) * 6);
+    g.stroke();
+  }
+}
+
+S.well = (g, W, H, R, o) => {
+  // the warrens under Kuto's Well: a natural cavern, black water, kobold squalor
+  const lights = [];
+  rockWall(g, 0, 0, W, H, R, '#3e362c');
+  const gr = g.createRadialGradient(W / 2, H * 0.5, H * 0.15, W / 2, H * 0.55, W * 0.62);
+  gr.addColorStop(0, 'rgba(0,0,0,0)');
+  gr.addColorStop(1, 'rgba(0,0,0,0.9)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, W, H);
+  // stalactites
+  for (let i = 0; i < 30; i++) {
+    const x = R() * W;
+    const hh = 20 + R() * 100;
+    const w = 6 + R() * 14;
+    g.fillStyle = linGrad(g, x - w, 0, x + w, 0, [[0, '#4a4034'], [1, '#100c08']]);
+    poly(g, [[x - w, 0], [x + w, 0], [x + (R() - 0.5) * 4, hh]]);
+    g.fill();
+  }
+  // floor and black water
+  const wy = H * 0.7;
+  g.fillStyle = linGrad(g, 0, wy - 30, 0, H, [[0, '#2a241c'], [1, '#0a0806']]);
+  poly(g, [[0, wy - 20], [W * 0.3, wy - 30], [W * 0.7, wy - 26], [W, wy - 14], [W, H], [0, H]]);
+  g.fill();
+  g.fillStyle = linGrad(g, 0, wy, 0, H, [[0, '#0c1416'], [1, '#020405']]);
+  g.beginPath();
+  g.ellipse(W * 0.5, H * 0.86, W * 0.32, H * 0.13, 0, 0, Math.PI * 2);
+  g.fill();
+  for (let i = 0; i < 90; i++) {
+    g.fillStyle = `rgba(160,200,210,${0.04 + R() * 0.08})`;
+    g.fillRect(W * 0.2 + R() * W * 0.6, H * 0.76 + R() * H * 0.2, 8 + R() * 30, 1);
+  }
+  // the rope ladder hanging in the shaft of daylight
+  lightShaft(g, W * 0.5, 0, 80, W * 0.5, H * 0.84, 200, '#c8d8e0', 0.32);
+  g.strokeStyle = 'rgba(150,120,80,0.9)';
+  g.lineWidth = 2;
+  for (const dx of [-12, 12]) {
+    g.beginPath();
+    g.moveTo(W * 0.5 + dx, 0);
+    g.quadraticCurveTo(W * 0.5 + dx + 4, H * 0.4, W * 0.5 + dx - 2, H * 0.74);
+    g.stroke();
+  }
+  for (let y = 18; y < H * 0.74; y += 22) {
+    g.beginPath();
+    g.moveTo(W * 0.5 - 12, y);
+    g.lineTo(W * 0.5 + 12, y + 2);
+    g.stroke();
+  }
+  glowEllipse(g, W * 0.5, H * 0.82, 170, 26, '#a8c8d8', 0.28);
+  // kobold squalor: bones, broken doors, refuse
+  for (const [x, rot] of [[0.16, -0.3], [0.84, 0.25]]) {
+    g.save();
+    g.translate(W * x, H * 0.72);
+    g.rotate(rot);
+    planks(g, -40, -110, 80, 110, { base: '#4a3420', width: 16, seed: 9 });
+    g.restore();
+  }
+  g.strokeStyle = '#c8bca0';
+  g.lineWidth = 3;
+  for (let i = 0; i < 9; i++) {
+    const x = W * (0.25 + R() * 0.5);
+    const y = H * (0.72 + R() * 0.05);
+    g.beginPath();
+    g.moveTo(x, y);
+    g.lineTo(x + (R() - 0.5) * 30, y + (R() - 0.5) * 6);
+    g.stroke();
+  }
+  P.rubble(g, W * 0.12, H * 0.84, 80, { seed: 143, base: '#3a3630' });
+  P.rubble(g, W * 0.88, H * 0.82, 70, { seed: 144, base: '#3a3630' });
+  if (o.light !== 'dim') {
     for (const x of [0.22, 0.78]) {
-      P.torchSconce(g, W * x, H * 0.4, 60);
-      lights.push({ x: W * x, y: H * 0.4, s: 18, kind: 'flame', color: '#ff9a3a' });
-      glow(g, W * x, H * 0.44, 320, '#ff8a30', 0.35);
+      P.torchSconce(g, W * x, H * 0.38, 60);
+      lights.push({ x: W * x, y: H * 0.38, s: 18, kind: 'flame', color: '#ff9a3a' });
+      glow(g, W * x, H * 0.42, 340, '#ff8a30', 0.32);
     }
   }
-  // shaft of grey daylight from the well above
-  lightShaft(g, W * 0.5, 0, 90, W * 0.5, H * 0.8, 200, '#c8d8e0', 0.3);
-  glowEllipse(g, W * 0.5, H * 0.8, 180, 30, '#a8c8d8', 0.25);
-  return { lights, motes: { color: '#c8d8e0', count: 40, rise: -0.1 }, floorY: H * 0.72, horizon: H * 0.72 };
+  return { lights, motes: { color: '#c8d8e0', count: 40, rise: -0.1 }, floorY: H * 0.66, horizon: H * 0.66 };
 };
 
 S.pool = (g, W, H, R) => {

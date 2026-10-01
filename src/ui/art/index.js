@@ -146,9 +146,10 @@ export function paintNpcPortrait(npc, scale = 1) {
     g.fillRect(0, 0, W, H);
     glow(g, W * 0.2, H * 0.3, H * 0.6, '#ff8a30', 0.3);
     const id = hasCreature(npc.monster) ? (npc.id === 'kobold_chief' ? 'koboldChief' : npc.monster) : 'orc';
-    const fig = paintCreature(id, H * 2.5, LIGHTS.torch, 3);
-    // crop to head & shoulders
-    g.drawImage(fig.canvas, W / 2 - fig.ox, H * 1.02 - fig.oy + H * 1.25);
+    const fh = H * 3.2;
+    const fig = paintCreature(id, fh, LIGHTS.torch, 3);
+    // crop to head & shoulders (small humanoids carry their head at ~0.8 of their height)
+    g.drawImage(fig.canvas, W / 2 - fig.ox, H * 0.46 + fh * 0.79 - fig.oy);
     vignette(g, W, H, 0.55);
   } else {
     const ch = { race: npc.race ?? 'human', gender: npc.gender ?? 'male', look: npc.look ?? {}, name: npc.name };

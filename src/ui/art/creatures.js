@@ -10,8 +10,8 @@ import { rgba, mix, glow, linGrad, poly, texture, contactShadow, rngOf, makeCanv
  */
 
 const SPECIES = {
-  kobold: { plan: 'humanoid', skin: '#8a4a2a', head: 'kobold', tail: true, build: 0.85, legs: 'digi', cloth: '#4a3a28', weapon: 'spear', eyes: '#ffc030', hunch: 0.12 },
-  koboldChief: { plan: 'humanoid', skin: '#7a6a5a', head: 'kobold', tail: true, build: 0.95, legs: 'digi', cloth: '#6a1e1a', weapon: 'sword', eyes: '#ffc030', hunch: 0.18, cape: '#5a1a14', helm: true },
+  kobold: { plan: 'humanoid', scaly: true, skin: '#8a4a2a', head: 'kobold', tail: true, build: 0.85, legs: 'digi', cloth: '#4a3a28', weapon: 'spear', eyes: '#ffc030', hunch: 0.12 },
+  koboldChief: { plan: 'humanoid', scaly: true, skin: '#7a6a5a', head: 'kobold', tail: true, build: 0.95, legs: 'digi', cloth: '#6a1e1a', weapon: 'sword', eyes: '#ffc030', hunch: 0.18, cape: '#5a1a14', helm: true },
   goblin: { plan: 'humanoid', skin: '#7a8a3a', head: 'goblin', build: 0.85, cloth: '#4a3020', weapon: 'sword', eyes: '#ffe040', hunch: 0.1 },
   orc: { plan: 'humanoid', skin: '#5e6e44', head: 'orc', build: 1.15, cloth: '#3a2a1c', armor: 'scraps', weapon: 'axe', eyes: '#ff3a18', hunch: 0.15 },
   orcLeader: { plan: 'humanoid', skin: '#56663e', head: 'orc', build: 1.3, cloth: '#2a1a12', armor: 'plate', weapon: 'axe', eyes: '#ff3a18', hunch: 0.1, cape: '#4a1010' },
@@ -19,7 +19,7 @@ const SPECIES = {
   hobgoblinChief: { plan: 'humanoid', skin: '#a04a22', head: 'hobgoblin', build: 1.2, cloth: '#1a1612', armor: 'plate', weapon: 'sword', shield: 'kite', eyes: '#ffa020', cape: '#1a1612', helm: true },
   gnoll: { plan: 'humanoid', skin: '#9a7a4a', head: 'gnoll', build: 1.15, legs: 'digi', cloth: '#3a2e22', armor: 'scraps', weapon: 'flail', eyes: '#ffd040', hunch: 0.2, fur: true },
   bugbear: { plan: 'humanoid', skin: '#7a5a30', head: 'bugbear', build: 1.35, cloth: '#3a2a1a', armor: 'scraps', weapon: 'mace', eyes: '#ffc040', hunch: 0.15, fur: true },
-  lizardMan: { plan: 'humanoid', skin: '#4a6a3a', head: 'lizard', tail: true, build: 1.05, cloth: '#4a3a20', weapon: 'spear', shield: 'round', eyes: '#ffe040' },
+  lizardMan: { plan: 'humanoid', scaly: true, skin: '#4a6a3a', head: 'lizard', tail: true, build: 1.05, cloth: '#4a3a20', weapon: 'spear', shield: 'round', eyes: '#ffe040' },
   thug: { plan: 'humanoid', skin: '#c08a6a', head: 'hood', hood: '#3a3228', build: 1.0, cloth: '#4a3a2a', armor: 'vest', weapon: 'club', eyes: null },
   bandit: { plan: 'humanoid', skin: '#b07a5a', head: 'hood', hood: '#4a3a24', build: 1.0, cloth: '#5a4a30', armor: 'vest', weapon: 'sword', eyes: null },
   buccaneer: { plan: 'humanoid', skin: '#b07a5a', head: 'bandana', bandana: '#8a1a1a', build: 1.0, cloth: '#c8b8a0', armor: 'vest', weapon: 'sword', eyes: null },
@@ -150,10 +150,12 @@ function weapon(g, kind, hx, hy, h, L, ang = -0.35) {
   const metal = (x0, x1) => linGrad(g, x0, 0, x1, 0, [[0, '#f0f0f8'], [0.4, '#9a9ca8'], [1, '#3a3c44']]);
   const wood = (x0, x1) => linGrad(g, x0, 0, x1, 0, [[0, '#8a6038'], [1, '#2a1a0c']]);
   if (kind === 'spear') {
-    g.fillStyle = wood(-h * 0.012, h * 0.012);
-    g.fillRect(-h * 0.012, -h * 0.75, h * 0.024, h * 1.05);
+    g.fillStyle = wood(-h * 0.016, h * 0.016);
+    g.fillRect(-h * 0.016, -h * 0.75, h * 0.032, h * 1.05);
+    g.fillStyle = '#5a4630';
+    g.fillRect(-h * 0.02, -h * 0.72, h * 0.04, h * 0.03);
     g.fillStyle = metal(-h * 0.03, h * 0.03);
-    poly(g, [[0, -h * 0.9], [h * 0.035, -h * 0.76], [0, -h * 0.72], [-h * 0.035, -h * 0.76]]);
+    poly(g, [[0, -h * 0.93], [h * 0.045, -h * 0.77], [0, -h * 0.72], [-h * 0.045, -h * 0.77]]);
     g.fill();
   } else if (kind === 'sword') {
     g.fillStyle = metal(-h * 0.02, h * 0.02);
@@ -1046,6 +1048,36 @@ export function dragonHead(g, cx, cy, s, col, eyeCol, L) {
   glow(g, cx, cy, s * 2.4, '#ff9a30', 0.18);
 }
 
+// ------------------------------------------------------------------ surface detail
+
+/** Scales or fur strokes over the whole silhouette (kept inside its alpha). */
+function surfaceDetail(c, h, kind, seed) {
+  const W = c.width;
+  const H = c.height;
+  const t = makeCanvas(W, H);
+  const tg = t.getContext('2d');
+  if (kind === 'scales') scales(tg, 0, 0, W, H, Math.max(4.5, h * 0.03), 'rgba(20,8,2,0.5)', 'rgba(255,220,170,0.2)');
+  else {
+    const R = rngOf(seed * 3 + 1);
+    tg.lineCap = 'round';
+    for (let i = 0; i < W * H * 0.004; i++) {
+      const x = R() * W;
+      const y = R() * H;
+      const len = h * (0.012 + R() * 0.02);
+      const a = Math.PI * 0.5 + (R() - 0.5) * 0.8;
+      tg.strokeStyle = R() < 0.5 ? 'rgba(0,0,0,0.35)' : 'rgba(255,235,200,0.18)';
+      tg.lineWidth = Math.max(0.7, h * 0.003);
+      tg.beginPath();
+      tg.moveTo(x, y);
+      tg.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);
+      tg.stroke();
+    }
+  }
+  tg.globalCompositeOperation = 'destination-in';
+  tg.drawImage(c, 0, 0);
+  c.getContext('2d').drawImage(t, 0, 0);
+}
+
 // ------------------------------------------------------------------ lighting
 
 /**
@@ -1134,6 +1166,7 @@ export function paintCreature(id, h, light, seed = 1) {
   const emit = EMIT;
   EMIT = null;
   g.setTransform(1, 0, 0, 1, 0, 0);
+  if (sp.scaly || sp.fur || sp.plan === 'quad') surfaceDetail(c, h, sp.scaly ? 'scales' : 'fur', seed);
   lightFigure(c, h, L, sp.plan === 'wraith' && sp.ghostly);
   for (const e of emit) {
     g.setTransform(e.m);

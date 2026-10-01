@@ -43,6 +43,13 @@ export default class DialogueScene extends Scene {
     this._buildDom();
     this.listen('input:action', ({ action }) => this._onAction(action));
 
+    if (params.view === 'npcs') {
+      clear(this.root);
+      const grid = h('div', { style: { position: 'absolute', inset: '0', display: 'grid', gridTemplateColumns: 'repeat(10, 1fr)', gap: '6px', padding: '6px', background: '#222' } });
+      for (const n of Object.values(NPCS)) grid.append(h('div', { style: { color: '#fff', font: '11px sans-serif' } }, [h('img', { src: framedPortraitURL(n), style: { width: '100%' } }), n.id]));
+      this.root.append(grid);
+      return;
+    }
     if (params.view === 'bestiary' || params.view === 'settings') {
       this._debugSheet(params.view, params);
       return;
@@ -52,6 +59,7 @@ export default class DialogueScene extends Scene {
       await this._showArt({ setting: 'library', light: 'dim' }, 'The Adventurer\'s Journal');
       this.openJournal({ entry: Number(params.entry) || null, tab: params.tab, standalone: true });
       this.ctx.audio.playMusic?.('town');
+      await this._decoded();
       return;
     }
     const encId = params.encounter ?? (params.script ? null : 'kobolds_1');
@@ -67,6 +75,12 @@ export default class DialogueScene extends Scene {
       await this.encounterIntro({ parley: params.parley === '1' || params.parley === 1 });
       ctx.audio.playMusic?.('encounter');
     }
+    await this._decoded();
+  }
+
+  /** Wait for every image in the screen to decode (deterministic first frame). */
+  _decoded() {
+    return Promise.all([...this.root.querySelectorAll('img')].map((i) => i.decode?.().catch(() => {})));
   }
 
   // ------------------------------------------------------------------ debug
@@ -355,8 +369,10 @@ export default class DialogueScene extends Scene {
     this.nodeId = id;
     const art = { ...(s.art ?? {}), ...(node.art ?? {}) };
     const kind = art.npc ? NPCS[art.npc]?.kind : null;
-    const figure = art.monster ?? (kind === 'ghost' ? 'ghostKnight' : kind === 'dragon' ? 'tyranthraxus' : null);
-    const spec = { setting: art.setting ?? 'slums', light: art.light, monsters: figure ? [{ id: figure, count: art.monster ? art.count ?? 1 : 1 }] : null, deity: art.deity };
+    const figure = art.monster ?? (kind === 'ghost' ? 'ghostKnight' : kind === 'dragon' ? 'tyranthraxus' : kind === 'monster' ? (art.npc === 'kobold_chief' ? 'koboldChief' : NPCS[art.npc].monster) : null);
+    const monsters = figure ? [{ id: figure, count: art.monster ? art.count ?? 1 : 1 }] : null;
+    if (kind === 'monster' && !art.monster) monsters.push({ id: NPCS[art.npc].monster, count: 2 });
+    const spec = { setting: art.setting ?? 'slums', light: art.light, monsters, deity: art.deity };
     await this._showArt(spec, s.title, s.subtitle ?? '');
     this._setSpeaker(node.speaker ?? null);
     if (node.do) apply(this.ctx, node.do);
