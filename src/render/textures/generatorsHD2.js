@@ -135,7 +135,7 @@ const PALETTES = {
  * @param {{seed?:number, rows?:number, minW?:number, maxW?:number, palette?:string, mortarW?:number,
  *   chamfer?:number, chips?:number, erosion?:number, moss?:number, soot?:number, mortar?:number[], sheen?:number}} o
  */
-export function ashlar2({ seed = 21, rows = 10, minW = 0.12, maxW = 0.26, palette = 'warm', mortarW = 0.0035, chamfer = 0.004, chips = 1, erosion = 1, moss = 0.3, soot = 0, mortar = null, sheen = 0, joints = true } = {}) {
+export function ashlar2({ seed = 21, rows = 10, minW = 0.12, maxW = 0.26, palette = 'warm', mortarW = 0.0035, chamfer = 0.004, chips = 1, erosion = 1, moss = 0.3, soot = 0, mortar = null, sheen = 0, joints = true, cracks = 0 } = {}) {
   const lay0 = layout({ rows, seed, minW, maxW });
   // jointless variant (single dressed blocks: jambs, voussoirs, quoins carry their own geometry bevels)
   const lay = joints ? lay0 : (u, v) => ({ row: 0, col: 0, x0: -2, x1: 3, y0: -2, y1: 3, uu: u, v });
@@ -194,9 +194,20 @@ export function ashlar2({ seed = 21, rows = 10, minW = 0.12, maxW = 0.26, palett
     let spall = 0;
     if (sB > 0.55 - 0.1 * erosion) {
       const sp = worley(u * 18 + (chipField - 0.5) * 1.6, v * 18 + (mid - 0.5) * 1.6, 18, seed + 13);
-      spall = sp.id > 0.8 - 0.07 * erosion ? smooth(0.36, 0.33, sp.f1 + (fine - 0.5) * 0.25) : 0;
+      spall = sp.id > 0.86 - 0.05 * erosion ? smooth(0.37, 0.28, sp.f1 + (fine - 0.5) * 0.25) : 0;
     }
-    let face = 0.62 + tilt + (big - 0.5) * 0.05 + dressing + tool + (micro - 0.5) * 0.012 - spall * 0.05;
+    // hairline cracks: a few stones are split by a wandering fracture (each its own angle / path)
+    let crk = 0;
+    if (cracks && sC < cracks * 0.45) {
+      const ang = sid * 6.283;
+      const lx = dxl / bw - 0.5;
+      const ly = dyt / bh - 0.5;
+      const along = lx * Math.cos(ang) + ly * Math.sin(ang);
+      const across = -lx * Math.sin(ang) + ly * Math.cos(ang) + (hash2(L.row, L.col, seed + 83) - 0.5) * 0.4 + (mid - 0.5) * 0.35 + (fine - 0.5) * 0.08;
+      const reach = 1 - smooth(0.25 + sB * 0.3, 0.5 + sB * 0.3, Math.abs(along + (sA - 0.5) * 0.4));
+      crk = (1 - smooth(0.0, 0.012 + fine * 0.01, Math.abs(across))) * reach;
+    }
+    let face = 0.62 + tilt + (big - 0.5) * 0.05 + dressing + tool + (micro - 0.5) * 0.012 - spall * 0.05 - crk * 0.05;
     // chip surface: fractured, lower, rougher
     const chipH = 0.62 - 0.06 - chipDepth * 3 + (fine - 0.5) * 0.08 + (micro - 0.5) * 0.02;
     const top = inChip && chipEdge < 1 ? lerp(chipH, face, chipEdge) : face;
@@ -216,7 +227,7 @@ export function ashlar2({ seed = 21, rows = 10, minW = 0.12, maxW = 0.26, palett
     // fresh stone in chips and spalls; slight lightening on worn arrises
     const fresh = inChip ? 1 - chipEdge : 0;
     // (kept subtle: a strong fresh tint outlines every block like a stencil)
-    c = mul3(c, 1 + fresh * 0.05 + spall * 0.04 + (1 - cham) * 0.04 * inStone);
+    c = mul3(c, 1 + fresh * 0.05 + spall * 0.04 + (1 - cham) * 0.04 * inStone - crk * 0.45);
     c = [c[0] * (1 + fresh * 0.01), c[1], c[2] * (1 - fresh * 0.015)];
     // weathering: rain streaks running down, lichen, crusts, soot
     const streak = fStreak(u, v);
@@ -242,7 +253,7 @@ export function ashlar2({ seed = 21, rows = 10, minW = 0.12, maxW = 0.26, palett
  * Rough-hewn rock (kobold warrens): pick-scarred tunnel walls with bedding
  * strata, fractures, wet seeps and pale mineral veins. No joints. Tile ≈ 3 m.
  */
-export function hewnRock({ seed = 241, base = [0.33, 0.29, 0.24], floor = false } = {}) {
+export function hewnRock({ seed = 241, base = [0.33, 0.29, 0.24], floor = false, ceiling = false } = {}) {
   const fBig = bake(128, 4, { octaves: 5, seed: seed + 1, warp: 0.5 });
   const fMid = bake(256, 14, { octaves: 4, seed: seed + 2, warp: 0.3 });
   const fFine = bake(512, 60, { octaves: 3, seed: seed + 3 });
@@ -258,8 +269,8 @@ export function hewnRock({ seed = 241, base = [0.33, 0.29, 0.24], floor = false 
     const sv = floor ? big * 9 : v * 7 + big * 2.2 + u * 0.6;
     const layer = Math.floor(sv);
     const lf = sv - layer;
-    const strataStep = smooth(0.0, 0.08, lf) * 0.06;
-    const layerTone = 0.85 + hash2(layer, 1, seed) * 0.3;
+    const strataStep = ceiling ? 0 : smooth(0.0, 0.08, lf) * 0.06;
+    const layerTone = ceiling ? 0.96 + hash2(layer, 1, seed) * 0.08 : 0.85 + hash2(layer, 1, seed) * 0.3;
     // pick scars: short diagonal gouges
     const pk = worley(u * 34, v * 22, 34, seed + 7);
     const gouge = floor ? 0 : (1 - smooth(0.0, 0.18, Math.abs(pk.f2 - pk.f1))) * 0.5 * (pk.id > 0.4 ? 1 : 0);
@@ -271,10 +282,11 @@ export function hewnRock({ seed = 241, base = [0.33, 0.29, 0.24], floor = false 
     c = mul3(c, 1 - crack * 0.55 + gouge * 0.08);
     const vein = (1 - smooth(0.0, 0.012, Math.abs(fVein(u, v) - 0.5))) * smooth(0.45, 0.65, big);
     c = mix3(c, [0.5, 0.48, 0.43], vein * 0.08);
-    const seep = smooth(0.55, 0.8, fSeep(u, v));
+    // seeps darken; only the wettest cores of a seep lose roughness (and never on the roof: no glints)
+    const seep = ceiling ? smooth(0.6, 0.85, fSeep(u, v)) * 0.5 : smooth(0.55, 0.8, fSeep(u, v));
     c = mix3(c, mul3(c, 0.55), seep * 0.6);
     c = mix3(c, [0.2, 0.26, 0.14], smooth(0.68, 0.8, mid) * seep * 0.6);
-    const r = clamp01(0.86 + (fine - 0.5) * 0.1 - seep * 0.45);
+    const r = ceiling ? clamp01(0.96 + (fine - 0.5) * 0.04) : clamp01(0.9 + (fine - 0.5) * 0.08 - smooth(0.75, 0.95, seep) * 0.3);
     return { c, h, r };
   };
 }

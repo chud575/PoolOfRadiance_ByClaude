@@ -123,7 +123,7 @@ export default class ExploreScene extends Scene {
       const skyFill = night ? new THREE.Color(k.sky) : new THREE.Color(k.sky).lerp(new THREE.Color(0xd6dce6), 0.5);
       // sunlit paving bounces warm light up into the shade
       const bounce = night ? new THREE.Color(k.ground).multiplyScalar(1.2) : new THREE.Color(k.ground).lerp(new THREE.Color(0x9a8064), 0.75).lerp(new THREE.Color(k.sun), 0.15);
-      this.hemi = new THREE.HemisphereLight(skyFill, bounce, k.hemi * (night ? 3.2 : 2.0));
+      this.hemi = new THREE.HemisphereLight(skyFill, bounce, k.hemi * (night ? 2.5 : 2.25));
       s.add(this.hemi);
       // under a roof on a city block the ambient turns warm and dim (lamplit plaster, not open sky)
       this._hemiOut = { sky: skyFill.clone(), ground: bounce.clone(), i: this.hemi.intensity };
@@ -149,8 +149,10 @@ export default class ExploreScene extends Scene {
       this.sun.shadow.radius = 2.5;
       s.add(this.sun, this.sun.target);
       // cool sky bounce from the side away from the sun (no shadows)
-      this.fill = new THREE.DirectionalLight(night ? 0x5a6a9a : 0x9cb2d8, night ? 0.3 : k.sunI * 0.14);
-      this.fill.position.set(-this.sunDir.x * 50, 30, -this.sunDir.z * 50);
+      this.fill = new THREE.DirectionalLight(night ? 0x5a6a9a : 0x9cb2d8, night ? 0.5 : k.sunI * 0.18);
+      // by night a high, cool sky-glow from the north as well: walls facing away from the moon still read
+      if (night) this.fill.position.set(-this.sunDir.x * 30, 45, -40);
+      else this.fill.position.set(-this.sunDir.x * 50, 30, -this.sunDir.z * 50);
       s.add(this.fill);
       s.fog = new THREE.FogExp2(k.fog, k.fogDensity * (this.map.harbour ? 0.38 : 0.72));
       setSurfaceAtmosphere({
@@ -168,7 +170,7 @@ export default class ExploreScene extends Scene {
       // raised ambient floor so silhouettes always read, even far from a torch; underground it is a
       // cool counter-light (cold air, wet stone) against the warm torches — the warrens greener,
       // Bane's temple a dead grey-green over a blood-red floor bounce
-      const amb = { warrens: [0x4a7a76, 0x1e160c, 4.5], bane: [0x46524c, 0x300a08, 5.0] }[ts.variant] ?? (dungeon ? [0x4a6a90, 0x1c150e, 1.8] : [0xeedcc8, 0x3a2a1c, 1.45]);
+      const amb = { warrens: [0x4a7a76, 0x1e160c, 4.5], bane: [0x46524c, 0x300a08, 5.0] }[ts.variant] ?? (dungeon ? [0x4a6a90, 0x1c150e, 1.8] : this.hour > 6.5 && this.hour < 18.5 ? [0xb4c4de, 0x6e4c30, 1.75] : [0xeedcc8, 0x5a3e28, 1.45]); // interiors by day: cool sky fill from the windows, warm hearth/board bounce up onto the joists
       this.hemi = new THREE.HemisphereLight(amb[0], amb[1], amb[2]);
       s.add(this.hemi);
       if (dungeon) {
@@ -213,7 +215,7 @@ export default class ExploreScene extends Scene {
     }
     // party lantern: carried a little ahead and to the right, warm, ~5 m reach
     // outdoors it only pools on the nearest walls so the moonlight stays dominant
-    const lanternI = ts.outdoors ? this.night * 9 : ts.variant === 'bane' ? 13 : ts.id === 'dungeon' ? 9 : 2;
+    const lanternI = ts.outdoors ? this.night * 9 : ts.variant === 'bane' ? 13 : ts.id === 'dungeon' ? 11 : 2;
     this.lantern = new THREE.PointLight(0xffb468, lanternI, ts.outdoors ? 8 : 13, 2);
     this.lantern.position.set(0.45, -0.25, -0.15);
     this.lantern.userData.base = lanternI;
@@ -398,17 +400,17 @@ export default class ExploreScene extends Scene {
       }
       if (!src.lit) continue;
       if (src.kind === 'hearth') {
-        for (const [dx, sc] of [[-0.22, 0.42], [0.05, 0.55], [0.26, 0.38]]) flames.push({ pos: src.pos.clone().add(new THREE.Vector3(src.N.z * dx, -0.1, -src.N.x * dx)), scale: sc });
+        for (const [dx, sc] of [[-0.22, 0.42], [0.05, 0.55], [0.26, 0.38]]) flames.push({ pos: src.pos.clone().add(new THREE.Vector3(src.N.z * dx, -0.1, -src.N.x * dx)), scale: sc, seed: src.seed + dx * 10 });
         glows.push({ pos: src.pos.clone().add(new THREE.Vector3(0, 0.3, 0)), size: 1.6, color: 0xff7a30, seed: src.seed, opacity: 0.5 });
         continue;
       }
       if (src.kind === 'brazier') {
-        for (const [dx, dz, sc] of [[0, 0, 0.3], [0.09, 0.05, 0.2], [-0.08, -0.06, 0.18]]) flames.push({ pos: src.pos.clone().add(new THREE.Vector3(dx, -0.08, dz)), scale: sc, color: src.flameColor });
-        glows.push({ pos: src.pos.clone().add(new THREE.Vector3(0, 0.2, 0)), size: 0.8, color: src.lightColor ?? 0xff8a40, seed: src.seed, opacity: 0.35 });
+        for (const [dx, dz, sc] of [[0, 0, 0.56], [0.14, 0.09, 0.26]]) flames.push({ pos: src.pos.clone().add(new THREE.Vector3(dx, -0.12, dz)), scale: sc, color: src.flameColor, seed: src.seed + dx * 30 });
+        glows.push({ pos: src.pos.clone().add(new THREE.Vector3(0, 0.2, 0)), size: 0.8, color: src.lightColor ?? 0xff8a40, seed: src.seed, opacity: 0.16 });
         glows.push({ pos: src.pos.clone().add(new THREE.Vector3(0, 0.3, 0)), size: 2.2, color: src.lightColor ?? 0xff8a40, seed: src.seed + 3, opacity: 0.06 });
         continue;
       }
-      if (src.kind !== 'lamp') flames.push({ pos: src.pos.clone().add(new THREE.Vector3(0, candle ? 0 : -0.1, 0)), scale: candle ? 0.07 : 0.24, color: src.flameColor });
+      if (src.kind !== 'lamp') flames.push({ pos: src.pos.clone().add(new THREE.Vector3(0, candle ? 0 : -0.1, 0)), scale: candle ? 0.07 : 0.3, color: src.flameColor, seed: src.seed });
       glows.push({ pos: src.pos, size: candle ? 0.3 : src.kind === 'lamp' ? 0.9 : this.tileset.outdoors ? 0.75 : 0.55, color: src.lightColor ?? (candle ? 0xffb868 : src.kind === 'lamp' ? 0xffc070 : 0xff9a48), seed: src.seed, opacity: indoorGlow });
       // night air: a wide, faint halo of light scattered in the damp around each lamp
       if (this.tileset.outdoors && this.night > 0.3 && !candle) glows.push({ pos: src.pos, size: src.kind === 'lamp' ? 3.4 : 2.6, color: 0xff9a50, seed: src.seed + 3, opacity: 0.16 * this.night });
@@ -446,7 +448,13 @@ export default class ExploreScene extends Scene {
       if (this.sunShafts) this.scene3d.add(this.sunShafts);
     }
     if (this.tileset.outdoors || !this.sun || !this.sun.intensity) return;
-    this.shafts = buildLightShafts(this.block.windows.filter((w) => !w.upper), this.sunDir, { strength: 0.032, length: 3.6 });
+    if (this.tileset.id === 'interior') {
+      // daylight through every window: soft cool shafts of skylight slanting down into the room
+      // (direct sun only enters on its own side; the rest of the sky still pours in)
+      const UP = new THREE.Vector3(0, 1, 0);
+      const dirFor = (w) => w.N.clone().multiplyScalar(0.72).addScaledVector(UP, 0.7).normalize();
+      this.shafts = buildLightShafts(this.block.windows.filter((w) => !w.upper), dirFor, { color: 0xd8e6ff, strength: 0.03, length: 4.2 });
+    } else this.shafts = buildLightShafts(this.block.windows.filter((w) => !w.upper), this.sunDir, { strength: 0.032, length: 3.6 });
     if (this.shafts) this.scene3d.add(this.shafts);
   }
 

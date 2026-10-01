@@ -154,12 +154,19 @@ const SKY_FRAG = /* glsl */ `
       col += (sc * star * 2.2 + vec3(0.32, 0.36, 0.5) * mw * 0.09) * uNight * smoothstep(-0.02, 0.18, y);
       // moon
       float mm = dot(d, uMoonDir);
-      float disk = smoothstep(0.99905, 0.99925, mm);
-      vec2 mp = vec2(dot(d - uMoonDir, normalize(cross(uMoonDir, vec3(0,1,0)))), d.y - uMoonDir.y) * 40.0;
-      float crater = fbm(mp * 3.0 + 5.0);
-      vec3 moonCol = vec3(1.0, 0.97, 0.9) * (0.55 + 0.45 * crater) * 1.5;
+      // a small disc (~1.1 deg) with maria, ray-crater speckle and limb darkening; held below the
+      // bloom clip so it reads as a moon, not a streetlamp
+      float disk = smoothstep(0.99979, 0.99983, mm);
+      vec3 mr = normalize(cross(uMoonDir, vec3(0.0, 1.0, 0.0)));
+      vec3 mu2 = cross(mr, uMoonDir);
+      vec2 q = vec2(dot(d, mr), dot(d, mu2)) / 0.0185;
+      float rq = length(q);
+      float maria = smoothstep(0.48, 0.62, fbm(q * 1.6 + vec2(3.1, 7.7)));
+      float crater = fbm(q * 7.0 + 5.0);
+      float limb = sqrt(max(0.0, 1.0 - rq * rq));
+      vec3 moonCol = vec3(0.98, 0.96, 0.9) * (0.62 + 0.38 * crater) * (1.0 - maria * 0.38) * (0.55 + 0.45 * limb) * 0.95;
       col = mix(col, moonCol, disk * uNight);
-      col += vec3(0.5, 0.6, 0.85) * (pow(max(mm, 0.0), 1400.0) * 0.35 + pow(max(mm, 0.0), 160.0) * 0.08 + pow(max(mm, 0.0), 14.0) * 0.06) * uNight;
+      col += vec3(0.5, 0.6, 0.85) * (pow(max(mm, 0.0), 9000.0) * 0.12 + pow(max(mm, 0.0), 600.0) * 0.05 + pow(max(mm, 0.0), 14.0) * 0.05) * uNight;
       // faint warm glow of Phlan's fires on the horizon
       col += vec3(0.16, 0.08, 0.04) * exp(-max(y, 0.0) * 22.0) * uNight;
     }
@@ -232,7 +239,13 @@ export function createSkyDome(o = {}) {
 /** Shared uniforms for all flame billboards. */
 export const FLAME_UNIFORMS = { uTime: { value: 0 } };
 let flameMat = null;
-/** Additive, camera-facing (Y-axis) animated flame material. */
+/**
+ * Layered shader flame (additive, Y-axis billboard): a noise-scrolled body made of three licking
+ * tongues that sway and flicker independently, a black-body colour ramp (deep orange rim → amber →
+ * yellow → near-white core, kept below the bloom clip), a faint blue root, and a dim smoke wisp
+ * curling off the tip. Brightness and height follow the same deterministic flicker() as the
+ * flame's point light (per-instance aSeed), so the light on the walls breathes with the fire.
+ */
 export function getFlameMaterial() {
   if (flameMat) return flameMat;
   flameMat = new THREE.ShaderMaterial({
@@ -242,7 +255,9 @@ export function getFlameMaterial() {
     fog: false,
     uniforms: FLAME_UNIFORMS,
     vertexShader: /* glsl */ `
-      varying vec2 vUv; varying float vSeed; varying vec3 vTint;
+      uniform float uTime;
+      attribute float aSeed;
+      varying vec2 vUv; varying float vSeed; varying vec3 vTint; varying float vFlick; varying float vPx;
       void main(){
         vUv = uv;
         vTint = vec3(1.0);
@@ -255,50 +270,105 @@ export function getFlameMaterial() {
         #endif
         vec4 c = mm * vec4(0.0, 0.0, 0.0, 1.0);
         vSeed = fract(sin(dot(c.xyz, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+        float s = aSeed;
+        // == flicker(time, seed) in lighting.js
+        vFlick = 0.86 + 0.08 * sin(uTime * 13.0 + s) + 0.05 * sin(uTime * 29.7 + s * 3.0) + 0.04 * sin(uTime * 7.3 + s * 1.7) - 0.03 * max(0.0, sin(uTime * 3.1 + s * 5.0));
         vec3 camR = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
         vec3 up = vec3(0.0, 1.0, 0.0);
         float sx = length(mm[0].xyz);
-        float sy = length(mm[1].xyz);
+        float sy = length(mm[1].xyz) * (0.88 + 0.14 * vFlick);
         vec3 wp = c.xyz + camR * position.x * sx + up * position.y * sy;
-        gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
+        vec4 mv = viewMatrix * vec4(wp, 1.0);
+        // approx. on-screen size in pixels (tiny distant flames get simpler, softer shapes)
+        vPx = sx * projectionMatrix[1][1] * 450.0 / max(-mv.z, 0.05);
+        gl_Position = projectionMatrix * mv;
       }`,
     fragmentShader: /* glsl */ `
-      uniform float uTime; varying vec2 vUv; varying float vSeed; varying vec3 vTint;
+      uniform float uTime; varying vec2 vUv; varying float vSeed; varying vec3 vTint; varying float vFlick; varying float vPx;
       float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       float n(vec2 x){ vec2 i = floor(x); vec2 f = fract(x); f = f*f*(3.0-2.0*f);
         return mix(mix(h(i), h(i+vec2(1,0)), f.x), mix(h(i+vec2(0,1)), h(i+vec2(1,1)), f.x), f.y); }
+      float fbm(vec2 p){ float s = 0.0; float a = 0.5; for (int i = 0; i < 4; i++){ s += a * n(p); p = p * 2.07 + vec2(1.7, 9.2); a *= 0.5; } return s; }
+      vec3 ramp(float k){
+        vec3 c = mix(vec3(0.42, 0.05, 0.008), vec3(0.95, 0.27, 0.03), smoothstep(0.0, 0.32, k));
+        c = mix(c, vec3(1.0, 0.56, 0.12), smoothstep(0.28, 0.6, k));
+        c = mix(c, vec3(1.0, 0.82, 0.42), smoothstep(0.58, 0.85, k));
+        c = mix(c, vec3(1.0, 0.93, 0.74), smoothstep(0.85, 1.0, k));
+        return c;
+      }
+      // one tongue: rounded root, tapering licking tip; returns soft coverage
+      float tongue(float x, float y, float xo, float ht, float wd){
+        float yy = y / ht;
+        float w = wd * pow(clamp(1.0 - yy, 0.0, 1.0), 0.6) * (0.55 + 0.45 * smoothstep(-0.12, 0.22, yy));
+        return (1.0 - smoothstep(w * 0.12, w * 1.1 + 0.03, abs(x - xo))) * step(0.0, 1.0 - yy);
+      }
       void main(){
         vec2 uv = vUv;
-        float t = uTime * 2.2 + vSeed * 17.0;
-        float turb = n(vec2(uv.x * 4.0, uv.y * 3.0 - t * 1.6)) * 0.6 + n(vec2(uv.x * 9.0, uv.y * 7.0 - t * 3.1)) * 0.4;
-        float x = (uv.x - 0.5) * 2.0 + (turb - 0.5) * 0.55 * uv.y;
-        float y = uv.y;
-        float w = mix(0.62, 0.02, pow(y, 0.9));
-        float shape = 1.0 - smoothstep(w * 0.55, w, abs(x));
-        shape *= smoothstep(0.0, 0.12, y) * (1.0 - smoothstep(0.55, 1.0, y + (turb - 0.5) * 0.4));
-        float core = (1.0 - smoothstep(0.0, w * 0.5, abs(x))) * (1.0 - smoothstep(0.1, 0.55, y));
-        vec3 col = mix(vec3(1.0, 0.25, 0.04), vec3(1.0, 0.62, 0.18), shape);
-        col = mix(col, vec3(1.0, 0.93, 0.7), core);
-        // tinted (unholy / magical) fire: instance colour replaces the black-body ramp
+        float t = uTime + vSeed * 17.0;
+        float x = (uv.x - 0.5) * 2.0;
+        float y = uv.y / 0.74;          // body fills the lower ~3/4; smoke above
+        float detail = smoothstep(6.0, 30.0, vPx);
+        // rising turbulence, stronger towards the tip
+        float d1 = fbm(vec2(x * 1.7, y * 2.3 - t * 3.6));
+        float d2 = fbm(vec2(x * 3.9 + 3.1, y * 4.4 - t * 6.1));
+        float sway = sin(t * 2.1 + vSeed * 6.0) * 0.07 * y + (n(vec2(t * 1.3, vSeed * 9.0)) - 0.5) * 0.16 * y;
+        float xd = x + ((d1 - 0.5) * 0.75 + (d2 - 0.5) * 0.3 * detail) * y + sway;
+        // three tongues: a tall centre and two shorter flankers that part as they rise
+        float h0 = 0.86 + 0.14 * n(vec2(t * 4.3, 1.0 + vSeed * 5.0));
+        float h1 = 0.52 + 0.22 * n(vec2(t * 5.1, 7.0 + vSeed * 3.0));
+        float h2 = 0.48 + 0.24 * n(vec2(t * 4.7, 13.0 + vSeed * 7.0));
+        float body = tongue(xd, y, 0.0, h0 * vFlick, 0.5);
+        body = max(body, tongue(xd, y, -0.16 - 0.2 * y, h1, 0.4) * detail);
+        body = max(body, tongue(xd, y, 0.15 + 0.22 * y, h2, 0.38) * detail);
+        body = max(body, tongue(xd, y, 0.0, h0 * 0.8, 0.62) * (1.0 - detail));
+        // licks break away near the tip
+        body *= smoothstep(0.12, 0.55, d2 + (1.0 - y) * 0.8);
+        // temperature: hottest low in the middle, cooling outward and upward
+        float core = (1.0 - smoothstep(0.0, 0.26, abs(xd))) * (1.0 - smoothstep(0.05, 0.62, y)) * smoothstep(0.0, 0.08, y);
+        float k = clamp(body * (0.5 - y * 0.32) + core * 0.6 + (d1 - 0.5) * 0.15, 0.0, 1.0);
+        vec3 col = ramp(k);
+        // a dim blue root where the fuel is
+        float root = (1.0 - smoothstep(0.0, 0.11, y)) * (1.0 - smoothstep(0.0, 0.3, abs(xd))) * body;
+        col = mix(col, vec3(0.25, 0.32, 0.9), root * 0.35);
+        // tinted (unholy / magical) fire: the tint drives the ramp instead of black-body colours
         float tintAmt = step(vTint.r + vTint.g + vTint.b, 2.99);
-        vec3 tc = mix(vTint * 0.55, vTint, shape);
-        tc = mix(tc, mix(vTint, vec3(1.0), 0.55), core);
-        col = mix(col, tc * 0.55, tintAmt); // saturated tints bloom hard: keep them dimmer
-        float a = shape * (0.75 + 0.25 * turb);
-        gl_FragColor = vec4(col * a * 2.2, a);
+        vec3 tc = mix(vTint * 0.28, vTint * 0.8, smoothstep(0.0, 0.55, k));
+        tc = mix(tc, mix(vTint, vec3(1.0), 0.5), smoothstep(0.7, 1.0, k));
+        col = mix(col, tc * 0.75, tintAmt);
+        float I = body * (0.55 + 0.85 * k) * (0.85 + 0.15 * vFlick);
+        // smoke wisp: a faint curl of lit haze rising off the tip
+        float sy = (uv.y - 0.5) / 0.5;
+        float sx = x + (fbm(vec2(x * 2.0, uv.y * 3.0 - t * 1.2)) - 0.5) * 1.2 * sy + sin(uv.y * 7.0 - t * 1.7) * 0.12 * sy;
+        float wisp = (1.0 - smoothstep(0.04, 0.14 + 0.2 * sy, abs(sx))) * smoothstep(0.0, 0.3, sy) * (1.0 - smoothstep(0.5, 1.0, sy));
+        wisp *= smoothstep(0.35, 0.7, fbm(vec2(x * 3.0, uv.y * 5.0 - t * 2.0))) * detail * (1.0 - tintAmt * 0.6);
+        vec3 outc = col * I * 1.35 + vec3(0.11, 0.095, 0.085) * wisp * 0.35;
+        float a = clamp(body + wisp * 0.1, 0.0, 1.0);
+        gl_FragColor = vec4(outc, a);
       }`,
   });
   return flameMat;
 }
 
+function flameGeometry(count, seeds) {
+  const g = new THREE.PlaneGeometry(1, 1.6);
+  g.translate(0, 0.8, 0);
+  if (count === 0) {
+    g.setAttribute('aSeed', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count).fill(seeds ?? 0), 1));
+  }
+  return g;
+}
+
 /**
- * Many flames in one draw call. items: [{pos: Vector3, scale: number, color?: hex (tinted fire)}]
+ * Many flames in one draw call. items: [{pos: Vector3, scale: number, color?: hex (tinted fire), seed?: number (= the light's flicker seed)}]
  * @returns {THREE.InstancedMesh}
  */
 export function createFlameBatch(items) {
-  const g = new THREE.PlaneGeometry(1, 1.6);
-  g.translate(0, 0.8, 0);
-  const mesh = new THREE.InstancedMesh(g, getFlameMaterial(), Math.max(1, items.length));
+  const g = flameGeometry(1);
+  const n = Math.max(1, items.length);
+  const seeds = new Float32Array(n);
+  items.forEach((it, i) => (seeds[i] = it.seed ?? (it.pos.x * 7.13 + it.pos.z * 3.71) % 50));
+  g.setAttribute('aSeed', new THREE.InstancedBufferAttribute(seeds, 1));
+  const mesh = new THREE.InstancedMesh(g, getFlameMaterial(), n);
   const m = new THREE.Matrix4();
   items.forEach((it, i) => mesh.setMatrixAt(i, m.compose(it.pos, new THREE.Quaternion(), new THREE.Vector3(it.scale, it.scale, it.scale))));
   if (items.some((it) => it.color !== undefined)) {
@@ -367,9 +437,8 @@ export function createGlowBatch(items) {
 }
 
 /** A camera-facing flame quad (origin at flame base). */
-export function createFlame(scale = 0.28) {
-  const g = new THREE.PlaneGeometry(1, 1.6);
-  g.translate(0, 0.8, 0);
+export function createFlame(scale = 0.28, seed = 0) {
+  const g = flameGeometry(0, seed);
   const m = new THREE.Mesh(g, getFlameMaterial());
   m.scale.set(scale, scale, scale);
   m.renderOrder = 5;
@@ -396,7 +465,7 @@ export function createTorch(o = {}) {
   }
   let flame = null;
   if (o.flame) {
-    flame = createFlame(o.flameScale ?? 0.28);
+    flame = createFlame(o.flameScale ?? 0.28, o.seed ?? 0);
     group.add(flame);
   }
   const base = o.intensity ?? 12;

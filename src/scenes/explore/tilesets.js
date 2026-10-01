@@ -69,7 +69,7 @@ export const TILESETS = {
     walls: ['hewn', 'hewn', 'hewn'],
     interiorFace: 'hewn',
     floors: { [CELL.STREET]: 'arch_cave_floor', [CELL.INTERIOR]: 'arch_cave_floor', [CELL.RUBBLE]: 'arch_cave_floor', [CELL.WATER]: 'arch_water', [CELL.COURTYARD]: 'arch_cave_floor' },
-    ceiling: 'arch_hewn',
+    ceiling: 'arch_hewn_ceil',
     ceilH: 3.2,
     roofs: false,
     skyline: null,
@@ -129,7 +129,7 @@ export const RECIPE_MATERIALS = {
   int_plaster: ['arch_plaster_int', 'arch_wainscot', 'arch_beam_dark'],
   int_panel: ['arch_wainscot', 'arch_beam_dark', 'arch_plaster_int'],
   int_stone: ['arch_stone_cold', 'arch_trim'],
-  hewn: ['arch_hewn', 'arch_cave_floor', 'prop_bone'],
+  hewn: ['arch_hewn', 'arch_hewn_ceil', 'arch_cave_floor', 'prop_bone'],
   basalt: ['arch_basalt', 'arch_basalt_floor', 'arch_relief', 'arch_trim'],
 };
 

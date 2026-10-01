@@ -667,7 +667,7 @@ export function limestone({ seed = 211, base = [0.5, 0.47, 0.41] } = {}) {
  * into two smaller ones), per-stone tilt/height, chipped corners, worn arrises,
  * wide dirt/moss-filled joints, lichen and stains. Tile ≈ 3 m.
  */
-export function flagstones({ seed = 77, rows = 8, base = [0.5, 0.47, 0.42], weeds = 0.45, minW = 0.1, maxW = 0.36 } = {}) {
+export function flagstones({ seed = 77, rows = 8, base = [0.5, 0.47, 0.42], weeds = 0.45, minW = 0.1, maxW = 0.36, bevelK = 1, tiltK = 1, jointK = 1, dirt = 0, roughVar = 0 } = {}) {
   // strongly varied course heights + widths: hand-laid random-course paving, not a tiled grid
   const lay = masonryLayout({ rows, seed, minW, maxW, rowVar: 0.95 });
   return (u, v) => {
@@ -700,9 +700,10 @@ export function flagstones({ seed = 77, rows = 8, base = [0.5, 0.47, 0.42], weed
     const chipR = 0.004 + wearS * 0.012;
     const corner = (1 - smooth(chipR * 0.5, chipR * (1.2 + n), cornerD)) * 0.008;
     const e = Math.min(dx, dy) + (n - 0.5) * 0.005 * (0.6 + wearS * 1.4) + (nf - 0.5) * 0.002 - corner;
-    const jw = 0.0028 + wearS * 0.002;
-    const stone = smooth(jw, jw + 0.003, e);
-    const bevel = smooth(jw, jw + 0.012 + wearS * 0.02, e);
+    // joint width varies stone to stone and along each joint (hand-laid, not a stencil)
+    const jw = (0.0028 + wearS * 0.002) * jointK * (0.55 + hash2(Math.floor(id * 1e5), 31, seed) * 0.9 + (n - 0.5) * 0.6);
+    const stone = smooth(jw, jw + 0.003 * Math.min(1, jointK + 0.3), e);
+    const bevel = smooth(jw, jw + (0.012 + wearS * 0.02) * bevelK, e);
     const big = wfbm(u, v, 3, seed + 2);
     const tones = [[1, 1, 1], [1.04, 0.99, 0.92], [0.94, 0.96, 0.98], [1.02, 0.97, 0.9], [0.9, 0.89, 0.87], [1.06, 1.03, 0.96], [0.86, 0.85, 0.82]];
     const tn = tones[Math.floor(id * tones.length)];
@@ -722,17 +723,21 @@ export function flagstones({ seed = 77, rows = 8, base = [0.5, 0.47, 0.42], weed
     // joints: compacted dirt, grit, moss/weeds in places
     const jn = valueNoise(u * 260, v * 260, 260, seed + 16);
     let jc = mul3([0.21, 0.19, 0.15], 0.75 + jn * 0.5);
+    // packed earth and grit (lighter, browner) filling the joints in places
+    if (dirt) jc = mix3(jc, mul3([0.36, 0.31, 0.24], 0.8 + jn * 0.4), smooth(0.35, 0.65, valueNoise(u * 34, v * 34, 34, seed + 17)) * dirt);
     jc = mix3(jc, mul3([0.17, 0.25, 0.09], 0.8 + jn * 0.4), smooth(0.55, 0.72, big) * weeds);
     const halo = (1 - smooth(jw, jw + 0.01, e)) * 0.2; // dirt creeping onto the stone edge
     c = mix3(c, mul3(jc, 1.3), halo * (1 - bevel));
     const col = mix3(jc, c, stone);
     // per-stone tilt + settle (reads through the normal map as uneven paving)
-    const tx = (hash2(Math.floor(id * 1e5), 21, seed) - 0.5) * 0.22;
-    const ty = (hash2(Math.floor(id * 1e5), 22, seed) - 0.5) * 0.22;
+    const tx = (hash2(Math.floor(id * 1e5), 21, seed) - 0.5) * 0.22 * tiltK;
+    const ty = (hash2(Math.floor(id * 1e5), 22, seed) - 0.5) * 0.22 * tiltK;
     const settle = (hash2(Math.floor(id * 1e5), 23, seed) - 0.5) * 0.06;
     const sh = 0.6 + settle + (fx - 0.5) * tx * bw * 4 + (fy - 0.5) * ty * bh * 4 + bevel * 0.12 + n * 0.06 + nf * 0.02 - crack * 0.1;
     const h = stone * sh + (1 - stone) * (0.1 + jn * 0.06);
-    const r = lerp(0.97, 0.72 + n * 0.16 + wearS * 0.08 - (1 - bevel) * 0.05, stone);
+    // per-stone roughness: some slabs foot-polished, most matte
+    const rs = roughVar ? (hash2(Math.floor(id * 1e5), 33, seed) - 0.35) * roughVar : 0;
+    const r = lerp(0.97, clamp01(0.72 + n * 0.16 + wearS * 0.08 - (1 - bevel) * 0.05 + rs), stone);
     return { c: col, h, r };
   };
 }

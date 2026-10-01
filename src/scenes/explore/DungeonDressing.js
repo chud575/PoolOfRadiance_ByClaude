@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { CELL, EDGE } from '../../data/maps/MapGrid.js';
 import { getMaterial } from '../../render/materials.js';
-import { getBaneBannerTexture, getRunnerTexture, getBlobTexture, getSoftTexture } from '../../render/textures/index.js';
+import { getBaneBannerTexture, getRunnerTexture, getBlobTexture, getSoftTexture, getAltarClothTexture, getAltarClothORM } from '../../render/textures/index.js';
 import { GeoBuilder, hash } from './GeoBuilder.js';
 import { CELL_SIZE, WALL_T } from './BlockBuilder.js';
 import { fracturedRock, PROP_UNIFORMS } from './Props.js';
@@ -120,6 +120,107 @@ export function dressDungeon(map, block, opts = {}) {
     geo.dispose();
   }
 
+  /** Smooth world-space value noise for the rock roof / corners. */
+  function vn2(x, y, sd) {
+    const ix = Math.floor(x);
+    const iy = Math.floor(y);
+    const fx = x - ix;
+    const fy = y - iy;
+    const ux = fx * fx * (3 - 2 * fx);
+    const uy = fy * fy * (3 - 2 * fy);
+    const a = hash(sd, ix, iy);
+    const b = hash(sd, ix + 1, iy);
+    const c = hash(sd, ix, iy + 1);
+    const d = hash(sd, ix + 1, iy + 1);
+    return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
+  }
+
+  /**
+   * Hewn roof over one cell: a displaced grid hanging *below* the flat ceiling (so it always hides it),
+   * world-space noise so neighbouring cells join seamlessly, and a rounded haunch wherever a wall
+   * meets the roof — the tunnel reads as cut rock, not a box with a lid. Matte material (no glints).
+   */
+  function rockRoof(fc) {
+    const ceil = ts.ceilH;
+    const N = 12;
+    const x0 = fc.x * S;
+    const z0 = fc.y * S;
+    const wallD = {};
+    for (const d of ['N', 'S', 'W', 'E']) wallD[d] = map.getEdge(fc.x, fc.y, d) !== EDGE.OPEN;
+    const haunch = (x, z) => {
+      // distance to the nearest walled cell edge (metres)
+      let m = 9;
+      if (wallD.W) m = Math.min(m, x - x0);
+      if (wallD.E) m = Math.min(m, x0 + S - x);
+      if (wallD.N) m = Math.min(m, z - z0);
+      if (wallD.S) m = Math.min(m, z0 + S - z);
+      const reach = 0.5 + vn2(x * 1.3 + 7, z * 1.3, 'hr') * 0.9;
+      const t = 1 - THREE.MathUtils.smoothstep(m, T / 2 - 0.05, T / 2 + reach);
+      return t * t * (0.2 + vn2(x * 1.7, z * 1.7 + 3, 'ha') * 0.75);
+    };
+    const pos = [];
+    const idx = [];
+    for (let j = 0; j <= N; j++) {
+      for (let i = 0; i <= N; i++) {
+        const x = x0 + (S * i) / N;
+        const z = z0 + (S * j) / N;
+        const n = vn2(x * 0.9, z * 0.9, 'rf1') * 0.55 + vn2(x * 2.6, z * 2.6, 'rf2') * 0.3 + vn2(x * 6.5, z * 6.5, 'rf3') * 0.15;
+        const sag = Math.max(0, n - 0.32) * 0.5 + haunch(x, z);
+        pos.push(x, ceil - 0.02 - sag, z);
+      }
+    }
+    for (let j = 0; j < N; j++) {
+      for (let i = 0; i < N; i++) {
+        const a = j * (N + 1) + i;
+        idx.push(a, a + 1, a + N + 1, a + 1, a + N + 2, a + N + 1); // faces down
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    g.geometry('arch_hewn_ceil', geo, M4(), { uv: 'world', ao: (p) => 0.5 + 0.5 * THREE.MathUtils.smoothstep(ceil - p.y, 0.0, 0.45) });
+    geo.dispose();
+    // a few knuckles of harder rock hanging well clear of the roof (never a flat disc)
+    for (let k = 0; k < 2; k++) {
+      if (hash(map.id, fc.x, fc.y, k, 'ck') > 0.45) continue;
+      const sc = 0.45 + hash(map.id, fc.x, fc.y, k, 'cs') * 0.4;
+      const m = tr(x0 + S / 2 + (hash(map.id, fc.x, fc.y, k, 'cx') - 0.5) * 2.2, ceil - 0.12 - sc * 0.12, z0 + S / 2 + (hash(map.id, fc.x, fc.y, k, 'cz') - 0.5) * 2.2)
+        .multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(Math.PI + (hash(map.id, fc.x, fc.y, k, 'rx') - 0.5) * 0.6, hash(map.id, fc.x, fc.y, k) * 6.3, 0)))
+        .multiply(new THREE.Matrix4().makeScale(sc * 1.3, sc * 0.9, sc));
+      g.geometry('arch_hewn_ceil', rocks[(fc.x + k) % rocks.length], m, { uv: 'world', tint: rt(fc.x, fc.y + k), ao: 0.55 });
+    }
+  }
+
+  /**
+   * Convex corners (a tunnel mouth seen head-on) get a column of fractured rock lumps straddling the
+   * edge, floor to roof, plus a shoulder bulging out under the roof: no straight vertical cut lines.
+   */
+  function cornerRocks(f) {
+    const H = f.H;
+    for (const end of [-1, 1]) {
+      const kind = f.ends[end];
+      if (kind !== 'convexExt' && kind !== 'convexNon') continue;
+      const sd = hash(f.seed, end, 'crn');
+      const sC = end * (S / 2 + T / 2 - 0.06);
+      let y = -0.05;
+      for (let k = 0; y < H - 0.1 && k < 9; k++) {
+        const sc = 0.36 + hash(sd, k, 'cz') * 0.38;
+        const h = sc * 0.62;
+        const m = onFace(f, sC + (hash(sd, k, 'cs') - 0.5) * 0.18 - end * 0.04, y + h * 0.5, T / 2 - 0.08 + hash(sd, k, 'cd') * 0.08)
+          .multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler((hash(sd, k, 'rx') - 0.5) * 0.8, hash(sd, k, 'ry') * 6.3, (hash(sd, k, 'rz') - 0.5) * 0.8)))
+          .multiply(new THREE.Matrix4().makeScale(sc * 1.05, sc * 1.25, sc * 1.05));
+        g.geometry('arch_hewn', rocks[(k + Math.floor(sd * 5)) % rocks.length], m, { uv: 'world', tint: rt(sd, k), ao: (p) => 0.55 + 0.45 * THREE.MathUtils.smoothstep(p.y, 0, 0.8) });
+        y += h * (0.62 + hash(sd, k, 'cy') * 0.25);
+      }
+      // overhanging shoulder where the corner meets the roof
+      const m = onFace(f, sC - end * 0.15, H - 0.28, T / 2 + 0.02)
+        .multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(0.3, sd * 6.3, 0.2)))
+        .multiply(new THREE.Matrix4().makeScale(1.1, 0.55, 0.9));
+      g.geometry('arch_hewn_ceil', rocks[Math.floor(sd * 5) % rocks.length], m, { uv: 'world', tint: rt(sd, 99), ao: 0.6 });
+    }
+  }
+
   // ---------------------------------------------------------------- WARRENS
   function warrens() {
     const ceil = ts.ceilH;
@@ -127,6 +228,7 @@ export function dressDungeon(map, block, opts = {}) {
       const sd = f.seed;
       const clear = (s) => !f.openings.some((o) => o.s0 - 0.4 < s && o.s1 + 0.4 > s);
       rockSkin(f);
+      cornerRocks(f);
       // boulders at the foot of the wall, half buried in it
       const nb = 2 + Math.floor(hash(sd, 'nb') * 3);
       for (let k = 0; k < nb; k++) {
@@ -180,15 +282,8 @@ export function dressDungeon(map, block, opts = {}) {
     for (const fc of block.spots.floorCells) {
       const cx = fc.x * S + S / 2;
       const cz = fc.y * S + S / 2;
-      // knuckles of rock hanging from the roof
-      for (let k = 0; k < 2; k++) {
-        if (hash(map.id, fc.x, fc.y, k, 'ck') > 0.6) continue;
-        const sc = 0.5 + hash(map.id, fc.x, fc.y, k, 'cs') * 0.7;
-        const m = tr(cx + (hash(map.id, fc.x, fc.y, k, 'cx') - 0.5) * 2.2, ts.ceilH + 0.05, cz + (hash(map.id, fc.x, fc.y, k, 'cz') - 0.5) * 2.2)
-          .multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(Math.PI, hash(map.id, fc.x, fc.y, k) * 6.3, 0)))
-          .multiply(new THREE.Matrix4().makeScale(sc * 1.4, sc * 0.6, sc));
-        g.geometry('arch_hewn', rocks[(fc.x + k) % rocks.length], m, { uv: 'world', tint: rt(fc.x, fc.y + k), ao: 0.7 });
-      }
+      // the roof is hewn rock too: a sagging, lumpy vault that rounds down into the walls
+      rockRoof(fc);
       const walls = ['N', 'S', 'W', 'E'].filter((d) => map.getEdge(fc.x, fc.y, d) === EDGE.WALL);
       // a runnel of seep water along corridors (two facing walls)
       const ns = walls.includes('E') && walls.includes('W');
@@ -435,34 +530,169 @@ export function dressDungeon(map, block, opts = {}) {
     const rot = 0;
     const m = tr(cx, 0, cz).multiply(new THREE.Matrix4().makeRotationY(rot));
     const at = (px, py, pz) => m.clone().multiply(tr(px, py, pz));
-    // stepped dais
+    // stepped dais: two chamfered treads, each with a worn, slightly lighter nosing
     g.box('arch_basalt', { matrix: at(0, 0.1, -0.2), s: [2.9, 0.2, 2.2], chamfer: 0.03, tint: [0.8, 0.76, 0.76] });
     g.box('arch_basalt', { matrix: at(0, 0.27, -0.35), s: [2.4, 0.15, 1.5], chamfer: 0.03, tint: [0.85, 0.8, 0.8] });
-    // altar block with a polished top and a channel for the blood
-    g.box('arch_basalt', { matrix: at(0, 0.82, -0.35), s: [1.8, 0.95, 0.85], chamfer: 0.04 });
-    g.box('arch_basalt', { matrix: at(0, 1.33, -0.35), s: [1.95, 0.08, 0.98], chamfer: 0.02, tint: [1.1, 1.05, 1.05] });
-    // red altar cloth hanging over the front
-    const cloth = new THREE.MeshStandardMaterial({ color: 0x6a0c0a, roughness: 0.9 });
-    const cg = new THREE.BoxGeometry(0.9, 0.86, 0.012);
-    const cm = new THREE.Mesh(cg, cloth);
-    cm.applyMatrix4(at(0, 0.95, 0.09));
-    cm.castShadow = true;
-    cm.receiveShadow = true;
-    group.add(cm);
-    own.push(cg, cloth);
+    // altar: moulded plinth, a body with sunken front panels between half-round colonnettes,
+    // and a two-stage top slab (fillet + overhanging cornice)
+    const zA = -0.35;
+    g.box('arch_basalt', { matrix: at(0, 0.42, zA), s: [1.98, 0.16, 1.02], chamfer: 0.035, tint: [0.92, 0.88, 0.88] });
+    g.box('arch_basalt', { matrix: at(0, 0.53, zA), s: [1.88, 0.06, 0.94], chamfer: 0.02 });
+    g.box('arch_basalt', { matrix: at(0, 0.88, zA), s: [1.76, 0.66, 0.82], chamfer: 0.02 });
+    for (const px of [-0.86, 0.86]) {
+      for (const pz of [zA + 0.42, zA - 0.42]) {
+        const col = new THREE.CylinderGeometry(0.06, 0.065, 0.66, 12);
+        g.geometry('arch_basalt', col, at(px, 0.88, pz), { uv: 'world', tint: [1.05, 1.0, 1.0] });
+        col.dispose();
+        for (const [cy, r] of [[0.57, 0.085], [1.19, 0.085]]) {
+          const ring = new THREE.CylinderGeometry(r, r, 0.05, 12);
+          g.geometry('arch_basalt', ring, at(px, cy, pz), { uv: 'world', tint: [1.1, 1.05, 1.05] });
+          ring.dispose();
+        }
+      }
+    }
+    // sunken side panels (the cloth covers the middle of the front)
+    for (const px of [-0.62, 0.62]) {
+      g.box('arch_basalt', { matrix: at(px, 0.88, zA + 0.415), s: [0.34, 0.5, 0.03], chamfer: 0.01, tint: [0.7, 0.66, 0.66] });
+      g.box('arch_basalt', { matrix: at(px, 0.88, zA + 0.43), s: [0.24, 0.4, 0.02], chamfer: 0.006, tint: [1.1, 1.05, 1.05] });
+    }
+    g.box('arch_basalt', { matrix: at(0, 1.245, zA), s: [1.9, 0.07, 0.94], chamfer: 0.015, tint: [1.05, 1.0, 1.0] });
+    g.box('arch_basalt', { matrix: at(0, 1.32, zA), s: [2.02, 0.09, 1.04], chamfer: 0.03, tint: [1.15, 1.1, 1.1] });
+    const topY = 1.365;
+    // draped altar cloth: runs from the back of the top over the front edge and hangs in folds,
+    // flaring and rippling more towards the fringed hem
+    {
+      const nu = 28;
+      const nv = 34;
+      const half = 0.52;
+      const zBack = zA - 0.42;
+      const zFront = zA + 0.52 + 0.012;
+      const Ltop = zFront - zBack;
+      const pos = [];
+      const uv = [];
+      const idx = [];
+      for (let j = 0; j <= nv; j++) {
+        for (let i = 0; i <= nu; i++) {
+          const u = i / nu;
+          const x0 = (u * 2 - 1) * half;
+          const drop = 0.82 + 0.035 * Math.sin(x0 * 11 + 1.3) + 0.02 * Math.sin(x0 * 23);
+          const L = Ltop + 0.04 + drop;
+          const sArc = (j / nv) * L;
+          let px;
+          let py;
+          let pz;
+          if (sArc <= Ltop) {
+            px = x0;
+            py = topY + 0.004 + 0.004 * Math.sin(x0 * 14 + sArc * 9);
+            pz = zBack + sArc;
+          } else if (sArc <= Ltop + 0.04) {
+            // roll over the rounded edge
+            const a = ((sArc - Ltop) / 0.04) * (Math.PI / 2);
+            px = x0;
+            py = topY - 0.025 + Math.cos(a) * 0.03;
+            pz = zFront - 0.02 + Math.sin(a) * 0.03;
+          } else {
+            const d = sArc - Ltop - 0.04;
+            const k = d / drop;
+            const flare = 1 + 0.07 * k * k;
+            px = x0 * flare;
+            py = topY - 0.025 - d;
+            // folds: a few deep pleats plus finer ripples, growing with the hang
+            const fold = (0.012 + 0.05 * k) * Math.sin(x0 * 8.5 + 0.6) + (0.004 + 0.018 * k) * Math.sin(x0 * 21 + 2.0) + 0.008 * k * k * Math.sin(x0 * 37);
+            pz = zFront + 0.012 + 0.03 * k * k + fold;
+          }
+          pos.push(px, py, pz);
+          uv.push(u, 1 - Math.min(1, sArc / L) * (1 - 0) );
+        }
+      }
+      for (let j = 0; j < nv; j++) {
+        for (let i = 0; i < nu; i++) {
+          const q = j * (nu + 1) + i;
+          idx.push(q, q + 1, q + nu + 1, q + 1, q + nu + 2, q + nu + 1);
+        }
+      }
+      const cg = new THREE.BufferGeometry();
+      cg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      cg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      cg.setIndex(idx);
+      cg.computeVertexNormals();
+      const orm = getAltarClothORM();
+      const cloth = new THREE.MeshStandardMaterial({ map: getAltarClothTexture(), roughnessMap: orm, metalnessMap: orm, roughness: 1, metalness: 1, alphaTest: 0.5, side: THREE.DoubleSide, sheen: 0 });
+      cloth.map.flipY = true;
+      const cm = new THREE.Mesh(cg, cloth);
+      cm.applyMatrix4(m);
+      cm.castShadow = true;
+      cm.receiveShadow = true;
+      group.add(cm);
+      own.push(cg, cloth);
+    }
+    // offerings: a gilt chalice, a bowl of blood, a ritual dagger, scattered coins, a skull
+    {
+      const chalice = new THREE.LatheGeometry([[0, 0], [0.07, 0], [0.072, 0.012], [0.02, 0.03], [0.014, 0.1], [0.03, 0.12], [0.06, 0.15], [0.065, 0.21], [0.058, 0.21], [0.05, 0.16], [0, 0.15]].map(([r, y]) => new THREE.Vector2(r, y)), 16);
+      g.geometry('gilt', chalice, at(0.42, topY, zA + 0.05), { uv: 'world' });
+      chalice.dispose();
+      const bowl = new THREE.LatheGeometry([[0, 0], [0.09, 0], [0.13, 0.04], [0.15, 0.08], [0.14, 0.085], [0.11, 0.05], [0, 0.04]].map(([r, y]) => new THREE.Vector2(r, y)), 16);
+      g.geometry('arch_iron', bowl, at(-0.4, topY, zA + 0.02), { uv: 'world', tint: [0.6, 0.55, 0.5] });
+      bowl.dispose();
+      const blood = new THREE.CircleGeometry(0.12, 16);
+      blood.rotateX(-Math.PI / 2);
+      const bm = new THREE.MeshStandardMaterial({ color: 0x2a0303, roughness: 0.08, metalness: 0 });
+      const bmesh = new THREE.Mesh(blood, bm);
+      bmesh.applyMatrix4(at(-0.4, topY + 0.07, zA + 0.02));
+      group.add(bmesh);
+      own.push(blood, bm);
+      // dagger laid across the cloth: blade, crossguard, grip, pommel
+      const dm = at(0.0, topY + 0.012, zA + 0.18).multiply(new THREE.Matrix4().makeRotationY(0.35));
+      g.box('arch_iron', { matrix: dm.clone().multiply(tr(0.13, 0, 0)), s: [0.24, 0.006, 0.035], chamfer: 0.002, tint: [1.3, 1.3, 1.35] });
+      g.box('gilt', { matrix: dm.clone().multiply(tr(0.0, 0.004, 0)), s: [0.016, 0.014, 0.1], chamfer: 0.004 });
+      g.box('arch_beam_dark', { matrix: dm.clone().multiply(tr(-0.06, 0.004, 0)), s: [0.1, 0.018, 0.02], chamfer: 0.006, tint: [0.3, 0.2, 0.15] });
+      const pom = new THREE.SphereGeometry(0.016, 8, 6);
+      g.geometry('gilt', pom, dm.clone().multiply(tr(-0.115, 0.004, 0)), { uv: 'world' });
+      pom.dispose();
+      const coin = new THREE.CylinderGeometry(0.014, 0.014, 0.003, 10);
+      for (let k = 0; k < 9; k++) {
+        const ccm = at(0.15 + (hash(x, y, k, 'cx') - 0.5) * 0.5, topY + 0.008 + (k % 3) * 0.003, zA + 0.2 + (hash(x, y, k, 'cz') - 0.5) * 0.2).multiply(new THREE.Matrix4().makeRotationX((hash(x, y, k, 'ct') - 0.5) * 0.4));
+        g.geometry('gilt', coin, ccm, { uv: 'world' });
+      }
+      coin.dispose();
+      const skull = new THREE.SphereGeometry(0.085, 14, 10);
+      skull.scale(1, 0.9, 1.2);
+      const sm = at(-0.7, topY + 0.07, zA - 0.12).multiply(new THREE.Matrix4().makeRotationY(0.5));
+      g.geometry('prop_bone', skull, sm, { uv: 'world', tint: [0.86, 0.8, 0.68] });
+      for (const ex of [-0.03, 0.03]) g.box('arch_beam_dark', { matrix: sm.clone().multiply(tr(ex, 0.01, 0.09)), s: [0.032, 0.028, 0.02], tint: [0.08, 0.06, 0.05] });
+      skull.dispose();
+    }
     // the stele behind it: a tall slab carrying a great relief of the Black Hand
     g.box('arch_basalt', { matrix: at(0, 1.9, -1.25), s: [2.3, 3.8, 0.4], chamfer: 0.05 });
     g.box('arch_basalt', { matrix: at(0, 3.86, -1.25), s: [2.6, 0.18, 0.55], chamfer: 0.04, tint: [0.9, 0.85, 0.85] });
     const rp = (px, py) => new THREE.Vector3(px, py, -1.04).applyMatrix4(m);
     g.quad('arch_relief', rp(-0.95, 1.55), rp(0.95, 1.55), rp(0.95, 3.45), rp(-0.95, 3.45), [[0, 1], [1, 1], [1, 0], [0, 0]], { ao: 1 });
-    // black candles on the altar
-    for (let k = 0; k < 5; k++) {
-      const px = -0.75 + k * 0.375;
-      const ch = 0.14 + hash(x, y, k, 'cand') * 0.12;
-      const cyl = new THREE.CylinderGeometry(0.025, 0.028, ch, 8);
-      g.geometry('arch_beam_dark', cyl, at(px, 1.37 + ch / 2, -0.62), { uv: 'world', tint: [0.12, 0.1, 0.1] });
+    // candles of oxblood wax along the back of the altar: varied heights, drips running down,
+    // wax pooled at the foot, a melted cup at the top
+    for (let k = 0; k < 7; k++) {
+      const px = -0.78 + k * 0.26 + (hash(x, y, k, 'cjx') - 0.5) * 0.06;
+      const pz = -0.66 + (hash(x, y, k, 'cjz') - 0.5) * 0.08 + (k % 2) * 0.06;
+      const ch = 0.1 + hash(x, y, k, 'cand') * 0.22;
+      const r0 = 0.024 + hash(x, y, k, 'cr') * 0.012;
+      const wax = [0.32, 0.07, 0.06];
+      const cyl = new THREE.CylinderGeometry(r0 * 0.96, r0, ch, 12);
+      g.geometry('prop_limestone', cyl, at(px, topY + ch / 2, pz), { uv: 'world', tint: wax });
       cyl.dispose();
-      if (k % 2 === 0) lamps.push({ pos: new THREE.Vector3(px, 1.37 + ch + 0.03, -0.62).applyMatrix4(m), kind: 'candle', lit: true, seed: 300 + k });
+      const pool = new THREE.CylinderGeometry(r0 * 2.1, r0 * 2.4, 0.008, 12);
+      g.geometry('prop_limestone', pool, at(px, topY + 0.004, pz), { uv: 'world', tint: wax });
+      pool.dispose();
+      for (let q = 0; q < 4; q++) {
+        const a = hash(x, y, k, q, 'da') * Math.PI * 2;
+        const len = 0.02 + hash(x, y, k, q, 'dl') * ch * 0.7;
+        const drip = new THREE.CapsuleGeometry(0.006, len, 3, 6);
+        g.geometry('prop_limestone', drip, at(px + Math.cos(a) * r0, topY + ch - len / 2 - 0.004, pz + Math.sin(a) * r0), { uv: 'world', tint: [wax[0] * 1.15, wax[1] * 1.15, wax[2] * 1.15] });
+        drip.dispose();
+      }
+      const lip = new THREE.TorusGeometry(r0 * 0.8, 0.006, 5, 12);
+      lip.rotateX(Math.PI / 2);
+      g.geometry('prop_limestone', lip, at(px, topY + ch, pz), { uv: 'world', tint: [0.42, 0.12, 0.1] });
+      lip.dispose();
+      if (k % 2 === 0 || k === 3) lamps.push({ pos: new THREE.Vector3(px, topY + ch + 0.012, pz).applyMatrix4(m), kind: 'candle', lit: true, seed: 300 + k });
     }
     // braziers either side of the dais
     for (const sx of [-1.75, 1.75]) brazier(at(sx, 0, 0.3), x * 7 + sx);

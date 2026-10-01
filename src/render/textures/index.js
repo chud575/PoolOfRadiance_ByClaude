@@ -199,6 +199,7 @@ function rng(seed) {
  * variant: 'lit' (warm) | 'dark' (unlit, sky reflection handled by material)
  */
 export function getWindowTexture(variant = 'lit') {
+  if (variant === 'sky') return getWindowSkyTexture();
   return canvasTex(`window_${variant}`, 128, 256, (g, w, h) => {
     const r = rng(variant === 'lit' ? 7 : 9);
     if (variant === 'lit') {
@@ -1159,4 +1160,154 @@ export function getStainTexture(variant = 0) {
       g.fillRect(w / 2 + Math.cos(a) * d, h / 2 + Math.sin(a) * d, 1 + r() * 2, 1 + r() * 2);
     }
   }, { srgb: false });
+}
+
+/**
+ * Altar cloth of the Black Hand: crimson velvet with a gold-embroidered border, a running
+ * key pattern, a black-hand roundel and a gold fringe at the hem. u across, v from the back
+ * of the altar top (v=0) to the hem (v=1). Paired with getAltarClothORM() (G rough, B metal).
+ */
+function drawAltarCloth(g, w, h, orm) {
+  const r = rng(733);
+  const gold = orm ? 'rgb(0,90,255)' : '#c99a3a';
+  const goldDk = orm ? 'rgb(0,140,200)' : '#7a5a1e';
+  g.fillStyle = orm ? 'rgb(0,235,0)' : '#5e0a09';
+  g.fillRect(0, 0, w, h);
+  if (!orm) {
+    // velvet: pile streaks and a soft sheen gradient across
+    const grad = g.createLinearGradient(0, 0, w, 0);
+    grad.addColorStop(0, 'rgba(0,0,0,0.35)');
+    grad.addColorStop(0.5, 'rgba(255,60,40,0.08)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.35)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 9000; i++) {
+      g.fillStyle = `rgba(${r() < 0.5 ? '0,0,0' : '255,80,60'},${r() * 0.07})`;
+      g.fillRect(r() * w, r() * h, 1, 2 + r() * 5);
+    }
+    // wax drips and old stains near the top (where the candles stand)
+    for (let i = 0; i < 14; i++) {
+      g.fillStyle = `rgba(20,4,4,${0.2 + r() * 0.3})`;
+      g.beginPath();
+      g.ellipse(r() * w, h * (0.1 + r() * 0.3), 3 + r() * 9, 2 + r() * 6, r() * 3, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+  // embroidered borders down both sides and above the hem
+  const band = (x, y, ww, hh) => {
+    g.fillStyle = goldDk;
+    g.fillRect(x, y, ww, hh);
+    g.fillStyle = gold;
+    g.fillRect(x + 2, y + 2, ww - 4, 3);
+    g.fillRect(x + 2, y + hh - 5, ww - 4, 3);
+    // key pattern stitched inside
+    const horiz = ww > hh;
+    const n = Math.floor((horiz ? ww : hh) / 18);
+    for (let k = 0; k < n; k++) {
+      if (horiz) {
+        const xx = x + k * 18 + 4;
+        g.fillRect(xx, y + 8, 10, 3);
+        g.fillRect(xx + 7, y + 8, 3, hh - 16);
+        g.fillRect(xx, y + hh - 11, 10, 3);
+      } else {
+        const yy = y + k * 18 + 4;
+        g.fillRect(x + 8, yy, 3, 10);
+        g.fillRect(x + 8, yy + 7, ww - 16, 3);
+        g.fillRect(x + ww - 11, yy, 3, 10);
+      }
+    }
+  };
+  band(10, 0, 30, h * 0.93);
+  band(w - 40, 0, 30, h * 0.93);
+  band(10, h * 0.86, w - 20, 30);
+  // roundel with the black hand on the hanging front
+  const cx = w / 2;
+  const cy = h * 0.74;
+  g.fillStyle = gold;
+  g.beginPath();
+  for (let k = 0; k <= 40; k++) {
+    const a = (k / 40) * Math.PI * 2;
+    const rr = k % 2 ? 46 : 54;
+    g.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+  }
+  g.fill();
+  g.fillStyle = orm ? 'rgb(0,230,0)' : '#120807';
+  g.beginPath();
+  g.arc(cx, cy, 40, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = gold;
+  const rr = (x, y, ww, hh, rad) => {
+    g.beginPath();
+    g.moveTo(x + rad, y);
+    g.arcTo(x + ww, y, x + ww, y + hh, rad);
+    g.arcTo(x + ww, y + hh, x, y + hh, rad);
+    g.arcTo(x, y + hh, x, y, rad);
+    g.arcTo(x, y, x + ww, y, rad);
+    g.fill();
+  };
+  rr(cx - 15, cy - 2, 30, 26, 6);
+  for (let k = 0; k < 4; k++) rr(cx - 15 + k * 7.8, cy - 26 + (k === 1 || k === 2 ? -4 : 0), 6.4, 28, 3);
+  rr(cx + 12, cy + 2, 14, 7, 3);
+  // fringe: gold threads below the last band (alpha-tested: the gaps are open)
+  g.clearRect(0, h * 0.86 + 30, w, h);
+  for (let x = 12; x < w - 12; x += 3) {
+    g.fillStyle = r() < 0.5 ? gold : goldDk;
+    g.fillRect(x, h * 0.86 + 30, 2, h * 0.14 - 30 - r() * 6);
+  }
+}
+export function getAltarClothTexture() {
+  return canvasTex('altar_cloth', 256, 512, (g, w, h) => drawAltarCloth(g, w, h, false));
+}
+export function getAltarClothORM() {
+  return canvasTex('altar_cloth_orm', 256, 512, (g, w, h) => drawAltarCloth(g, w, h, true), { srgb: false });
+}
+
+/**
+ * Daylight seen from inside through small leaded quarrels: bright blue-white sky, the roofs and a
+ * chimney of the house opposite, the faint green of a garden — leading cames drawn dark.
+ */
+function getWindowSkyTexture() {
+  return canvasTex('window_sky', 128, 256, (g, w, h) => {
+    const r = rng(17);
+    const grd = g.createLinearGradient(0, 0, 0, h);
+    grd.addColorStop(0, '#cfe0f6');
+    grd.addColorStop(0.45, '#eef4fb');
+    grd.addColorStop(0.62, '#f6f3ea');
+    grd.addColorStop(1, '#b9c2a8');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, w, h);
+    // roofs opposite (a soft, light silhouette: they are bright too, in full daylight)
+    g.fillStyle = 'rgba(120,118,124,0.55)';
+    g.beginPath();
+    g.moveTo(0, h * 0.72);
+    g.lineTo(w * 0.35, h * 0.56);
+    g.lineTo(w * 0.62, h * 0.7);
+    g.lineTo(w * 0.62, h * 0.62);
+    g.lineTo(w, h * 0.6);
+    g.lineTo(w, h);
+    g.lineTo(0, h);
+    g.closePath();
+    g.fill();
+    g.fillRect(w * 0.7, h * 0.5, w * 0.08, h * 0.1);
+    // glass: bullseye ripples and per-quarrel tint
+    for (let i = 0; i < 260; i++) {
+      g.fillStyle = `rgba(${r() < 0.5 ? '255,255,255' : '150,170,190'},${r() * 0.12})`;
+      g.beginPath();
+      g.arc(r() * w, r() * h, 2 + r() * 6, 0, Math.PI * 2);
+      g.fill();
+    }
+    // lead cames (diamond lattice)
+    g.strokeStyle = 'rgba(20,20,24,0.9)';
+    g.lineWidth = 2;
+    for (let k = -h; k < w + h; k += 22) {
+      g.beginPath();
+      g.moveTo(k, 0);
+      g.lineTo(k + h * 0.65, h);
+      g.stroke();
+      g.beginPath();
+      g.moveTo(k, 0);
+      g.lineTo(k - h * 0.65, h);
+      g.stroke();
+    }
+  });
 }

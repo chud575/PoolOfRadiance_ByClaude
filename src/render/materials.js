@@ -33,8 +33,8 @@ const DEFS = {
   arch_trim: { tex: 'hd2_quoin', texScale: 1.5, vc: true, color: 0xd8d0c4, fx: { macro: 0.2, grime: 0.4, moss: 0.5 } },
   arch_dressed: { tex: 'hd2_dressed', texScale: 1.5, vc: true, color: 0xe6ded2, fx: { macro: 0.2, grime: 0.45, moss: 0.4 } },
   arch_ruin: { tex: 'hd2_ruin', texScale: 3, vc: true, fx: { macro: 0.35, grime: 0.7, moss: 0.9 } },
-  arch_plaster: { tex: 'hd2_plaster', texScale: 3.7, vc: true, fx: { macro: 0.22, grime: 0.75, moss: 0.15 } },
-  arch_plaster_int: { tex: 'hd2_plaster_int', texScale: 3, vc: true, fx: { macro: 0.25, grime: 0.55 } },
+  arch_plaster: { tex: 'hd2_plaster', texScale: 3.7, vc: true, fx: { macro: 0.4, grime: 0.85, moss: 0.15, streak: 0.7 } },
+  arch_plaster_int: { tex: 'hd2_plaster_int', texScale: 3, vc: true, fx: { macro: 0.32, grime: 0.6, streak: 0.35 } },
   arch_beam: { tex: 'hd_beam', texScale: 1.2, vc: true, fx: { macro: 0.18, grime: 0.2, moss: 0.2 } },
   arch_beam_dark: { tex: 'hd_beam_dark', texScale: 1.2, vc: true, fx: { macro: 0.12 } },
   arch_roof_slate: { tex: 'hd_roof_slate', texScale: 2, vc: true, fx: { macro: 0.3, moss: 0.25 } },
@@ -45,11 +45,12 @@ const DEFS = {
   arch_mud: { tex: 'hd_mud', texScale: 3, vc: true, fx: { macro: 0.3, floor: 1 } },
   arch_boards: { tex: 'hd_boards', texScale: 2, vc: true, fx: { macro: 0.15, floor: 1 } },
   arch_ceiling: { tex: 'hd2_ceiling', texScale: 3, vc: true, color: 0xffffff, fx: { macro: 0.1 } },
-  arch_dungeon: { tex: 'hd2_dungeon', texScale: 3, vc: true, fx: { macro: 0.3, grime: 0.6, moss: 0.4 } },
+  arch_dungeon: { tex: 'hd2_dungeon', texScale: 3, vc: true, fx: { macro: 0.34, grime: 0.6, moss: 0.4, streak: 1 } },
   arch_dungeon_floor: { tex: 'hd_dungeon_floor', texScale: 3, vc: true, fx: { macro: 0.3, floor: 1 } },
   arch_hewn: { tex: 'hd2_hewn', texScale: 3, vc: true, fx: { macro: 0.35, grime: 0.5, moss: 0.5 } },
+  arch_hewn_ceil: { tex: 'hd2_hewn_ceil', texScale: 3, vc: true, roughness: 1, fx: { macro: 0.3 } },
   arch_cave_floor: { tex: 'hd2_cave_floor', texScale: 3, vc: true, fx: { macro: 0.35, floor: 1 } },
-  arch_basalt: { tex: 'hd2_basalt', texScale: 3, vc: true, fx: { macro: 0.18, grime: 0.3 } },
+  arch_basalt: { tex: 'hd2_basalt', texScale: 3, vc: true, fx: { macro: 0.22, grime: 0.3, streak: 0.8 } },
   arch_basalt_floor: { tex: 'hd2_basalt_floor', texScale: 3, vc: true, fx: { macro: 0.2, floor: 1 } },
   arch_relief: { tex: 'hd2_relief', texScale: 0, vc: true, fx: { macro: 0.1 } },
   arch_brick: { tex: 'hd_brick', texScale: 1, vc: true, fx: { macro: 0.3, grime: 0.5 } },
@@ -132,6 +133,7 @@ function applySurfaceFX(mat, fx) {
   const floor = (fx.floor ?? 0).toFixed(3);
   const dust = (fx.dust ?? 0).toFixed(3);
   const grain = (fx.grain ?? 0).toFixed(3);
+  const streak = (fx.streak ?? 0).toFixed(3);
   mat.onBeforeCompile = (shader) => {
     if (!SURFACE_UNIFORMS.uFxNoiseTex.value) SURFACE_UNIFORMS.uFxNoiseTex.value = getFxNoiseTexture();
     Object.assign(shader.uniforms, SURFACE_UNIFORMS);
@@ -162,6 +164,7 @@ function applySurfaceFX(mat, fx) {
         uniform float uFxHeightFog; uniform float uFxHeightFalloff;
         uniform vec3 uFxGrimeTint; uniform vec3 uFxMossTint; uniform float uFxWet;
         float vFxWet = 0.0;
+        float vFxFloor = 0.0;
         ${FX_NOISE}`,
       )
       .replace(
@@ -184,9 +187,21 @@ function applySurfaceFX(mat, fx) {
           // dust settled on upward-facing surfaces of props
           float dustAmt = smoothstep(0.35, 0.85, up) * (0.55 + 0.45 * nz.g) * ${dust};
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.46, 0.42, 0.36) * (0.85 + nz.b * 0.3), dustAmt * 0.6);
+          #if ${streak === '0.000' ? 0 : 1}
+          {
+            // seepage streaks running down the masonry + a damp, darker base (world-space, never tiles)
+            float sw = wp.x + wp.z;
+            float sk = texture2D(uFxNoiseTex, vec2(sw * 0.31, wp.y * 0.018 + 0.37)).g * 0.65 + texture2D(uFxNoiseTex, vec2(sw * 0.9, wp.y * 0.05)).b * 0.35;
+            float streaks = smoothstep(0.56, 0.78, sk) * vert * (0.6 + 0.4 * nz.a);
+            float damp = (1.0 - smoothstep(0.0, 0.9 + mN * 0.8, wp.y)) * vert;
+            diffuseColor.rgb *= 1.0 - (streaks * 0.32 + damp * 0.28) * ${streak};
+            vFxWet = max(vFxWet, damp * 0.6 * ${streak});
+          }
+          #endif
           float fl = ${floor};
           diffuseColor.rgb *= mix(1.0, 0.8 + nz.a * 0.4, fl);
-          vFxWet = smoothstep(0.5, 0.62, nz.r) * fl;
+          vFxWet = max(vFxWet, smoothstep(0.54, 0.62, nz.r) * (0.6 + 0.4 * smoothstep(0.4, 0.7, nz.g)) * fl);
+          vFxFloor = fl;
         }`,
       )
       .replace(
@@ -215,7 +230,14 @@ function applySurfaceFX(mat, fx) {
       .replace(
         '#include <roughnessmap_fragment>',
         `#include <roughnessmap_fragment>
-        roughnessFactor = mix(roughnessFactor, roughnessFactor * 0.3, uFxWet * vFxWet);`,
+        {
+          // paving: tops stay matte, water lies in the joints and in shallow puddles only
+          float gap = smoothstep(0.86, 0.95, roughnessFactor);
+          float wetK = clamp(uFxWet * 2.0, 0.0, 1.0);
+          roughnessFactor = mix(roughnessFactor, max(roughnessFactor, 0.93), vFxFloor * (1.0 - gap) * wetK);
+          roughnessFactor = mix(roughnessFactor, 0.32, vFxFloor * gap * wetK * 0.7);
+          roughnessFactor = mix(roughnessFactor, 0.07, vFxWet * wetK);
+        }`,
       )
       .replace(
         '#include <fog_fragment>',
@@ -237,7 +259,7 @@ function applySurfaceFX(mat, fx) {
         #endif`,
       );
   };
-  mat.customProgramCacheKey = () => `fx:${macro}:${grime}:${moss}:${floor}:${dust}:${grain}`;
+  mat.customProgramCacheKey = () => `fx:${macro}:${grime}:${moss}:${floor}:${dust}:${grain}:${streak}`;
 }
 
 const cache = new Map();
@@ -340,8 +362,15 @@ export function setWindowGlow(night, flicker = 1) {
   ext.emissiveIntensity = (0.015 + night * 2.6) * flicker;
   ext.color.setHex(night > 0.5 ? 0x101418 : 0x8c96a2);
   // from inside by day, windows glow with daylight
-  int.emissive.setHex(night > 0.5 ? 0x223355 : 0xdde8ff);
-  int.emissiveIntensity = night > 0.5 ? 0.25 : 0.62;
+  // from inside by day the glazing glows with the cool, bright sky beyond — well above the hearth
+  if (int.emissiveMap !== getWindowTexture('sky')) {
+    int.emissiveMap = getWindowTexture('sky');
+    int.map = null;
+    int.color.setHex(0x0a0c10);
+    int.needsUpdate = true;
+  }
+  int.emissive.setHex(night > 0.5 ? 0x1a2648 : 0xffffff);
+  int.emissiveIntensity = night > 0.5 ? 0.35 : 1.15;
   const lamp = getLampGlassMaterial();
   lamp.emissiveIntensity = (0.2 + night * 4) * flicker;
 }

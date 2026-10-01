@@ -566,6 +566,9 @@ export function buildBlock(map, opts = {}) {
     },
     dungeon(f) {
       const H = f.H;
+      // engaged piers hide every cell joint, so each bay may show its own part of the texture
+      // (a per-line offset would repeat the same 3 m of masonry in every bay of a corridor)
+      f.uvOff = [hash(f.seed, 'bu') * 7.3, hash(f.seed, 'bv') * 3.1];
       slab(f, 'arch_dungeon', 0, H, 0, T / 2);
       slab(f, 'arch_trim', 0, 0.3, T / 2, T / 2 + 0.08, { chamfer: 0.03, tint: [0.62, 0.62, 0.6] });
       // pilasters at the cell corners (engaged piers carrying the ribs)
@@ -584,6 +587,7 @@ export function buildBlock(map, opts = {}) {
     },
     basalt(f) {
       const H = f.H;
+      f.uvOff = [hash(f.seed, 'bu') * 7.3, hash(f.seed, 'bv') * 3.1];
       slab(f, 'arch_basalt', 0, H, 0, T / 2);
       slab(f, 'arch_basalt', 0, 0.42, T / 2, T / 2 + 0.09, { chamfer: 0.02, tint: [0.7, 0.66, 0.66] });
       slab(f, 'arch_basalt', H - 0.62, H - 0.42, T / 2, T / 2 + 0.16, { chamfer: 0.03, tint: [0.85, 0.8, 0.8] });
@@ -1071,13 +1075,66 @@ export function buildBlock(map, opts = {}) {
       const wt = 0.82;
       const db = d + depth + 0.06;
       const dt = d + depth - 0.12;
-      const hk = 'arch_dressed';
+      const hk = 'arch_stone';
       const tint = [0.86, 0.82, 0.76];
-      g.quad(hk, P(-wb, yb, db), P(wb, yb, db), P(wt, yt, dt), P(-wt, yt, dt), null, { tint, ao: (p) => 0.75 + 0.25 * THREE.MathUtils.smoothstep(p.y, yb, yt) });
+      // hood front as a subdivided grid so the soot plume can be painted in per vertex: black at the
+      // lip above the firebox, fanning out and fading up the hood
+      {
+        const NX = 10;
+        const NY = 8;
+        const soot = (u, v) => {
+          const cx = Math.abs(u - 0.5) * 2;
+          const plume = (1 - THREE.MathUtils.smoothstep(cx, 0.25 + v * 0.5, 0.55 + v * 0.6)) * (1 - v * 0.75);
+          return 1 - 0.72 * plume;
+        };
+        for (let j = 0; j < NY; j++) {
+          for (let i = 0; i < NX; i++) {
+            const pt = (ii, jj) => {
+              const u = ii / NX;
+              const v = jj / NY;
+              const w = wb + (wt - wb) * v;
+              return [P(-w + 2 * w * u, yb + (yt - yb) * v, db + (dt - db) * v), soot(u, v)];
+            };
+            const [a, sa] = pt(i, j);
+            const [b, sb] = pt(i + 1, j);
+            const [c, sc] = pt(i + 1, j + 1);
+            const [e, se] = pt(i, j + 1);
+            const sAvg = (sa + sb + sc + se) / 4;
+            g.quad(hk, a, b, c, e, null, { tint: [tint[0] * sAvg, tint[1] * sAvg, tint[2] * sAvg], ao: 0.9, uvOff: [0.37, 0.11] });
+          }
+        }
+      }
       g.quad(hk, P(-wb, yb, d), P(-wb, yb, db), P(-wt, yt, dt), P(-wt, yt, d), null, { tint, ao: 0.8 });
       g.quad(hk, P(wb, yb, db), P(wb, yb, d), P(wt, yt, d), P(wt, yt, dt), null, { tint, ao: 0.8 });
       g.quad(hk, P(-wb, yb, d), P(wb, yb, d), P(wb, yb, db), P(-wb, yb, db), null, { tint, ao: 0.5 });
-      localBox(f, 'arch_dressed', -wt, wt, yt, H, d, dt, { tint: [0.8, 0.76, 0.7] });
+      localBox(f, 'arch_stone', -wt, wt, yt, H, d, dt, { tint: [0.62, 0.58, 0.54] });
+      // a crowning cornice on the hood lip and a carved shield of arms on its face
+      localBox(f, 'arch_dressed', -wb - 0.05, wb + 0.05, yb - 0.02, yb + 0.07, d, db + 0.05, { chamfer: 0.025, tint: [0.7, 0.66, 0.6] });
+      {
+        const sm = localMatrix(f, 0, (yb + yt) / 2 + 0.02, (db + dt) / 2 + 0.03, 0).multiply(new THREE.Matrix4().makeRotationX(-Math.atan2(db - dt, yt - yb)));
+        const sh = new THREE.Shape();
+        sh.moveTo(-0.2, 0.22);
+        sh.lineTo(0.2, 0.22);
+        sh.lineTo(0.2, 0.0);
+        sh.quadraticCurveTo(0.18, -0.18, 0, -0.27);
+        sh.quadraticCurveTo(-0.18, -0.18, -0.2, 0.0);
+        sh.closePath();
+        const sg = new THREE.ExtrudeGeometry(sh, { depth: 0.04, bevelEnabled: true, bevelThickness: 0.012, bevelSize: 0.012, bevelSegments: 2, curveSegments: 8 });
+        g.geometry('arch_dressed', sg, sm, { uv: 'world', tint: [0.55, 0.16, 0.12], ao: 0.9 });
+        sg.dispose();
+        // a gilt chevron on the field
+        const cv = new THREE.Shape();
+        cv.moveTo(-0.17, -0.06);
+        cv.lineTo(0, 0.1);
+        cv.lineTo(0.17, -0.06);
+        cv.lineTo(0.17, 0.0);
+        cv.lineTo(0, 0.16);
+        cv.lineTo(-0.17, 0.0);
+        cv.closePath();
+        const cg = new THREE.ExtrudeGeometry(cv, { depth: 0.012, bevelEnabled: false });
+        g.geometry('gilt', cg, sm.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0, 0.055)), { uv: 'world' });
+        cg.dispose();
+      }
       // a moulded string course where hood meets breast
       localBox(f, 'arch_dressed', -wt - 0.06, wt + 0.06, yt, yt + 0.1, d, dt + 0.06, { chamfer: 0.02, tint: [0.9, 0.86, 0.8] });
       // stone corbels under the mantel ends

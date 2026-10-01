@@ -384,10 +384,13 @@ export function buildProps(map, block, opts = {}) {
     } else {
       // broken shaft on its plinth
       const colAO = (p) => 0.5 + 0.5 * THREE.MathUtils.smoothstep(p.y, 0.0, 0.9);
-      g.box('prop_limestone', { matrix: m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.2, 0)), s: [0.95, 0.4, 0.95], chamfer: 0.05, uv: 'local', ao: colAO });
-      g.box('prop_limestone', { matrix: m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.45, 0)), s: [0.82, 0.1, 0.82], chamfer: 0.03, uv: 'local', ao: colAO });
+      // square plinth with a chipped corner, Attic base mouldings, then the fluted, fractured shaft
+      g.box('prop_limestone', { matrix: m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.15, 0)), s: [0.98, 0.3, 0.98], chamfer: 0.035, uv: 'world', ao: colAO });
+      g.geometry('prop_limestone', geos.attic, m.clone().multiply(new THREE.Matrix4().makeRotationY(hash(fc.x, fc.y, 'br') * 6.3)), { uv: 'world', ao: colAO });
       const sh = geos.shaft[Math.floor(hash(fc.x, fc.y, 'sv') * geos.shaft.length)];
-      g.geometry('prop_limestone', sh, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.5, 0)).multiply(new THREE.Matrix4().makeRotationY(hash(fc.x, fc.y, 'sr') * 6.3)), { uvScale: [2, 1.2], ao: colAO });
+      g.geometry('prop_limestone', sh, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.54, 0)).multiply(new THREE.Matrix4().makeRotationY(hash(fc.x, fc.y, 'sr') * 6.3)), { uv: 'world', ao: colAO });
+      // a fallen fragment of the shaft beside the plinth
+      g.geometry('prop_limestone', geos.chunk[Math.floor(hash(fc.x, fc.y, 'fc') * geos.chunk.length)], m.clone().multiply(new THREE.Matrix4().makeTranslation(0.7, 0.14, 0.25)).multiply(new THREE.Matrix4().makeRotationY(hash(fc.x, fc.y, 'fr') * 6.3)).multiply(new THREE.Matrix4().makeScale(0.5, 0.42, 0.45)), { uv: 'world', ao: colAO });
     }
     {
       const mc = new THREE.Vector3().applyMatrix4(m);
@@ -717,32 +720,7 @@ function makePropGeometries() {
   }
   drum.computeVertexNormals();
   // broken column shafts: fluted, each with its own fracture (sloped shear, jagged, stump)
-  const shaft = [];
-  for (let v = 0; v < 3; v++) {
-    const hgt = [1.6, 1.25, 0.9][v];
-    const sg = new THREE.CylinderGeometry(0.32, 0.34, hgt, 20, 6);
-    const p = sg.attributes.position;
-    const slopeA = hash(v, 'sa') * Math.PI * 2;
-    for (let i = 0; i < p.count; i++) {
-      const a = Math.atan2(p.getZ(i), p.getX(i));
-      const rr = Math.hypot(p.getX(i), p.getZ(i));
-      if (rr > 0.25) {
-        const fl = 1 - 0.05 * Math.max(0, Math.cos(a * 10));
-        p.setX(i, p.getX(i) * fl);
-        p.setZ(i, p.getZ(i) * fl);
-      }
-      if (p.getY(i) > hgt / 2 - 0.01) {
-        const shear = Math.cos(a - slopeA) * (v === 0 ? 0.35 : 0.18);
-        const jag = (hash(v, Math.round(a * 6), 'jg') - 0.5) * (v === 1 ? 0.4 : 0.14);
-        p.setY(i, hgt / 2 - 0.25 + shear + jag);
-      }
-    }
-    sg.translate(0, hgt / 2, 0);
-    const ni = sg.toNonIndexed();
-    sg.dispose();
-    ni.computeVertexNormals();
-    shaft.push(ni);
-  }
+  const shaft = [0, 1, 2].map((v) => brokenShaft(v, [1.6, 1.25, 0.9][v]));
   const skull = new THREE.SphereGeometry(0.1, 10, 8);
   skull.scale(1, 0.9, 1.15);
   const bottle = new THREE.LatheGeometry([[0, 0], [0.045, 0], [0.05, 0.02], [0.05, 0.14], [0.02, 0.19], [0.015, 0.25], [0, 0.25]].map(([r, y]) => new THREE.Vector2(r, y)), 8);
@@ -750,7 +728,107 @@ function makePropGeometries() {
   const plate = new THREE.CylinderGeometry(0.11, 0.09, 0.02, 14);
   const pebble = new THREE.IcosahedronGeometry(0.5, 0);
   pebble.computeVertexNormals();
-  return { pebble, barrel: [body, hoop, lid], crate, sack, rock, chunk, link, candle, wheel, hub, pot, skull, drum, shaft, bottle, jar, plate };
+  return { pebble, barrel: [body, hoop, lid], crate, sack, rock, chunk, link, candle, wheel, hub, pot, skull, drum, shaft, attic: atticBase(0.34), bottle, jar, plate };
+}
+
+/**
+ * Broken, fluted column shaft (smooth-shaded): 24 concave flutes with fillets, a slight entasis,
+ * chipped arrises and dents down the shaft, and a fractured top — a sloped shear with a jagged,
+ * multi-scale break line and a rough, stepped fracture surface. Origin at the base centre.
+ */
+export function brokenShaft(seed, hgt) {
+  const NA = 96;
+  const NY = 16;
+  const R0 = 0.33;
+  const sa = hash(seed, 'sa') * Math.PI * 2;
+  const shear = [0.38, 0.16, 0.22][seed % 3];
+  const lerpH = (k, i) => {
+    // periodic 1D value noise around the circumference
+    const x = (i / NA) * k;
+    const i0 = Math.floor(x);
+    const f = x - i0;
+    const u = f * f * (3 - 2 * f);
+    return hash(seed, k, i0 % k, 'n') * (1 - u) + hash(seed, k, (i0 + 1) % k, 'n') * u;
+  };
+  const top = [];
+  for (let i = 0; i < NA; i++) {
+    const a = (i / NA) * Math.PI * 2;
+    const jag = (lerpH(5, i) - 0.5) * 0.22 + (lerpH(13, i) - 0.5) * 0.12 + (lerpH(31, i) - 0.5) * 0.05;
+    top.push(hgt - 0.12 - shear + Math.cos(a - sa) * shear + jag);
+  }
+  // dents / chips (spherical bites)
+  const dents = [];
+  for (let k = 0; k < 7; k++) dents.push({ a: hash(seed, k, 'da') * Math.PI * 2, y: hash(seed, k, 'dy') * hgt, r: 0.06 + hash(seed, k, 'dr') * 0.1, d: 0.02 + hash(seed, k, 'dd') * 0.035 });
+  const radius = (a, y) => {
+    const ent = R0 * (1 - 0.06 * (y / 2.5)) ;
+    const c = Math.cos(a * 24);
+    const flute = c > 0 ? 0.042 * Math.sqrt(c) : 0;
+    let r = ent - flute;
+    for (const d of dents) {
+      let da = Math.abs(a - d.a);
+      da = Math.min(da, Math.PI * 2 - da) * R0;
+      const q = Math.hypot(da, y - d.y) / d.r;
+      if (q < 1) r -= d.d * (1 - q * q);
+    }
+    return r;
+  };
+  const pos = [];
+  const idx = [];
+  for (let j = 0; j <= NY; j++) {
+    for (let i = 0; i < NA; i++) {
+      const a = (i / NA) * Math.PI * 2;
+      const y = (top[i] * j) / NY;
+      const r = radius(a, y) - (j === NY ? 0.012 : 0);
+      pos.push(Math.cos(a) * r, y, Math.sin(a) * r);
+    }
+  }
+  for (let j = 0; j < NY; j++) {
+    for (let i = 0; i < NA; i++) {
+      const a0 = j * NA + i;
+      const a1 = j * NA + ((i + 1) % NA);
+      const b0 = a0 + NA;
+      const b1 = a1 + NA;
+      idx.push(a0, b0, a1, a1, b0, b1);
+    }
+  }
+  // fracture surface: rings shrinking to a peak, each vertex roughened
+  const ringBase = (NY) * NA;
+  let prev = ringBase;
+  const RINGS = 4;
+  const meanTop = top.reduce((x, y) => x + y, 0) / NA;
+  for (let q = 1; q <= RINGS; q++) {
+    const t = q / (RINGS + 1);
+    const start = pos.length / 3;
+    for (let i = 0; i < NA; i++) {
+      const a = (i / NA) * Math.PI * 2;
+      const r = radius(a, top[i]) * (1 - t) - 0.012;
+      const y = top[i] * (1 - t) + meanTop * t + (hash(seed, q, i >> 2, 'fr') - 0.5) * 0.05 + Math.cos(a - sa) * shear * 0.3 * t;
+      pos.push(Math.cos(a) * r, y, Math.sin(a) * r);
+    }
+    for (let i = 0; i < NA; i++) {
+      const p0 = prev + i;
+      const p1 = prev + ((i + 1) % NA);
+      const c0 = start + i;
+      const c1 = start + ((i + 1) % NA);
+      idx.push(p0, c0, p1, p1, c0, c1);
+    }
+    prev = start;
+  }
+  const cIdx = pos.length / 3;
+  pos.push(0, meanTop + (hash(seed, 'pk') - 0.3) * 0.08, 0);
+  for (let i = 0; i < NA; i++) idx.push(prev + i, cIdx, prev + ((i + 1) % NA));
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+/** Attic column base: square plinth, lower torus, scotia, upper torus (origin at the floor). */
+export function atticBase(R = 0.36) {
+  const prof = [[0, 0.3], [R + 0.08, 0.3], [R + 0.1, 0.33], [R + 0.11, 0.37], [R + 0.09, 0.4], [R + 0.03, 0.41], [R + 0.01, 0.44], [R + 0.03, 0.47], [R + 0.055, 0.49], [R + 0.05, 0.52], [R + 0.02, 0.535], [R - 0.02, 0.54], [0, 0.54]];
+  const g = new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), 40);
+  return g;
 }
 
 /**
@@ -1084,11 +1162,11 @@ export { getLampGlassMaterial };
  * @param {THREE.Vector3} sunDir direction toward the light
  */
 export function buildLightShafts(windows, sunDir, { color = 0xfff0d8, strength = 0.12, length = 4.5 } = {}) {
-  const ray = sunDir.clone().multiplyScalar(-1).normalize();
   const pos = [];
   const uv = [];
   const Y = new THREE.Vector3(0, 1, 0);
   for (const w of windows) {
+    const ray = (typeof sunDir === 'function' ? sunDir(w) : sunDir).clone().multiplyScalar(-1).normalize();
     if (ray.dot(w.N) > -0.05) continue;
     const c = w.pos.clone().addScaledVector(w.N, -0.3);
     const Tt = new THREE.Vector3(-w.N.z, 0, w.N.x);
