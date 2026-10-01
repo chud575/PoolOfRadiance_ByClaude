@@ -20,65 +20,76 @@ function withTransform(g, x, y, s, fn) {
  * (rotated by angle). `glow` (0..1) only deepens the soft shadow beneath.
  */
 export function drawPartyArrow(g, x, y, s, angle = 0, { glow = 0.5 } = {}) {
+  // a compass-rose point painted in vermilion: one flank in a pale wash, the
+  // other in the full-strength pigment, a centre rib and a quill outline
   g.save();
   g.translate(x, y);
   g.rotate(angle);
   g.scale(s / 100, s / 100);
-  const outline = () => {
+  const tip = [0, -50];
+  const lw = [-25, 26];
+  const rw = [25, 26];
+  const notch = [0, 12];
+  const flank = (side) => {
     g.beginPath();
-    g.moveTo(0, -48);
-    g.quadraticCurveTo(10, -14, 29, 27);
-    g.quadraticCurveTo(14, 18, 0, 13);
-    g.quadraticCurveTo(-14, 18, -29, 27);
-    g.quadraticCurveTo(-10, -14, 0, -48);
+    g.moveTo(tip[0], tip[1]);
+    const w = side < 0 ? lw : rw;
+    g.quadraticCurveTo(w[0] * 0.38, -12, w[0], w[1]);
+    g.quadraticCurveTo(w[0] * 0.45, 17, notch[0], notch[1]);
     g.closePath();
   };
-  // shadow on the paper
+  const outline = () => {
+    g.beginPath();
+    g.moveTo(tip[0], tip[1]);
+    g.quadraticCurveTo(rw[0] * 0.38, -12, rw[0], rw[1]);
+    g.quadraticCurveTo(rw[0] * 0.45, 17, notch[0], notch[1]);
+    g.quadraticCurveTo(lw[0] * 0.45, 17, lw[0], lw[1]);
+    g.quadraticCurveTo(lw[0] * 0.38, -12, tip[0], tip[1]);
+    g.closePath();
+  };
+  // a soft wash shadow, as if the point were cut from paper and laid on
   g.save();
-  g.translate(5, 6);
+  g.translate(3.5, 4.5);
   outline();
-  g.fillStyle = `rgba(60,28,10,${(0.18 + glow * 0.1).toFixed(3)})`;
+  g.fillStyle = `rgba(70,34,12,${(0.16 + glow * 0.06).toFixed(3)})`;
   g.fill();
   g.restore();
-  // body wash
-  outline();
-  g.fillStyle = 'rgba(190,52,30,0.94)';
+  // lit flank: thin vermilion wash pooling toward its edge
+  flank(-1);
+  const lit = g.createLinearGradient(-26, 0, 0, 0);
+  lit.addColorStop(0, 'rgba(206,84,52,0.95)');
+  lit.addColorStop(1, 'rgba(232,140,96,0.9)');
+  g.fillStyle = lit;
   g.fill();
+  // shaded flank: full pigment, darker at the rib
+  flank(1);
+  const sh = g.createLinearGradient(0, 0, 26, 0);
+  sh.addColorStop(0, 'rgba(120,24,14,0.98)');
+  sh.addColorStop(1, 'rgba(168,40,24,0.96)');
+  g.fillStyle = sh;
+  g.fill();
+  // brush texture: a few dry streaks along the point
   g.save();
   outline();
   g.clip();
-  // shaded flank
-  g.fillStyle = 'rgba(110,22,12,0.55)';
-  g.beginPath(); g.moveTo(0, -50); g.lineTo(34, 30); g.lineTo(0, 14); g.closePath(); g.fill();
-  // pigment pooled toward the barbs
-  const pool = g.createLinearGradient(0, -48, 0, 28);
-  pool.addColorStop(0, 'rgba(255,170,120,0.18)');
-  pool.addColorStop(0.6, 'rgba(0,0,0,0)');
-  pool.addColorStop(1, 'rgba(90,15,8,0.35)');
-  g.fillStyle = pool;
-  g.fillRect(-32, -50, 64, 80);
-  // brush streaks along the stroke
-  g.strokeStyle = 'rgba(90,16,8,0.22)';
-  g.lineWidth = 1.4;
-  for (let i = -3; i <= 3; i++) {
-    g.beginPath(); g.moveTo(i * 2.2, -40 + Math.abs(i) * 6); g.lineTo(i * 7.5, 22 - Math.abs(i)); g.stroke();
-  }
-  // pale highlight on the lit edge
-  g.strokeStyle = 'rgba(255,214,170,0.55)';
-  g.lineWidth = 2.6;
-  g.beginPath(); g.moveTo(-3, -36); g.quadraticCurveTo(-11, -6, -22, 20); g.stroke();
+  g.strokeStyle = 'rgba(255,214,180,0.16)';
+  g.lineWidth = 1.2;
+  for (let i = 1; i <= 3; i++) { g.beginPath(); g.moveTo(-i * 2.5, -40 + i * 6); g.lineTo(-i * 7, 20 - i); g.stroke(); }
   g.restore();
-  // ink outline
-  outline();
+  // quill outline + rib
   g.lineJoin = 'round';
+  g.lineCap = 'round';
   g.strokeStyle = 'rgba(43,22,10,0.95)';
-  g.lineWidth = 3.4;
+  g.lineWidth = 2.6;
+  outline();
   g.stroke();
-  // gilt boss
+  g.lineWidth = 1.4;
+  g.beginPath(); g.moveTo(tip[0], tip[1] + 3); g.lineTo(notch[0], notch[1] - 1); g.stroke();
+  // a little gilt pivot, as on a compass card
   g.fillStyle = INK.goldHi;
-  g.beginPath(); g.arc(0, 2, 5.5, 0, Math.PI * 2); g.fill();
-  g.strokeStyle = INK.goldLo;
-  g.lineWidth = 1.6;
+  g.beginPath(); g.arc(0, 4, 4.2, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = 'rgba(43,22,10,0.9)';
+  g.lineWidth = 1.2;
   g.stroke();
   g.restore();
 }
@@ -92,8 +103,8 @@ export function partyConeCanvas() {
   const g = c.getContext('2d');
   g.filter = 'blur(9px)';
   const gr = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S * 0.48);
-  gr.addColorStop(0, 'rgba(200,80,40,0.55)');
-  gr.addColorStop(0.5, 'rgba(210,130,64,0.28)');
+  gr.addColorStop(0, 'rgba(196,84,46,0.42)');
+  gr.addColorStop(0.5, 'rgba(210,136,72,0.2)');
   gr.addColorStop(1, 'rgba(214,150,80,0)');
   g.fillStyle = gr;
   g.beginPath();

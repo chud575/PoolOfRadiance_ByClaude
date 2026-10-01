@@ -197,7 +197,7 @@ export class Diorama {
     this.scene = scene;
     this.party = party;
     this.map = map;
-    const maxAniso = this.ctx.render?.maxAnisotropy ?? 4;
+    const maxAniso = Math.min(8, this.ctx.render?.maxAnisotropy ?? 4);
     const { W, H, M, MX, MY } = SHEET;
     const cs = sheet.cs;
     const info = sheet.info;
@@ -477,7 +477,10 @@ export class Diorama {
       const sp = this._labelSprite(z.name);
       const cx = z.x + z.w / 2;
       const cz = z.y + z.h / 2;
-      sp.position.set(cx, z.h <= 1 ? 0.95 : 1.1, cz + Math.min(1.2, z.h * 0.3));
+      let lz = cz + Math.min(1.2, z.h * 0.3);
+      // never float a name over the party's token
+      if (party && Math.abs(party.x + 0.5 - cx) < 1.8 && Math.abs(party.y + 0.5 - lz) < 1.3) lz = party.y + 0.5 + (party.y > 2 ? -1.5 : 1.5);
+      sp.position.set(cx, z.h <= 1 ? 0.95 : 1.1, lz);
       scene.add(sp);
     }
 
@@ -523,7 +526,7 @@ export class Diorama {
       flag.castShadow = true;
       grp.add(base, disc, head, pole, finial, flag);
       grp.position.set(party.x + 0.5, 0, party.y + 0.5);
-      grp.scale.setScalar(1.35);
+      grp.scale.setScalar(1.75);
       scene.add(grp);
       this.marker = { grp, flag, flagGeo };
     }
@@ -531,7 +534,7 @@ export class Diorama {
     // ---------- note pins with their seals as flags ----------
     const needleMat = T(new THREE.MeshStandardMaterial({ color: 0xcfd3d8, roughness: 0.25, metalness: 1 }));
     const needleGeo = T(new THREE.CylinderGeometry(0.014, 0.004, 0.6, 6));
-    const headGeo = T(new THREE.SphereGeometry(0.1, 20, 14));
+    const headGeo = T(new THREE.SphereGeometry(0.15, 20, 14));
     for (const n of notes ?? []) {
       const kind = PIN_KINDS[n.kind] ?? PIN_KINDS.note;
       const mat = T(new THREE.MeshStandardMaterial({ color: new THREE.Color(kind.color), roughness: 0.3, metalness: 0.05 }));
@@ -545,7 +548,7 @@ export class Diorama {
       head.position.set(px - 0.03, 0.6, pz);
       head.castShadow = true;
       const seal = new THREE.Sprite(T(new THREE.SpriteMaterial({ map: this._pinTexture(n.kind, T), depthWrite: false, sizeAttenuation: false })));
-      seal.scale.set(0.04, 0.04, 1);
+      seal.scale.set(0.055, 0.055, 1);
       seal.position.set(px - 0.03, 1.15, pz);
       scene.add(needle, head, seal);
     }
@@ -688,10 +691,14 @@ export class Diorama {
     }
     const wick = new THREE.Mesh(T(new THREE.CylinderGeometry(0.012, 0.012, 0.14, 6)), T(new THREE.MeshStandardMaterial({ color: 0x1a120c })));
     wick.position.y = 2.68;
-    const flameMat = T(new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffd9a0).multiplyScalar(2.4) }));
+    const flameMat = T(new THREE.MeshBasicMaterial({ color: 0xffa040, transparent: true, opacity: 0.85 }));
     const flame = new THREE.Mesh(T(new THREE.SphereGeometry(0.09, 16, 12)), flameMat);
     flame.scale.set(1, 2.6, 1);
     flame.position.y = 2.92;
+    const core = new THREE.Mesh(T(new THREE.SphereGeometry(0.05, 12, 8)), T(new THREE.MeshBasicMaterial({ color: 0xfff4d8 })));
+    core.scale.set(1, 2.2, 1);
+    core.position.y = 2.86;
+    candle.add(core);
     for (const m of [hm, wax, ...candle.children]) { m.castShadow = true; m.receiveShadow = true; }
     candle.add(hm, wax, wick, flame);
     candle.position.set(-3.3, 0, 1.6);
@@ -707,8 +714,8 @@ export class Diorama {
       g.fillStyle = gr;
       g.fillRect(0, 0, 128, 128);
     }
-    const halo = new THREE.Sprite(T(new THREE.SpriteMaterial({ map: T(new THREE.CanvasTexture(glowC)), color: 0xffb070, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.6 })));
-    halo.scale.set(1.4, 1.4, 1);
+    const halo = new THREE.Sprite(T(new THREE.SpriteMaterial({ map: T(new THREE.CanvasTexture(glowC)), color: 0xffb070, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.95 })));
+    halo.scale.set(2.4, 2.4, 1);
     halo.position.set(-3.3, 2.95, 1.6);
     scene.add(halo);
     const candleLight = new THREE.PointLight(0xff9448, 14, 40, 1.35);
@@ -744,7 +751,7 @@ export class Diorama {
     shaftPts.unshift(new THREE.Vector2(0, 0));
     const shaft = new THREE.Mesh(T(new THREE.LatheGeometry(shaftPts, 10)), T(new THREE.MeshStandardMaterial({ color: 0xe9dfc6, roughness: 0.35, envMapIntensity: 0.6 })));
     shaft.castShadow = true;
-    const vaneGeo = T(new THREE.PlaneGeometry(1.5, 3.6, 8, 40));
+    const vaneGeo = T(new THREE.PlaneGeometry(1.15, 3.6, 8, 40));
     const vp = vaneGeo.attributes.position;
     for (let i = 0; i < vp.count; i++) {
       const x = vp.getX(i);
@@ -779,9 +786,11 @@ export class Diorama {
       for (const side of [-1, 1]) {
         if (r() < 0.035) continue; // a split between barbs
         const L = half(1 - t, side) * (0.92 + r() * 0.1);
-        const tone = 228 + r() * 22 - (t < 0.15 ? 40 * (0.15 - t) / 0.15 : 0);
-        g.strokeStyle = `rgba(${tone | 0},${(tone * 0.96) | 0},${(tone * 0.86) | 0},0.95)`;
-        g.lineWidth = 1.6;
+        // goose-grey mottling in soft bands, paler toward the shaft, darker at the tip
+        const band = 0.5 + 0.5 * Math.sin(t * 38 + Math.sin(t * 7) * 2 + side);
+        const tone = 206 + r() * 18 - band * 34 - (t < 0.18 ? 60 * (0.18 - t) / 0.18 : 0);
+        g.strokeStyle = `rgba(${tone | 0},${(tone * 0.95) | 0},${(tone * 0.86) | 0},${(0.8 + r() * 0.18).toFixed(2)})`;
+        g.lineWidth = 1.2 + r() * 0.8;
         g.beginPath();
         g.moveTo(cx, y);
         g.quadraticCurveTo(cx + side * L * 0.6, y - L * 0.25, cx + side * L, y - L * 0.55);
@@ -798,8 +807,8 @@ export class Diorama {
     g.fillStyle = band;
     g.fillRect(0, 0, W, H);
     g.globalCompositeOperation = 'source-over';
-    g.strokeStyle = 'rgba(250,244,228,1)';
-    g.lineWidth = 5;
+    g.strokeStyle = 'rgba(236,226,200,1)';
+    g.lineWidth = 4;
     g.beginPath(); g.moveTo(cx, 10); g.lineTo(cx, H - 160); g.stroke();
     const t = T(new THREE.CanvasTexture(c));
     t.colorSpace = THREE.SRGBColorSpace;

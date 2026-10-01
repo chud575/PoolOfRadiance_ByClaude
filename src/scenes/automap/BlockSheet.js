@@ -1,7 +1,7 @@
 import { EDGE, CELL, DIRS } from '../../data/maps/MapGrid.js';
 import { getMap, hasMap } from '../../data/maps/index.js';
 import { TRAVEL } from '../../data/travel.js';
-import { INK, makeCanvas, makeParchment, quillStroke, hatchRect, lineShade, stipple, featherMask, prng } from './ink.js';
+import { INK, makeCanvas, makeParchment, quillStroke, planWall, hatchRect, lineShade, stipple, featherMask, prng } from './ink.js';
 import { regions, washRegion, hatchBand, cobbleRegion, scatter, deckleMask } from './paint.js';
 import { drawMarker } from './glyphs.js';
 import { SERIF, drawCompassRose, drawCartouche, drawIlluminatedInitial, drawFlourish, fitFont, wrapText, haloText, goldGradient } from './ornaments.js';
@@ -111,9 +111,11 @@ export const MARKER_LABELS = {
 };
 
 // roof / floor pigments per wall style (each building picks one, then jitters hue and value)
-const ROOF_STONE = [[178, 92, 74], [160, 100, 88], [186, 120, 86], [150, 88, 84], [172, 110, 96]];
-const ROOF_TIMBER = [[200, 104, 60], [190, 84, 58], [206, 132, 70], [180, 80, 52], [196, 118, 78]];
-const ROOF_RUIN = [[150, 128, 104], [140, 120, 100]];
+const ROOF_STONE = [[184, 98, 72], [150, 136, 128], [176, 148, 108], [160, 112, 84], [178, 120, 106], [134, 128, 132]];
+const ROOF_TIMBER = [[204, 148, 72], [192, 102, 58], [200, 128, 74], [178, 90, 72], [208, 168, 98]];
+const ROOF_RUIN = [[150, 128, 104], [140, 120, 100], [132, 126, 112]];
+// pigments dropped wet-in-wet into a roof wash: sepia, indigo shadow, madder, sap
+const SECOND = [[110, 70, 44], [78, 86, 120], [140, 60, 52], [96, 100, 60]];
 
 /**
  * Build the sheet canvas.
@@ -218,7 +220,7 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
         // roofs and floors: each building its own pigment
         const pal = rg.style === 1 ? ROOF_TIMBER : rg.style === 2 ? ROOF_RUIN : ROOF_STONE;
         const base = pal[Math.floor(rr() * pal.length)];
-        washRegion(w, rg.cells, { ...P, color: jit(base, 0.6, 0.2), alpha: 0.5 + rr() * 0.14, seed: rs, edge: 0.5, blooms: 1 + Math.floor(rr() * 2), mottle: 0.2 + rr() * 0.12, gran: 0.4 });
+        washRegion(w, rg.cells, { ...P, color: jit(base, 0.5, 0.22), alpha: 0.48 + rr() * 0.16, seed: rs, edge: 0.55 + rr() * 0.2, blooms: rr() < 0.6 ? 1 : 0, mottle: 0.18 + rr() * 0.14, gran: 0.22 + rr() * 0.15, glaze: 0.35 + rr() * 0.35, second: SECOND[Math.floor(rr() * SECOND.length)] });
         hatchBand(w, rg.cells, { ...P, seed: rs + 1, angle: 0.5 + rr() * 0.7, band: 0.22 + rr() * 0.14, alpha: 0.3 + rr() * 0.15, color: '#4a1e12' });
       } else if (t === CELL.RUBBLE) {
         washRegion(w, rg.cells, { ...P, color: jit([150, 130, 104], 0.3, 0.15), alpha: 0.3, seed: rs, edge: 0.35, mottle: 0.5, gran: 0.5 });
@@ -263,8 +265,8 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
   // dried tide line where the survey's wash meets bare paper
   g.drawImage(tideLine, 0, 0, W, H);
 
-  // ---------- walls: quill strokes on their own ink layer ----------
-  const wallW = cs * 0.125;
+  // ---------- walls: a surveyor's drafted plan on its own ink layer ----------
+  const wallW = cs * 0.13;
   const { segs: cellSegs, effective } = collectEdges(map, info, seenCell, secrets);
   const segs = cellSegs.map((q) => ({ ...q, x0: CX(q.x0), y0: CY(q.y0), x1: CX(q.x1), y1: CY(q.y1) }));
   const exitAt = new Set(info.travel.filter((t) => t.edge).map((t) => `${t.at.x},${t.at.y},${t.at.facing}`));
@@ -274,36 +276,85 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
   const inkL = makeCanvas(W * k, H * k);
   const ig = inkL.getContext('2d');
   ig.scale(k, k);
+  const outward = (q) => (q.horiz ? [0, q.cell[2] === 'N' ? -1 : 1] : [q.cell[2] === 'W' ? -1 : 1, 0]);
+  /** a broken stone, outlined, for ruins and rubble spill */
+  const chunk = (x, y, rad, rr) => {
+    ig.beginPath();
+    const n = 4 + Math.floor(rr() * 3);
+    const rot = rr() * 6;
+    for (let i = 0; i < n; i++) {
+      const a = rot + (i / n) * Math.PI * 2;
+      const q = rad * (0.7 + rr() * 0.5);
+      if (i === 0) ig.moveTo(x + Math.cos(a) * q, y + Math.sin(a) * q * 0.8); else ig.lineTo(x + Math.cos(a) * q, y + Math.sin(a) * q * 0.8);
+    }
+    ig.closePath();
+    ig.fillStyle = 'rgba(214,196,160,0.9)';
+    ig.fill();
+    ig.strokeStyle = INK.ink;
+    ig.lineWidth = 0.6;
+    ig.stroke();
+  };
   if (inkWalls) {
     for (const rn of runs) {
-      const ext = wallW * 0.3;
+      const city = border(rn);
+      const timber = rn.style === 1 && !city && !dungeon;
+      const width = wallW * (city ? 1.55 : timber ? 0.72 : 1);
+      const ext = width * 0.5;
       const dx = rn.horiz ? ext : 0;
       const dy = rn.horiz ? 0 : ext;
       const sd = (rn.x0 * 7 + rn.y0 * 13) | 0;
-      const city = border(rn);
-      const width = wallW * (city ? 1.5 : rn.style === 1 ? 0.85 : 1);
-      quillStroke(ig, rn.x0 - dx, rn.y0 - dy, rn.x1 + dx, rn.y1 + dy, { width, amp: cs * 0.014, seed: sd, dry: 0.55, pool: 1 });
+      planWall(ig, rn.x0 - dx, rn.y0 - dy, rn.x1 + dx, rn.y1 + dy, { width, seed: sd, amp: cs * 0.012, dry: timber ? 0.2 : 0.45, fill: timber ? 0.55 : 0.82, over: city ? 0.6 : 1 });
+      const rr = prng(sd + 9);
+      const len = Math.hypot(rn.x1 - rn.x0, rn.y1 - rn.y0);
+      const ux = (rn.x1 - rn.x0) / len;
+      const uy = (rn.y1 - rn.y0) / len;
+      if (timber) {
+        // timber framing: square posts along the run
+        ig.fillStyle = INK.ink;
+        const n = Math.max(1, Math.round(len / cs));
+        for (let i = 0; i <= n; i++) {
+          const t = (i / n) * len;
+          const ps = width * (1.12 + rr() * 0.15);
+          ig.globalAlpha = 0.9;
+          ig.fillRect(rn.x0 + ux * t - ps / 2, rn.y0 + uy * t - ps / 2, ps, ps);
+        }
+        ig.globalAlpha = 1;
+      }
       if (city) {
-        // the city wall: a second, finer rule on the inside face
-        const o = width * 1.25;
-        const ox = rn.horiz ? 0 : (rn.cell[2] === 'W' ? o : -o);
-        const oy = rn.horiz ? (rn.cell[2] === 'N' ? o : -o) : 0;
-        quillStroke(ig, rn.x0 - dx + ox, rn.y0 - dy + oy, rn.x1 + dx + ox, rn.y1 + dy + oy, { width: wallW * 0.32, amp: cs * 0.01, seed: sd + 3, pool: 0.6, taper: 0.5 });
+        // the city wall: a finer rule on the inner face, merlons on the outer
+        const [ox, oy] = outward(rn);
+        const io = -width * 1.05;
+        quillStroke(ig, rn.x0 - dx + ox * io, rn.y0 - dy + oy * io, rn.x1 + dx + ox * io, rn.y1 + dy + oy * io, { width: wallW * 0.22, amp: cs * 0.01, seed: sd + 3, pool: 0, taper: 0.5 });
+        ig.fillStyle = INK.ink;
+        const n = Math.floor(len / (cs * 0.32));
+        for (let i = 0; i < n; i++) {
+          const t = (i + 0.5) * (len / n);
+          const mw = cs * 0.09;
+          const md = width * 0.42;
+          const cx = rn.x0 + ux * t + ox * (width * 0.5 + md * 0.5);
+          const cy = rn.y0 + uy * t + oy * (width * 0.5 + md * 0.5);
+          ig.globalAlpha = 0.78 + rr() * 0.2;
+          ig.fillRect(cx - (rn.horiz ? mw : md) / 2, cy - (rn.horiz ? md : mw) / 2, rn.horiz ? mw : md, rn.horiz ? md : mw);
+        }
+        ig.globalAlpha = 1;
       }
     }
-    // crumbling ruin walls: broken strokes and spill
+    // crumbling ruin walls: broken lengths with ragged ends and spilled masonry
     for (const sg of segs.filter((q) => effective(q) === EDGE.WALL && ruin(q))) {
       const r = prng((sg.x0 * 3 + sg.y0 * 7) | 0);
-      const n = 2 + Math.floor(r() * 2);
+      const n = 1 + Math.floor(r() * 3);
+      const [ox, oy] = outward(sg);
       for (let i = 0; i < n; i++) {
-        const t0 = i / n + r() * 0.08;
-        const t1 = (i + 1) / n - 0.08 - r() * 0.12;
-        if (t1 - t0 < 0.08) continue;
-        quillStroke(ig, sg.x0 + (sg.x1 - sg.x0) * t0, sg.y0 + (sg.y1 - sg.y0) * t0, sg.x0 + (sg.x1 - sg.x0) * t1, sg.y0 + (sg.y1 - sg.y0) * t1, { width: wallW * (0.65 + r() * 0.35), amp: 0.7, seed: i + sg.x0 * 3 + sg.y0, dry: 0.9, taper: 0.6 });
+        const t0 = i / n + r() * 0.1;
+        const t1 = (i + 1) / n - 0.1 - r() * 0.15;
+        if (t1 - t0 < 0.12) continue;
+        planWall(ig, sg.x0 + (sg.x1 - sg.x0) * t0, sg.y0 + (sg.y1 - sg.y0) * t0, sg.x0 + (sg.x1 - sg.x0) * t1, sg.y0 + (sg.y1 - sg.y0) * t1, { width: wallW * (0.7 + r() * 0.3), seed: i + sg.x0 * 3 + sg.y0, dry: 0.9, fill: 0.62, over: 0.4, amp: 0.6 });
       }
-      const mx = (sg.x0 + sg.x1) / 2;
-      const my = (sg.y0 + sg.y1) / 2;
-      stipple(ig, mx - cs * 0.4, my - cs * 0.16, cs * 0.8, cs * 0.32, { seed: (mx + my) | 0, count: 12, r: 1, color: INK.ink, alpha: 0.6 });
+      for (let i = 0; i < 4; i++) {
+        const t = 0.1 + r() * 0.8;
+        const side = (r() < 0.5 ? -1 : 1) * (wallW * 0.8 + r() * cs * 0.12);
+        chunk(sg.x0 + (sg.x1 - sg.x0) * t + ox * side, sg.y0 + (sg.y1 - sg.y0) * t + oy * side, cs * (0.025 + r() * 0.035), r);
+      }
     }
     // doors, locked doors, arches, found secret doors
     for (const sg of segs) {
@@ -314,69 +365,109 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
       const along = sg.horiz ? [1, 0] : [0, 1];
       const gap = cs * 0.26;
       const sd = (sg.x0 * 5 + sg.y0 * 11) | 0;
-      const piece = (a, b2, o = {}) => quillStroke(ig, sg.x0 + (sg.x1 - sg.x0) * a, sg.y0 + (sg.y1 - sg.y0) * a, sg.x0 + (sg.x1 - sg.x0) * b2, sg.y0 + (sg.y1 - sg.y0) * b2, { width: wallW, amp: 0.3, seed: sd + a * 10, ...o });
+      const timber = sg.style === 1 && !dungeon;
+      const ww = wallW * (timber ? 0.72 : 1);
+      const P = (a) => [sg.x0 + (sg.x1 - sg.x0) * a, sg.y0 + (sg.y1 - sg.y0) * a];
+      const piece = (a, b2, o = {}) => {
+        const [ax, ay] = P(a);
+        const [bx, by] = P(b2);
+        planWall(ig, ax, ay, bx, by, { width: ww, seed: sd + a * 10, amp: cs * 0.01, dry: 0.3, fill: timber ? 0.55 : 0.82, ...o });
+      };
       if (t === EDGE.SECRET) {
-        // a wall drawn in broken dashes + vermilion S
-        for (let i = 0; i < 6; i++) piece(i / 6 + 0.02, (i + 0.62) / 6, { width: wallW * 0.8, pool: 0.5, taper: 0.4 });
+        // the wall in broken dashes, and a vermilion S
+        for (let i = 0; i < 5; i++) piece(i / 5 + 0.03, (i + 0.6) / 5, { width: ww * 0.8, faces: false, dry: 0 });
         ig.save();
         ig.font = `italic bold ${Math.round(cs * 0.42)}px ${SERIF}`;
         ig.textAlign = 'center';
         ig.textBaseline = 'middle';
-        haloText(ig, 'S', mx + (sg.horiz ? 0 : cs * 0.22), my + (sg.horiz ? -cs * 0.2 : 0), { color: INK.vermilion, width: 3 });
+        ig.fillStyle = INK.vermilion;
+        ig.fillText('S', mx + (sg.horiz ? 0 : cs * 0.22), my + (sg.horiz ? -cs * 0.2 : 0));
         ig.restore();
         continue;
       }
-      piece(0, 0.5 - gap / cs, { pool: 1.1 });
-      piece(0.5 + gap / cs, 1, { pool: 1.1 });
-      // jambs
-      const jl = wallW * 1.1;
+      piece(-ww * 0.5 / cs, 0.5 - gap / cs, { over: 0.5 });
+      piece(0.5 + gap / cs, 1 + ww * 0.5 / cs, { over: 0.5 });
+      // jambs: short pen strokes across the opening's ends
+      const jl = ww * 0.95;
+      ig.save();
+      ig.strokeStyle = INK.ink;
+      ig.lineWidth = 1.1;
+      ig.lineCap = 'round';
       for (const sgn of [-1, 1]) {
         const jx = mx + along[0] * gap * sgn;
         const jy = my + along[1] * gap * sgn;
-        quillStroke(ig, jx - along[1] * jl, jy - along[0] * jl, jx + along[1] * jl, jy + along[0] * jl, { width: 1.3, amp: 0.1, seed: sd + sgn, pool: 0.4 });
+        ig.beginPath(); ig.moveTo(jx - along[1] * jl, jy - along[0] * jl); ig.lineTo(jx + along[1] * jl, jy + along[0] * jl); ig.stroke();
       }
+      ig.restore();
       if (t === EDGE.ARCH) {
-        const outward = exitAt.has(sg.cell.join(','));
+        const out = exitAt.has(sg.cell.join(','));
         ig.save();
         ig.fillStyle = INK.ink;
         for (const sgn of [-1, 1]) {
           const px = mx + along[0] * gap * sgn;
           const py = my + along[1] * gap * sgn;
-          ig.beginPath();
-          ig.arc(px, py, wallW * 0.85, 0, Math.PI * 2);
-          ig.fill();
+          const ps = ww * 1.9;
+          ig.globalAlpha = 0.9;
+          ig.fillRect(px - ps / 2, py - ps / 2, ps, ps);
         }
-        ig.strokeStyle = outward ? INK.vermilion : INK.ink;
-        ig.lineWidth = 1;
-        ig.setLineDash([2.5, 2.5]);
+        ig.globalAlpha = 1;
+        ig.strokeStyle = out ? INK.vermilion : INK.ink;
+        ig.lineWidth = 0.9;
+        ig.setLineDash([2.2, 2.4]);
         ig.beginPath();
         ig.moveTo(mx - along[0] * gap, my - along[1] * gap);
-        ig.quadraticCurveTo(mx + along[1] * gap * 0.5, my - along[0] * gap * 0.5, mx + along[0] * gap, my + along[1] * gap);
+        ig.lineTo(mx + along[0] * gap, my + along[1] * gap);
         ig.stroke();
         ig.restore();
       } else {
-        // door leaf, washed in wood or (locked) in red with a gilt lock
-        const lw = gap * 1.7;
-        const lt = wallW * 1.4;
+        // a plan door: the leaf hung from one jamb, swung open over a pencilled arc;
+        // locked doors are drawn shut, washed vermilion, with a gilt lock
+        const [ox, oy] = sg.horiz ? [0, sg.cell[2] === 'N' ? 1 : -1] : [sg.cell[2] === 'W' ? 1 : -1, 0];
+        const hx = mx - along[0] * gap;
+        const hy = my - along[1] * gap;
+        const L = gap * 2;
+        const lt = Math.max(1.8, ww * 0.7);
         ig.save();
-        ig.translate(mx, my);
-        if (!sg.horiz) ig.rotate(Math.PI / 2);
-        ig.fillStyle = t === EDGE.LOCKED ? 'rgba(156,59,37,0.9)' : 'rgba(168,116,58,0.85)';
-        ig.fillRect(-lw / 2, -lt / 2, lw, lt);
-        quillStroke(ig, -lw / 2, -lt / 2, lw / 2, -lt / 2, { width: 0.9, amp: 0.15, seed: sd + 1, pool: 0.3 });
-        quillStroke(ig, -lw / 2, lt / 2, lw / 2, lt / 2, { width: 0.9, amp: 0.15, seed: sd + 2, pool: 0.3 });
-        quillStroke(ig, -lw / 2, -lt / 2, -lw / 2, lt / 2, { width: 0.9, amp: 0.05, seed: sd + 3, pool: 0.3 });
-        quillStroke(ig, lw / 2, -lt / 2, lw / 2, lt / 2, { width: 0.9, amp: 0.05, seed: sd + 4, pool: 0.3 });
-        ig.strokeStyle = 'rgba(43,26,13,0.6)';
-        ig.lineWidth = 0.45;
-        ig.beginPath(); ig.moveTo(-lw / 2 + 1, -lt * 0.12); ig.lineTo(lw / 2 - 1, -lt * 0.1); ig.moveTo(-lw / 2 + 1, lt * 0.18); ig.lineTo(lw / 2 - 1, lt * 0.2); ig.stroke();
         if (t === EDGE.LOCKED) {
+          ig.translate(mx, my);
+          if (!sg.horiz) ig.rotate(Math.PI / 2);
+          ig.fillStyle = 'rgba(168,52,32,0.92)';
+          ig.fillRect(-L / 2, -lt * 0.9, L, lt * 1.8);
+          ig.strokeStyle = INK.ink;
+          ig.lineWidth = 0.8;
+          ig.strokeRect(-L / 2, -lt * 0.9, L, lt * 1.8);
           ig.fillStyle = INK.goldHi;
-          ig.beginPath(); ig.arc(0, 0, lt * 0.6, 0, Math.PI * 2); ig.fill();
-          ig.strokeStyle = INK.ink; ig.lineWidth = 0.8; ig.stroke();
+          ig.beginPath(); ig.arc(0, 0, lt * 1.15, 0, Math.PI * 2); ig.fill();
+          ig.lineWidth = 0.7;
+          ig.stroke();
           ig.fillStyle = INK.ink;
-          ig.beginPath(); ig.arc(0, -lt * 0.12, lt * 0.17, 0, Math.PI * 2); ig.fill();
-          ig.fillRect(-lt * 0.07, -lt * 0.1, lt * 0.14, lt * 0.34);
+          ig.beginPath(); ig.arc(0, -lt * 0.25, lt * 0.32, 0, Math.PI * 2); ig.fill();
+          ig.fillRect(-lt * 0.13, -lt * 0.2, lt * 0.26, lt * 0.65);
+        } else {
+          const a0 = Math.atan2(along[1], along[0]);
+          const a1 = Math.atan2(oy, ox);
+          let da = a1 - a0;
+          while (da > Math.PI) da -= Math.PI * 2;
+          while (da < -Math.PI) da += Math.PI * 2;
+          const open = a0 + da * 0.82;
+          // swing arc
+          ig.strokeStyle = 'rgba(43,26,13,0.7)';
+          ig.lineWidth = 0.7;
+          ig.setLineDash([2.2, 1.8]);
+          ig.beginPath();
+          ig.arc(hx, hy, L, Math.min(a0, a0 + da * 0.82), Math.max(a0, a0 + da * 0.82));
+          ig.stroke();
+          ig.setLineDash([]);
+          // leaf: oak, washed and ruled
+          ig.translate(hx, hy);
+          ig.rotate(open);
+          ig.fillStyle = 'rgba(176,118,58,0.92)';
+          ig.fillRect(0, -lt / 2, L, lt);
+          ig.strokeStyle = INK.ink;
+          ig.lineWidth = 0.8;
+          ig.strokeRect(0, -lt / 2, L, lt);
+          ig.fillStyle = INK.ink;
+          ig.beginPath(); ig.arc(0, 0, lt * 0.55, 0, Math.PI * 2); ig.fill();
         }
         ig.restore();
       }
@@ -489,7 +580,7 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
       drawFlourish(g, 0, fs * 0.58, Math.min(best.w * cs * 0.6, fs * 6), { color: 'rgba(74,44,20,0.7)', width: 1.1 });
       if (best.h >= 3) {
         g.font = `italic ${Math.round(fs * 0.4)}px ${SERIF}`;
-        haloText(g, 'not yet walked by the Company', 0, fs * 1.05, { color: 'rgba(74,44,20,0.75)', width: 2 });
+        haloText(g, 'not yet walked by the Company', 0, fs * 1.3, { color: 'rgba(74,44,20,0.75)', width: 2 });
       }
       g.restore();
     }
@@ -614,7 +705,8 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
   g.restore();
 
   g.restore();
-  return { canvas, k, cs, info, seenCell, cellRect: (x, y) => [M + CX(x), M + CY(y), cs, cs], seed, labels, markerSpots, regions: reg };
+  const wallRects = segs.filter((q) => effective(q) !== EDGE.OPEN).map((q) => [Math.min(q.x0, q.x1) - wallW, Math.min(q.y0, q.y1) - wallW, Math.abs(q.x1 - q.x0) + wallW * 2, Math.abs(q.y1 - q.y0) + wallW * 2]);
+  return { canvas, k, cs, info, seenCell, wallRects, cellRect: (x, y) => [M + CX(x), M + CY(y), cs, cs], seed, labels, markerSpots, regions: reg };
 }
 
 /** Small legend swatch drawn in sheet units. */
@@ -623,16 +715,27 @@ export function drawKeySwatch(g, key, x, y, s) {
   g.save();
   g.strokeStyle = INK.ink;
   g.fillStyle = INK.ink;
-  const wall = (a, b) => quillStroke(g, x - h + a * s, y, x - h + b * s, y, { width: s * 0.13, amp: 0.2, seed: 3 + a * 7 });
+  const wall = (a, b) => planWall(g, x - h + a * s, y, x - h + b * s, y, { width: s * 0.17, amp: 0.25, seed: 3 + a * 7, dry: 0, over: 0.4 });
   switch (key) {
     case 'wall': wall(0, 1); break;
     case 'door':
     case 'locked': {
       wall(0, 0.25); wall(0.75, 1);
-      g.fillStyle = key === 'locked' ? '#9c3b25' : '#a8743a';
-      g.fillRect(x - s * 0.24, y - s * 0.09, s * 0.48, s * 0.18);
-      g.lineWidth = 1; g.strokeRect(x - s * 0.24, y - s * 0.09, s * 0.48, s * 0.18);
-      if (key === 'locked') { g.fillStyle = INK.goldHi; g.beginPath(); g.arc(x, y, s * 0.08, 0, Math.PI * 2); g.fill(); g.stroke(); }
+      if (key === 'locked') {
+        g.fillStyle = 'rgba(168,52,32,0.92)';
+        g.fillRect(x - s * 0.25, y - s * 0.07, s * 0.5, s * 0.14);
+        g.lineWidth = 0.8; g.strokeRect(x - s * 0.25, y - s * 0.07, s * 0.5, s * 0.14);
+        g.fillStyle = INK.goldHi; g.beginPath(); g.arc(x, y, s * 0.09, 0, Math.PI * 2); g.fill(); g.stroke();
+      } else {
+        g.save();
+        g.strokeStyle = 'rgba(43,26,13,0.55)'; g.lineWidth = 0.6; g.setLineDash([1.5, 1.8]);
+        g.beginPath(); g.arc(x - s * 0.25, y, s * 0.5, -Math.PI * 0.41, 0); g.stroke();
+        g.setLineDash([]);
+        g.translate(x - s * 0.25, y); g.rotate(-Math.PI * 0.41);
+        g.fillStyle = 'rgba(176,118,58,0.92)'; g.fillRect(0, -s * 0.045, s * 0.5, s * 0.09);
+        g.lineWidth = 0.8; g.strokeStyle = INK.ink; g.strokeRect(0, -s * 0.045, s * 0.5, s * 0.09);
+        g.restore();
+      }
       break;
     }
     case 'secret': {
@@ -648,8 +751,8 @@ export function drawKeySwatch(g, key, x, y, s) {
     }
     case 'arch': {
       wall(0, 0.25); wall(0.75, 1);
-      g.fillRect(x - s * 0.3, y - s * 0.08, s * 0.14, s * 0.16);
-      g.fillRect(x + s * 0.16, y - s * 0.08, s * 0.14, s * 0.16);
+      g.fillRect(x - s * 0.33, y - s * 0.12, s * 0.2, s * 0.24);
+      g.fillRect(x + s * 0.13, y - s * 0.12, s * 0.2, s * 0.24);
       g.setLineDash([2, 2]); g.lineWidth = 1;
       g.beginPath(); g.moveTo(x - s * 0.16, y); g.lineTo(x + s * 0.16, y); g.stroke();
       break;

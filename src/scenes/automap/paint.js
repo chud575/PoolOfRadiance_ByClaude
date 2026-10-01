@@ -78,7 +78,7 @@ const rgba = (c, a) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a.toFixed(3)}
  * A watercolour wash over a region. g must be a dedicated wash layer (it erases
  * pigment with destination-out for mottling and back-runs).
  */
-export function washRegion(g, cells, { CX, CY, cs, k = 2, color, alpha = 0.4, seed = 1, edge = 0.4, blooms = 1, mottle = 0.35, gran = 0.3, walled }) {
+export function washRegion(g, cells, { CX, CY, cs, k = 2, color, alpha = 0.4, seed = 1, edge = 0.4, blooms = 1, mottle = 0.35, gran = 0.3, walled, glaze = 0, second = null }) {
   const rnd = prng(seed);
   const shape = shapePath(cells, CX, CY, cs);
   const edges = boundaryPath(cells, CX, CY, 'NESW', walled);
@@ -87,6 +87,35 @@ export function washRegion(g, cells, { CX, CY, cs, k = 2, color, alpha = 0.4, se
   g.clip(shape);
   g.fillStyle = rgba(color, alpha);
   g.fill(shape);
+  if (glaze > 0) {
+    // wet-in-wet: a second pigment dropped in at one side, fading across the region,
+    // plus a few soft pools where the paper held more water
+    let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity;
+    for (const [x, y] of cells) { x0 = Math.min(x0, CX(x)); y0 = Math.min(y0, CY(y)); x1 = Math.max(x1, CX(x + 1)); y1 = Math.max(y1, CY(y + 1)); }
+    const a = rnd() * Math.PI * 2;
+    const mx = (x0 + x1) / 2;
+    const my = (y0 + y1) / 2;
+    const R = Math.hypot(x1 - x0, y1 - y0) / 2;
+    const c2 = second ?? [color[0] * 0.72, color[1] * 0.62, color[2] * 0.7];
+    const lg = g.createLinearGradient(mx - Math.cos(a) * R, my - Math.sin(a) * R, mx + Math.cos(a) * R, my + Math.sin(a) * R);
+    lg.addColorStop(0, rgba(c2, alpha * glaze));
+    lg.addColorStop(0.55, rgba(c2, alpha * glaze * 0.25));
+    lg.addColorStop(1, rgba(c2, 0));
+    g.fillStyle = lg;
+    g.fill(shape);
+    const pools = Math.min(4, 1 + Math.floor(cells.length / 4));
+    for (let i = 0; i < pools; i++) {
+      const [bx, by] = cells[Math.floor(rnd() * cells.length)];
+      const px = CX(bx) + cs * rnd();
+      const py = CY(by) + cs * rnd();
+      const pr = cs * (0.35 + rnd() * 0.5);
+      const rg = g.createRadialGradient(px, py, 0, px, py, pr);
+      rg.addColorStop(0, rgba(c2, alpha * glaze * 0.55));
+      rg.addColorStop(1, rgba(c2, 0));
+      g.fillStyle = rg;
+      g.fillRect(px - pr, py - pr, pr * 2, pr * 2);
+    }
+  }
   if (mottle > 0) {
     g.globalCompositeOperation = 'destination-out';
     g.globalAlpha = mottle;

@@ -540,3 +540,44 @@ export function granTile() {
   granCache = c;
   return c;
 }
+
+/**
+ * A wall drawn the way a surveyor drafts a plan: the wall's thickness laid in
+ * as a dark iron-gall poché (a pressure-varied quill ribbon, dry-brushed in
+ * places), then both faces ruled as fine wobbling pen lines that overshoot
+ * the ends a little, as a draughtsman's construction lines do. Where two
+ * walls meet, their translucent ink overlaps and pools darker on its own.
+ * Use on a transparent ink layer (dry-brush erases with destination-out).
+ * @param {CanvasRenderingContext2D} g
+ */
+export function planWall(g, x0, y0, x1, y1, { width = 6, seed = 0, color = INK.ink, fill = 0.78, dry = 0.4, over = 1, faces = true, amp = 0.5 } = {}) {
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+  const nx = -uy;
+  const ny = ux;
+  const r = prng(seed * 5 + 3);
+  // poché: the wall's body
+  quillStroke(g, x0, y0, x1, y1, { width: width * 0.96, color, amp: amp * 0.6, seed, pool: 0, taper: 0.08, alpha: fill, dry });
+  if (!faces) return;
+  // the two faces: fine pen lines with their own wobble and overshoot
+  g.save();
+  g.strokeStyle = color;
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  for (const side of [-1, 1]) {
+    const o = side * width * 0.5;
+    const e0 = width * (0.15 + r() * 0.9) * over;
+    const e1 = width * (0.15 + r() * 0.9) * over;
+    const pts = wobblePoints(x0 - ux * e0 + nx * o, y0 - uy * e0 + ny * o, x1 + ux * e1 + nx * o, y1 + uy * e1 + ny * o, { amp, step: Math.max(4, width * 1.6), seed: seed * 3 + side * 17 });
+    g.globalAlpha = 0.85 + r() * 0.15;
+    g.lineWidth = Math.max(0.45, width * (0.13 + r() * 0.05));
+    g.beginPath();
+    g.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]);
+    g.stroke();
+  }
+  g.restore();
+}

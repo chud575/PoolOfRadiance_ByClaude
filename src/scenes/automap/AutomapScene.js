@@ -46,7 +46,7 @@ export default class AutomapScene extends Scene {
       const m = getMap(game.location.map);
       if (m.inBounds(game.location.x, game.location.y)) game.markExplored(m.id, game.location.x, game.location.y, m.w);
     }
-    this.post = { vignette: 0.3, bloomStrength: 0.35, bloomThreshold: 0.9, grain: 0.015 };
+    this.post = { vignette: 0.3, bloom: false, grain: 0.015 };
     this.view = params.view === 'world' ? 'world' : 'block';
     this.mode = params.mode === 'diorama' ? 'diorama' : 'parchment';
     this.sheets = new Map();
@@ -599,6 +599,10 @@ export default class AutomapScene extends Scene {
         helpRow('Drag', 'pan'), helpRow('Wheel', 'zoom'), helpRow('R-click', 'pin note'),
         helpRow('Enter', 'centre'), helpRow('T', 'diorama'), helpRow('O', 'overview'),
       ]),
+      ...(notes.length ? [] : [h('div.am-sec', ['Pins']), h('div.am-pinkey', PIN_ORDER.map((k) => h('div.am-pinkey-row', { dataset: { tip: 'Right-click a square, then choose the seal' } }, [
+        h('img', { src: glyphDataURL(`pin-${k}`, (g, x, y, sz) => drawPin(g, x, y, sz, k)), alt: '' }),
+        h('span', [PIN_KINDS[k].label]),
+      ])))]),
       h('div.am-sec', ['Phlan']),
       this._locator(),
     );
@@ -773,9 +777,25 @@ export default class AutomapScene extends Scene {
     if (this.sv.dirty || dt > 0 || this._needsDraw) this._draw();
   }
 
+  /**
+   * Frozen clock (screenshots): once the diorama's frame has settled (same scene,
+   * same camera for three renders) the canvas keeps its last image instead of
+   * paying for another software-GL frame.
+   */
   render() {
-    if (this.mode === 'diorama' && this.dio?.scene) this.ctx.render.render(this.dio.scene, this.dio.camera);
-    else this.ctx.render.clear();
+    if (this.mode === 'diorama' && this.dio?.scene) {
+      if (this.ctx.clock.frozen) {
+        const sig = this.dio.scene.uuid + this.dio.camera.matrixWorld.elements.map((v) => v.toFixed(4)).join(',') + window.innerWidth + 'x' + window.innerHeight;
+        if (sig === this._dioSig && this._dioRenders >= 3) return;
+        if (sig !== this._dioSig) this._dioRenders = 0;
+        this._dioSig = sig;
+        this._dioRenders++;
+      }
+      this.ctx.render.render(this.dio.scene, this.dio.camera);
+    } else {
+      this._dioSig = null;
+      this.ctx.render.clear();
+    }
   }
 
   _draw() {
@@ -862,6 +882,7 @@ export default class AutomapScene extends Scene {
     const X = (x) => SHEET.MX + x * cs;
     const Y = (y) => SHEET.MY + y * cs;
     const obs = [...(this.sheet.markerSpots ?? [])];
+    const walls = this.sheet.wallRects ?? [];
     for (const n of notesFor(game, m.id)) obs.push([X(n.x) + cs * 0.36, Y(n.y) - cs * 0.06, cs * 0.72, cs * 0.72]);
     if (this.isHome) obs.push([X(game.location.x) + cs * 0.1, Y(game.location.y) + cs * 0.05, cs * 0.8, cs * 0.9]);
     const pad = 12;
@@ -881,28 +902,37 @@ export default class AutomapScene extends Scene {
       const zx1 = X(z.x + z.w);
       const zy1 = Y(z.y + z.h);
       if (zx1 < vx0 || zx0 > vx1 || zy1 < vy0 || zy0 > vy1) continue;
-      const base = Math.min(cs * 0.4, Math.max(cs * 0.27, (z.w * cs * 0.92) / 7));
-      const fs = Math.max(base * zoom ** -0.42, 14 / this.sv.scaleAt());
-      g.font = `italic ${fs.toFixed(2)}px ${SERIF}`;
-      g.letterSpacing = `${(fs * 0.05).toFixed(2)}px`;
-      const lines = wrapText(g, z.name, Math.max(z.w * cs * 0.9, cs * 1.8));
-      const lw = Math.max(...lines.map((l) => g.measureText(l).width));
-      const lh = fs * 1.08;
-      const bh = lines.length * lh;
+      const base = Math.min(cs * 0.42, Math.max(cs * 0.32, (z.w * cs * 0.92) / 7));
+      const fs = Math.max(base * zoom ** -0.42, 17 / this.sv.scaleAt());
+      // district names in the surveyor's spaced capitals, inked in sepia
+      const caps = fs * 0.8;
+      g.font = `bold ${caps.toFixed(2)}px ${SERIF}`;
+      g.letterSpacing = `${(caps * 0.16).toFixed(2)}px`;
+      const lh = caps * 1.3;
       let best = null;
-      for (const [fx, fy] of [[0, 0], [0, -0.4], [0, 0.4], [0, -0.75], [0, 0.75], [-0.35, 0], [0.35, 0], [0, -1.2], [0, 1.2]]) {
-        const cx = clamp((zx0 + zx1) / 2 + fx * (zx1 - zx0) * 0.5, vx0 + lw / 2, vx1 - lw / 2);
-        const cy = clamp((zy0 + zy1) / 2 + fy * Math.max(zy1 - zy0, cs * 1.2) * 0.5, vy0 + bh / 2, vy1 - bh / 2);
-        const box = [cx - lw / 2 - fs * 0.15, cy - bh / 2, lw + fs * 0.3, bh];
-        const area = box[2] * box[3];
-        let score = Math.abs(fx) * 0.6 + Math.abs(fy) * 0.5;
-        for (const o of obs) score += (overlap(box, o) / area) * 12;
-        for (const o of placed) score += (overlap(box, o) / area) * 12;
-        if (cx < zx0 || cx > zx1 || cy < zy0 || cy > zy1) score += 1.5;
-        if (!best || score < best.score) best = { cx, cy, box, score };
+      // try the name on one line and wrapped narrower; keep the placement that sits
+      // inside its district on open ground, clear of walls, pins, markers and other names
+      const wraps = [Math.max(z.w * cs * 0.9, cs * 1.8), Math.max(z.w * cs * 0.55, cs * 1.4)];
+      for (const [wi, wrapW] of wraps.entries()) {
+        const lines = wrapText(g, z.name.toUpperCase(), wrapW);
+        const lw = Math.max(...lines.map((l) => g.measureText(l).width));
+        const bh = lines.length * lh;
+        for (const [fx, fy] of [[0, 0], [0, -0.4], [0, 0.4], [0, -0.75], [0, 0.75], [-0.35, 0], [0.35, 0], [0, -1.2], [0, 1.2]]) {
+          const cx = clamp((zx0 + zx1) / 2 + fx * (zx1 - zx0) * 0.5, vx0 + lw / 2, vx1 - lw / 2);
+          const cy = clamp((zy0 + zy1) / 2 + fy * Math.max(zy1 - zy0, cs * 1.2) * 0.5, vy0 + bh / 2, vy1 - bh / 2);
+          const box = [cx - lw / 2 - fs * 0.15, cy - bh / 2, lw + fs * 0.3, bh];
+          const area = box[2] * box[3];
+          let score = Math.abs(fx) * 0.6 + Math.abs(fy) * 0.5 + wi * 0.35 + (lines.length - 1) * 0.15;
+          for (const o of obs) score += (overlap(box, o) / area) * 12;
+          for (const o of placed) score += (overlap(box, o) / area) * 12;
+          for (const o of walls) if (overlap(box, o) > 0) score += 0.9;
+          if (cx < zx0 || cx > zx1 || cy < zy0 || cy > zy1) score += 1.5;
+          if (!best || score < best.score) best = { cx, cy, box, score, lines, bh };
+        }
       }
+      const { lines, bh } = best;
       placed.push(best.box);
-      lines.forEach((l, i) => haloText(g, l, best.cx, best.cy - bh / 2 + lh * (i + 0.5), { color: '#3b2210', width: fs * 0.3 }));
+      lines.forEach((l, i) => haloText(g, l, best.cx + caps * 0.1, best.cy - bh / 2 + lh * (i + 0.5), { color: '#3e1a0c', width: caps * 0.5, halo: 'rgba(238,226,194,0.95)' }));
     }
     g.letterSpacing = '0px';
     g.restore();

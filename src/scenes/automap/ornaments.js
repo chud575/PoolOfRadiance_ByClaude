@@ -307,14 +307,13 @@ export function haloText(g, text, x, y, { halo = 'rgba(242,230,198,0.55)', width
   g.save();
   g.lineJoin = 'round';
   const fs = parseFloat(/(\d+(?:\.\d+)?)px/.exec(g.font)?.[1] ?? '14');
-  // soft knockout: a thin pale stroke blurred by its own shadow
+  // parchment knockout: the scribe scraped the paper clean around his letters
+  // (a thin, low-contrast stroke in the paper's own tone, no glow)
   g.strokeStyle = halo;
-  g.shadowColor = halo;
-  g.shadowBlur = Math.max(1, fs * 0.25);
-  g.lineWidth = Math.min(width * 0.6, fs * 0.16);
+  g.globalAlpha *= 0.7;
+  g.lineWidth = Math.min(width * 0.45, fs * 0.11);
   g.strokeText(text, x, y);
-  g.shadowBlur = 0;
-  g.shadowColor = 'transparent';
+  g.globalAlpha /= 0.7;
   // bleed: ink wicks a little into the fibres
   if (bleed > 0) {
     g.globalAlpha *= bleed;

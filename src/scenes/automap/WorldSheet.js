@@ -2,7 +2,7 @@ import { EDGE, CELL, DIRS } from '../../data/maps/MapGrid.js';
 import { getMap, hasMap } from '../../data/maps/index.js';
 import { TRAVEL } from '../../data/travel.js';
 import { INK, makeCanvas, makeParchment, inkLine, quillStroke, lineShade, featherMask, mottleTile, prng, wobblePoints } from './ink.js';
-import { regions, washRegion, deckleMask } from './paint.js';
+import { regions, washRegion, hatchBand, deckleMask } from './paint.js';
 import { drawMarker } from './glyphs.js';
 import { analyseMap, collectEdges, mergeRuns } from './BlockSheet.js';
 import { SERIF, drawCompassRose, drawCartouche, drawIlluminatedInitial, drawFlourish, haloText, goldGradient, fitFont } from './ornaments.js';
@@ -112,8 +112,8 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
   g.clip(sea);
   // sea wash: deeper toward the bottom, mottled
   const sg = g.createLinearGradient(0, 760, 0, H);
-  sg.addColorStop(0, 'rgba(96,140,160,0.32)');
-  sg.addColorStop(1, 'rgba(44,84,128,0.55)');
+  sg.addColorStop(0, 'rgba(110,160,170,0.26)');
+  sg.addColorStop(1, 'rgba(56,100,140,0.46)');
   g.globalCompositeOperation = 'multiply';
   g.fillStyle = sg;
   g.fillRect(0, 700, W, 400);
@@ -151,6 +151,19 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
     g.quadraticCurveTo(x + s0, y - s0 * 0.9, x + s0 * 2, y);
     g.stroke();
   }
+  // portolan rhumb lines radiating from the compass rose across the sea
+  {
+    const [rx, ry] = [1175, 860];
+    for (let i = 0; i < 32; i++) {
+      const a = (i / 32) * Math.PI * 2;
+      g.strokeStyle = i % 4 === 0 ? 'rgba(43,26,13,0.5)' : i % 2 ? 'rgba(160,48,32,0.45)' : 'rgba(40,96,60,0.45)';
+      g.lineWidth = i % 4 === 0 ? 0.9 : 0.7;
+      g.beginPath();
+      g.moveTo(rx + Math.cos(a) * 76, ry + Math.sin(a) * 76);
+      g.lineTo(rx + Math.cos(a) * 1600, ry + Math.sin(a) * 1600);
+      g.stroke();
+    }
+  }
   // surf on the island shore
   for (let k2 = 1; k2 <= 3; k2++) {
     g.strokeStyle = `rgba(28,58,98,${(0.4 / k2).toFixed(3)})`;
@@ -175,6 +188,18 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
   g.beginPath();
   for (let x = -10; x <= W + 10; x += 6) (x === -10 ? g.moveTo(x, coastY(x) + 5) : g.lineTo(x, coastY(x) + 5 + Math.sin(x / 7) * 0.8));
   g.stroke();
+  // water-lining: the engraver's concentric rules following the shore, fading out to sea
+  for (let q = 1; q <= 6; q++) {
+    const off = 5 + q * q * 1.6 + q * 4;
+    g.strokeStyle = `rgba(28,58,98,${(0.75 / (0.6 + q * 0.45)).toFixed(3)})`;
+    g.lineWidth = 0.8;
+    g.beginPath();
+    for (let x = -10; x <= W + 10; x += 5) {
+      const y = coastY(x) + off + Math.sin(x / (9 + q * 3) + q) * 0.7 * q;
+      if (x === -10) g.moveTo(x, y); else g.lineTo(x, y);
+    }
+    g.stroke();
+  }
   for (let x = -10; x <= W + 10; x += 3.2) {
     const y = coastY(x);
     const L = 3 + r() * 5;
@@ -258,6 +283,7 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
     const x = 18 + tr() * 112;
     const y = 250 + tr() * 520;
     if (y > coastY(x) - 26) continue;
+    if (Math.abs(x - 70) < 34 && Math.abs(y - 520) < 104) continue; // keep the hills' name legible
     hills.push([x, y, 26 + tr() * 22, 14 + tr() * 12]);
   }
   for (let i = 0; i < 14; i++) hills.push([200 + tr() * 680, 22 + tr() * 18, 22 + tr() * 16, 10 + tr() * 8]);
@@ -270,10 +296,11 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
     if (y > coastY(x) - 14) continue;
     if (Math.abs(x - riverX(y)) < rw(y) + 16) continue;
     if (avoid(x, y, 26) || inCartouche(x, y)) continue;
+    if (Math.abs(x - 1135) < 122 && y > 618 && y < 676) continue; // a clearing for the forest's name
     const n = fbm(x / 70, y / 70, { period: 64, octaves: 3, seed: 12 });
-    if (n < 0.5 || tr() > (n - 0.5) * 3.2) continue;
-    if (trees.some(([tx, ty]) => Math.hypot(tx - x, (ty - y) * 1.4) < 11)) continue;
-    trees.push([x, y, 6.5 + tr() * 4]);
+    if (n < 0.46 || tr() > (n - 0.46) * 4) continue;
+    if (trees.some(([tx, ty]) => Math.hypot(tx - x, (ty - y) * 1.5) < 8.5)) continue;
+    trees.push([x, y, 6 + tr() * 3.6]);
   }
   // a few copses west and north, and along the river
   for (let i = 0; i < 160; i++) {
@@ -293,6 +320,29 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
     if (Math.abs(x - riverX(y)) < rw(y) + 6 || trees.some(([tx, ty]) => Math.hypot(tx - x, ty - y) < 9)) continue;
     marsh(g, x, y, 4 + tr() * 3, tr);
   }
+  // the forest floor: a granulated sap-green wash pooled under the canopies, so the
+  // woods read as masses rather than scattered trees
+  {
+    const fw = makeCanvas(W * k, H * k);
+    const fg = fw.getContext('2d');
+    fg.scale(k, k);
+    fg.filter = `blur(${(6 * k).toFixed(0)}px)`;
+    fg.fillStyle = 'rgba(96,116,58,0.5)';
+    fg.beginPath();
+    for (const [x, y, sz] of trees) { fg.moveTo(x + sz * 2.1, y - sz); fg.arc(x, y - sz, sz * 2.1, 0, Math.PI * 2); }
+    fg.fill();
+    fg.filter = 'none';
+    fg.setTransform(1, 0, 0, 1, 0, 0);
+    fg.globalCompositeOperation = 'destination-out';
+    const mp = fg.createPattern(mottleTile(), 'repeat');
+    fg.globalAlpha = 0.45;
+    fg.fillStyle = mp;
+    fg.fillRect(0, 0, W * k, H * k);
+    g.save();
+    g.globalCompositeOperation = 'multiply';
+    g.drawImage(fw, 0, 0, W, H);
+    g.restore();
+  }
   trees.sort((a, b) => a[1] - b[1]).forEach(([x, y, sz]) => tree(g, x, y, sz, tr));
   // ruined houses of the old city between the blocks
   for (let i = 0; i < 520; i++) {
@@ -308,7 +358,7 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
   g.textAlign = 'center';
   g.font = `italic 19px ${SERIF}`;
   g.letterSpacing = '3px';
-  haloText(g, 'The Quivering Forest', 0, 0, { color: '#2e3c1c', halo: 'rgba(240,228,196,0.85)', width: 5 });
+  haloText(g, 'The Quivering Forest', 0, 0, { color: '#22301a', halo: 'rgba(240,228,196,0.95)', width: 7 });
   g.restore();
   g.save();
   g.translate(70, 520);
@@ -586,7 +636,8 @@ const info0 = (m) => infoCache.get(m.id) ?? (infoCache.set(m.id, analyseMap(m)),
 
 const regCache = new Map();
 const regs0 = (m) => regCache.get(m.id) ?? (regCache.set(m.id, regions(m, info0(m))), regCache.get(m.id));
-const PIGMENT = { stone: [[178, 92, 74], [160, 100, 88], [186, 120, 86]], timber: [[200, 104, 60], [190, 84, 58], [206, 132, 70]], ruin: [[150, 128, 104]] };
+const PIGMENT = { stone: [[184, 98, 72], [150, 136, 128], [176, 148, 108], [160, 112, 84], [178, 120, 106], [134, 128, 132]], timber: [[204, 148, 72], [192, 102, 58], [200, 128, 74], [178, 90, 72], [208, 168, 98]], ruin: [[150, 128, 104], [132, 126, 112]] };
+const SECOND = [[110, 70, 44], [78, 86, 120], [140, 60, 52], [96, 100, 60]];
 
 /**
  * A surveyed block as a little ink plan: watercolour roofs and ground, thin
@@ -639,11 +690,14 @@ function drawMiniBlock(g, b, m, { seen, secrets, known, here, k }) {
       if (rg.type === CELL.INTERIOR) {
         const pal = rg.style === 1 ? PIGMENT.timber : rg.style === 2 ? PIGMENT.ruin : PIGMENT.stone;
         const c = pal[Math.floor(rr() * pal.length)];
-        const v = 0.9 + rr() * 0.2;
-        color = [c[0] * v, c[1] * v, c[2] * v];
-        alpha = 0.62;
+        const v = 0.86 + rr() * 0.26;
+        const hj = (rr() - 0.5) * 0.5;
+        color = [c[0] * v + hj * 40, c[1] * v + hj * 10, c[2] * v - hj * 25];
+        alpha = 0.56 + rr() * 0.14;
       } else if (rg.type === CELL.WATER) { color = [60, 110, 170]; alpha = 0.6; } else if (rg.type === CELL.RUBBLE) { color = [150, 130, 104]; alpha = 0.42; } else if (rg.type === CELL.COURTYARD) { color = [170, 168, 150]; alpha = 0.3; } else { color = wild ? [120, 150, 80] : [214, 186, 132]; alpha = wild ? 0.42 : 0.24; }
-      washRegion(w, rg.cells, { ...P, color, alpha, seed: rs, edge: rg.type === CELL.INTERIOR ? 0.55 : 0.25, blooms: 0, mottle: 0.2, gran: 0.25 });
+      const roof = rg.type === CELL.INTERIOR;
+      washRegion(w, rg.cells, { ...P, color, alpha, seed: rs, edge: roof ? 0.7 : 0.25, blooms: 0, mottle: 0.2, gran: 0.3, glaze: roof ? 0.4 + rr() * 0.3 : 0, second: SECOND[Math.floor(rr() * SECOND.length)] });
+      if (roof) hatchBand(w, rg.cells, { ...P, seed: rs + 1, angle: 0.6 + rr() * 0.5, band: 0.32, alpha: 0.5, color: '#4a1e12', width: 0.35 });
     }
     w.setTransform(1, 0, 0, 1, 0, 0);
     w.globalCompositeOperation = 'destination-in';
