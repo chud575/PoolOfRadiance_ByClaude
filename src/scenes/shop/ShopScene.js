@@ -9,10 +9,11 @@ import {
   addItem, canEquip, equipProblem, deriveStats, slotOf, unequipItem, removeItem, isAlive,
   trainableClasses, trainingCost, trainLevels, maxLevel,
 } from '../../rules/character.js';
-import { itemName, itemValue } from '../../rules/items.js';
+import { itemName, itemValue, encumbranceCategory } from '../../rules/items.js';
 import { TEMPLE_SERVICES, serviceApplies, performService } from '../../rules/temple.js';
 import { CLASSES, splitClasses, xpForLevel } from '../../rules/classes.js';
 import { itemIconURL, iconFor } from '../../ui/components/itemIcons.js';
+import { itemArtURL } from '../../ui/art/itemArt.js';
 import { portraitURL } from '../../ui/components/portraitPainter.js';
 import { paintPanel, framedPortraitURL, PanelOverlay, npcActor } from '../../ui/art/index.js';
 
@@ -33,6 +34,8 @@ const FILTERS = {
   magic: (d) => ['potion', 'scroll', 'wand', 'ring', 'cloak', 'bracers', 'gauntlets', 'amulet'].includes(d.type) || !!d.magic,
   other: (d) => ['gear', 'treasure'].includes(d.type),
 };
+/** A party tab fits about nine letters: "Brother Aldric" → "Aldric". */
+export const shortName = (n = '') => (n.length > 9 && n.includes(' ') ? n.split(' ').slice(-1)[0] : n);
 const FILTER_NAMES = { all: 'All', weapons: 'Melee', missile: 'Missile', armour: 'Armour', magic: 'Magic', other: 'Goods' };
 const TYPE_NAMES = { weapon: 'Weapon', armor: 'Body armour', shield: 'Shield', helm: 'Helm', ring: 'Ring', potion: 'Potion', scroll: 'Scroll', wand: 'Wand', ammo: 'Ammunition', gear: 'Gear', treasure: 'Treasure', cloak: 'Cloak', bracers: 'Bracers', gauntlets: 'Gauntlets', amulet: 'Amulet' };
 
@@ -133,6 +136,7 @@ export default class ShopScene extends Scene {
 
   // ------------------------------------------------------------------ refresh
   refresh() {
+    this.ctx.ui.tooltip?.hide();
     this._renderParty();
     this._renderTabs();
     clear(this.listEl);
@@ -156,7 +160,7 @@ export default class ShopScene extends Scene {
       this.partyEl.append(h(`div.shp-member${i === game.activeIndex ? '.sel' : ''}${ch.status === 'dead' ? '.dead' : ''}${st ? `.${st}` : ''}`, {
         onclick: () => { game.activeIndex = i; game.notifyPartyChanged(); },
         dataset: { tip: `${ch.name} — ${ch.hp.cur}/${ch.hp.max} hp, ${ch.gold} gp` },
-      }, [h('img', { src: portraitURL(ch, 0.4), alt: '' }), h('span.nm', [ch.name]), h('span.gp', [`${ch.gold} gp`]), h('i.hpbar', [h('i', { style: { width: `${pct * 100}%` } })])]));
+      }, [h('img', { src: portraitURL(ch, 0.4), alt: '' }), h('span.nm', [shortName(ch.name)]), h('span.gp', [`${ch.gold} gp`]), h('i.hpbar', [h('i', { style: { width: `${pct * 100}%` } })])]));
     });
   }
 
@@ -225,15 +229,31 @@ export default class ShopScene extends Scene {
         ondblclick: () => (sell ? this.sell() : this.buy()),
         dataset: { tip: usable ? statLine(d) : `${ch?.name} cannot use this: ${equipProblem(ch, x.id) ?? ''}` },
       }, [
-        h('img', { src: itemIconURL(iconFor(d), { magic: !!d.magic || ['potion', 'scroll', 'wand', 'ring'].includes(d.type) }), alt: '' }),
+        h('img', { src: itemArtURL(d, { magic: !!d.magic, size: 80 }) ?? itemIconURL(iconFor(d), { magic: !!d.magic || ['potion', 'scroll', 'wand', 'ring'].includes(d.type) }), alt: '' }),
         h('span.n', [name, sell && x.entry.equipped ? h('span.eq', ['READY']) : null, sell && (x.entry.qty ?? 1) > 1 ? ` ×${x.entry.qty}` : '']),
         h('span.s', [statLine(d, x.entry)]),
         h('span.p', [price ? `${price.toLocaleString('en-US')}` : '—', h('small', [price ? 'gp' : 'no sale'])]),
       ]);
       this.listEl.append(el);
     }
-    const selEl = this.listEl.querySelector('.shp-item.sel');
-    if (selEl) requestAnimationFrame(() => selEl.scrollIntoView({ block: 'nearest' }));
+    // keep the selection in view without leaving a half-clipped row at the top:
+    // scroll by whole rows (the bottom edge fades out under a mask)
+    const list = this.listEl;
+    const snap = () => {
+      const sel = list.querySelector('.shp-item.sel');
+      if (!sel || !list.clientHeight) return;
+      const tops = [...new Set([...list.querySelectorAll('.shp-item')].map((e) => e.offsetTop))].sort((a, b) => a - b);
+      const base = tops[0] ?? 0;
+      const bottom = sel.offsetTop + sel.offsetHeight - base;
+      const pad = 24;
+      let top = 0;
+      for (const t of tops) { if (bottom - (t - base) <= list.clientHeight - pad) { top = t - base; break; } }
+      list.scrollTop = top;
+      list.classList.toggle('scrolled', top > 0);
+    };
+    snap();
+    requestAnimationFrame(snap);
+    list.onscroll = () => list.classList.toggle('scrolled', list.scrollTop > 2);
     if (!items.length) this.listEl.append(h('div.shp-empty', [this.tab === 'sell' ? `${ch?.name ?? 'No one'} carries nothing ${this.shop.name} will buy.` : 'Nothing for sale.']));
   }
 
@@ -273,7 +293,7 @@ export default class ShopScene extends Scene {
       return;
     }
     add(
-      h('div.icon', [h('img', { src: itemIconURL(iconFor(d), { magic: !!d.magic }), alt: '' })]),
+      h('div.icon', [h('img', { src: itemArtURL(d, { magic: !!d.magic, size: 160 }) ?? itemIconURL(iconFor(d), { magic: !!d.magic }), alt: '' })]),
       h('div.name', [entry ? itemName(entry) : d.name]),
       h('div.kind', [`${TYPE_NAMES[d.type] ?? d.type}${d.twoHanded ? ' · two-handed' : ''}${d.ranged ? ` · range ${d.range}` : ''} · ${d.weight} cn · `, h('b', { style: { color: 'var(--por-amber)', fontStyle: 'normal' } }, [`${(this.tab === 'sell' ? this._salePrice(entry) : this._price(id)).toLocaleString('en-US')} gp`])]),
     );
@@ -290,7 +310,7 @@ export default class ShopScene extends Scene {
       } else {
         stats.append(stat('Armour class', then.ac, deltaText(now.ac - then.ac), now.ac - then.ac));
         stats.append(stat('Move', then.move, deltaText(then.move - now.move), then.move - now.move));
-        stats.append(stat('Burden', `${then.weight} cn`, '', 0));
+        stats.append(stat('Burden · cn', then.weight, encumbranceCategory(then.weight).label.toLowerCase(), 0));
       }
     } else {
       if (d.type === 'weapon') stats.append(stat('Damage', `${d.damage} / ${d.damageLarge}`, '', 0));
@@ -309,17 +329,23 @@ export default class ShopScene extends Scene {
   }
 
   _detailParty(add) {
-    const list = h('div.shp-rows', { style: { gridColumn: '1 / -1' } });
-    for (const m of this.ctx.game.party) {
+    const party = this.ctx.game.party;
+    const list = h(`div.shp-company${party.length > 3 ? '.two' : ''}`, { style: { gridColumn: '1 / -1' } });
+    party.forEach((m, i) => {
       const pct = Math.max(0, m.hp.cur) / m.hp.max;
-      const st = m.status !== 'ok' ? m.status : m.hp.cur <= 0 ? 'unconscious' : pct < 0.5 ? 'wounded' : 'hale';
-      list.append(h('div.shp-row.shp-train', { style: { gridTemplateColumns: '2.6em 1fr auto' } }, [
-        h('img', { src: portraitURL(m, 0.4), alt: '', style: { width: '2.6em', height: '3.1em' } }),
+      const st = m.status !== 'ok' && m.status ? m.status : m.hp.cur <= 0 ? 'unconscious' : pct < 0.5 ? 'wounded' : 'hale';
+      const col = st === 'hale' ? 'var(--por-green)' : st === 'dead' ? 'var(--por-blood)' : 'var(--por-amber)';
+      list.append(h(`div.shp-mate${i === this.ctx.game.activeIndex ? '.sel' : ''}`, {
+        onclick: () => { this.ctx.game.activeIndex = i; this.ctx.game.notifyPartyChanged(); },
+        dataset: { tip: `${m.name}: ${m.hp.cur} / ${m.hp.max} hp${m.conditions?.length ? ` · ${m.conditions.join(', ')}` : ''}` },
+      }, [
+        h('img', { src: portraitURL(m, 0.4), alt: '' }),
         h('span.t', [m.name]),
-        h('span.d', [`${m.hp.cur} / ${m.hp.max} hp · ${st}${m.conditions?.length ? ` · ${m.conditions.join(', ')}` : ''}`]),
-        h('span.c', { style: { gridColumn: '3', color: st === 'hale' ? 'var(--por-green)' : st === 'dead' ? 'var(--por-blood)' : 'var(--por-amber)', fontFamily: 'var(--font-display)', fontSize: '0.78em', letterSpacing: '0.14em', textTransform: 'uppercase' } }, [st]),
+        h('span.st', { style: { color: col } }, [st]),
+        h('span.hp', [`${Math.max(0, m.hp.cur)}/${m.hp.max}`]),
+        h(`i.bar.${st === 'hale' ? 'ok' : st === 'wounded' ? 'low' : 'down'}`, [h('i', { style: { width: `${pct * 100}%` } })]),
       ]));
-    }
+    });
     add(list);
   }
 
@@ -333,14 +359,23 @@ export default class ShopScene extends Scene {
       const applies = ch ? serviceApplies(id, ch) : false;
       const needers = this.ctx.game.party.filter((m) => serviceApplies(id, m));
       const [icon, tone] = SERVICE_ICON[id] ?? ['✚', ''];
+      const anyone = needers.length > 0;
+      if (!anyone) {
+        (this._others ??= []).push(h('div.shp-row.mini', { dataset: { tip: `${SERVICE_DESC[id] ?? ''} No one in the party needs this now.` } }, [h(`span.ic${tone ? `.${tone}` : ''}`, [icon]), h('span.t', [s.name]), h('span.c', [`${cost.toLocaleString('en-US')} gp`])]));
+        continue;
+      }
       this.listEl.append(h(`div.shp-row${applies ? '' : '.off'}`, [
         h(`span.ic${tone ? `.${tone}` : ''}`, [icon]),
         h('span.t', [s.name, needers.length ? h('span.shp-need', needers.map((m) => h('img', { src: portraitURL(m, 0.4), alt: '', dataset: { tip: `${m.name} needs this` } }))) : null]),
         h('span.d', [SERVICE_DESC[id] ?? '']),
         h('span.c', [`${cost.toLocaleString('en-US')} gp`]),
-        h('button.por-btn', { disabled: !applies || (ch?.gold ?? 0) < cost, onclick: () => this.service(id, cost) }, ['Request']),
+        h('button.por-btn', { disabled: !applies || (ch?.gold ?? 0) < cost, onclick: () => this.service(id, cost), dataset: { tip: !applies ? `${ch?.name ?? 'This character'} does not need this.` : (ch?.gold ?? 0) < cost ? `${ch.name} needs ${(cost - ch.gold).toLocaleString('en-US')} gp more — POOL the party's gold.` : `Pay ${cost} gp` } }, ['Request']),
       ]));
     }
+    if (this._others?.length) {
+      this.listEl.append(h('div.shp-subhead', ['Other services of the temple']), h('div.shp-minis', this._others));
+    }
+    this._others = null;
   }
 
   service(id, cost) {

@@ -177,7 +177,10 @@ export default class DialogueScene extends Scene {
       h('span', [h('span.por-keycap', ['J']), 'Journal']),
       h('span', [h('span.por-keycap', ['Enter']), 'Skip text']),
     ]);
-    this.side = h('div.dlg-side', [Frame({ title: 'Party', children: [this.roster.el] }).el, this.infoFrame.el, this.logFrame.el, this.hints]);
+    this.questEl = h('div.dlg-quests');
+    this.questFrame = Frame({ title: 'Journal', className: 'dlg-questframe', children: [this.questEl] });
+    this.side = h('div.dlg-side', [Frame({ title: 'Party', children: [this.roster.el] }).el, this.infoFrame.el, this.questFrame.el, this.logFrame.el, this.hints]);
+    this.listen('message', () => queueMicrotask(() => this._renderQuests()));
     this.bar = new CommandBar([]);
     this.barWrap = h('div.por-hud-bottom.dlg-bar', [this.bar.el]);
     this.root.append(bg, this.main, this.side, this.barWrap);
@@ -231,6 +234,7 @@ export default class DialogueScene extends Scene {
   }
 
   _settleArt() {
+    this._renderQuests();
     if (this.ctx.clock.frozen && this.fade) {
       this.fade.el.style.opacity = '1';
       this.fade.prev?.remove();
@@ -262,11 +266,12 @@ export default class DialogueScene extends Scene {
     const leader = this.ctx.game.activeCharacter?.name ?? 'the party';
     const text = paragraphs.map((p) => p.replace(/\{leader\}/g, leader).replace(/\{gold\}/g, String(partyGold(this.ctx.game))));
     const ps = text.map((t, i) => {
+      const { lead, body } = i === 0 ? dropCap(t) : { lead: [], body: t };
       const shown = h('span');
-      const hidden = h('span.dlg-hidden', [t]);
-      const p = h(`p${i === 0 ? '.dlg-first' : ''}`, [shown, hidden]);
+      const hidden = h('span.dlg-hidden', [body]);
+      const p = h(`p${lead.length ? '.dlg-capped' : ''}`, [...lead, shown, hidden]);
       this.prose.append(p);
-      return { shown, hidden, text: t };
+      return { shown, hidden, text: body };
     });
     if (see) this.prose.append(h('p.dlg-see', [see]));
     this.reveal = { ps, shown: 0, total: text.reduce((t, s) => t + s.length, 0) };
@@ -305,12 +310,20 @@ export default class DialogueScene extends Scene {
     });
     this.bar.set(cmds);
     this.choices = choices;
+    this.tipsEl?.remove();
+    this.tipsEl = null;
+    const tipped = cmds.filter((c) => c.tip);
+    if (tipped.length >= 2) {
+      this.tipsEl = h('div.dlg-tips', tipped.map((c) => h('div.dlg-tip', { onclick: (e) => { e.stopPropagation(); c.onSelect(); } }, [h('span.por-keycap', [c.key.toUpperCase()]), h('b', [c.label]), h('span', [c.tip])])));
+      this.body.append(this.tipsEl);
+    }
   }
 
   _choose(c) {
     if (this.busy) return;
     this.skipReveal();
     this.ctx.audio.sfx?.('click');
+    if (c.label && !/^(Continue|Back|Leave)$/.test(c.label) && !c.quiet) this.ctx.ui.message(`» ${c.label}`, 'system');
     c.run?.();
   }
 
@@ -329,6 +342,26 @@ export default class DialogueScene extends Scene {
   }
 
   // ------------------------------------------------------------------ side info
+  /** Active commissions and the latest journal entries (click to open the Journal). */
+  _renderQuests() {
+    const { game } = this.ctx;
+    if (!this.questEl) return;
+    clear(this.questEl);
+    const active = QUEST_LIST.filter((q) => ['active', 'done'].includes(questStatus(game.flags, q.id)));
+    for (const q of active.slice(0, 2)) {
+      const st = questStatus(game.flags, q.id);
+      this.questEl.append(h('div.dlg-q', { dataset: { tip: q.summary } }, [h('i.dlg-q-mark' + (st === 'done' ? '.done' : '')), h('span', [q.title]), h('em', [st === 'done' ? 'report' : 'active'])]));
+    }
+    const recent = journalList(game).slice(-2).reverse();
+    const unread = new Set(game.flags.journalUnread ?? []);
+    for (const n of recent) {
+      const e = getJournalEntry(n);
+      if (!e) continue;
+      this.questEl.append(h('div.dlg-j' + (unread.has(n) ? '.unread' : ''), { onclick: () => this.openJournal({ entry: n }), dataset: { tip: 'Open the Journal (J)' } }, [h('b', [String(n)]), h('span', [e.title])]));
+    }
+    if (!this.questEl.children.length) this.questEl.append(h('div.dlg-q.empty', ['No commissions yet — the Clerk at City Hall has work.']));
+  }
+
   _sidePlace(title, text) {
     this.infoFrame.title.textContent = 'Location';
     clear(this.sideInfo);
@@ -395,8 +428,8 @@ export default class DialogueScene extends Scene {
     const spec = { setting: art.setting ?? 'slums', light: art.light, monsters, deity: art.deity, actorId };
     await this._showArt(spec, s.title, s.subtitle ?? '');
     this._setSpeaker(node.speaker ?? null);
-    if (node.do) apply(this.ctx, node.do);
     if (node.journal && addJournal(this.ctx.game, node.journal)) this.ctx.ui.message(`Journal entry ${node.journal} recorded.`, 'lore');
+    if (node.do) apply(this.ctx, node.do);
     const paras = [].concat(node.text ?? []);
     this._setText(paras, { journal: node.journal ?? node.do?.find((e) => e.journal)?.journal ?? null });
     this._sidePlace(s.title, this.eventId ? undefined : s.subtitle ?? s.title);
@@ -491,7 +524,7 @@ export default class DialogueScene extends Scene {
     };
     const att = ['haughty', 'sly', 'nice', 'meek', 'abusive'];
     this._setChoices([
-      ...att.map((a) => ({ label: a[0].toUpperCase() + a.slice(1), key: a[0].toUpperCase(), tip: tips[a], run: () => this.parley(a) })),
+      ...att.map((a) => ({ label: a[0].toUpperCase() + a.slice(1), key: a[0].toUpperCase(), tip: tips[a], quiet: true, run: () => this.parley(a) })),
       { label: 'Back', key: 'B', run: () => this.encounterIntro() },
     ]);
   }
@@ -500,6 +533,10 @@ export default class DialogueScene extends Scene {
     const enc = this.encounter;
     const r = enc.parley?.[att] ?? 'fight';
     const [kind, arg] = r.split(':');
+    const speaker = this.ctx.game.activeCharacter?.name ?? 'The party';
+    this.ctx.ui.message(`${speaker} parleys: ${att.toUpperCase()}.`, 'system');
+    const outcome = { fight: ['The parley fails — they attack!', 'warn'], leave: ['They let you pass.', 'info'], flee: ['They break and flee.', 'info'], bribe: [`They demand a toll of ${arg} gold.`, 'warn'], talk: ['They will talk.', 'lore'] }[kind];
+    if (outcome) this.ctx.ui.message(outcome[0], outcome[1]);
     const who = enc.groups.length ? (enc.groups[0].count === 1 ? MONSTERS[enc.groups[0].monster].name : `The ${MONSTERS[enc.groups[0].monster].plural.toLowerCase()}`) : 'They';
     const line = enc.parleyText?.[kind] ?? enc.parleyText?.[att];
     if (kind === 'fight') {
@@ -680,7 +717,7 @@ export default class DialogueScene extends Scene {
         right.append(h('div.jr-entry-head', [h('span.jr-entry-num', [String(e.n)]), h('span.jr-entry-title', [e.title])]));
         if (e.where) right.append(h('div.jr-entry-where', [e.where]));
         right.append(h('div.jr-rule'));
-        right.append(h('div.jr-entry-text', [...e.text.map((p) => h('p', [p])), journalPlate(e.n)]));
+        right.append(h('div.jr-entry-text', [...e.text.map((p, i) => { if (i) return h('p', [p]); const d = dropCap(p); return h(`p${d.lead.length ? '.dlg-capped' : ''}`, [...d.lead, d.body]); }), journalPlate(e.n)]));
         right.append(h('div.jr-folio', [`— ${romanize(e.n)} —`]));
       } else right.append(h('div.jr-empty', ['Select an entry.']));
       game.flags.journalUnread = [...unread];
@@ -763,6 +800,19 @@ function journalPlate(n) {
     plateCache.set(setting, c.toDataURL('image/png'));
   }
   return h('img.jr-plate', { src: plateCache.get(setting), alt: '' });
+}
+
+/**
+ * Split a paragraph's opening into a drop-cap letter and a hanging quotation
+ * mark (so “"The Council…" reads as one word, with the quote in the margin).
+ */
+export function dropCap(t) {
+  const m = t.match(/^([“"'‘(«]*)([\p{L}\p{N}])/u);
+  if (!m) return { lead: [], body: t };
+  const lead = [];
+  if (m[1]) lead.push(h('span.dlg-hang', { 'aria-hidden': 'true' }, [m[1]]));
+  lead.push(h('span.dlg-cap', [m[2]]));
+  return { lead, body: t.slice(m[0].length) };
 }
 
 function youSee(enc) {

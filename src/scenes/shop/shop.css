@@ -114,3 +114,32 @@
 .shp-rumor { padding: 0.9em 1.1em; border-radius: 3px; border: 1px solid rgba(216, 178, 90, 0.2); background: rgba(0,0,0,0.25); font-style: italic; line-height: 1.5; color: var(--por-parchment); }
 .shp-bar .por-commandbar { padding: 0.55em 1em; gap: 0.5em; }
 .shp-bar .por-cmd { font-size: 0.96em; padding: 0.42em 1.05em; }
+
+/* wares: whole-row scrolling with soft fade edges and a visible gilt scrollbar */
+.shp-list { scroll-behavior: auto; mask-image: linear-gradient(180deg, #000 0, #000 calc(100% - 26px), transparent 100%); -webkit-mask-image: linear-gradient(180deg, #000 0, #000 calc(100% - 26px), transparent 100%); scrollbar-width: auto; scrollbar-color: rgba(216, 178, 90, 0.7) rgba(0, 0, 0, 0.25); padding-bottom: 22px; }
+.shp-list.scrolled { mask-image: linear-gradient(180deg, transparent 0, #000 18px, #000 calc(100% - 26px), transparent 100%); -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 18px, #000 calc(100% - 26px), transparent 100%); }
+.shp-member .nm { text-overflow: clip; }
+
+/* company list (temple / training / tavern): compact cards with HP bars */
+.shp-company { display: grid; grid-template-columns: 1fr; gap: 0.4em; align-content: start; overflow-y: auto; min-height: 0; }
+.shp-company.two { grid-template-columns: 1fr 1fr; }
+.shp-mate { position: relative; display: grid; grid-template-columns: 2.4em 1fr auto; grid-template-rows: auto auto auto; gap: 0 0.6em; align-items: center; padding: 0.35em 0.6em 0.45em 0.35em; border-radius: 3px; cursor: pointer;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015)); border: 1px solid rgba(216, 178, 90, 0.16); }
+.shp-mate.sel { border-color: var(--por-gilt-hi); box-shadow: 0 0 10px rgba(245, 217, 139, 0.2); }
+.shp-mate img { grid-row: 1 / span 3; width: 2.4em; height: 2.9em; object-fit: cover; border-radius: 2px; box-shadow: 0 0 0 1px var(--por-gilt-lo); }
+.shp-mate .t { font-size: 0.92em; color: var(--por-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shp-mate .st { grid-column: 3; grid-row: 1; font-family: var(--font-display); font-size: 0.66em; letter-spacing: 0.14em; text-transform: uppercase; }
+.shp-mate .hp { grid-column: 2 / span 2; grid-row: 2; font-family: var(--font-num); font-size: 0.8em; color: var(--por-text-dim); }
+.shp-mate .bar { grid-column: 2 / span 2; grid-row: 3; display: block; height: 4px; border-radius: 2px; background: rgba(0, 0, 0, 0.5); overflow: hidden; margin-top: 0.15em; }
+.shp-mate .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--por-hp-ok-a), var(--por-hp-ok-b)); }
+.shp-mate .bar.low i { background: linear-gradient(90deg, #c77a1c, var(--por-amber)); }
+.shp-mate .bar.down i { background: var(--por-blood); }
+
+/* temple: services nobody needs fold into a compact list */
+.shp-subhead { margin: 0.5em 0 0.1em; font-family: var(--font-display); font-size: 0.7em; letter-spacing: 0.22em; text-transform: uppercase; color: var(--por-gilt); opacity: 0.85; }
+.shp-minis { display: grid; grid-template-columns: 1fr 1fr; gap: 0.35em 0.6em; }
+.shp-row.mini { grid-template-columns: 1.6em 1fr auto; padding: 0.3em 0.6em 0.3em 0.4em; opacity: 0.82; }
+.shp-row.mini .ic { grid-row: auto; width: 1.6em; height: 1.6em; font-size: 0.8em; }
+.shp-row.mini .t { font-size: 0.86em; }
+.shp-row.mini .c { grid-row: auto; font-size: 0.9em; }
+.shp-row.off { opacity: 0.72; }

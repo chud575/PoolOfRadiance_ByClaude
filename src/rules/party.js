@@ -18,6 +18,7 @@ export function buildParty(id = 'default', seed = 1) {
     const primary = splitClasses(m.classSpec)[0];
     const kit = m.items ?? STARTING_KITS[primary];
     const ch = createCharacter({ ...m, rng, items: kit });
+    if (m.look) ch.look = { ...ch.look, ...m.look };
     if (m.hpCur !== undefined) ch.hp.cur = m.hpCur;
     if (m.status) ch.status = m.status;
     return ch;

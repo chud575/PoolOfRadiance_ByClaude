@@ -27,7 +27,7 @@
 
 /* ---------- the painted panel ---------- */
 .dlg-art {
-  position: relative; flex: 0 0 auto; height: 60vh; padding: 0.55em !important;
+  position: relative; flex: 0 0 auto; height: 63vh; padding: 0.55em !important;
   background: linear-gradient(180deg, #151a30, #06080f) !important;
 }
 .dlg-art .por-frame-title { font-size: 0.86em; padding: 0.24em 2em 0.2em; }
@@ -57,11 +57,11 @@
   position: relative; flex: 1 1 auto; min-height: 0; display: flex; gap: 1.6em;
   padding: 1.25em 1.8em 1.1em 1.8em !important;
 }
-.dlg-text.has-portrait { padding-left: 12.6em !important; }
+.dlg-text.has-portrait { padding-left: 0.9em !important; }
 .dlg-portrait {
-  position: absolute !important; left: 0.5em; bottom: 0.2em; width: 11.6em; height: 14.3em; z-index: 3 !important;
+  position: relative !important; flex: 0 0 auto; align-self: stretch; height: auto; max-height: 14.3em; aspect-ratio: 344 / 424; margin: -0.6em 0 -0.5em; z-index: 3 !important;
 }
-.dlg-portrait img { width: 100%; height: 100%; display: block; }
+.dlg-portrait img { width: 100%; height: 100%; display: block; object-fit: contain; object-position: center bottom; }
 .dlg-body { position: relative; flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
 .dlg-speaker {
   display: flex; align-items: baseline; gap: 0.8em; margin: 0 0 0.35em;
@@ -76,10 +76,6 @@
   scrollbar-width: thin; scrollbar-color: rgba(90, 60, 20, 0.5) transparent;
 }
 .dlg-prose p { margin: 0 0 0.55em; text-wrap: pretty; }
-.dlg-prose p.dlg-first::first-letter {
-  float: left; font-family: var(--font-display); font-weight: 700; font-size: 2.9em; line-height: 0.86; padding: 0.06em 0.1em 0 0;
-  color: #7a1e12; text-shadow: 0 1px 0 rgba(255, 230, 170, 0.8), 0 0 1px #3a0a04;
-}
 .dlg-prose .dlg-hidden { visibility: hidden; }
 .dlg-prose .dlg-see { font-style: italic; color: #4a3218; }
 .dlg-prose .dlg-see b { font-style: normal; font-family: var(--font-display); letter-spacing: 0.08em; color: #6a2410; }
@@ -228,9 +224,6 @@
 .jr-entry-where { font-style: italic; color: #6a4a28; margin: 0.1em 0 0.3em; }
 .jr-entry-text { flex: 1; overflow-y: auto; font-size: calc(1.08em * var(--text-scale)); line-height: 1.62; padding-right: 0.5em; }
 .jr-entry-text p { margin: 0 0 0.8em; text-wrap: pretty; }
-.jr-entry-text p:first-child::first-letter {
-  float: left; font-family: var(--font-display); font-weight: 700; font-size: 3.1em; line-height: 0.82; padding: 0.08em 0.12em 0 0; color: #7a1e12;
-}
 .jr-folio { position: absolute; bottom: 0.9em; left: 0; right: 0; text-align: center; font-family: var(--font-display); font-size: 0.8em; color: #8a6a3a; letter-spacing: 0.2em; }
 .jr-close { position: absolute; top: -2.1em; right: 1.6em; z-index: 3; }
 .jr-ribbon { position: absolute; top: -0.6em; left: calc(50% - 0.8em); width: 1.6em; height: 55%; background: linear-gradient(90deg, #6a0a0a, #a01a14 50%, #6a0a0a); clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 92%, 0 100%); z-index: 4; box-shadow: 0 4px 8px rgba(0,0,0,0.5); opacity: 0.92; }
@@ -268,3 +261,43 @@
 .dlg-doc > .dlg-ledger { max-width: none; transform: rotate(-0.6deg); box-shadow: 0 0 0 1px #000, 0 0 0 4px #2a1d10, 0 0 0 5px var(--por-gilt-lo), 14px 26px 40px rgba(0, 0, 0, 0.75), inset 0 0 60px rgba(120, 72, 20, 0.35); }
 .dlg-doc > .dlg-board { max-width: none; grid-template-columns: repeat(2, 1fr); }
 .dlg-lrow { grid-template-columns: 1.8em 1fr 7.4em 7em; }
+
+/* ---------- drop cap: the letter sits in two lines; an opening quote hangs in the margin ---------- */
+.dlg-prose { padding-left: 0.7em; }
+.dlg-capped { position: relative; }
+.dlg-capped::first-letter {
+  initial-letter: 2; -webkit-initial-letter: 2; margin-right: 0.08em;
+  font-family: var(--font-display); font-weight: 700; color: #7a1e12;
+  text-shadow: 0 1px 0 rgba(255, 230, 170, 0.8), 0 0 1px #3a0a04;
+}
+.dlg-hang {
+  position: absolute; left: -0.5em; top: 0.02em; font-family: var(--font-display); font-weight: 700; font-size: 2.2em; line-height: 1; color: #7a1e12; opacity: 0.8;
+}
+.jr-entry-text .dlg-capped::first-letter { initial-letter: 3; -webkit-initial-letter: 3; margin-right: 0.1em; }
+.jr-entry-text .dlg-hang { font-size: 2.4em; left: -0.6em; }
+.jr-entry-text { padding-left: 0.8em; }
+
+/* ---------- choice notes in the parchment (parley stances etc.) ---------- */
+.dlg-tips { display: grid; grid-template-columns: repeat(auto-fill, minmax(17em, 1fr)); gap: 0.35em 1.4em; margin-top: auto; padding-top: 0.5em; border-top: 1px solid rgba(90, 60, 20, 0.25); }
+.dlg-tip { display: grid; grid-template-columns: auto auto 1fr; gap: 0.5em; align-items: baseline; font-size: 0.86em; color: #3a2410; cursor: pointer; padding: 0.15em 0.3em; border-radius: 3px; }
+.dlg-tip:hover { background: rgba(122, 30, 18, 0.08); }
+.dlg-tip b { font-family: var(--font-display); letter-spacing: 0.14em; text-transform: uppercase; color: #6a1e10; font-size: 0.92em; }
+.dlg-tip span:last-child { font-style: italic; color: #5a3a1a; }
+.dlg-tip .por-keycap { font-size: 0.8em; }
+
+/* ---------- side column: journal & commissions, a compact top-anchored chronicle ---------- */
+.dlg-side { gap: 2.2vh; }
+.dlg-quests { display: flex; flex-direction: column; gap: 0.35em; font-size: 0.88em; }
+.dlg-q { display: grid; grid-template-columns: 0.8em 1fr auto; gap: 0.55em; align-items: center; color: var(--por-text); }
+.dlg-q em { font-style: normal; font-family: var(--font-display); font-size: 0.72em; letter-spacing: 0.16em; text-transform: uppercase; color: var(--por-gilt); }
+.dlg-q.empty { display: block; color: var(--por-text-dim); font-style: italic; }
+.dlg-q-mark { width: 0.55em; height: 0.55em; transform: rotate(45deg); background: linear-gradient(135deg, #8ab0ff, #2a52a8); box-shadow: 0 0 5px rgba(120, 160, 255, 0.6); }
+.dlg-q-mark.done { background: linear-gradient(135deg, #a8f0a0, #2a7a2a); box-shadow: 0 0 5px rgba(120, 240, 120, 0.6); }
+.dlg-j { display: grid; grid-template-columns: 2em 1fr; gap: 0.5em; align-items: baseline; cursor: pointer; color: var(--por-parchment); padding: 0.1em 0.2em; border-radius: 3px; }
+.dlg-j:hover { background: rgba(216, 178, 90, 0.12); }
+.dlg-j b { font-family: var(--font-display); color: var(--por-gilt-hi); text-align: right; }
+.dlg-j span { font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dlg-j.unread b::before { content: ''; display: inline-block; width: 0.4em; height: 0.4em; margin-right: 0.3em; border-radius: 50%; background: #e0402a; box-shadow: 0 0 4px #e0402a; vertical-align: 0.15em; }
+.por-frame.dlg-logframe > .por-frame-body { justify-content: flex-start !important; }
+.dlg-logframe .por-log-line { padding: 0.08em 0; border-bottom: 1px solid rgba(216, 178, 90, 0.08); }
+.dlg-logframe .por-log--system { color: #a8c0f0; }

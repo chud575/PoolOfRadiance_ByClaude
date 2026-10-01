@@ -553,7 +553,7 @@ S.cityhall = (g, W, H, R, o) => {
   }
   glowEllipse(g, W * 0.6, H * 0.92, W * 0.22, H * 0.07, '#ffd090', 0.18);
   // the arms of New Phlan: a great tapestry behind the clerk
-  const tx = W * 0.6;
+  const tx = W * 0.74;
   P.banner(g, tx, H * 0.07, W * 0.14, H * 0.44, '#5a1a14', { emblem: 'scales', trim: '#d8b25a', seed: 4 });
   P.banner(g, W * 0.5, H * 0.12, W * 0.04, H * 0.26, '#1d3574', { emblem: 'crown', tatter: 0.15, seed: 5 });
   // pigeonholes of rolled deeds on the back wall right
@@ -582,15 +582,15 @@ S.cityhall = (g, W, H, R, o) => {
   poly(g, [[W * 0.24, H * 0.8], [W * 0.8, H * 0.8], [W * 0.86, H * 0.88], [W * 0.18, H * 0.88]]);
   g.fill();
   // foreground: the desk (3D) in front of the clerk, and a column framing the left
-  const ppu = H * 0.66;
+  const ppu = H * 0.8;
   const d = desk3d();
   const lr = rig({ key: [-0.75, 0.45, 0.5], keyC: '#ffd090', keyI: 1.2, rimC: '#ffb060', amb: 0.45, sky: '#4a3a30', ground: '#24180e' });
-  const dx = W * 0.7;
+  const dx = W * 0.8;
   const dy = H * 1.02;
   prop3d(fg, d.f, dx, dy, ppu, lr, { yaw: -0.12, shadowW: 0.5 });
   for (const t of d.tips) { const [x, y] = proj(dx, dy, ppu, t, -0.12); lights.push({ x, y, s: 5, kind: 'candle', color: '#ffc060' }); }
   P.column(fg, W * 0.035, -10, H * 1.02, 74, { base: '#7a6a58', seed: 9 });
-  return { ...rm, lights, motes: { color: '#ffe0b0', count: 55, rise: 0.03 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.7, y: H * 0.85, h: H * 0.62, pose: 'clerk', yaw: -0.35 } };
+  return { ...rm, lights, motes: { color: '#ffe0b0', count: 55, rise: 0.03 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.81, y: H * 0.9, h: H * 0.78, pose: 'clerk', yaw: -0.4 } };
 };
 
 // ================================================================== Roland's forge
@@ -668,7 +668,7 @@ S.smithy = (g, W, H, R, o) => {
   const [wx, wy] = proj(ax, ay, ppu, [0.03, 0.3, 0.01], 0.25);
   lights.push({ x: wx, y: wy, s: 14, kind: 'glow', color: '#ff8030' });
   prop3d(fg, barrel3d(5, { open: true, water: true }), W * 0.76, H * 1.02, ppu * 0.95, lr, { yaw: 0.3 });
-  return { ...rm, lights, motes: { color: '#ffa050', count: 80, rise: 0.45 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.6, y: H * 0.97, h: H * 0.8, pose: 'smith', yaw: -0.3, apron: true } };
+  return { ...rm, lights, motes: { color: '#ffa050', count: 80, rise: 0.45 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.61, y: H * 1.06, h: H * 0.96, pose: 'smith', yaw: -0.3, apron: true } };
 };
 
 // ================================================================== temples
@@ -766,7 +766,7 @@ function templeTyr(g, W, H, R, o, d) {
   const ppu = H * 0.78;
   prop3d(fg, al.f, cx, H * 1.04, ppu, lr, { shadowW: 0.5 });
   for (const t of al.tips) { const [x, y] = proj(cx, H * 1.04, ppu, t); lights.push({ x, y, s: 5, kind: 'candle', color: '#ffd070' }); }
-  return { lights, motes: { color: '#fff4d8', count: 90, rise: 0.02 }, floorY, fgUsed: true, actorSlot: { x: cx, y: H * 0.86, h: H * 0.6, pose: 'priest', yaw: 0, vestments: '#1d3574' } };
+  return { lights, motes: { color: '#fff4d8', count: 90, rise: 0.02 }, floorY, fgUsed: true, actorSlot: { x: cx, y: H * 0.92, h: H * 0.74, pose: 'priest', yaw: 0, vestments: '#1d3574' } };
 }
 
 /** Sune: warm rose marble, a great rose window, silk, roses and her mirror. */
@@ -809,7 +809,7 @@ function templeSune(g, W, H, R, o, d) {
   const ppu = H * 0.78;
   prop3d(fg, al.f, W * 0.4, H * 1.04, ppu, lr, { shadowW: 0.5 });
   for (const t of al.tips) { const [x, y] = proj(W * 0.4, H * 1.04, ppu, t); lights.push({ x, y, s: 5, kind: 'candle', color: '#ffc880' }); }
-  return { ...rm, lights, motes: { color: '#ffc0c8', count: 70, rise: 0.04 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.4, y: H * 0.86, h: H * 0.6, pose: 'priest', yaw: 0.15, vestments: '#a01e2c' } };
+  return { ...rm, lights, motes: { color: '#ffc0c8', count: 70, rise: 0.04 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.4, y: H * 0.92, h: H * 0.74, pose: 'priest', yaw: 0.15, vestments: '#a01e2c' } };
 }
 
 /** Tempus: a smoky war hall of timber and stone, trophies of arms, braziers, a sword in the stone. */
@@ -835,7 +835,7 @@ function templeTempus(g, W, H, R, o, d) {
   fog(g, W, H * 0.15, H * 0.3, '#2a1a12', 0.4, 62);
   const ppu = H * 0.78;
   prop3d(fg, swordStone(), W * 0.5, H * 1.04, ppu, lr, { shadowW: 0.4 });
-  return { ...rm, lights, motes: { color: '#ffa060', count: 70, rise: 0.35 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.5, y: H * 0.86, h: H * 0.64, pose: 'trainer', yaw: -0.1 } };
+  return { ...rm, lights, motes: { color: '#ffa060', count: 70, rise: 0.35 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.5, y: H * 0.92, h: H * 0.78, pose: 'trainer', yaw: -0.1 } };
 }
 
 S.temple = (g, W, H, R, o) => {
@@ -977,7 +977,7 @@ S.training = (g, W, H, R, o) => {
     fg.restore();
     g.restore();
   }
-  return { ...rm, lights, motes: { color: '#fff0c8', count: 80, rise: 0.02 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.42, y: H * 0.97, h: H * 0.72, pose: 'trainer', yaw: 0.2 } };
+  return { ...rm, lights, motes: { color: '#fff0c8', count: 80, rise: 0.02 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.42, y: H * 1.04, h: H * 0.88, pose: 'trainer', yaw: 0.2 } };
 };
 
 // ================================================================== taverns
@@ -1060,7 +1060,7 @@ S.tavern = (g, W, H, R, o) => {
     f.cone([0.045, 0.03, 0], [0.07, 0.065, 0], 0.008, 0.008, M.darkWood, { group: null });
     prop3d(fg, f, W * x, top + 4 - (x - 0.5) * 30, H * 0.7 * s, lrBar, { shadowW: 0.05 });
   }
-  return { ...rm, lights, motes: { color: '#ffc880', count: 35, rise: 0.15 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.73, y: H * 0.84, h: H * 0.6, pose: 'barkeep', yaw: -0.35 } };
+  return { ...rm, lights, motes: { color: '#ffc880', count: 35, rise: 0.15 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.73, y: H * 0.92, h: H * 0.8, pose: 'barkeep', yaw: -0.35 } };
 };
 
 // ================================================================== shops with a counter
@@ -1076,7 +1076,7 @@ S.shop = (g, W, H, R, o) => {
   fg.fillStyle = 'rgba(255,220,160,0.32)';
   fg.fillRect(W * 0.1, H * 0.76, W * 0.8, 4);
   P.crate(fg, W * 0.92, H * 1.0, 100, 3);
-  return { ...info, fgUsed: true, actorSlot: { x: W * 0.46, y: H * 0.84, h: H * 0.56, pose: 'barkeep', yaw: 0.2 } };
+  return { ...info, fgUsed: true, actorSlot: { x: W * 0.46, y: H * 0.92, h: H * 0.74, pose: 'barkeep', yaw: 0.2 } };
 };
 
 const oldCurio = S.curio;
