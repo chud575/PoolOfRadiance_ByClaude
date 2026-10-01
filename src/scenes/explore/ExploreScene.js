@@ -424,7 +424,7 @@ export default class ExploreScene extends Scene {
     if (this.tileset.outdoors && this.keys.night < 0.5) {
       // crepuscular rays through the gaps between buildings (strongest at low sun)
       const low = this.keys.scatter > 0.8 || this.sunDir.y < 0.4;
-      this.sunShafts = buildSunShafts(this.map, this.block, { sunDir: this.sunDir, color: new THREE.Color(this.keys.sunCol).lerp(new THREE.Color(0xfff0d8), 0.3), strength: low ? 0.2 : 0.075, time: PROP_UNIFORMS.uTime });
+      this.sunShafts = buildSunShafts(this.map, this.block, { sunDir: this.sunDir, color: new THREE.Color(this.keys.sunCol).lerp(new THREE.Color(0xfff0d8), 0.3), strength: low ? 0.13 : 0.06, time: PROP_UNIFORMS.uTime });
       if (this.sunShafts) this.scene3d.add(this.sunShafts);
     }
     if (this.tileset.outdoors || !this.sun || !this.sun.intensity) return;

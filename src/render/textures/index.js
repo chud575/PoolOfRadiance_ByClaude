@@ -485,7 +485,10 @@ export function getGrimeTexture() {
  */
 export function getInscriptionTexture(text, { weathered = false } = {}) {
   const key = `inscr_${text}${weathered ? '_w' : ''}`;
-  return canvasTex(key, 512, 128, (g, w, h) => {
+  return canvasTex(key, 1024, 256, (g, w, h) => {
+    g.scale(2, 2);
+    w /= 2;
+    h /= 2;
     const r = rng(text.length * 13 + 5 + (weathered ? 101 : 0));
     const grd = g.createLinearGradient(0, 0, 0, h);
     grd.addColorStop(0, weathered ? '#8a8476' : '#9c9384');
@@ -513,21 +516,21 @@ export function getInscriptionTexture(text, { weathered = false } = {}) {
     g.scale(sx, 1);
     g.fillStyle = 'rgba(235,225,205,0.55)';
     g.fillText(text, 1, 3);
-    g.fillStyle = weathered ? 'rgba(30,24,18,0.75)' : 'rgba(30,24,18,0.92)';
+    g.fillStyle = weathered ? 'rgba(30,24,18,0.88)' : 'rgba(30,24,18,0.92)';
     g.fillText(text, 0, 1);
     g.restore();
     // wear: chip some of the letters away
     g.globalCompositeOperation = 'source-atop';
-    for (let i = 0; i < (weathered ? 160 : 60); i++) {
+    for (let i = 0; i < (weathered ? 70 : 50); i++) {
       g.fillStyle = `rgba(${weathered ? '128,122,108' : '150,142,128'},${0.3 + r() * 0.5})`;
       g.beginPath();
-      g.arc(r() * w, r() * h, 2 + r() * (weathered ? 11 : 7), 0, Math.PI * 2);
+      g.arc(r() * w, r() * h, 1.5 + r() * (weathered ? 6 : 5), 0, Math.PI * 2);
       g.fill();
     }
     g.globalCompositeOperation = 'source-over';
     if (weathered) {
       // lichen rosettes and rain/soot streaks
-      for (let i = 0; i < 26; i++) {
+      for (let i = 0; i < 14; i++) {
         const x = r() * w;
         const y = r() * h;
         const rad = 4 + r() * 16;
@@ -988,4 +991,32 @@ export function getRunnerTexture() {
     g.fillStyle = grd;
     g.fillRect(0, 0, w, h);
   }, { repeat: true });
+}
+
+/** Fire scorch above an opening (alpha in luminance): dense at the lintel, licking upward in tongues. */
+export function getScorchTexture() {
+  return canvasTex('scorch', 128, 256, (g, w, h) => {
+    const r = rng(733);
+    g.fillStyle = '#000';
+    g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 140; i++) {
+      const t = Math.pow(r(), 1.4);
+      const y = h * (1 - t * 0.98);
+      const x = w / 2 + (r() - 0.5) * w * (0.75 - t * 0.35) + Math.sin(t * 9 + i) * w * 0.08;
+      const rad = w * (0.08 + (1 - t) * 0.22);
+      const gr = g.createRadialGradient(x, y, 0, x, y, rad);
+      gr.addColorStop(0, `rgba(255,255,255,${0.32 * (1 - t * 0.8)})`);
+      gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gr;
+      g.fillRect(0, 0, w, h);
+    }
+    // keep the sides soft
+    const fade = g.createLinearGradient(0, 0, w, 0);
+    fade.addColorStop(0, 'rgba(0,0,0,1)');
+    fade.addColorStop(0.18, 'rgba(0,0,0,0)');
+    fade.addColorStop(0.82, 'rgba(0,0,0,0)');
+    fade.addColorStop(1, 'rgba(0,0,0,1)');
+    g.fillStyle = fade;
+    g.fillRect(0, 0, w, h);
+  }, { srgb: false });
 }

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { EDGE, CELL } from '../../data/maps/MapGrid.js';
 import { getMaterial, getWindowMaterial } from '../../render/materials.js';
-import { getInscriptionTexture, getEmberTexture, getSootTexture } from '../../render/textures/index.js';
+import { getInscriptionTexture, getEmberTexture, getSootTexture, getScorchTexture } from '../../render/textures/index.js';
 import { GeoBuilder, hash, defaultAO } from './GeoBuilder.js';
 import { TILESETS } from './tilesets.js';
 
@@ -112,14 +112,20 @@ export function buildBlock(map, opts = {}) {
         if (temple) H = 5.8;
         // which way does the entrance face? (temples turn their pediment to it)
         let frontAxis = null;
+        let frontDir = null;
         for (const [cx, cy] of cells) {
           for (const d of ['N', 'S', 'E', 'W']) {
             const t = map.getEdge(cx, cy, d);
-            if (t === EDGE.ARCH || t === EDGE.DOOR || t === EDGE.LOCKED) frontAxis = d === 'N' || d === 'S' ? 'z' : 'x';
+            if (t === EDGE.ARCH || t === EDGE.DOOR || t === EDGE.LOCKED) {
+              frontAxis = d === 'N' || d === 'S' ? 'z' : 'x';
+              frontDir = d;
+            }
           }
         }
+        // a named ruin that still stands: gutted — the back of the roof has fallen in, the facade is scorched
+        const partRuin = !ruined && /ruin/i.test(zone);
         if (style === 1 && H < 5) H = 5.4;
-        comps.push({ id, cells, style, ruined, H, temple, frontAxis, roofKind: ['arch_roof_slate', 'arch_roof_clay', 'arch_roof_shake'][Math.floor(hash(map.id, id, 'roof') * 3)], tint: PLASTER_TINTS[Math.floor(hash(map.id, id, 'tint') * PLASTER_TINTS.length)] });
+        comps.push({ id, cells, style, ruined, partRuin, H, temple, frontAxis, frontDir, roofKind: ['arch_roof_slate', 'arch_roof_clay', 'arch_roof_shake'][Math.floor(hash(map.id, id, 'roof') * 3)], tint: PLASTER_TINTS[Math.floor(hash(map.id, id, 'tint') * PLASTER_TINTS.length)] });
       }
     }
   }
@@ -279,6 +285,7 @@ export function buildBlock(map, opts = {}) {
         cell: { x: sd.cx, y: sd.cy, type: map.getCell(sd.cx, sd.cy) },
         tint: c?.tint ?? PLASTER_TINTS[Math.floor(seedE * PLASTER_TINTS.length)],
         temple: !interiorFace && !!c?.temple,
+        gut: !interiorFace && !!c?.partRuin,
         ends: {},
         seed: hash(e.key, si, map.id),
       };
@@ -289,6 +296,7 @@ export function buildBlock(map, opts = {}) {
       // corner classification at both ends
       for (const end of [-1, 1]) face.ends[end] = classifyEnd(e, sd.N, Tn, end, horizontal);
       RECIPES[recipe]?.(face);
+      if (face.gut || (!interiorFace && (recipe === 'ruin' || recipe === 'ruin_timber') && hash(face.seed, 'fire') < 0.45)) scorch(face);
       if (hearthEdge && interiorFace) {
         const wallDir = sd.N.x > 0.5 ? 'W' : sd.N.x < -0.5 ? 'E' : sd.N.z > 0.5 ? 'N' : 'S';
         if (hearths.some((h) => h.x === sd.cx && h.y === sd.cy && h.dir === wallDir)) buildHearth(face);
@@ -318,6 +326,28 @@ export function buildBlock(map, opts = {}) {
     }
     // ruin tops: capstones scattered
   }
+
+  /** Fire-blackening licking up from the openings of a gutted building, plus a few smoke stains. */
+  function scorch(f) {
+    const d = T / 2 + 0.02;
+    const P = (sv, y) => new THREE.Vector3(sv, y, d).applyMatrix4(f.basis);
+    for (const op of f.openings) {
+      const w = (op.s1 - op.s0) * 1.9;
+      const cx = (op.s0 + op.s1) / 2;
+      const y0 = op.y1 - 0.08;
+      const y1 = Math.min(f.H, op.y1 + 1.6 + hash(f.seed, op.s0, 'sh') * 0.8);
+      sootQuads.push([P(cx - w / 2, y0), P(cx + w / 2, y0), P(cx + w / 2, y1), P(cx - w / 2, y1)]);
+    }
+    for (let k = 0; k < 2; k++) {
+      if (hash(f.seed, k, 'sp') > 0.6) continue;
+      const cx = (hash(f.seed, k, 'sx') - 0.5) * 2.2;
+      const y0 = 0.2 + hash(f.seed, k, 'sy') * 2;
+      const w = 0.9 + hash(f.seed, k, 'sw') * 0.8;
+      if (f.openings.some((op) => op.s0 < cx + w / 2 && op.s1 > cx - w / 2 && op.y0 < y0 + w * 1.6 && op.y1 > y0)) continue;
+      sootQuads.push([P(cx - w / 2, y0), P(cx + w / 2, y0), P(cx + w / 2, y0 + w * 1.6), P(cx - w / 2, y0 + w * 1.6)]);
+    }
+  }
+  const sootQuads = [];
 
   /** Corner type for a face end: 'inside' | 'straight' | 'convexExt' | 'convexNon' | 'free' */
   function classifyEnd(e, N, Tn, end, horizontal) {
@@ -1323,7 +1353,7 @@ export function buildBlock(map, opts = {}) {
       const top = type === EDGE.ARCH ? ARCH_SPRING + ARCH_W / 2 + 0.55 : DOOR_H + 0.42;
       const f = { basis };
       localBox(f, 'arch_trim', -1.05, 1.05, top - 0.06, top + 0.52, T / 2 - 0.02, T / 2 + 0.07, { chamfer: 0.03 });
-      const ruinPlaque = ts.id === 'ruins';
+      const ruinPlaque = ts.id === 'ruins' || !!compAt(ev.x + dx, ev.y + dy)?.partRuin;
       const mat = new THREE.MeshStandardMaterial({ map: getInscriptionTexture(m[1].toUpperCase(), { weathered: ruinPlaque }), roughness: 0.92, alphaTest: 0.5 });
       const geo = new THREE.PlaneGeometry(1.9, 0.46);
       const plane = new THREE.Mesh(geo, mat);
@@ -1380,21 +1410,31 @@ export function buildBlock(map, opts = {}) {
     const B = alongX ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(-1, 0, 0);
     const P = (a, yy, b) => new THREE.Vector3(cx, yy, cz).addScaledVector(A, a).addScaledVector(B, b);
     const L = spanA + off + 0.35;
+    // gutted ruins keep only the front of the roof; the rest is bare, charred structure
+    const fv = { N: [0, 0, -1], S: [0, 0, 1], E: [1, 0, 0], W: [-1, 0, 0] }[c.frontDir] ?? [0, 0, 1];
+    const frontSign = Math.sign(A.x * fv[0] + A.z * fv[2]) || 1;
+    const gut = c.partRuin;
+    const keep = Math.min(L, 1.6);
+    const aLo = gut ? (frontSign > 0 ? L - keep : -L) : -L;
+    const aHi = gut ? (frontSign > 0 ? L : -L + keep) : L;
+    const brkSide = gut ? (hash(c.id, 'brk') < 0.5 ? -1 : 1) : 0;
+    if (gut) c.pedimentBreak = brkSide;
     const rk = c.roofKind;
     const tsR = 2;
     const th = 0.16;
     const slopeLen = Math.hypot(spanB + oh, rise + oh * Math.tan(pitch));
     for (const sb of [-1, 1]) {
+      if (sb === brkSide) continue; // that slope fell in with the pediment's broken half
       const eaveB = sb * (spanB + oh);
       const eaveY = He - oh * Math.tan(pitch);
-      const r0 = P(-L, He + rise, 0);
-      const r1 = P(L, He + rise, 0);
-      const e0 = P(-L, eaveY, eaveB);
-      const e1 = P(L, eaveY, eaveB);
+      const r0 = P(aLo, He + rise, 0);
+      const r1 = P(aHi, He + rise, 0);
+      const e0 = P(aLo, eaveY, eaveB);
+      const e1 = P(aHi, eaveY, eaveB);
       // top surface (normal outward/up)
       const nrm = new THREE.Vector3().subVectors(e0, r0).cross(new THREE.Vector3().subVectors(r1, r0));
       const up = nrm.y < 0;
-      const uvs = [[-L / tsR, 0], [L / tsR, 0], [L / tsR, slopeLen / tsR], [-L / tsR, slopeLen / tsR]];
+      const uvs = [[aLo / tsR, 0], [aHi / tsR, 0], [aHi / tsR, slopeLen / tsR], [aLo / tsR, slopeLen / tsR]];
       const lift = new THREE.Vector3(0, th, 0);
       const t0 = r0.clone().add(lift);
       const t1 = r1.clone().add(lift);
@@ -1415,12 +1455,14 @@ export function buildBlock(map, opts = {}) {
       else g.quad('arch_beam_dark', f1, f0, f3, f2, null, { ao: 0.7 });
       // barge boards along the gable edges
       for (const sa of [-1, 1]) {
+        if (gut && sa !== frontSign) continue;
         const a0 = P(sa * (L + 0.02), He + rise + th / 2, 0);
         const a1 = P(sa * (L + 0.02), eaveY + th / 2, eaveB);
         alongBox('arch_beam_dark', a0, a1, A, [0.08, 0.3], { uv: 'along', ao: 0.8 });
       }
       // rafter tails under the eave
       for (let a = -spanA + 0.2; a < spanA; a += 0.6) {
+        if (a < aLo || a > aHi) continue;
         const p0 = P(a, He - 0.05, sb * (spanB - 0.1));
         const p1 = P(a, eaveY + 0.02, sb * (spanB + oh - 0.05));
         alongBox('arch_beam_dark', p0, p1, A, [0.09, 0.12], { uv: 'along', ao: 0.55 });
@@ -1429,22 +1471,55 @@ export function buildBlock(map, opts = {}) {
     // ridge cap
     {
       const m = new THREE.Matrix4().compose(P(0, He + rise + th + 0.05, 0), new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), A), new THREE.Vector3(1, 1, 1));
-      g.box(rk === 'arch_roof_clay' ? 'arch_roof_clay' : 'arch_trim', { matrix: m, s: [2 * L + 0.05, 0.16, 0.34], chamfer: 0.05, ao: 0.9 });
+      if (gut) m.multiply(new THREE.Matrix4().makeTranslation((aLo + aHi) / 2, 0, 0));
+      g.box(rk === 'arch_roof_clay' ? 'arch_roof_clay' : 'arch_trim', { matrix: m, s: [aHi - aLo + 0.05, 0.16, 0.34], chamfer: 0.05, ao: 0.9 });
     }
+    if (gut) gutted(c, P, A, { aLo, aHi, L, spanA, spanB, He, rise, eaveY: He - oh * Math.tan(pitch), oh, frontSign, rk, brkSide });
     // gable walls
     const gKey = timber ? 'arch_plaster' : c.style === 2 ? 'arch_ruin' : 'arch_stone';
     for (const sa of [-1, 1]) {
+      if (gut && sa !== frontSign) continue; // the back gable has fallen with the roof
       const aa = sa * (spanA + off);
       const q0 = P(aa, He, -spanB);
       const q1 = P(aa, He, spanB);
       const q2 = P(aa, He + rise, 0);
       const n = new THREE.Vector3().subVectors(q1, q0).cross(new THREE.Vector3().subVectors(q2, q0));
       const outward = A.clone().multiplyScalar(sa);
-      const tri = n.dot(outward) > 0 ? [q0, q1, q2] : [q0, q2, q1];
-      g.tri(gKey, tri, null, { ao: 0.95, tint: timber ? c.tint : undefined, uvOff: [hash(c.id, sa, x, y, 'gu') * 9.1, hash(c.id, sa, 'gv') * 3.3] });
-      // back side (attic) to avoid see-through from odd angles
-      const back = tri.map((p) => p.clone().addScaledVector(outward, -0.15));
-      g.tri(gKey, [back[0], back[2], back[1]], null, { ao: 0.4 });
+      const orient = (t) => {
+        const nn = new THREE.Vector3().subVectors(t[1], t[0]).cross(new THREE.Vector3().subVectors(t[2], t[0]));
+        return nn.dot(outward) > 0 ? t : [t[0], t[2], t[1]];
+      };
+      const gableTris = [];
+      if (gut) {
+        // broken pediment: one half stands to the apex, the other has fallen to a ragged stepped edge
+        const qm = P(aa, He, 0);
+        const brk = brkSide;
+        const qEave = brk > 0 ? q1 : q0;
+        const qKeep = brk > 0 ? q0 : q1;
+        gableTris.push(orient([qKeep, qm, q2]));
+        const steps = 4;
+        let prev = qm.clone().setY(He + rise * 0.62);
+        gableTris.push(orient([qm, prev, P(aa, He, brk * spanB * 0.25)]));
+        for (let k = 1; k <= steps; k++) {
+          const t = k / steps;
+          const b = brk * spanB * t;
+          const yTop = He + rise * 0.62 * (1 - t) * (0.75 + 0.25 * hash(c.id, k, 'pst')) + (k === steps ? 0.2 : 0);
+          const pTop = P(aa, yTop, b);
+          gableTris.push(orient([P(aa, He, b - brk * spanB / steps), prev, pTop]));
+          gableTris.push(orient([P(aa, He, b - brk * spanB / steps), pTop, P(aa, He, b)]));
+          prev = pTop;
+        }
+        void qEave;
+        c.pedimentBreak = brk;
+      } else gableTris.push(n.dot(outward) > 0 ? [q0, q1, q2] : [q0, q2, q1]);
+      const tri = gableTris[0];
+      for (const t of gableTris) {
+        g.tri(gKey, t, null, { ao: 0.95, tint: timber ? c.tint : undefined, uvOff: [hash(c.id, sa, x, y, 'gu') * 9.1, hash(c.id, sa, 'gv') * 3.3] });
+        // back side (attic) to avoid see-through from odd angles
+        const back = t.map((p) => p.clone().addScaledVector(outward, -0.15));
+        g.tri(gKey, [back[0], back[2], back[1]], null, { ao: 0.4 });
+      }
+      void tri;
       if (timber) {
         const d = 0.04;
         const Pd = (b, yy) => P(aa + sa * d, yy, b);
@@ -1467,7 +1542,16 @@ export function buildBlock(map, opts = {}) {
         const apex = P(aa, He + rise, 0);
         for (const sb of [-1, 1]) {
           const e0 = P(aa, He + 0.12, sb * (spanB + 0.25)).add(out(0.14));
-          const a1 = apex.clone().add(new THREE.Vector3(0, 0.12, 0)).add(out(0.14));
+          let a1 = apex.clone().add(new THREE.Vector3(0, 0.12, 0)).add(out(0.14));
+          if (gut && sb === c.pedimentBreak) {
+            // the raking cornice on the fallen side survives only as a stub, its stones on the ground
+            a1 = e0.clone().lerp(a1, 0.3);
+            for (let k = 0; k < 3; k++) {
+              const fb = P(aa, 0.2 + k * 0.05, sb * (spanB * (0.3 + k * 0.25))).add(out(0.9 + hash(c.id, k, 'fbo') * 0.8));
+              const fm = new THREE.Matrix4().compose(fb, new THREE.Quaternion().setFromEuler(new THREE.Euler(hash(c.id, k, 'fx') - 0.5, hash(c.id, k, 'fy') * 3, (hash(c.id, k, 'fz') - 0.5) * 0.6)), new THREE.Vector3(1, 1, 1));
+              g.box('arch_dressed', { matrix: fm, s: [0.9, 0.36, 0.42], chamfer: 0.04, ao: 0.75 });
+            }
+          }
           alongBox('arch_trim', e0, a1, outward, [0.42, 0.32], { chamfer: 0.04, ao: 0.95 });
           const cb = P(aa, He + 0.2, sb * (spanB + 0.2)).add(out(0.2));
           const mm = new THREE.Matrix4().compose(cb, new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), outward), new THREE.Vector3(1, 1, 1));
@@ -1480,7 +1564,7 @@ export function buildBlock(map, opts = {}) {
           g.box('arch_trim', { matrix: mm.clone().multiply(new THREE.Matrix4().makeTranslation(0, -0.27, -0.06)), s: [2 * spanB + 0.3, 0.2, 0.3], chamfer: 0.03, ao: 0.8 });
           const ap = apex.clone().add(new THREE.Vector3(0, 0.38, 0)).add(out(0.14));
           const am = new THREE.Matrix4().compose(ap, new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), outward), new THREE.Vector3(1, 1, 1));
-          g.box('arch_trim', { matrix: am, s: [0.46, 0.5, 0.4], chamfer: 0.06, ao: 0.95 });
+          if (!gut) g.box('arch_trim', { matrix: am, s: [0.46, 0.5, 0.4], chamfer: 0.06, ao: 0.95 });
           // oculus
           const oc = P(aa, He + rise * 0.4, 0).add(out(0.04));
           const om = new THREE.Matrix4().compose(oc, new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), outward), new THREE.Vector3(1, 1, 1));
@@ -1503,7 +1587,7 @@ export function buildBlock(map, opts = {}) {
       }
     }
     // chimney
-    if (hash(c.id, x, y, 'chim') < 0.7) {
+    if (!gut && hash(c.id, x, y, 'chim') < 0.7) {
       const ca = (hash(c.id, 'ca') < 0.5 ? -1 : 1) * Math.max(0, spanA - 1.1);
       const cb = (hash(c.id, 'cb') < 0.5 ? -1 : 1) * spanB * 0.35;
       const roofY = He + rise * (1 - Math.abs(cb) / spanB);
@@ -1519,6 +1603,66 @@ export function buildBlock(map, opts = {}) {
       pot.dispose();
       chimneys.push(P(ca, top + 0.55, cb));
     }
+  }
+
+  /**
+   * The fallen part of a gutted roof: charred rafter pairs (some missing, some snapped and
+   * hanging), broken purlins and ridge, and a ragged edge of slipped tiles where the roof ends.
+   */
+  function gutted(c, P, A, o) {
+    const { aLo, aHi, L, spanB, He, rise, eaveY, oh, frontSign, rk, brkSide } = o;
+    const char = [0.32, 0.27, 0.24];
+    const from0 = frontSign > 0 ? aLo : aHi;
+    const to = frontSign > 0 ? -L : L;
+    const front = frontSign > 0 ? L - 0.3 : -L + 0.3;
+    const step = 0.7 * Math.sign(to - from0);
+    let k = 0;
+    // on the fallen side the bare rafters run right up to the front gable
+    for (let a = front + step * 0.5; Math.abs(a - front) < Math.abs(to - front) - 0.2; a += step, k++) {
+      const miss = hash(c.id, k, 'gm');
+      if (miss < 0.3) continue;
+      for (const sb of [-1, 1]) {
+        if (sb !== brkSide && Math.abs(a - front) < Math.abs(from0 - front)) continue;
+        if (hash(c.id, k, sb, 'gs') < 0.2) continue;
+        const snapped = hash(c.id, k, sb, 'gn') < 0.35;
+        const p0 = P(a, He + 0.05, sb * spanB);
+        let p1 = P(a, He + rise - 0.1, 0);
+        if (snapped) {
+          // snapped halfway: the stub droops toward the floor
+          const mid = p0.clone().lerp(p1, 0.5 + hash(c.id, k, sb, 'gl') * 0.2);
+          p1 = mid.add(new THREE.Vector3(0, -0.5 - hash(c.id, k, 'gd') * 0.6, 0));
+        }
+        alongBox('arch_beam_dark', p0, p1, A, [0.12, 0.16], { uv: 'along', ao: 0.7, tint: char });
+      }
+    }
+    // purlins: one per slope, broken off short of the far gable
+    const from = from0;
+    for (const sb of [-1, 1]) {
+      const len = (0.35 + hash(c.id, sb, 'pl') * 0.5) * Math.abs(to - from);
+      const p0 = P(from, He + rise * 0.5, sb * spanB * 0.5);
+      const p1 = P(from + Math.sign(to - from) * len, He + rise * 0.5 - hash(c.id, sb, 'pd') * 0.6, sb * spanB * 0.5);
+      alongBox('arch_beam_dark', p0, p1, new THREE.Vector3(0, 1, 0), [0.16, 0.16], { uv: 'along', ao: 0.7, tint: char });
+    }
+    {
+      const len = (0.5 + hash(c.id, 'rl') * 0.3) * Math.abs(to - from);
+      alongBox('arch_beam_dark', P(from, He + rise - 0.05, 0), P(from + Math.sign(to - from) * len, He + rise - 0.25, 0), new THREE.Vector3(0, 1, 0), [0.2, 0.2], { uv: 'along', ao: 0.7, tint: char });
+    }
+    // ragged edge of the surviving roof: slipped tile slabs along the break
+    const slope = Math.hypot(spanB + oh, rise + (He - eaveY));
+    for (const sb of [-1, 1]) {
+      if (sb === brkSide) continue;
+      for (let q = 0; q < 7; q++) {
+        const t = (q + hash(c.id, sb, q, 'tt')) / 7;
+        const b = sb * (spanB + oh) * (1 - t);
+        const y = eaveY + (He + rise - eaveY) * t + 0.12;
+        const a = from + Math.sign(to - from) * (0.15 + hash(c.id, sb, q, 'ta') * 0.6);
+        const ctr = P(a, y, b);
+        const m = new THREE.Matrix4().compose(ctr, new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), A), new THREE.Vector3(1, 1, 1));
+        m.multiply(new THREE.Matrix4().makeRotationX(-sb * Math.atan2(rise, spanB))).multiply(new THREE.Matrix4().makeRotationY((hash(c.id, sb, q, 'tr') - 0.5) * 0.5));
+        g.box(rk, { matrix: m, s: [0.5 + hash(c.id, sb, q, 'tw') * 0.4, 0.06, 0.45], ao: 0.8 });
+      }
+    }
+    void slope;
   }
 
   function ruinedRafters(c, x, y, w, h) {
@@ -1550,6 +1694,17 @@ export function buildBlock(map, opts = {}) {
     mesh.renderOrder = mesh.castShadow ? 1 : 2;
     group.add(mesh);
     meshes.push(mesh);
+  }
+  if (sootQuads.length) {
+    const sb = new GeoBuilder();
+    for (const q of sootQuads) sb.quad('soot', q[0], q[1], q[2], q[3], [[0, 0], [1, 0], [1, 1], [0, 1]], { ao: 1 });
+    const geo = sb.build().get('soot');
+    geo.deleteAttribute('color');
+    const mat = new THREE.MeshStandardMaterial({ color: 0x0a0806, alphaMap: getScorchTexture(), transparent: true, opacity: 1, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.renderOrder = 3;
+    mesh.userData.ownMaterial = true;
+    group.add(mesh);
   }
   for (const [key, geo] of panes.build()) {
     geo.deleteAttribute('color');

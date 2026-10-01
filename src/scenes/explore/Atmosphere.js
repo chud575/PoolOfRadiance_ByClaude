@@ -56,8 +56,8 @@ export function buildSunShafts(map, block, o) {
   cands.sort((p, q) => p.k - q.k);
   const chosen = [];
   for (const c of cands) {
-    if (chosen.length >= 34) break;
-    if (chosen.some((d) => Math.hypot(d.x - c.x, d.z - c.z) < 1.6)) continue;
+    if (chosen.length >= 26) break;
+    if (chosen.some((d) => Math.hypot(d.x - c.x, d.z - c.z) < 2.6)) continue;
     chosen.push(c);
   }
   if (!chosen.length) return null;
@@ -67,7 +67,8 @@ export function buildSunShafts(map, block, o) {
   const uv = [];
   const seed = [];
   for (const c of chosen) {
-    const w = 0.5 + c.k * 1.4;
+    // broad, soft shafts (a thin ribbon reads as a lens streak, not as light in air)
+    const w = 1.6 + c.k * 2.6;
     const len = (maxH * 0.7) / sun.y;
     const off = c.side * w * 0.5;
     const p0 = new THREE.Vector3(c.x + perp.x * off, 0.05, c.z + perp.y * off);
@@ -108,16 +109,18 @@ export function buildSunShafts(map, block, o) {
       uniform vec3 uColor; uniform float uStrength; uniform vec3 uSun; uniform float uTime;
       varying vec2 vUv; varying float vSeed; varying vec3 vW;
       void main(){
-        float across = sin(3.14159 * clamp(vUv.x, 0.0, 1.0));
-        across *= across;
+        float xc = (clamp(vUv.x, 0.0, 1.0) - 0.5) * 2.0;
+        float across = exp(-xc * xc * 3.2) * (1.0 - xc * xc);
         float along = smoothstep(0.0, 0.08, vUv.y) * (1.0 - smoothstep(0.35, 1.0, vUv.y));
-        float streak = 0.65 + 0.35 * sin(vUv.x * 9.0 + vSeed) * sin(vUv.x * 23.0 + vSeed * 1.7);
+        float streak = 0.8 + 0.2 * sin(vUv.x * 7.0 + vSeed) * sin(vUv.x * 13.0 + vSeed * 1.7);
+        // density modulation along the shaft (drifting dust and mist)
+        float dens = 0.55 + 0.45 * sin(vUv.y * 11.0 + vSeed * 2.3 + uTime * 0.05) * sin(vUv.y * 4.3 + vSeed);
         float motes = 0.85 + 0.15 * sin(vW.x * 3.0 + vW.y * 2.0 + uTime * 0.3 + vSeed);
         vec3 V = normalize(vW - cameraPosition);
         float phase = 0.3 + 1.6 * pow(max(dot(V, uSun), 0.0), 4.0);
         float d = length(vW - cameraPosition);
-        float nearFade = smoothstep(1.0, 4.0, d);
-        float a = across * along * streak * motes * phase * nearFade * uStrength;
+        float nearFade = smoothstep(3.0, 11.0, d);
+        float a = across * along * streak * dens * motes * phase * nearFade * uStrength;
         gl_FragColor = vec4(uColor * a, 1.0);
       }`,
   });

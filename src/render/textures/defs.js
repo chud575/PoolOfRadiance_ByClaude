@@ -63,6 +63,7 @@ export const TEXTURE_DEFS = {
   hd2_dressed: { size: 512, gen: () => HD2.ashlar2({ seed: 29, palette: 'warm', joints: false, moss: 0.25 }), normalStrength: 3, cavity: 0.16 },
   hd2_basalt_floor: { size: 1024, gen: () => HD2.ashlar2({ seed: 89, rows: 4, minW: 0.3, maxW: 0.5, palette: 'basalt', mortarW: 0.003, chamfer: 0.004, erosion: 0.8, chips: 0.8, moss: 0, sheen: 1 }), normalStrength: 2.6, cavity: 0.12 },
   hd2_cave_floor: { size: 1024, gen: () => HD2.hewnRock({ seed: 247, base: [0.36, 0.32, 0.27], floor: true }), normalStrength: 3.5, cavity: 0.25 },
+  hd2_plaster: { size: 512, gen: () => HD.plaster({ seed: 31, base: [0.7, 0.64, 0.53] }), normalStrength: 3.4, cavity: 0.24 },
 };
 
 for (const k of Object.keys(TEXTURE_DEFS)) TEXTURE_DEFS[k].hd = true;

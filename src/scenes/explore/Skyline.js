@@ -512,18 +512,12 @@ function house(g, winLit, winDark, x, y0, z, w, d, h, rotX, ruined, id, night, c
 
 function tower(g, x, z, r, h, broken, id, night, winLit, base = -0.5) {
   const sides = 8;
-  const geo = new THREE.CylinderGeometry(r, r * 1.08, h, sides, 1, true);
   if (broken) {
-    const p = geo.attributes.position;
-    for (let i = 0; i < p.count; i++) {
-      if (p.getY(i) > 0) {
-        const k = Math.round(Math.atan2(p.getZ(i), p.getX(i)) * 10);
-        p.setY(i, h / 2 - hash(id, k, 'brk') * h * 0.35);
-      }
-    }
-    geo.computeVertexNormals();
+    brokenTower(g, x, z, r, h, id, base);
+    return;
   }
-  g.geometry(broken ? 'arch_ruin' : 'arch_stone_cold', geo, new THREE.Matrix4().makeTranslation(x, base + h / 2, z), { uv: 'world' });
+  const geo = new THREE.CylinderGeometry(r, r * 1.08, h, sides, 1, true);
+  g.geometry('arch_stone_cold', geo, new THREE.Matrix4().makeTranslation(x, base + h / 2, z), { uv: 'world' });
   geo.dispose();
   if (!broken) {
     // string courses so the shaft reads as built masonry at a distance, and a darker weathered base
@@ -567,5 +561,54 @@ function tower(g, x, z, r, h, broken, id, night, winLit, base = -0.5) {
       const P1 = new THREE.Vector3(px, y, pz).addScaledVector(T, 0.25);
       winLit.quad('win', P1, P0, P0.clone().setY(y + 1.3), P1.clone().setY(y + 1.3), [[0, 0], [1, 0], [1, 1], [0, 1]], { ao: 1 });
     }
+  }
+}
+
+/**
+ * A ruined tower: a thick masonry shell whose top has fallen away in
+ * course-height steps toward one side (so the break reads as masonry, never
+ * as a spiky wedge), with the inner face and the wall thickness visible
+ * through the breach, and a skirt of fallen stone at its foot.
+ */
+function brokenTower(g, x, z, r, h, id, base) {
+  const sides = 14;
+  const wall = 0.7;
+  const course = 0.55;
+  const slopeA = hash(id, 'slope') * Math.PI * 2;
+  const tops = [];
+  for (let k = 0; k < sides; k++) {
+    const a = ((k + 0.5) / sides) * Math.PI * 2;
+    const fall = 0.5 + 0.5 * Math.cos(a - slopeA); // 1 on the high side
+    const t = h * (0.45 + 0.55 * fall) - hash(id, k, 'brk') * h * 0.12;
+    tops.push(Math.max(course * 2, Math.round(t / course) * course));
+  }
+  const P = (a, rr, y) => new THREE.Vector3(x + Math.cos(a) * rr, base + y, z + Math.sin(a) * rr);
+  for (let k = 0; k < sides; k++) {
+    const a0 = (k / sides) * Math.PI * 2;
+    const a1 = ((k + 1) / sides) * Math.PI * 2;
+    const t = tops[k];
+    const ro0 = r * 1.06;
+    const ro1 = r;
+    // outer face (slight batter), inner face (reversed), and the top of the wall
+    g.quad('arch_ruin', P(a1, ro0, 0), P(a0, ro0, 0), P(a0, ro1, t), P(a1, ro1, t), null, { ao: (p) => 0.6 + 0.4 * THREE.MathUtils.smoothstep(p.y - base, 0, 5) });
+    g.quad('arch_ruin', P(a0, r - wall, 0), P(a1, r - wall, 0), P(a1, r - wall, t), P(a0, r - wall, t), null, { ao: 0.45, tint: [0.8, 0.8, 0.8] });
+    g.quad('prop_rock', P(a0, r - wall, t), P(a1, r - wall, t), P(a1, ro1, t), P(a0, ro1, t), null, { ao: 0.8 });
+    // the step to the next segment's height: a vertical end face of masonry
+    const tn = tops[(k + 1) % sides];
+    if (Math.abs(tn - t) > 0.01) {
+      const lo = Math.min(t, tn);
+      const hi = Math.max(t, tn);
+      const ac = a1;
+      const q = [P(ac, r - wall, lo), P(ac, ro1, lo), P(ac, ro1, hi), P(ac, r - wall, hi)];
+      if (t > tn) g.quad('arch_ruin', q[0], q[1], q[2], q[3], null, { ao: 0.7 });
+      else g.quad('arch_ruin', q[1], q[0], q[3], q[2], null, { ao: 0.7 });
+    }
+  }
+  // fallen blocks around the foot
+  for (let k = 0; k < 7; k++) {
+    const a = slopeA + Math.PI + (hash(id, k, 'fa') - 0.5) * 2.2;
+    const rr = r + 1 + hash(id, k, 'fr') * 4;
+    const sz = 0.8 + hash(id, k, 'fs') * 1.2;
+    g.box('arch_ruin', { c: [x + Math.cos(a) * rr, base + sz * 0.3, z + Math.sin(a) * rr], s: [sz * 1.3, sz * 0.7, sz], rotY: hash(id, k, 'fy') * 3, chamfer: 0.15, ao: 0.6 });
   }
 }

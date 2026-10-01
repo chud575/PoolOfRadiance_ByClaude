@@ -178,7 +178,7 @@ export function buildProps(map, block, opts = {}) {
       continue;
     }
     // ---- outdoors
-    const ruinish = spot.recipe === 'ruin' || ts.id === 'ruins';
+    const ruinish = spot.recipe === 'ruin' || ts.id === 'ruins' || f.gut;
     if (ruinish || rubble) {
       if (r < (f.jag ? 0.9 : 0.55)) addRubble(place(f, sPos, T / 2 + 0.45), seed, 9 + Math.floor(hash(seed, 'n') * 9), 0.85, 1.15);
       if (r > 0.3 && r < 0.5) addBlock(place(f, -sPos * 0.8, T / 2 + 0.5), seed);
@@ -533,8 +533,8 @@ export function buildProps(map, block, opts = {}) {
   }
   // puddles (glossy decals that reflect the environment)
   if (puddles.length) {
-    const mat = new THREE.MeshStandardMaterial({ color: 0x08090a, roughness: ts.outdoors ? 0.06 : 0.38, metalness: 0.0, transparent: true, alphaMap: getPuddleTexture(), depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, envMapIntensity: 0.7 });
-    mat.opacity = 0.6;
+    const mat = new THREE.MeshStandardMaterial({ color: 0x050607, roughness: ts.outdoors ? 0.12 : 0.38, metalness: 0.0, transparent: true, alphaMap: getPuddleTexture(), depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, envMapIntensity: 0.45 });
+    mat.opacity = 0.5;
     const b = new GeoBuilder();
     for (const p of puddles) {
       const c = Math.cos(p.r) * p.s * 0.5;
