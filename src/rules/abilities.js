@@ -176,21 +176,20 @@ export function formatStr(str, pct) {
 }
 
 /**
- * Add `points` of strength to a (str, pct) pair, the way the Strength spell and
- * potions do: above 18 a fighter climbs one percentile band per point
- * (18 → 18/50 → 18/75 → 18/90 → 18/99 → 18/00); non-fighters cap at 18.
+ * Add `points` of strength to a (str, pct) pair, the way the Strength spell
+ * does. PHB: "a number of points — or tenths of points after 18 strength is
+ * attained (only if the character is a fighter)": above 18 each point is 10%
+ * exceptional strength (18 → 18/10 ... 18/90 → 18/00), capped at 18/00;
+ * non-fighters stop at 18.
  * @returns {{str:number, strPct:number}}
  */
 export function addStrength(str, pct, points, exceptional = true) {
   let s = str;
   let p = pct || 0;
-  const steps = [0, 50, 75, 90, 99, 100];
   for (let i = 0; i < points; i++) {
     if (s < 18) { s++; continue; }
-    if (!exceptional) break;
-    const idx = steps.findIndex((v) => p <= v);
-    if (idx < 0 || idx >= steps.length - 1) break;
-    p = steps[idx + 1];
+    if (!exceptional || p >= 100) break;
+    p = Math.min(100, p + 10);
   }
   return { str: s, strPct: s === 18 ? p : 0 };
 }

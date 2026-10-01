@@ -37,7 +37,8 @@ describe('strength (PHB table)', () => {
     expect(formatStr(18, 5)).toBe('18(05)');
     expect(formatStr(17, 0)).toBe('17');
     expect(addStrength(16, 0, 1)).toEqual({ str: 17, strPct: 0 });
-    expect(addStrength(17, 0, 3, true)).toEqual({ str: 18, strPct: 75 });
+    expect(addStrength(17, 0, 3, true)).toEqual({ str: 18, strPct: 20 }); // PHB: tenths of a point above 18
+    expect(addStrength(18, 95, 3, true)).toEqual({ str: 18, strPct: 100 });
     expect(addStrength(17, 0, 3, false)).toEqual({ str: 18, strPct: 0 });
     expect(addStrength(18, 100, 4, true)).toEqual({ str: 18, strPct: 100 });
     expect(compareStr(18, 50, 18, 0)).toBeGreaterThan(0);

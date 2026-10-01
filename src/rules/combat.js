@@ -1,5 +1,6 @@
 import { roll } from './dice.js';
-import { deriveStats, applyDamage, isConscious, bleed } from './character.js';
+import { deriveStats, applyDamage, isConscious, bleed, drainLevel, effectiveAbilities } from './character.js';
+import { trimMemorized } from './camp.js';
 import { dexterityMods, strengthTable } from './abilities.js';
 import { monsterSaves, turnNeeded, fighterAttacksPerRound, attacksThisRound } from './classes.js';
 import { MONSTERS } from '../data/monsters.js';
@@ -67,6 +68,9 @@ export function combatantFromCharacter(ch) {
     ranged: !!s.weapon?.ranged,
     range: s.weapon?.range ?? 1,
     magicWeapon: s.weaponMagic > 0,
+    weaponMagic: s.weaponMagic ?? 0,
+    weaponSilver: isSilverWeapon(s.weapon),
+    weaponEdged: isEdgedWeapon(s.weapon),
     size: 'M',
     hp: ch.hp,
     move: Math.round(s.move / 2) + 1,
@@ -130,7 +134,9 @@ export function rollInitiative(rng, combatants) {
       const speed = fx.attackMult > 1 ? 2 : fx.attackMult < 1 ? -2 : 0;
       return { c, init: rng.die(10) + c.initMod + speed };
     });
-  rolled.sort((a, b) => b.init - a.init || b.c.initMod - a.c.initMod || (a.c.side === 'party' ? -1 : 1));
+  // MM: zombies (tag 'slow') always strike last in the round.
+  const last = (c) => (monsterOf(c)?.special?.includes?.('slow') ? 1 : 0);
+  rolled.sort((a, b) => last(a.c) - last(b.c) || b.init - a.init || b.c.initMod - a.c.initMod || (a.c.side === 'party' ? -1 : 1));
   for (const r of rolled) r.c.initiative = r.init;
   return rolled.map((r) => r.c);
 }
@@ -213,15 +219,81 @@ export function isHelplessTarget(defender) {
 export const HELPLESS_RULES = ['bonus', 'auto', 'slay'];
 
 /**
+ * Situational to-hit bonus for attacking from behind (DMG/PHB): a rear attack
+ * is +2; a thief's backstab is +4 *instead* (not cumulative). The one place
+ * both resolveAttack and hitChance take it from, so the preview matches the roll.
+ * @param {{rear?:boolean, backstab?:boolean}} [o]
+ */
+export function situationalHit(o = {}) {
+  return o.backstab ? 4 : o.rear ? 2 : 0;
+}
+
+/** Blunt weapon groups (skeletons take full damage from these; half from edged/piercing). */
+export const BLUNT_GROUPS = new Set(['mace', 'flail', 'hammer', 'morningStar', 'club', 'staff', 'sling']);
+
+/** Is an ItemDef a silver(ed) weapon? (`silver: true`, or a silver id). */
+export function isSilverWeapon(def) {
+  return !!def && (def.silver === true || /silver/i.test(def.id ?? ''));
+}
+
+/** Is an ItemDef an edged or piercing weapon (not blunt)? Natural attacks count as not edged. */
+export function isEdgedWeapon(def) {
+  return !!def && def.type === 'weapon' && !BLUNT_GROUPS.has(def.weaponGroup ?? def.id);
+}
+
+/** Numeric argument of a monster tag ('magicToHit:1' → 1), or null when absent. */
+export function tagValue(c, name) {
+  const t = (monsterOf(c)?.special ?? []).find?.((x) => x === name || String(x).startsWith(`${name}:`));
+  if (t === undefined) return null;
+  const n = Number(String(t).split(':')[1]);
+  return Number.isFinite(n) ? n : true;
+}
+
+/**
+ * DMG: monsters strike creatures that need magic weapons as if armed with
+ * +1 at 4+1 HD, +2 at 6+2, +3 at 8+3, +4 at 10+4.
+ */
+export function monsterHitPower(m) {
+  const v = (m?.hd ?? 1) + (m?.hpBonus ?? 0) * 0.01;
+  return v >= 10.04 ? 4 : v >= 8.03 ? 3 : v >= 6.02 ? 2 : v >= 4.01 ? 1 : 0;
+}
+
+/**
+ * Weapon immunity of the defender against this attacker (MM): `magicToHit:N`
+ * needs a +N weapon (shadows, spectres: +1); `silverToHit` needs silver or
+ * any magic weapon (wights). Returns a log-ready reason, or null if the blow
+ * can harm. `o.weaponMagic` / `o.weaponSilver` override the attacker's
+ * (a bow from the pack).
+ * @param {{weaponMagic?:number, weaponSilver?:boolean}} [o]
+ */
+export function weaponImmunity(attacker, defender, o = {}) {
+  const needMagic = tagValue(defender, 'magicToHit');
+  const needSilver = tagValue(defender, 'silverToHit');
+  if (needMagic === null && needSilver === null) return null;
+  const am = monsterOf(attacker);
+  const magic = o.weaponMagic ?? attacker.weaponMagic ?? (am ? monsterHitPower(am) : 0);
+  const silver = o.weaponSilver ?? attacker.weaponSilver ?? false;
+  if (needMagic !== null && magic < (needMagic === true ? 1 : needMagic)) return `needs a +${needMagic === true ? 1 : needMagic} weapon`;
+  if (needSilver !== null && !silver && magic < 1) return 'needs a silver or magic weapon';
+  return null;
+}
+
+/**
  * Resolve one attack. Natural 20 always hits, natural 1 always misses (modern QoL
  * house rule; set opts.strict1e to disable). Applies timed effects: bless/prayer,
  * shield, invisibility, blink (50% miss), mirror image (hits strike images),
  * protection from normal missiles, racial adjustments, and helpless targets
- * (see HelplessRule; opts.helpless picks it).
+ * (see HelplessRule; opts.helpless picks it). Rear (+2) and backstab (+4,
+ * instead of the rear bonus) come from situationalHit(opts) — pass them as
+ * flags, never folded into opts.mods. Monster specials: weapon immunity
+ * (magicToHit/silverToHit → `immune`, `weaponImmune` reason) and skeletons'
+ * half damage from edged weapons (halfEdged).
  * @param {{mods?:number, dmgMod?:number, backstab?:boolean, backstabMult?:number, rear?:boolean,
- *   attackIndex?:number, ranged?:boolean, magicWeapon?:boolean, strict1e?:boolean, helpless?:HelplessRule}} [opts]
+ *   attackIndex?:number, ranged?:boolean, magicWeapon?:boolean, weaponMagic?:number, weaponSilver?:boolean,
+ *   weaponEdged?:boolean, strict1e?:boolean, helpless?:HelplessRule}} [opts]
  * @returns {{roll:number, needed:number, hit:boolean, damage:number, killed:boolean, crit:boolean,
- *   image?:boolean, blinked?:boolean, immune?:boolean, auto?:boolean, coupDeGrace?:boolean}}
+ *   image?:boolean, blinked?:boolean, immune?:boolean, weaponImmune?:string, auto?:boolean, coupDeGrace?:boolean,
+ *   halved?:boolean}}
  */
 export function resolveAttack(rng, attacker, defender, opts = {}) {
   const ranged = opts.ranged ?? !!attacker.ranged;
@@ -229,7 +301,7 @@ export function resolveAttack(rng, attacker, defender, opts = {}) {
   const helpless = isHelplessTarget(defender);
   const rule = opts.helpless ?? 'bonus';
   const autoHit = helpless && !ranged && (rule === 'auto' || rule === 'slay');
-  const mods = (opts.backstab ? 4 : 0) + (opts.rear ? 2 : 0) + (helpless ? 4 : 0) + (opts.mods ?? 0) + lm.hit;
+  const mods = situationalHit(opts) + (helpless ? 4 : 0) + (opts.mods ?? 0) + lm.hit;
   const needed = autoHit ? 1 : neededToHit(attacker.thac0, defender.ac + lm.ac, (attacker.hitBonus ?? 0) + mods);
   onAttacked(effectHost(attacker));
   if (lm.missChance && rng.int(1, 100) <= lm.missChance) {
@@ -254,26 +326,37 @@ export function resolveAttack(rng, attacker, defender, opts = {}) {
   if (hit && ranged && lm.immune.has('normalMissiles') && !(opts.magicWeapon ?? attacker.magicWeapon)) {
     return { roll: r, needed, hit: true, damage: 0, killed: false, crit: r === 20, immune: true };
   }
+  const wi = hit ? weaponImmunity(attacker, defender, opts) : null;
+  if (wi) return { roll: r, needed, hit: true, damage: 0, killed: false, crit: false, immune: true, weaponImmune: wi };
   if (hit && autoHit && rule === 'slay') {
     // Coup de grace: a helpless foe is slain outright (party members to -10).
     damage = Math.max(1, defender.hp.cur + (characterOf(defender) ? 10 : 0));
     killed = dealDamage(defender, damage);
     return { roll: r, needed, hit: true, damage, killed, crit: false, auto: true, coupDeGrace: true };
   }
+  let halved = false;
   if (hit) {
     const dice = defender.size === 'L' && attacker.attacksLarge ? attacker.attacksLarge : attacker.attacks[opts.attackIndex ?? 0] ?? attacker.attacks[0];
     damage = roll(rng, dice) + (attacker.dmgBonus ?? 0) + (opts.dmgMod ?? 0) + lm.dmg;
     if (lm.dmgMult) damage = Math.floor(damage * lm.dmgMult);
     damage = Math.max(1, damage);
     if (opts.backstab) damage *= opts.backstabMult ?? 2;
+    // MM skeletons: edged and piercing weapons do half damage.
+    if (tagValue(defender, 'halfEdged') !== null && (opts.weaponEdged ?? attacker.weaponEdged)) {
+      damage = Math.max(1, Math.floor(damage / 2));
+      halved = true;
+    }
     killed = dealDamage(defender, damage);
   }
-  return { roll: r, needed, hit, damage, killed, crit: r === 20 && !autoHit, ...(autoHit ? { auto: true } : {}) };
+  return { roll: r, needed, hit, damage, killed, crit: r === 20 && !autoHit, ...(autoHit ? { auto: true } : {}), ...(halved ? { halved } : {}) };
 }
 
 /**
  * Probability (0..1) that one attack hits, with the nat-20/nat-1 house rule.
- * @param {number} [mods] situational to-hit modifiers (rear, bless, cover...)
+ * Uses the same modifier set as resolveAttack: pass `opts.rear` /
+ * `opts.backstab` exactly as you pass them to resolveAttack.
+ * @param {number} [mods] situational to-hit modifiers (long range, cover...) — not rear/backstab
+ * @param {{ranged?:boolean, helpless?:HelplessRule, rear?:boolean, backstab?:boolean, strict1e?:boolean}} [opts]
  */
 export function hitChance(attacker, defender, mods = 0, opts = {}) {
   const ranged = opts.ranged ?? !!attacker.ranged;
@@ -283,7 +366,7 @@ export function hitChance(attacker, defender, mods = 0, opts = {}) {
   let p;
   if (helpless && !ranged && (rule === 'auto' || rule === 'slay')) p = 1;
   else {
-    const needed = neededToHit(attacker.thac0, defender.ac + lm.ac, (attacker.hitBonus ?? 0) + mods + (helpless ? 4 : 0) + lm.hit);
+    const needed = neededToHit(attacker.thac0, defender.ac + lm.ac, (attacker.hitBonus ?? 0) + mods + situationalHit(opts) + (helpless ? 4 : 0) + lm.hit);
     p = (21 - needed) / 20;
     p = opts.strict1e ? Math.max(0, Math.min(1, p)) : Math.max(0.05, Math.min(0.95, p));
   }
@@ -346,11 +429,15 @@ export function sweepAttacks(ch, target) {
   return Math.max(fighterAttacksPerRound(lvl), lvl);
 }
 
+/** MM energy drain per hit when the tag gives no number. */
+export const DRAIN_LEVELS = Object.freeze({ wight: 1, spectre: 2, wraith: 1, vampire: 2 });
+
 /**
  * Monster special attacks that ride on a successful hit (MM): ghoul/ghast
  * paralysis (save vs paralysis, elves immune, 3d4 rounds), poison (save vs
  * poison; giant centipedes' weak venom at +4), giant rat disease (5%, save vs
- * poison). Returns log-ready outcomes; effects are applied to the defender.
+ * poison), energy drain (`drainLevel`, see DRAIN_LEVELS), shadow strength
+ * drain (`drainStr`). Returns log-ready outcomes; effects are applied to the defender.
  * @returns {{kind:string, saved:boolean, text:string}[]}
  */
 export function onHitSpecials(rng, attacker, defender) {
@@ -374,6 +461,31 @@ export function onHitSpecials(rng, attacker, defender) {
   if (special.includes('poison') && !hasEffect(host, 'poisoned')) {
     const r = poison(rng, defender, { saveMod: m.poisonSave ?? (m.id === 'giantCentipede' ? 4 : 0), onset: m.poisonOnset ?? 10 });
     out.push({ kind: 'poison', saved: r.saved, text: r.saved ? `${dname} resists the venom.` : `${dname} is poisoned!` });
+  }
+  // Energy drain (wight 1 level, spectre 2; 'drainLevel:N' overrides). No save in 1e.
+  const drain = tagValue(attacker, 'drainLevel');
+  const dch = characterOf(defender);
+  if (drain !== null && dch) {
+    const n = drain === true ? (DRAIN_LEVELS[m.id] ?? 1) : drain;
+    const r = drainLevel(dch, n);
+    trimMemorized(dch);
+    out.push({ kind: 'drainLevel', saved: false, levels: r.drained.length, died: r.died,
+      text: r.died ? `${dname}'s life is drained away!` : `${dname} loses ${r.drained.length > 1 ? `${r.drained.length} levels` : 'a level'} to the chill touch!` });
+  }
+  // Shadow: each hit drains 1 STR for 2d4 turns; at 0 STR the victim dies (MM).
+  if (tagValue(attacker, 'drainStr') !== null && dch) {
+    const e = getEffect(host, 'strDrain');
+    const pts = (e?.data?.points ?? 0) + 1;
+    const rounds = roll(rng, '2d4') * 10;
+    const fx = addEffect(host, 'strDrain', { rounds, source: m.id, data: { points: pts } });
+    fx.mods = { strDrain: pts };
+    fx.data.points = pts;
+    const str = effectiveAbilities(dch).str;
+    if (str <= 0) {
+      dch.status = 'dead';
+      dch.hp.cur = Math.min(dch.hp.cur, -10);
+      out.push({ kind: 'drainStr', saved: false, died: true, text: `${dname} withers into a shadow!` });
+    } else out.push({ kind: 'drainStr', saved: false, text: `${dname} feels strength ebb away (STR ${str}).` });
   }
   if (special.includes('disease') && !hasEffect(host, 'diseased') && rng.int(1, 100) <= 5) {
     const sv = savingThrow(rng, defender, 'ppdm');

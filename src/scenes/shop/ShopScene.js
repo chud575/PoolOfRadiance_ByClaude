@@ -10,7 +10,9 @@ import {
   trainableClasses, trainingCost, trainLevels, maxLevel,
 } from '../../rules/character.js';
 import { itemName, itemValue, encumbranceCategory } from '../../rules/items.js';
-import { TEMPLE_SERVICES, serviceApplies, performService } from '../../rules/temple.js';
+import { TEMPLE_SERVICES, serviceApplies, serviceProblem, performService } from '../../rules/temple.js';
+import { trainingSpellChoices, learnSpell } from '../../rules/camp.js';
+import { SPELL_RULES } from '../../rules/spells.js';
 import { CLASSES, splitClasses, xpForLevel } from '../../rules/classes.js';
 import { itemIconURL, iconFor } from '../../ui/components/itemIcons.js';
 import { itemArtURL } from '../../ui/art/itemArt.js';
@@ -361,7 +363,9 @@ export default class ShopScene extends Scene {
       const [icon, tone] = SERVICE_ICON[id] ?? ['✚', ''];
       const anyone = needers.length > 0;
       if (!anyone) {
-        (this._others ??= []).push(h('div.shp-row.mini', { dataset: { tip: `${SERVICE_DESC[id] ?? ''} No one in the party needs this now.` } }, [h(`span.ic${tone ? `.${tone}` : ''}`, [icon]), h('span.t', [s.name]), h('span.c', [`${cost.toLocaleString('en-US')} gp`])]));
+        // Rules reason when someone would need it but cannot be helped (elves cannot be raised).
+        const why = this.ctx.game.party.map((m) => serviceProblem(id, m)).find((r) => r && r !== 'Not needed.');
+        (this._others ??= []).push(h('div.shp-row.mini', { dataset: { tip: `${SERVICE_DESC[id] ?? ''} ${why ?? 'No one in the party needs this now.'}` } }, [h(`span.ic${tone ? `.${tone}` : ''}`, [icon]), h('span.t', [s.name]), h('span.c', [`${cost.toLocaleString('en-US')} gp`])]));
         continue;
       }
       this.listEl.append(h(`div.shp-row${applies ? '' : '.off'}`, [
@@ -369,7 +373,7 @@ export default class ShopScene extends Scene {
         h('span.t', [s.name, needers.length ? h('span.shp-need', needers.map((m) => h('img', { src: portraitURL(m, 0.4), alt: '', dataset: { tip: `${m.name} needs this` } }))) : null]),
         h('span.d', [SERVICE_DESC[id] ?? '']),
         h('span.c', [`${cost.toLocaleString('en-US')} gp`]),
-        h('button.por-btn', { disabled: !applies || (ch?.gold ?? 0) < cost, onclick: () => this.service(id, cost), dataset: { tip: !applies ? `${ch?.name ?? 'This character'} does not need this.` : (ch?.gold ?? 0) < cost ? `${ch.name} needs ${(cost - ch.gold).toLocaleString('en-US')} gp more — POOL the party's gold.` : `Pay ${cost} gp` } }, ['Request']),
+        h('button.por-btn', { disabled: !applies || (ch?.gold ?? 0) < cost, onclick: () => this.service(id, cost), dataset: { tip: !applies ? (ch && serviceProblem(id, ch) !== 'Not needed.' ? `${ch.name}: ${serviceProblem(id, ch)}` : `${ch?.name ?? 'This character'} does not need this.`) : (ch?.gold ?? 0) < cost ? `${ch.name} needs ${(cost - ch.gold).toLocaleString('en-US')} gp more — POOL the party's gold.` : `Pay ${cost} gp` } }, ['Request']),
       ]));
     }
     if (this._others?.length) {
@@ -428,6 +432,26 @@ export default class ShopScene extends Scene {
     const txt = `${m.name} trains hard and rises to ${raised.map((c) => `${CLASSES[c].name} ${m.levels[c]}`).join(' / ')}!`;
     ui.message(txt, 'loot');
     this._say(`${txt} Garrick claps ${m.name} on the shoulder. "Better. Still slow on the left."`);
+    // PoR rule: a magic-user who trains a level adds one new spell to the book.
+    if (raised.includes('magicUser')) this._learnNewSpell(m);
+    game.notifyPartyChanged();
+  }
+
+  async _learnNewSpell(m) {
+    const { ui, game } = this.ctx;
+    const all = trainingSpellChoices(m);
+    if (!all.length) return;
+    // Highest spell level first (the new power), at most six choices.
+    const lvl = (id) => SPELL_RULES[id].schools.magicUser;
+    const choices = [...all].sort((a, b) => lvl(b) - lvl(a)).slice(0, 6);
+    const pick = await ui.dialog({
+      title: 'A New Spell', variant: 'blue',
+      body: `The masters of the hall open their books to ${m.name}. Choose one spell to scribe.`,
+      buttons: choices.map((id, i) => ({ id, label: `${SPELL_RULES[id].name} (${lvl(id)})`, primary: i === 0 })),
+    });
+    if (!pick) return;
+    const r = learnSpell(m, pick);
+    ui.message(r.ok ? `${m.name} scribes ${SPELL_RULES[pick].name} into the spell book.` : `${m.name} cannot learn that: ${r.reason}.`, r.ok ? 'loot' : 'warn');
     game.notifyPartyChanged();
   }
 

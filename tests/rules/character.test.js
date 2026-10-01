@@ -245,7 +245,7 @@ describe('effects on derived stats', () => {
     const ch = mk({ a: { str: 16 } });
     addEffect(ch, 'strength', { rounds: 60, mods: { strBonus: 3 } });
     expect(effectiveAbilities(ch).str).toBe(18);
-    expect(effectiveAbilities(ch).strPct).toBe(50); // 16 → 17 → 18 → 18/50
+    expect(effectiveAbilities(ch).strPct).toBe(10); // 16 → 17 → 18 → 18/10 (PHB: tenths above 18)
     addEffect(ch, 'giantStrength', { rounds: 10, mods: { strSet: { str: 21 } } });
     expect(effectiveAbilities(ch).str).toBe(21);
     expect(deriveStats(ch).dmgBonus).toBe(9);

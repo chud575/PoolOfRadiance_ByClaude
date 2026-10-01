@@ -239,7 +239,13 @@ describe('combat engine', () => {
     mons.forEach((m, i) => Object.assign(m, { x: 11, y: 6 + i }));
     activate(engine, mage);
     expect(engine.canCast(mage, 'fireball', { x: 11, y: 7 }).ok).toBe(true);
-    expect(engine.canCast(mage, 'magicMissile', { x: 11, y: 7 }).reason).toBe('Out of range');
+    // Rules range: magic missile 6 + level (7 squares is in reach of a veteran).
+    const L = mage.ref.levels.magicUser;
+    expect(engine.canCast(mage, 'magicMissile', { x: 11, y: 7 }).ok).toBe(true);
+    const far = { x: 4 + 6 + L + 1, y: 7 };
+    Object.assign(mons[2], far);
+    expect(engine.canCast(mage, 'magicMissile', far).reason).toBe('Out of range');
+    Object.assign(mons[2], { x: 11, y: 8 });
     field.block[field.idx(8, 7)] = 1;
     expect(engine.canCast(mage, 'fireball', { x: 11, y: 7 }).reason).toBe('No line of sight');
     field.block[field.idx(8, 7)] = 0;

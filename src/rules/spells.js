@@ -154,7 +154,7 @@ export const SPELL_RULES = {
     name: 'Spiritual Hammer', schools: { cleric: 2 }, usable: 'combat', castTime: 5, range: 3, target: 'enemy',
     area: { shape: 'single' }, hostile: true, duration: (L) => R(L),
     ops: [{ op: 'hammer' }],
-    desc: 'A hammer of pure force strikes at the cleric\'s command.', tip: 'Magical attack each round: 1d4+1 (+1 per 6 levels to hit and damage).',
+    desc: 'A hammer of pure force strikes at the cleric\'s command.', tip: 'Magical attack each round: 1d4+1 (1d4 vs large), +1 to hit and damage per 6 levels or fraction.',
   },
   chant: {
     name: 'Chant', schools: { cleric: 2 }, usable: 'combat', castTime: 10, range: 0, target: 'party',
@@ -323,10 +323,10 @@ export const SPELL_RULES = {
     name: 'Mirror Image', schools: { magicUser: 2 }, usable: 'combat', castTime: 2, range: 0, target: 'self',
     area: { shape: 'single' }, duration: (L) => R(3 * L),
     ops: [{ op: 'mirror' }],
-    desc: 'The caster splits into shimmering doubles.', tip: '1d4 images; each attack that hits has a chance to strike an image instead.',
+    desc: 'The caster splits into shimmering doubles.', tip: '1d4 images for 3 rounds/level (1e PHB); each attack that hits has a chance to strike an image instead.',
   },
   rayOfEnfeeblement: {
-    name: 'Ray of Enfeeblement', schools: { magicUser: 2 }, usable: 'combat', castTime: 2, range: (L) => 1 + Math.floor(L / 4) + 3, target: 'enemy',
+    name: 'Ray of Enfeeblement', schools: { magicUser: 2 }, usable: 'combat', castTime: 2, range: (L) => 1 + Math.floor(L / 4), target: 'enemy',
     area: { shape: 'single' }, hostile: true, duration: (L) => R(L), save: { key: 'sp', type: 'neg' },
     ops: [{ op: 'condition', id: 'enfeebled', mods: (L) => ({ strLossPct: 25 + 2 * Math.max(0, L - 3) }) }],
     desc: 'A sickly ray drains the strength from limbs.', tip: 'Strength (damage) cut by 25% +2%/level above 3rd. Save vs spell negates.',
@@ -583,9 +583,26 @@ function racialResists(rng, s, t) {
   return pct > 0 && rng.int(1, 100) <= pct;
 }
 
-/** Magic resistance % (monsters with `magicResistance`). */
-function magicResists(rng, t) {
-  const mr = monsterOf(t)?.magicResistance ?? 0;
+/**
+ * Magic resistance % of a creature: a numeric `magicResistance` field or the
+ * `magicResist:N` tag (Tyranthraxus 20%). DMG: the listed figure is against
+ * an 11th-level caster; it rises 5% per level the caster is below 11th and
+ * falls 5% per level above.
+ */
+export function magicResistanceOf(t, casterLvl = 11) {
+  const m = monsterOf(t);
+  if (!m) return 0;
+  let base = m.magicResistance ?? 0;
+  if (!base) {
+    const tag = (m.special ?? []).find?.((x) => String(x).startsWith('magicResist:'));
+    if (tag) base = Number(String(tag).split(':')[1]) || 0;
+  }
+  if (!base) return 0;
+  return Math.max(0, Math.min(100, base + 5 * (11 - casterLvl)));
+}
+
+function magicResists(rng, t, casterLvl) {
+  const mr = magicResistanceOf(t, casterLvl);
   return mr > 0 && rng.int(1, 100) <= mr;
 }
 
@@ -695,7 +712,7 @@ export function castSpell(rng, id, caster, targets = [], opts = {}) {
       res.log.push(`${tr.name} is unaffected.`);
       continue;
     }
-    if (hostile && magicResists(rng, t)) {
+    if (hostile && magicResists(rng, t, L)) {
       tr.resisted = true;
       res.log.push(`${tr.name} resists the magic!`);
       continue;
@@ -774,6 +791,13 @@ function applyOp(rng, op, ctx) {
       return false;
     }
     case 'condition': {
+      if (op.id === 'slowed' && removeEffect(host, 'hasted')) {
+        // 1e: slow cast on a hasted creature cancels the haste.
+        tr.removed.push('hasted');
+        tr.affected = true;
+        res.log.push(`${tr.name} moves at normal speed again.`);
+        return false;
+      }
       const rounds = op.rounds !== undefined ? val(op.rounds, L, school, rng) : duration || Infinity;
       const mods = op.mods ? op.mods(L, rng) : undefined;
       addEffect(host, op.id, { rounds, source: s.id, casterId: caster.id, level: L, mods });
@@ -799,7 +823,8 @@ function applyOp(rng, op, ctx) {
       return false;
     }
     case 'hammer': {
-      const magic = 1 + Math.floor(L / 6);
+      // PHB: +1 per 6 levels or fraction thereof (1st-6th +1, 7th-12th +2).
+      const magic = Math.max(1, Math.ceil(L / 6));
       addEffect(effectHost(caster), 'spiritualHammer', { rounds: duration, source: s.id, level: L, data: { magic, damage: '1d4+1', damageLarge: '1d4', targetId: t.id } });
       const h = hammerStrike(rng, caster, t, magic);
       res.log.push(h.text);
@@ -850,10 +875,16 @@ function applyOp(rng, op, ctx) {
       return false;
     }
     case 'haste': {
-      removeEffect(host, 'slowed');
-      addEffect(host, 'hasted', { rounds: duration, source: s.id, level: L });
       const tch = characterOf(t);
       if (tch) tch.age = (tch.age ?? 20) + 1;
+      // 1e: haste and slow cancel — a slowed creature returns to normal speed.
+      if (removeEffect(host, 'slowed')) {
+        tr.removed.push('slowed');
+        tr.affected = true;
+        res.log.push(`${tr.name} moves at normal speed again.`);
+        return false;
+      }
+      addEffect(host, 'hasted', { rounds: duration, source: s.id, level: L });
       tr.applied.push('hasted');
       tr.affected = true;
       res.log.push(`${tr.name} is hasted.`);
@@ -912,10 +943,22 @@ function sizeLarge(t) {
   return (t.size ?? monsterOf(t)?.size) === 'L';
 }
 
+/**
+ * 1e Sleep: one roll of 4d4 "creatures of up to 1 HD" is spent from the
+ * weakest victims upward. A creature of a higher band costs as many 1-HD
+ * creatures as the band's dice imply (PHB table: 4d4 at ≤1 HD, 2d4 at 1+1-2,
+ * 1d4 at 2+1-3, 0-1 at 3+1-4+4 → costs 1, 2, 4, 8), so a single casting
+ * never sleeps more than 16 creatures. The top band is "0-1": at most one
+ * 3+1 to 4+4 HD creature, and only on its own 1d2-1 roll. Undead, mindless
+ * and creatures over 4+4 HD are unaffected.
+ */
+export const SLEEP_COST = [1, 2, 4, 8];
+
 function resolveSleep(rng, s, caster, list, L, duration, res) {
-  // Weakest first; each band has its own number of victims.
   const sorted = [...list].sort((a, b) => hitDiceOf(a) - hitDiceOf(b));
-  const pools = SLEEP_BANDS.map((b) => Math.max(0, roll(rng, b.dice)));
+  let budget = roll(rng, SLEEP_BANDS[0].dice);
+  res.sleepBudget = budget;
+  let topBand = -1; // the 0-1 band's roll, made when first needed
   for (const t of sorted) {
     const tr = { target: t, name: nameOf(t), affected: false, applied: [], removed: [] };
     res.results.push(tr);
@@ -926,13 +969,19 @@ function resolveSleep(rng, s, caster, list, L, duration, res) {
       res.log.push(`${tr.name} is unaffected.`);
       continue;
     }
-    if (pools[band] <= 0) continue;
-    if (magicResists(rng, t) || racialResists(rng, s, t)) {
+    const cost = SLEEP_COST[band];
+    if (budget < cost) continue;
+    if (band === SLEEP_BANDS.length - 1) {
+      if (topBand < 0) topBand = Math.max(0, roll(rng, SLEEP_BANDS[band].dice));
+      if (topBand <= 0) continue;
+      topBand--;
+    }
+    budget -= cost;
+    if (magicResists(rng, t, L) || racialResists(rng, s, t)) {
       tr.resisted = true;
       res.log.push(`${tr.name} resists!`);
       continue;
     }
-    pools[band]--;
     addEffect(effectHost(t), 'asleep', { rounds: duration, source: s.id, casterId: caster.id, level: L });
     tr.applied.push('asleep');
     tr.affected = true;

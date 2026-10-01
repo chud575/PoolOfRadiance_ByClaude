@@ -246,3 +246,49 @@ export function shareCoins(coins, n) {
   }
   return shares;
 }
+
+/**
+ * Spoils of a won battle. The encounter's own treasure (`{gold: dice,
+ * items: ids[], types?: 'A'|['Q','M']}`) plus the Monster Manual treasure of
+ * the slain: individual types (J-N) roll once per creature, lair types once
+ * per kind (PoR-scaled coins, see generateTreasure). Coins, gems and
+ * jewelry are converted to gold pieces for the party purse (Gold Box
+ * treasure screen: the gems are named in the text); magic items come back as
+ * unidentified inventory entries.
+ * @param {import('./dice.js').Rng} rng
+ * @param {{gold?:string, items?:string[], types?:string|string[]}} [encTreasure]
+ * @param {object[]} [slain]  MonsterDefs (or combatants' `ref`) of the fallen
+ * @returns {{gold:number, items:import('./character.js').InventoryEntry[], gems:object[], jewelry:object[],
+ *   treasure:Treasure, text:string}}
+ */
+export function victorySpoils(rng, encTreasure = {}, slain = [], o = {}) {
+  const t = { coins: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 }, gems: [], jewelry: [], items: [] };
+  const merge = (x) => {
+    for (const k of Object.keys(t.coins)) t.coins[k] += x.coins[k] ?? 0;
+    t.gems.push(...x.gems);
+    t.jewelry.push(...x.jewelry);
+    t.items.push(...x.items);
+  };
+  if (encTreasure?.gold) t.coins.gp += Math.max(0, roll(rng, encTreasure.gold));
+  for (const id of encTreasure?.items ?? []) if (ITEMS[id]) t.items.push(makeEntry(id));
+  if (encTreasure?.types) merge(generateTreasure(rng, encTreasure.types, { scale: o.scale }));
+  const byType = new Map();
+  for (const m of slain) {
+    const types = [].concat(m?.treasure ?? []).filter((x) => TREASURE_TYPES[x]);
+    for (const ty of types) {
+      const key = 'JKLMN'.includes(ty) ? ty : `${m.id}:${ty}`;
+      const cur = byType.get(key) ?? { ty, count: 0 };
+      cur.count++;
+      byType.set(key, cur);
+    }
+  }
+  for (const { ty, count } of byType.values()) merge(generateTreasure(rng, ty, { scale: o.scale, count }));
+  const gold = Math.floor(treasureValue(t));
+  const parts = [];
+  if (gold) parts.push(`You find treasure worth ${gold.toLocaleString('en-US')} gold pieces`);
+  const valuables = [...t.gems.map((g) => g.name), ...t.jewelry.map((j) => j.name)];
+  if (valuables.length) parts.push(`including ${valuables.length > 3 ? `${valuables.slice(0, 3).join(', ')} and more` : valuables.join(', ')}`);
+  let text = parts.length ? `${parts.join(', ')}.` : '';
+  if (t.items.length) text += `${text ? ' ' : ''}${t.items.length === 1 ? 'An item lies among the dead.' : `${t.items.length} items lie among the dead.`}`;
+  return { gold, items: t.items, gems: t.gems, jewelry: t.jewelry, treasure: t, text };
+}

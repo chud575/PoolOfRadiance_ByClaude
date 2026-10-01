@@ -287,3 +287,48 @@ export function learnSpell(ch, id, { rng, chanceToKnow = false } = {}) {
   ch.spells.book.push(id);
   return { ok: true };
 }
+
+/**
+ * After a level is lost (energy drain): forget memorized spells beyond the
+ * slots the character still has (highest spell levels go first). Also trims
+ * the prepared load-out. Returns the ids forgotten.
+ */
+export function trimMemorized(ch) {
+  const lost = [];
+  for (const key of ['memorized', 'prepared']) {
+    for (const [cls, ids] of Object.entries(ch.spells?.[key] ?? {})) {
+      if (!Array.isArray(ids)) continue;
+      const slots = slotsFor(ch, cls);
+      const used = [];
+      const keep = [];
+      // Keep low-level spells first.
+      const order = ids.map((id, i) => ({ id, i, l: spellLevel(id, cls) })).sort((a, b) => a.l - b.l || a.i - b.i);
+      for (const o of order) {
+        if ((used[o.l - 1] ?? 0) < (slots[o.l - 1] ?? 0)) { used[o.l - 1] = (used[o.l - 1] ?? 0) + 1; keep.push(o); } else if (key === 'memorized') lost.push(o.id);
+      }
+      ch.spells[key][cls] = keep.sort((a, b) => a.i - b.i).map((o) => o.id);
+    }
+  }
+  return lost;
+}
+
+/**
+ * Pool of Radiance training rule: each time a magic-user trains a level the
+ * hall lets them add one new spell to the book. Returns the spell ids they may
+ * choose (every magic-user spell of a level they can now cast that learnSpell
+ * would accept — INT max level and max spells per level honoured), lowest
+ * level first. Call after trainLevels() raised 'magicUser', then learnSpell()
+ * the pick.
+ */
+export function trainingSpellChoices(ch) {
+  const lvl = ch.levels?.magicUser ?? 0;
+  if (!lvl || !ch.spells) return [];
+  const int = intelligenceTable(ch.abilities.int);
+  const out = [];
+  for (let l = 1; l <= Math.min(maxSpellLevel('magicUser', lvl), int.maxSpellLevel); l++) {
+    const inBook = ch.spells.book.filter((b) => SPELL_RULES[b]?.schools.magicUser === l).length;
+    if (inBook >= int.maxSpells) continue;
+    for (const id of spellsForClass('magicUser', l)) if (!ch.spells.book.includes(id)) out.push(id);
+  }
+  return out;
+}

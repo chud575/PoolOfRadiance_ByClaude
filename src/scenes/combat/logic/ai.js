@@ -1,5 +1,4 @@
 import { Battlefield, DIR8 } from './battlefield.js';
-import { SPELL_TACTICS } from './spells.js';
 import { SPELLS } from '../../../data/spells.js';
 
 /**
@@ -28,6 +27,10 @@ export function decide(engine, c) {
     }
     if (engine.canTurn(c)) return { kind: 'turn' };
     const spell = pickSpell(engine, c, foes);
+    if (spell) return spell;
+  } else {
+    // Priests of Bane and other monster casters (rules monsterSpells).
+    const spell = pickMonsterSpell(engine, c, foes);
     if (spell) return spell;
   }
 
@@ -157,7 +160,6 @@ function pickSpell(engine, c, foes) {
   const areaSpells = ['fireball', 'sleep', 'stinkingCloud', 'lightningBolt', 'holdPerson'].filter(has);
   let bestArea = null;
   for (const id of areaSpells) {
-    const t = SPELL_TACTICS[id];
     for (const e of foes) {
       const at = { x: e.x, y: e.y };
       if (!engine.canCast(c, id, at).ok) continue;
@@ -168,7 +170,6 @@ function pickSpell(engine, c, foes) {
       if (bad || good < (id === 'fireball' || id === 'lightningBolt' ? 2 : 2)) continue;
       const val = good * (SPELLS[id].level + 1);
       if (!bestArea || val > bestArea.val) bestArea = { val, spell: id, at };
-      void t;
     }
   }
   if (bestArea) return { kind: 'cast', spell: bestArea.spell, at: bestArea.at, path: [] };
@@ -176,6 +177,77 @@ function pickSpell(engine, c, foes) {
   if (has('magicMissile')) {
     const t = foes.filter((e) => engine.canCast(c, 'magicMissile', { x: e.x, y: e.y }).ok).sort((a, b) => a.hp.cur - b.hp.cur)[0];
     if (t) return { kind: 'cast', spell: 'magicMissile', at: { x: t.x, y: t.y }, path: [] };
+  }
+  return null;
+}
+
+/** Awake foes caught in the template of `id` aimed at `at`, and whether any ally of c is. */
+function areaCatch(engine, c, id, at) {
+  const sq = new Set(engine.spellArea(c, id, at).map((q) => `${q.x},${q.y}`));
+  const inside = engine.all.filter((o) => !engine.out(o) && sq.has(`${o.x},${o.y}`));
+  return {
+    foes: inside.filter((o) => engine.hostileTo(c, o) && !o.fx.asleep && !o.fx.held && !o.fx.paralyzed),
+    allies: inside.filter((o) => !engine.hostileTo(c, o)),
+  };
+}
+
+/** Best aim point for an area spell: most foes, optionally no allies. */
+function bestAim(engine, c, id, foes, { spareAllies = true, min = 1, persons = false } = {}) {
+  let best = null;
+  for (const e of foes) {
+    const at = { x: e.x, y: e.y };
+    if (!engine.canCast(c, id, at).ok) continue;
+    const got = areaCatch(engine, c, id, at);
+    if (spareAllies && got.allies.length) continue;
+    const n = persons ? got.foes.filter((o) => o.side === 'party' || o.ref?.person).length : got.foes.length;
+    if (n >= min && (!best || n > best.n)) best = { n, at };
+  }
+  return best;
+}
+
+/**
+ * Monster spellcasting (acolytes and priests of Bane: `spells:clericN`).
+ * Gold Box priority: Hold Person on the densest knot of awake persons,
+ * Silence on an enemy caster, Prayer/Curse early, Spiritual Hammer at range,
+ * Cause Light Wounds on an adjacent foe; arcane monsters use the area spells.
+ */
+function pickMonsterSpell(engine, c, foes) {
+  const known = engine.spellsOf(c);
+  if (!known.length) return null;
+  const has = (id) => known.some((s) => s.id === id);
+  const self = { x: c.x, y: c.y };
+  const cast = (spell, at) => ({ kind: 'cast', spell, at, path: [] });
+  if (has('prayer') && engine.round <= 2 && engine.alliesOf(c).length >= 2) return cast('prayer', self);
+  if (has('holdPerson')) {
+    const aim = bestAim(engine, c, 'holdPerson', foes, { spareAllies: false, persons: true });
+    if (aim) return cast('holdPerson', aim.at);
+  }
+  if (has('silence15')) {
+    const casters = foes.filter((e) => e.side === 'party' && (e.ref.levels?.cleric || e.ref.levels?.magicUser) && !e.fx.silenced);
+    const aim = bestAim(engine, c, 'silence15', casters);
+    if (aim) return cast('silence15', aim.at);
+  }
+  for (const id of ['fireball', 'lightningBolt', 'stinkingCloud', 'sleep']) {
+    if (!has(id)) continue;
+    const aim = bestAim(engine, c, id, foes, { min: 2 });
+    if (aim) return cast(id, aim.at);
+  }
+  if (has('curse') && engine.round <= 3) {
+    const aim = bestAim(engine, c, 'curse', foes, { spareAllies: false, min: 2 });
+    if (aim) return cast('curse', aim.at);
+  }
+  if (has('spiritualHammer') && !c.fx.spiritualHammer) {
+    const t = foes.find((e) => engine.canCast(c, 'spiritualHammer', { x: e.x, y: e.y }).ok);
+    if (t) return cast('spiritualHammer', { x: t.x, y: t.y });
+  }
+  for (const id of ['causeLightWounds', 'causeBlindness', 'bestowCurse', 'shockingGrasp']) {
+    if (!has(id)) continue;
+    const t = engine.adjacentEnemies(c).find((e) => engine.canCast(c, id, { x: e.x, y: e.y }).ok);
+    if (t) return cast(id, { x: t.x, y: t.y });
+  }
+  if (has('magicMissile')) {
+    const t = foes.filter((e) => engine.canCast(c, 'magicMissile', { x: e.x, y: e.y }).ok).sort((a, b) => a.hp.cur - b.hp.cur)[0];
+    if (t) return cast('magicMissile', { x: t.x, y: t.y });
   }
   return null;
 }

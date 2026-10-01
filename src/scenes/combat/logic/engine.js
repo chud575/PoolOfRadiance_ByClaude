@@ -1,12 +1,14 @@
-import { roll, diceStats } from '../../../rules/dice.js';
+import { diceStats } from '../../../rules/dice.js';
 import {
-  rollInitiative, isDown, resolveAttack, hitChance, dealDamage, savingThrow, moraleCheck, turnUndead,
+  rollInitiative, isDown, resolveAttack, hitChance, dealDamage, savingThrow, moraleCheck, turnUndead, weaponImmunity,
+  isSilverWeapon, isEdgedWeapon,
 } from '../../../rules/combat.js';
-import { heal, bandage as bandageCharacter } from '../../../rules/character.js';
+import { bandage as bandageCharacter, armorAllowsThieving } from '../../../rules/character.js';
 import { effectMods, hasEffect } from '../../../rules/conditions.js';
 import { effectHost } from '../../../rules/creature.js';
 import {
-  fxView, ableToAct, ableToCast, attacksThisTurn, castInBattle, roundUpkeep, hammerTurn, specialsOnHit,
+  fxView, ableToAct, attacksThisTurn, castInBattle, roundUpkeep, hammerTurn, specialsOnHit,
+  castableInBattle, battleCastProblem, monsterSpells, consumeMonsterSpell, stenchAuras, battleItemUse, quaffInBattle,
 } from '../../../rules/battle.js';
 import { dexterityMods } from '../../../rules/abilities.js';
 import { backstabMultiplier } from '../../../rules/classes.js';
@@ -14,7 +16,7 @@ import { ITEMS } from '../../../data/items.js';
 import { SPELLS } from '../../../data/spells.js';
 import { SPELL_RULES } from '../../../rules/spells.js';
 import { Battlefield, DIR8 } from './battlefield.js';
-import { SPELL_TACTICS, consumeSpell, casterLevel, memorizedSpells } from './spells.js';
+import { spellTactics, consumeSpell, memorizedSpells } from './spells.js';
 
 /**
  * Tactical combat engine: turn order, movement points, attacks of opportunity,
@@ -151,11 +153,13 @@ export class CombatEngine {
   }
 
   /**
-   * Situational to-hit / damage modifiers that depend on the battlefield
-   * (rear arc, backstab, long range). Spell and condition modifiers (bless,
-   * prayer, shield, invisibility, prot. from evil, helpless targets, racial
-   * bonuses) are applied by the rules in resolveAttack/hitChance; here they
-   * only add tooltip notes.
+   * Situational to-hit / damage modifiers that depend on the battlefield.
+   * `mods` holds only long range; rear (+2) and backstab (+4 instead) are
+   * returned as flags and passed to the rules as `{rear, backstab}` so the
+   * preview (hitChance) and the roll (resolveAttack) use one modifier set.
+   * Spell and condition modifiers (bless, prayer, shield, invisibility, prot.
+   * from evil, helpless targets, racial bonuses) are applied by the rules;
+   * here they only add tooltip notes.
    */
   attackMods(att, def, ranged = false) {
     let mods = 0;
@@ -172,12 +176,10 @@ export class CombatEngine {
     if (!ableToAct(def)) notes.push(ranged ? 'helpless' : 'helpless: slain outright');
     const rear = !ranged && this.isRear(att, def);
     let backstab = false;
-    if (rear) { mods += 2; notes.push('rear'); }
-    if (rear && att.side === 'party' && att.ref.levels?.thief && !att.ref.inventory.some((e) => e.equipped && ITEMS[e.id]?.type === 'armor' && !['leather', 'padded'].includes(ITEMS[e.id].armorGroup))) {
+    if (rear && att.side === 'party' && att.ref.levels?.thief && armorAllowsThieving(att.ref)) {
       backstab = true;
-      mods += 2;
-      notes.push('backstab');
-    }
+      notes.push('backstab +4');
+    } else if (rear) notes.push('rear +2');
     if (ranged) {
       const d = Battlefield.dist(att.x, att.y, def.x, def.y);
       const rp = this.rangedProfile(att);
@@ -191,7 +193,11 @@ export class CombatEngine {
     if (!ranged || att.side !== 'party') return att;
     const rp = this.rangedProfile(att);
     if (!rp) return att;
-    return { ...att, attacks: [rp.damage], attacksLarge: rp.damageLarge, hitBonus: rp.hitBonus, dmgBonus: 0 };
+    const def = ITEMS[rp.id];
+    return {
+      ...att, attacks: [rp.damage], attacksLarge: rp.damageLarge, hitBonus: rp.hitBonus, dmgBonus: 0,
+      weaponMagic: def?.magic ?? 0, magicWeapon: (def?.magic ?? 0) > 0, weaponSilver: isSilverWeapon(def), weaponEdged: isEdgedWeapon(def),
+    };
   }
 
   /**
@@ -217,13 +223,15 @@ export class CombatEngine {
     const isRanged = ranged ?? (can.ok ? can.ranged : !this.adjacent(att, def) && !!this.rangedProfile(att));
     const a = this.attackerFor(att, isRanged);
     const m = this.attackMods(att, def, isRanged);
-    const p = hitChance(a, def, m.mods, { ranged: isRanged, helpless: HELPLESS_RULE });
+    const p = hitChance(a, def, m.mods, { ranged: isRanged, helpless: HELPLESS_RULE, rear: m.rear, backstab: m.backstab });
+    const immune = weaponImmunity(a, def);
+    if (immune) m.notes.push(`immune: ${immune}`);
     const dice = def.size === 'L' && a.attacksLarge ? a.attacksLarge : a.attacks[0];
     const st = diceStats(dice);
     const mult = m.backstab ? backstabMultiplier(att.ref.levels.thief) : 1;
     const lo = Math.max(1, (st.min + a.dmgBonus + m.dmgMod)) * mult;
     const hi = Math.max(1, (st.max + a.dmgBonus + m.dmgMod)) * mult;
-    return { chance: p, dmg: lo === hi ? `${lo}` : `${lo}-${hi}`, notes: m.notes, ranged: isRanged, ok: can.ok, reason: can.reason, attacks: this.attackCount(att, def, isRanged) };
+    return { chance: p, dmg: immune ? '0' : lo === hi ? `${lo}` : `${lo}-${hi}`, immune: !!immune, notes: m.notes, ranged: isRanged, ok: can.ok, reason: can.reason, attacks: this.attackCount(att, def, isRanged) };
   }
 
   /** Attacks `att` gets against `def` this round (rules: 3/2, haste/slow, sweeps, rate of fire). */
@@ -250,6 +258,8 @@ export class CombatEngine {
         }
       }
     }
+    // Ghast stench: those within 10' save vs poison once or fight at -2.
+    ev.push(...stenchAuras(this.rng, this.all.filter((c) => !this.out(c)), (a, b) => Battlefield.dist(a.x, a.y, b.x, b.y) <= 1.5));
     const ready = this.all.filter((c) => !this.out(c));
     // Sleepers/held still hold a place in the order so the timeline stays readable.
     const actors = rollInitiative(this.rng, ready.filter((c) => ableToAct(c)));
@@ -371,21 +381,27 @@ export class CombatEngine {
     const a = this.attackerFor(att, ranged);
     const m = this.attackMods(att, def, ranged);
     const mult = m.backstab ? backstabMultiplier(att.ref.levels.thief) : 2;
-    const r = resolveAttack(this.rng, a, def, { mods: m.mods, dmgMod: m.dmgMod, backstab: m.backstab, backstabMult: mult, attackIndex, ranged, helpless: HELPLESS_RULE });
+    const r = resolveAttack(this.rng, a, def, { mods: m.mods, dmgMod: m.dmgMod, rear: m.rear, backstab: m.backstab, backstabMult: mult, attackIndex, ranged, helpless: HELPLESS_RULE });
     if (ranged && a !== att && att.side === 'party') this._useAmmo(att);
     let text;
     const verb = ranged ? 'shoots' : att.side === 'monster' ? (att.monsterId === 'giantRat' ? 'bites' : 'hits') : 'hits';
     if (r.image) text = `${att.name} strikes an image of ${def.name}; it vanishes!`;
     else if (r.blinked) text = `${def.name} blinks out of the way!`;
     else if (r.coupDeGrace) text = `${att.name} slays the helpless ${def.name}!`;
+    else if (r.weaponImmune) text = `${att.name}'s weapon passes harmlessly through ${def.name} (${r.weaponImmune}).`;
     else if (r.immune) text = `${att.name}'s missile turns aside from ${def.name}.`;
-    else if (r.hit) text = `${att.name} ${m.backstab ? 'backstabs' : verb} ${def.name} for ${r.damage}${r.crit ? ' (critical!)' : ''}.`;
+    else if (r.hit) text = `${att.name} ${m.backstab ? 'backstabs' : verb} ${def.name} for ${r.damage}${r.crit ? ' (critical!)' : ''}${r.halved ? ' (the blade glances off bone)' : ''}.`;
     else text = `${att.name} ${ranged ? 'shoots at' : 'swings at'} ${def.name} and misses.`;
     if (aoo && !r.image && !r.blinked) text = `${att.name} strikes as ${def.name} breaks away: ${r.hit ? `${r.damage} damage` : 'miss'}.`;
     if (guard && !r.image && !r.blinked) text = `${att.name}, on guard, strikes ${def.name}: ${r.hit ? `${r.damage} damage` : 'miss'}.`;
-    const ev = { type: 'attack', id: att.id, target: def.id, hit: r.hit && !r.immune, dmg: r.damage, roll: r.roll, needed: r.needed, crit: r.crit, killed: r.killed, ranged, aoo, guard, backstab: m.backstab, image: !!r.image, text };
+    const ev = { type: 'attack', id: att.id, target: def.id, hit: r.hit && !r.immune, immune: !!r.immune, dmg: r.damage, roll: r.roll, needed: r.needed, crit: r.crit, killed: r.killed, ranged, aoo, guard, backstab: m.backstab, image: !!r.image, text };
     const out = [ev];
-    if (r.hit && r.damage > 0 && att.side === 'monster' && !r.killed) out.push(...specialsOnHit(this.rng, att, def));
+    if (r.hit && r.damage > 0 && att.side === 'monster' && !r.killed) {
+      const sp = specialsOnHit(this.rng, att, def);
+      out.push(...sp);
+      // Energy/strength drain can slay outright.
+      if (sp.some((x) => x.died)) out.push(...this._downEvents(def));
+    }
     return out;
   }
 
@@ -540,15 +556,25 @@ export class CombatEngine {
   }
 
   // ----------------------------------------------------------------- spells
+  /**
+   * Spells c can cast right now: a character's memorized combat spells, or a
+   * monster priest's per-battle slots (rules monsterSpells) — filtered by the
+   * rules (silence, held, armour for arcane magic).
+   */
   spellsOf(c) {
-    if (c.side !== 'party') return [];
-    if (!ableToCast(c)) return [];
-    return memorizedSpells(c.ref);
+    if (this.out(c)) return [];
+    if (c.side === 'party' && c.ref?.classSpec) return castableInBattle(c, memorizedSpells(c.ref));
+    return castableInBattle(c, monsterSpells(c));
+  }
+
+  /** Rules targeting for c's cast of a spell (range/shape/size/maxTargets at its level) + scene hints. */
+  tactics(c, spellId, level = null) {
+    return spellTactics(spellId, c, level ? { level } : {});
   }
 
   /** Targets/area for a spell aimed at square `at`. */
-  spellArea(c, spellId, at) {
-    const t = SPELL_TACTICS[spellId];
+  spellArea(c, spellId, at, level = null) {
+    const t = this.tactics(c, spellId, level);
     if (!t) return [];
     const f = this.field;
     if (t.shape === 'allies') return this.all.filter((o) => !this.hostileTo(c, o) && !this.out(o)).map((o) => ({ x: o.x, y: o.y }));
@@ -558,8 +584,8 @@ export class CombatEngine {
   }
 
   /** Is `at` a legal target square for the spell? */
-  canCast(c, spellId, at) {
-    const t = SPELL_TACTICS[spellId];
+  canCast(c, spellId, at, level = null) {
+    const t = this.tactics(c, spellId, level);
     if (!t) return { ok: false, reason: 'Unknown spell' };
     if (t.target === 'self') return { ok: true };
     const d = Battlefield.dist(c.x, c.y, at.x, at.y);
@@ -575,14 +601,20 @@ export class CombatEngine {
 
   /** Cast a memorized spell at a square. */
   cast(c, spellId, at, { free = false, level = null, source = null } = {}) {
-    const t = SPELL_TACTICS[spellId];
+    const t = this.tactics(c, spellId, level);
     const def = SPELLS[spellId];
-    const can = this.canCast(c, spellId, at);
+    const can = this.canCast(c, spellId, at, level);
     if (!can.ok) return [{ type: 'log', text: can.reason, kind: 'warn' }];
-    if (!free && !consumeSpell(c.ref, spellId)) return [{ type: 'log', text: 'That spell is not memorized.', kind: 'warn' }];
-    const lvl = level ?? (c.side === 'party' ? casterLevel(c.ref, spellId) : 1);
+    // Rules gate (silence, held, armour for arcane magic) before the slot is spent; items need no casting.
+    const problem = source ? null : battleCastProblem(c, spellId);
+    if (problem) return [{ type: 'log', text: `${c.name}: ${problem}.`, kind: 'warn' }];
+    if (!free) {
+      const spent = c.side === 'party' && c.ref?.classSpec ? consumeSpell(c.ref, spellId) : consumeMonsterSpell(c, spellId);
+      if (!spent) return [{ type: 'log', text: 'That spell is not memorized.', kind: 'warn' }];
+    }
+    const lvl = t.level;
     if (t.target !== 'self') this._face(c, at.x, at.y);
-    const squares = this.spellArea(c, spellId, at);
+    const squares = this.spellArea(c, spellId, at, level);
     const set = new Set(squares.map((s) => `${s.x},${s.y}`));
     const inArea = this.all.filter((o) => !this.out(o) && set.has(`${o.x},${o.y}`));
     const hits = [];
@@ -599,7 +631,7 @@ export class CombatEngine {
     else if (t.shape === 'single') targets = occ ? [occ] : [];
     else if (t.pick === 'foes') targets = near(foesIn); // chosen targets (hold person, slow)
     else targets = near(inArea.filter((o) => !(t.notCaster && o === c)));
-    const r = castInBattle(this.rng, spellId, c, targets, { level: level ?? undefined, fromItem: !!source });
+    const r = castInBattle(this.rng, spellId, c, targets, { level: lvl, school: t.school, fromItem: !!source });
     hits.push(...r.hits);
     if (r.failed) ev[0].failed = true;
     if (r.ok) {
@@ -667,30 +699,32 @@ export class CombatEngine {
     return c.ref.inventory.map((e, i) => ({ e, i, def: ITEMS[e.id] })).filter(({ def, e }) => def && (def.type === 'potion' || (def.type === 'wand' && (e.charges ?? 0) > 0) || def.type === 'scroll'));
   }
 
-  /** Quaff a potion / zap a wand / read a scroll. Wands & scrolls become a free spell cast. */
+  /**
+   * Quaff a potion / zap a wand / read a scroll, through the rules: potions
+   * via useItem (healing, giant strength, speed, invisibility, heroism,
+   * neutralize...), scrolls gated by canUseScroll (cleric scrolls for
+   * clerics, magic-user scrolls for magic-users), wands and scrolls cast at
+   * the rules' item caster level.
+   */
   use(c, invIndex, at = null) {
     const e = c.ref.inventory[invIndex];
     const def = e && ITEMS[e.id];
-    if (!def) return [{ type: 'log', text: 'Nothing to use.', kind: 'warn' }];
-    if (def.type === 'potion') {
-      const dice = String(def.effect).split(':')[1] ?? '1d8';
-      const amt = heal(c.ref, roll(this.rng, dice));
-      c.ref.inventory.splice(invIndex, 1);
+    const u = battleItemUse(c.ref, invIndex);
+    if (!u.kind) return [{ type: 'log', text: u.reason, kind: 'warn' }];
+    if (u.kind === 'potion') {
+      const ev = quaffInBattle(this.rng, c, invIndex);
       c.acted = true;
       c.mp = 0;
       c.attacksLeft = 0;
-      return [{ type: 'use', id: c.id, item: def.id, text: `${c.name} drinks a ${def.name}.` }, { type: 'heal', id: c.id, amount: amt, text: `${c.name} regains ${amt} hit points.` }];
-    }
-    if (def.type === 'wand' || def.type === 'scroll') {
-      const spell = def.effect;
-      if (def.type === 'scroll' && SPELLS[spell]?.school === 'magicUser' && !c.ref.levels.magicUser) return [{ type: 'log', text: 'Only a magic-user can read that scroll.', kind: 'warn' }];
-      const ev = this.cast(c, spell, at ?? { x: c.x, y: c.y }, { free: true, level: def.type === 'wand' ? 6 : undefined, source: def.name });
-      if (ev[0]?.type === 'cast') {
-        if (def.type === 'wand') e.charges--;
-        else c.ref.inventory.splice(invIndex, 1);
-      }
       return ev;
     }
-    return [{ type: 'log', text: 'That cannot be used in combat.', kind: 'warn' }];
+    const ev = this.cast(c, u.spellId, at ?? { x: c.x, y: c.y }, { free: true, level: u.level, source: def.name });
+    if (ev[0]?.type === 'cast') {
+      if (def.type === 'scroll') {
+        if (e.spells?.length > 1) e.spells.splice(e.spells.indexOf(u.spellId), 1);
+        else c.ref.inventory.splice(invIndex, 1);
+      } else e.charges--;
+    }
+    return ev;
   }
 }

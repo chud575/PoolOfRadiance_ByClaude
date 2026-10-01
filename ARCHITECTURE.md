@@ -127,10 +127,14 @@ can make "Long Sword +2" from `longSword`. Optional ItemDef fields the rules und
 **Experience & training**: `awardXp(ch, xp)` (splits multiclass, +10% prime requisite, banks at most one point short
 of the level after next — Gold Box training rule), `trainableClasses(ch)`, `trainingCost(ch)` (PoR: 1,000 gp),
 `trainLevels(ch, rng)` (one level per visit, capped by race and PoR caps), `maxLevel(ch, cls)`,
-`dualClassProblem(ch, cls)` / `dualClass(ch, cls)` (humans).
+`dualClassProblem(ch, cls)` / `dualClass(ch, cls)` (humans). **Consumer obligation**: when `trainLevels` raised
+`'magicUser'`, offer `trainingSpellChoices(ch)` (camp.js; PoR: one new spell per level trained) and `learnSpell` the
+pick — ShopScene does. `drainLevel(ch, n)` (energy drain: highest class loses a level, its hit die, XP to the new
+level's midpoint; drained below 1st = dead) + `trimMemorized(ch)` (camp.js). Multiclass CON bonus: the fighter's
++3/+4 applies to every class's die before dividing (Gold Box ruling).
 
 **Health**: `applyDamage` (0 unconscious, −1…−9 dying, ≤ −10 dead; wakes sleepers), `bleed(ch)` (1 hp/round),
-`bandage(ch)`, `heal`, `raiseDead(rng, ch)` (resurrection survival, −1 CON; refuses elves per the PHB), `stoneToFlesh`,
+`bandage(ch)`, `heal` (DMG ruling: any healing stops a dying character's bleeding, even if still below 0), `raiseDead(rng, ch)` (resurrection survival, −1 CON; refuses elves per the PHB), `stoneToFlesh`,
 `isConscious`, `isAlive`.
 
 **Conditions**: `addEffect(target, id, {rounds, source, level, mods, data})`, `removeEffect`, `hasEffect`, `getEffect`,
@@ -149,10 +153,14 @@ Party combatants share `hp`, `conditions` and `effects` with their Character.
   Clerics roll the PHB low-WIS spell failure (WIS 9: 20%…12: 5%; the slot is spent; items never fail; `noFailure` for
   scripted casts). The caller picks targets from the template (primary/nearest first); the engine filters by `affects`,
   applies `maxTargets`, saves (WIS vs mind magic, DEX vs fireball/lightning, hold person: cleric −2 alone / MU −3 alone,
-  −1 for two; range cleric 6 / MU 12), sleep's PHB HD bands (`SLEEP_BANDS`), `dispelChance` (DMG +5%/level above,
+  −1 for two; range cleric 6 / MU 12), Sleep as one 4d4 budget spent weakest-first (`SLEEP_BANDS`, `SLEEP_COST`
+1/2/4/8 per band, the 3+1–4+4 band capped at its own 0–1 roll), magic resistance (`magicResistanceOf(t, casterLevel)`:
+`magicResistance` field or `magicResist:N` tag, DMG ±5%/level from 11th), haste/slow cancelling each other, `dispelChance` (DMG +5%/level above,
   −2%/level below), elf/half-elf sleep-charm resistance, undead immunity, shield vs magic missile, and returns terse Gold
   Box log lines. Utility spells report `flags` (`detectMagic`, `findTraps`, `unlock`, `readMagic`, `raiseDead`,
   `poisonCured`...). `hammerStrike(rng, cleric, target, magic)` is one Spiritual Hammer blow.
+* Verified values: Spiritual Hammer +1 per 6 levels or fraction (`ceil(L/6)`); Ray of Enfeeblement range 1 + L/4;
+  Mirror Image 1d4 images, 3 rounds/level (1e PHB); Strength above 18 adds tenths (10% exceptional per point, PHB).
 * Deliberate simplifications: Shield is AC 2 vs missiles / AC 4 vs melee (1e: AC 2 hurled, AC 3 small missiles, +1 saves
   vs frontal attacks); thieves may be any alignment but LG (PoR creation rule); clerics may use slings (Gold Box);
   halfling fighters reach 6th flat (PoR); magic armour moves at the PHB base rate (its benefit is half weight).
@@ -175,7 +183,13 @@ monsters, whose count is routines × attacks in the routine), `sweepAttacks(ch, 
 1-1 HD goblins, `belowOneHd`), `onHitSpecials` (ghoul paralysis — elves immune — poison, rat disease), `savingThrow`,
 `poison(rng, target, {mode:'deadly'|'damage', onset})`, `turnUndead(rng, level, type)` (unknown types: no effect),
 `endOfRound(c)` (bleeding, poison onset, effect expiry), `endCombat(party)`, `rollSurprise`, `moraleCheck`,
-`xpForVictory`, `autoResolve`.
+`xpForVictory`, `autoResolve`. Rear/backstab: pass `{rear, backstab}` flags (never fold them into `mods`);
+`situationalHit` gives rear +2, backstab +4 *instead*, and `hitChance` takes the same flags so the preview equals the roll.
+Monster tags enforced: `magicToHit:N` / `silverToHit` (`weaponImmunity(att, def)`; combatants carry `weaponMagic`,
+`weaponSilver`, `weaponEdged`; monsters strike as +1 at 4+1 HD … +4 at 10+4, `monsterHitPower`), `halfEdged`
+(skeletons: half damage from edged/piercing, `BLUNT_GROUPS`), `slow` (zombies act last in `rollInitiative`),
+`drainLevel[:N]` (wight 1, spectre 2 — `DRAIN_LEVELS`), `drainStr` (shadow: −1 STR per hit for 2d4 turns, death at 0),
+`stench` (battle.js `stenchAuras`), `magicResist:N`, `spells:clericN` (see below).
 
 **Battle bridge** (battle.js — what the tactical CombatEngine calls): `fxView(c)` makes `c.fx` a live Proxy over the
 creature's rules effects (`fx.blessed` → rounds left, `fx.asleep = 5` adds the effect, `delete fx.held` removes it;
@@ -184,11 +198,25 @@ creature's rules effects (`fx.blessed` → rounds left, `fx.asleep = 5` adds the
 CastResult + scene `hits` `{id, dmg, heal, saved, killed, effect, bolts, text}`, `roundUpkeep(c)` → bleed/down/wake
 events, `hammerTurn` (Spiritual Hammer's later blows), `specialsOnHit`. The engine resolves every spell, attack count,
 condition and end-of-round tick through these; it uses the `'slay'` helpless rule (Gold Box sleep/hold).
+* `battleTargeting(id, caster, {level})` — **the** source of spell targeting (range, shape, size, maxTargets at the
+  caster's level and class) in the engine's vocabulary; `logic/spells.js` only adds VFX/pick hints (`engine.tactics`).
+* `battleCastProblem(c, id)` / `castableInBattle(c, list)` — conditions + armour (an elf F/MU in plate gets no MU
+  spells); `castInBattle` checks them too (memory is the engine's job).
+* `monsterSpells(c)` / `consumeMonsterSpell(c, id)` / `monsterCasting(c)` — `spells:clericN` makes an Nth-level cleric
+  with that level's slots, filled once per battle (`MONSTER_PRIEST_SPELLS`, or the monster's `spellList`); the AI casts
+  them through `engine.cast` like a PC.
+* `battleItemUse(ch, i)` (potion / spell at `itemCasterLevel`, scrolls gated by `canUseScroll`) and
+  `quaffInBattle(rng, c, i)` (rules `useItem`: giant strength sets STR, speed hastes and ages, heroism, invisibility,
+  neutralize…).
+* `endBattle(partyCombatants)` — **consumer obligation** at the end of every battle (CombatScene.finish): strips held,
+  asleep, charmed, hasted, nauseous, stench… from the Characters (poison, disease, curses, strength drain persist).
 
 **Items, treasure, temple**: `useItem(rng, ch, index, targets, {spellId})`, `scribeScroll`, `identifyItem`, `detectMagicIn`;
 `generateTreasure(rng, types, {scale, count})` → `{coins, gems, jewelry, items, maps?}` (MM types A–Z incl. W),
+`victorySpoils(rng, encounter.treasure, slainMonsterDefs)` → `{gold, items, gems, jewelry, text}` (what CombatScene awards:
+encounter gold/items/`types` + each slain monster's `treasure` type, individual J–N per creature),
 `rollMagicItem`, `treasureValue`, `shareCoins`; `TEMPLE_SERVICES`, `serviceApplies(id, ch)`, `serviceProblem(id, ch)`
-(tooltip reason, e.g. elves cannot be raised), `raiseAllowed(ch)`, `performService(rng, id, ch)`.
+(tooltip reason, e.g. elves cannot be raised — ShopScene shows it), `raiseAllowed(ch)`, `performService(rng, id, ch)`.
 
 ## Scene contract
 

@@ -11,10 +11,11 @@ import { ITEMS } from '../../data/items.js';
 import { roll } from '../../rules/dice.js';
 import { combatantFromCharacter, combatantFromMonster, xpForVictory, isDown } from '../../rules/combat.js';
 import { awardXp } from '../../rules/character.js';
+import { endBattle, battleItemUse } from '../../rules/battle.js';
+import { victorySpoils } from '../../rules/treasure.js';
 import { Battlefield, DIR8 } from './logic/battlefield.js';
 import { CombatEngine } from './logic/engine.js';
 import { decide } from './logic/ai.js';
-import { SPELL_TACTICS, casterLevel } from './logic/spells.js';
 import { buildDiorama, TILE } from './view/terrain.js';
 import { makeFigureModel } from './view/models.js';
 import { Figure, RIM } from './view/animator.js';
@@ -688,7 +689,7 @@ export default class CombatScene extends Scene {
       this.hud.hideBanner();
       this.overlay.setRange(null, 0);
       this.cursor = data.start ?? { x: c.x, y: c.y };
-      const t = SPELL_TACTICS[data.spell];
+      const t = this.engine.tactics(c, data.spell);
       this.hud.setPrompt(`${data.label}: ${t.target === 'direction' ? 'choose a direction' : 'choose a target'} — Enter to cast, Esc to cancel`);
       this._hoverSquare(this.cursor);
     }
@@ -754,7 +755,7 @@ export default class CombatScene extends Scene {
     const spells = this.engine.spellsOf(c);
     const counts = new Map();
     for (const s of spells) counts.set(s.id, (counts.get(s.id) ?? 0) + 1);
-    const items = [...counts.entries()].map(([id, n], i) => ({ id, label: `${i + 1}  ${SPELLS[id].name}${n > 1 ? ` (${n})` : ''}`, key: String(i + 1), hint: `L${SPELLS[id].level} ${SPELLS[id].school === 'cleric' ? 'Cleric' : 'Mage'} · ${SPELL_TACTICS[id].range ? `range ${SPELL_TACTICS[id].range}` : 'self'}` }));
+    const items = [...counts.entries()].map(([id, n], i) => { const tt = this.engine.tactics(c, id); return { id, label: `${i + 1}  ${SPELLS[id].name}${n > 1 ? ` (${n})` : ''}`, key: String(i + 1), hint: `L${SPELLS[id].level} ${SPELLS[id].school === 'cleric' ? 'Cleric' : 'Mage'} · ${tt.range ? `range ${tt.range}` : 'self'}` }; });
     this.hud.openMenu('Cast', items, (it) => {
       this.hud.closeMenu();
       this._beginSpell(it.id, SPELLS[it.id].name);
@@ -763,7 +764,7 @@ export default class CombatScene extends Scene {
 
   _beginSpell(spell, label, source = null) {
     const c = this.cur;
-    const t = SPELL_TACTICS[spell];
+    const t = this.engine.tactics(c, spell, source?.level);
     if (t.target === 'self') {
       this._act(() => (source ? this.engine.use(c, source.index, { x: c.x, y: c.y }) : this.engine.cast(c, spell, { x: c.x, y: c.y })));
       return;
@@ -772,14 +773,14 @@ export default class CombatScene extends Scene {
     // Healing may target fallen (not dead) friends too; the most hurt comes first.
     const allies = this.engine.all.filter((o) => !this.engine.hostileTo(c, o) && !o.fled && (!isDown(o) || (o.side === 'party' && o.ref.status !== 'dead')))
       .sort((a, b) => a.hp.cur / a.hp.max - b.hp.cur / b.hp.max);
-    const pool = t.target === 'ally' ? allies : foes;
-    const valid = pool.filter((o) => this.engine.canCast(c, spell, { x: o.x, y: o.y }).ok);
+    const pool = t.target === 'ally' || t.affects === 'allies' ? allies : foes;
+    const valid = pool.filter((o) => this.engine.canCast(c, spell, { x: o.x, y: o.y }, source?.level).ok);
     // Area spells: aim at the foe that catches the most enemies and no friends.
     let first = valid[0] ?? pool[0];
     if (t.shape !== 'single' && t.target === 'square' && valid.length) {
       let best = -1;
       for (const o of valid) {
-        const area = new Set(this.engine.spellArea(c, spell, { x: o.x, y: o.y }).map((q) => `${q.x},${q.y}`));
+        const area = new Set(this.engine.spellArea(c, spell, { x: o.x, y: o.y }, source?.level).map((q) => `${q.x},${q.y}`));
         const inside = this.engine.all.filter((a) => !this.engine.out(a) && area.has(`${a.x},${a.y}`));
         const score = inside.filter((a) => this.engine.hostileTo(c, a)).length * 2 - inside.filter((a) => !this.engine.hostileTo(c, a)).length * 3;
         if (score > best) {
@@ -798,7 +799,11 @@ export default class CombatScene extends Scene {
     this.hud.openMenu('Use', items, (it) => {
       this.hud.closeMenu();
       if (it.def.type === 'potion') this._act(() => this.engine.use(c, it.index));
-      else this._beginSpell(it.def.effect, it.def.name, { index: it.index });
+      else {
+        const u = battleItemUse(c.ref, it.index);
+        if (!u.kind) { this.ctx.ui.message(u.reason, 'warn'); return; }
+        this._beginSpell(u.spellId, it.def.name, { index: it.index, level: u.level });
+      }
     }, () => this._enterMode('move'));
   }
 
@@ -1154,9 +1159,10 @@ export default class CombatScene extends Scene {
     if (this.mode === 'target' && myTurn) {
       // Spell targeting: spell facts only (no melee odds), area victims, and a sight line.
       const spell = this.modeData.spell;
-      const tact = SPELL_TACTICS[spell];
-      const can = e.canCast(c, spell, sq);
-      const area = e.spellArea(c, spell, sq);
+      const lv = this.modeData.source?.level;
+      const tact = e.tactics(c, spell, lv);
+      const can = e.canCast(c, spell, sq, lv);
+      const area = e.spellArea(c, spell, sq, lv);
       this.overlay.setTemplate(can.ok ? area : [], this._validTargets().map((o) => ({ x: o.x, y: o.y })));
       const affected = e.all.filter((o) => !e.out(o) && area.some((a) => a.x === o.x && a.y === o.y));
       const info = this._spellInfo(c, spell);
@@ -1184,15 +1190,15 @@ export default class CombatScene extends Scene {
 
   /** What the active spell does, for the targeting card: a headline number + terse lines. */
   _spellInfo(c, spell) {
-    const lvl = c.side === 'party' ? casterLevel(c.ref, spell) : 1;
-    const t = SPELL_TACTICS[spell];
+    const t = this.engine.tactics(c, spell);
+    const lvl = t.level;
     const rng = t.range ? `Range ${t.range}` : 'Self';
     switch (spell) {
       case 'magicMissile': {
         const n = 1 + Math.floor((lvl - 1) / 2);
         return { big: `${n}×`, unit: `missile${n > 1 ? 's' : ''} · 2-5 dmg each`, lines: [`Never misses · no save · ${rng}`] };
       }
-      case 'sleep': return { big: '4d4', unit: 'HD fall asleep', lines: ['Creatures of 4 HD or less · no save', `3×3 area · ${rng}`] };
+      case 'sleep': return { big: '4d4', unit: 'HD fall asleep', lines: ['Weakest first, up to 4+4 HD · no save', `3×3 area · ${rng}`] };
       case 'burningHands': return { big: String(lvl), unit: 'fire damage each', lines: ['Cone of 3 squares · no save'] };
       case 'shockingGrasp': return { big: `1d8+${lvl}`, unit: 'damage', lines: ['Touch · no save'] };
       case 'causeLightWounds': return { big: '1d8', unit: 'damage', lines: ['Touch · no save'] };
@@ -1213,9 +1219,10 @@ export default class CombatScene extends Scene {
     if (!c) return [];
     if (this.mode === 'target') {
       const spell = this.modeData.spell;
-      const t = SPELL_TACTICS[spell];
-      const pool = t.target === 'ally' ? e.all.filter((o) => !e.hostileTo(c, o) && !o.fled) : e.enemiesOf(c);
-      return pool.filter((o) => e.canCast(c, spell, { x: o.x, y: o.y }).ok);
+      const lv = this.modeData.source?.level;
+      const t = e.tactics(c, spell, lv);
+      const pool = t.target === 'ally' || t.affects === 'allies' ? e.all.filter((o) => !e.hostileTo(c, o) && !o.fled) : e.enemiesOf(c);
+      return pool.filter((o) => e.canCast(c, spell, { x: o.x, y: o.y }, lv).ok);
     }
     return e.enemiesOf(c).filter((o) => e.canAttack(c, o).ok);
   }
@@ -1262,7 +1269,7 @@ export default class CombatScene extends Scene {
     const occ = e.occupantAt(sq.x, sq.y);
     if (this.mode === 'target') {
       const spell = this.modeData.spell;
-      const can = e.canCast(c, spell, sq);
+      const can = e.canCast(c, spell, sq, this.modeData.source?.level);
       if (!can.ok) {
         this.ctx.ui.message(`${this.modeData.label}: ${can.reason}.`, 'warn');
         this.ctx.audio.sfx('bump');
@@ -1621,7 +1628,7 @@ export default class CombatScene extends Scene {
     const e = this.engine;
     const c = e.byId(ev.id);
     const fig = this.figures.get(c.id);
-    const tact = SPELL_TACTICS[ev.spell];
+    const tact = e.tactics(c, ev.spell);
     this._log(ev.text, 'combat');
     const sp = this.speed;
     const target = sq2w(ev.at.x, ev.at.y);
@@ -2028,13 +2035,8 @@ export default class CombatScene extends Scene {
     this.busy = true;
     this._clearTargeting();
     const { game, ui, scenes, rng } = this.ctx;
-    // Transient combat conditions don't persist.
-    for (const c of this.party) {
-      for (const k of ['asleep', 'held']) {
-        const i = c.ref.conditions.indexOf(k);
-        if (i >= 0) c.ref.conditions.splice(i, 1);
-      }
-    }
+    // Rules: combat-only effects (held, asleep, charmed, hasted, nauseous...) end with the battle.
+    endBattle(this.party);
     if (winner === 'party') {
       // Let the last death and its VFX settle before the fanfare.
       if (!this.snap) await this.wait(Math.max(0.9, this.vfx.busyUntil?.(this.time) ?? 0));
@@ -2045,10 +2047,13 @@ export default class CombatScene extends Scene {
       const living = game.party.filter((c) => c.status === 'ok');
       const share = Math.floor(xp / Math.max(1, living.length));
       for (const c of living) awardXp(c, share);
-      const gold = this.encounter.treasure?.gold ? roll(rng, this.encounter.treasure.gold) : 0;
+      // Rules spoils: the encounter's own gold/items plus MM treasure types of the slain.
+      const spoils = victorySpoils(rng, this.encounter.treasure, this.monsters.filter((m) => isDown(m)).map((m) => m.ref));
+      const gold = spoils.gold;
       if (gold && living[0]) living[0].gold += gold;
+      for (const it of spoils.items) living[0]?.inventory.push(it);
       game.notifyPartyChanged();
-      await ui.dialog({ title: 'Victory', body: `The party is victorious! Each survivor receives ${share} experience points.${gold ? ` You find ${gold} gold pieces.` : ''}` });
+      await ui.dialog({ title: 'Victory', body: `The party is victorious! Each survivor receives ${share} experience points.${spoils.text ? ` ${spoils.text}` : ''}` });
       scenes.goto('explore', {});
     } else if (winner === 'monster') {
       this.hud.showBanner('Defeat', null, this.time, 2.4);

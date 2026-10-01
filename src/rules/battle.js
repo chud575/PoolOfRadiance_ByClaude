@@ -1,9 +1,18 @@
 import {
   CONDITIONS, addEffect, removeEffect, getEffect, conditionIds, isIncapacitated, conditionsAllowCasting,
+  clearCombatEffects,
 } from './conditions.js';
-import { castSpell, conditionLine, hammerStrike, SPELL_RULES } from './spells.js';
-import { effectHost, nameOf, isDownCreature } from './creature.js';
-import { attacksFor, endOfRound, onHitSpecials, sweepAttacks, isDown } from './combat.js';
+import {
+  castSpell, conditionLine, hammerStrike, SPELL_RULES, castProblem, spellTargeting, castingClass, casterLevel,
+  spellsForClass,
+} from './spells.js';
+import { effectHost, nameOf, isDownCreature, characterOf, monsterOf, sideOf, isUndead } from './creature.js';
+import {
+  attacksFor, endOfRound, onHitSpecials, sweepAttacks, isDown, tagValue, savingThrow,
+} from './combat.js';
+import { spellSlots } from './classes.js';
+import { useItem, canUseScroll, itemCasterLevel } from './magicItems.js';
+import { ITEMS } from '../data/items.js';
 
 /**
  * Bridge between the rules engine and the tactical (grid) combat engine in
@@ -126,8 +135,10 @@ const EFFECT_FLOAT = { asleep: 'asleep', held: 'held', nauseous: 'nauseous', cha
  * @param {{level?:number, fromItem?:boolean, school?:string}} [o]
  */
 export function castInBattle(rng, spellId, caster, targets, o = {}) {
+  // Conditions (silence, held...) and armour for arcane magic are always
+  // checked; memory is the engine's business (it spends the slot itself).
   const res = castSpell(rng, spellId, caster, targets, {
-    check: false, ignoreMemory: true, context: 'combat', level: o.level, fromItem: !!o.fromItem, school: o.school,
+    ignoreMemory: true, context: 'combat', level: o.level, fromItem: !!o.fromItem, school: o.school,
   });
   const hits = [];
   if (!res.ok) {
@@ -217,9 +228,227 @@ export function hammerTurn(rng, caster, byId, pick) {
 
 /** Monster on-hit specials (paralysis, poison, disease) as tactical events. */
 export function specialsOnHit(rng, attacker, defender) {
-  const label = { paralyze: 'Paralyzed', poison: 'Poisoned', disease: 'Diseased' };
+  const label = { paralyze: 'Paralyzed', poison: 'Poisoned', disease: 'Diseased', drainLevel: 'Drained', drainStr: 'Weakened' };
   // `kind` doubles as the scene's floating label; `special` is the rule id.
   return onHitSpecials(rng, attacker, defender).map((r) => ({
     type: 'effect', id: defender.id, kind: r.saved ? 'Resists' : label[r.kind] ?? r.kind, special: r.kind, saved: r.saved, text: r.text,
+    ...(r.died ? { died: true } : {}),
   }));
+}
+
+// ------------------------------------------------------------ spell targeting
+
+/**
+ * Single source of truth for how a spell is aimed in battle, derived from
+ * SPELL_RULES via spellTargeting() at the caster's real level and casting
+ * class (cleric Hold Person range 6, magic-user 12; Magic Missile 6+L;
+ * Fireball 10+L; Bless a 5x5 square; Haste radius 2, max L targets...).
+ * Returned in the tactical engine's vocabulary:
+ *   target: 'enemy' | 'ally' | 'self' | 'square' | 'direction'
+ *   shape:  'single' | 'radius' | 'square' | 'cone' | 'line' | 'all'
+ * plus range, size, maxTargets, hostile, affects, level, school. Scene-only
+ * hints (VFX, how the template picks victims) are layered on by the engine.
+ * @param {{level?:number, school?:string}} [o]
+ */
+export function battleTargeting(id, caster = {}, o = {}) {
+  const s = SPELL_RULES[id];
+  if (!s) return null;
+  const school = o.school ?? castingClass(caster, id);
+  const level = o.level ?? casterLevel(caster, id);
+  const t = spellTargeting(id, level, school);
+  let target;
+  let shape = t.shape;
+  switch (s.target) {
+    case 'self': target = 'self'; shape = 'single'; break;
+    case 'ally': case 'creature': target = 'ally'; shape = 'single'; break;
+    case 'enemy': target = 'enemy'; shape = 'single'; break;
+    case 'direction': target = 'direction'; break;
+    case 'area': target = 'square'; break;
+    case 'party': target = shape === 'all' ? 'self' : 'square'; break;
+    default: target = 'self'; shape = 'single';
+  }
+  return {
+    target, shape, range: t.range, size: t.size, maxTargets: t.maxTargets, hostile: t.hostile, affects: t.affects,
+    level, school,
+  };
+}
+
+/**
+ * Why a combatant cannot cast this spell in battle right now (conditions,
+ * armour for arcane magic, camp-only spells), or null. Memory is not checked.
+ */
+export function battleCastProblem(c, id) {
+  if (!SPELL_RULES[id]) return 'unknown spell';
+  return castProblem(characterOf(c) ?? c, id, { context: 'combat', ignoreMemory: true });
+}
+
+/** Filter a memorized-spell list ({id, cls}[]) to what can be cast in battle now. */
+export function castableInBattle(c, spells) {
+  return spells.filter((s) => !battleCastProblem(c, s.id));
+}
+
+// ------------------------------------------------------- monster spellcasting
+
+/**
+ * Default load-outs for monster priests (evil clerics of Bane favour the
+ * reversed forms). Monsters may declare `spellList: string[]` instead.
+ */
+export const MONSTER_PRIEST_SPELLS = Object.freeze({
+  cleric: [
+    ['causeLightWounds', 'curse', 'causeLightWounds', 'protectionFromGood', 'causeLightWounds'],
+    ['holdPerson', 'silence15', 'holdPerson', 'spiritualHammer', 'holdPerson'],
+    ['prayer', 'dispelMagic', 'causeBlindness', 'bestowCurse'],
+  ],
+  magicUser: [
+    ['magicMissile', 'sleep', 'shockingGrasp', 'magicMissile'],
+    ['stinkingCloud', 'mirrorImage', 'rayOfEnfeeblement'],
+    ['fireball', 'lightningBolt', 'holdPerson', 'slow'],
+  ],
+});
+
+/** A monster's spellcasting class and level from its `spells:clericN` / `spells:magicUserN` tag. */
+export function monsterCasting(c) {
+  const m = monsterOf(c);
+  const tag = (m?.special ?? []).find?.((t) => String(t).startsWith('spells:'));
+  if (!tag) return null;
+  const mm = /^spells:(cleric|magicUser|mu)(\d+)$/.exec(String(tag));
+  if (!mm) return null;
+  return { cls: mm[1] === 'mu' ? 'magicUser' : mm[1], level: Number(mm[2]) };
+}
+
+/**
+ * Spells a monster caster still holds this battle, as {id, cls}[] — the same
+ * shape as a character's memorized list. The tag `spells:clericN` makes it an
+ * Nth-level cleric (1e slots for that level, no WIS bonus); the slot list is
+ * filled once per battle on the combatant (`c.monsterSpells`) and spent by
+ * consumeMonsterSpell. Exposed for the AI.
+ */
+export function monsterSpells(c) {
+  const cast = monsterCasting(c);
+  if (!cast) return [];
+  if (!c.monsterSpells) {
+    const m = monsterOf(c);
+    const slots = spellSlots(cast.cls, cast.level);
+    const list = [];
+    slots.forEach((n, i) => {
+      const pool = (m.spellList ?? []).filter((id) => SPELL_RULES[id]?.schools[cast.cls] === i + 1);
+      const src = pool.length ? pool : (MONSTER_PRIEST_SPELLS[cast.cls][i] ?? spellsForClass(cast.cls, i + 1));
+      for (let k = 0; k < n; k++) if (src.length) list.push(src[k % src.length]);
+    });
+    c.monsterSpells = list;
+    c.casterLevel = cast.level;
+  }
+  return c.monsterSpells.filter((id) => SPELL_RULES[id]?.usable !== 'camp').map((id) => ({ id, cls: cast.cls }));
+}
+
+/** Spend one of a monster's spells (returns false if it had none left). */
+export function consumeMonsterSpell(c, id) {
+  monsterSpells(c);
+  const i = c.monsterSpells?.indexOf(id) ?? -1;
+  if (i < 0) return false;
+  c.monsterSpells.splice(i, 1);
+  return true;
+}
+
+// ----------------------------------------------------------- monster auras
+
+/**
+ * Ghast stench (MM): anyone within 10' (an adjacent square, `near(a, b)`) of a
+ * creature tagged `stench` saves vs poison once per battle or fights at -2 to
+ * hit while the battle lasts. Undead are immune. Returns effect events.
+ */
+export function stenchAuras(rng, all, near) {
+  const ev = [];
+  const sources = all.filter((c) => !isDown(c) && !c.fled && tagValue(c, 'stench') !== null);
+  if (!sources.length) return ev;
+  for (const v of all) {
+    if (isDown(v) || v.fled || v.stenchChecked || isUndead(v)) continue;
+    if (!sources.some((src) => sideOf(src) !== sideOf(v) && near(src, v))) continue;
+    v.stenchChecked = true;
+    const sv = savingThrow(rng, v, 'ppdm');
+    const name = v.name ?? nameOf(v);
+    if (sv.saved) ev.push({ type: 'effect', id: v.id, kind: 'Resists', special: 'stench', saved: true, text: `${name} masters the charnel stench.` });
+    else {
+      addEffect(effectHost(v), 'stench', { rounds: Infinity, source: 'stench' });
+      ev.push({ type: 'effect', id: v.id, kind: 'Retching', special: 'stench', saved: false, text: `${name} retches at the charnel stench!` });
+    }
+  }
+  return ev;
+}
+
+// --------------------------------------------------------------- items
+
+/**
+ * Which battle use an inventory item has: 'potion' (drink now), 'spell'
+ * (scroll/wand: a spell the engine aims and casts at `level`), or a reason
+ * it cannot be used. Scrolls follow canUseScroll (magic-user scrolls need a
+ * magic-user, cleric scrolls a cleric); caster levels come from
+ * itemCasterLevel (ITEM_CASTER_LEVEL rules).
+ * @returns {{kind:'potion'|'spell', spellId?:string, level?:number, reason?:string}}
+ */
+export function battleItemUse(ch, index) {
+  const e = ch.inventory[index];
+  const def = e && ITEMS[e.id];
+  if (!def) return { kind: null, reason: 'Nothing to use.' };
+  if (def.type === 'potion') return { kind: 'potion' };
+  if (def.type === 'wand' || def.type === 'staff' || def.type === 'rod') {
+    if (!(e.charges > 0)) return { kind: null, reason: 'The wand is spent.' };
+    return { kind: 'spell', spellId: def.effect, level: itemCasterLevel(def, def.effect) };
+  }
+  if (def.type === 'scroll') {
+    const spellId = e.spells?.[0] ?? def.effect;
+    if (!spellId) return { kind: null, reason: 'The scroll is blank.' };
+    if (!canUseScroll(ch, spellId)) {
+      const s = SPELL_RULES[spellId];
+      return { kind: null, reason: s?.schools.cleric !== undefined && s?.schools.magicUser === undefined ? 'Only a cleric can read that scroll.' : 'Only a magic-user can read that scroll.' };
+    }
+    if (SPELL_RULES[spellId]?.usable === 'camp') return { kind: null, reason: 'That cannot be used in combat.' };
+    return { kind: 'spell', spellId, level: itemCasterLevel(def, spellId) };
+  }
+  return { kind: null, reason: 'That cannot be used in combat.' };
+}
+
+/**
+ * Drink a potion in battle through the rules useItem (heal, giant strength,
+ * speed, invisibility, heroism, neutralize...). Returns tactical events:
+ * a `use` event, then `heal` when hit points came back, else an `effect`.
+ */
+export function quaffInBattle(rng, c, index) {
+  const ch = characterOf(c);
+  const def = ITEMS[ch.inventory[index]?.id];
+  const before = ch.hp.cur;
+  const conds = new Set(ch.effects.map((e) => e.id));
+  const r = useItem(rng, ch, index, [c], { context: 'combat' });
+  const name = c.name ?? ch.name;
+  const ev = [{ type: 'use', id: c.id, item: def?.id, text: `${name} drinks a ${def?.name ?? 'potion'}.` }];
+  if (!r.ok) return [{ type: 'log', text: r.reason ?? 'Nothing happens.', kind: 'warn' }];
+  const healed = ch.hp.cur - before;
+  const added = ch.effects.map((e) => e.id).filter((id) => !conds.has(id));
+  if (healed > 0) ev.push({ type: 'heal', id: c.id, amount: healed, text: `${name} regains ${healed} hit points.` });
+  else ev.push({ type: 'effect', id: c.id, kind: added[0] ? (CONDITIONS[added[0]]?.name ?? added[0]) : 'Potion', effect: added[0], text: r.log[1] ?? 'Nothing seems to happen.' });
+  return ev;
+}
+
+/**
+ * End of battle for the party (call from the scene's finish, whatever the
+ * outcome): strips combat-only effects (held, asleep, charmed, hasted,
+ * nauseous, stench...) from every party Character and clears per-battle
+ * scratch on the combatants. Poison, disease, curses, blindness and long
+ * buffs (strength, resist fire...) persist.
+ * @param {object[]} combatants party combatants or Characters
+ * @returns {Record<string,string[]>} removed effect ids by character id
+ */
+export function endBattle(combatants) {
+  const out = {};
+  for (const c of combatants) {
+    const host = effectHost(c);
+    const removed = clearCombatEffects(host);
+    for (const k of ['asleep', 'held', 'paralyzed', 'nauseous', 'charmed', 'stench']) {
+      const i = host.conditions?.indexOf(k) ?? -1;
+      if (i >= 0) host.conditions.splice(i, 1);
+    }
+    if (removed.length) out[host.id ?? nameOf(host)] = removed;
+    delete c.stenchChecked;
+  }
+  return out;
 }

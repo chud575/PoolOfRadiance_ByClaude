@@ -25,6 +25,21 @@ import { itemName, isMagical } from './items.js';
 export const ITEM_CASTER_LEVEL = 6;
 
 /**
+ * Caster level of a spell released by an item: wands/staves/rods use their
+ * `casterLevel` (default ITEM_CASTER_LEVEL, 6th); scrolls cast at the
+ * higher of 6th level and the lowest level able to cast the spell (2L-1).
+ * Combat (battleItemUse) and camp (useItem) both read it from here.
+ */
+export function itemCasterLevel(def, spellId) {
+  if (!def) return ITEM_CASTER_LEVEL;
+  if (def.type === 'scroll') return Math.max(def.casterLevel ?? ITEM_CASTER_LEVEL, (SPELL_RULES[spellId]?.level ?? 1) * 2 - 1);
+  return def.casterLevel ?? ITEM_CASTER_LEVEL;
+}
+
+/** Item ids whose world-data effect string is a stand-in for a real 1e potion. */
+export const POTION_EFFECTS = Object.freeze({ potionHeroism: 'heroism' });
+
+/**
  * Who can read a scroll: magic-user scrolls need a magic-user (and read magic
  * to be scribed), cleric scrolls a cleric; thieves of 10th level may try MU scrolls.
  */
@@ -58,7 +73,7 @@ export function useItem(rng, ch, index, targets, o = {}) {
   if (def.type === 'wand' || def.type === 'staff' || def.type === 'rod') {
     if (!(entry.charges > 0)) return { ...out, reason: 'no charges' };
     if (def.classes && !splitClasses(ch.classSpec).some((c) => def.classes.includes(c))) return { ...out, reason: 'class cannot use' };
-    const cast = castSpell(rng, def.effect, ch, tgts, { fromItem: true, level: def.casterLevel ?? ITEM_CASTER_LEVEL, check: false });
+    const cast = castSpell(rng, def.effect, ch, tgts, { fromItem: true, level: itemCasterLevel(def, def.effect), check: false });
     entry.charges--;
     entry.identified = true;
     return { ok: cast.ok, log: [`${ch.name} uses the ${name}.`, ...cast.log.slice(1)], cast, consumed: false };
@@ -69,7 +84,7 @@ export function useItem(rng, ch, index, targets, o = {}) {
     const spellId = o.spellId ?? spells[0];
     if (!spellId || !spells.includes(spellId)) return { ...out, reason: 'scroll is blank' };
     if (!canUseScroll(ch, spellId)) return { ...out, reason: 'cannot read this scroll' };
-    const cast = castSpell(rng, spellId, ch, tgts, { fromItem: true, level: Math.max(ITEM_CASTER_LEVEL, SPELL_RULES[spellId].level * 2 - 1), check: false });
+    const cast = castSpell(rng, spellId, ch, tgts, { fromItem: true, level: itemCasterLevel(def, spellId), check: false });
     consumeScrollSpell(ch, index, spellId);
     return { ok: cast.ok, log: [`${ch.name} reads the ${name}.`, ...cast.log.slice(1)], cast, consumed: true };
   }
@@ -77,7 +92,7 @@ export function useItem(rng, ch, index, targets, o = {}) {
   if (def.type === 'potion') {
     const t = tgts[0];
     const log = [`${nameOf(t)} quaffs the ${name}.`];
-    applyPotion(rng, def.effect ?? '', t, log);
+    applyPotion(rng, POTION_EFFECTS[def.id] ?? def.effect ?? '', t, log);
     removeItem(ch, index, 1);
     return { ok: true, log, consumed: true };
   }
@@ -95,10 +110,23 @@ function applyPotion(rng, effect, t, log) {
     addEffect(host, 'giantStrength', { rounds: 60, source: 'potion', mods: { strSet: { str, strPct: 0 } } });
     log.push(`${nameOf(t)} feels the might of giants.`);
   } else if (kind === 'speed') {
-    addEffect(host, 'hasted', { rounds: 50, source: 'potion' });
+    // DMG: as haste for 5d4 rounds, and the drinker ages a year.
+    removeEffect(host, 'slowed');
+    addEffect(host, 'hasted', { rounds: roll(rng, '5d4'), source: 'potion' });
+    const ch = characterOf(t);
+    if (ch) ch.age = (ch.age ?? 20) + 1;
     log.push(`${nameOf(t)} blurs with speed.`);
+  } else if (kind === 'heroism') {
+    // DMG: fights as a fighter of higher level — +4 levels at 0, +2 at 1st-3rd,
+    // +1 at 4th-6th, none beyond; modelled as +1 to hit per level gained.
+    const ch = characterOf(t);
+    const lvl = ch ? (ch.levels.fighter ?? 0) : 1;
+    const gain = lvl === 0 ? 4 : lvl <= 3 ? 2 : lvl <= 6 ? 1 : 0;
+    if (gain) addEffect(host, 'heroism', { rounds: 60, source: 'potion', mods: { hit: gain, save: Math.ceil(gain / 2) } });
+    log.push(gain ? `${nameOf(t)} is filled with heroic fury.` : `${nameOf(t)} feels no braver than before.`);
   } else if (kind === 'neutralize') {
     removeEffect(host, 'poisoned');
+    removeEffect(host, 'slowPoison');
     log.push(`The poison in ${nameOf(t)}'s blood is neutralized.`);
   } else if (SPELL_RULES[kind]) {
     const r = castSpell(rng, kind, t, [t], { fromItem: true, level: ITEM_CASTER_LEVEL, check: false });

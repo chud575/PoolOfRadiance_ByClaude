@@ -399,6 +399,11 @@ export function effectiveAbilities(ch) {
     a.str = Math.max(3, Math.floor(eff * (1 - fx.strLossPct / 100)));
     a.strPct = 0;
   }
+  if (fx.strDrain) {
+    // Shadow's touch: whole STR points; exceptional strength goes first.
+    a.str = Math.max(0, a.str - fx.strDrain);
+    a.strPct = 0;
+  }
   if (fx.cha) a.cha = Math.min(18, a.cha + fx.cha);
   return a;
 }
@@ -648,6 +653,42 @@ export function trainLevels(ch, rng, o = {}) {
 }
 
 /**
+ * Energy drain (MM wight 1 level, spectre 2): each level is lost from the
+ * character's highest-level class (ties: first listed). The class's hit die
+ * for that level goes, XP drops to the midpoint of the new level (DMG), and
+ * hit points are recomputed (current hp falls by the same amount). Drained
+ * below 1st level the character dies.
+ * @returns {{drained:{cls:string, level:number}[], died:boolean}}
+ */
+export function drainLevel(ch, n = 1) {
+  const out = { drained: [], died: false };
+  if (!isAlive(ch)) return out;
+  for (let i = 0; i < n; i++) {
+    const classes = activeClasses(ch).filter((c) => ch.levels[c]);
+    const cls = classes.reduce((best, c) => (ch.levels[c] > ch.levels[best] ? c : best), classes[0]);
+    if (!cls || ch.levels[cls] <= 1) {
+      ch.status = 'dead';
+      ch.hp.cur = Math.min(ch.hp.cur, -10);
+      out.died = true;
+      return out;
+    }
+    const lvl = ch.levels[cls] - 1;
+    ch.levels[cls] = lvl;
+    ch.hpRolls[cls]?.pop();
+    ch.xp[cls] = Math.floor((xpForLevel(cls, lvl) + xpForLevel(cls, lvl + 1)) / 2);
+    out.drained.push({ cls, level: lvl });
+  }
+  const oldMax = ch.hp.max;
+  ch.hp.max = computeMaxHp(ch);
+  ch.hp.cur -= Math.max(0, oldMax - ch.hp.max);
+  if (ch.hp.cur <= -10) ch.status = 'dead';
+  else if (ch.hp.cur < 0 && ch.status === 'ok') ch.status = 'dying';
+  else if (ch.hp.cur === 0 && ch.status === 'ok') ch.status = 'unconscious';
+  out.died = ch.status === 'dead';
+  return out;
+}
+
+/**
  * Human dual-classing (PHB): needs 15+ in every prime requisite of the current
  * class and 17+ in those of the new one.
  * @returns {string|null} problem or null when allowed
@@ -741,7 +782,12 @@ export function heal(ch, amount) {
   if (ch.hp.cur > 0 && (ch.status === 'dying' || ch.status === 'unconscious')) {
     ch.status = 'ok';
     removeEffect(ch, 'bandaged');
-  } else if (ch.hp.cur === 0 && ch.status === 'dying') ch.status = 'unconscious';
+  } else if (ch.status === 'dying' && amount > 0) {
+    // DMG ruling: any healing stops the bleeding, even if the total is still
+    // below zero; the character stays unconscious until above 0 hp.
+    ch.status = 'unconscious';
+    if (ch.hp.cur < 0) addEffect(ch, 'bandaged');
+  }
   return ch.hp.cur - before;
 }
 

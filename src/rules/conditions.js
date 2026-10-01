@@ -30,7 +30,7 @@ export const ROUNDS_PER_HOUR = 60;
  *  strSet {str,strPct}, strBonus, strLossPct, moveMult, attackMult,
  *  attackerHit (to-hit mod for creatures attacking this one), images,
  *  immune [..], resist {element: damage multiplier}, saveVsElement {element:n},
- *  vsEvil / vsGood {ac, save}, cha, missChance (% attacks miss outright).
+ *  vsEvil / vsGood {ac, save}, cha, missChance (% attacks miss outright), strDrain (STR points lost).
  */
 export const CONDITIONS = {
   // ---------------------------------------------------------------- statuses
@@ -59,6 +59,8 @@ export const CONDITIONS = {
   slowed: { name: 'Slowed', kind: 'debuff', hostile: true, magical: true, mods: { moveMult: 0.5, attackMult: 0.5 }, desc: 'Half movement and attacks.' },
   enfeebled: { name: 'Enfeebled', kind: 'debuff', hostile: true, magical: true, mods: { strLossPct: 25 }, desc: 'Strength sapped by the ray.' },
   reduced: { name: 'Reduced', kind: 'debuff', hostile: true, magical: true, mods: { dmg: -2 }, desc: 'Shrunk: weaker blows.' },
+  strDrain: { name: 'Strength Drained', kind: 'debuff', hostile: true, desc: 'A shadow\'s chill touch has drained strength (returns in 2d4 turns).' },
+  stench: { name: 'Retching', kind: 'debuff', hostile: true, mods: { hit: -2 }, desc: 'Sickened by a ghast\'s charnel stench: -2 to hit.' },
   charmedSnake: { name: 'Entranced', kind: 'debuff', hostile: true, magical: true, incapacitated: true, desc: 'Swaying, snake-charmed.' },
 
   // --------------------------------------------------------------- spell buffs
@@ -71,6 +73,7 @@ export const CONDITIONS = {
   enlarged: { name: 'Enlarged', kind: 'buff', magical: true, mods: { dmg: 2 }, desc: 'Grown huge: heavier blows.' },
   strength: { name: 'Strength', kind: 'buff', magical: true, desc: 'Magically increased strength.' },
   giantStrength: { name: 'Giant Strength', kind: 'buff', magical: true, desc: 'Strength of a giant.' },
+  heroism: { name: 'Heroism', kind: 'buff', magical: true, mods: { hit: 2, save: 1 }, desc: 'Fights as a more seasoned warrior.' },
   invisible: { name: 'Invisible', kind: 'buff', magical: true, mods: { attackerHit: -4 }, breaksOnAttack: true, desc: 'Unseen: foes -4 to hit; ends on attacking.' },
   mirrorImage: { name: 'Mirror Image', kind: 'buff', magical: true, desc: 'Illusory doubles absorb attacks.' },
   blinking: { name: 'Blink', kind: 'buff', magical: true, mods: { attackerHit: -2, missChance: 50 }, desc: 'Flickers between planes; half of all attacks miss.' },
@@ -174,13 +177,13 @@ export function conditionsAllowCasting(target) {
  * @returns {{hit:number, dmg:number, ac:number, save:number, saveVs:Record<string,number>,
  *   acVsMissile:number|null, acVsMelee:number|null, moveMult:number, attackMult:number,
  *   attackerHit:number, missChance:number, strBonus:number, strSet:{str:number,strPct:number}|null,
- *   strLossPct:number, immune:Set<string>, resist:Record<string,number>, saveVsElement:Record<string,number>,
+ *   strLossPct:number, strDrain:number, immune:Set<string>, resist:Record<string,number>, saveVsElement:Record<string,number>,
  *   vsEvil:{ac:number,save:number}, vsGood:{ac:number,save:number}, cha:number, images:number}}
  */
 export function effectMods(target) {
   const out = {
     hit: 0, dmg: 0, ac: 0, save: 0, saveVs: {}, acVsMissile: null, acVsMelee: null, moveMult: 1, attackMult: 1,
-    attackerHit: 0, missChance: 0, strBonus: 0, strSet: null, strLossPct: 0, immune: new Set(), resist: {},
+    attackerHit: 0, missChance: 0, strBonus: 0, strSet: null, strLossPct: 0, strDrain: 0, immune: new Set(), resist: {},
     saveVsElement: {}, vsEvil: { ac: 0, save: 0 }, vsGood: { ac: 0, save: 0 }, cha: 0, images: 0,
   };
   const ids = new Set();
@@ -204,6 +207,7 @@ export function effectMods(target) {
     out.strBonus += m.strBonus ?? 0;
     if (m.strSet && (!out.strSet || m.strSet.str * 1000 + (m.strSet.strPct ?? 0) > out.strSet.str * 1000 + (out.strSet.strPct ?? 0))) out.strSet = { strPct: 0, ...m.strSet };
     out.strLossPct = Math.max(out.strLossPct, m.strLossPct ?? 0);
+    out.strDrain += m.strDrain ?? 0;
     for (const i of m.immune ?? []) out.immune.add(i);
     for (const [k, v] of Object.entries(m.resist ?? {})) out.resist[k] = Math.min(out.resist[k] ?? 1, v);
     for (const [k, v] of Object.entries(m.saveVsElement ?? {})) out.saveVsElement[k] = Math.max(out.saveVsElement[k] ?? 0, v);
@@ -276,7 +280,7 @@ export function clearEffects(target, pred = () => true) {
 
 /** Strip combat-only effects after a battle (keeps poison, disease, curses, blindness). */
 export function clearCombatEffects(target) {
-  const keep = new Set(['poisoned', 'diseased', 'blinded', 'bestowCurse', 'slowPoison', 'bandaged', 'detectMagic', 'findTraps', 'detectInvisibility', 'friends', 'resistCold', 'resistFire', 'strength', 'giantStrength', 'protEvil', 'protGood', 'invisible']);
+  const keep = new Set(['poisoned', 'diseased', 'blinded', 'bestowCurse', 'slowPoison', 'bandaged', 'detectMagic', 'findTraps', 'detectInvisibility', 'friends', 'resistCold', 'resistFire', 'strength', 'giantStrength', 'protEvil', 'protGood', 'invisible', 'strDrain', 'heroism']);
   return clearEffects(target, (e) => !keep.has(e.id));
 }
 

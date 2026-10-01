@@ -1,60 +1,59 @@
-import { getSpell } from '../../../rules/spells.js';
+import { getSpell, SPELL_RULES } from '../../../rules/spells.js';
+import { battleTargeting } from '../../../rules/battle.js';
 import { splitClasses } from '../../../rules/classes.js';
 import { deriveStats } from '../../../rules/character.js';
 
 /**
- * Tactical definitions for combat spells: how they are targeted and what area
- * they cover. Resolution lives in the engine; visuals in view/vfx.js.
- *   target: 'enemy' | 'ally' | 'self' | 'square' | 'direction'
- *   shape:  'single' | 'radius' | 'square' | 'cone' | 'line' | 'allies' | 'all'
+ * Scene-only hints for combat spells: the VFX family and how the battlefield
+ * template picks its victims (`pick: 'foes'` = chosen enemies only, hold
+ * person / slow; `notCaster` = the caster is never caught by its own blast).
+ * Everything that is a rule — target kind, range, shape, size, max targets —
+ * comes from the rules (battleTargeting over SPELL_RULES), so the cleric's
+ * Hold Person really is range 6 and Fireball 10 + level.
  */
-export const SPELL_TACTICS = {
-  magicMissile: { target: 'enemy', range: 6, shape: 'single', vfx: 'missile', hostile: true },
-  sleep: { target: 'square', range: 6, shape: 'square', size: 3, vfx: 'sleep', hostile: true },
-  burningHands: { target: 'direction', range: 1, shape: 'cone', size: 3, vfx: 'cone', hostile: true },
-  shockingGrasp: { target: 'enemy', range: 1, shape: 'single', vfx: 'shock', hostile: true },
-  charmPerson: { target: 'enemy', range: 12, shape: 'single', vfx: 'charm', hostile: true },
-  enlarge: { target: 'ally', range: 1, shape: 'single', vfx: 'buff' },
-  shield: { target: 'self', range: 0, shape: 'single', vfx: 'ward' },
-  invisibility: { target: 'ally', range: 1, shape: 'single', vfx: 'buff' },
-  mirrorImage: { target: 'self', range: 0, shape: 'single', vfx: 'ward' },
-  stinkingCloud: { target: 'square', range: 3, shape: 'square', size: 2, vfx: 'cloud', hostile: true },
-  fireball: { target: 'square', range: 10, shape: 'radius', size: 2, vfx: 'fireball', hostile: true, notCaster: true },
-  lightningBolt: { target: 'square', range: 8, shape: 'line', size: 8, vfx: 'lightning', hostile: true, notCaster: true },
-  haste: { target: 'self', range: 0, shape: 'allies', vfx: 'buff' },
-  bless: { target: 'self', range: 0, shape: 'allies', vfx: 'bless' },
-  curse: { target: 'square', range: 6, shape: 'square', size: 5, vfx: 'curse', hostile: true },
-  cureLightWounds: { target: 'ally', range: 1, shape: 'single', vfx: 'heal' },
-  causeLightWounds: { target: 'enemy', range: 1, shape: 'single', vfx: 'cause', hostile: true },
-  protectionFromEvil: { target: 'ally', range: 1, shape: 'single', vfx: 'ward' },
-  resistCold: { target: 'ally', range: 1, shape: 'single', vfx: 'buff' },
-  holdPerson: { target: 'square', range: 12, shape: 'radius', size: 1, max: 3, vfx: 'hold', hostile: true, pick: 'foes' },
-  silence15: { target: 'square', range: 12, shape: 'radius', size: 2, vfx: 'curse', hostile: true },
-  dispelMagic: { target: 'square', range: 6, shape: 'radius', size: 1, vfx: 'bless' },
-  prayer: { target: 'self', range: 0, shape: 'all', vfx: 'bless' },
-  // The rest of the Pool of Radiance list (resolved by the rules castSpell).
-  chant: { target: 'self', range: 0, shape: 'all', vfx: 'bless' },
-  spiritualHammer: { target: 'enemy', range: 3, shape: 'single', vfx: 'missile', hostile: true },
-  resistFire: { target: 'ally', range: 1, shape: 'single', vfx: 'buff' },
-  slowPoison: { target: 'ally', range: 1, shape: 'single', vfx: 'heal' },
-  snakeCharm: { target: 'square', range: 3, shape: 'radius', size: 1, vfx: 'charm', hostile: true },
-  cureBlindness: { target: 'ally', range: 1, shape: 'single', vfx: 'heal' },
-  cureDisease: { target: 'ally', range: 1, shape: 'single', vfx: 'heal' },
-  removeCurse: { target: 'ally', range: 1, shape: 'single', vfx: 'bless' },
-  causeBlindness: { target: 'enemy', range: 1, shape: 'single', vfx: 'cause', hostile: true },
-  causeDisease: { target: 'enemy', range: 1, shape: 'single', vfx: 'cause', hostile: true },
-  bestowCurse: { target: 'enemy', range: 1, shape: 'single', vfx: 'curse', hostile: true },
-  protectionFromGood: { target: 'ally', range: 1, shape: 'single', vfx: 'ward' },
-  reduce: { target: 'enemy', range: 1, shape: 'single', vfx: 'curse', hostile: true },
-  detectInvisibility: { target: 'self', range: 0, shape: 'single', vfx: 'buff' },
-  rayOfEnfeeblement: { target: 'enemy', range: 4, shape: 'single', vfx: 'curse', hostile: true },
-  strength: { target: 'ally', range: 1, shape: 'single', vfx: 'buff' },
-  blink: { target: 'self', range: 0, shape: 'single', vfx: 'ward' },
-  invisibility10: { target: 'square', range: 0, shape: 'radius', size: 1, vfx: 'buff' },
-  protEvil10: { target: 'square', range: 0, shape: 'radius', size: 1, vfx: 'ward' },
-  protNormalMissiles: { target: 'ally', range: 1, shape: 'single', vfx: 'ward' },
-  slow: { target: 'square', range: 10, shape: 'radius', size: 2, vfx: 'hold', hostile: true, pick: 'foes' },
+export const SPELL_HINTS = {
+  magicMissile: { vfx: 'missile' }, sleep: { vfx: 'sleep' }, burningHands: { vfx: 'cone' },
+  shockingGrasp: { vfx: 'shock' }, charmPerson: { vfx: 'charm' }, enlarge: { vfx: 'buff' }, shield: { vfx: 'ward' },
+  invisibility: { vfx: 'buff' }, mirrorImage: { vfx: 'ward' }, stinkingCloud: { vfx: 'cloud' },
+  fireball: { vfx: 'fireball', notCaster: true }, lightningBolt: { vfx: 'lightning', notCaster: true },
+  haste: { vfx: 'buff' }, bless: { vfx: 'bless' }, curse: { vfx: 'curse' }, cureLightWounds: { vfx: 'heal' },
+  causeLightWounds: { vfx: 'cause' }, protectionFromEvil: { vfx: 'ward' }, resistCold: { vfx: 'buff' },
+  holdPerson: { vfx: 'hold', pick: 'foes' }, silence15: { vfx: 'curse' }, dispelMagic: { vfx: 'bless' },
+  prayer: { vfx: 'bless' }, chant: { vfx: 'bless' }, spiritualHammer: { vfx: 'missile' }, resistFire: { vfx: 'buff' },
+  slowPoison: { vfx: 'heal' }, snakeCharm: { vfx: 'charm' }, cureBlindness: { vfx: 'heal' }, cureDisease: { vfx: 'heal' },
+  removeCurse: { vfx: 'bless' }, causeBlindness: { vfx: 'cause' }, causeDisease: { vfx: 'cause' },
+  bestowCurse: { vfx: 'curse' }, protectionFromGood: { vfx: 'ward' }, reduce: { vfx: 'curse' },
+  detectInvisibility: { vfx: 'buff' }, rayOfEnfeeblement: { vfx: 'curse' }, strength: { vfx: 'buff' },
+  blink: { vfx: 'ward' }, invisibility10: { vfx: 'buff' }, protEvil10: { vfx: 'ward' }, protGood10: { vfx: 'ward' },
+  protNormalMissiles: { vfx: 'ward' }, slow: { vfx: 'hold', pick: 'foes' },
+  cureSeriousWounds: { vfx: 'heal' }, cureCriticalWounds: { vfx: 'heal' }, neutralizePoison: { vfx: 'heal' },
 };
+
+/**
+ * Tactical definition of a spell for a caster (rules targeting at the
+ * caster's level and class + scene hints):
+ *   target: 'enemy' | 'ally' | 'self' | 'square' | 'direction'
+ *   shape:  'single' | 'radius' | 'square' | 'cone' | 'line' | 'all'
+ *   range, size, maxTargets, hostile, affects, level, school, vfx, pick?, notCaster?
+ * @param {{level?:number}} [o] item casts override the level
+ */
+export function spellTactics(id, caster = null, o = {}) {
+  const r = battleTargeting(id, caster ?? {}, o);
+  if (!r) return undefined;
+  return { ...r, vfx: 'buff', ...(SPELL_HINTS[id] ?? {}) };
+}
+
+/**
+ * Back-compat view: SPELL_TACTICS[id] is spellTactics(id) for a 1st-level
+ * caster of the spell's first class. Prefer engine.tactics(c, id), which
+ * knows the caster's real level and class.
+ */
+export const SPELL_TACTICS = new Proxy({}, {
+  get: (_, id) => (typeof id === 'string' && SPELL_RULES[id] ? spellTactics(id) : undefined),
+  has: (_, id) => typeof id === 'string' && !!SPELL_RULES[id],
+  ownKeys: () => Object.keys(SPELL_RULES),
+  getOwnPropertyDescriptor: (_, id) => (SPELL_RULES[id] ? { value: spellTactics(id), enumerable: true, configurable: true } : undefined),
+});
 
 /** Default spells a caster has "prepared at dawn" when the camp screen never set any. */
 const DEFAULT_PREP = {
