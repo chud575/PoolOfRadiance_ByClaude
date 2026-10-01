@@ -301,7 +301,8 @@ export function buildBlock(map, opts = {}) {
         const wallDir = sd.N.x > 0.5 ? 'W' : sd.N.x < -0.5 ? 'E' : sd.N.z > 0.5 ? 'N' : 'S';
         if (hearths.some((h) => h.x === sd.cx && h.y === sd.cy && h.dir === wallDir)) buildHearth(face);
       }
-      if (!interiorFace && !isDoor && !isArch && ts.outdoors) {
+      if (!isDoor && !isArch && ts.outdoors && (!interiorFace || hearthEdge || !face.openings.some((o) => o.border))) {
+        // outside: street clutter; inside a roofed house on a city block: furniture
         spots.wallBase.push({ face, cell: face.cell, style: e.style, recipe });
       }
       if (indoor && !isDoor && !isArch) spots.wallBase.push({ face, cell: face.cell, style: e.style, recipe });
@@ -1057,7 +1058,46 @@ export function buildBlock(map, opts = {}) {
     // chimney breast with firebox opening
     localBox(f, 'arch_trim', -1.05, -0.62, 0, 1.2, d, d + depth, { chamfer: 0.03, tint: [0.78, 0.74, 0.7] });
     localBox(f, 'arch_trim', 0.62, 1.05, 0, 1.2, d, d + depth, { chamfer: 0.03, tint: [0.78, 0.74, 0.7] });
-    localBox(f, 'arch_trim', -0.95, 0.95, 1.2, H, d, d + depth - 0.08, { tint: [0.72, 0.68, 0.64] });
+    // hood: a canted stone smoke-hood above the mantel narrowing into the chimney breast
+    {
+      const P = (sv, y, dd) => new THREE.Vector3(sv, y, dd).applyMatrix4(f.basis);
+      const yb = 1.42;
+      const yt = 2.45;
+      const wb = 1.2;
+      const wt = 0.82;
+      const db = d + depth + 0.06;
+      const dt = d + depth - 0.12;
+      const hk = 'arch_dressed';
+      const tint = [0.86, 0.82, 0.76];
+      g.quad(hk, P(-wb, yb, db), P(wb, yb, db), P(wt, yt, dt), P(-wt, yt, dt), null, { tint, ao: (p) => 0.75 + 0.25 * THREE.MathUtils.smoothstep(p.y, yb, yt) });
+      g.quad(hk, P(-wb, yb, d), P(-wb, yb, db), P(-wt, yt, dt), P(-wt, yt, d), null, { tint, ao: 0.8 });
+      g.quad(hk, P(wb, yb, db), P(wb, yb, d), P(wt, yt, d), P(wt, yt, dt), null, { tint, ao: 0.8 });
+      g.quad(hk, P(-wb, yb, d), P(wb, yb, d), P(wb, yb, db), P(-wb, yb, db), null, { tint, ao: 0.5 });
+      localBox(f, 'arch_dressed', -wt, wt, yt, H, d, dt, { tint: [0.8, 0.76, 0.7] });
+      // a moulded string course where hood meets breast
+      localBox(f, 'arch_dressed', -wt - 0.06, wt + 0.06, yt, yt + 0.1, d, dt + 0.06, { chamfer: 0.02, tint: [0.9, 0.86, 0.8] });
+      // stone corbels under the mantel ends
+      for (const sx of [-1.08, 1.08]) localBox(f, 'arch_dressed', sx - 0.1, sx + 0.1, 0.95, 1.2, d, d + depth + 0.08, { chamfer: 0.025, tint: [0.84, 0.8, 0.75] });
+      // things on the mantel: candlesticks, a pewter plate, two jars
+      const top = 1.42;
+      for (const sx of [-0.95, 0.95]) {
+        const cs = new THREE.CylinderGeometry(0.03, 0.05, 0.2, 8);
+        g.geometry('arch_iron', cs, localMatrix(f, sx, top + 0.1, d + depth - 0.02), { uv: 'world' });
+        cs.dispose();
+        const cn = new THREE.CylinderGeometry(0.02, 0.022, 0.12, 8);
+        g.geometry('arch_trim', cn, localMatrix(f, sx, top + 0.26, d + depth - 0.02), { uv: 'world', tint: [1.1, 1.05, 0.95] });
+        cn.dispose();
+      }
+      const plate = new THREE.CylinderGeometry(0.17, 0.17, 0.02, 16);
+      plate.rotateX(Math.PI / 2 - 0.25);
+      g.geometry('arch_iron', plate, localMatrix(f, 0, top + 0.17, d + depth - 0.06), { uv: 'world' });
+      plate.dispose();
+      for (const sx of [-0.5, 0.45]) {
+        const jar = new THREE.LatheGeometry([[0, 0], [0.06, 0], [0.08, 0.06], [0.07, 0.15], [0.045, 0.18], [0.05, 0.2], [0, 0.2]].map(([r, y]) => new THREE.Vector2(r, y)), 10);
+        g.geometry('arch_brick', jar, localMatrix(f, sx, top, d + depth), { uv: 'world', tint: [0.95, 0.75, 0.55] });
+        jar.dispose();
+      }
+    }
     localBox(f, 'arch_brick', -0.62, 0.62, 0.09, 1.2, d, d + 0.06, { tint: [0.35, 0.3, 0.28] });
     localBox(f, 'arch_brick', -0.62, 0.62, 1.05, 1.2, d, d + depth - 0.02, { tint: [0.3, 0.26, 0.24] });
     // mantel
@@ -1085,12 +1125,18 @@ export function buildBlock(map, opts = {}) {
       group.add(em);
       // soot plume up the chimney breast above the firebox
       const smat = new THREE.MeshStandardMaterial({ color: 0x050403, alphaMap: getSootTexture(), transparent: true, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2 });
-      const sgeo = new THREE.PlaneGeometry(1.5, 2.2);
+      // soot darkening the hood's face (canted) and fading up the breast
+      const tilt = Math.atan2(0.18, 1.03);
+      const sgeo = new THREE.PlaneGeometry(2.0, 1.05);
       const sm = new THREE.Mesh(sgeo, smat);
-      sm.applyMatrix4(localMatrix(f, 0, 1.42 + 1.1 - 0.15, d + depth - 0.08 + 0.004, 0));
+      sm.applyMatrix4(localMatrix(f, 0, (1.42 + 2.45) / 2, d + depth - 0.03 + 0.008, 0).multiply(new THREE.Matrix4().makeRotationX(-tilt)));
       sm.userData.ownMaterial = true;
       sm.renderOrder = 3;
       group.add(sm);
+      const sb2 = new THREE.Mesh(new THREE.PlaneGeometry(1.5, Math.max(0.3, H - 2.55)), smat);
+      sb2.applyMatrix4(localMatrix(f, 0, 2.55 + Math.max(0.3, H - 2.55) / 2, d + depth - 0.12 + 0.006, 0));
+      sb2.renderOrder = 3;
+      group.add(sb2);
       const sm2 = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 1.1), smat);
       sm2.applyMatrix4(localMatrix(f, 0, 0.75, d + 0.064, 0));
       sm2.renderOrder = 3;
@@ -1453,12 +1499,28 @@ export function buildBlock(map, opts = {}) {
       const f3 = e0.clone().add(lift);
       if (sb > 0) g.quad('arch_beam_dark', f0, f1, f2, f3, null, { ao: 0.7 });
       else g.quad('arch_beam_dark', f1, f0, f3, f2, null, { ao: 0.7 });
+      // eave course: a row of tile ends overhanging the fascia (reads as tiles, not a slab)
+      for (let a = aLo + 0.12; a < aHi - 0.1; a += 0.26) {
+        const ctr = P(a, eaveY + th + 0.01, eaveB + sb * 0.03);
+        const m = new THREE.Matrix4().compose(ctr, new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), A), new THREE.Vector3(1, 1, 1));
+        m.multiply(new THREE.Matrix4().makeRotationX(-sb * pitch));
+        g.box(rk, { matrix: m, s: [0.24, 0.05 + hash(c.id, a, sb, 'et') * 0.02, 0.32], ao: 0.85 });
+      }
       // barge boards along the gable edges
       for (const sa of [-1, 1]) {
         if (gut && sa !== frontSign) continue;
         const a0 = P(sa * (L + 0.02), He + rise + th / 2, 0);
         const a1 = P(sa * (L + 0.02), eaveY + th / 2, eaveB);
         alongBox('arch_beam_dark', a0, a1, A, [0.08, 0.3], { uv: 'along', ao: 0.8 });
+        // verge: the tile courses show their ends along the gable edge, each course lapping the next
+        const n = Math.max(3, Math.round(a0.distanceTo(a1) / 0.3));
+        for (let k = 0; k < n; k++) {
+          const t0 = k / n;
+          const t1 = (k + 1.15) / n;
+          const v0 = a0.clone().lerp(a1, t0).add(new THREE.Vector3(0, th * 0.55 + (k % 2) * 0.01, 0)).addScaledVector(A, sa * 0.03);
+          const v1 = a0.clone().lerp(a1, Math.min(1, t1)).add(new THREE.Vector3(0, th * 0.55, 0)).addScaledVector(A, sa * 0.03);
+          alongBox(rk, v0, v1, A, [0.14 + hash(c.id, sb, sa, k, 'vt') * 0.03, 0.06], { ao: 0.85 });
+        }
       }
       // rafter tails under the eave
       for (let a = -spanA + 0.2; a < spanA; a += 0.6) {

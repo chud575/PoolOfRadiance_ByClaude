@@ -34,17 +34,17 @@ const DEFS = {
   arch_dressed: { tex: 'hd2_dressed', texScale: 1.5, vc: true, color: 0xe6ded2, fx: { macro: 0.2, grime: 0.45, moss: 0.4 } },
   arch_ruin: { tex: 'hd2_ruin', texScale: 3, vc: true, fx: { macro: 0.35, grime: 0.7, moss: 0.9 } },
   arch_plaster: { tex: 'hd2_plaster', texScale: 3, vc: true, fx: { macro: 0.22, grime: 0.75, moss: 0.15 } },
-  arch_plaster_int: { tex: 'hd_plaster_int', texScale: 3, vc: true, fx: { macro: 0.25, grime: 0.55 } },
+  arch_plaster_int: { tex: 'hd2_plaster_int', texScale: 3, vc: true, fx: { macro: 0.25, grime: 0.55 } },
   arch_beam: { tex: 'hd_beam', texScale: 1.2, vc: true, fx: { macro: 0.18, grime: 0.2, moss: 0.2 } },
   arch_beam_dark: { tex: 'hd_beam_dark', texScale: 1.2, vc: true, fx: { macro: 0.12 } },
   arch_roof_slate: { tex: 'hd_roof_slate', texScale: 2, vc: true, fx: { macro: 0.3, moss: 0.25 } },
   arch_roof_clay: { tex: 'hd_roof_clay', texScale: 2, vc: true, fx: { macro: 0.3, moss: 0.2 } },
   arch_roof_shake: { tex: 'hd_roof_shake', texScale: 2, vc: true, fx: { macro: 0.3, moss: 0.3 } },
   arch_cobble: { tex: 'hd_cobble', texScale: 2, vc: true, fx: { macro: 0.4, floor: 1 } },
-  arch_flags: { tex: 'hd_flags', texScale: 3, vc: true, fx: { macro: 0.3, floor: 1 } },
+  arch_flags: { tex: 'hd2_flags', texScale: 3, vc: true, fx: { macro: 0.36, floor: 1 } },
   arch_mud: { tex: 'hd_mud', texScale: 3, vc: true, fx: { macro: 0.3, floor: 1 } },
   arch_boards: { tex: 'hd_boards', texScale: 2, vc: true, fx: { macro: 0.15, floor: 1 } },
-  arch_ceiling: { tex: 'hd_ceiling', texScale: 3, vc: true, color: 0xcccccc, fx: { macro: 0.1 } },
+  arch_ceiling: { tex: 'hd2_ceiling', texScale: 3, vc: true, color: 0xffffff, fx: { macro: 0.1 } },
   arch_dungeon: { tex: 'hd2_dungeon', texScale: 3, vc: true, fx: { macro: 0.3, grime: 0.6, moss: 0.4 } },
   arch_dungeon_floor: { tex: 'hd_dungeon_floor', texScale: 3, vc: true, fx: { macro: 0.3, floor: 1 } },
   arch_hewn: { tex: 'hd2_hewn', texScale: 3, vc: true, fx: { macro: 0.35, grime: 0.5, moss: 0.5 } },
@@ -67,6 +67,8 @@ const DEFS = {
   prop_rock: { tex: 'hd_rock', vc: true, fx: { macro: 0.35, moss: 0.4, dust: 1 } },
   prop_wood: { tex: 'hd_beam', fx: { macro: 0.2 } },
   prop_stone: { tex: 'hd2_ashlar', fx: { macro: 0.25, moss: 0.5 } },
+  prop_skin: { color: 0xc48a68, roughness: 0.62, vc: true, fx: {} },
+  prop_cloth: { tex: 'hd_burlap', color: 0xffffff, vc: true, fx: { macro: 0.15 } },
   prop_bone: { tex: 'hd_limestone', color: 0xf2e6cc, fx: { dust: 0.5 } },
   prop_limestone: { tex: 'hd_limestone', texScale: 1.5, vc: true, fx: { macro: 0.3, grime: 0.8, moss: 0.8, dust: 0.6 } },
 };
@@ -336,10 +338,10 @@ export function setWindowGlow(night, flicker = 1) {
   const ext = getWindowMaterial('ext');
   const int = getWindowMaterial('int');
   ext.emissiveIntensity = (0.015 + night * 2.6) * flicker;
-  ext.color.setHex(night > 0.5 ? 0x101418 : 0x1a232c);
+  ext.color.setHex(night > 0.5 ? 0x101418 : 0x8c96a2);
   // from inside by day, windows glow with daylight
   int.emissive.setHex(night > 0.5 ? 0x223355 : 0xdde8ff);
-  int.emissiveIntensity = night > 0.5 ? 0.25 : 0.95;
+  int.emissiveIntensity = night > 0.5 ? 0.25 : 0.62;
   const lamp = getLampGlassMaterial();
   lamp.emissiveIntensity = (0.2 + night * 4) * flicker;
 }

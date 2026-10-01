@@ -4,7 +4,7 @@ import { getMap, hasMap } from '../../data/maps/index.js';
 import { DIRS, DIR_YAW, DIR_VEC, EDGE, EDGE_NAMES, turnLeft, turnRight, OPPOSITE } from '../../data/maps/MapGrid.js';
 import { createSkyDome, createFlameBatch, createGlowBatch, timeOfDayKeys, setSurfaceAtmosphere, FLAME_UNIFORMS, flicker } from '../../render/lighting.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { preloadMaterials, setWindowGlow, getLampGlassMaterial, getWindowMaterial, getMaterial } from '../../render/materials.js';
+import { preloadMaterials, setWindowGlow, getLampGlassMaterial, getWindowMaterial, getMaterial, SURFACE_UNIFORMS } from '../../render/materials.js';
 import { preloadTextureSets } from '../../render/textures/index.js';
 import { createStandardHud } from '../../ui/StandardHud.js';
 import { buildBlock, disposeBlock, cellCenter, EYE_H, CELL_SIZE } from './BlockBuilder.js';
@@ -13,6 +13,7 @@ import { buildSkyline } from './Skyline.js';
 import { createParticles } from './Particles.js';
 import { buildSunShafts } from './Atmosphere.js';
 import { dressDungeon, BANE_FLAME, BANE_LIGHT } from './DungeonDressing.js';
+import { dressRooms } from './RoomDressing.js';
 import { tilesetFor, tilesetMaterials } from './tilesets.js';
 import { hasDemoMap, getDemoMap } from './demoMaps.js';
 import { deriveStats } from '../../rules/character.js';
@@ -124,6 +125,10 @@ export default class ExploreScene extends Scene {
       const bounce = night ? new THREE.Color(k.ground).multiplyScalar(1.2) : new THREE.Color(k.ground).lerp(new THREE.Color(0x9a8064), 0.75).lerp(new THREE.Color(k.sun), 0.15);
       this.hemi = new THREE.HemisphereLight(skyFill, bounce, k.hemi * (night ? 3.2 : 2.0));
       s.add(this.hemi);
+      // under a roof on a city block the ambient turns warm and dim (lamplit plaster, not open sky)
+      this._hemiOut = { sky: skyFill.clone(), ground: bounce.clone(), i: this.hemi.intensity };
+      this._hemiIn = { sky: new THREE.Color(night ? 0x8a6a4a : 0xc8b49a), ground: new THREE.Color(0x3a2818), i: night ? 1.4 : 2.2 };
+      this._roofMix = 0;
       const sunCol = night ? new THREE.Color(0x9db4ff) : new THREE.Color(k.sun).lerp(new THREE.Color(0xffd6a0), 0.3);
       this.sun = new THREE.DirectionalLight(sunCol, night ? 1.15 : k.sunI * 1.85);
       this.sunDir = (night ? k.moonDir : k.trueSunDir).clone();
@@ -163,7 +168,7 @@ export default class ExploreScene extends Scene {
       // raised ambient floor so silhouettes always read, even far from a torch; underground it is a
       // cool counter-light (cold air, wet stone) against the warm torches — the warrens greener,
       // Bane's temple a dead grey-green over a blood-red floor bounce
-      const amb = { warrens: [0x4a7a76, 0x1e160c, 4.5], bane: [0x3c4a46, 0x300a08, 4.2] }[ts.variant] ?? (dungeon ? [0x4a6a90, 0x1c150e, 1.8] : [0xffd8b0, 0x3a2414, 1.5]);
+      const amb = { warrens: [0x4a7a76, 0x1e160c, 4.5], bane: [0x3c4a46, 0x300a08, 4.2] }[ts.variant] ?? (dungeon ? [0x4a6a90, 0x1c150e, 1.8] : [0xeedcc8, 0x3a2a1c, 1.45]);
       this.hemi = new THREE.HemisphereLight(amb[0], amb[1], amb[2]);
       s.add(this.hemi);
       if (dungeon) {
@@ -355,8 +360,10 @@ export default class ExploreScene extends Scene {
     this.scene3d.add(this.props.group);
     this.dressing = this.tileset.variant ? dressDungeon(this.map, this.block) : null;
     if (this.dressing) this.scene3d.add(this.dressing.group);
-    // light sources: sconces + lamps + candles (+ themed braziers)
-    this.sources = [...this.block.torches, ...this.props.lamps, ...(this.dressing?.lamps ?? [])];
+    this.rooms = this.tileset.id !== 'dungeon' ? dressRooms(this.map) : null;
+    if (this.rooms) this.scene3d.add(this.rooms.group);
+    // light sources: sconces + lamps + candles (+ themed braziers, tavern candles)
+    this.sources = [...this.block.torches, ...this.props.lamps, ...(this.dressing?.lamps ?? []), ...(this.rooms?.lamps ?? [])];
     if (this.tileset.variant === 'bane') {
       // the Black Hand's sconces burn with a sickly green fire (the party's lantern stays warm)
       for (const src of this.block.torches) {
@@ -437,6 +444,8 @@ export default class ExploreScene extends Scene {
     this.props?.dispose();
     this.dressing?.dispose();
     this.dressing = null;
+    this.rooms?.dispose();
+    this.rooms = null;
     if (this.sourceVis) {
       this.glowBatch?.userData.dispose();
       this.glowBatch = null;
@@ -478,11 +487,11 @@ export default class ExploreScene extends Scene {
       l.position.copy(src.pos).addScaledVector(src.N ?? new THREE.Vector3(), 0.25);
       const candle = src.kind === 'candle';
       const hearth = src.kind === 'hearth';
-      l.color.setHex(src.lightColor ?? (hearth ? 0xff7a30 : candle ? 0xffb060 : src.kind === 'lamp' ? 0xffb56a : 0xff9040));
+      l.color.setHex(src.lightColor ?? (hearth ? 0xff8f50 : candle ? 0xffb060 : src.kind === 'lamp' ? 0xffb56a : 0xff9040));
       // inverse-square pools (~3 m effective reach); a torch by day barely registers against the sun
       const day = this.tileset.outdoors && this.night < 0.12;
       const under = this.tileset.id === 'dungeon';
-      l.userData.base = (hearth ? 26 : candle ? 1.6 : src.kind === 'brazier' ? 9 : src.kind === 'lamp' ? 6 : src.lightColor ? 6 : under ? 11 : 7) * (day ? 0.28 : 1);
+      l.userData.base = (hearth ? 20 : candle ? 1.6 : src.kind === 'brazier' ? 9 : src.kind === 'lamp' ? 6 : src.lightColor ? 6 : under ? 11 : 7) * (day ? 0.28 : 1);
       l.distance = hearth ? 12 : candle ? 4 : src.kind === 'brazier' ? 11 : 8;
     }
     for (const l of free) {
@@ -795,8 +804,35 @@ export default class ExploreScene extends Scene {
     }
   }
 
+  /** Blend the outdoor ambient toward a warm interior fill while the party stands under a roof. */
+  _updateRoofLight(dt, frozen) {
+    if (!this._hemiOut || !this.block?.covered) return;
+    const c = this.camera.position;
+    const cx = Math.floor(c.x / CELL_SIZE);
+    const cy = Math.floor(c.z / CELL_SIZE);
+    const target = this.block.covered(cx, cy) ? 1 : 0;
+    const next = frozen ? target : this._roofMix + (target - this._roofMix) * Math.min(1, dt * 3);
+    if (Math.abs(next - this._roofMix) < 1e-4 && this._roofApplied) return;
+    this._roofMix = next;
+    this._roofApplied = true;
+    const a = this._hemiOut;
+    const b = this._hemiIn;
+    this.hemi.color.copy(a.sky).lerp(b.sky, next);
+    this.hemi.groundColor.copy(a.ground).lerp(b.ground, next);
+    this.hemi.intensity = a.i + (b.i - a.i) * next;
+    this._roofExposure = 1 + 0.18 * next;
+    // no street haze indoors
+    if (this.scene3d.fog) {
+      this._fogBase ??= this.scene3d.fog.density;
+      this.scene3d.fog.density = this._fogBase * (1 - 0.85 * next);
+    }
+    this._hfBase ??= SURFACE_UNIFORMS.uFxHeightFog.value;
+    SURFACE_UNIFORMS.uFxHeightFog.value = this._hfBase * (1 - next);
+  }
+
   _animateWorld(time, dt, frozen) {
     FLAME_UNIFORMS.uTime.value = time;
+    this._updateRoofLight(dt, frozen);
     // eye adaptation: looking into the sun means looking at shaded faces — open up a little
     if (this.tileset.outdoors && this.keys.night < 0.5 && this.sunDir) {
       const yaw = this.camera.rotation.y;
@@ -805,7 +841,7 @@ export default class ExploreScene extends Scene {
       const sl = Math.hypot(this.sunDir.x, this.sunDir.z) || 1;
       const into = Math.max(0, (fx * this.sunDir.x + fz * this.sunDir.z) / sl);
       // a high sun: looking toward it means shaded faces, so open up; a low sun is in frame, so stop down
-      const target = this._baseExposure * (1 + (this.sunDir.y > 0.4 ? 0.24 : -0.14) * into);
+      const target = this._baseExposure * (1 + (this.sunDir.y > 0.4 ? 0.24 : -0.14) * into * (1 - this._roofMix)) * (this._roofExposure ?? 1);
       const cur = this.post.exposure;
       const next = frozen ? target : cur + (target - cur) * Math.min(1, dt * 2.5);
       if (Math.abs(next - cur) > 0.0005) {

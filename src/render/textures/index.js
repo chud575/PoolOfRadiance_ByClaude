@@ -208,12 +208,36 @@ export function getWindowTexture(variant = 'lit') {
       grd.addColorStop(1, '#5a2a10');
       g.fillStyle = grd;
     } else {
+      // daylight glazing: the sky and the roofs opposite reflected in the upper panes,
+      // a dim room with a curtain edge seen through the lower ones
       const grd = g.createLinearGradient(0, 0, 0, h);
-      grd.addColorStop(0, '#3a4a5c');
-      grd.addColorStop(1, '#0c0f14');
+      grd.addColorStop(0, '#9aaec4');
+      grd.addColorStop(0.35, '#5d7086');
+      grd.addColorStop(0.5, '#262c33');
+      grd.addColorStop(1, '#121417');
       g.fillStyle = grd;
     }
     g.fillRect(0, 0, w, h);
+    if (variant !== 'lit') {
+      // reflected rooftops opposite
+      g.fillStyle = 'rgba(30,34,40,0.85)';
+      g.beginPath();
+      g.moveTo(0, h * 0.42);
+      for (let x = 0; x <= w; x += 8) g.lineTo(x, h * (0.3 + 0.08 * Math.abs(Math.sin(x * 0.07 + 1.3)) + (x % 32 < 8 ? -0.04 : 0)));
+      g.lineTo(w, h * 0.42);
+      g.closePath();
+      g.fill();
+      // a soft diagonal sheen across the glass
+      const sh = g.createLinearGradient(0, 0, w, h * 0.6);
+      sh.addColorStop(0.25, 'rgba(255,255,255,0)');
+      sh.addColorStop(0.38, 'rgba(255,255,255,0.18)');
+      sh.addColorStop(0.5, 'rgba(255,255,255,0)');
+      g.fillStyle = sh;
+      g.fillRect(0, 0, w, h);
+      // warm hint of the room within
+      g.fillStyle = 'rgba(90,60,35,0.35)';
+      g.fillRect(w * 0.2, h * 0.62, w * 0.6, h * 0.3);
+    }
     // interior silhouettes (curtain edges, a beam)
     g.fillStyle = variant === 'lit' ? 'rgba(60,20,5,0.55)' : 'rgba(0,0,0,0.5)';
     g.fillRect(0, 0, w * 0.18, h);
@@ -1018,5 +1042,33 @@ export function getScorchTexture() {
     fade.addColorStop(1, 'rgba(0,0,0,1)');
     g.fillStyle = fade;
     g.fillRect(0, 0, w, h);
+  }, { srgb: false });
+}
+
+/** Blotchy ground stain (alpha in luminance): soft irregular patch with drip-like lobes. */
+export function getStainTexture(variant = 0) {
+  return canvasTex(`stain_${variant}`, 256, 256, (g, w, h) => {
+    const r = rng(907 + variant * 13);
+    g.fillStyle = '#000';
+    g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 70; i++) {
+      const a = r() * Math.PI * 2;
+      const d = Math.pow(r(), 0.7) * w * 0.32;
+      const x = w / 2 + Math.cos(a) * d;
+      const y = h / 2 + Math.sin(a) * d * 0.8;
+      const rad = w * (0.05 + r() * 0.13) * (1 - d / (w * 0.45));
+      const gr = g.createRadialGradient(x, y, 0, x, y, Math.max(2, rad));
+      gr.addColorStop(0, `rgba(255,255,255,${0.12 + r() * 0.16})`);
+      gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gr;
+      g.fillRect(0, 0, w, h);
+    }
+    // fine speckle so the edge breaks up
+    for (let i = 0; i < 900; i++) {
+      g.fillStyle = `rgba(255,255,255,${r() * 0.12})`;
+      const a = r() * Math.PI * 2;
+      const d = r() * w * 0.45;
+      g.fillRect(w / 2 + Math.cos(a) * d, h / 2 + Math.sin(a) * d, 1 + r() * 2, 1 + r() * 2);
+    }
   }, { srgb: false });
 }

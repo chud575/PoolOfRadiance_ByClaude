@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { CELL, EDGE } from '../../data/maps/MapGrid.js';
 import { getMaterial, getLampGlassMaterial, SURFACE_UNIFORMS } from '../../render/materials.js';
-import { getBannerTexture, getGrassTexture, getIvyClusterTexture, getCobwebTexture, getPuddleTexture, getSoftTexture, getRugTexture, getTapestryTexture, getNoticeTexture, getBlobTexture } from '../../render/textures/index.js';
+import { getStainTexture, getBannerTexture, getGrassTexture, getIvyClusterTexture, getCobwebTexture, getPuddleTexture, getSoftTexture, getRugTexture, getTapestryTexture, getNoticeTexture, getBlobTexture } from '../../render/textures/index.js';
 import { GeoBuilder, hash } from './GeoBuilder.js';
 import { puddleChance } from './exploreRules.js';
+import { isTavernZone } from './RoomDressing.js';
 import { CELL_SIZE, WALL_T } from './BlockBuilder.js';
 
 const S = CELL_SIZE;
@@ -33,6 +34,7 @@ export function buildProps(map, block, opts = {}) {
   const ivyCards = [];
   const webCards = [];
   const puddles = [];
+  const stains = [];
   const pools = [];
   const banners = [[], [], [], []];
   const rugs = [];
@@ -109,7 +111,10 @@ export function buildProps(map, block, opts = {}) {
     const interior = ts.id === 'interior' || (f.interior && ts.outdoors);
     // no clutter where a ground window's sill is (keep them readable) — windows start at 1.05m so fine
     if (interior && !dungeon) {
-      if (r < 0.2) {
+      const tavern = isTavernZone(map, cell.x, cell.y);
+      if (tavern) {
+        // the common room is furnished as a whole by RoomDressing
+      } else if (r < 0.2) {
         // table with a candle & tankards
         const m = place(f, sPos * 0.6, T / 2 + 0.75, 0);
         table(g, m, seed);
@@ -277,6 +282,31 @@ export function buildProps(map, block, opts = {}) {
         const px = cx + (hash(fc.x, fc.y, k, 'x') - 0.5) * 2.4;
         const pz = cz + (hash(fc.x, fc.y, k, 'z') - 0.5) * 2.4;
         for (let q = 0; q < 3; q++) grassCards.push({ p: new THREE.Vector3(px + (hash(fc.x, fc.y, k, q, 'qx') - 0.5) * 0.25, 0, pz + (hash(fc.x, fc.y, k, q, 'qz') - 0.5) * 0.25), scale: (0.08 + hash(fc.x, fc.y, k, q) * 0.1), rot: k + q });
+      }
+    }
+    if (ts.outdoors && !fc.covered && (fc.cell === CELL.STREET || fc.cell === CELL.COURTYARD)) {
+      // grime: soot, spilt ale, mud tracked in from the alleys — breaks up the paving's repeat
+      const n = 1 + Math.floor(hash(fc.x, fc.y, 'stn') * 2.4);
+      for (let k = 0; k < n; k++) {
+        stains.push({ x: cx + (hash(fc.x, fc.y, k, 'sx') - 0.5) * 2.6, z: cz + (hash(fc.x, fc.y, k, 'sz') - 0.5) * 2.6, s: 0.9 + hash(fc.x, fc.y, k, 'ss') * 1.8, r: hash(fc.x, fc.y, k, 'sr') * 6.3, a: 0.22 + hash(fc.x, fc.y, k, 'sa') * 0.3, v: k % 2 });
+      }
+      // litter: pebbles, straw, the odd broken sherd, gathered toward the walls
+      const nl = Math.floor(hash(fc.x, fc.y, 'lit') * 7);
+      for (let k = 0; k < nl; k++) {
+        const px = cx + (hash(fc.x, fc.y, k, 'lx') - 0.5) * 2.8;
+        const pz = cz + (hash(fc.x, fc.y, k, 'lz') - 0.5) * 2.8;
+        const kind = hash(fc.x, fc.y, k, 'lk');
+        const m = new THREE.Matrix4().makeTranslation(px, 0.01, pz).multiply(new THREE.Matrix4().makeRotationY(hash(fc.x, fc.y, k, 'lr') * 6.3));
+        if (kind < 0.5) {
+          const sc = 0.05 + hash(fc.x, fc.y, k, 'ls') * 0.07;
+          g.geometry('prop_rock', geos.rock[k % geos.rock.length], m.clone().multiply(new THREE.Matrix4().makeTranslation(0, sc * 0.15, 0)).multiply(new THREE.Matrix4().makeScale(sc, sc * 0.6, sc)), { uv: 'world', tint: [0.8, 0.78, 0.74], ao: 0.8 });
+        } else if (kind < 0.85) {
+          for (let q = 0; q < 3; q++) g.box('prop_burlap', { matrix: m.clone().multiply(new THREE.Matrix4().makeRotationY(q * 0.7)).multiply(new THREE.Matrix4().makeTranslation(q * 0.03, 0.005, 0)), s: [0.18 + q * 0.05, 0.008, 0.012], tint: [1.2, 1.05, 0.6] });
+        } else {
+          const shard = new THREE.CylinderGeometry(0.08, 0.07, 0.06, 6, 1, true, 0, 1.2);
+          g.geometry('arch_brick', shard, m.clone().multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2)), { uv: 'world', tint: [0.8, 0.62, 0.5] });
+          shard.dispose();
+        }
       }
     }
     if (ts.id === 'interior' && hash(fc.x, fc.y, 'rug') < 0.2 && !fc.edge) {
@@ -549,6 +579,34 @@ export function buildProps(map, block, opts = {}) {
     group.add(mesh);
     own.push(geo, mat);
   }
+  // ground stains (two blot variants, multiplied darkening via alpha)
+  for (const v of [0, 1]) {
+    const list = stains.filter((st) => st.v === v);
+    if (!list.length) continue;
+    const mat = new THREE.MeshBasicMaterial({ color: 0x1a140e, alphaMap: getStainTexture(v), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, vertexColors: true, side: THREE.DoubleSide });
+    const pos = [];
+    const uv = [];
+    const col = [];
+    for (const st of list) {
+      const c = Math.cos(st.r) * st.s * 0.5;
+      const sn = Math.sin(st.r) * st.s * 0.5;
+      const P = [[st.x - c + sn, st.z + sn + c], [st.x + c + sn, st.z - sn + c], [st.x + c - sn, st.z - sn - c], [st.x - c - sn, st.z + sn - c]];
+      const U = [[0, 0], [1, 0], [1, 1], [0, 1]];
+      for (const i of [0, 2, 1, 0, 3, 2]) {
+        pos.push(P[i][0], 0.009, P[i][1]);
+        uv.push(U[i][0], U[i][1]);
+        col.push(1, 1, 1, st.a);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.renderOrder = 2;
+    group.add(mesh);
+    own.push(geo, mat);
+  }
   // window light pools
   if (pools.length) {
     const mat = new THREE.MeshBasicMaterial({ map: getSoftTexture(), color: 0xffa050, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -3, vertexColors: true });
@@ -716,25 +774,73 @@ export function fracturedRock(seed, block) {
   return g;
 }
 
-/** Wall-mounted weapon rack: two spears, a sword and a round shield. */
+/** Wall-mounted weapon rack: a pegged board with two spears, a sword, an axe and a painted round shield. */
 function weaponRack(g, m, seed) {
-  g.box('prop_wood', { matrix: m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 1.9, 0.06)), s: [1.1, 0.08, 0.1], chamfer: 0.01, uv: 'along' });
-  g.box('prop_wood', { matrix: m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.9, 0.06)), s: [1.1, 0.08, 0.1], chamfer: 0.01, uv: 'along' });
-  for (const [x, lean] of [[-0.38, 0.06], [-0.18, -0.04]]) {
-    const sm = m.clone().multiply(new THREE.Matrix4().makeTranslation(x, 1.25, 0.14)).multiply(new THREE.Matrix4().makeRotationZ(lean));
-    g.box('prop_wood', { matrix: sm, s: [0.035, 2.4, 0.035], uv: 'along' });
-    g.box('prop_iron', { matrix: sm.clone().multiply(new THREE.Matrix4().makeTranslation(0, 1.28, 0)), s: [0.06, 0.24, 0.015], chamfer: 0.006 });
+  const at = (x, y, z) => m.clone().multiply(new THREE.Matrix4().makeTranslation(x, y, z));
+  // backboard with two rails and turned pegs
+  g.box('prop_wood', { matrix: at(0, 1.45, 0.025), s: [1.25, 1.2, 0.04], chamfer: 0.01, uv: 'along' });
+  for (const y of [1.0, 1.85]) {
+    g.box('prop_wood', { matrix: at(0, y, 0.06), s: [1.3, 0.07, 0.06], chamfer: 0.012, uv: 'along' });
+    for (const x of [-0.45, -0.25, 0.05, 0.3]) {
+      const peg = new THREE.CylinderGeometry(0.014, 0.018, 0.12, 6);
+      peg.rotateX(Math.PI / 2);
+      g.geometry('prop_wood', peg, at(x, y + 0.06, 0.12), { uv: 'world' });
+      peg.dispose();
+    }
   }
-  const sw = m.clone().multiply(new THREE.Matrix4().makeTranslation(0.18, 1.35, 0.13));
-  g.box('prop_iron', { matrix: sw, s: [0.05, 0.85, 0.01], chamfer: 0.004 });
-  g.box('prop_iron', { matrix: sw.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.45, 0)), s: [0.24, 0.035, 0.03] });
-  g.box('prop_wood', { matrix: sw.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.56, 0)), s: [0.035, 0.18, 0.035], uv: 'along' });
-  const shm = m.clone().multiply(new THREE.Matrix4().makeTranslation(0.42, 1.3, 0.1)).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2));
-  const disc = new THREE.CylinderGeometry(0.28, 0.28, 0.035, 18);
+  // spears: ash shafts with leaf-shaped heads and iron ferrules
+  for (const [x, lean] of [[-0.46, 0.04], [-0.26, -0.03]]) {
+    const sm = at(x, 1.35, 0.15).multiply(new THREE.Matrix4().makeRotationZ(lean));
+    const shaft = new THREE.CylinderGeometry(0.016, 0.018, 2.3, 6);
+    g.geometry('prop_wood', shaft, sm, { uv: 'world' });
+    shaft.dispose();
+    const head = new THREE.ConeGeometry(0.035, 0.26, 4);
+    head.scale(1, 1, 0.35);
+    g.geometry('prop_iron', head, sm.clone().multiply(new THREE.Matrix4().makeTranslation(0, 1.28, 0)), { uv: 'world' });
+    head.dispose();
+    const fer = new THREE.CylinderGeometry(0.02, 0.02, 0.06, 6);
+    g.geometry('prop_iron', fer, sm.clone().multiply(new THREE.Matrix4().makeTranslation(0, 1.14, 0)), { uv: 'world' });
+    fer.dispose();
+  }
+  // arming sword point-down: tapered blade with a fuller, crossguard, leather grip, pommel
+  const sw = at(0.06, 1.35, 0.14);
+  const blade = new THREE.CylinderGeometry(0.004, 0.024, 0.82, 4);
+  blade.scale(1, 1, 0.18);
+  blade.rotateY(Math.PI / 4);
+  g.geometry('prop_iron', blade, sw, { uv: 'world' });
+  blade.dispose();
+  g.box('prop_iron', { matrix: sw.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.43, 0)), s: [0.22, 0.03, 0.03], chamfer: 0.008 });
+  const grip = new THREE.CylinderGeometry(0.016, 0.016, 0.16, 6);
+  g.geometry('prop_burlap', grip, sw.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.52, 0)), { uv: 'world' });
+  grip.dispose();
+  const pom = new THREE.SphereGeometry(0.026, 8, 6);
+  g.geometry('prop_iron', pom, sw.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.62, 0)), { uv: 'world' });
+  pom.dispose();
+  // bearded axe hung on two pegs
+  const ax = at(0.3, 1.5, 0.14).multiply(new THREE.Matrix4().makeRotationZ(-0.12));
+  const haft = new THREE.CylinderGeometry(0.018, 0.022, 0.75, 6);
+  g.geometry('prop_wood', haft, ax, { uv: 'world' });
+  haft.dispose();
+  const bit = new THREE.Shape();
+  bit.moveTo(0, 0.05);
+  bit.lineTo(0.16, 0.11);
+  bit.quadraticCurveTo(0.2, 0, 0.16, -0.14);
+  bit.lineTo(0.02, -0.04);
+  bit.lineTo(0, -0.05);
+  const bitGeo = new THREE.ExtrudeGeometry(bit, { depth: 0.012, bevelEnabled: true, bevelThickness: 0.004, bevelSize: 0.004, bevelSegments: 1 });
+  g.geometry('prop_iron', bitGeo, ax.clone().multiply(new THREE.Matrix4().makeTranslation(0.012, 0.3, -0.006)), { uv: 'world' });
+  bitGeo.dispose();
+  // round shield with boss and rim
+  const shm = at(-0.05, 0.62, 0.1).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2 - 0.12));
+  const disc = new THREE.CylinderGeometry(0.3, 0.3, 0.03, 20);
   g.geometry(hash(seed, 'sh') < 0.5 ? 'prop_crate' : 'prop_wood', disc, shm, { uv: 'world' });
   disc.dispose();
-  const boss = new THREE.SphereGeometry(0.07, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2);
-  g.geometry('prop_iron', boss, m.clone().multiply(new THREE.Matrix4().makeTranslation(0.42, 1.3, 0.12)).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2)), { uv: 'world' });
+  const rim = new THREE.TorusGeometry(0.3, 0.012, 4, 24);
+  rim.rotateX(Math.PI / 2);
+  g.geometry('prop_iron', rim, shm, { uv: 'world' });
+  rim.dispose();
+  const boss = new THREE.SphereGeometry(0.075, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2);
+  g.geometry('prop_iron', boss, shm.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.015, 0)), { uv: 'world' });
   boss.dispose();
 }
 

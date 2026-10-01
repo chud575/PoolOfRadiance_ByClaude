@@ -667,8 +667,8 @@ export function limestone({ seed = 211, base = [0.5, 0.47, 0.41] } = {}) {
  * into two smaller ones), per-stone tilt/height, chipped corners, worn arrises,
  * wide dirt/moss-filled joints, lichen and stains. Tile ≈ 3 m.
  */
-export function flagstones({ seed = 77, rows = 8, base = [0.5, 0.47, 0.42], weeds = 0.45 } = {}) {
-  const lay = masonryLayout({ rows, seed, minW: 0.14, maxW: 0.34 });
+export function flagstones({ seed = 77, rows = 8, base = [0.5, 0.47, 0.42], weeds = 0.45, minW = 0.14, maxW = 0.34 } = {}) {
+  const lay = masonryLayout({ rows, seed, minW, maxW });
   return (u, v) => {
     let L = lay(u, v);
     let id = L.id;
