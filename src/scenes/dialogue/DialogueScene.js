@@ -10,8 +10,8 @@ import { QUEST_LIST, QUESTS, PROCLAMATIONS, questStatus } from '../../data/quest
 import { getMap, hasMap } from '../../data/maps/index.js';
 import { ITEMS } from '../../data/items.js';
 import { addItem } from '../../rules/character.js';
-import { paintPanel, framedPortraitURL, PanelOverlay, LIGHTS } from '../../ui/art/index.js';
-import { paintCreature, CREATURE_IDS } from '../../ui/art/creatures.js';
+import { paintPanel, framedPortraitURL, PanelOverlay, LIGHTS, npcActor, ghostActor } from '../../ui/art/index.js';
+import { paintCreature, CREATURE_IDS, renderCreature, lightRig, flattenSprite } from '../../ui/art/creatures.js';
 import { SETTING_IDS } from '../../ui/art/settings.js';
 import { apply, test, check, payRewards, spendGold, partyGold, living, addJournal, journalList } from './effects.js';
 
@@ -50,7 +50,7 @@ export default class DialogueScene extends Scene {
       this.root.append(grid);
       return;
     }
-    if (params.view === 'bestiary' || params.view === 'settings') {
+    if (params.view === 'bestiary' || params.view === 'settings' || params.view === 'figure') {
       this._debugSheet(params.view, params);
       return;
     }
@@ -88,7 +88,21 @@ export default class DialogueScene extends Scene {
   _debugSheet(view, p) {
     clear(this.root);
     const grid = h('div', { style: { position: 'absolute', inset: '0', display: 'grid', gridTemplateColumns: view === 'bestiary' ? 'repeat(8, 1fr)' : 'repeat(6, 1fr)', gap: '4px', padding: '4px', background: '#222', overflow: 'hidden' } });
-    if (view === 'bestiary') {
+    if (view === 'figure') {
+      // one or more large figures (debug): ids, seeds, h, yaw
+      const ids = String(p.ids ?? 'kobold').split(',');
+      const H = Number(p.h ?? 800);
+      grid.style.gridTemplateColumns = `repeat(${ids.length}, 1fr)`;
+      ids.forEach((id, i) => {
+        const c = h('canvas', { width: 900, height: 880, style: { width: '100%', background: 'linear-gradient(#3a3a46,#15151c)' } });
+        const g = c.getContext('2d');
+        const rg = lightRig(LIGHTS[p.light ?? 'torch']);
+        const f = NPCS[id] ? (() => { const a = NPCS[id].kind === 'ghost' ? ghostActor() : npcActor(NPCS[id]); const r = a.render({ h: H, pose: p.pose ?? 'stand', yaw: Number(p.yaw ?? 0.2) }, rg); return { canvas: r.canvas, ox: r.ox, oy: r.oy }; })()
+          : flattenSprite(renderCreature(id, H, rg, Number(p.seed ?? 1) + i, p.yaw != null ? { yaw: Number(p.yaw) } : {}));
+        g.drawImage(f.canvas, 450 - f.ox, 860 - f.oy + H * Number(p.crop ?? 0));
+        grid.append(c);
+      });
+    } else if (view === 'bestiary') {
       const ids = (p.ids ? String(p.ids).split(',') : CREATURE_IDS);
       for (const id of ids) {
         const c = h('canvas', { width: 200, height: 290, style: { width: '100%', background: 'linear-gradient(#3a3a46,#15151c)' } });
@@ -197,7 +211,10 @@ export default class DialogueScene extends Scene {
     const key = JSON.stringify(spec);
     if (key === this.artKey) return;
     this.artKey = key;
-    const { canvas, info } = paintPanel({ ...spec, w: 1280, h: 600 });
+    const npc = spec.actorId ? NPCS[spec.actorId] : null;
+    const actor = npc ? (npc.kind === 'ghost' ? ghostActor() : npcActor(npc)) : null;
+    const { canvas, info, composer } = paintPanel({ ...spec, actor, w: 1280, h: 600 });
+    this.composer = composer;
     canvas.className = 'dlg-art-cur';
     const prev = this.artView.querySelector('.dlg-art-cur');
     for (const old of this.artView.querySelectorAll('.dlg-art-prev, .dlg-art-fx')) old.remove();
@@ -219,6 +236,7 @@ export default class DialogueScene extends Scene {
       this.fade.prev?.remove();
       this.fade = null;
     }
+    this.composer?.draw(this.artCanvas.getContext('2d'), this.ctx.clock.time);
     this.overlay?.draw(this.ctx.clock.time);
   }
 
@@ -369,10 +387,12 @@ export default class DialogueScene extends Scene {
     this.nodeId = id;
     const art = { ...(s.art ?? {}), ...(node.art ?? {}) };
     const kind = art.npc ? NPCS[art.npc]?.kind : null;
-    const figure = art.monster ?? (kind === 'ghost' ? 'ghostKnight' : kind === 'dragon' ? 'tyranthraxus' : kind === 'monster' ? (art.npc === 'kobold_chief' ? 'koboldChief' : NPCS[art.npc].monster) : null);
+    const figure = art.monster ?? (kind === 'dragon' ? 'tyranthraxus' : kind === 'monster' ? (art.npc === 'kobold_chief' ? 'koboldChief' : NPCS[art.npc].monster) : null);
     const monsters = figure ? [{ id: figure, count: art.monster ? art.count ?? 1 : 1 }] : null;
     if (kind === 'monster' && !art.monster) monsters.push({ id: NPCS[art.npc].monster, count: 2 });
-    const spec = { setting: art.setting ?? 'slums', light: art.light, monsters, deity: art.deity };
+    // the person you are speaking with stands in the picture
+    const actorId = !art.monster && art.npc && (!kind || kind === 'portrait' || kind === 'hooded' || kind === 'ghost') ? art.npc : null;
+    const spec = { setting: art.setting ?? 'slums', light: art.light, monsters, deity: art.deity, actorId };
     await this._showArt(spec, s.title, s.subtitle ?? '');
     this._setSpeaker(node.speaker ?? null);
     if (node.do) apply(this.ctx, node.do);
@@ -704,6 +724,7 @@ export default class DialogueScene extends Scene {
       this.artCanvas.style.transform = `scale(${s.toFixed(4)}) translateX(${tx.toFixed(2)}%)`;
     }
     if (this.overlay && (dt > 0 || !this._drawnFrozen)) {
+      this.composer?.draw(this.artCanvas.getContext('2d'), t);
       this.overlay.draw(t);
       this._drawnFrozen = dt === 0;
     }

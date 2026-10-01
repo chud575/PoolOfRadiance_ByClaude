@@ -14,7 +14,7 @@ import { TEMPLE_SERVICES, serviceApplies, performService } from '../../rules/tem
 import { CLASSES, splitClasses, xpForLevel } from '../../rules/classes.js';
 import { itemIconURL, iconFor } from '../../ui/components/itemIcons.js';
 import { portraitURL } from '../../ui/components/portraitPainter.js';
-import { paintPanel, framedPortraitURL, PanelOverlay } from '../../ui/art/index.js';
+import { paintPanel, framedPortraitURL, PanelOverlay, npcActor } from '../../ui/art/index.js';
 
 /**
  * Shops, temples, the training hall and taverns of New Phlan.
@@ -74,7 +74,8 @@ export default class ShopScene extends Scene {
   _build() {
     const { ctx } = this;
     const deity = this.shop.deity ? DEITIES[this.shop.deity] : null;
-    const { canvas, info } = paintPanel({ setting: this.shop.setting ?? 'shop', deity, w: 1280, h: 600, seed: this.shop.id.length * 31 });
+    const { canvas, info, composer } = paintPanel({ setting: this.shop.setting ?? 'shop', deity, w: 1280, h: 600, seed: this.shop.id.length * 31, actor: npcActor(NPCS[this.shop.npc]) });
+    this.composer = composer;
     const fx = h('canvas.fx', { width: 1280, height: 600 });
     this.overlay = new PanelOverlay(fx, info, 5);
     this.overlay.draw(ctx.clock.time);
@@ -565,6 +566,7 @@ export default class ShopScene extends Scene {
       this._renderSay();
     }
     if (this.overlay && (dt > 0 || !this._drawn)) {
+      this.composer?.draw(this.artCanvas.getContext('2d'), this.ctx.clock.time);
       this.overlay.draw(this.ctx.clock.time);
       this._drawn = true;
     }

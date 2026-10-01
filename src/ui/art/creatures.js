@@ -1,4 +1,6 @@
 import { rgba, mix, glow, linGrad, poly, texture, contactShadow, rngOf, makeCanvas, hexRgb } from './paint.js';
+import { buildCreature, SPECIES as SCULPTED } from './bodies.js';
+import { renderFigure } from './sculpt.js';
 
 /**
  * Painted creature figures for encounter panels. All figures face the viewer
@@ -48,7 +50,7 @@ const SPECIES = {
 
 /** Relative height by creature (human = 1). */
 export function creatureScale(id) {
-  const t = { kobold: 0.62, koboldChief: 0.7, goblin: 0.66, giantRat: 0.42, wolf: 0.55, giantFrog: 0.5, giantCentipede: 0.38, giantSpider: 0.72, ogre: 1.45, hillGiant: 1.75, troll: 1.4, bugbear: 1.2, gnoll: 1.15, orcLeader: 1.08, hobgoblinChief: 1.05, tyranthraxus: 2.6, shadow: 1.0, spectre: 1.1 };
+  const t = { kobold: 0.68, koboldChief: 0.76, goblin: 0.66, giantRat: 0.42, wolf: 0.55, giantFrog: 0.5, giantCentipede: 0.38, giantSpider: 0.72, ogre: 1.45, hillGiant: 1.75, troll: 1.4, bugbear: 1.2, gnoll: 1.15, orcLeader: 1.08, hobgoblinChief: 1.05, tyranthraxus: 2.6, shadow: 1.0, spectre: 1.1 };
   return t[id] ?? 1;
 }
 
@@ -1150,6 +1152,10 @@ function lightFigure(c, h, L, ghostly = false) {
  * @returns {{canvas:HTMLCanvasElement, ox:number, oy:number}}
  */
 export function paintCreature(id, h, light, seed = 1) {
+  if (isSculpted(id)) {
+    const r = renderCreature(id, h, lightRig(light ?? {}), seed, { yaw: 0.25 });
+    return flattenSprite(r);
+  }
   const sp = SPECIES[id] ?? SPECIES.orc;
   const W = Math.ceil(h * (sp.plan === 'dragon' ? 2.2 : sp.plan === 'quad' ? 2.8 : 1.5));
   const Hc = Math.ceil(h * (sp.plan === 'dragon' ? 1.3 : sp.plan === 'humanoid' || sp.plan === 'skeleton' ? 1.25 : 1.15));
@@ -1222,3 +1228,64 @@ export function placeCreature(g, id, x, y, h, light, { haze = 0, hazeColor = '#2
 
 export const CREATURE_IDS = Object.keys(SPECIES);
 export { hexRgb };
+
+// ------------------------------------------------------------------ lit-clay figures (sculpt.js)
+
+/** Is this creature built by the 3D figure renderer? */
+export function isSculpted(id) {
+  return id in SCULPTED;
+}
+
+/**
+ * Light rig for the figure renderer from a panel light preset (index.js LIGHTS)
+ * and an optional key direction (world space, toward the light).
+ */
+export function lightRig(L, keyDir = [-0.65, 0.5, 0.6], extra = {}) {
+  const kx = keyDir[0];
+  return {
+    key: { dir: keyDir, color: L.key ?? '#ffb070', i: extra.keyI ?? 1.35 },
+    rim: { dir: [kx < 0 ? 0.8 : -0.8, 0.4, -0.65], color: L.rim ?? '#9ab0ff', i: 0.55 + (L.rimA ?? 0.5) * 1.3 },
+    sky: L.sky ?? rgbHex(mix(L.rim ?? '#9ab0ff', '#1a2030', 0.6)),
+    ground: L.ground ?? '#2a1c12',
+    amb: extra.amb ?? L.amb ?? 0.5,
+    fill: extra.fill ?? null,
+  };
+}
+
+function rgbHex(c) {
+  return `#${c.map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('')}`;
+}
+
+/**
+ * Render a creature (seeded pose, gear, tint) at pixel height h.
+ * Returns {canvas, ox, oy, emit, tail, pelvisY, sp}.
+ */
+export function renderCreature(id, h, rig, seed = 1, o = {}) {
+  const b = buildCreature(id, seed, o);
+  if (!b) return null;
+  const ppu = h / b.fig.top;
+  const yaw = o.yaw ?? b.yaw;
+  const opts = { ppu, yaw, rig, haze: o.haze ?? 0, hazeColor: o.hazeColor, ghost: b.sp.ghost ? (o.ghostColor ?? '#9ff4ff') : null, ss: o.ss ?? 2, pitch: o.pitch ?? 0.08, ink: o.ink ?? 0.85 };
+  const main = renderFigure(b.fig, opts);
+  const tail = b.sp.tail ? renderFigure(b.fig, { ...opts, layer: 'tail' }) : null;
+  return { ...main, tail, sp: b.sp, pose: b.pose, pelvisY: (b.sp.legs ?? 0.5) * ppu * 0.92 };
+}
+
+/** Merge a rendered creature (tail + body + eye glows) into one canvas. */
+export function flattenSprite(r) {
+  const pad = Math.ceil(r.ppu * 0.08);
+  let x0 = -r.ox; let y0 = -r.oy; let x1 = r.canvas.width - r.ox; let y1 = r.canvas.height - r.oy;
+  if (r.tail) { x0 = Math.min(x0, -r.tail.ox); y0 = Math.min(y0, -r.tail.oy); x1 = Math.max(x1, r.tail.canvas.width - r.tail.ox); y1 = Math.max(y1, r.tail.canvas.height - r.tail.oy); }
+  const c = makeCanvas(x1 - x0 + pad * 2, y1 - y0 + pad * 2);
+  const g = c.getContext('2d');
+  const ox = -x0 + pad;
+  const oy = -y0 + pad;
+  if (r.tail) g.drawImage(r.tail.canvas, ox - r.tail.ox, oy - r.tail.oy);
+  if (r.sp?.ghost) {
+    g.globalCompositeOperation = 'lighter';
+  }
+  g.drawImage(r.canvas, ox - r.ox, oy - r.oy);
+  g.globalCompositeOperation = 'source-over';
+  for (const e of r.emit ?? []) glow(g, ox - r.ox + e.x, oy - r.oy + e.y, e.r, e.color, e.a);
+  return { canvas: c, ox, oy };
+}

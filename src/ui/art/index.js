@@ -1,7 +1,10 @@
-import { makeCanvas, vignette, grade, grain, rgba, glow, flame, rngOf, hashStr, fog as fogBand, clamp01 } from './paint.js';
+import { makeCanvas, vignette, grade, grain, rgba, glow, flame, rngOf, hashStr, fog as fogBand, clamp01, contactShadow } from './paint.js';
 import { paintSetting } from './settings.js';
-import { placeCreature, creatureScale, paintCreature, dragonHead, hasCreature } from './creatures.js';
-import { paintPortrait } from '../components/portraitPainter.js';
+import './interiors.js';
+import { placeCreature, creatureScale, paintCreature, dragonHead, hasCreature, isSculpted, renderCreature } from './creatures.js';
+import { paintPortrait, defaultLook, SKIN_TONES, RACE_SKINS, HAIR_COLORS, CLOTH_COLORS, EYE_COLORS, HEADS, BODIES } from '../components/portraitPainter.js';
+import { buildPerson } from './bodies.js';
+import { renderFigure } from './sculpt.js';
 
 /**
  * Illustrated panels for the dialogue / encounter / shop screens — the big
@@ -31,35 +34,179 @@ const DEFAULT_LIGHT = {
   shop: 'torch', curio: 'torch', training: 'day', library: 'dim', textile: 'dim', crypt: 'torch', castle: 'torch', temple_bane: 'green', well: 'dim', pool: 'gold',
 };
 
+/** Key/rim light layout per light preset (world dirs toward the light). */
+const RIGS = {
+  day: { key: [-0.5, 0.8, 0.45], keyI: 1.25, amb: 0.75, sky: '#8aa0c0', ground: '#5a5040' },
+  dusk: { key: [-0.75, 0.3, 0.55], keyI: 1.3, amb: 0.5, sky: '#5a4a7a', ground: '#2a1e1e' },
+  night: { key: [-0.45, 0.35, 0.8], keyI: 1.15, amb: 0.32, sky: '#22305a', ground: '#140e0c' },
+  torch: { key: [-0.5, 0.4, 0.75], keyI: 1.3, amb: 0.38, sky: '#3a3040', ground: '#1e140c' },
+  fire: { key: [-0.5, 0.35, 0.75], keyI: 1.35, amb: 0.36, sky: '#40281c', ground: '#1e100a' },
+  dim: { key: [-0.55, 0.5, 0.65], keyI: 1.1, amb: 0.45, sky: '#3a3c50', ground: '#1e1812' },
+  green: { key: [-0.4, 0.5, 0.75], keyI: 1.1, amb: 0.35, sky: '#1a3a22', ground: '#0a120a' },
+  gold: { key: [0.2, 0.3, 0.9], keyI: 1.3, amb: 0.5, sky: '#6a4a20', ground: '#2a1a08' },
+  ghost: { key: [0.1, 0.8, 0.5], keyI: 1.1, amb: 0.45, sky: '#2a4a5a', ground: '#0e1418' },
+  ward: { key: [-0.4, 0.6, 0.7], keyI: 1.1, amb: 0.45, sky: '#2a3a6a', ground: '#101420' },
+};
+
+/** Light rig for a figure standing at (x, y) of the panel. */
+export function rigAt(light, info, x, y, W) {
+  const L = LIGHTS[light] ?? LIGHTS.dusk;
+  const R = RIGS[light] ?? RIGS.dusk;
+  // the nearest scene light rims the figure from behind on its side
+  let rimDir = [-R.key[0] * 1.2 || 0.8, 0.4, -0.65];
+  let rimC = L.rim;
+  let best = Infinity;
+  for (const l of info.lights ?? []) {
+    if (l.kind !== 'flame' && l.kind !== 'candle' && l.kind !== 'glow') continue;
+    const d = Math.abs(l.x - x) + Math.abs(l.y - y) * 0.5;
+    if (d < best) { best = d; rimDir = [Math.sign(l.x - x || 1) * 0.85, 0.35 + Math.max(0, (y - l.y) / W) * 0.6, -0.6]; rimC = l.color ?? L.rim; }
+  }
+  return {
+    key: { dir: R.key, color: L.key, i: R.keyI },
+    rim: { dir: rimDir, color: rimC, i: 0.6 + (L.rimA ?? 0.5) * 1.3 },
+    sky: R.sky, ground: R.ground, amb: R.amb,
+  };
+}
+
 /**
- * @param {{setting:string, light?:string, deity?:object, monsters?:{id:string,count:number}[], seed?:number, w?:number, h?:number}} spec
+ * @param {{setting:string, light?:string, deity?:object, monsters?:{id:string,count:number}[], actor?:object, seed?:number, w?:number, h?:number}} spec
+ * @returns {{canvas:HTMLCanvasElement, info:object, composer:PanelComposer}}
  */
 export function paintPanel(spec) {
   const W = spec.w ?? 1280;
   const H = spec.h ?? 640;
-  const c = makeCanvas(W, H);
-  const g = c.getContext('2d');
+  const bg = makeCanvas(W, H);
+  const g = bg.getContext('2d');
+  const fg = makeCanvas(W, H);
   const light = spec.light ?? DEFAULT_LIGHT[spec.setting] ?? 'dusk';
   const seed = spec.seed ?? hashStr(spec.setting);
-  const info = paintSetting(g, W, H, spec.setting, { light, deity: spec.deity, seed });
+  const info = paintSetting(g, W, H, spec.setting, { light, deity: spec.deity, seed, fg: fg.getContext('2d'), actor: !!spec.actor });
   info.light = light;
-  if (spec.monsters?.length) placeGroup(g, W, H, spec.monsters, info, light, seed);
-  // unify: grade, vignette, grain
-  const tone = {
-    day: ['#2a3450', '#ffe0b0'], dusk: ['#1a1840', '#ffb080'], night: ['#0a1030', '#ffb070'], torch: ['#1a1020', '#ffb060'], fire: ['#1a0a10', '#ff9a40'],
-    dim: ['#141828', '#e0c090'], green: ['#051a0a', '#9aff9a'], gold: ['#2a1a05', '#ffe090'], ghost: ['#0a1a2a', '#c0f0ff'], ward: ['#0a1030', '#c0d8ff'],
-  }[light] ?? ['#1a2440', '#ffcc88'];
-  grade(g, W, H, { shadow: tone[0], highlight: tone[1], amount: 0.4 });
-  vignette(g, W, H, 0.62);
-  grain(g, W, H, 0.07, seed % 97);
-  return { canvas: c, info };
+  const composer = new PanelComposer(W, H, bg, info, light, seed);
+  if (info.fgUsed) composer.fg = fg;
+  if (spec.actor) composer.addActor(spec.actor, info.actorSlot ?? { x: W * 0.5, y: H * 0.95, h: H * 0.74, pose: 'stand', yaw: 0.15 });
+  if (spec.monsters?.length) placeGroup(composer, g, W, H, spec.monsters, info, light, seed);
+  const canvas = makeCanvas(W, H);
+  composer.draw(canvas.getContext('2d'), 0);
+  return { canvas, info, composer };
+}
+
+/**
+ * Draws a panel: the painted setting, then animated figure sprites (idle
+ * breathing, weapon sway, tail flicks), the foreground props in front of an
+ * actor (desk, anvil, bar), depth fog between ranks, and the unifying grade.
+ * Deterministic for a time t.
+ */
+export class PanelComposer {
+  constructor(W, H, bg, info, light, seed) {
+    this.W = W;
+    this.H = H;
+    this.bg = bg;
+    this.info = info;
+    this.light = light;
+    this.seed = seed;
+    this.actors = [];
+    this.ops = []; // monsters & fog bands, far to near
+    this.fg = null;
+    const tone = {
+      day: ['#2a3450', '#ffe0b0'], dusk: ['#1a1840', '#ffb080'], night: ['#0a1030', '#ffb070'], torch: ['#1a1020', '#ffb060'], fire: ['#1a0a10', '#ff9a40'],
+      dim: ['#141828', '#e0c090'], green: ['#051a0a', '#9aff9a'], gold: ['#2a1a05', '#ffe090'], ghost: ['#0a1a2a', '#c0f0ff'], ward: ['#0a1030', '#c0d8ff'],
+    }[light] ?? ['#1a2440', '#ffcc88'];
+    this.tone = tone;
+  }
+
+  /** An NPC standing in the setting's actor slot (behind its desk/anvil/altar). */
+  addActor(actor, slot) {
+    const r = actor.render(slot, rigAt(this.light, this.info, slot.x, slot.y, this.W));
+    if (!r) return;
+    const g = this.bg.getContext('2d');
+    contactShadow(g, slot.x, slot.y, slot.h * 0.16, slot.h * 0.03, 0.5);
+    this.actors.push({ r, x: slot.x, y: slot.y, ph: 1.3, amp: 0.7, ghost: !!actor.ghost, sway: 0.4 });
+  }
+
+  addSprite(rec) { this.ops.push({ kind: 'sprite', ...rec }); }
+  addFog(y, h, color, a, seed) { this.ops.push({ kind: 'fog', y, h, color, a, seed }); }
+
+  _sprite(g, s, t) {
+    const r = s.r;
+    const br = Math.sin(t * (2 * Math.PI / (s.period ?? 3.4)) + s.ph);
+    const sway = Math.sin(t * 0.83 + s.ph * 1.7) * 0.012 * (s.sway ?? 1) + Math.sin(t * 2.1 + s.ph) * 0.003;
+    g.save();
+    g.translate(s.x, s.y);
+    if (s.flip) g.scale(-1, 1);
+    g.rotate(sway);
+    g.scale(1 + br * 0.004 * (s.amp ?? 1), 1 + br * 0.011 * (s.amp ?? 1));
+    if (r.tail) {
+      g.save();
+      const ty = -r.pelvisY;
+      g.translate(0, ty);
+      g.rotate(Math.sin(t * 1.9 + s.ph * 2.3) * 0.07 + Math.sin(t * 5.3 + s.ph) * 0.015);
+      g.translate(0, -ty);
+      g.drawImage(r.tail.canvas, -r.tail.ox, -r.tail.oy);
+      g.restore();
+    }
+    if (s.ghost) {
+      g.globalCompositeOperation = 'lighter';
+      g.filter = 'blur(10px)';
+      g.globalAlpha = 0.55;
+      g.drawImage(r.canvas, -r.ox, -r.oy);
+      g.filter = 'none';
+      g.globalAlpha = 0.9 + Math.sin(t * 1.3 + s.ph) * 0.08;
+    }
+    g.drawImage(r.canvas, -r.ox, -r.oy);
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = 'source-over';
+    for (const e of r.emit ?? []) {
+      const p = 0.8 + Math.sin(t * 3.1 + e.x) * 0.12;
+      glow(g, e.x - r.ox, e.y - r.oy, e.r * (s.ghost ? 2.5 : 1), e.color, e.a * p * (1 - (s.haze ?? 0) * 0.6));
+    }
+    g.restore();
+  }
+
+  /** Composite the panel at time t into g. */
+  draw(g, t = 0) {
+    const { W, H } = this;
+    g.clearRect(0, 0, W, H);
+    g.drawImage(this.bg, 0, 0);
+    for (const a of this.actors) this._sprite(g, a, t);
+    if (this.fg) g.drawImage(this.fg, 0, 0);
+    for (const o of this.ops) {
+      if (o.kind === 'fog') fogBand(g, W, o.y, o.h, o.color, o.a, o.seed);
+      else this._sprite(g, o, t);
+    }
+    grade(g, W, H, { shadow: this.tone[0], highlight: this.tone[1], amount: 0.4 });
+    vignette(g, W, H, 0.62);
+    grain(g, W, H, 0.07, this.seed % 97);
+  }
+}
+
+/** Soft ground shadow cast by a sprite away from the key light, plus contact AO. */
+function castShadow(g, r, x, y, h, keyDir, flip) {
+  const sh = makeCanvas(r.canvas.width, r.canvas.height);
+  const sg = sh.getContext('2d');
+  sg.drawImage(r.canvas, 0, 0);
+  sg.globalCompositeOperation = 'source-in';
+  sg.fillStyle = '#000';
+  sg.fillRect(0, 0, sh.width, sh.height);
+  g.save();
+  g.translate(x, y);
+  if (flip) g.scale(-1, 1);
+  // project: flatten onto the ground and lean away from the light
+  const lean = -(keyDir[0] / Math.max(0.25, keyDir[1])) * 0.35 * (flip ? -1 : 1);
+  g.transform(1, 0, lean, -0.26, 0, 0);
+  g.filter = `blur(${Math.max(2, h * 0.012).toFixed(1)}px)`;
+  g.globalAlpha = 0.42;
+  g.drawImage(sh, -r.ox, -r.oy);
+  g.restore();
+  contactShadow(g, x, y + h * 0.005, h * 0.2, h * 0.035, 0.6);
 }
 
 /**
  * Arrange up to 7 figures as a loose war-band: the leader forward and centre,
- * flankers a step back, a staggered second rank fading into the haze.
+ * flankers a step back, a staggered second rank fading into the haze. Each is
+ * an individual: its own pose, weapon, gear, tint, scale and facing.
  */
-function placeGroup(g, W, H, groups, info, light, seed) {
+function placeGroup(comp, g, W, H, groups, info, light, seed) {
   const list = [];
   for (const gr of groups) {
     const n = Math.max(1, Math.min(8, gr.count ?? 1));
@@ -71,31 +218,96 @@ function placeGroup(g, W, H, groups, info, light, seed) {
   const L = LIGHTS[light] ?? LIGHTS.dusk;
   const hazeColor = info.sky?.fog ?? (light === 'green' ? '#0a2010' : '#1a1410');
   const biggest = Math.max(...shown.map((id) => creatureScale(id)));
-  const human = Math.min(H * 0.52, (H * 0.64) / Math.max(1, biggest));
+  const human = Math.min(H * 0.6, (H * 0.7) / Math.max(1, biggest));
   const depth = (t) => floor + (H - floor) * t;
-  // slots: [x (0..1), depth t, scale, haze]
-  const front = [[0.5, 0.95, 1.0, 0], [0.3, 0.8, 0.9, 0.04], [0.7, 0.82, 0.9, 0.04]];
-  const back = [[0.4, 0.42, 0.66, 0.3], [0.6, 0.45, 0.66, 0.3], [0.19, 0.5, 0.68, 0.28], [0.81, 0.5, 0.68, 0.28]];
+  const front = [[0.5, 0.95, 1.0, 0], [0.29, 0.8, 0.9, 0.05], [0.71, 0.82, 0.9, 0.05]];
+  const back = [[0.39, 0.42, 0.66, 0.3], [0.61, 0.45, 0.66, 0.3], [0.17, 0.5, 0.7, 0.26], [0.83, 0.5, 0.7, 0.26]];
   const n = shown.length;
   const slots = n === 1 && shown[0] === 'tyranthraxus' ? [[0.5, 0.25, 0.6, 0]] : n === 1 && shown[0] === 'ghostKnight' ? [[0.5, 0.3, 0.82, 0]] : n === 1 ? [[0.5, 0.92, 1.05, 0]] : n === 2 ? [[0.4, 0.9, 1, 0], [0.62, 0.84, 0.95, 0.03]] : [...front, ...back].slice(0, n);
   const items = shown.map((id, i) => ({ id, slot: slots[i], i }));
-  // paint far to near
   items.sort((a, b) => a.slot[1] - b.slot[1]);
   let fogged = false;
   for (const it of items) {
     const [sx, t, sc, haze] = it.slot;
     if (!fogged && t > 0.6 && items.some((o) => o.slot[1] < 0.6)) {
-      fogBand(g, W, depth(0.5), H * 0.14, hazeColor, 0.3, seed % 13);
+      comp.addFog(depth(0.5), H * 0.14, hazeColor, 0.3, seed % 13);
       fogged = true;
     }
     const x = W * (sx + (R() - 0.5) * 0.04);
     const y = depth(t) + (R() - 0.5) * H * 0.015;
-    let hpx = human * sc * creatureScale(it.id) * (0.95 + R() * 0.1);
+    let hpx = human * sc * creatureScale(it.id) * (0.92 + R() * 0.16);
     hpx = Math.min(hpx, H * 0.95);
-    placeCreature(g, it.id, x, y, hpx, L, { haze, hazeColor, seed: seed + it.i * 13 + (it.id.length << 3), flip: sx > 0.55 && R() < 0.6 });
+    const fseed = seed + it.i * 13 + (it.id.length << 3);
+    if (isSculpted(it.id)) {
+      const rig = rigAt(light, info, x, y - hpx * 0.6, W);
+      // turn toward the party: figures on the flanks face the centre, 3/4 on
+      const toward = (0.5 - sx) * 1.6;
+      const yaw = Math.max(-0.95, Math.min(0.95, toward + (R() - 0.5) * 0.5 + (Math.abs(toward) < 0.2 ? (R() < 0.5 ? -0.45 : 0.45) : 0)));
+      const r = renderCreature(it.id, hpx, rig, fseed, { yaw, haze, hazeColor, leader: it.i === 0 && n > 2 });
+      if (!r) continue;
+      if (!r.sp.ghost) castShadow(g, r, x, y, hpx, rig.key.dir, false);
+      comp.addSprite({ r, x, y, ph: R() * 6.28, period: 2.8 + R() * 1.4, amp: 0.8 + R() * 0.5, haze, ghost: !!r.sp.ghost, sway: r.sp.tail ? 1.2 : 1 });
+      if (r.sp.ghost) glow(g, x, y - hpx * 0.5, hpx * 0.7, '#8ff0ff', 0.28, 'screen');
+    } else {
+      placeCreature(g, it.id, x, y, hpx, L, { haze, hazeColor, seed: fseed, flip: sx > 0.55 && R() < 0.6 });
+    }
   }
-  // low ground mist around their feet ties the figures into the scene
-  fogBand(g, W, H * 0.97, H * 0.12, hazeColor, 0.22, (seed + 3) % 13);
+  comp.addFog(H * 0.97, H * 0.12, hazeColor, 0.22, (seed + 3) % 13);
+}
+
+// ------------------------------------------------------------------ NPC actors
+
+const HAIR_STYLE = { short: 'short', swept: 'short', crop: 'short', topknot: 'short', long: 'long', wavy: 'long', braid: 'braid', bun: 'bun', bob: 'fringe', bald: 'bald', hood: 'short' };
+
+/**
+ * An NPC drawn standing in a setting's actor slot, dressed from the same look
+ * as their portrait (skin, hair, beard, clothing colour and body).
+ * @returns {{render:(slot:object, rig:object)=>object}|null}
+ */
+export function npcActor(npc, o = {}) {
+  if (!npc || (npc.kind && npc.kind !== 'portrait' && npc.kind !== 'hooded')) return null;
+  return {
+    render(slot, rig) {
+      const ch = { race: npc.race ?? 'human', gender: npc.gender ?? 'male', look: npc.look ?? {}, name: npc.name };
+      const look = defaultLook(ch);
+      const gender = ch.gender === 'female' ? 'female' : 'male';
+      const tpl = HEADS[gender][look.head] ?? HEADS[gender][0];
+      const skins = RACE_SKINS[ch.race] ?? RACE_SKINS.human;
+      const b = buildPerson({
+        seed: look.seed, race: ch.race, gender,
+        skin: SKIN_TONES[skins[look.skin % skins.length]],
+        hair: HAIR_COLORS[look.hair % HAIR_COLORS.length][1],
+        eyeC: EYE_COLORS[look.eyes % EYE_COLORS.length],
+        cloth: CLOTH_COLORS[look.cloth % CLOTH_COLORS.length][1],
+        body: BODIES[look.body % BODIES.length].id,
+        hairStyle: npc.kind === 'hooded' || tpl.hair === 'hood' ? 'short' : HAIR_STYLE[tpl.hair] ?? 'short',
+        hood: npc.kind === 'hooded' || tpl.hair === 'hood' ? CLOTH_COLORS[look.cloth % CLOTH_COLORS.length][1] : null,
+        beard: tpl.beard ?? 'none',
+        pose: slot.pose ?? o.pose ?? 'stand',
+        apron: slot.apron ?? false,
+        vestments: slot.vestments ?? null,
+        build: slot.build ?? 1,
+        hunch: tpl.age ? 0.08 * tpl.age : 0,
+      });
+      const r = renderFigure(b.fig, { ppu: slot.h / b.fig.top * (b.sp.legs < 0.45 ? 0.8 : 1), yaw: slot.yaw ?? 0, rig, pitch: slot.pitch ?? 0.1, ink: 0.8 });
+      return r;
+    },
+  };
+}
+
+/** Ferran Martinez: a knight in antique plate kneeling in vigil, sword reversed — a ghost. */
+export function ghostActor() {
+  return {
+    ghost: true,
+    render(slot, rig) {
+      const r = renderCreature('ghostKnight', slot.h, { ...rig, key: { dir: [-0.3, 0.8, 0.5], color: '#c8fbff', i: 1.3 }, rim: { dir: [0.7, 0.4, -0.6], color: '#e0ffff', i: 1.6 }, sky: '#4a8aa0', ground: '#0a1a20', amb: 0.5 }, 7, {
+        yaw: slot.yaw ?? 0.5,
+        poseOverride: { kneel: 1, weaponPose: 'vigil', offPose: null, crouch: 0.42, lean: 0.12, twist: 0, headYaw: -0.1, headPitch: 0.32, headTilt: 0.05, stance: 0.07, sway: 0, hipTilt: 0 },
+        ghostColor: '#a8f6ff',
+      });
+      return r;
+    },
+  };
 }
 
 // ------------------------------------------------------------------ NPC portraits

@@ -15,10 +15,10 @@ const SKIES = {
   night: { top: '#02040d', mid: '#0c1430', hor: '#27314f', fog: '#26304e', ground: '#1a1c24', wall: '#2e3140', amb: 0.35, win: 1, moon: [0.8, 0.16] },
   gold: { top: '#2a1a08', mid: '#6a4a18', hor: '#e8b860', fog: '#8a6a3a', ground: '#3a2a18', wall: '#5a4a34', amb: 0.8, win: 1 },
 };
-const skyFor = (light) => SKIES[light === 'torch' || light === 'fire' ? 'night' : light === 'dim' ? 'dusk' : light] ?? SKIES.dusk;
+export const skyFor = (light) => SKIES[light === 'torch' || light === 'fire' ? 'night' : light === 'dim' ? 'dusk' : light] ?? SKIES.dusk;
 
 /** Perspective depth mapping: world fraction d → screen fraction. */
-const persp = (d, k = 5) => (1 / (1 + k * d) - 1) / (1 / (1 + k) - 1);
+export const persp = (d, k = 5) => (1 / (1 + k * d) - 1) / (1 / (1 + k) - 1);
 
 // ================================================================== sky & far city
 
@@ -359,7 +359,7 @@ function streetScene(g, W, H, R, o) {
 
 // ================================================================== interior template
 
-function roomScene(g, W, H, R, o) {
+export function roomScene(g, W, H, R, o) {
   const bx0 = W * (o.bx0 ?? 0.24);
   const bx1 = W * (o.bx1 ?? 0.76);
   const by0 = H * (o.by0 ?? 0.14);
@@ -506,7 +506,8 @@ function roomScene(g, W, H, R, o) {
 
 // ================================================================== settings
 
-const S = {};
+/** Setting painters by id (interiors.js installs the service interiors). */
+export const S = {};
 
 S.slums = (g, W, H, R, o) => {
   const sc = streetScene(g, W, H, R, { ...o, light: o.light ?? 'dusk', ruined: 0.55, back: (g2, W2, H2, sky, R2, { horizon, lights }) => {
