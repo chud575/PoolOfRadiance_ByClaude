@@ -65,7 +65,7 @@ export function createCity({ seed = 1988 } = {}) {
   };
 
   /** One house: box + roof (or a ruined shell). */
-  const house = (x, z, w, d, h, ry, { ruined = false, lit = 0.3, base = GROUND } = {}) => {
+  const house = (x, z, w, d, h, ry, { ruined = false, lit = 0.3, base = GROUND, detail = true } = {}) => {
     const col = R.pick(stoneCols);
     const m = new THREE.Matrix4().makeRotationY(ry).setPosition(x, base, z);
     if (ruined) {
@@ -122,7 +122,7 @@ export function createCity({ seed = 1988 } = {}) {
     const pl = box(w + 0.16, 0.9, d + 0.16);
     pl.applyMatrix4(m);
     walls.push(tint(worldUV(pl, 2.4), new THREE.Color(col).multiplyScalar(0.85), { aoBottom: base, aoTop: base + 1 }));
-    {
+    if (detail) {
       const T = 0.2, P = 0.05; // timber width, proud of the plaster
       const tc = R.chance(0.5) ? 0x3a2a1e : 0x4a3424;
       const floorsN = Math.max(1, Math.floor(h / 2.6));
@@ -187,8 +187,8 @@ export function createCity({ seed = 1988 } = {}) {
         for (let i = 0; i < nx; i++) {
           const wx = -w / 2 + (w / nx) * (i + 0.5);
           if (R.chance(lit)) addWin(m, wx, wy, d / 2 + 0.03, 0, 0.5, 0.8, R.range(0.8, 1.4));
-          else addWin(m, wx, wy, d / 2 + 0.03, 0, 0.5, 0.8, 0.07);
-          if (h < 9) winFrame(m, wx, wy, d / 2 + 0.03, 0);
+          else if (detail) addWin(m, wx, wy, d / 2 + 0.03, 0, 0.5, 0.8, 0.07);
+          if (h < 9 && detail) winFrame(m, wx, wy, d / 2 + 0.03, 0);
         }
         for (let i = 0; i < nx; i++) {
           if (R.chance(lit * 0.45)) addWin(m, -w / 2 + (w / nx) * (i + 0.5), wy, -d / 2 - 0.03, Math.PI, 0.5, 0.8, R.range(0.8, 1.5));
@@ -275,7 +275,9 @@ export function createCity({ seed = 1988 } = {}) {
       const h = R.range(3.2, 7.0) * (1 + far * 0.25) * (R.chance(0.08) ? 1.5 : 1);
       const ry = (R.chance(0.5) ? 0 : Math.PI / 2) + R.range(-0.12, 0.12);
       const ruined = east ? R.chance(0.55) : R.chance(0.08);
-      house(x, z, w, d, h, ry, { ruined, lit: east ? 0.05 : 0.5 });
+      // timber framing and window joinery only where the camera ever gets close
+      const near = gz < 6 && Math.abs(x) < 120;
+      house(x, z, w, d, h, ry, { ruined, lit: east ? 0.05 : 0.5, detail: near });
       if (!ruined && R.chance(0.06)) tower(x + w * 0.6, z, R.range(1.4, 2.2), h + R.range(5, 10), { roof: R.chance(0.5) ? 'cone' : 'flat', lit: east ? 0 : 1 });
       if (east && ruined && R.chance(0.22) && fires.length < 9) fires.push(new THREE.Vector3(x + R.range(-1, 1), GROUND + 0.5, z));
     }
