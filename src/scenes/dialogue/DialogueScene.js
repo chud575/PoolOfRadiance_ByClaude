@@ -75,6 +75,7 @@ export default class DialogueScene extends Scene {
       ctx.audio.playMusic?.(this.script.id.startsWith('go_') ? 'explore' : 'town');
     } else {
       await this.encounterIntro({ parley: params.parley === '1' || params.parley === 1 });
+      if (params.beat === 'hostile') await this._hostile(); // (debug) the failed-parley beat
       ctx.audio.playMusic?.('encounter');
     }
     await this._decoded();
@@ -226,7 +227,8 @@ export default class DialogueScene extends Scene {
     if (key === this.artKey) return;
     this.artKey = key;
     const npc = spec.actorId ? NPCS[spec.actorId] : null;
-    const actor = npc ? (npc.kind === 'ghost' ? ghostActor() : npcActor(npc)) : null;
+    // story beats re-pose the figures: spec.pose for the person spoken to, spec.mood for a war-band
+    const actor = npc ? (npc.kind === 'ghost' ? ghostActor(spec.pose) : npcActor(npc, spec.pose ? { poseOverride: spec.pose } : {})) : null;
     const { canvas, info, composer } = paintPanel({ ...spec, actor, w: 1280, h: 600 });
     this.composer = composer;
     canvas.className = 'dlg-art-cur';
@@ -450,7 +452,7 @@ export default class DialogueScene extends Scene {
     if (kind === 'monster' && !art.monster) monsters.push({ id: NPCS[art.npc].monster, count: 2 });
     // the person you are speaking with stands in the picture
     const actorId = !art.monster && art.npc && (!kind || kind === 'portrait' || kind === 'hooded' || kind === 'ghost') ? art.npc : null;
-    const spec = { setting: art.setting ?? 'slums', light: art.light, monsters, deity: art.deity, actorId };
+    const spec = { setting: art.setting ?? 'slums', light: art.light, monsters, deity: art.deity, actorId, ...(art.pose ? { pose: art.pose } : {}), ...(art.mood ? { mood: art.mood } : {}) };
     await this._showArt(spec, s.title, s.subtitle ?? '');
     this._setSpeaker(node.speaker ?? null);
     if (initial && node.speaker && NPCS[node.speaker]) {
@@ -462,6 +464,7 @@ export default class DialogueScene extends Scene {
     const paras = [].concat(node.text ?? []);
     this._setText(paras, { journal: node.journal ?? node.do?.find((e) => e.journal)?.journal ?? null });
     this._sidePlace(s.title, this.eventId ? undefined : s.subtitle ?? s.title);
+    this._renderStatus(s);
     this.docEl?.remove();
     this.docEl = null;
     if (node.panel) this._showPanel(node.panel);
@@ -479,6 +482,25 @@ export default class DialogueScene extends Scene {
     if (!ch.length) ch.push({ label: 'Leave', key: 'L', isLeave: true, run: () => this.leave() });
     this._setChoices(ch);
     void initial;
+  }
+
+  /** A ledger line under the speech: the party's standing with the Council and the commission tally. */
+  _renderStatus(s) {
+    this.statusEl?.remove();
+    this.statusEl = null;
+    if (s.status !== 'council') return;
+    const f = this.ctx.game.flags;
+    const st = QUEST_LIST.map((q) => questStatus(f, q.id));
+    const n = (k) => st.filter((x) => x === k).length;
+    const proven = n('rewarded') + n('done');
+    const standing = proven >= 7 ? 'Heroes of the Council' : proven >= 4 ? 'Champions of Phlan' : proven >= 2 ? 'Trusted by the Council' : proven >= 1 ? 'Known to the Clerk' : 'Newcomers to Phlan';
+    const owed = QUEST_LIST.filter((q) => questStatus(f, q.id) === 'done').reduce((t, q) => t + q.reward.gold, 0);
+    this.statusEl = h('div.dlg-status', [
+      h('span.lbl', ['Standing']), h('span.v', [standing]),
+      h('span.lbl', ['Commissions']), h('span.v', [`${n('rewarded')} paid · ${n('done')} to report · ${n('active')} in hand · ${n('offered')} open · ${n('locked')} sealed`]),
+      owed ? h('span.v.owed', [`${owed.toLocaleString('en-US')} gp awaiting your REPORT`]) : null,
+    ]);
+    this.body.append(this.statusEl);
   }
 
   _runChoice(c) {
@@ -504,7 +526,8 @@ export default class DialogueScene extends Scene {
       this.ctx.ui.message(`${enc.name}: ${enc.groups.map((gr) => `${gr.count} ${MONSTERS[gr.monster][gr.count === 1 ? 'name' : 'plural']}`).join(', ')}.`, 'combat');
     }
     const art = enc.art ?? {};
-    await this._showArt({ setting: art.setting ?? 'slums', light: art.light, monsters: enc.groups.map((g) => ({ id: g.monster, count: typeof g.count === 'number' ? g.count : 4 })) }, enc.name, this._zoneName());
+    this.encSpec = { setting: art.setting ?? 'slums', light: art.light, monsters: enc.groups.map((g) => ({ id: g.monster, count: typeof g.count === 'number' ? g.count : 4 })) };
+    await this._showArt(this.encSpec, enc.name, this._zoneName());
     this._setSpeaker(null);
     this._sideEncounter(enc);
     if (parley) return this.parleyMenu();
@@ -534,6 +557,7 @@ export default class DialogueScene extends Scene {
         this.ctx.ui.message('You escape into the ruins.', 'info');
         return this.ctx.scenes.goto('explore', {});
       }
+      this._hostile();
       this._setText(['You turn to run — but they are faster. There is no escape!']);
       return this._setChoices([{ label: 'Combat', key: 'C', run: () => this.startCombat(enc.id) }]);
     }
@@ -543,11 +567,18 @@ export default class DialogueScene extends Scene {
         this._setText(['Both sides regard each other warily. At last, muttering, they lose interest and slink away into the ruins.']);
         return this._setChoices([{ label: 'Continue', key: 'C', isLeave: true, run: () => this.leave() }]);
       }
+      this._hostile();
       this._setText(['Both sides regard each other warily... then, with a howl, they attack!']);
       return this._setChoices([{ label: 'Combat', key: 'C', run: () => this.startCombat(enc.id) }]);
     }
     if (o === 'parley') return this.parleyMenu();
     return null;
+  }
+
+  /** Story beat: the war-band snarls and advances (re-posed figures cross-fade in). */
+  _hostile() {
+    if (!this.encSpec) return;
+    this._showArt({ ...this.encSpec, mood: 'hostile' }, this.encounter.name, this._zoneName());
   }
 
   parleyMenu() {
@@ -572,6 +603,7 @@ export default class DialogueScene extends Scene {
     const who = enc.groups.length ? (enc.groups[0].count === 1 ? MONSTERS[enc.groups[0].monster].name : `The ${MONSTERS[enc.groups[0].monster].plural.toLowerCase()}`) : 'They';
     const line = enc.parleyText?.[kind] ?? enc.parleyText?.[att];
     if (kind === 'fight') {
+      this._hostile();
       this._setText([line ?? `${who} snarl${who.startsWith('The') ? '' : 's'} with contempt. Your words have only made them angry.`]);
       return this._setChoices([{ label: 'Combat', key: 'C', run: () => this.startCombat(enc.id) }]);
     }
@@ -743,7 +775,16 @@ export default class DialogueScene extends Scene {
         list.append(h(`div.jr-item${n === sel ? '.on' : ''}${unread.has(n) ? '.unread' : ''}`, { onclick: () => { sel = n; unread.delete(n); render(); } }, [h('span.num', [String(n)]), h('span.tt', [e.title, e.where ? h('small', [e.where]) : null])]));
       }
       if (!found.length) list.append(h('div.jr-empty', ['The pages are blank. Your story in Phlan has yet to begin.']));
-      left.append(list, h('div.jr-folio', [`${found.length} of ${JOURNAL.length} entries`]));
+      // the foot of the page: where the party stands, and the commissions in hand
+      const inHand = QUEST_LIST.filter((q) => ['active', 'done'].includes(questStatus(game.flags, q.id)));
+      const loc = game.location;
+      const place = hasMap(loc.map) ? getMap(loc.map).name : 'New Phlan';
+      const aside = h('div.jr-aside', [
+        h('div.jr-aside-h', ['Memoranda']),
+        h('div.jr-aside-row', [h('b', ['Day ']), String(game.clock.day), ' · ', place]),
+        ...(inHand.length ? inHand.slice(0, 3).map((q) => h('div.jr-aside-row', [h('i', [questStatus(game.flags, q.id) === 'done' ? '✓' : '◆']), ` ${q.title}`, h('small', [questStatus(game.flags, q.id) === 'done' ? ' — report to the Clerk' : ' — in hand'])])) : [h('div.jr-aside-row', [h('i', ['◇']), ' No commission in hand. The Clerk at City Hall has work.'])]),
+      ]);
+      left.append(list, aside, h('div.jr-folio', [`${found.length} of ${JOURNAL.length} entries`]));
       const e = sel ? getJournalEntry(sel) : null;
       if (e) {
         right.append(h('div.jr-entry-head', [h('span.jr-entry-num', [String(e.n)]), h('span.jr-entry-title', [e.title])]));
@@ -822,9 +863,9 @@ function journalPlate(n) {
 export function dropCap(t) {
   const m = t.match(/^([“"'‘(«]*)([\p{L}\p{N}])/u);
   if (!m) return { lead: [], body: t };
-  const lead = [];
-  if (m[1]) lead.push(h('span.dlg-hang', { 'aria-hidden': 'true' }, [m[1]]));
-  lead.push(h('span.dlg-cap', [m[2]]));
+  // the opening quote hangs in the margin beside the cap, at the cap's own scale
+  const q = m[1].replace(/"/g, '\u201c').replace(/'/g, '\u2018');
+  const lead = [h('span.dlg-cap', q ? { dataset: { q } } : {}, [m[2]])];
   return { lead, body: t.slice(m[0].length) };
 }
 

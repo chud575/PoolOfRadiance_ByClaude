@@ -1,10 +1,12 @@
 import {
-  rngOf, rgba, mix, glow, glowEllipse, lightShaft, texture, masonry, planks, poly, linGrad, lerp, archPath, gothicPath, contactShadow, makeCanvas, fog,
+  rngOf, rgba, mix, glow, glowEllipse, lightShaft, texture, masonry, planks, poly, linGrad, lerp, archPath, gothicPath, contactShadow, makeCanvas, fog, quadPt,
 } from './paint.js';
 import * as P from './props.js';
 import { S, roomScene, persp } from './settings.js';
 import { Figure, mat, renderFigure, rotX, rotY, rotZ, ap3, mul3, alignY } from './sculpt.js';
-import { M, weapon, buildPerson } from './bodies.js';
+import { M, weapon } from './bodies.js';
+import { buildNpc } from './people.js';
+import { stainedGlass, drawGlass, glassPool } from './glass.js';
 
 /**
  * The service interiors of New Phlan and the haunted chapel of Sokol Keep,
@@ -132,23 +134,6 @@ function barrel3d(seed = 1, { open = false, water = false } = {}) {
   return f;
 }
 
-/** The great bronze scales of Tyr. */
-function scales3d() {
-  const f = new Figure();
-  const br = mat('#b08a40', { pattern: 'metal', metal: true, rough: 0.28, spec: 1, scale: 0.05 });
-  f.cone([0, 0, 0], [0, 0.55, 0], 0.012, 0.01, br, { group: null });
-  f.sphere([0, 0.58, 0], 0.025, br, { group: null });
-  f.box([0, 0.52, 0], [0.26, 0.008, 0.008], br, { group: null, bevel: 0.004, R: rotZ(0.04) });
-  for (const d of [-1, 1]) {
-    const x = d * 0.25;
-    const y = 0.52 + d * -0.01;
-    for (const a of [-1, 0, 1]) f.cone([x, y, 0], [x + a * 0.06, y - 0.2, a === 0 ? 0.05 : -0.02], 0.002, 0.002, br, { group: null });
-    f.ell([x, y - 0.21, 0], [0.075, 0.018, 0.075], br, { group: null });
-    f.sphere([x, y, 0], 0.012, br, { group: null });
-  }
-  f.cone([0, 0, 0], [0, 0.03, 0], 0.07, 0.05, br, { group: null });
-  return f;
-}
 
 function brazier3d() {
   const f = new Figure();
@@ -215,21 +200,6 @@ function desk3d() {
   return { f, tips: [tip] };
 }
 
-/** Tall oval mirror in a gilt frame (Sune). */
-function mirror3d() {
-  const f = new Figure();
-  const gilt = mat('#d8a848', { metal: true, rough: 0.25, spec: 1 });
-  for (let i = 0; i < 28; i++) {
-    const a = (i / 28) * Math.PI * 2;
-    f.sphere([Math.cos(a) * 0.13, 0.56 + Math.sin(a) * 0.24, 0], 0.022, gilt, { group: 'frame', blend: 0.02 });
-  }
-  f.ell([0, 0.56, -0.004], [0.13, 0.24, 0.006], mat('#c8d0e0', { metal: true, rough: 0.05, spec: 1.4 }), { group: null });
-  f.sphere([0, 0.83, 0], 0.035, gilt, { group: null });
-  for (const d of [-1, 1]) f.ell([d * 0.04, 0.86, 0], [0.04, 0.02, 0.015], gilt, { group: null, R: rotZ(d * 0.5) });
-  f.cone([0, 0, 0], [0, 0.3, 0], 0.03, 0.02, gilt, { group: null });
-  f.ell([0, 0.01, 0], [0.09, 0.012, 0.07], gilt, { group: null });
-  return f;
-}
 
 /** A vase of red roses. */
 function roses3d(seed = 1) {
@@ -557,7 +527,7 @@ function pew(g, x, y, w, s, { broken = 0, side = 1, seed = 1 } = {}) {
 
 S.cityhall = (g, W, H, R, o) => {
   const fg = o.fg ?? g;
-  const rm = roomScene(g, W, H, R, { wall: '#6e5c4a', wallKind: 'stone', floor: 'marble', floorColor: '#5e4c3a', by0: 0.04, by1: 0.66, bx0: 0.12, bx1: 0.7, ceiling: '#120c08' });
+  const rm = roomScene(g, W, H, R, { wall: '#7a6450', wallKind: 'plaster', wainscot: '#3a2616', floor: 'marble', floorColor: '#5e4c3a', by0: 0.04, by1: 0.66, bx0: 0.12, bx1: 0.7, ceiling: '#120c08' });
   const lights = [];
   // tall west windows in late light; shafts slant across the chamber toward the desk
   for (const [x, i] of [[0.17, 0], [0.3, 1]]) {
@@ -579,11 +549,8 @@ S.cityhall = (g, W, H, R, o) => {
     g.fillRect(cx, cy, W * 0.018, H * 0.04);
     if (R() < 0.8) { g.fillStyle = rgba('#e8dcbc', 1, 0.7 + R() * 0.3); g.beginPath(); g.arc(cx + W * 0.009, cy + H * 0.022, W * 0.006, 0, Math.PI * 2); g.fill(); }
   }
-  // right wall: ledgers to the ceiling
-  g.save();
-  g.transform(1, 0.22, 0, 1, 0, -W * 0.16);
-  P.bookshelf(g, W * 0.76, H * 0.2, W * 0.18, H * 0.6, { seed: 6, shelves: 6 });
-  g.restore();
+  // right wall: ledgers to the ceiling, built along the wall in true perspective
+  wallBookcase(g, [[rm.bx1, rm.by0], [W, -H * 0.05], [W, H * 1.05], [rm.bx1, rm.by1]], 0.12, 0.8, 0.1, 0.8, R);
   // left wall: proclamations
   g.save();
   g.transform(1, -0.25, 0, 1, 0, 0);
@@ -691,10 +658,14 @@ function templeTyr(g, W, H, R, o, d) {
   const fg = o.fg ?? g;
   const lights = [];
   const floorY = H * 0.68;
-  // dome and apse
-  g.fillStyle = '#0c0a0e';
-  g.fillRect(0, 0, W, H);
+  // dome and apse: the dome's underside lit from the oculus, cool and pale
   const cx = W / 2;
+  const dg = g.createRadialGradient(cx, -H * 0.05, H * 0.05, cx, 0, W * 0.6);
+  dg.addColorStop(0, '#9a9ca4');
+  dg.addColorStop(0.45, '#4a4c56');
+  dg.addColorStop(1, '#121318');
+  g.fillStyle = dg;
+  g.fillRect(0, 0, W, H);
   // coffered dome: concentric bands with sunk coffers, lit from the oculus
   for (let ring = 0; ring < 5; ring++) {
     const ry0 = H * (0.08 + ring * 0.06);
@@ -707,8 +678,8 @@ function templeTyr(g, W, H, R, o, d) {
       g.ellipse(cx, ry0 * 0.2, rx, ry0 + H * 0.06, 0, a0, a1);
       g.ellipse(cx, ry0 * 0.2, rx - W * 0.06, ry0, 0, a1, a0, true);
       g.closePath();
-      const k = 0.55 - ring * 0.08;
-      g.fillStyle = rgba('#b8ae9c', 1, k + R() * 0.06);
+      const k = 0.95 - ring * 0.12;
+      g.fillStyle = rgba('#b4b6bc', 1, k + R() * 0.06);
       g.fill();
     }
   }
@@ -728,7 +699,22 @@ function templeTyr(g, W, H, R, o, d) {
   g.lineTo(W * 1.06, floorY);
   g.closePath();
   g.clip();
-  masonry(g, 0, H * 0.06, W, floorY - H * 0.06, { base: '#b0a694', course: 22, blockW: 40, seed: 211 });
+  // big dressed blocks of cold pale limestone — a hall of judgment, not a brick shed
+  masonry(g, 0, H * 0.06, W, floorY - H * 0.06, { base: '#aeb0b0', course: 44, blockW: 96, seed: 211, mortar: 'rgba(30,32,40,0.45)', light: 'rgba(230,240,255,0.18)' });
+  texture(g, 0, H * 0.06, W, floorY - H * 0.06, { alpha: 0.22, cells: 6, seed: 214 });
+  // an inscription band in gilt capitals, and the carved, gilded balance of Tyr above the altar
+  const iy = H * 0.455;
+  g.fillStyle = 'rgba(16,20,34,0.8)';
+  g.fillRect(0, iy, W, H * 0.045);
+  g.fillStyle = 'rgba(216,178,90,0.45)';
+  g.fillRect(0, iy, W, 1.5);
+  g.fillRect(0, iy + H * 0.043, W, 1.5);
+  g.font = `600 ${Math.round(H * 0.026)}px Georgia, serif`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillStyle = '#e8c870';
+  g.fillText('I V S T I T I A   ·   L E X   ·   O F F I C I V M   ·   I V S T I T I A   ·   L E X   ·   O F F I C I V M', cx, iy + H * 0.023);
+  for (const nx of [0.18, 0.82]) carvedBalance(g, W * nx, H * 0.6, H * 0.06);
   g.fillStyle = linGrad(g, 0, 0, W, 0, [[0, 'rgba(0,0,0,0.8)'], [0.3, 'rgba(0,0,0,0.25)'], [0.5, 'rgba(0,0,0,0.05)'], [0.7, 'rgba(0,0,0,0.25)'], [1, 'rgba(0,0,0,0.8)']]);
   g.fillRect(0, 0, W, H);
   // niches with statues of the just
@@ -762,7 +748,7 @@ function templeTyr(g, W, H, R, o, d) {
     const x = cx + Math.sin(a) * W * 0.4;
     const near = 1 - Math.cos(a);
     const by = floorY + near * H * 0.16;
-    P.column(g, x, -10, by, 30 + near * 50, { base: '#c8bea8', seed: Math.round(a * 10) + 20 });
+    marbleColumn(g, x, -10, by, 30 + near * 50, { base: '#c4c6c8', seed: Math.round(a * 10) + 20 });
     contactShadow(g, x, by, 40 + near * 40, 8, 0.5);
   }
   // the oculus beam
@@ -772,8 +758,8 @@ function templeTyr(g, W, H, R, o, d) {
   glow(g, cx, 0, W * 0.2, '#fff8e8', 0.5);
   // the great scales hang above the altar
   const lr = rig({ key: [0.0, 0.95, 0.3], keyC: '#fff0d0', keyI: 1.4, rimC: '#a8c0ff', amb: 0.45, sky: '#3a4060', ground: '#2a2418' });
-  chain(g, cx, 0, H * 0.18, 2.5);
-  prop3d(g, scales3d(), cx, H * 0.53, H * 0.6, lr, { shadow: false, pitch: 0.05 });
+  // cold north light pooling on the pale floor
+  glowEllipse(g, cx, H * 0.95, W * 0.45, H * 0.1, '#c8d8ff', 0.18, 'screen');
   // altar & candelabra in front of the priest
   const al = altar3d({ stone: '#dcd4c4', runner: d.banner ?? '#1d3574', emblemC: '#e0b850', candles: 6, seed: 31 });
   const ppu = H * 0.78;
@@ -782,47 +768,244 @@ function templeTyr(g, W, H, R, o, d) {
   return { lights, motes: { color: '#fff4d8', count: 90, rise: 0.02 }, floorY, fgUsed: true, actorSlot: { x: cx, y: H * 0.92, h: H * 0.74, pose: 'priest', yaw: 0, vestments: '#1d3574' } };
 }
 
-/** Sune: warm rose marble, a great rose window, silk, roses and her mirror. */
+/** A fluted marble column: an Attic base, an Ionic capital with volutes, crisp flute shading. */
+function marbleColumn(g, x, yTop, yBot, w, { base = '#c4c6c8', seed = 1 } = {}) {
+  const R = rngOf(seed);
+  const shaft = (k) => rgba(base, 1, k);
+  g.save();
+  // shaft: cylinder shading across, then flutes as alternating light and dark strips
+  g.fillStyle = linGrad(g, x - w / 2, 0, x + w / 2, 0, [[0, shaft(0.45)], [0.22, shaft(1.12)], [0.4, shaft(1.0)], [0.75, shaft(0.62)], [1, shaft(0.3)]]);
+  g.fillRect(x - w / 2, yTop, w, yBot - yTop);
+  const n = 9;
+  for (let i = 0; i < n; i++) {
+    const u = (i + 0.5) / n;
+    const fx = x + Math.sin((u - 0.5) * Math.PI) * w * 0.5;
+    const fw = Math.cos((u - 0.5) * Math.PI) * (w / n) * 0.8;
+    g.fillStyle = `rgba(0,0,0,${0.12 + (u > 0.5 ? 0.14 : 0)})`;
+    g.fillRect(fx - fw * 0.35, yTop + w * 0.5, fw * 0.7, yBot - yTop - w * 0.9);
+    g.fillStyle = `rgba(255,255,255,${u < 0.5 ? 0.12 : 0.04})`;
+    g.fillRect(fx + fw * 0.35, yTop + w * 0.5, Math.max(1, fw * 0.15), yBot - yTop - w * 0.9);
+  }
+  // marble veins
+  g.strokeStyle = 'rgba(80,84,96,0.18)';
+  g.lineWidth = 1;
+  for (let i = 0; i < 4; i++) {
+    const vx = x + (R() - 0.5) * w * 0.8;
+    g.beginPath();
+    g.moveTo(vx, yTop + (yBot - yTop) * R());
+    g.bezierCurveTo(vx + (R() - 0.5) * w, yTop + (yBot - yTop) * R(), vx + (R() - 0.5) * w, yTop + (yBot - yTop) * R(), vx + (R() - 0.5) * w * 0.5, yBot - (yBot - yTop) * R() * 0.3);
+    g.stroke();
+  }
+  // Ionic capital: abacus slab and two volutes
+  const cy = yTop + Math.max(0, -yTop);
+  g.fillStyle = linGrad(g, x - w, 0, x + w, 0, [[0, shaft(0.5)], [0.3, shaft(1.15)], [1, shaft(0.35)]]);
+  g.fillRect(x - w * 0.78, cy, w * 1.56, w * 0.16);
+  for (const d of [-1, 1]) {
+    g.beginPath();
+    g.arc(x + d * w * 0.55, cy + w * 0.28, w * 0.16, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = 'rgba(30,30,40,0.5)';
+    g.lineWidth = Math.max(1, w * 0.03);
+    g.beginPath();
+    g.arc(x + d * w * 0.55, cy + w * 0.28, w * 0.09, 0, Math.PI * 1.6);
+    g.stroke();
+  }
+  // Attic base: two tori and a plinth
+  g.fillStyle = linGrad(g, x - w, 0, x + w, 0, [[0, shaft(0.5)], [0.3, shaft(1.1)], [1, shaft(0.3)]]);
+  g.beginPath(); g.ellipse(x, yBot - w * 0.42, w * 0.62, w * 0.1, 0, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.ellipse(x, yBot - w * 0.26, w * 0.7, w * 0.12, 0, 0, Math.PI * 2); g.fill();
+  g.fillRect(x - w * 0.75, yBot - w * 0.18, w * 1.5, w * 0.18);
+  g.restore();
+}
+
+/** Tyr's balance carved in relief into the apse wall and gilded: shadow, gilt, highlight. */
+function carvedBalance(g, cx, cy, s) {
+  const draw = (dx, dy, col, lw) => {
+    g.save();
+    g.translate(dx, dy);
+    g.strokeStyle = col;
+    g.fillStyle = col;
+    g.lineWidth = lw;
+    g.lineCap = 'round';
+    g.beginPath(); g.moveTo(cx, cy - s); g.lineTo(cx, cy + s * 0.95); g.stroke();
+    g.beginPath(); g.moveTo(cx - s * 1.2, cy - s * 0.6); g.quadraticCurveTo(cx, cy - s * 0.78, cx + s * 1.2, cy - s * 0.6); g.stroke();
+    for (const d of [-1, 1]) {
+      g.beginPath(); g.moveTo(cx + d * s * 1.2, cy - s * 0.6); g.lineTo(cx + d * s * 0.9, cy + s * 0.15); g.moveTo(cx + d * s * 1.2, cy - s * 0.6); g.lineTo(cx + d * s * 1.5, cy + s * 0.15); g.stroke();
+      g.beginPath(); g.ellipse(cx + d * s * 1.2, cy + s * 0.18, s * 0.36, s * 0.1, 0, 0, Math.PI); g.fill();
+    }
+    g.beginPath(); g.moveTo(cx - s * 0.45, cy + s * 0.95); g.lineTo(cx + s * 0.45, cy + s * 0.95); g.stroke();
+    g.beginPath(); g.arc(cx, cy - s, s * 0.1, 0, Math.PI * 2); g.fill();
+    g.restore();
+  };
+  draw(2, 3, 'rgba(10,12,20,0.55)', s * 0.11);
+  draw(0, 0, '#b08a3a', s * 0.09);
+  draw(-1, -1, 'rgba(255,236,170,0.55)', s * 0.03);
+  glow(g, cx, cy, s * 2.2, '#ffe8a8', 0.12, 'screen');
+}
+
+/** Sune: a candlelit boudoir-chapel of rose marble and gilt, the great rose window, her mirror. */
 function templeSune(g, W, H, R, o, d) {
   const fg = o.fg ?? g;
-  const rm = roomScene(g, W, H, R, { wall: '#c8a49a', wallKind: 'plaster', floor: 'marble', floorColor: '#8a6660', by0: 0.04, by1: 0.66, bx0: 0.1, bx1: 0.64, beams: false, ceiling: '#2a1418' });
+  const rm = roomScene(g, W, H, R, { wall: '#b88c84', wallKind: 'plaster', floor: 'marble', floorColor: '#7a5450', by0: 0.04, by1: 0.66, bx0: 0.1, bx1: 0.64, beams: false, ceiling: '#2a1418' });
   const lights = [];
   const pal = ['#c01e34', '#ff8aa0', '#ffd890', '#7a1430', '#f8f0e0'];
-  // crimson silk drapes either side of the window
+  // rose marble panelling in gilt mouldings over the plaster: veins, inset panels, pilasters
+  const { bx0, bx1, by0, by1 } = rm;
+  const panels = 5;
+  for (let i = 0; i < panels; i++) {
+    const px = bx0 + ((bx1 - bx0) * i) / panels;
+    const pw = (bx1 - bx0) / panels;
+    g.fillStyle = linGrad(g, px, by0, px + pw, by1, [[0, '#d8aaa0'], [0.5, '#c0928a'], [1, '#a87a74']]);
+    g.fillRect(px + pw * 0.08, by0 + (by1 - by0) * 0.08, pw * 0.84, (by1 - by0) * 0.84);
+    g.strokeStyle = 'rgba(120,60,60,0.25)';
+    g.lineWidth = 1.2;
+    for (let k = 0; k < 3; k++) {
+      g.beginPath();
+      const vx = px + pw * (0.2 + R() * 0.6);
+      g.moveTo(vx, by0 + (by1 - by0) * 0.1);
+      g.bezierCurveTo(vx + (R() - 0.5) * pw, by0 + (by1 - by0) * 0.4, vx + (R() - 0.5) * pw, by0 + (by1 - by0) * 0.6, vx + (R() - 0.5) * pw * 0.5, by1 - (by1 - by0) * 0.1);
+      g.stroke();
+    }
+    g.strokeStyle = '#d8a848';
+    g.lineWidth = 2;
+    g.strokeRect(px + pw * 0.08, by0 + (by1 - by0) * 0.08, pw * 0.84, (by1 - by0) * 0.84);
+    g.strokeStyle = 'rgba(60,20,20,0.5)';
+    g.lineWidth = 1;
+    g.strokeRect(px + pw * 0.08 + 3, by0 + (by1 - by0) * 0.08 + 3, pw * 0.84 - 6, (by1 - by0) * 0.84 - 6);
+  }
+  // crimson silk drapes either side of the window, gathered with gold cord
   for (const [x0, x1] of [[0.12, 0.2], [0.52, 0.6]]) {
     for (let i = 0; i < 8; i++) {
       const x = W * lerp(x0, x1, i / 8);
-      g.fillStyle = linGrad(g, x, 0, x + W * 0.012, 0, [[0, '#8a1424'], [0.5, '#d83a4a'], [1, '#4a0610']]);
+      g.fillStyle = linGrad(g, x, 0, x + W * 0.012, 0, [[0, '#7a1020'], [0.5, '#d03444'], [1, '#3a0610']]);
       g.fillRect(x, H * 0.04, W * 0.011, rm.by1 - H * 0.04);
     }
+    g.fillStyle = '#e8b850';
+    g.fillRect(W * x0, H * 0.4, W * (x1 - x0), 4);
   }
   roseWindow(g, W * 0.36, H * 0.27, H * 0.19, pal, 41);
-  godRays(g, { x: W * 0.36, y: H * 0.3, w: H * 0.3 }, { x: W * 0.42, y: H * 0.9, w: W * 0.32, h: H * 0.12 }, pal, { alpha: 0.2, seed: 42 });
+  godRays(g, { x: W * 0.36, y: H * 0.3, w: H * 0.3 }, { x: W * 0.42, y: H * 0.9, w: W * 0.32, h: H * 0.12 }, pal, { alpha: 0.18, seed: 42 });
   garland(g, W * 0.12, H * 0.08, W * 0.6, H * 0.08, H * 0.06, 43);
   garland(g, W * 0.64, H * 0.12, W * 0.98, H * -0.02, H * 0.05, 44);
-  // the right wall: Sune's mirror and roses on plinths
-  const lr = rig({ key: [-0.4, 0.6, 0.7], keyC: '#ffc8a8', keyI: 1.25, rimC: '#ff9aa8', amb: 0.5, sky: '#6a3a40', ground: '#2a1414' });
-  prop3d(g, mirror3d(), W * 0.82, H * 0.9, H * 0.72, lr, { yaw: -0.5, shadowW: 0.16 });
-  glow(g, W * 0.8, H * 0.5, 120, '#ffe0e8', 0.25, 'screen');
-  for (const [x, y, s] of [[0.08, 0.98, 0.7], [0.68, 0.8, 0.45]]) {
-    g.fillStyle = linGrad(g, W * x - 30 * s, 0, W * x + 30 * s, 0, [[0, '#e8d8d0'], [1, '#6a5450']]);
-    g.fillRect(W * x - 26 * s, H * y - 120 * s, 52 * s, 120 * s);
-    prop3d(g, roses3d(Math.round(x * 100)), W * x, H * y - 120 * s, H * s, lr, { shadow: false });
+  const lr = rig({ key: [-0.3, 0.5, 0.8], keyC: '#ffb890', keyI: 1.3, rimC: '#ff9aa8', amb: 0.45, sky: '#7a3a44', ground: '#3a1414' });
+  // Sune's mirror: a tall cheval glass in a gilt frame, reflecting the candlelit room
+  sunesMirror(g, W * 0.83, H * 0.94, H * 0.66, R);
+  // roses on plinths
+  for (const [x, y, sc] of [[0.08, 0.98, 0.7], [0.68, 0.8, 0.45]]) {
+    g.fillStyle = linGrad(g, W * x - 30 * sc, 0, W * x + 30 * sc, 0, [[0, '#f0dcd4'], [1, '#6a4a48']]);
+    g.fillRect(W * x - 26 * sc, H * y - 120 * sc, 52 * sc, 120 * sc);
+    prop3d(g, roses3d(Math.round(x * 100)), W * x, H * y - 120 * sc, H * sc, lr, { shadow: false });
+  }
+  // tall candelabra either side of the altar: the room's warm rose light
+  for (const [x, y, sc] of [[0.2, 0.9, 1], [0.6, 0.9, 1], [0.95, 0.99, 1.2]]) {
+    const cx = W * x;
+    const base = H * y;
+    const top = base - H * 0.42 * sc;
+    g.fillStyle = linGrad(g, cx - 4, 0, cx + 4, 0, [[0, '#f0c868'], [1, '#6a4a18']]);
+    g.fillRect(cx - 3 * sc, top, 6 * sc, base - top);
+    g.beginPath(); g.ellipse(cx, base, 22 * sc, 6 * sc, 0, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#c89a40';
+    g.lineWidth = 3 * sc;
+    g.beginPath(); g.moveTo(cx - 34 * sc, top); g.quadraticCurveTo(cx, top + 26 * sc, cx + 34 * sc, top); g.stroke();
+    for (const dx of [-34, -17, 0, 17, 34]) {
+      const ty = top - (dx === 0 ? 10 : Math.abs(dx) === 17 ? 4 : 0) * sc;
+      g.fillStyle = '#f2e6cc';
+      g.fillRect(cx + dx * sc - 2.5 * sc, ty - 16 * sc, 5 * sc, 16 * sc);
+      lights.push({ x: cx + dx * sc, y: ty - 18 * sc, s: 4.5 * sc, kind: 'candle', color: '#ffb070' });
+    }
+    glow(g, cx, top - 14 * sc, 230 * sc, '#ff9a70', 0.32, 'screen');
+    glowEllipse(g, cx, base, 160 * sc, 30 * sc, '#ffb090', 0.25, 'screen');
+  }
+  // votive candles crowding the altar step
+  for (let i = 0; i < 14; i++) {
+    const vx = W * (0.27 + R() * 0.26);
+    const vy = H * (0.82 + R() * 0.04);
+    g.fillStyle = 'rgba(255,240,220,0.9)';
+    g.fillRect(vx - 2, vy - 7, 4, 7);
+    lights.push({ x: vx, y: vy - 8, s: 2.5, kind: 'candle', color: '#ffc080' });
   }
   // petals on the floor
-  for (let i = 0; i < 70; i++) {
-    const x = W * (0.15 + R() * 0.7);
+  for (let i = 0; i < 90; i++) {
+    const x = W * (0.12 + R() * 0.76);
     const y = H * (0.8 + R() * 0.2);
     g.fillStyle = rgba('#c0182a', 0.85, 0.7 + R() * 0.6);
     g.beginPath();
     g.ellipse(x, y, 3 + R() * 2, 1.6, R() * 3, 0, Math.PI * 2);
     g.fill();
   }
-  const al = altar3d({ stone: '#e2c4bc', runner: '#a01e2c', emblemC: '#f0c870', candles: 6, seed: 51 });
+  // a warm rose wash over the whole room, darker at the edges so the candles carry it
+  g.save();
+  g.globalCompositeOperation = 'multiply';
+  const wash = g.createRadialGradient(W * 0.42, H * 0.6, H * 0.15, W * 0.42, H * 0.6, W * 0.7);
+  wash.addColorStop(0, '#fff0e8');
+  wash.addColorStop(0.6, '#d08a80');
+  wash.addColorStop(1, '#5a2a30');
+  g.fillStyle = wash;
+  g.fillRect(0, 0, W, H);
+  g.restore();
+  const al = altar3d({ stone: '#e8cac0', runner: '#a01e2c', emblemC: '#f0c870', candles: 6, seed: 51 });
   const ppu = H * 0.78;
   prop3d(fg, al.f, W * 0.4, H * 1.04, ppu, lr, { shadowW: 0.5 });
   for (const t of al.tips) { const [x, y] = proj(W * 0.4, H * 1.04, ppu, t); lights.push({ x, y, s: 5, kind: 'candle', color: '#ffc880', front: true }); }
   return { ...rm, lights, motes: { color: '#ffc0c8', count: 70, rise: 0.04 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.4, y: H * 0.92, h: H * 0.74, pose: 'priest', yaw: 0.15, vestments: '#a01e2c' } };
+}
+
+/** A cheval glass: a gilt oval frame on a carved stand, the glass holding a soft reflection of the room. */
+function sunesMirror(g, x, y, h, R) {
+  const fw = h * 0.34;
+  const fh = h * 0.6;
+  const cy = y - h * 0.62;
+  // stand: two turned posts and feet
+  for (const d of [-1, 1]) {
+    g.fillStyle = linGrad(g, x + d * fw * 0.62 - 5, 0, x + d * fw * 0.62 + 5, 0, [[0, '#f0c868'], [1, '#5a3a10']]);
+    g.fillRect(x + d * fw * 0.6 - 4, cy - fh * 0.1, 8, y - cy + fh * 0.1);
+    g.beginPath(); g.ellipse(x + d * fw * 0.6, y, 26, 7, 0, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.arc(x + d * fw * 0.6, cy - fh * 0.12, 7, 0, Math.PI * 2); g.fill();
+  }
+  // the glass: the room reflected — rose walls, a candle's bloom, a pale streak of window light
+  g.save();
+  g.beginPath();
+  g.ellipse(x, cy, fw / 2, fh / 2, 0, 0, Math.PI * 2);
+  g.clip();
+  g.fillStyle = linGrad(g, x - fw / 2, cy - fh / 2, x + fw / 2, cy + fh / 2, [[0, '#e8c4bc'], [0.45, '#a8706a'], [1, '#4a2428']]);
+  g.fillRect(x - fw, cy - fh, fw * 2, fh * 2);
+  glow(g, x - fw * 0.15, cy - fh * 0.05, fw * 0.5, '#ffb070', 0.6, 'screen');
+  g.fillStyle = '#fff4d8';
+  g.fillRect(x - fw * 0.16, cy - fh * 0.08, 3, 10);
+  g.globalCompositeOperation = 'screen';
+  for (const [ox, wv, a] of [[-0.3, 0.12, 0.35], [-0.1, 0.05, 0.25]]) {
+    g.fillStyle = `rgba(255,250,240,${a})`;
+    g.beginPath();
+    g.moveTo(x + fw * ox, cy - fh / 2);
+    g.lineTo(x + fw * (ox + wv), cy - fh / 2);
+    g.lineTo(x + fw * (ox + wv + 0.3), cy + fh / 2);
+    g.lineTo(x + fw * (ox + 0.3), cy + fh / 2);
+    g.fill();
+  }
+  g.restore();
+  // gilt frame: a thick bevelled oval with a crest of roses
+  for (const [lw, col] of [[fw * 0.16, '#4a2c0a'], [fw * 0.12, '#d8a848'], [fw * 0.04, '#fff0b8']]) {
+    g.strokeStyle = col;
+    g.lineWidth = lw;
+    g.beginPath();
+    g.ellipse(x, cy, fw / 2, fh / 2, 0, 0, Math.PI * 2);
+    g.stroke();
+  }
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * Math.PI * 2;
+    g.fillStyle = i % 2 ? '#f0d070' : '#a87a28';
+    g.beginPath();
+    g.arc(x + Math.cos(a) * fw / 2, cy + Math.sin(a) * fh / 2, fw * 0.035, 0, Math.PI * 2);
+    g.fill();
+  }
+  for (const dx of [-0.12, 0, 0.12]) {
+    g.fillStyle = '#b01828';
+    g.beginPath(); g.arc(x + dx * fw, cy - fh / 2 - fw * 0.06, fw * 0.07, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(255,160,170,0.6)';
+    g.beginPath(); g.arc(x + dx * fw - 2, cy - fh / 2 - fw * 0.08, fw * 0.03, 0, Math.PI * 2); g.fill();
+  }
+  glow(g, x, cy, fh * 0.7, '#ffd0c0', 0.18, 'screen');
+  void R;
 }
 
 /** Tempus: a smoky war hall of timber and stone, trophies of arms, braziers, a sword in the stone. */
@@ -861,37 +1044,18 @@ S.temple = (g, W, H, R, o) => {
 // ================================================================== Sokol Keep chapel (ruined, haunted)
 
 S.chapel = (g, W, H, R, o) => {
-  const rm = roomScene(g, W, H, R, { wall: '#4e4e56', wallKind: 'stone', floor: 'flags', floorColor: '#34343a', by0: 0.02, by1: 0.62, bx0: 0.31, bx1: 0.69, beams: false, ceiling: '#06070c' });
+  const rm = roomScene(g, W, H, R, { wall: '#4e4e56', wallKind: 'stone', floor: 'flags', floorColor: '#34343a', by0: 0.13, by1: 0.62, bx0: 0.31, bx1: 0.69, beams: false, ceiling: '#06070c', vault: { stone: '#3e3e48', hole: [0.62, 0.45, 0.14] } });
   const lights = [];
   const fg = o.fg ?? g;
-  // the east lancet: Saint Ferran's vigil in blue, crimson and gold
-  const wx = W * 0.435;
-  const wy = H * 0.07;
-  const ww = W * 0.13;
-  const wh = H * 0.46;
-  const pal = ['#1a3a8a', '#b01a24', '#e8b830', '#f2ecd8', '#2a6a4a', '#5a2a8a'];
-  const motif = (u, v) => {
-    const cu = (u - 0.5) * 2;
-    if (Math.abs(cu) > 0.78 || v > 0.93) return 2; // golden border
-    if (Math.hypot(cu, (v - 0.3) * 2.2) < 0.4) return v < 0.22 ? 3 : 2; // halo
-    if (Math.abs(cu) < 0.14 && v > 0.32 && v < 0.88) return 3; // the sword
-    if (Math.abs(v - 0.44) < 0.04 && Math.abs(cu) < 0.4) return 2; // crossguard
-    if (Math.abs(cu) < 0.4 && v > 0.45 && v < 0.85) return 1; // crimson surcoat
-    return (Math.floor(u * 7) + Math.floor(v * 9)) % 5 === 0 ? 5 : 0;
-  };
-  const path = () => gothicPath(g, wx, wy, ww, wh);
-  leadedGlass(g, wx, wy, ww, wh, pal, { path, motif, seed: 71, broken: 0.08, cell: 14, glowA: 0.6 });
-  g.lineWidth = 9;
-  g.strokeStyle = '#2a2a30';
-  gothicPath(g, wx, wy, ww, wh);
-  g.stroke();
-  g.lineWidth = 5;
-  g.beginPath();
-  g.moveTo(wx + ww / 2, wy + ww * 0.55);
-  g.lineTo(wx + ww / 2, wy + wh);
-  g.stroke();
-  // side lancets in perspective, some smashed
-  const side = [['#1a3a8a', '#e8b830', '#f2ecd8'], ['#2a6a4a', '#b01a24', '#e8b830']];
+  // the east lancet: Saint Ferran's vigil — a designed window, not a mosaic
+  const wx = W * 0.44;
+  const wy = H * 0.15;
+  const ww = W * 0.12;
+  const wh = H * 0.43;
+  const east = stainedGlass('knight', ww, wh, { seed: 71, broken: 0.04 });
+  drawGlass(g, east, wx, wy, { glowA: 0.4 });
+  // side lancets carry the arms of Sokol Keep, receding down the nave; a few smashed
+  const pools = [];
   for (const s of [-1, 1]) {
     for (let i = 0; i < 3; i++) {
       const t = persp(i / 3 + 0.1, 3);
@@ -899,17 +1063,19 @@ S.chapel = (g, W, H, R, o) => {
       const w = lerp(W * 0.065, W * 0.022, t);
       const top = lerp(H * 0.1, H * 0.12, t);
       const h = lerp(H * 0.5, H * 0.3, t);
-      const p2 = () => gothicPath(g, x - w / 2, top, w, h);
-      leadedGlass(g, x - w / 2, top, w, h, side[(i + (s > 0 ? 1 : 0)) % 2], { path: p2, motif: (u, v) => (Math.abs(u - 0.5) > 0.36 ? 1 : (Math.floor(v * 6) + (u > 0.5 ? 1 : 0)) % 3 === 0 ? 2 : 0), seed: 80 + i + s * 10, broken: 0.18, cell: Math.max(6, w / 4), glowA: 0.4 });
-      g.lineWidth = Math.max(2, w * 0.1);
-      g.strokeStyle = '#2a2a30';
-      p2();
-      g.stroke();
+      const c = stainedGlass('heraldry', Math.max(8, w), h, { seed: 80 + i + s * 10, broken: i === 1 ? 0.25 : 0.06, alt: (i + (s > 0 ? 1 : 0)) % 2 });
+      drawGlass(g, c, x - w / 2, top, { glowA: 0.3 });
+      if (i === 0) pools.push({ c, x, w, s });
     }
   }
-  // moonlight through the left lancets: coloured shafts and dappled pools across the floor
-  godRays(g, { x: W * 0.12, y: H * 0.3, w: W * 0.08 }, { x: W * 0.46, y: H * 0.86, w: W * 0.3, h: H * 0.12 }, ['#4a6ad8', '#d83040', '#f0c040', '#c8d8ff'], { alpha: 0.2, seed: 73 });
-  godRays(g, { x: W * 0.5, y: H * 0.3, w: W * 0.08 }, { x: W * 0.5, y: H * 0.74, w: W * 0.22, h: H * 0.08 }, pal.slice(0, 4), { alpha: 0.18, seed: 74 });
+  // the windows' light lying on the floor in their own colours
+  const floorY = rm.by1;
+  glassPool(g, east, { x: W * 0.42, y: floorY + H * 0.05, w: W * 0.16, h: H * 0.16, shear: -W * 0.02, alpha: 0.32 });
+  for (const p of pools) glassPool(g, p.c, { x: p.s < 0 ? W * 0.14 : W * 0.66, y: floorY + H * 0.14, w: W * 0.2, h: H * 0.2, shear: p.s < 0 ? W * 0.16 : -W * 0.16, alpha: 0.3 });
+  const pal = ['#1a3a8a', '#b01a24', '#e8b830', '#f2ecd8'];
+  // moonlight shafts through the lancets
+  godRays(g, { x: W * 0.12, y: H * 0.3, w: W * 0.08 }, { x: W * 0.3, y: H * 0.86, w: W * 0.24, h: H * 0.12 }, ['#4a6ad8', '#d83040', '#f0c040', '#c8d8ff'], { alpha: 0.12, seed: 73 });
+  godRays(g, { x: W * 0.5, y: H * 0.3, w: W * 0.08 }, { x: W * 0.5, y: H * 0.74, w: W * 0.22, h: H * 0.08 }, pal, { alpha: 0.12, seed: 74 });
   // ivy and cobwebs where the roof has failed
   for (let i = 0; i < 160; i++) {
     const x = W * (R() < 0.5 ? R() * 0.12 : 0.88 + R() * 0.12);
@@ -955,18 +1121,32 @@ S.training = (g, W, H, R, o) => {
     g.save();
     archPath(g, x, top, w, bot - top);
     g.clip();
-    g.fillStyle = linGrad(g, 0, top, 0, bot, [[0, '#9ac0e8'], [0.55, '#e8eef0'], [0.56, '#a8a074'], [1, '#c8b080']]);
-    g.fillRect(x, top, w, bot - top);
-    // far yard wall and a tree
-    g.fillStyle = '#b8a888';
-    g.fillRect(x, top + (bot - top) * 0.45, w, (bot - top) * 0.12);
-    if (i === 1) { g.fillStyle = '#4a6a3a'; g.beginPath(); g.arc(x + w * 0.6, top + (bot - top) * 0.38, w * 0.3, 0, Math.PI * 2); g.fill(); g.fillStyle = '#3a2a1a'; g.fillRect(x + w * 0.57, top + (bot - top) * 0.45, w * 0.06, (bot - top) * 0.12); }
+    yardView(g, x, top, w, bot - top, i, R);
     g.restore();
     g.strokeStyle = '#4a3e30';
     g.lineWidth = 6;
     archPath(g, x, top, w, bot - top);
     g.stroke();
     lightShaft(g, x + w / 2, H * 0.4, w * 0.9, x + w / 2 - W * 0.12, H * 0.98, w * 1.6, '#fff4d8', 0.32);
+  }
+  // the sand floor of the hall: raked lines, scuffed circles where pairs have sparred, footprints
+  for (let k = 0; k < 9; k++) {
+    const y = lerp(rm.by1, H, persp((k + 1) / 10, 2));
+    g.strokeStyle = 'rgba(90,70,40,0.18)';
+    g.lineWidth = 1 + k * 0.2;
+    g.beginPath(); g.moveTo(0, y + Math.sin(k) * 3); g.bezierCurveTo(W * 0.3, y - 4, W * 0.7, y + 5, W, y); g.stroke();
+  }
+  for (const [x, y, r] of [[0.55, 0.82, 0.12], [0.3, 0.9, 0.09]]) {
+    g.strokeStyle = 'rgba(70,52,30,0.22)';
+    g.lineWidth = 6;
+    g.beginPath(); g.ellipse(W * x, H * y, W * r, H * r * 0.28, 0, 0, Math.PI * 2); g.stroke();
+  }
+  for (let k = 0; k < 40; k++) {
+    const fx = W * (0.25 + R() * 0.6);
+    const fy = H * (0.72 + R() * 0.26);
+    const sc = (fy / H - 0.6) * 1.6;
+    g.fillStyle = 'rgba(60,44,24,0.28)';
+    g.beginPath(); g.ellipse(fx, fy, 5 * sc, 2.2 * sc, R() * 3, 0, Math.PI * 2); g.fill();
   }
   // archery butt in the yard light, weapon racks on the left wall
   g.save();
@@ -993,6 +1173,126 @@ S.training = (g, W, H, R, o) => {
   return { ...rm, lights, motes: { color: '#fff0c8', count: 80, rise: 0.02 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.42, y: H * 1.04, h: H * 0.88, pose: 'trainer', yaw: 0.2 } };
 };
 
+/**
+ * Floor-to-ceiling shelves of ledgers along a side wall, drawn in the wall's own
+ * perspective (quad = the wall's [far-top, near-top, near-bottom, far-bottom]).
+ */
+function wallBookcase(g, quad, u0, u1, v0, v1, R) {
+  const Q = (u, v) => quadPt(quad, u, v);
+  const shelves = 6;
+  // carcass
+  g.fillStyle = '#24160c';
+  poly(g, [Q(u0, v0), Q(u1, v0), Q(u1, v1), Q(u0, v1)]);
+  g.fill();
+  const cols = 34;
+  for (let sh = 0; sh < shelves; sh++) {
+    const va = lerp(v0, v1, sh / shelves) + 0.012;
+    const vb = lerp(v0, v1, (sh + 1) / shelves) - 0.006;
+    for (let c = 0; c < cols; c++) {
+      const ua = lerp(u0, u1, persp(c / cols, 1.2));
+      const ub = lerp(u0, u1, persp((c + 0.85) / cols, 1.2));
+      if (R() < 0.08) continue; // gaps where volumes are out
+      const top = vb - (vb - va) * (0.62 + R() * 0.34);
+      const col = R.pick ? R.pick(['#5a1a14', '#2a3a5a', '#3a4a2a', '#6a4a20', '#4a2a3a', '#7a5a3a', '#2a2a2a']) : '#5a1a14';
+      g.fillStyle = rgba(col, 1, 0.75 + R() * 0.5);
+      poly(g, [Q(ua, top), Q(ub, top), Q(ub, vb), Q(ua, vb)]);
+      g.fill();
+      // a gilt band on the spine
+      if (R() < 0.5) {
+        const bv = top + (vb - top) * 0.25;
+        g.fillStyle = 'rgba(216,178,90,0.55)';
+        poly(g, [Q(ua, bv), Q(ub, bv), Q(ub, bv + 0.006), Q(ua, bv + 0.006)]);
+        g.fill();
+      }
+    }
+    // the shelf board
+    g.fillStyle = '#4a2e18';
+    poly(g, [Q(u0, vb), Q(u1, vb), Q(u1, vb + 0.014), Q(u0, vb + 0.014)]);
+    g.fill();
+  }
+  // uprights
+  for (const u of [u0, (u0 + u1) / 2, u1]) {
+    const ua = u - 0.012; const ub = u + 0.012;
+    g.fillStyle = '#3a2412';
+    poly(g, [Q(ua, v0), Q(ub, v0), Q(ub, v1), Q(ua, v1)]);
+    g.fill();
+  }
+  // shadow deepening into the far corner
+  g.fillStyle = linGrad(g, Q(u0, 0.5)[0], 0, Q(u1, 0.5)[0], 0, [[0, 'rgba(0,0,0,0.55)'], [1, 'rgba(0,0,0,0.1)']]);
+  poly(g, [Q(u0, v0), Q(u1, v0), Q(u1, v1), Q(u0, v1)]);
+  g.fill();
+}
+
+/** The sunlit yard seen through an arch: sky with cloud, a crenellated yard wall, a real tree, a pell. */
+function yardView(g, x, y, w, h, i, R) {
+  const hz = y + h * 0.56;
+  g.fillStyle = linGrad(g, 0, y, 0, hz, [[0, '#6a9ad0'], [0.7, '#b8d0e8'], [1, '#e8eef0']]);
+  g.fillRect(x, y, w, hz - y);
+  // clouds: soft lobes lit from above
+  for (let k = 0; k < 3; k++) {
+    const cx = x + w * (0.2 + R() * 0.7);
+    const cy = y + h * (0.12 + R() * 0.2);
+    for (let j = 0; j < 5; j++) {
+      const rr = w * (0.06 + R() * 0.08);
+      const gr = g.createRadialGradient(cx + (j - 2) * rr * 0.7, cy - rr * 0.3, 1, cx + (j - 2) * rr * 0.7, cy, rr);
+      gr.addColorStop(0, 'rgba(255,255,255,0.85)');
+      gr.addColorStop(1, 'rgba(230,236,245,0)');
+      g.fillStyle = gr;
+      g.fillRect(cx - rr * 3, cy - rr * 2, rr * 6, rr * 3);
+    }
+  }
+  // far yard wall with crenels, shaded stone
+  const wy = hz - h * 0.12;
+  g.fillStyle = linGrad(g, 0, wy, 0, hz, [[0, '#c8b898'], [1, '#9a8a6a']]);
+  g.fillRect(x, wy, w, hz - wy);
+  for (let k = 0; k < 8; k++) g.fillRect(x + (k / 8) * w, wy - h * 0.035, w / 16, h * 0.036);
+  g.fillStyle = 'rgba(60,50,30,0.25)';
+  for (let k = 0; k < 6; k++) g.fillRect(x, wy + (k / 6) * (hz - wy), w, 1);
+  // sand of the yard, raked and scuffed
+  g.fillStyle = linGrad(g, 0, hz, 0, y + h, [[0, '#d8c090'], [1, '#b89a68']]);
+  g.fillRect(x, hz, w, y + h - hz);
+  g.strokeStyle = 'rgba(120,90,50,0.25)';
+  for (let k = 0; k < 6; k++) { g.beginPath(); g.moveTo(x, hz + (k + 1) * h * 0.05); g.lineTo(x + w, hz + (k + 1) * h * 0.06); g.stroke(); }
+  if (i === 1) {
+    // a plane tree in the yard: trunk with branches, foliage built of lit clusters
+    const tx = x + w * 0.62;
+    const tb = hz + h * 0.02;
+    g.strokeStyle = '#4a3624';
+    g.lineCap = 'round';
+    g.lineWidth = w * 0.06;
+    g.beginPath(); g.moveTo(tx, tb); g.lineTo(tx - w * 0.02, tb - h * 0.2); g.stroke();
+    g.lineWidth = w * 0.025;
+    for (const [dx, dy] of [[-0.14, -0.3], [0.12, -0.32], [0.02, -0.38]]) { g.beginPath(); g.moveTo(tx - w * 0.02, tb - h * 0.18); g.lineTo(tx + w * dx, tb + h * dy); g.stroke(); }
+    for (let k = 0; k < 26; k++) {
+      const a = R() * Math.PI * 2;
+      const rr = R();
+      const cx = tx + Math.cos(a) * w * 0.2 * rr;
+      const cy = tb - h * 0.34 + Math.sin(a) * h * 0.12 * rr;
+      const cr = w * (0.05 + R() * 0.05);
+      const gr = g.createRadialGradient(cx - cr * 0.3, cy - cr * 0.4, 1, cx, cy, cr);
+      gr.addColorStop(0, '#8ab060');
+      gr.addColorStop(0.6, '#4e7a3a');
+      gr.addColorStop(1, '#2a4a24');
+      g.fillStyle = gr;
+      g.beginPath(); g.arc(cx, cy, cr, 0, Math.PI * 2); g.fill();
+    }
+    g.fillStyle = 'rgba(40,50,30,0.3)';
+    g.beginPath(); g.ellipse(tx + w * 0.05, tb + h * 0.02, w * 0.22, h * 0.025, 0, 0, Math.PI * 2); g.fill();
+  } else {
+    // a pell post scarred by practice blows
+    const px = x + w * (i === 0 ? 0.4 : 0.55);
+    g.fillStyle = linGrad(g, px - 5, 0, px + 5, 0, [[0, '#8a6a44'], [1, '#4a3420']]);
+    g.fillRect(px - w * 0.03, hz - h * 0.2, w * 0.06, h * 0.22);
+    g.fillStyle = 'rgba(30,20,10,0.4)';
+    for (let k = 0; k < 4; k++) g.fillRect(px - w * 0.03, hz - h * (0.05 + k * 0.04), w * 0.06, 1.5);
+    g.fillStyle = 'rgba(40,30,20,0.3)';
+    g.beginPath(); g.ellipse(px + w * 0.04, hz + h * 0.02, w * 0.1, h * 0.012, 0, 0, Math.PI * 2); g.fill();
+  }
+  // haze of sunlight
+  g.fillStyle = 'rgba(255,248,230,0.12)';
+  g.fillRect(x, y, w, h);
+}
+
 // ================================================================== taverns
 
 S.tavern = (g, W, H, R, o) => {
@@ -1016,10 +1316,15 @@ S.tavern = (g, W, H, R, o) => {
   glowEllipse(g, hx, hy + 70, 520, 120, '#ff8a30', 0.3);
   g.fillStyle = '#2a1a0e';
   g.fillRect(hx - 120, hy - 150, 240, 14);
-  // a stag's antlers above the hearth
-  g.strokeStyle = '#d8c8a0';
-  g.lineWidth = 4;
-  for (const d of [-1, 1]) { g.beginPath(); g.moveTo(hx, hy - 180); g.quadraticCurveTo(hx + d * 40, hy - 230, hx + d * 70, hy - 210); g.moveTo(hx + d * 30, hy - 205); g.lineTo(hx + d * 30, hy - 235); g.stroke(); }
+  // the mantel: pewter plates, a jug and a hanging ham catch the firelight
+  g.fillStyle = '#3a2414';
+  g.fillRect(hx - 130, hy - 158, 260, 10);
+  for (let i = 0; i < 5; i++) {
+    const px = hx - 100 + i * 50;
+    g.fillStyle = linGrad(g, px - 14, hy - 200, px + 14, hy - 160, [[0, '#d8d0c0'], [1, '#5a5650']]);
+    g.beginPath(); g.ellipse(px, hy - 178, 13, 18, 0, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(30,20,10,0.6)'; g.lineWidth = 2; g.stroke();
+  }
   // casks and bottles along the right wall behind the bar
   g.save();
   g.transform(1, 0.16, 0, 1, 0, -W * 0.1);
@@ -1043,15 +1348,53 @@ S.tavern = (g, W, H, R, o) => {
     lights.push({ x: W * lx, y: H * 0.15 + 18, s: 10, kind: 'candle', color: '#ffb050' });
     glow(g, W * lx, H * 0.19, 260, '#ffa040', 0.22);
   }
-  // patrons at the hearth, dim and hazy
-  const lrBack = rig({ key: [-0.8, 0.3, 0.3], keyC: '#ff9a40', keyI: 1.3, rimC: '#ff8a30', amb: 0.25, sky: '#3a2a20', ground: '#140a04' });
-  for (const [x, y, h, seed, cloth, yaw] of [[0.37, 0.8, 0.42, 3, '#3a4a2a', -0.6], [0.12, 0.84, 0.46, 5, '#5a3a2a', 0.7]]) {
-    const b = buildPerson({ seed, skin: '#c58c62', cloth, hair: '#3a2416', hairStyle: 'short', beard: seed === 3 ? 'full' : 'none', pose: 'stand', body: 'leather' });
-    const r = renderFigure(b.fig, { ppu: H * h / b.fig.top, yaw, rig: lrBack, haze: 0.28, hazeColor: '#2a1a10', ink: 0.7 });
-    contactShadow(g, W * x, H * y, H * h * 0.18, H * h * 0.03, 0.5);
+  // the room the prose promises: an old sailor by the fire, a dwarf and a halfling at dice,
+  // two off-duty watchmen arguing over the Slum Wall (o.cast picks who is in tonight)
+  const cast = o.cast ?? ['dice', 'watch', 'sailor'];
+  const lrFire = rig({ key: [-0.85, 0.3, 0.45], keyC: '#ff9a40', keyI: 1.4, rimC: '#ffb060', rim: [0.6, 0.4, -0.6], amb: 0.3, sky: '#3a2a20', ground: '#2a160a' });
+  const person = (spec, x, y, hh, yaw, haze = 0) => {
+    const short = spec.race === 'dwarf' || spec.race === 'halfling';
+    const bn = buildNpc({ seed: spec.seed, race: spec.race ?? 'human', gender: spec.gender ?? 'male', age: spec.age ?? 0.2, build: spec.build ?? 1, skin: spec.skin ?? '#c58c62', hair: spec.hair ?? '#3a2416', hairStyle: spec.hairStyle ?? 'short', beard: spec.beard ?? 'none', eyeC: '#3a2a1a', pose: spec.pose, outfit: spec.outfit, belly: spec.belly });
+    const r = renderFigure(bn.fig, { ppu: (H * hh * (short ? (spec.race === 'halfling' ? 0.62 : 0.76) : 1)) / bn.top, yaw, rig: lrFire, pitch: 0.12, ink: 0.7, haze, hazeColor: '#2a1a10', ss: 1.25 });
+    if (!r) return;
+    contactShadow(g, W * x, H * y, H * hh * 0.17, H * hh * 0.03, 0.55);
     g.drawImage(r.canvas, W * x - r.ox, H * y - r.oy);
+  };
+  if (cast.includes('sailor')) {
+    // Old Tam on a stool at the fire, mug in hand
+    const st = new Figure();
+    st.cone([0, 0.2, 0], [0, 0.23, 0], 0.11, 0.11, M.wood, { group: null });
+    for (let i = 0; i < 3; i++) { const a = i * 2.1; st.cone([Math.cos(a) * 0.07, 0.2, Math.sin(a) * 0.07], [Math.cos(a) * 0.11, 0, Math.sin(a) * 0.11], 0.012, 0.012, M.darkWood, { group: null }); }
+    prop3d(g, st, W * 0.105, H * 0.83, H * 0.46, lrFire, { yaw: 0.3, shadowW: 0.25 });
+    person({ seed: 31, age: 0.85, skin: '#b07a58', hair: '#e0dcd4', hairStyle: 'bald', beard: 'full', pose: 'sit', outfit: { shirt: '#c8bca4', top: '#24344e', topKind: 'jerkin', sleeves: 'rolled', trousers: '#3a3a40', boots: '#1e1810', sash: '#7a1a1a' } }, 0.105, 0.86, 0.46, 0.95);
   }
-  P.table(g, W * 0.24, H * 0.95, 100, { seed: 5 });
+  if (cast.includes('watch')) {
+    // two watchmen in the Watch's blue tabards, toe to toe
+    const tab = (seed, top) => ({ seed, outfit: { shirt: '#4a4a5a', top, topKind: 'tabard', symbol: 'tower', sleeves: 'long', trousers: '#2a2a30', boots: '#1a1410', belt: '#2a1a0e' } });
+    person({ ...tab(41, '#1d3574'), hair: '#5a3a1e', beard: 'moustache', pose: 'argue' }, 0.375, 0.745, 0.44, 0.95, 0.12);
+    person({ ...tab(43, '#22407e'), age: 0.5, hair: '#2a1a10', beard: 'full', build: 1.1, belly: true, pose: 'folded' }, 0.452, 0.75, 0.45, -0.85, 0.12);
+  }
+  if (cast.includes('sailors')) {
+    person({ seed: 51, age: 0.5, skin: '#a87050', hair: '#1a1210', beard: 'full', pose: 'folded', outfit: { shirt: '#b8ac94', top: '#2a3040', topKind: 'jerkin', sleeves: 'rolled', trousers: '#2a2a30', boots: '#1a1410' } }, 0.12, 0.84, 0.5, 0.7);
+    person({ seed: 53, age: 0.3, skin: '#c08a66', hair: '#6a3a1a', beard: 'stubble', pose: 'argue', outfit: { shirt: '#d0c4a8', top: '#5a2a1a', topKind: 'jerkin', sleeves: 'rolled', trousers: '#3a3024', boots: '#1e1810' } }, 0.42, 0.76, 0.44, -0.8, 0.12);
+  }
+  if (cast.includes('dice')) {
+    // a dwarf and a halfling hunched over dice at a trestle table in the foreground
+    person({ seed: 61, race: 'dwarf', age: 0.4, skin: '#c8906a', hair: '#8a3a1a', hairStyle: 'short', beard: 'long', build: 1.1, pose: 'lean', outfit: { shirt: '#6a5a3a', top: '#4a3020', topKind: 'jerkin', sleeves: 'long', trousers: '#3a3024', boots: '#24180e', belt: '#2a1a0e' } }, 0.175, 0.97, 0.66, 0.85);
+    person({ seed: 63, race: 'halfling', age: 0.2, skin: '#e0b090', hair: '#5a3a1a', hairStyle: 'short', beard: 'none', pose: 'lean', outfit: { shirt: '#e0d4b8', top: '#3a6a3a', topKind: 'doublet', sleeves: 'rolled', trousers: '#5a4a2a', boots: '#3a2416' } }, 0.335, 0.97, 0.66, -0.85);
+    const tb = new Figure();
+    tb.box([0, 0.3, 0], [0.26, 0.016, 0.12], M.wood, { group: null, bevel: 0.006 });
+    for (const dx of [-0.22, 0.22]) tb.box([dx, 0.15, 0], [0.016, 0.15, 0.1], M.darkWood, { group: null, bevel: 0.006 });
+    tb.box([0, 0.08, 0], [0.22, 0.012, 0.012], M.darkWood, { group: null, bevel: 0.004 });
+    const bone = mat('#efe6cc', { rough: 0.5, spec: 0.3 });
+    for (const [dx, dz, a] of [[-0.03, 0.03, 0.4], [0.02, 0.05, 1.1], [0.06, 0.0, 0.2]]) tb.box([dx, 0.326, dz], [0.011, 0.011, 0.011], bone, { group: null, bevel: 0.003, R: rotY(a) });
+    for (const [dx, dz] of [[-0.18, -0.02], [0.17, 0.04]]) {
+      tb.cone([dx, 0.316, dz], [dx, 0.37, dz], 0.024, 0.022, M.darkWood, { group: null });
+      tb.ell([dx, 0.37, dz], [0.022, 0.006, 0.022], mat('#f0e4c8', { rough: 0.9 }), { group: null });
+    }
+    for (let i = 0; i < 6; i++) tb.cone([-0.09 + i * 0.012, 0.318, -0.05], [-0.09 + i * 0.012, 0.322, -0.05], 0.009, 0.009, M.gold, { group: null });
+    prop3d(g, tb, W * 0.255, H * 1.0, H * 0.78, lrFire, { yaw: 0.05, shadowW: 0.55, shadowA: 0.6 });
+  }
   // the bar (foreground): a long oak counter with tankards
   const top = H * 0.7;
   fg.fillStyle = linGrad(fg, 0, top, 0, H, [[0, '#7a5030'], [0.04, '#4a2c16'], [0.1, '#2a180a'], [1, '#100804']]);

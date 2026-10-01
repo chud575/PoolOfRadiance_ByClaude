@@ -265,16 +265,16 @@
 /* ---------- drop cap: the letter sits in two lines; an opening quote hangs in the margin ---------- */
 .dlg-prose { padding-left: 0.7em; }
 .dlg-capped { position: relative; }
-.dlg-capped::first-letter {
-  initial-letter: 2; -webkit-initial-letter: 2; margin-right: 0.08em;
+.dlg-cap {
+  float: left; position: relative; font-size: 3.05em; line-height: 0.8; margin: 0.08em 0.1em 0 0; padding-top: 0.02em;
   font-family: var(--font-display); font-weight: 700; color: #7a1e12;
   text-shadow: 0 1px 0 rgba(255, 230, 170, 0.8), 0 0 1px #3a0a04;
 }
-.dlg-hang {
-  position: absolute; left: -0.5em; top: 0.02em; font-family: var(--font-display); font-weight: 700; font-size: 2.2em; line-height: 1; color: #7a1e12; opacity: 0.8;
+.dlg-cap[data-q]::before {
+  content: attr(data-q); position: absolute; right: 100%; top: -0.02em; margin-right: 0.04em;
+  font-size: 0.85em; line-height: 1; color: #7a1e12; opacity: 0.9;
 }
-.jr-entry-text .dlg-capped::first-letter { initial-letter: 3; -webkit-initial-letter: 3; margin-right: 0.1em; }
-.jr-entry-text .dlg-hang { font-size: 2.4em; left: -0.6em; }
+.jr-entry-text .dlg-cap { font-size: 4.4em; margin-right: 0.08em; }
 .jr-entry-text { padding-left: 0.8em; }
 
 /* ---------- choice notes in the parchment (parley stances etc.) ---------- */
@@ -323,3 +323,19 @@
 .dlg-body:has(.dlg-tips) .dlg-prose { flex: 0 1 auto; min-height: 3.4em; }
 .dlg-tips { gap: 0.15em 1.2em; padding-top: 0.4em; }
 .dlg-tip { font-size: 0.8em; line-height: 1.3; padding: 0.1em 0.3em; }
+
+/* ---------- council ledger line under the clerk's speech ---------- */
+.dlg-status { margin-top: auto; padding-top: 0.55em; border-top: 1px solid rgba(90, 60, 20, 0.28); display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3em 0.7em; font-size: 0.86em; color: #3a2410; }
+.dlg-status .lbl { font-family: var(--font-display); font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; font-size: 0.82em; color: #6a1e10; }
+.dlg-status .v { margin-right: 1.2em; font-style: italic; }
+.dlg-status .owed { font-style: normal; font-family: var(--font-display); letter-spacing: 0.08em; color: #2a5a1a; }
+
+/* ---------- journal: memoranda at the foot of the index page ---------- */
+.jr-aside { margin: auto 1.2em 0.6em 2.2em; padding: 0.6em 0.9em 0.7em; border: 1px solid rgba(110, 70, 30, 0.35); border-radius: 2px; background: rgba(120, 80, 30, 0.06); box-shadow: inset 0 0 0 3px rgba(255, 245, 220, 0.25); font-size: 0.86em; color: #4a2e14; }
+.jr-aside-h { font-family: var(--font-display); letter-spacing: 0.22em; text-transform: uppercase; font-size: 0.78em; color: #7a1e12; margin-bottom: 0.35em; }
+.jr-aside-row { line-height: 1.5; }
+.jr-aside-row i { font-style: normal; color: #7a1e12; }
+.jr-aside-row small { font-style: italic; color: #6a4a28; }
+.jr-page.left .jr-list { min-height: 0; flex: 1 1 0; }
+.jr-page.left .jr-list { mask-image: linear-gradient(180deg, #000 calc(100% - 1.6em), transparent); -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 1.6em), transparent); }
+.jr-aside { margin-top: 0.4em; }

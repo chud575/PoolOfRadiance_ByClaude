@@ -215,11 +215,17 @@ export function banner(g, x, y, w, h, color, { emblem = null, trim = '#d8b25a', 
   g.fillStyle = linGrad(g, x, 0, x + w, 0, [[0, rgba(color, 1, 1.25)], [0.45, rgba(color, 1, 0.95)], [0.7, rgba(color, 1, 0.7)], [1, rgba(color, 1, 0.45)]]);
   g.fill();
   g.clip();
-  // folds
-  for (let i = 1; i < 4; i++) {
-    g.fillStyle = `rgba(0,0,0,${0.12 + (i % 2) * 0.1})`;
-    g.fillRect(x + (w * i) / 4 - w * 0.03, y, w * 0.06, h);
+  // hanging folds: a soft cosine of light and shade across the cloth, deepening toward the hem
+  const fg2 = g.createLinearGradient(x, 0, x + w, 0);
+  for (let i = 0; i <= 24; i++) {
+    const t = i / 24;
+    const c = Math.cos(t * Math.PI * 2 * 3.5 + 0.6);
+    fg2.addColorStop(t, c > 0 ? `rgba(255,235,210,${(c * 0.12).toFixed(3)})` : `rgba(0,0,0,${(-c * 0.32).toFixed(3)})`);
   }
+  g.fillStyle = fg2;
+  g.fillRect(x, y, w, h);
+  g.fillStyle = linGrad(g, 0, y, 0, y + h, [[0, 'rgba(0,0,0,0.15)'], [0.3, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0.25)']]);
+  g.fillRect(x, y, w, h);
   texture(g, x, y, w, h, { alpha: 0.35, cells: 32, octaves: 2, seed });
   g.fillStyle = trim;
   g.fillRect(x, y + h * 0.04, w, h * 0.02);

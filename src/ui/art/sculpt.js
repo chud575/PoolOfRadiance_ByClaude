@@ -1012,7 +1012,7 @@ function renderGL(fig, o, c) {
     sky: hex(rig.sky ?? '#4a5a80'), gnd: hex(rig.ground ?? '#2a1e16'), amb: rig.amb ?? 0.5,
     fill: rig.fill ? { d: ap3(V, norm(rig.fill.dir)), c: hex(rig.fill.color), i: rig.fill.i ?? 0.3 } : null,
     haze: o.haze ?? 0, hz: hex(o.hazeColor ?? '#202830'), ghost,
-    ink: o.ink ?? 0.8, paint: o.paint ?? Math.max(1, Math.round(ss * 1.2)), inkDepth: o.inkDepth,
+    ink: o.ink ?? 0.8, paint: o.paint ?? 1, inkDepth: o.inkDepth,
     yFeet: offY, figH: (y1 - Math.max(0, y0)) * P, zmin,
   });
   if (!big) return null;

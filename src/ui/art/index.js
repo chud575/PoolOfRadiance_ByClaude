@@ -1,4 +1,4 @@
-import { makeCanvas, vignette, grade, grain, rgba, glow, flame, rngOf, hashStr, fog as fogBand, clamp01, contactShadow } from './paint.js';
+import { makeCanvas, vignette, grade, grain, rgba, glow, glowEllipse, flame, rngOf, hashStr, fog as fogBand, clamp01, contactShadow } from './paint.js';
 import { paintSetting } from './settings.js';
 import './interiors.js';
 import { placeCreature, creatureScale, paintCreature, dragonHead, hasCreature, isSculpted, renderCreature, flattenSprite } from './creatures.js';
@@ -81,12 +81,12 @@ export function paintPanel(spec) {
   const fg = makeCanvas(W, H);
   const light = spec.light ?? DEFAULT_LIGHT[spec.setting] ?? 'dusk';
   const seed = spec.seed ?? hashStr(spec.setting);
-  const info = paintSetting(g, W, H, spec.setting, { light, deity: spec.deity, seed, fg: fg.getContext('2d'), actor: !!spec.actor });
+  const info = paintSetting(g, W, H, spec.setting, { light, deity: spec.deity, seed, fg: fg.getContext('2d'), actor: !!spec.actor, cast: spec.cast, pose: spec.pose });
   info.light = light;
   const composer = new PanelComposer(W, H, bg, info, light, seed);
   if (info.fgUsed) composer.fg = fg;
   if (spec.actor) composer.addActor(spec.actor, info.actorSlot ?? { x: W * 0.5, y: H * 0.95, h: H * 0.74, pose: 'stand', yaw: 0.15 });
-  if (spec.monsters?.length) placeGroup(composer, g, W, H, spec.monsters, info, light, seed);
+  if (spec.monsters?.length) placeGroup(composer, g, W, H, spec.monsters, info, light, seed, spec.mood);
   const canvas = makeCanvas(W, H);
   composer.draw(canvas.getContext('2d'), 0);
   return { canvas, info, composer };
@@ -122,7 +122,13 @@ export class PanelComposer {
     if (!r) return;
     const g = this.bg.getContext('2d');
     contactShadow(g, slot.x, slot.y, slot.h * 0.16, slot.h * 0.03, 0.5);
-    this.actors.push({ r, x: slot.x, y: slot.y, ph: 1.3, amp: 0.7, ghost: !!actor.ghost, sway: 0.4 });
+    this.actors.push({ r, x: slot.x, y: slot.y, ph: 1.3, amp: 0.7, ghost: !!actor.ghost && !r.spectral, hover: !!actor.ghost, sway: 0.4 });
+    if (actor.ghost) {
+      // the ghost is a cold point light: it spills onto the floor and the altar around him
+      glowEllipse(g, slot.x, slot.y - slot.h * 0.02, slot.h * 0.5, slot.h * 0.09, '#7ae8ff', 0.3, 'screen');
+      glow(g, slot.x, slot.y - slot.h * 0.55, slot.h * 0.9, '#5ad8f0', 0.16, 'screen');
+      this.info.lights.push({ x: slot.x, y: slot.y - slot.h * 0.6, s: slot.h * 0.18, kind: 'ghost', color: '#8ff0ff' });
+    }
   }
 
   addSprite(rec) { this.ops.push({ kind: 'sprite', ...rec }); }
@@ -130,13 +136,15 @@ export class PanelComposer {
 
   _sprite(g, s, t) {
     const r = s.r;
+    const amp = s.amp ?? 1;
     const br = Math.sin(t * (2 * Math.PI / (s.period ?? 3.4)) + s.ph);
-    const sway = Math.sin(t * 0.83 + s.ph * 1.7) * 0.012 * (s.sway ?? 1) + Math.sin(t * 2.1 + s.ph) * 0.003;
+    // idle life: a slow weight-shift sway that bends from the feet (the head travels most),
+    // breathing that lifts the shoulders and swells the chest, and a ghost's hover
+    const bend = (Math.sin(t * 0.83 + s.ph * 1.7) * 0.016 + Math.sin(t * 2.1 + s.ph) * 0.0035) * (s.sway ?? 1);
+    const hover = s.ghost || s.hover ? Math.sin(t * 0.9 + s.ph) * 0.01 : 0;
     g.save();
     g.translate(s.x, s.y);
     if (s.flip) g.scale(-1, 1);
-    g.rotate(sway);
-    g.scale(1 + br * 0.004 * (s.amp ?? 1), 1 + br * 0.011 * (s.amp ?? 1));
     if (r.tail) {
       g.save();
       const ty = -r.pelvisY;
@@ -146,20 +154,37 @@ export class PanelComposer {
       g.drawImage(r.tail.canvas, -r.tail.ox, -r.tail.oy);
       g.restore();
     }
+    const strips = (alpha) => {
+      const c = r.canvas;
+      const H = c.height;
+      const hp = Math.max(1, r.oy);
+      const n = Math.max(6, Math.min(28, Math.round(H / 14)));
+      for (let i = 0; i < n; i++) {
+        const y0 = Math.floor((i * H) / n);
+        const y1 = Math.floor(((i + 1) * H) / n);
+        const u = Math.max(0, Math.min(1.2, (r.oy - (y0 + y1) / 2) / hp)); // 0 feet .. 1 head
+        const dx = bend * hp * Math.pow(u, 1.5);
+        const chest = Math.max(0, 1 - Math.abs(u - 0.68) / 0.16);
+        const lift = (br * 0.0065 * amp * Math.min(1, Math.max(0, (u - 0.45) / 0.25)) + hover) * hp;
+        const wx = 1 + br * 0.014 * amp * chest;
+        const w = c.width * wx;
+        g.globalAlpha = alpha;
+        g.drawImage(c, 0, y0, c.width, y1 - y0 + 1, -r.ox * wx + dx, y0 - r.oy - lift, w, y1 - y0 + 1);
+      }
+    };
     if (s.ghost) {
       g.globalCompositeOperation = 'lighter';
       g.filter = 'blur(10px)';
-      g.globalAlpha = 0.55;
-      g.drawImage(r.canvas, -r.ox, -r.oy);
+      strips(0.55);
       g.filter = 'none';
-      g.globalAlpha = 0.9 + Math.sin(t * 1.3 + s.ph) * 0.08;
-    }
-    g.drawImage(r.canvas, -r.ox, -r.oy);
+      strips(0.9 + Math.sin(t * 1.3 + s.ph) * 0.08);
+    } else strips(1);
     g.globalAlpha = 1;
     g.globalCompositeOperation = 'source-over';
     for (const e of r.emit ?? []) {
       const p = 0.8 + Math.sin(t * 3.1 + e.x) * 0.12;
-      glow(g, e.x - r.ox, e.y - r.oy, e.r * (s.ghost ? 2.5 : 1), e.color, e.a * p * (1 - (s.haze ?? 0) * 0.6));
+      const u = Math.max(0, Math.min(1.2, (r.oy - e.y) / Math.max(1, r.oy)));
+      glow(g, e.x - r.ox + bend * r.oy * Math.pow(u, 1.5), e.y - r.oy - (br * 0.0065 * amp + hover) * r.oy, e.r * (s.ghost ? 2.5 : 1), e.color, e.a * p * (1 - (s.haze ?? 0) * 0.6));
     }
     g.restore();
   }
@@ -216,7 +241,8 @@ function castShadow(g, r, x, y, h, keyDir, flip) {
  * flankers a step back, a staggered second rank fading into the haze. Each is
  * an individual: its own pose, weapon, gear, tint, scale and facing.
  */
-function placeGroup(comp, g, W, H, groups, info, light, seed) {
+function placeGroup(comp, g, W, H, groups, info, light, seed, mood = null) {
+  const hostile = mood === 'hostile';
   const list = [];
   for (const gr of groups) {
     const n = Math.max(1, Math.min(8, gr.count ?? 1));
@@ -238,7 +264,14 @@ function placeGroup(comp, g, W, H, groups, info, light, seed) {
   items.sort((a, b) => a.slot[1] - b.slot[1]);
   let fogged = false;
   for (const it of items) {
-    const [sx, t, sc, haze] = it.slot;
+    let [sx, t, sc, haze] = it.slot;
+    if (hostile) {
+      // the band advances on the party: a step closer, drawing in toward the centre
+      t = Math.min(1.02, t + 0.06 + (1 - t) * 0.12);
+      sc *= 1.08;
+      sx = 0.5 + (sx - 0.5) * 0.9;
+      haze *= 0.6;
+    }
     if (!fogged && t > 0.6 && items.some((o) => o.slot[1] < 0.6)) {
       comp.addFog(depth(0.5), H * 0.14, hazeColor, 0.3, seed % 13);
       fogged = true;
@@ -252,8 +285,10 @@ function placeGroup(comp, g, W, H, groups, info, light, seed) {
       const rig = rigAt(light, info, x, y - hpx * 0.6, W);
       // turn toward the party: figures on the flanks face the centre, 3/4 on
       const toward = (0.5 - sx) * 1.6;
-      const yaw = Math.max(-0.95, Math.min(0.95, toward + (R() - 0.5) * 0.5 + (Math.abs(toward) < 0.2 ? (R() < 0.5 ? -0.45 : 0.45) : 0)));
-      const r = renderCreature(it.id, hpx, rig, fseed, { yaw, haze, hazeColor, leader: it.i === 0 && n > 2 });
+      const lead = it.i === 0 && n > 2;
+      const jit = (R() - 0.5) * 0.5;
+      const yaw = lead ? (jit < 0 ? -0.22 : 0.22) : Math.max(-0.95, Math.min(0.95, toward + jit + (Math.abs(toward) < 0.2 ? (R() < 0.5 ? -0.45 : 0.45) : 0)));
+      const r = renderCreature(it.id, hpx, rig, fseed, { yaw, haze, hazeColor, leader: lead, mood });
       if (!r) continue;
       if (!r.sp.ghost) castShadow(g, r, x, y, hpx, rig.key.dir, false);
       comp.addSprite({ r, x, y, ph: R() * 6.28, period: 2.8 + R() * 1.4, amp: 0.8 + R() * 0.5, haze, ghost: !!r.sp.ghost, sway: r.sp.tail ? 1.2 : 1 });
@@ -285,7 +320,9 @@ export function npcActor(npc, o = {}) {
       const skins = RACE_SKINS[ch.race] ?? RACE_SKINS.human;
       if (npc.figure) {
         const F = npc.figure;
-        const pose = { stand: 'idle', priest: 'bless' }[slot.pose ?? o.pose] ?? slot.pose ?? o.pose ?? F.pose ?? 'idle';
+        // the NPC's own signature pose wins over a setting's generic slot pose ('stand', 'priest')
+        const generic = { stand: 'idle', priest: 'bless' }[slot.pose ?? o.pose];
+        const pose = generic ? F.pose ?? generic : slot.pose ?? o.pose ?? F.pose ?? 'idle';
         const bn = buildNpc({
           seed: look.seed, race: ch.race, gender, age: F.age ?? (tpl.age ? 0.5 * tpl.age : 0), build: F.build ?? 1, belly: F.belly,
           skin: SKIN_TONES[skins[look.skin % skins.length]],
@@ -319,19 +356,129 @@ export function npcActor(npc, o = {}) {
   };
 }
 
-/** Ferran Martinez: a knight in antique plate kneeling in vigil, sword reversed — a ghost. */
-export function ghostActor() {
+const GHOST_POSES = {
+  // kneeling in vigil before the altar, both hands on the pommel of the reversed sword
+  vigil: { kneel: 1, weaponPose: 'vigil', offPose: null, crouch: 0.42, lean: 0.12, twist: 0, headYaw: -0.1, headPitch: 0.32, headTilt: 0.05, stance: 0.07, sway: 0, hipTilt: 0 },
+  // risen and turned to face the living, the sword still reversed before him
+  stand: { weaponPose: 'vigil', offPose: null, crouch: 0, lean: -0.02, twist: -0.25, headYaw: 0.05, headPitch: -0.05, headTilt: 0, stance: 0.07, sway: 0, hipTilt: 0.02 },
+  // roused to anger: the blade comes up
+  wrath: { weaponPose: 'raised', offPose: 'point', crouch: 0.08, lean: 0.08, twist: -0.3, headYaw: 0.1, headPitch: -0.08, headTilt: 0, stance: 0.1, sway: 0, hipTilt: 0 },
+};
+
+/**
+ * Ferran Martinez: a knight in antique plate — a ghost. Rendered solid, then
+ * made spectral in 2D: a cold fog body that veils what lies behind him (so the
+ * altar never draws through), the knight's own shading gradient-mapped into
+ * moonlit cyan, a Fresnel rim from the silhouette's edge, drifting internal mist
+ * and legs that dissolve into vapour.
+ * @param {'vigil'|'stand'|'wrath'} [pose]
+ */
+export function ghostActor(pose = 'vigil') {
   return {
     ghost: true,
     render(slot, rig) {
-      const r = renderCreature('ghostKnight', slot.h, { ...rig, key: { dir: [-0.3, 0.8, 0.5], color: '#c8fbff', i: 1.3 }, rim: { dir: [0.7, 0.4, -0.6], color: '#e0ffff', i: 1.6 }, sky: '#4a8aa0', ground: '#0a1a20', amb: 0.5 }, 7, {
-        yaw: slot.yaw ?? 0.5,
-        poseOverride: { kneel: 1, weaponPose: 'vigil', offPose: null, crouch: 0.42, lean: 0.12, twist: 0, headYaw: -0.1, headPitch: 0.32, headTilt: 0.05, stance: 0.07, sway: 0, hipTilt: 0 },
-        ghostColor: '#a8f6ff',
-      });
-      return r;
+      const P = GHOST_POSES[pose] ?? GHOST_POSES.vigil;
+      const yaw = pose === 'vigil' ? slot.yaw ?? 0.5 : 0.25;
+      const h = pose === 'vigil' ? slot.h : slot.h * 1.42;
+      const r = renderCreature('ghostKnight', h, { ...rig, key: { dir: [-0.3, 0.8, 0.5], color: '#e8fbff', i: 1.25 }, rim: { dir: [0.7, 0.4, -0.6], color: '#e0ffff', i: 1.4 }, sky: '#6aa8c0', ground: '#0a1a20', amb: 0.62 }, 7, { yaw, poseOverride: P, solid: true, ink: 0.9 });
+      if (!r) return null;
+      return spectral(flattenSprite(r), r.emit);
     },
   };
+}
+
+/** Turn a solid figure sprite into a ghost (see ghostActor). */
+function spectral(f, emit = []) {
+  const { canvas: src, ox, oy } = f;
+  const pad = 26;
+  const W = src.width + pad * 2;
+  const H = src.height + pad * 2;
+  const mask = (blur = 0, color = '#fff') => {
+    const m = makeCanvas(W, H);
+    const mg = m.getContext('2d');
+    if (blur) mg.filter = `blur(${blur}px)`;
+    mg.drawImage(src, pad, pad);
+    mg.filter = 'none';
+    mg.globalCompositeOperation = 'source-in';
+    mg.fillStyle = color;
+    mg.fillRect(0, 0, W, H);
+    return m;
+  };
+  const out = makeCanvas(W, H);
+  const g = out.getContext('2d');
+  // 1. the veil: a deep teal body of fog that hides the altar's edges behind him
+  g.globalAlpha = 0.5;
+  g.drawImage(mask(6, '#0a2a34'), 0, 0);
+  g.globalAlpha = 1;
+  // 2. the knight's own light and shade, gradient-mapped into cold cyan (helm, face, plates, cape all read)
+  const body = makeCanvas(W, H);
+  const bg = body.getContext('2d');
+  bg.drawImage(src, pad, pad);
+  const img = bg.getImageData(0, 0, W, H);
+  const d = img.data;
+  const stops = [[0, [6, 26, 40]], [0.3, [24, 92, 116]], [0.55, [90, 190, 214]], [0.8, [190, 246, 255]], [1, [250, 255, 255]]];
+  for (let i = 0; i < d.length; i += 4) {
+    if (!d[i + 3]) continue;
+    const a = d[i + 3] / 255;
+    let l = (d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11) / 255 / Math.max(0.01, a);
+    l = Math.min(1, Math.pow(l, 0.85) * 1.15);
+    let k = 1;
+    while (k < stops.length - 1 && stops[k][0] < l) k++;
+    const [t0, c0] = stops[k - 1];
+    const [t1, c1] = stops[k];
+    const u = Math.max(0, Math.min(1, (l - t0) / (t1 - t0)));
+    // legs dissolve into vapour toward the floor
+    const y = Math.floor(i / 4 / W);
+    const fy = (y - pad) / Math.max(1, oy);
+    const fade = Math.min(1, Math.max(0.12, (1 - fy) * 3.2 + 0.1));
+    d[i] = (c0[0] + (c1[0] - c0[0]) * u) * a;
+    d[i + 1] = (c0[1] + (c1[1] - c0[1]) * u) * a;
+    d[i + 2] = (c0[2] + (c1[2] - c0[2]) * u) * a;
+    d[i + 3] = 255 * a * (0.4 + l * 0.42) * fade;
+  }
+  bg.putImageData(img, 0, 0);
+  g.drawImage(body, 0, 0);
+  // 3. internal mist: soft noise clipped to the body, drifting upward
+  const mist = makeCanvas(W, H);
+  const mg = mist.getContext('2d');
+  const R = rngOf(77);
+  mg.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 70; i++) {
+    const x = R() * W;
+    const y = R() * H;
+    const rr = 8 + R() * 26;
+    const gr = mg.createRadialGradient(x, y, 0, x, y, rr);
+    gr.addColorStop(0, 'rgba(170,240,255,0.16)');
+    gr.addColorStop(1, 'rgba(170,240,255,0)');
+    mg.fillStyle = gr;
+    mg.fillRect(x - rr, y - rr, rr * 2, rr * 2);
+  }
+  mg.globalCompositeOperation = 'destination-in';
+  mg.drawImage(mask(3), 0, 0);
+  g.globalCompositeOperation = 'lighter';
+  g.drawImage(mist, 0, 0);
+  // 4. Fresnel rim: the silhouette's edge glows (mask minus its blurred self)
+  const rim = mask(0, '#c8fbff');
+  const rg = rim.getContext('2d');
+  rg.globalCompositeOperation = 'destination-out';
+  rg.filter = 'blur(3px)';
+  rg.drawImage(mask(0), 0, 0);
+  rg.drawImage(mask(0), 0, 0);
+  g.drawImage(rim, 0, 0);
+  g.filter = 'blur(8px)';
+  g.globalAlpha = 0.5;
+  g.drawImage(rim, 0, 0);
+  g.filter = 'none';
+  g.globalAlpha = 1;
+  // 5. an aura of cold light around him
+  g.globalCompositeOperation = 'destination-over';
+  g.globalAlpha = 0.35;
+  g.filter = 'blur(18px)';
+  g.drawImage(mask(0, '#5ad8f0'), 0, 0);
+  g.filter = 'none';
+  g.globalAlpha = 1;
+  g.globalCompositeOperation = 'source-over';
+  return { canvas: out, ox: ox + pad, oy: oy + pad, emit: emit.map((e) => ({ ...e })), spectral: true };
 }
 
 // ------------------------------------------------------------------ NPC portraits

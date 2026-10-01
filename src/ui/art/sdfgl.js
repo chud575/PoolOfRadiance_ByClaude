@@ -301,16 +301,19 @@ float hash2i(vec2 p) { return hash3(vec3(p, 7.13)); }
 
 float pattern(int pat, float s, vec2 uv, vec3 tu, vec3 tv, vec3 wp, inout vec3 n, out vec3 extra) {
   float u = uv.x; float v = uv.y; float k = 1.0; float du = 0.0; float dv = 0.0; extra = vec3(0.0);
-  if (pat == 1) { // scales
-    u += (vnoise(vec2(u, v) / (s * 6.0)) - 0.5) * s * 1.6;
-    v += (vnoise(vec2(u, v) / (s * 6.0) + vec2(9.0, 4.0)) - 0.5) * s * 1.6;
-    float row = floor(u / (s * 0.8)); float fu = u / (s * 0.8) - row;
-    float vv = v / s + mod(row, 2.0) * 0.5; float col = floor(vv); float fv = vv - col; float cv = (fv - 0.5) * 2.0;
-    float hg = 1.0 - cv * cv - fu * fu * 0.9; float edge = max(0.0, 1.0 - hg * 3.2);
-    du = -fu * 0.5; dv = -cv * 0.55;
+  if (pat == 1) { // scales: overlapping rows, each scale domed, lit on its root and tucked under the next row
+    u += (vnoise(vec2(u, v) / (s * 6.0)) - 0.5) * s * 0.9;
+    v += (vnoise(vec2(u, v) / (s * 6.0) + vec2(9.0, 4.0)) - 0.5) * s * 0.9;
+    float rh = s * 0.62;
+    float row = floor(u / rh); float fu = u / rh - row;
+    float vv = v / s + mod(row, 2.0) * 0.5; float col = floor(vv); float fv = (vv - col - 0.5) * 2.0;
+    // rounded free edge: the scale's outline is a U opening toward the root
+    float edgeD = fu + fv * fv * 0.55;
+    float seam = smoothstep(0.86, 1.08, edgeD);
     float rnd = hash2i(vec2(row, col));
-    k = (0.9 + rnd * 0.14) * (1.0 - edge * 0.25) * (0.82 + fbm(vec2(u, v) / (s * 9.0)) * 0.36);
-    extra.x = edge; extra.z = clamp((rnd - 0.55) * 2.5, 0.0, 1.0);
+    du = (0.5 - fu) * 0.55; dv = -fv * 0.4;
+    k = (0.88 + rnd * 0.2) * (1.08 - fu * 0.3) * (1.0 - seam * 0.32) * (0.86 + fbm(vec2(u, v) / (s * 9.0)) * 0.28);
+    extra.x = 0.0; extra.z = clamp((rnd - 0.62) * 2.2, 0.0, 1.0);
   } else if (pat == 2) { // fur / hair
     float n1 = vnoise(vec2(u / (s * 2.4), v / (s * 0.22)));
     float n2 = vnoise(vec2(u / (s * 0.9) + 7.0, v / (s * 0.12) + 3.0));
@@ -334,9 +337,11 @@ float pattern(int pat, float s, vec2 uv, vec3 tu, vec3 tv, vec3 wp, inout vec3 n
     float ring = abs(r - 0.32) < 0.13 ? 1.0 : 0.0; du = ring * fu * 0.9; dv = ring * fv * 0.9; k = ring > 0.5 ? 1.08 : 0.45;
   } else if (pat == 7) { // wood
     float gg = sin(v / (s * 0.1) + fbm(vec2(u / (s * 3.0), v / (s * 0.5))) * 6.0); k = 0.8 + gg * 0.12; dv = gg * 0.12;
-  } else if (pat == 8) { // skin: pores, mottling
+  } else if (pat == 8) { // skin: pores, mottling, broad blotches of colour and value (no two square inches alike)
     float nn = fbm3(wp / (s * 1.2)); float pore = vnoise3(wp / (s * 0.12));
-    k = 0.92 + nn * 0.12; du = (nn - 0.5) * 0.15 + (pore - 0.5) * 0.06; dv = (pore - 0.5) * 0.06;
+    float blot = fbm3(wp / (s * 7.0) + 5.0);
+    k = 0.84 + nn * 0.16 + (blot - 0.5) * 0.28; du = (nn - 0.5) * 0.18 + (pore - 0.5) * 0.08; dv = (pore - 0.5) * 0.08;
+    extra.x = -1.0 - clamp(blot * 1.6 - 0.45, 0.0, 1.0); // flush (decoded below)
   } else if (pat == 9) { // bone
     float nn = fbm(vec2(u / (s * 1.4), v / (s * 0.8))); float crack = abs(vnoise(vec2(u / (s * 0.7), v / (s * 0.3))) - 0.5) < 0.03 ? 0.6 : 1.0;
     k = (0.8 + nn * 0.3) * crack; du = (nn - 0.5) * 0.3;
@@ -399,7 +404,10 @@ void main() {
     n = normalize(nb * 0.45 + np * 0.55);
     base *= k;
     if (extra.z > 0.0 && m3.r + m3.g + m3.b > 0.0) base = mix(base, m3.rgb * k, extra.z);
+    if (extra.x < -0.5) base = mix(base, base * vec3(1.12, 0.84, 0.8), (-extra.x - 1.0) * 0.55); // ruddy flush on skin
   }
+  // broad value drift over every non-metal surface: worn, sun-faded, dirty patches
+  if (!metal) base *= 0.9 + fbm3(wp * 6.0 + 17.0) * 0.2;
   if (metal && extra.y > 0.0) base = mix(base, vec3(0.36, 0.2, 0.1), min(0.7, extra.y));
   float sh = shadowAt(p, nb);
   float occ = 0.0; float sc = 1.0;
@@ -427,12 +435,15 @@ void main() {
   if (metal) {
     c = base * (dk * 0.55 * uKeyC + ambC * 0.8 + fillC) + spec * uKeyC * (0.4 + base) + mix(uGnd, uSky, hemi) * 0.25 * base * ao + rimT * uRimC * (0.5 + base);
   } else {
+    spec *= 0.38; // matte: skin, cloth and leather keep only a soft sheen
     float term = sss > 0.3 ? max(0.0, 1.0 - abs(ndl) * 3.0) * 0.2 * sh : 0.0;
     vec3 scatter = vec3(1.25, 0.4, 0.22) * term;
     float trans = sss > 0.3 ? pow(max(0.0, dot(-n, uKey)), 2.0) * (1.0 - thick) * 0.5 : 0.0;
     c = base * (dk * uKeyC + ambC + fillC) + spec * uKeyC + rimT * uRimC * (0.35 + base * 0.6) + base * scatter + uKeyC * vec3(1.0, 0.45, 0.3) * trans * base * 1.4;
   }
-  c *= footDark * mix(1.0, ao, 0.35);
+  c *= footDark * mix(1.0, ao, 0.55);
+  // warm bounce off the floor into the lower body: figures sit in their scene's light
+  c += base * uGnd * pow(1.0 - hgt, 2.0) * max(0.0, -n.y * 0.6 + 0.4) * 0.9;
   c += m2.rgb;
   c = c / (1.0 + c * 0.28) * 1.18;
   float dz = clamp((p.z - uFig.z) * 3.0, 0.0, 1.0);

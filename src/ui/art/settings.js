@@ -531,6 +531,7 @@ export function roomScene(g, W, H, R, o) {
       g.fillRect(xl, y - 5 * (1 - s) - 2, xr - xl, 10 * (1 - s) + 3);
     }
   }
+  if (o.vault) vaultCeiling(g, W, H, R, bx0, bx1, by0, o);
   g.restore();
   void ceil;
   // floor
@@ -595,6 +596,74 @@ export function roomScene(g, W, H, R, o) {
   g.fillStyle = linGrad(g, 0, by1 - 30, 0, by1 + 10, [[0, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0.5)']]);
   g.fillRect(bx0, by1 - 30, bx1 - bx0, 40);
   return { bx0, bx1, by0, by1, lights, horizon: by1, floorY: by1 };
+}
+
+/**
+ * A ribbed stone vault over a room: webs of dressed stone shaded toward the
+ * crown, transverse and diagonal ribs receding down the nave, a wall rib over
+ * the far wall — and, if o.vault.hole, a broken bay open to the night sky.
+ */
+function vaultCeiling(g, W, H, R, bx0, bx1, by0, o) {
+  const v = typeof o.vault === 'object' ? o.vault : {};
+  const stone = v.stone ?? '#3a3a42';
+  // webs
+  g.fillStyle = linGrad(g, 0, 0, 0, by0, [[0, rgba(mix(stone, '#000000', 0.55))], [1, rgba(mix(stone, '#000000', 0.15))]]);
+  g.fillRect(0, 0, W, by0 + 2);
+  texture(g, 0, 0, W, by0 + 2, { alpha: 0.45, cells: 10, seed: R.int(1, 99) });
+  masonry(g, 0, 0, W, by0, { base: stone, course: 14, blockW: 40, seed: R.int(1, 99), mortar: 'rgba(10,10,14,0.5)' });
+  g.fillStyle = linGrad(g, 0, 0, 0, by0, [[0, 'rgba(0,0,0,0.7)'], [1, 'rgba(0,0,0,0.15)']]);
+  g.fillRect(0, 0, W, by0 + 2);
+  if (v.hole) {
+    // the roof has failed in one bay: stars, the edge of the moon's light, broken ribs
+    const hx = W * v.hole[0];
+    const hy = by0 * v.hole[1];
+    const hw = W * (v.hole[2] ?? 0.12);
+    g.save();
+    g.beginPath();
+    for (let i = 0; i <= 14; i++) {
+      const a = (i / 14) * Math.PI * 2;
+      const rr = 1 + (R() - 0.5) * 0.45;
+      g[i ? 'lineTo' : 'moveTo'](hx + Math.cos(a) * hw * 0.5 * rr, hy + Math.sin(a) * hw * 0.22 * rr);
+    }
+    g.closePath();
+    g.fillStyle = linGrad(g, 0, hy - hw * 0.2, 0, hy + hw * 0.2, [[0, '#1a2440'], [1, '#2a3a60']]);
+    g.fill();
+    g.clip();
+    for (let i = 0; i < 18; i++) { g.fillStyle = rgba('#e8f0ff', 0.5 + R() * 0.5); g.fillRect(hx + (R() - 0.5) * hw, hy + (R() - 0.5) * hw * 0.4, 1.5, 1.5); }
+    g.restore();
+    glow(g, hx, hy, hw * 0.9, '#8aa8e0', 0.25, 'screen');
+  }
+  // transverse ribs receding toward the far wall, and the wall rib over it
+  const ribs = 5;
+  for (let i = 0; i <= ribs; i++) {
+    const s = persp(i / ribs, 3);
+    const xl = lerp(0, bx0, s);
+    const xr = lerp(W, bx1, s);
+    const y = lerp(-H * 0.05, by0, s);
+    const rw = lerp(16, 4, s);
+    const rise = (xr - xl) * 0.42;
+    for (const [col, wdt] of [['#121216', rw * 1.4], [mix(stone, '#c8c4bc', 0.35), rw], [mix(stone, '#e8e4dc', 0.5), rw * 0.3]]) {
+      g.strokeStyle = Array.isArray(col) ? rgba(col) : col;
+      g.lineWidth = wdt;
+      g.beginPath();
+      g.moveTo(xl, y);
+      g.quadraticCurveTo((xl + xr) / 2, y - rise, xr, y);
+      g.stroke();
+    }
+  }
+  // diagonal ribs crossing each bay
+  g.strokeStyle = rgba(mix(stone, '#d8d4cc', 0.3), 0.85);
+  for (let i = 0; i < ribs; i++) {
+    const s0 = persp(i / ribs, 3);
+    const s1 = persp((i + 1) / ribs, 3);
+    g.lineWidth = lerp(8, 2, s0);
+    const xl0 = lerp(0, bx0, s0); const xr0 = lerp(W, bx1, s0); const y0 = lerp(-H * 0.05, by0, s0);
+    const xl1 = lerp(0, bx0, s1); const xr1 = lerp(W, bx1, s1); const y1 = lerp(-H * 0.05, by0, s1);
+    const cx = (xl0 + xr0 + xl1 + xr1) / 4;
+    const cy = Math.min(y0, y1) - (xr0 - xl0) * 0.3;
+    g.beginPath(); g.moveTo(xl0, y0); g.quadraticCurveTo(cx, cy, xr1, y1); g.stroke();
+    g.beginPath(); g.moveTo(xr0, y0); g.quadraticCurveTo(cx, cy, xl1, y1); g.stroke();
+  }
 }
 
 // ================================================================== settings

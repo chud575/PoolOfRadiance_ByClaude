@@ -38,6 +38,7 @@ export const DIALOGUES = {
   city_hall: {
     id: 'city_hall', title: 'City Hall', subtitle: 'The Council of New Phlan',
     art: { setting: 'cityhall', npc: 'clerk' },
+    status: 'council', // the parchment shows the party's standing and commission tally
     start: 'enter',
     nodes: {
       enter: {
@@ -55,10 +56,10 @@ export const DIALOGUES = {
         next: 'enter',
       },
       procl: { speaker: 'clerk', panel: 'proclamations', text: '"The board. Most of it is bounties. The rest is bounties with better handwriting."', choices: HALL },
-      commissions: { speaker: 'clerk', panel: 'commissions', text: '"The Council\'s commissions. Take any that suit you — but take them before you go and do the work. The Council does not pay for favours it did not ask for."', choices: HALL },
-      heroes: { speaker: 'clerk', panel: 'heroes', journal: 26, text: '"The roll of the victorious, and beneath it the roll of those who tried. I add to both with the same pen."', choices: HALL },
+      commissions: { speaker: 'clerk', panel: 'commissions', art: { pose: 'ledger' }, text: '"The Council\'s commissions. Take any that suit you — but take them before you go and do the work. The Council does not pay for favours it did not ask for."', choices: HALL },
+      heroes: { speaker: 'clerk', panel: 'heroes', journal: 26, art: { pose: 'ledger' }, text: '"The roll of the victorious, and beneath it the roll of those who tried. I add to both with the same pen."', choices: HALL },
       report: {
-        speaker: 'clerk', panel: 'report',
+        speaker: 'clerk', panel: 'report', art: { pose: 'ledger' },
         text: '"Let me see your proofs." The Clerk turns the ledger around so you can watch him write.',
         choices: HALL,
       },
@@ -242,27 +243,27 @@ export const DIALOGUES = {
         ],
       },
       speak: {
-        speaker: 'ferran', journal: 7, do: [{ flag: 'met_ferran' }, { item: 'bronzeKey' }],
+        speaker: 'ferran', journal: 7, art: { pose: 'stand' }, do: [{ flag: 'met_ferran' }, { item: 'bronzeKey' }],
         text: '"Living men. It has been long." His voice is the wind in an empty helm. "I am Ferran Martinez, castellan of this keep. Take this key — it opens the beacon tower. Light the beacon, and my men may lay down their watch."',
         next: 'more',
       },
       more: {
-        speaker: 'ferran',
+        speaker: 'ferran', art: { pose: 'stand' },
         text: '"And hear me. Something beneath the old city calls to the dead, and we rise and turn our faces toward it like flowers to the sun. Find what calls. End it. Then, perhaps, we may all rest."',
         end: true,
       },
       haughty: {
-        speaker: 'ferran',
+        speaker: 'ferran', art: { pose: 'stand' },
         text: '"You speak to me as to a servant." The ghost\'s eyes kindle. "I was knighted by the last true lord of Phlan. Mind your tongue in my chapel — and then, if you are worthy, I will speak."',
         choices: [{ label: 'Apologise', key: 'A', goto: 'speak' }, { label: 'Leave', key: 'L', end: true }],
       },
       abusive: {
-        speaker: 'ferran',
+        speaker: 'ferran', art: { pose: 'wrath' },
         text: 'The candles gutter and die. The ghost\'s sword comes up, and the cold of it goes through you like a winter sea. "Begone."',
         do: [{ damage: '1d6' }],
         end: true,
       },
-      again: { speaker: 'ferran', text: '"The beacon, friends. Light the beacon."', end: true },
+      again: { speaker: 'ferran', art: { pose: 'stand' }, text: '"The beacon, friends. Light the beacon."', end: true },
       rest: { speaker: 'ferran', text: 'The chapel is empty. On the altar, where the knight knelt, lies a sword that shines like new, and a single white rose.', do: [{ item: 'longSwordPlus2', once: 'ferran_sword' }], end: true },
     },
   },

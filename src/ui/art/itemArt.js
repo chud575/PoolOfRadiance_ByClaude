@@ -12,9 +12,9 @@ import { M, weapon } from './bodies.js';
 const cache = new Map();
 
 const RIG = {
-  key: { dir: [-0.55, 0.7, 0.55], color: '#fff2dc', i: 1.7 },
-  rim: { dir: [0.8, 0.3, -0.5], color: '#b8d0ff', i: 1.4 },
-  sky: '#a8b8d8', ground: '#5a4a3a', amb: 0.95,
+  key: { dir: [-0.55, 0.7, 0.55], color: '#fff2dc', i: 1.85 },
+  rim: { dir: [0.8, 0.3, -0.5], color: '#d0e0ff', i: 1.7 },
+  sky: '#b8c4dc', ground: '#6a5a4a', amb: 1.05,
 };
 
 const steel = mat('#c4c8d2', { pattern: 'metal', metal: true, rough: 0.22, spec: 1.1, scale: 0.08 });
@@ -83,79 +83,104 @@ function bowArc(f, H, depth, m, { recurve = 0, r = 0.022 } = {}) {
   return pts;
 }
 
-/** Torso-shaped armour body, decorated by kind. */
+/**
+ * Body armour, each type with its own silhouette so it reads at a glance on a
+ * card: a long quilted gambeson with sleeves, a leather cuirass with hanging
+ * strips, a hooded mail hauberk, a flared coat of scales, banded plates that
+ * wrap the body and the shoulders, vertical splints, and a ridged plate cuirass
+ * with great pauldrons and tassets.
+ */
 function armour(f, kind) {
-  const torso = (m) => {
-    f.ell([0, 0.08, 0], [0.3, 0.34, 0.16], m, { group: 'a' });
-    f.ell([0, -0.22, 0], [0.26, 0.14, 0.15], m, { group: 'a' });
+  const torso = (m, { waist = 0.26, chestW = 0.3 } = {}) => {
+    f.ell([0, 0.08, 0], [chestW, 0.34, 0.16], m, { group: 'a' });
+    f.ell([0, -0.22, 0], [waist, 0.14, 0.15], m, { group: 'a' });
     for (const d of [-1, 1]) f.ell([d * 0.3, 0.28, 0], [0.12, 0.1, 0.13], m, { group: 'a' });
     f.ell([0, 0.4, 0.02], [0.13, 0.05, 0.08], mat('#1a120a'), { group: null });
   };
+  const sleeves = (m, len = 0.3, r = 0.075) => { for (const d of [-1, 1]) f.cone([d * 0.33, 0.27, 0], [d * (0.4 + len * 0.3), 0.27 - len, 0.02], r, r * 0.85, m, { group: 'a' }); };
+  const skirt = (m, y1 = -0.55, flare = 0.34) => f.cone([0, -0.25, 0], [0, y1, 0.01], 0.25, flare, m, { group: 'a' });
+  const leatherL = mat('#8a5a32', { pattern: 'leather', scale: 0.05, rough: 0.65, spec: 0.2 });
+  const strap = mat('#3a2010', { pattern: 'leather', scale: 0.02 });
   switch (kind) {
     case 'padded': {
-      torso(mat('#c8b890', { pattern: 'cloth', scale: 0.03, rough: 0.9, spec: 0.05 }));
-      for (let j = 0; j < 6; j++) for (let i = -3; i <= 3; i++) f.sphere([i * 0.075 + (j % 2) * 0.037, 0.3 - j * 0.09, 0.14 + (Math.abs(i) < 3 ? 0.012 : -0.02)], 0.012, mat('#8a7a58', { rough: 1 }), { group: null });
+      // quilted gambeson: long sleeves, a skirt to the thigh, vertical quilting
+      const cloth = mat('#e0d0a8', { pattern: 'cloth', scale: 0.03, rough: 0.9, spec: 0.05 });
+      torso(cloth); sleeves(cloth, 0.42, 0.08); skirt(cloth, -0.5, 0.31);
+      for (let i = -3; i <= 3; i++) f.box([i * 0.075, -0.05, 0.155 - Math.abs(i) * 0.012], [0.006, 0.4, 0.006], mat('#8a7a58', { rough: 1 }), { group: null });
       break;
     }
     case 'leather': {
-      torso(leather);
-      f.box([0, -0.12, 0.16], [0.22, 0.02, 0.02], mat('#3a2010', { pattern: 'leather', scale: 0.02 }), { group: null, bevel: 0.01 });
+      // boiled-leather cuirass, no sleeves; pteruges strips hang from the waist, buckled straps over the shoulders
+      torso(leatherL, { waist: 0.24 });
+      for (let i = -3; i <= 3; i++) f.box([i * 0.072, -0.42, 0.11 - Math.abs(i) * 0.015], [0.03, 0.11, 0.012], leatherL, { group: null, bevel: 0.008, R: rotZ(i * 0.04) });
+      for (const d of [-1, 1]) f.box([d * 0.17, 0.3, 0.15], [0.03, 0.1, 0.012], strap, { group: null, bevel: 0.006 });
+      f.box([0, -0.12, 0.16], [0.22, 0.02, 0.02], strap, { group: null, bevel: 0.01 });
       f.box([0, -0.12, 0.18], [0.035, 0.03, 0.01], brass, { group: null, bevel: 0.005 });
       break;
     }
     case 'studded': {
-      torso(mat('#5a3820', { pattern: 'leather', scale: 0.05 }));
-      for (let j = 0; j < 6; j++) for (let i = -3; i <= 3; i++) f.sphere([i * 0.072 + (j % 2) * 0.036, 0.32 - j * 0.09, 0.14 + (Math.abs(i) < 3 ? 0.014 : -0.02)], 0.014, silver, { group: null });
+      const m = mat('#6a4224', { pattern: 'leather', scale: 0.05 });
+      torso(m); sleeves(m, 0.18, 0.08); skirt(m, -0.42, 0.29);
+      for (let j = 0; j < 8; j++) for (let i = -3; i <= 3; i++) f.sphere([i * 0.072 + (j % 2) * 0.036, 0.32 - j * 0.09, 0.15 + (Math.abs(i) < 3 ? 0.012 : -0.02) + (j > 5 ? 0.01 : 0)], 0.016, silver, { group: null });
       break;
     }
     case 'ring': {
-      torso(mat('#5a3820', { pattern: 'leather', scale: 0.05 }));
+      const m = mat('#6a4224', { pattern: 'leather', scale: 0.05 });
+      torso(m); sleeves(m, 0.2, 0.08);
       for (let j = 0; j < 5; j++) for (let i = -3; i <= 3; i++) {
-        f.ell([i * 0.075 + (j % 2) * 0.037, 0.3 - j * 0.1, 0.15 + (Math.abs(i) < 3 ? 0.01 : -0.03)], [0.026, 0.026, 0.006], iron, { group: null });
-        f.ell([i * 0.075 + (j % 2) * 0.037, 0.3 - j * 0.1, 0.156 + (Math.abs(i) < 3 ? 0.01 : -0.03)], [0.012, 0.012, 0.004], mat('#3a2010'), { group: null });
+        f.ell([i * 0.075 + (j % 2) * 0.037, 0.3 - j * 0.1, 0.15 + (Math.abs(i) < 3 ? 0.01 : -0.03)], [0.028, 0.028, 0.006], steel, { group: null });
+        f.ell([i * 0.075 + (j % 2) * 0.037, 0.3 - j * 0.1, 0.156 + (Math.abs(i) < 3 ? 0.01 : -0.03)], [0.013, 0.013, 0.004], mat('#2a1808'), { group: null });
       }
       break;
     }
     case 'scale': {
-      torso(mat('#a0a0a8', { pattern: 'scales', metal: true, scale: 0.05, rough: 0.35, spec: 0.9 }));
+      // a coat of overlapping scales flaring to the thigh, short sleeves
+      const m = mat('#b8b4a8', { pattern: 'scales', metal: true, scale: 0.06, rough: 0.35, spec: 0.9, tint2: '#8a7a5a' });
+      torso(m); sleeves(m, 0.16, 0.085); skirt(m, -0.58, 0.38);
       break;
     }
-    case 'chain': {
-      torso(mat('#9a9ca4', { pattern: 'mail', metal: true, scale: 0.12, rough: 0.4, spec: 0.8 }));
-      f.ell([0, -0.33, 0], [0.27, 0.06, 0.15], mat('#9a9ca4', { pattern: 'mail', metal: true, scale: 0.12, rough: 0.4, spec: 0.8 }), { group: null });
-      break;
-    }
+    case 'chain':
     case 'elfin': {
-      torso(mat('#d8e0e8', { pattern: 'mail', metal: true, scale: 0.06, rough: 0.2, spec: 1.2 }));
+      // a mail hauberk: elbow sleeves, hem to mid-thigh, and its coif rising behind the neck
+      const m = mat(kind === 'elfin' ? '#dde4ee' : '#a8aab2', { pattern: 'mail', metal: true, scale: kind === 'elfin' ? 0.07 : 0.12, rough: kind === 'elfin' ? 0.2 : 0.4, spec: kind === 'elfin' ? 1.2 : 0.8 });
+      torso(m); sleeves(m, 0.28, 0.08); skirt(m, -0.52, 0.32);
+      f.ell([0, 0.5, -0.04], [0.17, 0.15, 0.15], m, { group: 'a' });
+      f.ell([0, 0.47, 0.06], [0.1, 0.09, 0.06], mat('#120c08'), { group: null });
       break;
     }
     case 'banded': {
-      torso(mat('#6a5a48', { pattern: 'mail', metal: true, scale: 0.12, rough: 0.5, spec: 0.5 }));
-      for (let j = 0; j < 7; j++) {
+      // horizontal steel bands wrap the body; banded lames over each shoulder
+      torso(mat('#5a4a3a', { pattern: 'mail', metal: true, scale: 0.12, rough: 0.5, spec: 0.5 }));
+      for (let j = 0; j < 8; j++) {
         const y = 0.3 - j * 0.085;
         const w = 0.31 - Math.abs(j - 2.5) * 0.015;
-        f.ell([0, y, 0.01], [w, 0.03, 0.17], steel, { group: null });
-        for (const d of [-1, 1]) f.sphere([d * w * 0.55, y, 0.16], 0.012, brass, { group: null });
+        f.ell([0, y, 0.01], [w, 0.034, 0.175], steel, { group: null });
+        for (const d of [-1, 1]) f.sphere([d * w * 0.55, y, 0.165], 0.013, brass, { group: null });
       }
+      for (const d of [-1, 1]) for (let k = 0; k < 3; k++) f.ell([d * (0.33 + k * 0.03), 0.31 - k * 0.06, 0], [0.13, 0.035, 0.14], steel, { group: null, R: rotZ(d * -0.45) });
       break;
     }
     case 'splint': {
+      // vertical splints riveted to leather, a skirt of splints, mail sleeves
       torso(mat('#5a3820', { pattern: 'leather', scale: 0.05 }));
-      for (let i = -4; i <= 4; i++) f.box([i * 0.06, 0.02, 0.15 - Math.abs(i) * 0.012], [0.024, 0.28, 0.012], iron, { group: null, R: rotY(i * 0.12), bevel: 0.008 });
-      for (const y of [0.25, -0.2]) f.box([0, y, 0.165], [0.28, 0.012, 0.01], leather, { group: null, bevel: 0.005 });
+      sleeves(mat('#9a9ca4', { pattern: 'mail', metal: true, scale: 0.12, rough: 0.4, spec: 0.8 }), 0.26, 0.075);
+      for (let i = -4; i <= 4; i++) f.box([i * 0.06, 0.04, 0.15 - Math.abs(i) * 0.012], [0.024, 0.26, 0.012], iron, { group: null, R: rotY(i * 0.12), bevel: 0.008 });
+      for (let i = -4; i <= 4; i++) f.box([i * 0.065, -0.42, 0.12 - Math.abs(i) * 0.014], [0.026, 0.12, 0.012], iron, { group: null, R: mul3(rotY(i * 0.12), rotZ(i * 0.05)), bevel: 0.008 });
+      for (const y of [0.25, -0.2]) f.box([0, y, 0.165], [0.28, 0.012, 0.01], strap, { group: null, bevel: 0.005 });
       break;
     }
     case 'plate':
     default: {
+      // a ridged breastplate, a gorget, great layered pauldrons and tassets
       f.ell([0, 0.08, 0.01], [0.3, 0.34, 0.17], steel, { group: 'p' });
-      f.box([0, 0.1, 0.17], [0.006, 0.26, 0.006], silver, { group: null, bevel: 0.004 });
+      f.box([0, 0.1, 0.17], [0.008, 0.26, 0.008], silver, { group: null, bevel: 0.005 });
       for (let j = 0; j < 3; j++) f.ell([0, -0.2 - j * 0.07, 0.0], [0.27 - j * 0.01, 0.04, 0.16], steel, { group: null });
       for (const d of [-1, 1]) {
-        f.ell([d * 0.32, 0.3, 0], [0.15, 0.1, 0.15], steel, { group: null, R: rotZ(d * -0.4) });
-        f.ell([d * 0.36, 0.22, 0], [0.13, 0.07, 0.14], steel, { group: null, R: rotZ(d * -0.5) });
+        for (let k = 0; k < 3; k++) f.ell([d * (0.34 + k * 0.02), 0.32 - k * 0.07, 0], [0.17 - k * 0.015, 0.11 - k * 0.02, 0.17], steel, { group: null, R: rotZ(d * (-0.35 - k * 0.1)) });
+        f.box([d * 0.13, -0.46, 0.08], [0.1, 0.11, 0.015], steel, { group: null, bevel: 0.02, R: rotZ(d * 0.1) });
       }
-      f.ell([0, 0.42, 0], [0.14, 0.05, 0.1], steel, { group: null });
-      for (const d of [-1, 1]) f.sphere([d * 0.15, 0.32, 0.16], 0.014, brass, { group: null });
+      f.cone([0, 0.38, 0], [0, 0.5, 0], 0.15, 0.12, steel, { group: null });
+      for (const d of [-1, 1]) f.sphere([d * 0.15, 0.32, 0.16], 0.016, brass, { group: null });
       break;
     }
   }
@@ -267,10 +292,15 @@ function model(def) {
       return { f, R: euler3(0, 0, -0.78) };
     }
     case 'sling': {
-      f.ell([0, -0.2, 0], [0.11, 0.07, 0.04], leather, { group: null });
-      for (const d of [-1, 1]) for (let i = 0; i < 8; i++) f.sphere([d * (0.1 + Math.sin(i * 0.4) * 0.04 * i * 0.3), -0.18 + i * 0.07, 0], 0.01, cord, { group: 'cord', blend: 0.01 });
-      f.sphere([0, -0.19, 0.04], 0.04, mat('#8a8478', { pattern: 'stone', scale: 0.03 }), { group: null });
-      return { f, R: euler3(0, 0, 0) };
+      // a broad leather cradle holding a stone, two plaited cords rising to a finger loop
+      const cradle = mat('#a87a4a', { pattern: 'leather', scale: 0.04, rough: 0.6, spec: 0.25 });
+      f.ell([0, -0.32, 0], [0.16, 0.09, 0.05], cradle, { group: 'p' });
+      f.sphere([0, -0.3, 0.05], 0.065, mat('#a8a49a', { pattern: 'stone', scale: 0.03 }), { group: null });
+      const cordM = mat('#e8dcc0', { pattern: 'cloth', scale: 0.008, rough: 0.8 });
+      for (const d of [-1, 1]) f.cone([d * 0.15, -0.3, 0], [d * 0.03, 0.42, 0], 0.016, 0.014, cordM, { group: null });
+      f.ell([0, 0.47, 0], [0.05, 0.06, 0.016], cordM, { group: null });
+      f.ell([0, 0.47, 0.004], [0.028, 0.035, 0.02], mat('#0a0806'), { group: null });
+      return { f, R: euler3(0, 0, -0.35) };
     }
     case 'dart': {
       f.cone([0, -0.3, 0], [0, 0.25, 0], 0.012, 0.01, wood, { group: null });
@@ -359,9 +389,11 @@ export function itemArtURL(def, o = {}) {
       g.fillStyle = rg;
       g.fillRect(0, 0, size, size);
     }
-    const halo = g.createRadialGradient(size / 2, size / 2, size * 0.1, size / 2, size / 2, size * 0.5);
-    halo.addColorStop(0, 'rgba(150,175,230,0.22)');
-    halo.addColorStop(1, 'rgba(150,175,230,0)');
+    // a warm lit disc behind every item so dark wood, leather and cord read against the navy cards
+    const halo = g.createRadialGradient(size / 2, size * 0.46, size * 0.05, size / 2, size / 2, size * 0.5);
+    halo.addColorStop(0, 'rgba(236,214,170,0.5)');
+    halo.addColorStop(0.6, 'rgba(160,150,140,0.2)');
+    halo.addColorStop(1, 'rgba(120,140,190,0)');
     g.fillStyle = halo;
     g.fillRect(0, 0, size, size);
     g.shadowColor = 'rgba(0,0,0,0.75)';

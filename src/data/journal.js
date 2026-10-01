@@ -63,7 +63,7 @@ export const JOURNAL = [
   {
     n: 7, title: 'The Ghost of the Castellan', where: 'Sokol Keep chapel',
     text: [
-      'He stands before the broken altar with his sword reversed, as knights keep vigil. When he turns, you see the lamplight through him.',
+      'He kneels before the broken altar with his sword reversed, as knights keep vigil. When he rises and turns, the candlelight shines through him.',
       '"I am Ferran Martinez, castellan of this keep. I held the gate until dawn, and at dawn I learned that the gate had never been the danger. Something beneath the old city calls to the dead, and they rise and walk towards it. Find what calls. End it. Then, perhaps, my men and I may rest."',
     ],
   },

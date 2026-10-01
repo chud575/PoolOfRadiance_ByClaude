@@ -111,6 +111,14 @@ export const SHOPS = {
     greeting: 'Sit, sit. Ale\'s a copper, stew\'s two, and gossip is free if you drink enough of the first.',
     drink: 1,
     ambience: 'Smoke hangs under the beams. A dwarf is losing at dice to a halfling who is not cheating, quite; two off-duty watchmen argue about the Slum Wall; by the fire an old sailor waits for someone to buy him a drink and ask for a story.',
+    // the people the picture shows (setting cast: dice, watch, sailor), each worth a listen
+    cast: ['dice', 'watch', 'sailor'],
+    fare: [['Ale', '1 cp'], ['Stew', '2 cp'], ['Black bread', '1 cp'], ['Wine', '1 sp'], ['A bed', '5 sp']],
+    patrons: [
+      { icon: '⚄', who: 'Brannoc & Tibbet', what: 'A dwarf losing at dice to a halfling', line: '"Sixes. Again." The dwarf glares at the halfling, who smiles like a cat in a dairy. "Luck of the small folk," says Tibbet. "Same luck that kept us out of the Slums when the kobolds came up the old sewers. They come and go by the drains, you know. Like rats with spears."' },
+      { icon: '⚔', who: 'Two watchmen of the Slum Wall', what: 'Off duty, and arguing about it', line: '"Hold the wall and let the Council hire swords to clear the blocks," says the older. "Hired swords like them?" says the younger, nodding at you. "The Council pays in gold and journal-ink. Ask the Clerk — he has a list as long as your arm."' },
+      { icon: '⚓', who: 'Old Tam, by the fire', what: 'A sailor who wants a drink and a listener', short: 'him', cost: 1, journal: 20, line: 'Old Tam wraps both hands around the mug. "I sailed with the fleet that fled when the dragon came. I saw the Pool from the water, boy — a light under the old city, like the sun drowned in a cellar. Every one of us that looked at it too long went strange."' },
+    ],
     notices: [
       { head: 'Reward', text: 'Two silver the pair for kobold ears, brought to the Watch at the Slum Wall. No elf ears. We can tell.' },
       { head: 'Wanted', text: 'Strong backs for the Cadorna Textile House. Ask for Master Porphyrys. Discretion paid.' },
@@ -135,6 +143,8 @@ export const SHOPS = {
     setting: 'tavern',
     greeting: 'Sailors\' bar. Sailors\' rules. Don\'t whistle, don\'t sing, and don\'t ask about the island.',
     drink: 2,
+    cast: ['sailors'],
+    fare: [['Grog', '2 cp'], ['Fish stew', '3 cp'], ['Rum', '1 sp']],
     ambience: 'Tar, salt and wet wool. The sailors drink with their backs to the wall and their eyes on the door, and nobody looks out of the window toward the island.',
     rumors: [
       { journal: 6, text: '"Sokol Keep? Lights on the walls, no moon. No crew\'ll anchor under it. I\'ll row you, mind. Rowing\'s different."' },

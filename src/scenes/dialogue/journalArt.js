@@ -12,7 +12,7 @@ import { rngOf } from '../../ui/art/paint.js';
 // subject of each entry's plate
 const PLATES = {
   1: { setting: 'docks', light: 'dusk' }, 2: { setting: 'docks', light: 'day' }, 3: { setting: 'cityhall', actor: 'clerk' }, 4: { setting: 'cityhall', actor: 'clerk' },
-  5: { setting: 'slums', monsters: [{ id: 'kobold', count: 3 }] }, 6: { setting: 'keep', light: 'night' }, 7: { setting: 'chapel', actor: 'ferran', light: 'ghost' },
+  5: { setting: 'slums', monsters: [{ id: 'kobold', count: 3 }] }, 6: { setting: 'keep', light: 'night' }, 7: { setting: 'chapel', actor: 'ferran', light: 'ghost', pose: 'stand' },
   8: { setting: 'well_head' }, 9: { setting: 'plaza', light: 'day' }, 10: { setting: 'library', actor: 'sage' }, 11: { setting: 'library' }, 12: { setting: 'textile' },
   13: { setting: 'temple_bane', actor: 'bane_priest' }, 14: { setting: 'graveyard', monsters: [{ id: 'skeleton', count: 3 }] }, 15: { setting: 'castle', monsters: [{ id: 'hillGiant', count: 1 }] },
   16: { setting: 'gate', monsters: [{ id: 'orc', count: 3 }] }, 17: { setting: 'temple_bane' }, 18: { setting: 'pool', monsters: [{ id: 'tyranthraxus', count: 1 }] }, 19: { setting: 'wilds' },
@@ -31,77 +31,167 @@ export function engravedPlate(n) {
   const W = 720;
   const H = 290;
   const npc = spec.actor ? NPCS[spec.actor] : null;
-  const actor = npc ? (npc.kind === 'ghost' ? ghostActor() : npcActor(npc)) : null;
-  const { canvas } = paintPanel({ setting: spec.setting, light: spec.light, monsters: spec.monsters, actor, w: W, h: H, seed: n * 17 + 3 });
-  const url = engrave(canvas, n).toDataURL('image/png');
+  const actor = npc ? (npc.kind === 'ghost' ? ghostActor(spec.pose) : npcActor(npc)) : null;
+  const { canvas, composer } = paintPanel({ setting: spec.setting, light: spec.light, monsters: spec.monsters, actor, w: W, h: H, seed: n * 17 + 3 });
+  // the subject's silhouette: every figure sprite drawn as a flat mask
+  const mask = document.createElement('canvas');
+  mask.width = W;
+  mask.height = H;
+  const mg = mask.getContext('2d');
+  for (const a of composer.actors) composer._sprite(mg, { ...a, ghost: false, r: { ...a.r, emit: [] } }, 0);
+  for (const o of composer.ops) if (o.kind === 'sprite') composer._sprite(mg, { ...o, ghost: false, r: { ...o.r, emit: [] } }, 0);
+  const url = engrave(canvas, mask, n).toDataURL('image/png');
   plateCache.set(n, url);
   return url;
 }
 
-/** Re-draw a painting as a copper engraving: hatching by tone + ink contours, on a plate mark. */
-function engrave(src, seed) {
+/**
+ * Re-draw a painting as a line engraving. Tone comes from the painting's
+ * luminance; direction from its structure tensor, so the burin strokes run
+ * along the forms (isophotes) rather than in one fixed diagonal; each darker
+ * tone adds a crossing layer and the lines swell with the tone they cross.
+ * The figures (the subject) are drawn from a flat-lit silhouette pass: a
+ * clean, weighted ink contour around them and gentler hatching inside, so
+ * they read against a quieter background. An oval vignette keeps the work
+ * inside the plate mark.
+ */
+function engrave(src, maskC, seed) {
   const W = src.width;
   const H = src.height;
-  const sg = src.getContext('2d');
-  const d = sg.getImageData(0, 0, W, H).data;
-  // luminance, lightly blurred, with a gentle S-curve so the plate keeps its darks
-  const L = new Float32Array(W * H);
-  for (let i = 0; i < W * H; i++) L[i] = (d[i * 4] * 0.3 + d[i * 4 + 1] * 0.59 + d[i * 4 + 2] * 0.11) / 255;
-  const B = new Float32Array(W * H);
-  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
-    let s = 0;
-    for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) s += L[(y + j) * W + x + i];
-    B[y * W + x] = s / 9;
-  }
-  // normalise contrast across the plate
+  const d = src.getContext('2d').getImageData(0, 0, W, H).data;
+  const md = maskC.getContext('2d').getImageData(0, 0, W, H).data;
+  const N = W * H;
+  const L = new Float32Array(N);
+  const M = new Float32Array(N);
+  for (let i = 0; i < N; i++) { L[i] = (d[i * 4] * 0.3 + d[i * 4 + 1] * 0.59 + d[i * 4 + 2] * 0.11) / 255; M[i] = md[i * 4 + 3] / 255; }
+  const blur = (A, r) => {
+    const T = new Float32Array(N); const O = new Float32Array(N);
+    for (let y = 0; y < H; y++) { let s = 0; for (let x = -r; x <= r; x++) s += A[y * W + Math.max(0, Math.min(W - 1, x))]; for (let x = 0; x < W; x++) { T[y * W + x] = s / (2 * r + 1); s += A[y * W + Math.min(W - 1, x + r + 1)] - A[y * W + Math.max(0, x - r)]; } }
+    for (let x = 0; x < W; x++) { let s = 0; for (let y = -r; y <= r; y++) s += T[Math.max(0, Math.min(H - 1, y)) * W + x]; for (let y = 0; y < H; y++) { O[y * W + x] = s / (2 * r + 1); s += T[Math.min(H - 1, y + r + 1) * W + x] - T[Math.max(0, y - r) * W + x]; } }
+    return O;
+  };
+  const B = blur(L, 1);
+  const Mb = blur(M, 1);
+  // tone: normalised darkness, the background flattened a little so the subject carries the plate
   const sample = [];
-  for (let i = 0; i < B.length; i += 11) sample.push(B[i]);
+  for (let i = 0; i < N; i += 11) sample.push(B[i]);
   sample.sort((a, b) => a - b);
   const lo = sample[Math.floor(sample.length * 0.04)];
   const hi = sample[Math.floor(sample.length * 0.97)];
   const R = rngOf(seed * 31 + 7);
-  const ph = [R() * 6, R() * 6, R() * 6, R() * 6];
+  const tone = new Float32Array(N);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x;
+    let t = 1 - Math.max(0, Math.min(1, (B[i] - lo) / Math.max(0.05, hi - lo)));
+    t = Math.pow(t, 1.35);
+    const subj = Mb[i];
+    t = subj > 0.5 ? t * 0.92 : 0.12 + t * 0.78; // background compressed toward a mid tone
+    // oval vignette wholly inside the plate mark
+    const vx = (x - W / 2) / (W * 0.47);
+    const vy = (y - H / 2) / (H * 0.43);
+    const v = vx * vx + vy * vy + Math.sin(x * 0.07 + seed) * Math.cos(y * 0.09) * 0.04;
+    tone[i] = t * Math.max(0, Math.min(1, (1 - v) * 3.2));
+  }
+  // structure tensor → stroke direction along the forms
+  const gx = new Float32Array(N); const gy = new Float32Array(N);
+  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+    const i = y * W + x;
+    gx[i] = (B[i - W + 1] + 2 * B[i + 1] + B[i + W + 1]) - (B[i - W - 1] + 2 * B[i - 1] + B[i + W - 1]);
+    gy[i] = (B[i + W - 1] + 2 * B[i + W] + B[i + W + 1]) - (B[i - W - 1] + 2 * B[i - W] + B[i - W + 1]);
+  }
+  const jxx = new Float32Array(N); const jxy = new Float32Array(N); const jyy = new Float32Array(N);
+  for (let i = 0; i < N; i++) { jxx[i] = gx[i] * gx[i]; jxy[i] = gx[i] * gy[i]; jyy[i] = gy[i] * gy[i]; }
+  const Jxx = blur(jxx, 5); const Jxy = blur(jxy, 5); const Jyy = blur(jyy, 5);
+  const ang = new Float32Array(N);
+  const base = 0.62; // the engraver's default diagonal where the picture has no form
+  for (let i = 0; i < N; i++) {
+    const th = 0.5 * Math.atan2(2 * Jxy[i], Jxx[i] - Jyy[i]) + Math.PI / 2; // isophote direction
+    const coh = Math.min(1, Math.sqrt((Jxx[i] - Jyy[i]) ** 2 + 4 * Jxy[i] ** 2) * 40);
+    // blend toward the default by coherence (on the double-angle circle)
+    const c = Math.cos(2 * th) * coh + Math.cos(2 * base) * (1 - coh);
+    const s2 = Math.sin(2 * th) * coh + Math.sin(2 * base) * (1 - coh);
+    ang[i] = 0.5 * Math.atan2(s2, c);
+  }
   const out = document.createElement('canvas');
   out.width = W;
   out.height = H;
   const og = out.getContext('2d');
-  const img = og.createImageData(W, H);
-  const o = img.data;
-  const ink = [38, 24, 14];
-  const line = (x, y, ang, sp, width, phase) => {
-    const u = (x * Math.cos(ang) + y * Math.sin(ang)) / sp + phase + Math.sin((x * Math.sin(ang) - y * Math.cos(ang)) * 0.045 + phase) * 0.12;
-    const f = Math.abs(u - Math.round(u)) * sp; // distance to the nearest line in px
-    return Math.max(0, Math.min(1, width / 2 + 0.6 - f));
-  };
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      const i = y * W + x;
-      let t = 1 - Math.max(0, Math.min(1, (B[i] - lo) / Math.max(0.05, hi - lo)));
-      t = Math.pow(t, 1.6);
-      // vignetted plate: the engraving fades out in a ragged oval, leaving paper at the margins
-      const vx = (x - W / 2) / (W * 0.53);
-      const vy = (y - H * 0.52) / (H * 0.6);
-      const v = vx * vx + vy * vy + Math.sin(x * 0.09 + ph[0]) * Math.cos(y * 0.11 + ph[1]) * 0.05;
-      const fade = Math.max(0, Math.min(1, (1.08 - v) * 2.4));
-      t *= fade;
-      let a = 0;
-      // burin layers: each darker tone adds a crossing direction, lines swell with tone
-      if (t > 0.3) a = Math.max(a, line(x, y, 0.78, 8.5, 0.6 + (t - 0.3) * 3.2, ph[0]));
-      if (t > 0.56) a = Math.max(a, line(x, y, -0.62, 9, 0.5 + (t - 0.56) * 3.4, ph[1]));
-      if (t > 0.76) a = Math.max(a, line(x, y, 0.05, 8, 0.5 + (t - 0.76) * 3.6, ph[2]));
-      if (t > 0.9) a = Math.max(a, line(x, y, 1.45, 7, 0.9 + (t - 0.9) * 7, ph[3]));
-      // ink contours from the luminance gradient (only real edges, not texture)
-      if (fade > 0.3 && x > 1 && y > 1 && x < W - 2 && y < H - 2) {
-        const gx = B[i + 2] - B[i - 2];
-        const gy = B[i + 2 * W] - B[i - 2 * W];
-        const e = Math.hypot(gx, gy) * fade;
-        if (e > 0.11) a = Math.max(a, Math.min(1, (e - 0.11) * 9));
+  og.lineCap = 'round';
+  og.lineJoin = 'round';
+  const ink = (a) => `rgba(38,24,14,${a.toFixed(3)})`;
+  const at = (A, x, y) => A[Math.max(0, Math.min(H - 1, Math.round(y))) * W + Math.max(0, Math.min(W - 1, Math.round(x)))];
+  // burin layers: [tone threshold, spacing px, angle offset, stroke half-length]
+  const layers = [[0.2, 4.2, 0, 22], [0.5, 4.8, 0.9, 16], [0.74, 5.4, Math.PI / 2, 10], [0.9, 4, -0.45, 6]];
+  for (const [thr, sp, off, len] of layers) {
+    // evenly spaced streamlines: a stroke stops where it would crowd a neighbour of its own layer
+    const occ = new Uint8Array(N);
+    const sep = sp * 0.42;
+    const free = (x, y) => occ[Math.max(0, Math.min(H - 1, Math.round(y))) * W + Math.max(0, Math.min(W - 1, Math.round(x)))] === 0;
+    const mark = (x, y) => {
+      const r = Math.ceil(sep);
+      for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) {
+        if (i * i + j * j > sep * sep) continue;
+        const xx = Math.round(x) + i; const yy = Math.round(y) + j;
+        if (xx >= 0 && yy >= 0 && xx < W && yy < H) occ[yy * W + xx] = 1;
       }
-      o[i * 4] = ink[0];
-      o[i * 4 + 1] = ink[1];
-      o[i * 4 + 2] = ink[2];
-      o[i * 4 + 3] = Math.round(a * 235);
+    };
+    for (let gy0 = sp / 2; gy0 < H; gy0 += sp) {
+      for (let gx0 = (gy0 / sp) % 2 ? sp / 2 : 0; gx0 < W; gx0 += sp) {
+        const x0 = gx0 + (R() - 0.5) * sp * 0.25;
+        const y0 = gy0 + (R() - 0.5) * sp * 0.25;
+        const t0 = at(tone, x0, y0);
+        if (t0 < thr || !free(x0, y0)) continue;
+        // trace both ways along the direction field
+        const pts = [[x0, y0]];
+        for (const dir of [1, -1]) {
+          let x = x0; let y = y0;
+          for (let k = 0; k < len; k++) {
+            const a = at(ang, x, y) + off;
+            x += Math.cos(a) * dir * 1.4;
+            y += Math.sin(a) * dir * 1.4;
+            if (x < 0 || y < 0 || x >= W || y >= H || at(tone, x, y) < thr - 0.06 || !free(x, y)) break;
+            if (dir > 0) pts.push([x, y]); else pts.unshift([x, y]);
+          }
+        }
+        if (pts.length < 3) continue;
+        for (const [px, py] of pts) mark(px, py);
+        const subj = at(Mb, x0, y0) > 0.5;
+        og.strokeStyle = ink(subj ? 0.85 : 0.72);
+        og.lineWidth = Math.min(2.2, 0.3 + (t0 - thr) * (subj ? 2.4 : 1.9));
+        og.beginPath();
+        og.moveTo(pts[0][0], pts[0][1]);
+        for (let k = 1; k < pts.length; k++) og.lineTo(pts[k][0], pts[k][1]);
+        og.stroke();
+      }
     }
+  }
+  // stipple the deepest shadows
+  for (let i = 0; i < 9000; i++) {
+    const x = R() * W; const y = R() * H;
+    const t = at(tone, x, y);
+    if (t < 0.8 || R() > (t - 0.8) * 4) continue;
+    og.fillStyle = ink(0.8);
+    og.fillRect(x, y, 1.1, 1.1);
+  }
+  // contours: strong picture edges thin, the subject's silhouette heavy and clean
+  const img = og.getImageData(0, 0, W, H);
+  const o = img.data;
+  for (let y = 2; y < H - 2; y++) for (let x = 2; x < W - 2; x++) {
+    const i = y * W + x;
+    const vx = (x - W / 2) / (W * 0.47);
+    const vy = (y - H / 2) / (H * 0.43);
+    const fade = Math.max(0, Math.min(1, (1 - (vx * vx + vy * vy)) * 3));
+    if (fade <= 0) continue;
+    const e = Math.hypot(gx[i], gy[i]) * 0.25 * fade;
+    const me = Math.abs(Mb[i + 1] - Mb[i - 1]) + Math.abs(Mb[i + W] - Mb[i - W]);
+    let a = 0;
+    if (e > 0.14) a = Math.min(0.75, (e - 0.14) * 5);
+    if (me > 0.25) a = Math.max(a, Math.min(1, me * 1.4) * fade);
+    if (a <= 0) continue;
+    const k = i * 4;
+    const prev = o[k + 3] / 255;
+    const na = 1 - (1 - prev) * (1 - a);
+    o[k] = 38; o[k + 1] = 24; o[k + 2] = 14; o[k + 3] = Math.round(na * 240);
   }
   og.putImageData(img, 0, 0);
   // plate mark: a double ruled border pressed into the paper

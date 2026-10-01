@@ -36,7 +36,20 @@ const POSES = {
   clerk: { lean: 0.16, headPitch: 0.22, headYaw: -0.05, hands: (d) => d < 0 ? { at: [0.07, -0.24, 0.24], dir: [0.2, -0.2, 1], grip: true, weapon: 'quill', pole: [-1, -0.4, -0.2] } : { at: [-0.06, -0.25, 0.24], dir: [-0.3, 0, 1], curl: 0.3, pole: [1, -0.4, -0.2] } },
   smith: { lean: 0.1, twist: -0.22, headYaw: 0.35, headPitch: 0.15, hands: (d) => d < 0 ? { at: [-0.06, 0.15, 0.02], dir: [0.5, 0.45, -0.5], grip: true, weapon: 'hammer', pole: [-0.8, -0.2, -0.3] } : { at: [-0.05, -0.2, 0.25], dir: [-0.3, 0, 1], grip: true, weapon: 'tongs', pole: [1, -0.4, -0.2] } },
   barkeep: { lean: 0.08, twist: 0.15, headYaw: -0.2, headTilt: 0.06, hands: (d) => d < 0 ? { at: [0.05, -0.2, 0.2], dir: [0, 1, 0.1], grip: true, weapon: 'tankard', pole: [-1, -0.5, -0.2] } : { at: [-0.06, -0.22, 0.22], dir: [-0.5, 0.2, 1], curl: 0.6, spread: 0.3, rag: true, pole: [1, -0.5, -0.2] } },
-  trainer: { lean: -0.04, headPitch: -0.05, headYaw: 0.12, hands: (d) => ({ at: [-d * 0.04, -0.17, 0.12], dir: [-d, 0.1, 0.1], grip: true, pole: [d, -0.2, 0.3] }) },
+  // both hands stacked on the pommel of a longsword whose point rests on the floor before him
+  trainer: { lean: -0.03, headPitch: -0.04, headYaw: 0.1, hands: (d) => ({ at: [-d * 0.1, d < 0 ? -0.29 : -0.25, 0.2], dir: [0, -1, 0.04], grip: true, weapon: d < 0 ? 'longsword' : null, pole: [d, -0.3, -0.5] }) },
+  // the clerk raises the ledger to read from it, quill poised
+  ledger: { lean: 0.05, headPitch: 0.16, headYaw: -0.08, hands: (d) => d > 0 ? { at: [-0.05, -0.13, 0.25], dir: [-0.15, 0.25, 1], grip: true, weapon: 'ledger', pole: [1, -0.6, -0.2] } : { at: [0.06, -0.15, 0.24], dir: [0.3, 0.6, 0.6], grip: true, weapon: 'quill', pole: [-1, -0.5, -0.2] } },
+  // Tyr's priest: the right hand raised in judgement, the left holding a small balance by its ring
+  judge: { lean: -0.02, headPitch: -0.04, hands: (d) => d < 0 ? { at: [-0.03, 0.02, 0.17], dir: [-0.1, 1, 0.2], curl: 0.2, spread: 0.3, pole: [-1, -0.6, -0.3] } : { at: [0.02, -0.12, 0.24], dir: [0, 1, 0.2], grip: true, weapon: 'balance', pole: [1, -0.6, -0.2] } },
+  // seated on a stool or bench, hands on the knees (a mug in one)
+  sit: { lean: 0.08, sit: true, headPitch: 0.04, hands: (d) => d < 0 ? { at: [0.02, -0.22, 0.24], dir: [0, 1, 0.2], grip: true, weapon: 'tankard', pole: [-1, -0.4, -0.4] } : { at: [-0.01, -0.29, 0.2], dir: [0, -0.4, 1], curl: 0.5, pole: [1, -0.4, -0.4] } },
+  // leaning over a table, knuckles down — the dice game
+  lean: { lean: 0.3, headPitch: 0.25, hands: (d) => ({ at: [-d * 0.01, -0.2, 0.26], dir: [0, -0.5, 1], curl: 0.7, pole: [d, -0.3, -0.5] }) },
+  // a watchman jabbing a finger mid-argument
+  argue: { lean: 0.06, twist: 0.12, headPitch: -0.02, hands: (d) => d < 0 ? { at: [0.03, 0.02, 0.3], dir: [0.15, 0.2, 1], curl: 0.15, pole: [-1, -0.4, -0.2] } : { at: [0.025, -0.3, 0.05], dir: [0.1, -1, 0.15], curl: 0.45, pole: [1, -0.2, -0.6] } },
+  // arms folded across the chest
+  folded: { lean: -0.03, headPitch: -0.03, hands: (d) => ({ at: [-d * 0.15, -0.14, 0.1], dir: [-d, 0.15, 0.1], curl: 0.55, pole: [d, -0.9, 0.1] }) },
   point: { lean: 0.04, twist: 0.12, hands: (d) => d < 0 ? { at: [0.02, 0.0, 0.3], dir: [0.1, 0.1, 1], curl: 0.15, pole: [-1, -0.3, -0.2] } : { at: [0.03, -0.3, 0.04], dir: [0.1, -1, 0.15], curl: 0.45, pole: [1, -0.2, -0.6] } },
   cower: { lean: 0.28, crouch: 0.3, headPitch: 0.3, hands: (d) => ({ at: [d * 0.0, -0.02, 0.17], dir: [-d * 0.3, 0.8, 0.4], curl: 0.3, pole: [d, -0.8, 0] }) },
   threat: { lean: 0.12, crouch: 0.12, headPitch: 0.1, hands: (d) => d < 0 ? { at: [-0.04, 0.12, 0.12], dir: [0.4, 0.8, 0.3], grip: true, pole: [-1, -0.3, -0.4] } : { at: [-0.03, -0.18, 0.22], dir: [-0.2, 0.3, 1], curl: 0.5, pole: [1, -0.5, -0.2] } },
@@ -53,12 +66,12 @@ export function buildNpc(spec) {
   const O = spec.outfit ?? {};
   const P = { ...POSES.idle, ...(POSES[spec.pose] ?? {}) };
   const age = spec.age ?? 0;
-  const skinM = mat(spec.skin ?? '#d9a77a', { pattern: 'skin', scale: 0.018, sss: 0.55, rough: 0.55, spec: 0.22 });
+  const skinM = mat(spec.skin ?? '#d9a77a', { pattern: 'skin', scale: 0.018, sss: 0.5, rough: 0.82, spec: 0.08 });
   const shirtM = cloth(O.shirt ?? '#d8ccb0');
   const robe = O.topKind === 'robe';
   const topM = O.topKind === 'chain' ? mat('#8a8c94', { pattern: 'mail', metal: true, scale: 0.05, rough: 0.45, spec: 0.7 })
     : O.top ? (O.topKind === 'jerkin' ? leather(O.top) : cloth(O.top, { scale: 0.012 })) : shirtM;
-  const skirtM = O.skirt ? cloth(O.skirt) : robe ? topM : null;
+  const skirtM = O.skirtMail ? topM : O.skirt ? cloth(O.skirt) : robe ? topM : null;
   const trouserM = cloth(O.trousers ?? shade(O.shirt ?? '#6a5234', 0.55));
   const bootM = leather(O.boots ?? '#2e2016');
   const beltM = leather(O.belt ?? '#3a2616');
@@ -66,9 +79,12 @@ export function buildNpc(spec) {
 
   // ---- skeleton
   const crouch = P.crouch ?? 0;
-  const hipH = (short ? 0.4 : 0.49) * (1 - crouch * 0.25);
+  const sit = !!P.sit;
+  const legH = short ? 0.4 : 0.49;
+  const hipH = sit ? legH * 0.56 : legH * (1 - crouch * 0.25);
   const torso = (short ? 0.3 : 0.33);
-  const hr = short ? 0.076 : 0.066;
+  // heroic proportion: a head big enough to carry a face at panel size
+  const hr = short ? 0.084 : 0.075;
   const lean = (P.lean ?? 0) + age * 0.12 + (spec.hunch ?? 0);
   const twist = P.twist ?? 0;
   const TR = mul3(rotY(twist), rotX(lean));
@@ -80,16 +96,17 @@ export function buildNpc(spec) {
   const neck = add(pelvis, scl(up, torso));
   const shW = (fem ? 0.09 : 0.104) * b;
   const sh = { [-1]: add(chest, T([-shW, 0.064, -0.012])), [1]: add(chest, T([shW, 0.064, -0.012])) };
-  const headC = add(neck, T([0, hr * 1.22, hr * 0.18]));
+  const headC = add(neck, T([0, hr * 1.3, hr * 0.22]));
 
   // ---- legs (hidden under long skirts: only the shoe tips show)
   const longSkirt = skirtM && (O.skirtLen ?? 'floor') === 'floor';
   const stance = 0.065 * b;
   for (const d of [-1, 1]) {
-    const foot = [d * stance, 0, d < 0 ? 0.02 : -0.02];
+    // seated: feet planted forward of the stool, shins near vertical
+    const foot = sit ? [d * stance * 1.2, 0, 0.2 + (d < 0 ? 0.02 : -0.01)] : [d * stance, 0, d < 0 ? 0.02 : -0.02];
     const hip = add(pelvis, [d * 0.058 * b, -0.03, 0]);
     const ankle = add(foot, [0, 0.045, -0.015]);
-    const knee = ik(hip, ankle, (hipH - 0.03) * 0.52, (hipH - 0.03) * 0.5, [d * 0.1, 0, 1]);
+    const knee = ik(hip, ankle, (legH - 0.03) * 0.52, (legH - 0.03) * 0.5, sit ? [d * 0.05, 1, 0.6] : [d * 0.1, 0, 1]);
     if (!longSkirt) {
       f.cone(hip, knee, 0.05 * b, 0.037 * b, trouserM, { group: 'legs', k: 0.02 });
       f.ell(lerp3(hip, knee, 0.4), [0.052 * b, 0.1, 0.05 * b], trouserM, { group: 'legs', k: 0.03, R: alignY(sub(knee, hip)) });
@@ -130,8 +147,12 @@ export function buildNpc(spec) {
   if (O.topKind === 'doublet' || O.topKind === 'tabard') for (let i = 0; i < 5; i++) f.sphere([0, torso * (0.25 + i * 0.13), 0.073 * b], 0.0055, brass, { group: null });
   if (O.topKind === 'tabard' && O.symbol) emblem(f, O.symbol, [0, torso * 0.55, 0.077 * b], 0.03);
   f.pop();
-  // neck
-  f.cone(add(neck, T([0, -0.02, 0])), add(headC, T([0, -hr * 0.6, -hr * 0.1])), (fem ? 0.026 : 0.031) * b, (fem ? 0.024 : 0.028) * b, skinM, { group: 'neck', k: 0.01 });
+  // neck: a real column set into sloping trapezius muscles, the head carried forward of the spine
+  f.cone(add(neck, T([0, -0.03, -0.006])), add(headC, T([0, -hr * 0.55, -hr * 0.12])), (fem ? 0.03 : 0.037) * b, (fem ? 0.026 : 0.031) * b, skinM, { group: 'neck', k: 0.025 });
+  for (const d of [-1, 1]) {
+    const tq = add(neck, T([d * 0.05 * b, -0.03, -0.014]));
+    f.ell(tq, [0.05 * b, 0.024, 0.04 * b], O.top && !robe && O.topKind !== 'chain' ? topM : neckM, { group: 'torso', k: 0.04, R: mul3(TR, rotZ(d * 0.42)) });
+  }
 
   // ---- skirt / robe / tunic hem with hanging folds
   if (skirtM) {
@@ -142,6 +163,23 @@ export function buildNpc(spec) {
     const rBot = (floor ? 0.165 : 0.11) * b;
     f.cone(top, [0, hemY, 0.004], rTop, rBot, skirtM, { group: 'skirt', k: 0.02, disp: { amp: floor ? 0.013 : 0.008, freq: floor ? 15 : 11, twist: 1.6 } });
     f.ell(add(waist, T([0, -0.035, 0])), [rTop * 1.04, 0.05, rTop * 0.82], skirtM, { group: 'skirt', k: 0.03 });
+  }
+  // tabards, doublets and jerkins hang below the belt: a hem to mid-thigh, split at the sides,
+  // so no one stands about in a leotard
+  if (!skirtM && O.top && ['tabard', 'doublet', 'jerkin'].includes(O.topKind)) {
+    const top = add(waist, T([0, -0.012, 0]));
+    const len = O.topKind === 'tabard' ? 0.2 : O.topKind === 'jerkin' ? 0.13 : 0.1;
+    const hemY = waist[1] - len;
+    if (O.topKind === 'tabard') {
+      for (const z of [1, -1]) {
+        const a = add(top, T([0, 0, z * 0.05 * b]));
+        const bot = [0, hemY, z * 0.075 * b];
+        f.box(lerp3(a, bot, 0.5), [0.072 * b, Math.hypot(...sub(a, bot)) / 2, 0.007], topM, { group: `tabard${z}`, k: 0.01, bevel: 0.005, R: alignY(sub(a, bot), [1, 0, 0]), disp: { amp: 0.003, freq: 40 } });
+      }
+      if (O.symbol) emblem(f, O.symbol, [0, waist[1] - len * 0.45, 0.085 * b], 0.024);
+    } else {
+      f.cone(top, [0, hemY, 0.004], 0.088 * b, 0.1 * b, topM, { group: 'hem', k: 0.02, disp: { amp: 0.004, freq: 12, twist: 1 } });
+    }
   }
   if (O.apron) {
     const am = cloth(O.apron, { scale: 0.01 });
@@ -228,7 +266,7 @@ export function buildNpc(spec) {
   // ---- head
   const HR = mul3(rotY(twist + (P.headYaw ?? 0) + (spec.headYaw ?? 0)), mul3(rotX(-lean * 0.8 + (P.headPitch ?? 0)), rotZ((P.headTilt ?? 0) + (R() - 0.5) * 0.06)));
   f.push(headC, HR, hr);
-  sculptHead(f, skinM, { gender: spec.gender, age, hair: spec.hair, hairStyle: spec.hairStyle, beard: spec.beard, eyeC: spec.eyeC, hood: O.hood ?? null, helm: O.helm, nose: spec.nose, jaw: spec.jaw });
+  sculptHead(f, skinM, { gender: spec.gender, age, hair: spec.hair, hairStyle: spec.hairStyle, beard: spec.beard, eyeC: spec.eyeC, hood: O.hood ?? null, helm: O.helm, nose: spec.nose, jaw: spec.jaw, spectacles: O.spectacles, cap: O.cap });
   f.pop();
   f.top = headC[1] + hr * 1.15;
   return { fig: f, top: f.top, sp: { legs: short ? 0.4 : 0.49 }, hands };

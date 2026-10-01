@@ -25,7 +25,7 @@ export const NPCS = {
     id: 'clerk', name: 'Auric Vellum', title: 'Clerk of the Council', race: 'human', gender: 'male',
     look: { seed: 4101, head: 3, body: 4, hair: 8, cloth: 6, skin: 1, eyes: 4 }, aura: '#ffcf8a',
     desc: 'A stooped, ink-stained man with spectacles on a ribbon and a ledger never far from his hand.',
-    figure: { age: 0.6, hairStyle: 'bald', beard: 'full', hair: '#b8b0a4', pose: 'clerk', outfit: { shirt: '#d8ccb0', top: '#3a4a6a', topKind: 'robe', sleeves: 'bell', sash: '#7a1e1e', collar: '#1e1e28', cuff: '#d8ccb0' } },
+    figure: { age: 0.6, hairStyle: 'bald', beard: 'full', hair: '#c8c0b4', pose: 'clerk', outfit: { shirt: '#d8ccb0', top: '#1e3a86', topKind: 'robe', sleeves: 'bell', sash: '#7a1e1e', collar: '#c89a3a', cuff: '#d8ccb0', spectacles: true } },
   },
   councilman: {
     id: 'councilman', name: 'Porphyrys Cadorna', title: 'First Councilman', race: 'human', gender: 'male',
@@ -41,7 +41,7 @@ export const NPCS = {
   priest_tyr: {
     id: 'priest_tyr', name: 'Brother Ohlo', title: 'High Priest of Tyr', race: 'human', gender: 'male',
     look: { seed: 5101, head: 7, body: 7, hair: 9, cloth: 1, skin: 1, eyes: 0 }, aura: '#bcd4ff',
-    figure: { age: 0.55, hairStyle: 'bald', beard: 'long', hair: '#c8c0b4', pose: 'bless', outfit: { shirt: '#e0d8c8', top: '#e6e0d2', topKind: 'robe', sleeves: 'bell', stole: '#1d3574', symbol: 'scales', sash: '#1d3574', mantle: '#22346a' } },
+    figure: { age: 0.55, hairStyle: 'bald', beard: 'long', hair: '#c8c0b4', pose: 'judge', outfit: { shirt: '#e0d8c8', top: '#e6e0d2', topKind: 'robe', sleeves: 'bell', stole: '#1d3574', symbol: 'scales', sash: '#1d3574', mantle: '#22346a' } },
   },
   priestess_sune: {
     id: 'priestess_sune', name: 'Mother Ilsabet', title: 'Priestess of Sune', race: 'halfElf', gender: 'female',
@@ -81,7 +81,7 @@ export const NPCS = {
   trainer: {
     id: 'trainer', name: 'Garrick Ironhand', title: 'Weaponsmaster', race: 'human', gender: 'male',
     look: { seed: 8101, head: 3, body: 1, hair: 8, cloth: 0, skin: 3, eyes: 3 }, aura: '#ffb070',
-    figure: { hairStyle: 'short', beard: 'stubble', build: 1.15, pose: 'trainer', outfit: { shirt: '#6a2a1e', top: '#8a8c94', topKind: 'chain', sleeves: 'long', trousers: '#3a3024', boots: '#2a1c10', belt: '#3a2616' } },
+    figure: { age: 0.45, hairStyle: 'bald', beard: 'long', hair: '#e2ddd4', build: 1.18, pose: 'trainer', outfit: { shirt: '#6a2a1e', top: '#8a8c94', topKind: 'chain', skirtMail: true, skirtLen: 'knee', sleeves: 'long', trousers: '#2e261c', boots: '#2a1c10', belt: '#3a2616', mantle: '#5a1e16' } },
   },
   sage: {
     id: 'sage', name: 'Ione the Grey', title: 'Mage of the Library', race: 'elf', gender: 'female',

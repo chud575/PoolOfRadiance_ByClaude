@@ -72,11 +72,11 @@
 .shp-chip.on { color: var(--por-gilt-hi); border-color: var(--por-gilt); background: rgba(216, 178, 90, 0.12); }
 .shp-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 0.45em 0.6em; align-content: start; padding: 0.15em 0.4em 0.2em 0.1em;
   scrollbar-width: thin; scrollbar-color: rgba(216, 178, 90, 0.5) transparent; }
-.shp-item { display: grid; grid-template-columns: 2.7em 1fr auto; gap: 0.1em 0.7em; align-items: center; padding: 0.38em 0.6em 0.38em 0.4em; border-radius: 3px; cursor: pointer;
+.shp-item { display: grid; grid-template-columns: 3.3em 1fr auto; gap: 0.1em 0.7em; align-items: center; padding: 0.38em 0.6em 0.38em 0.4em; border-radius: 3px; cursor: pointer;
   background: linear-gradient(90deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.015)); border: 1px solid rgba(216, 178, 90, 0.14); transition: background 0.12s var(--ease), border-color 0.12s var(--ease); }
 .shp-item:hover { border-color: rgba(216, 178, 90, 0.55); background: rgba(45, 82, 163, 0.25); }
 .shp-item.sel { border-color: var(--por-gilt-hi); background: linear-gradient(90deg, rgba(45, 82, 163, 0.6), rgba(20, 34, 80, 0.45)); box-shadow: 0 0 12px rgba(245, 217, 139, 0.18); }
-.shp-item img { grid-row: 1 / span 2; width: 2.7em; height: 2.7em; }
+.shp-item img { grid-row: 1 / span 2; width: 3.3em; height: 3.3em; border-radius: 50%; background: radial-gradient(circle at 50% 42%, rgba(70, 92, 150, 0.55), rgba(10, 16, 36, 0.2) 70%); box-shadow: inset 0 0 0 1px rgba(216, 178, 90, 0.22); }
 .shp-item .n { font-size: 0.98em; color: var(--por-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .shp-item .s { font-size: 0.78em; color: var(--por-text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; grid-column: 2; }
 .shp-item .p { grid-row: 1 / span 2; grid-column: 3; font-family: var(--font-num); font-size: 1.02em; color: var(--por-amber); text-align: right; font-variant-numeric: tabular-nums; }
@@ -159,3 +159,57 @@
   background: radial-gradient(ellipse at 30% 20%, #f2e2b8, #d8c08a 70%, #b89a60); box-shadow: 0 4px 10px rgba(0, 0, 0, 0.55), inset 0 0 18px rgba(120, 80, 30, 0.35); border-radius: 1px; }
 .shp-notice::before { content: ''; position: absolute; top: 0.35em; left: 50%; width: 0.55em; height: 0.55em; margin-left: -0.27em; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #e0c070, #6a4a10); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); }
 .shp-notice b { display: block; text-align: center; font-family: var(--font-display); letter-spacing: 0.24em; text-transform: uppercase; color: #6a1e10; font-size: 0.92em; margin-bottom: 0.35em; }
+
+/* ---------- keeper note: what the current tab means for the selected member ---------- */
+.shp-keeper .note { margin-top: 0.55em; padding-top: 0.45em; border-top: 1px solid rgba(90, 60, 20, 0.28); display: flex; flex-wrap: wrap; gap: 0.25em 1.1em; align-items: baseline; font-size: 0.86em; color: #4a2e12; }
+.shp-keeper .note:empty { display: none; }
+.shp-keeper .note .lbl { font-family: var(--font-display); font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; font-size: 0.86em; color: #6a1e10; }
+.shp-keeper .note .it b { font-family: var(--font-num); font-weight: 600; color: #7a1e12; margin-left: 0.35em; }
+
+/* ---------- encumbrance: move rate over a banded load bar ---------- */
+.shp-burden { padding: 0.45em 0.6em 0.5em; border: 1px solid rgba(216, 178, 90, 0.28); border-radius: 3px; background: rgba(0, 0, 0, 0.25); }
+.shp-burden .l { display: block; font-family: var(--font-display); font-size: 0.66em; letter-spacing: 0.2em; text-transform: uppercase; color: var(--por-gilt); }
+.shp-burden .v { font-family: var(--font-num); font-size: 1.12em; color: var(--por-text); font-variant-numeric: tabular-nums; }
+.shp-burden .v small { font-family: var(--font-body); font-size: 0.72em; color: var(--por-text-dim); font-style: italic; }
+.shp-burden .d { font-size: 0.8em; margin-left: 0.35em; }
+.shp-burden .d.dn { color: var(--por-blood); } .shp-burden .d.up { color: var(--por-green); }
+.shp-burden .track { position: relative; height: 0.42em; margin-top: 0.3em; border-radius: 2px; background: rgba(0, 0, 0, 0.55); }
+.shp-burden .bands i { position: absolute; top: 0; bottom: 0; opacity: 0.4; }
+.shp-burden .bands i:nth-child(1) { background: #3a8a3a; } .shp-burden .bands i:nth-child(2) { background: #9a9a2a; }
+.shp-burden .bands i:nth-child(3) { background: #b8601a; } .shp-burden .bands i:nth-child(4) { background: #b02a1a; }
+.shp-burden .now { position: absolute; left: 0; top: 0.08em; bottom: 0.08em; border-radius: 1px; background: linear-gradient(90deg, #c8b080, #f5d98b); }
+.shp-burden .then { position: absolute; top: 0.08em; bottom: 0.08em; background: repeating-linear-gradient(135deg, #ff8a70 0 3px, rgba(255, 138, 112, 0.4) 3px 6px); }
+.shp-burden .cut { position: absolute; top: -0.12em; bottom: -0.12em; width: 1px; background: rgba(255, 240, 200, 0.6); }
+.shp-detail .shp-stats { grid-template-columns: 1fr 1.6fr; }
+
+/* ---------- training: the master's book ---------- */
+.shp-train.sel { border-color: var(--por-gilt-hi); box-shadow: 0 0 10px rgba(245, 217, 139, 0.18); }
+.shp-train.ready .por-btn:not([disabled]) { box-shadow: 0 0 10px rgba(120, 240, 120, 0.35); }
+.shp-train .por-btn[disabled] { opacity: 0.7; }
+.shp-book { display: flex; flex-direction: column; gap: 0.55em; }
+.shp-book-head { display: grid; grid-template-columns: 3.2em 1fr; gap: 0.8em; align-items: center; padding-bottom: 0.5em; border-bottom: 1px solid rgba(216, 178, 90, 0.22); }
+.shp-book-head img { width: 3.2em; height: 3.9em; object-fit: cover; border-radius: 2px; box-shadow: 0 0 0 1px var(--por-gilt-lo); }
+.shp-book-head b { display: block; font-family: var(--font-display); letter-spacing: 0.1em; color: var(--por-gilt-hi); font-weight: 400; font-size: 1.12em; }
+.shp-book-head small { color: var(--por-text-dim); font-style: italic; }
+.shp-book-row { display: grid; grid-template-columns: 7em 7.2em 1fr 8.5em; white-space: nowrap; gap: 0.8em; align-items: center; font-size: 0.92em; }
+.shp-book-row .c { font-family: var(--font-display); letter-spacing: 0.08em; color: var(--por-text); }
+.shp-book-row .l small { color: var(--por-text-dim); }
+.shp-book-row .bar { height: 6px; border-radius: 3px; background: rgba(0, 0, 0, 0.5); overflow: hidden; }
+.shp-book-row .bar i { display: block; height: 100%; background: linear-gradient(90deg, #8a6a2a, #f5d98b); }
+.shp-book-row .x { font-family: var(--font-num); font-size: 0.86em; color: var(--por-text-dim); text-align: right; }
+.shp-book-dual { display: flex; flex-wrap: wrap; gap: 0.4em; align-items: center; padding-top: 0.5em; border-top: 1px solid rgba(216, 178, 90, 0.18); }
+.shp-book-dual .l { font-family: var(--font-display); font-size: 0.66em; letter-spacing: 0.2em; text-transform: uppercase; color: var(--por-gilt); margin-right: 0.4em; }
+.shp-book-dual .shp-chip[disabled] { opacity: 0.45; cursor: default; }
+.shp-book-note { padding-top: 0.5em; border-top: 1px solid rgba(216, 178, 90, 0.18); font-style: italic; color: var(--por-text-dim); font-size: 0.9em; }
+
+/* ---------- tavern: who is in the room ---------- */
+.shp-patrons { display: flex; flex-direction: column; gap: 0.45em; }
+.shp-patron { display: grid; grid-template-columns: 2.2em 1fr auto; gap: 0.8em; align-items: center; padding: 0.45em 0.6em 0.45em 0.4em; border-radius: 3px; background: linear-gradient(90deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015)); border: 1px solid rgba(216, 178, 90, 0.16); }
+.shp-patron .ic { width: 2.2em; height: 2.2em; border-radius: 50%; display: grid; place-items: center; color: #1b1206; background: var(--gilt-grad); box-shadow: 0 0 0 1px #000; }
+.shp-patron .t { font-family: var(--font-display); letter-spacing: 0.06em; color: var(--por-text); font-size: 0.95em; }
+.shp-patron .t small { display: block; font-family: var(--font-body); letter-spacing: 0; font-style: italic; color: var(--por-text-dim); font-size: 0.86em; }
+.shp-patron .por-btn { font-size: 0.74em; padding: 0.35em 0.9em; }
+
+/* ---------- temple: the creed follows the services and fills the board, the god's sign behind it ---------- */
+.shp-creed { margin-top: 0.7em; flex: 1 0 auto; display: flex; flex-direction: column; justify-content: center; overflow: hidden; }
+.shp-creed::after { content: var(--sign, '⚖'); position: absolute; right: 0.4em; bottom: -0.15em; font-size: 6.5em; line-height: 1; color: rgba(245, 217, 139, 0.07); pointer-events: none; }

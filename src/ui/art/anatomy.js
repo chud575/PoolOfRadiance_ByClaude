@@ -85,6 +85,29 @@ export function sculptHead(f, skinM, o = {}) {
     f.carve('ell', [d * 0.92, -0.04, -0.03], [0.05, 0.13, 0.08], null, { k: 0.04 });
   }
   headwear(f, skinM, o);
+  if (o.spectacles) spectacles(f, o.spectacles === true ? '#b08a40' : o.spectacles);
+}
+
+/** Round wire spectacles on the nose, with a black ribbon looping from the temples to the chest. */
+function spectacles(f, wire) {
+  const wm = mat(wire, { metal: true, rough: 0.3, spec: 0.9, ink: 0.6 });
+  const g = { group: null, blend: 0 };
+  const r = 0.17;
+  for (const d of [-1, 1]) {
+    const c = [d * 0.31, 0.03, 1.0];
+    const n = 12;
+    for (let i = 0; i < n; i++) {
+      const a0 = (i / n) * Math.PI * 2;
+      const a1 = ((i + 1) / n) * Math.PI * 2;
+      f.cone([c[0] + Math.cos(a0) * r, c[1] + Math.sin(a0) * r * 0.86, c[2] - Math.abs(Math.cos(a0)) * 0.03], [c[0] + Math.cos(a1) * r, c[1] + Math.sin(a1) * r * 0.86, c[2] - Math.abs(Math.cos(a1)) * 0.03], 0.02, 0.02, wm, g);
+    }
+    // faint lens glint
+    f.ell([c[0], c[1], c[2] + 0.01], [r * 0.92, r * 0.8, 0.012], mat('#c8d8e8', { rough: 0.05, spec: 1.2, ink: 0, emissive: '#1a2228' }), { group: null, shadow: false });
+    // temple arm back to the ear, and the ribbon hanging from it
+    f.cone([c[0] + d * r, c[1] + 0.02, c[2] - 0.04], [d * 0.86, 0.06, 0.05], 0.018, 0.018, wm, g);
+    f.cone([d * 0.86, 0.04, 0.02], [d * 0.62, -1.2, 0.35], 0.022, 0.022, mat('#141010', { pattern: 'cloth', scale: 0.004, rough: 0.9 }), g);
+  }
+  f.cone([-0.31 + r * 0.98, 0.06, 0.99], [0.31 - r * 0.98, 0.06, 0.99], 0.02, 0.02, wm, g);
 }
 
 function hairMat(c, k = 1) {

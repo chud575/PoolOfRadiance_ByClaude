@@ -1265,7 +1265,7 @@ export function renderCreature(id, h, rig, seed = 1, o = {}) {
   if (!b) return null;
   const ppu = h / b.fig.top;
   const yaw = o.yaw ?? b.yaw;
-  const opts = { ppu, yaw, rig, haze: o.haze ?? 0, hazeColor: o.hazeColor, ghost: b.sp.ghost ? (o.ghostColor ?? '#9ff4ff') : null, ss: o.ss ?? 2, pitch: o.pitch ?? 0.08, ink: o.ink ?? 0.85 };
+  const opts = { ppu, yaw, rig, haze: o.haze ?? 0, hazeColor: o.hazeColor, ghost: b.sp.ghost && !o.solid ? (o.ghostColor ?? '#9ff4ff') : null, ss: o.ss ?? 2, pitch: o.pitch ?? 0.08, ink: o.ink ?? 0.85 };
   const main = renderFigure(b.fig, opts);
   const tail = b.sp.tail ? renderFigure(b.fig, { ...opts, layer: 'tail' }) : null;
   return { ...main, tail, sp: b.sp, pose: b.pose, pelvisY: (b.sp.legs ?? 0.5) * ppu * 0.92 };
