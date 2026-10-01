@@ -127,7 +127,7 @@ export default class ExploreScene extends Scene {
       s.add(this.hemi);
       // under a roof on a city block the ambient turns warm and dim (lamplit plaster, not open sky)
       this._hemiOut = { sky: skyFill.clone(), ground: bounce.clone(), i: this.hemi.intensity };
-      this._hemiIn = { sky: new THREE.Color(night ? 0x8a6a4a : 0xc8b49a), ground: new THREE.Color(0x3a2818), i: night ? 1.4 : 2.2 };
+      this._hemiIn = { sky: new THREE.Color(night ? 0x8a6a4a : 0xc8b49a), ground: new THREE.Color(night ? 0x4a3828 : 0x8a6a4c), i: night ? 1.4 : 2.2 }; // ground = warm bounce off the boards onto the ceiling
       this._roofMix = 0;
       const sunCol = night ? new THREE.Color(0x9db4ff) : new THREE.Color(k.sun).lerp(new THREE.Color(0xffd6a0), 0.3);
       this.sun = new THREE.DirectionalLight(sunCol, night ? 1.15 : k.sunI * 1.85);
