@@ -42,12 +42,91 @@ export function dressDungeon(map, block, opts = {}) {
   if (ts.variant === 'warrens') warrens();
   else if (ts.variant === 'bane') bane();
 
+  /**
+   * Hewn faces are flat slabs; this lays a displaced rock skin over each one: pick-scarred bulges and
+   * hollows (up to ~25 cm proud), tapering flat at the face ends, the roof and around openings so it
+   * always meets the neighbouring geometry cleanly. Noise is seeded in world space → no two walls match.
+   */
+  function rockSkin(f) {
+    const H = f.H;
+    const nS = 16;
+    const nY = Math.max(8, Math.round(H * 3.5));
+    const half = S / 2;
+    const ops = f.openings;
+    const vn = (x, y, sd) => {
+      const ix = Math.floor(x);
+      const iy = Math.floor(y);
+      const fx = x - ix;
+      const fy = y - iy;
+      const ux = fx * fx * (3 - 2 * fx);
+      const uy = fy * fy * (3 - 2 * fy);
+      const a = hash(sd, ix, iy);
+      const b = hash(sd, ix + 1, iy);
+      const c = hash(sd, ix, iy + 1);
+      const d = hash(sd, ix + 1, iy + 1);
+      return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
+    };
+    const opDist = (s, y) => {
+      let m = 9;
+      for (const o of ops) {
+        const dx = Math.max(o.s0 - s, 0, s - o.s1);
+        const dy = Math.max(o.y0 - y, 0, y - o.y1);
+        m = Math.min(m, Math.hypot(dx, dy));
+      }
+      return m;
+    };
+    const rockN = (w, y) => {
+      const n = vn(w * 1.1, y * 1.3, 'rk1') * 0.55 + vn(w * 2.9, y * 3.1, 'rk2') * 0.3 + vn(w * 7, y * 6.5, 'rk3') * 0.15;
+      return Math.max(0, n - 0.3) / 0.7; // flat floors between bulges
+    };
+    const inOp = (s, y) => ops.some((o) => s > o.s0 && s < o.s1 && y > o.y0 && y < o.y1);
+    const pos = [];
+    const idx = [];
+    const wp = new THREE.Vector3();
+    for (let j = 0; j <= nY; j++) {
+      for (let i = 0; i <= nS; i++) {
+        const sv = -half + (S * i) / nS;
+        const y = (H * j) / nY;
+        wp.set(sv, y, 0).applyMatrix4(f.basis);
+        const w = wp.x + wp.z; // along-wall world coordinate (faces are axis-aligned)
+        const n = rockN(w, y);
+        // horizontal pick-bench steps: the miners worked the face in lifts
+        const lift = Math.abs(((y + vn(w * 0.8, 3, 'rk4') * 0.4) % 0.9) / 0.9 - 0.5) < 0.04 ? -0.025 : 0;
+        const te = THREE.MathUtils.smoothstep(Math.min(sv + half, half - sv), 0.05, 0.55);
+        const tr2 = THREE.MathUtils.smoothstep(H - y, 0.0, 0.45) * (0.75 + 0.25 * THREE.MathUtils.smoothstep(y, 0, 0.3));
+        const to = THREE.MathUtils.smoothstep(opDist(sv, y), 0.02, 0.4);
+        const disp = (n * 0.42 + lift) * te * tr2 * to;
+        pos.push(sv, y, T / 2 + 0.008 + Math.max(0, disp));
+      }
+    }
+    for (let j = 0; j < nY; j++) {
+      for (let i = 0; i < nS; i++) {
+        const sc = -half + (S * (i + 0.5)) / nS;
+        const yc = (H * (j + 0.5)) / nY;
+        if (inOp(sc, yc)) continue;
+        const a = j * (nS + 1) + i;
+        const b = a + 1;
+        const c = a + nS + 1;
+        const d = c + 1;
+        idx.push(a, b, d, a, d, c);
+      }
+    }
+    if (!idx.length) return;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    g.geometry('arch_hewn', geo, f.basis, { uv: 'world', ao: (p) => (0.5 + 0.5 * Math.min(1, rockN(p.x + p.z, p.y) * 1.6)) * (0.6 + 0.4 * THREE.MathUtils.smoothstep(p.y, 0, 0.9)) * (0.75 + 0.25 * THREE.MathUtils.smoothstep(H - p.y, 0, 0.5)) });
+    geo.dispose();
+  }
+
   // ---------------------------------------------------------------- WARRENS
   function warrens() {
     const ceil = ts.ceilH;
     for (const f of block.spots.cave) {
       const sd = f.seed;
       const clear = (s) => !f.openings.some((o) => o.s0 - 0.4 < s && o.s1 + 0.4 > s);
+      rockSkin(f);
       // boulders at the foot of the wall, half buried in it
       const nb = 2 + Math.floor(hash(sd, 'nb') * 3);
       for (let k = 0; k < nb; k++) {

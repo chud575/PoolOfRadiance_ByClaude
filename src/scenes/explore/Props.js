@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { CELL, EDGE } from '../../data/maps/MapGrid.js';
 import { getMaterial, getLampGlassMaterial, SURFACE_UNIFORMS } from '../../render/materials.js';
-import { getStainTexture, getBannerTexture, getGrassTexture, getIvyClusterTexture, getCobwebTexture, getPuddleTexture, getSoftTexture, getRugTexture, getTapestryTexture, getNoticeTexture, getBlobTexture } from '../../render/textures/index.js';
+import { getStainTexture, getBannerTexture, getGrassTexture, getIvyClusterTexture, getCobwebTexture, getPuddleTexture, getSoftTexture, getRugTexture, getRugBumpTexture, getRugFringeTexture, getTapestryTexture, getNoticeTexture, getBlobTexture } from '../../render/textures/index.js';
 import { GeoBuilder, hash } from './GeoBuilder.js';
 import { puddleChance } from './exploreRules.js';
 import { isTavernZone } from './RoomDressing.js';
@@ -623,17 +623,34 @@ export function buildProps(map, block, opts = {}) {
     own.push(geo, mat);
   }
   // rugs
+  let fringeMat = null;
   for (const r of rugs) {
-    const mat = new THREE.MeshStandardMaterial({ map: getRugTexture(r.v), roughness: 0.95 });
-    const geo = new THREE.BoxGeometry(2.0, 0.028, 1.4);
-    geo.translate(0, 0.006, 0);
+    // knotted pile: colour + bump, a real 3 cm thickness with the edge darker (bound selvedge)
+    const mat = new THREE.MeshStandardMaterial({ map: getRugTexture(r.v), bumpMap: getRugBumpTexture(), bumpScale: 1.6, roughness: 1 });
+    const geo = new THREE.BoxGeometry(2.0, 0.03, 1.4, 1, 1, 1);
+    geo.translate(0, 0.009, 0);
     const mesh = new THREE.Mesh(geo, mat);
     mesh.applyMatrix4(r.m);
     mesh.receiveShadow = true;
     mesh.renderOrder = 2;
     group.add(mesh);
     own.push(geo, mat);
+    // warp fringe off both short ends, lying a little ruffled on the boards
+    fringeMat ??= new THREE.MeshStandardMaterial({ map: getRugFringeTexture(), alphaTest: 0.4, roughness: 1, side: THREE.DoubleSide });
+    for (const sx of [-1, 1]) {
+      const fg = new THREE.PlaneGeometry(1.4, 0.11);
+      fg.rotateX(-Math.PI / 2);
+      if (sx > 0) fg.rotateY(Math.PI); // knotted edge against the rug
+      fg.rotateY(-Math.PI / 2);
+      fg.translate(sx * 1.055, 0.004, 0);
+      const fm = new THREE.Mesh(fg, fringeMat);
+      fm.applyMatrix4(r.m);
+      fm.receiveShadow = true;
+      group.add(fm);
+      own.push(fg);
+    }
   }
+  if (fringeMat) own.push(fringeMat);
   // banners
   banners.forEach((list, v) => {
     if (!list.length) return;

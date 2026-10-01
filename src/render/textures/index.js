@@ -841,61 +841,149 @@ export function getNoticeTexture() {
 
 /** Woven rug with border bands and a central medallion. */
 export function getRugTexture(variant = 0) {
-  return canvasTex(`rug_${variant}`, 256, 192, (g, w, h) => {
+  return canvasTex(`rug_${variant}`, 512, 384, (g, w, h) => {
     const r = rng(101 + variant);
     const pals = [['#6e1f1a', '#c89a4a', '#1f2a48', '#e0cfa0'], ['#1f3050', '#b88a40', '#6a1c18', '#d8c8a0']];
     const [field, gold, dark, pale] = pals[variant % pals.length];
     g.fillStyle = field;
     g.fillRect(0, 0, w, h);
-    const band = (i, col) => {
+    // abrash: hand-dyed wool batches give the field faint horizontal bands
+    for (let y = 0; y < h; y += 6 + Math.floor(r() * 18)) {
+      g.fillStyle = `rgba(${r() < 0.5 ? '0,0,0' : '255,230,200'},${0.03 + r() * 0.05})`;
+      g.fillRect(0, y, w, 4 + r() * 14);
+    }
+    const band = (i, col, lw = 12) => {
       g.strokeStyle = col;
-      g.lineWidth = 6;
+      g.lineWidth = lw;
       g.strokeRect(i, i, w - 2 * i, h - 2 * i);
     };
-    band(8, dark);
-    band(16, gold);
-    band(24, dark);
-    // zig-zag border motif
-    g.strokeStyle = pale;
-    g.lineWidth = 2;
-    g.beginPath();
-    for (let x = 30; x < w - 30; x += 10) g.lineTo(x, 34 + ((x / 10) % 2) * 6);
-    g.stroke();
-    g.beginPath();
-    for (let x = 30; x < w - 30; x += 10) g.lineTo(x, h - 34 - ((x / 10) % 2) * 6);
-    g.stroke();
-    // medallion
-    g.save();
-    g.translate(w / 2, h / 2);
-    g.fillStyle = dark;
-    g.beginPath();
-    g.moveTo(0, -42);
-    g.lineTo(62, 0);
-    g.lineTo(0, 42);
-    g.lineTo(-62, 0);
-    g.closePath();
-    g.fill();
-    g.fillStyle = gold;
-    g.beginPath();
-    g.moveTo(0, -26);
-    g.lineTo(38, 0);
-    g.lineTo(0, 26);
-    g.lineTo(-38, 0);
-    g.closePath();
-    g.fill();
-    g.fillStyle = field;
-    g.fillRect(-8, -8, 16, 16);
-    g.restore();
-    // weave noise + wear
-    for (let i = 0; i < 5000; i++) {
-      g.fillStyle = `rgba(${r() < 0.5 ? '0,0,0' : '255,240,210'},${r() * 0.08})`;
-      g.fillRect(r() * w, r() * h, 1 + r() * 2, 1);
+    band(14, dark);
+    band(30, gold, 10);
+    band(46, dark);
+    // stepped (knotted) border motif: little hooked diamonds along the band
+    g.fillStyle = pale;
+    for (let x = 64; x < w - 64; x += 22) {
+      for (const y of [30, h - 30]) {
+        g.fillRect(x - 3, y - 6, 6, 12);
+        g.fillRect(x - 6, y - 3, 12, 6);
+      }
     }
-    const grd = g.createRadialGradient(w / 2, h / 2, 10, w / 2, h / 2, w * 0.6);
-    grd.addColorStop(0, 'rgba(230,210,170,0.18)');
-    grd.addColorStop(1, 'rgba(0,0,0,0)');
-    g.fillStyle = grd;
+    for (let y = 64; y < h - 64; y += 22) {
+      for (const x of [30, w - 30]) {
+        g.fillRect(x - 3, y - 6, 6, 12);
+        g.fillRect(x - 6, y - 3, 12, 6);
+      }
+    }
+    // medallion: stepped lozenge (knots make stairs, not smooth diagonals)
+    const lozenge = (rx, ry, col) => {
+      g.fillStyle = col;
+      for (let y = -ry; y <= ry; y += 4) {
+        const half = Math.round((rx * (1 - Math.abs(y) / ry)) / 4) * 4;
+        g.fillRect(w / 2 - half, h / 2 + y, half * 2, 4);
+      }
+    };
+    lozenge(124, 84, dark);
+    lozenge(96, 64, pale);
+    lozenge(76, 50, gold);
+    lozenge(36, 24, field);
+    lozenge(14, 10, dark);
+    // corner guls
+    for (const [cx, cy] of [[110, 100], [w - 110, 100], [110, h - 100], [w - 110, h - 100]]) {
+      g.fillStyle = gold;
+      for (let y = -16; y <= 16; y += 4) {
+        const half = Math.round((22 * (1 - Math.abs(y) / 16)) / 4) * 4;
+        g.fillRect(cx - half, cy + y, half * 2, 4);
+      }
+      g.fillStyle = dark;
+      g.fillRect(cx - 4, cy - 4, 8, 8);
+    }
+    // knot grain: every 2 px a knot of slightly different wool
+    const img = g.getImageData(0, 0, w, h);
+    const d = img.data;
+    for (let y = 0; y < h; y += 2) {
+      for (let x = 0; x < w; x += 2) {
+        const k = 0.86 + r() * 0.24;
+        for (let yy = 0; yy < 2; yy++) {
+          for (let xx = 0; xx < 2; xx++) {
+            const i = ((y + yy) * w + x + xx) * 4;
+            const sh = xx === 0 && yy === 0 ? 1.06 : yy === 1 ? 0.94 : 1;
+            d[i] = Math.min(255, d[i] * k * sh);
+            d[i + 1] = Math.min(255, d[i + 1] * k * sh);
+            d[i + 2] = Math.min(255, d[i + 2] * k * sh);
+          }
+        }
+      }
+    }
+    g.putImageData(img, 0, 0);
+    // wear: a trodden path across the middle (pile worn down to the pale warp), soiled edges
+    for (let i = 0; i < 260; i++) {
+      const x = w * (0.2 + r() * 0.6);
+      const y = h * (0.35 + r() * 0.3);
+      const rad = 6 + r() * 26;
+      const gr = g.createRadialGradient(x, y, 0, x, y, rad);
+      gr.addColorStop(0, `rgba(205,185,150,${0.05 + r() * 0.05})`);
+      gr.addColorStop(1, 'rgba(205,185,150,0)');
+      g.fillStyle = gr;
+      g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+    }
+    const edge = g.createRadialGradient(w / 2, h / 2, h * 0.3, w / 2, h / 2, w * 0.62);
+    edge.addColorStop(0, 'rgba(0,0,0,0)');
+    edge.addColorStop(1, 'rgba(20,12,6,0.35)');
+    g.fillStyle = edge;
     g.fillRect(0, 0, w, h);
+  });
+}
+
+/** Rug pile bump: knot grid + matted patches (luminance height). */
+export function getRugBumpTexture() {
+  return canvasTex('rug_bump', 256, 192, (g, w, h) => {
+    const r = rng(117);
+    const img = g.createImageData(w, h);
+    const d = img.data;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        const knot = (x % 2 === 0 ? 30 : 0) + (y % 2 === 0 ? 20 : 0);
+        const v = 120 + knot + r() * 60;
+        d[i] = d[i + 1] = d[i + 2] = v;
+        d[i + 3] = 255;
+      }
+    }
+    g.putImageData(img, 0, 0);
+    for (let i = 0; i < 40; i++) {
+      const x = w * (0.2 + r() * 0.6);
+      const y = h * (0.3 + r() * 0.4);
+      const rad = 6 + r() * 18;
+      const gr = g.createRadialGradient(x, y, 0, x, y, rad);
+      gr.addColorStop(0, 'rgba(60,60,60,0.35)');
+      gr.addColorStop(1, 'rgba(60,60,60,0)');
+      g.fillStyle = gr;
+      g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+    }
+  }, { srgb: false });
+}
+
+/** Rug fringe: knotted warp threads hanging off the short ends (alpha in the texture). */
+export function getRugFringeTexture() {
+  return canvasTex('rug_fringe', 256, 32, (g, w, h) => {
+    const r = rng(131);
+    g.clearRect(0, 0, w, h);
+    for (let x = 1; x < w; x += 3) {
+      const len = h * (0.55 + r() * 0.45);
+      const sway = (r() - 0.5) * 3;
+      const t = 200 + Math.floor(r() * 40);
+      g.strokeStyle = `rgb(${t},${t - 18},${t - 52})`;
+      g.lineWidth = 1.4;
+      g.beginPath();
+      g.moveTo(x, 0);
+      g.quadraticCurveTo(x + sway * 0.5, len * 0.5, x + sway, len);
+      g.stroke();
+    }
+    // knots where the warp is tied off against the selvedge
+    for (let x = 4; x < w; x += 12) {
+      g.fillStyle = 'rgba(190,170,130,1)';
+      g.fillRect(x - 3, 0, 7, 4);
+    }
   });
 }
 
