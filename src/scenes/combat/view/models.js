@@ -27,7 +27,7 @@ const HAIR = [0x2a1a10, 0x5a3418, 0x8a5a2a, 0xb88a4a, 0xd8c08a, 0x7a2a14, 0x1a1a
 // ------------------------------------------------------------------ species
 const SPECIES = {
   human: { height: 1.0, bulk: 1.0, head: 'human' },
-  kobold: { height: 0.72, bulk: 1.22, limbK: 1.35, head: 'kobold', headScale: 1.45, skin: ['reptile', 0x8a4624], shieldChance: 0.5, tail: 'long', legs: 'digitigrade', hunch: 0.34, thickNeck: true, cloth: 0x4a3a28, armor: 'harness', weapon: 'spear', weapons: ['spear', 'spear', 'shortSword', 'club'], eyes: 0xffc040 },
+  kobold: { height: 0.78, bulk: 1.22, limbK: 1.35, head: 'kobold', headScale: 1.45, skin: ['reptile', 0x8a4624], shieldChance: 0.5, tail: 'long', legs: 'digitigrade', hunch: 0.34, thickNeck: true, cloth: 0x4a3a28, armor: 'harness', weapon: 'spear', weapons: ['spear', 'spear', 'shortSword', 'club'], eyes: 0xffc040 },
   goblin: { height: 0.66, bulk: 0.95, limbK: 1.2, head: 'goblin', skin: ['skin', 0x8a9a3a], hunch: 0.15, cloth: 0x4a3020, weapon: 'shortSword', eyes: 0xffe060 },
   orc: { height: 1.04, bulk: 1.28, head: 'orc', skin: ['skin', 0x535d48], hunch: 0.36, cloth: 0x2e2418, armor: 'orcish', weapon: 'battleAxe', weapons: ['battleAxe', 'battleAxe', 'spear', 'morningStar', 'club'], helmChance: 0.55, eyes: 0xff4020 },
   hobgoblin: { height: 1.08, bulk: 1.12, head: 'hobgoblin', skin: ['skin', 0xb0582a], cloth: 0x5a1e18, armor: 'scale', weapon: 'longSword', shield: 'round', eyes: 0xffa020 },
