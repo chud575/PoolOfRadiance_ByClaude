@@ -801,8 +801,8 @@ export function buildBlock(map, opts = {}) {
         for (let k = 0; y < h - 0.01; k++) {
           const bh = Math.min(h - y, 0.34 + hash(e.key, sgn, k, 'jb') * 0.18);
           const long = (k + (sgn > 0 ? 1 : 0)) % 2 === 0;
-          const ext = long ? 0.1 + hash(e.key, sgn, k, 'je') * 0.08 : 0.01;
-          const proud = hash(e.key, sgn, k, 'jp') * 0.035; // some blocks sit proud of the others
+          const ext = long ? 0.06 + hash(e.key, sgn, k, 'je') * 0.06 : 0.0;
+          const proud = hash(e.key, sgn, k, 'jp') * 0.018; // some blocks sit a hair proud of the others
           const cham = 0.012 + hash(e.key, sgn, k, 'jc') * 0.035;
           const s0 = sgn < 0 ? a - ext : a;
           const s1 = sgn < 0 ? b : b + ext;
@@ -813,6 +813,8 @@ export function buildBlock(map, opts = {}) {
       } else localBox(f, frameKey, a, b, 0, h, fd0, fd1, { chamfer: 0.03, uv: fu, ao: revealAO });
     }
     if (stoneFrame) {
+      // stone lintel under the arch (the voussoirs bear on it; no daylight between them and the door)
+      localBox(f, blockKey, -w / 2 - 0.08, w / 2 + 0.08, h - 0.02, h + 0.12, fd0 + 0.03, fd1 - 0.03, { chamfer: 0.015, ao: revealAO, tint: [0.84, 0.8, 0.76] });
       // flat (jack) arch: voussoirs fanning from a centre below the opening, keystone proud
       const n = 7;
       const span = w + 0.5;
@@ -822,7 +824,7 @@ export function buildBlock(map, opts = {}) {
         const key = k === (n - 1) / 2;
         const ang = -Math.atan2(sm, h + 0.2 - cy);
         const vh = key ? 0.46 : 0.38 + hash(e.key, k, 'vh') * 0.03;
-        const m = localMatrix(f, sm, h + vh / 2 - (key ? 0.04 : 0), 0, ang);
+        const m = localMatrix(f, sm, h + 0.12 + vh / 2 - (key ? 0.04 : 0), 0, ang);
         g.box(blockKey, { matrix: m, s: [span / n - 0.006, vh, fd1 - fd0 - 0.07 + (key ? 0.05 : hash(e.key, k, 'vp') * 0.012)], chamfer: 0.008 + hash(e.key, k, 'vc') * 0.014, ao: revealAO, tint: tone(k, 7) });
       }
     } else localBox(f, frameKey, -w / 2 - 0.32, w / 2 + 0.32, h, h + 0.26, fd0 - 0.02, fd1 + 0.02, { chamfer: 0.035, uv: fu, ao: revealAO });

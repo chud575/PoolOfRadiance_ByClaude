@@ -213,7 +213,7 @@ export default class ExploreScene extends Scene {
     }
     // party lantern: carried a little ahead and to the right, warm, ~5 m reach
     // outdoors it only pools on the nearest walls so the moonlight stays dominant
-    const lanternI = ts.outdoors ? this.night * 2.6 : ts.id === 'dungeon' ? 8 : 2;
+    const lanternI = ts.outdoors ? this.night * 2.6 : ts.variant === 'bane' ? 4 : ts.id === 'dungeon' ? 8 : 2;
     this.lantern = new THREE.PointLight(0xffb468, lanternI, ts.outdoors ? 8 : 13, 2);
     this.lantern.position.set(0.45, -0.25, -0.15);
     this.lantern.userData.base = lanternI;

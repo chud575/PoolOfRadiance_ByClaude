@@ -127,7 +127,7 @@ const PALETTES = {
   warm: [[0.56, 0.5, 0.42], [0.52, 0.47, 0.4], [0.58, 0.52, 0.43], [0.5, 0.46, 0.41], [0.54, 0.48, 0.39], [0.6, 0.55, 0.47], [0.47, 0.43, 0.37], [0.57, 0.5, 0.41]],
   cold: [[0.4, 0.39, 0.38], [0.35, 0.35, 0.35], [0.44, 0.42, 0.39], [0.32, 0.32, 0.33], [0.38, 0.38, 0.36], [0.42, 0.39, 0.35], [0.3, 0.3, 0.3]],
   dungeon: [[0.33, 0.31, 0.29], [0.29, 0.28, 0.27], [0.36, 0.33, 0.29], [0.27, 0.27, 0.28], [0.31, 0.3, 0.28], [0.38, 0.35, 0.31], [0.25, 0.25, 0.25]],
-  basalt: [[0.27, 0.265, 0.275], [0.24, 0.24, 0.255], [0.29, 0.28, 0.28], [0.22, 0.22, 0.235], [0.26, 0.255, 0.26], [0.31, 0.3, 0.3]],
+  basalt: [[0.22, 0.215, 0.225], [0.19, 0.19, 0.205], [0.24, 0.23, 0.23], [0.17, 0.17, 0.185], [0.21, 0.205, 0.21], [0.26, 0.25, 0.25]],
 };
 
 /**
@@ -190,8 +190,12 @@ export function ashlar2({ seed = 21, rows = 10, minW = 0.12, maxW = 0.26, palett
     // tooled striations (diagonal batting) on some stones
     const tool = sA < 0.4 ? (valueNoise((u * Math.cos(sC) + v * Math.sin(sC)) * 900, 0.5, 1000, seed + 31) - 0.5) * 0.012 : 0;
     // spalls: shallow scars in the face with a sharp rim
-    const sp = worley(u * 18 + (chipField - 0.5) * 1.6, v * 18 + (mid - 0.5) * 1.6, 18, seed + 13);
-    const spall = sp.id > 0.87 - 0.07 * erosion ? smooth(0.36, 0.33, sp.f1 + (fine - 0.5) * 0.25) : 0;
+    // (only weathered stones spall: skip the cellular lookup on the rest — it dominates the cost)
+    let spall = 0;
+    if (sB > 0.55 - 0.1 * erosion) {
+      const sp = worley(u * 18 + (chipField - 0.5) * 1.6, v * 18 + (mid - 0.5) * 1.6, 18, seed + 13);
+      spall = sp.id > 0.8 - 0.07 * erosion ? smooth(0.36, 0.33, sp.f1 + (fine - 0.5) * 0.25) : 0;
+    }
     let face = 0.62 + tilt + (big - 0.5) * 0.05 + dressing + tool + (micro - 0.5) * 0.012 - spall * 0.05;
     // chip surface: fractured, lower, rougher
     const chipH = 0.62 - 0.06 - chipDepth * 3 + (fine - 0.5) * 0.08 + (micro - 0.5) * 0.02;
@@ -265,7 +269,7 @@ export function hewnRock({ seed = 241, base = [0.33, 0.29, 0.24], floor = false 
     let c = mul3(base, layerTone * (0.78 + (big - 0.5) * 0.4 + (mid - 0.5) * 0.25 + (fine - 0.5) * 0.12 + (micro - 0.5) * 0.08));
     c = mul3(c, 1 - crack * 0.55 + gouge * 0.08);
     const vein = (1 - smooth(0.0, 0.012, Math.abs(fVein(u, v) - 0.5))) * smooth(0.45, 0.65, big);
-    c = mix3(c, [0.58, 0.56, 0.5], vein * 0.35);
+    c = mix3(c, [0.5, 0.48, 0.43], vein * 0.22);
     const seep = smooth(0.55, 0.8, fSeep(u, v));
     c = mix3(c, mul3(c, 0.55), seep * 0.6);
     c = mix3(c, [0.2, 0.26, 0.14], smooth(0.68, 0.8, mid) * seep * 0.6);

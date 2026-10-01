@@ -157,9 +157,9 @@ const SKY_FRAG = /* glsl */ `
       float disk = smoothstep(0.99905, 0.99925, mm);
       vec2 mp = vec2(dot(d - uMoonDir, normalize(cross(uMoonDir, vec3(0,1,0)))), d.y - uMoonDir.y) * 40.0;
       float crater = fbm(mp * 3.0 + 5.0);
-      vec3 moonCol = vec3(1.0, 0.97, 0.9) * (0.75 + 0.35 * crater) * 2.4;
+      vec3 moonCol = vec3(1.0, 0.97, 0.9) * (0.55 + 0.45 * crater) * 1.5;
       col = mix(col, moonCol, disk * uNight);
-      col += vec3(0.5, 0.6, 0.85) * (pow(max(mm, 0.0), 900.0) * 0.7 + pow(max(mm, 0.0), 120.0) * 0.25 + pow(max(mm, 0.0), 14.0) * 0.1) * uNight;
+      col += vec3(0.5, 0.6, 0.85) * (pow(max(mm, 0.0), 1400.0) * 0.35 + pow(max(mm, 0.0), 160.0) * 0.08 + pow(max(mm, 0.0), 14.0) * 0.06) * uNight;
       // faint warm glow of Phlan's fires on the horizon
       col += vec3(0.16, 0.08, 0.04) * exp(-max(y, 0.0) * 22.0) * uNight;
     }
