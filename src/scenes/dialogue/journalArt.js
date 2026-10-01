@@ -77,22 +77,26 @@ function engrave(src, seed) {
     for (let x = 0; x < W; x++) {
       const i = y * W + x;
       let t = 1 - Math.max(0, Math.min(1, (B[i] - lo) / Math.max(0.05, hi - lo)));
-      t = Math.pow(t, 1.35);
+      t = Math.pow(t, 1.6);
+      // vignetted plate: the engraving fades out in a ragged oval, leaving paper at the margins
+      const vx = (x - W / 2) / (W * 0.53);
+      const vy = (y - H * 0.52) / (H * 0.6);
+      const v = vx * vx + vy * vy + Math.sin(x * 0.09 + ph[0]) * Math.cos(y * 0.11 + ph[1]) * 0.05;
+      const fade = Math.max(0, Math.min(1, (1.08 - v) * 2.4));
+      t *= fade;
       let a = 0;
       // burin layers: each darker tone adds a crossing direction, lines swell with tone
-      if (t > 0.26) a = Math.max(a, line(x, y, 0.78, 6.5, 0.5 + (t - 0.26) * 2.6, ph[0]));
-      if (t > 0.5) a = Math.max(a, line(x, y, -0.62, 7, 0.4 + (t - 0.5) * 2.8, ph[1]));
-      if (t > 0.7) a = Math.max(a, line(x, y, 0.05, 6, 0.4 + (t - 0.7) * 3, ph[2]));
-      if (t > 0.88) a = Math.max(a, line(x, y, 1.45, 5, 0.8 + (t - 0.88) * 6, ph[3]));
-      // ink contours from the luminance gradient
-      if (x > 0 && y > 0 && x < W - 1 && y < H - 1) {
-        const gx = B[i + 1] - B[i - 1];
-        const gy = B[i + W] - B[i - W];
-        const e = Math.hypot(gx, gy);
-        if (e > 0.045) a = Math.max(a, Math.min(1, (e - 0.045) * 12));
+      if (t > 0.3) a = Math.max(a, line(x, y, 0.78, 8.5, 0.6 + (t - 0.3) * 3.2, ph[0]));
+      if (t > 0.56) a = Math.max(a, line(x, y, -0.62, 9, 0.5 + (t - 0.56) * 3.4, ph[1]));
+      if (t > 0.76) a = Math.max(a, line(x, y, 0.05, 8, 0.5 + (t - 0.76) * 3.6, ph[2]));
+      if (t > 0.9) a = Math.max(a, line(x, y, 1.45, 7, 0.9 + (t - 0.9) * 7, ph[3]));
+      // ink contours from the luminance gradient (only real edges, not texture)
+      if (fade > 0.3 && x > 1 && y > 1 && x < W - 2 && y < H - 2) {
+        const gx = B[i + 2] - B[i - 2];
+        const gy = B[i + 2 * W] - B[i - 2 * W];
+        const e = Math.hypot(gx, gy) * fade;
+        if (e > 0.11) a = Math.max(a, Math.min(1, (e - 0.11) * 9));
       }
-      // stipple in the half-tones
-      if (t > 0.12 && t < 0.3 && ((x * 7 + y * 13) % 29 === 0)) a = Math.max(a, 0.6);
       o[i * 4] = ink[0];
       o[i * 4 + 1] = ink[1];
       o[i * 4 + 2] = ink[2];
@@ -101,11 +105,11 @@ function engrave(src, seed) {
   }
   og.putImageData(img, 0, 0);
   // plate mark: a double ruled border pressed into the paper
-  og.strokeStyle = 'rgba(38,24,14,0.9)';
-  og.lineWidth = 2.5;
+  og.strokeStyle = 'rgba(38,24,14,0.55)';
+  og.lineWidth = 1.5;
   og.strokeRect(4, 4, W - 8, H - 8);
-  og.lineWidth = 1;
-  og.strokeRect(10, 10, W - 20, H - 20);
+  og.lineWidth = 0.8;
+  og.strokeRect(9, 9, W - 18, H - 18);
   return out;
 }
 

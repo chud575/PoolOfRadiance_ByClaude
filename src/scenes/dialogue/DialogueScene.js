@@ -469,7 +469,10 @@ export default class DialogueScene extends Scene {
     const ch = [];
     for (const c of node.choices ?? []) {
       if (c.if && !test(this.ctx.game, c.if)) continue;
-      ch.push({ label: c.label, key: c.key, isLeave: !!c.end, run: () => this._runChoice(c) });
+      // scripted parley stances carry the same notes as an encounter parley
+      const stance = STANCE_TIPS[String(c.label).toLowerCase()];
+      const parleyNode = (node.choices ?? []).some((o) => ['haughty', 'sly', 'nice', 'meek', 'abusive'].includes(String(o.label).toLowerCase()));
+      ch.push({ label: c.label, key: c.key, tip: c.tip ?? (parleyNode ? stance : undefined), isLeave: !!c.end, run: () => this._runChoice(c) });
     }
     if (node.next) ch.push({ label: 'Continue', key: 'C', run: () => this.gotoNode(node.next) });
     if (node.end) ch.push({ label: 'Leave', key: 'L', isLeave: true, run: () => this.leave() });
@@ -550,13 +553,7 @@ export default class DialogueScene extends Scene {
   parleyMenu() {
     const enc = this.encounter;
     this._setText([`How will ${this.ctx.game.activeCharacter?.name ?? 'the party'} address them?`], { see: youSee(enc) });
-    const tips = {
-      haughty: 'Proud and commanding. Cows the weak; angers the strong.',
-      sly: 'Cunning and flattering. Works on the greedy.',
-      nice: 'Friendly and open. Works on the reasonable.',
-      meek: 'Humble and yielding. Invites demands.',
-      abusive: 'Threats and insults. Rarely wise.',
-    };
+    const tips = STANCE_TIPS;
     const att = ['haughty', 'sly', 'nice', 'meek', 'abusive'];
     this._setChoices([
       ...att.map((a) => ({ label: a[0].toUpperCase() + a.slice(1), key: a[0].toUpperCase(), tip: tips[a], quiet: true, run: () => this.parley(a) })),
@@ -839,6 +836,16 @@ function youSee(enc) {
   });
   return h('span', ['You see ', h('b', [parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts[0]]), '.']);
 }
+
+/** What each Gold Box parley stance tends to do (shown under the choices). */
+const STANCE_TIPS = {
+  haughty: 'Proud and commanding. Cows the weak; angers the strong.',
+  sly: 'Cunning and flattering. Works on the greedy.',
+  nice: 'Friendly and open. Works on the reasonable.',
+  meek: 'Humble and yielding. Invites demands.',
+  abusive: 'Threats and insults. Rarely wise.',
+  flee: 'Back away while you still can.',
+};
 
 function sizeWord(m) {
   const s = { S: 'small', M: 'man-sized', L: 'large' }[m.size] ?? '';
