@@ -4,9 +4,9 @@ import { createFlameBatch } from '../../../render/lighting.js';
 import { prng, ni, worldUV, tint, box, merge } from './geom.js';
 import { column } from './arch.js';
 import { buildMiniature } from '../../../ui/components/Miniature.js';
-import { armsTexture, bannerTexture, ledgerTexture, paperTexture, featherTexture } from './heraldry.js';
+import { armsTexture, bannerTexture, ledgerTexture, paperTexture, featherTexture, marbleFloorTexture } from './heraldry.js';
 
-export const CHAMBER_TEXTURES = ['hd2_ashlar', 'hd_limestone', 'hd_beam_dark', 'hd_crazy', 'hd2_plaster_int'];
+export const CHAMBER_TEXTURES = ['hd2_ashlar', 'hd_limestone', 'hd_beam_dark', 'hd2_plaster_int'];
 
 /** Where the chamber set lives (far below the city, sealed from the sky). */
 export const CHAMBER_ORIGIN = new THREE.Vector3(0, -240, 0);
@@ -173,7 +173,34 @@ export function createChamber({ seed = 1337 } = {}) {
     q.translate(-0.42, 1.12, tz + tl / 2 - 0.45);
     quillGeo.push(q);
   }
-  for (let i = 0; i < 6; i++) gold.push(tint(ni(new THREE.CylinderGeometry(0.05, 0.035, 0.18, 8).translate(R.range(-0.7, 0.7), 1.13, tz + R.range(-3.8, 3.2))), 0xc89838));
+  // goblets (turned: foot, knopped stem, bowl) at each councillor's place, a
+  // pewter ewer, scroll rolls tied with ribbon, a wax seal and a dish of fruit
+  const goblet = new THREE.LatheGeometry([[0, 0], [0.045, 0], [0.045, 0.008], [0.012, 0.02], [0.01, 0.06], [0.02, 0.07], [0.01, 0.08], [0.012, 0.1], [0.04, 0.12], [0.052, 0.17], [0.05, 0.19], [0.046, 0.19], [0.046, 0.175], [0, 0.13]].map(([r, y]) => new THREE.Vector2(r, y)), 14);
+  for (const dz of [-3.2, -1.1, 1.1, 3.2]) for (const sx of [-1, 1]) {
+    gold.push(tint(ni(goblet.clone().translate(sx * 0.62 + R.range(-0.05, 0.05), 1.06, tz + dz + R.range(-0.25, 0.1))), R.chance(0.5) ? 0xc89838 : 0xa8a8b0));
+  }
+  goblet.dispose();
+  const ewer = new THREE.LatheGeometry([[0, 0], [0.07, 0], [0.08, 0.04], [0.1, 0.12], [0.09, 0.2], [0.05, 0.27], [0.045, 0.31], [0.06, 0.34], [0.055, 0.345], [0, 0.3]].map(([r, y]) => new THREE.Vector2(r, y)), 16);
+  ewer.translate(-0.3, 1.06, tz - 1.9);
+  gold.push(tint(ni(ewer), 0x9a9aa4));
+  const handle = new THREE.TorusGeometry(0.07, 0.012, 5, 12, Math.PI * 1.2);
+  handle.rotateZ(-Math.PI * 0.35);
+  handle.translate(-0.3 - 0.1, 1.06 + 0.2, tz - 1.9);
+  gold.push(tint(ni(handle), 0x9a9aa4));
+  for (const [sx2, sz, ry, len] of [[0.45, tz + 1.9, 0.4, 0.42], [-0.55, tz - 0.4, -0.25, 0.36], [0.3, tz - 3.6, 1.2, 0.4], [-0.35, tz + 3.0, 0.9, 0.34]]) {
+    const roll = new THREE.CylinderGeometry(0.035, 0.035, len, 12);
+    roll.rotateZ(Math.PI / 2);
+    roll.rotateY(ry);
+    roll.translate(sx2, 1.095, sz);
+    floor.push(tint(ni(roll), 0xe8d8b0));
+    const rib = new THREE.TorusGeometry(0.037, 0.008, 4, 12);
+    rib.rotateY(Math.PI / 2);
+    rib.rotateY(ry);
+    rib.translate(sx2, 1.095, sz);
+    cloth.push(tint(ni(rib), 0x8a1a12));
+  }
+  for (const [fx, fz] of [[0.42, tz - 0.9], [0.5, tz - 0.8], [0.44, tz - 0.75], [0.36, tz - 0.86]]) cloth.push(tint(ni(new THREE.SphereGeometry(0.04, 8, 6).translate(fx, 1.1, fz)), R.chance(0.5) ? 0x8a2a14 : 0x9a7a20));
+  gold.push(tint(ni(new THREE.CylinderGeometry(0.16, 0.1, 0.035, 18).translate(0.43, 1.07, tz - 0.83)), 0xa8a8b0));
 
   // ---- candles: tall candelabra on the table, sconces on the columns ---------------------
   const flames = [];
@@ -207,7 +234,7 @@ export function createChamber({ seed = 1337 } = {}) {
   // in councillors' robes and vestments; lit only by the candles.
   const figures = [];
   const person = (ch, x, z, ry, q = 0.018, o = {}) => {
-    const f = buildMiniature({ race: 'human', ...ch }, { pose: 'stand', base: false, gear: false, quality: q, faceSize: 128, noWeapon: o.noWeapon ?? true, noShield: o.noShield ?? true });
+    const f = buildMiniature({ race: 'human', ...ch }, { pose: o.pose ?? 'stand', base: false, gear: false, quality: q, faceSize: 128, noWeapon: o.noWeapon ?? true, noShield: o.noShield ?? true });
     f.position.set(x, 0, z);
     f.rotation.y = ry;
     f.traverse((m) => { if (m.isMesh) { m.castShadow = false; m.receiveShadow = false; } });
@@ -226,39 +253,88 @@ export function createChamber({ seed = 1337 } = {}) {
     { gender: 'male', classSpec: 'cleric', look: { seed: 23, head: 7, body: 7, cloth: 4, hair: 7 } },
     { gender: 'male', classSpec: 'magicUser', look: { seed: 24, head: 6, body: 4, cloth: 2, hair: 1 } },
   ];
+  // high-backed council chairs (carved oak, red leather back, gilt finials);
+  // seated councillors turned toward the adventurers at the foot of the table
+  const SEAT = 0.2; // the dais under the chairs lifts the seated figures
+  const chair = (x, z, ry, tall = 1.55, w = 0.6) => {
+    const m = new THREE.Matrix4().makeRotationY(ry).setPosition(x, 0, z);
+    const put = (g, list, c) => list.push(tint(worldUV(g.applyMatrix4(m), 1), c));
+    put(box(w + 0.1, 0.2, 0.75, { z: -0.08 }), wood, 0x3a2818); // footboard / dais
+    put(box(w, 0.08, 0.52, { y: SEAT + 0.4, z: -0.02 }), wood, 0x5a3a22);
+    put(box(w - 0.08, 0.05, 0.46, { y: SEAT + 0.48, z: -0.02 }), cloth, 0x6a1410);
+    for (const sx of [-1, 1]) {
+      put(box(0.07, SEAT + 0.42, 0.07, { x: sx * (w / 2 - 0.04), y: 0, z: 0.2 }), wood, 0x3a2618);
+      put(box(0.08, SEAT + 0.42 + tall, 0.08, { x: sx * (w / 2 - 0.04), y: 0, z: -0.27 }), wood, 0x3a2618);
+      put(box(0.06, 0.06, 0.48, { x: sx * (w / 2 - 0.02), y: SEAT + 0.72, z: -0.03 }), wood, 0x4a3020); // arm rest
+      put(box(0.05, 0.28, 0.05, { x: sx * (w / 2 - 0.02), y: SEAT + 0.44, z: 0.19 }), wood, 0x3a2618);
+      const fin = new THREE.ConeGeometry(0.045, 0.14, 8).translate(sx * (w / 2 - 0.04), SEAT + 0.49 + tall, -0.27);
+      wood.push(tint(worldUV(fin.applyMatrix4(m), 1), 0x5a3a22));
+    }
+    put(box(w - 0.08, tall - 0.12, 0.05, { y: SEAT + 0.48, z: -0.27 }), cloth, 0x5a1210);
+    put(box(w + 0.04, 0.16, 0.1, { y: SEAT + 0.42 + tall - 0.1, z: -0.27 }), wood, 0x4a3020); // carved crest rail
+    const crest = new THREE.CircleGeometry(0.1, 16).translate(0, SEAT + 0.42 + tall + 0.08, -0.215);
+    gold.push(tint(ni(crest.applyMatrix4(m)), 0x7a5a20));
+  };
+  const seated = (ch, x, z, ry, q = 0.016) => {
+    chair(x, z, ry);
+    const f = person(ch, x, z, ry, q, { pose: 'sit' });
+    f.position.y = SEAT;
+    return f;
+  };
   [-3.2, -1.1, 1.1, 3.2].forEach((dz, i) => {
-    person(council[i], -1.62, tz + dz, Math.PI / 2 - 0.15);
-    person(council[i + 4], 1.62, tz + dz, -Math.PI / 2 + 0.15);
+    // the nearer the councillor sits to the foot, the further they turn to look
+    const turn = 0.5 + 0.12 * (dz + 3.2) / 6.4;
+    seated(council[i], -1.78, tz + dz, Math.PI / 2 - turn);
+    seated(council[i + 4], 1.78, tz + dz, -Math.PI / 2 + turn);
   });
-  person({ gender: 'male', classSpec: 'cleric', look: { seed: 31, head: 2, body: 7, cloth: 0, hair: 7 } }, 0, tz - tl / 2 - 0.8, 0);
-  // the clerk at his lectern, quill over the ledger
-  const lx = 2.6, lz = tz + tl / 2 + 1.2;
-  wood.push(tint(worldUV(box(0.5, 1.05, 0.5, { x: lx, y: 0, z: lz }), 1), 0x4a3220));
-  const desk = new THREE.BoxGeometry(0.9, 0.08, 0.7);
-  desk.rotateX(-0.35);
-  desk.translate(lx, 1.12, lz);
-  wood.push(tint(worldUV(ni(desk), 1), 0x5a3e28));
+  // the First Councillor in the great chair at the head of the table
+  chair(0, tz - tl / 2 - 0.85, 0, 2.1, 0.78);
+  person({ gender: 'male', classSpec: 'cleric', look: { seed: 31, head: 2, body: 7, cloth: 0, hair: 7 } }, 0, tz - tl / 2 - 0.85, 0, 0.016, { pose: 'sit' }).position.y = SEAT;
+  // the clerk at his lectern beside the foot of the table, turned to the
+  // adventurers, quill raised over the open ledger as he takes their names
+  const lx = 2.15, lz = tz + tl / 2 + 0.75;
+  const lry = -0.55; // lectern + clerk face the foot of the hall (toward camera)
+  const lm = new THREE.Matrix4().makeRotationY(lry).setPosition(lx, 0, lz);
+  const lput = (g, list, c) => list.push(tint(worldUV(g.applyMatrix4(lm), 1), c));
+  lput(box(0.42, 0.98, 0.36, { z: 0 }), wood, 0x4a3220);
+  lput(box(0.6, 0.06, 0.5, { y: 0, z: 0 }), wood, 0x3a2618);
+  const desk = new THREE.BoxGeometry(0.78, 0.06, 0.56);
+  desk.rotateX(0.32);
+  desk.translate(0, 1.04, 0.02);
+  lput(desk, wood, 0x5a3e28);
   {
-    // the open ledger on the sloped desk
+    // the open ledger on the sloped desk (tilted toward the clerk, who stands behind it)
     for (const s2 of [-1, 1]) {
-      const pg = new THREE.PlaneGeometry(0.38, 0.52);
+      const pg = new THREE.PlaneGeometry(0.34, 0.46);
       const uv = pg.attributes.uv;
       for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * 0.5 + (s2 > 0 ? 0.5 : 0));
       pg.rotateX(-Math.PI / 2);
-      pg.rotateZ(s2 * -0.06);
-      pg.translate(s2 * 0.19, 0.05, 0);
-      pg.rotateX(-0.35);
-      pg.translate(lx, 1.13, lz);
+      pg.rotateZ(s2 * 0.06);
+      pg.translate(s2 * 0.17, 0.04, 0);
+      pg.rotateX(0.32);
+      pg.translate(0, 1.05, 0.02);
+      pg.applyMatrix4(lm);
       ledgerGeo.push(pg);
     }
   }
-  candle(lx + 0.38, 1.16, lz - 0.2, 0.18);
-  person({ gender: 'male', classSpec: 'magicUser', look: { seed: 41, head: 6, body: 4, cloth: 5, hair: 1 } }, lx, lz + 0.72, Math.PI, 0.016);
+  candle(lx + Math.cos(lry) * 0.36 - 0.1, 1.0, lz - Math.sin(lry) * 0.36 - 0.25, 0.18);
+  const clerk = person({ gender: 'male', classSpec: 'magicUser', look: { seed: 41, head: 6, body: 4, cloth: 5, hair: 1 } }, lx - Math.sin(lry) * 0.62, lz - Math.cos(lry) * 0.62, lry, 0.014);
+  {
+    // his quill, raised mid-stroke in his right hand (the rig's right hand rests
+    // forward of the hip in the standing pose): a feather card plus a dark nib
+    const qg = new THREE.PlaneGeometry(0.06, 0.32);
+    qg.translate(0, 0.16, 0);
+    qg.rotateZ(0.5);
+    qg.rotateX(-0.5);
+    const quill = new THREE.Mesh(qg, new THREE.MeshStandardMaterial({ map: featherTexture(), alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.8 }));
+    quill.position.set(-0.2, 1.02, 0.34);
+    clerk.add(quill);
+    disposables.push(qg, quill.material, quill.material.map);
+  }
   // three adventurers seen from behind at the foot of the table: fighter in plate,
   // cleric in mail and tabard, mage in robes with a staff
   person({ gender: 'male', classSpec: 'fighter', look: { seed: 61, head: 0, body: 0, cloth: 1, hair: 2 } }, -2.45, 2.2, Math.PI + 0.35, 0.013, { noWeapon: false, noShield: false });
   person({ gender: 'female', classSpec: 'cleric', look: { seed: 62, head: 5, body: 5, cloth: 0, hair: 4 } }, 1.95, 2.5, Math.PI - 0.35, 0.013, { noWeapon: false, noShield: false });
-  person({ gender: 'male', classSpec: 'magicUser', look: { seed: 63, head: 6, body: 4, cloth: 3, hair: 0 } }, -1.55, 3.05, Math.PI + 0.2, 0.014, { noWeapon: false });
 
   // ---- meshes ------------------------------------------------------------------------------
   const texMat = (name, extra = {}) => {
@@ -278,7 +354,6 @@ export function createChamber({ seed = 1337 } = {}) {
   add(stone, texMat('hd2_ashlar'));
   add(fine, texMat('hd_limestone'));
   add(wood, texMat('hd_beam_dark'));
-  add(floor, texMat('hd_crazy'));
   const plain = (r, m = 0) => {
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: r, metalness: m });
     disposables.push(mat);
@@ -287,6 +362,14 @@ export function createChamber({ seed = 1337 } = {}) {
   add(cloth, plain(0.9));
   add(skin, plain(0.7));
   add(gold, plain(0.35, 0.85));
+  // floor + candles/scrolls: the marble chequer (its own texture, never the terrace's crazy paving)
+  {
+    const mt = marbleFloorTexture();
+    const mm = new THREE.MeshStandardMaterial({ map: mt.map, roughnessMap: mt.roughnessMap, vertexColors: true, roughness: 1, metalness: 0 });
+    disposables.push(mm, mt.map, mt.roughnessMap);
+    add(floor.slice(0, 1), mm);
+    add(floor.slice(1), plain(0.8));
+  }
   const texd = (list, tex, o = {}) => {
     if (!list.length) return;
     const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, side: THREE.DoubleSide, ...o });
@@ -332,7 +415,7 @@ export function createChamber({ seed = 1337 } = {}) {
   });
   // warm candle pools + cool window fill
   const lights = [];
-  for (const [x, y, z, I, d] of [[0, 2.2, tz - 2.5, 26, 11], [0, 2.2, tz + 2.6, 26, 11], [lx, 1.8, lz, 8, 5], [0, 5.2, tz, 18, 12]]) {
+  for (const [x, y, z, I, d] of [[0, 2.2, tz - 2.5, 26, 11], [0, 2.2, tz + 2.6, 26, 11], [lx + 0.5, 2.4, lz - 0.6, 3, 4], [0, 5.2, tz, 18, 12]]) {
     const L = new THREE.PointLight(0xffa458, I, d, 1.7);
     L.position.set(x, y, z);
     L.userData.base = I;
@@ -344,8 +427,8 @@ export function createChamber({ seed = 1337 } = {}) {
   const advRim = new THREE.PointLight(0xffa458, 7, 6, 1.6);
   advRim.position.set(0, 1.9, 0.6);
   group.add(advRim);
-  const advFill = new THREE.PointLight(0x7080d0, 5, 9, 1.4);
-  advFill.position.set(0.4, 2.6, 6.0);
+  const advFill = new THREE.PointLight(0x8090e0, 13, 9, 1.4);
+  advFill.position.set(0.2, 2.8, 5.4);
   group.add(advFill);
   const winFill = new THREE.PointLight(0x5a6ad0, 10, 18, 1.4);
   winFill.position.set(-5.5, 5, 4);

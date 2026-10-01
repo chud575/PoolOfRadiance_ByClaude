@@ -32,7 +32,7 @@ export function createWorld() {
   const sea = createSea(U);
   const city = createCity();
   const terrace = createTerrace();
-  const dragon = createDragon();
+  const dragon = createDragon({ sunDir: SUN_DIR });
   const chamber = createChamber();
   scene.add(sky, sea, city.group, terrace.group, dragon.group, chamber.group);
 
@@ -122,10 +122,10 @@ export function createWorld() {
   const systems = [motes, embersL, embersR, drift];
   for (const s of systems) scene.add(s.points);
 
-  // the dragon glides west across the sunset sky right of the logo, clear of the
-  // colonnade, over the Moonsea: the title card's second focal beat
-  const dragonPath = { x: 100, y: 23.5, z: -137, dx: 4.2, span: 380 };
-  dragon.group.scale.setScalar(2.25);
+  // the dragon glides along a screen-space lane the current camera pose keeps
+  // clear of the logo and panels (see TitleScene DRAGON / Intro shots)
+  let dragonLane = null;
+  let dragonOn = true;
 
   const api = {
     scene,
@@ -135,7 +135,6 @@ export function createWorld() {
     dragon,
     sun,
     sky,
-    dragonPath,
     chamber,
     hemi,
     fill,
@@ -149,21 +148,50 @@ export function createWorld() {
       this._look = k;
       if (this._interior) return;
       // aerial grade: blue-violet aerial perspective in the shadows, warm sun on the lit planes
-      scene.fog.density = 0.0034 + k * 0.0036;
+      scene.fog.density = 0.0034 + k * 0.0054;
       scene.fog.color.setHex(0x3a2240).lerp(LOOK_FOG, k);
-      hemi.intensity = 0.95 + k * 0.55;
+      hemi.intensity = 0.95 - k * 0.15;
       hemi.color.setHex(0x8a6aaa).lerp(new THREE.Color(0x6a7ac8), k);
-      fill.intensity = 0.8 + k * 0.5;
+      fill.intensity = 0.8 - k * 0.35;
       fill.color.setHex(0x6a78d0).lerp(LOOK_FILL, k);
       fill.position.set(8 + k * 60, 12 + k * 20, 30 + k * 10);
-      sun.intensity = 2.2 + k * 2.4;
+      sun.intensity = 2.2 + k * 3.8;
       sun.color.setHex(0xff8a4a).lerp(new THREE.Color(0xffa060), k);
-      moon.intensity = k * 1.25 + (this._moon ?? 0);
+      moon.intensity = k * 0.55 + (this._moon ?? 0);
       castleKey.intensity = 4.5 * (0.4 + 0.6 * k);
+      if (this._classic) {
+        // 1988: no sunset grade — neutral light so stone lands on EGA greys and
+        // the scene quantises to flat fills instead of orange/pink dither
+        scene.fog.color.setHex(0x000010);
+        scene.fog.density = 0.0022;
+        sun.color.setHex(0xffffff);
+        sun.intensity = 1.3;
+        hemi.color.setHex(0x9090b0);
+        hemi.intensity = 1.0;
+        fill.color.setHex(0x8080ff);
+        fill.intensity = 0.5;
+        castleKey.intensity = 0;
+      }
+    },
+    /** Classic 1988 mode (F2): flat EGA sky/sea, no volumetric shafts or sea-wind embers. */
+    setClassic(on) {
+      on = !!on;
+      if (on === !!this._classic) return;
+      this._classic = on;
+      U.uClassic.value = on ? 1 : 0;
+      shafts.visible = !on;
+      drift.points.visible = !on;
+      dragon.setClassic(on);
+      terrace.setClassic?.(on);
+      if (!this._interior) this.setLook(this._look ?? 0);
     },
     /** Show or hide the dragon (the intro keeps it out of the close city shots). */
     setDragon(on) {
-      dragon.group.visible = !!on;
+      dragonOn = !!on;
+    },
+    /** Flight lane for the dragon (null hides it); see Dragon.update. */
+    setDragonLane(lane) {
+      dragonLane = lane;
     },
     /** Extra cool sky key for a shot (City Hall: gives roofs and the dome a sky-lit side). */
     setMoon(m) {
@@ -190,7 +218,7 @@ export function createWorld() {
       camera.updateMatrixWorld();
       city.update(t, camera, SUN_DIR);
       terrace.update(t, camera, SUN_DIR);
-      dragon.update(t, dragonPath);
+      dragon.update(t, camera, dragonOn ? dragonLane : null);
       chamber.update(t);
       for (const s of systems) s.update(t, px);
     },

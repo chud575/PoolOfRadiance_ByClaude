@@ -5,7 +5,7 @@ import { NOISE } from './glsl.js';
 import { prng, ni, worldUV, tint, merge } from './geom.js';
 import { column as archColumn, entablature, addRimLight } from './arch.js';
 
-export const TERRACE_TEXTURES = ['hd_crazy', 'hd_limestone', 'hd_rubble'];
+export const TERRACE_TEXTURES = ['hd_limestone', 'hd_rubble'];
 
 /**
  * The old temple terrace above the city: flagstone floor with a broken edge,
@@ -27,43 +27,81 @@ export function createTerrace({ seed = 7 } = {}) {
   };
   const rimU = { uSunView: { value: new THREE.Vector3(0, 0, -1) }, uRimColor: { value: new THREE.Color(1.0, 0.55, 0.28) } };
   const stoneMat = addRimLight(texMat('hd_limestone', { vertexColors: true }), rimU, 1.1);
-  const floorMat = texMat('hd_crazy', { vertexColors: true });
-  // Second detail scale over the flagstones, in world space: broad grime and damp
-  // blotches, moss creeping along the joints (where the stone texture is dark),
-  // hairline cracks, and a polished, paler wear path where pilgrims walked to the
-  // Pool. Breaks up the single-scale tiling cadence of the flag texture.
+  // The temple pavement, laid in the shader over a fine limestone grain: two
+  // scales of stone (great flags in running courses of split lengths, patches
+  // of small square setts where it was repaired), per-stone tone and hue,
+  // worn arrises, a few slabs missing (earth and weeds in the hollow) or
+  // cracked through, moss and dirt in the joints, and rain-wet patches that
+  // turn dark and glossy so the Pool and braziers glint in them. A broad
+  // grime/damp layer and the pilgrims' polished path sit on top.
+  const floorMat = texMat('hd_limestone', { vertexColors: true });
   floorMat.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWP;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vWP;\n${NOISE}`)
+      .replace('#include <common>', `#include <common>
+        varying vec3 vWP;
+        ${NOISE}
+        void paving(vec2 w, out vec3 tc, out float wet, out float gap, out float joint, out float crack) {
+          float setts = step(0.66, fbm(w * 0.05 + vec2(3.1, 8.4))) * (1.0 - step(length(w), 7.5));
+          vec2 cs = setts > 0.5 ? vec2(0.5, 0.42) : vec2(2.1, 1.35);
+          float row = floor(w.y / cs.y);
+          float xx = w.x + hash12(vec2(row, 7.0 + setts)) * cs.x;
+          vec2 id = vec2(floor(xx / cs.x), row + setts * 1000.0);
+          vec2 local = vec2(fract(xx / cs.x) * cs.x, fract(w.y / cs.y) * cs.y);
+          float cw = cs.x;
+          if (setts < 0.5 && hash12(id + 13.0) < 0.45) {
+            float sp = cs.x * (0.34 + 0.32 * hash12(id + 5.0));
+            if (local.x > sp) { local.x -= sp; cw = cs.x - sp; id += vec2(0.5, 0.0); } else { cw = sp; }
+          }
+          float jw = setts > 0.5 ? 0.035 : 0.05;
+          float d = min(min(local.x, cw - local.x), min(local.y, cs.y - local.y));
+          d += (vnoise(w * 11.0) - 0.5) * 0.024 + (vnoise(w * 2.3) - 0.5) * 0.02;
+          joint = 1.0 - smoothstep(jw * 0.45, jw, d);
+          float bevel = 1.0 - smoothstep(jw, jw + 0.12, d);
+          float hs = hash12(id + 71.0);
+          float tone = 0.7 + 0.45 * hash12(id + 3.0);
+          tc = vec3(tone) * mix(vec3(1.05, 1.0, 0.92), vec3(0.93, 0.97, 1.05), hash12(id + 9.0));
+          tc *= 1.0 - bevel * 0.35;
+          gap = step(hs, 0.06) * (1.0 - setts) * step(4.6, length(w));
+          // a crack across the slab (a warped diagonal line)
+          vec2 lc = local / vec2(cw, cs.y) - 0.5;
+          float cl = abs(lc.x * (hash12(id + 2.0) - 0.5) * 2.0 + lc.y + (vnoise(w * 4.0) - 0.5) * 0.25);
+          crack = step(0.04, hs) * step(hs, 0.16) * (1.0 - smoothstep(0.004, 0.018, cl));
+          wet = smoothstep(0.63, 0.69, fbm(w * 0.2 + vec2(11.0, 2.0))) * (1.0 - smoothstep(4.0, 2.5, abs(abs(w.x) - 6.2) + abs(w.y + 1.2) * 0.5));
+        }`)
       .replace('#include <map_fragment>', `#include <map_fragment>
+        vec3 pvT; float pvWet, pvGap, pvJoint, pvCrack;
+        paving(vWP.xz, pvT, pvWet, pvGap, pvJoint, pvCrack);
         {
           vec2 w = vWP.xz;
-          float lum = dot(diffuseColor.rgb, vec3(0.333));
-          float joint = 1.0 - smoothstep(0.1, 0.32, lum);           // dark mortar lines
           float big = fbm(w * 0.09);                                  // broad grime / damp
           float mid = fbm(w * 0.55 + 7.3);
           float fine = vnoise(w * 6.0);
-          float r = length(w - vec2(0.0, 4.0));
           float path = (1.0 - smoothstep(1.4, 3.6, abs(w.x) - max(0.0, (w.y - 4.0)) * 0.05)) * step(3.2, w.y) * (1.0 - smoothstep(16.0, 26.0, w.y));
           float wear = max(path, 1.0 - smoothstep(4.5, 7.5, length(w)));
           float edge = smoothstep(-4.0, -8.5, w.y);                  // toward the broken edge
           float grime = smoothstep(0.42, 0.75, big) * 0.55 + edge * 0.35;
-          float moss = clamp(joint * (0.35 + smoothstep(0.45, 0.7, mid) * 0.9) * (1.0 - wear * 0.8) + edge * smoothstep(0.5, 0.75, mid) * 0.5, 0.0, 1.0);
-          // hairline cracks: thin ridges of a warped noise
-          float cn = abs(vnoise(w * 1.3 + vec2(fbm(w * 0.7) * 2.0)) - 0.5);
-          float crack = (1.0 - smoothstep(0.0, 0.018, cn)) * smoothstep(0.5, 0.62, mid) * (1.0 - joint);
-          vec3 c = diffuseColor.rgb;
+          vec3 c = diffuseColor.rgb * 1.08 * pvT * (0.9 + 0.2 * vnoise(w * 17.0)) * (0.95 + 0.1 * vnoise(w * 41.0));
           c *= mix(1.0, 0.62, grime) * (0.9 + 0.2 * mid) * (0.94 + 0.12 * fine);
-          c = mix(c, vec3(0.16, 0.2, 0.09) * (0.7 + 0.6 * fine), moss * 0.75);
-          c = mix(c, c * 1.18 + 0.03, wear * (1.0 - joint) * 0.6);
-          c *= 1.0 - crack * 0.55;
+          // joints: packed dirt, with moss where it's damp and untrodden
+          float moss = smoothstep(0.42, 0.68, mid) * (1.0 - wear * 0.85) + edge * 0.5;
+          vec3 jointC = mix(vec3(0.04, 0.03, 0.022), vec3(0.12, 0.17, 0.06) * (0.7 + 0.6 * fine), clamp(moss, 0.0, 1.0));
+          c = mix(c, jointC, pvJoint);
+          c *= 1.0 - pvCrack * 0.65;
+          // a missing slab: dark earth in the hollow, tufts of weed
+          vec3 soil = mix(vec3(0.06, 0.045, 0.03), vec3(0.1, 0.15, 0.05), step(0.62, vnoise(w * 14.0)));
+          c = mix(c, soil, pvGap);
+          c = mix(c, c * 1.16 + 0.025, wear * (1.0 - pvJoint) * (1.0 - pvGap) * 0.55);
+          // wet stone darkens
+          c *= mix(1.0, 0.58, pvWet * (1.0 - pvGap));
           diffuseColor.rgb = c;
         }`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-        roughnessFactor = clamp(roughnessFactor - 0.25 * (1.0 - smoothstep(4.5, 7.5, length(vWP.xz))), 0.3, 1.0);`);
+        roughnessFactor = clamp(roughnessFactor - 0.25 * (1.0 - smoothstep(4.5, 7.5, length(vWP.xz))), 0.3, 1.0);
+        roughnessFactor = mix(roughnessFactor, 0.2, pvWet * (1.0 - pvJoint) * (1.0 - pvGap));
+        roughnessFactor = mix(roughnessFactor, 1.0, max(pvGap, pvJoint * 0.7));`);
   };
 
   // ---- floor with a broken front edge -----------------------------------------
@@ -77,7 +115,7 @@ export function createTerrace({ seed = 7 } = {}) {
     s.closePath();
     const g = new THREE.ShapeGeometry(s, 1);
     g.rotateX(-Math.PI / 2);
-    worldUV(g, 4.6);
+    worldUV(g, 1.7);
     // vertex colours: darker, mossier toward the broken edge and the far sides
     const pos = g.attributes.position;
     const col = new Float32Array(pos.count * 3);
@@ -317,8 +355,8 @@ export function createTerrace({ seed = 7 } = {}) {
   group.add(poolLight);
   // warm bounce off the left brazier and the paving onto the standing colonnade, so
   // the two tall columns read as fluted stone with a lit face, not flat cut-outs
-  const colBounce = new THREE.PointLight(0xffa868, 9, 11, 1.5);
-  colBounce.position.set(-9.6, 3.2, -2.6);
+  const colBounce = new THREE.PointLight(0xffa868, 20, 13, 1.5);
+  colBounce.position.set(-8.6, 3.6, 0.6);
   group.add(colBounce);
 
   // ---- braziers --------------------------------------------------------------------
@@ -691,6 +729,12 @@ export function createTerrace({ seed = 7 } = {}) {
     /** Scale the column of radiance (the menu dims it so the castle behind stays solid). */
     setBeam(k) {
       for (const m of beams) m.material.uniforms.uStrength.value = m.userData.base * k;
+    },
+    /** Classic 1988 mode: no soft glow sprites or heat haze (they quantise to blobs). */
+    setClassic(on) {
+      for (const h of hazes) h.visible = !on;
+      for (const b of braziers) if (b.userData.sprite) b.userData.sprite.visible = !on;
+      glow.visible = !on;
     },
     update(t, camera, sunDir) {
       if (camera && sunDir) rimU.uSunView.value.copy(sunDir).transformDirection(camera.matrixWorldInverse);

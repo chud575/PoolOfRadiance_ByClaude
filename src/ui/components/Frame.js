@@ -16,5 +16,27 @@ export function Frame({ title = '', variant = 'blue', className = '', children =
     h('i.por-corner.tl'), h('i.por-corner.tr'), h('i.por-corner.bl'), h('i.por-corner.br'),
     titleEl, body,
   ]);
+  watchFrameSize(el);
   return { el, body, title: titleEl };
+}
+
+/**
+ * Tag a frame with data-size = wide | narrow | tiny from its width in ems, so
+ * narrow panels shrink their corner filigree and clamp the title cartouche
+ * instead of letting the two collide (CSS in styles/ui.css).
+ * @param {HTMLElement} el
+ */
+let ro = null;
+export function watchFrameSize(el) {
+  if (typeof ResizeObserver === 'undefined' || !el) return;
+  ro ??= new ResizeObserver((entries) => {
+    for (const e of entries) {
+      const t = /** @type {HTMLElement} */ (e.target);
+      const fs = parseFloat(getComputedStyle(t).fontSize) || 16;
+      const w = e.contentRect.width / fs;
+      const size = w < 17 ? 'tiny' : w < 25 ? 'narrow' : 'wide';
+      if (t.dataset.size !== size) t.dataset.size = size;
+    }
+  });
+  ro.observe(el);
 }

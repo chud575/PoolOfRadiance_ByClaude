@@ -6,6 +6,7 @@ export function createWorldUniforms(sunDir) {
   return {
     uTime: { value: 0 },
     uSunDir: { value: sunDir.clone().normalize() },
+    uClassic: { value: 0 },
   };
 }
 
@@ -27,10 +28,20 @@ export function createSky(U, { radius = 900, cloud = 1 } = {}) {
         gl_Position = vec4(p.xy, p.w * 0.99999, p.w);
       }`,
     fragmentShader: /* glsl */ `
-      uniform float uTime, uCloud; uniform vec3 uSunDir; varying vec3 vDir;
+      uniform float uTime, uCloud, uClassic; uniform vec3 uSunDir; varying vec3 vDir;
       ${DUSK_SKY}
       void main() {
         vec3 d = normalize(vDir);
+        if (uClassic > 0.5) {
+          // 1988: a black night sky with a field of white stars and one band of
+          // EGA blue on the horizon (a narrow ramp, so the post dithers only there)
+          vec3 k = mix(vec3(0.0, 0.0, 0.42), vec3(0.0), smoothstep(0.03, 0.06, d.y));
+          float st = step(0.9972, hash13(floor(d * 380.0))) * step(0.07, d.y);
+          k = mix(k, vec3(1.4), st);
+          if (d.y < 0.0) k = vec3(0.0);
+          gl_FragColor = vec4(k, 1.0);
+          return;
+        }
         vec3 c = duskSky(d, uSunDir, uTime, uCloud);
         // crepuscular rays fanning up from the set sun
         vec3 sd = uSunDir;
@@ -71,7 +82,7 @@ export function createSea(U, { level = -15, nearZ = -150, width = 6000, depth = 
         gl_Position = projectionMatrix * viewMatrix * w;
       }`,
     fragmentShader: /* glsl */ `
-      uniform float uTime; uniform vec3 uSunDir; varying vec3 vWorld;
+      uniform float uTime, uClassic; uniform vec3 uSunDir; varying vec3 vWorld;
       ${DUSK_SKY}
       // long readable swells rolling in from the open Moonsea, a chop on top, and a
       // fine ripple that fades out with distance (so far water never turns to speckle)
@@ -108,6 +119,11 @@ export function createSea(U, { level = -15, nearZ = -150, width = 6000, depth = 
         // haze toward the horizon
         vec3 hor = duskSky(normalize(vec3(v.x, 0.001, v.z)), uSunDir, uTime, 0.0);
         c = mix(c, hor, smoothstep(300.0, 2400.0, dist) * 0.9);
+        if (uClassic > 0.5) {
+          // flat EGA water: dark blue with light-blue swell streaks
+          float sw = step(0.78, vnoise(p * vec2(0.05, 0.35) + vec2(uTime * 0.05, 0.0))) * (1.0 - smoothstep(150.0, 700.0, dist));
+          c = mix(vec3(0.0, 0.0, 0.4), vec3(0.45, 0.45, 1.4), sw);
+        }
         gl_FragColor = vec4(c, 1.0);
       }`,
   });

@@ -338,4 +338,14 @@ export function bindSkin(ctx) {
     if (key === 'classicMode') syncClassic(!!value);
     else if (key in SKIN_DEFAULTS) applySkinSettings(ctx.settings);
   });
+  // last input device (data-input = kb | pad): prompts show keycaps or pad
+  // glyphs, not both, so legends stay uncluttered
+  el.dataset.input ??= 'kb';
+  ctx.bus?.on?.('input:action', ({ code } = {}) => {
+    const next = String(code ?? '').startsWith('pad:') ? 'pad' : 'kb';
+    if (el.dataset.input !== next) el.dataset.input = next;
+  });
+  const toKb = () => el.dataset.input !== 'kb' && (el.dataset.input = 'kb');
+  window.addEventListener('keydown', toKb, true);
+  window.addEventListener('pointerdown', toKb, true);
 }

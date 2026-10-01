@@ -9,6 +9,7 @@ import { createLogo } from './Logo.js';
 import { IntroCinematic } from './Intro.js';
 import { LoadPanel } from './LoadPanel.js';
 import { Credits } from './Credits.js';
+import { DRAGON } from './world/lanes.js';
 
 /**
  * Title scene: the Pool of Radiance glowing on the old temple terrace above
@@ -26,14 +27,14 @@ const ease = (k) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
 /** Camera poses per mode: position + look target. */
 const POSES = {
   card: { p: [0, 3.6, 12.5], l: [0, 1.08, -27.5] },
-  menu: { p: [-4.6, 3.3, 12.2], l: [-4.2, 1.2, -27.8] },
+  menu: { p: [-2.5, 3.9, 14.5], l: [-4.5, 1.2, -27.5] },
   settings: { p: [-1.5, 5.2, 9.5], l: [0.5, 1.5, -30] },
   load: { p: [2.5, 3.0, 10.5], l: [0.6, 1.3, -30] },
-  credits: { p: [2.2, 5.2, 14.5], l: [4.5, 3.4, -40] },
+  credits: { p: [2.6, 5.0, 14.5], l: [15, 3.6, -40] },
 };
 /** Logo layout per mode (fraction of screen width, centre NDC). */
 /** Strength of the Pool's light column per mode. */
-const BEAM = { card: 1, menu: 0.38, settings: 0.6, load: 0.5, credits: 0.7, intro: 1 };
+const BEAM = { card: 1, menu: 0.38, settings: 0.6, load: 0.5, credits: 0.22, intro: 1 };
 
 const LOGO = {
   card: { width: 0.56, cx: 0, cy: 0.5, alpha: 1 },
@@ -110,6 +111,7 @@ export default class TitleScene extends Scene {
       ]),
     ]);
     this.menuEl = h('section.por-title-menu', [
+      h('div.por-mm-banner', [h('i.por-mm-banner-line'), h('i.por-mm-banner-gem'), h('i.por-mm-banner-crest')]),
       h('div.por-mm', [
         h('div.por-mm-kicker', ['Phlan · Year of the Worm']),
         this.menu.el,
@@ -316,11 +318,27 @@ export default class TitleScene extends Scene {
     this.panel?.update?.(t, snap);
     const beamTo = BEAM[this.mode] ?? 1;
     this._beam = snap || this._beam === undefined ? beamTo : this._beam + (beamTo - this._beam) * Math.min(1, dt * 2.5);
-    this.world.terrace.setBeam(this._beam);
+    this.world.terrace.setBeam(this._beam * (this._classic ? 0.2 : 1));
+    const classic = !!this.ctx.render?.classic;
+    if (classic !== this._classic) {
+      this._classic = classic;
+      this.world.setClassic(classic);
+      this.logo.uniforms.uClassic.value = classic ? 1 : 0;
+      // flat EGA fills in the title's large surfaces: dither only where a cell
+      // is genuinely between two colours (the shader default dithers wider)
+      const u = this.ctx.render?.passes?.classic?.uniforms?.uEdge;
+      if (u) {
+        this._edge0 ??= u.value;
+        u.value = classic ? 0.478 : this._edge0;
+      }
+    }
+    if (this.mode !== 'intro') this.world.setDragonLane(this.camTween ? null : DRAGON[this.mode] ?? null);
     this.world.update(t, this.camera, this.ctx.render.renderer?.getPixelRatio?.() ?? 1);
   }
 
   exit() {
+    const u = this.ctx.render?.passes?.classic?.uniforms?.uEdge;
+    if (u && this._edge0 !== undefined) u.value = this._edge0;
     this.panel?.dispose();
     this.intro?.dispose();
     this.menu?.dispose();

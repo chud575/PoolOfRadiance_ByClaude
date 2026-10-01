@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { h } from '../../ui/UI.js';
 import { padGlyph } from '../../ui/SettingsPanel.js';
+import { DRAGON } from './world/lanes.js';
 
 /**
  * The prologue: five camera shots over Phlan at dusk with a text crawl in the
@@ -44,7 +45,7 @@ const SHOTS = [
   },
   {
     t: [24.4, 32.4],
-    keys: [{ p: V(-31, -9.6, -33), l: V(-19, -9.0, -58) }, { p: V(-24, -10.2, -40), l: V(-19.5, -8.6, -58) }],
+    keys: [{ p: V(-32, -10.3, -32), l: V(-19, -9.9, -58) }, { p: V(-25.5, -10.6, -38.5), l: V(-19.5, -9.5, -58) }],
     look: 0.7,
     moon: 2.4,
     caption: 'City Hall',
@@ -137,7 +138,11 @@ export class IntroCinematic {
     this.world?.setMoon?.(s.moon ?? 0);
     // the dragon only wheels over the open sea and the final crane; in the close
     // city shots it would cross the lens at an awkward, cropped scale
-    this.world?.setDragon?.(i === 0 || i === SHOTS.length - 1);
+    // over the sea it crosses the frame in profile, high in the sky; on the final
+    // crane it returns to the title card's lane once the camera has settled
+    this.world?.setDragonLane?.(i === 0
+      ? { x: [1.25, -0.5], y: [0.4, 0.52], d: [95, 120], period: 10, duty: 0.82, time: lt + 0.2, scale: 1.2, bank: 0.55 }
+      : i === SHOTS.length - 1 && lt > 45.5 ? { ...DRAGON.card, time: lt - 45.5 - DRAGON.card.phase } : null);
     this.world?.setLook?.(L);
 
     // crossfades between shots (and out at the very end)
@@ -187,7 +192,7 @@ export class IntroCinematic {
   dispose() {
     this.world?.setInterior?.(false);
     this.world?.setMoon?.(0);
-    this.world?.setDragon?.(true);
+    this.world?.setDragonLane?.(null);
     this.world?.setLook?.(0);
     this.el.remove();
   }

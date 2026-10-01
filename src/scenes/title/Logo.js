@@ -243,6 +243,7 @@ export function createLogo() {
     uSweep: { value: -1 },
     uAlpha: { value: 1 },
     uGlow: { value: 1 },
+    uClassic: { value: 0 },
   };
   const mat = new THREE.ShaderMaterial({
     transparent: true,
@@ -252,7 +253,7 @@ export function createLogo() {
     uniforms,
     vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: /* glsl */ `
-      uniform sampler2D uMap; uniform vec2 uTexel; uniform float uTime, uSweep, uAlpha, uGlow;
+      uniform sampler2D uMap; uniform vec2 uTexel; uniform float uTime, uSweep, uAlpha, uGlow, uClassic;
       varying vec2 vUv;
       float Hh(vec2 uv) { return texture2D(uMap, uv).b; }
       void main() {
@@ -306,6 +307,18 @@ export function createLogo() {
         col *= uGlow;
         float a = max(body, max(outline * 0.94, shadow * 0.55));
         vec3 outCol = mix(vec3(0.03, 0.012, 0.0), col, body);
+        if (uClassic > 0.5) {
+          // the 1988 card's flat EGA lettering: light-red TSR line, yellow title
+          // with a brown drop shadow, light-cyan Forgotten Realms (pre-tonemap
+          // values chosen to land on the palette entries)
+          vec3 en = vUv.y > 0.8 ? vec3(1.25, 0.09, 0.09) : vec3(0.09, 1.25, 1.25);
+          vec3 fill = mix(vec3(1.25, 1.25, 0.09), en, step(0.5, enamel));
+          float sh2 = texture2D(uMap, vUv + vec2(-uTexel.x * 5.0, uTexel.y * 7.0)).r;
+          outCol = mix(vec3(0.5, 0.1, 0.0), fill, step(0.5, body));
+          a = max(step(0.5, body), step(0.5, sh2)) * uAlpha;
+          gl_FragColor = vec4(outCol, a);
+          return;
+        }
         gl_FragColor = vec4(outCol, a * uAlpha);
       }`,
   });
@@ -317,10 +330,11 @@ export function createLogo() {
   const haloGeo = new THREE.PlaneGeometry(1.25, (H / W) * 1.1);
   const haloMat = new THREE.ShaderMaterial({
     transparent: true, depthTest: false, depthWrite: false, fog: false,
-    uniforms: { uAlpha: uniforms.uAlpha },
+    uniforms: { uAlpha: uniforms.uAlpha, uClassic: uniforms.uClassic },
     vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-    fragmentShader: /* glsl */ `uniform float uAlpha; varying vec2 vUv;
+    fragmentShader: /* glsl */ `uniform float uAlpha, uClassic; varying vec2 vUv;
       void main(){
+        if (uClassic > 0.5) discard;
         vec2 d = (vUv - vec2(0.5, 0.56)) * vec2(1.0, 2.3);
         float k = exp(-dot(d, d) * 5.5);
         gl_FragColor = vec4(vec3(0.05, 0.02, 0.05), k * 0.5 * uAlpha);

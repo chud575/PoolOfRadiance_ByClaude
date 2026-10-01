@@ -233,3 +233,84 @@ export function featherTexture() {
   x.beginPath(); x.moveTo(32, 254); x.quadraticCurveTo(30, 130, 24, 10); x.stroke();
   return tex(c);
 }
+
+/**
+ * The council floor: polished square flags laid in a diagonal-free chequer of
+ * cream limestone and dark red Moonsea marble, each slab with its own veining
+ * and tone, chipped arrises, worn dull lanes and dirt in the joints. 2×2 slabs
+ * per tile (lay with worldUV so one slab ≈ half the UV scale). Returns
+ * {map, roughnessMap}.
+ */
+export function marbleFloorTexture() {
+  const N = 512;
+  const T = N / 2;
+  const [c, x] = canvas(N, N);
+  const [rc, rx] = canvas(N, N);
+  const R = prng(29);
+  const img = x.createImageData(N, N);
+  const rim = rx.createImageData(N, N);
+  // tiny value noise
+  const P = new Float32Array(256 * 256);
+  for (let i = 0; i < P.length; i++) P[i] = R.next();
+  const vn = (u, v) => {
+    const iu = Math.floor(u), iv = Math.floor(v);
+    const fu = u - iu, fv = v - iv;
+    const a = P[(iu & 255) + (iv & 255) * 256], b = P[((iu + 1) & 255) + (iv & 255) * 256];
+    const c2 = P[(iu & 255) + ((iv + 1) & 255) * 256], d = P[((iu + 1) & 255) + ((iv + 1) & 255) * 256];
+    const su = fu * fu * (3 - 2 * fu), sv = fv * fv * (3 - 2 * fv);
+    return a + (b - a) * su + (c2 - a) * sv + (a - b - c2 + d) * su * sv;
+  };
+  const fbm = (u, v) => vn(u, v) * 0.5 + vn(u * 2.03, v * 2.03) * 0.25 + vn(u * 4.1, v * 4.1) * 0.125 + vn(u * 8.3, v * 8.3) * 0.0625;
+  const slabs = [];
+  for (let j = 0; j < 2; j++) for (let i = 0; i < 2; i++) {
+    const dark = (i + j) % 2 === 1;
+    slabs.push({ dark, tone: R.range(0.9, 1.08), ang: R.range(0, Math.PI), off: R.range(0, 50), chip: [R.range(0, 1), R.range(0, 1)] });
+  }
+  for (let py = 0; py < N; py++) for (let px = 0; px < N; px++) {
+    const si = (px >= T ? 1 : 0) + (py >= T ? 2 : 0);
+    const s = slabs[si];
+    const lx = px % T, ly = py % T;
+    const u = px / 40 + s.off, v = py / 40 + s.off;
+    const ca = Math.cos(s.ang), sa = Math.sin(s.ang);
+    const ru = u * ca - v * sa, rv = u * sa + v * ca;
+    const warp = fbm(ru * 0.6, rv * 0.6) * 6;
+    const vein = Math.pow(1 - Math.abs(Math.sin(ru * 0.9 + warp)), 18);
+    const vein2 = Math.pow(1 - Math.abs(Math.sin(rv * 1.7 + warp * 1.3)), 40) * 0.6;
+    const cloud = fbm(u * 0.35, v * 0.35);
+    let r, g, b;
+    if (s.dark) {
+      // oxblood marble with pale veins
+      r = 104 + cloud * 36; g = 44 + cloud * 18; b = 38 + cloud * 14;
+      r += (vein + vein2) * 60; g += (vein + vein2) * 50; b += (vein + vein2) * 42;
+    } else {
+      // cream limestone with grey-gold veins
+      r = 184 + cloud * 30; g = 168 + cloud * 26; b = 140 + cloud * 22;
+      r -= (vein + vein2) * 50; g -= (vein + vein2) * 48; b -= (vein + vein2) * 38;
+    }
+    r *= s.tone; g *= s.tone; b *= s.tone;
+    // joints: dark grout + dirt creeping in, bevelled arris highlight
+    const e = Math.min(lx, ly, T - 1 - lx, T - 1 - ly);
+    const chipD = Math.hypot(lx / T - s.chip[0], ly / T - s.chip[1]);
+    const grout = e < 2.2 ? 1 : 0;
+    const arris = e >= 2.2 && e < 4.5 ? 1 : 0;
+    const dirt = Math.max(0, 1 - (e - 2) / 9) * (0.4 + 0.6 * fbm(px / 9, py / 9));
+    const chipped = e < 7 && fbm(px / 5, py / 5) > 0.62 + chipD * 0.2 ? 1 : 0;
+    if (grout || chipped) { r = 38; g = 30; b = 24; }
+    else {
+      r *= 1 - dirt * 0.45; g *= 1 - dirt * 0.47; b *= 1 - dirt * 0.5;
+      if (arris) { r *= 1.07; g *= 1.07; b *= 1.06; }
+    }
+    // a worn dull lane down the middle of the hall + scuffs
+    const wear = fbm(px / 60, py / 14);
+    const k = (py * N + px) * 4;
+    img.data[k] = Math.min(255, r); img.data[k + 1] = Math.min(255, g); img.data[k + 2] = Math.min(255, b); img.data[k + 3] = 255;
+    const rough = grout || chipped ? 250 : Math.min(250, 60 + wear * 90 + dirt * 140 + (s.dark ? -10 : 20));
+    rim.data[k] = rough; rim.data[k + 1] = rough; rim.data[k + 2] = rough; rim.data[k + 3] = 255;
+  }
+  x.putImageData(img, 0, 0);
+  rx.putImageData(rim, 0, 0);
+  const map = tex(c, { aniso: 8 });
+  const roughnessMap = tex(rc, { srgb: false, aniso: 8 });
+  for (const t of [map, roughnessMap]) t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return { map, roughnessMap };
+}

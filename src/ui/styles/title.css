@@ -21,12 +21,13 @@
   backdrop-filter: blur(3px) saturate(0.9);
 }
 .por-title[data-mode='credits'] .por-title-scrim {
+  /* a dark vignette (never a light haze): crushes the edges toward black-violet
+     and seats the plate, leaving the dusk colour untouched in the middle */
   backdrop-filter: none;
   background:
-    radial-gradient(ellipse 40% 50% at 50% 66%, rgba(3, 3, 9, 0.5), transparent 100%),
-    radial-gradient(ellipse 30% 46% at 14% 40%, rgba(20, 8, 16, 0.42), transparent 100%),
-    linear-gradient(90deg, rgba(5, 4, 12, 0.5) 0%, rgba(5, 4, 12, 0.12) 26%, rgba(5, 4, 12, 0) 40%, rgba(5, 4, 12, 0) 66%, rgba(5, 4, 12, 0.36) 100%),
-    linear-gradient(180deg, rgba(4, 4, 12, 0) 0%, rgba(4, 4, 12, 0) 60%, rgba(4, 4, 12, 0.55) 100%);
+    radial-gradient(ellipse 34% 50% at 50% 64%, rgba(2, 1, 6, 0.42), transparent 100%),
+    radial-gradient(ellipse 66% 82% at 52% 42%, transparent 30%, rgba(3, 2, 8, 0.58) 66%, rgba(2, 1, 5, 0.94) 100%),
+    linear-gradient(90deg, rgba(4, 2, 10, 0.38), transparent 30%);
 }
 .por-title[data-mode='intro'] .por-title-scrim { opacity: 0; }
 
@@ -51,9 +52,67 @@
 @keyframes por-breathe { 0%, 100% { opacity: 0.62; } 50% { opacity: 1; } }
 
 /* ---------- main menu ---------- */
-.por-title-menu { display: flex; align-items: center; padding-left: 7.5vw; }
+.por-title-menu { display: flex; align-items: center; padding-left: calc(5.2vw + 2.6em); }
+/* a heraldic banner of tooled leather hangs behind the menu: gilt edge, swallow
+   point, crest at the head, so the menu sits on the skin instead of a void */
+.por-mm-banner {
+  --pt: 3.2em;
+  position: absolute; left: 5.2vw; top: -1px; bottom: 9.5vh; width: 28em; pointer-events: none !important;
+  background: linear-gradient(90deg, #5e4418, #e6c477 12%, #fff1c0 22%, #a07a30 40%, #f0cf7c 60%, #7a5a22 82%, #d6b05a 92%, #4a3410);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--pt)), 50% 100%, 0 calc(100% - var(--pt)));
+  filter: drop-shadow(0 18px 40px rgba(0, 0, 0, 0.7));
+  opacity: 0; transform: translateY(-2.5em); transition: opacity 0.55s var(--ease), transform 0.7s var(--ease);
+}
+.por-mm-banner::before {
+  content: ''; position: absolute; inset: 0 3px 3px;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--pt) + 1px), 50% 100%, 0 calc(100% - var(--pt) + 1px));
+  background:
+    radial-gradient(120% 40% at 50% 0%, rgba(110, 150, 255, 0.14), transparent 70%),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.5), transparent 16%, transparent 84%, rgba(0, 0, 0, 0.5)),
+    linear-gradient(180deg, rgba(10, 14, 34, 0.55), rgba(8, 10, 26, 0.82) 40%, rgba(5, 6, 16, 0.9)),
+    var(--tex-brocade, none),
+    var(--tex-leather, none),
+    #0c1230;
+  background-size: auto, auto, auto, 2.6em 3.03em, 12em 12em, auto;
+}
+.por-mm-banner::after {
+  /* material grain */
+  content: ''; position: absolute; inset: 0; background: var(--tex-grain); opacity: 0.5; mix-blend-mode: overlay;
+}
+.por-mm-banner-line {
+  position: absolute; inset: 0 0.9em calc(var(--pt) * 0.55); z-index: 1;
+  border-left: 1px solid rgba(216, 178, 90, 0.42); border-right: 1px solid rgba(216, 178, 90, 0.42);
+  box-shadow: -1px 0 0 rgba(0, 0, 0, 0.5), 1px 0 0 rgba(0, 0, 0, 0.5);
+}
+.por-mm-banner-crest {
+  position: absolute; left: 50%; bottom: calc(var(--pt) * 0.9); width: 7em; height: 3.4em; transform: translateX(-50%); z-index: 1;
+  background: var(--filigree-crest) center / contain no-repeat; opacity: 0.75;
+  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.9));
+}
+.por-mm-banner-gem {
+  /* the banner's device: a gilt roundel holding a drop of the Pool's radiance, under a crest */
+  position: absolute; left: 50%; top: 13vh; width: 4.6em; height: 4.6em; transform: translateX(-50%); z-index: 1; border-radius: 50%;
+  background:
+    radial-gradient(circle closest-side at 40% 36%, rgba(255, 255, 255, 0.95), rgba(200, 250, 255, 0.5) 30%, transparent 60%),
+    radial-gradient(circle closest-side, #8ef0ff 0%, #1fa6d8 38%, #0a3c6a 68%, #06203c 70%, #2a1d08 71%, #2a1d08 74%, transparent 75%),
+    conic-gradient(from 200deg, #fff1c0, #a07a30, #f0cf7c, #5e4418, #e6c477, #8a6a2a, #fff1c0);
+  box-shadow: 0 0 0 1px #050302, 0 0 26px rgba(80, 220, 255, 0.35), 0 4px 10px rgba(0, 0, 0, 0.7);
+  animation: por-gem 5s ease-in-out infinite;
+}
+.por-mm-banner-gem::before {
+  content: ''; position: absolute; left: 50%; top: -2.9em; width: 9em; height: 3em; transform: translateX(-50%);
+  background: var(--filigree-crest) center / contain no-repeat; opacity: 0.9;
+}
+.por-mm-banner-gem::after {
+  content: ''; position: absolute; left: 50%; top: calc(100% + 0.6em); width: 14em; height: 0.9em; transform: translateX(-50%);
+  background: var(--filigree-rule) center / 100% 100% no-repeat; opacity: 0.7;
+}
+@keyframes por-gem { 0%, 100% { box-shadow: 0 0 0 1px #050302, 0 0 20px rgba(80, 220, 255, 0.28), 0 4px 10px rgba(0, 0, 0, 0.7); } 50% { box-shadow: 0 0 0 1px #050302, 0 0 34px rgba(80, 220, 255, 0.5), 0 4px 10px rgba(0, 0, 0, 0.7); } }
+html[data-motion='reduce'] .por-mm-banner-gem { animation: none; }
+.por-title[data-mode='menu'] .por-mm-banner { opacity: 1; transform: none; transition-delay: 0.1s; }
+html[data-classic='1'] .por-mm-banner { display: none; }
 .por-mm {
-  width: 23em; opacity: 0; transform: translateX(-1.5em); transition: opacity 0.5s var(--ease), transform 0.6s var(--ease);
+  position: relative; width: 23em; opacity: 0; transform: translateX(-1.5em); transition: opacity 0.5s var(--ease), transform 0.6s var(--ease);
   pointer-events: none;
 }
 .por-title[data-mode='menu'] .por-mm { opacity: 1; transform: none; pointer-events: auto; transition-delay: 0.25s; }

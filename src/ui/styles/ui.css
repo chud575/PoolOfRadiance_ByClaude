@@ -129,15 +129,17 @@ html, body {
   background: var(--tex-grain); opacity: 0.6; mix-blend-mode: overlay;
 }
 .por-frame--blue {
+  /* worn book leather: pebble grain shows through a thinner dye, the edges and
+     corners are rubbed darker, a soft sheen rides the top */
   background:
     radial-gradient(130% 60% at 50% -8%, rgba(110, 150, 255, 0.2), transparent 62%),
     radial-gradient(90% 70% at 50% 120%, rgba(0, 0, 0, 0.45), transparent 70%),
+    radial-gradient(ellipse 72% 66% at 50% 46%, transparent 52%, rgba(2, 4, 14, 0.42) 88%, rgba(0, 0, 6, 0.62) 100%),
     var(--tex-brocade, none),
-    linear-gradient(180deg, rgba(34, 54, 118, 0.5) 0%, rgba(14, 22, 58, 0.62) 100%),
+    linear-gradient(180deg, rgba(34, 54, 118, 0.34) 0%, rgba(14, 22, 58, 0.5) 100%),
     var(--tex-leather, none),
     var(--panel-grad);
-  background-size: auto, auto, 2.6em 3.03em, auto, 12em 12em, auto;
-  background-blend-mode: normal, normal, normal, normal, normal, normal;
+  background-size: auto, auto, auto, 2.6em 3.03em, auto, 12em 12em, auto;
 }
 .por-frame--dark {
   background:
@@ -187,6 +189,14 @@ html, body {
 }
 .por-frame-title::after { inset: 0; border: 0; background: linear-gradient(180deg, rgba(255, 255, 255, 0.35), transparent 45%); clip-path: inherit; }
 .por-frame-body { position: relative; }
+/* narrow panels (data-size from Frame's ResizeObserver): smaller corner filigree and a
+   cartouche clamped between the corners, so ornament and title never collide */
+.por-frame[data-size='narrow'] > .por-corner { --cs: 3.7em; }
+.por-frame[data-size='tiny'] > .por-corner { --cs: 2.8em; }
+.por-frame[data-size='narrow'] > .por-frame-title, .por-frame[data-size='tiny'] > .por-frame-title {
+  max-width: calc(100% - 5.4em); overflow: hidden; text-overflow: ellipsis; letter-spacing: 0.18em; padding-left: 1.5em; padding-right: 1.5em;
+}
+.por-frame[data-size='tiny'] > .por-frame-title { max-width: calc(100% - 4em); letter-spacing: 0.1em; font-size: 0.78em; }
 
 /* ---------- Typography ---------- */
 .por-gilt-text {
