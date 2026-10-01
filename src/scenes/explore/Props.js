@@ -60,6 +60,8 @@ export function buildProps(map, block, opts = {}) {
     g.geometry('prop_crate', geos.crate, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, size / 2, 0)).multiply(new THREE.Matrix4().makeScale(size, size, size)));
   };
   const addSack = (m, scale) => g.geometry('prop_burlap', geos.sack, m.clone().multiply(new THREE.Matrix4().makeScale(scale, scale * (0.85 + (scale % 0.1)), scale)), { uvScale: [2, 2] });
+  // fractured masonry chunks match the local walls (never pale trim stone in a dark dungeon)
+  const chunkKey = ts.id === 'dungeon' ? ({ bane: 'arch_basalt', warrens: 'arch_hewn' }[ts.variant] ?? 'arch_dungeon') : 'arch_trim';
   const addRubble = (m, seed, n, spread, big = 1) => {
     // a heap: larger fractured blocks first, then smaller stones and chips around them
     for (let i = 0; i < n; i++) {
@@ -73,7 +75,7 @@ export function buildProps(map, block, opts = {}) {
       mm.multiply(new THREE.Matrix4().makeScale(sc, sc * 0.7, sc));
       const t = 0.72 + hash(seed, i, 'tn') * 0.4;
       const warm = hash(seed, i, 'tw') - 0.5;
-      g.geometry(chunk ? 'arch_trim' : 'prop_rock', geo, mm, { uv: 'world', tint: [t * (1 + warm * 0.08), t, t * (1 - warm * 0.1)], ao: (p) => 0.55 + 0.45 * THREE.MathUtils.smoothstep(p.y, 0.0, 0.35) });
+      g.geometry(chunk ? chunkKey : 'prop_rock', geo, mm, { uv: 'world', tint: [t * (1 + warm * 0.08), t, t * (1 - warm * 0.1)], ao: (p) => 0.55 + 0.45 * THREE.MathUtils.smoothstep(p.y, 0.0, 0.35) });
     }
     const c = new THREE.Vector3().applyMatrix4(m);
     blob(c.x, c.z, spread * 1.4 + 0.3, 0.5);
@@ -146,6 +148,11 @@ export function buildProps(map, block, opts = {}) {
         const dc = new THREE.Vector3().applyMatrix4(dm);
         blob(dc.x, dc.z, 0.5, 0.7);
       }
+      if (ts.variant === 'bane') {
+        // a kept temple: no rubble or stores, only the odd offering of bones
+        if (r < 0.12) bones(g, place(f, sPos, T / 2 + 0.35, seed * 6), seed, geos);
+        continue;
+      }
       if (r < 0.14) addRubble(place(f, sPos, T / 2 + 0.4), seed, 9, 0.6);
       else if (r < 0.22) {
         addBarrel(place(f, sPos, T / 2 + 0.35, seed * 5), 0.95);
@@ -153,9 +160,17 @@ export function buildProps(map, block, opts = {}) {
       } else if (r < 0.32) bones(g, place(f, sPos, T / 2 + 0.35, seed * 6), seed, geos);
       else if (r < 0.42) {
         // hanging chains with shackles
-        for (const o of [-0.3, 0.3]) {
-          const m = place(f, sPos + o, T / 2 + 0.06);
-          for (let k = 0; k < 8; k++) g.geometry('prop_iron', geos.link, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 2.4 - k * 0.09, 0)).multiply(new THREE.Matrix4().makeRotationY(k % 2 ? Math.PI / 2 : 0)), { uv: 'world' });
+        for (const o of [-0.32, 0.32]) {
+          const m = place(f, sPos + o, T / 2 + 0.07);
+          // forged staple: back plate, two rivets, eye ring
+          g.box('prop_iron', { matrix: m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 2.5, -0.05)), s: [0.12, 0.16, 0.02], chamfer: 0.008 });
+          g.geometry('prop_iron', geos.link, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 2.44, -0.02)).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2)).multiply(new THREE.Matrix4().makeScale(1.3, 1, 1.3)), { uv: 'world' });
+          const n = 7 + Math.floor(hash(seed, o, 'cl') * 4);
+          for (let k = 0; k < n; k++) g.geometry('prop_iron', geos.link, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 2.36 - k * 0.1, 0)).multiply(new THREE.Matrix4().makeRotationY(k % 2 ? Math.PI / 2 : 0)).multiply(new THREE.Matrix4().makeScale(1.25, 1.25, 1.25)), { uv: 'world' });
+          // open manacle hanging from the last link
+          const cuff = new THREE.TorusGeometry(0.06, 0.014, 6, 14, Math.PI * 1.6);
+          g.geometry('prop_iron', cuff, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 2.3 - n * 0.1, 0.02)).multiply(new THREE.Matrix4().makeRotationZ(-Math.PI * 0.3)), { uv: 'world' });
+          cuff.dispose();
         }
       }
       // cobwebs in inside corners near the ceiling
@@ -644,7 +659,7 @@ function makePropGeometries() {
  * Fractured stone: a sphere (or block) cut by random cleavage planes into flat
  * facets, jittered, with a flat seat; flat-shaded.
  */
-function fracturedRock(seed, block) {
+export function fracturedRock(seed, block) {
   const base = block ? new THREE.BoxGeometry(1, 0.62, 0.72, 3, 2, 2) : new THREE.IcosahedronGeometry(0.5, 2);
   const g = base.index ? base.toNonIndexed() : base;
   if (g !== base) base.dispose();
@@ -774,11 +789,28 @@ function shelf(g, m, seed, geos) {
 }
 
 function bones(g, m, seed, geos) {
-  g.geometry('prop_bone', geos.skull, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.08, 0)).multiply(new THREE.Matrix4().makeRotationY(seed * 6)), { uv: 'world' });
-  for (let k = 0; k < 5; k++) {
-    const mm = m.clone().multiply(new THREE.Matrix4().makeTranslation((hash(seed, k, 'bx') - 0.5) * 0.8, 0.025, (hash(seed, k, 'bz') - 0.5) * 0.5));
-    mm.multiply(new THREE.Matrix4().makeRotationY(hash(seed, k) * 6));
-    g.box('prop_bone', { matrix: mm, s: [0.35 + hash(seed, k, 'l') * 0.2, 0.035, 0.035], chamfer: 0.01 });
+  // a skull with sockets and jaw, ribs and long bones with knuckled ends, scattered
+  const sm = m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.09, 0)).multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(0.15, seed * 6, 0.2)));
+  g.geometry('prop_bone', geos.skull, sm, { uv: 'world', tint: [0.9, 0.84, 0.72] });
+  g.box('prop_bone', { matrix: sm.clone().multiply(new THREE.Matrix4().makeTranslation(0, -0.075, 0.05)), s: [0.1, 0.035, 0.08], chamfer: 0.01, tint: [0.8, 0.74, 0.62] });
+  for (const ex of [-0.035, 0.035]) g.box('arch_beam_dark', { matrix: sm.clone().multiply(new THREE.Matrix4().makeTranslation(ex, 0.01, 0.105)), s: [0.035, 0.03, 0.02], tint: [0.1, 0.08, 0.07] });
+  const knob = new THREE.SphereGeometry(0.028, 6, 5);
+  for (let k = 0; k < 6; k++) {
+    const len = 0.3 + hash(seed, k, 'l') * 0.22;
+    const mm = m.clone().multiply(new THREE.Matrix4().makeTranslation((hash(seed, k, 'bx') - 0.5) * 0.8, 0.03 + (k % 2) * 0.03, (hash(seed, k, 'bz') - 0.5) * 0.5));
+    mm.multiply(new THREE.Matrix4().makeRotationY(hash(seed, k) * 6)).multiply(new THREE.Matrix4().makeRotationZ(Math.PI / 2 + (hash(seed, k, 'tz') - 0.5) * 0.3));
+    const shaft = new THREE.CylinderGeometry(0.017, 0.015, len, 6);
+    g.geometry('prop_bone', shaft, mm, { uv: 'world', tint: [0.86, 0.8, 0.68] });
+    shaft.dispose();
+    for (const sy of [-1, 1]) for (const kx of [-0.012, 0.012]) g.geometry('prop_bone', knob, mm.clone().multiply(new THREE.Matrix4().makeTranslation(kx, (sy * len) / 2, 0)), { uv: 'world', tint: [0.88, 0.82, 0.7] });
+  }
+  knob.dispose();
+  // a few curved ribs
+  for (let k = 0; k < 4; k++) {
+    const rib = new THREE.TorusGeometry(0.16, 0.009, 4, 10, Math.PI * 0.8);
+    const rm = m.clone().multiply(new THREE.Matrix4().makeTranslation(0.2 + (hash(seed, k, 'rx') - 0.5) * 0.3, 0.02, (hash(seed, k, 'rz') - 0.5) * 0.3)).multiply(new THREE.Matrix4().makeRotationX(-Math.PI / 2 + 0.2)).multiply(new THREE.Matrix4().makeRotationZ(hash(seed, k, 'rr') * 6));
+    g.geometry('prop_bone', rib, rm, { uv: 'world', tint: [0.84, 0.78, 0.66] });
+    rib.dispose();
   }
 }
 

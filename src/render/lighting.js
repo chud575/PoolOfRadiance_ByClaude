@@ -43,8 +43,9 @@ export function sunDirection(hour, out = new THREE.Vector3()) {
 
 /** Direction to the moon (opposite-ish arc, high in the south-west at midnight). */
 export function moonDirection(hour, out = new THREE.Vector3()) {
+  // rises in the east at dusk, arcs low through the southern sky, sets west at dawn
   const a = (((hour + 24 - 18) % 24) / 12) * Math.PI;
-  return out.set(Math.cos(a) * 0.8, 0.35 + Math.sin(a) * 0.45, 0.7).normalize();
+  return out.set(Math.cos(a), 0.05 + Math.sin(a) * 0.3, 0.16).normalize();
 }
 
 /** Colour/intensity keys by hour (0-24), smoothly interpolated. */
@@ -153,12 +154,12 @@ const SKY_FRAG = /* glsl */ `
       col += (sc * star * 2.2 + vec3(0.32, 0.36, 0.5) * mw * 0.09) * uNight * smoothstep(-0.02, 0.18, y);
       // moon
       float mm = dot(d, uMoonDir);
-      float disk = smoothstep(0.99955, 0.99975, mm);
-      vec2 mp = vec2(dot(d - uMoonDir, normalize(cross(uMoonDir, vec3(0,1,0)))), d.y - uMoonDir.y) * 60.0;
+      float disk = smoothstep(0.99905, 0.99925, mm);
+      vec2 mp = vec2(dot(d - uMoonDir, normalize(cross(uMoonDir, vec3(0,1,0)))), d.y - uMoonDir.y) * 40.0;
       float crater = fbm(mp * 3.0 + 5.0);
       vec3 moonCol = vec3(1.0, 0.97, 0.9) * (0.75 + 0.35 * crater) * 2.4;
       col = mix(col, moonCol, disk * uNight);
-      col += vec3(0.5, 0.6, 0.85) * (pow(max(mm, 0.0), 180.0) * 0.5 + pow(max(mm, 0.0), 14.0) * 0.08) * uNight;
+      col += vec3(0.5, 0.6, 0.85) * (pow(max(mm, 0.0), 900.0) * 0.7 + pow(max(mm, 0.0), 120.0) * 0.25 + pow(max(mm, 0.0), 14.0) * 0.1) * uNight;
       // faint warm glow of Phlan's fires on the horizon
       col += vec3(0.16, 0.08, 0.04) * exp(-max(y, 0.0) * 22.0) * uNight;
     }
@@ -241,9 +242,13 @@ export function getFlameMaterial() {
     fog: false,
     uniforms: FLAME_UNIFORMS,
     vertexShader: /* glsl */ `
-      varying vec2 vUv; varying float vSeed;
+      varying vec2 vUv; varying float vSeed; varying vec3 vTint;
       void main(){
         vUv = uv;
+        vTint = vec3(1.0);
+        #ifdef USE_INSTANCING_COLOR
+          vTint = instanceColor;
+        #endif
         mat4 mm = modelMatrix;
         #ifdef USE_INSTANCING
           mm = modelMatrix * instanceMatrix;
@@ -258,7 +263,7 @@ export function getFlameMaterial() {
         gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
       }`,
     fragmentShader: /* glsl */ `
-      uniform float uTime; varying vec2 vUv; varying float vSeed;
+      uniform float uTime; varying vec2 vUv; varying float vSeed; varying vec3 vTint;
       float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       float n(vec2 x){ vec2 i = floor(x); vec2 f = fract(x); f = f*f*(3.0-2.0*f);
         return mix(mix(h(i), h(i+vec2(1,0)), f.x), mix(h(i+vec2(0,1)), h(i+vec2(1,1)), f.x), f.y); }
@@ -274,6 +279,11 @@ export function getFlameMaterial() {
         float core = (1.0 - smoothstep(0.0, w * 0.5, abs(x))) * (1.0 - smoothstep(0.1, 0.55, y));
         vec3 col = mix(vec3(1.0, 0.25, 0.04), vec3(1.0, 0.62, 0.18), shape);
         col = mix(col, vec3(1.0, 0.93, 0.7), core);
+        // tinted (unholy / magical) fire: instance colour replaces the black-body ramp
+        float tintAmt = step(vTint.r + vTint.g + vTint.b, 2.99);
+        vec3 tc = mix(vTint * 0.55, vTint, shape);
+        tc = mix(tc, mix(vTint, vec3(1.0), 0.55), core);
+        col = mix(col, tc * 0.55, tintAmt); // saturated tints bloom hard: keep them dimmer
         float a = shape * (0.75 + 0.25 * turb);
         gl_FragColor = vec4(col * a * 2.2, a);
       }`,
@@ -282,7 +292,7 @@ export function getFlameMaterial() {
 }
 
 /**
- * Many flames in one draw call. items: [{pos: Vector3, scale: number}]
+ * Many flames in one draw call. items: [{pos: Vector3, scale: number, color?: hex (tinted fire)}]
  * @returns {THREE.InstancedMesh}
  */
 export function createFlameBatch(items) {
@@ -291,6 +301,10 @@ export function createFlameBatch(items) {
   const mesh = new THREE.InstancedMesh(g, getFlameMaterial(), Math.max(1, items.length));
   const m = new THREE.Matrix4();
   items.forEach((it, i) => mesh.setMatrixAt(i, m.compose(it.pos, new THREE.Quaternion(), new THREE.Vector3(it.scale, it.scale, it.scale))));
+  if (items.some((it) => it.color !== undefined)) {
+    const c = new THREE.Color();
+    items.forEach((it, i) => mesh.setColorAt(i, it.color !== undefined ? c.set(it.color) : c.setRGB(1, 1, 1)));
+  }
   mesh.count = items.length;
   mesh.renderOrder = 5;
   mesh.frustumCulled = false;

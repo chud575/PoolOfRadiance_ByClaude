@@ -871,3 +871,121 @@ export function getRugTexture(variant = 0) {
     g.fillRect(0, 0, w, h);
   });
 }
+
+/**
+ * Banner of Bane: a long crimson cloth with a black clenched hand within a
+ * ring of black spikes, a black border and a ragged, singed hem (alpha).
+ */
+export function getBaneBannerTexture() {
+  return canvasTex('banner_bane', 192, 512, (g, w, h) => {
+    const r = rng(613);
+    g.clearRect(0, 0, w, h);
+    // ragged hem: a jagged line along the bottom
+    g.beginPath();
+    g.moveTo(0, 0);
+    g.lineTo(w, 0);
+    g.lineTo(w, h * 0.9);
+    for (let k = 12; k >= 0; k--) g.lineTo((w * k) / 12, h * (0.9 + (k % 2 ? 0.06 : 0.02) + r() * 0.03));
+    g.closePath();
+    g.save();
+    g.clip();
+    const grad = g.createLinearGradient(0, 0, w, 0);
+    grad.addColorStop(0, '#4a0806');
+    grad.addColorStop(0.5, '#7e100c');
+    grad.addColorStop(1, '#4a0806');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, w, h);
+    // weave
+    for (let i = 0; i < 6000; i++) {
+      g.fillStyle = `rgba(${r() < 0.5 ? '0,0,0' : '255,90,60'},${r() * 0.06})`;
+      g.fillRect(r() * w, r() * h, 1, 1 + r() * 3);
+    }
+    // black border bands
+    g.fillStyle = '#0c0807';
+    g.fillRect(0, 0, w, 22);
+    g.fillRect(0, 22, 12, h);
+    g.fillRect(w - 12, 22, 12, h);
+    g.fillRect(0, h * 0.78, w, 10);
+    // spiked ring
+    const cx = w / 2;
+    const cy = h * 0.38;
+    g.beginPath();
+    for (let k = 0; k <= 48; k++) {
+      const a = (k / 48) * Math.PI * 2;
+      const rr = k % 2 ? 62 : 74;
+      g.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+    }
+    g.closePath();
+    g.fill();
+    g.fillStyle = '#7e100c';
+    g.beginPath();
+    g.arc(cx, cy, 54, 0, Math.PI * 2);
+    g.fill();
+    // the black hand (fingers together, thumb out)
+    g.fillStyle = '#0c0807';
+    const rr = (x, y, ww, hh, rad) => {
+      g.beginPath();
+      g.moveTo(x + rad, y);
+      g.arcTo(x + ww, y, x + ww, y + hh, rad);
+      g.arcTo(x + ww, y + hh, x, y + hh, rad);
+      g.arcTo(x, y + hh, x, y, rad);
+      g.arcTo(x, y, x + ww, y, rad);
+      g.fill();
+    };
+    rr(cx - 22, cy - 6, 44, 40, 8);
+    for (let k = 0; k < 4; k++) rr(cx - 22 + k * 11.5, cy - 40 + (k === 1 || k === 2 ? -6 : 0), 9.5, 40, 4.5);
+    g.save();
+    g.translate(cx + 22, cy + 8);
+    g.rotate(-0.6);
+    rr(-5, -26, 10, 28, 5);
+    g.restore();
+    rr(cx - 14, cy + 30, 28, 14, 3);
+    // tarnished gold thread motto line
+    g.fillStyle = 'rgba(200,150,60,0.55)';
+    for (let k = 0; k < 7; k++) g.fillRect(cx - 50 + k * 15, h * 0.62, 9, 3);
+    // soot and singeing toward the hem, fading toward the folds
+    const grd = g.createLinearGradient(0, h * 0.55, 0, h);
+    grd.addColorStop(0, 'rgba(10,4,2,0)');
+    grd.addColorStop(1, 'rgba(10,4,2,0.8)');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, w, h);
+    g.restore();
+  });
+}
+
+/** Long processional runner: crimson wool, black and tarnished-gold borders (tiles along v). */
+export function getRunnerTexture() {
+  return canvasTex('runner_bane', 128, 256, (g, w, h) => {
+    const r = rng(617);
+    g.fillStyle = '#5e0c0a';
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = '#0e0807';
+    g.fillRect(0, 0, 14, h);
+    g.fillRect(w - 14, 0, 14, h);
+    g.fillStyle = '#8a6a30';
+    g.fillRect(16, 0, 3, h);
+    g.fillRect(w - 19, 0, 3, h);
+    // stepped lozenges down the centre
+    g.fillStyle = '#2a0605';
+    for (let y = 0; y < h; y += 64) {
+      g.beginPath();
+      g.moveTo(w / 2, y + 8);
+      g.lineTo(w / 2 + 26, y + 32);
+      g.lineTo(w / 2, y + 56);
+      g.lineTo(w / 2 - 26, y + 32);
+      g.closePath();
+      g.fill();
+    }
+    for (let i = 0; i < 5000; i++) {
+      g.fillStyle = `rgba(${r() < 0.5 ? '0,0,0' : '255,120,90'},${r() * 0.07})`;
+      g.fillRect(r() * w, r() * h, 1, 1 + r() * 2);
+    }
+    // wear down the middle (trodden)
+    const grd = g.createLinearGradient(0, 0, w, 0);
+    grd.addColorStop(0.3, 'rgba(30,20,16,0)');
+    grd.addColorStop(0.5, 'rgba(30,20,16,0.25)');
+    grd.addColorStop(0.7, 'rgba(30,20,16,0)');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, w, h);
+  }, { repeat: true });
+}

@@ -58,7 +58,7 @@ export function buildBlock(map, opts = {}) {
   const torches = [];
   const windows = [];
   const chimneys = [];
-  const spots = { wallBase: [], lamp: [], banner: [], floorCells: [], cobweb: [], ivy: [] };
+  const spots = { wallBase: [], lamp: [], banner: [], floorCells: [], cobweb: [], ivy: [], cave: [], bane: [] };
   const W = map.w;
   const Hh = map.h;
   /** Optional fireplaces: map.hearths [{x,y,dir}] (or a single map.hearth). */
@@ -256,7 +256,9 @@ export function buildBlock(map, opts = {}) {
         seed: hash(e.key, si, map.id),
       };
       // per-face texture offset: no two walls show the same stones / plaster blemishes
-      face.uvOff = [Math.floor(hash(face.seed, 'uo') * 97) / 7.3, Math.floor(hash(face.seed, 'vo') * 13) / 3.7];
+      // (keyed by the wall's line + facing so a straight run stays continuous — no seams between cells)
+      const lineKey = horizontal ? `h${e.j}:${sd.N.z}` : `v${e.i}:${sd.N.x}`;
+      face.uvOff = [Math.floor(hash(map.id, lineKey, 'uo') * 97) / 7.3, Math.floor(hash(map.id, lineKey, 'vo') * 13) / 3.7];
       // corner classification at both ends
       for (const end of [-1, 1]) face.ends[end] = classifyEnd(e, sd.N, Tn, end, horizontal);
       RECIPES[recipe]?.(face);
@@ -515,6 +517,39 @@ export function buildBlock(map, opts = {}) {
         localBox(f, 'arch_trim', s - 0.36, s + 0.36, H - 0.55, H - 0.35, T / 2, T / 2 + 0.24, { chamfer: 0.04, tint: [0.6, 0.6, 0.58] });
       }
     },
+    hewn(f) {
+      // rough-hewn rock: the face itself is flat (normal-mapped); lumps, roots and refuse come from the dressing pass
+      slab(f, 'arch_hewn', 0, f.H, 0, T / 2);
+      spots.cave.push(f);
+    },
+    basalt(f) {
+      const H = f.H;
+      slab(f, 'arch_basalt', 0, H, 0, T / 2);
+      slab(f, 'arch_basalt', 0, 0.42, T / 2, T / 2 + 0.09, { chamfer: 0.02, tint: [0.7, 0.66, 0.66] });
+      slab(f, 'arch_basalt', H - 0.62, H - 0.42, T / 2, T / 2 + 0.16, { chamfer: 0.03, tint: [0.85, 0.8, 0.8] });
+      slab(f, 'arch_basalt', H - 0.42, H - 0.36, T / 2, T / 2 + 0.1, { chamfer: 0.01, tint: [0.6, 0.55, 0.55] });
+      for (const end of [-1, 1]) {
+        if (f.ends[end] === 'inside' || f.ends[end] === 'free') continue;
+        const s = end * (S / 2);
+        localBox(f, 'arch_basalt', s - 0.28, s + 0.28, 0, H - 0.62, T / 2, T / 2 + 0.15, { chamfer: 0.04 });
+        localBox(f, 'arch_basalt', s - 0.36, s + 0.36, 0, 0.55, T / 2, T / 2 + 0.22, { chamfer: 0.04, tint: [0.7, 0.66, 0.66] });
+        // capital
+        localBox(f, 'arch_basalt', s - 0.38, s + 0.38, H - 0.9, H - 0.62, T / 2, T / 2 + 0.24, { chamfer: 0.05, tint: [0.9, 0.85, 0.85] });
+      }
+      const free = !f.openings.length && f.ends[-1] !== 'free';
+      if (free && hash(f.seed, 'relief') < 0.5) {
+        // carved relief panel of the Black Hand, set in a moulded frame
+        const d = T / 2 + 0.02;
+        const P = (sv, y) => new THREE.Vector3(sv, y, d).applyMatrix4(f.basis);
+        g.quad('arch_relief', P(-0.62, 1.15), P(0.62, 1.15), P(0.62, 2.39), P(-0.62, 2.39), [[0, 1], [1, 1], [1, 0], [0, 0]], { ao: 0.95 });
+        localBox(f, 'arch_basalt', -0.74, 0.74, 1.03, 1.15, T / 2, T / 2 + 0.1, { chamfer: 0.02, tint: [0.9, 0.85, 0.85] });
+        localBox(f, 'arch_basalt', -0.74, 0.74, 2.39, 2.51, T / 2, T / 2 + 0.1, { chamfer: 0.02, tint: [0.9, 0.85, 0.85] });
+        localBox(f, 'arch_basalt', -0.74, -0.62, 1.15, 2.39, T / 2, T / 2 + 0.1, { chamfer: 0.02, tint: [0.9, 0.85, 0.85] });
+        localBox(f, 'arch_basalt', 0.62, 0.74, 1.15, 2.39, T / 2, T / 2 + 0.1, { chamfer: 0.02, tint: [0.9, 0.85, 0.85] });
+        f.relief = true;
+      }
+      spots.bane.push(f);
+    },
     dungeon_brick(f) {
       slab(f, 'arch_brick', 0.5, f.H, 0, T / 2, { tint: [0.7, 0.66, 0.62] });
       slab(f, 'arch_dungeon', 0, 0.5, 0, T / 2 + 0.06, { chamfer: 0.03 });
@@ -679,7 +714,7 @@ export function buildBlock(map, opts = {}) {
     const w = DOOR_W;
     const h = DOOR_H;
     const style = ts.walls[e.style];
-    const stoneFrame = style === 'stone' || style === 'dungeon' || style === 'int_stone' || style === 'dungeon_brick' || style === 'cave' || style === 'ruin';
+    const stoneFrame = style === 'stone' || style === 'dungeon' || style === 'int_stone' || style === 'dungeon_brick' || style === 'cave' || style === 'ruin' || style === 'hewn' || style === 'basalt';
     const frameKey = stoneFrame ? 'arch_trim' : 'arch_beam_dark';
     const fd0 = -T / 2 - 0.05;
     const fd1 = T / 2 + 0.05;
@@ -692,24 +727,48 @@ export function buildBlock(map, opts = {}) {
       return a;
     };
     const fu = stoneFrame ? 'world' : 'along';
-    // jambs built from alternating long/short blocks (stone) or a single post (timber)
+    // jambs: alternating long/short dressed blocks with individual depth, chamfer, tone
+    // and a hair of misalignment (stone), or a single post (timber)
+    const blockKey = style === 'basalt' ? 'arch_basalt' : style === 'hewn' ? 'arch_dungeon' : stoneFrame ? 'arch_dressed' : frameKey;
+    const tone = (k, sgn) => {
+      const t = 0.86 + hash(e.key, sgn, k, 'jt') * 0.2;
+      const w = (hash(e.key, sgn, k, 'jw') - 0.5) * 0.08;
+      return [t * (1 + w), t, t * (1 - w * 1.4)];
+    };
     for (const sgn of [-1, 1]) {
       const a = sgn < 0 ? -w / 2 - 0.2 : w / 2;
       const b = sgn < 0 ? -w / 2 : w / 2 + 0.2;
       if (stoneFrame) {
         let y = 0;
         for (let k = 0; y < h - 0.01; k++) {
-          const bh = Math.min(h - y, 0.36 + hash(e.key, sgn, k, 'jb') * 0.16);
+          const bh = Math.min(h - y, 0.34 + hash(e.key, sgn, k, 'jb') * 0.18);
           const long = (k + (sgn > 0 ? 1 : 0)) % 2 === 0;
-          const ext = long ? 0.12 : 0;
-          localBox(f, frameKey, sgn < 0 ? a - ext : a, sgn < 0 ? b : b + ext, y + 0.006, y + bh - 0.006, fd0 + (long ? 0 : 0.015), fd1 - (long ? 0 : 0.015), { chamfer: 0.025 + hash(e.key, sgn, k, 'jc') * 0.02, uv: fu, ao: revealAO });
+          const ext = long ? 0.1 + hash(e.key, sgn, k, 'je') * 0.08 : 0.01;
+          const proud = hash(e.key, sgn, k, 'jp') * 0.035; // some blocks sit proud of the others
+          const cham = 0.012 + hash(e.key, sgn, k, 'jc') * 0.035;
+          const s0 = sgn < 0 ? a - ext : a;
+          const s1 = sgn < 0 ? b : b + ext;
+          const m = localMatrix(f, (s0 + s1) / 2, y + bh / 2, 0, (hash(e.key, sgn, k, 'jr') - 0.5) * 0.012);
+          g.box(blockKey, { matrix: m, s: [s1 - s0 - 0.012, bh - 0.014, fd1 - fd0 - 0.05 + proud * 2 + (long ? 0 : -0.015)], chamfer: cham, ao: revealAO, tint: tone(k, sgn) });
           y += bh;
         }
       } else localBox(f, frameKey, a, b, 0, h, fd0, fd1, { chamfer: 0.03, uv: fu, ao: revealAO });
     }
-    localBox(f, frameKey, -w / 2 - 0.32, w / 2 + 0.32, h, h + 0.26, fd0 - 0.02, fd1 + 0.02, { chamfer: 0.035, uv: fu, ao: revealAO });
-    if (stoneFrame) localBox(f, 'arch_trim', -0.14, 0.14, h + 0.02, h + 0.3, fd0 - 0.04, fd1 + 0.04, { chamfer: 0.03 }); // keystone
-    localBox(f, 'arch_trim', -w / 2 - 0.05, w / 2 + 0.05, 0, 0.06, fd0 - 0.12, fd1 + 0.12, { chamfer: 0.02 }); // threshold step
+    if (stoneFrame) {
+      // flat (jack) arch: voussoirs fanning from a centre below the opening, keystone proud
+      const n = 7;
+      const span = w + 0.5;
+      const cy = h - 6;
+      for (let k = 0; k < n; k++) {
+        const sm = -span / 2 + (span * (k + 0.5)) / n;
+        const key = k === (n - 1) / 2;
+        const ang = -Math.atan2(sm, h + 0.2 - cy);
+        const vh = key ? 0.46 : 0.38 + hash(e.key, k, 'vh') * 0.03;
+        const m = localMatrix(f, sm, h + vh / 2 - (key ? 0.04 : 0), 0, ang);
+        g.box(blockKey, { matrix: m, s: [span / n - 0.006, vh, fd1 - fd0 - 0.07 + (key ? 0.05 : hash(e.key, k, 'vp') * 0.012)], chamfer: 0.008 + hash(e.key, k, 'vc') * 0.014, ao: revealAO, tint: tone(k, 7) });
+      }
+    } else localBox(f, frameKey, -w / 2 - 0.32, w / 2 + 0.32, h, h + 0.26, fd0 - 0.02, fd1 + 0.02, { chamfer: 0.035, uv: fu, ao: revealAO });
+    localBox(f, stoneFrame ? blockKey : 'arch_trim', -w / 2 - 0.05, w / 2 + 0.05, 0, 0.06, fd0 - 0.12, fd1 + 0.12, { chamfer: 0.02, tint: [0.8, 0.78, 0.74] }); // worn threshold step
 
     // door leaf (own mesh so it can swing): five planks, battens, forged strap hinges with rivets
     const lg = new GeoBuilder();
@@ -862,7 +921,7 @@ export function buildBlock(map, opts = {}) {
   }
   function wallKey(e) {
     const rec = ts.walls[e.style];
-    return { stone: 'arch_stone', ruin: 'arch_ruin', dungeon: 'arch_dungeon', dungeon_brick: 'arch_brick', cave: 'arch_ruin', int_stone: 'arch_stone_cold', int_plaster: 'arch_plaster_int', int_panel: 'arch_wainscot', ruin_timber: 'arch_ruin' }[rec] ?? 'arch_stone';
+    return { stone: 'arch_stone', ruin: 'arch_ruin', dungeon: 'arch_dungeon', dungeon_brick: 'arch_brick', cave: 'arch_ruin', hewn: 'arch_hewn', basalt: 'arch_basalt', int_stone: 'arch_stone_cold', int_plaster: 'arch_plaster_int', int_panel: 'arch_wainscot', ruin_timber: 'arch_ruin' }[rec] ?? 'arch_stone';
   }
 
   function buildWindow(f, e, o, sides, fA, covA, covB) {
@@ -1015,52 +1074,87 @@ export function buildBlock(map, opts = {}) {
     const d = T / 2 + (face.recipe === 'timber' && y > 3.1 ? JETTY : 0);
     const base = new THREE.Vector3(s, y, d).applyMatrix4(face.basis);
     const out = face.N.clone();
-    // bracket: wall plate + arm + cup
-    localBox(face, 'arch_iron', s - 0.055, s + 0.055, y - 0.3, y + 0.0, d, d + 0.025, { chamfer: 0.008 });
-    for (const yy of [y - 0.26, y - 0.04]) localBox(face, 'arch_iron', s - 0.015, s + 0.015, yy - 0.015, yy + 0.015, d + 0.02, d + 0.04, { chamfer: 0.006 });
-    beamIron(face, [s, y - 0.22, d + 0.02], [s, y - 0.1, d + 0.24]);
-    beamIron(face, [s, y - 0.02, d + 0.02], [s, y - 0.1, d + 0.24]);
-    const tip = new THREE.Vector3(s, y + 0.02, d + 0.26).applyMatrix4(face.basis);
+    // bracket: forged back-plate with a scrolled finial, two rivets, a strap arm and a collar ring
+    localBox(face, 'arch_iron', s - 0.045, s + 0.045, y - 0.34, y + 0.02, d, d + 0.018, { chamfer: 0.012 });
+    localBox(face, 'arch_iron', s - 0.022, s + 0.022, y + 0.02, y + 0.08, d, d + 0.016, { chamfer: 0.01 });
+    for (const yy of [y - 0.29, y - 0.03]) {
+      const rv = new THREE.SphereGeometry(0.014, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2);
+      rv.rotateX(Math.PI / 2);
+      g.geometry('arch_iron', rv, localMatrix(face, s, yy, d + 0.017), { uv: 'world' });
+      rv.dispose();
+    }
+    beamIron(face, [s, y - 0.25, d + 0.015], [s, y - 0.12, d + 0.22], 0.022);
+    beamIron(face, [s, y - 0.04, d + 0.015], [s, y - 0.12, d + 0.22], 0.022);
+    let tip = new THREE.Vector3(s, y + 0.06, d + 0.27).applyMatrix4(face.basis);
     if (kind === 'torch') {
-      // wooden torch stick, leaning out
-      // tapered wooden haft leaning out of a forged ring, pitch-soaked head in an iron basket
-      const m = localMatrix(face, s, y - 0.06, d + 0.25);
-      m.multiply(new THREE.Matrix4().makeRotationX(-0.25));
-      const haft = new THREE.CylinderGeometry(0.03, 0.022, 0.46, 8);
-      g.geometry('arch_beam_dark', haft, m, { uv: 'world' });
-      haft.dispose();
-      const ring = new THREE.TorusGeometry(0.045, 0.01, 5, 12);
-      ring.rotateX(Math.PI / 2);
-      g.geometry('arch_iron', ring, localMatrix(face, s, y - 0.1, d + 0.24), { uv: 'world' });
-      ring.dispose();
-      const mc = localMatrix(face, s, y + 0.12, d + 0.3);
-      mc.multiply(new THREE.Matrix4().makeRotationX(-0.25));
-      const head = new THREE.CylinderGeometry(0.05, 0.035, 0.12, 8);
-      g.geometry('arch_beam_dark', head, mc, { uv: 'world', tint: [0.25, 0.2, 0.17] });
-      head.dispose();
-      for (let k = 0; k < 4; k++) {
-        const bm = mc.clone().multiply(new THREE.Matrix4().makeRotationY((k * Math.PI) / 2)).multiply(new THREE.Matrix4().makeTranslation(0.052, 0, 0)).multiply(new THREE.Matrix4().makeRotationZ(-0.25));
-        g.box('arch_iron', { matrix: bm, s: [0.012, 0.15, 0.012] });
+      // tapered haft of split ash, bound with twine, leaning out of a forged collar;
+      // the head is pitch-soaked rag in an open iron cage of curved bars
+      const lean = 0.24;
+      const m = localMatrix(face, s, y - 0.1, d + 0.245);
+      m.multiply(new THREE.Matrix4().makeRotationX(lean));
+      const haft = new THREE.CylinderGeometry(0.026, 0.017, 0.58, 10, 4);
+      // slight irregularity in the turned haft
+      const hp = haft.attributes.position;
+      for (let i = 0; i < hp.count; i++) {
+        const a = Math.atan2(hp.getZ(i), hp.getX(i));
+        const k = 1 + 0.08 * Math.sin(a * 3 + hp.getY(i) * 9) * 0.5;
+        hp.setX(i, hp.getX(i) * k);
+        hp.setZ(i, hp.getZ(i) * k);
       }
-      const band = new THREE.TorusGeometry(0.055, 0.008, 4, 12);
-      band.rotateX(Math.PI / 2);
-      g.geometry('arch_iron', band, mc.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.05, 0)), { uv: 'world' });
-      g.geometry('arch_iron', band, mc.clone().multiply(new THREE.Matrix4().makeTranslation(0, -0.05, 0)).multiply(new THREE.Matrix4().makeScale(0.75, 1, 0.75)), { uv: 'world' });
-      band.dispose();
+      haft.computeVertexNormals();
+      g.geometry('arch_beam', haft, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, -0.04, 0)), { uv: 'world', tint: [0.75, 0.62, 0.5] });
+      haft.dispose();
+      // twine bindings
+      const bind = new THREE.TorusGeometry(0.024, 0.006, 4, 12);
+      bind.rotateX(Math.PI / 2);
+      for (const by of [-0.2, -0.17, -0.14, 0.02, 0.05]) g.geometry('prop_burlap', bind, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, by, 0)).multiply(new THREE.Matrix4().makeScale(1 - by * 0.4, 1, 1 - by * 0.4)), { uv: 'world', tint: [0.6, 0.5, 0.38] });
+      bind.dispose();
+      // forged collar on the arm
+      const ring = new THREE.TorusGeometry(0.036, 0.009, 6, 14);
+      ring.rotateX(Math.PI / 2);
+      g.geometry('arch_iron', ring, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, -0.02, 0)), { uv: 'world' });
+      ring.dispose();
+      // head: lathe of charred, wrapped rag (bulging)
+      const prof = [];
+      for (let k = 0; k <= 8; k++) {
+        const t = k / 8;
+        prof.push(new THREE.Vector2(0.026 + Math.sin(t * Math.PI) * 0.03 + (k % 2) * 0.003, -0.07 + t * 0.15));
+      }
+      const head = new THREE.LatheGeometry(prof, 10);
+      const mc = m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.27, 0));
+      tip = new THREE.Vector3(0, 0.06, 0).applyMatrix4(mc);
+      g.geometry('arch_beam_dark', head, mc, { uv: 'world', tint: [0.2, 0.16, 0.13] });
+      head.dispose();
+      // cage: six bars bowing outward, a top and bottom ring
+      for (let k = 0; k < 6; k++) {
+        const a = (k * Math.PI) / 3;
+        for (let q = 0; q < 3; q++) {
+          const y0 = -0.08 + q * 0.065;
+          const r0 = 0.05 + Math.sin(((q + 0.5) / 3) * Math.PI) * 0.018;
+          const bm = mc.clone().multiply(new THREE.Matrix4().makeRotationY(a)).multiply(new THREE.Matrix4().makeTranslation(r0, y0 + 0.032, 0)).multiply(new THREE.Matrix4().makeRotationZ((1 - q) * 0.3));
+          g.box('arch_iron', { matrix: bm, s: [0.009, 0.07, 0.009] });
+        }
+      }
+      for (const [ry, rs] of [[-0.085, 0.75], [0.11, 1.05]]) {
+        const band = new THREE.TorusGeometry(0.05, 0.006, 4, 14);
+        band.rotateX(Math.PI / 2);
+        g.geometry('arch_iron', band, mc.clone().multiply(new THREE.Matrix4().makeTranslation(0, ry, 0)).multiply(new THREE.Matrix4().makeScale(rs, 1, rs)), { uv: 'world' });
+        band.dispose();
+      }
     } else {
       // candle lantern
       localBox(face, 'arch_iron', s - 0.1, s + 0.1, y - 0.1, y - 0.07, d + 0.16, d + 0.36);
       localBox(face, 'arch_iron', s - 0.11, s + 0.11, y + 0.22, y + 0.26, d + 0.15, d + 0.37, { chamfer: 0.01 });
     }
-    torches.push({ pos: kind === 'torch' ? tip.clone().add(new THREE.Vector3(0, 0.14, 0)).addScaledVector(out, 0.06) : tip.clone(), base, N: out, lit, kind, seed: Math.floor(face.seed * 1000) });
+    torches.push({ pos: kind === 'torch' ? tip.clone().add(new THREE.Vector3(0, 0.1, 0)) : tip.clone(), base, N: out, lit, kind, seed: Math.floor(face.seed * 1000) });
   }
-  function beamIron(face, a, b) {
+  function beamIron(face, a, b, w = 0.03) {
     const va = new THREE.Vector3(...a).applyMatrix4(face.basis);
     const vb = new THREE.Vector3(...b).applyMatrix4(face.basis);
     const len = va.distanceTo(vb);
     const mid = va.clone().add(vb).multiplyScalar(0.5);
     const q = new THREE.Quaternion().setFromUnitVectors(UP, vb.clone().sub(va).normalize());
-    g.box('arch_iron', { matrix: new THREE.Matrix4().compose(mid, q, new THREE.Vector3(1, 1, 1)), s: [0.03, len, 0.03] });
+    g.box('arch_iron', { matrix: new THREE.Matrix4().compose(mid, q, new THREE.Vector3(1, 1, 1)), s: [w, len, w * 0.8], chamfer: w * 0.2 });
   }
 
   const plainFaces = new Map();
@@ -1152,15 +1246,26 @@ export function buildBlock(map, opts = {}) {
       if (ceilKey) {
         const ch = indoor ? ceilH : ceilH;
         g.quad(ceilKey, new THREE.Vector3(x0, ch, z0), new THREE.Vector3(x0 + S, ch, z0), new THREE.Vector3(x0 + S, ch, z0 + S), new THREE.Vector3(x0, ch, z0 + S), null, { ao: 0.8 });
-        if (ts.id === 'dungeon') {
-          // stone ribs across open cell boundaries (N and W) → rhythmic vaulting
+        if (ts.variant === 'warrens') {
+          // natural rock roof: no ribs; the dressing pass hangs roots and lumps from it
+        } else if (ts.id === 'dungeon') {
+          // stone ribs across open cell boundaries (N and W) → rhythmic vaulting; the cross ribs
+          // vary cell to cell (some missing, some fallen to a single beam) so the vault never repeats
+          const rk = ts.variant === 'bane' ? 'arch_basalt' : 'arch_dungeon';
           for (const [d, horiz] of [['N', true], ['W', false]]) {
             if (map.getEdge(x, y, d) !== EDGE.OPEN) continue;
-            if (horiz) g.box('arch_dungeon', { c: [x0 + S / 2, ch - 0.22, z0], s: [S + T, 0.44, 0.5], chamfer: 0.06, ao: 0.75 });
-            else g.box('arch_dungeon', { c: [x0, ch - 0.22, z0 + S / 2], s: [0.5, 0.44, S + T], chamfer: 0.06, ao: 0.75 });
+            if (horiz) g.box(rk, { c: [x0 + S / 2, ch - 0.22, z0], s: [S + T, 0.44, 0.5], chamfer: 0.06, ao: 0.75 });
+            else g.box(rk, { c: [x0, ch - 0.22, z0 + S / 2], s: [0.5, 0.44, S + T], chamfer: 0.06, ao: 0.75 });
           }
-          g.box('arch_dungeon', { c: [x0 + S / 2, ch - 0.12, z0 + S / 2], s: [0.28, 0.24, S], chamfer: 0.04, ao: 0.7 });
-          g.box('arch_dungeon', { c: [x0 + S / 2, ch - 0.12, z0 + S / 2], s: [S, 0.24, 0.28], chamfer: 0.04, ao: 0.7 });
+          const cv = hash(map.id, x, y, 'vault');
+          if (cv < 0.45) {
+            g.box(rk, { c: [x0 + S / 2, ch - 0.12, z0 + S / 2], s: [0.28, 0.24, S], chamfer: 0.04, ao: 0.7 });
+            g.box(rk, { c: [x0 + S / 2, ch - 0.12, z0 + S / 2], s: [S, 0.24, 0.28], chamfer: 0.04, ao: 0.7 });
+            g.box(rk, { c: [x0 + S / 2, ch - 0.2, z0 + S / 2], s: [0.46, 0.2, 0.46], chamfer: 0.06, ao: 0.7, tint: [0.85, 0.82, 0.8] }); // boss
+          } else if (cv < 0.7) {
+            const ax = hash(map.id, x, y, 'vax') < 0.5;
+            g.box(rk, { c: [x0 + S / 2, ch - 0.12, z0 + S / 2], s: ax ? [S, 0.24, 0.3] : [0.3, 0.24, S], chamfer: 0.04, ao: 0.7 });
+          }
         } else {
           // timber beam across the cell + joists
           const alongX = hash(map.id, x, y, 'bm') < 0 || (y % 2 === 0) || true;

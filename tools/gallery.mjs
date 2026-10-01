@@ -27,6 +27,7 @@ export const GALLERY = [
   { name: 'explore_harbour', query: 'scene=explore&map=demo_quay&x=7&y=12&dir=S&hour=17.3&t=2&seed=1' },
   { name: 'explore_morning', query: 'scene=explore&map=phlan_slums&x=5&y=10&dir=E&hour=7.3&t=2&seed=1' },
   { name: 'explore_bane', query: 'scene=explore&map=temple_bane&x=7&y=15&dir=N&t=2&seed=1' },
+  { name: 'explore_bane_altar', query: 'scene=explore&map=temple_bane&x=7&y=5&dir=N&t=2&seed=1' },
   { name: 'combat', query: 'scene=combat&encounter=kobolds_1&t=2&seed=1' },
   { name: 'combat_spell', query: 'scene=combat&encounter=orcs_1&party=veterans&demo=fireball&map=phlan_slums&x=4&y=4&t=0.75&seed=1' },
   { name: 'combat_melee', query: 'scene=combat&encounter=orcs_1&demo=melee&t=0.46&seed=1' },

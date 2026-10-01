@@ -61,6 +61,43 @@ export const TILESETS = {
     grime: 0x1a1c16,
     moss: 0x2a3a1e,
   },
+  // dungeon variants keep id 'dungeon' (all dungeon behaviour) and add a `variant` for dressing
+  warrens: {
+    id: 'dungeon',
+    variant: 'warrens',
+    outdoors: false,
+    walls: ['hewn', 'hewn', 'hewn'],
+    interiorFace: 'hewn',
+    floors: { [CELL.STREET]: 'arch_cave_floor', [CELL.INTERIOR]: 'arch_cave_floor', [CELL.RUBBLE]: 'arch_cave_floor', [CELL.WATER]: 'arch_water', [CELL.COURTYARD]: 'arch_cave_floor' },
+    ceiling: 'arch_hewn',
+    ceilH: 3.2,
+    roofs: false,
+    skyline: null,
+    props: 'warrens',
+    streetWallH: 3.2,
+    buildingH: [3.2],
+    particles: ['dust', 'embers', 'fog'],
+    grime: 0x18160f,
+    moss: 0x2c3c1c,
+  },
+  bane: {
+    id: 'dungeon',
+    variant: 'bane',
+    outdoors: false,
+    walls: ['basalt', 'basalt', 'basalt'],
+    interiorFace: 'basalt',
+    floors: { [CELL.STREET]: 'arch_basalt_floor', [CELL.INTERIOR]: 'arch_basalt_floor', [CELL.RUBBLE]: 'arch_basalt_floor', [CELL.WATER]: 'arch_water', [CELL.COURTYARD]: 'arch_basalt_floor' },
+    ceiling: 'arch_basalt',
+    ceilH: 4.0,
+    roofs: false,
+    skyline: null,
+    props: 'bane',
+    streetWallH: 4.0,
+    buildingH: [4.0],
+    particles: ['dust', 'embers', 'fog'],
+    grime: 0x100c0c,
+    moss: 0x1c1c16,
+  },
   interior: {
     id: 'interior',
     outdoors: false,
@@ -92,6 +129,8 @@ export const RECIPE_MATERIALS = {
   int_plaster: ['arch_plaster_int', 'arch_wainscot', 'arch_beam_dark'],
   int_panel: ['arch_wainscot', 'arch_beam_dark', 'arch_plaster_int'],
   int_stone: ['arch_stone_cold', 'arch_trim'],
+  hewn: ['arch_hewn', 'arch_cave_floor', 'prop_bone'],
+  basalt: ['arch_basalt', 'arch_basalt_floor', 'arch_relief', 'arch_trim'],
 };
 
 /**
@@ -101,16 +140,29 @@ export const RECIPE_MATERIALS = {
  */
 export function tilesetFor(map, override) {
   if (override && TILESETS[override]) return TILESETS[override];
-  if (map.tileset && TILESETS[map.tileset]) return TILESETS[map.tileset];
-  if (map.kind === 'dungeon') return TILESETS.dungeon;
+  const ts = map.tileset && TILESETS[map.tileset] ? TILESETS[map.tileset] : map.kind === 'dungeon' ? TILESETS.dungeon : null;
+  if (ts === TILESETS.dungeon) return TILESETS[dungeonVariant(map)] ?? ts;
+  if (ts) return ts;
   if (map.wallSet === 'ruin' || map.wallSet === 'ruins') return TILESETS.ruins;
   if (map.outdoors === false) return TILESETS.interior;
   return TILESETS.city;
 }
 
+/**
+ * A generic 'dungeon' map gets a themed variant from its identity: kobold
+ * warrens / caves / sewers → rough-hewn 'warrens'; temples of Bane (or any
+ * black-hand sanctum) → black basalt 'bane'. Otherwise plain cut-stone.
+ */
+export function dungeonVariant(map) {
+  const id = `${map.id ?? ''} ${map.name ?? ''}`.toLowerCase();
+  if (/warren|kobold|cave|sewer|burrow|tunnel/.test(id)) return 'warrens';
+  if (/bane|black hand|zhent/.test(id)) return 'bane';
+  return null;
+}
+
 /** Every material key a tileset may need. */
 export function tilesetMaterials(ts) {
-  const keys = new Set(['arch_door', 'arch_iron', 'arch_beam', 'arch_beam_dark', 'arch_trim', 'arch_stone', 'arch_brick',
+  const keys = new Set(['arch_door', 'arch_dressed', 'arch_iron', 'arch_beam', 'arch_beam_dark', 'arch_trim', 'arch_stone', 'arch_brick',
     'prop_staves', 'prop_crate', 'prop_iron', 'prop_burlap', 'prop_rubble', 'prop_rock', 'prop_wood', 'prop_stone', 'prop_limestone']);
   for (const w of ts.walls) for (const k of RECIPE_MATERIALS[w] ?? []) keys.add(k);
   for (const k of RECIPE_MATERIALS[ts.interiorFace] ?? []) keys.add(k);

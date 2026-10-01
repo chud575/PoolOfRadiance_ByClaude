@@ -12,6 +12,7 @@ import { buildProps, buildLightShafts, PROP_UNIFORMS } from './Props.js';
 import { buildSkyline } from './Skyline.js';
 import { createParticles } from './Particles.js';
 import { buildSunShafts } from './Atmosphere.js';
+import { dressDungeon, BANE_FLAME, BANE_LIGHT } from './DungeonDressing.js';
 import { tilesetFor, tilesetMaterials } from './tilesets.js';
 import { hasDemoMap, getDemoMap } from './demoMaps.js';
 import { deriveStats } from '../../rules/character.js';
@@ -157,9 +158,20 @@ export default class ExploreScene extends Scene {
       });
     } else {
       const dungeon = ts.id === 'dungeon';
-      // raised ambient floor so silhouettes always read, even far from a torch
-      this.hemi = new THREE.HemisphereLight(dungeon ? 0x5a6684 : 0xffd8b0, dungeon ? 0x1c150e : 0x3a2414, dungeon ? 1.05 : 1.5);
+      // raised ambient floor so silhouettes always read, even far from a torch; underground it is a
+      // cool counter-light (cold air, wet stone) against the warm torches — the warrens greener,
+      // Bane's temple a dead grey-green over a blood-red floor bounce
+      const amb = { warrens: [0x4a7a76, 0x1e160c, 4.5], bane: [0x3c4a46, 0x300a08, 4.2] }[ts.variant] ?? (dungeon ? [0x4a6a90, 0x1c150e, 1.8] : [0xffd8b0, 0x3a2414, 1.5]);
+      this.hemi = new THREE.HemisphereLight(amb[0], amb[1], amb[2]);
       s.add(this.hemi);
+      if (dungeon) {
+        // faint cold key from above-ahead: separates walls, floor and vault in value and hue
+        this.coolKey = new THREE.DirectionalLight(ts.variant === 'bane' ? 0x7a9a8a : 0x7090c0, 0.22);
+        this.coolKey.position.set(0.3, 1, 0.6);
+        this.camera.add(this.coolKey);
+        this.camera.add(this.coolKey.target);
+        this.coolKey.target.position.set(0, -0.6, -3);
+      }
       if (!dungeon) {
         // daylight falling through the windows (shadowed so it only enters through openings)
         this.sun = new THREE.DirectionalLight(0xfff0dc, this.hour > 6 && this.hour < 19 ? 9 : 0);
@@ -178,7 +190,7 @@ export default class ExploreScene extends Scene {
         this.sun.shadow.radius = 3;
         s.add(this.sun, this.sun.target);
       }
-      s.fog = new THREE.FogExp2(dungeon ? 0x07080b : 0x1a120c, dungeon ? 0.055 : 0.025);
+      s.fog = new THREE.FogExp2(ts.variant === 'warrens' ? 0x060909 : ts.variant === 'bane' ? 0x050706 : dungeon ? 0x07080b : 0x1a120c, dungeon ? 0.055 : 0.025);
       s.background = new THREE.Color(dungeon ? 0x020203 : 0x0a0604);
       setSurfaceAtmosphere({ sunDir: new THREE.Vector3(0, 1, 0), sunColor: 0x000000, scatter: 0, heightFog: dungeon ? 0.35 : 0.08, heightFalloff: 0.8, grimeTint: ts.grime, mossTint: ts.moss, wet: dungeon ? 0.3 : 0 });
     }
@@ -187,14 +199,15 @@ export default class ExploreScene extends Scene {
     // door torches burn all day, so the pool is always present (constant light count → no recompiles)
     const needLights = true;
     for (let i = 0; i < (needLights ? POOL_LIGHTS : 0); i++) {
-      const l = new THREE.PointLight(0xff9a48, 0, 11, 1.7);
+      const l = new THREE.PointLight(0xff9a48, 0, 8, 2);
       l.userData = { src: null, fade: 1 };
       s.add(l);
       this.poolLights.push(l);
     }
     // party lantern: carried a little ahead and to the right, warm, ~5 m reach
-    const lanternI = ts.outdoors ? this.night * 10 : ts.id === 'dungeon' ? 15 : 3;
-    this.lantern = new THREE.PointLight(0xffb468, lanternI, ts.outdoors ? 12 : 15, ts.outdoors ? 1.6 : 1.45);
+    // outdoors it only pools on the nearest walls so the moonlight stays dominant
+    const lanternI = ts.outdoors ? this.night * 2.6 : ts.id === 'dungeon' ? 8 : 2;
+    this.lantern = new THREE.PointLight(0xffb468, lanternI, ts.outdoors ? 8 : 13, 2);
     this.lantern.position.set(0.45, -0.25, -0.15);
     this.lantern.userData.base = lanternI;
     if (!ts.outdoors || this.night > 0.12) this.camera.add(this.lantern);
@@ -254,6 +267,8 @@ export default class ExploreScene extends Scene {
   _postFor() {
     const ts = this.tileset;
     if (!ts.outdoors) {
+      if (ts.variant === 'bane') return { bloomStrength: 0.6, bloomThreshold: 0.72, bloomRadius: 0.55, exposure: 1.6, vignette: 0.5, saturation: 0.92, contrast: 1.08 };
+      if (ts.variant === 'warrens') return { bloomStrength: 0.6, bloomThreshold: 0.7, bloomRadius: 0.55, exposure: 1.6, vignette: 0.48, saturation: 0.95, contrast: 1.06 };
       return ts.id === 'dungeon'
         ? { bloomStrength: 0.65, bloomThreshold: 0.7, bloomRadius: 0.55, exposure: 1.35, vignette: 0.5, saturation: 1.0, contrast: 1.06 }
         : { bloomStrength: 0.55, bloomThreshold: 0.75, bloomRadius: 0.5, exposure: 1.25, vignette: 0.42, saturation: 1.05, contrast: 1.05 };
@@ -313,7 +328,9 @@ export default class ExploreScene extends Scene {
     }
     if (!this.tileset.particles.includes('embers')) return;
     const origins = this.sources.filter((s) => s.lit && (s.kind === 'torch' || s.kind === 'hearth')).flatMap((s) => (s.kind === 'hearth' ? [0, 1, 2] : [0]).map((k) => s.pos.clone().add(new THREE.Vector3(k * 0.1 - 0.1, 0.12, 0))));
-    const p = createParticles('embers', { origins, size: 0.022, color: 0xffc060, color2: 0xff3a08, intensity: 2.2, seed: 15 });
+    const bane = this.tileset.variant === 'bane';
+    for (const s of this.sources) if (s.lit && s.kind === 'brazier') origins.push(s.pos.clone().add(new THREE.Vector3(0, 0.1, 0)));
+    const p = createParticles('embers', { origins, size: 0.022, color: bane ? 0xc0ff90 : 0xffc060, color2: bane ? 0x18a020 : 0xff3a08, intensity: 2.2, seed: 15 });
     if (p) {
       this.scene3d.add(p);
       this.particles.push(p);
@@ -334,8 +351,18 @@ export default class ExploreScene extends Scene {
     this.scene3d.add(this.block.group);
     this.props = buildProps(this.map, this.block, { night: this.night });
     this.scene3d.add(this.props.group);
-    // light sources: sconces + lamps + candles
-    this.sources = [...this.block.torches, ...this.props.lamps];
+    this.dressing = this.tileset.variant ? dressDungeon(this.map, this.block) : null;
+    if (this.dressing) this.scene3d.add(this.dressing.group);
+    // light sources: sconces + lamps + candles (+ themed braziers)
+    this.sources = [...this.block.torches, ...this.props.lamps, ...(this.dressing?.lamps ?? [])];
+    if (this.tileset.variant === 'bane') {
+      // the Black Hand's sconces burn with a sickly green fire (the party's lantern stays warm)
+      for (const src of this.block.torches) {
+        if (src.kind !== 'torch') continue;
+        src.flameColor = BANE_FLAME;
+        src.lightColor = BANE_LIGHT;
+      }
+    }
     this.sourceVis = new THREE.Group();
     // all flames / glows / lamp glass batched into three draw calls
     const flames = [];
@@ -355,11 +382,17 @@ export default class ExploreScene extends Scene {
         glows.push({ pos: src.pos.clone().add(new THREE.Vector3(0, 0.3, 0)), size: 1.6, color: 0xff7a30, seed: src.seed, opacity: 0.5 });
         continue;
       }
-      if (src.kind !== 'lamp') flames.push({ pos: src.pos.clone().add(new THREE.Vector3(0, candle ? 0 : -0.1, 0)), scale: candle ? 0.07 : 0.24 });
-      glows.push({ pos: src.pos, size: candle ? 0.3 : src.kind === 'lamp' ? 0.9 : this.tileset.outdoors ? 0.75 : 0.55, color: candle ? 0xffb868 : src.kind === 'lamp' ? 0xffc070 : 0xff9a48, seed: src.seed, opacity: indoorGlow });
+      if (src.kind === 'brazier') {
+        for (const [dx, dz, sc] of [[0, 0, 0.3], [0.09, 0.05, 0.2], [-0.08, -0.06, 0.18]]) flames.push({ pos: src.pos.clone().add(new THREE.Vector3(dx, -0.08, dz)), scale: sc, color: src.flameColor });
+        glows.push({ pos: src.pos.clone().add(new THREE.Vector3(0, 0.2, 0)), size: 0.8, color: src.lightColor ?? 0xff8a40, seed: src.seed, opacity: 0.35 });
+        glows.push({ pos: src.pos.clone().add(new THREE.Vector3(0, 0.3, 0)), size: 2.2, color: src.lightColor ?? 0xff8a40, seed: src.seed + 3, opacity: 0.06 });
+        continue;
+      }
+      if (src.kind !== 'lamp') flames.push({ pos: src.pos.clone().add(new THREE.Vector3(0, candle ? 0 : -0.1, 0)), scale: candle ? 0.07 : 0.24, color: src.flameColor });
+      glows.push({ pos: src.pos, size: candle ? 0.3 : src.kind === 'lamp' ? 0.9 : this.tileset.outdoors ? 0.75 : 0.55, color: src.lightColor ?? (candle ? 0xffb868 : src.kind === 'lamp' ? 0xffc070 : 0xff9a48), seed: src.seed, opacity: indoorGlow });
       // night air: a wide, faint halo of light scattered in the damp around each lamp
       if (this.tileset.outdoors && this.night > 0.3 && !candle) glows.push({ pos: src.pos, size: src.kind === 'lamp' ? 3.4 : 2.6, color: 0xff9a50, seed: src.seed + 3, opacity: 0.16 * this.night });
-      else if (!this.tileset.outdoors && !candle) glows.push({ pos: src.pos, size: 1.9, color: 0xff8a40, seed: src.seed + 3, opacity: 0.09 });
+      else if (!this.tileset.outdoors && !candle) glows.push({ pos: src.pos, size: 1.9, color: src.lightColor ?? 0xff8a40, seed: src.seed + 3, opacity: 0.09 });
     }
     if (flames.length) this.sourceVis.add(createFlameBatch(flames));
     if (glows.length) {
@@ -400,6 +433,8 @@ export default class ExploreScene extends Scene {
   _disposeBlock() {
     if (this.block) disposeBlock(this.block);
     this.props?.dispose();
+    this.dressing?.dispose();
+    this.dressing = null;
     if (this.sourceVis) {
       this.glowBatch?.userData.dispose();
       this.glowBatch = null;
@@ -422,7 +457,7 @@ export default class ExploreScene extends Scene {
       const d = s.pos.clone().sub(here);
       const dist = d.length();
       const inFront = d.normalize().dot(fwd);
-      return dist - inFront * 2.5 - (s.kind === 'hearth' ? 6 : 0);
+      return dist - inFront * 2.5 - (s.kind === 'hearth' ? 6 : s.kind === 'brazier' ? 3 : 0);
     };
     const best = lit.sort((a, b) => score(a) - score(b)).slice(0, POOL_LIGHTS);
     // keep lights that already track a chosen source
@@ -441,9 +476,12 @@ export default class ExploreScene extends Scene {
       l.position.copy(src.pos).addScaledVector(src.N ?? new THREE.Vector3(), 0.25);
       const candle = src.kind === 'candle';
       const hearth = src.kind === 'hearth';
-      l.color.setHex(hearth ? 0xff7a30 : candle ? 0xffb060 : src.kind === 'lamp' ? 0xffb56a : 0xff9040);
-      l.userData.base = (hearth ? 30 : candle ? 3.5 : src.kind === 'lamp' ? 9 : 11) * (this.tileset.outdoors && this.night < 0.12 ? 0.6 : 1);
-      l.distance = hearth ? 14 : candle ? 7 : 12;
+      l.color.setHex(src.lightColor ?? (hearth ? 0xff7a30 : candle ? 0xffb060 : src.kind === 'lamp' ? 0xffb56a : 0xff9040));
+      // inverse-square pools (~3 m effective reach); a torch by day barely registers against the sun
+      const day = this.tileset.outdoors && this.night < 0.12;
+      const under = this.tileset.id === 'dungeon';
+      l.userData.base = (hearth ? 26 : candle ? 1.6 : src.kind === 'brazier' ? 9 : src.kind === 'lamp' ? 6 : src.lightColor ? 6 : under ? 11 : 7) * (day ? 0.28 : 1);
+      l.distance = hearth ? 12 : candle ? 4 : src.kind === 'brazier' ? 11 : 8;
     }
     for (const l of free) {
       l.userData.src = null;

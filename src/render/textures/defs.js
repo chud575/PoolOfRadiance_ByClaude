@@ -1,5 +1,6 @@
 import * as G from './generators.js';
 import * as HD from './generatorsHD.js';
+import * as HD2 from './generatorsHD2.js';
 
 /**
  * Texture set definitions (pure JS: importable from Web Workers).
@@ -49,6 +50,19 @@ export const TEXTURE_DEFS = {
   hd_door: { size: 512, gen: () => HD.doorPlanks({ seed: 221 }), normalStrength: 3, cavity: 0.25 },
   hd_rock: { size: 256, gen: () => HD.rockFace({ seed: 231 }), normalStrength: 4, cavity: 0.2 },
   hd_water: { size: 256, gen: () => HD.waterWaves({ seed: 201 }), normalStrength: 3 },
+  // ---- explore v3: crisp 1024² masonry (baked-noise generators) ----
+  hd2_ashlar: { size: 1024, gen: () => HD2.ashlar2({ seed: 21, rows: 10, minW: 0.12, maxW: 0.26, palette: 'warm' }), normalStrength: 3.2, cavity: 0.16 },
+  hd2_quoin: { size: 512, gen: () => HD2.ashlar2({ seed: 27, rows: 4, minW: 0.42, maxW: 0.62, palette: 'warm', mortarW: 0.006, chamfer: 0.008, moss: 0.2 }), normalStrength: 3, cavity: 0.16 },
+  hd2_ashlar_cold: { size: 1024, gen: () => HD2.ashlar2({ seed: 22, rows: 9, minW: 0.13, maxW: 0.28, palette: 'cold', moss: 0.55 }), normalStrength: 3.2, cavity: 0.16 },
+  hd2_ruin: { size: 1024, gen: () => HD2.ashlar2({ seed: 23, rows: 8, minW: 0.14, maxW: 0.3, palette: 'cold', erosion: 2.2, chips: 1.6, moss: 1, mortarW: 0.005, soot: 0.45 }), normalStrength: 3.6, cavity: 0.2 },
+  hd2_dungeon: { size: 1024, gen: () => HD2.ashlar2({ seed: 81, rows: 6, minW: 0.2, maxW: 0.38, palette: 'dungeon', mortarW: 0.004, chamfer: 0.006, erosion: 1.5, chips: 1.3, moss: 0.25 }), normalStrength: 3.4, cavity: 0.14 },
+  hd2_basalt: { size: 1024, gen: () => HD2.ashlar2({ seed: 87, rows: 5, minW: 0.25, maxW: 0.45, palette: 'basalt', mortarW: 0.0025, chamfer: 0.003, erosion: 0.6, chips: 0.7, moss: 0.05, sheen: 0.9 }), normalStrength: 3, cavity: 0.1 },
+  hd2_hewn: { size: 1024, gen: () => HD2.hewnRock({ seed: 241, base: [0.44, 0.39, 0.32] }), normalStrength: 4.5, cavity: 0.25 },
+  hd2_relief: { size: 512, gen: () => HD2.baneRelief({ seed: 251 }), normalStrength: 5, cavity: 0.3 },
+  hd2_iron: { size: 256, gen: () => HD2.forgedIron({ seed: 157 }), normalStrength: 2.5, cavity: 0.2 },
+  hd2_dressed: { size: 512, gen: () => HD2.ashlar2({ seed: 29, palette: 'warm', joints: false, moss: 0.25 }), normalStrength: 3, cavity: 0.16 },
+  hd2_basalt_floor: { size: 1024, gen: () => HD2.ashlar2({ seed: 89, rows: 4, minW: 0.3, maxW: 0.5, palette: 'basalt', mortarW: 0.003, chamfer: 0.004, erosion: 0.8, chips: 0.8, moss: 0, sheen: 1 }), normalStrength: 2.6, cavity: 0.12 },
+  hd2_cave_floor: { size: 1024, gen: () => HD2.hewnRock({ seed: 247, base: [0.36, 0.32, 0.27], floor: true }), normalStrength: 3.5, cavity: 0.25 },
 };
 
 for (const k of Object.keys(TEXTURE_DEFS)) TEXTURE_DEFS[k].hd = true;
