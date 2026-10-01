@@ -3,6 +3,7 @@ import { CELL, EDGE } from '../../data/maps/MapGrid.js';
 import { getMaterial, getLampGlassMaterial, SURFACE_UNIFORMS } from '../../render/materials.js';
 import { getBannerTexture, getGrassTexture, getIvyClusterTexture, getCobwebTexture, getPuddleTexture, getSoftTexture, getRugTexture, getTapestryTexture, getNoticeTexture, getBlobTexture } from '../../render/textures/index.js';
 import { GeoBuilder, hash } from './GeoBuilder.js';
+import { puddleChance } from './exploreRules.js';
 import { CELL_SIZE, WALL_T } from './BlockBuilder.js';
 
 const S = CELL_SIZE;
@@ -248,7 +249,8 @@ export function buildProps(map, block, opts = {}) {
     const h = hash(map.id, fc.x, fc.y, 'pud');
     const cx = fc.x * S + S / 2;
     const cz = fc.y * S + S / 2;
-    const wet = ts.id === 'dungeon' ? 0.3 : fc.cell === CELL.STREET ? 0.22 : fc.cell === CELL.RUBBLE ? 0.25 : 0.1;
+    // standing water only on open street/rubble ground and dungeon stone — never on indoor boards
+    const wet = puddleChance(ts, fc);
     if (h < wet) puddles.push({ x: cx + (hash(fc.x, fc.y, 'px') - 0.5) * 1.6, z: cz + (hash(fc.x, fc.y, 'pz') - 0.5) * 1.6, s: 0.9 + hash(fc.x, fc.y, 'ps') * 1.2, r: hash(fc.x, fc.y, 'pr') * 6 });
     if ((fc.cell === CELL.RUBBLE || ts.id === 'ruins') && hash(fc.x, fc.y, 'rb') < 0.5) {
       addRubble(new THREE.Matrix4().makeTranslation(cx + (hash(fc.x, fc.y, 'rx') - 0.5) * 1.4, 0, cz + (hash(fc.x, fc.y, 'rz') - 0.5) * 1.4), hash(fc.x, fc.y, 'rs'), 6, 0.7, 0.8);

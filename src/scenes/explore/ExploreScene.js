@@ -15,6 +15,7 @@ import { buildSunShafts } from './Atmosphere.js';
 import { tilesetFor, tilesetMaterials } from './tilesets.js';
 import { hasDemoMap, getDemoMap } from './demoMaps.js';
 import { deriveStats } from '../../rules/character.js';
+import { headBobEnabled } from './exploreRules.js';
 import { SHOPS } from '../../data/shops.js';
 
 const STEP_TIME = 0.34;
@@ -706,7 +707,7 @@ export default class ExploreScene extends Scene {
     let fy;
     let bob = 0;
     let roll = 0;
-    const bobOn = this.ctx.settings.get('headBob') ?? true;
+    const bobOn = headBobEnabled(this.ctx.settings);
     if (tw.kind === 'move') {
       let k;
       if (tw.door) {
