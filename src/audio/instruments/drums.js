@@ -11,7 +11,7 @@ import { AudioRng } from '../core/rng.js';
  */
 const KIT = {
   // Japanese-style war drum: huge, low, slow tension drop.
-  taiko: (f) => ({ freq: f ?? 62, ratios: [1, 1.58, 2.14, 2.62, 3.4], amps: [1, 0.45, 0.25, 0.14, 0.06], decays: [0.75, 0.35, 0.22, 0.15, 0.1], dur: 2.0, glide: 0.35, noise: 0.5, noiseDecay: 0.02, noiseLp: 0.15 }),
+  taiko: (f) => ({ freq: f ?? 70, ratios: [1, 1.58, 2.14, 2.62, 3.4], amps: [1, 0.45, 0.25, 0.14, 0.06], decays: [0.75, 0.35, 0.22, 0.15, 0.1], dur: 2.0, glide: 0.35, noise: 0.5, noiseDecay: 0.02, noiseLp: 0.15 }),
   // Orchestral timpani (tuned): near-harmonic modes of a loaded membrane.
   timpani: (f) => ({ freq: f ?? 98, ratios: [1, 1.504, 1.742, 2.0, 2.245, 2.494, 2.8], amps: [1, 0.7, 0.4, 0.35, 0.22, 0.15, 0.08], decays: [2.4, 1.5, 1.0, 1.1, 0.8, 0.6, 0.4], dur: 3.2, glide: 0.04, noise: 0.25, noiseDecay: 0.012, noiseLp: 0.25 }),
   tom: (f) => ({ freq: f ?? 120, ratios: [1, 1.6, 2.3], amps: [1, 0.4, 0.2], decays: [0.35, 0.18, 0.1], dur: 0.9, glide: 0.25, noise: 0.5, noiseDecay: 0.015, noiseLp: 0.3 }),
@@ -19,7 +19,7 @@ const KIT = {
   frameSlap: (f) => ({ freq: f ?? 380, ratios: [1, 1.7, 2.6], amps: [0.5, 0.4, 0.3], decays: [0.05, 0.04, 0.03], dur: 0.3, glide: 0.05, noise: 1.2, noiseDecay: 0.012, noiseLp: 0.7 }),
   snare: (f) => ({ freq: f ?? 190, ratios: [1, 1.74, 2.6], amps: [0.6, 0.35, 0.2], decays: [0.08, 0.06, 0.04], dur: 0.5, glide: 0.04, noise: 1.4, noiseDecay: 0.06, noiseLp: 0.85 }),
   rim: () => ({ freq: 1700, ratios: [1, 2.3], amps: [1, 0.4], decays: [0.02, 0.012], dur: 0.15, noise: 0.4, noiseDecay: 0.004, noiseLp: 0.9 }),
-  bigboom: () => ({ freq: 38, ratios: [1, 1.5, 2.2], amps: [1, 0.4, 0.2], decays: [1.6, 0.7, 0.4], dur: 3.0, glide: 0.5, noise: 0.6, noiseDecay: 0.04, noiseLp: 0.08 }),
+  bigboom: () => ({ freq: 46, ratios: [1, 1.5, 2.2], amps: [1, 0.4, 0.2], decays: [1.6, 0.7, 0.4], dur: 3.0, glide: 0.5, noise: 0.6, noiseDecay: 0.04, noiseLp: 0.08 }),
 };
 
 /** Metallic noise percussion (tambourine jingles, cymbals) rendered in JS. */
@@ -105,6 +105,7 @@ export class Drums extends Instrument {
   /** Pre-render the sample buffers a note will need (idle-time cache warming). */
   warm(m, vel = 0.8, opts = {}, all = false) {
     const kind = opts.kind ?? this.kind;
+    if (kind === 'timpani' && m !== undefined && m < 38) m += 12;
     const vbs = all ? [0, 1, 2] : [vel < 0.45 ? 0 : vel < 0.78 ? 1 : 2];
     const out = [];
     for (const vb of vbs) for (let variant = 0; variant < 3; variant++) out.push(() => this._buf(kind, m, vb, variant));
@@ -113,6 +114,8 @@ export class Drums extends Instrument {
 
   play(t, m, dur, vel = 0.8, opts = {}) {
     const kind = opts.kind ?? this.kind;
+    // Timpani below D2 only add sub-bass mud on small speakers: take them up the octave.
+    if (kind === 'timpani' && m !== undefined && m < 38) m += 12;
     const vb = vel < 0.45 ? 0 : vel < 0.78 ? 1 : 2;
     const variant = this.rr++ % 3;
     const buf = this._buf(kind, m, vb, variant);

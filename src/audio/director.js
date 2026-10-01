@@ -683,6 +683,7 @@ export class Director {
           return [['ready', {}]];
         }
         // Undead immune to the weapon: it passes harmlessly through.
+        if (hint?.immune && hint.ranged) return [['spell_ward', { vol: 0.5 }]];
         if (hint?.immune || now - (this.immuneAt ?? -10) < 0.25) return [['pass_through', {}]];
         if (!hint) return [['miss', opts]];
         if (hint.ranged) return [['swing', { pitch: 1.7, vol: 0.6 }]];

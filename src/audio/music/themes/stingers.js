@@ -39,7 +39,7 @@ export const victory = {
     ev.push(...mel('violins', 'r:w | r:w | F#5:h. A5:e B5:e | D6:h C#6:q. A5:e | A5:w~w', { vel: 0.55, opts: { release: 3 } }));
     ev.push(...pad('choir', chart('D,Bm | G,A | D | D', 4, 8), { low: 'F#3', count: 4, vel: 0.58, opts: { release: 3 } }));
     ev.push(...arp('harp', chart('D', 2, 6), { low: 'D4', pattern: [0, 1, 2, 3, 4, 5, 6, 7], step: 0.25, vel: 0.5 }));
-    ev.push(...arp('harp', chart('D', 4, 16), { low: 'D3', pattern: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, null, null, null], step: 0.25, vel: 0.45, ring: 6 }));
+    ev.push(...arp('harp', chart('D', 4, 16), { low: 'D3', pattern: [0, 1, 2, 3, 4, 5, 6, 7, null, null, null, null, null, null, null, null], step: 0.25, vel: 0.45, ring: 6 }));
     ev.push({ inst: 'timpani', t: 0, midi: 38, dur: 1, vel: 0.9 });
     ev.push({ inst: 'timpani', t: 1, midi: 33, dur: 1, vel: 0.7 });
     ev.push({ inst: 'timpani', t: 6, midi: 33, dur: 2, vel: 0.5, roll: [0.3, 0.9] });
@@ -62,12 +62,15 @@ export const defeat = {
   barQ: 4,
   loop: false,
   gain: 0.81,
+  key: 2,
+  room: 'cathedral',
+  wet: 0.6,
   instruments: {
-    strings: { preset: 'strings', pan: 0.15 },
-    celli: { preset: 'celli', pan: 0.3 },
-    basses: { preset: 'basses' },
+    strings: { preset: 'strings', pan: -0.2 },
+    celli: { preset: 'celli', pan: 0.45 },
+    basses: { preset: 'basses', pan: 0.6 },
     choir: { preset: 'choirOo' },
-    bell: { preset: 'churchBell', pan: -0.2 },
+    bell: { preset: 'churchBell', pan: -0.4 },
     boom: { preset: 'boom' },
     lowbrass: { preset: 'lowbrass' },
     flute: { preset: 'flute', pan: 0.3 },
@@ -143,7 +146,7 @@ export const danger = {
   loop: false,
   gain: 1.25,
   instruments: {
-    boom: { preset: 'boom', eq: [{ type: 'highpass', f: 36, q: 0.6 }] },
+    boom: { preset: 'boom', eq: [{ type: 'highpass', f: 52, q: 0.7 }] },
     taiko: { preset: 'taiko', pan: -0.35 },
     taiko2: { preset: 'taiko', pan: 0.4, gain: 0.8 },
     lowbrass: { preset: 'lowbrass', pan: 0.4 },

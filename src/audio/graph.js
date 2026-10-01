@@ -57,12 +57,12 @@ export function createGraph(ac, dest = ac.destination) {
   // low mids, presence for bite and a touch of air.
   const hp = ac.createBiquadFilter();
   hp.type = 'highpass';
-  hp.frequency.value = 30;
-  hp.Q.value = 0.6;
+  hp.frequency.value = 34;
+  hp.Q.value = 0.7;
   const sub = ac.createBiquadFilter();
   sub.type = 'lowshelf';
-  sub.frequency.value = 62;
-  sub.gain.value = -5.5;
+  sub.frequency.value = 72;
+  sub.gain.value = -6;
   const mud = ac.createBiquadFilter();
   mud.type = 'peaking';
   mud.frequency.value = 230;

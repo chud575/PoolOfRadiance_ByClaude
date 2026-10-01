@@ -301,14 +301,14 @@ const VOX = {
   frog: (fx, t, m) => {
     // A croak is pulsed phonation through a resonant throat sac, not a square wave.
     if (m === 'die') {
-      fx.voice(t, { dur: 1.1, a: 0.02, contour: [[0, 120], [0.5, 92], [1, 52]], vowels: ['r', 'o', 'u'], formant: 0.85, pulse: [26, 0.9, 9], rough: 0.3, breath: 0.12, voices: 2, peak: 0.34 });
+      fx.voice(t, { dur: 1.1, a: 0.02, contour: [[0, 120], [0.5, 92], [1, 52]], vowels: ['r', 'o', 'u'], formant: 0.85, pulse: [26, 0.9, 9], rough: 0.3, breath: 0.12, voices: 2, peak: 0.18 });
       fx.voice(t + 1.0, { whisper: true, dur: 0.6, vowels: ['o', 'u'], peak: 0.07, qScale: 1.5 });
       thud(fx, t + 1.05, 0.3, 70);
       return;
     }
     for (let c = 0; c < (m === 'hurt' ? 1 : 2); c++) {
       const tt = t + c * 0.46;
-      fx.voice(tt, { dur: 0.34, a: 0.012, release: 0.06, contour: [[0, 135], [0.3, 150], [1, 118]], vowels: ['r', 'o'], formant: 0.9, pulse: [m === 'hurt' ? 34 : 28, 0.95], rough: 0.25, breath: 0.05, voices: 2, peak: 0.4 });
+      fx.voice(tt, { dur: 0.34, a: 0.012, release: 0.06, contour: [[0, 135], [0.3, 150], [1, 118]], vowels: ['r', 'o'], formant: 0.9, pulse: [m === 'hurt' ? 34 : 28, 0.95], rough: 0.25, breath: 0.05, voices: 2, peak: 0.2 });
       fx.burst(tt, { a: 0.02, dur: 0.3, peak: 0.05, filters: [{ type: 'bandpass', f: 420, q: 6 }] }); // throat sac
     }
   },
@@ -437,9 +437,10 @@ export const SFX = {
     const k = 0.85 + v * 0.06;
     fx.burst(t, { a: 0.0005, dur: 0.007, peak: 0.32, filters: [{ type: 'highpass', f: 3200 + v * 450 }] });
     fx.modes(t + 0.001, { f: 2400 + v * 330, ratios: [1, 1.47, 2.09, 2.74], decays: [0.08, 0.055, 0.035, 0.025], amps: [1, 0.6, 0.4, 0.25], peak: 0.03 + (v % 3) * 0.008, jitter: 0.02 });
-    fx.burst(t + 0.001, { a: 0.002, dur: 0.05 + v * 0.008, peak: 0.36, filters: [{ type: 'bandpass', f: 1100 * k, f1: 480 * k, q: 1.3 }] });
-    fx.grains(t + 0.004, { count: 4 + v, spread: 0.06 + v * 0.01, fLo: 280, fHi: 1100, q: 2.2, peak: 0.24, dLo: 0.01, dHi: 0.03 });
-    fx.burst(t, { kind: 'pink', a: 0.002, dur: 0.1, peak: 0.5, filters: [{ type: 'lowpass', f: 280 * k, f1: 120 }, { type: 'highpass', f: 55 }] });
+    fx.burst(t + 0.001, { a: 0.002, dur: 0.09 + v * 0.01, peak: 0.6, filters: [{ type: 'bandpass', f: 1100 * k, f1: 480 * k, q: 1.3 }] });
+    fx.grains(t + 0.004, { count: 6 + v, spread: 0.09 + v * 0.01, fLo: 280, fHi: 1100, q: 2.2, peak: 0.4, dLo: 0.015, dHi: 0.04 });
+    fx.burst(t, { kind: 'pink', a: 0.002, dur: 0.18, peak: 0.9, filters: [{ type: 'lowpass', f: 300 * k, f1: 130 }, { type: 'highpass', f: 55 }] });
+    fx.burst(t + 0.01, { kind: 'brown', a: 0.004, dur: 0.14, peak: 0.6, filters: [{ type: 'lowpass', f: 500 }] });
     if (v % 2) fx.burst(t + 0.008, { a: 0.006, dur: 0.08, peak: 0.12, filters: [{ type: 'bandpass', f: 3300, f1: 1700, q: 2 }] });
     if (o.crit) SFX.crit(fx, t, o);
   },
