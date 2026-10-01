@@ -354,6 +354,35 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
       const len = Math.hypot(rn.x1 - rn.x0, rn.y1 - rn.y0);
       const ux = (rn.x1 - rn.x0) / len;
       const uy = (rn.y1 - rn.y0) / len;
+      if (!timber) {
+        // ashlar in plan: the poché broken by masonry joints in two staggered courses
+        ig.save();
+        ig.strokeStyle = 'rgba(236,222,190,0.55)';
+        ig.lineWidth = Math.max(0.5, width * 0.09);
+        ig.lineCap = 'butt';
+        const nx = -uy;
+        const ny = ux;
+        for (const [course, o0, o1] of [[0, -0.42, 0], [1, 0, 0.42]]) {
+          let t = rr() * cs * 0.2 + (course ? cs * 0.12 : 0);
+          ig.beginPath();
+          while (t < len) {
+            const px = rn.x0 + ux * t;
+            const py = rn.y0 + uy * t;
+            ig.moveTo(px + nx * width * o0, py + ny * width * o0);
+            ig.lineTo(px + nx * width * o1, py + ny * width * o1);
+            t += cs * (0.2 + rr() * 0.14);
+          }
+          ig.stroke();
+        }
+        // the bed joint down the middle
+        ig.strokeStyle = 'rgba(236,222,190,0.3)';
+        ig.lineWidth = Math.max(0.4, width * 0.06);
+        ig.beginPath();
+        ig.moveTo(rn.x0, rn.y0);
+        ig.lineTo(rn.x1, rn.y1);
+        ig.stroke();
+        ig.restore();
+      }
       if (timber) {
         // timber framing: square posts along the run
         ig.fillStyle = INK.ink;

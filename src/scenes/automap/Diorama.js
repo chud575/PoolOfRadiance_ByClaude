@@ -516,7 +516,7 @@ export class Diorama {
       mg.fillRect(0, 0, 512, 512);
       mg.drawImage(sheet.fog, MX, MY, sheet.cs * map.w, sheet.cs * map.h, 0, 0, 512, 512);
       const maskTex = T(new THREE.CanvasTexture(mc));
-      [[0.05, 0.55, 0x7c8698, 1], [0.2, 0.34, 0x8c96a6, 2], [0.42, 0.22, 0x9aa2b0, 3]].forEach(([y, op, col, sd]) => {
+      [[0.05, 0.6, 0x84878e, 1], [0.2, 0.38, 0x96989e, 2], [0.42, 0.26, 0xa8aaae, 3]].forEach(([y, op, col, sd]) => {
         const nTex = T(new THREE.CanvasTexture(this._mistCanvas(sd)));
         nTex.wrapS = nTex.wrapT = THREE.RepeatWrapping;
         nTex.repeat.set(1.6, 1.6);

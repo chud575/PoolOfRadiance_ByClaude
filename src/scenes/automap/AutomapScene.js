@@ -938,28 +938,30 @@ export default class AutomapScene extends Scene {
       g.drawImage(partyConeCanvas(), -R, -R, R * 2, R * 2);
       g.restore();
       const frozen = this.ctx.clock.frozen;
+      // the token grows a little when you lean in, but never swamps the plan
+      const tk = Math.max(0.6, this.sv.zoom ** -0.6);
       const pulse = frozen ? 0.6 : 0.55 + 0.45 * Math.sin(t * 3.2);
       // a vermilion halo and a gilt survey ring under the token, so the party is found at a glance
       g.save();
-      const hr = cs * 0.95;
+      const hr = cs * 0.95 * tk;
       const halo = g.createRadialGradient(cx, cy, cs * 0.1, cx, cy, hr);
       halo.addColorStop(0, `rgba(255,236,190,${(0.55 + pulse * 0.15).toFixed(3)})`);
       halo.addColorStop(0.55, 'rgba(232,150,90,0.22)');
       halo.addColorStop(1, 'rgba(200,80,40,0)');
       g.fillStyle = halo;
       g.beginPath(); g.arc(cx, cy, hr, 0, Math.PI * 2); g.fill();
-      const ring = cs * (0.66 + (frozen ? 0 : 0.06 * Math.sin(t * 2.2)));
+      const ring = cs * tk * (0.66 + (frozen ? 0 : 0.06 * Math.sin(t * 2.2)));
       g.strokeStyle = 'rgba(168,40,24,0.85)';
       g.lineWidth = Math.max(1.6, 2.4 / s);
-      g.setLineDash([cs * 0.12, cs * 0.07]);
+      g.setLineDash([cs * tk * 0.12, cs * tk * 0.07]);
       g.lineDashOffset = frozen ? 0 : -t * cs * 0.15;
       g.beginPath(); g.arc(cx, cy, ring, 0, Math.PI * 2); g.stroke();
       g.setLineDash([]);
       g.strokeStyle = 'rgba(201,160,69,0.9)';
       g.lineWidth = Math.max(0.8, 1.2 / s);
-      g.beginPath(); g.arc(cx, cy, ring + cs * 0.07, 0, Math.PI * 2); g.stroke();
+      g.beginPath(); g.arc(cx, cy, ring + cs * tk * 0.07, 0, Math.PI * 2); g.stroke();
       g.restore();
-      drawPartyArrow(g, cx, cy, cs * (1.28 + pulse * 0.05), a, { glow: pulse });
+      drawPartyArrow(g, cx, cy, cs * tk * (1.28 + pulse * 0.05), a, { glow: pulse });
     }
     this._drawZoneLabels(g, s);
     // pins
