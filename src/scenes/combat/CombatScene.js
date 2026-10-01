@@ -102,30 +102,17 @@ export default class CombatScene extends Scene {
         for (let i = 0; i < n; i++) this.monsters.push(combatantFromMonster(rng, g.monster, i + 1));
       }
     }
-    // Build the figure models while the shared textures generate in workers.
-    const models = new Map();
-    [...this.party, ...this.monsters].forEach((c, i) => models.set(c.id, makeFigureModel(c, c.side === 'party' ? this.party.indexOf(c) : i)));
-
-    // ------------------------------------------------ diorama
-    performance.mark?.('combat:models');
-    await texReady;
-    performance.mark?.('combat:textures');
-    this.diorama = buildDiorama(this.field, { hour, seed: 11 });
-    s.add(this.diorama.group);
-    // Real lights for the three most central flames (a brazier first).
+    // The full light rig exists before anything is built: a constant light set
+    // (3 flame lights + the spell light, sun/fill/rim, hemi) means every shader
+    // program can be compiled early and is never recompiled when flames appear.
     this.torchLights = [];
-    const flames = [...this.diorama.torches].sort((a, b) => (b.brazier ? 1 : 0) - (a.brazier ? 1 : 0) || Math.hypot(a.x - this.center.x, a.z - this.center.z) - Math.hypot(b.x - this.center.x, b.z - this.center.z)).slice(0, 3);
-    flames.forEach((f, i) => {
-      const l = f.altar
-        ? new THREE.PointLight(0xffb468, this.night ? 16 : 5, 9, 1.8) // candle pool on the altar
-        : new THREE.PointLight(0xff9a48, (this.night ? 30 : 7) * (f.brazier ? 1.4 : 1), f.brazier ? 13 : 10, 1.8);
-      l.position.set(f.x, f.y, f.z);
-      l.userData.base = l.intensity;
+    for (let i = 0; i < 3; i++) {
+      const l = new THREE.PointLight(0xff9a48, 0, 10, 1.8);
+      l.userData.base = 0;
       l.userData.seed = i * 2.3;
       s.add(l);
       this.torchLights.push(l);
-      f.light = l;
-    });
+    }
     // Soft camera-side fill so figures read against the ground (a classic tactics-cam trick).
     this.fill = new THREE.DirectionalLight(this.night ? 0x6a80c0 : 0xfff2e0, this.night ? 0.35 : 0.55);
     s.add(this.fill, this.fill.target);
@@ -133,6 +120,44 @@ export default class CombatScene extends Scene {
     this.rim = new THREE.DirectionalLight(this.night ? 0x8fb0ff : 0xffe8c8, this.night ? 0.9 : 0.8);
     s.add(this.rim, this.rim.target);
     this.vfx = new VFX(s);
+
+    // Build the figure models while the shared textures generate in workers.
+    const models = new Map();
+    [...this.party, ...this.monsters].forEach((c, i) => models.set(c.id, makeFigureModel(c, c.side === 'party' ? this.party.indexOf(c) : i)));
+    this.figures = new Map();
+    [...this.party, ...this.monsters].forEach((c, i) => {
+      const fig = new Figure(models.get(c.id), { seed: i * 13.7 + 1 });
+      s.add(fig.root);
+      this.figures.set(c.id, fig);
+    });
+    // Hand the figure shaders to the GPU process now: it compiles them while
+    // this thread waits for the texture workers (SwiftShader compiles are the
+    // single largest first-frame cost).
+    this._precompile();
+
+    // ------------------------------------------------ diorama
+    performance.mark?.('combat:models');
+    await texReady;
+    performance.mark?.('combat:textures');
+    this.diorama = buildDiorama(this.field, { hour, seed: 11 });
+    s.add(this.diorama.group);
+    this._precompile();
+    // Real lights for the three most central flames (a brazier first).
+    const flames = [...this.diorama.torches].sort((a, b) => (b.brazier ? 1 : 0) - (a.brazier ? 1 : 0) || Math.hypot(a.x - this.center.x, a.z - this.center.z) - Math.hypot(b.x - this.center.x, b.z - this.center.z)).slice(0, 3);
+    flames.forEach((f, i) => {
+      const l = this.torchLights[i];
+      if (f.altar) {
+        l.color.set(0xffb468); // candle pool on the altar
+        l.intensity = this.night ? 16 : 5;
+        l.distance = 9;
+      } else {
+        l.intensity = (this.night ? 30 : 7) * (f.brazier ? 1.4 : 1);
+        l.distance = f.brazier ? 13 : 10;
+      }
+      l.position.set(f.x, f.y, f.z);
+      l.userData.base = l.intensity;
+      f.light = l;
+    });
     // Figure rim light: cool moonlit edge at night, warm sky edge by day.
     RIM.uRimColor.value.set(this.night ? 0x4a64a8 : 0x8a7a64).multiplyScalar(this.night ? 0.9 : 0.55);
 
@@ -142,7 +167,6 @@ export default class CombatScene extends Scene {
     this.engine.turnIdx = -1;
 
     // ------------------------------------------------ figures
-    this.figures = new Map();
     this.overlay = new Overlay(this.field);
     this.overlay.uniforms.uNight.value = this.night ? 1 : 0;
     s.add(this.overlay.group);
@@ -150,14 +174,12 @@ export default class CombatScene extends Scene {
     const all = [...this.party, ...this.monsters];
     all.forEach((c, i) => {
       const model = models.get(c.id);
-      const fig = new Figure(model, { seed: i * 13.7 + 1 });
+      const fig = this.figures.get(c.id);
       const p = sq2w(c.x, c.y);
       fig.place(p.x, p.z, facingYaw(c.facing));
-      s.add(fig.root);
-      this.figures.set(c.id, fig);
       if (isDown(c)) fig.lieDead(this.time);
       // Glowing eyes read across the dark (undead, kobolds, rats...).
-      if (model.eyesColor != null && fig.b.head && c.side === 'monster') {
+      if (model.eyesColor != null && fig.b.head && c.side === 'monster' && (this.night || model.eyesBurn)) {
         const glow = new THREE.Sprite(this._eyeMat?.[model.eyesColor] ?? ((this._eyeMat ??= {})[model.eyesColor] = new THREE.SpriteMaterial({ map: getGlowTexture(), color: model.eyesColor, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: this.night ? 0.95 : 0.3 })));
         glow.scale.setScalar((this.night ? 0.24 : 0.14) * (model.scale ?? 1));
         if (model.eyeAt) glow.position.set(0, model.eyeAt[1], model.eyeAt[2] + 0.01);
@@ -201,7 +223,12 @@ export default class CombatScene extends Scene {
     this._frameCombatants(true, null, false, true);
     if (!this.demo) {
       this._chooseYaw();
+      // Debug/screenshot overrides: &yaw= &pitch= (radians), &dist= (metres).
+      const num = (k) => (params[k] !== undefined && Number.isFinite(+params[k]) ? +params[k] : null);
+      if (num('yaw') !== null) this.cam.yaw = this.cam.goalYaw = num('yaw');
+      if (num('pitch') !== null) this.cam.pitch = this.cam.goalPitch = num('pitch');
       this._frameCombatants(true, null, false, true);
+      if (num('dist') !== null) this.cam.dist = this.cam.goalDist = num('dist');
     }
     // Bloom only on true emitters: a high threshold and a capped strength so lit
     // windows, the fireball core and holy light never flood to white.
@@ -336,6 +363,24 @@ export default class CombatScene extends Scene {
     };
     for (const c of this.party) face(c, anchor.x, anchor.y);
     for (const c of this.monsters) face(c, start[0], start[1]);
+  }
+
+  /**
+   * Queue shader compilation for everything in the scene against the
+   * composer's (linear, half-float) target so the programs match the ones the
+   * frame will use. Non-blocking: the GPU process links them in parallel.
+   */
+  _precompile() {
+    const r = this.ctx.render.renderer;
+    try {
+      this._preRT ??= new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType });
+      const prev = r.getRenderTarget();
+      r.setRenderTarget(this._preRT);
+      r.compile(this.scene3d, this.camera);
+      r.setRenderTarget(prev);
+    } catch (e) {
+      console.warn('[combat] precompile skipped', e);
+    }
   }
 
   _envMap(hour) {
@@ -1811,7 +1856,9 @@ export default class CombatScene extends Scene {
     const mm = mean('monster');
     let sep = pm && mm && pm.distanceTo(mm) > 0.1 ? mm.sub(pm).setY(0).normalize() : null;
     if (around?.length >= 2) sep = sq2w(around[1].x, around[1].y).sub(sq2w(around[0].x, around[0].y)).setY(0).normalize();
-    const yaws = around ? Array.from({ length: 16 }, (_, i) => (i / 16) * Math.PI * 2 - Math.PI) : [0.32, -0.32, 0, 0.62, -0.62, 0.95, -0.95, Math.PI / 2, -Math.PI / 2];
+    const marks = (this.field.features?.props ?? []).filter((p) => p.type === 'statue' || p.type === 'altar').map((p) => Object.assign(new THREE.Vector3(p.x * TILE + TILE / 2, p.type === 'statue' ? 2.2 : 1.0, p.y * TILE + TILE / 2), { w: p.type === 'statue' ? 8 : 4 }));
+    const probe = this.camera.clone();
+        const yaws = around ? Array.from({ length: 16 }, (_, i) => (i / 16) * Math.PI * 2 - Math.PI) : [0.32, -0.32, 0, 0.62, -0.62, 0.95, -0.95, Math.PI / 2, -Math.PI / 2];
     for (const yaw of yaws) {
       const off = new THREE.Vector3(Math.sin(yaw) * Math.cos(this.cam.pitch), Math.sin(this.cam.pitch), Math.cos(yaw) * Math.cos(this.cam.pitch)).multiplyScalar(this.cam.goalDist);
       const pos = this.cam.goalTarget.clone().add(off);
@@ -1830,7 +1877,20 @@ export default class CombatScene extends Scene {
           if (ahead > 0.5 && ahead < 9 && lateral < 4) crowd += 1.5;
         }
       }
-      const n = this.diorama.occluders(pos, pts) * (around ? 3 : 1) + (around ? 0 : Math.abs(yaw - 0.32) * 2) + along * 14 + crowd;
+      // Landmarks (Tyr's statue, the altar) composed into the visible frame read
+      // as a place, not a board: reward bearings that keep them clear of the HUD.
+      let land = 0;
+      if (!around && marks.length) {
+        probe.position.copy(pos);
+        probe.lookAt(this.cam.goalTarget.x, 0.6, this.cam.goalTarget.z);
+        probe.updateMatrixWorld(true);
+        for (const m of marks) {
+          const v = m.clone().project(probe);
+          if (v.z < 1 && v.x > -0.9 && v.x < 0.4 && v.y > -0.6 && v.y < 0.72) land += m.w;
+        }
+      }
+      const n = this.diorama.occluders(pos, pts) * (around ? 3 : 1) + (around ? 0 : Math.abs(yaw - 0.32) * 2) + along * 14 + crowd - land;
+      if (this.params.camlog) console.warn('YAW', yaw.toFixed(2), 'occ', this.diorama.occluders(pos, pts), 'along', along.toFixed(2), 'land', land, 'n', n.toFixed(2));
       if (!best || n < best.n) best = { n, yaw };
     }
     this.cam.yaw = this.cam.goalYaw = best.yaw;
@@ -2081,6 +2141,7 @@ export default class CombatScene extends Scene {
     this.diorama?.dispose();
     this._blobGeo?.dispose();
     this._blobMat?.dispose();
+    this._preRT?.dispose();
     for (const m of Object.values(this._eyeMat ?? {})) m.dispose();
     for (const d of this._decals ?? []) {
       d.geometry.dispose();

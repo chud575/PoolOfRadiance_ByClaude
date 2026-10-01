@@ -90,7 +90,7 @@ export const DEMOS = {
       const cx = (2 + (n - 1)) * TILE;
       const pitch = Number.isFinite(+sc.params.pitch) && sc.params.pitch !== undefined ? +sc.params.pitch : 0.42;
       const mz = all.reduce((a, c) => a + c.y, 0) / Math.max(1, all.length);
-      sc.cam.goalTarget.set(cx + TILE / 2, 0, (mz + 0.5) * TILE);
+      sc.cam.goalTarget.set(cx + TILE / 2, Number(sc.params.ty) || 0, (mz + 0.5) * TILE);
       sc.camera.clearViewOffset();
       sc._applyViewOffset = () => {};
       sc.cam.target.copy(sc.cam.goalTarget);
@@ -174,11 +174,11 @@ export const DEMOS = {
       });
       sc.overlay.setTemplate([]);
       // Camera: frame caster and blast, slightly closer.
-      const mid = sq2w(caster.x + (best.x - caster.x) * 0.6, caster.y + (best.y - caster.y) * 0.6);
+      const mid = sq2w(caster.x + (best.x - caster.x) * 0.68, caster.y + (best.y - caster.y) * 0.68);
       sc.cam.goalTarget.copy(mid);
       sc.cam.target.copy(mid);
       const span = Math.hypot(caster.x - best.x, caster.y - best.y) * TILE;
-      sc.cam.goalDist = sc.cam.dist = Math.max(15, span * 1.9);
+      sc.cam.goalDist = sc.cam.dist = Math.max(13.5, span * 1.75);
       sc.cam.goalYaw = sc.cam.yaw = Math.atan2(best.y - caster.y, -(best.x - caster.x)) * 0 + 0.25;
       sc.cam.goalPitch = sc.cam.pitch = 0.9;
       sc._refresh(caster);

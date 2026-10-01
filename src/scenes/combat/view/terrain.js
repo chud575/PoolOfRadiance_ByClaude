@@ -82,6 +82,7 @@ export function buildDiorama(field, o = {}) {
   const disposables = [];
   const ambient = [];
   const colBatches = [];
+  const beamBatches = [];
 
   // ---------------------------------------------------------------- cells
   const cellX0 = field.cx0 - RING;
@@ -1079,8 +1080,13 @@ export function buildDiorama(field, o = {}) {
       const zz = hz0 + 1.6 + k * 3.2;
       const l1 = 0.8 + hash(k, 1, 501) * 1.4;
       const l2 = 0.6 + hash(k, 2, 501) * 1.2;
-      batch.add(worldBox(l1, 0.26, 0.26, 1), darkWood, { p: [hx0 + l1 / 2, 3.55, zz], r: [0, 0, -0.06] });
-      batch.add(worldBox(l2, 0.26, 0.26, 1), darkWood, { p: [hx0 + hw - l2 / 2, 3.55, zz], r: [0, 0, 0.08] });
+      // High beams dither out like the walls when they hang between camera and fight.
+      const b1 = new Batcher();
+      b1.add(worldBox(l1, 0.26, 0.26, 1), darkWood, { p: [hx0 + l1 / 2, 3.55, zz], r: [0, 0, -0.06] });
+      beamBatches.push({ b: b1, box: new THREE.Box3(new THREE.Vector3(hx0, 3.3, zz - 0.2), new THREE.Vector3(hx0 + l1, 3.8, zz + 0.2)) });
+      const b2 = new Batcher();
+      b2.add(worldBox(l2, 0.26, 0.26, 1), darkWood, { p: [hx0 + hw - l2 / 2, 3.55, zz], r: [0, 0, 0.08] });
+      beamBatches.push({ b: b2, box: new THREE.Box3(new THREE.Vector3(hx0 + hw - l2, 3.3, zz - 0.2), new THREE.Vector3(hx0 + hw, 3.8, zz + 0.2)) });
     }
     batch.add(worldBox(4.2, 0.24, 0.24, 1), darkWood, { p: [hx0 + hw - 1.6, 0.55, hz0 + hd - 1.4], r: [0, 0.7, 0.25] });
     batch.add(worldBox(2.6, 0.22, 0.22, 1), darkWood, { p: [hx0 + 1.4, 0.3, hz0 + hd - 0.9], r: [0, -0.4, 0.1] });
@@ -1187,6 +1193,12 @@ export function buildDiorama(field, o = {}) {
     wallGroups.push({ w, full: gFull, cut: gCut });
   }
 
+  for (const bb of beamBatches) {
+    const gFull = new THREE.Group();
+    bb.b.flush(gFull);
+    group.add(gFull);
+    wallGroups.push({ w: { prop: true, e: {} }, full: gFull, cut: new THREE.Group(), fixedBox: bb.box.expandByScalar(0.3) });
+  }
   for (const cb of colBatches) {
     const gFull = new THREE.Group();
     cb.b.flush(gFull);
@@ -1291,7 +1303,8 @@ export function buildDiorama(field, o = {}) {
       }
       g.full.visible = true;
       g.cut.visible = false;
-      g.fadeTarget = hides ? 0.22 : 1;
+      // Loose props (high beams, tall columns) vanish outright; walls keep a ghost.
+      g.fadeTarget = hides ? (g.w?.prop ? 0 : 0.22) : 1;
     }
   }
 

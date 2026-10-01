@@ -118,7 +118,7 @@ export class Overlay {
           if (s.a > 0.1 && r > 0.1) {
             float hv = fract((g.x + g.y) * 3.0);
             float hatch = smoothstep(0.58, 0.64, hv) * (1.0 - smoothstep(0.92, 0.98, hv));
-            LAYER(vec3(0.95, 0.22, 0.15), hatch * 0.3);
+            LAYER(vec3(0.95, 0.22, 0.15), hatch * 0.19);
           }
           // Spell template.
           if (s.g > 0.9) {

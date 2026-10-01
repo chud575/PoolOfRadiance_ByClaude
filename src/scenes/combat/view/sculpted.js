@@ -77,7 +77,7 @@ const hashf = (n) => {
 export const LOOKS = {
   kobold: { skin: [0x6e3a20, 'scales'], back: [0x2e1810, 'scales'], belly: [0xb08050, 'scales'], horn: 0xa89068, cloth: 0x4a3a28, head: 'kobold' },
   goblin: { skin: [0x86963a, 'skin'], back: [0x5a6a26, 'skin'], belly: [0xa0aa60, 'skin'], horn: 0xd8c8a0, cloth: 0x4a3020, head: 'goblin', pants: 0x3a2a1a },
-  orc: { skin: [0x5a6a44, 'skin'], back: [0x3e4a2e, 'skin'], belly: [0x6a7650, 'skin'], horn: 0xe6dac0, cloth: 0x2e2418, head: 'orc', pants: 0x2a221a, jerkin: 0x3a2618, plate: 0x6a4a34 },
+  orc: { skin: [0x464a38, 'skin'], back: [0x2a2c22, 'skin'], belly: [0x56584a, 'skin'], horn: 0xa89a7c, cloth: 0x2e2418, head: 'orc', pants: 0x2a221a, jerkin: 0x2a1c12, plate: 0x3e3630, hair: 0x0e0c0a },
   hobgoblin: { skin: [0xb0582a, 'skin'], back: [0x7a3618, 'skin'], belly: [0xc0703a, 'skin'], horn: 0xe0d0b0, cloth: 0x5a1e18, head: 'hobgoblin', pants: 0x3a2018, mail: 0x8a8070, hair: 0x1e1a18, nose: 0x5a3a5a },
   gnoll: { skin: [0xa88450, 'spots'], back: [0x6a5030, 'fur'], belly: [0xc8a878, 'fur'], horn: 0xe0d4b0, cloth: 0x3a2e22, head: 'gnoll', hair: 0x2a1a10, pants: 0x3a2e22 },
   bugbear: { skin: [0x7a5a30, 'fur'], back: [0x4a3418, 'fur'], belly: [0x9a7a50, 'fur'], horn: 0xd8c8a0, cloth: 0x3a2a1a, head: 'bugbear', hair: 0x2a1a0a, pants: 0x3a2a1a },
@@ -103,7 +103,7 @@ export function sculptedFlesh(key, o) {
     .mat('back', look.back[0], { pattern: look.back[1], rough: 0.6 })
     .mat('belly', look.belly[0], { pattern: look.belly[1], rough: 0.65, edge: 0.2 })
     .mat('horn', look.horn, { pattern: 'smooth', rough: 0.55, edge: 0.25, wash: 0.9 })
-    .mat('tooth', 0xf0e8d0, { pattern: 'smooth', rough: 0.35, edge: 0.3, wash: 0.3 })
+    .mat('tooth', 0xb4a688, { pattern: 'smooth', rough: 0.55, edge: 0.3, wash: 0.6 })
     .mat('dark', 0x1a0e0a, { pattern: 'smooth', rough: 0.5, edge: 0, wash: 0.2 })
     .mat('mouth', 0x3a0e0a, { pattern: 'smooth', rough: 0.4, edge: 0, wash: 0.4 })
     .mat('hair', look.hair ?? 0x1a120c, { pattern: 'fur', rough: 0.9, edge: 0.5, wash: 0.8 })
@@ -111,7 +111,7 @@ export function sculptedFlesh(key, o) {
     .mat('leather', look.jerkin ?? 0x3a2618, { pattern: 'leather', rough: 0.6, edge: 0.6, wash: 0.8 })
     .mat('shirt', look.shirt ?? 0x4a4438, { pattern: 'cloth', rough: 0.95, edge: 0.4, wash: 0.9 })
     .mat('mail', look.mail ?? 0x8a8070, { pattern: 'mail', rough: 0.45, metal: 0.7, edge: 0.6, wash: 0.8 })
-    .mat('plate', look.plate ?? 0x6a4a34, { pattern: 'metal', rough: 0.55, metal: 0.6, edge: 0.9, wash: 0.8 })
+    .mat('plate', look.plate ?? 0x6a4a34, { pattern: 'metal', rough: 0.78, metal: 0.4, edge: 0.9, wash: 0.9 })
     .mat('nose', look.nose ?? look.back[0], { pattern: 'skin', rough: 0.5 });
   const res = o.species === 'skeleton' ? skeletonBody(B, o) : fleshBody(B, o, look);
   const geometry = toGeometry(B, o, res);
@@ -141,6 +141,11 @@ function fleshBody(B, o, look) {
   for (const sx of [1, -1]) {
     // Lats flare from the armpits into the waist.
     B.ell('chest', add(J.chest, [sx * 0.12 * w * s, 0.06 * s, -0.03 * s]), [0.06 * s, 0.12 * s, 0.08 * s], T);
+  }
+  // Brutes: a thick yoke of trapezius so the head sits low between the shoulders.
+  if (sp === 'orc' || sp === 'ogre' || sp === 'troll') {
+    B.ell('chest', add(J.chest, [0, 0.225 * s, -0.045 * s]), [0.15 * w * s, 0.085 * s, 0.085 * s], T);
+    for (const sx of [1, -1]) B.ell('chest', add(J.chest, [sx * 0.1 * w * s, 0.2 * s, -0.02 * s]), [0.075 * s, 0.07 * s, 0.075 * s], T);
   }
   if (o.belly) B.ell('spine', add(J.spine, [0, 0.07 * s, 0.075 * s]), [0.19 * w * s, 0.17 * s, 0.15 * s], { ...T, mat: 'belly' });
   // Belly / chest plate colour (reptiles' pale scutes, furred chests).
@@ -338,7 +343,9 @@ const HEADS = {
     B.ell('head', H(0, 0.112, -0.022), [0.094 * hs, 0.082 * hs, 0.1 * hs], T);
     B.ell('head', H(0, 0.06, 0.04), [0.086 * hs, 0.052 * hs, 0.07 * hs], T);
     B.box('head', H(0, 0.032, 0.075), [0.062 * hs, 0.028 * hs, 0.036 * hs], { ...T, rr: 0.022 * hs, R: mEuler(-0.15, 0, 0) });
-    B.ell('head', H(0, 0.128, 0.08), [0.09 * hs, 0.024 * hs, 0.034 * hs], { ...T, k: 0.018 * hs, mat: 'back' });
+    // Heavy, knotted brow shelf that shadows the eyes.
+    B.ell('head', H(0, 0.126, 0.084), [0.1 * hs, 0.03 * hs, 0.04 * hs], { ...T, k: 0.018 * hs, mat: 'back' });
+    for (const sx of [1, -1]) B.ell('head', H(sx * 0.042, 0.13, 0.1), [0.036 * hs, 0.02 * hs, 0.026 * hs], { ...T, k: 0.012 * hs, mat: 'back', R: mEuler(0, 0, sx * -0.25) });
     for (const sx of [1, -1]) B.ell('head', H(sx * 0.05, 0.094, 0.075), [0.032 * hs, 0.022 * hs, 0.026 * hs], { ...T, k: 0.014 * hs });
     B.ell('head', H(0, 0.09, 0.112), [0.028 * hs, 0.024 * hs, 0.024 * hs], { ...T, k: 0.012 * hs });
     for (const sx of [1, -1]) {
@@ -346,8 +353,7 @@ const HEADS = {
       B.sph('head', H(sx * 0.04, 0.108, 0.092), 0.019 * hs, { g: G.torso, sub: true, k: 0.008 * hs });
       // Swept-back pointed ears.
       B.ell('head', H(sx * 0.098, 0.108, -0.015), [0.013 * hs, 0.032 * hs, 0.06 * hs], { ...T, k: 0.012 * hs, R: mEuler(-0.55, sx * 0.35, 0) });
-      // Tusks up past the lip.
-      B.cone('head', H(sx * 0.046, 0.045, 0.1), H(sx * 0.058, 0.118, 0.114), 0.014 * hs, 0.003 * hs, { g: G.hard, k: 0.004 * hs, mat: 'tooth' });
+      // (Tusks are rigid kit parts — too fine for the sculpt grid; see models.js.)
     }
     B.box('head', H(0, 0.052, 0.108), [0.046 * hs, 0.004 * hs, 0.02 * hs], { g: G.torso, sub: true, k: 0.003 * hs });
     // Greasy black topknot.

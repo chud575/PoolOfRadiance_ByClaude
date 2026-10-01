@@ -29,13 +29,13 @@ const SPECIES = {
   human: { height: 1.0, bulk: 1.0, head: 'human' },
   kobold: { height: 0.78, bulk: 1.22, limbK: 1.35, head: 'kobold', headScale: 1.45, skin: ['reptile', 0x8a4624], shieldChance: 0.5, tail: 'long', legs: 'digitigrade', hunch: 0.34, thickNeck: true, cloth: 0x4a3a28, armor: 'harness', weapon: 'spear', weapons: ['spear', 'spear', 'shortSword', 'club'], eyes: 0xffc040 },
   goblin: { height: 0.66, bulk: 0.95, limbK: 1.2, head: 'goblin', skin: ['skin', 0x8a9a3a], hunch: 0.15, cloth: 0x4a3020, weapon: 'shortSword', eyes: 0xffe060 },
-  orc: { height: 1.04, bulk: 1.28, head: 'orc', skin: ['skin', 0x535d48], hunch: 0.36, cloth: 0x2e2418, armor: 'orcish', weapon: 'battleAxe', weapons: ['battleAxe', 'battleAxe', 'spear', 'morningStar', 'club'], helmChance: 0.55, eyes: 0xff4020 },
+  orc: { height: 1.04, bulk: 1.28, head: 'orc', skin: ['skin', 0x474d38], hunch: 0.42, cloth: 0x2e2418, armor: 'orcish', weapon: 'battleAxe', weapons: ['battleAxe', 'battleAxe', 'spear', 'morningStar', 'club'], helmChance: 0.55, eyes: 0xff4020 },
   hobgoblin: { height: 1.08, bulk: 1.12, head: 'hobgoblin', skin: ['skin', 0xb0582a], cloth: 0x5a1e18, armor: 'scale', weapon: 'longSword', shield: 'round', eyes: 0xffa020 },
   gnoll: { height: 1.2, bulk: 1.15, limbK: 1.1, head: 'gnoll', skin: ['fur', 0x9a7a4a], hunch: 0.3, legs: 'digitigrade', cloth: 0x3a2e22, armor: 'scraps', weapon: 'flail', eyes: 0xffd040 },
   giantRat: { rig: 'quad', skin: ['fur', 0x4a3a30], height: 0.55, eyes: 0xff3020 },
-  skeleton: { height: 1.0, bulk: 0.9, head: 'skull', body: 'bones', skin: ['bone', 0xd8ccb0], weapon: 'shortSword', shield: 'round', eyes: 0x60d0ff },
-  zombie: { height: 1.0, bulk: 1.0, head: 'zombie', skin: ['skin', 0x7a8a6a], cloth: 0x3a3a30, tattered: true, hunch: 0.25, weapon: null, eyes: 0xc0ff60, armsForward: true },
-  ghoul: { height: 0.98, bulk: 0.9, head: 'zombie', skin: ['skin', 0x9a9a8a], cloth: 0x2a2a28, tattered: true, hunch: 0.35, weapon: null, eyes: 0xff4040 },
+  skeleton: { undead: true, height: 1.0, bulk: 0.9, head: 'skull', body: 'bones', skin: ['bone', 0xd8ccb0], weapon: 'shortSword', shield: 'round', eyes: 0x60d0ff },
+  zombie: { undead: true, height: 1.0, bulk: 1.0, head: 'zombie', skin: ['skin', 0x7a8a6a], cloth: 0x3a3a30, tattered: true, hunch: 0.25, weapon: null, eyes: 0xc0ff60, armsForward: true },
+  ghoul: { undead: true, height: 0.98, bulk: 0.9, head: 'zombie', skin: ['skin', 0x9a9a8a], cloth: 0x2a2a28, tattered: true, hunch: 0.35, weapon: null, eyes: 0xff4040 },
   bugbear: { height: 1.3, bulk: 1.3, head: 'gnoll', skin: ['fur', 0x7a5a30], hunch: 0.2, cloth: 0x3a2a1a, armor: 'scraps', weapon: 'morningStar', eyes: 0xffc040 },
   lizardMan: { height: 1.08, bulk: 1.05, head: 'kobold', skin: ['scales', 0x4a6a3a], tail: true, cloth: 0x4a3a20, weapon: 'spear', shield: 'round', eyes: 0xffe040 },
   ogre: { height: 1.55, bulk: 1.55, head: 'ogre', skin: ['skin', 0xa08a5a], belly: true, cloth: 0x4a3a28, weapon: 'club', eyes: 0xffa060 },
@@ -140,6 +140,7 @@ export function makeFigureModel(c, index = 0) {
     armLen: sp.armLen ?? 1,
     claws: sp.claws,
     eyes: sp.eyes,
+    undead: !!sp.undead,
     armsForward: sp.armsForward,
     digitigrade: sp.legs === 'digitigrade',
     thickNeck: sp.thickNeck,
@@ -147,7 +148,9 @@ export function makeFigureModel(c, index = 0) {
     seed,
   });
   if (sculpt) {
-    model.root.scale.setScalar(indiv);
+    // Individuals differ in stature and girth (a heavier brute, a wiry runt).
+    const girth = 0.93 + hashStr(`${c.id}:b`) * 0.16;
+    model.root.scale.set(indiv * girth, indiv, indiv * girth);
     model.height *= indiv;
     model.radius *= indiv;
     model.scale *= indiv;
@@ -429,14 +432,25 @@ function buildBiped(o) {
   else {
     // Eyes (glowing for monsters) set into the sculpted sockets; helmets as kit.
     const hs = s * (o.headScale ?? 1);
-    const eyeMat = o.eyes != null ? pbr('glow', 0x000000, { emissive: o.eyes, emissiveIntensity: 2.4 }) : pbr('eye', 0x1a120c);
+    // Undead eyes burn; the living get a beady, wet glint that only glows by night (sprite).
+    const eyeMat = o.eyes != null ? (o.undead ? pbr('glow', 0x000000, { emissive: o.eyes, emissiveIntensity: 2.4 }) : pbr('glow', 0x140604, { emissive: o.eyes, emissiveIntensity: 0.45 })) : pbr('eye', 0x1a120c);
     for (const e of sculptEyes.eyes ?? []) R.part('head', sphere(sculptEyes.eyeR * hs, 8, 6), eyeMat, { p: [e[0] * hs, e[1] * hs, e[2] * hs] });
+    if (o.head === 'orc') {
+      // Yellowed tusks jutting up from the underbite (two-part, slightly hooked).
+      const tusk = pbr('bone', 0x9a8a68);
+      for (const sx of [1, -1]) {
+        R.part('head', cone(0.0115 * hs, 0.05 * hs, 7), tusk, { p: [sx * 0.046 * hs, 0.066 * hs, 0.108 * hs], r: [0.25, 0, sx * -0.24] });
+        R.part('head', cone(0.0065 * hs, 0.026 * hs, 6), tusk, { p: [sx * 0.054 * hs, 0.1 * hs, 0.112 * hs], r: [-0.15, 0, sx * -0.5] });
+      }
+    }
     if (kit.helm === 'orcHelm') {
       const hy = 0.1 * hs;
       const rustM = pbr('metal', 0x5e4434);
-      R.part('head', sphere(0.112 * hs, 14, 10, { thetaLength: Math.PI * 0.42 }), rustM, { p: [0, hy + 0.03 * hs, -0.02 * hs], s: [1.08, 0.95, 1.1] });
-      R.part('head', box(0.018 * hs, 0.07 * hs, 0.02 * hs), rustM, { p: [0, hy + 0.02 * hs, 0.105 * hs], r: [0.3, 0, 0] });
-      for (const sx of [1, -1]) R.part('head', cone(0.02 * hs, 0.1 * hs, 6), pbr('bone', 0xd0c4a8), { p: [sx * 0.095 * hs, hy + 0.11 * hs, -0.02 * hs], r: [0.2, 0, sx * -0.7] });
+      // Dented skullcap hugging the sculpted cranium, a riveted brow band, nasal and horns.
+      R.part('head', sphere(0.104 * hs, 16, 10, { thetaLength: Math.PI * 0.5 }), rustM, { p: [0, 0.104 * hs, -0.024 * hs], s: [1.02, 0.96, 1.08] });
+      R.part('head', torus(0.104 * hs, 0.009 * hs, 5, 20), pbr('metal', 0x3a3430), { p: [0, 0.108 * hs, -0.024 * hs], r: [Math.PI / 2 - 0.12, 0, 0], s: [1.02, 1.08, 1] });
+      R.part('head', box(0.016 * hs, 0.06 * hs, 0.014 * hs), rustM, { p: [0, 0.098 * hs, 0.105 * hs], r: [0.12, 0, 0] });
+      for (const sx of [1, -1]) R.part('head', cone(0.018 * hs, 0.09 * hs, 6), pbr('bone', 0x9a8c70), { p: [sx * 0.085 * hs, 0.19 * hs, -0.03 * hs], r: [0.25, 0, sx * -0.75] });
     }
   }
   if (o.thickNeck && !sculpt) {
@@ -537,6 +551,7 @@ function buildBiped(o) {
     hasCape: !!kit.cape,
     weapon: weaponMeshKind,
     eyesColor: o.eyes,
+    eyesBurn: !!o.undead,
   };
 }
 

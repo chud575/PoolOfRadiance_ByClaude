@@ -134,69 +134,116 @@ const NOISE_GLSL = `
 `;
 
 /**
- * Volumetric-looking flame / smoke shell: a noise-displaced sphere whose
- * fragment shader turns view-facing thickness + fBm into a temperature, ramps
- * it through smoke → deep red → orange → yellow → white-hot, and erodes the
- * alpha edge as it cools (uErode). Emission is capped so ACES never clips it
- * to a flat white blob. uSmoke=1 renders the dark, fire-lit smoke cap instead.
+ * Ray-marched volumetric fire/smoke ball. A unit sphere (scaled/positioned by
+ * the caller) bounds a domain-warped fBm density field; each pixel marches it
+ * front to back, turning density + distance from the core into temperature:
+ * white-hot heart → yellow → orange flame tongues → dull red → absorbing soot
+ * that is lit from inside by the fire and from above by the sky. Ground clips
+ * the march (uFloor, object space) so the blast hugs the cobbles. Output is
+ * premultiplied; hot emission is rolled off so ACES keeps the hue.
+ * Uniforms animated by the caller: uGrow (fireball radius in sphere units),
+ * uHeat, uErode (tears holes as it burns out), uSmoke (cools edges to soot),
+ * uFade, uAge, uCam (camera in object space), uFloor.
  */
-function fireShell({ smoke = false, detail = 5 } = {}) {
+function volumeFire({ steps = 24, smoke = false } = {}) {
   const mat = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
     side: THREE.FrontSide,
-    uniforms: { uT: { value: 0 }, uHeat: { value: 1 }, uErode: { value: 0 }, uAlpha: { value: 1 }, uSeed: { value: 0 }, uGlow: { value: 1 }, uDisp: { value: 0.3 } },
-    vertexShader: `${NOISE_GLSL}
-      uniform float uT, uSeed, uDisp; varying vec3 vN; varying vec3 vP; varying vec3 vView; varying vec3 vWN; varying float vDisp;
-      // Billowing (cauliflower) displacement: sums of |noise| puff outward.
-      float billow(vec3 p){ float s = 0.0, a = 0.55; for (int i = 0; i < 3; i++) { s += a * abs(noise3(p)); p *= 2.1; a *= 0.5; } return s; }
+    blending: THREE.CustomBlending,
+    blendSrc: THREE.OneFactor,
+    blendDst: THREE.OneMinusSrcAlphaFactor,
+    uniforms: {
+      uCam: { value: new THREE.Vector3(0, 0, 5) }, uAge: { value: 0 }, uSeed: { value: 0 }, uGrow: { value: 0.5 }, uHeat: { value: 1 },
+      uErode: { value: 0 }, uSmoke: { value: 0 }, uFade: { value: 1 }, uFloor: { value: -10 }, uFreq: { value: 3.3 }, uSky: { value: new THREE.Color(0x3a4048) },
+    },
+    vertexShader: 'varying vec3 vO; void main(){ vO = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `
+      uniform vec3 uCam, uSky; uniform float uAge, uSeed, uGrow, uHeat, uErode, uSmoke, uFade, uFloor, uFreq;
+      varying vec3 vO;
+      float h31(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+      float vn(vec3 x){ vec3 i = floor(x); vec3 f = fract(x); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(mix(h31(i), h31(i + vec3(1,0,0)), f.x), mix(h31(i + vec3(0,1,0)), h31(i + vec3(1,1,0)), f.x), f.y),
+                   mix(mix(h31(i + vec3(0,0,1)), h31(i + vec3(1,0,1)), f.x), mix(h31(i + vec3(0,1,1)), h31(i + vec3(1,1,1)), f.x), f.y), f.z); }
+      float fbm(vec3 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { s += a * vn(p); p = p * 2.07 + vec3(1.7, 9.2, 3.3); a *= 0.5; } return s / 0.9375; }
+      // Returns density (>0 inside); n = turbulence, core = 1 at the heart.
+      float field(vec3 p, out float n, out float core){
+        float r = length(p);
+        vec3 q = p * uFreq + vec3(0.0, -uAge * 1.6, 0.0) + uSeed;
+        float w = vn(q * 0.7 + 4.3);
+        n = fbm(q + w * 1.9);
+        float tongue = 1.0 - abs(vn(q * 2.6 + w * 3.0) * 2.0 - 1.0);
+        float g = max(uGrow, 0.02);
+        float rad = g * (0.55 + 0.7 * n) + tongue * tongue * 0.16 * g;
+        core = clamp(1.0 - r / g, 0.0, 1.0);
+        float d = (rad - r) / g;
+        d -= uErode * (1.05 - n) * 1.6;
+        return d;
+      }
       void main(){
-        vec3 n0 = normalize(position);
-        float d = billow(n0 * 2.8 + vec3(0.0, -uT * 1.2, uSeed));
-        vDisp = d;
-        vec3 p = position + normal * (d - 0.25) * uDisp * 2.0;
-        vN = normalize(normalMatrix * normal);
-        vWN = n0;
-        vec4 mv = modelViewMatrix * vec4(p, 1.0);
-        vView = normalize(-mv.xyz);
-        vP = position;
-        gl_Position = projectionMatrix * mv;
-      }`,
-    fragmentShader: `${NOISE_GLSL}
-      uniform float uT, uHeat, uErode, uAlpha, uSeed, uGlow; varying vec3 vN; varying vec3 vP; varying vec3 vView; varying vec3 vWN; varying float vDisp;
-      void main(){
-        float facing = clamp(dot(normalize(vN), normalize(vView)), 0.0, 1.0);
-        vec3 q = vP * 3.4 + vec3(0.0, -uT * 2.2, uSeed);
-        float n = fbm3(q) * 0.5 + 0.5;
-        float n2 = fbm3(q * 2.7 + 5.0) * 0.5 + 0.5;
-        // Puffs (high displacement) burn hot, creases between them are sooty and cool.
-        float puff = smoothstep(0.12, 0.55, vDisp);
-        ${smoke ? `
-        float dens = facing * 0.6 + puff * 0.5 + (n - 0.5) * 0.9 - uErode;
-        float a = smoothstep(0.05, 0.4, dens) * uAlpha;
-        // Grey-brown smoke: sky-lit crowns, soot in the folds, fire-lit underside.
-        vec3 c = mix(vec3(0.06, 0.055, 0.05), vec3(0.24, 0.22, 0.2), puff * 0.6 + n2 * 0.4);
-        c += vec3(0.1, 0.11, 0.13) * clamp(vWN.y, 0.0, 1.0) * (0.4 + puff * 0.6);
-        float under = clamp(-vWN.y * 0.9 + 0.25, 0.0, 1.0);
-        c += vec3(1.0, 0.36, 0.07) * under * uGlow * (0.25 + puff * 0.9) * 0.9;
-        gl_FragColor = vec4(c, a);` : `
-        float heat = uHeat * (0.3 + facing * 0.35 + puff * 0.45) + (n - 0.5) * 0.7 + (n2 - 0.5) * 0.35;
-        float edge = facing * 0.7 + puff * 0.45 + (n2 - 0.5) * 0.8 - uErode;
-        float a = smoothstep(0.05, 0.3, edge) * uAlpha;
-        vec3 c = vec3(0.07, 0.02, 0.01);
-        c = mix(c, vec3(0.55, 0.08, 0.015), smoothstep(0.12, 0.35, heat));
-        c = mix(c, vec3(1.0, 0.33, 0.04), smoothstep(0.35, 0.62, heat));
-        c = mix(c, vec3(1.0, 0.62, 0.16), smoothstep(0.62, 0.88, heat));
-        c = mix(c, vec3(1.0, 0.86, 0.55), smoothstep(0.88, 1.2, heat));
-        // Highlight roll-off: hot cores glow, but stay ~2.5x so ACES keeps the hue.
-        float emit = 0.45 + 1.7 * smoothstep(0.45, 1.15, heat);
-        gl_FragColor = vec4(c * emit, a);`}
+        vec3 ro = uCam;
+        vec3 rd = normalize(vO - uCam);
+        float b = dot(ro, rd); float c = dot(ro, ro) - 1.0; float h = b * b - c;
+        if (h <= 0.0) discard;
+        h = sqrt(h);
+        float t0 = max(-b - h, 0.0); float t1 = -b + h;
+        if (rd.y < -0.0001) t1 = min(t1, (uFloor - ro.y) / rd.y);
+        if (t1 <= t0) discard;
+        const int N = ${steps};
+        float dt = (t1 - t0) / float(N);
+        float jit = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+        vec3 col = vec3(0.0); float T = 1.0;
+        for (int i = 0; i < N; i++) {
+          vec3 p = ro + rd * (t0 + (float(i) + jit) * dt);
+          float n, core;
+          float d = field(p, n, core);
+          if (d > 0.0) {
+            float dens = clamp(d * 5.0, 0.0, 1.0);
+            ${smoke ? `
+            float a = 1.0 - exp(-dens * 5.5 * dt);
+            vec3 sc = mix(vec3(0.02, 0.018, 0.017), vec3(0.17, 0.16, 0.15), n * n);
+            sc += uSky * clamp(p.y * 1.2 + 0.25, 0.0, 1.0) * (0.25 + n * 0.8);
+            sc += vec3(1.0, 0.32, 0.06) * uHeat * clamp(0.5 - p.y, 0.0, 1.0) * core * 1.4;
+            col += T * a * sc;` : `
+            float temp = uHeat * (0.42 + core * 0.6 + (n - 0.5) * 1.7) - uSmoke * (1.0 - core) * 1.0;
+            float a = 1.0 - exp(-dens * mix(9.0, 14.0, clamp(temp, 0.0, 1.0)) * dt);
+            vec3 soot = mix(vec3(0.018, 0.016, 0.014), vec3(0.13, 0.115, 0.1), n * n);
+            soot += uSky * clamp(p.y * 1.2 + 0.2, 0.0, 1.0) * 0.7 * n;
+            vec3 e = vec3(0.45, 0.05, 0.008) * smoothstep(0.1, 0.32, temp);
+            e = mix(e, vec3(1.0, 0.28, 0.03) * 1.05, smoothstep(0.3, 0.55, temp));
+            e = mix(e, vec3(1.0, 0.55, 0.12) * 1.45, smoothstep(0.55, 0.82, temp));
+            e = mix(e, vec3(1.0, 0.84, 0.5) * 2.0, smoothstep(0.85, 1.25, temp));
+            // Soot near the cool edge picks up the fire's own glow from within.
+            soot += vec3(0.9, 0.25, 0.04) * clamp(uHeat, 0.0, 1.0) * 0.35 * smoothstep(-0.1, 0.25, temp);
+            vec3 sc = mix(soot, e, smoothstep(0.08, 0.3, temp));
+            col += T * a * sc;`}
+            T *= 1.0 - a;
+            if (T < 0.015) break;
+          }
+        }
+        float A = (1.0 - T) * uFade;
+        gl_FragColor = vec4(col * uFade, A);
       }`,
   });
-  const mesh = new THREE.Mesh(new THREE.IcosahedronGeometry(1, detail), mat);
+  const mesh = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 3), mat);
   mesh.renderOrder = smoke ? 8 : 9;
   mesh.frustumCulled = false;
-  return mesh;
+  const inv = new THREE.Matrix4();
+  return {
+    obj: mesh,
+    u: mat.uniforms,
+    /** Call after positioning/scaling: camera into object space, ground height. */
+    sync(camera, groundY = 0) {
+      mesh.updateMatrixWorld(true);
+      inv.copy(mesh.matrixWorld).invert();
+      if (camera) mat.uniforms.uCam.value.copy(camera.position).applyMatrix4(inv);
+      mat.uniforms.uFloor.value = (groundY - mesh.position.y) / mesh.scale.y;
+    },
+    dispose() {
+      mesh.geometry.dispose();
+      mat.dispose();
+    },
+  };
 }
 
 /**
@@ -382,7 +429,7 @@ function shockRing(color) {
         float n = noise3(vec3(cos(a) * 2.5, sin(a) * 2.5, uT * 3.0)) * 0.06 + noise3(vec3(cos(a) * 7.0, sin(a) * 7.0, uT * 5.0)) * 0.025;
         float d = r - (0.8 + n);
         float band = exp(-d * d / 0.004) * (0.65 + 0.35 * noise3(vec3(p * 6.0, uT)));
-        float wake = smoothstep(0.82, 0.2, r) * smoothstep(0.0, 0.5, r) * 0.18;
+        float wake = smoothstep(0.82, 0.2, r) * smoothstep(0.0, 0.5, r) * 0.04;
         float edge = 1.0 - smoothstep(0.92, 1.0, r);
         gl_FragColor = vec4(mix(uColor, vec3(1.0, 0.85, 0.6), 0.3) * 1.6, (band + wake) * edge * uA); }`,
   });
@@ -710,11 +757,12 @@ export class VFX {
 
   /**
    * Fireball: a comet (white-hot head, tapered flickering tail, shed embers)
-   * arcs to the target and detonates in layers — a white-hot core flash, two
-   * turbulent noise-eroded flame shells, velocity-streaked ember sparks, a dark
-   * fire-lit smoke cap rolling upward, a heat-shimmer shock shell and ground
-   * ring, debris, dust and a scorch — with a strong orange light washing the
-   * scene. Emission is capped so ACES keeps the hue at the peak.
+   * arcs to the target and detonates in layers — a ray-marched fire volume
+   * (white-hot heart, orange flame tongues, a sooty rim that cools to smoke),
+   * an offset secondary burst, velocity-streaked ember sparks, a dark rolling
+   * smoke cap and stem, a heat-shimmer shell and ground shockwave, debris,
+   * dust and a scorch — with a strong orange light washing walls and figures.
+   * Emission is rolled off so ACES keeps the hue at the peak.
    * Returns {flight, detonate} (seconds from t).
    */
   fireball(t, from, to, radius = 2.5 * 1.5, seed = 1) {
@@ -725,7 +773,7 @@ export class VFX {
     const core = glowSprite(0xfff4dc, 0.34);
     const tail = taperTrail(28, 0xfff0c8, 0xff3008, 0.2);
     const shed = particleBurst({
-      at: from, count: 70, life: 0.5, size: 0.06, speed: 1.2, drag: 2.5, gravity: 2, stagger: flight, turb: 0.6,
+      at: from, count: 70, life: 0.32, size: 0.035, speed: 1.6, drag: 2.5, gravity: 2, stagger: flight, turb: 0.9,
       colors: [0xfff0c0, 0xff7018, 0x501008], intensity: 2.4, seed,
       emit: (i) => {
         const q = P(i / 70);
@@ -752,29 +800,20 @@ export class VFX {
 
     const T = t + flight;
     const R = radius;
-    const flash = fireShell();
-    const shellA = fireShell();
-    const shellB = fireShell();
-    // Billowing lobes around the core break the sphere into a cauliflower burst.
-    const lobes = [];
-    for (let k = 0; k < 7; k++) {
-      const m = fireShell({ detail: 4 });
-      m.material.uniforms.uSeed.value = seed * 2.3 + k * 5.7;
-      const a = (k / 7) * Math.PI * 2 + hashf(seed + k) * 0.6;
-      const el = 0.15 + hashf(seed + k * 3) * 0.75;
-      m.userData.dir = new THREE.Vector3(Math.cos(a) * Math.cos(el), Math.sin(el) * 0.8 + 0.1, Math.sin(a) * Math.cos(el));
-      m.userData.sz = 0.24 + hashf(seed + k * 7) * 0.14;
-      lobes.push(m);
-    }
-    const smokes = [fireShell({ smoke: true }), fireShell({ smoke: true }), fireShell({ smoke: true }), fireShell({ smoke: true }), fireShell({ smoke: true })];
-    shellA.material.uniforms.uSeed.value = seed * 3.1;
-    shellB.material.uniforms.uSeed.value = seed * 7.7 + 11;
-    shellB.rotation.set(1.1, 0.7, 0.3);
-    flash.material.uniforms.uSeed.value = seed;
-    smokes.forEach((m, k) => {
-      m.material.uniforms.uSeed.value = seed * 5 + k * 13;
-      m.material.uniforms.uDisp.value = 0.45;
-    });
+    // One ray-marched fire volume (core → flame tongues → soot) plus a smaller
+    // offset one for an asymmetric silhouette, and two smoke volumes that roll
+    // up out of the crown into a dark cap as the fire burns out.
+    const ball = volumeFire({ steps: 26 });
+    const ball2 = volumeFire({ steps: 18 });
+    const cap = volumeFire({ steps: 18, smoke: true });
+    const stem = volumeFire({ steps: 14, smoke: true });
+    ball.u.uSeed.value = seed * 3.1;
+    ball2.u.uSeed.value = seed * 7.7 + 11;
+    cap.u.uSeed.value = seed * 5.3 + 2;
+    stem.u.uSeed.value = seed * 2.9 + 7;
+    cap.u.uFreq.value = 2.0;
+    stem.u.uFreq.value = 2.6;
+    const o2 = new THREE.Vector3(hashf(seed + 1) - 0.5, 0.25, hashf(seed + 2) - 0.5).normalize();
     // Heat shimmer: a thin, fast-expanding fresnel shell.
     const shock = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 3), new THREE.ShaderMaterial({
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
@@ -791,61 +830,63 @@ export class VFX {
     const lateSparks = sparkStreaks({ at: { x: to.x, y: to.y + 0.4, z: to.z }, count: 40, speed: 4, up: 1.4, life: 1.6, gravity: 3, drag: 1.6, hemi: true, width: 1.6, streak: 0.12, intensity: 2.2, seed: seed + 9, delay: 0.15, stagger: 0.5, r0: R * 0.4 });
     const debris = particleBurst({ at: { x: to.x, y: 0.2, z: to.z }, count: 36, speed: 6.5, life: 1.2, size: 0.09, drag: 1, gravity: 12, hemi: true, colors: [0x5a4a3a, 0x3a3028, 0x2a2420], additive: false, intensity: 1, soft: 0.2, seed: seed + 5, floor: 0.03 });
     const dust = particleBurst({ at: { x: to.x, y: 0.15, z: to.z }, count: 30, spread: 0.3, flatY: true, hemi: true, speed: 7.5, up: 0.12, life: 1.8, size: 1.0, grow: 2.5, drag: 3.2, colors: [0x7a6a58, 0x5a4e42, 0x3a342e], additive: false, intensity: 1, soft: 0.95, seed: seed + 13, fadeIn: 0.05 });
-    const groundFire = particleBurst({ at: { x: to.x, y: 0.12, z: to.z }, count: 40, spread: R * 0.75, flatY: true, speed: 0.2, gravity: -1.2, life: 0.9, stagger: 1.2, delay: 0.25, size: 0.35, grow: 1.2, drag: 1, turb: 0.3, colors: [0xffd080, 0xff5a10, 0x301008], intensity: 1.8, seed: seed + 21, fadeIn: 0.15 });
-    this.add(T, 4.5, () => ({ list: [scorch, ring, dust, groundFire, ...smokes, ...lobes, shellA, shellB, flash, shock, sparks, lateSparks, debris] }), (age) => {
+    const groundFire = particleBurst({ at: { x: to.x, y: 0.12, z: to.z }, count: 70, spread: R * 0.7, flatY: true, speed: 0.2, gravity: -1.4, life: 0.8, stagger: 1.4, delay: 0.3, size: 0.16, grow: 1.0, drag: 1, turb: 0.4, colors: [0xffb050, 0xff4a08, 0x200804], intensity: 1.1, seed: seed + 21, fadeIn: 0.15 });
+    this.add(T, 4.5, () => ({ list: [scorch, ring, dust, groundFire, stem, cap, ball2, ball, shock, sparks, lateSparks, debris] }), (age, parts, ctx) => {
       const ease = 1 - Math.exp(-age * 8);
-      // White-hot core flash: tiny, intense, gone in a blink.
-      flash.position.set(to.x, to.y, to.z);
-      flash.scale.setScalar(R * (0.12 + 0.2 * (1 - Math.exp(-age * 30))));
-      flash.material.uniforms.uT.value = age;
-      flash.material.uniforms.uHeat.value = 1.45;
-      flash.material.uniforms.uAlpha.value = clamp01(1 - age / 0.22);
-      flash.visible = age < 0.22;
-      // Turbulent flame shells: billow out fast, rise, cool and erode at the edges.
-      const rise = age * 0.7 + age * age * 0.25;
-      shellA.position.set(to.x, to.y + rise, to.z);
-      shellA.scale.set(R * (0.2 + 0.34 * ease), R * (0.18 + 0.28 * ease) * (1 + age * 0.25), R * (0.2 + 0.34 * ease));
-      shellA.material.uniforms.uT.value = age * 1.3;
-      shellA.material.uniforms.uHeat.value = Math.max(0.15, 1.25 - age * 1.05);
-      shellA.material.uniforms.uErode.value = 0.08 + Math.max(0, age - 0.22) * 0.85;
-      shellA.material.uniforms.uAlpha.value = clamp01(1.6 - age);
-      shellA.visible = age < 1.6;
-      shellB.position.set(to.x, to.y + rise * 1.15 + 0.1, to.z);
-      shellB.scale.set(R * (0.16 + 0.3 * ease), R * (0.16 + 0.27 * ease), R * (0.16 + 0.3 * ease));
-      shellB.material.uniforms.uT.value = age * 1.6 + 3;
-      shellB.material.uniforms.uHeat.value = Math.max(0.2, 1.4 - age * 1.3);
-      shellB.material.uniforms.uErode.value = Math.max(0, age - 0.2) * 0.9;
-      shellB.material.uniforms.uAlpha.value = clamp01(1.3 - age);
-      shellB.visible = age < 1.3;
-      lobes.forEach((m, k) => {
-        const e2 = 1 - Math.exp(-age * (7 - k * 0.4));
-        const d = m.userData.dir;
-        const off = R * (0.18 + 0.4 * e2);
-        m.position.set(to.x + d.x * off, to.y + d.y * off + rise * (0.8 + d.y * 0.5), to.z + d.z * off);
-        m.scale.setScalar(R * m.userData.sz * (0.5 + 0.8 * e2));
-        m.material.uniforms.uT.value = age * 1.5 + k;
-        m.material.uniforms.uHeat.value = Math.max(0.1, 1.4 - age * 1.25 - k * 0.04);
-        m.material.uniforms.uErode.value = 0.1 + Math.max(0, age - 0.18) * 1.1;
-        m.material.uniforms.uAlpha.value = clamp01(1.25 - age * 1.1);
-        m.visible = age < 1.15;
-      });
-      // Rolling smoke cap: rises from the fireball's crown, lit from below while it burns.
-      smokes.forEach((m, k) => {
-        const a2 = age - 0.08 - k * 0.06;
-        m.visible = a2 > 0 && age < 4.4;
-        if (!m.visible) return;
-        const ang = k * 2.1 + seed;
-        // Three puffs roll up into a cap; two trail beneath as the rising stem.
-        const stem = k >= 3;
-        const lift = stem ? R * 0.15 + a2 * (0.7 + (k - 3) * 0.3) : R * 0.3 + a2 * 1.5 + k * 0.22;
-        m.position.set(to.x + Math.cos(ang) * R * (stem ? 0.05 : 0.18), to.y + lift, to.z + Math.sin(ang) * R * (stem ? 0.05 : 0.18));
-        const g = stem ? 0.14 + a2 * 0.12 : 0.28 + a2 * 0.3;
-        m.scale.set(R * g, R * (stem ? g * 1.5 : g * 0.72), R * g);
-        m.material.uniforms.uT.value = a2 * 0.6 + k;
-        m.material.uniforms.uGlow.value = Math.max(0, 1 - a2 * 0.9);
-        m.material.uniforms.uErode.value = Math.max(0, 0.4 - a2 * 1.2) + Math.max(0, a2 - 2.2) * 0.45;
-        m.material.uniforms.uAlpha.value = clamp01(a2 * 4) * 0.92;
-      });
+      const cam = ctx?.camera;
+      const rise = age * 0.55 + age * age * 0.3;
+      // Main fireball: snaps out in ~0.25 s, hot heart cooling through orange to
+      // soot at the rim, then tears open and fades while it rises.
+      const Rb = R * 0.78;
+      ball.obj.position.set(to.x, to.y + rise, to.z);
+      ball.obj.scale.set(Rb, Rb * 0.92, Rb);
+      ball.u.uAge.value = age;
+      ball.u.uGrow.value = 0.18 + 0.62 * (1 - Math.exp(-age * 9)) + age * 0.06;
+      ball.u.uHeat.value = age < 0.06 ? 1.7 : 0.35 + 1.3 * Math.exp(-(age - 0.06) * 2.2);
+      ball.u.uSmoke.value = clamp01(0.12 + age * 1.25);
+      ball.u.uErode.value = Math.max(0, age - 0.5) * 0.75;
+      ball.u.uFade.value = clamp01((2.6 - age) / 0.8);
+      ball.obj.visible = age < 2.6;
+      ball.sync(cam, 0.02);
+      const R2 = R * 0.46;
+      const e2 = 1 - Math.exp(-(age - 0.03) * 8);
+      ball2.obj.position.set(to.x + o2.x * R * 0.42 * e2, to.y + rise * 1.2 + o2.y * R * 0.3, to.z + o2.z * R * 0.42 * e2);
+      ball2.obj.scale.setScalar(R2);
+      ball2.u.uAge.value = age + 2;
+      ball2.u.uGrow.value = 0.2 + 0.6 * Math.max(0, e2);
+      ball2.u.uHeat.value = 0.3 + 1.1 * Math.exp(-age * 2.6);
+      ball2.u.uSmoke.value = clamp01(age * 1.1);
+      ball2.u.uErode.value = Math.max(0, age - 0.4) * 0.9;
+      ball2.u.uFade.value = clamp01((2.0 - age) / 0.7);
+      ball2.obj.visible = age > 0.03 && age < 2.0;
+      ball2.sync(cam, 0.02);
+      // Smoke: a cap rolls up out of the crown, a stem trails beneath it.
+      const ac = age - 0.12;
+      cap.obj.visible = ac > 0 && age < 4.4;
+      if (cap.obj.visible) {
+        const g = R * (0.42 + ac * 0.22);
+        cap.obj.position.set(to.x, to.y + R * 0.35 + ac * 1.3 + rise * 0.4, to.z);
+        cap.obj.scale.set(g, g * 0.7, g);
+        cap.u.uAge.value = ac * 0.7;
+        cap.u.uGrow.value = 0.25 + 0.55 * (1 - Math.exp(-ac * 3));
+        cap.u.uHeat.value = Math.max(0, 1 - ac * 0.8);
+        cap.u.uErode.value = Math.max(0, ac - 2.0) * 0.4;
+        cap.u.uFade.value = clamp01(ac * 3) * clamp01((4.4 - age) / 1.4) * 0.95;
+        cap.sync(cam, 0.02);
+      }
+      const as = age - 0.35;
+      stem.obj.visible = as > 0 && age < 4.0;
+      if (stem.obj.visible) {
+        const g = R * (0.22 + as * 0.08);
+        stem.obj.position.set(to.x, to.y + g * 0.9 + as * 0.4, to.z);
+        stem.obj.scale.set(g, g * 1.6, g);
+        stem.u.uAge.value = as;
+        stem.u.uGrow.value = 0.3 + 0.4 * (1 - Math.exp(-as * 3));
+        stem.u.uHeat.value = Math.max(0, 0.7 - as * 0.6);
+        stem.u.uErode.value = Math.max(0, as - 1.6) * 0.5;
+        stem.u.uFade.value = clamp01(as * 3) * clamp01((4.0 - age) / 1.2) * 0.85;
+        stem.sync(cam, 0.02);
+      }
       shock.position.set(to.x, to.y, to.z);
       shock.scale.setScalar(R * (0.3 + 0.7 * (1 - Math.exp(-age * 9))));
       shock.material.uniforms.uA.value = clamp01(1 - age / 0.25) ** 2 * 0.12;
@@ -855,7 +896,7 @@ export class VFX {
       ring.scale.setScalar(rr * 2 / 0.8);
       ring.position.set(to.x, 0.06, to.z);
       ring.material.uniforms.uT.value = age;
-      ring.material.uniforms.uA.value = clamp01(1 - age / 0.6) ** 1.5 * 0.85;
+      ring.material.uniforms.uA.value = clamp01(1 - age / 0.5) ** 1.5 * 0.55;
       ring.visible = age < 0.62;
       scorch.position.set(to.x, 0.03, to.z);
       scorch.scale.setScalar(R * 0.95);
