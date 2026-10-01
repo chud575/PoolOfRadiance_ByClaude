@@ -163,51 +163,65 @@ function spiral(cx, cy, r0, turns, dir = 1, start = 0) {
 const P = (pts) => pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(2)} ${y.toFixed(2)}`).join('');
 
 /**
- * Corner filigree (top-left orientation; CSS mirrors for other corners), drawn
- * at 96 units for ~4em display: a bevelled double rule ending in a jewelled
- * boss, two C-scroll volutes curling off each arm, acanthus leaves and a
- * pendant bud. Every stroke is laid twice — a dark bevel shadow offset down-
- * right, then the two-tone gilt face — so it reads as raised metal.
+ * Corner filigree (top-left orientation; CSS mirrors for other corners). The
+ * frame's own corner sits at (26,26) of the 100-unit box, so the ornament
+ * straddles the gilt band instead of sprawling over the panel's content: a
+ * jewelled rosette boss on the corner, C-scroll volutes and acanthus curling
+ * OUTWARD along both arms, a bevelled double fillet laid along the band, and
+ * only a small fleuron reaching inside. Every stroke is laid twice (a dark
+ * bevel shadow offset down-right, then the gilt face) so it reads as raised,
+ * chased metal. CSS: size --cs, offset -0.26 * --cs.
  */
 function cornerSVG() {
-  const s = 96;
-  const curlA = spiral(46, 16, 10, 1.3, -1, Math.PI * 0.5);
-  const curlB = spiral(16, 46, 10, 1.3, 1, Math.PI);
-  const curlC = spiral(70, 9, 5.5, 1.1, 1, Math.PI * 1.5);
-  const curlD = spiral(9, 70, 5.5, 1.1, -1, 0);
+  const s = 100;
+  const C = 26;
+  const curlT = spiral(52, 13, 9, 1.35, -1, Math.PI * 0.5);
+  const curlL = spiral(13, 52, 9, 1.35, 1, Math.PI);
+  const curlT2 = spiral(80, 16, 5.2, 1.15, 1, Math.PI * 1.5);
+  const curlL2 = spiral(16, 80, 5.2, 1.15, -1, 0);
   const strokes = `
-      <path d="M5 5 H94" stroke-width="3"/>
-      <path d="M5 5 V94" stroke-width="3"/>
-      <path d="M12 12 H70" stroke-width="1.3"/>
-      <path d="M12 12 V70" stroke-width="1.3"/>
-      <path d="M16 16 C30 16 40 8 52 15 C58 19 56 27 50 26" stroke-width="2.1"/>
-      <path d="M16 16 C16 30 8 40 15 52 C19 58 27 56 26 50" stroke-width="2.1"/>
-      <path d="${P(curlA)}" stroke-width="1.7"/>
-      <path d="${P(curlB)}" stroke-width="1.7"/>
-      <path d="M52 15 C60 10 66 6 74 9" stroke-width="1.4"/>
-      <path d="M15 52 C10 60 6 66 9 74" stroke-width="1.4"/>
-      <path d="${P(curlC)}" stroke-width="1.2"/>
-      <path d="${P(curlD)}" stroke-width="1.2"/>
-      <path d="M24 24 C33 33 40 33 50 38" stroke-width="1.3"/>
-      <path d="M24 24 C33 33 33 40 38 50" stroke-width="1.3"/>`;
+      <path d="M${C} ${C - 4} H97" stroke-width="2.4"/>
+      <path d="M${C - 4} ${C} V97" stroke-width="2.4"/>
+      <path d="M${C + 6} ${C + 4} H74" stroke-width="1"/>
+      <path d="M${C + 4} ${C + 6} V74" stroke-width="1"/>
+      <path d="M30 18 C38 6 52 2 60 9 C65 14 62 22 55 21" stroke-width="2.2"/>
+      <path d="M18 30 C6 38 2 52 9 60 C14 65 22 62 21 55" stroke-width="2.2"/>
+      <path d="${P(curlT)}" stroke-width="1.6"/>
+      <path d="${P(curlL)}" stroke-width="1.6"/>
+      <path d="M60 9 C68 5 74 8 80 11" stroke-width="1.4"/>
+      <path d="M9 60 C5 68 8 74 11 80" stroke-width="1.4"/>
+      <path d="${P(curlT2)}" stroke-width="1.15"/>
+      <path d="${P(curlL2)}" stroke-width="1.15"/>
+      <path d="M62 21 C70 22 78 20 88 21" stroke-width="1"/>
+      <path d="M21 62 C22 70 20 78 21 88" stroke-width="1"/>
+      <path d="M14 14 C8 8 6 4 2 2" stroke-width="1.5"/>`;
   const fills = `
-    <path d="M24 18 C32 20 36 26 34 34 C28 30 24 26 24 18 Z"/>
-    <path d="M18 24 C20 32 26 36 34 34 C30 28 26 24 18 24 Z"/>
-    <path d="M44 34 C49 31 54 33 55 38 C50 39 46 38 44 34 Z"/>
-    <path d="M34 44 C31 49 33 54 38 55 C39 50 38 46 34 44 Z"/>
-    <circle cx="51" cy="40" r="1.6"/><circle cx="40" cy="51" r="1.6"/>`;
+    <path d="M36 14 C42 10 50 11 52 17 C46 19 40 18 36 14 Z"/>
+    <path d="M14 36 C10 42 11 50 17 52 C19 46 18 40 14 36 Z"/>
+    <path d="M68 13 C72 10 76 11 77 15 C73 16 70 15 68 13 Z"/>
+    <path d="M13 68 C10 72 11 76 15 77 C16 73 15 70 13 68 Z"/>
+    <path d="M${C + 3} ${C + 3} C${C + 12} ${C + 5} ${C + 15} ${C + 9} ${C + 14} ${C + 14} C${C + 9} ${C + 15} ${C + 5} ${C + 12} ${C + 3} ${C + 3} Z"/>
+    <circle cx="${C + 17}" cy="${C + 17}" r="1.5"/>
+    <circle cx="88" cy="21" r="1.4"/><circle cx="21" cy="88" r="1.4"/>
+    <path d="M6 1 C9 4 9 7 6 9 C3 7 3 4 6 1 Z" transform="rotate(-45 6 6)"/>`;
+  // the rosette boss: eight petals round a cabochon, centred on the frame corner
+  const petals = Array.from({ length: 8 }, (_, i) => `<path d="M0 -12.5 C3.6 -9 3.6 -5.5 0 -4 C-3.6 -5.5 -3.6 -9 0 -12.5 Z" transform="rotate(${i * 45 + 22.5})"/>`).join('');
   const body = `
-    <g fill="none" stroke="#120a02" stroke-linecap="round" transform="translate(0.9 1.2)" opacity=".85">${strokes}</g>
-    <g fill="#120a02" transform="translate(0.9 1.2)" opacity=".85">${fills}</g>
+    <g fill="none" stroke="#120a02" stroke-linecap="round" transform="translate(0.9 1.2)" opacity=".9">${strokes}</g>
+    <g fill="#120a02" transform="translate(0.9 1.2)" opacity=".9">${fills}</g>
     <g fill="none" stroke="url(#g)" stroke-linecap="round">${strokes}</g>
-    <g fill="none" stroke="#fff6d8" stroke-linecap="round" opacity=".35" transform="translate(-0.4 -0.5)"><path d="M5 5 H94" stroke-width="0.8"/><path d="M5 5 V94" stroke-width="0.8"/></g>
+    <g fill="none" stroke="#fff6d8" stroke-linecap="round" opacity=".4" transform="translate(-0.4 -0.5)"><path d="M${C} ${C - 4} H97" stroke-width="0.7"/><path d="M${C - 4} ${C} V97" stroke-width="0.7"/></g>
     <g fill="url(#g)" stroke="#3a2808" stroke-width=".5">${fills}</g>
-    <path d="M7 -1 L15 7 L7 15 L-1 7 Z" fill="#120a02" transform="translate(0.8 1)"/>
-    <path d="M7 -1 L15 7 L7 15 L-1 7 Z" fill="url(#g)" stroke="#2a1a04" stroke-width=".7"/>
-    <circle cx="7" cy="7" r="3.2" fill="#0b2a40" stroke="#2a1a04" stroke-width=".6"/>
-    <circle cx="7" cy="7" r="2.3" fill="url(#gem)"/>
-    <circle cx="6.1" cy="6" r=".8" fill="#fff"/>`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2 -2 ${s} ${s}" width="${s}" height="${s}">${GILT_DEFS('g', 96, 96)}<defs><radialGradient id="gem"><stop offset="0" stop-color="#e8ffff"/><stop offset=".5" stop-color="#5fd8f0"/><stop offset="1" stop-color="#0d4a6a"/></radialGradient></defs>${body}</svg>`;
+    <g transform="translate(${C - 3} ${C - 3})">
+      <g fill="#120a02" transform="translate(0.9 1.2)">${petals}<circle r="8.6"/></g>
+      <g fill="url(#g)" stroke="#2a1a04" stroke-width=".6">${petals}</g>
+      <circle r="8.4" fill="url(#g)" stroke="#2a1a04" stroke-width=".7"/>
+      <circle r="6.6" fill="none" stroke="#5a3e10" stroke-width=".6"/>
+      <circle r="5" fill="#0b2a40" stroke="#2a1a04" stroke-width=".6"/>
+      <circle r="3.9" fill="url(#gem)"/>
+      <circle cx="-1.4" cy="-1.5" r="1.2" fill="#fff"/>
+    </g>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${s} ${s}" width="${s}" height="${s}">${GILT_DEFS('g', 100, 100)}<defs><radialGradient id="gem" cx=".4" cy=".35"><stop offset="0" stop-color="#e8ffff"/><stop offset=".45" stop-color="#5fd8f0"/><stop offset="1" stop-color="#0d4a6a"/></radialGradient></defs>${body}</svg>`;
 }
 
 /** Centre crest for frame tops: lozenge with flanking scroll volutes. */
@@ -303,6 +317,9 @@ export function bindSkin(ctx) {
   const el = document.documentElement;
   const syncClassic = (on) => {
     const next = on ? '1' : '0';
+    // index.html may already have set data-classic pre-boot: the bitmap face
+    // must still be generated, so register it before the early-out
+    if (on) registerBitmapFont();
     if (el.dataset.classic === next) return;
     // flip the whole skin in one frame: park transitions while the EGA rules
     // come and go, so no row keeps a half-faded classic box or highlight bar

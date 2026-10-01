@@ -64,7 +64,7 @@ html[data-classic='1'] :is(.por-menu-item, .por-set-tab, .por-cmd)::after { disp
 html[data-classic='1'] .por-menu-item:disabled, html[data-classic='1'] .por-menu-item.locked { color: var(--ega-8) !important; opacity: 1 !important; }
 html[data-classic='1'] .por-mm-list::before { display: none; }
 html[data-classic='1'] .por-btn { border: 2px solid var(--ega-9) !important; }
-html[data-classic='1'] .por-set-desc, html[data-classic='1'] .por-set-blurb, html[data-classic='1'] .por-mm-desc { color: var(--ega-7) !important; }
+html[data-classic='1'] .por-set-desc, html[data-classic='1'] .por-set-blurb, html[data-classic='1'] .por-mm-desc { color: var(--ega-7) !important; line-height: 1.45; }
 html[data-classic='1'] .por-set-title, html[data-classic='1'] .por-set-name, html[data-classic='1'] .por-bind-group, html[data-classic='1'] .por-bind-head { color: var(--ega-11) !important; }
 html[data-classic='1'] .por-set-badge { background: var(--ega-13) !important; color: #000 !important; }
 html[data-classic='1'] .por-set-icon { color: var(--ega-11) !important; }
@@ -104,10 +104,11 @@ html[data-classic='1'] .por-mm {
   background: #000; border: 3px double var(--ega-9); box-shadow: 0 0 0 3px #000, 0 0 0 6px var(--ega-9); padding: 1em 1.2em 0.8em;
 }
 html[data-classic='1'] .por-mm-list { gap: 0 !important; }
-html[data-classic='1'] .por-mm-list .por-menu-item { padding-left: 1.2em !important; margin: 0 !important; }
+html[data-classic='1'] .por-mm-list .por-menu-item { padding-left: 1.2em !important; margin: 0 !important; white-space: nowrap; }
+html[data-classic='1'] .por-mm { width: max-content; min-width: 23em; }
 html[data-classic='1'] .por-mm-kicker { color: var(--ega-11) !important; padding-left: 0.5em; opacity: 1; }
 html[data-classic='1'] .por-mm-kicker::after { display: none; }
-html[data-classic='1'] .por-mm-desc { padding-left: 0.5em; }
+html[data-classic='1'] .por-mm-desc { padding-left: 0.5em; width: 0; min-width: 100%; }
 html[data-classic='1'] .por-title-scrim { background: none !important; }
 html[data-classic='1'] .por-btn.primary { background: var(--ega-1) !important; color: var(--ega-14) !important; border-color: var(--ega-11) !important; }
 html[data-classic='1'] .por-btn.primary:hover { background: var(--ega-9) !important; color: var(--ega-15) !important; }

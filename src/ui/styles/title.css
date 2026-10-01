@@ -24,6 +24,8 @@
   backdrop-filter: none;
   background:
     radial-gradient(ellipse 40% 50% at 50% 66%, rgba(3, 3, 9, 0.5), transparent 100%),
+    radial-gradient(ellipse 30% 46% at 14% 40%, rgba(20, 8, 16, 0.42), transparent 100%),
+    linear-gradient(90deg, rgba(5, 4, 12, 0.5) 0%, rgba(5, 4, 12, 0.12) 26%, rgba(5, 4, 12, 0) 40%, rgba(5, 4, 12, 0) 66%, rgba(5, 4, 12, 0.36) 100%),
     linear-gradient(180deg, rgba(4, 4, 12, 0) 0%, rgba(4, 4, 12, 0) 60%, rgba(4, 4, 12, 0.55) 100%);
 }
 .por-title[data-mode='intro'] .por-title-scrim { opacity: 0; }

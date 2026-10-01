@@ -81,12 +81,22 @@ export function createCity({ seed = 1988 } = {}) {
           const pl = len / pieces;
           const off = -len / 2 + pl * (k + 0.5);
           const hh = h * R.range(0.25, 1);
-          const g = box(pl + 0.02, hh, t, { x: 0, y: 0, z: 0 });
-          g.translate(off, 0, 0);
-          g.rotateY(r);
-          g.translate(ox, 0, oz);
-          g.applyMatrix4(m);
-          rubble.push(tint(worldUV(g, 2.2), new THREE.Color(col).multiplyScalar(0.8), { aoBottom: base, aoTop: base + 3 }));
+          // the break is stepped, not sawn: narrow slices whose heights random-walk
+          // down toward the gap, each course a little proud or recessed, so the
+          // wall reads as fallen masonry against the sky instead of a box
+          const n = Math.max(2, Math.round(pl / 0.55));
+          const sw = pl / n;
+          const dirn = R.chance(0.5) ? 1 : -1;
+          for (let q = 0; q < n; q++) {
+            const fq = dirn > 0 ? q / (n - 1) : 1 - q / (n - 1);
+            const sh = Math.max(0.6, hh * (1 - 0.55 * fq * fq) - R.range(0, 0.7));
+            const g = box(sw + 0.02, sh, t * R.range(0.92, 1.08), { x: 0, y: 0, z: R.range(-0.03, 0.03) });
+            g.translate(off - pl / 2 + sw * (q + 0.5), 0, 0);
+            g.rotateY(r);
+            g.translate(ox, 0, oz);
+            g.applyMatrix4(m);
+            rubble.push(tint(worldUV(g, 2.2), new THREE.Color(col).multiplyScalar(R.range(0.72, 0.88)), { aoBottom: base, aoTop: base + 3 }));
+          }
         }
       }
       if (R.chance(0.4)) {
@@ -342,7 +352,7 @@ export function createCity({ seed = 1988 } = {}) {
     fine.push(tint(worldUV(box(hw + 0.8, 0.7, hd + 0.8, { x: hx, y: GROUND + hh, z: hz }), 2), 0xc0b29c));
     const hr = gableRoof(hw, hd + 0.8, 3.8, { o: 0.55, t: 0.3 });
     const rm = new THREE.Matrix4().makeTranslation(hx, GROUND + hh + 0.7, hz);
-    for (const g of hr.roof) slate.push(tint(g.applyMatrix4(rm), 0x66708a));
+    for (const g of hr.roof) slate.push(tint(g.applyMatrix4(rm), 0x8c96b4));
     for (const g of hr.caps) fine.push(tint(g.applyMatrix4(rm), 0x8a8f9a));
     for (const g of hr.gables) hall.push(tint(worldUV(g.applyMatrix4(rm), 2.6), 0xb0a28c));
     const hm = new THREE.Matrix4().setPosition(hx, GROUND, hz);
@@ -366,7 +376,7 @@ export function createCity({ seed = 1988 } = {}) {
     fine.push(tint(worldUV(box(12.4, 0.24, 3.8, { x: hx, y: colBase + 6.72, z: pz + 2.2 }), 2), 0xd0c4ae));
     const ped = gableRoof(3.6, 12.2, 2.0, { o: 0.25, t: 0.26, ridge: false });
     const pm = new THREE.Matrix4().makeRotationY(Math.PI / 2).setPosition(hx, colBase + 6.96, pz + 2.2);
-    for (const g of ped.roof) slate.push(tint(g.applyMatrix4(pm), 0x66708a));
+    for (const g of ped.roof) slate.push(tint(g.applyMatrix4(pm), 0x8c96b4));
     for (const g of ped.gables) fine.push(tint(g.applyMatrix4(pm), 0xc6baa4));
     // tympanum roundel (the Council's sun-and-scales)
     const tymp = new THREE.CircleGeometry(0.62, 24);

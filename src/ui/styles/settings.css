@@ -207,6 +207,7 @@ html[data-classic='1'] .por-set-seal-svg { display: none; }
 .por-set-footer { display: flex; align-items: center; justify-content: space-between; gap: 1em; margin-top: 1em; padding-top: 0.9em; border-top: 1px solid rgba(216, 178, 90, 0.22); }
 .por-set-legend { display: flex; flex-wrap: wrap; gap: 1.3em; font-family: var(--font-display); font-weight: 700; font-size: 0.72em; letter-spacing: 0.16em; text-transform: uppercase; color: var(--por-text-dim); }
 .por-set-legend > span { display: inline-flex; align-items: center; gap: 0.3em; }
+.por-set-legend-lbl { margin-left: 0.35em; }
 .por-set-legend .por-keycap { font-size: 1em; letter-spacing: 0; }
 .por-keycap .por-arrow { width: 1.15em; height: 1.15em; }
 .por-set-actions { display: flex; gap: 0.6em; }

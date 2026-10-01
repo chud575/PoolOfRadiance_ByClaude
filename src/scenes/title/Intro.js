@@ -44,8 +44,9 @@ const SHOTS = [
   },
   {
     t: [24.4, 32.4],
-    keys: [{ p: V(-31, -9.6, -33), l: V(-19, -8.2, -58) }, { p: V(-24, -10.2, -40), l: V(-19.5, -7.8, -58) }],
+    keys: [{ p: V(-31, -9.6, -33), l: V(-19, -9.0, -58) }, { p: V(-24, -10.2, -40), l: V(-19.5, -8.6, -58) }],
     look: 0.7,
+    moon: 2.4,
     caption: 'City Hall',
     sub: 'The Council of Phlan',
     text: 'The City Council pays in gold for every block of the old city made safe again. Its clerk keeps a ledger of the brave, and of the dead.',
@@ -133,6 +134,10 @@ export class IntroCinematic {
     camera.lookAt(look);
     const L = Array.isArray(s.look) ? s.look[0] + (s.look[1] - s.look[0]) * e : s.look;
     this.world?.setInterior?.(!!s.interior);
+    this.world?.setMoon?.(s.moon ?? 0);
+    // the dragon only wheels over the open sea and the final crane; in the close
+    // city shots it would cross the lens at an awkward, cropped scale
+    this.world?.setDragon?.(i === 0 || i === SHOTS.length - 1);
     this.world?.setLook?.(L);
 
     // crossfades between shots (and out at the very end)
@@ -181,6 +186,8 @@ export class IntroCinematic {
 
   dispose() {
     this.world?.setInterior?.(false);
+    this.world?.setMoon?.(0);
+    this.world?.setDragon?.(true);
     this.world?.setLook?.(0);
     this.el.remove();
   }

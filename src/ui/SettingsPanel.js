@@ -276,10 +276,10 @@ export class SettingsPanel {
     this.bodyEl = h('div.por-set-body');
     const footer = h('div.por-set-footer', [
       h('div.por-set-legend', [
-        h('span', [h('span.por-keycap', [arrowSvg('↑')]), h('span.por-keycap', [arrowSvg('↓')]), ' Select']),
-        h('span', [h('span.por-keycap', [arrowSvg('←')]), h('span.por-keycap', [arrowSvg('→')]), ' Adjust']),
-        h('span', [h('span.por-keycap', ['Enter']), padGlyph('A'), ' Toggle']),
-        h('span', [h('span.por-keycap', ['Esc']), padGlyph('B'), ' Back']),
+        h('span', [h('span.por-keycap', [arrowSvg('↑')]), h('span.por-keycap', [arrowSvg('↓')]), h('span.por-set-legend-lbl', ['Select'])]),
+        h('span', [h('span.por-keycap', [arrowSvg('←')]), h('span.por-keycap', [arrowSvg('→')]), h('span.por-set-legend-lbl', ['Adjust'])]),
+        h('span', [h('span.por-keycap', ['Enter']), padGlyph('A'), h('span.por-set-legend-lbl', ['Toggle'])]),
+        h('span', [h('span.por-keycap', ['Esc']), padGlyph('B'), h('span.por-set-legend-lbl', ['Back'])]),
       ]),
       h('div.por-set-actions', [
         h('button.por-btn', { type: 'button', onclick: () => this.resetSection() }, ['Restore defaults']),

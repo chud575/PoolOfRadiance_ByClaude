@@ -160,23 +160,25 @@ html, body {
 .por-frame--parchment::after { mix-blend-mode: multiply; opacity: 0.35; }
 .por-frame > * { position: relative; z-index: 1; }
 .por-corner {
-  position: absolute !important; z-index: 2 !important; width: 4.7em; height: 4.7em; pointer-events: none;
+  --cs: 5.4em;
+  position: absolute !important; z-index: 2 !important; width: var(--cs); height: var(--cs); pointer-events: none;
   background: var(--filigree-corner) center / contain no-repeat;
   filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.95)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.55));
 }
-.por-corner.tl { top: -0.78em; left: -0.78em; }
-.por-corner.tr { top: -0.78em; right: -0.78em; transform: scaleX(-1); }
-.por-corner.bl { bottom: -0.78em; left: -0.78em; transform: scaleY(-1); }
-.por-corner.br { bottom: -0.78em; right: -0.78em; transform: scale(-1, -1); }
+/* the ornament's own corner sits 26% in: it straddles the gilt band, never the content */
+.por-corner.tl { top: calc(var(--cs) * -0.26 - 2px); left: calc(var(--cs) * -0.26 - 2px); }
+.por-corner.tr { top: calc(var(--cs) * -0.26 - 2px); right: calc(var(--cs) * -0.26 - 2px); transform: scaleX(-1); }
+.por-corner.bl { bottom: calc(var(--cs) * -0.26 - 2px); left: calc(var(--cs) * -0.26 - 2px); transform: scaleY(-1); }
+.por-corner.br { bottom: calc(var(--cs) * -0.26 - 2px); right: calc(var(--cs) * -0.26 - 2px); transform: scale(-1, -1); }
 /* small frames (HUD roster, tooltips-sized panels) use a lighter corner */
-.por-hud-right > .por-corner { width: 2.8em; height: 2.8em; }
+.por-hud-right > .por-corner { --cs: 3.6em; }
 .por-frame-title {
-  position: absolute !important; top: -1em; left: 50%; transform: translateX(-50%);
-  padding: 0.24em 1.7em 0.2em; white-space: nowrap;
-  font-family: var(--font-display); font-weight: 700; font-size: 0.8em; letter-spacing: 0.26em; text-transform: uppercase;
+  position: absolute !important; top: -1.08em; left: 50%; transform: translateX(-50%);
+  padding: 0.34em 2.2em 0.3em; white-space: nowrap;
+  font-family: var(--font-display); font-weight: 700; font-size: 0.86em; letter-spacing: 0.3em; text-transform: uppercase;
   color: #1b1206; background: var(--gilt-grad);
-  clip-path: polygon(0.8em 0, calc(100% - 0.8em) 0, 100% 50%, calc(100% - 0.8em) 100%, 0.8em 100%, 0 50%);
-  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.85));
+  clip-path: polygon(1em 0, calc(100% - 1em) 0, 100% 50%, calc(100% - 1em) 100%, 1em 100%, 0 50%);
+  filter: drop-shadow(0 0 0 #2a1d08) drop-shadow(0 2px 3px rgba(0, 0, 0, 0.85));
   text-shadow: 0 1px 0 rgba(255, 244, 210, 0.6);
 }
 .por-frame-title::before, .por-frame-title::after {

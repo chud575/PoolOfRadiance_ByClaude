@@ -122,9 +122,9 @@ export function createWorld() {
   const systems = [motes, embersL, embersR, drift];
   for (const s of systems) scene.add(s.points);
 
-  // the dragon glides west across the brightest band of the sunset, just above the
-  // skyline left of the logo, big enough to be the title card's second focal beat
-  const dragonPath = { x: -40, y: 15.5, z: -137, dx: 4.2, span: 380 };
+  // the dragon glides west across the sunset sky right of the logo, clear of the
+  // colonnade, over the Moonsea: the title card's second focal beat
+  const dragonPath = { x: 98, y: 21, z: -137, dx: 4.2, span: 380 };
   dragon.group.scale.setScalar(2.5);
 
   const api = {
@@ -158,8 +158,18 @@ export function createWorld() {
       fill.position.set(8 + k * 60, 12 + k * 20, 30 + k * 10);
       sun.intensity = 2.2 + k * 2.4;
       sun.color.setHex(0xff8a4a).lerp(new THREE.Color(0xffa060), k);
-      moon.intensity = k * 1.25;
+      moon.intensity = k * 1.25 + (this._moon ?? 0);
       castleKey.intensity = 4.5 * (0.4 + 0.6 * k);
+    },
+    /** Show or hide the dragon (the intro keeps it out of the close city shots). */
+    setDragon(on) {
+      dragon.group.visible = !!on;
+    },
+    /** Extra cool sky key for a shot (City Hall: gives roofs and the dome a sky-lit side). */
+    setMoon(m) {
+      if ((this._moon ?? 0) === m) return;
+      this._moon = m;
+      this.setLook(this._look ?? 0);
     },
     /** Move the lighting rig indoors (council chamber shot): k = 0 outdoors, 1 inside. */
     setInterior(on) {
