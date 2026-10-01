@@ -26,9 +26,9 @@ const HAIR = [0x2a1a10, 0x5a3418, 0x8a5a2a, 0xb88a4a, 0xd8c08a, 0x7a2a14, 0x1a1a
 // ------------------------------------------------------------------ species
 const SPECIES = {
   human: { height: 1.0, bulk: 1.0, head: 'human' },
-  kobold: { height: 0.62, bulk: 0.85, head: 'kobold', skin: ['scales', 0x9a4a2a], tail: true, legs: 'digitigrade', hunch: 0.2, cloth: 0x4a3a28, weapon: 'spear', eyes: 0xffc040 },
+  kobold: { height: 0.72, bulk: 1.08, head: 'kobold', headScale: 1.15, skin: ['reptile', 0x8a4624], tail: 'long', legs: 'digitigrade', hunch: 0.34, thickNeck: true, cloth: 0x4a3a28, armor: 'harness', weapon: 'spear', weapons: ['spear', 'spear', 'shortSword', 'club'], eyes: 0xffc040 },
   goblin: { height: 0.66, bulk: 0.9, head: 'goblin', skin: ['skin', 0x8a9a3a], hunch: 0.15, cloth: 0x4a3020, weapon: 'shortSword', eyes: 0xffe060 },
-  orc: { height: 1.02, bulk: 1.18, head: 'orc', skin: ['skin', 0x6a7a4a], hunch: 0.25, cloth: 0x3a2a1c, armor: 'scraps', weapon: 'battleAxe', eyes: 0xff4020 },
+  orc: { height: 1.04, bulk: 1.28, head: 'orc', skin: ['skin', 0x535d48], hunch: 0.36, cloth: 0x2e2418, armor: 'orcish', weapon: 'battleAxe', weapons: ['battleAxe', 'battleAxe', 'spear', 'morningStar', 'club'], helmChance: 0.55, eyes: 0xff4020 },
   hobgoblin: { height: 1.08, bulk: 1.12, head: 'hobgoblin', skin: ['skin', 0xb0582a], cloth: 0x5a1e18, armor: 'scale', weapon: 'longSword', shield: 'round', eyes: 0xffa020 },
   gnoll: { height: 1.2, bulk: 1.15, head: 'gnoll', skin: ['fur', 0x9a7a4a], hunch: 0.3, legs: 'digitigrade', cloth: 0x3a2e22, armor: 'scraps', weapon: 'flail', eyes: 0xffd040 },
   giantRat: { rig: 'quad', skin: ['fur', 0x4a3a30], height: 0.55, eyes: 0xff3020 },
@@ -105,12 +105,15 @@ export function makeFigureModel(c, index = 0) {
   const seed = hashStr(c.id);
   if (sp.rig === 'quad') return buildRat(sp, seed);
   if (sp.rig === 'spider') return buildSpider(sp, seed);
+  // Per-individual variation: gear, helm, stature.
+  const pick = (arr, k) => arr[Math.floor(hashStr(`${c.id}:${k}`) * arr.length)];
   const kit = {
     color: sp.cloth ?? 0x3a3024,
-    weapon: sp.weapon === undefined ? 'club' : sp.weapon,
+    weapon: sp.weapons ? pick(sp.weapons, 'w') : sp.weapon === undefined ? 'club' : sp.weapon,
+    variant: hashStr(`${c.id}:v`),
     armor: sp.armor ?? (sp.body === 'bones' ? 'none' : 'loincloth'),
     shield: sp.shield ?? null,
-    helm: null,
+    helm: sp.helmChance && hashStr(`${c.id}:h`) < sp.helmChance ? 'orcHelm' : null,
     human: sp.human,
     stripes: sp.stripes,
     tattered: sp.tattered,
@@ -118,10 +121,10 @@ export function makeFigureModel(c, index = 0) {
     hair: 0x1a120a,
   };
   return buildBiped({
-    height: sp.height * (0.97 + seed * 0.06),
-    bulk: sp.bulk,
+    height: sp.height * (0.94 + seed * 0.12),
+    bulk: sp.bulk * (0.95 + hashStr(`${c.id}:b`) * 0.1),
     legRatio: sp.legRatio ?? 1,
-    headScale: 1,
+    headScale: sp.headScale ?? 1,
     head: sp.head,
     body: sp.body,
     skin: sp.skinTone ? ['skin', sp.skinTone] : sp.skin,
@@ -134,6 +137,7 @@ export function makeFigureModel(c, index = 0) {
     eyes: sp.eyes,
     armsForward: sp.armsForward,
     digitigrade: sp.legs === 'digitigrade',
+    thickNeck: sp.thickNeck,
     seed,
   });
 }
@@ -158,6 +162,7 @@ function buildBiped(o) {
   const metal = pbr('metal', 0xb8bcc4);
   const darkMetal = pbr('metal', 0x5a5c62);
   const gold = pbr('gold', 0xd8b25a);
+  const rust = pbr('metal', 0x5e4434);
   const wood = pbr('wood', 0x7a5230);
   const bones = o.body === 'bones';
   const boneMat = bones ? skinMat : null;
@@ -191,7 +196,7 @@ function buildBiped(o) {
   }
 
   // Body --------------------------------------------------------------
-  const torsoMat = bones ? boneMat : kit.armor === 'robe' ? clothMat : kit.armor === 'loincloth' || kit.armor === 'none' || kit.armor === 'scraps' ? skinMat : clothMat;
+  const torsoMat = bones ? boneMat : kit.armor === 'robe' ? clothMat : kit.armor === 'loincloth' || kit.armor === 'none' || kit.armor === 'scraps' || kit.armor === 'orcish' || kit.armor === 'harness' ? skinMat : clothMat;
   if (bones) {
     // Spine column, ribcage hoops, pelvis.
     for (let i = 0; i < 5; i++) R.part('spine', sphere(0.028 * s, 8, 6), boneMat, { p: [0, i * 0.045 * s, -0.04 * s] });
@@ -231,14 +236,16 @@ function buildBiped(o) {
     // Deltoid: rounds the shoulder into the arm.
     R.part(`upperArm${side}`, sphere(0.066 * s * bw, 12, 10), armMat, { p: [sx * 0.008 * s, -0.012 * s, 0], s: [1, 1.1, 1] });
     R.part(`upperArm${side}`, limb(0.055 * s * bw, 0.045 * s * bw, armU), armMat);
-    R.part(`foreArm${side}`, limb(0.046 * s * bw, 0.036 * s * bw, armF), kit.armor === 'robe' ? clothMat : o.claws || kit.armor === 'loincloth' || kit.armor === 'scraps' || kit.armor === 'none' ? skinMat : kit.armor === 'chain' || kit.armor === 'plate' ? armMat : skinMat);
+    R.part(`foreArm${side}`, limb(0.046 * s * bw, 0.036 * s * bw, armF), kit.armor === 'robe' ? clothMat : o.claws || kit.armor === 'loincloth' || kit.armor === 'scraps' || kit.armor === 'orcish' || kit.armor === 'harness' || kit.armor === 'none' ? skinMat : kit.armor === 'chain' || kit.armor === 'plate' ? armMat : skinMat);
     // Hand: palm + thumb; claws for beasts.
     R.part(`hand${side}`, rbox(0.075 * s * bw, 0.095 * s, 0.05 * s, 0.018 * s), skinMat, { p: [0, -0.05 * s, 0.005 * s] });
     R.part(`hand${side}`, limb(0.014 * s, 0.012 * s, 0.045 * s, { seg: 6 }), skinMat, { p: [sx * -0.03 * s, -0.03 * s, 0.025 * s], r: [0.6, 0, sx * 0.4] });
     if (o.claws) for (let k = 0; k < 3; k++) R.part(`hand${side}`, cone(0.01 * s, 0.08 * s, 5), pbr('bone', 0x3a3024), { p: [(k - 1) * 0.022 * s, -0.12 * s, 0.01 * s], r: [Math.PI, 0, 0] });
-    const legMat = kit.armor === 'robe' ? darkCloth : kit.armor === 'plate' ? pbr('chain', 0x9a9ea6) : o.skin[0] === 'fur' || o.skin[0] === 'scales' ? skinMat : kit.armor === 'loincloth' || kit.armor === 'none' ? skinMat : darkCloth;
-    R.part(`thigh${side}`, limb(0.08 * s * bw, 0.055 * s * bw, thighL), legMat);
-    R.part(`shin${side}`, limb(0.056 * s * bw, 0.042 * s * bw, shinL), o.digitigrade ? skinMat : kit.race === 'monster' ? legMat : darkLeather);
+    const legMat = kit.armor === 'robe' ? darkCloth : kit.armor === 'plate' ? pbr('chain', 0x9a9ea6) : kit.armor === 'orcish' ? pbr('cloth', 0x2a221a) : o.skin[0] === 'fur' || o.skin[0] === 'scales' || o.skin[0] === 'reptile' ? skinMat : kit.armor === 'loincloth' || kit.armor === 'none' ? skinMat : darkCloth;
+    // Brutes (orcs, ogres) get heavy legs; everyone else the classic proportions.
+    const lw = w > 1.15 ? w * 1.05 : bw;
+    R.part(`thigh${side}`, limb(0.08 * s * lw, 0.058 * s * lw, thighL), legMat);
+    R.part(`shin${side}`, limb(0.06 * s * lw, 0.045 * s * lw, shinL), o.digitigrade ? skinMat : kit.race === 'monster' ? legMat : darkLeather);
     // Boots / feet.
     if (o.digitigrade) {
       R.part(`foot${side}`, rbox(0.08 * s, 0.05 * s, 0.2 * s, 0.02 * s), skinMat, { p: [0, -0.03 * s, 0.06 * s] });
@@ -257,6 +264,21 @@ function buildBiped(o) {
     if (kit.armor === 'chain' || kit.armor === 'scale') {
       R.part(`upperArm${side}`, sphere(0.085 * s * bw, 12, 8, { thetaLength: Math.PI * 0.55 }), kit.armor === 'scale' ? pbr('scales', 0x8a8070) : leather, { p: [sx * 0.015 * s, 0.01 * s, 0], s: [1, 0.85, 1.05] });
       R.part(`foreArm${side}`, cyl(0.052 * s, 0.044 * s, 0.13 * s, 10), leather, { p: [0, -armF + 0.08 * s, 0] });
+    }
+    if (kit.armor === 'orcish') {
+      // Crude, mismatched gear: a rusty pauldron on one or both shoulders, leather bracers, wrapped shins.
+      const both = (kit.variant ?? 0) > 0.5;
+      if (side === 'R' || both) {
+        R.part(`upperArm${side}`, sphere(0.1 * s * bw, 10, 8, { thetaLength: Math.PI * 0.5 }), rust, { p: [sx * 0.02 * s, 0.025 * s, 0], s: [1.15, 0.85, 1.15], r: [0, 0, sx * -0.25] });
+        R.part(`upperArm${side}`, sphere(0.09 * s * bw, 10, 6, { thetaLength: Math.PI * 0.45 }), rust, { p: [sx * 0.03 * s, -0.035 * s, 0], s: [1.1, 0.7, 1.1], r: [0, 0, sx * -0.35] });
+        for (let k = 0; k < 3; k++) R.part(`upperArm${side}`, sphere(0.012 * s, 5, 4), darkMetal, { p: [sx * (0.03 + k * 0.03) * s, 0.09 * s - k * 0.02 * s, 0.05 * s] });
+      } else {
+        R.part(`upperArm${side}`, sphere(0.085 * s * bw, 10, 6, { thetaLength: Math.PI * 0.5 }), darkLeather, { p: [sx * 0.01 * s, 0.01 * s, 0], s: [1.1, 0.8, 1.1] });
+      }
+      R.part(`foreArm${side}`, cyl(0.054 * s * bw, 0.046 * s * bw, 0.14 * s, 9), darkLeather, { p: [0, -armF + 0.09 * s, 0] });
+      for (let k = 0; k < 2; k++) R.part(`foreArm${side}`, torus(0.053 * s * bw, 0.006 * s, 4, 12), leather, { p: [0, -armF + (0.05 + k * 0.08) * s, 0], r: [Math.PI / 2, 0, 0] });
+      R.part(`shin${side}`, cyl(0.06 * s, 0.05 * s, 0.24 * s, 9), darkLeather, { p: [0, -shinL * 0.55, 0] });
+      for (let k = 0; k < 3; k++) R.part(`shin${side}`, torus(0.058 * s, 0.006 * s, 4, 12), leather, { p: [0, -shinL * 0.35 - k * 0.07 * s, 0], r: [Math.PI / 2 + 0.15, 0, 0] });
     }
     if (kit.armor === 'leather') {
       R.part(`upperArm${side}`, sphere(0.078 * s, 12, 8, { thetaLength: Math.PI * 0.5 }), leather, { p: [sx * 0.01 * s, 0, 0], s: [1, 0.8, 1] });
@@ -305,6 +327,34 @@ function buildBiped(o) {
       R.part('chest', lathe([[0.18, -0.02], [0.2, 0.12], [0.16, 0.22]].map(([r, y]) => [r * s, y * s]), 14, { xs: w * 1.1, zs: 0.7 }), darkLeather);
       R.part('hips', lathe([[0.2, -0.18], [0.17, -0.06], [0.16, 0.02]].map(([r, y]) => [r * s, y * s]), 16, { xs: w, zs: 0.74 }), darkCloth);
       if (kit.stripes) for (let k = 0; k < 4; k++) R.part('spine', torus(0.158 * s * w, 0.006 * s, 4, 20), pbr('cloth', 0x8a1a1a), { p: [0, k * 0.05 * s, 0], r: [Math.PI / 2, 0, 0], s: [1, 0.72, 1] });
+    } else if (kit.armor === 'orcish') {
+      // Layered crude armour: a hide jerkin, a rusty breastplate (dented, strapped on),
+      // cross straps, a skull-buckled belt and hanging leather tassets.
+      torsoShell(darkLeather, 1.07, -0.12);
+      const v = kit.variant ?? 0;
+      if (v < 0.75) {
+        R.part('chest', lathe([[0.15, -0.02], [0.18, 0.06], [0.19, 0.14], [0.15, 0.2]].map(([r, y]) => [r * s, y * s]), 12, { xs: w * 1.1, zs: 0.74 }), rust, { p: [0, 0, 0.012 * s], s: [1, 1, 1], r: [0.04, 0, 0] });
+        for (const sx of [1, -1]) for (const y of [0.02, 0.16]) R.part('chest', sphere(0.012 * s, 5, 4), darkMetal, { p: [sx * 0.11 * s * w, y * s, 0.13 * s] });
+      }
+      for (const sx of [1, -1]) R.part('chest', box(0.03 * s, 0.38 * s, 0.012 * s), leather, { p: [0, 0.08 * s, 0.145 * s], r: [0, 0, sx * 0.55] });
+      R.part('chest', box(0.03 * s, 0.38 * s, 0.012 * s), leather, { p: [0, 0.08 * s, -0.135 * s], r: [0, 0, 0.55] });
+      R.part('hips', torus(0.168 * s * w, 0.024 * s, 6, 22), darkLeather, { p: [0, 0.04 * s, 0], r: [Math.PI / 2, 0, 0], s: [1, 0.76, 1] });
+      R.part('hips', sphere(0.034 * s, 8, 6), pbr('bone', 0xd8ccb0), { p: [0, 0.04 * s, 0.135 * s], s: [1, 1.1, 0.7] });
+      for (let k = 0; k < 6; k++) {
+        const a = (k / 6) * Math.PI * 2 + 0.3;
+        R.part('hips', box(0.075 * s, (0.2 + (k % 2) * 0.05) * s, 0.012 * s), k % 3 ? darkLeather : rust, { p: [Math.sin(a) * 0.17 * s * w, -0.1 * s, Math.cos(a) * 0.125 * s], r: [Math.cos(a) * 0.15, a, 0] });
+      }
+      R.part('hips', lathe([[0.2, -0.16], [0.17, -0.06], [0.16, 0.02]].map(([r, y]) => [r * s, y * s]), 12, { xs: w, zs: 0.74 }), pbr('cloth', 0x2a221a));
+      // A trophy: bone fetish on a cord.
+      if (v > 0.4) R.part('chest', cone(0.012 * s, 0.06 * s, 5), pbr('bone', 0xe0d4b8), { p: [0.04 * s, 0.1 * s, 0.16 * s], r: [Math.PI, 0, 0.3] });
+    } else if (kit.armor === 'harness') {
+      // Kobold: a scrap of loincloth and a leather harness with a pouch.
+      R.part('hips', box(0.12 * s * w, 0.22 * s, 0.012 * s), darkCloth, { p: [0, -0.13 * s, 0.13 * s], r: [0.1, 0, 0] });
+      R.part('hips', torus(0.152 * s * w, 0.016 * s, 5, 16), darkLeather, { p: [0, 0.02 * s, 0], r: [Math.PI / 2, 0, 0], s: [1, 0.74, 1] });
+      R.part('chest', box(0.026 * s, 0.34 * s, 0.01 * s), darkLeather, { p: [0, 0.08 * s, 0.13 * s], r: [0, 0, 0.6] });
+      R.part('hips', rbox(0.06 * s, 0.07 * s, 0.04 * s, 0.012 * s), leather, { p: [0.12 * s * w, -0.03 * s, 0.07 * s], r: [0, 0.6, 0] });
+      // Pale belly scales.
+      R.part('spine', lathe([[0.1, -0.02], [0.12, 0.1], [0.11, 0.22]].map(([r, y]) => [r * s, y * s]), 10, { xs: w * 0.8, zs: 0.5 }), pbr('reptile', 0xc89a62), { p: [0, 0, 0.05 * s] });
     } else if (kit.armor === 'scraps') {
       R.part('chest', box(0.2 * s * w, 0.14 * s, 0.05 * s), darkLeather, { p: [0.03 * s, 0.12 * s, 0.1 * s], r: [0, 0, 0.3] });
       R.part('upperArmR', sphere(0.08 * s * w, 10, 6, { thetaLength: Math.PI * 0.5 }), darkMetal, { p: [0, 0.01 * s, 0], s: [1.1, 0.9, 1.1] });
@@ -329,12 +379,20 @@ function buildBiped(o) {
 
   // Head -----------------------------------------------------------------
   buildHead(R, o, s, skinMat);
+  if (o.thickNeck) {
+    // Reptiles: a thick, forward-slung neck bridging the big head to the shoulders.
+    R.part('neck', limb(0.065 * s, 0.075 * s, 0.12 * s, { seg: 10 }), skinMat, { p: [0, 0.1 * s, 0.01 * s], r: [0.35, 0, 0] });
+    R.part('head', sphere(0.07 * s, 10, 8), skinMat, { p: [0, 0.02 * s, -0.04 * s] });
+  }
 
   // Tail.
   if (o.tail) {
-    R.part('tail1', limb(0.05 * s, 0.035 * s, 0.24 * s, { seg: 8 }), skinMat, { r: [Math.PI / 2, 0, 0] });
-    R.part('tail2', limb(0.035 * s, 0.022 * s, 0.22 * s, { seg: 8 }), skinMat, { r: [Math.PI / 2, 0, 0] });
-    R.part('tail3', limb(0.022 * s, 0.006 * s, 0.2 * s, { seg: 6 }), skinMat, { r: [Math.PI / 2, 0, 0] });
+    const tk = o.tail === 'long' ? 1.35 : 1;
+    R.part('tail1', limb(0.062 * s * tk, 0.045 * s * tk, 0.24 * s * tk, { seg: 8 }), skinMat, { r: [Math.PI / 2, 0, 0] });
+    R.part('tail2', limb(0.045 * s * tk, 0.028 * s * tk, 0.22 * s * tk, { seg: 8 }), skinMat, { r: [Math.PI / 2, 0, 0] });
+    R.part('tail3', limb(0.028 * s * tk, 0.006 * s, 0.22 * s * tk, { seg: 6 }), skinMat, { r: [Math.PI / 2, 0, 0] });
+    // Dorsal ridge along the tail.
+    for (let k = 0; k < 3; k++) R.part(`tail${k + 1}`, cone(0.012 * s * tk, 0.045 * s * tk, 4), skinMat, { p: [0, 0.035 * s * tk * (1 - k * 0.3), -0.1 * s * tk], r: [-0.6, 0, 0] });
   }
 
   // Cape: three cloth panels hanging from the shoulders.
@@ -522,18 +580,32 @@ function buildHead(R, o, s, skinMat) {
       break;
     }
     case 'orc': {
-      R.part('head', sphere(0.11 * hs, 18, 14), skinMat, { p: [0, hy, -0.01 * hs], s: [1.05, 0.95, 1] });
-      R.part('head', sphere(0.095 * hs, 14, 10), skinMat, { p: [0, hy - 0.055 * hs, 0.03 * hs], s: [1.15, 0.72, 1.05] });
-      R.part('head', box(0.17 * hs, 0.035 * hs, 0.05 * hs), skinMat, { p: [0, hy + 0.035 * hs, 0.08 * hs], r: [0.2, 0, 0] });
-      // Pig snout.
-      R.part('head', cyl(0.035 * hs, 0.04 * hs, 0.05 * hs, 10), pbr('skin', 0x8a8a5a), { p: [0, hy - 0.01 * hs, 0.115 * hs], r: [Math.PI / 2, 0, 0] });
+      // Heavy, brutish: low sloped cranium, jutting underbite jaw with tusks,
+      // a thick brow shelf over deep-set eyes, a flat broad nose, swept ears.
+      const dark = pbr('skin', 0x3a4232);
+      R.part('head', sphere(0.105 * hs, 18, 14), skinMat, { p: [0, hy + 0.005 * hs, -0.02 * hs], s: [1.05, 0.88, 1.05] });
+      R.part('head', rbox(0.17 * hs, 0.08 * hs, 0.13 * hs, 0.035 * hs), skinMat, { p: [0, hy - 0.07 * hs, 0.045 * hs], r: [-0.12, 0, 0] });
+      R.part('head', box(0.19 * hs, 0.042 * hs, 0.06 * hs), dark, { p: [0, hy + 0.03 * hs, 0.085 * hs], r: [0.35, 0, 0] });
+      for (const sx of [1, -1]) R.part('head', sphere(0.035 * hs, 8, 6), dark, { p: [sx * 0.05 * hs, hy + 0.035 * hs, 0.095 * hs], s: [1.3, 0.6, 0.8] });
+      R.part('head', sphere(0.034 * hs, 10, 8), dark, { p: [0, hy - 0.012 * hs, 0.118 * hs], s: [1.35, 0.75, 0.9] });
       for (const sx of [1, -1]) {
-        R.part('head', sphere(0.01 * hs, 6, 5), pbr('eye', 0x100808), { p: [sx * 0.014 * hs, hy - 0.01 * hs, 0.142 * hs] });
-        R.part('head', sphere(0.013 * hs, 8, 6), eyeMat, { p: [sx * 0.042 * hs, hy + 0.018 * hs, 0.098 * hs] });
-        R.part('head', cone(0.012 * hs, 0.055 * hs, 6), pbr('bone', 0xe8dcc0), { p: [sx * 0.045 * hs, hy - 0.05 * hs, 0.1 * hs], r: [-0.25, 0, sx * -0.15] });
-        R.part('head', cone(0.028 * hs, 0.08 * hs, 5), skinMat, { p: [sx * 0.11 * hs, hy + 0.01 * hs, -0.02 * hs], r: [0.3, 0, sx * -1.2] });
+        R.part('head', sphere(0.009 * hs, 6, 5), pbr('eye', 0x080404), { p: [sx * 0.016 * hs, hy - 0.022 * hs, 0.142 * hs] });
+        R.part('head', sphere(0.022 * hs, 8, 6), pbr('eye', 0x0a0606), { p: [sx * 0.045 * hs, hy + 0.012 * hs, 0.09 * hs] });
+        R.part('head', sphere(0.012 * hs, 8, 6), eyeMat, { p: [sx * 0.045 * hs, hy + 0.012 * hs, 0.103 * hs] });
+        // Tusks from the lower jaw, curving up past the lip.
+        R.part('head', cone(0.017 * hs, 0.085 * hs, 7), pbr('bone', 0xe6dac0), { p: [sx * 0.055 * hs, hy - 0.05 * hs, 0.11 * hs], r: [-0.35, 0, sx * -0.28] });
+        R.part('head', cone(0.035 * hs, 0.11 * hs, 5), skinMat, { p: [sx * 0.115 * hs, hy + 0.0 * hs, -0.03 * hs], r: [0.5, 0, sx * -1.25], s: [1, 1, 0.45] });
       }
-      R.part('head', limb(0.03 * hs, 0.012 * hs, 0.16 * hs, { seg: 6 }), pbr('hair', 0x1a1410), { p: [0, hy + 0.1 * hs, -0.05 * hs], r: [-0.8, 0, 0] });
+      R.part('head', box(0.11 * hs, 0.012 * hs, 0.012 * hs), dark, { p: [0, hy - 0.072 * hs, 0.112 * hs] });
+      if (kit.helm === 'orcHelm') {
+        const rustM = pbr('metal', 0x5e4434);
+        R.part('head', sphere(0.118 * hs, 14, 10, { thetaLength: Math.PI * 0.5 }), rustM, { p: [0, hy + 0.012 * hs, -0.015 * hs], s: [1.05, 0.9, 1.08] });
+        R.part('head', box(0.02 * hs, 0.08 * hs, 0.02 * hs), rustM, { p: [0, hy + 0.0 * hs, 0.112 * hs], r: [0.3, 0, 0] });
+        for (const sx of [1, -1]) R.part('head', cone(0.022 * hs, 0.1 * hs, 6), pbr('bone', 0xd0c4a8), { p: [sx * 0.1 * hs, hy + 0.09 * hs, -0.01 * hs], r: [0.2, 0, sx * -0.7] });
+      } else {
+        // Greasy black topknot / crest.
+        for (let k = 0; k < 4; k++) R.part('head', limb(0.028 * hs, 0.01 * hs, 0.12 * hs, { seg: 6 }), pbr('hair', 0x141010), { p: [0, hy + 0.085 * hs, 0.02 * hs - k * 0.04 * hs], r: [-0.6 - k * 0.35, 0, 0] });
+      }
       break;
     }
     case 'goblin': {
@@ -547,18 +619,22 @@ function buildHead(R, o, s, skinMat) {
       break;
     }
     case 'kobold': {
-      R.part('head', sphere(0.1 * hs, 16, 12), skinMat, { p: [0, hy, 0], s: [0.95, 0.92, 1.05] });
-      // Snout (upper + lower jaw).
-      R.part('head', rbox(0.09 * hs, 0.06 * hs, 0.16 * hs, 0.025 * hs), skinMat, { p: [0, hy - 0.015 * hs, 0.12 * hs], r: [0.12, 0, 0] });
-      R.part('head', rbox(0.075 * hs, 0.03 * hs, 0.13 * hs, 0.012 * hs), skinMat, { p: [0, hy - 0.055 * hs, 0.1 * hs], r: [-0.1, 0, 0] });
-      for (let k = 0; k < 3; k++) for (const sx of [1, -1]) R.part('head', cone(0.006 * hs, 0.02 * hs, 4), pbr('bone', 0xf0e8d0), { p: [sx * 0.03 * hs, hy - 0.045 * hs, 0.14 * hs + k * 0.03 * hs - 0.03 * hs], r: [Math.PI, 0, 0] });
+      // Reptilian dog-lizard: a wedge snout with nostril bumps and a row of teeth,
+      // swept-back horns, frilled ears and a crest — readable at tactics zoom.
+      const hornMat = pbr('bone', 0xd8c8a0);
+      const lightScale = pbr('reptile', 0xc89a62);
+      R.part('head', sphere(0.095 * hs, 16, 12), skinMat, { p: [0, hy + 0.01 * hs, -0.01 * hs], s: [0.95, 0.9, 1.05] });
+      R.part('head', rbox(0.085 * hs, 0.06 * hs, 0.19 * hs, 0.026 * hs), skinMat, { p: [0, hy - 0.01 * hs, 0.13 * hs], r: [0.16, 0, 0] });
+      R.part('head', rbox(0.072 * hs, 0.028 * hs, 0.16 * hs, 0.012 * hs), lightScale, { p: [0, hy - 0.058 * hs, 0.11 * hs], r: [-0.12, 0, 0] });
+      for (const sx of [1, -1]) R.part('head', sphere(0.01 * hs, 6, 5), pbr('eye', 0x100604), { p: [sx * 0.02 * hs, hy + 0.012 * hs, 0.22 * hs] });
+      for (let k = 0; k < 4; k++) for (const sx of [1, -1]) R.part('head', cone(0.006 * hs, 0.022 * hs, 4), pbr('bone', 0xf0e8d0), { p: [sx * 0.032 * hs, hy - 0.045 * hs, 0.17 * hs + k * 0.025 * hs - 0.05 * hs], r: [Math.PI, 0, 0] });
       for (const sx of [1, -1]) {
-        R.part('head', sphere(0.018 * hs, 8, 6), eyeMat, { p: [sx * 0.05 * hs, hy + 0.025 * hs, 0.075 * hs] });
-        R.part('head', cone(0.02 * hs, 0.1 * hs, 6), pbr('bone', 0xd8c8a0), { p: [sx * 0.05 * hs, hy + 0.09 * hs, -0.04 * hs], r: [-0.9, 0, sx * -0.3] });
-        R.part('head', cone(0.035 * hs, 0.06 * hs, 4), skinMat, { p: [sx * 0.085 * hs, hy + 0.03 * hs, -0.04 * hs], r: [0, 0, sx * -1.2], s: [1, 1, 0.3] });
+        R.part('head', sphere(0.02 * hs, 8, 6), eyeMat, { p: [sx * 0.05 * hs, hy + 0.03 * hs, 0.075 * hs] });
+        R.part('head', box(0.04 * hs, 0.012 * hs, 0.03 * hs), skinMat, { p: [sx * 0.048 * hs, hy + 0.05 * hs, 0.08 * hs], r: [0.3, 0, sx * -0.3] });
+        R.part('head', cone(0.022 * hs, 0.14 * hs, 6), hornMat, { p: [sx * 0.05 * hs, hy + 0.08 * hs, -0.07 * hs], r: [-1.15, 0, sx * -0.35] });
+        R.part('head', cone(0.04 * hs, 0.08 * hs, 4), skinMat, { p: [sx * 0.09 * hs, hy + 0.02 * hs, -0.04 * hs], r: [0, 0, sx * -1.25], s: [1, 1, 0.3] });
       }
-      // Dorsal crest.
-      for (let k = 0; k < 4; k++) R.part('head', cone(0.012 * hs, 0.04 * hs, 4), skinMat, { p: [0, hy + 0.095 * hs - k * 0.02 * hs, -0.02 * hs - k * 0.035 * hs], r: [-0.5 - k * 0.3, 0, 0] });
+      for (let k = 0; k < 4; k++) R.part('head', cone(0.014 * hs, 0.05 * hs, 4), skinMat, { p: [0, hy + 0.09 * hs - k * 0.022 * hs, -0.03 * hs - k * 0.038 * hs], r: [-0.5 - k * 0.3, 0, 0] });
       break;
     }
     case 'gnoll': {

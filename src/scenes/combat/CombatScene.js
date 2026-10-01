@@ -14,15 +14,17 @@ import { awardXp } from '../../rules/character.js';
 import { Battlefield, DIR8 } from './logic/battlefield.js';
 import { CombatEngine } from './logic/engine.js';
 import { decide } from './logic/ai.js';
-import { SPELL_TACTICS } from './logic/spells.js';
+import { SPELL_TACTICS, casterLevel } from './logic/spells.js';
 import { buildDiorama, TILE } from './view/terrain.js';
 import { makeFigureModel } from './view/models.js';
-import { Figure } from './view/animator.js';
+import { Figure, RIM } from './view/animator.js';
 import { Overlay } from './view/overlay.js';
 import { VFX } from './view/vfx.js';
 import { CombatHud, describeHealth, fmtMp } from './ui/hud.js';
 import { DEMOS } from './demos.js';
 
+/** Portrait cache (data URLs) shared by every fight this session. */
+const PORTRAITS = new Map();
 const SPEEDS = [[0.6, 'Slow'], [1, 'Normal'], [1.6, 'Fast'], [2.4, 'Faster'], [4, 'Fastest']];
 const sq2w = (x, y) => new THREE.Vector3(x * TILE + TILE / 2, 0, y * TILE + TILE / 2);
 const yawTo = (a, b) => Math.atan2(b.x - a.x, b.y - a.y);
@@ -113,7 +115,9 @@ export default class CombatScene extends Scene {
     this.torchLights = [];
     const flames = [...this.diorama.torches].sort((a, b) => (b.brazier ? 1 : 0) - (a.brazier ? 1 : 0) || Math.hypot(a.x - this.center.x, a.z - this.center.z) - Math.hypot(b.x - this.center.x, b.z - this.center.z)).slice(0, 3);
     flames.forEach((f, i) => {
-      const l = new THREE.PointLight(0xff9a48, (this.night ? 30 : 7) * (f.brazier ? 1.4 : 1), f.brazier ? 13 : 10, 1.8);
+      const l = f.altar
+        ? new THREE.PointLight(0xffb468, this.night ? 16 : 5, 9, 1.8) // candle pool on the altar
+        : new THREE.PointLight(0xff9a48, (this.night ? 30 : 7) * (f.brazier ? 1.4 : 1), f.brazier ? 13 : 10, 1.8);
       l.position.set(f.x, f.y, f.z);
       l.userData.base = l.intensity;
       l.userData.seed = i * 2.3;
@@ -128,6 +132,8 @@ export default class CombatScene extends Scene {
     this.rim = new THREE.DirectionalLight(this.night ? 0x8fb0ff : 0xffe8c8, this.night ? 0.9 : 0.8);
     s.add(this.rim, this.rim.target);
     this.vfx = new VFX(s);
+    // Figure rim light: cool moonlit edge at night, warm sky edge by day.
+    RIM.uRimColor.value.set(this.night ? 0x4a64a8 : 0x8a7a64).multiplyScalar(this.night ? 0.9 : 0.55);
 
     this._placeCombatants();
     this.engine = new CombatEngine({ rng, field: this.field, party: this.party, monsters: this.monsters });
@@ -176,15 +182,25 @@ export default class CombatScene extends Scene {
     const zone = loc.map?.zoneAt?.(loc.at.x, loc.at.y) ?? 'Phlan';
     this.hud = new CombatHud(this.ctx, { location: zone, sub: `${this.encounter.name} · ${String(Math.floor(hour)).padStart(2, '0')}:00` });
     this.own(() => this.hud.dispose());
+    // Results are shown when they land (see _veil), not when the dice are rolled.
+    this.veil = new Map();
+    this.hud.view = {
+      has: (c) => this.veil.has(c.id),
+      hp: (c) => this.veil.get(c.id).hp,
+      out: (c) => this.veil.get(c.id).out,
+    };
     this.hud.setSpeed(SPEEDS[this.speedIdx][1]);
     this._frames = 0;
 
     // ------------------------------------------------ camera
-    this.cam = { yaw: 0.32, pitch: 0.86, dist: Math.max(W * 0.95, H * 1.35) + 4, target: this.center.clone(), goalTarget: this.center.clone(), goalYaw: 0.32, goalDist: 0, goalPitch: 0.86 };
+    this.cam = { yaw: 0.32, pitch: 0.8, dist: Math.max(W * 0.95, H * 1.35) + 4, target: this.center.clone(), goalTarget: this.center.clone(), goalYaw: 0.32, goalDist: 0, goalPitch: 0.8 };
     this.cam.maxDist = this.cam.dist * 1.2;
     this.cam.minDist = 8;
     this._frameCombatants(true);
-    if (!this.demo) this._chooseYaw();
+    if (!this.demo) {
+      this._chooseYaw();
+      this._frameCombatants(true);
+    }
     this.post = { bloomStrength: this.night ? 0.75 : 0.42, bloomThreshold: this.night ? 0.72 : 0.85, bloomRadius: 0.55, vignette: this.night ? 0.5 : 0.36, exposure: this.night ? 1.12 : 1.0, contrast: 1.06, saturation: this.night ? 0.98 : 1.06 };
     this._updateCamera(0, true);
 
@@ -199,7 +215,11 @@ export default class CombatScene extends Scene {
     this._snapTurns = 0;
 
     this.ctx.audio.playMusic('combat');
-    const count = this.encounter.groups.map((g) => `${this.monsters.filter((m) => m.monsterId === g.monster).length} ${this.monsters.find((m) => m.monsterId === g.monster)?.ref.plural ?? g.monster}`).join(' and ');
+    const count = this.encounter.groups.map((g) => {
+      const n = this.monsters.filter((m) => m.monsterId === g.monster).length;
+      const ref = this.monsters.find((m) => m.monsterId === g.monster)?.ref;
+      return `${n} ${n === 1 ? ref?.name ?? g.monster : ref?.plural ?? `${ref?.name ?? g.monster}s`}`;
+    }).join(' and ');
     this.ctx.ui.message(`${count.toUpperCase()} ATTACK!`, 'combat');
 
     // Initial HUD.
@@ -267,7 +287,8 @@ export default class CombatScene extends Scene {
       [c.x, c.y] = partySq[i] ?? [0, 0];
       taken.add(`${c.x},${c.y}`);
     });
-    // Monsters: an anchor at walking distance ~8-10 from the party, then a compact cluster.
+    // Monsters: an anchor at walking distance ~6-7 from the party (a tense opening, both
+    // sides in one readable frame), then a compact cluster.
     const fl = f.flood(start[0], start[1], () => false, 99);
     const cands = [];
     for (let y = 0; y < f.h; y++) {
@@ -276,7 +297,7 @@ export default class CombatScene extends Scene {
         if (!Number.isFinite(c) || !f.isFree(x, y) || !notRim(x, y)) continue;
         const openN = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => f.isFree(x + dx, y + dy)).length;
         const straight = Math.max(Math.abs(x - start[0]), Math.abs(y - start[1]));
-        cands.push({ x, y, score: -Math.abs(c - 9) - Math.max(0, straight - 8) * 1.5 - Math.max(0, c - straight - 3) * 1.2 + openN * 0.4 + ((x * 7 + y * 13) % 5) * 0.05 });
+        cands.push({ x, y, score: -Math.abs(c - 6.5) - Math.max(0, straight - 6) * 1.5 - Math.max(0, c - straight - 3) * 1.2 + openN * 0.4 + ((x * 7 + y * 13) % 5) * 0.05 });
       }
     }
     cands.sort((a, b) => b.score - a.score);
@@ -357,7 +378,19 @@ export default class CombatScene extends Scene {
     const prevExposure = r.toneMappingExposure;
     r.shadowMap.autoUpdate = false;
     const key = new THREE.Vector3();
+    const keyOf = (c) => {
+      const fig = this.figures.get(c.id);
+      return c.side === 'party'
+        ? `p|${c.ref.id}|${c.ref.race}|${c.ref.inventory.filter((e) => e.equipped).map((e) => e.id).join(',')}|${this.night ? 1 : 0}`
+        : `m|${c.monsterId}|${fig.model.kit?.helm ?? ''}|${fig.model.weapon ?? ''}|${this.night ? 1 : 0}`;
+    };
     for (const c of [...this.party, ...this.monsters]) {
+      // Same species + kit (or the same hero) → reuse the portrait (also across fights).
+      const pk = keyOf(c);
+      if (PORTRAITS.has(pk)) {
+        this.hud.portraits.set(c.id, PORTRAITS.get(pk));
+        continue;
+      }
       const fig = this.figures.get(c.id);
       fig.root.visible = true;
       const wasDead = fig.death;
@@ -394,7 +427,9 @@ export default class CombatScene extends Scene {
       grd.addColorStop(1, 'rgba(0,0,0,0.55)');
       g.fillStyle = grd;
       g.fillRect(0, 0, W, Hh);
-      this.hud.portraits.set(c.id, canvas.toDataURL('image/png'));
+      const url = canvas.toDataURL('image/png');
+      this.hud.portraits.set(c.id, url);
+      PORTRAITS.set(pk, url);
       fig.death = wasDead;
       fig.root.visible = false;
     }
@@ -409,6 +444,25 @@ export default class CombatScene extends Scene {
   }
 
   // =================================================================== time
+  /**
+   * Run `fn` once combat time reaches `t` (staged demos: log lines and HUD
+   * changes land with their VFX). Deterministic under a frozen clock.
+   */
+  at(t, fn) {
+    (this._timed ??= []).push({ t, fn });
+    this._timed.sort((a, b) => a.t - b.t);
+  }
+
+  _runTimed() {
+    if (!this._timed?.length) return;
+    let fired = false;
+    while (this._timed.length && this._timed[0].t <= this.time) {
+      this._timed.shift().fn();
+      fired = true;
+    }
+    if (fired) this._refresh(this.demoActive ?? this.engine.active());
+  }
+
   /** Promise that resolves after `sec` of (scaled) combat time; instant when frozen. */
   wait(sec) {
     if (this.snap || sec <= 0) return Promise.resolve();
@@ -429,7 +483,10 @@ export default class CombatScene extends Scene {
   }
 
   get speed() {
-    return SPEEDS[this.speedIdx][0] * (this.quickAll ? 1.8 : 1);
+    // On hardware that can't hold a frame rate (software GL) playback runs faster
+    // so monster turns stay snappy in wall-clock time.
+    const slow = (this._slowFrames ?? 0) >= 3 ? 2.2 : 1;
+    return SPEEDS[this.speedIdx][0] * (this.quickAll ? 1.8 : 1) * slow;
   }
 
   // =================================================================== director
@@ -544,6 +601,7 @@ export default class CombatScene extends Scene {
     this.hud.closeMenu();
     this.overlay.setTemplate([]);
     this.overlay.setPath(null, null);
+    this.overlay.setRay(null, null);
     this.overlay.targetRing.visible = false;
     if (!c) return;
     if (mode === 'move') {
@@ -565,7 +623,8 @@ export default class CombatScene extends Scene {
       this.overlay.setRange(null, 0);
       const targets = this.engine.enemiesOf(c).filter((e) => this.engine.canAttack(c, e).ok);
       this.overlay.setTemplate([], targets.map((e) => ({ x: e.x, y: e.y })));
-      this.aimList = this.engine.enemiesOf(c).sort((a, b) => Battlefield.dist(c.x, c.y, a.x, a.y) - Battlefield.dist(c.x, c.y, b.x, b.y));
+      const valid = targets.length ? targets : this.engine.enemiesOf(c);
+      this.aimList = valid.slice().sort((a, b) => Battlefield.dist(c.x, c.y, a.x, a.y) - Battlefield.dist(c.x, c.y, b.x, b.y));
       this.aimIdx = 0;
       this.cursor = this.aimList[0] ? { x: this.aimList[0].x, y: this.aimList[0].y } : { x: c.x, y: c.y };
       this.hud.setPrompt('Aim: choose a target — Enter to attack, Tab to cycle');
@@ -581,6 +640,7 @@ export default class CombatScene extends Scene {
   }
 
   _clearTargeting() {
+    this.overlay.setRay(null, null);
     this.overlay.setRange(null, 0);
     this.overlay.setTemplate([]);
     this.overlay.setHover(null);
@@ -922,9 +982,13 @@ export default class CombatScene extends Scene {
   _cycleTarget(d) {
     if (this.mode !== 'aim' && this.mode !== 'target') return;
     const c = this.cur;
-    const t = this.mode === 'target' ? SPELL_TACTICS[this.modeData.spell] : null;
-    const list = t?.target === 'ally' ? this.engine.alliesOf(c).concat([c]) : this.engine.enemiesOf(c);
-    if (!list.length) return;
+    // Only targets that can actually be hit / reached by the spell.
+    let list = this._validTargets();
+    if (!list.length) {
+      this.ctx.ui.message('No valid target in range or sight.', 'warn');
+      return;
+    }
+    list = list.sort((a, b) => Battlefield.dist(c.x, c.y, a.x, a.y) - Battlefield.dist(c.x, c.y, b.x, b.y));
     this.aimIdx = (((this.aimIdx ?? 0) + d) % list.length + list.length) % list.length;
     this.cursor = { x: list[this.aimIdx].x, y: list[this.aimIdx].y };
     this._hoverSquare(this.cursor);
@@ -993,7 +1057,7 @@ export default class CombatScene extends Scene {
       const foe = c ? e.hostileTo(c, occ) : occ.side === 'monster';
       content.push(h(`div.t.${foe ? 'foe' : 'ally'}`, [occ.name]));
       content.push(h('div.s', [`${occ.side === 'party' ? `${occ.hp.cur}/${occ.hp.max} HP` : describeHealth(occ)} · AC ${occ.ac}${occ.fx?.asleep ? ' · asleep' : ''}${occ.fx?.held ? ' · held' : ''}${occ.guarding ? ' · guarding' : ''}`]));
-      if (foe && myTurn && c.attacksLeft > 0 && !isDown(occ)) {
+      if (foe && myTurn && c.attacksLeft > 0 && !isDown(occ) && this.mode !== 'target') {
         const pv = e.preview(c, occ);
         let reachNote = '';
         if (!pv.ok && this.mode === 'move') {
@@ -1032,20 +1096,71 @@ export default class CombatScene extends Scene {
       }
     }
     if (this.mode === 'target' && myTurn) {
+      // Spell targeting: spell facts only (no melee odds), area victims, and a sight line.
       const spell = this.modeData.spell;
+      const tact = SPELL_TACTICS[spell];
       const can = e.canCast(c, spell, sq);
       const area = e.spellArea(c, spell, sq);
-      this.overlay.setTemplate(can.ok ? area : [], []);
+      this.overlay.setTemplate(can.ok ? area : [], this._validTargets().map((o) => ({ x: o.x, y: o.y })));
       const affected = e.all.filter((o) => !e.out(o) && area.some((a) => a.x === o.x && a.y === o.y));
-      content.unshift(h('div.t', [this.modeData.label]));
-      content.push(h('div.s', [SPELLS[spell]?.desc ?? '']));
-      if (can.ok && SPELL_TACTICS[spell].shape !== 'single') content.push(h('div.note', [`Affects ${affected.length}: ${affected.map((o) => o.name).slice(0, 5).join(', ')}${affected.length > 5 ? '…' : ''}`]));
+      const info = this._spellInfo(c, spell);
+      content.length = 0;
+      content.push(h('div.t', [this.modeData.label]));
+      if (occ) content.push(h('div.s', [`${occ.name} · ${occ.side === 'party' ? `${occ.hp.cur}/${occ.hp.max} HP` : describeHealth(occ)}`]));
+      content.push(h('div.pct', [h('b', [info.big]), h('span', [info.unit])]));
+      for (const line of info.lines) content.push(h('div.s', [line]));
+      if (can.ok && tact.shape !== 'single') {
+        const foes = affected.filter((o) => e.hostileTo(c, o));
+        content.push(h('div.note', [`Catches ${foes.length} foe${foes.length === 1 ? '' : 's'}${foes.length ? `: ${foes.map((o) => o.name).slice(0, 4).join(', ')}${foes.length > 4 ? '…' : ''}` : ''}`]));
+      }
       if (!can.ok) { content.push(h('div.warn', [can.reason])); bad = true; }
-      if (affected.some((o) => !e.hostileTo(c, o)) && SPELL_TACTICS[spell].hostile && SPELL_TACTICS[spell].shape !== 'single') content.push(h('div.warn', ['Allies are in the area!']));
-    }
+      if (can.ok && affected.some((o) => !e.hostileTo(c, o)) && tact.hostile && tact.shape !== 'single') content.push(h('div.warn', ['Allies are in the area!']));
+      if (tact.target !== 'self' && tact.target !== 'direction') this.overlay.setRay({ x: c.x, y: c.y }, sq, this.field.losBlock(c.x, c.y, sq.x, sq.y));
+      else this.overlay.setRay(null, null);
+    } else if (this.mode === 'aim' && myTurn) {
+      this.overlay.setRay({ x: c.x, y: c.y }, sq, this.field.losBlock(c.x, c.y, sq.x, sq.y));
+    } else this.overlay.setRay(null, null);
     if (this.mode === 'aim' && myTurn && !occ) content.push(h('div.s', ['No target here']));
     this.overlay.setHover(sq, bad);
     this.hud.showInspect(content.length ? content : null, pos.x, pos.y);
+  }
+
+  /** What the active spell does, for the targeting card: a headline number + terse lines. */
+  _spellInfo(c, spell) {
+    const lvl = c.side === 'party' ? casterLevel(c.ref, spell) : 1;
+    const t = SPELL_TACTICS[spell];
+    const rng = t.range ? `Range ${t.range}` : 'Self';
+    switch (spell) {
+      case 'magicMissile': {
+        const n = 1 + Math.floor((lvl - 1) / 2);
+        return { big: `${n}×`, unit: `missile${n > 1 ? 's' : ''} · 2-5 dmg each`, lines: [`Never misses · no save · ${rng}`] };
+      }
+      case 'sleep': return { big: '4d4', unit: 'HD fall asleep', lines: ['Creatures of 4 HD or less · no save', `3×3 area · ${rng}`] };
+      case 'burningHands': return { big: String(lvl), unit: 'fire damage each', lines: ['Cone of 3 squares · no save'] };
+      case 'shockingGrasp': return { big: `1d8+${lvl}`, unit: 'damage', lines: ['Touch · no save'] };
+      case 'causeLightWounds': return { big: '1d8', unit: 'damage', lines: ['Touch · no save'] };
+      case 'cureLightWounds': return { big: '1d8', unit: 'hit points healed', lines: ['Touch · revives the fallen'] };
+      case 'fireball': return { big: `${Math.min(10, lvl)}d6`, unit: 'fire damage', lines: ['Save vs. spell for half', `Radius 2 · ${rng}`] };
+      case 'lightningBolt': return { big: `${Math.min(10, lvl)}d6`, unit: 'damage along the line', lines: ['Save vs. spell for half', `Line of 8 · ${rng}`] };
+      case 'stinkingCloud': return { big: '2×2', unit: 'nauseating cloud', lines: ['Save vs. poison or retch helplessly', rng] };
+      case 'holdPerson': return { big: '≤3', unit: 'humanoids held', lines: ['Save vs. spell (−2 for a lone target)', rng] };
+      case 'charmPerson': return { big: '1', unit: 'humanoid charmed', lines: ['Save vs. spell negates', rng] };
+      default: return { big: '', unit: SPELLS[spell]?.name ?? '', lines: [SPELLS[spell]?.desc ?? '', rng].filter(Boolean) };
+    }
+  }
+
+  /** Squares Tab can cycle through: valid targets for the current aim / spell. */
+  _validTargets() {
+    const c = this.cur;
+    const e = this.engine;
+    if (!c) return [];
+    if (this.mode === 'target') {
+      const spell = this.modeData.spell;
+      const t = SPELL_TACTICS[spell];
+      const pool = t.target === 'ally' ? e.all.filter((o) => !e.hostileTo(c, o) && !o.fled) : e.enemiesOf(c);
+      return pool.filter((o) => e.canCast(c, spell, { x: o.x, y: o.y }).ok);
+    }
+    return e.enemiesOf(c).filter((o) => e.canAttack(c, o).ok);
   }
 
   _screenOf(sq) {
@@ -1133,6 +1248,50 @@ export default class CombatScene extends Scene {
   /** Play engine events with animation, VFX, floating text and log lines. */
   async play(evs) {
     const e = this.engine;
+    this._veil(evs);
+    try {
+      await this._playEvents(evs);
+    } finally {
+      this.veil.clear();
+      if (!this.done) this._refresh(this.cur && this.turnDone ? this.cur : e.active());
+    }
+  }
+
+  /**
+   * Roll the displayed state of everyone this batch touches back to before the
+   * batch (the engine has already applied it); _reveal() steps it forward as each
+   * hit / heal / death actually plays on screen.
+   */
+  _veil(evs) {
+    const e = this.engine;
+    const delta = new Map();
+    const downs = new Set();
+    const add = (id, v) => id && delta.set(id, (delta.get(id) ?? 0) + v);
+    for (const ev of evs) {
+      if (ev.type === 'attack' && ev.hit) add(ev.target, ev.dmg ?? 0);
+      else if (ev.type === 'cast') for (const hh of ev.hits ?? []) add(hh.id, (hh.dmg ?? 0) - (hh.heal ?? 0));
+      else if (ev.type === 'heal') add(ev.id, -(ev.amount ?? 0));
+      else if (ev.type === 'bleed') add(ev.id, 1);
+      else if (ev.type === 'down') downs.add(ev.id);
+    }
+    for (const id of new Set([...delta.keys(), ...downs])) {
+      const c = e.byId(id);
+      if (!c) continue;
+      const hp = c.hp.cur + (delta.get(id) ?? 0);
+      this.veil.set(id, { hp: Math.min(c.hp.max, hp), out: downs.has(id) ? false : e.out(c) });
+    }
+  }
+
+  /** A result lands: move the displayed hp of `id` by `dhp` (or reveal it fully). */
+  _reveal(id, dhp = null) {
+    const v = this.veil.get(id);
+    if (!v) return;
+    if (dhp === null) this.veil.delete(id);
+    else v.hp = Math.min(this.engine.byId(id)?.hp.max ?? v.hp, v.hp + dhp);
+  }
+
+  async _playEvents(evs) {
+    const e = this.engine;
     for (let i = 0; i < evs.length; i++) {
       const ev = evs[i];
       if (this.done && ev.type !== 'log') break;
@@ -1172,6 +1331,7 @@ export default class CombatScene extends Scene {
           await this._playAttack(ev, evs, i);
           break;
         case 'down':
+          this._reveal(ev.id);
           if (!ev.silent) this._log(ev.text, ev.id && e.byId(ev.id)?.side === 'party' ? 'warn' : 'combat');
           this._down(ev);
           break;
@@ -1184,6 +1344,7 @@ export default class CombatScene extends Scene {
           if (ev.kind === 'nauseous' && fig) fig.play('hit', this.time, 0.6, { power: 0.5 });
           break;
         case 'heal':
+          this._reveal(ev.id, ev.amount ?? 0);
           if (ev.text) this._log(ev.text, 'combat');
           this._maybeRevive(ev.id);
           if (fig) {
@@ -1233,6 +1394,7 @@ export default class CombatScene extends Scene {
           break;
         }
         case 'bleed':
+          this._reveal(ev.id, -1);
           this._log(ev.text, 'warn');
           if (fig) this.hud.float('-1', 'dmg', this._head(fig), this.time, { cls: 'party' });
           break;
@@ -1269,6 +1431,13 @@ export default class CombatScene extends Scene {
     return this._s * 7.13;
   }
 
+  /** Where a death floater sits: just above the victim's body, not the sky. */
+  _killPos(fig) {
+    const p = fig.root.position.clone();
+    p.y += fig.model.height * 0.4;
+    return p;
+  }
+
   _head(fig) {
     const p = fig.root.position.clone();
     p.y += fig.model.height * 1.02;
@@ -1288,7 +1457,6 @@ export default class CombatScene extends Scene {
     const clip = ev.ranged ? 'shoot' : 'attack';
     const reach = ev.ranged ? 0 : Math.min(0.5, Math.max(0.15, (Battlefield.dist(att.x, att.y, def.x, def.y) * TILE - 1.1) * 0.5 + 0.3));
     if (ev.aoo || ev.guard) this.hud.float(ev.aoo ? 'Free attack!' : 'Guard!', 'status', this._head(fa), this.time);
-    this._log(ev.text, 'combat');
     if (this.snap) {
       this._impact(ev, att, def, fa, fd);
       return;
@@ -1312,6 +1480,9 @@ export default class CombatScene extends Scene {
   }
 
   _impact(ev, att, def, fa, fd) {
+    // The blow lands: now the log line, the number and the hp bar.
+    this._log(ev.text, 'combat');
+    if (ev.hit) this._reveal(def.id, -(ev.dmg ?? 0));
     const at = fd.root.position.clone();
     at.y = fd.model.height * 0.62;
     const t = this.time;
@@ -1372,7 +1543,7 @@ export default class CombatScene extends Scene {
     } else {
       fig.die(this.time, from.x, from.z, { holy: ev.holy });
       this.vfx.dust(this.time + 0.45, fig.root.position.clone(), { seed: this._seed(), big: c.size === 'L' });
-      this.hud.float(c.side === 'party' ? (c.ref.status === 'dead' ? 'Killed' : 'Down') : 'Slain', 'kill', this._head(fig).add(new THREE.Vector3(0, 0.3, 0)), this.time + 0.15);
+      this.hud.float(c.side === 'party' ? (c.ref.status === 'dead' ? 'Killed' : 'Down') : 'Slain', 'kill', this._killPos(fig), this.time + 0.15, { rise: 0.25 });
     }
     this.overlay.teamRing(c.id, c.side).visible = false;
     fig.blob.visible = false;
@@ -1438,11 +1609,12 @@ export default class CombatScene extends Scene {
     for (const hh of ev.hits ?? []) {
       if (hh.text) this._log(hh.text, 'combat');
       if (!hh.id) continue;
+      this._reveal(hh.id, (hh.heal ?? 0) - (hh.dmg ?? 0));
       const f2 = this.figures.get(hh.id);
       if (!f2) continue;
       if (hh.dmg) {
         f2.play('hit', this.time, 0.5 / sp, { power: 1.3 });
-        this.hud.float(String(hh.dmg), 'dmg', this._head(f2), this.time + Math.random() * 0 + (hh.saved ? 0.05 : 0), { cls: e.byId(hh.id).side === 'party' ? 'party' : '' });
+        this.hud.float(String(hh.dmg), 'dmg', this._head(f2), this.time + (hh.saved ? 0.05 : 0), { cls: e.byId(hh.id).side === 'party' ? 'party' : '' });
         if (tact.vfx === 'missile') this.vfx.hitSparks(this.time, this._head(f2).add(new THREE.Vector3(0, -0.5, 0)), { blood: false, seed: this._seed() });
       }
       if (hh.heal) {
@@ -1468,61 +1640,43 @@ export default class CombatScene extends Scene {
   // =================================================================== camera
   _focus(c, soft = false) {
     if (!c || this.cam.userPanned) return;
-    this._frameCombatants(false);
-    const p = sq2w(c.x, c.y);
-    const k = soft ? 0.2 : 0.3;
-    const fc = this.fightCenter;
-    this.cam.goalTarget.set(fc.x + (p.x - fc.x) * k, 0, fc.z + (p.z - fc.z) * k);
+    this._frameCombatants(false, c, soft);
   }
 
-  /** Fit the camera to the living combatants (the fight, not the whole map). */
-  _frameCombatants(snap = false) {
-    const live = this.engine.all.filter((c) => !this.engine.out(c));
+  /**
+   * Frame the fight around the acting unit: it, its likely targets (the nearest
+   * foes) and the allies at its side, plus ~2 squares of margin — close enough
+   * that faces, weapons and silhouettes read (≈90-140 px figures at 1600x900).
+   * When the fight is spread out the frame favours the actor over the far foes.
+   */
+  _frameCombatants(snap = false, focus = null, soft = false) {
+    const e = this.engine;
+    const live = e.all.filter((c) => !e.out(c));
     if (!live.length) return;
-    let x0 = Infinity;
-    let x1 = -Infinity;
-    let z0 = Infinity;
-    let z1 = -Infinity;
-    for (const c of live) {
-      const p = sq2w(c.x, c.y);
-      x0 = Math.min(x0, p.x);
-      x1 = Math.max(x1, p.x);
-      z0 = Math.min(z0, p.z);
-      z1 = Math.max(z1, p.z);
+    const act = focus ?? e.active() ?? this.demoActive ?? live.find((c) => c.side === 'party') ?? live[0];
+    const d = (a, b) => Battlefield.dist(a.x, a.y, b.x, b.y);
+    const foes = live.filter((o) => o.side !== act.side && !o.charmed).sort((a, b) => d(a, act) - d(b, act));
+    const near = foes.filter((f) => d(f, act) <= 7).slice(0, 3);
+    if (!near.length && foes[0]) near.push(foes[0]);
+    const allies = live.filter((o) => o !== act && o.side === act.side && d(o, act) <= 2.5);
+    const MIN = 10.5;
+    const MAX = 21;
+    let fit = this._fitBox([act, ...near, ...allies]);
+    // Too spread out: keep the actor and its nearest foe (and its neighbours) only.
+    if (fit.need > MAX && near.length > 1) fit = this._fitBox([act, near[0], ...allies.filter((o) => d(o, act) <= 1.5)]);
+    let { cx, cz, need } = fit;
+    const ap = sq2w(act.x, act.y);
+    if (need > MAX) {
+      const k = Math.min(0.3, 1 - MAX / need);
+      cx += (ap.x - cx) * k;
+      cz += (ap.z - cz) * k;
     }
-    const m = 2.6;
-    // Extra room on the far side for the figures' heights.
-    z0 -= 1.4;
-    const hw = (x1 - x0) / 2 + m;
-    const hd = (z1 - z0) / 2 + m;
-    const sa = this._safeArea();
-    const fov = 2 * Math.atan(Math.tan((this.camera.fov * Math.PI) / 360) * sa.h);
-    const hf = 2 * Math.atan(Math.tan((this.camera.fov * Math.PI) / 360) * this.camera.aspect * sa.w);
-    const pitch = this.cam.goalPitch;
-    const dW = hw / Math.tan(hf / 2) + hd * Math.cos(pitch) * 0.5;
-    const dD = (hd * Math.sin(pitch)) / Math.tan(fov / 2) + hd * Math.cos(pitch);
-    // Keep figures large enough to read (~110 px at 1080p): cap the pull-back and
-    // favour the party when the whole fight doesn't fit.
-    const cap = 34;
-    let dist = Math.min(this.cam.maxDist, Math.max(13, dW, dD) * 1.02);
-    if (dist > cap) {
-      const party = live.filter((c) => c.side === 'party');
-      if (party.length) {
-        const px = party.reduce((a, c) => a + sq2w(c.x, c.y).x, 0) / party.length;
-        const pz = party.reduce((a, c) => a + sq2w(c.x, c.y).z, 0) / party.length;
-        const k = Math.min(0.3, (dist - cap) / dist);
-        x0 += (px - x0) * k;
-        x1 += (px - x1) * k;
-        z0 += (pz - z0) * k;
-        z1 += (pz - z1) * k;
-      }
-      dist = cap;
-    }
-    // Bias the view a little down-screen so the HUD at the top doesn't cover the fight.
-    const cx = (x0 + x1) / 2;
-    const cz = (z0 + z1) / 2;
+    const dist = Math.max(MIN, Math.min(MAX, need));
     this.fightCenter = new THREE.Vector3(cx, 0, cz);
-    this.cam.goalTarget.set(cx, 0, cz);
+    if (soft) {
+      // Small corrections while walking: drift, don't lurch.
+      this.cam.goalTarget.lerp(this.fightCenter, 0.5);
+    } else this.cam.goalTarget.set(cx, 0, cz);
     this.cam.goalDist = dist;
     if (snap) {
       this.cam.target.copy(this.cam.goalTarget);
@@ -1530,19 +1684,61 @@ export default class CombatScene extends Scene {
     }
   }
 
+  /** Camera distance needed to fit a set of combatants (+ margin), and the box centre. */
+  _fitBox(set) {
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    let z0 = Infinity;
+    let z1 = -Infinity;
+    for (const c of set) {
+      const p = sq2w(c.x, c.y);
+      x0 = Math.min(x0, p.x);
+      x1 = Math.max(x1, p.x);
+      z0 = Math.min(z0, p.z);
+      z1 = Math.max(z1, p.z);
+    }
+    const m = 2.4;
+    z0 -= 1.0;
+    const hw = (x1 - x0) / 2 + m;
+    const hd = (z1 - z0) / 2 + m;
+    const sa = this._safeArea();
+    const fov = 2 * Math.atan(Math.tan((this.camera.fov * Math.PI) / 360) * sa.h);
+    const hf = 2 * Math.atan(Math.tan((this.camera.fov * Math.PI) / 360) * this.camera.aspect * sa.w);
+    const pitch = this.cam.goalPitch;
+    const cy = Math.abs(Math.cos(this.cam.goalYaw));
+    const syw = Math.abs(Math.sin(this.cam.goalYaw));
+    const ex = hw * cy + hd * syw;
+    const ez = hw * syw + hd * cy;
+    const dW = ex / Math.tan(hf / 2) + ez * Math.cos(pitch) * 0.5;
+    const dD = (ez * Math.sin(pitch)) / Math.tan(fov / 2) + ez * Math.cos(pitch);
+    return { cx: (x0 + x1) / 2, cz: (z0 + z1) / 2 + 0.5, need: Math.max(dW, dD) };
+  }
+
   /** Pick the opening camera bearing that hides the fewest buildings (least cut-away). */
-  _chooseYaw() {
+  _chooseYaw({ around = null } = {}) {
     const pts = [];
-    for (const c of this.engine.all) {
+    for (const c of around ?? this.engine.all) {
       if (this.engine.out(c)) continue;
       const p = sq2w(c.x, c.y);
       pts.push(new THREE.Vector3(p.x, 0.2, p.z), new THREE.Vector3(p.x, 1.6, p.z));
     }
     let best = null;
-    for (const yaw of [0.32, -0.32, 0, 0.62, -0.62]) {
+    const live = this.engine.all.filter((c) => !this.engine.out(c));
+    const mean = (side) => {
+      const l = live.filter((c) => c.side === side);
+      return l.length ? l.reduce((a, c) => a.add(sq2w(c.x, c.y)), new THREE.Vector3()).multiplyScalar(1 / l.length) : null;
+    };
+    const pm = mean('party');
+    const mm = mean('monster');
+    let sep = pm && mm && pm.distanceTo(mm) > 0.1 ? mm.sub(pm).setY(0).normalize() : null;
+    if (around?.length >= 2) sep = sq2w(around[1].x, around[1].y).sub(sq2w(around[0].x, around[0].y)).setY(0).normalize();
+    const yaws = around ? Array.from({ length: 16 }, (_, i) => (i / 16) * Math.PI * 2 - Math.PI) : [0.32, -0.32, 0, 0.62, -0.62, 0.95, -0.95, Math.PI / 2, -Math.PI / 2];
+    for (const yaw of yaws) {
       const off = new THREE.Vector3(Math.sin(yaw) * Math.cos(this.cam.pitch), Math.sin(this.cam.pitch), Math.cos(yaw) * Math.cos(this.cam.pitch)).multiplyScalar(this.cam.goalDist);
       const pos = this.cam.goalTarget.clone().add(off);
-      const n = this.diorama.occluders(pos, pts) + Math.abs(yaw - 0.32) * 2;
+      // Prefer a bearing that lays the two sides out across the (wide) screen.
+      const along = sep ? Math.abs(sep.x * Math.sin(yaw) + sep.z * Math.cos(yaw)) : 0;
+      const n = this.diorama.occluders(pos, pts) * (around ? 3 : 1) + (around ? 0 : Math.abs(yaw - 0.32) * 2) + along * 14;
       if (!best || n < best.n) best = { n, yaw };
     }
     this.cam.yaw = this.cam.goalYaw = best.yaw;
@@ -1554,8 +1750,8 @@ export default class CombatScene extends Scene {
     const H = window.innerHeight;
     const em = Math.max(12, Math.min(25.6, 16 * (H / 900)));
     const right = 19.5 * em;
-    const top = 8.5 * em;
-    const bottom = 12 * em;
+    const top = 6.6 * em;
+    const bottom = 4.6 * em;
     return { w: (W - right) / W, h: (H - top - bottom) / H, ox: right / 2, oy: (bottom - top) / 2, W, H };
   }
 
@@ -1600,6 +1796,20 @@ export default class CombatScene extends Scene {
     if (this.hoverSq) push(this.hoverSq.x * TILE + TILE / 2, 0.1, this.hoverSq.y * TILE + TILE / 2);
     pts.length = n;
     this.diorama.setView(this.camera.position, pts);
+    // Fade hole: centred on the view target, wide enough for the visible actors.
+    const r = this.ctx.render.renderer;
+    const buf = r.getDrawingBufferSize(this._buf ??= new THREE.Vector2());
+    const v = this._hv ??= new THREE.Vector3();
+    v.copy(this.cam.target).setY(0.8).project(this.camera);
+    const cx = (v.x * 0.5 + 0.5) * buf.x;
+    const cy = (v.y * 0.5 + 0.5) * buf.y;
+    let rad = buf.y * 0.2;
+    for (let i = 0; i < n; i += 3) {
+      v.copy(pts[i + 1] ?? pts[i]).project(this.camera);
+      if (Math.abs(v.x) > 1.05 || Math.abs(v.y) > 1.05) continue;
+      rad = Math.max(rad, Math.hypot((v.x * 0.5 + 0.5) * buf.x - cx, (v.y * 0.5 + 0.5) * buf.y - cy) + buf.y * 0.1);
+    }
+    this.diorama.setHole(cx, cy, Math.min(buf.y * 0.48, rad));
   }
 
   // =================================================================== HUD refresh
@@ -1647,7 +1857,11 @@ export default class CombatScene extends Scene {
     if (af && !this.engine.out(act)) {
       this.overlay.activeRing.visible = true;
       this.overlay.activeRing.position.set(af.root.position.x, 0.035, af.root.position.z);
-    } else this.overlay.activeRing.visible = false;
+      this.overlay.setFocus(undefined, { x: act.x, y: act.y });
+    } else {
+      this.overlay.activeRing.visible = false;
+      this.overlay.setFocus(undefined, null);
+    }
   }
 
   // =================================================================== frame
@@ -1683,6 +1897,7 @@ export default class CombatScene extends Scene {
     if (!this.frozen) this.time += dt * scale * catchUp;
     else this.time = this.ctx.clock.time;
     const t = this.time;
+    this._runTimed();
     // Resolve waits.
     if (this._waits.length) {
       const due = this._waits.filter((w) => w.t <= t);
@@ -1705,7 +1920,7 @@ export default class CombatScene extends Scene {
     this._updateCamera(dt);
     const r = this.ctx.render;
     const pix = (r.height * r.renderer.getPixelRatio()) / (2 * Math.tan((this.camera.fov * Math.PI) / 360));
-    this.vfx.update(t, this.camera, pix);
+    this.vfx.update(t, this.camera, pix, (this._res ??= new THREE.Vector2()).set(r.width ?? window.innerWidth, r.height ?? window.innerHeight));
     this.hud.update(t, this.camera, window.innerWidth, window.innerHeight);
   }
 

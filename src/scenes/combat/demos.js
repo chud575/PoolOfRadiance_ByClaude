@@ -124,29 +124,40 @@ export const DEMOS = {
       setActive(sc, caster);
       sc.mode = 'target';
       sc.modeData = { spell: 'fireball', label: 'Fireball' };
-      // Cast pose: release at t=0.
+      // Timing: whatever the range, the gallery frame (t=0.75) lands ~0.26 s after
+      // detonation — fire shells fully billowed, sparks streaking, smoke starting.
       const f = sc.figures.get(caster.id);
-      f.play('cast', -0.62, 1.15);
-      f.update(0);
-      const hand = f.bonePos('handR').clone();
       const centre = sq2w(best.x, best.y).setY(0.9);
+      f.play('cast', -10, 1.15);
+      f.update(0);
+      const flight = Math.max(0.35, f.bonePos('handR').distanceTo(centre) / 16);
+      const launch = 0.75 - 0.26 - flight;
+      f.play('cast', launch - 0.62, 1.15);
+      f.update(launch);
+      const hand = f.bonePos('handR').clone();
       const R = 2.5 * TILE;
-      sc.vfx.castGlow(-0.7, () => f.bonePos('handR').clone(), 0xff8030, 0.85);
-      const { detonate } = sc.vfx.fireball(0, hand, centre, R, 3.7);
+      sc.vfx.castGlow(launch - 0.7, () => f.bonePos('handR').clone(), 0xff8030, 0.85);
+      const det = sc.vfx.fireball(launch, hand, centre, R, 3.7);
+      const detonate = launch + det.detonate;
       // Victims.
       const hitList = foes.filter((m) => Math.hypot(m.x - best.x, m.y - best.y) <= 2.5);
       const dmg = [17, 21, 9, 19, 14, 22];
+      sc.ctx.ui.message(`${caster.name} casts Fireball!`, 'combat');
       hitList.forEach((m, k) => {
         const fm = sc.figures.get(m.id);
         const d = dmg[k % dmg.length];
-        m.hp.cur -= d;
         fm.play('hit', detonate + 0.02, 0.6, { power: 1.8 });
         sc.hud.float(String(d), k === 0 ? 'crit' : 'dmg', sc._head(fm), detonate + 0.06 + k * 0.03);
-        if (m.hp.cur <= 0) kill(sc, m, detonate + 0.03 + k * 0.02, centre);
+        // Results land with the blast, not before it.
+        sc.at(detonate + 0.02, () => {
+          m.hp.cur -= d;
+          if (m.hp.cur <= 0) kill(sc, m, detonate + 0.03 + k * 0.02, centre);
+        });
       });
-      sc.ctx.ui.message(`${caster.name} casts Fireball!`, 'combat');
-      sc.ctx.ui.message(`The fireball engulfs ${hitList.length} foes.`, 'combat');
-      for (const m of hitList) sc.ctx.ui.message(m.hp.cur <= 0 ? `${m.name} is slain.` : `${m.name} is scorched.`, 'combat');
+      sc.at(detonate + 0.05, () => {
+        sc.ctx.ui.message(`The fireball engulfs ${hitList.length} foes.`, 'combat');
+        for (const m of hitList) sc.ctx.ui.message(m.hp.cur <= 0 ? `${m.name} is slain.` : `${m.name} is scorched.`, 'combat');
+      });
       sc.overlay.setTemplate([]);
       // Camera: frame caster and blast, slightly closer.
       const mid = sq2w((caster.x + best.x) / 2, (caster.y + best.y) / 2);
@@ -228,7 +239,7 @@ export const DEMOS = {
       sc.vfx.swipe(impact - 0.06, fh.root.position.clone().setY(fh.model.height * 0.55), fh.yaw);
       sc.vfx.addShake(impact, 0.12, 0.3);
       sc.hud.float('9', 'crit', sc._head(ff), impact + 0.01);
-      foe.hp.cur = Math.max(1, foe.hp.cur - 3);
+      sc.at(impact, () => (foe.hp.cur = Math.max(1, foe.hp.cur - 3)));
       // Second pair mid-exchange.
       if (second && foe2) {
         sc.figures.get(foe2.id).play('attack', -0.05, 0.8, { reach: 0.3 });
@@ -237,7 +248,7 @@ export const DEMOS = {
       if (foe3) {
         kill(sc, foe3, -0.12, sq2w(hero.x, hero.y));
         sc.vfx.dust(0.33, sc.figures.get(foe3.id).root.position.clone(), { seed: 8 });
-        sc.hud.float('Slain', 'kill', sc._head(sc.figures.get(foe3.id)).add(new THREE.Vector3(0, 0.3, 0)), 0.02);
+        sc.hud.float('Slain', 'kill', sc._killPos(sc.figures.get(foe3.id)), 0.02, { rise: 0.25 });
       }
       // A missile from a rear rank for depth.
       const archer = sc.party.find((c) => c !== hero && c !== second && e.rangedProfile(c));
@@ -251,15 +262,16 @@ export const DEMOS = {
         const tf = sc.figures.get(tgt.id);
         sc.vfx.missile(0.33, from, sc._head(tf).add(new THREE.Vector3(0, -tf.model.height * 0.45, 0)), { seed: 2 });
       }
-      sc.ctx.ui.message(`${foe3 ? `${foe3.name} is slain.` : ''}`, 'combat');
-      sc.ctx.ui.message(`${hero.name} hits ${foe.name} for 9 (critical!).`, 'combat');
+      if (foe3) sc.ctx.ui.message(`${foe3.name} is slain.`, 'combat');
+      sc.at(impact, () => sc.ctx.ui.message(`${hero.name} hits ${foe.name} for 9 (critical!).`, 'combat'));
       // Camera close on the clash.
       const midW = sq2w((hero.x + foe.x) / 2, (hero.y + foe.y) / 2);
       sc.cam.goalTarget.copy(midW);
       sc.cam.target.copy(midW);
       sc.cam.goalDist = sc.cam.dist = Math.max(11, sc.cam.dist * 0.5);
-      sc.cam.goalYaw = sc.cam.yaw = Number.isFinite(+sc.params.yaw) && sc.params.yaw !== undefined ? +sc.params.yaw : 2.4;
-      sc.cam.goalPitch = sc.cam.pitch = 0.72;
+      sc.cam.goalPitch = sc.cam.pitch = 0.68;
+      if (Number.isFinite(+sc.params.yaw) && sc.params.yaw !== undefined) sc.cam.goalYaw = sc.cam.yaw = +sc.params.yaw;
+      else sc._chooseYaw({ around: [hero, foe] });
       sc._refresh(hero);
     },
   },

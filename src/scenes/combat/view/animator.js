@@ -20,6 +20,26 @@ const angLerp = (a, b, t) => {
   return a + d * t;
 };
 
+/**
+ * Shared fresnel rim (one program for every figure): a thin bright edge so the
+ * silhouettes separate from cobbles and walls. Colour/strength set per scene.
+ */
+export const RIM = { uRimColor: { value: new THREE.Color(0.18, 0.16, 0.14) }, uRimPower: { value: 3.0 } };
+
+function addRim(mat) {
+  if (!mat.isMeshStandardMaterial) return;
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uRimColor = RIM.uRimColor;
+    sh.uniforms.uRimPower = RIM.uRimPower;
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform vec3 uRimColor; uniform float uRimPower;')
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        { float rimF = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), uRimPower);
+          totalEmissiveRadiance += uRimColor * rimF * (0.6 + 0.4 * diffuseColor.rgb / max(0.001, max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b)))); }`);
+  };
+  mat.customProgramCacheKey = () => 'fig-rim';
+}
+
 export class Figure {
   /**
    * @param {object} model  result of makeFigureModel
@@ -38,6 +58,7 @@ export class Figure {
     this.mats = [];
     for (const m of model.meshes) {
       m.material = m.material.clone();
+      addRim(m.material);
       this.mats.push({ m: m.material, emissive: m.material.emissive?.clone() ?? new THREE.Color(0), ei: m.material.emissiveIntensity ?? 1, color: m.material.color.clone() });
     }
     this.pos = new THREE.Vector3();
@@ -196,14 +217,16 @@ export class Figure {
     void bob;
 
     // Hit flash & death dimming.
-    const flash = Math.max(0, 1 - (t - this.hitFlash) / 0.16) ** 2;
+    const fAge = t - this.hitFlash;
+    // (A hit queued for the future must not flash yet — negative age.)
+    const flash = fAge < 0 ? 0 : Math.max(0, 1 - fAge / 0.16) ** 2;
     const deadDim = this.death ? clamp01((t - this.death.t0 - 1.2) / 2.5) : 0;
     const holy = this.death?.holy ? clamp01((t - this.death.t0) / 0.6) : 0;
     for (const mm of this.mats) {
       if (mm.m.emissive) {
-        mm.m.emissive.copy(mm.emissive).lerp(new THREE.Color(1, 0.55, 0.4), flash * 0.45);
+        mm.m.emissive.copy(mm.emissive).lerp(new THREE.Color(1, 0.5, 0.35), flash * 0.4);
         if (holy) mm.m.emissive.lerp(new THREE.Color(1, 0.9, 0.6), Math.sin(holy * Math.PI) * 0.9);
-        mm.m.emissiveIntensity = Math.max(mm.ei, flash * 0.6);
+        mm.m.emissiveIntensity = Math.max(mm.ei, flash * 0.4);
       }
       mm.m.color.copy(mm.color).multiplyScalar(1 - deadDim * 0.35);
     }

@@ -215,12 +215,18 @@ export class Battlefield {
         this.block[this.idx(x, y)] = 2;
         this.features.props.push({ x, y, type, r: hash(x, y, s) });
       };
+      this.features.hall = { x0: rx0, y0: ry0, w: rw, h: rh, cx };
       put(cx, ry0, 'statue');
       put(cx, ry0 + 1, 'altar');
       for (let ly = 2; ly < rh - 1; ly += 3) {
         put(rx0 + 1, ry0 + ly, 'column');
         put(rx0 + rw - 2, ry0 + ly, 'column');
       }
+      // The ruin: a toppled column across the side aisle, rubble heaped in the corners.
+      put(rx0 + 2, ry0 + Math.min(rh - 3, 6), 'fallen');
+      put(rx0 + rw - 1, ry0 + rh - 1, 'rubble');
+      put(rx0, ry0 + rh - 1, 'rubble');
+      put(rx0 + rw - 1, ry0, 'rubble');
     }
     for (let y = 0; y < this.h; y++) {
       for (let x = 0; x < this.w; x++) {
@@ -363,7 +369,15 @@ export class Battlefield {
    * (props and creatures don't block sight).
    */
   los(ax, ay, bx, by) {
-    if (ax === bx && ay === by) return true;
+    return this.losBlock(ax, ay, bx, by) >= 1;
+  }
+
+  /**
+   * Fraction (0..1) of the way from a to b at which sight is first blocked;
+   * 1 when the line is clear. Used to draw the targeting ray red past the block.
+   */
+  losBlock(ax, ay, bx, by) {
+    if (ax === bx && ay === by) return 1;
     const steps = Math.ceil(Math.max(Math.abs(bx - ax), Math.abs(by - ay)) * 4);
     let px = ax;
     let py = ay;
@@ -374,18 +388,18 @@ export class Battlefield {
       const x = Math.round(fx);
       const y = Math.round(fy);
       if (x !== px || y !== py) {
-        if (this.inBounds(x, y) && this.block[this.idx(x, y)] === 1) return false;
+        if (this.inBounds(x, y) && this.block[this.idx(x, y)] === 1) return Math.max(0, t - 0.5 / steps);
         if (x !== px && y !== py) {
           // Diagonal transition: blocked only if both orthogonal routes are blocked.
           const r1 = this.wallBetween(px, py, x, py) || this.wallBetween(x, py, x, y) || this.block[this.idx(x, py)] === 1;
           const r2 = this.wallBetween(px, py, px, y) || this.wallBetween(px, y, x, y) || this.block[this.idx(px, y)] === 1;
-          if (r1 && r2) return false;
-        } else if (this.wallBetween(px, py, x, y)) return false;
+          if (r1 && r2) return Math.max(0, t - 0.5 / steps);
+        } else if (this.wallBetween(px, py, x, y)) return Math.max(0, t - 0.5 / steps);
         px = x;
         py = y;
       }
     }
-    return true;
+    return 1;
   }
 
   /** Chebyshev distance in squares (Gold Box range counting). */

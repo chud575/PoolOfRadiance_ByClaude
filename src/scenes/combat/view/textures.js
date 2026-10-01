@@ -203,6 +203,7 @@ const KIND = {
   gold: { tex: 'metal', roughness: 0.8, metalness: 1, normalScale: 0.3 },
   skin: { tex: 'skin', roughness: 1, metalness: 0, normalScale: 0.15, repeat: 2 },
   scales: { tex: 'scales', roughness: 1, metalness: 0, normalScale: 1, repeat: 2 },
+  reptile: { tex: 'skin', roughness: 0.78, metalness: 0, normalScale: 0.55, repeat: 4 },
   fur: { tex: 'fur', roughness: 1, metalness: 0, normalScale: 0.8, repeat: 3 },
   bone: { tex: 'bone', roughness: 1, metalness: 0, normalScale: 0.7 },
   wood: { tex: 'wood', roughness: 1, metalness: 0, normalScale: 0.6 },

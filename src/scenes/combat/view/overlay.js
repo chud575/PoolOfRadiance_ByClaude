@@ -42,6 +42,8 @@ export class Overlay {
       uShowGrid: { value: 1 },
       uAlpha: { value: 1 },
       uNight: { value: 0 },
+      uFocus: { value: new THREE.Vector2(-99, -99) },
+      uFocus2: { value: new THREE.Vector2(-99, -99) },
     };
     const mat = new THREE.ShaderMaterial({
       transparent: true,
@@ -55,6 +57,7 @@ export class Overlay {
         uniform sampler2D tState, tInfo;
         uniform vec2 uGrid;
         uniform float uTime, uShowGrid, uAlpha, uNight;
+        uniform vec2 uFocus, uFocus2;
         uniform vec3 uRangeColor, uTemplateColor;
         vec4 S(vec2 c){ return texture2D(tState, (c + 0.5) / uGrid); }
         vec4 I(vec2 c){ return texture2D(tInfo, (c + 0.5) / uGrid); }
@@ -71,11 +74,15 @@ export class Overlay {
           #define LAYER(C, A) { float al_ = clamp(A, 0.0, 1.0); col = col * (1.0 - al_) + (C) * al_; a = a + al_ * (1.0 - a); }
           float ed = min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y));
           // Grid (only on open ground): hairlines plus corner ticks, like a printed battle map.
-          float grid = (1.0 - smoothstep(0.0, 0.016, ed)) * walk * uShowGrid;
+          // Grid marks only where they help: inside the move range and around the
+          // cursor / active unit, fading with distance (no printed lattice everywhere).
+          float near = max(1.0 - smoothstep(1.2, 3.2, length(g - uFocus - 0.5)), 1.0 - smoothstep(0.8, 2.4, length(g - uFocus2 - 0.5)));
+          float gridVis = max(step(0.1, s.r) * 0.8, near) * walk * uShowGrid;
+          float grid = (1.0 - smoothstep(0.0, 0.016, ed)) * gridVis;
           LAYER(mix(vec3(0.06, 0.05, 0.04), vec3(0.8, 0.75, 0.6), uNight), grid * mix(0.28, 0.07, uNight));
           vec2 cf = min(f, 1.0 - f);
-          float tick = (1.0 - smoothstep(0.0, 0.022, min(cf.x, cf.y))) * step(max(cf.x, cf.y), 0.1) * walk * uShowGrid;
-          LAYER(mix(vec3(0.95, 0.85, 0.6), vec3(0.9, 0.85, 0.7), uNight), tick * mix(0.4, 0.16, uNight));
+          float tick = (1.0 - smoothstep(0.0, 0.016, min(cf.x, cf.y))) * step(max(cf.x, cf.y), 0.07) * gridVis;
+          LAYER(mix(vec3(0.95, 0.85, 0.6), vec3(0.9, 0.85, 0.7), uNight), tick * mix(0.26, 0.12, uNight));
           // Movement range: soft fill + bright outline where the range ends.
           float r = s.r;
           if (r > 0.1) {
@@ -84,7 +91,9 @@ export class Overlay {
             vec2 d[4]; d[0] = vec2(1,0); d[1] = vec2(-1,0); d[2] = vec2(0,1); d[3] = vec2(0,-1);
             float dist[4]; dist[0] = 1.0 - f.x; dist[1] = f.x; dist[2] = 1.0 - f.y; dist[3] = f.y;
             for (int k = 0; k < 4; k++) {
-              if (S(c + d[k]).r < 0.1) edgeGlow = max(edgeGlow, 1.0 - smoothstep(0.0, 0.06, dist[k]));
+              // Free-standing obstacles (columns, crates) inside the range don't notch its outline.
+              float nObs = step(0.2, I(c + d[k]).r) * step(I(c + d[k]).r, 0.5);
+              if (S(c + d[k]).r < 0.1 && nObs < 0.5) edgeGlow = max(edgeGlow, 1.0 - smoothstep(0.0, 0.06, dist[k]));
             }
             vec3 rc = r > 0.9 ? uRangeColor : vec3(1.0, 0.78, 0.35);
             LAYER(rc * 0.55, fill);
@@ -154,6 +163,31 @@ export class Overlay {
     this.arrow.renderOrder = 3;
     this.arrow.visible = false;
     this.group.add(this.arrow);
+
+    // Line-of-sight ray (aim / spell targeting): gold while clear, red past the block.
+    this.rayMat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      uniforms: { uTime: this.uniforms.uTime, uBlock: { value: 1 }, uLen: { value: 1 } },
+      vertexShader: `attribute float aT; varying float vT; varying vec2 vUv; void main(){ vT = aT; vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `varying float vT; varying vec2 vUv; uniform float uTime, uBlock, uLen;
+        void main(){
+          float across = 1.0 - abs(vUv.y - 0.5) * 2.0;
+          bool blocked = vT > uBlock;
+          float dash = step(0.45, fract(vT * uLen * 1.4 - uTime * 1.2));
+          vec3 c = blocked ? vec3(1.0, 0.18, 0.12) : vec3(1.0, 0.88, 0.55);
+          float a = smoothstep(0.0, 0.6, across) * (blocked ? 0.85 : 0.35 + dash * 0.45);
+          // A bright tick where the line is cut.
+          a += (1.0 - smoothstep(0.0, 0.04 / max(uLen, 1.0), abs(vT - uBlock))) * step(uBlock, 0.999) * 0.9;
+          float fadeIn = smoothstep(0.0, 0.06, vT);
+          gl_FragColor = vec4(c * 1.6, a * fadeIn);
+        }`,
+    });
+    this.ray = new THREE.Mesh(new THREE.BufferGeometry(), this.rayMat);
+    this.ray.renderOrder = 3;
+    this.ray.frustumCulled = false;
+    this.ray.visible = false;
+    this.group.add(this.ray);
 
     // Rings.
     this.ringMat = (color, width = 0.08) => new THREE.ShaderMaterial({
@@ -240,8 +274,15 @@ export class Overlay {
     for (const s of squares) this.set(s.x, s.y, 'g', 255);
   }
 
+  /** Grid-mark focus points (cursor, active unit) in square coords. */
+  setFocus(sq, sq2 = undefined) {
+    if (sq !== undefined) this.uniforms.uFocus.value.set(sq ? sq.x : -99, sq ? sq.y : -99);
+    if (sq2 !== undefined) this.uniforms.uFocus2.value.set(sq2 ? sq2.x : -99, sq2 ? sq2.y : -99);
+  }
+
   setHover(sq, bad = false) {
     this.clear('b');
+    this.setFocus(sq ?? null);
     if (sq) this.set(sq.x, sq.y, 'b', bad ? 140 : 255);
   }
 
@@ -292,6 +333,43 @@ export class Overlay {
     this.arrow.visible = true;
   }
 
+  /** Sight line from square a to square b, blocked at fraction tBlock (1 = clear). */
+  setRay(a, b, tBlock = 1) {
+    if (!a || !b || (a.x === b.x && a.y === b.y)) {
+      this.ray.visible = false;
+      return;
+    }
+    const A = new THREE.Vector3(a.x * TILE + TILE / 2, 0.07, a.y * TILE + TILE / 2);
+    const B = new THREE.Vector3(b.x * TILE + TILE / 2, 0.07, b.y * TILE + TILE / 2);
+    const dir = new THREE.Vector3().subVectors(B, A);
+    const len = dir.length();
+    dir.normalize();
+    const side = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(0.07);
+    const n = 24;
+    const pos = [];
+    const uv = [];
+    const tt = [];
+    const idx = [];
+    for (let i = 0; i <= n; i++) {
+      const u = i / n;
+      const p = A.clone().lerp(B, u);
+      pos.push(p.x - side.x, p.y, p.z - side.z, p.x + side.x, p.y, p.z + side.z);
+      uv.push(u, 0, u, 1);
+      tt.push(u, u);
+      if (i < n) idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setAttribute('aT', new THREE.Float32BufferAttribute(tt, 1));
+    g.setIndex(idx);
+    this.ray.geometry.dispose();
+    this.ray.geometry = g;
+    this.rayMat.uniforms.uBlock.value = tBlock;
+    this.rayMat.uniforms.uLen.value = len;
+    this.ray.visible = true;
+  }
+
   update(t) {
     this.uniforms.uTime.value = t;
     const k = 1 + Math.sin(t * 4) * 0.04;
@@ -306,6 +384,8 @@ export class Overlay {
     this.mesh.material.dispose();
     this.path.geometry.dispose();
     this.pathMat.dispose();
+    this.ray.geometry.dispose();
+    this.rayMat.dispose();
     this.teamGeo.dispose();
   }
 }

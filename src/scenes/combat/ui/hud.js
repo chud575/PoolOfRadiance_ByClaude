@@ -25,7 +25,8 @@ export class CombatHud {
     this.timeline = h('div.cb-timeline');
     this.card = Frame({ title: 'Combat', variant: 'blue', className: 'cb-card' });
     this.cardBody = this.card.body;
-    this.log = new MessageLog(ctx.bus, { lines: 4 });
+    this.log = new MessageLog(ctx.bus, { lines: 3, max: 80 });
+    this.logBox = h('div.cb-logbox', { dataset: { tip: 'Combat log — hover to expand' } }, [this.log.el]);
     this.cmds = h('div.por-commandbar.cb-cmds');
     this.prompt = h('div.cb-prompt');
     this.inspect = h('div.cb-inspect');
@@ -36,8 +37,8 @@ export class CombatHud {
     this.rosterFrame = Frame({ title: 'Party', variant: 'blue', className: 'cb-roster' });
     this.roster = h('div.por-roster');
     this.rosterFrame.body.append(this.roster);
-    const bottom = h('div.cb-bottom', [h('div.por-log-wrap', [this.log.el]), this.cmds]);
-    this.root.append(this.floatLayer, this.speedEl, this.loc, this.timeline, this.card.el, this.rosterFrame.el, this.prompt, bottom, this.help, this.banner, this.inspect);
+    const bottom = h('div.cb-bottom', [this.cmds]);
+    this.root.append(this.floatLayer, this.speedEl, this.loc, this.timeline, this.card.el, this.rosterFrame.el, this.logBox, this.prompt, bottom, this.help, this.banner, this.inspect);
     ctx.ui.mount(this.root);
     this.floats = [];
     this.banners = [];
@@ -53,27 +54,41 @@ export class CombatHud {
     const nodes = [h('div.cb-round', ['Round', h('b', [String(Math.max(1, engine.round))])])];
     let lastSide = null;
     order.forEach((c) => {
-      const down = engine.out(c);
+      const down = this.shownOut(c, engine);
+      const hpNow = this.shownHp(c);
       const done = c._actedRound === engine.round && c.id !== activeId;
       if (lastSide && lastSide !== c.side && false) nodes.push(h('div.cb-sep'));
       lastSide = c.side;
-      const pct = Math.max(0, c.hp.cur) / Math.max(1, c.hp.max);
+      const pct = Math.max(0, hpNow) / Math.max(1, c.hp.max);
       const fx = Object.keys(c.fx ?? {}).filter((k) => FX_LABEL[k] && c.fx[k]).map((k) => ({ asleep: 'z', held: '⛓', nauseous: '~', blessed: '✦', hasted: '»', cursed: '✖', mirror: '◈', invisible: '◌', shielded: '⛨', prot: '☼' }[k] ?? '')).join('');
       const tok = h(`div.cb-token.${c.side}`, {
         class: `${c.id === activeId ? 'current' : ''} ${down ? 'down' : ''} ${done ? 'done' : ''}`,
-        dataset: { tip: `${c.name} — ${c.side === 'party' ? `HP ${c.hp.cur}/${c.hp.max}` : describeHealth(c)} · AC ${c.ac}${c.initiative ? ` · Init ${c.initiative}` : ''}` },
+        dataset: { tip: `${c.name} — ${c.side === 'party' ? `HP ${hpNow}/${c.hp.max}` : describeHealth({ hp: { cur: hpNow, max: c.hp.max } })} · AC ${c.ac}${c.initiative ? ` · Init ${c.initiative}` : ''}` },
         onmouseenter: () => onHover?.(c.id),
         onmouseleave: () => onHover?.(null),
         onclick: () => onClick?.(c.id),
       }, [
         this.portraits.get(c.id) ? h('img', { src: this.portraits.get(c.id), alt: '' }) : h('div', { style: { width: '100%', height: '100%', background: c.side === 'party' ? '#1f3a7a' : '#6e1814' } }),
-        h('div.nm', [shortName(c.name)]),
+        c.side === 'party' ? h('div.nm', [shortName(c.name)]) : h('div.no', [monsterNo(c.name)]),
         fx ? h('div.fx', [fx]) : null,
         h('div.hpb', [h('i', { style: { width: `${pct * 100}%` } })]),
       ]);
       nodes.push(tok);
     });
     this.timeline.replaceChildren(...nodes);
+  }
+
+  /**
+   * What the HUD shows may lag the rules engine: results are revealed when their
+   * hit / impact plays, not when they were rolled. `view` (set by the scene)
+   * holds the displayed values for combatants whose outcome hasn't landed yet.
+   */
+  shownHp(c) {
+    return this.view?.has(c) ? this.view.hp(c) : c.hp.cur;
+  }
+
+  shownOut(c, engine) {
+    return this.view?.has(c) ? this.view.out(c) : engine.out(c);
   }
 
   // ---------------------------------------------------------------- card
@@ -84,7 +99,8 @@ export class CombatHud {
     const isParty = c.side === 'party';
     this.card.el.classList.toggle('monster', !isParty);
     if (this.card.title) this.card.title.textContent = isParty ? (c.quick ? 'Quick' : 'Your Turn') : 'Enemy';
-    const pct = Math.max(0, c.hp.cur) / Math.max(1, c.hp.max);
+    const hpNow = this.shownHp(c);
+    const pct = Math.max(0, hpNow) / Math.max(1, c.hp.max);
     const s = isParty ? deriveStats(c.ref) : null;
     const chips = Object.keys(c.fx ?? {}).filter((k) => FX_LABEL[k] && c.fx[k]).map((k) => h(`span.cb-chip.${FX_LABEL[k][1]}`, [FX_LABEL[k][0]]));
     if (c.guarding) chips.push(h('span.cb-chip.good', ['Guarding']));
@@ -98,7 +114,7 @@ export class CombatHud {
     body.append(...[
       h('div.nm', [c.name]),
       h('div.cls', [isParty ? `${s.className} · Level ${s.levels}` : `${c.ref?.name ?? 'Monster'} · ${hdText(c)}`]),
-      h('div.row', ['Hit Points', h('b', [isParty ? `${c.hp.cur} / ${c.hp.max}` : describeHealth(c)])]),
+      h('div.row', ['Hit Points', h('b', [isParty ? `${hpNow} / ${c.hp.max}` : describeHealth({ hp: { cur: hpNow, max: c.hp.max } })])]),
       h('div.hp', [h('i', { style: { width: `${pct * 100}%` } })]),
       h('div.row', ['Armor Class', h('b', [String(c.ac)])]),
       h('div.row', ['THAC0', h('b', [String(c.thac0)])]),
@@ -114,13 +130,14 @@ export class CombatHud {
   setRoster(engine, activeId, onClick) {
     const rows = [h('div.por-roster-head', [h('span.n', ['Name']), h('span.ac', ['AC']), h('span.hp', ['HP'])])];
     for (const c of engine.party) {
-      const pct = Math.max(0, c.hp.cur) / c.hp.max;
-      const st = c.fled ? 'dead' : c.ref.status !== 'ok' ? c.ref.status : pct < 0.34 ? 'low' : 'ok';
+      const hpNow = this.shownHp(c);
+      const pct = Math.max(0, hpNow) / c.hp.max;
+      const st = c.fled ? 'dead' : this.view?.has(c) ? (pct < 0.34 ? 'low' : 'ok') : c.ref.status !== 'ok' ? c.ref.status : pct < 0.34 ? 'low' : 'ok';
       rows.push(h(`div.por-roster-row.st-${st}`, {
         class: `${c.id === activeId ? 'active' : ''} ${c.quick ? 'auto' : ''}`,
         dataset: { tip: `${c.name}${c.fled ? ' (fled)' : ''} — click to toggle QUICK (computer control)` },
         onclick: () => onClick?.(c),
-      }, [h('span.n', [c.name]), h('span.ac', [String(c.ac)]), h('span.hp', [c.fled ? '—' : String(c.hp.cur)]), h('span.bar', [h('i', { style: { width: `${pct * 100}%` } })])]));
+      }, [h('span.n', [c.name]), h('span.ac', [String(c.ac)]), h('span.hp', [c.fled ? '—' : String(hpNow)]), h('span.bar', [h('i', { style: { width: `${pct * 100}%` } })])]));
     }
     this.roster.replaceChildren(...rows);
     // Keep the roster below the card.
@@ -145,6 +162,7 @@ export class CombatHud {
 
   setPrompt(text) {
     this.prompt.textContent = text ?? '';
+    this.prompt.classList.toggle('show', !!text);
   }
 
   setSpeed(label) {
@@ -277,6 +295,12 @@ export function describeHealth(c) {
 function hdText(c) {
   const hd = c.ref?.hd;
   return hd === undefined ? '' : hd < 1 ? 'HD ½' : `HD ${hd}${c.ref.hpBonus ? (c.ref.hpBonus > 0 ? `+${c.ref.hpBonus}` : c.ref.hpBonus) : ''}`;
+}
+
+/** Monsters show their number as a badge (the full name is in the tooltip). */
+function monsterNo(n) {
+  const m = /(\d+)$/.exec(n);
+  return m ? m[1] : '';
 }
 
 function shortName(n) {

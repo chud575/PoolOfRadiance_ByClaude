@@ -35,9 +35,14 @@ function addMacro(mat, { scale = 0.18, amount = 0.45, grime = 0.35, key = 'macro
       .replace('#include <map_fragment>', `#include <map_fragment>
         float mn = mNoise(vMWPos * ${scale.toFixed(3)}) * 0.6 + mNoise(vMWPos * ${(scale * 2.7).toFixed(3)}) * 0.4;
         diffuseColor.rgb *= ${(1 - amount / 2).toFixed(3)} + ${amount.toFixed(3)} * mn;
-        diffuseColor.rgb *= mix(${(1 - grime).toFixed(3)}, 1.0, smoothstep(0.0, 1.4, vMWPos.y));`);
+        diffuseColor.rgb *= mix(${(1 - grime).toFixed(3)}, 1.0, smoothstep(0.0, 1.4, vMWPos.y));
+        ${grime > 0 ? `// Rain streaks running down from sills and copings; moss creeping up the base.
+        float stk = smoothstep(0.55, 0.9, mNoise(vec3(vMWPos.x * 2.3, vMWPos.y * 0.16, vMWPos.z * 2.3)));
+        diffuseColor.rgb *= 1.0 - stk * 0.3 * smoothstep(0.4, 2.0, vMWPos.y);
+        float baseMoss = (1.0 - smoothstep(0.05, 0.75, vMWPos.y)) * smoothstep(0.4, 0.7, mNoise(vMWPos * 1.7));
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.16, 0.19, 0.09), baseMoss * 0.6);` : ''}`);
   };
-  mat.customProgramCacheKey = () => `${key}-${scale}-${amount}-${grime}`;
+  mat.customProgramCacheKey = () => `${key}-${scale}-${amount}-${grime}-v2`;
   return mat;
 }
 
@@ -47,8 +52,8 @@ function libMat(set, color = 0xffffff, o = {}) {
   const key = `${set}|${color}|${o.rough ?? ''}`;
   if (libCache.has(key)) return libCache.get(key);
   const t = getTextureSet(set);
-  const m = new THREE.MeshStandardMaterial({ map: t.map, normalMap: t.normalMap, roughnessMap: t.roughnessMap, color, roughness: o.rough ?? 1, metalness: 0 });
-  addMacro(m, { key: 'lib' });
+  const m = new THREE.MeshStandardMaterial({ map: t.map, normalMap: t.normalMap, roughnessMap: t.roughnessMap, color, roughness: o.rough ?? 1, metalness: 0, normalScale: new THREE.Vector2(1.7, 1.7) });
+  addMacro(m, { key: 'lib', amount: 0.55 });
   libCache.set(key, m);
   return m;
 }
@@ -74,6 +79,8 @@ export function buildDiorama(field, o = {}) {
   const flames = [];
   const torchSpots = [];
   const disposables = [];
+  const ambient = [];
+  const colBatches = [];
 
   // ---------------------------------------------------------------- cells
   const cellX0 = field.cx0 - RING;
@@ -210,6 +217,21 @@ export function buildDiorama(field, o = {}) {
         if (wF > 0.001) gc = mix(gc, texture2D(map3, uv3), wF);
         float mac = gFbm(vWPos.xz * 0.07);
         gc.rgb *= 0.78 + 0.42 * mac;
+        // Kerbs: a lighter dressed-stone band with a dark gutter where paving changes.
+        float kerb = 1.0 - abs(wF - 0.5) * 2.0;
+        gc.rgb = mix(gc.rgb, vec3(0.5, 0.47, 0.43) * (0.85 + 0.3 * gn), smoothstep(0.62, 0.92, kerb) * 0.8);
+        gc.rgb *= 1.0 - smoothstep(0.3, 0.5, kerb) * (1.0 - smoothstep(0.5, 0.62, kerb)) * 0.45;
+        // Mortar gaps (dark in the albedo) collect moss and grime in patches.
+        float lum = dot(gc.rgb, vec3(0.3, 0.55, 0.15));
+        float gap = 1.0 - smoothstep(0.08, 0.2, lum);
+        float mossN = smoothstep(0.42, 0.7, gFbm(vWPos.xz * 0.33 + 4.0));
+        gc.rgb = mix(gc.rgb, vec3(0.13, 0.17, 0.07), gap * mossN * 0.85);
+        // Worn, polished wheel/foot paths.
+        float worn = smoothstep(0.55, 0.78, gFbm(vWPos.xz * 0.09 + 11.0)) * (1.0 - wR);
+        gc.rgb *= 1.0 + 0.14 * worn;
+        // Dirt drifts heaped against walls, broken up by noise.
+        float drift = smoothstep(0.08, 0.5, 1.0 - gAO) * smoothstep(0.3, 0.6, gFbm(vWPos.xz * 0.6 + 2.0) + (1.0 - gAO) * 0.4);
+        gc.rgb = mix(gc.rgb, vec3(0.24, 0.2, 0.15) * (0.75 + 0.5 * gn), drift * 0.8);
         gc.rgb = mix(gc.rgb, gc.rgb * vec3(0.95, 0.9, 0.82), smoothstep(0.55, 0.8, gFbm(vWPos.xz * 0.21 + 3.0)) * 0.6);
         gc.rgb *= mix(1.0, 0.42, wet);
         gc.rgb *= mix(0.35, 1.0, gAO);
@@ -220,6 +242,7 @@ export function buildDiorama(field, o = {}) {
         if (wR > 0.001) gr = mix(gr, texture2D(rough2, uv2).g, wR);
         if (wF > 0.001) gr = mix(gr, texture2D(rough3, uv3).g, wF);
         float roughnessFactor = roughness * gr;
+        roughnessFactor *= 1.0 - 0.25 * smoothstep(0.55, 0.78, gFbm(vWPos.xz * 0.09 + 11.0));
         roughnessFactor = mix(roughnessFactor, 0.22, wet);
       `)
       .replace('#include <normal_fragment_maps>', `
@@ -234,7 +257,7 @@ export function buildDiorama(field, o = {}) {
         reflectedLight.indirectDiffuse *= mix(0.5, 1.0, gAO);
       `);
   };
-  groundMat.customProgramCacheKey = () => 'combat-ground-v3';
+  groundMat.customProgramCacheKey = () => 'combat-ground-v4';
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(SW * TILE, SH * TILE, 1, 1), groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(originX + (SW * TILE) / 2, 0, originZ + (SH * TILE) / 2);
@@ -372,7 +395,9 @@ export function buildDiorama(field, o = {}) {
           }
         }
       }
-      for (const variant of ['full', 'cut']) {
+      // Houses no longer cut away into dollhouses: they dither out where they
+      // would hide the fight (see setView), so only the full variant is built.
+      for (const variant of ['full']) {
         const B = house[variant];
         const hh = variant === 'cut' ? 1.05 + seed * 0.25 : height;
         if (ruined && variant === 'full') {
@@ -394,8 +419,16 @@ export function buildDiorama(field, o = {}) {
         // Plinth.
         B.add(place(worldBox(len + 0.1, 0.45, 0.1, 2.5), len / 2, 0.225, 0.03), plinthMat);
         if (variant === 'full' && !ruined) {
-          // Corner quoins / timber posts.
-          B.add(place(worldBox(0.26, hh, 0.26, 2.5), 0, hh / 2, -0.06), style === 1 ? darkWood : plinthMat);
+          // Corner quoins (alternating dressed blocks) / timber posts.
+          if (style === 1) B.add(place(worldBox(0.26, hh, 0.26, 2.5), 0, hh / 2, -0.06), darkWood);
+          else {
+            for (let qy = 0.45, k = 0; qy < hh - 0.2; qy += 0.36, k++) {
+              const qw = k % 2 ? 0.34 : 0.56;
+              B.add(place(worldBox(qw, 0.32, 0.08, 1), qw / 2 - 0.02, qy + 0.16, 0.03), plinthMat);
+            }
+            // Eaves corbels under the roof line.
+            for (let cx = 0.6; cx < len - 0.3; cx += 1.1) B.add(place(worldBox(0.14, 0.18, 0.32, 1), cx, hh - 0.12, 0.14), darkWood, { cast: false });
+          }
           // Upper-floor string course.
           B.add(place(worldBox(len, 0.16, 0.12, 2.5), len / 2, 2.7, 0.05), style === 1 ? darkWood : plinthMat);
           // Windows along the upper floor, and the ground floor away from doors.
@@ -439,8 +472,7 @@ export function buildDiorama(field, o = {}) {
     floor.rotateX(-Math.PI / 2);
     const fuv = floor.attributes.uv;
     for (let i = 0; i < fuv.count; i++) fuv.setXY(i, fuv.getX(i) * iw / 1.1, fuv.getY(i) * id / 1.1);
-    house.cut.add(floor, plank, { p: [(hx0 + hx1) / 2, 0.03, (hz0 + hz1) / 2] }, { cast: false });
-    furnish(house, iw, id);
+    void furnish;
     if (!ruined) {
       const alongX = iw >= id;
       const span = alongX ? id : iw;
@@ -466,6 +498,37 @@ export function buildDiorama(field, o = {}) {
         for (let i = 0; i < idx.length; i += 3) [idx[i], idx[i + 2]] = [idx[i + 2], idx[i]];
         gu.computeVertexNormals();
         house.full.add(gu, darkWood, { p: [(hx0 + hx1) / 2, height - 0.07, (hz0 + hz1) / 2] }, { cast: false });
+        // Tile courses: shallow lips across the slope give the roof real relief.
+        if (roofM !== thatchMat) {
+          const rows = Math.floor(slope / 0.42);
+          for (let k = 1; k < rows; k++) {
+            const u = k / rows;
+            const lip = worldBox(len + over * 2, 0.045, 0.07, 3);
+            const yy = rise * (1 - u) - 0.0 + 0.03;
+            const zz = side * (u * (span / 2 + over));
+            const m4 = new THREE.Matrix4().makeRotationX(side * ang);
+            lip.applyMatrix4(m4);
+            lip.translate(0, yy, zz);
+            if (!alongX) lip.rotateY(Math.PI / 2);
+            house.full.add(lip, roofM, { p: [(hx0 + hx1) / 2, height - 0.02, (hz0 + hz1) / 2] }, { cast: false });
+          }
+        }
+        // Fascia board along the eave.
+        const fas = worldBox(len + over * 2, 0.16, 0.05, 1);
+        fas.translate(0, -0.06, side * (span / 2 + over));
+        if (!alongX) fas.rotateY(Math.PI / 2);
+        house.full.add(fas, darkWood, { p: [(hx0 + hx1) / 2, height - 0.05, (hz0 + hz1) / 2] }, { cast: false });
+      }
+      // Bargeboards up the gable edges.
+      for (const end of [-1, 1]) {
+        for (const side of [-1, 1]) {
+          const slope = Math.hypot(span / 2 + over, rise);
+          const bb = worldBox(0.06, 0.18, slope, 1);
+          bb.rotateX(side * Math.atan2(rise, span / 2 + over));
+          bb.translate(end * (len / 2 + over), rise / 2, side * (span / 2 + over) / 2);
+          if (!alongX) bb.rotateY(Math.PI / 2);
+          house.full.add(bb, darkWood, { p: [(hx0 + hx1) / 2, height - 0.02, (hz0 + hz1) / 2] }, { cast: false });
+        }
       }
       // Gable ends.
       for (const end of [-1, 1]) {
@@ -479,9 +542,15 @@ export function buildDiorama(field, o = {}) {
         if (!alongX) g.rotateY(Math.PI / 2);
         house.full.add(g, wallMat, { p: [(hx0 + hx1) / 2, height - 0.02, (hz0 + hz1) / 2] });
       }
-      // Ridge beam + chimney.
+      // Ridge capped with half-round ridge tiles.
       const ridge = worldBox(alongX ? len + over * 2 : 0.22, 0.22, alongX ? 0.22 : len + over * 2, 1);
       house.full.add(ridge, darkWood, { p: [(hx0 + hx1) / 2, height + rise, (hz0 + hz1) / 2] });
+      if (roofM !== thatchMat) {
+        const rt = new THREE.CylinderGeometry(0.15, 0.15, len + over * 2, 10, 1, false, 0, Math.PI);
+        rt.rotateZ(Math.PI / 2);
+        if (!alongX) rt.rotateY(Math.PI / 2);
+        house.full.add(rt, roofM, { p: [(hx0 + hx1) / 2, height + rise + 0.06, (hz0 + hz1) / 2] }, { cast: false });
+      }
       if (seed > 0.35) {
         const cx = alongX ? hx0 + iw * (0.2 + seed * 0.5) : (hx0 + hx1) / 2 + span * 0.2;
         const cz = alongX ? (hz0 + hz1) / 2 + span * 0.2 : hz0 + id * (0.2 + seed * 0.5);
@@ -630,7 +699,7 @@ export function buildDiorama(field, o = {}) {
     const ox = horiz ? x0 : x0 + CELLM;
     const oz = horiz ? z0 + CELLM : z0;
     const gap = e.type === EDGE.DOOR || e.type === EDGE.ARCH;
-    const wall = { horiz, full: new Batcher(), cut: new Batcher(), e };
+    const wall = { horiz, full: new Batcher(), cut: new Batcher(), e, low: true };
     for (const variant of ['full', 'cut']) {
       const B = wall[variant];
       const segs = [];
@@ -742,9 +811,38 @@ export function buildDiorama(field, o = {}) {
     } else if (p.type === 'rubble') {
       for (let k = 0; k < 5; k++) batch.add(rockGeo(hash(p.x, p.y + k, 3), 0.25 + hash(p.x + k, p.y, 4) * 0.35), rockMat, { p: [x + (hash(k, p.x, 5) - 0.5) * 0.9, 0.05, z + (hash(k, p.y, 6) - 0.5) * 0.9] });
     } else if (p.type === 'column') {
-      const hh = 1.2 + r * 30 % 2.2;
-      batch.add(new THREE.CylinderGeometry(0.34, 0.38, hh, 14), libMat('wall_stone', 0xe0d8c8), { p: [x, hh / 2 + 0.3, z] });
-      batch.add(worldBox(0.95, 0.3, 0.95, 1), plinthMat, { p: [x, 0.15, z] });
+      // Fluted columns: some still carry their capital, others snapped off with
+      // drums tumbled at the foot.
+      const colMat = libMat('wall_stone', 0xd8d0c0);
+      const hallCol = !!field.features.hall;
+      const broken = hallCol ? hash(p.x, p.y, 401) < 0.45 : true;
+      const hh = broken ? 1.0 + hash(p.x, p.y, 402) * 1.3 : 3.7;
+      // Tall columns get their own group so they can dither out when they hide the fight.
+      const CB = broken ? batch : new Batcher();
+      if (!broken) colBatches.push({ b: CB, x, z, h: hh + 0.8 });
+      CB.add(columnGeo(hh, broken, p.x * 7 + p.y), colMat, { p: [x, 0.42, z] });
+      CB.add(worldBox(0.98, 0.26, 0.98, 1), plinthMat, { p: [x, 0.13, z] });
+      CB.add(new THREE.CylinderGeometry(0.46, 0.5, 0.16, 20), colMat, { p: [x, 0.34, z] });
+      if (!broken) {
+        CB.add(new THREE.CylinderGeometry(0.5, 0.36, 0.22, 20), colMat, { p: [x, 0.42 + hh + 0.11, z] });
+        CB.add(worldBox(1.05, 0.2, 1.05, 1), plinthMat, { p: [x, 0.42 + hh + 0.32, z] });
+      } else {
+        for (let k = 0; k < 2; k++) {
+          const a = hash(p.x, p.y, 410 + k) * Math.PI * 2;
+          CB.add(columnGeo(0.42, true, p.x + k * 13), colMat, { p: [x + Math.cos(a) * 0.55, 0.3, z + Math.sin(a) * 0.55], r: [Math.PI / 2, a, 0] });
+        }
+        for (let k = 0; k < 4; k++) CB.add(rockGeo(hash(k, p.x, p.y), 0.1 + hash(p.y, k, 3) * 0.12), colMat, { p: [x + (hash(k, 1, p.x) - 0.5) * 1.1, 0.04, z + (hash(k, 2, p.y) - 0.5) * 1.1] }, { cast: false });
+      }
+    } else if (p.type === 'fallen') {
+      // A toppled column lying across the square: drums in a broken row + capital.
+      const colMat = libMat('wall_stone', 0xd0c8b8);
+      const a = 0.4 + hash(p.x, p.y, 420) * 0.5;
+      for (let k = 0; k < 3; k++) {
+        const d = (k - 1) * 0.62;
+        batch.add(columnGeo(0.58, k === 0, p.x * 3 + k), colMat, { p: [x + Math.cos(a) * d, 0.33, z + Math.sin(a) * d], r: [Math.PI / 2, -a + Math.PI / 2 + (k - 1) * 0.08, 0] });
+      }
+      batch.add(worldBox(0.9, 0.3, 0.9, 1), plinthMat, { p: [x + Math.cos(a) * 1.15, 0.15, z + Math.sin(a) * 1.15], r: [0.2, a, 0.15] });
+      for (let k = 0; k < 6; k++) batch.add(rockGeo(hash(k, p.x, 7), 0.08 + hash(k, p.y, 8) * 0.14), colMat, { p: [x + (hash(k, 3, p.x) - 0.5) * 1.3, 0.03, z + (hash(k, 4, p.y) - 0.5) * 1.3] }, { cast: false });
     } else if (p.type === 'debris') {
       for (let k = 0; k < 4; k++) batch.add(worldBox(1.1, 0.06, 0.16, 1), woodMat, { p: [x + (hash(k, 1, p.x) - 0.5) * 0.7, 0.05 + k * 0.05, z + (hash(k, 2, p.y) - 0.5) * 0.7], r: [0, hash(k, 3, p.x) * 3, 0.1] });
     }
@@ -859,7 +957,21 @@ export function buildDiorama(field, o = {}) {
     }
   }
 
-  // Temple furniture: altar with candles and a statue of Tyr.
+  // Temple furniture: altar with candles and a cracked statue of Tyr (the Maimed God,
+  // blindfolded, his right hand lost), banners of the Scales, roof beams that
+  // survived the collapse, candle clusters and — at night — moonbeams through the
+  // open roof.
+  const stoneT = libMat('wall_stone', 0xd8d4cc);
+  const crackMat = new THREE.MeshStandardMaterial({ color: 0x14100c, roughness: 1 });
+  disposables.push(crackMat);
+  const candleMat = pbr('glow', 0xf0e8d0, { emissive: 0xffc070, emissiveIntensity: night ? 0.9 : 0.4 });
+  const candle = (cx, cz, y, h, seed) => {
+    batch.add(new THREE.CylinderGeometry(0.03, 0.035, h, 7), candleMat, { p: [cx, y + h / 2, cz] }, { cast: false });
+    const fl = makeFlame(0.09, seed);
+    fl.position.set(cx, y + h + 0.06, cz);
+    group.add(fl);
+    flames.push(fl);
+  };
   for (const p of field.features.props ?? []) {
     const x = p.x * TILE + TILE / 2;
     const z = p.y * TILE + TILE / 2;
@@ -867,27 +979,121 @@ export function buildDiorama(field, o = {}) {
       batch.add(worldBox(1.4, 0.95, 0.85, 1.5), libMat('wall_stone', 0xe8e0d0), { p: [x, 0.475, z] });
       batch.add(worldBox(1.55, 0.1, 1.0, 1.5), plinthMat, { p: [x, 1.0, z] });
       batch.add(worldBox(0.5, 0.02, 1.02, 1), pbr('cloth', 0x8a1a18), { p: [x, 1.06, z] }, { cast: false });
-      for (const dx of [-0.55, 0.55]) {
-        batch.add(new THREE.CylinderGeometry(0.035, 0.04, 0.22, 8), pbr('glow', 0xf0e8d0, { emissive: 0xffc070, emissiveIntensity: 0.6 }), { p: [x + dx, 1.17, z] }, { cast: false });
-        const fl = makeFlame(0.12, x + dx);
-        fl.position.set(x + dx, 1.3, z);
-        group.add(fl);
-        flames.push(fl);
-      }
+      batch.add(worldBox(0.5, 0.6, 0.012, 1), pbr('cloth', 0x8a1a18), { p: [x, 0.76, z + 0.505] }, { cast: false });
+      // A crack through the altar block and a chipped corner.
+      batch.add(worldBox(0.03, 0.8, 0.02, 1), crackMat, { p: [x - 0.38, 0.45, z + 0.43], r: [0, 0, 0.3] }, { cast: false });
+      batch.add(rockGeo(hash(p.x, p.y, 77), 0.12), libMat('wall_stone', 0xe8e0d0), { p: [x + 0.8, 0.05, z + 0.4] }, { cast: false });
+      // Candles: tall pair, a cluster of stubs, melted wax.
+      candle(x - 0.58, z, 1.05, 0.26, x);
+      candle(x + 0.58, z, 1.05, 0.22, x + 1);
+      for (let k = 0; k < 5; k++) candle(x - 0.25 + k * 0.12, z - 0.28 + (k % 2) * 0.1, 1.05, 0.06 + hash(k, p.x, 5) * 0.1, x + k * 3);
+      for (let k = 0; k < 6; k++) candle(x - 1.0 + (k % 3) * 0.14, z + 0.55 + Math.floor(k / 3) * 0.14, 0, 0.08 + hash(k, p.y, 9) * 0.16, z + k * 5);
+      // The altar's warm light gets one of the real point lights.
+      torches.unshift({ x, y: 1.75, z, brazier: true, altar: true });
     } else if (p.type === 'statue') {
-      const stone = libMat('wall_stone', 0xd8d4cc);
-      batch.add(worldBox(1.2, 0.6, 1.2, 1.5), plinthMat, { p: [x, 0.3, z] });
-      const robe = new THREE.LatheGeometry([[0.001, 0], [0.42, 0], [0.36, 0.8], [0.3, 1.5], [0.22, 1.9], [0.12, 2.0]].map(([r, y]) => new THREE.Vector2(r, y)), 16);
-      batch.add(robe, stone, { p: [x, 0.6, z] });
-      batch.add(new THREE.SphereGeometry(0.17, 14, 10), stone, { p: [x, 2.8, z] });
-      batch.add(worldBox(0.36, 0.06, 0.1, 1), pbr('cloth', 0x2a2a2a), { p: [x, 2.82, z + 0.13] }, { cast: false });
-      // Arms outstretched holding the scales of justice.
-      batch.add(new THREE.CylinderGeometry(0.05, 0.05, 1.2, 8).rotateZ(Math.PI / 2), stone, { p: [x, 2.35, z + 0.12] });
-      batch.add(new THREE.CylinderGeometry(0.018, 0.018, 1.4, 6).rotateZ(Math.PI / 2), pbr('gold', 0xb8923a), { p: [x, 2.6, z + 0.25] });
-      for (const dx of [-0.65, 0.65]) {
-        batch.add(new THREE.SphereGeometry(0.14, 12, 6, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), pbr('gold', 0xb8923a), { p: [x + dx, 2.3, z + 0.25] });
-        batch.add(new THREE.CylinderGeometry(0.006, 0.006, 0.3, 4), pbr('gold', 0xb8923a), { p: [x + dx, 2.45, z + 0.25] }, { cast: false });
+      const sx = x;
+      const sz = z - 0.1;
+      batch.add(worldBox(1.3, 0.9, 1.1, 1.5), plinthMat, { p: [sx, 0.45, sz] });
+      batch.add(worldBox(1.45, 0.12, 1.25, 1.5), stoneT, { p: [sx, 0.96, sz] });
+      const robe = new THREE.LatheGeometry([[0.001, 0], [0.44, 0], [0.4, 0.5], [0.33, 1.1], [0.3, 1.5], [0.36, 1.85], [0.2, 2.05], [0.09, 2.12]].map(([r, y]) => new THREE.Vector2(r, y)), 20);
+      robe.scale(1, 1, 0.8);
+      batch.add(robe, stoneT, { p: [sx, 1.02, sz] });
+      // Head with a carved blindfold, beard.
+      batch.add(new THREE.SphereGeometry(0.17, 16, 12), stoneT, { p: [sx, 3.3, sz + 0.02] });
+      batch.add(new THREE.CylinderGeometry(0.175, 0.175, 0.07, 16), pbr('cloth', 0x3a3632), { p: [sx, 3.33, sz + 0.02] }, { cast: false });
+      batch.add(new THREE.ConeGeometry(0.12, 0.26, 10), stoneT, { p: [sx, 3.08, sz + 0.1], r: [Math.PI, 0, 0] });
+      // Left arm raised, holding the warhammer of justice.
+      batch.add(new THREE.CylinderGeometry(0.06, 0.07, 0.75, 8), stoneT, { p: [sx - 0.42, 3.15, sz + 0.05], r: [0, 0, -0.5] });
+      batch.add(new THREE.CylinderGeometry(0.025, 0.025, 1.2, 6), stoneT, { p: [sx - 0.62, 3.6, sz + 0.05] });
+      batch.add(worldBox(0.38, 0.2, 0.2, 1), stoneT, { p: [sx - 0.62, 4.2, sz + 0.05] });
+      // Right arm ends at the wrist (Tyr's lost hand); the scales hang from it.
+      batch.add(new THREE.CylinderGeometry(0.065, 0.055, 0.6, 8), stoneT, { p: [sx + 0.36, 2.8, sz + 0.18], r: [0.6, 0, 0.5] });
+      batch.add(new THREE.CylinderGeometry(0.016, 0.016, 0.9, 6).rotateZ(Math.PI / 2), pbr('gold', 0x8a6a2a), { p: [sx + 0.5, 2.62, sz + 0.42] });
+      for (const dx of [-0.42, 0.42]) {
+        batch.add(new THREE.SphereGeometry(0.12, 12, 6, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), pbr('gold', 0x8a6a2a), { p: [sx + 0.5 + dx, 2.32, sz + 0.42] });
+        batch.add(new THREE.CylinderGeometry(0.004, 0.004, 0.3, 4), pbr('gold', 0x8a6a2a), { p: [sx + 0.5 + dx, 2.47, sz + 0.42] }, { cast: false });
       }
+      // A great crack through the statue and a fallen fragment at its feet.
+      batch.add(worldBox(0.025, 1.4, 0.02, 1), crackMat, { p: [sx + 0.12, 2.2, sz + 0.33], r: [0, 0, 0.25] }, { cast: false });
+      batch.add(worldBox(0.02, 0.6, 0.02, 1), crackMat, { p: [sx - 0.1, 1.5, sz + 0.36], r: [0, 0, -0.5] }, { cast: false });
+      batch.add(rockGeo(hash(p.x, 3, 3), 0.3), stoneT, { p: [sx + 0.7, 0.1, sz + 0.75] });
+      batch.add(rockGeo(hash(p.x, 4, 3), 0.18), stoneT, { p: [sx + 0.45, 0.05, sz + 0.95] }, { cast: false });
+      for (let k = 0; k < 4; k++) candle(sx - 0.5 + k * 0.32, sz + 0.62, 0.96, 0.08 + hash(k, 2, 9) * 0.12, sx + k * 7);
+    }
+  }
+  const hallR = field.features.hall;
+  if (hallR) {
+    const hx0 = hallR.x0 * TILE;
+    const hz0 = hallR.y0 * TILE;
+    const hw = hallR.w * TILE;
+    const hd = hallR.h * TILE;
+    // Banners of the Scales flanking the statue on the back wall, tattered at the hem.
+    const banTex = heraldryTex(0x5a1210, 0xd8b25a);
+    disposables.push(banTex);
+    const banMat = new THREE.MeshStandardMaterial({ map: banTex, roughness: 0.95, side: THREE.DoubleSide, alphaTest: 0.5, transparent: false });
+    disposables.push(banMat);
+    for (const dx of [-2.1, 2.1]) {
+      const g = new THREE.PlaneGeometry(1.0, 2.4, 6, 8);
+      const pos = g.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        const y = pos.getY(i);
+        const xx = pos.getX(i);
+        pos.setZ(i, Math.sin(xx * 5 + y * 2) * 0.03 + (1.2 - y) * 0.02);
+      }
+      g.computeVertexNormals();
+      batch.add(g, banMat, { p: [hallR.cx * TILE + TILE / 2 + dx, 2.5, hz0 + 0.24] }, { cast: false });
+      batch.add(new THREE.CylinderGeometry(0.03, 0.03, 1.3, 6).rotateZ(Math.PI / 2), darkWood, { p: [hallR.cx * TILE + TILE / 2 + dx, 3.72, hz0 + 0.26] }, { cast: false });
+    }
+    // Surviving roof beams jutting from the side walls, a fallen one across the rubble.
+    for (let k = 0; k < Math.floor(hd / 3.2); k++) {
+      const zz = hz0 + 1.6 + k * 3.2;
+      const l1 = 0.8 + hash(k, 1, 501) * 1.4;
+      const l2 = 0.6 + hash(k, 2, 501) * 1.2;
+      batch.add(worldBox(l1, 0.26, 0.26, 1), darkWood, { p: [hx0 + l1 / 2, 3.55, zz], r: [0, 0, -0.06] });
+      batch.add(worldBox(l2, 0.26, 0.26, 1), darkWood, { p: [hx0 + hw - l2 / 2, 3.55, zz], r: [0, 0, 0.08] });
+    }
+    batch.add(worldBox(4.2, 0.24, 0.24, 1), darkWood, { p: [hx0 + hw - 1.6, 0.55, hz0 + hd - 1.4], r: [0, 0.7, 0.25] });
+    batch.add(worldBox(2.6, 0.22, 0.22, 1), darkWood, { p: [hx0 + 1.4, 0.3, hz0 + hd - 0.9], r: [0, -0.4, 0.1] });
+    // Rubble drifts along the foot of the walls.
+    const rubM = libMat('wall_ruin', 0xa89c8c);
+    for (let k = 0; k < 40; k++) {
+      const side = k % 4;
+      const t = hash(k, 3, 511);
+      const px = side < 2 ? hx0 + 0.35 + side * (hw - 0.7) : hx0 + t * hw;
+      const pz = side < 2 ? hz0 + t * hd : hz0 + 0.35 + (side - 2) * (hd - 0.7);
+      batch.add(rockGeo(hash(k, 4, 511), 0.08 + hash(k, 5, 511) * 0.18), rubM, { p: [px + (hash(k, 6, 511) - 0.5) * 0.3, 0.03, pz + (hash(k, 7, 511) - 0.5) * 0.3] }, { cast: false });
+    }
+    if (night) {
+      // Moonbeams through the open roof: slanted soft shafts with drifting motes.
+      const beamMat = new THREE.ShaderMaterial({
+        transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+        uniforms: { uT: { value: 0 }, tNoise: { value: noiseTexture() } },
+        vertexShader: 'varying vec2 vUv; varying vec3 vW; void main(){ vUv = uv; vW = (modelMatrix * vec4(position,1.0)).xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+        fragmentShader: `varying vec2 vUv; varying vec3 vW; uniform float uT; uniform sampler2D tNoise;
+          void main(){ float across = 1.0 - abs(vUv.x - 0.5) * 2.0;
+            float n = texture2D(tNoise, vec2(vW.x * 0.08 + uT * 0.01, vW.y * 0.05 - uT * 0.02)).r;
+            float a = smoothstep(0.0, 1.0, across) * smoothstep(0.0, 0.3, vUv.y) * smoothstep(1.0, 0.55, vUv.y) * (0.55 + n * 0.6);
+            gl_FragColor = vec4(vec3(0.55, 0.65, 1.0) * 0.5, a * a * 0.3); }`,
+      });
+      disposables.push(beamMat);
+      const beams = new THREE.Group();
+      for (const [fx, fz, w] of [[0.32, 0.45, 1.6], [0.66, 0.7, 1.2], [0.45, 0.85, 0.9]]) {
+        for (const rot of [0, Math.PI / 3, (Math.PI * 2) / 3]) {
+          const g = new THREE.PlaneGeometry(w, 9);
+          const m = new THREE.Mesh(g, beamMat);
+          m.position.set(hx0 + hw * fx + 1.2, 4.0, hz0 + hd * fz - 1.0);
+          m.rotation.set(0, rot + 0.5, 0);
+          m.rotateX(0.32);
+          m.renderOrder = 5;
+          beams.add(m);
+          disposables.push(g);
+        }
+      }
+      group.add(beams);
+      ambient.push({ update: (t) => (beamMat.uniforms.uT.value = t), dispose: () => {} });
+      const motes = loopingParticles({ count: 60, at: new THREE.Vector3(hx0 + hw * 0.5, 1.8, hz0 + hd * 0.6), spread: hw * 0.35, spreadY: 1.6, vel: [0.04, 0.03, 0.02], turb: 0.15, life: 8, size: 0.03, color: 0xb8c8ff, additive: true, alpha: 0.6, seed: 31 });
+      group.add(motes.obj);
+      ambient.push(motes);
     }
   }
 
@@ -951,6 +1157,13 @@ export function buildDiorama(field, o = {}) {
     wallGroups.push({ w, full: gFull, cut: gCut });
   }
 
+  for (const cb of colBatches) {
+    const gFull = new THREE.Group();
+    cb.b.flush(gFull);
+    group.add(gFull);
+    const box = new THREE.Box3(new THREE.Vector3(cb.x - 0.55, 0, cb.z - 0.55), new THREE.Vector3(cb.x + 0.55, cb.h, cb.z + 0.55));
+    wallGroups.push({ w: { prop: true, e: {} }, full: gFull, cut: new THREE.Group(), fixedBox: box });
+  }
   // Bounding boxes for occlusion tests.
   for (const hg of houseGroups) {
     const hs = hg.h;
@@ -958,11 +1171,58 @@ export function buildDiorama(field, o = {}) {
     hg.box = new THREE.Box3(new THREE.Vector3(hs.x0 - 0.5, 0, hs.z0 - 0.5), new THREE.Vector3(hs.x1 + 0.5, top, hs.z1 + 0.5));
   }
   for (const wg of wallGroups) {
+    if (wg.fixedBox) {
+      wg.box = wg.fixedBox;
+      continue;
+    }
     wg.box = new THREE.Box3();
     wg.full.updateMatrixWorld(true);
     wg.box.setFromObject(wg.full);
     wg.box.expandByScalar(0.2);
   }
+  // Occlusion fade: per-group opacity (screen-door dither) applied only inside a
+  // soft screen-space hole around the fight, so roofs and outer walls keep their
+  // silhouette while the slice between camera and actors melts away.
+  const fadeShared = { uHole: { value: new THREE.Vector2(-9999, -9999) }, uHoleR: { value: 300 } };
+  const fadeMats = new Map();
+  const fadeMat = (m, g) => {
+    const key = `${m.uuid}|${g.full.id}`;
+    if (fadeMats.has(key)) return fadeMats.get(key);
+    const f = m.clone();
+    const base = m.onBeforeCompile;
+    const baseKey = m.customProgramCacheKey?.() ?? '';
+    f.onBeforeCompile = (sh, r) => {
+      base?.call(m, sh, r);
+      sh.uniforms.uFade = g.fade;
+      sh.uniforms.uHole = fadeShared.uHole;
+      sh.uniforms.uHoleR = fadeShared.uHoleR;
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', `#include <common>
+          uniform float uFade, uHoleR; uniform vec2 uHole;
+          float bayer4(vec2 p){ int x = int(mod(p.x, 4.0)); int y = int(mod(p.y, 4.0)); int i = x + y * 4;
+            float B[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+            return (B[i] + 0.5) / 16.0; }`)
+        .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+          if (uFade < 0.999) {
+            float hd = length(gl_FragCoord.xy - uHole) / uHoleR;
+            float op = mix(uFade, 1.0, smoothstep(0.75, 1.15, hd));
+            if (bayer4(gl_FragCoord.xy) > op) discard;
+          }`);
+    };
+    f.customProgramCacheKey = () => `${baseKey}|fade`;
+    fadeMats.set(key, f);
+    disposables.push(f);
+    return f;
+  };
+  for (const g of [...houseGroups, ...wallGroups]) {
+    if (g.w?.city || g.w?.low) continue;
+    g.fade = { value: 1 };
+    g.fadeTarget = 1;
+    g.full.traverse((o) => {
+      if (o.isMesh) o.material = fadeMat(o.material, g);
+    });
+  }
+
   const _ray = new THREE.Ray();
   const _v = new THREE.Vector3();
   /**
@@ -993,20 +1253,28 @@ export function buildDiorama(field, o = {}) {
           break;
         }
       }
-      g.full.visible = !hides;
-      g.cut.visible = hides;
-      for (const tc of g.h?.torches ?? []) {
-        tc.flame.visible = !hides;
-        tc.hidden = hides;
-        if (tc.light) tc.light.userData.hidden = hides;
+      if (g.w?.low) {
+        // Low field walls simply drop to their knee-high cut-away course.
+        g.full.visible = !hides;
+        g.cut.visible = hides;
+        continue;
       }
+      g.full.visible = true;
+      g.cut.visible = false;
+      g.fadeTarget = hides ? 0.22 : 1;
     }
   }
 
+  /** Screen-space centre/radius (px) of the fade hole — the fight's focus. */
+  function setHole(x, y, r) {
+    fadeShared.uHole.value.set(x, y);
+    fadeShared.uHoleR.value = r;
+  }
+
   // ---------------------------------------------------------------- ambient life
-  const ambient = [];
   // Embers rising from every brazier; sparks from torches.
   for (const tc of torches) {
+    if (tc.altar) continue;
     const e = loopingParticles({ count: tc.brazier ? 26 : 8, at: new THREE.Vector3(tc.x, tc.y - (tc.brazier ? 0.35 : 0.1), tc.z), spread: tc.brazier ? 0.35 : 0.08, vel: [0, tc.brazier ? 1.3 : 0.8, 0], turb: 0.35, life: tc.brazier ? 2.2 : 1.4, size: 0.05, color: 0xffa040, additive: true, seed: tc.x * 3 + tc.z });
     group.add(e.obj);
     ambient.push(e);
@@ -1048,7 +1316,7 @@ export function buildDiorama(field, o = {}) {
   function occluders(camPos, points) {
     let n = 0;
     for (const g of [...houseGroups, ...wallGroups]) {
-      if (g.w?.city) continue;
+      if (g.w?.city || g.w?.prop) continue;
       for (const p of points) {
         _ray.origin.copy(p);
         _ray.direction.subVectors(camPos, p).normalize();
@@ -1063,7 +1331,13 @@ export function buildDiorama(field, o = {}) {
     return n;
   }
 
+  let lastT = null;
   function update(t, pix) {
+    const dt = lastT === null ? 0 : t - lastT;
+    lastT = t;
+    // Ease the occlusion fades (snap when the clock is frozen: settled state).
+    const k = dt > 1e-5 ? 1 - Math.exp(-dt * 6) : 1;
+    for (const g of [...houseGroups, ...wallGroups]) if (g.fade) g.fade.value += (g.fadeTarget - g.fade.value) * k;
     for (const f of flames) f.userData.update(t);
     for (const a of ambient) a.update(t, pix);
   }
@@ -1077,7 +1351,7 @@ export function buildDiorama(field, o = {}) {
     for (const f of flames) f.userData.dispose?.();
   }
 
-  return { group, torches, flames, houses, update, setView, occluders, bounds: { w: W, h: H }, dispose };
+  return { group, torches, flames, houses, update, setView, setHole, occluders, bounds: { w: W, h: H }, dispose };
 }
 
 // ------------------------------------------------------------------ helpers
@@ -1289,6 +1563,85 @@ function mergeList(list) {
 }
 
 /** Irregular rock: jittered icosahedron. */
+/** Temple banner: Tyr's scales on deep red, gilt border, a tattered hem (alpha). */
+function heraldryTex(field, gilt) {
+  const c = document.createElement('canvas');
+  c.width = 128;
+  c.height = 320;
+  const g = c.getContext('2d');
+  const hex = (n) => `#${n.toString(16).padStart(6, '0')}`;
+  g.fillStyle = hex(field);
+  g.fillRect(0, 0, 128, 320);
+  // Weave + grime.
+  for (let i = 0; i < 1400; i++) {
+    g.fillStyle = `rgba(0,0,0,${hash(i, 1, 601) * 0.18})`;
+    g.fillRect(hash(i, 2, 601) * 128, hash(i, 3, 601) * 320, 2, 1);
+  }
+  const grd = g.createLinearGradient(0, 0, 0, 320);
+  grd.addColorStop(0, 'rgba(0,0,0,0)');
+  grd.addColorStop(1, 'rgba(20,10,0,0.45)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 128, 320);
+  g.strokeStyle = hex(gilt);
+  g.lineWidth = 5;
+  g.strokeRect(9, 9, 110, 260);
+  // The scales of Tyr.
+  g.lineWidth = 4;
+  g.beginPath();
+  g.moveTo(64, 70); g.lineTo(64, 190);
+  g.moveTo(26, 95); g.lineTo(102, 95);
+  g.moveTo(30, 95); g.lineTo(22, 135); g.moveTo(30, 95); g.lineTo(42, 135);
+  g.moveTo(98, 95); g.lineTo(86, 135); g.moveTo(98, 95); g.lineTo(110, 135);
+  g.moveTo(44, 190); g.lineTo(84, 190);
+  g.stroke();
+  g.fillStyle = hex(gilt);
+  for (const cx of [32, 98]) {
+    g.beginPath();
+    g.ellipse(cx, 136, 14, 6, 0, 0, Math.PI);
+    g.fill();
+  }
+  g.beginPath();
+  g.arc(64, 64, 7, 0, Math.PI * 2);
+  g.fill();
+  // Tattered hem: cut away a ragged band (alpha-tested).
+  g.globalCompositeOperation = 'destination-out';
+  g.beginPath();
+  g.moveTo(0, 320);
+  for (let x = 0; x <= 128; x += 8) g.lineTo(x, 280 + hash(x, 4, 601) * 36 + (x % 16 ? 10 : 0));
+  g.lineTo(128, 320);
+  g.closePath();
+  g.fill();
+  for (let i = 0; i < 6; i++) {
+    g.beginPath();
+    g.arc(hash(i, 5, 601) * 128, 60 + hash(i, 6, 601) * 200, 3 + hash(i, 7, 601) * 5, 0, Math.PI * 2);
+    g.fill();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/** Fluted column shaft (base at y=0); a broken one gets a jagged, sheared top. */
+function columnGeo(h, broken, seed) {
+  const g = new THREE.CylinderGeometry(0.31, 0.35, h, 24, Math.max(2, Math.round(h * 3)), false);
+  g.translate(0, h / 2, 0);
+  const pos = g.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    const r = Math.hypot(x, z);
+    if (r < 0.05) continue;
+    const a = Math.atan2(z, x);
+    const k = 1 - Math.max(0, Math.cos(a * 12)) * 0.06;
+    let ny = y;
+    if (broken && y > h - 0.01) ny = h - 0.05 - hash(Math.round(a * 4), seed, 431) * 0.35 - Math.max(0, Math.cos(a + seed)) * 0.25;
+    pos.setXYZ(i, x * k, ny, z * k);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+
 function rockGeo(seed, size) {
   const g = new THREE.IcosahedronGeometry(size, 1);
   const pos = g.attributes.position;
