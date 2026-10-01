@@ -1406,6 +1406,7 @@ export default class CombatScene extends Scene {
       if (this.done && ev.type !== 'log') break;
       const fig = ev.id ? this.figures.get(ev.id) : null;
       const actor = ev.id ? e.byId(ev.id) : null;
+      this.ctx.bus.emit('combat:event', { ev, engine: e }); // structured feed for the audio director
       switch (ev.type) {
         case 'round':
           this._refresh(e.active());
@@ -2109,6 +2110,7 @@ export default class CombatScene extends Scene {
     const { game, ui, scenes, rng } = this.ctx;
     // Rules: combat-only effects (held, asleep, charmed, hasted, nauseous...) end with the battle.
     endBattle(this.party);
+    this.ctx.bus.emit('combat:end', { winner }); // audio: victory coda / defeat
     if (winner === 'party') {
       // Let the last death and its VFX settle before the fanfare.
       if (!this.snap) await this.wait(Math.max(0.9, this.vfx.busyUntil?.(this.time) ?? 0));

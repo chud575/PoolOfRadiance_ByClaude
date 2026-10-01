@@ -22,6 +22,7 @@ export const UI_SETTING_DEFAULTS = {
   quality: 'high',
   difficulty: 'veteran',
   uiVolume: 0.7,
+  ambienceVolume: 0.6,
   showTooltips: true,
   cameraBob: true,
 };
@@ -239,6 +240,7 @@ export class SettingsPanel {
           { key: 'musicVolume', label: 'Music', desc: 'The score of the Moonsea.', type: 'slider', min: 0, max: 1, step: 0.05, fmt: pct },
           { key: 'sfxVolume', label: 'Effects', desc: 'Steel, spells, doors and footsteps.', type: 'slider', min: 0, max: 1, step: 0.05, fmt: pct },
           { key: 'uiVolume', label: 'Interface', desc: 'Menu clicks and confirmations.', type: 'slider', min: 0, max: 1, step: 0.05, fmt: pct },
+          { key: 'ambienceVolume', label: 'Ambience', desc: 'Wind, surf, the city and the dungeon dark.', type: 'slider', min: 0, max: 1, step: 0.05, fmt: pct },
         ],
       },
       { id: 'controls', label: 'Controls', blurb: 'Rebind keys. Click a key, then press the new one (Esc cancels, Del clears).', custom: 'bindings' },
