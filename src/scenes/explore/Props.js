@@ -121,13 +121,18 @@ export function buildProps(map, block, opts = {}) {
       } else if (r < 0.58) {
         addCrate(place(f, sPos, T / 2 + 0.35, (seed - 0.5) * 0.4), 0.6);
         addSack(place(f, sPos + 0.55, T / 2 + 0.3, seed * 5), 0.9);
-      } else if (r < 0.68 && f.recipe !== 'int_panel') {
-        tapestries[Math.floor(hash(seed, 'tv') * 2)].push({ face: f, s: sPos * 0.5, w: 1.15, h: 1.7, y: 1.25 });
-      } else if (r < 0.76) {
-        weaponRack(g, place(f, sPos * 0.5, T / 2 + 0.02), seed);
-      } else if (r < 0.83) {
-        notices.push({ face: f, s: sPos * 0.5 });
-        g.box('prop_wood', { matrix: place(f, sPos * 0.5, T / 2 + 0.03).multiply(new THREE.Matrix4().makeTranslation(0, 1.55, 0)), s: [1.08, 0.82, 0.05], chamfer: 0.012, uv: 'along' });
+      }
+      // wall dressing above the furniture line (never across a window or under a shelf)
+      const deco = hash(seed, 'deco', map.id);
+      const ds = (hash(seed, 'dsx') - 0.5) * 1.0;
+      const freeWall = !f.openings.some((o) => o.s0 - 0.7 < ds && o.s1 + 0.7 > ds) && !(r >= 0.2 && r < 0.36);
+      if (freeWall && f.recipe !== 'int_panel') {
+        if (deco < 0.3) tapestries[Math.floor(hash(seed, 'tv') * 2)].push({ face: f, s: ds, w: 1.1, h: 1.45, y: 1.35 });
+        else if (deco < 0.45 && r >= 0.36) weaponRack(g, place(f, ds, T / 2 + 0.02), seed);
+        else if (deco < 0.58) {
+          notices.push({ face: f, s: ds });
+          g.box('prop_wood', { matrix: place(f, ds, T / 2 + 0.03).multiply(new THREE.Matrix4().makeTranslation(0, 1.55, 0)), s: [1.08, 0.82, 0.05], chamfer: 0.012, uv: 'along' });
+        }
       }
       continue;
     }

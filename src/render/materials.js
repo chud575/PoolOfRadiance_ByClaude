@@ -33,7 +33,7 @@ const DEFS = {
   arch_trim: { tex: 'hd_ashlar', texScale: 1.5, vc: true, color: 0xd8d0c4, fx: { macro: 0.2, grime: 0.4, moss: 0.5 } },
   arch_ruin: { tex: 'hd_ruin', texScale: 3, vc: true, fx: { macro: 0.35, grime: 0.7, moss: 0.9 } },
   arch_plaster: { tex: 'hd_plaster', texScale: 3, vc: true, fx: { macro: 0.22, grime: 0.75, moss: 0.15 } },
-  arch_plaster_int: { tex: 'hd_plaster_int', texScale: 3, vc: true, fx: { macro: 0.12, grime: 0.25 } },
+  arch_plaster_int: { tex: 'hd_plaster_int', texScale: 3, vc: true, fx: { macro: 0.25, grime: 0.55 } },
   arch_beam: { tex: 'hd_beam', texScale: 1.2, vc: true, fx: { macro: 0.18, grime: 0.2, moss: 0.2 } },
   arch_beam_dark: { tex: 'hd_beam_dark', texScale: 1.2, vc: true, fx: { macro: 0.12 } },
   arch_roof_slate: { tex: 'hd_roof_slate', texScale: 2, vc: true, fx: { macro: 0.3, moss: 0.25 } },

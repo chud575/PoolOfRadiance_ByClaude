@@ -185,14 +185,18 @@ export function plaster({ seed = 31, base = [0.78, 0.72, 0.6], decay = 1, interi
     const crackMask = smooth(0.6, 0.72, fbm(u * 5, v * 5, { octaves: 3, period: 5, seed: seed + 7 })) * smooth(0.25, 0.6, w.id + 0.2);
     const crack = (1 - smooth(0.0, 0.012, w.f2 - w.f1)) * crackMask * decay;
     // a few longer settlement cracks (wandering lines, very thin)
-    // two sparse settlement cracks per tile: thin, near-vertical, jagged, fading out
+    // two sparse settlement cracks per tile: thin, jagged at the cm scale, slowly drifting
     let settle = 0;
     for (let k = 0; k < 2; k++) {
       const x0 = hash2(k, 1, seed + 16);
-      const wob = (fbm(v * 6 + k * 3.7, 0.5, { octaves: 4, period: 6, seed: seed + 17 + k }) - 0.5) * 0.12 + (valueNoise(v * 60, k * 9.1, 60, seed + 19) - 0.5) * 0.012;
-      const du = Math.abs(((u - x0 - wob + 1.5) % 1) - 0.5);
-      const span = smooth(0.0, 0.08, Math.abs(((v - hash2(k, 2, seed + 16) + 1.5) % 1) - 0.5) - 0.18);
-      settle = Math.max(settle, (1 - smooth(0.0, 0.0022, du - 0.0006)) * (1 - span));
+      const sv = v * 48;
+      const seg = Math.floor(sv);
+      const t = sv - seg;
+      const jag = (hash2(seg % 48, k, seed + 18) * (1 - t) + hash2((seg + 1) % 48, k, seed + 18) * t - 0.5) * 0.009;
+      const drift = (fbm(v * 3 + k * 3.7, 0.5, { octaves: 2, period: 3, seed: seed + 17 + k }) - 0.5) * 0.05;
+      const du = Math.abs(((u - x0 - drift - jag + 1.5) % 1) - 0.5);
+      const span = smooth(0.0, 0.06, Math.abs(((v - hash2(k, 2, seed + 16) + 1.5) % 1) - 0.5) - 0.2);
+      settle = Math.max(settle, (1 - smooth(0.0, 0.0018, du - 0.0004)) * (1 - span));
     }
     settle *= decay * 0.8;
     const ck = Math.max(crack * 0.7, settle);

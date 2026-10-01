@@ -1137,12 +1137,12 @@ export function buildBlock(map, opts = {}) {
           let a = 0;
           for (let k = 0; a < S - 0.05; k++) {
             const len = Math.min(S - a, 0.55 + hash(map.id, x, y, d, k, 'kl') * 0.5);
-            const hgt = 0.02 + hash(map.id, x, y, d, k, 'kh') * 0.025;
+            const hgt = 0.05 + hash(map.id, x, y, d, k, 'kh') * 0.035;
             const along = a + len / 2;
             const inset = 0.16;
             const cxk = dx ? x0 + (dx > 0 ? S - inset : inset) : x0 + along;
             const czk = dy ? z0 + (dy > 0 ? S - inset : inset) : z0 + along;
-            g.box('arch_trim', { c: [cxk, hgt / 2 - 0.01, czk], s: dx ? [0.3, hgt + 0.02, len - 0.025] : [len - 0.025, hgt + 0.02, 0.3], rotY: (hash(map.id, x, y, d, k, 'kr') - 0.5) * 0.03, chamfer: 0.03, tint: [0.82, 0.8, 0.76], ao: 0.85 });
+            g.box('arch_trim', { c: [cxk, hgt / 2 - 0.01, czk], s: dx ? [0.34, hgt + 0.02, len - 0.03] : [len - 0.03, hgt + 0.02, 0.34], rotY: (hash(map.id, x, y, d, k, 'kr') - 0.5) * 0.04, chamfer: 0.035, tint: [0.95, 0.92, 0.86], ao: (p, n) => (n.y > 0.5 ? 0.95 : 0.6) });
             a += len;
           }
         }
