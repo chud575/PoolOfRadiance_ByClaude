@@ -10,6 +10,8 @@ import { castSpell, isMemorized } from '../../rules/spells.js';
 import { hasMap, getMap } from '../../data/maps/index.js';
 import { SAVE_SLOTS } from '../../core/SaveManager.js';
 import { buildCamp } from './CampBackdrop.js';
+import { useRenderer } from '../../ui/components/Miniature.js';
+import { UINav } from '../../ui/components/uiNav.js';
 
 const CURES = ['cureSeriousWounds', 'cureLightWounds'];
 
@@ -21,6 +23,7 @@ const CURES = ['cureSeriousWounds', 'cureLightWounds'];
 export default class CampScene extends Scene {
   async enter(params = {}) {
     const { render, game } = this.ctx;
+    useRenderer(render.renderer);
     this.params = params;
     // Casters with no chosen spells get a sensible load-out (they can change it in MAGIC).
     for (const ch of game.party) if (castingClassesOf(ch).length && !Object.values(ch.spells?.prepared ?? {}).some((l) => l.length)) autoPrepare(ch);
@@ -33,6 +36,13 @@ export default class CampScene extends Scene {
     this.listen('party:changed', () => this._refreshStatus());
     this.ctx.audio?.playMusic?.('camp');
     this.ctx.ui.message('The party makes camp among the ruins. Sentries are posted.', 'lore');
+    // Arrow keys / D-pad walk the camp panel and the command line.
+    this.nav = new UINav(this.ctx, { roots: () => (this.view || this.busy ? [] : [this.statusBody, this.bar?.el]) });
+    this.own(() => this.nav.dispose());
+    if (params.sleep) {
+      // Gallery/debug: the party asleep part-way through a rest (deterministic under a frozen clock).
+      this.doRest(partyMemorizationTime(game.party) || 480, { demo: 0.46 });
+    }
     const p = params.panel;
     if (p === 'view' || p === 'items' || p === 'magic') this.openView(p === 'view' ? 'sheet' : p === 'items' ? 'items' : 'spells', params.member != null ? Number(params.member) : undefined);
     else if (p === 'save') this.openSave();
@@ -46,16 +56,23 @@ export default class CampScene extends Scene {
     this.camera = new THREE.PerspectiveCamera(46, render.aspect, 0.1, 600);
     this.camera.position.set(0, 1.75, 5.2);
     this.camera.lookAt(0, 0.95, -0.6);
+    if (this.ctx.debug?.raw?.campcam === 'close') {
+      this.camera.position.set(0.4, 1.3, 1.6);
+      this.camera.lookAt(-0.6, 0.75, -1.2);
+    } else if (this.ctx.debug?.raw?.campcam === 'sleep') {
+      this.camera.position.set(-0.6, 1.2, 0.6);
+      this.camera.lookAt(-2.0, 0.1, -0.9);
+    }
     this.hour = game.clock.hour + game.clock.minute / 60;
-    this.camp = await buildCamp(s, { party: game.party, hour: this.hour, renderer: render.renderer });
-    if (this.params.sleep) this.camp.setResting(true);
+    this.camp = await buildCamp(s, { party: game.party, hour: this.hour, renderer: render.renderer, resting: !!this.params.sleep });
   }
 
   _buildUI() {
     const { game } = this.ctx;
     // Title.
     this.topSub = h('div.s');
-    this.ctx.ui.mount(h('div.camp-top', [h('div.t.por-gilt-text', ['Encamped']), this.topSub]));
+    this.topTitle = h('div.t.por-gilt-text', ['Encamped']);
+    this.ctx.ui.mount(h('div.camp-top', [this.topTitle, this.topSub]));
 
     // Left: camp status.
     this.statusBody = h('div');
@@ -123,7 +140,11 @@ export default class CampScene extends Scene {
   }
 
   _onAction(action) {
-    if (this.busy || this.ctx.ui.layers.modal.children.length) return;
+    if (this.busy) {
+      if (action === 'cancel') this.interruptRest();
+      return;
+    }
+    if (this.ctx.ui.layers.modal.children.length) return;
     const n = this.ctx.game.party.length;
     const g = this.ctx.game;
     const cmds = this.bar.commands;
@@ -131,11 +152,7 @@ export default class CampScene extends Scene {
     else if (action === 'view') this.openView('sheet');
     else if (action === 'nextMember' && n) { g.activeIndex = (g.activeIndex + 1) % n; g.notifyPartyChanged(); }
     else if (action === 'prevMember' && n) { g.activeIndex = (g.activeIndex + n - 1) % n; g.notifyPartyChanged(); }
-    else if (action === 'turnRight' || action === 'turnLeft') {
-      // Gamepad / arrows walk the command line.
-      this.cmdIndex = (this.cmdIndex + (action === 'turnRight' ? 1 : cmds.length - 1)) % cmds.length;
-      this.bar.el.querySelectorAll('.por-cmd')[this.cmdIndex]?.focus();
-    }
+    void cmds;
   }
 
   // ------------------------------------------------------------------ panels
@@ -161,7 +178,8 @@ export default class CampScene extends Scene {
     const f = Frame({ title, variant: 'blue', className: 'por-dialog' });
     f.el.style.maxWidth = width;
     f.el.style.width = width;
-    const close = () => { back.remove(); window.removeEventListener('keydown', onKey, true); this._refreshStatus(); };
+    let nav = null;
+    const close = () => { back.remove(); window.removeEventListener('keydown', onKey, true); nav?.dispose(); this._refreshStatus(); };
     const onKey = (e) => {
       if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(); }
     };
@@ -169,7 +187,9 @@ export default class CampScene extends Scene {
     const back = h('div.por-modal-backdrop', [f.el]);
     window.addEventListener('keydown', onKey, true);
     this.ctx.ui.layers.modal.append(back);
-    return { close, body: f.body };
+    // Arrows / D-pad move between the options, Enter / A picks, Esc / B closes; the first option starts focused.
+    nav = new UINav(this.ctx, { roots: () => [f.el], modal: true, autofocus: true, onBack: close });
+    return { close, body: f.body, nav };
   }
 
   openSave() {
@@ -222,62 +242,118 @@ export default class CampScene extends Scene {
     const memo = partyMemorizationTime(party);
     const heal = restUntilHealedMinutes(party);
     const opts = [
-      memo ? ['Until spells are memorized', memo] : null,
-      heal > memo ? ['Until everyone is healed', heal] : null,
-      ['Sleep the night (8 hours)', 480],
-      ['Short rest (1 hour)', 60],
-      ['Rest one full day', MINUTES_PER_DAY],
+      memo ? ['Until spells are memorized', memo, 'Casters study after sleep; every chosen spell returns.'] : null,
+      heal > memo ? ['Until everyone is healed', heal, 'Natural rest heals 1 hit point per full day.'] : null,
+      ['Sleep the night', 480, 'Eight hours under the stars.'],
+      ['Short rest', 60, 'An hour to catch your breath.'],
+      ['Rest one full day', MINUTES_PER_DAY, 'Heals each wounded companion 1 hp.'],
     ].filter(Boolean);
+    const watch = this._sentry();
     const body = h('div', [
-      h('p.pc-rest-note', ['Rest heals 1 hit point per full day and lets casters memorize their chosen spells. Sentries keep watch; the ruins are quiet tonight.']),
-      h('div.camp-slots', opts.map(([label, min]) => h('button.camp-slot', { onclick: () => { m.close(); this.doRest(min); } }, [
-        h('span.id', ['☾']), h('span', [h('div', [label])]), h('span.dt', [fmtMinutes(min) || '—']),
+      h('p.pc-rest-note', [`Rest heals and lets casters memorize their chosen spells. ${watch ? `${watch.name} takes first watch;` : 'Sentries keep watch;'} you may interrupt at any time.`]),
+      h('div.camp-slots', opts.map(([label, min, note]) => h('button.camp-slot', { onclick: () => { m.close(); this.doRest(min); } }, [
+        h('span.id', ['☾']), h('span', [h('div', [label]), h('div.sm', [note])]), h('span.dt', [fmtMinutes(min) || '—']),
       ]))),
     ]);
     const m = this._modal('Rest', body);
   }
 
-  /** Rest `minutes` with a short time-lapse (fade, clock spin), then report. */
-  doRest(minutes) {
+  _sentry() {
+    const party = this.ctx.game.party.filter((c) => isAlive(c) && c.status === 'ok');
+    return party.find((c) => String(c.classSpec).includes('fighter')) ?? party[0] ?? null;
+  }
+
+  /**
+   * Rest `minutes` as a time-lapse the player can interrupt: the fire burns
+   * down, the party sleeps, the clock and a progress bar run, and the rest is
+   * applied in increments so an interrupted rest keeps what it earned.
+   * @param {number} minutes
+   * @param {{demo?: number}} [o]  demo: hold at this progress (gallery shots)
+   */
+  doRest(minutes, o = {}) {
     if (!minutes || this.busy) return;
     const { game, ui } = this.ctx;
-    const party = game.party;
-    const report = rest(party, minutes, { rng: this.ctx.rng });
-    const from = game.minutes;
-    game.advanceTime(minutes);
-    const names = Object.fromEntries(party.map((c) => [c.id, c.name]));
-    const lines = [];
-    for (const [id, n] of Object.entries(report.healed)) lines.push(`${names[id]} heals ${n} hp.`);
-    for (const [id, ids] of Object.entries(report.memorized)) lines.push(`${names[id]} memorizes ${ids.length} spell${ids.length === 1 ? '' : 's'}.`);
-    for (const id of report.died) lines.push(`${names[id]} succumbs to poison.`);
-    ui.message(`The party rests for ${fmtMinutes(minutes)}.`, 'info');
-    for (const l of lines) ui.message(l, 'system');
-    // Time-lapse overlay.
-    const clock = h('div', { style: { fontFamily: 'var(--font-num)', fontSize: '2.6em', color: '#fff', letterSpacing: '0.08em', textShadow: '0 0 20px rgba(245,217,139,0.4)' } });
-    const veil = h('div', { style: { position: 'absolute', inset: '0', display: 'grid', placeItems: 'center', background: 'radial-gradient(ellipse at center, rgba(2,3,10,0.25), rgba(0,0,0,0.85))', opacity: '0', transition: 'opacity 0.35s ease', pointerEvents: 'none' } }, [
-      h('div', { style: { textAlign: 'center' } }, [h('div.por-gilt-text', { style: { fontSize: '1.6em', letterSpacing: '0.35em', textTransform: 'uppercase' } }, ['Resting']), clock]),
+    const watch = this._sentry();
+    const casters = game.party.filter((c) => isAlive(c) && castingClassesOf(c).length);
+    ui.message(`The party beds down for ${fmtMinutes(minutes)}; ${watch ? `${watch.name} takes first watch.` : 'no one keeps watch.'}`, 'lore');
+    // The resting overlay: moon, time rested of total, a progress bar and Interrupt.
+    const bar = h('i');
+    const label = h('span.v');
+    const clock = h('span.c');
+    const note = h('div.n', [casters.length ? `${casters.map((c) => c.name).join(', ')} ${casters.length === 1 ? 'studies' : 'study'} after sleep.` : 'The fire crackles low; the ruins are quiet.']);
+    const interrupt = h('button.por-btn', { onclick: () => this.interruptRest() }, ['Interrupt ', h('span.por-hk-badge', ['Esc'])]);
+    const panel = h('div.camp-resting', [
+      h('div.moon'),
+      h('div.body', [
+        h('div.hd', [h('span.t.por-gilt-text', ['Resting']), label, clock]),
+        h('div.camp-rest-bar', [bar, ...[0.25, 0.5, 0.75].map((x) => h('b', { style: { left: `${x * 100}%` } }))]),
+        note,
+      ]),
+      interrupt,
     ]);
-    this.ctx.ui.layers.toast.append(veil);
-    requestAnimationFrame(() => { veil.style.opacity = '1'; });
+    this.ctx.ui.mount(panel);
+    this.topTitle && (this.topTitle.textContent = 'Resting');
     this.camp?.setResting(true);
-    const busy = (this.busy = { veil, clock, from, to: from + minutes, start: this.ctx.clock.time, dur: Math.min(2.2, 0.8 + minutes / 600) });
-    // Wall-clock fallback: never leave the party stuck resting if frames stall (hidden tab).
-    setTimeout(() => { if (this.busy === busy) this._finishRest(); }, busy.dur * 1000 + 600);
+    this.bar?.el.classList.add('dim');
+    const busy = (this.busy = {
+      panel, bar, label, clock, from: game.minutes, total: minutes, applied: 0, report: { healed: {}, memorized: {}, died: [] },
+      start: this.ctx.clock.time - (o.demo ? o.demo * Math.min(6, 2.2 + minutes / 110) : 0), dur: Math.min(6, 2.2 + minutes / 110), demo: o.demo ?? null,
+    });
+    this._advanceRest(o.demo ?? 0);
+    if (!o.demo) {
+      // Wall-clock fallback: never leave the party stuck resting if frames stall (hidden tab).
+      setTimeout(() => { if (this.busy === busy) { this._advanceRest(1); this._finishRest(); } }, busy.dur * 1000 + 800);
+    }
     game.notifyPartyChanged();
+  }
+
+  /** Apply rest up to fraction p of the total and update the overlay. */
+  _advanceRest(p) {
+    const b = this.busy;
+    if (!b) return;
+    const { game } = this.ctx;
+    const target = Math.round(b.total * Math.max(0, Math.min(1, p)));
+    const delta = target - b.applied;
+    if (delta > 0 && b.demo == null) {
+      const r = rest(game.party, delta, { rng: this.ctx.rng });
+      for (const [id, n] of Object.entries(r.healed)) b.report.healed[id] = (b.report.healed[id] ?? 0) + n;
+      for (const [id, ids] of Object.entries(r.memorized)) b.report.memorized[id] = [...(b.report.memorized[id] ?? []), ...ids];
+      b.report.died.push(...r.died);
+      game.advanceTime(delta);
+    }
+    b.applied = target;
+    b.bar.style.width = `${(target / b.total) * 100}%`;
+    b.label.textContent = `${fmtMinutes(target) === 'no rest' ? '0m' : fmtMinutes(target)} of ${fmtMinutes(b.total)}`;
+    const m = b.from + target;
+    b.clock.textContent = `Day ${Math.floor(m / MINUTES_PER_DAY) + 1} · ${String(Math.floor((m % MINUTES_PER_DAY) / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  }
+
+  interruptRest() {
+    if (!this.busy || this.busy.demo != null) return;
+    this.busy.interrupted = true;
+    this._finishRest();
   }
 
   _finishRest() {
     const b = this.busy;
     if (!b) return;
     this.busy = null;
+    const { game, ui } = this.ctx;
+    const names = Object.fromEntries(game.party.map((c) => [c.id, c.name]));
+    ui.message(b.interrupted ? `Rest interrupted after ${fmtMinutes(b.applied) || 'a moment'}.` : `The party rests for ${fmtMinutes(b.applied)}.`, b.interrupted ? 'warn' : 'info');
+    for (const [id, n] of Object.entries(b.report.healed)) ui.message(`${names[id]} heals ${n} hp.`, 'system');
+    for (const [id, ids] of Object.entries(b.report.memorized)) ui.message(`${names[id]} memorizes ${ids.length} spell${ids.length === 1 ? '' : 's'}.`, 'system');
+    for (const id of b.report.died) ui.message(`${names[id]} succumbs to poison.`, 'warn');
+    b.panel.classList.add('out');
+    setTimeout(() => b.panel.remove(), 400);
     this.camp?.setResting(false);
-    b.veil.style.opacity = '0';
-    setTimeout(() => b.veil.remove(), 400);
+    this.bar?.el.classList.remove('dim');
+    this.topTitle && (this.topTitle.textContent = 'Encamped');
     // New hour → rebuild the sky/light if day and night have turned.
-    const g = this.ctx.game;
-    const hour = g.clock.hour + g.clock.minute / 60;
+    const hour = game.clock.hour + game.clock.minute / 60;
     const night = (x) => x < 6 || x >= 19;
     if (night(hour) !== night(this.hour)) this._rebuild3d();
+    game.notifyPartyChanged();
     this._refreshStatus();
   }
 
@@ -383,20 +459,21 @@ export default class CampScene extends Scene {
   update(dt) {
     const t = this.ctx.clock.time;
     this.camp?.update(t);
-    if (this.busy) {
-      const b = this.busy;
-      const p = dt === 0 ? 1 : Math.min(1, (t - b.start) / b.dur);
-      const e = p < 0.5 ? 2 * p * p : 1 - (-2 * p + 2) ** 2 / 2;
-      const m = Math.round(b.from + (b.to - b.from) * e);
-      const day = Math.floor(m / MINUTES_PER_DAY) + 1;
-      b.clock.textContent = `Day ${day} · ${String(Math.floor((m % MINUTES_PER_DAY) / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
-      if (p >= 1) this._finishRest();
+    const b = this.busy;
+    if (b) {
+      if (b.demo != null) this._advanceRest(b.demo);
+      else {
+        const p = dt === 0 ? 1 : Math.min(1, (t - b.start) / b.dur);
+        const e = p < 0.5 ? 2 * p * p : 1 - (-2 * p + 2) ** 2 / 2;
+        this._advanceRest(e);
+        if (p >= 1) this._finishRest();
+      }
     }
   }
 
   exit() {
     this.view?.close();
-    this.busy?.veil?.remove();
+    this.busy?.panel?.remove();
     this.camp?.dispose();
     super.exit();
   }

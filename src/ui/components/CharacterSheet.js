@@ -11,7 +11,9 @@ import { ITEMS } from '../../data/items.js';
 import { itemIconURL, iconFor } from './itemIcons.js';
 import { portraitURL } from './portraitPainter.js';
 import { abilityTip, STAT_TIPS } from './rulesText.js';
-import { miniatureSnapshot } from './Miniature.js';
+import { miniatureSnapshot, useRenderer } from './Miniature.js';
+
+export { useRenderer };
 
 const sgn = (n) => (n > 0 ? `+${n}` : String(n));
 const ORD = (n) => `${n}${n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th'}`;

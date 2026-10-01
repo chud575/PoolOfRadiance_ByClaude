@@ -3,7 +3,7 @@ import { h, clear } from '../dom.js';
 import { Frame } from './Frame.js';
 import { RACES } from '../../rules/races.js';
 import { classSpecName } from '../../rules/classes.js';
-import { renderSheet, miniPortrait } from './CharacterSheet.js';
+import { renderSheet, miniPortrait, useRenderer } from './CharacterSheet.js';
 import { InventoryPanel } from './Inventory.js';
 import { SpellPanel } from './SpellPanel.js';
 import { STAT_TIPS } from './rulesText.js';
@@ -22,6 +22,7 @@ const TABS = [['sheet', 'Sheet', 'V'], ['items', 'Items', 'I'], ['spells', 'Magi
  * @returns {{close: () => void, el: HTMLElement, setTab: (t:string) => void}}
  */
 export function openCharacterView(ctx, o = {}) {
+  useRenderer(ctx.render?.renderer);
   let index = Math.max(0, Math.min(ctx.game.party.length - 1, o.index ?? ctx.game.activeIndex ?? 0));
   let tab = o.tab ?? 'sheet';
   let panel = null;

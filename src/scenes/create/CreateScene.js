@@ -13,7 +13,12 @@ import { portraitURL, HEADS, BODIES, RACE_SKINS, SKIN_TONES, HAIR_COLORS, EYE_CO
 import { portraitEl, miniPortrait, abilityMods } from '../../ui/components/CharacterSheet.js';
 import { openCharacterView } from '../../ui/components/CharacterView.js';
 import { STAT_TIPS, ALIGNMENT_TEXT, levelLimitText, abilityTip } from '../../ui/components/rulesText.js';
-import { buildMiniature, miniatureEnvironment } from '../../ui/components/Miniature.js';
+import { buildMiniature, miniatureEnvironment, useRenderer } from '../../ui/components/Miniature.js';
+import { UINav } from '../../ui/components/uiNav.js';
+import { ITEMS } from '../../data/items.js';
+import { itemName } from '../../rules/items.js';
+import { itemIconURL, iconFor } from '../../ui/components/itemIcons.js';
+import { createFlame } from '../../render/lighting.js';
 import { CREATE_TEXT, NAMES } from './createData.js';
 
 const STEPS = [['race', 'Race'], ['class', 'Class'], ['align', 'Alignment'], ['stats', 'Abilities'], ['portrait', 'Portrait'], ['name', 'Name']];
@@ -34,6 +39,7 @@ const ROSTER_KEY = 'por.roster';
 export default class CreateScene extends Scene {
   async enter(params = {}) {
     const { render } = this.ctx;
+    useRenderer(render.renderer);
     this.rng = this.ctx.rng;
     await this._build3d();
     this.post = { bloomStrength: 0.5, bloomThreshold: 0.92, vignette: 0.62, exposure: 1.08 };
@@ -53,6 +59,9 @@ export default class CreateScene extends Scene {
     this.ctx.ui.mount(this.card.el);
     this.ctx.ui.mount(h('div.pc-cmdline', [this.bar.el]));
     this.own(() => this.bar.dispose());
+    // Arrow keys / D-pad move between the options of the current step and the command line.
+    this.nav = new UINav(this.ctx, { roots: () => [this.stepsEl, this.main.body, this.card.body, this.bar.el] });
+    this.own(() => this.nav.dispose());
     this.listen('input:action', ({ action }) => {
       if (this.ctx.ui.layers.modal.children.length) return;
       if (action === 'cancel') this.back();
@@ -149,6 +158,75 @@ export default class CreateScene extends Scene {
       rod.position.set(x, 3.56, -3.02);
       s.add(rod);
     }
+    // A carpet runner up to the plinth (breaks the floor's tiling) and candelabra either side.
+    {
+      const cc = document.createElement('canvas');
+      cc.width = 128;
+      cc.height = 512;
+      const g = cc.getContext('2d', { willReadFrequently: true });
+      g.fillStyle = '#5a1416';
+      g.fillRect(0, 0, 128, 512);
+      for (let y = 0; y < 512; y += 2) {
+        g.fillStyle = `rgba(0,0,0,${0.06 + 0.06 * Math.sin(y * 0.7)})`;
+        g.fillRect(0, y, 128, 1);
+      }
+      g.strokeStyle = '#c99a48';
+      g.lineWidth = 6;
+      g.strokeRect(10, -10, 108, 540);
+      g.lineWidth = 2;
+      g.strokeRect(20, -10, 88, 540);
+      for (let y = 30; y < 512; y += 64) {
+        g.fillStyle = '#b8873c';
+        g.beginPath();
+        g.moveTo(64, y - 14); g.lineTo(78, y); g.lineTo(64, y + 14); g.lineTo(50, y);
+        g.closePath();
+        g.fill();
+      }
+      const ct = new THREE.CanvasTexture(cc);
+      ct.colorSpace = THREE.SRGBColorSpace;
+      ct.anisotropy = 8;
+      const cm = new THREE.MeshStandardMaterial({ map: ct, roughness: 0.95 });
+      this._mats.push(cm);
+      this._texs = [ct];
+      const carpet = new THREE.Mesh(G(new THREE.PlaneGeometry(1.5, 7)), cm);
+      carpet.rotation.x = -Math.PI / 2;
+      carpet.position.set(0, 0.006, 3.6);
+      carpet.receiveShadow = true;
+      s.add(carpet);
+      // Candelabra: iron stands with three candles each.
+      const iron = new THREE.MeshStandardMaterial({ color: 0x2a2724, metalness: 0.8, roughness: 0.45 });
+      const wax = new THREE.MeshStandardMaterial({ color: 0xe8dcc0, roughness: 0.6, emissive: 0x402010, emissiveIntensity: 0.3 });
+      this._mats.push(iron, wax);
+      this._candles = [];
+      for (const x of [-1.55, 1.55]) {
+        const stand = new THREE.Group();
+        const pole = new THREE.Mesh(G(new THREE.CylinderGeometry(0.025, 0.04, 1.45, 10)), iron);
+        pole.position.y = 0.72;
+        pole.castShadow = true;
+        stand.add(pole);
+        const foot = new THREE.Mesh(G(new THREE.CylinderGeometry(0.18, 0.22, 0.05, 16)), iron);
+        foot.position.y = 0.025;
+        stand.add(foot);
+        const arm = new THREE.Mesh(G(new THREE.TorusGeometry(0.17, 0.012, 6, 24, Math.PI)), iron);
+        arm.position.y = 1.36;
+        arm.rotation.z = Math.PI;
+        stand.add(arm);
+        for (const dx of [-0.17, 0, 0.17]) {
+          const c = new THREE.Mesh(G(new THREE.CylinderGeometry(0.018, 0.02, 0.16, 10)), wax);
+          c.position.set(dx, dx === 0 ? 1.55 : 1.44, 0);
+          stand.add(c);
+          const f = createFlame(0.06);
+          f.position.set(dx, (dx === 0 ? 1.55 : 1.44) + 0.08, 0);
+          stand.add(f);
+        }
+        const l = new THREE.PointLight(0xffb060, 3.2, 5, 1.8);
+        l.position.set(0, 1.62, 0);
+        stand.add(l);
+        this._candles.push(l);
+        stand.position.set(x * 0.82, 0, 0.9);
+        s.add(stand);
+      }
+    }
     // Dust motes drifting in the spotlight.
     const N = 70;
     const mg = G(new THREE.BufferGeometry());
@@ -222,7 +300,7 @@ export default class CreateScene extends Scene {
       this.figureRoot.remove(c);
     }
     const f = buildMiniature(d, { pose: 'stand' });
-    f.scale.setScalar(1.28);
+    f.scale.setScalar(1.42);
     this.figureRoot.add(f);
   }
 
@@ -395,6 +473,10 @@ export default class CreateScene extends Scene {
           h('div.pc-big', [h('span.n', [String(s.thac0)]), h('span.l', ['THAC0'])]),
         ]));
         b.append(this._abStrip(s.abilities, ch.classSpec));
+        const kit = (ch.inventory ?? []).filter((e) => e.equipped && ITEMS[e.id]);
+        b.append(h('div.pc-sect-h', [h('span', ['Readied'])]), h('div.cc-kit', kit.map((e) => h('div.cc-kit-row', { dataset: { tip: ITEMS[e.id].desc ?? itemName(e) } }, [
+          h('img', { src: itemIconURL(iconFor(ITEMS[e.id]), { magic: !!(e.magic || ITEMS[e.id].magic) }), alt: '' }), h('span', [itemName(e)]),
+        ]))));
       } else {
         b.append(h('p.cc-lead', { style: { textAlign: 'center', marginTop: '2em' } }, [CREATE_TEXT.emptyParty]));
       }
@@ -603,8 +685,8 @@ export default class CreateScene extends Scene {
     this.main.title.textContent = 'Portrait';
     const look = (d.look = defaultLook(d));
     b.append(h('div.cc-title', ['Choose a Likeness']), h('p.cc-lead', [CREATE_TEXT.portrait]));
-    const thumbs = (list, key, mk, cls = '') => h(`div.cc-thumbs${cls}`, list.map((it, i) => h(`button.cc-thumb${look[key] === i ? '.sel' : ''}`, { onclick: () => { d.look = { ...look, [key]: i }; this.show('portrait'); }, dataset: { tip: it.name } }, [
-      h('img', { src: portraitURL(mk(i), 0.34), alt: '' }), h('span', [it.name]),
+    const thumbs = (list, key, mk, cls = '', crop = 'head') => h(`div.cc-thumbs${cls}`, list.map((it, i) => h(`button.cc-thumb${look[key] === i ? '.sel' : ''}`, { onclick: () => { d.look = { ...look, [key]: i }; this.show('portrait'); }, dataset: { tip: it.name } }, [
+      h('div.im', [h('img', { src: portraitURL(mk(i), 0.34, { crop }), alt: '' })]), h('span', [it.name]),
     ])));
     const sw = (colors, key) => h('div.cc-sw', colors.map((c, i) => h(`button${look[key] === i ? '.sel' : ''}`, { style: { background: c }, onclick: () => { d.look = { ...look, [key]: i }; this.show('portrait'); } })));
     const skins = (RACE_SKINS[d.race] ?? RACE_SKINS.human).map((k) => SKIN_TONES[k]);
@@ -612,7 +694,7 @@ export default class CreateScene extends Scene {
       h('div.pc-sect-h.left', [h('span', ['Head'])]),
       thumbs(HEADS[d.gender], 'head', (i) => ({ ...d, look: { ...look, head: i } })),
       h('div.pc-sect-h.left', { style: { marginTop: '0.8em' } }, [h('span', ['Body'])]),
-      thumbs(BODIES, 'body', (i) => ({ ...d, look: { ...look, body: i } }), '.body'),
+      thumbs(BODIES, 'body', (i) => ({ ...d, look: { ...look, body: i } }), '.body', 'torso'),
       h('div.pc-sect', { style: { marginTop: '0.8em' } }, [
         h('div.cc-row', [h('span.k', ['Skin']), sw(skins, 'skin')]),
         h('div.cc-row', [h('span.k', ['Hair']), sw(HAIR_COLORS.map((x) => x[1]), 'hair')]),
@@ -779,6 +861,7 @@ export default class CreateScene extends Scene {
     for (const g of this._geos ?? []) g.dispose();
     this._trimMat?.dispose();
     for (const m of this._mats ?? []) m.dispose();
+    for (const t of this._texs ?? []) t.dispose();
     this._env?.dispose();
     super.exit();
   }

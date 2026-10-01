@@ -36,6 +36,7 @@ export class PartyRoster {
 
   refresh() {
     if (this.portraits) {
+      if (portraitMod) portraitMod.useRenderer?.(this.ctx.render?.renderer);
       if (!portraitMod) {
         loadPortraits(() => this.refresh());
         return this._refreshClassic();

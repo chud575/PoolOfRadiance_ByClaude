@@ -3,7 +3,7 @@ import { h, clear } from '../dom.js';
 import { ITEMS } from '../../data/items.js';
 import { deriveStats, activeClasses } from '../../rules/character.js';
 import { CLASSES, classSpecName } from '../../rules/classes.js';
-import { knownSpells, slotsFor, freeSlots, prepareSpells, memorizationTime, autoPrepare, spellsToMemorize } from '../../rules/camp.js';
+import { knownSpells, slotsFor, freeSlots, prepareSpells, memorizationTime, partyMemorizationTime, autoPrepare, spellsToMemorize } from '../../rules/camp.js';
 import { getSpell, spellLevel, castProblem, castSpell, isMemorized, consumeMemorized } from '../../rules/spells.js';
 import { scribeScroll } from '../../rules/magicItems.js';
 import { itemName } from '../../rules/items.js';
@@ -155,18 +155,21 @@ export class SpellPanel {
       ]);
     });
     const need = memorizationTime(ch);
+    // The party rests as long as its slowest caster needs: one number everywhere (camp panel, here, REST).
+    const partyNeed = partyMemorizationTime(this.ctx.game.party);
+    const nToLearn = Object.values(spellsToMemorize(ch)).flat().length;
     const loadout = h('div.pc-memo', [
       h('div.pc-sect', { style: { flex: '1', display: 'flex', flexDirection: 'column', minHeight: '0' } }, [
         h('div.pc-sect-h', [h('span', [`${ch.name}'s ${cls === 'cleric' ? 'prayers' : 'spells'}`])]),
         h('div.pc-spell-scroll.pc-memo-list', rows.length ? rows : [h('div.empty', ['No spells chosen. Pick from the list, or AUTO.'])]),
         h('div.pc-rest-note', { style: { marginTop: '0.5em' } }, need
-          ? ['Rest ', h('b', [fmtMinutes(need)]), ` to memorize ${Object.values(spellsToMemorize(ch)).flat().length} spell${Object.values(spellsToMemorize(ch)).flat().length === 1 ? '' : 's'} (1e: ${need > 300 ? 6 : 4} hours of sleep, then 15 minutes per spell level).`]
-          : ['All chosen spells are in memory.']),
+          ? [`${ch.name} needs `, h('b', [fmtMinutes(need)]), ` to memorize ${nToLearn} spell${nToLearn === 1 ? '' : 's'} (1e: ${need > 300 ? 6 : 4} hours of sleep, then 15 minutes per spell level).`, partyNeed > need ? [' The party rests ', h('b', [fmtMinutes(partyNeed)]), ' for its slowest caster.'] : null]
+          : [partyNeed ? ['All chosen spells are in memory. The party still needs ', h('b', [fmtMinutes(partyNeed)]), ' for the others.'] : 'All chosen spells are in memory.']),
       ]),
       h('div.pc-actions', [
         h('button.por-btn', { onclick: () => this.auto() }, ['Auto']),
         h('button.por-btn', { onclick: () => this.clearAll() }, ['Clear']),
-        h('button.por-btn.primary', { style: { gridColumn: 'span 2' }, disabled: !need || !this.o.onRest, onclick: () => this.o.onRest?.() }, [need ? `Rest ${fmtMinutes(need)}` : 'Memorized']),
+        h('button.por-btn.primary', { style: { gridColumn: 'span 2' }, disabled: !partyNeed || !this.o.onRest, onclick: () => this.o.onRest?.() }, [partyNeed ? `Rest ${fmtMinutes(partyNeed)}` : 'Memorized']),
       ]),
     ]);
     this.el.append(casters, knownCol, loadout);
@@ -174,7 +177,7 @@ export class SpellPanel {
 
   _restNote() {
     const party = this.ctx.game.party;
-    const need = Math.max(0, ...party.filter((c) => c.status === 'ok').map((c) => memorizationTime(c)));
+    const need = partyMemorizationTime(party);
     return h('div.pc-rest-note', need ? ['The party must rest ', h('b', [fmtMinutes(need)]), ' for every caster to finish memorizing.'] : ['Every caster has memorized their spells.']);
   }
 

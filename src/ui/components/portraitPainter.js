@@ -13,88 +13,11 @@
 export const PORTRAIT_W = 300;
 export const PORTRAIT_H = 375;
 
-// ------------------------------------------------------------------ palettes
+import { SKIN_TONES, RACE_SKINS, HAIR_COLORS, EYE_COLORS, CLOTH_COLORS, HEADS, BODIES, defaultLook, rngFrom, hashNum, appearanceKey } from './lookData.js';
+import { renderPortrait3D } from './portrait3d.js';
 
-export const SKIN_TONES = {
-  pale: '#f2d6c0', fair: '#ecc3a2', light: '#dfae88', golden: '#d9a77a', ruddy: '#d99478',
-  tan: '#c58c62', olive: '#b0865c', brown: '#8a5a3c', dark: '#5f3b28',
-};
-export const RACE_SKINS = {
-  human: ['fair', 'light', 'tan', 'olive', 'brown', 'dark'],
-  elf: ['pale', 'fair', 'golden', 'light'],
-  halfElf: ['fair', 'light', 'golden', 'tan', 'olive'],
-  dwarf: ['ruddy', 'light', 'tan', 'brown'],
-  gnome: ['tan', 'ruddy', 'light', 'brown'],
-  halfling: ['fair', 'ruddy', 'light', 'tan'],
-};
-export const HAIR_COLORS = [
-  ['Raven', '#17110e'], ['Umber', '#3a2416'], ['Chestnut', '#62351b'], ['Auburn', '#8a3a1a'],
-  ['Copper', '#b3602a'], ['Honey', '#b8904c'], ['Flaxen', '#dcc285'], ['Silver', '#b9b5ae'],
-  ['Ash', '#6f6a64'], ['Snow', '#e4e0d8'],
-];
-export const EYE_COLORS = ['#3f6788', '#4f7336', '#5e3f24', '#7d6034', '#4a4d58', '#6fa0b8', '#94762c'];
-export const CLOTH_COLORS = [
-  ['Crimson', '#7c1e1c'], ['Royal', '#1f3a7c'], ['Forest', '#2c5634'], ['Violet', '#523672'],
-  ['Umber', '#6a5234'], ['Sable', '#2a2a31'], ['Ochre', '#8f6a1c'], ['Teal', '#1c5a5e'],
-];
+export { SKIN_TONES, RACE_SKINS, HAIR_COLORS, EYE_COLORS, CLOTH_COLORS, HEADS, BODIES, defaultLook };
 
-/** Head templates per gender (8 each). The race modifies proportions and beards. */
-export const HEADS = {
-  male: [
-    { name: 'Soldier', hair: 'short', beard: 'none', face: { jaw: 1.08, chin: 1.12 } },
-    { name: 'Wanderer', hair: 'swept', beard: 'full', face: { w: 0.97, nose: 1.12, eye: 0.94 } },
-    { name: 'Noble', hair: 'long', beard: 'goatee', face: { w: 0.92, jaw: 0.9, chin: 0.85, nose: 1.1, long: 1.07 } },
-    { name: 'Veteran', hair: 'bald', beard: 'full', scar: true, age: 0.7, face: { w: 1.05, jaw: 1.12, brow: 1.35, nose: 1.18 } },
-    { name: 'Guardsman', hair: 'short', beard: 'moustache', helm: true, face: { jaw: 1.12, chin: 1.1, mouth: 1.08 } },
-    { name: 'Rogue', hair: 'topknot', beard: 'stubble', face: { w: 0.93, jaw: 0.86, chin: 0.78, eye: 0.9, long: 1.04 } },
-    { name: 'Hooded', hair: 'hood', beard: 'stubble', face: { w: 0.95, nose: 1.08 } },
-    { name: 'Sage', hair: 'long', beard: 'long', age: 1, face: { w: 0.95, nose: 1.22, long: 1.05, eye: 0.92 } },
-  ],
-  female: [
-    { name: 'Maiden', hair: 'long', beard: 'none' },
-    { name: 'Ranger', hair: 'braid', beard: 'none', face: { w: 0.97, jaw: 0.95, nose: 1.05 } },
-    { name: 'Priestess', hair: 'bun', beard: 'none', face: { w: 1.03, chin: 0.88, eye: 1.05 } },
-    { name: 'Duelist', hair: 'bob', beard: 'none', face: { w: 0.94, jaw: 0.86, nose: 1.06, eye: 0.93, mouth: 0.92 } },
-    { name: 'Sorceress', hair: 'wavy', beard: 'none', face: { w: 0.93, long: 1.06, eye: 1.1, chin: 0.85 } },
-    { name: 'Shieldmaiden', hair: 'long', beard: 'none', helm: true, face: { jaw: 1.06, chin: 1.05 } },
-    { name: 'Hooded', hair: 'hood', beard: 'none' },
-    { name: 'Mercenary', hair: 'crop', beard: 'none', scar: true, face: { jaw: 1.1, brow: 1.35, w: 1.02, eye: 0.92 } },
-  ],
-};
-/** Bodies (8), usable by anyone; defaults follow the class. */
-export const BODIES = [
-  { id: 'plate', name: 'Plate' },
-  { id: 'chain', name: 'Mail' },
-  { id: 'scale', name: 'Scale' },
-  { id: 'leather', name: 'Leathers' },
-  { id: 'robe', name: 'Robes' },
-  { id: 'tabard', name: 'Tabard' },
-  { id: 'fur', name: 'Furs' },
-  { id: 'vestments', name: 'Vestments' },
-];
-const CLASS_BODY = { fighter: 0, cleric: 5, magicUser: 4, thief: 3 };
-const CLASS_HEAD = { male: { fighter: 0, cleric: 1, magicUser: 7, thief: 5 }, female: { fighter: 5, cleric: 2, magicUser: 4, thief: 3 } };
-
-// ------------------------------------------------------------------ utilities
-
-function rngFrom(seed) {
-  let s = (seed >>> 0) || 1;
-  return () => {
-    s = (s + 0x6d2b79f5) >>> 0;
-    let t = s;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-function hashNum(...xs) {
-  let h = 2166136261;
-  for (const x of xs) {
-    const s = String(x);
-    for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
-  }
-  return h >>> 0;
-}
 const hex = (c) => [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)];
 const clamp255 = (v) => Math.max(0, Math.min(255, Math.round(v)));
 /** rgba() from a hex or rgb triple, scaled by k, tinted toward `tint` by amount t. */
@@ -246,30 +169,6 @@ function lock(g, R, o) {
   }
 }
 
-// ------------------------------------------------------------------ looks
-
-/**
- * Complete a (possibly partial) look for a character. Deterministic from look.seed.
- * @param {{race:string, gender?:string, classSpec?:string, look?:object}} ch
- */
-export function defaultLook(ch) {
-  const look = { ...(ch.look ?? {}) };
-  const seed = look.seed ?? hashNum(ch.name ?? '', ch.race, ch.classSpec);
-  const R = rngFrom(seed * 31 + 7);
-  const gender = ch.gender === 'female' ? 'female' : 'male';
-  const cls = String(ch.classSpec ?? 'fighter').split('/')[0];
-  const skins = RACE_SKINS[ch.race] ?? RACE_SKINS.human;
-  look.seed = seed;
-  look.head ??= CLASS_HEAD[gender][cls] ?? Math.floor(R() * 8);
-  look.body ??= CLASS_BODY[cls] ?? 0;
-  look.skin ??= Math.floor(R() * skins.length);
-  const hairPool = ch.race === 'elf' ? [0, 5, 6, 7, 9, 2] : ch.race === 'dwarf' ? [3, 4, 2, 1, 0, 8] : ch.race === 'gnome' ? [8, 9, 1, 4, 2] : [0, 1, 2, 3, 4, 5, 6];
-  look.hair ??= hairPool[Math.floor(R() * hairPool.length)];
-  look.eyes ??= Math.floor(R() * EYE_COLORS.length);
-  look.cloth ??= Math.floor(R() * CLOTH_COLORS.length);
-  return look;
-}
-
 // ------------------------------------------------------------------ painting
 
 const RACE_SHAPE = {
@@ -326,7 +225,7 @@ function facePath(g, F) {
   smooth(g, pts, true, 0.55);
 }
 
-function paintBackground(g, R, look, cloth) {
+export function paintBackground(g, R, look, cloth) {
   const W = PORTRAIT_W, H = PORTRAIT_H;
   const hue = cloth;
   const grd = g.createLinearGradient(0, 0, W, H);
@@ -1482,7 +1381,7 @@ function paintHoodFront(g, F, clothCol) {
 }
 
 /** Painterly pass: restamp the image as short oriented strokes, then glaze, grain and vignette. */
-function paintPost(g, R, W, H) {
+export function paintPost(g, R, W, H) {
   const img = g.getImageData(0, 0, W, H);
   const d = img.data;
   const lum = (x, y) => {
@@ -1546,6 +1445,15 @@ function paintPost(g, R, W, H) {
  * @returns {HTMLCanvasElement}
  */
 export function paintPortrait(ch, o = {}) {
+  if (!o.flat) {
+    const c3 = renderPortrait3D(ch, o);
+    if (c3) return c3;
+  }
+  return paintPortrait2D(ch, o);
+}
+
+/** The original all-2D painter (fallback without WebGL). */
+function paintPortrait2D(ch, o = {}) {
   const look = defaultLook(ch);
   const gender = ch.gender === 'female' ? 'female' : 'male';
   const head = HEADS[gender][look.head % 8];
@@ -1595,20 +1503,21 @@ export function paintPortrait(ch, o = {}) {
 
 const urlCache = new Map();
 /** Stable cache key for a character's portrait. */
-export function portraitKey(ch, scale = 1) {
-  const l = defaultLook(ch);
-  return [ch.race, ch.gender, l.seed, l.head, l.body, l.skin, l.hair, l.eyes, l.cloth, scale].join('|');
+export function portraitKey(ch, scale = 1, crop = 'head') {
+  return `${appearanceKey(ch)}|${scale}|${crop}`;
 }
 /**
  * PNG data URL of a character's portrait (cached).
  * @param {object} ch  character or {race, gender, classSpec, look}
  * @param {number} [scale]
+ * @param {{crop?: 'head'|'torso'}} [o]
  */
-export function portraitURL(ch, scale = 1) {
-  const key = portraitKey(ch, scale);
+export function portraitURL(ch, scale = 1, o = {}) {
+  const crop = o.crop ?? 'head';
+  const key = portraitKey(ch, scale, crop);
   let u = urlCache.get(key);
   if (!u) {
-    u = paintPortrait(ch, { scale }).toDataURL('image/png');
+    u = paintPortrait(ch, { scale, crop }).toDataURL('image/png');
     if (urlCache.size > 160) urlCache.delete(urlCache.keys().next().value);
     urlCache.set(key, u);
   }
