@@ -194,6 +194,15 @@ export const DEMOS = {
       f.play('turn', 0, 1.6);
       sc.vfx.holyLight(0.3, f.root.position.clone(), 4.2);
       sc._frameCombatants(true, cleric);
+      // Debug: &look=statue frames the temple statue (model review).
+      const st = sc.params.look === 'statue' && sc.field.features.props.find((p) => p.type === 'statue');
+      if (st) {
+        sc.cam.goalTarget.set(st.x * TILE + TILE / 2, 1.5, st.y * TILE + TILE / 2);
+        sc.cam.target.copy(sc.cam.goalTarget);
+        sc.cam.goalDist = sc.cam.dist = 7;
+        sc.cam.goalPitch = sc.cam.pitch = 0.45;
+        sc.cam.goalYaw = sc.cam.yaw = 0;
+      }
       sc._refresh(cleric);
     },
   },

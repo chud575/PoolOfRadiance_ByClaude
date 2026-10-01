@@ -82,7 +82,7 @@ export default class CombatScene extends Scene {
       s.fog = new THREE.FogExp2(0x0a1124, 0.016);
     } else {
       this.rig.sun.intensity *= 1.1;
-      this.rig.hemi.intensity *= 1.35;
+      this.rig.hemi.intensity *= 1.6; // lift the shadow side: no pitch-black building shadows
       s.fog = new THREE.FogExp2(keys.fog, 0.0085);
     }
     s.add(createSkyDome({ hour }));
@@ -354,7 +354,7 @@ export default class CombatScene extends Scene {
     es.add(new THREE.Mesh(new THREE.SphereGeometry(10, 32, 16), mat));
     const env = pm.fromScene(es, 0.02, 0.1, 100, { size: 64 }).texture;
     this.scene3d.environment = env;
-    this.scene3d.environmentIntensity = this.night ? 0.5 : 0.75;
+    this.scene3d.environmentIntensity = this.night ? 0.5 : 0.9;
     pm.dispose();
     mat.dispose();
     this.own(() => env.dispose());

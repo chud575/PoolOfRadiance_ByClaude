@@ -672,3 +672,58 @@ export function patchSculptShader(sh) {
     .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
       normal = sculptBump(-vViewPosition, normal, vec2(dFdx(sculptH), dFdy(sculptH)) * 0.0022 * sculptFade, faceDirection);`);
 }
+
+// ------------------------------------------------------------------ statue
+let _statue = null;
+/**
+ * The cracked statue of Tyr for the ruined temple: a robed, blindfolded,
+ * bearded god, warhammer raised in his left hand, the right ending at the
+ * wrist — one sculpted stone mesh with baked occlusion (origin at the plinth top).
+ */
+export function statueGeometry() {
+  if (_statue) return _statue;
+  const B = new Builder();
+  B.mat('skin', 0x86817a, { pattern: 'smooth', rough: 0.9, edge: 0.3, wash: 1.0 })
+    .mat('dark', 0x4a4640, { pattern: 'smooth', rough: 0.95, edge: 0.3, wash: 1.0 })
+    .mat('moss', 0x5a6440, { pattern: 'smooth', rough: 1, edge: 0.2, wash: 1.0 });
+  const sc = B.sc;
+  const S = { k: 0.06, g: 0, mat: B.mats.skin };
+  // Robe: a flared skirt with deep vertical folds, belted waist, broad shoulders.
+  sc.cone([0, 0.0, 0], [0, 1.45, 0], 0.44, 0.27, S);
+  for (let k = 0; k < 9; k++) {
+    const a = (k / 9) * Math.PI * 2 + 0.2;
+    sc.cone([Math.sin(a) * 0.4, 0.02, Math.cos(a) * 0.36], [Math.sin(a) * 0.25, 1.3, Math.cos(a) * 0.22], 0.07, 0.03, { ...S, k: 0.05 });
+  }
+  sc.ellipsoid([0, 1.72, 0], [0.31, 0.33, 0.22], M_ID, S);
+  sc.ellipsoid([0, 1.97, -0.01], [0.36, 0.12, 0.2], M_ID, S);
+  sc.torus([0, 1.42, 0], 0.27, 0.035, M_ID, { g: 1, mat: B.mats.skin, k: 0.01 });
+  sc.cone([0, 2.0, 0], [0, 2.13, 0.01], 0.08, 0.07, S);
+  // Head, beard, the carved blindfold.
+  sc.ellipsoid([0, 2.26, 0.01], [0.13, 0.155, 0.14], M_ID, S);
+  sc.ellipsoid([0, 2.12, 0.08], [0.1, 0.14, 0.07], M_ID, { ...S, k: 0.04 });
+  sc.ellipsoid([0, 2.22, 0.125], [0.03, 0.04, 0.03], M_ID, { ...S, k: 0.02 });
+  sc.torus([0, 2.29, 0.01], 0.135, 0.022, mEuler(0.12, 0, 0), { g: 1, mat: B.mats.dark, k: 0.01 });
+  sc.ellipsoid([0, 2.36, -0.02], [0.135, 0.07, 0.14], M_ID, { ...S, k: 0.03 });
+  // Left arm raised with the warhammer of justice.
+  sc.cone([-0.32, 1.96, 0], [-0.5, 2.28, 0.06], 0.075, 0.06, S);
+  sc.cone([-0.5, 2.28, 0.06], [-0.56, 2.62, 0.06], 0.06, 0.05, S);
+  sc.ellipsoid([-0.56, 2.66, 0.06], [0.055, 0.06, 0.055], M_ID, S);
+  sc.cone([-0.56, 2.1, 0.06], [-0.56, 3.2, 0.06], 0.026, 0.026, { g: 2, mat: B.mats.skin, k: 0.005 });
+  sc.box([-0.56, 3.22, 0.06], [0.18, 0.09, 0.09], M_ID, 0.02, { g: 2, mat: B.mats.skin, k: 0.01 });
+  // Right arm: forearm ends at the wrist (Tyr's lost hand).
+  sc.cone([0.32, 1.96, 0], [0.42, 1.62, 0.16], 0.075, 0.06, S);
+  sc.cone([0.42, 1.62, 0.16], [0.5, 1.5, 0.36], 0.06, 0.05, S);
+  // Weathering: a great crack, chips, moss in the folds.
+  sc.box([0.1, 1.2, 0.3], [0.008, 0.6, 0.06], mEuler(0, 0, 0.25), 0.003, { g: 0, sub: true, k: 0.004 });
+  sc.sphere([0.2, 1.98, 0.12], 0.05, { g: 0, sub: true, k: 0.02 });
+  for (let k = 0; k < 5; k++) sc.ellipsoid([Math.sin(k * 1.7) * 0.38, 0.05 + k * 0.02, Math.cos(k * 1.7) * 0.33], [0.08, 0.04, 0.08], M_ID, { g: 3, mat: B.mats.moss, k: 0.03 });
+  const m = meshSculpt(sc, { cell: 0.016, ao: 0.03 });
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(m.position, 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(m.normal, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(m.color, 3));
+  geo.setIndex(new THREE.BufferAttribute(m.index, 1));
+  geo.computeBoundingSphere();
+  _statue = geo;
+  return geo;
+}

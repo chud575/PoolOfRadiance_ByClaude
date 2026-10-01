@@ -5,6 +5,7 @@ import { CELL, EDGE } from '../../../data/maps/MapGrid.js';
 import { SUB } from '../logic/battlefield.js';
 import { Batcher, worldBox, wallQuad } from './batch.js';
 import { pbr } from './textures.js';
+import { statueGeometry } from './sculpted.js';
 import { fbm } from '../../../render/textures/noise.js';
 
 export const TILE = 1.5;
@@ -221,7 +222,7 @@ export function buildDiorama(field, o = {}) {
         gc.rgb *= 0.78 + 0.42 * mac;
         // Kerbs: a lighter dressed-stone band with a dark gutter where paving changes.
         float kerb = 1.0 - abs(wF - 0.5) * 2.0;
-        gc.rgb = mix(gc.rgb, vec3(0.5, 0.47, 0.43) * (0.85 + 0.3 * gn), smoothstep(0.62, 0.92, kerb) * 0.8);
+        gc.rgb = mix(gc.rgb, vec3(0.42, 0.4, 0.37) * (0.85 + 0.3 * gn), smoothstep(0.62, 0.92, kerb) * 0.55);
         gc.rgb *= 1.0 - smoothstep(0.3, 0.5, kerb) * (1.0 - smoothstep(0.5, 0.62, kerb)) * 0.45;
         // Mortar gaps (dark in the albedo) collect moss and grime in patches.
         float lum = dot(gc.rgb, vec3(0.3, 0.55, 0.15));
@@ -996,6 +997,7 @@ export function buildDiorama(field, o = {}) {
   // survived the collapse, candle clusters and — at night — moonbeams through the
   // open roof.
   const stoneT = libMat('wall_stone', 0xd8d4cc);
+  let statueMat = null;
   const crackMat = new THREE.MeshStandardMaterial({ color: 0x14100c, roughness: 1 });
   disposables.push(crackMat);
   const candleMat = pbr('glow', 0xf0e8d0, { emissive: 0xffc070, emissiveIntensity: night ? 0.9 : 0.4 });
@@ -1029,27 +1031,21 @@ export function buildDiorama(field, o = {}) {
       const sz = z - 0.1;
       batch.add(worldBox(1.3, 0.9, 1.1, 1.5), plinthMat, { p: [sx, 0.45, sz] });
       batch.add(worldBox(1.45, 0.12, 1.25, 1.5), stoneT, { p: [sx, 0.96, sz] });
-      const robe = new THREE.LatheGeometry([[0.001, 0], [0.44, 0], [0.4, 0.5], [0.33, 1.1], [0.3, 1.5], [0.36, 1.85], [0.2, 2.05], [0.09, 2.12]].map(([r, y]) => new THREE.Vector2(r, y)), 20);
-      robe.scale(1, 1, 0.8);
-      batch.add(robe, stoneT, { p: [sx, 1.02, sz] });
-      // Head with a carved blindfold, beard.
-      batch.add(new THREE.SphereGeometry(0.17, 16, 12), stoneT, { p: [sx, 3.3, sz + 0.02] });
-      batch.add(new THREE.CylinderGeometry(0.175, 0.175, 0.07, 16), pbr('cloth', 0x3a3632), { p: [sx, 3.33, sz + 0.02] }, { cast: false });
-      batch.add(new THREE.ConeGeometry(0.12, 0.26, 10), stoneT, { p: [sx, 3.08, sz + 0.1], r: [Math.PI, 0, 0] });
-      // Left arm raised, holding the warhammer of justice.
-      batch.add(new THREE.CylinderGeometry(0.06, 0.07, 0.75, 8), stoneT, { p: [sx - 0.42, 3.15, sz + 0.05], r: [0, 0, -0.5] });
-      batch.add(new THREE.CylinderGeometry(0.025, 0.025, 1.2, 6), stoneT, { p: [sx - 0.62, 3.6, sz + 0.05] });
-      batch.add(worldBox(0.38, 0.2, 0.2, 1), stoneT, { p: [sx - 0.62, 4.2, sz + 0.05] });
-      // Right arm ends at the wrist (Tyr's lost hand); the scales hang from it.
-      batch.add(new THREE.CylinderGeometry(0.065, 0.055, 0.6, 8), stoneT, { p: [sx + 0.36, 2.8, sz + 0.18], r: [0.6, 0, 0.5] });
-      batch.add(new THREE.CylinderGeometry(0.016, 0.016, 0.9, 6).rotateZ(Math.PI / 2), pbr('gold', 0x8a6a2a), { p: [sx + 0.5, 2.62, sz + 0.42] });
+      // The god himself: one sculpted stone mesh (robe folds, blindfold, beard,
+      // raised hammer, the lost right hand), with occlusion baked in.
+      const statue = new THREE.Mesh(statueGeometry(), statueMat ??= new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, metalness: 0 }));
+      if (!disposables.includes(statueMat)) disposables.push(statueMat);
+      statue.position.set(sx, 1.02, sz);
+      statue.castShadow = true;
+      statue.receiveShadow = true;
+      group.add(statue);
+      // The scales hang from the stump of the right wrist.
+      batch.add(new THREE.CylinderGeometry(0.016, 0.016, 0.9, 6).rotateZ(Math.PI / 2), pbr('gold', 0x8a6a2a), { p: [sx + 0.5, 2.5, sz + 0.4] });
       for (const dx of [-0.42, 0.42]) {
-        batch.add(new THREE.SphereGeometry(0.12, 12, 6, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), pbr('gold', 0x8a6a2a), { p: [sx + 0.5 + dx, 2.32, sz + 0.42] });
-        batch.add(new THREE.CylinderGeometry(0.004, 0.004, 0.3, 4), pbr('gold', 0x8a6a2a), { p: [sx + 0.5 + dx, 2.47, sz + 0.42] }, { cast: false });
+        batch.add(new THREE.SphereGeometry(0.12, 12, 6, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), pbr('gold', 0x8a6a2a), { p: [sx + 0.5 + dx, 2.2, sz + 0.4] });
+        batch.add(new THREE.CylinderGeometry(0.004, 0.004, 0.3, 4), pbr('gold', 0x8a6a2a), { p: [sx + 0.5 + dx, 2.35, sz + 0.4] }, { cast: false });
       }
       // A great crack through the statue and a fallen fragment at its feet.
-      batch.add(worldBox(0.025, 1.4, 0.02, 1), crackMat, { p: [sx + 0.12, 2.2, sz + 0.33], r: [0, 0, 0.25] }, { cast: false });
-      batch.add(worldBox(0.02, 0.6, 0.02, 1), crackMat, { p: [sx - 0.1, 1.5, sz + 0.36], r: [0, 0, -0.5] }, { cast: false });
       batch.add(rockGeo(hash(p.x, 3, 3), 0.3), stoneT, { p: [sx + 0.7, 0.1, sz + 0.75] });
       batch.add(rockGeo(hash(p.x, 4, 3), 0.18), stoneT, { p: [sx + 0.45, 0.05, sz + 0.95] }, { cast: false });
       for (let k = 0; k < 4; k++) candle(sx - 0.5 + k * 0.32, sz + 0.62, 0.96, 0.08 + hash(k, 2, 9) * 0.12, sx + k * 7);
