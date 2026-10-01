@@ -1,7 +1,8 @@
 import { EDGE, CELL, DIRS } from '../../data/maps/MapGrid.js';
 import { getMap, hasMap } from '../../data/maps/index.js';
 import { TRAVEL } from '../../data/travel.js';
-import { INK, makeCanvas, makeParchment, inkLine, hatchRect, lineShade, stipple, featherMask, prng } from './ink.js';
+import { INK, makeCanvas, makeParchment, quillStroke, hatchRect, lineShade, stipple, featherMask, prng } from './ink.js';
+import { regions, washRegion, hatchBand, cobbleRegion, scatter, deckleMask } from './paint.js';
 import { drawMarker } from './glyphs.js';
 import { SERIF, drawCompassRose, drawCartouche, drawIlluminatedInitial, drawFlourish, fitFont, wrapText, haloText, goldGradient } from './ornaments.js';
 
@@ -109,25 +110,21 @@ export const MARKER_LABELS = {
   battle: 'Battle won', shrine: 'Shrine', exit: 'Way out', stairs: 'Stair / passage',
 };
 
-const WASH = {
-  [CELL.STREET]: 'rgba(236,214,170,0.10)',
-  [CELL.INTERIOR]: 'rgba(196,92,78,0.34)',
-  [CELL.RUBBLE]: 'rgba(150,128,100,0.34)',
-  [CELL.WATER]: 'rgba(70,120,170,0.55)',
-  [CELL.COURTYARD]: 'rgba(150,160,150,0.34)',
-};
-const GREEN = 'rgba(120,150,80,0.36)';
+// roof / floor pigments per wall style (each building picks one, then jitters hue and value)
+const ROOF_STONE = [[178, 92, 74], [160, 100, 88], [186, 120, 86], [150, 88, 84], [172, 110, 96]];
+const ROOF_TIMBER = [[200, 104, 60], [190, 84, 58], [206, 132, 70], [180, 80, 52], [196, 118, 78]];
+const ROOF_RUIN = [[150, 128, 104], [140, 120, 100]];
 
 /**
  * Build the sheet canvas.
  * @param {import('../../data/maps/MapGrid.js').MapGrid} map
  * @param {{k?:number, seen:(x:number,y:number)=>boolean, secrets:Set<string>, spent:Record<string,boolean>, inkWalls?:boolean, subtitle?:string}} o
  */
-export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = true, subtitle = 'Phlan, upon the Moonsea' }) {
+export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = true, zoneLabels = false, subtitle = 'Phlan, upon the Moonsea' }) {
   const { W, H, M, MX, MY, MS } = SHEET;
   const info = analyseMap(map);
   const seed = [...map.id].reduce((a, c) => a * 31 + c.charCodeAt(0), 7) & 0xffff;
-  const canvas = makeParchment((W + 2 * M) * k, (H + 2 * M) * k, { seed, margin: M * k, tone: [240, 224, 186] });
+  const canvas = makeParchment((W + 2 * M) * k, (H + 2 * M) * k, { seed, margin: M * k, tone: [240, 224, 186], ring: [0.985, 0.99] });
   const g = canvas.getContext('2d');
   g.save();
   g.scale(k, k);
@@ -149,8 +146,8 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
   g.stroke();
   g.restore();
 
-  // ---------- fog mask (explored cells, feathered) ----------
-  const mk = 0.5; // mask resolution (px per unit)
+  // ---------- fog mask (explored cells, feathered then deckled) ----------
+  const mk = 1; // mask resolution (px per unit)
   const rects = [];
   const nearSeen = (x, y) => {
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (seenCell(x + dx, y + dy)) return true;
@@ -159,17 +156,18 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
   for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) {
     if (seenCell(x, y) || (info.isRock(x, y) && nearSeen(x, y))) rects.push([CX(x) * mk, CY(y) * mk, cs * mk, cs * mk]);
   }
-  const mask = featherMask(W * mk, H * mk, rects, { blur: cs * mk * 0.22, grow: cs * mk * 0.2 });
+  const soft = featherMask(W * mk, H * mk, rects, { blur: cs * mk * 0.2, grow: cs * mk * 0.16 });
+  const { mask, edge: tideLine } = deckleMask(soft, { seed: seed + 5, scale: cs * mk * 0.45, amount: 0.6 });
 
   // unexplored tone: a faint sepia wash + graphite hatching everywhere the ink hasn't reached
   const fog = makeCanvas(W * k, H * k);
   {
     const f = fog.getContext('2d');
     f.scale(k, k);
-    f.fillStyle = 'rgba(92,66,36,0.24)';
+    f.fillStyle = 'rgba(92,66,36,0.2)';
     f.fillRect(MX, MY, MS, MS);
-    lineShade(f, MX, MY, MS, MS, { gap: 5.5, angle: -Math.PI / 3.2, color: '#4a3826', width: 0.55, alpha: 0.3 });
-    lineShade(f, MX, MY, MS, MS, { gap: 11, angle: Math.PI / 3.2, color: '#4a3826', width: 0.45, alpha: 0.12 });
+    lineShade(f, MX, MY, MS, MS, { gap: 5.5, angle: -Math.PI / 3.2, color: '#4a3826', width: 0.5, alpha: 0.26 });
+    lineShade(f, MX, MY, MS, MS, { gap: 13, angle: Math.PI / 3.2, color: '#4a3826', width: 0.4, alpha: 0.1 });
     f.setTransform(1, 0, 0, 1, 0, 0);
     f.globalCompositeOperation = 'destination-out';
     f.imageSmoothingEnabled = true;
@@ -177,91 +175,82 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
   }
   g.drawImage(fog, 0, 0, W, H);
 
-  // ---------- washes (masked) ----------
+  // ---------- watercolour washes (masked) ----------
+  const reg = regions(map, info);
   const wash = makeCanvas(W * k, H * k);
+  const P = { CX, CY, cs, k, walled: (x, y, d) => map.getEdge(x, y, d) !== EDGE.OPEN };
   {
     const w = wash.getContext('2d');
     w.scale(k, k);
     const r = prng(seed + 11);
+    // bedrock: hatched solid ground
     for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) {
-      const X = CX(x);
-      const Y = CY(y);
-      if (info.isRock(x, y)) {
-        w.fillStyle = 'rgba(120,100,80,0.22)';
-        w.fillRect(X, Y, cs, cs);
-        hatchRect(w, X, Y, cs, cs, { seed: seed + y * 97 + x, size: cs * 0.36, width: 0.9, alpha: 0.62, color: '#3a2716' });
-        continue;
-      }
-      const t = map.getCell(x, y);
-      w.fillStyle = wild && t === CELL.STREET ? GREEN : (dungeon && t === CELL.INTERIOR ? 'rgba(200,170,120,0.28)' : WASH[t] ?? WASH[CELL.STREET]);
-      w.fillRect(X - 0.3, Y - 0.3, cs + 0.6, cs + 0.6);
-      if (t === CELL.STREET) {
-        if (wild) {
-          w.strokeStyle = 'rgba(70,90,40,0.5)';
-          w.lineWidth = 0.9;
-          for (let i = 0; i < 3; i++) {
-            const px = X + cs * (0.15 + r() * 0.7);
-            const py = Y + cs * (0.2 + r() * 0.7);
-            w.beginPath();
-            w.moveTo(px - 3, py); w.lineTo(px - 1, py - 5); w.moveTo(px, py); w.lineTo(px, py - 6); w.moveTo(px + 3, py); w.lineTo(px + 1, py - 5);
-            w.stroke();
-          }
-        } else {
-          // cobbles: tiny rounded stones
-          w.strokeStyle = 'rgba(110,80,45,0.38)';
-          w.lineWidth = 0.6;
-          for (let i = 0; i < 7; i++) {
-            const px = X + cs * (0.1 + r() * 0.8);
-            const py = Y + cs * (0.1 + r() * 0.8);
-            w.beginPath();
-            w.ellipse(px, py, cs * 0.05, cs * 0.035, r() * 3, 0, Math.PI * 2);
-            w.stroke();
-          }
-        }
+      if (!info.isRock(x, y)) continue;
+      w.fillStyle = 'rgba(120,100,80,0.2)';
+      w.fillRect(CX(x), CY(y), cs, cs);
+      hatchRect(w, CX(x), CY(y), cs, cs, { seed: seed + y * 97 + x, size: cs * 0.36, width: 0.8, alpha: 0.55, color: '#3a2716' });
+    }
+    // soft cast shadows of the walls (south-east), laid in as a wash
+    w.save();
+    w.filter = `blur(${(cs * 0.05 * k).toFixed(1)}px)`;
+    w.strokeStyle = 'rgba(70,40,18,0.22)';
+    w.lineWidth = cs * 0.16;
+    w.beginPath();
+    for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) {
+      if (info.isRock(x, y)) continue;
+      if (map.getEdge(x, y, 'N') !== EDGE.OPEN) { w.moveTo(CX(x) + cs * 0.1, CY(y) + cs * 0.1); w.lineTo(CX(x + 1) + cs * 0.1, CY(y) + cs * 0.1); }
+      if (map.getEdge(x, y, 'W') !== EDGE.OPEN) { w.moveTo(CX(x) + cs * 0.1, CY(y) + cs * 0.1); w.lineTo(CX(x) + cs * 0.1, CY(y + 1) + cs * 0.1); }
+    }
+    w.stroke();
+    w.restore();
+    for (const rg of reg.list) {
+      const rs = seed * 7 + rg.index * 131;
+      const rr = prng(rs);
+      const jit = (c, hj, vj) => {
+        const v = 1 + (rr() - 0.5) * vj;
+        const h0 = (rr() - 0.5) * hj;
+        return [c[0] * v + h0 * 40, c[1] * v + h0 * 10, c[2] * v - h0 * 25];
+      };
+      const t = rg.type;
+      if (t === CELL.INTERIOR && dungeon) {
+        washRegion(w, rg.cells, { ...P, color: jit([200, 170, 125], 0.4, 0.15), alpha: 0.24, seed: rs, edge: 0.3, mottle: 0.4, gran: 0.25 });
       } else if (t === CELL.INTERIOR) {
-        if (dungeon) stipple(w, X, Y, cs, cs, { seed: seed + x * 7 + y * 131, count: 10, r: 0.8, color: '#5a4630', alpha: 0.35 });
-        else lineShade(w, X, Y, cs, cs, { gap: cs / 7, angle: -Math.PI / 4, color: '#7a2a24', width: 0.6, alpha: 0.35 });
-      } else if (t === CELL.COURTYARD) {
-        w.strokeStyle = 'rgba(80,80,70,0.32)';
-        w.lineWidth = 0.6;
-        w.beginPath();
-        const q = cs / 2;
-        w.moveTo(X, Y + q); w.lineTo(X + cs, Y + q);
-        w.moveTo(X + q + ((y & 1) ? q / 2 : 0), Y); w.lineTo(X + q + ((y & 1) ? q / 2 : 0), Y + q);
-        w.moveTo(X + ((y & 1) ? q / 2 : q / 4) + q * 0.1, Y + q); w.lineTo(X + ((y & 1) ? q / 2 : q / 4) + q * 0.1, Y + cs);
-        w.stroke();
+        // roofs and floors: each building its own pigment
+        const pal = rg.style === 1 ? ROOF_TIMBER : rg.style === 2 ? ROOF_RUIN : ROOF_STONE;
+        const base = pal[Math.floor(rr() * pal.length)];
+        washRegion(w, rg.cells, { ...P, color: jit(base, 0.6, 0.2), alpha: 0.5 + rr() * 0.14, seed: rs, edge: 0.5, blooms: 1 + Math.floor(rr() * 2), mottle: 0.2 + rr() * 0.12, gran: 0.4 });
+        hatchBand(w, rg.cells, { ...P, seed: rs + 1, angle: 0.5 + rr() * 0.7, band: 0.22 + rr() * 0.14, alpha: 0.3 + rr() * 0.15, color: '#4a1e12' });
       } else if (t === CELL.RUBBLE) {
-        stipple(w, X, Y, cs, cs, { seed: seed + x * 13 + y * 71, count: 26, r: 0.9, color: '#3d2c1c', alpha: 0.55 });
-        w.strokeStyle = 'rgba(50,35,20,0.6)';
-        w.lineWidth = 0.8;
-        for (let i = 0; i < 3; i++) {
-          const px = X + cs * (0.15 + r() * 0.7);
-          const py = Y + cs * (0.15 + r() * 0.7);
-          const s = cs * (0.05 + r() * 0.06);
-          w.beginPath();
-          w.moveTo(px - s, py); w.lineTo(px - s * 0.3, py - s * 0.9); w.lineTo(px + s, py - s * 0.4); w.lineTo(px + s * 0.7, py + s * 0.6); w.closePath();
-          w.stroke();
-        }
+        washRegion(w, rg.cells, { ...P, color: jit([150, 130, 104], 0.3, 0.15), alpha: 0.3, seed: rs, edge: 0.35, mottle: 0.5, gran: 0.5 });
+      } else if (t === CELL.COURTYARD) {
+        washRegion(w, rg.cells, { ...P, color: [200, 180, 140], alpha: 0.16, seed: rs, edge: 0.22, mottle: 0.55, gran: 0.25, blooms: 0 });
       } else if (t === CELL.WATER) {
-        w.strokeStyle = 'rgba(30,60,110,0.45)';
-        w.lineWidth = 0.8;
-        for (let i = 0; i < 3; i++) {
-          const py = Y + cs * (0.25 + i * 0.25);
-          const ox = (r() - 0.5) * cs * 0.2;
-          w.beginPath();
-          w.moveTo(X + cs * 0.15 + ox, py);
-          w.quadraticCurveTo(X + cs * 0.3 + ox, py - cs * 0.07, X + cs * 0.45 + ox, py);
-          w.quadraticCurveTo(X + cs * 0.6 + ox, py + cs * 0.07, X + cs * 0.75 + ox, py);
-          w.stroke();
-        }
+        washRegion(w, rg.cells, { ...P, color: jit([62, 112, 168], 0.2, 0.1), alpha: 0.5, seed: rs, edge: 0.55, mottle: 0.25, gran: 0.15, blooms: 2 });
+      } else {
+        washRegion(w, rg.cells, { ...P, color: wild ? [120, 152, 80] : [214, 186, 132], alpha: wild ? 0.3 : 0.16, seed: rs, edge: 0.22, mottle: 0.55, gran: 0.25, blooms: 0 });
       }
     }
-    // soft watercolour edge darkening: re-stroke the cell-type boundaries with a blurred pass
-    w.filter = `blur(${cs * 0.08 * k}px)`;
-    w.globalAlpha = 0.5;
-    w.drawImage(wash, 0, 0, W, H);
-    w.filter = 'none';
-    w.globalAlpha = 1;
+    // texture: drawn setts on plazas, grit on the streets, broken masonry in rubble, ripples on water
+    for (const rg of reg.list) {
+      if (rg.type === CELL.COURTYARD) cobbleRegion(w, rg.cells, { ...P, seed: seed + rg.index * 17 });
+    }
+    scatter(w, map, (x, y) => !info.isRock(x, y) && map.getCell(x, y) === CELL.STREET, { ...P, seed: seed + 3, kind: wild ? 'grass' : 'street' });
+    scatter(w, map, (x, y) => !info.isRock(x, y) && map.getCell(x, y) === CELL.RUBBLE, { ...P, seed: seed + 4, kind: 'rubble' });
+    if (dungeon) scatter(w, map, (x, y) => !info.isRock(x, y) && map.getCell(x, y) === CELL.INTERIOR, { ...P, seed: seed + 6, kind: 'street' });
+    w.strokeStyle = 'rgba(30,60,110,0.45)';
+    w.lineWidth = 0.7;
+    for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) {
+      if (info.isRock(x, y) || map.getCell(x, y) !== CELL.WATER) continue;
+      for (let i = 0; i < 3; i++) {
+        const py = CY(y) + cs * (0.25 + i * 0.25) + (r() - 0.5) * cs * 0.08;
+        const ox = CX(x) + (r() - 0.5) * cs * 0.3;
+        w.beginPath();
+        w.moveTo(ox + cs * 0.15, py);
+        w.quadraticCurveTo(ox + cs * 0.3, py - cs * 0.06, ox + cs * 0.45, py);
+        w.quadraticCurveTo(ox + cs * 0.6, py + cs * 0.06, ox + cs * 0.75, py);
+        w.stroke();
+      }
+    }
     w.setTransform(1, 0, 0, 1, 0, 0);
     w.globalCompositeOperation = 'destination-in';
     w.imageSmoothingEnabled = true;
@@ -271,123 +260,132 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
   g.globalCompositeOperation = 'multiply';
   g.drawImage(wash, 0, 0, W, H);
   g.restore();
+  // dried tide line where the survey's wash meets bare paper
+  g.drawImage(tideLine, 0, 0, W, H);
 
-  // ---------- walls ----------
-  const wallW = cs * 0.12;
+  // ---------- walls: quill strokes on their own ink layer ----------
+  const wallW = cs * 0.125;
   const { segs: cellSegs, effective } = collectEdges(map, info, seenCell, secrets);
   const segs = cellSegs.map((q) => ({ ...q, x0: CX(q.x0), y0: CY(q.y0), x1: CX(q.x1), y1: CY(q.y1) }));
   const exitAt = new Set(info.travel.filter((t) => t.edge).map((t) => `${t.at.x},${t.at.y},${t.at.facing}`));
   const ruin = (q) => q.style === 2 && !dungeon;
+  const border = (q) => !dungeon && !wild && ((q.horiz && (q.cell[1] === 0 && q.cell[2] === 'N' || q.cell[1] === map.h - 1 && q.cell[2] === 'S')) || (!q.horiz && (q.cell[0] === 0 && q.cell[2] === 'W' || q.cell[0] === map.w - 1 && q.cell[2] === 'E')));
   const runs = mergeRuns(segs.filter((q) => effective(q) === EDGE.WALL && !ruin(q)));
+  const inkL = makeCanvas(W * k, H * k);
+  const ig = inkL.getContext('2d');
+  ig.scale(k, k);
   if (inkWalls) {
-    // drop shadow (south-east) for relief
-    g.save();
-    g.globalAlpha = 0.22;
-    for (const r of runs) inkLine(g, r.x0 + wallW * 0.45, r.y0 + wallW * 0.55, r.x1 + wallW * 0.45, r.y1 + wallW * 0.55, { width: wallW * 1.3, color: '#3a2410', amp: 0.4, seed: r.x0 + r.y0 * 3 });
-    g.restore();
-    for (const r of runs) {
-      const ext = wallW * 0.35;
-      const dx = r.horiz ? ext : 0;
-      const dy = r.horiz ? 0 : ext;
-      inkLine(g, r.x0 - dx, r.y0 - dy, r.x1 + dx, r.y1 + dy, { width: wallW * (r.style === 2 ? 1.15 : 1), color: '#1c110a', amp: cs * (r.style === 2 ? 0.05 : 0.012), seed: (r.x0 * 7 + r.y0 * 13) | 0, bleed: wallW * 0.7 });
+    for (const rn of runs) {
+      const ext = wallW * 0.3;
+      const dx = rn.horiz ? ext : 0;
+      const dy = rn.horiz ? 0 : ext;
+      const sd = (rn.x0 * 7 + rn.y0 * 13) | 0;
+      const city = border(rn);
+      const width = wallW * (city ? 1.5 : rn.style === 1 ? 0.85 : 1);
+      quillStroke(ig, rn.x0 - dx, rn.y0 - dy, rn.x1 + dx, rn.y1 + dy, { width, amp: cs * 0.014, seed: sd, dry: 0.55, pool: 1 });
+      if (city) {
+        // the city wall: a second, finer rule on the inside face
+        const o = width * 1.25;
+        const ox = rn.horiz ? 0 : (rn.cell[2] === 'W' ? o : -o);
+        const oy = rn.horiz ? (rn.cell[2] === 'N' ? o : -o) : 0;
+        quillStroke(ig, rn.x0 - dx + ox, rn.y0 - dy + oy, rn.x1 + dx + ox, rn.y1 + dy + oy, { width: wallW * 0.32, amp: cs * 0.01, seed: sd + 3, pool: 0.6, taper: 0.5 });
+      }
     }
     // crumbling ruin walls: broken strokes and spill
-    for (const s of segs.filter((q) => effective(q) === EDGE.WALL && ruin(q))) {
-      const r = prng((s.x0 * 3 + s.y0 * 7) | 0);
-      const n = 3;
+    for (const sg of segs.filter((q) => effective(q) === EDGE.WALL && ruin(q))) {
+      const r = prng((sg.x0 * 3 + sg.y0 * 7) | 0);
+      const n = 2 + Math.floor(r() * 2);
       for (let i = 0; i < n; i++) {
-        const t0 = i / n + r() * 0.06;
-        const t1 = (i + 1) / n - 0.06 - r() * 0.08;
-        inkLine(g, s.x0 + (s.x1 - s.x0) * t0, s.y0 + (s.y1 - s.y0) * t0, s.x0 + (s.x1 - s.x0) * t1, s.y0 + (s.y1 - s.y0) * t1, { width: wallW * (0.7 + r() * 0.3), amp: 0.8, seed: i + s.x0 });
+        const t0 = i / n + r() * 0.08;
+        const t1 = (i + 1) / n - 0.08 - r() * 0.12;
+        if (t1 - t0 < 0.08) continue;
+        quillStroke(ig, sg.x0 + (sg.x1 - sg.x0) * t0, sg.y0 + (sg.y1 - sg.y0) * t0, sg.x0 + (sg.x1 - sg.x0) * t1, sg.y0 + (sg.y1 - sg.y0) * t1, { width: wallW * (0.65 + r() * 0.35), amp: 0.7, seed: i + sg.x0 * 3 + sg.y0, dry: 0.9, taper: 0.6 });
       }
-      const mx = (s.x0 + s.x1) / 2;
-      const my = (s.y0 + s.y1) / 2;
-      stipple(g, mx - cs * 0.4, my - cs * 0.18, cs * 0.8, cs * 0.36, { seed: (mx + my) | 0, count: 14, r: 1.1, color: INK.ink, alpha: 0.7 });
+      const mx = (sg.x0 + sg.x1) / 2;
+      const my = (sg.y0 + sg.y1) / 2;
+      stipple(ig, mx - cs * 0.4, my - cs * 0.16, cs * 0.8, cs * 0.32, { seed: (mx + my) | 0, count: 12, r: 1, color: INK.ink, alpha: 0.6 });
     }
     // doors, locked doors, arches, found secret doors
-    for (const s of segs) {
-      const t = effective(s);
+    for (const sg of segs) {
+      const t = effective(sg);
       if (t === EDGE.WALL) continue;
-      const mx = (s.x0 + s.x1) / 2;
-      const my = (s.y0 + s.y1) / 2;
-      const along = s.horiz ? [1, 0] : [0, 1];
+      const mx = (sg.x0 + sg.x1) / 2;
+      const my = (sg.y0 + sg.y1) / 2;
+      const along = sg.horiz ? [1, 0] : [0, 1];
       const gap = cs * 0.26;
-      const seg = (a, b) => inkLine(g, s.x0 + (s.x1 - s.x0) * a, s.y0 + (s.y1 - s.y0) * a, s.x0 + (s.x1 - s.x0) * b, s.y0 + (s.y1 - s.y0) * b, { width: wallW, amp: 0.3, seed: (s.x0 + s.y0) | 0, bleed: wallW * 0.6, cap: 'butt' });
+      const sd = (sg.x0 * 5 + sg.y0 * 11) | 0;
+      const piece = (a, b2, o = {}) => quillStroke(ig, sg.x0 + (sg.x1 - sg.x0) * a, sg.y0 + (sg.y1 - sg.y0) * a, sg.x0 + (sg.x1 - sg.x0) * b2, sg.y0 + (sg.y1 - sg.y0) * b2, { width: wallW, amp: 0.3, seed: sd + a * 10, ...o });
       if (t === EDGE.SECRET) {
-        // dashed wall + vermilion S
-        g.save();
-        g.setLineDash([cs * 0.1, cs * 0.07]);
-        g.strokeStyle = INK.ink;
-        g.lineWidth = wallW * 0.8;
-        g.beginPath(); g.moveTo(s.x0, s.y0); g.lineTo(s.x1, s.y1); g.stroke();
-        g.restore();
-        g.save();
-        g.font = `italic bold ${Math.round(cs * 0.42)}px ${SERIF}`;
-        g.textAlign = 'center';
-        g.textBaseline = 'middle';
-        haloText(g, 'S', mx + (s.horiz ? 0 : cs * 0.22), my + (s.horiz ? -cs * 0.2 : 0), { color: INK.vermilion, width: 3 });
-        g.restore();
+        // a wall drawn in broken dashes + vermilion S
+        for (let i = 0; i < 6; i++) piece(i / 6 + 0.02, (i + 0.62) / 6, { width: wallW * 0.8, pool: 0.5, taper: 0.4 });
+        ig.save();
+        ig.font = `italic bold ${Math.round(cs * 0.42)}px ${SERIF}`;
+        ig.textAlign = 'center';
+        ig.textBaseline = 'middle';
+        haloText(ig, 'S', mx + (sg.horiz ? 0 : cs * 0.22), my + (sg.horiz ? -cs * 0.2 : 0), { color: INK.vermilion, width: 3 });
+        ig.restore();
         continue;
       }
-      seg(0, 0.5 - gap / cs);
-      seg(0.5 + gap / cs, 1);
+      piece(0, 0.5 - gap / cs, { pool: 1.1 });
+      piece(0.5 + gap / cs, 1, { pool: 1.1 });
       // jambs
-      g.save();
-      g.strokeStyle = INK.ink;
-      g.lineWidth = 1.2;
       const jl = wallW * 1.1;
       for (const sgn of [-1, 1]) {
         const jx = mx + along[0] * gap * sgn;
         const jy = my + along[1] * gap * sgn;
-        g.beginPath();
-        g.moveTo(jx - along[1] * jl, jy - along[0] * jl);
-        g.lineTo(jx + along[1] * jl, jy + along[0] * jl);
-        g.stroke();
+        quillStroke(ig, jx - along[1] * jl, jy - along[0] * jl, jx + along[1] * jl, jy + along[0] * jl, { width: 1.3, amp: 0.1, seed: sd + sgn, pool: 0.4 });
       }
-      g.restore();
       if (t === EDGE.ARCH) {
-        const outward = exitAt.has(s.cell.join(','));
-        g.save();
-        g.fillStyle = INK.ink;
+        const outward = exitAt.has(sg.cell.join(','));
+        ig.save();
+        ig.fillStyle = INK.ink;
         for (const sgn of [-1, 1]) {
-          g.fillRect(mx + along[0] * gap * sgn - wallW * 0.8, my + along[1] * gap * sgn - wallW * 0.8, wallW * 1.6, wallW * 1.6);
+          const px = mx + along[0] * gap * sgn;
+          const py = my + along[1] * gap * sgn;
+          ig.beginPath();
+          ig.arc(px, py, wallW * 0.85, 0, Math.PI * 2);
+          ig.fill();
         }
-        g.strokeStyle = outward ? INK.vermilion : INK.ink;
-        g.lineWidth = 1;
-        g.setLineDash([2.5, 2.5]);
-        g.beginPath();
-        g.moveTo(mx - along[0] * gap, my - along[1] * gap);
-        g.lineTo(mx + along[0] * gap, my + along[1] * gap);
-        g.stroke();
-        g.restore();
+        ig.strokeStyle = outward ? INK.vermilion : INK.ink;
+        ig.lineWidth = 1;
+        ig.setLineDash([2.5, 2.5]);
+        ig.beginPath();
+        ig.moveTo(mx - along[0] * gap, my - along[1] * gap);
+        ig.quadraticCurveTo(mx + along[1] * gap * 0.5, my - along[0] * gap * 0.5, mx + along[0] * gap, my + along[1] * gap);
+        ig.stroke();
+        ig.restore();
       } else {
-        // door leaf
+        // door leaf, washed in wood or (locked) in red with a gilt lock
         const lw = gap * 1.7;
-        const lt = wallW * 1.35;
-        g.save();
-        g.translate(mx, my);
-        if (!s.horiz) g.rotate(Math.PI / 2);
-        g.fillStyle = t === EDGE.LOCKED ? '#9c3b25' : '#a8743a';
-        g.fillRect(-lw / 2, -lt / 2, lw, lt);
-        g.strokeStyle = INK.ink;
-        g.lineWidth = 1.1;
-        g.strokeRect(-lw / 2, -lt / 2, lw, lt);
-        g.lineWidth = 0.5;
-        g.beginPath(); g.moveTo(-lw / 2, 0); g.lineTo(lw / 2, 0); g.stroke();
+        const lt = wallW * 1.4;
+        ig.save();
+        ig.translate(mx, my);
+        if (!sg.horiz) ig.rotate(Math.PI / 2);
+        ig.fillStyle = t === EDGE.LOCKED ? 'rgba(156,59,37,0.9)' : 'rgba(168,116,58,0.85)';
+        ig.fillRect(-lw / 2, -lt / 2, lw, lt);
+        quillStroke(ig, -lw / 2, -lt / 2, lw / 2, -lt / 2, { width: 0.9, amp: 0.15, seed: sd + 1, pool: 0.3 });
+        quillStroke(ig, -lw / 2, lt / 2, lw / 2, lt / 2, { width: 0.9, amp: 0.15, seed: sd + 2, pool: 0.3 });
+        quillStroke(ig, -lw / 2, -lt / 2, -lw / 2, lt / 2, { width: 0.9, amp: 0.05, seed: sd + 3, pool: 0.3 });
+        quillStroke(ig, lw / 2, -lt / 2, lw / 2, lt / 2, { width: 0.9, amp: 0.05, seed: sd + 4, pool: 0.3 });
+        ig.strokeStyle = 'rgba(43,26,13,0.6)';
+        ig.lineWidth = 0.45;
+        ig.beginPath(); ig.moveTo(-lw / 2 + 1, -lt * 0.12); ig.lineTo(lw / 2 - 1, -lt * 0.1); ig.moveTo(-lw / 2 + 1, lt * 0.18); ig.lineTo(lw / 2 - 1, lt * 0.2); ig.stroke();
         if (t === EDGE.LOCKED) {
-          g.fillStyle = INK.goldHi;
-          g.beginPath(); g.arc(0, 0, lt * 0.62, 0, Math.PI * 2); g.fill();
-          g.strokeStyle = INK.ink; g.lineWidth = 0.8; g.stroke();
-          g.fillStyle = INK.ink;
-          g.beginPath(); g.arc(0, -lt * 0.12, lt * 0.18, 0, Math.PI * 2); g.fill();
-          g.fillRect(-lt * 0.07, -lt * 0.1, lt * 0.14, lt * 0.36);
+          ig.fillStyle = INK.goldHi;
+          ig.beginPath(); ig.arc(0, 0, lt * 0.6, 0, Math.PI * 2); ig.fill();
+          ig.strokeStyle = INK.ink; ig.lineWidth = 0.8; ig.stroke();
+          ig.fillStyle = INK.ink;
+          ig.beginPath(); ig.arc(0, -lt * 0.12, lt * 0.17, 0, Math.PI * 2); ig.fill();
+          ig.fillRect(-lt * 0.07, -lt * 0.1, lt * 0.14, lt * 0.34);
         }
-        g.restore();
+        ig.restore();
       }
     }
   }
+  g.drawImage(inkL, 0, 0, W, H);
 
   // ---------- markers ----------
+  const markerSpots = [];
   for (const ev of map.events) {
     if (!seenCell(ev.x, ev.y)) continue;
     const mk2 = eventMarker(ev, !!spent[ev.id]);
@@ -395,7 +393,10 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
     const same = map.events.filter((e) => e.x === ev.x && e.y === ev.y && eventMarker(e, !!spent[e.id]));
     const idx = same.indexOf(ev);
     const off = same.length > 1 ? (idx - (same.length - 1) / 2) * cs * 0.32 : 0;
-    drawMarker(g, mk2, CX(ev.x) + cs / 2 + off, CY(ev.y) + cs / 2, cs * 0.42, { color: INK.ink });
+    const mxp = CX(ev.x) + cs / 2 + off;
+    const myp = CY(ev.y) + cs / 2;
+    drawMarker(g, mk2, mxp, myp, cs * 0.42, { color: INK.ink, seed: ev.x * 31 + ev.y });
+    markerSpots.push([mxp - cs * 0.22, myp - cs * 0.22, cs * 0.44, cs * 0.44]);
   }
   // exits: arrows in the margin + destination names
   g.save();
@@ -415,44 +416,48 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
       const label = `to ${t.destName}`;
       if (facing === 'N' || facing === 'S') {
         g.textAlign = 'center';
-        haloText(g, label, ax, ay + oy * cs * 0.42, { width: 3 });
+        haloText(g, label, ax, ay + oy * cs * 0.42, { width: 3, color: '#3b2210' });
       } else {
         g.save();
         g.translate(ax + ox * cs * 0.22, ay);
         g.rotate(facing === 'E' ? Math.PI / 2 : -Math.PI / 2);
         g.textAlign = 'center';
-        haloText(g, label, 0, -cs * 0.14, { width: 3 });
+        haloText(g, label, 0, -cs * 0.14, { width: 3, color: '#3b2210' });
         g.restore();
       }
     } else {
       const glyph = t.art === 'docks' || t.art === 'keep' ? 'boat' : 'stairs';
       drawMarker(g, glyph, X, Y, cs * 0.5, { color: INK.ink });
+      markerSpots.push([X - cs * 0.25, Y - cs * 0.25, cs * 0.5, cs * 0.75]);
       g.font = `italic ${Math.round(cs * 0.27)}px ${SERIF}`;
       g.textAlign = 'center';
-      haloText(g, t.destName, X, Y + cs * 0.52, { width: 3 });
+      haloText(g, t.destName, X, Y + cs * 0.52, { width: 3, color: '#3b2210' });
     }
   }
   g.restore();
 
-  // ---------- zone names ----------
-  g.save();
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
+  // ---------- zone names: placed live by the viewer (see AutomapScene), recorded here ----------
+  const labels = [];
   for (const z of map.zones) {
     let any = false;
     for (let y = z.y; y < z.y + z.h && !any; y++) for (let x = z.x; x < z.x + z.w; x++) if (seenCell(x, y)) { any = true; break; }
     if (!any) continue;
-    const zw = z.w * cs * 0.92;
-    const fs = Math.min(cs * 0.34, Math.max(cs * 0.22, zw / 7));
-    g.font = `italic ${Math.round(fs)}px ${SERIF}`;
-    g.letterSpacing = `${(fs * 0.06).toFixed(1)}px`;
-    const lines = wrapText(g, z.name, Math.max(zw, cs * 1.8));
-    const cx = CX(z.x + z.w / 2);
-    const cy = CY(z.y + z.h / 2) - ((lines.length - 1) * fs * 1.05) / 2 + (z.h <= 2 ? 0 : -cs * 0.08);
-    lines.forEach((l, i) => haloText(g, l, cx, cy + i * fs * 1.05, { color: '#3b2210', halo: 'rgba(243,230,196,0.85)', width: fs * 0.3 }));
+    labels.push({ name: z.name, x: z.x, y: z.y, w: z.w, h: z.h });
   }
-  g.letterSpacing = '0px';
-  g.restore();
+  if (zoneLabels) {
+    g.save();
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    for (const z of labels) {
+      const fs = Math.min(cs * 0.34, Math.max(cs * 0.22, (z.w * cs * 0.92) / 7));
+      g.font = `italic ${Math.round(fs)}px ${SERIF}`;
+      const lines = wrapText(g, z.name, Math.max(z.w * cs * 0.92, cs * 1.8));
+      const cx = CX(z.x + z.w / 2);
+      const cy = CY(z.y + z.h / 2) - ((lines.length - 1) * fs * 1.05) / 2;
+      lines.forEach((l, i) => haloText(g, l, cx, cy + i * fs * 1.05, { color: '#3b2210', width: fs * 0.3 }));
+    }
+    g.restore();
+  }
 
   // ---------- terra incognita: label the largest unexplored tract ----------
   {
@@ -460,34 +465,32 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
     const unseen = (x, y) => !seenCell(x, y) && !info.isRock(x, y);
     for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) {
       for (let h2 = 1; y + h2 <= map.h; h2++) {
-        let ok = true;
         let w2 = 0;
         for (; x + w2 < map.w; w2++) {
           let col = true;
           for (let j = y; j < y + h2; j++) if (!unseen(x + w2, j)) { col = false; break; }
           if (!col) break;
         }
-        if (w2 === 0) ok = false;
-        if (!ok) break;
-        // keep the row width as the minimum over rows (scan above checks all rows per column)
+        if (w2 === 0) break;
         if (w2 >= 4 && h2 >= 2 && (!best || w2 * h2 > best.w * best.h)) best = { x, y, w: w2, h: h2 };
       }
     }
     if (best && best.w * best.h >= 10) {
       g.save();
       g.translate(CX(best.x + best.w / 2), CY(best.y + best.h / 2));
-      g.rotate(-0.06);
-      const fs = Math.min(cs * 0.62, (best.w * cs) / 7.5);
-      g.font = `italic ${Math.round(fs)}px ${SERIF}`;
-      g.letterSpacing = `${(fs * 0.12).toFixed(1)}px`;
+      g.rotate(-0.05);
+      const fs = Math.min(cs * 0.85, (best.w * cs) / 6.2);
       g.textAlign = 'center';
       g.textBaseline = 'middle';
-      g.fillStyle = 'rgba(80,50,25,0.42)';
-      g.fillText('Unexplored', 0, 0);
-      g.font = `italic ${Math.round(fs * 0.42)}px ${SERIF}`;
+      g.font = `italic ${Math.round(fs)}px ${SERIF}`;
+      g.letterSpacing = `${(fs * 0.1).toFixed(1)}px`;
+      haloText(g, 'Terra Incognita', 0, -fs * 0.1, { color: 'rgba(74,44,20,0.8)', halo: 'rgba(236,222,186,0.6)', width: fs * 0.25 });
       g.letterSpacing = '1px';
-      g.fillStyle = 'rgba(80,50,25,0.38)';
-      if (best.h >= 3) g.fillText('so far as the Company knows', 0, fs * 0.85);
+      drawFlourish(g, 0, fs * 0.58, Math.min(best.w * cs * 0.6, fs * 6), { color: 'rgba(74,44,20,0.7)', width: 1.1 });
+      if (best.h >= 3) {
+        g.font = `italic ${Math.round(fs * 0.4)}px ${SERIF}`;
+        haloText(g, 'not yet walked by the Company', 0, fs * 1.05, { color: 'rgba(74,44,20,0.75)', width: 2 });
+      }
       g.restore();
     }
   }
@@ -611,7 +614,7 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
   g.restore();
 
   g.restore();
-  return { canvas, k, cs, info, seenCell, cellRect: (x, y) => [M + CX(x), M + CY(y), cs, cs], seed };
+  return { canvas, k, cs, info, seenCell, cellRect: (x, y) => [M + CX(x), M + CY(y), cs, cs], seed, labels, markerSpots, regions: reg };
 }
 
 /** Small legend swatch drawn in sheet units. */
@@ -620,7 +623,7 @@ export function drawKeySwatch(g, key, x, y, s) {
   g.save();
   g.strokeStyle = INK.ink;
   g.fillStyle = INK.ink;
-  const wall = (a, b) => inkLine(g, x - h + a * s, y, x - h + b * s, y, { width: s * 0.13, amp: 0.2, seed: 3 });
+  const wall = (a, b) => quillStroke(g, x - h + a * s, y, x - h + b * s, y, { width: s * 0.13, amp: 0.2, seed: 3 + a * 7 });
   switch (key) {
     case 'wall': wall(0, 1); break;
     case 'door':

@@ -298,13 +298,32 @@ export function wrapText(g, text, maxWidth) {
   return lines;
 }
 
-/** Text with a paper-coloured halo so it reads over ink. */
-export function haloText(g, text, x, y, { halo = 'rgba(240,226,190,0.9)', width = 4, color = INK.ink } = {}) {
+/**
+ * Lettering inked onto the paper: a faint, soft parchment knockout (so it
+ * reads over washes and hatching without looking like a sticker), the ink
+ * itself slightly translucent, and a hair of bleed. `width` scales the knockout.
+ */
+export function haloText(g, text, x, y, { halo = 'rgba(242,230,198,0.55)', width = 4, color = INK.ink, bleed = 0.22 } = {}) {
   g.save();
   g.lineJoin = 'round';
+  const fs = parseFloat(/(\d+(?:\.\d+)?)px/.exec(g.font)?.[1] ?? '14');
+  // soft knockout: a thin pale stroke blurred by its own shadow
   g.strokeStyle = halo;
-  g.lineWidth = width;
+  g.shadowColor = halo;
+  g.shadowBlur = Math.max(1, fs * 0.25);
+  g.lineWidth = Math.min(width * 0.6, fs * 0.16);
   g.strokeText(text, x, y);
+  g.shadowBlur = 0;
+  g.shadowColor = 'transparent';
+  // bleed: ink wicks a little into the fibres
+  if (bleed > 0) {
+    g.globalAlpha *= bleed;
+    g.fillStyle = color;
+    g.fillText(text, x + fs * 0.02, y + fs * 0.025);
+    g.fillText(text, x - fs * 0.015, y + fs * 0.01);
+    g.globalAlpha /= bleed;
+  }
+  g.globalAlpha *= 0.9;
   g.fillStyle = color;
   g.fillText(text, x, y);
   g.restore();

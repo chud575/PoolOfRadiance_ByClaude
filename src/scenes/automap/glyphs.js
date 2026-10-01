@@ -14,46 +14,95 @@ function withTransform(g, x, y, s, fn) {
   g.restore();
 }
 
-/** Party arrow (compass-needle style): crimson and gilt, pointing up (rotate before calling). */
+/**
+ * Party pointer, hand-painted: a vermilion wash with a darker shaded flank, a
+ * pale highlight stroke, brush streaks and an inked outline, pointing up
+ * (rotated by angle). `glow` (0..1) only deepens the soft shadow beneath.
+ */
 export function drawPartyArrow(g, x, y, s, angle = 0, { glow = 0.5 } = {}) {
   g.save();
   g.translate(x, y);
   g.rotate(angle);
   g.scale(s / 100, s / 100);
-  if (glow > 0) {
-    const gr = g.createRadialGradient(0, 0, 0, 0, 0, 70);
-    gr.addColorStop(0, `rgba(255,210,120,${0.55 * glow})`);
-    gr.addColorStop(0.5, `rgba(255,150,60,${0.22 * glow})`);
-    gr.addColorStop(1, 'rgba(255,150,60,0)');
-    g.fillStyle = gr;
+  const outline = () => {
     g.beginPath();
-    g.arc(0, 0, 70, 0, Math.PI * 2);
-    g.fill();
-  }
-  // shadow
-  g.fillStyle = 'rgba(30,10,0,0.35)';
-  g.beginPath();
-  g.moveTo(4, -38); g.lineTo(30, 34); g.lineTo(4, 20); g.lineTo(-22, 34); g.closePath();
+    g.moveTo(0, -48);
+    g.quadraticCurveTo(10, -14, 29, 27);
+    g.quadraticCurveTo(14, 18, 0, 13);
+    g.quadraticCurveTo(-14, 18, -29, 27);
+    g.quadraticCurveTo(-10, -14, 0, -48);
+    g.closePath();
+  };
+  // shadow on the paper
+  g.save();
+  g.translate(5, 6);
+  outline();
+  g.fillStyle = `rgba(60,28,10,${(0.18 + glow * 0.1).toFixed(3)})`;
   g.fill();
-  // body: two halves (lit / shaded) like a compass needle
+  g.restore();
+  // body wash
+  outline();
+  g.fillStyle = 'rgba(190,52,30,0.94)';
+  g.fill();
+  g.save();
+  outline();
+  g.clip();
+  // shaded flank
+  g.fillStyle = 'rgba(110,22,12,0.55)';
+  g.beginPath(); g.moveTo(0, -50); g.lineTo(34, 30); g.lineTo(0, 14); g.closePath(); g.fill();
+  // pigment pooled toward the barbs
+  const pool = g.createLinearGradient(0, -48, 0, 28);
+  pool.addColorStop(0, 'rgba(255,170,120,0.18)');
+  pool.addColorStop(0.6, 'rgba(0,0,0,0)');
+  pool.addColorStop(1, 'rgba(90,15,8,0.35)');
+  g.fillStyle = pool;
+  g.fillRect(-32, -50, 64, 80);
+  // brush streaks along the stroke
+  g.strokeStyle = 'rgba(90,16,8,0.22)';
+  g.lineWidth = 1.4;
+  for (let i = -3; i <= 3; i++) {
+    g.beginPath(); g.moveTo(i * 2.2, -40 + Math.abs(i) * 6); g.lineTo(i * 7.5, 22 - Math.abs(i)); g.stroke();
+  }
+  // pale highlight on the lit edge
+  g.strokeStyle = 'rgba(255,214,170,0.55)';
+  g.lineWidth = 2.6;
+  g.beginPath(); g.moveTo(-3, -36); g.quadraticCurveTo(-11, -6, -22, 20); g.stroke();
+  g.restore();
+  // ink outline
+  outline();
   g.lineJoin = 'round';
-  g.fillStyle = '#d4402c';
-  g.beginPath(); g.moveTo(0, -42); g.lineTo(0, 16); g.lineTo(-26, 30); g.closePath(); g.fill();
-  g.fillStyle = '#8e1f16';
-  g.beginPath(); g.moveTo(0, -42); g.lineTo(26, 30); g.lineTo(0, 16); g.closePath(); g.fill();
-  const gold = g.createLinearGradient(-26, -40, 26, 30);
-  gold.addColorStop(0, INK.goldHi);
-  gold.addColorStop(0.5, INK.gold);
-  gold.addColorStop(1, INK.goldLo);
-  g.strokeStyle = gold;
-  g.lineWidth = 5;
-  g.beginPath(); g.moveTo(0, -42); g.lineTo(26, 30); g.lineTo(0, 16); g.lineTo(-26, 30); g.closePath(); g.stroke();
-  g.strokeStyle = 'rgba(40,10,0,0.9)';
+  g.strokeStyle = 'rgba(43,22,10,0.95)';
+  g.lineWidth = 3.4;
+  g.stroke();
+  // gilt boss
+  g.fillStyle = INK.goldHi;
+  g.beginPath(); g.arc(0, 2, 5.5, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = INK.goldLo;
   g.lineWidth = 1.6;
   g.stroke();
-  g.fillStyle = INK.goldHi;
-  g.beginPath(); g.arc(0, 6, 5, 0, Math.PI * 2); g.fill();
   g.restore();
+}
+
+/** The party's view: a soft vermilion-ochre wash wedge (cached canvas). */
+let coneCache = null;
+export function partyConeCanvas() {
+  if (coneCache) return coneCache;
+  const S = 256;
+  const c = makeCanvas(S);
+  const g = c.getContext('2d');
+  g.filter = 'blur(9px)';
+  const gr = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S * 0.48);
+  gr.addColorStop(0, 'rgba(200,80,40,0.55)');
+  gr.addColorStop(0.5, 'rgba(210,130,64,0.28)');
+  gr.addColorStop(1, 'rgba(214,150,80,0)');
+  g.fillStyle = gr;
+  g.beginPath();
+  g.moveTo(S / 2, S / 2);
+  g.arc(S / 2, S / 2, S * 0.46, -Math.PI / 2 - 0.5, -Math.PI / 2 + 0.5);
+  g.closePath();
+  g.fill();
+  coneCache = c;
+  return c;
 }
 
 /** Pin kinds for player notes. */
@@ -150,7 +199,7 @@ export function shade(hex, k) {
 /**
  * Marker glyphs in ink. kind: sign | text | battle | treasure | exit | stairs | shop | boat | shrine
  */
-export function drawMarker(g, kind, x, y, s, { color = INK.ink, accent = INK.vermilion, angle = 0 } = {}) {
+export function drawMarker(g, kind, x, y, s, { color = INK.ink, accent = INK.vermilion, angle = 0, seed = 0 } = {}) {
   g.save();
   g.translate(x, y);
   g.rotate(angle);
@@ -186,11 +235,30 @@ export function drawMarker(g, kind, x, y, s, { color = INK.ink, accent = INK.ver
       break;
     }
     case 'battle': {
-      g.strokeStyle = accent;
-      g.lineWidth = 7;
-      g.beginPath(); g.moveTo(-26, -26); g.lineTo(22, 22); g.moveTo(26, -26); g.lineTo(-22, 22); g.stroke();
-      g.lineWidth = 6;
-      g.beginPath(); g.moveTo(10, 24); g.lineTo(24, 10); g.moveTo(-10, 24); g.lineTo(-24, 10); g.stroke();
+      // crossed swords, inked, with a touch of vermilion on the grips
+      const jit = ((seed * 9301 + 49297) % 233280) / 233280;
+      g.rotate((jit - 0.5) * 0.35);
+      const sword = (dir) => {
+        g.save();
+        g.scale(dir, 1);
+        g.rotate(-Math.PI / 4);
+        g.fillStyle = 'rgba(236,226,204,0.95)';
+        g.beginPath(); g.moveTo(0, -40); g.lineTo(4.5, -32); g.lineTo(4, 14); g.lineTo(-4, 14); g.lineTo(-4.5, -32); g.closePath();
+        g.fill();
+        g.lineWidth = 3; g.strokeStyle = color; g.stroke();
+        g.lineWidth = 1.4;
+        g.beginPath(); g.moveTo(0, -30); g.lineTo(0, 10); g.stroke();
+        g.lineWidth = 4;
+        g.beginPath(); g.moveTo(-13, 16); g.lineTo(13, 16); g.stroke();
+        g.fillStyle = accent;
+        g.fillRect(-3, 18, 6, 14);
+        g.lineWidth = 2; g.strokeRect(-3, 18, 6, 14);
+        g.fillStyle = color;
+        g.beginPath(); g.arc(0, 36, 4.5, 0, Math.PI * 2); g.fill();
+        g.restore();
+      };
+      sword(1);
+      sword(-1);
       break;
     }
     case 'treasure': {

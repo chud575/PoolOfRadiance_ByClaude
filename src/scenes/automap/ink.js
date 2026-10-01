@@ -194,9 +194,9 @@ export function grainTile() {
  * Deckled parchment sheet with foxing, stains, darkened edges and fibres.
  * Returns a canvas of size (w, h); the sheet occupies an inset rect with
  * a transparent margin carrying a baked contact shadow.
- * @param {number} w @param {number} h @param {{seed?:number, margin?:number, tone?:number[], age?:number}} opts
+ * @param {number} w @param {number} h @param {{seed?:number, margin?:number, tone?:number[], age?:number, ring?:number[]|null}} opts
  */
-export function makeParchment(w, h, { seed = 1, margin = 0, tone = [238, 222, 184], age = 1 } = {}) {
+export function makeParchment(w, h, { seed = 1, margin = 0, tone = [238, 222, 184], age = 1, ring = [0.015, 0.985] } = {}) {
   const c = makeCanvas(w, h);
   const g = c.getContext('2d');
   const sx = margin;
@@ -299,11 +299,12 @@ export function makeParchment(w, h, { seed = 1, margin = 0, tone = [238, 222, 18
     g.fillStyle = gr;
     g.fillRect(x - rr, y - rr, rr * 2, rr * 2);
   }
-  if (age > 0.5) {
-    const x = sx + sw * (0.12 + r() * 0.2);
-    const y = sy + sh * (0.7 + r() * 0.2);
-    const rr = Math.min(sw, sh) * 0.07;
-    g.strokeStyle = 'rgba(110,65,25,0.06)';
+  if (age > 0.5 && ring) {
+    // a cup-ring left in the margin, mostly run off the corner of the sheet
+    const x = sx + sw * ring[0];
+    const y = sy + sh * ring[1];
+    const rr = Math.min(sw, sh) * 0.075;
+    g.strokeStyle = 'rgba(110,65,25,0.07)';
     for (let k = 0; k < 3; k++) {
       g.lineWidth = rr * (0.03 + k * 0.02);
       g.beginPath();
@@ -339,7 +340,7 @@ export function makeParchment(w, h, { seed = 1, margin = 0, tone = [238, 222, 18
  * The cartographer's desk: dark walnut planks lit by a warm candle pool.
  * @param {number} w @param {number} h @param {{cx?:number, cy?:number}} [light]
  */
-export function makeDesk(w, h, { cx = 0.45, cy = 0.45, seed = 4, lit = true } = {}) {
+export function makeDesk(w, h, { cx = 0.45, cy = 0.45, seed = 4, lit = true, tone = [70, 40, 22] } = {}) {
   const c = makeCanvas(w, h);
   const g = c.getContext('2d');
   const lw = Math.ceil(w / 3);
@@ -360,9 +361,9 @@ export function makeDesk(w, h, { cx = 0.45, cy = 0.45, seed = 4, lit = true } = 
       const seam = Math.min(py, 1 - py);
       if (seam < 0.035) v *= 0.35 + seam / 0.035 * 0.65;
       const i = (y * lw + x) * 4;
-      img.data[i] = 70 * v + 8;
-      img.data[i + 1] = 40 * v + 5;
-      img.data[i + 2] = 22 * v + 3;
+      img.data[i] = tone[0] * v + 8;
+      img.data[i + 1] = tone[1] * v + 5;
+      img.data[i + 2] = tone[2] * v + 3;
       img.data[i + 3] = 255;
     }
   }
@@ -406,5 +407,136 @@ export function featherMask(w, h, rects, { blur = 6, grow = 0 } = {}) {
   for (const [x, y, rw, rh] of rects) g.rect(x - grow, y - grow, rw + grow * 2, rh + grow * 2);
   g.fill();
   g.filter = 'none';
+  return c;
+}
+
+/**
+ * A quill stroke: a filled ribbon whose width follows the pen pressure
+ * (noise), lands heavy, lifts off thin, wobbles slightly, carries an
+ * iron-gall tide line at its edges and pools ink at both ends. With `dry`
+ * (0..1) it also scratches a few dry-brush gaps out of the stroke; only use
+ * that on a transparent ink layer (it erases with destination-out).
+ */
+export function quillStroke(g, x0, y0, x1, y1, { width = 2, color = INK.ink, amp = 0.6, seed = 0, pool = 1, taper = 0.3, alpha = 0.93, dry = 0 } = {}) {
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+  const nx = -uy;
+  const ny = ux;
+  const step = Math.max(1.2, width * 0.7);
+  const n = Math.max(3, Math.ceil(len / step));
+  const s = ((seed * 7.31) % 977 + 977) % 977;
+  const L = [];
+  const R = [];
+  for (let i = 0; i <= n; i++) {
+    const d = (i / n) * len;
+    const wob = (valueNoise(s + d / 34, s * 0.37, 4096, 3) - 0.5) * 2 * amp + (valueNoise(s + d / 6, 3.3, 4096, 4) - 0.5) * amp * 0.35;
+    const press = 0.74 + 0.4 * valueNoise(s + d / 22, 11.3 + s, 4096, 5);
+    const endIn = Math.min(1, d / (width * 2.4));
+    const endOut = Math.min(1, (len - d) / (width * 3.2));
+    const tp = (1 - taper) + taper * Math.min(Math.sqrt(endIn), endOut);
+    const w = width * press * tp * 0.5;
+    const cx = x0 + ux * d + nx * wob;
+    const cy = y0 + uy * d + ny * wob;
+    L.push([cx + nx * w, cy + ny * w]);
+    R.push([cx - nx * w, cy - ny * w]);
+  }
+  g.save();
+  g.beginPath();
+  g.moveTo(L[0][0], L[0][1]);
+  for (let i = 1; i < L.length; i++) g.lineTo(L[i][0], L[i][1]);
+  for (let i = R.length - 1; i >= 0; i--) g.lineTo(R[i][0], R[i][1]);
+  g.closePath();
+  g.fillStyle = color;
+  g.globalAlpha *= alpha * 0.86;
+  g.fill();
+  // tide line: iron-gall ink dries darker at its edges
+  g.globalAlpha = Math.min(1, g.globalAlpha / 0.86);
+  g.strokeStyle = color;
+  g.lineJoin = 'round';
+  g.lineWidth = Math.max(0.3, width * 0.13);
+  g.stroke();
+  if (pool) {
+    const r = prng(seed + 17);
+    g.fillStyle = color;
+    const blob = (x, y, rad) => {
+      g.beginPath();
+      for (let i = 0; i <= 10; i++) {
+        const a = (i / 10) * Math.PI * 2;
+        const q = rad * (0.85 + r() * 0.3);
+        if (i === 0) g.moveTo(x + Math.cos(a) * q, y + Math.sin(a) * q); else g.lineTo(x + Math.cos(a) * q, y + Math.sin(a) * q);
+      }
+      g.closePath();
+      g.fill();
+    };
+    blob(x0 + ux * width * 0.15, y0 + uy * width * 0.15, width * 0.58 * pool);
+    blob(x1 - ux * width * 0.1, y1 - uy * width * 0.1, width * 0.46 * pool);
+  }
+  g.restore();
+  if (dry > 0 && len > width * 6) {
+    const r = prng(seed * 3 + 5);
+    g.save();
+    g.globalCompositeOperation = 'destination-out';
+    g.lineCap = 'round';
+    const count = Math.floor(len / (width * 9) * dry + r() * 1.4);
+    for (let i = 0; i < count; i++) {
+      const a = 0.12 + r() * 0.7;
+      const b = Math.min(0.95, a + 0.05 + r() * 0.18);
+      const strands = 2 + Math.floor(r() * 3);
+      for (let k = 0; k < strands; k++) {
+        const o = (r() - 0.5) * width * 0.75;
+        g.globalAlpha = 0.35 + r() * 0.5;
+        g.lineWidth = width * (0.06 + r() * 0.1);
+        const aa = a + r() * 0.04;
+        const bb = b - r() * 0.04;
+        g.beginPath();
+        g.moveTo(x0 + dx * aa + nx * o, y0 + dy * aa + ny * o);
+        g.lineTo(x0 + dx * bb + nx * o, y0 + dy * bb + ny * o);
+        g.stroke();
+      }
+    }
+    g.restore();
+  }
+}
+
+/** A tileable soft mottling (low-frequency fbm) used to break up washes. */
+let mottleCache = null;
+export function mottleTile() {
+  if (mottleCache) return mottleCache;
+  const S = 256;
+  const c = makeCanvas(S);
+  const g = c.getContext('2d');
+  const img = g.createImageData(S, S);
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const n = fbm(x / 64, y / 64, { period: 4, octaves: 4, seed: 404 });
+    const i = (y * S + x) * 4;
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = 255;
+    img.data[i + 3] = Math.max(0, Math.min(255, (n - 0.38) * 2.2 * 255));
+  }
+  g.putImageData(img, 0, 0);
+  mottleCache = c;
+  return c;
+}
+
+/** Pigment granulation: dark specks clustered by noise (tileable). */
+let granCache = null;
+export function granTile() {
+  if (granCache) return granCache;
+  const S = 256;
+  const c = makeCanvas(S);
+  const g = c.getContext('2d');
+  const img = g.createImageData(S, S);
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const cl = fbm(x / 32, y / 32, { period: 8, octaves: 3, seed: 77 });
+    const h = hash2(x, y, 41);
+    const v = h > 0.985 - cl * 0.12 ? 1 : h > 0.93 - cl * 0.2 ? 0.45 : 0;
+    const i = (y * S + x) * 4;
+    img.data[i] = 40; img.data[i + 1] = 22; img.data[i + 2] = 10;
+    img.data[i + 3] = v * 255;
+  }
+  g.putImageData(img, 0, 0);
+  granCache = c;
   return c;
 }

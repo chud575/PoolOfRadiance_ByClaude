@@ -34,7 +34,7 @@ export const GALLERY = [
   { name: 'automap', query: 'scene=automap&map=phlan_slums&x=7&y=11&dir=N&explored=demo&t=1&seed=1' },
   { name: 'automap_zoom', query: 'scene=automap&map=phlan_slums&x=7&y=11&dir=N&explored=demo&zoom=2.6&t=1&seed=1' },
   { name: 'automap_diorama', query: 'scene=automap&map=phlan_slums&x=7&y=11&dir=N&explored=demo&mode=diorama&t=1&seed=1' },
-  { name: 'worldmap', query: 'scene=automap&view=world&map=phlan_slums&x=7&y=11&dir=N&explored=demo&t=1&seed=1' },
+  { name: 'worldmap', ref: 'automap', query: 'scene=automap&view=world&map=phlan_slums&x=7&y=11&dir=N&explored=demo&t=1&seed=1' },
   { name: 'camp', query: 'scene=camp&hour=21.5&t=2&seed=1' },
   { name: 'camp_rest', query: 'scene=camp&hour=2&sleep=1&t=2&seed=1' },
   { name: 'charsheet', query: 'scene=camp&panel=view&member=0&hour=21.5&t=2&seed=1' },

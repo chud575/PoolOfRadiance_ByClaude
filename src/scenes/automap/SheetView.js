@@ -1,4 +1,4 @@
-import { makeDesk, makeParchment } from './ink.js';
+import { makeDesk, makeParchment, grainTile } from './ink.js';
 
 /**
  * Screen-space viewer for a parchment sheet lying on the cartographer's desk:
@@ -203,12 +203,57 @@ export class SheetView {
       g.fillStyle = gr;
       g.fillRect(0, 0, W, H);
     }
+    // paper tooth: fibre grain that only resolves once you lean in
+    const tooth = Math.max(0, Math.min(1, (this.zoom - 1.2) / 1.2));
+    if (tooth > 0) {
+      g.save();
+      if (!this._grainPat) {
+        this._grainPat = g.createPattern(grainTile(), 'repeat');
+      }
+      this._grainPat.setTransform(new DOMMatrix().scaleSelf(0.22));
+      g.globalCompositeOperation = 'multiply';
+      g.globalAlpha = 0.32 * tooth;
+      g.fillStyle = this._grainPat;
+      g.fillRect(0, 0, W, H);
+      g.restore();
+    }
     if (overlay) {
       g.save();
       overlay(g, s);
       g.restore();
     }
     g.setTransform(1, 0, 0, 1, 0, 0);
+    // when the sheet overfills the frame, shade the frame's edges so the map
+    // reads as passing beneath the side panel rather than being cut off
+    const over = Math.max(0, Math.min(1, (this.zoom - 1.05) / 0.5));
+    if (over > 0) {
+      const r = this.rect;
+      const e = 70 * d;
+      const x1 = (r.x + r.w) * d;
+      const right = g.createLinearGradient(x1 - e, 0, x1 + 24 * d, 0);
+      right.addColorStop(0, 'rgba(10,6,3,0)');
+      right.addColorStop(1, `rgba(10,6,3,${(0.6 * over).toFixed(3)})`);
+      g.fillStyle = right;
+      g.fillRect(x1 - e, 0, e + this.canvas.width - x1, this.canvas.height);
+      const yb = (r.y + r.h) * d;
+      const bottom = g.createLinearGradient(0, yb - e * 0.7, 0, this.canvas.height);
+      bottom.addColorStop(0, 'rgba(10,6,3,0)');
+      bottom.addColorStop(1, `rgba(10,6,3,${(0.55 * over).toFixed(3)})`);
+      g.fillStyle = bottom;
+      g.fillRect(0, yb - e * 0.7, this.canvas.width, this.canvas.height);
+      for (const [x0, xx] of [[0, r.x * d + e * 0.6]]) {
+        const left = g.createLinearGradient(x0, 0, xx, 0);
+        left.addColorStop(0, `rgba(10,6,3,${(0.45 * over).toFixed(3)})`);
+        left.addColorStop(1, 'rgba(10,6,3,0)');
+        g.fillStyle = left;
+        g.fillRect(x0, 0, xx, this.canvas.height);
+      }
+      const top = g.createLinearGradient(0, 0, 0, r.y * d + e * 0.6);
+      top.addColorStop(0, `rgba(10,6,3,${(0.45 * over).toFixed(3)})`);
+      top.addColorStop(1, 'rgba(10,6,3,0)');
+      g.fillStyle = top;
+      g.fillRect(0, 0, this.canvas.width, r.y * d + e * 0.6);
+    }
     this.dirty = false;
   }
 }

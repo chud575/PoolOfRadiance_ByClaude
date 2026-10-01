@@ -4,9 +4,11 @@ import { h, clear, CommandBar } from '../../ui/UI.js';
 import { getMap, hasMap } from '../../data/maps/index.js';
 import { EDGE, CELL, DIRS } from '../../data/maps/MapGrid.js';
 import { SHEET, buildBlockSheet, eventMarker, MARKER_LABELS } from './BlockSheet.js';
-import { WORLD, buildWorldSheet } from './WorldSheet.js';
+import { WORLD, LAYOUT, buildWorldSheet } from './WorldSheet.js';
 import { SheetView } from './SheetView.js';
-import { drawPartyArrow, drawPin, PIN_KINDS, PIN_ORDER, glyphDataURL } from './glyphs.js';
+import { drawPartyArrow, partyConeCanvas, drawPin, drawMarker, PIN_KINDS, PIN_ORDER, glyphDataURL } from './glyphs.js';
+import { SERIF, wrapText, haloText } from './ornaments.js';
+import { INK } from './ink.js';
 import { foundSecrets, notesFor, setNote, removeNote, exploredStats, applyDemoExploration } from './state.js';
 
 const DIR_NAMES = { N: 'North', E: 'East', S: 'South', W: 'West' };
@@ -53,6 +55,19 @@ export default class AutomapScene extends Scene {
     this.editor = null;
 
     this._buildDom();
+    if (this.overlay) {
+      // pushed over explore: hide the scene below's HUD (title, compass, log) so it
+      // never bleeds over the map or the diorama; restored on exit
+      const hidden = [];
+      for (const layer of [this.ctx.ui.layers.scene, this.ctx.ui.layers.hud]) {
+        for (const el of layer.children) {
+          if (el === this.root || el === this.bottom) continue;
+          hidden.push([el, el.style.visibility]);
+          el.style.visibility = 'hidden';
+        }
+      }
+      this.own(() => { for (const [el, v] of hidden) el.style.visibility = v; });
+    }
     const wantWorld = this.view === 'world';
     this._openBlock(this.homeId, { rebuild: true });
     if (wantWorld) this._openWorld();
@@ -269,6 +284,7 @@ export default class AutomapScene extends Scene {
       this.dio = new Diorama(this.ctx);
       this.own(() => this.dio?.dispose());
     }
+    await this.dio.prepare();
     this._rebuildDiorama(zoom);
     this.root.classList.add('is-3d');
   }
@@ -290,6 +306,7 @@ export default class AutomapScene extends Scene {
 
   _setMode(mode) {
     if (mode === this.mode) return;
+    this._resetHover();
     if (mode === 'diorama') {
       this._enterDiorama().then(() => { this._refreshUi(); this._draw(); });
       return;
@@ -328,13 +345,21 @@ export default class AutomapScene extends Scene {
     else this.sv.zoomCenter(f);
   }
 
+  _resetHover() {
+    this.hover = null;
+    this._hideTip();
+    this.root.style.cursor = '';
+  }
+
   _toWorld() {
+    this._resetHover();
     this._openWorld();
     this._refreshUi();
     this._draw();
   }
 
   _toBlock(id) {
+    this._resetHover();
     this._openBlock(id);
     this._refreshUi();
     this._draw();
@@ -568,12 +593,118 @@ export default class AutomapScene extends Scene {
           h('span.am-note-xy', [`${n.x},${n.y}`]),
         ])))
         : h('div.am-empty', ['Right-click any square to pin a note: danger, treasure, a quest lead.']),
+      ...this._chartedSection(),
       h('div.am-sec', ['Controls']),
-      h('div.am-help', [
-        helpRow('Drag / WASD', 'pan'), helpRow('Wheel / Q E', 'zoom'), helpRow('Right-click', 'pin a note'),
-        helpRow('Enter', 'centre on party'), helpRow('T', 'tabletop diorama'), helpRow('O', 'overview of Phlan'),
+      h('div.am-help.two', [
+        helpRow('Drag', 'pan'), helpRow('Wheel', 'zoom'), helpRow('R-click', 'pin note'),
+        helpRow('Enter', 'centre'), helpRow('T', 'diorama'), helpRow('O', 'overview'),
       ]),
+      h('div.am-sec', ['Phlan']),
+      this._locator(),
     );
+  }
+
+  /** What the survey has charted on this block: inscriptions, battles, exits, secrets. */
+  _chartedSection() {
+    const { game } = this.ctx;
+    const m = this.map;
+    const items = [];
+    const seen = (x, y) => this._seen(x, y);
+    for (const ev of m.events) {
+      if (!seen(ev.x, ev.y)) continue;
+      const kind = eventMarker(ev, !!game.spentEvents[ev.id]);
+      if (!kind || kind === 'text') continue;
+      items.push({ kind, x: ev.x, y: ev.y, text: MARKER_LABELS[kind], where: m.zoneAt(ev.x, ev.y) });
+    }
+    for (const t of this.sheet.info.travel) {
+      if (!seen(t.at.x, t.at.y)) continue;
+      items.push({ kind: t.edge ? 'exit' : (t.art === 'docks' || t.art === 'keep' ? 'boat' : 'stairs'), x: t.at.x, y: t.at.y, text: `To ${t.destName}`, where: m.zoneAt(t.at.x, t.at.y), angle: t.edge ? DIR_ANGLE[t.at.facing] : 0 });
+    }
+    for (const key of foundSecrets(game, m.id)) {
+      const [x, y] = key.split(',').map(Number);
+      items.push({ kind: 'secret', x, y, text: 'Secret door', where: m.zoneAt(x, y) });
+    }
+    if (!items.length) return [];
+    const shown = items.slice(0, 3);
+    const cs = SHEET.MS / m.w;
+    const icon = (it) => glyphDataURL(`mk-${it.kind}-${it.angle ?? 0}`, (g, x, y, s) => {
+      if (it.kind === 'secret') {
+        g.font = `italic bold ${Math.round(s * 0.9)}px ${SERIF}`;
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillStyle = '#e0573c';
+        g.fillText('S', x, y);
+      } else drawMarker(g, it.kind, x, y, s * 1.1, { color: '#e9d9b4', accent: '#e0573c', angle: it.angle ?? 0, seed: 3 });
+    });
+    return [
+      h('div.am-sec', ['Charted']),
+      h('ul.am-notes.am-charted', [
+        ...shown.map((it) => h('li.am-note', {
+          onclick: () => { this.flash = { x: it.x, y: it.y, t: this.ctx.clock.time }; this.sv.focus(SHEET.MX + (it.x + 0.5) * cs, SHEET.MY + (it.y + 0.5) * cs, Math.max(this.sv.tZoom, 2)); },
+          dataset: { tip: 'Show on the map' },
+        }, [
+          h('img', { src: icon(it), alt: '' }),
+          h('span.am-note-text', { title: `${it.text} · ${it.where}` }, [it.text, h('i.am-where', [` · ${it.where}`])]),
+          h('span.am-note-xy', [`${it.x},${it.y}`]),
+        ])),
+        items.length > shown.length ? h('div.am-empty', [`and ${items.length - shown.length} more on the sheet.`]) : null,
+      ]),
+    ];
+  }
+
+  /** A gilt thumbnail of Phlan's blocks: where this block lies; click for the overview. */
+  _locator() {
+    const { game } = this.ctx;
+    const c = h('canvas.am-locator', { dataset: { tip: 'Overview of Phlan (O)' }, onclick: () => this._toWorld() });
+    const W = 300;
+    const H = 128;
+    const dpr = 2;
+    c.width = W * dpr;
+    c.height = H * dpr;
+    const g = c.getContext('2d');
+    g.scale(dpr, dpr);
+    const sx = (x) => 12 + ((x - 180) / 1040) * (W - 24);
+    const sy = (y) => 10 + ((y - 110) / 840) * (H - 20);
+    const k = (W - 24) / 1040;
+    // the Moonsea
+    const sea = g.createLinearGradient(0, sy(790), 0, H);
+    sea.addColorStop(0, 'rgba(40,80,110,0.55)');
+    sea.addColorStop(1, 'rgba(20,40,70,0.75)');
+    g.fillStyle = sea;
+    g.fillRect(0, sy(795), W, H);
+    g.strokeStyle = 'rgba(216,178,90,0.35)';
+    g.lineWidth = 0.7;
+    for (let i = 0; i < 4; i++) {
+      g.beginPath();
+      for (let x = 0; x <= W; x += 6) g.lineTo(x, sy(805) + i * 7 + Math.sin(x / 9 + i) * 1.2);
+      g.stroke();
+    }
+    // river
+    g.strokeStyle = 'rgba(70,120,150,0.8)';
+    g.lineWidth = 4;
+    g.beginPath(); g.moveTo(sx(965), 0); g.quadraticCurveTo(sx(990), sy(400), sx(955), sy(800)); g.stroke();
+    // old wall
+    g.strokeStyle = 'rgba(216,178,90,0.45)';
+    g.lineWidth = 1;
+    g.setLineDash([3, 2]);
+    g.strokeRect(sx(150), sy(52), (905 - 150) * k, sy(780) - sy(52));
+    g.setLineDash([]);
+    for (const [id, [cx, cy, shape]] of Object.entries(LAYOUT)) {
+      if (!hasMap(id)) continue;
+      const known = this.reveal || id === game.location.map || exploredStats(game, getMap(id)).seen > 0;
+      const here = id === this.map.id;
+      const r = (shape === 'round' ? 52 : 66) * k;
+      g.beginPath();
+      if (shape === 'round') g.arc(sx(cx), sy(cy), r, 0, Math.PI * 2); else g.rect(sx(cx) - r, sy(cy) - r, r * 2, r * 2);
+      g.fillStyle = here ? 'rgba(200,64,46,0.9)' : known ? 'rgba(216,178,90,0.32)' : 'rgba(255,255,255,0.04)';
+      g.fill();
+      g.setLineDash(known || here ? [] : [2, 2]);
+      g.strokeStyle = here ? '#f5d98b' : known ? 'rgba(245,217,139,0.85)' : 'rgba(216,178,90,0.35)';
+      g.lineWidth = here ? 1.6 : 1;
+      g.stroke();
+      g.setLineDash([]);
+    }
+    return c;
   }
 
   _sideWorld() {
@@ -682,22 +813,19 @@ export default class AutomapScene extends Scene {
       const cx = X(x) + cs / 2;
       const cy = Y(y) + cs / 2;
       const a = DIR_ANGLE[dir];
+      const breathe = 0.85 + 0.15 * Math.sin(t * 2.4);
       g.save();
       g.translate(cx, cy);
       g.rotate(a);
-      const cone = g.createRadialGradient(0, 0, cs * 0.2, 0, -cs * 0.2, cs * 2.4);
-      cone.addColorStop(0, 'rgba(255,215,130,0.30)');
-      cone.addColorStop(1, 'rgba(255,215,130,0)');
-      g.fillStyle = cone;
-      g.beginPath();
-      g.moveTo(0, 0);
-      g.arc(0, 0, cs * 2.4, -Math.PI / 2 - 0.55, -Math.PI / 2 + 0.55);
-      g.closePath();
-      g.fill();
+      g.globalAlpha = breathe;
+      g.globalCompositeOperation = 'multiply';
+      const R = cs * 2.6;
+      g.drawImage(partyConeCanvas(), -R, -R, R * 2, R * 2);
       g.restore();
       const pulse = 0.55 + 0.45 * Math.sin(t * 3.2);
-      drawPartyArrow(g, cx, cy, cs * 0.9, a, { glow: 0.5 + pulse * 0.5 });
+      drawPartyArrow(g, cx, cy, cs * (0.86 + pulse * 0.04), a, { glow: pulse });
     }
+    this._drawZoneLabels(g, s);
     // pins
     const notes = notesFor(game, m.id);
     for (const n of notes) {
@@ -705,6 +833,65 @@ export default class AutomapScene extends Scene {
       const hov = this.hover && this.hover.x === n.x && this.hover.y === n.y;
       drawPin(g, X(n.x) + cs * 0.72, Y(n.y) + cs * 0.3, cs * (0.66 + (hov ? 0.08 : 0) + fl * 0.2), n.kind, { lift: hov ? cs * 0.04 : 0 });
     }
+  }
+
+  /**
+   * Zone names, lettered live so they stay inside the frame when zoomed, grow
+   * gently with zoom (not 1:1), and step aside from pins, markers and the party.
+   */
+  _drawZoneLabels(g) {
+    const labels = this.sheet.labels;
+    if (!labels?.length) return;
+    const { game } = this.ctx;
+    const m = this.map;
+    const cs = SHEET.MS / m.w;
+    const X = (x) => SHEET.MX + x * cs;
+    const Y = (y) => SHEET.MY + y * cs;
+    const obs = [...(this.sheet.markerSpots ?? [])];
+    for (const n of notesFor(game, m.id)) obs.push([X(n.x) + cs * 0.36, Y(n.y) - cs * 0.06, cs * 0.72, cs * 0.72]);
+    if (this.isHome) obs.push([X(game.location.x) + cs * 0.1, Y(game.location.y) + cs * 0.05, cs * 0.8, cs * 0.9]);
+    const pad = 12;
+    const vr = this.viewRect;
+    const [vx0, vy0] = this.sv.screenToUnits(vr.x + pad, vr.y + pad);
+    const [vx1, vy1] = this.sv.screenToUnits(vr.x + vr.w - pad, vr.y + vr.h - pad);
+    const zoom = this.sv.zoom;
+    const clamp = (v, lo, hi) => (lo > hi ? (lo + hi) / 2 : Math.max(lo, Math.min(hi, v)));
+    const overlap = (a, b) => Math.max(0, Math.min(a[0] + a[2], b[0] + b[2]) - Math.max(a[0], b[0])) * Math.max(0, Math.min(a[1] + a[3], b[1] + b[3]) - Math.max(a[1], b[1]));
+    const placed = [];
+    g.save();
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    for (const z of labels) {
+      const zx0 = X(z.x);
+      const zy0 = Y(z.y);
+      const zx1 = X(z.x + z.w);
+      const zy1 = Y(z.y + z.h);
+      if (zx1 < vx0 || zx0 > vx1 || zy1 < vy0 || zy0 > vy1) continue;
+      const base = Math.min(cs * 0.4, Math.max(cs * 0.27, (z.w * cs * 0.92) / 7));
+      const fs = base * zoom ** -0.42;
+      g.font = `italic ${fs.toFixed(2)}px ${SERIF}`;
+      g.letterSpacing = `${(fs * 0.05).toFixed(2)}px`;
+      const lines = wrapText(g, z.name, Math.max(z.w * cs * 0.9, cs * 1.8));
+      const lw = Math.max(...lines.map((l) => g.measureText(l).width));
+      const lh = fs * 1.08;
+      const bh = lines.length * lh;
+      let best = null;
+      for (const [fx, fy] of [[0, 0], [0, -0.4], [0, 0.4], [0, -0.75], [0, 0.75], [-0.35, 0], [0.35, 0], [0, -1.2], [0, 1.2]]) {
+        const cx = clamp((zx0 + zx1) / 2 + fx * (zx1 - zx0) * 0.5, vx0 + lw / 2, vx1 - lw / 2);
+        const cy = clamp((zy0 + zy1) / 2 + fy * Math.max(zy1 - zy0, cs * 1.2) * 0.5, vy0 + bh / 2, vy1 - bh / 2);
+        const box = [cx - lw / 2 - fs * 0.15, cy - bh / 2, lw + fs * 0.3, bh];
+        const area = box[2] * box[3];
+        let score = Math.abs(fx) * 0.6 + Math.abs(fy) * 0.5;
+        for (const o of obs) score += (overlap(box, o) / area) * 12;
+        for (const o of placed) score += (overlap(box, o) / area) * 12;
+        if (cx < zx0 || cx > zx1 || cy < zy0 || cy > zy1) score += 1.5;
+        if (!best || score < best.score) best = { cx, cy, box, score };
+      }
+      placed.push(best.box);
+      lines.forEach((l, i) => haloText(g, l, best.cx, best.cy - bh / 2 + lh * (i + 0.5), { color: '#3b2210', width: fs * 0.3 }));
+    }
+    g.letterSpacing = '0px';
+    g.restore();
   }
 
   _overlayWorld(g, s, t) {
@@ -724,7 +911,7 @@ export default class AutomapScene extends Scene {
       const { x, y, dir } = game.location;
       const [px, py] = this.world.cellToUnits(here, x + 0.5, y + 0.5);
       const pulse = 0.55 + 0.45 * Math.sin(t * 3.2);
-      drawPartyArrow(g, px, py, 30, DIR_ANGLE[dir], { glow: 0.6 + pulse * 0.4 });
+      drawPartyArrow(g, px, py, 30, DIR_ANGLE[dir], { glow: pulse });
     }
   }
 
