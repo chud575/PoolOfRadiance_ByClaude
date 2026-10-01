@@ -18,7 +18,7 @@ export class Overlay {
         const i = (y * w + x) * 4;
         const idx = field.idx(x, y);
         this.info[i] = field.block[idx] === 0 ? 255 : field.block[idx] === 2 ? 90 : 0;
-        this.info[i + 1] = field.exitMask[idx] ? 255 : 0;
+        this.info[i + 1] = field.exitMask[idx] ? 255 : field.isRough?.(x, y) ? 100 : 0;
         this.info[i + 2] = field.wallE[idx] ? 255 : 0;
         this.info[i + 3] = field.wallS[idx] ? 255 : 0;
       }
@@ -83,26 +83,42 @@ export class Overlay {
           vec2 cf = min(f, 1.0 - f);
           float tick = (1.0 - smoothstep(0.0, 0.016, min(cf.x, cf.y))) * step(max(cf.x, cf.y), 0.07) * gridVis;
           LAYER(mix(vec3(0.95, 0.85, 0.6), vec3(0.9, 0.85, 0.7), uNight), tick * mix(0.26, 0.12, uNight));
-          // Movement range: soft fill + bright outline where the range ends.
+          // Movement range: an inlaid, softly lit field — faint fill with a slow
+          // shimmer, a glow feathered inward from the boundary and an antialiased rim.
           float r = s.r;
           if (r > 0.1) {
-            float fill = 0.13 + 0.03 * sin(uTime * 2.0 + (c.x + c.y) * 0.4);
-            float edgeGlow = 0.0;
+            float de = 2.0;
             vec2 d[4]; d[0] = vec2(1,0); d[1] = vec2(-1,0); d[2] = vec2(0,1); d[3] = vec2(0,-1);
             float dist[4]; dist[0] = 1.0 - f.x; dist[1] = f.x; dist[2] = 1.0 - f.y; dist[3] = f.y;
             for (int k = 0; k < 4; k++) {
               // Free-standing obstacles (columns, crates) inside the range don't notch its outline.
               float nObs = step(0.2, I(c + d[k]).r) * step(I(c + d[k]).r, 0.5);
-              if (S(c + d[k]).r < 0.1 && nObs < 0.5) edgeGlow = max(edgeGlow, 1.0 - smoothstep(0.0, 0.06, dist[k]));
+              if (S(c + d[k]).r < 0.1 && nObs < 0.5) de = min(de, dist[k]);
             }
+            for (int k = 0; k < 4; k++) {
+              vec2 dd = vec2(k < 2 ? 1.0 : -1.0, (k == 0 || k == 2) ? 1.0 : -1.0);
+              float nObs = step(0.2, I(c + dd).r) * step(I(c + dd).r, 0.5);
+              if (S(c + dd).r < 0.1 && nObs < 0.5) de = min(de, length(vec2(dd.x > 0.0 ? 1.0 - f.x : f.x, dd.y > 0.0 ? 1.0 - f.y : f.y)));
+            }
+            float aa = fwidth(de) * 1.2 + 0.004;
+            float rim = 1.0 - smoothstep(0.012, 0.012 + aa + 0.02, de);
+            float inner = exp(-de * 7.0) * (1.0 - rim);
+            float shimmer = 0.5 + 0.5 * sin(uTime * 1.4 - (g.x * 0.8 + g.y * 0.55));
             vec3 rc = r > 0.9 ? uRangeColor : vec3(1.0, 0.78, 0.35);
-            LAYER(rc * 0.55, fill);
-            LAYER(rc * 1.5, edgeGlow * 0.8);
+            LAYER(rc * 0.45, 0.07 + 0.035 * shimmer);
+            LAYER(rc * 1.1, inner * (0.42 + 0.12 * shimmer));
+            LAYER(rc * 1.7 + 0.15, rim * 0.85);
+            // Rough ground costs extra: darker, with a stipple.
+            if (inf.g > 0.2 && inf.g < 0.5) {
+              float st = step(0.82, fract(sin(dot(floor(g * 9.0), vec2(12.9898, 78.233))) * 43758.5453));
+              LAYER(vec3(0.02, 0.025, 0.04), 0.26 + st * 0.2);
+            }
           }
           // Threatened squares (moving out provokes): red diagonal hatch.
           if (s.a > 0.1 && r > 0.1) {
-            float hatch = step(0.62, fract((g.x + g.y) * 3.0));
-            LAYER(vec3(0.9, 0.2, 0.15), hatch * 0.22);
+            float hv = fract((g.x + g.y) * 3.0);
+            float hatch = smoothstep(0.58, 0.64, hv) * (1.0 - smoothstep(0.92, 0.98, hv));
+            LAYER(vec3(0.95, 0.22, 0.15), hatch * 0.3);
           }
           // Spell template.
           if (s.g > 0.9) {

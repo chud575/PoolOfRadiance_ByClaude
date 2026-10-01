@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { patchSculptShader } from './sculpted.js';
 
 /**
  * Procedural skeletal animation for combat figures. Every clip is a pure function
@@ -28,7 +29,9 @@ export const RIM = { uRimColor: { value: new THREE.Color(0.18, 0.16, 0.14) }, uR
 
 function addRim(mat) {
   if (!mat.isMeshStandardMaterial) return;
+  const sculpt = !!mat.userData?.sculpt;
   mat.onBeforeCompile = (sh) => {
+    if (sculpt) patchSculptShader(sh);
     sh.uniforms.uRimColor = RIM.uRimColor;
     sh.uniforms.uRimPower = RIM.uRimPower;
     sh.fragmentShader = sh.fragmentShader
@@ -37,7 +40,7 @@ function addRim(mat) {
         { float rimF = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), uRimPower);
           totalEmissiveRadiance += uRimColor * rimF * (0.6 + 0.4 * diffuseColor.rgb / max(0.001, max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b)))); }`);
   };
-  mat.customProgramCacheKey = () => 'fig-rim';
+  mat.customProgramCacheKey = () => (sculpt ? 'fig-rim-sculpt' : 'fig-rim');
 }
 
 export class Figure {
@@ -407,15 +410,27 @@ export class Figure {
         add('neck', -0.25 * k + 0.2 * p2);
         P['hips@'][1] -= 0.03 * s * k;
       } else if (a.type === 'hit') {
-        const e = Math.sin(clamp01(u) * Math.PI) * (1 - u * 0.5);
-        const kick = (a.power ?? 1) * e;
-        add('spine', -0.35 * kick, 0.15 * kick, 0.1 * kick);
-        add('chest', -0.2 * kick);
-        add('neck', -0.35 * kick, 0.3 * kick);
-        add('upperArmL', 0.3 * kick, 0, 0.3 * kick);
-        add('upperArmR', 0.3 * kick, 0, -0.3 * kick);
-        rootOff.z -= 0.14 * s * kick;
-        P['hips@'][1] -= 0.04 * s * kick;
+        // Hit react: an instant snap back (within ~1/30 s), a damped wobble and a
+        // stagger step away from the blow that recovers by the end of the clip.
+        const pw = a.power ?? 1;
+        const tt = u * a.dur;
+        const side = hashf(this.seed + a.t0 * 7) > 0.5 ? 1 : -1;
+        const snap = 1 - Math.exp(-tt * 45);
+        const kick = pw * snap * Math.exp(-tt * 4.5) * (0.78 + 0.22 * Math.cos(tt * 16));
+        const step = Math.min(1.4, pw) * easeOut(clamp01(tt / 0.22)) * (1 - ease(clamp01((u - 0.55) / 0.45)));
+        add('spine', -0.42 * kick, 0.22 * kick * side, 0.12 * kick * side);
+        add('chest', -0.26 * kick, 0.1 * kick * side);
+        add('neck', -0.45 * kick, 0.35 * kick * side);
+        add('head', -0.2 * kick, 0.15 * kick * side);
+        add('upperArmL', 0.45 * kick, 0, 0.45 * kick);
+        add('upperArmR', 0.45 * kick, 0, -0.45 * kick);
+        add('foreArmL', -0.3 * kick);
+        add('foreArmR', -0.3 * kick);
+        add('thighR', 0.4 * step);
+        add('shinR', 0.45 * step);
+        add('thighL', -0.15 * step);
+        rootOff.z -= 0.26 * s * step + 0.06 * s * kick;
+        P['hips@'][1] -= 0.05 * s * (kick * 0.6 + step * 0.4);
       } else if (a.type === 'turn') {
         // Holy symbol raised high.
         const k = ease(clamp01(u / 0.3)) * (1 - ease(clamp01((u - 0.75) / 0.25)));
@@ -630,7 +645,7 @@ export class Figure {
 
   dispose() {
     for (const mesh of this.model.meshes) {
-      mesh.geometry.dispose();
+      if (!mesh.userData.sharedGeometry) mesh.geometry.dispose();
       mesh.material.dispose();
     }
   }

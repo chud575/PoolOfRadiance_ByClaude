@@ -15,6 +15,17 @@ export class RigBuilder {
     /** @type {Map<THREE.Material, {geo: THREE.BufferGeometry, bone: number}[]>} */
     this.buckets = new Map();
     this.attachments = [];
+    /** Pre-skinned meshes (sculpted flesh): {geo, mat, names} */
+    this.skinned = [];
+  }
+
+  /**
+   * Add a pre-skinned geometry in figure (bind-pose) space; its skinIndex
+   * attribute indexes \`names\` (bone names), remapped to the skeleton at build().
+   */
+  skin(geo, mat, names) {
+    this.skinned.push({ geo, mat, names });
+    return this;
   }
 
   /** Create a bone under `parent` (name or null for root) at local offset. */
@@ -88,6 +99,24 @@ export class RigBuilder {
       mesh.castShadow = castShadow;
       mesh.receiveShadow = true;
       mesh.frustumCulled = false;
+      this.root.add(mesh);
+      mesh.bind(skeleton);
+      meshes.push(mesh);
+    }
+    for (const { geo, mat, names } of this.skinned) {
+      let g = geo;
+      // The shared (cached) geometry indexes bones by name order; remap only if this rig differs.
+      if (names.some((nm, i) => index.get(nm) !== i)) {
+        g = geo.clone();
+        const si = g.attributes.skinIndex;
+        for (let i = 0; i < si.count * 4; i++) si.array[i] = index.get(names[si.array[i]]) ?? 0;
+        si.needsUpdate = true;
+      }
+      const mesh = new THREE.SkinnedMesh(g, mat);
+      mesh.castShadow = castShadow;
+      mesh.receiveShadow = true;
+      mesh.frustumCulled = false;
+      mesh.userData.sharedGeometry = g === geo;
       this.root.add(mesh);
       mesh.bind(skeleton);
       meshes.push(mesh);

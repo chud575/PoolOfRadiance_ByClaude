@@ -170,17 +170,36 @@ export class CombatHud {
   }
 
   // ---------------------------------------------------------------- inspect
-  showInspect(content, x, y) {
+  showInspect(content, x, y, world = null) {
     if (!content) {
       this.inspect.classList.remove('show');
+      this._inspectWorld = null;
       return;
     }
     this.inspect.replaceChildren(...[].concat(content));
     this.inspect.classList.add('show');
+    this._inspectWorld = world ? world.clone() : null;
+    this._placeInspect(x, y);
+  }
+
+  _placeInspect(x, y) {
     const w = this.inspect.offsetWidth;
     const hh = this.inspect.offsetHeight;
-    const px = Math.min(x + 18, window.innerWidth - w - 10);
-    const py = Math.min(y + 20, window.innerHeight - hh - 10);
+    // Anchor beside the target, inside the play area: never over the command
+    // line / prompt (bottom), the initiative bar (top) or the right-hand panels.
+    const W = window.innerWidth;
+    const cmdTop = this.cmds.getBoundingClientRect().top || window.innerHeight - 60;
+    const promptH = this.prompt.classList.contains('show') ? this.prompt.offsetHeight + 6 : 0;
+    const maxY = cmdTop - promptH - hh - 8;
+    const minY = (this.timeline.getBoundingClientRect().bottom || 80) + 8;
+    const cardL = this.card.el.getBoundingClientRect().left || W;
+    const maxX = Math.min(W - w - 10, cardL - w - 12);
+    // Up and to the right of the anchor (clear of the figure standing on it).
+    let px = x + 34;
+    if (px > maxX) px = x - w - 34;
+    px = Math.max(10, Math.min(maxX, px));
+    let py = y - hh - 26;
+    py = Math.max(minY, Math.min(maxY, py));
     this.inspect.style.transform = `translate(${px}px, ${py}px)`;
   }
 
@@ -240,17 +259,41 @@ export class CombatHud {
 
   // ---------------------------------------------------------------- floating text & banners
   float(text, kind, pos, t, o = {}) {
-    const el = h(`div.cb-float.${kind}`, { class: o.cls ?? '' }, [text]);
+    if (!pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.y) || !Number.isFinite(pos.z)) return;
+    // Several kills landing together (a fireball) consolidate into one callout
+    // over the group instead of a pile of overlapping SLAIN labels.
+    if (kind === 'kill' && !o.solo) {
+      const prev = this.floats.find((f) => f.kind === 'kill' && !f.solo && Math.abs(f.t0 - t) < 0.45);
+      if (prev) {
+        prev.n += 1;
+        prev.sum.add(pos);
+        prev.pos.copy(prev.sum).multiplyScalar(1 / prev.n);
+        prev.el.textContent = `${prev.n} ${prev.plural ?? 'slain'}`;
+        prev.el.classList.add('multi');
+        return;
+      }
+    }
+    const el = h(`div.cb-float.${kind}`, { class: o.cls ?? '', style: { opacity: '0' } }, [text]);
     this.floatLayer.append(el);
-    this.floats.push({ el, pos: pos.clone(), t0: t, life: o.life ?? 1.3, dx: o.dx ?? 0, rise: o.rise ?? 1 });
+    this.floats.push({ el, kind, solo: !!o.solo, n: 1, sum: pos.clone(), plural: o.plural, pos: pos.clone(), t0: t, life: o.life ?? 1.3, dx: o.dx ?? 0, rise: o.rise ?? 1 });
   }
 
   showBanner(text, sub, t, life = 1.6) {
     this.banner.replaceChildren(text, sub ? h('small', [sub]) : '');
+    this.banner.classList.toggle('big', life >= 2);
     this.bannerT = { t0: t, life };
   }
 
+  hideBanner() {
+    this.bannerT = null;
+    this.banner.style.opacity = '0';
+  }
+
   update(t, camera, w, hgt) {
+    if (this._inspectWorld) {
+      const v = this._v.copy(this._inspectWorld).project(camera);
+      if (Number.isFinite(v.x) && v.z < 1) this._placeInspect((v.x * 0.5 + 0.5) * w, (-v.y * 0.5 + 0.5) * hgt);
+    }
     for (const f of this.floats) {
       const age = t - f.t0;
       if (age < 0) {
@@ -261,8 +304,14 @@ export class CombatHud {
       this._v.copy(f.pos);
       this._v.y += f.rise * (0.25 + 1.1 * (1 - Math.exp(-age * 3)));
       this._v.project(camera);
-      const x = (this._v.x * 0.5 + 0.5) * w + f.dx * age * 30;
-      const y = (-this._v.y * 0.5 + 0.5) * hgt;
+      // Behind the camera / degenerate projection: never draw at the screen origin.
+      if (!Number.isFinite(this._v.x) || !Number.isFinite(this._v.y) || this._v.z > 1 || this._v.z < -1) {
+        f.el.style.opacity = '0';
+        if (u >= 1) f.dead = true;
+        continue;
+      }
+      const x = Math.max(24, Math.min(w - 24, (this._v.x * 0.5 + 0.5) * w + f.dx * age * 30));
+      const y = Math.max(24, Math.min(hgt - 24, (-this._v.y * 0.5 + 0.5) * hgt));
       const pop = age < 0.12 ? 0.6 + (age / 0.12) * 0.6 : 1.2 - Math.min(0.2, (age - 0.12) * 1.5);
       f.el.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px) scale(${pop})`;
       f.el.style.opacity = String(u < 0.75 ? 1 : Math.max(0, 1 - (u - 0.75) / 0.25));
@@ -274,7 +323,7 @@ export class CombatHud {
       const u = (t - this.bannerT.t0) / this.bannerT.life;
       const a = u < 0 ? 0 : u < 0.15 ? u / 0.15 : u > 0.75 ? Math.max(0, 1 - (u - 0.75) / 0.25) : 1;
       this.banner.style.opacity = String(a);
-      this.banner.style.transform = `translate(-50%, -50%) scale(${0.96 + Math.min(1, u * 4) * 0.04})`;
+      this.banner.style.transform = `translate(-50%, 0) scale(${0.96 + Math.min(1, u * 4) * 0.04})`;
       if (u > 1) this.bannerT = null;
     }
   }

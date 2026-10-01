@@ -29,8 +29,8 @@
 .cb-token .hpb i { display: block; height: 100%; background: linear-gradient(90deg, #3fae55, #9df0a0); }
 .cb-token.monster .hpb i { background: linear-gradient(90deg, #a8281e, #ff7a60); }
 .cb-token .nm {
-  position: absolute; left: 0; right: 0; top: 0; font-size: 0.55em; text-align: center; color: #fff; padding: 0.1em 0;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.75), transparent); letter-spacing: 0.04em; white-space: nowrap; overflow: hidden;
+  position: absolute; left: 0; right: 0; bottom: 4px; font-size: 0.55em; text-align: center; color: #fff; padding: 0.25em 0 0.1em;
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.8), transparent); letter-spacing: 0.04em; white-space: nowrap; overflow: hidden;
 }
 .cb-token.current { width: 3.9em; height: 4.7em; border: 2px solid var(--por-gilt-hi); box-shadow: 0 0 0 1px #000, 0 0 16px rgba(245, 217, 139, 0.65); }
 .cb-token.done { opacity: 0.5; filter: saturate(0.5); }
@@ -130,16 +130,18 @@
 .cb-float.heal { color: #8dffa0; font-size: 1.7em; }
 .cb-float.status { color: #d8c8ff; font-size: 1.05em; letter-spacing: 0.14em; text-transform: uppercase; }
 .cb-float.kill { color: #ff5a4a; font-size: 1.1em; letter-spacing: 0.2em; text-transform: uppercase; }
+.cb-float.kill.multi { font-size: 1.45em; padding: 0.1em 0.7em; background: radial-gradient(ellipse at center, rgba(20, 2, 0, 0.75), rgba(20, 2, 0, 0) 70%); }
 
 /* ---------- Banners ---------- */
 .cb-banner {
-  position: absolute; left: 50%; top: 30%; transform: translate(-50%, -50%); pointer-events: none; text-align: center;
-  font-family: var(--font-display); letter-spacing: 0.35em; text-transform: uppercase; color: #ffe7a8;
-  font-size: 2.1em; opacity: 0; padding: 0.35em 2.6em 0.4em;
+  position: absolute; left: 50%; top: 6.6em; transform: translate(-50%, 0); pointer-events: none; text-align: center;
+  font-family: var(--font-display); letter-spacing: 0.3em; text-transform: uppercase; color: #ffe7a8;
+  font-size: 1.35em; opacity: 0; padding: 0.25em 2.6em 0.3em;
   text-shadow: 0 0 2px #000, 0 2px 3px #000, 0 0 18px rgba(0, 0, 0, 0.95);
   background: radial-gradient(ellipse at center, rgba(4, 6, 16, 0.9) 0%, rgba(4, 6, 16, 0.78) 45%, rgba(4, 6, 16, 0) 72%);
   -webkit-text-stroke: 0.5px rgba(0, 0, 0, 0.6);
 }
+.cb-banner.big { font-size: 2.1em; top: 4.2em; letter-spacing: 0.35em; }
 .cb-banner small { display: block; font-size: 0.45em; letter-spacing: 0.3em; color: #f4ead2; margin-top: 0.4em; -webkit-text-stroke: 0; }
 .cb-banner::before, .cb-banner::after { content: ''; display: block; height: 1px; margin: 0.25em auto; width: 60%; background: linear-gradient(90deg, transparent, var(--por-gilt), transparent); }
 
@@ -154,8 +156,12 @@
 /* ---------- Help / speed ---------- */
 .cb-help { position: absolute; right: 1.4em; bottom: 4.4em; text-align: right; font-size: 0.72em; color: var(--por-text-dim); text-shadow: 0 1px 2px #000; line-height: 1.5; pointer-events: none; }
 .cb-help kbd { font-family: var(--font-num); color: var(--por-amber); border: 1px solid rgba(216, 178, 90, 0.4); border-radius: 2px; padding: 0 0.3em; font-size: 0.95em; }
-.cb-speed { position: absolute; left: 1.2em; top: 1.1em; font-family: var(--font-display); font-size: 0.72em; letter-spacing: 0.18em; color: var(--por-gilt); text-transform: uppercase; text-shadow: 0 1px 2px #000; }
+.cb-speed { position: absolute; left: 1.2em; top: 0.9em; font-family: var(--font-display); font-size: 0.72em; letter-spacing: 0.18em; color: var(--por-gilt); text-transform: uppercase; text-shadow: 0 1px 2px #000; }
 .cb-speed b { color: #fff; }
-.cb-loc { position: absolute; left: 1.2em; top: 2.6em; }
+.cb-loc {
+  position: absolute; left: 0.6em; top: 2.2em; padding: 0.35em 2.4em 0.45em 0.6em; pointer-events: none;
+  background: linear-gradient(90deg, rgba(5, 8, 20, 0.82), rgba(5, 8, 20, 0.62) 70%, rgba(5, 8, 20, 0));
+  border-left: 2px solid rgba(216, 178, 90, 0.6);
+}
 .cb-loc .name { font-family: var(--font-display); letter-spacing: 0.18em; text-transform: uppercase; font-size: 1.1em; }
 .cb-loc .sub { color: var(--por-text-dim); font-size: 0.85em; text-shadow: 0 1px 2px #000; }

@@ -3,6 +3,7 @@ import { RigBuilder, limb, lathe, sphere, box, cyl, cone, torus, rbox, blade } f
 import { pbr, heraldry } from './textures.js';
 import { ITEMS } from '../../../data/items.js';
 import { splitClasses } from '../../../rules/classes.js';
+import { sculptedFlesh, sculptMaterial, LOOKS } from './sculpted.js';
 
 /**
  * Procedural 3D figures for tactical combat: the six party archetypes (kit read
@@ -26,11 +27,11 @@ const HAIR = [0x2a1a10, 0x5a3418, 0x8a5a2a, 0xb88a4a, 0xd8c08a, 0x7a2a14, 0x1a1a
 // ------------------------------------------------------------------ species
 const SPECIES = {
   human: { height: 1.0, bulk: 1.0, head: 'human' },
-  kobold: { height: 0.72, bulk: 1.08, head: 'kobold', headScale: 1.32, skin: ['reptile', 0x8a4624], shieldChance: 0.5, tail: 'long', legs: 'digitigrade', hunch: 0.34, thickNeck: true, cloth: 0x4a3a28, armor: 'harness', weapon: 'spear', weapons: ['spear', 'spear', 'shortSword', 'club'], eyes: 0xffc040 },
-  goblin: { height: 0.66, bulk: 0.9, head: 'goblin', skin: ['skin', 0x8a9a3a], hunch: 0.15, cloth: 0x4a3020, weapon: 'shortSword', eyes: 0xffe060 },
+  kobold: { height: 0.72, bulk: 1.22, limbK: 1.35, head: 'kobold', headScale: 1.45, skin: ['reptile', 0x8a4624], shieldChance: 0.5, tail: 'long', legs: 'digitigrade', hunch: 0.34, thickNeck: true, cloth: 0x4a3a28, armor: 'harness', weapon: 'spear', weapons: ['spear', 'spear', 'shortSword', 'club'], eyes: 0xffc040 },
+  goblin: { height: 0.66, bulk: 0.95, limbK: 1.2, head: 'goblin', skin: ['skin', 0x8a9a3a], hunch: 0.15, cloth: 0x4a3020, weapon: 'shortSword', eyes: 0xffe060 },
   orc: { height: 1.04, bulk: 1.28, head: 'orc', skin: ['skin', 0x535d48], hunch: 0.36, cloth: 0x2e2418, armor: 'orcish', weapon: 'battleAxe', weapons: ['battleAxe', 'battleAxe', 'spear', 'morningStar', 'club'], helmChance: 0.55, eyes: 0xff4020 },
   hobgoblin: { height: 1.08, bulk: 1.12, head: 'hobgoblin', skin: ['skin', 0xb0582a], cloth: 0x5a1e18, armor: 'scale', weapon: 'longSword', shield: 'round', eyes: 0xffa020 },
-  gnoll: { height: 1.2, bulk: 1.15, head: 'gnoll', skin: ['fur', 0x9a7a4a], hunch: 0.3, legs: 'digitigrade', cloth: 0x3a2e22, armor: 'scraps', weapon: 'flail', eyes: 0xffd040 },
+  gnoll: { height: 1.2, bulk: 1.15, limbK: 1.1, head: 'gnoll', skin: ['fur', 0x9a7a4a], hunch: 0.3, legs: 'digitigrade', cloth: 0x3a2e22, armor: 'scraps', weapon: 'flail', eyes: 0xffd040 },
   giantRat: { rig: 'quad', skin: ['fur', 0x4a3a30], height: 0.55, eyes: 0xff3020 },
   skeleton: { height: 1.0, bulk: 0.9, head: 'skull', body: 'bones', skin: ['bone', 0xd8ccb0], weapon: 'shortSword', shield: 'round', eyes: 0x60d0ff },
   zombie: { height: 1.0, bulk: 1.0, head: 'zombie', skin: ['skin', 0x7a8a6a], cloth: 0x3a3a30, tattered: true, hunch: 0.25, weapon: null, eyes: 0xc0ff60, armsForward: true },
@@ -120,9 +121,13 @@ export function makeFigureModel(c, index = 0) {
     race: 'monster',
     hair: 0x1a120a,
   };
-  return buildBiped({
-    height: sp.height * (0.94 + seed * 0.12),
-    bulk: sp.bulk * (0.95 + hashStr(`${c.id}:b`) * 0.1),
+  // Sculpted species mesh once at their canonical build; individuals vary by scale.
+  const sculpt = LOOKS[c.monsterId] && !sp.human ? c.monsterId : null;
+  const indiv = 0.94 + seed * 0.12;
+  const model = buildBiped({
+    sculpt,
+    height: sp.height * (sculpt ? 1 : indiv),
+    bulk: sp.bulk * (sculpt ? 1 : 0.95 + hashStr(`${c.id}:b`) * 0.1),
     legRatio: sp.legRatio ?? 1,
     headScale: sp.headScale ?? 1,
     head: sp.head,
@@ -138,8 +143,17 @@ export function makeFigureModel(c, index = 0) {
     armsForward: sp.armsForward,
     digitigrade: sp.legs === 'digitigrade',
     thickNeck: sp.thickNeck,
+    limbK: sp.limbK,
     seed,
   });
+  if (sculpt) {
+    model.root.scale.setScalar(indiv);
+    model.height *= indiv;
+    model.radius *= indiv;
+    model.scale *= indiv;
+    if (model.eyeAt) model.eyeAt = model.eyeAt.map((v) => v * indiv);
+  }
+  return model;
 }
 
 // ------------------------------------------------------------------ biped
@@ -195,9 +209,33 @@ function buildBiped(o) {
     R.bone('capeC', 'capeB', 0, -0.36 * s, 0);
   }
 
+  // Sculpted flesh: one smooth, auto-skinned body mesh (see sculpted.js).
+  const sculpt = o.sculpt;
+  let sculptEyes = null;
+  if (sculpt) {
+    // Bind pose with the arms (and a touch of the legs) held away from the
+    // body so limbs and torso sculpt as separate volumes; reset after build().
+    R.bones.upperArmL.rotation.z = 0.3;
+    R.bones.upperArmR.rotation.z = -0.3;
+    R.bones.thighL.rotation.z = 0.05;
+    R.bones.thighR.rotation.z = -0.05;
+    R.root.updateMatrixWorld(true);
+    const J = {};
+    const v = new THREE.Vector3();
+    for (const b of R.boneList) J[b.name] = b.getWorldPosition(v).toArray();
+    const key = [sculpt, o.height, o.bulk, kit.armor, kit.tattered ? 1 : 0, o.tail ?? '', kit.cape ? 1 : 0].join('|');
+    const flesh = sculptedFlesh(key, {
+      species: sculpt, J, s, w, hs: s * (o.headScale ?? 1), bw: Math.sqrt(w) * (o.limbK ?? 1), legW: (w > 1.15 ? w * 1.05 : Math.sqrt(w)) * (o.limbK ?? 1),
+      belly: o.belly, tail: o.tail, digitigrade: o.digitigrade, thickNeck: o.thickNeck, claws: o.claws, kit,
+    });
+    R.skin(flesh.geometry, sculptMaterial(), flesh.names);
+    sculptEyes = flesh;
+    o.sculptEyesOut = flesh;
+  }
+
   // Body --------------------------------------------------------------
   const torsoMat = bones ? boneMat : kit.armor === 'robe' ? clothMat : kit.armor === 'loincloth' || kit.armor === 'none' || kit.armor === 'scraps' || kit.armor === 'orcish' || kit.armor === 'harness' ? skinMat : clothMat;
-  if (bones) {
+  if (bones && !sculpt) {
     // Spine column, ribcage hoops, pelvis.
     for (let i = 0; i < 5; i++) R.part('spine', sphere(0.028 * s, 8, 6), boneMat, { p: [0, i * 0.045 * s, -0.04 * s] });
     for (let i = 0; i < 5; i++) {
@@ -208,7 +246,7 @@ function buildBiped(o) {
     R.part('chest', cyl(0.025 * s, 0.025 * s, 0.34 * s * w, 8), boneMat, { p: [0, 0.2 * s, -0.02 * s], r: [0, 0, Math.PI / 2] });
     R.part('hips', lathe([[0.02, -0.08], [0.12, -0.04], [0.14, 0.02], [0.1, 0.06]].map(([r, y]) => [r * s * w, y * s]), 10, { zs: 0.55 }), boneMat);
     R.part('neck', cyl(0.022 * s, 0.022 * s, 0.09 * s, 8), boneMat, { p: [0, 0.04 * s, 0] });
-  } else {
+  } else if (!sculpt) {
     const bellyK = o.belly ? 1.35 : 1;
     R.part('hips', lathe([[0.06, -0.1], [0.14, -0.07], [0.16, 0.0], [0.15, 0.09]].map(([r, y]) => [r * s, y * s]), 16, { xs: w, zs: 0.72 }), kit.armor === 'robe' ? clothMat : kit.armor === 'loincloth' || kit.armor === 'none' ? darkCloth : darkCloth);
     R.part('spine', lathe([[0.15, -0.02], [0.15 * bellyK, 0.08], [0.155, 0.2], [0.15, 0.24]].map(([r, y]) => [r * s, y * s]), 16, { xs: w, zs: 0.7 * (o.belly ? 1.25 : 1) }), torsoMat);
@@ -221,6 +259,7 @@ function buildBiped(o) {
   // Arms & legs.
   for (const [side, sx] of [['L', 1], ['R', -1]]) {
     if (bones) {
+      if (sculpt) continue;
       R.part(`upperArm${side}`, limb(0.02 * s, 0.017 * s, armU, { bulge: 0.9, seg: 6 }), boneMat);
       R.part(`upperArm${side}`, sphere(0.032 * s, 8, 6), boneMat);
       R.part(`foreArm${side}`, limb(0.016 * s, 0.013 * s, armF, { bulge: 0.9, seg: 6 }), boneMat);
@@ -233,6 +272,7 @@ function buildBiped(o) {
     }
     const armMat = kit.armor === 'chain' || kit.armor === 'plate' ? pbr('chain', 0x9a9ea6) : kit.armor === 'robe' || kit.armor === 'tunic' ? clothMat : skinMat;
     const bw = Math.sqrt(w);
+    if (!sculpt) {
     // Deltoid: rounds the shoulder into the arm.
     R.part(`upperArm${side}`, sphere(0.066 * s * bw, 12, 10), armMat, { p: [sx * 0.008 * s, -0.012 * s, 0], s: [1, 1.1, 1] });
     R.part(`upperArm${side}`, limb(0.055 * s * bw, 0.045 * s * bw, armU), armMat);
@@ -254,6 +294,7 @@ function buildBiped(o) {
       R.part(`foot${side}`, rbox(0.1 * s * bw, 0.08 * s, 0.24 * s, 0.03 * s), kit.race === 'monster' && kit.armor !== 'vest' ? skinMat : darkLeather, { p: [0, -0.035 * s, 0.05 * s] });
       if (kit.race !== 'monster' || kit.armor === 'vest') R.part(`shin${side}`, cyl(0.06 * s, 0.055 * s, 0.14 * s, 12), darkLeather, { p: [0, -shinL + 0.08 * s, 0] });
     }
+    } // !sculpt
     if (kit.armor === 'plate') {
       R.part(`upperArm${side}`, sphere(0.1 * s, 14, 10, { thetaLength: Math.PI * 0.55 }), metal, { p: [sx * 0.02 * s, 0.02 * s, 0], s: [1.05, 0.95, 1.1] });
       R.part(`upperArm${side}`, sphere(0.085 * s, 14, 8, { thetaLength: Math.PI * 0.5 }), metal, { p: [sx * 0.03 * s, -0.05 * s, 0], s: [1, 0.8, 1.05] });
@@ -262,13 +303,15 @@ function buildBiped(o) {
       R.part(`thigh${side}`, sphere(0.06 * s, 12, 8), metal, { p: [0, -thighL, 0.02 * s] });
     }
     if (kit.armor === 'chain' || kit.armor === 'scale') {
-      R.part(`upperArm${side}`, sphere(0.085 * s * bw, 12, 8, { thetaLength: Math.PI * 0.55 }), kit.armor === 'scale' ? pbr('scales', 0x8a8070) : leather, { p: [sx * 0.015 * s, 0.01 * s, 0], s: [1, 0.85, 1.05] });
+      if (!sculpt) R.part(`upperArm${side}`, sphere(0.085 * s * bw, 12, 8, { thetaLength: Math.PI * 0.55 }), kit.armor === 'scale' ? pbr('scales', 0x8a8070) : leather, { p: [sx * 0.015 * s, 0.01 * s, 0], s: [1, 0.85, 1.05] });
       R.part(`foreArm${side}`, cyl(0.052 * s, 0.044 * s, 0.13 * s, 10), leather, { p: [0, -armF + 0.08 * s, 0] });
     }
     if (kit.armor === 'orcish') {
       // Crude, mismatched gear: a rusty pauldron on one or both shoulders, leather bracers, wrapped shins.
       const both = (kit.variant ?? 0) > 0.5;
-      if (side === 'R' || both) {
+      if (sculpt) {
+        // (sculpted pauldrons)
+      } else if (side === 'R' || both) {
         R.part(`upperArm${side}`, sphere(0.1 * s * bw, 10, 8, { thetaLength: Math.PI * 0.5 }), rust, { p: [sx * 0.02 * s, 0.025 * s, 0], s: [1.15, 0.85, 1.15], r: [0, 0, sx * -0.25] });
         R.part(`upperArm${side}`, sphere(0.09 * s * bw, 10, 6, { thetaLength: Math.PI * 0.45 }), rust, { p: [sx * 0.03 * s, -0.035 * s, 0], s: [1.1, 0.7, 1.1], r: [0, 0, sx * -0.35] });
         for (let k = 0; k < 3; k++) R.part(`upperArm${side}`, sphere(0.012 * s, 5, 4), darkMetal, { p: [sx * (0.03 + k * 0.03) * s, 0.09 * s - k * 0.02 * s, 0.05 * s] });
@@ -306,7 +349,7 @@ function buildBiped(o) {
       R.part('chest', box(0.012 * s, 0.26 * s, 0.03 * s), metal, { p: [0, 0.08 * s, 0.14 * s] });
       R.part('hips', lathe([[0.24, -0.26], [0.19, -0.08], [0.17, 0.02]].map(([r, y]) => [r * s, y * s]), 16, { xs: w, zs: 0.74 }), darkMetal);
     } else if (kit.armor === 'scale') {
-      torsoShell(pbr('scales', 0x8a8070), 1.1);
+      if (!sculpt) torsoShell(pbr('scales', 0x8a8070), 1.1);
       R.part('hips', lathe([[0.24, -0.26], [0.19, -0.08], [0.17, 0.02]].map(([r, y]) => [r * s, y * s]), 16, { xs: w, zs: 0.74 }), pbr('scales', 0x6a6050));
     } else if (kit.armor === 'leather') {
       torsoShell(leather, 1.06);
@@ -330,9 +373,9 @@ function buildBiped(o) {
     } else if (kit.armor === 'orcish') {
       // Layered crude armour: a hide jerkin, a rusty breastplate (dented, strapped on),
       // cross straps, a skull-buckled belt and hanging leather tassets.
-      torsoShell(darkLeather, 1.07, -0.12);
+      if (!sculpt) torsoShell(darkLeather, 1.07, -0.12);
       const v = kit.variant ?? 0;
-      if (v < 0.75) {
+      if (v < 0.75 && !sculpt) {
         R.part('chest', lathe([[0.15, -0.02], [0.18, 0.06], [0.19, 0.14], [0.15, 0.2]].map(([r, y]) => [r * s, y * s]), 12, { xs: w * 1.1, zs: 0.74 }), rust, { p: [0, 0, 0.012 * s], s: [1, 1, 1], r: [0.04, 0, 0] });
         for (const sx of [1, -1]) for (const y of [0.02, 0.16]) R.part('chest', sphere(0.012 * s, 5, 4), darkMetal, { p: [sx * 0.11 * s * w, y * s, 0.13 * s] });
       }
@@ -344,7 +387,7 @@ function buildBiped(o) {
         const a = (k / 6) * Math.PI * 2 + 0.3;
         R.part('hips', box(0.075 * s, (0.2 + (k % 2) * 0.05) * s, 0.012 * s), k % 3 ? darkLeather : rust, { p: [Math.sin(a) * 0.17 * s * w, -0.1 * s, Math.cos(a) * 0.125 * s], r: [Math.cos(a) * 0.15, a, 0] });
       }
-      R.part('hips', lathe([[0.2, -0.16], [0.17, -0.06], [0.16, 0.02]].map(([r, y]) => [r * s, y * s]), 12, { xs: w, zs: 0.74 }), pbr('cloth', 0x2a221a));
+      if (!sculpt) R.part('hips', lathe([[0.2, -0.16], [0.17, -0.06], [0.16, 0.02]].map(([r, y]) => [r * s, y * s]), 12, { xs: w, zs: 0.74 }), pbr('cloth', 0x2a221a));
       // A trophy: bone fetish on a cord.
       if (v > 0.4) R.part('chest', cone(0.012 * s, 0.06 * s, 5), pbr('bone', 0xe0d4b8), { p: [0.04 * s, 0.1 * s, 0.16 * s], r: [Math.PI, 0, 0.3] });
     } else if (kit.armor === 'harness') {
@@ -355,10 +398,10 @@ function buildBiped(o) {
       R.part('hips', rbox(0.06 * s, 0.07 * s, 0.04 * s, 0.012 * s), leather, { p: [0.12 * s * w, -0.03 * s, 0.07 * s], r: [0, 0.6, 0] });
       // Pale belly scales, a darker banded back and a ridge of dorsal spines from
       // the skull down into the tail: the reptile silhouette reads at any zoom.
-      R.part('spine', lathe([[0.1, -0.02], [0.125, 0.1], [0.11, 0.22]].map(([r, y]) => [r * s, y * s]), 10, { xs: w * 0.8, zs: 0.55 }), pbr('reptile', 0xc89a62), { p: [0, 0, 0.05 * s] });
+      if (!sculpt) R.part('spine', lathe([[0.1, -0.02], [0.125, 0.1], [0.11, 0.22]].map(([r, y]) => [r * s, y * s]), 10, { xs: w * 0.8, zs: 0.55 }), pbr('reptile', 0xc89a62), { p: [0, 0, 0.05 * s] });
       const back = pbr('reptile', 0x5a2a14);
-      for (let k = 0; k < 4; k++) R.part('chest', cone(0.03 * s, 0.11 * s, 4), back, { p: [0, 0.24 * s - k * 0.06 * s, -0.12 * s * w], r: [-0.95, 0, 0], s: [0.6, 1, 1] });
-      for (let k = 0; k < 3; k++) R.part('spine', cone(0.026 * s, 0.09 * s, 4), back, { p: [0, 0.2 * s - k * 0.07 * s, -0.115 * s * w], r: [-1.05, 0, 0], s: [0.6, 1, 1] });
+      if (!sculpt) for (let k = 0; k < 4; k++) R.part('chest', cone(0.03 * s, 0.11 * s, 4), back, { p: [0, 0.24 * s - k * 0.06 * s, -0.12 * s * w], r: [-0.95, 0, 0], s: [0.6, 1, 1] });
+      if (!sculpt) for (let k = 0; k < 3; k++) R.part('spine', cone(0.026 * s, 0.09 * s, 4), back, { p: [0, 0.2 * s - k * 0.07 * s, -0.115 * s * w], r: [-1.05, 0, 0], s: [0.6, 1, 1] });
     } else if (kit.armor === 'scraps') {
       R.part('chest', box(0.2 * s * w, 0.14 * s, 0.05 * s), darkLeather, { p: [0.03 * s, 0.12 * s, 0.1 * s], r: [0, 0, 0.3] });
       R.part('upperArmR', sphere(0.08 * s * w, 10, 6, { thetaLength: Math.PI * 0.5 }), darkMetal, { p: [0, 0.01 * s, 0], s: [1.1, 0.9, 1.1] });
@@ -369,10 +412,10 @@ function buildBiped(o) {
       R.part('hips', torus(0.155 * s * w, 0.018 * s, 5, 16), darkLeather, { p: [0, 0.02 * s, 0], r: [Math.PI / 2, 0, 0], s: [1, 0.74, 1] });
     }
     if (kit.tattered) {
-      R.part('chest', torsoShellGeo(s, w, 1.04), pbr('cloth', 0x4a4438));
+      if (!sculpt) R.part('chest', torsoShellGeo(s, w, 1.04), pbr('cloth', 0x4a4438));
       for (let k = 0; k < 5; k++) R.part('hips', box(0.06 * s, (0.2 + (k % 3) * 0.08) * s, 0.01 * s), pbr('cloth', 0x3a3428), { p: [(k - 2) * 0.06 * s, -0.12 * s, 0.13 * s], r: [0.1, 0, (k - 2) * 0.08] });
     }
-    if (o.belly) R.part('spine', sphere(0.2 * s, 16, 12), skinMat, { p: [0, 0.08 * s, 0.07 * s], s: [w * 0.95, 0.9, 1] });
+    if (o.belly && !sculpt) R.part('spine', sphere(0.2 * s, 16, 12), skinMat, { p: [0, 0.08 * s, 0.07 * s], s: [w * 0.95, 0.9, 1] });
     // Belt with buckle + pouch.
     if (kit.race !== 'monster' || kit.armor === 'vest') {
       R.part('hips', torus(0.165 * s * w, 0.02 * s, 6, 24), darkLeather, { p: [0, 0.04 * s, 0], r: [Math.PI / 2, 0, 0], s: [1, 0.76, 1] });
@@ -382,15 +425,28 @@ function buildBiped(o) {
   }
 
   // Head -----------------------------------------------------------------
-  buildHead(R, o, s, skinMat);
-  if (o.thickNeck) {
+  if (!sculpt) buildHead(R, o, s, skinMat);
+  else {
+    // Eyes (glowing for monsters) set into the sculpted sockets; helmets as kit.
+    const hs = s * (o.headScale ?? 1);
+    const eyeMat = o.eyes != null ? pbr('glow', 0x000000, { emissive: o.eyes, emissiveIntensity: 2.4 }) : pbr('eye', 0x1a120c);
+    for (const e of sculptEyes.eyes ?? []) R.part('head', sphere(sculptEyes.eyeR * hs, 8, 6), eyeMat, { p: [e[0] * hs, e[1] * hs, e[2] * hs] });
+    if (kit.helm === 'orcHelm') {
+      const hy = 0.1 * hs;
+      const rustM = pbr('metal', 0x5e4434);
+      R.part('head', sphere(0.112 * hs, 14, 10, { thetaLength: Math.PI * 0.42 }), rustM, { p: [0, hy + 0.03 * hs, -0.02 * hs], s: [1.08, 0.95, 1.1] });
+      R.part('head', box(0.018 * hs, 0.07 * hs, 0.02 * hs), rustM, { p: [0, hy + 0.02 * hs, 0.105 * hs], r: [0.3, 0, 0] });
+      for (const sx of [1, -1]) R.part('head', cone(0.02 * hs, 0.1 * hs, 6), pbr('bone', 0xd0c4a8), { p: [sx * 0.095 * hs, hy + 0.11 * hs, -0.02 * hs], r: [0.2, 0, sx * -0.7] });
+    }
+  }
+  if (o.thickNeck && !sculpt) {
     // Reptiles: a thick, forward-slung neck bridging the big head to the shoulders.
     R.part('neck', limb(0.065 * s, 0.075 * s, 0.12 * s, { seg: 10 }), skinMat, { p: [0, 0.1 * s, 0.01 * s], r: [0.35, 0, 0] });
     R.part('head', sphere(0.07 * s, 10, 8), skinMat, { p: [0, 0.02 * s, -0.04 * s] });
   }
 
   // Tail.
-  if (o.tail) {
+  if (o.tail && !sculpt) {
     const tk = o.tail === 'long' ? 1.35 : 1;
     R.part('tail1', limb(0.062 * s * tk, 0.045 * s * tk, 0.24 * s * tk, { seg: 8 }), skinMat, { r: [Math.PI / 2, 0, 0] });
     R.part('tail2', limb(0.045 * s * tk, 0.028 * s * tk, 0.22 * s * tk, { seg: 8 }), skinMat, { r: [Math.PI / 2, 0, 0] });
@@ -465,9 +521,11 @@ function buildBiped(o) {
   }
 
   const built = R.build();
+  if (o.sculpt) for (const nm of ['upperArmL', 'upperArmR', 'thighL', 'thighR']) R.bones[nm].rotation.z = 0;
   return {
     ...built,
     rig: 'biped',
+    eyeAt: o.sculpt && o.sculptEyesOut?.eyes?.[0] ? o.sculptEyesOut.eyes[0].map((v) => v * s * (o.headScale ?? 1)) : null,
     height: u,
     radius: 0.3 * s * Math.max(1, w),
     scale: s,

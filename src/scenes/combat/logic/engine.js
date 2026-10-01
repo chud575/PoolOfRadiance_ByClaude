@@ -416,9 +416,9 @@ export class CombatEngine {
       const dx = step.x - c.x;
       const dy = step.y - c.y;
       if (Math.max(Math.abs(dx), Math.abs(dy)) !== 1) break;
-      const cost = dx && dy ? 1.5 : 1;
-      if (cost > c.mp + 1e-6) break;
       const leaving = !this.field.inBounds(step.x, step.y);
+      const cost = leaving ? (dx && dy ? 1.5 : 1) : this.field.stepCost(c.x, c.y, step.x, step.y);
+      if (cost > c.mp + 1e-6) break;
       if (!leaving && (!this.field.canStep(c.x, c.y, step.x, step.y) || this.occupantAt(step.x, step.y))) break;
       // Attacks of opportunity: enemies adjacent now that won't be adjacent after the step.
       const before = this.adjacentEnemies(c).filter((e) => this.awake(e) && e.fx.aooUsed !== this.round);

@@ -79,11 +79,24 @@ export const DEMOS = {
         f.place(f.pos.x, f.pos.z, 0);
         c.facing = 4;
       });
-      sc.cam.goalTarget.set(10 * TILE, 0, (y0 - 1) * TILE);
+      // Model review: plain studio floor, no buildings in the way.
+      sc.diorama.group.visible = false;
+      const floor = new THREE.Mesh(new THREE.PlaneGeometry(80, 80).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x5a5550, roughness: 0.9 }));
+      floor.position.set(sc.field.w * TILE / 2, -0.002, sc.field.h * TILE / 2);
+      floor.receiveShadow = true;
+      sc.scene3d.add(floor);
+      sc.overlay.group.visible = false;
+      const n = Math.max(sc.party.length, sc.monsters.length);
+      const cx = (2 + (n - 1)) * TILE;
+      const pitch = Number.isFinite(+sc.params.pitch) && sc.params.pitch !== undefined ? +sc.params.pitch : 0.42;
+      const mz = all.reduce((a, c) => a + c.y, 0) / Math.max(1, all.length);
+      sc.cam.goalTarget.set(cx + TILE / 2, 0, (mz + 0.5) * TILE);
+      sc.camera.clearViewOffset();
+      sc._applyViewOffset = () => {};
       sc.cam.target.copy(sc.cam.goalTarget);
-      sc.cam.goalDist = sc.cam.dist = 17;
-      sc.cam.goalPitch = sc.cam.pitch = 0.42;
-      sc.cam.goalYaw = sc.cam.yaw = 0;
+      sc.cam.goalDist = sc.cam.dist = Number.isFinite(+sc.params.dist) && sc.params.dist !== undefined ? +sc.params.dist : 4 + n * 2.4;
+      sc.cam.goalPitch = sc.cam.pitch = pitch;
+      sc.cam.goalYaw = sc.cam.yaw = Number.isFinite(+sc.params.yaw) && sc.params.yaw !== undefined ? +sc.params.yaw : 0;
       sc.demoActive = sc.party[0];
     },
   },
@@ -147,7 +160,8 @@ export const DEMOS = {
         const fm = sc.figures.get(m.id);
         const d = dmg[k % dmg.length];
         fm.play('hit', detonate + 0.02, 0.6, { power: 1.8 });
-        sc.hud.float(String(d), k === 0 ? 'crit' : 'dmg', sc._head(fm), detonate + 0.06 + k * 0.03);
+        // Numbers lift clear of the fireball's face, staggered.
+        sc.hud.float(String(d), k === 0 ? 'crit' : 'dmg', sc._head(fm).add(new THREE.Vector3(0, 1.0 + (k % 3) * 0.4, 0)), detonate + 0.1 + k * 0.05);
         // Results land with the blast, not before it.
         sc.at(detonate + 0.02, () => {
           m.hp.cur -= d;
@@ -247,8 +261,9 @@ export const DEMOS = {
       }
       if (foe3) {
         kill(sc, foe3, -0.12, sq2w(hero.x, hero.y));
-        sc.vfx.dust(0.33, sc.figures.get(foe3.id).root.position.clone(), { seed: 8 });
-        sc.hud.float('Slain', 'kill', sc._killPos(sc.figures.get(foe3.id)), 0.02, { rise: 0.25 });
+        const from3 = sq2w(hero.x, hero.y);
+        sc.vfx.dust(0.33, sc._killPos(sc.figures.get(foe3.id), from3).setY(0), { seed: 8 });
+        sc.hud.float('Slain', 'kill', sc._killPos(sc.figures.get(foe3.id), from3), 0.02, { rise: 0.25 });
       }
       // A missile from a rear rank for depth.
       const archer = sc.party.find((c) => c !== hero && c !== second && e.rangedProfile(c));
@@ -272,6 +287,10 @@ export const DEMOS = {
       sc.cam.goalPitch = sc.cam.pitch = 0.68;
       if (Number.isFinite(+sc.params.yaw) && sc.params.yaw !== undefined) sc.cam.goalYaw = sc.cam.yaw = +sc.params.yaw;
       else sc._chooseYaw({ around: [hero, foe] });
+      // Nudge the frame toward the camera so the near rank isn't cut by the bottom edge.
+      const toCam = new THREE.Vector3(Math.sin(sc.cam.yaw), 0, Math.cos(sc.cam.yaw));
+      sc.cam.goalTarget.addScaledVector(toCam, 1.1);
+      sc.cam.target.copy(sc.cam.goalTarget);
       sc._refresh(hero);
     },
   },

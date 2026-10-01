@@ -254,6 +254,14 @@ export class Battlefield {
 
   isFree(x, y) { return this.inBounds(x, y) && this.block[this.idx(x, y)] === 0; }
 
+  /** Rough ground (loose rubble, broken paving): entering it costs half a move extra. */
+  isRough(x, y) { return this.inBounds(x, y) && this.kind[this.idx(x, y)] === CELL.RUBBLE && this.block[this.idx(x, y)] === 0; }
+
+  /** Movement cost of one step (diagonals 1½, +½ into rough ground). */
+  stepCost(x0, y0, x1, y1) {
+    return (x1 !== x0 && y1 !== y0 ? 1.5 : 1) + (this.isRough(x1, y1) ? 0.5 : 0);
+  }
+
   /** Is there a wall between orthogonally adjacent squares a→b? */
   wallBetween(ax, ay, bx, by) {
     if (bx === ax + 1 && by === ay) return !!this.wallE[this.idx(ax, ay)];
@@ -339,7 +347,7 @@ export class Battlefield {
         const ny = y + dy;
         if (!this.canStep(x, y, nx, ny)) continue;
         if (occupied(nx, ny)) continue;
-        const nc = c + (dx && dy ? 1.5 : 1);
+        const nc = c + this.stepCost(x, y, nx, ny);
         if (nc > maxCost + 1e-6) continue;
         const ni = this.idx(nx, ny);
         if (nc < cost[ni] - 1e-6) {

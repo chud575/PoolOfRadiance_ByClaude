@@ -22,16 +22,16 @@ const hash = (x, y, s = 0) => {
  */
 function addMacro(mat, { scale = 0.18, amount = 0.45, grime = 0.35, key = 'macro' } = {}) {
   mat.onBeforeCompile = (sh) => {
+    sh.uniforms.tMNoise = { value: noiseTexture() };
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vMWPos;')
       .replace('#include <fog_vertex>', '#include <fog_vertex>\nvMWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
         varying vec3 vMWPos;
-        float mHash(vec3 p){ return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
-        float mNoise(vec3 p){ vec3 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
-          return mix(mix(mix(mHash(i), mHash(i+vec3(1,0,0)), f.x), mix(mHash(i+vec3(0,1,0)), mHash(i+vec3(1,1,0)), f.x), f.y),
-                     mix(mix(mHash(i+vec3(0,0,1)), mHash(i+vec3(1,0,1)), f.x), mix(mHash(i+vec3(0,1,1)), mHash(i+vec3(1,1,1)), f.x), f.y), f.z); }`)
+        uniform sampler2D tMNoise;
+        // Pre-baked tileable fBm: one fetch instead of eight sin-hashes per call.
+        float mNoise(vec3 p){ return texture2D(tMNoise, (p.xz + p.y * vec2(0.71, 0.53)) * 0.125).r; }`)
       .replace('#include <map_fragment>', `#include <map_fragment>
         float mn = mNoise(vMWPos * ${scale.toFixed(3)}) * 0.6 + mNoise(vMWPos * ${(scale * 2.7).toFixed(3)}) * 0.4;
         diffuseColor.rgb *= ${(1 - amount / 2).toFixed(3)} + ${amount.toFixed(3)} * mn;
@@ -42,7 +42,7 @@ function addMacro(mat, { scale = 0.18, amount = 0.45, grime = 0.35, key = 'macro
         float baseMoss = (1.0 - smoothstep(0.05, 0.75, vMWPos.y)) * smoothstep(0.4, 0.7, mNoise(vMWPos * 1.7));
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.16, 0.19, 0.09), baseMoss * 0.6);` : ''}`);
   };
-  mat.customProgramCacheKey = () => `${key}-${scale}-${amount}-${grime}-v2`;
+  mat.customProgramCacheKey = () => `${key}-${scale}-${amount}-${grime}-v3`;
   return mat;
 }
 
@@ -171,9 +171,11 @@ export function buildDiorama(field, o = {}) {
   splat.minFilter = THREE.LinearFilter;
   splat.needsUpdate = true;
   disposables.push(splat);
-  const cob = getTextureSet('floor_cobble');
+  // Street: small granite setts (~11 cm); temple / courtyard: dressed rectangular
+  // flagstones; rubble: packed dirt and grit. Each its own albedo/normal/roughness set.
+  const cob = getTextureSet('hd_cobble');
   const rub = getTextureSet('floor_rubble');
-  const flg = getTextureSet('floor_flag');
+  const flg = getTextureSet('hd_flags');
   const groundMat = new THREE.MeshStandardMaterial({ map: cob.map, normalMap: cob.normalMap, roughnessMap: cob.roughnessMap, roughness: 1, metalness: 0, normalScale: new THREE.Vector2(1.3, 1.3) });
   const originX = -margin * TILE;
   const originZ = -margin * TILE;
@@ -209,9 +211,9 @@ export function buildDiorama(field, o = {}) {
         float wR = smoothstep(0.25, 0.75, gs.g + (gn - 0.5) * 0.7);
         float wF = smoothstep(0.35, 0.65, gs.b + (gn - 0.5) * 0.25);
         float wet = smoothstep(0.35, 0.6, gs.a + (gFbm(vWPos.xz * 0.9) - 0.5) * 0.6);
-        vec2 uv1 = vec2(vWPos.x, -vWPos.z) / 2.6;
+        vec2 uv1 = vec2(vWPos.x, -vWPos.z) / 1.3;
         vec2 uv2 = vec2(vWPos.x, -vWPos.z) / 3.2 + 0.37;
-        vec2 uv3 = vec2(vWPos.x, -vWPos.z) / 3.0;
+        vec2 uv3 = vec2(vWPos.x, -vWPos.z) / 2.7;
         vec4 gc = texture2D(map, uv1);
         if (wR > 0.001) gc = mix(gc, texture2D(map2, uv2), wR);
         if (wF > 0.001) gc = mix(gc, texture2D(map3, uv3), wF);
@@ -233,6 +235,9 @@ export function buildDiorama(field, o = {}) {
         float drift = smoothstep(0.08, 0.5, 1.0 - gAO) * smoothstep(0.3, 0.6, gFbm(vWPos.xz * 0.6 + 2.0) + (1.0 - gAO) * 0.4);
         gc.rgb = mix(gc.rgb, vec3(0.24, 0.2, 0.15) * (0.75 + 0.5 * gn), drift * 0.8);
         gc.rgb = mix(gc.rgb, gc.rgb * vec3(0.95, 0.9, 0.82), smoothstep(0.55, 0.8, gFbm(vWPos.xz * 0.21 + 3.0)) * 0.6);
+        // Gutters: a damp, darker band along wall feet and kerbs (rain runs off the eaves).
+        float gutter = smoothstep(0.9, 0.62, gAO) * (1.0 - wR) * smoothstep(0.25, 0.55, gFbm(vWPos.xz * 0.8 + 5.0) + (1.0 - gAO) * 0.5);
+        wet = max(wet, gutter * 0.7);
         gc.rgb *= mix(1.0, 0.42, wet);
         gc.rgb *= mix(0.35, 1.0, gAO);
         diffuseColor *= gc;
@@ -268,7 +273,7 @@ export function buildDiorama(field, o = {}) {
   // Room floors (reachable interiors) — planks.
   const plank = pbr('plank', 0x9a8878);
   const hall = (field.features.rooms ?? []).length >= 6;
-  const roomFloor = hall ? libMat('floor_flag', 0xd8d0c4) : plank;
+  const roomFloor = plank;
   // Halls/temples keep the splatted flagstone ground (with its contact shadows); houses get planks.
   for (const r of hall ? [] : field.features.rooms ?? []) {
     const g = new THREE.PlaneGeometry(CELLM, CELLM);
@@ -293,7 +298,7 @@ export function buildDiorama(field, o = {}) {
   const ironMat = pbr('metal', 0x3a3a40);
   const barrelMat = pbr('plank', 0xc8a080);
   const crateMat = pbr('plank', 0xd8b890);
-  const glassLit = new THREE.MeshStandardMaterial({ color: 0x201008, emissive: 0xffa040, emissiveIntensity: night ? 2.6 : 0.25, roughness: 0.4 });
+  const glassLit = new THREE.MeshStandardMaterial({ color: 0x201008, emissive: 0xffa040, emissiveIntensity: night ? 1.5 : 0.25, roughness: 0.4 });
   const glassDark = new THREE.MeshStandardMaterial({ color: 0x0a0c10, roughness: 0.15, metalness: 0.2 });
   disposables.push(glassLit, glassDark);
 
@@ -847,41 +852,70 @@ export function buildDiorama(field, o = {}) {
       for (let k = 0; k < 4; k++) batch.add(worldBox(1.1, 0.06, 0.16, 1), woodMat, { p: [x + (hash(k, 1, p.x) - 0.5) * 0.7, 0.05 + k * 0.05, z + (hash(k, 2, p.y) - 0.5) * 0.7], r: [0, hash(k, 3, p.x) * 3, 0.1] });
     }
   }
-  // Scatter loose stones / weeds near walls and in rubble (non-blocking decoration).
-  const grassMat = makeGrassMaterial();
-  disposables.push(grassMat);
-  const tufts = [];
+  // Weeds grow in clusters only where feet and cartwheels don't reach: along
+  // wall bases, kerbs and in rubble (several species: grass, rosettes, dry stalks).
+  const weedMat = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.85, metalness: 0 });
+  disposables.push(weedMat);
+  const weedKinds = [weedGeo('grass', 1), weedGeo('grass', 2), weedGeo('rosette', 3), weedGeo('dry', 4), weedGeo('clover', 5)];
+  const weeds = weedKinds.map(() => []);
+  const wallSide = (x, y) => {
+    // Unit offset toward the nearest wall/house edge of this square (or null).
+    const out = [];
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      let w = kindAt(x + dx, y + dy) === 'house';
+      if (!w && field.inBounds(x, y) && field.inBounds(x + dx, y + dy)) {
+        const i0 = field.idx(x, y);
+        if (dx === 1) w = !!field.wallE[i0];
+        else if (dx === -1) w = !!field.wallE[field.idx(x - 1, y)];
+        else if (dy === 1) w = !!field.wallS[i0];
+        else w = !!field.wallS[field.idx(x, y - 1)];
+      }
+      if (w) out.push([dx, dy]);
+    }
+    return out;
+  };
   for (let y = -margin; y < field.h + margin; y++) {
     for (let x = -margin; x < field.w + margin; x++) {
       const k = kindAt(x, y);
-      if (k === 'house' || k === 'water') continue;
-      const nearHouse = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => kindAt(x + dx, y + dy) === 'house');
+      if (k === 'house' || k === 'water' || k === 'room') continue;
+      const walls = wallSide(x, y);
       const r = hash(x + 900, y + 900, 41);
-      const pRate = k === 'rubble' || k === 'outside' ? 0.5 : nearHouse ? 0.35 : 0.06;
+      const rubbly = k === 'rubble' || k === 'outside';
+      const pRate = walls.length ? 0.55 : rubbly ? 0.22 : 0;
       if (r < pRate) {
-        const n = 1 + Math.floor(hash(x, y, 43) * 3);
-        for (let i = 0; i < n; i++) tufts.push([x * TILE + hash(x, y + i, 44) * TILE, y * TILE + hash(x + i, y, 45) * TILE, 0.25 + hash(x + i, y + i, 46) * 0.35, hash(i, x, y) * 6]);
+        // A cluster hugging the wall foot (or a random spot in rubble).
+        const [dx, dy] = walls.length ? walls[Math.floor(hash(x, y, 42) * walls.length)] : [0, 0];
+        const along = hash(x, y, 43) - 0.5;
+        const cx = x * TILE + TILE / 2 + (dx ? dx * TILE * 0.42 : along * TILE * 0.8);
+        const cz = y * TILE + TILE / 2 + (dy ? dy * TILE * 0.42 : (dx ? along * TILE * 0.8 : (hash(x, y, 49) - 0.5) * TILE * 0.8));
+        const n = 3 + Math.floor(hash(x, y, 44) * 5);
+        const species = rubbly ? (hash(x, y, 45) < 0.5 ? 3 : Math.floor(hash(x, y, 46) * 3)) : Math.floor(hash(x, y, 46) * 5);
+        for (let i = 0; i < n; i++) {
+          const kk = i === 0 ? species : hash(x + i, y, 47) < 0.65 ? species : Math.floor(hash(i, x, y) * 5);
+          const spread = 0.12 + i * 0.05;
+          const ox = (dx ? -dx * hash(i, y, 48) * 0.18 : (hash(i, x, 48) - 0.5) * 2 * spread);
+          const oz = (dy ? -dy * hash(i, x, 50) * 0.18 : (hash(i, y, 50) - 0.5) * 2 * spread);
+          weeds[kk].push([cx + ox + (dy ? (hash(x, i, 51) - 0.5) * 0.6 : 0), cz + oz + (dx ? (hash(y, i, 52) - 0.5) * 0.6 : 0), (0.55 + hash(x + i, y + i, 46) * 0.7) * (i === 0 ? 1.15 : 1), hash(i, x, y) * 6.28]);
+        }
       }
-      if (k !== 'room' && hash(x, y, 47) < (k === 'rubble' ? 0.5 : 0.12)) {
-        batch.add(rockGeo(hash(x, y, 48), 0.07 + hash(x, y, 49) * 0.12), rockMat, { p: [x * TILE + hash(x, y, 50) * TILE, 0.0, y * TILE + hash(x, y, 51) * TILE] }, { cast: false });
+      if (hash(x, y, 47) < (k === 'rubble' ? 0.5 : walls.length ? 0.2 : 0.04)) {
+        batch.add(rockGeo(hash(x, y, 48), 0.05 + hash(x, y, 49) * 0.1), rockMat, { p: [x * TILE + hash(x, y, 50) * TILE, 0.0, y * TILE + hash(x, y, 51) * TILE] }, { cast: false });
       }
     }
   }
-  if (tufts.length) {
-    const tg = new THREE.PlaneGeometry(1, 1);
-    tg.translate(0, 0.5, 0);
-    const tg2 = tg.clone().rotateY(Math.PI / 2);
-    const tuft = mergeTwo(tg, tg2);
-    const inst = new THREE.InstancedMesh(tuft, grassMat, tufts.length);
+  weeds.forEach((list, kk) => {
+    if (!list.length) return;
+    const inst = new THREE.InstancedMesh(weedKinds[kk], weedMat, list.length);
     const m = new THREE.Matrix4();
-    tufts.forEach(([x, z, s, a], i) => {
-      m.compose(new THREE.Vector3(x, 0, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), a), new THREE.Vector3(s * 1.4, s, s * 1.4));
+    list.forEach(([x, z, sc, a], i) => {
+      m.compose(new THREE.Vector3(x, 0, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), a), new THREE.Vector3(sc, sc, sc));
       inst.setMatrixAt(i, m);
     });
     inst.receiveShadow = true;
+    inst.castShadow = false;
     group.add(inst);
-    disposables.push(tuft);
-  }
+  });
+  disposables.push(...weedKinds);
 
   // ---------------------------------------------------------------- torches & braziers
   // Choose torch spots on faces that look onto the fight, spread apart.
@@ -1488,29 +1522,73 @@ function rugMaterial(k) {
   return _rugs[k];
 }
 
-let _grassTex = null;
-function makeGrassMaterial() {
-  if (!_grassTex) {
-    const c = document.createElement('canvas');
-    c.width = 128;
-    c.height = 128;
-    const g = c.getContext('2d');
-    for (let i = 0; i < 38; i++) {
-      const x = 10 + hash(i, 1, 3) * 108;
-      const h = 50 + hash(i, 2, 3) * 70;
-      const bend = (hash(i, 3, 3) - 0.5) * 40;
-      const gg = 90 + hash(i, 4, 3) * 80;
-      g.strokeStyle = `rgb(${gg * 0.55 | 0},${gg | 0},${gg * 0.35 | 0})`;
-      g.lineWidth = 2 + hash(i, 5, 3) * 2;
-      g.beginPath();
-      g.moveTo(x, 128);
-      g.quadraticCurveTo(x + bend * 0.3, 128 - h * 0.6, x + bend, 128 - h);
-      g.stroke();
+/** Small vertex-coloured weed clumps (blades / rosettes / dry stalks / clover). */
+function weedGeo(kind, seed) {
+  const P = [];
+  const C = [];
+  const r = (i, k) => hash(i, k, seed * 31);
+  const tri = (a, b, c, ca, cb, cc) => {
+    P.push(...a, ...b, ...c);
+    C.push(...ca, ...cb, ...cc);
+  };
+  const col = (h, s2, v) => new THREE.Color().setHSL(h, s2, v);
+  if (kind === 'grass' || kind === 'dry') {
+    const n = kind === 'dry' ? 9 : 16;
+    for (let i = 0; i < n; i++) {
+      const a = r(i, 1) * Math.PI * 2;
+      const lean = 0.15 + r(i, 2) * 0.5;
+      const h = (kind === 'dry' ? 0.22 : 0.12) + r(i, 3) * (kind === 'dry' ? 0.22 : 0.16);
+      const w = 0.012 + r(i, 4) * 0.012;
+      const bx = Math.cos(a) * r(i, 5) * 0.05;
+      const bz = Math.sin(a) * r(i, 5) * 0.05;
+      const tx = bx + Math.cos(a) * lean * h;
+      const tz = bz + Math.sin(a) * lean * h;
+      const px = -Math.sin(a) * w;
+      const pz = Math.cos(a) * w;
+      const base = kind === 'dry' ? col(0.09, 0.35, 0.18) : col(0.22 + r(i, 6) * 0.05, 0.5, 0.12);
+      const tip = kind === 'dry' ? col(0.11, 0.4, 0.45 + r(i, 7) * 0.15) : col(0.17 + r(i, 6) * 0.08, 0.55, 0.32 + r(i, 7) * 0.12);
+      tri([bx - px, 0, bz - pz], [bx + px, 0, bz + pz], [tx, h, tz], base.toArray(), base.toArray(), tip.toArray());
     }
-    _grassTex = new THREE.CanvasTexture(c);
-    _grassTex.colorSpace = THREE.SRGBColorSpace;
+  } else {
+    const n = kind === 'clover' ? 10 : 7;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + r(i, 1) * 0.4;
+      const len = kind === 'clover' ? 0.05 + r(i, 2) * 0.03 : 0.09 + r(i, 2) * 0.06;
+      const wd = kind === 'clover' ? 0.03 : 0.025;
+      const up = kind === 'clover' ? 0.04 + r(i, 3) * 0.03 : 0.02 + r(i, 3) * 0.04;
+      const ca = Math.cos(a);
+      const sa = Math.sin(a);
+      const o = kind === 'clover' ? 0.02 + r(i, 4) * 0.05 : 0;
+      const b = [ca * o, up * 0.3, sa * o];
+      const m1 = [ca * (o + len * 0.5) - sa * wd, up, sa * (o + len * 0.5) + ca * wd];
+      const m2 = [ca * (o + len * 0.5) + sa * wd, up, sa * (o + len * 0.5) - ca * wd];
+      const t = [ca * (o + len), up * 0.7, sa * (o + len)];
+      const c0 = col(kind === 'clover' ? 0.3 : 0.24, 0.45, 0.13).toArray();
+      const c1 = col(kind === 'clover' ? 0.3 : 0.2, 0.5, 0.26 + r(i, 5) * 0.08).toArray();
+      tri(b, m1, t, c0, c1, c1);
+      tri(b, t, m2, c0, c1, c1);
+    }
+    if (kind === 'rosette') {
+      // A dandelion-yellow flower head.
+      const y = 0.14;
+      for (let k = 0; k < 5; k++) {
+        const a = (k / 5) * Math.PI * 2;
+        tri([0, 0.02, 0], [Math.cos(a) * 0.006, y, Math.sin(a) * 0.006], [Math.cos(a + 1.2) * 0.006, y, Math.sin(a + 1.2) * 0.006], col(0.25, 0.4, 0.15).toArray(), col(0.25, 0.4, 0.2).toArray(), col(0.25, 0.4, 0.2).toArray());
+        tri([0, y, 0], [Math.cos(a) * 0.022, y + 0.004, Math.sin(a) * 0.022], [Math.cos(a + 0.6) * 0.022, y + 0.004, Math.sin(a + 0.6) * 0.022], col(0.13, 0.85, 0.5).toArray(), col(0.14, 0.9, 0.55).toArray(), col(0.14, 0.9, 0.55).toArray());
+      }
+    }
   }
-  return new THREE.MeshStandardMaterial({ map: _grassTex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.9, color: 0xa8b088 });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
+  g.computeVertexNormals();
+  // Light from above: bias normals upward so double-sided blades don't go black.
+  const nrm = g.attributes.normal;
+  for (let i = 0; i < nrm.count; i++) {
+    const v = new THREE.Vector3(nrm.getX(i), Math.abs(nrm.getY(i)) + 0.8, nrm.getZ(i)).normalize();
+    nrm.setXYZ(i, v.x, v.y, v.z);
+  }
+  return g;
 }
 
 function barrelGeo() {

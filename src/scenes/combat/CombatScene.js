@@ -51,7 +51,7 @@ export default class CombatScene extends Scene {
 
     performance.mark?.('combat:enter');
     // Shared procedural textures generate in parallel workers while we build.
-    const texReady = Promise.resolve(TexLib.preloadTextureSets?.(['floor_cobble', 'floor_rubble', 'floor_flag', 'wall_stone', 'wall_timber', 'wall_ruin', 'door_wood'])).catch(() => {});
+    const texReady = Promise.resolve(TexLib.preloadTextureSets?.(['hd_cobble', 'floor_rubble', 'hd_flags', 'wall_stone', 'wall_timber', 'wall_ruin', 'door_wood'])).catch(() => {});
 
     // ------------------------------------------------ where are we?
     const loc = this._location(params);
@@ -159,7 +159,8 @@ export default class CombatScene extends Scene {
       if (model.eyesColor != null && fig.b.head && c.side === 'monster') {
         const glow = new THREE.Sprite(this._eyeMat?.[model.eyesColor] ?? ((this._eyeMat ??= {})[model.eyesColor] = new THREE.SpriteMaterial({ map: getGlowTexture(), color: model.eyesColor, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: this.night ? 0.95 : 0.3 })));
         glow.scale.setScalar((this.night ? 0.24 : 0.14) * (model.scale ?? 1));
-        glow.position.set(0, model.rig === 'biped' ? 0.11 * (model.scale ?? 1) : 0.04, model.rig === 'biped' ? 0.12 * (model.scale ?? 1) : 0.12);
+        if (model.eyeAt) glow.position.set(0, model.eyeAt[1], model.eyeAt[2] + 0.01);
+        else glow.position.set(0, model.rig === 'biped' ? 0.11 * (model.scale ?? 1) : 0.04, model.rig === 'biped' ? 0.12 * (model.scale ?? 1) : 0.12);
         fig.b.head.add(glow);
         fig.eyeGlow = glow;
       }
@@ -196,12 +197,14 @@ export default class CombatScene extends Scene {
     this.cam = { yaw: 0.32, pitch: 0.74, dist: Math.max(W * 0.95, H * 1.35) + 4, target: this.center.clone(), goalTarget: this.center.clone(), goalYaw: 0.32, goalDist: 0, goalPitch: 0.74 };
     this.cam.maxDist = this.cam.dist * 1.2;
     this.cam.minDist = 8;
-    this._frameCombatants(true);
+    this._frameCombatants(true, null, false, true);
     if (!this.demo) {
       this._chooseYaw();
-      this._frameCombatants(true);
+      this._frameCombatants(true, null, false, true);
     }
-    this.post = { bloomStrength: this.night ? 0.75 : 0.42, bloomThreshold: this.night ? 0.72 : 0.85, bloomRadius: 0.55, vignette: this.night ? 0.5 : 0.36, exposure: this.night ? 1.12 : 1.0, contrast: 1.06, saturation: this.night ? 0.98 : 1.06 };
+    // Bloom only on true emitters: a high threshold and a capped strength so lit
+    // windows, the fireball core and holy light never flood to white.
+    this.post = { bloomStrength: this.night ? 0.55 : 0.38, bloomThreshold: this.night ? 0.84 : 0.9, bloomRadius: 0.55, vignette: this.night ? 0.5 : 0.36, exposure: this.night ? 1.12 : 1.0, contrast: 1.06, saturation: this.night ? 0.98 : 1.06 };
     this._updateCamera(0, true);
 
     // ------------------------------------------------ input
@@ -282,6 +285,21 @@ export default class CombatScene extends Scene {
     let start = [pc.x, pc.y];
     if (!f.isFree(...start)) start = bfs(pc.x, pc.y, 1)[0] ?? [1, 1];
     const notRim = (x, y) => !f.exitMask[f.idx(x, y)];
+    // Start the party on the most open square near its cell (not wedged
+    // against a column or wall), so the formation shares one open floor.
+    {
+      const open = (x, y) => {
+        let n = 0;
+        for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (f.inBounds(x + dx, y + dy) && f.isFree(x + dx, y + dy)) n++;
+        return n;
+      };
+      let best = { sq: start, n: open(...start) - 0 };
+      for (const sq of bfs(start[0], start[1], 12, notRim)) {
+        const n = open(sq[0], sq[1]) - Math.hypot(sq[0] - start[0], sq[1] - start[1]) * 0.8;
+        if (n > best.n + 0.5) best = { sq, n };
+      }
+      start = best.sq;
+    }
     const partySq = bfs(start[0], start[1], this.party.length, notRim);
     this.party.forEach((c, i) => {
       [c.x, c.y] = partySq[i] ?? [0, 0];
@@ -295,9 +313,13 @@ export default class CombatScene extends Scene {
       for (let x = 0; x < f.w; x++) {
         const c = fl.cost[f.idx(x, y)];
         if (!Number.isFinite(c) || !f.isFree(x, y) || !notRim(x, y)) continue;
-        const openN = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => f.isFree(x + dx, y + dy)).length;
+        let openN = 0;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if ((dx || dy) && f.isFree(x + dx, y + dy)) openN++;
         const straight = Math.max(Math.abs(x - start[0]), Math.abs(y - start[1]));
-        cands.push({ x, y, score: -Math.abs(c - 6.5) - Math.max(0, straight - 6) * 1.5 - Math.max(0, c - straight - 3) * 1.2 + openN * 0.4 + ((x * 7 + y * 13) % 5) * 0.05 });
+        // A readable standoff: ~5 squares of open ground between the sides, in
+        // plain sight of each other (never round a corner or behind a wall).
+        const sight = f.los(x, y, start[0], start[1]) ? 0 : 6;
+        cands.push({ x, y, score: -Math.abs(c - 4.5) * 1.2 - Math.max(0, straight - 5) * 1.5 - Math.max(0, c - straight - 1.5) * 1.5 - sight + openN * 0.35 + ((x * 7 + y * 13) % 5) * 0.05 });
       }
     }
     cands.sort((a, b) => b.score - a.score);
@@ -382,7 +404,7 @@ export default class CombatScene extends Scene {
       const fig = this.figures.get(c.id);
       return c.side === 'party'
         ? `p|${c.ref.id}|${c.ref.race}|${c.ref.inventory.filter((e) => e.equipped).map((e) => e.id).join(',')}|${this.night ? 1 : 0}`
-        : `m|${c.monsterId}|${fig.model.kit?.helm ?? ''}|${fig.model.weapon ?? ''}|${this.night ? 1 : 0}`;
+        : `m|${c.monsterId}|${fig.model.kit?.helm ?? ''}|${this.night ? 1 : 0}`;
     };
     for (const c of [...this.party, ...this.monsters]) {
       // Same species + kit (or the same hero) → reuse the portrait (also across fights).
@@ -410,6 +432,7 @@ export default class CombatScene extends Scene {
       r.setRenderTarget(rt);
       r.clear();
       r.render(s, cam);
+      performance.mark?.(`portrait:${pk}`);
       r.readRenderTargetPixels(rt, 0, 0, W, Hh, buf);
       const img = g.createImageData(W, Hh);
       for (let y = 0; y < Hh; y++) {
@@ -481,14 +504,18 @@ export default class CombatScene extends Scene {
    * animate (software GL) — results resolve immediately instead of dragging on.
    */
   get snap() {
-    return this.frozen || (this.quickAll && (this._slowFrames ?? 0) >= 3);
+    // Frozen clock; QUICK on hardware too slow to animate; and monster turns on
+    // hardware that manages only a couple of frames a second (software GL).
+    const slow = (this._slowFrames ?? 0) >= 3;
+    return this.frozen || (this.quickAll && slow) || (this._aiActing && slow && (this._frameMs ?? 0) > 450);
   }
 
   get speed() {
     // On hardware that can't hold a frame rate (software GL) playback runs faster
-    // so monster turns stay snappy in wall-clock time.
+    // so monster turns stay snappy in wall-clock time; monsters always move
+    // briskly (the player watches, not plays, their turns).
     const slow = (this._slowFrames ?? 0) >= 3 ? 2.2 : 1;
-    return SPEEDS[this.speedIdx][0] * (this.quickAll ? 1.8 : 1) * slow;
+    return SPEEDS[this.speedIdx][0] * (this.quickAll ? 1.8 : 1) * (this._aiActing ? 1.6 : 1) * slow;
   }
 
   // =================================================================== director
@@ -528,10 +555,15 @@ export default class CombatScene extends Scene {
     this._refresh(c);
     this._focus(c);
     const auto = c.side === 'monster' || c.quick || this.quickAll || c.charmed;
-    if (!auto && !this.snap) this.hud.showBanner(`${c.name}`, 'Your move', this.time, 1.1);
+    if (!auto && !this.snap) this.hud.showBanner(`${c.name}`, 'Your move', this.time, 0.8);
     if (auto) {
-      await this.wait(0.25 / this.speed);
-      await this._aiTurn(c);
+      this._aiActing = true;
+      try {
+        await this.wait(0.12 / this.speed);
+        await this._aiTurn(c);
+      } finally {
+        this._aiActing = false;
+      }
     } else {
       await this._playerTurn(c);
     }
@@ -555,7 +587,7 @@ export default class CombatScene extends Scene {
     } else if (plan.kind === 'move' && c.attacksLeft > 0) {
       // Moved but nothing in reach: end.
     }
-    await this.wait(0.15 / this.speed);
+    await this.wait(0.08 / this.speed);
   }
 
   // =================================================================== player turn
@@ -572,7 +604,23 @@ export default class CombatScene extends Scene {
       this._enterMode('move');
       this._signalIdle?.();
       // Demo/debug: preview a path to a hovered square.
-      if (this.params.hover) {
+      if (this.params.hover === 'auto') {
+        // Gallery: preview the advance toward the nearest foe (path + card).
+        const foes = this.engine.enemiesOf(c).filter((o) => !this.engine.out(o));
+        let best = null;
+        for (let i = 0; i < this.field.w * this.field.h; i++) {
+          const cost = this.flood?.cost[i];
+          if (!Number.isFinite(cost) || cost <= 0 || cost > c.mp + 1e-6) continue;
+          const x = i % this.field.w;
+          const y = (i / this.field.w) | 0;
+          if (this.engine.occupantAt(x, y)) continue;
+          const d = Math.min(...foes.map((o) => Battlefield.dist(x, y, o.x, o.y)));
+          if (d < 2) continue;
+          const sc = cost - d * 0.6;
+          if (!best || sc > best.sc) best = { x, y, sc };
+        }
+        if (best) this._hoverSquare({ x: best.x, y: best.y });
+      } else if (this.params.hover) {
         const [hx, hy] = String(this.params.hover).split(',').map(Number);
         this._hoverSquare({ x: hx, y: hy });
       }
@@ -622,6 +670,7 @@ export default class CombatScene extends Scene {
       this.overlay.setTemplate([], targets.map((e) => ({ x: e.x, y: e.y })));
       this.hud.setPrompt(c.attacksLeft > 0 ? 'Move, or click a foe to attack' : 'Move or end your turn');
     } else if (mode === 'aim') {
+      this.hud.hideBanner();
       this.overlay.setRange(null, 0);
       const targets = this.engine.enemiesOf(c).filter((e) => this.engine.canAttack(c, e).ok);
       this.overlay.setTemplate([], targets.map((e) => ({ x: e.x, y: e.y })));
@@ -632,6 +681,7 @@ export default class CombatScene extends Scene {
       this.hud.setPrompt('Aim: choose a target — Enter to attack, Tab to cycle');
       this._hoverSquare(this.cursor);
     } else if (mode === 'target') {
+      this.hud.hideBanner();
       this.overlay.setRange(null, 0);
       this.cursor = data.start ?? { x: c.x, y: c.y };
       const t = SPELL_TACTICS[data.spell];
@@ -1091,9 +1141,9 @@ export default class CombatScene extends Scene {
         if (this.field.exitMask[i]) content.push(h('div.note', ['Edge of the battle — step off to flee']));
       } else {
         this.overlay.setPath(null, null);
-        if (this.field.block[i] === 1) content.push(h('div.s', ['Building']));
-        else if (this.field.block[i] === 2) content.push(h('div.s', ['Obstacle']));
-        else if (sq.x !== c.x || sq.y !== c.y) { content.push(h('div.s', ['Out of reach this turn'])); bad = true; }
+        if (this.field.block[i]) {
+          // Walls / props: no card (a lingering label over buildings is noise).
+        } else if (sq.x !== c.x || sq.y !== c.y) { content.push(h('div.s', ['Out of reach this turn'])); bad = true; }
         if (sq.x === c.x && sq.y === c.y && this.field.exitMask[i]) content.push(h('div.note', ['Press an arrow toward the edge to flee']));
       }
     }
@@ -1124,7 +1174,8 @@ export default class CombatScene extends Scene {
     } else this.overlay.setRay(null, null);
     if (this.mode === 'aim' && myTurn && !occ) content.push(h('div.s', ['No target here']));
     this.overlay.setHover(sq, bad);
-    this.hud.showInspect(content.length ? content : null, pos.x, pos.y);
+    // Keyboard / scripted cursor: anchor the card to the square in the world.
+    this.hud.showInspect(content.length ? content : null, pos.x, pos.y, this.mouseClient ? null : sq2w(sq.x, sq.y).setY(occ ? 1.2 : 0.3));
   }
 
   /** What the active spell does, for the targeting card: a headline number + terse lines. */
@@ -1303,7 +1354,7 @@ export default class CombatScene extends Scene {
         case 'round':
           this._refresh(e.active());
           if (ev.round > 1) {
-            this.hud.showBanner(`Round ${ev.round}`, null, this.time, 1.0);
+            this.hud.showBanner(`Round ${ev.round}`, null, this.time, 0.8);
             this.ctx.ui.message(`— Round ${ev.round} —`, 'system');
           }
           break;
@@ -1434,9 +1485,19 @@ export default class CombatScene extends Scene {
   }
 
   /** Where a death floater sits: just above the victim's body, not the sky. */
-  _killPos(fig) {
+  _killPos(fig, from = null) {
+    // Where the body comes to rest: half a body-length away from the killer.
     const p = fig.root.position.clone();
-    p.y += fig.model.height * 0.4;
+    if (from) {
+      const dx = p.x - from.x;
+      const dz = p.z - from.z;
+      const l = Math.hypot(dx, dz);
+      if (l > 1e-3) {
+        p.x += (dx / l) * fig.model.height * 0.45;
+        p.z += (dz / l) * fig.model.height * 0.45;
+      }
+    }
+    p.y = 0.35;
     return p;
   }
 
@@ -1494,15 +1555,14 @@ export default class CombatScene extends Scene {
       return;
     }
     if (ev.hit) {
-      fd.play('hit', t, 0.5 / this.speed, { power: ev.crit ? 1.6 : ev.dmg > 5 ? 1.2 : 0.9 });
+      fd.play('hit', t, 0.62 / Math.sqrt(this.speed), { power: ev.crit ? 1.6 : ev.dmg > 5 ? 1.25 : 0.95 });
       const bone = def.monsterId === 'skeleton';
       this.vfx.hitSparks(t, at, { crit: ev.crit, seed: this._seed(), bone, blood: !bone });
       this.hud.float(String(ev.dmg), ev.crit ? 'crit' : 'dmg', this._head(fd), t, { cls: def.side === 'party' ? 'party' : '', dx: (Math.sin(t * 13) * 0.5) });
       this.ctx.audio.sfx('hit');
-      if (ev.crit || ev.killed || ev.dmg >= 6) {
-        this.vfx.addShake(t, ev.crit ? 0.18 : 0.1, 0.3);
-        this.hitStop = ev.crit || ev.killed ? 0.09 : 0.05;
-      }
+      // Every connecting blow gets a beat of hit-stop; heavy ones shake the camera.
+      this.hitStop = ev.crit || ev.killed ? 0.09 : ev.ranged ? 0.03 : 0.045;
+      if (ev.crit || ev.killed || ev.dmg >= 6) this.vfx.addShake(t, ev.crit ? 0.18 : 0.1, 0.3);
     } else {
       fd.play('hit', t, 0.35 / this.speed, { power: 0.25 });
       this.hud.float(ev.image ? 'Image!' : 'Miss', 'miss', this._head(fd), t);
@@ -1544,8 +1604,8 @@ export default class CombatScene extends Scene {
       fig.die(this.time - 10, from.x, from.z, { holy: ev.holy });
     } else {
       fig.die(this.time, from.x, from.z, { holy: ev.holy });
-      this.vfx.dust(this.time + 0.45, fig.root.position.clone(), { seed: this._seed(), big: c.size === 'L' });
-      this.hud.float(c.side === 'party' ? (c.ref.status === 'dead' ? 'Killed' : 'Down') : 'Slain', 'kill', this._killPos(fig), this.time + 0.15, { rise: 0.25 });
+      this.vfx.dust(this.time + 0.45, this._killPos(fig, from).setY(0), { seed: this._seed(), big: c.size === 'L', night: this.night });
+      this.hud.float(c.side === 'party' ? (c.ref.status === 'dead' ? 'Killed' : 'Down') : 'Slain', 'kill', this._killPos(fig, from), this.time + 0.15, { rise: 0.25, solo: c.side === 'party' });
     }
     this.overlay.teamRing(c.id, c.side).visible = false;
     fig.blob.visible = false;
@@ -1615,8 +1675,11 @@ export default class CombatScene extends Scene {
       const f2 = this.figures.get(hh.id);
       if (!f2) continue;
       if (hh.dmg) {
-        f2.play('hit', this.time, 0.5 / sp, { power: 1.3 });
-        this.hud.float(String(hh.dmg), 'dmg', this._head(f2), this.time + (hh.saved ? 0.05 : 0), { cls: e.byId(hh.id).side === 'party' ? 'party' : '' });
+        f2.play('hit', this.time, 0.6 / Math.sqrt(sp), { power: 1.3 });
+        // Area blasts: lift the numbers clear of the fire and stagger them.
+        const area = tact.shape !== 'single';
+        const k = (ev.hits ?? []).indexOf(hh);
+        this.hud.float(String(hh.dmg), 'dmg', this._head(f2).add(new THREE.Vector3(0, area ? 0.9 + (k % 3) * 0.35 : 0, 0)), this.time + (hh.saved ? 0.05 : 0) + (area ? 0.12 + k * 0.07 : 0), { cls: e.byId(hh.id).side === 'party' ? 'party' : '' });
         if (tact.vfx === 'missile') this.vfx.hitSparks(this.time, this._head(f2).add(new THREE.Vector3(0, -0.5, 0)), { blood: false, seed: this._seed() });
       }
       if (hh.heal) {
@@ -1651,7 +1714,7 @@ export default class CombatScene extends Scene {
    * that faces, weapons and silhouettes read (≈90-140 px figures at 1600x900).
    * When the fight is spread out the frame favours the actor over the far foes.
    */
-  _frameCombatants(snap = false, focus = null, soft = false) {
+  _frameCombatants(snap = false, focus = null, soft = false, all = false) {
     const e = this.engine;
     const live = e.all.filter((c) => !e.out(c));
     if (!live.length) return;
@@ -1662,8 +1725,11 @@ export default class CombatScene extends Scene {
     if (!near.length && foes[0]) near.push(foes[0]);
     const allies = live.filter((o) => o !== act && o.side === act.side && d(o, act) <= 2.5);
     const MIN = 10.5;
-    const MAX = 21;
-    let fit = this._fitBox([act, ...near, ...allies]);
+    // Keep the whole fight in view when it fits (a stable tactical camera);
+    // otherwise frame the actor, its likely targets and its neighbours.
+    const MAX = all ? 21.5 : 18.5;
+    let fit = this._fitBox(live);
+    if (fit.need > MAX) fit = this._fitBox([act, ...near, ...allies]);
     // Too spread out: keep the actor and its nearest foe (and its neighbours) only.
     if (fit.need > MAX && near.length > 1) fit = this._fitBox([act, near[0], ...allies.filter((o) => d(o, act) <= 1.5)]);
     let { cx, cz, need } = fit;
@@ -1740,7 +1806,20 @@ export default class CombatScene extends Scene {
       const pos = this.cam.goalTarget.clone().add(off);
       // Prefer a bearing that lays the two sides out across the (wide) screen.
       const along = sep ? Math.abs(sep.x * Math.sin(yaw) + sep.z * Math.cos(yaw)) : 0;
-      const n = this.diorama.occluders(pos, pts) * (around ? 3 : 1) + (around ? 0 : Math.abs(yaw - 0.32) * 2) + along * 14;
+      let crowd = 0;
+      if (around) {
+        // Close-ups: don't shoot over the shoulders of bystanders (they'd fill the foreground).
+        const mid = sq2w((around[0].x + around[1].x) / 2, (around[0].y + around[1].y) / 2);
+        const toCam = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+        for (const c of live) {
+          if (around.includes(c)) continue;
+          const d = sq2w(c.x, c.y).sub(mid);
+          const ahead = d.dot(toCam);
+          const lateral = Math.abs(d.x * toCam.z - d.z * toCam.x);
+          if (ahead > 0.5 && ahead < 9 && lateral < 4) crowd += 1.5;
+        }
+      }
+      const n = this.diorama.occluders(pos, pts) * (around ? 3 : 1) + (around ? 0 : Math.abs(yaw - 0.32) * 2) + along * 14 + crowd;
       if (!best || n < best.n) best = { n, yaw };
     }
     this.cam.yaw = this.cam.goalYaw = best.yaw;
@@ -1894,9 +1973,14 @@ export default class CombatScene extends Scene {
       this.hitStop -= dt;
       scale = 0.12;
     }
-    // Low frame rates (e.g. software GL) clamp dt; let combat keep a lively pace.
-    const catchUp = dt >= 0.099 ? 1.6 : 1;
-    if (!this.frozen) this.time += dt * scale * catchUp;
+    // Low frame rates (e.g. software GL) clamp dt to 0.1 s; pace combat by the
+    // real frame time instead (capped), so playback keeps wall-clock speed.
+    // (performance.now() only measures hardware pacing here, never drives a pose.)
+    const nowMs = performance.now();
+    this._frameMs = this._lastMs ? nowMs - this._lastMs : 16;
+    this._lastMs = nowMs;
+    const realDt = dt >= 0.099 ? Math.min(0.6, this._frameMs / 1000) : dt;
+    if (!this.frozen) this.time += realDt * scale;
     else this.time = this.ctx.clock.time;
     const t = this.time;
     this._runTimed();
@@ -1948,6 +2032,8 @@ export default class CombatScene extends Scene {
       }
     }
     if (winner === 'party') {
+      // Let the last death and its VFX settle before the fanfare.
+      if (!this.snap) await this.wait(Math.max(0.9, this.vfx.busyUntil?.(this.time) ?? 0));
       for (const c of this.party) if (!this.engine.out(c)) this.figures.get(c.id).play('cheer', this.time, 1.4);
       this.hud.showBanner('Victory', this.encounter.name, this.time, 2.2);
       await this.wait(1.4);
