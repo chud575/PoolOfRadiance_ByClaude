@@ -362,6 +362,11 @@ function pattern(m, u, v, tu, tv, wp, out) {
   let dv = 0;
   switch (m.pattern) {
     case 'scales': {
+      // domain warp so the rows wander like real hide, not basketwork
+      const wu = (vnoise(u / (s * 6), v / (s * 6)) - 0.5) * s * 1.6;
+      const wv = (vnoise(u / (s * 6) + 9, v / (s * 6) + 4) - 0.5) * s * 1.6;
+      u += wu;
+      v += wv;
       const row = Math.floor(u / (s * 0.8));
       const fu = u / (s * 0.8) - row;
       const vv = v / s + (row & 1) * 0.5;
@@ -374,7 +379,7 @@ function pattern(m, u, v, tu, tv, wp, out) {
       du = -fu * 0.9 * 0.55;
       dv = -cv * 0.55;
       const rnd = hash2(row, col);
-      k = (0.88 + rnd * 0.18) * (1 - edge * 0.26);
+      k = (0.9 + rnd * 0.14) * (1 - edge * 0.2) * (0.82 + fbm(u / (s * 9), v / (s * 9), 2) * 0.36);
       out.edge = edge;
       if (m.tint2) out.t2 = Math.max(0, Math.min(1, (rnd - 0.55) * 2.5));
       break;
@@ -743,7 +748,7 @@ export function renderFigure(fig, o = {}) {
       const sh = shadowAt ? shadowAt([VT[0] * x + VT[1] * y + VT[2] * z, VT[3] * x + VT[4] * y + VT[5] * z, VT[6] * x + VT[7] * y + VT[8] * z]) : 1;
       // AO
       const zavg = cs[idx] > 0 ? zs[idx] / cs[idx] : z;
-      const occ = Math.max(0, zavg - z) * 9 + (1 - cs[idx] / ((aoR * 2 + 1) ** 2)) * 0.1;
+      const occ = Math.max(0, zavg - z) * 6 + (1 - cs[idx] / ((aoR * 2 + 1) ** 2)) * 0.1;
       const ao = Math.max(0.35, 1 - occ);
       // ground contact darkening & height gradient (Darkest-Dungeon style)
       const hgt = Math.max(0, Math.min(1, (yFeet - py) / Math.max(1, figH)));

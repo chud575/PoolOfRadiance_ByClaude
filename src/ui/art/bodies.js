@@ -40,7 +40,7 @@ const eyeMat = (c) => mat('#000000', { emissive: c, ink: 0, rough: 0.2, spec: 0.
  * headR: head radius; build: girth; arm: arm length factor.
  */
 export const SPECIES = {
-  kobold: { head: 'kobold', skin: '#8a4a2a', skin2: '#c87a3a', pattern: 'scales', legs: 0.4, torso: 0.3, headR: 0.085, build: 0.8, digi: true, tail: 0.42, hunch: 0.22, cloth: ['#4a3a28', '#5a2a1a', '#3a3424', '#6a5a3a'], weapons: ['spear', 'spear', 'spear', 'shortsword', 'club', 'axe'], shield: 0.25, helm: 0.3, eyes: '#ffb020', claws: true },
+  kobold: { head: 'kobold', skin: '#8a4a2a', skin2: '#4a3428', skin3: '#a8783a', pattern: 'scales', legs: 0.4, torso: 0.3, headR: 0.085, build: 0.8, digi: true, tail: 0.42, hunch: 0.22, cloth: ['#4a3a28', '#5a2a1a', '#3a3424', '#6a5a3a'], weapons: ['spear', 'spear', 'spear', 'shortsword', 'club', 'axe'], shield: 0.25, helm: 0.3, eyes: '#ffb020', claws: true },
   koboldChief: { head: 'kobold', skin: '#7a6a5a', skin2: '#a89070', pattern: 'scales', legs: 0.4, torso: 0.31, headR: 0.085, build: 0.92, digi: true, tail: 0.45, hunch: 0.18, cloth: ['#6a1e1a'], cape: '#5a1a14', weapons: ['longsword'], shield: 0, helm: 1, eyes: '#ffc030', claws: true, chief: true },
   goblin: { head: 'goblin', skin: '#7a8a3a', skin2: '#9aa04a', pattern: 'skin', legs: 0.42, torso: 0.3, headR: 0.09, build: 0.82, hunch: 0.15, cloth: ['#4a3020', '#3a3a28', '#5a2a1a'], weapons: ['shortsword', 'club', 'spear', 'axe'], shield: 0.35, helm: 0.3, eyes: '#ffe040' },
   orc: { head: 'orc', skin: '#5e6e44', skin2: '#4a5a34', pattern: 'skin', legs: 0.47, torso: 0.33, headR: 0.07, build: 1.18, hunch: 0.15, cloth: ['#3a2a1c', '#2a2218'], armor: 'scraps', weapons: ['axe', 'axe', 'mace', 'longsword', 'spear'], shield: 0.3, helm: 0.4, eyes: '#ff3a18' },
@@ -528,7 +528,10 @@ export function humanoid(f, sp, pose, R, gear) {
       const knee = ik(hipJ, ankle, thigh, shin, [d * 0.12, 0, 1]);
       limbSeg(f, hipJ, knee, legR * 1.2, legR * 0.85, legM, sk);
       limbSeg(f, knee, ankle, legR * 0.88, legR * 0.58, legM, sk);
-      if (gear.bootM && !sk) f.cone(lerpP(knee, ankle, 0.45), ankle, legR * 0.95, legR * 0.72, gear.bootM, { group: null });
+      if (gear.bootM && !sk) {
+        f.cone(lerpP(knee, ankle, 0.38), ankle, legR * 0.98, legR * 0.74, gear.bootM, { group: null });
+        if (gear.bootM !== gear.metalM) f.cone(lerpP(knee, ankle, 0.32), lerpP(knee, ankle, 0.42), legR * 1.12, legR * 1.06, gear.bootM, { group: null });
+      }
       footShape(f, ankle, [0, 0, 1], legR, gear, sp, d);
       if (plate) kneeCop(f, knee, gear);
     }
@@ -563,8 +566,11 @@ export function humanoid(f, sp, pose, R, gear) {
     f.box([0, 0.0, 0.07], [0.012, 0.06, 0.008], boneM, { group: 'body' });
     f.pop();
     f.cone(add(chest, ap3(TR, [-shW, 0.07, 0])), add(chest, ap3(TR, [shW, 0.07, 0])), 0.01, 0.01, boneM);
-    // tattered remnant of a tabard
-    if (gear.clothM) f.ell(add(pelvis, [0, -0.02, 0.01]), [0.08, 0.07, 0.05], gear.clothM, { group: null });
+    // tattered remnant of a loincloth hanging from the pelvis
+    if (gear.clothM) {
+      f.box(add(pelvis, [0, -0.07, 0.045]), [0.035, 0.07, 0.004], gear.clothM, { group: null, R: rotX(0.12), bevel: 0.003 });
+      f.ell(add(pelvis, [0, 0.005, 0]), [0.075, 0.012, 0.05], M.darkLeather, { group: null });
+    }
   } else {
     const belly = sp.belly ? 0.035 : 0;
     f.push(pelvis, TR, 1);
@@ -589,7 +595,11 @@ export function humanoid(f, sp, pose, R, gear) {
       f.ell([0, torso * 0.5, 0.008], [0.112 * b, torso * 0.52, 0.076 * b], am, { group: null });
       f.ell([0, -0.02, 0.01], [0.095 * b, 0.07, 0.07 * b], am, { group: null });
     } else if (gear.armor === 'vest' || gear.armor === 'scraps') {
-      f.ell([0, torso * 0.55, 0.006], [0.108 * b, torso * 0.42, 0.074 * b], gear.armor === 'vest' ? gear.vestM : M.leather, { group: null });
+      const vm = gear.armor === 'vest' ? gear.vestM : M.leather;
+      // a jerkin that follows the chest and nips in at the waist
+      f.ell([0, torso * 0.62, 0.003], [0.112 * b, torso * 0.29, 0.077 * b], vm, { group: 'vest', blend: 0.07 });
+      f.ell([0, torso * 0.32, 0.005], [0.093 * b, torso * 0.25, 0.07 * b], vm, { group: 'vest', blend: 0.07 });
+      for (let i = 0; i < 4; i++) f.sphere([0.014, torso * (0.22 + i * 0.13), 0.072 * b], 0.005, M.bronze, { group: null });
       if (gear.armor === 'scraps') {
         f.ell([-0.05 * b, torso * 0.62, 0.05], [0.06, 0.06, 0.03], gear.metalM, { group: null, R: rotZ(0.4) });
         f.cone([-0.1 * b, torso * 0.9, 0.03], [0.09 * b, torso * 0.25, 0.075], 0.012, 0.012, M.leather, { group: null });
@@ -619,6 +629,17 @@ export function humanoid(f, sp, pose, R, gear) {
       f.cone([Math.sin(a) * 0.05, torso * 0.86 - Math.cos(a) * 0.035, 0.05], [Math.sin(a) * 0.052, torso * 0.86 - Math.cos(a) * 0.035 - 0.02, 0.058], 0.006, 0.003, M.tooth, { group: null });
     }
     f.pop();
+    if (gear.skirtM && !robe) {
+      // tunic hem: a short flared skirt with folds over the thighs, and a pouch on the belt
+      const waist = add(pelvis, ap3(TR, [0, 0.0, 0]));
+      const hem = [pelvis[0] + sway * 0.3, hipH - 0.17, 0.004];
+      f.cone(waist, hem, 0.078 * b, 0.098 * b, gear.skirtM, { group: 'skirt', blend: 0.015 });
+      for (let i = 0; i < 7; i++) {
+        const a = -1.5 + i * 0.5;
+        f.cone(add(waist, [Math.sin(a) * 0.07 * b, -0.03, Math.cos(a) * 0.066 * b]), add(hem, [Math.sin(a) * 0.09 * b, 0.004, Math.cos(a) * 0.087 * b]), 0.007, 0.012, gear.skirtM, { group: 'skirt', blend: 0.015 });
+      }
+      f.box(add(pelvis, ap3(TR, [0.08 * b, 0.0, 0.04])), [0.022, 0.028, 0.012], M.leather, { group: null, R: TR, bevel: 0.008 });
+    }
     if (robe) {
       // robe skirt: a flared cone from the waist to the floor, with fold ridges
       const waist = add(pelvis, ap3(TR, [0, 0.02, 0]));
@@ -853,9 +874,10 @@ export function buildCreature(id, seed = 1, o = {}) {
   const R = rngOf(seed * 9301 + 49297);
   const f = new Figure();
   // tint variation: brightness and a nudge toward the secondary skin colour
-  const tint = (R() - 0.5) * 0.22;
-  const toward = R() * 0.45;
-  const base = mixc(sp.skin, sp.skin2 ?? sp.skin, toward);
+  const tint = (R() - 0.5) * 0.3;
+  const toward = R() * 0.7;
+  let base = mixc(sp.skin, sp.skin2 ?? sp.skin, toward);
+  if (sp.skin3 && R() < 0.35) base = mixc(base, sp.skin3, 0.5 + R() * 0.3);
   const skinC = shade(base, 1 + tint);
   const skinM = mat(skinC, { pattern: sp.pattern ?? 'skin', scale: sp.pattern === 'scales' ? 0.0105 : sp.pattern === 'fur' ? 0.012 : 0.02, rough: sp.pattern === 'scales' ? 0.45 : 0.7, spec: sp.pattern === 'scales' ? 0.35 : 0.15, sss: sp.skeletal ? 0.2 : 0.45, tint2: sp.pattern === 'scales' ? shade(sp.skin2 ?? sp.skin, 1.05) : null });
   const clothC = R.pick(sp.cloth ?? ['#4a3a28']);
@@ -880,11 +902,16 @@ export function buildCreature(id, seed = 1, o = {}) {
     bracerM: !sp.human && R() < 0.4 ? M.leather : null,
   };
   if (sp.human) {
-    gear.legM = mat(shade(clothC, 0.7), { pattern: 'cloth', scale: 0.02 });
+    // layered costume: linen shirt, leather jerkin, coloured hose and hem, dark boots
+    const shirtC = R.pick(['#b8a888', '#9a8a6a', '#c8bca4', '#7a6a58', '#a89878']);
+    const legC = R.pick(['#3a3a40', '#4a3a2a', '#2e3a2e', '#5a4a3a']);
+    gear.legM = mat(legC, { pattern: 'cloth', scale: 0.02 });
     gear.bootM = M.darkLeather;
-    gear.armM = mat(shade(clothC, 0.85), { pattern: 'cloth', scale: 0.02 });
-    gear.foreM = gear.armM;
-    gear.torsoM = mat(shade(clothC, 0.95), { pattern: 'cloth', scale: 0.02 });
+    gear.armM = mat(shirtC, { pattern: 'cloth', scale: 0.016 });
+    gear.foreM = R() < 0.4 ? skinM : gear.armM;
+    gear.torsoM = gear.armM;
+    gear.skirtM = mat(shade(clothC, 0.9), { pattern: 'cloth', scale: 0.016 });
+    gear.bracerM = gear.foreM === skinM ? M.leather : null;
     gear.headOpts = {
       hair: R.pick(['#17110e', '#3a2416', '#62351b', '#6f6a64']),
       hairStyle: R.pick(['short', 'short', 'bald', 'long']),
@@ -904,7 +931,7 @@ export function buildCreature(id, seed = 1, o = {}) {
   if (sp.armor === 'robe' && !sp.human) { gear.armM = clothM; gear.torsoM = clothM; }
   // pose
   const poses = POSES_BY_WEAPON[weaponK] ?? (sp.reach ? ['reach'] : ['guard']);
-  const weaponPose = o.pose ?? (o.leader && poses.includes('raised') ? 'raised' : R.pick(poses));
+  const weaponPose = o.pose ?? (o.leader ? (poses.includes('raised') ? 'raised' : poses.includes('spearReady') ? 'spearReady' : R.pick(poses)) : R.pick(poses));
   const offPose = gear.shield ? 'shield' : o.leader && weaponPose !== 'spearReady' ? 'point' : sp.claws && !weaponK ? 'claw' : R.pick(['fist', 'fist', 'hip', 'claw']);
   const pose = {
     weaponPose,
@@ -962,8 +989,9 @@ export function buildPerson(o) {
   if (body === 'chain' || body === 'scale') { gear.armor = body === 'chain' ? 'mail' : 'scale'; gear.armM = mat('#8a8c92', { pattern: 'mail', metal: true, scale: 0.05, rough: 0.5, spec: 0.6 }); gear.foreM = clothM; }
   if (body === 'leather') { gear.armor = 'vest'; gear.vestM = M.leather; }
   if (body === 'fur') { gear.armor = 'fur'; }
+  if (body === 'tabard' || body === 'leather' || body === 'chain' || body === 'scale') gear.skirtM = clothM;
   if (body === 'tabard') { gear.tunic = true; gear.tunicM = clothM; gear.torsoM = mat(shade(o.cloth ?? '#6a5234', 0.7), { pattern: 'cloth', scale: 0.02 }); }
-  if (o.apron) { gear.tunic = true; gear.tunicM = M.leather; gear.armM = skinM; gear.foreM = skinM; gear.sleeveM = clothM; gear.torsoM = clothM; }
+  if (o.apron) { gear.skirtM = M.leather; gear.tunic = true; gear.tunicM = M.leather; gear.armM = skinM; gear.foreM = skinM; gear.sleeveM = clothM; gear.torsoM = clothM; }
   if (o.vestments) { gear.cape = true; gear.capeM = mat(o.vestments, { pattern: 'cloth', scale: 0.02 }); }
   const P = {
     clerk: { weaponPose: 'clerk', lean: 0.1, headPitch: 0.1, headYaw: -0.1, crouch: 0 },
@@ -1028,4 +1056,183 @@ function solveHandsCustom(sp, pose, ctx) {
   }
   void gear;
   return hands;
+}
+
+// ------------------------------------------------------------------ beasts
+
+/** Non-humanoid plans built by buildBeast(). */
+export const BEASTS = {
+  giantRat: { plan: 'quad', fur: '#4a3a30', fur2: '#6a5444', eyes: '#ff3020', len: 1.0, height: 0.3, lowSlung: true, snout: 1.25, ears: 'round', tail: 'rat', bulk: 0.9 },
+  wolf: { plan: 'quad', fur: '#6a6660', fur2: '#8a8478', eyes: '#ffd040', len: 1.15, height: 0.55, snout: 1.1, ears: 'pointed', tail: 'bushy', bulk: 1 },
+  giantSpider: { plan: 'spider', skin: '#2a2420', skin2: '#5a3a1a', eyes: '#ff2020' },
+  giantFrog: { plan: 'frog', skin: '#6a8a4a', skin2: '#c8c890', eyes: '#ffe080' },
+  giantCentipede: { plan: 'centipede', skin: '#7a3a1a', skin2: '#c86a2a', eyes: '#ff4020' },
+  shadow: { plan: 'wraith', color: '#0a0a12', eyes: '#c8d0ff' },
+  spectre: { plan: 'wraith', color: '#9ab0c8', eyes: '#ffffff', ghost: true },
+};
+
+export function buildBeast(id, seed = 1, o = {}) {
+  const sp = BEASTS[id];
+  if (!sp) return null;
+  const R = rngOf(seed * 7907 + 31);
+  const f = new Figure();
+  const tint = 1 + (R() - 0.5) * 0.25;
+  if (sp.plan === 'quad') quadruped(f, sp, R, tint);
+  else if (sp.plan === 'spider') spider(f, sp, R, tint);
+  else if (sp.plan === 'frog') frog(f, sp, R, tint);
+  else if (sp.plan === 'centipede') centipede(f, sp, R, tint);
+  else if (sp.plan === 'wraith') wraith(f, sp, R);
+  f.top = f.top ?? 1;
+  return { fig: f, sp: { ...sp, ghost: !!sp.ghost, legs: 0.3 }, pose: {}, yaw: (R() < 0.5 ? -1 : 1) * (0.5 + R() * 0.5) };
+}
+
+function eyePair(f, x, y, z, r, c) {
+  for (const d of [-1, 1]) {
+    f.sphere([d * x, y, z], r, eyeMat(c), { group: null });
+    f.glow([d * x, y, z + r], r * 5, c, 0.8);
+  }
+}
+
+function quadruped(f, sp, R, tint) {
+  const fur = mat(shade(mixc(sp.fur, sp.fur2, R() * 0.6), tint), { pattern: 'fur', scale: 0.012, rough: 0.85, spec: 0.1 });
+  const L = sp.len * 0.5;
+  const Hh = sp.height;
+  const b = sp.bulk;
+  // the body points at the viewer (+z): hindquarters at -z
+  const chest = [0, Hh * 0.95, L * 0.45];
+  const hips = [0, Hh * 0.92, -L * 0.5];
+  f.ell(chest, [0.13 * b, 0.14 * b, 0.17 * b], fur, { group: 'body' });
+  f.ell([0, Hh * 0.9, 0], [0.12 * b, 0.12 * b, 0.25 * b], fur, { group: 'body' });
+  f.ell(hips, [0.12 * b, 0.13 * b, 0.15 * b], fur, { group: 'body' });
+  // legs: shoulder → elbow → paw, hip → hock → paw
+  const crouch = R() * 0.08;
+  for (const d of [-1, 1]) {
+    const fz = L * 0.55 + (d > 0 ? 0.04 : -0.02);
+    const sh = add(chest, [d * 0.08 * b, -0.05, 0.02]);
+    const paw = [d * 0.09 * b, 0.02, fz + (R() - 0.5) * 0.06];
+    const el = ik(sh, add(paw, [0, 0.03, 0]), Hh * 0.5, Hh * 0.5, [0, 0, -1]);
+    f.cone(sh, el, 0.05 * b, 0.032 * b, fur, { group: 'body' });
+    f.cone(el, add(paw, [0, 0.03, 0]), 0.03 * b, 0.022 * b, fur, { group: 'body' });
+    f.ell(add(paw, [0, 0.015, 0.02]), [0.03 * b, 0.016, 0.042 * b], fur, { group: null });
+    for (let t = -1; t <= 1; t++) f.cone(add(paw, [t * 0.012, 0.008, 0.055 * b]), add(paw, [t * 0.014, 0.0, 0.075 * b]), 0.006, 0.002, M.bone, { group: null });
+    const hp = add(hips, [d * 0.08 * b, -0.04, -0.02]);
+    const hpaw = [d * 0.1 * b, 0.02, -L * 0.6 + (R() - 0.5) * 0.05];
+    const hock = add(hpaw, [0, Hh * 0.3, -0.05]);
+    const knee = ik(hp, hock, Hh * 0.45, Hh * 0.4, [0, 0, 1]);
+    f.cone(hp, knee, 0.07 * b, 0.04 * b, fur, { group: 'body' });
+    f.cone(knee, hock, 0.035 * b, 0.025 * b, fur, { group: 'body' });
+    f.cone(hock, add(hpaw, [0, 0.02, 0]), 0.024 * b, 0.02 * b, fur, { group: 'body' });
+    f.ell(add(hpaw, [0, 0.012, 0.02]), [0.028 * b, 0.014, 0.04 * b], fur, { group: null });
+  }
+  // neck and head, lowered and snarling
+  const nb = add(chest, [0, 0.06, 0.1]);
+  const hp = add(chest, [(R() - 0.5) * 0.06, 0.06 - crouch, 0.24 * b]);
+  f.cone(nb, hp, 0.09 * b, 0.07 * b, fur, { group: 'body' });
+  f.push(hp, euler(0.2 + R() * 0.15, (R() - 0.5) * 0.5, (R() - 0.5) * 0.2), 0.075 * b);
+  f.ell([0, 0, 0], [1, 0.85, 1.05], fur, { group: 'head', blend: 0.08 });
+  f.cone([0, -0.15, 0.5], [0, -0.35, 0.5 + sp.snout * 1.1], 0.6, 0.28, fur, { group: 'head', blend: 0.08 });
+  f.cone([0, -0.55, 0.4], [0, -0.62, 0.4 + sp.snout * 0.95], 0.35, 0.18, fur, { group: 'head', blend: 0.06 });
+  f.cone([0, -0.42, 0.55], [0, -0.48, 0.45 + sp.snout * 0.95], 0.28, 0.14, M.mouth, { group: null });
+  f.sphere([0, -0.28, 0.55 + sp.snout * 1.12], 0.17, M.dark, { group: null });
+  for (let i = 0; i < 4; i++) for (const d of [-1, 1]) f.cone([d * 0.18, -0.38, 0.7 + i * 0.22 * sp.snout], [d * 0.17, -0.55, 0.72 + i * 0.22 * sp.snout], 0.06, 0.012, M.tooth, { group: null });
+  if (sp.ears === 'round') for (const d of [-1, 1]) f.ell([d * 0.65, 0.7, -0.2], [0.35, 0.38, 0.1], mat(shade(sp.fur2, 0.9), { rough: 0.6, sss: 0.7 }), { group: null, R: rotZ(d * -0.3) });
+  else for (const d of [-1, 1]) f.cone([d * 0.5, 0.6, -0.2], [d * 0.62, 1.4, -0.35], 0.28, 0.04, fur, { group: null });
+  eyePair(f, 0.42, 0.18, 0.75, 0.12, sp.eyes);
+  f.pop();
+  // tail
+  const tail = [hips];
+  const naked = sp.tail === 'rat';
+  const tm = naked ? mat('#c89a88', { pattern: 'skin', scale: 0.01, sss: 0.7 }) : fur;
+  let p = add(hips, [0, 0.03, -0.12 * b]);
+  tail.push(p);
+  const side = R() < 0.5 ? -1 : 1;
+  for (let i = 0; i < 7; i++) {
+    p = add(p, [side * 0.05 * Math.sin(i * 0.6 + 0.4), naked ? -0.03 + i * 0.002 : 0.02 - i * 0.012, -0.07]);
+    tail.push(p);
+  }
+  f.layer = 'tail';
+  for (let i = 1; i < tail.length - 1; i++) f.cone(tail[i], tail[i + 1], (naked ? 0.022 : 0.05) * (1 - i / tail.length) + 0.004, (naked ? 0.022 : 0.05) * (1 - (i + 1) / tail.length) + 0.003, tm, { group: 'tail' });
+  f.layer = 'main';
+  f.top = Hh * 1.25;
+}
+
+function spider(f, sp, R, tint) {
+  const chit = mat(shade(sp.skin, tint), { pattern: 'skin', scale: 0.03, rough: 0.35, spec: 0.6 });
+  const mark = mat(sp.skin2, { pattern: 'fur', scale: 0.01, rough: 0.7 });
+  const h = 0.32;
+  f.ell([0, h, -0.28], [0.26, 0.22, 0.3], chit, { group: 'b' });
+  f.ell([0, h + 0.12, -0.32], [0.12, 0.05, 0.2], mark, { group: null });
+  f.ell([0, h - 0.02, 0.06], [0.16, 0.12, 0.17], chit, { group: 'b' });
+  for (let i = 0; i < 4; i++) {
+    for (const d of [-1, 1]) {
+      const a = (-0.9 + i * 0.6);
+      const root = [d * 0.12, h, 0.06 + Math.cos(a) * 0.08];
+      const knee = [d * (0.3 + 0.05 * Math.cos(a)), h + 0.28 - i * 0.02, 0.06 + Math.sin(-a) * -0.28 + 0.1 * Math.cos(a)];
+      const tip = [d * (0.5 + 0.08 * Math.cos(a)), 0.01, 0.06 + Math.sin(-a) * -0.55];
+      f.cone(root, knee, 0.03, 0.022, chit, { group: null });
+      f.cone(knee, tip, 0.022, 0.006, chit, { group: null });
+      f.sphere(knee, 0.026, chit, { group: null });
+    }
+  }
+  for (const d of [-1, 1]) f.cone([d * 0.05, h - 0.06, 0.2], [d * 0.03, h - 0.16, 0.24], 0.03, 0.006, M.bone, { group: null });
+  for (const [x, y, r] of [[0.05, 0.05, 0.026], [0.1, 0.03, 0.02], [0.03, 0.09, 0.016], [0.08, 0.08, 0.014]]) for (const d of [-1, 1]) {
+    f.sphere([d * x, h + y, 0.2], r, eyeMat(sp.eyes), { group: null });
+    f.glow([d * x, h + y, 0.22], r * 3, sp.eyes, 0.6);
+  }
+  f.top = h + 0.3;
+}
+
+function frog(f, sp, R, tint) {
+  const skin = mat(shade(sp.skin, tint), { pattern: 'skin', scale: 0.015, rough: 0.45, spec: 0.4, sss: 0.5 });
+  const belly = mat(sp.skin2, { pattern: 'skin', scale: 0.02, rough: 0.3, spec: 0.5 });
+  f.ell([0, 0.2, -0.05], [0.24, 0.17, 0.28], skin, { group: 'b' });
+  f.ell([0, 0.16, 0.12], [0.2, 0.12, 0.16], belly, { group: 'b' });
+  f.ell([0, 0.3, 0.18], [0.2, 0.1, 0.16], skin, { group: 'b' });
+  f.ell([0, 0.24, 0.3], [0.2, 0.025, 0.06], M.mouth, { group: null });
+  for (const d of [-1, 1]) {
+    f.sphere([d * 0.12, 0.38, 0.2], 0.06, skin, { group: 'b' });
+    f.sphere([d * 0.13, 0.4, 0.24], 0.04, eyeMat(sp.eyes), { group: null });
+    f.glow([d * 0.13, 0.4, 0.27], 0.15, sp.eyes, 0.5);
+    f.ell([d * 0.28, 0.14, -0.1], [0.1, 0.12, 0.2], skin, { group: 'b' });
+    f.cone([d * 0.3, 0.06, -0.05], [d * 0.36, 0.01, 0.2], 0.04, 0.03, skin, { group: null });
+    f.ell([d * 0.37, 0.01, 0.24], [0.07, 0.012, 0.06], skin, { group: null });
+    f.cone([d * 0.14, 0.14, 0.2], [d * 0.18, 0.01, 0.3], 0.03, 0.022, skin, { group: null });
+  }
+  f.top = 0.48;
+}
+
+function centipede(f, sp, R, tint) {
+  const plate = mat(shade(sp.skin, tint), { pattern: 'skin', scale: 0.02, rough: 0.35, spec: 0.6 });
+  const legM = mat(sp.skin2, { rough: 0.5, spec: 0.4 });
+  let p = [0, 0.32, 0.18];
+  let a = 0;
+  for (let i = 0; i < 12; i++) {
+    const r = 0.06 - i * 0.002;
+    f.ell(p, [r * 1.3, r * 0.8, r], plate, { group: 'c', blend: 0.01 });
+    for (const d of [-1, 1]) f.cone(add(p, [d * r, -0.01, 0]), add(p, [d * (r + 0.08), Math.max(-p[1] + 0.005, -0.08), 0.02]), 0.008, 0.003, legM, { group: null });
+    a += (R() - 0.5) * 0.7;
+    p = add(p, [Math.sin(a) * 0.07, i < 2 ? -0.1 : 0, -Math.cos(a) * 0.08]);
+    p[1] = Math.max(0.05, p[1]);
+  }
+  for (const d of [-1, 1]) f.cone([d * 0.03, 0.3, 0.24], [d * 0.05, 0.24, 0.32], 0.012, 0.003, M.bone, { group: null });
+  eyePair(f, 0.035, 0.36, 0.22, 0.016, sp.eyes);
+  f.top = 0.5;
+}
+
+function wraith(f, sp, R) {
+  const robe = mat(sp.color, { pattern: 'cloth', scale: 0.02, rough: 0.9, spec: 0.05 });
+  f.cone([0, 0.62, 0], [0, 0.15, 0], 0.13, 0.24, robe, { group: 'r' });
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * Math.PI * 2;
+    f.cone([Math.cos(a) * 0.18, 0.3, Math.sin(a) * 0.18], [Math.cos(a) * 0.26, 0.02 + R() * 0.08, Math.sin(a) * 0.26], 0.05, 0.012, robe, { group: 'r' });
+  }
+  f.ell([0, 0.78, 0], [0.16, 0.14, 0.12], robe, { group: 'r' });
+  f.ell([0, 0.96, -0.02], [0.11, 0.12, 0.12], robe, { group: 'r' });
+  f.ell([0, 0.93, 0.07], [0.07, 0.08, 0.04], M.dark, { group: null });
+  eyePair(f, 0.03, 0.95, 0.1, 0.012, sp.eyes);
+  for (const d of [-1, 1]) {
+    f.cone([d * 0.14, 0.82, 0], [d * 0.26, 0.66, 0.16], 0.05, 0.035, robe, { group: 'r' });
+    openHand(f, [d * 0.29, 0.62, 0.2], [d * 0.3, -0.2, 1], 1.1, mat('#c8d0d8', { pattern: 'bone', scale: 0.01 }), d, { claws: true, spread: 1 });
+  }
+  f.top = 1.1;
 }

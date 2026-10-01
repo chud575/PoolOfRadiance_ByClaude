@@ -5,6 +5,7 @@ import { ENCOUNTERS, getEncounter } from '../../data/encounters.js';
 import { MONSTERS } from '../../data/monsters.js';
 import { DIALOGUES } from '../../data/dialogue.js';
 import { NPCS } from '../../data/npcs.js';
+import { DEITIES } from '../../data/shops.js';
 import { JOURNAL, getJournalEntry } from '../../data/journal.js';
 import { QUEST_LIST, QUESTS, PROCLAMATIONS, questStatus } from '../../data/quests.js';
 import { getMap, hasMap } from '../../data/maps/index.js';
@@ -51,7 +52,7 @@ export default class DialogueScene extends Scene {
       this.root.append(grid);
       return;
     }
-    if (params.view === 'bestiary' || params.view === 'settings' || params.view === 'figure') {
+    if (['bestiary', 'settings', 'figure', 'panel'].includes(params.view)) {
       this._debugSheet(params.view, params);
       return;
     }
@@ -89,7 +90,16 @@ export default class DialogueScene extends Scene {
   _debugSheet(view, p) {
     clear(this.root);
     const grid = h('div', { style: { position: 'absolute', inset: '0', display: 'grid', gridTemplateColumns: view === 'bestiary' ? 'repeat(8, 1fr)' : 'repeat(6, 1fr)', gap: '4px', padding: '4px', background: '#222', overflow: 'hidden' } });
-    if (view === 'figure') {
+    if (view === 'panel') {
+      // one panel full-size (debug): setting, light, monsters=id:n,..., actor=npcId
+      const monsters = p.monsters ? String(p.monsters).split(',').map((m) => { const [id, n] = m.split(':'); return { id, count: Number(n ?? 1) }; }) : null;
+      const npc = p.actor ? NPCS[p.actor] : null;
+      const actor = npc ? (npc.kind === 'ghost' ? ghostActor() : npcActor(npc)) : null;
+      const { canvas } = paintPanel({ setting: p.setting ?? 'slums', light: p.light, monsters, actor, deity: p.deity ? DEITIES[p.deity] : undefined, w: 1600, h: 750, seed: Number(p.pseed ?? 0) || undefined });
+      canvas.style.width = '100%';
+      grid.style.gridTemplateColumns = '1fr';
+      grid.append(canvas);
+    } else if (view === 'figure') {
       // one or more large figures (debug): ids, seeds, h, yaw
       const ids = String(p.ids ?? 'kobold').split(',');
       const H = Number(p.h ?? 800);
@@ -99,7 +109,7 @@ export default class DialogueScene extends Scene {
         const g = c.getContext('2d');
         const rg = lightRig(LIGHTS[p.light ?? 'torch']);
         const f = NPCS[id] ? (() => { const a = NPCS[id].kind === 'ghost' ? ghostActor() : npcActor(NPCS[id]); const r = a.render({ h: H, pose: p.pose ?? 'stand', yaw: Number(p.yaw ?? 0.2) }, rg); return { canvas: r.canvas, ox: r.ox, oy: r.oy }; })()
-          : flattenSprite(renderCreature(id, H, rg, Number(p.seed ?? 1) + i, p.yaw != null ? { yaw: Number(p.yaw) } : {}));
+          : flattenSprite(renderCreature(id, H, rg, Number(p.seed ?? 1) + i, { ...(p.yaw != null ? { yaw: Number(p.yaw) } : {}), ...(p.pitch != null ? { pitch: Number(p.pitch) } : {}), ...(p.override ? { poseOverride: JSON.parse(p.override) } : {}) }));
         g.drawImage(f.canvas, 450 - f.ox, 860 - f.oy + H * Number(p.crop ?? 0));
         grid.append(c);
       });
@@ -225,7 +235,7 @@ export default class DialogueScene extends Scene {
     if (prev) prev.className = 'dlg-art-prev';
     const fx = h('canvas.dlg-art-fx', { width: 1280, height: 600 });
     this.artView.append(canvas, fx);
-    this.overlay = new PanelOverlay(fx, info, 3);
+    this.overlay = new PanelOverlay(fx, info, 3, composer);
     this.artCanvas = canvas;
     this.fade = { t0: this.ctx.clock.time, el: canvas, prev };
     // ambient background

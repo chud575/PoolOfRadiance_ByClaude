@@ -237,14 +237,80 @@ function facade(g, W, H, sky, R, o) {
   const bx = Math.min(q[0][0], q[3][0]);
   const bw = Math.abs(nearX - farX) + 4;
   const wallBase = style === 'stone' ? mix(sky.wall, '#6a6258', 0.3) : mix(sky.wall, '#8a7a62', 0.35);
-  if (style === 'stone') masonry(g, Math.min(nearX, farX) - 2, Math.min(nearTop, farTop), bw + 4, nearBot - Math.min(nearTop, farTop), { base: rgba(wallBase), course: 26, blockW: 56, seed: R.int(1, 99) });
-  else {
+  if (style === 'stone') {
+    // ashlar in true perspective: each block a quad between depth columns and course rows
+    g.fillStyle = rgba(mix(wallBase, '#000000', 0.55));
+    g.fillRect(Math.min(nearX, farX) - 2, Math.min(nearTop, farTop) - 40, bw + 4, nearBot + 40);
+    const rows = 22;
+    const cols = 34;
+    for (let r = 0; r < rows; r++) {
+      const v0 = r / rows;
+      const v1 = (r + 1) / rows;
+      const off = (r % 2) * 0.5 + (R() - 0.5) * 0.2;
+      for (let c = -1; c < cols; c++) {
+        const d0 = Math.max(0, (c + off) / cols);
+        const d1 = Math.min(1, (c + off + 0.92 + R() * 0.12) / cols);
+        if (d1 <= d0) continue;
+        const k = 0.78 + R() * 0.38;
+        const warm = (R() - 0.5) * 0.08;
+        poly(g, [pt(d0, v0 + 0.004), pt(d1, v0 + 0.004), pt(d1, v1 - 0.004), pt(d0, v1 - 0.004)]);
+        g.fillStyle = rgba(mix(wallBase, warm > 0 ? '#8a6a48' : '#4a4e58', Math.abs(warm) * 4), 1, k);
+        g.fill();
+        // top edge catches the light, bottom edge in shadow
+        poly(g, [pt(d0, v0 + 0.004), pt(d1, v0 + 0.004), pt(d1, v0 + 0.012), pt(d0, v0 + 0.012)]);
+        g.fillStyle = 'rgba(255,230,190,0.12)';
+        g.fill();
+      }
+    }
+    texture(g, Math.min(nearX, farX) - 2, Math.min(nearTop, farTop), bw + 4, nearBot - Math.min(nearTop, farTop), { alpha: 0.4, mode: 'overlay', cells: 18, seed: R.int(1, 99) });
+    texture(g, Math.min(nearX, farX) - 2, Math.min(nearTop, farTop), bw + 4, nearBot - Math.min(nearTop, farTop), { alpha: 0.3, mode: 'multiply', cells: 4, octaves: 4, seed: R.int(1, 99) });
+  } else {
     g.fillStyle = rgba(wallBase);
     g.fillRect(Math.min(nearX, farX) - 2, Math.min(nearTop, farTop), bw + 4, nearBot);
     texture(g, Math.min(nearX, farX) - 2, Math.min(nearTop, farTop), bw + 4, nearBot, { alpha: 0.5, mode: 'overlay', cells: 10, seed: R.int(1, 99) });
     texture(g, Math.min(nearX, farX) - 2, Math.min(nearTop, farTop), bw + 4, nearBot, { alpha: 0.3, mode: 'multiply', cells: 5, seed: R.int(1, 99) });
   }
   void bx;
+  if (style !== 'stone') {
+    // weathered plaster: rain streaks, damp at the foot, patches fallen away to the brick
+    for (let i = 0; i < 26; i++) {
+      const d = R();
+      const v = 0.1 + R() * 0.6;
+      const a = pt(d, v);
+      const b = pt(d + 0.02 + R() * 0.03, v);
+      const len = (pt(d, 1)[1] - pt(d, 0)[1]) * (0.1 + R() * 0.3);
+      const w = Math.abs(b[0] - a[0]);
+      g.fillStyle = linGrad(g, 0, a[1], 0, a[1] + len, [[0, 'rgba(30,22,14,0.32)'], [1, 'rgba(30,22,14,0)']]);
+      g.fillRect(Math.min(a[0], b[0]), a[1], w, len);
+    }
+    for (let i = 0; i < 9; i++) {
+      const d0 = R() * 0.9;
+      const d1 = d0 + 0.03 + R() * 0.05;
+      const v0 = 0.15 + R() * 0.55;
+      const v1 = v0 + 0.06 + R() * 0.1;
+      const quad = [pt(d0, v0), pt(d1, v0 + 0.01), pt(d1, v1), pt(d0, v1 - 0.01)];
+      g.save();
+      poly(g, quad);
+      g.clip();
+      g.fillStyle = rgba(mix('#6a3a2a', sky.fog, 0.3));
+      g.fillRect(Math.min(quad[0][0], quad[1][0]) - 4, Math.min(quad[0][1], quad[1][1]) - 4, Math.abs(quad[1][0] - quad[0][0]) + 8, Math.abs(quad[2][1] - quad[0][1]) + 8);
+      for (let r = 0; r < 6; r++) {
+        const vv = v0 + ((v1 - v0) * r) / 6;
+        poly(g, [pt(d0 - 0.01, vv), pt(d1 + 0.01, vv), pt(d1 + 0.01, vv + 0.002), pt(d0 - 0.01, vv + 0.002)]);
+        g.fillStyle = 'rgba(20,12,8,0.55)';
+        g.fill();
+      }
+      g.restore();
+      poly(g, quad);
+      g.strokeStyle = 'rgba(230,210,180,0.18)';
+      g.lineWidth = 1;
+      g.stroke();
+    }
+    const damp = [pt(0, 0.72), pt(1, 0.72), pt(1, 0.86), pt(0, 0.86)];
+    poly(g, damp);
+    g.fillStyle = linGrad(g, 0, damp[0][1], 0, damp[3][1], [[0, 'rgba(20,24,14,0)'], [1, 'rgba(20,24,14,0.4)']]);
+    g.fill();
+  }
   // stone plinth course on timber houses
   if (style === 'timber') {
     const pl = [pt(0, 0.82), pt(1, 0.82), pt(1, 1), pt(0, 1)];
@@ -263,6 +329,9 @@ function facade(g, W, H, sky, R, o) {
       const p1 = pt(d0, 1);
       const wpx = Math.max(1.5, Math.abs(pt(d0, 0)[0] - pt(d0 + 0.015, 0)[0]));
       g.fillRect(p0[0] - wpx / 2, p0[1], wpx, p1[1] - p0[1]);
+      g.fillStyle = side > 0 ? 'rgba(255,190,120,0.18)' : 'rgba(150,170,230,0.12)';
+      g.fillRect(p0[0] + (side > 0 ? -wpx / 2 : wpx / 2 - Math.max(1, wpx * 0.25)), p0[1], Math.max(1, wpx * 0.25), p1[1] - p0[1]);
+      g.fillStyle = 'rgba(28,18,10,0.95)';
       for (const v of [0.08, 0.46, 0.82]) {
         poly(g, [pt(d0, v), pt(d1, v), pt(d1, v + 0.025), pt(d0, v + 0.025)]);
         g.fill();
@@ -325,7 +394,19 @@ function facade(g, W, H, sky, R, o) {
   g.fillStyle = linGrad(g, 0, 0, 0, H, [[0, 'rgba(0,0,0,0.25)'], [0.5, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0.5)']]);
   g.fillRect(Math.min(nearX, farX) - 2, 0, bw + 4, H);
   g.restore();
-  // roof overhang silhouette / eaves line
+  // eaves: a dark overhang band along the roofline, thicker near the viewer, with a lit tile edge
+  if (!ruined || ruined < 0.5) {
+    const top = outline.slice(0, N + 1);
+    const eave = top.map((p, i) => [p[0], p[1] - (1 - persp(i / N)) * H * 0.035 - 2]);
+    poly(g, [...top, ...eave.reverse()]);
+    g.fillStyle = 'rgba(14,9,6,0.96)';
+    g.fill();
+    g.strokeStyle = rgba(mix(sky.hor, '#ffffff', 0.2), 0.35);
+    g.lineWidth = 1.2;
+    g.beginPath();
+    eave.reverse().forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])));
+    g.stroke();
+  }
   g.strokeStyle = 'rgba(12,8,6,0.95)';
   g.lineWidth = 3;
   g.beginPath();
@@ -345,6 +426,18 @@ function streetScene(g, W, H, R, o) {
   const width = o.width ?? 0.34;
   const L = facade(g, W, H, sky, R, { side: -1, horizon, nearX: -W * 0.04, farX: W * (0.5 - width / 2), nearTop: -H * 0.25, farTop: horizon - H * 0.2, ruined: o.ruined ?? 0, style: o.leftStyle ?? 'timber', lights });
   const Rt = facade(g, W, H, sky, R, { side: 1, horizon, nearX: W * 1.04, farX: W * (0.5 + width / 2), nearTop: -H * 0.2, farTop: horizon - H * 0.22, ruined: o.ruined ?? 0, style: o.rightStyle ?? 'stone', lights });
+  // wet cobbles: lit windows and lanterns streak down into the street
+  g.save();
+  g.globalCompositeOperation = 'screen';
+  g.filter = 'blur(3px)';
+  for (const l of lights) {
+    if (l.kind !== 'glow' || l.y < horizon - H * 0.3) continue;
+    const ry = horizon + (horizon - l.y) * 0.35 + H * 0.06;
+    const len = H * 0.1 + l.s * 1.2;
+    g.fillStyle = linGrad(g, 0, ry, 0, ry + len, [[0, rgba('#ffa050', 0.22 * (1.3 - sky.amb))], [1, rgba('#ffa050', 0)]]);
+    g.fillRect(l.x - l.s * 0.25, ry, l.s * 0.5, len);
+  }
+  g.restore();
   // wall lanterns
   if (o.lanterns !== false) {
     for (const [side, d] of [[-1, 0.28], [1, 0.45]]) {

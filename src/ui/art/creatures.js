@@ -1,5 +1,5 @@
 import { rgba, mix, glow, linGrad, poly, texture, contactShadow, rngOf, makeCanvas, hexRgb } from './paint.js';
-import { buildCreature, SPECIES as SCULPTED } from './bodies.js';
+import { buildCreature, buildBeast, SPECIES as SCULPTED, BEASTS } from './bodies.js';
 import { renderFigure } from './sculpt.js';
 
 /**
@@ -1233,7 +1233,7 @@ export { hexRgb };
 
 /** Is this creature built by the 3D figure renderer? */
 export function isSculpted(id) {
-  return id in SCULPTED;
+  return id in SCULPTED || id in BEASTS;
 }
 
 /**
@@ -1261,7 +1261,7 @@ function rgbHex(c) {
  * Returns {canvas, ox, oy, emit, tail, pelvisY, sp}.
  */
 export function renderCreature(id, h, rig, seed = 1, o = {}) {
-  const b = buildCreature(id, seed, o);
+  const b = id in BEASTS ? buildBeast(id, seed, o) : buildCreature(id, seed, o);
   if (!b) return null;
   const ppu = h / b.fig.top;
   const yaw = o.yaw ?? b.yaw;

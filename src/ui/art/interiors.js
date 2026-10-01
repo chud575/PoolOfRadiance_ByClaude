@@ -588,7 +588,7 @@ S.cityhall = (g, W, H, R, o) => {
   const dx = W * 0.8;
   const dy = H * 1.02;
   prop3d(fg, d.f, dx, dy, ppu, lr, { yaw: -0.12, shadowW: 0.5 });
-  for (const t of d.tips) { const [x, y] = proj(dx, dy, ppu, t, -0.12); lights.push({ x, y, s: 5, kind: 'candle', color: '#ffc060' }); }
+  for (const t of d.tips) { const [x, y] = proj(dx, dy, ppu, t, -0.12); lights.push({ x, y, s: 5, kind: 'candle', color: '#ffc060', front: true }); }
   P.column(fg, W * 0.035, -10, H * 1.02, 74, { base: '#7a6a58', seed: 9 });
   return { ...rm, lights, motes: { color: '#ffe0b0', count: 55, rise: 0.03 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.81, y: H * 0.9, h: H * 0.78, pose: 'clerk', yaw: -0.4 } };
 };
@@ -666,7 +666,7 @@ S.smithy = (g, W, H, R, o) => {
   const ay = H * 1.03;
   prop3d(fg, anvil3d(), ax, ay, ppu, lr, { yaw: 0.25, shadowW: 0.32 });
   const [wx, wy] = proj(ax, ay, ppu, [0.03, 0.3, 0.01], 0.25);
-  lights.push({ x: wx, y: wy, s: 14, kind: 'glow', color: '#ff8030' });
+  lights.push({ x: wx, y: wy, s: 14, kind: 'glow', color: '#ff8030', front: true });
   prop3d(fg, barrel3d(5, { open: true, water: true }), W * 0.76, H * 1.02, ppu * 0.95, lr, { yaw: 0.3 });
   return { ...rm, lights, motes: { color: '#ffa050', count: 80, rise: 0.45 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.61, y: H * 1.06, h: H * 0.96, pose: 'smith', yaw: -0.3, apron: true } };
 };
@@ -765,7 +765,7 @@ function templeTyr(g, W, H, R, o, d) {
   const al = altar3d({ stone: '#dcd4c4', runner: d.banner ?? '#1d3574', emblemC: '#e0b850', candles: 6, seed: 31 });
   const ppu = H * 0.78;
   prop3d(fg, al.f, cx, H * 1.04, ppu, lr, { shadowW: 0.5 });
-  for (const t of al.tips) { const [x, y] = proj(cx, H * 1.04, ppu, t); lights.push({ x, y, s: 5, kind: 'candle', color: '#ffd070' }); }
+  for (const t of al.tips) { const [x, y] = proj(cx, H * 1.04, ppu, t); lights.push({ x, y, s: 5, kind: 'candle', color: '#ffd070', front: true }); }
   return { lights, motes: { color: '#fff4d8', count: 90, rise: 0.02 }, floorY, fgUsed: true, actorSlot: { x: cx, y: H * 0.92, h: H * 0.74, pose: 'priest', yaw: 0, vestments: '#1d3574' } };
 }
 
@@ -808,7 +808,7 @@ function templeSune(g, W, H, R, o, d) {
   const al = altar3d({ stone: '#e2c4bc', runner: '#a01e2c', emblemC: '#f0c870', candles: 6, seed: 51 });
   const ppu = H * 0.78;
   prop3d(fg, al.f, W * 0.4, H * 1.04, ppu, lr, { shadowW: 0.5 });
-  for (const t of al.tips) { const [x, y] = proj(W * 0.4, H * 1.04, ppu, t); lights.push({ x, y, s: 5, kind: 'candle', color: '#ffc880' }); }
+  for (const t of al.tips) { const [x, y] = proj(W * 0.4, H * 1.04, ppu, t); lights.push({ x, y, s: 5, kind: 'candle', color: '#ffc880', front: true }); }
   return { ...rm, lights, motes: { color: '#ffc0c8', count: 70, rise: 0.04 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.4, y: H * 0.92, h: H * 0.74, pose: 'priest', yaw: 0.15, vestments: '#a01e2c' } };
 }
 

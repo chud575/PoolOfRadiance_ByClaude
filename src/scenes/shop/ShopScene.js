@@ -80,7 +80,7 @@ export default class ShopScene extends Scene {
     const { canvas, info, composer } = paintPanel({ setting: this.shop.setting ?? 'shop', deity, w: 1280, h: 600, seed: this.shop.id.length * 31, actor: npcActor(NPCS[this.shop.npc]) });
     this.composer = composer;
     const fx = h('canvas.fx', { width: 1280, height: 600 });
-    this.overlay = new PanelOverlay(fx, info, 5);
+    this.overlay = new PanelOverlay(fx, info, 5, composer);
     this.overlay.draw(ctx.clock.time);
     const bgc = h('canvas', { width: 320, height: 150 });
     bgc.getContext('2d').drawImage(canvas, 0, 0, 320, 150);

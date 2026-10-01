@@ -1,7 +1,7 @@
 import { makeCanvas, vignette, grade, grain, rgba, glow, flame, rngOf, hashStr, fog as fogBand, clamp01, contactShadow } from './paint.js';
 import { paintSetting } from './settings.js';
 import './interiors.js';
-import { placeCreature, creatureScale, paintCreature, dragonHead, hasCreature, isSculpted, renderCreature } from './creatures.js';
+import { placeCreature, creatureScale, paintCreature, dragonHead, hasCreature, isSculpted, renderCreature, flattenSprite } from './creatures.js';
 import { paintPortrait, defaultLook, SKIN_TONES, RACE_SKINS, HAIR_COLORS, CLOTH_COLORS, EYE_COLORS, HEADS, BODIES } from '../components/portraitPainter.js';
 import { buildPerson } from './bodies.js';
 import { renderFigure } from './sculpt.js';
@@ -160,6 +160,15 @@ export class PanelComposer {
       const p = 0.8 + Math.sin(t * 3.1 + e.x) * 0.12;
       glow(g, e.x - r.ox, e.y - r.oy, e.r * (s.ghost ? 2.5 : 1), e.color, e.a * p * (1 - (s.haze ?? 0) * 0.6));
     }
+    g.restore();
+  }
+
+  /** Erase an overlay canvas where figures stand (scene flames behind them stay hidden). */
+  maskFigures(g, t = 0) {
+    g.save();
+    g.globalCompositeOperation = 'destination-out';
+    for (const a of this.actors) this._sprite(g, { ...a, ghost: false, r: { ...a.r, emit: [] } }, t);
+    for (const o of this.ops) if (o.kind === 'sprite' && !o.ghost) this._sprite(g, { ...o, r: { ...o.r, emit: [] } }, t);
     g.restore();
   }
 
@@ -348,6 +357,8 @@ export function paintNpcPortrait(npc, scale = 1) {
     g.fill();
     dragonHead(g, W / 2, H * 0.34, W * 0.27, '#b07a3a', '#ffe080', LIGHTS.gold);
     vignette(g, W, H, 0.55);
+  } else if (npc.kind === 'monster' && isSculpted(npc.id === 'kobold_chief' ? 'koboldChief' : npc.monster)) {
+    c = sculptBust(npc.id === 'kobold_chief' ? 'koboldChief' : npc.monster, W, H, { bg: ['#4a2a18', '#0a0604'], light: '#ffb070', seed: 11, yaw: 0.35, zoom: 1.75, pitch: -0.05, pose: { weaponPose: 'low', headYaw: 0.15, headPitch: -0.15, twist: 0.05, lean: 0, headTilt: 0.08 } });
   } else if (npc.kind === 'monster') {
     c = makeCanvas(W, H);
     const g = c.getContext('2d');
@@ -368,25 +379,7 @@ export function paintNpcPortrait(npc, scale = 1) {
     if (npc.kind === 'hooded') ch.look = { ...ch.look, head: 6 };
     c = paintPortrait(ch, { scale });
     if (npc.kind === 'ghost') {
-      const g = c.getContext('2d');
-      g.save();
-      g.globalCompositeOperation = 'luminosity';
-      g.fillStyle = 'rgba(128,128,128,0.35)';
-      g.fillRect(0, 0, c.width, c.height);
-      g.globalCompositeOperation = 'color';
-      g.fillStyle = 'rgba(90,220,255,0.85)';
-      g.fillRect(0, 0, c.width, c.height);
-      g.globalCompositeOperation = 'screen';
-      const gr = g.createLinearGradient(0, 0, 0, c.height);
-      gr.addColorStop(0, 'rgba(120,220,255,0.15)');
-      gr.addColorStop(1, 'rgba(160,240,255,0.55)');
-      g.fillStyle = gr;
-      g.fillRect(0, 0, c.width, c.height);
-      g.restore();
-      glow(g, c.width / 2, c.height * 0.4, c.height * 0.5, '#8ff0ff', 0.25);
-      // scanline shimmer
-      g.fillStyle = 'rgba(200,250,255,0.08)';
-      for (let y = 0; y < c.height; y += 3) g.fillRect(0, y, c.width, 1);
+      c = ghostly(c);
     } else if (npc.kind === 'hooded') {
       const g = c.getContext('2d');
       g.fillStyle = 'rgba(0,0,0,0.25)';
@@ -395,6 +388,82 @@ export function paintNpcPortrait(npc, scale = 1) {
     }
   }
   portraitCache.set(key, c);
+  return c;
+}
+
+/**
+ * Spectral treatment for a painted portrait: a gradient map from deep night
+ * through cyan to white keeps every brushstroke of the face, then the lit
+ * edges glow and a faint chill mist rises from below.
+ */
+function ghostly(src) {
+  const W = src.width;
+  const H = src.height;
+  const c = makeCanvas(W, H);
+  const g = c.getContext('2d');
+  g.drawImage(src, 0, 0);
+  const img = g.getImageData(0, 0, W, H);
+  const d = img.data;
+  const stops = [[0, [4, 10, 22]], [0.35, [18, 70, 96]], [0.65, [96, 200, 222]], [0.85, [190, 246, 255]], [1, [250, 255, 255]]];
+  for (let i = 0; i < d.length; i += 4) {
+    let l = (d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11) / 255;
+    l = Math.min(1, Math.pow(l, 0.9) * 1.12);
+    let k = 1;
+    while (k < stops.length - 1 && stops[k][0] < l) k++;
+    const [t0, c0] = stops[k - 1];
+    const [t1, c1] = stops[k];
+    const u = Math.max(0, Math.min(1, (l - t0) / (t1 - t0)));
+    d[i] = c0[0] + (c1[0] - c0[0]) * u;
+    d[i + 1] = c0[1] + (c1[1] - c0[1]) * u;
+    d[i + 2] = c0[2] + (c1[2] - c0[2]) * u;
+  }
+  g.putImageData(img, 0, 0);
+  // bloom of the lit planes
+  g.save();
+  g.globalCompositeOperation = 'lighter';
+  g.filter = 'blur(6px)';
+  g.globalAlpha = 0.35;
+  g.drawImage(c, 0, 0);
+  g.restore();
+  // mist from below and a cold halo behind the head
+  const mist = g.createLinearGradient(0, H * 0.55, 0, H);
+  mist.addColorStop(0, 'rgba(160,240,255,0)');
+  mist.addColorStop(1, 'rgba(160,240,255,0.35)');
+  g.fillStyle = mist;
+  g.fillRect(0, 0, W, H);
+  glow(g, W / 2, H * 0.36, H * 0.42, '#8ff0ff', 0.18);
+  return c;
+}
+
+/** Head-and-shoulders portrait of a sculpted creature (matches its figure in the scene). */
+function sculptBust(id, W, H, o) {
+  const c = makeCanvas(W, H);
+  const g = c.getContext('2d');
+  const bg = g.createRadialGradient(W / 2, H * 0.42, 10, W / 2, H * 0.5, H * 0.8);
+  bg.addColorStop(0, o.bg[0]);
+  bg.addColorStop(1, o.bg[1]);
+  g.fillStyle = bg;
+  g.fillRect(0, 0, W, H);
+  glow(g, W * 0.25, H * 0.25, H * 0.6, o.light, 0.22);
+  const rig = { key: { dir: [-0.55, 0.55, 0.65], color: o.light, i: 1.35 }, rim: { dir: [0.8, 0.4, -0.5], color: o.ghost ? '#e0ffff' : '#9ab8ff', i: 1.3 }, sky: o.ghost ? '#4a8aa0' : '#4a3a40', ground: '#140c08', amb: 0.5 };
+  const hpx = H * o.zoom;
+  const r = renderCreature(id, hpx, rig, o.seed, { yaw: o.yaw, pitch: o.pitch, poseOverride: o.pose, ghostColor: '#a8f6ff' });
+  if (!r) return c;
+  const f = flattenSprite(r);
+  const x = W / 2 - f.ox + W * 0.04;
+  const y = H * 0.06 - (f.oy - hpx);
+  if (o.ghost) {
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+    g.filter = 'blur(12px)';
+    g.globalAlpha = 0.6;
+    g.drawImage(f.canvas, x, y);
+    g.restore();
+    g.globalCompositeOperation = 'lighter';
+  }
+  g.drawImage(f.canvas, x, y);
+  g.globalCompositeOperation = 'source-over';
+  vignette(g, W, H, 0.5);
   return c;
 }
 
@@ -471,7 +540,8 @@ export function framedPortraitURL(npc) {
  * Deterministic for a time t (frozen clock ⇒ settled frame at t).
  */
 export class PanelOverlay {
-  constructor(canvas, info, seed = 1) {
+  constructor(canvas, info, seed = 1, composer = null) {
+    this.composer = composer;
     this.canvas = canvas;
     this.g = canvas.getContext('2d');
     this.info = info;
@@ -482,12 +552,8 @@ export class PanelOverlay {
     this.rise = m.rise ?? 0.05;
   }
 
-  draw(t) {
-    const { g, canvas } = this;
-    const W = canvas.width;
-    const H = canvas.height;
-    g.clearRect(0, 0, W, H);
-    for (const [i, L] of (this.info.lights ?? []).entries()) {
+  _lights(g, t, list) {
+    for (const [i, L] of list) {
       const ph = t + i * 1.7;
       const fl = 0.82 + Math.sin(ph * 7.3) * 0.08 + Math.sin(ph * 17.1 + 1) * 0.06 + Math.sin(ph * 3.1) * 0.04;
       if (L.kind === 'flame') {
@@ -504,6 +570,17 @@ export class PanelOverlay {
         glow(g, L.x, L.y, L.s * 1.2, L.color, 0.18 * p);
       }
     }
+  }
+
+  draw(t) {
+    const { g, canvas } = this;
+    const W = canvas.width;
+    const H = canvas.height;
+    g.clearRect(0, 0, W, H);
+    const lights = (this.info.lights ?? []).map((L, i) => [i, L]);
+    this._lights(g, t, lights.filter(([, L]) => !L.front));
+    this.composer?.maskFigures(g, t);
+    this._lights(g, t, lights.filter(([, L]) => L.front));
     // motes: dust/embers/spores drifting
     g.save();
     g.globalCompositeOperation = 'lighter';
