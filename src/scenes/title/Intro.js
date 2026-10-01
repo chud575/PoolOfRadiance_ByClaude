@@ -28,7 +28,7 @@ const SHOTS = [
   },
   {
     t: [8.2, 16.4],
-    keys: [{ p: V(22, 9, -44), l: V(78, -11, -122) }, { p: V(40, 6.5, -62), l: V(66, -10, -128) }],
+    keys: [{ p: V(18, 9.5, -40), l: V(78, -7.5, -122) }, { p: V(34, 7.5, -56), l: V(66, -6.5, -128) }],
     look: 1,
     caption: 'The Old City',
     sub: 'Fallen these fifty years',

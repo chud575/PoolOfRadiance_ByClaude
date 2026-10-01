@@ -4,6 +4,7 @@ import './interiors.js';
 import { placeCreature, creatureScale, paintCreature, dragonHead, hasCreature, isSculpted, renderCreature, flattenSprite } from './creatures.js';
 import { paintPortrait, defaultLook, SKIN_TONES, RACE_SKINS, HAIR_COLORS, CLOTH_COLORS, EYE_COLORS, HEADS, BODIES } from '../components/portraitPainter.js';
 import { buildPerson } from './bodies.js';
+import { buildNpc } from './people.js';
 import { renderFigure } from './sculpt.js';
 
 /**
@@ -282,6 +283,20 @@ export function npcActor(npc, o = {}) {
       const gender = ch.gender === 'female' ? 'female' : 'male';
       const tpl = HEADS[gender][look.head] ?? HEADS[gender][0];
       const skins = RACE_SKINS[ch.race] ?? RACE_SKINS.human;
+      if (npc.figure) {
+        const F = npc.figure;
+        const pose = { stand: 'idle', priest: 'bless' }[slot.pose ?? o.pose] ?? slot.pose ?? o.pose ?? F.pose ?? 'idle';
+        const bn = buildNpc({
+          seed: look.seed, race: ch.race, gender, age: F.age ?? (tpl.age ? 0.5 * tpl.age : 0), build: F.build ?? 1, belly: F.belly,
+          skin: SKIN_TONES[skins[look.skin % skins.length]],
+          hair: F.hair ?? HAIR_COLORS[look.hair % HAIR_COLORS.length][1],
+          eyeC: EYE_COLORS[look.eyes % EYE_COLORS.length],
+          hairStyle: F.hairStyle ?? HAIR_STYLE[tpl.hair] ?? 'short',
+          beard: F.beard ?? tpl.beard ?? 'none',
+          pose: o.poseOverride ?? pose, outfit: F.outfit, headYaw: F.headYaw, nose: F.nose, jaw: F.jaw,
+        });
+        return renderFigure(bn.fig, { ppu: slot.h / bn.top * (ch.race === 'dwarf' || ch.race === 'halfling' || ch.race === 'gnome' ? 0.8 : 1), yaw: slot.yaw ?? 0, rig, pitch: slot.pitch ?? 0.1, ink: 0.7 });
+      }
       const b = buildPerson({
         seed: look.seed, race: ch.race, gender,
         skin: SKIN_TONES[skins[look.skin % skins.length]],

@@ -73,20 +73,26 @@ export function createSea(U, { level = -15, nearZ = -150, width = 6000, depth = 
     fragmentShader: /* glsl */ `
       uniform float uTime; uniform vec3 uSunDir; varying vec3 vWorld;
       ${DUSK_SKY}
+      // long readable swells rolling in from the open Moonsea, a chop on top, and a
+      // fine ripple that fades out with distance (so far water never turns to speckle)
+      float uLod;
       float waves(vec2 p) {
         float t = uTime;
-        return fbm3(p * vec2(0.08, 0.22) + vec2(t * 0.05, t * 0.02)) * 0.6
-             + vnoise(p * vec2(0.35, 0.9) - vec2(t * 0.12, 0.0)) * 0.4;
+        float swell = sin(p.x * 0.045 + p.y * 0.11 + t * 0.55) * 0.55 + sin(p.x * -0.028 + p.y * 0.075 - t * 0.4) * 0.4;
+        float chop = fbm3(p * vec2(0.08, 0.22) + vec2(t * 0.05, t * 0.02));
+        float fine = vnoise(p * vec2(0.35, 0.9) - vec2(t * 0.12, 0.0));
+        return swell * 0.55 + chop * 0.45 + fine * 0.3 * uLod;
       }
       void main() {
         vec3 v = normalize(vWorld - cameraPosition);
         float dist = length(vWorld.xz - cameraPosition.xz);
         vec2 p = vWorld.xz;
-        float e = 0.6;
+        uLod = 1.0 - smoothstep(50.0, 240.0, dist);
+        float e = 0.6 + dist * 0.004;
         float h0 = waves(p);
         float hx = waves(p + vec2(e, 0.0));
         float hz = waves(p + vec2(0.0, e));
-        float amp = 0.55 / (1.0 + dist * 0.004);
+        float amp = 0.55 / (1.0 + dist * 0.006);
         vec3 n = normalize(vec3((h0 - hx) * amp * 3.0, 1.0, (h0 - hz) * amp * 3.0));
         vec3 r = reflect(v, n);
         r.y = abs(r.y) + 0.004;

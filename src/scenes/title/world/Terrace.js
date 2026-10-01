@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { getTextureSet, getGlowTexture, getGrassTexture } from '../../../render/textures/index.js';
+import { getTextureSet, getGlowTexture } from '../../../render/textures/index.js';
 import { createTorch, FLAME_UNIFORMS } from '../../../render/lighting.js';
 import { NOISE } from './glsl.js';
 import { prng, ni, worldUV, tint, merge } from './geom.js';
@@ -28,6 +28,43 @@ export function createTerrace({ seed = 7 } = {}) {
   const rimU = { uSunView: { value: new THREE.Vector3(0, 0, -1) }, uRimColor: { value: new THREE.Color(1.0, 0.55, 0.28) } };
   const stoneMat = addRimLight(texMat('hd_limestone', { vertexColors: true }), rimU, 1.1);
   const floorMat = texMat('hd_crazy', { vertexColors: true });
+  // Second detail scale over the flagstones, in world space: broad grime and damp
+  // blotches, moss creeping along the joints (where the stone texture is dark),
+  // hairline cracks, and a polished, paler wear path where pilgrims walked to the
+  // Pool. Breaks up the single-scale tiling cadence of the flag texture.
+  floorMat.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWP;')
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>\nvarying vec3 vWP;\n${NOISE}`)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+        {
+          vec2 w = vWP.xz;
+          float lum = dot(diffuseColor.rgb, vec3(0.333));
+          float joint = 1.0 - smoothstep(0.1, 0.32, lum);           // dark mortar lines
+          float big = fbm(w * 0.09);                                  // broad grime / damp
+          float mid = fbm(w * 0.55 + 7.3);
+          float fine = vnoise(w * 6.0);
+          float r = length(w - vec2(0.0, 4.0));
+          float path = (1.0 - smoothstep(1.4, 3.6, abs(w.x) - max(0.0, (w.y - 4.0)) * 0.05)) * step(3.2, w.y) * (1.0 - smoothstep(16.0, 26.0, w.y));
+          float wear = max(path, 1.0 - smoothstep(4.5, 7.5, length(w)));
+          float edge = smoothstep(-4.0, -8.5, w.y);                  // toward the broken edge
+          float grime = smoothstep(0.42, 0.75, big) * 0.55 + edge * 0.35;
+          float moss = clamp(joint * (0.35 + smoothstep(0.45, 0.7, mid) * 0.9) * (1.0 - wear * 0.8) + edge * smoothstep(0.5, 0.75, mid) * 0.5, 0.0, 1.0);
+          // hairline cracks: thin ridges of a warped noise
+          float cn = abs(vnoise(w * 1.3 + vec2(fbm(w * 0.7) * 2.0)) - 0.5);
+          float crack = (1.0 - smoothstep(0.0, 0.018, cn)) * smoothstep(0.5, 0.62, mid) * (1.0 - joint);
+          vec3 c = diffuseColor.rgb;
+          c *= mix(1.0, 0.62, grime) * (0.9 + 0.2 * mid) * (0.94 + 0.12 * fine);
+          c = mix(c, vec3(0.16, 0.2, 0.09) * (0.7 + 0.6 * fine), moss * 0.75);
+          c = mix(c, c * 1.18 + 0.03, wear * (1.0 - joint) * 0.6);
+          c *= 1.0 - crack * 0.55;
+          diffuseColor.rgb = c;
+        }`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+        roughnessFactor = clamp(roughnessFactor - 0.25 * (1.0 - smoothstep(4.5, 7.5, length(vWP.xz))), 0.3, 1.0);`);
+  };
 
   // ---- floor with a broken front edge -----------------------------------------
   {
@@ -40,7 +77,7 @@ export function createTerrace({ seed = 7 } = {}) {
     s.closePath();
     const g = new THREE.ShapeGeometry(s, 1);
     g.rotateX(-Math.PI / 2);
-    worldUV(g, 6);
+    worldUV(g, 4.6);
     // vertex colours: darker, mossier toward the broken edge and the far sides
     const pos = g.attributes.position;
     const col = new Float32Array(pos.count * 3);
@@ -283,37 +320,125 @@ export function createTerrace({ seed = 7 } = {}) {
   const ironMat = new THREE.MeshStandardMaterial({ color: 0x2a2624, roughness: 0.55, metalness: 0.85 });
   disposables.push(ironMat);
   const braziers = [];
+  const hazes = [];
+  const coalMat = new THREE.ShaderMaterial({
+    uniforms: U,
+    vertexShader: /* glsl */ `varying vec2 vP; void main(){ vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /* glsl */ `uniform float uTime; varying vec2 vP; ${NOISE}
+      void main(){
+        // a bed of coals: dark crusted lumps with white-hot seams that breathe
+        float cells = vnoise(vP * 9.0);
+        float seam = 1.0 - smoothstep(0.0, 0.18, abs(cells - 0.5));
+        float breathe = 0.65 + 0.35 * sin(uTime * 2.3 + vnoise(vP * 3.0) * 6.0);
+        float heat = clamp(seam * breathe + (1.0 - length(vP) / 0.7) * 0.35, 0.0, 1.0);
+        vec3 c = mix(vec3(0.05, 0.02, 0.01), vec3(1.6, 0.42, 0.08), heat);
+        c += vec3(1.4, 0.9, 0.4) * pow(heat, 4.0);
+        gl_FragColor = vec4(c, 1.0);
+      }`,
+  });
+  disposables.push(coalMat);
+  const hazeMat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    uniforms: U,
+    vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /* glsl */ `uniform float uTime; varying vec2 vUv; ${NOISE}
+      void main(){
+        // heat shimmer over the flame: thin rising wavering bands of warm air
+        float y = vUv.y;
+        float x = vUv.x - 0.5 + (vnoise(vec2(y * 6.0 - uTime * 2.2, 1.0)) - 0.5) * 0.25 * y;
+        float column = exp(-x * x * 26.0);
+        float bands = 0.5 + 0.5 * sin(y * 38.0 - uTime * 9.0 + vnoise(vec2(x * 8.0, y * 4.0 - uTime)) * 4.0);
+        float a = column * bands * smoothstep(0.0, 0.15, y) * (1.0 - smoothstep(0.45, 1.0, y));
+        gl_FragColor = vec4(vec3(0.5, 0.26, 0.1) * a * 0.22, 1.0);
+      }`,
+  });
+  disposables.push(hazeMat);
   for (const [bx, bz, sd] of [[-6.2, -1.2, 1], [6.2, -1.2, 5]]) {
     const b = new THREE.Group();
-    const bowl = new THREE.LatheGeometry([[0.1, 0], [0.55, 0.05], [0.75, 0.28], [0.8, 0.42], [0.72, 0.42], [0.5, 0.2], [0.05, 0.14]].map(([r, y]) => new THREE.Vector2(r, y)), 24);
+    // a wrought-iron brazier: flared bowl with a rolled lip, a fluted stem on three
+    // scrolled legs ending in paw feet
+    const bowl = new THREE.LatheGeometry([[0.08, 0], [0.5, 0.04], [0.72, 0.22], [0.84, 0.4], [0.9, 0.46], [0.86, 0.5], [0.76, 0.44], [0.5, 0.24], [0.06, 0.16]].map(([r, y]) => new THREE.Vector2(r, y)), 32);
     const bm = new THREE.Mesh(bowl, ironMat);
     bm.position.y = 1.15;
     bm.castShadow = true;
     b.add(bm);
+    const lip = new THREE.Mesh(new THREE.TorusGeometry(0.88, 0.035, 6, 40), ironMat);
+    lip.rotation.x = Math.PI / 2;
+    lip.position.y = 1.62;
+    b.add(lip);
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.025, 5, 32), ironMat);
+    band.rotation.x = Math.PI / 2;
+    band.position.y = 1.36;
+    b.add(band);
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.09, 0.9, 10), ironMat);
+    stem.position.y = 0.72;
+    b.add(stem);
     for (let i = 0; i < 3; i++) {
       const a = (i / 3) * Math.PI * 2;
-      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.06, 1.3, 6), ironMat);
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.05, 1.3, 6), ironMat);
       leg.position.set(Math.cos(a) * 0.35, 0.62, Math.sin(a) * 0.35);
       leg.rotation.set(Math.sin(a) * 0.3, 0, -Math.cos(a) * 0.3);
       leg.castShadow = true;
       b.add(leg);
+      const curl = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.022, 5, 14, Math.PI * 1.5), ironMat);
+      curl.position.set(Math.cos(a) * 0.5, 0.34, Math.sin(a) * 0.5);
+      curl.rotation.y = -a;
+      b.add(curl);
+      const foot = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 8), ironMat);
+      foot.scale.set(1, 0.6, 1.3);
+      foot.position.set(Math.cos(a) * 0.56, 0.04, Math.sin(a) * 0.56);
+      b.add(foot);
     }
-    const coals = new THREE.Mesh(new THREE.CircleGeometry(0.66, 20), new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 0.45, 0.1) }));
+    const coals = new THREE.Mesh(new THREE.CircleGeometry(0.74, 28), coalMat);
     coals.rotation.x = -Math.PI / 2;
-    coals.position.y = 1.52;
+    coals.position.y = 1.55;
     b.add(coals);
-    disposables.push(coals.material);
-    const torch = createTorch({ color: 0xff9a48, intensity: 7, distance: 14, seed: sd, flame: true, flameScale: 0.75 });
+    const haze = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 3.2), hazeMat);
+    haze.position.y = 3.2;
+    haze.userData.billboard = true;
+    b.add(haze);
+    const torch = createTorch({ color: 0xff9a48, intensity: 15, distance: 12, seed: sd, flame: true, flameScale: 0.95 });
     torch.position.y = 1.5;
-    torch.userData.sprite.position.y = 0.5;
-    torch.userData.sprite.scale.setScalar(2.2);
-    torch.userData.glowScale = 0.45;
+    torch.userData.sprite.position.y = 0.55;
+    torch.userData.sprite.scale.setScalar(2.6);
+    torch.userData.glowScale = 0.5;
     torch.userData.light.position.y = 0.9;
     b.add(torch);
     b.position.set(bx, 0, bz);
     group.add(b);
     braziers.push(torch);
+    hazes.push(haze);
   }
+  // smoke curling up from the braziers and drifting off on the sea wind
+  const brSmoke = (() => {
+    const per = 22, pts = [[-6.2, 2.3, -1.2], [6.2, 2.3, -1.2]];
+    const pos = new Float32Array(per * pts.length * 3), sd = new Float32Array(per * pts.length * 2);
+    let k = 0;
+    for (const p of pts) for (let i = 0; i < per; i++, k++) { pos.set(p, k * 3); sd.set([i / per, R.next()], k * 2); }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('aSeed', new THREE.BufferAttribute(sd, 2));
+    const m = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, uniforms: { ...U, uPx: { value: 1 } },
+      vertexShader: /* glsl */ `attribute vec2 aSeed; uniform float uTime, uPx; varying float vL; varying float vS;
+        void main(){ float l = fract(uTime * 0.09 + aSeed.x); vL = l; vS = aSeed.y; vec3 p = position;
+          p.y += l * 7.5; p.x += -l * l * 4.0 + sin(l * 9.0 + aSeed.y * 6.0) * 0.35 * l; p.z += (aSeed.y - 0.5) * 1.2 * l;
+          vec4 mv = modelViewMatrix * vec4(p, 1.0); gl_Position = projectionMatrix * mv;
+          gl_PointSize = clamp((0.6 + l * 3.4) * uPx * 700.0 / -mv.z, 1.0, 260.0); }`,
+      fragmentShader: /* glsl */ `varying float vL; varying float vS; ${NOISE}
+        void main(){ vec2 d = gl_PointCoord - 0.5; float n = fbm3(gl_PointCoord * 3.0 + vS * 11.0);
+          float puff = smoothstep(0.5, 0.1, length(d) + (n - 0.5) * 0.3);
+          float a = puff * smoothstep(0.0, 0.1, vL) * (1.0 - smoothstep(0.3, 1.0, vL)) * 0.22;
+          vec3 c = mix(vec3(0.08, 0.06, 0.07), vec3(0.22, 0.16, 0.15), n) + vec3(0.6, 0.25, 0.08) * (1.0 - smoothstep(0.0, 0.18, vL));
+          gl_FragColor = vec4(c, a); }`,
+    });
+    const mesh = new THREE.Points(g, m);
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 2;
+    disposables.push(g, m);
+    return mesh;
+  })();
+  group.add(brSmoke);
 
   // ---- ruined colonnade, arch fragment, rubble ------------------------------------------
   const pieces = [];
@@ -373,6 +498,57 @@ export function createTerrace({ seed = 7 } = {}) {
     g.translate(x + 2.2, 0.95, -9.4);
     pieces.push(tint(worldUV(g, 2), 0xb3a896));
   }
+  // ivy climbing the standing columns: leafy vines spiralling up the flutes,
+  // thick at the base, thinning out toward the capital (breaks up the dark shafts)
+  {
+    const pos = [], col = [], nor = [];
+    const leaf = (c, n, up, s, tone) => {
+      const side = new THREE.Vector3().crossVectors(n, up).normalize();
+      const tip = c.clone().addScaledVector(up, s * 1.2).addScaledVector(n, s * 0.35);
+      const l = c.clone().addScaledVector(side, -s * 0.55).addScaledVector(up, s * 0.35);
+      const r = c.clone().addScaledVector(side, s * 0.55).addScaledVector(up, s * 0.35);
+      const nn = n.clone().addScaledVector(up, 0.4).normalize();
+      for (const [a, b, d] of [[c, l, tip], [c, tip, r]]) {
+        pos.push(a.x, a.y, a.z, b.x, b.y, b.z, d.x, d.y, d.z);
+        for (let k = 0; k < 3; k++) { nor.push(nn.x, nn.y, nn.z); col.push(...tone); }
+      }
+    };
+    const ivy = (cx, cz, h, seed) => {
+      const IR = prng(seed);
+      for (let v = 0; v < 3; v++) {
+        let a = IR.range(0, Math.PI * 2);
+        const top = h * IR.range(0.45, 0.85);
+        for (let y = 0.3; y < top; y += 0.07) {
+          a += IR.range(-0.05, 0.16);
+          const density = 1 - y / top;
+          if (IR.next() > 0.25 + density * 0.75) continue;
+          const rr = 0.62 - (y / h) * 0.1;
+          const n = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
+          for (let k = 0; k < 2; k++) {
+            const aa = a + IR.range(-0.35, 0.35);
+            const nn = new THREE.Vector3(Math.cos(aa), IR.range(-0.2, 0.3), Math.sin(aa)).normalize();
+            const c = new THREE.Vector3(cx + Math.cos(aa) * rr, y + IR.range(-0.05, 0.05), cz + Math.sin(aa) * rr);
+            const up = new THREE.Vector3(IR.range(-0.4, 0.4), 1, IR.range(-0.4, 0.4)).normalize();
+            const g = IR.range(0.6, 1.1);
+            const tone = IR.chance(0.12) ? [0.36 * g, 0.22 * g, 0.08 * g] : [0.08 * g, 0.17 * g + 0.04, 0.05 * g];
+            leaf(c, nn, up, IR.range(0.07, 0.13) * (0.7 + density * 0.6), tone);
+          }
+          void n;
+        }
+      }
+    };
+    ivy(-13, -6, 10, 41);
+    ivy(-9.2, -8.2, 10, 42);
+    ivy(16.5, -4, 8, 43);
+    ivy(-17, 2, 4.5, 44);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    const im = addRimLight(new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.6 }), rimU, 2.2);
+    group.add(new THREE.Mesh(g, im));
+    disposables.push(g, im);
+  }
   const ruin = merge(pieces);
   const ruinMesh = new THREE.Mesh(ruin, stoneMat);
   ruinMesh.castShadow = true;
@@ -423,7 +599,7 @@ export function createTerrace({ seed = 7 } = {}) {
   }
   {
     const tufts = [];
-    for (let i = 0; i < 170; i++) {
+    for (let i = 0; i < 230; i++) {
       // along the broken edge, round column plinths, and in random cracks
       let x, z;
       const k = R.next();
@@ -432,21 +608,68 @@ export function createTerrace({ seed = 7 } = {}) {
       else { x = R.range(-30, 30); z = R.range(-8, 7); }
       if (Math.hypot(x, z) < 5.2) continue;
       tufts.push([x, z, R.range(0.35, 0.8), R.range(0, Math.PI)]);
+      // satellites: tufts grow in clumps
+      for (let k = R.int(0, 2); k > 0; k--) tufts.push([x + R.range(-0.5, 0.5), z + R.range(-0.4, 0.4), R.range(0.25, 0.55), 0]);
     }
-    const g = new THREE.PlaneGeometry(1, 1);
-    g.translate(0, 0.5, 0);
-    const gm = new THREE.MeshStandardMaterial({ map: getGrassTexture(), alphaTest: 0.4, side: THREE.DoubleSide, roughness: 1, color: 0x8a9a6a });
-    const inst = new THREE.InstancedMesh(g, gm, tufts.length * 2);
-    const mtx = new THREE.Matrix4();
-    const q = new THREE.Quaternion();
-    tufts.forEach(([x, z, sc, ry], i) => {
-      for (let j = 0; j < 2; j++) {
-        q.setFromEuler(new THREE.Euler(0, ry + j * Math.PI / 2, 0));
-        inst.setMatrixAt(i * 2 + j, mtx.compose(new THREE.Vector3(x, 0, z), q, new THREE.Vector3(sc * 1.3, sc, sc)));
+    // clustered tufts of real blades (tapered, bent, root-dark to sun-bleached tips),
+    // a few seed heads, lit by the scene instead of flat alpha cards
+    const blades = [];
+    const pos = [], col = [], nor = [];
+    const tri = (a, b, c, ca, cb, cc) => {
+      pos.push(...a, ...b, ...c);
+      col.push(...ca, ...cb, ...cc);
+      const n = new THREE.Vector3().subVectors(new THREE.Vector3(...b), new THREE.Vector3(...a)).cross(new THREE.Vector3().subVectors(new THREE.Vector3(...c), new THREE.Vector3(...a))).normalize();
+      // bias normals upward so blades catch the sky like foliage, not paper
+      n.y = Math.abs(n.y) + 0.8;
+      n.normalize();
+      for (let k = 0; k < 3; k++) nor.push(n.x, n.y, n.z);
+    };
+    tufts.forEach(([x, z, sc, ry]) => {
+      const n = 9 + Math.floor(R.next() * 8);
+      const dry = R.next();
+      for (let i = 0; i < n; i++) {
+        const a = R.range(0, Math.PI * 2);
+        const rr = R.range(0, 0.16) * sc;
+        const bx = x + Math.cos(a) * rr, bz = z + Math.sin(a) * rr;
+        const hgt = sc * R.range(0.45, 1.05);
+        const wid = R.range(0.025, 0.045) * (0.6 + sc * 0.5);
+        const lean = R.range(0.15, 0.6) * hgt;
+        const dir = a + R.range(-0.5, 0.5);
+        const dx = Math.cos(dir), dz = Math.sin(dir);
+        const px = -dz, pz = dx;
+        const base = [0.05, 0.07, 0.03];
+        const tip = dry > 0.6 ? [0.62, 0.55, 0.3] : [0.34 + R.range(0, 0.1), 0.42 + R.range(0, 0.1), 0.16];
+        const midc = [base[0] * 0.4 + tip[0] * 0.6, base[1] * 0.4 + tip[1] * 0.6, base[2] * 0.4 + tip[2] * 0.6];
+        // three segments, curving over
+        const P = (t) => [bx + dx * lean * t * t, hgt * (t - 0.25 * t * t * (lean / hgt)), bz + dz * lean * t * t];
+        const W = (t) => wid * (1 - t);
+        let prevL = null, prevR = null, prevC = base;
+        for (let k = 0; k <= 3; k++) {
+          const t = k / 3;
+          const c = P(t);
+          const w = W(t);
+          const L = [c[0] - px * w, c[1], c[2] - pz * w];
+          const Rr = [c[0] + px * w, c[1], c[2] + pz * w];
+          const cc = k === 0 ? base : k === 3 ? tip : midc;
+          if (prevL) {
+            tri(prevL, prevR, Rr, prevC, prevC, cc);
+            tri(prevL, Rr, L, prevC, cc, cc);
+          }
+          prevL = L; prevR = Rr; prevC = cc;
+        }
       }
+      void ry;
     });
-    group.add(inst);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    const gm = addRimLight(new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.85 }), rimU, 1.6);
+    const grass = new THREE.Mesh(g, gm);
+    grass.receiveShadow = true;
+    group.add(grass);
     disposables.push(g, gm);
+    void blades;
   }
 
   // soft glow at the heart of the pool
@@ -469,6 +692,7 @@ export function createTerrace({ seed = 7 } = {}) {
       U.uTime.value = t;
       FLAME_UNIFORMS.uTime.value = t;
       for (const b of braziers) b.userData.update(t);
+      if (camera) for (const hz of hazes) hz.quaternion.copy(camera.quaternion);
       poolLight.intensity = 30 * (0.92 + 0.08 * Math.sin(t * 1.3));
     },
     dispose() {

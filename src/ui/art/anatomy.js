@@ -17,6 +17,7 @@ const WHITE = mat('#e9e2d6', { rough: 0.25, spec: 0.7, ink: 0, sss: 0.3 });
 const PUPIL = mat('#050403', { rough: 0.1, spec: 1, ink: 0 });
 const SHINE = mat('#ffffff', { emissive: '#d8d0c0', ink: 0 });
 const MOUTH = mat('#2a0c0a', { rough: 0.6, spec: 0.2, ink: 0.2 });
+const LASH = mat('#1a0e08', { rough: 0.7, spec: 0.1, ink: 0 });
 
 /**
  * @param f Figure (pushed to the head frame, scale = head radius)
@@ -66,8 +67,10 @@ export function sculptHead(f, skinM, o = {}) {
     f.ell(add(c, [d * -0.01, 0, 0.138]), [0.034, 0.034, 0.018], PUPIL, { group: null });
     f.sphere(add(c, [d * -0.01 - 0.028, 0.03, 0.146]), 0.016, SHINE, { group: null, shadow: false });
     // upper lid (covers the top of the eyeball, with a crease) and lower lid
-    f.ell(add(c, [0, 0.075, 0.03]), [0.17, 0.085, 0.15], skinM, { group: 'head', k: 0.05, R: rotZ(d * -0.12) });
-    f.ell(add(c, [0, -0.1, 0.02]), [0.155, 0.05, 0.135], skinM, { group: 'head', k: 0.05 });
+    f.ell(add(c, [0, 0.112, 0.025]), [0.17, 0.07, 0.15], skinM, { group: 'head', k: 0.05, R: rotZ(d * -0.1) });
+    f.ell(add(c, [0, -0.122, 0.02]), [0.155, 0.045, 0.135], skinM, { group: 'head', k: 0.05 });
+    // lash line along the lid edge: what makes an eye read at a distance
+    f.ell(add(c, [d * 0.005, 0.05, 0.125]), [0.15, 0.016, 0.045], LASH, { group: null, R: rotZ(d * -0.1) });
     if (!fem && age < 0.6) f.ell([d * 0.34, 0.27, 0.76], [0.19, 0.05, 0.07], hairMat(o.hair ?? '#3a2416', o.brow ?? 1), { group: null, R: rotZ(d * -0.15) });
     else f.ell([d * 0.34, 0.26, 0.77], [0.18, 0.03, 0.05], hairMat(o.hair ?? '#3a2416', 0.8), { group: null, R: rotZ(d * -0.22) });
   }

@@ -276,7 +276,7 @@ export function createCity({ seed = 1988 } = {}) {
       const ry = (R.chance(0.5) ? 0 : Math.PI / 2) + R.range(-0.12, 0.12);
       const ruined = east ? R.chance(0.55) : R.chance(0.08);
       // timber framing and window joinery only where the camera ever gets close
-      const near = gz < 6 && Math.abs(x) < 120;
+      const near = (gz < 6 && Math.abs(x) < 120) || (x > 10 && x < 110 && gz < 12);
       house(x, z, w, d, h, ry, { ruined, lit: east ? 0.05 : 0.5, detail: near });
       if (!ruined && R.chance(0.06)) tower(x + w * 0.6, z, R.range(1.4, 2.2), h + R.range(5, 10), { roof: R.chance(0.5) ? 'cone' : 'flat', lit: east ? 0 : 1 });
       if (east && ruined && R.chance(0.22) && fires.length < 9) fires.push(new THREE.Vector3(x + R.range(-1, 1), GROUND + 0.5, z));

@@ -60,7 +60,7 @@ export function createWorld() {
   // a narrow key on Valjevo Castle from the moonrise side: the keep and its towers
   // get a lit plane the dusk town around them doesn't, so the castle reads as the
   // focal mass of the old city (aerial shots and the title skyline)
-  const castleKey = new THREE.SpotLight(0xb4b8ff, 0, 0, 0.2, 0.55, 0);
+  const castleKey = new THREE.SpotLight(0xc4c0ff, 0, 0, 0.26, 0.6, 0);
   castleKey.position.set(150, 70, -40);
   castleKey.target.position.set(55, -2, -128);
   scene.add(castleKey, castleKey.target);
@@ -106,12 +106,12 @@ export function createWorld() {
     height: 16, speed: [0.03, 0.08], size: 0.55, colorA: 0xe8ffff, colorB: 0x3fc8ff, sway: 1.4, intensity: 2.4,
   });
   const embersL = createParticles({
-    count: 70, seed: 5, origin: new THREE.Vector3(-6.2, 1.8, -1.2), spread: new THREE.Vector3(0.9, 0.2, 0.9),
-    height: 7, speed: [0.12, 0.3], size: 0.3, wind: new THREE.Vector3(-0.25, 0, 0.05), sway: 0.7, intensity: 3,
+    count: 120, seed: 5, origin: new THREE.Vector3(-6.2, 1.8, -1.2), spread: new THREE.Vector3(0.7, 0.2, 0.7),
+    height: 10, speed: [0.1, 0.28], size: 0.32, wind: new THREE.Vector3(-0.6, 0, 0.1), sway: 0.9, intensity: 3.4,
   });
   const embersR = createParticles({
-    count: 70, seed: 6, origin: new THREE.Vector3(6.2, 1.8, -1.2), spread: new THREE.Vector3(0.9, 0.2, 0.9),
-    height: 7, speed: [0.12, 0.3], size: 0.3, wind: new THREE.Vector3(-0.25, 0, 0.05), sway: 0.7, intensity: 3,
+    count: 120, seed: 6, origin: new THREE.Vector3(6.2, 1.8, -1.2), spread: new THREE.Vector3(0.7, 0.2, 0.7),
+    height: 10, speed: [0.1, 0.28], size: 0.32, wind: new THREE.Vector3(-0.6, 0, 0.1), sway: 0.9, intensity: 3.4,
   });
   // embers carried up from the burning old city on the sea wind
   const drift = createParticles({
@@ -122,8 +122,10 @@ export function createWorld() {
   const systems = [motes, embersL, embersR, drift];
   for (const s of systems) scene.add(s.points);
 
-  const dragonPath = { x: 150, y: 26, z: -230, dx: 4.2, span: 380 };
-  dragon.group.scale.setScalar(1.45);
+  // the dragon glides west across the brightest band of the sunset, just above the
+  // skyline left of the logo, big enough to be the title card's second focal beat
+  const dragonPath = { x: -40, y: 15.5, z: -137, dx: 4.2, span: 380 };
+  dragon.group.scale.setScalar(2.5);
 
   const api = {
     scene,
@@ -157,7 +159,7 @@ export function createWorld() {
       sun.intensity = 2.2 + k * 2.4;
       sun.color.setHex(0xff8a4a).lerp(new THREE.Color(0xffa060), k);
       moon.intensity = k * 1.25;
-      castleKey.intensity = 1.7 * (0.45 + 0.55 * k);
+      castleKey.intensity = 4.5 * (0.4 + 0.6 * k);
     },
     /** Move the lighting rig indoors (council chamber shot): k = 0 outdoors, 1 inside. */
     setInterior(on) {
