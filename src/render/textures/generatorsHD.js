@@ -82,16 +82,16 @@ function masonryLayout({ rows, seed, minW, maxW }) {
  * chipped corners and spalls, recessed lime mortar with losses, pitting,
  * lichen and rain streaks. Tile ≈ 3 m.
  */
-export function ashlar({ seed = 21, rows = 8, minW = 0.18, maxW = 0.34, palette = 'warm', mortarW = 0.011, erosion = 1, moss = 0.35 } = {}) {
+export function ashlar({ seed = 21, rows = 8, minW = 0.18, maxW = 0.34, palette = 'warm', mortarW = 0.0055, erosion = 1, moss = 0.35 } = {}) {
   const lay = masonryLayout({ rows, seed, minW, maxW });
   const pals = {
     warm: [[0.52, 0.48, 0.42], [0.47, 0.44, 0.4], [0.56, 0.5, 0.41], [0.45, 0.44, 0.42], [0.5, 0.45, 0.37], [0.58, 0.54, 0.47], [0.42, 0.39, 0.35]],
-    cold: [[0.38, 0.39, 0.4], [0.33, 0.34, 0.35], [0.42, 0.41, 0.39], [0.3, 0.31, 0.33], [0.36, 0.37, 0.36], [0.4, 0.38, 0.35], [0.28, 0.29, 0.3]],
+    cold: [[0.39, 0.38, 0.37], [0.34, 0.34, 0.34], [0.43, 0.41, 0.38], [0.31, 0.31, 0.32], [0.37, 0.37, 0.35], [0.41, 0.38, 0.34], [0.29, 0.29, 0.29]],
     dark: [[0.28, 0.27, 0.26], [0.24, 0.24, 0.24], [0.31, 0.29, 0.26], [0.22, 0.22, 0.23], [0.27, 0.26, 0.25], [0.33, 0.31, 0.28], [0.2, 0.2, 0.2]],
   };
   const pal = pals[palette] ?? pals.warm;
   const palMean = mul3(pal.reduce((a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]], [0, 0, 0]), 1 / pal.length);
-  const mortar = palette === 'dark' ? [0.2, 0.19, 0.17] : [0.5, 0.47, 0.41];
+  const mortar = palette === 'dark' ? [0.27, 0.26, 0.23] : [0.5, 0.47, 0.41];
   return (u, v) => {
     const L = lay(u, v);
     const sid = L.id;
@@ -101,14 +101,15 @@ export function ashlar({ seed = 21, rows = 8, minW = 0.18, maxW = 0.34, palette 
     const chip = wfbm(u, v, 14, seed + 5, 4, 0.4);
     const chipF = fbm(u * 60, v * 60, { octaves: 3, period: 60, seed: seed + 6 });
     // worn arrises: per-stone erosion amount, much stronger on some stones
-    const wear = (0.4 + sB * sB * 2.2) * erosion;
-    const edgeNoise = (chip - 0.5) * 0.007 * wear + (chipF - 0.5) * 0.003 * wear;
+    const wear = (0.35 + sB * sB * 1.3) * erosion;
+    // chips only bite into the stone (never shrink the joint below the mortar line)
+    const edgeNoise = -Math.max(0, (chip - 0.45) * 0.006 * wear + (chipF - 0.5) * 0.0025 * wear);
     // distances in tile units; corners chip more
     const cornerD = Math.hypot(Math.min(L.fx, 1 - L.fx) * L.bw, Math.min(L.fy, 1 - L.fy) * L.bh);
-    const cornerChip = (1 - smooth(0.0, 0.02 + sB * 0.035, cornerD)) * 0.012 * (0.5 + chipF);
+    const cornerChip = (1 - smooth(0.0, 0.012 + sB * 0.02, cornerD)) * 0.006 * (0.5 + chipF);
     const e = Math.min(L.dx, L.dy) + edgeNoise - cornerChip;
-    const mw = mortarW * (0.8 + hash2(L.row, 19, seed) * 0.5);
-    const inStone = smooth(mw, mw + 0.003, e);
+    const mw = mortarW * (0.7 + hash2(L.row, 19, seed) * 0.35);
+    const inStone = smooth(mw, mw + 0.005, e);
     const bevelW = 0.008 + sA * 0.03;
     const bevel = smooth(mw, mw + bevelW, e);
     const big = fbm(u * 6, v * 6, { octaves: 4, period: 6, seed });
@@ -125,13 +126,13 @@ export function ashlar({ seed = 21, rows = 8, minW = 0.18, maxW = 0.34, palette 
     const rockFaced = sA > 0.78;
     const pillowAmt = sA < 0.35 ? 0.0 : sA < 0.78 ? (sA - 0.35) * 0.18 : 0.04;
     const tool = valueNoise((u + v * (sC > 0.5 ? 1 : -1)) * 260, (u - v) * 18, 1000, seed + 31);
-    c = mul3(c, 1 + (tool - 0.5) * (sA < 0.35 ? 0.09 : 0.03));
+    c = mul3(c, 1 + (tool - 0.5) * (sA < 0.35 ? 0.045 : 0.02));
     const rockN = rockFaced ? fbm(u * 26, v * 26, { octaves: 4, period: 26, seed: seed + 51 }) : 0.5;
     // worn arrises are lighter (exposed fresh stone) and smoother
     c = mul3(c, 1 + (1 - bevel) * 0.1 * inStone);
     // rain streaks
     const streak = fbm(u * 36, v * 2.2, { octaves: 3, period: 36, seed: seed + 13 });
-    c = mul3(c, 1 - smooth(0.55, 0.8, streak) * 0.24);
+    c = mul3(c, 1 - smooth(0.6, 0.85, streak) * 0.14);
     // lichen (yellow-green / grey patches) + white crustose dots
     const lich = wfbm(u, v, 5, seed + 17, 5);
     c = mix3(c, [0.42, 0.44, 0.3], smooth(0.62, 0.72, lich) * 0.55 * moss);
@@ -141,13 +142,13 @@ export function ashlar({ seed = 21, rows = 8, minW = 0.18, maxW = 0.34, palette 
     const mn = fbm(u * 60, v * 60, { octaves: 2, period: 60, seed: seed + 23 });
     const loss = smooth(0.55, 0.7, fbm(u * 9, v * 9, { octaves: 3, period: 9, seed: seed + 29 }));
     let mc = mul3(mortar, 0.7 + mn * 0.4);
-    mc = mix3(mc, mul3(mortar, 0.35), loss * 0.8);
+    mc = mix3(mc, mul3(mortar, 0.55), loss * 0.6);
     mc = mix3(mc, [0.2, 0.26, 0.14], smooth(0.55, 0.75, big) * moss);
     const col = mix3(mc, c, inStone);
     const pillow = Math.sin(Math.PI * clamp01(L.fx)) * Math.sin(Math.PI * clamp01(L.fy));
     const tilt = ((L.fx - 0.5) * (hash2(L.row, L.col, seed + 61) - 0.5) + (L.fy - 0.5) * (hash2(L.row, L.col, seed + 62) - 0.5)) * 0.05;
     const stoneH = 0.6 + bevel * 0.14 + pillow * pillowAmt + tilt + big * 0.08 + fine * 0.05 + micro * 0.006 + (rockN - 0.5) * 0.12 - pit * 0.1;
-    const h = inStone * stoneH + (1 - inStone) * (0.12 + mn * 0.08 - loss * 0.07);
+    const h = inStone * stoneH + (1 - inStone) * (0.3 + mn * 0.08 - loss * 0.08);
     const sr = 0.74 + sB * 0.16 + (rockFaced ? 0.06 : 0);
     const r = lerp(0.97, clamp01(sr + fine * 0.1 - pit * 0.1 - (1 - bevel) * 0.08), inStone);
     return { c: col, h, r };
@@ -184,23 +185,31 @@ export function plaster({ seed = 31, base = [0.78, 0.72, 0.6], decay = 1, interi
     const crackMask = smooth(0.6, 0.72, fbm(u * 5, v * 5, { octaves: 3, period: 5, seed: seed + 7 })) * smooth(0.25, 0.6, w.id + 0.2);
     const crack = (1 - smooth(0.0, 0.012, w.f2 - w.f1)) * crackMask * decay;
     // a few longer settlement cracks (wandering lines, very thin)
-    const sl = fbm(u * 3, v * 8, { octaves: 4, period: 3, seed: seed + 16 });
-    const settle = (1 - smooth(0.0, 0.006, Math.abs(sl - 0.5))) * smooth(0.6, 0.7, fbm(u * 4, v * 4, { octaves: 2, period: 4, seed: seed + 17 })) * decay;
+    // two sparse settlement cracks per tile: thin, near-vertical, jagged, fading out
+    let settle = 0;
+    for (let k = 0; k < 2; k++) {
+      const x0 = hash2(k, 1, seed + 16);
+      const wob = (fbm(v * 6 + k * 3.7, 0.5, { octaves: 4, period: 6, seed: seed + 17 + k }) - 0.5) * 0.12 + (valueNoise(v * 60, k * 9.1, 60, seed + 19) - 0.5) * 0.012;
+      const du = Math.abs(((u - x0 - wob + 1.5) % 1) - 0.5);
+      const span = smooth(0.0, 0.08, Math.abs(((v - hash2(k, 2, seed + 16) + 1.5) % 1) - 0.5) - 0.18);
+      settle = Math.max(settle, (1 - smooth(0.0, 0.0022, du - 0.0006)) * (1 - span));
+    }
+    settle *= decay * 0.8;
     const ck = Math.max(crack * 0.7, settle);
     c = mul3(c, 1 - ck * 0.4);
     h -= ck * 0.06;
     // small spalls exposing riven oak lath (with dark gaps) behind the render
     if (!interior) {
       const sp = wfbm(u, v, 9, seed + 8, 4, 0.5);
-      const spMask = smooth(0.5, 0.65, fbm(u * 2, v * 2, { octaves: 2, period: 2, seed: seed + 18 }));
-      const spall = smooth(0.735, 0.745, sp) * decay * spMask;
+      const spMask = smooth(0.62, 0.72, fbm(u * 2, v * 2, { octaves: 2, period: 2, seed: seed + 18 }));
+      const spall = smooth(0.745, 0.755, sp) * decay * spMask;
       if (spall > 0) {
         const lv = v * 70 + (fbm(u * 8, v * 8, { octaves: 2, period: 8, seed: seed + 9 }) - 0.5) * 2;
         const lf = lv - Math.floor(lv);
         const lath = smooth(0.08, 0.2, lf) * (1 - smooth(0.72, 0.85, lf));
         const grain = valueNoise(u * 300, lv * 2, 1000, seed + 10);
         const wood = mul3([0.3, 0.22, 0.15], 0.7 + grain * 0.5);
-        const under = mix3([0.08, 0.07, 0.06], wood, lath);
+        const under = mix3([0.16, 0.13, 0.1], wood, lath);
         c = mix3(c, under, spall);
         h = lerp(h, 0.3 + lath * 0.18, spall);
         r = lerp(r, 0.95, spall);
@@ -348,13 +357,14 @@ export function crazyFlags({ seed = 71, scale = 5, base = [0.5, 0.47, 0.42], wee
  * streaks and white efflorescence. Tile ≈ 3 m.
  */
 export function dungeonStone({ seed = 81 } = {}) {
-  const base = ashlar({ seed, rows: 6, minW: 0.2, maxW: 0.38, palette: 'dark', mortarW: 0.009, erosion: 1.6, moss: 0.25 });
+  const base = ashlar({ seed, rows: 6, minW: 0.2, maxW: 0.38, palette: 'dark', mortarW: 0.006, erosion: 1.6, moss: 0.25 });
   return (u, v, x, y) => {
     const s = base(u, v, x, y);
     const rough = fbm(u * 14, v * 14, { octaves: 4, period: 14, seed: seed + 1 });
     const grit = valueNoise(u * 420, v * 420, 420, seed + 4);
-    s.h += (rough - 0.5) * 0.06 + (grit - 0.5) * 0.02;
-    s.c = mul3(s.c, 0.85 + rough * 0.3 + (grit - 0.5) * 0.08);
+    const hew = fbm(u * 30, v * 30, { octaves: 3, period: 30, seed: seed + 5 });
+    s.h += (rough - 0.5) * 0.1 + (hew - 0.5) * 0.05 + (grit - 0.5) * 0.02;
+    s.c = mul3(s.c, 0.82 + rough * 0.3 + (hew - 0.5) * 0.12 + (grit - 0.5) * 0.08);
     const damp = smooth(0.5, 0.78, fbm(u * 10, v * 1.5, { octaves: 4, period: 10, seed: seed + 2 }));
     s.c = mix3(s.c, mul3(s.c, 0.62), damp * 0.55);
     // matte, porous stone: only the dampest seams get a faint sheen
@@ -413,23 +423,31 @@ export function dungeonFloor({ seed = 91 } = {}) {
 }
 
 /** Bricks (chimneys, hearths, cellar vaults). Tile ≈ 1 m. */
-export function bricks({ seed = 101, rows = 14, cols = 4, base = [0.42, 0.22, 0.15], soot = 0.3 } = {}) {
+export function bricks({ seed = 101, rows = 14, cols = 4, base = [0.4, 0.25, 0.18], soot = 0.3 } = {}) {
+  const tones = [[1, 1, 1], [1.08, 0.95, 0.85], [0.85, 0.82, 0.8], [1.12, 0.88, 0.72], [0.7, 0.62, 0.58], [0.95, 0.9, 0.86]];
   return (u, v) => {
     const ry = v * rows;
     const row = Math.floor(ry);
-    const off = (row % 2) * 0.5;
+    const off = (row % 2) * 0.5 + (hash2(row, 3, seed) - 0.5) * 0.12;
     const rx = u * cols + off;
     const col = Math.floor(rx);
     const fx = rx - col;
     const fy = ry - row;
     const id = hash2(((col % cols) + cols) % cols, row, seed);
     const n = fbm(u * 30, v * 30, { octaves: 4, period: 30, seed: seed + 1 });
-    const e = Math.min(Math.min(fx, 1 - fx) * (1 / cols) * rows * 0.5, Math.min(fy, 1 - fy)) + (n - 0.5) * 0.06;
-    const brick = smooth(0.07, 0.11, e);
-    let c = mul3(base, 0.7 + id * 0.45 + (n - 0.5) * 0.25);
+    const pit = valueNoise(u * 160, v * 160, 160, seed + 3);
+    const e = Math.min(Math.min(fx, 1 - fx) * (1 / cols) * rows * 0.5, Math.min(fy, 1 - fy)) + (n - 0.5) * 0.08 * (0.5 + id);
+    const brick = smooth(0.07, 0.1, e);
+    const bev = smooth(0.07, 0.18, e);
+    const tn = tones[Math.floor(id * tones.length)];
+    let c = [base[0] * tn[0], base[1] * tn[1], base[2] * tn[2]];
+    c = mul3(c, 0.78 + hash2(col, row, seed + 7) * 0.3 + (n - 0.5) * 0.22 + (pit - 0.5) * 0.08);
+    // dark over-fired headers, efflorescence and soot
+    if (hash2(col, row, seed + 9) > 0.86) c = mul3(c, 0.55);
+    c = mix3(c, [0.6, 0.58, 0.54], smooth(0.72, 0.85, fbm(u * 8, v * 8, { octaves: 3, period: 8, seed: seed + 4 })) * 0.3);
     c = mix3(c, [0.12, 0.1, 0.09], smooth(0.5, 0.8, fbm(u * 3, v * 3, { octaves: 3, period: 3, seed: seed + 2 })) * soot);
-    const m = mul3([0.45, 0.42, 0.37], 0.75 + n * 0.3);
-    return { c: mix3(m, c, brick), h: brick * (0.6 + n * 0.15) + (1 - brick) * 0.15, r: lerp(0.95, 0.85, brick) };
+    const m = mul3([0.44, 0.41, 0.36], 0.72 + n * 0.3);
+    return { c: mix3(m, c, brick), h: brick * (0.58 + bev * 0.1 + n * 0.12 - pit * 0.04) + (1 - brick) * 0.12, r: lerp(0.95, 0.82 + pit * 0.1, brick) };
   };
 }
 
@@ -645,7 +663,7 @@ export function limestone({ seed = 211, base = [0.5, 0.47, 0.41] } = {}) {
  * into two smaller ones), per-stone tilt/height, chipped corners, worn arrises,
  * wide dirt/moss-filled joints, lichen and stains. Tile ≈ 3 m.
  */
-export function flagstones({ seed = 77, rows = 8, base = [0.5, 0.47, 0.42], weeds = 0.7 } = {}) {
+export function flagstones({ seed = 77, rows = 8, base = [0.5, 0.47, 0.42], weeds = 0.45 } = {}) {
   const lay = masonryLayout({ rows, seed, minW: 0.14, maxW: 0.34 });
   return (u, v) => {
     let L = lay(u, v);
@@ -656,13 +674,13 @@ export function flagstones({ seed = 77, rows = 8, base = [0.5, 0.47, 0.42], weed
     let fy = L.fy;
     let bw = L.bw;
     let bh = L.bh;
-    if (sp < 0.3 && bw > 0.2) {
+    if (sp < 0.3 && bw > 0.26) {
       const cut = 0.4 + hash2(L.row, L.col, seed + 10) * 0.2;
       const right = fx > cut;
       fx = right ? (fx - cut) / (1 - cut) : fx / cut;
       bw = right ? bw * (1 - cut) : bw * cut;
       id = hash2(Math.floor(id * 1e6), right ? 1 : 0, seed + 11);
-    } else if (sp > 0.82) {
+    } else if (sp > 0.86 && bh > 0.15) {
       const top = fy > 0.5;
       fy = top ? (fy - 0.5) * 2 : fy * 2;
       bh *= 0.5;
@@ -674,17 +692,17 @@ export function flagstones({ seed = 77, rows = 8, base = [0.5, 0.47, 0.42], weed
     const nf = fbm(u * 90, v * 90, { octaves: 2, period: 90, seed: seed + 13 });
     const wearS = hash2(Math.floor(id * 1e6), 5, seed);
     const cornerD = Math.hypot(dx, dy);
-    const chipR = 0.008 + wearS * 0.03;
-    const corner = (1 - smooth(chipR * 0.5, chipR * (1.2 + n), cornerD)) * 0.014;
-    const e = Math.min(dx, dy) + (n - 0.5) * 0.008 * (0.6 + wearS * 1.4) + (nf - 0.5) * 0.003 - corner;
-    const jw = 0.006 + wearS * 0.004;
+    const chipR = 0.004 + wearS * 0.012;
+    const corner = (1 - smooth(chipR * 0.5, chipR * (1.2 + n), cornerD)) * 0.008;
+    const e = Math.min(dx, dy) + (n - 0.5) * 0.005 * (0.6 + wearS * 1.4) + (nf - 0.5) * 0.002 - corner;
+    const jw = 0.0028 + wearS * 0.002;
     const stone = smooth(jw, jw + 0.003, e);
     const bevel = smooth(jw, jw + 0.012 + wearS * 0.02, e);
     const big = wfbm(u, v, 3, seed + 2);
-    const tones = [[1, 1, 1], [1.06, 0.98, 0.88], [0.9, 0.93, 0.97], [1.03, 0.95, 0.84], [0.85, 0.84, 0.82], [1.1, 1.05, 0.95], [0.78, 0.76, 0.72]];
+    const tones = [[1, 1, 1], [1.04, 0.99, 0.92], [0.94, 0.96, 0.98], [1.02, 0.97, 0.9], [0.9, 0.89, 0.87], [1.06, 1.03, 0.96], [0.86, 0.85, 0.82]];
     const tn = tones[Math.floor(id * tones.length)];
     let c = [base[0] * tn[0], base[1] * tn[1], base[2] * tn[2]];
-    c = mul3(c, 0.78 + hash2(Math.floor(id * 1e5), 7, seed) * 0.3 + (n - 0.5) * 0.22 + (big - 0.5) * 0.16 + (nf - 0.5) * 0.06);
+    c = mul3(c, 0.84 + hash2(Math.floor(id * 1e5), 7, seed) * 0.2 + (n - 0.5) * 0.22 + (big - 0.5) * 0.16 + (nf - 0.5) * 0.06);
     // worn, slightly polished centres; lighter fresh chips at arrises
     c = mul3(c, 1 + (1 - bevel) * 0.1 * stone);
     // occasional hairline crack through a slab
@@ -698,9 +716,9 @@ export function flagstones({ seed = 77, rows = 8, base = [0.5, 0.47, 0.42], weed
     c = mul3(c, 1 - smooth(0.6, 0.8, fbm(u * 5, v * 5, { octaves: 3, period: 5, seed: seed + 15 })) * 0.22);
     // joints: compacted dirt, grit, moss/weeds in places
     const jn = valueNoise(u * 260, v * 260, 260, seed + 16);
-    let jc = mul3([0.16, 0.14, 0.11], 0.75 + jn * 0.5);
-    jc = mix3(jc, mul3([0.17, 0.25, 0.09], 0.8 + jn * 0.4), smooth(0.4, 0.62, big) * weeds);
-    const halo = (1 - smooth(jw, jw + 0.02, e)) * 0.35; // dirt creeping onto the stone edge
+    let jc = mul3([0.21, 0.19, 0.15], 0.75 + jn * 0.5);
+    jc = mix3(jc, mul3([0.17, 0.25, 0.09], 0.8 + jn * 0.4), smooth(0.55, 0.72, big) * weeds);
+    const halo = (1 - smooth(jw, jw + 0.01, e)) * 0.2; // dirt creeping onto the stone edge
     c = mix3(c, mul3(jc, 1.3), halo * (1 - bevel));
     const col = mix3(jc, c, stone);
     // per-stone tilt + settle (reads through the normal map as uneven paving)
@@ -719,7 +737,7 @@ export function flagstones({ seed = 77, rows = 8, base = [0.5, 0.47, 0.42], weed
  * flowing grain with knots, end checks at top/bottom, weathered grey edges,
  * dark joints. Roughness follows wear.
  */
-export function doorPlanks({ seed = 221, count = 5, base = [0.3, 0.18, 0.1] } = {}) {
+export function doorPlanks({ seed = 221, count = 5, base = [0.3, 0.2, 0.13] } = {}) {
   return (u, v) => {
     const p = Math.floor(u * count);
     const fu = u * count - p;
@@ -735,7 +753,7 @@ export function doorPlanks({ seed = 221, count = 5, base = [0.3, 0.18, 0.1] } = 
       const d = Math.hypot(dxk, dyk);
       const infl = Math.exp(-d * d * 18);
       kx += infl * Math.sign(dxk || 1) * 0.25 * (1 - Math.min(1, d * 2));
-      kAmt = Math.max(kAmt, 1 - smooth(0.03, 0.07, d));
+      kAmt = Math.max(kAmt, 1 - smooth(0.03 + hash2(p, 30 + k, seed) * 0.03, 0.07 + hash2(p, 30 + k, seed) * 0.04, d));
     }
     const g1 = fbm(fu * 3 + id * 9, v * 4, { octaves: 3, period: 1000, seed: seed + 1 });
     const gx = fu + kx + (g1 - 0.5) * 0.3;
@@ -745,11 +763,11 @@ export function doorPlanks({ seed = 221, count = 5, base = [0.3, 0.18, 0.1] } = 
     let c = mul3(base, 0.7 + id * 0.4);
     c = mul3(c, 0.78 + ring * 0.16 + fine * 0.14 + (pore - 0.5) * 0.08);
     // knots: dark core with a ring
-    c = mix3(c, mul3(base, 0.35), kAmt * 0.9);
+    c = mix3(c, mul3(base, 0.6), kAmt * 0.8);
     // weathering: greyed silver near plank edges and bottom (splash zone)
     const edge = 1 - smooth(0.0, 0.12, Math.min(fu, 1 - fu));
     const grey = clamp01(edge * 0.6 + (1 - smooth(0.0, 0.25, v)) * 0.5 + smooth(0.55, 0.8, fbm(u * 3, v * 3, { octaves: 3, period: 3, seed: seed + 4 })) * 0.4);
-    c = mix3(c, mul3([0.36, 0.33, 0.29], 0.8 + fine * 0.3), grey * 0.45);
+    c = mix3(c, mul3([0.38, 0.35, 0.31], 0.8 + fine * 0.3), grey * 0.62);
     // end checks: radial splits from top and bottom ends
     const endD = Math.min(v, 1 - v);
     const chk = valueNoise(fu * 7 + p * 3.1, 0.5, 1000, seed + 5);
@@ -767,7 +785,7 @@ export function doorPlanks({ seed = 221, count = 5, base = [0.3, 0.18, 0.1] } = 
 }
 
 /** Fractured rock / broken masonry surface (no joints) for rubble meshes. Tile ≈ 1 m. */
-export function rockFace({ seed = 231, base = [0.46, 0.43, 0.38] } = {}) {
+export function rockFace({ seed = 231, base = [0.4, 0.38, 0.34] } = {}) {
   return (u, v) => {
     const big = wfbm(u, v, 4, seed, 5, 0.5);
     const mid = fbm(u * 16, v * 16, { octaves: 4, period: 16, seed: seed + 1 });

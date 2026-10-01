@@ -75,6 +75,7 @@ export default class ExploreScene extends Scene {
     this._setupEnvironment();
 
     this.post = this._postFor();
+    this._baseExposure = this.post.exposure ?? 1;
 
     this.hud = createStandardHud(this.ctx, {
       commands: [
@@ -117,7 +118,7 @@ export default class ExploreScene extends Scene {
       const skyFill = night ? new THREE.Color(k.sky) : new THREE.Color(k.sky).lerp(new THREE.Color(0xd6dce6), 0.5);
       // sunlit paving bounces warm light up into the shade
       const bounce = night ? new THREE.Color(k.ground).multiplyScalar(1.2) : new THREE.Color(k.ground).lerp(new THREE.Color(0x9a8064), 0.75).lerp(new THREE.Color(k.sun), 0.15);
-      this.hemi = new THREE.HemisphereLight(skyFill, bounce, k.hemi * (night ? 2.3 : 2.0));
+      this.hemi = new THREE.HemisphereLight(skyFill, bounce, k.hemi * (night ? 3.2 : 2.0));
       s.add(this.hemi);
       const sunCol = night ? new THREE.Color(0x9db4ff) : new THREE.Color(k.sun).lerp(new THREE.Color(0xffd6a0), 0.3);
       this.sun = new THREE.DirectionalLight(sunCol, night ? 1.15 : k.sunI * 1.85);
@@ -182,8 +183,8 @@ export default class ExploreScene extends Scene {
     }
     // pooled torch lights (constant count → no shader recompiles)
     this.poolLights = [];
-    // by day in the open the sconces are unlit: skip point lights entirely (cheaper shading)
-    const needLights = !ts.outdoors || this.night > 0.12;
+    // door torches burn all day, so the pool is always present (constant light count → no recompiles)
+    const needLights = true;
     for (let i = 0; i < (needLights ? POOL_LIGHTS : 0); i++) {
       const l = new THREE.PointLight(0xff9a48, 0, 11, 1.7);
       l.userData = { src: null, fade: 1 };
@@ -191,11 +192,11 @@ export default class ExploreScene extends Scene {
       this.poolLights.push(l);
     }
     // party lantern: carried a little ahead and to the right, warm, ~5 m reach
-    const lanternI = ts.outdoors ? this.night * 7 : ts.id === 'dungeon' ? 15 : 3;
+    const lanternI = ts.outdoors ? this.night * 10 : ts.id === 'dungeon' ? 15 : 3;
     this.lantern = new THREE.PointLight(0xffb468, lanternI, ts.outdoors ? 12 : 15, ts.outdoors ? 1.6 : 1.45);
     this.lantern.position.set(0.45, -0.25, -0.15);
     this.lantern.userData.base = lanternI;
-    if (needLights) this.camera.add(this.lantern);
+    if (!ts.outdoors || this.night > 0.12) this.camera.add(this.lantern);
     setWindowGlow(this.skyNight, 1);
   }
 
@@ -440,7 +441,7 @@ export default class ExploreScene extends Scene {
       const candle = src.kind === 'candle';
       const hearth = src.kind === 'hearth';
       l.color.setHex(hearth ? 0xff7a30 : candle ? 0xffb060 : src.kind === 'lamp' ? 0xffb56a : 0xff9040);
-      l.userData.base = hearth ? 30 : candle ? 3.5 : src.kind === 'lamp' ? 9 : 11;
+      l.userData.base = (hearth ? 30 : candle ? 3.5 : src.kind === 'lamp' ? 9 : 11) * (this.tileset.outdoors && this.night < 0.12 ? 0.6 : 1);
       l.distance = hearth ? 14 : candle ? 7 : 12;
     }
     for (const l of free) {
@@ -755,6 +756,21 @@ export default class ExploreScene extends Scene {
 
   _animateWorld(time, dt, frozen) {
     FLAME_UNIFORMS.uTime.value = time;
+    // eye adaptation: looking into the sun means looking at shaded faces — open up a little
+    if (this.tileset.outdoors && this.keys.night < 0.5 && this.sunDir) {
+      const yaw = this.camera.rotation.y;
+      const fx = -Math.sin(yaw);
+      const fz = -Math.cos(yaw);
+      const sl = Math.hypot(this.sunDir.x, this.sunDir.z) || 1;
+      const into = Math.max(0, (fx * this.sunDir.x + fz * this.sunDir.z) / sl);
+      const target = this._baseExposure * (1 + 0.24 * into);
+      const cur = this.post.exposure;
+      const next = frozen ? target : cur + (target - cur) * Math.min(1, dt * 2.5);
+      if (Math.abs(next - cur) > 0.0005) {
+        this.post.exposure = next;
+        if (this.ctx.scenes.current === this) this.ctx.render.applyPost({ exposure: next });
+      }
+    }
     PROP_UNIFORMS.uTime.value = time;
     this.sky?.userData.update(time);
     if (this.skyline?.water?.normalMap) this.skyline.water.normalMap.offset.set(time * 0.004, time * 0.0025);

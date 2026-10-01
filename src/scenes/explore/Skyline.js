@@ -337,7 +337,37 @@ function house(g, winLit, winDark, x, y0, z, w, d, h, rotX, ruined, id, night, c
         const P3 = P0.clone().setY(wy + 1.1);
         const lit = night > 0.3 && hash(id, f, c, 'lit') < 0.45;
         (lit ? winLit : winDark).quad('win', P1, P0, P3, P2, [[0, 0], [1, 0], [1, 1], [0, 1]], { ao: 1 });
+        // frame, mullion and sill so windows read as joinery, not holes
+        const fk = plaster ? 'arch_beam_dark' : 'arch_trim';
+        const N = new THREE.Vector3(nx, 0, nz);
+        const ctr = new THREE.Vector3(px, wy + 0.55, pz).addScaledVector(N, 0.04);
+        const ang = Math.atan2(T.x, T.z);
+        const box = (k, dt, dy, sx, sy, sz) => g.box(k, { c: ctr.clone().addScaledVector(T, dt).add(new THREE.Vector3(0, dy, 0)), s: [sx, sy, sz], rotY: ang - Math.PI / 2, ao: 0.85 });
+        box(fk, -0.4, 0, 0.1, 1.25, 0.1);
+        box(fk, 0.4, 0, 0.1, 1.25, 0.1);
+        box(fk, 0, 0.6, 0.9, 0.12, 0.12);
+        box(fk, 0, 0, 0.05, 1.1, 0.06);
+        box('arch_trim', 0, -0.6, 0.95, 0.08, 0.2);
       }
+    }
+    // timber framing on plaster houses: floor rails, corner posts, braces
+    if (plaster) {
+      const N = new THREE.Vector3(nx, 0, nz);
+      const T = new THREE.Vector3(-nz, 0, nx);
+      const fc = new THREE.Vector3(x + nx * (w / 2 + 0.05), 0, z + nz * (d / 2 + 0.05));
+      const ang = Math.atan2(T.x, T.z);
+      const bx = (dt, y, sx, sy, rz = 0) => {
+        const m = new THREE.Matrix4().makeTranslation(fc.x + T.x * dt, y, fc.z + T.z * dt).multiply(new THREE.Matrix4().makeRotationY(ang - Math.PI / 2)).multiply(new THREE.Matrix4().makeRotationZ(rz));
+        g.box('arch_beam_dark', { matrix: m, s: [sx, sy, 0.1], ao: 0.85 });
+      };
+      for (let fy = 0; fy * 2.6 < h - 0.5; fy++) bx(0, y0 + fy * 2.6 + 0.08, len + 0.1, 0.16);
+      bx(0, y0 + h - 0.1, len + 0.1, 0.18);
+      for (const e of [-1, 1]) bx(e * (len / 2 - 0.08), y0 + h / 2, 0.18, h);
+      if (hash(id, nx, nz, 'brace') < 0.7) {
+        const fl = Math.min(2.6, h) - 0.2;
+        for (const e of [-1, 1]) bx(e * (len / 2 - 0.55), y0 + 0.1 + fl / 2 + 2.6 * (h > 5.5 ? 1 : 0), 0.12, Math.hypot(0.9, fl), e * Math.atan2(0.9, fl));
+      }
+      void N;
     }
   }
 }

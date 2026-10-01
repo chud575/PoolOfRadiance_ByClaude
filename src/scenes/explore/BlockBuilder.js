@@ -475,7 +475,12 @@ export function buildBlock(map, opts = {}) {
       if (H > 3.5) {
         const J = JETTY;
         // jetty: joist ends + bressumer + upper storey pushed out
-        for (let s = -S / 2 + 0.2; s < S / 2 - 0.1; s += 0.42) localBox(f, 'arch_beam', s - 0.06, s + 0.06, lowTop - 0.14, lowTop + 0.02, d1 - 0.05, d1 + J, { uv: 'along', skip: ['nz'] });
+        for (let s = -S / 2 + 0.2, k = 0; s < S / 2 - 0.1; s += 0.38 + hash(f.seed, k, 'js') * 0.12, k++) {
+          // hand-hewn joist ends: uneven sizes, projections and the odd sag
+          const jw = 0.055 + hash(f.seed, k, 'jw') * 0.025;
+          const jy = (hash(f.seed, k, 'jy') - 0.5) * 0.03;
+          localBox(f, 'arch_beam', s - jw, s + jw, lowTop - 0.15 + jy, lowTop + 0.02, d1 - 0.05, d1 + J + (hash(f.seed, k, 'jp') - 0.5) * 0.05, { uv: 'along', skip: ['nz'], chamfer: 0.01 });
+        }
         slab(f, 'arch_beam', lowTop + 0.02, lowTop + 0.24, d1 + J - 0.18, d1 + J + 0.04, { uv: 'along', skip: ['nz'] });
         slab(f, 'arch_plaster', lowTop + 0.24, H, d1 + J - 0.16, d1 + J, { tint: f.tint });
         frameBays(f, lowTop + 0.24, H, d1 + J, 'arch_beam', true);
@@ -1011,16 +1016,37 @@ export function buildBlock(map, opts = {}) {
     const base = new THREE.Vector3(s, y, d).applyMatrix4(face.basis);
     const out = face.N.clone();
     // bracket: wall plate + arm + cup
-    localBox(face, 'arch_iron', s - 0.06, s + 0.06, y - 0.28, y + 0.02, d, d + 0.03);
+    localBox(face, 'arch_iron', s - 0.055, s + 0.055, y - 0.3, y + 0.0, d, d + 0.025, { chamfer: 0.008 });
+    for (const yy of [y - 0.26, y - 0.04]) localBox(face, 'arch_iron', s - 0.015, s + 0.015, yy - 0.015, yy + 0.015, d + 0.02, d + 0.04, { chamfer: 0.006 });
     beamIron(face, [s, y - 0.22, d + 0.02], [s, y - 0.1, d + 0.24]);
+    beamIron(face, [s, y - 0.02, d + 0.02], [s, y - 0.1, d + 0.24]);
     const tip = new THREE.Vector3(s, y + 0.02, d + 0.26).applyMatrix4(face.basis);
     if (kind === 'torch') {
       // wooden torch stick, leaning out
+      // tapered wooden haft leaning out of a forged ring, pitch-soaked head in an iron basket
       const m = localMatrix(face, s, y - 0.06, d + 0.25);
       m.multiply(new THREE.Matrix4().makeRotationX(-0.25));
-      g.box('arch_beam_dark', { matrix: m, s: [0.05, 0.42, 0.05], uv: 'along' });
+      const haft = new THREE.CylinderGeometry(0.03, 0.022, 0.46, 8);
+      g.geometry('arch_beam_dark', haft, m, { uv: 'world' });
+      haft.dispose();
+      const ring = new THREE.TorusGeometry(0.045, 0.01, 5, 12);
+      ring.rotateX(Math.PI / 2);
+      g.geometry('arch_iron', ring, localMatrix(face, s, y - 0.1, d + 0.24), { uv: 'world' });
+      ring.dispose();
       const mc = localMatrix(face, s, y + 0.12, d + 0.3);
-      g.box('arch_iron', { matrix: mc, s: [0.1, 0.1, 0.1], chamfer: 0.02 });
+      mc.multiply(new THREE.Matrix4().makeRotationX(-0.25));
+      const head = new THREE.CylinderGeometry(0.05, 0.035, 0.12, 8);
+      g.geometry('arch_beam_dark', head, mc, { uv: 'world', tint: [0.25, 0.2, 0.17] });
+      head.dispose();
+      for (let k = 0; k < 4; k++) {
+        const bm = mc.clone().multiply(new THREE.Matrix4().makeRotationY((k * Math.PI) / 2)).multiply(new THREE.Matrix4().makeTranslation(0.052, 0, 0)).multiply(new THREE.Matrix4().makeRotationZ(-0.25));
+        g.box('arch_iron', { matrix: bm, s: [0.012, 0.15, 0.012] });
+      }
+      const band = new THREE.TorusGeometry(0.055, 0.008, 4, 12);
+      band.rotateX(Math.PI / 2);
+      g.geometry('arch_iron', band, mc.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.05, 0)), { uv: 'world' });
+      g.geometry('arch_iron', band, mc.clone().multiply(new THREE.Matrix4().makeTranslation(0, -0.05, 0)).multiply(new THREE.Matrix4().makeScale(0.75, 1, 0.75)), { uv: 'world' });
+      band.dispose();
     } else {
       // candle lantern
       localBox(face, 'arch_iron', s - 0.1, s + 0.1, y - 0.1, y - 0.07, d + 0.16, d + 0.36);
@@ -1104,6 +1130,23 @@ export function buildBlock(map, opts = {}) {
           g.box('arch_trim', { c: [cxw, -0.2, czw], s: dx ? [0.3, 0.5, S] : [S, 0.5, 0.3], chamfer: 0.04 });
         }
       } else spots.floorCells.push({ x, y, cell, covered: cov });
+      // a kerb of long edging stones where the courtyard paving meets the street cobbles
+      if (cell === CELL.COURTYARD && !indoor) {
+        for (const [d, dx, dy] of [['N', 0, -1], ['S', 0, 1], ['W', -1, 0], ['E', 1, 0]]) {
+          if (map.getEdge(x, y, d) !== EDGE.OPEN || map.getCell(x + dx, y + dy) !== CELL.STREET) continue;
+          let a = 0;
+          for (let k = 0; a < S - 0.05; k++) {
+            const len = Math.min(S - a, 0.55 + hash(map.id, x, y, d, k, 'kl') * 0.5);
+            const hgt = 0.02 + hash(map.id, x, y, d, k, 'kh') * 0.025;
+            const along = a + len / 2;
+            const inset = 0.16;
+            const cxk = dx ? x0 + (dx > 0 ? S - inset : inset) : x0 + along;
+            const czk = dy ? z0 + (dy > 0 ? S - inset : inset) : z0 + along;
+            g.box('arch_trim', { c: [cxk, hgt / 2 - 0.01, czk], s: dx ? [0.3, hgt + 0.02, len - 0.025] : [len - 0.025, hgt + 0.02, 0.3], rotY: (hash(map.id, x, y, d, k, 'kr') - 0.5) * 0.03, chamfer: 0.03, tint: [0.82, 0.8, 0.76], ao: 0.85 });
+            a += len;
+          }
+        }
+      }
       // ceiling
       const ceilKey = indoor ? ts.ceiling : cov ? 'arch_ceiling' : null;
       if (ceilKey) {

@@ -22,7 +22,7 @@ export const TEXTURE_DEFS = {
   // ---- explore HD sets (world-scaled; see materials.js texScale) ----
   hd_ashlar: { size: 512, gen: () => HD.ashlar({ seed: 21, rows: 10, minW: 0.12, maxW: 0.26, palette: 'warm' }), normalStrength: 4, cavity: 0.18 },
   hd_ashlar_cold: { size: 512, gen: () => HD.ashlar({ seed: 22, rows: 9, minW: 0.13, maxW: 0.28, palette: 'cold', moss: 0.6 }), normalStrength: 4, cavity: 0.18 },
-  hd_ruin: { size: 512, gen: () => HD.ashlar({ seed: 23, rows: 8, minW: 0.14, maxW: 0.3, palette: 'cold', erosion: 2.5, moss: 1, mortarW: 0.012 }), normalStrength: 5, cavity: 0.2 },
+  hd_ruin: { size: 512, gen: () => HD.ashlar({ seed: 23, rows: 8, minW: 0.14, maxW: 0.3, palette: 'cold', erosion: 2.2, moss: 1, mortarW: 0.008 }), normalStrength: 5, cavity: 0.2 },
   hd_plaster: { size: 512, gen: () => HD.plaster({ seed: 31 }), normalStrength: 3, cavity: 0.2 },
   hd_plaster_int: { size: 512, gen: () => HD.plaster({ seed: 32, base: [0.74, 0.66, 0.52], decay: 0.45, interior: true }), normalStrength: 3 },
   hd_beam: { size: 256, gen: () => HD.oakBeam({ seed: 41 }), normalStrength: 4 },
