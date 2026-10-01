@@ -269,7 +269,7 @@ export function hewnRock({ seed = 241, base = [0.33, 0.29, 0.24], floor = false 
     let c = mul3(base, layerTone * (0.78 + (big - 0.5) * 0.4 + (mid - 0.5) * 0.25 + (fine - 0.5) * 0.12 + (micro - 0.5) * 0.08));
     c = mul3(c, 1 - crack * 0.55 + gouge * 0.08);
     const vein = (1 - smooth(0.0, 0.012, Math.abs(fVein(u, v) - 0.5))) * smooth(0.45, 0.65, big);
-    c = mix3(c, [0.5, 0.48, 0.43], vein * 0.22);
+    c = mix3(c, [0.5, 0.48, 0.43], vein * 0.08);
     const seep = smooth(0.55, 0.8, fSeep(u, v));
     c = mix3(c, mul3(c, 0.55), seep * 0.6);
     c = mix3(c, [0.2, 0.26, 0.14], smooth(0.68, 0.8, mid) * seep * 0.6);

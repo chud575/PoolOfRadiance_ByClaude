@@ -205,7 +205,7 @@ export function plaster({ seed = 31, base = [0.78, 0.72, 0.6], decay = 1, interi
     // small spalls exposing riven oak lath (with dark gaps) behind the render
     if (!interior) {
       const sp = wfbm(u, v, 9, seed + 8, 4, 0.5);
-      const spMask = smooth(0.62, 0.72, fbm(u * 2, v * 2, { octaves: 2, period: 2, seed: seed + 18 }));
+      const spMask = smooth(0.7, 0.76, fbm(u * 2, v * 2, { octaves: 2, period: 2, seed: seed + 18 }));
       const spall = smooth(0.745, 0.755, sp) * decay * spMask;
       if (spall > 0) {
         const lv = v * 70 + (fbm(u * 8, v * 8, { octaves: 2, period: 8, seed: seed + 9 }) - 0.5) * 2;

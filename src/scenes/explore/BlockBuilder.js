@@ -339,10 +339,12 @@ export function buildBlock(map, opts = {}) {
       const y1 = Math.min(f.H, op.y1 + 1.6 + hash(f.seed, op.s0, 'sh') * 0.8);
       sootQuads.push([P(cx - w / 2, y0), P(cx + w / 2, y0), P(cx + w / 2, y1), P(cx - w / 2, y1)]);
     }
+    // free-floating smoke stains read as random blobs mid-wall: only plinth-level smoke now,
+    // rising from the ground where debris burned against the wall
     for (let k = 0; k < 2; k++) {
-      if (hash(f.seed, k, 'sp') > 0.6) continue;
+      if (hash(f.seed, k, 'sp') > 0.35) continue;
       const cx = (hash(f.seed, k, 'sx') - 0.5) * 2.2;
-      const y0 = 0.2 + hash(f.seed, k, 'sy') * 2;
+      const y0 = -0.05;
       const w = 0.9 + hash(f.seed, k, 'sw') * 0.8;
       if (f.openings.some((op) => op.s0 < cx + w / 2 && op.s1 > cx - w / 2 && op.y0 < y0 + w * 1.6 && op.y1 > y0)) continue;
       sootQuads.push([P(cx - w / 2, y0), P(cx + w / 2, y0), P(cx + w / 2, y0 + w * 1.6), P(cx - w / 2, y0 + w * 1.6)]);
@@ -1764,7 +1766,7 @@ export function buildBlock(map, opts = {}) {
     for (const q of sootQuads) sb.quad('soot', q[0], q[1], q[2], q[3], [[0, 0], [1, 0], [1, 1], [0, 1]], { ao: 1 });
     const geo = sb.build().get('soot');
     geo.deleteAttribute('color');
-    const mat = new THREE.MeshStandardMaterial({ color: 0x0a0806, alphaMap: getScorchTexture(), transparent: true, opacity: 1, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2 });
+    const mat = new THREE.MeshStandardMaterial({ color: 0x0a0806, alphaMap: getScorchTexture(), transparent: true, opacity: 0.78, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2 });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.renderOrder = 3;
     mesh.userData.ownMaterial = true;

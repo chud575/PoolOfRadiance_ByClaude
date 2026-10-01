@@ -168,7 +168,7 @@ export default class ExploreScene extends Scene {
       // raised ambient floor so silhouettes always read, even far from a torch; underground it is a
       // cool counter-light (cold air, wet stone) against the warm torches — the warrens greener,
       // Bane's temple a dead grey-green over a blood-red floor bounce
-      const amb = { warrens: [0x4a7a76, 0x1e160c, 4.5], bane: [0x3c4a46, 0x300a08, 4.2] }[ts.variant] ?? (dungeon ? [0x4a6a90, 0x1c150e, 1.8] : [0xeedcc8, 0x3a2a1c, 1.45]);
+      const amb = { warrens: [0x4a7a76, 0x1e160c, 4.5], bane: [0x46524c, 0x300a08, 5.0] }[ts.variant] ?? (dungeon ? [0x4a6a90, 0x1c150e, 1.8] : [0xeedcc8, 0x3a2a1c, 1.45]);
       this.hemi = new THREE.HemisphereLight(amb[0], amb[1], amb[2]);
       s.add(this.hemi);
       if (dungeon) {
@@ -213,7 +213,7 @@ export default class ExploreScene extends Scene {
     }
     // party lantern: carried a little ahead and to the right, warm, ~5 m reach
     // outdoors it only pools on the nearest walls so the moonlight stays dominant
-    const lanternI = ts.outdoors ? this.night * 2.6 : ts.variant === 'bane' ? 4 : ts.id === 'dungeon' ? 8 : 2;
+    const lanternI = ts.outdoors ? this.night * 9 : ts.variant === 'bane' ? 13 : ts.id === 'dungeon' ? 9 : 2;
     this.lantern = new THREE.PointLight(0xffb468, lanternI, ts.outdoors ? 8 : 13, 2);
     this.lantern.position.set(0.45, -0.25, -0.15);
     this.lantern.userData.base = lanternI;
@@ -274,7 +274,7 @@ export default class ExploreScene extends Scene {
   _postFor() {
     const ts = this.tileset;
     if (!ts.outdoors) {
-      if (ts.variant === 'bane') return { bloomStrength: 0.6, bloomThreshold: 0.72, bloomRadius: 0.55, exposure: 1.6, vignette: 0.5, saturation: 0.92, contrast: 1.08 };
+      if (ts.variant === 'bane') return { bloomStrength: 0.6, bloomThreshold: 0.72, bloomRadius: 0.55, exposure: 1.85, vignette: 0.5, saturation: 0.92, contrast: 1.08 };
       if (ts.variant === 'warrens') return { bloomStrength: 0.6, bloomThreshold: 0.7, bloomRadius: 0.55, exposure: 1.6, vignette: 0.48, saturation: 0.95, contrast: 1.06 };
       return ts.id === 'dungeon'
         ? { bloomStrength: 0.65, bloomThreshold: 0.7, bloomRadius: 0.55, exposure: 1.35, vignette: 0.5, saturation: 1.0, contrast: 1.06 }
@@ -362,6 +362,17 @@ export default class ExploreScene extends Scene {
     if (this.dressing) this.scene3d.add(this.dressing.group);
     this.rooms = this.tileset.id !== 'dungeon' ? dressRooms(this.map) : null;
     if (this.rooms) this.scene3d.add(this.rooms.group);
+    if (this.tileset.id === 'interior' && this.sun) {
+      // invisible shadow lid over the whole room: the thin ceiling boards alone let the window
+      // sun leak along every joist edge (bias), so daylight now only enters through the windows
+      const W = this.map.w * CELL_SIZE;
+      const H = this.map.h * CELL_SIZE;
+      const lid = new THREE.Mesh(new THREE.BoxGeometry(W, 0.5, H), new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false }));
+      lid.position.set(W / 2, this.tileset.ceilH + 0.35, H / 2);
+      lid.castShadow = true;
+      lid.userData.ownMaterial = true;
+      this.block.group.add(lid);
+    }
     // light sources: sconces + lamps + candles (+ themed braziers, tavern candles)
     this.sources = [...this.block.torches, ...this.props.lamps, ...(this.dressing?.lamps ?? []), ...(this.rooms?.lamps ?? [])];
     if (this.tileset.variant === 'bane') {
