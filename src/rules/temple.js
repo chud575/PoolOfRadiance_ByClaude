@@ -21,11 +21,28 @@ export const TEMPLE_SERVICES = {
   identify: { name: 'Identify', cost: 200, identify: true },
 };
 
+/**
+ * PHB: "Elves may not be raised" — raise dead does not work on them (only
+ * resurrection, which Phlan's temples do not offer). Enforced here and in
+ * character.raiseDead; serviceProblem() gives the player the reason.
+ */
+export function raiseAllowed(ch) {
+  return ch.race !== 'elf';
+}
+
+/** Why a temple service cannot help this character (tooltip text), or null. */
+export function serviceProblem(id, ch) {
+  const s = TEMPLE_SERVICES[id];
+  if (!s) return 'unknown service';
+  if (s.raise && ch.status === 'dead' && !raiseAllowed(ch)) return 'Elves cannot be raised from the dead.';
+  return serviceApplies(id, ch) ? null : 'Not needed.';
+}
+
 /** Does the service apply to this character (for greying out menu entries)? */
 export function serviceApplies(id, ch) {
   const s = TEMPLE_SERVICES[id];
   if (!s) return false;
-  if (s.raise) return ch.status === 'dead';
+  if (s.raise) return ch.status === 'dead' && raiseAllowed(ch);
   if (s.unstone) return ch.status === 'stoned';
   if (!isAlive(ch)) return false;
   if (s.heal) return ch.hp.cur < ch.hp.max;

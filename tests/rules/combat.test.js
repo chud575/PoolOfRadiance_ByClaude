@@ -84,7 +84,7 @@ describe('attacks', () => {
     const f = combatantFromCharacter(ch);
     const o = combatantFromMonster(rng, 'orc', 1);
     const before = hitChance(f, o);
-    castSpell(rng, 'bless', buildParty('default', 1)[1], [f]);
+    castSpell(rng, 'bless', buildParty('default', 1)[1], [f], { ignoreMemory: true, noFailure: true });
     expect(liveMods(f, o).hit).toBe(1);
     expect(hitChance(f, o)).toBeCloseTo(before + 0.05);
   });

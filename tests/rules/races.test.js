@@ -47,7 +47,11 @@ describe('races', () => {
     expect(racialLevelLimit('elf', 'magicUser', { int: 16 })).toBe(9);
     expect(racialLevelLimit('dwarf', 'fighter', { str: 17 })).toBe(8);
     expect(racialLevelLimit('halfElf', 'cleric', { wis: 18 })).toBe(5);
-    expect(racialLevelLimit('halfling', 'fighter', { str: 17 })).toBe(5);
+    // PoR: halfling fighters reach 6th flat (the PHB's STR 18 row is unreachable).
+    expect(racialLevelLimit('halfling', 'fighter', { str: 17 })).toBe(6);
+    expect(racialLevelLimit('halfling', 'fighter', { str: 12 })).toBe(6);
+    expect(racialLevelLimit('gnome', 'fighter', { str: 18 })).toBe(6);
+    expect(racialLevelLimit('gnome', 'fighter', { str: 17 })).toBe(5);
     expect(racialLevelLimit('gnome', 'thief', { str: 3 })).toBe(Infinity);
     expect(racialLevelLimit('human', 'magicUser')).toBe(Infinity);
     expect(racialLevelLimit('dwarf', 'cleric')).toBe(0);
@@ -77,7 +81,7 @@ describe('races', () => {
     expect(RACES.halfling.move).toBe(9);
     expect(RACES.human.infravision).toBe(0);
     expect(RACES.elf.infravision).toBe(60);
-    expect(RACES.gnome.thiefAdj.ol).toBe(10);
+    expect(RACES.gnome.thiefAdj.ol).toBe(5);
     expect(RACES.halfling.thiefAdj.hs).toBe(15);
   });
 });

@@ -131,14 +131,16 @@ export function wisdomSpellFailure(wis) {
  */
 export function intelligenceTable(int) {
   const i = clampIdx(int, 3, 19);
-  if (i <= 8) return { maxSpellLevel: 0, knowChance: 0, minSpells: 0, maxSpells: 0, languages: i <= 7 ? 0 : 1 };
-  if (i === 9) return { maxSpellLevel: 4, knowChance: 35, minSpells: 4, maxSpells: 6, languages: 1 };
-  if (i <= 12) return { maxSpellLevel: 5, knowChance: 45, minSpells: 5, maxSpells: 7, languages: i - 9 };
-  if (i <= 14) return { maxSpellLevel: 6, knowChance: 55, minSpells: 6, maxSpells: 9, languages: i - 9 };
-  if (i <= 16) return { maxSpellLevel: 7, knowChance: 65, minSpells: 7, maxSpells: 11, languages: i - 9 };
-  if (i === 17) return { maxSpellLevel: 8, knowChance: 75, minSpells: 8, maxSpells: 14, languages: 8 };
-  if (i === 18) return { maxSpellLevel: 9, knowChance: 85, minSpells: 9, maxSpells: 18, languages: 9 };
-  return { maxSpellLevel: 9, knowChance: 90, minSpells: 10, maxSpells: Infinity, languages: 10 };
+  // PHB "possible # of additional languages" column (19: DMG).
+  const languages = { 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 1, 9: 1, 10: 2, 11: 2, 12: 3, 13: 3, 14: 4, 15: 4, 16: 5, 17: 6, 18: 7, 19: 8 }[i];
+  if (i <= 8) return { maxSpellLevel: 0, knowChance: 0, minSpells: 0, maxSpells: 0, languages };
+  if (i === 9) return { maxSpellLevel: 4, knowChance: 35, minSpells: 4, maxSpells: 6, languages };
+  if (i <= 12) return { maxSpellLevel: 5, knowChance: 45, minSpells: 5, maxSpells: 7, languages };
+  if (i <= 14) return { maxSpellLevel: 6, knowChance: 55, minSpells: 6, maxSpells: 9, languages };
+  if (i <= 16) return { maxSpellLevel: 7, knowChance: 65, minSpells: 7, maxSpells: 11, languages };
+  if (i === 17) return { maxSpellLevel: 8, knowChance: 75, minSpells: 8, maxSpells: 14, languages };
+  if (i === 18) return { maxSpellLevel: 9, knowChance: 85, minSpells: 9, maxSpells: 18, languages };
+  return { maxSpellLevel: 9, knowChance: 95, minSpells: 10, maxSpells: Infinity, languages };
 }
 
 /** Charisma: max henchmen, loyalty base %, reaction adjustment %. */
@@ -146,7 +148,8 @@ export function charismaTable(cha) {
   const c = clampIdx(cha, 3, 18);
   const hench = [1, 1, 2, 2, 3, 3, 4, 4, 4, 5, 5, 6, 7, 8, 10, 15][c - 3];
   const loyalty = [-30, -25, -20, -15, -10, -5, 0, 0, 0, 0, 0, 5, 15, 20, 30, 40][c - 3];
-  const reaction = [-25, -20, -15, -10, -5, 0, 0, 0, 0, 0, 0, 5, 10, 15, 25, 35][c - 3];
+  // PHB: 8-12 neutral, then 13:+5 14:+10 15:+15 16:+25 17:+30 18:+35.
+  const reaction = [-25, -20, -15, -10, -5, 0, 0, 0, 0, 0, 5, 10, 15, 25, 30, 35][c - 3];
   return { henchmen: hench, loyalty, reaction };
 }
 

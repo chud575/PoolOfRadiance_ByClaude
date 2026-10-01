@@ -2,11 +2,17 @@ import { roll, diceStats } from '../../../rules/dice.js';
 import {
   rollInitiative, isDown, resolveAttack, hitChance, dealDamage, savingThrow, moraleCheck, turnUndead,
 } from '../../../rules/combat.js';
-import { heal } from '../../../rules/character.js';
+import { heal, bandage as bandageCharacter } from '../../../rules/character.js';
+import { effectMods, hasEffect } from '../../../rules/conditions.js';
+import { effectHost } from '../../../rules/creature.js';
+import {
+  fxView, ableToAct, ableToCast, attacksThisTurn, castInBattle, roundUpkeep, hammerTurn, specialsOnHit,
+} from '../../../rules/battle.js';
 import { dexterityMods } from '../../../rules/abilities.js';
 import { backstabMultiplier } from '../../../rules/classes.js';
 import { ITEMS } from '../../../data/items.js';
 import { SPELLS } from '../../../data/spells.js';
+import { SPELL_RULES } from '../../../rules/spells.js';
 import { Battlefield, DIR8 } from './battlefield.js';
 import { SPELL_TACTICS, consumeSpell, casterLevel, memorizedSpells } from './spells.js';
 
@@ -16,8 +22,20 @@ import { SPELL_TACTICS, consumeSpell, casterLevel, memorizedSpells } from './spe
  * every action returns a list of events that the scene plays back visually.
  *
  * Event types: round, turn, step, attack, down, cast, spellHit, effect, heal,
- * turnUndead, flee, guard, delay, bandage, bleed, wake, log, use, fleeFail.
+ * turnUndead, flee, guard, delay, bandage, bleed, wake, log, use, fleeFail, effectEnd.
+ *
+ * Rules integration (src/rules/battle.js): `c.fx` is a live view over the
+ * creature's rules effects; spells resolve through the rules castSpell;
+ * attack counts come from attacksFor (3/2 fighters, haste, slow, sweeps);
+ * end-of-round bleeding/poison/expiry from the rules endOfRound.
  */
+
+/**
+ * How melee treats helpless (asleep, held, paralyzed, nauseous) targets:
+ * the Gold Box/DMG coup de grace — an automatic hit that slays outright.
+ * See rules HelplessRule ('bonus' | 'auto' | 'slay').
+ */
+export const HELPLESS_RULE = 'slay';
 export class CombatEngine {
   /**
    * @param {{rng: import('../../../rules/dice.js').Rng, field: Battlefield,
@@ -35,7 +53,12 @@ export class CombatEngine {
     /** persistent area effects: {kind, squares:Set<string>, rounds, casterId} */
     this.areas = [];
     for (const c of this.all) {
-      c.fx ??= {};
+      if (!c._fxView) {
+        const old = c.fx ?? {};
+        c.fx = fxView(c);
+        for (const [k, v] of Object.entries(old)) c.fx[k] = v;
+        c._fxView = true;
+      }
       c.facing ??= c.side === 'party' ? 2 : 6;
       c.mp = 0;
       c.attacksLeft = 0;
@@ -74,7 +97,7 @@ export class CombatEngine {
 
   /** Is a creature able to take actions / make free attacks? */
   awake(c) {
-    return !this.out(c) && !c.fx.asleep && !c.fx.held && !c.fx.nauseous;
+    return !this.out(c) && ableToAct(c);
   }
 
   adjacent(a, b, ax = a.x, ay = a.y) {
@@ -127,20 +150,26 @@ export class CombatEngine {
     return vx * fx + vy * fy < -0.5;
   }
 
-  /** Situational to-hit / damage modifiers. */
+  /**
+   * Situational to-hit / damage modifiers that depend on the battlefield
+   * (rear arc, backstab, long range). Spell and condition modifiers (bless,
+   * prayer, shield, invisibility, prot. from evil, helpless targets, racial
+   * bonuses) are applied by the rules in resolveAttack/hitChance; here they
+   * only add tooltip notes.
+   */
   attackMods(att, def, ranged = false) {
     let mods = 0;
-    let dmgMod = 0;
+    const dmgMod = 0;
     const notes = [];
-    if (att.fx.blessed) { mods += 1; notes.push('bless'); }
-    if (att.fx.cursed) { mods -= 1; notes.push('curse'); }
-    if (att.fx.prayer) { mods += 1; }
-    if (def.fx?.prayerFoe) mods += 1;
-    if (att.fx.enlarged) dmgMod += 2;
-    if (def.fx?.prot && att.ref?.alignment?.includes?.('E')) { mods -= 2; notes.push('protected'); }
-    if (def.fx?.invisible) { mods -= 4; notes.push('invisible'); }
-    if (def.fx?.shielded) mods -= ranged ? 3 : 1;
-    if (def.fx?.asleep || def.fx?.held || def.fx?.nauseous) { mods += 10; notes.push('helpless'); }
+    const ah = effectHost(att);
+    const dh = effectHost(def);
+    if (hasEffect(ah, 'blessed')) notes.push('bless');
+    if (hasEffect(ah, 'cursed')) notes.push('curse');
+    if (hasEffect(ah, 'prayer') || hasEffect(ah, 'chant')) notes.push('prayer');
+    if (hasEffect(dh, 'protEvil') && att.ref?.alignment?.includes?.('E')) notes.push('protected');
+    if (hasEffect(dh, 'invisible')) notes.push('invisible');
+    if (hasEffect(dh, 'shielded')) notes.push('shield');
+    if (!ableToAct(def)) notes.push(ranged ? 'helpless' : 'helpless: slain outright');
     const rear = !ranged && this.isRear(att, def);
     let backstab = false;
     if (rear) { mods += 2; notes.push('rear'); }
@@ -188,13 +217,19 @@ export class CombatEngine {
     const isRanged = ranged ?? (can.ok ? can.ranged : !this.adjacent(att, def) && !!this.rangedProfile(att));
     const a = this.attackerFor(att, isRanged);
     const m = this.attackMods(att, def, isRanged);
-    const p = hitChance(a, def, m.mods);
+    const p = hitChance(a, def, m.mods, { ranged: isRanged, helpless: HELPLESS_RULE });
     const dice = def.size === 'L' && a.attacksLarge ? a.attacksLarge : a.attacks[0];
     const st = diceStats(dice);
     const mult = m.backstab ? backstabMultiplier(att.ref.levels.thief) : 1;
     const lo = Math.max(1, (st.min + a.dmgBonus + m.dmgMod)) * mult;
     const hi = Math.max(1, (st.max + a.dmgBonus + m.dmgMod)) * mult;
-    return { chance: p, dmg: lo === hi ? `${lo}` : `${lo}-${hi}`, notes: m.notes, ranged: isRanged, ok: can.ok, reason: can.reason, attacks: att.attacks.length };
+    return { chance: p, dmg: lo === hi ? `${lo}` : `${lo}-${hi}`, notes: m.notes, ranged: isRanged, ok: can.ok, reason: can.reason, attacks: this.attackCount(att, def, isRanged) };
+  }
+
+  /** Attacks `att` gets against `def` this round (rules: 3/2, haste/slow, sweeps, rate of fire). */
+  attackCount(att, def, ranged = false) {
+    const rp = ranged && att.side === 'party' ? this.rangedProfile(att) : null;
+    return attacksThisTurn(att, Math.max(1, this.round), def, { ranged, weapon: rp?.id ? ITEMS[rp.id] : undefined });
   }
 
   // ------------------------------------------------------------ round flow
@@ -217,8 +252,8 @@ export class CombatEngine {
     }
     const ready = this.all.filter((c) => !this.out(c));
     // Sleepers/held still hold a place in the order so the timeline stays readable.
-    const actors = rollInitiative(this.rng, ready.filter((c) => !c.fx.asleep && !c.fx.held));
-    const sleepers = ready.filter((c) => c.fx.asleep || c.fx.held);
+    const actors = rollInitiative(this.rng, ready.filter((c) => ableToAct(c)));
+    const sleepers = ready.filter((c) => !ableToAct(c));
     this.order = [...actors, ...sleepers];
     for (const c of this.all) c.delayed = false;
     this.turnIdx = -1;
@@ -231,28 +266,13 @@ export class CombatEngine {
     const ev = [];
     for (const c of this.all) {
       if (c.fled) continue;
-      if (c.side === 'party' && c.ref.status === 'dying' && !c.fx.bandaged) {
-        dealDamage(c, 1);
-        ev.push({ type: 'bleed', id: c.id, text: c.ref.status === 'dead' ? `${c.name} has bled to death.` : `${c.name} is bleeding (${c.hp.cur}).` });
-        if (c.ref.status === 'dead') ev.push({ type: 'down', id: c.id, status: 'dead', silent: true });
-      }
+      // Rules upkeep: bleeding (bandaged allies don't), poison onset, effects expiring.
+      if (!(c.side === 'monster' && isDown(c))) ev.push(...roundUpkeep(c));
       const regen = (c.ref?.special ?? []).find?.((s) => String(s).startsWith('regenerate'));
       if (regen && c.side === 'monster' && c.status === 'ok' && c.hp.cur < c.hp.max) {
         const n = Number(regen.split(':')[1] ?? 1);
         c.hp.cur = Math.min(c.hp.max, c.hp.cur + n);
         ev.push({ type: 'heal', id: c.id, amount: n, text: `${c.name} regenerates.` });
-      }
-      for (const k of ['asleep', 'held', 'nauseous', 'blessed', 'cursed', 'prot', 'shielded', 'enlarged', 'invisible', 'hasted', 'prayer', 'prayerFoe', 'silenced']) {
-        if (typeof c.fx[k] === 'number') {
-          c.fx[k]--;
-          if (c.fx[k] <= 0) {
-            delete c.fx[k];
-            if (k === 'asleep' || k === 'held') {
-              this._setCondition(c, k, false);
-              ev.push({ type: 'wake', id: c.id, text: k === 'asleep' ? `${c.name} wakes up.` : `${c.name} can move again.` });
-            }
-          }
-        }
       }
     }
     for (const a of this.areas) a.rounds--;
@@ -279,19 +299,29 @@ export class CombatEngine {
       }
       const c = this.order[this.turnIdx];
       if (!c || this.out(c) || c._actedRound === this.round) continue;
-      if (c.fx.asleep || c.fx.held || c.fx.nauseous) {
+      if (!ableToAct(c)) {
         c._actedRound = this.round;
         continue;
       }
       if (c.side === 'party' && c.ref.status !== 'ok') continue;
-      c.mp = c.move * (c.fx.hasted ? 2 : 1);
-      c.attacksLeft = c.attacks.length * (c.fx.hasted ? 2 : 1);
+      // Rules: haste doubles / slow halves movement; attacksFor gives 3/2
+      // fighters their alternate-round second blow and halves a slowed orc.
+      c.mp = Math.max(0, Math.round(c.move * effectMods(effectHost(c)).moveMult));
+      c.attacksLeft = attacksThisTurn(c, this.round);
       c.guarding = false;
       c.moved = 0;
       c.acted = false;
       c.startX = c.x;
       c.startY = c.y;
       ev.push({ type: 'turn', id: c.id, round: this.round });
+      // A Spiritual Hammer the cleric still commands strikes again.
+      const hammer = hammerTurn(this.rng, c, (id) => this.byId(id), (range) => this.enemiesOf(c)
+        .filter((e) => Battlefield.dist(c.x, c.y, e.x, e.y) <= range)
+        .sort((a, b) => Battlefield.dist(c.x, c.y, a.x, a.y) - Battlefield.dist(c.x, c.y, b.x, b.y))[0] ?? null);
+      if (hammer) {
+        const t = this.byId(hammer.target);
+        ev.push(hammer, ...this._downEvents(t), ...this._afterKill(t));
+      }
       return ev;
     }
     return ev;
@@ -331,31 +361,32 @@ export class CombatEngine {
     if (d >= 0) c.facing = d;
   }
 
-  /** One attack roll with all the trimmings. */
+  /**
+   * One attack roll with all the trimmings, through the rules resolveAttack
+   * (mirror images, blink, shield, bless... and the helpless coup de grace).
+   * Returns the attack event followed by any monster on-hit specials
+   * (paralysis, poison, disease).
+   */
   _strike(att, def, { ranged = false, aoo = false, guard = false, attackIndex = 0 } = {}) {
     const a = this.attackerFor(att, ranged);
     const m = this.attackMods(att, def, ranged);
     const mult = m.backstab ? backstabMultiplier(att.ref.levels.thief) : 2;
-    // Mirror images soak attacks.
-    if (def.fx.mirror > 0 && this.rng.int(1, def.fx.mirror + 1) > 1) {
-      def.fx.mirror--;
-      return { type: 'attack', id: att.id, target: def.id, hit: false, image: true, dmg: 0, ranged, aoo, guard, text: `${att.name} strikes an image of ${def.name}; it vanishes!` };
-    }
-    const r = resolveAttack(this.rng, a, def, { mods: m.mods, dmgMod: m.dmgMod, backstab: m.backstab, backstabMult: mult, attackIndex });
+    const r = resolveAttack(this.rng, a, def, { mods: m.mods, dmgMod: m.dmgMod, backstab: m.backstab, backstabMult: mult, attackIndex, ranged, helpless: HELPLESS_RULE });
     if (ranged && a !== att && att.side === 'party') this._useAmmo(att);
     let text;
     const verb = ranged ? 'shoots' : att.side === 'monster' ? (att.monsterId === 'giantRat' ? 'bites' : 'hits') : 'hits';
-    if (r.hit) {
-      text = `${att.name} ${m.backstab ? 'backstabs' : verb} ${def.name} for ${r.damage}${r.crit ? ' (critical!)' : ''}.`;
-      if (def.fx.asleep) {
-        delete def.fx.asleep;
-        this._setCondition(def, 'asleep', false);
-      }
-    } else text = `${att.name} ${ranged ? 'shoots at' : 'swings at'} ${def.name} and misses.`;
-    if (aoo) text = `${att.name} strikes as ${def.name} breaks away: ${r.hit ? `${r.damage} damage` : 'miss'}.`;
-    if (guard) text = `${att.name}, on guard, strikes ${def.name}: ${r.hit ? `${r.damage} damage` : 'miss'}.`;
-    const ev = { type: 'attack', id: att.id, target: def.id, hit: r.hit, dmg: r.damage, roll: r.roll, needed: r.needed, crit: r.crit, killed: r.killed, ranged, aoo, guard, backstab: m.backstab, text };
-    return ev;
+    if (r.image) text = `${att.name} strikes an image of ${def.name}; it vanishes!`;
+    else if (r.blinked) text = `${def.name} blinks out of the way!`;
+    else if (r.coupDeGrace) text = `${att.name} slays the helpless ${def.name}!`;
+    else if (r.immune) text = `${att.name}'s missile turns aside from ${def.name}.`;
+    else if (r.hit) text = `${att.name} ${m.backstab ? 'backstabs' : verb} ${def.name} for ${r.damage}${r.crit ? ' (critical!)' : ''}.`;
+    else text = `${att.name} ${ranged ? 'shoots at' : 'swings at'} ${def.name} and misses.`;
+    if (aoo && !r.image && !r.blinked) text = `${att.name} strikes as ${def.name} breaks away: ${r.hit ? `${r.damage} damage` : 'miss'}.`;
+    if (guard && !r.image && !r.blinked) text = `${att.name}, on guard, strikes ${def.name}: ${r.hit ? `${r.damage} damage` : 'miss'}.`;
+    const ev = { type: 'attack', id: att.id, target: def.id, hit: r.hit && !r.immune, dmg: r.damage, roll: r.roll, needed: r.needed, crit: r.crit, killed: r.killed, ranged, aoo, guard, backstab: m.backstab, image: !!r.image, text };
+    const out = [ev];
+    if (r.hit && r.damage > 0 && att.side === 'monster' && !r.killed) out.push(...specialsOnHit(this.rng, att, def));
+    return out;
   }
 
   _useAmmo(att) {
@@ -396,7 +427,7 @@ export class CombatEngine {
         e.fx.aooUsed = this.round;
         const a = this._strike(e, c, { aoo: true });
         this._face(e, c.x, c.y);
-        ev.push(a, ...this._downEvents(c));
+        ev.push(...a, ...this._downEvents(c));
         if (this.out(c)) return ev;
       }
       if (leaving) {
@@ -417,7 +448,7 @@ export class CombatEngine {
         if (!g.guarding || !this.awake(g) || !this.adjacent(c, g)) continue;
         g.guarding = false;
         this._face(g, c.x, c.y);
-        ev.push(this._strike(g, c, { guard: true }), ...this._downEvents(c));
+        ev.push(...this._strike(g, c, { guard: true }), ...this._downEvents(c));
         if (this.out(c)) return ev;
       }
     }
@@ -435,16 +466,25 @@ export class CombatEngine {
   /** Melee or missile attack(s) against a target. Ends the turn when attacks run out. */
   attack(c, def) {
     const can = this.canAttack(c, def);
-    if (!can.ok) return [{ type: 'log', text: can.reason, kind: 'warn' }];
+    if (!can.ok) {
+      // Slow halves attacks: on its off round a slowed creature cannot strike.
+      if (c.attacksLeft <= 0 && !c.acted && effectMods(effectHost(c)).attackMult < 1) {
+        c.acted = true;
+        return [{ type: 'log', text: `${c.name} is too slow to strike this round.`, kind: 'combat' }];
+      }
+      return [{ type: 'log', text: can.reason, kind: 'warn' }];
+    }
     const ev = [];
     this._face(c, def.x, def.y);
-    const n = can.ranged ? Math.min(c.attacksLeft, c.side === 'party' ? 2 : c.attacksLeft) : c.attacksLeft;
+    // Rules attack count: melee uses this turn's attacksLeft (3/2, haste,
+    // slow) plus the fighter sweep vs < 1 HD foes; missiles use the weapon's
+    // rate of fire (bows 2, darts 3) under haste/slow.
+    const n = can.ranged ? this.attackCount(c, def, true) : Math.max(c.attacksLeft, this.attackCount(c, def, false));
     for (let i = 0; i < n; i++) {
       if (this.out(def)) break;
-      ev.push(this._strike(c, def, { ranged: can.ranged, attackIndex: Math.min(i, c.attacks.length - 1) }));
+      ev.push(...this._strike(c, def, { ranged: can.ranged, attackIndex: i % Math.max(1, c.attacks.length) }));
       ev.push(...this._downEvents(def));
       c.attacksLeft--;
-      if (can.ranged) break;
     }
     c.attacksLeft = 0;
     c.acted = true;
@@ -490,8 +530,7 @@ export class CombatEngine {
   /** Bind the wounds of an adjacent dying ally. */
   bandage(c, t) {
     if (!t || t.side !== c.side || t.ref?.status !== 'dying' || !this.adjacent(c, t)) return [{ type: 'log', text: 'No dying ally within reach.', kind: 'warn' }];
-    t.fx.bandaged = true;
-    t.ref.status = 'unconscious';
+    bandageCharacter(t.ref);
     c.acted = true;
     return [{ type: 'bandage', id: c.id, target: t.id, text: `${c.name} binds ${t.name}'s wounds. The bleeding stops.` }];
   }
@@ -503,7 +542,7 @@ export class CombatEngine {
   // ----------------------------------------------------------------- spells
   spellsOf(c) {
     if (c.side !== 'party') return [];
-    if (c.fx.silenced) return [];
+    if (!ableToCast(c)) return [];
     return memorizedSpells(c.ref);
   }
 
@@ -547,181 +586,35 @@ export class CombatEngine {
     const set = new Set(squares.map((s) => `${s.x},${s.y}`));
     const inArea = this.all.filter((o) => !this.out(o) && set.has(`${o.x},${o.y}`));
     const hits = [];
-    const ev = [{ type: 'cast', id: c.id, spell: spellId, at, squares, vfx: t.vfx, source, text: `${c.name} ${source ? `uses ${source}` : `casts ${def.name}`}!` }];
+    const ev = [{ type: 'cast', id: c.id, spell: spellId, at, squares, vfx: t.vfx, source, text: `${c.name} ${source ? `uses ${source}` : `casts ${def?.name ?? SPELL_RULES[spellId]?.name ?? spellId}`}!` }];
     const foesIn = inArea.filter((o) => this.hostileTo(c, o));
     const occ = this.occupantAt(at.x, at.y, { includeDown: true });
-    const save = (o, key, bonus = 0) => savingThrow(this.rng, o, key, bonus).saved;
-    const damage = (o, dmg) => {
-      const killed = dealDamage(o, dmg);
-      if (o.fx.asleep) { delete o.fx.asleep; this._setCondition(o, 'asleep', false); }
-      return killed;
-    };
-    switch (spellId) {
-      case 'magicMissile': {
-        const n = 1 + Math.floor((lvl - 1) / 2);
-        let total = 0;
-        const bolts = [];
-        for (let i = 0; i < n; i++) {
-          const d = roll(this.rng, '1d4+1');
-          bolts.push(d);
-          total += d;
+    // The battlefield picks who the template covers (nearest the aim point
+    // first); the rules decide who is affected, saves, damage and effects.
+    const near = (list) => [...list].sort((a, b) => Battlefield.dist(at.x, at.y, a.x, a.y) - Battlefield.dist(at.x, at.y, b.x, b.y));
+    let targets;
+    if (t.target === 'self' && t.shape === 'single') targets = [c];
+    else if (t.shape === 'allies') targets = [c, ...near(this.alliesOf(c))];
+    else if (t.shape === 'all') targets = this.all.filter((o) => !this.out(o));
+    else if (t.shape === 'single') targets = occ ? [occ] : [];
+    else if (t.pick === 'foes') targets = near(foesIn); // chosen targets (hold person, slow)
+    else targets = near(inArea.filter((o) => !(t.notCaster && o === c)));
+    const r = castInBattle(this.rng, spellId, c, targets, { level: level ?? undefined, fromItem: !!source });
+    hits.push(...r.hits);
+    if (r.failed) ev[0].failed = true;
+    if (r.ok) {
+      for (const tr of r.results) {
+        // Charm: the creature changes sides on the battlefield.
+        if (tr.charmed) {
+          tr.target.side = c.side;
+          tr.target.charmed = true;
+          tr.target.fleeing = false;
         }
-        if (occ.fx.shielded) {
-          hits.push({ id: occ.id, dmg: 0, text: `The missiles splash harmlessly against ${occ.name}'s shield.` });
-        } else {
-          const killed = damage(occ, total);
-          hits.push({ id: occ.id, dmg: total, bolts, killed, text: `${n} missile${n > 1 ? 's' : ''} strike${n > 1 ? '' : 's'} ${occ.name} for ${total}.` });
-        }
-        break;
       }
-      case 'sleep': {
-        let budget = roll(this.rng, '4d4');
-        const cands = foesIn.filter((o) => !o.ref?.special?.includes?.('undead') && !o.fx.asleep).sort((a, b) => (a.ref?.hd ?? 1) - (b.ref?.hd ?? 1));
-        for (const o of cands) {
-          const hd = o.side === 'party' ? Math.max(...Object.values(o.ref.levels)) : Math.max(1, Math.ceil(o.ref.hd ?? 1));
-          if (hd > 4 || hd > budget) continue;
-          budget -= hd;
-          o.fx.asleep = 5 * lvl;
-          this._setCondition(o, 'asleep', true);
-          hits.push({ id: o.id, effect: 'asleep', text: `${o.name} falls asleep.` });
-        }
-        if (!hits.length) hits.push({ text: 'Nobody succumbs to the spell.' });
-        break;
-      }
-      case 'burningHands': {
-        for (const o of inArea) {
-          const killed = damage(o, lvl);
-          hits.push({ id: o.id, dmg: lvl, killed, text: `${o.name} is burned for ${lvl}.` });
-        }
-        if (!inArea.length) hits.push({ text: 'The flames lick at empty air.' });
-        break;
-      }
-      case 'shockingGrasp':
-      case 'causeLightWounds': {
-        const d = roll(this.rng, spellId === 'shockingGrasp' ? '1d8' : '1d8') + (spellId === 'shockingGrasp' ? lvl : 0);
-        const hit = spellId === 'causeLightWounds' ? resolveAttack(this.rng, c, occ, { mods: 0 }).hit : true;
-        if (hit) {
-          const killed = damage(occ, d);
-          hits.push({ id: occ.id, dmg: d, killed, text: `${occ.name} takes ${d} damage.` });
-        } else hits.push({ id: occ.id, dmg: 0, text: `${c.name}'s touch misses.` });
-        break;
-      }
-      case 'charmPerson': {
-        const ok = !occ.ref?.special?.includes?.('undead') && (occ.size !== 'L') && !save(occ, 'sp');
-        if (ok) {
-          occ.side = c.side;
-          occ.charmed = true;
-          occ.fleeing = false;
-          hits.push({ id: occ.id, effect: 'charmed', text: `${occ.name} is charmed and now fights for you!` });
-        } else hits.push({ id: occ.id, effect: 'resist', text: `${occ.name} resists the charm.` });
-        break;
-      }
-      case 'stinkingCloud': {
-        this.areas.push({ kind: 'cloud', squares: set, rounds: lvl, casterId: c.id, center: at });
-        for (const o of inArea) {
-          if (o.ref?.special?.includes?.('undead')) continue;
-          if (!save(o, 'ppdm')) {
-            o.fx.nauseous = 2;
-            hits.push({ id: o.id, effect: 'nauseous', text: `${o.name} is overcome by the stench.` });
-          } else hits.push({ id: o.id, effect: 'resist', text: `${o.name} holds its breath.` });
-        }
-        break;
-      }
-      case 'fireball':
-      case 'lightningBolt': {
-        const dice = `${Math.min(10, lvl)}d6`;
-        const base = roll(this.rng, dice);
-        for (const o of inArea) {
-          if (o === c) continue;
-          const saved = save(o, 'sp');
-          const d = saved ? Math.floor(base / 2) : base;
-          const killed = damage(o, Math.max(1, d));
-          hits.push({ id: o.id, dmg: Math.max(1, d), saved, killed, text: `${o.name} ${saved ? 'dodges partly and ' : ''}takes ${Math.max(1, d)}.` });
-        }
-        if (!hits.length) hits.push({ text: 'The blast hits nothing.' });
-        break;
-      }
-      case 'holdPerson': {
-        const cands = foesIn.filter((o) => !o.ref?.special?.includes?.('undead') && o.monsterId !== 'giantRat' && o.size !== 'L').slice(0, t.max ?? 3);
-        for (const o of cands) {
-          if (!save(o, 'sp', -1)) {
-            o.fx.held = 4 + lvl;
-            this._setCondition(o, 'held', true);
-            hits.push({ id: o.id, effect: 'held', text: `${o.name} is held fast!` });
-          } else hits.push({ id: o.id, effect: 'resist', text: `${o.name} shrugs off the spell.` });
-        }
-        if (!cands.length) hits.push({ text: 'No one there can be held.' });
-        break;
-      }
-      case 'silence15': {
-        for (const o of inArea) {
-          o.fx.silenced = 2 * lvl;
-          hits.push({ id: o.id, effect: 'silenced', text: `${o.name} is wrapped in silence.` });
-        }
-        break;
-      }
-      case 'curse': {
-        for (const o of foesIn) {
-          o.fx.cursed = 6;
-          hits.push({ id: o.id, effect: 'cursed', text: `${o.name} is cursed.` });
-        }
-        if (!foesIn.length) hits.push({ text: 'The curse finds no one.' });
-        break;
-      }
-      case 'bless':
-      case 'haste': {
-        for (const o of this.alliesOf(c).concat([c])) {
-          o.fx[spellId === 'bless' ? 'blessed' : 'hasted'] = spellId === 'bless' ? 6 : 3 + lvl;
-          hits.push({ id: o.id, effect: spellId === 'bless' ? 'blessed' : 'hasted' });
-        }
-        hits.push({ text: spellId === 'bless' ? 'The party is blessed.' : 'The party moves with unnatural speed!' });
-        break;
-      }
-      case 'prayer': {
-        for (const o of this.all) {
-          if (this.out(o)) continue;
-          if (this.hostileTo(c, o)) o.fx.prayerFoe = lvl;
-          else o.fx.prayer = lvl;
-        }
-        hits.push({ text: 'A prayer strengthens allies and weakens foes.' });
-        break;
-      }
-      case 'cureLightWounds': {
-        const d = roll(this.rng, '1d8');
-        const amt = occ.side === 'party' ? heal(occ.ref, d) : Math.min(d, occ.hp.max - occ.hp.cur);
-        if (occ.side !== 'party') occ.hp.cur += amt;
-        if (occ.fx.bandaged && occ.ref?.status === 'ok') delete occ.fx.bandaged;
-        hits.push({ id: occ.id, heal: amt, text: `${occ.name} is healed for ${amt}.` });
-        break;
-      }
-      case 'protectionFromEvil':
-      case 'shield':
-      case 'enlarge':
-      case 'invisibility':
-      case 'resistCold': {
-        const target = t.target === 'self' ? c : occ;
-        const k = { protectionFromEvil: 'prot', shield: 'shielded', enlarge: 'enlarged', invisibility: 'invisible', resistCold: 'resistCold' }[spellId];
-        target.fx[k] = 3 * lvl + 2;
-        hits.push({ id: target.id, effect: k, text: `${target.name} is ${{ prot: 'warded against evil', shielded: 'shielded', enlarged: 'enlarged', invisible: 'turned invisible', resistCold: 'protected from cold' }[k]}.` });
-        break;
-      }
-      case 'mirrorImage': {
-        c.fx.mirror = roll(this.rng, '1d4');
-        hits.push({ id: c.id, effect: 'mirror', text: `${c.fx.mirror} image${c.fx.mirror > 1 ? 's' : ''} of ${c.name} appear${c.fx.mirror > 1 ? '' : 's'}.` });
-        break;
-      }
-      case 'dispelMagic': {
-        for (const o of inArea) {
-          for (const k of ['asleep', 'held', 'blessed', 'cursed', 'prot', 'shielded', 'enlarged', 'invisible', 'hasted', 'mirror', 'silenced']) delete o.fx[k];
-          this._setCondition(o, 'asleep', false);
-          this._setCondition(o, 'held', false);
-        }
-        this.areas = this.areas.filter((a) => ![...a.squares].some((s) => set.has(s)));
-        hits.push({ text: 'Magic unravels.' });
-        break;
-      }
-      default:
-        hits.push({ text: 'Nothing happens.' });
+      // Lingering clouds keep nauseating whoever stands in them.
+      if (spellId === 'stinkingCloud') this.areas.push({ kind: 'cloud', squares: set, rounds: lvl, casterId: c.id, center: at });
+      // Dispel magic also blows clouds away.
+      if (spellId === 'dispelMagic') this.areas = this.areas.filter((a) => ![...a.squares].some((q) => set.has(q)));
     }
     ev[0].hits = hits;
     for (const hh of hits) {

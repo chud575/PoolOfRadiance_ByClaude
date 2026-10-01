@@ -91,8 +91,11 @@ export const RACES = {
     move: 6,
     size: 'M',
     saveBonusCon: true,
-    thiefAdj: { ol: 15, ft: 15, cw: -10, rl: -5 },
+    thiefAdj: { ol: 10, ft: 15, cw: -10, rl: -5 },
     vsGiants: true,
+    /** PHB: these creatures suffer -4 to hit a dwarf (applied as -4 AC in combat). */
+    acVs: ['giant', 'ogre', 'titan', 'troll'],
+    /** PHB: +1 to hit these. */
     bonusVs: ['orc', 'halfOrc', 'goblin', 'hobgoblin'],
     languages: ['Common', 'Dwarvish', 'Gnome', 'Goblin', 'Kobold', 'Orcish'],
     age: { fighter: [40, '5d4'], thief: [75, '3d6'] },
@@ -113,9 +116,10 @@ export const RACES = {
     move: 6,
     size: 'S',
     saveBonusCon: true,
-    thiefAdj: { ol: 10, ft: 10, ms: 5, hs: 5, hn: 10, cw: -15 },
+    thiefAdj: { ol: 5, ft: 10, ms: 5, hs: 5, hn: 10, cw: -15 },
     vsGiants: true,
-    bonusVs: ['kobold', 'gnoll', 'bugbear'],
+    acVs: ['bugbear', 'giant', 'gnoll', 'ogre', 'titan', 'troll'],
+    bonusVs: ['kobold', 'goblin'],
     languages: ['Common', 'Dwarvish', 'Gnome', 'Halfling', 'Goblin', 'Kobold'],
     age: { fighter: [60, '5d4'], thief: [80, '5d4'] },
     desc: 'Clever tinkers of the hills. Bonus saves vs magic; giants and ogres strike them less often.',
@@ -129,8 +133,10 @@ export const RACES = {
     maxStrPct: { male: 0, female: 0 },
     femaleMaxStr: 14,
     classes: ['fighter', 'thief', 'fighter/thief'],
+    // PoR lists halfling fighters at 6th level flat. (The PHB's STR-dependent
+    // 4/5/6 can never reach 6 because halfling STR tops out at 17.)
     levelLimits: { fighter: 6, thief: U },
-    limitBy: { fighter: ['str', [[18, 6], [17, 5], [0, 4]]] },
+    limitBy: {},
     infravision: 30,
     move: 9,
     size: 'S',

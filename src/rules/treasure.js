@@ -14,6 +14,7 @@ import { COIN_VALUES_GP } from './items.js';
  * @property {{name:string, value:number}[]} gems
  * @property {{name:string, value:number}[]} jewelry
  * @property {import('./character.js').InventoryEntry[]} items
+ * @property {number} [maps]   treasure maps found (type W)
  */
 
 /** [pct, dice] per column, dice in coins (already multiplied). Magic: [pct, count, kind]. */
@@ -41,6 +42,7 @@ export const TREASURE_TYPES = {
   T: { scrolls: [50, '1d4'] },
   U: { gems: [90, '10d8'], jewelry: [80, '5d6'], magic: [70, 1, 'any'] },
   V: { magic: [85, 2, 'any'] },
+  W: { gp: [60, '5d6x1000'], pp: [15, '1d8x100'], gems: [60, '10d8'], jewelry: [50, '5d8'], maps: [55, 1] },
   X: { magic: [60, 1, 'misc'], potions: [60, 1] },
   Y: { gp: [70, '2d6x1000'] },
   Z: { cp: [20, '1d3x1000'], sp: [25, '1d4x1000'], ep: [25, '1d4x1000'], gp: [30, '1d4x1000'], pp: [30, '1d6x100'], gems: [55, '10d6'], jewelry: [50, '5d6'], magic: [50, 3, 'any'] },
@@ -190,6 +192,7 @@ export function generateTreasure(rng, types, o = {}) {
           if (e) out.items.push(e);
         }
       }
+      if (def.maps && rng.chance(def.maps[0])) out.maps = (out.maps ?? 0) + def.maps[1];
       if (def.potions && rng.chance(def.potions[0])) {
         const n = typeof def.potions[1] === 'string' ? roll(rng, def.potions[1]) : def.potions[1];
         for (let i = 0; i < n; i++) {

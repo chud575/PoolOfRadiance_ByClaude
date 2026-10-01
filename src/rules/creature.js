@@ -50,6 +50,54 @@ export const PERSON_IDS = new Set([
   'orcLeader', 'hobgoblinLeader', 'koboldChief', 'goblinChief', 'norl', 'bishopBraccio', 'fighterNpc',
 ]);
 
+/**
+ * Creature family for racial combat rules: 'orc' for an Orc Leader, 'giant'
+ * for a Hill Giant, 'hobgoblin' for a Hobgoblin Chief... Monsters may state
+ * `family` explicitly; otherwise it is derived from the id. Characters return
+ * their race id.
+ */
+export function familyOf(c) {
+  const ch = characterOf(c);
+  if (ch) return ch.race;
+  const m = monsterOf(c);
+  if (!m) return null;
+  if (m.family) return m.family;
+  const id = m.id ?? '';
+  if (id === 'titan' || /Titan$/.test(id)) return 'titan';
+  if (id === 'giant' || /Giant$/.test(id)) return 'giant';
+  for (const f of FAMILY_PREFIXES) if (id === f || (id.startsWith(f) && /[A-Z]/.test(id[f.length] ?? ''))) return f;
+  return id;
+}
+const FAMILY_PREFIXES = ['hobgoblin', 'goblin', 'kobold', 'halfOrc', 'orc', 'gnoll', 'bugbear', 'ogre', 'troll'];
+
+/**
+ * PHB racial combat adjustments between an attacker and a defender:
+ * dwarves +1 to hit orcs, half-orcs, goblins and hobgoblins; gnomes +1 to hit
+ * kobolds and goblins; giants, ogres, titans and trolls (plus gnolls and
+ * bugbears against gnomes) suffer -4 to hit dwarves and gnomes, which we
+ * apply as a -4 (better) AC for the defender.
+ * @returns {{hit:number, ac:number}}
+ */
+export function racialCombatMods(attacker, defender) {
+  const out = { hit: 0, ac: 0 };
+  const aRace = RACES[characterOf(attacker)?.race];
+  const dRace = RACES[characterOf(defender)?.race];
+  if (aRace?.bonusVs?.includes(familyOf(defender))) out.hit += 1;
+  if (dRace?.acVs?.includes(familyOf(attacker))) out.ac -= 4;
+  return out;
+}
+
+/**
+ * True for creatures of less than one full hit die (kobolds, giant rats, and
+ * 1-1 HD goblins): fighters "sweep" them, one attack per level.
+ */
+export function belowOneHd(c) {
+  if (characterOf(c)) return false;
+  const m = monsterOf(c);
+  const hd = m?.hd ?? 1;
+  return hd < 1 || (hd === 1 && (m?.hpBonus ?? 0) < 0);
+}
+
 export function hasTag(c, tag) {
   return tagsOf(c).includes(tag);
 }

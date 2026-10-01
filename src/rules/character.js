@@ -314,6 +314,8 @@ export function equipProblem(ch, itemId) {
   const classes = splitClasses(ch.classSpec);
   if (def.classes && !classes.some((c) => def.classes.includes(c))) return 'class cannot use';
   if (def.type === 'weapon') {
+    // 1e: a multiclassed cleric keeps the cleric's weapon restriction (blunt only).
+    if (classes.includes('cleric') && !CLASSES.cleric.weapons.includes(def.weaponGroup)) return 'clerics may not shed blood';
     const ok = classes.some((c) => CLASSES[c].weapons === 'any' || CLASSES[c].weapons.includes(def.weaponGroup));
     return ok ? null : 'weapon not allowed';
   }
@@ -414,9 +416,13 @@ export function highestLevel(ch) {
   return Math.max(1, ...Object.values(ch.levels ?? {}));
 }
 
-/** Can the character cast arcane spells in their current armour? */
+/**
+ * Can the character cast arcane spells in their current armour? No armour or
+ * shield, except elfin chain, which only elves and half-elves can cast in (1e).
+ */
 export function armorAllowsArcane(ch) {
-  return !equipped(ch).some(([, d]) => d.type === 'armor' && d.armorGroup !== 'elfin') && !equipped(ch).some(([, d]) => d.type === 'shield');
+  const elfish = ch.race === 'elf' || ch.race === 'halfElf';
+  return !equipped(ch).some(([, d]) => d.type === 'armor' && !(d.armorGroup === 'elfin' && elfish)) && !equipped(ch).some(([, d]) => d.type === 'shield');
 }
 
 /** Can the character use thief skills in their current armour? */
@@ -495,7 +501,8 @@ export function deriveStats(ch) {
   let racial = 0;
   if (ranged && race.missileBonus && ['sling', 'shortBow', 'longBow', 'compositeBow'].includes(weapon.weaponGroup)) racial = race.missileBonus;
   if (ch.race === 'elf' && weapon && ['shortBow', 'longBow', 'shortSword', 'longSword'].includes(weapon.weaponGroup)) racial = Math.max(racial, 1);
-  const hitBonus = (ranged ? dex.missile : str.hit) + wMagic + racial + fx.hit;
+  // Thrown weapons get both the DEX missile and the STR to-hit adjustments (DMG).
+  const hitBonus = (ranged ? dex.missile + (weapon.thrown ? str.hit : 0) : str.hit) + wMagic + racial + fx.hit;
   const dmgBonus = (ranged && !weapon.thrown ? 0 : str.dmg) + wMagic + fx.dmg;
 
   // ---- attacks per round
@@ -536,7 +543,7 @@ export function deriveStats(ch) {
     saves,
     hitBonus,
     dmgBonus,
-    missileHit: dex.missile + wMagic + fx.hit,
+    missileHit: dex.missile + (weapon?.thrown ? str.hit : 0) + wMagic + fx.hit,
     weapon,
     weaponEntry,
     weaponMagic: wMagic,
@@ -743,8 +750,10 @@ export function heal(ch, amount) {
  * returns the character at 1 hp and costs 1 point of CON (PHB).
  * @returns {{ok:boolean, roll:number, needed:number}}
  */
-export function raiseDead(rng, ch) {
+export function raiseDead(rng, ch, { allowElves = false } = {}) {
   if (ch.status !== 'dead') return { ok: false, roll: 0, needed: 0 };
+  // PHB: elves cannot be raised (only resurrected).
+  if (ch.race === 'elf' && !allowElves) return { ok: false, roll: 0, needed: 0, reason: 'elf' };
   const needed = constitutionTable(ch.abilities.con).resurrection;
   const r = rng.int(1, 100);
   if (r > needed) {

@@ -25,7 +25,7 @@ export const COIN_VALUES_GP = { cp: 0.01, sp: 0.1, ep: 0.5, gp: 1, pp: 5 };
 
 /** PHB armour base movement (inches) by armour group. */
 export const ARMOR_MOVE = {
-  leather: 12, padded: 9, studded: 9, ring: 12, scale: 6, chain: 9, elfin: 12, banded: 9, splint: 6, plate: 6,
+  leather: 12, padded: 9, studded: 9, ring: 9, scale: 6, chain: 9, elfin: 12, banded: 9, splint: 6, plate: 6,
 };
 
 /** Default missile rate of fire (per round) by weapon group (PHB). */
@@ -96,11 +96,14 @@ export function rateOfFire(def) {
   return def.rateOfFire ?? RATE_OF_FIRE[def.weaponGroup] ?? 1;
 }
 
-/** Base movement allowed by worn armour (magic armour: one step lighter). */
-export function armorMoveLimit(armorDef, magic = 0) {
+/**
+ * Base movement allowed by worn armour (PHB table). Magic armour moves at the
+ * same base rate; its benefit is half weight (see itemWeight), which shows up
+ * through encumbrance. `magic` is accepted for API compatibility.
+ */
+export function armorMoveLimit(armorDef, magic = 0) { // eslint-disable-line no-unused-vars
   if (!armorDef) return 12;
-  const m = ARMOR_MOVE[armorDef.armorGroup] ?? 12;
-  return magic > 0 ? Math.min(12, m + 3) : m;
+  return ARMOR_MOVE[armorDef.armorGroup] ?? 12;
 }
 
 /**

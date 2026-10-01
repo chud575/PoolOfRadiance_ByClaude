@@ -38,7 +38,8 @@ describe('item helpers', () => {
     expect(rateOfFire(ITEMS.sling)).toBe(1);
     expect(rateOfFire(ITEMS.longSword)).toBe(1);
     expect(armorMoveLimit(ITEMS.plateMail)).toBe(6);
-    expect(armorMoveLimit(ITEMS.plateMail, 1)).toBe(9);
+    // Magic armour moves at the PHB base rate; its benefit is half weight.
+    expect(armorMoveLimit(ITEMS.plateMail, 1)).toBe(6);
     expect(armorMoveLimit(ITEMS.leather)).toBe(12);
     expect(armorMoveLimit(null)).toBe(12);
   });

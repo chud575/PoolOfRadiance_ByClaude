@@ -10,6 +10,12 @@ import { hasEffect, getEffect, addEffect, effectMods } from '../../src/rules/con
 import { SPELLS as DATA_SPELLS } from '../../src/data/spells.js';
 import { CONDITIONS } from '../../src/rules/conditions.js';
 
+/**
+ * Scripted cast for spell-mechanics tests: memory is not checked (unless the
+ * test consumes a memorized slot) and the cleric WIS failure roll is off.
+ */
+const cast = (rng, id, c, t = [], o = {}) => castSpell(rng, id, c, t, { ignoreMemory: !o.consume, noFailure: true, ...o });
+
 const abil = (o = {}) => ({ str: 12, strPct: 0, int: 12, wis: 12, dex: 12, con: 12, cha: 12, ...o });
 const mage = (level = 1, o = {}) => createCharacter({ rng: new Rng(1), name: 'Meralda', race: 'human', classSpec: 'magicUser', abilities: abil({ int: 18 }), level, ...o });
 const priest = (level = 1, o = {}) => createCharacter({ rng: new Rng(2), name: 'Aldric', race: 'human', classSpec: 'cleric', abilities: abil({ wis: 17 }), level, ...o });
@@ -85,11 +91,11 @@ describe('casting prerequisites', () => {
   it('consumes a memorized instance when cast', () => {
     const m = mage(1);
     m.spells.memorized.magicUser = ['magicMissile'];
-    const r = castSpell(new Rng(1), 'magicMissile', m, mons(new Rng(1), 'kobold', 1), { consume: true });
+    const r = cast(new Rng(1), 'magicMissile', m, mons(new Rng(1), 'kobold', 1), { consume: true });
     expect(r.ok).toBe(true);
     expect(m.spells.memorized.magicUser).toEqual([]);
     expect(consumeMemorized(m, 'magicMissile')).toBe(false);
-    expect(castSpell(new Rng(1), 'magicMissile', m, [], { consume: true }).reason).toBe('not memorized');
+    expect(cast(new Rng(1), 'magicMissile', m, [], { consume: true }).reason).toBe('not memorized');
   });
   it('caster levels', () => {
     expect(casterLevel(mage(5), 'fireball')).toBe(5);
@@ -104,17 +110,17 @@ describe('damage spells', () => {
     for (let i = 0; i < 30; i++) {
       const [orc] = mons(rng, 'orc', 1);
       orc.hp = { cur: 100, max: 100 };
-      const r = castSpell(rng, 'magicMissile', mage(1), [orc]);
+      const r = cast(rng, 'magicMissile', mage(1), [orc]);
       expect(r.results[0].damage).toBeGreaterThanOrEqual(2);
       expect(r.results[0].damage).toBeLessThanOrEqual(5);
-      const r5 = castSpell(rng, 'magicMissile', mage(5), [orc]);
+      const r5 = cast(rng, 'magicMissile', mage(5), [orc]);
       expect(r5.results[0].damage).toBeGreaterThanOrEqual(6);
       expect(r5.results[0].damage).toBeLessThanOrEqual(15);
     }
     const [o] = mons(rng, 'orc', 1);
     addEffect(o, 'shielded', { rounds: 5 });
     const hp = o.hp.cur;
-    const r = castSpell(rng, 'magicMissile', mage(1), [o]);
+    const r = cast(rng, 'magicMissile', mage(1), [o]);
     expect(r.results[0].immune).toBe(true);
     expect(o.hp.cur).toBe(hp);
   });
@@ -122,7 +128,7 @@ describe('damage spells', () => {
     const rng = new Rng(5);
     const ks = mons(rng, 'orc', 3);
     ks.forEach((k) => { k.hp = { cur: 20, max: 20 }; });
-    castSpell(rng, 'burningHands', mage(4), ks);
+    cast(rng, 'burningHands', mage(4), ks);
     expect(ks.map((k) => k.hp.cur)).toEqual([16, 16, 16]);
   });
   it('fireball: 1d6/level, save for half, resist fire halves, dex helps saves', () => {
@@ -132,7 +138,7 @@ describe('damage spells', () => {
     for (let i = 0; i < 200; i++) {
       const [o] = mons(rng, 'ogre', 1);
       o.hp = { cur: 1000, max: 1000 };
-      const r = castSpell(rng, 'fireball', mage(5), [o]).results[0];
+      const r = cast(rng, 'fireball', mage(5), [o]).results[0];
       expect(r.damage).toBeLessThanOrEqual(30);
       if (r.saved) { half++; expect(r.damage).toBeLessThanOrEqual(15); } else full++;
     }
@@ -141,7 +147,7 @@ describe('damage spells', () => {
     const f = fighter();
     f.hp = { cur: 500, max: 500 };
     addEffect(f, 'resistFire', { rounds: 10 });
-    const r = castSpell(new Rng(1), 'fireball', mage(6), [f]).results[0];
+    const r = cast(new Rng(1), 'fireball', mage(6), [f]).results[0];
     expect(r.damage).toBeLessThanOrEqual(18);
     expect(r.save.bonus).toBe(3);
   });
@@ -149,13 +155,13 @@ describe('damage spells', () => {
     const rng = new Rng(7);
     const [o] = mons(rng, 'troll', 1);
     o.hp = { cur: 200, max: 200 };
-    const r = castSpell(rng, 'lightningBolt', mage(6), [o]).results[0];
+    const r = cast(rng, 'lightningBolt', mage(6), [o]).results[0];
     expect(r.damage).toBeGreaterThan(0);
     let hits = 0;
     for (let i = 0; i < 50; i++) {
       const [k] = mons(rng, 'kobold', 1);
       k.hp = { cur: 100, max: 100 };
-      const g = castSpell(rng, 'shockingGrasp', mage(3), [k]).results[0];
+      const g = cast(rng, 'shockingGrasp', mage(3), [k]).results[0];
       if (!g.missed) { hits++; expect(g.damage).toBeGreaterThanOrEqual(4); expect(g.damage).toBeLessThanOrEqual(11); }
     }
     expect(hits).toBeGreaterThan(8); // THAC0 21 vs AC 7: 35%
@@ -163,7 +169,7 @@ describe('damage spells', () => {
   it('lethal damage kills monsters and downs characters', () => {
     const rng = new Rng(8);
     const [k] = mons(rng, 'kobold', 1);
-    const r = castSpell(rng, 'fireball', mage(6), [k]);
+    const r = cast(rng, 'fireball', mage(6), [k]);
     expect(k.status).toBe('dead');
     expect(r.results[0].down).toBe(true);
     expect(r.log.join(' ')).toMatch(/slain/);
@@ -174,7 +180,7 @@ describe('sleep', () => {
   it('sleeps low-HD creatures, weakest first, no save', () => {
     const rng = new Rng(9);
     const ks = mons(rng, 'kobold', 4);
-    const r = castSpell(rng, 'sleep', mage(1), ks);
+    const r = cast(rng, 'sleep', mage(1), ks);
     expect(r.results.filter((x) => x.affected).length).toBe(4); // 4d4 ≥ 4
     expect(ks.every((k) => hasEffect(k, 'asleep'))).toBe(true);
     expect(getEffect(ks[0], 'asleep').rounds).toBe(5);
@@ -183,7 +189,7 @@ describe('sleep', () => {
     const rng = new Rng(10);
     const [s] = mons(rng, 'skeleton', 1);
     const [t] = mons(rng, 'troll', 1);
-    const r = castSpell(rng, 'sleep', mage(1), [s, t]);
+    const r = cast(rng, 'sleep', mage(1), [s, t]);
     expect(r.results.every((x) => !x.affected)).toBe(true);
   });
   it('4 HD creatures only rarely', () => {
@@ -191,7 +197,7 @@ describe('sleep', () => {
     let slept = 0;
     for (let i = 0; i < 100; i++) {
       const og = mons(rng, 'ogre', 1);
-      slept += castSpell(rng, 'sleep', mage(1), og).results.filter((x) => x.affected).length;
+      slept += cast(rng, 'sleep', mage(1), og).results.filter((x) => x.affected).length;
     }
     expect(slept).toBeGreaterThan(25);
     expect(slept).toBeLessThan(75);
@@ -201,16 +207,16 @@ describe('sleep', () => {
     let resisted = 0;
     for (let i = 0; i < 100; i++) {
       const e = createCharacter({ rng, name: 'E', race: 'elf', classSpec: 'fighter', abilities: abil({ str: 12 }) });
-      if (castSpell(rng, 'sleep', mage(1), [e]).results[0].resisted) resisted++;
+      if (cast(rng, 'sleep', mage(1), [e]).results[0].resisted) resisted++;
     }
     expect(resisted).toBeGreaterThan(75);
   });
   it('damage wakes the sleeper', () => {
     const rng = new Rng(13);
     const ks = mons(rng, 'orc', 1);
-    castSpell(rng, 'sleep', mage(1), ks);
+    cast(rng, 'sleep', mage(1), ks);
     ks[0].hp.cur = 50;
-    castSpell(rng, 'magicMissile', mage(1), ks);
+    cast(rng, 'magicMissile', mage(1), ks);
     expect(hasEffect(ks[0], 'asleep')).toBe(false);
   });
 });
@@ -219,26 +225,26 @@ describe('enchantments', () => {
   it('hold person affects persons only, harsher save alone', () => {
     const rng = new Rng(14);
     const [sk] = mons(rng, 'skeleton', 1);
-    const r = castSpell(rng, 'holdPerson', priest(3), [sk]);
+    const r = cast(rng, 'holdPerson', priest(3), [sk]);
     expect(r.results[0].immune).toBe(true);
     let held = 0;
     for (let i = 0; i < 100; i++) {
       const [o] = mons(rng, 'orc', 1);
-      const res = castSpell(rng, 'holdPerson', priest(3), [o]).results[0];
+      const res = cast(rng, 'holdPerson', priest(3), [o]).results[0];
       expect(res.save.bonus).toBe(-2);
       if (res.affected) { held++; expect(hasEffect(o, 'held')).toBe(true); expect(getEffect(o, 'held').rounds).toBe(7); }
     }
     expect(held).toBeGreaterThan(40);
     const many = mons(rng, 'orc', 6);
-    expect(castSpell(rng, 'holdPerson', priest(3), many).results.length).toBe(3);
-    expect(castSpell(rng, 'holdPerson', mage(5), mons(rng, 'orc', 6)).results.length).toBe(4);
+    expect(cast(rng, 'holdPerson', priest(3), many).results.length).toBe(3);
+    expect(cast(rng, 'holdPerson', mage(5), mons(rng, 'orc', 6)).results.length).toBe(4);
   });
   it('charm person marks the victim for the caster\'s side', () => {
     const rng = new Rng(15);
     let charmed = 0;
     for (let i = 0; i < 40; i++) {
       const [b] = mons(rng, 'buccaneer', 1);
-      const r = castSpell(rng, 'charmPerson', mage(1), [b]).results[0];
+      const r = cast(rng, 'charmPerson', mage(1), [b]).results[0];
       if (r.charmed) { charmed++; expect(getEffect(b, 'charmed').data.side).toBe('party'); }
     }
     expect(charmed).toBeGreaterThan(10);
@@ -246,7 +252,7 @@ describe('enchantments', () => {
   it('WIS adjusts saves vs mind magic for characters', () => {
     const wise = createCharacter({ rng: new Rng(1), name: 'W', race: 'human', classSpec: 'fighter', abilities: abil({ wis: 18 }) });
     const orcCaster = mons(new Rng(1), 'orc', 1)[0];
-    const r = castSpell(new Rng(2), 'holdPerson', orcCaster, [wise], { check: false }).results[0];
+    const r = cast(new Rng(2), 'holdPerson', orcCaster, [wise], { check: false }).results[0];
     expect(r.save.bonus).toBe(-2 + 4);
   });
   it('stinking cloud nauseates the living', () => {
@@ -254,7 +260,7 @@ describe('enchantments', () => {
     let n = 0;
     for (let i = 0; i < 30; i++) {
       const ks = mons(rng, 'kobold', 1);
-      const r = castSpell(rng, 'stinkingCloud', mage(3), ks).results[0];
+      const r = cast(rng, 'stinkingCloud', mage(3), ks).results[0];
       if (r.affected) {
         n++;
         const rounds = getEffect(ks[0], 'nauseous').rounds;
@@ -264,19 +270,19 @@ describe('enchantments', () => {
     }
     expect(n).toBeGreaterThan(10);
     const sk = mons(rng, 'skeleton', 1);
-    expect(castSpell(rng, 'stinkingCloud', mage(3), sk).results[0].immune).toBe(true);
+    expect(cast(rng, 'stinkingCloud', mage(3), sk).results[0].immune).toBe(true);
   });
   it('slow and haste', () => {
     const rng = new Rng(17);
     const party = [fighter(), fighter(), fighter()];
     const age = party[0].age;
-    castSpell(rng, 'haste', mage(5), party);
+    cast(rng, 'haste', mage(5), party);
     expect(party.every((p) => hasEffect(p, 'hasted'))).toBe(true);
     expect(party[0].age).toBe(age + 1);
     expect(deriveStats(party[0]).attacks).toBe(2);
-    expect(castSpell(rng, 'haste', mage(2), [fighter(), fighter(), fighter()]).results.length).toBe(2);
+    expect(cast(rng, 'haste', mage(2), [fighter(), fighter(), fighter()]).results.length).toBe(2);
     const foes = mons(rng, 'orc', 3);
-    const r = castSpell(rng, 'slow', mage(5), foes);
+    const r = cast(rng, 'slow', mage(5), foes);
     for (const x of r.results) if (x.affected) expect(effectMods(x.target).attackMult).toBe(0.5);
   });
 });
@@ -287,10 +293,10 @@ describe('cleric blessings and curses', () => {
     const c = priest(1);
     const f = fighter();
     const [o] = mons(rng, 'orc', 1);
-    castSpell(rng, 'bless', c, [c, f, o]);
+    cast(rng, 'bless', c, [c, f, o]);
     expect(hasEffect(f, 'blessed')).toBe(true);
     expect(hasEffect(o, 'blessed')).toBe(false);
-    castSpell(rng, 'curse', c, [f, o]);
+    cast(rng, 'curse', c, [f, o]);
     expect(hasEffect(o, 'cursed')).toBe(true);
     expect(hasEffect(f, 'cursed')).toBe(false);
   });
@@ -299,7 +305,7 @@ describe('cleric blessings and curses', () => {
     const c = priest(5);
     const f = fighter();
     const [o] = mons(rng, 'orc', 1);
-    castSpell(rng, 'prayer', c, [c, f, o]);
+    cast(rng, 'prayer', c, [c, f, o]);
     expect(effectMods(f)).toMatchObject({ hit: 1, dmg: 1, save: 1 });
     expect(effectMods(o)).toMatchObject({ hit: -1, dmg: -1, save: -1 });
     expect(getEffect(f, 'prayer').rounds).toBe(5);
@@ -310,18 +316,18 @@ describe('cleric blessings and curses', () => {
     applyDamage(f, f.hp.cur + 2);
     expect(f.status).toBe('dying');
     let r;
-    do { r = castSpell(rng, 'cureLightWounds', priest(), [f]); } while (f.hp.cur <= 0);
+    do { r = cast(rng, 'cureLightWounds', priest(), [f]); } while (f.hp.cur <= 0);
     expect(f.status).toBe('ok');
     expect(r.results[0].healed).toBeGreaterThan(0);
     const [sk] = mons(rng, 'skeleton', 1);
-    expect(castSpell(rng, 'cureLightWounds', priest(), [sk]).results[0].affected).toBe(false);
+    expect(cast(rng, 'cureLightWounds', priest(), [sk]).results[0].affected).toBe(false);
   });
   it('protection from evil: -2 AC and +2 saves vs evil only', () => {
     const f = fighter();
-    castSpell(new Rng(1), 'protectionFromEvil', priest(2), [f]);
+    cast(new Rng(1), 'protectionFromEvil', priest(2), [f]);
     expect(getEffect(f, 'protEvil').rounds).toBe(6);
     expect(effectMods(f).vsEvil).toEqual({ ac: -2, save: 2 });
-    const pm = castSpell(new Rng(1), 'protectionFromEvil', mage(2), [f]);
+    const pm = cast(new Rng(1), 'protectionFromEvil', mage(2), [f]);
     expect(pm.ok).toBe(true);
   });
   it('spiritual hammer attacks as a magic weapon', () => {
@@ -330,7 +336,7 @@ describe('cleric blessings and curses', () => {
     for (let i = 0; i < 40; i++) {
       const [k] = mons(rng, 'orc', 1);
       k.hp = { cur: 50, max: 50 };
-      const r = castSpell(rng, 'spiritualHammer', priest(3), [k]).results[0];
+      const r = cast(rng, 'spiritualHammer', priest(3), [k]).results[0];
       if (!r.missed) { hits++; expect(r.damage).toBeGreaterThanOrEqual(3); expect(r.damage).toBeLessThanOrEqual(6); }
     }
     expect(hits).toBeGreaterThan(10);
@@ -342,7 +348,7 @@ describe('cleric blessings and curses', () => {
       const [o] = mons(rng, 'orc', 1);
       addEffect(o, 'blessed', { rounds: 5, level: 5 });
       addEffect(o, 'poisoned'); // not magical: never dispelled
-      castSpell(rng, 'dispelMagic', priest(5), [o]);
+      cast(rng, 'dispelMagic', priest(5), [o]);
       if (!hasEffect(o, 'blessed')) removed++;
       expect(hasEffect(o, 'poisoned')).toBe(true);
     }
@@ -354,7 +360,7 @@ describe('cleric blessings and curses', () => {
     const f = fighter();
     f.inventory.push({ id: 'longSword', qty: 1, equipped: true, identified: true, cursed: true, magic: -1 });
     addEffect(f, 'bestowCurse', { rounds: 10 });
-    const r = castSpell(rng, 'removeCurse', priest(5), [f]);
+    const r = cast(rng, 'removeCurse', priest(5), [f]);
     expect(hasEffect(f, 'bestowCurse')).toBe(false);
     expect(f.inventory.at(-1).cursed).toBe(false);
     expect(r.flags.uncursedItems).toBe(1);
@@ -364,8 +370,8 @@ describe('cleric blessings and curses', () => {
     const f = fighter();
     addEffect(f, 'blinded');
     addEffect(f, 'diseased');
-    castSpell(rng, 'cureBlindness', priest(5), [f]);
-    castSpell(rng, 'cureDisease', priest(5), [f]);
+    cast(rng, 'cureBlindness', priest(5), [f]);
+    cast(rng, 'cureDisease', priest(5), [f]);
     expect(hasEffect(f, 'blinded')).toBe(false);
     expect(hasEffect(f, 'diseased')).toBe(false);
   });
@@ -374,27 +380,27 @@ describe('cleric blessings and curses', () => {
 describe('utility and personal spells', () => {
   it('camp spells raise flags', () => {
     const rng = new Rng(25);
-    expect(castSpell(rng, 'detectMagic', mage(1)).flags.detectMagic).toBe(true);
-    expect(castSpell(rng, 'knock', mage(3)).flags.unlock).toBe(true);
-    expect(castSpell(rng, 'readMagic', mage(1)).flags.readMagic).toBe(true);
-    expect(castSpell(rng, 'findTraps', priest(3)).flags.findTraps).toBe(true);
+    expect(cast(rng, 'detectMagic', mage(1)).flags.detectMagic).toBe(true);
+    expect(cast(rng, 'knock', mage(3)).flags.unlock).toBe(true);
+    expect(cast(rng, 'readMagic', mage(1)).flags.readMagic).toBe(true);
+    expect(cast(rng, 'findTraps', priest(3)).flags.findTraps).toBe(true);
   });
   it('shield, mirror image, invisibility, blink, enlarge, strength', () => {
     const rng = new Rng(26);
     const m = mage(3);
-    castSpell(rng, 'shield', m);
+    cast(rng, 'shield', m);
     expect(getEffect(m, 'shielded').rounds).toBe(15);
-    castSpell(rng, 'mirrorImage', m);
+    cast(rng, 'mirrorImage', m);
     const imgs = getEffect(m, 'mirrorImage').data.images;
     expect(imgs).toBeGreaterThanOrEqual(1);
     expect(imgs).toBeLessThanOrEqual(4);
     const f = fighter({ abilities: abil({ str: 12 }) });
-    castSpell(rng, 'invisibility', m, [f]);
+    cast(rng, 'invisibility', m, [f]);
     expect(effectMods(f).attackerHit).toBe(-4);
-    castSpell(rng, 'enlarge', mage(6), [f]);
+    cast(rng, 'enlarge', mage(6), [f]);
     expect(deriveStats(f).abilities).toMatchObject({ str: 18, strPct: 100 });
     const g = fighter({ abilities: abil({ str: 12 }) });
-    castSpell(rng, 'strength', m, [g]);
+    cast(rng, 'strength', m, [g]);
     const bonus = getEffect(g, 'strength').data.bonus;
     expect(deriveStats(g).abilities.str).toBe(Math.min(18, 12 + bonus));
   });
@@ -402,20 +408,20 @@ describe('utility and personal spells', () => {
     const rng = new Rng(27);
     const f = fighter({ abilities: abil({ str: 16 }) });
     let r;
-    do { f.effects = []; f.conditions = []; r = castSpell(rng, 'rayOfEnfeeblement', mage(5), [f], { check: false }).results[0]; } while (!r.affected);
+    do { f.effects = []; f.conditions = []; r = cast(rng, 'rayOfEnfeeblement', mage(5), [f], { check: false }).results[0]; } while (!r.affected);
     expect(deriveStats(f).abilities.str).toBe(Math.floor(16 * 0.71));
   });
   it('invisible creatures cannot be singled out by hostile spells', () => {
     const rng = new Rng(28);
     const [o] = mons(rng, 'orc', 1);
     addEffect(o, 'invisible');
-    expect(castSpell(rng, 'magicMissile', mage(1), [o]).results[0].immune).toBe(true);
+    expect(cast(rng, 'magicMissile', mage(1), [o]).results[0].immune).toBe(true);
   });
   it('works on party combatants and shares effects with the character', () => {
     const rng = new Rng(29);
     const f = fighter();
     const c = combatantFromCharacter(f);
-    castSpell(rng, 'bless', priest(), [c]);
+    cast(rng, 'bless', priest(), [c]);
     expect(hasEffect(f, 'blessed')).toBe(true);
     expect(c.conditions).toContain('blessed');
   });

@@ -8,7 +8,8 @@ import {
   clearCombatEffects,
 } from './conditions.js';
 import { neededToHit } from './tohit.js';
-import { isEvil, isGood, effectHost, characterOf } from './creature.js';
+import { isEvil, isGood, effectHost, characterOf, racialCombatMods, belowOneHd, monsterOf } from './creature.js';
+import { rateOfFire } from './items.js';
 import { rollSave } from './saves.js';
 
 export { neededToHit };
@@ -26,7 +27,8 @@ export { neededToHit };
  * @property {number} ac
  * @property {number} hitBonus
  * @property {number} dmgBonus
- * @property {string[]} attacks        damage dice per attack
+ * @property {string[]} attacks        damage dice: a monster's attack routine (claw/claw/bite), or a
+ *                                     character's weapon damage (one entry; see attacksFor for how many)
  * @property {'S'|'M'|'L'} size
  * @property {{cur:number,max:number}} hp
  * @property {number} move             squares per round
@@ -38,7 +40,8 @@ export { neededToHit };
  * @property {number} xp               xp value when defeated (monsters)
  * @property {object} ref              the underlying Character or monster def
  * @property {string} [monsterId]
- * @property {number} [attackRate]     attacks per round (1.5 = 3 per 2 rounds)
+ * @property {number} [attackRate]     base attacks per round at creation (1.5 = 3 per 2 rounds); informational —
+ *                                     attacksFor() recomputes it live (haste/slow cast mid-fight count)
  * @property {object} [snap]  derived numbers at creation, so later effects apply as deltas (rules internal)
  * @property {number} [x]  @property {number} [y]  @property {number} [facing]   owned by combat scene
  */
@@ -58,7 +61,7 @@ export function combatantFromCharacter(ch) {
     acRear: s.acRear,
     hitBonus: s.hitBonus,
     dmgBonus: s.dmgBonus,
-    attacks: Array(Math.max(1, Math.floor(s.attacks))).fill(s.damage),
+    attacks: [s.damage],
     attackRate: s.attacks,
     attacksLarge: s.damageLarge,
     ranged: !!s.weapon?.ranged,
@@ -171,6 +174,10 @@ export function liveMods(attacker, defender, { ranged = false } = {}) {
     out.dmg += fx.dmg;
     if (fx.strLossPct) out.dmgMult = 1 - fx.strLossPct / 100;
   }
+  // Racial adjustments (dwarf/gnome vs giants, orcs, goblins...).
+  const rac = racialCombatMods(attacker, defender);
+  out.hit += rac.hit;
+  out.ac += rac.ac;
   // Defender.
   const dfx = effectMods(dHost);
   if (characterOf(defender) && defender.snap) {
@@ -191,29 +198,46 @@ export function liveMods(attacker, defender, { ranged = false } = {}) {
   return out;
 }
 
+/** Is the defender helpless (asleep, held, paralyzed, nauseous, unconscious)? */
+export function isHelplessTarget(defender) {
+  return isHelpless(effectHost(defender)) || isHelpless(defender);
+}
+
+/**
+ * Helpless-target rules (DMG): 'bonus' = +4 to hit (default, conservative);
+ * 'auto' = melee attacks hit automatically (missiles still get +4);
+ * 'slay' = melee hits automatically and kills outright (coup de grace) —
+ * the Gold Box treatment of sleeping and held foes.
+ * @typedef {'bonus'|'auto'|'slay'} HelplessRule
+ */
+export const HELPLESS_RULES = ['bonus', 'auto', 'slay'];
+
 /**
  * Resolve one attack. Natural 20 always hits, natural 1 always misses (modern QoL
  * house rule; set opts.strict1e to disable). Applies timed effects: bless/prayer,
  * shield, invisibility, blink (50% miss), mirror image (hits strike images),
- * protection from normal missiles, helpless targets (+4).
+ * protection from normal missiles, racial adjustments, and helpless targets
+ * (see HelplessRule; opts.helpless picks it).
  * @param {{mods?:number, dmgMod?:number, backstab?:boolean, backstabMult?:number, rear?:boolean,
- *   attackIndex?:number, ranged?:boolean, magicWeapon?:boolean, strict1e?:boolean}} [opts]
+ *   attackIndex?:number, ranged?:boolean, magicWeapon?:boolean, strict1e?:boolean, helpless?:HelplessRule}} [opts]
  * @returns {{roll:number, needed:number, hit:boolean, damage:number, killed:boolean, crit:boolean,
- *   image?:boolean, blinked?:boolean, immune?:boolean}}
+ *   image?:boolean, blinked?:boolean, immune?:boolean, auto?:boolean, coupDeGrace?:boolean}}
  */
 export function resolveAttack(rng, attacker, defender, opts = {}) {
   const ranged = opts.ranged ?? !!attacker.ranged;
   const lm = liveMods(attacker, defender, { ranged });
-  const helpless = isHelpless(effectHost(defender)) || defender.conditions?.includes('asleep') || defender.conditions?.includes('held');
+  const helpless = isHelplessTarget(defender);
+  const rule = opts.helpless ?? 'bonus';
+  const autoHit = helpless && !ranged && (rule === 'auto' || rule === 'slay');
   const mods = (opts.backstab ? 4 : 0) + (opts.rear ? 2 : 0) + (helpless ? 4 : 0) + (opts.mods ?? 0) + lm.hit;
-  const needed = neededToHit(attacker.thac0, defender.ac + lm.ac, (attacker.hitBonus ?? 0) + mods);
+  const needed = autoHit ? 1 : neededToHit(attacker.thac0, defender.ac + lm.ac, (attacker.hitBonus ?? 0) + mods);
   onAttacked(effectHost(attacker));
   if (lm.missChance && rng.int(1, 100) <= lm.missChance) {
     return { roll: 0, needed, hit: false, damage: 0, killed: false, crit: false, blinked: true };
   }
   const r = rng.die(20);
-  let hit = r >= needed;
-  if (!opts.strict1e) {
+  let hit = autoHit || r >= needed;
+  if (!opts.strict1e && !autoHit) {
     if (r === 20) hit = true;
     if (r === 1) hit = false;
   }
@@ -230,6 +254,12 @@ export function resolveAttack(rng, attacker, defender, opts = {}) {
   if (hit && ranged && lm.immune.has('normalMissiles') && !(opts.magicWeapon ?? attacker.magicWeapon)) {
     return { roll: r, needed, hit: true, damage: 0, killed: false, crit: r === 20, immune: true };
   }
+  if (hit && autoHit && rule === 'slay') {
+    // Coup de grace: a helpless foe is slain outright (party members to -10).
+    damage = Math.max(1, defender.hp.cur + (characterOf(defender) ? 10 : 0));
+    killed = dealDamage(defender, damage);
+    return { roll: r, needed, hit: true, damage, killed, crit: false, auto: true, coupDeGrace: true };
+  }
   if (hit) {
     const dice = defender.size === 'L' && attacker.attacksLarge ? attacker.attacksLarge : attacker.attacks[opts.attackIndex ?? 0] ?? attacker.attacks[0];
     damage = roll(rng, dice) + (attacker.dmgBonus ?? 0) + (opts.dmgMod ?? 0) + lm.dmg;
@@ -238,7 +268,7 @@ export function resolveAttack(rng, attacker, defender, opts = {}) {
     if (opts.backstab) damage *= opts.backstabMult ?? 2;
     killed = dealDamage(defender, damage);
   }
-  return { roll: r, needed, hit, damage, killed, crit: r === 20 };
+  return { roll: r, needed, hit, damage, killed, crit: r === 20 && !autoHit, ...(autoHit ? { auto: true } : {}) };
 }
 
 /**
@@ -246,30 +276,113 @@ export function resolveAttack(rng, attacker, defender, opts = {}) {
  * @param {number} [mods] situational to-hit modifiers (rear, bless, cover...)
  */
 export function hitChance(attacker, defender, mods = 0, opts = {}) {
-  const lm = liveMods(attacker, defender, { ranged: opts.ranged ?? !!attacker.ranged });
-  const sleepy = isHelpless(effectHost(defender)) || defender.conditions?.includes('asleep') || defender.conditions?.includes('held') ? 4 : 0;
-  const needed = neededToHit(attacker.thac0, defender.ac + lm.ac, (attacker.hitBonus ?? 0) + mods + sleepy + lm.hit);
-  let p = (21 - needed) / 20;
-  p = opts.strict1e ? Math.max(0, Math.min(1, p)) : Math.max(0.05, Math.min(0.95, p));
+  const ranged = opts.ranged ?? !!attacker.ranged;
+  const lm = liveMods(attacker, defender, { ranged });
+  const helpless = isHelplessTarget(defender);
+  const rule = opts.helpless ?? 'bonus';
+  let p;
+  if (helpless && !ranged && (rule === 'auto' || rule === 'slay')) p = 1;
+  else {
+    const needed = neededToHit(attacker.thac0, defender.ac + lm.ac, (attacker.hitBonus ?? 0) + mods + (helpless ? 4 : 0) + lm.hit);
+    p = (21 - needed) / 20;
+    p = opts.strict1e ? Math.max(0, Math.min(1, p)) : Math.max(0.05, Math.min(0.95, p));
+  }
   if (lm.missChance) p *= 1 - lm.missChance / 100;
   if (lm.images) p *= 1 / (lm.images + 1);
   return p;
 }
 
-/** Attacks per round for a combatant this round (fighters 3/2 at 7th level alternate 1 and 2). */
-export function attacksFor(c, round = 1) {
-  if (c.attackRate) return attacksThisRound(c.attackRate, round);
-  return c.attacks.length;
+
+/**
+ * Live attack rate (attacks per round, may be fractional) of a combatant,
+ * computed now — so Haste or Slow cast mid-battle count at once.
+ *  - characters: fighter 1 / 3/2 / 2 by level (deriveStats), or the missile
+ *    rate of fire of `o.weapon` (a bow from the pack), × haste/slow;
+ *  - monsters: attack routines per round (1 × haste/slow); see attacksFor.
+ * @param {{weapon?:object}} [o]
+ */
+export function attackRateOf(c, o = {}) {
+  const ch = characterOf(c);
+  const mult = effectMods(effectHost(c)).attackMult;
+  if (ch) {
+    if (o.weapon) {
+      const fl = activeFighterLevel(ch);
+      const base = o.weapon.ranged ? rateOfFire(o.weapon) : fl ? fighterAttacksPerRound(fl) : 1;
+      return base * mult;
+    }
+    return deriveStats(ch).attacks; // already × attackMult
+  }
+  return mult;
+}
+
+function activeFighterLevel(ch) {
+  return ch.classSpec.split('/').includes('fighter') || ch.dual?.from === 'fighter' ? ch.levels?.fighter ?? 0 : 0;
 }
 
 /**
- * Fighters attack creatures of less than 1 HD once per fighter level each
- * round (1e/Gold Box "sweep"). Returns the number of attacks vs such a target.
+ * The single source of truth for how many attacks a combatant makes this
+ * round. Fighters at 3/2 alternate 1 and 2 (round parity); hasted creatures
+ * double, slowed ones halve (a slowed orc swings every other round). A
+ * monster's count is routines × the attacks in its routine (claw/claw/bite).
+ * @param {number} [round] 1-based combat round
+ * @param {{weapon?:object}} [o]
  */
-export function sweepAttacks(ch, targetHd) {
+export function attacksFor(c, round = 1, o = {}) {
+  const rate = attackRateOf(c, o);
+  if (characterOf(c)) return attacksThisRound(rate, round);
+  return attacksThisRound(rate, round) * Math.max(1, c.attacks?.length ?? 1);
+}
+
+/**
+ * Fighters attack creatures of less than one full HD (kobolds, giant rats,
+ * 1-1 HD goblins) once per fighter level each round (1e/Gold Box "sweep").
+ * `target` is a creature, or a number of hit dice (back-compat).
+ * Returns the number of attacks vs such a target (0 = no sweep).
+ */
+export function sweepAttacks(ch, target) {
   const lvl = ch.levels?.fighter ?? 0;
-  if (!lvl || targetHd >= 1) return 0;
+  const small = typeof target === 'number' ? target < 1 : belowOneHd(target);
+  if (!lvl || !small) return 0;
   return Math.max(fighterAttacksPerRound(lvl), lvl);
+}
+
+/**
+ * Monster special attacks that ride on a successful hit (MM): ghoul/ghast
+ * paralysis (save vs paralysis, elves immune, 3d4 rounds), poison (save vs
+ * poison; giant centipedes' weak venom at +4), giant rat disease (5%, save vs
+ * poison). Returns log-ready outcomes; effects are applied to the defender.
+ * @returns {{kind:string, saved:boolean, text:string}[]}
+ */
+export function onHitSpecials(rng, attacker, defender) {
+  const m = monsterOf(attacker);
+  const out = [];
+  if (!m || isDown(defender)) return out;
+  const special = m.special ?? [];
+  const host = effectHost(defender);
+  const dname = defender.name ?? characterOf(defender)?.name ?? 'the victim';
+  if (special.includes('paralyze') && !hasEffect(host, 'paralyzed')) {
+    const elf = characterOf(defender)?.race === 'elf';
+    if (elf) out.push({ kind: 'paralyze', saved: true, text: `${dname} shrugs off the ghoulish touch.` });
+    else {
+      const sv = savingThrow(rng, defender, 'ppdm');
+      if (!sv.saved) {
+        addEffect(host, 'paralyzed', { rounds: roll(rng, '3d4'), source: m.id });
+        out.push({ kind: 'paralyze', saved: false, text: `${dname} is paralyzed!` });
+      } else out.push({ kind: 'paralyze', saved: true, text: `${dname} resists the paralysis.` });
+    }
+  }
+  if (special.includes('poison') && !hasEffect(host, 'poisoned')) {
+    const r = poison(rng, defender, { saveMod: m.poisonSave ?? (m.id === 'giantCentipede' ? 4 : 0), onset: m.poisonOnset ?? 10 });
+    out.push({ kind: 'poison', saved: r.saved, text: r.saved ? `${dname} resists the venom.` : `${dname} is poisoned!` });
+  }
+  if (special.includes('disease') && !hasEffect(host, 'diseased') && rng.int(1, 100) <= 5) {
+    const sv = savingThrow(rng, defender, 'ppdm');
+    if (!sv.saved) {
+      addEffect(host, 'diseased', { rounds: Infinity, source: m.id });
+      out.push({ kind: 'disease', saved: false, text: `${dname} is infected by the filthy bite.` });
+    }
+  }
+  return out;
 }
 
 /**
@@ -413,7 +526,7 @@ export function autoResolve(rng, party, monsters, maxRounds = 30) {
       const foes = alive(actor.side === 'party' ? 'monster' : 'party');
       if (!foes.length) break;
       const target = foes[0];
-      const n = actor.ref?.classSpec && target.ref?.hd < 1 ? Math.max(attacksFor(actor, round), sweepAttacks(actor.ref, target.ref.hd)) : attacksFor(actor, round);
+      const n = actor.ref?.classSpec ? Math.max(attacksFor(actor, round), sweepAttacks(actor.ref, target)) : attacksFor(actor, round);
       for (let i = 0; i < n; i++) {
         const tgt = isDown(target) ? alive(actor.side === 'party' ? 'monster' : 'party')[0] : target;
         if (!tgt) break;

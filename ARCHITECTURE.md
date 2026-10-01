@@ -129,7 +129,8 @@ of the level after next — Gold Box training rule), `trainableClasses(ch)`, `tr
 `dualClassProblem(ch, cls)` / `dualClass(ch, cls)` (humans).
 
 **Health**: `applyDamage` (0 unconscious, −1…−9 dying, ≤ −10 dead; wakes sleepers), `bleed(ch)` (1 hp/round),
-`bandage(ch)`, `heal`, `raiseDead(rng, ch)` (resurrection survival, −1 CON), `stoneToFlesh`, `isConscious`, `isAlive`.
+`bandage(ch)`, `heal`, `raiseDead(rng, ch)` (resurrection survival, −1 CON; refuses elves per the PHB), `stoneToFlesh`,
+`isConscious`, `isAlive`.
 
 **Conditions**: `addEffect(target, id, {rounds, source, level, mods, data})`, `removeEffect`, `hasEffect`, `getEffect`,
 `effectMods(target)`, `tickEffects(target, rounds)`, `isIncapacitated`, `isHelpless`, `conditionsAllowCasting`,
@@ -139,28 +140,54 @@ Party combatants share `hp`, `conditions` and `effects` with their Character.
 **Spells** (`SPELL_RULES`, 54 spells incl. temple-only cures/raise dead)
 * `spellsForClass(cls, level)`, `getSpell(id)` (rules + data display merged: `name, desc, tip, schools, usable, ...`),
   `spellLevel(id, cls)`, `spellTargeting(id, casterLevel, cls)` → `{target, range, shape, size, maxTargets, hostile, duration}`.
-* `castProblem(caster, id, {context})` → reason or null (memorized, silence/held, armour for arcane, camp/combat usability).
-* `castSpell(rng, id, caster, targets, {consume, context, level})` → `{ok, reason, level, results:[{target, affected, saved,
-  save, resisted, immune, missed, damage, healed, applied, removed, down, charmed}], flags, log}`. The caller picks
-  targets from the template (primary/nearest first); the engine filters by `affects`, applies `maxTargets`, saves
-  (WIS vs mind magic, DEX vs fireball/lightning, hold person's −2 alone), elf/half-elf sleep-charm resistance, undead
-  immunity, shield vs magic missile, and returns terse Gold Box log lines. Utility spells report `flags`
-  (`detectMagic`, `findTraps`, `unlock`, `readMagic`, `raiseDead`, `poisonCured`...).
+* `castProblem(caster, id, {context, ignoreMemory})` → reason or null (memorized, silence/held, armour for arcane — elfin
+  chain only for elves/half-elves — camp/combat usability).
+* `castSpell(rng, id, caster, targets, {consume, ignoreMemory, check, context, level, fromItem, noFailure})` → `{ok, reason,
+  failed, level, results:[{target, affected, saved, save, resisted, immune, missed, damage, healed, applied, removed, down,
+  charmed}], flags, log}`. Memory is always checked unless `ignoreMemory: true` (or `check: false`) is passed explicitly.
+  Clerics roll the PHB low-WIS spell failure (WIS 9: 20%…12: 5%; the slot is spent; items never fail; `noFailure` for
+  scripted casts). The caller picks targets from the template (primary/nearest first); the engine filters by `affects`,
+  applies `maxTargets`, saves (WIS vs mind magic, DEX vs fireball/lightning, hold person: cleric −2 alone / MU −3 alone,
+  −1 for two; range cleric 6 / MU 12), sleep's PHB HD bands (`SLEEP_BANDS`), `dispelChance` (DMG +5%/level above,
+  −2%/level below), elf/half-elf sleep-charm resistance, undead immunity, shield vs magic missile, and returns terse Gold
+  Box log lines. Utility spells report `flags` (`detectMagic`, `findTraps`, `unlock`, `readMagic`, `raiseDead`,
+  `poisonCured`...). `hammerStrike(rng, cleric, target, magic)` is one Spiritual Hammer blow.
+* Deliberate simplifications: Shield is AC 2 vs missiles / AC 4 vs melee (1e: AC 2 hurled, AC 3 small missiles, +1 saves
+  vs frontal attacks); thieves may be any alignment but LG (PoR creation rule); clerics may use slings (Gold Box);
+  halfling fighters reach 6th flat (PoR); magic armour moves at the PHB base rate (its benefit is half weight).
 * Memorization (camp.js): `knownSpells(ch, cls)`, `slotsFor`, `checkLoadout`, `prepareSpells(ch, cls, ids)`, `autoPrepare(ch)`,
-  `spellsToMemorize`, `memorizationTime(ch)` (1e: 4/6/8 h rest + 15 min per spell level), `rest(party, minutes)` →
-  `{healed, memorized, expired, died}` (1 hp/day natural healing, `healPerDay` option), `learnSpell`. Model:
-  `ch.spells.prepared[cls]` = chosen load-out, `ch.spells.memorized[cls]` = still in memory (casting removes).
+  `spellsToMemorize`, `memorizationTime(ch)` (1e: 4/6/8 h rest + 15 min per spell level, net of banked study),
+  `study(ch, minutes)` (spells return one at a time once their own 15 min/level is done — an interrupted rest keeps them),
+  `rest(party, minutes)` → `{healed, memorized, expired, died}` (1 hp/day natural healing, `healPerDay` option; poison
+  onset counts down by the minutes rested unless Slow Poison holds it), `learnSpell` (INT max spell level, max spells per
+  level, optional chance to know). Model: `ch.spells.prepared[cls]` = chosen load-out, `ch.spells.memorized[cls]` = still
+  in memory (casting removes), `ch.spells.study` = banked minutes.
 
 **Combat** (combat.js, co-owned): `combatantFromCharacter`, `combatantFromMonster`, `rollInitiative`, `canAct`, `resolveAttack(rng,
-a, d, {mods, dmgMod, backstab, rear, ranged})` (applies live effects: bless/prayer, shield, invisibility, blink, mirror
-image, prot. from evil/missiles, helpless +4), `hitChance`, `attacksFor(c, round)` (3/2 alternation), `sweepAttacks(ch, hd)`
-(fighters vs < 1 HD), `savingThrow`, `poison(rng, target, {mode:'deadly'|'damage'})`, `turnUndead(rng, level, type)`,
+a, d, {mods, dmgMod, backstab, rear, ranged, helpless})` (applies live effects: bless/prayer, shield, invisibility, blink,
+mirror image, prot. from evil/missiles; racial adjustments via `racialCombatMods` — dwarves +1 vs orcs/half-orcs/goblins/
+hobgoblins, gnomes +1 vs kobolds/goblins, giants/ogres/trolls/titans (+ gnolls/bugbears vs gnomes) −4 to hit dwarves and
+gnomes; helpless targets per `HelplessRule`: `'bonus'` +4 (default), `'auto'` melee auto-hit, `'slay'` coup de grace),
+`hitChance(a, d, mods, {ranged, helpless})`, `attackRateOf(c, {weapon})` / `attacksFor(c, round, {weapon})` — the single
+source of truth for attack counts, computed live (3/2 fighters alternate 1,2; haste ×2, slow ×½ for characters *and*
+monsters, whose count is routines × attacks in the routine), `sweepAttacks(ch, target)` (fighters vs < 1 full HD incl.
+1-1 HD goblins, `belowOneHd`), `onHitSpecials` (ghoul paralysis — elves immune — poison, rat disease), `savingThrow`,
+`poison(rng, target, {mode:'deadly'|'damage', onset})`, `turnUndead(rng, level, type)` (unknown types: no effect),
 `endOfRound(c)` (bleeding, poison onset, effect expiry), `endCombat(party)`, `rollSurprise`, `moraleCheck`,
 `xpForVictory`, `autoResolve`.
 
+**Battle bridge** (battle.js — what the tactical CombatEngine calls): `fxView(c)` makes `c.fx` a live Proxy over the
+creature's rules effects (`fx.blessed` → rounds left, `fx.asleep = 5` adds the effect, `delete fx.held` removes it;
+`prot`/`mirror` alias `protEvil`/`mirrorImage`; other keys are scratch), `ableToAct`, `ableToCast`,
+`attacksThisTurn(c, round, target, {ranged, weapon})`, `castInBattle(rng, id, caster, targets, {level, fromItem})` →
+CastResult + scene `hits` `{id, dmg, heal, saved, killed, effect, bolts, text}`, `roundUpkeep(c)` → bleed/down/wake
+events, `hammerTurn` (Spiritual Hammer's later blows), `specialsOnHit`. The engine resolves every spell, attack count,
+condition and end-of-round tick through these; it uses the `'slay'` helpless rule (Gold Box sleep/hold).
+
 **Items, treasure, temple**: `useItem(rng, ch, index, targets, {spellId})`, `scribeScroll`, `identifyItem`, `detectMagicIn`;
-`generateTreasure(rng, types, {scale, count})` → `{coins, gems, jewelry, items}`, `rollMagicItem`, `treasureValue`,
-`shareCoins`; `TEMPLE_SERVICES`, `serviceApplies(id, ch)`, `performService(rng, id, ch)`.
+`generateTreasure(rng, types, {scale, count})` → `{coins, gems, jewelry, items, maps?}` (MM types A–Z incl. W),
+`rollMagicItem`, `treasureValue`, `shareCoins`; `TEMPLE_SERVICES`, `serviceApplies(id, ch)`, `serviceProblem(id, ch)`
+(tooltip reason, e.g. elves cannot be raised), `raiseAllowed(ch)`, `performService(rng, id, ch)`.
 
 ## Scene contract
 
@@ -331,7 +358,7 @@ premium modern release, i.e.:
 
 * Combat: only QUICK/FLEE work; MOVE/AIM/CAST etc. are disabled placeholders; figures are primitives.
 * Explore: one block (`phlan_slums`), exits to unbuilt maps, no roofs/skyline beyond block walls, no props.
-* Spells: full rules engine (castSpell, memorization, rest); combat still uses its own resolver for some spells; no memorization UI yet.
+* Spells: full rules engine (castSpell, memorization, rest), used by camp and by tactical combat (via rules/battle.js).
 * Shops: buy only; temple/training services not implemented.
 * UI: no inventory/character sheet screens; settings/options UI minimal; no rebinding UI (API exists).
 * Reference renderer is from memory of the EGA original — close in layout/palette, not pixel-exact.

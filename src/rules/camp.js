@@ -1,7 +1,7 @@
 import { deriveStats, activeClasses, isAlive, heal, bandage } from './character.js';
 import { intelligenceTable } from './abilities.js';
 import { spellsForClass, SPELL_RULES, spellLevel } from './spells.js';
-import { tickEffects, hasEffect, CONDITIONS, conditionIds } from './conditions.js';
+import { tickEffects, hasEffect, getEffect, CONDITIONS, conditionIds } from './conditions.js';
 import { maxSpellLevel } from './classes.js';
 
 /**
@@ -11,11 +11,12 @@ import { maxSpellLevel } from './classes.js';
  *   ch.spells.prepared[cls]  – the chosen load-out (what the caster re-learns on each rest)
  *   ch.spells.memorized[cls] – what is still in memory right now (cast = removed)
  *   ch.spells.book           – magic-user spell book (clerics know every spell of their levels)
- *   ch.spells.study          – minutes of memorization already done toward the current load-out
+ *   ch.spells.study          – minutes of rest/study banked toward what is still missing
  *
  * 1e timing: before memorizing, a caster must rest 4 hours (1st-2nd level
  * spells), 6 hours (3rd-4th) or 8 hours (5th+), then spend 15 minutes per
- * spell level being memorized.
+ * spell level being memorized. Spells come back one at a time, in load-out
+ * order, so an interrupted rest still restores the spells already studied.
  */
 
 export const MINUTES_PER_DAY = 24 * 60;
@@ -108,7 +109,7 @@ export function restBeforeMemorizing(highestLevel) {
   return 600;
 }
 
-/** Minutes of rest a character needs to memorize everything missing from their load-out. */
+/** Minutes of rest a character still needs to memorize everything missing from their load-out (net of banked study). */
 export function memorizationTime(ch) {
   const need = spellsToMemorize(ch);
   let highest = 0;
@@ -121,7 +122,7 @@ export function memorizationTime(ch) {
     }
   }
   if (!levels) return 0;
-  return restBeforeMemorizing(highest) + 15 * levels;
+  return Math.max(0, restBeforeMemorizing(highest) + 15 * levels - (ch.spells?.study ?? 0));
 }
 
 /** Longest memorization time in the party (the rest the party must take). */
@@ -170,15 +171,24 @@ export function rest(party, minutes, o = {}) {
   for (const ch of party) {
     if (!isAlive(ch)) continue;
     if (ch.status === 'dying') bandage(ch);
+    // Poison works on while the party rests: its onset (rounds = minutes)
+    // counts down except while Slow Poison holds it at bay.
+    const venom = getEffect(ch, 'poisoned') ?? (hasEffect(ch, 'poisoned') ? { id: 'poisoned', data: {} } : null);
+    if (venom) {
+      const slow = getEffect(ch, 'slowPoison');
+      const slowed = slow ? Math.min(minutes, slow.rounds) : hasEffect(ch, 'slowPoison') ? minutes : 0;
+      const onset = (venom.data?.onset ?? 10) - (minutes - slowed);
+      venom.data = { ...(venom.data ?? {}), onset };
+      if (onset <= 0) {
+        ch.status = 'dead';
+        ch.hp.cur = Math.min(ch.hp.cur, -10);
+        report.died.push(ch.id);
+        continue;
+      }
+    }
     // Effects run their course (rounds = minutes).
     const exp = tickEffects(ch, minutes);
     if (exp.length) report.expired[ch.id] = exp;
-    // Poison: fatal unless slowed (1e); the camp surfaces this as a death.
-    if (hasEffect(ch, 'poisoned') && !hasEffect(ch, 'slowPoison')) {
-      ch.status = 'dead';
-      report.died.push(ch.id);
-      continue;
-    }
     // Natural healing, per complete day rested.
     ch.restMinutes = (ch.restMinutes ?? 0) + minutes;
     const days = Math.floor(ch.restMinutes / MINUTES_PER_DAY);
@@ -192,19 +202,44 @@ export function rest(party, minutes, o = {}) {
     }
     // Memorization (only conscious casters study).
     if (ch.status !== 'ok') continue;
-    const need = memorizationTime(ch);
-    if (!need) continue;
-    ch.spells.study = (ch.spells.study ?? 0) + minutes;
-    if (ch.spells.study >= need) {
-      const learned = spellsToMemorize(ch);
-      for (const [cls, ids] of Object.entries(learned)) {
-        ch.spells.memorized[cls] = [...(ch.spells.memorized[cls] ?? []), ...ids];
-      }
-      ch.spells.study = 0;
-      report.memorized[ch.id] = Object.values(learned).flat();
-    }
+    const learned = study(ch, minutes);
+    if (learned.length) report.memorized[ch.id] = learned;
   }
   return report;
+}
+
+/**
+ * Advance one caster's memorization by `minutes` of rest. After the 1e rest
+ * period (set by the highest missing spell level), each spell takes 15
+ * minutes per spell level and is memorized as soon as its own study is done.
+ * Leftover study is banked in ch.spells.study. Returns the ids learned.
+ */
+export function study(ch, minutes) {
+  const need = spellsToMemorize(ch);
+  const queue = [];
+  for (const [cls, ids] of Object.entries(need)) for (const id of ids) queue.push({ cls, id, lvl: spellLevel(id, cls) });
+  if (!queue.length) {
+    if (ch.spells) ch.spells.study = 0;
+    return [];
+  }
+  const restFirst = restBeforeMemorizing(Math.max(...queue.map((q) => q.lvl)));
+  let banked = (ch.spells.study ?? 0) + minutes;
+  if (banked < restFirst) {
+    ch.spells.study = banked;
+    return [];
+  }
+  let progress = banked - restFirst;
+  const learned = [];
+  for (const q of queue) {
+    const cost = 15 * q.lvl;
+    if (progress < cost) break;
+    progress -= cost;
+    ch.spells.memorized[q.cls] = [...(ch.spells.memorized[q.cls] ?? []), q.id];
+    learned.push(q.id);
+  }
+  banked = learned.length === queue.length ? 0 : restFirst + progress;
+  ch.spells.study = banked;
+  return learned;
 }
 
 /**
@@ -242,6 +277,9 @@ export function learnSpell(ch, id, { rng, chanceToKnow = false } = {}) {
   if (sl > maxSpellLevel('magicUser', lvl)) return { ok: false, reason: 'too high level' };
   const int = intelligenceTable(ch.abilities.int);
   if (sl > int.maxSpellLevel) return { ok: false, reason: 'intelligence too low' };
+  // PHB: INT caps how many spells of each level a spell book may hold.
+  const sameLevel = ch.spells.book.filter((b) => SPELL_RULES[b]?.schools.magicUser === sl).length;
+  if (sameLevel >= int.maxSpells) return { ok: false, reason: `no room for more level ${sl} spells (INT ${ch.abilities.int}: ${int.maxSpells} max)` };
   if (chanceToKnow && rng) {
     const r = rng.int(1, 100);
     if (r > int.knowChance) return { ok: false, reason: 'failed to understand', roll: r };

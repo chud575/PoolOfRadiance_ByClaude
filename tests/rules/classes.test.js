@@ -193,11 +193,12 @@ describe('turn undead matrix (DMG)', () => {
 });
 
 describe('alignment and names', () => {
-  it('thieves cannot be LG or CG', () => {
+  it('thieves may be any alignment but lawful good (PoR creation rule)', () => {
     const a = allowedAlignments('thief');
     expect(a).not.toContain('LG');
-    expect(a).not.toContain('CG');
+    expect(a).toContain('CG');
     expect(a).toContain('NG');
+    expect(a.length).toBe(8);
     expect(allowedAlignments('fighter/thief')).toEqual(a);
     expect(allowedAlignments('fighter').length).toBe(9);
   });

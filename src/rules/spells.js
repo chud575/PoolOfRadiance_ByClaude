@@ -1,7 +1,8 @@
 import { roll } from './dice.js';
 import { SPELLS as DATA_SPELLS } from '../data/spells.js';
 import { splitClasses, CLASSES } from './classes.js';
-import { deriveStats, activeClasses, armorAllowsArcane, highestLevel } from './character.js';
+import { deriveStats, activeClasses, armorAllowsArcane, highestLevel, effectiveAbilities } from './character.js';
+import { wisdomSpellFailure } from './abilities.js';
 import {
   addEffect, removeEffect, hasEffect, effectMods, conditionsAllowCasting, clearEffects, CONDITIONS,
   ROUNDS_PER_TURN, ROUNDS_PER_HOUR,
@@ -116,13 +117,13 @@ export const SPELL_RULES = {
     desc: 'Hidden snares glow to the cleric\'s eye.', tip: 'Reveals traps ahead for 3 turns.',
   },
   holdPerson: {
-    name: 'Hold Person', schools: { cleric: 2, magicUser: 3 }, usable: 'combat', castTime: 5, range: 12, target: 'area',
+    name: 'Hold Person', schools: { cleric: 2, magicUser: 3 }, usable: 'combat', castTime: 5, range: (L, s) => (s === 'magicUser' ? 12 : 6), target: 'area',
     area: { shape: 'radius', size: 1 }, affects: 'person', hostile: true, mental: true,
     maxTargets: (L, s) => (s === 'magicUser' ? 4 : 3),
     duration: (L, s) => (s === 'magicUser' ? R(2 * L) : R(4 + L)),
     save: { key: 'sp', type: 'neg' },
     ops: [{ op: 'condition', id: 'held' }],
-    desc: 'Limbs lock rigid as the spell takes hold.', tip: 'Paralyzes up to 3 persons (4 for magic-users). Save vs spell negates; lone targets save at -2.',
+    desc: 'Limbs lock rigid as the spell takes hold.', tip: 'Paralyzes up to 3 persons (4 for magic-users). Save vs spell negates; a lone target saves at -2 (-3 vs a magic-user), two at -1.',
   },
   resistFire: {
     name: 'Resist Fire', schools: { cleric: 2 }, usable: 'both', castTime: 5, range: 1, target: 'ally',
@@ -191,7 +192,7 @@ export const SPELL_RULES = {
     name: 'Dispel Magic', schools: { cleric: 3, magicUser: 3 }, usable: 'both', castTime: 6, range: (L, s) => (s === 'magicUser' ? 12 : 6), target: 'area',
     area: { shape: 'radius', size: 1 },
     ops: [{ op: 'dispel' }],
-    desc: 'Weaves of magic unravel.', tip: 'Ends magical effects in the area: 50% ±5% per level of difference.',
+    desc: 'Weaves of magic unravel.', tip: 'Ends magical effects in the area: 50%, +5% per level the caster is above the magic\'s caster, -2% per level below.',
   },
   prayer: {
     name: 'Prayer', schools: { cleric: 3 }, usable: 'combat', castTime: 6, range: 0, target: 'party',
@@ -595,10 +596,14 @@ function applyElement(host, dmg, element) {
   return Math.floor(dmg * mult * (res ?? 1));
 }
 
-const SLEEP_BANDS = [
+/**
+ * PHB Sleep table, on hitDiceOf() values (a "+" counts as half a die):
+ * up to 1 HD → 4d4; 1+1 to 2 → 2d4; 2+1 to 3 → 1d4; 3+1 to 4+4 → 0-1.
+ */
+export const SLEEP_BANDS = [
   { max: 1, dice: '4d4' },
-  { max: 2.5, dice: '2d4' },
-  { max: 3.5, dice: '1d4' },
+  { max: 2, dice: '2d4' },
+  { max: 3, dice: '1d4' },
   { max: 4.5, dice: '1d2-1' },
 ];
 
@@ -624,7 +629,9 @@ export function castSpell(rng, id, caster, targets = [], opts = {}) {
   }
   const ch = characterOf(caster);
   if (opts.check !== false && !opts.fromItem) {
-    const p = castProblem(caster, id, { ignoreMemory: !opts.consume, context: opts.context });
+    // Memory is always checked unless the caller says otherwise explicitly
+    // (scripted casts, or a combat engine that already spent the slot).
+    const p = castProblem(caster, id, { ignoreMemory: !!opts.ignoreMemory, context: opts.context });
     if (p) {
       res.reason = p;
       return res;
@@ -637,6 +644,17 @@ export function castSpell(rng, id, caster, targets = [], opts = {}) {
   res.ok = true;
   if (opts.consume && ch) consumeMemorized(ch, id);
   const cname = nameOf(caster);
+  // PHB: clerics of low wisdom risk spell failure (the spell is lost).
+  if (ch && school === 'cleric' && !opts.fromItem && !opts.noFailure) {
+    const pct = wisdomSpellFailure(effectiveAbilities(ch).wis);
+    if (pct > 0 && rng.int(1, 100) <= pct) {
+      res.ok = false;
+      res.failed = true;
+      res.reason = 'spell failed';
+      res.log.push(`${cname} prays for ${s.name}, but the god is silent.`);
+      return res;
+    }
+  }
   res.log.push(opts.fromItem ? `${s.name} is released.` : `${cname} casts ${s.name}.`);
 
   // Self-targeted spells ignore the target list.
@@ -656,7 +674,8 @@ export function castSpell(rng, id, caster, targets = [], opts = {}) {
   if (s.ops[0]?.op === 'sleep') return resolveSleep(rng, s, caster, list, L, duration, res);
 
   // Hold person: fewer targets → harsher save.
-  const holdPenalty = s.id === 'holdPerson' ? (list.length === 1 ? -2 : list.length === 2 ? -1 : 0) : 0;
+  // PHB: cleric one target -2, two -1; magic-user one target -3, two -1.
+  const holdPenalty = s.id === 'holdPerson' ? (list.length === 1 ? (school === 'magicUser' ? -3 : -2) : list.length === 2 ? -1 : 0) : 0;
   // Snake charm spends the caster's current hp as a pool of snake hp.
   let hpPool = s.id === 'snakeCharm' ? (ch ? ch.hp.cur : caster.hp?.cur ?? 10) : Infinity;
 
@@ -772,9 +791,7 @@ function applyOp(rng, op, ctx) {
     case 'dispel': {
       const removed = clearEffects(host, (e, def) => {
         if (!def.magical) return false;
-        const diff = L - (e.level ?? L);
-        const chance = Math.max(5, Math.min(95, 50 + 5 * diff));
-        return rng.int(1, 100) <= chance;
+        return rng.int(1, 100) <= dispelChance(L, e.level ?? L);
       });
       tr.removed.push(...removed);
       tr.affected = removed.length > 0;
@@ -783,21 +800,16 @@ function applyOp(rng, op, ctx) {
     }
     case 'hammer': {
       const magic = 1 + Math.floor(L / 6);
-      const { thac0 } = attackOf(caster);
-      const needed = neededToHit(thac0, acOf(t), magic);
-      const r = rng.die(20);
       addEffect(effectHost(caster), 'spiritualHammer', { rounds: duration, source: s.id, level: L, data: { magic, damage: '1d4+1', damageLarge: '1d4', targetId: t.id } });
-      if (r === 1 || (r !== 20 && r < needed)) {
+      const h = hammerStrike(rng, caster, t, magic);
+      res.log.push(h.text);
+      if (!h.hit) {
         tr.missed = true;
-        res.log.push(`The hammer misses ${tr.name}.`);
         return true;
       }
-      const dmg = roll(rng, sizeLarge(t) ? '1d4' : '1d4+1') + magic;
-      const wasDown = isDownCreature(t);
-      tr.damage = dmg;
+      tr.damage = h.damage;
       tr.affected = true;
-      tr.down = damageCreature(t, dmg) && !wasDown;
-      res.log.push(`The hammer strikes ${tr.name} for ${dmg}.${tr.down ? ` ${tr.name} is slain!` : ''}`);
+      tr.down = h.down;
       return false;
     }
     case 'flag': {
@@ -870,6 +882,32 @@ function applyOp(rng, op, ctx) {
   }
 }
 
+/**
+ * One blow of a Spiritual Hammer (the cast, and each later round the cleric
+ * directs it): to-hit as the cleric with the hammer's +1 per 6 levels, 1d4+1
+ * (1d4 vs large) + that bonus. Returns {hit, damage, down, roll, needed, text}.
+ */
+export function hammerStrike(rng, caster, t, magic = 1) {
+  const { thac0 } = attackOf(caster);
+  const needed = neededToHit(thac0, acOf(t), magic);
+  const r = rng.die(20);
+  const name = nameOf(t);
+  if (r === 1 || (r !== 20 && r < needed)) return { hit: false, damage: 0, down: false, roll: r, needed, text: `The hammer misses ${name}.` };
+  const damage = roll(rng, sizeLarge(t) ? '1d4' : '1d4+1') + magic;
+  const wasDown = isDownCreature(t);
+  const down = damageCreature(t, damage) && !wasDown;
+  return { hit: true, damage, down, roll: r, needed, text: `The hammer strikes ${name} for ${damage}.${down ? ` ${name} is slain!` : ''}` };
+}
+
+/**
+ * DMG dispel magic: 50% base, +5% per level the dispeller is above the
+ * caster of the magic, -2% per level below (clamped 1..99).
+ */
+export function dispelChance(dispellerLevel, casterLevelOfMagic) {
+  const d = dispellerLevel - casterLevelOfMagic;
+  return Math.max(1, Math.min(99, 50 + (d > 0 ? 5 * d : 2 * d)));
+}
+
 function sizeLarge(t) {
   return (t.size ?? monsterOf(t)?.size) === 'L';
 }
@@ -913,6 +951,6 @@ const CONDITION_LINES = {
   charmedSnake: 'is entranced', slowPoison: 'feels the poison slow',
 };
 
-function conditionLine(name, id) {
+export function conditionLine(name, id) {
   return `${name} ${CONDITION_LINES[id] ?? `is affected (${CONDITIONS[id]?.name ?? id})`}.`;
 }

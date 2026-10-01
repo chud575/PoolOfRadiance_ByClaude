@@ -1,4 +1,4 @@
-import { SPELLS } from '../../../data/spells.js';
+import { getSpell } from '../../../rules/spells.js';
 import { splitClasses } from '../../../rules/classes.js';
 import { deriveStats } from '../../../rules/character.js';
 
@@ -19,8 +19,8 @@ export const SPELL_TACTICS = {
   invisibility: { target: 'ally', range: 1, shape: 'single', vfx: 'buff' },
   mirrorImage: { target: 'self', range: 0, shape: 'single', vfx: 'ward' },
   stinkingCloud: { target: 'square', range: 3, shape: 'square', size: 2, vfx: 'cloud', hostile: true },
-  fireball: { target: 'square', range: 10, shape: 'radius', size: 2, vfx: 'fireball', hostile: true },
-  lightningBolt: { target: 'square', range: 8, shape: 'line', size: 8, vfx: 'lightning', hostile: true },
+  fireball: { target: 'square', range: 10, shape: 'radius', size: 2, vfx: 'fireball', hostile: true, notCaster: true },
+  lightningBolt: { target: 'square', range: 8, shape: 'line', size: 8, vfx: 'lightning', hostile: true, notCaster: true },
   haste: { target: 'self', range: 0, shape: 'allies', vfx: 'buff' },
   bless: { target: 'self', range: 0, shape: 'allies', vfx: 'bless' },
   curse: { target: 'square', range: 6, shape: 'square', size: 5, vfx: 'curse', hostile: true },
@@ -28,10 +28,32 @@ export const SPELL_TACTICS = {
   causeLightWounds: { target: 'enemy', range: 1, shape: 'single', vfx: 'cause', hostile: true },
   protectionFromEvil: { target: 'ally', range: 1, shape: 'single', vfx: 'ward' },
   resistCold: { target: 'ally', range: 1, shape: 'single', vfx: 'buff' },
-  holdPerson: { target: 'square', range: 12, shape: 'radius', size: 1, max: 3, vfx: 'hold', hostile: true },
+  holdPerson: { target: 'square', range: 12, shape: 'radius', size: 1, max: 3, vfx: 'hold', hostile: true, pick: 'foes' },
   silence15: { target: 'square', range: 12, shape: 'radius', size: 2, vfx: 'curse', hostile: true },
   dispelMagic: { target: 'square', range: 6, shape: 'radius', size: 1, vfx: 'bless' },
   prayer: { target: 'self', range: 0, shape: 'all', vfx: 'bless' },
+  // The rest of the Pool of Radiance list (resolved by the rules castSpell).
+  chant: { target: 'self', range: 0, shape: 'all', vfx: 'bless' },
+  spiritualHammer: { target: 'enemy', range: 3, shape: 'single', vfx: 'missile', hostile: true },
+  resistFire: { target: 'ally', range: 1, shape: 'single', vfx: 'buff' },
+  slowPoison: { target: 'ally', range: 1, shape: 'single', vfx: 'heal' },
+  snakeCharm: { target: 'square', range: 3, shape: 'radius', size: 1, vfx: 'charm', hostile: true },
+  cureBlindness: { target: 'ally', range: 1, shape: 'single', vfx: 'heal' },
+  cureDisease: { target: 'ally', range: 1, shape: 'single', vfx: 'heal' },
+  removeCurse: { target: 'ally', range: 1, shape: 'single', vfx: 'bless' },
+  causeBlindness: { target: 'enemy', range: 1, shape: 'single', vfx: 'cause', hostile: true },
+  causeDisease: { target: 'enemy', range: 1, shape: 'single', vfx: 'cause', hostile: true },
+  bestowCurse: { target: 'enemy', range: 1, shape: 'single', vfx: 'curse', hostile: true },
+  protectionFromGood: { target: 'ally', range: 1, shape: 'single', vfx: 'ward' },
+  reduce: { target: 'enemy', range: 1, shape: 'single', vfx: 'curse', hostile: true },
+  detectInvisibility: { target: 'self', range: 0, shape: 'single', vfx: 'buff' },
+  rayOfEnfeeblement: { target: 'enemy', range: 4, shape: 'single', vfx: 'curse', hostile: true },
+  strength: { target: 'ally', range: 1, shape: 'single', vfx: 'buff' },
+  blink: { target: 'self', range: 0, shape: 'single', vfx: 'ward' },
+  invisibility10: { target: 'square', range: 0, shape: 'radius', size: 1, vfx: 'buff' },
+  protEvil10: { target: 'square', range: 0, shape: 'radius', size: 1, vfx: 'ward' },
+  protNormalMissiles: { target: 'ally', range: 1, shape: 'single', vfx: 'ward' },
+  slow: { target: 'square', range: 10, shape: 'radius', size: 2, vfx: 'hold', hostile: true, pick: 'foes' },
 };
 
 /** Default spells a caster has "prepared at dawn" when the camp screen never set any. */
@@ -70,7 +92,7 @@ export function memorizedSpells(ch) {
   for (const [k, ids] of Object.entries(mem)) {
     if (!Array.isArray(ids)) continue;
     for (const id of ids) {
-      const s = SPELLS[id];
+      const s = getSpell(id);
       if (!s || !SPELL_TACTICS[id]) continue;
       if (s.usable === 'camp') continue;
       out.push({ id, cls: classes.includes(k) ? k : s.school });
@@ -94,6 +116,6 @@ export function consumeSpell(ch, id) {
 
 /** Caster level for a spell's school. */
 export function casterLevel(ch, spellId) {
-  const school = SPELLS[spellId]?.school;
+  const school = getSpell(spellId)?.school;
   return ch.levels?.[school] ?? Math.max(1, ...Object.values(ch.levels ?? { x: 1 }));
 }

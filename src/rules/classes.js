@@ -50,7 +50,8 @@ export const CLASSES = {
     xp: [0, 1501, 3001, 6001, 13001, 27501, 55001, 110001, 225001, 450001, 675001],
     xpStep: 225000,
     // Blunt weapons only (no edged weapons that draw blood).
-    weapons: ['club', 'flail', 'hammer', 'mace', 'staff', 'morningStar'],
+    // Gold Box allows clerics the (blunt) sling and staff sling too.
+    weapons: ['club', 'flail', 'hammer', 'mace', 'staff', 'morningStar', 'sling', 'staffSling'],
     armor: 'any',
     shield: true,
     alignments: ALL_ALIGN,
@@ -91,8 +92,10 @@ export const CLASSES = {
     weapons: ['club', 'dagger', 'dart', 'shortSword', 'longSword', 'broadSword', 'sling'],
     armor: ['leather', 'padded', 'studded'],
     shield: false,
-    // PHB: thieves are neutral or evil (neutral good is allowed; LG/CG are not).
-    alignments: ['NG', 'LN', 'TN', 'CN', 'LE', 'NE', 'CE'],
+    // Pool of Radiance character creation: a thief may be any alignment except
+    // lawful good (a deliberate Gold Box simplification of the PHB's
+    // "neutral or evil").
+    alignments: ['NG', 'CG', 'LN', 'TN', 'CN', 'LE', 'NE', 'CE'],
     thac0: [[4, 21], [8, 19], [12, 16], [16, 14], [20, 12], [99, 10]],
     startGold: '2d6x10',
     desc: 'Scouts, lock-pickers and backstabbers who strike from the shadows.',
@@ -341,9 +344,11 @@ export function fighterAttacksPerRound(level) {
  * @param {number} round 1-based combat round
  */
 export function attacksThisRound(rate, round = 1) {
-  const whole = Math.floor(rate);
-  const frac = rate - whole;
-  return whole + (frac > 0 && round % Math.round(1 / frac) === 0 ? 1 : 0);
+  // Spread a rational rate evenly: attacks in round r = floor(rate*r) - floor(rate*(r-1)).
+  // 1.5 → 1,2,1,2; 0.5 → 0,1,0,1; 0.75 → 0,1,1,1; 3 → 3,3...
+  const r = Math.max(1, Math.floor(round));
+  const f = (n) => Math.floor(rate * n + 1e-9);
+  return f(r) - f(r - 1);
 }
 
 /**
@@ -377,7 +382,8 @@ export function turnColumn(level) {
 
 /** What a cleric of `level` needs vs undead `type` (number, 'T', 'D', 'D*' or '-'). */
 export function turnNeeded(level, type) {
-  const row = TURN_UNDEAD[type] ?? TURN_UNDEAD.zombie;
+  const row = TURN_UNDEAD[type];
+  if (!row) return '-'; // unknown type: never guess (a data typo must not become "zombie")
   return row[turnColumn(level)];
 }
 
