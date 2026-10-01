@@ -273,7 +273,7 @@ export function createChamber({ seed = 1337 } = {}) {
     put(box(w - 0.08, tall - 0.12, 0.05, { y: SEAT + 0.48, z: -0.27 }), cloth, 0x5a1210);
     put(box(w + 0.04, 0.16, 0.1, { y: SEAT + 0.42 + tall - 0.1, z: -0.27 }), wood, 0x4a3020); // carved crest rail
     const crest = new THREE.CircleGeometry(0.1, 16).translate(0, SEAT + 0.42 + tall + 0.08, -0.215);
-    gold.push(tint(ni(crest.applyMatrix4(m)), 0x7a5a20));
+    wood.push(tint(worldUV(crest.applyMatrix4(m), 1), 0x6a4a28));
   };
   const seated = (ch, x, z, ry, q = 0.016) => {
     chair(x, z, ry);

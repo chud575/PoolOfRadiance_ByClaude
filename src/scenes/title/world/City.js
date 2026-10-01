@@ -19,6 +19,7 @@ const GROUND = -14;
  */
 export function createCity({ seed = 1988 } = {}) {
   const Rmain = prng(seed);
+  const Rw = prng(seed + 11); // weathering details (never shifts the layout stream)
   let R = Rmain;
   const group = new THREE.Group();
   group.name = 'city';
@@ -344,7 +345,10 @@ export function createCity({ seed = 1988 } = {}) {
     const ang = Math.atan2(z1 - z0, x1 - x0);
     for (let i = 0; i < n; i++) {
       const f = (i + 0.5) / n;
-      list.push(tint(worldUV(box(0.7, 0.8, t, { x: x0 + (x1 - x0) * f, y, z: z0 + (z1 - z0) * f, ry: -ang }), 3.2), col));
+      // fifty years of neglect: merlons fallen, others chipped lower
+      if (Rw.chance(list === castle ? 0.2 : 0.12)) continue;
+      const mh = Rw.chance(0.25) ? Rw.range(0.35, 0.65) : 0.8;
+      list.push(tint(worldUV(box(0.7, mh, t, { x: x0 + (x1 - x0) * f, y, z: z0 + (z1 - z0) * f, ry: -ang + Rw.range(-0.04, 0.04) }), 3.2), new THREE.Color(col).multiplyScalar(Rw.range(0.86, 1.04))));
     }
   };
 
@@ -377,7 +381,7 @@ export function createCity({ seed = 1988 } = {}) {
       if (Math.hypot(x + 42, z + 96) < 11) continue; // temple close
       if (x > -38 && x < -2 && z < -33 && z > -67) continue; // council plaza
       if (R.chance(0.12)) continue;
-      const east = x > 14;
+      const east = x > 6;
       const w = R.range(4.2, 7.5);
       const d = R.range(4.2, 7.2);
       const far = gz / 15;
@@ -581,13 +585,13 @@ export function createCity({ seed = 1988 } = {}) {
     return new THREE.MeshStandardMaterial({ map: t.map, normalMap: t.normalMap, roughnessMap: t.roughnessMap, vertexColors: true, roughness: 1, ...extra });
   };
   const rimU = { uSunView: { value: new THREE.Vector3(0, 0, -1) }, uRimColor: { value: new THREE.Color(1.0, 0.55, 0.28) } };
-  const wallMat = addRimLight(texMat('hd2_ashlar'), rimU, 1);
+  const wallMat = addRimLight(texMat('hd2_ashlar'), rimU, 1, { weather: 1 });
   // the castle gets its own, brighter rim and a touch of warm self-light so it
   // separates from the town in the dusk haze
-  const castleMat = addRimLight(texMat('hd2_ashlar', { emissive: 0x1a0c06 }), rimU, 2.2);
-  const hallMat = addRimLight(texMat('hd2_ashlar'), rimU, 1);
+  const castleMat = addRimLight(texMat('hd2_ashlar', { emissive: 0x1a0c06 }), rimU, 2.2, { weather: 1, ground: -10 });
+  const hallMat = addRimLight(texMat('hd2_ashlar'), rimU, 1, { weather: 0.55 });
   const plasterMat = addRimLight(texMat('hd2_plaster'), rimU, 0.9);
-  const rubbleMat = addRimLight(texMat('hd2_ruin'), rimU, 1);
+  const rubbleMat = addRimLight(texMat('hd2_ruin'), rimU, 1, { weather: 0.8 });
   const groundMat = texMat('hd_mud');
   const cobbleMat = texMat('hd_cobble', { polygonOffset: true, polygonOffsetFactor: -1 });
   const roofMat = addRimLight(texMat('hd_roof_clay'), rimU, 1.2);

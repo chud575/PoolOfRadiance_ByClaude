@@ -319,8 +319,33 @@ export function robedFigure({ height = 1.75, robe = 0x5a1a14, hood = true, stoop
  * steps (rim · body · shadow) instead of one flat black. `uniforms.uSunView`
  * must be updated each frame with the sun direction in view space.
  */
-export function addRimLight(mat, uniforms, strength = 1) {
+export function addRimLight(mat, uniforms, strength = 1, { weather = 0, ground = -14 } = {}) {
   mat.onBeforeCompile = (sh) => {
+    if (weather > 0) {
+      // weathering in world space: rain streaks running down from every ledge,
+      // damp/algae darkening at the foot of the walls, mottled lichen, so the
+      // ashlar stops reading as one clean repeating brick texture
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vWthr;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWthr = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', `#include <common>
+          varying vec3 vWthr;
+          float wh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+          float wn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(wh(i), wh(i + vec2(1, 0)), f.x), mix(wh(i + vec2(0, 1)), wh(i + vec2(1, 1)), f.x), f.y); }`)
+        .replace('#include <map_fragment>', `#include <map_fragment>
+          {
+            float u = vWthr.x * 1.3 + vWthr.z * 1.3;
+            float streak = wn(vec2(u * 2.2, vWthr.y * 0.09)) * wn(vec2(u * 7.0, vWthr.y * 0.05 + 3.0));
+            float damp = 1.0 - smoothstep(${ground.toFixed(1)}, ${(ground + 3.2).toFixed(1)}, vWthr.y);
+            float mott = wn(vWthr.xz * 0.35 + vWthr.y * 0.2);
+            vec3 c = diffuseColor.rgb;
+            c *= 1.0 - ${weather.toFixed(2)} * (0.42 * smoothstep(0.25, 0.7, streak) + 0.18 * mott);
+            c = mix(c, c * vec3(0.55, 0.62, 0.45), damp * ${weather.toFixed(2)} * 0.8);
+            diffuseColor.rgb = c;
+          }`);
+    }
     sh.uniforms.uSunView = uniforms.uSunView;
     sh.uniforms.uRimColor = uniforms.uRimColor;
     sh.uniforms.uRimK = { value: strength };
@@ -338,6 +363,6 @@ export function addRimLight(mat, uniforms, strength = 1) {
           totalEmissiveRadiance += vec3(0.055, 0.05, 0.11) * uRimK * up * diffuseColor.rgb;
         }`);
   };
-  mat.customProgramCacheKey = () => `rim${strength}`;
+  mat.customProgramCacheKey = () => `rim${strength}w${weather}`;
   return mat;
 }

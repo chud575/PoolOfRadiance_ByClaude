@@ -104,7 +104,7 @@ export class IntroCinematic {
     ]);
     this.fade = h('div.por-intro-fade');
     this.el = h('div.por-intro', [
-      h('div.por-intro-bar.top', [
+      this.topBar = h('div.por-intro-bar.top', [
         this.caption,
         h('button.por-intro-skip', { type: 'button', onclick: () => this.skip() }, [h('span', ['Skip']), h('span.por-keycap', ['Esc']), padGlyph('B')]),
       ]),
@@ -179,6 +179,10 @@ export class IntroCinematic {
     // logo returns as the camera settles on the Pool
     this.logoAlpha = smooth(45.2, 48.2, lt);
     this.el.classList.toggle('final', lt > 44.5);
+    // the top letterbox lifts away as the crane settles, so the last frame opens
+    // up into the full title card (logo's AD&D line included)
+    const lift = smooth(44.6, 46.6, lt);
+    this.topBar.style.transform = lift > 0 ? `translateY(${(-lift * 101).toFixed(2)}%)` : '';
 
     if (!snap && !this.done && lt >= INTRO_LENGTH + 1.2) this.skip();
   }

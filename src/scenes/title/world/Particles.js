@@ -37,16 +37,16 @@ export function createParticles(o = {}) {
       uDisc: { value: o.disc ? 1 : 0 },
       uIntensity: { value: o.intensity ?? 1 },
       uPx: { value: 1 },
+      uRes: { value: new THREE.Vector2(1600, 900) },
     },
     vertexShader: /* glsl */ `
       attribute vec4 aSeed;
       uniform float uTime, uHeight, uSize, uSway, uDisc, uPx;
-      uniform vec3 uOrigin, uSpread, uWind; uniform vec2 uSpeed;
-      varying float vLife; varying float vFlick;
-      void main() {
+      uniform vec3 uOrigin, uSpread, uWind; uniform vec2 uSpeed, uRes;
+      varying float vLife; varying float vFlick; varying vec2 vDir; varying float vStretch;
+      vec3 at(float t, out float life) {
         float spd = mix(uSpeed.x, uSpeed.y, aSeed.w);
-        float life = fract(uTime * spd + aSeed.x);
-        vLife = life;
+        life = fract(t * spd + aSeed.x);
         vec3 p;
         if (uDisc > 0.5) {
           float a = aSeed.y * 6.2831853; float r = sqrt(aSeed.z);
@@ -57,24 +57,42 @@ export function createParticles(o = {}) {
         float ph = aSeed.w * 6.2831853;
         p.y += life * uHeight;
         p += uWind * life * uHeight;
-        p.x += sin(uTime * 1.1 + ph + life * 5.0) * uSway * life;
-        p.z += cos(uTime * 0.9 + ph * 1.7 + life * 4.0) * uSway * life;
+        p.x += sin(t * 1.1 + ph + life * 5.0) * uSway * life;
+        p.z += cos(t * 0.9 + ph * 1.7 + life * 4.0) * uSway * life;
+        return p;
+      }
+      void main() {
+        float life, life1;
+        vec3 p = at(uTime, life);
+        vec3 p1 = at(uTime - 0.14, life1);
+        vLife = life;
+        float ph = aSeed.w * 6.2831853;
         vFlick = 0.6 + 0.4 * sin(uTime * (6.0 + aSeed.y * 9.0) + ph * 3.0);
         vec4 mv = modelViewMatrix * vec4(p, 1.0);
         gl_Position = projectionMatrix * mv;
-        float s = uSize * (0.5 + aSeed.y) * (1.0 - life * 0.55);
-        gl_PointSize = clamp(s * uPx * 300.0 / -mv.z, 1.0, 48.0);
+        vec4 c1 = projectionMatrix * modelViewMatrix * vec4(p1, 1.0);
+        // size variance: a few big lazy sparks among many fine ones
+        float s = uSize * mix(0.35, 1.7, aSeed.y * aSeed.y) * (1.0 - life * 0.55);
+        float ps = clamp(s * uPx * 300.0 / -mv.z, 1.0, 48.0);
+        // motion streak: elongate the sprite along its screen-space velocity
+        vec2 dpx = (gl_Position.xy / gl_Position.w - c1.xy / c1.w) * 0.5 * uRes;
+        float len = (life1 < life) ? length(dpx) : 0.0;
+        vStretch = clamp(len / max(ps, 1.0), 0.0, 1.0);
+        vDir = len > 1e-3 ? normalize(vec2(dpx.x, -dpx.y)) : vec2(1.0, 0.0);
+        gl_PointSize = min(64.0, ps * (1.0 + vStretch * 1.2));
       }`,
     fragmentShader: /* glsl */ `
       uniform vec3 uColA, uColB; uniform float uIntensity;
-      varying float vLife; varying float vFlick;
+      varying float vLife; varying float vFlick; varying vec2 vDir; varying float vStretch;
       void main() {
         vec2 d = gl_PointCoord - 0.5;
-        float r = length(d) * 2.0;
+        vec2 q = vec2(dot(d, vDir), dot(d, vec2(-vDir.y, vDir.x)));
+        float across = max(0.28, 1.0 - 0.72 * vStretch);
+        float r = length(vec2(q.x, q.y / across)) * 2.0;
         float core = exp(-r * r * 9.0) + exp(-r * r * 2.2) * 0.35;
         float fade = smoothstep(0.0, 0.08, vLife) * (1.0 - smoothstep(0.55, 1.0, vLife));
         vec3 c = mix(uColA, uColB, smoothstep(0.0, 0.8, vLife));
-        gl_FragColor = vec4(c * core * fade * vFlick * uIntensity, 1.0);
+        gl_FragColor = vec4(c * core * fade * vFlick * uIntensity * (1.0 + vStretch * 0.4), 1.0);
       }`,
   });
   const points = new THREE.Points(geo, mat);
@@ -86,6 +104,7 @@ export function createParticles(o = {}) {
     update(t, px = 1) {
       mat.uniforms.uTime.value = t;
       mat.uniforms.uPx.value = px;
+      if (typeof window !== 'undefined') mat.uniforms.uRes.value.set(window.innerWidth * px, window.innerHeight * px);
     },
     dispose() {
       geo.dispose();
