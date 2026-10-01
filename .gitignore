@@ -10,3 +10,5 @@ reference/*
 scratch_*/
 audio_out/
 .fn_*
+.critic_*
+.*_review*.mjs
