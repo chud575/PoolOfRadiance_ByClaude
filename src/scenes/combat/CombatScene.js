@@ -157,8 +157,8 @@ export default class CombatScene extends Scene {
       if (isDown(c)) fig.lieDead(this.time);
       // Glowing eyes read across the dark (undead, kobolds, rats...).
       if (model.eyesColor != null && fig.b.head && c.side === 'monster') {
-        const glow = new THREE.Sprite(this._eyeMat?.[model.eyesColor] ?? ((this._eyeMat ??= {})[model.eyesColor] = new THREE.SpriteMaterial({ map: getGlowTexture(), color: model.eyesColor, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: this.night ? 0.6 : 0.22 })));
-        glow.scale.setScalar(0.13 * (model.scale ?? 1));
+        const glow = new THREE.Sprite(this._eyeMat?.[model.eyesColor] ?? ((this._eyeMat ??= {})[model.eyesColor] = new THREE.SpriteMaterial({ map: getGlowTexture(), color: model.eyesColor, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: this.night ? 0.95 : 0.3 })));
+        glow.scale.setScalar((this.night ? 0.24 : 0.14) * (model.scale ?? 1));
         glow.position.set(0, model.rig === 'biped' ? 0.11 * (model.scale ?? 1) : 0.04, model.rig === 'biped' ? 0.12 * (model.scale ?? 1) : 0.12);
         fig.b.head.add(glow);
         fig.eyeGlow = glow;
@@ -193,7 +193,7 @@ export default class CombatScene extends Scene {
     this._frames = 0;
 
     // ------------------------------------------------ camera
-    this.cam = { yaw: 0.32, pitch: 0.8, dist: Math.max(W * 0.95, H * 1.35) + 4, target: this.center.clone(), goalTarget: this.center.clone(), goalYaw: 0.32, goalDist: 0, goalPitch: 0.8 };
+    this.cam = { yaw: 0.32, pitch: 0.74, dist: Math.max(W * 0.95, H * 1.35) + 4, target: this.center.clone(), goalTarget: this.center.clone(), goalYaw: 0.32, goalDist: 0, goalPitch: 0.74 };
     this.cam.maxDist = this.cam.dist * 1.2;
     this.cam.minDist = 8;
     this._frameCombatants(true);
@@ -393,6 +393,7 @@ export default class CombatScene extends Scene {
       }
       const fig = this.figures.get(c.id);
       fig.root.visible = true;
+      if (fig.eyeGlow) fig.eyeGlow.visible = false;
       const wasDead = fig.death;
       fig.death = null;
       fig.update(1.3);
@@ -432,6 +433,7 @@ export default class CombatScene extends Scene {
       PORTRAITS.set(pk, url);
       fig.death = wasDead;
       fig.root.visible = false;
+      if (fig.eyeGlow) fig.eyeGlow.visible = !wasDead;
     }
     for (const o of hidden) o.visible = true;
     s.background = prevBg;

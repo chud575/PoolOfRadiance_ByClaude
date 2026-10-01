@@ -26,7 +26,7 @@ const HAIR = [0x2a1a10, 0x5a3418, 0x8a5a2a, 0xb88a4a, 0xd8c08a, 0x7a2a14, 0x1a1a
 // ------------------------------------------------------------------ species
 const SPECIES = {
   human: { height: 1.0, bulk: 1.0, head: 'human' },
-  kobold: { height: 0.72, bulk: 1.08, head: 'kobold', headScale: 1.15, skin: ['reptile', 0x8a4624], tail: 'long', legs: 'digitigrade', hunch: 0.34, thickNeck: true, cloth: 0x4a3a28, armor: 'harness', weapon: 'spear', weapons: ['spear', 'spear', 'shortSword', 'club'], eyes: 0xffc040 },
+  kobold: { height: 0.72, bulk: 1.08, head: 'kobold', headScale: 1.32, skin: ['reptile', 0x8a4624], shieldChance: 0.5, tail: 'long', legs: 'digitigrade', hunch: 0.34, thickNeck: true, cloth: 0x4a3a28, armor: 'harness', weapon: 'spear', weapons: ['spear', 'spear', 'shortSword', 'club'], eyes: 0xffc040 },
   goblin: { height: 0.66, bulk: 0.9, head: 'goblin', skin: ['skin', 0x8a9a3a], hunch: 0.15, cloth: 0x4a3020, weapon: 'shortSword', eyes: 0xffe060 },
   orc: { height: 1.04, bulk: 1.28, head: 'orc', skin: ['skin', 0x535d48], hunch: 0.36, cloth: 0x2e2418, armor: 'orcish', weapon: 'battleAxe', weapons: ['battleAxe', 'battleAxe', 'spear', 'morningStar', 'club'], helmChance: 0.55, eyes: 0xff4020 },
   hobgoblin: { height: 1.08, bulk: 1.12, head: 'hobgoblin', skin: ['skin', 0xb0582a], cloth: 0x5a1e18, armor: 'scale', weapon: 'longSword', shield: 'round', eyes: 0xffa020 },
@@ -112,7 +112,7 @@ export function makeFigureModel(c, index = 0) {
     weapon: sp.weapons ? pick(sp.weapons, 'w') : sp.weapon === undefined ? 'club' : sp.weapon,
     variant: hashStr(`${c.id}:v`),
     armor: sp.armor ?? (sp.body === 'bones' ? 'none' : 'loincloth'),
-    shield: sp.shield ?? null,
+    shield: sp.shield ?? (sp.shieldChance && hashStr(`${c.id}:s`) < sp.shieldChance ? 'round' : null),
     helm: sp.helmChance && hashStr(`${c.id}:h`) < sp.helmChance ? 'orcHelm' : null,
     human: sp.human,
     stripes: sp.stripes,
@@ -353,8 +353,12 @@ function buildBiped(o) {
       R.part('hips', torus(0.152 * s * w, 0.016 * s, 5, 16), darkLeather, { p: [0, 0.02 * s, 0], r: [Math.PI / 2, 0, 0], s: [1, 0.74, 1] });
       R.part('chest', box(0.026 * s, 0.34 * s, 0.01 * s), darkLeather, { p: [0, 0.08 * s, 0.13 * s], r: [0, 0, 0.6] });
       R.part('hips', rbox(0.06 * s, 0.07 * s, 0.04 * s, 0.012 * s), leather, { p: [0.12 * s * w, -0.03 * s, 0.07 * s], r: [0, 0.6, 0] });
-      // Pale belly scales.
-      R.part('spine', lathe([[0.1, -0.02], [0.12, 0.1], [0.11, 0.22]].map(([r, y]) => [r * s, y * s]), 10, { xs: w * 0.8, zs: 0.5 }), pbr('reptile', 0xc89a62), { p: [0, 0, 0.05 * s] });
+      // Pale belly scales, a darker banded back and a ridge of dorsal spines from
+      // the skull down into the tail: the reptile silhouette reads at any zoom.
+      R.part('spine', lathe([[0.1, -0.02], [0.125, 0.1], [0.11, 0.22]].map(([r, y]) => [r * s, y * s]), 10, { xs: w * 0.8, zs: 0.55 }), pbr('reptile', 0xc89a62), { p: [0, 0, 0.05 * s] });
+      const back = pbr('reptile', 0x5a2a14);
+      for (let k = 0; k < 4; k++) R.part('chest', cone(0.03 * s, 0.11 * s, 4), back, { p: [0, 0.24 * s - k * 0.06 * s, -0.12 * s * w], r: [-0.95, 0, 0], s: [0.6, 1, 1] });
+      for (let k = 0; k < 3; k++) R.part('spine', cone(0.026 * s, 0.09 * s, 4), back, { p: [0, 0.2 * s - k * 0.07 * s, -0.115 * s * w], r: [-1.05, 0, 0], s: [0.6, 1, 1] });
     } else if (kit.armor === 'scraps') {
       R.part('chest', box(0.2 * s * w, 0.14 * s, 0.05 * s), darkLeather, { p: [0.03 * s, 0.12 * s, 0.1 * s], r: [0, 0, 0.3] });
       R.part('upperArmR', sphere(0.08 * s * w, 10, 6, { thetaLength: Math.PI * 0.5 }), darkMetal, { p: [0, 0.01 * s, 0], s: [1.1, 0.9, 1.1] });
