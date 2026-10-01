@@ -770,7 +770,10 @@ export default class ExploreScene extends Scene {
     this._animateWorld(time, dt, frozen);
     const tw = this.tween;
     if (!tw) return;
-    tw.t = frozen ? 1 : Math.min(1, tw.t + dt / tw.dur);
+    // the clock clamps hitches to 0.1 s; on a very slow device (every frame a hitch) a grid step
+    // would crawl over many seconds, so a clamped frame counts as more of the move than it says
+    const hitch = dt >= 0.099 ? 2.5 : 1;
+    tw.t = frozen ? 1 : Math.min(1, tw.t + (dt * hitch) / tw.dur);
     let fx;
     let fy;
     let bob = 0;
