@@ -202,7 +202,7 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
   scene.fog = new THREE.FogExp2(fogCol, night ? 0.034 : 0.018);
 
   // ---- light: fire key, moon rim/fill, sky
-  const hemi = new THREE.HemisphereLight(night ? 0x3a4c86 : 0x9ab0d0, 0x0e0a08, night ? 0.5 : 0.9);
+  const hemi = new THREE.HemisphereLight(night ? 0x4458a0 : 0x9ab0d0, 0x0e0a08, night ? 0.62 : 0.9);
   scene.add(hemi);
   const moon = new THREE.DirectionalLight(night ? 0x9ab4ff : 0xfff0d8, night ? 1.15 : 1.6);
   moon.position.set(-5, 9, -9);
@@ -212,10 +212,6 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
   moon.shadow.bias = -0.0008;
   moon.shadow.normalBias = 0.02;
   scene.add(moon, moon.target);
-  // A cool moonlit fill from the viewer's side, so the party is not one orange cast.
-  const moonFill = new THREE.DirectionalLight(0x7890d0, night ? 0.55 : 0.4);
-  moonFill.position.set(4.5, 6, 8);
-  scene.add(moonFill, moonFill.target);
   const fireLight = new THREE.PointLight(0xffa25a, 0, 16, 1.6);
   fireLight.position.set(0, 1.0, 0.05);
   fireLight.castShadow = true;
@@ -693,8 +689,7 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
     fireLight.color.setHex(restingNow ? 0xff7a34 : 0xffa25a);
     emberLight.intensity = (restingNow ? 1.1 : 0.6) * (0.9 + 0.1 * Math.sin(time * 3.1));
     moon.intensity = night ? (restingNow ? 1.9 : 1.15) : 1.6;
-    moonFill.intensity = night ? (restingNow ? 0.8 : 0.55) : 0.4;
-    hemi.intensity = night ? (restingNow ? 0.55 : 0.5) : 0.9;
+    hemi.intensity = night ? (restingNow ? 0.66 : 0.62) : 0.9;
     coalMat.emissiveIntensity = (restingNow ? 1.6 : 1.1) * (0.9 + 0.1 * Math.sin(time * 2.3));
     logMat.emissiveIntensity = (restingNow ? 1.1 : 0.8) * (0.85 + 0.15 * Math.sin(time * 5.7 + 0.4));
     coalChunkMat.emissiveIntensity = (restingNow ? 1.4 : 0.9) * (0.85 + 0.15 * Math.sin(time * 6.1));

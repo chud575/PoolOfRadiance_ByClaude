@@ -181,6 +181,38 @@ export function overpaintPortrait(out, mask, app, view) {
     g.putImageData(img, 0, 0);
   }
 
+  // ---- value planes: the skin simplified into a painter's few values —
+  // light, half-tone, core shadow and a cooler reflected light — laid over
+  // the render so it reads as painted planes rather than a smooth gradient.
+  function valuePlanes(ar, ag, ab) {
+    const img = g.getImageData(0, 0, W, H);
+    const d = img.data;
+    const ma = faceSoft.getContext('2d').getImageData(0, 0, W, H).data;
+    const base = [ar, ag, ab];
+    const L0 = Math.max(20, ar * 0.3 + ag * 0.59 + ab * 0.11);
+    const light = mixc(base, [255, 232, 205], 0.22).map((v) => v * 1.12);
+    const half = base;
+    const core = mixc(base, [120, 50, 40], 0.35).map((v) => v * 0.6);
+    const refl = mixc(core, [90, 100, 130], 0.3).map((v) => v * 1.15);
+    const sstep = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+    for (let i = 0; i < W * H; i++) {
+      const a = ma[i * 4 + 3] / 255;
+      if (a < 0.05 || md[i * 4] < 110) continue;
+      const r = d[i * 4], g2 = d[i * 4 + 1], b = d[i * 4 + 2];
+      const t = (r * 0.3 + g2 * 0.59 + b * 0.11) / L0;
+      // Piecewise: reflected (deep) → core → half → light, with soft edges.
+      let c = mixc(refl, core, sstep(0.28, 0.4, t));
+      c = mixc(c, half, sstep(0.62, 0.78, t));
+      c = mixc(c, light, sstep(1.08, 1.22, t));
+      // Keep the render's own value within each plane (planes, not flat fills).
+      const k2 = 0.38 * a;
+      d[i * 4] = clamp(r + (c[0] - r) * k2);
+      d[i * 4 + 1] = clamp(g2 + (c[1] - g2) * k2);
+      d[i * 4 + 2] = clamp(b + (c[2] - b) * k2);
+    }
+    g.putImageData(img, 0, 0);
+  }
+
   // ---- broad planes: soften the sculpt's lumps the way a painter simplifies
   // skin into planes (a blur of the skin alone, laid over at partial strength).
   if (!mini) {
@@ -207,6 +239,7 @@ export function overpaintPortrait(out, mask, app, view) {
       g.drawImage(blur, 0, 0);
       g.globalAlpha = 1;
       relight(filled, sr / n, sg2 / n, sb / n);
+      valuePlanes(sr / n, sg2 / n, sb / n);
     }
   }
 
