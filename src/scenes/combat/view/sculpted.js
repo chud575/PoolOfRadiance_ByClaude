@@ -78,7 +78,7 @@ export const LOOKS = {
   kobold: { skin: [0x6e3a20, 'scales'], back: [0x2e1810, 'scales'], belly: [0xb08050, 'scales'], horn: 0xa89068, cloth: 0x4a3a28, head: 'kobold' },
   goblin: { skin: [0x86963a, 'skin'], back: [0x5a6a26, 'skin'], belly: [0xa0aa60, 'skin'], horn: 0xd8c8a0, cloth: 0x4a3020, head: 'goblin', pants: 0x3a2a1a },
   orc: { skin: [0x464a38, 'skin'], back: [0x2a2c22, 'skin'], belly: [0x56584a, 'skin'], horn: 0xa89a7c, cloth: 0x2e2418, head: 'orc', pants: 0x2a221a, jerkin: 0x2a1c12, plate: 0x3e3630, hair: 0x0e0c0a },
-  hobgoblin: { skin: [0xb0582a, 'skin'], back: [0x7a3618, 'skin'], belly: [0xc0703a, 'skin'], horn: 0xe0d0b0, cloth: 0x5a1e18, head: 'hobgoblin', pants: 0x3a2018, mail: 0x8a8070, hair: 0x1e1a18, nose: 0x5a3a5a },
+  hobgoblin: { skin: [0x7e4a32, 'skin'], back: [0x4e2a1a, 'skin'], belly: [0x8e5a3c, 'skin'], horn: 0xe0d0b0, cloth: 0x5a1e18, head: 'hobgoblin', pants: 0x3a2018, mail: 0x8a8070, hair: 0x1e1a18, nose: 0x5a3a5a },
   gnoll: { skin: [0xa88450, 'spots'], back: [0x6a5030, 'fur'], belly: [0xc8a878, 'fur'], horn: 0xe0d4b0, cloth: 0x3a2e22, head: 'gnoll', hair: 0x2a1a10, pants: 0x3a2e22 },
   bugbear: { skin: [0x7a5a30, 'fur'], back: [0x4a3418, 'fur'], belly: [0x9a7a50, 'fur'], horn: 0xd8c8a0, cloth: 0x3a2a1a, head: 'bugbear', hair: 0x2a1a0a, pants: 0x3a2a1a },
   lizardMan: { skin: [0x4a6a3a, 'scales'], back: [0x2e4a26, 'scales'], belly: [0xb0b07a, 'scales'], horn: 0xd8d0a0, cloth: 0x4a3a20, head: 'lizard' },

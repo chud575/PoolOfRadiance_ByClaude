@@ -1266,6 +1266,7 @@ export function buildDiorama(field, o = {}) {
   }
 
   const _ray = new THREE.Ray();
+  const _pb = new THREE.Box3();
   const _v = new THREE.Vector3();
   /**
    * Cut away houses and walls that would hide any of `points` (combatants,
@@ -1285,11 +1286,14 @@ export function buildDiorama(field, o = {}) {
         continue;
       }
       let hides = false;
+      // Loose props (tall columns, beams) also clear out when they merely loom
+      // in the foreground next to a sight line.
+      const box = g.w?.prop ? _pb.copy(g.box).expandByScalar(0.9) : g.box;
       for (const p of points) {
         _ray.origin.copy(p);
         _ray.direction.subVectors(camPos, p).normalize();
-        if (g.box.containsPoint(p)) continue;
-        const hit = _ray.intersectBox(g.box, _v);
+        if (box.containsPoint(p)) continue;
+        const hit = _ray.intersectBox(box, _v);
         if (hit && hit.distanceTo(p) < camPos.distanceTo(p)) {
           hides = true;
           break;
@@ -1301,10 +1305,11 @@ export function buildDiorama(field, o = {}) {
         g.cut.visible = hides;
         continue;
       }
-      g.full.visible = true;
-      g.cut.visible = false;
-      // Loose props (high beams, tall columns) vanish outright; walls keep a ghost.
+      // Loose props (high beams, tall columns) dissolve and then drop out
+      // entirely (no speckled ghost past the hole's rim); walls keep a ghost.
       g.fadeTarget = hides ? (g.w?.prop ? 0 : 0.22) : 1;
+      g.full.visible = !(g.w?.prop && hides && g.fade && g.fade.value < 0.04);
+      g.cut.visible = false;
     }
   }
 

@@ -30,7 +30,7 @@ const SPECIES = {
   kobold: { height: 0.78, bulk: 1.22, limbK: 1.35, head: 'kobold', headScale: 1.45, skin: ['reptile', 0x8a4624], shieldChance: 0.5, tail: 'long', legs: 'digitigrade', hunch: 0.34, thickNeck: true, cloth: 0x4a3a28, armor: 'harness', weapon: 'spear', weapons: ['spear', 'spear', 'shortSword', 'club'], eyes: 0xffc040 },
   goblin: { height: 0.66, bulk: 0.95, limbK: 1.2, head: 'goblin', skin: ['skin', 0x8a9a3a], hunch: 0.15, cloth: 0x4a3020, weapon: 'shortSword', eyes: 0xffe060 },
   orc: { height: 1.04, bulk: 1.28, head: 'orc', skin: ['skin', 0x474d38], hunch: 0.42, cloth: 0x2e2418, armor: 'orcish', weapon: 'battleAxe', weapons: ['battleAxe', 'battleAxe', 'spear', 'morningStar', 'club'], helmChance: 0.55, eyes: 0xff4020 },
-  hobgoblin: { height: 1.08, bulk: 1.12, head: 'hobgoblin', skin: ['skin', 0xb0582a], cloth: 0x5a1e18, armor: 'scale', weapon: 'longSword', shield: 'round', eyes: 0xffa020 },
+  hobgoblin: { height: 1.08, bulk: 1.12, head: 'hobgoblin', skin: ['skin', 0x9a5030], cloth: 0x5a1e18, armor: 'scale', weapon: 'longSword', shield: 'round', helmChance: 0.75, eyes: 0xffa020 },
   gnoll: { height: 1.2, bulk: 1.15, limbK: 1.1, head: 'gnoll', skin: ['fur', 0x9a7a4a], hunch: 0.3, legs: 'digitigrade', cloth: 0x3a2e22, armor: 'scraps', weapon: 'flail', eyes: 0xffd040 },
   giantRat: { rig: 'quad', skin: ['fur', 0x4a3a30], height: 0.55, eyes: 0xff3020 },
   skeleton: { undead: true, height: 1.0, bulk: 0.9, head: 'skull', body: 'bones', skin: ['bone', 0xd8ccb0], weapon: 'shortSword', shield: 'round', eyes: 0x60d0ff },

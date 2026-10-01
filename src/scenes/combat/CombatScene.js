@@ -1886,7 +1886,7 @@ export default class CombatScene extends Scene {
         probe.updateMatrixWorld(true);
         for (const m of marks) {
           const v = m.clone().project(probe);
-          if (v.z < 1 && v.x > -0.9 && v.x < 0.4 && v.y > -0.6 && v.y < 0.72) land += m.w;
+          if (v.z < 1 && v.x > -0.7 && v.x < 0.35 && v.y > -0.6 && v.y < 0.6) land += m.w;
         }
       }
       const n = this.diorama.occluders(pos, pts) * (around ? 3 : 1) + (around ? 0 : Math.abs(yaw - 0.32) * 2) + along * 14 + crowd - land;
@@ -2087,7 +2087,7 @@ export default class CombatScene extends Scene {
    * a software-GL frame costs seconds and the HUD lives in the DOM anyway.
    */
   render() {
-    if (this.frozen && (this._renders ?? 0) >= 2 && this._frames > 2) return;
+    if (this.frozen && (this._renders ?? 0) >= 3 && this._frames > 3) return;
     this._renders = (this._renders ?? 0) + 1;
     super.render();
   }
