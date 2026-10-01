@@ -38,10 +38,11 @@ export function createParticles(o = {}) {
       uIntensity: { value: o.intensity ?? 1 },
       uPx: { value: 1 },
       uRes: { value: new THREE.Vector2(1600, 900) },
+      uStreak: { value: o.streak ? 1 : 0 },
     },
     vertexShader: /* glsl */ `
       attribute vec4 aSeed;
-      uniform float uTime, uHeight, uSize, uSway, uDisc, uPx;
+      uniform float uTime, uHeight, uSize, uSway, uDisc, uPx, uStreak;
       uniform vec3 uOrigin, uSpread, uWind; uniform vec2 uSpeed, uRes;
       varying float vLife; varying float vFlick; varying vec2 vDir; varying float vStretch;
       vec3 at(float t, out float life) {
@@ -72,11 +73,11 @@ export function createParticles(o = {}) {
         gl_Position = projectionMatrix * mv;
         vec4 c1 = projectionMatrix * modelViewMatrix * vec4(p1, 1.0);
         // size variance: a few big lazy sparks among many fine ones
-        float s = uSize * mix(0.35, 1.7, aSeed.y * aSeed.y) * (1.0 - life * 0.55);
+        float s = uSize * mix(0.5 + aSeed.y, mix(0.35, 1.7, aSeed.y * aSeed.y), uStreak) * (1.0 - life * 0.55);
         float ps = clamp(s * uPx * 300.0 / -mv.z, 1.0, 48.0);
         // motion streak: elongate the sprite along its screen-space velocity
         vec2 dpx = (gl_Position.xy / gl_Position.w - c1.xy / c1.w) * 0.5 * uRes;
-        float len = (life1 < life) ? length(dpx) : 0.0;
+        float len = (life1 < life) ? length(dpx) * uStreak : 0.0;
         vStretch = clamp(len / max(ps, 1.0), 0.0, 1.0);
         vDir = len > 1e-3 ? normalize(vec2(dpx.x, -dpx.y)) : vec2(1.0, 0.0);
         gl_PointSize = min(64.0, ps * (1.0 + vStretch * 1.2));

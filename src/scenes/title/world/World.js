@@ -107,17 +107,17 @@ export function createWorld() {
   });
   const embersL = createParticles({
     count: 120, seed: 5, origin: new THREE.Vector3(-6.2, 1.8, -1.2), spread: new THREE.Vector3(0.7, 0.2, 0.7),
-    height: 10, speed: [0.1, 0.28], size: 0.32, wind: new THREE.Vector3(-0.6, 0, 0.1), sway: 0.9, intensity: 3.4,
+    height: 10, speed: [0.1, 0.28], size: 0.32, wind: new THREE.Vector3(-0.6, 0, 0.1), sway: 0.9, intensity: 3.4, streak: true,
   });
   const embersR = createParticles({
     count: 120, seed: 6, origin: new THREE.Vector3(6.2, 1.8, -1.2), spread: new THREE.Vector3(0.7, 0.2, 0.7),
-    height: 10, speed: [0.1, 0.28], size: 0.32, wind: new THREE.Vector3(-0.6, 0, 0.1), sway: 0.9, intensity: 3.4,
+    height: 10, speed: [0.1, 0.28], size: 0.32, wind: new THREE.Vector3(-0.6, 0, 0.1), sway: 0.9, intensity: 3.4, streak: true,
   });
   // embers carried up from the burning old city on the sea wind
   const drift = createParticles({
     count: 260, seed: 9, origin: new THREE.Vector3(18, -10, -40), spread: new THREE.Vector3(90, 6, 70),
     height: 26, speed: [0.015, 0.04], size: 0.55, wind: new THREE.Vector3(-1.1, 0, 0.35), sway: 2.5, intensity: 2.2,
-    colorA: 0xffc070, colorB: 0xff3a0a,
+    colorA: 0xffc070, colorB: 0xff3a0a, streak: true,
   });
   const systems = [motes, embersL, embersR, drift];
   for (const s of systems) scene.add(s.points);

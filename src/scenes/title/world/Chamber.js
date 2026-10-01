@@ -322,8 +322,8 @@ export function createChamber({ seed = 1337 } = {}) {
   {
     // his quill, raised mid-stroke in his right hand (the rig's right hand rests
     // forward of the hip in the standing pose): a feather card plus a dark nib
-    const qg = new THREE.PlaneGeometry(0.06, 0.32);
-    qg.translate(0, 0.16, 0);
+    const qg = new THREE.PlaneGeometry(0.085, 0.44);
+    qg.translate(0, 0.22, 0);
     qg.rotateZ(0.5);
     qg.rotateX(-0.5);
     const quill = new THREE.Mesh(qg, new THREE.MeshStandardMaterial({ map: featherTexture(), alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.8 }));
