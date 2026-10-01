@@ -11,6 +11,8 @@
  * localStorage so the first frame is already correct).
  */
 
+import { registerBitmapFont } from './bitmapFontFace.js';
+
 let installed = false;
 
 function hash(x, y, s) {
@@ -63,6 +65,63 @@ function noiseTexture(size, { seed = 1, base, amp, octaves = 5, scale = 4, fibre
   return c.toDataURL('image/png');
 }
 
+/**
+ * Pebbled book-binding leather (tileable): jittered cellular pebbles with dark
+ * creases between them, a soft top-light on each pebble and fine pores.
+ */
+function leatherTexture(size, { seed = 23, base = [22, 30, 66], cells = 22 } = {}) {
+  if (typeof document === 'undefined') return '';
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const x = c.getContext('2d');
+  const img = x.createImageData(size, size);
+  const pts = [];
+  for (let j = 0; j < cells; j++) for (let i = 0; i < cells; i++) pts.push([(i + 0.15 + hash(i, j, seed) * 0.7) / cells, (j + 0.15 + hash(i, j, seed + 1) * 0.7) / cells]);
+  for (let py = 0; py < size; py++) {
+    for (let px = 0; px < size; px++) {
+      const u = px / size, v = py / size;
+      const ci = Math.floor(u * cells), cj = Math.floor(v * cells);
+      let d1 = 9, d2 = 9, best = null;
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+        const ii = (ci + di + cells) % cells, jj = (cj + dj + cells) % cells;
+        const p = pts[jj * cells + ii];
+        const dx = p[0] + (ci + di - ii) / cells - u;
+        const dy = p[1] + (cj + dj - jj) / cells - v;
+        const d = Math.hypot(dx, dy) * cells;
+        if (d < d1) { d2 = d1; d1 = d; best = [dx, dy]; } else if (d < d2) d2 = d;
+      }
+      const crease = Math.min(1, (d2 - d1) * 3.2); // 0 at the crease
+      const dome = best ? Math.max(0, -best[1] * cells * 0.9 + 0.2) : 0; // light from above
+      const pore = hash(px, py, seed + 5) > 0.93 ? -0.06 : 0;
+      const mott = (valueNoise(u * 4, v * 4, seed + 9, 4) - 0.5) * 0.18;
+      const k = 0.62 + 0.38 * crease + dome * 0.12 + pore + mott;
+      const o = (py * size + px) * 4;
+      img.data[o] = base[0] * k;
+      img.data[o + 1] = base[1] * k;
+      img.data[o + 2] = base[2] * k * 1.02;
+      img.data[o + 3] = 255;
+    }
+  }
+  x.putImageData(img, 0, 0);
+  return c.toDataURL('image/png');
+}
+
+/** Tone-on-tone damask (brocade) repeat: pomegranate lozenge with scroll leaves. */
+function brocadeSVG() {
+  const leaf = (cx, cy, r, rot) => `<path transform="translate(${cx} ${cy}) rotate(${rot})" d="M0 0 C${r * 0.5} ${-r * 0.4} ${r} ${-r * 0.2} ${r * 1.3} ${r * 0.1} C${r * 0.9} ${r * 0.3} ${r * 0.4} ${r * 0.3} 0 0 Z"/>`;
+  const curl = (cx, cy, dir) => P(spiral(cx, cy, 7, 1.1, dir, 0));
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 140" width="120" height="140">
+    <g fill="rgba(170,190,255,0.035)" stroke="rgba(190,205,255,0.05)" stroke-width="1">
+      <path d="M60 14 C78 34 90 52 60 92 C30 52 42 34 60 14 Z"/>
+      <path d="M60 30 C70 44 74 56 60 76 C46 56 50 44 60 30 Z" fill="rgba(170,190,255,0.03)"/>
+      ${leaf(60, 92, 18, -30)}${leaf(60, 92, 18, 210)}${leaf(60, 14, 14, 30)}${leaf(60, 14, 14, 150)}
+      <circle cx="0" cy="0" r="9"/><circle cx="120" cy="0" r="9"/><circle cx="0" cy="140" r="9"/><circle cx="120" cy="140" r="9"/>
+      ${leaf(0, 70, 16, -20)}${leaf(120, 70, 16, 200)}
+    </g>
+    <g fill="none" stroke="rgba(190,205,255,0.045)" stroke-width="1.2"><path d="${curl(28, 110, 1)}"/><path d="${curl(92, 110, -1)}"/><path d="${curl(28, 40, -1)}"/><path d="${curl(92, 40, 1)}"/></g>
+  </svg>`;
+}
+
 /** Grain overlay: transparent with light/dark specks. */
 function grainTexture(size, seed = 3) {
   if (typeof document === 'undefined') return '';
@@ -97,31 +156,61 @@ function spiral(cx, cy, r0, turns, dir = 1, start = 0) {
 const P = (pts) => pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(2)} ${y.toFixed(2)}`).join('');
 
 /**
- * Corner filigree (top-left orientation; CSS mirrors for other corners):
- * an L of double rules meeting in a jewelled boss, with C-scrolls curling off
- * both arms and a small acanthus leaf.
+ * Corner filigree (top-left orientation; CSS mirrors for other corners), drawn
+ * at 96 units for ~4em display: a bevelled double rule ending in a jewelled
+ * boss, two C-scroll volutes curling off each arm, acanthus leaves and a
+ * pendant bud. Every stroke is laid twice — a dark bevel shadow offset down-
+ * right, then the two-tone gilt face — so it reads as raised metal.
  */
 function cornerSVG() {
-  const s = 64;
-  const curlA = spiral(30, 12, 7, 1.15, -1, Math.PI * 0.5);
-  const curlB = spiral(12, 30, 7, 1.15, 1, Math.PI);
+  const s = 96;
+  const curlA = spiral(46, 16, 10, 1.3, -1, Math.PI * 0.5);
+  const curlB = spiral(16, 46, 10, 1.3, 1, Math.PI);
+  const curlC = spiral(70, 9, 5.5, 1.1, 1, Math.PI * 1.5);
+  const curlD = spiral(9, 70, 5.5, 1.1, -1, 0);
+  const strokes = `
+      <path d="M5 5 H94" stroke-width="3"/>
+      <path d="M5 5 V94" stroke-width="3"/>
+      <path d="M12 12 H70" stroke-width="1.3"/>
+      <path d="M12 12 V70" stroke-width="1.3"/>
+      <path d="M16 16 C30 16 40 8 52 15 C58 19 56 27 50 26" stroke-width="2.1"/>
+      <path d="M16 16 C16 30 8 40 15 52 C19 58 27 56 26 50" stroke-width="2.1"/>
+      <path d="${P(curlA)}" stroke-width="1.7"/>
+      <path d="${P(curlB)}" stroke-width="1.7"/>
+      <path d="M52 15 C60 10 66 6 74 9" stroke-width="1.4"/>
+      <path d="M15 52 C10 60 6 66 9 74" stroke-width="1.4"/>
+      <path d="${P(curlC)}" stroke-width="1.2"/>
+      <path d="${P(curlD)}" stroke-width="1.2"/>
+      <path d="M24 24 C33 33 40 33 50 38" stroke-width="1.3"/>
+      <path d="M24 24 C33 33 33 40 38 50" stroke-width="1.3"/>`;
+  const fills = `
+    <path d="M24 18 C32 20 36 26 34 34 C28 30 24 26 24 18 Z"/>
+    <path d="M18 24 C20 32 26 36 34 34 C30 28 26 24 18 24 Z"/>
+    <path d="M44 34 C49 31 54 33 55 38 C50 39 46 38 44 34 Z"/>
+    <path d="M34 44 C31 49 33 54 38 55 C39 50 38 46 34 44 Z"/>
+    <circle cx="51" cy="40" r="1.6"/><circle cx="40" cy="51" r="1.6"/>`;
   const body = `
-    <g fill="none" stroke="url(#g)" stroke-linecap="round">
-      <path d="M4 4 H62" stroke-width="2.4"/>
-      <path d="M4 4 V62" stroke-width="2.4"/>
-      <path d="M10 10 H46" stroke-width="1.1" opacity=".85"/>
-      <path d="M10 10 V46" stroke-width="1.1" opacity=".85"/>
-      <path d="M12 12 C22 12 30 6 38 12 C42 15 40 20 36 19" stroke-width="1.6"/>
-      <path d="M12 12 C12 22 6 30 12 38 C15 42 20 40 19 36" stroke-width="1.6"/>
-      <path d="${P(curlA)}" stroke-width="1.3"/>
-      <path d="${P(curlB)}" stroke-width="1.3"/>
-      <path d="M20 20 C26 26 30 26 36 30" stroke-width="1" opacity=".8"/>
-      <path d="M20 20 C26 26 26 30 30 36" stroke-width="1" opacity=".8"/>
-    </g>
-    <path d="M4 0 L8 4 L4 8 L0 4 Z" fill="url(#g)" stroke="#1a1004" stroke-width=".6"/>
-    <path d="M18 14 Q22 18 18 22 Q14 18 18 14 Z" fill="url(#g)" opacity=".9"/>
-    <circle cx="4" cy="4" r="1.6" fill="#8ff0ff"/>`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${s} ${s}" width="${s}" height="${s}">${GILT_DEFS('g')}${body}</svg>`;
+    <g fill="none" stroke="#120a02" stroke-linecap="round" transform="translate(0.9 1.2)" opacity=".85">${strokes}</g>
+    <g fill="#120a02" transform="translate(0.9 1.2)" opacity=".85">${fills}</g>
+    <g fill="none" stroke="url(#g)" stroke-linecap="round">${strokes}</g>
+    <g fill="none" stroke="#fff6d8" stroke-linecap="round" opacity=".35" transform="translate(-0.4 -0.5)"><path d="M5 5 H94" stroke-width="0.8"/><path d="M5 5 V94" stroke-width="0.8"/></g>
+    <g fill="url(#g)" stroke="#3a2808" stroke-width=".5">${fills}</g>
+    <path d="M7 -1 L15 7 L7 15 L-1 7 Z" fill="#120a02" transform="translate(0.8 1)"/>
+    <path d="M7 -1 L15 7 L7 15 L-1 7 Z" fill="url(#g)" stroke="#2a1a04" stroke-width=".7"/>
+    <circle cx="7" cy="7" r="3.2" fill="#0b2a40" stroke="#2a1a04" stroke-width=".6"/>
+    <circle cx="7" cy="7" r="2.3" fill="url(#gem)"/>
+    <circle cx="6.1" cy="6" r=".8" fill="#fff"/>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2 -2 ${s} ${s}" width="${s}" height="${s}">${GILT_DEFS('g', 96, 96)}<defs><radialGradient id="gem"><stop offset="0" stop-color="#e8ffff"/><stop offset=".5" stop-color="#5fd8f0"/><stop offset="1" stop-color="#0d4a6a"/></radialGradient></defs>${body}</svg>`;
+}
+
+/** Centre crest for frame tops: lozenge with flanking scroll volutes. */
+function crestSVG() {
+  const l = spiral(26, 12, 6, 1.2, 1, 0);
+  const r = spiral(94, 12, 6, 1.2, -1, Math.PI);
+  const st = `<path d="M2 14 C14 14 18 4 30 6" stroke-width="1.5"/><path d="M118 14 C106 14 102 4 90 6" stroke-width="1.5"/><path d="${P(l)}" stroke-width="1.3"/><path d="${P(r)}" stroke-width="1.3"/><path d="M36 14 C44 20 52 20 60 14 C68 20 76 20 84 14" stroke-width="1.1"/>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 24" width="120" height="24">${GILT_DEFS('g', 120, 24)}
+    <g fill="none" stroke="#120a02" stroke-linecap="round" transform="translate(.7 .9)">${st}</g>
+    <g fill="none" stroke="url(#g)" stroke-linecap="round">${st}</g></svg>`;
 }
 
 /** Horizontal divider: fine double rule with a centre lozenge and scrolls. */
@@ -157,12 +246,14 @@ export function installSkin() {
   const root = document.documentElement.style;
   try {
     root.setProperty('--tex-parchment', `url(${noiseTexture(256, { seed: 11, base: [228, 210, 170], amp: 0.22, scale: 4, fibres: 0.05, mottle: 0.22 })})`);
-    root.setProperty('--tex-leather', `url(${noiseTexture(256, { seed: 23, base: [26, 30, 52], amp: 0.16, scale: 16, octaves: 4, mottle: 0.08 })})`);
+    root.setProperty('--tex-leather', `url(${leatherTexture(256)})`);
     root.setProperty('--tex-grain', `url(${grainTexture(128)})`);
   } catch {
     /* canvas unavailable: CSS falls back to gradients */
   }
   root.setProperty('--filigree-corner', url(cornerSVG()));
+  root.setProperty('--filigree-crest', url(crestSVG()));
+  root.setProperty('--tex-brocade', url(brocadeSVG()));
   root.setProperty('--filigree-rule', url(ruleSVG()));
   root.setProperty('--filigree-flourish', url(flourishSVG()));
 }
@@ -190,4 +281,30 @@ export function applySkinSettings(settings) {
   el.dataset.contrast = get('highContrast') ? 'high' : 'normal';
   el.dataset.motion = get('reduceMotion') ? 'reduce' : 'full';
   el.dataset.font = get('readableFont') ? 'readable' : 'classic';
+}
+
+let boundCtx = null;
+/**
+ * Keep <html> in sync with the live context: skin/accessibility settings,
+ * classic 1988 mode (data-classic → EGA UI skin + bitmap font) and frozen
+ * debug clocks (data-frozen → CSS animations parked so shots are identical).
+ * Idempotent; safe to call from any scene or panel.
+ * @param {import('../../core/context.js').GameContext} ctx
+ */
+export function bindSkin(ctx) {
+  if (typeof document === 'undefined' || !ctx) return;
+  const el = document.documentElement;
+  const syncClassic = (on) => {
+    el.dataset.classic = on ? '1' : '0';
+    if (on) registerBitmapFont();
+  };
+  syncClassic(!!(ctx.render?.classic ?? ctx.settings?.get?.('classicMode')));
+  if (ctx.clock?.frozen || ctx.debug?.frozen) el.dataset.frozen = '1';
+  if (boundCtx === ctx) return;
+  boundCtx = ctx;
+  applySkinSettings(ctx.settings);
+  ctx.bus?.on?.('settings:changed', ({ key, value }) => {
+    if (key === 'classicMode') syncClassic(!!value);
+    else if (key in SKIN_DEFAULTS) applySkinSettings(ctx.settings);
+  });
 }

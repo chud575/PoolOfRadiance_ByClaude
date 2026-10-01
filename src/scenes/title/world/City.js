@@ -3,8 +3,9 @@ import { getTextureSet, getGlowTexture } from '../../../render/textures/index.js
 import { createFlameBatch } from '../../../render/lighting.js';
 import { NOISE } from './glsl.js';
 import { prng, ni, worldUV, tint, box, gable, pyramid, cylinder, cone, merge } from './geom.js';
+import { column, dome, gableRoof, robedFigure, addRimLight } from './arch.js';
 
-export const CITY_TEXTURES = ['hd_ashlar', 'hd_roof_clay', 'hd_roof_slate', 'hd_rubble'];
+export const CITY_TEXTURES = ['hd_ashlar', 'hd_roof_clay', 'hd_roof_slate', 'hd_roof_shake', 'hd_rubble', 'hd_beam_dark', 'hd_limestone'];
 
 const GROUND = -14;
 
@@ -21,6 +22,10 @@ export function createCity({ seed = 1988 } = {}) {
   const walls = [];
   const roofs = [];
   const slate = [];
+  const shake = [];
+  const beams = [];
+  const fine = []; // dressed limestone (columns, mouldings)
+  const people = [];
   const windows = [];
   const fires = [];
   const lamps = [];
@@ -31,6 +36,7 @@ export function createCity({ seed = 1988 } = {}) {
   const stoneCols = [0x8a8076, 0x7a7068, 0x958778, 0x6f675f, 0x857a6b];
   const roofCols = [0xb0705a, 0x9a6050, 0xc08a6a, 0x8f5a48];
   const slateCols = [0x6e7688, 0x5d6475, 0x7a7f8c];
+  const shakeCols = [0x8a6a4a, 0x7a5c40, 0x9a7a56];
 
   const addWin = (m, lx, ly, lz, ry, w = 0.5, h = 0.8, warm = 1) => {
     const g = new THREE.PlaneGeometry(w, h);
@@ -72,22 +78,44 @@ export function createCity({ seed = 1988 } = {}) {
         g.applyMatrix4(m);
         walls.push(tint(worldUV(g, 3), 0x5a524a));
       }
+      // charred roof timbers: a few rafters still spanning, others fallen in
+      const nb = R.int(2, 5);
+      for (let k = 0; k < nb; k++) {
+        const fallen = R.chance(0.45);
+        const len = d * R.range(0.6, 1.05);
+        const g = box(0.22, 0.26, len, { x: -w / 2 + w * R.range(0.1, 0.9), y: fallen ? R.range(0.3, 1.5) : h * R.range(0.55, 0.95), z: 0, rx: fallen ? R.range(0.3, 0.7) * (R.chance(0.5) ? 1 : -1) : R.range(-0.08, 0.08), rz: R.range(-0.1, 0.1) });
+        g.applyMatrix4(m);
+        beams.push(tint(worldUV(g, 1.5), R.chance(0.5) ? 0x2a1e16 : 0x4a3424));
+      }
+      if (R.chance(0.35)) {
+        // a collapsed half-roof slab leaning into the shell
+        const gr = gableRoof(w * 0.6, d, d * 0.45, { o: 0.2, t: 0.2, ridge: false });
+        const mm = new THREE.Matrix4().makeRotationZ(R.range(0.25, 0.5)).setPosition(-w * 0.15, h * 0.35, 0).premultiply(m);
+        roofs.push(tint(gr.roof[0].applyMatrix4(mm), 0x7a4a3a));
+      }
       return;
     }
     const g = box(w, h, d);
     g.applyMatrix4(m);
     walls.push(tint(worldUV(g, 3), col, { aoBottom: base, aoTop: base + 4 }));
     const kind = R.next();
-    if (kind < 0.62) {
-      const rg = gable(w, d, d * R.range(0.38, 0.55));
-      rg.applyMatrix4(new THREE.Matrix4().makeRotationY(0).setPosition(0, h, 0));
-      rg.applyMatrix4(m);
-      const isSlate = R.chance(0.35);
-      (isSlate ? slate : roofs).push(tint(worldUV(rg, 2), R.pick(isSlate ? slateCols : roofCols)));
-    } else if (kind < 0.85) {
-      const rg = pyramid(Math.max(w, d), Math.max(w, d) * 0.5, { y: h });
+    if (kind < 0.66) {
+      const rise = d * R.range(0.36, 0.55);
+      const gr = gableRoof(w, d, rise, { o: R.range(0.35, 0.6), t: R.range(0.18, 0.26) });
+      const mm = new THREE.Matrix4().makeTranslation(0, h, 0).premultiply(m);
+      const pick = R.next();
+      const list = pick < 0.45 ? roofs : pick < 0.78 ? slate : shake;
+      const rc = list === roofs ? R.pick(roofCols) : list === slate ? R.pick(slateCols) : R.pick(shakeCols);
+      for (const g of gr.roof) list.push(tint(g.applyMatrix4(mm), rc));
+      for (const g of gr.caps) list.push(tint(g.applyMatrix4(mm), new THREE.Color(rc).multiplyScalar(0.8)));
+      for (const g of gr.gables) walls.push(tint(g.applyMatrix4(mm), col));
+    } else if (kind < 0.87) {
+      const rg = pyramid(Math.max(w, d) * 1.12, Math.max(w, d) * 0.5, { y: h - 0.15 });
       rg.applyMatrix4(m);
       slate.push(tint(worldUV(rg, 2), R.pick(slateCols)));
+      const fas = box(w + 0.5, 0.25, d + 0.5, { y: h - 0.2 });
+      fas.applyMatrix4(m);
+      beams.push(tint(worldUV(fas, 2), 0x3a2a1e));
     } else {
       // flat roof with parapet
       const pg = box(w + 0.2, 0.5, d + 0.2, { y: h });
@@ -220,43 +248,81 @@ export function createCity({ seed = 1988 } = {}) {
   }
 
   // ---- Temple of Tyr (dome) and the Council hall (New Phlan) ----------------
+  const xform = (list, geos, mtx) => { for (const g of geos) list.push(g.applyMatrix4(mtx)); };
   {
     const tx = -42, tz = -96;
     walls.push(tint(worldUV(box(14, 11, 14, { x: tx, z: tz, y: GROUND }), 3), 0xa39684, { aoBottom: GROUND, aoTop: GROUND + 4 }));
-    walls.push(tint(worldUV(cylinder(6.4, 6.4, 2.5, 20, { x: tx, y: GROUND + 11, z: tz }), 3), 0xa39684));
-    const dome = new THREE.SphereGeometry(6.6, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2);
-    dome.translate(tx, GROUND + 13.5, tz);
-    slate.push(tint(worldUV(ni(dome), 2), 0x5f8a80));
+    walls.push(tint(worldUV(box(14.8, 0.6, 14.8, { x: tx, z: tz, y: GROUND + 10.6 }), 2), 0xb5a792));
+    // corner pinnacles
+    for (const [dx, dz] of [[-7, -7], [7, -7], [-7, 7], [7, 7]]) {
+      walls.push(tint(worldUV(box(1.2, 2.2, 1.2, { x: tx + dx, z: tz + dz, y: GROUND + 11.2 }), 2), 0xa89a86));
+      slate.push(tint(worldUV(pyramid(1.3, 1.6, { x: tx + dx, z: tz + dz, y: GROUND + 13.4 }), 1), 0x5f8a80));
+    }
+    const dm = dome({ r: 6.2, drumH: 2.8, ribs: 16 });
+    const mt = new THREE.Matrix4().makeTranslation(tx, GROUND + 11.2, tz);
+    xform(fine, dm.stone, mt);
+    xform(slate, dm.roof, mt);
+    xform(windows, dm.windows, mt);
     const m = new THREE.Matrix4().setPosition(tx, GROUND, tz);
-    for (let i = 0; i < 4; i++) addWin(m, -4.5 + i * 3, 6, 7.05, 0, 0.8, 2.2, 1.5);
+    for (let i = 0; i < 4; i++) addWin(m, -4.5 + i * 3, 6, 7.05, 0, 0.8, 2.2, 1.0);
     // the council hall: a long civic hall with a pedimented portico on its plaza
     const hx = -20, hz = -60, hw = 18, hd = 9, hh = 9;
     walls.push(tint(worldUV(box(hw, hh, hd, { x: hx, y: GROUND, z: hz }), 3), 0xa89a86, { aoBottom: GROUND, aoTop: GROUND + 4 }));
-    walls.push(tint(worldUV(box(hw + 0.6, 0.6, hd + 0.6, { x: hx, y: GROUND + hh, z: hz }), 3), 0xb8aa94));
-    const hr = gable(hw, hd, 4.2, { o: 0.5 });
-    hr.translate(hx, GROUND + hh + 0.6, hz);
-    slate.push(tint(worldUV(hr, 2), 0x5d6475));
+    // string courses + plinth
+    fine.push(tint(worldUV(box(hw + 0.4, 0.9, hd + 0.4, { x: hx, y: GROUND, z: hz }), 2), 0x9a8c78));
+    fine.push(tint(worldUV(box(hw + 0.3, 0.25, hd + 0.3, { x: hx, y: GROUND + 4.3, z: hz }), 2), 0xbcae98));
+    fine.push(tint(worldUV(box(hw + 0.8, 0.7, hd + 0.8, { x: hx, y: GROUND + hh, z: hz }), 2), 0xc0b29c));
+    const hr = gableRoof(hw, hd + 0.8, 3.8, { o: 0.55, t: 0.3 });
+    const rm = new THREE.Matrix4().makeTranslation(hx, GROUND + hh + 0.7, hz);
+    for (const g of hr.roof) slate.push(tint(g.applyMatrix4(rm), 0x66708a));
+    for (const g of hr.caps) fine.push(tint(g.applyMatrix4(rm), 0x8a8f9a));
+    for (const g of hr.gables) walls.push(tint(g.applyMatrix4(rm), 0xa89a86));
     const hm = new THREE.Matrix4().setPosition(hx, GROUND, hz);
     for (let f = 0; f < 2; f++) for (let i = 0; i < 8; i++) {
-      if (f === 0 && (i === 3 || i === 4)) continue;
-      addWin(hm, -7.7 + i * 2.2, 2.2 + f * 3.6, hd / 2 + 0.04, 0, 0.8, 1.6, 0.9);
+      if (f === 0 && (i >= 2 && i <= 5)) continue;
+      addWin(hm, -7.7 + i * 2.2, 2.0 + f * 3.8, hd / 2 + 0.04, 0, 0.8, 1.7, 0.75);
+      // window surrounds (lintel + sill)
+      fine.push(tint(worldUV(box(1.15, 0.18, 0.2, { x: hx - 7.7 + i * 2.2, y: GROUND + 2.0 + f * 3.8 + 0.88, z: hz + hd / 2 + 0.08 }), 1), 0xc4b8a2));
+      fine.push(tint(worldUV(box(1.05, 0.12, 0.26, { x: hx - 7.7 + i * 2.2, y: GROUND + 2.0 + f * 3.8 - 0.94, z: hz + hd / 2 + 0.1 }), 1), 0xc4b8a2));
     }
-    // portico: steps, six columns, entablature, pediment
+    // portico: steps, six fluted drum columns with capitals, entablature, pediment
     const pz = hz + hd / 2;
-    for (let k = 0; k < 3; k++) walls.push(tint(worldUV(box(12 - k * 0.6, 0.3, 4.4 - k * 0.5, { x: hx, y: GROUND + k * 0.3, z: pz + 2.2 - k * 0.25 }), 2), 0xb5a792));
-    for (let i = 0; i < 6; i++) walls.push(tint(worldUV(cylinder(0.32, 0.38, 5.6, 12, { x: hx - 4.5 + i * 1.8, y: GROUND + 0.9, z: pz + 3.4 }), 2), 0xcfc3ae));
-    walls.push(tint(worldUV(box(11.6, 0.9, 3.2, { x: hx, y: GROUND + 6.5, z: pz + 2.2 }), 2), 0xbcae98));
-    const ped = gable(3.2, 11.6, 2.0, { o: 0.2, ry: Math.PI / 2 });
-    ped.translate(hx, GROUND + 7.4, pz + 2.2);
-    walls.push(tint(worldUV(ped, 2), 0xb4a690));
-    addWin(hm, 0, 1.6, hd / 2 + 0.05, 0, 2.0, 3.0, 1.2); // open doors, warm light within
-    lamps.push(new THREE.Vector3(hx - 2.2, GROUND + 3.2, pz + 3.9), new THREE.Vector3(hx + 2.2, GROUND + 3.2, pz + 3.9));
+    for (let k = 0; k < 4; k++) fine.push(tint(worldUV(box(12.6 - k * 0.5, 0.26, 5.0 - k * 0.42, { x: hx, y: GROUND + k * 0.26, z: pz + 2.5 - k * 0.21 }), 1.5), 0xb5a792, { aoBottom: GROUND, aoTop: GROUND + 1.2 }));
+    const colBase = GROUND + 1.04;
+    for (let i = 0; i < 6; i++) {
+      const cm = new THREE.Matrix4().makeTranslation(hx - 4.5 + i * 1.8, colBase, pz + 3.4);
+      xform(fine, column({ h: 5.4, r: 0.36, flutes: 18, seed: 40 + i, color: 0xd6cab4, plinth: true }), cm);
+    }
+    fine.push(tint(worldUV(box(11.8, 0.7, 3.4, { x: hx, y: colBase + 5.4, z: pz + 2.2 }), 2), 0xc8bca6));
+    fine.push(tint(worldUV(box(11.8, 0.62, 3.3, { x: hx, y: colBase + 6.1, z: pz + 2.2 }), 2), 0xb8ac96));
+    fine.push(tint(worldUV(box(12.4, 0.24, 3.8, { x: hx, y: colBase + 6.72, z: pz + 2.2 }), 2), 0xd0c4ae));
+    const ped = gableRoof(3.6, 12.2, 2.0, { o: 0.25, t: 0.26, ridge: false });
+    const pm = new THREE.Matrix4().makeRotationY(Math.PI / 2).setPosition(hx, colBase + 6.96, pz + 2.2);
+    for (const g of ped.roof) slate.push(tint(g.applyMatrix4(pm), 0x66708a));
+    for (const g of ped.gables) fine.push(tint(g.applyMatrix4(pm), 0xc6baa4));
+    // tympanum roundel (the Council's sun-and-scales)
+    const tymp = new THREE.CircleGeometry(0.62, 24);
+    tymp.translate(hx, colBase + 7.75, pz + 4.02);
+    fine.push(tint(worldUV(ni(tymp), 1), 0xd8b25a));
+    addWin(hm, 0, 1.75, hd / 2 + 0.05, 0, 2.2, 3.1, 0.95); // open doors, warm light within
+    lamps.push(new THREE.Vector3(hx - 2.2, GROUND + 3.4, pz + 3.9), new THREE.Vector3(hx + 2.2, GROUND + 3.4, pz + 3.9));
     for (const lx of [-12, -4, 4, 12]) {
       walls.push(tint(worldUV(cylinder(0.08, 0.1, 3.4, 6, { x: hx + lx, y: GROUND, z: pz + 12 }), 1), 0x2a2622));
       lamps.push(new THREE.Vector3(hx + lx, GROUND + 3.5, pz + 12));
     }
     banners.push([hx - 3.6, pz + 3.3], [hx + 3.6, pz + 3.3]);
     tower(hx + 10.5, hz, 2.2, 19, { roof: 'cone', lit: 1 });
+    // townsfolk gathered on the steps to read the proclamation; a guard at the door
+    const folk = [
+      [-1.6, 6.6, 0x6a2018, 0.2], [-0.9, 7.2, 0x2a3a5a, -0.3], [0.4, 6.9, 0x4a3a28, 0.1], [1.4, 7.4, 0x3a2a40, 0.4],
+      [2.4, 6.4, 0x5a4a30, -0.2], [-2.8, 7.6, 0x2a2a2a, 0.6], [-0.2, 4.6, 0x7a1a14, 3.14], [3.6, 5.2, 0x1a2a4a, 2.6],
+    ];
+    folk.forEach(([fx, fz, c, ry], i) => {
+      const f = robedFigure({ height: 1.62 + (i % 3) * 0.08, robe: c, hood: i % 2 === 0, seed: i + 3 });
+      const level = fz < 5.6 ? 0.78 : 0;
+      const fm = new THREE.Matrix4().makeRotationY(ry).setPosition(hx + fx, GROUND + level, pz + fz);
+      for (const g of [...f.cloth, ...f.skin]) people.push(g.applyMatrix4(fm));
+    });
   }
 
   // ---- harbour: quays, lighthouse ------------------------------------------
@@ -276,10 +342,15 @@ export function createCity({ seed = 1988 } = {}) {
     const t = getTextureSet(name);
     return new THREE.MeshStandardMaterial({ map: t.map, normalMap: t.normalMap, roughnessMap: t.roughnessMap, vertexColors: true, roughness: 1, ...extra });
   };
-  const wallMat = texMat('hd_ashlar');
-  const roofMat = texMat('hd_roof_clay');
-  const slateMat = texMat('hd_roof_slate');
-  disposables.push(wallMat, roofMat, slateMat);
+  const rimU = { uSunView: { value: new THREE.Vector3(0, 0, -1) }, uRimColor: { value: new THREE.Color(1.0, 0.55, 0.28) } };
+  const wallMat = addRimLight(texMat('hd_ashlar'), rimU, 1);
+  const roofMat = addRimLight(texMat('hd_roof_clay'), rimU, 1.2);
+  const slateMat = addRimLight(texMat('hd_roof_slate', { metalness: 0.05 }), rimU, 1.2);
+  const shakeMat = addRimLight(texMat('hd_roof_shake'), rimU, 1.2);
+  const beamMat = addRimLight(texMat('hd_beam_dark'), rimU, 0.8);
+  const fineMat = addRimLight(texMat('hd_limestone'), rimU, 1);
+  const peopleMat = addRimLight(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }), rimU, 1.4);
+  disposables.push(wallMat, roofMat, slateMat, shakeMat, beamMat, fineMat, peopleMat);
   const addMesh = (list, mat, shadow = false) => {
     if (!list.length) return null;
     const g = merge(list);
@@ -292,20 +363,32 @@ export function createCity({ seed = 1988 } = {}) {
   addMesh(walls, wallMat);
   addMesh(roofs, roofMat);
   addMesh(slate, slateMat);
+  addMesh(shake, shakeMat);
+  addMesh(beams, beamMat);
+  addMesh(fine, fineMat);
+  addMesh(people, peopleMat);
   // lit windows: leaded panes (mullions + transom), brighter at the sill like firelight within
   const winMat = new THREE.ShaderMaterial({
     vertexColors: true,
-    uniforms: { uGain: { value: new THREE.Color(2.3, 1.55, 0.9) } },
+    uniforms: { uGain: { value: new THREE.Color(1.55, 1.0, 0.56) } },
     vertexShader: /* glsl */ `varying vec2 vUv; varying vec3 vCol; void main(){ vUv = uv; vCol = color; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: /* glsl */ `
       uniform vec3 uGain; varying vec2 vUv; varying vec3 vCol;
       void main(){
-        vec2 f = abs(fract(vUv * vec2(2.0, 3.0)) - 0.5);
-        float bars = smoothstep(0.43, 0.47, max(f.x, f.y));
-        float frame = step(0.92, max(abs(vUv.x - 0.5), abs(vUv.y - 0.5)) * 2.0);
-        float glow = mix(1.25, 0.7, vUv.y);
-        vec3 c = vCol * uGain * glow * (1.0 - bars * 0.75) * (1.0 - frame * 0.85);
-        gl_FragColor = vec4(c, 1.0);
+        // leaded lights: 2x4 panes, mullion + transom thicker than the cames
+        vec2 g = vUv * vec2(2.0, 4.0);
+        vec2 f = abs(fract(g) - 0.5);
+        float cames = smoothstep(0.40, 0.46, max(f.x, f.y));
+        float mull = 1.0 - smoothstep(0.035, 0.06, abs(vUv.x - 0.5));
+        float trans = 1.0 - smoothstep(0.03, 0.05, abs(vUv.y - 0.62));
+        float frame = smoothstep(0.86, 0.94, max(abs(vUv.x - 0.5), abs(vUv.y - 0.5)) * 2.0);
+        // interior: warm hearth glow low and centred, falling to dim corners; a hint of a ceiling beam
+        float glow = exp(-pow((vUv.x - 0.5) * 1.6, 2.0) - pow((vUv.y - 0.25) * 1.3, 2.0));
+        float beam = 1.0 - 0.35 * (1.0 - smoothstep(0.0, 0.05, abs(vUv.y - 0.86)));
+        vec3 c = vCol * uGain * (0.35 + 0.8 * glow) * beam;
+        float lead = max(max(cames * 0.7, mull), max(trans, frame));
+        c *= 1.0 - lead * 0.88;
+        gl_FragColor = vec4(min(c, vec3(1.25, 0.9, 0.6)), 1.0);
       }`,
   });
   disposables.push(winMat);
@@ -330,8 +413,8 @@ export function createCity({ seed = 1988 } = {}) {
   lamps.forEach((p, i) => {
     const s = new THREE.Sprite(lampMat);
     s.position.copy(p);
-    s.scale.setScalar(2.2);
-    s.userData.base = 2.2;
+    s.scale.setScalar(0.65);
+    s.userData.base = 0.65;
     s.userData.seed = 10 + i;
     group.add(s);
     glows.push(s);
@@ -339,15 +422,26 @@ export function createCity({ seed = 1988 } = {}) {
   if (banners.length) {
     const bg = [];
     for (const [bx, bz] of banners) {
-      const g = new THREE.PlaneGeometry(1.1, 3.6, 1, 4);
+      const g = new THREE.PlaneGeometry(1.1, 3.6, 8, 10);
       const p = g.attributes.position;
-      for (let k = 0; k < p.count; k++) p.setZ(k, Math.sin(p.getY(k) * 1.4) * 0.06);
+      const col = new Float32Array(p.count * 3);
+      for (let k = 0; k < p.count; k++) {
+        const x = p.getX(k), y = p.getY(k);
+        // vertical folds + a swallow-tail hem
+        p.setZ(k, Math.sin(x * 11) * 0.07 + Math.sin(y * 1.4) * 0.05);
+        if (y < -1.7) p.setY(k, y - (0.55 - Math.abs(x)) * 0.6);
+        const hem = Math.abs(x) > 0.47 || y > 1.66 ? 1 : 0;
+        const device = Math.hypot(x, y - 0.5) < 0.28 && Math.hypot(x, y - 0.5) > 0.2 ? 1 : 0;
+        const c = hem || device ? [0.85, 0.62, 0.25] : [0.55, 0.1, 0.08];
+        col.set(c, k * 3);
+      }
       g.computeVertexNormals();
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
       g.translate(bx, GROUND + 4.2, bz);
       bg.push(g);
     }
-    const bgeo = merge(bg.map((g) => tint(g, 0xffffff)));
-    const bmat = new THREE.MeshStandardMaterial({ color: 0x8a1c16, roughness: 0.85, side: THREE.DoubleSide, emissive: 0x2a0604 });
+    const bgeo = merge(bg);
+    const bmat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide, emissive: 0x1a0402 });
     disposables.push(bgeo, bmat);
     group.add(new THREE.Mesh(bgeo, bmat));
   }
@@ -376,7 +470,7 @@ export function createCity({ seed = 1988 } = {}) {
       vertexShader: /* glsl */ `attribute float aSeed; uniform float uTime; varying float vF;
         void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv;
           vF = 0.75 + 0.25 * sin(uTime * (3.0 + aSeed * 5.0) + aSeed * 40.0);
-          gl_PointSize = clamp(2400.0 / -mv.z, 1.5, 22.0) * (0.6 + aSeed * 0.6); }`,
+          gl_PointSize = clamp(1400.0 / -mv.z, 1.2, 7.0) * (0.6 + aSeed * 0.6); }`,
       fragmentShader: /* glsl */ `varying float vF; void main(){ vec2 d = gl_PointCoord - 0.5; float r = length(d) * 2.0;
           float k = exp(-r * r * 10.0) + exp(-r * r * 2.5) * 0.25; gl_FragColor = vec4(vec3(1.6, 0.85, 0.35) * k * vF, 1.0); }`,
     });
@@ -398,7 +492,9 @@ export function createCity({ seed = 1988 } = {}) {
     fires,
     ships,
     ground: GROUND,
-    update(t) {
+    /** @param {number} t @param {THREE.Camera} [camera] @param {THREE.Vector3} [sunDir] */
+    update(t, camera, sunDir) {
+      if (camera && sunDir) rimU.uSunView.value.copy(sunDir).transformDirection(camera.matrixWorldInverse);
       smoke.update(t);
       cityTime.value = t;
       for (const s of glows) {

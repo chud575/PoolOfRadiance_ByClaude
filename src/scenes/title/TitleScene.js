@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { Scene } from '../../core/Scene.js';
 import { h, Menu } from '../../ui/UI.js';
-import { SettingsPanel } from '../../ui/SettingsPanel.js';
+import { SettingsPanel, padGlyph } from '../../ui/SettingsPanel.js';
+import { bindSkin } from '../../ui/styles/skin.js';
 import { buildParty } from '../../rules/party.js';
 import { createWorld, preloadWorld } from './world/World.js';
 import { createLogo } from './Logo.js';
@@ -43,6 +44,7 @@ const LOGO = {
 export default class TitleScene extends Scene {
   async enter(params = {}) {
     const { ctx } = this;
+    bindSkin(ctx);
     await preloadWorld();
     this.world = createWorld();
     this.scene3d = this.world.scene;
@@ -77,12 +79,12 @@ export default class TitleScene extends Scene {
     const saves = ctx.saves.list().sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
     this.latestSave = saves[0] ?? null;
     const items = [
-      { id: 'continue', label: 'Continue', key: 'C', disabled: !this.latestSave, desc: this.latestSave ? this._saveLine(this.latestSave) : 'No adventure in progress.' },
+      { id: 'continue', label: 'Continue', key: 'C', locked: !this.latestSave, desc: this.latestSave ? this._saveLine(this.latestSave) : 'Locked — no adventure in progress yet. Begin a New Game; Phlan autosaves as you go.' },
       { id: 'new', label: 'New Game', key: 'N', desc: 'Hear the Council of Phlan, then roll up a party of six.' },
-      { id: 'load', label: 'Load Game', key: 'L', disabled: !saves.length, desc: saves.length ? `${saves.length} saved game${saves.length > 1 ? 's' : ''} in the chronicle.` : 'No saved games yet.' },
+      { id: 'load', label: 'Load Game', key: 'L', locked: !saves.length, desc: saves.length ? `${saves.length} saved game${saves.length > 1 ? 's' : ''} in the chronicle.` : 'Locked — the chronicle is empty. Save from camp (Encamp) or with F5.' },
       { id: 'quick', label: 'Quick Start', key: 'Q', desc: 'Skip ahead with a ready-made party of six adventurers.' },
       { id: 'settings', label: 'Settings', key: 'S', desc: 'Graphics, classic 1988 mode, pace, audio, controls and accessibility.' },
-      { id: 'credits', label: 'Credits', key: 'R', desc: 'Those who made this homage, and those who made the original.' },
+      { id: 'credits', label: 'About & Credits', key: 'A', desc: 'Those who made this homage, and those who made the original.' },
     ];
     this.menuItems = items;
     this.descEl = h('div.por-mm-desc');
@@ -93,6 +95,7 @@ export default class TitleScene extends Scene {
         if (changed) ctx.audio.sfx('click', { bus: 'ui', pitch: 1.4 });
       },
       onCancel: () => this.setMode('card'),
+      onLocked: () => ctx.audio.sfx('error', { bus: 'ui' }),
       bus: ctx.bus,
       autofocus: false,
       className: 'por-mm-list',
@@ -135,13 +138,16 @@ export default class TitleScene extends Scene {
   }
 
   _legend(mode) {
+    const back = () => this.setMode('menu');
     const L = {
-      card: [['Enter', 'Begin'], ['F2', 'Classic 1988']],
-      menu: [['↑↓', 'Select'], ['Enter', 'Choose'], ['Esc', 'Back'], ['F2', 'Classic 1988']],
-      load: [['↑↓', 'Select'], ['Enter', 'Load'], ['Del', 'Delete'], ['Esc', 'Back']],
-      credits: [['Esc', 'Back']],
+      card: [['Enter', 'Begin', 'A', () => this.setMode('menu')], ['F2', 'Classic 1988', null, () => this.ctx.bus.emit('input:action', { action: 'toggleClassic', code: 'F2' })]],
+      menu: [['↑↓', 'Select', '↑'], ['Enter', 'Choose', 'A'], ['Esc', 'Back', 'B', () => this.setMode('card')], ['F2', 'Classic 1988']],
+      load: [['↑↓', 'Select', '↑'], ['Enter', 'Load', 'A'], ['Del', 'Delete', 'X'], ['Esc', 'Back', 'B', back]],
+      credits: [['Esc', 'Back', 'B', back]],
     }[mode] ?? [];
-    this.legendEl.replaceChildren(...L.map(([k, t]) => h('span.por-title-legend-item', [h('span.por-keycap', [k]), h('span', [t])])));
+    this.legendEl.replaceChildren(...L.map(([k, t, pad, fn]) => h(fn ? 'button.por-title-legend-item.click' : 'span.por-title-legend-item', fn ? { type: 'button', onclick: (e) => { e.stopPropagation(); fn(); } } : {}, [
+      h('span.por-keycap', [k]), pad ? padGlyph(pad) : null, h('span', [t]),
+    ])));
   }
 
   // ------------------------------------------------------------------- modes
@@ -160,6 +166,7 @@ export default class TitleScene extends Scene {
       this.intro = null;
     }
     if (mode === 'menu') queueMicrotask(() => this.mode === 'menu' && this.menu.focus());
+    if (mode === 'menu' && prev !== 'menu' && this.menuItems[this.menu.index]?.locked) this.menu.highlightId('new');
     if (mode === 'settings') {
       this.panel = new SettingsPanel(this.ctx, { tab, onClose: () => this.setMode('menu') });
       this.panelEl.replaceChildren(this.panel.el);
@@ -208,7 +215,7 @@ export default class TitleScene extends Scene {
     if (e.ctrlKey || e.metaKey || e.altKey || this.ctx.ui.layers.modal.children.length) return;
     if (this.mode === 'card') {
       if (['F2', 'F5', 'F9', 'Tab', 'Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
-      const it = this.menuItems.find((x) => x.key && x.key.toUpperCase() === e.key.toUpperCase() && !x.disabled);
+      const it = this.menuItems.find((x) => x.key && x.key.toUpperCase() === e.key.toUpperCase() && !x.disabled && !x.locked);
       e.preventDefault();
       if (it) this.select(it.id);
       else this.setMode('menu');

@@ -8,7 +8,8 @@ import { h, clear, hotkeyLabel } from '../dom.js';
  * A command with `action` names an InputManager action: the scene already handles
  * that action (with its rebindable keys), so the bar does NOT also bind `key` as a
  * letter hotkey (that would double-fire, or collide with WASD/QE movement). `key`
- * is then only displayed: underlined if the label contains it, else as a key badge.
+ * is then only displayed, always as a keycap badge (one notation for the whole
+ * bar). Commands without `action` keep the 1988 highlighted-capital hotkey.
  */
 export class CommandBar {
   constructor(commands = [], { title = '' } = {}) {
@@ -29,7 +30,7 @@ export class CommandBar {
         disabled: !!c.disabled,
         dataset: { tip: c.tip ?? '', cmd: c.id },
         onclick: () => !c.disabled && c.onSelect?.(c),
-      }, c.action && c.key && !c.label.toUpperCase().includes(c.key.toUpperCase())
+      }, c.action && c.key
         ? [h('span', [c.label]), h('span.por-hk-badge', [c.key])]
         : [hotkeyLabel(c.label, c.key)]);
       this.el.append(b);

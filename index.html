@@ -32,6 +32,7 @@
         el.dataset.contrast = s.highContrast ? 'high' : 'normal';
         el.dataset.motion = s.reduceMotion ? 'reduce' : 'full';
         el.dataset.font = s.readableFont ? 'readable' : 'classic';
+        el.dataset.classic = s.classicMode || /[?&]classic=1/.test(location.search) ? '1' : '0';
       } catch (e) { /* storage unavailable */ }
     })();
   </script>

@@ -3,6 +3,7 @@ import { Frame } from './components/Frame.js';
 import { PartyRoster } from './components/PartyRoster.js';
 import { MessageLog } from './components/MessageLog.js';
 import { CommandBar } from './components/CommandBar.js';
+import { bindSkin } from './styles/skin.js';
 
 /**
  * The standard exploration HUD: location header (top-left), compass,
@@ -13,11 +14,37 @@ import { CommandBar } from './components/CommandBar.js';
  * @param {{commands: Array, logLines?: number, title?: string}} o
  */
 export function createStandardHud(ctx, o) {
+  bindSkin(ctx);
   const root = h('div.por-hud');
   const locName = h('div.name.por-gilt-text', ['']);
   const locSub = h('div.sub', ['']);
+  // the Gold Box status line ("7,11 N 10:00 SEARCH OFF") on a gilt plate
+  const st = { xy: h('span.v'), dir: h('span.v'), time: h('span.v'), day: h('span.v'), search: h('span.v') };
+  const seg = (label, v) => h('span.por-status-seg', [label ? h('span.k', [label]) : null, v]);
+  const status = h('div.por-hud-status', { dataset: { tip: 'Position · facing · day and hour · search mode' } }, [
+    seg('', st.xy), h('i.sep'), seg('', st.dir), h('i.sep'), seg('Day', st.day), seg('', st.time), h('i.sep'), seg('Search', st.search),
+  ]);
   const compass = createCompass();
-  const top = h('div.por-hud-top', [h('div.por-location', [locName, locSub]), h('div', { style: { marginRight: '19em' } }, [compass.el])]);
+  const top = h('div.por-hud-top', [h('div.por-location', [locName, status, locSub]), h('div', { style: { marginRight: '19em' } }, [compass.el])]);
+  let lastSub = '';
+  const renderStatus = () => {
+    const g = ctx.game;
+    const m = /^(\d+),(\d+) · facing (\w+) · Day (\d+), (\d\d:\d\d)/.exec(lastSub);
+    const c = g?.clock ?? { day: 1, hour: 0, minute: 0 };
+    const x = m ? m[1] : g?.location?.x ?? 0;
+    const y = m ? m[2] : g?.location?.y ?? 0;
+    const dir = m ? m[3][0] : g?.location?.dir ?? 'N';
+    st.xy.textContent = `${x},${y}`;
+    st.dir.textContent = dir;
+    st.day.textContent = m ? m[4] : String(c.day);
+    st.time.textContent = m ? m[5] : `${String(c.hour).padStart(2, '0')}:${String(c.minute).padStart(2, '0')}`;
+    const on = !!(g?.searchMode ?? g?.flags?.searchMode);
+    st.search.textContent = on ? 'On' : 'Off';
+    st.search.classList.toggle('on', on);
+    locSub.textContent = m ? '' : lastSub;
+    locSub.hidden = !!m || !lastSub;
+  };
+  const offs = ['location:changed', 'time:changed', 'search:changed'].map((e) => ctx.bus.on(e, () => renderStatus()));
   const roster = new PartyRoster(ctx);
   const rosterFrame = Frame({ title: 'Party', variant: 'blue', className: 'por-hud-right', children: [roster.el] });
   const log = new MessageLog(ctx.bus, { lines: o.logLines ?? 4 });
@@ -31,11 +58,14 @@ export function createStandardHud(ctx, o) {
     log,
     bar,
     compass,
+    status,
     setLocation(name, sub) {
       locName.textContent = name;
-      locSub.textContent = sub;
+      lastSub = sub ?? '';
+      renderStatus();
     },
     dispose() {
+      offs.forEach((off) => off?.());
       roster.dispose();
       log.dispose();
       bar.dispose();

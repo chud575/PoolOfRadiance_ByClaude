@@ -12,6 +12,7 @@ export const GALLERY = [
   { name: 'title_credits', query: 'scene=title&view=credits&t=9&seed=1' },
   { name: 'intro', query: 'scene=title&view=intro&t=13.5&seed=1' },
   { name: 'title_council', query: 'scene=title&view=intro&t=29&seed=1' },
+  { name: 'title_chamber', query: 'scene=title&view=intro&t=37&seed=1' },
   { name: 'create', query: 'scene=create&step=stats&t=2&seed=1' },
   { name: 'create_party', query: 'scene=create&party=default&t=2&seed=1' },
   { name: 'create_portrait', query: 'scene=create&step=portrait&t=2&seed=1' },

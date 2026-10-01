@@ -1,6 +1,6 @@
 import { h, clear } from './dom.js';
 import { Frame } from './components/Frame.js';
-import { applySkinSettings, SKIN_DEFAULTS } from './styles/skin.js';
+import { applySkinSettings, bindSkin, SKIN_DEFAULTS } from './styles/skin.js';
 import { DEFAULT_BINDINGS } from '../core/InputManager.js';
 import { DEFAULT_SETTINGS } from '../core/Settings.js';
 
@@ -48,7 +48,25 @@ export const ACTION_LABELS = [
   ]],
 ];
 
-const PAD_NAMES = { 0: 'A', 1: 'B', 2: 'X', 3: 'Y', 4: 'LB', 5: 'RB', 6: 'LT', 7: 'RT', 8: 'View', 9: 'Menu', 12: '↑', 13: '↓', 14: '←', 15: '→' };
+const PAD_NAMES = { 0: 'A', 1: 'B', 2: 'X', 3: 'Y', 4: 'LB', 5: 'RB', 6: 'LT', 7: 'RT', 8: 'View', 9: 'Menu', 10: 'LS', 11: 'RS', 12: '↑', 13: '↓', 14: '←', 15: '→' };
+
+/**
+ * One consistent gamepad glyph set (standard mapping): round face buttons in
+ * the usual A/B/X/Y colours, pill-shaped bumpers/triggers/system buttons,
+ * round d-pad arrows, and a dashed "unbound" glyph that matches empty key slots.
+ * @param {string|null} name  'A','B','X','Y','LB','RB','LT','RT','View','Menu','↑','↓','←','→' (null = unbound)
+ */
+export function padGlyph(name) {
+  if (!name) return h('span.por-pad.unbound', { title: 'Unbound' }, ['—']);
+  if ('ABXY'.includes(name) && name.length === 1) return h(`span.por-pad.face.${name.toLowerCase()}`, { title: `${name} button` }, [name]);
+  if ('↑↓←→'.includes(name)) return h('span.por-pad.dpad', { title: 'D-pad' }, [name]);
+  return h('span.por-pad.pill', { title: name }, [name]);
+}
+
+const keyCap = (code) => {
+  const l = keyLabel(code);
+  return '↑↓←→'.includes(l) && l.length === 1 ? h('span.por-arrow', [l]) : l;
+};
 
 /** Readable label for a KeyboardEvent.code. */
 export function keyLabel(code) {
@@ -86,6 +104,7 @@ export class SettingsPanel {
    */
   constructor(ctx, { tab = 'graphics', onClose = null, variant = 'screen' } = {}) {
     this.ctx = ctx;
+    bindSkin(ctx);
     this.onClose = onClose;
     this.sections = this._sections();
     this.tab = this.sections.some((s) => s.id === tab) ? tab : 'graphics';
@@ -200,9 +219,12 @@ export class SettingsPanel {
       h('button.por-set-tab', { type: 'button', role: 'tab', dataset: { tab: s.id }, onclick: () => this.setTab(s.id) }, [icon(s.id), h('span', [s.label])]),
     );
     this.tabsEl.append(
-      h('div.por-set-tabs-hint', [h('span.por-keycap', ['Q']), h('span.por-keycap.pad', ['LB'])]),
+      h('div.por-set-tabs-head', [
+        h('span.por-set-tabs-hint', [h('span.por-keycap', ['Q']), padGlyph('LB')]),
+        h('span.por-set-tabs-cap', ['Sections']),
+        h('span.por-set-tabs-hint', [padGlyph('RB'), h('span.por-keycap', ['E'])]),
+      ]),
       ...this.tabBtns,
-      h('div.por-set-tabs-hint', [h('span.por-keycap', ['E']), h('span.por-keycap.pad', ['RB'])]),
     );
     this.headEl = h('div.por-set-head');
     this.bodyEl = h('div.por-set-body');
@@ -210,24 +232,28 @@ export class SettingsPanel {
       h('div.por-set-legend', [
         h('span', [h('span.por-keycap', ['↑']), h('span.por-keycap', ['↓']), ' Select']),
         h('span', [h('span.por-keycap', ['←']), h('span.por-keycap', ['→']), ' Adjust']),
-        h('span', [h('span.por-keycap', ['Enter']), h('span.por-keycap.pad.a', ['A']), ' Toggle']),
-        h('span', [h('span.por-keycap', ['Esc']), h('span.por-keycap.pad.b', ['B']), ' Back']),
+        h('span', [h('span.por-keycap', ['Enter']), padGlyph('A'), ' Toggle']),
+        h('span', [h('span.por-keycap', ['Esc']), padGlyph('B'), ' Back']),
       ]),
       h('div.por-set-actions', [
         h('button.por-btn', { type: 'button', onclick: () => this.resetSection() }, ['Restore defaults']),
         h('button.por-btn.primary', { type: 'button', onclick: () => this.close() }, ['Done']),
       ]),
     ]);
-    const main = h('div.por-set-main', [this.headEl, this.bodyEl]);
+    this.moreEl = h('button.por-set-more', { type: 'button', onclick: () => { this.bodyEl.scrollBy({ top: this.bodyEl.clientHeight * 0.7, behavior: 'smooth' }); } }, ['More below', h('span.por-set-more-arrow', ['▾'])]);
+    this.bodyEl.addEventListener('scroll', () => this._updateScrollCue());
+    const main = h('div.por-set-main', [this.headEl, h('div.por-set-bodywrap', [this.bodyEl, this.moreEl])]);
+    this.mainEl = main;
     this.frame = Frame({ title: 'Settings', variant: 'blue', className: 'por-set-frame', children: [h('div.por-set-layout', [this.tabsEl, main]), footer] });
     this.el.append(this.frame.el);
     this.setTab(this.tab, { silent: true });
   }
 
-  setTab(id, { silent = false } = {}) {
+  setTab(id, { silent = false, keepCapture = false, keepFocus = false } = {}) {
+    const sameTab = this.tab === id;
     this.tab = id;
-    this.focus = 0;
-    this.capture = null;
+    if (!(keepFocus && sameTab)) this.focus = 0;
+    if (!keepCapture) this.capture = null;
     this.tabBtns.forEach((b) => b.classList.toggle('sel', b.dataset.tab === id));
     const sec = this.sections.find((s) => s.id === id);
     clear(this.headEl).append(h('h2.por-set-title', [sec.label]), h('div.por-set-blurb', [sec.blurb ?? '']), h('div.por-rule'));
@@ -235,8 +261,44 @@ export class SettingsPanel {
     this.rowEls = [];
     if (sec.custom === 'bindings') this._buildBindings();
     else for (const row of sec.rows) this.bodyEl.append(this._row(row));
+    const note = this._note(sec.id);
+    if (note) this.bodyEl.append(note);
     this._markFocus();
+    queueMicrotask(() => this._updateScrollCue());
+    if (typeof requestAnimationFrame !== 'undefined') requestAnimationFrame(() => this._updateScrollCue());
     if (!silent) this.ctx.audio?.sfx?.('click', { bus: 'ui', pitch: 0.9 });
+  }
+
+  /** A small illustrated note that closes short sections (no dead space). */
+  _note(id) {
+    if (id === 'graphics') {
+      const ega = ['#000000', '#0000AA', '#00AA00', '#00AAAA', '#AA0000', '#AA00AA', '#AA5500', '#AAAAAA', '#555555', '#5555FF', '#55FF55', '#55FFFF', '#FF5555', '#FF55FF', '#FFFF55', '#FFFFFF'];
+      return h('div.por-set-note', [
+        h('div.por-set-swatches', ega.map((c) => h('i', { style: { background: c } }))),
+        h('div.por-set-note-text', [h('b', ['The 1988 palette. ']), 'Classic mode quantises every frame to these sixteen EGA colours and swaps the interface for the original blue double-rule frames and 5×7 lettering.']),
+      ]);
+    }
+    if (id === 'audio') {
+      return h('div.por-set-note', [
+        h('div.por-set-note-glyph', ['♪']),
+        h('div.por-set-note-text', [h('b', ['Every sound is synthesised. ']), 'Lutes, choirs, steel and spell-fire are performed live by the audio engine — no recordings — so the score follows the party from tavern to crypt.']),
+      ]);
+    }
+    if (id === 'access') {
+      return h('div.por-set-note.por-set-preview', [
+        h('div.por-set-note-cap', ['Preview']),
+        h('div.por-set-note-text', [h('b.por-gilt-text', ['The Slums. ']), 'The streets are strewn with rubble and debris. ', h('span.por-hk', ['K']), 'obolds lurk in the shadows.']),
+      ]);
+    }
+    return null;
+  }
+
+  _updateScrollCue() {
+    const b = this.bodyEl;
+    if (!b) return;
+    const more = b.scrollHeight - b.clientHeight - b.scrollTop > 4;
+    this.mainEl?.classList.toggle('more-below', more);
+    this.mainEl?.classList.toggle('more-above', b.scrollTop > 4);
   }
 
   _row(row) {
@@ -343,11 +405,11 @@ export class SettingsPanel {
               e.stopPropagation();
               this._beginCapture(action, i);
             },
-          }, [waiting ? 'Press a key…' : keys[i] ? keyLabel(keys[i]) : '—']);
+          }, [waiting ? 'Press a key…' : keys[i] ? keyCap(keys[i]) : '—']);
         };
         const row = h('div.por-bind-row', { dataset: { action } }, [
           h('span.por-bind-label', [label]), slot(0), slot(1),
-          h('span.por-bind-pad', pads.length ? pads.map((p) => h(p.length === 1 ? `span.por-keycap.pad${'ABXY'.includes(p) ? `.${p.toLowerCase()}` : ''}` : 'span.por-keycap', [p])) : ['—']),
+          h('span.por-bind-pad', pads.length ? pads.map((p) => padGlyph(p)) : [padGlyph(null)]),
         ]);
         row._activate = () => this._beginCapture(action, 0);
         row.addEventListener('mouseenter', () => this._setFocus(this.rowEls.indexOf(row)));
@@ -376,10 +438,22 @@ export class SettingsPanel {
   }
 
   _beginCapture(action, slot) {
+    if (!this.ctx.input) return;
     this.capture = { action, slot };
-    this.setTab('controls', { silent: true });
+    const scroll = this.bodyEl.scrollTop;
+    this.setTab('controls', { silent: true, keepCapture: true });
+    this.bodyEl.scrollTop = scroll;
     const i = this.rowEls.findIndex((r) => r.dataset.action === action);
     this._setFocus(i);
+    this.ctx.audio?.sfx?.('click', { bus: 'ui', pitch: 1.5 });
+  }
+
+  _rebuildBindings() {
+    const f = this.focus;
+    const scroll = this.bodyEl.scrollTop;
+    this.setTab('controls', { silent: true, keepFocus: true });
+    this.bodyEl.scrollTop = scroll;
+    this._setFocus(f);
   }
 
   _finishCapture(code) {
@@ -391,11 +465,9 @@ export class SettingsPanel {
     if (code === null) keys.splice(slot, 1);
     else if (slot < keys.length) keys[slot] = code;
     else keys.push(code);
-    input.rebind(action, [...new Set(keys.slice(0, 2).concat(keys.slice(2))), ...pads]);
+    input.rebind(action, [...new Set(keys), ...pads]);
     this.capture = null;
-    const f = this.focus;
-    this.setTab('controls', { silent: true });
-    this._setFocus(f);
+    this._rebuildBindings();
   }
 
   // ---------------------------------------------------------------- focus/input
@@ -407,6 +479,7 @@ export class SettingsPanel {
 
   _markFocus() {
     this.rowEls.forEach((r, j) => r.classList.toggle('focus', j === this.focus));
+    this._updateScrollCue();
     const r = this.rowEls[this.focus];
     if (r && this.bodyEl.scrollHeight > this.bodyEl.clientHeight) {
       const top = r.offsetTop - this.bodyEl.offsetTop;
@@ -425,11 +498,12 @@ export class SettingsPanel {
     if (!this.el.isConnected) return;
     if (this.capture) {
       e.preventDefault();
-      e.stopPropagation();
+      e.stopImmediatePropagation();
+      if (['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight'].includes(e.code) && e.repeat) return;
       if (e.code === 'Escape') {
         this.capture = null;
-        this.setTab('controls', { silent: true });
-      } else if (e.code === 'Delete') this._finishCapture(null);
+        this._rebuildBindings();
+      } else if (e.code === 'Delete' || e.code === 'Backspace') this._finishCapture(null);
       else this._finishCapture(e.code);
       return;
     }

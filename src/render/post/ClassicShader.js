@@ -41,9 +41,24 @@ export const ClassicShader = {
       vec2 cell = floor(uv * uVirtual);
       vec2 suv = (cell + 0.5) / uVirtual;
       vec3 src = texture2D(tDiffuse, suv).rgb;
+      // EGA art was drawn in saturated primaries: push chroma + midtone contrast
+      // before matching so dusk hues land on blues/cyans/browns, not a grey ramp.
+      float luma = dot(src, vec3(0.299, 0.587, 0.114));
+      src = clamp(mix(vec3(luma), src, 1.9), 0.0, 1.0);
+      src = clamp((src - 0.5) * 1.15 + 0.5 + 0.04, 0.0, 1.0);
       vec3 c = src + bayer(cell) * uDither * 0.33;
       float best = 1e9; vec3 q = PAL[0];
-      for (int i = 0; i < 16; i++) { vec3 d = c - PAL[i]; float e = dot(d, d * vec3(0.3, 0.59, 0.11)); if (e < best) { best = e; q = PAL[i]; } }
+      for (int i = 0; i < 16; i++) {
+        vec3 d = c - PAL[i];
+        // 'redmean'-style perceptual distance (hue matters, not only brightness)
+        float rm = 0.5 * (c.r + PAL[i].r);
+        float e = (2.0 + rm) * d.r * d.r + 4.0 * d.g * d.g + (3.0 - rm) * d.b * d.b;
+        // greys only win when the source is genuinely neutral
+        float grey = step(abs(PAL[i].r - PAL[i].b) + abs(PAL[i].g - PAL[i].b), 0.01) * step(0.01, PAL[i].r) * step(PAL[i].r, 0.9);
+        float chroma = max(max(c.r, c.g), c.b) - min(min(c.r, c.g), c.b);
+        e += grey * chroma * 0.35;
+        if (e < best) { best = e; q = PAL[i]; }
+      }
       float scan = 1.0 - uScanline * (0.5 + 0.5 * cos(fract(uv.y * uVirtual.y) * 6.2831));
       vec3 outc = mix(texture2D(tDiffuse, vUv).rgb, q * scan, uStrength);
       gl_FragColor = vec4(outc, 1.0);

@@ -1,0 +1,96 @@
+/* ==========================================================================
+   Classic 1988 mode (F2): the whole HTML skin turns into the Gold Box EGA
+   screen — black panels, light-blue double-line frames, white upper-case
+   5x7 bitmap text (font generated at runtime by bitmapFontFace.js), green
+   party names, cyan headings and yellow hotkey capitals. No gradients,
+   no soft shadows, no rounding.
+   ========================================================================== */
+html[data-classic='1'] {
+  --ega-0: #000000; --ega-1: #0000aa; --ega-2: #00aa00; --ega-3: #00aaaa; --ega-4: #aa0000; --ega-5: #aa00aa; --ega-6: #aa5500; --ega-7: #aaaaaa;
+  --ega-8: #555555; --ega-9: #5555ff; --ega-10: #55ff55; --ega-11: #55ffff; --ega-12: #ff5555; --ega-13: #ff55ff; --ega-14: #ffff55; --ega-15: #ffffff;
+  --por-midnight: #000; --por-deep: #000; --por-royal: var(--ega-1); --por-royal-hi: var(--ega-9);
+  --por-gilt: var(--ega-9); --por-gilt-hi: var(--ega-11); --por-gilt-lo: var(--ega-9); --por-gilt-dk: var(--ega-1);
+  --por-parchment: var(--ega-15); --por-parchment-lo: var(--ega-7);
+  --por-text: var(--ega-15); --por-text-dim: var(--ega-7); --por-amber: var(--ega-14); --por-green: var(--ega-10); --por-blood: var(--ega-12); --por-cyan: var(--ega-11);
+  --por-hp-ok-a: var(--ega-2); --por-hp-ok-b: var(--ega-10);
+  --font-display: 'PoR 5x7', 'Courier New', monospace;
+  --font-body: 'PoR 5x7', 'Courier New', monospace;
+  --font-num: 'PoR 5x7', 'Courier New', monospace;
+  --gilt-grad: linear-gradient(var(--ega-9), var(--ega-9));
+  --gilt-edge: linear-gradient(90deg, var(--ega-9), var(--ega-9));
+  --panel-grad: linear-gradient(#000, #000);
+  --focus-ring: 0 0 0 2px #000, 0 0 0 4px var(--ega-14);
+  --filigree-corner: none; --filigree-rule: none; --filigree-flourish: none; --tex-leather: none; --tex-grain: none; --tex-brocade: none;
+}
+html[data-classic='1'] #ui-root { -webkit-font-smoothing: none; font-smooth: never; text-rendering: optimizeSpeed; }
+html[data-classic='1'] #ui-root * {
+  text-shadow: none !important; border-radius: 0 !important; letter-spacing: 0.06em !important; font-style: normal !important;
+  filter: none !important; backdrop-filter: none !important; -webkit-mask-image: none !important; mask-image: none !important;
+}
+html[data-classic='1'] #ui-root :is(button, .por-set-name, .por-set-title, .por-frame-title, .por-mm-kicker, .por-location .name, .por-roster-row, .por-cmd, .por-menu-item, .por-set-tab, .por-bind-label, .por-hud-status) { text-transform: uppercase; }
+
+/* frames: double light-blue rule on black */
+html[data-classic='1'] .por-frame,
+html[data-classic='1'] .por-frame--blue,
+html[data-classic='1'] .por-frame--dark,
+html[data-classic='1'] .por-frame--parchment {
+  background: #000 !important; color: var(--ega-15);
+  border: 3px double var(--ega-9) !important;
+  box-shadow: 0 0 0 3px #000, 0 0 0 6px var(--ega-9) !important;
+}
+html[data-classic='1'] .por-frame::before, html[data-classic='1'] .por-frame::after,
+html[data-classic='1'] .por-corner, html[data-classic='1'] .por-frame-plate, html[data-classic='1'] .por-frame-crest { display: none !important; }
+html[data-classic='1'] .por-frame-title {
+  background: #000 !important; color: var(--ega-11) !important; clip-path: none !important; padding: 0 0.6em !important; font-weight: 400 !important;
+}
+html[data-classic='1'] .por-rule, html[data-classic='1'] .por-mm-rule { background: none !important; height: 0 !important; border-top: 2px solid var(--ega-9); margin: 0.6em 0 !important; }
+html[data-classic='1'] .por-gilt-text { background: none !important; color: var(--ega-11) !important; -webkit-background-clip: border-box; }
+html[data-classic='1'] .por-hk, html[data-classic='1'] .por-hk-cap { color: var(--ega-14) !important; text-decoration: none !important; background: none !important; }
+html[data-classic='1'] .por-keycap, html[data-classic='1'] .por-pad, html[data-classic='1'] .por-hk-badge {
+  background: #000 !important; color: var(--ega-14) !important; border: 0 !important; box-shadow: none !important; min-width: 0; width: auto; padding: 0 0.15em;
+}
+html[data-classic='1'] .por-keycap::before, html[data-classic='1'] .por-pad::before, html[data-classic='1'] .por-hk-badge::before { content: '['; color: var(--ega-7); }
+html[data-classic='1'] .por-keycap::after, html[data-classic='1'] .por-pad::after, html[data-classic='1'] .por-hk-badge::after { content: ']'; color: var(--ega-7); }
+
+/* menus, rows, buttons: the Gold Box inverse-video highlight */
+html[data-classic='1'] :is(.por-menu-item, .por-set-tab, .por-set-row, .por-bind-row, .por-load-row, .por-cmd, .por-btn, .por-chip, .por-seg-opt) {
+  background: #000 !important; border-color: transparent !important; box-shadow: none !important; color: var(--ega-15) !important; font-weight: 400 !important;
+}
+html[data-classic='1'] :is(.por-menu-item.hl, .por-set-tab.sel, .por-set-row.focus, .por-bind-row.focus, .por-load-row.focus, .por-cmd:hover, .por-btn:hover, .por-seg-opt.sel, .por-chip.sel, .por-btn.primary) {
+  background: var(--ega-1) !important; color: var(--ega-15) !important;
+}
+html[data-classic='1'] :is(.por-menu-item, .por-set-row, .por-bind-row, .por-set-tab)::before,
+html[data-classic='1'] :is(.por-menu-item, .por-set-tab, .por-cmd)::after { display: none !important; }
+html[data-classic='1'] .por-menu-item:disabled, html[data-classic='1'] .por-menu-item.locked { color: var(--ega-8) !important; opacity: 1 !important; }
+html[data-classic='1'] .por-mm-list::before { display: none; }
+html[data-classic='1'] .por-btn { border: 2px solid var(--ega-9) !important; }
+html[data-classic='1'] .por-set-desc, html[data-classic='1'] .por-set-blurb, html[data-classic='1'] .por-mm-desc { color: var(--ega-7) !important; }
+html[data-classic='1'] .por-set-title, html[data-classic='1'] .por-set-name, html[data-classic='1'] .por-bind-group, html[data-classic='1'] .por-bind-head { color: var(--ega-11) !important; }
+html[data-classic='1'] .por-set-badge { background: var(--ega-13) !important; color: #000 !important; }
+html[data-classic='1'] .por-set-icon { color: var(--ega-11) !important; }
+html[data-classic='1'] .por-toggle-track, html[data-classic='1'] .por-slider, html[data-classic='1'] .por-seg {
+  background: #000 !important; border: 2px solid var(--ega-9) !important; box-shadow: none !important;
+}
+html[data-classic='1'] .por-toggle.on .por-toggle-track { background: var(--ega-1) !important; }
+html[data-classic='1'] .por-toggle-knob, html[data-classic='1'] .por-slider-thumb { background: var(--ega-14) !important; box-shadow: none !important; border-radius: 0 !important; }
+html[data-classic='1'] .por-slider-fill { background: var(--ega-9) !important; box-shadow: none !important; }
+html[data-classic='1'] .por-slider-ticks { display: none; }
+html[data-classic='1'] .por-bind-key { background: #000 !important; border: 2px solid var(--ega-9) !important; box-shadow: none !important; color: var(--ega-15) !important; }
+html[data-classic='1'] .por-bind-key.waiting { background: var(--ega-14) !important; color: #000 !important; }
+
+/* screen chrome */
+html[data-classic='1'] .por-title-scrim { background: rgba(0, 0, 0, 0.55) !important; }
+html[data-classic='1'] .por-title-footer, html[data-classic='1'] .por-commandbar, html[data-classic='1'] .por-hud-bottom .por-log-wrap { background: #000 !important; border-color: var(--ega-9) !important; }
+html[data-classic='1'] .por-commandbar::before, html[data-classic='1'] .por-log-wrap::before, html[data-classic='1'] .por-log-wrap::after { display: none !important; }
+html[data-classic='1'] .por-hud-status { background: #000 !important; border: 3px double var(--ega-9) !important; box-shadow: none !important; color: var(--ega-15) !important; }
+html[data-classic='1'] .por-hud-status .on { color: var(--ega-14) !important; }
+html[data-classic='1'] .por-location { background: #000 !important; }
+html[data-classic='1'] .por-location .name { color: var(--ega-11) !important; }
+html[data-classic='1'] .por-location::after { display: none; }
+html[data-classic='1'] .por-roster-row.active { background: var(--ega-1) !important; color: var(--ega-15) !important; }
+html[data-classic='1'] .por-roster-row .bar { display: none; }
+html[data-classic='1'] .por-intro-bar { background: #000 !important; }
+html[data-classic='1'] .por-intro-cap-main { color: var(--ega-11) !important; }
+html[data-classic='1'] .por-compass { filter: none; }
+html[data-classic='1'] .por-tooltip, html[data-classic='1'] .por-toast { background: #000 !important; color: var(--ega-15) !important; border: 3px double var(--ega-9) !important; clip-path: none !important; }
+html[data-classic='1'] .por-scroll-fade::after { background: linear-gradient(transparent, #000) !important; }

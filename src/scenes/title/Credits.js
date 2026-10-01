@@ -11,7 +11,7 @@ const CREDITS = [
   ['h2', 'This homage'],
   ['r', 'Direction, design, code & art', 'Claude'],
   ['r', 'Rules engine', 'AD&D 1st Edition, implemented from the books'],
-  ['r', 'Graphics', 'Three.js · every texture, model and glyph generated procedurally'],
+  ['r', 'Graphics', 'Three.js — every texture, model and glyph generated procedurally'],
   ['r', 'Sound', 'WebAudio synthesis — no recorded samples'],
   ['r', 'Typography', 'Your system’s finest serif, gilded in a shader'],
   ['gap'],
@@ -40,10 +40,8 @@ export class Credits {
       if (k === 'gap') return h('div.por-credits-gap');
       return h('div.por-credits-role', [h('div.role', [a]), h('div.name', String(b).split('\n').map((l) => h('div', [l])))]);
     }));
-    this.el = h('div.por-credits', [
-      h('div.por-credits-window', [this.crawl]),
-      h('button.por-btn.por-credits-back', { type: 'button', onclick: () => this.onClose() }, ['Back']),
-    ]);
+    // Back lives in the footer legend (Esc / B / click anywhere), docked to the grid.
+    this.el = h('div.por-credits', { onclick: () => this.onClose() }, [h('div.por-credits-window', [this.crawl])]);
   }
 
   update(t) {

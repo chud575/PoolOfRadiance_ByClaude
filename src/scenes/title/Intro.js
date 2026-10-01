@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { h } from '../../ui/UI.js';
+import { padGlyph } from '../../ui/SettingsPanel.js';
 
 /**
  * The prologue: five camera shots over Phlan at dusk with a text crawl in the
@@ -7,7 +8,11 @@ import { h } from '../../ui/UI.js';
  * as the logo returns. Everything is a pure function of intro-local time, so
  * `?scene=title&view=intro&t=14` is a deterministic still. Skippable.
  */
-export const INTRO_LENGTH = 41;
+export const INTRO_LENGTH = 49;
+
+/** Chamber set origin (see world/Chamber.js). */
+const CO = { x: 0, y: -240, z: 0 };
+const C = (x, y, z) => new THREE.Vector3(x + CO.x, y + CO.y, z + CO.z);
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -23,7 +28,7 @@ const SHOTS = [
   },
   {
     t: [8.2, 16.4],
-    keys: [{ p: V(96, 13, -118), l: V(44, -10, -66) }, { p: V(58, 9, -86), l: V(12, -12, -44) }],
+    keys: [{ p: V(22, 9, -44), l: V(78, -11, -122) }, { p: V(40, 6.5, -62), l: V(66, -10, -128) }],
     look: 1,
     caption: 'The Old City',
     sub: 'Fallen these fifty years',
@@ -39,14 +44,23 @@ const SHOTS = [
   },
   {
     t: [24.4, 32.4],
-    keys: [{ p: V(-30, -9.2, -34), l: V(-19, -8, -58) }, { p: V(-23, -9.8, -42), l: V(-19.5, -7.6, -58) }],
-    look: 0.55,
+    keys: [{ p: V(-31, -9.6, -33), l: V(-19, -8.2, -58) }, { p: V(-24, -10.2, -40), l: V(-19.5, -7.8, -58) }],
+    look: 0.7,
     caption: 'City Hall',
     sub: 'The Council of Phlan',
     text: 'The City Council pays in gold for every block of the old city made safe again. Its clerk keeps a ledger of the brave, and of the dead.',
   },
   {
-    t: [32.4, INTRO_LENGTH],
+    t: [32.4, 40.4],
+    keys: [{ p: C(0.6, 1.55, 10.4), l: C(-0.1, 1.35, -6) }, { p: C(0.25, 1.6, 8.4), l: C(0, 1.4, -7.5) }],
+    look: 0,
+    interior: true,
+    caption: 'The Council Chamber',
+    sub: 'By candlelight',
+    text: 'The councillors look you over by candlelight. The clerk wets his quill. “Names, classes, and the gods you swear by.”',
+  },
+  {
+    t: [40.4, INTRO_LENGTH],
     keys: [{ p: V(0, 34, 46), l: V(0, 0, -6) }, { p: V(0, 3.6, 12.5), l: V(0, 1.08, -27.5) }],
     look: [0.9, 0],
     caption: '',
@@ -90,7 +104,7 @@ export class IntroCinematic {
     this.el = h('div.por-intro', [
       h('div.por-intro-bar.top', [
         this.caption,
-        h('button.por-intro-skip', { type: 'button', onclick: () => this.skip() }, [h('span', ['Skip']), h('span.por-keycap', ['Esc']), h('span.por-keycap.pad.b', ['B'])]),
+        h('button.por-intro-skip', { type: 'button', onclick: () => this.skip() }, [h('span', ['Skip']), h('span.por-keycap', ['Esc']), padGlyph('B')]),
       ]),
       this.proclamation,
       h('div.por-intro-bar.bottom', [this.textEl, h('div.por-intro-progress', [this.progress])]),
@@ -118,6 +132,7 @@ export class IntroCinematic {
     const look = new THREE.Vector3().lerpVectors(a.l, b.l, e);
     camera.lookAt(look);
     const L = Array.isArray(s.look) ? s.look[0] + (s.look[1] - s.look[0]) * e : s.look;
+    this.world?.setInterior?.(!!s.interior);
     this.world?.setLook?.(L);
 
     // crossfades between shots (and out at the very end)
@@ -152,8 +167,8 @@ export class IntroCinematic {
     this.proclamation.style.visibility = pa > 0.001 ? 'visible' : 'hidden';
 
     // logo returns as the camera settles on the Pool
-    this.logoAlpha = smooth(37.2, 40.2, lt);
-    this.el.classList.toggle('final', lt > 36.5);
+    this.logoAlpha = smooth(45.2, 48.2, lt);
+    this.el.classList.toggle('final', lt > 44.5);
 
     if (!snap && !this.done && lt >= INTRO_LENGTH + 1.2) this.skip();
   }
@@ -165,6 +180,7 @@ export class IntroCinematic {
   }
 
   dispose() {
+    this.world?.setInterior?.(false);
     this.world?.setLook?.(0);
     this.el.remove();
   }

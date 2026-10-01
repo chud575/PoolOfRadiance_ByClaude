@@ -124,9 +124,9 @@ export function buildLogoTexture() {
     const y = 470;
     const opts = { initial: 1.28, track: 0.035 };
     const wPool = drawWord(g, 'POOL', 0, 0, size, { ...opts, measure: true });
-    const wOf = drawWord(g, 'of', 0, 0, size * 0.5, { initial: 1, track: 0.02, italic: true, measure: true });
+    const wOf = drawWord(g, 'of', 0, 0, size * 0.64, { initial: 1, track: 0.01, italic: true, measure: true });
     const wRad = drawWord(g, 'RADIANCE', 0, 0, size, { ...opts, measure: true });
-    const gap = size * 0.2;
+    const gap = size * 0.12;
     const total = wPool + wOf + wRad + gap * 2;
     const k = Math.min(1, 1880 / total);
     g.save();
@@ -135,7 +135,17 @@ export function buildLogoTexture() {
     let x = -total / 2;
     drawWord(g, 'POOL', x, 0, size, opts);
     x += wPool + gap;
-    drawWord(g, 'of', x, -size * 0.18, size * 0.5, { initial: 1, track: 0.02, italic: true });
+    drawWord(g, 'of', x, -size * 0.2, size * 0.64, { initial: 1, track: 0.01, italic: true });
+    // a swash rule under the 'of' ties it to the capitals' baseline
+    g.save();
+    g.lineCap = 'round';
+    g.lineWidth = 7;
+    g.beginPath();
+    g.moveTo(x - size * 0.02, -size * 0.06);
+    g.bezierCurveTo(x + wOf * 0.3, size * 0.02, x + wOf * 0.7, -size * 0.12, x + wOf + size * 0.04, -size * 0.04);
+    g.stroke();
+    diamond(g, x + wOf / 2, -size * 0.66, 9);
+    g.restore();
     x += wOf + gap;
     drawWord(g, 'RADIANCE', x, 0, size, opts);
     g.restore();
@@ -172,11 +182,11 @@ export function buildLogoTexture() {
     e.font = `700 ${size}px ${DISPLAY_FONT}`;
     const txt = 'FORGOTTEN REALMS';
     let w = 0;
-    for (const ch of txt) w += e.measureText(ch).width + size * 0.42;
+    for (const ch of txt) w += e.measureText(ch).width + size * 0.26;
     let x = cx - w / 2;
     for (const ch of txt) {
       e.fillText(ch, x, 680);
-      x += e.measureText(ch).width + size * 0.42;
+      x += e.measureText(ch).width + size * 0.26;
     }
     scroll(g, cx - w / 2 - 36, 660, -1, 150, 6);
     scroll(g, cx + w / 2 + 36, 660, 1, 150, 6);
@@ -303,6 +313,24 @@ export function createLogo() {
   const mesh = new THREE.Mesh(geo, mat);
   mesh.renderOrder = 1000;
   mesh.frustumCulled = false;
+  // soft dusk-shadow plate behind the logotype so it sits on a darker, contrasting sky
+  const haloGeo = new THREE.PlaneGeometry(1.25, (H / W) * 1.1);
+  const haloMat = new THREE.ShaderMaterial({
+    transparent: true, depthTest: false, depthWrite: false, fog: false,
+    uniforms: { uAlpha: uniforms.uAlpha },
+    vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /* glsl */ `uniform float uAlpha; varying vec2 vUv;
+      void main(){
+        vec2 d = (vUv - vec2(0.5, 0.56)) * vec2(1.0, 2.3);
+        float k = exp(-dot(d, d) * 5.5);
+        gl_FragColor = vec4(vec3(0.05, 0.02, 0.05), k * 0.5 * uAlpha);
+      }`,
+  });
+  const halo = new THREE.Mesh(haloGeo, haloMat);
+  halo.renderOrder = 999;
+  halo.frustumCulled = false;
+  halo.position.z = -0.001;
+  mesh.add(halo);
   return {
     mesh,
     uniforms,
@@ -325,6 +353,8 @@ export function createLogo() {
       tex.dispose();
       geo.dispose();
       mat.dispose();
+      haloGeo.dispose();
+      haloMat.dispose();
     },
   };
 }

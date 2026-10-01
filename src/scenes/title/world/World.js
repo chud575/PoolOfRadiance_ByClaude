@@ -5,20 +5,21 @@ import { createCity, CITY_TEXTURES } from './City.js';
 import { createTerrace, TERRACE_TEXTURES } from './Terrace.js';
 import { createDragon } from './Dragon.js';
 import { createParticles } from './Particles.js';
+import { createChamber, CHAMBER_TEXTURES } from './Chamber.js';
 
 /** Direction of the set sun (just below the sea horizon, WSW). */
 export const SUN_DIR = new THREE.Vector3(-0.45, 0.014, -1).normalize();
 
 /** Generate every texture the title world needs (in workers). */
 export function preloadWorld() {
-  return preloadTextureSets([...CITY_TEXTURES, ...TERRACE_TEXTURES]);
+  return preloadTextureSets([...new Set([...CITY_TEXTURES, ...TERRACE_TEXTURES, ...CHAMBER_TEXTURES])]);
 }
 
 /**
  * Ruined Phlan at dusk, assembled: sky, Moonsea, city, temple terrace with
  * the Pool of Radiance, a dragon over the sea, embers and motes.
  */
-const LOOK_FOG = new THREE.Color(0x5a3552);
+const LOOK_FOG = new THREE.Color(0x3a3a68);
 const LOOK_FILL = new THREE.Color(0x9a92b8);
 
 export function createWorld() {
@@ -32,10 +33,11 @@ export function createWorld() {
   const city = createCity();
   const terrace = createTerrace();
   const dragon = createDragon();
-  scene.add(sky, sea, city.group, terrace.group, dragon.group);
+  const chamber = createChamber();
+  scene.add(sky, sea, city.group, terrace.group, dragon.group, chamber.group);
 
   // ---- lighting: sunset rim from the sea, cool dusk fill, pool + braziers are the keys
-  const hemi = new THREE.HemisphereLight(0x7a5a9a, 0x1a1016, 0.75);
+  const hemi = new THREE.HemisphereLight(0x8a6aaa, 0x241618, 0.95);
   scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xff8a4a, 2.2);
   sun.position.copy(SUN_DIR).multiplyScalar(60).add(new THREE.Vector3(0, 14, 0));
@@ -47,9 +49,14 @@ export function createWorld() {
   sun.shadow.bias = -0.0008;
   sun.shadow.normalBias = 0.04;
   scene.add(sun, sun.target);
-  const fill = new THREE.DirectionalLight(0x6070c8, 0.6);
+  const fill = new THREE.DirectionalLight(0x6a78d0, 0.8);
   fill.position.set(8, 12, 30);
   scene.add(fill);
+  // cool moon/sky key from the east, used by the aerial + City Hall shots so roofs
+  // and domes get a sky-lit side against the warm sunset rim
+  const moon = new THREE.DirectionalLight(0x8090e0, 0);
+  moon.position.set(60, 70, 50);
+  scene.add(moon);
   // warm spill from City Hall's open doors (lights the portico in the prologue)
   const hall = new THREE.PointLight(0xffa860, 30, 22, 1.6);
   hall.position.set(-20, -11.2, -50.5);
@@ -120,6 +127,7 @@ export function createWorld() {
     sun,
     sky,
     dragonPath,
+    chamber,
     hemi,
     fill,
     /**
@@ -129,26 +137,48 @@ export function createWorld() {
      */
     setLook(k) {
       k = Math.max(0, Math.min(1, k));
-      scene.fog.density = 0.0034 + k * 0.0042;
+      this._look = k;
+      if (this._interior) return;
+      // aerial grade: blue-violet aerial perspective in the shadows, warm sun on the lit planes
+      scene.fog.density = 0.0034 + k * 0.0036;
       scene.fog.color.setHex(0x3a2240).lerp(LOOK_FOG, k);
-      hemi.intensity = 0.75 + k * 0.85;
-      fill.intensity = 0.6 + k * 0.9;
-      fill.color.setHex(0x6070c8).lerp(LOOK_FILL, k);
+      hemi.intensity = 0.95 + k * 0.55;
+      hemi.color.setHex(0x8a6aaa).lerp(new THREE.Color(0x6a7ac8), k);
+      fill.intensity = 0.8 + k * 0.5;
+      fill.color.setHex(0x6a78d0).lerp(LOOK_FILL, k);
       fill.position.set(8 + k * 60, 12 + k * 20, 30 + k * 10);
-      sun.intensity = 2.2 + k * 1.2;
+      sun.intensity = 2.2 + k * 2.4;
+      sun.color.setHex(0xff8a4a).lerp(new THREE.Color(0xffa060), k);
+      moon.intensity = k * 1.25;
+    },
+    /** Move the lighting rig indoors (council chamber shot): k = 0 outdoors, 1 inside. */
+    setInterior(on) {
+      on = !!on;
+      if (on === !!this._interior) return;
+      this._interior = on;
+      if (on) {
+        sun.intensity = 0; hemi.intensity = 0.06; fill.intensity = 0; moon.intensity = 0;
+        scene.fog.density = 0.012;
+        scene.fog.color.setHex(0x0c0810);
+      } else {
+        this.setLook(this._look ?? 0);
+      }
     },
     update(t, camera, px = 1) {
       U.uTime.value = t;
       sky.userData.update(camera);
-      city.update(t);
-      terrace.update(t);
+      camera.updateMatrixWorld();
+      city.update(t, camera, SUN_DIR);
+      terrace.update(t, camera, SUN_DIR);
       dragon.update(t, dragonPath);
+      chamber.update(t);
       for (const s of systems) s.update(t, px);
     },
     dispose() {
       city.dispose();
       terrace.dispose();
       dragon.dispose();
+      chamber.dispose();
       for (const s of systems) s.dispose();
       shaftMat.dispose();
       shafts.children.forEach((m) => m.geometry.dispose());

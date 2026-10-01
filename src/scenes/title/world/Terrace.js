@@ -3,6 +3,7 @@ import { getTextureSet, getGlowTexture, getGrassTexture } from '../../../render/
 import { createTorch, FLAME_UNIFORMS } from '../../../render/lighting.js';
 import { NOISE } from './glsl.js';
 import { prng, ni, worldUV, tint, merge } from './geom.js';
+import { column as archColumn, entablature, addRimLight } from './arch.js';
 
 export const TERRACE_TEXTURES = ['hd_crazy', 'hd_limestone', 'hd_rubble'];
 
@@ -24,7 +25,8 @@ export function createTerrace({ seed = 7 } = {}) {
     disposables.push(m);
     return m;
   };
-  const stoneMat = texMat('hd_limestone', { vertexColors: true });
+  const rimU = { uSunView: { value: new THREE.Vector3(0, 0, -1) }, uRimColor: { value: new THREE.Color(1.0, 0.55, 0.28) } };
+  const stoneMat = addRimLight(texMat('hd_limestone', { vertexColors: true }), rimU, 1.1);
   const floorMat = texMat('hd_crazy', { vertexColors: true });
 
   // ---- floor with a broken front edge -----------------------------------------
@@ -78,6 +80,38 @@ export function createTerrace({ seed = 7 } = {}) {
       b.scale(1.1, 1, 1.4);
       b.translate(x, base + (hgt - 0.6) / 2, -11.4);
       parts.push(tint(worldUV(ni(b), 3), 0x8e8475, { aoBottom: base, aoTop: base + 5 }));
+    }
+    // a grand processional stair climbing the wall's face to the terrace (centre)
+    for (let k = 0; k < 28; k++) {
+      const sy = base + k * (hgt / 28);
+      const st = new THREE.BoxGeometry(9, hgt / 28 + 0.02, 0.7);
+      st.translate(0, sy + hgt / 56, -11.6 - (27 - k) * 0.68);
+      parts.push(tint(worldUV(st, 2), 0xa89c8a, { aoBottom: base, aoTop: base + 4 }));
+    }
+    for (const sx of [-1, 1]) {
+      // stair cheek walls with a coping
+      const cheek = new THREE.BoxGeometry(1.2, hgt, 19.6);
+      cheek.translate(sx * 5.1, base + hgt / 2 - 0.4, -11.2 - 9.4);
+      const p2 = cheek.attributes.position;
+      for (let i = 0; i < p2.count; i++) {
+        const zz = p2.getZ(i);
+        if (p2.getY(i) > base + hgt / 2 - 0.4) p2.setY(i, base + (hgt + 0.6) * Math.min(1, Math.max(0.12, (zz + 30.2) / 19.6)));
+      }
+      cheek.computeVertexNormals();
+      parts.push(tint(worldUV(ni(cheek), 3), 0x958a7b, { aoBottom: base, aoTop: base + 5 }));
+    }
+    // blind arcade niches between the buttresses
+    for (let x = -53.25; x <= 53.25; x += 9.5) {
+      if (Math.abs(x) < 7) continue;
+      const niche = new THREE.BoxGeometry(4.2, hgt * 0.5, 0.5);
+      niche.translate(x, base + hgt * 0.42, -11.0);
+      parts.push(tint(worldUV(niche, 2), 0x6e665c));
+      const arch = new THREE.CylinderGeometry(2.1, 2.1, 0.5, 16, 1, false, 0, Math.PI);
+      arch.rotateX(Math.PI / 2);
+      arch.rotateZ(Math.PI / 2);
+      arch.rotateY(0);
+      arch.translate(x, base + hgt * 0.67, -11.0);
+      parts.push(tint(worldUV(ni(arch), 2), 0x6e665c));
     }
     // a string course of dentils under the lip
     for (let x = -61; x <= 61; x += 1.2) {
@@ -169,11 +203,13 @@ export function createTerrace({ seed = 7 } = {}) {
         float rings = pow(0.5 + 0.5 * sin(r * 26.0 - t * 2.4), 10.0) * (1.0 - r);
         vec3 deep = vec3(0.02, 0.16, 0.26);
         vec3 mid = vec3(0.08, 0.55, 0.75);
-        vec3 core = vec3(0.8, 1.55, 1.8);
+        vec3 core = vec3(0.42, 0.95, 1.1);
         vec3 col = mix(core, mid, smoothstep(0.0, 0.45, r + (n - 0.5) * 0.25));
         col = mix(col, deep, smoothstep(0.55, 1.02, r));
-        col += vec3(0.5, 1.4, 1.6) * caustic * (1.0 - r * 0.5) * 0.7;
-        col += vec3(0.8, 1.8, 2.0) * rings * 0.5;
+        col += vec3(0.35, 1.0, 1.15) * caustic * (1.0 - r * 0.5) * 0.55;
+        col += vec3(0.5, 1.2, 1.35) * rings * 0.35;
+        // keep the vortex readable at the core: darker spiral lanes
+        col *= 0.78 + 0.22 * smoothstep(0.2, 0.8, n2);
         col += vec3(0.1, 0.4, 0.5) * n2 * 0.6;
         // dark meniscus against the stone
         col *= 1.0 - smoothstep(0.93, 1.0, r) * 0.7;
@@ -206,9 +242,9 @@ export function createTerrace({ seed = 7 } = {}) {
         float streak = fbm(vec2(vUv.x * 18.0, y * 3.0 - uTime * 0.6));
         float streak2 = vnoise(vec2(vUv.x * 44.0, y * 6.0 - uTime * 1.1));
         float body = pow(facing, 2.2) * (0.45 + 0.9 * streak * streak2);
-        float fall = pow(1.0 - y, 2.4) * smoothstep(0.0, 0.03, y);
+        float fall = pow(1.0 - y, 3.4) * smoothstep(0.0, 0.03, y);
         vec3 c = mix(vec3(0.35, 1.25, 1.6), vec3(1.2, 1.9, 2.1), pow(1.0 - y, 6.0));
-        gl_FragColor = vec4(c * body * fall * uStrength * 0.085, 1.0);
+        gl_FragColor = vec4(c * body * fall * uStrength * 0.06, 1.0);
       }`,
   });
   disposables.push(beamMat);
@@ -278,45 +314,20 @@ export function createTerrace({ seed = 7 } = {}) {
 
   // ---- ruined colonnade, arch fragment, rubble ------------------------------------------
   const pieces = [];
-  const column = (x, z, h, { capital = true, lean = 0 } = {}) => {
-    const plinth = new THREE.BoxGeometry(1.6, 0.5, 1.6);
-    plinth.translate(x, 0.25, z);
-    pieces.push(tint(worldUV(plinth, 2), 0xbcb2a3));
-    const shaft = new THREE.CylinderGeometry(0.52, 0.6, h, 24, 8);
-    const p = shaft.attributes.position;
-    for (let i = 0; i < p.count; i++) {
-      const ang = Math.atan2(p.getZ(i), p.getX(i));
-      const k = 1 - 0.05 * Math.pow(Math.abs(Math.cos(ang * 10)), 0.5);
-      p.setX(i, p.getX(i) * k);
-      p.setZ(i, p.getZ(i) * k);
-      // broken top: jag the upper ring when there is no capital
-      if (!capital && p.getY(i) > h / 2 - 0.01) p.setY(i, p.getY(i) - R.range(0, 0.6));
-    }
-    shaft.computeVertexNormals();
-    shaft.translate(0, h / 2 + 0.5, 0);
-    shaft.rotateZ(lean);
-    shaft.translate(x, 0, z);
-    pieces.push(tint(worldUV(shaft, 2), 0xd2c9b9, { aoBottom: 0, aoTop: 2.5, aoStrength: 0.35 }));
-    if (capital) {
-      const cap = new THREE.CylinderGeometry(0.85, 0.55, 0.5, 24);
-      cap.translate(x, h + 0.75, z);
-      pieces.push(tint(worldUV(cap, 2), 0xc9bfae));
-      const ab = new THREE.BoxGeometry(1.9, 0.4, 1.9);
-      ab.translate(x, h + 1.2, z);
-      pieces.push(tint(worldUV(ab, 2), 0xbdb3a4));
-    }
+  const column = (x, z, h, { capital = true, lean = 0, broken = 0, seed = 1, ry = 0 } = {}) => {
+    const m = new THREE.Matrix4().compose(new THREE.Vector3(x, 0, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, ry, lean)), new THREE.Vector3(1, 1, 1));
+    for (const g of archColumn({ h: h + 1.6, r: 0.6, flutes: 20, capital, broken, seed, color: 0xd6cdbd })) pieces.push(g.applyMatrix4(m));
   };
-  column(-13, -6, 9.5);
-  column(-9.2, -8.2, 9.5);
-  column(12.5, -6.6, 5.2, { capital: false });
-  column(16.5, -4, 8.6, { capital: false });
-  column(-17, 2, 3.4, { capital: false });
-  // architrave across the left pair, broken off at the right
+  column(-13, -6, 9.5, { seed: 1 });
+  column(-9.2, -8.2, 9.5, { seed: 2 });
+  column(12.5, -6.6, 5.2, { capital: false, broken: 0.35, seed: 3 });
+  column(16.5, -4, 8.6, { capital: false, broken: 0.25, seed: 4 });
+  column(-17, 2, 3.4, { capital: false, broken: 0.5, seed: 5 });
+  // entablature across the left pair (architrave · triglyph frieze · cornice), sheared off at the right
   {
-    const g = new THREE.BoxGeometry(6.4, 1.1, 1.5);
-    g.rotateY(-0.5);
-    g.translate(-10.9, 11.6, -7.0);
-    pieces.push(tint(worldUV(g, 2), 0xb9ae9d));
+    const ang = Math.atan2(-8.2 + 6, -9.2 + 13);
+    const m = new THREE.Matrix4().compose(new THREE.Vector3(-11.0, 11.12 + 0.02, -7.05), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -ang, 0.03)), new THREE.Vector3(1, 1, 1));
+    for (const g of entablature(6.8, { depth: 1.7, seed: 9, color: 0xc8bdaa, brokenEnd: 0.9 })) pieces.push(g.applyMatrix4(m));
   }
   // fallen drums and rubble
   for (const [x, z, ry] of [[9, 3.5, 0.6], [14, 1, 1.9], [-11.5, 4, 2.4]]) {
@@ -446,7 +457,8 @@ export function createTerrace({ seed = 7 } = {}) {
     group,
     poolLight,
     braziers,
-    update(t) {
+    update(t, camera, sunDir) {
+      if (camera && sunDir) rimU.uSunView.value.copy(sunDir).transformDirection(camera.matrixWorldInverse);
       U.uTime.value = t;
       FLAME_UNIFORMS.uTime.value = t;
       for (const b of braziers) b.userData.update(t);
