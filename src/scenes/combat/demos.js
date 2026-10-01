@@ -161,7 +161,7 @@ export const DEMOS = {
         const d = dmg[k % dmg.length];
         fm.play('hit', detonate + 0.02, 0.6, { power: 1.8 });
         // Numbers lift clear of the fireball's face, staggered.
-        sc.hud.float(String(d), k === 0 ? 'crit' : 'dmg', sc._head(fm).add(new THREE.Vector3(0, 1.0 + (k % 3) * 0.4, 0)), detonate + 0.1 + k * 0.05);
+        sc.hud.float(String(d), k === 0 ? 'crit' : 'dmg', sc._head(fm).add(new THREE.Vector3(0, 1.7 + (k % 3) * 0.45, 0)), detonate + 0.1 + k * 0.05);
         // Results land with the blast, not before it.
         sc.at(detonate + 0.02, () => {
           m.hp.cur -= d;
@@ -174,14 +174,27 @@ export const DEMOS = {
       });
       sc.overlay.setTemplate([]);
       // Camera: frame caster and blast, slightly closer.
-      const mid = sq2w((caster.x + best.x) / 2, (caster.y + best.y) / 2);
+      const mid = sq2w(caster.x + (best.x - caster.x) * 0.6, caster.y + (best.y - caster.y) * 0.6);
       sc.cam.goalTarget.copy(mid);
       sc.cam.target.copy(mid);
       const span = Math.hypot(caster.x - best.x, caster.y - best.y) * TILE;
-      sc.cam.goalDist = sc.cam.dist = Math.max(16, span * 2.1);
+      sc.cam.goalDist = sc.cam.dist = Math.max(15, span * 1.9);
       sc.cam.goalYaw = sc.cam.yaw = Math.atan2(best.y - caster.y, -(best.x - caster.x)) * 0 + 0.25;
       sc.cam.goalPitch = sc.cam.pitch = 0.9;
       sc._refresh(caster);
+    },
+  },
+
+  /** Turn undead: the cleric raises the holy symbol against the skeletons (t≈0.6 peak). */
+  turn: {
+    async stage(sc) {
+      const cleric = sc.party.find((c) => c.ref.levels.cleric) ?? sc.party[0];
+      const f = sc.figures.get(cleric.id);
+      setActive(sc, cleric);
+      f.play('turn', 0, 1.6);
+      sc.vfx.holyLight(0.3, f.root.position.clone(), 4.2);
+      sc._frameCombatants(true, cleric);
+      sc._refresh(cleric);
     },
   },
 

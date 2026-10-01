@@ -380,6 +380,9 @@ export default class CombatScene extends Scene {
       }
     });
     for (const o of hidden) o.visible = false;
+    // Spell flashes must not wash out the portraits.
+    const vfxLight = this.vfx.light.intensity;
+    this.vfx.light.intensity = 0;
     const prevBg = s.background;
     const prevFog = s.fog;
     s.background = new THREE.Color(this.night ? 0x10162c : 0x1a2240);
@@ -459,6 +462,7 @@ export default class CombatScene extends Scene {
       if (fig.eyeGlow) fig.eyeGlow.visible = !wasDead;
     }
     for (const o of hidden) o.visible = true;
+    this.vfx.light.intensity = vfxLight;
     s.background = prevBg;
     s.fog = prevFog;
     r.shadowMap.autoUpdate = prevAuto;
@@ -616,7 +620,7 @@ export default class CombatScene extends Scene {
           if (this.engine.occupantAt(x, y)) continue;
           const d = Math.min(...foes.map((o) => Battlefield.dist(x, y, o.x, o.y)));
           if (d < 2) continue;
-          const sc = cost - d * 0.6;
+          const sc = -d * 3 + Math.min(cost, 3);
           if (!best || sc > best.sc) best = { x, y, sc };
         }
         if (best) this._hoverSquare({ x: best.x, y: best.y });

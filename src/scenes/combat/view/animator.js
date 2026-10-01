@@ -268,7 +268,8 @@ export class Figure {
     set('spine', 0.06 + hunch * 0.5, 0.18, 0);
     set('chest', 0.03 + hunch * 0.35 + breathe * 0.025, 0.08, 0);
     set('neck', -hunch * 0.55 - 0.05, -0.22 + Math.sin(it * 0.43) * 0.12, 0);
-    set('head', -hunch * 0.35 + Math.sin(it * 0.61) * 0.04, Math.sin(it * 0.37) * 0.1, 0);
+    // Monsters carry their heads up (glaring at the party), so faces read from the tactics camera.
+    set('head', -hunch * 0.35 - (m.kit?.race === 'monster' ? 0.2 : 0) + Math.sin(it * 0.61) * 0.04, Math.sin(it * 0.37) * 0.1, 0);
     // Legs: staggered, knees soft.
     set('thighL', -0.32, 0.12, 0.08);
     set('shinL', 0.42);

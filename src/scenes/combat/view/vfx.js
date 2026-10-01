@@ -824,7 +824,7 @@ export class VFX {
         m.position.set(to.x + d.x * off, to.y + d.y * off + rise * (0.8 + d.y * 0.5), to.z + d.z * off);
         m.scale.setScalar(R * m.userData.sz * (0.5 + 0.8 * e2));
         m.material.uniforms.uT.value = age * 1.5 + k;
-        m.material.uniforms.uHeat.value = Math.max(0.1, 1.15 - age * 1.4 - k * 0.03);
+        m.material.uniforms.uHeat.value = Math.max(0.1, 1.4 - age * 1.25 - k * 0.04);
         m.material.uniforms.uErode.value = 0.1 + Math.max(0, age - 0.18) * 1.1;
         m.material.uniforms.uAlpha.value = clamp01(1.25 - age * 1.1);
         m.visible = age < 1.15;
@@ -1006,7 +1006,7 @@ export class VFX {
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
       uniforms: { uA: { value: 0 } },
       vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
-      fragmentShader: 'varying vec2 vUv; uniform float uA; void main(){ float a = smoothstep(0.0, 0.25, vUv.y) * smoothstep(1.0, 0.35, vUv.y) * (0.6 + 0.4 * sin(vUv.x * 62.83)); gl_FragColor = vec4(vec3(1.0, 0.85, 0.55), a * uA * 0.32); }',
+      fragmentShader: 'varying vec2 vUv; uniform float uA; void main(){ float a = smoothstep(0.0, 0.25, vUv.y) * smoothstep(1.0, 0.35, vUv.y) * (0.6 + 0.4 * sin(vUv.x * 62.83)); gl_FragColor = vec4(vec3(1.0, 0.85, 0.55), a * uA * 0.2); }',
     }));
     column.renderOrder = 8;
     const ring = groundRing(0xffd070, 0.0);
@@ -1016,7 +1016,7 @@ export class VFX {
       sigil.position.set(at.x, 0.05, at.z);
       sigil.scale.setScalar(2.2 + Math.min(1, age * 3) * 1.0);
       sigil.rotation.y = age * 0.4;
-      sigil.material.opacity = k * 0.8;
+      sigil.material.opacity = k * 0.65;
       rays.position.set(at.x, 0.055, at.z);
       rays.scale.setScalar(4 + age * 5);
       rays.material.uniforms.uA.value = k;
