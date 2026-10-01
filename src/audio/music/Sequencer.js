@@ -101,12 +101,19 @@ export class TrackPlayer {
   /** Schedule everything that starts before `horizon` (AudioContext seconds). */
   tick(horizon) {
     if (this.done || this.stopped) return;
+    if (this.stopAt !== undefined) {
+      if (horizon >= this.stopAt) {
+        horizon = this.stopAt;
+        this.stopped = true; // after this final fill
+      }
+    }
     for (;;) {
       while (this.cursor < this.events.length) {
         const e = this.events[this.cursor];
         const at = this.passStart + e.t * this.spq;
         if (at > horizon) return;
         this.cursor++;
+        if (this.stopAt !== undefined && at >= this.stopAt) continue;
         this._play(e, at);
       }
       // End of pass.
@@ -144,20 +151,34 @@ export class TrackPlayer {
     });
   }
 
-  /** Fade out and stop scheduling. */
-  fadeOut(seconds = 2) {
-    if (this.stopped) return;
-    this.stopped = true;
-    const t = this.ac.currentTime;
+  /** Seconds until the next bar line (for quantised transitions). */
+  untilNextBar() {
+    const bar = (this.song.barQ ?? 4) * this.spq;
+    const el = this.ac.currentTime - this.passStart;
+    if (el < 0) return -el;
+    return bar - (el % bar);
+  }
+
+  /** Keep playing until `at` (AudioContext time), then fade out over `seconds`. */
+  fadeOut(seconds = 2, at = this.ac.currentTime) {
+    if (this.stopped || this.stopAt !== undefined) return;
+    const t = Math.max(this.ac.currentTime, at);
+    if (t <= this.ac.currentTime + 0.01) this.stopped = true;
+    else this.stopAt = t;
+    const hold = (p) => {
+      if (p.cancelAndHoldAtTime) p.cancelAndHoldAtTime(t);
+      else {
+        p.cancelScheduledValues(t);
+        p.setValueAtTime(Math.max(0.0001, p.value), t);
+      }
+    };
     const g = this.out.gain;
-    g.cancelScheduledValues(t);
-    g.setValueAtTime(Math.max(0.0001, g.value), t);
-    g.exponentialRampToValueAtTime(0.0001, t + Math.max(0.05, seconds));
+    hold(g);
+    g.linearRampToValueAtTime(0.0001, t + Math.max(0.05, seconds));
     const s = this.sendOut.gain;
-    s.cancelScheduledValues(t);
-    s.setValueAtTime(Math.max(0.0001, s.value), t);
+    hold(s);
     s.linearRampToValueAtTime(0, t + Math.max(0.05, seconds) + 0.5);
-    this._disposeAt = t + seconds + 1;
+    this._disposeAt = t + seconds + 1.5;
   }
 
   dispose() {

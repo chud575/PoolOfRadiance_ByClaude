@@ -32,6 +32,13 @@ function partyXp(party) {
   return (party ?? []).reduce((a, c) => a + (typeof c.xp === 'object' && c.xp ? Object.values(c.xp).reduce((x, y) => x + (Number(y) || 0), 0) : Number(c.xp) || 0), 0);
 }
 
+/** {cur, max} whether a character stores hp as a number or an object. */
+function hpOf(c) {
+  const h = c?.hp;
+  if (h && typeof h === 'object') return { cur: Number(h.cur ?? h.current ?? 0), max: Number(h.max ?? h.cur ?? 1) };
+  return { cur: Number(h ?? 1), max: Number(c?.maxHp ?? c?.hpMax ?? h ?? 1) };
+}
+
 function monsterIdOf(name) {
   if (!name) return null;
   const base = name.replace(/\s+\d+$/, '').trim().toLowerCase();
@@ -198,7 +205,7 @@ export class Director {
 
   _partyAllDown() {
     const p = this.party;
-    return p?.length > 0 && p.every((c) => (c.hp ?? 1) <= 0 || (c.status && c.status !== 'ok'));
+    return p?.length > 0 && p.every((c) => hpOf(c).cur <= 0 || (c.status && c.status !== 'ok'));
   }
 
   // ------------------------------------------------------------------ combat
@@ -224,7 +231,11 @@ export class Director {
   }
 
   _message({ text, kind }) {
-    if (!text || this.scene !== 'combat') return;
+    if (!text) return;
+    if (this.scene !== 'combat') {
+      this._worldMessage(text, kind);
+      return;
+    }
     const now = this.now;
     let m;
     if ((m = /^(.+?) ATTACK!$/.exec(text))) {
@@ -262,9 +273,12 @@ export class Director {
       return;
     }
     if ((m = /^(.+?) is slain\.$/.exec(text)) || (m = /^(.+?) crumbles to dust!$/.exec(text))) {
+      // QUICK combat resolves in a blink: don't stack a scream per corpse.
       const id = monsterIdOf(m[1]);
-      if (id) this.e.sfx(`vox_${VOICE_OF[id] ?? 'human'}_die`, { vol: 0.85 });
-      this.e.sfx('death', { delay: 0.25 });
+      const fresh = now - (this.lastDeath ?? -10) > 0.6;
+      this.lastDeath = now;
+      if (id && fresh) this.e.sfx(`vox_${VOICE_OF[id] ?? 'human'}_die`, { vol: 0.85 });
+      this.e.sfx('death', { delay: 0.25, vol: fresh ? 1 : 0.5 });
       return;
     }
     if ((m = /^(.+?) (is killed!|falls, bleeding|is knocked unconscious)/.exec(text))) {
@@ -279,9 +293,25 @@ export class Director {
     if (kind === 'warn' && /escapes/.test(text)) this.combatOver = true;
     // Low party health → raise the stakes.
     if (this.party?.length) {
-      const hp = this.party.reduce((a, c) => a + Math.max(0, c.hp ?? 0), 0);
-      const max = this.party.reduce((a, c) => a + (c.maxHp ?? c.hpMax ?? c.hp ?? 1), 0);
+      const hp = this.party.reduce((a, c) => a + Math.max(0, hpOf(c).cur), 0);
+      const max = this.party.reduce((a, c) => a + Math.max(1, hpOf(c).max), 0);
       if (max > 0 && hp / max < 0.35) this._setDanger(0.9);
+    }
+  }
+
+  /** Exploration / dialogue log lines that deserve a sound. */
+  _worldMessage(text) {
+    if (/stirs in the shadows/i.test(text)) this.e.sfx('omen');
+    else if (/hidden door|secret door/i.test(text)) {
+      this.e.sfx('door_secret');
+      this.e.stinger('discovery', { duck: 0.5 });
+    } else if (/^Journal entry .* recorded/.test(text)) this.e.stinger('quest', { duck: 0.5 });
+    else if (/The door is locked/.test(text)) this.e.sfx('door_locked', { delay: 0.05 });
+    else if (/wounds are healed/.test(text)) this.e.sfx('spell_heal');
+    else if (/deathly cold/i.test(text)) this.e.sfx('spell_curse');
+    else if (/ takes the |Among the spoils/.test(text)) {
+      this.e.sfx('equip');
+      this.e.sfx('sparkle', { delay: 0.1, vol: 0.6 });
     }
   }
 

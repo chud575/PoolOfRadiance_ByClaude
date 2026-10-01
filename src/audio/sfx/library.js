@@ -252,6 +252,13 @@ export const SFX = {
     metalClang(fx, t + 0.18, 0.2, 640);
   },
   splash: (fx, t) => foot(fx, t, 'water', 1.4),
+  omen: (fx, t) => {
+    // Something stirs: a low swell, a breath of wind, a far-off growl.
+    fx.tone(t, { type: 'sawtooth', f: 55, a: 0.8, dur: 0.9, peak: 0.08, filters: [{ type: 'lowpass', f: 300 }] });
+    fx.tone(t, { type: 'sawtooth', f: 58.3, a: 0.8, dur: 0.9, peak: 0.06, filters: [{ type: 'lowpass', f: 300 }] });
+    fx.burst(t, { kind: 'pink', a: 0.9, curve: 'lin', dur: 0.6, peak: 0.12, filters: [{ type: 'bandpass', f: 500, f1: 1400, q: 1.5, dt: 1.2 }] });
+    fx.voice(t + 0.6, { whisper: true, dur: 0.8, vowels: ['u', 'a'], peak: 0.08, qScale: 1.5 });
+  },
 
   // --- weapons
   swing: (fx, t, o) => whoosh(fx, t, { f0: 450 * (o.heavy ? 0.7 : 1), f1: 1900, dur: 0.24, peak: 0.28 }),

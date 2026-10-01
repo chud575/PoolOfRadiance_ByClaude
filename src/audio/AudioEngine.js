@@ -54,6 +54,10 @@ export class AudioEngine {
       for (const ev of ['pointerdown', 'keydown', 'touchstart', 'gamepadconnected']) window.addEventListener(ev, this._unlock, { capture: true });
       document.addEventListener?.('visibilitychange', () => this._visibility());
     }
+    // Gamepad-only players: try on the first pad action (works where pads count as activation).
+    bus?.on('input:action', ({ code }) => {
+      if (!this.ctx && String(code ?? '').startsWith('pad')) this.unlock();
+    });
     bus?.on('settings:changed', ({ key }) => {
       if (/Volume$|^muteAll$/.test(key)) this._applyVolumes();
     });
@@ -77,9 +81,8 @@ export class AudioEngine {
     } catch {
       return;
     }
-    for (const ev of ['pointerdown', 'keydown', 'touchstart', 'gamepadconnected']) window.removeEventListener(ev, this._unlock, { capture: true });
-    // Keep a lightweight resume hook (browsers may suspend again).
-    window.addEventListener('pointerdown', () => this.ctx?.state === 'suspended' && this.ctx.resume().catch(() => {}), { passive: true });
+    // The gesture listeners stay installed: later gestures resume a context
+    // the browser suspended (or created suspended, e.g. from gamepad input).
     this.graph = createGraph(this.ctx);
     this.buses = { master: this.graph.master, music: this.graph.musicIn, sfx: this.graph.sfxIn, ui: this.graph.uiBus, ambience: this.graph.ambBus };
     this._applyVolumes();
@@ -177,9 +180,17 @@ export class AudioEngine {
     this.state = state;
     if (!this.ctx) return;
     const ac = this.ctx;
+    const urgent = ['combat', 'victory', 'defeat', 'encounter'].includes(state);
     const fade = o.fade ?? (state === 'combat' ? 0.25 : 2.5);
+    // Musical transitions: calm changes wait for the current bar line (≤ 2.5 s)
+    // so the outgoing cue finishes its phrase; urgent ones cut in at once.
+    let wait = o.delay ?? (state === 'combat' ? 0.9 : 0);
+    if (!urgent && o.delay === undefined && this.player && !this.player.stopped) {
+      const nb = this.player.untilNextBar();
+      if (nb < 2.5) wait = nb;
+    }
     if (this.player) {
-      this.player.fadeOut(state === 'combat' || state === 'victory' || state === 'defeat' ? 0.6 : fade * 1.2);
+      this.player.fadeOut(urgent ? 0.6 : fade * 1.2, ac.currentTime + (urgent ? 0 : wait));
       this.fading.push(this.player);
       this.player = null;
     }
@@ -189,9 +200,9 @@ export class AudioEngine {
       dest: this.graph.musicIn,
       send: this.graph.musicSend,
       // Combat waits for the "danger" sting to land before the drums kick in.
-      at: ac.currentTime + 0.06 + (o.delay ?? (state === 'combat' ? 0.9 : 0)),
-      fadeIn: fade,
-      intensity: this.intensity ?? song.intensity ?? 1,
+      at: ac.currentTime + 0.06 + wait,
+      fadeIn: urgent ? fade : Math.max(0.4, fade * 0.6),
+      intensity: o.intensity ?? (state === 'combat' ? this.intensity : null) ?? song.intensity ?? 1,
     });
     this.player.tick(ac.currentTime + 0.4);
   }
@@ -261,6 +272,7 @@ export class AudioEngine {
     if (!ac || ac.state !== 'running') return;
     const now = ac.currentTime;
     this.player?.tick(now + 0.4);
+    for (const p of this.fading) p.tick?.(now + 0.4);
     for (const s of this.stingers) s.tick(now + 1);
     this.amb?.tick(now + 1);
     // Reap finished players.
