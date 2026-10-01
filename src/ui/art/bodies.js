@@ -924,6 +924,12 @@ export function buildCreature(id, seed = 1, o = {}) {
       pose.headYaw = Math.max(-1.1, Math.min(1.1, sgn * want - o.yaw - pose.twist));
     }
   }
+  if (sp.head === 'kobold' && !sp.armor && !sp.chief) {
+    // scavenged gear varies the pack: a stolen jerkin, a strapped scrap of plate, or bare hide
+    const r = R();
+    if (r < 0.28) gear.armor = 'vest';
+    else if (r < 0.46) gear.armor = 'scraps';
+  }
   if (sp.chief) gear.cape = true;
   const j = humanoid(f, sp, pose, R, gear);
   f.top = j.hp[1] + (sp.headR ?? 0.065);
