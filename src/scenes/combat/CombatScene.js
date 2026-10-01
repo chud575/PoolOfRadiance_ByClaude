@@ -159,7 +159,7 @@ export default class CombatScene extends Scene {
       f.light = l;
     });
     // Figure rim light: cool moonlit edge at night, warm sky edge by day.
-    RIM.uRimColor.value.set(this.night ? 0x4a64a8 : 0x8a7a64).multiplyScalar(this.night ? 0.9 : 0.55);
+    RIM.uRimColor.value.set(this.night ? 0x5a78c0 : 0x8a7a64).multiplyScalar(this.night ? 1.25 : 0.55);
 
     this._placeCombatants();
     this.engine = new CombatEngine({ rng, field: this.field, party: this.party, monsters: this.monsters });
@@ -500,9 +500,14 @@ export default class CombatScene extends Scene {
       grd.addColorStop(1, 'rgba(0,0,0,0.55)');
       g.fillStyle = grd;
       g.fillRect(0, 0, W, Hh);
-      const url = canvas.toDataURL('image/png');
-      this.hud.portraits.set(c.id, url);
-      PORTRAITS.set(pk, url);
+      // A canvas (not a data-URL <img>): drawing it is synchronous, so the
+      // strip never shows a not-yet-decoded portrait (deterministic captures).
+      const pc = document.createElement('canvas');
+      pc.width = W;
+      pc.height = Hh;
+      pc.getContext('2d').drawImage(canvas, 0, 0);
+      this.hud.portraits.set(c.id, pc);
+      PORTRAITS.set(pk, pc);
       fig.death = wasDead;
       fig.root.visible = false;
       if (fig.eyeGlow) fig.eyeGlow.visible = !wasDead;
@@ -755,7 +760,7 @@ export default class CombatScene extends Scene {
   _commands() {
     const c = this.cur;
     const e = this.engine;
-    const my = c && !this.busy && this.turnDone && c.side === 'party';
+    const my = c && !this.done && !this.busy && this.turnDone && c.side === 'party';
     const spells = my ? e.spellsOf(c) : [];
     const items = my ? e.usableItems(c) : [];
     const list = [
@@ -772,6 +777,7 @@ export default class CombatScene extends Scene {
       { id: 'speed', label: 'Speed', key: 'S', tip: `Combat speed: ${SPEEDS[this.speedIdx][1]}`, onSelect: () => this._cmdSpeed() },
       { id: 'end', label: 'End', key: 'E', tip: 'End this character\'s turn', disabled: !my, onSelect: () => this._act(() => []) },
     ];
+    if (this.done) for (const it of list) it.disabled = true;
     this.hud.setCommands(list, this.mode === 'aim' ? 'aim' : this.mode === 'target' ? 'cast' : this.mode === 'move' && my ? 'move' : null);
     this._cmdList = list;
   }
@@ -1171,7 +1177,8 @@ export default class CombatScene extends Scene {
           if (p && p.length && p[p.length - 1].cost <= c.mp) reachNote = `Move ${fmtMp(p[p.length - 1].cost)} and attack`;
           else bad = true;
         }
-        content.push(h('div.pct', [h('b', [`${Math.round(pv.chance * 100)}%`]), h('span', [`to hit · ${pv.dmg} dmg${pv.attacks > 1 ? ` ×${pv.attacks}` : ''}${pv.ranged ? ' · missile' : ''}`])]));
+        content.push(h('div.pct', [h('b', [`${Math.round(pv.chance * 100)}%`]), h('span', [`to hit · ${pv.dmg} dmg${pv.attacks > 1 ? ` ×${pv.attacks}` : ''}`])]));
+        if (c.side === 'party') content.push(h('div.wpn', [`${pv.ranged ? 'Missile' : 'Melee'} · ${pv.weapon}${pv.dice ? ` (${pv.dice})` : ''}`]));
         content.push(h('div.bar', [h('i', { style: { width: `${pv.chance * 100}%` } })]));
         if (pv.notes.length) content.push(h('div.note', [pv.notes.join(' · ')]));
         if (!pv.ok) content.push(h('div', { class: reachNote ? 'note' : 'warn' }, [reachNote || pv.reason]));
@@ -1450,7 +1457,7 @@ export default class CombatScene extends Scene {
           break;
         case 'effect':
           this._log(ev.text, 'combat');
-          if (fig) this.hud.float(ev.kind === 'fear' ? 'Panics!' : ev.kind, 'status', this._head(fig), this.time);
+          if (fig) this._say(fig, ev.kind === 'fear' ? 'Panics!' : ev.kind, 'status', this.time);
           if (ev.kind === 'nauseous' && fig) fig.play('hit', this.time, 0.6, { power: 0.5 });
           break;
         case 'heal':
@@ -1458,7 +1465,7 @@ export default class CombatScene extends Scene {
           if (ev.text) this._log(ev.text, 'combat');
           this._maybeRevive(ev.id);
           if (fig) {
-            this.hud.float(`+${ev.amount}`, 'heal', this._head(fig), this.time);
+            this._say(fig, `+${ev.amount}`, 'heal', this.time);
             this.vfx.heal(this.time, fig.root.position.clone(), this._seed());
           }
           break;
@@ -1470,7 +1477,7 @@ export default class CombatScene extends Scene {
           await this.wait(1.0 / this.speed);
           for (const id of ev.targets) {
             const f2 = this.figures.get(id);
-            if (ev.result === 'turned') this.hud.float('Turned!', 'status', this._head(f2), this.time);
+            if (ev.result === 'turned') this._say(f2, 'Turned!', 'status', this.time);
           }
           break;
         }
@@ -1486,12 +1493,12 @@ export default class CombatScene extends Scene {
         case 'guard':
           this._log(ev.text, 'combat');
           fig.guard = true;
-          this.hud.float('Guard', 'status', this._head(fig), this.time);
+          this._say(fig, 'Guard', 'status', this.time);
           await this.wait(0.3 / this.speed);
           break;
         case 'delay':
           this._log(ev.text, 'combat');
-          this.hud.float('Delay', 'status', this._head(fig), this.time);
+          this._say(fig, 'Delay', 'status', this.time);
           break;
         case 'bandage': {
           this._log(ev.text, 'combat');
@@ -1500,13 +1507,13 @@ export default class CombatScene extends Scene {
           fig.play('kneel', this.time, 1.2 / this.speed);
           this.vfx.heal(this.time + 0.3, this.figures.get(ev.target).root.position.clone(), this._seed());
           await this.wait(1.0 / this.speed);
-          this.hud.float('Bandaged', 'status', this._head(this.figures.get(ev.target)), this.time);
+          this._say(this.figures.get(ev.target), 'Bandaged', 'status', this.time);
           break;
         }
         case 'bleed':
           this._reveal(ev.id, -1);
           this._log(ev.text, 'warn');
-          if (fig) this.hud.float('-1', 'dmg', this._head(fig), this.time, { cls: 'party' });
+          if (fig) this._say(fig, '-1', 'dmg', this.time, { cls: 'party' });
           break;
         case 'wake':
           this._log(ev.text, 'combat');
@@ -1558,6 +1565,19 @@ export default class CombatScene extends Scene {
     return p;
   }
 
+  /** Floating text pinned to a figure's head (follows hit reacts and falls), stacked per unit. */
+  _say(fig, text, kind, t, o = {}) {
+    if (!fig) return;
+    this.hud.float(text, kind, null, t, { follow: () => this._headPos(fig), unit: fig, ...o });
+  }
+
+  /** Just above the head bone (or the model top for rigs without one). */
+  _headPos(fig) {
+    const p = fig.b?.head ? fig.bonePos('head', new THREE.Vector3()) : fig.root.position.clone().setY(fig.root.position.y + fig.model.height * 0.85);
+    p.y += fig.model.height * 0.24;
+    return p;
+  }
+
   _head(fig) {
     const p = fig.root.position.clone();
     p.y += fig.model.height * 1.02;
@@ -1576,7 +1596,7 @@ export default class CombatScene extends Scene {
     const dur = (ev.ranged ? 1.0 : att.monsterId === 'giantRat' ? 0.6 : 0.8) / sp;
     const clip = ev.ranged ? 'shoot' : 'attack';
     const reach = ev.ranged ? 0 : Math.min(0.5, Math.max(0.15, (Battlefield.dist(att.x, att.y, def.x, def.y) * TILE - 1.1) * 0.5 + 0.3));
-    if (ev.aoo || ev.guard) this.hud.float(ev.aoo ? 'Free attack!' : 'Guard!', 'status', this._head(fa), this.time);
+    if (ev.aoo || ev.guard) this._say(fa, ev.aoo ? 'Free attack!' : 'Guard!', 'status', this.time);
     if (this.snap) {
       this._impact(ev, att, def, fa, fd);
       return;
@@ -1615,14 +1635,14 @@ export default class CombatScene extends Scene {
       fd.play('hit', t, 0.62 / Math.sqrt(this.speed), { power: ev.crit ? 1.6 : ev.dmg > 5 ? 1.25 : 0.95 });
       const bone = def.monsterId === 'skeleton';
       this.vfx.hitSparks(t, at, { crit: ev.crit, seed: this._seed(), bone, blood: !bone });
-      this.hud.float(String(ev.dmg), ev.crit ? 'crit' : 'dmg', this._head(fd), t, { cls: def.side === 'party' ? 'party' : '', dx: (Math.sin(t * 13) * 0.5) });
+      this._say(fd, String(ev.dmg), ev.crit ? 'crit' : 'dmg', t, { cls: def.side === 'party' ? 'party' : '', dx: (Math.sin(t * 13) * 0.5) });
       this.ctx.audio.sfx('hit');
       // Every connecting blow gets a beat of hit-stop; heavy ones shake the camera.
       this.hitStop = ev.crit || ev.killed ? 0.09 : ev.ranged ? 0.03 : 0.045;
       if (ev.crit || ev.killed || ev.dmg >= 6) this.vfx.addShake(t, ev.crit ? 0.18 : 0.1, 0.3);
     } else {
       fd.play('hit', t, 0.35 / this.speed, { power: 0.25 });
-      this.hud.float(ev.image ? 'Image!' : 'Miss', 'miss', this._head(fd), t);
+      this._say(fd, ev.image ? 'Image!' : 'Miss', 'miss', t);
       this.ctx.audio.sfx('miss');
     }
     this._refresh(this.engine.active());
@@ -1646,7 +1666,7 @@ export default class CombatScene extends Scene {
     if (!c || !f || !f.death || isDown(c)) return;
     f.revive(this.time);
     f.blob.visible = true;
-    this.hud.float('Revived', 'status', this._head(f), this.time + 0.2);
+    this._say(f, 'Revived', 'status', this.time + 0.2);
   }
 
   _down(ev) {
@@ -1713,7 +1733,7 @@ export default class CombatScene extends Scene {
         break;
       }
       case 'sleep': this.vfx.sleepCloud(T, centre, (tact.size ?? 3) * TILE, this._seed()); delay = 0.9; break;
-      case 'cloud': this.vfx.stinkingCloud(T, centre, (tact.size ?? 2) * TILE, `area-${ev.at.x},${ev.at.y}`, this._seed()); delay = 0.6; break;
+      case 'cloud': this.vfx.stinkingCloud(T, centre, (tact.size ?? 2) * TILE, `area-${ev.at.x},${ev.at.y}`, this._seed(), { night: this.night }); delay = 0.6; break;
       case 'heal': this.vfx.heal(T, tgtFig ? tgtFig.root.position.clone() : target, this._seed()); delay = 0.4; break;
       case 'bless': for (const s of sq) this.vfx.aura(T, sq2w(s.x, s.y), 0xffd070, this._seed()); delay = 0.5; break;
       case 'curse': for (const s of sq) this.vfx.aura(T, sq2w(s.x, s.y), 0xa03050, this._seed(), { down: true }); delay = 0.5; break;
@@ -1724,6 +1744,11 @@ export default class CombatScene extends Scene {
       default: this.vfx.aura(T, tgtFig ? tgtFig.root.position.clone() : fig.root.position.clone(), 0x80c0ff, this._seed()); delay = 0.4;
     }
     await this.wait(delay);
+    // The fireball's money frame: time all but stops for a beat as it blooms.
+    if (tact.vfx === 'fireball' && !this.snap) {
+      this.hitStop = 0.32;
+      this.hitStopScale = 0.18;
+    }
     // Apply results.
     for (const hh of ev.hits ?? []) {
       if (hh.text) this._log(hh.text, 'combat');
@@ -1733,29 +1758,40 @@ export default class CombatScene extends Scene {
       if (!f2) continue;
       if (hh.dmg) {
         f2.play('hit', this.time, 0.6 / Math.sqrt(sp), { power: 1.3 });
-        // Area blasts: lift the numbers clear of the fire and stagger them.
+        if (tact.vfx === 'fireball' || tact.vfx === 'cone') f2.burn(this.time);
+        if (tact.vfx === 'fireball') f2.knock(this.time, f2.pos.x - centre.x, f2.pos.z - centre.z, 0.45);
+        // Every number rides its own victim's head, coloured by the damage type,
+        // with a name plate + hp tick for area spells (who took what).
         const area = tact.shape !== 'single';
         const k = (ev.hits ?? []).indexOf(hh);
-        this.hud.float(String(hh.dmg), 'dmg', this._head(f2).add(new THREE.Vector3(0, area ? 0.9 + (k % 3) * 0.35 : 0, 0)), this.time + (hh.saved ? 0.05 : 0) + (area ? 0.12 + k * 0.07 : 0), { cls: e.byId(hh.id).side === 'party' ? 'party' : '' });
+        const vic = e.byId(hh.id);
+        const dtype = { fireball: 'fire', cone: 'fire', missile: 'magic', lightning: 'shock', shock: 'shock' }[tact.vfx] ?? '';
+        const shownHp = this.veil.has(hh.id) ? this.veil.get(hh.id).hp : vic.hp.cur;
+        this._say(f2, String(hh.dmg), 'dmg', this.time + (hh.saved ? 0.05 : 0) + (area ? 0.08 + k * 0.05 : 0), {
+          cls: `${vic.side === 'party' ? 'party' : ''} ${dtype}`,
+          tag: area ? { name: vic.name, hp: Math.max(0, shownHp) / vic.hp.max, lost: hh.dmg / vic.hp.max } : null,
+        });
         if (tact.vfx === 'missile') this.vfx.hitSparks(this.time, this._head(f2).add(new THREE.Vector3(0, -0.5, 0)), { blood: false, seed: this._seed() });
       }
       if (hh.heal) {
-        this.hud.float(`+${hh.heal}`, 'heal', this._head(f2), this.time);
+        this._say(f2, `+${hh.heal}`, 'heal', this.time);
         this._maybeRevive(hh.id);
       }
       if (hh.effect === 'asleep') {
         f2.setState('asleep');
-        this.hud.float('Asleep', 'status', this._head(f2), this.time + 0.2);
+        (this._zzz ??= new Set()).add(hh.id);
+        this.vfx.sleepZ(this.time + 0.3, () => this._headPos(f2), `z-${hh.id}`, this._seed());
+        this._say(f2, 'Asleep', 'status', this.time + 0.2);
       }
-      if (hh.effect === 'held') this.hud.float('Held', 'status', this._head(f2), this.time);
-      if (hh.effect === 'nauseous') this.hud.float('Nauseous', 'status', this._head(f2), this.time);
+      if (hh.effect === 'held') this._say(f2, 'Held', 'status', this.time);
+      if (hh.effect === 'nauseous') this._say(f2, 'Nauseous', 'status', this.time);
       if (hh.effect === 'charmed') {
-        this.hud.float('Charmed', 'status', this._head(f2), this.time);
+        this._say(f2, 'Charmed', 'status', this.time);
         this.overlay.teamRing(hh.id, 'party');
       }
-      if (hh.effect === 'resist') this.hud.float('Resists', 'miss', this._head(f2), this.time);
+      if (hh.effect === 'resist') this._say(f2, 'Resists', 'miss', this.time);
     }
-    if (tact.vfx === 'fireball' || tact.vfx === 'lightning') this.hitStop = 0.06;
+    if (tact.vfx === 'lightning') this.hitStop = 0.06;
     await this.wait(0.35 / sp);
   }
 
@@ -1978,7 +2014,7 @@ export default class CombatScene extends Scene {
         if (c) this.hud.showSheet(c);
       },
     });
-    this.hud.setCard(act, e);
+    if (!this.done) this.hud.setCard(act, e);
     this.hud.setRoster(e, act?.id, (c) => {
       c.quick = !c.quick;
       this.ctx.ui.message(`${c.name}: ${c.quick ? 'QUICK (computer control)' : 'manual control'}.`, 'system');
@@ -1992,6 +2028,16 @@ export default class CombatScene extends Scene {
 
   _updateFigures() {
     const t = this.time;
+    // Sleepers' "Z"s end when they wake (or fall).
+    if (this._zzz?.size) {
+      for (const id of [...this._zzz]) {
+        const c = this.engine.byId(id);
+        if (!c || !c.fx?.asleep || this.engine.out(c)) {
+          this.vfx.kill(`z-${id}`);
+          this._zzz.delete(id);
+        }
+      }
+    }
     for (const c of this.engine.all) {
       const fig = this.figures.get(c.id);
       if (!fig) continue;
@@ -2001,13 +2047,13 @@ export default class CombatScene extends Scene {
       fig.proxy.position.set(p.x, 0, p.z);
       const ring = this.overlay.teamRing(c.id, c.charmed ? 'party' : c.side);
       ring.position.set(p.x, 0.03, p.z);
-      ring.visible = !this.engine.out(c) && fig.root.visible;
+      ring.visible = !this.done && !this.engine.out(c) && fig.root.visible;
       const hl = this.hoverTimeline === c.id;
       ring.scale.setScalar(hl ? 1.25 : 1);
     }
     const act = this.engine.active() ?? this.demoActive;
     const af = act && this.figures.get(act.id);
-    if (af && !this.engine.out(act)) {
+    if (af && !this.engine.out(act) && !this.done) {
       this.overlay.activeRing.visible = true;
       this.overlay.activeRing.position.set(af.root.position.x, 0.035, af.root.position.z);
       this.overlay.setFocus(undefined, { x: act.x, y: act.y });
@@ -2043,7 +2089,8 @@ export default class CombatScene extends Scene {
     let scale = this.speed >= 2.4 ? 1 : 1;
     if (this.hitStop > 0) {
       this.hitStop -= dt;
-      scale = 0.12;
+      scale = this.hitStopScale ?? 0.12;
+      if (this.hitStop <= 0) this.hitStopScale = null;
     }
     // Low frame rates (e.g. software GL) clamp dt to 0.1 s; pace combat by the
     // real frame time instead (capped), so playback keeps wall-clock speed.
@@ -2079,6 +2126,8 @@ export default class CombatScene extends Scene {
     const r = this.ctx.render;
     const pix = (r.height * r.renderer.getPixelRatio()) / (2 * Math.tan((this.camera.fov * Math.PI) / 360));
     this.vfx.update(t, this.camera, pix, (this._res ??= new THREE.Vector2()).set(r.width ?? window.innerWidth, r.height ?? window.innerHeight));
+    // Spell flashes kick the exposure for a few frames (white-hot fireball glare).
+    r.renderer.toneMappingExposure = (this.post?.exposure ?? 1) * (1 + (this.vfx.exposure ?? 0));
     this.hud.update(t, this.camera, window.innerWidth, window.innerHeight);
   }
 
@@ -2114,9 +2163,13 @@ export default class CombatScene extends Scene {
     if (winner === 'party') {
       // Let the last death and its VFX settle before the fanfare.
       if (!this.snap) await this.wait(Math.max(0.9, this.vfx.busyUntil?.(this.time) ?? 0));
+      this._clearBattlefield();
       for (const c of this.party) if (!this.engine.out(c)) this.figures.get(c.id).play('cheer', this.time, 1.4);
-      this.hud.showBanner('Victory', this.encounter.name, this.time, 2.2);
+      this.hud.showBanner('Victory', this.encounter.name, this.time, 1.5);
+      this.hud.setSummary(this._summary('party'));
       await this.wait(1.4);
+      // The dialog carries its own VICTORY header: no second title above it.
+      this.hud.hideBanner();
       const xp = xpForVictory(this.monsters);
       const living = game.party.filter((c) => c.status === 'ok');
       const share = Math.floor(xp / Math.max(1, living.length));
@@ -2130,8 +2183,11 @@ export default class CombatScene extends Scene {
       await ui.dialog({ title: 'Victory', body: `The party is victorious! Each survivor receives ${share} experience points.${spoils.text ? ` ${spoils.text}` : ''}` });
       scenes.goto('explore', {});
     } else if (winner === 'monster') {
-      this.hud.showBanner('Defeat', null, this.time, 2.4);
+      this._clearBattlefield();
+      this.hud.showBanner('Defeat', null, this.time, 1.5);
+      this.hud.setSummary(this._summary('monster'));
       await this.wait(1.4);
+      this.hud.hideBanner();
       await ui.dialog({ title: 'Defeat', body: 'The party has fallen. Phlan will not be reclaimed today...' });
       scenes.goto('title');
     } else {
@@ -2139,6 +2195,44 @@ export default class CombatScene extends Scene {
       ui.message('The party escapes into the ruins.', 'warn');
       scenes.goto('explore', {});
     }
+  }
+
+  /** Battle over: strip every tactical overlay, callout, aura and lingering cloud. */
+  _clearBattlefield() {
+    this.hud.clearFloats();
+    this.overlay.setRange(null, 0);
+    this.overlay.setTemplate([]);
+    this.overlay.setHover(null);
+    this.overlay.setPath(null, null);
+    this.overlay.setRay(null, null);
+    this.overlay.targetRing.visible = false;
+    this.overlay.activeRing.visible = false;
+    for (const r of this.overlay.teamRings.values()) r.visible = false;
+    this.vfx.clearLingering?.();
+    this.cur = null;
+    this.hud.setCommands((this._cmdList ?? []).map((c) => ({ ...c, disabled: true })), null);
+  }
+
+  /** Rows for the aftermath card (replaces the stale turn card). */
+  _summary(winner) {
+    const e = this.engine;
+    const slain = this.monsters.filter((m) => e.out(m) && !m.fled).length;
+    const fled = this.monsters.filter((m) => m.fled).length;
+    const standing = this.party.filter((c) => !e.out(c) && !c.fled).length;
+    const fallen = this.party.filter((c) => e.out(c)).length;
+    const xp = winner === 'party' ? xpForVictory(this.monsters) : 0;
+    const living = this.party.filter((c) => c.ref.status === 'ok').length;
+    return {
+      title: winner === 'party' ? 'Aftermath' : 'Fallen',
+      name: this.encounter.name,
+      rows: [
+        ['Rounds fought', String(Math.max(1, e.round))],
+        ['Foes slain', `${slain}${fled ? ` (+${fled} fled)` : ''}`],
+        ['Party standing', `${standing} / ${this.party.length}`],
+        fallen ? ['Fallen', String(fallen)] : null,
+        winner === 'party' ? ['Experience each', String(Math.floor(xp / Math.max(1, living)))] : null,
+      ].filter(Boolean),
+    };
   }
 
   exit() {

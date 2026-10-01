@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { patchSculptShader } from './sculpted.js';
+import { patchSculptShader, patchRigidShader } from './sculpted.js';
 
 /**
  * Procedural skeletal animation for combat figures. Every clip is a pure function
@@ -27,11 +27,16 @@ const angLerp = (a, b, t) => {
  */
 export const RIM = { uRimColor: { value: new THREE.Color(0.18, 0.16, 0.14) }, uRimPower: { value: 3.0 } };
 
+// Rigid kit material kind (from pbr()'s name) → surface-detail pattern id.
+const RIGID_PID = { cloth: 3, leather: 5, chain: 9, metal: 8, gold: 6, skin: 6, scales: 10, reptile: 1, fur: 2, bone: 4, wood: 6, hair: 2, plank: 6 };
+
 function addRim(mat) {
   if (!mat.isMeshStandardMaterial) return;
   const sculpt = !!mat.userData?.sculpt;
+  const pid = sculpt ? -1 : RIGID_PID[String(mat.name ?? '').split('|')[0]] ?? -1;
   mat.onBeforeCompile = (sh) => {
     if (sculpt) patchSculptShader(sh);
+    else if (pid >= 0) patchRigidShader(sh, pid);
     sh.uniforms.uRimColor = RIM.uRimColor;
     sh.uniforms.uRimPower = RIM.uRimPower;
     sh.fragmentShader = sh.fragmentShader
@@ -40,8 +45,12 @@ function addRim(mat) {
         { float rimF = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), uRimPower);
           totalEmissiveRadiance += uRimColor * rimF * (0.6 + 0.4 * diffuseColor.rgb / max(0.001, max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b)))); }`);
   };
-  mat.customProgramCacheKey = () => (sculpt ? 'fig-rim-sculpt' : 'fig-rim');
+  mat.customProgramCacheKey = () => (sculpt ? 'fig-rim-sculpt' : pid >= 0 ? 'fig-rim-detail' : 'fig-rim');
 }
+
+const _FLASH = new THREE.Color(1, 0.82, 0.68);
+const _HOLY = new THREE.Color(1, 0.9, 0.6);
+const _BURN = new THREE.Color(1, 0.32, 0.05);
 
 export class Figure {
   /**
@@ -74,6 +83,9 @@ export class Figure {
     this.state = 'idle';
     this.death = null;
     this.hitFlash = -99;
+    this.burnT = -99;
+    this.knockT = -99;
+    this.knockDir = new THREE.Vector3();
     this.guard = false;
     this.rest = {};
     for (const [k, bone] of Object.entries(this.b)) this.rest[k] = bone.position.clone();
@@ -135,6 +147,18 @@ export class Figure {
     };
     this.state = 'dead';
     this.action = null;
+  }
+
+  /** Caught in fire at time t: an ember glow that gutters out and a scorched tint. */
+  burn(t) {
+    this.burnT = t;
+  }
+
+  /** Blast stagger at time t: thrown back along (dx,dz) then recovering (or falling). */
+  knock(t, dx, dz, dist = 0.45) {
+    const l = Math.hypot(dx, dz) || 1;
+    this.knockT = t;
+    this.knockDir.set((dx / l) * dist, 0, (dz / l) * dist);
   }
 
   /** Instantly lie dead (for combatants already down when the scene starts). */
@@ -204,6 +228,13 @@ export class Figure {
 
     // Root transform (with death topple).
     this.root.position.copy(this.pos);
+    {
+      const ka = t - this.knockT;
+      if (ka >= 0 && ka < 1.4) {
+        const k = ka < 0.16 ? 1 - (1 - ka / 0.16) ** 3 : this.death ? 1 : Math.max(0, 1 - (ka - 0.16) / 0.9) ** 2;
+        this.root.position.addScaledVector(this.knockDir, k);
+      } else if (ka >= 1.4 && this.death) this.root.position.add(this.knockDir);
+    }
     const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
     const off = rootOff.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
     this.root.position.add(off);
@@ -222,16 +253,22 @@ export class Figure {
     // Hit flash & death dimming.
     const fAge = t - this.hitFlash;
     // (A hit queued for the future must not flash yet — negative age.)
-    const flash = fAge < 0 ? 0 : Math.max(0, 1 - fAge / 0.16) ** 2;
+    // A brief warm-white kick only — never a uniform glow that turns a whole
+    // figure (kit and all) into a pale mannequin; the dead never flash.
+    const flash = fAge < 0 || this.death ? 0 : Math.max(0, 1 - fAge / 0.12) ** 2;
     const deadDim = this.death ? clamp01((t - this.death.t0 - 1.2) / 2.5) : 0;
     const holy = this.death?.holy ? clamp01((t - this.death.t0) / 0.6) : 0;
+    const bAge = t - this.burnT;
+    const burn = bAge < 0 ? 0 : Math.exp(-bAge * 2.4) * (0.75 + 0.25 * Math.sin(bAge * 37 + this.seed * 9));
+    const char = bAge < 0 ? 0 : Math.min(1, bAge * 6) * 0.45;
     for (const mm of this.mats) {
       if (mm.m.emissive) {
-        mm.m.emissive.copy(mm.emissive).lerp(new THREE.Color(1, 0.5, 0.35), flash * 0.4);
-        if (holy) mm.m.emissive.lerp(new THREE.Color(1, 0.9, 0.6), Math.sin(holy * Math.PI) * 0.9);
-        mm.m.emissiveIntensity = Math.max(mm.ei, flash * 0.4);
+        mm.m.emissive.copy(mm.emissive).lerp(_FLASH, flash * 0.13);
+        if (burn > 0.01) mm.m.emissive.lerp(_BURN, Math.min(1, burn * 0.2));
+        if (holy) mm.m.emissive.lerp(_HOLY, Math.sin(holy * Math.PI) * 0.9);
+        mm.m.emissiveIntensity = mm.ei;
       }
-      mm.m.color.copy(mm.color).multiplyScalar(1 - deadDim * 0.35);
+      mm.m.color.copy(mm.color).multiplyScalar((1 - deadDim * 0.35) * (1 - char));
     }
   }
 

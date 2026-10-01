@@ -145,7 +145,7 @@ const NOISE_GLSL = `
  * uHeat, uErode (tears holes as it burns out), uSmoke (cools edges to soot),
  * uFade, uAge, uCam (camera in object space), uFloor.
  */
-function volumeFire({ steps = 24, smoke = false } = {}) {
+function volumeFire({ steps = 24, smoke = false, gas = false } = {}) {
   const mat = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
@@ -155,11 +155,11 @@ function volumeFire({ steps = 24, smoke = false } = {}) {
     blendDst: THREE.OneMinusSrcAlphaFactor,
     uniforms: {
       uCam: { value: new THREE.Vector3(0, 0, 5) }, uAge: { value: 0 }, uSeed: { value: 0 }, uGrow: { value: 0.5 }, uHeat: { value: 1 },
-      uErode: { value: 0 }, uSmoke: { value: 0 }, uFade: { value: 1 }, uFloor: { value: -10 }, uFreq: { value: 3.3 }, uSky: { value: new THREE.Color(0x3a4048) },
+      uErode: { value: 0 }, uSmoke: { value: 0 }, uFade: { value: 1 }, uFloor: { value: -10 }, uFreq: { value: 3.3 }, uSky: { value: new THREE.Color(0x3a4048) }, uDrift: { value: new THREE.Vector3(0, -1.3, 0) },
     },
     vertexShader: 'varying vec3 vO; void main(){ vO = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: `
-      uniform vec3 uCam, uSky; uniform float uAge, uSeed, uGrow, uHeat, uErode, uSmoke, uFade, uFloor, uFreq;
+      uniform vec3 uCam, uSky, uDrift; uniform float uAge, uSeed, uGrow, uHeat, uErode, uSmoke, uFade, uFloor, uFreq;
       varying vec3 vO;
       float h31(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
       float vn(vec3 x){ vec3 i = floor(x); vec3 f = fract(x); f = f * f * (3.0 - 2.0 * f);
@@ -167,15 +167,20 @@ function volumeFire({ steps = 24, smoke = false } = {}) {
                    mix(mix(h31(i + vec3(0,0,1)), h31(i + vec3(1,0,1)), f.x), mix(h31(i + vec3(0,1,1)), h31(i + vec3(1,1,1)), f.x), f.y), f.z); }
       float fbm(vec3 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { s += a * vn(p); p = p * 2.07 + vec3(1.7, 9.2, 3.3); a *= 0.5; } return s / 0.9375; }
       // Returns density (>0 inside); n = turbulence, core = 1 at the heart.
+      // Large billowing lobes (low-frequency, domain-warped) with finer curl on
+      // the rim: reads as a rolling fireball, not a flat noise texture.
       float field(vec3 p, out float n, out float core){
         float r = length(p);
-        vec3 q = p * uFreq + vec3(0.0, -uAge * 1.6, 0.0) + uSeed;
-        float w = vn(q * 0.7 + 4.3);
-        n = fbm(q + w * 1.9);
-        float tongue = 1.0 - abs(vn(q * 2.6 + w * 3.0) * 2.0 - 1.0);
+        vec3 q = p * uFreq + uDrift * uAge + uSeed;
+        float w = vn(q * 0.55 + 4.3);
+        float b1 = vn(q * 0.9 + w * 1.6);
+        float b2 = vn(q * 2.1 + w * 2.2 + 7.1);
+        float b3 = vn(q * 4.6 + 3.3 - vec3(0.0, uAge * 2.0, 0.0));
+        float lob = 1.0 - abs(b1 * 2.0 - 1.0);
+        n = clamp(lob * 0.55 + b2 * 0.3 + b3 * 0.15, 0.0, 1.0);
         float g = max(uGrow, 0.02);
-        float rad = g * (0.55 + 0.7 * n) + tongue * tongue * 0.16 * g;
-        core = clamp(1.0 - r / g, 0.0, 1.0);
+        float rad = g * (0.58 + 0.62 * n);
+        core = clamp(1.0 - r / (g * 0.95), 0.0, 1.0);
         float d = (rad - r) / g;
         d -= uErode * (1.05 - n) * 1.6;
         return d;
@@ -199,20 +204,34 @@ function volumeFire({ steps = 24, smoke = false } = {}) {
           float d = field(p, n, core);
           if (d > 0.0) {
             float dens = clamp(d * 5.0, 0.0, 1.0);
-            ${smoke ? `
+            ${gas ? `
+            // Stinking cloud: dense, low, sickly yellow-green vapour — paler on
+            // the curling tops (sky-lit), dark olive in the folds beneath.
+            float a = 1.0 - exp(-dens * mix(1.2, 5.0, n * n) * dt);
+            // One self-shadow tap toward the sky: billow tops lit, undersides dark.
+            float nU, cU;
+            float dUp = field(p + vec3(0.05, 0.22, 0.03), nU, cU);
+            float lit = exp(-max(dUp, 0.0) * 5.0);
+            float shade = clamp(lit * 0.35 + smoothstep(0.3, 0.8, n) * 0.85 - 0.15, 0.0, 1.0);
+            vec3 sc = mix(vec3(0.01, 0.013, 0.003), vec3(0.13, 0.14, 0.03), shade);
+            sc = mix(sc, sc * vec3(1.15, 1.0, 0.55), smoothstep(0.55, 0.9, n));
+            sc *= 0.55 + 0.6 * clamp(p.y * 0.9 + 0.55, 0.0, 1.0);
+            sc += vec3(0.06, 0.07, 0.012) * pow(n, 4.0) * lit;
+            sc *= uHeat;
+            col += T * a * sc;` : smoke ? `
             float a = 1.0 - exp(-dens * 5.5 * dt);
             vec3 sc = mix(vec3(0.02, 0.018, 0.017), vec3(0.17, 0.16, 0.15), n * n);
             sc += uSky * clamp(p.y * 1.2 + 0.25, 0.0, 1.0) * (0.25 + n * 0.8);
             sc += vec3(1.0, 0.32, 0.06) * uHeat * clamp(0.5 - p.y, 0.0, 1.0) * core * 1.4;
             col += T * a * sc;` : `
-            float temp = uHeat * (0.42 + core * 0.6 + (n - 0.5) * 1.7) - uSmoke * (1.0 - core) * 1.0;
-            float a = 1.0 - exp(-dens * mix(9.0, 14.0, clamp(temp, 0.0, 1.0)) * dt);
-            vec3 soot = mix(vec3(0.018, 0.016, 0.014), vec3(0.13, 0.115, 0.1), n * n);
+            float temp = uHeat * (0.24 + core * 0.9 + (n - 0.5) * 1.25) - uSmoke * (1.0 - core) * 1.05;
+            float a = 1.0 - exp(-dens * mix(7.0, 12.0, clamp(temp, 0.0, 1.0)) * dt);
+            vec3 soot = mix(vec3(0.02, 0.017, 0.015), vec3(0.15, 0.12, 0.1), n * n);
             soot += uSky * clamp(p.y * 1.2 + 0.2, 0.0, 1.0) * 0.7 * n;
-            vec3 e = vec3(0.45, 0.05, 0.008) * smoothstep(0.1, 0.32, temp);
-            e = mix(e, vec3(1.0, 0.28, 0.03) * 1.05, smoothstep(0.3, 0.55, temp));
-            e = mix(e, vec3(1.0, 0.55, 0.12) * 1.45, smoothstep(0.55, 0.82, temp));
-            e = mix(e, vec3(1.0, 0.84, 0.5) * 2.0, smoothstep(0.85, 1.25, temp));
+            vec3 e = vec3(0.4, 0.045, 0.008) * smoothstep(0.08, 0.3, temp);
+            e = mix(e, vec3(1.0, 0.3, 0.035) * 0.95, smoothstep(0.28, 0.52, temp));
+            e = mix(e, vec3(1.0, 0.56, 0.14) * 1.3, smoothstep(0.52, 0.8, temp));
+            e = mix(e, vec3(1.0, 0.82, 0.5) * 1.75, smoothstep(0.88, 1.35, temp));
             // Soot near the cool edge picks up the fire's own glow from within.
             soot += vec3(0.9, 0.25, 0.04) * clamp(uHeat, 0.0, 1.0) * 0.35 * smoothstep(-0.1, 0.25, temp);
             vec3 sc = mix(soot, e, smoothstep(0.08, 0.3, temp));
@@ -226,7 +245,7 @@ function volumeFire({ steps = 24, smoke = false } = {}) {
       }`,
   });
   const mesh = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 3), mat);
-  mesh.renderOrder = smoke ? 8 : 9;
+  mesh.renderOrder = smoke || gas ? 8 : 9;
   mesh.frustumCulled = false;
   const inv = new THREE.Matrix4();
   return {
@@ -389,6 +408,103 @@ function taperTrail(n, colorHead, colorTail, width) {
         pos.set([p.x - _s.x, p.y - _s.y, p.z - _s.z, p.x + _s.x, p.y + _s.y, p.z + _s.z], i * 6);
       }
       g.attributes.position.needsUpdate = true;
+    },
+    dispose() {
+      g.dispose();
+      mat.dispose();
+    },
+  };
+}
+
+/**
+ * Tall billboarded flame tongues (cylindrical billboards, rotate about Y only):
+ * noise-licked teardrops with a white-yellow root, orange body and red-black
+ * tips, each a pure function of age. Gives a blast vertical mass from a 3/4 view.
+ */
+function flameTongues(n, seed) {
+  const pos = [];
+  const uv = [];
+  const off = [];
+  const dat = [];
+  const idx = [];
+  for (let i = 0; i < n; i++) {
+    const r = (k) => hashf(seed * 31.7 + i * 7.3 + k * 1.9);
+    const a = r(1) * Math.PI * 2;
+    const rr = Math.sqrt(r(2));
+    for (let k = 0; k < 4; k++) {
+      pos.push(0, 0, 0);
+      uv.push(k % 2, k < 2 ? 0 : 1);
+      off.push(Math.cos(a) * rr, Math.sin(a) * rr);
+      dat.push(r(3), 0.3 + r(4) * r(4) * 1.4, r(5) * 0.3, 0.5 + r(6) * 0.7);
+    }
+    const b = i * 4;
+    idx.push(b, b + 1, b + 2, b + 1, b + 3, b + 2);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('aOff', new THREE.Float32BufferAttribute(off, 2));
+  g.setAttribute('aD', new THREE.Float32BufferAttribute(dat, 4));
+  g.setIndex(idx);
+  const mat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    // Premultiplied "over": overlapping tongues occlude rather than stacking to white.
+    blending: THREE.CustomBlending,
+    blendSrc: THREE.OneFactor,
+    blendDst: THREE.OneMinusSrcAlphaFactor,
+    side: THREE.DoubleSide,
+    uniforms: { uAge: { value: 0 }, uR: { value: 3 }, uH: { value: 2.5 }, uLife: { value: 1.4 }, uA: { value: 1 }, uCam: { value: new THREE.Vector3() } },
+    vertexShader: `
+      attribute vec2 aOff; attribute vec4 aD;
+      uniform float uAge, uR, uH, uLife; uniform vec3 uCam;
+      varying vec2 vUv; varying vec4 vD; varying float vK;
+      void main(){
+        vUv = uv; vD = aD;
+        float t = uAge - aD.z;
+        float u = clamp(t / (uLife * aD.w), 0.0, 1.0);
+        // Tongues shoot up fast with the blast, lick outward, then shrink and fade.
+        float grow = t <= 0.0 ? 0.0 : (1.0 - exp(-t * 11.0)) * (1.0 - smoothstep(0.45, 1.0, u));
+        vK = t <= 0.0 || u >= 1.0 ? 0.0 : 1.0 - smoothstep(0.55, 1.0, u);
+        float spread = uR * (0.35 + 0.65 * (1.0 - exp(-t * 6.0)));
+        vec3 base = (modelMatrix * vec4(aOff.x * spread, 0.0, aOff.y * spread, 1.0)).xyz;
+        float h = uH * aD.y * grow * (1.0 - length(aOff) * 0.45);
+        float w = h * 0.5 + 0.15 * grow;
+        vec3 toCam = uCam - base; toCam.y = 0.0; toCam = normalize(toCam);
+        vec3 right = vec3(toCam.z, 0.0, -toCam.x);
+        vec3 p = base + right * (uv.x - 0.5) * w + vec3(0.0, uv.y * h, 0.0);
+        gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+      }`,
+    fragmentShader: `${NOISE_GLSL}
+      uniform float uAge, uA; varying vec2 vUv; varying vec4 vD; varying float vK;
+      void main(){
+        if (vK <= 0.0) discard;
+        // Classic licking flame: a teardrop (wide belly, tapering tip) warped by
+        // rising noise, with soft edges and a temperature ramp root → tip.
+        vec2 q = vec2((vUv.x - 0.5) * 2.0, vUv.y);
+        float n = fbm3(vec3(q.x * 1.4 + vD.x * 13.0, q.y * 1.8 - uAge * 3.4, vD.x * 7.0)) * 0.5 + 0.5;
+        float n2 = fbm3(vec3(q.x * 3.2, q.y * 3.6 - uAge * 5.5, vD.x * 3.0 + 4.0)) * 0.5 + 0.5;
+        q.x += (n - 0.5) * 1.3 * q.y + sin(q.y * 5.0 + vD.x * 20.0 - uAge * 6.0) * 0.12 * q.y;
+        float wid = mix(0.95, 0.32, pow(q.y, 0.6)) * (0.75 + 0.5 * n);
+        float d = length(vec2(q.x / wid, (q.y - 0.3) * 1.3)) + (n2 - 0.5) * 0.5;
+        float fire = (1.0 - smoothstep(0.1, 1.0, d)) * (0.25 + n2 * 0.95) - q.y * 0.45;
+        fire = clamp(fire * 1.1, 0.0, 1.0) * vK;
+        float alpha = smoothstep(0.08, 0.6, fire);
+        vec3 c = mix(vec3(0.35, 0.04, 0.01), vec3(0.95, 0.3, 0.05), smoothstep(0.1, 0.45, fire));
+        c = mix(c, vec3(1.0, 0.6, 0.18), smoothstep(0.5, 0.85, fire));
+        float A = alpha * uA * 0.8;
+        gl_FragColor = vec4(c * 0.9 * A, A * 0.7);
+      }`,
+  });
+  const mesh = new THREE.Mesh(g, mat);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = 10;
+  return {
+    obj: mesh,
+    u: mat.uniforms,
+    update(age, ctx) {
+      mat.uniforms.uAge.value = age;
+      if (ctx.camera) mat.uniforms.uCam.value.copy(ctx.camera.position);
     },
     dispose() {
       g.dispose();
@@ -579,6 +695,7 @@ export class VFX {
     let lightI = 0;
     let lightC = null;
     let lightP = null;
+    let expo = 0;
     for (const fx of this.effects) {
       const age = t - fx.start;
       if (age < 0) {
@@ -588,6 +705,7 @@ export class VFX {
       for (const p of fx.objs) (p.obj ?? p).visible = true;
       for (const p of fx.objs) p.update?.(age, this.ctx);
       const r = fx.animate?.(age, fx.parts, this.ctx);
+      if (r?.exposure > expo) expo = r.exposure;
       if (r?.light && r.light.i > lightI) {
         lightI = r.light.i;
         lightC = r.light.color;
@@ -595,11 +713,18 @@ export class VFX {
       }
       if (!fx.persistent && age > fx.life) fx.dead = true;
     }
+    /** Exposure bump requested by flashes (the scene scales tone-mapping exposure). */
+    this.exposure = expo;
     this.light.intensity = lightI;
     if (lightC) this.light.color.set(lightC);
     if (lightP) this.light.position.copy(lightP);
     for (const fx of this.effects.filter((f) => f.dead)) this._remove(fx);
     this.effects = this.effects.filter((f) => !f.dead);
+  }
+
+  /** End of battle: every aura, cloud and ring goes (decals stay in the world). */
+  clearLingering() {
+    for (const fx of this.effects) fx.dead = true;
   }
 
   kill(id) {
@@ -639,7 +764,8 @@ export class VFX {
   hitSparks(t, at, { blood = true, crit = false, seed = 1, bone = false } = {}) {
     this.add(t, 0.9, () => ({
       list: [
-        particleBurst({ at, count: crit ? 24 : 16, speed: crit ? 7 : 5.5, life: 0.32, size: 0.03, drag: 2.5, gravity: 9, colors: [0xffffff, 0xffc060, 0xff5010], intensity: 2.2, seed, floor: 0.02, spread: 0.12 }),
+        // Velocity-streaked steel sparks spraying off the blow (not round specks).
+        sparkStreaks({ at, count: crit ? 18 : 11, speed: crit ? 6.5 : 5, life: 0.3, gravity: 9, drag: 2.2, width: 1.6, streak: 0.035, intensity: 2.0, seed, r0: 0.05 }),
         ...(blood && !bone ? [particleBurst({ at, count: crit ? 26 : 14, speed: 2.2, life: 0.7, size: 0.07, drag: 1.5, gravity: 9.8, colors: [0x7a0a06, 0x4a0504, 0x2a0303], additive: false, intensity: 1, soft: 0.3, seed: seed + 7, floor: 0.02 })] : []),
         ...(bone ? [particleBurst({ at, count: 16, speed: 2.5, life: 0.8, size: 0.06, drag: 1.2, gravity: 9.8, colors: [0xe8e0c8, 0xc8b898, 0x8a7a60], additive: false, intensity: 1, soft: 0.2, seed: seed + 9, floor: 0.02 })] : []),
         glowSprite(0xffc070, crit ? 0.9 : 0.6, 0.7),
@@ -647,7 +773,7 @@ export class VFX {
     }), (age, parts) => {
       const sp = parts.list[parts.list.length - 1];
       sp.position.copy(at);
-      sp.material.opacity = Math.max(0, 1 - age / 0.08) * 0.5;
+      sp.material.opacity = Math.max(0, 1 - age / 0.07) * 0.35;
       sp.scale.setScalar((crit ? 0.9 : 0.6) * (1 + age * 3));
     });
   }
@@ -803,11 +929,13 @@ export class VFX {
     // One ray-marched fire volume (core → flame tongues → soot) plus a smaller
     // offset one for an asymmetric silhouette, and two smoke volumes that roll
     // up out of the crown into a dark cap as the fire burns out.
-    const ball = volumeFire({ steps: 26 });
+    const ball = volumeFire({ steps: 32 });
     const ball2 = volumeFire({ steps: 18 });
     const cap = volumeFire({ steps: 18, smoke: true });
     const stem = volumeFire({ steps: 14, smoke: true });
     ball.u.uSeed.value = seed * 3.1;
+    ball.u.uFreq.value = 2.1;
+    ball2.u.uFreq.value = 2.4;
     ball2.u.uSeed.value = seed * 7.7 + 11;
     cap.u.uSeed.value = seed * 5.3 + 2;
     stem.u.uSeed.value = seed * 2.9 + 7;
@@ -830,8 +958,37 @@ export class VFX {
     const lateSparks = sparkStreaks({ at: { x: to.x, y: to.y + 0.4, z: to.z }, count: 40, speed: 4, up: 1.4, life: 1.6, gravity: 3, drag: 1.6, hemi: true, width: 1.6, streak: 0.12, intensity: 2.2, seed: seed + 9, delay: 0.15, stagger: 0.5, r0: R * 0.4 });
     const debris = particleBurst({ at: { x: to.x, y: 0.2, z: to.z }, count: 36, speed: 6.5, life: 1.2, size: 0.09, drag: 1, gravity: 12, hemi: true, colors: [0x5a4a3a, 0x3a3028, 0x2a2420], additive: false, intensity: 1, soft: 0.2, seed: seed + 5, floor: 0.03 });
     const dust = particleBurst({ at: { x: to.x, y: 0.15, z: to.z }, count: 30, spread: 0.3, flatY: true, hemi: true, speed: 7.5, up: 0.12, life: 1.8, size: 1.0, grow: 2.5, drag: 3.2, colors: [0x7a6a58, 0x5a4e42, 0x3a342e], additive: false, intensity: 1, soft: 0.95, seed: seed + 13, fadeIn: 0.05 });
+    // Vertical mass: a crown of tall flame tongues licking up around the blast,
+    // and a white-hot flash core for the first frames.
+    const tongues = flameTongues(11, seed + 31);
+    tongues.u.uR.value = R * 0.6;
+    tongues.u.uH.value = R * 0.5;
+    tongues.u.uLife.value = 0.95;
+    const tonguesIn = flameTongues(4, seed + 37);
+    tonguesIn.u.uR.value = R * 0.25;
+    tonguesIn.u.uH.value = R * 0.7;
+    tonguesIn.u.uLife.value = 0.8;
+    const flash = glowSprite(0xfff2d8, R * 3.2, 0);
+    const flashCore = glowSprite(0xffffff, R * 1.2, 0);
+    const heatRing = groundRing(0xffb070, 0.0);
     const groundFire = particleBurst({ at: { x: to.x, y: 0.12, z: to.z }, count: 70, spread: R * 0.7, flatY: true, speed: 0.2, gravity: -1.4, life: 0.8, stagger: 1.4, delay: 0.3, size: 0.16, grow: 1.0, drag: 1, turb: 0.4, colors: [0xffb050, 0xff4a08, 0x200804], intensity: 1.1, seed: seed + 21, fadeIn: 0.15 });
-    this.add(T, 4.5, () => ({ list: [scorch, ring, dust, groundFire, stem, cap, ball2, ball, shock, sparks, lateSparks, debris] }), (age, parts, ctx) => {
+    this.add(T, 4.5, () => ({ list: [scorch, ring, heatRing, dust, groundFire, stem, cap, ball2, ball, tongues, tonguesIn, shock, sparks, lateSparks, debris, flash, flashCore] }), (age, parts, ctx) => {
+      tongues.obj.position.set(to.x, 0.02, to.z);
+      tonguesIn.obj.position.set(to.x, 0.02, to.z);
+      // White-hot flash: 2-3 frames of glare, then gone.
+      const fl = age < 0.03 ? age / 0.03 : Math.exp(-(age - 0.03) * 14);
+      flash.position.set(to.x, to.y + 0.3, to.z);
+      flash.material.opacity = fl * 0.85;
+      flashCore.position.set(to.x, to.y + 0.2, to.z);
+      flashCore.material.opacity = Math.min(1, fl * 1.4);
+      // Heat shimmer band riding just behind the shockwave front.
+      const hr = R * (0.3 + 0.95 * (1 - Math.exp(-age * 6)));
+      heatRing.position.set(to.x, 0.05, to.z);
+      heatRing.scale.setScalar(hr * 2.2);
+      heatRing.material.uniforms.uR.value = 0.8;
+      heatRing.material.uniforms.uW.value = 0.22;
+      heatRing.material.uniforms.uA.value = clamp01(1 - age / 0.7) * 0.35;
+      heatRing.visible = age < 0.75;
       const ease = 1 - Math.exp(-age * 8);
       const cam = ctx?.camera;
       const rise = age * 0.55 + age * age * 0.3;
@@ -871,7 +1028,7 @@ export class VFX {
         cap.u.uGrow.value = 0.25 + 0.55 * (1 - Math.exp(-ac * 3));
         cap.u.uHeat.value = Math.max(0, 1 - ac * 0.8);
         cap.u.uErode.value = Math.max(0, ac - 2.0) * 0.4;
-        cap.u.uFade.value = clamp01(ac * 3) * clamp01((4.4 - age) / 1.4) * 0.95;
+        cap.u.uFade.value = clamp01(ac * 3) * clamp01((4.4 - age) / 1.4) * 0.72;
         cap.sync(cam, 0.02);
       }
       const as = age - 0.35;
@@ -884,7 +1041,7 @@ export class VFX {
         stem.u.uGrow.value = 0.3 + 0.4 * (1 - Math.exp(-as * 3));
         stem.u.uHeat.value = Math.max(0, 0.7 - as * 0.6);
         stem.u.uErode.value = Math.max(0, as - 1.6) * 0.5;
-        stem.u.uFade.value = clamp01(as * 3) * clamp01((4.0 - age) / 1.2) * 0.85;
+        stem.u.uFade.value = clamp01(as * 3) * clamp01((4.0 - age) / 1.2) * 0.6;
         stem.sync(cam, 0.02);
       }
       shock.position.set(to.x, to.y, to.z);
@@ -896,15 +1053,17 @@ export class VFX {
       ring.scale.setScalar(rr * 2 / 0.8);
       ring.position.set(to.x, 0.06, to.z);
       ring.material.uniforms.uT.value = age;
-      ring.material.uniforms.uA.value = clamp01(1 - age / 0.5) ** 1.5 * 0.55;
-      ring.visible = age < 0.62;
+      ring.material.uniforms.uA.value = clamp01(1 - age / 0.6) ** 1.3 * 0.75;
+      ring.visible = age < 0.66;
       scorch.position.set(to.x, 0.03, to.z);
       scorch.scale.setScalar(R * 0.95);
       scorch.material.opacity = clamp01(age * 5) * 0.75;
       // A big warm key light: white-orange flash settling to a deep orange glow.
       // A big warm flare that washes walls, windows and figures, settling to a burn.
-      const li = age < 0.04 ? 220 * (age / 0.04) : 220 * Math.exp(-(age - 0.04) * 2.6) + 26 * Math.max(0, 1 - age / 2.4);
-      return { light: { i: li, color: age < 0.15 ? 0xffb868 : 0xff7a28, pos: new THREE.Vector3(to.x, to.y + 1.1 + rise * 0.6, to.z) } };
+      const li = age < 0.03 ? 1400 * (age / 0.03) : 1300 * Math.exp(-(age - 0.03) * 18) + 55 * Math.exp(-age * 1.2) + 22 * Math.max(0, 1 - age / 2.6);
+      // Exposure kick on the flash, easing back as the fire settles.
+      const expo = age < 0.03 ? 0.8 * (age / 0.03) : 0.8 * Math.exp(-(age - 0.03) * 16) + 0.05 * Math.exp(-age * 3);
+      return { exposure: expo, light: { i: li, color: age < 0.12 ? 0xffd6a0 : 0xff8434, pos: new THREE.Vector3(to.x, to.y + 1.3 + rise * 0.6, to.z) } };
     });
     this.addShake(T, 0.35, 0.6);
     return { flight, detonate: flight };
@@ -961,38 +1120,73 @@ export class VFX {
     return 0.12;
   }
 
-  /** Sleep: lilac motes settle over the area and dust the sleepers. */
+  /** Sleep: big, soft blue-violet motes drift down in lazy arcs and settle over the area. */
   sleepCloud(t, centre, size, seed = 1) {
-    const r = size * 0.75;
-    this.add(t, 2.6, () => ({
-      list: [
-        particleBurst({ at: { x: centre.x, y: 2.8, z: centre.z }, count: 120, spread: r, speed: 0.3, gravity: 0.25, life: 2.4, stagger: 0.8, size: 0.09, drag: 0.8, turb: 0.4, colors: [0xffffff, 0xc8b0ff, 0x6a50c0], intensity: 2.2, seed, floor: 0.1, fadeIn: 0.2 }),
-      ],
-    }));
-    const ring = groundRing(0xa080ff, 0.15);
-    this.add(t, 1.5, () => ({ list: [ring] }), (age) => {
-      ring.position.set(centre.x, 0.06, centre.z);
-      ring.scale.setScalar(r * 2.6);
-      ring.material.uniforms.uR.value = 0.3 + age * 0.4;
-      ring.material.uniforms.uA.value = Math.sin(clamp01(age / 1.5) * Math.PI) * 0.6;
-      return { light: { i: 4 * Math.sin(clamp01(age / 1.5) * Math.PI), color: 0x9a80ff, pos: new THREE.Vector3(centre.x, 2, centre.z) } };
+    const r = size * 0.62;
+    const motes = particleBurst({
+      at: { x: centre.x, y: 3.4, z: centre.z }, count: 60, spread: r, speed: 0.22, gravity: 0.18, life: 2.6, stagger: 0.9, size: 0.26, drag: 0.6, turb: 0.55,
+      colors: [0xcfc0ff, 0x9a84ff, 0x4a3ac0], intensity: 1.2, seed, floor: -2, fadeIn: 0.25, soft: 1.0,
+    });
+    const dust = particleBurst({
+      at: { x: centre.x, y: 2.6, z: centre.z }, count: 60, spread: r * 1.05, speed: 0.15, gravity: 0.22, life: 2.8, stagger: 1.0, size: 0.05, drag: 0.5, turb: 0.4,
+      colors: [0xe8e0ff, 0xb8a8ff, 0x6a58d0], intensity: 1.6, seed: seed + 5, floor: -2, fadeIn: 0.2,
+    });
+    const veil = glowSprite(0x8a78ff, size * 1.6, 0);
+    this.add(t, 3.0, () => ({ list: [motes, dust, veil] }), (age) => {
+      veil.position.set(centre.x, 1.0, centre.z);
+      veil.material.opacity = Math.sin(clamp01(age / 2.6) * Math.PI) * 0.06;
+      return { light: { i: 2.2 * Math.sin(clamp01(age / 2.6) * Math.PI), color: 0x9a86ff, pos: new THREE.Vector3(centre.x, 2.4, centre.z) } };
     });
   }
 
-  /** Stinking cloud: persistent, churning volumetric fog (layered noise billboards). */
-  stinkingCloud(t, centre, size, id, seed = 1) {
-    const puffs = [];
-    for (let k = 0; k < 14; k++) puffs.push(puff(k % 3 ? 0x8a9a3a : 0xa8b050, seed + k));
-    this.add(t, 999, () => ({ list: puffs }), (age) => {
-      const fade = clamp01(age / 0.8);
-      puffs.forEach((p, k) => {
-        const a = hashf(seed + k) * Math.PI * 2 + age * 0.15 * (k % 2 ? 1 : -1);
-        const rr = size * 0.45 * Math.sqrt(hashf(seed + k * 7));
-        p.position.set(centre.x + Math.cos(a) * rr, 0.5 + hashf(seed + k * 3) * 1.1 + Math.sin(age * 0.6 + k) * 0.1, centre.z + Math.sin(a) * rr);
-        const sc = (1.6 + hashf(seed + k * 11) * 1.4) * (0.6 + fade * 0.4) * size * 0.35;
-        p.scale.set(sc * 1.4, sc, 1);
-        p.material.uniforms.uT.value = age + k;
-        p.material.uniforms.uA.value = 0.42 * fade;
+  /** A sleeper: soft violet glow pulse and lazy "Z"s rising from the head (persistent until woken). */
+  sleepZ(t, getPos, id, seed = 1) {
+    const zs = [0, 1, 2].map(() => {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: zTexture(), color: 0xd8ccff, transparent: true, depthWrite: false, opacity: 0 }));
+      sp.renderOrder = 12;
+      return sp;
+    });
+    const glow = glowSprite(0x9a88ff, 0.9, 0);
+    this.add(t, 999, () => ({ list: [glow, ...zs] }), (age) => {
+      const p = getPos();
+      glow.position.copy(p).setY(p.y - 0.15);
+      glow.material.opacity = 0.18 + 0.12 * Math.sin(age * 2.2 + seed);
+      zs.forEach((z, k) => {
+        const ph = (age * 0.45 + k / 3 + seed * 0.13) % 1;
+        z.position.set(p.x + Math.sin(ph * 5 + k) * 0.12 + ph * 0.25, p.y + ph * 0.75, p.z);
+        z.scale.setScalar(0.14 + ph * 0.16);
+        z.material.opacity = Math.sin(ph * Math.PI) * 0.85 * clamp01(age * 2);
+      });
+    }, { persistent: true, id });
+  }
+
+  /**
+   * Stinking cloud: persistent, ray-marched yellow-green vapour hugging the
+   * ground — three overlapping squashed volumes with slow curling billows and
+   * edges that drift and breathe.
+   */
+  stinkingCloud(t, centre, size, id, seed = 1, { night = false } = {}) {
+    const vols = [0, 1, 2].map((k) => {
+      const v = volumeFire({ steps: 20, gas: true });
+      v.u.uSeed.value = seed * 3.7 + k * 11.3;
+      v.u.uFreq.value = 2.2;
+      v.u.uDrift.value.set(0.35 * (k % 2 ? 1 : -1), 0.12, 0.25);
+      v.u.uHeat.value = night ? 0.4 : 1.0;
+      return v;
+    });
+    this.add(t, 999, () => ({ list: vols }), (age, parts, ctx) => {
+      const fade = clamp01(age / 0.9);
+      vols.forEach((v, k) => {
+        const a = hashf(seed + k) * Math.PI * 2 + age * 0.05 * (k % 2 ? 1 : -1);
+        const off = k === 0 ? 0 : size * 0.22;
+        const g = size * (0.62 - k * 0.08) * (0.85 + 0.15 * fade) * (1 + 0.04 * Math.sin(age * 0.7 + k));
+        v.obj.position.set(centre.x + Math.cos(a) * off, g * 0.32, centre.z + Math.sin(a) * off);
+        v.obj.scale.set(g, g * 0.42, g * 0.95);
+        v.u.uAge.value = age * 0.3 + k * 3;
+        v.u.uGrow.value = 0.55 + 0.25 * fade;
+        v.u.uErode.value = 0.05;
+        v.u.uFade.value = fade * 0.92;
+        v.sync(ctx.camera, 0.01);
       });
     }, { persistent: true, id });
   }
@@ -1088,6 +1282,24 @@ export class VFX {
       return { light: { i: 5 * k, color, pos: p } };
     });
   }
+}
+
+let _zTex = null;
+function zTexture() {
+  if (_zTex) return _zTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  g.font = 'italic bold 52px Georgia, serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.shadowColor = 'rgba(120, 100, 255, 0.9)';
+  g.shadowBlur = 10;
+  g.fillStyle = '#fff';
+  g.fillText('z', 32, 34);
+  _zTex = new THREE.CanvasTexture(c);
+  _zTex.colorSpace = THREE.SRGBColorSpace;
+  return _zTex;
 }
 
 let _sigil = null;

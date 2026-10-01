@@ -86,11 +86,20 @@ export const DEMOS = {
       floor.receiveShadow = true;
       sc.scene3d.add(floor);
       sc.overlay.group.visible = false;
-      const n = Math.max(sc.party.length, sc.monsters.length);
-      const cx = (2 + (n - 1)) * TILE;
+      // &only=monsters: hide the party row and frame just the monsters.
+      if (sc.params.only === 'monsters') {
+        for (const c of sc.party) sc.figures.get(c.id).root.visible = false;
+        sc.monsters.forEach((c, i) => {
+          moveTo(sc, c, 2 + i * 2, y0 - 2);
+          const f = sc.figures.get(c.id);
+          f.place(f.pos.x, f.pos.z, 0);
+        });
+      }
+      const n = sc.params.only === 'monsters' ? sc.monsters.length : Math.max(sc.party.length, sc.monsters.length);
+      const cx = sc.params.only === 'monsters' ? sc.monsters.reduce((a, c) => a + c.x, 0) / Math.max(1, sc.monsters.length) * TILE : (2 + (n - 1)) * TILE;
       const pitch = Number.isFinite(+sc.params.pitch) && sc.params.pitch !== undefined ? +sc.params.pitch : 0.42;
       const mz = all.reduce((a, c) => a + c.y, 0) / Math.max(1, all.length);
-      sc.cam.goalTarget.set(cx + TILE / 2, Number(sc.params.ty) || 0, (mz + 0.5) * TILE);
+      sc.cam.goalTarget.set(cx + TILE / 2 + (Number(sc.params.tx) || 0), Number(sc.params.ty) || 0, (mz + 0.5) * TILE);
       sc.camera.clearViewOffset();
       sc._applyViewOffset = () => {};
       sc.cam.target.copy(sc.cam.goalTarget);
@@ -98,6 +107,7 @@ export const DEMOS = {
       sc.cam.goalPitch = sc.cam.pitch = pitch;
       sc.cam.goalYaw = sc.cam.yaw = Number.isFinite(+sc.params.yaw) && sc.params.yaw !== undefined ? +sc.params.yaw : 0;
       sc.demoActive = sc.party[0];
+      sc.cam.userPanned = true;
     },
   },
 
@@ -137,14 +147,14 @@ export const DEMOS = {
       setActive(sc, caster);
       sc.mode = 'target';
       sc.modeData = { spell: 'fireball', label: 'Fireball' };
-      // Timing: whatever the range, the gallery frame (t=0.75) lands ~0.26 s after
-      // detonation — fire shells fully billowed, sparks streaking, smoke starting.
+      // Timing: whatever the range, the gallery frame (t=0.75) lands ~0.17 s after
+      // detonation — the money frame: white-hot heart, billowing shell, shockwave out.
       const f = sc.figures.get(caster.id);
       const centre = sq2w(best.x, best.y).setY(0.9);
       f.play('cast', -10, 1.15);
       f.update(0);
       const flight = Math.max(0.35, f.bonePos('handR').distanceTo(centre) / 16);
-      const launch = 0.75 - 0.26 - flight;
+      const launch = 0.75 - 0.17 - flight;
       f.play('cast', launch - 0.62, 1.15);
       f.update(launch);
       const hand = f.bonePos('handR').clone();
@@ -160,8 +170,11 @@ export const DEMOS = {
         const fm = sc.figures.get(m.id);
         const d = dmg[k % dmg.length];
         fm.play('hit', detonate + 0.02, 0.6, { power: 1.8 });
-        // Numbers lift clear of the fireball's face, staggered.
-        sc.hud.float(String(d), k === 0 ? 'crit' : 'dmg', sc._head(fm).add(new THREE.Vector3(0, 1.7 + (k % 3) * 0.45, 0)), detonate + 0.1 + k * 0.05);
+        fm.burn(detonate + 0.01);
+        fm.knock(detonate + 0.01, fm.pos.x - centre.x, fm.pos.z - centre.z, 0.5);
+        // Each number rides its victim's head, fire-coloured, with a name plate + hp tick.
+        const hp0 = m.hp.cur;
+        sc._say(fm, String(d), 'dmg', detonate + 0.08 + k * 0.05, { cls: 'fire', tag: { name: m.name, hp: Math.max(0, hp0 - d) / m.hp.max, lost: Math.min(hp0, d) / m.hp.max } });
         // Results land with the blast, not before it.
         sc.at(detonate + 0.02, () => {
           m.hp.cur -= d;
@@ -174,13 +187,48 @@ export const DEMOS = {
       });
       sc.overlay.setTemplate([]);
       // Camera: frame caster and blast, slightly closer.
-      const mid = sq2w(caster.x + (best.x - caster.x) * 0.68, caster.y + (best.y - caster.y) * 0.68);
+      const mid = sq2w(caster.x + (best.x - caster.x) * 0.6, caster.y + (best.y - caster.y) * 0.6);
       sc.cam.goalTarget.copy(mid);
       sc.cam.target.copy(mid);
       const span = Math.hypot(caster.x - best.x, caster.y - best.y) * TILE;
-      sc.cam.goalDist = sc.cam.dist = Math.max(13.5, span * 1.75);
-      sc.cam.goalYaw = sc.cam.yaw = Math.atan2(best.y - caster.y, -(best.x - caster.x)) * 0 + 0.25;
-      sc.cam.goalPitch = sc.cam.pitch = 0.9;
+      sc.cam.goalDist = sc.cam.dist = Math.max(14.5, span * 1.9);
+      // A lower 3/4 view so the blast's height (tongues, rising core, smoke cap)
+      // reads, from the bearing with the fewest buildings in the way.
+      sc.cam.goalPitch = sc.cam.pitch = Number.isFinite(+sc.params.pitch) && sc.params.pitch !== undefined ? +sc.params.pitch : 0.66;
+      if (Number.isFinite(+sc.params.yaw) && sc.params.yaw !== undefined) sc.cam.goalYaw = +sc.params.yaw;
+      else sc._chooseYaw({ around: [caster, best] });
+      sc.cam.yaw = sc.cam.goalYaw;
+      sc._refresh(caster);
+    },
+  },
+
+  /** Area spells for review: a stinking cloud over one knot of foes, sleep settling on others (t≈1.2). */
+  cloud: {
+    async stage(sc) {
+      const foes = sc.monsters;
+      const caster = sc.party.find((c) => c.ref.levels.magicUser) ?? sc.party[0];
+      setActive(sc, caster);
+      const a = foes[0];
+      const b = foes.slice().sort((p, q) => Battlefield.dist(q.x, q.y, a.x, a.y) - Battlefield.dist(p.x, p.y, a.x, a.y))[0];
+      const ca = sq2w(a.x + 0.5, a.y + 0.5);
+      sc.vfx.stinkingCloud(-4, ca, 2 * TILE, 'demo-cloud', 2.3, { night: sc.night });
+      const cb = sq2w(b.x, b.y);
+      sc.vfx.sleepCloud(0, cb, 3 * TILE, 4.1);
+      for (const m of foes) {
+        if (Battlefield.dist(m.x, m.y, b.x, b.y) <= 1 && m !== a) {
+          m.fx.asleep = 3;
+          const f = sc.figures.get(m.id);
+          f.setState('asleep');
+          sc.vfx.sleepZ(0.6, () => sc._headPos(f), `z-${m.id}`, m.x + m.y);
+        }
+      }
+      const mid = ca.clone().lerp(cb, 0.5);
+      sc.cam.goalTarget.copy(mid);
+      sc.cam.target.copy(mid);
+      sc.cam.goalDist = sc.cam.dist = 13;
+      sc.cam.goalPitch = sc.cam.pitch = 0.7;
+      sc._chooseYaw({ around: [a, b] });
+      sc.cam.yaw = sc.cam.goalYaw;
       sc._refresh(caster);
     },
   },
@@ -274,7 +322,7 @@ export const DEMOS = {
       sc.vfx.hitSparks(impact, at, { crit: true, seed: 5, blood: true });
       sc.vfx.swipe(impact - 0.06, fh.root.position.clone().setY(fh.model.height * 0.55), fh.yaw);
       sc.vfx.addShake(impact, 0.12, 0.3);
-      sc.hud.float('9', 'crit', sc._head(ff), impact + 0.01);
+      sc._say(ff, '9', 'crit', impact + 0.01);
       sc.at(impact, () => (foe.hp.cur = Math.max(1, foe.hp.cur - 3)));
       // Second pair mid-exchange.
       if (second && foe2) {

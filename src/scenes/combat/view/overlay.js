@@ -37,7 +37,7 @@ export class Overlay {
       tInfo: { value: this.tInfo },
       uGrid: { value: new THREE.Vector2(w, h) },
       uTime: { value: 0 },
-      uRangeColor: { value: new THREE.Color(0x6fb8ff) },
+      uRangeColor: { value: new THREE.Color(0x9cc6ee) },
       uTemplateColor: { value: new THREE.Color(0xff6a2a) },
       uShowGrid: { value: 1 },
       uAlpha: { value: 1 },
@@ -65,6 +65,10 @@ export class Overlay {
           vec2 g = vec2(vUv.x, 1.0 - vUv.y) * uGrid;
           vec2 c = floor(g);
           vec2 f = g - c;
+          // Pixel footprint in square units, taken in uniform control flow
+          // (derivatives inside branches are undefined → nondeterministic AA).
+          vec2 fwG = fwidth(g);
+          float pxG = max(0.5 * (fwG.x + fwG.y), 0.0015);
           vec4 s = S(c);
           vec4 inf = I(c);
           float walk = step(0.5, inf.r);
@@ -100,32 +104,45 @@ export class Overlay {
               float nObs = step(0.2, I(c + dd).r) * step(I(c + dd).r, 0.5);
               if (S(c + dd).r < 0.1 && nObs < 0.5) de = min(de, length(vec2(dd.x > 0.0 ? 1.0 - f.x : f.x, dd.y > 0.0 ? 1.0 - f.y : f.y)));
             }
-            float aa = fwidth(de) * 1.2 + 0.004;
-            float rim = 1.0 - smoothstep(0.012, 0.012 + aa + 0.02, de);
-            float inner = exp(-de * 7.0) * (1.0 - rim);
-            float shimmer = 0.5 + 0.5 * sin(uTime * 1.4 - (g.x * 0.8 + g.y * 0.55));
-            vec3 rc = r > 0.9 ? uRangeColor : vec3(1.0, 0.78, 0.35);
-            LAYER(rc * 0.45, 0.07 + 0.035 * shimmer);
-            LAYER(rc * 1.1, inner * (0.42 + 0.12 * shimmer));
-            LAYER(rc * 1.7 + 0.15, rim * 0.85);
+            // Crisp ~1.5 px rim on the outer boundary (pixel-sized via fwidth), a
+            // faint per-square inlay and a low, even tint: the cobbles stay readable.
+            float px = pxG;
+            float rim = 1.0 - smoothstep(px * 0.9, px * 2.1, de);
+            float halo = exp(-de * 22.0) * (1.0 - rim);
+            float shimmer = 0.5 + 0.5 * sin(uTime * 1.2 - (g.x * 0.8 + g.y * 0.55));
+            vec3 rc = r > 0.9 ? uRangeColor : vec3(1.0, 0.8, 0.45);
+            float tileEd = ed;
+            float pxT = pxG;
+            float inlay = smoothstep(0.035, 0.035 + pxT * 1.5, tileEd);
+            LAYER(rc * 0.55, (0.11 + 0.025 * shimmer) * inlay);
+            LAYER(rc * 0.9, (1.0 - smoothstep(0.035, 0.035 + pxT * 1.2, tileEd)) * smoothstep(0.0, pxT, tileEd) * 0.1);
+            LAYER(rc, halo * 0.1);
+            LAYER(vec3(0.0), (1.0 - smoothstep(px * 2.1, px * 3.4, de)) * (1.0 - rim) * 0.35);
+            LAYER(rc * 1.25 + 0.1, rim * 0.9);
             // Rough ground costs extra: darker, with a stipple.
             if (inf.g > 0.2 && inf.g < 0.5) {
               float st = step(0.82, fract(sin(dot(floor(g * 9.0), vec2(12.9898, 78.233))) * 43758.5453));
               LAYER(vec3(0.02, 0.025, 0.04), 0.26 + st * 0.2);
             }
           }
-          // Threatened squares (moving out provokes): red diagonal hatch.
+          // Threatened squares (moving out provokes): thin, desaturated diagonal
+          // hairlines plus a faint red vignette hugging the square edges.
           if (s.a > 0.1 && r > 0.1) {
-            float hv = fract((g.x + g.y) * 3.0);
-            float hatch = smoothstep(0.58, 0.64, hv) * (1.0 - smoothstep(0.92, 0.98, hv));
-            LAYER(vec3(0.95, 0.22, 0.15), hatch * 0.19);
+            float hv = (g.x + g.y) * 4.0;
+            float hd = abs(fract(hv) - 0.5);
+            float hpx = pxG * 8.0;
+            float hatch = 1.0 - smoothstep(hpx * 0.6, hpx * 1.4, hd);
+            LAYER(vec3(0.62, 0.3, 0.26), hatch * 0.2);
+            LAYER(vec3(0.55, 0.12, 0.08), exp(-ed * 9.0) * 0.16);
           }
           // Spell template.
           if (s.g > 0.9) {
             float pulse = 0.5 + 0.5 * sin(uTime * 5.0);
             float e2 = 1.0 - smoothstep(0.0, 0.07, ed);
-            LAYER(uTemplateColor * 0.8, 0.28 + 0.1 * pulse);
-            LAYER(uTemplateColor * 1.6, e2 * 0.7);
+            float pxE = pxG;
+            float rimT = 1.0 - smoothstep(pxE, pxE * 2.5, ed);
+            LAYER(uTemplateColor * 0.7, 0.13 + 0.05 * pulse);
+            LAYER(uTemplateColor * 1.5, rimT * 0.6 + e2 * 0.12);
           } else if (s.g > 0.4) {
             // Valid target squares (enemies in reach).
             float e2 = 1.0 - smoothstep(0.0, 0.08, ed);
@@ -140,10 +157,25 @@ export class Overlay {
           } else if (s.b > 0.5) {
             LAYER(vec3(1.0, 0.25, 0.2) * 0.7, 0.25);
           }
-          // Exit squares along the rim (flee): drifting chevrons.
+          // Exit squares along the rim (flee): a worn painted chevron pointing off
+          // the field with a slow glowing pulse travelling outward.
           if (inf.g > 0.5 && r > 0.1) {
-            float chev = step(0.75, fract(ed * 6.0 - uTime * 0.8));
-            LAYER(vec3(0.5, 1.0, 0.6), chev * 0.25);
+            vec4 dE = vec4(c.x, uGrid.x - 1.0 - c.x, c.y, uGrid.y - 1.0 - c.y);
+            float m = min(min(dE.x, dE.y), min(dE.z, dE.w));
+            vec2 outD = m == dE.x ? vec2(-1.0, 0.0) : m == dE.y ? vec2(1.0, 0.0) : m == dE.z ? vec2(0.0, -1.0) : vec2(0.0, 1.0);
+            vec2 q = f - 0.5;
+            vec2 lq = vec2(dot(q, vec2(-outD.y, outD.x)), dot(q, outD));
+            float wear = 0.65 + 0.35 * fract(sin(dot(floor(g * 14.0), vec2(12.9898, 78.233))) * 43758.5453);
+            float cpx = pxG;
+            float chevA = 0.0;
+            for (int k = 0; k < 2; k++) {
+              float off = -0.16 + float(k) * 0.2;
+              float dch = abs(lq.y - off + abs(lq.x) * 0.75) - 0.035;
+              chevA = max(chevA, (1.0 - smoothstep(0.0, cpx * 1.5, dch)) * step(abs(lq.x), 0.3));
+            }
+            float pulse = smoothstep(0.25, 0.0, abs(fract(uTime * 0.45) - (lq.y + 0.5)));
+            LAYER(vec3(0.92, 0.84, 0.62) * 0.75, chevA * 0.26 * wear);
+            LAYER(vec3(1.0, 0.86, 0.5) * 1.3, chevA * pulse * 0.3);
           }
           gl_FragColor = vec4(col / max(a, 0.0001), a * uAlpha);
         }`,

@@ -68,7 +68,7 @@ export class CombatHud {
         onmouseleave: () => onHover?.(null),
         onclick: () => onClick?.(c.id),
       }, [
-        this.portraits.get(c.id) ? h('img', { src: this.portraits.get(c.id), alt: '' }) : h('div', { style: { width: '100%', height: '100%', background: c.side === 'party' ? '#1f3a7a' : '#6e1814' } }),
+        this.portraits.get(c.id) ? this._portraitImg(c.id) : h('div', { style: { width: '100%', height: '100%', background: c.side === 'party' ? '#1f3a7a' : '#6e1814' } }),
         c.side === 'party' ? h('div.nm', [shortName(c.name)]) : h('div.no', [monsterNo(c.name)]),
         fx ? h('div.fx', [fx]) : null,
         h('div.hpb', [h('i', { style: { width: `${pct * 100}%` } })]),
@@ -76,6 +76,25 @@ export class CombatHud {
       nodes.push(tok);
     });
     this.timeline.replaceChildren(...nodes);
+  }
+
+  /** One persistent portrait canvas per combatant, drawn synchronously from the rendered source. */
+  _portraitImg(id) {
+    const src = this.portraits.get(id);
+    this._imgs ??= new Map();
+    let im = this._imgs.get(id);
+    if (!im || im._src !== src) {
+      if (typeof src === 'string') im = h('img', { src, alt: '' });
+      else {
+        im = document.createElement('canvas');
+        im.width = src.width;
+        im.height = src.height;
+        im.getContext('2d').drawImage(src, 0, 0);
+      }
+      im._src = src;
+      this._imgs.set(id, im);
+    }
+    return im;
   }
 
   /**
@@ -125,6 +144,16 @@ export class CombatHud {
       chips.length ? h('div.cb-chips', chips) : null,
       isParty && c.quick ? h('div.auto', ['Under computer control']) : null,
     ].filter(Boolean));
+  }
+
+  /** End of battle: the turn card becomes a terse summary. */
+  setSummary(sm) {
+    const body = this.cardBody;
+    clear(body);
+    this.card.el.classList.remove('monster');
+    this.card.el.classList.add('summary');
+    if (this.card.title) this.card.title.textContent = sm.title;
+    body.append(h('div.nm', [sm.name ?? '']), ...sm.rows.map(([k, v]) => h('div.row', [k, h('b', [v])])));
   }
 
   setRoster(engine, activeId, onClick) {
@@ -258,24 +287,47 @@ export class CombatHud {
   }
 
   // ---------------------------------------------------------------- floating text & banners
+  /**
+   * Floating combat text. `o.follow` (→ Vector3) pins it to a moving anchor
+   * (the victim's head) and `o.unit` stacks several callouts on one unit;
+   * `o.tag` adds a small name plate with an hp tick {name, hp, lost} (0..1).
+   * Text lives ~1.1 s and rises a few pixels — never drifts off its victim.
+   */
   float(text, kind, pos, t, o = {}) {
-    if (!pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.y) || !Number.isFinite(pos.z)) return;
+    const anchor = o.follow ? o.follow() : pos;
+    if (!anchor || !Number.isFinite(anchor.x) || !Number.isFinite(anchor.y) || !Number.isFinite(anchor.z)) return;
     // Several kills landing together (a fireball) consolidate into one callout
     // over the group instead of a pile of overlapping SLAIN labels.
     if (kind === 'kill' && !o.solo) {
       const prev = this.floats.find((f) => f.kind === 'kill' && !f.solo && Math.abs(f.t0 - t) < 0.45);
       if (prev) {
         prev.n += 1;
-        prev.sum.add(pos);
+        prev.sum.add(anchor);
         prev.pos.copy(prev.sum).multiplyScalar(1 / prev.n);
-        prev.el.textContent = `${prev.n} ${prev.plural ?? 'slain'}`;
+        prev.follow = null;
+        prev.el.firstChild.textContent = `${prev.n} ${prev.plural ?? 'slain'}`;
         prev.el.classList.add('multi');
         return;
       }
     }
-    const el = h(`div.cb-float.${kind}`, { class: o.cls ?? '', style: { opacity: '0' } }, [text]);
+    const kids = [h('span', [text])];
+    if (o.tag) {
+      const hp = Math.max(0, Math.min(1, o.tag.hp ?? 1));
+      const lost = Math.max(0, Math.min(1 - hp, o.tag.lost ?? 0));
+      kids.push(h('span.tag', [o.tag.name, h('i', [h('b', { style: { width: `${hp * 100}%`, float: 'left' } }), h('b.lost', { style: { width: `${lost * 100}%`, float: 'left' } })])]));
+    }
+    const el = h(`div.cb-float.${kind}`, { class: o.cls ?? '', style: { opacity: '0' } }, kids);
     this.floatLayer.append(el);
-    this.floats.push({ el, kind, solo: !!o.solo, n: 1, sum: pos.clone(), plural: o.plural, pos: pos.clone(), t0: t, life: o.life ?? 1.3, dx: o.dx ?? 0, rise: o.rise ?? 1 });
+    this.floats.push({ el, kind, unit: o.unit ?? null, follow: o.follow ?? null, solo: !!o.solo, n: 1, sum: anchor.clone(), plural: o.plural, pos: anchor.clone(), t0: t, life: o.life ?? (kind === 'kill' ? 1.2 : 1.1), dx: o.dx ?? 0, rise: o.rise ?? 1 });
+  }
+
+  /** Battle over: no callouts or stale cards survive into the summary. */
+  clearFloats() {
+    for (const f of this.floats) f.el.remove();
+    this.floats = [];
+    this.hideBanner();
+    this.showInspect(null);
+    this.setPrompt('');
   }
 
   showBanner(text, sub, t, life = 1.6) {
@@ -294,6 +346,15 @@ export class CombatHud {
       const v = this._v.copy(this._inspectWorld).project(camera);
       if (Number.isFinite(v.x) && v.z < 1) this._placeInspect((v.x * 0.5 + 0.5) * w, (-v.y * 0.5 + 0.5) * hgt);
     }
+    // Per-unit stacks: the newest callout sits on the head, older ones step up.
+    const stackIdx = new Map();
+    for (let i = this.floats.length - 1; i >= 0; i--) {
+      const f = this.floats[i];
+      if (!f.unit || t - f.t0 < 0) continue;
+      const k = stackIdx.get(f.unit) ?? 0;
+      f.stack = k;
+      stackIdx.set(f.unit, k + 1);
+    }
     for (const f of this.floats) {
       const age = t - f.t0;
       if (age < 0) {
@@ -301,8 +362,11 @@ export class CombatHud {
         continue;
       }
       const u = age / f.life;
+      if (f.follow) {
+        const p = f.follow();
+        if (p && Number.isFinite(p.x)) f.pos.copy(p);
+      }
       this._v.copy(f.pos);
-      this._v.y += f.rise * (0.25 + 1.1 * (1 - Math.exp(-age * 3)));
       this._v.project(camera);
       // Behind the camera / degenerate projection: never draw at the screen origin.
       if (!Number.isFinite(this._v.x) || !Number.isFinite(this._v.y) || this._v.z > 1 || this._v.z < -1) {
@@ -310,11 +374,12 @@ export class CombatHud {
         if (u >= 1) f.dead = true;
         continue;
       }
-      const x = Math.max(24, Math.min(w - 24, (this._v.x * 0.5 + 0.5) * w + f.dx * age * 30));
-      const y = Math.max(24, Math.min(hgt - 24, (-this._v.y * 0.5 + 0.5) * hgt));
-      const pop = age < 0.12 ? 0.6 + (age / 0.12) * 0.6 : 1.2 - Math.min(0.2, (age - 0.12) * 1.5);
-      f.el.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px) scale(${pop})`;
-      f.el.style.opacity = String(u < 0.75 ? 1 : Math.max(0, 1 - (u - 0.75) / 0.25));
+      const lift = f.rise * (8 + 22 * (1 - Math.exp(-age * 4))) + (f.stack ?? 0) * 30;
+      const x = Math.max(24, Math.min(w - 24, (this._v.x * 0.5 + 0.5) * w + f.dx * 14 * Math.min(1, age * 3)));
+      const y = Math.max(24, Math.min(hgt - 24, (-this._v.y * 0.5 + 0.5) * hgt - lift));
+      const pop = age < 0.1 ? 0.7 + (age / 0.1) * 0.5 : 1.2 - Math.min(0.2, (age - 0.1) * 1.6);
+      f.el.style.transform = `translate(-50%, -100%) translate(${x}px, ${y}px) scale(${pop})`;
+      f.el.style.opacity = String(u < 0.7 ? 1 : Math.max(0, 1 - (u - 0.7) / 0.3));
       if (u >= 1) f.dead = true;
     }
     for (const f of this.floats.filter((x) => x.dead)) f.el.remove();

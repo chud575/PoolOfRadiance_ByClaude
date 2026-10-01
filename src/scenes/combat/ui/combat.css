@@ -22,7 +22,7 @@
   border: 1px solid rgba(216, 178, 90, 0.45); background: #111; transition: transform 0.18s, opacity 0.2s, width 0.2s;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
 }
-.cb-token img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cb-token img, .cb-token canvas { width: 100%; height: 100%; object-fit: cover; display: block; }
 .cb-token.party { border-color: rgba(120, 170, 255, 0.8); }
 .cb-token.monster { border-color: rgba(255, 110, 90, 0.75); }
 .cb-token .hpb { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(0, 0, 0, 0.7); }
@@ -79,6 +79,8 @@
 }
 .cb-logbox .por-log { --lines: 3; transition: max-height 0.2s; }
 .cb-logbox:hover { background: rgba(5, 8, 20, 0.92); }
+/* Never an empty frame: the log box only exists once it has something to say. */
+.cb-logbox:not(:has(.por-log-line)) { display: none; }
 .cb-logbox:hover .por-log { --lines: 12; }
 .cb-cmds .por-cmd.active { color: #1b1206; background: var(--gilt-grad); border-color: #000; }
 .cb-cmds .por-cmd.active .por-hk { color: #1b1206; }
@@ -101,9 +103,12 @@
   position: fixed; left: 0; top: 0; min-width: 13em; max-width: 19em; pointer-events: none; z-index: 5;
   padding: 0.55em 0.8em; background: linear-gradient(180deg, rgba(14, 22, 52, 0.96), rgba(6, 10, 26, 0.96));
   border: 1px solid var(--por-gilt-lo); border-radius: 2px; box-shadow: 0 0 0 1px #000, 0 10px 26px rgba(0, 0, 0, 0.6);
-  font-size: 0.85em; opacity: 0; transition: opacity 0.1s;
+  font-size: 0.85em; visibility: hidden;
 }
-.cb-inspect.show { opacity: 1; }
+/* No opacity transition: a compositor-pending fade could leave the card invisible
+   while targeting (the spell card must show the instant a spell is chosen). */
+.cb-inspect.show { visibility: visible; }
+.cb-inspect .wpn { color: var(--por-gilt-hi); font-size: 0.85em; letter-spacing: 0.06em; margin-top: 0.15em; }
 .cb-inspect .t { font-family: var(--font-display); letter-spacing: 0.08em; color: #fff; font-size: 1.05em; }
 .cb-inspect .t.foe { color: #ffa08e; }
 .cb-inspect .t.ally { color: var(--por-green); }
@@ -123,8 +128,16 @@
   color: #fff; text-shadow: 0 0 2px #000, 0 2px 4px #000, 0 0 12px rgba(0, 0, 0, 0.8); letter-spacing: 0.02em;
   will-change: transform, opacity;
 }
-.cb-float.dmg { color: #ffe0c8; font-size: 1.9em; }
+.cb-float { text-align: center; line-height: 1; }
+.cb-float.dmg { color: #ffe0c8; font-size: 1.75em; }
 .cb-float.dmg.party { color: #ff8a70; }
+.cb-float.dmg.fire, .cb-float.crit.fire { color: #ffae4a; text-shadow: 0 0 2px #000, 0 2px 4px #000, 0 0 14px rgba(255, 90, 10, 0.75); }
+.cb-float.dmg.magic, .cb-float.crit.magic { color: #9fc4ff; text-shadow: 0 0 2px #000, 0 2px 4px #000, 0 0 14px rgba(70, 120, 255, 0.75); }
+.cb-float.dmg.shock { color: #cfe8ff; text-shadow: 0 0 2px #000, 0 2px 4px #000, 0 0 14px rgba(120, 190, 255, 0.85); }
+.cb-float .tag { display: block; margin-top: 0.12em; font-size: 0.36em; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #f0e6cc; }
+.cb-float .tag i { display: block; height: 3px; width: 4.2em; margin: 0.25em auto 0; background: rgba(0, 0, 0, 0.7); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.8); }
+.cb-float .tag i b { display: block; height: 100%; background: linear-gradient(90deg, #c8321e, #ff7a3a); }
+.cb-float .tag i b.lost { background: rgba(255, 220, 160, 0.9); }
 .cb-float.crit { color: #ffd24a; font-size: 2.5em; }
 .cb-float.miss { color: #c8c8d8; font-size: 1.1em; font-style: italic; letter-spacing: 0.12em; }
 .cb-float.heal { color: #8dffa0; font-size: 1.7em; }
@@ -154,8 +167,12 @@
 .cb-sheet .inv .eq { color: #5a2a00; font-weight: 600; }
 
 /* ---------- Help / speed ---------- */
-.cb-help { position: absolute; right: 1.4em; bottom: 4.4em; text-align: right; font-size: 0.72em; color: var(--por-text-dim); text-shadow: 0 1px 2px #000; line-height: 1.5; pointer-events: none; }
-.cb-help kbd { font-family: var(--font-num); color: var(--por-amber); border: 1px solid rgba(216, 178, 90, 0.4); border-radius: 2px; padding: 0 0.3em; font-size: 0.95em; }
+.cb-help {
+  position: absolute; right: 1.2em; bottom: 4.1em; text-align: right; font-size: max(12.5px, 0.8em); color: #d6cdb8; line-height: 1.65; pointer-events: none;
+  padding: 0.3em 0.7em 0.35em 1.6em; text-shadow: 0 1px 2px #000;
+  background: linear-gradient(270deg, rgba(5, 8, 20, 0.8), rgba(5, 8, 20, 0.62) 75%, rgba(5, 8, 20, 0));
+}
+.cb-help kbd { font-family: var(--font-num); color: #ffd98a; background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(216, 178, 90, 0.55); border-radius: 2px; padding: 0 0.32em; font-size: 0.95em; }
 .cb-speed { position: absolute; left: 1.2em; top: 0.9em; font-family: var(--font-display); font-size: 0.72em; letter-spacing: 0.18em; color: var(--por-gilt); text-transform: uppercase; text-shadow: 0 1px 2px #000; }
 .cb-speed b { color: #fff; }
 .cb-loc {

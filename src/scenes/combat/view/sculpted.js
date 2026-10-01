@@ -18,7 +18,7 @@ import { Sculpt, meshSculpt, M_ID, mEuler } from '../../../ui/components/sdfScul
  * parts (rig.js), so per-individual gear costs nothing extra.
  */
 
-export const PAT = { skin: 0, scales: 1, fur: 2, cloth: 3, bone: 4, leather: 5, smooth: 6, spots: 7, metal: 8, mail: 9 };
+export const PAT = { skin: 0, scales: 1, fur: 2, cloth: 3, bone: 4, leather: 5, smooth: 6, spots: 7, metal: 8, mail: 9, scale: 10 };
 
 const lin = (hex) => {
   const c = new THREE.Color(hex);
@@ -78,7 +78,9 @@ export const LOOKS = {
   kobold: { skin: [0x6e3a20, 'scales'], back: [0x2e1810, 'scales'], belly: [0xb08050, 'scales'], horn: 0xa89068, cloth: 0x4a3a28, head: 'kobold' },
   goblin: { skin: [0x86963a, 'skin'], back: [0x5a6a26, 'skin'], belly: [0xa0aa60, 'skin'], horn: 0xd8c8a0, cloth: 0x4a3020, head: 'goblin', pants: 0x3a2a1a },
   orc: { skin: [0x464a38, 'skin'], back: [0x2a2c22, 'skin'], belly: [0x56584a, 'skin'], horn: 0xa89a7c, cloth: 0x2e2418, head: 'orc', pants: 0x2a221a, jerkin: 0x2a1c12, plate: 0x3e3630, hair: 0x0e0c0a },
-  hobgoblin: { skin: [0x7e4a32, 'skin'], back: [0x4e2a1a, 'skin'], belly: [0x8e5a3c, 'skin'], horn: 0xe0d0b0, cloth: 0x5a1e18, head: 'hobgoblin', pants: 0x3a2018, mail: 0x8a8070, hair: 0x1e1a18, nose: 0x5a3a5a },
+  // Hobgoblins: dark rust-brown hide with an orange cast, a flat simian face,
+  // bronze scale coats under a red-and-ochre legion tabard, leather boots.
+  hobgoblin: { skin: [0x5a2a14, 'skin'], back: [0x381608, 'skin'], belly: [0x6a321a, 'skin'], horn: 0xd8c8a8, cloth: 0x5a1e18, head: 'hobgoblin', pants: 0x2e1c12, mail: 0x6e5a3e, hair: 0x0e0a08, nose: 0x3a1a0e, tabard: 0x7a1a12, trim: 0xb88a2e, boots: 0x2a1a10 },
   gnoll: { skin: [0xa88450, 'spots'], back: [0x6a5030, 'fur'], belly: [0xc8a878, 'fur'], horn: 0xe0d4b0, cloth: 0x3a2e22, head: 'gnoll', hair: 0x2a1a10, pants: 0x3a2e22 },
   bugbear: { skin: [0x7a5a30, 'fur'], back: [0x4a3418, 'fur'], belly: [0x9a7a50, 'fur'], horn: 0xd8c8a0, cloth: 0x3a2a1a, head: 'bugbear', hair: 0x2a1a0a, pants: 0x3a2a1a },
   lizardMan: { skin: [0x4a6a3a, 'scales'], back: [0x2e4a26, 'scales'], belly: [0xb0b07a, 'scales'], horn: 0xd8d0a0, cloth: 0x4a3a20, head: 'lizard' },
@@ -112,7 +114,11 @@ export function sculptedFlesh(key, o) {
     .mat('shirt', look.shirt ?? 0x4a4438, { pattern: 'cloth', rough: 0.95, edge: 0.4, wash: 0.9 })
     .mat('mail', look.mail ?? 0x8a8070, { pattern: 'mail', rough: 0.45, metal: 0.7, edge: 0.6, wash: 0.8 })
     .mat('plate', look.plate ?? 0x6a4a34, { pattern: 'metal', rough: 0.78, metal: 0.4, edge: 0.9, wash: 0.9 })
-    .mat('nose', look.nose ?? look.back[0], { pattern: 'skin', rough: 0.5 });
+    .mat('nose', look.nose ?? look.back[0], { pattern: 'skin', rough: 0.5 })
+    .mat('tabard', look.tabard ?? 0x5a1e18, { pattern: 'cloth', rough: 0.9, edge: 0.5, wash: 0.85 })
+    .mat('trim', look.trim ?? 0xa08030, { pattern: 'cloth', rough: 0.8, edge: 0.4, wash: 0.7 })
+    .mat('boots', look.boots ?? 0x2a1a10, { pattern: 'leather', rough: 0.65, edge: 0.7, wash: 0.85 })
+    .mat('scale', look.mail ?? 0x6e5a3e, { pattern: 'scale', rough: 0.5, metal: 0.65, edge: 0.8, wash: 0.85 });
   const res = o.species === 'skeleton' ? skeletonBody(B, o) : fleshBody(B, o, look);
   const geometry = toGeometry(B, o, res);
   const out = { geometry, names: res.names, eyes: res.eyes, eyeR: res.eyeR };
@@ -194,7 +200,7 @@ function fleshBody(B, o, look) {
     // Sleeves (mail shirts, shirts): grown upper-arm, clipped at the elbow.
     if (o.kit.armor === 'scale' || o.kit.tattered) {
       const cut = mid(ua, fa, o.kit.armor === 'scale' ? 0.55 : 0.75)[1];
-      B.cone(`upperArm${side}`, add(ua, [0, 0.01 * s, 0]), fa, 0.06 * bw * s, 0.05 * bw * s, { g: side === 'L' ? G.sleeveL : G.sleeveR, k: 0.02 * s, grow: 0.01 * s, mat: o.kit.armor === 'scale' ? 'mail' : 'shirt', clip: [[0, -1, 0, -cut]] });
+      B.cone(`upperArm${side}`, add(ua, [0, 0.01 * s, 0]), fa, 0.06 * bw * s, 0.05 * bw * s, { g: side === 'L' ? G.sleeveL : G.sleeveR, k: 0.02 * s, grow: 0.01 * s, mat: o.kit.armor === 'scale' ? (sp === 'hobgoblin' ? 'scale' : 'mail') : 'shirt', clip: [[0, -1, 0, -cut]] });
     }
   }
   // ---- legs
@@ -259,7 +265,31 @@ function fleshBody(B, o, look) {
     }
     if ((o.kit.variant ?? 0) < 0.75 || true) jerkin('plate', G.plate, 0.03 * s, J.neck[1] - 0.05 * s, J.spine[1] + 0.02 * s, 0.03 * s);
   } else if (o.kit.armor === 'scale') {
-    jerkin('mail', G.jerkin, 0.014 * s, J.neck[1] - 0.025 * s, J.hips[1] - 0.12 * s);
+    const scaleMat = sp === 'hobgoblin' ? 'scale' : 'mail';
+    jerkin(scaleMat, G.jerkin, 0.014 * s, J.neck[1] - 0.025 * s, J.hips[1] - 0.12 * s);
+    if (sp === 'hobgoblin') {
+      // Legion tabard over the scale coat: front and back panels to mid-thigh,
+      // an ochre hem band and a broad belt; and laced leather boots.
+      const top = J.chest[1] + 0.2 * s;
+      for (const fz of [1, -1]) {
+        const zc = fz * 0.118 * s;
+        B.box('chest', [0, J.chest[1] + 0.06 * s, zc + fz * 0.012 * s], [0.12 * w * s, 0.15 * s, 0.012 * s], { g: G.plate, mat: 'tabard', rr: 0.006 * s, R: mEuler(fz * -0.05, 0, 0), clip: [[0, 1, 0, top]] });
+        B.box('spine', [0, J.spine[1] + 0.04 * s, zc * 1.05 + fz * 0.014 * s], [0.115 * w * s, 0.13 * s, 0.012 * s], { g: G.plate, mat: 'tabard', rr: 0.006 * s });
+        B.box('hips', [0, J.hips[1] - 0.12 * s, zc * 1.1 + fz * 0.016 * s], [0.1 * w * s, 0.13 * s, 0.01 * s], { g: G.plate, mat: 'tabard', rr: 0.006 * s, R: mEuler(fz * 0.08, 0, 0) });
+        B.box('hips', [0, J.hips[1] - 0.245 * s, zc * 1.1 + fz * 0.026 * s], [0.102 * w * s, 0.014 * s, 0.012 * s], { g: G.plate, mat: 'trim', rr: 0.004 * s, R: mEuler(fz * 0.08, 0, 0) });
+        // Ochre device: a broad chevron on the chest.
+        for (const sx of [1, -1]) B.box('chest', [sx * 0.04 * w * s, J.chest[1] + 0.07 * s, zc + fz * 0.026 * s], [0.055 * s, 0.012 * s, 0.006 * s], { g: G.plate, mat: 'trim', rr: 0.003 * s, R: mEuler(0, 0, sx * 0.6) });
+      }
+      B.ell('hips', add(J.hips, [0, 0.03 * s, -0.005 * s]), [0.16 * w * s, 0.03 * s, 0.125 * s], { g: G.plate, k: 0.01 * s, mat: 'boots' });
+      for (const side of ['L', 'R']) {
+        const sh = J[`shin${side}`];
+        const ft = J[`foot${side}`];
+        const BT = { g: side === 'L' ? G.pantsL : G.pantsR, k: 0.02 * s, grow: 0.014 * s, mat: 'boots' };
+        B.cone(`shin${side}`, add(sh, [0, -0.06 * s, 0]), add(ft, [0, 0.0, 0]), 0.06 * lw * s, 0.046 * lw * s, BT);
+        B.ell(`foot${side}`, add(ft, [0, -0.04 * s, 0.05 * s]), [0.054 * s, 0.04 * s, 0.12 * s], BT);
+        B.cone(`shin${side}`, add(sh, [0, -0.05 * s, 0]), add(sh, [0, -0.08 * s, 0]), 0.066 * lw * s, 0.066 * lw * s, { ...BT, grow: 0.018 * s });
+      }
+    }
   } else if (o.kit.tattered) {
     jerkin('shirt', G.jerkin, 0.01 * s, J.neck[1] - 0.04 * s, J.hips[1] - 0.1 * s);
   } else if (o.kit.armor === 'scraps') {
@@ -363,22 +393,25 @@ const HEADS = {
   },
   hobgoblin(B, H, hs, { K, G }) {
     const T = { k: K, g: G.torso };
-    B.ell('head', H(0, 0.112, -0.015), [0.09 * hs, 0.086 * hs, 0.095 * hs], T);
-    B.ell('head', H(0, 0.058, 0.038), [0.078 * hs, 0.052 * hs, 0.066 * hs], T);
-    B.ell('head', H(0, 0.132, 0.072), [0.084 * hs, 0.022 * hs, 0.032 * hs], { ...T, k: 0.016 * hs, mat: 'back' });
-    // A big, flushed nose.
-    B.cone('head', H(0, 0.118, 0.09), H(0, 0.082, 0.13), 0.02 * hs, 0.022 * hs, { ...T, k: 0.012 * hs, mat: 'nose' });
+    // Flat, simian face: broad cranium, a heavy brow shelf, a short prognathous
+    // muzzle with a flat, wide nose and flared nostrils, small pointed ears.
+    B.ell('head', H(0, 0.115, -0.018), [0.092 * hs, 0.084 * hs, 0.094 * hs], T);
+    B.ell('head', H(0, 0.06, 0.042), [0.08 * hs, 0.05 * hs, 0.06 * hs], T);
+    B.ell('head', H(0, 0.05, 0.075), [0.058 * hs, 0.036 * hs, 0.036 * hs], { ...T, k: 0.02 * hs });
+    B.ell('head', H(0, 0.134, 0.074), [0.088 * hs, 0.024 * hs, 0.034 * hs], { ...T, k: 0.016 * hs, mat: 'back' });
+    for (const sx of [1, -1]) B.ell('head', H(sx * 0.054, 0.09, 0.06), [0.03 * hs, 0.024 * hs, 0.03 * hs], { ...T, k: 0.014 * hs });
+    B.ell('head', H(0, 0.093, 0.102), [0.034 * hs, 0.017 * hs, 0.018 * hs], { ...T, k: 0.012 * hs, mat: 'nose' });
     for (const sx of [1, -1]) {
-      B.sph('head', H(sx * 0.038, 0.108, 0.085), 0.019 * hs, { g: G.torso, sub: true, k: 0.008 * hs });
-      // Large pointed ears jutting out sideways: they read from above.
-      B.ell('head', H(sx * 0.13, 0.13, -0.025), [0.07 * hs, 0.03 * hs, 0.012 * hs], { ...T, k: 0.018 * hs, R: mEuler(0, sx * 0.25, sx * -0.4) });
-      B.cone('head', H(sx * 0.03, 0.045, 0.098), H(sx * 0.034, 0.075, 0.104), 0.008 * hs, 0.002 * hs, { g: G.hard, mat: 'tooth' });
+      B.sph('head', H(sx * 0.014, 0.086, 0.116), 0.007 * hs, { g: G.torso, sub: true, k: 0.003 * hs });
+      B.sph('head', H(sx * 0.038, 0.11, 0.087), 0.019 * hs, { g: G.torso, sub: true, k: 0.008 * hs });
+      // Small, swept pointed ears.
+      B.ell('head', H(sx * 0.098, 0.12, -0.02), [0.04 * hs, 0.022 * hs, 0.01 * hs], { ...T, k: 0.014 * hs, R: mEuler(0, sx * 0.4, sx * -0.55) });
+      B.cone('head', H(sx * 0.028, 0.04, 0.098), H(sx * 0.03, 0.066, 0.104), 0.007 * hs, 0.0015 * hs, { g: G.hard, mat: 'tooth' });
     }
-    B.box('head', H(0, 0.05, 0.1), [0.042 * hs, 0.004 * hs, 0.02 * hs], { g: G.torso, sub: true, k: 0.003 * hs });
-    // Dark-grey hair: a swept crest and a short beard.
-    B.ell('head', H(0, 0.17, -0.03), [0.04 * hs, 0.035 * hs, 0.1 * hs], { g: G.hair, k: 0.02 * hs, mat: 'hair' });
-    B.ell('head', H(0, 0.04, 0.062), [0.062 * hs, 0.03 * hs, 0.04 * hs], { g: G.hair, k: 0.02 * hs, mat: 'hair' });
-    return { eyes: [[0.038, 0.108, 0.087], [-0.038, 0.108, 0.087]], r: 0.012 };
+    B.box('head', H(0, 0.046, 0.104), [0.044 * hs, 0.004 * hs, 0.02 * hs], { g: G.torso, sub: true, k: 0.003 * hs });
+    // Coarse black side-whiskers framing the jaw.
+    for (const sx of [1, -1]) B.ell('head', H(sx * 0.07, 0.06, 0.02), [0.022 * hs, 0.04 * hs, 0.035 * hs], { g: G.hair, k: 0.016 * hs, mat: 'hair' });
+    return { eyes: [[0.038, 0.11, 0.089], [-0.038, 0.11, 0.089]], r: 0.011 };
   },
   gnoll(B, H, hs, { K, G }) {
     const T = { k: K, g: G.torso };
@@ -628,13 +661,7 @@ export function sculptMaterial() {
  * spotted hide, cloth weave, leather grain, mail rings, bone), bump-mapped via
  * screen derivatives and faded out where it would alias at tactics zoom.
  */
-export function patchSculptShader(sh) {
-  sh.vertexShader = sh.vertexShader
-    .replace('#include <common>', '#include <common>\nattribute vec4 aMat; varying vec4 vMat; varying vec3 vObj;')
-    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvMat = aMat; vObj = position;');
-  sh.fragmentShader = sh.fragmentShader
-    .replace('#include <common>', `#include <common>
-      varying vec4 vMat; varying vec3 vObj;
+export const SCULPT_DETAIL_GLSL = `
       float sh3(vec3 p){ p = fract(p * 0.3183099 + vec3(0.71, 0.113, 0.419)); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
       float sn3(vec3 x){ vec3 i = floor(x); vec3 f = fract(x); f = f * f * (3.0 - 2.0 * f);
         return mix(mix(mix(sh3(i), sh3(i + vec3(1,0,0)), f.x), mix(sh3(i + vec3(0,1,0)), sh3(i + vec3(1,1,0)), f.x), f.y),
@@ -644,42 +671,202 @@ export function patchSculptShader(sh) {
           vec3 g = vec3(float(x), float(y), float(z)); vec3 o = vec3(sh3(i + g), sh3(i + g + 7.1), sh3(i + g + 3.3));
           float d = length(g + o - f); if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d; }
         return vec2(d1, d2); }
-      // Height + albedo factor for a pattern at object position p.
-      void sculptDetail(float pid, vec3 p, out float h, out float alb) {
-        h = 0.0; alb = 1.0;
+      // Surface detail per material pattern at object position p (metres).
+      // Two bands: a MID band (2-8 cm features: scale rows, leather panels and
+      // seams, mottled hide, rust blooms, mail rows, grime) that always resolves
+      // at tactics zoom, and the FINE band (pores, weave, rings) blended in by
+      // 'fine' only where a texel is smaller than a pixel.
+      // Out: h (bump height), alb (rgb albedo multiplier), dr (roughness offset), dm (metal offset).
+      void sculptDetail(float pid, vec3 p, float fine, out float h, out vec3 alb, out float dr, out float dm) {
+        h = 0.0; alb = vec3(1.0); dr = 0.0; dm = 0.0;
         float big = sn3(p * 9.0) * 0.65 + sn3(p * 3.0) * 0.35;
-        if (pid < 0.5) { h = sn3(p * 90.0) * 0.5 + sn3(p * 260.0) * 0.25; alb = 0.8 + big * 0.36; }
-        else if (pid < 1.5) { vec2 c = cell3(p * 34.0); float e = smoothstep(0.0, 0.25, c.y - c.x); h = e * (0.7 + 0.3 * (1.0 - c.x)); alb = mix(0.55, 1.0, e) * (0.82 + 0.3 * big); }
-        else if (pid < 2.5) { h = sn3(p * vec3(170.0, 40.0, 170.0)) * 0.7 + sn3(p * 60.0) * 0.3; alb = 0.78 + h * 0.35; }
-        else if (pid < 3.5) { float wv = sin(p.x * 900.0) * sin(p.y * 900.0 + p.z * 900.0); h = wv * 0.25 + sn3(p * 40.0) * 0.4; alb = 0.88 + sn3(p * 14.0) * 0.24; }
-        else if (pid < 4.5) { h = sn3(p * 50.0) * 0.6; float cr = smoothstep(0.02, 0.0, abs(sn3(p * 22.0) - 0.5)); h -= cr * 0.5; alb = 0.82 + sn3(p * 7.0) * 0.3 - cr * 0.3; }
-        else if (pid < 5.5) { vec2 c = cell3(p * 70.0); h = smoothstep(0.0, 0.12, c.y - c.x) * 0.5 + sn3(p * 30.0) * 0.4; alb = 0.8 + sn3(p * 11.0) * 0.35; }
-        else if (pid < 6.5) { h = sn3(p * 30.0) * 0.2; alb = 0.95 + sn3(p * 12.0) * 0.1; }
-        else if (pid < 7.5) { vec2 c = cell3(p * 16.0); float spot = smoothstep(0.32, 0.22, c.x); h = sn3(p * vec3(170.0, 40.0, 170.0)) * 0.6; alb = mix(0.95, 0.42, spot) * (0.85 + h * 0.3); }
-        else if (pid < 8.5) { h = sn3(p * 40.0) * 0.3; alb = 0.75 + sn3(p * 6.0) * 0.45; }
-        else { vec3 q = p * 140.0; float r = length(fract(vec2(q.x + floor(q.y) * 0.5, q.y)) - 0.5); h = smoothstep(0.45, 0.25, r) * 0.8; alb = 0.6 + h * 0.5; }
+        // Grime gradient: dirt and soot collect toward the feet and in the low folds.
+        float grime = mix(0.72, 1.0, smoothstep(0.04, 0.55, p.y)) * (0.9 + 0.2 * sn3(p * 2.3));
+        if (pid < 0.5) {
+          // Skin: blotchy mottling, warts / pores, dirt; oily-to-dry roughness.
+          float mot = sn3(p * 7.0) * 0.6 + sn3(p * 17.0) * 0.4;
+          vec2 c = cell3(p * 46.0);
+          float wart = smoothstep(0.2, 0.07, c.x);
+          h = wart * 0.6 + mot * 0.3 + fine * (sn3(p * 90.0) * 0.5 + sn3(p * 260.0) * 0.25);
+          alb = vec3(0.8 + mot * 0.34) * mix(vec3(1.0), vec3(1.08, 0.9, 0.82), smoothstep(0.55, 0.8, sn3(p * 5.0)));
+          alb *= 1.0 - wart * 0.16;
+          dr = (sn3(p * 21.0) - 0.5) * 0.25;
+        } else if (pid < 1.5) {
+          // Reptile scales: 3-5 cm plates with dark seams, banded tone.
+          vec2 c = cell3(p * 24.0);
+          float e = smoothstep(0.0, 0.22, c.y - c.x);
+          vec2 cf = cell3(p * 60.0);
+          float ef = smoothstep(0.0, 0.25, cf.y - cf.x);
+          h = e * (0.7 + 0.3 * (1.0 - c.x)) + fine * ef * 0.4;
+          alb = vec3(mix(0.72, 1.04, e) * (0.8 + 0.32 * big)) * mix(1.0, mix(0.7, 1.0, ef), fine);
+          dr = (1.0 - e) * 0.25 - 0.08;
+        } else if (pid < 2.5) {
+          h = sn3(p * vec3(70.0, 14.0, 70.0)) * 0.7 + fine * sn3(p * vec3(170.0, 40.0, 170.0)) * 0.5;
+          alb = vec3(0.74 + h * 0.36) * (0.85 + 0.25 * big);
+          dr = 0.05;
+        } else if (pid < 3.5) {
+          // Cloth: folds, stains, a darker frayed hem, weave when close.
+          float st = smoothstep(0.55, 0.8, sn3(p * 6.0 + 3.1));
+          h = sn3(p * vec3(18.0, 6.0, 18.0)) * 0.5 + fine * (sin(p.x * 900.0) * sin(p.y * 900.0 + p.z * 900.0) * 0.25);
+          alb = vec3(0.86 + sn3(p * 14.0) * 0.26) * (1.0 - st * 0.22) * grime;
+          alb *= mix(vec3(1.0), vec3(0.95, 0.9, 0.8), st);
+          dr = 0.04;
+        } else if (pid < 4.5) {
+          h = sn3(p * 50.0) * 0.6; float cr = smoothstep(0.02, 0.0, abs(sn3(p * 22.0) - 0.5)); h -= cr * 0.5;
+          alb = vec3(0.82 + sn3(p * 7.0) * 0.3 - cr * 0.3) * mix(vec3(1.0), vec3(0.92, 0.85, 0.7), smoothstep(0.3, 0.8, sn3(p * 4.0)));
+        } else if (pid < 5.5) {
+          // Leather: cut panels with dark stitched seams, scuffed lighter wear, grain.
+          vec2 c = cell3(p * 9.0);
+          float seamD = c.y - c.x;
+          float seam = 1.0 - smoothstep(0.015, 0.05, seamD);
+          float stitch = seam * step(0.5, fract((p.x + p.y * 1.3 + p.z) * 70.0));
+          float scuff = smoothstep(0.62, 0.85, sn3(p * 16.0));
+          vec2 cg = cell3(p * 70.0);
+          h = -seam * 0.6 + stitch * 0.3 + sn3(p * 30.0) * 0.3 + fine * smoothstep(0.0, 0.12, cg.y - cg.x) * 0.3;
+          alb = vec3((0.82 + 0.3 * sn3(p * 11.0)) * (1.0 - seam * 0.45) + scuff * 0.22 + stitch * 0.18) * grime;
+          dr = -0.15 + scuff * 0.25 + seam * 0.15;
+        } else if (pid < 6.5) {
+          h = sn3(p * 30.0) * 0.2; alb = vec3(0.95 + sn3(p * 12.0) * 0.1);
+        } else if (pid < 7.5) {
+          vec2 c = cell3(p * 16.0); float spot = smoothstep(0.32, 0.22, c.x);
+          h = sn3(p * vec3(70.0, 14.0, 70.0)) * 0.6; alb = vec3(mix(0.95, 0.42, spot) * (0.85 + h * 0.3));
+        } else if (pid < 8.5) {
+          // Plate: rust blooms (orange-brown, rough, non-metal), dents, pitting.
+          float rn = sn3(p * 8.0) * 0.6 + sn3(p * 23.0) * 0.4;
+          float rust = smoothstep(0.5, 0.72, rn);
+          float pit = smoothstep(0.75, 0.9, sn3(p * 60.0));
+          h = sn3(p * 14.0) * 0.4 - pit * 0.3 + rust * 0.2;
+          alb = mix(vec3(0.8 + sn3(p * 6.0) * 0.35), vec3(1.5, 0.82, 0.46) * (0.75 + 0.3 * rn), rust) * (1.0 - pit * 0.25);
+          dr = rust * 0.4 + pit * 0.1 - 0.05; dm = -rust * 0.55;
+        } else if (pid < 9.5) {
+          // Mail: staggered ring rows (glinting high/low per row), with rust in the hem.
+          vec3 q = p * vec3(70.0, 46.0, 70.0);
+          float row = floor(q.y);
+          float ring = abs(fract(q.x + q.z + row * 0.5) - 0.5) * 2.0;
+          float rv = 0.5 + 0.5 * sin(q.y * 6.2832);
+          h = rv * 0.5 + (1.0 - ring) * 0.3;
+          vec3 qf = p * 140.0;
+          float rf = length(fract(vec2(qf.x + floor(qf.y) * 0.5, qf.y)) - 0.5);
+          h = mix(h, smoothstep(0.45, 0.25, rf) * 0.8, fine * 0.6);
+          float rust = smoothstep(0.62, 0.8, sn3(p * 9.0)) * (1.0 - smoothstep(0.4, 0.9, p.y));
+          alb = mix(vec3(0.55 + rv * 0.5) * (0.85 + 0.3 * sn3(vec3(row, 0.0, 0.0) + p * 3.0)), vec3(1.2, 0.75, 0.45), rust) * grime;
+          dr = (1.0 - rv) * 0.25 + rust * 0.35 - 0.1; dm = -rust * 0.4;
+        } else {
+          // Armour scales: overlapping rounded plates in staggered rows, bright rims.
+          vec2 uv = vec2((p.x + p.z * 0.6) * 34.0, p.y * 30.0);
+          float rowI = floor(uv.y);
+          vec2 f = vec2(fract(uv.x + rowI * 0.5), fract(uv.y));
+          float d = length((f - vec2(0.5, 1.0)) * vec2(1.0, 0.75));
+          float plate = 1.0 - smoothstep(0.42, 0.52, d);
+          float rim = smoothstep(0.3, 0.48, d) * plate;
+          h = plate * (1.0 - f.y) * 0.8;
+          alb = vec3((0.55 + plate * 0.45 + rim * 0.3) * (0.82 + 0.3 * sn3(vec3(floor(uv.x + rowI * 0.5), rowI, 0.0) * 0.37))) * grime;
+          float verd = smoothstep(0.6, 0.85, sn3(p * 7.0));
+          alb = mix(alb, alb * vec3(0.7, 1.05, 0.95), verd);
+          dr = (1.0 - plate) * 0.35 - rim * 0.15 + verd * 0.2; dm = -(1.0 - plate) * 0.4;
+        }
       }
       vec3 sculptBump(vec3 surf_pos, vec3 surf_norm, vec2 dHdxy, float faceDir) {
         vec3 sx = dFdx(surf_pos); vec3 sy = dFdy(surf_pos); vec3 r1 = cross(sy, surf_norm); vec3 r2 = cross(surf_norm, sx);
         float det = dot(sx, r1) * faceDir; vec3 grad = sign(det) * (dHdxy.x * r1 + dHdxy.y * r2);
         return normalize(abs(det) * surf_norm - grad); }
-      float sculptH; float sculptAlb;`)
+`;
+
+export function patchSculptShader(sh) {
+  sh.vertexShader = sh.vertexShader
+    .replace('#include <common>', '#include <common>\nattribute vec4 aMat; varying vec4 vMat; varying vec3 vObj;')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvMat = aMat; vObj = position;');
+  sh.fragmentShader = sh.fragmentShader
+    .replace('#include <common>', `#include <common>
+      varying vec4 vMat; varying vec3 vObj;
+${SCULPT_DETAIL_GLSL}
+      float sculptH; vec3 sculptAlb; float sculptDR; float sculptDM; float sculptMid;`)
     .replace('#include <color_fragment>', `#include <color_fragment>
-      // Micro detail only where it resolves (a texel bigger than a pixel); at
-      // tactics zoom just the broad colour breakup (cheap) remains.
-      float sculptFade = 1.0 - smoothstep(0.004, 0.012, length(fwidth(vObj)));
-      if (sculptFade > 0.01) {
-        sculptDetail(floor(vMat.x + 0.5), vObj, sculptH, sculptAlb);
-        sculptAlb = mix(0.8 + 0.4 * sn3(vObj * 4.0), sculptAlb, sculptFade);
-      } else { sculptH = 0.4; sculptAlb = 0.8 + 0.4 * sn3(vObj * 4.0); }
+      // Mid-band detail always (it resolves at tactics zoom); the fine band
+      // fades in only where a texel is bigger than a pixel.
+      float fw = length(fwidth(vObj));
+      float sculptFine = 1.0 - smoothstep(0.004, 0.012, fw);
+      sculptMid = 1.0 - smoothstep(0.03, 0.08, fw);
+      sculptDetail(floor(vMat.x + 0.5), vObj, sculptFine, sculptH, sculptAlb, sculptDR, sculptDM);
+      sculptAlb = mix(vec3(0.8 + 0.4 * sn3(vObj * 4.0)), sculptAlb, sculptMid);
       diffuseColor.rgb *= sculptAlb;`)
-    .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = clamp(vMat.y + (sculptH - 0.4) * 0.15, 0.08, 1.0);')
-    .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = vMat.z;')
+    .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = clamp(vMat.y + sculptDR * sculptMid, 0.08, 1.0);')
+    .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = clamp(vMat.z + sculptDM * sculptMid, 0.0, 1.0);')
     .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
-      normal = sculptBump(-vViewPosition, normal, vec2(dFdx(sculptH), dFdy(sculptH)) * 0.0022 * sculptFade, faceDirection);`);
+      normal = sculptBump(-vViewPosition, normal, vec2(dFdx(sculptH), dFdy(sculptH)) * 0.0035 * sculptMid, faceDirection);`);
+}
+
+/**
+ * The same mid-band surface breakup for rigid kit parts (armour, cloth, leather,
+ * weapons) on top of their detail textures, keyed by a pattern id, so a figure
+ * reads as stitched leather / mail / rusty plate / stained cloth at tactics
+ * zoom instead of smooth vinyl.
+ */
+export function patchRigidShader(sh, pid) {
+  sh.uniforms.uPid = { value: pid };
+  sh.vertexShader = sh.vertexShader
+    .replace('#include <common>', '#include <common>\nvarying vec3 vObjR;')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvObjR = position;');
+  sh.fragmentShader = sh.fragmentShader
+    .replace('#include <common>', `#include <common>
+      uniform float uPid; varying vec3 vObjR;
+      ${SCULPT_DETAIL_GLSL}
+      float rgH; vec3 rgAlb; float rgDR; float rgDM; float rgMid;`)
+    .replace('#include <color_fragment>', `#include <color_fragment>
+      rgMid = (1.0 - smoothstep(0.03, 0.08, length(fwidth(vObjR)))) * 0.8;
+      sculptDetail(uPid, vObjR, 0.0, rgH, rgAlb, rgDR, rgDM);
+      diffuseColor.rgb *= mix(vec3(1.0), rgAlb, rgMid);`)
+    .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = clamp(roughnessFactor + rgDR * rgMid, 0.06, 1.0);')
+    .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = clamp(metalnessFactor + rgDM * rgMid, 0.0, 1.0);')
+    .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+      normal = sculptBump(-vViewPosition, normal, vec2(dFdx(rgH), dFdy(rgH)) * 0.0025 * rgMid, faceDirection);`);
 }
 
 // ------------------------------------------------------------------ statue
+let _statueMat = null;
+/**
+ * Weathered limestone for the statue: chisel-grain and pitting bump, dark
+ * rain streaks running down from every ledge, lichen blooms (grey-green and
+ * rust-orange), grime pooled low and soot from centuries of candles.
+ */
+export function statueMaterial() {
+  if (_statueMat) return _statueMat;
+  const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 });
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vSO;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSO = position;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+        varying vec3 vSO;
+        ${SCULPT_DETAIL_GLSL}
+        float stH;`)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        {
+          vec3 p = vSO;
+          float n1 = sn3(p * 3.0), n2 = sn3(p * 11.0), n3 = sn3(p * 37.0);
+          vec2 cc = cell3(p * 18.0);
+          float pit = smoothstep(0.16, 0.05, cc.x) * smoothstep(0.55, 0.75, n2);
+          float streak = smoothstep(0.55, 0.85, sn3(vec3(p.x * 14.0, p.y * 0.8, p.z * 14.0))) * smoothstep(0.2, 1.4, p.y);
+          float lichen = smoothstep(0.62, 0.78, n1 * 0.6 + n2 * 0.4);
+          float rustL = smoothstep(0.7, 0.85, sn3(p * 5.0 + 3.7));
+          float low = 1.0 - smoothstep(0.0, 0.9, p.y);
+          vec3 c = diffuseColor.rgb * (0.82 + 0.3 * n2 + 0.1 * n3);
+          c *= 1.0 - streak * 0.35;
+          c = mix(c, vec3(0.42, 0.46, 0.36) * (0.8 + 0.4 * n3), lichen * 0.55);
+          c = mix(c, vec3(0.62, 0.38, 0.18) * (0.8 + 0.4 * n3), rustL * 0.45);
+          c *= 1.0 - low * 0.3 - pit * 0.35;
+          diffuseColor.rgb = c;
+          stH = n3 * 0.4 + n2 * 0.3 - pit * 0.8 + sin(p.y * 160.0 + n2 * 6.0) * 0.06;
+        }`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+        normal = sculptBump(-vViewPosition, normal, vec2(dFdx(stH), dFdy(stH)) * 0.004, faceDirection);`);
+  };
+  m.customProgramCacheKey = () => 'statue-weathered-v1';
+  _statueMat = m;
+  return m;
+}
+
 let _statue = null;
 /**
  * The cracked statue of Tyr for the ruined temple: a robed, blindfolded,
@@ -719,11 +906,34 @@ export function statueGeometry() {
   // Right arm: forearm ends at the wrist (Tyr's lost hand).
   sc.cone([0.32, 1.96, 0], [0.42, 1.62, 0.16], 0.075, 0.06, S);
   sc.cone([0.42, 1.62, 0.16], [0.5, 1.5, 0.36], 0.06, 0.05, S);
+  // Carved detail: a mantle draped over the shoulders with a hem band, chest
+  // folds, beard strands, cuffs and a knotted blindfold trailing behind.
+  sc.ellipsoid([0, 1.9, -0.02], [0.4, 0.1, 0.25], M_ID, { ...S, k: 0.03, grow: 0.02, clip: [[0, -1, 0, -1.82]] });
+  for (let k = 0; k < 5; k++) {
+    const x = (k - 2) * 0.09;
+    sc.box([x, 1.66, 0.22 - Math.abs(x) * 0.25], [0.012, 0.16, 0.02], mEuler(0.1, 0, x * 0.6), 0.006, { g: 0, sub: true, k: 0.02 });
+  }
+  for (let k = 0; k < 6; k++) {
+    const x = (k - 2.5) * 0.028;
+    sc.box([x, 2.07, 0.14], [0.004, 0.08, 0.02], mEuler(0.25, 0, x * 2.0), 0.002, { g: 0, sub: true, k: 0.006 });
+  }
+  for (let k = 0; k < 12; k++) {
+    const a = (k / 12) * Math.PI * 2;
+    sc.box([Math.sin(a) * 0.41, 0.55, Math.cos(a) * 0.37], [0.014, 0.5, 0.02], mEuler(0, a, 0), 0.008, { g: 0, sub: true, k: 0.03 });
+  }
+  sc.torus([-0.53, 2.47, 0.06], 0.065, 0.014, mEuler(0.0, 0, 0.35), { g: 1, mat: B.mats.skin, k: 0.008 });
+  sc.torus([0.48, 1.53, 0.31], 0.062, 0.014, mEuler(1.1, 0, 0.4), { g: 1, mat: B.mats.skin, k: 0.008 });
+  sc.ellipsoid([0, 2.3, -0.15], [0.04, 0.03, 0.03], M_ID, { g: 1, mat: B.mats.dark, k: 0.01 });
+  sc.cone([0.02, 2.29, -0.16], [0.05, 2.1, -0.2], 0.02, 0.012, { g: 1, mat: B.mats.dark, k: 0.01 });
+  sc.cone([-0.02, 2.29, -0.16], [-0.06, 2.12, -0.19], 0.02, 0.012, { g: 1, mat: B.mats.dark, k: 0.01 });
   // Weathering: a great crack, chips, moss in the folds.
   sc.box([0.1, 1.2, 0.3], [0.008, 0.6, 0.06], mEuler(0, 0, 0.25), 0.003, { g: 0, sub: true, k: 0.004 });
   sc.sphere([0.2, 1.98, 0.12], 0.05, { g: 0, sub: true, k: 0.02 });
+  sc.sphere([-0.3, 1.1, 0.3], 0.06, { g: 0, sub: true, k: 0.02 });
+  sc.sphere([0.1, 0.25, 0.4], 0.07, { g: 0, sub: true, k: 0.025 });
+  sc.box([-0.15, 0.9, 0.36], [0.006, 0.4, 0.05], mEuler(0, 0, -0.4), 0.002, { g: 0, sub: true, k: 0.004 });
   for (let k = 0; k < 5; k++) sc.ellipsoid([Math.sin(k * 1.7) * 0.38, 0.05 + k * 0.02, Math.cos(k * 1.7) * 0.33], [0.08, 0.04, 0.08], M_ID, { g: 3, mat: B.mats.moss, k: 0.03 });
-  const m = meshSculpt(sc, { cell: 0.016, ao: 0.03 });
+  const m = meshSculpt(sc, { cell: 0.012, ao: 0.03 });
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(m.position, 3));
   geo.setAttribute('normal', new THREE.BufferAttribute(m.normal, 3));

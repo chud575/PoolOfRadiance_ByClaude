@@ -27,10 +27,10 @@ const HAIR = [0x2a1a10, 0x5a3418, 0x8a5a2a, 0xb88a4a, 0xd8c08a, 0x7a2a14, 0x1a1a
 // ------------------------------------------------------------------ species
 const SPECIES = {
   human: { height: 1.0, bulk: 1.0, head: 'human' },
-  kobold: { height: 0.78, bulk: 1.22, limbK: 1.35, head: 'kobold', headScale: 1.45, skin: ['reptile', 0x8a4624], shieldChance: 0.5, tail: 'long', legs: 'digitigrade', hunch: 0.34, thickNeck: true, cloth: 0x4a3a28, armor: 'harness', weapon: 'spear', weapons: ['spear', 'spear', 'shortSword', 'club'], eyes: 0xffc040 },
+  kobold: { height: 0.78, bulk: 1.22, limbK: 1.35, head: 'kobold', headScale: 1.45, skin: ['reptile', 0x8a4624], shieldChance: 0.45, tail: 'long', legs: 'digitigrade', hunch: 0.34, thickNeck: true, cloth: 0x4a3a28, armor: 'harness', weapon: 'spear', weapons: ['spear', 'club', 'sling', 'spear', 'shortSword', 'club', 'sling'], helms: [null, 'kCap', 'kSkull', 'kBand'], stature: 0.26, shields: ['round', 'hide'], eyes: 0xffc040 },
   goblin: { height: 0.66, bulk: 0.95, limbK: 1.2, head: 'goblin', skin: ['skin', 0x8a9a3a], hunch: 0.15, cloth: 0x4a3020, weapon: 'shortSword', eyes: 0xffe060 },
   orc: { height: 1.04, bulk: 1.28, head: 'orc', skin: ['skin', 0x474d38], hunch: 0.42, cloth: 0x2e2418, armor: 'orcish', weapon: 'battleAxe', weapons: ['battleAxe', 'battleAxe', 'spear', 'morningStar', 'club'], helmChance: 0.55, eyes: 0xff4020 },
-  hobgoblin: { height: 1.08, bulk: 1.12, head: 'hobgoblin', skin: ['skin', 0x9a5030], cloth: 0x5a1e18, armor: 'scale', weapon: 'longSword', shield: 'round', helmChance: 0.75, eyes: 0xffa020 },
+  hobgoblin: { height: 1.08, bulk: 1.12, head: 'hobgoblin', skin: ['skin', 0x5a2a14], cloth: 0x5a1e18, armor: 'scale', weapon: 'glaive', weapons: ['glaive', 'glaive', 'glaive', 'longSword'], shield: null, shieldWith: { longSword: 'round' }, helms: ['hobHelm'], eyes: 0xffa020 },
   gnoll: { height: 1.2, bulk: 1.15, limbK: 1.1, head: 'gnoll', skin: ['fur', 0x9a7a4a], hunch: 0.3, legs: 'digitigrade', cloth: 0x3a2e22, armor: 'scraps', weapon: 'flail', eyes: 0xffd040 },
   giantRat: { rig: 'quad', skin: ['fur', 0x4a3a30], height: 0.55, eyes: 0xff3020 },
   skeleton: { undead: true, height: 1.0, bulk: 0.9, head: 'skull', body: 'bones', skin: ['bone', 0xd8ccb0], weapon: 'shortSword', shield: 'round', eyes: 0x60d0ff },
@@ -108,13 +108,21 @@ export function makeFigureModel(c, index = 0) {
   if (sp.rig === 'spider') return buildSpider(sp, seed);
   // Per-individual variation: gear, helm, stature.
   const pick = (arr, k) => arr[Math.floor(hashStr(`${c.id}:${k}`) * arr.length)];
+  // Individuals are numbered from 1: the n-th of a species cycles the weapon list
+  // so a warband always shows a mix (spears, clubs, slings) rather than clones.
+  const nth = Math.max(0, (parseInt(/(\d+)$/.exec(c.name ?? '')?.[1] ?? '1', 10) || 1) - 1);
+  const weapon = sp.weapons ? sp.weapons[(nth + Math.floor(hashStr(`${c.monsterId}:w0`) * sp.weapons.length)) % sp.weapons.length] : sp.weapon === undefined ? 'club' : sp.weapon;
+  const shield = sp.shieldWith ? sp.shieldWith[weapon] ?? null
+    : weapon === 'sling' ? null
+    : sp.shield !== undefined && sp.shield !== null ? sp.shield
+    : sp.shieldChance && hashStr(`${c.id}:s`) < sp.shieldChance ? (sp.shields ? pick(sp.shields, 'st') : 'round') : null;
   const kit = {
     color: sp.cloth ?? 0x3a3024,
-    weapon: sp.weapons ? pick(sp.weapons, 'w') : sp.weapon === undefined ? 'club' : sp.weapon,
+    weapon,
     variant: hashStr(`${c.id}:v`),
     armor: sp.armor ?? (sp.body === 'bones' ? 'none' : 'loincloth'),
-    shield: sp.shield ?? (sp.shieldChance && hashStr(`${c.id}:s`) < sp.shieldChance ? 'round' : null),
-    helm: sp.helmChance && hashStr(`${c.id}:h`) < sp.helmChance ? 'orcHelm' : null,
+    shield,
+    helm: sp.helms ? sp.helms[(nth * 3 + 1) % sp.helms.length] : sp.helmChance && hashStr(`${c.id}:h`) < sp.helmChance ? 'orcHelm' : null,
     human: sp.human,
     stripes: sp.stripes,
     tattered: sp.tattered,
@@ -123,7 +131,7 @@ export function makeFigureModel(c, index = 0) {
   };
   // Sculpted species mesh once at their canonical build; individuals vary by scale.
   const sculpt = LOOKS[c.monsterId] && !sp.human ? c.monsterId : null;
-  const indiv = 0.94 + seed * 0.12;
+  const indiv = sp.stature ? 1 - sp.stature / 2 + hashStr(`${c.id}:tall`) * sp.stature : 0.94 + seed * 0.12;
   const model = buildBiped({
     sculpt,
     height: sp.height * (sculpt ? 1 : indiv),
@@ -443,6 +451,35 @@ function buildBiped(o) {
         R.part('head', cone(0.0065 * hs, 0.026 * hs, 6), tusk, { p: [sx * 0.054 * hs, 0.1 * hs, 0.112 * hs], r: [-0.15, 0, sx * -0.5] });
       }
     }
+    if (kit.helm === 'hobHelm') {
+      // Hobgoblin legion helm: a dark-iron conical spangenhelm with brass bands,
+      // a nasal, hinged cheek guards and a short red horsehair crest.
+      const iron = pbr('metal', 0x3e3a36);
+      const brass = pbr('gold', 0x9a7a3a);
+      R.part('head', lathe([[0.104, 0], [0.1, 0.05], [0.08, 0.1], [0.045, 0.14], [0.008, 0.16]].map(([r, y]) => [r * hs, y * hs]), 14, { zs: 1.08 }), iron, { p: [0, 0.1 * hs, -0.018 * hs] });
+      R.part('head', torus(0.104 * hs, 0.01 * hs, 5, 22), brass, { p: [0, 0.104 * hs, -0.018 * hs], r: [Math.PI / 2, 0, 0], s: [1, 1.08, 1] });
+      for (let k = 0; k < 4; k++) R.part('head', box(0.012 * hs, 0.15 * hs, 0.01 * hs), brass, { p: [Math.sin(k * Math.PI / 2) * 0.07 * hs, 0.17 * hs, -0.018 * hs + Math.cos(k * Math.PI / 2) * 0.075 * hs], r: [Math.cos(k * Math.PI / 2) * -0.55, 0, Math.sin(k * Math.PI / 2) * 0.55] });
+      R.part('head', box(0.018 * hs, 0.07 * hs, 0.012 * hs), iron, { p: [0, 0.085 * hs, 0.1 * hs], r: [0.1, 0, 0] });
+      for (const sx of [1, -1]) R.part('head', rbox(0.012 * hs, 0.08 * hs, 0.06 * hs, 0.004 * hs), iron, { p: [sx * 0.092 * hs, 0.065 * hs, 0.03 * hs], r: [0.15, 0, sx * 0.12] });
+      R.part('head', box(0.022 * hs, 0.05 * hs, 0.16 * hs), pbr('fur', 0x8a1a10), { p: [0, 0.27 * hs, -0.03 * hs], r: [-0.15, 0, 0] });
+    }
+    if (kit.helm === 'kCap') {
+      // A boiled-leather skullcap laced under the horns.
+      R.part('head', sphere(0.094 * hs, 12, 8, { thetaLength: Math.PI * 0.42 }), pbr('leather', 0x4a3220), { p: [0, 0.112 * hs, -0.02 * hs], s: [1, 0.9, 1.08] });
+      R.part('head', torus(0.088 * hs, 0.008 * hs, 4, 16), pbr('leather', 0x2a1a10), { p: [0, 0.145 * hs, -0.02 * hs], r: [Math.PI / 2, 0, 0], s: [1, 1.1, 1] });
+    }
+    if (kit.helm === 'kSkull') {
+      // The bleached skull of a dog worn as a helm, its muzzle over the brow.
+      const boneM = pbr('bone', 0xd6c8a6);
+      R.part('head', sphere(0.08 * hs, 10, 8, { thetaLength: Math.PI * 0.55 }), boneM, { p: [0, 0.135 * hs, -0.03 * hs], s: [1, 0.85, 1.15] });
+      R.part('head', cone(0.035 * hs, 0.11 * hs, 6), boneM, { p: [0, 0.165 * hs, 0.06 * hs], r: [Math.PI / 2 - 0.3, 0, 0], s: [1, 1, 0.6] });
+      for (const sx of [1, -1]) R.part('head', sphere(0.014 * hs, 6, 4), pbr('eye', 0x0a0806), { p: [sx * 0.03 * hs, 0.17 * hs, 0.04 * hs] });
+    }
+    if (kit.helm === 'kBand') {
+      // A rag headband knotted behind the horns, with a crow feather.
+      R.part('head', torus(0.09 * hs, 0.012 * hs, 4, 18), pbr('cloth', 0x8a2a1a), { p: [0, 0.13 * hs, -0.02 * hs], r: [Math.PI / 2 - 0.15, 0, 0], s: [1, 1.12, 1] });
+      R.part('head', box(0.012 * hs, 0.11 * hs, 0.03 * hs), pbr('cloth', 0x1a1a1e), { p: [0.05 * hs, 0.2 * hs, -0.07 * hs], r: [-0.4, 0, -0.35] });
+    }
     if (kit.helm === 'orcHelm') {
       const hy = 0.1 * hs;
       const rustM = pbr('metal', 0x5e4434);
@@ -674,7 +711,36 @@ function buildHead(R, o, s, skinMat) {
         R.part('head', cone(0.035 * hs, 0.11 * hs, 5), skinMat, { p: [sx * 0.115 * hs, hy + 0.0 * hs, -0.03 * hs], r: [0.5, 0, sx * -1.25], s: [1, 1, 0.45] });
       }
       R.part('head', box(0.11 * hs, 0.012 * hs, 0.012 * hs), dark, { p: [0, hy - 0.072 * hs, 0.112 * hs] });
-      if (kit.helm === 'orcHelm') {
+      if (kit.helm === 'hobHelm') {
+      // Hobgoblin legion helm: a dark-iron conical spangenhelm with brass bands,
+      // a nasal, hinged cheek guards and a short red horsehair crest.
+      const iron = pbr('metal', 0x3e3a36);
+      const brass = pbr('gold', 0x9a7a3a);
+      R.part('head', lathe([[0.104, 0], [0.1, 0.05], [0.08, 0.1], [0.045, 0.14], [0.008, 0.16]].map(([r, y]) => [r * hs, y * hs]), 14, { zs: 1.08 }), iron, { p: [0, 0.1 * hs, -0.018 * hs] });
+      R.part('head', torus(0.104 * hs, 0.01 * hs, 5, 22), brass, { p: [0, 0.104 * hs, -0.018 * hs], r: [Math.PI / 2, 0, 0], s: [1, 1.08, 1] });
+      for (let k = 0; k < 4; k++) R.part('head', box(0.012 * hs, 0.15 * hs, 0.01 * hs), brass, { p: [Math.sin(k * Math.PI / 2) * 0.07 * hs, 0.17 * hs, -0.018 * hs + Math.cos(k * Math.PI / 2) * 0.075 * hs], r: [Math.cos(k * Math.PI / 2) * -0.55, 0, Math.sin(k * Math.PI / 2) * 0.55] });
+      R.part('head', box(0.018 * hs, 0.07 * hs, 0.012 * hs), iron, { p: [0, 0.085 * hs, 0.1 * hs], r: [0.1, 0, 0] });
+      for (const sx of [1, -1]) R.part('head', rbox(0.012 * hs, 0.08 * hs, 0.06 * hs, 0.004 * hs), iron, { p: [sx * 0.092 * hs, 0.065 * hs, 0.03 * hs], r: [0.15, 0, sx * 0.12] });
+      R.part('head', box(0.022 * hs, 0.05 * hs, 0.16 * hs), pbr('fur', 0x8a1a10), { p: [0, 0.27 * hs, -0.03 * hs], r: [-0.15, 0, 0] });
+    }
+    if (kit.helm === 'kCap') {
+      // A boiled-leather skullcap laced under the horns.
+      R.part('head', sphere(0.094 * hs, 12, 8, { thetaLength: Math.PI * 0.42 }), pbr('leather', 0x4a3220), { p: [0, 0.112 * hs, -0.02 * hs], s: [1, 0.9, 1.08] });
+      R.part('head', torus(0.088 * hs, 0.008 * hs, 4, 16), pbr('leather', 0x2a1a10), { p: [0, 0.145 * hs, -0.02 * hs], r: [Math.PI / 2, 0, 0], s: [1, 1.1, 1] });
+    }
+    if (kit.helm === 'kSkull') {
+      // The bleached skull of a dog worn as a helm, its muzzle over the brow.
+      const boneM = pbr('bone', 0xd6c8a6);
+      R.part('head', sphere(0.08 * hs, 10, 8, { thetaLength: Math.PI * 0.55 }), boneM, { p: [0, 0.135 * hs, -0.03 * hs], s: [1, 0.85, 1.15] });
+      R.part('head', cone(0.035 * hs, 0.11 * hs, 6), boneM, { p: [0, 0.165 * hs, 0.06 * hs], r: [Math.PI / 2 - 0.3, 0, 0], s: [1, 1, 0.6] });
+      for (const sx of [1, -1]) R.part('head', sphere(0.014 * hs, 6, 4), pbr('eye', 0x0a0806), { p: [sx * 0.03 * hs, 0.17 * hs, 0.04 * hs] });
+    }
+    if (kit.helm === 'kBand') {
+      // A rag headband knotted behind the horns, with a crow feather.
+      R.part('head', torus(0.09 * hs, 0.012 * hs, 4, 18), pbr('cloth', 0x8a2a1a), { p: [0, 0.13 * hs, -0.02 * hs], r: [Math.PI / 2 - 0.15, 0, 0], s: [1, 1.12, 1] });
+      R.part('head', box(0.012 * hs, 0.11 * hs, 0.03 * hs), pbr('cloth', 0x1a1a1e), { p: [0.05 * hs, 0.2 * hs, -0.07 * hs], r: [-0.4, 0, -0.35] });
+    }
+    if (kit.helm === 'orcHelm') {
         const rustM = pbr('metal', 0x5e4434);
         R.part('head', sphere(0.118 * hs, 14, 10, { thetaLength: Math.PI * 0.5 }), rustM, { p: [0, hy + 0.012 * hs, -0.015 * hs], s: [1.05, 0.9, 1.08] });
         R.part('head', box(0.02 * hs, 0.08 * hs, 0.02 * hs), rustM, { p: [0, hy + 0.0 * hs, 0.112 * hs], r: [0.3, 0, 0] });
@@ -843,6 +909,24 @@ export function addWeapon(R, bone, kind, s, m) {
       R.part(bone, cyl(0.02 * s, 0.02 * s, 0.05 * s, 8), m.darkMetal, { p: [0, handleY, gz(1.08)], r: [Math.PI / 2, 0, 0] });
       break;
     }
+    case 'glaive': {
+      // Hobgoblin polearm: a long ash haft, a curved single-edged blade with a
+      // back hook, an iron langet and a red tassel.
+      R.part(bone, cyl(0.017 * s, 0.019 * s, 1.75 * s, 8), m.wood, { p: [0, handleY, gz(0.42)], r: [Math.PI / 2, 0, 0] });
+      R.part(bone, blade([[-0.02, 0], [0.035, 0], [0.06, 0.12], [0.055, 0.26], [0.0, 0.36], [-0.015, 0.22], [-0.03, 0.06]].map(([x, y]) => [x * s, y * s]), 0.012 * s, 0.003 * s), m.metal, { p: [0, handleY, gz(1.26)], r: [Math.PI / 2, 0, 0] });
+      R.part(bone, blade([[0, 0], [-0.09, 0.03], [-0.02, 0.06]].map(([x, y]) => [x * s, y * s]), 0.01 * s), m.darkMetal, { p: [0, handleY, gz(1.3)], r: [Math.PI / 2, 0, 0] });
+      R.part(bone, cyl(0.024 * s, 0.022 * s, 0.12 * s, 8), m.darkMetal, { p: [0, handleY, gz(1.22)], r: [Math.PI / 2, 0, 0] });
+      R.part(bone, cone(0.03 * s, 0.1 * s, 6), pbr('fur', 0x8a1a10), { p: [0, handleY, gz(1.14)], r: [-Math.PI / 2, 0, 0] });
+      R.part(bone, cone(0.018 * s, 0.06 * s, 6), m.darkMetal, { p: [0, handleY, gz(-0.48)], r: [-Math.PI / 2, 0, 0] });
+      break;
+    }
+    case 'sling': {
+      // A leather sling dangling from the fist with a stone in its cradle.
+      R.part(bone, cyl(0.004 * s, 0.004 * s, 0.32 * s, 4), m.leather, { p: [0, handleY - 0.16 * s, gz(0.02)] });
+      R.part(bone, rbox(0.05 * s, 0.03 * s, 0.035 * s, 0.01 * s), m.leather, { p: [0, handleY - 0.33 * s, gz(0.02)] });
+      R.part(bone, sphere(0.022 * s, 7, 5), pbr('bone', 0x7a746a), { p: [0, handleY - 0.32 * s, gz(0.02)] });
+      break;
+    }
     case 'bow': {
       R.part(bone, torus(0.42 * s, 0.014 * s, 6, 24, Math.PI * 0.75), m.wood, { p: [0, 0.3 * s, 0], r: [0, Math.PI / 2, Math.PI / 2 + Math.PI * 0.125] });
       R.part(bone, cyl(0.002 * s, 0.002 * s, 0.78 * s, 3), pbr('cloth', 0xe8e0d0), { p: [0, -0.05 * s, 0], r: [Math.PI / 2, 0, 0] });
@@ -855,9 +939,17 @@ export function addWeapon(R, bone, kind, s, m) {
 
 function addShield(R, bone, kind, s, kit, m) {
   // Heroes carry painted heraldry; monsters carry battered planks.
-  const face = kit.race === 'monster' ? pbr('plank', 0x8a6a4a) : new THREE.MeshStandardMaterial({ map: heraldry(kit.color, kit.device ?? 'chevron'), roughness: 0.75, metalness: 0.05 });
+  const face = kit.race === 'monster' ? (kind === 'hide' ? pbr('leather', 0x7a5a3a) : pbr('plank', 0x8a6a4a)) : new THREE.MeshStandardMaterial({ map: heraldry(kit.color, kit.device ?? 'chevron'), roughness: 0.75, metalness: 0.05 });
   // In the guard pose the hand's -Y axis points forward; the shield faces that way.
   const place = { p: [0.03 * s, -0.1 * s, 0.02 * s], r: [0, 0, 0] };
+  if (kind === 'hide') {
+    // Stretched hide on a wicker hoop: smaller, lashed, no boss.
+    const g = cyl(0.2 * s, 0.2 * s, 0.02 * s, 18);
+    R.part(bone, g, face, place);
+    R.part(bone, torus(0.2 * s, 0.014 * s, 5, 18), pbr('wood', 0x5a4028), { p: place.p, r: [Math.PI / 2, 0, 0] });
+    for (let k = 0; k < 2; k++) R.part(bone, box(0.4 * s, 0.012 * s, 0.03 * s), pbr('wood', 0x4a3420), { p: [place.p[0], place.p[1] - 0.02 * s, place.p[2]], r: [0, k * Math.PI / 2 + 0.4, 0] });
+    return;
+  }
   if (kind === 'round') {
     const g = cyl(0.26 * s, 0.26 * s, 0.03 * s, 28);
     const uv = g.attributes.uv;

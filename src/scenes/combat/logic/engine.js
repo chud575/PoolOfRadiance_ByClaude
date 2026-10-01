@@ -231,7 +231,8 @@ export class CombatEngine {
     const mult = m.backstab ? backstabMultiplier(att.ref.levels.thief) : 1;
     const lo = Math.max(1, (st.min + a.dmgBonus + m.dmgMod)) * mult;
     const hi = Math.max(1, (st.max + a.dmgBonus + m.dmgMod)) * mult;
-    return { chance: p, dmg: immune ? '0' : lo === hi ? `${lo}` : `${lo}-${hi}`, immune: !!immune, notes: m.notes, ranged: isRanged, ok: can.ok, reason: can.reason, attacks: this.attackCount(att, def, isRanged) };
+    const weapon = isRanged && att.side === 'party' ? this.rangedProfile(att)?.name ?? this.weaponName(att) : this.weaponName(att);
+    return { chance: p, dmg: immune ? '0' : lo === hi ? `${lo}` : `${lo}-${hi}`, dice, weapon, immune: !!immune, notes: m.notes, ranged: isRanged, ok: can.ok, reason: can.reason, attacks: this.attackCount(att, def, isRanged) };
   }
 
   /** Attacks `att` gets against `def` this round (rules: 3/2, haste/slow, sweeps, rate of fire). */

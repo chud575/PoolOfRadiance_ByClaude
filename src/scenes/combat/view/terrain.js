@@ -5,7 +5,7 @@ import { CELL, EDGE } from '../../../data/maps/MapGrid.js';
 import { SUB } from '../logic/battlefield.js';
 import { Batcher, worldBox, wallQuad } from './batch.js';
 import { pbr } from './textures.js';
-import { statueGeometry } from './sculpted.js';
+import { statueGeometry, statueMaterial } from './sculpted.js';
 import { fbm } from '../../../render/textures/noise.js';
 
 export const TILE = 1.5;
@@ -36,6 +36,10 @@ function addMacro(mat, { scale = 0.18, amount = 0.45, grime = 0.35, key = 'macro
       .replace('#include <map_fragment>', `#include <map_fragment>
         float mn = mNoise(vMWPos * ${scale.toFixed(3)}) * 0.6 + mNoise(vMWPos * ${(scale * 2.7).toFixed(3)}) * 0.4;
         diffuseColor.rgb *= ${(1 - amount / 2).toFixed(3)} + ${amount.toFixed(3)} * mn;
+        // Per-patch hue drift (warm/cool stone, sun-bleached vs. sooty) and
+        // brick-scale blotching so no two wall runs read as the same tile.
+        diffuseColor.rgb *= mix(vec3(1.07, 0.99, 0.9), vec3(0.9, 0.96, 1.05), mNoise(vMWPos * 0.37 + 5.0));
+        diffuseColor.rgb *= 0.86 + 0.28 * mNoise(vMWPos * 3.3 + 1.7);
         diffuseColor.rgb *= mix(${(1 - grime).toFixed(3)}, 1.0, smoothstep(0.0, 1.4, vMWPos.y));
         ${grime > 0 ? `// Rain streaks running down from sills and copings; moss creeping up the base.
         float stk = smoothstep(0.55, 0.9, mNoise(vec3(vMWPos.x * 2.3, vMWPos.y * 0.16, vMWPos.z * 2.3)));
@@ -43,7 +47,7 @@ function addMacro(mat, { scale = 0.18, amount = 0.45, grime = 0.35, key = 'macro
         float baseMoss = (1.0 - smoothstep(0.05, 0.75, vMWPos.y)) * smoothstep(0.4, 0.7, mNoise(vMWPos * 1.7));
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.16, 0.19, 0.09), baseMoss * 0.6);` : ''}`);
   };
-  mat.customProgramCacheKey = () => `${key}-${scale}-${amount}-${grime}-v3`;
+  mat.customProgramCacheKey = () => `${key}-${scale}-${amount}-${grime}-v4`;
   return mat;
 }
 
@@ -217,8 +221,23 @@ export function buildDiorama(field, o = {}) {
         vec2 uv2 = vec2(vWPos.x, -vWPos.z) / 3.2 + 0.37;
         vec2 uv3 = vec2(vWPos.x, -vWPos.z) / 2.7;
         vec4 gc = texture2D(map, uv1);
+        // Smaller setts along wall feet and kerbs (edge courses), larger mid-street.
+        float edgeC = smoothstep(0.92, 0.7, gAO) * (1.0 - wF);
+        if (edgeC > 0.01) gc = mix(gc, texture2D(map, uv1 * 1.85 + 0.31), edgeC);
         if (wR > 0.001) gc = mix(gc, texture2D(map2, uv2), wR);
         if (wF > 0.001) gc = mix(gc, texture2D(map3, uv3), wF);
+        // Ruin: on dressed flagstones, broken / missing slabs open onto grit and
+        // rubble, meandering hairline cracks run across slabs, moss fills seams.
+        float brkN = gFbm(vWPos.xz * 0.52 + 9.0) + (gn - 0.5) * 0.12;
+        float brk = wF * smoothstep(0.57, 0.6, brkN);
+        if (brk > 0.001) gc = mix(gc, texture2D(map2, uv2 * 1.6 + 0.2) * vec4(0.4, 0.36, 0.31, 1.0) * (0.7 + 0.6 * gFbm(vWPos.xz * 3.1)), brk);
+        float crN = gFbm(vWPos.xz * 0.75 + 2.7) - 0.5;
+        float crW = fwidth(crN) * 1.6 + 0.006;
+        float crack = wF * (1.0 - brk) * (1.0 - smoothstep(crW * 0.5, crW * 1.6, abs(crN))) * smoothstep(0.45, 0.65, gFbm(vWPos.xz * 0.21 + 13.0));
+        gc.rgb *= 1.0 - crack * 0.8;
+        // A dark sunken rim where a slab is missing.
+        float brkRim = wF * smoothstep(0.53, 0.57, brkN) * (1.0 - brk);
+        gc.rgb *= 1.0 - brkRim * 0.45;
         float mac = gFbm(vWPos.xz * 0.07);
         gc.rgb *= 0.78 + 0.42 * mac;
         // Kerbs: a lighter dressed-stone band with a dark gutter where paving changes.
@@ -228,8 +247,10 @@ export function buildDiorama(field, o = {}) {
         // Mortar gaps (dark in the albedo) collect moss and grime in patches.
         float lum = dot(gc.rgb, vec3(0.3, 0.55, 0.15));
         float gap = 1.0 - smoothstep(0.08, 0.2, lum);
-        float mossN = smoothstep(0.42, 0.7, gFbm(vWPos.xz * 0.33 + 4.0));
+        float mossN = smoothstep(0.42 - wF * 0.14, 0.7, gFbm(vWPos.xz * 0.33 + 4.0));
         gc.rgb = mix(gc.rgb, vec3(0.13, 0.17, 0.07), gap * mossN * 0.85);
+        // Moss and weeds creeping into cracks and around broken slabs.
+        gc.rgb = mix(gc.rgb, vec3(0.11, 0.15, 0.06), (crack * 0.5 + brkRim * 0.6) * mossN);
         // Worn, polished wheel/foot paths.
         float worn = smoothstep(0.55, 0.78, gFbm(vWPos.xz * 0.09 + 11.0)) * (1.0 - wR);
         gc.rgb *= 1.0 + 0.14 * worn;
@@ -248,6 +269,7 @@ export function buildDiorama(field, o = {}) {
         float gr = texture2D(roughnessMap, uv1).g;
         if (wR > 0.001) gr = mix(gr, texture2D(rough2, uv2).g, wR);
         if (wF > 0.001) gr = mix(gr, texture2D(rough3, uv3).g, wF);
+        gr = mix(gr, 1.0, brk * 0.8);
         float roughnessFactor = roughness * gr;
         roughnessFactor *= 1.0 - 0.25 * smoothstep(0.55, 0.78, gFbm(vWPos.xz * 0.09 + 11.0));
         roughnessFactor = mix(roughnessFactor, 0.22, wet);
@@ -256,6 +278,7 @@ export function buildDiorama(field, o = {}) {
         vec3 mapN = texture2D(normalMap, uv1).xyz * 2.0 - 1.0;
         if (wR > 0.001) mapN = mix(mapN, texture2D(normal2, uv2).xyz * 2.0 - 1.0, wR);
         if (wF > 0.001) mapN = mix(mapN, texture2D(normal3, uv3).xyz * 2.0 - 1.0, wF);
+        if (brk > 0.001) mapN = mix(mapN, texture2D(normal2, uv2 * 1.6 + 0.2).xyz * 2.0 - 1.0, brk);
         mapN = normalize(mapN);
         mapN.xy *= normalScale * (1.0 - wet * 0.9);
         normal = normalize( tbn * mapN );
@@ -264,7 +287,7 @@ export function buildDiorama(field, o = {}) {
         reflectedLight.indirectDiffuse *= mix(0.5, 1.0, gAO);
       `);
   };
-  groundMat.customProgramCacheKey = () => 'combat-ground-v4';
+  groundMat.customProgramCacheKey = () => 'combat-ground-v5';
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(SW * TILE, SH * TILE, 1, 1), groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(originX + (SW * TILE) / 2, 0, originZ + (SH * TILE) / 2);
@@ -1034,8 +1057,7 @@ export function buildDiorama(field, o = {}) {
       batch.add(worldBox(1.45, 0.12, 1.25, 1.5), stoneT, { p: [sx, 0.96, sz] });
       // The god himself: one sculpted stone mesh (robe folds, blindfold, beard,
       // raised hammer, the lost right hand), with occlusion baked in.
-      const statue = new THREE.Mesh(statueGeometry(), statueMat ??= new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, metalness: 0 }));
-      if (!disposables.includes(statueMat)) disposables.push(statueMat);
+      const statue = new THREE.Mesh(statueGeometry(), statueMat ??= statueMaterial());
       statue.position.set(sx, 1.02, sz);
       statue.castShadow = true;
       statue.receiveShadow = true;
@@ -1088,10 +1110,39 @@ export function buildDiorama(field, o = {}) {
       b2.add(worldBox(l2, 0.26, 0.26, 1), darkWood, { p: [hx0 + hw - l2 / 2, 3.55, zz], r: [0, 0, 0.08] });
       beamBatches.push({ b: b2, box: new THREE.Box3(new THREE.Vector3(hx0 + hw - l2, 3.3, zz - 0.2), new THREE.Vector3(hx0 + hw, 3.8, zz + 0.2)) });
     }
-    batch.add(worldBox(4.2, 0.24, 0.24, 1), darkWood, { p: [hx0 + hw - 1.6, 0.55, hz0 + hd - 1.4], r: [0, 0.7, 0.25] });
-    batch.add(worldBox(2.6, 0.22, 0.22, 1), darkWood, { p: [hx0 + 1.4, 0.3, hz0 + hd - 0.9], r: [0, -0.4, 0.1] });
-    // Rubble drifts along the foot of the walls.
+    // Fallen beams lie against the back wall (never a dark slab across the
+    // foreground), in sun-and-rain greyed timber that reads by moonlight too.
+    const greyWood = pbr('wood', 0x8a7a66);
+    batch.add(worldBox(4.2, 0.24, 0.24, 1), greyWood, { p: [hx0 + hw - 1.9, 0.5, hz0 + 1.3], r: [0, -0.5, 0.22] });
+    batch.add(worldBox(2.6, 0.22, 0.22, 1), greyWood, { p: [hx0 + 1.5, 0.28, hz0 + 1.0], r: [0, 0.35, 0.1] });
+    // Broken slab fragments and grit in loose clusters across the floor, and
+    // pale pools of old candle wax spilt around the altar end.
     const rubM = libMat('wall_ruin', 0xa89c8c);
+    for (let k = 0; k < 9; k++) {
+      const cx = hx0 + 1 + hash(k, 21, 513) * (hw - 2);
+      const cz = hz0 + 1 + hash(k, 22, 513) * (hd - 2);
+      const n = 4 + Math.floor(hash(k, 23, 513) * 6);
+      for (let j = 0; j < n; j++) {
+        const a = hash(k, j, 514) * Math.PI * 2;
+        const r = Math.sqrt(hash(j, k, 515)) * 0.45;
+        const sz = 0.03 + hash(j, k, 516) ** 2 * 0.13;
+        batch.add(rockGeo(hash(k * 13 + j, 9, 517), sz), j % 3 ? rubM : stoneT, { p: [cx + Math.cos(a) * r, sz * 0.25, cz + Math.sin(a) * r], r: [0, a, 0] }, { cast: sz > 0.09 });
+      }
+      // A flat broken tile lying askew.
+      batch.add(worldBox(0.34 + hash(k, 24, 513) * 0.2, 0.05, 0.26, 1.5), stoneT, { p: [cx + 0.3, 0.03, cz - 0.2], r: [0.06, hash(k, 25, 513) * 3, 0.08] }, { cast: false });
+    }
+    const waxM = new THREE.MeshStandardMaterial({ color: 0xe8dcc0, roughness: 0.35, metalness: 0 });
+    disposables.push(waxM);
+    for (const p of field.features.props ?? []) {
+      if (p.type !== 'altar' && p.type !== 'statue') continue;
+      for (let k = 0; k < 7; k++) {
+        const a = hash(k, p.x, 518) * Math.PI * 2;
+        const r = 0.7 + hash(p.y, k, 519) * 0.6;
+        const g = new THREE.CircleGeometry(0.05 + hash(k, 3, 520) * 0.09, 10).rotateX(-Math.PI / 2);
+        batch.add(g, waxM, { p: [p.x * TILE + TILE / 2 + Math.cos(a) * r, 0.006, p.y * TILE + TILE / 2 + Math.sin(a) * r], s: [1, 1, 0.6 + hash(k, 4, 520) * 0.6] }, { cast: false });
+      }
+    }
+    // Rubble drifts along the foot of the walls.
     for (let k = 0; k < 40; k++) {
       const side = k % 4;
       const t = hash(k, 3, 511);
@@ -1249,6 +1300,14 @@ export function buildDiorama(field, o = {}) {
             float hd = length(gl_FragCoord.xy - uHole) / uHoleR;
             float op = mix(uFade, 1.0, smoothstep(0.75, 1.15, hd));
             if (bayer4(gl_FragCoord.xy) > op) discard;
+          }`)
+        // Cut-away (foreground) masses never read as unlit black slabs: they
+        // lift toward a soft, cool-grey silhouette as they fade.
+        .replace('#include <dithering_fragment>', `#include <dithering_fragment>
+          if (uFade < 0.999) {
+            float gh = (1.0 - uFade);
+            vec3 ghostC = vec3(0.32, 0.34, 0.4) * (0.7 + 0.3 * dot(gl_FragColor.rgb, vec3(0.33)));
+            gl_FragColor.rgb = mix(gl_FragColor.rgb, max(gl_FragColor.rgb, ghostC), gh * 0.75);
           }`);
     };
     f.customProgramCacheKey = () => `${baseKey}|fade`;
@@ -1276,6 +1335,10 @@ export function buildDiorama(field, o = {}) {
     const cdx = camPos.x - W / 2;
     const cdz = camPos.z - H / 2;
     const cl = Math.hypot(cdx, cdz) || 1;
+    // How far the fight sits from the camera: masses well in front of it are foreground.
+    let fightD = 0;
+    for (const p of points) fightD += camPos.distanceTo(p) / Math.max(1, points.length);
+    const _c = new THREE.Vector3();
     for (const g of [...houseGroups, ...wallGroups]) {
       if (g.w?.city) {
         // City walls on the camera's side are always lowered (dollhouse view).
@@ -1299,6 +1362,15 @@ export function buildDiorama(field, o = {}) {
           break;
         }
       }
+      // Foreground masses (a roof beam or wall face between the lens and the
+      // fight, even if no sight line strictly crosses it) never sit as black
+      // slabs across the frame: beams clear out, walls ghost to a soft silhouette.
+      let fore = false;
+      if (!hides && points.length) {
+        g.box.getCenter(_c);
+        const dc = camPos.distanceTo(_c);
+        fore = dc < fightD - (g.w?.prop ? 1.5 : 4.5) && _c.y + 0.5 > 0;
+      }
       if (g.w?.low) {
         // Low field walls simply drop to their knee-high cut-away course.
         g.full.visible = !hides;
@@ -1307,8 +1379,8 @@ export function buildDiorama(field, o = {}) {
       }
       // Loose props (high beams, tall columns) dissolve and then drop out
       // entirely (no speckled ghost past the hole's rim); walls keep a ghost.
-      g.fadeTarget = hides ? (g.w?.prop ? 0 : 0.22) : 1;
-      g.full.visible = !(g.w?.prop && hides && g.fade && g.fade.value < 0.04);
+      g.fadeTarget = hides ? (g.w?.prop ? 0 : 0.22) : fore ? (g.w?.prop ? 0 : 0.6) : 1;
+      g.full.visible = !(g.w?.prop && (hides || fore) && g.fade && g.fade.value < 0.04);
       g.cut.visible = false;
     }
   }
