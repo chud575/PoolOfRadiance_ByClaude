@@ -24,12 +24,12 @@ function wfbm(u, v, period, seed, octaves = 5, warp = 0.35) {
  * Row/column masonry layout helper: returns per-pixel block info for a running
  * bond with irregular row heights and block widths (tileable).
  */
-function masonryLayout({ rows, seed, minW, maxW }) {
+function masonryLayout({ rows, seed, minW, maxW, rowVar = 0.5 }) {
   // row boundaries in [0,1)
   const rb = [0];
   let acc = 0;
   const weights = [];
-  for (let r = 0; r < rows; r++) weights.push(0.75 + hash2(r, 7, seed) * 0.5);
+  for (let r = 0; r < rows; r++) weights.push(1 - rowVar / 2 + hash2(r, 7, seed) * rowVar);
   const tot = weights.reduce((a, b) => a + b, 0);
   for (let r = 0; r < rows; r++) {
     acc += weights[r] / tot;
@@ -667,8 +667,9 @@ export function limestone({ seed = 211, base = [0.5, 0.47, 0.41] } = {}) {
  * into two smaller ones), per-stone tilt/height, chipped corners, worn arrises,
  * wide dirt/moss-filled joints, lichen and stains. Tile ≈ 3 m.
  */
-export function flagstones({ seed = 77, rows = 8, base = [0.5, 0.47, 0.42], weeds = 0.45, minW = 0.14, maxW = 0.34 } = {}) {
-  const lay = masonryLayout({ rows, seed, minW, maxW });
+export function flagstones({ seed = 77, rows = 8, base = [0.5, 0.47, 0.42], weeds = 0.45, minW = 0.1, maxW = 0.36 } = {}) {
+  // strongly varied course heights + widths: hand-laid random-course paving, not a tiled grid
+  const lay = masonryLayout({ rows, seed, minW, maxW, rowVar: 0.95 });
   return (u, v) => {
     let L = lay(u, v);
     let id = L.id;
@@ -678,7 +679,7 @@ export function flagstones({ seed = 77, rows = 8, base = [0.5, 0.47, 0.42], weed
     let fy = L.fy;
     let bw = L.bw;
     let bh = L.bh;
-    if (sp < 0.3 && bw > 0.26) {
+    if (sp < 0.38 && bw > 0.22) {
       const cut = 0.4 + hash2(L.row, L.col, seed + 10) * 0.2;
       const right = fx > cut;
       fx = right ? (fx - cut) / (1 - cut) : fx / cut;
@@ -706,7 +707,7 @@ export function flagstones({ seed = 77, rows = 8, base = [0.5, 0.47, 0.42], weed
     const tones = [[1, 1, 1], [1.04, 0.99, 0.92], [0.94, 0.96, 0.98], [1.02, 0.97, 0.9], [0.9, 0.89, 0.87], [1.06, 1.03, 0.96], [0.86, 0.85, 0.82]];
     const tn = tones[Math.floor(id * tones.length)];
     let c = [base[0] * tn[0], base[1] * tn[1], base[2] * tn[2]];
-    c = mul3(c, 0.84 + hash2(Math.floor(id * 1e5), 7, seed) * 0.2 + (n - 0.5) * 0.22 + (big - 0.5) * 0.16 + (nf - 0.5) * 0.06);
+    c = mul3(c, 0.8 + hash2(Math.floor(id * 1e5), 7, seed) * 0.3 + (n - 0.5) * 0.22 + (big - 0.5) * 0.16 + (nf - 0.5) * 0.06);
     // worn, slightly polished centres; lighter fresh chips at arrises
     c = mul3(c, 1 + (1 - bevel) * 0.1 * stone);
     // occasional hairline crack through a slab
@@ -726,8 +727,8 @@ export function flagstones({ seed = 77, rows = 8, base = [0.5, 0.47, 0.42], weed
     c = mix3(c, mul3(jc, 1.3), halo * (1 - bevel));
     const col = mix3(jc, c, stone);
     // per-stone tilt + settle (reads through the normal map as uneven paving)
-    const tx = (hash2(Math.floor(id * 1e5), 21, seed) - 0.5) * 0.14;
-    const ty = (hash2(Math.floor(id * 1e5), 22, seed) - 0.5) * 0.14;
+    const tx = (hash2(Math.floor(id * 1e5), 21, seed) - 0.5) * 0.22;
+    const ty = (hash2(Math.floor(id * 1e5), 22, seed) - 0.5) * 0.22;
     const settle = (hash2(Math.floor(id * 1e5), 23, seed) - 0.5) * 0.06;
     const sh = 0.6 + settle + (fx - 0.5) * tx * bw * 4 + (fy - 0.5) * ty * bh * 4 + bevel * 0.12 + n * 0.06 + nf * 0.02 - crack * 0.1;
     const h = stone * sh + (1 - stone) * (0.1 + jn * 0.06);

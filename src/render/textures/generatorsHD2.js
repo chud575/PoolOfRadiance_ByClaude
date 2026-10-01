@@ -177,7 +177,7 @@ export function ashlar2({ seed = 21, rows = 10, minW = 0.12, maxW = 0.26, palett
     const wear = (0.4 + sB * sB * 1.4) * erosion;
     const cornerD = Math.hypot(dx, dy);
     const chipField = fChip(u, v) * 0.65 + fChipLo(u, v) * 0.35;
-    const chipDepth = Math.max(0, chipField - 0.47) * 0.075 * wear * chips + (1 - smooth(0, 0.025 + sB * 0.03, cornerD + (chipField - 0.5) * 0.02)) * 0.014 * wear * chips;
+    const chipDepth = Math.max(0, chipField - 0.5) * 0.05 * wear * chips + (1 - smooth(0, 0.02 + sB * 0.03, cornerD + (chipField - 0.5) * 0.02)) * 0.012 * wear * chips;
     const inChip = e < mw + chamfer + chipDepth ? 1 : 0;
     const chipEdge = smooth(mw + chipDepth + chamfer - 0.0012, mw + chipDepth + chamfer, e);
     // stone mask (crisp: ~1 px transition at 1024)
@@ -215,8 +215,9 @@ export function ashlar2({ seed = 21, rows = 10, minW = 0.12, maxW = 0.26, palett
     else if (micro < 0.1) c = mul3(c, 0.88);
     // fresh stone in chips and spalls; slight lightening on worn arrises
     const fresh = inChip ? 1 - chipEdge : 0;
-    c = mul3(c, 1 + fresh * 0.12 + spall * 0.06 + (1 - cham) * 0.05 * inStone);
-    c = [c[0] * (1 + fresh * 0.03), c[1], c[2] * (1 - fresh * 0.04)];
+    // (kept subtle: a strong fresh tint outlines every block like a stencil)
+    c = mul3(c, 1 + fresh * 0.05 + spall * 0.04 + (1 - cham) * 0.04 * inStone);
+    c = [c[0] * (1 + fresh * 0.01), c[1], c[2] * (1 - fresh * 0.015)];
     // weathering: rain streaks running down, lichen, crusts, soot
     const streak = fStreak(u, v);
     c = mul3(c, 1 - smooth(0.58, 0.82, streak) * 0.16 * erosion);
