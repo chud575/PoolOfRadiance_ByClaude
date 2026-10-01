@@ -124,8 +124,8 @@ export function createWorld() {
 
   // the dragon glides west across the sunset sky right of the logo, clear of the
   // colonnade, over the Moonsea: the title card's second focal beat
-  const dragonPath = { x: 98, y: 21, z: -137, dx: 4.2, span: 380 };
-  dragon.group.scale.setScalar(2.5);
+  const dragonPath = { x: 100, y: 23.5, z: -137, dx: 4.2, span: 380 };
+  dragon.group.scale.setScalar(2.25);
 
   const api = {
     scene,

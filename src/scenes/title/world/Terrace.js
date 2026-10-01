@@ -315,6 +315,11 @@ export function createTerrace({ seed = 7 } = {}) {
   const poolLight = new THREE.PointLight(0x7fe8ff, 30, 34, 1.4);
   poolLight.position.set(0, 2.2, 0);
   group.add(poolLight);
+  // warm bounce off the left brazier and the paving onto the standing colonnade, so
+  // the two tall columns read as fluted stone with a lit face, not flat cut-outs
+  const colBounce = new THREE.PointLight(0xffa868, 9, 11, 1.5);
+  colBounce.position.set(-9.6, 3.2, -2.6);
+  group.add(colBounce);
 
   // ---- braziers --------------------------------------------------------------------
   const ironMat = new THREE.MeshStandardMaterial({ color: 0x2a2624, roughness: 0.55, metalness: 0.85 });
@@ -397,7 +402,7 @@ export function createTerrace({ seed = 7 } = {}) {
     haze.position.y = 3.2;
     haze.userData.billboard = true;
     b.add(haze);
-    const torch = createTorch({ color: 0xff9a48, intensity: 15, distance: 12, seed: sd, flame: true, flameScale: 0.95 });
+    const torch = createTorch({ color: 0xff9a48, intensity: 20, distance: 19, seed: sd, flame: true, flameScale: 0.95 });
     torch.position.y = 1.5;
     torch.userData.sprite.position.y = 0.55;
     torch.userData.sprite.scale.setScalar(2.6);
