@@ -116,6 +116,8 @@ export class Director {
     bus.on('combat:end', ({ winner } = {}) => this._combatEnd(winner));
     bus.on('combat:attack', (p) => this._structuredAttack(p ?? {}));
     bus.on('combat:cast', (p) => this._structuredCast(p ?? {}));
+    bus.on('combat:event', (p) => this._combatEvent(p ?? {}));
+    bus.on('save:written', () => this._uiAfter('save'));
     bus.on('audio:stinger', ({ name }) => this.e.stinger(name));
     bus.on('audio:sfx', ({ name, opts }) => this.e.sfx(name, opts));
     this._installUiSounds();
@@ -159,6 +161,15 @@ export class Director {
     if (night === this.night) return;
     this.night = night;
     if (this.scene === 'explore' && !this.overlays.length) this.e.ambience(this._envNow().bed, { night });
+    // Resting passes the hours: the camp bed follows day and night too.
+    else if (this.overlays[this.overlays.length - 1] === 'camp' || (this.scene === 'camp' && !this.overlays.length)) this._campBed();
+  }
+
+  /** Campfire under the open sky (crickets and owls at night, birds by day) or a subterranean camp (fire, drips, the deep). */
+  _campBed() {
+    const env = this._envNow();
+    const under = env.bed === 'dungeon' || env.room === 'dungeon' || env.room === 'cathedral' || env.bed === 'interior';
+    this.e.ambience(under ? 'camp_in' : 'camp', { night: this.night });
   }
 
   /** Map the scene's requested track to a music state. */
@@ -188,7 +199,8 @@ export class Director {
     if (overlay) {
       this.overlays.push(name);
       if (name === 'automap') this.e.sfx('map', { bus: 'ui' });
-      else if (name === 'camp') this.e.ambience('camp', { night: true });
+      else if (name === 'camp') this._campBed();
+      else this._uiAfter('open');
       return;
     }
     this.overlays = [];
@@ -211,7 +223,7 @@ export class Director {
         this.e.ambience(env.room === 'dungeon' || env.room === 'room' || env.room === 'cathedral' ? 'combat_in' : 'combat_out');
         break;
       case 'camp':
-        this.e.ambience('camp', { night: true });
+        this._campBed();
         break;
       case 'shop':
       case 'create':
@@ -225,12 +237,36 @@ export class Director {
   _sceneResume() {
     const top = this.overlays.pop();
     if (top === 'automap') this.e.sfx('close', { bus: 'ui' });
+    else if (top && top !== 'camp') this._uiAfter('close');
     if (top === 'camp' && this.scene === 'explore') this.e.ambience(this._envNow().bed, { night: this.night });
   }
 
   _action(action) {
-    if (this.scene !== 'explore' || this.overlays.length) return;
+    const menu = this.overlays.length || !['explore', 'combat'].includes(this.scene);
+    if (menu) {
+      // Menus: Enter / A confirms, Esc / B backs out, shoulder buttons page through the roster.
+      if (action === 'confirm') this._uiAfter('confirm');
+      else if (action === 'cancel') this._uiAfter('cancel');
+      else if (action === 'prevMember' || action === 'nextMember') this._uiAfter('page');
+      return;
+    }
+    if (this.scene !== 'explore') return;
     if (action === 'turnLeft' || action === 'turnRight' || action === 'turnAround') this.e.sfx('turn', { vol: 0.8 });
+  }
+
+  /**
+   * A global UI sound that yields to the scene's own: played on the next task
+   * unless the scene already sounded a UI cue for this input (its pitched
+   * click wins over the generic one).
+   */
+  _uiAfter(name, opts = {}) {
+    const fire = () => {
+      const l = this.e.lastUiSfx;
+      if (l && l.scene && this.now - l.at < 0.06) return;
+      this.e.sfx(name, { bus: 'ui', ...opts, global: true });
+    };
+    if (typeof setTimeout === 'undefined') fire();
+    else setTimeout(fire, 0);
   }
 
   // ------------------------------------------------------------------ party
@@ -253,6 +289,8 @@ export class Director {
   }
 
   _partyAllDown() {
+    const fighters = this._engineParty();
+    if (fighters) return fighters.length > 0 && fighters.every((c) => this.engine.out?.(c) ?? hpOf(c).cur <= 0);
     const p = this.party;
     return p?.length > 0 && p.every((c) => hpOf(c).cur <= 0 || (c.status && c.status !== 'ok'));
   }
@@ -263,8 +301,14 @@ export class Director {
     return Math.max(1, sum);
   }
 
+  /** The party's combatants in the running battle (structured feed), or null. */
+  _engineParty() {
+    const all = this.inCombat && this.engine?.all;
+    return Array.isArray(all) ? all.filter((c) => c.side === 'party') : null;
+  }
+
   _partyHpFrac() {
-    const p = this.party ?? [];
+    const p = this._engineParty() ?? this.party ?? [];
     if (!p.length) return 1;
     const hp = p.reduce((a, c) => a + Math.max(0, hpOf(c).cur), 0);
     const max = p.reduce((a, c) => a + Math.max(1, hpOf(c).max), 0);
@@ -284,6 +328,9 @@ export class Director {
     this.pendingWind = null;
     this.hint = null;
     this.baseDanger = 0.5;
+    this.structured = false;
+    this.strengthSet = false;
+    this.engine = null;
     if (Array.isArray(p.monsters) && p.monsters.length) this._strength(p.monsters.map((m) => ({ id: m.monsterId ?? m.id ?? m, n: m.n ?? 1 })));
     this.e.intensity = this.baseDanger;
     this.e.player?.setIntensity(this.baseDanger, 0.5);
@@ -306,6 +353,7 @@ export class Director {
       if (BOSS.test(g.id ?? '')) boss = true;
     }
     this.foes = n;
+    this.strengthSet = true;
     const r = hd / this._partyLevels();
     let x = 0.3 + 0.32 * r;
     if (boss) x = Math.max(x, 0.78);
@@ -352,6 +400,89 @@ export class Director {
     } else this.lowerVotes = 0;
   }
 
+  /**
+   * The combat scene's structured feed: every engine event as it is played
+   * ({type, id, target, hit, crit, ranged, killed, immune, …} plus the engine
+   * for lookups). Primary path — when it is present the log text is ignored.
+   */
+  _combatEvent({ ev, engine }) {
+    if (!ev?.type) return;
+    if (!this.inCombat) this._combatStart({});
+    if (this.combatOver) return;
+    this.structured = true;
+    this.engine = engine ?? this.engine;
+    const by = (id) => (id !== undefined && engine?.byId ? engine.byId(id) : null);
+    const now = this.now;
+    if (!this.strengthSet && Array.isArray(engine?.all)) {
+      const groups = new Map();
+      for (const c of engine.all) if (c.side === 'monster' && c.monsterId) groups.set(c.monsterId, (groups.get(c.monsterId) ?? 0) + 1);
+      if (groups.size) this.e.setIntensity(this._strength([...groups].map(([id, n]) => ({ id, n }))), 0.5);
+    }
+    switch (ev.type) {
+      case 'attack': {
+        const a = by(ev.id);
+        const d = by(ev.target);
+        this.hint = this._hintFrom({ attId: a?.monsterId ?? null, tgtId: d?.monsterId ?? null, tgtParty: d?.side === 'party', attParty: a?.side === 'party', attRef: a?.ref, tgtRef: d?.ref, ranged: !!ev.ranged, hit: !!ev.hit, crit: !!(ev.crit || ev.backstab), immune: !!ev.immune, bite: a?.monsterId === 'giantRat' }, 'event');
+        this._reassess();
+        break;
+      }
+      case 'down': {
+        const c = by(ev.id);
+        if (c?.side === 'party') this._partyDown(c.ref ?? c, ev.status === 'dead');
+        else this._foeDown(c?.monsterId ?? monsterIdOf(c?.name));
+        break;
+      }
+      case 'cast':
+        this.spellHint = { at: now, family: spellFamily(String(ev.spell ?? '').replace(/([a-z])([A-Z])/g, '$1 $2')), n: /missile/i.test(ev.spell ?? '') ? 3 : undefined, src: 'event' };
+        break;
+      case 'turnUndead':
+        this.spellHint = { at: now, family: 'spell_turn', src: 'event' };
+        break;
+      case 'flee':
+        if (by(ev.id)?.side === 'monster') this.foesDown++;
+        this._reassess();
+        break;
+      case 'heal':
+      case 'round':
+        this._reassess();
+        break;
+      default:
+    }
+  }
+
+  /** A party member falls: their own voice (race, sex), the body, the music answers. */
+  _partyDown(ref, dead) {
+    const now = this.now;
+    const member = this.party?.find((c) => c.name === ref?.name) ?? ref ?? {};
+    this.e.sfx('vox_party_die', { vol: 0.75, race: member.race, gender: member.gender });
+    if (now - (this.lastThud ?? -10) > 0.3) {
+      this.lastThud = now;
+      this.e.sfx('death', { delay: 0.3 });
+    }
+    this.downs++;
+    if (dead || member.status === 'dead') this.e.stinger('fallen', { duck: 0.6 });
+    if (this._partyAllDown()) this._combatEnd('monster');
+    else this._reassess();
+  }
+
+  /** A foe is slain: its death cry (one per 600 ms in QUICK combat) and a thud. */
+  _foeDown(id) {
+    const now = this.now;
+    const fresh = now - (this.lastDeathVox ?? -10) > 0.6;
+    if (id) {
+      this.foesDown++;
+      if (fresh) {
+        this.lastDeathVox = now;
+        this.e.sfx(`vox_${voiceOf(id)}_die`, { vol: 0.85 });
+      }
+    }
+    if (now - (this.lastThud ?? -10) > 0.3) {
+      this.lastThud = now;
+      this.e.sfx('death', { delay: 0.25, vol: fresh ? 1 : 0.6 });
+    }
+    this._reassess();
+  }
+
   _structuredAttack(p) {
     const tgtId = p.targetMonsterId ?? monsterIdOf(p.target);
     const attId = p.monsterId ?? monsterIdOf(p.attacker);
@@ -370,8 +501,22 @@ export class Director {
     return { at: this.now, src, used: false, ...a, material };
   }
 
+  /** Party member (with race/gender) for an engine ref or a name. */
+  _member(ref) {
+    if (!ref) return null;
+    return this.party?.find((c) => c.name === (ref.name ?? ref)) ?? (typeof ref === 'object' ? ref : null);
+  }
+
   _voice(attId, chance = 0.45) {
-    if (!attId) return null;
+    if (!attId) {
+      // A party member's effort shout, now and then.
+      const h = this.hint;
+      const now = this.now;
+      if (!h?.attParty || now - this.lastVox < 2 || !this.e.rng.chance(0.25)) return null;
+      const who = this._member(h.attRef);
+      this.lastVox = now;
+      return ['vox_party', { mode: 'attack', vol: 0.6, race: who?.race, gender: who?.gender }];
+    }
     const fam = voiceOf(attId);
     const now = this.now;
     const first = !this.voiced.has(fam);
@@ -412,6 +557,13 @@ export class Director {
       }
       return;
     }
+    if (/ drinks a /.test(text)) {
+      this.e.sfx('potion');
+      return;
+    }
+    if (kind === 'warn' && /escapes/.test(text)) this.combatOver = true;
+    // The structured feed already described attacks, casts and falls.
+    if (this.structured) return;
     if ((m = /^(.+?) (?:casts|uses) (.+?)!$/.exec(text))) {
       if (this.spellHint?.src === 'event' && now - this.spellHint.at < 2) return;
       const missiles = /magic missile/i.test(m[2]) ? 3 : undefined;
@@ -420,10 +572,6 @@ export class Director {
     }
     if (/presents the holy symbol/.test(text)) {
       this.spellHint = { at: now, family: 'spell_turn' };
-      return;
-    }
-    if (/ drinks a /.test(text)) {
-      this.e.sfx('potion');
       return;
     }
     const a = parseAttack(text);
@@ -446,24 +594,20 @@ export class Director {
         this.deferred = { at: now, ranged: h.ranged };
       }
       this._reassess();
-      if (!/ is slain[.!]?$/.test(text)) return;
+      if (!/ is (slain|down)[.!]?$/.test(text)) return;
+    }
+    if (/passes harmlessly through/.test(text)) {
+      this.immuneAt = now;
+      return;
     }
     if ((m = /(?:^|\.\s)([^.]+?) is slain[.!]?$/.exec(text)) || (m = /^(.+?) crumbles to dust!$/.exec(text)) || (m = /^(.+?) succumbs to the poison\.$/.exec(text))) {
-      const id = monsterIdOf(m[1]);
       // QUICK combat resolves in a blink: don't stack a scream per corpse, one thud per 300 ms.
-      const fresh = now - (this.lastDeathVox ?? -10) > 0.6;
-      if (id) {
-        this.foesDown++;
-        if (fresh) {
-          this.lastDeathVox = now;
-          this.e.sfx(`vox_${voiceOf(id)}_die`, { vol: 0.85 });
-        }
-      }
-      if (now - (this.lastThud ?? -10) > 0.3) {
-        this.lastThud = now;
-        this.e.sfx('death', { delay: 0.25, vol: fresh ? 1 : 0.6 });
-      }
-      this._reassess();
+      this._foeDown(monsterIdOf(m[1]));
+      return;
+    }
+    // Spell and weapon downs of party members ("Taran takes 6 damage. Taran is down!").
+    if ((m = /(?:^|\.\s)([^.]+?) is down!$/.exec(text))) {
+      this._partyDown(this.party?.find((c) => c.name === m[1]) ?? { name: m[1] }, false);
       return;
     }
     if ((m = /^(.+?) flees the battle!$/.exec(text))) {
@@ -472,18 +616,9 @@ export class Director {
       return;
     }
     if ((m = /^(.+?) (is killed!|falls, bleeding|is knocked unconscious)/.exec(text))) {
-      this.e.sfx('vox_human_die', { vol: 0.7, pitch: 1.1 });
-      if (now - (this.lastThud ?? -10) > 0.3) {
-        this.lastThud = now;
-        this.e.sfx('death', { delay: 0.25 });
-      }
-      this.downs++;
-      if (/killed/.test(m[2])) this.e.stinger('fallen', { duck: 0.6 });
-      if (this._partyAllDown()) this._combatEnd('monster');
-      else this._reassess();
+      this._partyDown(this.party?.find((c) => c.name === m[1]) ?? { name: m[1] }, /killed/.test(m[2]));
       return;
     }
-    if (kind === 'warn' && /escapes/.test(text)) this.combatOver = true;
     if (/regains|healed|bleeding stops/.test(text)) this._reassess();
     else if (this.party?.length && this._partyHpFrac() < 0.35) this._reassess();
   }
@@ -547,6 +682,8 @@ export class Director {
           this.pendingWind = { at: now };
           return [['ready', {}]];
         }
+        // Undead immune to the weapon: it passes harmlessly through.
+        if (hint?.immune || now - (this.immuneAt ?? -10) < 0.25) return [['pass_through', {}]];
         if (!hint) return [['miss', opts]];
         if (hint.ranged) return [['swing', { pitch: 1.7, vol: 0.6 }]];
         // A melee miss: the blade is parried, caught on a shield, or dodged.
@@ -563,9 +700,17 @@ export class Director {
         if (hint.ranged) out.push(['arrow_hit', nudge({})]);
         if (hint.bite) out.push(['bite', nudge({})]);
         out.push(['hit', nudge({ material: hint.ranged && hint.material === 'armor' ? 'flesh' : hint.material, crit: hint.crit, ...opts })]);
-        if (hint.tgtId && now - this.lastVox > 0.8 && this.e.rng.chance(0.35)) {
-          this.lastVox = now;
-          out.push([`vox_${voiceOf(hint.tgtId)}`, { mode: 'hurt', vol: 0.7, delay: 0.08 + (late ? 0.07 : 0) }]);
+        if (now - this.lastVox > 0.8 && this.e.rng.chance(0.35)) {
+          const delay = 0.08 + (late ? 0.07 : 0);
+          if (hint.tgtId) {
+            this.lastVox = now;
+            out.push([`vox_${voiceOf(hint.tgtId)}`, { mode: 'hurt', vol: 0.7, delay }]);
+          } else if (hint.tgtParty) {
+            // The party's own pain: each character's voice by race and sex.
+            const who = this._member(hint.tgtRef);
+            this.lastVox = now;
+            out.push(['vox_party', { mode: 'hurt', vol: 0.65, delay, race: who?.race, gender: who?.gender }]);
+          }
         }
         return out;
       }
@@ -584,14 +729,49 @@ export class Director {
   // ------------------------------------------------------------------ ui
   _installUiSounds() {
     if (typeof document === 'undefined') return;
+    const SEL = 'button:not([disabled]), [role="button"], .por-menu-item, .por-cmd';
+    // Input modality: pointer hovers tick on their own; keyboard / gamepad
+    // navigation ticks when the focus or a menu highlight moves.
+    let modality = 'pointer';
+    let lastFocusTick = -1;
+    this.bus?.on('input:action', ({ code }) => {
+      if (String(code ?? '').startsWith('pad')) modality = 'pad';
+    });
+    document.addEventListener('keydown', () => (modality = 'key'), { capture: true, passive: true });
+    document.addEventListener('pointerdown', () => (modality = 'pointer'), { capture: true, passive: true });
+    document.addEventListener('pointermove', (ev) => {
+      if (ev.movementX || ev.movementY) modality = 'pointer';
+    }, { passive: true });
+    const focusTick = () => {
+      if (modality === 'pointer') return;
+      const now = this.now;
+      if (now - lastFocusTick < 0.03) return;
+      lastFocusTick = now;
+      this.e.sfx('focus', { bus: 'ui', vol: 0.9, global: true });
+    };
+    document.addEventListener('focusin', (ev) => {
+      if (ev.target?.closest?.(SEL)) focusTick();
+    });
+    // Menus move a highlight (aria-selected) rather than DOM focus.
+    if (typeof MutationObserver !== 'undefined') {
+      const mo = new MutationObserver((list) => {
+        for (const m of list) if (m.target?.getAttribute?.('aria-selected') === 'true' && m.oldValue !== 'true') {
+          focusTick();
+          return;
+        }
+      });
+      const watch = () => mo.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['aria-selected'], attributeOldValue: true });
+      if (document.body) watch();
+      else document.addEventListener('DOMContentLoaded', watch, { once: true });
+    }
     let lastEl = null;
     document.addEventListener(
       'pointerover',
       (ev) => {
-        const el = ev.target?.closest?.('button:not([disabled]), [role="button"], .por-menu-item, .por-cmd');
+        const el = ev.target?.closest?.(SEL);
         if (!el || el === lastEl) return;
         lastEl = el;
-        this.e.sfx('hover', { bus: 'ui', vol: 0.8 });
+        this.e.sfx('hover', { bus: 'ui', vol: 0.8, global: true });
       },
       { passive: true },
     );
@@ -602,11 +782,12 @@ export class Director {
       },
       { passive: true },
     );
+    // The generic click yields to a scene's own (pitched) click for the same press.
     document.addEventListener(
       'click',
       (ev) => {
-        const el = ev.target?.closest?.('button:not([disabled]), [role="button"], .por-menu-item, .por-cmd');
-        if (el) this.e.sfx('click', { bus: 'ui' });
+        const el = ev.target?.closest?.(SEL);
+        if (el) this._uiAfter('click');
       },
       { passive: true, capture: true },
     );

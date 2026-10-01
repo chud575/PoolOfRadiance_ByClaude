@@ -1,4 +1,4 @@
-import { chart, mel, pad, riff, drums, counter, arp } from '../compose.js';
+import { chart, mel, pad, riff, drums, counter, arp, soften } from '../compose.js';
 
 /**
  * Battle! D minor, 138 bpm, 3-3-2 accents. Gold Box fights run for many
@@ -17,7 +17,10 @@ import { chart, mel, pad, riff, drums, counter, arp } from '../compose.js';
  */
 const MA = 'D4:q. A4:e A4:q G4:e F4:e | E4:q. F4:e D4:h | D4:q. Bb4:e Bb4:q A4:e G4:e | G4:q. A4:e E4:h | D5:q. A4:e A4:q Bb4:e C5:e | D5:q. C5:e A4:h | G4:e A4:e Bb4:e C5:e A4:q G4:e E4:e | A4:w';
 const MB = 'G5:h. F5:e E5:e | D5:h Bb4:h | A4:q. D5:e F5:q A5:q | A5:h. G5:e F5:e | F5:q. E5:e D5:q F5:q | E5:q. D5:e C5:q E5:q | C#5:q. D5:e E5:q A5:q | A5:w';
-const MC = 'F4:q. D4:e F4:q G4:q | E4:q. C4:e E4:q G4:q | A4:h. F4:q | D4:h. r:q | G4:q. Bb4:e A4:q G4:q | G4:q. Eb4:e G4:q Bb4:q | A4:w | C#5:h A4:h';
+// B's horn theme breaks the dotted cell: syncopated pick-ups, a triplet turn, long arches.
+const MC = 'F4:e G4:e A4:q~e F4:e G4:e A4:e | C5:h Bb4:e A4:e G4:q | A4:t Bb4:t A4:t G4:q F4:q~e E4:e | D4:h. r:q | G4:e A4:e Bb4:q~e G4:e A4:e Bb4:e | Eb5:h D5:e C5:e Bb4:q | A4:h. G4:e A4:e | C#5:h A4:h';
+// A real countermelody for A's second half (against MB): contrary motion, suspensions.
+const MBC = 'Bb4:w | Bb4:h. D5:q | A4:h F4:h | A4:h~e Bb4:e A4:e G4:e | F4:w | G4:h C5:h | E5:h C#5:h | E5:w';
 const MC2 = 'D5:e E5:e F5:e G5:e A5:q F5:q | E5:e F5:e G5:e A5:e Bb5:q G5:q | A5:q. G5:e F5:e E5:e D5:q | D5:w | Bb4:e C5:e D5:e Eb5:e F5:q D5:q | Eb5:e F5:e G5:e A5:e Bb5:q G5:q | A5:h. G5:e F5:e | E5:w';
 // The title motif in augmentation (G minor, then home in D minor).
 const AUG1 = 'G3:h. D4:q | D4:w | C4:q Bb3:q C4:q D4:q | Bb3:w | Eb4:h. D4:q | C4:h F4:h | F#4:w | F#4:h D4:h';
@@ -41,6 +44,14 @@ function engine(ev, all, at, bars, { taiko = 'X..x..X.X..x..x.|X..x..X.X..x.xx.'
   ev.push(...drums('taiko2', '..x.....x...x...', { bars, at, vel: 0.5, midi: 48 }));
 }
 
+/** Layer 2 (desperate / boss) adds weight, not just brightness: timpani on the downbeats, doubled low brass, big taiko. */
+function big(ev, ch, at, bars = 16) {
+  ev.push(...pad('lowbrass2', ch, { low: 'D2', count: 2, vel: 0.62, layer: 2 }));
+  ev.push(...ch.filter((c) => c.bar % 2 === 0).map((c) => ({ inst: 'timpani', t: c.t, midi: 31 + ((c.ch.root + 5) % 12), dur: 1, vel: 0.85, layer: 2 })));
+  ev.push(...drums('boom', 'X...............|................', { bars, at, vel: 0.5, layer: 2 }));
+  ev.push(...drums('taiko3', 'X..X..X.X..X..X.', { bars, at, vel: 0.62, layer: 2, midi: 55 }));
+}
+
 const SECTIONS = {
   A(ev, at, { first }) {
     const ca = chart(CA, 4, at);
@@ -49,14 +60,18 @@ const SECTIONS = {
     engine(ev, all, at, 16);
     ev.push(...mel('horn', MA, { at, vel: 0.8, layer: 1 }));
     ev.push(...stabs('brass', ca, { low: 'F3', vel: 0.72, layer: 1 }));
-    ev.push(...pad('horn2', cb, { low: 'G3', count: 3, vel: 0.55, layer: 1, cadence: true }));
+    // Bars 9–16 keep a tune at mid intensity: the horns sing MB (violins double it above at L2).
+    ev.push(...mel('horn', MB, { at: at + 32, vel: 0.76, transpose: -12, layer: 1 }));
+    ev.push(...soften(mel('horn2', MBC, { at: at + 32, transpose: -12, layer: 1 }), 0.8));
     ev.push(...drums('tom', '....x.......x.xx|....x.....x.xxxx', { bars: 16, at, vel: 0.6, layer: 1 }));
     ev.push(...drums('snare', 'x.xxx.x.x.xxx.x.', { bars: 16, at, vel: 0.35, layer: 1, skipBars: first ? [0, 1, 2, 3] : [] }));
     ev.push(...riff('violins2', all, 'R5R8R5R3', { low: 'D4', step: 0.5, vel: 0.4, opts: { art: 'spic' }, layer: 1 }));
     ev.push(...mel('violins', MA, { at, vel: 0.6, transpose: 12, layer: 2 }));
     ev.push(...mel('violins', MB, { at: at + 32, vel: 0.7, layer: 2 }));
-    ev.push(...mel('brass', MB, { at: at + 32, vel: 0.7, transpose: -12, layer: 2 }));
-    ev.push(...pad('choir', all, { low: 'A3', count: 3, vel: 0.55, layer: 2, cadence: true }));
+    ev.push(...mel('violins2', MBC, { at: at + 32, vel: 0.55, layer: 2 }));
+    ev.push(...mel('brass', MB, { at: at + 32, vel: 0.74, transpose: -12, layer: 2, opts: { art: 'legato' } }));
+    ev.push(...pad('choir', all, { low: 'A3', count: 3, vel: 0.68, layer: 2, cadence: true }));
+    big(ev, all, at);
     ev.push({ inst: 'crash', t: at, dur: 2, vel: 0.75, layer: 2 });
     ev.push({ inst: 'crash', t: at + 32, dur: 2, vel: 0.8, layer: 2 });
     ev.push({ inst: 'timpani', t: at + 28, midi: 33, dur: 4, vel: 0.7, roll: [0.3, 0.95], layer: 2 });
@@ -69,14 +84,16 @@ const SECTIONS = {
     engine(ev, all, at, 16, { taiko: 'X.x.X..xX.x.X.x.|X.x.X..xX.x.XXxx', celli: 'R.R5R.R8R.R5R.8.' });
     ev.push(...mel('violins', MA, { at, vel: 0.72, transpose: 12, layer: 1 }));
     ev.push(...mel('brass', MA, { at, vel: 0.62, layer: 1 }));
+    ev.push({ inst: 'horn', t: at + 30, midi: [62, 69], dur: 1.5, vel: 0.85, layer: 1, opts: { art: 'rip' } });
     ev.push(...counter('horn2', ca, { low: 'A3', vel: 0.5, key: 2, layer: 1 }));
     ev.push(...mel('horn', MB, { at: at + 32, vel: 0.78, transpose: -12, layer: 1 }));
     ev.push(...riff('violins2', cb, 'R8R8R8R8', { low: 'D5', step: 0.25, vel: 0.36, opts: { art: 'spic' }, layer: 1 }));
     ev.push(...drums('snare', '....x.......x.x.', { bars: 16, at, vel: 0.45, layer: 1 }));
     ev.push(...drums('tom', 'x.x.....x.x..x..', { bars: 16, at, vel: 0.5, layer: 1 }));
     ev.push(...mel('violins', MB, { at: at + 32, vel: 0.7, layer: 2 }));
-    ev.push(...pad('choir', all, { low: 'D4', count: 3, vel: 0.5, layer: 2, cadence: true }));
+    ev.push(...pad('choir', all, { low: 'D4', count: 3, vel: 0.64, layer: 2, cadence: true }));
     ev.push(...stabs('brass', cb, { low: 'A3', times: [0, 1.5, 3], vel: 0.7, layer: 2 }));
+    big(ev, all, at);
     ev.push({ inst: 'crash', t: at + 32, dur: 2, vel: 0.8, layer: 1 });
     ev.push({ inst: 'timpani', t: at + 60, midi: 33, dur: 4, vel: 0.7, roll: [0.3, 1], layer: 1 });
   },
@@ -91,7 +108,8 @@ const SECTIONS = {
     ev.push(...drums('snare', 'x..x..x.x..x.xxx', { bars: 16, at, vel: 0.32, layer: 1 }));
     ev.push(...mel('brass', MC, { at: at + 32, vel: 0.66, layer: 2 }));
     ev.push(...mel('violins2', MC, { at, vel: 0.5, transpose: 12, layer: 2 }));
-    ev.push(...pad('choir', all, { low: 'A3', count: 3, vel: 0.5, layer: 2, cadence: true }));
+    ev.push(...pad('choir', all, { low: 'A3', count: 3, vel: 0.64, layer: 2, cadence: true }));
+    big(ev, all, at);
     ev.push({ inst: 'crash', t: at, dur: 2, vel: 0.7, layer: 2 });
     ev.push({ inst: 'timpani', t: at + 28, midi: 33, dur: 4, vel: 0.65, roll: [0.25, 0.9], layer: 1 });
     ev.push({ inst: 'timpani', t: at + 60, midi: 33, dur: 4, vel: 0.7, roll: [0.3, 1], layer: 1 });
@@ -112,6 +130,7 @@ const SECTIONS = {
     ev.push(...mel('horn', 'r:w | r:w | r:w | r:w | D4:q. A4:e A4:h | Bb4:q. A4:e G4:h | A4:w | E4:h A4:h', { at: at + 32, vel: 0.78, layer: 2 }));
     ev.push(...pad('choir', cb, { low: 'A3', count: 3, vel: 0.5, layer: 2 }));
     ev.push({ inst: 'sus', t: at + 60, dur: 4, vel: 0.7, layer: 1 });
+    ev.push({ inst: 'brass', t: at + 62, midi: [62, 65, 69], dur: 1.5, vel: 0.85, layer: 2, opts: { art: 'rip' } });
   },
   D(ev, at) {
     const c1 = chart('Gm | Gm | Cm | Gm | Eb | F | D | D', 4, at);
@@ -128,8 +147,9 @@ const SECTIONS = {
     ev.push(...mel('horn', AUG2, { at: at + 32, vel: 0.74, layer: 1 }));
     ev.push(...drums('snare', '....x.......x...', { bars: 16, at, vel: 0.4, layer: 1 }));
     ev.push(...mel('violins', AUG2, { at: at + 32, vel: 0.66, transpose: 12, layer: 2 }));
-    ev.push(...pad('choir', all, { low: 'G3', count: 3, vel: 0.55, layer: 2, cadence: true }));
+    ev.push(...pad('choir', all, { low: 'G3', count: 3, vel: 0.66, layer: 2, cadence: true }));
     ev.push(...pad('strings', c1, { low: 'D4', count: 3, vel: 0.45, layer: 2, opts: { art: 'trem', tremRate: 12 } }));
+    big(ev, all, at);
     ev.push({ inst: 'timpani', t: at + 24, midi: 38, dur: 8, vel: 0.65, roll: [0.2, 0.95], layer: 1 });
     ev.push({ inst: 'crash', t: at + 32, dur: 2, vel: 0.8, layer: 2 });
     ev.push({ inst: 'timpani', t: at + 60, midi: 33, dur: 4, vel: 0.7, roll: [0.3, 1], layer: 1 });
@@ -151,26 +171,36 @@ export default {
   loop: true,
   gain: 0.69,
   intensity: 0.55,
+  key: 2,
+  room: 'hall',
+  wet: 0.45,
+  lift: 3,
+  // Presence for bite (the driving cue must cut through on laptop speakers).
+  eq: [{ type: 'peaking', f: 3200, q: 0.7, g: 3.5 }, { type: 'highshelf', f: 7500, g: 2 }],
+  // Orchestra seating: 1st violins hard left, 2nds left-centre, violas/strings centre, celli right,
+  // basses far right; horns left-centre, trumpets right-centre, trombones right; drums spread across the back.
   instruments: {
-    taiko: { preset: 'taiko', pan: -0.05 },
-    taiko2: { preset: 'taiko', pan: 0.4, gain: 0.6 },
-    tom: { preset: 'tom', pan: -0.4 },
-    snare: { preset: 'snare', pan: 0.25 },
-    rim: { preset: 'rim', pan: 0.45 },
-    celli: { preset: 'celli', pan: 0.3, reverb: 0.2 },
-    violins: { preset: 'violins', pan: -0.45 },
-    violins2: { preset: 'violins', pan: -0.2, gain: 0.6 },
-    strings: { preset: 'strings', pan: -0.1 },
-    basses: { preset: 'basses', pan: 0.45, eq: [{ type: 'highpass', f: 45, q: 0.6 }] },
-    lowbrass: { preset: 'lowbrass', pan: 0.12, eq: [{ type: 'highpass', f: 110, q: 0.6 }] },
-    brass: { preset: 'brass', pan: 0.25 },
-    horn: { preset: 'horn', pan: -0.25 },
-    horn2: { preset: 'horn', pan: 0.35, gain: 0.8 },
-    choir: { preset: 'choir', pan: 0 },
-    crash: { preset: 'crash', pan: 0.35 },
-    sus: { preset: 'sus', pan: -0.3 },
-    timpani: { preset: 'timpani', pan: 0.05 },
-    boom: { preset: 'boom' },
+    taiko: { preset: 'taiko', pan: -0.2, eq: [{ type: 'highpass', f: 42, q: 0.6 }] },
+    taiko2: { preset: 'taiko', pan: 0.45, gain: 0.6, eq: [{ type: 'highpass', f: 50, q: 0.6 }] },
+    taiko3: { preset: 'taiko', pan: -0.55, gain: 0.5, eq: [{ type: 'highpass', f: 60, q: 0.6 }] },
+    tom: { preset: 'tom', pan: -0.5 },
+    snare: { preset: 'snare', pan: 0.35 },
+    rim: { preset: 'rim', pan: 0.55 },
+    celli: { preset: 'celli', pan: 0.45, reverb: 0.2 },
+    violins: { preset: 'violins', pan: -0.6 },
+    violins2: { preset: 'violins', pan: -0.25, gain: 0.6 },
+    strings: { preset: 'strings', pan: 0.05 },
+    basses: { preset: 'basses', pan: 0.65, eq: [{ type: 'highpass', f: 45, q: 0.6 }] },
+    lowbrass: { preset: 'lowbrass', pan: 0.4, eq: [{ type: 'highpass', f: 110, q: 0.6 }] },
+    lowbrass2: { preset: 'lowbrass', pan: 0.55, gain: 0.8, eq: [{ type: 'highpass', f: 70, q: 0.6 }] },
+    brass: { preset: 'brass', pan: 0.3 },
+    horn: { preset: 'horn', pan: -0.35 },
+    horn2: { preset: 'horn', pan: -0.15, gain: 0.8 },
+    choir: { preset: 'choir', pan: 0, reverb: 0.7 },
+    crash: { preset: 'crash', pan: 0.5 },
+    sus: { preset: 'sus', pan: -0.45 },
+    timpani: { preset: 'timpani', pan: 0.15, gain: 0.7 },
+    boom: { preset: 'boom', eq: [{ type: 'highpass', f: 38, q: 0.6 }] },
   },
   build(pass, rng, state = {}) {
     const ev = [];
@@ -238,11 +268,15 @@ export const encounter = {
   barQ: 4,
   loop: true,
   gain: 0.75,
+  key: 2,
+  room: 'hall',
+  wet: 0.55,
+  eq: [{ type: 'peaking', f: 3200, q: 0.7, g: 4 }, { type: 'highshelf', f: 7500, g: 2.5 }],
   instruments: {
-    celli: { preset: 'celli', pan: 0.3 },
-    violins: { preset: 'violins', pan: -0.4 },
-    basses: { preset: 'basses', pan: 0.4 },
-    taiko: { preset: 'taiko', gain: 0.8 },
+    celli: { preset: 'celli', pan: 0.45 },
+    violins: { preset: 'violins', pan: -0.55 },
+    basses: { preset: 'basses', pan: 0.6, eq: [{ type: 'highpass', f: 40, q: 0.6 }] },
+    taiko: { preset: 'taiko', gain: 0.8, pan: -0.15, eq: [{ type: 'highpass', f: 45, q: 0.6 }] },
     horn: { preset: 'horn', pan: -0.4, reverb: 0.7 },
     lowbrass: { preset: 'lowbrass', pan: 0.15 },
     harmonics: { preset: 'harmonics', pan: 0.45 },

@@ -1,5 +1,5 @@
 import { createGraph } from './graph.js';
-import { TrackPlayer } from './music/Sequencer.js';
+import { TrackPlayer, LOOKAHEAD } from './music/Sequencer.js';
 import { SONGS, STINGERS } from './music/songs.js';
 import { SFX } from './sfx/library.js';
 import { Fx } from './sfx/toolkit.js';
@@ -8,6 +8,31 @@ import { AudioRng } from './core/rng.js';
 import { Director } from './director.js';
 import { sfxGain } from './loudness.js';
 import { createInstrument } from './instruments/index.js';
+
+/**
+ * Scheduler clock in a Worker: its timer is neither throttled in background
+ * tabs (where main-thread intervals drop to ≥ 1 s) nor delayed by the main
+ * thread's own timer queue. Ticks still run on the main thread; the long
+ * LOOKAHEAD covers stalls there.
+ */
+const CLOCK_SRC = 'let id=0;onmessage=(e)=>{clearInterval(id);if(e.data>0)id=setInterval(()=>postMessage(0),e.data);};';
+function startClock(fn, ms) {
+  try {
+    if (typeof Worker === 'undefined' || typeof Blob === 'undefined') throw new Error('no worker');
+    const url = URL.createObjectURL(new Blob([CLOCK_SRC], { type: 'text/javascript' }));
+    const w = new Worker(url);
+    w.onmessage = fn;
+    w.postMessage(ms);
+    return () => {
+      w.postMessage(0);
+      w.terminate();
+      URL.revokeObjectURL(url);
+    };
+  } catch {
+    const id = setInterval(fn, ms);
+    return () => clearInterval(id);
+  }
+}
 
 /**
  * Procedural WebAudio engine: adaptive composed soundtrack, environmental
@@ -95,11 +120,8 @@ export class AudioEngine {
     }
     // The gesture listeners stay installed: later gestures resume a context
     // the browser suspended (or created suspended, e.g. from gamepad input).
-    this.graph = createGraph(this.ctx);
-    this.buses = { master: this.graph.master, music: this.graph.musicIn, sfx: this.graph.sfxIn, ui: this.graph.uiBus, ambience: this.graph.ambBus };
-    this._applyVolumes();
-    this.graph.setRoom(this.env.room);
-    this._timer = setInterval(() => this._tick(), 50);
+    this._attach(this.ctx, createGraph(this.ctx));
+    this._stopClock = startClock(() => this._tick(), 50);
     this._prewarm();
     // Replay intent recorded before the gesture.
     if (this.currentTrack) {
@@ -112,6 +134,28 @@ export class AudioEngine {
       this.ambState = null;
       this.ambience(a.bed, a);
     }
+  }
+
+  /** Bind a context + mixer graph (the live one, or an OfflineAudioContext for review renders). */
+  _attach(ac, graph) {
+    this.ctx = ac;
+    this.graph = graph;
+    this.buses = { master: graph.master, music: graph.musicIn, sfx: graph.sfxIn, ui: graph.uiBus, ambience: graph.ambBus };
+    this._applyVolumes();
+    graph.setRoom(this.env.room);
+  }
+
+  /**
+   * Offline harness (tools/audiorender.mjs): drive this engine inside an
+   * OfflineAudioContext, so review renders go through the real music()
+   * transition code. Call `tick()` from ac.suspend() points.
+   */
+  static offline(ac, graph, { settings = null, bus = null } = {}) {
+    const e = new AudioEngine(settings, bus, { muted: true });
+    e.muted = false;
+    e.offlineMode = true;
+    e._attach(ac, graph);
+    return e;
   }
 
   /**
@@ -185,17 +229,21 @@ export class AudioEngine {
     if (!ac || ac.state === 'closed') return;
     const fn = SFX[name] ?? SFX.click;
     this.log?.push(name);
-    // Anti-machine-gun: identical sounds within 25 ms collapse.
+    // Anti-machine-gun: identical sounds (same name and pitch) within 25 ms collapse.
     const now = ac.currentTime;
-    const last = this._lastSfx.get(name) ?? -1;
+    const key = `${name}|${opts.pitch ?? 1}`;
+    const last = this._lastSfx.get(key) ?? -1;
     if (now - last < 0.025 && !opts.force) return;
-    this._lastSfx.set(name, now);
+    this._lastSfx.set(key, now);
+    if (this._lastSfx.size > 256) this._lastSfx.clear();
+    if (opts.bus === 'ui') this.lastUiSfx = { name, at: now, scene: !opts.global };
     const ui = opts.bus === 'ui';
     const out = ui ? this.graph.uiBus : this.graph.sfxIn;
     const pitch = (opts.pitch ?? 1) * (ui ? 1 : 1 + this.rng.range(-0.03, 0.03));
     const fx = new Fx(ac, out, this.rng, { pitch, vol: (opts.vol ?? 1) * sfxGain(name), pan: opts.pan ?? 0, send: ui ? undefined : this.graph.envSend, sendLevel: opts.reverb ?? 0.3 });
     try {
-      fn(fx, now + 0.005 + (opts.delay ?? 0), { surface: this.env.surface, ...opts });
+      // Spell chords sound in the key of the score that is playing.
+      fn(fx, now + 0.005 + (opts.delay ?? 0), { surface: this.env.surface, key: this.key ?? 2, ...opts });
     } catch (err) {
       console.warn('[audio] sfx failed', name, err);
     }
@@ -239,6 +287,10 @@ export class AudioEngine {
     }
     const song = SONGS[state];
     if (!song) return; // 'silence'
+    // Each cue has its own acoustic: the tavern band plays in a dry taproom,
+    // the crypt in a cathedral, battle and title on a hall stage.
+    this.graph.setMusicRoom(song.room ?? 'hall', ac.currentTime + wait, song.wet ?? 0.5, urgent ? 0.8 : Math.max(1.5, fade));
+    this.key = song.key ?? null;
     this.player = new TrackPlayer(ac, song, {
       dest: this.graph.musicIn,
       send: this.graph.musicSend,
@@ -247,7 +299,7 @@ export class AudioEngine {
       fadeIn: urgent ? fade : Math.max(0.4, fade * 0.6),
       intensity: o.intensity ?? (state === 'combat' ? this.intensity : null) ?? song.intensity ?? 1,
     });
-    this.player.tick(ac.currentTime + 0.4);
+    this.player.tick(ac.currentTime + LOOKAHEAD);
   }
 
   stopMusic(fade = 2) {
@@ -335,16 +387,16 @@ export class AudioEngine {
   // ------------------------------------------------------------------ scheduler
   _tick() {
     const ac = this.ctx;
-    if (!ac || ac.state !== 'running') return;
+    if (!ac || (ac.state !== 'running' && !this.offlineMode)) return;
     const now = ac.currentTime;
     if (this._warmQ?.length) {
       const t0 = performance.now();
       while (this._warmQ.length && performance.now() - t0 < 5) this._warmQ.shift()();
     }
-    this.player?.tick(now + 0.4);
-    for (const p of this.fading) p.tick?.(now + 0.4);
-    for (const s of this.stingers) s.tick(now + 1);
-    this.amb?.tick(now + 1);
+    this.player?.tick(now + LOOKAHEAD);
+    for (const p of this.fading) p.tick?.(now + LOOKAHEAD);
+    for (const s of this.stingers) s.tick(now + LOOKAHEAD);
+    this.amb?.tick(now + LOOKAHEAD);
     // Reap finished players.
     this.fading = this.fading.filter((p) => {
       if (p._disposeAt && now > p._disposeAt) {

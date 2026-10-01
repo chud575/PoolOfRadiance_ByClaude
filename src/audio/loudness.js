@@ -26,14 +26,14 @@ export const AMB_TARGET = -27;
 
 /** Momentary-max LUFS targets for one-shot SFX, first match wins. */
 export const SFX_TARGETS = [
-  [/^hover$/, -30],
+  [/^(hover|focus)$/, -30],
   [/^(click|page|open|close|map)$/, -27],
   [/^(confirm|cancel|error|save)$/, -25],
   [/^turn$/, -29],
   [/^(step_|step$|footstep|walk)/, -26],
   [/^(ready)$/, -27],
   [/^(splash|bump)$/, -23],
-  [/^(swing|miss|dodge)$/, -21],
+  [/^(swing|miss|dodge|pass_through)$/, -21],
   [/^(bow|arrow_in)$/, -20],
   [/^(crit)$/, -15],
   [/^(hit|hit_armor|hit_bone|parry|shield)$/, -17.5],
@@ -45,7 +45,7 @@ export const SFX_TARGETS = [
   [/^(spell|spell_sleep|spell_mind|spell_heal|heal|spell_ward)$/, -20],
   [/^spell_fizzle$/, -23],
   [/^(vox_dragon|vox_dragon_die)$/, -14],
-  [/^(vox_ogre|vox_ogre_die)$/, -16.5],
+  [/^(vox_ogre|vox_troll|vox_giant)(_die)?$/, -16.5],
   [/^vox_.*_die$/, -18.5],
   [/^(vox_rat|vox_ghost)$/, -21],
   [/^vox_/, -19.5],

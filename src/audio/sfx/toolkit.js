@@ -219,6 +219,25 @@ export class Fx {
         src.push(n);
       }
     }
+    if (o.pulse) {
+      // Pulsed phonation (croaks, purrs, sobs): amplitude chopped at o.pulse[0] Hz, depth o.pulse[1].
+      const am = ac.createGain();
+      am.gain.value = 1 - o.pulse[1] * 0.5;
+      const l = ac.createOscillator();
+      l.type = 'square';
+      l.frequency.setValueAtTime(o.pulse[0], t);
+      if (o.pulse[2]) l.frequency.linearRampToValueAtTime(o.pulse[2], t + dur);
+      const sm = ac.createBiquadFilter();
+      sm.type = 'lowpass';
+      sm.frequency.value = o.pulse[0] * 3;
+      const lg = ac.createGain();
+      lg.gain.value = o.pulse[1] * 0.5;
+      l.connect(sm).connect(lg).connect(am.gain);
+      l.start(t);
+      src.push(l);
+      head.connect(am);
+      head = am;
+    }
     const V = {
       a: [[800, 1, 8], [1200, 0.5, 9], [2500, 0.2, 11]],
       o: [[500, 1, 8], [850, 0.5, 9], [2400, 0.12, 11]],

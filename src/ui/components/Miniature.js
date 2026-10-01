@@ -5,6 +5,7 @@ import { meshSculpt } from './sdfSculpt.js';
 import { paintFaceSkin, FACE_BOX } from './faceSkin.js';
 import * as TX from './miniatureTextures.js';
 import { renderToCanvas } from './paintPass.js';
+import { finishFace } from './portraitOverpaint.js';
 
 /**
  * Party miniatures: painted 28 mm-style tabletop figures of the player
@@ -384,7 +385,7 @@ export function buildMiniature(ch, opt = {}) {
   disposables.push(faceTex);
   const sl = app.lin(app.skinHex);
   const sgy = (sl[0] + sl[1] + sl[2]) / 3;
-  const mat = figureMaterial(faceTex, sl.map((v) => v + (sgy - v) * 0.18));
+  const mat = figureMaterial(faceTex, sl.map((v) => v + (sgy - v) * 0.26));
   disposables.push(mat);
   const body = new THREE.Mesh(geo, mat);
   body.castShadow = true;
@@ -558,6 +559,57 @@ export function offscreen() {
 }
 
 let stage = null;
+/**
+ * The paperdoll's backdrop: a stone alcove of dressed ashlar with a warm pool
+ * of light behind the figure, falling off to a vignette (deterministic).
+ */
+function paintAlcove(g, W, H) {
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  g.fillStyle = '#17141b';
+  g.fillRect(0, 0, W, H);
+  const rowH = 30;
+  for (let y = 0, r = 0; y < H * 0.8; y += rowH, r++) {
+    let x = -rnd() * 60;
+    while (x < W) {
+      const bw = 46 + rnd() * 44;
+      const t = 0.75 + rnd() * 0.5;
+      g.fillStyle = `rgb(${Math.round(44 * t)},${Math.round(40 * t)},${Math.round(46 * t)})`;
+      g.fillRect(x + 1.5, y + 1.5, bw - 3, rowH - 3);
+      // Chipped arrises and a lit top edge on each block.
+      g.fillStyle = 'rgba(255,240,220,0.05)';
+      g.fillRect(x + 2, y + 2, bw - 4, 2);
+      g.fillStyle = 'rgba(0,0,0,0.25)';
+      g.fillRect(x + 2, y + rowH - 4, bw - 4, 2);
+      for (let k = 0; k < 6; k++) {
+        g.fillStyle = `rgba(0,0,0,${0.08 + rnd() * 0.1})`;
+        g.fillRect(x + rnd() * bw, y + rnd() * rowH, 2 + rnd() * 5, 1 + rnd() * 2);
+      }
+      x += bw;
+    }
+  }
+  // The floor: worn flags receding into shadow.
+  const fl = g.createLinearGradient(0, H * 0.78, 0, H);
+  fl.addColorStop(0, '#0d0b10');
+  fl.addColorStop(1, '#221d22');
+  g.fillStyle = fl;
+  g.fillRect(0, H * 0.78, W, H * 0.22);
+  // Pool of warm light behind the figure, and the vignette.
+  g.globalCompositeOperation = 'lighter';
+  const pool = g.createRadialGradient(W * 0.5, H * 0.5, 8, W * 0.5, H * 0.52, H * 0.55);
+  pool.addColorStop(0, 'rgba(150,104,62,0.55)');
+  pool.addColorStop(0.4, 'rgba(90,60,44,0.25)');
+  pool.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = pool;
+  g.fillRect(0, 0, W, H);
+  g.globalCompositeOperation = 'source-over';
+  const vg = g.createRadialGradient(W * 0.5, H * 0.5, H * 0.2, W * 0.5, H * 0.5, H * 0.75);
+  vg.addColorStop(0, 'rgba(0,0,0,0)');
+  vg.addColorStop(1, 'rgba(0,0,0,0.85)');
+  g.fillStyle = vg;
+  g.fillRect(0, 0, W, H);
+}
+
 function snapshotStage() {
   const o = offscreen();
   if (!o) return null;
@@ -588,13 +640,7 @@ function snapshotStage() {
   const back = document.createElement('canvas');
   back.width = 256;
   back.height = 512;
-  const g = back.getContext('2d');
-  const rg = g.createRadialGradient(128, 300, 10, 128, 300, 300);
-  rg.addColorStop(0, '#3a3240');
-  rg.addColorStop(0.45, '#1a1622');
-  rg.addColorStop(1, '#07060a');
-  g.fillStyle = rg;
-  g.fillRect(0, 0, 256, 512);
+  paintAlcove(back.getContext('2d', { willReadFrequently: true }), 256, 512);
   const bt = new THREE.CanvasTexture(back);
   bt.colorSpace = THREE.SRGBColorSpace;
   const camera = new THREE.PerspectiveCamera(24, 0.6, 0.1, 50);
@@ -625,15 +671,18 @@ export function miniatureSnapshot(ch, o = {}) {
     const H = m.userData.height;
     cam.aspect = w / h;
     cam.fov = 24;
-    const dist = (H * 1.25) / (2 * Math.tan((cam.fov * Math.PI) / 360));
-    cam.position.set(0, H * 0.62, dist);
+    const dist = (H * 1.16) / (2 * Math.tan((cam.fov * Math.PI) / 360));
+    cam.position.set(0, H * 0.6, dist);
     cam.lookAt(0, H * 0.5, 0);
     cam.updateProjectionMatrix();
     m.rotation.y = -0.28;
     st.scene.add(m);
     st.scene.background = o.backdrop === false ? null : st.background;
     st.plinth.visible = o.backdrop !== false;
-    const url = renderToCanvas(renderer, st.scene, cam, { w, h, exposure: 1.1, alpha: o.backdrop === false, key: 'snap' }).toDataURL('image/png');
+    const cv = renderToCanvas(renderer, st.scene, cam, { w, h, exposure: 1.1, alpha: o.backdrop === false, key: 'snap' });
+    // Painted eyes, brows and mouth at the snapshot's own resolution.
+    try { finishFace(renderer, st.scene, cam, m, cv, m.userData.app, { mini: true, key: 'snapMask' }); } catch { /* keep the plain render */ }
+    const url = cv.toDataURL('image/png');
     st.scene.remove(m);
     m.userData.dispose();
     if (snapCache.size > 24) snapCache.delete(snapCache.keys().next().value);

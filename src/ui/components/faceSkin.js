@@ -96,7 +96,7 @@ export function paintFaceSkin(app, o = {}) {
   // ---- glazes: eye sockets, cheeks, lips area, temples
   soft(S / 90, () => {
     for (const sg of [-1, 1]) {
-      g.fillStyle = rgba(dark, o.portrait ? 0.08 : 0.32);
+      g.fillStyle = rgba(dark, o.portrait ? 0.08 : 0.2);
       ell(sg * ex, eyeY + 0.008, 0.019, 0.011);
       g.fill();
       g.fillStyle = rgba([200, 90, 80], o.portrait ? (app.fem ? 0.1 : 0.05) : app.fem ? 0.2 : 0.13);
@@ -143,7 +143,7 @@ export function paintFaceSkin(app, o = {}) {
       g.closePath();
     };
     // Lids: skin over the eyeball, a little darker and cooler in the socket.
-    const lidC = o.portrait ? [Math.round(skin[0] * 0.94), Math.round(skin[1] * 0.9), Math.round(skin[2] * 0.9)] : [Math.round(skin[0] * 0.74), Math.round(skin[1] * 0.66), Math.round(skin[2] * 0.66)];
+    const lidC = o.portrait ? [Math.round(skin[0] * 0.94), Math.round(skin[1] * 0.9), Math.round(skin[2] * 0.9)] : [Math.round(skin[0] * 0.86), Math.round(skin[1] * 0.8), Math.round(skin[2] * 0.8)];
     const lg = g.createRadialGradient(X(cx), Y(eyeY), 0, X(cx), Y(eyeY), 0.0158 * U);
     lg.addColorStop(0, rgba(lidC, 1));
     lg.addColorStop(0.72, rgba(lidC, 1));

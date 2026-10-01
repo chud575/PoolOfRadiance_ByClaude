@@ -1,10 +1,25 @@
 import { makeImpulse } from './dsp/impulse.js';
 
+/** Generated impulse responses are cached per context: a room change never regenerates one. */
+const irCache = new WeakMap();
+export function cachedImpulse(ac, name, seed) {
+  let m = irCache.get(ac);
+  if (!m) irCache.set(ac, (m = new Map()));
+  const k = `${name}|${seed}`;
+  let b = m.get(k);
+  if (!b) m.set(k, (b = makeImpulse(ac, name, seed)));
+  return b;
+}
+
+/** Music reverb per cue: the room each score is heard in (see setMusicRoom). */
+export const MUSIC_ROOM_SEED = 3;
+
 /**
  * The mixer graph, shared by the live engine and the offline renderer.
  *
- *   music players ─► musicIn ─► musicDuck ─► musicBus(vol) ─┐
- *                └► musicSend ─► hall convolver ─► musicBus  │
+ *   music players ─► musicIn ─► EQ ─► widen ─► musicDuck ─► musicBus(vol) ─┐
+ *                │          └► early reflections (decorrelated L/R) ─┘     │
+ *                └► musicSend ─► music room A/B (crossfaded per cue) ─► musicDuck
  *   sfx ─► sfxIn ─► sfxBus(vol) ─────────────────────────────┤
  *       └► envSend ─► room convolver A/B (crossfaded) ─► sfxBus
  *   ambience ─► ambBus(vol) ─────────────────────────────────┤
@@ -37,25 +52,32 @@ export function createGraph(ac, dest = ac.destination) {
   const musicDuck = g(1);
   const musicIn = g(1);
   const musicSend = g(1);
-  // Gentle mastering EQ on the score: rumble filter, de-mud the low mids,
-  // a touch of air. Keeps a dense orchestra from turning to porridge.
+  // Mastering EQ on the score: rumble filter, a sub-bass shelf cut (taiko,
+  // timpani, basses and the big drum otherwise pile up below 60 Hz), de-mud the
+  // low mids, presence for bite and a touch of air.
   const hp = ac.createBiquadFilter();
   hp.type = 'highpass';
-  hp.frequency.value = 32;
+  hp.frequency.value = 30;
   hp.Q.value = 0.6;
+  const sub = ac.createBiquadFilter();
+  sub.type = 'lowshelf';
+  sub.frequency.value = 62;
+  sub.gain.value = -5.5;
   const mud = ac.createBiquadFilter();
   mud.type = 'peaking';
-  mud.frequency.value = 220;
+  mud.frequency.value = 230;
   mud.Q.value = 0.9;
-  mud.gain.value = -3;
+  mud.gain.value = -2.5;
+  const pres = ac.createBiquadFilter();
+  pres.type = 'peaking';
+  pres.frequency.value = 3600;
+  pres.Q.value = 0.6;
+  pres.gain.value = 2.5;
   const air = ac.createBiquadFilter();
   air.type = 'highshelf';
   air.frequency.value = 9000;
-  air.gain.value = 1.5;
-  musicIn.connect(hp).connect(mud).connect(air);
-  // Stereo shuffler on the score: lifts the side signal above ~300 Hz by
-  // ~3.5 dB (bass stays mono). Per-voice section panning does the real work;
-  // this restores the width summing to the buses takes away.
+  air.gain.value = 2;
+  musicIn.connect(hp).connect(sub).connect(mud).connect(pres).connect(air);
   const widen = (src, dst, w = 0.5) => {
     const split = ac.createChannelSplitter(2);
     const merge = ac.createChannelMerger(2);
@@ -94,12 +116,80 @@ export function createGraph(ac, dest = ac.destination) {
     r.connect(merge, 0, 1);
     merge.connect(dst);
   };
-  widen(air, musicDuck);
+  widen(air, musicDuck, 0.75);
+  // Early reflections of the stage: different tap times per ear (and cross-fed
+  // taps), so the dry orchestra is decorrelated between L and R like players
+  // heard in a real room, not a pan-potted mono mix.
+  {
+    const split = ac.createChannelSplitter(2);
+    const merge = ac.createChannelMerger(2);
+    const lp = ac.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 5000;
+    const erHp = ac.createBiquadFilter();
+    erHp.type = 'highpass';
+    erHp.frequency.value = 180;
+    air.connect(erHp).connect(lp).connect(split);
+    const taps = [
+      // [from channel, to channel, delay s, gain]
+      [0, 0, 0.0113, 0.2], [0, 1, 0.0171, 0.16], [0, 0, 0.0237, 0.12], [0, 1, 0.0313, 0.1],
+      [1, 1, 0.0127, 0.2], [1, 0, 0.0193, 0.16], [1, 1, 0.0269, 0.12], [1, 0, 0.0347, 0.1],
+    ];
+    for (const [from, to, d, gain] of taps) {
+      const dl = ac.createDelay(0.1);
+      dl.delayTime.value = d;
+      dl.channelCount = 1;
+      dl.channelCountMode = 'explicit';
+      const tg = g(gain * (to === from ? 1 : -1));
+      tg.channelCount = 1;
+      tg.channelCountMode = 'explicit';
+      split.connect(dl, from);
+      dl.connect(tg).connect(merge, 0, to);
+    }
+    merge.connect(musicDuck);
+  }
   musicDuck.connect(musicBus).connect(master);
-  const hall = ac.createConvolver();
-  hall.buffer = makeImpulse(ac, 'hall', 3);
-  const hallRet = g(0.5);
-  musicSend.connect(hall).connect(hallRet).connect(musicDuck);
+  // Music reverb: two convolvers crossfaded when the cue (and its room) changes.
+  const mrooms = [ac.createConvolver(), ac.createConvolver()];
+  const mGain = [g(0.0001), g(0.0001)];
+  mrooms.forEach((c, i) => {
+    musicSend.connect(c);
+    c.connect(mGain[i]).connect(musicDuck);
+  });
+  let mActive = 0;
+  let mCurrent = null;
+  let mWet = 0.5;
+  /**
+   * Crossfade the score's reverb to `name` (an impulse.js ROOMS preset) at
+   * return level `wet` over `fade` seconds.
+   */
+  const setMusicRoom = (name, t = ac.currentTime, wet = 0.5, fade = 2) => {
+    if (name === mCurrent && Math.abs(wet - mWet) < 1e-3) return;
+    const first = mCurrent === null;
+    if (name === mCurrent) {
+      mGain[mActive].gain.cancelScheduledValues(t);
+      mGain[mActive].gain.setValueAtTime(mGain[mActive].gain.value, t);
+      mGain[mActive].gain.linearRampToValueAtTime(wet, t + fade);
+      mWet = wet;
+      return;
+    }
+    mCurrent = name;
+    mWet = wet;
+    const next = first ? 0 : 1 - mActive;
+    mrooms[next].buffer = cachedImpulse(ac, name, MUSIC_ROOM_SEED);
+    if (first) {
+      mGain[0].gain.setValueAtTime(wet, t);
+      return;
+    }
+    mGain[next].gain.cancelScheduledValues(t);
+    mGain[next].gain.setValueAtTime(0.0001, t);
+    mGain[next].gain.linearRampToValueAtTime(wet, t + fade);
+    mGain[mActive].gain.cancelScheduledValues(t);
+    mGain[mActive].gain.setValueAtTime(Math.max(0.0001, mGain[mActive].gain.value), t);
+    mGain[mActive].gain.linearRampToValueAtTime(0.0001, t + fade);
+    mActive = next;
+  };
+  setMusicRoom('hall', 0, 0.5);
 
   const sfxBus = g(0.8);
   const sfxIn = g(1);
@@ -119,7 +209,7 @@ export function createGraph(ac, dest = ac.destination) {
     const first = current === null;
     current = name;
     const next = first ? 0 : 1 - active;
-    rooms[next].buffer = makeImpulse(ac, name, 17 + name.length);
+    rooms[next].buffer = cachedImpulse(ac, name, 17 + name.length);
     if (first) {
       roomGain[0].gain.setValueAtTime(wet, t);
       return;
@@ -137,5 +227,5 @@ export function createGraph(ac, dest = ac.destination) {
   ambBus.connect(master);
   const uiBus = g(0.7);
   uiBus.connect(master);
-  return { master, musicBus, musicDuck, musicIn, musicSend, sfxBus, sfxIn, envSend, ambBus, uiBus, setRoom, glue, limiter };
+  return { master, musicBus, musicDuck, musicIn, musicSend, sfxBus, sfxIn, envSend, ambBus, uiBus, setRoom, setMusicRoom, glue, limiter };
 }

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { faceLayout } from './figureRig.js';
 import { rngFrom, hashNum } from './lookData.js';
+import { renderToCanvas } from './paintPass.js';
 
 /**
  * The illustrator's finishing layer for a portrait bust: after the sculpt is
@@ -78,6 +79,7 @@ function softened(src, f) {
  * @param {{project:(p:number[])=>number[], frames:object}} view  head-local → canvas px
  */
 export function overpaintPortrait(out, mask, app, view) {
+  const mini = !!view.mini;
   const W = out.width, H = out.height;
   const k = W / 300; // px scale relative to a full-size portrait
   const g = out.getContext('2d', { willReadFrequently: true });
@@ -181,7 +183,7 @@ export function overpaintPortrait(out, mask, app, view) {
 
   // ---- broad planes: soften the sculpt's lumps the way a painter simplifies
   // skin into planes (a blur of the skin alone, laid over at partial strength).
-  {
+  if (!mini) {
     let sr = 0, sg2 = 0, sb = 0, n = 0;
     for (let i = 0; i < W * H; i += 3) {
       if (md[i * 4] > 110) { sr += src[i * 4]; sg2 += src[i * 4 + 1]; sb += src[i * 4 + 2]; n++; }
@@ -210,7 +212,7 @@ export function overpaintPortrait(out, mask, app, view) {
 
   // ---- impasto: short strokes of the skin's own colour, nudged warm or cool
   // and lighter or darker, laid along the forms (visible brushwork).
-  {
+  if (!mini) {
     const cur = g.getImageData(0, 0, W, H).data;
     const lumAt = (x, y) => {
       const i = (clamp(Math.round(y), 0, H - 1) * W + clamp(Math.round(x), 0, W - 1)) * 4;
@@ -508,7 +510,7 @@ export function overpaintPortrait(out, mask, app, view) {
   }
 
   // ---- character lines: age, weather and expression written into the skin
-  {
+  if (!mini) {
     const age = app.age + (app.expr === 'weary' ? 0.3 : 0) + (app.race === 'dwarf' ? 0.25 : 0) + (app.race === 'gnome' ? 0.3 : 0) - (app.race === 'elf' ? 0.3 : 0) - (app.fem ? 0.1 : 0);
     const o = frame(fg, [0, 0, 0.088]);
     const local = at(o[0], o[1]);
@@ -707,7 +709,7 @@ export function overpaintPortrait(out, mask, app, view) {
   // ================================================================ hair strands
   let hairPx = 0;
   for (let i = 1; i < md.length; i += 16) if (md[i] > 110) hairPx++;
-  if (hairPx > 20) {
+  if (hairPx > 20 && !mini) {
     const hl = layer(W, H);
     const hg = hl.getContext('2d');
     hg.lineCap = 'round';
@@ -812,4 +814,55 @@ export function overpaintPortrait(out, mask, app, view) {
     g.globalAlpha = 1;
   }
   void view.frames;
+}
+
+/**
+ * Render the material-ID pass of a figure already posed in `scene` and paint
+ * the finishing layer onto `out` (the finished render of the same view).
+ * @param {THREE.WebGLRenderer} renderer
+ * @param {THREE.Scene} scene
+ * @param {THREE.Camera} cam
+ * @param {THREE.Object3D} fig  the miniature root (userData.frames)
+ * @param {HTMLCanvasElement} out
+ * @param {object} app  resolveAppearance()
+ * @param {{mini?: boolean, key?: string}} [o]  mini: features only (snapshots of the whole figure)
+ */
+export function finishFace(renderer, scene, cam, fig, out, app, o = {}) {
+  const W = out.width, H = out.height;
+  const { maskMat: mm, blackMat: bm } = maskMaterials();
+  const saved = [];
+  fig.traverse((m) => {
+    if (!m.isMesh) return;
+    saved.push([m, m.material]);
+    m.material = m.geometry.getAttribute('aMat') ? mm : bm;
+  });
+  const hidden = [];
+  scene.traverse((m) => { if (m.isMesh && m.visible && !saved.some(([x]) => x === m)) { hidden.push(m); m.visible = false; } });
+  const bgSaved = scene.background;
+  scene.background = null;
+  let mask;
+  try {
+    mask = renderToCanvas(renderer, scene, cam, { w: W, h: H, ss: 1, paint: false, key: o.key ?? 'faceMask' });
+  } finally {
+    for (const [m, mt] of saved) m.material = mt;
+    for (const m of hidden) m.visible = true;
+    scene.background = bgSaved;
+  }
+  const body = saved.find(([m]) => m.geometry.getAttribute('aMat'))?.[0];
+  if (!body) return;
+  body.updateMatrixWorld(true);
+  cam.updateMatrixWorld();
+  const fr = fig.userData.frames;
+  const v = new THREE.Vector3();
+  const { c: Hc0, R: HR0, hs: hs0 } = fr.face;
+  const project = (p) => {
+    const q = [p[0] * hs0, p[1] * hs0, p[2] * hs0];
+    v.set(
+      Hc0[0] + HR0[0] * q[0] + HR0[3] * q[1] + HR0[6] * q[2],
+      Hc0[1] + HR0[1] * q[0] + HR0[4] * q[1] + HR0[7] * q[2],
+      Hc0[2] + HR0[2] * q[0] + HR0[5] * q[1] + HR0[8] * q[2],
+    ).applyMatrix4(body.matrixWorld).project(cam);
+    return [(v.x + 1) * 0.5 * W, (1 - v.y) * 0.5 * H];
+  };
+  overpaintPortrait(out, mask, app, { project, frames: fr, mini: !!o.mini });
 }

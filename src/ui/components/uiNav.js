@@ -60,6 +60,10 @@ export class UINav {
     this._clearRing();
     if (ring) el.classList.add('kb-focus');
     el.focus({ preventScroll: true });
+    if (ring) {
+      const r = el.getBoundingClientRect();
+      this._last = { x: r.left + r.width / 2, y: r.top + r.height / 2, text: el.textContent };
+    }
     el.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
   }
 
@@ -69,6 +73,27 @@ export class UINav {
     if (!items.length) return;
     const sel = items.find((el) => el.classList.contains('sel') || el.classList.contains('primary')) ?? items[0];
     this.focus(sel, ring);
+  }
+
+  /**
+   * After a panel re-renders (choosing an option rebuilds it), put the ring
+   * back on the same option — or the control now nearest where it was.
+   */
+  _restore() {
+    const L = this._last;
+    if (!L) return false;
+    const items = this.items();
+    if (!items.length) return false;
+    let best = null;
+    let bestD = Infinity;
+    for (const el of items) {
+      const r = el.getBoundingClientRect();
+      const d = Math.hypot(r.left + r.width / 2 - L.x, r.top + r.height / 2 - L.y) - (el.textContent === L.text ? 60 : 0);
+      if (d < bestD) { bestD = d; best = el; }
+    }
+    if (!best) return false;
+    this.focus(best, true);
+    return true;
   }
 
   _current(items) {
@@ -81,7 +106,7 @@ export class UINav {
     if (!items.length) return false;
     const cur = this._current(items);
     if (!cur) {
-      this.focusFirst(true);
+      if (!this._restore()) this.focusFirst(true);
       return true;
     }
     const r0 = cur.getBoundingClientRect();
@@ -119,6 +144,8 @@ export class UINav {
       // Enter on a focused button already clicks it natively.
       if (cur && !(code === 'Enter' && cur.tagName === 'BUTTON')) cur.click();
       else if (!cur && /^pad:/.test(code ?? '')) this.focusFirst(true);
+      // Keep the ring through the re-render the choice may cause.
+      if (cur) setTimeout(() => { if (!this._current(this.items()) && this._active()) this._restore(); }, 80);
       return;
     }
     if (action === 'cancel' && this.o.onBack) this.o.onBack();

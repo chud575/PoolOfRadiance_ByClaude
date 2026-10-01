@@ -12,7 +12,12 @@ import { chart, mel, pad, arp, riff, drums, shift, soften, counter } from '../co
  */
 const A1 = 'D4:q. A4:e A4:q. D5:e | D5:e C5:e Bb4:e A4:e Bb4:h | G4:q. A4:e Bb4:q. C5:e | A4:h. r:q';
 const A2 = 'D4:q. A4:e A4:q. E5:e | D5:e C5:e Bb4:e A4:e G4:h | F4:q. G4:e A4:q. Bb4:e | A4:h E4:h';
-const B = 'F4:q. G4:e A4:q C5:q | Bb4:q. A4:e G4:h | A4:q. Bb4:e C5:q D5:q | E5:h. D5:e C5:e';
+// The bridge breaks the dotted cell: a syncopated lift, a triplet turn, a long run into the climax.
+const B = 'F4:e G4:e A4:q~e C5:e Bb4:e A4:e | G4:h A4:t Bb4:t C5:t D5:q | E5:q. D5:e C5:q Bb4:e C5:e | E5:h E5:t F5:t E5:t D5:e C5:e';
+// Descant over A2 (violins): long arching notes against the horn tune, a suspension at the cadence.
+const DESC = 'A5:h. G5:e F5:e | Bb5:h~e A5:e G5:e F5:e | F5:q. E5:e D5:q F5:q | E5:w';
+// Horn counterline under the climax (contrary motion to the trumpets).
+const CC = 'F4:h E4:q D4:q | C4:h F4:q E4:q | D4:q. E4:e E4:q C#4:q | D4:w';
 const C = 'D5:q. A4:e A4:q. F5:e | E5:e D5:e C5:e Bb4:e A4:h | Bb4:q. C5:e D5:q E5:q | D5:w';
 const OUT = 'A4:h. G4:e F4:e | F4:h D4:h | G4:h. F4:e E4:e | E4:w';
 
@@ -24,17 +29,20 @@ export default {
   barQ: 4,
   loop: true,
   gain: 0.81,
+  key: 2,
+  room: 'hall',
+  wet: 0.55,
   instruments: {
-    horn: { preset: 'horn', pan: -0.15 },
-    brass: { preset: 'brass', pan: 0.1 },
-    lowbrass: { preset: 'lowbrass', pan: -0.05 },
-    violins: { preset: 'violins', pan: -0.45 },
-    strings: { preset: 'strings', pan: -0.15 },
-    celli: { preset: 'celli', pan: 0.3 },
-    celli2: { preset: 'celli', pan: 0.2, gain: 0.8 },
-    basses: { preset: 'basses', pan: 0.45 },
-    harp: { preset: 'harp', pan: -0.6 },
-    flute: { preset: 'flute', pan: 0.4 },
+    horn: { preset: 'horn', pan: -0.3 },
+    brass: { preset: 'brass', pan: 0.3 },
+    lowbrass: { preset: 'lowbrass', pan: 0.45 },
+    violins: { preset: 'violins', pan: -0.6 },
+    strings: { preset: 'strings', pan: -0.05 },
+    celli: { preset: 'celli', pan: 0.45 },
+    celli2: { preset: 'celli', pan: 0.35, gain: 0.8 },
+    basses: { preset: 'basses', pan: 0.65 },
+    harp: { preset: 'harp', pan: -0.65 },
+    flute: { preset: 'flute', pan: 0.25 },
     choir: { preset: 'choir', pan: 0 },
     timpani: { preset: 'timpani', pan: 0.05 },
     taiko: { preset: 'taiko', pan: -0.1 },
@@ -76,7 +84,7 @@ export default {
     } else {
       ev.push(...mel('horn', A1, { at: t, vel: 0.72 }));
       ev.push(...mel('horn', A2, { at: t + 16, vel: 0.78 }));
-      ev.push(...mel('violins', A2, { at: t + 16, transpose: 12, vel: 0.5 }));
+      ev.push(...mel('violins', DESC, { at: t + 16, vel: 0.5 }));
       ev.push(...ca.filter((c) => c.bar % 2 === 0).map((c) => ({ inst: 'timpani', t: c.t, midi: c.ch.root === 2 ? 38 : 33, dur: 1, vel: 0.55 })));
       ev.push(...drums('taiko', 'X...............|X.......o.......', { bars: 8, at: t, vel: 0.4 }));
     }
@@ -103,7 +111,7 @@ export default {
     ev.push(...counter('celli2', cc, { low: 'D3', vel: 0.55, key: 2 }));
     ev.push(...pad('choir', cc, { low: 'D4', count: 3, vel: 0.65, cadence: true }));
     ev.push(...mel('brass', C, { at: t, vel: 0.85 }));
-    ev.push(...mel('horn', C, { at: t, vel: 0.8, transpose: -12 }));
+    ev.push(...mel('horn', CC, { at: t, vel: 0.78 }));
     ev.push(...mel('violins', C, { at: t, vel: 0.7, transpose: 12 }));
     ev.push(...riff('celli', cc, 'R.RRR.RR', { low: 'D2', step: 0.5, vel: 0.55, opts: { art: 'spic' } }));
     ev.push(...drums('taiko', 'X..x..X.X..x..x.|X..x..X.X..x.xXX|X..x..X.X..x..x.|X...............', { bars: 4, at: t, vel: 0.75 }));
@@ -130,6 +138,9 @@ export const intro = {
   barQ: 4,
   loop: true,
   gain: 0.88,
+  key: 2,
+  room: 'hall',
+  wet: 0.6,
   instruments: {
     harp: { preset: 'harp', pan: -0.4 },
     flute: { preset: 'flute', pan: 0.25 },

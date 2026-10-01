@@ -12,8 +12,11 @@
  *              brings each cue to its target (see src/audio/loudness.js). Merges with existing data.
  * --wiring     load gallery scenes with ?audio=1 (unmuted debug mode, autoplay allowed) and check
  *              that each one drives the expected music state / ambience (scene → music wiring).
- * Prints peak / RMS (dBFS), integrated + momentary-max loudness (LUFS) and stereo width
- * (side/mid dB) per cue; fails on NaNs, silence or clipping.
+ * --list      print the cue names and exit       --out DIR  output directory (default audio_out)
+ * --help      this text. Unknown flags are an error.
+ * Prints peak / RMS (dBFS), integrated + momentary-max loudness (LUFS), the LRA-ish momentary
+ * spread (p10–p90, LU), stereo width (side/mid dB) and L/R correlation per cue; fails on NaNs,
+ * silence or clipping.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -22,6 +25,31 @@ import { launch, CHROME, CHROME_ARGS } from './lib/browser.mjs';
 import { chromium } from 'playwright';
 
 const a = process.argv.slice(2);
+const FLAGS = { only: 1, match: 1, out: 1, port: 1, passes: 1, spectro: 0, bands: 0, list: 0, calibrate: 0, wiring: 0, help: 0 };
+{
+  const usage = () => {
+    const src = fs.readFileSync(new URL(import.meta.url), 'utf8');
+    console.log(src.slice(src.indexOf('/**') + 4, src.indexOf('*/')).replace(/^ \* ?/gm, '').trim());
+  };
+  if (a.includes('--help') || a.includes('-h')) {
+    usage();
+    process.exit(0);
+  }
+  for (let i = 0; i < a.length; i++) {
+    const k = a[i].startsWith('--') ? a[i].slice(2) : null;
+    if (k === null || !(k in FLAGS)) {
+      console.error(`audiorender: unknown argument "${a[i]}" (see --help)`);
+      process.exit(2);
+    }
+    if (FLAGS[k]) {
+      if (a[i + 1] === undefined || a[i + 1].startsWith('--')) {
+        console.error(`audiorender: --${k} needs a value (see --help)`);
+        process.exit(2);
+      }
+      i++;
+    }
+  }
+}
 const opt = (k, d) => {
   const i = a.indexOf(`--${k}`);
   return i >= 0 ? a[i + 1] : d;
@@ -78,7 +106,7 @@ try {
       const s = r.stats;
       const bad = s.nan > 0 || s.peak < 0.003 || s.clip > 50;
       if (bad) failures++;
-      console.log(`${bad ? 'FAIL' : 'OK  '} ${name.padEnd(28)} ${s.seconds.toFixed(1).padStart(6)}s  peak ${db(s.peak).padStart(6)}  rms ${db(s.rms).padStart(6)}  LUFS ${f1(s.lufs).padStart(6)}  M ${f1(s.lufsM).padStart(6)}  S/M ${f1(s.width).padStart(6)}${s.clip ? `  clip ${s.clip}` : ''}${s.nan ? `  NaN ${s.nan}` : ''}  (${Date.now() - t0} ms)`);
+      console.log(`${bad ? 'FAIL' : 'OK  '} ${name.padEnd(28)} ${s.seconds.toFixed(1).padStart(6)}s  peak ${db(s.peak).padStart(6)}  rms ${db(s.rms).padStart(6)}  LUFS ${f1(s.lufs).padStart(6)}  M ${f1(s.lufsM).padStart(6)}  S/M ${f1(s.width).padStart(6)}  r ${Number.isFinite(s.corr) ? s.corr.toFixed(2) : '-'}  spread ${f1(s.spread)}${s.clip ? `  clip ${s.clip}` : ''}${s.nan ? `  NaN ${s.nan}` : ''}  (${Date.now() - t0} ms)`);
       if (showBands && s.bands) console.log('      ', Object.entries(s.bands).map(([k, v]) => `${k} ${v}`).join('  '));
     }
   }

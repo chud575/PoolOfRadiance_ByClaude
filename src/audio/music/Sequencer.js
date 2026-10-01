@@ -6,6 +6,16 @@ import { noiseBuffer } from '../dsp/bank.js';
 const clock = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
 /**
+ * Scheduling horizon (seconds). Notes are handed to the audio thread this far
+ * ahead, so a main-thread stall shorter than this (map loads, shader
+ * compiles, the combat scene's slow frames) never reaches the speakers.
+ */
+export const LOOKAHEAD = 1.8;
+
+/** A note that reaches the scheduler later than this (s) is dropped rather than bunched. */
+export const LATE_DROP = 0.04;
+
+/**
  * Seconds from quarter 0 to quarter `q` given ritardando segments [[q0, q1, k]]
  * (tempo eases linearly from 1 to k across each segment).
  */
@@ -53,7 +63,18 @@ export class TrackPlayer {
     this.dest = o.dest;
     this.send = o.send;
     this.out = ac.createGain();
-    this.out.connect(o.dest);
+    // Per-cue EQ (e.g. presence for the battle cue): out → filters → dest.
+    let tail = this.out;
+    for (const e of song.eq ?? []) {
+      const f = ac.createBiquadFilter();
+      f.type = e.type;
+      f.frequency.value = e.f;
+      if (e.q !== undefined) f.Q.value = e.q;
+      if (e.g !== undefined) f.gain.value = e.g;
+      tail.connect(f);
+      tail = f;
+    }
+    tail.connect(o.dest);
     this.sendOut = ac.createGain();
     this.sendOut.connect(o.send);
     const start = o.at ?? ac.currentTime + 0.05;
@@ -76,9 +97,12 @@ export class TrackPlayer {
     this.inst = new Map();
     this.pass = 0;
     this.passStart = start;
+    this.startTime = start;
     this.done = false;
     this.stopped = false;
     this._skipped = [];
+    this._silent = [];
+    this.dropped = 0;
     // Sample buffers (drums, plucks, noise) are rendered in JS: warm them a few
     // ms at a time between ticks instead of all at once when a note first needs them.
     this._warmQ = [() => noiseBuffer(ac, 'white'), () => noiseBuffer(ac, 'pink')];
@@ -109,7 +133,27 @@ export class TrackPlayer {
 
   _load() {
     this.state ??= {};
-    const r = this.song.build(this.pass, this.rng.fork(this.pass + 1), this.state);
+    let r;
+    // Rest windows: long-running exploration cues fall silent (ambience only)
+    // for a while every few minutes, so hours of grid crawling never wear the
+    // score thin. Seeded per song, never on the first pass.
+    const rest = this.song.rest;
+    if (rest && this.pass > 0) {
+      this.restAnchor ??= this.startTime;
+      this.restAfter ??= this.rng.range(rest.after[0], rest.after[1]);
+      if (this.section !== 'rest' && this.passStart - this.restAnchor >= this.restAfter) {
+        const secs = this.rng.range(rest.length[0], rest.length[1]);
+        const bar = this.song.barQ ?? 4;
+        r = { lengthQ: Math.max(bar, Math.round(secs / this.spq / bar) * bar), events: [], section: 'rest' };
+        this.restAnchor = this.passStart + secs;
+        this.restAfter = this.rng.range(rest.after[0], rest.after[1]);
+      }
+    }
+    if (!r) {
+      const mp = this.musicPass ?? 0;
+      r = this.song.build(mp, this.rng.fork(mp + 1), this.state);
+      this.musicPass = mp + 1;
+    }
     this.section = r.section ?? null;
     this.events = this._slurs(r.events.slice().sort((a, b) => a.t - b.t));
     this.lengthQ = r.lengthQ;
@@ -175,15 +219,27 @@ export class TrackPlayer {
     return i === 0 ? 1 : i === 1 ? ss(0.2, 0.5) : ss(0.55, 0.85);
   }
 
+  /**
+   * Overall lift with intensity (dB at the top layer, song.lift): the
+   * desperate layer must feel *bigger*, not just brighter — everything
+   * swells by `lift` dB and the top layer sends more to the room.
+   */
+  _lift(x) {
+    const k = Math.max(0, Math.min(1, (x - 0.5) / 0.4));
+    return Math.pow(10, ((this.song.lift ?? 0) * k * k * (3 - 2 * k)) / 20);
+  }
+
   _applyIntensity(t, tc) {
+    const lift = this._lift(this.intensity);
     this.layers.forEach((L, i) => {
-      const v = Math.max(0.0001, this._layerGain(i, this.intensity));
+      const v = Math.max(0.0001, this._layerGain(i, this.intensity) * lift);
+      const sv = v * (i === 2 ? 1.35 : 1);
       if (tc) {
         L.g.gain.setTargetAtTime(v, t, tc);
-        L.s.gain.setTargetAtTime(v, t, tc);
+        L.s.gain.setTargetAtTime(sv, t, tc);
       } else {
         L.g.gain.setValueAtTime(v, t);
-        L.s.gain.setValueAtTime(v, t);
+        L.s.gain.setValueAtTime(sv, t);
       }
     });
   }
@@ -191,6 +247,15 @@ export class TrackPlayer {
   setIntensity(x, seconds = 2) {
     this.intensity = Math.max(0, Math.min(1, x));
     this._applyIntensity(this.ac.currentTime, seconds / 3);
+    // Notes of a silent layer inside the lookahead window were not scheduled:
+    // hand the ones still in the future to the audio thread now.
+    const soon = this.ac.currentTime + 0.03;
+    this._silent = this._silent.filter((s) => {
+      if (s.at < soon) return false;
+      if (this._layerGain(s.e.layer, this.intensity) < 0.02) return true;
+      this._play(s.e, s.at, true);
+      return false;
+    });
     // Long notes of a layer that was silent when they began (choir pads,
     // whole-note brass) join in now instead of waiting for the next onset.
     const now = this.ac.currentTime;
@@ -238,42 +303,70 @@ export class TrackPlayer {
     }
   }
 
-  _play(e, at) {
+  _play(e, at, rescued = false) {
     const layer = e.layer ?? 0;
     // Layers faded out by the current intensity cost nothing: don't schedule them
-    // (but remember long notes so they can join if the intensity rises mid-note).
-    if (layer && this._layerGain(layer, this.intensity) < 0.02) {
+    // (but remember long notes so they can join if the intensity rises mid-note,
+    // and notes inside the lookahead window so they can still be scheduled).
+    if (!rescued && layer && this._layerGain(layer, this.intensity) < 0.02) {
       const len = this.secAt(e.t + e.dur) - this.secAt(e.t);
       if (len > 1.5 && !e.roll && e.midi !== undefined && !e.phrase) this._skipped.push({ e, end: at + len });
       if (this._skipped.length > 64) this._skipped.splice(0, this._skipped.length - 64);
+      this._silent.push({ e, at });
+      if (this._silent.length > 256) this._silent = this._silent.filter((s) => s.at > this.ac.currentTime);
       return;
     }
-    const ins = this._instrument(e.inst, layer);
     const human = e.exact ? 0 : this.rng.gauss(0.005);
-    const t = Math.max(this.ac.currentTime, at + human);
-    const dur = this.secAt(e.t + e.dur) - this.secAt(e.t);
-    const vel = Math.max(0.05, Math.min(1, (e.vel ?? 0.7) + (e.exact ? 0 : this.rng.gauss(0.025))));
+    let dur = this.secAt(e.t + e.dur) - this.secAt(e.t);
+    const now = this.ac.currentTime;
+    let t = at + human;
     if (e.phrase) {
-      const notes = e.phrase.map((n, i) => ({
+      let notes = e.phrase.map((n, i) => ({
         t: i ? this.passStart + this.secAt(n.t) + this.rng.gauss(0.003) : t,
         midi: n.midi,
         dur: this.secAt(n.t + n.dur) - this.secAt(n.t),
         vel: Math.max(0.05, Math.min(1, n.vel + this.rng.gauss(0.02))),
       }));
+      // Late (main thread stalled): the phrase picks up at its next note.
+      if (t < now - LATE_DROP) {
+        const keep = notes.filter((n) => n.t >= now);
+        this.dropped += notes.length - keep.length;
+        if (!keep.length) return;
+        notes = keep;
+      }
+      notes[0].t = Math.max(now, notes[0].t);
+      for (let i = 1; i < notes.length; i++) notes[i].t = Math.max(notes[i - 1].t + 0.01, notes[i].t);
       // Keep the chain gapless after humanising.
       for (let i = 0; i < notes.length - 1; i++) notes[i].dur = Math.max(0.02, notes[i + 1].t - notes[i].t);
-      ins.phrase(notes, e.opts ?? {});
+      this._instrument(e.inst, layer).phrase(notes, e.opts ?? {});
       return;
     }
+    // Robust to main-thread stalls: a note that arrives late is dropped, never
+    // bunched up with its neighbours; a long held note joins mid-way instead.
+    if (t < now - LATE_DROP) {
+      const left = t + dur - now;
+      if (dur < 1.2 || left < 0.6 || e.roll) {
+        this.dropped++;
+        return;
+      }
+      dur = left;
+      t = now + 0.01;
+      e = { ...e, opts: { ...(e.opts ?? {}), attack: Math.min(0.5, left * 0.3) } };
+    }
+    t = Math.max(now, t);
+    const ins = this._instrument(e.inst, layer);
+    const vel = Math.max(0.05, Math.min(1, (e.vel ?? 0.7) + (e.exact ? 0 : this.rng.gauss(0.025))));
     if (e.roll) {
       ins.roll(t, Array.isArray(e.midi) ? e.midi[0] : e.midi, dur, e.roll[0], e.roll[1], e.opts ?? {});
       return;
     }
     const notes = Array.isArray(e.midi) ? e.midi : [e.midi];
+    // Chords: each note gets its share of the section (divisi).
+    const o = notes.length > 1 ? { ...(e.opts ?? {}), divisi: notes.length } : e.opts ?? {};
     notes.forEach((m, i) => {
       // Strummed chords on plucked instruments: spread the onsets.
       const strum = (e.opts?.strum ?? 0) * i;
-      ins.play(t + strum, m, dur, vel, e.opts ?? {});
+      ins.play(t + strum, m, dur, vel, o);
     });
   }
 

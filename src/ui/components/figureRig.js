@@ -257,7 +257,7 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
   const sitting = !!P.seat;
 
   // ---- materials
-  const skinC = desat(L(app.skinHex), 0.18);
+  const skinC = desat(L(app.skinHex), 0.26);
   const hairC = L(app.hairHex);
   const clothC = L(app.clothHex);
   const trimC = L(app.trimHex);
@@ -275,10 +275,10 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
     leather: mat(L('#4a2c18'), { rough: 0.6, pattern: PATTERN.leather, edge: 0.45, wash: 0.65 }),
     darkLeather: mat(L('#2f2016'), { rough: 0.58, pattern: PATTERN.leather, edge: 0.45, wash: 0.6 }),
     boots: mat(L('#33241a'), { rough: 0.5, pattern: PATTERN.leather, edge: 0.5, wash: 0.6 }),
-    steel: mat(L('#b4b8c0'), { rough: 0.3, metal: 1, pattern: PATTERN.metal, edge: 0.35, wash: 0.5 }),
-    darkSteel: mat(L('#6d7078'), { rough: 0.42, metal: 1, pattern: PATTERN.metal, edge: 0.35, wash: 0.5 }),
-    mail: mat(L('#8f949c'), { rough: 0.5, metal: 1, pattern: PATTERN.mail, edge: 0.2, wash: 0.6 }),
-    scale: mat(L('#a7864e'), { rough: 0.38, metal: 1, pattern: PATTERN.scale, edge: 0.3, wash: 0.65 }),
+    steel: mat(L('#a9adb5'), { rough: 0.42, metal: 1, pattern: PATTERN.metal, edge: 0.35, wash: 0.5 }),
+    darkSteel: mat(L('#666a72'), { rough: 0.5, metal: 1, pattern: PATTERN.metal, edge: 0.35, wash: 0.5 }),
+    mail: mat(L('#80858d'), { rough: 0.6, metal: 1, pattern: PATTERN.mail, edge: 0.2, wash: 0.6 }),
+    scale: mat(L('#9a7c48'), { rough: 0.48, metal: 1, pattern: PATTERN.scale, edge: 0.3, wash: 0.65 }),
     gilt: mat(L('#d0a650'), { rough: 0.3, metal: 1, pattern: PATTERN.metal, edge: 0.4 }),
     fur: mat(L('#8a7258'), { rough: 0.95, pattern: PATTERN.fur, edge: 0.6, wash: 0.8, soft: 0.006 }),
     rope: mat(L('#9a8458'), { rough: 0.9, pattern: PATTERN.cloth, edge: 0.4 }),

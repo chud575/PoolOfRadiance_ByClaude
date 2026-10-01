@@ -3,7 +3,7 @@ import { buildMiniature, offscreen } from './Miniature.js';
 import { defaultLook, resolveAppearance, rngFrom, hashNum } from './lookData.js';
 import { paintBackground, PORTRAIT_W, PORTRAIT_H } from './portraitPainter.js';
 import { renderToCanvas } from './paintPass.js';
-import { overpaintPortrait, maskMaterials } from './portraitOverpaint.js';
+import { finishFace } from './portraitOverpaint.js';
 
 /**
  * Painted portraits from the miniature's own sculpt: the same head (skull,
@@ -94,8 +94,8 @@ export function renderPortrait3D(ch, o = {}) {
     const cam = st.camera;
     cam.aspect = W / H;
     cam.fov = 18;
-    const viewH = torso ? 0.92 * Math.max(0.85, hs) : 0.5 * hs;
-    const target = hc.clone().add(new THREE.Vector3(0, torso ? -0.3 * Math.max(0.85, hs) : -0.052 * hs, 0));
+    const viewH = torso ? 0.92 * Math.max(0.85, hs) : 0.43 * hs;
+    const target = hc.clone().add(new THREE.Vector3(0, torso ? -0.3 * Math.max(0.85, hs) : -0.04 * hs, 0));
     const dist = viewH / (2 * Math.tan((cam.fov * Math.PI) / 360));
     cam.position.set(target.x - dist * 0.08, target.y + (torso ? dist * 0.03 : 0.04 * hs), target.z + dist);
     cam.lookAt(target);
@@ -114,37 +114,8 @@ export function renderPortrait3D(ch, o = {}) {
     st.rimWarm.target.updateMatrixWorld();
     const out = renderToCanvas(off.renderer, st.scene, cam, { w: W, h: H, ss: 1.4, paint: o.paint !== false, seed: (look.seed % 997) / 997, key: 'portrait' });
     if (o.overpaint === false || torso && scale < 0.4) return out;
-    // Material-ID pass for the finishing layer (skin / hair / eyes).
-    const { maskMat, blackMat } = maskMaterials();
-    const saved = [];
-    fig.traverse((m) => {
-      if (!m.isMesh) return;
-      saved.push([m, m.material]);
-      m.material = m.geometry.getAttribute('aMat') ? maskMat : blackMat;
-    });
-    const bgSaved = st.scene.background;
-    st.scene.background = null;
-    let mask;
-    try {
-      mask = renderToCanvas(off.renderer, st.scene, cam, { w: W, h: H, ss: 1, paint: false, key: 'portraitMask' });
-    } finally {
-      for (const [m, mt] of saved) m.material = mt;
-      st.scene.background = bgSaved;
-    }
-    const body = saved.find(([m]) => m.geometry.getAttribute('aMat'))?.[0];
-    body.updateMatrixWorld(true);
-    const v = new THREE.Vector3();
-    const { c: Hc0, R: HR0, hs: hs0 } = fr.face;
-    const project = (p) => {
-      const q = [p[0] * hs0, p[1] * hs0, p[2] * hs0];
-      v.set(
-        Hc0[0] + HR0[0] * q[0] + HR0[3] * q[1] + HR0[6] * q[2],
-        Hc0[1] + HR0[1] * q[0] + HR0[4] * q[1] + HR0[7] * q[2],
-        Hc0[2] + HR0[2] * q[0] + HR0[5] * q[1] + HR0[8] * q[2],
-      ).applyMatrix4(body.matrixWorld).project(cam);
-      return [(v.x + 1) * 0.5 * W, (1 - v.y) * 0.5 * H];
-    };
-    overpaintPortrait(out, mask, app, { project, frames: fr });
+    // The illustrator's finishing layer (needs a material-ID pass of the same view).
+    finishFace(off.renderer, st.scene, cam, fig, out, app, { key: 'portraitMask' });
     return out;
   } catch (err) {
     console.warn('portrait3d', err);

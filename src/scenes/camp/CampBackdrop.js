@@ -17,7 +17,7 @@ import { groundTextures, barkTextures, emberTexture, coalTextures, smokeTexture,
  * inside a ring of sooty fieldstones. Resting, the fire burns down to embers,
  * the light cools and the sleepers lie under blankets while one keeps watch.
  *
- * buildCamp(scene, {party, hour, renderer}) → {update(t), setResting(on), dispose()}
+ * buildCamp(scene, {party, hour, renderer, deferParty}) → {update(t), setResting(on), ensureParty(), dispose()}
  */
 
 const hrand = (i, s = 0) => {
@@ -179,7 +179,7 @@ function archUV(g, aoFn) {
  * @param {THREE.Scene} scene
  * @param {{party: object[], hour: number, renderer?: THREE.WebGLRenderer, resting?: boolean}} o
  */
-export async function buildCamp(scene, { party, hour, renderer, resting = false }) {
+export async function buildCamp(scene, { party, hour, renderer, resting = false, deferParty = false }) {
   await preloadMaterials(['arch_stone', 'arch_ruin', 'arch_mud', 'prop_wood', 'prop_burlap']);
   const geos = [];
   const mats = [];
@@ -212,6 +212,10 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false 
   moon.shadow.bias = -0.0008;
   moon.shadow.normalBias = 0.02;
   scene.add(moon, moon.target);
+  // A cool moonlit fill from the viewer's side, so the party is not one orange cast.
+  const moonFill = new THREE.DirectionalLight(0x7890d0, night ? 0.55 : 0.4);
+  moonFill.position.set(4.5, 6, 8);
+  scene.add(moonFill, moonFill.target);
   const fireLight = new THREE.PointLight(0xffa25a, 0, 16, 1.6);
   fireLight.position.set(0, 1.0, 0.05);
   fireLight.castShadow = true;
@@ -676,7 +680,10 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false 
   };
 
   let restingNow = !!resting;
-  placeParty(restingNow);
+  // Opening straight into a full-screen panel (VIEW/ITEMS/MAGIC) hides the
+  // diorama: the party is sculpted only when it is first seen.
+  let placed = !deferParty;
+  if (placed) placeParty(restingNow);
 
   const update = (time) => {
     // Fire: lively in the evening, burned down to embers while the party sleeps.
@@ -686,6 +693,7 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false 
     fireLight.color.setHex(restingNow ? 0xff7a34 : 0xffa25a);
     emberLight.intensity = (restingNow ? 1.1 : 0.6) * (0.9 + 0.1 * Math.sin(time * 3.1));
     moon.intensity = night ? (restingNow ? 1.9 : 1.15) : 1.6;
+    moonFill.intensity = night ? (restingNow ? 0.8 : 0.55) : 0.4;
     hemi.intensity = night ? (restingNow ? 0.55 : 0.5) : 0.9;
     coalMat.emissiveIntensity = (restingNow ? 1.6 : 1.1) * (0.9 + 0.1 * Math.sin(time * 2.3));
     logMat.emissiveIntensity = (restingNow ? 1.1 : 0.8) * (0.85 + 0.15 * Math.sin(time * 5.7 + 0.4));
@@ -726,8 +734,14 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false 
     sky,
     update,
     setResting(on) {
-      if (!!on === restingNow) return;
+      if (!!on === restingNow && placed) return;
       restingNow = !!on;
+      placed = true;
+      placeParty(restingNow);
+    },
+    ensureParty() {
+      if (placed) return;
+      placed = true;
       placeParty(restingNow);
     },
     dispose() {

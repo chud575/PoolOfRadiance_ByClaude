@@ -17,6 +17,10 @@ export const ROOMS = {
   dungeon: { t60: 3.4, pre: 0.012, damp: 0.72, early: 22, size: 9, width: 0.85, lowcut: 110, floor: 450 },
   room: { t60: 0.85, pre: 0.006, damp: 0.5, early: 10, size: 5, width: 0.7, lowcut: 140, floor: 900 },
   street: { t60: 1.3, pre: 0.018, damp: 0.55, early: 8, size: 14, width: 1, lowcut: 160, floor: 800 },
+  // Music rooms: a dry low-ceilinged taproom for the tavern band, a big dark
+  // stone vault for the dungeon score.
+  tavern: { t60: 0.6, pre: 0.004, damp: 0.6, early: 12, size: 6, width: 0.8, lowcut: 170, floor: 1100 },
+  vault: { t60: 3.6, pre: 0.02, damp: 0.62, early: 20, size: 22, width: 1, lowcut: 120, floor: 700 },
   open: { t60: 0.7, pre: 0.03, damp: 0.7, early: 4, size: 30, width: 1, lowcut: 220, floor: 900 },
 };
 

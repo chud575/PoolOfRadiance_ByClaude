@@ -65,7 +65,7 @@ describe('composed themes', () => {
         const bars = str.split('|').map((b) => b.trim()).filter(Boolean).map(lineLength);
         // Every bar is one bar long (a tied note may hold for whole extra bars).
         const base = bars[0];
-        const ok = (Math.abs(base - 4) < 1e-6 || Math.abs(base - 3) < 1e-6) && bars.every((b) => Math.abs(b / base - Math.round(b / base)) < 1e-6);
+        const ok = [3, 4, 6].some((L) => Math.abs(base - L) < 1e-6) && bars.every((b) => Math.abs(b / base - Math.round(b / base)) < 1e-6);
         expect(ok, `${f}: "${str}" bars = ${bars.join(', ')}`).toBe(true);
       }
     }

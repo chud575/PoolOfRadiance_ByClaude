@@ -8,6 +8,7 @@ import { AudioRng } from './core/rng.js';
 import { PRESETS, createInstrument } from './instruments/index.js';
 import { ritSeconds } from './music/Sequencer.js';
 import { sfxGain } from './loudness.js';
+import { AudioEngine } from './AudioEngine.js';
 
 /**
  * Offline rendering of every cue (OfflineAudioContext) — used by
@@ -15,7 +16,7 @@ import { sfxGain } from './loudness.js';
  *   const m = await import('/src/audio/offline.js'); m.listCues();
  */
 const SURFACES = ['stone', 'cobble', 'gravel', 'dirt', 'grass', 'wood', 'water'];
-const UI_SFX = /^(click|hover|confirm|cancel|error|page|open|close|map|save)$/;
+const UI_SFX = /^(click|hover|focus|confirm|cancel|error|page|open|close|map|save)$/;
 
 /** Default bus levels of the live engine (AudioEngine._applyVolumes with default settings). */
 export const LIVE_BUS = { master: 0.8, music: 0.6, sfx: 0.8, ambience: 0.6, ui: 0.68 };
@@ -31,7 +32,7 @@ export function listCues() {
   for (const s of SURFACES) cues.push(`sfx_step_${s}`);
   for (const id of Object.keys(SFX)) if (id !== 'step') cues.push(`sfx_${id}`);
   for (const id of Object.keys(PRESETS)) cues.push(`inst_${id}`);
-  cues.push('demo_combat_adaptive', 'demo_crossfade', 'demo_victory');
+  cues.push('demo_combat_adaptive', 'demo_crossfade', 'demo_victory', 'demo_stall', 'demo_rest');
   return cues;
 }
 
@@ -69,6 +70,7 @@ function cueSpec(name, o = {}) {
       seconds: secs,
       room: 'street',
       setup(ac, g) {
+        g.setMusicRoom(song.room ?? 'hall', 0, song.wet ?? 0.5);
         const p = new TrackPlayer(ac, song, { dest: g.musicIn, send: g.musicSend, at: 0.05, intensity: song.id === 'combat' ? 0.8 : undefined, ...gainOpt });
         for (let x = 1; x <= Math.ceil(secs); x++) p.tick(Math.min(secs, x));
         if (song.loop) {
@@ -113,7 +115,7 @@ function cueSpec(name, o = {}) {
     const vol = o.raw ? o.gain ?? 1 : sfxGain(id);
     return {
       // Rendered long, then trimmed to the cue's real tail (-80 dBFS).
-      seconds: /^(spell_|door|vox_dragon|vox_ogre|vox_ghost|vox_zombie|vox_wolf|omen|levelup|chest|trap|potion)/.test(id) ? 7 : 4,
+      seconds: /^(spell_|door|vox_dragon|vox_ogre|vox_troll|vox_giant|vox_ghost|vox_zombie|vox_wolf|vox_frog|omen|levelup|chest|trap|potion)/.test(id) ? 7 : 4,
       trim: true,
       room: 'dungeon',
       setup(ac, g) {
@@ -126,10 +128,18 @@ function cueSpec(name, o = {}) {
     const id = name.slice(5);
     const low = /bass|celli|lowbrass|taiko|timpani|boom|bassoon|drone|gurdy|organ/.test(id) ? 36 : /choir/.test(id) ? 48 : /glock|celesta|harmonics|recorder|flute|violins/.test(id) ? 72 : 60;
     return {
-      seconds: 10,
+      seconds: 15,
       room: 'street',
       setup(ac, g) {
         const ins = createInstrument(ac, id, g.musicIn, g.musicSend, 9);
+        // A long messa di voce (p < f > p) on one note: the spectrum should bloom and darken with it.
+        const swell = [0.3, 0.55, 0.85, 1, 0.8, 0.5, 0.3].map((v, i) => ({ t: 9.8 + i * 0.55, midi: low + 7, dur: 0.55, vel: v }));
+        if (!/taiko|timpani|tom|frame|snare|tamb|crash|sus|hat|chime|boom|rim|Bell|bell|glock|celesta/.test(id)) ins.phrase(swell, { dip: 0 });
+        // Brass articulations: a rip up into a note and a fall off it.
+        if (/horn|brass/.test(id)) {
+          ins.play(13.9, low + 12, 0.45, 0.9, { art: 'rip' });
+          ins.play(14.45, low + 12, 0.3, 0.85, { art: 'fall' });
+        }
         const notes = [0, 4, 7, 12];
         notes.forEach((n, i) => ins.play(0.1 + i * 0.6, low + n, 0.5, 0.45 + i * 0.12, {}));
         [0, 4, 7].forEach((n) => ins.play(2.7, low + n, 2.2, 0.7, {}));
@@ -179,23 +189,71 @@ function cueSpec(name, o = {}) {
     };
   }
   if (name === 'demo_crossfade') {
+    // Through the live engine: AudioEngine.music()/ambience() drive the real
+    // bar-quantised crossfade and per-cue room change; the scheduler ticks at
+    // 50 ms from suspend points, exactly as the Worker clock does live.
     return {
-      seconds: 40,
+      seconds: 44,
       room: 'street',
       setup(ac, g) {
-        const a = new TrackPlayer(ac, SONGS.town, { dest: g.musicIn, send: g.musicSend, at: 0.05 });
-        for (let k = 1; k <= 18; k++) a.tick(k);
-        a.out.gain.setValueAtTime(a.out.gain.value, 16);
-        a.out.gain.exponentialRampToValueAtTime(0.0001, 19);
-        const b = new TrackPlayer(ac, SONGS.ruins, { dest: g.musicIn, send: g.musicSend, at: 16, fadeIn: 2.5 });
-        for (let k = 17; k <= 40; k++) b.tick(k);
-        new Ambience(ac, g.ambBus, g.envSend, 'town', { at: 0, fade: 1, seed: 3 }).tick(16);
-        const r = new Ambience(ac, g.ambBus, g.envSend, 'ruins', { at: 16, fade: 2.5, seed: 4 });
-        r.tick(40);
+        const e = AudioEngine.offline(ac, g);
+        e.music('town', { fade: 1 });
+        e.ambience('town', { fade: 1 });
+        liveTicks(ac, e, 44, (t) => {
+          if (t === 16) {
+            e.music('ruins');
+            e.ambience('ruins');
+          }
+        });
+      },
+    };
+  }
+  if (name === 'demo_stall') {
+    // The main thread freezes for 1.2 s at 8 s (a map load): no ticks at all.
+    // With the 1.8 s lookahead the music plays straight through — no gap, no burst.
+    return {
+      seconds: 20,
+      room: 'street',
+      setup(ac, g) {
+        const e = AudioEngine.offline(ac, g);
+        e.music('combat', { intensity: 0.7 });
+        liveTicks(ac, e, 20, null, (t) => t > 8 && t < 9.2);
+      },
+    };
+  }
+  if (name === 'demo_rest') {
+    // An exploration cue's rest window: music → ambience only → music again (rest forced early for review).
+    return {
+      seconds: 120,
+      room: 'street',
+      setup(ac, g) {
+        const e = AudioEngine.offline(ac, g);
+        e.music('wilds');
+        e.player.restAfter = 50;
+        e.player.restAnchor = 0;
+        e.ambience('wilds');
+        liveTicks(ac, e, 120);
       },
     };
   }
   throw new Error(`unknown cue ${name}`);
+}
+
+/**
+ * Drive an offline AudioEngine like the live Worker clock: a tick every 50 ms
+ * at render time (OfflineAudioContext.suspend), `at(t)` hooks on whole
+ * seconds, and `stalled(t)` to simulate a frozen main thread.
+ */
+function liveTicks(ac, e, seconds, at = null, stalled = null) {
+  const dt = 0.05;
+  for (let i = 1; i * dt < seconds - 0.1; i++) {
+    const t = Math.round(i * dt * 1000) / 1000;
+    ac.suspend(t).then(() => {
+      if (at && Math.abs(t - Math.round(t)) < 1e-6) at(Math.round(t));
+      if (!stalled?.(t)) e._tick();
+      ac.resume();
+    });
+  }
 }
 
 /** Copy of `buf` cut after its last sample above -80 dBFS (+ 0.25 s), at least 0.5 s long. */
@@ -313,11 +371,30 @@ export function loudness(buf) {
   const L = (e) => -0.691 + 10 * Math.log10(e + 1e-20);
   const momentaryMax = Math.max(...z.map(L));
   const abs = z.filter((e) => L(e) > -70);
-  if (!abs.length) return { integrated: -Infinity, momentaryMax };
+  if (!abs.length) return { integrated: -Infinity, momentaryMax, spread: 0 };
+  // Phrase-level dynamics: p10–p90 of the momentary loudness above the gate.
+  const ms = abs.map(L).sort((x, y) => x - y);
+  const spread = ms[Math.floor(ms.length * 0.9)] - ms[Math.floor(ms.length * 0.1)];
   const mean = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
   const rel = L(mean(abs)) - 10;
   const gated = abs.filter((e) => L(e) > rel);
-  return { integrated: L(mean(gated.length ? gated : abs)), momentaryMax };
+  return { integrated: L(mean(gated.length ? gated : abs)), momentaryMax, spread };
+}
+
+/** Pearson correlation of L and R (1 = mono, 0 = uncorrelated). */
+export function correlation(buf) {
+  if (buf.numberOfChannels < 2) return 1;
+  const l = buf.getChannelData(0);
+  const r = buf.getChannelData(1);
+  let lr = 0;
+  let ll = 0;
+  let rr = 0;
+  for (let i = 0; i < l.length; i++) {
+    lr += l[i] * r[i];
+    ll += l[i] * l[i];
+    rr += r[i] * r[i];
+  }
+  return lr / Math.sqrt(ll * rr + 1e-30);
 }
 
 /** Side/mid energy ratio in dB (stereo width; an orchestral image sits around -6 to -9). */
@@ -390,7 +467,9 @@ export function stats(buf, { full = false } = {}) {
     const l = loudness(buf);
     out.lufs = l.integrated;
     out.lufsM = l.momentaryMax;
+    out.spread = l.spread;
     out.width = stereoWidth(buf);
+    out.corr = correlation(buf);
     if (full) out.bands = bands(buf);
   }
   return out;

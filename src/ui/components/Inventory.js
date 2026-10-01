@@ -272,7 +272,7 @@ export class InventoryPanel {
       ]);
     };
     // The character's own miniature, dressed in what is readied; painted silhouette as a fallback.
-    const snapUrl = miniatureSnapshot(ch, { w: 340, h: 600 });
+    const snapUrl = miniatureSnapshot(ch, { w: 300, h: 640 });
     let fig;
     if (snapUrl) fig = h('img.pc-doll-mini', { src: snapUrl, alt: '', draggable: false });
     else {
@@ -314,7 +314,7 @@ export class InventoryPanel {
         h('span.nm', [itemName(e)]),
       ]);
     });
-    const capacity = Math.max(18, Math.ceil((inv.length + 1) / 6) * 6);
+    const capacity = Math.max(24, Math.ceil((inv.length + 1) / 6) * 6);
     for (let k = inv.length; k < capacity; k++) tiles.push(h('div.pc-tile.empty'));
     const weightNow = carriedWeight(ch);
     const list = h('div.pc-sect.pc-items', [

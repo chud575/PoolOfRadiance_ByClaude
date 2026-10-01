@@ -19,9 +19,11 @@ export const BEDS = {
   dungeon: { layers: ['rumble:0.7', 'cave:0.35'], events: { drip: 2.6, chain: 35, moanFar: 55, rubble: 40 } },
   crypt: { layers: ['wind:0.55', 'cave:0.2'], events: { crow: 18, bellFar: 45, moanFar: 40 }, night: { layers: ['wind:0.6'], events: { owl: 12, moanFar: 30, cricket: 4 } } },
   wilds: { layers: ['wind:0.55', 'leaves:0.5'], events: { bird: 3.5, crow: 30 }, night: { layers: ['wind:0.45', 'leaves:0.3'], events: { cricket: 1.5, owl: 15, wolfFar: 45 } } },
-  camp: { layers: ['fire:0.8', 'wind:0.25'], events: { crackle: 0.5, pop: 3, cricket: 1.6, owl: 25 } },
-  interior: { layers: ['room:0.6'], events: { creakFar: 12, drip: 20 } },
-  combat_out: { layers: ['wind:0.45'], events: {} },
+  camp: { layers: ['fire:0.8', 'wind:0.25'], events: { crackle: 0.5, pop: 3, bird: 6 }, night: { layers: ['fire:0.8', 'wind:0.2'], events: { crackle: 0.5, pop: 3, cricket: 1.6, owl: 25 } } },
+  // Resting underground: the fire, the drip of the deep, a far rumble — no crickets, no owls.
+  camp_in: { layers: ['fire:0.75', 'cave:0.3', 'rumble:0.35'], events: { crackle: 0.5, pop: 3, drip: 3.5, rubble: 45 } },
+  interior: { layers: ['room:0.5', 'roomtone:0.6', 'fire:0.18'], events: { creakFar: 12, footFar: 16, clink: 9, crackle: 2.5 } },
+  combat_out: { layers: ['wind:0.45', 'gusts:0.35', 'leaves:0.25'], events: { crow: 20, rubble: 30 } },
   combat_in: { layers: ['rumble:0.5', 'cave:0.2'], events: { drip: 6 } },
   silence: { layers: [], events: {} },
 };
@@ -199,6 +201,17 @@ export class Ambience {
         n2.connect(bp).connect(g2).connect(g);
         return;
       }
+      case 'roomtone': {
+        // The air of a lived-in room: a soft broadband hush with a gentle presence.
+        const n = this._noise(t, 'pink');
+        const bp = this._filter('bandpass', 2200, 0.5);
+        const hs = this._filter('highshelf', 6000, 0.7);
+        hs.gain.value = -6;
+        g.gain.value = 0.03 * lvl;
+        this._lfo(t, 0.07, 0.008 * lvl, g.gain);
+        n.connect(bp).connect(hs).connect(g);
+        return;
+      }
       case 'room': {
         const n = this._noise(t, 'brown');
         const lp = this._filter('lowpass', 180);
@@ -286,6 +299,20 @@ export class Ambience {
       case 'wolfFar': {
         const g = new Fx(this.ac, this.out, this.rng, { vol: 0.2, pan: r.range(-0.8, 0.8) });
         monsterVox(g, t, 'wolf', 'howl');
+        break;
+      }
+      case 'clink': {
+        // Cups, a ladle, a dropped spoon somewhere in the room.
+        for (let i = 0; i < r.int(1, 3); i++) fx.modes(t + i * r.range(0.08, 0.3), { f: r.range(2400, 4200), ratios: [1, 2.32, 4.1], decays: [0.18, 0.08, 0.04], peak: 0.02 });
+        break;
+      }
+      case 'footFar': {
+        // Someone crossing the floor above or in the next room.
+        for (let i = 0; i < r.int(3, 6); i++) {
+          const tt = t + i * r.range(0.45, 0.6);
+          fx.burst(tt, { kind: 'pink', dur: 0.06, peak: 0.05, filters: [{ type: 'lowpass', f: 380 }, { type: 'highpass', f: 70 }] });
+          fx.modes(tt, { f: r.range(160, 210), ratios: [1, 2.3], decays: [0.06, 0.03], peak: 0.02 });
+        }
         break;
       }
       case 'crackle': {

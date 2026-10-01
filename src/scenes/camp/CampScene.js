@@ -64,7 +64,8 @@ export default class CampScene extends Scene {
       this.camera.lookAt(-2.0, 0.1, -0.9);
     }
     this.hour = game.clock.hour + game.clock.minute / 60;
-    this.camp = await buildCamp(s, { party: game.party, hour: this.hour, renderer: render.renderer, resting: !!this.params.sleep });
+    const fullPanel = ['view', 'items', 'magic'].includes(this.params.panel) && !this.params.sleep;
+    this.camp = await buildCamp(s, { party: game.party, hour: this.hour, renderer: render.renderer, resting: !!this.params.sleep, deferParty: fullPanel });
   }
 
   _buildUI() {
@@ -169,7 +170,7 @@ export default class CampScene extends Scene {
     this.view = openCharacterView(this.ctx, {
       index: i,
       tab,
-      onClose: () => { this.view = null; this._refreshStatus(); },
+      onClose: () => { this.view = null; this.camp?.ensureParty?.(); this._refreshStatus(); },
       onRest: () => { this.view?.close(); this.doRest(partyMemorizationTime(this.ctx.game.party)); },
     });
   }
