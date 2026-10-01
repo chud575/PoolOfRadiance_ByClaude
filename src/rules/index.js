@@ -15,5 +15,6 @@ export * from './magicItems.js';
 export * from './treasure.js';
 export * from './temple.js';
 export * from './combat.js';
+export * from './specials.js';
 export * from './party.js';
 export * from './battle.js';

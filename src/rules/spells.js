@@ -33,7 +33,8 @@ import { neededToHit } from './tohit.js';
  * @property {string} name
  * @property {Record<string,number>} schools   casting class → spell level
  * @property {'combat'|'camp'|'both'} usable
- * @property {number} castTime  segments (initiative delay)
+ * @property {number|function(number,string):number} castTime  segments (initiative delay); per class for
+ *   spells both classes cast (PHB: MU Hold Person / Dispel Magic 3, cleric 5 / 6)
  * @property {number|function(number):number} range  squares (0 = self, 1 = touch)
  * @property {'self'|'ally'|'enemy'|'creature'|'area'|'direction'|'party'|'none'} target
  * @property {{shape:'single'|'radius'|'square'|'cone'|'line'|'all', size?:number|function(number):number}} area
@@ -47,6 +48,7 @@ import { neededToHit } from './tohit.js';
  * @property {boolean} [hostile]
  * @property {string} [reverse]  id of the reversed form
  * @property {boolean} [templeOnly]
+ * @property {boolean} [itemOnly]   released only by a magic item (Wand of Paralyzation)
  * @property {SpellOp[]} ops
  * @property {string} desc  terse, evocative
  * @property {string} tip   mechanics summary for tooltips
@@ -85,19 +87,19 @@ export const SPELL_RULES = {
     desc: 'A withering touch opens wounds.', tip: 'Touch attack: 1d8 damage.',
   },
   detectMagic: {
-    name: 'Detect Magic', schools: { cleric: 1, magicUser: 1 }, usable: 'camp', castTime: 10, range: 0, target: 'self',
+    name: 'Detect Magic', schools: { cleric: 1, magicUser: 1 }, usable: 'camp', castTime: (L, s) => (s === 'magicUser' ? 1 : 10), range: 0, target: 'self',
     area: { shape: 'single' }, duration: (L, s) => (s === 'magicUser' ? R(2 * L) : T(1)),
     ops: [{ op: 'flag', flag: 'detectMagic' }, { op: 'condition', id: 'detectMagic' }],
     desc: 'Enchanted things shimmer with a faint blue radiance.', tip: 'Reveals which carried items are magical.',
   },
   protectionFromEvil: {
-    name: 'Protection from Evil', schools: { cleric: 1, magicUser: 1 }, usable: 'both', castTime: 4, range: 1, target: 'ally',
+    name: 'Protection from Evil', schools: { cleric: 1, magicUser: 1 }, usable: 'both', castTime: (L, s) => (s === 'magicUser' ? 1 : 4), range: 1, target: 'ally',
     area: { shape: 'single' }, duration: (L, s) => (s === 'magicUser' ? R(2 * L) : R(3 * L)), reverse: 'protectionFromGood',
     ops: [{ op: 'condition', id: 'protEvil' }],
     desc: 'A ward of silver light turns aside evil.', tip: 'Touch: -2 AC and +2 saves against evil attackers.',
   },
   protectionFromGood: {
-    name: 'Protection from Good', schools: { cleric: 1, magicUser: 1 }, usable: 'both', castTime: 4, range: 1, target: 'ally',
+    name: 'Protection from Good', schools: { cleric: 1, magicUser: 1 }, usable: 'both', castTime: (L, s) => (s === 'magicUser' ? 1 : 4), range: 1, target: 'ally',
     area: { shape: 'single' }, duration: (L, s) => (s === 'magicUser' ? R(2 * L) : R(3 * L)), reverse: 'protectionFromEvil',
     ops: [{ op: 'condition', id: 'protGood' }],
     desc: 'A dark ward repels the righteous.', tip: 'Touch: -2 AC and +2 saves against good attackers.',
@@ -117,7 +119,7 @@ export const SPELL_RULES = {
     desc: 'Hidden snares glow to the cleric\'s eye.', tip: 'Reveals traps ahead for 3 turns.',
   },
   holdPerson: {
-    name: 'Hold Person', schools: { cleric: 2, magicUser: 3 }, usable: 'combat', castTime: 5, range: (L, s) => (s === 'magicUser' ? 12 : 6), target: 'area',
+    name: 'Hold Person', schools: { cleric: 2, magicUser: 3 }, usable: 'combat', castTime: (L, s) => (s === 'magicUser' ? 3 : 5), range: (L, s) => (s === 'magicUser' ? 12 : 6), target: 'area',
     area: { shape: 'radius', size: 1 }, affects: 'person', hostile: true, mental: true,
     maxTargets: (L, s) => (s === 'magicUser' ? 4 : 3),
     duration: (L, s) => (s === 'magicUser' ? R(2 * L) : R(4 + L)),
@@ -189,7 +191,7 @@ export const SPELL_RULES = {
     desc: 'A sickly touch spreads rot.', tip: 'Touch: disease (-2 to hit, no natural healing). Save vs spell negates.',
   },
   dispelMagic: {
-    name: 'Dispel Magic', schools: { cleric: 3, magicUser: 3 }, usable: 'both', castTime: 6, range: (L, s) => (s === 'magicUser' ? 12 : 6), target: 'area',
+    name: 'Dispel Magic', schools: { cleric: 3, magicUser: 3 }, usable: 'both', castTime: (L, s) => (s === 'magicUser' ? 3 : 6), range: (L, s) => (s === 'magicUser' ? 12 : 6), target: 'area',
     area: { shape: 'radius', size: 1 },
     ops: [{ op: 'dispel' }],
     desc: 'Weaves of magic unravel.', tip: 'Ends magical effects in the area: 50%, +5% per level the caster is above the magic\'s caster, -2% per level below.',
@@ -400,6 +402,15 @@ export const SPELL_RULES = {
     ops: [{ op: 'condition', id: 'slowed' }],
     desc: 'Foes wade as through deep water.', tip: 'Up to 1 enemy/level: half moves and attacks. Save vs spell negates.',
   },
+
+  // ===================================== ITEM-ONLY (released by magic items, never memorized)
+  wandParalyzation: {
+    name: 'Paralyzation', schools: { magicUser: 3 }, usable: 'combat', castTime: 1, range: 1, target: 'direction', itemOnly: true,
+    area: { shape: 'cone', size: 6 }, hostile: true, duration: (L, s, rng) => (rng ? roll(rng, '5d4') : 12),
+    save: { key: 'rsw', type: 'neg' },
+    ops: [{ op: 'condition', id: 'paralyzed' }],
+    desc: 'A pale ray fans out; limbs lock rigid.', tip: 'Wand: a 6-square cone; any creature saves vs wand or is paralyzed 5d4 rounds.',
+  },
 };
 
 for (const [id, s] of Object.entries(SPELL_RULES)) {
@@ -410,9 +421,9 @@ for (const [id, s] of Object.entries(SPELL_RULES)) {
 
 export const SPELL_IDS = Object.keys(SPELL_RULES);
 
-/** Spells a Pool of Radiance caster can memorize (not temple-only), by class and level. */
+/** Spells a Pool of Radiance caster can memorize (not temple-only or item-only), by class and level. */
 export function spellsForClass(classId, level) {
-  return SPELL_IDS.filter((id) => SPELL_RULES[id].schools[classId] === level && !SPELL_RULES[id].templeOnly);
+  return SPELL_IDS.filter((id) => SPELL_RULES[id].schools[classId] === level && !SPELL_RULES[id].templeOnly && !SPELL_RULES[id].itemOnly);
 }
 
 /**
@@ -435,22 +446,34 @@ export function spellLevel(id, classId) {
 
 const val = (v, L, school, rng) => (typeof v === 'function' ? v(L, school, rng) : v);
 
-/** Which class casts this spell for a caster (first class that has it). */
-export function castingClass(caster, id) {
+/**
+ * Which class casts this spell for a caster. Multiclass casters keep separate
+ * memories, so the class comes from the memorized slot: pass `cls` when the
+ * caller knows it (a {id, cls} slot); otherwise the first class — in
+ * `ch.spells.memorized` order, the same order consumeMemorized() spends —
+ * that has the spell memorized; otherwise the first active class whose list
+ * holds it. A half-elf C/MU with Hold Person memorized only as a magic-user
+ * casts the magic-user version (range 12, up to 4 persons, -3 alone).
+ */
+export function castingClass(caster, id, cls) {
   const s = SPELL_RULES[id];
   const ch = characterOf(caster);
   if (!s) return DATA_SPELLS[id]?.school ?? 'magicUser';
+  if (cls && s.schools[cls] !== undefined) return cls;
   if (ch) {
-    const cls = activeClasses(ch).find((c) => s.schools[c] !== undefined);
-    if (cls) return cls;
+    const active = activeClasses(ch).filter((c) => s.schools[c] !== undefined);
+    const mem = ch.spells?.memorized ?? {};
+    const held = Object.keys(mem).find((c) => active.includes(c) && Array.isArray(mem[c]) && mem[c].includes(id));
+    if (held) return held;
+    if (active.length) return active[0];
   }
   return Object.keys(s.schools)[0];
 }
 
-/** Caster level for a spell. Monsters use `casterLevel` or HD. */
-export function casterLevel(caster, id) {
+/** Caster level for a spell (in the casting class, see castingClass). Monsters use `casterLevel` or HD. */
+export function casterLevel(caster, id, cls) {
   const ch = characterOf(caster);
-  const cls = castingClass(caster, id);
+  cls = castingClass(caster, id, cls);
   if (ch) return ch.levels?.[cls] ?? highestLevel(ch);
   const m = monsterOf(caster);
   return caster.casterLevel ?? m?.casterLevel ?? Math.max(1, Math.floor(m?.hd ?? 1));
@@ -473,7 +496,7 @@ export function spellTargeting(id, level = 1, school) {
     hostile: !!s.hostile,
     affects: s.affects ?? 'any',
     duration: val(s.duration ?? 0, level, sc),
-    castTime: s.castTime ?? 1,
+    castTime: val(s.castTime ?? 1, level, sc),
   };
 }
 
@@ -489,24 +512,34 @@ export function castProblem(caster, id, opts = {}) {
   if (!conditionsAllowCasting(effectHost(caster))) return 'cannot cast now';
   if (ch) {
     if (!isAliveCreature(ch) || ch.status !== 'ok') return 'not conscious';
-    const cls = activeClasses(ch).find((c) => s.schools[c] !== undefined);
-    if (!cls) return 'not a spell of this class';
+    if (!activeClasses(ch).some((c) => s.schools[c] !== undefined)) return 'not a spell of this class';
+    const cls = castingClass(ch, id, opts.cls);
     if (cls === 'magicUser' && !armorAllowsArcane(ch)) return 'armor prevents arcane casting';
-    if (!opts.ignoreMemory && !isMemorized(ch, id)) return 'not memorized';
+    if (!opts.ignoreMemory && !isMemorized(ch, id, opts.cls)) return 'not memorized';
     if (opts.context === 'camp' && s.usable === 'combat') return 'only in combat';
     if (opts.context === 'combat' && s.usable === 'camp') return 'not in combat';
   }
   return null;
 }
 
-/** True if the character currently has the spell memorized. */
-export function isMemorized(ch, id) {
-  return Object.values(ch.spells?.memorized ?? {}).some((ids) => Array.isArray(ids) && ids.includes(id));
+/** True if the character currently has the spell memorized (in class `cls`, or in any class). */
+export function isMemorized(ch, id, cls) {
+  const mem = ch.spells?.memorized ?? {};
+  if (cls) return Array.isArray(mem[cls]) && mem[cls].includes(id);
+  return Object.values(mem).some((ids) => Array.isArray(ids) && ids.includes(id));
 }
 
-/** Remove one memorized instance (the spell is forgotten when cast). */
-export function consumeMemorized(ch, id) {
-  for (const ids of Object.values(ch.spells?.memorized ?? {})) {
+/**
+ * Remove one memorized instance (the spell is forgotten when cast) from the
+ * class it is cast as: `cls` when given, else castingClass() — so the slot
+ * spent is always the one whose version of the spell takes effect.
+ */
+export function consumeMemorized(ch, id, cls) {
+  const mem = ch.spells?.memorized ?? {};
+  const from = cls ?? castingClass(ch, id);
+  const order = [from, ...Object.keys(mem).filter((k) => k !== from && !cls)];
+  for (const k of order) {
+    const ids = mem[k];
     if (!Array.isArray(ids)) continue;
     const i = ids.indexOf(id);
     if (i >= 0) {
@@ -633,8 +666,13 @@ export const SLEEP_BANDS = [
  * @param {string} id
  * @param {object} caster  Character, Combatant or monster
  * @param {object[]} [targets]
- * @param {{level?:number, school?:string, consume?:boolean, check?:boolean, context?:'combat'|'camp',
- *   fromItem?:boolean}} [opts]
+ * `opts.cls` (alias `school`) is the casting class of the memorized slot
+ * ({id, cls}); without it castingClass() decides. `opts.saveKey` overrides
+ * the spell's save category — item-released magic from wands, staves and
+ * rods saves vs Rod/Staff/Wand ('rsw', DMG); scrolls and potions keep the
+ * spell's own.
+ * @param {{level?:number, cls?:string, school?:string, consume?:boolean, check?:boolean, context?:'combat'|'camp',
+ *   fromItem?:boolean, saveKey?:string, noFailure?:boolean, ignoreMemory?:boolean}} [opts]
  * @returns {CastResult}
  */
 export function castSpell(rng, id, caster, targets = [], opts = {}) {
@@ -648,18 +686,18 @@ export function castSpell(rng, id, caster, targets = [], opts = {}) {
   if (opts.check !== false && !opts.fromItem) {
     // Memory is always checked unless the caller says otherwise explicitly
     // (scripted casts, or a combat engine that already spent the slot).
-    const p = castProblem(caster, id, { ignoreMemory: !!opts.ignoreMemory, context: opts.context });
+    const p = castProblem(caster, id, { ignoreMemory: !!opts.ignoreMemory, context: opts.context, cls: opts.cls ?? opts.school });
     if (p) {
       res.reason = p;
       return res;
     }
   }
-  const school = opts.school ?? castingClass(caster, id);
-  const L = opts.level ?? casterLevel(caster, id);
+  const school = castingClass(caster, id, opts.cls ?? opts.school);
+  const L = opts.level ?? casterLevel(caster, id, school);
   res.school = school;
   res.level = L;
   res.ok = true;
-  if (opts.consume && ch) consumeMemorized(ch, id);
+  if (opts.consume && ch) consumeMemorized(ch, id, school);
   const cname = nameOf(caster);
   // PHB: clerics of low wisdom risk spell failure (the spell is lost).
   if (ch && school === 'cleric' && !opts.fromItem && !opts.noFailure) {
@@ -729,7 +767,7 @@ export function castSpell(rng, id, caster, targets = [], opts = {}) {
     }
     let saved = false;
     if (s.save && hostile) {
-      const sv = rollSave(rng, t, s.save.key, { bonus: holdPenalty, mental: s.mental, dodge: s.dodge, element: s.element, source: caster });
+      const sv = rollSave(rng, t, opts.saveKey ?? s.save.key, { bonus: holdPenalty, mental: s.mental, dodge: s.dodge, element: s.element, source: caster });
       tr.save = { roll: sv.roll, target: sv.target, bonus: sv.bonus };
       tr.saved = saved = sv.saved;
       if (saved && s.save.type === 'neg') {
@@ -997,7 +1035,7 @@ const CONDITION_LINES = {
   invisible: 'vanishes', enfeebled: 'is enfeebled', reduced: 'shrinks', protEvil: 'is warded from evil',
   protGood: 'is warded from good', resistCold: 'is warded from cold', resistFire: 'is warded from fire',
   blinking: 'begins to blink', protNormalMissiles: 'is warded from missiles', bestowCurse: 'is accursed',
-  charmedSnake: 'is entranced', slowPoison: 'feels the poison slow',
+  charmedSnake: 'is entranced', slowPoison: 'feels the poison slow', paralyzed: 'is paralyzed', afraid: 'flees in terror',
 };
 
 export function conditionLine(name, id) {

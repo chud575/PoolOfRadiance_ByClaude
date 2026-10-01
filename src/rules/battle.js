@@ -6,12 +6,14 @@ import {
   castSpell, conditionLine, hammerStrike, SPELL_RULES, castProblem, spellTargeting, castingClass, casterLevel,
   spellsForClass,
 } from './spells.js';
-import { effectHost, nameOf, isDownCreature, characterOf, monsterOf, sideOf, isUndead } from './creature.js';
+import { effectHost, nameOf, isDownCreature, characterOf, monsterOf, sideOf, isUndead, classAsOf } from './creature.js';
 import {
   attacksFor, endOfRound, onHitSpecials, sweepAttacks, isDown, tagValue, savingThrow,
 } from './combat.js';
-import { spellSlots } from './classes.js';
-import { useItem, canUseScroll, itemCasterLevel } from './magicItems.js';
+import { spellSlots, splitClasses } from './classes.js';
+import { useItem, canUseScroll, itemCasterLevel, itemSaveKey, nextBead } from './magicItems.js';
+import { itemRulesOf } from './items.js';
+import { breathOf, breathsLeft, breathWeapon, throwsRocks, throwRocks, ROCK_THROW, fearAura } from './specials.js';
 import { ITEMS } from '../data/items.js';
 
 /**
@@ -132,13 +134,23 @@ const EFFECT_FLOAT = { asleep: 'asleep', held: 'held', nauseous: 'nauseous', cha
  * `effect` is 'asleep' | 'held' | 'nauseous' | 'charmed' | 'resist' for the
  * scene's floating text. Spell failure (low-WIS clerics) gives ok:false,
  * failed:true and a single text hit.
- * @param {{level?:number, fromItem?:boolean, school?:string}} [o]
+ * Item casts (`fromItem`) take the save category of the item battleItemUse()
+ * last resolved for this caster ('rsw' for wands/staves/rods) unless
+ * `o.saveKey` is passed. `o.cls` (alias `school`) is the memorized slot's class.
+ * @param {{level?:number, fromItem?:boolean, school?:string, cls?:string, saveKey?:string}} [o]
  */
 export function castInBattle(rng, spellId, caster, targets, o = {}) {
   // Conditions (silence, held...) and armour for arcane magic are always
   // checked; memory is the engine's business (it spends the slot itself).
+  let saveKey = o.saveKey;
+  const ch = characterOf(caster);
+  if (o.fromItem && ch) {
+    const p = PENDING_ITEM.get(ch);
+    if (p && p.spellId === spellId && saveKey === undefined) saveKey = p.saveKey;
+    PENDING_ITEM.delete(ch);
+  }
   const res = castSpell(rng, spellId, caster, targets, {
-    ignoreMemory: true, context: 'combat', level: o.level, fromItem: !!o.fromItem, school: o.school,
+    ignoreMemory: true, context: 'combat', level: o.level, fromItem: !!o.fromItem, cls: o.cls ?? o.school, saveKey,
   });
   const hits = [];
   if (!res.ok) {
@@ -306,14 +318,15 @@ export const MONSTER_PRIEST_SPELLS = Object.freeze({
   ],
 });
 
-/** A monster's spellcasting class and level from its `spells:clericN` / `spells:magicUserN` tag. */
+/**
+ * A monster's spellcasting class and level: creature.classAsOf — `classAs`,
+ * or a `spells:clericN` / `spells:magicUserN` tag (level max(N, HD)).
+ */
 export function monsterCasting(c) {
   const m = monsterOf(c);
-  const tag = (m?.special ?? []).find?.((t) => String(t).startsWith('spells:'));
-  if (!tag) return null;
-  const mm = /^spells:(cleric|magicUser|mu)(\d+)$/.exec(String(tag));
-  if (!mm) return null;
-  return { cls: mm[1] === 'mu' ? 'magicUser' : mm[1], level: Number(mm[2]) };
+  if (!m || !(m.special ?? []).some?.((t) => String(t).startsWith('spells:'))) return null;
+  const ca = classAsOf(m);
+  return ca && (ca.cls === 'cleric' || ca.cls === 'magicUser') ? ca : null;
 }
 
 /**
@@ -388,12 +401,18 @@ export function stenchAuras(rng, all, near) {
  */
 export function battleItemUse(ch, index) {
   const e = ch.inventory[index];
-  const def = e && ITEMS[e.id];
+  const def = e && itemRulesOf(e);
   if (!def) return { kind: null, reason: 'Nothing to use.' };
   if (def.type === 'potion') return { kind: 'potion' };
   if (def.type === 'wand' || def.type === 'staff' || def.type === 'rod') {
     if (!(e.charges > 0)) return { kind: null, reason: 'The wand is spent.' };
-    return { kind: 'spell', spellId: def.effect, level: itemCasterLevel(def, def.effect) };
+    if (def.classes && !splitClasses(ch.classSpec).some((c) => def.classes.includes(c))) return { kind: null, reason: 'Your class cannot use that.' };
+    return pendItem(ch, { kind: 'spell', spellId: def.effect, level: itemCasterLevel(def, def.effect), saveKey: itemSaveKey(def) });
+  }
+  if (def.effect === 'necklaceMissiles') {
+    const bead = nextBead(e);
+    if (!bead) return { kind: null, reason: 'The necklace is bare.' };
+    return pendItem(ch, { kind: 'spell', spellId: 'fireball', level: bead.hd });
   }
   if (def.type === 'scroll') {
     const spellId = e.spells?.[0] ?? def.effect;
@@ -403,9 +422,31 @@ export function battleItemUse(ch, index) {
       return { kind: null, reason: s?.schools.cleric !== undefined && s?.schools.magicUser === undefined ? 'Only a cleric can read that scroll.' : 'Only a magic-user can read that scroll.' };
     }
     if (SPELL_RULES[spellId]?.usable === 'camp') return { kind: null, reason: 'That cannot be used in combat.' };
-    return { kind: 'spell', spellId, level: itemCasterLevel(def, spellId) };
+    return pendItem(ch, { kind: 'spell', spellId, level: itemCasterLevel(def, spellId) });
   }
   return { kind: null, reason: 'That cannot be used in combat.' };
+}
+
+/**
+ * The item use battleItemUse() just resolved for a character, remembered so
+ * the cast that follows (engine.use → engine.cast → castInBattle with
+ * fromItem) gets the item's save category even if the engine does not pass
+ * `saveKey` itself. Not serialised (WeakMap).
+ */
+const PENDING_ITEM = new WeakMap();
+function pendItem(ch, use) {
+  PENDING_ITEM.set(ch, use);
+  return use;
+}
+
+/** True if the rules let this inventory entry be used in battle (potions, charged wands, scrolls, missile necklaces). */
+export function usableInBattle(ch, index) {
+  const e = ch.inventory[index];
+  const def = e && itemRulesOf(e);
+  if (!def) return false;
+  if (def.type === 'potion' || def.type === 'scroll') return true;
+  if (def.type === 'wand' || def.type === 'staff' || def.type === 'rod') return (e.charges ?? 0) > 0;
+  return def.effect === 'necklaceMissiles' && !!nextBead(e);
 }
 
 /**
@@ -451,4 +492,59 @@ export function endBattle(combatants) {
     delete c.stenchChecked;
   }
   return out;
+}
+
+// ------------------------------------------------- monster special actions
+
+/**
+ * Special *actions* a monster can take this turn instead of attacking, for
+ * the AI: dragon breath (`breath:<element>`, 3/day, damage = current hp),
+ * giant boulders (`throwRocks`, 2d8, 2-20 squares). Shapes/sizes are in the
+ * engine's vocabulary (a breath is aimed like a spell template).
+ * @returns {{id:'breath'|'rocks', shape:string, size:number, range:number, minRange?:number, element?:string, uses?:number}[]}
+ */
+export function monsterSpecialActions(c) {
+  const out = [];
+  if (!monsterOf(c) || isDownCreature(c)) return out;
+  const b = breathOf(c);
+  if (b && breathsLeft(c) > 0) out.push({ id: 'breath', shape: b.shape, size: b.size, range: b.shape === 'line' ? b.size : 1, element: b.element, uses: breathsLeft(c) });
+  if (throwsRocks(c)) out.push({ id: 'rocks', shape: 'single', size: 1, range: ROCK_THROW.range, minRange: ROCK_THROW.minRange });
+  return out;
+}
+
+/**
+ * A breath weapon in battle: rules breathWeapon over the creatures the
+ * engine's template caught. Returns `{ok, ...result, events}` with one
+ * `breath` event (`hits` like castInBattle's: {id, dmg, saved, killed, text})
+ * the scene can present like a spell.
+ */
+export function breathInBattle(rng, c, targets) {
+  const r = breathWeapon(rng, c, targets);
+  if (!r.ok) return { ...r, events: [{ type: 'log', text: `${nameOf(c)} cannot breathe now.`, kind: 'warn' }] };
+  const hits = r.results.map((x) => ({ id: x.target.id, dmg: x.damage, saved: x.saved, killed: x.down, text: `${x.name} ${x.saved ? 'dodges partly and ' : ''}takes ${x.damage}.` }));
+  return { ...r, events: [{ type: 'breath', id: c.id, element: r.element, damage: r.damage, hits, text: r.log[0] }] };
+}
+
+/** A thrown boulder in battle → an `attack` event (ranged, `rock: true`) like hammerTurn's. */
+export function rockInBattle(rng, c, target, distance) {
+  const r = throwRocks(rng, c, target, { distance });
+  if (!r.ok) return { ...r, events: [{ type: 'log', text: `${nameOf(c)}: ${r.reason}.`, kind: 'warn' }] };
+  return { ...r, events: [{ type: 'attack', id: c.id, target: target.id, hit: r.hit, dmg: r.damage, roll: r.roll, needed: r.needed, killed: r.down, ranged: true, rock: true, text: r.text }] };
+}
+
+/**
+ * Fear auras at the start of a round: every creature tagged `fear` that is
+ * up forces a once-per-battle check on its foes in sight (`seen(src, v)`,
+ * default: all). Returns effect events (kind 'Afraid' / 'Resists').
+ */
+export function fearInBattle(rng, all, seen = () => true) {
+  const ev = [];
+  for (const src of all.filter((c) => !isDown(c) && !c.fled && tagValue(c, 'fear') !== null)) {
+    const foes = all.filter((v) => v !== src && !isDown(v) && !v.fled && sideOf(v) !== sideOf(src) && seen(src, v));
+    for (const r of fearAura(rng, src, foes)) {
+      if (r.immune) continue;
+      ev.push({ type: 'effect', id: r.target.id, kind: r.afraid ? 'Afraid' : 'Resists', special: 'fear', saved: !r.afraid, text: r.text });
+    }
+  }
+  return ev;
 }

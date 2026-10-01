@@ -2,14 +2,14 @@ import { roll } from './dice.js';
 import { deriveStats, applyDamage, isConscious, bleed, drainLevel, effectiveAbilities } from './character.js';
 import { trimMemorized } from './camp.js';
 import { dexterityMods, strengthTable } from './abilities.js';
-import { monsterSaves, turnNeeded, fighterAttacksPerRound, attacksThisRound } from './classes.js';
+import { turnNeeded, fighterAttacksPerRound, attacksThisRound } from './classes.js';
 import { MONSTERS } from '../data/monsters.js';
 import {
   effectMods, isIncapacitated, isHelpless, onDamaged, onAttacked, addEffect, hasEffect, getEffect,
-  clearCombatEffects,
+  clearCombatEffects, tickPoison, tickEffects,
 } from './conditions.js';
 import { neededToHit } from './tohit.js';
-import { isEvil, isGood, effectHost, characterOf, racialCombatMods, belowOneHd, monsterOf } from './creature.js';
+import { isEvil, isGood, effectHost, characterOf, racialCombatMods, belowOneHd, monsterOf, monsterBaseSaves, monsterBaseThac0 } from './creature.js';
 import { rateOfFire } from './items.js';
 import { rollSave } from './saves.js';
 
@@ -83,7 +83,7 @@ export function combatantFromCharacter(ch) {
     xp: 0,
     ref: ch,
     snap: {
-      ac: s.ac, acMissile: s.acMissile, fxHit: s.mods.hit, fxDmg: s.mods.dmg,
+      ac: s.ac, acMissile: s.acMissile, fxHit: s.mods.hit, fxDmg: s.mods.dmg, thac0: s.thac0,
       strHit: strengthTable(s.abilities.str, s.abilities.strPct).hit, strDmg: strengthTable(s.abilities.str, s.abilities.strPct).dmg,
     },
   };
@@ -99,7 +99,7 @@ export function combatantFromMonster(rng, monsterId, index = 0) {
     id: `m${++_mId}_${monsterId}`,
     side: 'monster',
     name: index ? `${m.name} ${index}` : m.name,
-    thac0: m.thac0,
+    thac0: monsterBaseThac0(m),
     ac: m.ac,
     hitBonus: 0,
     dmgBonus: 0,
@@ -110,7 +110,7 @@ export function combatantFromMonster(rng, monsterId, index = 0) {
     hp: { cur: Math.max(1, hp), max: Math.max(1, hp) },
     move: Math.round(m.move / 2) + 1,
     initMod: 0,
-    saves: monsterSaves(m.hd, m.hpBonus ?? 0),
+    saves: monsterBaseSaves(m),
     status: 'ok',
     conditions: [],
     effects: [],
@@ -173,6 +173,8 @@ export function liveMods(attacker, defender, { ranged = false } = {}) {
     const s = deriveStats(characterOf(attacker));
     const st = strengthTable(s.abilities.str, s.abilities.strPct);
     out.hit += s.mods.hit - attacker.snap.fxHit + (ranged ? 0 : st.hit - attacker.snap.strHit);
+    // Temporary fighter levels (heroism) improve THAC0 after the snapshot.
+    if (attacker.snap.thac0 !== undefined) out.hit += attacker.snap.thac0 - s.thac0;
     out.dmg += s.mods.dmg - attacker.snap.fxDmg + (ranged ? 0 : st.dmg - attacker.snap.strDmg);
   } else if (!characterOf(attacker)) {
     const fx = effectMods(aHost);
@@ -575,24 +577,12 @@ export function endOfRound(c) {
     out.bled = bleed(ch);
     if (out.bled && ch.status === 'dead') out.died = true;
   }
-  const p = getEffect(host, 'poisoned');
-  if (p && !hasEffect(host, 'slowPoison')) {
-    p.data = { ...(p.data ?? {}), onset: (p.data?.onset ?? 10) - 1 };
-    if (p.data.onset <= 0) {
-      if (ch) { ch.status = 'dead'; ch.hp.cur = Math.min(ch.hp.cur, -10); } else { c.hp.cur = 0; c.status = 'dead'; }
-      out.died = out.poisonDeath = true;
-    }
+  const p = tickPoison(host, 1);
+  if (p.lethal) {
+    if (ch) { ch.status = 'dead'; ch.hp.cur = Math.min(ch.hp.cur, -10); } else { c.hp.cur = 0; c.status = 'dead'; }
+    out.died = out.poisonDeath = true;
   }
-  for (const e of [...(host.effects ?? [])]) {
-    if (e.rounds === Infinity) continue;
-    e.rounds -= 1;
-    if (e.rounds <= 0) {
-      host.effects.splice(host.effects.indexOf(e), 1);
-      const i = host.conditions?.indexOf(e.id) ?? -1;
-      if (i >= 0) host.conditions.splice(i, 1);
-      out.expired.push(e.id);
-    }
-  }
+  out.expired.push(...tickEffects(host, 1));
   return out;
 }
 

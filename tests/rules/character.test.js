@@ -204,8 +204,8 @@ describe('equipment', () => {
     const s = deriveStats(ch);
     expect(s.hitBonus).toBe(1);
     expect(s.dmgBonus).toBe(1);
-    expect(s.ac).toBe(3); // 5 -1 magic -1 ring
-    expect(s.saves.sp).toBe(16);
+    expect(s.ac).toBe(4); // 5 -1 magic; DMG: the ring's AC does not add to magic armour...
+    expect(s.saves.sp).toBe(16); // ...but its save bonus does
     const e = addItem(ch, 'longSword', { magic: 3 });
     ch.inventory.forEach((x) => { if (x.id === 'longSwordPlus1') x.equipped = false; });
     equipItem(ch, ch.inventory.indexOf(e));

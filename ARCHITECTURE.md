@@ -109,7 +109,11 @@ Durations are combat rounds (1 round = 1 minute; 1 turn = 10 rounds). Ranges/are
 
 **Creation & sheet**
 * `rollLegalAbilities(rng, race, classSpec, method?, gender?)`, `applyRace`, `validateConcept({race, classSpec, alignment, abilities, gender})`
-* `createCharacter({rng, name, race, classSpec, abilities?, gender?, alignment?, items?, level?, spellbook?})`
+* `createCharacter({rng, name, race, classSpec, abilities?, gender?, alignment?, items?, level?, spellbook?, ignoreLimits?})` — `level`
+  stops at the racial level limit unless `ignoreLimits`.
+* Class ability minimums are the **Gold Box subset** PoR enforces (fighter STR 9 / CON 7, cleric WIS 9, magic-user INT 9 /
+  DEX 6, thief DEX 9), not the full PHB rows (fighter WIS 6, cleric STR/INT/CON/CHA 6...). Fighter THAC0 follows the 1e
+  DMG matrix (2 points per 2 levels: 20 at 1-2, 18 at 3-4...), not the Gold Box's later 21−level shortcut.
 * `deriveStats(ch)` → `{thac0, ac, acRear, acMissile, saves, hitBonus, dmgBonus, weapon, weaponMagic, ranged, damage, attacks,
   move, baseMove, weight, encumbrance, spellSlots, canCastArcane, thief, backstab, abilities (effective), mods (effects), ...}`
 * Tables for tooltips: `abilitySummary(abilities)`, `strengthTable`, `intelligenceTable`, `constitutionTable`, `charismaTable`,
@@ -123,33 +127,58 @@ Durations are combat rounds (1 round = 1 minute; 1 turn = 10 rounds). Ranges/are
 can make "Long Sword +2" from `longSword`. Optional ItemDef fields the rules understand: `magic`, `magicVs`, `acBase`
 (bracers), `acBonus`, `saveBonus`, `setStr` (gauntlets of ogre power), `rateOfFire`, `cursed`, `classes`, `slot`,
 `casterLevel`; potion `effect` strings `heal:<dice>`, `giantStrength:<str>`, `speed`, `neutralize`, or a spell id.
+`ITEM_RULES` / `itemRulesOf(id)` layer DMG facts over the data (Wand of Paralyzation → its own cone, any creature, save vs
+wand; Gauntlets of Ogre Power C/F/T; Giant Strength and Heroism fighter-only; Necklace of Missiles beads 5/3/3 HD).
+Heroism (`heroismLevels`: +4/+3/+2/+1 levels at 0/1-3/4-6/7-9) grants fighter levels for THAC0, saves and attack rate plus
+that many d10 temporary hp. **Protection stacking (DMG)**: a ring of protection's AC does not add to magic armour (its save
+bonus does) and rings don't stack; a cloak of protection gives nothing over magic armour or non-leather armour; bracers
+are armour + shield (a shield adds only its enchantment) — plate +1, shield +1, ring +3, cloak +2 is AC 0.
 
 **Experience & training**: `awardXp(ch, xp)` (splits multiclass, +10% prime requisite, banks at most one point short
 of the level after next — Gold Box training rule), `trainableClasses(ch)`, `trainingCost(ch)` (PoR: 1,000 gp),
 `trainLevels(ch, rng)` (one level per visit, capped by race and PoR caps), `maxLevel(ch, cls)`,
-`dualClassProblem(ch, cls)` / `dualClass(ch, cls)` (humans). **Consumer obligation**: when `trainLevels` raised
+`dualClassProblem(ch, cls)` / `dualClass(ch, cls)` / `dualClassChoices(ch)` → `[{cls, ok, reason}]` (humans; PoR lets them
+change class at the Training Hall — **shop owner**: list `dualClassChoices` there, charge the training fee, call `dualClass`). **Consumer obligation**: when `trainLevels` raised
 `'magicUser'`, offer `trainingSpellChoices(ch)` (camp.js; PoR: one new spell per level trained) and `learnSpell` the
 pick — ShopScene does. `drainLevel(ch, n)` (energy drain: highest class loses a level, its hit die, XP to the new
 level's midpoint; drained below 1st = dead) + `trimMemorized(ch)` (camp.js). Multiclass CON bonus: the fighter's
-+3/+4 applies to every class's die before dividing (Gold Box ruling).
++3/+4 applies to every class's die before dividing while fighter is one of the classes (Gold Box ruling); a dual-classed
+human's dice each use their own class's bonus (an MU turned fighter gains nothing retroactively). `tempHpOf(ch)` —
+temporary hit points (heroism) are part of `hp.max` while they last and leave with the effect.
 
 **Health**: `applyDamage` (0 unconscious, −1…−9 dying, ≤ −10 dead; wakes sleepers), `bleed(ch)` (1 hp/round),
 `bandage(ch)`, `heal` (DMG ruling: any healing stops a dying character's bleeding, even if still below 0), `raiseDead(rng, ch)` (resurrection survival, −1 CON; refuses elves per the PHB), `stoneToFlesh`,
 `isConscious`, `isAlive`.
 
 **Conditions**: `addEffect(target, id, {rounds, source, level, mods, data})`, `removeEffect`, `hasEffect`, `getEffect`,
-`effectMods(target)`, `tickEffects(target, rounds)`, `isIncapacitated`, `isHelpless`, `conditionsAllowCasting`,
-`clearCombatEffects`. Effects live in `target.effects`; `target.conditions` mirrors their ids as strings.
+`effectMods(target)`, `tickEffects(target, rounds)`, `tickPoison(target, minutes)` (the one poison model: onset in
+rounds = minutes counts down in combat, exploration and rest alike, except the minutes Slow Poison covers),
+`isIncapacitated`, `isHelpless`, `conditionsAllowCasting`, `clearCombatEffects`. Conditions include `afraid` (fear aura:
+flees, −2 to hit if cornered) and the `fighterLevels` mod (heroism). Effects live in `target.effects`; `target.conditions` mirrors their ids as strings.
 Party combatants share `hp`, `conditions` and `effects` with their Character.
 
-**Spells** (`SPELL_RULES`, 54 spells incl. temple-only cures/raise dead)
+**Time** (camp.js): `passTime(party, minutes)` — exploration/travel/dialogue time: timed effects run down (Strength 1 h/level,
+Bless, Detect Magic, Find Traps, Prot. from Evil... expire while walking), poison onset counts down, the dying are bound;
+no healing or memorization (that is `rest`). `syncPartyTime(party, game.minutes)` — idempotent: brings every member up to
+the game clock via a per-character `timeMark`; `rest`/`passTime` advance the marks so a camp that rests and then calls
+`game.advanceTime` never ticks twice. **Consumer obligation**: after every `GameState.advanceTime` (ExploreScene steps and
+searches, dialogue, shops, travel) call `syncPartyTime(game.party, game.minutes)` — e.g. once from a `time:changed` bus
+listener in main.js.
+
+**Spells** (`SPELL_RULES`, 54 PoR spells incl. temple-only cures/raise dead, plus item-only `wandParalyzation`)
 * `spellsForClass(cls, level)`, `getSpell(id)` (rules + data display merged: `name, desc, tip, schools, usable, ...`),
   `spellLevel(id, cls)`, `spellTargeting(id, casterLevel, cls)` → `{target, range, shape, size, maxTargets, hostile, duration}`.
-* `castProblem(caster, id, {context, ignoreMemory})` → reason or null (memorized, silence/held, armour for arcane — elfin
+* `castingClass(caster, id, cls?)` — multiclass casters keep separate memories: the class comes from the memorized slot
+  (`cls`, else the first class in `spells.memorized` order holding the spell, else the first active class). A half-elf C/MU
+  with Hold Person memorized only as MU casts the MU version (range 12, 4 persons, −3 alone, 2 rounds/level, 3 segments).
+  `consumeMemorized(ch, id, cls?)` / `isMemorized(ch, id, cls?)` act on that class. `castTime` is per class where the PHB
+  differs (MU Hold Person / Dispel Magic 3 segments, cleric 5 / 6). MU Hold Person lasts 2 rounds/level (PHB p. 79; OSRIC
+  agrees).
+* `castProblem(caster, id, {context, ignoreMemory, cls})` → reason or null (memorized, silence/held, armour for arcane — elfin
   chain only for elves/half-elves — camp/combat usability).
-* `castSpell(rng, id, caster, targets, {consume, ignoreMemory, check, context, level, fromItem, noFailure})` → `{ok, reason,
+* `castSpell(rng, id, caster, targets, {consume, ignoreMemory, check, context, level, cls, fromItem, saveKey, noFailure})` → `{ok, reason,
   failed, level, results:[{target, affected, saved, save, resisted, immune, missed, damage, healed, applied, removed, down,
-  charmed}], flags, log}`. Memory is always checked unless `ignoreMemory: true` (or `check: false`) is passed explicitly.
+  charmed}], flags, log}`. `saveKey` overrides the save category (wands/staves/rods pass `'rsw'`, DMG). Memory is always checked unless `ignoreMemory: true` (or `check: false`) is passed explicitly.
   Clerics roll the PHB low-WIS spell failure (WIS 9: 20%…12: 5%; the slot is spent; items never fail; `noFailure` for
   scripted casts). The caller picks targets from the template (primary/nearest first); the engine filters by `affects`,
   applies `maxTargets`, saves (WIS vs mind magic, DEX vs fireball/lightning, hold person: cleric −2 alone / MU −3 alone,
@@ -185,11 +214,26 @@ monsters, whose count is routines × attacks in the routine), `sweepAttacks(ch, 
 `endOfRound(c)` (bleeding, poison onset, effect expiry), `endCombat(party)`, `rollSurprise`, `moraleCheck`,
 `xpForVictory`, `autoResolve`. Rear/backstab: pass `{rear, backstab}` flags (never fold them into `mods`);
 `situationalHit` gives rear +2, backstab +4 *instead*, and `hitChance` takes the same flags so the preview equals the roll.
+Persons (Charm/Hold Person): `monsterIsPerson(m)` — an explicit `person: true|false` wins; class-based NPCs are persons;
+otherwise `familyOf(m)` must be in `PERSON_FAMILIES` (human, the demi-humans, kobold, goblin, hobgoblin, orc, gnoll, lizard
+man, troglodyte and the PHB's sprites; human bands like `bandit*`, `buccaneer*`, `*Priest` are family `human`). No id list.
+Class-based NPCs: `classAsOf(m)` (`classAs`/`saveAs` 'cleric5' or `{cls, level}`, else a `spells:clericN` tag → cleric of
+level max(N, HD)); `monsterBaseSaves(m)` / `monsterBaseThac0(m)` use that class table (Priest of Bane = cleric 5: ppdm 9,
+bw 15), else fighter-by-HD saves / the DMG monster matrix. Backstab multiplies the whole blow (weapon die + STR + magic) —
+a deliberate Gold Box-style reading; the PHB is ambiguous.
 Monster tags enforced: `magicToHit:N` / `silverToHit` (`weaponImmunity(att, def)`; combatants carry `weaponMagic`,
 `weaponSilver`, `weaponEdged`; monsters strike as +1 at 4+1 HD … +4 at 10+4, `monsterHitPower`), `halfEdged`
 (skeletons: half damage from edged/piercing, `BLUNT_GROUPS`), `slow` (zombies act last in `rollInitiative`),
 `drainLevel[:N]` (wight 1, spectre 2 — `DRAIN_LEVELS`), `drainStr` (shadow: −1 STR per hit for 2d4 turns, death at 0),
-`stench` (battle.js `stenchAuras`), `magicResist:N`, `spells:clericN` (see below).
+`stench` (battle.js `stenchAuras`), `magicResist:N`, `spells:clericN` (see below). Every tag is registered in
+`SPECIAL_HANDLERS` (specials.js; a test fails if a monster carries an unregistered tag).
+
+**Monster special actions** (specials.js): `breathWeapon(rng, attacker, targets, {element?, damage?})` (DMG dragon breath:
+damage = current hp, save vs Breath for half, element resistance and element save bonuses apply, 3 uses — `breathOf`,
+`breathsLeft`, `BREATH_WEAPONS`: Tyranthraxus's `breath:lightning` is a 10-square line), `throwRocks(rng, giant, target,
+{distance})` (hill giant: missile attack, 2d8, 2-20 squares, dwarves/gnomes −4 to be hit, Prot. Normal Missiles does not
+stop boulders), `fearAura(rng, src, targets)` (`fear`: < 1 HD flee, ≤ 3 HD/levels save vs paralyzation or `afraid` 4d6
+rounds, once per battle), `regenerationOf(c)` (`regenerate:N` from the 3rd round after being hurt).
 
 **Battle bridge** (battle.js — what the tactical CombatEngine calls): `fxView(c)` makes `c.fx` a live Proxy over the
 creature's rules effects (`fx.blessed` → rounds left, `fx.asleep = 5` adds the effect, `delete fx.held` removes it;
@@ -205,7 +249,14 @@ condition and end-of-round tick through these; it uses the `'slay'` helpless rul
 * `monsterSpells(c)` / `consumeMonsterSpell(c, id)` / `monsterCasting(c)` — `spells:clericN` makes an Nth-level cleric
   with that level's slots, filled once per battle (`MONSTER_PRIEST_SPELLS`, or the monster's `spellList`); the AI casts
   them through `engine.cast` like a PC.
-* `battleItemUse(ch, i)` (potion / spell at `itemCasterLevel`, scrolls gated by `canUseScroll`) and
+* Monster actions for the AI: `monsterSpecialActions(c)` → `[{id:'breath'|'rocks', shape, size, range, element?, uses?}]`,
+  `breathInBattle(rng, c, targetsInTemplate)` → one `breath` event with castInBattle-style `hits`, `rockInBattle(rng, c,
+  target, distance)` → an `attack` event (`rock: true`), `fearInBattle(rng, all, seen?)` → effect events (call at round
+  start). **Combat owner**: the engine/AI must offer these (they replace the old ad-hoc morale 'fear' for Tyranthraxus) and
+  may swap its own regeneration for `regenerationOf`.
+* `battleItemUse(ch, i)` → `{kind, spellId, level, saveKey}` (potion / spell at `itemCasterLevel`, scrolls gated by
+  `canUseScroll`, wands save vs `rsw` — remembered for the following `castInBattle`, but pass `saveKey` through when you can;
+  the Necklace of Missiles throws fireball beads — `usableInBattle(ch, i)` says which entries qualify) and
   `quaffInBattle(rng, c, i)` (rules `useItem`: giant strength sets STR, speed hastes and ages, heroism, invisibility,
   neutralize…).
 * `endBattle(partyCombatants)` — **consumer obligation** at the end of every battle (CombatScene.finish): strips held,

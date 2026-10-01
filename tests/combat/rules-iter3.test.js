@@ -168,7 +168,9 @@ describe('items in battle go through the rules', () => {
     expect(hasEffect(inv.c.ref, 'invisible')).toBe(true);
     const her = quaff('potionHeroism');
     expect(hasEffect(her.c.ref, 'heroism')).toBe(true);
-    expect(deriveStats(her.c.ref).mods.hit).toBeGreaterThanOrEqual(2);
+    // DMG: a 1st-level fighter fights as a 4th (+3 levels): THAC0 20 → 18, +3d10 temporary hp.
+    expect(deriveStats(her.c.ref).thac0).toBe(18);
+    expect(her.c.ref.hp.cur).toBeGreaterThan(her.hp + 2);
     const c = pc('human', 'fighter');
     addEffect(c.ref, 'poisoned', { rounds: Infinity, data: { onset: 5 } });
     c.ref.inventory.push({ id: 'potionNeutralizePoison', qty: 1, identified: true });
@@ -409,16 +411,20 @@ describe('monster special tags', () => {
 });
 
 describe('monster spellcasting', () => {
-  it("'spells:clericN' gives an Nth-level cleric's slots, spent per battle", () => {
+  it("'spells:clericN' makes a cleric of level max(N, HD), slots spent per battle", () => {
     const rng = new Rng(1);
     const acolyte = combatantFromMonster(rng, 'acolyte');
     expect(monsterSpells(acolyte)).toEqual([{ id: 'causeLightWounds', cls: 'cleric' }]);
-    const priest = combatantFromMonster(rng, 'banePriest');
+    const priest = combatantFromMonster(rng, 'banePriest'); // HD 5, 'spells:cleric3' → cleric 5: 3/3/1
     const ids = monsterSpells(priest).map((s) => s.id);
-    expect(ids.filter((id) => SPELL_RULES[id].schools.cleric === 1).length).toBe(2);
-    expect(ids).toContain('holdPerson');
+    expect(priest.casterLevel).toBe(5);
+    expect(ids.filter((id) => SPELL_RULES[id].schools.cleric === 1).length).toBe(3);
+    expect(ids.filter((id) => SPELL_RULES[id].schools.cleric === 2).length).toBe(3);
+    expect(ids.filter((id) => SPELL_RULES[id].schools.cleric === 3).length).toBe(1);
+    const holds = ids.filter((id) => id === 'holdPerson').length;
+    expect(holds).toBeGreaterThan(0);
     expect(consumeMonsterSpell(priest, 'holdPerson')).toBe(true);
-    expect(monsterSpells(priest).map((s) => s.id)).not.toContain('holdPerson');
+    expect(monsterSpells(priest).filter((s) => s.id === 'holdPerson').length).toBe(holds - 1);
   });
 
   it('a priest of Bane casts Hold Person at the party through the engine and the AI', () => {
@@ -430,10 +436,11 @@ describe('monster spellcasting', () => {
     const plan = decide(engine, priest);
     expect(plan.kind).toBe('cast');
     expect(plan.spell).toBe('holdPerson');
+    const holds = engine.spellsOf(priest).filter((s) => s.id === 'holdPerson').length;
     const ev = engine.cast(priest, plan.spell, plan.at);
     expect(ev[0].type).toBe('cast');
-    expect(engine.spellsOf(priest).map((s) => s.id)).not.toContain('holdPerson');
-    expect(priest.casterLevel).toBe(3);
+    expect(engine.spellsOf(priest).filter((s) => s.id === 'holdPerson').length).toBe(holds - 1);
+    expect(priest.casterLevel).toBe(5);
   });
 
   it('a silenced priest cannot cast', () => {

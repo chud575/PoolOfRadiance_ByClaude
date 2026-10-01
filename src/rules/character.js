@@ -12,7 +12,7 @@ import {
 } from './classes.js';
 import { ITEMS } from '../data/items.js';
 import {
-  itemMagic, itemWeight, coinWeight, encumbranceCategory, armorMoveLimit, rateOfFire, makeEntry,
+  itemMagic, itemWeight, coinWeight, encumbranceCategory, armorMoveLimit, rateOfFire, makeEntry, itemRulesOf,
 } from './items.js';
 import { effectMods, onDamaged, addEffect, removeEffect, hasEffect } from './conditions.js';
 
@@ -165,7 +165,9 @@ export function startingAge(rng, raceId, classSpec) {
  * @param {string} [opts.alignment]
  * @param {boolean} [opts.maxHpAtFirst]  QoL: max HP at level 1 (default true)
  * @param {string[]} [opts.items]        item ids to add (equipped when sensible)
- * @param {number} [opts.level]          start at this level in every class (debug/test parties)
+ * @param {number} [opts.level]          start at this level in every class (debug/test parties), capped by the
+ *                                       racial level limit unless `opts.ignoreLimits`
+ * @param {boolean} [opts.ignoreLimits]
  * @param {string[]} [opts.spellbook]    magic-user starting spells
  * @returns {Character}
  */
@@ -205,8 +207,11 @@ export function createCharacter(opts) {
     ch.hpRolls[c] = [opts.maxHpAtFirst === false ? rng.die(die) : die];
     if (c === 'cleric' || c === 'magicUser') ch.spells.memorized[c] = [];
   }
+  // Racial level limits apply to pre-built characters too (a half-elf cleric
+  // stops at 5th); `ignoreLimits: true` for test rigs that need more.
   for (let l = 2; l <= level; l++) {
     for (const c of classes) {
+      if (!opts.ignoreLimits && l > racialLevelLimit(race, c, ch.abilities)) continue;
       ch.xp[c] = Math.max(ch.xp[c], xpForLevel(c, l));
       advanceClassLevel(ch, c, rng);
     }
@@ -230,27 +235,36 @@ export function advanceClassLevel(ch, classId, rng) {
 
 /**
  * Max HP: per class sum(rolls) + con bonus per HD level (up to hdCap), divided
- * by number of classes (multiclass rule). Minimum 1 per level. Dual-classed
- * humans keep their old class's hit points and gain the new class's only once
- * it exceeds the old level.
+ * by number of classes (multiclass rule). Minimum 1 per level. The fighter's
+ * CON bonus (+3 at 17, +4 at 18) applies to fighter dice; for a multiclass
+ * that includes fighter it applies to every class's dice before dividing
+ * (Gold Box ruling). Dual-classed humans keep their old class's hit points —
+ * each class's dice with that class's own CON bonus, so a magic-user turned
+ * fighter gains nothing retroactively — and gain the new class's only once it
+ * exceeds the old level. Temporary hit points (Potion of Heroism) are added.
  */
 export function computeMaxHp(ch) {
-  const classes = Object.keys(ch.hpRolls);
-  const isFighter = classes.includes('fighter');
   const con = ch.abilities.con;
-  const perClass = (c) => {
+  const perClass = (c, fighterBonus, from = 0) => {
     const cls = CLASSES[c];
-    return ch.hpRolls[c].reduce((t, r, i) => t + Math.max(1, r + (i < cls.hdCap ? conHpBonus(con, isFighter) : 0)), 0);
+    return (ch.hpRolls[c] ?? []).slice(from).reduce((t, r, i) => t + Math.max(1, r + (from + i < cls.hdCap ? conHpBonus(con, fighterBonus) : 0)), 0);
   };
+  const temp = tempHpOf(ch);
   if (ch.dual) {
     const now = splitClasses(ch.classSpec)[0];
-    const oldHp = perClass(ch.dual.from);
-    const rolls = ch.hpRolls[now] ?? [];
-    const extra = rolls.slice(ch.dual.level).reduce((t, r, i) => t + Math.max(1, r + (ch.dual.level + i < CLASSES[now].hdCap ? conHpBonus(con, isFighter) : 0)), 0);
-    return Math.max(1, oldHp + extra);
+    const oldHp = perClass(ch.dual.from, ch.dual.from === 'fighter');
+    const extra = perClass(now, now === 'fighter', ch.dual.level);
+    return Math.max(1, oldHp + extra) + temp;
   }
-  const total = classes.reduce((t, c) => t + perClass(c), 0);
-  return Math.max(1, Math.floor(total / classes.length));
+  const classes = Object.keys(ch.hpRolls);
+  const isFighter = classes.includes('fighter');
+  const total = classes.reduce((t, c) => t + perClass(c, isFighter), 0);
+  return Math.max(1, Math.floor(total / classes.length)) + temp;
+}
+
+/** Temporary hit points from effects (Potion of Heroism dice), counted in hp.max while they last. */
+export function tempHpOf(ch) {
+  return (ch.effects ?? []).reduce((t, e) => t + (e.data?.tempHp ?? 0), 0);
 }
 
 /** Update max hp after a CON change or level-up, adjusting current hp by the difference. */
@@ -309,7 +323,7 @@ function slotOccupied(ch, def) {
  * @returns {string|null}
  */
 export function equipProblem(ch, itemId) {
-  const def = ITEMS[itemId];
+  const def = itemRulesOf(itemId);
   if (!def) return 'unknown item';
   const classes = splitClasses(ch.classSpec);
   if (def.classes && !classes.some((c) => def.classes.includes(c))) return 'class cannot use';
@@ -380,6 +394,10 @@ export function carriedWeight(ch) {
 
 // ------------------------------------------------------------ derived values
 
+/** Rings / cloaks subject to the DMG protection-stacking rules (see deriveStats). */
+export const PROTECTION_RING = /^ringProtection/;
+export const PROTECTION_CLOAK = /^cloakProtection/;
+
 /**
  * Current ability scores after magic: gauntlets of ogre power / girdles (setStr),
  * the Strength spell and potions (strBonus / strSet), Enlarge, Ray of
@@ -391,7 +409,7 @@ export function effectiveAbilities(ch) {
   const fighter = splitClasses(ch.classSpec).includes('fighter');
   if (fx.strBonus) Object.assign(a, addStrength(a.str, a.strPct, fx.strBonus, fighter));
   const sets = [];
-  for (const [e, d] of equipped(ch)) if (d.setStr) sets.push({ strPct: 0, ...d.setStr, _e: e });
+  for (const [e, d] of equipped(ch)) if (d.setStr && canEquip(ch, d.id)) sets.push({ strPct: 0, ...d.setStr, _e: e });
   if (fx.strSet) sets.push(fx.strSet);
   for (const s of sets) if (s.str * 1000 + (s.str === 18 ? s.strPct : 0) > a.str * 1000 + (a.str === 18 ? a.strPct : 0)) { a.str = s.str; a.strPct = s.str === 18 ? s.strPct : 0; }
   if (fx.strLossPct) {
@@ -454,7 +472,9 @@ export function deriveStats(ch) {
   const str = strengthTable(a.str, a.strPct);
   const dex = dexterityMods(a.dex);
   const fx = effectMods(ch);
-  const thac0 = Math.min(...classes.map((c) => thac0For(c, ch.levels[c] ?? 1)));
+  // Heroism: temporary fighter levels (fighters only) for THAC0, saves and attack rate.
+  const lvlOf = (c) => (ch.levels[c] ?? 1) + (c === 'fighter' ? fx.fighterLevels : 0);
+  const thac0 = Math.min(...classes.map((c) => thac0For(c, lvlOf(c))));
   const gear = equipped(ch);
 
   // ---- armour class
@@ -466,20 +486,43 @@ export function deriveStats(ch) {
   let saveBonus = 0;
   let weapon = null;
   let weaponEntry = null;
+  // DMG protection-item rules: a ring of protection's AC bonus does not add
+  // to magic armour (its save bonus still counts) and two rings do not stack;
+  // a cloak of protection does nothing at all over magic armour or any armour
+  // but leather; bracers of defense are armour + shield in one (they don't
+  // work under body armour, and a shield adds only its enchantment to them).
+  const bodyArmor = gear.find(([, d]) => d.type === 'armor');
+  const magicArmor = !!bodyArmor && itemMagic(bodyArmor[0]) > 0;
+  const bracers = !bodyArmor && gear.some(([, d]) => d.acBase !== undefined);
+  let ringAc = 0;
+  let ringSave = 0;
   for (const [e, d] of gear) {
     const m = itemMagic(e);
     if (d.type === 'armor') {
       armorDef = d;
       armorMagic = m;
       base = Math.min(base, d.ac - m);
-    } else if (d.acBase !== undefined) {
+    } else if (d.acBase !== undefined && !bodyArmor) {
       base = Math.min(base, d.acBase); // bracers of defense: do not stack with armour
     }
-    if (d.type === 'shield') shieldAc += (d.acBonus ?? 1) + m;
+    if (PROTECTION_RING.test(d.id ?? '')) {
+      // Rings of protection: the best one counts.
+      ringAc = Math.max(ringAc, magicArmor ? 0 : (d.acBonus ?? m));
+      ringSave = Math.max(ringSave, d.saveBonus ?? m);
+      continue;
+    }
+    if (PROTECTION_CLOAK.test(d.id ?? '')) {
+      const ok = !magicArmor && (!bodyArmor || bodyArmor[1].armorGroup === 'leather');
+      if (ok) { otherAc += d.acBonus ?? m; saveBonus += d.saveBonus ?? m; }
+      continue;
+    }
+    if (d.type === 'shield') shieldAc += bracers ? Math.max(0, m) : (d.acBonus ?? 1) + m;
     else if (d.type !== 'armor') otherAc += (d.acBonus ?? 0) + (d.type === 'helm' ? m : 0);
     if (d.type === 'weapon' && !weapon) { weapon = d; weaponEntry = e; }
     saveBonus += d.saveBonus ?? 0;
   }
+  otherAc += ringAc;
+  saveBonus += ringSave;
   const dexAc = hasEffect(ch, 'blinded') ? Math.max(0, dex.ac) : dex.ac; // blind: no dex bonus
   let ac = base - shieldAc - otherAc + dexAc + fx.ac;
   const acRear = base - otherAc + Math.max(0, dexAc) + fx.ac;
@@ -493,7 +536,7 @@ export function deriveStats(ch) {
   const magicBonus = racialSaveBonus(ch.race, ch.abilities.con);
   const poisonBonus = racialPoisonBonus(ch.race, ch.abilities.con);
   for (const k of SAVE_KEYS) {
-    saves[k] = Math.min(...classes.map((c) => savesFor(c, ch.levels[c] ?? 1)[k]));
+    saves[k] = Math.min(...classes.map((c) => savesFor(c, lvlOf(c))[k]));
     if (k === 'rsw' || k === 'sp') saves[k] -= magicBonus;
     if (k === 'ppdm') saves[k] -= poisonBonus;
     saves[k] -= saveBonus + fx.save + (fx.saveVs[k] ?? 0);
@@ -511,7 +554,7 @@ export function deriveStats(ch) {
   const dmgBonus = (ranged && !weapon.thrown ? 0 : str.dmg) + wMagic + fx.dmg;
 
   // ---- attacks per round
-  const fighterLvl = classes.includes('fighter') ? ch.levels.fighter ?? 0 : 0;
+  const fighterLvl = classes.includes('fighter') ? lvlOf('fighter') : 0;
   let attacks = ranged ? rateOfFire(weapon) : fighterLvl ? fighterAttacksPerRound(fighterLvl) : 1;
   attacks *= fx.attackMult;
 
@@ -705,6 +748,19 @@ export function dualClassProblem(ch, newClass) {
   if (!meetsClassMinimums(ch.abilities, newClass)) return 'ability minimums not met';
   if (!allowedAlignments(newClass).includes(ch.alignment)) return 'alignment not allowed';
   return null;
+}
+
+/**
+ * Classes a human may change to at the Training Hall right now (PoR lets
+ * humans switch class there; the hall charges its usual training fee):
+ * [{cls, ok, reason}] for every other base class, `ok` when dualClassProblem
+ * allows it — the shop lists them with the reason as the tooltip.
+ */
+export function dualClassChoices(ch) {
+  return Object.keys(CLASSES).filter((c) => !splitClasses(ch.classSpec).includes(c)).map((cls) => {
+    const reason = dualClassProblem(ch, cls);
+    return { cls, ok: !reason, reason };
+  });
 }
 
 /** Switch a human to a new class at level 1 (keeps old hp/levels in reserve). */

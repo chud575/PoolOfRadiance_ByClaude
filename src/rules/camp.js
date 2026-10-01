@@ -1,7 +1,7 @@
 import { deriveStats, activeClasses, isAlive, heal, bandage } from './character.js';
 import { intelligenceTable } from './abilities.js';
 import { spellsForClass, SPELL_RULES, spellLevel } from './spells.js';
-import { tickEffects, hasEffect, getEffect, CONDITIONS, conditionIds } from './conditions.js';
+import { tickEffects, tickPoison, CONDITIONS, conditionIds } from './conditions.js';
 import { maxSpellLevel } from './classes.js';
 
 /**
@@ -171,20 +171,13 @@ export function rest(party, minutes, o = {}) {
   for (const ch of party) {
     if (!isAlive(ch)) continue;
     if (ch.status === 'dying') bandage(ch);
-    // Poison works on while the party rests: its onset (rounds = minutes)
-    // counts down except while Slow Poison holds it at bay.
-    const venom = getEffect(ch, 'poisoned') ?? (hasEffect(ch, 'poisoned') ? { id: 'poisoned', data: {} } : null);
-    if (venom) {
-      const slow = getEffect(ch, 'slowPoison');
-      const slowed = slow ? Math.min(minutes, slow.rounds) : hasEffect(ch, 'slowPoison') ? minutes : 0;
-      const onset = (venom.data?.onset ?? 10) - (minutes - slowed);
-      venom.data = { ...(venom.data ?? {}), onset };
-      if (onset <= 0) {
-        ch.status = 'dead';
-        ch.hp.cur = Math.min(ch.hp.cur, -10);
-        report.died.push(ch.id);
-        continue;
-      }
+    // Poison works on while the party rests, exactly as in combat and on the
+    // road (conditions.tickPoison): onset counts down except under Slow Poison.
+    if (tickPoison(ch, minutes).lethal) {
+      ch.status = 'dead';
+      ch.hp.cur = Math.min(ch.hp.cur, -10);
+      report.died.push(ch.id);
+      continue;
     }
     // Effects run their course (rounds = minutes).
     const exp = tickEffects(ch, minutes);
@@ -204,6 +197,76 @@ export function rest(party, minutes, o = {}) {
     if (ch.status !== 'ok') continue;
     const learned = study(ch, minutes);
     if (learned.length) report.memorized[ch.id] = learned;
+  }
+  markTime(party, minutes);
+  return report;
+}
+
+/**
+ * Exploration / travel / dialogue time: `minutes` pass without rest. Timed
+ * effects run down (Bless, Strength 1 h/level, Detect Magic, Find Traps,
+ * Prot. from Evil... expire while walking — rounds = minutes) and poison
+ * onset counts down exactly as in combat and rest (Slow Poison holds it).
+ * Out of combat the party binds its dying (as rest() does — forgiving QoL:
+ * nobody bleeds out on the walk home). No natural healing, no memorization
+ * (that is rest()).
+ * @param {import('./character.js').Character[]} party
+ * @param {number} minutes
+ * @returns {{minutes:number, expired:Record<string,string[]>, died:string[], bandaged:string[]}}
+ */
+export function passTime(party, minutes) {
+  const report = { minutes, expired: {}, died: [], bandaged: [] };
+  if (!(minutes > 0)) return report;
+  for (const ch of party) {
+    if (!isAlive(ch)) continue;
+    if (tickPoison(ch, minutes).lethal) {
+      ch.status = 'dead';
+      ch.hp.cur = Math.min(ch.hp.cur, -10);
+      report.died.push(ch.id);
+      continue;
+    }
+    if (ch.status === 'dying' && bandage(ch)) report.bandaged.push(ch.id);
+    const exp = tickEffects(ch, minutes);
+    if (exp.length) report.expired[ch.id] = exp;
+  }
+  markTime(party, minutes);
+  return report;
+}
+
+/** Advance each member's `timeMark` (game minute their effects are current to) after rest/passTime. */
+function markTime(party, minutes) {
+  for (const ch of party) if (typeof ch.timeMark === 'number') ch.timeMark += minutes;
+}
+
+/**
+ * Idempotent clock sync — the one call a scene needs: bring every party
+ * member's effects up to the game clock (`game.minutes`). Each Character
+ * remembers `timeMark`, the minute it was last brought current; the gap is
+ * passed with passTime(). rest() and passTime() advance the marks
+ * themselves, so a camp that rests 8 h and then advances the game clock by
+ * 8 h does not tick twice. The first call only sets the mark.
+ * Consumers: call `syncPartyTime(game.party, game.minutes)` after every
+ * GameState.advanceTime (explore steps, searching, dialogue, shops, travel).
+ * @returns {ReturnType<typeof passTime>|null}
+ */
+export function syncPartyTime(party, now) {
+  const gaps = party.filter((ch) => typeof ch.timeMark === 'number').map((ch) => now - ch.timeMark);
+  for (const ch of party) if (typeof ch.timeMark !== 'number') ch.timeMark = now;
+  const gap = gaps.length ? Math.max(...gaps) : 0;
+  if (gap <= 0) {
+    for (const ch of party) ch.timeMark = Math.max(ch.timeMark, now);
+    return null;
+  }
+  // Members may lag by different amounts (joined later): tick each by its own gap.
+  const report = { minutes: gap, expired: {}, died: [], bandaged: [] };
+  for (const ch of party) {
+    const d = now - ch.timeMark;
+    if (d <= 0) continue;
+    const r = passTime([ch], d);
+    Object.assign(report.expired, r.expired);
+    report.died.push(...r.died);
+    report.bandaged.push(...r.bandaged);
+    ch.timeMark = now;
   }
   return report;
 }

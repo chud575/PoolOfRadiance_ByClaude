@@ -30,7 +30,8 @@ export const ROUNDS_PER_HOUR = 60;
  *  strSet {str,strPct}, strBonus, strLossPct, moveMult, attackMult,
  *  attackerHit (to-hit mod for creatures attacking this one), images,
  *  immune [..], resist {element: damage multiplier}, saveVsElement {element:n},
- *  vsEvil / vsGood {ac, save}, cha, missChance (% attacks miss outright), strDrain (STR points lost).
+ *  vsEvil / vsGood {ac, save}, cha, missChance (% attacks miss outright), strDrain (STR points lost),
+ *  fighterLevels (temporary fighter levels: heroism — THAC0, saves and attacks as a higher-level fighter).
  */
 export const CONDITIONS = {
   // ---------------------------------------------------------------- statuses
@@ -73,7 +74,8 @@ export const CONDITIONS = {
   enlarged: { name: 'Enlarged', kind: 'buff', magical: true, mods: { dmg: 2 }, desc: 'Grown huge: heavier blows.' },
   strength: { name: 'Strength', kind: 'buff', magical: true, desc: 'Magically increased strength.' },
   giantStrength: { name: 'Giant Strength', kind: 'buff', magical: true, desc: 'Strength of a giant.' },
-  heroism: { name: 'Heroism', kind: 'buff', magical: true, mods: { hit: 2, save: 1 }, desc: 'Fights as a more seasoned warrior.' },
+  heroism: { name: 'Heroism', kind: 'buff', magical: true, mods: { fighterLevels: 2 }, desc: 'Fights as a more seasoned warrior: extra fighter levels and hit dice.' },
+  afraid: { name: 'Afraid', kind: 'debuff', hostile: true, magical: true, mods: { hit: -2 }, flees: true, desc: 'Gripped by supernatural terror: flees, -2 to hit if cornered.' },
   invisible: { name: 'Invisible', kind: 'buff', magical: true, mods: { attackerHit: -4 }, breaksOnAttack: true, desc: 'Unseen: foes -4 to hit; ends on attacking.' },
   mirrorImage: { name: 'Mirror Image', kind: 'buff', magical: true, desc: 'Illusory doubles absorb attacks.' },
   blinking: { name: 'Blink', kind: 'buff', magical: true, mods: { attackerHit: -2, missChance: 50 }, desc: 'Flickers between planes; half of all attacks miss.' },
@@ -130,13 +132,23 @@ export function addEffect(target, id, o = {}) {
   return e;
 }
 
-/** Remove an effect (and its condition string). Returns true if present. */
+/**
+ * Remove an effect (and its condition string). Returns true if present.
+ * Temporary hit points the effect granted (`data.tempHp`, Potion of Heroism)
+ * leave with it: max hp drops back and current hp is capped, so damage taken
+ * meanwhile came off the temporary points first (DMG).
+ */
 export function removeEffect(target, id) {
   const list = store(target);
   const i = list.findIndex((x) => x.id === id);
   syncCondition(target, id, false);
   if (i < 0) return false;
-  list.splice(i, 1);
+  const [e] = list.splice(i, 1);
+  const temp = e.data?.tempHp ?? 0;
+  if (temp && target.hp) {
+    target.hp.max = Math.max(1, target.hp.max - temp);
+    target.hp.cur = Math.min(target.hp.cur, target.hp.max);
+  }
   return true;
 }
 
@@ -178,13 +190,13 @@ export function conditionsAllowCasting(target) {
  *   acVsMissile:number|null, acVsMelee:number|null, moveMult:number, attackMult:number,
  *   attackerHit:number, missChance:number, strBonus:number, strSet:{str:number,strPct:number}|null,
  *   strLossPct:number, strDrain:number, immune:Set<string>, resist:Record<string,number>, saveVsElement:Record<string,number>,
- *   vsEvil:{ac:number,save:number}, vsGood:{ac:number,save:number}, cha:number, images:number}}
+ *   vsEvil:{ac:number,save:number}, vsGood:{ac:number,save:number}, cha:number, images:number, fighterLevels:number}}
  */
 export function effectMods(target) {
   const out = {
     hit: 0, dmg: 0, ac: 0, save: 0, saveVs: {}, acVsMissile: null, acVsMelee: null, moveMult: 1, attackMult: 1,
     attackerHit: 0, missChance: 0, strBonus: 0, strSet: null, strLossPct: 0, strDrain: 0, immune: new Set(), resist: {},
-    saveVsElement: {}, vsEvil: { ac: 0, save: 0 }, vsGood: { ac: 0, save: 0 }, cha: 0, images: 0,
+    saveVsElement: {}, vsEvil: { ac: 0, save: 0 }, vsGood: { ac: 0, save: 0 }, cha: 0, images: 0, fighterLevels: 0,
   };
   const ids = new Set();
   const records = [...(target.effects ?? [])];
@@ -214,6 +226,7 @@ export function effectMods(target) {
     if (m.vsEvil) { out.vsEvil.ac = Math.min(out.vsEvil.ac, m.vsEvil.ac ?? 0); out.vsEvil.save = Math.max(out.vsEvil.save, m.vsEvil.save ?? 0); }
     if (m.vsGood) { out.vsGood.ac = Math.min(out.vsGood.ac, m.vsGood.ac ?? 0); out.vsGood.save = Math.max(out.vsGood.save, m.vsGood.save ?? 0); }
     out.cha += m.cha ?? 0;
+    out.fighterLevels = Math.max(out.fighterLevels, m.fighterLevels ?? 0);
     if (e.id === 'mirrorImage') out.images += e.data?.images ?? 0;
   }
   // Haste and slow cancel each other (1e).
@@ -237,6 +250,25 @@ export function tickEffects(target, rounds = 1) {
     }
   }
   return expired;
+}
+
+/**
+ * Poison onset (1e "deadly" poison): the `poisoned` effect carries
+ * `data.onset` in rounds (= minutes) left before the venom kills. Every mode
+ * counts it down the same way — combat (endOfRound, 1 per round), exploration
+ * (camp.passTime) and rest (camp.rest) — except while Slow Poison holds it
+ * (only the minutes Slow Poison does not cover count). Does not kill: returns
+ * {poisoned, onset, lethal} and the caller applies death to its creature kind.
+ * @returns {{poisoned:boolean, onset:number, lethal:boolean}}
+ */
+export function tickPoison(target, minutes = 1) {
+  const venom = getEffect(target, 'poisoned') ?? (target.conditions?.includes('poisoned') ? addEffect(target, 'poisoned', { data: { onset: 10 } }) : null);
+  if (!venom) return { poisoned: false, onset: Infinity, lethal: false };
+  const slow = getEffect(target, 'slowPoison');
+  const held = slow ? Math.min(minutes, slow.rounds) : target.conditions?.includes('slowPoison') ? minutes : 0;
+  const onset = (venom.data?.onset ?? 10) - Math.max(0, minutes - held);
+  venom.data = { ...(venom.data ?? {}), onset };
+  return { poisoned: true, onset, lethal: onset <= 0 };
 }
 
 /**

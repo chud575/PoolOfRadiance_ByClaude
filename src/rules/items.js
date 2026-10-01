@@ -32,6 +32,35 @@ export const ARMOR_MOVE = {
 export const RATE_OF_FIRE = { shortBow: 2, longBow: 2, compositeBow: 2, dart: 3, dagger: 2, lightCrossbow: 1, heavyCrossbow: 0.5, sling: 1, handAxe: 1, spear: 1 };
 
 /**
+ * DMG rules the world data does not (yet) state, merged over the ItemDef by
+ * itemRulesOf(). Overrides win: the Wand of Paralyzation releases its own
+ * cone (any creature, save vs wand) rather than Hold Person; Gauntlets of
+ * Ogre Power are usable by clerics, fighters and thieves only; potions of
+ * Giant Strength and Heroism are fighter-only (DMG 'F') — a non-fighter who
+ * drinks one gains nothing; the Necklace of Missiles carries fireball beads
+ * (DMG type I: one 5 HD and two 3 HD missiles).
+ */
+export const ITEM_RULES = Object.freeze({
+  wandParalyzation: { effect: 'wandParalyzation' },
+  gauntletsOgrePower: { classes: ['cleric', 'fighter', 'thief'] },
+  potionGiantStrength: { fighterOnly: true },
+  potionHeroism: { effect: 'heroism', fighterOnly: true },
+  necklaceMissiles: { effect: 'necklaceMissiles', beads: [5, 3, 3] },
+});
+
+/**
+ * The ItemDef with ITEM_RULES applied — what every rule that reads `classes`,
+ * `effect`, `fighterOnly` or `beads` should use.
+ * @param {string|{id:string}|object} idOrDef id, inventory entry or ItemDef
+ */
+export function itemRulesOf(idOrDef) {
+  const def = ITEMS[typeof idOrDef === 'string' ? idOrDef : idOrDef?.id] ?? (typeof idOrDef === 'object' && idOrDef?.type ? idOrDef : undefined);
+  if (!def) return undefined;
+  const o = ITEM_RULES[def.id];
+  return o ? { ...def, ...o } : def;
+}
+
+/**
  * @param {string|{id:string}} idOrEntry
  * @returns {import('../data/schema.js').ItemDef|undefined}
  */
@@ -151,6 +180,8 @@ export function makeEntry(itemId, o = {}) {
     if (o.identified === undefined && o.magic !== 0) entry.identified = false;
   }
   if (def.charges || o.charges) entry.charges = o.charges ?? def.charges;
+  const beads = ITEM_RULES[itemId]?.beads;
+  if (beads && entry.charges === undefined) entry.charges = beads.length;
   if (o.spells) entry.spells = [...o.spells];
   if (o.cursed) entry.cursed = true;
   return entry;

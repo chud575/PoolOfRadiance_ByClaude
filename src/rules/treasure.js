@@ -37,7 +37,7 @@ export const TREASURE_TYPES = {
   O: { cp: [25, '1d4x1000'], sp: [20, '1d3x1000'] },
   P: { sp: [30, '1d6x1000'], ep: [25, '1d2x1000'] },
   Q: { gems: [50, '1d4'] },
-  R: { gp: [40, '2d4x1000'], pp: [50, '10d6x10'], gems: [55, '4d8'], jewelry: [45, '1d12'] },
+  R: { gp: [40, '2d4x1000'], pp: [50, '10d6x100'], gems: [55, '4d8'], jewelry: [45, '1d12'] },
   S: { potions: [40, '2d4'] },
   T: { scrolls: [50, '1d4'] },
   U: { gems: [90, '10d8'], jewelry: [80, '5d6'], magic: [70, 1, 'any'] },
@@ -75,8 +75,8 @@ export function rollJewelry(rng) {
 
 // ------------------------------------------------------------- magic items
 
-/** Candidate ids per category; only ids that exist in data/items.js are used. */
-const MAGIC_TABLE = {
+/** Candidate ids per category — every id must exist in data/items.js (a test checks). */
+export const MAGIC_TABLE = {
   potions: [
     ['potionHealing', 30], ['potionExtraHealing', 10], ['potionGiantStrength', 8], ['potionSpeed', 8],
     ['potionInvisibility', 8], ['potionFireResistance', 6], ['potionNeutralizePoison', 5], ['potionHeroism', 5],
@@ -84,7 +84,7 @@ const MAGIC_TABLE = {
   scrolls: 'scroll',
   rings: [['ringProtection1', 50], ['ringProtection2', 20], ['ringProtection3', 5], ['ringFeatherFall', 10], ['ringInvisibility', 5], ['ringFireResistance', 10]],
   wands: [['wandMagicMissile', 50], ['wandParalyzation', 20], ['wandFire', 10], ['wandLightning', 10], ['wandSleep', 10]],
-  misc: [['bracersAC6', 20], ['bracersAC4', 10], ['cloakProtection1', 25], ['cloakProtection2', 10], ['gauntletsOgrePower', 15], ['cloakDisplacement', 10], ['dustDisappearance', 10], ['necklaceMissiles', 5], ['manualBodilyHealth', 3]],
+  misc: [['bracersAC6', 20], ['bracersAC4', 10], ['cloakProtection1', 25], ['cloakProtection2', 10], ['gauntletsOgrePower', 15], ['cloakDisplacement', 10], ['necklaceMissiles', 5]],
   // Enchanted versions of mundane weapons / armour (entry.magic).
   armor: [['chainMail', 30], ['leather', 15], ['bandedMail', 15], ['plateMail', 15], ['scaleMail', 10], ['shield', 30], ['ringMail', 5], ['studdedLeather', 5]],
   swords: [['longSword', 55], ['shortSword', 20], ['broadSword', 15], ['twoHandedSword', 10]],

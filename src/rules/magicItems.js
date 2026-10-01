@@ -4,19 +4,24 @@ import { splitClasses } from './classes.js';
 import { castSpell, SPELL_RULES } from './spells.js';
 import { learnSpell } from './camp.js';
 import { heal, removeItem } from './character.js';
-import { addEffect, removeEffect } from './conditions.js';
+import { addEffect, removeEffect, getEffect } from './conditions.js';
 import { characterOf, nameOf, healCreature, effectHost } from './creature.js';
-import { itemName, isMagical } from './items.js';
+import { itemName, isMagical, itemRulesOf } from './items.js';
 
 /**
  * Using magic items: potions, scrolls, wands, and identification.
  *
- * Effect strings (ItemDef.effect):
+ * Effect strings (ItemDef.effect, after ITEM_RULES overrides — itemRulesOf):
  *   'heal:<dice>'               restore hit points
  *   '<spellId>'                 cast that spell (wands, scrolls, many potions)
- *   'giantStrength:<str>'       set STR to a giant's (19-25) for 1 turn×... (potions)
+ *   'giantStrength:<str>'       set STR to a giant's (19-25) for 6 turns — fighters only (DMG 'F')
+ *   'heroism'                   temporary fighter levels + hit dice — fighters only (DMG 'F')
  *   'speed'                     haste (potion of speed)
  *   'neutralize'                cure poison
+ *   'necklaceMissiles'          throw the largest remaining fireball bead (entry.charges beads left)
+ * Wands, staves and rods release their spell with the save vs Rod/Staff/Wand
+ * ('rsw', DMG) and never fail; the Wand of Paralyzation is its own cone
+ * ('wandParalyzation': any creature, no WIS adjustment, no target-count penalty).
  * Scroll entries may carry `spells: string[]` (generated treasure); the def's
  * `effect` is used otherwise.
  */
@@ -36,8 +41,38 @@ export function itemCasterLevel(def, spellId) {
   return def.casterLevel ?? ITEM_CASTER_LEVEL;
 }
 
-/** Item ids whose world-data effect string is a stand-in for a real 1e potion. */
+/** Item ids whose world-data effect string is a stand-in for a real 1e potion (see items.ITEM_RULES). */
 export const POTION_EFFECTS = Object.freeze({ potionHeroism: 'heroism' });
+
+/** DMG save category for magic released by an item: wands, staves and rods → 'rsw'; others keep the spell's. */
+export function itemSaveKey(def) {
+  return def && (def.type === 'wand' || def.type === 'staff' || def.type === 'rod') ? 'rsw' : undefined;
+}
+
+/**
+ * Necklace of Missiles: the bead the wearer throws next (the largest left)
+ * as {hd} — a fireball of that many d6 — or null when spent. Beads live in
+ * ITEM_RULES (DMG type I: 5, 3, 3 HD); `entry.charges` counts those left.
+ */
+export function nextBead(entry) {
+  const def = itemRulesOf(entry);
+  const beads = [...(def?.beads ?? [])].sort((a, b) => b - a);
+  const left = entry?.charges ?? beads.length;
+  if (!(left > 0) || !beads.length) return null;
+  return { hd: beads[Math.max(0, beads.length - left)] };
+}
+
+/**
+ * DMG Potion of Heroism: temporary levels for a fighter of level 0 +4,
+ * 1st-3rd +3, 4th-6th +2, 7th-9th +1, 10th+ none.
+ */
+export function heroismLevels(fighterLevel) {
+  if (fighterLevel <= 0) return 4;
+  if (fighterLevel <= 3) return 3;
+  if (fighterLevel <= 6) return 2;
+  if (fighterLevel <= 9) return 1;
+  return 0;
+}
 
 /**
  * Who can read a scroll: magic-user scrolls need a magic-user (and read magic
@@ -64,7 +99,7 @@ export function canUseScroll(ch, spellId) {
  */
 export function useItem(rng, ch, index, targets, o = {}) {
   const entry = ch.inventory[index];
-  const def = entry && ITEMS[entry.id];
+  const def = entry && itemRulesOf(entry);
   const out = { ok: false, log: [], consumed: false };
   if (!def) return { ...out, reason: 'no such item' };
   const tgts = targets?.length ? targets : [ch];
@@ -73,10 +108,19 @@ export function useItem(rng, ch, index, targets, o = {}) {
   if (def.type === 'wand' || def.type === 'staff' || def.type === 'rod') {
     if (!(entry.charges > 0)) return { ...out, reason: 'no charges' };
     if (def.classes && !splitClasses(ch.classSpec).some((c) => def.classes.includes(c))) return { ...out, reason: 'class cannot use' };
-    const cast = castSpell(rng, def.effect, ch, tgts, { fromItem: true, level: itemCasterLevel(def, def.effect), check: false });
+    const cast = castSpell(rng, def.effect, ch, tgts, { fromItem: true, level: itemCasterLevel(def, def.effect), check: false, saveKey: itemSaveKey(def) });
     entry.charges--;
     entry.identified = true;
     return { ok: cast.ok, log: [`${ch.name} uses the ${name}.`, ...cast.log.slice(1)], cast, consumed: false };
+  }
+
+  if (def.effect === 'necklaceMissiles') {
+    const bead = nextBead(entry);
+    if (!bead) return { ...out, reason: 'no missiles left' };
+    const cast = castSpell(rng, 'fireball', ch, tgts, { fromItem: true, level: bead.hd, check: false });
+    entry.charges = (entry.charges ?? 1) - 1;
+    entry.identified = true;
+    return { ok: cast.ok, log: [`${ch.name} hurls a ${bead.hd}-die missile from the ${name}.`, ...cast.log.slice(1)], cast, consumed: false };
   }
 
   if (def.type === 'scroll') {
@@ -92,16 +136,28 @@ export function useItem(rng, ch, index, targets, o = {}) {
   if (def.type === 'potion') {
     const t = tgts[0];
     const log = [`${nameOf(t)} quaffs the ${name}.`];
-    applyPotion(rng, POTION_EFFECTS[def.id] ?? def.effect ?? '', t, log);
+    applyPotion(rng, POTION_EFFECTS[def.id] ?? def.effect ?? '', t, log, def);
     removeItem(ch, index, 1);
     return { ok: true, log, consumed: true };
   }
   return { ...out, reason: 'cannot be used' };
 }
 
-function applyPotion(rng, effect, t, log) {
+/** Fighter levels of a potion drinker (0 for non-fighters; monsters count by HD when they fight as fighters). */
+function fighterLevelOf(t) {
+  const ch = characterOf(t);
+  if (ch) return splitClasses(ch.classSpec).includes('fighter') ? ch.levels.fighter ?? 1 : null;
+  return null;
+}
+
+function applyPotion(rng, effect, t, log, def = {}) {
   const [kind, arg] = effect.split(':');
   const host = effectHost(t);
+  // DMG: Giant Strength and Heroism are fighter-only potions — anyone else gains nothing.
+  if ((def.fighterOnly || kind === 'giantStrength' || kind === 'heroism') && fighterLevelOf(t) === null) {
+    log.push(`${nameOf(t)} feels a warrior's fire flicker and fade. Only a fighter can use it.`);
+    return;
+  }
   if (kind === 'heal') {
     const n = healCreature(t, roll(rng, arg));
     log.push(`${nameOf(t)} is healed ${n} hit points.`);
@@ -117,13 +173,16 @@ function applyPotion(rng, effect, t, log) {
     if (ch) ch.age = (ch.age ?? 20) + 1;
     log.push(`${nameOf(t)} blurs with speed.`);
   } else if (kind === 'heroism') {
-    // DMG: fights as a fighter of higher level — +4 levels at 0, +2 at 1st-3rd,
-    // +1 at 4th-6th, none beyond; modelled as +1 to hit per level gained.
-    const ch = characterOf(t);
-    const lvl = ch ? (ch.levels.fighter ?? 0) : 1;
-    const gain = lvl === 0 ? 4 : lvl <= 3 ? 2 : lvl <= 6 ? 1 : 0;
-    if (gain) addEffect(host, 'heroism', { rounds: 60, source: 'potion', mods: { hit: gain, save: Math.ceil(gain / 2) } });
-    log.push(gain ? `${nameOf(t)} is filled with heroic fury.` : `${nameOf(t)} feels no braver than before.`);
+    // DMG: the fighter temporarily gains levels (heroismLevels) — THAC0, saves
+    // and attack rate as that higher level — and a d10 of temporary hit points
+    // per level gained, lost first and gone when the potion wears off.
+    const gain = heroismLevels(fighterLevelOf(t));
+    if (gain && !getEffect(host, 'heroism')) {
+      const tempHp = roll(rng, `${gain}d10`);
+      addEffect(host, 'heroism', { rounds: 60, source: 'potion', mods: { fighterLevels: gain }, data: { levels: gain, tempHp } });
+      if (t.hp) { t.hp.max += tempHp; t.hp.cur += tempHp; }
+      log.push(`${nameOf(t)} is filled with heroic fury (+${gain} levels, +${tempHp} hit points).`);
+    } else log.push(`${nameOf(t)} feels no braver than before.`);
   } else if (kind === 'neutralize') {
     removeEffect(host, 'poisoned');
     removeEffect(host, 'slowPoison');
