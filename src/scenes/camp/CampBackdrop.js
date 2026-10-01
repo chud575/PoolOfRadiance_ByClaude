@@ -5,6 +5,7 @@ import { getGlowTexture, getGrassTexture } from '../../render/textures/index.js'
 import { CLOTH_COLORS, defaultLook } from '../../ui/components/lookData.js';
 import { buildMiniature, miniatureEnvironment } from '../../ui/components/Miniature.js';
 import { isAlive } from '../../rules/character.js';
+import { buildBedroll } from './bedroll.js';
 import { groundTextures, barkTextures, emberTexture, coalTextures, smokeTexture, blobTexture } from './campTextures.js';
 
 /**
@@ -220,6 +221,10 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
   fireLight.shadow.normalBias = 0.03;
   fireLight.shadow.camera.near = 0.15;
   scene.add(fireLight);
+  // Moon rim on the sentry (resting only): from behind and above, so he stands out against the ruins.
+  const sentryRim = new THREE.SpotLight(0x9ab8ff, 0, 9, 0.38, 0.6, 1.2);
+  sentryRim.position.set(-2.8, 4.4, -7.8);
+  scene.add(sentryRim, sentryRim.target);
   const emberLight = new THREE.PointLight(0xff5a1a, 0, 2.2, 2);
   emberLight.position.set(0, 0.15, 0);
   scene.add(emberLight);
@@ -398,7 +403,7 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
     const skyline = new THREE.Mesh(sg, Mt(new THREE.MeshBasicMaterial({ color: night ? 0x111a30 : 0x6a7890, fog: true })));
     skyline.position.set(0, 0, -34);
     root.add(skyline);
-    if (night) {
+    if (night && false) {
       const winMat = Mt(new THREE.MeshBasicMaterial({ color: 0xffb060, fog: true }));
       const wg = G(new THREE.PlaneGeometry(0.35, 0.5));
       for (let i = 0; i < 18; i++) {
@@ -567,6 +572,104 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
     root.add(tent);
   }
 
+  // ---- camp life: an ash ring round the hearth, a pot on a tripod at its edge, weapons propped up.
+  {
+    // Ash and soot: a dark, uneven ring on the flags (radial-gradient canvas decal).
+    const c = document.createElement('canvas');
+    c.width = c.height = 256;
+    const g = c.getContext('2d');
+    const grd = g.createRadialGradient(128, 128, 30, 128, 128, 128);
+    grd.addColorStop(0, 'rgba(0,0,0,0)');
+    grd.addColorStop(0.32, 'rgba(18,14,12,0.9)');
+    grd.addColorStop(0.55, 'rgba(40,34,30,0.75)');
+    grd.addColorStop(0.8, 'rgba(60,54,50,0.25)');
+    grd.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, 256, 256);
+    // Ash flecks.
+    for (let i = 0; i < 900; i++) {
+      const a = hrand(i, 141) * Math.PI * 2;
+      const r = 40 + hrand(i, 142) ** 0.7 * 80;
+      g.fillStyle = `rgba(${150 + hrand(i, 143) * 60},${145 + hrand(i, 143) * 55},${140 + hrand(i, 143) * 50},${0.08 + hrand(i, 144) * 0.2})`;
+      g.fillRect(128 + Math.cos(a) * r, 128 + Math.sin(a) * r, 1 + hrand(i, 145) * 2, 1 + hrand(i, 146) * 2);
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    texs.push(tex);
+    const ash = new THREE.Mesh(G(new THREE.PlaneGeometry(2.3, 2.3)), Mt(new THREE.MeshStandardMaterial({ map: tex, transparent: true, depthWrite: false, roughness: 1 })));
+    ash.rotation.x = -Math.PI / 2;
+    ash.position.y = 0.008;
+    ash.renderOrder = 1;
+    ash.receiveShadow = true;
+    root.add(ash);
+
+    // Tripod of green sticks with an iron pot hanging over the edge of the embers.
+    const tri = new THREE.Group();
+    const stickGeo = G(new THREE.CylinderGeometry(0.012, 0.016, 1.05, 6));
+    const stickMat = Mt(new THREE.MeshStandardMaterial({ color: 0x5a4430, roughness: 0.9, map: bark.map }));
+    const apex = new THREE.Vector3(0, 0.98, 0);
+    for (let k = 0; k < 3; k++) {
+      const a = k * 2.094 + 0.3;
+      const foot = new THREE.Vector3(Math.cos(a) * 0.42, 0, Math.sin(a) * 0.42);
+      const st = new THREE.Mesh(stickGeo, stickMat);
+      st.position.copy(foot).lerp(apex, 0.5);
+      st.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), apex.clone().sub(foot).normalize());
+      st.scale.y = foot.distanceTo(apex) / 1.05;
+      st.castShadow = true;
+      tri.add(st);
+    }
+    const chain = new THREE.Mesh(G(new THREE.CylinderGeometry(0.004, 0.004, 0.42, 4)), Mt(new THREE.MeshStandardMaterial({ color: 0x2a2a2c, metalness: 0.8, roughness: 0.5 })));
+    chain.position.set(0, 0.77, 0);
+    tri.add(chain);
+    const potGeo = G(new THREE.LatheGeometry([[0.001, 0], [0.07, 0.005], [0.12, 0.04], [0.135, 0.1], [0.125, 0.16], [0.11, 0.18], [0.12, 0.19], [0.112, 0.195]].map(([x, y]) => new THREE.Vector2(x, y)), 20));
+    const potMat = Mt(new THREE.MeshStandardMaterial({ color: 0x1c1b1c, metalness: 0.7, roughness: 0.62 }));
+    const pot = new THREE.Mesh(potGeo, potMat);
+    pot.position.set(0, 0.36, 0);
+    pot.castShadow = true;
+    tri.add(pot);
+    const stew = new THREE.Mesh(G(new THREE.CircleGeometry(0.108, 16)), Mt(new THREE.MeshStandardMaterial({ color: 0x5a3a1c, roughness: 0.35 })));
+    stew.rotation.x = -Math.PI / 2;
+    stew.position.set(0, 0.36 + 0.17, 0);
+    tri.add(stew);
+    const handle = new THREE.Mesh(G(new THREE.TorusGeometry(0.12, 0.005, 4, 16, Math.PI)), potMat);
+    handle.position.set(0, 0.36 + 0.19, 0);
+    tri.add(handle);
+    tri.position.set(0.85, 0, 0.45);
+    root.add(tri);
+
+    // A spear and a sheathed sword propped against the firewood stack; a shield leaning beside.
+    const metal = Mt(new THREE.MeshStandardMaterial({ color: 0x9aa0a8, metalness: 1, roughness: 0.35 }));
+    const shaftMat = Mt(new THREE.MeshStandardMaterial({ color: 0x6a4a2c, roughness: 0.8 }));
+    const spear = new THREE.Group();
+    const shaft = new THREE.Mesh(G(new THREE.CylinderGeometry(0.014, 0.016, 2.0, 6)), shaftMat);
+    shaft.position.y = 1.0;
+    spear.add(shaft);
+    const head = new THREE.Mesh(G(new THREE.ConeGeometry(0.03, 0.2, 4)), metal);
+    head.position.y = 2.1;
+    spear.add(head);
+    spear.position.set(2.3, 0, -2.35);
+    spear.rotation.set(-0.12, 0, -0.32);
+    spear.traverse((o) => { o.castShadow = true; });
+    root.add(spear);
+    const sword = new THREE.Group();
+    const scab = new THREE.Mesh(G(new THREE.BoxGeometry(0.06, 0.82, 0.025)), Mt(new THREE.MeshStandardMaterial({ color: 0x3a2418, roughness: 0.6 })));
+    scab.position.y = 0.41;
+    sword.add(scab);
+    const guard = new THREE.Mesh(G(new THREE.BoxGeometry(0.2, 0.025, 0.035)), metal);
+    guard.position.y = 0.84;
+    sword.add(guard);
+    const grip = new THREE.Mesh(G(new THREE.CylinderGeometry(0.014, 0.014, 0.16, 6)), shaftMat);
+    grip.position.y = 0.93;
+    sword.add(grip);
+    const pommel = new THREE.Mesh(G(new THREE.SphereGeometry(0.025, 8, 6)), metal);
+    pommel.position.y = 1.02;
+    sword.add(pommel);
+    sword.position.set(2.75, 0, -2.42);
+    sword.rotation.set(-0.2, 0.3, 0.25);
+    sword.traverse((o) => { o.castShadow = true; });
+    root.add(sword);
+  }
+
   // ---- the party
   const blob = blobTexture();
   const blobMat = Mt(new THREE.MeshBasicMaterial({ map: blob, transparent: true, depthWrite: false, color: 0x000000, opacity: 0.85 }));
@@ -591,13 +694,15 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
   const matGeo = G(new THREE.BoxGeometry(0.78, 0.035, 1.95, 4, 1, 8));
   const packGeo = G(new THREE.LatheGeometry([[0.001, 0], [0.14, 0.01], [0.18, 0.11], [0.15, 0.24], [0.06, 0.3], [0.045, 0.34], [0.001, 0.34]].map(([x, y]) => new THREE.Vector2(x, y)), 12));
   const packMat = Mt(new THREE.MeshStandardMaterial({ color: 0x5e4a34, roughness: 1, map: getMaterial('prop_burlap')?.map ?? null }));
+  const bootGeo = G(new THREE.CapsuleGeometry(0.045, 0.1, 4, 8));
+  const bootMat = Mt(new THREE.MeshStandardMaterial({ color: 0x2e2018, roughness: 0.6 }));
   const bedMats = living.map((ch) => {
     const look = defaultLook(ch);
     return Mt(new THREE.MeshStandardMaterial({ color: new THREE.Color(CLOTH_COLORS[(look.cloth + 3) % CLOTH_COLORS.length][1]).multiplyScalar(0.75), roughness: 1, map: getMaterial('prop_burlap')?.map ?? null }));
   });
   const blanketHex = (ch) => {
     const look = defaultLook(ch);
-    return `#${new THREE.Color(CLOTH_COLORS[(look.cloth + 3) % CLOTH_COLORS.length][1]).multiplyScalar(0.8).getHexString()}`;
+    return `#${new THREE.Color(CLOTH_COLORS[(look.cloth + 3) % CLOTH_COLORS.length][1]).lerp(new THREE.Color(0x8a6a48), 0.35).multiplyScalar(1.15).getHexString()}`;
   };
 
   /** (Re)place the party: on logs around the fire, or asleep under blankets with one on watch. */
@@ -609,26 +714,31 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
     living.forEach((ch, i) => {
       const sentry = i === sentryIdx && living.length > 2 && sleeping;
       if (sentry) {
-        const m = buildMiniature(ch, { pose: 'guard', base: false });
-        m.position.set(2.6, 0, -1.9);
-        m.rotation.y = 2.3;
+        // The watch: on the edge of the firelight, turned three-quarters to us, rim-lit by the moon.
+        const m = buildMiniature(ch, { pose: 'guard', base: false, rayHead: true, headGain: 0.85 });
+        m.position.set(-1.35, 0, -3.75);
+        m.rotation.y = 0.3;
         partyGroup.add(m);
-        shadowBlob(partyGroup, 2.6, -1.9, 0.75, 0.75);
+        shadowBlob(partyGroup, -1.35, -3.75, 0.75, 0.75);
+        sentryRim.target.position.set(-1.35, 1.1, -3.75);
         minis.push(m);
         return;
       }
-      const a = seats[seat++ % seats.length];
-      const r = sleeping ? 1.85 : 1.5;
-      const x = Math.cos(a) * r;
-      const z = Math.sin(a) * r;
-      const ry = Math.atan2(-x, -z);
+      // Sleepers lie in a fan behind and beside the fire, feet to the warmth.
+      const SLEEP = [[-1.2, -1.05, Math.PI / 2], [1.2, -1.1, -Math.PI / 2], [-1.05, -2.2, Math.PI / 2 + 0.12], [1.1, -2.25, -Math.PI / 2 - 0.1], [0.15, -3.1, Math.PI / 2]];
+      const a = seats[seat % seats.length];
+      const r = 1.5;
+      const x = sleeping ? SLEEP[seat % SLEEP.length][0] : Math.cos(a) * r;
+      const z = sleeping ? SLEEP[seat % SLEEP.length][1] : Math.sin(a) * r;
+      seat++;
+      const ry = sleeping ? SLEEP[(seat - 1) % SLEEP.length][2] : Math.atan2(-x, -z);
       const spot = new THREE.Group();
       spot.position.set(x, 0, z);
       spot.rotation.y = ry;
       partyGroup.add(spot);
       if (!sleeping) {
         // A log to sit on (as high as the sitter's seat), the bedroll rolled up behind, a pack.
-        const m = buildMiniature(ch, { pose: 'sit', base: false, gear: true });
+        const m = buildMiniature(ch, { pose: 'sit', base: false, gear: true, rayHead: true, headGain: 0.6, mod: ['warm', 'talkL', 'listen', 'talkR', 'warm', 'listen'][(seat - 1) % 6] });
         const fr = m.userData.frames;
         const seatTop = fr.joints.pelvis[1] - 0.085 * fr.scale;
         const lr = seatTop / 2;
@@ -654,22 +764,25 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
         spot.add(m);
         minis.push(m);
       } else {
-        // A bedroll mat with the sleeper on it under a blanket, head on a pillow, pack by the head.
-        const mat = new THREE.Mesh(matGeo, bedMats[i]);
-        mat.position.set(0, 0.018, -0.75);
-        mat.receiveShadow = true;
-        mat.castShadow = true;
-        spot.add(mat);
-        const m = buildMiniature(ch, { pose: 'sleep', base: false, blanket: blanketHex(ch) });
-        // The sleeper's feet toward the fire.
-        m.position.set(0, 0.035, 0.12);
+        // A bedroll: wool mat, rolled-cloak pillow, a blanket draped over the sleeper, the head on the pillow.
+        const poses = ['side', 'back', 'curled', 'back', 'side'];
+        const m = buildBedroll(ch, { pose: poses[i % poses.length], blanket: blanketHex(ch), mat: `#${bedMats[i].color.getHexString()}`, seed: i * 7 + 3 });
+        m.position.set(0, 0, 0);
         spot.add(m);
         const pack = new THREE.Mesh(packGeo, packMat);
-        pack.position.set(0.5, 0, -1.75);
+        pack.position.set(0.5, 0, -1.15);
         pack.rotation.set(0, 0.4, 1.3);
         pack.castShadow = true;
         spot.add(pack);
-        shadowBlob(spot, 0, -0.75, 1.0, 2.2);
+        // Boots set by the foot of the bed.
+        for (const sg of [-1, 1]) {
+          const boot = new THREE.Mesh(bootGeo, bootMat);
+          boot.position.set(-0.5 + sg * 0.06, 0.05, 1.0 + sg * 0.03);
+          boot.rotation.y = 0.2 * sg;
+          boot.castShadow = true;
+          spot.add(boot);
+        }
+        shadowBlob(spot, 0, 0, 1.0, 2.2);
         minis.push(m);
       }
     });
@@ -684,12 +797,13 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
   const update = (time) => {
     // Fire: lively in the evening, burned down to embers while the party sleeps.
     const fl = 0.84 + 0.1 * Math.sin(time * 9.1) + 0.06 * Math.sin(time * 23.7 + 1.3) + 0.05 * Math.sin(time * 4.3);
-    const burn = restingNow ? 0.32 : 1;
+    const burn = restingNow ? 0.5 : 1;
     fireLight.intensity = (night ? 14 : 9) * burn * fl;
     fireLight.color.setHex(restingNow ? 0xff7a34 : 0xffa25a);
     emberLight.intensity = (restingNow ? 1.1 : 0.6) * (0.9 + 0.1 * Math.sin(time * 3.1));
-    moon.intensity = night ? (restingNow ? 1.9 : 1.15) : 1.6;
-    hemi.intensity = night ? (restingNow ? 0.66 : 0.62) : 0.9;
+    moon.intensity = night ? (restingNow ? 2.6 : 1.15) : 1.6;
+    hemi.intensity = night ? (restingNow ? 1.25 : 0.62) : 0.9;
+    sentryRim.intensity = restingNow ? 60 : 0;
     coalMat.emissiveIntensity = (restingNow ? 1.6 : 1.1) * (0.9 + 0.1 * Math.sin(time * 2.3));
     logMat.emissiveIntensity = (restingNow ? 1.1 : 0.8) * (0.85 + 0.15 * Math.sin(time * 5.7 + 0.4));
     coalChunkMat.emissiveIntensity = (restingNow ? 1.4 : 0.9) * (0.85 + 0.15 * Math.sin(time * 6.1));

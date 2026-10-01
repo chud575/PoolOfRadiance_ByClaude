@@ -10,8 +10,10 @@ import { spellLevel } from '../../rules/spells.js';
 import { ITEMS } from '../../data/items.js';
 import { itemIconURL, iconFor } from './itemIcons.js';
 import { portraitURL } from './portraitPainter.js';
+import { portraitImg } from './lazyPortrait.js';
 import { abilityTip, STAT_TIPS } from './rulesText.js';
 import { miniatureSnapshot, useRenderer } from './Miniature.js';
+import { ammoProblem } from './Inventory.js';
 
 export { useRenderer };
 
@@ -31,7 +33,7 @@ export function portraitEl(ch, o = {}) {
 /** Small portrait (roster strips). */
 export function miniPortrait(ch, { selected = false, onclick, tip } = {}) {
   return h(`div.pc-mini${selected ? '.sel' : ''}${ch.status === 'dead' ? '.dead' : ''}`, { onclick, dataset: tip ? { tip } : {} }, [
-    h('img', { src: portraitURL(ch, 0.28), alt: ch.name, draggable: false }),
+    portraitImg(ch, 0.28, { alt: ch.name }),
   ]);
 }
 
@@ -83,7 +85,7 @@ export function renderSheet(ch) {
       h('div', { dataset: lore(STAT_TIPS.align(ch.alignment)) }, [ALIGNMENT_NAMES[ch.alignment]]),
     ]),
     h('div', { style: { textAlign: 'center' } }, [
-      h(`span.pc-chip${ch.status === 'ok' ? '.good' : '.warn'}`, [statusLabel(ch)]),
+      ch.status === 'ok' ? null : h('span.pc-chip.warn', [statusLabel(ch)]),
       ...effects.filter((e) => e.kind !== 'status' || e.id !== 'ok').slice(0, 4).map((e) => h('span.pc-chip', { dataset: lore({ title: e.name, text: e.desc }) }, [e.name])),
     ]),
   ]);
@@ -172,22 +174,23 @@ export function renderSheet(ch) {
   if (race.missileBonus) traits.push(['Sling & bow', `+${race.missileBonus}`, 'Halflings are deadly with slings and bows.']);
   if (race.vsGiants) traits.push(['Giant-wary', '−4', 'Giants, ogres and trolls suffer −4 to hit this small folk.']);
   if (race.canDualClass) traits.push(['Dual class', 'able', 'Humans may abandon their class for a new one and later regain the old abilities.']);
-  traits.push(['Level limits', ch.race === 'human' ? 'none' : 'by race', ch.race === 'human' ? 'Humans may rise as far in any class as training allows (in Phlan: fighters 8th, clerics and magic-users 6th, thieves 9th).' : 'Demi-humans reach only so far in each class; exceptional prime requisites raise the cap.']);
+  traits.push(['Racial level limit', ch.race === 'human' ? 'none' : 'yes', ch.race === 'human' ? 'Humans have no racial level limit; only the Phlan level cap (see RECORD) applies.' : 'Demi-humans reach only so far in each class by race; exceptional prime requisites raise the limit. The lower of this and the Phlan level cap applies (see RECORD).']);
   extra.push(sect('Racial Traits', [h('div.pc-kv', traits.flatMap(([k, v, t]) => kv(k, v, { title: k, text: t }))),
     h('div', { style: { marginTop: '0.45em' } }, race.languages.map((l) => h('span.pc-chip', { dataset: lore({ title: 'Languages', text: `${ch.name} speaks ${race.languages.join(', ')}. Intelligence allows more tongues to be learned.` }) }, [l])))]));
 
   const gear = ch.inventory.filter((e) => e.equipped && ITEMS[e.id]);
-  const kit = sect('Readied', gear.length ? gear.map((e) => h('div', { style: { display: 'flex', alignItems: 'center', gap: '0.6em', padding: '0.12em 0' }, dataset: lore({ title: itemName(e), text: `Readied ${ITEMS[e.id].type}. Open ITEMS to change equipment.` }) }, [
+  const ammoWarn = ammoProblem(ch);
+  const kit = sect('Readied', [...(gear.length ? gear.map((e) => h('div', { style: { display: 'flex', alignItems: 'center', gap: '0.6em', padding: '0.12em 0' }, dataset: lore({ title: itemName(e), text: `Readied ${ITEMS[e.id].type}. Open ITEMS to change equipment.` }) }, [
     h('img', { src: itemIconURL(iconFor(ITEMS[e.id])), alt: '', style: { width: '1.9em', height: '1.9em' } }),
     h('span', { style: { color: 'var(--por-text)' } }, [itemName(e), (e.qty ?? 1) > 1 ? ` ×${e.qty}` : '']),
-  ])) : [h('div.pc-rest-note', ['Nothing readied.'])]);
+  ])) : [h('div.pc-rest-note', ['Nothing readied.'])]), ammoWarn ? h('div.pc-warn', { dataset: lore({ title: 'Ammunition', text: 'Arrows need a bow and quarrels a crossbow readied in the weapon hand; otherwise they cannot be fired.' }) }, ['⚠ ', ammoWarn]) : null].filter(Boolean));
   const langs = sect('Languages', [h('div', race.languages.map((l) => h('span.pc-chip', [l])))]);
   // ---- record: experience, limits, wealth
   const totalXp = classes.reduce((t, c) => t + (ch.xp[c] ?? 0), 0);
   const caps = classes.map((c) => `${CLASSES[c].name.split('-')[0]} ${maxLevel(ch, c)}`).join(' · ');
   const record = sect('Record', [h('div.pc-kv', [
     ...kv('Experience', totalXp.toLocaleString('en-US'), { title: 'Experience', text: 'Earned by defeating foes and recovering treasure. Multi-class characters split every award between their classes. Levels are gained by training at a hall once enough is banked.' }),
-    ...kv('Level limit', caps, { title: 'Level limits', text: `Demi-humans are capped by race (and exceptional ability scores raise the cap). In the ruins of Phlan the Council's trainers teach only so far: fighters to 8th, clerics and magic-users to 6th, thieves to 9th.` }),
+    ...kv('Phlan level cap', caps, { title: 'Phlan level cap', text: `Demi-humans are capped by race (and exceptional ability scores raise the cap). In the ruins of Phlan the Council's trainers teach only so far: fighters to 8th, clerics and magic-users to 6th, thieves to 9th.` }),
     ...kv('Training', '1,000 gp', { title: 'Training', text: 'A level-up costs 1,000 gold pieces at the Training Hall, one level per visit. Experience beyond one level short of the next is not banked.' }),
     ...kv('Purse', `${(ch.gold ?? 0).toLocaleString('en-US')} gp`, { title: 'Purse', text: 'Coins weigh 1 coin-weight (cn) each and count toward encumbrance. Pool gold or split it evenly from the ITEMS screen.' }),
   ])]);
@@ -202,14 +205,17 @@ export function renderSheet(ch) {
     h('div.pc-packline', pack.length ? pack.slice(0, 8).map((e) => h('span.pc-packi', { dataset: lore({ title: itemName(e), text: 'Carried in the pack. Open ITEMS to ready, use, trade or drop it.' }) }, [h('img', { src: itemIconURL(iconFor(ITEMS[e.id])), alt: '' }), (e.qty ?? 1) > 1 ? h('b', [String(e.qty)]) : null])) : [h('span.pc-rest-note', ['Nothing else carried.'])]),
     h('div.pc-rest-note', { style: { marginTop: '0.35em' } }, [`${pack.length} item${pack.length === 1 ? '' : 's'} in the pack · ${s.weight} cn carried · ${s.encumbrance.label.toLowerCase()}`]),
   ]);
-  const side = [saves, ...extra.slice(0, 2)];
+  // Spells per day sit under the readied kit, so the right column never overflows on casters.
+  const spellSect = casting.length ? extra.find((x) => x.textContent.startsWith('Spells per Day')) : null;
+  const rest = extra.filter((x) => x !== spellSect);
+  const side = [saves, ...rest.slice(0, 2)];
   void langs;
   side.push(cond, packSect);
   const sheet = h('div.pc-sheet', [
     id,
     h('div.pc-col', [abil, cls, record]),
-    h('div.pc-col', [combat, kit]),
-    h('div.pc-col', side),
+    h('div.pc-col', [combat, kit, spellSect].filter(Boolean)),
+    h('div.pc-col.pc-col-scroll', side),
   ]);
   // Every rules-bearing row takes keyboard focus, so arrows walk the sheet and the lore strip follows.
   for (const el of sheet.querySelectorAll('.pc-ab, .pc-big, .pc-cls, .pc-kv > .k, .pc-cond, .pc-packi')) {

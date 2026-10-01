@@ -4,6 +4,7 @@ import { buildFigure } from './figureRig.js';
 import { meshSculpt } from './sdfSculpt.js';
 import { paintFaceSkin, FACE_BOX } from './faceSkin.js';
 import * as TX from './miniatureTextures.js';
+import { createHead } from './headShader.js';
 import { renderToCanvas } from './paintPass.js';
 import { finishFace } from './portraitOverpaint.js';
 
@@ -35,7 +36,9 @@ export const QUALITY = { hero: 0.0072, camp: 0.0108, snap: 0.0082, portrait: 0.0
 
 const dataCache = new Map();
 function figureData(app, pose, cell, opt = {}) {
-  const key = `${appearanceKeyOf(app)}|${pose}|${cell}|${opt.blanket ?? ''}|${opt.noWeapon ? 1 : 0}|${opt.boundsKey ?? (opt.bounds ? opt.bounds.join(',') : '')}`;
+  // With a ray-marched head the body sculpt does not depend on the head template: the eight head
+  // thumbnails (and every head change) share one body mesh.
+  const key = `${appearanceKeyOf(app, opt.noHead)}|${pose}|${cell}|${opt.blanket ?? ''}|${opt.noWeapon ? 1 : 0}|${opt.noHead ? 1 : 0}|${opt.mod ?? ''}|${opt.boundsKey ?? (opt.bounds ? opt.bounds.join(',') : '')}`;
   const hit = dataCache.get(key);
   if (hit) {
     dataCache.delete(key);
@@ -70,9 +73,9 @@ function figureData(app, pose, cell, opt = {}) {
   while (dataCache.size > 28) dataCache.delete(dataCache.keys().next().value);
   return out;
 }
-function appearanceKeyOf(app) {
+function appearanceKeyOf(app, noHead = false) {
   const l = app.look;
-  return [app.race, app.gender, l.seed, l.head, l.body, l.skin, l.hair, l.eyes, l.cloth, app.body, app.helm ? 1 : 0, app.hood ? 1 : 0, app.weapon, app.shield, app.cloak ? 1 : 0].join('|');
+  return [app.race, app.gender, l.seed, noHead ? '-' : l.head, l.body, l.skin, l.hair, l.eyes, l.cloth, app.body, app.helm ? 1 : 0, app.hood ? 1 : 0, app.weapon, app.shield, app.cloak ? 1 : 0].join('|');
 }
 
 function geometryOf(d) {
@@ -360,6 +363,30 @@ function gearMats() {
 
 // ------------------------------------------------------------------ building a miniature
 
+let blank = null;
+function blankFaceCanvas() {
+  if (!blank) {
+    blank = document.createElement('canvas');
+    blank.width = blank.height = 4;
+  }
+  return blank;
+}
+
+let casterGeo = null;
+let casterMat = null;
+function headCasterGeo() {
+  if (!casterGeo) {
+    casterGeo = new THREE.SphereGeometry(1, 16, 12);
+    casterGeo.scale(0.082, 0.112, 0.105);
+    casterGeo.translate(0, 0.0, 0.0);
+  }
+  return casterGeo;
+}
+function shadowOnlyMat() {
+  casterMat ??= new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+  return casterMat;
+}
+
 /**
  * Build a miniature.
  * @param {{race:string, gender?:string, classSpec:string, look?:object, name?:string, inventory?:object[]}} ch
@@ -370,7 +397,8 @@ export function buildMiniature(ch, opt = {}) {
   const pose = opt.pose ?? 'stand';
   const app = resolveAppearance(ch, { gear: opt.gear });
   const cell = typeof opt.quality === 'number' ? opt.quality : QUALITY[opt.quality ?? (pose === 'sit' || pose === 'sleep' || pose === 'guard' ? 'camp' : 'hero')];
-  const d = figureData(app, pose, cell, { blanket: opt.blanket, noWeapon: opt.noWeapon, bounds: opt.bounds, boundsFn: opt.boundsFn, boundsKey: opt.boundsKey });
+  const rayHead = opt.rayHead === true;
+  const d = figureData(app, pose, cell, { blanket: opt.blanket, noWeapon: opt.noWeapon, noHead: rayHead, mod: opt.mod, bounds: opt.bounds, boundsFn: opt.boundsFn, boundsKey: opt.boundsKey });
   const fr = d.frames;
   const root = new THREE.Group();
   const fig = new THREE.Group();
@@ -378,7 +406,8 @@ export function buildMiniature(ch, opt = {}) {
   const disposables = [];
   const geo = geometryOf(d);
   disposables.push(geo);
-  const faceCanvas = paintFaceSkin(app, { size: opt.faceSize ?? (cell < 0.008 ? 512 : 256), asleep: fr.asleep, portrait: pose === 'portrait' });
+  // The ray-marched head paints its own face: the body needs no face texture.
+  const faceCanvas = rayHead ? blankFaceCanvas() : paintFaceSkin(app, { size: opt.faceSize ?? (cell < 0.008 ? 512 : 256), asleep: fr.asleep, portrait: pose === 'portrait' });
   const faceTex = new THREE.CanvasTexture(faceCanvas);
   faceTex.colorSpace = THREE.NoColorSpace;
   faceTex.anisotropy = 4;
@@ -391,6 +420,21 @@ export function buildMiniature(ch, opt = {}) {
   body.castShadow = true;
   body.receiveShadow = true;
   fig.add(body);
+  if (rayHead) {
+    // The ray-marched head (exact anatomy at any size) and an invisible stand-in that casts its shadow.
+    const head = createHead(app, fr.face, { asleep: fr.asleep, ambient: opt.headAmbient, fog: !!opt.fog, gain: opt.headGain, lite: opt.headLite });
+    fig.add(head);
+    disposables.push({ dispose: () => head.userData.dispose() });
+    const { c, R, hs } = fr.face;
+    const caster = new THREE.Mesh(headCasterGeo(), shadowOnlyMat());
+    caster.position.set(...c);
+    caster.quaternion.setFromRotationMatrix(new THREE.Matrix4().set(R[0], R[3], R[6], 0, R[1], R[4], R[7], 0, R[2], R[5], R[8], 0, 0, 0, 0, 1));
+    caster.scale.setScalar(hs);
+    caster.castShadow = true;
+    caster.userData.sharedGeo = true;
+    fig.add(caster);
+    root.userData.head = head;
+  }
 
   // Weapon and shield.
   const gm = gearMats();
@@ -473,7 +517,7 @@ export function buildMiniature(ch, opt = {}) {
   root.userData.app = app;
   root.userData.dispose = () => {
     for (const x of disposables) x.dispose();
-    root.traverse((o) => { if (o.isMesh && o !== body && o.geometry && !disposables.includes(o.geometry)) o.geometry.dispose(); });
+    root.traverse((o) => { if (o.isMesh && o !== body && o.geometry && !o.userData.sharedGeo && !disposables.includes(o.geometry)) o.geometry.dispose(); });
     for (const m of Object.values(gm)) if (m?.dispose) m.dispose();
     for (const m of gm.extra) m.dispose();
   };
@@ -667,13 +711,14 @@ export function miniatureSnapshot(ch, o = {}) {
     if (!st) return null;
     const { renderer } = offscreen();
     const cam = st.camera;
-    const m = buildMiniature(ch, { pose: 'display', base: true, quality: 'snap' });
+    const m = buildMiniature(ch, { pose: 'display', base: true, quality: 'snap', rayHead: true, headGain: 0.85, headAmbient: [0.04, 0.04, 0.05] });
     const H = m.userData.height;
     cam.aspect = w / h;
     cam.fov = 24;
-    const dist = (H * 1.16) / (2 * Math.tan((cam.fov * Math.PI) / 360));
+    // Frame the whole figure with its weapon (the sword is held out to the side).
+    const dist = (H * 1.3) / (2 * Math.tan((cam.fov * Math.PI) / 360));
     cam.position.set(0, H * 0.6, dist);
-    cam.lookAt(0, H * 0.5, 0);
+    cam.lookAt(0, H * 0.52, 0);
     cam.updateProjectionMatrix();
     m.rotation.y = -0.28;
     st.scene.add(m);
@@ -681,7 +726,7 @@ export function miniatureSnapshot(ch, o = {}) {
     st.plinth.visible = o.backdrop !== false;
     const cv = renderToCanvas(renderer, st.scene, cam, { w, h, exposure: 1.1, alpha: o.backdrop === false, key: 'snap' });
     // Painted eyes, brows and mouth at the snapshot's own resolution.
-    try { finishFace(renderer, st.scene, cam, m, cv, m.userData.app, { mini: true, key: 'snapMask' }); } catch { /* keep the plain render */ }
+    if (!m.userData.head) try { finishFace(renderer, st.scene, cam, m, cv, m.userData.app, { mini: true, key: 'snapMask' }); } catch { /* keep the plain render */ }
     const url = cv.toDataURL('image/png');
     st.scene.remove(m);
     m.userData.dispose();

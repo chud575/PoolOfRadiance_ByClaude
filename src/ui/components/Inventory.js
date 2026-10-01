@@ -21,6 +21,16 @@ const DOLL = [
   ['feet', 'Boots', 'boots', 'R'], ['ring2', 'Ring', 'ring', 'R'], ['quiver', 'Quiver', 'arrow', 'R'],
 ];
 
+const LORE_BY_TYPE = {
+  weapon: 'Honest steel from a Phlan smithy, oiled against the sea air.',
+  armor: 'Worn by a dozen owners before you; every dent is a story.',
+  shield: 'Painted wood and iron, scarred by kobold spears.',
+  ammo: 'Fletched by hand. Retrieve what you can after the fight.',
+  potion: 'A stoppered vial. Shake well; drink quickly.',
+  scroll: 'Crackling vellum, the ink still faintly warm.',
+  treasure: 'Worth more to a moneychanger than to you.',
+  gear: 'The kit every adventurer forgets until it is needed.',
+};
 const TYPE_NAMES = { weapon: 'Weapon', armor: 'Armor', shield: 'Shield', helm: 'Helm', ring: 'Ring', potion: 'Potion', scroll: 'Scroll', wand: 'Wand', ammo: 'Ammunition', gear: 'Gear', treasure: 'Treasure' };
 
 /** Stat line for an item definition. */
@@ -314,12 +324,14 @@ export class InventoryPanel {
         h('span.nm', [itemName(e)]),
       ]);
     });
-    const capacity = Math.max(24, Math.ceil((inv.length + 1) / 6) * 6);
+    // The pack grid fits its contents (one spare row); the space below holds the selected item's lore.
+    const capacity = Math.max(12, Math.ceil((inv.length + 1) / 6) * 6);
     for (let k = inv.length; k < capacity; k++) tiles.push(h('div.pc-tile.empty'));
     const weightNow = carriedWeight(ch);
     const list = h('div.pc-sect.pc-items', [
       h('div.pc-sect-h', [h('span', [`Pack · ${inv.length} item${inv.length === 1 ? '' : 's'} · ${weightNow} cn`])]),
       h('div.pc-pack', tiles),
+      this._loreCard(ch, inv[this.sel]),
       h('div.pc-legend', [['mundane', 'Common'], ['magic', 'Magic'], ['unknown', 'Unidentified'], ['cursed', 'Cursed'], ['treasure', 'Treasure']].map(([k, l]) => h(`span.r-${k}`, [h('i'), l]))),
       this._tradeStrip(ch),
     ]);
@@ -386,6 +398,25 @@ export class InventoryPanel {
     ]);
     const side = h('div.pc-detail', [h('div.pc-sect', { style: { display: 'flex', flexDirection: 'column', gap: '0.7em' } }, [h('div.pc-sect-h', [h('span', ['Item'])]), ...detail]), enc, purse]);
     this.el.append(doll, list, side);
+  }
+
+  /** The selected item, illuminated: a large plate of its art on parchment, its lore and its rules. */
+  _loreCard(ch, e) {
+    const def = e && ITEMS[e.id];
+    if (!def) return h('div.pc-itemlore.empty', [h('p', ['Select an item to read its lore.'])]);
+    const magic = isMagical(e) && e.identified !== false;
+    const stat = itemStatLine(def, e);
+    const cmp = compareItem(ch, e);
+    return h(`div.pc-itemlore.r-${itemRarity(e)}`, [
+      h('div.plate', [h('img', { src: itemIconURL(iconFor(def), { magic }), alt: '' })]),
+      h('div.txt', [
+        h('div.t', [itemName(e)]),
+        h('div.s', [`${TYPE_NAMES[def.type] ?? def.type} · ${itemWeight(e)} cn · ${itemValue(e)} gp${e.equipped ? ' · readied' : ''}`]),
+        h('p.d', [def.desc ?? LORE_BY_TYPE[def.type] ?? 'Plain, serviceable gear of the Moonsea towns.']),
+        stat ? h('p.r', [stat]) : null,
+        cmp && cmp.bits.length ? h('p.c', cmp.bits.map((b) => h(`span.${b.good ? 'up' : 'down'}`, [b.good ? '▲ ' : '▼ ', b.text, ' ']))) : null,
+      ]),
+    ]);
   }
 
   /** Companions as trade targets: click (or drop an item on) a portrait to hand the selected item over. */
@@ -462,7 +493,7 @@ export class InventoryPanel {
     const pick = await this.ctx.ui.dialog({
       title: 'Trade',
       variant: 'blue',
-      body: h('p', [`Give the ${itemName(e)} to whom?`]),
+      body: h('p.pc-trade-pick', [`Give the ${itemName(e)} to whom?`]),
       buttons: [...others.map((c) => ({ id: c.id, label: c.name })), { id: null, label: 'Cancel' }],
     });
     const to = others.find((c) => c.id === pick);

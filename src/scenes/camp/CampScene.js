@@ -12,6 +12,7 @@ import { SAVE_SLOTS } from '../../core/SaveManager.js';
 import { buildCamp } from './CampBackdrop.js';
 import { useRenderer } from '../../ui/components/Miniature.js';
 import { UINav } from '../../ui/components/uiNav.js';
+import { setPortraitSync } from '../../ui/components/lazyPortrait.js';
 
 const CURES = ['cureSeriousWounds', 'cureLightWounds'];
 
@@ -24,6 +25,7 @@ export default class CampScene extends Scene {
   async enter(params = {}) {
     const { render, game } = this.ctx;
     useRenderer(render.renderer);
+    setPortraitSync(!!this.ctx.debug?.frozen);
     this.params = params;
     // Casters with no chosen spells get a sensible load-out (they can change it in MAGIC).
     for (const ch of game.party) if (castingClassesOf(ch).length && !Object.values(ch.spells?.prepared ?? {}).some((l) => l.length)) autoPrepare(ch);
@@ -109,7 +111,11 @@ export default class CampScene extends Scene {
   _refreshStatus() {
     if (!this.statusBody) return;
     const { game } = this.ctx;
-    const { day, hour, minute } = game.clock;
+    // While resting, the header and TIME follow the rest clock.
+    const mins = this.busy ? this.busy.from + this.busy.applied : game.minutes;
+    const day = Math.floor(mins / MINUTES_PER_DAY) + 1;
+    const hour = Math.floor((mins % MINUTES_PER_DAY) / 60);
+    const minute = mins % 60;
     const loc = game.location?.map;
     const where = loc && hasMap(loc) ? getMap(loc).name ?? loc : 'Phlan';
     this.topSub.textContent = `${where} · Day ${day}, ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
@@ -128,13 +134,13 @@ export default class CampScene extends Scene {
         ...row('Memorize', memo ? fmtMinutes(memo) : 'done', 'Rest the casters need to memorize their chosen spells (1e: sleep, then 15 minutes per spell level).'),
         ...row('Wounded', wounded.length ? `${wounded.length} of ${party.length}` : 'none', 'Natural rest heals 1 hp per day; FIX lets clerics heal the party.'),
         ...row('Full health', heal > memo ? `${Math.ceil(heal / MINUTES_PER_DAY)} day${Math.ceil(heal / MINUTES_PER_DAY) === 1 ? '' : 's'}` : 'now'),
-        ...row('Healers', clerics.length ? `${clerics.length} ready` : 'none', 'Clerics with cure spells memorized.'),
+        ...row('Cures', clerics.length ? `${clerics.reduce((t, c) => t + CURES.reduce((u, id) => u + (c.spells?.memorized?.cleric ?? []).filter((x) => x === id).length, 0), 0)} memorized` : 'none memorized', 'Cure spells memorized by the party\'s clerics, ready for FIX. Choose cures in MAGIC and rest to memorize them.'),
         ...row('Party gold', `${gold.toLocaleString('en-US')} gp`),
       ]),
       h('div.camp-status', [
-        h('button.por-btn.primary', { style: { gridColumn: 'span 2' }, onclick: () => (memo ? this.doRest(memo) : this.openRest()) }, [memo ? `Rest ${fmtMinutes(memo)}` : 'Rest…']),
-        h('button.por-btn', { onclick: () => this.openView('spells') }, ['Magic']),
-        h('button.por-btn', { onclick: () => this.fix() }, ['Fix']),
+        h('button.por-btn.primary', { style: { gridColumn: 'span 2' }, disabled: !!this.busy, onclick: () => (memo ? this.doRest(memo) : this.openRest()) }, [this.busy ? 'Resting…' : memo ? `Rest ${fmtMinutes(memo)}` : 'Rest…']),
+        h('button.por-btn', { disabled: !!this.busy, onclick: () => this.openView('spells') }, ['Magic']),
+        h('button.por-btn', { disabled: !!this.busy, onclick: () => this.fix() }, ['Fix']),
       ]),
       KeyLegend([['A–Z', 'Command'], [['[', ']'], 'Member'], ['Esc', 'Break camp']], { className: 'por-legend--rule' }),
     );
@@ -145,6 +151,8 @@ export default class CampScene extends Scene {
       if (action === 'cancel') this.interruptRest();
       return;
     }
+    // The Esc that was meant to interrupt a rest that had just ended must not also break camp.
+    if (action === 'cancel' && this._restEndedAt != null && this.ctx.clock.time - this._restEndedAt < 0.9) return;
     if (this.ctx.ui.layers.modal.children.length) return;
     const n = this.ctx.game.party.length;
     const g = this.ctx.game;
@@ -301,11 +309,9 @@ export default class CampScene extends Scene {
       start: this.ctx.clock.time - (o.demo ? o.demo * Math.min(6, 2.2 + minutes / 110) : 0), dur: Math.min(6, 2.2 + minutes / 110), demo: o.demo ?? null,
     });
     this._advanceRest(o.demo ?? 0);
-    if (!o.demo) {
-      // Wall-clock fallback: never leave the party stuck resting if frames stall (hidden tab).
-      setTimeout(() => { if (this.busy === busy) { this._advanceRest(1); this._finishRest(); } }, busy.dur * 1000 + 800);
-    }
+    void busy;
     game.notifyPartyChanged();
+    this._refreshStatus();
   }
 
   /** Apply rest up to fraction p of the total and update the overlay. */
@@ -327,6 +333,20 @@ export default class CampScene extends Scene {
     b.label.textContent = `${fmtMinutes(target) === 'no rest' ? '0m' : fmtMinutes(target)} of ${fmtMinutes(b.total)}`;
     const m = b.from + target;
     b.clock.textContent = `Day ${Math.floor(m / MINUTES_PER_DAY) + 1} · ${String(Math.floor((m % MINUTES_PER_DAY) / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+    if (delta !== 0 || b.demo != null) this._refreshClock();
+  }
+
+  /** Header + TIME row only (cheap; called every rest frame). */
+  _refreshClock() {
+    const b = this.busy;
+    const mins = b ? b.from + b.applied : this.ctx.game.minutes;
+    const hh = String(Math.floor((mins % MINUTES_PER_DAY) / 60)).padStart(2, '0');
+    const mm = String(mins % 60).padStart(2, '0');
+    const loc = this.ctx.game.location?.map;
+    const where = loc && hasMap(loc) ? getMap(loc).name ?? loc : 'Phlan';
+    if (this.topSub) this.topSub.textContent = `${where} · Day ${Math.floor(mins / MINUTES_PER_DAY) + 1}, ${hh}:${mm}`;
+    const t = this.statusBody?.querySelector('.pc-kv > .v');
+    if (t) t.textContent = `${hh}:${mm}`;
   }
 
   interruptRest() {
@@ -339,6 +359,7 @@ export default class CampScene extends Scene {
     const b = this.busy;
     if (!b) return;
     this.busy = null;
+    this._restEndedAt = this.ctx.clock.time;
     const { game, ui } = this.ctx;
     const names = Object.fromEntries(game.party.map((c) => [c.id, c.name]));
     ui.message(b.interrupted ? `Rest interrupted after ${fmtMinutes(b.applied) || 'a moment'}.` : `The party rests for ${fmtMinutes(b.applied)}.`, b.interrupted ? 'warn' : 'info');
@@ -447,9 +468,13 @@ export default class CampScene extends Scene {
     this._refreshStatus();
   }
 
-  exitCamp() {
-    if (this.busy) return;
-    this.ctx.scenes.goto('explore', {});
+  async exitCamp() {
+    if (this.busy || this._exiting) return;
+    // Breaking camp is one keypress away (Esc): ask first.
+    this._exiting = true;
+    const ok = await this.ctx.ui.dialog({ title: 'Break Camp', variant: 'blue', body: 'Pack up and move on?', buttons: [{ id: 'y', label: 'Break camp', primary: true }, { id: null, label: 'Stay' }] });
+    this._exiting = false;
+    if (ok === 'y') this.ctx.scenes.goto('explore', {});
   }
 
   onResize() {
@@ -457,9 +482,25 @@ export default class CampScene extends Scene {
     this.camera.updateProjectionMatrix();
   }
 
+  /** Behind a full-screen VIEW the campfire is only glimpsed: redraw it twice a second, not every frame. */
+  render() {
+    const t = this.ctx.clock.time;
+    if (this.view && this._lastRender != null && Math.abs(t - this._lastRender) < 0.5) return;
+    this._lastRender = t;
+    super.render();
+  }
+
   update(dt) {
     const t = this.ctx.clock.time;
     this.camp?.update(t);
+    // Resting: the camera leans in over the bedrolls (eased; settled at once under a frozen clock).
+    if (!this.ctx.debug?.raw?.campcam) {
+      const want = this.busy ? 1 : 0;
+      this._camK = this._camK == null || dt === 0 ? want : this._camK + (want - this._camK) * Math.min(1, dt * 2.5);
+      const k = this._camK * this._camK * (3 - 2 * this._camK);
+      this.camera.position.set(0, 1.75 + 0.75 * k, 5.2 - 1.2 * k);
+      this.camera.lookAt(0, 0.95 - 0.5 * k, -0.6 - 0.9 * k);
+    }
     const b = this.busy;
     if (b) {
       if (b.demo != null) this._advanceRest(b.demo);

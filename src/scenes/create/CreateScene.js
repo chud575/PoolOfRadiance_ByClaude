@@ -5,8 +5,9 @@ import { createTorch } from '../../render/lighting.js';
 import { getMaterial, preloadMaterials } from '../../render/materials.js';
 import { getBannerTexture, getGlowTexture } from '../../render/textures/index.js';
 import { RACES, RACE_IDS, raceAbilityCaps } from '../../rules/races.js';
-import { CLASSES, ALIGNMENTS, ALIGNMENT_NAMES, PR_LEVEL_CAPS, classSpecName, splitClasses, allowedAlignments } from '../../rules/classes.js';
+import { CLASSES, ALIGNMENTS, ALIGNMENT_NAMES, PR_LEVEL_CAPS, classSpecName, splitClasses, allowedAlignments, xpForLevel } from '../../rules/classes.js';
 import { ABILITIES, ABILITY_NAMES, ABILITY_ABBR, formatStr } from '../../rules/abilities.js';
+import { SAVE_SLOTS } from '../../core/SaveManager.js';
 import { createCharacter, deriveStats, applyRace, meetsClassMinimums, rollExceptionalStr, validateConcept } from '../../rules/character.js';
 import { STARTING_KITS } from '../../data/items.js';
 import { portraitURL, HEADS, BODIES, RACE_SKINS, SKIN_TONES, HAIR_COLORS, EYE_COLORS, CLOTH_COLORS, defaultLook } from '../../ui/components/portraitPainter.js';
@@ -15,6 +16,7 @@ import { openCharacterView } from '../../ui/components/CharacterView.js';
 import { STAT_TIPS, ALIGNMENT_TEXT, levelLimitText, abilityTip } from '../../ui/components/rulesText.js';
 import { buildMiniature, miniatureEnvironment, useRenderer } from '../../ui/components/Miniature.js';
 import { UINav } from '../../ui/components/uiNav.js';
+import { portraitImg, setPortraitSync } from '../../ui/components/lazyPortrait.js';
 import { ITEMS } from '../../data/items.js';
 import { itemName } from '../../rules/items.js';
 import { itemIconURL, iconFor } from '../../ui/components/itemIcons.js';
@@ -40,6 +42,7 @@ export default class CreateScene extends Scene {
   async enter(params = {}) {
     const { render } = this.ctx;
     useRenderer(render.renderer);
+    setPortraitSync(!!this.ctx.debug?.frozen);
     this.rng = this.ctx.rng;
     await this._build3d();
     this.post = { bloomStrength: 0.5, bloomThreshold: 0.92, vignette: 0.62, exposure: 1.08 };
@@ -299,7 +302,7 @@ export default class CreateScene extends Scene {
       c.userData.dispose?.();
       this.figureRoot.remove(c);
     }
-    const f = buildMiniature(d, { pose: 'stand' });
+    const f = buildMiniature(d, { pose: 'stand', rayHead: true, headGain: 0.9 });
     f.scale.setScalar(1.42);
     this.figureRoot.add(f);
   }
@@ -307,7 +310,7 @@ export default class CreateScene extends Scene {
   // ------------------------------------------------------------------ state
 
   resetDraft() {
-    this.draft = { race: 'human', gender: 'male', classSpec: 'fighter', alignment: 'LG', method: '4d6', abilities: null, dice: null, buy: null, name: '', look: { seed: this.rng.int(1, 1e9) } };
+    this.draft = { race: 'human', gender: 'male', classSpec: 'fighter', alignment: 'LG', method: '4d6', abilities: null, dice: null, buy: null, name: '', look: { seed: this.rng.int(1, 1e9), head: this.rng.int(0, 7) } };
     this.editing = null;
   }
 
@@ -402,7 +405,9 @@ export default class CreateScene extends Scene {
     this._renderCard();
     this._renderBar();
     this.figureRoot.visible = step !== 'party' || this.newParty.length > 0;
-    this._updateFigure();
+    // The pedestal figure is re-sculpted for a new look: let the panel paint first (interactive runs).
+    if (this.ctx.debug?.frozen) this._updateFigure();
+    else setTimeout(() => { if (!this._gone) this._updateFigure(); }, 40);
   }
 
   next() {
@@ -440,6 +445,9 @@ export default class CreateScene extends Scene {
         { id: 'drop', label: 'Drop', key: 'D', tip: 'Remove the selected character from the party', disabled: !n, onSelect: () => this.dropSel() },
         { id: 'modify', label: 'Modify', key: 'M', tip: 'Change the selected character\'s name and portrait', disabled: !n, onSelect: () => this.modifySel() },
         { id: 'view', label: 'View', key: 'V', tip: 'Character sheet', disabled: !n, onSelect: () => this.viewSel() },
+        { id: 'train', label: 'Train', key: 'T', tip: 'Advance a level (at a Training Hall, for 1,000 gp)', disabled: !n, onSelect: () => this.trainSel() },
+        { id: 'load', label: 'Load', key: 'L', tip: 'Load a saved game', onSelect: () => this.loadGame() },
+        { id: 'save', label: 'Save', key: 'S', tip: 'Save this party as a new game', disabled: !n, onSelect: () => this.saveGame() },
         { id: 'begin', label: 'Begin Adventuring', key: 'B', tip: 'Enter the city of Phlan', disabled: !n, onSelect: () => this.begin() },
         { id: 'exit', label: 'Exit', key: 'E', tip: 'Back to the title', onSelect: () => this.ctx.scenes.goto('title') },
       );
@@ -546,7 +554,7 @@ export default class CreateScene extends Scene {
                 this.show('race');
               },
             }, [
-              h('img', { src: portraitURL({ race: r, gender: d.gender, classSpec: 'fighter', look }, 0.3), alt: '' }),
+              portraitImg({ race: r, gender: d.gender, classSpec: 'fighter', look }, 0.3),
               h('div', [h('div.t', [RACES[r].name]), h('div.d', [CREATE_TEXT.raceShort[r]])]),
             ]);
           })),
@@ -599,7 +607,7 @@ export default class CreateScene extends Scene {
       h('p', [r.desc]),
       h('p', [h('span.k', ['Abilities']), adj, h('span.k', { style: { marginLeft: '1em' } }, ['Move']), String(r.move), h('span.k', { style: { marginLeft: '1em' } }, ['Infravision']), r.infravision ? `${r.infravision}'` : 'none']),
       h('p', [h('span.k', ['Classes']), r.classes.map(classSpecName).join(', ')]),
-      h('p', [h('span.k', ['Level limits']), levelLimitText(this.draft.race)]),
+      h('p', [h('span.k', ['Racial level limits']), levelLimitText(this.draft.race), h('span', { style: { color: 'var(--por-text-dim)' } }, [' (Phlan caps all: F8 C6 MU6 T9)'])]),
     ]);
   }
 
@@ -652,7 +660,7 @@ export default class CreateScene extends Scene {
       h('div.pc-sect', rows),
       s ? h('div.cc-derived', [
         ['Hit Points', pv.hp.max], ['Armor Class', s.ac], ['THAC0', s.thac0], ['Damage', `${s.damage}${s.dmgBonus ? (s.dmgBonus > 0 ? `+${s.dmgBonus}` : s.dmgBonus) : ''}`],
-        ['Move', s.move], ['Age', pv.age], ['Gold', pv.gold], ['Level cap', splitClasses(d.classSpec).map((c) => Math.min(PR_LEVEL_CAPS[c], RACES[d.race].levelLimits[c] ?? 99)).join('/')],
+        ['Move', s.move], ['Age', pv.age], ['Gold', pv.gold], ['Phlan cap', splitClasses(d.classSpec).map((c) => Math.min(PR_LEVEL_CAPS[c], RACES[d.race].levelLimits[c] ?? 99)).join('/')],
       ].map(([l, v]) => h('div.pc-big', [h('span.n', { style: { fontSize: '1.25em' } }, [String(v)]), h('span.l', [l])]))) : null,
       probs.length ? h('p', { style: { color: '#ff9a86', fontSize: '0.85em', marginTop: '0.6em' } }, [`Not allowed: ${probs.join('; ')}.`]) : null,
       this._requirements(),
@@ -686,7 +694,7 @@ export default class CreateScene extends Scene {
     const look = (d.look = defaultLook(d));
     b.append(h('div.cc-title', ['Choose a Likeness']), h('p.cc-lead', [CREATE_TEXT.portrait]));
     const thumbs = (list, key, mk, cls = '', crop = 'head') => h(`div.cc-thumbs${cls}`, list.map((it, i) => h(`button.cc-thumb${look[key] === i ? '.sel' : ''}`, { onclick: () => { d.look = { ...look, [key]: i }; this.show('portrait'); }, dataset: { tip: it.name } }, [
-      h('div.im', [h('img', { src: portraitURL(mk(i), 0.34, { crop }), alt: '' })]), h('span', [it.name]),
+      h('div.im', [portraitImg(mk(i), 0.34, { crop })]), h('span', [it.name]),
     ])));
     const sw = (colors, key) => h('div.cc-sw', colors.map((c, i) => h(`button${look[key] === i ? '.sel' : ''}`, { style: { background: c }, onclick: () => { d.look = { ...look, [key]: i }; this.show('portrait'); } })));
     const skins = (RACE_SKINS[d.race] ?? RACE_SKINS.human).map((k) => SKIN_TONES[k]);
@@ -744,6 +752,89 @@ export default class CreateScene extends Scene {
         h('div.cl', [`${RACES[ch.race].name} ${s.classAbbr} ${s.levels} · HP ${ch.hp.max}`]),
       ]);
     }))]));
+    b.append(this._partySummary());
+  }
+
+  /** Party at a glance: front line, spell power, hit points, purse and alignments. */
+  _partySummary() {
+    const P = this.newParty;
+    const has = (c, k) => splitClasses(c.classSpec).includes(k);
+    const front = P.filter((c) => has(c, 'fighter')).length;
+    const arcane = P.filter((c) => has(c, 'magicUser')).length;
+    const divine = P.filter((c) => has(c, 'cleric')).length;
+    const thieves = P.filter((c) => has(c, 'thief')).length;
+    const hp = P.reduce((t, c) => t + c.hp.max, 0);
+    const gold = P.reduce((t, c) => t + (c.gold ?? 0), 0);
+    const bestAC = P.length ? Math.min(...P.map((c) => deriveStats(c).ac)) : '—';
+    const al = {};
+    for (const c of P) al[c.alignment] = (al[c.alignment] ?? 0) + 1;
+    const tile = (n, l, tip) => h('div.pc-big', { dataset: { tip } }, [h('span.n', [String(n)]), h('span.l', [l])]);
+    const advice = !P.length ? 'An empty hall. Create your first adventurer.'
+      : !divine ? 'No cleric: wounds will heal slowly (1 hp a day).'
+        : !arcane ? 'No magic-user: Sleep and Magic Missile win the early fights.'
+          : front < 2 ? 'Thin front line: the first three in the marching order take the blows.'
+            : !thieves ? 'No thief: locks and traps must be braved by force.'
+              : 'A balanced company. Order the strong to the front with ALTER at camp.';
+    return h('div.pc-sect.cc-summary', [
+      h('div.pc-sect-h', [h('span', ['The Company'])]),
+      h('div.cc-sumtiles', [
+        tile(front, 'Fighters', 'Characters with the fighter class: the front line.'),
+        tile(divine, 'Clerics', 'Divine casters: healing and protection.'),
+        tile(arcane, 'Magic-users', 'Arcane casters: Sleep, Magic Missile and worse.'),
+        tile(thieves, 'Thieves', 'Locks, traps and backstabs.'),
+        tile(hp, 'Total HP', 'The party\'s combined hit points.'),
+        tile(bestAC, 'Best AC', 'Lower is better.'),
+        tile(gold.toLocaleString('en-US'), 'Gold', 'Pooled starting gold for arms and armour.'),
+      ]),
+      h('div.cc-sumline', [
+        ...Object.entries(al).map(([k, n]) => h('span.pc-chip', { dataset: { tip: ALIGNMENT_NAMES[k] } }, [`${k}${n > 1 ? ` ×${n}` : ''}`])),
+        h('span.cc-advice', [advice]),
+      ]),
+    ]);
+  }
+
+  /** TRAIN: as in the original, levels are bought at a Training Hall in Phlan. */
+  trainSel() {
+    const ch = this.newParty[this.hubSel];
+    if (!ch) return;
+    const ready = splitClasses(ch.classSpec).filter((c) => (ch.xp[c] ?? 0) >= xpForLevel(c, (ch.levels[c] ?? 1) + 1));
+    if (!ready.length) {
+      const c = splitClasses(ch.classSpec)[0];
+      const need = xpForLevel(c, (ch.levels[c] ?? 1) + 1) - (ch.xp[c] ?? 0);
+      return this.ctx.ui.toast(`${ch.name} needs ${need.toLocaleString('en-US')} more XP to train.`);
+    }
+    this.ctx.ui.toast(`${ch.name} may train: visit a Training Hall in Phlan (1,000 gp).`);
+  }
+
+  /** LOAD a saved game from the party screen. */
+  async loadGame() {
+    const list = this.ctx.saves?.list?.() ?? [];
+    if (!list.length) return this.ctx.ui.toast('There are no saved games.');
+    const pick = await this.ctx.ui.dialog({
+      title: 'Load Game', variant: 'blue', body: h('p.pc-trade-pick', ['Which game?']),
+      buttons: [...list.slice(0, 6).map((r) => ({ id: r.slot, label: `${r.slot === 'auto' ? 'Auto' : r.slot} · ${r.summary}`.slice(0, 40) })), { id: null, label: 'Cancel' }],
+    });
+    if (!pick) return;
+    const st = this.ctx.saves.load(pick);
+    if (!st) return this.ctx.ui.toast('That game could not be read.');
+    this.ctx.game.loadJSON(st);
+    this.ctx.scenes.goto('explore', {});
+  }
+
+  /** SAVE this party as a new game (at the gates of Phlan). */
+  async saveGame() {
+    if (!this.newParty.length) return;
+    if (this.ctx.debug?.nosave) return this.ctx.ui.toast('Saving is disabled in debug/screenshot mode.');
+    const used = new Set((this.ctx.saves?.list?.() ?? []).map((r) => r.slot));
+    const free = SAVE_SLOTS.filter((sl) => sl !== 'auto' && !used.has(sl));
+    const slot = free[0] ?? 'A';
+    if (used.has(slot)) {
+      const ok = await this.ctx.ui.dialog({ title: 'Overwrite?', variant: 'blue', body: `Every slot is taken. Replace the game in slot ${slot}?`, buttons: [{ id: 'y', label: 'Overwrite', primary: true }, { id: null, label: 'Cancel' }] });
+      if (ok !== 'y') return;
+    }
+    this.ctx.game.setParty(this.newParty.map((c) => structuredClone(c)));
+    const done = this.ctx.saves.save(slot, this.ctx.game);
+    this.ctx.ui.toast(done ? `Party saved to slot ${slot}.` : 'Save unavailable.');
   }
 
   // ------------------------------------------------------------------ actions
@@ -820,7 +911,8 @@ export default class CreateScene extends Scene {
     if (!this.newParty.length) return;
     const saved = this.ctx.game.party;
     this.ctx.game.party = this.newParty;
-    openCharacterView(this.ctx, { index: this.hubSel, onClose: () => { this.ctx.game.party = saved; } });
+    this._viewOpen = true;
+    openCharacterView(this.ctx, { index: this.hubSel, onClose: () => { this.ctx.game.party = saved; this._viewOpen = false; } });
   }
 
   begin() {
@@ -831,6 +923,14 @@ export default class CreateScene extends Scene {
 
   onResize() {
     this._frameCamera();
+  }
+
+  /** Behind a full-screen VIEW the hall is only glimpsed: redraw it twice a second. */
+  render() {
+    const t = this.ctx.clock.time;
+    if (this._viewOpen && this._lastRender != null && Math.abs(t - this._lastRender) < 0.5) return;
+    this._lastRender = t;
+    super.render();
   }
 
   update() {
@@ -857,6 +957,7 @@ export default class CreateScene extends Scene {
   }
 
   exit() {
+    this._gone = true;
     for (const c of this.figureRoot?.children ?? []) c.userData.dispose?.();
     for (const g of this._geos ?? []) g.dispose();
     this._trimMat?.dispose();

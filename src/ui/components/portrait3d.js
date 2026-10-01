@@ -79,7 +79,7 @@ export function renderPortrait3D(ch, o = {}) {
     const torso = crop === 'torso';
     const quality = scale <= 0.3 ? 0.0088 : scale <= 0.5 ? 'thumb' : 'portrait';
     fig = buildMiniature(ch, {
-      pose: 'portrait', base: false, quality, noWeapon: true, noShield: true, boundsKey: crop, faceSize: scale <= 0.5 ? 256 : 512,
+      pose: 'portrait', base: false, quality, noWeapon: true, noShield: true, rayHead: true, headAmbient: [0.035, 0.035, 0.045], headGain: 0.6, headLite: scale < 0.5, boundsKey: crop, faceSize: scale <= 0.5 ? 256 : 512,
       boundsFn: (fr) => {
         const c = fr.face.c;
         const hs = fr.face.hs;
@@ -112,8 +112,8 @@ export function renderPortrait3D(ch, o = {}) {
     st.rimWarm.position.copy(hc).add(new THREE.Vector3(-1.5, 0.3, -1.2));
     st.rimWarm.target.position.copy(hc);
     st.rimWarm.target.updateMatrixWorld();
-    const out = renderToCanvas(off.renderer, st.scene, cam, { w: W, h: H, ss: 1.4, paint: o.paint !== false, seed: (look.seed % 997) / 997, key: 'portrait' });
-    if (o.overpaint === false || torso && scale < 0.4) return out;
+    const out = renderToCanvas(off.renderer, st.scene, cam, { w: W, h: H, ss: scale < 0.5 ? 1 : 1.25, paint: o.paint === false ? false : 'light', seed: (look.seed % 997) / 997, key: 'portrait' });
+    if (o.overpaint === false || torso && scale < 0.4 || fig.userData.head) return out;
     // The illustrator's finishing layer (needs a material-ID pass of the same view).
     finishFace(off.renderer, st.scene, cam, fig, out, app, { key: 'portraitMask' });
     return out;

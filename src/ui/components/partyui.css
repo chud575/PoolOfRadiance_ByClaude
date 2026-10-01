@@ -112,7 +112,8 @@
 .pc-name { font-family: var(--font-display); font-size: 1.45em; letter-spacing: 0.08em; text-align: center; margin-top: 0.3em; line-height: 1.1; }
 .pc-sub { text-align: center; color: var(--por-text-dim); font-size: 0.92em; line-height: 1.35; }
 .pc-sub b { color: var(--por-text); font-weight: normal; }
-.pc-col { display: flex; flex-direction: column; gap: 0.8em; }
+.pc-col { display: flex; flex-direction: column; gap: 0.8em; min-height: 0; }
+.pc-col-scroll { overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; padding-right: 0.2em; }
 .pc-bigrow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.45em; margin-bottom: 0.55em; }
 .pc-cls { display: grid; grid-template-columns: 1fr auto; gap: 0.15em 0.6em; align-items: baseline; margin-bottom: 0.45em; }
 .pc-cls .c { font-family: var(--font-display); letter-spacing: 0.1em; color: var(--por-text); }
@@ -398,7 +399,8 @@
 /* ---- magic: glyphs, sockets, grimoire ---- */
 .pc-spell img.gl { width: 2.15em; height: 2.15em; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7)); }
 .pc-spell { grid-template-columns: 2.3em 1fr auto; }
-.pc-spell.full { opacity: 0.55; }
+.pc-spell.full { opacity: 0.82; }
+.pc-spell.full .nm { color: #cfc6b0; }
 .pc-sockets { display: flex; flex-direction: column; gap: 0.35em; margin-bottom: 0.6em; padding: 0.5em 0.6em; border-radius: 3px; background: radial-gradient(ellipse at 50% 0%, rgba(245, 217, 139, 0.08), rgba(0, 0, 0, 0.35)); border: 1px solid rgba(216, 178, 90, 0.2); }
 .pc-socket-row { display: grid; grid-template-columns: 1.8em 1fr auto; align-items: center; gap: 0.5em; }
 .pc-socket-row .lv { font-family: var(--font-display); color: var(--por-gilt); letter-spacing: 0.1em; text-align: center; }
@@ -539,3 +541,44 @@
 /* Paperdoll: the miniature fills its lit alcove. */
 .pc-doll-fig { background: radial-gradient(ellipse at 50% 55%, #2c2228 0%, #121016 60%, #07060a 100%); }
 .pc-doll-fig img.pc-doll-mini { width: 100%; height: 100%; max-height: none; object-fit: cover; object-position: 50% 80%; }
+
+/* Trade picker: party names wrap inside the dialog frame instead of breaking out of it. */
+.por-dialog:has(.pc-trade-pick) { max-width: min(40em, 92vw); }
+.por-dialog:has(.pc-trade-pick) .por-dialog-buttons { flex-wrap: wrap; justify-content: center; }
+.por-dialog:has(.pc-trade-pick) .por-dialog-buttons .por-btn { white-space: nowrap; flex: 0 0 auto; }
+
+/* Party hub: the company at a glance. */
+.cc-summary { margin-top: 0.9em; }
+.cc-sumtiles { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.4em; }
+.cc-sumtiles .pc-big { padding: 0.3em 0.1em; }
+.cc-sumtiles .pc-big .n { font-size: 1.25em; }
+.cc-sumtiles .pc-big .l { font-size: 0.58em; letter-spacing: 0.08em; }
+.cc-sumline { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35em; margin-top: 0.55em; }
+.cc-advice { margin-left: auto; font-style: italic; color: var(--por-text-dim); font-size: 0.82em; }
+
+/* A portrait still being painted. */
+img.pc-pending { background: radial-gradient(ellipse at 50% 40%, rgba(120, 96, 70, 0.35), rgba(10, 10, 20, 0.9) 70%); min-height: 2em; }
+
+/* Spells: readable unselected rows; the spell card is the one detail surface (no lore strip on MAGIC). */
+.pc-spells .pc-spell .tg { color: #a9b3cf; font-size: 0.76em; }
+.pc-spells .pc-spell .nm { color: #ece4cc; }
+.pc-view:has(.pc-spells .pc-spellcard) .pc-lore { display: none; }
+.pc-cast-empty { padding: 1.2em 0.6em; text-align: center; }
+.pc-cast-empty .t { font-family: var(--font-display); letter-spacing: 0.14em; color: var(--por-gilt-hi); font-size: 1.1em; margin-bottom: 0.4em; text-transform: uppercase; }
+.pc-cast-empty p { color: var(--por-text-dim); margin: 0 0 0.8em; }
+.pc-cast-empty .pc-spell.ghost { opacity: 0.6; text-align: left; cursor: default; border: 1px dashed rgba(216, 178, 90, 0.25); margin: 0.25em auto; max-width: 24em; }
+
+/* ITEMS: the selected item's lore plate under the pack grid. */
+.pc-itemlore { display: grid; grid-template-columns: 9em 1fr; gap: 1em; align-items: center; margin: 0.8em 0 0.6em; padding: 0.8em 1em; border-radius: 3px;
+  background: linear-gradient(180deg, rgba(244, 228, 190, 0.96), rgba(222, 198, 150, 0.96)); color: #2a1c0e; box-shadow: inset 0 0 22px rgba(120, 80, 30, 0.35), 0 0 0 1px #000, 0 0 0 2px rgba(216, 178, 90, 0.5); }
+.pc-itemlore.empty { display: block; text-align: center; color: #6a5434; font-style: italic; }
+.pc-itemlore .plate { width: 9em; height: 9em; border-radius: 50%; display: grid; place-items: center;
+  background: radial-gradient(circle at 45% 40%, rgba(255, 248, 225, 0.95), rgba(214, 186, 132, 0.9) 60%, rgba(150, 110, 60, 0.85)); box-shadow: inset 0 0 18px rgba(90, 50, 10, 0.45), 0 2px 6px rgba(60, 30, 0, 0.4); }
+.pc-itemlore .plate img { width: 82%; height: 82%; image-rendering: auto; filter: drop-shadow(2px 4px 4px rgba(60, 30, 0, 0.55)) saturate(1.1) contrast(1.05); }
+.pc-itemlore.r-magic .plate { background: radial-gradient(circle at 45% 40%, rgba(230, 244, 255, 0.95), rgba(150, 190, 230, 0.9) 60%, rgba(60, 90, 140, 0.85)); }
+.pc-itemlore .t { font-family: var(--font-display); letter-spacing: 0.08em; font-size: 1.15em; color: #5a2a0e; }
+.pc-itemlore .s { font-size: 0.76em; letter-spacing: 0.06em; color: #7a5a34; text-transform: uppercase; margin: 0.1em 0 0.4em; }
+.pc-itemlore .d { font-style: italic; margin: 0 0 0.35em; line-height: 1.35; }
+.pc-itemlore .r { margin: 0; font-size: 0.88em; color: #3a2a18; }
+.pc-itemlore .c { margin: 0.25em 0 0; font-size: 0.82em; }
+.pc-itemlore .c .up { color: #2a6a2a; } .pc-itemlore .c .down { color: #8a2a1a; }

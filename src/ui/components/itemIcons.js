@@ -466,8 +466,9 @@ export function itemIconURL(icon, o = {}) {
   }
   g.save();
   if (o.ghost) {
-    g.globalAlpha = 0.16;
-    g.filter = 'grayscale(1) brightness(2.2)';
+    // Empty-slot ghost: a faint gilt engraving rather than a grey smudge.
+    g.globalAlpha = 0.3;
+    g.filter = 'grayscale(1) sepia(1) saturate(1.6) brightness(1.7)';
   } else {
     g.shadowColor = 'rgba(0,0,0,0.7)';
     g.shadowBlur = 4;

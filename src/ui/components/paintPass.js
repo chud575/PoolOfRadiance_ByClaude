@@ -157,13 +157,26 @@ export function renderToCanvas(renderer, scene, camera, o) {
     renderer.autoClear = true;
     renderer.shadowMap.autoUpdate = true;
     renderer.shadowMap.needsUpdate = true;
-    const hdr = hdrTarget(o.key ?? 'fig', RW, RH, o.paint ? 0 : 4);
+    const hdr = hdrTarget(o.key ?? 'fig', RW, RH, o.paint === true ? 0 : 4);
     renderer.setRenderTarget(hdr);
     renderer.setClearColor(0x000000, o.alpha ? 0 : 1);
     renderer.clear();
     renderer.render(scene, camera);
     const out = rtFor(`out:${o.key ?? 'fig'}`, o.w, o.h, { depthBuffer: false });
-    if (o.paint) {
+    if (o.paint === 'light') {
+      // Brushwork only: tone-mapped source smeared along the forms (keeps the anatomy crisp).
+      const mid = rtFor(`mid:${o.key ?? 'fig'}`, RW, RH, { depthBuffer: false });
+      p.plain.uniforms.tSrc.value = hdr.texture;
+      p.plain.uniforms.exposure.value = o.exposure ?? 1;
+      p.quad.material = p.plain;
+      renderer.setRenderTarget(mid);
+      renderer.render(p.scene, p.cam);
+      p.strokes.uniforms.tSrc.value = mid.texture;
+      p.strokes.uniforms.texel.value.set(1 / RW, 1 / RH);
+      p.strokes.uniforms.res.value.set(RW, RH);
+      p.strokes.uniforms.seed.value = o.seed ?? 0;
+      p.quad.material = p.strokes;
+    } else if (o.paint) {
       const mid = rtFor(`mid:${o.key ?? 'fig'}`, RW, RH, { depthBuffer: false });
       p.kuw.uniforms.tSrc.value = hdr.texture;
       p.kuw.uniforms.texel.value.set(1 / RW, 1 / RH);

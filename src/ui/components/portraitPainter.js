@@ -1506,6 +1506,10 @@ const urlCache = new Map();
 export function portraitKey(ch, scale = 1, crop = 'head') {
   return `${appearanceKey(ch)}|${scale}|${crop}`;
 }
+/** Whether a portrait is already painted (cheap). */
+export function hasPortrait(ch, scale = 1, crop = 'head') {
+  return urlCache.has(portraitKey(ch, scale, crop));
+}
 /**
  * PNG data URL of a character's portrait (cached).
  * @param {object} ch  character or {race, gender, classSpec, look}

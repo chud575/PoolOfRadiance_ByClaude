@@ -130,6 +130,8 @@ export class SpellPanel {
         const full = free[i] <= 0;
         lists.push(h(`div.pc-spell${this.focus === id ? '.sel' : ''}${full && !count ? '.full' : ''}`, {
           tabindex: '0', dataset: { ...lore(spellTip(id, cls)), nav: '1' },
+          onmouseenter: () => this._swapCard(id, cls),
+          onfocus: () => this._swapCard(id, cls),
           onclick: () => { this.focus = id; if (!full) this.add(id); else { this.ctx.ui.toast(`No free level ${ROMAN[i + 1]} slots — remove a spell first.`); this.render(); } },
         }, [
           h('img.gl', { src: spellGlyphURL(id), alt: '' }),
@@ -143,7 +145,7 @@ export class SpellPanel {
       sub,
       h('div.pc-sect-h.left', [h('span', [`${cls === 'cleric' ? 'Prayers granted by the gods' : 'Spells in the book'} · click to memorize`])]),
       h('div.pc-spell-scroll', lists),
-      this._spellCard(this.focus && known.includes(this.focus) ? this.focus : prepared[0] ?? known[0], cls),
+      (this._card = this._spellCard(this.focus && known.includes(this.focus) ? this.focus : prepared[0] ?? known[0], cls)),
     ]);
 
     // ---- load-out
@@ -182,6 +184,14 @@ export class SpellPanel {
     this.el.append(casters, knownCol, loadout);
   }
 
+  /** The one spell-detail surface follows the pointer / keyboard focus. */
+  _swapCard(id, cls) {
+    if (!this._card?.isConnected || this._cardId === id) return;
+    const next = this._spellCard(id, cls);
+    this._card.replaceWith(next);
+    this._card = next;
+  }
+
   /** The focused spell, illuminated: glyph, family, level, range, area, duration, save and lore. */
   _spellCard(id, cls) {
     if (!id) return null;
@@ -189,6 +199,7 @@ export class SpellPanel {
     const d = SPELL_DATA[id] ?? {};
     const save = { none: 'none', 'neg:sp': 'spell negates', 'half:sp': 'spell for half', 'neg:ppdm': 'poison negates' }[d.save] ?? d.save ?? 'none';
     const where = { both: 'combat or camp', combat: 'combat only', camp: 'camp only' }[sp?.usable ?? d.usable] ?? '';
+    this._cardId = id;
     return h('div.pc-spellcard', [
       h('img', { src: spellGlyphURL(id), alt: '' }),
       h('div.body', [
@@ -328,7 +339,14 @@ export class SpellPanel {
     const left = h('div.pc-sect', { style: { display: 'flex', flexDirection: 'column', minHeight: '0' } }, [
       sub,
       h('div.pc-sect-h.left', [h('span', ['Memorized spells'])]),
-      h('div.pc-spell-scroll', rows.length ? rows : [h('div.pc-rest-note', ['Nothing in memory. Memorize, then rest.'])]),
+      h('div.pc-spell-scroll', rows.length ? rows : [
+        h('div.pc-cast-empty', [
+          h('div.t', ['Nothing in memory']),
+          h('p', [`${ch.name}'s mind is empty of ${cls === 'cleric' ? 'prayers' : 'spells'}. These return after tonight's rest:`]),
+          ...(ch.spells?.prepared?.[cls] ?? []).map((pid) => h('div.pc-spell.ghost', { dataset: lore(spellTip(pid, cls)) }, [h('img.gl', { src: spellGlyphURL(pid, { dim: true }), alt: '' }), h('span', [h('div.nm', [getSpell(pid).name]), h('div.tg', ['after rest'])]), h('span.ct', [''])])),
+          this.o.onRest ? h('button.por-btn.primary', { style: { marginTop: '0.8em' }, onclick: () => this.o.onRest?.() }, ['Rest and memorize']) : null,
+        ]),
+      ]),
     ]);
     const id = this.focus && uniq.includes(this.focus) ? this.focus : uniq.find((x) => !castProblem(ch, x, { context: 'camp' }));
     const sp = id && getSpell(id);
