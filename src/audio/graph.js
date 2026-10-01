@@ -52,7 +52,50 @@ export function createGraph(ac, dest = ac.destination) {
   air.type = 'highshelf';
   air.frequency.value = 9000;
   air.gain.value = 1.5;
-  musicIn.connect(hp).connect(mud).connect(air).connect(musicDuck).connect(musicBus).connect(master);
+  musicIn.connect(hp).connect(mud).connect(air);
+  // Stereo shuffler on the score: lifts the side signal above ~300 Hz by
+  // ~3.5 dB (bass stays mono). Per-voice section panning does the real work;
+  // this restores the width summing to the buses takes away.
+  const widen = (src, dst, w = 0.5) => {
+    const split = ac.createChannelSplitter(2);
+    const merge = ac.createChannelMerger(2);
+    const mk = (v) => {
+      const n = ac.createGain();
+      n.gain.value = v;
+      n.channelCount = 1;
+      n.channelCountMode = 'explicit';
+      return n;
+    };
+    const side = mk(1);
+    const sl = mk(0.5);
+    const sr = mk(-0.5);
+    const shp = ac.createBiquadFilter();
+    shp.type = 'highpass';
+    shp.frequency.value = 300;
+    shp.channelCount = 1;
+    shp.channelCountMode = 'explicit';
+    const sp = mk(w);
+    const sn = mk(-w);
+    const l = mk(1);
+    const r = mk(1);
+    src.connect(split);
+    split.connect(l, 0);
+    split.connect(r, 1);
+    split.connect(sl, 0);
+    split.connect(sr, 1);
+    sl.connect(side);
+    sr.connect(side);
+    side.connect(shp);
+    shp.connect(sp);
+    shp.connect(sn);
+    sp.connect(l);
+    sn.connect(r);
+    l.connect(merge, 0, 0);
+    r.connect(merge, 0, 1);
+    merge.connect(dst);
+  };
+  widen(air, musicDuck);
+  musicDuck.connect(musicBus).connect(master);
   const hall = ac.createConvolver();
   hall.buffer = makeImpulse(ac, 'hall', 3);
   const hallRet = g(0.5);

@@ -46,6 +46,11 @@ export class Plucked extends Instrument {
     );
   }
 
+  /** Pre-render the string buffers a note will need (idle-time cache warming). */
+  warm(m, vel = 0.7) {
+    return [0, 1, 2].map((variant) => () => this._buf(m, vel, variant));
+  }
+
   play(t, m, dur, vel = 0.7, opts = {}) {
     const ac = this.ac;
     const variant = this.rr++ % 3;

@@ -1,7 +1,8 @@
-import { noiseBuffer } from '../dsp/bank.js';
+import { noiseBuffer, noiseOffset } from '../dsp/bank.js';
 import { Fx } from './toolkit.js';
 import { creak, monsterVox } from './library.js';
 import { AudioRng } from '../core/rng.js';
+import { bedGain } from '../loudness.js';
 
 /**
  * Ambience beds: continuous noise layers shaped by slow LFOs (wind, surf,
@@ -43,7 +44,8 @@ export class Ambience {
     this.out = ac.createGain();
     const t = o.at ?? ac.currentTime;
     this.out.gain.setValueAtTime(0.0001, t);
-    this.out.gain.linearRampToValueAtTime(1, t + (o.fade ?? 2.5));
+    this.level = o.gain ?? bedGain(env, !!(o.night && spec.night));
+    this.out.gain.linearRampToValueAtTime(this.level, t + (o.fade ?? 2.5));
     this.out.connect(dest);
     this.send = ac.createGain();
     this.send.gain.value = 0.6;
@@ -73,7 +75,10 @@ export class Ambience {
     const n = this.ac.createBufferSource();
     n.buffer = noiseBuffer(this.ac, kind);
     n.loop = true;
-    n.start(t, this.rng.range(0, 3));
+    // Independent read heads (and a hair of rate drift) per layer: no two
+    // layers ever share the same stretch of the 24 s noise take.
+    n.playbackRate.value = this.rng.range(0.94, 1.06);
+    n.start(t, noiseOffset(this.rng, 3));
     this.nodes.push(n);
     return n;
   }

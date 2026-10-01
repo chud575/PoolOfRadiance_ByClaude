@@ -22,9 +22,10 @@ export const victory = {
   },
   build() {
     const ev = [];
-    const ch = chart('D | G,A | D | D', 4);
-    ev.push(...mel('brass', 'A3:t! A3:t A3:t D4:q! A4:q. F#4:e | G4:e. A4:s B4:e. G4:s A4:h | D5:w! | r:w', { vel: 0.85 }));
-    ev.push(...mel('horn', 'F#3:t F#3:t F#3:t A3:q F#4:q. D4:e | D4:e. E4:s G4:e. E4:s E4:h | A4:w | r:w', { vel: 0.7 }));
+    // The title's motif, turned major: D–A–A and the leap to the octave.
+    const ch = chart('D | A | D | D', 4);
+    ev.push(...mel('brass', 'D4:q.! A4:e A4:q. D5:e | C#5:e. B4:s A4:e. B4:s C#5:q E5:q | D5:w! | r:w', { vel: 0.85 }));
+    ev.push(...mel('horn', 'A3:q. F#4:e F#4:q. A4:e | A4:e. G4:s E4:e. G4:s A4:q C#5:q | A4:w | r:w', { vel: 0.7 }));
     ev.push(...pad('lowbrass', ch.slice(0, 3), { low: 'D2', count: 2, vel: 0.6 }));
     ev.push(...pad('strings', ch, { low: 'F#3', count: 3, vel: 0.5 }));
     ev.push(...pad('basses', ch, { low: 'D2', count: 1, vel: 0.55 }));
@@ -61,15 +62,16 @@ export const defeat = {
   },
   build() {
     const ev = [];
-    const ch = chart('Dm | A | Gm,A | Dm', 4);
+    // The motif again, broken: D–A–A in mourning, sinking to the tonic.
+    const ch = chart('Dm | F/C | Gm,A | Dm', 4);
     ev.push({ inst: 'boom', t: 0, dur: 2, vel: 0.9 });
     ev.push({ inst: 'bell', t: 0, midi: 50, dur: 4, vel: 0.6 });
     ev.push({ inst: 'bell', t: 8, midi: 50, dur: 4, vel: 0.45 });
-    ev.push(...mel('strings', 'A4:h G4:q F4:q | E4:h D4:h | Bb3:h A3:h | D4:w', { vel: 0.5 }));
+    ev.push(...mel('strings', 'D4:h. A4:q | A4:h G4:q F4:q | Bb3:h A3:h | D4:w', { vel: 0.5 }));
     ev.push(...mel('flute', 'r:w | r:w | D5:h C#5:h | D5:w', { vel: 0.35 }));
     ev.push(...pad('choir', ch, { low: 'D3', count: 3, vel: 0.45 }));
     ev.push(...pad('celli', ch, { low: 'D2', count: 2, vel: 0.4 }));
-    ev.push(...pad('basses', ch, { low: 'D1', count: 1, vel: 0.45 }));
+    ev.push(...pad('basses', ch, { low: 'D2', count: 1, vel: 0.45 }));
     ev.push({ inst: 'lowbrass', t: 0, midi: [38, 45], dur: 4, vel: 0.45 });
     return { lengthQ: 16, events: ev, tailQ: 4 };
   },

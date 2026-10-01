@@ -10,13 +10,14 @@ import { AudioRng } from '../core/rng.js';
  * absorption). A gentle highpass keeps the tail from booming.
  */
 export const ROOMS = {
-  // name: { t60, pre (s), damp (0 bright … 1 dark), early: count, size (m-ish), width, lowcut }
-  hall: { t60: 2.9, pre: 0.022, damp: 0.55, early: 14, size: 26, width: 1, lowcut: 90 },
-  cathedral: { t60: 4.6, pre: 0.035, damp: 0.6, early: 18, size: 40, width: 1, lowcut: 70 },
-  dungeon: { t60: 3.4, pre: 0.012, damp: 0.72, early: 22, size: 9, width: 0.85, lowcut: 110 },
-  room: { t60: 0.85, pre: 0.006, damp: 0.5, early: 10, size: 5, width: 0.7, lowcut: 140 },
-  street: { t60: 1.3, pre: 0.018, damp: 0.6, early: 8, size: 14, width: 1, lowcut: 160 },
-  open: { t60: 0.7, pre: 0.03, damp: 0.75, early: 4, size: 30, width: 1, lowcut: 220 },
+  // name: { t60, pre (s), damp (0 bright … 1 dark), early: count, size (m-ish), width, lowcut, floor (Hz: the
+  // tail's damping cutoff never falls below this — a scoring stage stays airy, a cellar goes dull) }
+  hall: { t60: 2.7, pre: 0.024, damp: 0.3, early: 16, size: 26, width: 1, lowcut: 110, floor: 1500 },
+  cathedral: { t60: 4.6, pre: 0.035, damp: 0.5, early: 18, size: 40, width: 1, lowcut: 80, floor: 900 },
+  dungeon: { t60: 3.4, pre: 0.012, damp: 0.72, early: 22, size: 9, width: 0.85, lowcut: 110, floor: 450 },
+  room: { t60: 0.85, pre: 0.006, damp: 0.5, early: 10, size: 5, width: 0.7, lowcut: 140, floor: 900 },
+  street: { t60: 1.3, pre: 0.018, damp: 0.55, early: 8, size: 14, width: 1, lowcut: 160, floor: 800 },
+  open: { t60: 0.7, pre: 0.03, damp: 0.7, early: 4, size: 30, width: 1, lowcut: 220, floor: 900 },
 };
 
 /**
@@ -41,7 +42,7 @@ export function impulseData(sr, spec, seed = 7) {
     for (let i = pre; i < len; i++) {
       const t = (i - pre) / sr;
       // Cutoff falls from ~sr/2.4 toward a few hundred Hz as the tail ages.
-      const fc = 300 + (sr / 2.4) * Math.exp(-t * (1.2 + r.damp * 5));
+      const fc = (r.floor ?? 300) + (sr / 2.4) * Math.exp(-t * (1.2 + r.damp * 5));
       const a = Math.exp((-2 * Math.PI * fc) / sr);
       const n = rng.next() * 2 - 1;
       lp = (1 - a) * n + a * lp;
@@ -53,9 +54,10 @@ export function impulseData(sr, spec, seed = 7) {
       d[i] = hp * Math.exp(-k * t) * grow * 0.9;
     }
     // Early reflections.
+    // Independent reflection patterns per ear (decorrelated, wide early field).
     for (let e = 0; e < r.early; e++) {
       const tt = r.pre * 0.4 + ((e + rng.next()) / r.early) * (r.size / 343) * 1.6;
-      const idx = Math.floor(tt * sr * (1 + (c ? 0.013 : -0.011) * r.width * rng.next()));
+      const idx = Math.floor(tt * sr * (1 + (rng.next() - 0.5) * 0.08 * r.width));
       if (idx >= len) continue;
       const amp = (0.55 / (1 + e * 0.35)) * (rng.next() < 0.5 ? -1 : 1) * Math.exp(-k * tt);
       // Each reflection is a tiny smeared click (absorption softens it).

@@ -36,7 +36,7 @@ export class Instrument {
     // Ensemble chorus (sections): two slowly modulated short delays panned
     // apart — one oscillator-free way to turn 3 voices into a section.
     if (o.chorus) {
-      for (const [side, base, rate] of [[-0.7, 0.013, 0.31], [0.7, 0.019, 0.23]]) {
+      for (const [side, base, rate] of [[-0.75, 0.014, 0.31], [0.75, 0.021, 0.23]]) {
         const d = ac.createDelay(0.05);
         d.delayTime.value = base;
         const l = ac.createOscillator();
@@ -46,7 +46,7 @@ export class Instrument {
         l.connect(lg).connect(d.delayTime);
         l.start();
         const g = ac.createGain();
-        g.gain.value = 0.45;
+        g.gain.value = 0.4;
         const p = ac.createStereoPanner();
         p.pan.value = Math.max(-1, Math.min(1, (o.pan ?? 0) + side));
         this.out.connect(d).connect(g).connect(p).connect(o.dest);
@@ -71,6 +71,15 @@ export class Instrument {
 
   // eslint-disable-next-line no-unused-vars
   play(t, midi, dur, vel, opts) {}
+
+  /**
+   * A slurred (legato) phrase: notes [{t, midi, dur, vel}] that follow each
+   * other without gaps. Sustained instruments override this to glide between
+   * pitches on one continuous envelope; the default just plays the notes.
+   */
+  phrase(notes, opts = {}) {
+    for (const n of notes) this.play(n.t, n.midi, n.dur, n.vel, opts);
+  }
 
   /** Stop free-running modulators (call when the owning player is gone). */
   dispose() {

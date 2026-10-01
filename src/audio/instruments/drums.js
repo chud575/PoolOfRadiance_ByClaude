@@ -34,10 +34,22 @@ function metal(sr, kind, vel, seed) {
     const f = kind === 'tamb' ? rng.range(4800, 11000) : kind === 'chime' ? 1800 * Math.pow(1.17, p) * rng.range(0.99, 1.01) : rng.range(2500, 13000);
     const d = (kind === 'tamb' ? rng.range(0.06, 0.25) : kind === 'hat' ? 0.05 : kind === 'chime' ? rng.range(0.6, 2) : rng.range(0.6, dur * 0.5));
     const a = rng.range(0.3, 1) / Math.sqrt(parts);
-    let ph = rng.next();
-    for (let n = 0; n < N; n++) {
-      ph += f / sr;
-      out[n] += Math.sin(6.2831853 * ph) * a * Math.exp(-n / sr / d);
+    // Recursive sine (rotation) with a running decay: cheap, and stops once inaudible.
+    const w = (6.283185307179586 * f) / sr;
+    const c = Math.cos(w);
+    const sn = Math.sin(w);
+    const p0 = rng.next() * 6.283185307179586;
+    let x = Math.cos(p0);
+    let y = Math.sin(p0);
+    let env = a;
+    const kd = Math.exp(-1 / (sr * d));
+    const floor = a * 1e-5;
+    for (let n = 0; n < N && env > floor; n++) {
+      out[n] += y * env;
+      const x1 = x * c - y * sn;
+      y = x * sn + y * c;
+      x = x1;
+      env *= kd;
     }
   }
   // Noise layer (highpassed).
@@ -74,15 +86,12 @@ export class Drums extends Instrument {
     this.rr = 0;
   }
 
-  play(t, m, dur, vel = 0.8, opts = {}) {
-    const kind = opts.kind ?? this.kind;
-    const vb = vel < 0.45 ? 0 : vel < 0.78 ? 1 : 2;
+  _buf(kind, m, vb, variant) {
     const v = [0.4, 0.7, 1][vb];
-    const variant = this.rr++ % 3;
     const tuned = kind === 'timpani' || kind === 'tom' || kind === 'taiko' || kind === 'frame';
     const f = tuned && m ? 440 * Math.pow(2, (m - 69) / 12) : undefined;
     const key = `drum:${kind}:${tuned && m ? m : 0}:${vb}:${variant}`;
-    const buf = sample(this.ac, key, (sr) => {
+    return sample(this.ac, key, (sr) => {
       if (KIT[kind]) {
         const spec = KIT[kind](f);
         // Round-robin: tiny tuning / decay jitter per variant.
@@ -91,6 +100,22 @@ export class Drums extends Instrument {
       }
       return metal(sr, kind, v, variant * 31 + vb);
     });
+  }
+
+  /** Pre-render the sample buffers a note will need (idle-time cache warming). */
+  warm(m, vel = 0.8, opts = {}, all = false) {
+    const kind = opts.kind ?? this.kind;
+    const vbs = all ? [0, 1, 2] : [vel < 0.45 ? 0 : vel < 0.78 ? 1 : 2];
+    const out = [];
+    for (const vb of vbs) for (let variant = 0; variant < 3; variant++) out.push(() => this._buf(kind, m, vb, variant));
+    return out;
+  }
+
+  play(t, m, dur, vel = 0.8, opts = {}) {
+    const kind = opts.kind ?? this.kind;
+    const vb = vel < 0.45 ? 0 : vel < 0.78 ? 1 : 2;
+    const variant = this.rr++ % 3;
+    const buf = this._buf(kind, m, vb, variant);
     const src = this.ac.createBufferSource();
     src.buffer = buf;
     const g = this.ac.createGain();

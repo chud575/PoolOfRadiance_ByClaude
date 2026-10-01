@@ -164,16 +164,52 @@ const VOX = {
   },
   wolf: (fx, t, m) => {
     if (m === 'attack') fx.voice(t, { dur: 0.5, contour: [[0, 140], [1, 120]], vowels: ['r'], rough: 0.6, drive: 0.4, peak: 0.35 });
-    else fx.voice(t, { type: 'triangle', dur: m === 'die' ? 0.7 : 1.6, contour: m === 'die' ? [[0, 700], [1, 300]] : [[0, 380], [0.2, 560], [0.8, 540], [1, 420]], vowels: ['u', 'o', 'u'], vib: [5, 0.01], breath: 0.03, peak: 0.3 });
+    else if (m === 'die' || m === 'hurt') {
+      // A yelp that breaks and falls: sharp rise, then a rough whimpering slide down.
+      const d = m === 'die' ? 0.75 : 0.32;
+      fx.voice(t, { dur: d, a: 0.012, contour: m === 'die' ? [[0, 620], [0.08, 940], [0.3, 780], [0.65, 430], [1, 260]] : [[0, 700], [0.25, 980], [1, 620]], vowels: ['i', 'a', 'u'], formant: 1.25, rough: 0.35, roughRate: 90, breath: 0.12, vib: [11, 0.025], peak: 0.24 });
+      if (m === 'die') fx.voice(t + 0.82, { dur: 0.45, a: 0.06, contour: [[0, 340], [1, 210]], vowels: ['u', 'u'], formant: 1.1, rough: 0.5, breath: 0.25, peak: 0.08 });
+    } else fx.voice(t, { type: 'triangle', dur: 1.6, contour: [[0, 380], [0.2, 560], [0.8, 540], [1, 420]], vowels: ['u', 'o', 'u'], vib: [5, 0.01], breath: 0.03, peak: 0.3 });
   },
-  spider: (fx, t) => {
+  spider: (fx, t, m) => {
+    if (m === 'die') {
+      // Death rattle: chitter that slows and sinks, legs scrabbling, a wet collapse.
+      let tt = t;
+      for (let i = 0; i < 16; i++) {
+        const k = i / 15;
+        fx.burst(tt, { dur: 0.018 + k * 0.03, peak: 0.22 * (1 - k * 0.6), filters: [{ type: 'bandpass', f: 3000 - k * 2100, q: 7 }] });
+        tt += 0.03 + k * k * 0.09;
+      }
+      fx.grains(t + 0.1, { count: 14, spread: 0.8, curve: 1.8, fLo: 600, fHi: 1800, q: 4, peak: 0.12 });
+      fx.burst(t + 0.05, { kind: 'pink', a: 0.08, hold: 0.25, dur: 0.6, peak: 0.12, filters: [{ type: 'bandpass', f: 1800, f1: 500, q: 1.5, dt: 0.9 }] });
+      thud(fx, tt + 0.05, 0.25, 70);
+      return;
+    }
     fx.burst(t, { a: 0.05, hold: 0.3, dur: 0.2, peak: 0.14, filters: [{ type: 'highpass', f: 3000 }] });
     fx.grains(t, { count: 9, spread: 0.35, fLo: 1800, fHi: 3200, q: 9, peak: 0.25 });
   },
-  frog: (fx, t) => {
+  frog: (fx, t, m) => {
+    if (m === 'die') {
+      // A croak that collapses: the pulse train slows and drops, then a long deflating groan.
+      let tt = t;
+      for (let i = 0; i < 14; i++) {
+        const k = i / 13;
+        fx.tone(tt, { type: 'square', f: 95 - k * 45, dur: 0.035 + k * 0.03, peak: 0.4 * (1 - k * 0.5), filters: [{ type: 'bandpass', f: 650 - k * 350, q: 4 }] });
+        tt += 0.035 + k * 0.07;
+      }
+      fx.voice(t + 0.25, { dur: 0.9, contour: [[0, 70], [1, 38]], vowels: ['o', 'u'], rough: 0.7, roughRate: 30, formant: 0.8, breath: 0.2, peak: 0.16 });
+      return;
+    }
     for (let c = 0; c < 2; c++) for (let i = 0; i < 7; i++) fx.tone(t + c * 0.42 + i * 0.035, { type: 'square', f: 95, dur: 0.03, peak: 0.4, filters: [{ type: 'bandpass', f: 650, q: 4 }] });
   },
-  lizard: (fx, t) => {
+  lizard: (fx, t, m) => {
+    if (m === 'die') {
+      // Hiss turning to a rattling gurgle that sinks away.
+      fx.burst(t, { a: 0.02, hold: 0.15, dur: 0.5, peak: 0.12, filters: [{ type: 'bandpass', f: 2600, f1: 900, q: 2, dt: 0.6 }] });
+      fx.voice(t + 0.08, { dur: 1.0, contour: [[0, 170], [0.3, 140], [1, 60]], vowels: ['r', 'o', 'u'], rough: 0.9, roughRate: 35, drive: 0.3, breath: 0.2, peak: 0.3 });
+      thud(fx, t + 0.9, 0.3, 75);
+      return;
+    }
     fx.burst(t, { a: 0.04, hold: 0.25, dur: 0.2, peak: 0.12, filters: [{ type: 'bandpass', f: 2600, q: 2 }] });
     fx.voice(t + 0.15, { dur: 0.35, contour: [[0, 150], [1, 115]], vowels: ['r'], rough: 0.6, peak: 0.3 });
   },
@@ -302,6 +338,35 @@ export const SFX = {
   block: (fx, t) => {
     metalClang(fx, t, 0.16, 1100);
     knock(fx, t, 260, 0.25);
+  },
+  // Blade meets blade: a bright ring with a scrape as the edges slide apart.
+  parry: (fx, t) => {
+    metalClang(fx, t, 0.2, fx.rng.range(1150, 1450));
+    fx.burst(t + 0.015, { a: 0.01, dur: 0.16, peak: 0.12, filters: [{ type: 'bandpass', f: 4200, f1: 2400, q: 3, dt: 0.15 }] });
+    fx.tone(t, { f: 160, f1: 110, dur: 0.06, peak: 0.12 });
+  },
+  // A blow caught on a wooden, iron-rimmed shield.
+  shield: (fx, t) => {
+    knock(fx, t, fx.rng.range(150, 190), 0.45);
+    fx.burst(t, { dur: 0.09, peak: 0.25, filters: [{ type: 'lowpass', f: 900 }] });
+    clink(fx, t + 0.005, fx.rng.range(1800, 2300), 0.06, 0.7);
+  },
+  // A sidestep: cloth and leather, the blade cutting air close by.
+  dodge: (fx, t) => {
+    whoosh(fx, t, { f0: 700, f1: 2600, dur: 0.18, peak: 0.16 });
+    fx.burst(t + 0.05, { a: 0.03, dur: 0.12, peak: 0.05, filters: [{ type: 'bandpass', f: 1600, q: 0.8 }] });
+    foot(fx, t + 0.1, 'stone', 0.3, 0.2);
+  },
+  // Wind-up of an attack before we know what it is: leather creak, gear shifting.
+  ready: (fx, t) => {
+    creak(fx, t, { rate: [55, 80], dur: 0.12, f: 1300, q: 8, peak: 0.025 });
+    fx.burst(t, { a: 0.03, dur: 0.12, peak: 0.05, filters: [{ type: 'bandpass', f: 1200, q: 0.7 }] });
+    fx.grains(t + 0.02, { count: 4, spread: 0.12, fLo: 3500, fHi: 7000, q: 7, peak: 0.02 });
+  },
+  // An incoming arrow: a rising whistle that ends at the target.
+  arrow_in: (fx, t) => {
+    fx.burst(t, { kind: 'pink', a: 0.16, dur: 0.06, peak: 0.25, curve: 'lin', filters: [{ type: 'bandpass', f: 1800, f1: 3800, q: 6, dt: 0.18 }] });
+    fx.tone(t, { f: 2600, f1: 3400, a: 0.15, dur: 0.05, peak: 0.02 });
   },
   bow: (fx, t) => {
     fx.tone(t, { type: 'triangle', f: 215, f1: 200, dur: 0.28, peak: 0.22 });
@@ -465,7 +530,14 @@ export const SFX = {
     clink(fx, t + 0.1, 2700, 0.05, 0.5);
   },
   sparkle: (fx, t) => shimmer(fx, t, { notes: [2093, 2637, 3136, 4186], step: 0.05, dur: 0.6, peak: 0.04 }),
-  levelup: (fx, t) => SFX.sparkle(fx, t),
+  // Level up: a rising arpeggio of struck bells (D major, the motif's fifth on
+  // top), a warm swell underneath and a final glint.
+  levelup: (fx, t) => {
+    [587, 740, 880, 1175, 1760].forEach((f, i) => fx.modes(t + i * 0.085, { f, ratios: [1, 2.76, 5.4], decays: [1.4 - i * 0.15, 0.5, 0.2], amps: [1, 0.35, 0.12], peak: 0.09 + i * 0.01, pan: (i - 2) * 0.18 }));
+    chord(fx, t + 0.1, [294, 440, 587], { dur: 1.1, peak: 0.04, vowel: 'o', a: 0.25 });
+    fx.tone(t + 0.42, { f: 3520, dur: 0.9, peak: 0.025, vib: [6, 0.004] });
+    fx.burst(t + 0.38, { a: 0.2, dur: 0.6, peak: 0.03, filters: [{ type: 'highpass', f: 6000 }] });
+  },
 };
 
 /** Monster vocalisation: kind = voice family or monster id; mode = attack|hurt|die. */

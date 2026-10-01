@@ -1,4 +1,4 @@
-import { noiseBuffer } from '../dsp/bank.js';
+import { noiseBuffer, noiseOffset } from '../dsp/bank.js';
 
 /**
  * Tiny synthesis toolkit for one-shot sound effects. Every helper schedules
@@ -75,7 +75,7 @@ export class Fx {
     const g = ac.createGain();
     const end = this._env(g, t, { a: o.a ?? 0.002, d: o.dur ?? 0.15, peak: o.peak ?? 0.4, hold: o.hold ?? 0, curve: o.curve });
     this._filters(src, o.filters, t, o.sweep ?? o.dur ?? 0.15).connect(g).connect(this._dest(o));
-    src.start(t, this.rng.range(0, 3.5));
+    src.start(t, noiseOffset(this.rng, 3));
     src.stop(end + 0.05);
     return g;
   }
@@ -170,7 +170,7 @@ export class Fx {
       n.buffer = noiseBuffer(ac, 'pink');
       n.connect(mix);
       src.push(n);
-      n.start(t, this.rng.range(0, 3));
+      n.start(t, noiseOffset(this.rng, 3));
     } else {
       const contour = o.contour ?? [[0, 120], [1, 100]];
       for (let v = 0; v < (o.voices ?? 1); v++) {
@@ -205,7 +205,7 @@ export class Fx {
         am.gain.value = 1;
         n.connect(lp).connect(ng).connect(am.gain);
         mix.connect(am);
-        n.start(t, this.rng.range(0, 3));
+        n.start(t, noiseOffset(this.rng, 3));
         src.push(n);
         head = am;
       }
@@ -215,7 +215,7 @@ export class Fx {
         const ng = ac.createGain();
         ng.gain.value = o.breath;
         n.connect(ng).connect(head);
-        n.start(t, this.rng.range(0, 3));
+        n.start(t, noiseOffset(this.rng, 3));
         src.push(n);
       }
     }

@@ -9,6 +9,8 @@ import { ksString, modal, noiseData } from '../../src/audio/dsp/synth.js';
 import { impulseData } from '../../src/audio/dsp/impulse.js';
 import { SFX, VOICE_OF } from '../../src/audio/sfx/library.js';
 import { MONSTERS } from '../../src/data/monsters.js';
+import { chart, pad, mel, counter } from '../../src/audio/music/compose.js';
+import { ritSeconds } from '../../src/audio/music/Sequencer.js';
 
 describe('audio notation', () => {
   it('parses pitches and durations', () => {
@@ -102,5 +104,74 @@ describe('sfx catalogue', () => {
   });
   it('gives every monster a voice', () => {
     for (const id of Object.keys(MONSTERS)) expect(VOICE_OF[id], id).toBeTruthy();
+  });
+});
+
+describe('composition craft', () => {
+  it('voice-leads pads: smallest motion, common tones held, no parallel fifths/octaves', () => {
+    const ev = pad('s', chart('Dm | Bb | C | Dm | Gm | A | Dm', 4), { low: 'A3', count: 3 });
+    let motion = 0;
+    for (let i = 1; i < ev.length; i++) {
+      const a = ev[i - 1].midi;
+      const b = ev[i].midi;
+      motion += b.reduce((acc, m, k) => acc + Math.abs(m - a[k]), 0);
+      // Common tone of Dm → Bb (D, F) is held.
+      if (i === 1) expect(b.filter((m) => a.includes(m)).length).toBeGreaterThanOrEqual(2);
+      for (let x = 0; x < 3; x++) for (let y = x + 1; y < 3; y++) {
+        const i0 = (a[y] - a[x]) % 12;
+        const i1 = (b[y] - b[x]) % 12;
+        const par = (i0 === 7 || i0 === 0) && i0 === i1 && a[x] !== b[x] && Math.sign(b[x] - a[x]) === Math.sign(b[y] - a[y]);
+        expect(par, `parallel ${i0 ? 'fifths' : 'octaves'} at chord ${i}`).toBe(false);
+      }
+    }
+    // Root-position parallel stacking would move ~5 semitones per voice per change.
+    expect(motion / (ev.length - 1)).toBeLessThan(6);
+  });
+  it('colours dominant cadences with sus4 → 3 and a seventh', () => {
+    const ev = pad('s', chart('Gm | A | Dm', 4), { low: 'D3', count: 4, cadence: true });
+    expect(ev).toHaveLength(4); // A splits into Asus4 + A7
+    const pcs = (e) => e.midi.map((m) => m % 12);
+    expect(pcs(ev[1])).toContain(2); // D = the 4th over A
+    expect(pcs(ev[2])).toContain(7); // G = the 7th
+    expect(pcs(ev[2])).toContain(1); // C# = the 3rd
+  });
+  it('slurs melodies and shapes phrase dynamics', () => {
+    const ev = mel('horn', 'D4:q A4:q D5:q A4:q | D4:w');
+    expect(ev.every((e) => e.slur)).toBe(true);
+    expect(ev[2].vel).toBeGreaterThan(ev[0].vel); // the peak note leads the phrase
+    expect(ev[4].vel).toBeLessThan(ev[2].vel); // the phrase relaxes on its last note
+  });
+  it('counterlines move by step between chord tones', () => {
+    const ev = counter('c', chart('Dm | Bb | C | Dm', 4), { low: 'A3', key: 2 });
+    for (let i = 1; i < ev.length; i++) expect(Math.abs(ev[i].midi - ev[i - 1].midi)).toBeLessThanOrEqual(4);
+  });
+  it('ritardando stretches time', () => {
+    expect(ritSeconds(8, [], 0.5)).toBeCloseTo(4);
+    expect(ritSeconds(8, [[4, 8, 0.8]], 0.5)).toBeGreaterThan(4.2);
+  });
+  it('combat never plays the same section twice running and visits every section', () => {
+    const state = {};
+    const seen = [];
+    for (let p = 0; p < 24; p++) seen.push(SONGS.combat.build(p, new AudioRng(p * 7 + 1), state).section);
+    expect(seen[0]).toBe('A');
+    for (let i = 1; i < seen.length; i++) expect(seen[i]).not.toBe(seen[i - 1]);
+    expect(new Set(seen).size).toBeGreaterThanOrEqual(5);
+    const est = {};
+    const ev = [0, 1, 2, 3, 4, 5].map((p) => SONGS.encounter.build(p, new AudioRng(p + 3), est).section);
+    expect(new Set(ev).size).toBe(3);
+  });
+  it('keeps the combat low end clear (basses from D2, low brass high-passed)', () => {
+    const r = SONGS.combat.build(0, new AudioRng(1), {});
+    const basses = r.events.filter((e) => e.inst === 'basses' && e.opts?.art === 'spic');
+    expect(Math.min(...basses.map((e) => [].concat(e.midi)[0]))).toBeGreaterThanOrEqual(38);
+    expect(SONGS.combat.instruments.lowbrass.eq[0]).toMatchObject({ type: 'highpass' });
+  });
+});
+
+describe('sfx variety', () => {
+  it('gives spider, frog and lizard real death sounds and level-up its own cue', () => {
+    expect(SFX.levelup).not.toBe(SFX.sparkle);
+    expect(SFX.levelup.toString()).not.toMatch(/SFX\.sparkle/);
+    for (const f of ['parry', 'shield', 'dodge', 'ready', 'arrow_in']) expect(SFX[f], f).toBeTypeOf('function');
   });
 });

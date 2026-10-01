@@ -24,7 +24,7 @@ export function sample(ac, key, gen) {
     data = gen(ac.sampleRate);
     floatCache.set(fk, data);
     // Bound memory: drop the oldest entries past ~600 sounds.
-    if (floatCache.size > 600) floatCache.delete(floatCache.keys().next().value);
+    if (floatCache.size > 900) floatCache.delete(floatCache.keys().next().value);
   }
   const chans = Array.isArray(data) ? data : [data];
   b = ac.createBuffer(chans.length, chans[0].length, ac.sampleRate);
@@ -33,7 +33,15 @@ export function sample(ac, key, gen) {
   return b;
 }
 
-/** Long looping noise buffers (white | pink | brown). */
+/** Seconds of each looping noise buffer: long enough that beds never audibly repeat. */
+export const NOISE_SECONDS = 24;
+
+/** Long looping noise buffers (white | pink | brown), one independent 24 s take per kind. */
 export function noiseBuffer(ac, kind = 'white') {
-  return sample(ac, `noise:${kind}`, (sr) => noiseData(sr, 4, kind, kind.length * 97 + 5));
+  return sample(ac, `noise:${kind}`, (sr) => noiseData(sr, NOISE_SECONDS + 0.05, kind, kind.length * 97 + 5));
+}
+
+/** A random start offset into a noise buffer (seconds), leaving `need` seconds before the end. */
+export function noiseOffset(rng, need = 1) {
+  return rng.range(0, Math.max(0.1, NOISE_SECONDS - need - 0.1));
 }

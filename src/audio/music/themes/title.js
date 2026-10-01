@@ -1,15 +1,19 @@
-import { chart, mel, pad, arp, riff, drums, shift, soften } from '../compose.js';
+import { chart, mel, pad, arp, riff, drums, shift, soften, counter } from '../compose.js';
 
 /**
- * "The Pool of Radiance" — main title. D minor, heroic horn theme
- * (D–A–A leap motif, shared with the combat theme), lifting to F/Bb in the
- * bridge, full orchestra + choir at the climax. Later passes re-voice the A
- * section gently (flute + harp) so the loop never grows tiring.
+ * "The Pool of Radiance" — main title. D minor, heroic horn theme. Its
+ * signature: the D–A–A fifth answered by a dotted leap to the octave
+ * (D4 q. A4 e A4 q. D5 e) — the motif every other cue quotes (combat
+ * compresses it, the development augments it, the fanfare turns it major,
+ * camp and defeat echo it). The arc climbs phrase by phrase (D5, E5, the
+ * bridge's E5, the climax's F5), lifting to F/Bb in the bridge, full
+ * orchestra + choir at the climax. Later passes re-voice the A section gently
+ * (flute + harp) so the loop never grows tiring.
  */
-const A1 = 'D4:q. A4:e A4:h | G4:e F4:e G4:e A4:e F4:h | E4:q. F4:e G4:q A4:q | D4:w';
-const A2 = 'D4:q. A4:e A4:q D5:q | C5:e Bb4:e A4:e G4:e A4:h | Bb4:q. A4:e G4:q F4:q | E4:h. r:q';
+const A1 = 'D4:q. A4:e A4:q. D5:e | D5:e C5:e Bb4:e A4:e Bb4:h | G4:q. A4:e Bb4:q. C5:e | A4:h. r:q';
+const A2 = 'D4:q. A4:e A4:q. E5:e | D5:e C5:e Bb4:e A4:e G4:h | F4:q. G4:e A4:q. Bb4:e | A4:h E4:h';
 const B = 'F4:q. G4:e A4:q C5:q | Bb4:q. A4:e G4:h | A4:q. Bb4:e C5:q D5:q | E5:h. D5:e C5:e';
-const C = 'D5:q. A4:e A4:q F5:q | E5:e D5:e C5:e Bb4:e A4:h | Bb4:q. C5:e D5:q E5:q | D5:w';
+const C = 'D5:q. A4:e A4:q. F5:e | E5:e D5:e C5:e Bb4:e A4:h | Bb4:q. C5:e D5:q E5:q | D5:w';
 const OUT = 'A4:h. G4:e F4:e | F4:h D4:h | G4:h. F4:e E4:e | E4:w';
 
 export const TITLE_MOTIF = { A1, A2, B, C };
@@ -24,12 +28,13 @@ export default {
     horn: { preset: 'horn', pan: -0.15 },
     brass: { preset: 'brass', pan: 0.1 },
     lowbrass: { preset: 'lowbrass', pan: -0.05 },
-    violins: { preset: 'violins', pan: -0.35 },
-    strings: { preset: 'strings', pan: 0.2 },
+    violins: { preset: 'violins', pan: -0.45 },
+    strings: { preset: 'strings', pan: -0.15 },
     celli: { preset: 'celli', pan: 0.3 },
-    basses: { preset: 'basses', pan: 0.15 },
-    harp: { preset: 'harp', pan: -0.45 },
-    flute: { preset: 'flute', pan: 0.35 },
+    celli2: { preset: 'celli', pan: 0.2, gain: 0.8 },
+    basses: { preset: 'basses', pan: 0.45 },
+    harp: { preset: 'harp', pan: -0.6 },
+    flute: { preset: 'flute', pan: 0.4 },
     choir: { preset: 'choir', pan: 0 },
     timpani: { preset: 'timpani', pan: 0.05 },
     taiko: { preset: 'taiko', pan: -0.1 },
@@ -61,8 +66,8 @@ export default {
     const ca = chart('Dm | Bb | C | Dm | Dm | Gm | Bb | A', 4, t);
     const soft = !first && pass % 2 === 1;
     ev.push(...pad('basses', ca, { low: 'D2', count: 1, vel: 0.38 }));
-    ev.push(...pad('strings', ca, { low: 'A3', count: 3, vel: soft ? 0.3 : 0.34 }));
-    ev.push(...pad('celli', ca, { low: 'D3', count: 2, vel: 0.3 }));
+    ev.push(...pad('strings', ca, { low: 'A3', count: 3, vel: soft ? 0.3 : 0.34, cadence: true }));
+    ev.push(...counter('celli', ca, { low: 'D3', vel: 0.32, key: 2 }));
     ev.push(...arp('harp', ca, { low: 'D3', pattern: [0, 1, 2, 3, 4, 3, 2, 1], step: 0.5, vel: soft ? 0.55 : 0.45 }));
     if (soft) {
       ev.push(...mel('flute', A1, { at: t, vel: 0.62 }));
@@ -79,8 +84,8 @@ export default {
     // ---- B section (4 bars): the lift.
     const cb = chart('F | Gm | F,Bb | C', 4, t);
     ev.push(...pad('basses', cb, { low: 'D2', count: 1, vel: 0.55 }));
-    ev.push(...pad('strings', cb, { low: 'A3', count: 3, vel: 0.5, opts: { art: 'swell' } }));
-    ev.push(...pad('choir', cb, { low: 'A3', count: 3, vel: 0.45 }));
+    ev.push(...pad('strings', cb, { low: 'A3', count: 3, vel: 0.5, opts: { art: 'swell' }, cadence: true }));
+    ev.push(...pad('choir', cb, { low: 'A3', count: 3, vel: 0.45, cadence: true }));
     ev.push(...arp('harp', cb, { low: 'F3', pattern: [0, 1, 2, 3, 4, 5, 4, 3, 2, 1, 2, 3, 4, 3, 2, 1], step: 0.25, vel: 0.42 }));
     ev.push(...mel('violins', B, { at: t, vel: 0.62 }));
     ev.push(...mel(soft ? 'horn' : 'flute', B, { at: t, vel: 0.58, transpose: soft ? -12 : 0 }));
@@ -94,9 +99,9 @@ export default {
     ev.push({ inst: 'timpani', t, midi: 38, dur: 1, vel: 1 });
     ev.push(...pad('basses', cc, { low: 'D2', count: 1, vel: 0.7 }));
     ev.push(...pad('lowbrass', cc, { low: 'D2', count: 2, vel: 0.6 }));
-    ev.push(...pad('strings', cc, { low: 'D4', count: 3, vel: 0.6 }));
-    ev.push(...pad('celli', cc, { low: 'D3', count: 2, vel: 0.6 }));
-    ev.push(...pad('choir', cc, { low: 'D4', count: 3, vel: 0.65 }));
+    ev.push(...pad('strings', cc, { low: 'D4', count: 4, vel: 0.6, cadence: true }));
+    ev.push(...counter('celli2', cc, { low: 'D3', vel: 0.55, key: 2 }));
+    ev.push(...pad('choir', cc, { low: 'D4', count: 3, vel: 0.65, cadence: true }));
     ev.push(...mel('brass', C, { at: t, vel: 0.85 }));
     ev.push(...mel('horn', C, { at: t, vel: 0.8, transpose: -12 }));
     ev.push(...mel('violins', C, { at: t, vel: 0.7, transpose: 12 }));
@@ -108,12 +113,14 @@ export default {
     t += 16;
     // ---- Outro / breath before the loop (4 bars).
     const co = chart('Dm | Bb | Gm | A', 4, t);
-    ev.push(...pad('strings', co, { low: 'A3', count: 3, vel: 0.3 }));
+    ev.push(...pad('strings', co, { low: 'A3', count: 3, vel: 0.3, cadence: true }));
     ev.push(...pad('basses', co, { low: 'D2', count: 1, vel: 0.35 }));
     ev.push(...arp('harp', co, { low: 'D3', pattern: [0, 2, 4, 2], step: 1, vel: 0.5, ring: 2 }));
     ev.push(...mel('flute', OUT, { at: t, vel: 0.5 }));
     t += 16;
-    return { lengthQ: t, events: ev, tailQ: 4 };
+    // Breathe: broaden into the climax and into the loop point.
+    const tb = t - 32;
+    return { lengthQ: t, events: ev, tailQ: 4, rit: [[tb - 4, tb, 0.88], [t - 4, t, 0.8]] };
   },
 };
 

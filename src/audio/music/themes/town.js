@@ -28,9 +28,24 @@ function build(pass, { tavern }) {
   // Lute fingerpicking: bass on 1 and 4, chord tones between.
   ev.push(...arp('lute', all, { low: 'G3', pattern: [0, 2, 1, 3, 2, 1], step: 0.5, vel: 0.5, accent: 0.12, ring: 1.5 }));
   ev.push(...riff('bass', all, 'R..5..', { low: 'D2', step: 0.5, vel: 0.62 }));
-  // Hurdy-gurdy drone on G/D for the A strain, C/G for B.
-  ev.push({ inst: 'gurdy', t: 0, midi: [43, 50], dur: 24, vel: 0.4, opts: { fifth: 0 } });
-  ev.push({ inst: 'gurdy', t: 24, midi: [43, 48], dur: 24, vel: 0.4, opts: { fifth: 0 } });
+  // Hurdy-gurdy drone on G/D for the A strain, C/G for B; the trompette
+  // (buzzing bridge) rattles on every dotted-quarter crank stroke.
+  const stroke = (bpm) => bpm / 60 / 1.5;
+  const bpm = tavern ? 184 : 160;
+  ev.push({ inst: 'gurdy', t: 0, midi: 43, dur: 24, vel: 0.42, opts: { fifth: 0.5, buzz: stroke(bpm), buzzLevel: tavern ? 1 : 0.7 } });
+  ev.push({ inst: 'gurdy', t: 0, midi: 50, dur: 24, vel: 0.3, opts: { fifth: 0 } });
+  ev.push({ inst: 'gurdy', t: 24, midi: 43, dur: 24, vel: 0.42, opts: { fifth: 0.5, buzz: stroke(bpm), buzzLevel: tavern ? 1 : 0.7 } });
+  ev.push({ inst: 'gurdy', t: 24, midi: 48, dur: 24, vel: 0.3, opts: { fifth: 0 } });
+  // Tavern: a second lute strums the chords (down-strokes on the beats, an up-stroke pickup).
+  if (tavern || pass % 2 === 1) {
+    for (const p of pad('strum', all, { low: 'G3', count: 5, vel: tavern ? 0.55 : 0.42 })) {
+      for (const [dt, v, up] of [[0, 1, false], [1.5, 0.85, false], [2.5, 0.55, true]]) {
+        if (dt >= p.dur - 0.06) continue;
+        const notes = up ? p.midi.slice().reverse().slice(0, 3) : p.midi;
+        ev.push({ ...p, t: p.t + dt, midi: notes, dur: up ? 0.4 : 0.9, vel: p.vel * v, opts: { strum: up ? 0.012 : 0.02 } });
+      }
+    }
+  }
   // Percussion.
   const fp = tavern ? 'X.xX.x|X.xXxx' : 'X..x.x|X..x.o';
   ev.push(...drums('frame', fp, { bars: 16, barQ: 3, step: 0.5, vel: tavern ? 0.7 : 0.6 }));
@@ -39,19 +54,22 @@ function build(pass, { tavern }) {
   return { lengthQ: 48, events: ev, tailQ: 2 };
 }
 
+// A real market band, spread across the square.
 const instruments = {
   recorder: { preset: 'recorder', pan: 0.15 },
-  recorder2: { preset: 'recorder', pan: -0.3, gain: 0.45 },
-  fiddle: { preset: 'fiddle', pan: 0.1 },
+  recorder2: { preset: 'recorder', pan: -0.5, gain: 0.45 },
+  fiddle: { preset: 'fiddle', pan: 0.2 },
   shawm: { preset: 'shawm', pan: 0.1 },
-  dulcimer: { preset: 'dulcimer', pan: -0.35 },
-  lute: { preset: 'lute', pan: -0.2 },
+  dulcimer: { preset: 'dulcimer', pan: -0.6 },
+  lute: { preset: 'lute', pan: -0.4 },
+  strum: { preset: 'lute', pan: 0.55, gain: 0.7 },
   bass: { preset: 'bass', pan: 0.05 },
-  gurdy: { preset: 'gurdy', pan: 0.3, gain: 0.4 },
-  frame: { preset: 'frame', pan: 0.1 },
-  slap: { preset: 'frame', kind: 'frameSlap', pan: -0.15, gain: 0.5 },
-  tamb: { preset: 'tamb', pan: 0.45 },
+  gurdy: { preset: 'gurdy', pan: 0.6, gain: 0.45 },
+  frame: { preset: 'frame', pan: 0.2 },
+  slap: { preset: 'frame', kind: 'frameSlap', pan: -0.3, gain: 0.5 },
+  tamb: { preset: 'tamb', pan: 0.7 },
 };
 
-export default { id: 'town', bpm: 104, barQ: 3, loop: true, gain: 1.06, instruments, build: (p) => build(p, { tavern: false }) };
-export const tavern = { id: 'tavern', bpm: 122, barQ: 3, loop: true, gain: 0.94, instruments, build: (p) => build(p, { tavern: true }) };
+// A jig: dotted quarter ≈ 107 in town, ≈ 123 in the tavern (bpm counts quarters; a 6/8 bar = 3 quarters).
+export default { id: 'town', bpm: 160, barQ: 3, loop: true, gain: 1.06, instruments, build: (p) => build(p, { tavern: false }) };
+export const tavern = { id: 'tavern', bpm: 184, barQ: 3, loop: true, gain: 0.94, instruments, build: (p) => build(p, { tavern: true }) };

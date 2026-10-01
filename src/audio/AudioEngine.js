@@ -6,6 +6,8 @@ import { Fx } from './sfx/toolkit.js';
 import { Ambience } from './sfx/ambience.js';
 import { AudioRng } from './core/rng.js';
 import { Director } from './director.js';
+import { sfxGain } from './loudness.js';
+import { createInstrument } from './instruments/index.js';
 
 /**
  * Procedural WebAudio engine: adaptive composed soundtrack, environmental
@@ -23,7 +25,10 @@ import { Director } from './director.js';
  * `city` which resolve to the current location's mood.
  * The AudioContext is created lazily on the first user gesture (autoplay
  * policy). Until then (and when muted, e.g. debug/screenshot mode) every call
- * is a cheap no-op that only records intent.
+ * is a cheap no-op that only records intent. `?audio=1` in the URL unmutes the
+ * debug/screenshot mode and creates the context at once (for automated checks
+ * of scene → music wiring; launch Chromium with
+ * --autoplay-policy=no-user-gesture-required to hear it run).
  */
 export class AudioEngine {
   /**
@@ -32,6 +37,8 @@ export class AudioEngine {
    * @param {{muted?: boolean}} [o]
    */
   constructor(settings, bus, { muted = false } = {}) {
+    const forced = typeof location !== 'undefined' && /[?&]audio=1\b/.test(location.search ?? '');
+    if (forced) muted = false;
     this.settings = settings;
     this.bus = bus;
     this.muted = muted;
@@ -61,6 +68,11 @@ export class AudioEngine {
     bus?.on('settings:changed', ({ key }) => {
       if (/Volume$|^muteAll$/.test(key)) this._applyVolumes();
     });
+    if (forced && typeof window !== 'undefined') {
+      this.forced = true;
+      window.__AUDIO = this;
+      queueMicrotask(() => this.unlock());
+    }
   }
 
   /** Optional: give the director access to game state (location on boot, party). */
@@ -88,6 +100,7 @@ export class AudioEngine {
     this._applyVolumes();
     this.graph.setRoom(this.env.room);
     this._timer = setInterval(() => this._tick(), 50);
+    this._prewarm();
     // Replay intent recorded before the gesture.
     if (this.currentTrack) {
       const id = this.currentTrack;
@@ -99,6 +112,35 @@ export class AudioEngine {
       this.ambState = null;
       this.ambience(a.bed, a);
     }
+  }
+
+  /**
+   * Queue idle-time rendering of the sample buffers (drums, plucks) the
+   * stingers and the battle music open with, so a fight's first beat never
+   * stalls the main thread generating them. Worked off ~5 ms per tick.
+   */
+  _prewarm() {
+    const sink = this.ctx.createGain();
+    const q = [];
+    for (const song of [...Object.values(STINGERS), SONGS.combat, SONGS.encounter]) {
+      let r;
+      try {
+        r = song.build(0, new AudioRng(1), {});
+      } catch {
+        continue;
+      }
+      const made = new Map();
+      for (const e of r.events) {
+        if (e.t > 16) continue;
+        const spec = song.instruments[e.inst];
+        const preset = typeof spec === 'string' ? spec : spec?.preset;
+        if (!preset || !/taiko|timpani|tom|snare|crash|sus|boom|rim|frame|tamb|hat|harp|lute|pizz|dulcimer|bass|harmonics/.test(preset)) continue;
+        let ins = made.get(e.inst);
+        if (!ins) made.set(e.inst, (ins = createInstrument(this.ctx, spec, sink, null, 1)));
+        for (const m of [].concat(e.midi ?? 0)) if (ins.warm) q.push(...ins.warm(m, e.vel ?? 0.7, e.opts ?? {}, !!e.roll));
+      }
+    }
+    this._warmQ = q;
   }
 
   _visibility() {
@@ -142,6 +184,7 @@ export class AudioEngine {
     const ac = this.ctx;
     if (!ac || ac.state === 'closed') return;
     const fn = SFX[name] ?? SFX.click;
+    this.log?.push(name);
     // Anti-machine-gun: identical sounds within 25 ms collapse.
     const now = ac.currentTime;
     const last = this._lastSfx.get(name) ?? -1;
@@ -150,7 +193,7 @@ export class AudioEngine {
     const ui = opts.bus === 'ui';
     const out = ui ? this.graph.uiBus : this.graph.sfxIn;
     const pitch = (opts.pitch ?? 1) * (ui ? 1 : 1 + this.rng.range(-0.03, 0.03));
-    const fx = new Fx(ac, out, this.rng, { pitch, vol: opts.vol ?? 1, pan: opts.pan ?? 0, send: ui ? undefined : this.graph.envSend, sendLevel: opts.reverb ?? 0.3 });
+    const fx = new Fx(ac, out, this.rng, { pitch, vol: (opts.vol ?? 1) * sfxGain(name), pan: opts.pan ?? 0, send: ui ? undefined : this.graph.envSend, sendLevel: opts.reverb ?? 0.3 });
     try {
       fn(fx, now + 0.005 + (opts.delay ?? 0), { surface: this.env.surface, ...opts });
     } catch (err) {
@@ -227,12 +270,13 @@ export class AudioEngine {
    * One-shot musical sting over the score (score ducks underneath).
    * @param {'victory'|'defeat'|'levelup'|'discovery'|'danger'|'quest'|'fallen'} name
    */
-  stinger(name, { duck = 0.35, stopMusic = false } = {}) {
+  stinger(name, { duck = 0.35, stopMusic = false, at } = {}) {
+    this.lastStinger = name;
     if (!this.ctx) return;
     const song = STINGERS[name];
     if (!song) return;
     const ac = this.ctx;
-    const t = ac.currentTime;
+    const t = at ?? ac.currentTime;
     if (stopMusic) this.stopMusic(0.5);
     const p = new TrackPlayer(ac, song, { dest: this.graph.musicBus, send: this.graph.musicSend, at: t + 0.03 });
     p.tick(t + 60);
@@ -240,10 +284,32 @@ export class AudioEngine {
     const len = (p.endTime ?? t + 4) - t;
     const d = this.graph.musicDuck.gain;
     d.cancelScheduledValues(t);
-    d.setValueAtTime(d.value, t);
+    d.setValueAtTime(at ? 1 : d.value, t);
     d.linearRampToValueAtTime(duck, t + 0.15);
     d.setValueAtTime(duck, t + Math.max(0.2, len - 1.2));
     d.linearRampToValueAtTime(1, t + len + 0.8);
+  }
+
+  /**
+   * Win: the battle music plays on to its next downbeat, ends there with its
+   * coda (a final hit on layer 0), and the stinger's fanfare starts on that
+   * same downbeat.
+   */
+  endCombatWith(name = 'victory') {
+    this.lastStinger = name;
+    if (!this.ctx || !this.player || this.player.stopped || !this.player.song.coda) {
+      this.stinger(name, { stopMusic: true });
+      return;
+    }
+    const ac = this.ctx;
+    const at = ac.currentTime + this.player.untilNextBar(0.12);
+    const coda = this.player.endWithCoda(at);
+    if (coda) this.stingers.push(coda);
+    this.fading.push(this.player);
+    this.player = null;
+    this.currentTrack = null;
+    this.state = null;
+    this.stinger(name, { at, duck: 1 });
   }
 
   // ------------------------------------------------------------------ environment
@@ -271,6 +337,10 @@ export class AudioEngine {
     const ac = this.ctx;
     if (!ac || ac.state !== 'running') return;
     const now = ac.currentTime;
+    if (this._warmQ?.length) {
+      const t0 = performance.now();
+      while (this._warmQ.length && performance.now() - t0 < 5) this._warmQ.shift()();
+    }
     this.player?.tick(now + 0.4);
     for (const p of this.fading) p.tick?.(now + 0.4);
     for (const s of this.stingers) s.tick(now + 1);
@@ -298,6 +368,6 @@ export class AudioEngine {
 
   /** Debug snapshot for tools/devtools. */
   debugState() {
-    return { unlocked: !!this.ctx, state: this.state, track: this.currentTrack, intensity: this.intensity, env: { ...this.env }, ambience: this.ambState, ctx: this.ctx?.state };
+    return { unlocked: !!this.ctx, state: this.state, track: this.currentTrack, intensity: this.intensity, section: this.player?.section ?? null, pass: this.player?.pass ?? null, stinger: this.lastStinger ?? null, env: { ...this.env }, ambience: this.ambState, ctx: this.ctx?.state };
   }
 }

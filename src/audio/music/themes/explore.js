@@ -1,4 +1,4 @@
-import { chart, mel, pad, arp, riff, drums, soften } from '../compose.js';
+import { chart, mel, pad, arp, drums, soften, counter } from '../compose.js';
 import { midi } from '../../core/notes.js';
 
 /**
@@ -32,10 +32,10 @@ export const ruins = {
   gain: 0.55,
   intensity: 0.4,
   instruments: {
-    celli: { preset: 'celli', pan: 0.25 },
-    basses: { preset: 'basses', pan: 0.1 },
+    celli: { preset: 'celli', pan: 0.3 },
+    basses: { preset: 'basses', pan: 0.45 },
     choir: { preset: 'choirOo', pan: 0 },
-    harmonics: { preset: 'harmonics', pan: -0.4 },
+    harmonics: { preset: 'harmonics', pan: -0.55 },
     harp: { preset: 'harp', pan: -0.3, reverb: 0.6 },
     flute: { preset: 'flute', pan: 0.3, reverb: 0.6 },
     horn: { preset: 'horn', pan: -0.5, reverb: 0.9, gain: 0.5, eq: [{ type: 'lowpass', f: 1800, q: 0.5 }] },
@@ -142,27 +142,29 @@ export const wilds = {
   loop: true,
   gain: 0.94,
   instruments: {
-    harp: { preset: 'harp', pan: -0.35 },
-    flute: { preset: 'flute', pan: 0.2 },
-    violins: { preset: 'violins', pan: -0.15 },
-    strings: { preset: 'strings', pan: 0.25 },
-    basses: { preset: 'basses' },
+    harp: { preset: 'harp', pan: -0.55 },
+    flute: { preset: 'flute', pan: 0.3 },
+    violins: { preset: 'violins', pan: -0.4 },
+    strings: { preset: 'strings', pan: -0.1 },
+    celli: { preset: 'celli', pan: 0.3, gain: 0.8 },
+    basses: { preset: 'basses', pan: 0.45 },
     horn: { preset: 'horn', pan: -0.3, reverb: 0.7 },
-    frame: { preset: 'frame', pan: 0.2, gain: 0.5 },
+    frame: { preset: 'frame', pan: 0.35, gain: 0.5 },
   },
   build(pass) {
     const ev = [];
     const ca = chart('Am | G | Am,G | Am | Am | C | D | Am', 4);
     const cb = chart('C | G | Am | Em | F | C | D | E', 4, 32);
     const all = [...ca, ...cb];
-    ev.push(...pad('strings', all, { low: 'A3', count: 3, vel: 0.3 }));
+    ev.push(...pad('strings', all, { low: 'A3', count: 3, vel: 0.3, cadence: true }));
+    ev.push(...counter('celli', all, { low: 'E3', vel: 0.26, scale: [0, 2, 3, 5, 7, 9, 10], key: 9 }));
     ev.push(...pad('basses', all, { low: 'E2', count: 1, vel: 0.35 }));
     ev.push(...arp('harp', all, { low: 'A2', pattern: [0, 2, 3, 4, 5, 4, 3, 2], step: 0.5, vel: 0.42 }));
     ev.push(...mel('flute', 'A4:q. B4:e C5:q E5:q | D5:h B4:h | C5:q. B4:e A4:q G4:q | A4:w | E5:q. D5:e C5:q D5:q | E5:h G5:h | F#5:q E5:q D5:q B4:q | A4:w', { vel: 0.58 }));
     const bLead = pass % 2 ? 'horn' : 'violins';
     ev.push(...mel(bLead, 'E5:h. C5:q | D5:h B4:h | C5:q E5:q A5:q G5:q | E5:w | F5:h. E5:q | E5:q D5:q C5:h | D5:q E5:q F#5:q A5:q | G#5:w', { at: 32, vel: 0.55, transpose: bLead === 'horn' ? -12 : 0 }));
     ev.push(...drums('frame', 'X.....x.X.......', { bars: 16, step: 0.25, vel: 0.4, skipBars: [0, 1, 2, 3] }));
-    return { lengthQ: 64, events: ev, tailQ: 4 };
+    return { lengthQ: 64, events: ev, tailQ: 4, rit: [[60, 64, 0.85]] };
   },
 };
 
@@ -173,13 +175,14 @@ export const camp = {
   loop: true,
   gain: 1.06,
   instruments: {
-    harp: { preset: 'harp', pan: -0.3 },
-    lute: { preset: 'lute', pan: 0.25 },
-    flute: { preset: 'flute', pan: 0.15 },
-    recorder: { preset: 'recorder', pan: 0.1 },
-    strings: { preset: 'strings', pan: 0, gain: 0.7 },
-    violins: { preset: 'violins', pan: -0.2, gain: 0.7 },
-    basses: { preset: 'basses', gain: 0.7 },
+    harp: { preset: 'harp', pan: -0.5 },
+    lute: { preset: 'lute', pan: 0.45 },
+    flute: { preset: 'flute', pan: 0.2 },
+    recorder: { preset: 'recorder', pan: 0.15 },
+    strings: { preset: 'strings', pan: -0.1, gain: 0.7 },
+    violins: { preset: 'violins', pan: -0.4, gain: 0.7 },
+    violins2: { preset: 'violins', pan: -0.25, gain: 0.6 },
+    basses: { preset: 'basses', pan: 0.4, gain: 0.7 },
   },
   build(pass) {
     const ev = [];
@@ -187,14 +190,16 @@ export const camp = {
     const cb = chart('Am | F | Gm | F | C | Bb | C | F', 3, 24);
     const all = [...ca, ...cb];
     const MA = 'A4:h C5:q | Bb4:h G4:q | A4:q G4:q F4:q | G4:h. | A4:h C5:q | D5:h C5:q | Bb4:q A4:q G4:q | F4:h.';
-    const MB = 'C5:h D5:q | C5:h A4:q | Bb4:h C5:q | A4:h. | G4:h A4:q | Bb4:h D5:q | C5:q Bb4:q G4:q | F4:h.';
+    // Bar 5 of the second strain whispers the title motif (a fifth, held), in F major.
+    const MB = 'C5:h D5:q | C5:h A4:q | Bb4:h C5:q | A4:h. | G4:q. D5:e D5:q | Bb4:h D5:q | C5:q Bb4:q G4:q | F4:h.';
     ev.push(...arp(pass % 2 ? 'lute' : 'harp', all, { low: 'F2', pattern: [0, 2, 3, 4, 3, 2], step: 0.5, vel: 0.42, ring: 1.5 }));
-    ev.push(...pad('strings', all, { low: 'A3', count: 3, vel: 0.22 }));
+    ev.push(...pad('strings', all, { low: 'A3', count: 3, vel: 0.22, cadence: true }));
+    ev.push(...counter('violins2', cb, { low: 'F4', vel: 0.2, scale: [0, 2, 4, 5, 7, 9, 10], key: 5 }));
     ev.push(...pad('basses', all, { low: 'F2', count: 1, vel: 0.28 }));
     const lead = ['flute', 'lute', 'recorder'][pass % 3];
     ev.push(...mel(lead, MA, { vel: 0.52, transpose: lead === 'lute' ? 0 : 0 }));
     ev.push(...mel(lead, MB, { at: 24, vel: 0.5 }));
     if (pass % 3 === 2) ev.push(...soften(mel('violins', MB, { at: 24, transpose: -12 }), 0.55));
-    return { lengthQ: 48, events: ev, tailQ: 3 };
+    return { lengthQ: 48, events: ev, tailQ: 3, rit: [[45, 48, 0.85]] };
   },
 };

@@ -118,11 +118,18 @@ export function modal(sr, o) {
     const amp = o.amps[p] * (p === 0 ? 1 : 0.6 + 0.4 * vel);
     const dec = o.decays[p];
     let ph = rng.next() * 0.2;
-    for (let n = 0; n < N; n++) {
-      const t = n / sr;
-      const f = f0 * (1 + glide * Math.exp(-t / 0.08));
-      ph += f / sr;
-      out[n] += Math.sin(2 * Math.PI * ph) * amp * Math.exp(-t / dec);
+    // Running multipliers instead of exp() per sample, and stop once the partial is inaudible.
+    let env = amp;
+    const kd = Math.exp(-1 / (sr * dec));
+    let gl = glide;
+    const kg = Math.exp(-1 / (sr * 0.08));
+    const floor = amp * 1e-5;
+    const inv = 1 / sr;
+    for (let n = 0; n < N && env > floor; n++) {
+      ph += f0 * (1 + gl) * inv;
+      gl *= kg;
+      out[n] += Math.sin(6.283185307179586 * ph) * env;
+      env *= kd;
     }
   }
   const nl = o.noise ?? 0.3;
@@ -131,9 +138,12 @@ export function modal(sr, o) {
     const a = o.noiseLp ?? 0.3;
     let lp = 0;
     const M = Math.min(N, Math.ceil(sr * nd * 8));
+    let env = nl * vel * 3;
+    const kd = Math.exp(-1 / (sr * nd));
     for (let n = 0; n < M; n++) {
       lp += a * (rng.next() * 2 - 1 - lp);
-      out[n] += lp * nl * vel * Math.exp(-n / sr / nd) * 3;
+      out[n] += lp * env;
+      env *= kd;
     }
   }
   // Soft attack (1 ms) to kill the step discontinuity, normalise.
