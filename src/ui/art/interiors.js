@@ -363,29 +363,42 @@ function leadedGlass(g, x, y, w, h, palette, { path, motif, seed = 1, broken = 0
 /** Coloured god rays from a window falling across the floor, with dappled pools. */
 function godRays(g, from, to, palette, { alpha = 0.22, seed = 1, spread = 1 } = {}) {
   const R = rngOf(seed);
-  g.save();
-  g.globalCompositeOperation = 'screen';
+  // draw every shaft and pool into one layer, then blur it once (filters are costly)
+  const W = g.canvas.width;
+  const H = g.canvas.height;
+  const k = 0.5;
+  const L = makeCanvas(W * k, H * k);
+  const lg = L.getContext('2d');
+  lg.scale(k, k);
   for (let i = 0; i < 9; i++) {
     const t = (i + 0.5) / 9;
     const sx = from.x + (t - 0.5) * from.w;
     const ex = to.x + (t - 0.5) * to.w * spread;
     const c = palette[(i + (R() < 0.3 ? 1 : 0)) % palette.length];
-    lightShaft(g, sx, from.y, from.w / 9 * 1.6, ex, to.y, to.w / 9 * 1.8, c, alpha * (0.6 + R() * 0.6));
+    const a = alpha * (0.6 + R() * 0.6);
+    const w0 = from.w / 9 * 1.6;
+    const w1 = to.w / 9 * 1.8;
+    const gr = lg.createLinearGradient(sx, from.y, ex, to.y);
+    gr.addColorStop(0, rgba(c, a));
+    gr.addColorStop(0.6, rgba(c, a * 0.4));
+    gr.addColorStop(1, rgba(c, 0));
+    lg.fillStyle = gr;
+    poly(lg, [[sx - w0 / 2, from.y], [sx + w0 / 2, from.y], [ex + w1 / 2, to.y], [ex - w1 / 2, to.y]]);
+    lg.fill();
   }
-  g.restore();
-  // dappled pools of coloured light on the floor
-  g.save();
-  g.globalCompositeOperation = 'lighter';
-  g.filter = 'blur(5px)';
   for (let i = 0; i < 40; i++) {
     const u = R() - 0.5;
     const v = R() - 0.5;
     const c = palette[Math.floor(R() * palette.length)];
-    g.fillStyle = rgba(c, alpha * 0.55 * (1 - Math.hypot(u, v) * 1.2));
-    g.beginPath();
-    g.ellipse(to.x + u * to.w * spread, to.y + v * to.h, to.w * 0.07, to.h * 0.12, 0, 0, Math.PI * 2);
-    g.fill();
+    lg.fillStyle = rgba(c, Math.max(0, alpha * 0.55 * (1 - Math.hypot(u, v) * 1.2)));
+    lg.beginPath();
+    lg.ellipse(to.x + u * to.w * spread, to.y + v * to.h, to.w * 0.07, to.h * 0.12, 0, 0, Math.PI * 2);
+    lg.fill();
   }
+  g.save();
+  g.globalCompositeOperation = 'screen';
+  g.filter = 'blur(4px)';
+  g.drawImage(L, 0, 0, W, H);
   g.restore();
   glowEllipse(g, to.x, to.y, to.w * 0.6 * spread, to.h * 0.7, palette[1] ?? palette[0], alpha * 0.6);
 }

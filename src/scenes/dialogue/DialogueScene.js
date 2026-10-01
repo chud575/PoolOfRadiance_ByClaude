@@ -384,7 +384,7 @@ export default class DialogueScene extends Scene {
       text ??= m.name;
     }
     const head = zone ?? title;
-    if (text && head && text.toLowerCase() === String(head).toLowerCase()) text = hasMap(loc.map) ? getMap(loc.map).name : '';
+    if (text && head && text.toLowerCase() === String(head).toLowerCase()) text = SETTING_WHERE[this.script?.art?.setting] ?? (hasMap(loc.map) ? getMap(loc.map).name : '');
     if (text && head && text.toLowerCase() === String(head).toLowerCase()) text = '';
     this.sideInfo.append(h('div.dlg-place', [h('b', [head]), text ?? '']));
   }
@@ -787,6 +787,13 @@ export default class DialogueScene extends Scene {
 }
 
 // ------------------------------------------------------------------ helpers
+
+/** Where a scripted scene takes place, by its painted setting. */
+const SETTING_WHERE = {
+  chapel: 'The chapel of Sokol Keep', keep: 'Sokol Keep', cityhall: 'City Hall, New Phlan', well: "Kuto's Well", well_head: "Kuto's Well", library: "Mendor's Library",
+  temple_bane: 'The Temple of Bane', graveyard: 'Valhingen Graveyard', castle: 'Valjevo Castle', gate: 'Stojanow Gate', textile: 'Cadorna Textile House', plaza: 'Podol Plaza',
+  tavern: 'New Phlan', docks: 'The docks of New Phlan', pool: 'The Pool of Radiance', wilds: 'The wilderness', slums: 'The Slums', alley: 'The Slums', tenement: 'The Slums',
+};
 
 /** The engraved plate illustrating a journal entry. */
 function journalPlate(n) {
