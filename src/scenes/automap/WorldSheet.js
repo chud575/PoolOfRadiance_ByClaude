@@ -539,7 +539,7 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
   haloText(g, 'Thorn Island', 0, 0, { color: '#2c3518', halo: 'rgba(236,226,200,0.8)', width: 5 });
   g.restore();
   drawShip(g, 490, 925, 52);
-  drawSerpent(g, 650, 972, 44);
+  drawSerpent(g, 655, 968, 52);
   drawCompassRose(g, 1175, 860, 72);
   // scale of leagues
   g.save();
@@ -1250,7 +1250,7 @@ function drawSerpent(g, x, y, s) {
   g.scale(s / 60, s / 60);
   g.lineJoin = 'round';
   g.lineCap = 'round';
-  const body = '#4c7a58';
+  const body = '#5f7f62';
   const coil = (hx, w, h) => {
     const outer = new Path2D();
     outer.moveTo(hx - w / 2, 2);
@@ -1263,8 +1263,8 @@ function drawSerpent(g, x, y, s) {
     g.save();
     g.clip(outer);
     // belly band and scales
-    g.strokeStyle = 'rgba(240,220,160,0.55)';
-    g.lineWidth = 1.6;
+    g.strokeStyle = 'rgba(232,214,160,0.4)';
+    g.lineWidth = 1.3;
     g.beginPath(); g.moveTo(hx - w / 2 + 4.5, 2); g.bezierCurveTo(hx - w / 2 + 4.5, -h + 7, hx + w / 2 - 4.5, -h + 7, hx + w / 2 - 4.5, 2); g.stroke();
     g.strokeStyle = 'rgba(20,40,24,0.6)';
     g.lineWidth = 0.5;
@@ -1274,8 +1274,11 @@ function drawSerpent(g, x, y, s) {
       const py = -h * 0.75 * Math.sin(t * Math.PI) + 1;
       g.beginPath(); g.arc(px, py, 2, 0.2, Math.PI - 0.2); g.stroke();
     }
-    g.fillStyle = 'rgba(15,30,18,0.4)';
-    g.fillRect(hx, -h, w, h + 4);
+    // engraved shading: fine parallel cuts on the shadowed half of each coil
+    g.save();
+    g.beginPath(); g.rect(hx - w * 0.05, -h - 2, w, h + 6); g.clip();
+    lineShade(g, hx - w, -h - 4, w * 2, h + 10, { gap: 1.6, angle: -1.1, color: '#14281a', width: 0.45, alpha: 0.7 });
+    g.restore();
     g.restore();
     g.strokeStyle = INK.ink;
     g.lineWidth = 1.2;
@@ -1310,8 +1313,7 @@ function drawSerpent(g, x, y, s) {
   g.fill(neck);
   g.save();
   g.clip(neck);
-  g.fillStyle = 'rgba(15,30,18,0.38)';
-  g.fillRect(14, -40, 40, 44);
+  lineShade(g, 16, -42, 40, 46, { gap: 1.6, angle: -1.1, color: '#14281a', width: 0.45, alpha: 0.7 });
   g.strokeStyle = 'rgba(240,220,160,0.5)';
   g.lineWidth = 1.4;
   g.beginPath(); g.moveTo(14, 2); g.bezierCurveTo(17, -12, 24, -24, 36, -29); g.stroke();
@@ -1331,6 +1333,12 @@ function drawSerpent(g, x, y, s) {
   g.beginPath(); g.arc(37, -36, 1.8, 0, Math.PI * 2); g.fill();
   g.fillStyle = INK.ink;
   g.beginPath(); g.arc(37.4, -36, 0.8, 0, Math.PI * 2); g.fill();
+  // foam where the coils break the water
+  g.strokeStyle = 'rgba(250,244,226,0.85)';
+  g.lineWidth = 1;
+  for (const fx of [-59, -33, -1, 21, 6]) {
+    g.beginPath(); g.moveTo(fx - 5, 1); g.quadraticCurveTo(fx - 2, -3, fx, 0); g.quadraticCurveTo(fx + 2, -3, fx + 5, 1); g.stroke();
+  }
   // water breaking around the coils
   g.strokeStyle = 'rgba(28,58,98,0.65)';
   g.lineWidth = 0.8;
