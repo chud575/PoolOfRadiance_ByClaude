@@ -31,7 +31,7 @@ export function portraitEl(ch, o = {}) {
 /** Small portrait (roster strips). */
 export function miniPortrait(ch, { selected = false, onclick, tip } = {}) {
   return h(`div.pc-mini${selected ? '.sel' : ''}${ch.status === 'dead' ? '.dead' : ''}`, { onclick, dataset: tip ? { tip } : {} }, [
-    h('img', { src: portraitURL(ch, 0.4), alt: ch.name, draggable: false }),
+    h('img', { src: portraitURL(ch, 0.28), alt: ch.name, draggable: false }),
   ]);
 }
 

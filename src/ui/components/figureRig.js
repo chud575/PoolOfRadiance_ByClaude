@@ -525,7 +525,9 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
       const t = Math.max(0, Math.min(1, hl / 0.03));
       const top = Math.max(0, Math.min(1, l[1] / 0.1));
       const th = t * t * (3 - 2 * t) * (style === 'swept' ? 0.8 + 0.9 * top * Math.max(0, Math.min(1, (l[2] + 0.06) / 0.1)) : 0.75 + 0.45 * top);
-      return cran(x, y, z) - T * th + groove(x, y, z) * th;
+      // Where the hair thins to nothing it sinks just under the scalp, so the
+      // skin (not a hair-tinted blend) shows below the hairline.
+      return cran(x, y, z) - T * th + groove(x, y, z) * th + 0.0022 * hs * Math.max(0, 1 - th * 5);
     }, bbOf(headLocal([0, 0.026, -0.014]), 0.13 * hs), { ...hairG, k: 0.006 * hs });
     void r; void capClip;
     if (style === 'short' && app.fem) hE([0, 0.0, -0.05], [0.082, 0.07, 0.07], null, M.hair, { k: 0.02 * hs, disp: grooveH(0.002, 18), amp: 0.003 * hs });

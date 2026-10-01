@@ -77,7 +77,7 @@ export function renderPortrait3D(ch, o = {}) {
     st.scene.backgroundIntensity = 0.55;
 
     const torso = crop === 'torso';
-    const quality = scale <= 0.5 ? 'thumb' : 'portrait';
+    const quality = scale <= 0.3 ? 0.0088 : scale <= 0.5 ? 'thumb' : 'portrait';
     fig = buildMiniature(ch, {
       pose: 'portrait', base: false, quality, noWeapon: true, noShield: true, boundsKey: crop, faceSize: scale <= 0.5 ? 256 : 512,
       boundsFn: (fr) => {

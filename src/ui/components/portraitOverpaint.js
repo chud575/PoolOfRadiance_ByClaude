@@ -218,7 +218,7 @@ export function overpaintPortrait(out, mask, app, view) {
       const i = (clamp(Math.round(y), 0, H - 1) * W + clamp(Math.round(x), 0, W - 1)) * 4;
       return cur[i] * 0.3 + cur[i + 1] * 0.59 + cur[i + 2] * 0.11;
     };
-    const N = Math.round(700 * k * k);
+    const N = Math.round(900 * k * k);
     g.save();
     g.lineCap = 'round';
     let placed = 0;
@@ -235,7 +235,7 @@ export function overpaintPortrait(out, mask, app, view) {
       if (gl < 1.5) { dx = 0.7; dy = -0.7; } else { dx /= gl; dy /= gl; }
       const v = 0.9 + R() * 0.2;
       const warm = R() < 0.5 ? [8, 2, -4] : [-4, 0, 6];
-      g.strokeStyle = `rgba(${clamp(Math.round(cur[i] * v + warm[0]))},${clamp(Math.round(cur[i + 1] * v + warm[1]))},${clamp(Math.round(cur[i + 2] * v + warm[2]))},0.32)`;
+      g.strokeStyle = `rgba(${clamp(Math.round(cur[i] * v + warm[0]))},${clamp(Math.round(cur[i + 1] * v + warm[1]))},${clamp(Math.round(cur[i + 2] * v + warm[2]))},0.42)`;
       g.lineWidth = (1.4 + R() * 1.8) * k;
       const L = (3 + R() * 6) * k;
       g.beginPath();
@@ -297,13 +297,14 @@ export function overpaintPortrait(out, mask, app, view) {
       const dn = P([cx + sg * 0.006, eyeY - 0.024, 0.078]);
       const cu = at(up[0], up[1]);
       const cd = at(dn[0], dn[1]);
-      const lidU = mixc(cu, [70, 40, 46], 0.12).map((v) => v * 0.9);
-      const lidD = mixc(cd, [80, 50, 50], 0.06);
+      const avg = mixc(cu, cd, 0.5);
+      const lidU = mixc(avg, [70, 40, 46], 0.14).map((v) => v * 0.84);
+      const lidD = mixc(avg, [80, 50, 50], 0.06).map((v) => v * 0.94);
       const lg = fg.createLinearGradient(0, 14, 0, -12);
       lg.addColorStop(0, rgba(cu, 0));
-      lg.addColorStop(0.25, rgba(lidU, 0.85));
-      lg.addColorStop(0.55, rgba(lidU, 0.9));
-      lg.addColorStop(0.75, rgba(lidD, 0.85));
+      lg.addColorStop(0.25, rgba(lidU, 0.72));
+      lg.addColorStop(0.55, rgba(lidU, 0.8));
+      lg.addColorStop(0.75, rgba(lidD, 0.7));
       lg.addColorStop(1, rgba(cd, 0));
       fg.save();
       fg.beginPath();
