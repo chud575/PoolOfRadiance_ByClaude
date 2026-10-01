@@ -299,7 +299,7 @@ export function buildProps(map, block, opts = {}) {
         const m = new THREE.Matrix4().makeTranslation(px, 0.01, pz).multiply(new THREE.Matrix4().makeRotationY(hash(fc.x, fc.y, k, 'lr') * 6.3));
         if (kind < 0.5) {
           const sc = 0.05 + hash(fc.x, fc.y, k, 'ls') * 0.07;
-          g.geometry('prop_rock', geos.rock[k % geos.rock.length], m.clone().multiply(new THREE.Matrix4().makeTranslation(0, sc * 0.15, 0)).multiply(new THREE.Matrix4().makeScale(sc, sc * 0.6, sc)), { uv: 'world', tint: [0.8, 0.78, 0.74], ao: 0.8 });
+          g.geometry('prop_rock', geos.pebble, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, sc * 0.15, 0)).multiply(new THREE.Matrix4().makeScale(sc, sc * 0.6, sc)), { uv: 'world', tint: [0.8, 0.78, 0.74], ao: 0.8 });
         } else if (kind < 0.85) {
           for (let q = 0; q < 3; q++) g.box('prop_burlap', { matrix: m.clone().multiply(new THREE.Matrix4().makeRotationY(q * 0.7)).multiply(new THREE.Matrix4().makeTranslation(q * 0.03, 0.005, 0)), s: [0.18 + q * 0.05, 0.008, 0.012], tint: [1.2, 1.05, 0.6] });
         } else {
@@ -731,7 +731,9 @@ function makePropGeometries() {
   const bottle = new THREE.LatheGeometry([[0, 0], [0.045, 0], [0.05, 0.02], [0.05, 0.14], [0.02, 0.19], [0.015, 0.25], [0, 0.25]].map(([r, y]) => new THREE.Vector2(r, y)), 8);
   const jar = new THREE.LatheGeometry([[0, 0], [0.07, 0], [0.09, 0.06], [0.08, 0.14], [0.05, 0.17], [0.055, 0.19], [0, 0.19]].map(([r, y]) => new THREE.Vector2(r, y)), 10);
   const plate = new THREE.CylinderGeometry(0.11, 0.09, 0.02, 14);
-  return { barrel: [body, hoop, lid], crate, sack, rock, chunk, link, candle, wheel, hub, pot, skull, drum, shaft, bottle, jar, plate };
+  const pebble = new THREE.IcosahedronGeometry(0.5, 0);
+  pebble.computeVertexNormals();
+  return { pebble, barrel: [body, hoop, lid], crate, sack, rock, chunk, link, candle, wheel, hub, pot, skull, drum, shaft, bottle, jar, plate };
 }
 
 /**
