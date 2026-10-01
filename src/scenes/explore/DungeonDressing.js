@@ -214,9 +214,9 @@ export function dressDungeon(map, block, opts = {}) {
         y += h * (0.62 + hash(sd, k, 'cy') * 0.25);
       }
       // overhanging shoulder where the corner meets the roof
-      const m = onFace(f, sC - end * 0.15, H - 0.28, T / 2 + 0.02)
-        .multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(0.3, sd * 6.3, 0.2)))
-        .multiply(new THREE.Matrix4().makeScale(1.1, 0.55, 0.9));
+      const m = onFace(f, sC - end * 0.1, H - 0.3, T / 2 - 0.1)
+        .multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(0.5, sd * 6.3, 0.6 * end)))
+        .multiply(new THREE.Matrix4().makeScale(0.75, 0.6, 0.65));
       g.geometry('arch_hewn_ceil', rocks[Math.floor(sd * 5) % rocks.length], m, { uv: 'world', tint: rt(sd, 99), ao: 0.6 });
     }
   }

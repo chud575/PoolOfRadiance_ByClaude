@@ -62,13 +62,14 @@ export const TEXTURE_DEFS = {
   hd2_relief: { size: 512, gen: () => HD2.baneRelief({ seed: 251 }), normalStrength: 5, cavity: 0.3 },
   hd2_iron: { size: 256, gen: () => HD2.forgedIron({ seed: 157 }), normalStrength: 2.5, cavity: 0.2 },
   hd2_dressed: { size: 512, gen: () => HD2.ashlar2({ seed: 29, palette: 'warm', joints: false, moss: 0.25 }), normalStrength: 3, cavity: 0.16 },
-  hd2_basalt_floor: { size: 1024, gen: () => HD2.ashlar2({ seed: 89, rows: 4, minW: 0.3, maxW: 0.5, palette: 'basalt', mortarW: 0.003, chamfer: 0.004, erosion: 0.8, chips: 0.8, moss: 0, sheen: 1 }), normalStrength: 2.6, cavity: 0.12 },
+  hd2_basalt_floor: { size: 1024, gen: () => HD2.ashlar2({ seed: 89, rows: 6, minW: 0.18, maxW: 0.34, palette: 'basalt', mortarW: 0.003, chamfer: 0.004, erosion: 1.0, chips: 1.0, moss: 0, sheen: 0.45, cracks: 0.6 }), normalStrength: 2.6, cavity: 0.14 },
   hd2_cave_floor: { size: 1024, gen: () => HD2.hewnRock({ seed: 247, base: [0.36, 0.32, 0.27], floor: true }), normalStrength: 3.5, cavity: 0.25 },
   hd2_plaster: { size: 1024, gen: () => HD.plaster({ seed: 31, base: [0.7, 0.64, 0.53], decay: 1.45 }), normalStrength: 4, cavity: 0.28 },
   hd2_plaster_int: { size: 1024, gen: () => HD.plaster({ seed: 33, base: [0.82, 0.77, 0.66], decay: 0.8, interior: true }), normalStrength: 3.2, cavity: 0.22 },
   hd2_ceiling: { size: 512, gen: () => HD.floorBoards({ seed: 193, count: 12, base: [0.33, 0.23, 0.15] }), normalStrength: 2.5, cavity: 0.25 },
   hd2_cobble: { size: 512, gen: () => HD.cobbleSetts({ seed: 61 }), normalStrength: 3.8, cavity: 0.3 },
-  hd2_flags: { size: 1024, gen: () => HD.flagstones({ seed: 71, rows: 13, minW: 0.055, maxW: 0.19, bevelK: 0.35, tiltK: 0.45, jointK: 0.75, dirt: 0.7, roughVar: 0.35 }), normalStrength: 3.6, cavity: 0.2 },
+  hd2_dungeon_floor: { size: 1024, gen: () => HD.flagstones({ seed: 93, rows: 9, minW: 0.08, maxW: 0.26, base: [0.3, 0.29, 0.27], weeds: 0.15, bevelK: 0.45, tiltK: 0.6, jointK: 0.9, dirt: 0.5, roughVar: 0.4, lichen: 0 }), normalStrength: 3.8, cavity: 0.24 },
+  hd2_flags: { size: 1024, gen: () => HD.flagstones({ seed: 71, rows: 13, minW: 0.055, maxW: 0.19, bevelK: 0.35, tiltK: 0.45, jointK: 0.75, dirt: 0.7, roughVar: 0.35, lichen: 0.5 }), normalStrength: 3.6, cavity: 0.2 },
 };
 
 for (const k of Object.keys(TEXTURE_DEFS)) TEXTURE_DEFS[k].hd = true;

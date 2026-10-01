@@ -309,6 +309,44 @@ export function buildProps(map, block, opts = {}) {
         }
       }
     }
+    if (ts.id === 'dungeon' && ts.variant !== 'bane') {
+      // cut-stone halls: an iron drain grate in some corridor bays, and the floor's litter of
+      // straw, grit and the odd gnawed bone swept toward the walls
+      const wN = map.getEdge(fc.x, fc.y, 'N') === EDGE.WALL;
+      const wS = map.getEdge(fc.x, fc.y, 'S') === EDGE.WALL;
+      const wE = map.getEdge(fc.x, fc.y, 'E') === EDGE.WALL;
+      const wW = map.getEdge(fc.x, fc.y, 'W') === EDGE.WALL;
+      if (!ts.variant && ((wN && wS) || (wE && wW)) && hash(map.id, fc.x, fc.y, 'drain') < 0.4) {
+        const rot = wN && wS ? 0 : Math.PI / 2;
+        const m = new THREE.Matrix4().makeTranslation(cx, 0, cz).multiply(new THREE.Matrix4().makeRotationY(rot));
+        const at = (x, y, z) => m.clone().multiply(new THREE.Matrix4().makeTranslation(x, y, z));
+        g.box('arch_beam_dark', { matrix: at(0, 0.003, 0), s: [0.52, 0.006, 0.52], tint: [0.03, 0.03, 0.03], ao: 0.3 });
+        for (const [x, z, sx, sz] of [[0, -0.29, 0.66, 0.08], [0, 0.29, 0.66, 0.08], [-0.29, 0, 0.08, 0.5], [0.29, 0, 0.08, 0.5]]) g.box('arch_trim', { matrix: at(x, 0.012, z), s: [sx, 0.03, sz], chamfer: 0.008, tint: [0.55, 0.53, 0.5], ao: 0.8 });
+        for (let k = 0; k < 6; k++) g.box('prop_iron', { matrix: at(-0.21 + k * 0.084, 0.012, 0), s: [0.022, 0.02, 0.5], ao: 0.7 });
+        g.box('prop_iron', { matrix: at(0, 0.014, 0), s: [0.5, 0.018, 0.024], ao: 0.7 });
+        puddles.push({ x: cx, z: cz, s: 1.1, r: hash(fc.x, fc.y, 'dr') * 6 });
+      }
+      const nl = (ts.variant === 'warrens' ? 8 : 3) + Math.floor(hash(fc.x, fc.y, 'dlit') * 6);
+      for (let k = 0; k < nl; k++) {
+        const ax = (hash(fc.x, fc.y, k, 'dx') - 0.5) * 2.6;
+        const az = (hash(fc.x, fc.y, k, 'dz') - 0.5) * 2.6;
+        // pushed toward the walls: the middle of the passage is trodden clear
+        const px = cx + Math.sign(ax) * Math.pow(Math.abs(ax) / 1.3, 0.5) * 1.3;
+        const pz = cz + Math.sign(az) * Math.pow(Math.abs(az) / 1.3, 0.5) * 1.3;
+        const kind = hash(fc.x, fc.y, k, 'dk');
+        const m = new THREE.Matrix4().makeTranslation(px, 0.01, pz).multiply(new THREE.Matrix4().makeRotationY(hash(fc.x, fc.y, k, 'dr2') * 6.3));
+        if (kind < 0.55) {
+          const sc = 0.04 + hash(fc.x, fc.y, k, 'ds') * 0.08;
+          g.geometry('prop_rock', geos.pebble, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, sc * 0.15, 0)).multiply(new THREE.Matrix4().makeScale(sc, sc * 0.6, sc)), { uv: 'world', tint: [0.6, 0.58, 0.55], ao: 0.75 });
+        } else if (kind < 0.85) {
+          for (let q = 0; q < 4; q++) g.box('prop_burlap', { matrix: m.clone().multiply(new THREE.Matrix4().makeRotationY(q * 0.6)).multiply(new THREE.Matrix4().makeTranslation(q * 0.03, 0.004, 0)), s: [0.16 + q * 0.05, 0.007, 0.011], tint: [0.5, 0.43, 0.28] });
+        } else {
+          const bone = new THREE.CylinderGeometry(0.014, 0.012, 0.22, 6);
+          g.geometry('prop_bone', bone, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.014, 0)).multiply(new THREE.Matrix4().makeRotationZ(Math.PI / 2)), { uv: 'world', tint: [0.85, 0.8, 0.68] });
+          bone.dispose();
+        }
+      }
+    }
     if (ts.id === 'interior' && hash(fc.x, fc.y, 'rug') < 0.2 && !fc.edge) {
       const m = new THREE.Matrix4().makeTranslation(cx, 0.008, cz).multiply(new THREE.Matrix4().makeRotationY(hash(fc.x, fc.y) < 0.5 ? 0 : Math.PI / 2));
       rugs.push({ m, v: hash(fc.x, fc.y, 'rv') < 0.5 ? 0 : 1 });
@@ -320,7 +358,7 @@ export function buildProps(map, block, opts = {}) {
       if (map.getCell(fc.x, fc.y + 1) !== CELL.WATER || fc.cell === CELL.WATER) continue;
       const ez = (fc.y + 1) * S - 0.45;
       const cx = fc.x * S + S / 2;
-      {
+      if (!fc.pier) {
         // the quay edge: a battered stone face down into the water, a coping of long dressed
         // blocks overhanging it, timber fenders and an iron mooring ring
         const qz = (fc.y + 1) * S;
@@ -544,7 +582,7 @@ export function buildProps(map, block, opts = {}) {
   }
   // cobwebs
   if (webCards.length) {
-    const mat = new THREE.MeshBasicMaterial({ map: getCobwebTexture(), transparent: true, depthWrite: false, side: THREE.DoubleSide, color: 0x9a9a92, opacity: 0.8 });
+    const mat = new THREE.MeshBasicMaterial({ map: getCobwebTexture(), transparent: true, depthWrite: false, side: THREE.DoubleSide, color: 0x7a7a72, opacity: 0.6 });
     const b = new GeoBuilder();
     for (const c of webCards) {
       const f = c.face;
@@ -554,10 +592,34 @@ export function buildProps(map, block, opts = {}) {
       const sz = 0.9;
       const P = (s, y, dd) => new THREE.Vector3(s, y, dd).applyMatrix4(f.basis);
       // triangle spanning corner: along wall, down, and out from the other wall
-      const a = P(se, H, d);
-      const bb = P(se - c.end * sz, H, d + 0.05);
-      const cc = P(se, H - sz, d + sz * 0.7);
-      b.tri('web', [a, bb, cc], [[0, 0], [1, 0], [0, 1]], { ao: 1 });
+      // a sagging sheet, not a flat card: the corner triangle subdivided, its middle bellied
+      // down and out into the room, the free edge drooping between its anchors
+      const N = 5;
+      const pt = (i, j) => {
+        const u = i / N;
+        const v = j / N;
+        const a = new THREE.Vector3(se, H, d);
+        const bb = new THREE.Vector3(se - c.end * sz, H, d + 0.05);
+        const cc = new THREE.Vector3(se, H - sz, d + sz * 0.7);
+        const q = a.clone().addScaledVector(bb.clone().sub(a), u).addScaledVector(cc.clone().sub(a), v);
+        const w = 1 - u - v;
+        const sag = 4 * u * v * 0.9 + w * (u + v) * 0.4;
+        q.y -= sag * 0.16;
+        q.z += sag * 0.06;
+        return [P(q.x, q.y, q.z), [u, v]];
+      };
+      for (let j = 0; j < N; j++) {
+        for (let i = 0; i < N - j; i++) {
+          const [p0, t0] = pt(i, j);
+          const [p1, t1] = pt(i + 1, j);
+          const [p2, t2] = pt(i, j + 1);
+          b.tri('web', [p0, p1, p2], [t0, t1, t2], { ao: 1 });
+          if (i + j < N - 1) {
+            const [p3, t3] = pt(i + 1, j + 1);
+            b.tri('web', [p1, p3, p2], [t1, t3, t2], { ao: 1 });
+          }
+        }
+      }
     }
     const geo = b.build().get('web');
     const mesh = new THREE.Mesh(geo, mat);

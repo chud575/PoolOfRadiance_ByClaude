@@ -218,7 +218,7 @@ export function ashlar2({ seed = 21, rows = 10, minW = 0.12, maxW = 0.26, palett
 
     // ---------------------------------------------------------------- colour
     let c = pal[Math.floor(sid * pal.length)];
-    c = mul3(c, 0.92 + hash2(L.row, L.col, seed + 1) * 0.14);
+    c = mul3(c, 0.88 + hash2(L.row, L.col, seed + 1) * 0.22);
     c = [c[0] * (1 + (sC - 0.5) * 0.08), c[1], c[2] * (1 - (sC - 0.5) * 0.09)];
     c = mul3(c, 0.84 + big * 0.3 + (mid - 0.5) * 0.16 + (fine - 0.5) * 0.1 + (micro - 0.5) * 0.08);
     // mineral speckle

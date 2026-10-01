@@ -678,7 +678,7 @@ export function limestone({ seed = 211, base = [0.5, 0.47, 0.41] } = {}) {
  * into two smaller ones), per-stone tilt/height, chipped corners, worn arrises,
  * wide dirt/moss-filled joints, lichen and stains. Tile ≈ 3 m.
  */
-export function flagstones({ seed = 77, rows = 8, base = [0.5, 0.47, 0.42], weeds = 0.45, minW = 0.1, maxW = 0.36, bevelK = 1, tiltK = 1, jointK = 1, dirt = 0, roughVar = 0 } = {}) {
+export function flagstones({ seed = 77, rows = 8, base = [0.5, 0.47, 0.42], weeds = 0.45, minW = 0.1, maxW = 0.36, bevelK = 1, tiltK = 1, jointK = 1, dirt = 0, roughVar = 0, lichen = 1 } = {}) {
   // strongly varied course heights + widths: hand-laid random-course paving, not a tiled grid
   const lay = masonryLayout({ rows, seed, minW, maxW, rowVar: 0.95 });
   return (u, v) => {
@@ -729,7 +729,7 @@ export function flagstones({ seed = 77, rows = 8, base = [0.5, 0.47, 0.42], weed
     // lichen rosettes and dark stains
     const lw = worley(u * 40, v * 40, 40, seed + 14);
     const lich = (1 - smooth(0.12, 0.3, lw.f1)) * (lw.id > 0.86 ? 1 : 0);
-    c = mix3(c, [0.62, 0.62, 0.5], lich * 0.45);
+    c = mix3(c, [0.62, 0.62, 0.5], lich * 0.45 * lichen);
     c = mul3(c, 1 - smooth(0.6, 0.8, fbm(u * 5, v * 5, { octaves: 3, period: 5, seed: seed + 15 })) * 0.22);
     // joints: compacted dirt, grit, moss/weeds in places
     const jn = valueNoise(u * 260, v * 260, 260, seed + 16);

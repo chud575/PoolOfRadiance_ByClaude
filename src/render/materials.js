@@ -28,7 +28,7 @@ const DEFS = {
   water_dark: { color: 0x0a1a24, roughness: 0.05, metalness: 0.2 },
 
   // ---- explore architecture (vertex AO colours required) ----
-  arch_stone: { tex: 'hd2_ashlar', texScale: 3, vc: true, fx: { macro: 0.28, grime: 0.55, moss: 0.35 } },
+  arch_stone: { tex: 'hd2_ashlar', texScale: 3, vc: true, fx: { macro: 0.32, grime: 0.55, moss: 0.35, streak: 0.55 } },
   arch_stone_cold: { tex: 'hd2_ashlar_cold', texScale: 3, vc: true, fx: { macro: 0.3, grime: 0.6, moss: 0.5 } },
   arch_trim: { tex: 'hd2_quoin', texScale: 1.5, vc: true, color: 0xd8d0c4, fx: { macro: 0.2, grime: 0.4, moss: 0.5 } },
   arch_dressed: { tex: 'hd2_dressed', texScale: 1.5, vc: true, color: 0xe6ded2, fx: { macro: 0.2, grime: 0.45, moss: 0.4 } },
@@ -46,7 +46,7 @@ const DEFS = {
   arch_boards: { tex: 'hd_boards', texScale: 2, vc: true, fx: { macro: 0.15, floor: 1 } },
   arch_ceiling: { tex: 'hd2_ceiling', texScale: 3, vc: true, color: 0xffffff, fx: { macro: 0.1 } },
   arch_dungeon: { tex: 'hd2_dungeon', texScale: 3, vc: true, fx: { macro: 0.34, grime: 0.6, moss: 0.4, streak: 1 } },
-  arch_dungeon_floor: { tex: 'hd_dungeon_floor', texScale: 3, vc: true, fx: { macro: 0.3, floor: 1 } },
+  arch_dungeon_floor: { tex: 'hd2_dungeon_floor', texScale: 3, vc: true, fx: { macro: 0.3, floor: 1 } },
   arch_hewn: { tex: 'hd2_hewn', texScale: 3, vc: true, fx: { macro: 0.35, grime: 0.5, moss: 0.5 } },
   arch_hewn_ceil: { tex: 'hd2_hewn_ceil', texScale: 3, vc: true, roughness: 1, fx: { macro: 0.3 } },
   arch_cave_floor: { tex: 'hd2_cave_floor', texScale: 3, vc: true, fx: { macro: 0.35, floor: 1 } },
