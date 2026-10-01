@@ -35,6 +35,7 @@ async function boot() {
   /** @type {import('./core/context.js').GameContext} */
   const ctx = { bus, clock, settings, rng, saves, game, render, ui, audio, input, debug, scenes: null };
   ctx.scenes = new SceneManager(ctx);
+  audio.attach?.(ctx); // audio director reads location/party for adaptive music
   window.__GAME = ctx; // for scripts/devtools only — never read this from game code
 
   if (debug.classic) render.setClassic(true);

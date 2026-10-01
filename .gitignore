@@ -8,3 +8,4 @@ reference/*
 .vite/
 .DS_Store
 scratch_*/
+audio_out/

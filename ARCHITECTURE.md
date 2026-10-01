@@ -77,11 +77,20 @@ src/ui/                    HTML/CSS overlay
   components/              Frame, CommandBar, MessageLog, PartyRoster, Menu, Dialog, Tooltip, Toast
   StandardHud.js           explore HUD (location, compass, roster, log, command line)
   styles/ui.css            the skin (CSS variables — gilt / deep blue / parchment)
-src/audio/AudioEngine.js   WebAudio buses (master/music/sfx/ui), procedural sfx, music stub
+src/audio/                 procedural WebAudio (see "Audio" below)
+  AudioEngine.js           public API: sfx(), playMusic()/music(), stinger(), setIntensity(), ambience(), setEnvironment()
+  director.js              event-bus listener: location→mood/surface/reverb/ambience, combat-log→contextual sfx, stingers
+  graph.js                 mixer: music/sfx/ambience/ui buses, generated-IR convolution reverbs, glue comp + limiter
+  environments.js          map id → {mood, surface, room, bed}; spell name → sfx family
+  instruments/             Karplus–Strong plucks (lute/harp/dulcimer), bowed strings, formant choir, winds/brass, drones, modal drums, bells
+  music/                   Sequencer (TrackPlayer: lookahead scheduling, adaptive layers), compose helpers, themes/*.js, songs.js
+  sfx/                     toolkit (noise/tone/modes/grains/formant voice), library (all named sfx), ambience beds
+  dsp/                     pure-JS synthesis (KS strings, modal drums, noise), impulse responses, sample cache
+  offline.js               OfflineAudioContext renders of every cue (used by tools/audiorender.mjs)
 src/scenes/<name>/         one directory per scene (see ownership)
   registry.js              name → lazy import (only file that knows all scenes)
 tools/                     node tooling (never imported by the game)
-  shot.mjs shotall.mjs refshot.mjs smoke.mjs gallery.mjs lib/{server,browser}.mjs
+  shot.mjs shotall.mjs refshot.mjs smoke.mjs gallery.mjs audiorender.mjs lib/{server,browser}.mjs
   reference/               1988 EGA reference renderer (index.html, ref.js, ega.js, screens.js)
 tests/                     vitest specs (rules/, data/)
 ```
@@ -176,6 +185,9 @@ GameContext (`ctx`): `bus, clock, input, settings, saves, game, scenes, render, 
 `scene:enter {name, params, overlay?}`, `scene:resume {name, result}`, `input:action {action, code}`,
 `message {text, kind}` (kinds: info/combat/loot/warn/lore/system), `party:changed`, `location:changed`,
 `time:changed`, `settings:changed {key, value}`, `save:written {slot}`, `audio:music {trackId}`, `app:ready`.
+Optional events the audio director listens for (emit them when convenient; it already infers most of this from
+`message` text and `party:changed`): `combat:start {encounter}`, `combat:end {winner: 'party'|'monster'|'fled'}`,
+`audio:stinger {name}` (victory/defeat/levelup/discovery/danger/quest/fallen), `audio:sfx {name, opts}`.
 
 ### Input actions
 forward, back, turnLeft, turnRight, strafeLeft, strafeRight, turnAround, confirm, cancel, area, cast,
@@ -253,6 +265,34 @@ Each workstream owns its paths; touch others' paths only via small, announced AP
 Shared-file etiquette: adding a scene = one line in `registry.js`; adding a gallery shot = one line in
 `tools/gallery.mjs`; adding a material/texture = new keys (never change existing keys' meaning).
 
+## Audio
+
+Everything is synthesized at run time — no samples. `ctx.audio` (src/audio/AudioEngine.js):
+
+| call | what |
+|---|---|
+| `sfx(name, {bus:'sfx'\|'ui', pitch, vol, pan, delay, surface, material, crit, n, mode})` | one-shot effect (library in `sfx/library.js`) |
+| `playMusic(id)` / `music(state, {fade, intensity})` | crossfade the score. States: `title intro town tavern ruins dungeon crypt wilds camp combat encounter victory defeat silence`; aliases `explore`/`phlan_streets`/`city`/`dungeon` resolve to the current map's mood (`environments.js`) |
+| `stinger(name)` | one-shot musical sting over the ducked score: `victory defeat levelup discovery danger quest fallen` |
+| `setIntensity(0..1)` | adaptive layers (combat: base 0.5, raised automatically as the party falls) |
+| `ambience(bed, {night})` | `title town ruins dungeon crypt wilds camp interior combat_out combat_in` |
+
+SFX names scenes may use: `step footstep walk bump turn door door_close door_locked door_secret chest trap splash swing miss hit
+hit_armor hit_bone crit bite claw block bow arrow_hit death spell spell_fire spell_cone spell_lightning spell_shock spell_missile
+spell_sleep spell_mind spell_cloud spell_heal heal spell_holy spell_curse spell_ward spell_turn spell_fizzle potion click hover
+confirm cancel error page open close map coins save equip sparkle levelup vox_<family> vox_<family>_die` (families: kobold goblin
+orc gnoll ogre skeleton zombie ghost rat wolf spider frog lizard human dragon; `VOICE_OF` maps monster ids).
+Generic requests are made specific by the director: `step` uses the map's surface (cobble/gravel/dirt/grass/wood/stone) and a
+party of feet; in combat `miss` with pitch > 1.2 becomes a sword swing or bow twang, `hit` becomes armour/bone/flesh + monster
+pain voices, and `spell` becomes the cast spell's family — all inferred from the combat log line that precedes it.
+Buttons get hover/click ticks globally. The AudioContext starts on the first gesture; in debug/screenshot mode
+(`?scene=`) audio is muted. Settings read: `masterVolume musicVolume sfxVolume` (+ optional `ambienceVolume uiVolume muteAll
+muteInBackground`).
+
+Review renders: `node tools/audiorender.mjs [--match music_|--only sfx_door,...] [--spectro] [--port N]` → `audio_out/<cue>.wav`
+(+ spectrogram PNGs). Cues: `music_*`, `sting_*`, `amb_*`, `sfx_*`, `sfx_step_<surface>`, `inst_<preset>`, `demo_combat_adaptive`,
+`demo_crossfade`. Fails on NaN, silence or clipping.
+
 ## Coding conventions
 
 * ES modules, 2-space indent, single quotes, semicolons, JSDoc on exported APIs.
@@ -293,6 +333,5 @@ premium modern release, i.e.:
 * Explore: one block (`phlan_slums`), exits to unbuilt maps, no roofs/skyline beyond block walls, no props.
 * Spells: full rules engine (castSpell, memorization, rest); combat still uses its own resolver for some spells; no memorization UI yet.
 * Shops: buy only; temple/training services not implemented.
-* Audio: procedural sfx only; music is a stub.
 * UI: no inventory/character sheet screens; settings/options UI minimal; no rebinding UI (API exists).
 * Reference renderer is from memory of the EGA original — close in layout/palette, not pixel-exact.
