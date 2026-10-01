@@ -501,12 +501,18 @@ export class Diorama {
       shape.quadraticCurveTo(-0.07, 0.08, 0, 0.3);
       const ag = T(new THREE.ExtrudeGeometry(shape, { depth: 0.04, bevelEnabled: true, bevelThickness: 0.012, bevelSize: 0.012, bevelSegments: 2, curveSegments: 8 }));
       ag.rotateX(-Math.PI / 2);
-      const enamel = T(new THREE.MeshStandardMaterial({ color: 0xb8321f, roughness: 0.45, metalness: 0, envMapIntensity: 0.8 }));
+      const enamel = T(new THREE.MeshPhysicalMaterial({ color: 0xa82a18, roughness: 0.35, metalness: 0, clearcoat: 0.6, clearcoatRoughness: 0.3, envMapIntensity: 0.8 }));
       const arrow = new THREE.Mesh(ag, enamel);
-      arrow.position.y = 0.075;
+      arrow.position.y = 0.085;
       arrow.castShadow = true;
+      // a gilt rim under the enamel, like a brass compass pointer
+      const rimGeo = T(new THREE.ExtrudeGeometry(shape, { depth: 0.03, bevelEnabled: true, bevelThickness: 0.01, bevelSize: 0.03, bevelSegments: 2, curveSegments: 8 }));
+      rimGeo.rotateX(-Math.PI / 2);
+      const rim = new THREE.Mesh(rimGeo, M_.gold);
+      rim.position.y = 0.068;
+      rim.castShadow = true;
       const head = new THREE.Group();
-      head.add(arrow);
+      head.add(rim, arrow);
       head.rotation.y = { N: 0, E: -Math.PI / 2, S: Math.PI, W: Math.PI / 2 }[party.dir] ?? 0;
       const pole = new THREE.Mesh(T(new THREE.CylinderGeometry(0.012, 0.014, 1.1, 8)), M_.beam);
       pole.position.set(-0.2, 0.6, 0.18);

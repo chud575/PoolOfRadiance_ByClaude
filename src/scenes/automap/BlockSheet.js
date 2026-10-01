@@ -1,7 +1,7 @@
 import { EDGE, CELL, DIRS } from '../../data/maps/MapGrid.js';
 import { getMap, hasMap } from '../../data/maps/index.js';
 import { TRAVEL } from '../../data/travel.js';
-import { INK, makeCanvas, makeParchment, quillStroke, planWall, hatchRect, lineShade, stipple, featherMask, prng } from './ink.js';
+import { INK, makeCanvas, makeParchment, quillStroke, planWall, pencilShade, hatchRect, lineShade, stipple, featherMask, prng } from './ink.js';
 import { regions, washRegion, hatchBand, cobbleRegion, scatter, deckleMask } from './paint.js';
 import { drawMarker } from './glyphs.js';
 import { SERIF, drawCompassRose, drawCartouche, drawIlluminatedInitial, drawFlourish, fitFont, wrapText, haloText, goldGradient } from './ornaments.js';
@@ -166,10 +166,11 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
   {
     const f = fog.getContext('2d');
     f.scale(k, k);
-    f.fillStyle = 'rgba(92,66,36,0.2)';
+    // the unknown stays cool grey pencil; the survey is warm ink and wash
+    f.fillStyle = 'rgba(78,72,66,0.2)';
     f.fillRect(MX, MY, MS, MS);
-    lineShade(f, MX, MY, MS, MS, { gap: 5.5, angle: -Math.PI / 3.2, color: '#4a3826', width: 0.5, alpha: 0.26 });
-    lineShade(f, MX, MY, MS, MS, { gap: 13, angle: Math.PI / 3.2, color: '#4a3826', width: 0.4, alpha: 0.1 });
+    pencilShade(f, MX, MY, MS, MS, { gap: 5.2, angle: -Math.PI / 3.2, color: '#3c3a3c', width: 0.55, alpha: 0.32, seed: seed + 21 });
+    pencilShade(f, MX, MY, MS, MS, { gap: 12, angle: Math.PI / 3.4, color: '#3c3a3c', width: 0.45, alpha: 0.14, seed: seed + 22 });
     f.setTransform(1, 0, 0, 1, 0, 0);
     f.globalCompositeOperation = 'destination-out';
     f.imageSmoothingEnabled = true;
@@ -225,11 +226,11 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
       } else if (t === CELL.RUBBLE) {
         washRegion(w, rg.cells, { ...P, color: jit([150, 130, 104], 0.3, 0.15), alpha: 0.3, seed: rs, edge: 0.35, mottle: 0.5, gran: 0.5 });
       } else if (t === CELL.COURTYARD) {
-        washRegion(w, rg.cells, { ...P, color: [200, 180, 140], alpha: 0.16, seed: rs, edge: 0.22, mottle: 0.55, gran: 0.25, blooms: 0 });
+        washRegion(w, rg.cells, { ...P, color: [214, 184, 128], alpha: 0.21, seed: rs, edge: 0, mottle: 0.55, gran: 0.25, blooms: 0 });
       } else if (t === CELL.WATER) {
         washRegion(w, rg.cells, { ...P, color: jit([62, 112, 168], 0.2, 0.1), alpha: 0.5, seed: rs, edge: 0.55, mottle: 0.25, gran: 0.15, blooms: 2 });
       } else {
-        washRegion(w, rg.cells, { ...P, color: wild ? [120, 152, 80] : [214, 186, 132], alpha: wild ? 0.3 : 0.16, seed: rs, edge: 0.22, mottle: 0.55, gran: 0.25, blooms: 0 });
+        washRegion(w, rg.cells, { ...P, color: wild ? [120, 152, 80] : [220, 184, 122], alpha: wild ? 0.3 : 0.22, seed: rs, edge: 0.22, mottle: 0.55, gran: 0.25, blooms: 0 });
       }
     }
     // texture: drawn setts on plazas, grit on the streets, broken masonry in rubble, ripples on water

@@ -581,3 +581,39 @@ export function planWall(g, x0, y0, x1, y1, { width = 6, seed = 0, color = INK.i
   }
   g.restore();
 }
+
+/**
+ * Pencil shading laid by hand: long parallel strokes whose spacing, angle,
+ * pressure and length wander a little, each broken into a few dashes where the
+ * pencil skipped over the paper's tooth. (lineShade is the ruled engraver's
+ * version.)
+ */
+export function pencilShade(g, x, y, w, h, { gap = 6, angle = -Math.PI / 4, color = '#4a3826', width = 0.5, alpha = 0.25, seed = 1 } = {}) {
+  const r = prng(seed);
+  g.save();
+  g.beginPath();
+  g.rect(x, y, w, h);
+  g.clip();
+  g.strokeStyle = color;
+  g.lineCap = 'round';
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  const R = Math.hypot(w, h) / 2 + gap;
+  for (let o = -R; o <= R; o += gap * (0.7 + r() * 0.6)) {
+    const a = angle + (r() - 0.5) * 0.05;
+    const ca = Math.cos(a);
+    const sa = Math.sin(a);
+    let t = -R + r() * gap * 3;
+    while (t < R) {
+      const L = gap * (6 + r() * 26);
+      g.globalAlpha = alpha * (0.45 + r() * 0.8);
+      g.lineWidth = width * (0.7 + r() * 0.6);
+      g.beginPath();
+      g.moveTo(cx - sa * o + ca * t, cy + ca * o + sa * t);
+      g.lineTo(cx - sa * o + ca * (t + L), cy + ca * o + sa * (t + L));
+      g.stroke();
+      t += L + gap * (0.3 + r() * 2.2);
+    }
+  }
+  g.restore();
+}
