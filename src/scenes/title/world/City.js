@@ -151,10 +151,16 @@ export function createCity({ seed = 1988 } = {}) {
   const tower = (x, z, r, h, { roof = 'cone', base = GROUND, lit = 0 } = {}) => {
     const col = R.pick(stoneCols);
     walls.push(tint(worldUV(cylinder(r, r * 1.08, h, 14, { x, y: base, z }), 3), col, { aoBottom: base, aoTop: base + 5 }));
+    // string course a third of the way up
+    fine.push(tint(worldUV(cylinder(r * 1.12, r * 1.12, 0.3, 16, { x, y: base + h * 0.62, z }), 2), new THREE.Color(col).multiplyScalar(1.12)));
     if (roof === 'cone') {
-      slate.push(tint(worldUV(cone(r * 1.25, r * 2.4, 14, { x, y: base + h, z }), 2), R.pick(slateCols)));
+      // eaves ring, conical roof, lead finial
+      beams.push(tint(worldUV(cylinder(r * 1.32, r * 1.18, 0.3, 16, { x, y: base + h - 0.05, z }), 2), 0x3a2a1e));
+      slate.push(tint(worldUV(cone(r * 1.28, r * 2.6, 16, { x, y: base + h + 0.2, z }), 2), R.pick(slateCols)));
+      fine.push(tint(worldUV(cylinder(0.06, 0.1, r * 0.9, 6, { x, y: base + h + 0.2 + r * 2.5, z }), 1), 0x6a6050));
     } else {
-      // crenellated top
+      // corbelled, crenellated top
+      fine.push(tint(worldUV(cylinder(r * 1.15, r * 1.04, 0.55, 16, { x, y: base + h - 0.55, z }), 2), new THREE.Color(col).multiplyScalar(0.95)));
       walls.push(tint(worldUV(cylinder(r * 1.15, r * 1.15, 0.9, 14, { x, y: base + h, z }), 3), col));
       const n = Math.round(r * 3);
       for (let i = 0; i < n; i++) {
@@ -236,6 +242,10 @@ export function createCity({ seed = 1988 } = {}) {
     mound.translate(cx, GROUND + 2, cz);
     walls.push(tint(worldUV(mound, 4), 0x5d564c));
     walls.push(tint(worldUV(box(14, 15, 12, { x: cx, y: base, z: cz }), 3), 0x8a7f72, { aoBottom: base, aoTop: base + 6 }));
+    // buttresses, machicolation band and lit arrow slits on the keep
+    for (const bx of [-4.6, 0, 4.6]) walls.push(tint(worldUV(box(1.2, 13.5, 0.9, { x: cx + bx, y: base, z: cz + 6.3 }), 3), 0x82776a, { aoBottom: base, aoTop: base + 6 }));
+    fine.push(tint(worldUV(box(14.8, 0.9, 12.8, { x: cx, y: base + 14.1, z: cz }), 2), 0x958a7c));
+    for (let k = 0; k < 4; k++) addWin(new THREE.Matrix4().setPosition(cx, base, cz), -6.9 + k * 4.6 + 2.3 * (k % 2 ? 0 : 0), 9.5, 6.06, 0, 0.35, 1.1, 0.8);
     crenel(cx - 7, cz + 6, cx + 7, cz + 6, base + 15, 0.6, 0x8a7f72);
     crenel(cx - 7, cz - 6, cx + 7, cz - 6, base + 15, 0.6, 0x8a7f72);
     for (const [dx, dz] of [[-10, 8], [10, 8], [-10, -8], [10, -8]]) tower(cx + dx, cz + dz, 2.4, 19, { roof: dx > 0 && dz > 0 ? 'broken' : 'cone', base });

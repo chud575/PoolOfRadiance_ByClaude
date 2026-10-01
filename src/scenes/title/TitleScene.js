@@ -32,6 +32,9 @@ const POSES = {
   credits: { p: [0, 7.5, 16], l: [0, 2.5, -40] },
 };
 /** Logo layout per mode (fraction of screen width, centre NDC). */
+/** Strength of the Pool's light column per mode. */
+const BEAM = { card: 1, menu: 0.38, settings: 0.6, load: 0.5, credits: 0.7, intro: 1 };
+
 const LOGO = {
   card: { width: 0.56, cx: 0, cy: 0.5, alpha: 1 },
   menu: { width: 0.44, cx: 0.235, cy: 0.575, alpha: 1 },
@@ -309,6 +312,9 @@ export default class TitleScene extends Scene {
     this.fadeEl.style.opacity = String(fade);
     this.root.classList.toggle('booted', snap || !this.fromBoot || since > 2.6);
     this.panel?.update?.(t, snap);
+    const beamTo = BEAM[this.mode] ?? 1;
+    this._beam = snap || this._beam === undefined ? beamTo : this._beam + (beamTo - this._beam) * Math.min(1, dt * 2.5);
+    this.world.terrace.setBeam(this._beam);
     this.world.update(t, this.camera, this.ctx.render.renderer?.getPixelRatio?.() ?? 1);
   }
 

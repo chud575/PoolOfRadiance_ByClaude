@@ -44,9 +44,9 @@ export const ClassicShader = {
       // EGA art was drawn in saturated primaries: push chroma + midtone contrast
       // before matching so dusk hues land on blues/cyans/browns, not a grey ramp.
       float luma = dot(src, vec3(0.299, 0.587, 0.114));
-      src = clamp(mix(vec3(luma), src, 1.9), 0.0, 1.0);
+      src = clamp(mix(vec3(luma), src, 1.55), 0.0, 1.0);
       src = clamp((src - 0.5) * 1.15 + 0.5 + 0.04, 0.0, 1.0);
-      vec3 c = src + bayer(cell) * uDither * 0.33;
+      vec3 c = src + bayer(cell) * uDither * 0.24;
       float best = 1e9; vec3 q = PAL[0];
       for (int i = 0; i < 16; i++) {
         vec3 d = c - PAL[i];

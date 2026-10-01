@@ -275,7 +275,7 @@ export class SettingsPanel {
       const ega = ['#000000', '#0000AA', '#00AA00', '#00AAAA', '#AA0000', '#AA00AA', '#AA5500', '#AAAAAA', '#555555', '#5555FF', '#55FF55', '#55FFFF', '#FF5555', '#FF55FF', '#FFFF55', '#FFFFFF'];
       return h('div.por-set-note', [
         h('div.por-set-swatches', ega.map((c) => h('i', { style: { background: c } }))),
-        h('div.por-set-note-text', [h('b', ['The 1988 palette. ']), 'Classic mode quantises every frame to these sixteen EGA colours and swaps the interface for the original blue double-rule frames and 5×7 lettering.']),
+        h('div.por-set-note-text', [h('b', ['The 1988 palette. ']), 'Classic mode draws Phlan in these sixteen EGA colours, with the original 5×7 lettering.']),
       ]);
     }
     if (id === 'audio') {

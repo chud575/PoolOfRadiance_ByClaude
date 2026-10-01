@@ -94,3 +94,6 @@ html[data-classic='1'] .por-intro-cap-main { color: var(--ega-11) !important; }
 html[data-classic='1'] .por-compass { filter: none; }
 html[data-classic='1'] .por-tooltip, html[data-classic='1'] .por-toast { background: #000 !important; color: var(--ega-15) !important; border: 3px double var(--ega-9) !important; clip-path: none !important; }
 html[data-classic='1'] .por-scroll-fade::after { background: linear-gradient(transparent, #000) !important; }
+html[data-classic='1'] .por-roster, html[data-classic='1'] .por-roster * { letter-spacing: 0 !important; white-space: nowrap; }
+html[data-classic='1'] .por-roster-row .name, html[data-classic='1'] .por-roster-row > span:first-child { overflow: hidden; text-overflow: clip; }
+html[data-classic='1'] .por-hud-right { width: 19.5em; }

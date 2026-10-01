@@ -248,11 +248,14 @@ export function createTerrace({ seed = 7 } = {}) {
       }`,
   });
   disposables.push(beamMat);
+  const beams = [];
   for (const [rb, rt, h, s] of [[2.7, 3.6, 34, 0.8], [1.4, 2.4, 28, 1.1], [0.55, 1.0, 22, 1.2]]) {
     const g = new THREE.CylinderGeometry(rt, rb, h, 48, 1, true);
     g.translate(0, h / 2 + 0.1, 0);
     const m = new THREE.Mesh(g, beamMat.clone());
     m.material.uniforms = { ...U, uStrength: { value: s } };
+    m.userData.base = s;
+    beams.push(m);
     disposables.push(g, m.material);
     m.renderOrder = 4;
     group.add(m);
@@ -457,6 +460,10 @@ export function createTerrace({ seed = 7 } = {}) {
     group,
     poolLight,
     braziers,
+    /** Scale the column of radiance (the menu dims it so the castle behind stays solid). */
+    setBeam(k) {
+      for (const m of beams) m.material.uniforms.uStrength.value = m.userData.base * k;
+    },
     update(t, camera, sunDir) {
       if (camera && sunDir) rimU.uSunView.value.copy(sunDir).transformDirection(camera.matrixWorldInverse);
       U.uTime.value = t;
