@@ -154,8 +154,9 @@ export class Fx {
         curve[i] = ((1 + k) * x) / (1 + k * Math.abs(x));
       }
       ws.curve = curve;
+      // Distortion adds a lot of energy: compensate so driven roars sit level.
       const post = ac.createGain();
-      post.gain.value = 0.5;
+      post.gain.value = 0.5 / (1 + o.drive * 1.6);
       ws.connect(post).connect(dest);
       dest = ws;
     }

@@ -115,17 +115,15 @@ function cueSpec(name) {
       seconds: 56,
       room: 'street',
       setup(ac, g) {
-        const p = new TrackPlayer(ac, SONGS.combat, { dest: g.musicIn, send: g.musicSend, at: 0.05, intensity: 0 });
-        // Intensity automation: 0 → 0.5 at 14 s → 1 at 28 s → back to 0.4 at 46 s.
-        const marks = [[14, 0.5], [28, 1], [46, 0.4]];
-        p.tick(56);
-        for (const L of p.layers.keys()) {
-          const lg = p.layers[L];
-          for (const [tt, x] of marks) {
-            const v = Math.max(0.0001, p._layerGain(L, x));
-            lg.g.gain.setTargetAtTime(v, tt, 0.6);
-            lg.s.gain.setTargetAtTime(v, tt, 0.6);
-          }
+        const p = new TrackPlayer(ac, SONGS.combat, { dest: g.musicIn, send: g.musicSend, at: 0.05, intensity: 0.05 });
+        // Intensity automation: calm → fight (14 s) → desperate (28 s) → winning (46 s).
+        // Scheduled segment by segment, exactly as the live lookahead would.
+        const marks = [[0, 0.05], [14, 0.5], [28, 1], [46, 0.4], [56, 0.4]];
+        for (let i = 0; i < marks.length - 1; i++) {
+          const [tt, x] = marks[i];
+          p.intensity = x;
+          p._applyIntensity(tt, i ? 0.6 : 0);
+          p.tick(marks[i + 1][0]);
         }
         g.musicIn.gain.setValueAtTime(1, 54);
         g.musicIn.gain.linearRampToValueAtTime(0, 55.9);

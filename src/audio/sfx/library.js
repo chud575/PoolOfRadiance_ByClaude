@@ -80,7 +80,7 @@ const thud = (fx, t, peak = 0.5, f = 85) => {
 };
 
 function whoosh(fx, t, { f0 = 500, f1 = 2000, dur = 0.22, peak = 0.3, q = 1.4, pan } = {}) {
-  fx.burst(t, { kind: 'pink', a: dur * 0.45, dur: dur * 0.6, peak, curve: 'lin', filters: [{ type: 'bandpass', f: f0, f1, q, dt: dur * 0.6 }], pan });
+  fx.burst(t, { kind: 'pink', a: dur * 0.45, dur: dur * 0.6, peak: peak * 4, curve: 'lin', filters: [{ type: 'bandpass', f: f0, f1, q, dt: dur * 0.6 }], pan });
 }
 
 function metalClang(fx, t, peak = 0.25, f = 820) {
@@ -171,7 +171,7 @@ const VOX = {
     fx.grains(t, { count: 9, spread: 0.35, fLo: 1800, fHi: 3200, q: 9, peak: 0.25 });
   },
   frog: (fx, t) => {
-    for (let c = 0; c < 2; c++) for (let i = 0; i < 7; i++) fx.tone(t + c * 0.42 + i * 0.035, { type: 'square', f: 95, dur: 0.03, peak: 0.12, filters: [{ type: 'bandpass', f: 650, q: 4 }] });
+    for (let c = 0; c < 2; c++) for (let i = 0; i < 7; i++) fx.tone(t + c * 0.42 + i * 0.035, { type: 'square', f: 95, dur: 0.03, peak: 0.4, filters: [{ type: 'bandpass', f: 650, q: 4 }] });
   },
   lizard: (fx, t) => {
     fx.burst(t, { a: 0.04, hold: 0.25, dur: 0.2, peak: 0.12, filters: [{ type: 'bandpass', f: 2600, q: 2 }] });
@@ -333,7 +333,7 @@ export const SFX = {
     zap(fx, t + 0.25, 0.32, 0.45);
     thunder(fx, t + 0.4, 0.65);
   },
-  spell_shock: (fx, t) => zap(fx, t, 0.18, 0.35),
+  spell_shock: (fx, t) => zap(fx, t, 0.18, 0.7),
   spell_missile: (fx, t, o) => {
     const n = o.n ?? 3;
     for (let i = 0; i < n; i++) {

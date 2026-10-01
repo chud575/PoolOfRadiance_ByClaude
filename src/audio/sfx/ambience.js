@@ -154,8 +154,8 @@ export class Ambience {
       case 'rumble': {
         const n = this._noise(t, 'brown');
         const lp = this._filter('lowpass', 110, 0.8);
-        g.gain.value = 0.5 * lvl;
-        this._lfo(t, 0.05, 0.2 * lvl, g.gain);
+        g.gain.value = 0.09 * lvl;
+        this._lfo(t, 0.05, 0.035 * lvl, g.gain);
         n.connect(lp).connect(g);
         return;
       }
@@ -165,8 +165,8 @@ export class Ambience {
         const bp = this._filter('bandpass', 260, 12);
         const bp2 = this._filter('bandpass', 610, 14);
         this._lfo(t, 0.021, 30, bp.frequency);
-        g.gain.value = 0.35 * lvl;
-        this._lfo(t, 0.037, 0.2 * lvl, g.gain);
+        g.gain.value = 0.5 * lvl;
+        this._lfo(t, 0.037, 0.3 * lvl, g.gain);
         n.connect(bp).connect(g);
         n.connect(bp2).connect(g);
         return;
@@ -183,8 +183,8 @@ export class Ambience {
       case 'fire': {
         const n = this._noise(t, 'brown');
         const lp = this._filter('lowpass', 260, 0.6);
-        g.gain.value = 0.45 * lvl;
-        this._lfo(t, 0.6, 0.15 * lvl, g.gain);
+        g.gain.value = 0.08 * lvl;
+        this._lfo(t, 0.6, 0.03 * lvl, g.gain);
         n.connect(lp).connect(g);
         const n2 = this._noise(t, 'pink');
         const bp = this._filter('bandpass', 900, 0.8);

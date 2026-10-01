@@ -45,7 +45,7 @@ export default {
     const all = [...ca, ...cb];
     // L0: the engine room.
     ev.push(...riff('celli', all, 'RRRRRRRRRRRRRRRR', { low: 'D2', step: 0.25, vel: 0.5, accents: '>..>..>.>..>..>.', opts: { art: 'spic' }, gate: 0.6 }));
-    ev.push(...riff('basses', all, 'R..R..R.R..R..R.', { low: 'D1', step: 0.25, vel: 0.6, opts: { art: 'spic' } }));
+    ev.push(...riff('basses', all, 'R..R..R.R..R..R.', { low: 'D1', step: 0.25, vel: 0.45, opts: { art: 'spic' } }));
     ev.push(...pad('lowbrass', all, { low: 'D2', count: 2, vel: 0.45 }));
     ev.push(...drums('taiko', 'X..x..X.X..x..x.|X..x..X.X..x.xx.', { bars: 16, vel: 0.72 }));
     ev.push(...drums('taiko2', '..x.....x...x...', { bars: 16, vel: 0.5, midi: 48 }));

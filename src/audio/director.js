@@ -27,6 +27,11 @@ const MONSTER_BY_NAME = (() => {
 })();
 
 /** "Kobold 3" → 'kobold'; party/unknown names → null. */
+/** Total experience of a party (xp may be a number or {class: xp}). */
+function partyXp(party) {
+  return (party ?? []).reduce((a, c) => a + (typeof c.xp === 'object' && c.xp ? Object.values(c.xp).reduce((x, y) => x + (Number(y) || 0), 0) : Number(c.xp) || 0), 0);
+}
+
 function monsterIdOf(name) {
   if (!name) return null;
   const base = name.replace(/\s+\d+$/, '').trim().toLowerCase();
@@ -180,7 +185,7 @@ export class Director {
     const sameParty = names.length === this.partyNames.size && names.every((n) => this.partyNames.has(n));
     this.partyNames = new Set(names);
     const lv = new Map(party.map((c) => [c.name, Object.values(c.levels ?? {}).reduce((a, b) => a + (b || 0), 0)]));
-    const xp = party.reduce((a, c) => a + (c.xp ?? 0), 0);
+    const xp = partyXp(party);
     if (sameParty && this.levels) {
       let up = false;
       for (const [n, l] of lv) if (l > (this.levels.get(n) ?? l)) up = true;
@@ -204,7 +209,7 @@ export class Director {
     this.downs = 0;
     this.e.intensity = 0.5;
     this.e.player?.setIntensity(0.5, 0.5);
-    this.xp = (this.party ?? []).reduce((a, c) => a + (c.xp ?? 0), 0);
+    this.xp = partyXp(this.party);
   }
 
   _combatEnd(winner) {
