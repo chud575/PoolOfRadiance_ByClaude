@@ -71,7 +71,7 @@ export const defeat = {
     basses: { preset: 'basses', pan: 0.6 },
     choir: { preset: 'choirOo' },
     bell: { preset: 'churchBell', pan: -0.4 },
-    boom: { preset: 'boom' },
+    boom: { preset: 'boom', eq: [{ type: 'highpass', f: 52, q: 0.7 }] },
     lowbrass: { preset: 'lowbrass' },
     flute: { preset: 'flute', pan: 0.3 },
   },

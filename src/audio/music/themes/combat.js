@@ -176,7 +176,7 @@ export default {
   wet: 0.45,
   lift: 3,
   // Presence for bite (the driving cue must cut through on laptop speakers).
-  eq: [{ type: 'peaking', f: 3200, q: 0.7, g: 3.5 }, { type: 'highshelf', f: 7500, g: 2 }],
+  eq: [{ type: 'peaking', f: 3000, q: 0.6, g: 5.5 }, { type: 'highshelf', f: 7000, g: 3 }],
   // Orchestra seating: 1st violins hard left, 2nds left-centre, violas/strings centre, celli right,
   // basses far right; horns left-centre, trumpets right-centre, trombones right; drums spread across the back.
   instruments: {
@@ -271,7 +271,7 @@ export const encounter = {
   key: 2,
   room: 'hall',
   wet: 0.55,
-  eq: [{ type: 'peaking', f: 3200, q: 0.7, g: 4 }, { type: 'highshelf', f: 7500, g: 2.5 }],
+  eq: [{ type: 'peaking', f: 3000, q: 0.6, g: 5.5 }, { type: 'highshelf', f: 7000, g: 3.5 }],
   instruments: {
     celli: { preset: 'celli', pan: 0.45 },
     violins: { preset: 'violins', pan: -0.55 },

@@ -14,8 +14,8 @@ export const CAL = {
    "fp": "1x3eocb"
   },
   "combat": {
-   "gain": 0.369,
-   "lufs": -16.4,
+   "gain": 0.345,
+   "lufs": -16.3,
    "target": -16.5,
    "fp": "1fyc8xg"
   },
@@ -32,10 +32,10 @@ export const CAL = {
    "fp": "12wi6qa"
   },
   "defeat": {
-   "gain": 1.2549,
+   "gain": 1.2555,
    "lufs": -17.1,
    "target": -17,
-   "fp": "irh66v"
+   "fp": "nf2pe3"
   },
   "discovery": {
    "gain": 1.1334,
@@ -50,7 +50,7 @@ export const CAL = {
    "fp": "1sjyfh3"
   },
   "encounter": {
-   "gain": 1.1704,
+   "gain": 1.1046,
    "lufs": -17.5,
    "target": -17.5,
    "fp": "145zhcm"
