@@ -19,7 +19,7 @@ export default {
   bpm: 76,
   barQ: 4,
   loop: true,
-  gain: 0.65,
+  gain: 0.81,
   instruments: {
     horn: { preset: 'horn', pan: -0.15 },
     brass: { preset: 'brass', pan: 0.1 },
@@ -122,7 +122,7 @@ export const intro = {
   bpm: 62,
   barQ: 4,
   loop: true,
-  gain: 0.7,
+  gain: 0.88,
   instruments: {
     harp: { preset: 'harp', pan: -0.4 },
     flute: { preset: 'flute', pan: 0.25 },

@@ -6,7 +6,7 @@ export const victory = {
   bpm: 100,
   barQ: 4,
   loop: false,
-  gain: 0.65,
+  gain: 0.81,
   instruments: {
     brass: { preset: 'brass', pan: 0.1 },
     horn: { preset: 'horn', pan: -0.2 },
@@ -48,7 +48,7 @@ export const defeat = {
   bpm: 58,
   barQ: 4,
   loop: false,
-  gain: 0.65,
+  gain: 0.81,
   instruments: {
     strings: { preset: 'strings', pan: 0.15 },
     celli: { preset: 'celli', pan: 0.3 },
@@ -80,7 +80,7 @@ export const levelup = {
   bpm: 120,
   barQ: 4,
   loop: false,
-  gain: 0.9,
+  gain: 1.12,
   instruments: {
     brass: { preset: 'brass', pan: 0.1 },
     harp: { preset: 'harp', pan: -0.4 },
@@ -104,7 +104,7 @@ export const discovery = {
   bpm: 90,
   barQ: 4,
   loop: false,
-  gain: 0.85,
+  gain: 1.06,
   instruments: {
     harp: { preset: 'harp', pan: -0.3 },
     celesta: { preset: 'celesta', pan: 0.4 },
@@ -127,7 +127,7 @@ export const danger = {
   bpm: 120,
   barQ: 4,
   loop: false,
-  gain: 1,
+  gain: 1.25,
   instruments: {
     boom: { preset: 'boom' },
     taiko: { preset: 'taiko' },
@@ -156,7 +156,7 @@ export const quest = {
   bpm: 96,
   barQ: 4,
   loop: false,
-  gain: 0.85,
+  gain: 1.06,
   instruments: {
     harp: { preset: 'harp', pan: -0.3 },
     handbell: { preset: 'handbell', pan: 0.3 },
@@ -178,7 +178,7 @@ export const fallen = {
   bpm: 60,
   barQ: 4,
   loop: false,
-  gain: 0.9,
+  gain: 1.12,
   instruments: {
     choir: { preset: 'choirOo' },
     bell: { preset: 'churchBell' },

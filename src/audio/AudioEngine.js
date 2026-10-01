@@ -115,7 +115,7 @@ export class AudioEngine {
     const set = (node, v) => node.gain.setTargetAtTime(Math.max(0, v), t, 0.05);
     const mute = s?.get('muteAll') ? 0 : 1;
     set(this.graph.master, (s?.get('masterVolume') ?? 0.8) * mute);
-    set(this.graph.musicBus, (s?.get('musicVolume') ?? 0.6) * 0.9);
+    set(this.graph.musicBus, s?.get('musicVolume') ?? 0.6);
     const sfx = s?.get('sfxVolume') ?? 0.8;
     set(this.graph.sfxBus, sfx);
     set(this.graph.uiBus, (s?.get('uiVolume') ?? sfx) * 0.85);

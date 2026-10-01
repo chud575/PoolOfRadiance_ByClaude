@@ -33,6 +33,26 @@ export class Instrument {
     const pan = ac.createStereoPanner();
     pan.pan.value = o.pan ?? 0;
     this.out.connect(pan).connect(o.dest);
+    // Ensemble chorus (sections): two slowly modulated short delays panned
+    // apart — one oscillator-free way to turn 3 voices into a section.
+    if (o.chorus) {
+      for (const [side, base, rate] of [[-0.7, 0.013, 0.31], [0.7, 0.019, 0.23]]) {
+        const d = ac.createDelay(0.05);
+        d.delayTime.value = base;
+        const l = ac.createOscillator();
+        l.frequency.value = rate;
+        const lg = ac.createGain();
+        lg.gain.value = 0.0025 * o.chorus;
+        l.connect(lg).connect(d.delayTime);
+        l.start();
+        const g = ac.createGain();
+        g.gain.value = 0.45;
+        const p = ac.createStereoPanner();
+        p.pan.value = Math.max(-1, Math.min(1, (o.pan ?? 0) + side));
+        this.out.connect(d).connect(g).connect(p).connect(o.dest);
+        this._chorusLfos = [...(this._chorusLfos ?? []), l];
+      }
+    }
     if (o.send) {
       this.sendGain = ac.createGain();
       this.sendGain.gain.value = o.reverb ?? 0.3;
@@ -51,6 +71,18 @@ export class Instrument {
 
   // eslint-disable-next-line no-unused-vars
   play(t, midi, dur, vel, opts) {}
+
+  /** Stop free-running modulators (call when the owning player is gone). */
+  dispose() {
+    for (const l of this._chorusLfos ?? []) {
+      try {
+        l.stop();
+      } catch {
+        /* not started */
+      }
+    }
+    this._chorusLfos = [];
+  }
 }
 
 /**

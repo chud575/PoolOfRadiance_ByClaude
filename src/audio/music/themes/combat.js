@@ -20,7 +20,7 @@ export default {
   bpm: 138,
   barQ: 4,
   loop: true,
-  gain: 0.55,
+  gain: 0.69,
   intensity: 0.55,
   instruments: {
     taiko: { preset: 'taiko', pan: -0.05 },
@@ -75,7 +75,7 @@ export const encounter = {
   bpm: 92,
   barQ: 4,
   loop: true,
-  gain: 0.6,
+  gain: 0.75,
   instruments: {
     celli: { preset: 'celli', pan: 0.2 },
     violins: { preset: 'violins', pan: -0.25 },

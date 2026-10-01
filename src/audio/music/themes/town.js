@@ -53,5 +53,5 @@ const instruments = {
   tamb: { preset: 'tamb', pan: 0.45 },
 };
 
-export default { id: 'town', bpm: 104, barQ: 3, loop: true, gain: 0.85, instruments, build: (p) => build(p, { tavern: false }) };
-export const tavern = { id: 'tavern', bpm: 122, barQ: 3, loop: true, gain: 0.75, instruments, build: (p) => build(p, { tavern: true }) };
+export default { id: 'town', bpm: 104, barQ: 3, loop: true, gain: 1.06, instruments, build: (p) => build(p, { tavern: false }) };
+export const tavern = { id: 'tavern', bpm: 122, barQ: 3, loop: true, gain: 0.94, instruments, build: (p) => build(p, { tavern: true }) };

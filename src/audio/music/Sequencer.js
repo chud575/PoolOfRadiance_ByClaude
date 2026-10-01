@@ -182,6 +182,7 @@ export class TrackPlayer {
   }
 
   dispose() {
+    for (const ins of this.inst.values()) ins.dispose?.();
     try {
       this.out.disconnect();
       this.sendOut.disconnect();

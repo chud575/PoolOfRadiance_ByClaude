@@ -110,7 +110,7 @@ export const crypt = {
   bpm: 56,
   barQ: 4,
   loop: true,
-  gain: 0.6,
+  gain: 0.75,
   instruments: {
     chant: { preset: 'choirOh', pan: 0, voices: 5 },
     choir: { preset: 'choirOo', pan: 0 },
@@ -140,7 +140,7 @@ export const wilds = {
   bpm: 72,
   barQ: 4,
   loop: true,
-  gain: 0.75,
+  gain: 0.94,
   instruments: {
     harp: { preset: 'harp', pan: -0.35 },
     flute: { preset: 'flute', pan: 0.2 },
@@ -171,7 +171,7 @@ export const camp = {
   bpm: 80,
   barQ: 3,
   loop: true,
-  gain: 0.85,
+  gain: 1.06,
   instruments: {
     harp: { preset: 'harp', pan: -0.3 },
     lute: { preset: 'lute', pan: 0.25 },
