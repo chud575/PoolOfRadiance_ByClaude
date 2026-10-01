@@ -24,8 +24,10 @@ const CREDITS = [
 ];
 
 /**
- * Slow credits crawl over the dimmed dusk. Scroll position is a pure
- * function of clock time (deterministic under a frozen clock).
+ * Slow credits crawl on an illuminated parchment plate over the dusk (the
+ * scene stays visible around it). Scroll position is a pure function of clock
+ * time (deterministic under a frozen clock); the plate's mask fades lines in
+ * and out inside the parchment, never into the void.
  */
 export class Credits {
   constructor(ctx, { onClose, t0 = 0 }) {
@@ -33,20 +35,27 @@ export class Credits {
     this.onClose = onClose;
     this.t0 = t0;
     this.crawl = h('div.por-credits-crawl', CREDITS.map(([k, a, b]) => {
-      if (k === 'h') return h('h1.por-credits-h.por-gilt-text', [a]);
-      if (k === 'h2') return h('h2.por-credits-h2', [a]);
+      if (k === 'h') return h('h1.por-credits-h', [a]);
+      if (k === 'h2') return h('h2.por-credits-h2', [h('span', [a])]);
       if (k === 's') return h('div.por-credits-s', [a]);
       if (k === 'p') return h('p.por-credits-p', [a]);
-      if (k === 'gap') return h('div.por-credits-gap');
+      if (k === 'gap') return h('div.por-credits-gap', [h('i')]);
       return h('div.por-credits-role', [h('div.role', [a]), h('div.name', String(b).split('\n').map((l) => h('div', [l])))]);
     }));
     // Back lives in the footer legend (Esc / B / click anywhere), docked to the grid.
-    this.el = h('div.por-credits', { onclick: () => this.onClose() }, [h('div.por-credits-window', [this.crawl])]);
+    this.window = h('div.por-credits-window', [this.crawl]);
+    this.el = h('div.por-credits', { onclick: () => this.onClose() }, [
+      h('div.por-credits-plate.por-frame.por-frame--parchment', [
+        h('i.por-corner.tl'), h('i.por-corner.tr'), h('i.por-corner.bl'), h('i.por-corner.br'),
+        h('div.por-frame-title', ['Credits']),
+        this.window,
+      ]),
+    ]);
   }
 
   update(t) {
-    const y = Math.max(0, (t - this.t0) * 38);
-    const H = this.crawl.offsetHeight + (this.el.offsetHeight || 800);
+    const y = Math.max(0, (t - this.t0) * 34);
+    const H = this.crawl.offsetHeight + (this.window.offsetHeight || 500);
     this.crawl.style.transform = `translateY(${-(y % H)}px)`;
   }
 

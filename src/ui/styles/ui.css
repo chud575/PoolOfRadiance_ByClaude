@@ -70,6 +70,9 @@ html[data-motion='reduce'] *, html[data-motion='reduce'] *::before, html[data-mo
 html[data-frozen='1'] *, html[data-frozen='1'] *::before, html[data-frozen='1'] *::after {
   transition: none !important; animation-play-state: paused !important; animation-delay: 0s !important; animation-duration: 0s !important; animation-iteration-count: 1 !important;
 }
+/* state swaps that must land on the next frame (menu highlight, classic-mode toggle): no transitions */
+.por-snap, .por-snap *, .por-snap *::before, .por-snap *::after,
+html[data-snap='1'] *, html[data-snap='1'] *::before, html[data-snap='1'] *::after { transition: none !important; }
 html[data-font='readable'] { --font-body: var(--font-readable); --font-num: var(--font-readable); }
 
 * { box-sizing: border-box; }
@@ -94,16 +97,19 @@ html, body {
 .por-frame {
   position: relative;
   padding: var(--s4) var(--s5);
-  border: 3px solid transparent;
+  border: 5px solid transparent;
   border-radius: var(--radius);
-  /* bevelled gilt: bright upper-left, burnished lower-right, as a 3px border-image */
-  border-image: linear-gradient(135deg, #fff3c8 0%, #e6c06a 22%, #8e6a28 48%, #d9b25c 70%, #6e5020 100%) 1;
+  /* bevelled gilt band: burnished metal with travelling highlights (bright upper-left,
+     deep lower-right, several soft speculars along the run), as a 5px border-image */
+  border-image: linear-gradient(135deg, #fff6d2 0%, #f0cf7c 7%, #a07a30 15%, #e8c770 24%, #fff0bc 30%, #b58c3c 40%, #7a5a22 48%, #d6b05a 57%, #f6dc94 63%, #9a7430 73%, #5e4418 84%, #c49a48 92%, #4a3410 100%) 1;
   box-shadow:
     0 0 0 1px #050302,
-    0 0 0 4px rgba(10, 12, 28, 0.97),
-    0 0 0 5px #7a5c22,
-    0 0 0 6px #f0d690,
-    0 0 0 7px #3a2a0c,
+    0 0 0 3px rgba(10, 12, 28, 0.97),
+    0 0 0 4px #5a4216,
+    0 0 0 5px #e6c477,
+    0 0 0 6px #fff1c0,
+    0 0 0 7px #8a6a2a,
+    0 0 0 8px #2a1d08,
     0 22px 60px rgba(0, 0, 0, 0.66),
     0 4px 12px rgba(0, 0, 0, 0.5),
     inset 0 1px 0 rgba(255, 240, 200, 0.22),
@@ -130,8 +136,8 @@ html, body {
     linear-gradient(180deg, rgba(34, 54, 118, 0.5) 0%, rgba(14, 22, 58, 0.62) 100%),
     var(--tex-leather, none),
     var(--panel-grad);
-  background-size: auto, auto, 6em 7em, auto, 12em 12em, auto;
-  background-blend-mode: normal, normal, screen, normal, normal, normal;
+  background-size: auto, auto, 2.6em 3.03em, auto, 12em 12em, auto;
+  background-blend-mode: normal, normal, normal, normal, normal, normal;
 }
 .por-frame--dark {
   background:
@@ -154,14 +160,14 @@ html, body {
 .por-frame--parchment::after { mix-blend-mode: multiply; opacity: 0.35; }
 .por-frame > * { position: relative; z-index: 1; }
 .por-corner {
-  position: absolute !important; z-index: 2 !important; width: 3.9em; height: 3.9em; pointer-events: none;
+  position: absolute !important; z-index: 2 !important; width: 4.7em; height: 4.7em; pointer-events: none;
   background: var(--filigree-corner) center / contain no-repeat;
-  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 6px rgba(0, 0, 0, 0.45));
+  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.95)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.55));
 }
-.por-corner.tl { top: -0.62em; left: -0.62em; }
-.por-corner.tr { top: -0.62em; right: -0.62em; transform: scaleX(-1); }
-.por-corner.bl { bottom: -0.62em; left: -0.62em; transform: scaleY(-1); }
-.por-corner.br { bottom: -0.62em; right: -0.62em; transform: scale(-1, -1); }
+.por-corner.tl { top: -0.78em; left: -0.78em; }
+.por-corner.tr { top: -0.78em; right: -0.78em; transform: scaleX(-1); }
+.por-corner.bl { bottom: -0.78em; left: -0.78em; transform: scaleY(-1); }
+.por-corner.br { bottom: -0.78em; right: -0.78em; transform: scale(-1, -1); }
 /* small frames (HUD roster, tooltips-sized panels) use a lighter corner */
 .por-hud-right > .por-corner { width: 2.8em; height: 2.8em; }
 .por-frame-title {
@@ -248,12 +254,32 @@ html, body {
 .por-cmd:hover:not(:disabled)::after, .por-cmd:focus-visible::after { transform: scaleX(1); }
 .por-cmd:active:not(:disabled) { transform: translateY(1px); }
 .por-cmd:disabled { opacity: 0.34; cursor: default; }
+/* Gold Box hotkey capital on the command line: the saturated EGA yellow, a touch larger */
+.por-cmd .por-hk { color: #ffdd4a; font-weight: 700; text-shadow: 0 0 10px rgba(255, 210, 60, 0.5), 0 1px 2px rgba(0, 0, 0, 0.95); }
+.por-cmd .por-hk-cap { font-size: 1.12em; line-height: 1; }
+.por-cmd-word { white-space: nowrap; }
+.por-cmd-key {
+  display: inline-flex; align-items: center; justify-content: center; margin-left: 0.45em; padding: 0 0.32em; min-width: 1.35em; height: 1.35em;
+  position: relative; top: -0.42em; font-family: var(--font-num); font-weight: 700; font-size: 0.62em; letter-spacing: 0; line-height: 1;
+  color: var(--por-parchment); opacity: 0.82; border: 1px solid rgba(216, 178, 90, 0.55); border-bottom-width: 2px; border-radius: 3px;
+  background: linear-gradient(180deg, #26305a, #10162f); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.por-cmd:hover .por-cmd-key, .por-cmd:focus-visible .por-cmd-key { opacity: 1; color: #fff; }
+html[data-classic='1'] .por-cmd-key { background: #000 !important; color: var(--ega-7) !important; border: 0 !important; box-shadow: none !important; top: 0; }
+html[data-classic='1'] .por-cmd-key::before { content: '('; } html[data-classic='1'] .por-cmd-key::after { content: ')'; }
 .por-hk-badge {
   display: inline-flex; align-items: center; justify-content: center; margin-left: 0.5em; padding: 0 0.4em; min-width: 1.55em; height: 1.55em;
   font-family: var(--font-num); font-weight: 700; font-size: 0.8em; letter-spacing: 0; line-height: 1; vertical-align: 0.06em;
   color: var(--por-amber); border: 1px solid var(--por-gilt-lo); border-bottom-width: 2px; border-radius: 4px;
   background: linear-gradient(180deg, #2a3560, #121a38); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 1px 2px rgba(0, 0, 0, 0.6);
 }
+
+/* key legend row (see KeyLegend in CommandBar.js) */
+.por-legend { display: flex; flex-wrap: wrap; align-items: center; column-gap: 1.25em; row-gap: 0.45em; font-family: var(--font-display); font-weight: 700; font-size: 0.72em; letter-spacing: 0.14em; text-transform: uppercase; color: var(--por-text-dim); }
+.por-legend-item { display: inline-flex; align-items: center; gap: 0.32em; white-space: nowrap; }
+.por-legend .por-keycap { font-size: 1.02em; letter-spacing: 0; min-width: 1.75em; }
+.por-legend-label { padding-left: 0.12em; }
+.por-legend--rule { margin-top: 1.1em; padding-top: 0.85em; border-top: 1px solid rgba(216, 178, 90, 0.22); justify-content: space-between; }
 
 /* ---------- Roster ---------- */
 .por-roster { font-size: calc(0.95em * var(--text-scale)); min-width: 15em; }

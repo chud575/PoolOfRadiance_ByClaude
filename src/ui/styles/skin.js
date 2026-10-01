@@ -106,19 +106,26 @@ function leatherTexture(size, { seed = 23, base = [22, 30, 66], cells = 22 } = {
   return c.toDataURL('image/png');
 }
 
-/** Tone-on-tone damask (brocade) repeat: pomegranate lozenge with scroll leaves. */
+/**
+ * Blind-tooled leather repeat (the --tex-brocade layer): a fine diamond
+ * lattice of double fillets with a small four-petal fleuron at every crossing,
+ * pressed into the hide — each line is a dark impression with a faint lit lip
+ * below it, so it reads as tooling, not printed wallpaper. Low contrast by
+ * design: it should only show where the light grazes the panel.
+ */
 function brocadeSVG() {
-  const leaf = (cx, cy, r, rot) => `<path transform="translate(${cx} ${cy}) rotate(${rot})" d="M0 0 C${r * 0.5} ${-r * 0.4} ${r} ${-r * 0.2} ${r * 1.3} ${r * 0.1} C${r * 0.9} ${r * 0.3} ${r * 0.4} ${r * 0.3} 0 0 Z"/>`;
-  const curl = (cx, cy, dir) => P(spiral(cx, cy, 7, 1.1, dir, 0));
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 140" width="120" height="140">
-    <g fill="rgba(170,190,255,0.035)" stroke="rgba(190,205,255,0.05)" stroke-width="1">
-      <path d="M60 14 C78 34 90 52 60 92 C30 52 42 34 60 14 Z"/>
-      <path d="M60 30 C70 44 74 56 60 76 C46 56 50 44 60 30 Z" fill="rgba(170,190,255,0.03)"/>
-      ${leaf(60, 92, 18, -30)}${leaf(60, 92, 18, 210)}${leaf(60, 14, 14, 30)}${leaf(60, 14, 14, 150)}
-      <circle cx="0" cy="0" r="9"/><circle cx="120" cy="0" r="9"/><circle cx="0" cy="140" r="9"/><circle cx="120" cy="140" r="9"/>
-      ${leaf(0, 70, 16, -20)}${leaf(120, 70, 16, 200)}
-    </g>
-    <g fill="none" stroke="rgba(190,205,255,0.045)" stroke-width="1.2"><path d="${curl(28, 110, 1)}"/><path d="${curl(92, 110, -1)}"/><path d="${curl(28, 40, -1)}"/><path d="${curl(92, 40, 1)}"/></g>
+  const W = 48, H = 56;
+  const lattice = `M0 0 L${W} ${H} M${W} 0 L0 ${H} M${-W / 2} ${H / 2} L${W / 2} ${H * 1.5} M${W / 2} ${-H / 2} L${W * 1.5} ${H / 2} M${W / 2} ${-H / 2} L${-W / 2} ${H / 2} M${W * 1.5} ${H / 2} L${W / 2} ${H * 1.5}`;
+  const fleuron = (cx, cy) => `<g transform="translate(${cx} ${cy})"><path d="M0 -5 C1.6 -2.4 1.6 -1.2 0 0 C-1.6 -1.2 -1.6 -2.4 0 -5 Z M0 5 C1.6 2.4 1.6 1.2 0 0 C-1.6 1.2 -1.6 2.4 0 5 Z M-5 0 C-2.4 1.4 -1.2 1.4 0 0 C-1.2 -1.4 -2.4 -1.4 -5 0 Z M5 0 C2.4 1.4 1.2 1.4 0 0 C1.2 -1.4 2.4 -1.4 5 0 Z"/><circle r="0.9"/></g>`;
+  const fl = [[0, 0], [W, 0], [0, H], [W, H], [W / 2, H / 2]].map(([x, y]) => fleuron(x, y)).join('');
+  const dots = [[W / 2, 0], [0, H / 2], [W, H / 2], [W / 2, H]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="0.9"/>`).join('');
+  const layer = (stroke, fill, dy, a) => `<g transform="translate(0 ${dy})" opacity="${a}">
+      <path d="${lattice}" fill="none" stroke="${stroke}" stroke-width="0.7"/>
+      <path d="${lattice}" fill="none" stroke="${stroke}" stroke-width="0.45" transform="translate(0 2.6)"/>
+      <g fill="${fill}">${fl}${dots}</g></g>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
+    ${layer('rgb(205,218,255)', 'rgb(205,218,255)', 0.7, 0.045)}
+    ${layer('rgb(0,0,12)', 'rgb(0,0,12)', 0, 0.2)}
   </svg>`;
 }
 
@@ -295,8 +302,15 @@ export function bindSkin(ctx) {
   if (typeof document === 'undefined' || !ctx) return;
   const el = document.documentElement;
   const syncClassic = (on) => {
-    el.dataset.classic = on ? '1' : '0';
+    const next = on ? '1' : '0';
+    if (el.dataset.classic === next) return;
+    // flip the whole skin in one frame: park transitions while the EGA rules
+    // come and go, so no row keeps a half-faded classic box or highlight bar
+    el.dataset.snap = '1';
+    el.dataset.classic = next;
     if (on) registerBitmapFont();
+    void document.body?.offsetWidth;
+    delete el.dataset.snap;
   };
   syncClassic(!!(ctx.render?.classic ?? ctx.settings?.get?.('classicMode')));
   if (ctx.clock?.frozen || ctx.debug?.frozen) el.dataset.frozen = '1';

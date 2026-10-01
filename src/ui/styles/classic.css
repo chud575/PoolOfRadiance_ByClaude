@@ -97,3 +97,29 @@ html[data-classic='1'] .por-scroll-fade::after { background: linear-gradient(tra
 html[data-classic='1'] .por-roster, html[data-classic='1'] .por-roster * { letter-spacing: 0 !important; white-space: nowrap; }
 html[data-classic='1'] .por-roster-row .name, html[data-classic='1'] .por-roster-row > span:first-child { overflow: hidden; text-overflow: clip; }
 html[data-classic='1'] .por-hud-right { width: 19.5em; }
+
+/* title menu as a Gold Box text window: solid black panel, double rule, no gaps
+   for the 3D scene to show through between rows */
+html[data-classic='1'] .por-mm {
+  background: #000; border: 3px double var(--ega-9); box-shadow: 0 0 0 3px #000, 0 0 0 6px var(--ega-9); padding: 1em 1.2em 0.8em;
+}
+html[data-classic='1'] .por-mm-list { gap: 0 !important; }
+html[data-classic='1'] .por-mm-list .por-menu-item { padding-left: 1.2em !important; margin: 0 !important; }
+html[data-classic='1'] .por-mm-kicker { color: var(--ega-11) !important; padding-left: 0.5em; opacity: 1; }
+html[data-classic='1'] .por-mm-kicker::after { display: none; }
+html[data-classic='1'] .por-mm-desc { padding-left: 0.5em; }
+html[data-classic='1'] .por-title-scrim { background: none !important; }
+html[data-classic='1'] .por-btn.primary { background: var(--ega-1) !important; color: var(--ega-14) !important; border-color: var(--ega-11) !important; }
+html[data-classic='1'] .por-btn.primary:hover { background: var(--ega-9) !important; color: var(--ega-15) !important; }
+html[data-classic='1'] .por-toggle-track::before { display: none !important; }
+html[data-classic='1'] .por-toggle-knob { background-image: none !important; border: 0 !important; }
+/* footer: one clean line in the wide 5x7 face */
+html[data-classic='1'] .por-title-footer { font-size: 0.72em; grid-template-columns: auto 1fr auto; padding: 0 1.2em; gap: 1.5em; border-top: 2px solid var(--ega-9); }
+html[data-classic='1'] .por-title-footer > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+html[data-classic='1'] .por-title-legend { justify-content: center; gap: 1.2em; }
+html[data-classic='1'] .por-title-legend .por-pad { display: none; }
+html[data-classic='1'] .por-title-foot-r { display: none; }
+html[data-classic='1'] .por-title-prompt-text::before, html[data-classic='1'] .por-title-prompt-text::after { display: none; }
+html[data-classic='1'] .por-title-prompt-text { color: var(--ega-14) !important; background: #000; padding: 0.3em 0.8em; margin-right: 0; letter-spacing: 0.3em !important; }
+html[data-classic='1'] .por-set-legend .por-pad, html[data-classic='1'] .por-set-tabs-hint .por-pad { display: none; }
+html[data-classic='1'] .por-credits-plate { padding: 1.2em 1.6em !important; }

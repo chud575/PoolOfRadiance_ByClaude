@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Scene } from '../../core/Scene.js';
-import { h, clear, Frame, CommandBar, PartyRoster, MessageLog } from '../../ui/UI.js';
+import { h, clear, Frame, CommandBar, KeyLegend, PartyRoster, MessageLog } from '../../ui/UI.js';
 import { openCharacterView } from '../../ui/components/CharacterView.js';
 import { castingClassesOf, fmtMinutes } from '../../ui/components/SpellPanel.js';
 import { miniPortrait } from '../../ui/components/CharacterSheet.js';
@@ -135,7 +135,7 @@ export default class CampScene extends Scene {
         h('button.por-btn', { onclick: () => this.openView('spells') }, ['Magic']),
         h('button.por-btn', { onclick: () => this.fix() }, ['Fix']),
       ]),
-      h('div.pc-rest-note', { style: { marginTop: '0.8em', fontSize: '0.78em' } }, ['Hotkeys: letters on the command line · ', h('span.por-hk-badge', ['[']), ' ', h('span.por-hk-badge', [']']), ' select member · ', h('span.por-hk-badge', ['Esc']), ' break camp']),
+      KeyLegend([['A–Z', 'Command'], [['[', ']'], 'Member'], ['Esc', 'Break camp']], { className: 'por-legend--rule' }),
     );
   }
 

@@ -59,13 +59,58 @@ const PAD_NAMES = { 0: 'A', 1: 'B', 2: 'X', 3: 'Y', 4: 'LB', 5: 'RB', 6: 'LT', 7
 export function padGlyph(name) {
   if (!name) return h('span.por-pad.unbound', { title: 'Unbound' }, ['—']);
   if ('ABXY'.includes(name) && name.length === 1) return h(`span.por-pad.face.${name.toLowerCase()}`, { title: `${name} button` }, [name]);
-  if ('↑↓←→'.includes(name)) return h('span.por-pad.dpad', { title: 'D-pad' }, [name]);
+  if ('↑↓←→'.includes(name)) return h('span.por-pad.dpad', { title: `D-pad ${name}` }, [dpadSvg(name)]);
   return h('span.por-pad.pill', { title: name }, [name]);
 }
 
+/** The arms of New Phlan as a gilt seal: a tower over the Moonsea waves in a roped roundel. */
+function phlanSeal() {
+  const ticks = Array.from({ length: 36 }, (_, i) => {
+    const a = (i / 36) * Math.PI * 2;
+    return `<line x1="${(50 + Math.cos(a) * 41).toFixed(1)}" y1="${(50 + Math.sin(a) * 41).toFixed(1)}" x2="${(50 + Math.cos(a) * 44).toFixed(1)}" y2="${(50 + Math.sin(a) * 44).toFixed(1)}"/>`;
+  }).join('');
+  const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  s.setAttribute('viewBox', '0 0 100 100');
+  s.setAttribute('aria-hidden', 'true');
+  s.classList.add('por-set-seal-svg');
+  s.innerHTML = `<defs><linearGradient id="sealg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff2c4"/><stop offset=".35" stop-color="#d8b25a"/><stop offset=".65" stop-color="#8a6a2a"/><stop offset="1" stop-color="#e2c070"/></linearGradient></defs>
+    <circle cx="50" cy="50" r="47" fill="rgba(5,8,22,0.55)" stroke="url(#sealg)" stroke-width="2.2"/>
+    <circle cx="50" cy="50" r="38" fill="none" stroke="url(#sealg)" stroke-width="1.2"/>
+    <g stroke="url(#sealg)" stroke-width="1.1">${ticks}</g>
+    <g fill="url(#sealg)" stroke="#1a1004" stroke-width=".6">
+      <path d="M41 66 V40 H38 V33 H42 V36 H46 V33 H54 V36 H58 V33 H62 V40 H59 V66 Z"/>
+      <path d="M47 66 V57 a3 3 0 0 1 6 0 V66 Z" fill="#0a1024"/>
+      <rect x="48.6" y="44" width="2.8" height="6" rx="1.4" fill="#0a1024"/>
+      <path d="M45 33 L50 22 L55 33 Z"/>
+    </g>
+    <g fill="none" stroke="url(#sealg)" stroke-width="1.6" stroke-linecap="round">
+      <path d="M24 70 q4.3 -4 8.6 0 t8.6 0 t8.6 0 t8.6 0 t8.6 0 t8.6 0"/>
+      <path d="M28 77 q4.3 -4 8.6 0 t8.6 0 t8.6 0 t8.6 0 t8.6 0"/>
+    </g>`;
+  return s;
+}
+
+const ROT = { '↑': 0, '→': 90, '↓': 180, '←': 270 };
+const svgEl = (markup, cls) => {
+  const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  s.setAttribute('viewBox', '0 0 16 16');
+  s.setAttribute('aria-hidden', 'true');
+  s.classList.add(cls);
+  s.innerHTML = markup;
+  return s;
+};
+/** Arrow-key glyph drawn as geometry, so it sits dead centre in its keycap. */
+export function arrowSvg(dir) {
+  return svgEl(`<g transform="rotate(${ROT[dir] ?? 0} 8 8)"><path d="M8 2.6 L12.6 7.6 H9.6 V13.4 H6.4 V7.6 H3.4 Z" fill="currentColor"/></g>`, 'por-arrow');
+}
+/** D-pad glyph: the cross with the pressed arm lit. */
+function dpadSvg(dir) {
+  return svgEl(`<path d="M6 1.5h4v4.5h4.5v4H10v4.5H6V10H1.5V6H6z" fill="rgba(8,10,20,0.85)" stroke="currentColor" stroke-opacity="0.55" stroke-width="0.8" stroke-linejoin="round"/>`
+    + `<g transform="rotate(${ROT[dir] ?? 0} 8 8)"><path d="M6.2 1.8h3.6v3.9L8 7.5 6.2 5.7z" fill="#fff4cc"/></g>`, 'por-dpad');
+}
 const keyCap = (code) => {
   const l = keyLabel(code);
-  return '↑↓←→'.includes(l) && l.length === 1 ? h('span.por-arrow', [l]) : l;
+  return '↑↓←→'.includes(l) && l.length === 1 ? arrowSvg(l) : l;
 };
 
 /** Readable label for a KeyboardEvent.code. */
@@ -225,13 +270,14 @@ export class SettingsPanel {
         h('span.por-set-tabs-hint', [padGlyph('RB'), h('span.por-keycap', ['E'])]),
       ]),
       ...this.tabBtns,
+      h('div.por-set-seal', [phlanSeal(), h('div.por-set-seal-cap', ['Changes take effect at once and are kept between sessions.'])]),
     );
     this.headEl = h('div.por-set-head');
     this.bodyEl = h('div.por-set-body');
     const footer = h('div.por-set-footer', [
       h('div.por-set-legend', [
-        h('span', [h('span.por-keycap', ['↑']), h('span.por-keycap', ['↓']), ' Select']),
-        h('span', [h('span.por-keycap', ['←']), h('span.por-keycap', ['→']), ' Adjust']),
+        h('span', [h('span.por-keycap', [arrowSvg('↑')]), h('span.por-keycap', [arrowSvg('↓')]), ' Select']),
+        h('span', [h('span.por-keycap', [arrowSvg('←')]), h('span.por-keycap', [arrowSvg('→')]), ' Adjust']),
         h('span', [h('span.por-keycap', ['Enter']), padGlyph('A'), ' Toggle']),
         h('span', [h('span.por-keycap', ['Esc']), padGlyph('B'), ' Back']),
       ]),

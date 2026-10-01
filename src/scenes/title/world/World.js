@@ -57,6 +57,13 @@ export function createWorld() {
   const moon = new THREE.DirectionalLight(0x8090e0, 0);
   moon.position.set(60, 70, 50);
   scene.add(moon);
+  // a narrow key on Valjevo Castle from the moonrise side: the keep and its towers
+  // get a lit plane the dusk town around them doesn't, so the castle reads as the
+  // focal mass of the old city (aerial shots and the title skyline)
+  const castleKey = new THREE.SpotLight(0xb4b8ff, 0, 0, 0.2, 0.55, 0);
+  castleKey.position.set(150, 70, -40);
+  castleKey.target.position.set(55, -2, -128);
+  scene.add(castleKey, castleKey.target);
   // warm spill from City Hall's open doors (lights the portico in the prologue)
   const hall = new THREE.PointLight(0xffa860, 30, 22, 1.6);
   hall.position.set(-20, -11.2, -50.5);
@@ -118,7 +125,7 @@ export function createWorld() {
   const dragonPath = { x: 150, y: 26, z: -230, dx: 4.2, span: 380 };
   dragon.group.scale.setScalar(1.45);
 
-  return {
+  const api = {
     scene,
     uniforms: U,
     city,
@@ -150,6 +157,7 @@ export function createWorld() {
       sun.intensity = 2.2 + k * 2.4;
       sun.color.setHex(0xff8a4a).lerp(new THREE.Color(0xffa060), k);
       moon.intensity = k * 1.25;
+      castleKey.intensity = 1.7 * (0.45 + 0.55 * k);
     },
     /** Move the lighting rig indoors (council chamber shot): k = 0 outdoors, 1 inside. */
     setInterior(on) {
@@ -157,7 +165,7 @@ export function createWorld() {
       if (on === !!this._interior) return;
       this._interior = on;
       if (on) {
-        sun.intensity = 0; hemi.intensity = 0.06; fill.intensity = 0; moon.intensity = 0;
+        sun.intensity = 0; hemi.intensity = 0.06; fill.intensity = 0; moon.intensity = 0; castleKey.intensity = 0;
         scene.fog.density = 0.012;
         scene.fog.color.setHex(0x0c0810);
       } else {
@@ -188,4 +196,6 @@ export function createWorld() {
       sea.material.dispose();
     },
   };
+  api.setLook(0);
+  return api;
 }

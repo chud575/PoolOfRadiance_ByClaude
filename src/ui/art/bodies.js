@@ -1,5 +1,6 @@
 import { Figure, mat, add, sub, scl, norm, cross, ap3, mul3, rotX, rotY, rotZ, euler, alignY, ik, mixc, shade, hex } from './sculpt.js';
 import { rngOf } from './paint.js';
+import { sculptHead, handShape } from './anatomy.js';
 
 /**
  * Procedural rigs for the lit-clay figure renderer (sculpt.js): a humanoid
@@ -73,27 +74,14 @@ export const SPECIES = {
 /** A gripping fist around a shaft along local +Y (origin = palm centre). */
 function fist(f, at, dir, s, skinM, side, { claws = false, gauntlet = null } = {}) {
   f.push(at, alignY(dir, [side, 0, 0]), s);
-  const m = gauntlet ?? skinM;
-  f.ell([0, 0, -0.004], [0.026, 0.034, 0.024], m, { blend: 0.012 });
-  // knuckle row wrapping the shaft
-  for (let i = 0; i < 4; i++) f.sphere([side * 0.004, 0.022 - i * 0.014, 0.019], 0.011, m, { blend: 0.008 });
-  // thumb over the fingers
-  f.cone([side * -0.02, 0.022, 0], [side * -0.006, 0.03, 0.02], 0.009, 0.008, m, { blend: 0.008 });
-  if (claws) for (let i = 0; i < 3; i++) f.cone([side * 0.006, 0.018 - i * 0.016, 0.03], [side * 0.004, 0.012 - i * 0.016, 0.042], 0.004, 0.0015, M.bone, { group: null });
+  handShape(f, gauntlet ?? skinM, side, { grip: true, claws });
   f.pop();
 }
 
 /** An open hand / claw. */
-function openHand(f, at, dir, s, skinM, side, { claws = false, spread = 0.5 } = {}) {
+function openHand(f, at, dir, s, skinM, side, { claws = false, spread = 0.5, curl = 0.35 } = {}) {
   f.push(at, alignY(dir, [side, 0, 0]), s);
-  f.ell([0, 0.01, 0], [0.024, 0.03, 0.012], skinM, { blend: 0.01 });
-  for (let i = 0; i < 4; i++) {
-    const a = (i - 1.5) * 0.18 * spread;
-    const b = [Math.sin(a) * 0.05 + (i - 1.5) * 0.012, 0.03 + Math.cos(a) * 0.045, 0.006];
-    f.cone([(i - 1.5) * 0.012, 0.032, 0], b, 0.0065, 0.005, skinM, { blend: 0.006 });
-    if (claws) f.cone(b, add(b, [Math.sin(a) * 0.02, 0.018, 0.01]), 0.004, 0.001, M.bone, { group: null });
-  }
-  f.cone([side * -0.022, 0.006, 0.004], [side * -0.04, 0.03, 0.012], 0.007, 0.006, skinM, { blend: 0.006 });
+  handShape(f, skinM, side, { claws, spread, curl });
   f.pop();
 }
 
@@ -386,55 +374,7 @@ function head(f, kind, sp, skinM, R, o = {}) {
 
 /** A human head: skull, jaw, nose, brow, ears, eyes, hair / beard / hood / helm. */
 function humanHead(f, sp, skinM, o) {
-  const g = { group: 'head', blend: 0.1 };
-  const hard = { group: null, blend: 0 };
-  const hairM = mat(o.hair ?? '#3a2416', { pattern: 'fur', scale: 0.006, rough: 0.55, spec: 0.3 });
-  f.ell([0, 0.12, -0.05], [0.86, 0.98, 0.98], skinM, g);
-  f.ell([0, -0.38, 0.22], [0.66, 0.55, 0.66], skinM, g);
-  f.ell([0, -0.72, 0.42], [0.3, 0.2, 0.28], skinM, g);
-  f.ell([0, 0.3, 0.7], [0.7, 0.18, 0.28], skinM, g);
-  f.cone([0, 0.15, 0.9], [0, -0.25, 1.08], 0.1, 0.13, skinM, g);
-  for (const d of [-1, 1]) {
-    f.ell([d * 0.85, -0.05, 0.0], [0.1, 0.22, 0.14], skinM, g);
-    f.ell([d * 0.33, 0.08, 0.72], [0.17, 0.11, 0.12], M.dark, hard);
-    f.sphere([d * 0.32, 0.08, 0.76], 0.07, M.white, hard);
-    f.sphere([d * 0.32, 0.08, 0.81], 0.045, mat(o.eyeC ?? '#3a2a1a', { rough: 0.2, spec: 0.9, ink: 0 }), hard);
-    f.ell([d * 0.35, 0.22, 0.8], [0.2, 0.05, 0.08], hairM, hard);
-  }
-  f.ell([0, -0.45, 0.86], [0.24, 0.035, 0.08], M.mouth, hard);
-  const style = o.hairStyle ?? 'short';
-  if (o.hood) {
-    const hm = mat(o.hood, { pattern: 'cloth', scale: 0.015 });
-    f.ell([0, 0.25, -0.25], [1.15, 1.22, 1.05], hm, hard);
-    f.ell([0, -0.2, -0.35], [1.25, 1.0, 0.85], hm, hard);
-    // shadowed cowl rim around the face
-    for (let i = 0; i < 9; i++) {
-      const a = -1.9 + i * (3.8 / 8);
-      f.sphere([Math.sin(a) * 0.95, Math.cos(a) * 1.0 + 0.05, 0.5 - Math.cos(a) * 0.1], 0.2, hm, hard);
-    }
-  } else if (o.helm) {
-    const hm = o.helmM ?? M.steel;
-    f.ell([0, 0.28, -0.04], [0.98, 0.92, 1.05], hm, hard);
-    f.box([0, -0.05, 0.98], [0.06, 0.4, 0.04], hm, { ...hard, bevel: 0.03 });
-    for (const d of [-1, 1]) f.ell([d * 0.84, -0.25, 0.1], [0.14, 0.55, 0.62], hm, hard);
-    f.ell([0, 0.28, -0.04], [1.0, 0.1, 1.07], o.trimM ?? M.bronze, hard);
-    if (o.crest) f.ell([0, 1.0, -0.15], [0.12, 0.5, 0.9], mat(o.crest, { pattern: 'fur', scale: 0.01 }), hard);
-  } else if (o.bandana) {
-    f.ell([0, 0.32, -0.05], [0.92, 0.82, 1.02], mat(o.bandana, { pattern: 'cloth', scale: 0.01 }), hard);
-    f.cone([-0.6, 0.3, -0.75], [-0.75, -0.3, -0.95], 0.12, 0.05, mat(o.bandana, { pattern: 'cloth', scale: 0.01 }), hard);
-  } else if (style !== 'bald') {
-    f.ell([0, 0.4, -0.18], [0.92, 0.78, 0.94], hairM, hard);
-    if (style === 'long' || style === 'bun' || style === 'braid' || style === 'wavy') f.ell([0, -0.25, -0.45], [0.95, 1.15, 0.6], hairM, hard);
-    if (style === 'bun') f.sphere([0, 0.55, -0.85], 0.38, hairM, hard);
-    if (style === 'fringe') f.ell([0, 0.62, 0.5], [0.8, 0.25, 0.4], hairM, hard);
-  } else {
-    f.ell([0, -0.05, -0.35], [0.88, 0.45, 0.7], hairM, hard);
-  }
-  const beard = o.beard ?? 'none';
-  if (beard === 'full' || beard === 'long') f.ell([0, beard === 'long' ? -0.95 : -0.72, 0.48], [0.62, beard === 'long' ? 0.85 : 0.5, 0.5], hairM, hard);
-  if (beard === 'goatee') f.ell([0, -0.8, 0.62], [0.25, 0.3, 0.22], hairM, hard);
-  if (beard === 'moustache' || beard === 'full' || beard === 'long' || beard === 'goatee') f.ell([0, -0.35, 0.9], [0.36, 0.08, 0.1], hairM, hard);
-  if (beard === 'stubble') f.ell([0, -0.55, 0.42], [0.62, 0.42, 0.52], mat(shade(o.hair ?? '#3a2416', 0.7), { pattern: 'skin', scale: 0.004, rough: 0.9 }), { group: 'head', blend: 0.05 });
+  sculptHead(f, skinM, o);
 }
 
 // ------------------------------------------------------------------ the humanoid rig
@@ -982,7 +922,7 @@ export function buildPerson(o) {
     legM: mat(shade(o.cloth ?? '#6a5234', 0.6), { pattern: 'cloth', scale: 0.02 }),
     bootM: M.darkLeather,
     armM: clothM, foreM: clothM, torsoM: clothM,
-    headOpts: { hair: o.hair ?? '#3a2416', hairStyle: o.hairStyle ?? 'short', beard: o.beard ?? 'none', eyeC: o.eyeC, hood: o.hood ?? null },
+    headOpts: { hair: o.hair ?? '#3a2416', hairStyle: o.hairStyle ?? 'short', beard: o.beard ?? 'none', eyeC: o.eyeC, hood: o.hood ?? null, gender: o.gender, age: o.age ?? 0 },
   };
   if (body === 'robe' || body === 'vestments') { gear.armor = 'robe'; }
   if (body === 'plate') { gear.armor = 'plate'; gear.legM = metalM; gear.bootM = metalM; gear.armM = metalM; gear.foreM = metalM; gear.gloveM = metalM; }

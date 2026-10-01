@@ -2,9 +2,11 @@ import * as THREE from 'three';
 import { getTextureSet, getGlowTexture } from '../../../render/textures/index.js';
 import { createFlameBatch } from '../../../render/lighting.js';
 import { prng, ni, worldUV, tint, box, merge } from './geom.js';
-import { column, robedFigure } from './arch.js';
+import { column } from './arch.js';
+import { buildMiniature } from '../../../ui/components/Miniature.js';
+import { armsTexture, bannerTexture, ledgerTexture, paperTexture, featherTexture } from './heraldry.js';
 
-export const CHAMBER_TEXTURES = ['hd_ashlar', 'hd_limestone', 'hd_beam_dark', 'hd_crazy'];
+export const CHAMBER_TEXTURES = ['hd2_ashlar', 'hd_limestone', 'hd_beam_dark', 'hd_crazy', 'hd2_plaster_int'];
 
 /** Where the chamber set lives (far below the city, sealed from the sky). */
 export const CHAMBER_ORIGIN = new THREE.Vector3(0, -240, 0);
@@ -24,6 +26,7 @@ export function createChamber({ seed = 1337 } = {}) {
   group.position.copy(CHAMBER_ORIGIN);
   const disposables = [];
   const stone = [], fine = [], wood = [], floor = [], cloth = [], skin = [], glass = [], gold = [];
+  const armsGeo = [], bannerGeo = [], ledgerGeo = [], paperGeo = [], quillGeo = [];
   const W = 14, D = 26, H = 9.5; // room x: -7..7, z: -13..13 (council at -z end)
 
   // ---- shell -------------------------------------------------------------------
@@ -32,10 +35,10 @@ export function createChamber({ seed = 1337 } = {}) {
   cloth.push(tint(worldUV(ni(new THREE.BoxGeometry(2.4, 0.03, D - 4).translate(0, 0.015, 1)), 1), 0x5a1410));
   for (const sx of [-1, 1]) {
     const wall = box(0.6, H, D, { x: sx * (W / 2 + 0.3) });
-    stone.push(tint(worldUV(wall, 3), 0x9a8e7e, { aoBottom: 0, aoTop: 3 }));
+    stone.push(tint(worldUV(wall, 2.3), 0x9a8e7e, { aoBottom: 0, aoTop: 3 }));
   }
-  stone.push(tint(worldUV(box(W + 1.2, H, 0.6, { z: -D / 2 - 0.3 }), 3), 0x9a8e7e, { aoBottom: 0, aoTop: 3 }));
-  stone.push(tint(worldUV(box(W + 1.2, H, 0.6, { z: D / 2 + 0.3 }), 3), 0x8a7e6e, { aoBottom: 0, aoTop: 3 }));
+  stone.push(tint(worldUV(box(W + 1.2, H, 0.6, { z: -D / 2 - 0.3 }), 2.3), 0x9a8e7e, { aoBottom: 0, aoTop: 3 }));
+  stone.push(tint(worldUV(box(W + 1.2, H, 0.6, { z: D / 2 + 0.3 }), 2.3), 0x8a7e6e, { aoBottom: 0, aoTop: 3 }));
   wood.push(tint(worldUV(box(W + 1.2, 0.4, D + 1.2, { y: H }), 2), 0x3a2a1e));
   // ceiling beams + corbels
   for (let z = -D / 2 + 1.5; z < D / 2; z += 3) {
@@ -68,29 +71,55 @@ export function createChamber({ seed = 1337 } = {}) {
     fine.push(tint(worldUV(box(4.6, 3.6, 0.9, { y: 0, z: z + 0.45 }), 1.5), 0xb5a994));
     stone.push(tint(worldUV(box(3.0, 2.2, 0.5, { y: 0, z: z + 0.7 }), 1), 0x2a2420));
     fine.push(tint(worldUV(box(5.2, 0.4, 1.2, { y: 3.6, z: z + 0.6 }), 1.5), 0xc8bca8));
-    // the arms of Phlan: a heater shield, gilt border on red, three gold roundels
+    // the arms of New Phlan, carved and painted: a heater shield (tower over the
+    // Moonsea waves, a bordure of gold) on a gilt cartouche
     const sh = new THREE.Shape();
     sh.moveTo(-1, 1.1); sh.lineTo(1, 1.1); sh.lineTo(1, 0.1); sh.quadraticCurveTo(0.9, -0.9, 0, -1.4); sh.quadraticCurveTo(-0.9, -0.9, -1, 0.1); sh.closePath();
-    const sg = new THREE.ShapeGeometry(sh, 8);
-    sg.translate(0, 6.2, z + 0.1);
+    const sg = new THREE.ExtrudeGeometry(sh, { depth: 0.08, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.06, bevelSegments: 2, curveSegments: 12 });
+    sg.translate(0, 6.2, z + 0.06);
     gold.push(tint(ni(sg), 0xd8a848));
-    const inner = new THREE.ShapeGeometry(sh, 8);
-    inner.scale(0.84, 0.86, 1);
-    inner.translate(0, 6.22, z + 0.12);
-    cloth.push(tint(ni(inner), 0x8a1a14));
-    for (const [rx, ry] of [[-0.42, 0.5], [0.42, 0.5], [0, -0.25]]) gold.push(tint(ni(new THREE.CircleGeometry(0.2, 16).translate(rx, 6.2 + ry, z + 0.14)), 0xe0b050));
+    const face = new THREE.ShapeGeometry(sh, 16);
+    const fp = face.attributes.position, fuv = face.attributes.uv;
+    for (let i = 0; i < fp.count; i++) fuv.setXY(i, (fp.getX(i) + 1) / 2, (fp.getY(i) + 1.4) / 2.5);
+    face.scale(0.9, 0.9, 1);
+    face.translate(0, 6.25, z + 0.205);
+    armsGeo.push(ni(face));
+    // mantling scrolls either side of the shield
+    for (const sx of [-1, 1]) {
+      const sc = new THREE.TorusGeometry(0.34, 0.06, 6, 18, Math.PI * 1.4);
+      sc.rotateZ(sx > 0 ? -0.6 : Math.PI + 0.6);
+      sc.translate(sx * 1.25, 6.75, z + 0.12);
+      gold.push(tint(ni(sc), 0xc89838));
+      const sc2 = new THREE.TorusGeometry(0.22, 0.05, 6, 16, Math.PI * 1.5);
+      sc2.rotateZ(sx > 0 ? 0.9 : Math.PI - 0.9);
+      sc2.translate(sx * 1.15, 5.65, z + 0.12);
+      gold.push(tint(ni(sc2), 0xc89838));
+    }
+    // a mural crown over the shield
+    gold.push(tint(ni(new THREE.CylinderGeometry(0.62, 0.62, 0.22, 20, 1, true, -Math.PI / 2, Math.PI).rotateY(Math.PI).translate(0, 7.48, z + 0.05)), 0xd8a848));
+    for (let k = 0; k < 5; k++) gold.push(tint(ni(new THREE.BoxGeometry(0.16, 0.16, 0.1).translate(-0.5 + k * 0.25, 7.66, z + 0.62 * Math.sin(Math.acos((-0.5 + k * 0.25) / 0.62)) + 0.03)), 0xd8a848));
+    // banners with the city's device, a gilt pole and a bullion fringe
     for (const bx of [-4.4, 4.4]) {
-      const b = new THREE.PlaneGeometry(1.6, 5.0, 1, 8);
+      const b = new THREE.PlaneGeometry(1.6, 5.0, 6, 16);
       const p = b.attributes.position;
       for (let i = 0; i < p.count; i++) {
-        const y = p.getY(i);
-        p.setZ(i, Math.sin(p.getX(i) * 3.5) * 0.06);
-        if (y < -2.3) p.setY(i, y - (Math.abs(p.getX(i)) < 0.1 ? 0.5 : 0));
+        const x = p.getX(i), y = p.getY(i);
+        // swallowtail hem + soft vertical folds
+        const tail = y < -2.0 ? Math.max(0, 0.55 - Math.abs(x) * 0.7) * ((-2.0 - y) / 0.5) : 0;
+        p.setY(i, y + tail * 0.9);
+        p.setZ(i, Math.sin(x * 4.2 + bx) * 0.07 + Math.sin(y * 0.9) * 0.02);
       }
       b.computeVertexNormals();
-      b.translate(bx, 5.4, z + 0.12);
-      cloth.push(tint(ni(b), 0x8a1a14));
-      gold.push(tint(ni(new THREE.BoxGeometry(1.9, 0.12, 0.12).translate(bx, 7.95, z + 0.15)), 0xc89838));
+      b.translate(bx, 5.4, z + 0.16);
+      bannerGeo.push(b);
+      gold.push(tint(ni(new THREE.CylinderGeometry(0.05, 0.05, 2.1, 8).rotateZ(Math.PI / 2).translate(bx, 7.95, z + 0.2)), 0xc89838));
+      for (const ex of [-1.05, 1.05]) gold.push(tint(ni(new THREE.SphereGeometry(0.09, 10, 8).translate(bx + ex, 7.95, z + 0.2)), 0xe0b050));
+      // fringe: a row of short gilt tassels along the swallowtail hem
+      for (let k = 0; k <= 16; k++) {
+        const x = -0.8 + k * 0.1;
+        const yy = 2.9 - Math.max(0, 0.55 - Math.abs(x) * 0.7) * 0.9;
+        gold.push(tint(ni(new THREE.CylinderGeometry(0.012, 0.02, 0.16, 4).translate(bx + x, yy - 0.08, z + 0.17 + Math.sin(x * 4.2 + bx) * 0.07)), 0xd0a040));
+      }
     }
   }
 
@@ -102,15 +131,49 @@ export function createChamber({ seed = 1337 } = {}) {
     wood.push(tint(worldUV(box(0.18, 0.8, 0.18, { x: lx, y: 0, z: tz + lz }), 1), 0x3a2618));
   }
   cloth.push(tint(ni(new THREE.BoxGeometry(0.9, 0.02, tl - 0.4).translate(0, 1.05, tz)), 0x7a1a12));
-  // documents, a map, goblets
-  for (let i = 0; i < 9; i++) {
-    const px = R.range(-0.8, 0.8), pz = tz + R.range(-tl / 2 + 0.6, tl / 2 - 0.6);
-    const pg = new THREE.BoxGeometry(R.range(0.25, 0.4), 0.01, R.range(0.3, 0.45));
-    pg.rotateY(R.range(-0.4, 0.4));
-    pg.translate(px, 1.06, pz);
-    floor.push(tint(worldUV(ni(pg), 1), 0xf0e2c0));
+  // the Council's business: a great open ledger at the near end, loose petitions
+  // and a city plan, inkwell and quill, goblets
+  {
+    const book = (x, y, z, ry, w = 0.62, d = 0.44) => {
+      // two page blocks with a raised gutter, on a leather board
+      wood.push(tint(worldUV(box(w + 0.06, 0.03, d + 0.05, { x, y, z, ry }), 1), 0x3a1a10));
+      for (const s2 of [-1, 1]) {
+        const pg = new THREE.PlaneGeometry(w / 2, d, 8, 1);
+        const pp = pg.attributes.position;
+        for (let i = 0; i < pp.count; i++) {
+          const u = (pp.getX(i) + w / 4) / (w / 2); // 0..1 across the half page
+          const lift = Math.sin(Math.min(1, s2 > 0 ? 1 - u : u) * Math.PI * 0.5) * 0.035;
+          pp.setZ(i, lift);
+        }
+        const uv = pg.attributes.uv;
+        for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * 0.5 + (s2 > 0 ? 0.5 : 0));
+        pg.rotateX(-Math.PI / 2);
+        pg.translate(s2 * w / 4, 0.045, 0);
+        pg.rotateY(ry);
+        pg.translate(x, y, z);
+        ledgerGeo.push(pg);
+      }
+    };
+    book(0.15, 1.05, tz + tl / 2 - 0.55, 0.12);
+    // loose petitions and a city plan
+    for (let i = 0; i < 7; i++) {
+      const px = R.range(-0.75, 0.75), pz = tz + R.range(-tl / 2 + 0.6, tl / 2 - 1.3);
+      const pg = new THREE.PlaneGeometry(R.range(0.26, 0.36), R.range(0.34, 0.44));
+      pg.rotateX(-Math.PI / 2);
+      pg.rotateY(R.range(-0.5, 0.5));
+      pg.translate(px, 1.062 + i * 0.0015, pz);
+      paperGeo.push(pg);
+    }
+    // inkwell + quill (feather card standing in the well, crossing the light)
+    gold.push(tint(ni(new THREE.CylinderGeometry(0.05, 0.06, 0.07, 12).translate(-0.42, 1.095, tz + tl / 2 - 0.45)), 0x2a2a30));
+    const q = new THREE.PlaneGeometry(0.07, 0.34);
+    q.translate(0, 0.17, 0);
+    q.rotateZ(-0.35);
+    q.rotateY(0.6);
+    q.translate(-0.42, 1.12, tz + tl / 2 - 0.45);
+    quillGeo.push(q);
   }
-  for (let i = 0; i < 6; i++) gold.push(tint(ni(new THREE.CylinderGeometry(0.05, 0.035, 0.18, 8).translate(R.range(-0.7, 0.7), 1.13, tz + R.range(-3.8, 3.8))), 0xc89838));
+  for (let i = 0; i < 6; i++) gold.push(tint(ni(new THREE.CylinderGeometry(0.05, 0.035, 0.18, 8).translate(R.range(-0.7, 0.7), 1.13, tz + R.range(-3.8, 3.2))), 0xc89838));
 
   // ---- candles: tall candelabra on the table, sconces on the columns ---------------------
   const flames = [];
@@ -140,18 +203,34 @@ export function createChamber({ seed = 1337 } = {}) {
   }
 
   // ---- the council, the clerk, the adventurers --------------------------------------------
-  const person = (f, x, z, ry, level = 0) => {
-    const m = new THREE.Matrix4().makeRotationY(ry).setPosition(x, level, z);
-    for (const g of f.cloth) cloth.push(g.applyMatrix4(m));
-    for (const g of f.skin) skin.push(g.applyMatrix4(m));
+  // Sculpted figures from the party-miniature rig (faces, hands, robes and armour),
+  // in councillors' robes and vestments; lit only by the candles.
+  const figures = [];
+  const person = (ch, x, z, ry, q = 0.018, o = {}) => {
+    const f = buildMiniature({ race: 'human', ...ch }, { pose: 'stand', base: false, gear: false, quality: q, faceSize: 128, noWeapon: o.noWeapon ?? true, noShield: o.noShield ?? true });
+    f.position.set(x, 0, z);
+    f.rotation.y = ry;
+    f.traverse((m) => { if (m.isMesh) { m.castShadow = false; m.receiveShadow = false; } });
+    group.add(f);
+    figures.push(f);
+    return f;
   };
   // councillors along both sides of the table and the First Councillor at its head
-  const robes = [0x5a1a14, 0x1e2a50, 0x3a2a48, 0x2a3a2a, 0x5a3a1a, 0x4a1a30, 0x24304a];
+  const council = [
+    { gender: 'male', classSpec: 'magicUser', look: { seed: 11, head: 7, body: 4, cloth: 0, hair: 9 } },
+    { gender: 'female', classSpec: 'cleric', look: { seed: 12, head: 2, body: 7, cloth: 1, hair: 1 } },
+    { gender: 'male', classSpec: 'cleric', look: { seed: 13, head: 2, body: 7, cloth: 3, hair: 0 } },
+    { gender: 'male', classSpec: 'magicUser', look: { seed: 14, head: 1, body: 4, cloth: 5, hair: 2 } },
+    { gender: 'male', classSpec: 'magicUser', look: { seed: 21, head: 3, body: 4, cloth: 6, hair: 8 } },
+    { gender: 'female', classSpec: 'magicUser', look: { seed: 22, head: 4, body: 4, cloth: 3, hair: 3 } },
+    { gender: 'male', classSpec: 'cleric', look: { seed: 23, head: 7, body: 7, cloth: 4, hair: 7 } },
+    { gender: 'male', classSpec: 'magicUser', look: { seed: 24, head: 6, body: 4, cloth: 2, hair: 1 } },
+  ];
   [-3.2, -1.1, 1.1, 3.2].forEach((dz, i) => {
-    person(robedFigure({ robe: robes[i], hood: false, seed: 10 + i, height: 1.7 + (i % 2) * 0.06 }), -1.65, tz + dz, Math.PI / 2 - 0.15);
-    person(robedFigure({ robe: robes[(i + 3) % robes.length], hood: i % 2 === 1, seed: 20 + i, height: 1.68 + ((i + 1) % 2) * 0.07 }), 1.65, tz + dz, -Math.PI / 2 + 0.15);
+    person(council[i], -1.62, tz + dz, Math.PI / 2 - 0.15);
+    person(council[i + 4], 1.62, tz + dz, -Math.PI / 2 + 0.15);
   });
-  person(robedFigure({ robe: 0x6a1410, hood: false, seed: 31, height: 1.82 }), 0, tz - tl / 2 - 0.8, 0);
+  person({ gender: 'male', classSpec: 'cleric', look: { seed: 31, head: 2, body: 7, cloth: 0, hair: 7 } }, 0, tz - tl / 2 - 0.8, 0);
   // the clerk at his lectern, quill over the ledger
   const lx = 2.6, lz = tz + tl / 2 + 1.2;
   wood.push(tint(worldUV(box(0.5, 1.05, 0.5, { x: lx, y: 0, z: lz }), 1), 0x4a3220));
@@ -159,25 +238,27 @@ export function createChamber({ seed = 1337 } = {}) {
   desk.rotateX(-0.35);
   desk.translate(lx, 1.12, lz);
   wood.push(tint(worldUV(ni(desk), 1), 0x5a3e28));
-  for (const s of [-1, 1]) {
-    const page = new THREE.BoxGeometry(0.38, 0.03, 0.55);
-    page.rotateZ(s * 0.08);
-    page.rotateX(-0.35);
-    page.translate(lx + s * 0.2, 1.18, lz);
-    floor.push(tint(worldUV(ni(page), 1), 0xf2e6c6));
+  {
+    // the open ledger on the sloped desk
+    for (const s2 of [-1, 1]) {
+      const pg = new THREE.PlaneGeometry(0.38, 0.52);
+      const uv = pg.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * 0.5 + (s2 > 0 ? 0.5 : 0));
+      pg.rotateX(-Math.PI / 2);
+      pg.rotateZ(s2 * -0.06);
+      pg.translate(s2 * 0.19, 0.05, 0);
+      pg.rotateX(-0.35);
+      pg.translate(lx, 1.13, lz);
+      ledgerGeo.push(pg);
+    }
   }
   candle(lx + 0.38, 1.16, lz - 0.2, 0.18);
-  person(robedFigure({ robe: 0x2a2620, hood: true, stoop: 0.5, seed: 41, height: 1.6, arms: 'forward' }), lx, lz + 0.75, Math.PI);
-  // three adventurers in silhouette at the foot of the table: fighter, cleric, mage
-  const adv = [[-2.5, 5.3, 0x3a3a40, 0.25], [2.4, 4.9, 0x6a5a40, -0.3], [-1.2, 6.6, 0x2a1e3a, 0.1]];
-  adv.forEach(([ax, az, c, ry], i) => {
-    person(robedFigure({ robe: c, hood: i === 2, seed: 60 + i, height: 1.78 - i * 0.04 }), ax, az, Math.PI + ry);
-  });
-  // a spear, a shield, a staff
-  wood.push(tint(ni(new THREE.CylinderGeometry(0.025, 0.03, 2.4, 6).translate(-2.85, 1.2, 5.35)), 0x3a2a1a));
-  gold.push(tint(ni(new THREE.ConeGeometry(0.05, 0.25, 6).translate(-2.85, 2.5, 5.35)), 0x9aa0a8));
-  gold.push(tint(ni(new THREE.CylinderGeometry(0.38, 0.38, 0.06, 16).rotateX(Math.PI / 2).translate(-2.2, 1.05, 5.0)), 0x6a6a72));
-  wood.push(tint(ni(new THREE.CylinderGeometry(0.03, 0.035, 2.1, 6).translate(2.75, 1.05, 4.95)), 0x4a3424));
+  person({ gender: 'male', classSpec: 'magicUser', look: { seed: 41, head: 6, body: 4, cloth: 5, hair: 1 } }, lx, lz + 0.72, Math.PI, 0.016);
+  // three adventurers seen from behind at the foot of the table: fighter in plate,
+  // cleric in mail and tabard, mage in robes with a staff
+  person({ gender: 'male', classSpec: 'fighter', look: { seed: 61, head: 0, body: 0, cloth: 1, hair: 2 } }, -2.45, 2.2, Math.PI + 0.35, 0.013, { noWeapon: false, noShield: false });
+  person({ gender: 'female', classSpec: 'cleric', look: { seed: 62, head: 5, body: 5, cloth: 0, hair: 4 } }, 1.95, 2.5, Math.PI - 0.35, 0.013, { noWeapon: false, noShield: false });
+  person({ gender: 'male', classSpec: 'magicUser', look: { seed: 63, head: 6, body: 4, cloth: 3, hair: 0 } }, -1.55, 3.05, Math.PI + 0.2, 0.014, { noWeapon: false });
 
   // ---- meshes ------------------------------------------------------------------------------
   const texMat = (name, extra = {}) => {
@@ -194,7 +275,7 @@ export function createChamber({ seed = 1337 } = {}) {
     group.add(mesh);
     disposables.push(g);
   };
-  add(stone, texMat('hd_ashlar'));
+  add(stone, texMat('hd2_ashlar'));
   add(fine, texMat('hd_limestone'));
   add(wood, texMat('hd_beam_dark'));
   add(floor, texMat('hd_crazy'));
@@ -206,6 +287,19 @@ export function createChamber({ seed = 1337 } = {}) {
   add(cloth, plain(0.9));
   add(skin, plain(0.7));
   add(gold, plain(0.35, 0.85));
+  const texd = (list, tex, o = {}) => {
+    if (!list.length) return;
+    const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, side: THREE.DoubleSide, ...o });
+    disposables.push(mat, tex);
+    const g = merge(list.map((x) => (x.index ? x.toNonIndexed() : x)));
+    group.add(new THREE.Mesh(g, mat));
+    disposables.push(g);
+  };
+  texd(armsGeo, armsTexture(), { roughness: 0.55, metalness: 0.25 });
+  texd(bannerGeo, bannerTexture(), { roughness: 0.95 });
+  texd(ledgerGeo, ledgerTexture(), { roughness: 0.9 });
+  texd(paperGeo, paperTexture(), { roughness: 0.92 });
+  texd(quillGeo, featherTexture(), { roughness: 0.8, alphaTest: 0.4 });
   const glassMat = new THREE.ShaderMaterial({
     vertexShader: /* glsl */ `varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
     fragmentShader: /* glsl */ `varying vec3 vW;
@@ -245,6 +339,14 @@ export function createChamber({ seed = 1337 } = {}) {
     group.add(L);
     lights.push(L);
   }
+  // candle spill between the adventurers and the table (rims their shoulders and helms)
+  // and a cool moonlit fill from the doors behind them, so plate and mail read from the back
+  const advRim = new THREE.PointLight(0xffa458, 7, 6, 1.6);
+  advRim.position.set(0, 1.9, 0.6);
+  group.add(advRim);
+  const advFill = new THREE.PointLight(0x7080d0, 5, 9, 1.4);
+  advFill.position.set(0.4, 2.6, 6.0);
+  group.add(advFill);
   const winFill = new THREE.PointLight(0x5a6ad0, 10, 18, 1.4);
   winFill.position.set(-5.5, 5, 4);
   group.add(winFill);
@@ -264,6 +366,7 @@ export function createChamber({ seed = 1337 } = {}) {
     },
     dispose() {
       for (const d of disposables) d.dispose?.();
+      for (const f of figures) f.userData.dispose?.();
       flameMesh.geometry.dispose();
     },
   };

@@ -74,10 +74,17 @@ export class Menu {
   highlight(i) {
     const changed = i !== this.index;
     this.index = i;
+    // Swap the highlight with transitions parked: the state change lands on the
+    // very next painted frame even when frames are slow (software GL), so the
+    // highlight bar can never lag behind the selection. Decoration animates via
+    // keyframes on the new row instead (see .hl::after in the skin).
+    this.el.classList.add('por-snap');
     this._rows.forEach((r, j) => {
       r.classList.toggle('hl', j === i);
       r.setAttribute('aria-selected', j === i ? 'true' : 'false');
     });
+    void this.el.offsetWidth;
+    this.el.classList.remove('por-snap');
     if (this.items[i]) this.onHighlight?.(this.items[i], i, changed);
   }
 

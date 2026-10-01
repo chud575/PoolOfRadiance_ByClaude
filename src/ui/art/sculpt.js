@@ -17,6 +17,8 @@
  * Everything is a pure function of the figure and options: no Math.random.
  */
 
+import { sdfAvailable, traceFigure } from './sdfgl.js';
+
 // ------------------------------------------------------------------ math
 
 export const I3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
@@ -134,6 +136,30 @@ export function mat(color, o = {}) {
 
 // ------------------------------------------------------------------ figure
 
+const M_SUB = mat('#000000');
+
+/**
+ * Default relief for cloth and hair volumes: hanging fold ridges around big cloth
+ * cones (robes, skirts, sleeves, capes) and strand streaks on hair masses.
+ */
+function autoDisp(p) {
+  const m = p.mat;
+  if (!m || p.sub) return null;
+  if (m.pattern === 'cloth' && p.type === 0) {
+    const r = Math.max(p.ra, p.rb);
+    if (r < 0.03) return null;
+    const L = Math.hypot(p.b[0] - p.a[0], p.b[1] - p.a[1], p.b[2] - p.a[2]);
+    if (L < r * 1.2) return null;
+    return { amp: Math.min(0.012, r * 0.09), freq: Math.round(Math.min(18, Math.max(7, r * 120))), twist: 1.5 };
+  }
+  if (m.pattern === 'fur' && p.type === 1) {
+    const e = Math.min(p.r[0], p.r[1], p.r[2]);
+    if (e < 0.012) return null;
+    return { amp: Math.min(0.006, e * 0.12), freq: 1 / Math.max(0.002, m.scale) * 0.5 };
+  }
+  return null;
+}
+
 /** Builder for a figure: a list of volumes with a transform stack. */
 export class Figure {
   constructor() {
@@ -159,10 +185,22 @@ export class Figure {
   _add(p, o) {
     p.group = o.group === undefined ? this.group : o.group;
     p.layer = o.layer ?? this.layer;
-    p.blend = o.blend ?? 0.03;
-    p.shadow = o.shadow ?? true;
+    // blend: world units; k: blend radius in local units (scaled with the transform stack)
+    p.blend = o.k != null ? o.k * this.T.s : o.blend ?? 0.03;
+    p.shadow = o.shadow ?? !o.sub;
+    if (o.sub) p.sub = true; // smooth subtraction from its group (GPU renderer; ignored by the CPU caster)
+    const disp = o.disp === undefined ? autoDisp(p) : o.disp;
+    if (disp) p.disp = { seed: (this.prims.length * 7.31) % 13, ...disp };
     this.prims.push(p);
     return p;
+  }
+
+  /** Smoothly carve a volume out of a group (eye sockets, mouth line, nostrils, hollows). */
+  carve(kind, a, b, c, o = {}) {
+    const opt = { group: this.group, k: 0.08, ...o, sub: true };
+    if (kind === 'ell') return this.ell(a, b, M_SUB, opt);
+    if (kind === 'cone') return this.cone(a, b, c, o.rb, M_SUB, opt);
+    return this.box(a, b, M_SUB, opt);
   }
 
   /** Round cone (tapered capsule) from a (radius ra) to b (radius rb). */
@@ -317,7 +355,7 @@ const HIT = [hitCone, hitEll, hitBox];
 function toView(prims, V) {
   const out = [];
   for (const p of prims) {
-    const q = { ...p };
+    const q = { ...p, src: p.src ?? p };
     if (p.type === 0) {
       q.va = ap3(V, p.a);
       q.vb = ap3(V, p.b);
@@ -333,6 +371,8 @@ function toView(prims, V) {
       q.e1 = e1;
       q.e2 = cross(ax, e1);
       q.L = len(sub(q.vb, q.va));
+      q.z0 = Math.min(q.va[2] - p.ra, q.vb[2] - p.rb);
+      q.z1 = Math.max(q.va[2] + p.ra, q.vb[2] + p.rb);
     } else {
       q.vc = ap3(V, p.c);
       q.vR = mul3(V, p.R);
@@ -341,7 +381,9 @@ function toView(prims, V) {
       const R = q.vR;
       const ex = Math.abs(R[0]) * ext[0] + Math.abs(R[1]) * ext[1] + Math.abs(R[2]) * ext[2];
       const ey = Math.abs(R[3]) * ext[0] + Math.abs(R[4]) * ext[1] + Math.abs(R[5]) * ext[2];
+      const ez = Math.abs(R[6]) * ext[0] + Math.abs(R[7]) * ext[1] + Math.abs(R[8]) * ext[2];
       q.x0 = q.vc[0] - ex; q.x1 = q.vc[0] + ex; q.y0 = q.vc[1] - ey; q.y1 = q.vc[1] + ey;
+      q.z0 = q.vc[2] - ez; q.z1 = q.vc[2] + ez;
     }
     out.push(q);
   }
@@ -499,7 +541,8 @@ export function renderFigure(fig, o = {}) {
   const V = mul3(rotX(o.pitch ?? 0.06), rotY(o.yaw ?? 0));
   const rig = o.rig ?? DEFAULT_RIG;
   const layer = o.layer ?? 'main';
-  const all = toView(fig.prims, V);
+  const allV = toView(fig.prims, V);
+  const all = allV.filter((p) => !p.sub);
   const prims = all.filter((p) => p.layer === layer);
   if (!prims.length) return null;
   // extents (view units)
@@ -510,6 +553,10 @@ export function renderFigure(fig, o = {}) {
   const H = Math.ceil((y1 - y0) * P) + pad * 2;
   const offX = -x0 * P + pad;
   const offY = y1 * P + pad;
+  if (o.gpu !== false && sdfAvailable()) {
+    const r = renderGL(fig, o, { all, prims: allV.filter((p) => p.layer === layer), V, rig, ss, P, W, H, offX, offY, x0, x1, y0, y1 });
+    if (r) return r;
+  }
   const n = W * H;
   const zb = new Float32Array(n).fill(-Infinity);
   const ib = new Int16Array(n).fill(-1);
@@ -920,4 +967,78 @@ function kuwahara(D, ib, W, H, r) {
       D[o4] = br; D[o4 + 1] = bg; D[o4 + 2] = bb;
     }
   }
+}
+
+/** Light-space rotation that maps the (world) key direction to +z. */
+function lightBasis(keyW) {
+  const z = keyW;
+  let x = cross([0, 1, 0], z);
+  if (len(x) < 1e-3) x = [1, 0, 0];
+  x = norm(x);
+  const y = cross(z, x);
+  return [x[0], x[1], x[2], y[0], y[1], y[2], z[0], z[1], z[2]];
+}
+
+/** GPU path of renderFigure (sdfgl.js): smooth-min sculpting, fold geometry, SDF shadows/AO. */
+function renderGL(fig, o, c) {
+  const { all, prims, V, rig, ss, P, W, H, offX, offY, y0, y1 } = c;
+  const VT = tr3(V);
+  const keyW = norm(rig.key.dir);
+  const keyV = ap3(V, keyW);
+  // light space as seen from view space: Lv = Lr(world) * VT
+  let shadowPrims = null;
+  let Lv = null;
+  if (o.shadow !== false) {
+    const LB = lightBasis(keyW);
+    Lv = mul3(LB, VT);
+    const sp = fig.prims.filter((p) => p.shadow);
+    if (sp.length) {
+      // view-space geometry (what the shader evaluates), binned by light-space bounds
+      const lb = toView(sp, LB);
+      const vp = toView(sp, V);
+      shadowPrims = vp.map((q, i) => ({ ...q, x0: lb[i].x0, x1: lb[i].x1, y0: lb[i].y0, y1: lb[i].y1, z0: lb[i].z0, z1: lb[i].z1 }));
+    }
+  }
+  const kc0 = hex(rig.key.color); const ks = o.keySat ?? 0.55;
+  const kc = [kc0[0] + (1 - kc0[0]) * (1 - ks) * 0.85, kc0[1] + (0.95 - kc0[1]) * (1 - ks) * 0.85, kc0[2] + (0.88 - kc0[2]) * (1 - ks) * 0.85];
+  let zmin = Infinity;
+  for (const p of prims) if (!p.sub) zmin = Math.min(zmin, (p.z0 + p.z1) * 0.5);
+  const ghost = o.ghost ? hex(o.ghost === true ? '#9ff4ff' : o.ghost) : null;
+  const t0 = performance.now();
+  const big = traceFigure(prims, shadowPrims, {
+    P, W, H, offX, offY, ss, VT, Lr: Lv,
+    keyV, kc, ki: rig.key.i ?? 1.2,
+    rimV: ap3(V, norm(rig.rim?.dir ?? [0.7, 0.3, -0.6])), rc: hex(rig.rim?.color ?? '#9ab0ff'), ri: rig.rim?.i ?? 0.8,
+    sky: hex(rig.sky ?? '#4a5a80'), gnd: hex(rig.ground ?? '#2a1e16'), amb: rig.amb ?? 0.5,
+    fill: rig.fill ? { d: ap3(V, norm(rig.fill.dir)), c: hex(rig.fill.color), i: rig.fill.i ?? 0.3 } : null,
+    haze: o.haze ?? 0, hz: hex(o.hazeColor ?? '#202830'), ghost,
+    ink: o.ink ?? 0.8, paint: o.paint ?? Math.max(1, Math.round(ss * 1.2)), inkDepth: o.inkDepth,
+    yFeet: offY, figH: (y1 - Math.max(0, y0)) * P, zmin,
+  });
+  if (!big) return null;
+  if (globalThis.__SDF_LOG) console.log(`sdf ${W}x${H} prims=${prims.length} ${(performance.now() - t0).toFixed(0)}ms`);
+  const outW = Math.ceil(W / ss);
+  const outH = Math.ceil(H / ss);
+  const cv = document.createElement('canvas');
+  cv.width = outW;
+  cv.height = outH;
+  const g2 = cv.getContext('2d');
+  g2.imageSmoothingEnabled = true;
+  g2.imageSmoothingQuality = 'high';
+  g2.drawImage(big, 0, 0, outW, outH);
+  // glows hidden behind the figure are dropped (analytic front depth at that pixel)
+  const emit = [];
+  for (const e of fig.emit) {
+    const v = ap3(V, e.p);
+    let zf = -Infinity;
+    for (const p of prims) {
+      if (v[0] < p.x0 || v[0] > p.x1 || v[1] < p.y0 || v[1] > p.y1) continue;
+      if (p.sub) continue;
+      const z = HIT[p.type](p, v[0], v[1]);
+      if (z > zf) zf = z;
+    }
+    if (zf > v[2] + e.r * 0.6) continue;
+    emit.push({ x: (v[0] * P + offX) / ss, y: (-v[1] * P + offY) / ss, r: e.r * P / ss, color: e.color, a: e.a, z: v[2] });
+  }
+  return { canvas: cv, ox: offX / ss, oy: offY / ss, emit, ppu: P / ss };
 }

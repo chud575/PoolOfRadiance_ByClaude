@@ -29,7 +29,7 @@ const POSES = {
   menu: { p: [-4.6, 3.3, 12.2], l: [-4.2, 1.2, -27.8] },
   settings: { p: [-1.5, 5.2, 9.5], l: [0.5, 1.5, -30] },
   load: { p: [2.5, 3.0, 10.5], l: [0.6, 1.3, -30] },
-  credits: { p: [0, 7.5, 16], l: [0, 2.5, -40] },
+  credits: { p: [2.2, 5.2, 14.5], l: [4.5, 3.4, -40] },
 };
 /** Logo layout per mode (fraction of screen width, centre NDC). */
 /** Strength of the Pool's light column per mode. */
@@ -190,7 +190,9 @@ export default class TitleScene extends Scene {
       this.panelEl.replaceChildren();
     }
     if (mode !== 'intro') this._tweenCamera(POSES[mode] ?? POSES.card, instant ? 0 : 1.6);
-    this._tweenLogo(LOGO[mode] ?? LOGO.card, instant ? 0 : 1.1);
+    // the intro opens on black: drop the logo at once so no half-faded title
+    // lingers under the letterbox while the first shot fades up
+    this._tweenLogo(LOGO[mode] ?? LOGO.card, instant || mode === 'intro' ? 0 : 1.1);
   }
 
   _tweenCamera(pose, dur) {

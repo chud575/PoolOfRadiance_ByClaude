@@ -5,7 +5,7 @@ import { toast } from './components/Toast.js';
 
 export { h, clear, hotkeyLabel } from './dom.js';
 export { Frame } from './components/Frame.js';
-export { CommandBar } from './components/CommandBar.js';
+export { CommandBar, KeyLegend } from './components/CommandBar.js';
 export { MessageLog } from './components/MessageLog.js';
 export { PartyRoster } from './components/PartyRoster.js';
 export { Menu } from './components/Menu.js';

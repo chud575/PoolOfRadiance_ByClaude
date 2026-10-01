@@ -30,9 +30,7 @@ export class CommandBar {
         disabled: !!c.disabled,
         dataset: { tip: c.tip ?? '', cmd: c.id },
         onclick: () => !c.disabled && c.onSelect?.(c),
-      }, c.action && c.key
-        ? [h('span', [c.label]), h('span.por-hk-badge', [c.key])]
-        : [hotkeyLabel(c.label, c.key)]);
+      }, c.action ? actionLabel(c) : [hotkeyLabel(c.label, c.key)]);
       this.el.append(b);
     }
   }
@@ -52,4 +50,35 @@ export class CommandBar {
     window.removeEventListener('keydown', this._onKey);
     this.el.remove();
   }
+}
+
+/**
+ * Gold Box notation for an action command: the word with its yellow initial
+ * capital (AREA CAST VIEW ENCAMP SEARCH LOOK, exactly as in 1988). When the
+ * bound key is that initial letter nothing else is shown; when it is not
+ * (default WASD movement claims A/S/E, or the player rebound it) a small
+ * superscript keycap names the real key, so the bar never lies.
+ */
+function actionLabel(c) {
+  const word = String(c.label);
+  const key = String(c.key ?? '');
+  const initial = word[0] ?? '';
+  const same = key.length === 1 && key.toUpperCase() === initial.toUpperCase();
+  return [
+    h('span.por-cmd-word', [h('span.por-hk.por-hk-cap', [initial]), word.slice(1)]),
+    key && !same ? h('span.por-cmd-key', { title: `Key: ${key}` }, [key]) : null,
+  ];
+}
+
+/**
+ * A key legend row ("[ ] Select member   Esc Break camp"), laid out like the
+ * settings footer: each entry keeps its keycaps and words together on one
+ * line, entries wrap as whole units, keycaps share one baseline.
+ * @param {Array<[string[] | string, string]>} items  [[keys, label], ...]
+ */
+export function KeyLegend(items, { className = '' } = {}) {
+  return h('div.por-legend', { class: className }, items.map(([keys, label]) => h('span.por-legend-item', [
+    ...[].concat(keys).map((k) => h('span.por-keycap', [k])),
+    h('span.por-legend-label', [label]),
+  ])));
 }

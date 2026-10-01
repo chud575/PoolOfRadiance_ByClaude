@@ -33,9 +33,10 @@
   content: ''; position: absolute; right: calc(-1.4em - 0.32em - 1px); top: 50%; width: 0.64em; height: 0.64em; margin-top: -0.32em; transform: rotate(45deg);
   background: var(--gilt-grad); border: 1px solid #2a1a04; box-shadow: 0 0 8px rgba(255, 220, 140, 0.6);
 }
-.por-set-tab.sel::before {
-  content: ''; position: absolute; left: 100%; top: 50%; width: 1.2em; height: 1px; background: linear-gradient(90deg, rgba(216, 178, 90, 0.7), rgba(245, 217, 139, 0.9));
-}
+.por-set-seal { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: 0.7em; padding: 1em 0.4em 0.4em; opacity: 0.9; }
+.por-set-seal-svg { width: 5.6em; height: 5.6em; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.7)); opacity: 0.85; }
+.por-set-seal-cap { font-style: italic; font-size: calc(0.78em * var(--text-scale)); line-height: 1.45; color: var(--por-text-dim); text-align: center; max-width: 13em; }
+html[data-classic='1'] .por-set-seal-svg { display: none; }
 .por-set-icon { width: 1.35em; height: 1.35em; flex: none; color: var(--por-gilt); }
 .por-set-tab.sel .por-set-icon { color: var(--por-gilt-hi); filter: drop-shadow(0 0 4px rgba(255, 210, 120, 0.6)); }
 
@@ -58,9 +59,10 @@
 }
 .por-set-main.more-below .por-set-bodywrap::after, .por-set-main.more-above .por-set-bodywrap::before { opacity: 1; }
 .por-set-more {
-  position: absolute; left: 50%; bottom: 0.25em; transform: translateX(-50%); z-index: 2; display: inline-flex; align-items: center; gap: 0.5em;
+  /* seated on the footer rule like a cartouche, clear of the last row */
+  position: absolute; left: 50%; bottom: -2.95em; transform: translateX(-50%); z-index: 2; display: inline-flex; align-items: center; gap: 0.5em;
   font: inherit; font-family: var(--font-display); font-weight: 700; font-size: 0.68em; letter-spacing: 0.28em; text-transform: uppercase;
-  color: var(--por-gilt-hi); background: rgba(6, 10, 28, 0.85); border: 1px solid rgba(216, 178, 90, 0.55); border-radius: 1em; padding: 0.3em 1.1em;
+  color: var(--por-gilt-hi); background: linear-gradient(180deg, #1a2550, #0b1130); border: 1px solid rgba(216, 178, 90, 0.75); border-radius: 1em; padding: 0.3em 1.1em; box-shadow: 0 0 0 3px #0e1638, 0 2px 6px rgba(0, 0, 0, 0.6);
   cursor: pointer; opacity: 0; pointer-events: none; transition: opacity 0.25s var(--ease), border-color 0.15s var(--ease);
 }
 .por-set-more:hover { border-color: var(--por-gilt-hi); }
@@ -121,16 +123,33 @@
 /* toggle switch */
 .por-toggle { display: inline-flex; align-items: center; gap: 0.7em; font: inherit; background: none; border: 0; padding: 0.2em; cursor: pointer; color: var(--por-text-dim); border-radius: 2px; }
 .por-toggle-track {
-  position: relative; width: 3.1em; height: 1.5em; border-radius: 1em; background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(216, 178, 90, 0.4);
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6); transition: background 0.22s var(--ease), border-color 0.22s var(--ease);
+  /* a brass slide-bolt in an engraved slot: dark recess, gilt rim, a jewel lamp that wakes when on */
+  position: relative; width: 3.3em; height: 1.45em; border-radius: 0.3em;
+  background:
+    linear-gradient(180deg, #05070f, #11162a 55%, #0a0d1c);
+  border: 1px solid #8a6a2a; border-top-color: #3a2a0c; border-bottom-color: #e2c272;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.85), inset 0 0 0 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 230, 170, 0.12);
+  transition: background 0.22s var(--ease), border-color 0.22s var(--ease);
+}
+.por-toggle-track::before {
+  /* the jewel lamp seated at the far end of the slot */
+  content: ''; position: absolute; right: 0.36em; top: 50%; width: 0.46em; height: 0.46em; margin-top: -0.23em; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #3a4058, #0c0f1c 70%); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.8);
+  transition: background 0.22s var(--ease), box-shadow 0.22s var(--ease);
 }
 .por-toggle-knob {
-  position: absolute; top: 0.14em; left: 0.16em; width: 1.08em; height: 1.08em; border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #fff5d0, #c9a24e 60%, #7a5a20); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+  position: absolute; top: 0.1em; left: 0.12em; width: 1.5em; height: 1.08em; border-radius: 0.22em;
+  background:
+    repeating-linear-gradient(90deg, rgba(60, 40, 8, 0.55) 0 1px, transparent 1px 0.2em) center / 0.62em 64% no-repeat,
+    linear-gradient(180deg, #fff3c4 0%, #e8c46a 30%, #b48a3a 62%, #7a5a20 100%);
+  border: 1px solid #3a2808;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 -1px 0 rgba(60, 40, 8, 0.6), 0 2px 3px rgba(0, 0, 0, 0.75);
   transition: transform 0.22s var(--ease);
 }
-.por-toggle.on .por-toggle-track { background: linear-gradient(90deg, rgba(45, 82, 163, 0.95), rgba(80, 130, 230, 0.9)); border-color: var(--por-gilt); }
-.por-toggle.on .por-toggle-knob { transform: translateX(1.56em); }
+.por-toggle.on .por-toggle-track { border-color: var(--por-gilt); border-top-color: #4a3410; }
+.por-toggle.on .por-toggle-track::before { background: radial-gradient(circle at 38% 32%, #f2ffff, #6fe2ff 45%, #1a7aa8); box-shadow: 0 0 6px rgba(120, 230, 255, 0.85), 0 0 12px rgba(120, 230, 255, 0.35); }
+.por-toggle.on .por-toggle-knob { transform: translateX(1.52em); }
+.por-toggle.on .por-toggle-track::before { right: auto; left: 0.36em; }
 .por-toggle-label { font-family: var(--font-display); font-weight: 700; font-size: 0.8em; letter-spacing: 0.14em; text-transform: uppercase; width: 2.4em; text-align: left; }
 .por-toggle.on .por-toggle-label { color: var(--por-gilt-hi); }
 
@@ -163,15 +182,25 @@
 .por-bind-label { font-size: calc(0.95em * var(--text-scale)); }
 .por-bind-key {
   font: inherit; font-family: var(--font-num); font-size: 0.86em; height: 1.95em; border-radius: 4px; cursor: pointer; color: var(--por-parchment);
-  background: linear-gradient(180deg, #27325c, #111836); border: 1px solid var(--por-gilt-lo); border-bottom-width: 2px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 1px 2px rgba(0, 0, 0, 0.6); transition: border-color 0.14s var(--ease), color 0.14s var(--ease);
+  /* a real keycap: lit top face, darker skirt, hard drop to the leather */
+  background: linear-gradient(180deg, #3a4782 0%, #26306a 14%, #1a2350 58%, #121938 100%);
+  border: 1px solid #8a6e36; border-top-color: #c9a85c; border-bottom: 3px solid #4c3a16;
+  box-shadow: inset 0 1px 0 rgba(255, 240, 200, 0.22), inset 0 -1px 0 rgba(0, 0, 0, 0.45), inset 0.18em 0 0.3em -0.2em rgba(255, 255, 255, 0.08), 0 2px 0 rgba(3, 5, 14, 0.9), 0 3px 6px rgba(0, 0, 0, 0.45);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8); font-weight: 700;
+  transition: border-color 0.14s var(--ease), color 0.14s var(--ease);
 }
+.por-bind-key:active { transform: translateY(2px); border-bottom-width: 1px; box-shadow: inset 0 1px 0 rgba(255, 240, 200, 0.15), 0 1px 0 rgba(3, 5, 14, 0.9); }
 .por-bind-key:hover { border-color: var(--por-gilt-hi); color: #fff; }
 .por-bind-key.empty { color: var(--por-text-dim); background: rgba(0, 0, 0, 0.25); border-style: dashed; }
 .por-bind-key.waiting { color: #1b1206; background: var(--gilt-grad); border-color: #000; animation: por-breathe 1.2s ease-in-out infinite; font-family: var(--font-display); font-weight: 700; letter-spacing: 0.06em; font-size: 0.74em; }
 .por-bind-row.conflict .por-bind-key:not(.empty) { border-color: var(--por-blood); box-shadow: 0 0 8px rgba(208, 71, 60, 0.5); }
 .por-bind-pad { display: flex; gap: 0.3em; justify-content: center; align-items: center; color: var(--por-text-dim); }
-.por-arrow { font-size: 1.45em; line-height: 0.8; font-family: 'DejaVu Sans', 'Segoe UI Symbol', sans-serif; }
+.por-arrow { width: 1.45em; height: 1.45em; display: block; margin: 0 auto; filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.7)); }
+.por-bind-key { display: flex; align-items: center; justify-content: center; }
+.por-bind-pad .por-pad { font-size: 0.92em; height: 2.05em; min-width: 2.05em; border-width: 2px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 -2px 0 rgba(0, 0, 0, 0.35), 0 2px 3px rgba(0, 0, 0, 0.7); }
+.por-bind-pad .por-pad.pill { min-width: 3em; height: 1.85em; font-size: 0.78em; border-radius: 0.95em; }
+.por-bind-pad .por-pad.unbound { box-shadow: none; }
+.por-dpad { width: 1.55em; height: 1.55em; display: block; }
 .por-bind-foot { display: flex; justify-content: space-between; align-items: center; gap: 1em; padding: 1em 0.9em 0.3em 1.1em; font-size: calc(0.85em * var(--text-scale)); }
 
 /* footer */
@@ -179,4 +208,5 @@
 .por-set-legend { display: flex; flex-wrap: wrap; gap: 1.3em; font-family: var(--font-display); font-weight: 700; font-size: 0.72em; letter-spacing: 0.16em; text-transform: uppercase; color: var(--por-text-dim); }
 .por-set-legend > span { display: inline-flex; align-items: center; gap: 0.3em; }
 .por-set-legend .por-keycap { font-size: 1em; letter-spacing: 0; }
+.por-keycap .por-arrow { width: 1.15em; height: 1.15em; }
 .por-set-actions { display: flex; gap: 0.6em; }

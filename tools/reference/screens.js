@@ -412,9 +412,15 @@ export const SCREENS = {
     e.textAt(2, 1, shop.name.toUpperCase().slice(0, 36), C.lightCyan);
     e.textAt(2, 3, 'ITEM', C.white);
     e.textAt(30, 3, 'COST', C.white);
-    shop.stock.slice(0, 16).forEach((id, i) => {
-      e.textAt(2, 5 + i, ITEMS[id].name.toUpperCase().slice(0, 24), C.lightGreen);
-      e.textAt(30, 5 + i, String(ITEMS[id].cost).padStart(5), C.lightGreen);
+    // Taverns and training halls carry no stock: the 1988 menus listed their services instead.
+    const rows = shop.stock?.length
+      ? shop.stock.map((id) => [ITEMS[id]?.name ?? id, ITEMS[id]?.cost ?? 0])
+      : shop.kind === 'tavern'
+        ? [['ALE', shop.drink ?? 1], ['STEW', 2], ['RUMORS', 0]]
+        : (shop.classes ?? []).map((c) => [`TRAIN ${c.replace(/([A-Z])/g, '-$1')}`, shop.cost ?? 1000]);
+    rows.slice(0, 16).forEach(([name, cost], i) => {
+      e.textAt(2, 5 + i, String(name).toUpperCase().slice(0, 24), C.lightGreen);
+      e.textAt(30, 5 + i, String(cost).padStart(5), C.lightGreen);
     });
     e.textAt(2, 22, `${party[0].name.toUpperCase()} HAS ${party[0].gold} GOLD`, C.white);
     commandLine(e, ['BUY', 'SELL', 'VIEW', 'TAKE', 'POOL', 'EXIT']);
