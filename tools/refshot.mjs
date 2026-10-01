@@ -24,7 +24,7 @@ try {
   for (const g of GALLERY) {
     if (only?.length && !only.includes(g.name)) continue;
     const base = g.ref ?? g.name.split('_')[0]; // explore_door → explore screen with its own params; `ref` overrides
-    const q = new URLSearchParams(g.query);
+    const q = new URLSearchParams(g.refQuery ?? g.query); // refQuery: a real-map stand-in for homage-only demo maps
     q.set('scene', base);
     const out = `${outDir}/${g.name}.png`;
     try {

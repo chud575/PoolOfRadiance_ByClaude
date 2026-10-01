@@ -221,6 +221,33 @@ export function buildBlock(map, opts = {}) {
     const inB = map.inBounds(sides[1].cx, sides[1].cy);
     const seen = (sd) => map.inBounds(sd.cx, sd.cy) && !(solidCell(sd.cx, sd.cy) && (indoor || covered(sd.cx, sd.cy)));
     if (!seen(sides[0]) && !seen(sides[1])) return;
+    // walls against open water are quay parapets (a pier's sides), or nothing at all out at sea
+    {
+      // beyond the southern edge of a waterfront block is the open sea
+      const isW = (sd) => (map.inBounds(sd.cx, sd.cy) ? map.getCell(sd.cx, sd.cy) === CELL.WATER : !!map.harbour && sd.cy >= Hh);
+      const wa = isW(sides[0]);
+      const wb = isW(sides[1]);
+      if (!indoor && (wa || wb) && !isDoor && !isArch) {
+        const landA = inA && !wa;
+        const landB = inB && !wb;
+        void 0;
+        if (!landA && !landB) return;
+        const sd = landA ? sides[0] : sides[1];
+        const Tn = new THREE.Vector3().crossVectors(UP, sd.N);
+        const pf = { basis: new THREE.Matrix4().makeBasis(Tn, UP, sd.N).setPosition(M) };
+        // battered face into the water, then a dwarf wall with a moulded coping
+        localBox(pf, 'arch_stone_cold', -S / 2 - T / 2, S / 2 + T / 2, -1.6, 0.0, -T / 2 - 0.2, T / 2, { tint: [0.72, 0.74, 0.7] });
+        localBox(pf, 'arch_stone', -S / 2 - T / 2, S / 2 + T / 2, 0.0, 0.62, -T / 2 + 0.06, T / 2);
+        let a = -S / 2 - T / 2;
+        for (let k = 0; a < S / 2 + T / 2 - 0.02; k++) {
+          const l = Math.min(S / 2 + T / 2 - a, 0.7 + hash(e.key, k, 'pc') * 0.5);
+          localBox(pf, 'arch_dressed', a + 0.01, a + l - 0.01, 0.62, 0.8, -T / 2 + 0.01, T / 2 + 0.07, { chamfer: 0.03, tint: [0.85 + hash(e.key, k, 'pt') * 0.12, 0.84, 0.8] });
+          a += l;
+        }
+        spots.wallBase.push({ face: { ...pf, N: sd.N, T: Tn, M, e, H: 0.8, openings: [], ends: {}, seed: seedE, cell: { x: sd.cx, y: sd.cy, type: map.getCell(sd.cx, sd.cy) }, quay: true }, cell: { x: sd.cx, y: sd.cy, type: map.getCell(sd.cx, sd.cy) }, style: e.style, recipe: 'quay' });
+        return;
+      }
+    }
     const covA = covered(sides[0].cx, sides[0].cy);
     const covB = covered(sides[1].cx, sides[1].cy);
     const buildingWall = !indoor && (covA !== covB) && inA && inB;

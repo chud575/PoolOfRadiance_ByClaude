@@ -34,3 +34,14 @@ export function puddleChance(ts, fc) {
   if (fc.cell === CELL.RUBBLE) return 0.25;
   return 0;
 }
+
+/**
+ * A map is a waterfront when at least half of its southern row is water.
+ * @param {{w:number, h:number, getCell:(x:number,y:number)=>number, outdoors?:boolean, kind?:string}} map
+ */
+export function inferHarbour(map) {
+  if (map.outdoors === false || map.kind === 'dungeon') return false;
+  let n = 0;
+  for (let x = 0; x < map.w; x++) if (map.getCell(x, map.h - 1) === CELL.WATER) n++;
+  return n >= map.w / 2;
+}

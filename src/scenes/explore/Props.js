@@ -290,6 +290,27 @@ export function buildProps(map, block, opts = {}) {
       if (map.getCell(fc.x, fc.y + 1) !== CELL.WATER || fc.cell === CELL.WATER) continue;
       const ez = (fc.y + 1) * S - 0.45;
       const cx = fc.x * S + S / 2;
+      {
+        // the quay edge: a battered stone face down into the water, a coping of long dressed
+        // blocks overhanging it, timber fenders and an iron mooring ring
+        const qz = (fc.y + 1) * S;
+        g.box('arch_stone_cold', { c: [cx, -1.0, qz - 0.35], s: [S + 0.02, 2.0, 0.7], ao: (p) => 0.45 + 0.55 * THREE.MathUtils.smoothstep(p.y, -0.6, 0.0), tint: [0.78, 0.8, 0.76] });
+        let a = 0;
+        for (let k = 0; a < S - 0.02; k++) {
+          const l = Math.min(S - a, 0.7 + hash(fc.x, k, 'cpl') * 0.6);
+          const hgt = 0.16 + hash(fc.x, k, 'cph') * 0.03;
+          g.box('arch_dressed', { c: [fc.x * S + a + l / 2, hgt / 2 - 0.02, qz - 0.22], s: [l - 0.025, hgt, 0.66], rotY: (hash(fc.x, k, 'cpr') - 0.5) * 0.02, chamfer: 0.03, tint: [0.84 + hash(fc.x, k, 'cpt') * 0.14, 0.84, 0.8], ao: (p, n) => (n.y > 0.5 ? 1 : 0.7) });
+          a += l;
+        }
+        for (let k = 0; k < 2; k++) {
+          const fx = fc.x * S + 0.75 + k * 1.5;
+          g.box('prop_wood', { c: [fx, -0.55, qz + 0.1], s: [0.2, 1.3, 0.18], chamfer: 0.02, uv: 'along', tint: [0.55, 0.5, 0.45] });
+          g.box('prop_iron', { c: [fx, -0.08, qz + 0.1], s: [0.22, 0.05, 0.2] });
+        }
+        const ring = new THREE.TorusGeometry(0.09, 0.014, 6, 14);
+        g.geometry('prop_iron', ring, new THREE.Matrix4().makeTranslation(cx + 0.3, -0.25, qz + 0.03), { uv: 'world' });
+        ring.dispose();
+      }
       if (fc.x % 2 === 0) {
         const bm = new THREE.Matrix4().makeTranslation(cx + (hash(fc.x, 'bo') - 0.5), 0, ez);
         const post = new THREE.CylinderGeometry(0.14, 0.17, 0.62, 10);

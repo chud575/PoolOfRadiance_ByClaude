@@ -3,6 +3,10 @@ import { getLambertMaterial, getWindowMaterial } from '../../render/materials.js
 import { getTextureSet } from '../../render/textures/index.js';
 import { GeoBuilder, hash } from './GeoBuilder.js';
 import { CELL_SIZE } from './BlockBuilder.js';
+import { buildCog, drawSail } from './Ships.js';
+import { createFlameBatch, FLAME_UNIFORMS } from '../../render/lighting.js';
+
+const PROP_TIME = FLAME_UNIFORMS.uTime;
 
 const S = CELL_SIZE;
 
@@ -173,6 +177,7 @@ export function buildSkyline(map, ts, opts = {}) {
   wgeo.rotateX(-Math.PI / 2);
   const uv = wgeo.attributes.uv;
   for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 160, uv.getY(i) * 90);
+  if (harbour) sunGlitter(water, opts.sunDir, opts.sunColor);
   const wmesh = new THREE.Mesh(wgeo, water);
   wmesh.position.set(cx, harbour ? -0.42 : -2.6, harbour ? H + 442 : H + 26 + 450);
   wmesh.receiveShadow = false;
@@ -181,33 +186,61 @@ export function buildSkyline(map, ts, opts = {}) {
   own.push(wgeo, water);
   // quay wall along the harbour
   if (!harbour) g.box('arch_stone_cold', { c: [cx, -2.2, H + 26], s: [800, 1.4, 1.6], ao: 0.8 });
+  const rig = { sails: [], lines: [] };
+  const shadows = [];
+  let beacon = null;
   if (harbour) {
-    // moored and anchored cogs: hull, castles, mast, yard, furled sail, stays
-    for (let k = 0; k < 7; k++) {
-      const x = cx + (hash(seedBase, k, 'hx') - 0.5) * 120;
-      const z = H + 14 + k * 9 + hash(seedBase, k, 'hz') * 10;
-      const len = 9 + hash(k, 'hl') * 5;
-      const rot = (hash(k, 'hr') - 0.5) * 0.8;
-      const M = (dx, dy, dz) => new THREE.Matrix4().makeTranslation(x, 0, z).multiply(new THREE.Matrix4().makeRotationY(rot)).multiply(new THREE.Matrix4().makeTranslation(dx, dy, dz));
-      g.box('arch_beam_dark', { matrix: M(0, 0.1, 0), s: [len * 0.8, 2.2, 3.2], chamfer: 0.7, ao: 0.7 });
-      g.box('arch_beam_dark', { matrix: M(len * 0.42, 0.5, 0).multiply(new THREE.Matrix4().makeRotationZ(0.35)), s: [len * 0.3, 1.6, 2.6], chamfer: 0.6, ao: 0.7 });
-      g.box('arch_beam_dark', { matrix: M(-len * 0.42, 0.45, 0).multiply(new THREE.Matrix4().makeRotationZ(-0.3)), s: [len * 0.25, 1.6, 2.8], chamfer: 0.5, ao: 0.7 });
-      g.box('arch_beam_dark', { matrix: M(len * 0.38, 1.2, 0), s: [len * 0.22, 1.2, 2.6], chamfer: 0.15, ao: 0.75 });
-      g.box('arch_beam_dark', { matrix: M(-len * 0.4, 1.0, 0), s: [len * 0.18, 0.9, 2.4], chamfer: 0.15, ao: 0.75 });
-      g.box('arch_beam_dark', { matrix: M(0, 6.5, 0), s: [0.28, 12, 0.28], ao: 0.7 });
-      g.box('arch_beam_dark', { matrix: M(0, 10.5, 0), s: [0.16, 0.16, 6.5], ao: 0.7 });
-      g.box('arch_plaster', { matrix: M(0, 10.2, 0), s: [0.4, 0.5, 6.2], chamfer: 0.15, ao: 0.85 });
-      g.box('arch_beam_dark', { matrix: M(len * 0.25, 6.2, 0).multiply(new THREE.Matrix4().makeRotationZ(-0.62)), s: [0.05, 13, 0.05], ao: 0.7 });
-      g.box('arch_beam_dark', { matrix: M(-len * 0.25, 6.2, 0).multiply(new THREE.Matrix4().makeRotationZ(0.62)), s: [0.05, 13, 0.05], ao: 0.7 });
+    // moored and anchored cogs (clinker hulls, castles, set or furled sails, shrouds with ratlines)
+    for (let k = 0; k < 6; k++) {
+      const x = cx + (k - 2.5) * 22 + (hash(seedBase, k, 'hx') - 0.5) * 10;
+      const z = H + 22 + (k % 3) * 16 + hash(seedBase, k, 'hz') * 10;
+      const len = 13 + hash(k, 'hl') * 6;
+      const rot = Math.PI / 2 + (hash(k, 'hr') - 0.5) * 1.4 + (k % 2 ? Math.PI : 0);
+      const M = new THREE.Matrix4().makeTranslation(x, -0.2, z).multiply(new THREE.Matrix4().makeRotationY(rot)).multiply(new THREE.Matrix4().makeRotationX((hash(k, 'heel') - 0.5) * 0.06));
+      buildCog(g, M, { len, seed: k + 1, set: k === 1 || k === 4 }, rig);
+      // the hull's reflection darkens the water under it
+      shadows.push([x, z, len * 0.7]);
     }
-    // breakwater running out into the bay with a beacon tower at its head
-    g.box('arch_stone_cold', { c: [cx - 70, -0.2, H + 70], s: [6, 1.6, 120], rotY: 0.5, ao: 0.75 });
+    // breakwater running out into the bay: rough blocks with a paved top and a beacon tower at its head
+    {
+      const bx = cx - 70;
+      const bz = H + 70;
+      const ang = 0.5;
+      const dirx = Math.sin(ang);
+      const dirz = Math.cos(ang);
+      for (let k = 0; k < 40; k++) {
+        const t = (k / 40 - 0.5) * 120;
+        const px = bx + dirx * t;
+        const pz = bz + dirz * t;
+        g.box('arch_stone_cold', { c: [px, -0.35 + hash(k, 'bwh') * 0.15, pz], s: [6 + hash(k, 'bww') * 0.8, 1.5, 3.1], rotY: ang + (hash(k, 'bwr') - 0.5) * 0.06, chamfer: 0.25, ao: 0.75, tint: [0.8 + hash(k, 'bt') * 0.25, 0.8 + hash(k, 'bt') * 0.25, 0.8 + hash(k, 'bt') * 0.22] });
+        if (k % 3 === 0) g.box('arch_ruin', { c: [px + dirz * 3.4, -0.6, pz - dirx * 3.4], s: [1.6, 1.0, 1.4], rotY: hash(k, 'rr') * 3, chamfer: 0.3, ao: 0.6 });
+      }
+    }
     tower(g, cx - 40, H + 122, 3.2, 16, false, 'beacon', night, winLit, -0.6);
-    // the far shore: a low blue line of hills across the water
-    for (let k = 0; k < 24; k++) {
-      const x0 = cx - 600 + k * 50;
-      const hh = 4 + noise1(k * 0.7 + 3.3) * 10;
-      g.quad('arch_mud', new THREE.Vector3(x0, -0.5, H + 520), new THREE.Vector3(x0 + 52, -0.5, H + 520), new THREE.Vector3(x0 + 52, hh * 0.8, H + 520), new THREE.Vector3(x0, hh, H + 520), null, { ao: 0.5 });
+    beacon = new THREE.Vector3(cx - 40, -0.6 + 16 + 2.4, H + 122);
+    // Sokol Keep on its island: a dark crag with a black curtain wall and keep
+    {
+      const ix = cx + 150;
+      const iz = H + 300;
+      for (let k = 0; k < 14; k++) {
+        const a = (k / 14) * Math.PI * 2;
+        const r = 26 + hash(k, 'isl') * 10;
+        const rock = new THREE.IcosahedronGeometry(1, 1);
+        g.geometry('arch_ruin', rock, new THREE.Matrix4().makeTranslation(ix + Math.cos(a) * r * 0.6, -1, iz + Math.sin(a) * r * 0.4).multiply(new THREE.Matrix4().makeScale(r * 0.55, 6 + hash(k, 'ih') * 8, r * 0.45)), { uv: 'world', ao: 0.6, tint: [0.55, 0.55, 0.58] });
+        rock.dispose();
+      }
+      g.box('arch_stone_cold', { c: [ix, 10, iz], s: [34, 8, 20], ao: 0.6, tint: [0.35, 0.35, 0.38] });
+      for (const [dx, dz] of [[-17, -10], [17, -10], [-17, 10], [17, 10]]) tower(g, ix + dx, iz + dz, 2.4, 14, false, `sokol${dx}${dz}`, night, winLit, 6);
+      tower(g, ix + 4, iz + 2, 4.5, 26, false, 'sokolkeep', night, winLit, 6);
+    }
+    // the far shore: two receding ridges of hills across the water, with a dark tree line
+    for (const [dist, amp, base, tnt] of [[520, 14, 4, 0.55], [380, 7, 1.5, 0.7]]) {
+      for (let k = 0; k < 48; k++) {
+        const x0 = cx - 700 + k * 30;
+        const h0 = base + noise1(k * 0.35 + dist) * amp + noise1(k * 1.7 + dist * 0.3) * amp * 0.25;
+        const h1 = base + noise1((k + 1) * 0.35 + dist) * amp + noise1((k + 1) * 1.7 + dist * 0.3) * amp * 0.25;
+        g.quad('arch_mud', new THREE.Vector3(x0, -0.5, H + dist), new THREE.Vector3(x0 + 30, -0.5, H + dist), new THREE.Vector3(x0 + 30, h1, H + dist), new THREE.Vector3(x0, h0, H + dist), null, { ao: 0.5, tint: [tnt * 0.8, tnt * 0.9, tnt] });
+      }
     }
   }
   // a few moored cogs' masts as silhouettes
@@ -228,6 +261,64 @@ export function buildSkyline(map, ts, opts = {}) {
     mesh.receiveShadow = true;
     group.add(mesh);
     own.push(geo);
+  }
+  // sails (cloth) and rigging (lines)
+  if (rig.sails.length) {
+    const arr = rig.sails;
+    const n = arr.length / 5;
+    const pos = new Float32Array(n * 3);
+    const uvs = new Float32Array(n * 2);
+    for (let i = 0; i < n; i++) {
+      pos.set([arr[i * 5], arr[i * 5 + 1], arr[i * 5 + 2]], i * 3);
+      uvs.set([arr[i * 5 + 3], arr[i * 5 + 4]], i * 2);
+    }
+    const sg = new THREE.BufferGeometry();
+    sg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    sg.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    sg.computeVertexNormals();
+    const c = document.createElement('canvas');
+    c.width = 256;
+    c.height = 256;
+    drawSail(c.getContext('2d'), 256, 256, 11);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 4;
+    const sm = new THREE.MeshLambertMaterial({ map: tex, side: THREE.DoubleSide, color: night > 0.5 ? 0x50586a : 0xf0e8dc });
+    const mesh = new THREE.Mesh(sg, sm);
+    mesh.renderOrder = 5;
+    group.add(mesh);
+    own.push(sg, sm, tex);
+  }
+  if (rig.lines.length) {
+    const lg = new THREE.BufferGeometry();
+    lg.setAttribute('position', new THREE.Float32BufferAttribute(rig.lines, 3));
+    const lm = new THREE.LineBasicMaterial({ color: 0x1a140f, transparent: true, opacity: 0.75 });
+    const lines = new THREE.LineSegments(lg, lm);
+    lines.renderOrder = 5;
+    group.add(lines);
+    own.push(lg, lm);
+  }
+  if (shadows.length) {
+    // dark reflections of the hulls on the water (cheap stand-in for planar reflection)
+    const pos = [];
+    for (const [x, z, r] of shadows) {
+      for (const [a, c] of [[-1, -1], [1, 1], [1, -1], [-1, -1], [-1, 1], [1, 1]]) pos.push(x + a * r, -0.38, z + c * r * 0.45);
+    }
+    const sg = new THREE.BufferGeometry();
+    sg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    const uvs = [];
+    for (let i = 0; i < shadows.length; i++) for (const [a, c] of [[0, 0], [1, 1], [1, 0], [0, 0], [0, 1], [1, 1]]) uvs.push(a, c);
+    sg.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    const sm = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false, alphaMap: softAlpha() });
+    const mesh = new THREE.Mesh(sg, sm);
+    mesh.renderOrder = 7;
+    group.add(mesh);
+    own.push(sg, sm);
+  }
+  if (beacon && (night > 0.2 || (opts.hour ?? 12) > 16.5)) {
+    const fl = createFlameBatch([{ pos: beacon, scale: 2.6 }]);
+    group.add(fl);
+    own.push(fl.geometry);
   }
   const lit = winLit.build().get('win');
   if (lit) {
@@ -251,6 +342,53 @@ export function buildSkyline(map, ts, opts = {}) {
       group.removeFromParent();
     },
   };
+}
+
+/**
+ * Sun glitter on the sea: a sparkling path of facets toward the low sun
+ * (high-power specular on the perturbed normal, broken up by a sparkle noise).
+ */
+function sunGlitter(mat, sunDir, sunColor) {
+  if (!sunDir) return;
+  const uSun = { value: sunDir.clone().normalize() };
+  const uCol = { value: new THREE.Color(sunColor ?? 0xffd8a0) };
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uGlSun = uSun;
+    sh.uniforms.uGlCol = uCol;
+    sh.uniforms.uTime = PROP_TIME;
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vGlW;').replace('#include <fog_vertex>', '#include <fog_vertex>\nvGlW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform vec3 uGlSun; uniform vec3 uGlCol; uniform float uTime; varying vec3 vGlW;\nfloat glH(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }')
+      .replace(
+        '#include <lights_fragment_end>',
+        `#include <lights_fragment_end>
+        {
+          vec3 sv = normalize((viewMatrix * vec4(uGlSun, 0.0)).xyz);
+          vec3 r = reflect(-normalize(vViewPosition), normal);
+          float lobe = pow(max(dot(r, sv), 0.0), 60.0);
+          vec2 cell = floor(vGlW.xz * 3.0 + vec2(uTime * 0.7, uTime * 0.4));
+          float sparkle = step(0.82, glH(cell)) * (0.6 + 0.4 * sin(uTime * 6.0 + glH(cell + 3.1) * 40.0));
+          float broad = pow(max(dot(r, sv), 0.0), 8.0) * 0.08;
+          reflectedLight.directSpecular += uGlCol * (lobe * (0.4 + sparkle * 4.0) + broad);
+        }`,
+      );
+  };
+  mat.customProgramCacheKey = () => 'sea_glitter';
+}
+
+let _softAlpha = null;
+function softAlpha() {
+  if (_softAlpha) return _softAlpha;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grd.addColorStop(0, '#fff');
+  grd.addColorStop(1, '#000');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 64, 64);
+  _softAlpha = new THREE.CanvasTexture(c);
+  return _softAlpha;
 }
 
 function noise1(x) {
@@ -388,8 +526,22 @@ function tower(g, x, z, r, h, broken, id, night, winLit, base = -0.5) {
   g.geometry(broken ? 'arch_ruin' : 'arch_stone_cold', geo, new THREE.Matrix4().makeTranslation(x, base + h / 2, z), { uv: 'world' });
   geo.dispose();
   if (!broken) {
+    // string courses so the shaft reads as built masonry at a distance, and a darker weathered base
+    for (const f of [0.33, 0.66]) {
+      const ring = new THREE.CylinderGeometry(r * 1.06, r * 1.06, 0.35, sides, 1, true);
+      g.geometry('arch_trim', ring, new THREE.Matrix4().makeTranslation(x, base + h * f, z), { uv: 'world', ao: 0.8, tint: [0.75, 0.73, 0.7] });
+      ring.dispose();
+    }
+    const plinth = new THREE.CylinderGeometry(r * 1.12, r * 1.2, 1.6, sides, 1, true);
+    g.geometry('arch_stone_cold', plinth, new THREE.Matrix4().makeTranslation(x, base + 0.8, z), { uv: 'world', ao: 0.6, tint: [0.6, 0.62, 0.6] });
+    plinth.dispose();
+    for (let k = 0; k < 3; k++) {
+      // dark slit windows up the shaft
+      const a = k * 2.1 + hash(id, 'sl') * 6;
+      g.box('arch_beam_dark', { c: [x + Math.cos(a) * (r + 0.02), base + h * (0.25 + k * 0.22), z + Math.sin(a) * (r + 0.02)], s: [0.25, 1.1, 0.3], rotY: -a, tint: [0.15, 0.12, 0.1] });
+    }
     // corbelled parapet + merlons, or a conical roof
-    if (hash(id, 'cone') < 0.5) {
+    if (hash(id, 'cone') < 0.5 && id !== 'beacon') {
       const cone = new THREE.ConeGeometry(r * 1.25, r * 2.4, sides, 1, true);
       g.geometry('arch_roof_slate', cone, new THREE.Matrix4().makeTranslation(x, base + h + r * 1.2, z), { uv: 'world', ao: 0.85 });
       cone.dispose();

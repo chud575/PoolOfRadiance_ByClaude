@@ -16,7 +16,7 @@ import { dressDungeon, BANE_FLAME, BANE_LIGHT } from './DungeonDressing.js';
 import { tilesetFor, tilesetMaterials } from './tilesets.js';
 import { hasDemoMap, getDemoMap } from './demoMaps.js';
 import { deriveStats } from '../../rules/character.js';
-import { headBobEnabled } from './exploreRules.js';
+import { headBobEnabled, inferHarbour } from './exploreRules.js';
 import { SHOPS } from '../../data/shops.js';
 
 const STEP_TIME = 0.34;
@@ -45,6 +45,8 @@ export default class ExploreScene extends Scene {
     this.demo = !hasMap(loc.map) && hasDemoMap(loc.map);
     this.map = this.demo ? getDemoMap(loc.map) : getMap(loc.map);
     game.location = loc;
+    // a block whose southern row is open water is a waterfront (sea plane, quay edge, shipping)
+    if (this.map.harbour === undefined) this.map.harbour = inferHarbour(this.map);
     this.pos = { x: loc.x, y: loc.y, dir: loc.dir };
     this.hour = Number.isFinite(params.hour) ? params.hour : game.clock.hour + game.clock.minute / 60;
     this.tileset = tilesetFor(this.map, params.tileset);
@@ -70,7 +72,7 @@ export default class ExploreScene extends Scene {
     }
     this._buildShafts();
     if (ts.skyline) {
-      this.skyline = buildSkyline(this.map, ts, { night: this.night, hour: this.hour });
+      this.skyline = buildSkyline(this.map, ts, { night: this.night, hour: this.hour, sunDir: this.keys.night > 0.5 ? this.keys.moonDir : this.keys.trueSunDir, sunColor: this.keys.night > 0.5 ? 0x9db4ff : this.keys.sunCol });
       this.scene3d.add(this.skyline.group);
     }
     this._setupParticles();
@@ -802,7 +804,8 @@ export default class ExploreScene extends Scene {
       const fz = -Math.cos(yaw);
       const sl = Math.hypot(this.sunDir.x, this.sunDir.z) || 1;
       const into = Math.max(0, (fx * this.sunDir.x + fz * this.sunDir.z) / sl);
-      const target = this._baseExposure * (1 + 0.24 * into);
+      // a high sun: looking toward it means shaded faces, so open up; a low sun is in frame, so stop down
+      const target = this._baseExposure * (1 + (this.sunDir.y > 0.4 ? 0.24 : -0.14) * into);
       const cur = this.post.exposure;
       const next = frozen ? target : cur + (target - cur) * Math.min(1, dt * 2.5);
       if (Math.abs(next - cur) > 0.0005) {
