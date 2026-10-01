@@ -380,6 +380,15 @@ export default class ShopScene extends Scene {
       this.listEl.append(h('div.shp-subhead', ['Other services of the temple']), h('div.shp-minis', this._others));
     }
     this._others = null;
+    // the god's creed fills the foot of the board: a carved tablet over the offering box
+    const god = DEITIES[this.shop.deity];
+    if (god?.creed) {
+      this.listEl.append(h('div.shp-creed', { style: { '--god': god.banner ?? '#1d3574' } }, [
+        h('div.shp-creed-head', [h('b', [`${god.name}, ${god.title}`]), h('small', [god.domain ?? ''])]),
+        h('ol', god.creed.map((c) => h('li', [c]))),
+        god.tithe ? h('p', [god.tithe]) : null,
+      ]));
+    }
   }
 
   service(id, cost) {
@@ -468,6 +477,10 @@ export default class ShopScene extends Scene {
       this.listEl.append(h('div.shp-row', [h('span.ic', [ic]), h('span.t', [t]), h('span.d', [d]), h('span.c', [c]), h('button.por-btn', { onclick: fn }, ['Choose'])]));
     }
     this.listEl.append(h('div.shp-rumor', [this.lastRumour ?? this.shop.ambience ?? 'The room is loud with dice and old songs. Someone is always just about to tell a story.']));
+    // bills pinned to the post by the hearth
+    if (this.shop.notices?.length) {
+      this.listEl.append(h('div.shp-subhead', ['Pinned by the hearth']), h('div.shp-notices', this.shop.notices.map((n, i) => h('div.shp-notice', { style: { '--rot': `${[-1.2, 0.8, -0.4, 1.1][i % 4]}deg` } }, [h('b', [n.head]), n.text]))));
+    }
   }
 
   round() {

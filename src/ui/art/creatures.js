@@ -50,7 +50,7 @@ const SPECIES = {
 
 /** Relative height by creature (human = 1). */
 export function creatureScale(id) {
-  const t = { kobold: 0.68, koboldChief: 0.76, goblin: 0.66, giantRat: 0.42, wolf: 0.55, giantFrog: 0.5, giantCentipede: 0.38, giantSpider: 0.72, ogre: 1.45, hillGiant: 1.75, troll: 1.4, bugbear: 1.2, gnoll: 1.15, orcLeader: 1.08, hobgoblinChief: 1.05, tyranthraxus: 2.6, shadow: 1.0, spectre: 1.1 };
+  const t = { kobold: 0.76, koboldChief: 0.84, goblin: 0.66, giantRat: 0.42, wolf: 0.55, giantFrog: 0.5, giantCentipede: 0.38, giantSpider: 0.72, ogre: 1.45, hillGiant: 1.75, troll: 1.4, bugbear: 1.2, gnoll: 1.15, orcLeader: 1.08, hobgoblinChief: 1.05, tyranthraxus: 2.6, shadow: 1.0, spectre: 1.1 };
   return t[id] ?? 1;
 }
 

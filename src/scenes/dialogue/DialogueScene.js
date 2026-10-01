@@ -256,6 +256,7 @@ export default class DialogueScene extends Scene {
   }
 
   _setSpeaker(npcId) {
+    this.speakerId = npcId;
     clear(this.portrait);
     clear(this.speaker);
     const npc = npcId ? NPCS[npcId] : null;
@@ -387,6 +388,9 @@ export default class DialogueScene extends Scene {
     if (text && head && text.toLowerCase() === String(head).toLowerCase()) text = SETTING_WHERE[this.script?.art?.setting] ?? (hasMap(loc.map) ? getMap(loc.map).name : '');
     if (text && head && text.toLowerCase() === String(head).toLowerCase()) text = '';
     this.sideInfo.append(h('div.dlg-place', [h('b', [head]), text ?? '']));
+    // a line on the person before you, from the sage's notes
+    const npc = this.speakerId ? NPCS[this.speakerId] : null;
+    if (npc?.desc) this.sideInfo.append(h('div.dlg-lore', [h('em', [npc.name]), npc.desc]));
   }
 
   _sideEncounter(enc) {
@@ -418,6 +422,13 @@ export default class DialogueScene extends Scene {
     threat.style.setProperty('--c1', cols[0]);
     threat.style.setProperty('--c2', cols[1]);
     this.sideInfo.append(list, threat);
+    // the sage's notes on the foe: a line of lore and the Gold Box stat line
+    const lead = MONSTERS[enc.groups[0]?.monster];
+    if (lead) {
+      const hdTxt = lead.hd < 1 ? '½' : `${lead.hd}${lead.hpBonus ? (lead.hpBonus > 0 ? `+${lead.hpBonus}` : lead.hpBonus) : ''}`;
+      const stats = [`AC ${lead.ac}`, `HD ${hdTxt}`, `Dmg ${(lead.attacks ?? []).join('/') || '—'}`, `MV ${lead.move}`];
+      this.sideInfo.append(h('div.dlg-lore', [lead.desc ? lead.desc : `${lead.plural ?? lead.name} of the ruins.`, h('div.dlg-stats', stats.map((t) => h('span', [t])))]));
+    }
   }
 
   // ------------------------------------------------------------------ scripts
@@ -496,7 +507,13 @@ export default class DialogueScene extends Scene {
     if (parley) return this.parleyMenu();
     this._setText([enc.intro ?? `You encounter ${enc.name}.`], { see: youSee(enc) });
     const labels = { combat: ['Combat', 'C'], wait: ['Wait', 'W'], flee: ['Flee', 'F'], parley: ['Parlay', 'P'] };
-    this._setChoices((enc.options ?? ['combat', 'flee']).map((o) => ({ label: labels[o][0], key: labels[o][1], isLeave: false, run: () => this.encounterChoice(o) })));
+    const notes = {
+      combat: 'Draw steel. The fight moves to the battle map.',
+      wait: 'Hold your ground and see what they do.',
+      flee: 'Fall back. The fleetest party gets away.',
+      parley: 'Speak first. Choose your manner with care.',
+    };
+    this._setChoices((enc.options ?? ['combat', 'flee']).map((o) => ({ label: labels[o][0], key: labels[o][1], tip: notes[o], isLeave: false, run: () => this.encounterChoice(o) })));
   }
 
   _zoneName() {

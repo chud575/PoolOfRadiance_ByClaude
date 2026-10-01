@@ -68,7 +68,7 @@ export function buildNpc(spec) {
   const crouch = P.crouch ?? 0;
   const hipH = (short ? 0.4 : 0.49) * (1 - crouch * 0.25);
   const torso = (short ? 0.3 : 0.33);
-  const hr = short ? 0.074 : 0.063;
+  const hr = short ? 0.076 : 0.066;
   const lean = (P.lean ?? 0) + age * 0.12 + (spec.hunch ?? 0);
   const twist = P.twist ?? 0;
   const TR = mul3(rotY(twist), rotX(lean));
@@ -78,8 +78,8 @@ export function buildNpc(spec) {
   const waist = add(pelvis, scl(up, 0.1));
   const chest = add(pelvis, scl(up, torso * 0.64));
   const neck = add(pelvis, scl(up, torso));
-  const shW = (fem ? 0.097 : 0.114) * b;
-  const sh = { [-1]: add(chest, T([-shW, 0.075, -0.012])), [1]: add(chest, T([shW, 0.075, -0.012])) };
+  const shW = (fem ? 0.09 : 0.104) * b;
+  const sh = { [-1]: add(chest, T([-shW, 0.064, -0.012])), [1]: add(chest, T([shW, 0.064, -0.012])) };
   const headC = add(neck, T([0, hr * 1.22, hr * 0.18]));
 
   // ---- legs (hidden under long skirts: only the shoe tips show)
@@ -111,7 +111,7 @@ export function buildNpc(spec) {
   f.ell([0, 0, 0], [(fem ? 0.098 : 0.09) * b, 0.075, 0.068 * b], topM, tg);
   f.ell([0, 0.1, 0.004], [(fem ? 0.07 : 0.08) * b, 0.07, (fem ? 0.056 : 0.062) * b], topM, tg);
   f.ell([0, torso * 0.64, 0], [(fem ? 0.09 : 0.105) * b, 0.098, (fem ? 0.066 : 0.074) * b], topM, tg);
-  f.ell([0, torso * 0.64 + 0.055, -0.006], [(fem ? 0.1 : 0.118) * b, 0.05, 0.066 * b], topM, tg);
+  f.ell([0, torso * 0.64 + 0.05, -0.006], [(fem ? 0.094 : 0.108) * b, 0.046, 0.064 * b], topM, tg);
   if (fem) for (const d of [-1, 1]) f.ell([d * 0.04, torso * 0.6, 0.05], [0.044, 0.042, 0.04], topM, { group: 'torso', k: 0.03 });
   if (spec.belly) f.ell([0, 0.12, 0.04], [0.085 * b, 0.09, 0.07 * b], topM, tg);
   // neckline: a chemise or shirt collar showing at the throat, skin above it
@@ -194,15 +194,19 @@ export function buildNpc(spec) {
     hands[d] = { wrist, dir, elbow };
     const sleeveTop = O.topKind === 'doublet' || O.topKind === 'chain' || robe ? topM : shirtM;
     const sg = { group: `arm${d}`, k: 0.025 };
-    f.sphere(sh[d], 0.05 * b, sleeveTop, { group: 'torso', k: 0.04 });
+    f.sphere(sh[d], 0.043 * b, sleeveTop, { group: 'torso', k: 0.05 });
     const sleeves = O.sleeves ?? (robe ? 'bell' : 'long');
     if (sleeves === 'puffed') f.ell(lerp3(sh[d], elbow, 0.35), [0.058 * b, 0.075, 0.056 * b], sleeveTop, { ...sg, R: alignY(sub(elbow, sh[d])) });
-    f.cone(sh[d], elbow, 0.047 * b, 0.039 * b, sleeveTop, sg);
+    f.cone(sh[d], elbow, 0.042 * b, 0.036 * b, sleeveTop, sg);
     if (sleeves === 'bell') {
       // wide sleeve: flares from the elbow and hangs below the wrist
-      const hang = add(wrist, [0, -0.04, 0]);
-      f.cone(elbow, lerp3(elbow, hang, 1.05), 0.043 * b, 0.078 * b, sleeveTop, { ...sg, disp: { amp: 0.007, freq: 8, twist: 1 } });
-      f.carve('cone', lerp3(elbow, hang, 0.75), lerp3(elbow, hang, 1.3), 0.055 * b, { group: `arm${d}`, k: 0.01, rb: 0.066 * b });
+      // gravity: on a raised or forward arm the wide cuff drapes down off the
+      // forearm instead of opening toward the viewer like a bowl
+      const fw = norm(sub(wrist, elbow));
+      const lift = Math.max(0, fw[1] + 0.35) + Math.max(0, fw[2]) * 0.6;
+      const hang = add(wrist, [0, -0.025 - 0.09 * lift, -0.02 * lift]);
+      f.cone(elbow, lerp3(elbow, hang, 1.0), 0.038 * b, 0.064 * b, sleeveTop, { ...sg, disp: { amp: 0.006, freq: 9, twist: 1 } });
+      f.carve('cone', lerp3(elbow, hang, 0.78), lerp3(elbow, hang, 1.3), 0.046 * b, { group: `arm${d}`, k: 0.01, rb: 0.056 * b });
       f.cone(lerp3(elbow, wrist, 0.6), wrist, 0.027, 0.023, skinM, { group: `wrist${d}`, k: 0.01 });
     } else if (sleeves === 'rolled') {
       f.cone(lerp3(elbow, wrist, 0.12), wrist, 0.034 * b, 0.024 * b, skinM, { group: `forearm${d}`, k: 0.02 });

@@ -111,6 +111,11 @@ export const SHOPS = {
     greeting: 'Sit, sit. Ale\'s a copper, stew\'s two, and gossip is free if you drink enough of the first.',
     drink: 1,
     ambience: 'Smoke hangs under the beams. A dwarf is losing at dice to a halfling who is not cheating, quite; two off-duty watchmen argue about the Slum Wall; by the fire an old sailor waits for someone to buy him a drink and ask for a story.',
+    notices: [
+      { head: 'Reward', text: 'Two silver the pair for kobold ears, brought to the Watch at the Slum Wall. No elf ears. We can tell.' },
+      { head: 'Wanted', text: 'Strong backs for the Cadorna Textile House. Ask for Master Porphyrys. Discretion paid.' },
+      { head: 'Lost', text: 'A grey cat answering to Duchess, last seen near Kuto\'s Well. Please do not look for her there.' },
+    ],
     rumors: [
       { journal: 8, text: 'An old guard stirs his stew. "Kuto\'s Well? The kobolds use it like a front door."' },
       { journal: 20, text: 'An old sailor clears his throat. "You want a story? I\'ll tell you a story."' },
@@ -150,8 +155,8 @@ export const SHOPS = {
 
 /** Temple deity presentation (colours used by the painted temple interior). */
 export const DEITIES = {
-  tyr: { name: 'Tyr', title: 'the Even-Handed', symbol: 'scales', glass: ['#2a4ea8', '#e8c860', '#f4f0e0'], banner: '#1d3574' },
-  sune: { name: 'Sune', title: 'Firehair', symbol: 'heart', glass: ['#b0283c', '#ff9aa8', '#ffd890'], banner: '#7c1e2c' },
-  tempus: { name: 'Tempus', title: 'the Foehammer', symbol: 'sword', glass: ['#8a2a1a', '#c8c8d0', '#e8a040'], banner: '#5a1a14' },
+  tyr: { domain: 'Justice · Law · Duty', creed: ['Weigh every deed, your own first.', 'Keep the oath though it cost the hand that swore it.', 'Let no wrong go unanswered, and no answer go beyond the wrong.'], tithe: 'The blind god sees the coin you hold back. So does Brother Ohlo.', name: 'Tyr', title: 'the Even-Handed', symbol: 'scales', glass: ['#2a4ea8', '#e8c860', '#f4f0e0'], banner: '#1d3574' },
+  sune: { domain: 'Beauty · Love · Passion', creed: ['Cherish what is lovely, and make lovely what is not.', 'Let no ugliness of spirit go unchallenged.', 'Follow the heart; it is braver than the head.'], tithe: 'Roses are laid at the mirror each dawn. Gold, the priestesses say, is only a warmer rose.', name: 'Sune', title: 'Firehair', symbol: 'heart', glass: ['#b0283c', '#ff9aa8', '#ffd890'], banner: '#7c1e2c' },
+  tempus: { domain: 'War · Battle · Valour', creed: ['Face the foe; never turn a blade on the unarmed.', 'Honour the fallen of both sides.', 'War is a storm. Stand in it.'], tithe: 'Old weapons hang on the walls, each the price of a soldier mended.', name: 'Tempus', title: 'the Foehammer', symbol: 'sword', glass: ['#8a2a1a', '#c8c8d0', '#e8a040'], banner: '#5a1a14' },
   bane: { name: 'Bane', title: 'the Black Hand', symbol: 'hand', glass: ['#1a3a1a', '#60ff80', '#101810'], banner: '#101410' },
 };

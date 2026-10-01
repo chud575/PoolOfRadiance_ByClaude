@@ -41,7 +41,7 @@ const eyeMat = (c) => mat('#000000', { emissive: c, ink: 0, rough: 0.2, spec: 0.
  * headR: head radius; build: girth; arm: arm length factor.
  */
 export const SPECIES = {
-  kobold: { head: 'kobold', skin: '#8a4a2a', skin2: '#4a3428', skin3: '#a8783a', pattern: 'scales', legs: 0.4, torso: 0.3, headR: 0.085, build: 0.8, digi: true, tail: 0.42, hunch: 0.22, cloth: ['#4a3a28', '#5a2a1a', '#3a3424', '#6a5a3a'], weapons: ['spear', 'spear', 'spear', 'shortsword', 'club', 'axe'], shield: 0.25, helm: 0.3, eyes: '#ffb020', claws: true },
+  kobold: { head: 'kobold', skin: '#7e4026', skin2: '#3e2a22', skin3: '#9a6a34', pattern: 'scales', legs: 0.4, torso: 0.3, headR: 0.085, build: 0.8, digi: true, tail: 0.42, hunch: 0.22, cloth: ['#4a3a28', '#5a2a1a', '#3a3424', '#6a5a3a'], weapons: ['spear', 'spear', 'spear', 'shortsword', 'club', 'axe'], shield: 0.25, helm: 0.3, eyes: '#ffb020', claws: true },
   koboldChief: { head: 'kobold', skin: '#7a6a5a', skin2: '#a89070', pattern: 'scales', legs: 0.4, torso: 0.31, headR: 0.085, build: 0.92, digi: true, tail: 0.45, hunch: 0.18, cloth: ['#6a1e1a'], cape: '#5a1a14', weapons: ['longsword'], shield: 0, helm: 1, eyes: '#ffc030', claws: true, chief: true },
   goblin: { head: 'goblin', skin: '#7a8a3a', skin2: '#9aa04a', pattern: 'skin', legs: 0.42, torso: 0.3, headR: 0.09, build: 0.82, hunch: 0.15, cloth: ['#4a3020', '#3a3a28', '#5a2a1a'], weapons: ['shortsword', 'club', 'spear', 'axe'], shield: 0.35, helm: 0.3, eyes: '#ffe040' },
   orc: { head: 'orc', skin: '#5e6e44', skin2: '#4a5a34', pattern: 'skin', legs: 0.47, torso: 0.33, headR: 0.07, build: 1.18, hunch: 0.15, cloth: ['#3a2a1c', '#2a2218'], armor: 'scraps', weapons: ['axe', 'axe', 'mace', 'longsword', 'spear'], shield: 0.3, helm: 0.4, eyes: '#ff3a18' },
@@ -226,21 +226,38 @@ function head(f, kind, sp, skinM, R, o = {}) {
   };
   switch (kind) {
     case 'kobold': {
-      f.ell([0, 0.05, -0.1], [0.9, 0.82, 0.95], skinM, g);
-      // long reptilian snout, upper jaw and lower jaw slightly agape
-      f.cone([0, -0.02, 0.35], [0, -0.18, 1.55], 0.56, 0.3, skinM, g);
-      f.cone([0, -0.42, 0.25], [0, -0.48, 1.3], 0.36, 0.2, skinM, g);
-      f.cone([0, -0.3, 0.45], [0, -0.33, 1.32], 0.3, 0.16, M.mouth, { group: null, blend: 0 });
-      for (let i = 0; i < 5; i++) for (const d of [-1, 1]) f.cone([d * (0.2 - i * 0.02), -0.2, 0.62 + i * 0.16], [d * (0.19 - i * 0.02), -0.34, 0.64 + i * 0.16], 0.045, 0.012, M.tooth, hard);
-      for (const d of [-1, 1]) f.sphere([d * 0.12, -0.08, 1.6], 0.06, M.dark, hard);
-      // brow ridges & horns
-      for (const d of [-1, 1]) {
-        f.ell([d * 0.42, 0.36, 0.55], [0.32, 0.16, 0.3], skinM, g);
-        f.cone([d * 0.45, 0.55, -0.15], [d * 0.85, 1.25, -0.75], 0.2, 0.05, M.bone, hard);
-        // frilled ear
-        f.ell([d * 0.85, 0.15, -0.35], [0.12, 0.38, 0.3], skinM, { ...g, R: rotZ(d * 0.5) });
+      // narrow cranium swept back over a long, dog-like reptilian muzzle
+      f.ell([0, 0.12, -0.18], [0.74, 0.7, 0.84], skinM, g);
+      f.ell([0, -0.12, 0.05], [0.66, 0.5, 0.62], skinM, g);
+      // upper jaw: a tapering muzzle with a flat nasal ridge on top
+      f.cone([0, -0.04, 0.3], [0, -0.16, 1.82], 0.46, 0.17, skinM, g);
+      f.ell([0, 0.1, 0.95], [0.26, 0.13, 0.8], skinM, { ...g, R: rotX(0.08) });
+      // lower jaw hanging slightly open, a dark mouth and a tongue between
+      f.cone([0, -0.4, 0.2], [0, -0.6, 1.5], 0.3, 0.12, skinM, g);
+      f.cone([0, -0.3, 0.42], [0, -0.42, 1.52], 0.27, 0.1, M.mouth, { group: null, blend: 0 });
+      f.cone([0, -0.42, 0.6], [0, -0.48, 1.25], 0.12, 0.07, mat('#8a2a2a', { rough: 0.35, spec: 0.5 }), { group: null, blend: 0 });
+      // needle teeth along both jaws
+      for (let i = 0; i < 6; i++) for (const d of [-1, 1]) {
+        const z = 0.62 + i * 0.17;
+        const x = d * (0.24 - i * 0.025);
+        f.cone([x, -0.2 - i * 0.02, z], [x * 0.96, -0.36 - i * 0.02, z + 0.02], 0.04, 0.008, M.tooth, hard);
+        if (i % 2 === 0) f.cone([x * 0.9, -0.5 - i * 0.022, z], [x * 0.88, -0.38 - i * 0.022, z + 0.02], 0.032, 0.007, M.tooth, hard);
       }
-      eyes(0.45, 0.2, 0.72, 0.13, true);
+      // nostrils at the snout tip
+      for (const d of [-1, 1]) f.ell([d * 0.08, -0.06, 1.8], [0.045, 0.03, 0.04], M.dark, hard);
+      // heavy brow ridges slanting down toward the snout: a scowl
+      for (const d of [-1, 1]) {
+        f.ell([d * 0.36, 0.34, 0.58], [0.3, 0.12, 0.3], skinM, { ...g, R: rotZ(d * 0.38) });
+        f.ell([d * 0.5, -0.12, 0.4], [0.18, 0.16, 0.28], skinM, g); // cheek scute
+        // short horns curving back from the brow
+        f.cone([d * 0.32, 0.58, 0.0], [d * 0.46, 0.92, -0.42], 0.17, 0.09, M.bone, hard);
+        f.cone([d * 0.46, 0.92, -0.42], [d * 0.5, 1.0, -0.85], 0.09, 0.02, M.bone, hard);
+        // swept, finned ears
+        f.ell([d * 0.68, 0.18, -0.5], [0.07, 0.24, 0.42], skinM, { ...g, R: mul3(rotY(d * 0.5), rotX(-0.5)) });
+      }
+      // a row of small spines down the back of the skull
+      for (let i = 0; i < 4; i++) f.cone([0, 0.7 - i * 0.18, -0.55 - i * 0.18], [0, 0.88 - i * 0.2, -0.75 - i * 0.2], 0.07, 0.01, skinM, hard);
+      eyes(0.4, 0.18, 0.66, 0.12, true);
       break;
     }
     case 'goblin': {
@@ -521,6 +538,12 @@ export function humanoid(f, sp, pose, R, gear) {
     f.ell([0, torso * 0.84, -0.012], [0.095 * b, 0.04, 0.05 * b], gear.torsoM ?? skinM, { group: 'body' });
     f.ell([0, torso * 0.66, 0.03 * b], [0.09 * b, 0.055, 0.045 * b], gear.torsoM ?? skinM, { group: 'body' });
     for (const d of [-1, 1]) f.ell([d * 0.07 * b, torso * 0.5, -0.01], [0.04 * b, 0.08, 0.05 * b], gear.torsoM ?? skinM, { group: 'body' });
+    if (sp.head === 'kobold' && !gear.torsoM) {
+      // pale ventral scutes down the chest and belly, a ridge of spines down the back
+      const bellyM = mat(mixc(skinM.color ?? sp.skin, '#b08858', 0.45), { pattern: 'leather', scale: 0.03, rough: 0.55, spec: 0.3 });
+      for (let i = 0; i < 6; i++) f.ell([0, torso * (0.12 + i * 0.13), 0.052 * b + Math.sin(i * 0.5) * 0.004], [0.045 * b - Math.abs(i - 3) * 0.003, 0.024, 0.022], bellyM, { group: 'body', blend: 0.015 });
+      for (let i = 0; i < 6; i++) f.cone([0, torso * (0.2 + i * 0.13), -0.055 * b], [0, torso * (0.2 + i * 0.13) + 0.014, -0.078 * b], 0.011, 0.002, skinM, { group: null });
+    }
     // neck
     f.cone([0, torso * 0.85, -0.005], [0, torso + hr * 0.6, 0.01 + (sp.hunch ?? 0) * 0.08], 0.032 * b * (sp.head === 'ogre' ? 1.6 : 1), 0.028 * b * (sp.head === 'ogre' ? 1.5 : 1), skinM, { group: 'body' });
     // armour / clothing layers
@@ -566,7 +589,7 @@ export function humanoid(f, sp, pose, R, gear) {
     }
     if (gear.necklace) for (let i = 0; i < 7; i++) {
       const a = -0.9 + i * 0.3;
-      f.cone([Math.sin(a) * 0.05, torso * 0.86 - Math.cos(a) * 0.035, 0.05], [Math.sin(a) * 0.052, torso * 0.86 - Math.cos(a) * 0.035 - 0.02, 0.058], 0.006, 0.003, M.tooth, { group: null });
+      f.cone([Math.sin(a) * 0.05, torso * 0.86 - Math.cos(a) * 0.035, 0.05], [Math.sin(a) * 0.052, torso * 0.86 - Math.cos(a) * 0.035 - 0.014, 0.056], 0.0042, 0.0015, M.bone, { group: null });
     }
     f.pop();
     if (gear.skirtM && !robe) {
@@ -660,9 +683,10 @@ function monsterHelm(f, kind, gear) {
   const hard = { group: null };
   if (kind === 'kobold' || kind === 'goblin' || kind === 'gnoll' || kind === 'lizard') {
     // a battered skullcap with a nasal or a leather cap
-    f.ell([0, 0.45, -0.1], [0.98, 0.62, 1.02], hm, hard);
-    f.ell([0, 0.2, -0.1], [1.0, 0.1, 1.04], gear.trimM ?? M.leather, hard);
-    if (gear.helmSpike) f.cone([0, 0.95, -0.15], [0, 1.45, -0.25], 0.12, 0.02, hm, hard);
+    const kob = kind === 'kobold';
+    f.ell([0, kob ? 0.6 : 0.45, kob ? -0.22 : -0.1], kob ? [0.8, 0.46, 0.88] : [0.98, 0.62, 1.02], hm, hard);
+    f.ell([0, kob ? 0.44 : 0.2, kob ? -0.22 : -0.1], kob ? [0.83, 0.07, 0.9] : [1.0, 0.1, 1.04], gear.trimM ?? M.leather, hard);
+    if (gear.helmSpike) f.cone([0, kob ? 1.0 : 0.95, -0.25], [0, kob ? 1.4 : 1.45, -0.35], 0.12, 0.02, hm, hard);
   } else {
     f.ell([0, 0.42, -0.05], [1.02, 0.8, 1.04], hm, hard);
     f.ell([0, 0.18, -0.05], [1.04, 0.1, 1.06], gear.trimM ?? M.bronze, hard);
@@ -819,7 +843,7 @@ export function buildCreature(id, seed = 1, o = {}) {
   let base = mixc(sp.skin, sp.skin2 ?? sp.skin, toward);
   if (sp.skin3 && R() < 0.35) base = mixc(base, sp.skin3, 0.5 + R() * 0.3);
   const skinC = shade(base, 1 + tint);
-  const skinM = mat(skinC, { pattern: sp.pattern ?? 'skin', scale: sp.pattern === 'scales' ? 0.0105 : sp.pattern === 'fur' ? 0.012 : 0.02, rough: sp.pattern === 'scales' ? 0.45 : 0.7, spec: sp.pattern === 'scales' ? 0.35 : 0.15, sss: sp.skeletal ? 0.2 : 0.45, tint2: sp.pattern === 'scales' ? shade(sp.skin2 ?? sp.skin, 1.05) : null });
+  const skinM = mat(skinC, { pattern: sp.pattern ?? 'skin', scale: sp.pattern === 'scales' ? 0.0075 : sp.pattern === 'fur' ? 0.012 : 0.02, rough: sp.pattern === 'scales' ? 0.45 : 0.7, spec: sp.pattern === 'scales' ? 0.35 : 0.15, sss: sp.skeletal ? 0.2 : 0.45, tint2: sp.pattern === 'scales' ? shade(sp.skin2 ?? sp.skin, 1.05) : null });
   const clothC = R.pick(sp.cloth ?? ['#4a3a28']);
   const clothM = mat(shade(clothC, 0.9 + R() * 0.25), { pattern: 'cloth', scale: 0.018, spec: 0.05, rough: 0.9 });
   const weaponK = o.weapon !== undefined ? o.weapon : R.pick(sp.weapons ?? [null]);
@@ -890,6 +914,16 @@ export function buildCreature(id, seed = 1, o = {}) {
     tailSide: R() < 0.5 ? -1 : 1,
     ...(o.poseOverride ?? {}),
   };
+  if (['kobold', 'gnoll', 'lizard'].includes(sp.head) && o.yaw != null && o.poseOverride?.headYaw == null) {
+    // a long muzzle pointed straight at the viewer foreshortens into a blob:
+    // keep snouted heads at least three-quarter on, turned the way the body is
+    const total = o.yaw + pose.twist + pose.headYaw;
+    const want = 0.7;
+    if (Math.abs(total) < want) {
+      const sgn = Math.sign(o.yaw || pose.headYaw || 1);
+      pose.headYaw = Math.max(-1.1, Math.min(1.1, sgn * want - o.yaw - pose.twist));
+    }
+  }
   if (sp.chief) gear.cape = true;
   const j = humanoid(f, sp, pose, R, gear);
   f.top = j.hp[1] + (sp.headR ?? 0.065);

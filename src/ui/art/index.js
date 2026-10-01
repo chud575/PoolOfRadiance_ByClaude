@@ -63,8 +63,8 @@ export function rigAt(light, info, x, y, W) {
     if (d < best) { best = d; rimDir = [Math.sign(l.x - x || 1) * 0.85, 0.35 + Math.max(0, (y - l.y) / W) * 0.6, -0.6]; rimC = l.color ?? L.rim; }
   }
   return {
-    key: { dir: R.key, color: L.key, i: R.keyI },
-    rim: { dir: rimDir, color: rimC, i: 0.6 + (L.rimA ?? 0.5) * 1.3 },
+    key: { dir: R.key, color: L.key, i: R.keyI * 1.12 },
+    rim: { dir: rimDir, color: rimC, i: (0.6 + (L.rimA ?? 0.5) * 1.3) * 1.3 },
     sky: R.sky, ground: R.ground, amb: R.amb,
   };
 }
