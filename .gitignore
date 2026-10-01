@@ -9,3 +9,4 @@ reference/*
 .DS_Store
 scratch_*/
 audio_out/
+.fn_*
