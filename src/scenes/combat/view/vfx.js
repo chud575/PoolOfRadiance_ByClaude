@@ -303,7 +303,7 @@ function gasVolume({ steps = 26 } = {}) {
     uniforms: {
       uCam: { value: new THREE.Vector3(0, 5, 5) }, uAge: { value: 0 }, uSeed: { value: 0 }, uFade: { value: 1 },
       uHalf: { value: new THREE.Vector3(3, 1, 3) }, uLightDir: { value: new THREE.Vector3(0.4, 0.85, 0.3).normalize() },
-      uKey: { value: new THREE.Color(1, 0.96, 0.85) }, uAmb: { value: new THREE.Color(0.35, 0.4, 0.45) }, uMaxA: { value: 0.68 },
+      uKey: { value: new THREE.Color(1, 0.96, 0.85) }, uAmb: { value: new THREE.Color(0.35, 0.4, 0.45) }, uMaxA: { value: 0.75 },
     },
     vertexShader: 'varying vec3 vO; void main(){ vO = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: `
@@ -325,10 +325,12 @@ function gasVolume({ steps = 26 } = {}) {
         float r = length(e) + (vn(vec3(q.xz * 0.9, a * 0.06 + uSeed)) - 0.5) * 0.36;
         float reach = 1.0 - smoothstep(0.38, 0.84, r);
         // Height: thick at the cobbles, lobed crowns, thinning upward.
-        float top = 0.3 + 1.0 * n * reach;
+        // Lumpy crowns: a few big billows heave up well above the rest.
+        float lump = smoothstep(0.45, 0.8, vn(vec3(q.xz * 0.7, a * 0.05 + uSeed + 2.0)));
+        float top = 0.3 + (0.9 + 1.1 * lump) * n * reach;
         float hf = smoothstep(top, top * 0.35, q.y) * smoothstep(-0.02, 0.06, q.y);
-        float d = (n - 0.46 + reach * 0.26) * hf * reach;
-        return clamp(d * 5.5, 0.0, 1.0);
+        float d = (n - 0.5 + reach * 0.28) * hf * reach;
+        return clamp(d * 6.5, 0.0, 1.0);
       }
       void main(){
         vec3 ro = uCam;
@@ -352,19 +354,21 @@ function gasVolume({ steps = 26 } = {}) {
           float d = dens(q);
           if (d > 0.002) {
             float stepM = dt * length(rd * uHalf);
-            float a = 1.0 - exp(-d * 1.5 * stepM);
+            float a = 1.0 - exp(-d * 2.3 * stepM);
             // Self-shadow: two probes toward the key light.
             float s1 = dens(q + uLightDir * 0.18);
             float s2 = dens(q + uLightDir * 0.45);
-            float lit = exp(-(s1 * 2.6 + s2 * 2.2));
-            float hgt = clamp(q.y / 1.1, 0.0, 1.0);
-            vec3 fold = vec3(0.05, 0.065, 0.015);
-            vec3 body = vec3(0.3, 0.37, 0.07);
-            vec3 crown = vec3(0.62, 0.66, 0.2);
+            float lit = exp(-(s1 * 3.4 + s2 * 2.8));
+            float hgt = clamp(q.y / 1.5, 0.0, 1.0);
+            vec3 fold = vec3(0.03, 0.038, 0.012);
+            vec3 body = vec3(0.22, 0.27, 0.06);
+            vec3 crown = vec3(0.6, 0.62, 0.22);
             vec3 alb = mix(fold, body, smoothstep(0.05, 0.55, lit));
             alb = mix(alb, crown, smoothstep(0.55, 1.0, lit) * (0.4 + 0.6 * hgt));
             // Thin margins scatter more: lighter, greyer rims.
             alb = mix(alb, vec3(0.5, 0.54, 0.36), (1.0 - smoothstep(0.0, 0.3, d)) * 0.5 * lit);
+            // Upper wisps and the thin outer drift age to a sour grey.
+            alb = mix(alb, vec3(0.34, 0.35, 0.32) * (0.5 + 0.6 * lit), smoothstep(0.35, 1.0, hgt) * 0.55);
             vec3 c = alb * (uKey * (0.25 + 0.95 * lit) + uAmb * (0.55 + 0.45 * hgt));
             col += T * a * c;
             T *= 1.0 - a;
@@ -1066,8 +1070,8 @@ export class VFX {
     shock.frustumCulled = false;
     const scorch = new THREE.Mesh(new THREE.CircleGeometry(1, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: scorchTexture(), transparent: true, depthWrite: false, color: 0x000000, opacity: 0.8 }));
     scorch.renderOrder = 1;
-    const sparks = sparkStreaks({ at: to, count: 44, speed: 10, life: 1.3, gravity: 8, drag: 1.4, hemi: true, width: 1.7, streak: 0.03, intensity: 1.6, seed: seed + 3, r0: R * 0.15 });
-    const lateSparks = sparkStreaks({ at: { x: to.x, y: to.y + 0.4, z: to.z }, count: 40, speed: 4, up: 1.4, life: 1.6, gravity: 3, drag: 1.6, hemi: true, width: 1.6, streak: 0.12, intensity: 2.2, seed: seed + 9, delay: 0.15, stagger: 0.5, r0: R * 0.4 });
+    const sparks = sparkStreaks({ at: to, count: 16, speed: 9, life: 0.9, gravity: 8, drag: 1.6, hemi: true, width: 1.2, streak: 0.018, intensity: 1.3, seed: seed + 3, r0: R * 0.3 });
+    const lateSparks = sparkStreaks({ at: { x: to.x, y: to.y + 0.4, z: to.z }, count: 26, speed: 2.5, up: 1.6, life: 1.6, gravity: 1.5, drag: 1.6, hemi: true, width: 1.1, streak: 0.04, intensity: 2.0, seed: seed + 9, delay: 0.15, stagger: 0.8, r0: R * 0.5 });
     const debris = particleBurst({ at: { x: to.x, y: 0.2, z: to.z }, count: 36, speed: 6.5, life: 1.2, size: 0.09, drag: 1, gravity: 12, hemi: true, colors: [0x5a4a3a, 0x3a3028, 0x2a2420], additive: false, intensity: 1, soft: 0.2, seed: seed + 5, floor: 0.03 });
     const dust = particleBurst({ at: { x: to.x, y: 0.15, z: to.z }, count: 34, spread: 0.3, flatY: true, hemi: true, speed: 7.5, up: 0.1, life: 1.8, size: 0.55, grow: 2.0, drag: 3.2, colors: [0x2e2924, 0x26221e, 0x1c1916], additive: false, intensity: 1, soft: 0.95, seed: seed + 13, fadeIn: 0.15 });
     const flash = glowSprite(0xfff2d8, R * 3.2, 0);
@@ -1075,9 +1079,10 @@ export class VFX {
     const groundFire = particleBurst({ at: { x: to.x, y: 0.12, z: to.z }, count: 70, spread: R * 0.7, flatY: true, speed: 0.2, gravity: -1.4, life: 0.8, stagger: 1.4, delay: 0.3, size: 0.16, grow: 1.0, drag: 1, turb: 0.4, colors: [0xffb050, 0xff4a08, 0x200804], intensity: 1.1, seed: seed + 21, fadeIn: 0.15 });
     this.add(T, 4.5, () => ({ list: [scorch, dust, groundFire, stem, cap, ball2, ball, shock, sparks, lateSparks, debris, flash, flashCore] }), (age, parts, ctx) => {
       // White-hot flash: 2-3 frames of glare, then gone.
-      const fl = age < 0.03 ? age / 0.03 : Math.exp(-(age - 0.03) * 14);
+      const fl = age < 0.03 ? age / 0.03 : Math.exp(-(age - 0.03) * 22);
       flash.position.set(to.x, to.y + 0.3, to.z);
-      flash.material.opacity = fl * 0.85;
+      flash.material.opacity = fl * 0.7;
+      flash.visible = flashCore.visible = age < 0.25;
       flashCore.position.set(to.x, to.y + 0.2, to.z);
       flashCore.material.opacity = Math.min(1, fl * 1.4);
       const ease = 1 - Math.exp(-age * 8);
@@ -1090,8 +1095,8 @@ export class VFX {
       ball.obj.scale.set(Rb, Rb * 0.92, Rb);
       ball.u.uAge.value = age;
       ball.u.uGrow.value = 0.18 + 0.62 * (1 - Math.exp(-age * 9)) + age * 0.06;
-      ball.u.uHeat.value = age < 0.06 ? 1.6 : 0.3 + 1.0 * Math.exp(-(age - 0.06) * 2.6);
-      ball.u.uSmoke.value = clamp01(0.22 + age * 1.0);
+      ball.u.uHeat.value = age < 0.06 ? 1.6 : 0.36 + 1.05 * Math.exp(-(age - 0.06) * 1.7);
+      ball.u.uSmoke.value = clamp01(0.2 + age * 0.85);
       ball.u.uErode.value = Math.max(0, age - 0.5) * 0.75;
       ball.u.uFade.value = clamp01((2.6 - age) / 0.8);
       ball.obj.visible = age < 2.6;
@@ -1110,20 +1115,21 @@ export class VFX {
       ball2.sync(cam, 0.02);
       // Smoke: a dark mushrooming cap boils up out of the crown almost at
       // once (sooty, near-black folds against the orange), a stem beneath it.
-      const ac = age - 0.3;
+      const ac = age - 0.16;
       cap.obj.visible = ac > 0 && age < 4.4;
       if (cap.obj.visible) {
-        const g = R * (0.5 + ac * 0.3) * (0.7 + 0.3 * (1 - Math.exp(-ac * 6)));
-        cap.obj.position.set(to.x, to.y + Rb * 0.62 + g * 0.22 + ac * 1.1 + rise * 0.5, to.z);
-        cap.obj.scale.set(g * 1.2, g * 0.62, g * 1.2);
+        // Mushrooming: rises out of the crown and spreads wide and flat.
+        const g = R * (0.42 + ac * 0.32) * (0.6 + 0.4 * (1 - Math.exp(-ac * 5)));
+        cap.obj.position.set(to.x, to.y + Rb * 0.7 + g * 0.25 + ac * 1.25 + rise * 0.5, to.z);
+        cap.obj.scale.set(g * 1.35, g * 0.6, g * 1.35);
         cap.u.uAge.value = ac * 0.7;
         cap.u.uGrow.value = 0.35 + 0.5 * (1 - Math.exp(-ac * 5));
         cap.u.uHeat.value = Math.max(0, 1 - ac * 0.7);
         cap.u.uErode.value = Math.max(0, ac - 2.0) * 0.4;
-        cap.u.uFade.value = clamp01(ac * 8) * clamp01((4.4 - age) / 1.4) * 0.92;
+        cap.u.uFade.value = clamp01(ac * 4) * clamp01((4.4 - age) / 1.4) * 0.9;
         cap.sync(cam, 0.02);
       }
-      const as = age - 0.7;
+      const as = age - 0.3;
       stem.obj.visible = as > 0 && age < 4.0;
       if (stem.obj.visible) {
         const g = R * (0.22 + as * 0.08);
@@ -1238,8 +1244,8 @@ export class VFX {
   sleepCloud(t, centre, size, seed = 1) {
     const r = size * 0.4;
     const motes = particleBurst({
-      at: { x: centre.x, y: 2.2, z: centre.z }, count: 22, spread: r, speed: 0.12, gravity: 0.12, life: 2.2, stagger: 0.7, size: 0.05, drag: 0.8, turb: 0.25,
-      colors: [0xe8e0ff, 0xb0a0ff, 0x6a58d0], intensity: 1.3, seed, floor: 0.3, fadeIn: 0.25, soft: 0.5,
+      at: { x: centre.x, y: 2.2, z: centre.z }, count: 30, spread: r, speed: 0.12, gravity: 0.1, life: 2.2, stagger: 0.7, size: 0.026, drag: 0.8, turb: 0.18,
+      colors: [0xffffff, 0xd8ccff, 0x8a78e0], intensity: 2.6, seed, floor: 0.3, fadeIn: 0.2, soft: 0.22,
     });
     this.add(t, 2.6, () => ({ list: [motes] }), (age) => {
       return { light: { i: 1.2 * Math.sin(clamp01(age / 2.2) * Math.PI), color: 0x9a86ff, pos: new THREE.Vector3(centre.x, 2.0, centre.z) } };
@@ -1248,18 +1254,18 @@ export class VFX {
 
   /** A sleeper: a faint violet glow and three slow motes drifting about the head (persistent until woken). */
   sleepZ(t, getPos, id, seed = 1) {
-    const motes = [0, 1, 2].map((k) => glowSprite(k === 1 ? 0xd8d0ff : 0xa898ff, 0.11, 0));
-    const glow = glowSprite(0x9a88ff, 0.7, 0);
+    const motes = [0, 1, 2].map((k) => glowSprite(k === 1 ? 0xf0ecff : 0xc8bcff, 0.06, 0));
+    const glow = glowSprite(0x9a88ff, 0.55, 0);
     this.add(t, 999, () => ({ list: [glow, ...motes] }), (age) => {
       const p = getPos();
       glow.position.copy(p).setY(p.y - 0.1);
-      glow.material.opacity = 0.12 + 0.06 * Math.sin(age * 1.6 + seed);
+      glow.material.opacity = 0.07 + 0.03 * Math.sin(age * 1.6 + seed);
       motes.forEach((m, k) => {
         const ph = (age * 0.22 + k / 3 + seed * 0.13) % 1;
         const a = ph * Math.PI * 2 + k * 2.1;
         m.position.set(p.x + Math.cos(a) * 0.22, p.y + 0.12 + ph * 0.4, p.z + Math.sin(a) * 0.22);
-        m.scale.setScalar(0.08 + 0.05 * Math.sin(ph * Math.PI));
-        m.material.opacity = Math.sin(ph * Math.PI) * 0.75 * clamp01(age * 1.5);
+        m.scale.setScalar(0.04 + 0.025 * Math.sin(ph * Math.PI));
+        m.material.opacity = Math.sin(ph * Math.PI) * 0.95 * clamp01(age * 1.5);
       });
     }, { persistent: true, id });
   }
@@ -1276,7 +1282,7 @@ export class VFX {
       v.u.uAmb.value.setRGB(0.12, 0.14, 0.2);
     }
     const half = size * 0.5 + 0.9;
-    v.place(centre.x, centre.z, half, 1.0, half);
+    v.place(centre.x, centre.z, half, 1.3, half);
     this.add(t, 999, () => ({ list: [v] }), (age, parts, ctx) => {
       const fade = clamp01(age / 1.2);
       v.u.uAge.value = age;

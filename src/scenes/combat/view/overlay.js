@@ -109,15 +109,18 @@ export class Overlay {
             float px = pxG;
             float shimmer = 0.5 + 0.5 * sin(uTime * 1.2 - (g.x * 0.8 + g.y * 0.55));
             vec3 rc = r > 0.9 ? uRangeColor : vec3(1.0, 0.8, 0.45);
-            float glowIn = exp(-de * 4.5);
+            float glowIn = exp(-de * 3.2);
             // Far edges of a big range recede (no lone bright fragments at the
             // frame's rim): the lip fades with distance from the mover.
             float farK = uFocus2.x > -50.0 ? mix(1.0, 0.3, smoothstep(4.0, 9.0, length(g - uFocus2 - 0.5))) : 1.0;
-            float lip = (1.0 - smoothstep(px * 0.5, px * 3.5, de)) * farK;
-            glowIn *= mix(0.6, 1.0, farK);
-            LAYER(rc * 0.5, 0.035 + 0.012 * shimmer);
-            LAYER(rc * 0.85, glowIn * 0.22);
-            LAYER(rc * 1.15 + 0.06, lip * 0.42);
+            // Feathered lip: a soft luminous seam, a few pixels wide, never a hard white line.
+            float lip = (1.0 - smoothstep(0.0, px * 5.0 + 0.02, de)) * farK;
+            glowIn *= mix(0.55, 1.0, farK);
+            // (Composited in linear HDR over dark paving: small alphas read strong.)
+            float nk = mix(1.0, 0.75, uNight);
+            LAYER(rc * 0.5, (0.01 + 0.006 * shimmer) * nk);
+            LAYER(rc * 0.8, glowIn * 0.11 * nk);
+            LAYER(rc * 1.0, lip * lip * 0.16 * nk);
             // Rough ground costs extra: darker, with a stipple.
             if (inf.g > 0.2 && inf.g < 0.5) {
               float st = step(0.82, fract(sin(dot(floor(g * 9.0), vec2(12.9898, 78.233))) * 43758.5453));
@@ -127,12 +130,12 @@ export class Overlay {
           // Threatened squares (moving out provokes): thin, desaturated diagonal
           // hairlines plus a faint red vignette hugging the square edges.
           if (s.a > 0.1 && r > 0.1) {
-            float hv = (g.x + g.y) * 2.0;
+            float hv = (g.x + g.y) * 1.0;
             float hd = abs(fract(hv) - 0.5);
             float hpx = pxG * 4.0;
             float hatch = 1.0 - smoothstep(hpx * 0.6, hpx * 1.4, hd);
-            LAYER(vec3(0.62, 0.3, 0.26), hatch * 0.1);
-            LAYER(vec3(0.55, 0.12, 0.08), exp(-ed * 9.0) * 0.08);
+            LAYER(vec3(0.62, 0.3, 0.26), hatch * 0.06);
+            LAYER(vec3(0.55, 0.12, 0.08), exp(-ed * 9.0) * 0.06);
           }
           // Spell template.
           if (s.g > 0.9) {
@@ -154,7 +157,7 @@ export class Overlay {
           if (s.b > 0.9) {
             float e2 = 1.0 - smoothstep(0.0, 0.05, ed);
             LAYER(vec3(1.0, 0.92, 0.65), 0.1);
-            LAYER(vec3(1.0, 0.92, 0.65) * 1.6, e2 * 0.9);
+            LAYER(vec3(1.0, 0.92, 0.65) * 1.3, e2 * 0.5);
           } else if (s.b > 0.5) {
             LAYER(vec3(1.0, 0.25, 0.2) * 0.7, 0.25);
           }
@@ -323,11 +326,27 @@ export class Overlay {
     this.reticle.visible = false;
     this.group.add(this.reticle);
     this.teamRings = new Map();
-    this.teamMat = {
-      party: new THREE.MeshBasicMaterial({ color: 0x5aa0ff, transparent: true, opacity: 0.42, depthWrite: false }),
-      monster: new THREE.MeshBasicMaterial({ color: 0xff5a4a, transparent: true, opacity: 0.36, depthWrite: false }),
-    };
-    this.teamGeo = new THREE.RingGeometry(0.5, 0.538, 48).rotateX(-Math.PI / 2);
+    // Grounded team markers: a fine antialiased line with a soft glow bleeding
+    // inward onto the paving (a painted base, not a neon decal).
+    const teamShader = (color, a) => new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      uniforms: { uColor: { value: new THREE.Color(color) }, uA: { value: a } },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: `varying vec2 vUv; uniform vec3 uColor; uniform float uA;
+        void main(){
+          vec2 p = vUv * 2.0 - 1.0;
+          float r = length(p);
+          float px = fwidth(r);
+          float line = 1.0 - smoothstep(0.0, px * 1.6 + 0.012, abs(r - 0.86));
+          float inner = smoothstep(0.45, 0.86, r) * (1.0 - smoothstep(0.86, 0.87, r));
+          float outer = (1.0 - smoothstep(0.86, 0.98, r)) * step(0.86, r);
+          float a = line * 0.85 + inner * inner * 0.22 + outer * 0.18;
+          gl_FragColor = vec4(uColor * (0.8 + line * 0.5), a * uA);
+        }`,
+    });
+    this.teamMat = { party: teamShader(0x6aa8ff, 0.6), monster: teamShader(0xff6a54, 0.55) };
+    this.teamGeo = new THREE.PlaneGeometry(1.24, 1.24).rotateX(-Math.PI / 2);
   }
 
   /** Team ring under each combatant (blue party / red foes). */

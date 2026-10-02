@@ -775,10 +775,10 @@ function buildHead(R, o, s, skinMat) {
       const hornMat = pbr('bone', 0xd8c8a0);
       const lightScale = pbr('reptile', 0xc89a62);
       R.part('head', sphere(0.095 * hs, 16, 12), skinMat, { p: [0, hy + 0.01 * hs, -0.01 * hs], s: [0.95, 0.9, 1.05] });
-      R.part('head', rbox(0.085 * hs, 0.06 * hs, 0.19 * hs, 0.026 * hs), skinMat, { p: [0, hy - 0.01 * hs, 0.13 * hs], r: [0.16, 0, 0] });
-      R.part('head', rbox(0.072 * hs, 0.028 * hs, 0.16 * hs, 0.012 * hs), lightScale, { p: [0, hy - 0.058 * hs, 0.11 * hs], r: [-0.12, 0, 0] });
-      for (const sx of [1, -1]) R.part('head', sphere(0.01 * hs, 6, 5), pbr('eye', 0x100604), { p: [sx * 0.02 * hs, hy + 0.012 * hs, 0.22 * hs] });
-      for (let k = 0; k < 4; k++) for (const sx of [1, -1]) R.part('head', cone(0.006 * hs, 0.022 * hs, 4), pbr('bone', 0xf0e8d0), { p: [sx * 0.032 * hs, hy - 0.045 * hs, 0.17 * hs + k * 0.025 * hs - 0.05 * hs], r: [Math.PI, 0, 0] });
+      R.part('head', rbox(0.08 * hs, 0.058 * hs, 0.25 * hs, 0.026 * hs), skinMat, { p: [0, hy - 0.012 * hs, 0.16 * hs], r: [0.16, 0, 0] });
+      R.part('head', rbox(0.07 * hs, 0.028 * hs, 0.21 * hs, 0.012 * hs), lightScale, { p: [0, hy - 0.062 * hs, 0.14 * hs], r: [-0.16, 0, 0] });
+      for (const sx of [1, -1]) R.part('head', sphere(0.01 * hs, 6, 5), pbr('eye', 0x100604), { p: [sx * 0.02 * hs, hy + 0.0 * hs, 0.28 * hs] });
+      for (let k = 0; k < 4; k++) for (const sx of [1, -1]) R.part('head', cone(0.006 * hs, 0.022 * hs, 4), pbr('bone', 0xf0e8d0), { p: [sx * 0.03 * hs, hy - 0.05 * hs, 0.2 * hs + k * 0.03 * hs - 0.05 * hs], r: [Math.PI, 0, 0] });
       for (const sx of [1, -1]) {
         R.part('head', sphere(0.02 * hs, 8, 6), eyeMat, { p: [sx * 0.05 * hs, hy + 0.03 * hs, 0.075 * hs] });
         R.part('head', box(0.04 * hs, 0.012 * hs, 0.03 * hs), skinMat, { p: [sx * 0.048 * hs, hy + 0.05 * hs, 0.08 * hs], r: [0.3, 0, sx * -0.3] });

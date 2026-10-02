@@ -328,13 +328,13 @@ const HEADS = {
     // Big round skull, heavy cheeks, a long blunt dog-lizard snout.
     B.ell('head', H(0, 0.1, -0.02), [0.088 * hs, 0.082 * hs, 0.096 * hs], T);
     for (const sx of [1, -1]) B.ell('head', H(sx * 0.045, 0.075, 0.035), [0.04 * hs, 0.04 * hs, 0.05 * hs], T);
-    B.cone('head', H(0, 0.096, 0.04), H(0, 0.07, 0.26), 0.054 * hs, 0.03 * hs, T);
-    B.cone('head', H(0, 0.12, 0.02), H(0, 0.092, 0.21), 0.03 * hs, 0.02 * hs, { ...T, mat: 'back' });
-    B.cone('head', H(0, 0.044, 0.03), H(0, 0.042, 0.23), 0.04 * hs, 0.02 * hs, { ...T, mat: 'belly' });
+    B.cone('head', H(0, 0.096, 0.04), H(0, 0.066, 0.31), 0.054 * hs, 0.03 * hs, T);
+    B.cone('head', H(0, 0.12, 0.02), H(0, 0.088, 0.26), 0.03 * hs, 0.02 * hs, { ...T, mat: 'back' });
+    B.cone('head', H(0, 0.044, 0.03), H(0, 0.038, 0.28), 0.04 * hs, 0.02 * hs, { ...T, mat: 'belly' });
     // Mouth line + nostrils + eye sockets carved.
-    B.box('head', H(0, 0.058, 0.17), [0.05 * hs, 0.0045 * hs, 0.09 * hs], { g: G.torso, sub: true, k: 0.004 * hs, R: mEuler(-0.08, 0, 0) });
+    B.box('head', H(0, 0.056, 0.2), [0.05 * hs, 0.0045 * hs, 0.11 * hs], { g: G.torso, sub: true, k: 0.004 * hs, R: mEuler(-0.08, 0, 0) });
     for (const sx of [1, -1]) {
-      B.sph('head', H(sx * 0.015, 0.084, 0.258), 0.008 * hs, { g: G.torso, sub: true, k: 0.004 * hs });
+      B.sph('head', H(sx * 0.015, 0.08, 0.308), 0.008 * hs, { g: G.torso, sub: true, k: 0.004 * hs });
       B.sph('head', H(sx * 0.042, 0.112, 0.07), 0.02 * hs, { g: G.torso, sub: true, k: 0.008 * hs });
     }
     // Heavy brow ridges.
@@ -345,7 +345,7 @@ const HEADS = {
       B.cone('head', H(sx * 0.07, 0.205, -0.115), H(sx * 0.08, 0.2, -0.19), 0.011 * hs, 0.003 * hs, { g: G.hard, k: 0.01 * hs, mat: 'horn' });
       B.ell('head', H(sx * 0.088, 0.1, -0.045), [0.012 * hs, 0.052 * hs, 0.042 * hs], { ...T, k: 0.012 * hs, mat: 'back', R: mEuler(0.3, 0, sx * 0.55) });
       // Teeth along the upper jaw.
-      for (let k = 0; k < 4; k++) B.cone('head', H(sx * 0.028, 0.064, 0.1 + k * 0.03), H(sx * 0.026, 0.046, 0.102 + k * 0.03), 0.006 * hs, 0.0015 * hs, { g: G.hard, mat: 'tooth' });
+      for (let k = 0; k < 4; k++) B.cone('head', H(sx * 0.028, 0.062, 0.12 + k * 0.035), H(sx * 0.026, 0.044, 0.122 + k * 0.035), 0.006 * hs, 0.0015 * hs, { g: G.hard, mat: 'tooth' });
     }
     for (let k = 0; k < 4; k++) B.cone('head', H(0, 0.165 - k * 0.025, -0.06 - k * 0.035), H(0, 0.19 - k * 0.03, -0.1 - k * 0.04), 0.016 * hs, 0.003 * hs, { k: 0.01 * hs, g: G.torso, mat: 'back' });
     return { eyes: [[0.042, 0.112, 0.072], [-0.042, 0.112, 0.072]], r: 0.015 };

@@ -299,7 +299,7 @@ export class Figure {
     for (const mm of this.mats) {
       if (mm.m.emissive) {
         mm.m.emissive.copy(mm.emissive).lerp(_FLASH, flash * 0.13);
-        if (burn > 0.01) mm.m.emissive.lerp(_BURN, Math.min(1, burn * 0.07));
+        if (burn > 0.01) mm.m.emissive.lerp(_BURN, Math.min(1, burn * 0.32));
         if (holy) mm.m.emissive.lerp(_HOLY, Math.sin(holy * Math.PI) * 0.9);
         mm.m.emissiveIntensity = mm.ei;
       }

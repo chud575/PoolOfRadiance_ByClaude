@@ -511,11 +511,15 @@ export default class CombatScene extends Scene {
       // Each foe gets its own framing (head turn, tilt, distance) so a pack of
       // identical skeletons doesn't read as one portrait copied down the bar.
       const hv = c.side === 'party' ? 0.5 : ((String(c.id).split('').reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7) % 1000) / 1000);
-      const yaw = fig.yaw - 0.3 + (c.side === 'party' ? 0 : (hv - 0.5) * 0.9);
+      const yaw = fig.yaw - 0.3 + (c.side === 'party' ? 0 : (hv - 0.5) * 1.5);
+      // A per-foe backdrop tint (ember, moss, dusk) separates identical kin in the bar.
+      if (c.side !== 'party') s.background = new THREE.Color(this.night ? 0x10162c : 0x1a2240).lerp(new THREE.Color().setHSL((hv * 3.7) % 1, 0.45, 0.16), 0.55);
+      else s.background = new THREE.Color(this.night ? 0x10162c : 0x1a2240);
       key.set(Math.sin(yaw), 0, Math.cos(yaw));
       const dd = d * (c.side === 'party' ? 1 : 0.9 + hv * 0.25);
       cam.position.set(head.x + key.x * dd, head.y + dd * (0.12 + (c.side === 'party' ? 0 : (hv - 0.5) * 0.25)), head.z + key.z * dd);
       cam.lookAt(head.x, head.y - 0.04 * sc, head.z);
+      if (c.side !== 'party') cam.rotateZ((hv - 0.5) * 0.35);
       r.setRenderTarget(rt);
       r.clear();
       r.render(s, cam);
@@ -1904,7 +1908,7 @@ export default class CombatScene extends Scene {
     const near = foes.filter((f) => d(f, act) <= 7).slice(0, 3);
     if (!near.length && foes[0]) near.push(foes[0]);
     const allies = live.filter((o) => o !== act && o.side === act.side && d(o, act) <= 2.5);
-    const MIN = 10.5;
+    const MIN = 9.5;
     // Keep the whole fight in view when it fits (a stable tactical camera);
     // otherwise frame the actor, its likely targets and its neighbours.
     const MAX = all ? 21.5 : 18.5;
@@ -1958,8 +1962,8 @@ export default class CombatScene extends Scene {
       z0 = Math.min(z0, p.z);
       z1 = Math.max(z1, p.z);
     }
-    const m = 2.4;
-    z0 -= 1.0;
+    const m = 1.7;
+    z0 -= 0.9;
     const hw = (x1 - x0) / 2 + m;
     const hd = (z1 - z0) / 2 + m;
     const sa = this._safeArea();
@@ -2023,7 +2027,7 @@ export default class CombatScene extends Scene {
         probe.updateMatrixWorld(true);
         for (const m of marks) {
           const v = m.clone().project(probe);
-          if (v.z < 1 && v.x > -0.7 && v.x < 0.35 && v.y > -0.6 && v.y < 0.6) land += m.w;
+          if (v.z < 1 && v.x > -0.7 && v.x < 0.12 && v.y > -0.6 && v.y < 0.55) land += m.w;
         }
       }
       const n = this.diorama.occluders(pos, pts) * (around ? 3 : 1) + (around ? 0 : Math.abs(yaw - 0.32) * 2) + along * 14 + crowd - land;

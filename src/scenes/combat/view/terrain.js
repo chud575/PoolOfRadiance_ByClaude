@@ -59,11 +59,11 @@ function addMacro(mat, { scale = 0.18, amount = 0.45, grime = 0.35, key = 'macro
 /** Textured PBR material from the shared library set, tinted (own instance). */
 const libCache = new Map();
 function libMat(set, color = 0xffffff, o = {}) {
-  const key = `${set}|${color}|${o.rough ?? ''}`;
+  const key = `${set}|${color}|${o.rough ?? ''}|${o.ns ?? ''}|${o.grime ?? ''}`;
   if (libCache.has(key)) return libCache.get(key);
   const t = getTextureSet(set);
-  const m = new THREE.MeshStandardMaterial({ map: t.map, normalMap: t.normalMap, roughnessMap: t.roughnessMap, color, roughness: o.rough ?? 1, metalness: 0, normalScale: new THREE.Vector2(1.7, 1.7) });
-  addMacro(m, { key: 'lib', amount: 0.55 });
+  const m = new THREE.MeshStandardMaterial({ map: t.map, normalMap: t.normalMap, roughnessMap: t.roughnessMap, color, roughness: o.rough ?? 1, metalness: 0, normalScale: new THREE.Vector2(o.ns ?? 1.7, o.ns ?? 1.7) });
+  addMacro(m, { key: o.grime ? 'libw' : 'lib', amount: o.amount ?? 0.55, grime: o.grime ?? 0.35 });
   libCache.set(key, m);
   return m;
 }
@@ -222,9 +222,9 @@ export function buildDiorama(field, o = {}) {
         float wR = smoothstep(0.25, 0.75, gs.g + (gn - 0.5) * 0.7);
         // Paving change: a blurred, noise-broken boundary (no hard rectangle)
         // with a band of grit and loose setts where the flagstones give out.
-        vec2 gdx = vec2(0.7 / uSize.x, 0.0), gdz = vec2(0.0, 0.7 / uSize.y);
+        vec2 gdx = vec2(1.2 / uSize.x, 0.0), gdz = vec2(0.0, 1.2 / uSize.y);
         float bB = (gs.b * 2.0 + texture2D(tSplat, gsp + gdx).b + texture2D(tSplat, gsp - gdx).b + texture2D(tSplat, gsp + gdz).b + texture2D(tSplat, gsp - gdz).b) / 6.0;
-        float wF = smoothstep(0.44, 0.56, bB + (gn - 0.5) * 0.5 + (gFbm(vWPos.xz * 1.9 + 3.0) - 0.5) * 0.32);
+        float wF = smoothstep(0.45, 0.55, bB + (gn - 0.5) * 0.75 + (gFbm(vWPos.xz * 1.9 + 3.0) - 0.5) * 0.4 + (gFbm(vWPos.xz * 0.35 + 17.0) - 0.5) * 0.35);
         float fEdge = 1.0 - abs(wF * 2.0 - 1.0);
         // Standing water: broad, organic puddles from low-frequency noise (no
         // square blocks), only on paving; their margins break up at stone scale.
@@ -233,7 +233,7 @@ export function buildDiorama(field, o = {}) {
         // Setts: 1 m tiles of ~11 cm stones; neighbouring patches use the
         // same courses shifted a whole number of rows (seamless), so the
         // repeat never lines up.
-        vec2 uv1 = vec2(vWPos.x, -vWPos.z) / 1.2;
+        vec2 uv1 = vec2(vWPos.x, -vWPos.z) / 1.0;
         vec2 uv2 = vec2(vWPos.x, -vWPos.z) / 3.2 + 0.37;
         vec2 uv3 = vec2(vWPos.x, -vWPos.z) / 2.7;
         vec4 gc = texture2D(map, uv1);
@@ -268,7 +268,7 @@ export function buildDiorama(field, o = {}) {
         gc.rgb = mix(gc.rgb, texture2D(map2, uv2 * 1.7).rgb * vec3(0.78, 0.68, 0.55), dCover * 0.85);
         // Kerbs: a lighter dressed-stone band with a dark gutter where paving changes.
         float kerb = 1.0 - abs(wF - 0.5) * 2.0;
-        gc.rgb = mix(gc.rgb, vec3(0.42, 0.4, 0.37) * (0.85 + 0.3 * gn), smoothstep(0.62, 0.92, kerb) * 0.55);
+        gc.rgb = mix(gc.rgb, vec3(0.3, 0.29, 0.27) * (0.85 + 0.3 * gn), smoothstep(0.62, 0.92, kerb) * 0.25);
         gc.rgb *= 1.0 - smoothstep(0.3, 0.5, kerb) * (1.0 - smoothstep(0.5, 0.62, kerb)) * 0.45;
         // Mortar gaps (dark in the albedo) collect moss and grime in patches.
         float lum = dot(gc.rgb, vec3(0.3, 0.55, 0.15));
@@ -312,7 +312,7 @@ export function buildDiorama(field, o = {}) {
         gr = mix(gr, 1.0, brk * 0.8);
         // Matte stone (the texture's own per-stone variation, a few polished),
         // satin where damp, mirror-smooth only in the standing water.
-        float roughnessFactor = max(0.62, roughness * gr);
+        float roughnessFactor = max(0.74, roughness * gr);
         roughnessFactor *= 1.0 - 0.12 * smoothstep(0.55, 0.78, gFbm(vWPos.xz * 0.09 + 11.0));
         roughnessFactor = mix(roughnessFactor, 0.6, wet * 0.7);
         roughnessFactor = mix(roughnessFactor, ${night ? '0.2' : '0.42'}, puddle);
@@ -366,7 +366,7 @@ export function buildDiorama(field, o = {}) {
   }
 
   // ---------------------------------------------------------------- materials
-  const wallMats = [libMat('wall_stone', 0xd8d0c4), libMat('wall_timber', 0xe8e0d0), libMat('wall_ruin', 0xc8beb0)];
+  const wallMats = [libMat('wall_stone', 0xd8d0c4), libMat('wall_timber', 0xdcd2bc, { ns: 0.75, grime: 0.5, amount: 0.75 }), libMat('wall_ruin', 0xc8beb0)];
   const plinthMat = libMat('wall_stone', 0x8a8278);
   const capMat = libMat('wall_ruin', 0x6a6258);
   const linenMat = pbr('cloth', 0xd8ccb2);

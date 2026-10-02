@@ -147,14 +147,14 @@ export const DEMOS = {
       setActive(sc, caster);
       sc.mode = 'target';
       sc.modeData = { spell: 'fireball', label: 'Fireball' };
-      // Timing: whatever the range, the gallery frame (t=0.75) lands ~0.17 s after
-      // detonation — the money frame: white-hot heart, billowing shell, shockwave out.
+      // Timing: whatever the range, the gallery frame (t=0.75) lands ~0.42 s after
+      // detonation — the money frame: rolling flame, sooty rim, cap boiling up, victims thrown.
       const f = sc.figures.get(caster.id);
       const centre = sq2w(best.x, best.y).setY(0.9);
       f.play('cast', -10, 1.15);
       f.update(0);
       const flight = Math.max(0.35, f.bonePos('handR').distanceTo(centre) / 16);
-      const launch = 0.75 - 0.17 - flight;
+      const launch = 0.75 - 0.42 - flight;
       f.play('cast', launch - 0.62, 1.15);
       f.update(launch);
       const hand = f.bonePos('handR').clone();
