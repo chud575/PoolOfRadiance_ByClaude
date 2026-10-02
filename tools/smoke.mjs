@@ -2,7 +2,7 @@
 /**
  * End-to-end vertical-slice smoke test (headless):
  * title → Quick Start → walk east into the kobold ambush → dialogue → COMBAT →
- * QUICK auto-resolve → victory → back to explore. Fails on any page error.
+ * QUICK auto-resolve → victory → back to explore → row to Sokol Keep by keyboard. Fails on any page error.
  *   node tools/smoke.mjs [--shots] [--port N]   (--shots saves shots/smoke_*.png at each step)
  */
 import { ensureServer } from './lib/server.mjs';
@@ -49,6 +49,15 @@ try {
   const loc = await page.evaluate(() => window.__GAME.game.location);
   const xp = await page.evaluate(() => window.__GAME.game.party[0].xp);
   console.log('back in explore at', loc, 'lead xp', xp);
+  // travel by keyboard: the Grey Gull prompt's command is 'Row to Sokol Keep', so R must row
+  await page.goto(`${srv.base}?seed=7&scene=dialogue&script=go_civ_sokol`, { waitUntil: 'load' });
+  await page.waitForFunction(() => window.__READY === true, null, { timeout: 60000 });
+  await waitScene('dialogue');
+  await page.waitForTimeout(300);
+  await page.keyboard.press('Enter'); // finish the typewriter reveal
+  await page.keyboard.press('r');
+  await page.waitForFunction(() => window.__GAME?.scenes.currentName === 'explore' && window.__GAME.game.location?.map === 'sokol_keep', null, { timeout: 60000, polling: 100 });
+  console.log('rowed to', await page.evaluate(() => window.__GAME.game.location));
   ok = errors.length === 0;
 } catch (err) {
   console.error('[smoke] step failed:', err.message, 'scene =', await sceneName().catch(() => '?'));

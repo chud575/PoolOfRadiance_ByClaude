@@ -346,7 +346,7 @@ vec2 map(vec3 pw) {
       float bd = bodyField(b, part) * hs * BODYK;
       if (bd < res) { res = bd; mat = 10.0 + part; }
     } else res = min(res, bb * hs * BODYK);
-  } else res = min(res, (b.y + 0.06) * hs * BODYK + 0.003);
+  } else if (!MDBG(16)) res = min(res, (b.y + 0.06) * hs * BODYK + 0.003);
   return vec2(res, mat);
 }
 float mapD(vec3 p) { return map(p).x; }

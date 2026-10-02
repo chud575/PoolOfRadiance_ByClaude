@@ -16,7 +16,7 @@ export async function current(chars, o = {}) {
   const t = [];
   for (const ch of chars) {
     const t0 = performance.now();
-    images.push(renderPortraitWith(offscreen().renderer, { classSpec: 'fighter', name: 'X', ...ch }, { scale: o.scale ?? 1, crop: o.crop }));
+    images.push(renderPortraitWith(offscreen().renderer, { classSpec: 'fighter', name: 'X', ...ch }, { scale: o.scale ?? 1, crop: o.crop, raw: o.raw, oil: o.oil, mode: o.mode, yaw: ch.yaw ?? o.yaw, pitch: ch.pitch ?? o.pitch, tilt: ch.tilt ?? o.tilt, viewH: o.viewH, targetY: o.targetY, ss: o.ss, dbg: o.dbg }));
     t.push(Math.round(performance.now() - t0));
   }
   if (o.sheet) return { images: [sheet(images, o.cols ?? images.length)], info: t };

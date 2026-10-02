@@ -169,6 +169,7 @@ uniform float uDetail;
 uniform float uPix;
 uniform float uSteps;
 uniform float uSeed;
+uniform vec3 uGaze;
 uniform float uDbg;
 uniform float uGain;
 uniform float uLite;
@@ -936,6 +937,7 @@ export function createHead(app, frame, o = {}) {
     uGain: { value: o.gain ?? 1 },
     uLite: { value: o.lite ? 1 : 0 },
     uSeed: { value: (app.seed % 97) * 0.37 },
+    uGaze: { value: new THREE.Vector3(0, -0.05, 1).normalize() },
     uInvModel: { value: new THREE.Matrix4() },
     uModel: { value: new THREE.Matrix4() },
     uProj: { value: new THREE.Matrix4() },

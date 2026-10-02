@@ -22,7 +22,7 @@
 .shp-keeper .say .hid { visibility: hidden; }
 
 /* detail card */
-.shp-detail { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 6.2em 1fr; gap: 0.4em 1.2em; align-content: start; padding: 1.1em 1.3em !important; }
+.shp-detail { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-color: var(--por-gilt-lo) transparent; display: grid; grid-template-columns: 6.2em 1fr; gap: 0.4em 1.2em; align-content: start; padding: 1.1em 1.3em !important; }
 .shp-detail .icon { grid-row: 1 / span 2; width: 6.2em; height: 6.2em; border-radius: 4px; display: grid; place-items: center;
   background: radial-gradient(circle at 45% 40%, rgba(80, 110, 190, 0.35), rgba(5, 8, 20, 0.9)); box-shadow: 0 0 0 1px var(--por-gilt-lo), inset 0 0 18px rgba(0,0,0,0.8); }
 .shp-detail .icon img { width: 80%; height: 80%; image-rendering: auto; filter: drop-shadow(0 3px 4px rgba(0,0,0,0.7)); }
@@ -181,6 +181,10 @@
 .shp-burden .then { position: absolute; top: 0.08em; bottom: 0.08em; background: repeating-linear-gradient(135deg, #ff8a70 0 3px, rgba(255, 138, 112, 0.4) 3px 6px); }
 .shp-burden .cut { position: absolute; top: -0.12em; bottom: -0.12em; width: 1px; background: rgba(255, 240, 200, 0.6); }
 .shp-detail .shp-stats { grid-template-columns: 1fr 1.6fr; }
+.shp-detail .shp-stats.n3 { grid-template-columns: 1fr 1.25fr 0.8fr; gap: 0.4em; }
+.shp-detail .shp-stats.n3 .shp-stat { padding: 0.35em 0.5em; }
+.shp-detail .shp-stats.n3 .shp-stat .l { letter-spacing: 0.12em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shp-detail .shp-stats.n1 { grid-template-columns: 1fr; }
 
 /* ---------- training: the master's book ---------- */
 .shp-train.sel { border-color: var(--por-gilt-hi); box-shadow: 0 0 10px rgba(245, 217, 139, 0.18); }

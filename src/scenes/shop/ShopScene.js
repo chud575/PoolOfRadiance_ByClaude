@@ -65,7 +65,7 @@ export default class ShopScene extends Scene {
     this.tab = params.tab ?? { temple: 'services', training: 'train', tavern: 'tavern' }[kind] ?? 'buy';
     this.filter = 'all';
     this.selId = params.item ?? null;
-    this.selIdx = null;
+    this.selIdx = Number.isFinite(Number(params.sel)) && params.sel !== '' ? Number(params.sel) : null;
     this.t0 = ctx.clock.time;
     this._build();
     this.listen('party:changed', () => this.refresh());
@@ -333,7 +333,11 @@ export default class ShopScene extends Scene {
       if (d.effect && (d.type === 'potion' || d.type === 'scroll' || d.type === 'wand')) stats.append(stat('Effect', effectName(d.effect), '', 0));
       if (d.charges) stats.append(stat('Charges', entry?.charges ?? d.charges, '', 0));
     }
-    if (stats.children.length) add(stats);
+    if (stats.children.length) {
+      // three stat boxes sit in one compact row; a burden bar pairs with AC in two
+      stats.classList.add(`n${Math.min(3, stats.children.length)}`);
+      add(stats);
+    }
     // who can use it
     const users = h('div.shp-users', [h('span.l', ['Usable by'])]);
     for (const m of this.ctx.game.party) {
@@ -436,8 +440,21 @@ export default class ShopScene extends Scene {
       const atMax = lvl >= maxLevel(m, cls);
       const cur = xpForLevel(cls, lvl);
       const next = xpForLevel(cls, lvl + 1);
-      const pct = atMax ? 1 : Math.max(0, Math.min(1, (m.xp[cls] - cur) / Math.max(1, next - cur)));
-      const lbl = atMax ? 'At the limit of what can be taught' : ready.length ? 'Ready to train' : `${(next - m.xp[cls]).toLocaleString('en-US')} xp to go`;
+      // a multiclass character's experience is split between the classes, each with its own
+      // table (a thief needs 1,251 for level 2, a fighter 2,001): show every class's target
+      const prog = classes.map((c) => {
+        const l = m.levels[c];
+        const lo = xpForLevel(c, l);
+        const hi = xpForLevel(c, l + 1);
+        const done = l >= maxLevel(m, c);
+        return { c, done, pct: done ? 1 : Math.max(0, Math.min(1, ((m.xp[c] ?? 0) - lo) / Math.max(1, hi - lo))), togo: Math.max(0, hi - (m.xp[c] ?? 0)) };
+      });
+      const open = prog.filter((p) => !p.done);
+      const pct = open.length ? Math.max(...open.map((p) => p.pct)) : 1;
+      void cur; void next;
+      const lbl = atMax && !open.length ? 'At the limit of what can be taught' : ready.length ? 'Ready to train'
+        : open.length > 1 ? `${open.map((p) => `${CLASSES[p.c].abbr} ${p.togo.toLocaleString('en-US')}`).join(' · ')} xp to go`
+          : `${open[0].togo.toLocaleString('en-US')} xp to go`;
       this.listEl.append(h(`div.shp-row.shp-train${i === this.ctx.game.activeIndex ? '.sel' : ''}${ready.length ? '.ready' : ''}`, { onclick: () => { this.ctx.game.activeIndex = i; this.ctx.game.notifyPartyChanged(); } }, [
         h('img', { src: portraitURL(m, 0.4), alt: '' }),
         h('span.t', [m.name]),

@@ -640,8 +640,8 @@ for (const t of TRAVEL) {
         branch: t.requires ? [{ if: { notFlag: t.requires }, goto: 'barred' }] : undefined,
         text: t.text,
         choices: [
-          { label: t.go ?? 'Go', key: 'Y', travel: { ...t.to, minutes: t.minutes ?? 10 } },
-          { label: 'Stay', key: 'N', end: true },
+          { label: t.go ?? 'Go', travel: { ...t.to, minutes: t.minutes ?? 10 } },
+          { label: 'Stay', end: true },
         ],
       },
       barred: { text: t.barred ?? 'The way is barred.', end: true },

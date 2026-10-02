@@ -370,6 +370,9 @@ export default class DialogueScene extends Scene {
     const used = new Set();
     const cmds = choices.map((c, i) => {
       let key = c.key;
+      // a fixed key must be a letter the label shows (the command bar gilds it); otherwise take the
+      // first free letter of the label, so the obvious key always works and is always drawn
+      if (key && /[A-Z]/i.test(c.label) && !c.label.toUpperCase().includes(key.toUpperCase())) key = null;
       if (!key || used.has(key.toUpperCase())) key = [...c.label.toUpperCase()].find((ch) => /[A-Z]/.test(ch) && !used.has(ch)) ?? String(i + 1);
       used.add(key.toUpperCase());
       return { id: `c${i}`, label: c.label, key, disabled: !!c.disabled, tip: c.tip, onSelect: () => this._choose(c) };
@@ -380,7 +383,19 @@ export default class DialogueScene extends Scene {
     this.tipsEl = null;
     const tipped = cmds.filter((c) => c.tip);
     if (tipped.length >= 2) {
-      this.tipsEl = h('div.dlg-tips', tipped.map((c) => h('div.dlg-tip', { onclick: (e) => { e.stopPropagation(); c.onSelect(); } }, [h('span.por-keycap', [c.key.toUpperCase()]), h('b', [c.label]), h('span', [c.tip])])));
+      // the choices live on the command bar alone; the parchment carries one quiet line that
+      // names the manner of the command under the pointer (or keyboard focus)
+      const idle = () => [h('span.dlg-hint-k', ['Your manner']), h('span', [`${tipped.map((c) => c.label).join(' · ')} — point at a command to weigh it.`])];
+      this.tipsEl = h('div.dlg-hint', idle());
+      const show = (c) => { clear(this.tipsEl); this.tipsEl.append(...(c ? [h('span.dlg-hint-k', [c.label]), h('span', [c.tip])] : idle())); };
+      for (const b of this.bar.el.querySelectorAll('.por-cmd')) {
+        const c = cmds.find((x) => x.id === b.dataset.cmd);
+        if (!c?.tip) continue;
+        b.addEventListener('mouseenter', () => show(c));
+        b.addEventListener('focus', () => show(c));
+        b.addEventListener('mouseleave', () => show(null));
+        b.addEventListener('blur', () => show(null));
+      }
       this.body.append(this.tipsEl);
     }
   }
@@ -734,7 +749,8 @@ export default class DialogueScene extends Scene {
       led.append(h('h3', [kind === 'report' ? 'Report to the Council' : 'Commissions of the Council']), h('div.sub', [kind === 'report' ? (paid.length ? 'The Clerk counts out your reward in good Phlan gold.' : 'The Clerk finds nothing in your report that the Council owes you for. Yet.') : 'Signed and sealed; payable at this desk upon proof.']));
       const rows = h('div.rows');
       const sealed = QUEST_LIST.filter((q) => questStatus(game.flags, q.id) === 'locked').length;
-      QUEST_LIST.forEach((q, i) => {
+      let shown = 0; // numbered as listed, so a hidden commission never leaves a gap (I, II, IV)
+      QUEST_LIST.forEach((q) => {
         const st = questStatus(game.flags, q.id);
         if (st === 'locked') return;
         if (kind === 'report' && st !== 'rewarded' && st !== 'done' && st !== 'active') return;
@@ -743,7 +759,7 @@ export default class DialogueScene extends Scene {
           ? h('button.por-btn', { onclick: () => { (game.flags.quests ??= {})[q.id] = 'active'; addJournal(game, q.journal); this.ctx.ui.message(`Commission accepted: ${q.title}. Journal entry ${q.journal} recorded.`, 'lore'); this._showPanel(kind); this._renderStatus(this.script); this._renderQuests(); } }, ['Accept'])
           : h(`span.dlg-stamp.${st === 'offered' ? 'active' : st}`, [stampText]);
         rows.append(h(`div.dlg-lrow${st === 'locked' ? '.locked' : ''}`, [
-          h('span.n', [romanize(i + 1)]),
+          h('span.n', [romanize(++shown)]),
           h('div.t', [st === 'locked' ? 'Under seal' : q.title, h('small', [st === 'locked' ? 'The Council will open this commission when you have proven yourselves.' : q.summary])]),
           h('div.r', [`${q.reward.gold.toLocaleString('en-US')} gp`, h('em', [`${q.reward.xp} xp each`])]),
           accept,

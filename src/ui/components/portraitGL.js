@@ -354,7 +354,7 @@ function applyFrame(job) {
   u.uRes.value.set(job.RW, job.RH);
   u.uMode.value = o.mode ?? 0;
   u.uDbg.value = o.dbg ?? 0;
-  u.uKeyDir.value.fromArray(o.key ?? [-0.66, 0.7, 0.26]);
+  u.uKeyDir.value.fromArray(o.key ?? [-0.62, 0.6, 0.5]);
   u.uLightK.value.fromArray(o.lightK ?? [3.0, 0.26, 1.8, 0.75]);
   u.uLite.value = job.scale < 0.35 ? 1 : 0;
   u.uSpot.value.set(0.02, o.crop === 'torso' ? -0.2 : 0, 0, o.crop === 'torso' ? 0.14 : 0.028);

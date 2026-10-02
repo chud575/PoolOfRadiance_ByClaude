@@ -344,3 +344,14 @@
 .dlg-prose .dlg-more { margin: 0.1em 0 0; text-align: right; font-family: var(--font-display); font-size: 0.72em; letter-spacing: 0.24em; text-transform: uppercase; color: #7a1e12; animation: dlg-more-bob 1.6s ease-in-out infinite; }
 @keyframes dlg-more-bob { 50% { transform: translateY(0.18em); opacity: 0.7; } }
 .por-frozen .dlg-prose .dlg-more { animation: none; }
+
+/* one quiet line naming the manner of the hovered command (the choices themselves live on the bar) */
+.dlg-hint { display: flex; gap: 0.7em; align-items: baseline; margin-top: auto; padding-top: 0.45em; border-top: 1px solid rgba(90, 60, 20, 0.22);
+  font-size: 0.84em; line-height: 1.35; color: #5a3a1a; font-style: italic; min-height: 1.6em; }
+.dlg-hint .dlg-hint-k { font-family: var(--font-display); font-style: normal; letter-spacing: 0.16em; text-transform: uppercase; color: #6a1e10; font-size: 0.88em; white-space: nowrap; }
+.dlg-body:has(.dlg-hint) .dlg-prose { flex: 1 1 auto; }
+/* chronicle: the log scrolls inside the frame (pinned to the newest line) and its top edge fades out,
+   so an older line never shows cut in half */
+.por-frame.dlg-logframe > .por-frame-body { overflow: hidden; }
+.dlg-logframe .por-log { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-top: 1em;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 1.1em); mask-image: linear-gradient(to bottom, transparent 0, #000 1.1em); }
