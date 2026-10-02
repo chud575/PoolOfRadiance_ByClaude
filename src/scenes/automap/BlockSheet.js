@@ -558,7 +558,17 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
     const off = same.length > 1 ? (idx - (same.length - 1) / 2) * cs * 0.32 : 0;
     const mxp = CX(ev.x) + cs / 2 + off;
     const myp = CY(ev.y) + cs / 2;
-    drawMarker(g, mk2, mxp, myp, cs * 0.42, { color: INK.ink, seed: ev.x * 31 + ev.y });
+    // a pale knock-out under the glyph so it reads on top of the drawn paving
+    {
+      const kr = cs * 0.34;
+      const kg = g.createRadialGradient(mxp, myp, kr * 0.3, mxp, myp, kr);
+      kg.addColorStop(0, 'rgba(240,228,198,0.85)');
+      kg.addColorStop(0.7, 'rgba(240,228,198,0.6)');
+      kg.addColorStop(1, 'rgba(240,228,198,0)');
+      g.fillStyle = kg;
+      g.beginPath(); g.arc(mxp, myp, kr, 0, Math.PI * 2); g.fill();
+    }
+    drawMarker(g, mk2, mxp, myp, cs * (mk2 === 'battle' ? 0.52 : 0.44), { color: INK.ink, seed: ev.x * 31 + ev.y });
     markerSpots.push([mxp - cs * 0.22, myp - cs * 0.22, cs * 0.44, cs * 0.44]);
   }
   // exits: arrows in the margin + destination names
