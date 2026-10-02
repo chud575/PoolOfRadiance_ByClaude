@@ -239,6 +239,19 @@ export const DEMOS = {
     },
   },
 
+  /** Spell targeting for review: Magic Missile aimed (Tab) at the nearest foe — reticle, sight arc, spell card. */
+  target: {
+    async stage(sc) {
+      const caster = sc.party.find((c) => c.ref.levels.magicUser && !c.ref.levels.fighter) ?? sc.party.find((c) => c.ref.levels.magicUser) ?? sc.party[0];
+      setActive(sc, caster);
+      sc._frameCombatants(true, caster);
+      const spell = sc.params.spell || 'magicMissile';
+      sc._enterMode('target', { spell, label: spell === 'magicMissile' ? 'Magic Missile' : spell });
+      sc._cycleTarget(0);
+      sc._refresh(caster);
+    },
+  },
+
   /** Turn undead: the cleric raises the holy symbol against the skeletons (t≈0.6 peak). */
   turn: {
     async stage(sc) {

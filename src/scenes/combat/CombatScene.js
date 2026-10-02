@@ -165,7 +165,7 @@ export default class CombatScene extends Scene {
       f.light = l;
     });
     // Figure rim light: cool moonlit edge at night, warm sky edge by day.
-    RIM.uRimColor.value.set(this.night ? 0x5a78c0 : 0x8a7a64).multiplyScalar(this.night ? 1.25 : 0.55);
+    RIM.uRimColor.value.set(this.night ? 0x6a88d0 : 0x8a7a64).multiplyScalar(this.night ? 1.7 : 0.55);
 
     this._placeCombatants();
     this.engine = new CombatEngine({ rng, field: this.field, party: this.party, monsters: this.monsters });

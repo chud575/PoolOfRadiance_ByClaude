@@ -298,7 +298,7 @@ export function buildDiorama(field, o = {}) {
         float roughnessFactor = max(0.62, roughness * gr);
         roughnessFactor *= 1.0 - 0.12 * smoothstep(0.55, 0.78, gFbm(vWPos.xz * 0.09 + 11.0));
         roughnessFactor = mix(roughnessFactor, 0.5, wet * 0.8);
-        roughnessFactor = mix(roughnessFactor, 0.14, puddle);
+        roughnessFactor = mix(roughnessFactor, 0.3, puddle);
       `)
       .replace('#include <normal_fragment_maps>', `
         vec3 mapN = texture2D(normalMap, uv1).xyz * 2.0 - 1.0;

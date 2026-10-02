@@ -33,6 +33,7 @@ export const GALLERY = [
   { name: 'combat_melee', query: 'scene=combat&encounter=orcs_1&demo=melee&t=0.46&seed=1&yaw=0.3' },
   { name: 'combat_night', query: 'scene=combat&encounter=skeletons_1&hour=22&t=2&seed=1' },
   { name: 'combat_cloud', query: 'scene=combat&encounter=kobolds_1&demo=cloud&t=1.3&seed=1' },
+  { name: 'combat_target', query: 'scene=combat&encounter=kobolds_1&demo=target&t=2&seed=1' },
   { name: 'automap', query: 'scene=automap&map=phlan_slums&x=7&y=11&dir=N&explored=demo&t=1&seed=1' },
   { name: 'automap_zoom', query: 'scene=automap&map=phlan_slums&x=7&y=11&dir=N&explored=demo&zoom=2.6&t=1&seed=1' },
   { name: 'automap_diorama', query: 'scene=automap&map=phlan_slums&x=7&y=11&dir=N&explored=demo&mode=diorama&t=1&seed=1' },
