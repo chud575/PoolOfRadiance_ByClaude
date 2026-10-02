@@ -168,12 +168,14 @@ export function plaster({ seed = 31, base = [0.78, 0.72, 0.6], decay = 1, interi
     const trowel = fbm(u * 30, v * 10, { octaves: 3, period: 30, seed: seed + 2 });
     const fine = valueNoise(u * 200, v * 200, 200, seed + 3);
     const sweep = fbm(u * 22 + v * 9, v * 22 - u * 6, { octaves: 2, period: 22, seed: seed + 12 });
-    let c = mul3(base, 0.88 + (big - 0.5) * 0.22 + (mid - 0.5) * 0.1 + (fine - 0.5) * 0.05 + (sweep - 0.5) * 0.05);
+    let c = mul3(base, 0.88 + (big - 0.5) * 0.34 + (mid - 0.5) * 0.17 + (fine - 0.5) * 0.07 + (sweep - 0.5) * 0.07);
     // limewash build-up: subtle lighter/darker brush patches
     c = mix3(c, mul3(base, 1.08), smooth(0.55, 0.75, fbm(u * 6, v * 6, { octaves: 3, period: 6, seed: seed + 13 })) * 0.35);
     // yellowed water stains + drips
     const stain = smooth(0.52, 0.78, fbm(u * 4, v * 4, { octaves: 4, period: 4, seed: seed + 4 }));
-    c = mix3(c, mul3([0.62, 0.53, 0.38], 0.92), stain * 0.26 * decay);
+    c = mix3(c, mul3([0.6, 0.5, 0.36], 0.9), stain * 0.34 * decay);
+    // smudged grey-brown dirt blooms (hands, splash-back, old smoke) at the metre scale
+    c = mix3(c, [c[0] * 0.8, c[1] * 0.77, c[2] * 0.72], smooth(0.5, 0.8, fbm(u * 3 + 7.1, v * 3, { octaves: 4, period: 3, seed: seed + 21 })) * 0.55 * decay);
     const drip = fbm(u * 40, v * 1.4, { octaves: 3, period: 40, seed: seed + 5 });
     c = mul3(c, 1 - smooth(0.62, 0.86, drip) * 0.1 * decay);
     let h = 0.6 + trowel * 0.05 + mid * 0.04 + fine * 0.012 + sweep * 0.02;
@@ -309,25 +311,36 @@ export function roofTiles({ seed = 51, kind = 'slate', courses = 11, perCourse =
  * pebbles and occasional weeds. Tile ≈ 2 m at scale 11.
  */
 export function cobbleSetts({ seed = 61, scale = 11, moss = 0.4, wet = 0.2 } = {}) {
+  // rounded field cobbles bedded in grit: each stone its own cushion (no uniform bevel rim that
+  // reads as plastic scales), its own tone, lean and roughness; joints part-filled with sand/dirt
+  const tones = [[0.4, 0.39, 0.37], [0.33, 0.33, 0.35], [0.46, 0.42, 0.35], [0.28, 0.27, 0.26], [0.43, 0.42, 0.42], [0.42, 0.36, 0.31], [0.36, 0.37, 0.33]];
   return (u, v) => {
     const wu = u + (fbm(u * 4, v * 4, { octaves: 2, period: 4, seed: seed + 1 }) - 0.5) * 0.02;
     const w = worley(wu * scale, v * scale * 1.3, scale, seed);
     const gap = w.f2 - w.f1;
-    const stone = smooth(0.06, 0.2, gap);
-    const dome = Math.sqrt(clamp01(gap / 0.55));
     const n = fbm(u * 40, v * 40, { octaves: 3, period: 40, seed: seed + 2 });
     const big = fbm(u * 3, v * 3, { octaves: 4, period: 3, seed: seed + 3 });
-    const tones = [[0.4, 0.39, 0.37], [0.34, 0.34, 0.36], [0.45, 0.41, 0.35], [0.3, 0.29, 0.28], [0.42, 0.42, 0.43]];
+    const fillN = fbm(u * 14, v * 14, { octaves: 2, period: 14, seed: seed + 6 });
+    // joint width varies along its length (some stones sit tight, others are gapped and sanded)
+    const jw = 0.035 + fillN * 0.09;
+    const stone = smooth(jw, jw + 0.09, gap);
+    const t = clamp01(gap / (0.4 + w.id * 0.25));
+    const dome = t * (2 - t);
+    const lump = fbm(u * 26 + w.id * 17, v * 26, { octaves: 2, period: 26, seed: seed + 7 });
     let c = tones[Math.floor(w.id * tones.length)];
-    c = mul3(c, 0.78 + n * 0.3 + dome * 0.12);
+    const sTone = hash2(Math.floor(w.id * 997), 1, seed);
+    c = mul3(c, 0.72 + sTone * 0.36 + (n - 0.5) * 0.22 + dome * 0.08);
     c = mul3(c, 0.85 + big * 0.3);
+    // worn tops are lighter and polished by feet, the stone's shoulders keep the dirt
+    c = mix3(c, mul3(c, 0.7), (1 - dome) * stone * 0.45);
     const joint = worley(u * 90, v * 90, 90, seed + 4);
-    let jc = mul3([0.17, 0.14, 0.11], 0.8 + joint.id * 0.5);
+    let jc = mul3([0.2, 0.17, 0.13], 0.75 + joint.id * 0.45 + fillN * 0.3);
     jc = mix3(jc, [0.16, 0.22, 0.09], smooth(0.5, 0.7, big) * moss);
     const col = mix3(jc, c, stone);
-    const puddle = smooth(0.62, 0.7, fbm(u * 2, v * 2, { octaves: 3, period: 2, seed: seed + 5 })) * wet;
-    const h = stone * (0.4 + dome * 0.5 + n * 0.06) + (1 - stone) * (0.08 + joint.id * 0.08);
-    let r = lerp(0.95, 0.62 + n * 0.2 - dome * 0.12, stone);
+    const puddle = smooth(0.64, 0.72, fbm(u * 2, v * 2, { octaves: 3, period: 2, seed: seed + 5 })) * wet;
+    const fill = 0.1 + fillN * 0.18 + joint.id * 0.05;
+    const h = stone * (0.36 + dome * 0.42 + (lump - 0.5) * 0.08 + n * 0.04) + (1 - stone) * fill;
+    let r = lerp(0.96, 0.66 + sTone * 0.22 + n * 0.08 - dome * 0.08, stone);
     r = lerp(r, 0.15, puddle * (1 - stone * 0.6));
     return { c: mul3(col, 1 - puddle * 0.25), h, r };
   };

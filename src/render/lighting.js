@@ -251,7 +251,12 @@ export function getFlameMaterial() {
   flameMat = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
-    blending: THREE.AdditiveBlending,
+    // premultiplied 'over' with partial coverage: the fire adds its light but also veils what is
+    // behind it, so a flame still reads orange against a sunlit wall (pure additive washes out)
+    blending: THREE.CustomBlending,
+    blendSrc: THREE.OneFactor,
+    blendDst: THREE.OneMinusSrcAlphaFactor,
+    blendEquation: THREE.AddEquation,
     fog: false,
     uniforms: FLAME_UNIFORMS,
     vertexShader: /* glsl */ `
@@ -292,8 +297,8 @@ export function getFlameMaterial() {
       vec3 ramp(float k){
         vec3 c = mix(vec3(0.42, 0.05, 0.008), vec3(0.95, 0.27, 0.03), smoothstep(0.0, 0.32, k));
         c = mix(c, vec3(1.0, 0.56, 0.12), smoothstep(0.28, 0.6, k));
-        c = mix(c, vec3(1.0, 0.82, 0.42), smoothstep(0.58, 0.85, k));
-        c = mix(c, vec3(1.0, 0.93, 0.74), smoothstep(0.85, 1.0, k));
+        c = mix(c, vec3(1.0, 0.76, 0.34), smoothstep(0.58, 0.86, k));
+        c = mix(c, vec3(1.0, 0.88, 0.62), smoothstep(0.88, 1.0, k));
         return c;
       }
       // one tongue: rounded root, tapering licking tip; returns soft coverage
@@ -341,8 +346,8 @@ export function getFlameMaterial() {
         float sx = x + (fbm(vec2(x * 2.0, uv.y * 3.0 - t * 1.2)) - 0.5) * 1.2 * sy + sin(uv.y * 7.0 - t * 1.7) * 0.12 * sy;
         float wisp = (1.0 - smoothstep(0.04, 0.14 + 0.2 * sy, abs(sx))) * smoothstep(0.0, 0.3, sy) * (1.0 - smoothstep(0.5, 1.0, sy));
         wisp *= smoothstep(0.35, 0.7, fbm(vec2(x * 3.0, uv.y * 5.0 - t * 2.0))) * detail * (1.0 - tintAmt * 0.6);
-        vec3 outc = col * I * 1.35 + vec3(0.11, 0.095, 0.085) * wisp * 0.35;
-        float a = clamp(body + wisp * 0.1, 0.0, 1.0);
+        vec3 outc = col * I * 0.98 + vec3(0.11, 0.095, 0.085) * wisp * 0.35;
+        float a = clamp(body * (0.35 + 0.3 * (1.0 - k)) + wisp * 0.12, 0.0, 1.0);
         gl_FragColor = vec4(outc, a);
       }`,
   });

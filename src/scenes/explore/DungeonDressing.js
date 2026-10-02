@@ -638,7 +638,7 @@ export function dressDungeon(map, block, opts = {}) {
       cg.setIndex(idx);
       cg.computeVertexNormals();
       const orm = getAltarClothORM();
-      const cloth = new THREE.MeshStandardMaterial({ map: getAltarClothTexture(), roughnessMap: orm, metalnessMap: orm, roughness: 1, metalness: 1, alphaTest: 0.5, side: THREE.DoubleSide, sheen: 0 });
+      const cloth = new THREE.MeshStandardMaterial({ map: getAltarClothTexture(), roughnessMap: orm, metalnessMap: orm, roughness: 1, metalness: 1, alphaTest: 0.5, side: THREE.DoubleSide });
       cloth.map.flipY = true;
       const cm = new THREE.Mesh(cg, cloth);
       cm.applyMatrix4(m);

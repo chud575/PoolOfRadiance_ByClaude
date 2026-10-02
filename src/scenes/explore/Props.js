@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { CELL, EDGE } from '../../data/maps/MapGrid.js';
 import { getMaterial, getLampGlassMaterial, SURFACE_UNIFORMS } from '../../render/materials.js';
 import { getStainTexture, getBannerTexture, getGrassTexture, getIvyClusterTexture, getCobwebTexture, getPuddleTexture, getSoftTexture, getRugTexture, getRugBumpTexture, getRugFringeTexture, getTapestryTexture, getNoticeTexture, getBlobTexture } from '../../render/textures/index.js';
@@ -938,8 +939,10 @@ export function fracturedRock(seed, block) {
     }
     p.setXYZ(i, out.x, out.y, out.z);
   }
-  g.computeVertexNormals();
-  return g;
+  // smooth the conchoidal ripples, keep the cleavage planes crisp (no low-poly facet look)
+  const sm = toCreasedNormals(g, block ? 0.55 : 0.95);
+  g.dispose();
+  return sm;
 }
 
 /** Wall-mounted weapon rack: a pegged board with two spears, a sword, an axe and a painted round shield. */

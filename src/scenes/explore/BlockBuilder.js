@@ -346,7 +346,7 @@ export function buildBlock(map, opts = {}) {
       // corner classification at both ends
       for (const end of [-1, 1]) face.ends[end] = classifyEnd(e, sd.N, Tn, end, horizontal);
       RECIPES[recipe]?.(face);
-      if (face.gut || (!interiorFace && (recipe === 'ruin' || recipe === 'ruin_timber') && hash(face.seed, 'fire') < 0.45)) scorch(face);
+      if (face.gut || (!interiorFace && (recipe === 'ruin' || recipe === 'ruin_timber') && hash(face.seed, 'fire') < (recipe === 'ruin_timber' ? 0.75 : 0.45))) scorch(face);
       if (hearthEdge && interiorFace) {
         const wallDir = sd.N.x > 0.5 ? 'W' : sd.N.x < -0.5 ? 'E' : sd.N.z > 0.5 ? 'N' : 'S';
         if (hearths.some((h) => h.x === sd.cx && h.y === sd.cy && h.dir === wallDir)) buildHearth(face);
@@ -608,7 +608,7 @@ export function buildBlock(map, opts = {}) {
     },
     ruin_timber(f) {
       slab(f, 'arch_ruin', 0, Math.min(1.2, f.H), 0, T / 2 + 0.03, { chamfer: 0.03 });
-      slab(f, 'arch_plaster', 1.2, f.H, 0, T / 2, { jag: true, tint: [0.8, 0.76, 0.7] });
+      slab(f, 'arch_plaster', 1.2, f.H, 0, T / 2, { jag: true, tint: [0.7, 0.64, 0.56] }); // weathered, smoke-dulled daub
       ruinFrame(f);
     },
     cave(f) {

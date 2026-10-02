@@ -149,7 +149,7 @@ export default class ExploreScene extends Scene {
       this.sun.shadow.radius = 2.5;
       s.add(this.sun, this.sun.target);
       // cool sky bounce from the side away from the sun (no shadows)
-      this.fill = new THREE.DirectionalLight(night ? 0x5a6a9a : 0x9cb2d8, night ? 0.5 : k.sunI * 0.18);
+      this.fill = new THREE.DirectionalLight(night ? 0x6a7cb4 : 0x9cb2d8, night ? 0.85 : k.sunI * 0.18);
       // by night a high, cool sky-glow from the north as well: walls facing away from the moon still read
       if (night) this.fill.position.set(-this.sunDir.x * 30, 45, -40);
       else this.fill.position.set(-this.sunDir.x * 50, 30, -this.sunDir.z * 50);
@@ -170,7 +170,7 @@ export default class ExploreScene extends Scene {
       // raised ambient floor so silhouettes always read, even far from a torch; underground it is a
       // cool counter-light (cold air, wet stone) against the warm torches — the warrens greener,
       // Bane's temple a dead grey-green over a blood-red floor bounce
-      const amb = { warrens: [0x4a7a76, 0x1e160c, 4.5], bane: [0x46524c, 0x300a08, 5.0] }[ts.variant] ?? (dungeon ? [0x4a6a90, 0x1c150e, 1.8] : this.hour > 6.5 && this.hour < 18.5 ? [0xb4c4de, 0x6e4c30, 1.75] : [0xeedcc8, 0x5a3e28, 1.45]); // interiors by day: cool sky fill from the windows, warm hearth/board bounce up onto the joists
+      const amb = { warrens: [0x5a8480, 0x2a1e12, 6.5], bane: [0x4c5a52, 0x340c0a, 6.0] }[ts.variant] ?? (dungeon ? [0x4a6a90, 0x1c150e, 1.8] : this.hour > 6.5 && this.hour < 18.5 ? [0xb4c4de, 0x8e5e38, 1.9] : [0xeedcc8, 0x5a3e28, 1.45]); // interiors by day: cool sky fill from the windows, warm hearth/board bounce up onto the joists
       this.hemi = new THREE.HemisphereLight(amb[0], amb[1], amb[2]);
       s.add(this.hemi);
       if (dungeon) {
@@ -215,7 +215,7 @@ export default class ExploreScene extends Scene {
     }
     // party lantern: carried a little ahead and to the right, warm, ~5 m reach
     // outdoors it only pools on the nearest walls so the moonlight stays dominant
-    const lanternI = ts.outdoors ? this.night * 9 : ts.variant === 'bane' ? 13 : ts.id === 'dungeon' ? 11 : 2;
+    const lanternI = ts.outdoors ? this.night * 4.5 : ts.variant === 'bane' ? 13 : ts.id === 'dungeon' ? 11 : 2;
     this.lantern = new THREE.PointLight(0xffb468, lanternI, ts.outdoors ? 8 : 13, 2);
     this.lantern.position.set(0.45, -0.25, -0.15);
     this.lantern.userData.base = lanternI;
@@ -277,7 +277,7 @@ export default class ExploreScene extends Scene {
     const ts = this.tileset;
     if (!ts.outdoors) {
       if (ts.variant === 'bane') return { bloomStrength: 0.6, bloomThreshold: 0.72, bloomRadius: 0.55, exposure: 1.85, vignette: 0.5, saturation: 0.92, contrast: 1.08 };
-      if (ts.variant === 'warrens') return { bloomStrength: 0.6, bloomThreshold: 0.7, bloomRadius: 0.55, exposure: 1.6, vignette: 0.48, saturation: 0.95, contrast: 1.06 };
+      if (ts.variant === 'warrens') return { bloomStrength: 0.6, bloomThreshold: 0.7, bloomRadius: 0.55, exposure: 1.8, vignette: 0.48, saturation: 0.95, contrast: 1.06 };
       return ts.id === 'dungeon'
         ? { bloomStrength: 0.65, bloomThreshold: 0.7, bloomRadius: 0.55, exposure: 1.35, vignette: 0.5, saturation: 1.0, contrast: 1.06 }
         : { bloomStrength: 0.55, bloomThreshold: 0.75, bloomRadius: 0.5, exposure: 1.25, vignette: 0.42, saturation: 1.05, contrast: 1.05 };
@@ -390,7 +390,7 @@ export default class ExploreScene extends Scene {
     const flames = [];
     const glows = [];
     const glassGeos = [];
-    const indoorGlow = this.tileset.outdoors ? 0.85 : 0.5;
+    const indoorGlow = this.tileset.outdoors ? 0.3 + 0.55 * this.night : 0.42; // by day a torch is a flame, not a lamp
     for (const src of this.sources) {
       const candle = src.kind === 'candle';
       if (src.kind === 'lamp') {
@@ -510,7 +510,7 @@ export default class ExploreScene extends Scene {
       // inverse-square pools (~3 m effective reach); a torch by day barely registers against the sun
       const day = this.tileset.outdoors && this.night < 0.12;
       const under = this.tileset.id === 'dungeon';
-      l.userData.base = (hearth ? 20 : candle ? 1.6 : src.kind === 'brazier' ? 9 : src.kind === 'lamp' ? 6 : src.lightColor ? 6 : under ? 11 : 7) * (day ? 0.28 : 1);
+      l.userData.base = (hearth ? 20 : candle ? 1.6 : src.kind === 'brazier' ? 12 : src.kind === 'lamp' ? 6 : src.lightColor ? 6 : under ? 11 : 7) * (day ? 0.28 : 1);
       l.distance = hearth ? 12 : candle ? 4 : src.kind === 'brazier' ? 11 : 8;
     }
     for (const l of free) {

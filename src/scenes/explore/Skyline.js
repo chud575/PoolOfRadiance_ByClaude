@@ -495,6 +495,16 @@ function house(g, winLit, winDark, x, y0, z, w, d, h, rotX, ruined, id, night, c
     const n = new THREE.Vector3().subVectors(q1, q0).cross(new THREE.Vector3().subVectors(q2, q0));
     const out = A.clone().multiplyScalar(sa);
     g.tri(wallKey, n.dot(out) > 0 ? [q0, q1, q2] : [q0, q2, q1], null, { ao: 0.9, tint });
+    if (plaster) {
+      // gable timbering: tie beam, king post and a collar, so the gable is framed, not a blank plane
+      const o = A.clone().multiplyScalar(sa * (la - 0.26));
+      const ctr = new THREE.Vector3(x, 0, z).add(o);
+      const ang = Math.atan2(B.x, B.z);
+      const bm = (cy, along, sx, sy) => g.box('arch_beam_dark', { c: [ctr.x + B.x * along, cy, ctr.z + B.z * along], s: [sx, sy, 0.1], rotY: ang - Math.PI / 2, ao: 0.8 });
+      bm(top + 0.06, 0, lb * 2 - 0.8, 0.16);
+      bm(top + rise * 0.46, 0, 0.14, rise * 0.92);
+      bm(top + rise * 0.5, 0, lb - 0.55, 0.12);
+    }
   }
   // ridge tiles, fascia boards under the eaves and bargeboards up the gables
   {
@@ -571,11 +581,18 @@ function house(g, winLit, winDark, x, y0, z, w, d, h, rotX, ruined, id, night, c
       for (let fy = 0; fy * 2.6 < h - 0.5; fy++) bx(0, y0 + fy * 2.6 + 0.08, len + 0.1, 0.16);
       bx(0, y0 + h - 0.1, len + 0.1, 0.18);
       for (const e of [-1, 1]) bx(e * (len / 2 - 0.08), y0 + h / 2, 0.18, h);
+      // studs between the window bays on every storey, so the frame reads as joinery at range
+      const cols = Math.max(1, Math.floor(len / 1.6));
+      for (let fy = 0; fy * 2.6 < h - 1; fy++) {
+        const sh = Math.min(2.6, h - fy * 2.6) - 0.2;
+        for (let c = 0; c < cols - 1; c++) bx((c - (cols - 1) / 2 + 0.5) * (len / cols), y0 + fy * 2.6 + 0.1 + sh / 2, 0.12, sh);
+      }
+      // a rubble-stone plinth under the sill beam
+      g.box('arch_stone', { c: [fc.x - N.x * 0.03, y0 + 0.02 + 0.35, fc.z - N.z * 0.03], s: nx ? [0.08, 0.7, len] : [len, 0.7, 0.08], ao: 0.7, tint: [0.8, 0.78, 0.74] });
       if (hash(id, nx, nz, 'brace') < 0.7) {
         const fl = Math.min(2.6, h) - 0.2;
         for (const e of [-1, 1]) bx(e * (len / 2 - 0.55), y0 + 0.1 + fl / 2 + 2.6 * (h > 5.5 ? 1 : 0), 0.12, Math.hypot(0.9, fl), e * Math.atan2(0.9, fl));
       }
-      void N;
     }
   }
 }

@@ -251,7 +251,7 @@ function applySurfaceFX(mat, fx) {
           float gap = smoothstep(0.86, 0.95, roughnessFactor);
           float wetK = clamp(uFxWet * 2.0, 0.0, 1.0);
           roughnessFactor = mix(roughnessFactor, max(roughnessFactor, 0.93), vFxFloor * (1.0 - gap) * wetK);
-          roughnessFactor = mix(roughnessFactor, 0.32, vFxFloor * gap * wetK * 0.7);
+          roughnessFactor = mix(roughnessFactor, 0.42, vFxFloor * gap * wetK * 0.6);
           roughnessFactor = mix(roughnessFactor, 0.07, vFxWet * wetK);
         }`,
       )

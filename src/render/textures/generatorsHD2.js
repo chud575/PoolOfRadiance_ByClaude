@@ -135,7 +135,7 @@ const PALETTES = {
  * @param {{seed?:number, rows?:number, minW?:number, maxW?:number, palette?:string, mortarW?:number,
  *   chamfer?:number, chips?:number, erosion?:number, moss?:number, soot?:number, mortar?:number[], sheen?:number}} o
  */
-export function ashlar2({ seed = 21, rows = 10, minW = 0.12, maxW = 0.26, palette = 'warm', mortarW = 0.0035, chamfer = 0.004, chips = 1, erosion = 1, moss = 0.3, soot = 0, mortar = null, sheen = 0, joints = true, cracks = 0 } = {}) {
+export function ashlar2({ seed = 21, rows = 10, minW = 0.12, maxW = 0.26, palette = 'warm', mortarW = 0.0035, chamfer = 0.004, chips = 1, erosion = 1, moss = 0.3, soot = 0, mortar = null, sheen = 0, joints = true, cracks = 0, spalls = 1 } = {}) {
   const lay0 = layout({ rows, seed, minW, maxW });
   // jointless variant (single dressed blocks: jambs, voussoirs, quoins carry their own geometry bevels)
   const lay = joints ? lay0 : (u, v) => ({ row: 0, col: 0, x0: -2, x1: 3, y0: -2, y1: 3, uu: u, v });
@@ -192,9 +192,9 @@ export function ashlar2({ seed = 21, rows = 10, minW = 0.12, maxW = 0.26, palett
     // spalls: shallow scars in the face with a sharp rim
     // (only weathered stones spall: skip the cellular lookup on the rest — it dominates the cost)
     let spall = 0;
-    if (sB > 0.55 - 0.1 * erosion) {
+    if (spalls > 0 && sB > 0.55 - 0.1 * erosion) {
       const sp = worley(u * 18 + (chipField - 0.5) * 1.6, v * 18 + (mid - 0.5) * 1.6, 18, seed + 13);
-      spall = sp.id > 0.86 - 0.05 * erosion ? smooth(0.37, 0.28, sp.f1 + (fine - 0.5) * 0.25) : 0;
+      spall = sp.id > 1 - (0.14 + 0.05 * erosion) * spalls ? smooth(0.37, 0.28, sp.f1 + (fine - 0.5) * 0.25) : 0;
     }
     // hairline cracks: a few stones are split by a wandering fracture (each its own angle / path)
     let crk = 0;
@@ -318,7 +318,7 @@ export function baneRelief({ seed = 251 } = {}) {
   };
   return (u, v) => {
     const x = u * 2 - 1;
-    const y = 1 - v * 2;
+    const y = v * 2 - 1; // fingers up as the panel is mapped (the texture is uploaded flipped)
     const fine = fFine(u, v);
     const micro = fMicro(u, v);
     const border = Math.max(Math.abs(x), Math.abs(y));
@@ -327,15 +327,15 @@ export function baneRelief({ seed = 251 } = {}) {
     const ring = smooth(0.66, 0.68, r0) * (1 - smooth(0.72, 0.74, r0));
     const ang = Math.atan2(y, x);
     const spikes = (1 - smooth(0.0, 0.02, r0 - 0.74 - 0.08 * Math.max(0, Math.cos(ang * 12)) ** 6)) * smooth(0.72, 0.74, r0);
-    const hand = 1 - smooth(-0.01, 0.01, handSDF(x * 1.15, y * 1.15 + 0.02));
+    const hand = 1 - smooth(-0.01, 0.01, handSDF(x * 1.08, y * 1.08 + 0.04));
     const relief = Math.max(frame, ring, spikes * 0.9, hand);
     const h = 0.35 + relief * 0.35 + (fine - 0.5) * 0.04 + (micro - 0.5) * 0.015 - (border > 0.97 ? 0.15 : 0);
     let c = mul3([0.11, 0.105, 0.11], 0.85 + (fine - 0.5) * 0.3 + (micro - 0.5) * 0.1);
     // raised parts are polished (worn by hands) and slightly lighter; recesses keep a dull red pigment
     c = mix3(c, [0.32, 0.05, 0.04], (1 - relief) * smooth(0.0, 0.66, 0.66 - Math.abs(r0 - 0.33)) * 0.0);
-    c = mix3(c, mul3(c, 1.35), relief * 0.5);
+    c = mix3(c, mul3(c, 1.7), relief * 0.6);
     const pigment = (1 - relief) * (r0 < 0.66 ? 1 : 0);
-    c = mix3(c, [0.24, 0.035, 0.03], pigment * 0.55);
+    c = mix3(c, [0.26, 0.035, 0.03], pigment * 0.75);
     const r = lerp(0.82, 0.38, relief) + (fine - 0.5) * 0.08;
     return { c, h, r };
   };
