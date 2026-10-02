@@ -442,7 +442,7 @@ function buildBiped(o) {
     // Eyes (glowing for monsters) set into the sculpted sockets; helmets as kit.
     const hs = s * (o.headScale ?? 1);
     // Undead eyes burn; the living get a beady, wet glint that only glows by night (sprite).
-    const eyeMat = o.eyes != null ? (o.undead ? pbr('glow', 0x000000, { emissive: o.eyes, emissiveIntensity: 2.4 }) : pbr('glow', 0x140604, { emissive: o.eyes, emissiveIntensity: 0.45 })) : pbr('eye', 0x1a120c);
+    const eyeMat = o.eyes != null ? (o.undead ? pbr('glow', 0x000000, { emissive: o.eyes, emissiveIntensity: 2.4 }) : pbr('glow', 0x140604, { emissive: o.eyes, emissiveIntensity: 1.2 })) : pbr('eye', 0x1a120c);
     for (const e of sculptEyes.eyes ?? []) R.part('head', sphere(sculptEyes.eyeR * hs, 8, 6), eyeMat, { p: [e[0] * hs, e[1] * hs, e[2] * hs] });
     if (o.head === 'orc') {
       // Yellowed tusks jutting up from the underbite (two-part, slightly hooked).
@@ -641,8 +641,13 @@ function buildHead(R, o, s, skinMat) {
         R.part('head', box(0.018 * hs, 0.08 * hs, 0.02 * hs), metal, { p: [0, hy - 0.005 * hs, 0.112 * hs] });
       } else if (kit.mage) {
         // Wide-brimmed pointed hat.
-        R.part('head', cyl(0.2 * hs, 0.2 * hs, 0.012 * hs, 24), pbr('cloth', new THREE.Color(kit.color).multiplyScalar(0.6).getHex()), { p: [0, hy + 0.07 * hs, 0] });
-        R.part('head', lathe([[0.115, 0], [0.1, 0.08], [0.06, 0.18], [0.02, 0.27], [0.002, 0.3]].map(([r, y]) => [r * hs, y * hs]), 16), pbr('cloth', new THREE.Color(kit.color).multiplyScalar(0.6).getHex()), { p: [0, hy + 0.07 * hs, -0.01 * hs], r: [-0.25, 0, 0.1] });
+        // Felt hat: a thin brim with a rolled, drooping edge, a crown that
+        // slumps and a tip that flops back (no rigid traffic cone).
+        const felt = pbr('cloth', new THREE.Color(kit.color).multiplyScalar(0.6).getHex());
+        R.part('head', cyl(0.2 * hs, 0.19 * hs, 0.01 * hs, 24), felt, { p: [0, hy + 0.07 * hs, 0], r: [0.08, 0, 0.05] });
+        R.part('head', torus(0.198 * hs, 0.011 * hs, 5, 28), felt, { p: [0, hy + 0.062 * hs, 0], r: [Math.PI / 2 + 0.08, 0, 0.05], s: [1, 1, 0.8] });
+        R.part('head', lathe([[0.118, 0], [0.108, 0.05], [0.09, 0.11], [0.072, 0.16]].map(([r, y]) => [r * hs, y * hs]), 16), felt, { p: [0, hy + 0.07 * hs, -0.01 * hs], r: [-0.25, 0, 0.1] });
+        R.part('head', lathe([[0.074, 0], [0.058, 0.05], [0.036, 0.1], [0.016, 0.15], [0.003, 0.18]].map(([r, y]) => [r * hs, y * hs]), 14), felt, { p: [-0.016 * hs, hy + 0.222 * hs, -0.05 * hs], r: [-1.0, 0, 0.3] });
         R.part('head', torus(0.11 * hs, 0.01 * hs, 5, 20), pbr('gold', 0xd8b25a), { p: [0, hy + 0.08 * hs, 0], r: [Math.PI / 2, 0, 0] });
         R.part('head', sphere(0.104 * hs, 16, 12, { thetaLength: Math.PI * 0.6 }), hairMat, { p: [0, hy + 0.006 * hs, -0.014 * hs], r: [-0.55, 0, 0], s: [0.98, 1.05, 1.06] });
         R.part('head', limb(0.08 * hs, 0.05 * hs, 0.3 * hs, { seg: 10, zs: 0.5 }), hairMat, { p: [0, hy - 0.02 * hs, -0.07 * hs] });

@@ -634,6 +634,25 @@ export function buildDiorama(field, o = {}) {
             torchSpots.push({ x: ox + Math.cos(yaw) * (d.at + 1.0) + Math.sin(yaw) * 0.35, z: oz - Math.sin(yaw) * (d.at + 1.0) + Math.cos(yaw) * 0.35, y: 2.35, yaw, house });
           }
           if (!doors.length && len > 3) torchSpots.push({ x: ox + Math.cos(yaw) * (len / 2) + Math.sin(yaw) * 0.35, z: oz - Math.sin(yaw) * (len / 2) + Math.cos(yaw) * 0.35, y: 2.4, yaw, house });
+          // Long masonry faces get stepped buttresses (rhythm and shadow on an
+          // otherwise flat slab); any face may carry ivy climbing from a corner.
+          if (style !== 1 && len > 5) {
+            const nb = Math.floor(len / 3.6);
+            for (let k = 1; k <= nb; k++) {
+              const at = (k / (nb + 1)) * len;
+              if (doors.some((d) => Math.abs(d.at - at) < 1.1)) continue;
+              const bh = Math.min(hh - 0.6, 2.6 + hash(k, seed * 50, 3) * 0.8);
+              B.add(place(worldBox(0.5, bh, 0.42, 2.5), at, bh / 2, 0.21), plinthMat);
+              B.add(place(worldBox(0.5, 0.7, 0.32, 2.5).rotateX(-0.6), at, bh + 0.12, 0.12), plinthMat, { cast: false });
+            }
+          }
+          if (hash(f.d.charCodeAt(0), seed * 77, 11) > 0.45) {
+            const iw2 = 1.4 + hash(seed * 31, f.d.charCodeAt(0), 2) * 1.6;
+            const ih2 = Math.min(hh - 0.4, 2.2 + hash(seed * 29, f.d.charCodeAt(0), 4) * 2.2);
+            const left = hash(seed * 13, f.d.charCodeAt(0), 6) > 0.5;
+            const g = new THREE.PlaneGeometry(iw2, ih2);
+            B.add(place(g, left ? iw2 / 2 + 0.05 : len - iw2 / 2 - 0.05, ih2 / 2, 0.035), ivyMaterial(Math.floor(seed * 3)), { cast: false });
+          }
         }
       }
     }
@@ -1854,6 +1873,50 @@ function noiseTexture() {
 }
 
 const _rugs = [];
+const _ivy = [];
+/** Climbing ivy: dense leaf clusters thinning toward the top, alpha-tested. */
+function ivyMaterial(k) {
+  if (_ivy[k]) return _ivy[k];
+  const c = document.createElement('canvas');
+  c.width = 128;
+  c.height = 192;
+  const g = c.getContext('2d');
+  let sd = 17 + k * 101;
+  const rnd = () => ((sd = (sd * 16807) % 2147483647) / 2147483647);
+  // Woody stems first.
+  g.strokeStyle = '#2a1e12';
+  g.lineWidth = 1.5;
+  for (let i = 0; i < 7; i++) {
+    let x = 20 + rnd() * 88;
+    let y = 192;
+    g.beginPath();
+    g.moveTo(x, y);
+    while (y > 20) {
+      x += (rnd() - 0.5) * 14;
+      y -= 6 + rnd() * 10;
+      g.lineTo(x, y);
+    }
+    g.stroke();
+  }
+  for (let i = 0; i < 1100; i++) {
+    const y = 192 * rnd(); // height from the root (bottom)
+    const spread = 0.5 + 0.5 * (y / 192);
+    const x = 64 + (rnd() - 0.5) * 128 * spread;
+    // Dense at the root, ragged and thinning toward the top.
+    if (rnd() > 1 - 0.8 * Math.pow(y / 192, 1.3)) continue;
+    const r = 2.5 + rnd() * 3.5;
+    const sh = 0.35 + rnd() * 0.65;
+    g.fillStyle = `rgb(${Math.round(20 + 30 * sh)},${Math.round(34 + 40 * sh)},${Math.round(14 + 14 * sh)})`;
+    g.beginPath();
+    g.ellipse(x, 192 - y, r, r * 0.75, rnd() * 3, 0, Math.PI * 2);
+    g.fill();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  _ivy[k] = new THREE.MeshStandardMaterial({ map: t, alphaTest: 0.5, roughness: 0.8, side: THREE.DoubleSide });
+  return _ivy[k];
+}
+
 function rugMaterial(k) {
   if (_rugs[k]) return _rugs[k];
   const c = document.createElement('canvas');
