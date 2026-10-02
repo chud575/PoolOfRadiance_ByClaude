@@ -325,9 +325,12 @@ export function clearEffects(target, pred = () => true) {
  * (cast from a spell whose duration runs in turns or hours — Enlarge, Prot.
  * from Normal Missiles, Strength, Resist Fire... see spells
  * LONG_DURATION_SPELLS) or from a potion; those run out with passTime.
+ * Effects of round-measured spells end with the battle, as the PHB durations
+ * (a few rounds) would have run out by then: Bless, Haste, Mirror Image,
+ * Protection from Evil/Good (2-3 rounds per level), Friends (1 round per level).
  */
 export function clearCombatEffects(target) {
-  const keep = new Set(['poisoned', 'diseased', 'blinded', 'bestowCurse', 'slowPoison', 'bandaged', 'detectMagic', 'findTraps', 'detectInvisibility', 'friends', 'resistCold', 'resistFire', 'strength', 'giantStrength', 'protEvil', 'protGood', 'invisible', 'strDrain', 'heroism']);
+  const keep = new Set(['poisoned', 'diseased', 'blinded', 'bestowCurse', 'slowPoison', 'bandaged', 'detectMagic', 'findTraps', 'detectInvisibility', 'resistCold', 'resistFire', 'strength', 'giantStrength', 'invisible', 'strDrain', 'heroism']);
   return clearEffects(target, (e) => !keep.has(e.id) && !e.persist);
 }
 

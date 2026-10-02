@@ -29,7 +29,28 @@ export const ARMOR_MOVE = {
 };
 
 /** Default missile rate of fire (per round) by weapon group (PHB). */
-export const RATE_OF_FIRE = { shortBow: 2, longBow: 2, compositeBow: 2, dart: 3, dagger: 2, lightCrossbow: 1, heavyCrossbow: 0.5, sling: 1, handAxe: 1, spear: 1 };
+export const RATE_OF_FIRE = { shortBow: 2, longBow: 2, compositeBow: 2, dart: 3, dagger: 2, lightCrossbow: 1, heavyCrossbow: 0.5, sling: 1, handAxe: 1, spear: 1, javelin: 1 };
+
+/**
+ * Melee weapons that can also be hurled (PHB missile table), with their long
+ * range in battle squares (the dart's 4.5" is its 6 squares, so roughly 4
+ * squares to 3"). The world data lists daggers, hand axes and spears as melee
+ * weapons; throwableDef() gives them their thrown profile.
+ */
+export const THROWN_RANGE = Object.freeze({ dagger: 4, handAxe: 4, spear: 4, javelin: 8 });
+
+/**
+ * The missile form of a weapon: a true missile weapon (bow, sling, dart) as it
+ * is, a throwable melee weapon (dagger, hand axe, spear, javelin) with
+ * `ranged`, `thrown` and its thrown `range` filled in, anything else null.
+ * @param {object} def ItemDef
+ */
+export function throwableDef(def) {
+  if (!def || def.type !== 'weapon') return null;
+  if (def.ranged) return def;
+  const r = THROWN_RANGE[def.weaponGroup ?? def.id];
+  return r ? { ...def, ranged: true, thrown: true, range: r, meleeRange: def.range ?? 1 } : null;
+}
 
 /**
  * DMG rules the world data does not (yet) state, merged over the ItemDef by

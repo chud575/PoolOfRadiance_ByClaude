@@ -4,7 +4,7 @@ import {
   isSilverWeapon, isEdgedWeapon, rollSurprise,
 } from '../../../rules/combat.js';
 import { regenerationOf, breathOf, isAfraid } from '../../../rules/specials.js';
-import { bandage as bandageCharacter, armorAllowsThieving, missileProfile } from '../../../rules/character.js';
+import { bandage as bandageCharacter, missileProfile, useMissile, canBackstab, backstabMultiplierOf } from '../../../rules/character.js';
 import { rangeModifier } from '../../../rules/items.js';
 import { effectMods, hasEffect } from '../../../rules/conditions.js';
 import { effectHost } from '../../../rules/creature.js';
@@ -14,7 +14,6 @@ import {
   beginCasting, finishCasting, castDueBefore, castingDelay, cloudExposure,
   monsterSpecialActions, breathInBattle, rockInBattle, fearInBattle,
 } from '../../../rules/battle.js';
-import { backstabMultiplier } from '../../../rules/classes.js';
 import { ITEMS } from '../../../data/items.js';
 import { SPELLS } from '../../../data/spells.js';
 import { SPELL_RULES } from '../../../rules/spells.js';
@@ -142,7 +141,7 @@ export class CombatEngine {
     // rules missileProfile: equipped missile first, DEX + racial + enchantment (+ STR when thrown), ammo check
     const mp = missileProfile(c.ref);
     if (!mp) return null;
-    return { damage: mp.damage, damageLarge: mp.damageLarge, range: mp.range, hitBonus: mp.hitBonus, dmgBonus: mp.dmgBonus, thrown: mp.thrown, magic: mp.magic, name: mp.def.name, id: mp.def.id, ammo: mp.ammo };
+    return { damage: mp.damage, damageLarge: mp.damageLarge, range: mp.range, hitBonus: mp.hitBonus, dmgBonus: mp.dmgBonus, thrown: mp.thrown, magic: mp.magic, name: mp.def.name, id: mp.def.id, def: mp.def, ammo: mp.ammo, fxHit: mp.fxHit, fxDmg: mp.fxDmg, mp };
   }
 
   /** Name of the weapon in hand (for UI + model). */
@@ -184,14 +183,14 @@ export class CombatEngine {
     if (!ableToAct(def)) notes.push(ranged ? 'helpless' : 'helpless: slain outright');
     const rear = !ranged && this.isRear(att, def);
     let backstab = false;
-    if (rear && att.side === 'party' && att.ref.levels?.thief && armorAllowsThieving(att.ref)) {
+    if (rear && att.side === 'party' && canBackstab(att.ref)) {
       backstab = true;
       notes.push('backstab +4');
     } else if (rear) notes.push('rear +2');
     if (ranged) {
       const d = Battlefield.dist(att.x, att.y, def.x, def.y);
       const rp = this.rangedProfile(att);
-      const rm = rp ? rangeModifier(rp.id ? ITEMS[rp.id] : { range: rp.range }, d) : null; // PHB S/M/L: 0/-2/-5
+      const rm = rp ? rangeModifier(rp.def ?? { range: rp.range }, d) : null; // PHB S/M/L: 0/-2/-5
       if (rm?.mod) { mods += rm.mod; notes.push(`${rm.band} range`); }
     }
     return { mods, dmgMod, rear, backstab, notes };
@@ -202,9 +201,10 @@ export class CombatEngine {
     if (!ranged || att.side !== 'party') return att;
     const rp = this.rangedProfile(att);
     if (!rp) return att;
-    const def = ITEMS[rp.id];
+    const def = rp.def ?? ITEMS[rp.id];
+    // The profile is computed now, timed effects included, so its snapshot is now too (rules liveMods adds only later changes).
     return {
-      ...att, attacks: [rp.damage], attacksLarge: rp.damageLarge, hitBonus: rp.hitBonus, dmgBonus: rp.dmgBonus ?? 0, hurled: !!rp.thrown,
+      ...att, snap: att.snap && { ...att.snap, fxHit: rp.fxHit ?? att.snap.fxHit, fxDmg: rp.fxDmg ?? att.snap.fxDmg }, attacks: [rp.damage], attacksLarge: rp.damageLarge, hitBonus: rp.hitBonus, dmgBonus: rp.dmgBonus ?? 0, hurled: !!rp.thrown,
       weaponMagic: rp.magic ?? def?.magic ?? 0, magicWeapon: (rp.magic ?? def?.magic ?? 0) > 0, weaponSilver: isSilverWeapon(def), weaponEdged: isEdgedWeapon(def),
     };
   }
@@ -237,7 +237,7 @@ export class CombatEngine {
     if (immune) m.notes.push(`immune: ${immune}`);
     const dice = def.size === 'L' && a.attacksLarge ? a.attacksLarge : a.attacks[0];
     const st = diceStats(dice);
-    const mult = m.backstab ? backstabMultiplier(att.ref.levels.thief) : 1;
+    const mult = m.backstab ? backstabMultiplierOf(att.ref) : 1;
     const lo = Math.max(1, (st.min + a.dmgBonus + m.dmgMod)) * mult;
     const hi = Math.max(1, (st.max + a.dmgBonus + m.dmgMod)) * mult;
     const weapon = isRanged && att.side === 'party' ? this.rangedProfile(att)?.name ?? this.weaponName(att) : this.weaponName(att);
@@ -247,7 +247,7 @@ export class CombatEngine {
   /** Attacks `att` gets against `def` this round (rules: 3/2, haste/slow, sweeps, rate of fire). */
   attackCount(att, def, ranged = false) {
     const rp = ranged && att.side === 'party' ? this.rangedProfile(att) : null;
-    return attacksThisTurn(att, Math.max(1, this.round), def, { ranged, weapon: rp?.id ? ITEMS[rp.id] : undefined });
+    return attacksThisTurn(att, Math.max(1, this.round), def, { ranged, weapon: rp?.def ?? (rp?.id ? ITEMS[rp.id] : undefined) });
   }
 
   // --------------------------------------------------------------- surprise
@@ -469,7 +469,7 @@ export class CombatEngine {
   _strike(att, def, { ranged = false, aoo = false, guard = false, attackIndex = 0 } = {}) {
     const a = this.attackerFor(att, ranged);
     const m = this.attackMods(att, def, ranged);
-    const mult = m.backstab ? backstabMultiplier(att.ref.levels.thief) : 2;
+    const mult = m.backstab ? backstabMultiplierOf(att.ref) : 2;
     const r = resolveAttack(this.rng, a, def, { mods: m.mods, dmgMod: m.dmgMod, rear: m.rear, backstab: m.backstab, backstabMult: mult, attackIndex, ranged, helpless: HELPLESS_RULE });
     if (ranged && a !== att && att.side === 'party') this._useAmmo(att);
     let text;
@@ -495,10 +495,7 @@ export class CombatEngine {
   }
 
   _useAmmo(att) {
-    const rp = this.rangedProfile(att);
-    if (!rp?.ammo) return;
-    const e = att.ref.inventory.find((x) => x.id === rp.ammo && (x.qty ?? 1) > 0);
-    if (e) e.qty = (e.qty ?? 1) - 1;
+    useMissile(att.ref, this.rangedProfile(att)?.mp); // rules: the arrow/bolt stack, or the thrown dart/dagger itself
   }
 
   _downEvents(def) {
@@ -589,6 +586,10 @@ export class CombatEngine {
     const n = can.ranged ? this.attackCount(c, def, true) : Math.max(c.attacksLeft, this.attackCount(c, def, false));
     for (let i = 0; i < n; i++) {
       if (this.out(def)) break;
+      if (can.ranged && c.side === 'party' && !this.rangedProfile(c)) { // the last arrow/dart is gone
+        ev.push({ type: 'log', text: `${c.name} is out of missiles.`, kind: 'warn' });
+        break;
+      }
       ev.push(...this._strike(c, def, { ranged: can.ranged, attackIndex: i % Math.max(1, c.attacks.length) }));
       ev.push(...this._downEvents(def));
       c.attacksLeft--;

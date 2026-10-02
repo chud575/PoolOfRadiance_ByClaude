@@ -17,7 +17,7 @@ import { dressRooms } from './RoomDressing.js';
 import { tilesetFor, tilesetMaterials } from './tilesets.js';
 import { hasDemoMap, getDemoMap } from './demoMaps.js';
 import { deriveStats } from '../../rules/character.js';
-import { edgeKey, isDoorOpened, openLockedDoor, searchSquare } from '../../rules/explore.js';
+import { edgeKey, isDoorOpened, openLockedDoor, searchSquare, triggerMapTrap } from '../../rules/explore.js';
 import { headBobEnabled, inferHarbour } from './exploreRules.js';
 import { SHOPS } from '../../data/shops.js';
 
@@ -690,6 +690,17 @@ export default class ExploreScene extends Scene {
         case 'exit':
           ui.message(ev.text, 'system');
           break;
+        case 'trap': {
+          // rules: detect (Find Traps, thief, dwarf stone sense), disarm or spring; state in game.flags.traps
+          const r = triggerMapTrap(this.ctx.rng, game, ev);
+          if (r.minutes) game.advanceTime(r.minutes);
+          for (const l of r.lines) ui.message(l.text, l.tone);
+          if (r.sprung) {
+            this.ctx.audio.sfx(r.victims.some((v) => v.damage) ? 'hit' : 'miss');
+            game.notifyPartyChanged?.();
+          }
+          break;
+        }
         default:
       }
     }

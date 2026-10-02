@@ -182,8 +182,10 @@ export function detectTrap(rng, party, trap = {}) {
 }
 
 /**
- * A thief's Find/Remove Traps roll to disarm a found trap (PHB: one roll;
- * failure by 20+ springs it unless `o.safe`). Non-thieves cannot try.
+ * A thief's Find/Remove Traps roll to disarm a found trap (PHB: one roll per
+ * trap). HOUSE RULE, not PHB: a roll that fails by more than 20 springs the
+ * trap (the PHB leaves a failed attempt's consequences to the DM); pass
+ * `o.safe` to play it strictly by the book. Non-thieves cannot try.
  * @param {{mod?:number}} [trap]
  * @param {{safe?:boolean}} [o]
  * @returns {{removed:boolean, sprung:boolean, chance:number, roll:number|null, text:string}}
@@ -496,7 +498,7 @@ export function springTrap(rng, party, trap) {
  * square or opens a trapped chest or door: a Find Traps spell, the best
  * thief's Find/Remove Traps roll or a dwarf's stone sense may spot it
  * (detectTrap). A found trap is then disarmed by the best thief
- * (findRemoveTraps: failing by more than 20 springs it); a party with no
+ * (findRemoveTraps; house rule: failing by more than 20 springs it); a party with no
  * thief, or one that fails, steps around it if `o.avoidable` (a pit in a
  * corridor) or springs it. An unseen trap springs. The trap's state (found,
  * removed, sprung) is written back onto `trap` so a scene can keep it in
@@ -552,4 +554,39 @@ export function resolveTrap(rng, party, trap, o = {}) {
   out.alarm = sp.alarm;
   out.text.push(...sp.text);
   return out;
+}
+
+/**
+ * The persistent rules state of a map trap (game.flags.traps[id]): found,
+ * removed, sprung. Created on first use.
+ */
+export function mapTrapState(game, id) {
+  const traps = (game.flags ??= {}).traps ??= {};
+  return (traps[id] ??= {});
+}
+
+/**
+ * A map event of type 'trap' met in exploration: the scene calls this when the
+ * party steps onto the square (or, with `o.search`, searches it). The trap's
+ * found/removed/sprung state lives in game.flags.traps[ev.id], so it survives
+ * saves and a disarmed or sprung one-shot trap stays quiet. Text lines carry a
+ * tone for the message log ('warn' when the trap goes off, 'loot' when it is
+ * disarmed, 'system' otherwise).
+ * @param {import('./dice.js').Rng} rng
+ * @param {{party:object[], flags?:object}} game
+ * @param {{id:string, trap:string, avoidable?:boolean}} ev the map event (TRAPS id + overrides)
+ * @param {{search?:boolean}} [o]
+ * @returns {ReturnType<typeof resolveTrap> & {state:object, lines:{text:string, tone:string}[], quiet:boolean}}
+ */
+export function triggerMapTrap(rng, game, ev, o = {}) {
+  const state = mapTrapState(game, ev.id);
+  const { id, type, x, y, once, chance, facing, ...overrides } = ev; // eslint-disable-line no-unused-vars
+  const spec = { ...overrides, trap: ev.trap, ...state };
+  const r = resolveTrap(rng, game.party ?? [], spec, { avoidable: !!ev.avoidable, search: !!o.search });
+  for (const k of ['found', 'removed', 'sprung']) if (spec[k]) state[k] = true;
+  const quiet = !r.text.length;
+  const tone = r.sprung ? 'warn' : r.removed ? 'loot' : 'system';
+  const lines = r.text.map((t) => ({ text: t, tone }));
+  if (r.sprung) for (const v of r.victims) if (v.ch?.status === 'dead') lines.push({ text: `${v.ch.name} is killed!`, tone: 'warn' });
+  return { ...r, state, lines, quiet };
 }

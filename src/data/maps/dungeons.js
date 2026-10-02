@@ -40,6 +40,9 @@ export function buildKutosWarrens() {
   m.event({ id: 'warrens_centipedes', x: 3, y: 10, type: 'encounter', ref: 'well_centipedes', once: true });
   m.event({ id: 'warrens_hoard', x: 1, y: 1, type: 'treasure', text: 'The kobolds\' hoard: buttons, spoons, a crown of tin — and a surprising amount of real silver.', once: true, gold: 110 });
   m.event({ id: 'warrens_nest', x: 1, y: 12, type: 'treasure', text: 'Among the husks, the remains of an earlier adventurer and his purse.', once: true, gold: 65 });
+  // Traps (rules resolveTrap via triggerMapTrap; state in game.flags.traps).
+  m.event({ id: 'warrens_darts', x: 7, y: 8, type: 'trap', trap: 'dartVolley', avoidable: true, text: 'Kobold darts hiss from holes bored in the tunnel wall.' });
+  m.event({ id: 'warrens_pit', x: 5, y: 9, type: 'trap', trap: 'pit', avoidable: true, text: 'The packed earth gives way: a kobold pit, stakes at the bottom.' });
   applyTravel(m);
   return m;
 }

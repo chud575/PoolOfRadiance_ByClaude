@@ -4,7 +4,7 @@ import { splitClasses, CLASSES } from './classes.js';
 import { deriveStats, activeClasses, armorAllowsArcane, highestLevel, effectiveAbilities } from './character.js';
 import { wisdomSpellFailure } from './abilities.js';
 import {
-  addEffect, removeEffect, hasEffect, effectMods, conditionsAllowCasting, clearEffects, CONDITIONS,
+  addEffect, removeEffect, hasEffect, effectMods, conditionsAllowCasting, clearEffects, CONDITIONS, onAttacked,
   ROUNDS_PER_TURN, ROUNDS_PER_HOUR,
 } from './conditions.js';
 import {
@@ -811,6 +811,13 @@ export function castSpell(rng, id, caster, targets = [], opts = {}) {
     }
   }
   res.log.push(opts.fromItem ? `${s.name} is released.` : `${cname} casts ${s.name}.`);
+  // PHB Invisibility: the spell ends when the recipient attacks, and casting
+  // a hostile spell (or releasing one from a wand) is an attack.
+  if (s.hostile && caster) {
+    const broke = onAttacked(effectHost(caster));
+    if (broke.includes('invisible')) res.log.push(`${cname} flickers into view.`);
+    if (broke.length) res.flags.revealed = broke;
+  }
 
   // Self-targeted spells ignore the target list.
   let list = s.target === 'self' ? [caster] : targets.length ? [...targets] : ['ally', 'creature', 'party'].includes(s.target) ? [caster] : [];

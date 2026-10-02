@@ -125,6 +125,11 @@ export function rollScroll(rng) {
   return makeEntry(base, { spells, identified: false });
 }
 
+/** DMG Table I category for a d100 roll (see rollMagicItem). */
+export function magicTableIBand(r) {
+  return r <= 20 ? 'potions' : r <= 35 ? 'scrolls' : r <= 40 ? 'rings' : r <= 45 ? 'wands' : r <= 60 ? 'misc' : r <= 75 ? 'armor' : r <= 86 ? 'swords' : 'weapons';
+}
+
 /**
  * Roll one magic item of a kind: 'any' | 'armsArmor' | 'noWeapons' | 'noPotions' | 'misc' |
  * 'potions' | 'scrolls' | 'rings' | 'wands' | 'armor' | 'swords' | 'weapons'. A kind with no item
@@ -134,13 +139,13 @@ export function rollScroll(rng) {
 export function rollMagicItem(rng, kind = 'any', o = {}) {
   let cat = kind;
   if (kind === 'any' || kind === 'noWeapons' || kind === 'armsArmor' || kind === 'noPotions') {
-    // MM type Z: "any 3 except potions" — roll past the potion band.
-    const r = rng.int(kind === 'noPotions' ? 21 : 1, 100);
-    if (kind === 'armsArmor') cat = r <= 40 ? 'armor' : r <= 75 ? 'swords' : 'weapons';
-    else {
-      cat = r <= 20 ? 'potions' : r <= 35 ? 'scrolls' : r <= 40 ? 'rings' : r <= 45 ? 'wands' : r <= 57 ? 'misc' : r <= 72 ? 'armor' : r <= 86 ? 'swords' : 'weapons';
-      if (kind === 'noWeapons' && (cat === 'swords' || cat === 'weapons')) cat = 'misc';
-    }
+    // DMG Table I: potions 01-20, scrolls 21-35, rings 36-40, rods/staves/
+    // wands 41-45, miscellaneous magic 46-60, armour & shields 61-75, swords
+    // 76-86, miscellaneous weapons 87-00. MM type Z ("any 3 except potions")
+    // rolls past the potion band; "armour or weapon" rolls within 61-00.
+    const r = rng.int(kind === 'noPotions' ? 21 : kind === 'armsArmor' ? 61 : 1, 100);
+    cat = magicTableIBand(r);
+    if (kind === 'noWeapons' && (cat === 'swords' || cat === 'weapons')) cat = 'misc';
   }
   if (cat === 'scrolls') return rollScroll(rng);
   const rows = MAGIC_TABLE[cat];
@@ -151,6 +156,7 @@ export function rollMagicItem(rng, kind = 'any', o = {}) {
     const e = makeEntry(id, { magic: plus, identified: false });
     if (plus < 0) e.cursed = true;
     if (ITEMS[id].type === 'ammo') e.qty = roll(rng, '2d6');
+    else if ((ITEMS[id].weaponGroup ?? id) === 'dart') e.qty = roll(rng, '3d4'); // DMG: magic darts come 3-12
     return e;
   }
   const e = makeEntry(id, { identified: false });

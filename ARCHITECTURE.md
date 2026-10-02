@@ -167,7 +167,8 @@ temporary hit points (heroism) are part of `hp.max` while they last and leave wi
 rounds = minutes counts down in combat, exploration and rest alike, except the minutes Slow Poison covers),
 `isIncapacitated`, `isHelpless`, `conditionsAllowCasting`, `clearCombatEffects` (keeps poison, disease, curses and every
 effect flagged `persist` — spells whose duration runs in turns/hours, `LONG_DURATION_SPELLS`: Enlarge, Strength, Prot.
-from Normal Missiles, Resist Fire/Cold, Invisibility...; Bless, Haste, Mirror Image end with the battle). Conditions include `afraid` (fear aura:
+from Normal Missiles, Resist Fire/Cold, Invisibility...; round-measured spells — Bless, Haste, Mirror Image, Prot. from
+Evil/Good, Friends — end with the battle). Conditions include `afraid` (fear aura:
 flees, −2 to hit if cornered) and the `fighterLevels` mod (heroism). Effects live in `target.effects`; `target.conditions` mirrors their ids as strings.
 Party combatants share `hp`, `conditions` and `effects` with their Character.
 
@@ -206,7 +207,8 @@ walking; poison kills on the road).
   failed, level, results:[{target, affected, saved, save, resisted, immune, missed, damage, healed, applied, removed, down,
   charmed}], flags, log}`. `saveKey` overrides the save category (wands/staves/rods pass `'rsw'`, DMG). Memory is always checked unless `ignoreMemory: true` (or `check: false`) is passed explicitly.
   Clerics roll the PHB low-WIS spell failure (WIS 9: 20%…12: 5%; the slot is spent; items never fail; `noFailure` for
-  scripted casts). The caller picks targets from the template (primary/nearest first); the engine filters by `affects`,
+  scripted casts). A hostile spell (or one released from a wand, scroll or necklace) ends the caster's Invisibility (PHB;
+  `flags.revealed`). The caller picks targets from the template (primary/nearest first); the engine filters by `affects`,
   applies `maxTargets`, saves (WIS vs mind magic, DEX vs fireball/lightning, hold person: cleric −2 alone / MU −3 alone,
   −1 for two; range cleric 6 / MU 12), Sleep on the five PHB bands (`SLEEP_BANDS`: ≤1 HD 4d4, 1+1–2 2d4, 2+1–3 1d4,
 3+1–4 1–2, 4+1–4+4 0–1), weakest first, each band's number rolled when first reached and each sleeper using 1/N of
@@ -314,11 +316,18 @@ condition and end-of-round tick through these; it uses the `'slay'` helpless rul
   asleep, charmed, hasted, nauseous, stench… from the Characters (poison, disease, curses, strength drain persist).
 
 **Missile fire** (character.js / items.js — wired into the combat engine's `rangedProfile` and range modifier):
-`missileProfile(ch)` → `{def, entry, hitBonus, dmgBonus, damage, damageLarge, range, bands, thrown, magic, ammo}` | null —
-the equipped missile weapon or the first in the pack (no ammo → null); to hit = DEX missile + enchantment + racial
-(`racialWeaponHit`: halfling bow/sling +3, elf bow and short/long sword +1) + STR to hit for thrown weapons
-(`isThrownWeapon`: dart, dagger, hand axe, spear, javelin), damage = STR + enchantment for thrown weapons only (a
-launcher's enchantment adds to hit, not damage, DMG). `rangeModifier(def, squares)` → `{band, mod, inRange}`: PHB
+`missileProfile(ch)` → `{def, entry, hitBonus, dmgBonus, damage, damageLarge, range, bands, thrown, magic, launcherMagic,
+ammoMagic, ammo, ammoEntry, consumes, fxHit, fxDmg, rateOfFire}` | null — the equipped missile weapon, else one in the
+pack, else a spare throwable weapon (`throwableDef`/`THROWN_RANGE`: dagger, hand axe, spear 4 squares, javelin 8 — never
+the only one in hand). Launchers need ammo: the equipped stack, else the best-enchanted one (cursed −1 last). To hit =
+DEX missile + launcher magic + ammo magic + racial (`racialWeaponHit`: halfling bow/sling +3, elf bow and short/long sword
++1) + STR to hit for thrown weapons (`isThrownWeapon`) + the timed effects already on the character (`fxHit`: bless,
+curse, blindness...). Damage = STR + enchantment for thrown weapons, the ammo's enchantment for arrows/bolts (DMG: a
+launcher's magic adds to hit only) + `fxDmg`. `magic` = max(launcher, ammo) counts for `magicToHit`. `consumes` is the
+entry one missile uses up — `useMissile(ch, profile)` decrements it (an emptied thrown stack leaves the pack); the
+profile is null when nothing is left. The engine's ranged attacker takes the profile's `fxHit/fxDmg` as its snapshot so
+`liveMods` adds only later changes. `canBackstab(ch)` / `backstabMultiplierOf(ch)` (active thief class + thieving armour;
+0 for a dual-classed human whose thief career is dormant) drive the engine's backstab. `rangeModifier(def, squares)` → `{band, mod, inRange}`: PHB
 short/medium/long 0 / −2 / −5, with `missileRangeBands(def)` keeping the PHB proportions (`MISSILE_RANGES`) of the
 weapon's battle `range` (= long range).
 
@@ -330,7 +339,7 @@ these and spend the returned `minutes` with `game.advanceTime`):
   once per lock per thief level, `door.failedBy`) → the strongest member forcing it (`openDoorsChance(str, pct,
   {locked})`: x in 6, the locked/barred figure only at 18/91+ and giant STR) or bending bars (`bendBarsChance`).
 * `detectTrap(rng, party, trap)` (Find Traps spell finds outright; thief F/RT; dwarves/gnomes 50% for stonework traps),
-  `findRemoveTraps(rng, ch, trap, {safe})` (F/RT %; failing by 20+ springs it).
+  `findRemoveTraps(rng, ch, trap, {safe})` (F/RT %; HOUSE RULE, not PHB: failing by more than 20 springs it; `safe` = by the book).
 * `searchSecret(rng, party, {passive, concealed, sliding})` — `secretDoorChance(race, o)`: elves/half-elves 1 in 6
   passing, 2 in 6 searching (3 concealed); others 1 in 6 searching only; dwarves use their 66% for sliding walls;
   searching costs 10 minutes. `stoneSense(rng, ch, kind)` / `stoneSenseChance` (PHB dwarf/gnome senses).
@@ -340,9 +349,11 @@ these and spend the returned `minutes` with `game.advanceTime`):
   (an event `{type:'trap', trap:'pit', ...overrides}`), `springTrap(rng, party, trap)` → `{victims:[{ch, hit, saved, damage,
   effect, status}], alarm, text}` (the trap's own THAC0 against AC, saves with DEX dodge and the racial bonus only vs
   poison, damage through `applyDamage`), and **`resolveTrap(rng, party, trapState, {avoidable, search})`** — the whole Gold
-  Box flow: detect (spell / thief / stone sense) → the best thief disarms (failing by 20+ springs it) → else step around it
-  (`avoidable`) or spring it; `found/removed/sprung` are written back on the state object so a one-shot trap acts once
-  (keep it in `game.flags`). **Explore/world owners**: map events of type `'trap'` should call `resolveTrap`.
+  Box flow: detect (spell / thief / stone sense) → the best thief disarms (house rule: failing by more than 20 springs it) →
+  else step around it (`avoidable`) or spring it; `found/removed/sprung` are written back on the state object so a one-shot
+  trap acts once. **`triggerMapTrap(rng, game, ev, {search})`** is what ExploreScene calls for a map event
+  `{type:'trap', trap, avoidable?, text?}`: state in `game.flags.traps[ev.id]` (`mapTrapState`), returns resolveTrap's result
+  plus `lines:[{text, tone}]` and `quiet`. Kuto's Warrens has a dart trap (7,8) and a kobold pit (5,9).
 * Scene-facing (wired in ExploreScene): `edgeKey(mapId, x, y, dir)` (same key from both faces of a wall),
   `openLockedDoor(rng, game, key, {useKnock, door})` — walking into a LOCKED edge: thief picks, then STR, then a
   memorized Knock (slot spent); state persists in `game.flags.doors[key]` (`lockedDoorState`, `isDoorOpened`) and an
@@ -354,7 +365,8 @@ these and spend the returned `minutes` with `game.advanceTime`):
 / two of each magic kind except potions and scrolls, `EACH_MAGIC_KIND`; Z any 3 except potions — kind `'noPotions'`),
 `victorySpoils(rng, encounter.treasure, slainMonsterDefs)` → `{gold, items, gems, jewelry, text}` (what CombatScene awards:
 encounter gold/items/`types` + each slain monster's `treasure` type, individual J–N per creature),
-`rollMagicItem`, `treasureValue`, `shareCoins`; `TEMPLE_SERVICES`, `serviceApplies(id, ch)`, `serviceProblem(id, ch)`
+`rollMagicItem` (DMG Table I bands, `magicTableIBand(d100)`: potions 1-20, scrolls 21-35, rings 36-40, wands 41-45,
+misc 46-60, armour 61-75, swords 76-86, misc weapons 87-00), `treasureValue`, `shareCoins`; `TEMPLE_SERVICES`, `serviceApplies(id, ch)`, `serviceProblem(id, ch)`
 (tooltip reason, e.g. elves cannot be raised — ShopScene shows it), `raiseAllowed(ch)`, `performService(rng, id, ch)`.
 
 ## Scene contract

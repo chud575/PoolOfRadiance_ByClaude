@@ -13,7 +13,7 @@ import {
 import { ITEMS } from '../data/items.js';
 import {
   itemMagic, itemWeight, coinWeight, encumbranceCategory, armorMoveLimit, rateOfFire, makeEntry, itemRulesOf,
-  isThrownWeapon, missileRangeBands,
+  isThrownWeapon, missileRangeBands, throwableDef,
 } from './items.js';
 import { effectMods, onDamaged, addEffect, removeEffect, hasEffect } from './conditions.js';
 
@@ -561,9 +561,11 @@ export function deriveStats(ch) {
   const racial = racialWeaponHit(ch.race, weapon);
   const thrown = ranged && isThrownWeapon(weapon);
   // Thrown weapons get both the DEX missile and the STR to-hit adjustments (DMG).
-  const hitBonus = (ranged ? dex.missile + (thrown ? str.hit : 0) : str.hit) + wMagic + racial + fx.hit;
-  // A launcher's enchantment (bow, crossbow, sling) adds to hit, not damage (DMG).
-  const dmgBonus = (ranged && !thrown ? 0 : str.dmg + wMagic) + fx.dmg;
+  // A launcher in hand shoots its best (or equipped) ammunition: an arrow's or
+  // bolt's enchantment adds to hit and damage, the launcher's to hit only (DMG).
+  const ammoMagic = ranged && !thrown && weapon.ammo ? (missileProfile(ch)?.entry === weaponEntry ? missileProfile(ch).ammoMagic : 0) : 0;
+  const hitBonus = (ranged ? dex.missile + (thrown ? str.hit : 0) : str.hit) + wMagic + ammoMagic + racial + fx.hit;
+  const dmgBonus = (ranged && !thrown ? ammoMagic : str.dmg + wMagic) + fx.dmg;
 
   // ---- attacks per round
   const fighterLvl = classes.includes('fighter') ? lvlOf('fighter') : 0;
@@ -605,10 +607,10 @@ export function deriveStats(ch) {
     savePoison,
     hitBonus,
     dmgBonus,
-    missileHit: dex.missile + (thrown ? str.hit : 0) + wMagic + racial + fx.hit,
+    missileHit: dex.missile + (thrown ? str.hit : 0) + wMagic + ammoMagic + racial + fx.hit,
     weapon,
     weaponEntry,
-    weaponMagic: wMagic,
+    weaponMagic: ammoMagic ? Math.max(wMagic, ammoMagic) : wMagic,
     ranged,
     range: weapon?.range ?? 1,
     damage: weapon?.damage ?? '1d2',
@@ -621,7 +623,7 @@ export function deriveStats(ch) {
     spellSlots: slots,
     canCastArcane: armorAllowsArcane(ch),
     thief,
-    backstab: classes.includes('thief') ? backstabMultiplier(ch.levels.thief) : 0,
+    backstab: backstabMultiplierOf(ch),
     ...classLabels(ch),
     abilities: a,
     mods: fx,
@@ -648,35 +650,104 @@ export function racialWeaponHit(raceId, weapon) {
 }
 
 /**
- * The character's missile attack: the equipped missile weapon, else the first
- * one in the pack (Gold Box: the bow is drawn when the foe is out of reach).
- * The to-hit bonus is DEX missile + enchantment + racial (halfling sling or bow
- * +3, elf bow +1), plus the STR to-hit for thrown weapons. Damage adds STR only
- * for thrown weapons, and a bow's enchantment adds to hit but not to damage (DMG).
- * Timed effects (bless, prayer...) are not included; combat applies them live.
- * `null` when there is no missile weapon, or no ammunition for it.
+ * The character's missile attack. The weapon is chosen in this order: the
+ * equipped missile weapon (bow, crossbow, sling, darts), else one in the pack
+ * (Gold Box: the bow is drawn when the foe is out of reach), else a spare
+ * throwable weapon (a dagger, hand axe, spear or javelin that is not the one
+ * in hand, or a stack of two or more of them).
+ *
+ * Launchers need ammunition of their kind: the equipped stack, else the one
+ * with the best enchantment (a cursed -1 stack is used only when nothing else
+ * is left). Per the DMG an arrow's or bolt's enchantment adds to hit AND
+ * damage, while the launcher's adds to hit only; the attack counts as magic
+ * of the better of the two (magicToHit, silver/+N to hit shadows and the like).
+ * Thrown weapons add the STR to-hit and damage adjustments and their own
+ * enchantment to both. DEX missile adjustment, racial bonus (halfling sling or
+ * bow +3, elf bow +1) and the timed effects already on the character (bless,
+ * prayer, curse, blindness, disease...: `fxHit`/`fxDmg`) are all included.
+ *
+ * `consumes` is the inventory entry one missile uses up (the ammo stack or
+ * the thrown stack itself); combat decrements its qty per missile, and the
+ * profile is null once it is empty.
+ * `null` when there is no usable missile weapon or no ammunition for it.
  * @returns {{def:object, entry:object, hitBonus:number, dmgBonus:number, damage:string, damageLarge:string,
- *   range:number, bands:{short:number, medium:number, long:number}, thrown:boolean, magic:number, ammo:string|null}|null}
+ *   range:number, bands:{short:number, medium:number, long:number}, thrown:boolean, magic:number,
+ *   launcherMagic:number, ammoMagic:number, ammo:string|null, ammoEntry:object|null, consumes:object|null,
+ *   fxHit:number, fxDmg:number, rateOfFire:number}|null}
  */
 export function missileProfile(ch) {
   const inv = ch?.inventory ?? [];
-  const isMissile = (e) => ITEMS[e.id]?.type === 'weapon' && ITEMS[e.id]?.ranged;
-  const entry = inv.find((e) => e.equipped && isMissile(e)) ?? inv.find(isMissile);
-  if (!entry) return null;
-  const def = ITEMS[entry.id];
-  if (def.ammo && !inv.some((e) => e.id === def.ammo && (e.qty ?? 1) > 0)) return null;
+  const has = (e) => (e.qty ?? 1) > 0;
+  const ammoFor = (def) => {
+    if (!def.ammo) return undefined;
+    const stacks = inv.filter((e) => e.id === def.ammo && has(e));
+    if (!stacks.length) return null;
+    return stacks.find((e) => e.equipped) ?? stacks.reduce((b, e) => (itemMagic(e) > itemMagic(b) ? e : b));
+  };
+  const usable = (e) => {
+    const d = ITEMS[e.id];
+    return d?.type === 'weapon' && d.ranged && has(e) && ammoFor(d) !== null;
+  };
+  let entry = inv.find((e) => e.equipped && usable(e)) ?? inv.find(usable);
+  let def = entry && ITEMS[entry.id];
+  if (!entry) {
+    // A spare throwable weapon: never the only one in hand.
+    const spare = (e) => has(e) && !ITEMS[e.id]?.ranged && throwableDef(ITEMS[e.id]) && (!e.equipped || (e.qty ?? 1) > 1);
+    entry = inv.find((e) => spare(e) && !e.equipped) ?? inv.find(spare);
+    if (!entry) return null;
+    def = throwableDef(ITEMS[entry.id]);
+  }
+  const ammoEntry = ammoFor(def) ?? null;
   const a = effectiveAbilities(ch);
   const str = strengthTable(a.str, a.strPct);
   const dex = dexterityMods(a.dex);
-  const magic = itemMagic(entry);
+  const fx = effectMods(ch);
+  const launcherMagic = itemMagic(entry);
+  const ammoMagic = ammoEntry ? itemMagic(ammoEntry) : 0;
   const thrown = isThrownWeapon(def);
   return {
-    def, entry, thrown, magic, ammo: def.ammo ?? null,
-    hitBonus: dex.missile + magic + racialWeaponHit(ch.race, def) + (thrown ? str.hit : 0),
-    dmgBonus: thrown ? str.dmg + magic : 0,
+    def, entry, thrown,
+    magic: ammoEntry ? Math.max(launcherMagic, ammoMagic) : launcherMagic,
+    launcherMagic, ammoMagic,
+    ammo: def.ammo ?? null, ammoEntry,
+    consumes: ammoEntry ?? (thrown ? entry : null),
+    hitBonus: dex.missile + launcherMagic + ammoMagic + racialWeaponHit(ch.race, def) + (thrown ? str.hit : 0) + fx.hit,
+    dmgBonus: (thrown ? str.dmg + launcherMagic : ammoMagic) + fx.dmg,
+    fxHit: fx.hit, fxDmg: fx.dmg,
     damage: def.damage, damageLarge: def.damageLarge ?? def.damage,
-    range: def.range ?? 8, bands: missileRangeBands(def),
+    range: def.range ?? 8, bands: missileRangeBands(def), rateOfFire: rateOfFire(def) * fx.attackMult,
   };
+}
+
+/**
+ * Use up one missile of a profile (missileProfile().consumes): an arrow,
+ * bolt, dart or thrown dagger. Thrown weapons that run out leave the pack (the
+ * empty entry is removed; it lies on the battlefield). Returns the entry used.
+ */
+export function useMissile(ch, profile = missileProfile(ch)) {
+  const e = profile?.consumes;
+  if (!e) return null;
+  e.qty = Math.max(0, (e.qty ?? 1) - 1);
+  if (e.qty === 0 && profile.thrown) {
+    const i = ch.inventory.indexOf(e);
+    if (i >= 0) ch.inventory.splice(i, 1);
+  }
+  return e;
+}
+
+/** Can this character backstab now (an active thief class, armour that allows it)? */
+export function canBackstab(ch) {
+  return !!ch?.levels && backstabMultiplierOf(ch) > 0 && armorAllowsThieving(ch);
+}
+
+/**
+ * Backstab damage multiplier (PHB: ×2 at thief levels 1-4, ×3 at 5-8...),
+ * 0 when the thief class is not active (a dual-classed human whose thief
+ * career is dormant, or no thief class at all).
+ */
+export function backstabMultiplierOf(ch) {
+  if (!ch?.levels || !activeClasses(ch).includes('thief')) return 0;
+  return backstabMultiplier(ch.levels.thief);
 }
 
 /**
