@@ -48,7 +48,8 @@ describe('modifiers', () => {
     expect(m.hit).toBe(2);
     expect(m.dmg).toBe(1);
     expect(m.save).toBe(1);
-    expect(m.acVsMissile).toBe(2);
+    expect(m.acVsMissile).toBe(3);
+    expect(m.acVsHurled).toBe(2);
     expect(m.acVsMelee).toBe(4);
     expect(m.immune.has('magicMissile')).toBe(true);
     expect(m.resist.fire).toBe(0.5);

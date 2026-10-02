@@ -260,16 +260,17 @@ export function savesOf(c) {
 }
 
 /** Current AC (melee) including effects. */
-export function acOf(c, { missile = false, rear = false } = {}) {
+export function acOf(c, { missile = false, rear = false, hurled = false } = {}) {
   const ch = characterOf(c);
   if (ch) {
     const s = deriveStats(ch);
-    return rear ? s.acRear : missile ? s.acMissile : s.ac;
+    return rear ? s.acRear : missile ? (hurled ? s.acHurled : s.acMissile) : s.ac;
   }
   const fx = effectMods(c);
   let ac = (c.ac ?? monsterOf(c)?.ac ?? 10) + fx.ac;
   if (!missile && fx.acVsMelee != null) ac = Math.min(ac, fx.acVsMelee);
-  if (missile && fx.acVsMissile != null) ac = Math.min(ac, fx.acVsMissile);
+  const cap = missile ? (hurled ? fx.acVsHurled ?? fx.acVsMissile : fx.acVsMissile) : null;
+  if (cap != null) ac = Math.min(ac, cap);
   return ac;
 }
 

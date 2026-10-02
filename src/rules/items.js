@@ -119,6 +119,54 @@ export function itemWeight(entry) {
   return w;
 }
 
+/**
+ * Weapon groups that are hand-hurled when used as missiles (PHB): thrown
+ * weapons add the STR to-hit and damage adjustments as well as DEX (DMG), and
+ * the Shield spell's AC 2 applies to them (AC 3 against device-propelled).
+ */
+export const THROWN_GROUPS = new Set(['dart', 'dagger', 'handAxe', 'spear', 'javelin']);
+
+/** Is this missile weapon thrown by hand (dart, dagger, hand axe, spear, javelin)? */
+export function isThrownWeapon(def) {
+  if (!def) return false;
+  if (def.thrown != null) return !!def.thrown;
+  return THROWN_GROUPS.has(def.weaponGroup ?? def.id);
+}
+
+/**
+ * PHB missile ranges in inches, short / medium / long. The to-hit modifier is
+ * 0 at short, -2 at medium and -5 at long range.
+ */
+export const MISSILE_RANGES = Object.freeze({
+  shortBow: [5, 10, 15], longBow: [7, 14, 21], compositeBow: [6, 12, 21], lightCrossbow: [6, 12, 18],
+  heavyCrossbow: [8, 16, 24], sling: [5, 10, 20], dart: [1.5, 3, 4.5], dagger: [1, 2, 3], handAxe: [1, 2, 3],
+  spear: [1, 2, 3], javelin: [2, 4, 6],
+});
+export const RANGE_MODS = Object.freeze({ short: 0, medium: -2, long: -5 });
+
+/**
+ * Range bands of a missile weapon in battle squares. The weapon's `range` (its
+ * maximum reach on the battle map) is long range, and short and medium keep the
+ * PHB proportions: a short bow reaching 10 squares is short to 3, medium to 6
+ * and long to 10.
+ * @returns {{short:number, medium:number, long:number}}
+ */
+export function missileRangeBands(def) {
+  const phb = MISSILE_RANGES[def?.weaponGroup ?? def?.id] ?? [1, 2, 3];
+  const long = def?.range ?? phb[2];
+  return { short: (long * phb[0]) / phb[2], medium: (long * phb[1]) / phb[2], long };
+}
+
+/**
+ * PHB range band and to-hit modifier for a missile at `distance` squares.
+ * @returns {{band:'short'|'medium'|'long'|null, mod:number, inRange:boolean}} band null = out of range
+ */
+export function rangeModifier(def, distance) {
+  const b = missileRangeBands(def);
+  const band = distance <= b.short ? 'short' : distance <= b.medium ? 'medium' : distance <= b.long ? 'long' : null;
+  return { band, mod: band ? RANGE_MODS[band] : 0, inRange: !!band };
+}
+
 /** Missiles per round for a weapon def. */
 export function rateOfFire(def) {
   if (!def?.ranged) return 1;

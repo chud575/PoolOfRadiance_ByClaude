@@ -73,17 +73,23 @@ describe('armour class by direction (DMG)', () => {
     expect(defenderAc(f, orc)).toBe(orc.ac);
   });
 
-  it('Shield cast before the combatant is built still turns arrows (AC 2, not 4)', () => {
+  it('Shield cast before the combatant is built still turns arrows (PHB: AC 3 vs arrows, 2 vs hurled, 4 else)', () => {
     const mu = mk('human', 'magicUser', { level: 3 });
     castSpell(new Rng(1), 'shield', mu, [mu], { ignoreMemory: true });
+    const s = deriveStats(mu);
+    expect([s.ac, s.acMissile, s.acHurled]).toEqual([4, 3, 2]);
     const c = combatantFromCharacter(mu);
     const archer = combatantFromMonster(new Rng(1), 'orc');
     archer.ranged = true;
-    expect(defenderAc(archer, c, { ranged: true })).toBe(2);
+    expect(defenderAc(archer, c, { ranged: true })).toBe(3); // arrows: device-propelled
     expect(defenderAc(archer, c, { ranged: false })).toBe(4);
-    // orc THAC0 19: melee vs 4 needs 15 (0.30), arrows vs 2 need 17 (0.20).
+    archer.hurled = true; // a thrown javelin
+    expect(defenderAc(archer, c, { ranged: true })).toBe(2);
+    // orc THAC0 19: melee vs 4 needs 15 (0.30), javelins vs 2 need 17 (0.20).
     expect(hitChance(archer, c, 0, { ranged: true })).toBeCloseTo(0.20, 5);
     expect(hitChance(archer, c, 0, { ranged: false })).toBeCloseTo(0.30, 5);
+    archer.hurled = false; // arrows vs 3 need 16 (0.25)
+    expect(hitChance(archer, c, 0, { ranged: true })).toBeCloseTo(0.25, 5);
   });
 
   it('Shield cast mid-battle also applies by direction', () => {
@@ -91,9 +97,19 @@ describe('armour class by direction (DMG)', () => {
     const c = combatantFromCharacter(mu);
     castSpell(new Rng(1), 'shield', mu, [mu], { ignoreMemory: true });
     const orc = combatantFromMonster(new Rng(1), 'orc');
-    expect(defenderAc(orc, c, { ranged: true })).toBe(2);
+    expect(defenderAc(orc, c, { ranged: true })).toBe(3);
     expect(defenderAc(orc, c)).toBe(4);
     expect(defenderAc(orc, c, { rear: true })).toBe(10); // the shield spell guards the front only
+  });
+
+  it('a character throwing darts counts as hurled against a shielded monster', () => {
+    const t = mk('human', 'thief', { items: ['dart'] });
+    const c = combatantFromCharacter(t);
+    const kob = combatantFromMonster(new Rng(1), 'kobold');
+    addEffect(kob, 'shielded', { rounds: 5 });
+    expect(defenderAc(c, kob, { ranged: true })).toBe(2);
+    const archer = combatantFromCharacter(mk('human', 'fighter', { items: ['shortBow', 'arrows'] }));
+    expect(defenderAc(archer, kob, { ranged: true })).toBe(3);
   });
 });
 

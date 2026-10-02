@@ -26,7 +26,7 @@ export const ROUNDS_PER_HOUR = 60;
  *  outright (1e) at the scene's discretion; breaksOnDamage – removed when hurt;
  *  noCast – cannot cast spells; magical – can be dispelled; hostile – harmful.
  * `mods` (all optional): hit, dmg, ac (negative = better), save (all saves),
- *  saveVs {key:n}, acVsMissile / acVsMelee (AC cap, e.g. shield spell),
+ *  saveVs {key:n}, acVsMissile (device-propelled) / acVsHurled (thrown) / acVsMelee (AC cap, e.g. shield spell),
  *  strSet {str,strPct}, strBonus, strLossPct, moveMult, attackMult,
  *  attackerHit (to-hit mod for creatures attacking this one), images,
  *  immune [..], resist {element: damage multiplier}, saveVsElement {element:n},
@@ -70,7 +70,7 @@ export const CONDITIONS = {
   chant: { name: 'Chant', kind: 'buff', magical: true, mods: { hit: 1, dmg: 1, save: 1 }, desc: '+1 to hit, damage and saves.' },
   protEvil: { name: 'Prot. from Evil', kind: 'buff', magical: true, mods: { vsEvil: { ac: -2, save: 2 } }, desc: '-2 AC and +2 saves against evil creatures.' },
   protGood: { name: 'Prot. from Good', kind: 'buff', magical: true, mods: { vsGood: { ac: -2, save: 2 } }, desc: '-2 AC and +2 saves against good creatures.' },
-  shielded: { name: 'Shield', kind: 'buff', magical: true, mods: { acVsMissile: 2, acVsMelee: 4, immune: ['magicMissile'] }, desc: 'AC 2 vs missiles, AC 4 vs melee, immune to magic missile.' },
+  shielded: { name: 'Shield', kind: 'buff', magical: true, mods: { acVsHurled: 2, acVsMissile: 3, acVsMelee: 4, immune: ['magicMissile'] }, desc: 'AC 2 vs hurled missiles, AC 3 vs arrows, bolts and sling stones, AC 4 vs all else; immune to magic missile.' },
   enlarged: { name: 'Enlarged', kind: 'buff', magical: true, mods: { dmg: 2 }, desc: 'Grown huge: heavier blows.' },
   strength: { name: 'Strength', kind: 'buff', magical: true, desc: 'Magically increased strength.' },
   giantStrength: { name: 'Giant Strength', kind: 'buff', magical: true, desc: 'Strength of a giant.' },
@@ -189,14 +189,14 @@ export function conditionsAllowCasting(target) {
 /**
  * Aggregate numeric modifiers from every active effect.
  * @returns {{hit:number, dmg:number, ac:number, save:number, saveVs:Record<string,number>,
- *   acVsMissile:number|null, acVsMelee:number|null, moveMult:number, attackMult:number,
+ *   acVsMissile:number|null, acVsHurled:number|null, acVsMelee:number|null, moveMult:number, attackMult:number,
  *   attackerHit:number, missChance:number, strBonus:number, strSet:{str:number,strPct:number}|null,
  *   strLossPct:number, strDrain:number, immune:Set<string>, resist:Record<string,number>, saveVsElement:Record<string,number>,
  *   vsEvil:{ac:number,save:number}, vsGood:{ac:number,save:number}, cha:number, images:number, fighterLevels:number}}
  */
 export function effectMods(target) {
   const out = {
-    hit: 0, dmg: 0, ac: 0, save: 0, saveVs: {}, acVsMissile: null, acVsMelee: null, moveMult: 1, attackMult: 1,
+    hit: 0, dmg: 0, ac: 0, save: 0, saveVs: {}, acVsMissile: null, acVsHurled: null, acVsMelee: null, moveMult: 1, attackMult: 1,
     attackerHit: 0, missChance: 0, strBonus: 0, strSet: null, strLossPct: 0, strDrain: 0, immune: new Set(), resist: {},
     saveVsElement: {}, vsEvil: { ac: 0, save: 0 }, vsGood: { ac: 0, save: 0 }, cha: 0, images: 0, fighterLevels: 0,
   };
@@ -213,6 +213,7 @@ export function effectMods(target) {
     out.save += m.save ?? 0;
     for (const [k, v] of Object.entries(m.saveVs ?? {})) out.saveVs[k] = (out.saveVs[k] ?? 0) + v;
     if (m.acVsMissile != null) out.acVsMissile = Math.min(out.acVsMissile ?? 99, m.acVsMissile);
+    if (m.acVsHurled != null) out.acVsHurled = Math.min(out.acVsHurled ?? 99, m.acVsHurled);
     if (m.acVsMelee != null) out.acVsMelee = Math.min(out.acVsMelee ?? 99, m.acVsMelee);
     if (m.moveMult) out.moveMult *= m.moveMult;
     if (m.attackMult) out.attackMult *= m.attackMult;

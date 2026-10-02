@@ -117,10 +117,11 @@ Durations are combat rounds (1 round = 1 minute; 1 turn = 10 rounds). Ranges/are
   `'goldBox'` | `'dmg'`) switches to the DMG matrix (2 points per 2 levels). Rules side: `RULES_OPTIONS`,
   `setRulesOptions({fighterThac0})`, `thac0For(cls, lvl, {fighterThac0})`, `attachRulesSettings(settings, bus)` (main.js).
   Other classes always use the DMG matrices.
-* `deriveStats(ch)` → `{thac0, ac, acRear, acMissile, saves, savePoison, hitBonus, dmgBonus, weapon, weaponMagic, ranged, damage,
+* `deriveStats(ch)` → `{thac0, ac, acRear, acMissile, acHurled, saves, savePoison, hitBonus, dmgBonus, weapon, weaponMagic, ranged, damage,
   attacks, move, baseMove, weight, encumbrance, spellSlots, canCastArcane, thief, backstab, levels, className, classAbbr,
   classLevels ('F8 / MU3'), dual, dualActive, abilities (effective), mods (effects), ...}`. `acRear` = no shield, no DEX
-  bonus (what rear attacks and backstabs hit); `acMissile` includes the Shield spell's AC 2 vs missiles. `saves.ppdm` does
+  bonus (what rear attacks and backstabs hit); the Shield spell (PHB) gives `acHurled` 2 (darts, axes, javelins, spears,
+  rocks), `acMissile` 3 (arrows, bolts, sling stones) and `ac` 4. `saves.ppdm` does
   **not** include the dwarf/halfling CON bonus — it applies against poison only (`savePoison` for the sheet, `rollSave(...,
   {poison:true})` in play). A dual-classed human's labels show both careers (`classLabels(ch)`).
 * Tables for tooltips: `abilitySummary(abilities)`, `strengthTable`, `intelligenceTable`, `constitutionTable`, `charismaTable`,
@@ -217,8 +218,8 @@ the spell — a group of one kind gets exactly the PHB number (two bugbears: 1d2
 * Verified values: Spiritual Hammer +1 per 6 levels or fraction (`ceil(L/6)`), range 1"/level (one square per level);
   Stinking Cloud lingers 1 round/level (battle.js `cloudExposure`: saves vs poison on entering or each round inside); Ray of Enfeeblement range 1 + L/4;
   Mirror Image 1d4 images, 3 rounds/level (1e PHB); Strength above 18 adds tenths (10% exceptional per point, PHB).
-* Deliberate simplifications: Shield is AC 2 vs missiles / AC 4 vs melee (1e: AC 2 hurled, AC 3 small missiles, +1 saves
-  vs frontal attacks); thieves may be any alignment but LG (PoR creation rule); clerics may use slings (Gold Box);
+* Deliberate simplifications: Shield's +1 to saves vs frontal attacks is not modelled (its AC 2 hurled / 3 device-propelled /
+  4 other is); thieves may be any alignment but LG (PoR creation rule); clerics may use slings (Gold Box);
   halfling fighters reach 6th flat (PoR); magic armour moves at the PHB base rate (its benefit is half weight).
 * Memorization (camp.js): `knownSpells(ch, cls)`, `slotsFor`, `checkLoadout`, `prepareSpells(ch, cls, ids)`, `autoPrepare(ch)`,
   `spellsToMemorize`, `memorizationTime(ch)` (1e: 4/6/8 h rest + 15 min per spell level, net of banked study),
@@ -231,7 +232,8 @@ the spell — a group of one kind gets exactly the PHB number (two bugbears: 1d2
 **Combat** (combat.js, co-owned): `combatantFromCharacter`, `combatantFromMonster`, `rollInitiative`, `canAct`, `resolveAttack(rng,
 a, d, {mods, dmgMod, backstab, rear, ranged, helpless})` (the base AC is by direction — `defenderAc(a, d, {rear,
 ranged})`: rear and backstab strike `acRear` (no shield, no DEX; a monster's declared `shield`/`shieldAc` is ignored),
-missiles strike `acMissile` (Shield spell AC 2, even if cast before the combatant was built), else melee AC; applies live effects: bless/prayer, shield, invisibility, blink,
+missiles strike `acMissile`, or `acHurled` when the attack is thrown (`isHurledAttack`: the character's missileProfile,
+`attacker.hurled`, a monster's javelins/rocks) — the Shield spell applies even if cast before the combatant was built; else melee AC; applies live effects: bless/prayer, shield, invisibility, blink,
 mirror image, prot. from evil/missiles; racial adjustments via `racialCombatMods` — dwarves +1 vs orcs/half-orcs/goblins/
 hobgoblins, gnomes +1 vs kobolds/goblins, giants/ogres/trolls/titans (+ gnolls/bugbears vs gnomes) −4 to hit dwarves and
 gnomes; helpless targets per `HelplessRule`: `'bonus'` +4 (default), `'auto'` melee auto-hit, `'slay'` coup de grace),
@@ -311,6 +313,15 @@ condition and end-of-round tick through these; it uses the `'slay'` helpless rul
 * `endBattle(partyCombatants)` — **consumer obligation** at the end of every battle (CombatScene.finish): strips held,
   asleep, charmed, hasted, nauseous, stench… from the Characters (poison, disease, curses, strength drain persist).
 
+**Missile fire** (character.js / items.js — wired into the combat engine's `rangedProfile` and range modifier):
+`missileProfile(ch)` → `{def, entry, hitBonus, dmgBonus, damage, damageLarge, range, bands, thrown, magic, ammo}` | null —
+the equipped missile weapon or the first in the pack (no ammo → null); to hit = DEX missile + enchantment + racial
+(`racialWeaponHit`: halfling bow/sling +3, elf bow and short/long sword +1) + STR to hit for thrown weapons
+(`isThrownWeapon`: dart, dagger, hand axe, spear, javelin), damage = STR + enchantment for thrown weapons only (a
+launcher's enchantment adds to hit, not damage, DMG). `rangeModifier(def, squares)` → `{band, mod, inRange}`: PHB
+short/medium/long 0 / −2 / −5, with `missileRangeBands(def)` keeping the PHB proportions (`MISSILE_RANGES`) of the
+weapon's battle `range` (= long range).
+
 **Exploration** (explore.js — for ExploreScene's LOCKED/SECRET edges, traps and encounters; **explore owner**: call
 these and spend the returned `minutes` with `game.advanceTime`):
 * `tryOpenLock(rng, party, door, {knock, force, pick, retry})` → `{opened, method:'knock'|'pick'|'force'|'bars'|'open'|null,
@@ -325,6 +336,13 @@ these and spend the returned `minutes` with `game.advanceTime`):
   searching costs 10 minutes. `stoneSense(rng, ch, kind)` / `stoneSenseChance` (PHB dwarf/gnome senses).
 * `surpriseMods(party, {scout})` → `{monsterMod}` (−2 when the moving group / scout is all elves and halflings in non-metal
   armour) — fed into `rollSurprise({party})`.
+* Traps: `TRAPS` (poisonNeedle, dartVolley, pit, fallingBlock, scythingBlade, sleepGas, fireGlyph, alarm), `trapSpec(event)`
+  (an event `{type:'trap', trap:'pit', ...overrides}`), `springTrap(rng, party, trap)` → `{victims:[{ch, hit, saved, damage,
+  effect, status}], alarm, text}` (the trap's own THAC0 against AC, saves with DEX dodge and the racial bonus only vs
+  poison, damage through `applyDamage`), and **`resolveTrap(rng, party, trapState, {avoidable, search})`** — the whole Gold
+  Box flow: detect (spell / thief / stone sense) → the best thief disarms (failing by 20+ springs it) → else step around it
+  (`avoidable`) or spring it; `found/removed/sprung` are written back on the state object so a one-shot trap acts once
+  (keep it in `game.flags`). **Explore/world owners**: map events of type `'trap'` should call `resolveTrap`.
 * Scene-facing (wired in ExploreScene): `edgeKey(mapId, x, y, dir)` (same key from both faces of a wall),
   `openLockedDoor(rng, game, key, {useKnock, door})` — walking into a LOCKED edge: thief picks, then STR, then a
   memorized Knock (slot spent); state persists in `game.flags.doors[key]` (`lockedDoorState`, `isDoorOpened`) and an

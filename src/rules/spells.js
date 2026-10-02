@@ -303,7 +303,7 @@ export const SPELL_RULES = {
     name: 'Shield', schools: { magicUser: 1 }, usable: 'both', castTime: 1, range: 0, target: 'self',
     area: { shape: 'single' }, duration: (L) => R(5 * L),
     ops: [{ op: 'condition', id: 'shielded' }],
-    desc: 'An invisible barrier hums before the caster.', tip: 'Self: AC 2 vs missiles, AC 4 vs melee, immune to magic missile.',
+    desc: 'An invisible barrier hums before the caster.', tip: 'Self: AC 2 vs hurled weapons, AC 3 vs arrows, bolts and sling stones, AC 4 vs all else; immune to magic missile.',
   },
   shockingGrasp: {
     name: 'Shocking Grasp', schools: { magicUser: 1 }, usable: 'combat', castTime: 1, range: 1, target: 'enemy',

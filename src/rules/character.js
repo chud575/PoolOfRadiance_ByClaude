@@ -13,6 +13,7 @@ import {
 import { ITEMS } from '../data/items.js';
 import {
   itemMagic, itemWeight, coinWeight, encumbranceCategory, armorMoveLimit, rateOfFire, makeEntry, itemRulesOf,
+  isThrownWeapon, missileRangeBands,
 } from './items.js';
 import { effectMods, onDamaged, addEffect, removeEffect, hasEffect } from './conditions.js';
 
@@ -529,10 +530,15 @@ export function deriveStats(ch) {
   const dexAc = hasEffect(ch, 'blinded') ? Math.max(0, dex.ac) : dex.ac; // blind: no dex bonus
   let ac = base - shieldAc - otherAc + dexAc + fx.ac;
   const acRear = base - otherAc + Math.max(0, dexAc) + fx.ac;
+  // Shield spell (PHB): AC 2 vs hand-hurled missiles, AC 3 vs device-propelled
+  // (arrows, bolts, sling stones), AC 4 vs everything else.
   let acMissile = ac;
+  let acHurled = ac;
   if (fx.acVsMelee != null) ac = Math.min(ac, fx.acVsMelee);
-  if (fx.acVsMissile != null) acMissile = Math.min(acMissile, fx.acVsMissile);
-  else acMissile = ac;
+  if (fx.acVsMissile != null || fx.acVsHurled != null) {
+    acMissile = Math.min(acMissile, fx.acVsMissile ?? 99);
+    acHurled = Math.min(acHurled, fx.acVsHurled ?? fx.acVsMissile ?? 99);
+  } else acMissile = acHurled = ac;
 
   // ---- saving throws
   const saves = {};
@@ -552,12 +558,12 @@ export function deriveStats(ch) {
   // ---- weapon
   const ranged = !!weapon?.ranged;
   const wMagic = weaponEntry ? itemMagic(weaponEntry) : 0;
-  let racial = 0;
-  if (ranged && race.missileBonus && ['sling', 'shortBow', 'longBow', 'compositeBow'].includes(weapon.weaponGroup)) racial = race.missileBonus;
-  if (ch.race === 'elf' && weapon && ['shortBow', 'longBow', 'shortSword', 'longSword'].includes(weapon.weaponGroup)) racial = Math.max(racial, 1);
+  const racial = racialWeaponHit(ch.race, weapon);
+  const thrown = ranged && isThrownWeapon(weapon);
   // Thrown weapons get both the DEX missile and the STR to-hit adjustments (DMG).
-  const hitBonus = (ranged ? dex.missile + (weapon.thrown ? str.hit : 0) : str.hit) + wMagic + racial + fx.hit;
-  const dmgBonus = (ranged && !weapon.thrown ? 0 : str.dmg) + wMagic + fx.dmg;
+  const hitBonus = (ranged ? dex.missile + (thrown ? str.hit : 0) : str.hit) + wMagic + racial + fx.hit;
+  // A launcher's enchantment (bow, crossbow, sling) adds to hit, not damage (DMG).
+  const dmgBonus = (ranged && !thrown ? 0 : str.dmg + wMagic) + fx.dmg;
 
   // ---- attacks per round
   const fighterLvl = classes.includes('fighter') ? lvlOf('fighter') : 0;
@@ -594,11 +600,12 @@ export function deriveStats(ch) {
     ac,
     acRear,
     acMissile,
+    acHurled,
     saves,
     savePoison,
     hitBonus,
     dmgBonus,
-    missileHit: dex.missile + (weapon?.thrown ? str.hit : 0) + wMagic + fx.hit,
+    missileHit: dex.missile + (thrown ? str.hit : 0) + wMagic + racial + fx.hit,
     weapon,
     weaponEntry,
     weaponMagic: wMagic,
@@ -623,6 +630,52 @@ export function deriveStats(ch) {
     images: fx.images,
     attackerHit: fx.attackerHit,
     missChance: fx.missChance,
+  };
+}
+
+/**
+ * Racial to-hit bonus with a weapon (PHB): halflings +3 with any bow or a
+ * sling; elves +1 with bows and with short and long swords. They do not stack.
+ */
+export function racialWeaponHit(raceId, weapon) {
+  if (!weapon) return 0;
+  const g = weapon.weaponGroup ?? weapon.id;
+  let n = 0;
+  const race = RACES[raceId];
+  if (weapon.ranged && race?.missileBonus && ['sling', 'shortBow', 'longBow', 'compositeBow'].includes(g)) n = race.missileBonus;
+  if (raceId === 'elf' && ['shortBow', 'longBow', 'compositeBow', 'shortSword', 'longSword'].includes(g)) n = Math.max(n, 1);
+  return n;
+}
+
+/**
+ * The character's missile attack: the equipped missile weapon, else the first
+ * one in the pack (Gold Box: the bow is drawn when the foe is out of reach).
+ * The to-hit bonus is DEX missile + enchantment + racial (halfling sling or bow
+ * +3, elf bow +1), plus the STR to-hit for thrown weapons. Damage adds STR only
+ * for thrown weapons, and a bow's enchantment adds to hit but not to damage (DMG).
+ * Timed effects (bless, prayer...) are not included; combat applies them live.
+ * `null` when there is no missile weapon, or no ammunition for it.
+ * @returns {{def:object, entry:object, hitBonus:number, dmgBonus:number, damage:string, damageLarge:string,
+ *   range:number, bands:{short:number, medium:number, long:number}, thrown:boolean, magic:number, ammo:string|null}|null}
+ */
+export function missileProfile(ch) {
+  const inv = ch?.inventory ?? [];
+  const isMissile = (e) => ITEMS[e.id]?.type === 'weapon' && ITEMS[e.id]?.ranged;
+  const entry = inv.find((e) => e.equipped && isMissile(e)) ?? inv.find(isMissile);
+  if (!entry) return null;
+  const def = ITEMS[entry.id];
+  if (def.ammo && !inv.some((e) => e.id === def.ammo && (e.qty ?? 1) > 0)) return null;
+  const a = effectiveAbilities(ch);
+  const str = strengthTable(a.str, a.strPct);
+  const dex = dexterityMods(a.dex);
+  const magic = itemMagic(entry);
+  const thrown = isThrownWeapon(def);
+  return {
+    def, entry, thrown, magic, ammo: def.ammo ?? null,
+    hitBonus: dex.missile + magic + racialWeaponHit(ch.race, def) + (thrown ? str.hit : 0),
+    dmgBonus: thrown ? str.dmg + magic : 0,
+    damage: def.damage, damageLarge: def.damageLarge ?? def.damage,
+    range: def.range ?? 8, bands: missileRangeBands(def),
   };
 }
 

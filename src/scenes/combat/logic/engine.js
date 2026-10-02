@@ -4,7 +4,8 @@ import {
   isSilverWeapon, isEdgedWeapon, rollSurprise,
 } from '../../../rules/combat.js';
 import { regenerationOf, breathOf, isAfraid } from '../../../rules/specials.js';
-import { bandage as bandageCharacter, armorAllowsThieving } from '../../../rules/character.js';
+import { bandage as bandageCharacter, armorAllowsThieving, missileProfile } from '../../../rules/character.js';
+import { rangeModifier } from '../../../rules/items.js';
 import { effectMods, hasEffect } from '../../../rules/conditions.js';
 import { effectHost } from '../../../rules/creature.js';
 import {
@@ -13,7 +14,6 @@ import {
   beginCasting, finishCasting, castDueBefore, castingDelay, cloudExposure,
   monsterSpecialActions, breathInBattle, rockInBattle, fearInBattle,
 } from '../../../rules/battle.js';
-import { dexterityMods } from '../../../rules/abilities.js';
 import { backstabMultiplier } from '../../../rules/classes.js';
 import { ITEMS } from '../../../data/items.js';
 import { SPELLS } from '../../../data/spells.js';
@@ -139,12 +139,10 @@ export class CombatEngine {
   /** Ranged weapon profile of a character (equipped bow, or one carried in the pack). */
   rangedProfile(c) {
     if (c.side !== 'party') return c.ranged ? { damage: c.attacks[0], range: c.range, hitBonus: 0, name: 'missile' } : null;
-    const ch = c.ref;
-    const entry = ch.inventory.find((e) => ITEMS[e.id]?.ranged && ITEMS[e.id].type === 'weapon');
-    if (!entry) return null;
-    const def = ITEMS[entry.id];
-    if (def.ammo && !ch.inventory.some((e) => e.id === def.ammo && (e.qty ?? 1) > 0)) return null;
-    return { damage: def.damage, damageLarge: def.damageLarge, range: def.range ?? 8, hitBonus: dexterityMods(ch.abilities.dex).missile + (def.magic ?? 0), name: def.name, id: def.id, ammo: def.ammo };
+    // rules missileProfile: equipped missile first, DEX + racial + enchantment (+ STR when thrown), ammo check
+    const mp = missileProfile(c.ref);
+    if (!mp) return null;
+    return { damage: mp.damage, damageLarge: mp.damageLarge, range: mp.range, hitBonus: mp.hitBonus, dmgBonus: mp.dmgBonus, thrown: mp.thrown, magic: mp.magic, name: mp.def.name, id: mp.def.id, ammo: mp.ammo };
   }
 
   /** Name of the weapon in hand (for UI + model). */
@@ -193,7 +191,8 @@ export class CombatEngine {
     if (ranged) {
       const d = Battlefield.dist(att.x, att.y, def.x, def.y);
       const rp = this.rangedProfile(att);
-      if (rp && d > rp.range / 2) { mods -= 2; notes.push('long range'); }
+      const rm = rp ? rangeModifier(rp.id ? ITEMS[rp.id] : { range: rp.range }, d) : null; // PHB S/M/L: 0/-2/-5
+      if (rm?.mod) { mods += rm.mod; notes.push(`${rm.band} range`); }
     }
     return { mods, dmgMod, rear, backstab, notes };
   }
@@ -205,8 +204,8 @@ export class CombatEngine {
     if (!rp) return att;
     const def = ITEMS[rp.id];
     return {
-      ...att, attacks: [rp.damage], attacksLarge: rp.damageLarge, hitBonus: rp.hitBonus, dmgBonus: 0,
-      weaponMagic: def?.magic ?? 0, magicWeapon: (def?.magic ?? 0) > 0, weaponSilver: isSilverWeapon(def), weaponEdged: isEdgedWeapon(def),
+      ...att, attacks: [rp.damage], attacksLarge: rp.damageLarge, hitBonus: rp.hitBonus, dmgBonus: rp.dmgBonus ?? 0, hurled: !!rp.thrown,
+      weaponMagic: rp.magic ?? def?.magic ?? 0, magicWeapon: (rp.magic ?? def?.magic ?? 0) > 0, weaponSilver: isSilverWeapon(def), weaponEdged: isEdgedWeapon(def),
     };
   }
 

@@ -260,7 +260,8 @@ describe('effects on derived stats', () => {
     expect(deriveStats(ch).hitBonus).toBe(base.hitBonus + 1);
     addEffect(ch, 'shielded', { rounds: 5 });
     expect(deriveStats(ch).ac).toBe(Math.min(base.ac, 4));
-    expect(deriveStats(ch).acMissile).toBe(2);
+    expect(deriveStats(ch).acMissile).toBe(3);
+    expect(deriveStats(ch).acHurled).toBe(2);
     addEffect(ch, 'hasted', { rounds: 5 });
     expect(deriveStats(ch).attacks).toBe(2);
     expect(deriveStats(ch).move).toBe(24);

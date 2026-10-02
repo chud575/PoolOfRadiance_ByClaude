@@ -1,6 +1,9 @@
 import { strengthTable } from './abilities.js';
-import { deriveStats, equipped, isConscious, effectiveAbilities } from './character.js';
-import { hasEffect } from './conditions.js';
+import { deriveStats, equipped, isConscious, effectiveAbilities, applyDamage } from './character.js';
+import { hasEffect, addEffect, ROUNDS_PER_TURN } from './conditions.js';
+import { roll } from './dice.js';
+import { rollSave } from './saves.js';
+import { neededToHit } from './tohit.js';
 
 /**
  * Exploration rules: locked and barred doors, traps, secret doors, racial
@@ -379,4 +382,174 @@ export function searchSquare(rng, party, walls, o = {}) {
     if (r.found) found.push({ dir: w.dir, by: r.by });
   }
   return { found, minutes: o.passive ? 0 : 10 };
+}
+
+// ------------------------------------------------------------------- traps
+
+/**
+ * Trap catalogue in the 1e manner. A map event of type 'trap' names one by
+ * `trap: 'poisonNeedle'` and may override any field. Fields:
+ *  - who: 'lead' (the first able member: the one opening, stepping),
+ *    'random' (`count` dice of random members), 'all' (the whole party)
+ *  - attack: the trap rolls to hit with this THAC0 against each victim's AC
+ *  - dice: damage dice; save {key, type:'half'|'neg', poison?, dodge?}
+ *  - effect: a condition to add on a failed save (poisoned, paralyzed,
+ *    asleep), lasting `rounds` (poison takes `onset` rounds to kill)
+ *  - mod: % added to Find/Remove Traps (a cunning trap: -10)
+ *  - stonework: built into stone, so dwarves and gnomes can sense it
+ *  - alarm: springing it brings the guards (the scene rolls an encounter)
+ */
+export const TRAPS = Object.freeze({
+  poisonNeedle: {
+    name: 'poisoned needle', who: 'lead', dice: '1', save: { key: 'ppdm', type: 'neg', poison: true },
+    effect: 'poisoned', onset: 10, text: 'A needle flicks out of the lock.',
+  },
+  dartVolley: {
+    name: 'dart trap', who: 'random', count: '1d3', attack: 16, dice: '1d3', mod: 0, stonework: true,
+    text: 'Darts hiss from holes in the wall.',
+  },
+  pit: {
+    name: 'concealed pit', who: 'lead', dice: '1d6', save: { key: 'ppdm', type: 'neg', dodge: true }, stonework: true,
+    text: 'The floor gives way beneath your feet.',
+  },
+  fallingBlock: {
+    name: 'falling block', who: 'lead', dice: '2d6', save: { key: 'ppdm', type: 'half', dodge: true }, stonework: true,
+    text: 'A block of stone drops from the ceiling.',
+  },
+  scythingBlade: {
+    name: 'scything blade', who: 'lead', attack: 13, dice: '1d10', stonework: true,
+    text: 'A blade sweeps out of a slot in the wall.',
+  },
+  sleepGas: {
+    name: 'gas trap', who: 'all', save: { key: 'ppdm', type: 'neg' }, effect: 'asleep', rounds: '1d4x10',
+    text: 'A sweet-smelling vapour fills the passage.',
+  },
+  fireGlyph: {
+    name: 'glyph of warding', who: 'all', dice: '2d4+6', save: { key: 'sp', type: 'half' }, element: 'fire', mod: -10,
+    text: 'A rune flares and the air bursts into flame.',
+  },
+  alarm: {
+    name: 'alarm', who: 'none', alarm: true, text: 'A bell clangs somewhere in the dark.',
+  },
+});
+
+/** The full trap spec: a catalogue entry merged with the event's overrides. */
+export function trapSpec(trap = {}) {
+  const base = typeof trap === 'string' ? TRAPS[trap] : TRAPS[trap.trap ?? trap.kind ?? trap.id] ?? {};
+  return typeof trap === 'string' ? { ...base, id: trap } : { ...base, ...trap, id: trap.trap ?? trap.kind ?? trap.id };
+}
+
+const rollExpr = (rng, e) => roll(rng, e);
+
+/**
+ * Spring a trap on the party: who it reaches, attack rolls against AC, saves
+ * (the stout races' CON bonus only against poison; DEX helps dodge pits and
+ * falling blocks), damage through applyDamage (so 0 hp is unconscious and
+ * below that the victim is dying), and conditions on a failed save.
+ * @returns {{victims:{ch:object, hit:boolean, saved:boolean|null, damage:number, effect:string|null, status:string}[],
+ *   alarm:boolean, text:string[]}}
+ */
+export function springTrap(rng, party, trap) {
+  const t = trapSpec(trap);
+  const members = ableMembers(party);
+  const text = [t.text ?? `The ${t.name ?? 'trap'} is sprung!`];
+  let targets = [];
+  if (t.who === 'all') targets = (party ?? []).filter((ch) => ch && isConscious(ch));
+  else if (t.who === 'random') {
+    const pool = [...members];
+    for (let n = Math.max(1, rollExpr(rng, t.count ?? 1)); n > 0 && pool.length; n--) targets.push(pool.splice(rng.int(0, pool.length - 1), 1)[0]);
+  } else if (t.who !== 'none' && members[0]) targets = [members[0]];
+  const victims = [];
+  for (const ch of targets) {
+    const v = { ch, hit: true, saved: null, damage: 0, effect: null, status: ch.status };
+    if (t.attack != null) {
+      const need = neededToHit(t.attack, deriveStats(ch).ac, 0);
+      v.hit = rng.die(20) >= need;
+    }
+    if (v.hit && t.save) {
+      v.saved = rollSave(rng, ch, t.save.key, { poison: !!t.save.poison, dodge: !!t.save.dodge, element: t.element }).saved;
+    }
+    const negated = v.saved && t.save?.type === 'neg';
+    if (v.hit && !negated && t.dice) {
+      let d = rollExpr(rng, t.dice);
+      if (v.saved && t.save?.type === 'half') d = Math.floor(d / 2);
+      if (t.element) d = Math.floor(d * (deriveStats(ch).resist?.[t.element] ?? 1));
+      v.damage = Math.max(0, d);
+      if (v.damage) applyDamage(ch, v.damage);
+    }
+    if (v.hit && !v.saved && t.effect && isConscious(ch)) {
+      if (t.effect === 'poisoned') addEffect(ch, 'poisoned', { rounds: Infinity, source: 'trap', data: { onset: t.onset ?? 10 } });
+      else addEffect(ch, t.effect, { rounds: t.rounds != null ? rollExpr(rng, t.rounds) : ROUNDS_PER_TURN, source: 'trap' });
+      v.effect = t.effect;
+    }
+    v.status = ch.status;
+    const what = !v.hit ? 'is missed' : negated ? 'avoids it' : v.damage ? `takes ${v.damage}${v.effect ? ` and is ${v.effect}` : ''}` : v.effect ? `is ${v.effect}` : 'is unharmed';
+    text.push(`${ch.name} ${what}.`);
+    victims.push(v);
+  }
+  if (t.alarm) text.push('The alarm is raised.');
+  return { victims, alarm: !!t.alarm, text };
+}
+
+/**
+ * The whole trap interaction, Gold Box style. The party walks onto a trapped
+ * square or opens a trapped chest or door: a Find Traps spell, the best
+ * thief's Find/Remove Traps roll or a dwarf's stone sense may spot it
+ * (detectTrap). A found trap is then disarmed by the best thief
+ * (findRemoveTraps: failing by more than 20 springs it); a party with no
+ * thief, or one that fails, steps around it if `o.avoidable` (a pit in a
+ * corridor) or springs it. An unseen trap springs. The trap's state (found,
+ * removed, sprung) is written back onto `trap` so a scene can keep it in
+ * game.flags; a removed or sprung one-shot trap (no `resets`) does nothing again.
+ * @param {import('./dice.js').Rng} rng
+ * @param {object[]} party
+ * @param {object|string} trap a TRAPS id or an event object `{trap:'pit', ...overrides}`
+ * @param {{avoidable?:boolean, search?:boolean}} [o] search: the party is searching (a turn spent: always try to detect)
+ * @returns {{detected:boolean, removed:boolean, sprung:boolean, avoided:boolean, by:object|null,
+ *   victims:object[], alarm:boolean, minutes:number, text:string[]}}
+ */
+export function resolveTrap(rng, party, trap, o = {}) {
+  const state = typeof trap === 'object' ? trap : {};
+  const t = trapSpec(trap);
+  const out = { detected: false, removed: false, sprung: false, avoided: false, by: null, victims: [], alarm: false, minutes: 0, text: [] };
+  if (state.removed || (state.sprung && !t.resets)) return out;
+  const det = state.found ? { found: true, by: null, method: 'known' } : detectTrap(rng, party, t);
+  if (o.search) out.minutes += 10;
+  if (det.found) {
+    out.detected = state.found = true;
+    out.by = det.by;
+    if (det.by) out.text.push(det.method === 'spell' ? `${det.by.name}'s spell reveals a ${t.name}.` : det.method === 'stonework' ? `${det.by.name} spots odd stonework: a ${t.name}!` : `${det.by.name} finds a ${t.name}.`);
+    const thief = ableMembers(party)
+      .map((ch) => ({ ch, chance: Math.max(0, Math.min(99, (deriveStats(ch).thief?.ft ?? 0) + (t.mod ?? 0))) }))
+      .filter((x) => x.chance > 0)
+      .sort((a, b) => b.chance - a.chance)[0];
+    if (thief) {
+      const r = findRemoveTraps(rng, thief.ch, t);
+      out.minutes += 1;
+      out.text.push(r.text);
+      if (r.removed) {
+        out.removed = state.removed = true;
+        out.by = thief.ch;
+        return out;
+      }
+      if (!r.sprung && o.avoidable) {
+        out.avoided = true;
+        out.text.push('The party edges around it.');
+        return out;
+      }
+      if (!r.sprung) return out; // known and still armed: try again, or leave it be
+    } else {
+      // Known but nobody can disarm it: step around it, or leave the chest or
+      // door alone (the scene may still choose to springTrap deliberately).
+      out.avoided = true;
+      out.text.push(o.avoidable ? 'The party edges around it.' : 'Nobody here can disarm it; the party leaves it be.');
+      return out;
+    }
+  }
+  const sp = springTrap(rng, party, t);
+  out.sprung = state.sprung = true;
+  out.victims = sp.victims;
+  out.alarm = sp.alarm;
+  out.text.push(...sp.text);
+  return out;
 }

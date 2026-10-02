@@ -1,5 +1,5 @@
 import { roll } from './dice.js';
-import { deriveStats, applyDamage, isConscious, bleed, drainLevel, effectiveAbilities, activeClasses } from './character.js';
+import { deriveStats, applyDamage, isConscious, bleed, drainLevel, effectiveAbilities, activeClasses, missileProfile } from './character.js';
 import { trimMemorized } from './camp.js';
 import { dexterityMods, strengthTable } from './abilities.js';
 import { turnNeeded, fighterAttacksPerRound, attacksThisRound } from './classes.js';
@@ -60,6 +60,7 @@ export function combatantFromCharacter(ch) {
     thac0: s.thac0,
     ac: s.ac,
     acMissile: s.acMissile,
+    acHurled: s.acHurled,
     acRear: s.acRear,
     hitBonus: s.hitBonus,
     dmgBonus: s.dmgBonus,
@@ -84,7 +85,7 @@ export function combatantFromCharacter(ch) {
     xp: 0,
     ref: ch,
     snap: {
-      ac: s.ac, acMissile: s.acMissile, acRear: s.acRear, fxHit: s.mods.hit, fxDmg: s.mods.dmg, thac0: s.thac0,
+      ac: s.ac, acMissile: s.acMissile, acHurled: s.acHurled, acRear: s.acRear, fxHit: s.mods.hit, fxDmg: s.mods.dmg, thac0: s.thac0,
       strHit: strengthTable(s.abilities.str, s.abilities.strPct).hit, strDmg: strengthTable(s.abilities.str, s.abilities.strPct).dmg,
     },
   };
@@ -164,7 +165,8 @@ export function toHitNeeded(attacker, defender, mods = 0) {
  * combatants were built (bless, prayer, shield, invisibility, prot. from evil...).
  * @returns {{hit:number, dmg:number, ac:number, missChance:number, images:number, immune:Set<string>}}
  */
-export function liveMods(attacker, defender, { ranged = false, rear = false } = {}) {
+export function liveMods(attacker, defender, { ranged = false, rear = false, hurled = null } = {}) {
+  const thrown = ranged && (hurled ?? isHurledAttack(attacker));
   const aHost = effectHost(attacker);
   const dHost = effectHost(defender);
   const out = { hit: 0, dmg: 0, ac: 0, missChance: 0, images: 0, immune: new Set() };
@@ -195,17 +197,17 @@ export function liveMods(attacker, defender, { ranged = false, rear = false } = 
     // AC: rear (no shield, no DEX bonus, no frontal Shield spell), missile
     // (Shield spell AC 2, Prot. from Normal Missiles...) or melee.
     const s = deriveStats(characterOf(defender));
-    const live = rear ? s.acRear : ranged ? s.acMissile : s.ac;
+    const live = rear ? s.acRear : ranged ? (thrown ? s.acHurled : s.acMissile) : s.ac;
     out.ac += live - defender.snap.ac;
   } else if (characterOf(defender)) {
     // A bare Character used as a defender (camp tests, scripted events).
     const s = deriveStats(characterOf(defender));
-    out.ac += (rear ? s.acRear : ranged ? s.acMissile : s.ac) - (defender.ac ?? s.ac);
+    out.ac += (rear ? s.acRear : ranged ? (thrown ? s.acHurled : s.acMissile) : s.ac) - (defender.ac ?? s.ac);
   } else {
     let ac = defender.ac + dfx.ac;
     if (rear) ac += monsterShieldAc(defender); // a shield guards the front only
     else {
-      const cap = ranged ? dfx.acVsMissile : dfx.acVsMelee;
+      const cap = ranged ? (thrown ? dfx.acVsHurled ?? dfx.acVsMissile : dfx.acVsMissile) : dfx.acVsMelee;
       if (cap != null) ac = Math.min(ac, cap);
     }
     out.ac += ac - defender.ac;
@@ -217,6 +219,26 @@ export function liveMods(attacker, defender, { ranged = false, rear = false } = 
   out.images = dfx.images;
   out.immune = dfx.immune;
   return out;
+}
+
+const HURLED_NAMES = /javelin|spear|axe|dagger|dart|rock|boulder|stone/i;
+
+/**
+ * Is this missile attack hand-hurled (thrown) rather than device-propelled?
+ * It matters against the Shield spell: AC 2 vs hurled, AC 3 vs arrows,
+ * bolts and sling stones (PHB). Taken from `attacker.hurled` when set, else
+ * the character's missile weapon (missileProfile), else the monster's
+ * `hurled` flag or weapon name (javelins, spears, rocks).
+ */
+export function isHurledAttack(attacker) {
+  if (!attacker) return false;
+  if (attacker.hurled != null) return !!attacker.hurled;
+  if (attacker.rock) return true;
+  const ch = characterOf(attacker);
+  if (ch) return !!missileProfile(ch)?.thrown;
+  const m = monsterOf(attacker);
+  if (m?.hurled != null) return !!m.hurled;
+  return HURLED_NAMES.test(m?.weapon ?? '');
 }
 
 /**

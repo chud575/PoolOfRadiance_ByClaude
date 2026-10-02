@@ -102,7 +102,7 @@ export function throwsRocks(c) {
 
 /**
  * A giant's thrown boulder (MM): a missile attack with the giant's THAC0
- * against the target's missile AC — Shield's AC 2 vs missiles, invisibility
+ * against the target's AC vs hurled missiles — Shield's AC 2, invisibility
  * and blink count; dwarves and gnomes are -4 to hit for giants (PHB) — for
  * 2d8 damage. Protection from Normal Missiles does *not* stop boulders (PHB).
  * Natural 20 hits, natural 1 misses.
@@ -118,7 +118,7 @@ export function throwRocks(rng, attacker, target, o = {}) {
   const { thac0, hitBonus } = attackOf(attacker);
   const dfx = effectMods(effectHost(target));
   const rac = racialCombatMods(attacker, target);
-  const ac = acOf(target, { missile: true }) + rac.ac;
+  const ac = acOf(target, { missile: true, hurled: true }) + rac.ac; // hand-hurled: Shield AC 2
   const needed = neededToHit(thac0, ac, hitBonus + rac.hit + dfx.attackerHit);
   const r = rng.die(20);
   const blinked = dfx.missChance > 0 && rng.int(1, 100) <= dfx.missChance;
