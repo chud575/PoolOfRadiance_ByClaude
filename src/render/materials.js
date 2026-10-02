@@ -41,7 +41,7 @@ const DEFS = {
   arch_roof_clay: { tex: 'hd_roof_clay', texScale: 2, vc: true, fx: { macro: 0.3, moss: 0.2 } },
   arch_roof_shake: { tex: 'hd_roof_shake', texScale: 2, vc: true, fx: { macro: 0.3, moss: 0.3 } },
   arch_cobble: { tex: 'hd2_cobble', texScale: 2, vc: true, fx: { macro: 0.4, floor: 1 } },
-  arch_flags: { tex: 'hd2_flags', texScale: 3.45, vc: true, fx: { macro: 0.36, floor: 1 } },
+  arch_flags: { tex: 'hd2_flags', texScale: 2.8, vc: true, fx: { macro: 0.36, floor: 1 } },
   arch_mud: { tex: 'hd_mud', texScale: 3, vc: true, fx: { macro: 0.3, floor: 1 } },
   arch_boards: { tex: 'hd_boards', texScale: 2, vc: true, fx: { macro: 0.15, floor: 1 } },
   arch_ceiling: { tex: 'hd2_ceiling', texScale: 3, vc: true, color: 0xffffff, fx: { macro: 0.1 } },

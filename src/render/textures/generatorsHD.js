@@ -185,7 +185,7 @@ export function plaster({ seed = 31, base = [0.78, 0.72, 0.6], decay = 1, interi
     const wv = v + (fbm(u * 18 + 3.1, v * 18, { octaves: 2, period: 18, seed: seed + 15 }) - 0.5) * 0.02;
     const w = worley(wu * 22, wv * 22, 22, seed + 6);
     const crackMask = smooth(0.6, 0.72, fbm(u * 5, v * 5, { octaves: 3, period: 5, seed: seed + 7 })) * smooth(0.25, 0.6, w.id + 0.2);
-    const crack = (1 - smooth(0.0, 0.012, w.f2 - w.f1)) * crackMask * decay;
+    const crack = (1 - smooth(0.0, 0.035, w.f2 - w.f1)) * crackMask * decay * 0.8; // ≥ 1 texel wide: continuous hairlines, never dotted
     // a few longer settlement cracks (wandering lines, very thin)
     // two sparse settlement cracks per tile: thin, jagged at the cm scale, slowly drifting
     let settle = 0;

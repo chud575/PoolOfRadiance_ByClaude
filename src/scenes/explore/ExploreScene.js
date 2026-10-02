@@ -400,8 +400,9 @@ export default class ExploreScene extends Scene {
       }
       if (!src.lit) continue;
       if (src.kind === 'hearth') {
-        for (const [dx, sc] of [[-0.22, 0.42], [0.05, 0.55], [0.26, 0.38]]) flames.push({ pos: src.pos.clone().add(new THREE.Vector3(src.N.z * dx, -0.1, -src.N.x * dx)), scale: sc, seed: src.seed + dx * 10 });
-        glows.push({ pos: src.pos.clone().add(new THREE.Vector3(0, 0.3, 0)), size: 1.6, color: 0xff7a30, seed: src.seed, opacity: 0.5 });
+        // a bed of fire along the logs: a tall heart, licking flankers and low flames at the ends
+        for (const [dx, dz, sc] of [[-0.3, 0.02, 0.3], [-0.16, -0.04, 0.5], [0.0, 0.03, 0.66], [0.15, -0.03, 0.48], [0.29, 0.02, 0.32], [0.06, 0.1, 0.36]]) flames.push({ pos: src.pos.clone().add(new THREE.Vector3(src.N.z * dx + src.N.x * dz, -0.14, -src.N.x * dx + src.N.z * dz)), scale: sc, seed: src.seed + dx * 10 + dz * 7 });
+        glows.push({ pos: src.pos.clone().add(new THREE.Vector3(0, 0.3, 0)), size: 1.6, color: 0xff7a30, seed: src.seed, opacity: 0.22 });
         continue;
       }
       if (src.kind === 'brazier') {
@@ -510,7 +511,7 @@ export default class ExploreScene extends Scene {
       // inverse-square pools (~3 m effective reach); a torch by day barely registers against the sun
       const day = this.tileset.outdoors && this.night < 0.12;
       const under = this.tileset.id === 'dungeon';
-      l.userData.base = (hearth ? 20 : candle ? 1.6 : src.kind === 'brazier' ? 12 : src.kind === 'lamp' ? 6 : src.lightColor ? 6 : under ? 11 : 7) * (day ? 0.28 : 1);
+      l.userData.base = (hearth ? 15 : candle ? 1.6 : src.kind === 'brazier' ? 12 : src.kind === 'lamp' ? 6 : src.lightColor ? 6 : under ? 11 : 7) * (day ? 0.28 : 1);
       l.distance = hearth ? 12 : candle ? 4 : src.kind === 'brazier' ? 11 : 8;
     }
     for (const l of free) {
