@@ -28,7 +28,8 @@ html[data-input='pad'] .por-set-tabs-head .por-keycap { display: none; }
   color: var(--por-text-dim); background: none; border: 1px solid transparent; border-radius: 2px; padding: 0.7em 1.1em 0.7em 0.8em; cursor: pointer; white-space: nowrap;
   transition: color 0.15s var(--ease), background 0.2s var(--ease), border-color 0.2s var(--ease);
 }
-.por-set-tab:hover { color: var(--por-text); background: rgba(255, 255, 255, 0.04); }
+.por-set-tab:not(.sel):hover { color: var(--por-text); background: none; text-shadow: 0 0 10px rgba(255, 220, 150, 0.25); }
+.por-set-tab:not(.sel):hover .por-set-icon { color: var(--por-gilt); }
 .por-set-tab.sel {
   color: #fff6de; border-color: rgba(216, 178, 90, 0.7);
   background: linear-gradient(90deg, rgba(45, 82, 163, 0.85), rgba(20, 34, 80, 0.35));
@@ -120,9 +121,11 @@ html[data-classic='1'] .por-set-seal-svg { display: none; }
 .por-seg { display: inline-flex; padding: 2px; border-radius: 3px; background: rgba(0, 0, 0, 0.42); border: 1px solid rgba(216, 178, 90, 0.35); box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.5); }
 .por-seg-opt {
   font: inherit; font-family: var(--font-display); font-weight: 700; font-size: 0.8em; letter-spacing: 0.08em; text-transform: uppercase;
-  color: var(--por-text-dim); background: none; border: 0; border-radius: 2px; padding: 0.45em 0.85em; cursor: pointer; white-space: nowrap;
+  font-variant-numeric: lining-nums tabular-nums; font-feature-settings: 'lnum' 1, 'onum' 0, 'tnum' 1; font-variant-caps: normal;
+  color: var(--por-text-dim); background: none; border: 0; border-radius: 2px; padding: 0.45em 0.85em; min-width: 4.2em; text-align: center; cursor: pointer; white-space: nowrap;
   transition: color 0.14s var(--ease), background 0.2s var(--ease), box-shadow 0.2s var(--ease);
 }
+.por-seg-opt.num { font-family: var(--font-num); font-size: 0.86em; letter-spacing: 0.04em; padding-top: 0.42em; padding-bottom: 0.42em; }
 .por-seg-opt:hover { color: var(--por-text); background: rgba(255, 255, 255, 0.05); }
 .por-seg-opt.sel { color: #1b1206; background: var(--gilt-grad); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.5); text-shadow: 0 1px 0 rgba(255, 244, 210, 0.5); }
 
@@ -211,6 +214,7 @@ html[data-classic='1'] .por-set-seal-svg { display: none; }
 .por-bind-label { font-size: calc(0.95em * var(--text-scale)); }
 .por-bind-key {
   font: inherit; font-family: var(--font-num); font-size: 0.86em; height: 1.95em; border-radius: 4px; cursor: pointer; color: var(--por-parchment);
+  padding: 3px 0 0; line-height: 1; /* the 3px skirt below lifts the face: drop the legend to its optical centre */
   /* a real keycap: lit top face, darker skirt, hard drop to the leather */
   background: linear-gradient(180deg, #3a4782 0%, #26306a 14%, #1a2350 58%, #121938 100%);
   border: 1px solid #8a6e36; border-top-color: #c9a85c; border-bottom: 3px solid #4c3a16;
@@ -220,13 +224,19 @@ html[data-classic='1'] .por-set-seal-svg { display: none; }
 }
 .por-bind-key:active { transform: translateY(2px); border-bottom-width: 1px; box-shadow: inset 0 1px 0 rgba(255, 240, 200, 0.15), 0 1px 0 rgba(3, 5, 14, 0.9); }
 .por-bind-key:hover { border-color: var(--por-gilt-hi); color: #fff; }
-/* an empty slot: a recessed, engraved socket in the leather, not a broken button */
+/* an empty slot: an open, dashed gilt socket that asks to be filled */
 .por-bind-key.empty {
-  color: rgba(216, 190, 130, 0.38); background: linear-gradient(180deg, #04060f, #0b1022 70%, #10162e);
-  border: 1px solid #03040a; border-bottom-color: rgba(216, 178, 90, 0.35); border-top-color: #000;
-  box-shadow: inset 0 3px 5px rgba(0, 0, 0, 0.9), inset 0 0 0 1px rgba(216, 178, 90, 0.08), 0 1px 0 rgba(255, 236, 180, 0.07);
-  text-shadow: 0 1px 0 rgba(255, 236, 180, 0.1), 0 -1px 0 rgba(0, 0, 0, 0.8); font-weight: 400;
+  color: rgba(232, 208, 150, 0.6); background: linear-gradient(180deg, rgba(40, 52, 110, 0.28), rgba(20, 26, 60, 0.22));
+  border: 1px dashed rgba(216, 178, 90, 0.55); border-bottom-width: 1px; padding-top: 0;
+  box-shadow: inset 0 0 0 1px rgba(5, 7, 18, 0.5); text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8); font-weight: 400;
+  font-family: var(--font-display); letter-spacing: 0.14em; text-transform: uppercase; font-size: 0.72em;
 }
+.por-bind-key.empty:hover, .por-bind-row.focus .por-bind-key.empty { border-style: solid; color: #fff2cc; background: linear-gradient(180deg, rgba(70, 90, 170, 0.4), rgba(30, 40, 90, 0.3)); box-shadow: 0 0 10px rgba(255, 206, 110, 0.25); }
+.por-bind-add { display: inline-flex; align-items: center; gap: 0.5em; }
+.por-bind-add i { position: relative; width: 0.8em; height: 0.8em; }
+.por-bind-add i::before, .por-bind-add i::after { content: ''; position: absolute; left: 50%; top: 50%; background: currentColor; transform: translate(-50%, -50%); }
+.por-bind-add i::before { width: 100%; height: 1.5px; }
+.por-bind-add i::after { width: 1.5px; height: 100%; }
 .por-bind-key.waiting { color: #1b1206; background: var(--gilt-grad); border-color: #000; animation: por-breathe 1.2s ease-in-out infinite; font-family: var(--font-display); font-weight: 700; letter-spacing: 0.06em; font-size: 0.74em; }
 .por-bind-row.conflict .por-bind-key:not(.empty) { border-color: var(--por-blood); box-shadow: 0 0 8px rgba(208, 71, 60, 0.5); }
 .por-bind-pad { display: flex; gap: 0.3em; justify-content: center; align-items: center; color: var(--por-text-dim); }
@@ -248,7 +258,8 @@ html[data-classic='1'] .por-set-seal-svg { display: none; }
 .por-bind-pad .por-pad.unbound { border-color: #03040a; border-bottom-color: rgba(216, 178, 90, 0.35); background: radial-gradient(circle at 50% 70%, #10142a, #04060e 80%); box-shadow: inset 0 3px 5px rgba(0, 0, 0, 0.9); color: rgba(216, 190, 130, 0.38); }
 /* d-pad: a full-size cross with the pressed arm lit, legible at a glance */
 .por-bind-pad .por-pad.dpad { --pc: #e6dcc0; padding: 0; }
-.por-bind-pad .por-pad.dpad .por-dpad { width: 1.7em; height: 1.7em; filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.9)); }
+.por-bind-pad .por-pad.dpad { min-width: 2.5em; height: 2.5em; margin: -0.18em 0; border-radius: 0.6em; }
+.por-bind-pad .por-pad.dpad .por-dpad { width: 2.1em; height: 2.1em; filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.9)); }
 .por-dpad { width: 1.55em; height: 1.55em; display: block; }
 .por-bind-foot { display: flex; justify-content: space-between; align-items: center; gap: 1em; padding: 1em 0.9em 0.3em 1.1em; font-size: calc(0.85em * var(--text-scale)); }
 

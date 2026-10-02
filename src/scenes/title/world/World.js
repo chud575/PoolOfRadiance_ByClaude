@@ -23,7 +23,19 @@ export function preloadWorld() {
 const LOOK_FOG = new THREE.Color(0x3a3a68);
 const LOOK_FILL = new THREE.Color(0x9a92b8);
 
-export function createWorld() {
+/** Stand-ins for the city and terrace until a staged boot builds them (see populate). */
+function stubSet() {
+  const group = new THREE.Group();
+  const noop = () => {};
+  return { group, stub: true, ensureCrowd: noop, setShadows: noop, setClassic: noop, setBeam: noop, update: noop, dispose: noop };
+}
+
+/**
+ * @param {{deferred?: boolean}} [o]  deferred: build only sky, sea, lights, dragon
+ *   and particles now (instant first frame: logo over the dusk); the city and
+ *   terrace come later from populate(), once their textures have arrived.
+ */
+export function createWorld({ deferred = false } = {}) {
   const scene = new THREE.Scene();
   const U = createWorldUniforms(SUN_DIR);
   scene.fog = new THREE.FogExp2(0x3a2240, 0.0034);
@@ -31,8 +43,8 @@ export function createWorld() {
 
   const sky = createSky(U);
   const sea = createSea(U);
-  const city = createCity();
-  const terrace = createTerrace();
+  let city = deferred ? stubSet() : createCity();
+  let terrace = deferred ? stubSet() : createTerrace();
   const dragon = createDragon({ sunDir: SUN_DIR });
   // the council chamber (and its dozen sculpted figures) is only built once the
   // prologue needs it: the title card and menus never pay for it
@@ -80,7 +92,7 @@ export function createWorld() {
   // The Old City aerial's own rig: a low warm key raking in from the west (frame
   // left, the sunset side) with long shadows across the ruins and the castle
   // mound, and a cool moonrise rim from the east that edges every tower.
-  const cityKey = new THREE.DirectionalLight(0xffa070, 0);
+  const cityKey = new THREE.DirectionalLight(0xffb27e, 0);
   cityKey.position.set(55 - 100, -10 + 34, -120 + 22);
   cityKey.target.position.set(55, -10, -120);
   cityKey.shadow.mapSize.set(2048, 2048);
@@ -140,35 +152,69 @@ export function createWorld() {
   // far quarter separate into planes of depth
   const mistMat = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide,
-    uniforms: { uTime: U.uTime, uOp: { value: 1 } },
+    uniforms: { uTime: U.uTime, uOp: { value: 1 }, uAlpha: { value: 0.2 }, uLayer: { value: 0 } },
     vertexShader: /* glsl */ `varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
-    fragmentShader: /* glsl */ `uniform float uTime, uOp; varying vec3 vW;
+    fragmentShader: /* glsl */ `uniform float uTime, uOp, uAlpha, uLayer; varying vec3 vW;
       ${NOISE}
       void main(){
-        vec2 p = vW.xz * 0.045 + vec2(uTime * 0.012, uTime * 0.004);
+        vec2 p = vW.xz * 0.06 + vec2(uTime * 0.012, uTime * 0.004) + vec2(uLayer * 3.7, uLayer * 1.9);
         float n = fbm(p + fbm(p * 1.7 + 3.1) * 0.8);
-        float a = smoothstep(0.5, 0.85, n);
+        float a = smoothstep(0.46, 0.84, n);
         // fade out at the sheet's rim and toward the camera's own street
         vec2 c = (vW.xz - vec2(60.0, -118.0)) / vec2(95.0, 70.0);
         a *= 1.0 - smoothstep(0.55, 1.0, length(c));
-        a *= smoothstep(-55.0, -85.0, vW.z);
+        a *= smoothstep(-50.0, -78.0, vW.z);
+        // thin near the lens, banking up with distance: it separates the planes
+        a *= smoothstep(35.0, 120.0, distance(cameraPosition, vW));
         // warm on the sun (west) side, cool lilac in the lee
-        vec3 col = mix(vec3(0.55, 0.42, 0.62), vec3(1.0, 0.62, 0.42), smoothstep(110.0, 10.0, vW.x));
-        gl_FragColor = vec4(col * 0.75, a * 0.13 * uOp);
+        vec3 col = mix(vec3(0.5, 0.44, 0.7), vec3(1.0, 0.64, 0.46), smoothstep(110.0, 10.0, vW.x) * 0.8);
+        gl_FragColor = vec4(col * 0.7, a * uAlpha * uOp);
       }`,
   });
   const mist = new THREE.Group();
-  for (const [y, k] of [[-9.7, 1], [-9.0, 0.8]]) {
+  // four sheets lying in the streets: dense and low in the hollows, thin and
+  // torn higher up, so the foreground ruins, the castle mound and the far
+  // quarter separate into planes
+  [[-12.9, 0.3], [-11.8, 0.3], [-10.2, 0.22], [-8.2, 0.12]].forEach(([y, alpha], i) => {
     const g = new THREE.PlaneGeometry(200, 150);
     g.rotateX(-Math.PI / 2);
-    const m = new THREE.Mesh(g, mistMat);
+    const mat = mistMat.clone();
+    mat.uniforms = { uTime: U.uTime, uOp: mistMat.uniforms.uOp, uAlpha: { value: alpha }, uLayer: { value: i } };
+    const m = new THREE.Mesh(g, mat);
     m.position.set(60, y, -118);
-    m.scale.setScalar(1 + (1 - k) * 0.1);
     m.renderOrder = 2;
     mist.add(m);
-  }
+  });
   mist.visible = false;
   scene.add(mist);
+
+  // ---- title skyline haze: soft veils between the rows of the town ----------------
+  // (behind the first streets and again before the castle and harbour) so the
+  // midground separates into planes instead of one flat silhouette
+  const hazeMat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, fog: false,
+    uniforms: { uTime: U.uTime, uA: { value: 1 } },
+    vertexShader: /* glsl */ `varying vec2 vUv; varying vec3 vW; void main(){ vUv = uv; vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: /* glsl */ `uniform float uTime, uA; varying vec2 vUv; varying vec3 vW;
+      ${NOISE}
+      void main(){
+        float n = fbm(vec2(vW.x * 0.03 + uTime * 0.01, vUv.y * 2.0 - uTime * 0.004));
+        float a = pow(1.0 - vUv.y, 1.8) * (0.55 + 0.6 * n) * smoothstep(0.0, 0.08, vUv.x) * smoothstep(1.0, 0.92, vUv.x);
+        // warm toward the low sun (west, frame left), lilac in the east
+        vec3 col = mix(vec3(0.42, 0.3, 0.46), vec3(0.95, 0.55, 0.36), smoothstep(40.0, -90.0, vW.x));
+        gl_FragColor = vec4(col * 0.75, a * uA);
+      }`,
+  });
+  const haze = new THREE.Group();
+  for (const [z, hgt, a] of [[-60, 13, 0.5], [-112, 20, 0.6]]) {
+    const g = new THREE.PlaneGeometry(320, hgt);
+    g.translate(0, -14 + hgt / 2, z);
+    const m = new THREE.Mesh(g, hazeMat.clone());
+    m.material.uniforms = { uTime: U.uTime, uA: { value: a } };
+    m.renderOrder = 1;
+    haze.add(m);
+  }
+  scene.add(haze);
 
   // ---- particles ------------------------------------------------------------------
   const motes = createParticles({
@@ -209,6 +255,31 @@ export function createWorld() {
     chamber: null,
     ensureChamber,
     ensureCrowd: () => city.ensureCrowd(),
+    /** True once the city and terrace exist (a staged boot fills them in after the first frames). */
+    get populated() { return !city.stub; },
+    /**
+     * Staged boot, step two: build the city and the terrace (textures must be
+     * preloaded) and swap them in for the stand-ins; the town then emerges
+     * from a thinning mist (see update).
+     */
+    populate() {
+      if (!city.stub || this._disposed) return;
+      const swap = (old, fresh) => {
+        const i = outdoor.indexOf(old.group);
+        if (i >= 0) outdoor[i] = fresh.group;
+        scene.remove(old.group);
+        scene.add(fresh.group);
+        return fresh;
+      };
+      city = swap(city, createCity());
+      terrace = swap(terrace, createTerrace());
+      this.city = city;
+      this.terrace = terrace;
+      if (this._classic) { terrace.setClassic?.(true); city.setClassic?.(true); }
+      if (this._stage?.cityKey) city.setShadows(true);
+      this._applyStage();
+      this._emerge = 0;
+    },
     hemi,
     fill,
     /**
@@ -290,6 +361,7 @@ export function createWorld() {
       for (const s of [motes, embersL, embersR]) s.points.visible = !inside && st.terrace && !(this._classic && s !== motes);
       drift.points.visible = !inside && st.drift && !this._classic && !this._low;
       shafts.visible = !inside && st.terrace && !this._classic;
+      haze.visible = !inside && st.terrace && !this._classic;
       hall.visible = !inside && st.hall;
       const ck = !inside && !!st.cityKey && !this._classic;
       cityKey.visible = ck;
@@ -297,8 +369,8 @@ export function createWorld() {
       mist.visible = ck;
       cityKey.castShadow = ck && !this._low;
       sun.castShadow = !ck && !this._low;
-      cityKey.intensity = ck ? 15 : 0;
-      cityRim.intensity = ck ? 3.6 : 0;
+      cityKey.intensity = ck ? 11.5 : 0;
+      cityRim.intensity = ck ? 4.4 : 0;
       if (chamber) chamber.group.visible = inside;
     },
     /**
@@ -333,15 +405,22 @@ export function createWorld() {
       if (on) ensureChamber();
       this._applyStage();
       if (on) {
-        sun.intensity = 0; hemi.intensity = 0.06; fill.intensity = 0; moon.intensity = 0; castleKey.intensity = 0;
+        sun.intensity = 0; hemi.intensity = 0.16; fill.intensity = 0; moon.intensity = 0; castleKey.intensity = 0;
         scene.fog.density = 0.012;
         scene.fog.color.setHex(0x0c0810);
       } else {
         this.setLook(this._look ?? 0);
       }
     },
-    update(t, camera, px = 1) {
+    update(t, camera, px = 1, dt = 0) {
       U.uTime.value = t;
+      if (this._emerge !== undefined && this._emerge < 1) {
+        // the freshly built town rises out of a mist that thins over ~1.5 s
+        this._emerge = Math.min(1, this._emerge + Math.min(dt, 0.1) / 1.5);
+        const k = 1 - this._emerge;
+        this.setLook(this._look ?? 0);
+        scene.fog.density *= 1 + 9 * k * k;
+      }
       sky.userData.update(camera);
       camera.updateMatrixWorld();
       city.update(t, camera, SUN_DIR);
@@ -351,14 +430,16 @@ export function createWorld() {
       for (const s of systems) s.update(t, px);
     },
     dispose() {
+      this._disposed = true;
       city.dispose();
       terrace.dispose();
       dragon.dispose();
       chamber?.dispose();
       for (const s of systems) s.dispose();
       shaftMat.dispose();
+      haze.children.forEach((m) => { m.geometry.dispose(); m.material.dispose(); });
       mistMat.dispose();
-      mist.children.forEach((m) => m.geometry.dispose());
+      mist.children.forEach((m) => { m.geometry.dispose(); m.material.dispose(); });
       shafts.children.forEach((m) => m.geometry.dispose());
       sky.geometry.dispose();
       sky.material.dispose();

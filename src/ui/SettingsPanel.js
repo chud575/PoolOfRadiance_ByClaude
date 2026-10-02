@@ -34,6 +34,27 @@ const QUALITY_PRESETS = {
   ultra: { pixelRatioCap: 2, antialias: 'smaa', bloom: true },
 };
 
+/**
+ * Choose a quality preset outside the Settings screen (first-run auto-detect):
+ * stores it, applies its renderer settings and resizes the canvas.
+ * @param {import('../core/context.js').GameContext} ctx
+ * @param {'low'|'medium'|'high'|'ultra'} name
+ */
+export function applyQualityPreset(ctx, name) {
+  const p = QUALITY_PRESETS[name];
+  if (!p || !ctx.settings) return;
+  ctx.settings.set('quality', name);
+  for (const [k, v] of Object.entries(p)) ctx.settings.set(k, v);
+  const r = ctx.render;
+  try {
+    r?.renderer?.setPixelRatio(Math.min(window.devicePixelRatio || 1, p.pixelRatioCap));
+    r?.setSize?.(window.innerWidth, window.innerHeight);
+    r?._applyPassEnables?.();
+  } catch (e) {
+    console.warn('[settings] quality preset failed', e);
+  }
+}
+
 /** Human-friendly names for input actions (rebinding table), grouped. */
 export const ACTION_LABELS = [
   ['Movement', [
@@ -106,11 +127,11 @@ export function arrowSvg(dir) {
 }
 /** D-pad glyph: the cross with the pressed arm lit. */
 function dpadSvg(dir) {
-  // the dark cross, then the pressed arm filled gilt with a black arrowhead
-  // pointing out along it: Up/Down/Left/Right read at a glance
-  return svgEl(`<path d="M5.9 1.2h4.2v4.7h4.7v4.2h-4.7v4.7H5.9v-4.7H1.2V5.9h4.7z" fill="rgba(8,10,20,0.9)" stroke="currentColor" stroke-opacity="0.6" stroke-width="0.7" stroke-linejoin="round"/>`
-    + `<circle cx="8" cy="8" r="1.1" fill="currentColor" fill-opacity="0.35"/>`
-    + `<g transform="rotate(${ROT[dir] ?? 0} 8 8)"><path d="M6.1 1.4h3.8v4.6H6.1z" fill="#f5d98b" stroke="#fff4cc" stroke-width="0.4"/><path d="M8 2.1 L9.55 4.6 H6.45 Z" fill="#140c02"/></g>`, 'por-dpad');
+  // a broad dark cross; the pressed arm filled gilt right through the hub, with
+  // a big black arrowhead pointing out along it: Up/Down/Left/Right read at a glance
+  return svgEl(`<path d="M5.4 0.8h5.2v4.6h4.6v5.2h-4.6v4.6H5.4v-4.6H0.8V5.4h4.6z" fill="rgba(8,10,20,0.92)" stroke="currentColor" stroke-opacity="0.55" stroke-width="0.6" stroke-linejoin="round"/>`
+    + `<g transform="rotate(${ROT[dir] ?? 0} 8 8)"><path d="M5.6 1.0h4.8v8.2H5.6z" fill="#f5d98b" stroke="#fff4cc" stroke-width="0.35"/>`
+    + `<path d="M8 1.9 L10.1 5.6 H8.9 V8.4 H7.1 V5.6 H5.9 Z" fill="#140c02"/></g>`, 'por-dpad');
 }
 const keyCap = (code) => {
   const l = keyLabel(code);
@@ -433,7 +454,7 @@ export class SettingsPanel {
     } else if (row.type === 'choice') {
       const seg = h('div.por-seg', { role: 'radiogroup' });
       for (const [val, lab] of row.options) {
-        seg.append(h(`button.por-seg-opt${val === v ? '.sel' : ''}`, { type: 'button', role: 'radio', 'aria-checked': val === v ? 'true' : 'false', onclick: () => this._setValue(el, val) }, [lab]));
+        seg.append(h(`button.por-seg-opt${val === v ? '.sel' : ''}${/^\d/.test(String(lab)) ? '.num' : ''}`, { type: 'button', role: 'radio', 'aria-checked': val === v ? 'true' : 'false', onclick: () => this._setValue(el, val) }, [lab]));
       }
       ctl.append(seg);
     } else if (row.type === 'slider') {
@@ -511,7 +532,8 @@ export class SettingsPanel {
               e.stopPropagation();
               this._beginCapture(action, i);
             },
-          }, [waiting ? 'Press a key…' : keys[i] ? keyCap(keys[i]) : '—']);
+          title: keys[i] ? undefined : 'Empty — click to bind a key',
+          }, [waiting ? 'Press a key…' : keys[i] ? keyCap(keys[i]) : h('span.por-bind-add', [h('i'), 'Bind'])]);
         };
         const row = h('div.por-bind-row', { dataset: { action } }, [
           h('span.por-bind-label', [label]), slot(0), slot(1),

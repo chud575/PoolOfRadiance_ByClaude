@@ -78,7 +78,7 @@ const FRAG = /* glsl */ `
     float edgeSun = max(0.0, dot(N, sp / max(spl, 1e-4))) * spl;
     float backK = 0.5 + 0.5 * dot(-V, uSun);
     float rim = pow(1.0 - abs(ndv), 4.0);
-    col += uRim * rim * (edgeSun * 0.45 + back * back * 0.45) * backK;
+    col += uRim * rim * (edgeSun * 0.8 + back * back * 0.6 + 0.12) * backK;
     col += uRim * pow(sunN, 2.0) * 0.03;
     if (vMem.x > 0.5 && vMem.x < 1.5) {
       // membrane: light bleeds through where it's thin; bones and the

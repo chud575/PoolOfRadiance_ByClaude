@@ -124,3 +124,6 @@ html[data-classic='1'] .por-title-prompt-text::before, html[data-classic='1'] .p
 html[data-classic='1'] .por-title-prompt-text { color: var(--ega-14) !important; background: #000; padding: 0.3em 0.8em; margin-right: 0; letter-spacing: 0.3em !important; }
 html[data-classic='1'] .por-set-legend .por-pad, html[data-classic='1'] .por-set-tabs-hint .por-pad { display: none; }
 html[data-classic='1'] .por-credits-plate { padding: 1.2em 1.6em !important; }
+html[data-classic='1'] .por-credits-sheet { background: #000; -webkit-mask-image: none !important; mask-image: none !important; padding: 1em 1.2em; }
+html[data-classic='1'] .por-credits-sheet-tone { display: none; }
+html[data-classic='1'] .por-credits-shadow { filter: none; }

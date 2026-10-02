@@ -4,8 +4,9 @@
  * credits) hide it so it never looms behind a frame.
  */
 export const DRAGON = {
-  // the card's hero pass: rising out from under the logo, banking across the
-  // sun disc framed by the colonnade, then away toward the sea haze
-  card: { x: [-0.42, -1.18], y: [0.29, 0.52], d: [125, 150], xe: 1, de: 2, period: 22, duty: 0.8, phase: 0.95, scale: 1.35, bank: -0.4 },
-  menu: { x: [0.98, 0.7], y: [0.42, 0.36], d: [170, 210], xe: 1, de: 6, period: 20, duty: 0.75, phase: 4.5, scale: 1.25, bank: -0.62 },
+  // the card's hero pass: in from the right over the Moonsea, gliding across
+  // the open sky between the logo and the castle with slow deep wing beats,
+  // climbing away before it ever reaches the lettering
+  card: { x: [1.02, 0.56], y: [0.47, 0.63], d: [150, 175], xe: 1, de: 1.5, period: 24, duty: 0.7, phase: 3.24, scale: 1.75, bank: -0.25 },
+  menu: { x: [0.99, 0.7], y: [0.5, 0.66], d: [150, 175], xe: 1, de: 1.5, period: 24, duty: 0.7, phase: 3.24, scale: 1.6, bank: -0.3 },
 };

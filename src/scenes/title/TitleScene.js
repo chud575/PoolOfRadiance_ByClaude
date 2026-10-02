@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Scene } from '../../core/Scene.js';
 import { h, Menu } from '../../ui/UI.js';
-import { SettingsPanel, padGlyph } from '../../ui/SettingsPanel.js';
+import { SettingsPanel, padGlyph, applyQualityPreset } from '../../ui/SettingsPanel.js';
 import { bindSkin } from '../../ui/styles/skin.js';
 import { buildParty } from '../../rules/party.js';
 import { createWorld, preloadWorld } from './world/World.js';
@@ -9,6 +9,7 @@ import { createLogo } from './Logo.js';
 import { IntroCinematic } from './Intro.js';
 import { LoadPanel } from './LoadPanel.js';
 import { Credits } from './Credits.js';
+import { ClassicCard } from './ClassicCard.js';
 import { DRAGON } from './world/lanes.js';
 import { glyph, GLYPH_W, GLYPH_H } from '../../render/bitmapFont5x7.js';
 
@@ -50,8 +51,19 @@ export default class TitleScene extends Scene {
   async enter(params = {}) {
     const { ctx } = this;
     bindSkin(ctx);
-    await preloadWorld();
-    this.world = createWorld();
+    // staged boot (live sessions): sky, sea, dragon and the gilded logo show at
+    // once; the city and terrace are built a few frames later, once their
+    // textures have been generated in workers. Debug stills build everything up front.
+    const staged = !ctx.debug?.active;
+    const textures = preloadWorld();
+    if (!staged) await textures;
+    this.world = createWorld({ deferred: staged });
+    if (staged) {
+      textures.then(() => new Promise((r) => setTimeout(r, 60))).then(() => {
+        if (!this._exited) this.world.populate();
+      });
+    }
+    this._autoQuality();
     this.scene3d = this.world.scene;
     this.camera = new THREE.PerspectiveCamera(45, ctx.render.aspect, 0.3, 6000);
     this.logo = createLogo();
@@ -66,6 +78,9 @@ export default class TitleScene extends Scene {
     this.enterTime = this._now();
     this.fromBoot = !ctx.debug.active;
 
+    // debug: `cam=px,py,pz,lx,ly,lz` pins the camera (inspect a set up close)
+    const cam = String(params.cam ?? '').split(',').map(Number);
+    this.debugCam = cam.length === 6 && cam.every(Number.isFinite) ? cam : null;
     this._buildDom();
     const view = params.view ?? 'card';
     this.setMode(POSES[view] || view === 'intro' ? view : 'card', { instant: true, tab: params.tab });
@@ -129,7 +144,9 @@ export default class TitleScene extends Scene {
     this.classicSubEl = h('div.por-title-classic-subs', this.classicSubs.map((s) => s.el));
     this.panelEl = h('section.por-title-panel');
     this.legendEl = h('div.por-title-legend');
+    this.ega = new ClassicCard();
     this.root = h('div.por-title', [
+      this.ega.el,
       h('div.por-title-scrim'),
       this.classicSubEl,
       this.cardEl,
@@ -369,6 +386,28 @@ export default class TitleScene extends Scene {
     return this._softGL;
   }
 
+  /**
+   * First run on a weak (software) rasteriser with no quality chosen yet: pick
+   * the 'low' preset for the player (they can raise it in Settings).
+   */
+  _autoQuality() {
+    const st = this.ctx.settings;
+    if (!st || st.get('quality') !== undefined || this.ctx.debug?.active) return;
+    const soft = (() => {
+      try {
+        const gl = this.ctx.render?.renderer?.getContext?.();
+        const ext = gl?.getExtension('WEBGL_debug_renderer_info');
+        const name = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : '';
+        return /swiftshader|llvmpipe|software|basic render/i.test(name);
+      } catch {
+        return false;
+      }
+    })();
+    if (!soft) return;
+    applyQualityPreset(this.ctx, 'low');
+    st.set('qualityAuto', true);
+  }
+
   onResize() {
     this.camera.aspect = this.ctx.render.aspect;
     this.camera.updateProjectionMatrix();
@@ -404,6 +443,10 @@ export default class TitleScene extends Scene {
     }
     if (this.mode === 'intro' && this.intro) {
       this.intro.update(t, this.camera, snap);
+      if (this.debugCam) {
+        this.camera.position.set(...this.debugCam.slice(0, 3));
+        this.camera.lookAt(...this.debugCam.slice(3));
+      }
     } else {
       const sway = document.documentElement.dataset.motion === 'reduce' ? 0 : 1;
       this.camera.position.set(
@@ -423,7 +466,12 @@ export default class TitleScene extends Scene {
     const reveal = snap || !this.fromBoot ? 1 : THREE.MathUtils.smoothstep(since, 1.2, 3.2);
     const L = this.logoState;
     const introLogo = this.intro?.logoAlpha ?? 0;
-    const logoA = Math.max(L.alpha * reveal, introLogo);
+    // classic 1988 outside the prologue: the authored EGA card replaces the 3D
+    // world and its gilded logo entirely (see ClassicCard / render())
+    const egaCard = !!this._classic && this.mode !== 'intro';
+    this.ega.el.style.display = egaCard ? '' : 'none';
+    if (egaCard) this.ega.update(snap ? t : Math.floor(t * 12) / 12);
+    const logoA = egaCard ? 0 : Math.max(L.alpha * reveal, introLogo);
     this.logo.layout(this.camera, { width: L.width * (0.96 + 0.04 * reveal), cx: L.cx, cy: L.cy, alpha: logoA });
     this._layoutClassicSubs({ ...L, width: L.width * (0.96 + 0.04 * reveal) }, logoA);
     this.logo.uniforms.uSweep.value = this.fromBoot && since < 5 && !snap ? -0.3 + (since - 1.5) * 0.6 : ((t * 0.16) % 1.8) - 0.4;
@@ -438,7 +486,14 @@ export default class TitleScene extends Scene {
     // classic 1988: no volumetric column (it quantises to a dithered blob)
     this.world.terrace.setBeam(this._classic ? 0 : this._beam);
     if (this.mode !== 'intro') this.world.setDragonLane(this.camTween ? null : DRAGON[this.mode] ?? null);
-    this.world.update(t, this.camera, this.ctx.render.renderer?.getPixelRatio?.() ?? 1);
+    // candlelit interior: a tighter bloom, so clustered flames stay flames, not a glowing ball
+    if (!!this.world._interior !== this._postInterior) {
+      this._postInterior = !!this.world._interior;
+      this.post.bloomStrength = this._postInterior ? 0.28 : 0.55;
+      this.post.bloomThreshold = this._postInterior ? 0.97 : 0.92;
+      this.ctx.render.applyPost?.(this.post);
+    }
+    this.world.update(t, this.camera, this.ctx.render.renderer?.getPixelRatio?.() ?? 1, uiDt);
   }
 
   /**
@@ -449,6 +504,8 @@ export default class TitleScene extends Scene {
    */
   render() {
     if (this._leaving) return;
+    // the EGA card covers the screen: don't shade the 3D world behind it
+    if (this._classic && this.mode !== 'intro') return;
     if (this.ctx.clock.frozen && this.ctx.render.renderer?.getContextAttributes?.()?.preserveDrawingBuffer) {
       const m = this.camera.matrixWorld.elements;
       const sig = `${this.mode}|${this._classic}|${this.ctx.render.width}x${this.ctx.render.height}|${m.map((v) => v.toFixed(4)).join(',')}|${this.logo.uniforms.uAlpha.value.toFixed(3)}`;
@@ -461,6 +518,7 @@ export default class TitleScene extends Scene {
   }
 
   exit() {
+    this._exited = true;
     const u = this.ctx.render?.passes?.classic?.uniforms?.uEdge;
     if (u && this._edge0 !== undefined) u.value = this._edge0;
     this.panel?.dispose();

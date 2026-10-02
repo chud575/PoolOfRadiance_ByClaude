@@ -255,68 +255,141 @@ export function createTerrace({ seed = 7 } = {}) {
   // its own tone and slightly chipped arrises. The profile runs from the buried
   // outer foot over the top and down the inner wall, so the lathe faces point
   // out of the stone (outward, upward, and toward the water on the inner wall).
+  // Cut-stone profile (r, y): a plinth course buried in the paving with a
+  // chamfered tread, the main block with a slightly battered outer face and a
+  // small arris chamfer, a flat coping with the sunken rune channel, and the
+  // inner face dropping plumb into the water. Flat facets (the lathe runs only
+  // a few segments per block) so each block reads as dressed ashlar, not a roll.
   const rimProfile = [
-    [5.02, -0.12], [4.98, 0.0], [4.92, 0.05], [4.86, 0.2], [4.8, 0.27], [4.74, 0.3], [4.22, 0.32], [4.17, 0.36], [4.15, 0.53],
-    [4.06, 0.65], [3.92, 0.7], [3.69, 0.71], [3.67, 0.64], [3.27, 0.64], [3.25, 0.71], [3.14, 0.7], [3.03, 0.64], [2.94, 0.52],
-    [2.9, 0.36], [2.9, -0.6],
+    [5.0, -0.16], [4.99, 0.1], [4.94, 0.15], [4.58, 0.16], [4.53, 0.2], [4.49, 0.62], [4.45, 0.68], [4.38, 0.71],
+    [3.98, 0.71], [3.96, 0.64], [3.58, 0.64], [3.56, 0.71], [3.08, 0.71], [3.01, 0.66], [2.97, 0.6],
   ].map(([r, y]) => new THREE.Vector2(r, y));
+  // the inner face below the arris: wet, dark and glossy, its own material
+  const wetProfile = [[2.97, 0.6], [2.95, 0.3], [2.93, -0.7]].map(([r, y]) => new THREE.Vector2(r, y));
   {
     const blocks = [];
-    const NB = 16;
+    const wet = [];
+    const NB = 14;
+    const JOINT = 0.012; // half-width of each mortar joint (radians)
     for (let b = 0; b < NB; b++) {
-      const gap = 0.0;
-      const g = new THREE.LatheGeometry(rimProfile, 10, (b / NB) * Math.PI * 2 + gap, (Math.PI * 2) / NB - gap * 2);
-      const pp = g.attributes.position;
-      const a0 = (b / NB) * Math.PI * 2, a1 = ((b + 1) / NB) * Math.PI * 2;
-      for (let i = 0; i < pp.count; i++) {
-        // chipped arrises: the outer roll and inner nose lose a little here and
-        // there, and every block's ends are pencil-rounded so the joints read
-        const x = pp.getX(i), y = pp.getY(i), z = pp.getZ(i);
-        const ch = Math.sin(x * 9.1 + z * 7.3 + b) * Math.cos(z * 11.7 - x * 5.1);
-        if (y > 0.55 && ch > 0.72) pp.setY(i, y - 0.035 * (ch - 0.72) * 4);
-        let ang = Math.atan2(x, z);
-        if (ang < 0) ang += Math.PI * 2;
-        const de = Math.min(Math.abs(ang - a0), Math.abs(a1 - ang));
-        if (de < 0.012 && y > 0.5) pp.setY(i, pp.getY(i) - 0.03);
-      }
-      g.computeVertexNormals();
-      const uv = g.attributes.uv;
-      for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 14, uv.getY(i) * 1.2);
-      const tone = 0.82 + 0.2 * R.next();
+      const a0 = (b / NB) * Math.PI * 2 + JOINT, a1 = ((b + 1) / NB) * Math.PI * 2 - JOINT;
+      // each block settled a little differently: height, a slight tilt, its own tone
+      const dy = (R.next() - 0.5) * 0.045;
+      const tilt = (R.next() - 0.5) * 0.03;
+      const chipA = R.next(), chipB = R.next();
+      const build = (prof, segs) => {
+        const g = new THREE.LatheGeometry(prof, segs, a0, a1 - a0);
+        const pp = g.attributes.position;
+        for (let i = 0; i < pp.count; i++) {
+          const x = pp.getX(i), y = pp.getY(i), z = pp.getZ(i);
+          let ang = Math.atan2(x, z);
+          if (ang < a0 - 0.5) ang += Math.PI * 2;
+          const f = (ang - a0) / (a1 - a0); // 0..1 along the block
+          let ny = y;
+          if (y > 0.1) ny += dy + tilt * (f - 0.5);
+          // chipped arrises: a bite out of the top outer edge near one end, a
+          // spalled inner nose on the other, small nicks everywhere
+          const r = Math.hypot(x, z);
+          const nick = Math.sin(x * 23.1 + z * 17.7 + b) * Math.cos(z * 19.3 - x * 13.1);
+          if (y > 0.6 && r > 4.3 && ((chipA > 0.4 && f < 0.22) || (chipA < 0.25 && f > 0.8))) ny -= 0.07 * (1 - Math.abs(f - (f < 0.5 ? 0 : 1)) / 0.22);
+          if (y > 0.6 && r < 3.1 && ((chipB > 0.55 && f > 0.6 && f < 0.85) || (chipB < 0.2 && f < 0.3))) ny -= 0.05;
+          if (y > 0.6 && nick > 0.6) ny -= 0.02 * (nick - 0.6) * 2.5;
+          // pencil-rounded block ends so every joint reads
+          const de = Math.min(f, 1 - f) * (a1 - a0) * r;
+          if (y > 0.55 && de < 0.05) ny -= (0.05 - de) * 0.5;
+          pp.setY(i, ny);
+        }
+        g.computeVertexNormals();
+        const uv = g.attributes.uv;
+        for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 9 + b * 0.37, uv.getY(i) * 1.6 + b * 0.21);
+        return g;
+      };
+      // dry block: outer faces + coping, 4 flat facets per block
+      const g = build(rimProfile, 4);
+      const tone = 0.74 + 0.22 * R.next();
       const warm = R.next();
-      const base = new THREE.Color(0xd8cfc0).lerp(new THREE.Color(0xc8c2b8), warm).multiplyScalar(tone);
-      tint(g, base, { aoBottom: 0, aoTop: 0.45, aoStrength: 0.5 });
-      const cc = g.attributes.color;
+      const base = new THREE.Color(0xbdb4a2).lerp(new THREE.Color(0xa8a49c), warm).multiplyScalar(tone);
+      tint(g, base, { aoBottom: 0.0, aoTop: 0.5, aoStrength: 0.55 });
+      const pp = g.attributes.position, cc = g.attributes.color;
       for (let i = 0; i < pp.count; i++) {
         const x = pp.getX(i), z = pp.getZ(i), y = pp.getY(i);
         const r = Math.hypot(x, z);
         let k = 1;
-        if (r < 2.96 && y < 0.5) k = 0.3 + 0.25 * Math.max(0, Math.min(1, (y - 0.0) / 0.5)); // wet, algae-dark down to the water
-        else if (r < 3.08) k = 0.66; // the nose: worn, damp
-        else if (r > 3.26 && r < 3.68 && y < 0.66) k = 0.42; // the sunken rune channel: soot and shadow
-        else if (r > 4.16 && y < 0.36) k = 0.62; // the step's re-entrant corner
-        if (y < 0.06 && r > 4.85) k *= 0.55; // grime where the kerb sinks into the flags
-        {
-          let ang = Math.atan2(x, z);
-          if (ang < 0) ang += Math.PI * 2;
-          if (Math.min(Math.abs(ang - a0), Math.abs(a1 - ang)) < 0.012) k *= 0.55; // mortar joint
-        }
-        // rain-streaked weathering, a few lichen-stained blocks
-        const st = 0.88 + 0.12 * Math.sin(Math.atan2(x, z) * 61 + b * 3.1) * Math.sin(Math.atan2(x, z) * 17.0);
+        if (r < 3.06) k = 0.62; // the inner arris: splashed, damp
+        else if (r < 3.3 && y > 0.6) k = 0.82; // the coping darkens toward the water
+        else if (r > 3.55 && r < 3.99 && y < 0.7) k = 0.38; // the sunken rune channel: soot and shadow
+        else if (r > 4.5 && y < 0.2) k = 0.6; // the tread's re-entrant corner
+        if (y < 0.06 && r > 4.9) k *= 0.5; // grime where the plinth sinks into the flags
+        // lichen and rain-streaks: a few blocks greener, streaks down the outer face
+        const st = 0.86 + 0.14 * Math.sin(Math.atan2(x, z) * 71 + b * 3.1) * Math.sin(Math.atan2(x, z) * 23.0 + b);
         k *= st;
-        cc.setXYZ(i, cc.getX(i) * k, cc.getY(i) * k * (b % 5 === 2 ? 1.04 : 1), cc.getZ(i) * k * (b % 5 === 2 ? 0.9 : 1));
+        const lich = b % 4 === 1 && r > 4.4 ? 1 : 0;
+        cc.setXYZ(i, cc.getX(i) * k * (lich ? 0.9 : 1), cc.getY(i) * k * (lich ? 1.02 : 1), cc.getZ(i) * k * (lich ? 0.78 : 1));
       }
       blocks.push(ni(g));
+      // wet inner face of the same block
+      const w = build(wetProfile, 4);
+      tint(w, new THREE.Color(0x3a4440).multiplyScalar(0.9 + 0.2 * tone));
+      wet.push(ni(w));
+    }
+    // mortar: a dark recessed ring behind the joints (seen in the gaps)
+    {
+      const mp = rimProfile.map((v) => new THREE.Vector2(v.x - (v.x > 4 ? 0.035 : -0.035) * (v.y > 0.15 ? 1 : 0), v.y - 0.025));
+      const mg = new THREE.LatheGeometry(mp.filter((v, i) => i > 0), 112);
+      tint(mg, 0x2a2622);
+      blocks.push(ni(mg));
     }
     const g = merge(blocks);
-    const rim = new THREE.Mesh(g, addRimLight(texMat('hd_limestone', { vertexColors: true, roughness: 0.92 }), rimU, 1.2));
+    const kerbMat = addRimLight(texMat('hd_limestone', { vertexColors: true, roughness: 0.95 }), rimU, 0.9);
+    kerbMat.normalScale = new THREE.Vector2(1.6, 1.6);
+    const rim = new THREE.Mesh(g, kerbMat);
     rim.castShadow = true;
     rim.receiveShadow = true;
     group.add(rim);
+    // the wet inner face: dark, glossy, green at the waterline, and lit from below
+    // by caustics thrown up off the moving surface
+    const wetMat = texMat('hd_limestone', { vertexColors: true, roughness: 0.22, metalness: 0.0 });
+    wetMat.onBeforeCompile = (sh) => {
+      sh.uniforms.uTime = U.uTime;
+      sh.uniforms.uClassic = uClassic;
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vWW;')
+        .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', `#include <common>
+          varying vec3 vWW; uniform float uTime; uniform float uClassic;
+          ${NOISE}`)
+        .replace('#include <map_fragment>', `#include <map_fragment>
+          {
+            float above = smoothstep(0.24, 0.6, vWW.y);
+            vec3 c = diffuseColor.rgb;
+            c = mix(c * vec3(0.55, 0.8, 0.6), c, above); // algae film at and below the waterline
+            c *= 0.75 + 0.5 * vnoise(vec2(atan(vWW.z, vWW.x) * 40.0, vWW.y * 12.0));
+            diffuseColor.rgb = c;
+          }`)
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+          {
+            // caustic web crawling up the inner wall from the bright water
+            float ang = atan(vWW.z, vWW.x);
+            vec2 q = vec2(ang * 4.6, vWW.y * 5.0);
+            float n1 = fbm3(q + vec2(uTime * 0.21, -uTime * 0.35));
+            float n2 = fbm3(q * 1.7 - vec2(uTime * 0.13, uTime * 0.27) + n1 * 2.0);
+            float web = pow(1.0 - abs(sin(n2 * 9.0)), 6.0);
+            float h = vWW.y - 0.26;
+            float fall = exp(-max(h, 0.0) * 6.0) * smoothstep(-0.05, 0.02, h);
+            totalEmissiveRadiance += vec3(0.25, 0.85, 1.0) * (web * 1.1 + 0.18) * fall * (1.0 - uClassic);
+          }`);
+    };
+    wetMat.customProgramCacheKey = () => 'kerbWet';
+    const wg = merge(wet);
+    const wetMesh = new THREE.Mesh(wg, wetMat);
+    wetMesh.receiveShadow = true;
+    group.add(wetMesh);
+    disposables.push(wg);
     // classic 1988: the kerb is one flat light-grey ellipse round the water
     const rimEGA = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.42, 0.42, 0.42), fog: false });
     disposables.push(rimEGA);
-    classicSwaps.push([rim, rimEGA]);
+    classicSwaps.push([rim, rimEGA], [wetMesh, rimEGA]);
     disposables.push(g);
     // contact shadow + AO where the kerb sits in the paving: a soft darkening
     // ring (multiplied, not additive) and a tighter crease right at the foot
@@ -345,9 +418,9 @@ export function createTerrace({ seed = 7 } = {}) {
     }
     // rune ring inlaid in the coping's channel: cut glyphs filled with the Pool's
     // light (capped: the carving must stay readable, not bloom into a halo)
-    const band = new THREE.RingGeometry(3.28, 3.66, 128, 1);
+    const band = new THREE.RingGeometry(3.58, 3.96, 160, 1);
     band.rotateX(-Math.PI / 2);
-    band.translate(0, 0.643, 0);
+    band.translate(0, 0.645, 0);
     const bandMat = new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: false,
@@ -361,9 +434,9 @@ export function createTerrace({ seed = 7 } = {}) {
         ${NOISE}
         void main(){
           float a = atan(vP.z, vP.x) / 6.2831853 + 0.5;
-          float r = (length(vP.xz) - 3.28) / 0.38;
-          float cell = floor(a * 72.0);
-          vec2 f = vec2(fract(a * 72.0), r);
+          float r = (length(vP.xz) - 3.58) / 0.38;
+          float cell = floor(a * 84.0);
+          vec2 f = vec2(fract(a * 84.0), r);
           // procedural glyph: a few strokes per cell
           float h1 = hash12(vec2(cell, 1.0)), h2 = hash12(vec2(cell, 2.0)), h3 = hash12(vec2(cell, 3.0));
           float g = 0.0;
@@ -374,8 +447,12 @@ export function createTerrace({ seed = 7 } = {}) {
           // some glyphs are worn shallow and only faintly lit
           g *= 0.45 + 0.55 * step(0.18, hash12(vec2(cell, 7.0)));
           float pulse = 0.6 + 0.4 * sin(uTime * 1.3 - a * 18.849);
-          vec3 c = vec3(0.12, 0.62, 0.85) * g * (0.3 + 0.32 * pulse);
-          gl_FragColor = vec4(min(c, vec3(0.75)), 1.0);
+          // the glyphs burn with the Pool's light: a hot core in the cut and a soft
+          // glow spilling over the channel floor
+          float halo = smoothstep(0.0, 0.5, g) * 0.0;
+          vec3 c = vec3(0.3, 1.1, 1.45) * g * (0.75 + 0.6 * pulse);
+          c += vec3(0.05, 0.3, 0.42) * (0.5 + 0.5 * pulse) * smoothstep(0.0, 0.3, f.y) * smoothstep(1.0, 0.7, f.y) * 0.5;
+          gl_FragColor = vec4(min(c, vec3(1.6)), 1.0);
         }`,
     });
     disposables.push(band, bandMat);

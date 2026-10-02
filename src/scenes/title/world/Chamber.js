@@ -257,8 +257,8 @@ export function createChamber({ seed = 1337 } = {}) {
   // ---- candles: tall candelabra on the table, sconces on the columns ---------------------
   const flames = [];
   const candle = (x, y, z, hgt = 0.3) => {
-    floor.push(tint(ni(new THREE.CylinderGeometry(0.035, 0.04, hgt, 8).translate(x, y + hgt / 2, z)), 0xf2ead2));
-    flames.push({ pos: new THREE.Vector3(x, y + hgt, z).add(CHAMBER_ORIGIN), scale: 0.16 });
+    floor.push(tint(ni(new THREE.CylinderGeometry(0.035, 0.04, hgt, 8).translate(x, y + hgt / 2, z)), 0xa89878, { aoBottom: y, aoTop: y + hgt, aoStrength: 0.3 }));
+    flames.push({ pos: new THREE.Vector3(x, y + hgt, z).add(CHAMBER_ORIGIN), scale: 0.11 });
   };
   for (const cz of [tz - 3, tz, tz + 3]) {
     gold.push(tint(ni(new THREE.CylinderGeometry(0.05, 0.14, 0.55, 10).translate(0, 1.33, cz)), 0xb88a38));
@@ -360,6 +360,15 @@ export function createChamber({ seed = 1337 } = {}) {
     // on the board, one sits back listening with a hand on the knee, heads turned
     const L = ['warm', 'talkR', 'listen', 'warm'][i];
     const Rm = ['listen', 'warm', 'talkL', 'talkR'][i];
+    if (i === 3) {
+      // the two nearest the foot have risen from their chairs to look the
+      // newcomers over: standing robes hang in long straight folds
+      chair(-1.78, tz + dz, Math.PI / 2 - turn);
+      chair(1.78, tz + dz, -Math.PI / 2 + turn);
+      person(council[i], -2.35, tz + dz + 0.55, Math.PI / 2 - 0.35, 0.016, { mod: 'talkR' });
+      person(council[i + 4], 2.3, tz + dz + 0.6, -Math.PI / 2 + 0.4, 0.016, { mod: 'listen' });
+      return;
+    }
     seated(council[i], -1.78, tz + dz, Math.PI / 2 - turn + (i % 2 ? 0.12 : -0.05), 0.016, { mod: L, lean: i % 2 ? 0.04 : -0.025 });
     seated(council[i + 4], 1.78, tz + dz, -Math.PI / 2 + turn - (i % 2 ? 0.08 : -0.1), 0.016, { mod: Rm, lean: i % 2 ? -0.035 : 0.03 });
   });
@@ -556,22 +565,57 @@ export function createChamber({ seed = 1337 } = {}) {
   add(glass, glassMat);
   const flameMesh = createFlameBatch(flames.map((f) => ({ pos: f.pos.clone().sub(CHAMBER_ORIGIN), scale: f.scale })));
   group.add(flameMesh);
-  // candle halos
-  const haloMat = new THREE.SpriteMaterial({ map: getGlowTexture(), color: 0xffa860, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false, opacity: 0.55 });
+  // candle halos: only a tight warm bead round each flame (the flame card itself
+  // carries the shape), never a bloom ball
+  const haloMat = new THREE.SpriteMaterial({ map: getGlowTexture(), color: 0xffa860, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false, opacity: 0.3 });
   disposables.push(haloMat);
   const halos = [];
   flames.forEach((f, i) => {
+    // the candelabra candles stand in a row down the lens: their beads would
+    // stack into one glowing ball, so only the sconces and chandelier get one
+    if (f.pos.y - CHAMBER_ORIGIN.y < 2.2) return;
     const s = new THREE.Sprite(haloMat);
     s.position.copy(f.pos).sub(CHAMBER_ORIGIN);
-    s.position.y += 0.1;
-    s.scale.setScalar(0.5);
+    s.position.y += 0.06;
+    s.scale.setScalar(0.17);
     s.userData.seed = i * 1.37;
     group.add(s);
     halos.push(s);
   });
+  // light falloff: each sconce washes its column and the wall behind it in a
+  // warm pool that fades with distance, and the candelabra pool on the table
+  const washMat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    polygonOffset: true, polygonOffsetFactor: -2,
+    uniforms: { uK: { value: 1 } },
+    vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /* glsl */ `uniform float uK; varying vec2 vUv;
+      void main(){
+        vec2 d = (vUv - vec2(0.5, 0.42)) * vec2(2.0, 1.6);
+        float r2 = dot(d, d);
+        float k = exp(-r2 * 3.2) * 0.75 + exp(-r2 * 14.0) * 0.5;
+        gl_FragColor = vec4(vec3(1.0, 0.55, 0.22) * k * 0.3 * uK, 1.0);
+      }`,
+  });
+  disposables.push(washMat);
+  const wash = (x, y, z, w, hh, ry, rx = 0) => {
+    const g = new THREE.PlaneGeometry(w, hh);
+    if (rx) g.rotateX(rx);
+    g.rotateY(ry);
+    g.translate(x, y, z);
+    disposables.push(g);
+    const m = new THREE.Mesh(g, washMat);
+    m.renderOrder = 2;
+    group.add(m);
+  };
+  for (const f of flames) {
+    const p = f.pos.clone().sub(CHAMBER_ORIGIN);
+    if (Math.abs(p.x) > W / 2 - 2.2 && p.y > 3) wash(Math.sign(p.x) * (W / 2 - 1.36), p.y + 0.1, p.z, 1.9, 2.6, -Math.sign(p.x) * Math.PI / 2);
+  }
+  for (const cz of [tz - 3, tz, tz + 3]) wash(0, 1.066, cz, 2.2, 2.8, 0, -Math.PI / 2);
   // warm candle pools + cool window fill
   const lights = [];
-  for (const [x, y, z, I, d] of [[0, 2.2, tz - 2.5, 26, 11], [0, 2.2, tz + 2.6, 26, 11], [lx + 0.5, 2.4, lz - 0.6, 3, 4], [0, 5.2, tz, 18, 12]]) {
+  for (const [x, y, z, I, d] of [[0, 2.7, tz - 2.5, 22, 11], [0, 2.7, tz + 2.6, 22, 11], [lx + 0.5, 2.4, lz - 0.6, 3, 4], [0, 5.2, tz, 18, 12]]) {
     const L = new THREE.PointLight(0xffa458, I, d, 1.7);
     L.position.set(x, y, z);
     L.userData.base = I;
@@ -585,7 +629,7 @@ export function createChamber({ seed = 1337 } = {}) {
   group.add(advRim);
   // a candle-side rim for the left foreground adventurer (plate catches it on the
   // shoulder and helm instead of reading as a flat blue cut-out)
-  const advRimL = new THREE.PointLight(0xffb060, 9, 4.2, 1.5);
+  const advRimL = new THREE.PointLight(0xffb060, 4.5, 4.2, 1.5);
   advRimL.position.set(-1.35, 2.15, 1.05);
   group.add(advRimL);
   const advFill = new THREE.PointLight(0x8090e0, 13, 9, 1.4);

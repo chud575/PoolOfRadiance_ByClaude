@@ -319,7 +319,7 @@ export function robedFigure({ height = 1.75, robe = 0x5a1a14, hood = true, stoop
  * steps (rim · body · shadow) instead of one flat black. `uniforms.uSunView`
  * must be updated each frame with the sun direction in view space.
  */
-export function addRimLight(mat, uniforms, strength = 1, { weather = 0, ground = -14, soot = 0, flat = 0 } = {}) {
+export function addRimLight(mat, uniforms, strength = 1, { weather = 0, ground = -14, soot = 0, flat = 0, flake = 0, courses = 0 } = {}) {
   mat.onBeforeCompile = (sh) => {
     if (weather > 0) {
       // weathering in world space: rain streaks running down from every ledge,
@@ -370,6 +370,27 @@ export function addRimLight(mat, uniforms, strength = 1, { weather = 0, ground =
               float k = clamp((smoothstep(0.18, 0.55, tongue) * 0.6 + drip * 0.5) * (0.35 + 0.65 * hi) + scorch * 0.45, 0.0, 1.0);
               c = mix(c, c * vec3(0.16, 0.14, 0.13), k * ${soot.toFixed(2)});
             }` : ''}
+            ${courses > 0 ? `{
+              // non-uniform masonry: every course (0.36 m, the texture's bed joints)
+              // and every few metres along it a different quarry tone, with
+              // re-faced and patched blocks lighter or darker than their neighbours
+              float row = floor(vWthr.y / 0.36);
+              float seg = floor(u * 0.45 + wh(vec2(row, 3.0)) * 3.0);
+              float hv = wh(vec2(row, seg));
+              c *= 1.0 + ${courses.toFixed(2)} * (hv - 0.5) * 1.6;
+              c = mix(c, c * vec3(1.08, 1.0, 0.86), step(0.86, hv) * ${courses.toFixed(2)} * 2.0);
+            }` : ''}
+            ${flake > 0 ? `{
+              // lime-wash flaking off in sheets: the rubble core shows through in
+              // ragged patches, heaviest low on the wall and round the openings
+              float fl = wn(vec2(u * 1.2, vWthr.y * 0.7) + 5.0) * 0.55 + wn(vec2(u * 6.5, vWthr.y * 5.0)) * 0.3 + wn(vec2(u * 19.0, vWthr.y * 15.0)) * 0.15;
+              fl += 0.12 * (1.0 - smoothstep(${ground.toFixed(1)}, ${(ground + 2.5).toFixed(1)}, vWthr.y)); // rising damp strips the wash low down
+              float edge = smoothstep(0.58, 0.6, fl);
+              float core = smoothstep(0.6, 0.66, fl);
+              vec3 stone = vec3(0.3, 0.26, 0.22) * (0.7 + 0.6 * wn(vec2(u * 14.0, vWthr.y * 14.0)));
+              c = mix(c, c * 0.55, edge * (1.0 - core) * ${flake.toFixed(2)});
+              c = mix(c, stone, core * ${flake.toFixed(2)});
+            }` : ''}
             diffuseColor.rgb = c;
           }`);
     }
@@ -390,7 +411,7 @@ export function addRimLight(mat, uniforms, strength = 1, { weather = 0, ground =
           totalEmissiveRadiance += vec3(0.055, 0.05, 0.11) * uRimK * up * diffuseColor.rgb;
         }`);
   };
-  mat.customProgramCacheKey = () => `rim${strength}w${weather}s${soot}f${flat}`;
+  mat.customProgramCacheKey = () => `rim${strength}w${weather}s${soot}f${flat}k${flake}c${courses}`;
   return mat;
 }
 
@@ -432,7 +453,7 @@ export function contactShadow(rx = 0.42, rz = 0.32, strength = 0.75) {
  * soft roughness (no plastic glints), skin keeps a warm wrap of light in its
  * shadows, and only true metals (metalness > 0.5) stay polished.
  */
-export function matteFigure(root) {
+export function matteFigure(root, { detail = 0.45, dim = 1, rim = null } = {}) {
   root.traverse((o) => {
     if (!o.isMesh || !o.material || o.material.userData?.matted) return;
     const m = o.material;
@@ -442,14 +463,30 @@ export function matteFigure(root) {
     const prev = m.onBeforeCompile;
     m.onBeforeCompile = (sh, r) => {
       prev.call(m, sh, r);
+      // the sculpt's cloth/leather micro-relief reads as worms at cinematic
+      // distances: keep only a whisper of it
+      if (sh.uniforms.uDetail) sh.uniforms.uDetail.value = detail;
+      sh.uniforms.uRimC = { value: new THREE.Color(rim ?? 0x000000) };
       sh.fragmentShader = sh.fragmentShader
-        .replace('roughnessFactor = clamp(vMat.y + miniR, 0.06, 1.0);', 'roughnessFactor = clamp(vMat.y + miniR, 0.06, 1.0);\nroughnessFactor = mix(max(roughnessFactor, 0.78), roughnessFactor, step(0.5, vMat.z));')
+        .replace('#include <common>', '#include <common>\nuniform vec3 uRimC;')
+        // armour: never a mirror (no blown white plates): a satin floor on roughness
+        .replace('roughnessFactor = clamp(vMat.y + miniR, 0.06, 1.0);', 'roughnessFactor = clamp(vMat.y + miniR, 0.06, 1.0);\nroughnessFactor = mix(max(roughnessFactor, 0.78), max(roughnessFactor, 0.46), step(0.5, vMat.z));')
         .replace('#include <aomap_fragment>', `#include <aomap_fragment>
-          reflectedLight.indirectSpecular *= mix(0.35, 1.0, step(0.5, vMat.z));
+          reflectedLight.indirectSpecular *= mix(0.35, 0.5, step(0.5, vMat.z));
+          reflectedLight.directSpecular *= mix(1.0, 0.55, step(0.5, vMat.z));
+          reflectedLight.directDiffuse *= ${dim.toFixed(2)};
+          reflectedLight.indirectDiffuse *= ${dim.toFixed(2)};
           // skin: soft wrapped warmth in the shadow side (cheap sub-surface)
-          if (floor(vMat.x + 0.5) > 8.5 && floor(vMat.x + 0.5) < 9.5) reflectedLight.indirectDiffuse += diffuseColor.rgb * vec3(0.06, 0.025, 0.015);`);
+          if (floor(vMat.x + 0.5) > 8.5 && floor(vMat.x + 0.5) < 9.5) reflectedLight.indirectDiffuse += diffuseColor.rgb * vec3(0.06, 0.025, 0.015);`)
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+          {
+            // backlight: a warm edge from the light behind the figure, so it reads
+            // as a silhouette with a lit outline rather than a front-lit toy
+            float fr = pow(1.0 - clamp(abs(dot(normal, normalize(vViewPosition))), 0.0, 1.0), 2.6);
+            totalEmissiveRadiance += uRimC * fr;
+          }`);
     };
-    m.customProgramCacheKey = () => `${key}-matte`;
+    m.customProgramCacheKey = () => `${key}-matte-d${detail}-m${dim}-r${rim ?? 0}`;
     m.userData.matted = true;
     m.needsUpdate = true;
   });
