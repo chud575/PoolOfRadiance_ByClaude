@@ -202,8 +202,8 @@ export function createWorld() {
         fill.intensity *= 0.35;
         sun.intensity *= 0.55;
         castleKey.intensity = 0;
-        scene.fog.color.setHex(0x584c88);
-        scene.fog.density = 0.0068;
+        scene.fog.color.setHex(0x5a4c8a);
+        scene.fog.density = 0.0058;
       }
       if (this._classic) {
         // 1988: no sunset grade — neutral light so stone lands on EGA greys and
@@ -259,7 +259,7 @@ export function createWorld() {
       cityRim.visible = ck;
       cityKey.castShadow = ck;
       sun.castShadow = !ck;
-      cityKey.intensity = ck ? 10 : 0;
+      cityKey.intensity = ck ? 15 : 0;
       cityRim.intensity = ck ? 3.6 : 0;
       if (chamber) chamber.group.visible = inside;
     },

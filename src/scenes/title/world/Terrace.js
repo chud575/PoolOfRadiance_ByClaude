@@ -438,7 +438,7 @@ export function createTerrace({ seed = 7 } = {}) {
   group.add(poolLight);
   // warm bounce off the left brazier and the paving onto the standing colonnade, so
   // the two tall columns read as fluted stone with a lit face, not flat cut-outs
-  const colBounce = new THREE.SpotLight(0xffb478, 260, 30, 0.45, 0.8, 1.4);
+  const colBounce = new THREE.SpotLight(0xffb070, 1100, 30, 0.45, 0.8, 1.4);
   colBounce.position.set(-2.5, 6.5, 6.5);
   colBounce.target.position.set(-11.5, 4.6, -7.4);
   group.add(colBounce, colBounce.target);

@@ -84,6 +84,16 @@ export function createChamber({ seed = 1337 } = {}) {
     face.scale(0.9, 0.9, 1);
     face.translate(0, 6.25, z + 0.205);
     armsGeo.push(ni(face));
+    // its iron hanging bracket and the soft shadow it throws on the ashlar
+    gold.push(tint(ni(new THREE.BoxGeometry(0.12, 0.5, 0.22).translate(0, 7.3, z + 0.1)), 0x2a2420));
+    {
+      const sg2 = new THREE.ShapeGeometry(sh, 12);
+      sg2.scale(1.12, 1.08, 1);
+      sg2.translate(0.12, 6.05, z + 0.012);
+      const shMesh = new THREE.Mesh(sg2, new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.45, depthWrite: false }));
+      group.add(shMesh);
+      disposables.push(sg2, shMesh.material);
+    }
     // mantling scrolls either side of the shield
     for (const sx of [-1, 1]) {
       const sc = new THREE.TorusGeometry(0.34, 0.06, 6, 18, Math.PI * 1.4);
@@ -282,6 +292,13 @@ export function createChamber({ seed = 1337 } = {}) {
       wood.push(tint(worldUV(fin.applyMatrix4(m), 1), 0x5a3a22));
     }
     put(box(w - 0.08, tall - 0.12, 0.05, { y: SEAT + 0.48, z: -0.27 }), cloth, 0x5a1210);
+    // buttoned leather: a carved oak frame round the back panel, brass studs in a grid
+    put(box(w - 0.06, 0.05, 0.07, { y: SEAT + 0.48, z: -0.255 }), wood, 0x4a3020);
+    for (const sx of [-1, 1]) put(box(0.05, tall - 0.12, 0.07, { x: sx * (w / 2 - 0.07), y: SEAT + 0.48, z: -0.255 }), wood, 0x4a3020);
+    for (let iy = 0; iy < 4; iy++) for (let ix = 0; ix < 3; ix++) {
+      const st = new THREE.SphereGeometry(0.014, 6, 4).translate((ix - 1) * (w - 0.2) / 2.4, SEAT + 0.66 + iy * (tall - 0.4) / 3.2, -0.24);
+      gold.push(tint(ni(st.applyMatrix4(m)), 0xc8a050));
+    }
     put(box(w + 0.04, 0.16, 0.1, { y: SEAT + 0.42 + tall - 0.1, z: -0.27 }), wood, 0x4a3020); // carved crest rail
     const crest = new THREE.CircleGeometry(0.1, 16).translate(0, SEAT + 0.42 + tall + 0.08, -0.215);
     wood.push(tint(worldUV(crest.applyMatrix4(m), 1), 0x6a4a28));

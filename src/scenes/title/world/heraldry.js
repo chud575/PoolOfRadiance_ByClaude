@@ -284,7 +284,7 @@ export function marbleFloorTexture() {
       r += (vein + vein2) * 60; g += (vein + vein2) * 50; b += (vein + vein2) * 42;
     } else {
       // cream limestone with grey-gold veins
-      r = 184 + cloud * 30; g = 168 + cloud * 26; b = 140 + cloud * 22;
+      r = 150 + cloud * 28; g = 136 + cloud * 24; b = 112 + cloud * 20; // aged, candle-smoked limestone
       r -= (vein + vein2) * 50; g -= (vein + vein2) * 48; b -= (vein + vein2) * 38;
     }
     r *= s.tone; g *= s.tone; b *= s.tone;
