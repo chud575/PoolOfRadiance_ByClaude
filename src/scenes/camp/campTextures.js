@@ -332,3 +332,43 @@ export function blobTexture() {
   blobCache = tex(c, true);
   return blobCache;
 }
+
+let stoneCache = null;
+/** Weathered fieldstone: speckled granite with lichen flecks, pits and a crystalline grain (tiles). */
+export function stoneTextures() {
+  if (stoneCache) return stoneCache;
+  const W = 256;
+  const n = valueNoise(211);
+  const c = cv(W);
+  const g = ctx2d(c);
+  const img = g.createImageData(W, W);
+  const hd = new Float32Array(W * W);
+  const rough = new Uint8ClampedArray(W * W);
+  const R = rng(77);
+  for (let y = 0; y < W; y++) {
+    for (let x = 0; x < W; x++) {
+      const big = fbm(n, x / 40, y / 40, 4);
+      const mid = fbm(n, x / 9 + 50, y / 9, 3);
+      const speck = R();
+      const pit = Math.max(0, 0.42 - fbm(n, x / 5 + 90, y / 5 + 20, 2)) * 3;
+      let k = 0.42 + big * 0.35 + (mid - 0.5) * 0.22 + (speck > 0.93 ? 0.22 : speck < 0.06 ? -0.18 : 0);
+      k -= pit * 0.08;
+      const lichen = Math.max(0, fbm(n, x / 14 + 7, y / 14 + 3, 3) - 0.62) * 3.5;
+      const i = (y * W + x) * 4;
+      img.data[i] = Math.min(255, (118 * k + 18) * (1 - lichen * 0.2) + lichen * 40);
+      img.data[i + 1] = Math.min(255, (112 * k + 16) * (1 - lichen * 0.1) + lichen * 46);
+      img.data[i + 2] = Math.min(255, (104 * k + 16) * (1 - lichen * 0.35) + lichen * 16);
+      img.data[i + 3] = 255;
+      hd[y * W + x] = big * 0.6 + mid * 0.25 - pit * 0.08 + (speck > 0.9 ? 0.02 : 0);
+      rough[y * W + x] = 200 + Math.min(55, pit * 60) - lichen * 20;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  const rc = cv(W);
+  const rg = ctx2d(rc);
+  const ri = rg.createImageData(W, W);
+  for (let i = 0; i < W * W; i++) { ri.data[i * 4] = ri.data[i * 4 + 1] = ri.data[i * 4 + 2] = rough[i]; ri.data[i * 4 + 3] = 255; }
+  rg.putImageData(ri, 0, 0);
+  stoneCache = { map: tex(c, true, true), normalMap: tex(normalFromHeight(hd, W, W, 7), false, true), roughnessMap: tex(rc, false, true) };
+  return stoneCache;
+}

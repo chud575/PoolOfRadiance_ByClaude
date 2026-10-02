@@ -84,13 +84,13 @@ function bodyBumps(pose) {
   if (pose === 'side') {
     // On the side, facing +x: a high narrow ridge of shoulder and hip, knees drawn forward.
     return [
-      [0.0, -0.5, 0.14, 0.13, 0.27], // shoulder
-      [0.02, -0.28, 0.13, 0.2, 0.22], // ribs
-      [0.0, 0.0, 0.15, 0.14, 0.29], // hip
-      [0.13, 0.2, 0.12, 0.16, 0.2], // thighs forward
-      [0.2, 0.36, 0.1, 0.1, 0.17], // knees
-      [0.06, 0.55, 0.09, 0.16, 0.13], // shins back
-      [0.02, 0.7, 0.08, 0.07, 0.12], // feet
+      [0.0, -0.48, 0.15, 0.17, 0.3], // shoulder (the highest point)
+      [0.02, -0.27, 0.13, 0.22, 0.25], // waist dips
+      [0.0, -0.02, 0.16, 0.2, 0.3], // hip
+      [0.11, 0.17, 0.13, 0.2, 0.22], // thighs forward
+      [0.19, 0.33, 0.1, 0.13, 0.19], // knees
+      [0.08, 0.52, 0.09, 0.2, 0.14], // shins back
+      [0.03, 0.7, 0.08, 0.09, 0.13], // feet
     ];
   }
   if (pose === 'curled') {
@@ -105,11 +105,12 @@ function bodyBumps(pose) {
   }
   // On the back: chest, belly, hips, two legs, feet up.
   return [
-    [0.0, -0.46, 0.22, 0.14, 0.2], // chest + shoulders
-    [0.0, -0.22, 0.19, 0.17, 0.17], // belly
-    [0.0, 0.02, 0.2, 0.12, 0.16], // hips
-    [-0.1, 0.32, 0.08, 0.28, 0.12], [0.1, 0.32, 0.08, 0.28, 0.12], // legs
-    [-0.11, 0.72, 0.06, 0.06, 0.17], [0.11, 0.72, 0.06, 0.06, 0.17], // toes up
+    [0.0, -0.46, 0.22, 0.13, 0.23], // chest + shoulders
+    [0.0, -0.22, 0.18, 0.15, 0.19], // belly
+    [0.0, 0.02, 0.2, 0.12, 0.18], // hips
+    [-0.1, 0.32, 0.08, 0.26, 0.13], [0.1, 0.32, 0.08, 0.26, 0.13], // legs
+    [-0.1, 0.3, 0.06, 0.06, 0.16], // one knee a little raised
+    [-0.11, 0.72, 0.06, 0.06, 0.2], [0.11, 0.72, 0.06, 0.06, 0.19], // toes up
   ];
 }
 
@@ -175,16 +176,18 @@ export function buildBedroll(ch, o = {}) {
 
   // ---- the blanket: a cloth grid draped over the body bumps.
   const bumps = bodyBumps(pose).map(([x, z, w, l, hgt]) => [x * Math.max(0.8, L), z * L, w * Math.max(0.75, L ** 0.5), l * L, hgt * Math.max(0.7, L ** 0.6)]);
-  const bW = 1.02;
+  const bW = 0.9;
   const bL = (pose === 'back' ? 1.55 : 1.4) * L;
   const NX = 34;
   const NZ = 56;
   const z0 = headZ + 0.16 * L; // blanket edge under the chin
+  // One continuous body under the wool: the forms are blended with a smooth maximum, so the shoulder,
+  // waist, hip and knee read as one figure rather than a row of separate humps.
   const bodyH = (x, z) => {
     let hgt = 0;
     for (const [bx, bz, w, l, hh] of bumps) {
-      const d = ((x - bx) / w) ** 2 + ((z - bz) / l) ** 2;
-      if (d < 1) hgt = Math.max(hgt, hh * Math.sqrt(1 - d));
+      const d = ((x - bx) / (w * 1.06)) ** 2 + ((z - bz) / (l * 1.4)) ** 2;
+      if (d < 1) hgt = Math.max(hgt, hh * Math.pow(1 - d, 0.42));
     }
     return hgt;
   };
@@ -194,7 +197,7 @@ export function buildBedroll(ch, o = {}) {
   for (let j = 0; j <= NZ; j++) for (let i = 0; i <= NX; i++) grid[j * (NX + 1) + i] = bodyH(gx(i), gz(j));
   // Drape: cloth spans from each high point down a limited slope (a distance-field dilation).
   const cell = bW / NX;
-  const slope = 0.62 * cell;
+  const slope = 0.85 * cell;
   for (let pass = 0; pass < 30; pass++) {
     for (let j = 0; j <= NZ; j++) {
       for (let i = 0; i <= NX; i++) {
@@ -222,7 +225,9 @@ export function buildBedroll(ch, o = {}) {
       let hgt = grid[j * (NX + 1) + i];
       // Folds: run down the slopes, strongest where the cloth hangs.
       const hang = Math.max(0, 1 - hgt / 0.12);
-      const fold = 0.012 * Math.sin(x * 26 + z * 7 + seed) * hang + 0.007 * Math.sin(z * 21 - x * 9 + seed * 2) + 0.004 * Math.sin(x * 61 + z * 33);
+      // Irregular folds: a few broad drapes falling off the body plus small creases (no regular ribs).
+      const fn = (u, v, sd) => Math.sin(u * 1.7 + Math.sin(v * 2.3 + sd) * 1.9 + sd) * Math.sin(v * 1.3 + Math.sin(u * 1.1 + sd * 2) * 1.4);
+      const fold = 0.016 * fn(x * 9, z * 6, seed) * hang + 0.006 * fn(x * 23 + 3, z * 17, seed + 5) * (0.5 + hang) + 0.0025 * fn(x * 60, z * 45, seed + 9);
       hgt = Math.max(0.004, hgt + fold * (0.4 + hang));
       // The hem tucks down to the mat at the sides and the foot; a turned-back edge at the chin.
       const ex = Math.abs(x) / (bW / 2);
@@ -252,9 +257,12 @@ export function buildBedroll(ch, o = {}) {
   // ---- an arm on top of the blanket (sleeve, wrist, hand).
   const sleeveCol = new THREE.Color(app.body === 'robe' || app.body === 'vestments' || app.body === 'tunic' ? app.clothHex : '#3a3028');
   const sleeveMat = D(new THREE.MeshStandardMaterial({ color: sleeveCol, roughness: 0.95 }));
-  const skinMat = D(new THREE.MeshStandardMaterial({ color: new THREE.Color(app.skinHex).multiplyScalar(0.85), roughness: 0.6 }));
-  const armGeo = D(new THREE.CapsuleGeometry(0.036 * hs, 0.24 * L, 4, 10));
-  const handGeo = D(new THREE.SphereGeometry(0.038 * hs, 12, 8));
+  const skinMat = D(new THREE.MeshStandardMaterial({ color: new THREE.Color(app.skinHex).lerp(new THREE.Color(0x9a8a80), 0.25).multiplyScalar(0.72), roughness: 0.62 }));
+  const armGeo = D(new THREE.CapsuleGeometry(0.03 * hs, 0.24 * L, 4, 10));
+  const handGeo = D(new THREE.SphereGeometry(0.03 * hs, 12, 8));
+  const cuffMat = D(new THREE.MeshStandardMaterial({ color: sleeveCol.clone().multiplyScalar(0.7), roughness: 0.95 }));
+  const wristGeo = D(new THREE.CylinderGeometry(0.031 * hs, 0.034 * hs, 0.025, 10));
+  const fingerGeo = D(new THREE.CapsuleGeometry(0.011 * hs, 0.035 * hs, 3, 6));
   const onTop = (x, z) => top + 0.01 + grid[Math.max(0, Math.min(NZ, Math.round(((z - z0) / bL) * NZ))) * (NX + 1) + Math.max(0, Math.min(NX, Math.round(((x + bW / 2) / bW) * NX)))];
   const arm = (ax, az, bx, bz) => {
     const a = new THREE.Vector3(ax, onTop(ax, az) + 0.03, az);
@@ -265,12 +273,30 @@ export function buildBedroll(ch, o = {}) {
     m.scale.y = a.distanceTo(b) / (0.24 * L + 0.07 * hs);
     m.castShadow = true;
     root.add(m);
-    const hand = new THREE.Mesh(handGeo, skinMat);
-    hand.position.copy(b).add(b.clone().sub(a).normalize().multiplyScalar(0.04 * hs));
-    hand.scale.set(1.1, 0.6, 1.35);
-    hand.lookAt(b.clone().add(b.clone().sub(a)));
-    hand.castShadow = true;
-    root.add(hand);
+    // Cuff, a flat relaxed hand (palm + curled fingers + thumb) resting on the wool.
+    const dir = b.clone().sub(a).normalize();
+    const wrist = new THREE.Mesh(wristGeo, cuffMat);
+    wrist.position.copy(b);
+    wrist.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+    root.add(wrist);
+    const handG = new THREE.Group();
+    handG.position.copy(b).add(dir.clone().multiplyScalar(0.045 * hs)).add(new THREE.Vector3(0, -0.008, 0));
+    handG.lookAt(handG.position.clone().add(dir));
+    const palm = new THREE.Mesh(handGeo, skinMat);
+    palm.scale.set(1.25, 0.5, 1.5);
+    handG.add(palm);
+    for (let f = 0; f < 4; f++) {
+      const fg = new THREE.Mesh(fingerGeo, skinMat);
+      fg.position.set((f - 1.5) * 0.013 * hs, -0.006, 0.04 * hs);
+      fg.rotation.x = Math.PI / 2 + 0.5;
+      handG.add(fg);
+    }
+    const th = new THREE.Mesh(fingerGeo, skinMat);
+    th.position.set(0.03 * hs, 0, 0.012 * hs);
+    th.rotation.set(Math.PI / 2, 0, -0.8);
+    handG.add(th);
+    handG.traverse((o) => { o.castShadow = true; });
+    root.add(handG);
   };
   if (pose === 'back') arm(0.21 * L, -0.28 * L, 0.03, -0.42 * L);
   else if (pose === 'side') arm(0.1, -0.36 * L, 0.24, -0.22 * L);
@@ -282,7 +308,8 @@ export function buildBedroll(ch, o = {}) {
   let hc;
   if (pose === 'back') {
     // Face up, crown toward −z, turned a little toward the camera side.
-    const tilt = 0.35 + hash(seed, 5) * 0.25;
+    // Turned well onto one cheek, so the hair and ear read from above rather than a face-up blob.
+    const tilt = 0.95 + hash(seed, 5) * 0.2;
     const y = new THREE.Vector3(0, 0.18, -1).normalize();
     const z = new THREE.Vector3(Math.sin(tilt), Math.cos(tilt), 0.18).normalize();
     const x = new THREE.Vector3().crossVectors(y, z).normalize();

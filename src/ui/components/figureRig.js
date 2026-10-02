@@ -290,7 +290,7 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
     cloth: mat(clothC, { rough: 0.92, pattern: PATTERN.cloth, soft: 0.003, edge: 0.3, wash: 0.65 }),
     clothDark: mat(mulc(clothC, 0.55), { rough: 0.95, pattern: PATTERN.cloth, edge: 0.3, wash: 0.6 }),
     trim: mat(trimC, { rough: 0.9, pattern: PATTERN.cloth, edge: 0.3 }),
-    trousers: mat(L('#3c3329'), { rough: 0.95, pattern: PATTERN.cloth, edge: 0.25, wash: 0.6 }),
+    trousers: mat(L('#33323a'), { rough: 0.95, pattern: PATTERN.cloth, edge: 0.25, wash: 0.6 }),
     linen: mat(L('#a89c82'), { rough: 0.9, pattern: PATTERN.linen, edge: 0.25, wash: 0.7 }),
     leather: mat(L('#4a2c18'), { rough: 0.6, pattern: PATTERN.leather, edge: 0.45, wash: 0.65 }),
     darkLeather: mat(L('#2f2016'), { rough: 0.58, pattern: PATTERN.leather, edge: 0.45, wash: 0.6 }),
@@ -682,23 +682,44 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
     }
   };
 
+  // A hauberk's skirt split front and back: a short ring at the hips and a flap down each thigh to
+  // the knee, so the legs read through it (no 'nappy' cone over the pelvis).
+  const splitSkirt = (m, len, o = {}) => {
+    skirt(m, 0.16 * s, 0.035, o);
+    for (const k of ['L', 'R']) {
+      const { hip, kn } = legs[k];
+      const sg = k === 'L' ? 1 : -1;
+      const top = vadd(hip, mApply(pR, [sg * 0.02 * s, 0.04 * s, 0]));
+      const along = vlerp(hip, kn, Math.min(1, len / B.thigh));
+      const hang = sitting ? along : vlerp(along, vadd(top, mApply(pR, [sg * 0.012 * s, -len, 0])), 0.6);
+      AC(top, hang, 0.09 * g, (sitting ? 0.088 : 0.104) * g, m, { k: 0.06 * s, ...o });
+    }
+  };
   if (mailBody || scaleBody) {
     const m = scaleBody ? M.scale : M.mail;
     torsoShell(m, 0.012 * s);
     sleeves(m, 0.011 * s, 0.35);
-    skirt(m, 0.3 * s, 0.05);
-    if (body === 'tabard') {
-      // Surcoat panels front and back in the house colour.
+    splitSkirt(m, (scaleBody ? 0.36 : 0.42) * s);
+    if (body === 'chain' && !sitting) {
+      // A short surcoat skirt in the house colour over the mail, open at the sides: it hangs over the
+      // thighs and breaks the line of the legs.
       for (const sg of [1, -1]) {
-        const c = at(vlerp(J.pelvis, J.neck, 0.35), sR, [0, -0.06, sg * 0.125]);
-        sc.box(c, [0.12 * g, 0.36 * s, 0.008 * s], mMul(sR, mRotX(sg * -0.07)), 0.006 * s, { mat: M.cloth, g: GR.cloak, k: 0 });
+        const c = at(J.pelvis, pR, [0, -0.13, sg * 0.165]);
+        sc.box(c, [0.125 * g, 0.2 * s, 0.007 * s], mMul(pR, mRotX(sg * -0.16)), 0.005 * s, { mat: M.cloth, g: GR.cloak, k: 0, disp: (x, y, z) => 0.003 * s * Math.sin(x * 90 + y * 8), amp: 0.004 * s });
+      }
+    }
+    if (body === 'tabard') {
+      // Surcoat panels front and back in the house colour, hanging to the knee and breaking the legs' line.
+      for (const sg of [1, -1]) {
+        const c = at(J.pelvis, sR, [0, sitting ? 0.04 : -0.06, sg * 0.13]);
+        sc.box(c, [0.115 * g, (sitting ? 0.2 : 0.36) * s, 0.008 * s], mMul(sR, mRotX(sg * -0.06)), 0.006 * s, { mat: M.cloth, g: GR.cloak, k: 0 });
       }
       sc.ellipsoid(at(chestC, sR, [0, 0.02, 0.131]), [0.04 * s, 0.045 * s, 0.006 * s], sR, { mat: M.gilt, g: GR.belt });
     }
   } else if (plate) {
     torsoShell(M.mail, 0.008 * s);
     sleeves(M.mail, 0.008 * s, 0.2);
-    skirt(M.mail, 0.26 * s, 0.035);
+    splitSkirt(M.mail, 0.3 * s);
     // Breastplate with a central ridge, backplate.
     const bp = at(chestC, sR, [0, -0.02, 0.006]);
     PL(bp, [0.172 * g, 0.19 * s, 0.122 * g], sR, { clip: [planeAlong(sR, [0, -1, 0], at(J.pelvis, sR, [0, 0.11, 0])), planeAlong(sR, [0, 1, 0], at(J.neck, sR, [0, -0.045, 0]))], clipK: 0.006 * s });
@@ -724,7 +745,10 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
       // Legs: cuisses, poleyns, greaves.
       const { hip, kn, an } = legs[k];
       AC(vlerp(hip, kn, 0.3), vlerp(hip, kn, 0.95), 0.084 * g, 0.062 * g, M.steel, { g: GR.plate, k: 0 });
-      PL(vadd(kn, mApply(J.spineR, [0, 0, 0.012 * s])), [0.058 * g, 0.054 * g, 0.056 * g], sR, {});
+      // Poleyn: a shallow cop over the knee with a side wing, not a ball.
+      const kR = mAlongY(vsub(an, kn), J.side);
+      PL(vadd(kn, mApply(kR, [0, 0, 0.022 * s])), [0.052 * g, 0.048 * g, 0.03 * g], kR, {});
+      PL(vadd(kn, mApply(kR, [sg * 0.03 * s, 0, 0.01 * s])), [0.012 * g, 0.04 * g, 0.034 * g], kR, {});
       AC(vlerp(kn, an, 0.1), vlerp(kn, an, 0.9), 0.06 * g, 0.042 * g, M.steel, { g: GR.plate, k: 0 });
     }
     // Gorget.
@@ -752,7 +776,7 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
     sc.torus(at(J.neck, sR, [0, -0.005, 0.0]), 0.06 * g, 0.016 * s, sR, { mat: M.linen, g: GR.belt, k: 0 });
     for (let i = 0; i < 4; i++) sc.torus(at(chestC, sR, [0, 0.12 - i * 0.03, 0.112 * g / s + 0.016]), 0.016 * s, 0.0028 * s, mMul(sR, mRotX(Math.PI / 2)), { mat: M.darkLeather, g: GR.belt, k: 0 });
     sleeves(M.cloth, 0.004 * s, 0.7);
-    skirt(M.cloth, 0.25 * s, 0.04);
+    splitSkirt(M.cloth, 0.3 * s);
     skirt(M.leather, 0.13 * s, 0.045, { k: 0.01 * s });
     for (const k of ['L', 'R']) {
       const sg = k === 'L' ? 1 : -1;
@@ -814,11 +838,11 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
   } else if (tunic) {
     // A loose tunic with folds and a dark collar over a linen shirt.
     const pcT = J.pelvis;
-    torsoShell(M.cloth, 0.016 * s, { disp: (x, y, z) => 0.0035 * s * Math.sin(Math.atan2(x - pcT[0], z - pcT[2]) * 8 + y * 14), amp: 0.004 * s });
+    torsoShell(M.cloth, 0.022 * s, { disp: (x, y, z) => 0.005 * s * Math.sin(Math.atan2(x - pcT[0], z - pcT[2]) * 7 + y * 12) * (0.6 + 0.4 * Math.sin(y * 31 + x * 17)), amp: 0.006 * s });
     sc.torus(at(J.neck, sR, [0, -0.01, 0.0]), 0.064 * g, 0.016 * s, sR, { mat: M.clothDark, g: GR.belt, k: 0 });
     sc.box(at(chestC, sR, [0, 0.09, 0.118 * g / s + 0.012]), [0.02 * s, 0.06 * s, 0.006 * s], mMul(sR, mRotX(-0.12)), 0.004 * s, { mat: M.linen, g: GR.belt, k: 0 });
     sleeves(M.clothDark, 0.006 * s, 0.75);
-    skirt(M.cloth, 0.24 * s, 0.05);
+    splitSkirt(M.cloth, 0.38 * s, { disp: (x, y, z) => 0.003 * s * Math.sin(Math.atan2(x - pcT[0], z - pcT[2]) * 10 + y * 6), amp: 0.004 * s });
   }
 
   // Belt with buckle and pouch (a rope cord for robes).

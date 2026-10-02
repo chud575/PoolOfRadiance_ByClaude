@@ -125,7 +125,16 @@ void miniPattern(float pid, out float h, out float alb, out float rmod) {
     float r = length(f * vec2(1.0, 1.25));
     float ring = smoothstep(0.14, 0.24, r) * smoothstep(0.52, 0.36, r);
     float fd = aaFade(105.0);
-    h = ring * 0.0011 * fd; alb = mix(0.82, mix(0.45, 1.18, ring), fd); rmod = (1.0 - ring) * 0.25 * fd;
+    // Far LOD: rows of rings blur into fine horizontal courses, with rust/oil patches and a
+    // broken, sparkling roughness (never smooth grey plastic).
+    float fd2 = aaFade(26.0);
+    float course = 0.5 + 0.5 * sin(triUV(p, vObjN).y * 26.0 * 6.2832);
+    float wear = vn3(p * 22.0);
+    float spark = vn3(p * 310.0);
+    float farAlb = (0.5 + 0.38 * wear) * mix(1.0, 0.75 + 0.5 * course, fd2) * (0.9 + 0.2 * spark);
+    h = ring * 0.0011 * fd + (course - 0.5) * 0.0005 * fd2 * (1.0 - fd);
+    alb = mix(farAlb, mix(0.45, 1.18, ring), fd);
+    rmod = mix(0.12 + (spark - 0.5) * 0.45 + (0.5 - wear) * 0.2, (1.0 - ring) * 0.25, fd);
   } else if (pid < 2.5) { // scales
     vec2 uv = triUV(p, vObjN) * vec2(55.0, 70.0);
     uv.x += 0.5 * mod(floor(uv.y), 2.0);
