@@ -2,44 +2,44 @@
 // Loudness calibration: gain per cue and the loudness it measured at that gain (see loudness.js).
 export const CAL = {
  "fp": {
-  "music": "y4uegv",
-  "sfx": "e9edho",
-  "amb": "jgtztq"
+  "music": "1k26pzb",
+  "sfx": "14tv4bo",
+  "amb": "tpqrx7"
  },
  "music": {
   "camp": {
-   "gain": 1.6214,
+   "gain": 1.6152,
    "lufs": -18,
    "target": -18,
    "fp": "vpeyf7"
   },
   "combat": {
-   "gain": 0.9101,
-   "lufs": -16.5,
+   "gain": 0.8894,
+   "lufs": -16.4,
    "target": -16.5,
    "sections": {
-    "A": 0,
-    "C": 1.2,
+    "A": 0.1,
+    "C": 1.1,
     "D": 1.5,
     "A2": -1.2,
-    "B": -1.5
+    "B": -1.6
    },
    "curve": [
     [
      0.2,
-     -17.3
+     -17.2
     ],
     [
      0.3,
-     -17.1
+     -17
     ],
     [
      0.45,
-     -15.8
+     -15.7
     ],
     [
      0.6,
-     -15.2
+     -15.1
     ],
     [
      0.75,
@@ -56,231 +56,231 @@ export const CAL = {
    ],
    "fp": "144q3b8",
    "check": {
-    "1": -14.5,
-    "0.3": -16.5,
+    "1": -14.4,
+    "0.3": -16.4,
     "0.5": -16.4,
     "0.8": -15.1
    }
   },
   "crypt": {
-   "gain": 1.6294,
+   "gain": 1.3951,
    "lufs": -18.3,
    "target": -18,
    "sections": {
-    "v0": -0.5,
-    "v3": -1.1,
-    "v1": 2.2,
-    "v2": -0.7
+    "v0": 1,
+    "v3": -1.6,
+    "v1": 2.7,
+    "v2": -2.2
    },
    "fp": "pj6oju"
   },
   "danger": {
-   "gain": 1.2284,
-   "lufs": -16.1,
+   "gain": 1.254,
+   "lufs": -16.2,
    "target": -16,
    "fp": "12wi6qa"
   },
   "defeat": {
-   "gain": 1.5994,
-   "lufs": -17.2,
+   "gain": 1.4956,
+   "lufs": -17.3,
    "target": -17,
    "fp": "a9tzxp"
   },
   "discovery": {
-   "gain": 1.3497,
-   "lufs": -17.1,
+   "gain": 1.1381,
+   "lufs": -17,
    "target": -17,
    "fp": "sv4kn5"
   },
   "dungeon": {
-   "gain": 1.3493,
+   "gain": 1.2728,
    "lufs": -18.6,
    "target": -18.5,
    "sections": {
     "v0": -2.2,
     "v3": 3.9,
     "v1": -2.1,
-    "v2": 0.5
+    "v2": 0.4
    },
    "fp": "7njvqn"
   },
   "encounter": {
-   "gain": 1.5251,
+   "gain": 1.4862,
    "lufs": -17.6,
    "target": -17.5,
    "sections": {
-    "standoff": -1.1,
+    "standoff": -1,
     "stalk": 1.8,
-    "heartbeat": -0.7
+    "heartbeat": -0.8
    },
    "fp": "145zhcm"
   },
   "fallen": {
-   "gain": 2.5909,
-   "lufs": -18.1,
+   "gain": 1.9634,
+   "lufs": -18.2,
    "target": -18,
    "fp": "2220ey"
   },
   "intro": {
-   "gain": 1.1756,
+   "gain": 1.0936,
    "lufs": -18.5,
    "target": -18.5,
    "fp": "1j681eo"
   },
   "levelup": {
-   "gain": 1.2005,
-   "lufs": -16,
+   "gain": 1.1744,
+   "lufs": -16.1,
    "target": -16,
    "fp": "xt89zx"
   },
   "quest": {
-   "gain": 1.3343,
+   "gain": 1.3476,
    "lufs": -17,
    "target": -17,
    "fp": "1fh51sc"
   },
   "ruins": {
-   "gain": 1.2172,
+   "gain": 1.2509,
    "lufs": -18.1,
    "target": -18,
    "sections": {
-    "v0": -1.7,
-    "v3": 3.2,
-    "v1": -1.8,
-    "v2": 0.3
+    "v0": -1.4,
+    "v3": 2.5,
+    "v1": -1.5,
+    "v2": 0.4
    },
    "fp": "1kvc2ot"
   },
   "tavern": {
-   "gain": 1.4667,
+   "gain": 1.4816,
    "lufs": -17.1,
    "target": -17,
    "sections": {
-    "set": -2.7,
-    "air": 2.7
+    "set": -2.8,
+    "air": 2.8
    },
    "fp": "13frohk"
   },
   "title": {
-   "gain": 0.9511,
+   "gain": 0.9303,
    "lufs": -17,
    "target": -17,
    "fp": "ycuaiz"
   },
   "town": {
-   "gain": 1.8059,
+   "gain": 1.7882,
    "lufs": -17.1,
    "target": -17,
    "sections": {
-    "set": -2.2,
-    "air": 2.2
+    "set": -2.1,
+    "air": 2.1
    },
    "fp": "qcmx18"
   },
   "victory": {
-   "gain": 0.7409,
+   "gain": 0.7569,
    "lufs": -15.7,
    "target": -16,
    "fp": "ht8i80"
   },
   "wilds": {
-   "gain": 1.5304,
+   "gain": 1.51,
    "lufs": -18,
    "target": -18,
    "sections": {
-    "v0": -1.6,
-    "v3": -1.7,
+    "v0": -1.5,
+    "v3": -1.6,
     "v1": -1.4,
-    "v2": 4.6
+    "v2": 4.5
    },
    "fp": "jbert9"
   }
  },
  "amb": {
   "camp": {
-   "gain": 4.4222,
+   "gain": 3.9787,
    "lufs": -27,
    "target": -27
   },
   "camp_in": {
-   "gain": 4.23,
+   "gain": 3.8047,
    "lufs": -27,
    "target": -27
   },
   "camp_night": {
-   "gain": 4.4523,
+   "gain": 3.9992,
    "lufs": -27,
    "target": -27
   },
   "combat_in": {
-   "gain": 7.1477,
+   "gain": 4.8944,
    "lufs": -27,
    "target": -27
   },
   "combat_out": {
-   "gain": 5.7617,
+   "gain": 5.7297,
    "lufs": -27,
    "target": -27
   },
   "crypt": {
-   "gain": 4.0336,
+   "gain": 4.0048,
    "lufs": -27,
    "target": -27
   },
   "crypt_night": {
-   "gain": 4.6451,
+   "gain": 4.6403,
    "lufs": -27,
    "target": -27
   },
   "dungeon": {
-   "gain": 4.4602,
+   "gain": 3.776,
    "lufs": -27,
    "target": -27
   },
   "interior": {
-   "gain": 4.3475,
+   "gain": 7.5633,
    "lufs": -27,
    "target": -27
   },
   "ruins": {
-   "gain": 3.3395,
+   "gain": 3.3162,
    "lufs": -27,
    "target": -27
   },
   "ruins_night": {
-   "gain": 3.6573,
+   "gain": 3.639,
    "lufs": -27,
    "target": -27
   },
   "title": {
-   "gain": 2.8922,
+   "gain": 2.8775,
    "lufs": -27,
    "target": -27
   },
   "town": {
-   "gain": 5.2656,
+   "gain": 5.2223,
    "lufs": -27,
    "target": -27
   },
   "town_night": {
-   "gain": 5.3095,
+   "gain": 5.3104,
    "lufs": -27,
    "target": -27
   },
   "wilds": {
-   "gain": 4.274,
+   "gain": 4.2631,
    "lufs": -27,
    "target": -27
   },
   "wilds_night": {
-   "gain": 4.7131,
+   "gain": 4.7055,
    "lufs": -27,
    "target": -27
   }
  },
  "sfx": {
   "arrow_hit": {
-   "gain": 3.7953,
+   "gain": 3.7983,
    "m": -19.9,
    "target": -18.5,
    "peak": -2.9
@@ -289,151 +289,151 @@ export const CAL = {
    "gain": 16,
    "m": -20.6,
    "target": -20,
-   "peak": -8.7
+   "peak": -8.5
   },
   "bite": {
-   "gain": 3.1664,
+   "gain": 3.1793,
    "m": -18.8,
    "target": -18.5,
-   "peak": -3.8
+   "peak": -3.9
   },
   "block": {
-   "gain": 0.9033,
+   "gain": 0.8996,
    "m": -18.2,
    "target": -18.5,
    "peak": -4.2
   },
   "bow": {
-   "gain": 2.5184,
+   "gain": 2.5047,
    "m": -20.1,
    "target": -20,
    "peak": -6.8
   },
   "bump": {
-   "gain": 3.2855,
+   "gain": 3.3202,
    "m": -23.1,
    "target": -23,
-   "peak": -7.8
+   "peak": -7.7
   },
   "cancel": {
-   "gain": 3.3815,
+   "gain": 3.3868,
    "m": -25,
    "target": -25,
-   "peak": -13.2
+   "peak": -13.1
   },
   "chest": {
-   "gain": 1.5449,
+   "gain": 1.5415,
    "m": -21,
    "target": -21,
    "peak": -8.7
   },
   "claw": {
-   "gain": 2.1714,
+   "gain": 2.1706,
    "m": -18.6,
    "target": -18.5,
    "peak": -5.8
   },
   "click": {
-   "gain": 4.8861,
+   "gain": 4.8631,
    "m": -27.1,
    "target": -27,
-   "peak": -6.3
+   "peak": -6.4
   },
   "close": {
-   "gain": 7.5317,
+   "gain": 7.4128,
    "m": -27,
    "target": -27,
-   "peak": -8.3
+   "peak": -8.4
   },
   "coins": {
-   "gain": 2.2661,
+   "gain": 2.2599,
    "m": -22.5,
    "target": -22.5,
-   "peak": -11.1
+   "peak": -11.2
   },
   "confirm": {
-   "gain": 1.6715,
+   "gain": 1.6457,
    "m": -25,
    "target": -25,
-   "peak": -12.9
+   "peak": -13.3
   },
   "crit": {
-   "gain": 1.693,
+   "gain": 1.7096,
    "m": -15.4,
    "target": -15,
    "peak": -3.4
   },
   "death": {
-   "gain": 1.4779,
+   "gain": 1.4778,
    "m": -20.1,
    "target": -20,
-   "peak": -6.1
+   "peak": -6
   },
   "dodge": {
-   "gain": 3.0622,
+   "gain": 3.057,
    "m": -21,
    "target": -21,
-   "peak": -9.5
+   "peak": -9.6
   },
   "door": {
-   "gain": 1.2145,
+   "gain": 1.2177,
    "m": -21.3,
    "target": -21,
    "peak": -3.1
   },
   "door_close": {
-   "gain": 0.9342,
+   "gain": 0.9328,
    "m": -20.8,
    "target": -21,
    "peak": -3.1
   },
   "door_locked": {
-   "gain": 0.7914,
+   "gain": 0.7898,
    "m": -20.9,
    "target": -21,
-   "peak": -5.6
+   "peak": -5.7
   },
   "door_secret": {
-   "gain": 1.3311,
+   "gain": 1.3301,
    "m": -21,
    "target": -21,
-   "peak": -10
+   "peak": -10.4
   },
   "equip": {
-   "gain": 4.679,
+   "gain": 4.6678,
    "m": -22.5,
    "target": -22.5,
    "peak": -7.9
   },
   "error": {
-   "gain": 5.0416,
+   "gain": 5.0551,
    "m": -25,
    "target": -25,
-   "peak": -12.8
+   "peak": -12.6
   },
   "focus": {
-   "gain": 14.1585,
+   "gain": 14.094,
    "m": -30,
    "target": -30,
-   "peak": -10.3
+   "peak": -10.4
   },
   "footstep": {
-   "gain": 8.5999,
+   "gain": 8.5825,
    "m": -26.1,
    "target": -26,
    "peak": -2.9
   },
   "heal": {
-   "gain": 1.1923,
+   "gain": 1.1863,
    "m": -20,
    "target": -20,
-   "peak": -11.1
+   "peak": -10.9
   },
   "hit": {
-   "gain": 3.6421,
+   "gain": 3.6412,
    "m": -18.7,
    "target": -17.5,
-   "peak": -2.7
+   "peak": -2.8
   },
   "hit_armor": {
    "gain": 1,
@@ -442,67 +442,67 @@ export const CAL = {
    "peak": -4.6
   },
   "hit_bone": {
-   "gain": 3.3901,
-   "m": -17.9,
+   "gain": 3.3784,
+   "m": -17.8,
    "target": -17.5,
-   "peak": -3.2
+   "peak": -3.3
   },
   "hover": {
    "gain": 16,
-   "m": -31.1,
+   "m": -31,
    "target": -30,
    "peak": -13.9
   },
   "levelup": {
-   "gain": 1.1142,
+   "gain": 0.8614,
    "m": -19,
    "target": -19,
-   "peak": -10.7
+   "peak": -10.3
   },
   "map": {
-   "gain": 5.8946,
+   "gain": 5.8842,
    "m": -27,
    "target": -27,
    "peak": -16.1
   },
   "miss": {
-   "gain": 2.6131,
+   "gain": 2.6104,
    "m": -21,
    "target": -21,
    "peak": -9.4
   },
   "omen": {
-   "gain": 4.1346,
+   "gain": 4.1375,
    "m": -21,
    "target": -21,
    "peak": -11.5
   },
   "open": {
-   "gain": 7.0401,
+   "gain": 7.0156,
    "m": -27,
    "target": -27,
-   "peak": -11.5
+   "peak": -11.6
   },
   "page": {
-   "gain": 9.0521,
+   "gain": 9.0307,
    "m": -27,
    "target": -27,
    "peak": -10.9
   },
   "parry": {
-   "gain": 0.7934,
-   "m": -17.4,
+   "gain": 0.7839,
+   "m": -17.5,
    "target": -17.5,
-   "peak": -4.6
+   "peak": -4.7
   },
   "pass_through": {
-   "gain": 1.4813,
+   "gain": 1.4815,
    "m": -21,
    "target": -21,
-   "peak": -10.9
+   "peak": -11.2
   },
   "potion": {
-   "gain": 3.8615,
+   "gain": 3.8614,
    "m": -22.5,
    "target": -22.5,
    "peak": -9.8
@@ -514,400 +514,400 @@ export const CAL = {
    "peak": -12.4
   },
   "save": {
-   "gain": 1.5108,
+   "gain": 1.4937,
    "m": -25,
    "target": -25,
    "peak": -18.3
   },
   "shield": {
-   "gain": 2.8476,
+   "gain": 2.8407,
    "m": -20,
    "target": -18.5,
-   "peak": -2.8
+   "peak": -2.9
   },
   "sparkle": {
-   "gain": 1.7891,
+   "gain": 1.7927,
    "m": -25,
    "target": -25,
    "peak": -18.7
   },
   "spell": {
-   "gain": 1.6199,
+   "gain": 1.6231,
    "m": -20,
    "target": -20,
-   "peak": -10.8
+   "peak": -11
   },
   "spell_cloud": {
-   "gain": 2.1378,
+   "gain": 1.62,
    "m": -18.5,
    "target": -18.5,
-   "peak": -5.9
+   "peak": -7.4
   },
   "spell_cone": {
-   "gain": 0.7068,
-   "m": -16.5,
+   "gain": 0.6865,
+   "m": -16.4,
    "target": -16.5,
-   "peak": -11.3
+   "peak": -9.9
   },
   "spell_curse": {
-   "gain": 3.0335,
+   "gain": 3.0322,
    "m": -18.5,
    "target": -18.5,
    "peak": -6.8
   },
   "spell_fire": {
-   "gain": 0.4861,
-   "m": -14.4,
-   "target": -14.5,
-   "peak": -4.2
-  },
-  "spell_fizzle": {
-   "gain": 6.1109,
-   "m": -23,
-   "target": -23,
-   "peak": -9
-  },
-  "spell_heal": {
-   "gain": 1.1923,
-   "m": -20,
-   "target": -20,
-   "peak": -11.1
-  },
-  "spell_holy": {
-   "gain": 0.8193,
-   "m": -18.5,
-   "target": -18.5,
-   "peak": -10.6
-  },
-  "spell_lightning": {
-   "gain": 0.8817,
+   "gain": 0.5154,
    "m": -14.2,
    "target": -14.5,
-   "peak": -3
+   "peak": -2.6
   },
-  "spell_mind": {
-   "gain": 2.2989,
+  "spell_fizzle": {
+   "gain": 6.0848,
+   "m": -23,
+   "target": -23,
+   "peak": -9.1
+  },
+  "spell_heal": {
+   "gain": 1.1863,
    "m": -20,
    "target": -20,
-   "peak": -12.9
+   "peak": -10.9
+  },
+  "spell_holy": {
+   "gain": 0.7112,
+   "m": -18.5,
+   "target": -18.5,
+   "peak": -10.7
+  },
+  "spell_lightning": {
+   "gain": 0.9508,
+   "m": -14.4,
+   "target": -14.5,
+   "peak": -3.2
+  },
+  "spell_mind": {
+   "gain": 2.2988,
+   "m": -20,
+   "target": -20,
+   "peak": -12.3
   },
   "spell_missile": {
-   "gain": 5.431,
+   "gain": 5.4187,
    "m": -18.7,
    "target": -18.5,
    "peak": -2.4
   },
   "spell_shock": {
-   "gain": 2.5054,
+   "gain": 2.4936,
    "m": -19.5,
    "target": -18.5,
    "peak": -2.6
   },
   "spell_sleep": {
-   "gain": 1.7652,
+   "gain": 1.7415,
    "m": -20,
    "target": -20,
-   "peak": -12.8
+   "peak": -12.7
   },
   "spell_turn": {
-   "gain": 0.4722,
+   "gain": 0.3365,
    "m": -16.5,
    "target": -16.5,
-   "peak": -8.6
+   "peak": -8.3
   },
   "spell_ward": {
-   "gain": 2.3285,
+   "gain": 2.3123,
    "m": -20,
    "target": -20,
-   "peak": -10.7
+   "peak": -10.6
   },
   "splash": {
-   "gain": 3.0152,
+   "gain": 3.016,
    "m": -23,
    "target": -23,
    "peak": -8.6
   },
   "step_cobble": {
-   "gain": 2.9065,
+   "gain": 2.9025,
    "m": -26,
    "target": -26,
-   "peak": -5.2
+   "peak": -5.3
   },
   "step_dirt": {
-   "gain": 6.3277,
+   "gain": 6.318,
    "m": -26,
    "target": -26,
-   "peak": -6.6
+   "peak": -6.7
   },
   "step_grass": {
-   "gain": 3.4699,
+   "gain": 3.4693,
    "m": -26,
    "target": -26,
-   "peak": -11.7
+   "peak": -11.6
   },
   "step_gravel": {
-   "gain": 3.7892,
+   "gain": 3.7856,
    "m": -26,
    "target": -26,
-   "peak": -7
+   "peak": -6.9
   },
   "step_stone": {
-   "gain": 6.7202,
+   "gain": 6.7169,
    "m": -26,
    "target": -26,
    "peak": -4.9
   },
   "step_water": {
-   "gain": 2.2357,
+   "gain": 2.2336,
    "m": -26,
    "target": -26,
    "peak": -12.7
   },
   "step_wood": {
-   "gain": 1.4109,
+   "gain": 1.4115,
    "m": -26,
    "target": -26,
    "peak": -9.1
   },
   "swing": {
-   "gain": 2.4616,
+   "gain": 2.453,
    "m": -21,
    "target": -21,
    "peak": -10
   },
   "trap": {
-   "gain": 0.4907,
+   "gain": 0.4999,
    "m": -21,
    "target": -21,
-   "peak": -6.3
+   "peak": -6
   },
   "turn": {
-   "gain": 10.9537,
+   "gain": 10.9409,
    "m": -29,
    "target": -29,
    "peak": -11.2
   },
   "vox_dragon": {
-   "gain": 0.5636,
-   "m": -13.7,
+   "gain": 0.519,
+   "m": -14,
    "target": -14,
-   "peak": -7.4
+   "peak": -6.7
   },
   "vox_dragon_die": {
-   "gain": 0.4893,
-   "m": -13.9,
+   "gain": 0.4683,
+   "m": -13.8,
    "target": -14,
-   "peak": -5.9
+   "peak": -6.2
   },
   "vox_frog": {
-   "gain": 1.425,
+   "gain": 1.4087,
    "m": -19.5,
    "target": -19.5,
-   "peak": -7.9
+   "peak": -7.8
   },
   "vox_frog_die": {
-   "gain": 2.1808,
+   "gain": 2.1787,
    "m": -18.6,
    "target": -18.5,
    "peak": -4.3
   },
   "vox_ghost": {
-   "gain": 3.3217,
+   "gain": 3.2839,
    "m": -21,
    "target": -21,
    "peak": -13.2
   },
   "vox_ghost_die": {
-   "gain": 4.5237,
+   "gain": 4.4871,
    "m": -18.5,
    "target": -18.5,
-   "peak": -11.7
+   "peak": -11.6
   },
   "vox_giant": {
-   "gain": 0.4037,
-   "m": -16.4,
-   "target": -16.5,
-   "peak": -13.5
-  },
-  "vox_giant_die": {
-   "gain": 0.3563,
+   "gain": 0.4013,
    "m": -16.3,
    "target": -16.5,
-   "peak": -9.9
+   "peak": -12.5
+  },
+  "vox_giant_die": {
+   "gain": 0.3307,
+   "m": -16.5,
+   "target": -16.5,
+   "peak": -9.6
   },
   "vox_gnoll": {
    "gain": 1,
-   "m": -19.7,
-   "target": -19.5,
-   "peak": -10.8
-  },
-  "vox_gnoll_die": {
-   "gain": 0.8803,
-   "m": -18.5,
-   "target": -18.5,
-   "peak": -10.1
-  },
-  "vox_goblin": {
-   "gain": 1.6225,
-   "m": -19.5,
+   "m": -19.6,
    "target": -19.5,
    "peak": -10.7
   },
+  "vox_gnoll_die": {
+   "gain": 0.8723,
+   "m": -18.5,
+   "target": -18.5,
+   "peak": -10
+  },
+  "vox_goblin": {
+   "gain": 1.6142,
+   "m": -19.5,
+   "target": -19.5,
+   "peak": -10.8
+  },
   "vox_goblin_die": {
-   "gain": 1.1507,
+   "gain": 1.153,
    "m": -18.5,
    "target": -18.5,
    "peak": -10.8
   },
   "vox_human": {
-   "gain": 1.2473,
+   "gain": 1.2454,
    "m": -19.5,
    "target": -19.5,
    "peak": -9.5
   },
   "vox_human_die": {
-   "gain": 1.0949,
+   "gain": 1.0979,
+   "m": -18.5,
+   "target": -18.5,
+   "peak": -10.7
+  },
+  "vox_kobold": {
+   "gain": 1,
+   "m": -19.2,
+   "target": -19.5,
+   "peak": -9.6
+  },
+  "vox_kobold_die": {
+   "gain": 0.8798,
    "m": -18.5,
    "target": -18.5,
    "peak": -10.4
   },
-  "vox_kobold": {
-   "gain": 1,
-   "m": -19.3,
-   "target": -19.5,
-   "peak": -9.4
-  },
-  "vox_kobold_die": {
-   "gain": 0.8858,
-   "m": -18.5,
-   "target": -18.5,
-   "peak": -10.3
-  },
   "vox_lizard": {
-   "gain": 0.9348,
+   "gain": 0.923,
    "m": -19.5,
    "target": -19.5,
-   "peak": -9.3
+   "peak": -9.5
   },
   "vox_lizard_die": {
-   "gain": 0.649,
+   "gain": 0.6446,
    "m": -18.5,
    "target": -18.5,
-   "peak": -13.5
+   "peak": -13.4
   },
   "vox_ogre": {
-   "gain": 0.4131,
+   "gain": 0.4105,
    "m": -16.3,
    "target": -16.5,
-   "peak": -12.1
+   "peak": -11.9
   },
   "vox_ogre_die": {
-   "gain": 0.392,
+   "gain": 0.3919,
    "m": -16.4,
    "target": -16.5,
    "peak": -10.6
   },
   "vox_orc": {
-   "gain": 0.6498,
+   "gain": 0.6486,
    "m": -19.5,
    "target": -19.5,
-   "peak": -16.2
+   "peak": -15.8
   },
   "vox_orc_die": {
-   "gain": 0.6883,
+   "gain": 0.6841,
    "m": -18.5,
    "target": -18.5,
-   "peak": -15.5
+   "peak": -15.3
   },
   "vox_party": {
-   "gain": 1.8642,
+   "gain": 1.8696,
    "m": -19.5,
    "target": -19.5,
-   "peak": -8.3
+   "peak": -8.4
   },
   "vox_party_die": {
-   "gain": 1.2673,
+   "gain": 1.258,
    "m": -18.5,
    "target": -18.5,
-   "peak": -9.6
+   "peak": -9.7
   },
   "vox_rat": {
-   "gain": 5.3643,
+   "gain": 5.3495,
    "m": -21,
    "target": -21,
-   "peak": -12.7
+   "peak": -12.9
   },
   "vox_rat_die": {
-   "gain": 1.6371,
+   "gain": 1.6327,
    "m": -18.5,
    "target": -18.5,
    "peak": -9.3
   },
   "vox_skeleton": {
-   "gain": 1.6906,
+   "gain": 1.6957,
    "m": -19.6,
    "target": -19.5,
-   "peak": -3.9
+   "peak": -3.8
   },
   "vox_skeleton_die": {
-   "gain": 2.154,
+   "gain": 2.157,
    "m": -18.5,
    "target": -18.5,
    "peak": -7.6
   },
   "vox_spider": {
-   "gain": 1.0639,
+   "gain": 1.0632,
    "m": -19.5,
    "target": -19.5,
-   "peak": -14
+   "peak": -14.1
   },
   "vox_spider_die": {
-   "gain": 11.0355,
-   "m": -20,
+   "gain": 10.8818,
+   "m": -19.9,
    "target": -18.5,
    "peak": -2
   },
   "vox_troll": {
-   "gain": 0.3864,
+   "gain": 0.3866,
    "m": -16.4,
    "target": -16.5,
-   "peak": -14.5
+   "peak": -14.2
   },
   "vox_troll_die": {
-   "gain": 0.3591,
+   "gain": 0.3594,
    "m": -16.3,
    "target": -16.5,
-   "peak": -8.7
+   "peak": -8.9
   },
   "vox_wolf": {
-   "gain": 0.5787,
+   "gain": 0.575,
    "m": -19.5,
    "target": -19.5,
-   "peak": -15.8
+   "peak": -15.4
   },
   "vox_wolf_die": {
    "gain": 1,
-   "m": -18.5,
+   "m": -18.4,
    "target": -18.5,
-   "peak": -10.1
+   "peak": -9.8
   },
   "vox_zombie": {
    "gain": 1,
    "m": -19.3,
    "target": -19.5,
-   "peak": -11.8
+   "peak": -11.4
   },
   "vox_zombie_die": {
-   "gain": 1.3233,
+   "gain": 1.3054,
    "m": -18.5,
    "target": -18.5,
-   "peak": -9.6
+   "peak": -9.7
   },
   "walk": {
-   "gain": 6.5816,
+   "gain": 6.573,
    "m": -26.1,
    "target": -26,
-   "peak": -2.8
+   "peak": -2.9
   }
  }
 };

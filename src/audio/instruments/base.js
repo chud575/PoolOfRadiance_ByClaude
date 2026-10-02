@@ -116,7 +116,17 @@ export const cents = (c) => Math.pow(2, c / 1200);
  * so a desperate battle can't outrun the live audio thread.
  */
 const active = new WeakMap();
-export function voiceBudget(ac, t, end, want, min = 2, cap = 110) {
+const caps = new WeakMap();
+/** Default player cap for a context (a whole desperate battle fits under it on a desktop audio thread). */
+export const VOICE_CAP = 110;
+/** Lower (or restore) the player cap of a context — the live engine's load guard does this when the audio thread falls behind. */
+export function setVoiceCap(ac, cap) {
+  caps.set(ac, cap);
+}
+export function voiceCap(ac) {
+  return caps.get(ac) ?? VOICE_CAP;
+}
+export function voiceBudget(ac, t, end, want, min = 2, cap = voiceCap(ac)) {
   let a = active.get(ac);
   if (!a) active.set(ac, (a = []));
   const now = ac.currentTime ?? 0;
@@ -150,4 +160,22 @@ export function kbq(ac, type) {
     /* older engines: a-rate only */
   }
   return b;
+}
+
+/**
+ * An oscillator whose frequency/detune (and anything modulating them:
+ * vibrato, drift, glides) is read once per 128-sample block. Sample-accurate
+ * frequency modulation is the other big per-sample cost of an orchestral
+ * score; vibrato at 5 Hz and 50 ms glides are smooth at a 2.7 ms step (the
+ * phase stays continuous, only the increment updates per block).
+ */
+export function kosc(ac) {
+  const o = ac.createOscillator();
+  try {
+    o.frequency.automationRate = 'k-rate';
+    o.detune.automationRate = 'k-rate';
+  } catch {
+    /* older engines: a-rate only */
+  }
+  return o;
 }

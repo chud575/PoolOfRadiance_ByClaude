@@ -267,4 +267,25 @@ describe('audio director', () => {
       expect(Math.min(...ds.slice(1).map((x, i) => x - ds[i]))).toBeGreaterThanOrEqual(0.2);
     });
   });
+
+  it('places combat sounds where they happen on screen (camera yaw from the scene)', () => {
+    const { bus, d } = setup();
+    bus.emit('scene:enter', { name: 'combat', params: {} });
+    const scene = { cam: { yaw: 0 } };
+    d.attach({ game: null, scenes: { current: scene } });
+    const orc = { id: 'm1', side: 'monster', monsterId: 'orc', x: 9, y: 5 };
+    const hero = { id: 'p1', side: 'party', ref: { name: 'Taran' }, x: 3, y: 5 };
+    const eng = { all: [orc, hero], byId: (id) => [orc, hero].find((c) => c.id === id) };
+    bus.emit('combat:event', { ev: { type: 'attack', id: 'p1', target: 'm1', hit: true }, engine: eng });
+    const hit = d.remapSfx('hit', {}).find(([n]) => n === 'hit');
+    expect(hit[1].pan).toBeGreaterThan(0.3); // the orc stands to the right of the camera
+    // Orbit the camera half way round: the same orc is now on the left.
+    scene.cam.yaw = Math.PI;
+    bus.emit('combat:event', { ev: { type: 'attack', id: 'p1', target: 'm1', hit: true }, engine: eng });
+    expect(d.remapSfx('hit', {}).find(([n]) => n === 'hit')[1].pan).toBeLessThan(-0.3);
+    // No camera, no guess: centred.
+    scene.cam = undefined;
+    bus.emit('combat:event', { ev: { type: 'attack', id: 'p1', target: 'm1', hit: true }, engine: eng });
+    expect(d.remapSfx('hit', {}).find(([n]) => n === 'hit')[1].pan).toBeUndefined();
+  });
 });

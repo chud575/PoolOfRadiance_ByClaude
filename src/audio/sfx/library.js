@@ -9,6 +9,8 @@ import { noiseBuffer, noiseOffset } from '../dsp/bank.js';
 
 /** One-shots with sharp transients that get their own peak limiter (Fx `limit`). */
 export const LIMITED = /^(hit|hit_armor|hit_bone|crit|shield|parry|block|bite|claw|arrow_hit|death|spell_shock|spell_fire|spell_lightning|spell_cone|spell_turn|trap|door|door_close|door_locked|chest|vox_(dragon|ogre|troll|giant)(_die)?)$/;
+/** Large events that get a stereo spread (Fx `wide`): blasts, storms, collapses, the biggest roars. */
+export const WIDE = /^(spell_fire|spell_lightning|spell_cone|spell_cloud|spell_turn|spell_holy|trap|levelup|vox_(dragon|giant)(_die)?)$/;
 
 // ------------------------------------------------------------------ footsteps
 /**

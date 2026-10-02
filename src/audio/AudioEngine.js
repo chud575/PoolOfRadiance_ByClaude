@@ -1,13 +1,15 @@
 import { createGraph } from './graph.js';
 import { TrackPlayer, LOOKAHEAD } from './music/Sequencer.js';
 import { SONGS, STINGERS } from './music/songs.js';
-import { SFX, LIMITED } from './sfx/library.js';
+import { SFX, LIMITED, WIDE } from './sfx/library.js';
 import { Fx } from './sfx/toolkit.js';
 import { Ambience } from './sfx/ambience.js';
 import { AudioRng } from './core/rng.js';
 import { Director } from './director.js';
 import { sfxGain } from './loudness.js';
 import { createInstrument } from './instruments/index.js';
+import { setVoiceCap } from './instruments/base.js';
+import { LoadGuard } from './loadguard.js';
 
 /**
  * Scheduler clock in a Worker: its timer is neither throttled in background
@@ -249,7 +251,7 @@ export class AudioEngine {
     const ui = opts.bus === 'ui';
     const out = ui ? this.graph.uiBus : this.graph.sfxIn;
     const pitch = (opts.pitch ?? 1) * (ui ? 1 : 1 + this.rng.range(-0.03, 0.03));
-    const fx = new Fx(ac, out, this.rng, { pitch, vol: (opts.vol ?? 1) * sfxGain(name === 'step' ? `step_${opts.surface ?? this.env.surface ?? 'cobble'}` : name), pan: opts.pan ?? 0, send: ui ? undefined : this.graph.envSend, sendLevel: opts.reverb ?? 0.3, limit: LIMITED.test(name) });
+    const fx = new Fx(ac, out, this.rng, { pitch, vol: (opts.vol ?? 1) * sfxGain(name === 'step' ? `step_${opts.surface ?? this.env.surface ?? 'cobble'}` : name), pan: opts.pan ?? 0, send: ui ? undefined : this.graph.envSend, sendLevel: opts.reverb ?? 0.3, limit: LIMITED.test(name), wide: WIDE.test(name) && !opts.bus ? 1 : 0 });
     try {
       // Spell chords sound in the key of the score that is playing.
       fn(fx, now + 0.005 + (opts.delay ?? 0), { surface: this.env.surface, key: this.key ?? 2, ...opts });
@@ -398,6 +400,12 @@ export class AudioEngine {
     const ac = this.ctx;
     if (!ac || (ac.state !== 'running' && !this.offlineMode)) return;
     const now = ac.currentTime;
+    // Audio-thread load guard (live only): thin the orchestra if rendering falls behind real time.
+    if (!this.offlineMode) {
+      this.loadGuard ??= new LoadGuard();
+      const cap = this.loadGuard.update(performance.now() / 1000, now, ac.state === 'running');
+      if (cap !== this._cap) setVoiceCap(ac, (this._cap = cap));
+    }
     if (this._warmQ?.length) {
       const t0 = performance.now();
       while (this._warmQ.length && performance.now() - t0 < 5) this._warmQ.shift()();
@@ -429,6 +437,6 @@ export class AudioEngine {
 
   /** Debug snapshot for tools/devtools. */
   debugState() {
-    return { unlocked: !!this.ctx, state: this.state, track: this.currentTrack, intensity: this.intensity, section: this.player?.section ?? null, pass: this.player?.pass ?? null, stinger: this.lastStinger ?? null, env: { ...this.env }, ambience: this.ambState, ctx: this.ctx?.state };
+    return { unlocked: !!this.ctx, state: this.state, track: this.currentTrack, intensity: this.intensity, section: this.player?.section ?? null, pass: this.player?.pass ?? null, stinger: this.lastStinger ?? null, env: { ...this.env }, ambience: this.ambState, ctx: this.ctx?.state, voiceCap: this._cap ?? null, overloads: this.loadGuard?.events ?? 0 };
   }
 }

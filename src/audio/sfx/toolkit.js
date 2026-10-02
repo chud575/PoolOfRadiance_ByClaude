@@ -11,7 +11,7 @@ export class Fx {
    * @param {BaseAudioContext} ac
    * @param {AudioNode} out  destination (bus input)
    * @param {import('../core/rng.js').AudioRng} rng
-   * @param {{pitch?:number, vol?:number, pan?:number, send?:AudioNode, sendLevel?:number}} [o]
+   * @param {{pitch?:number, vol?:number, pan?:number, send?:AudioNode, sendLevel?:number, limit?:boolean, wide?:number}} [o]
    */
   constructor(ac, out, rng, o = {}) {
     this.ac = ac;
@@ -35,6 +35,23 @@ export class Fx {
       lim.release.value = 0.08;
       this.out.connect(lim).connect(p).connect(out);
     } else this.out.connect(p).connect(out);
+    if (o.wide) {
+      // Big events (blasts, thunder, a dragon's roar) fill the space instead of
+      // sitting on one point: two short, darkened early reflections thrown hard
+      // left and right (unequal delays, so the image widens without combing mono).
+      for (const [side, dt, f] of [[-0.95, 0.0131, 5200], [0.95, 0.0197, 4300]]) {
+        const d = ac.createDelay(0.05);
+        d.delayTime.value = dt;
+        const lp = ac.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.value = f;
+        const wg = ac.createGain();
+        wg.gain.value = 0.42 * o.wide;
+        const wp = ac.createStereoPanner();
+        wp.pan.value = side;
+        this.out.connect(d).connect(lp).connect(wg).connect(wp).connect(out);
+      }
+    }
     if (o.send) {
       const s = ac.createGain();
       s.gain.value = o.sendLevel ?? 0.25;

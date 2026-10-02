@@ -1,4 +1,4 @@
-import { Instrument, adsr, cents, voiceBudget, kbq } from './base.js';
+import { Instrument, adsr, cents, voiceBudget, kbq, kosc } from './base.js';
 import { mtof } from '../core/notes.js';
 import { noiseBuffer, noiseOffset } from '../dsp/bank.js';
 
@@ -57,7 +57,7 @@ function wave(ac, name) {
 }
 
 function lfo(ac, t, rate, depth, delay = 0, rampTo = 0.4) {
-  const o = ac.createOscillator();
+  const o = kosc(ac);
   o.frequency.value = rate;
   const g = ac.createGain();
   g.gain.setValueAtTime(0, t);
@@ -242,7 +242,7 @@ export class Strings extends Instrument {
     drive(ac, pr.cs, hill.gain, 10);
     lp.connect(lp2).connect(hill).connect(g);
     if (art === 'trem') {
-      const tr = ac.createOscillator();
+      const tr = kosc(ac);
       tr.type = 'triangle';
       tr.frequency.value = opts.tremRate ?? 13;
       const tg = ac.createGain();
@@ -290,7 +290,7 @@ export class Strings extends Instrument {
     for (let i = 0; i < nv; i++) {
       const pg = ac.createGain();
       pg.connect(deskIn[i % desks]);
-      const o = ac.createOscillator();
+      const o = kosc(ac);
       // Every player's instrument has its own spectrum.
       o.setPeriodicWave(wave(ac, waves[(i + (this.o.seed ?? 0)) % 3]));
       const det = cents(rng.range(-6, 6));
@@ -378,7 +378,7 @@ Strings.prototype._spic = function spic(n, opts = {}) {
   lp.frequency.setTargetAtTime(top * 0.5, n.t + 0.01, 0.04);
   lp.connect(g).connect(this.input);
   for (let k = 0; k < 2; k++) {
-    const o = ac.createOscillator();
+    const o = kosc(ac);
     o.setPeriodicWave(wave(ac, 'bowed'));
     o.frequency.value = f * cents(rng.range(-7, 7));
     const pn = ac.createStereoPanner();
@@ -424,12 +424,15 @@ const TEXTS = {
 const CONSONANTS = ['', 'l', 's', '', 'k', 'n', '', 't', 'l', ''];
 
 /**
- * Choir: two half-sections per note, each with its own formant bank whose
- * frequencies are jittered per section (different singers, different
- * vocal tracts), 2–4 singers each with personal pitch, vibrato and onset.
- * The vowel changes syllable by syllable through a phrase (and drifts inside
- * long notes, ah→oh), and syllables start with soft consonants — s, t, k
- * bursts or an l/n dip — so the choir sings words, not a fixed "aah".
+ * Choir: two half-sections, each with its own vocal tract (a formant bank
+ * jittered per half — different singers, different throats), 2–4 singers per
+ * note in each half with personal pitch, vibrato and onset. The whole choir
+ * sings one text: the vowel changes syllable by syllable (and drifts inside
+ * long notes, ah→oh), syllables start with soft consonants — s, t, k bursts
+ * or an l/n dip — and every note of a chord sings the same syllable, so the
+ * choir sings words, not a fixed "aah". The formant banks are shared by all
+ * the notes of the instrument (one vocal tract per half, not one per note):
+ * a fraction of the audio-thread work for a sustained six-part chord.
  */
 export class Choir extends Instrument {
   constructor(ac, o) {
@@ -441,6 +444,61 @@ export class Choir extends Instrument {
     this.shift = o.formantShift ?? 1;
     this.breath = o.breath ?? 0.06;
     this.syl = 0;
+    this.sylAt = new Map();
+    this.banks = null;
+  }
+
+  /** The two half-sections' vocal tracts (built on first use). */
+  _banks(t) {
+    if (this.banks) return this.banks;
+    const ac = this.ac;
+    const rng = this.rng;
+    const V0 = VOWELS[this.vowel === 'mm' ? 'mm' : this.text[0]];
+    this.banks = [0, 1].map((half) => {
+      const sh = this.shift * (half ? rng.range(1.015, 1.05) : rng.range(0.95, 0.985));
+      const sec = ac.createGain();
+      const pn = ac.createStereoPanner();
+      pn.pan.value = Math.max(-1, Math.min(1, this.center + (half ? 0.32 : -0.32)));
+      sec.connect(pn).connect(this.input);
+      const src = ac.createGain();
+      const bps = [];
+      const fgs = [];
+      for (let fi = 0; fi < 4; fi++) {
+        const bp = kbq(ac);
+        bp.type = 'bandpass';
+        bp.Q.value = V0[fi][2];
+        bp.frequency.setValueAtTime(V0[fi][0] * sh, t);
+        const fg = ac.createGain();
+        fg.gain.setValueAtTime(V0[fi][1] * 3.2, t);
+        src.connect(bp).connect(fg).connect(sec);
+        bps.push(bp);
+        fgs.push(fg);
+      }
+      // Breath air above the formants.
+      const air = kbq(ac);
+      air.type = 'highpass';
+      air.frequency.value = 4500;
+      const ag = ac.createGain();
+      ag.gain.value = 0.3;
+      src.connect(air).connect(ag).connect(sec);
+      return { sh, sec, src, bps, fgs };
+    });
+    return this.banks;
+  }
+
+  /** The syllable sung at `t` (shared by every note that starts within 20 ms of it). */
+  _syllable(t) {
+    const key = Math.round(t * 50);
+    for (const k of [key, key - 1, key + 1]) {
+      const s = this.sylAt.get(k);
+      if (s) return { ...s, fresh: false };
+    }
+    const k = this.syl++;
+    const fixed = this.vowel === 'mm';
+    const s = { v: fixed ? 'mm' : this.text[k % this.text.length], c: fixed ? '' : CONSONANTS[(k * 7 + 3) % CONSONANTS.length] };
+    this.sylAt.set(key, s);
+    if (this.sylAt.size > 256) for (const old of this.sylAt.keys()) if (old < key - 500) this.sylAt.delete(old);
+    return { ...s, fresh: true };
   }
 
   play(t, m, dur, vel = 0.6, opts = {}) {
@@ -456,55 +514,35 @@ export class Choir extends Instrument {
     const total = last.t + last.dur - n0.t;
     const divisi = Math.max(1, opts.divisi ?? 1);
     const nv = voiceBudget(ac, n0.t, last.t + last.dur + 0.8, Math.max(2, Math.round(this.voices / Math.sqrt(divisi))), 2);
-    const g = ac.createGain();
+    const banks = this._banks(n0.t);
     const a = opts.attack ?? Math.min(0.32, 0.3 * n0.dur + 0.04);
-    const end = phraseEnv(g.gain, notes, { a, r: opts.release ?? 0.7, s: 0.94, dip: 0.1, level: (v) => ((0.18 + 0.3 * v) * 0.42) / Math.sqrt(nv) });
-    g.connect(this.input);
-    const syl = notes.map(() => {
-      const k = this.syl++;
-      const fixed = this.vowel === 'mm';
-      return { v: fixed ? 'mm' : this.text[k % this.text.length], c: fixed ? '' : CONSONANTS[(k * 7 + 3) % CONSONANTS.length] };
+    const envO = { a, r: opts.release ?? 0.7, s: 0.94, dip: 0.1, level: (v) => ((0.18 + 0.3 * v) * 0.42) / Math.sqrt(nv) };
+    const syl = notes.map((n) => this._syllable(n.t));
+    // The text: formant moves for each new syllable (both vocal tracts).
+    notes.forEach((n, k) => {
+      const s = syl[k];
+      if (!s.fresh) return;
+      for (const B of banks) {
+        for (let fi = 0; fi < 4; fi++) {
+          const V = VOWELS[s.v][fi];
+          B.bps[fi].frequency.setTargetAtTime(V[0] * B.sh, Math.max(0, n.t - 0.02), 0.035);
+          B.fgs[fi].gain.setTargetAtTime(V[1] * 3.2, Math.max(0, n.t - 0.02), 0.035);
+          // Long notes drift toward a darker vowel (ah → oh, eh → ah …).
+          if (n.dur > 1.2 && s.v !== 'mm') {
+            const to = VOWELS[{ ah: 'oh', eh: 'ah', ee: 'eh', oh: 'oo', oo: 'oh' }[s.v]][fi];
+            B.bps[fi].frequency.setTargetAtTime(V[0] * B.sh * 0.6 + to[0] * B.sh * 0.4, n.t + n.dur * 0.45, n.dur * 0.25);
+          }
+        }
+      }
     });
     const nodes = [];
     const fp = [];
+    let end = 0;
     for (let half = 0; half < 2; half++) {
-      // This half-section's vocal tract.
-      const sh = this.shift * (half ? rng.range(1.015, 1.05) : rng.range(0.95, 0.985));
-      const sec = ac.createGain();
-      const pn = ac.createStereoPanner();
-      pn.pan.value = Math.max(-1, Math.min(1, this.center + (half ? 0.32 : -0.32)));
-      sec.connect(pn).connect(g);
-      const src = ac.createGain();
-      for (let fi = 0; fi < 4; fi++) {
-        const bp = kbq(ac);
-        bp.type = 'bandpass';
-        const V0 = VOWELS[syl[0].v][fi];
-        bp.Q.value = V0[2];
-        bp.frequency.setValueAtTime(V0[0] * sh, n0.t);
-        const fg = ac.createGain();
-        fg.gain.setValueAtTime(V0[1] * 3.2, n0.t);
-        notes.forEach((n, k) => {
-          const V = VOWELS[syl[k].v][fi];
-          if (k) {
-            bp.frequency.setTargetAtTime(V[0] * sh, n.t - 0.02, 0.035);
-            fg.gain.setTargetAtTime(V[1] * 3.2, n.t - 0.02, 0.035);
-          }
-          // Long notes drift toward a darker vowel (ah → oh, eh → ah …).
-          if (n.dur > 1.2 && syl[k].v !== 'mm') {
-            const to = VOWELS[{ ah: 'oh', eh: 'ah', ee: 'eh', oh: 'oo', oo: 'oh' }[syl[k].v]][fi];
-            const t1 = n.t + n.dur * 0.45;
-            bp.frequency.setTargetAtTime(V[0] * sh * 0.6 + to[0] * sh * 0.4, t1, n.dur * 0.25);
-          }
-        });
-        src.connect(bp).connect(fg).connect(sec);
-      }
-      // Breath air above the formants.
-      const air = kbq(ac);
-      air.type = 'highpass';
-      air.frequency.value = 4500;
-      const ag = ac.createGain();
-      ag.gain.value = 0.3;
-      src.connect(air).connect(ag).connect(sec);
+      const B = banks[half];
+      const g = ac.createGain();
+      end = phraseEnv(g.gain, notes, envO);
+      g.connect(B.src);
       // Singers.
       const per = Math.ceil(nv / 2);
       // Every singer is a person: own vibrato (4.8–6.2 Hz, ±15–30 cents,
@@ -515,7 +553,7 @@ export class Choir extends Instrument {
       nodes.push(...wander.map((x) => x.o));
       let pairVib = null;
       for (let i = 0; i < per; i++) {
-        const o = ac.createOscillator();
+        const o = kosc(ac);
         o.setPeriodicWave(wave(ac, 'voice'));
         const det = cents(rng.range(-9, 9));
         o.frequency.setValueAtTime(f * det, n0.t);
@@ -536,15 +574,23 @@ export class Choir extends Instrument {
         const ts = n0.t + rng.range(0, 0.07);
         og.gain.setValueAtTime(0, ts);
         og.gain.linearRampToValueAtTime(rng.range(0.75, 1.1), ts + 0.05);
-        o.connect(og).connect(src);
+        o.connect(og).connect(g);
         o.start(ts);
         nodes.push(o);
       }
-      // Consonant onsets for this half (slightly different timing per half).
-      notes.forEach((n, k) => {
+      // Breath: aspiration through this half's vocal tract.
+      const n = ac.createBufferSource();
+      n.buffer = noiseBuffer(ac, 'pink');
+      const ng = ac.createGain();
+      ng.gain.value = this.breath * n0.vel * 1.6;
+      n.connect(ng).connect(g);
+      n.start(n0.t, noiseOffset(rng, total + 1));
+      nodes.push(n);
+      // Consonant onsets, once per syllable for the whole choir (slightly different timing per half).
+      notes.forEach((nt, k) => {
         const c = syl[k].c;
-        if (!c || n.vel < 0.2) return;
-        const t0 = Math.max(n0.t, n.t - (c === 's' ? 0.07 : 0.02)) + rng.range(0, 0.015);
+        if (!syl[k].fresh || !c || nt.vel < 0.2) return;
+        const t0 = Math.max(n0.t, nt.t - (c === 's' ? 0.07 : 0.02)) + rng.range(0, 0.015);
         const ns = ac.createBufferSource();
         ns.buffer = noiseBuffer(ac, 'white');
         const flt = kbq(ac);
@@ -552,24 +598,17 @@ export class Choir extends Instrument {
         flt.frequency.value = c === 's' ? 5500 : c === 'k' ? 2200 : c === 't' ? 3800 : 900;
         flt.Q.value = c === 's' ? 0.7 : 1.5;
         const cg = ac.createGain();
-        const pk = (c === 's' ? 0.05 : c === 'l' || c === 'n' ? 0.015 : 0.06) * n.vel / Math.sqrt(nv);
+        const pk = (c === 's' ? 0.05 : c === 'l' || c === 'n' ? 0.015 : 0.06) * nt.vel * 0.75;
         const len = c === 's' ? 0.08 : c === 'l' || c === 'n' ? 0.05 : 0.018;
         cg.gain.setValueAtTime(0, t0);
         cg.gain.linearRampToValueAtTime(pk, t0 + Math.min(0.02, len * 0.4));
         cg.gain.linearRampToValueAtTime(0, t0 + len);
-        ns.connect(flt).connect(cg).connect(sec);
+        ns.connect(flt).connect(cg).connect(B.sec);
         ns.start(t0, noiseOffset(rng, 1));
         ns.stop(t0 + len + 0.02);
       });
     }
     glideFreqs(fp, notes, null, { glide: 0.09 });
-    const n = ac.createBufferSource();
-    n.buffer = noiseBuffer(ac, 'pink');
-    const ng = ac.createGain();
-    ng.gain.value = this.breath * n0.vel;
-    n.connect(ng).connect(g);
-    n.start(n0.t, noiseOffset(rng, total + 1));
-    nodes.push(n);
     for (const o of nodes) o.stop(end);
   }
 }
@@ -734,7 +773,8 @@ export class Wind extends Instrument {
       g.connect(this.voicePan(opts.pan));
     }
     // Short stabs: half the section (keeps fast brass figures cheap and tight).
-    const voices = total < 0.5 ? Math.min(2, p.voices ?? 1) : p.voices ?? 1;
+    const wantV = total < 0.5 ? Math.min(2, p.voices ?? 1) : p.voices ?? 1;
+    const voices = wantV > 1 ? voiceBudget(ac, n0.t, last.t + last.dur + rel, wantV, 1) : wantV;
     const fp = [];
     const vibOk = total > p.vib[2] + 0.1;
     const sharedVib = !isBrass && vibOk ? lfo(ac, n0.t, p.vib[0] + rng.range(-0.3, 0.3), f * p.vib[1] * (opts.vib ?? 1), p.vib[2], 0.45) : null;
@@ -743,7 +783,7 @@ export class Wind extends Instrument {
     const brassVib = isBrass && vibOk ? lfo(ac, n0.t, p.vib[0] + rng.range(-0.4, 0.4), f * p.vib[1] * (opts.vib ?? 1), p.vib[2] + rng.range(0, 0.2), 0.5) : null;
     if (brassVib) nodes.push(brassVib.o);
     for (let i = 0; i < voices; i++) {
-      const o = ac.createOscillator();
+      const o = kosc(ac);
       o.setPeriodicWave(wave(ac, p.wave));
       const det = cents(voices > 1 ? rng.range(-5, 5) : 0);
       const t0 = n0.t + (voices > 1 ? rng.range(0, 0.025) : 0);
@@ -778,7 +818,7 @@ export class Wind extends Instrument {
       }
     }
     if (p.tri) {
-      const o = ac.createOscillator();
+      const o = kosc(ac);
       o.type = 'triangle';
       o.frequency.setValueAtTime(f * 2, n0.t);
       glideFreqs([[o.frequency, 2]], notes, null, { glide: 0.045 });
@@ -835,7 +875,7 @@ export class Drone extends Instrument {
     const nodes = [];
     for (const [ratio, det, amp] of [[1, -3, 1], [1, 4, 0.7], [1.5, 0, opts.fifth ?? 0.35]]) {
       if (!amp) continue;
-      const o = ac.createOscillator();
+      const o = kosc(ac);
       o.setPeriodicWave(wave(ac, this.waveName));
       o.frequency.value = f * ratio * cents(det);
       const og = ac.createGain();
@@ -851,7 +891,7 @@ export class Drone extends Instrument {
     if (opts.buzz) {
       // Trompette: the "dog" bridge rattles on every crank stroke — a raspy,
       // hard-clipped copy of the melody string gated by a smoothed pulse.
-      const rasp = ac.createOscillator();
+      const rasp = kosc(ac);
       rasp.type = 'sawtooth';
       rasp.frequency.value = f * 2;
       const pre = ac.createGain();
@@ -870,7 +910,7 @@ export class Drone extends Instrument {
       bp.Q.value = 1.1;
       const gate = ac.createGain();
       gate.gain.value = 0;
-      const pulse = ac.createOscillator();
+      const pulse = kosc(ac);
       pulse.type = 'square';
       pulse.frequency.value = opts.buzz;
       const sm = kbq(ac);
@@ -920,7 +960,7 @@ export class Bell extends Instrument {
     for (const [ratio, amp, dec] of this.b.partials) {
       const fr = f * ratio;
       if (fr > 16000) continue;
-      const o = ac.createOscillator();
+      const o = kosc(ac);
       o.frequency.value = fr * cents(this.rng.range(-3, 3));
       const g = ac.createGain();
       const pk = amp * (0.12 + 0.2 * vel);

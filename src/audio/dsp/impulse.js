@@ -7,7 +7,8 @@ import { AudioRng } from '../core/rng.js';
  * per-channel jitter for width), then a diffuse tail of decorrelated noise with
  * an exponential envelope (T60) whose high frequencies die faster than its lows
  * (a one-pole lowpass whose cutoff slides down over time — air + wall
- * absorption). A gentle highpass keeps the tail from booming.
+ * absorption). The tail decays in three bands (lows longer, highs shorter:
+ * `bass` / `treble` ratios). A gentle highpass keeps the tail from booming.
  */
 export const ROOMS = {
   // name: { t60, pre (s), damp (0 bright … 1 dark), early: count, size (m-ish), width, lowcut, floor (Hz: the
@@ -32,7 +33,7 @@ export const ROOMS = {
 export function impulseData(sr, spec, seed = 7) {
   const r = typeof spec === 'string' ? ROOMS[spec] : spec;
   const rng = new AudioRng(seed);
-  const len = Math.ceil(sr * (r.pre + r.t60 * 1.15));
+  const len = Math.ceil(sr * (r.pre + r.t60 * 1.15 * (r.bass ?? 1.25)));
   const chans = [new Float32Array(len), new Float32Array(len)];
   const pre = Math.floor(r.pre * sr);
   const k = Math.log(1000) / r.t60; // amplitude e-folding so -60 dB at t60
@@ -43,12 +44,28 @@ export function impulseData(sr, spec, seed = 7) {
     let hp = 0;
     let prev = 0;
     const lcA = Math.exp((-2 * Math.PI * r.lowcut) / sr);
+    let bl = 0;
+    let bh = 0;
+    const aLo = Math.exp((-2 * Math.PI * 320) / sr);
+    const aHi = Math.exp((-2 * Math.PI * 3200) / sr);
+    const kLo = k / (r.bass ?? 1.25);
+    const kHi = k / (r.treble ?? 0.6);
+    // Relative to the overall envelope exp(-k t) applied below.
+    const eLo = (t) => Math.exp(-(kLo - k) * t);
+    const eMid = () => 1;
+    const eHi = (t) => Math.exp(-(kHi - k) * t);
     for (let i = pre; i < len; i++) {
       const t = (i - pre) / sr;
       // Cutoff falls from ~sr/2.4 toward a few hundred Hz as the tail ages.
       const fc = (r.floor ?? 300) + (sr / 2.4) * Math.exp(-t * (1.2 + r.damp * 5));
       const a = Math.exp((-2 * Math.PI * fc) / sr);
-      const n = rng.next() * 2 - 1;
+      // Three-band decay: the lows of a stone room ring longer than the mids,
+      // the highs die first (bass ratio ~1.25, treble ratio ~0.6) — a warm,
+      // dense tail instead of one uniformly decaying noise.
+      const w = rng.next() * 2 - 1;
+      bl = (1 - aLo) * w + aLo * bl;
+      bh = (1 - aHi) * w + aHi * bh;
+      const n = bl * eLo(t) + (bh - bl) * eMid(t) + (w - bh) * eHi(t);
       lp = (1 - a) * n + a * lp;
       // DC/low cut
       hp = lcA * (hp + lp - prev);

@@ -1,7 +1,7 @@
 import { createGraph } from './graph.js';
 import { TrackPlayer } from './music/Sequencer.js';
 import { SONGS, STINGERS } from './music/songs.js';
-import { SFX, LIMITED } from './sfx/library.js';
+import { SFX, LIMITED, WIDE } from './sfx/library.js';
 import { Fx } from './sfx/toolkit.js';
 import { Ambience, BEDS } from './sfx/ambience.js';
 import { AudioRng } from './core/rng.js';
@@ -158,7 +158,7 @@ function cueSpec(name, o = {}) {
       trim: true,
       room: 'dungeon',
       setup(ac, g) {
-        const fx = new Fx(ac, UI_SFX.test(id) ? g.uiBus : g.sfxIn, new AudioRng(7), { send: g.envSend, sendLevel: 0.25, vol, limit: LIMITED.test(id) });
+        const fx = new Fx(ac, UI_SFX.test(id) ? g.uiBus : g.sfxIn, new AudioRng(7), { send: g.envSend, sendLevel: 0.25, vol, limit: LIMITED.test(id), wide: WIDE.test(id) ? 1 : 0 });
         fn(fx, 0.08, { surface: 'stone' });
       },
     };

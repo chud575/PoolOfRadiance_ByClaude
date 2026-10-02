@@ -18,15 +18,15 @@ export const BEDS = {
   title: { layers: ['wind:0.5', 'surf:0.6'], events: { gull: 9, bellFar: 40 } },
   town: { layers: ['wind:0.3', 'walla:0.7', 'murmur:0.3', 'surf:0.2'], events: { gull: 9, dog: 22, hammer: 9, cart: 14, callFar: 11, hoof: 19, coinsFar: 13, laughFar: 17 }, night: { layers: ['wind:0.35', 'surf:0.25'], events: { owl: 20, dog: 40, cricket: 3 } } },
   ruins: { layers: ['wind:0.8', 'gusts:0.5'], events: { crow: 14, rubble: 22, creakFar: 16 }, night: { layers: ['wind:0.8', 'gusts:0.5'], events: { owl: 18, rubble: 30, cricket: 4, wolfFar: 60 } } },
-  dungeon: { layers: ['rumble:0.7', 'cave:0.35'], events: { drip: 2.6, chain: 35, moanFar: 55, rubble: 40 } },
+  dungeon: { layers: ['rumble:0.35', 'cave:0.5', 'seep:0.6'], events: { drip: 2.6, chain: 35, moanFar: 55, rubble: 40 } },
   crypt: { layers: ['wind:0.55', 'cave:0.2'], events: { crow: 18, bellFar: 45, moanFar: 40 }, night: { layers: ['wind:0.6'], events: { owl: 12, moanFar: 30, cricket: 4 } } },
   wilds: { layers: ['wind:0.55', 'leaves:0.5'], events: { bird: 3.5, crow: 30 }, night: { layers: ['wind:0.45', 'leaves:0.3'], events: { cricket: 1.5, owl: 15, wolfFar: 45 } } },
   camp: { layers: ['fire:0.8', 'wind:0.25'], events: { crackle: 0.5, pop: 3, bird: 6 }, night: { layers: ['fire:0.8', 'wind:0.2'], events: { crackle: 0.5, pop: 3, cricket: 1.6, owl: 25 } } },
   // Resting underground: the fire, the drip of the deep, a far rumble — no crickets, no owls.
-  camp_in: { layers: ['fire:0.75', 'cave:0.3', 'rumble:0.35'], events: { crackle: 0.5, pop: 3, drip: 3.5, rubble: 45 } },
-  interior: { layers: ['room:0.5', 'roomtone:0.6', 'fire:0.18'], events: { creakFar: 12, footFar: 16, clink: 9, crackle: 2.5 } },
+  camp_in: { layers: ['fire:0.75', 'cave:0.3', 'rumble:0.2', 'seep:0.3'], events: { crackle: 0.5, pop: 3, drip: 3.5, rubble: 45 } },
+  interior: { layers: ['room:0.2', 'roomtone:0.9', 'fire:0.18'], events: { creakFar: 12, footFar: 16, clink: 9, crackle: 2.5 } },
   combat_out: { layers: ['wind:0.45', 'gusts:0.35', 'leaves:0.25'], events: { crow: 20, rubble: 30 } },
-  combat_in: { layers: ['rumble:0.5', 'cave:0.2'], events: { drip: 6 } },
+  combat_in: { layers: ['rumble:0.3', 'cave:0.35', 'seep:0.5'], events: { drip: 6 } },
   silence: { layers: [], events: {} },
 };
 
@@ -85,6 +85,10 @@ export class Ambience {
     n.playbackRate.value = this.rng.range(0.94, 1.06);
     n.start(t, noiseOffset(this.rng, 3));
     this.nodes.push(n);
+    // Brown noise piles its energy below 40 Hz (and drifts like DC): rumble you
+    // can't hear on a laptop and that eats the bed's headroom. Keep the
+    // audible weight (45–200 Hz) and drop the sub.
+    if (kind === 'brown') return n.connect(this._filter('highpass', 42, 0.6)).connect(this._filter('highpass', 42, 0.6));
     return n;
   }
 
@@ -192,6 +196,20 @@ export class Ambience {
         g.gain.value = 0.09 * lvl;
         this._lfo(t, 0.05, 0.035 * lvl, g.gain);
         this._stereo(g, (j) => this._noise(t, 'brown').connect(this._filter('lowpass', 110 * j, 0.8)));
+        return;
+      }
+      case 'seep': {
+        // Water finding its way through the stone somewhere off in the dark: a
+        // thin trickle whose babble is noise-modulated noise, a different seam in each ear.
+        g.gain.value = 0.09 * lvl;
+        this._stereo(g, (j) => {
+          const am = ac.createGain();
+          am.gain.value = 0.35;
+          const mod = ac.createGain();
+          mod.gain.value = 9;
+          this._noise(t, 'white').connect(this._filter('lowpass', 18 * j, 0.7)).connect(mod).connect(am.gain);
+          return this._noise(t, 'white').connect(this._filter('bandpass', 2300 * j, 1.4)).connect(this._filter('lowpass', 5200 * j, 0.6)).connect(am);
+        });
         return;
       }
       case 'cave': {

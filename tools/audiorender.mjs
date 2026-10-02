@@ -13,7 +13,9 @@
  * --wiring     load gallery scenes with ?audio=1 (unmuted debug mode, autoplay allowed) and check
  *              that each one drives the expected music state / ambience (scene → music wiring).
  * --perf      play title, town and the battle cue (intensity 1, with blows and voices) in a realtime
- *             AudioContext for 20 s each and report audio-thread load (renderCapacity / underruns).
+ *             AudioContext for 20 s each and report audio-thread load (renderCapacity / underruns,
+ *             audio-clock lag vs wall clock, and the live load guard's voice cap). Fails if audio
+ *             still lags real time once the guard has adapted (second 10 s).
  * --list      print the cue names and exit       --out DIR  output directory (default audio_out)
  * --help      this text. Unknown flags are an error.
  * Prints peak / RMS (dBFS), integrated + momentary-max loudness (LUFS), the LRA-ish momentary
@@ -154,12 +156,17 @@ async function perf() {
         if (k % 4 === 0) e._sfx('vox_orc', {});
         if (k % 7 === 0) e._sfx('spell_fire', {});
       }, 400) : null;
-      await new Promise((res) => setTimeout(res, 20000));
+      await new Promise((res) => setTimeout(res, 10000));
+      const w1 = performance.now();
+      const a1 = ac.currentTime;
+      await new Promise((res) => setTimeout(res, 10000));
+      const late = { wall: (performance.now() - w1) / 1000, audio: ac.currentTime - a1 };
+      const dbg = e.debugState();
       clearInterval(iv);
       if (bv) clearInterval(bv);
       const wall = (performance.now() - t0) / 1000;
       const ps = ac.playbackStats ? { underrunEvents: ac.playbackStats.underrunEvents, underrunDuration: ac.playbackStats.underrunDuration } : null;
-      const out = { wall, audio: ac.currentTime - ct0, loads, ps };
+      const out = { wall, audio: ac.currentTime - ct0, loads, ps, late, cap: dbg.voiceCap, overloads: dbg.overloads };
       await ac.close();
       return out;
     }, { state, intensity, blows });
@@ -167,9 +174,11 @@ async function perf() {
     const peak = r.loads.length ? Math.max(...r.loads.map((l) => l[1])) : null;
     const under = r.loads.length ? Math.max(...r.loads.map((l) => l[2])) : null;
     const lag = r.wall - r.audio;
-    const ok = (under === null || under < 0.01) && lag < 0.5;
+    // Settled: once the load guard has adapted (second 10 s), audio must keep pace with real time.
+    const lateLag = r.late.wall - r.late.audio;
+    const ok = (under === null || under < 0.01) && lateLag < 0.15;
     if (!ok) bad++;
-    console.log(`${ok ? 'OK  ' : 'SLOW'} ${state.padEnd(8)} wall ${r.wall.toFixed(1)}s audio ${r.audio.toFixed(1)}s  load avg ${avg === null ? '-' : (avg * 100).toFixed(0) + '%'} peak ${peak === null ? '-' : (peak * 100).toFixed(0) + '%'} underrun ${under === null ? '-' : (under * 100).toFixed(1) + '%'}${r.ps ? `  playbackStats ${JSON.stringify(r.ps)}` : ''}`);
+    console.log(`${ok ? 'OK  ' : 'SLOW'} ${state.padEnd(8)} wall ${r.wall.toFixed(1)}s audio ${r.audio.toFixed(1)}s  load avg ${avg === null ? '-' : (avg * 100).toFixed(0) + '%'} peak ${peak === null ? '-' : (peak * 100).toFixed(0) + '%'} underrun ${under === null ? '-' : (under * 100).toFixed(1) + '%'}  lag ${lag.toFixed(2)}s (settled ${lateLag.toFixed(2)}s)  voice cap ${r.cap ?? '-'} (${r.overloads} cuts)${r.ps ? `  playbackStats ${JSON.stringify(r.ps)}` : ''}`);
   }
   for (const e of errs) console.error('[error]', e);
   await b.close();
