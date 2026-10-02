@@ -13,7 +13,7 @@ import { buildCamp } from './CampBackdrop.js';
 import { useRenderer } from '../../ui/components/Miniature.js';
 import { UINav } from '../../ui/components/uiNav.js';
 import { setPortraitSync, portraitsPending } from '../../ui/components/lazyPortrait.js';
-import { warmPortraits } from '../../ui/components/portrait3d.js';
+import { warmPortraitPainter } from '../../ui/components/portraitPainter.js';
 
 const CURES = ['cureSeriousWounds', 'cureLightWounds'];
 
@@ -27,7 +27,7 @@ export default class CampScene extends Scene {
     const { render, game } = this.ctx;
     useRenderer(render.renderer);
     setPortraitSync(!!this.ctx.debug?.frozen);
-    if (!this.ctx.debug?.frozen) warmPortraits();
+    if (!this.ctx.debug?.frozen) warmPortraitPainter();
     this.params = params;
     // Casters with no chosen spells get a sensible load-out (they can change it in MAGIC).
     for (const ch of game.party) if (castingClassesOf(ch).length && !Object.values(ch.spells?.prepared ?? {}).some((l) => l.length)) autoPrepare(ch);
@@ -507,7 +507,7 @@ export default class CampScene extends Scene {
     if (!this.ctx.debug?.frozen && this._lastWall != null) {
       const now = performance.now();
       const modal = this.ctx.ui.layers.modal.children.length > 0;
-      const gap = modal || portraitsPending() ? 500 : this._slow ? 120 : 0;
+      const gap = this._slow && portraitsPending() ? 6000 : modal || portraitsPending() ? 500 : this._slow ? 120 : 0;
       if (gap && now - this._lastWall < gap) return;
     }
     this._lastRender = t;
@@ -516,6 +516,13 @@ export default class CampScene extends Scene {
     // campfire at ~8 fps from then on, so the DOM panels and dialogs stay responsive.
     if (this._lastWall != null) this._slowRun = now - this._lastWall > 110 ? (this._slowRun ?? 0) + 1 : 0;
     this._slow = this._slow || (this._slowRun ?? 0) >= 3;
+    // A software GPU redraws the shadow maps only every fourth frame (the hall barely moves).
+    const sm = this.ctx.render.renderer.shadowMap;
+    if (this._slow && !this.ctx.debug?.frozen) {
+      sm.autoUpdate = false;
+      this._shadowTick = ((this._shadowTick ?? 0) + 1) % 4;
+      if (this._shadowTick === 1) sm.needsUpdate = true;
+    }
     super.render();
     this._lastWall = now;
   }
@@ -544,6 +551,7 @@ export default class CampScene extends Scene {
   }
 
   exit() {
+    this.ctx.render.renderer.shadowMap.autoUpdate = true;
     this.view?.close();
     this.busy?.panel?.remove();
     this.camp?.dispose();

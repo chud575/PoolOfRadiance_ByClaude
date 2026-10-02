@@ -14,7 +14,8 @@ export const PORTRAIT_W = 300;
 export const PORTRAIT_H = 375;
 
 import { SKIN_TONES, RACE_SKINS, HAIR_COLORS, EYE_COLORS, CLOTH_COLORS, HEADS, BODIES, defaultLook, rngFrom, hashNum, appearanceKey } from './lookData.js';
-import { renderPortrait3D, renderPortrait3DAsync } from './portrait3d.js';
+import { renderPortraitWith, renderPortraitBanded } from './portraitGL.js';
+import { offscreen } from './Miniature.js';
 import { storedPortrait, storePortrait } from './portraitStore.js';
 
 export { SKIN_TONES, RACE_SKINS, HAIR_COLORS, EYE_COLORS, CLOTH_COLORS, HEADS, BODIES, defaultLook };
@@ -1447,10 +1448,34 @@ export function paintPost(g, R, W, H) {
  */
 export function paintPortrait(ch, o = {}) {
   if (!o.flat) {
-    const c3 = renderPortrait3D(ch, o);
-    if (c3) return c3;
+    try {
+      const off = offscreen();
+      if (off) return renderPortraitWith(off.renderer, ch, o);
+    } catch (err) {
+      console.warn('portrait', err);
+    }
   }
   return paintPortrait2D(ch, o);
+}
+
+/**
+ * Warm the portrait painter: compile its shader with a tiny portrait now (while a scene loads),
+ * not on the first click. Cheap on a real GPU; under software GL it runs in the background.
+ */
+let lane = Promise.resolve();
+/** Banded portraits share render targets: run them one at a time. */
+function banded(ch, o) {
+  const off = offscreen();
+  if (!off) return Promise.resolve(null);
+  const run = lane.then(() => renderPortraitBanded(off.renderer, ch, o));
+  lane = run.then(() => {}, () => {});
+  return run;
+}
+let warmed = null;
+export function warmPortraitPainter() {
+  if (warmed) return warmed;
+  warmed = banded({ race: 'human', gender: 'male', classSpec: 'fighter', name: 'warm', look: { seed: 1 } }, { scale: 0.08, oil: false }).then(() => {}, () => {});
+  return warmed;
 }
 
 /** The original all-2D painter (fallback without WebGL). */
@@ -1572,7 +1597,10 @@ export function portraitURLAsync(ch, scale = 1, o = {}) {
     if (stored) { remember(key, stored, false); return stored; }
     const small = await fromLarger(ch, scale, crop);
     if (small) { remember(key, small); return small; }
-    const c = await renderPortrait3DAsync(ch, { scale, crop });
+    // Painted in bands across ticks (the ray-marched pass yields to the game's own frames between
+    // them): no single long stall, even on a software GPU.
+    let c = null;
+    try { c = await banded(ch, { scale, crop }); } catch (err) { console.warn('portrait', err); }
     const u = (c ?? paintPortrait2D(ch, { scale, crop })).toDataURL('image/png');
     remember(key, u);
     return u;

@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { renderPortrait3D } from '../../../ui/components/portrait3d.js';
 import { createHead } from '../../../ui/components/headShader.js';
 import { resolveAppearance } from '../../../ui/components/lookData.js';
 import { offscreen } from '../../../ui/components/Miniature.js';
 import { renderToCanvas } from '../../../ui/components/paintPass.js';
+import { renderPortraitWith } from '../../../ui/components/portraitGL.js';
 
 export async function current(chars, o = {}) {
   window.__NOHEAD = !!o.nohead;
@@ -16,7 +16,7 @@ export async function current(chars, o = {}) {
   const t = [];
   for (const ch of chars) {
     const t0 = performance.now();
-    images.push(renderPortrait3D({ classSpec: 'fighter', name: 'X', ...ch }, { scale: o.scale ?? 1, crop: o.crop, brush: o.brush, paint: o.paint }));
+    images.push(renderPortraitWith(offscreen().renderer, { classSpec: 'fighter', name: 'X', ...ch }, { scale: o.scale ?? 1, crop: o.crop }));
     t.push(Math.round(performance.now() - t0));
   }
   if (o.sheet) return { images: [sheet(images, o.cols ?? images.length)], info: t };
@@ -87,26 +87,6 @@ export async function heads(chars, o = {}) {
   return { images, info: t };
 }
 
-export async function warmtest(chars, o = {}) {
-  const { warmPortraits } = await import('../../../ui/components/portrait3d.js');
-  const off = offscreen();
-  const gl = off.renderer.getContext();
-  const info = { ext: !!gl.getExtension('KHR_parallel_shader_compile') };
-  let t0 = performance.now();
-  await warmPortraits();
-  info.warm = Math.round(performance.now() - t0);
-  info.programsAfterWarm = off.renderer.info.programs.length;
-  t0 = performance.now();
-  const img = renderPortrait3D({ race: 'dwarf', gender: 'female', classSpec: 'fighter', name: 'X', look: { seed: 5 } }, { scale: 0.3 });
-  info.first = Math.round(performance.now() - t0);
-  info.programsAfterFirst = off.renderer.info.programs.length;
-  info.keys = off.renderer.info.programs.map((p) => p.name + ':' + (p.cacheKey ?? '').length);
-  t0 = performance.now();
-  renderPortrait3D({ race: 'elf', gender: 'female', classSpec: 'fighter', name: 'X', look: { seed: 6 } }, { scale: 1 });
-  info.second = Math.round(performance.now() - t0);
-  return { images: [img], info };
-}
-
 export async function icons(names, o = {}) {
   const { itemIconURL } = await import('../../../ui/components/itemIcons.js');
   const sz = o.size ?? 96;
@@ -124,4 +104,58 @@ export async function icons(names, o = {}) {
     g.drawImage(img, (i % cols) * sz, Math.floor(i / cols) * sz, sz, sz);
   }
   return { images: [c], info: [] };
+}
+
+export async function flat(chars, o = {}) {
+  const { paintPortrait } = await import('../../../ui/components/portraitPainter.js');
+  const images = chars.map((ch) => paintPortrait({ classSpec: 'fighter', name: 'X', ...ch }, { flat: true, scale: o.scale ?? 1 }));
+  return { images: [sheet(images, o.cols ?? images.length)], info: [] };
+}
+
+export async function gl(chars, o = {}) {
+  const { renderPortraitWith } = await import('../../../ui/components/portraitGL.js');
+  const renderPortraitGL = (c, oo) => renderPortraitWith(offscreen().renderer, c, oo);
+  const images = [];
+  const info = [];
+  for (const ch of chars) {
+    for (const v of o.views ?? [{}]) {
+      const t0 = performance.now();
+      images.push(renderPortraitGL({ classSpec: 'fighter', name: 'X', ...ch }, { scale: o.scale ?? 1, ...o, ...v }));
+      const { portraitStats } = await import('../../../ui/components/portraitGL.js');
+      info.push(Math.round(performance.now() - t0) + ' m' + portraitStats.march + ' p' + portraitStats.post + ' g' + portraitStats.gpu + ' o' + portraitStats.oil);
+    }
+  }
+  return { images: [sheet(images, o.cols ?? images.length)], info };
+}
+
+export async function workertest(chars, o = {}) {
+  const { portraitURLAsync } = await import('../../../ui/components/portraitPainter.js');
+  const info = [];
+  const images = [];
+  for (const ch of chars) {
+    const t0 = performance.now();
+    const url = await portraitURLAsync({ classSpec: 'fighter', name: 'X', ...ch }, o.scale ?? 0.46, { crop: o.crop ?? 'head' });
+    info.push(Math.round(performance.now() - t0));
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    const c = document.createElement('canvas');
+    c.width = img.width; c.height = img.height;
+    c.getContext('2d').drawImage(img, 0, 0);
+    images.push(c);
+  }
+  return { images: [sheet(images, images.length)], info };
+}
+
+export async function minitime(chars, o = {}) {
+  const { buildMiniature } = await import('../../../ui/components/Miniature.js');
+  const info = [];
+  for (const ch of chars) {
+    const t0 = performance.now();
+    const f = buildMiniature({ classSpec: 'fighter', name: 'X', ...ch }, { pose: 'stand', rayHead: true, headGain: 0.9, ...o });
+    info.push(Math.round(performance.now() - t0));
+    f.userData.dispose?.();
+  }
+  const c = document.createElement('canvas'); c.width = 10; c.height = 10;
+  return { images: [c], info };
 }

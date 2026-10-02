@@ -15,9 +15,9 @@ import { portraitEl, miniPortrait, abilityMods } from '../../ui/components/Chara
 import { openCharacterView } from '../../ui/components/CharacterView.js';
 import { STAT_TIPS, ALIGNMENT_TEXT, levelLimitText, abilityTip } from '../../ui/components/rulesText.js';
 import { buildMiniature, miniatureEnvironment, useRenderer } from '../../ui/components/Miniature.js';
-import { warmPortraits } from '../../ui/components/portrait3d.js';
+import { warmPortraitPainter } from '../../ui/components/portraitPainter.js';
 import { UINav } from '../../ui/components/uiNav.js';
-import { portraitImg, setPortraitSync } from '../../ui/components/lazyPortrait.js';
+import { portraitImg, setPortraitSync, portraitsPending } from '../../ui/components/lazyPortrait.js';
 import { bodyShowsArmor } from '../../ui/components/lookData.js';
 import { ITEMS } from '../../data/items.js';
 import { itemName } from '../../rules/items.js';
@@ -52,11 +52,11 @@ export default class CreateScene extends Scene {
     const { render } = this.ctx;
     useRenderer(render.renderer);
     setPortraitSync(!!this.ctx.debug?.frozen);
-    // Link the ray-marched portrait shader in the background now, not on the first click.
+    // Start the portrait painter (its own GL context in a worker, the shader compiled there) before
+    // the hall claims the GPU, so the first portrait a player asks for does not wait on it.
+    if (!this.ctx.debug?.frozen) warmPortraitPainter();
     this.rng = this.ctx.rng;
     await this._build3d();
-    // Link the ray-marched portrait shader while the hall loads, not on the first click.
-    if (!this.ctx.debug?.frozen) await warmPortraits();
     this.post = { bloomStrength: 0.5, bloomThreshold: 0.92, vignette: 0.62, exposure: 1.08 };
 
     this.newParty = [...this.ctx.game.party];
@@ -323,6 +323,7 @@ export default class CreateScene extends Scene {
       }
       this._retireAt = (this._frameNo ?? 0) + 2;
       const f = buildMiniature({ ...d, look: { ...d.look } }, { pose: 'stand', rayHead: true, headGain: 0.9 });
+      this._dirty3d = true;
       f.scale.setScalar(1.42);
       this.figureRoot.add(f);
     };
@@ -961,11 +962,33 @@ export default class CreateScene extends Scene {
     this._frameCamera();
   }
 
-  /** Behind a full-screen VIEW the hall is only glimpsed: redraw it twice a second. */
+  /**
+   * Behind a full-screen VIEW the hall is only glimpsed: redraw it twice a second. On a slow
+   * (software) GPU it is redrawn when the miniature changes and otherwise every few seconds.
+   */
   render() {
     const t = this.ctx.clock.time;
     if (this._viewOpen && this._lastRender != null && Math.abs(t - this._lastRender) < 0.5) return;
+    // On a slow (software) GPU the hall is drawn a few times a second, and less while portraits
+    // are being painted, so the panels — and the portrait painter sharing the GPU — stay responsive.
+    if (!this.ctx.debug?.frozen && this._lastWall != null) {
+      const now = performance.now();
+      const gap = this._slow ? (portraitsPending() ? 6000 : this._dirty3d ? 0 : 2500) : 0;
+      if (gap && now - this._lastWall < gap) return;
+    }
+    const wall = performance.now();
+    if (this._lastWall != null) this._slowRun = wall - this._lastWall > 110 ? (this._slowRun ?? 0) + 1 : 0;
+    this._slow = this._slow || (this._slowRun ?? 0) >= 3;
+    this._lastWall = wall;
     this._lastRender = t;
+    // A software GPU redraws the shadow maps only every fourth frame (the hall barely moves).
+    const sm = this.ctx.render.renderer.shadowMap;
+    if (this._slow && !this.ctx.debug?.frozen) {
+      sm.autoUpdate = false;
+      this._shadowTick = ((this._shadowTick ?? 0) + 1) % 4;
+      if (this._shadowTick === 1 || this._dirty3d) sm.needsUpdate = true;
+    }
+    this._dirty3d = false;
     super.render();
     this._frameNo = (this._frameNo ?? 0) + 1;
     if (this._retired?.length && this._frameNo >= this._retireAt) {
@@ -998,6 +1021,7 @@ export default class CreateScene extends Scene {
   }
 
   exit() {
+    this.ctx.render.renderer.shadowMap.autoUpdate = true;
     this._gone = true;
     for (const c of this.figureRoot?.children ?? []) c.userData.dispose?.();
     for (const c of this._retired ?? []) c.userData.dispose?.();
