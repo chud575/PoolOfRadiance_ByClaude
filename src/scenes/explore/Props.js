@@ -75,12 +75,14 @@ export function buildProps(map, block, opts = {}) {
       const sc = (0.2 + hash(seed, i, 'rs') * 0.55) * big * (1 - (r / spread) * 0.6) * (i < 2 ? 1.5 : 1);
       const chunk = hash(seed, i, 'ck') < 0.3;
       const geo = chunk ? geos.chunk[i % geos.chunk.length] : geos.rock[i % geos.rock.length];
-      const mm = m.clone().multiply(new THREE.Matrix4().makeTranslation(Math.cos(a) * r, sc * 0.17, Math.sin(a) * r * 0.6));
+      // bedded into the ground (a third of each stone buried), never perched on it
+      const mm = m.clone().multiply(new THREE.Matrix4().makeTranslation(Math.cos(a) * r, sc * 0.04, Math.sin(a) * r * 0.6));
       mm.multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler((hash(seed, i, 'x') - 0.5) * 0.5, hash(seed, i, 'y') * 6.3, (hash(seed, i, 'z') - 0.5) * 0.5)));
       mm.multiply(new THREE.Matrix4().makeScale(sc, sc * 0.7, sc));
-      const t = 0.72 + hash(seed, i, 'tn') * 0.4;
+      const t = 0.58 + hash(seed, i, 'tn') * 0.32;
       const warm = hash(seed, i, 'tw') - 0.5;
-      g.geometry(chunk ? chunkKey : 'prop_rock', geo, mm, { uv: 'world', tint: [t * (1 + warm * 0.08), t, t * (1 - warm * 0.1)], ao: (p) => 0.55 + 0.45 * THREE.MathUtils.smoothstep(p.y, 0.0, 0.35) });
+      // contact occlusion: dark where the stone meets the ground and its neighbours
+      g.geometry(chunk ? chunkKey : 'prop_rock', geo, mm, { uv: 'world', tint: [t * (1 + warm * 0.08), t, t * (1 - warm * 0.1)], ao: (p) => 0.3 + 0.7 * THREE.MathUtils.smoothstep(p.y, 0.0, 0.32) });
     }
     const c = new THREE.Vector3().applyMatrix4(m);
     blob(c.x, c.z, spread * 1.1 + 0.25, 0.62);
@@ -318,7 +320,7 @@ export function buildProps(map, block, opts = {}) {
         const m = new THREE.Matrix4().makeTranslation(px, 0.01, pz).multiply(new THREE.Matrix4().makeRotationY(hash(fc.x, fc.y, k, 'lr') * 6.3));
         if (kind < 0.5) {
           const sc = 0.05 + hash(fc.x, fc.y, k, 'ls') * 0.07;
-          g.geometry('prop_rock', geos.pebble, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, sc * 0.15, 0)).multiply(new THREE.Matrix4().makeScale(sc, sc * 0.6, sc)), { uv: 'world', tint: [0.8, 0.78, 0.74], ao: 0.8 });
+          g.geometry('prop_rock', geos.pebble, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, sc * 0.15, 0)).multiply(new THREE.Matrix4().makeScale(sc, sc * 0.6, sc)), { uv: 'world', tint: [0.6, 0.58, 0.54], ao: 0.7 });
         } else if (kind < 0.85) {
           addStraw(m, hash(fc.x, fc.y, k, 'sw'), 7, [1.2, 1.05, 0.6]);
         } else {
@@ -419,12 +421,25 @@ export function buildProps(map, block, opts = {}) {
       }
       if (fc.x % 2 === 0) {
         const bm = new THREE.Matrix4().makeTranslation(cx + (hash(fc.x, 'bo') - 0.5), 0, ez);
-        const post = new THREE.CylinderGeometry(0.14, 0.17, 0.62, 10);
-        g.geometry('prop_iron', post, bm.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.31, 0)), { uv: 'world' });
+        // a squared oak mooring post: rope-worn waist, pyramid-chamfered top, an iron strap, a slight lean
+        bm.multiply(new THREE.Matrix4().makeRotationY(hash(fc.x, 'bry') * 0.6)).multiply(new THREE.Matrix4().makeRotationZ((hash(fc.x, 'brz') - 0.5) * 0.06));
+        const post = new THREE.CylinderGeometry(0.15, 0.17, 0.78, 4, 3);
+        post.rotateY(Math.PI / 4);
+        const pp = post.attributes.position;
+        for (let i = 0; i < pp.count; i++) {
+          const yy = pp.getY(i);
+          const waist = 1 - 0.14 * Math.exp(-Math.pow((yy - 0.05) / 0.12, 2)); // worn by the lines
+          pp.setX(i, pp.getX(i) * waist);
+          pp.setZ(i, pp.getZ(i) * waist);
+        }
+        post.computeVertexNormals();
+        g.geometry('prop_wood', post, bm.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.37, 0)), { uv: 'world', tint: [0.55, 0.48, 0.42], ao: (p) => 0.5 + 0.5 * THREE.MathUtils.smoothstep(p.y, 0.0, 0.3) });
         post.dispose();
-        const cap = new THREE.SphereGeometry(0.19, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2);
-        g.geometry('prop_iron', cap, bm.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.6, 0)), { uv: 'world' });
+        const cap = new THREE.CylinderGeometry(0.03, 0.15, 0.09, 4);
+        cap.rotateY(Math.PI / 4);
+        g.geometry('prop_wood', cap, bm.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.8, 0)), { uv: 'world', tint: [0.4, 0.36, 0.32] });
         cap.dispose();
+        g.box('prop_iron', { matrix: bm.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.62, 0)), s: [0.27, 0.05, 0.27] });
         if (hash(fc.x, 'rope') < 0.6) {
           const rope = new THREE.TorusGeometry(0.22, 0.045, 6, 16);
           g.geometry('prop_burlap', rope, bm.clone().multiply(new THREE.Matrix4().makeTranslation(0.45, 0.05, -0.2)).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2)), { uv: 'world' });

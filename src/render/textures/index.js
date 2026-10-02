@@ -1325,3 +1325,119 @@ function getWindowSkyTexture() {
     }
   });
 }
+
+/**
+ * Rain runoff below a ledge (sill, string course, cornice), alpha in luminance. u tiles
+ * horizontally (≈1 m per repeat); v runs from the ledge (v=0, top) down. Many thin drip
+ * streaks of uneven length and weight, a darker wash right under the ledge, ragged ends.
+ */
+export function getRunoffTexture() {
+  return canvasTex('runoff', 256, 512, (g, w, h) => {
+    const r = rng(1201);
+    g.fillStyle = '#000';
+    g.fillRect(0, 0, w, h);
+    // the wet band straight under the drip edge
+    const band = g.createLinearGradient(0, 0, 0, h * 0.22);
+    band.addColorStop(0, 'rgba(255,255,255,0.55)');
+    band.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = band;
+    g.fillRect(0, 0, w, h * 0.22);
+    // streaks: drawn three times shifted by ±w so they wrap seamlessly in u
+    const streaks = [];
+    for (let i = 0; i < 110; i++) {
+      const len = Math.pow(r(), 1.6) * 0.95 + 0.05;
+      streaks.push({ x: r() * w, wd: 0.6 + Math.pow(r(), 3) * 9, len, a: 0.05 + r() * 0.22 * (1.2 - len * 0.5), wob: r() * 6.28 });
+    }
+    for (const s of streaks) {
+      for (const off of [-w, 0, w]) {
+        const L = s.len * h;
+        const gr = g.createLinearGradient(0, 0, 0, L);
+        gr.addColorStop(0, `rgba(255,255,255,${s.a})`);
+        gr.addColorStop(0.7, `rgba(255,255,255,${s.a * 0.6})`);
+        gr.addColorStop(1, 'rgba(255,255,255,0)');
+        g.fillStyle = gr;
+        g.beginPath();
+        const x0 = s.x + off;
+        g.moveTo(x0 - s.wd / 2, 0);
+        for (let y = 0; y <= L; y += 8) g.lineTo(x0 - s.wd / 2 * (1 - (y / L) * 0.6) + Math.sin(y * 0.02 + s.wob) * 1.5, y);
+        for (let y = L; y >= 0; y -= 8) g.lineTo(x0 + s.wd / 2 * (1 - (y / L) * 0.6) + Math.sin(y * 0.02 + s.wob) * 1.5, y);
+        g.closePath();
+        g.fill();
+      }
+    }
+  }, { srgb: false, repeat: true });
+}
+
+/**
+ * Ground splash and rising damp at a wall foot, alpha in luminance. u tiles (≈2 m); v=0 at the
+ * ground, v=1 at the top of the band (≈0.9 m). Dense at the ground, a ragged tide line, mud
+ * splash flecks thrown up the wall.
+ */
+export function getPlinthGrimeTexture() {
+  return canvasTex('plinth_grime', 512, 256, (g, w, h) => {
+    const r = rng(1301);
+    g.fillStyle = '#000';
+    g.fillRect(0, 0, w, h);
+    // canvas y down: ground at the bottom row (v=0 maps to the bottom with flipY)
+    const base = g.createLinearGradient(0, h, 0, 0);
+    base.addColorStop(0, 'rgba(255,255,255,0.85)');
+    base.addColorStop(0.25, 'rgba(255,255,255,0.5)');
+    base.addColorStop(0.6, 'rgba(255,255,255,0.12)');
+    base.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = base;
+    g.fillRect(0, 0, w, h);
+    // ragged damp tide line: wrapped lobes
+    for (let i = 0; i < 60; i++) {
+      const x = r() * w;
+      const top = h * (0.35 + r() * 0.35);
+      const rad = 10 + r() * 40;
+      for (const off of [-w, 0, w]) {
+        const gr = g.createRadialGradient(x + off, top, 0, x + off, top, rad);
+        gr.addColorStop(0, `rgba(255,255,255,${0.1 + r() * 0.12})`);
+        gr.addColorStop(1, 'rgba(255,255,255,0)');
+        g.fillStyle = gr;
+        g.fillRect(x + off - rad, top - rad, rad * 2, h);
+      }
+    }
+    // splash flecks
+    for (let i = 0; i < 1400; i++) {
+      const t = Math.pow(r(), 2.2);
+      const y = h - t * h * 0.9;
+      g.fillStyle = `rgba(255,255,255,${(0.08 + r() * 0.3) * (1 - t)})`;
+      const s = 1 + r() * 2.5;
+      g.fillRect(r() * w, y, s, s * (0.7 + r() * 0.8));
+    }
+  }, { srgb: false, repeat: true });
+}
+
+/**
+ * Cart rut along a street (alpha in luminance): a worn track across v (centre = v 0.5), tiling
+ * in u (≈3 m). Broken, uneven edges; darker, polished core; occasional gaps where setts stand proud.
+ */
+export function getRutTexture() {
+  return canvasTex('rut', 512, 128, (g, w, h) => {
+    const r = rng(1401);
+    g.fillStyle = '#000';
+    g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 260; i++) {
+      const x = r() * w;
+      const y = h / 2 + (r() - 0.5) * h * 0.38;
+      const rad = 6 + r() * 22;
+      for (const off of [-w, 0, w]) {
+        const gr = g.createRadialGradient(x + off, y, 0, x + off, y, rad);
+        gr.addColorStop(0, `rgba(255,255,255,${0.05 + r() * 0.08})`);
+        gr.addColorStop(1, 'rgba(255,255,255,0)');
+        g.fillStyle = gr;
+        g.fillRect(x + off - rad, y - rad, rad * 2, rad * 2);
+      }
+    }
+    // fade toward both edges of the strip
+    const fade = g.createLinearGradient(0, 0, 0, h);
+    fade.addColorStop(0, 'rgba(0,0,0,1)');
+    fade.addColorStop(0.3, 'rgba(0,0,0,0)');
+    fade.addColorStop(0.7, 'rgba(0,0,0,0)');
+    fade.addColorStop(1, 'rgba(0,0,0,1)');
+    g.fillStyle = fade;
+    g.fillRect(0, 0, w, h);
+  }, { srgb: false, repeat: true });
+}

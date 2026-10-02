@@ -161,8 +161,11 @@ export function ashlar({ seed = 21, rows = 8, minW = 0.18, maxW = 0.34, palette 
  * spalls where the render has fallen away exposing riven oak lath.
  * Tile ≈ 3 m.
  */
-export function plaster({ seed = 31, base = [0.78, 0.72, 0.6], decay = 1, interior = false } = {}) {
+export function plaster({ seed = 31, base = [0.78, 0.72, 0.6], decay = 1, interior = false, lumps = 0, flake = 0 } = {}) {
   return (u, v) => {
+    // hand-thrown daub under the limewash: soft lumps and hollows at the 5–20 cm scale
+    const lump = lumps ? wfbm(u + 0.37, v + 0.11, 7, seed + 40, 4, 0.3) : 0.5;
+    const lump2 = lumps ? fbm(u * 40, v * 40, { octaves: 2, period: 40, seed: seed + 41 }) : 0.5;
     const big = wfbm(u, v, 3, seed, 5, 0.5);
     const mid = fbm(u * 12, v * 12, { octaves: 4, period: 12, seed: seed + 1 });
     const trowel = fbm(u * 30, v * 10, { octaves: 3, period: 30, seed: seed + 2 });
@@ -178,8 +181,21 @@ export function plaster({ seed = 31, base = [0.78, 0.72, 0.6], decay = 1, interi
     c = mix3(c, [c[0] * 0.8, c[1] * 0.77, c[2] * 0.72], smooth(0.5, 0.8, fbm(u * 3 + 7.1, v * 3, { octaves: 4, period: 3, seed: seed + 21 })) * 0.55 * decay);
     const drip = fbm(u * 40, v * 1.4, { octaves: 3, period: 40, seed: seed + 5 });
     c = mul3(c, 1 - smooth(0.62, 0.86, drip) * 0.1 * decay);
-    let h = 0.6 + trowel * 0.05 + mid * 0.04 + fine * 0.012 + sweep * 0.02;
+    let h = 0.6 + trowel * 0.05 + mid * 0.04 + fine * 0.012 + sweep * 0.02 + (lump - 0.5) * 0.12 * lumps + (lump2 - 0.5) * 0.025 * lumps;
+    // limewash thicker in the hollows (lighter), worn thin on the lumps (the ochre daub shows)
+    c = mul3(c, 1 + (0.5 - lump) * 0.16 * lumps);
     let r = 0.9 - fine * 0.05;
+    if (flake) {
+      // flaking limewash: patches where the white coat has peeled off the darker daub beneath
+      const fl = wfbm(u + 0.7, v + 0.2, 7, seed + 42, 4, 0.5);
+      const fm = smooth(0.62, 0.66, fl) * smooth(0.45, 0.7, fbm(u * 3, v * 3, { octaves: 3, period: 3, seed: seed + 43 }));
+      c = mix3(c, mul3([0.56, 0.44, 0.3], 0.85 + mid * 0.3), fm * flake);
+      h -= fm * 0.025 * flake;
+      // a thin raised lip where the coat breaks
+      const lip = smooth(0.6, 0.62, fl) * (1 - smooth(0.62, 0.635, fl)) * flake;
+      c = mul3(c, 1 + lip * 0.1);
+      h += lip * 0.015;
+    }
     // fine hairline craquelure: warped small cells, thin lines, only in patches
     const wu = u + (fbm(u * 18, v * 18, { octaves: 2, period: 18, seed: seed + 14 }) - 0.5) * 0.02;
     const wv = v + (fbm(u * 18 + 3.1, v * 18, { octaves: 2, period: 18, seed: seed + 15 }) - 0.5) * 0.02;

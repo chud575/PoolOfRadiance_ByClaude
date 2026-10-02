@@ -5,6 +5,8 @@ import { getTextureSet } from '../../render/textures/index.js';
 import { GeoBuilder, hash } from './GeoBuilder.js';
 import { CELL_SIZE } from './BlockBuilder.js';
 import { buildCog, drawSail } from './Ships.js';
+import { createSea } from './Sea.js';
+import { timeOfDayKeys } from '../../render/lighting.js';
 import { createFlameBatch, FLAME_UNIFORMS } from '../../render/lighting.js';
 
 const PROP_TIME = FLAME_UNIFORMS.uTime;
@@ -181,12 +183,32 @@ export function buildSkyline(map, ts, opts = {}) {
   const uv = wgeo.attributes.uv;
   for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 160, uv.getY(i) * 90);
   if (harbour) sunGlitter(water, opts.sunDir, opts.sunColor);
-  const wmesh = new THREE.Mesh(wgeo, water);
-  wmesh.position.set(cx, harbour ? -0.42 : -2.6, harbour ? H + 442 : H + 26 + 450);
-  wmesh.receiveShadow = false;
-  wmesh.renderOrder = 6;
-  group.add(wmesh);
-  own.push(wgeo, water);
+  if (harbour) {
+    // a true mirror: the hulls, sails, quay and sky reflected in the swell
+    const k = timeOfDayKeys(opts.hour ?? 12);
+    const sea = createSea({
+      normalMap: waterNormal,
+      size: [1600, 900],
+      deep: new THREE.Color(night > 0.5 ? 0x02050a : 0x183038),
+      sunDir: opts.sunDir ?? new THREE.Vector3(0, 1, 0),
+      sunColor: new THREE.Color(opts.sunColor ?? 0xffd8a0).multiplyScalar(night > 0.5 ? 0.5 : 1),
+      skyTop: new THREE.Color(k.top),
+      skyHor: new THREE.Color(k.hor),
+      fogColor: new THREE.Color(k.fog),
+      fogDensity: k.fogDensity * 0.3,
+      night,
+    });
+    sea.position.set(cx, -0.42, H + 442);
+    group.add(sea);
+    own.push(wgeo, water, { dispose: () => sea.dispose() });
+  } else {
+    const wmesh = new THREE.Mesh(wgeo, water);
+    wmesh.position.set(cx, -2.6, H + 26 + 450);
+    wmesh.receiveShadow = false;
+    wmesh.renderOrder = 6;
+    group.add(wmesh);
+    own.push(wgeo, water);
+  }
   // quay wall along the harbour
   if (!harbour) g.box('arch_stone_cold', { c: [cx, -2.2, H + 26], s: [800, 1.4, 1.6], ao: 0.8 });
   const rig = { sails: [], lines: [] };
@@ -196,7 +218,8 @@ export function buildSkyline(map, ts, opts = {}) {
     // moored and anchored cogs (clinker hulls, castles, set or furled sails, shrouds with ratlines)
     // an anchorage, not a parade: cogs at staggered depths, swinging to their cables at different
     // headings, sails set on some and furled on others (dx from the block centre, dz past the quay)
-    const FLEET = [[-10, 28, 0.62, 17, true], [-30, 44, 0.95, 14, false], [14, 64, 3.9, 13, true], [34, 36, 1.35, 15, false], [-52, 84, 2.75, 12, true], [52, 96, 0.4, 13, false]];
+    // one hero cog lying broadside at mid-distance, the rest scattered in depth, heading and size
+    const FLEET = [[-4, 30, 0.42, 18, true], [-36, 52, 2.35, 12, false], [24, 78, 3.55, 11, true], [40, 40, 1.05, 14, false], [-66, 104, 0.45, 10, true], [74, 128, 2.9, 12, false], [6, 150, 1.6, 9, false]];
     FLEET.forEach(([dx, dz, rot, len, set], k) => {
       const x = cx + dx + (hash(seedBase, k, 'hx') - 0.5) * 4;
       const z = H + dz + (hash(seedBase, k, 'hz') - 0.5) * 4;
@@ -329,9 +352,12 @@ export function buildSkyline(map, ts, opts = {}) {
     sg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     sg.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     const sm = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.5, depthWrite: false, alphaMap: softAlpha() });
-    const mesh = new THREE.Mesh(sg, sm);
-    mesh.renderOrder = 7;
-    group.add(mesh);
+    // (the mirror sea reflects the hulls themselves: the dark stand-in pools are only for the far bay)
+    if (!harbour) {
+      const mesh = new THREE.Mesh(sg, sm);
+      mesh.renderOrder = 7;
+      group.add(mesh);
+    }
     own.push(sg, sm);
     const fg = new THREE.BufferGeometry();
     fg.setAttribute('position', new THREE.Float32BufferAttribute(fpos, 3));

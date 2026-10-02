@@ -11,7 +11,9 @@ import { buildBlock, disposeBlock, cellCenter, EYE_H, CELL_SIZE } from './BlockB
 import { buildProps, buildLightShafts, PROP_UNIFORMS } from './Props.js';
 import { buildSkyline } from './Skyline.js';
 import { createParticles } from './Particles.js';
-import { buildSunShafts } from './Atmosphere.js';
+import { GodRaysPass } from './GodRays.js';
+import { buildWetReflections } from './WetReflections.js';
+import { CELL } from '../../data/maps/MapGrid.js';
 import { dressDungeon, BANE_FLAME, BANE_LIGHT } from './DungeonDressing.js';
 import { dressRooms } from './RoomDressing.js';
 import { tilesetFor, tilesetMaterials } from './tilesets.js';
@@ -80,6 +82,7 @@ export default class ExploreScene extends Scene {
     this._setupParticles();
     this._setupEnvironment();
 
+    this._setupGodRays();
     this.post = this._postFor();
     this._baseExposure = this.post.exposure ?? 1;
 
@@ -147,7 +150,10 @@ export default class ExploreScene extends Scene {
       cam.far = 200;
       this.sun.shadow.bias = -0.00035;
       this.sun.shadow.normalBias = 0.035;
-      this.sun.shadow.radius = 2.5;
+      // a wide, soft penumbra (sun ~0.5 deg + sky scatter) and a little skylight in the umbra:
+      // street shadows read as shade, not as black bands
+      this.sun.shadow.radius = 4.5;
+      this.sun.shadow.intensity = night ? 0.92 : 0.8;
       s.add(this.sun, this.sun.target);
       // cool sky bounce from the side away from the sun (no shadows)
       this.fill = new THREE.DirectionalLight(night ? 0x6a7cb4 : 0x9cb2d8, night ? 0.85 : k.sunI * 0.18);
@@ -164,7 +170,8 @@ export default class ExploreScene extends Scene {
         heightFalloff: 0.45,
         grimeTint: ts.grime,
         mossTint: ts.moss,
-        wet: 0.4,
+        wet: night ? 0.55 : 0.4,
+        slick: night ? 1 : 0,
         // puddles mirror the sky above the roofline and the shadowed house fronts below it
         reflZenith: new THREE.Color(k.top).multiplyScalar(night ? 0.9 : 0.75),
         reflHorizon: new THREE.Color(k.hor).multiplyScalar(night ? 0.9 : 0.8),
@@ -277,6 +284,28 @@ export default class ExploreScene extends Scene {
     });
     pmrem.dispose();
     this.own(() => rt.dispose());
+  }
+
+  /** Screen-space crepuscular rays (outdoors by day; strongest with a low sun in the haze). */
+  _setupGodRays() {
+    if (!this.tileset.outdoors || this.keys.night > 0.5 || this.keys.trueSunDir.y < -0.02) return;
+    const comp = this.ctx.render.composer;
+    const gr = new GodRaysPass();
+    gr.camera = this.camera;
+    gr.sunDir.copy(this.keys.trueSunDir);
+    gr.color.set(this.keys.sunCol).lerp(new THREE.Color(0xfff2dc), 0.25);
+    // low sun through haze: long bright fans; high sun: a faint veil
+    const low = THREE.MathUtils.clamp(1 - (this.keys.trueSunDir.y - 0.1) / 0.5, 0, 1);
+    gr.strength = (0.4 + 7.6 * low) * (0.6 + 0.4 * this.keys.scatter);
+    gr.attach(comp);
+    comp.insertPass(gr, 1);
+    this.godRays = gr;
+    this.own(() => {
+      comp.removePass(gr);
+      gr.detach();
+      gr.dispose();
+      this.godRays = null;
+    });
   }
 
   _postFor() {
@@ -436,6 +465,20 @@ export default class ExploreScene extends Scene {
       this.sourceVis.add(new THREE.Mesh(this._lampGeo, getLampGlassMaterial()));
     }
     this.scene3d.add(this.sourceVis);
+    if (this.tileset.outdoors && this.night > 0.3) {
+      // rain-wet setts mirror every lamp and torch in long broken streaks
+      const m = this.map;
+      const isGround = (x, z) => {
+        const cx = Math.floor(x / CELL_SIZE);
+        const cz = Math.floor(z / CELL_SIZE);
+        if (!m.inBounds(cx, cz)) return false;
+        const c = m.getCell(cx, cz);
+        return c !== CELL.WATER && !(c === CELL.INTERIOR && this.block.covered(cx, cz));
+      };
+      const lit = this.sources.filter((s) => s.lit && (s.kind === 'lamp' || s.kind === 'torch' || s.kind === 'brazier'));
+      this.wetRefl = buildWetReflections(lit, this.block.crownAt ?? (() => 0), { night: this.night, fogColor: this.scene3d.fog?.color ?? new THREE.Color(0), fogDensity: this.scene3d.fog?.density ?? 0, isGround });
+      if (this.wetRefl) this.scene3d.add(this.wetRefl);
+    }
     if (this.particles) this._rebuildEmbers();
   }
 
@@ -449,12 +492,6 @@ export default class ExploreScene extends Scene {
       this.sunShafts.removeFromParent();
       this.sunShafts.userData.dispose();
       this.sunShafts = null;
-    }
-    if (this.tileset.outdoors && this.keys.night < 0.5) {
-      // crepuscular rays through the gaps between buildings (strongest at low sun)
-      const low = this.keys.scatter > 0.8 || this.sunDir.y < 0.4;
-      this.sunShafts = buildSunShafts(this.map, this.block, { sunDir: this.sunDir, color: new THREE.Color(this.keys.sunCol).lerp(new THREE.Color(0xfff0d8), 0.3), strength: low ? 0.34 : 0.06, time: PROP_UNIFORMS.uTime });
-      if (this.sunShafts) this.scene3d.add(this.sunShafts);
     }
     if (this.tileset.outdoors || !this.sun || !this.sun.intensity) return;
     if (this.tileset.id === 'interior') {
@@ -483,6 +520,11 @@ export default class ExploreScene extends Scene {
       this.sourceVis.removeFromParent();
     }
     this._lampGeo?.dispose();
+    if (this.wetRefl) {
+      this.wetRefl.removeFromParent();
+      this.wetRefl.userData.dispose();
+      this.wetRefl = null;
+    }
     this.block = null;
     this.props = null;
   }
@@ -537,7 +579,9 @@ export default class ExploreScene extends Scene {
   render() {
     const frozen = this.ctx.clock.frozen;
     if (frozen && !this.tween && (this._settled ?? 0) >= 3) return;
+    if (this.godRays) this.godRays.enabled = true;
     super.render();
+    if (this.godRays) this.godRays.enabled = false;
     this._settled = frozen ? (this._settled ?? 0) + 1 : 0;
   }
 
@@ -965,7 +1009,6 @@ export default class ExploreScene extends Scene {
     this._disposeBlock();
     for (const p of this.particles ?? []) p.userData.dispose();
     this.shafts?.userData.dispose();
-    this.sunShafts?.userData.dispose();
     this.skyline?.dispose();
     if (this.sky) {
       this.sky.geometry.dispose();

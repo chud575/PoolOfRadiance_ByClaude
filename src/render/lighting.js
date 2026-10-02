@@ -167,6 +167,11 @@ const SKY_FRAG = /* glsl */ `
       vec3 moonCol = vec3(0.98, 0.96, 0.9) * (0.62 + 0.38 * crater) * (1.0 - maria * 0.38) * (0.55 + 0.45 * limb) * 0.95;
       col = mix(col, moonCol, disk * uNight);
       col += vec3(0.5, 0.6, 0.85) * (pow(max(mm, 0.0), 9000.0) * 0.12 + pow(max(mm, 0.0), 600.0) * 0.05 + pow(max(mm, 0.0), 14.0) * 0.05) * uNight;
+      // moonlit haze: a soft corona hugging the disc and a faint 22-degree ice halo ring
+      float ang = acos(clamp(mm, -1.0, 1.0));
+      float corona = exp(-ang * 38.0) * 0.16 + exp(-ang * 9.0) * 0.05;
+      float ring = exp(-pow((ang - 0.384) / 0.022, 2.0)) * 0.035 * (0.7 + 0.3 * fbm(d.xz * 14.0));
+      col += vec3(0.62, 0.7, 0.92) * (corona + ring) * uNight * smoothstep(-0.05, 0.1, y);
       // faint warm glow of Phlan's fires on the horizon
       col += vec3(0.16, 0.08, 0.04) * exp(-max(y, 0.0) * 22.0) * uNight;
     }
@@ -504,8 +509,9 @@ export function flicker(time, seed = 0) {
 }
 
 /** Push sun/scatter info into the SurfaceFX uniforms (height fog, sun in-scatter). */
-export function setSurfaceAtmosphere({ sunDir, sunColor, scatter = 0, heightFog = 0, heightFalloff = 0.35, grimeTint, mossTint, wet = 0, reflZenith = 0, reflHorizon = 0, reflWall = 0 } = {}) {
+export function setSurfaceAtmosphere({ sunDir, sunColor, scatter = 0, heightFog = 0, heightFalloff = 0.35, grimeTint, mossTint, wet = 0, slick = 0, reflZenith = 0, reflHorizon = 0, reflWall = 0 } = {}) {
   const U = SURFACE_UNIFORMS;
+  U.uFxSlick.value = slick;
   if (sunDir) U.uFxSunDir.value.copy(sunDir).normalize();
   if (sunColor !== undefined) U.uFxSunColor.value.set(sunColor);
   U.uFxScatter.value = scatter;

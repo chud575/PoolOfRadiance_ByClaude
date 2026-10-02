@@ -40,7 +40,7 @@ const DEFS = {
   arch_roof_slate: { tex: 'hd_roof_slate', texScale: 2, vc: true, fx: { macro: 0.3, moss: 0.25 } },
   arch_roof_clay: { tex: 'hd_roof_clay', texScale: 2, vc: true, fx: { macro: 0.3, moss: 0.2 } },
   arch_roof_shake: { tex: 'hd_roof_shake', texScale: 2, vc: true, fx: { macro: 0.3, moss: 0.3 } },
-  arch_cobble: { tex: 'hd3_setts', texScale: 2, vc: true, fx: { macro: 0.4, floor: 1 } },
+  arch_cobble: { tex: 'hd4_setts', texScale: 2, vc: true, fx: { macro: 0.4, floor: 1 } },
   arch_flags: { tex: 'hd2_flags', texScale: 2.8, vc: true, fx: { macro: 0.36, floor: 1 } },
   arch_mud: { tex: 'hd_mud', texScale: 3, vc: true, fx: { macro: 0.3, floor: 1 } },
   arch_boards: { tex: 'hd_boards', texScale: 2, vc: true, fx: { macro: 0.15, floor: 1 } },
@@ -64,8 +64,8 @@ const DEFS = {
   prop_crate: { tex: 'hd_crate', fx: { macro: 0.2 } },
   prop_iron: { tex: 'hd2_iron', metalness: 0.7, fx: {} },
   prop_burlap: { tex: 'hd_burlap', fx: { macro: 0.2 } },
-  prop_rubble: { tex: 'hd_rock', fx: { macro: 0.35, moss: 0.5, dust: 1 } },
-  prop_rock: { tex: 'hd_rock', vc: true, fx: { macro: 0.35, moss: 0.4, dust: 1 } },
+  prop_rubble: { tex: 'hd_rock', fx: { macro: 0.35, moss: 0.5, dust: 0.45 } },
+  prop_rock: { tex: 'hd_rock', vc: true, fx: { macro: 0.35, moss: 0.4, dust: 0.45 } },
   prop_wood: { tex: 'hd_beam', fx: { macro: 0.2 } },
   prop_stone: { tex: 'hd2_ashlar', fx: { macro: 0.25, moss: 0.5 } },
   prop_skin: { color: 0xc48a68, roughness: 0.62, vc: true, fx: {} },
@@ -88,6 +88,7 @@ export const SURFACE_UNIFORMS = {
   uFxGrimeTint: { value: new THREE.Color(0x2a2418) },
   uFxMossTint: { value: new THREE.Color(0x3c4a22) },
   uFxWet: { value: 0.0 },
+  uFxSlick: { value: 0.0 }, // rain-slick paving (night): lower roughness on floors
   uFxNoiseTex: { value: null },
   // puddle reflections: sky gradient + the street walls that line it (set per scene)
   uFxReflZenith: { value: new THREE.Color(0x000000) },
@@ -168,7 +169,7 @@ function applySurfaceFX(mat, fx) {
         varying vec3 vFxWorldNormal;
         uniform vec3 uFxSunDir; uniform vec3 uFxSunColor; uniform float uFxScatter;
         uniform float uFxHeightFog; uniform float uFxHeightFalloff;
-        uniform vec3 uFxGrimeTint; uniform vec3 uFxMossTint; uniform float uFxWet;
+        uniform vec3 uFxGrimeTint; uniform vec3 uFxMossTint; uniform float uFxWet; uniform float uFxSlick;
         uniform vec3 uFxReflZenith; uniform vec3 uFxReflHorizon; uniform vec3 uFxReflWall;
         float vFxWet = 0.0;
         float vFxFloor = 0.0;
@@ -224,7 +225,7 @@ function applySurfaceFX(mat, fx) {
           diffuseColor.rgb *= mix(1.0, 0.8 + nz.a * 0.4, fl);
           // standing water: broad, soft-edged pools in the low spots (metre-scale noise only — no
           // per-pixel speckle), a darker damp halo around each, the joints wet a little beyond
-          float pudF = nz.r * 0.7 + nz.a * 0.3 + (nz.g - 0.5) * 0.08;
+          float pudF = nz.r * 0.7 + nz.a * 0.3 + (nz.g - 0.5) * 0.08 + uFxSlick * 0.05;
           float wetAmt = clamp(uFxWet * 2.0, 0.0, 1.0) * fl;
           vFxPud = smoothstep(0.64, 0.7, pudF) * wetAmt;
           float halo = smoothstep(0.6, 0.66, pudF) * wetAmt;
@@ -269,6 +270,8 @@ function applySurfaceFX(mat, fx) {
           float wetK = clamp(uFxWet * 2.0, 0.0, 1.0);
           roughnessFactor = mix(roughnessFactor, max(roughnessFactor, 0.5), vFxWet * wetK);
           roughnessFactor = mix(roughnessFactor, 0.06, smoothstep(0.2, 0.9, vFxPud));
+          // after rain the whole carriageway is slick: crowns glossy, joints still matte
+          roughnessFactor = mix(roughnessFactor, roughnessFactor * 0.5, vFxFloor * uFxSlick);
         }`,
       )
       .replace(
@@ -418,13 +421,16 @@ export function getWindowMaterial(side = 'ext') {
             if (t == tt.z) {
               // back wall: warm plaster, a lamp glow in the middle, a dark dresser low down
               float glow = exp(-dot(hp.xy - vec2(0.55, 0.62), hp.xy - vec2(0.55, 0.62)) * 3.0);
-              room = 0.55 + 0.75 * glow;
+              room = 0.32 + 1.1 * glow;
               float dresser = step(abs(hp.x - 0.25), 0.28) * step(hp.y, 0.22);
-              room *= 1.0 - dresser * 0.6;
+              room *= 1.0 - dresser * 0.7;
+              // a shelf of crockery and a framed hanging catch the lamplight
+              room *= 1.0 - 0.35 * step(abs(hp.y - 0.78), 0.012) * step(abs(hp.x - 0.8), 0.3);
+              room *= 1.0 - 0.3 * step(abs(hp.x - 0.15), 0.1) * step(abs(hp.y - 0.62), 0.12);
             } else if (t == tt.y) {
-              room = rd.y > 0.0 ? 0.42 * (0.55 + 0.45 * step(0.25, fract(hp.x * 2.5))) : 0.3 + 0.1 * step(0.5, fract(hp.z * 4.0));
+              room = rd.y > 0.0 ? 0.2 * (0.45 + 0.55 * step(0.25, fract(hp.x * 2.5))) : 0.22 + 0.08 * step(0.5, fract(hp.z * 4.0));
             } else {
-              room = 0.36 + 0.3 * (hp.z / D);
+              room = 0.2 + 0.32 * (hp.z / D);
             }
             // curtains drawn to either side, folds catching the lamp
             float cx = min(uv0.x, 1.0 - uv0.x);
@@ -461,7 +467,7 @@ export function getLampGlassMaterial() {
 export function setWindowGlow(night, flicker = 1) {
   const ext = getWindowMaterial('ext');
   const int = getWindowMaterial('int');
-  ext.emissiveIntensity = (0.015 + night * 2.6) * flicker;
+  ext.emissiveIntensity = (0.015 + night * 1.55) * flicker;
   ext.color.setHex(night > 0.5 ? 0x101418 : 0x8c96a2);
   // from inside by day, windows glow with daylight
   // from inside by day the glazing glows with the cool, bright sky beyond — well above the hearth
