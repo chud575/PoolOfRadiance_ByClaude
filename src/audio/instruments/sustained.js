@@ -1,4 +1,4 @@
-import { Instrument, adsr, cents } from './base.js';
+import { Instrument, adsr, cents, voiceBudget, kbq } from './base.js';
 import { mtof } from '../core/notes.js';
 import { noiseBuffer, noiseOffset } from '../dsp/bank.js';
 
@@ -18,6 +18,18 @@ function wave(ac, name) {
     switch (name) {
       case 'bowed': // saw-like with a body formant bump and a rolled-off top
         a = (1 / Math.pow(n, 1.05)) * (1 + 0.8 * Math.exp(-((n - 4) ** 2) / 6)) * (n > 24 ? 0.6 : 1);
+        break;
+      case 'bowed2': // another player / instrument: bump higher, a weaker 2nd, slightly darker top
+        a = (1 / Math.pow(n, 1.12)) * (1 + 0.9 * Math.exp(-((n - 6) ** 2) / 8)) * (n === 2 ? 0.7 : 1) * (n > 20 ? 0.65 : 1);
+        break;
+      case 'bowed3': // a brighter, thinner fiddle: lower bump, a notch near the 9th (bow position)
+        a = (1 / Math.pow(n, 0.98)) * (1 + 0.6 * Math.exp(-((n - 3) ** 2) / 4)) * (1 - 0.7 * Math.exp(-((n - 9) ** 2) / 2)) * (n > 28 ? 0.55 : 1);
+        break;
+      case 'oboe': // double reed: weak fundamental, strong 2nd–5th, formants ~1.1 k and ~3 k (applied as EQ)
+        a = (n === 1 ? 0.45 : n <= 5 ? 1 / Math.pow(n, 0.35) : 1.2 / Math.pow(n, 1.1)) * (n > 30 ? 0.5 : 1);
+        break;
+      case 'clarinet': // cylindrical bore: odd harmonics dominate low, evens fill in high up
+        a = (n % 2 ? 1 / Math.pow(n, 0.9) : (n < 6 ? 0.06 : 0.35) / Math.pow(n, 1.0)) * (n > 26 ? 0.5 : 1);
         break;
       case 'horn': // brass: strong 2-5th harmonics
         a = (1 / Math.pow(n, 1.35)) * (n >= 2 && n <= 6 ? 1.6 : 1);
@@ -116,8 +128,14 @@ function glideFreqs(params, notes, ratioOf, { glide = 0.06 } = {}) {
 }
 
 /** Body resonances of the violin family (Hz, Q, gain dB), scaled by register. */
-/** Body resonances of the violin family (Hz, Q, gain dB), scaled by register. */
 const BODY = [[285, 3.2, 3.5], [470, 4.5, 2], [1060, 5, 3.5], [1600, 4, -3.5], [2700, 1.8, 3.5], [4300, 3, -2.5]];
+/**
+ * Narrow, irregular body modes (peaks and dips a few % wide). A partial that
+ * vibrato sweeps across them rises and falls in level, so vibrato reads as
+ * the shimmering amplitude/timbre modulation of a real wooden box, not just
+ * a pitch wobble.
+ */
+const MODES = [[640, 14, 4.5], [905, 16, -4.5], [1370, 15, 4.5], [1830, 14, -4], [2330, 16, 4], [3150, 15, -3.5], [3700, 13, 3]];
 
 /**
  * A control signal (ConstantSource) carrying a phrase-shaped envelope: bow
@@ -157,6 +175,7 @@ export class Strings extends Instrument {
   constructor(ac, o) {
     const body = o.body ?? (0.25 + 0.75 * Math.min(1, Math.max(0, ((o.bright ?? 0.5) - 0.28) / 0.34)));
     const eq = BODY.map(([f, q, g], i) => ({ type: 'peaking', f: i >= 4 ? f * (0.65 + 0.35 * body) : f * (0.3 + 0.7 * body), q, g }));
+    for (const [f, q, g] of MODES) eq.push({ type: 'peaking', f: f * (0.45 + 0.55 * body), q, g });
     eq.push({ type: 'highshelf', f: 9000, g: -3 });
     // Players are seated individually: the section is panned per player, not as a block.
     super(ac, { eq, ...o, pan: 0, chorus: 0 });
@@ -190,7 +209,8 @@ export class Strings extends Instrument {
     const r = opts.release ?? (spic ? 0.08 : Math.min(0.5, 0.18 + total * 0.08));
     // Section size for this note: divisi chords share the players.
     const divisi = Math.max(1, opts.divisi ?? 1);
-    const nv = spic ? Math.min(3, this.voices) : Math.max(this.voices > 1 ? 2 : 1, Math.round(this.voices / Math.sqrt(divisi)));
+    const want = spic ? Math.min(3, this.voices) : Math.max(this.voices > 1 ? 2 : 1, Math.round(this.voices / Math.sqrt(divisi)));
+    const nv = voiceBudget(ac, n0.t, last.t + last.dur + 0.5, want, Math.min(2, want));
     const g = ac.createGain();
     const lvl = (v) => ((0.16 + 0.22 * v) * 0.42) / Math.sqrt(nv);
     const envNotes = spic ? notes.map((n) => ({ ...n, dur: Math.min(n.dur, 0.09) })) : notes;
@@ -200,21 +220,21 @@ export class Strings extends Instrument {
     const pr = pressureSignal(ac, envNotes, { ...envO, a: a * 1.4 + 0.01, level: (v) => 0.25 + 0.75 * v });
     g.connect(this.input);
     // Brightness follows pressure.
-    const lp = ac.createBiquadFilter();
+    const lp = kbq(ac);
     lp.type = 'lowpass';
     lp.Q.value = 0.45;
-    const lo = Math.max(f * 2.2, 650);
-    const top = Math.min(16000, Math.max(f * 9, 2400 + 9000 * this.bright));
+    const lo = Math.min(9000, Math.max(f * 4.5, 1000));
+    const top = Math.min(16000, Math.max(f * 11, 2600 + 9000 * this.bright));
     lp.frequency.value = lo;
     drive(ac, pr.cs, lp.frequency, top - lo);
     // A second pole: soft bowing really does lose the upper partials (24 dB/oct).
-    const lp2 = ac.createBiquadFilter();
+    const lp2 = kbq(ac);
     lp2.type = 'lowpass';
     lp2.Q.value = 0.5;
     lp2.frequency.value = lo * 1.6;
     drive(ac, pr.cs, lp2.frequency, (top - lo) * 1.6);
     // The bridge hill: a broad formant that grows with bow pressure.
-    const hill = ac.createBiquadFilter();
+    const hill = kbq(ac);
     hill.type = 'peaking';
     hill.frequency.value = 2500 + 1000 * this.body;
     hill.Q.value = 0.9;
@@ -251,26 +271,47 @@ export class Strings extends Instrument {
     // Slow intonation drift on long notes: one wandering LFO, the desks drifting against each other.
     let drift = null;
     if (vibOn && total > 1.5) {
-      const d = lfo(ac, n0.t, rng.range(0.1, 0.3), f * 0.0018, 0, 0.5);
+      const d = lfo(ac, n0.t, rng.range(0.1, 0.3), f * 0.0035, 0, 0.5);
       const inv = ac.createGain();
       inv.gain.value = -1;
       d.g.connect(inv);
       drift = [d.g, inv];
       nodes.push(d.o);
     }
+    // Vibrato rate wanders (players speed up and relax): one slow LFO shared
+    // by the section, each player following it with their own sign and depth.
+    let rateWob = null;
+    if (vibOn && total > 0.6) {
+      rateWob = lfo(ac, n0.t, rng.range(0.25, 0.55), 1, 0, 0.3);
+      nodes.push(rateWob.o);
+    }
+    const waves = ['bowed', 'bowed2', 'bowed3'];
+    const deskVib = [];
     for (let i = 0; i < nv; i++) {
       const pg = ac.createGain();
       pg.connect(deskIn[i % desks]);
       const o = ac.createOscillator();
-      o.setPeriodicWave(wave(ac, 'bowed'));
+      // Every player's instrument has its own spectrum.
+      o.setPeriodicWave(wave(ac, waves[(i + (this.o.seed ?? 0)) % 3]));
       const det = cents(rng.range(-6, 6));
       o.frequency.setValueAtTime(f * det, n0.t);
       freqParams.push([o.frequency, det]);
       if (vibOn) {
-        // Own vibrato: rate, depth and how late it starts are personal.
-        const v = lfo(ac, n0.t, rng.range(4.6, 6.2), f * rng.range(0.0028, 0.0058) * (opts.vib ?? 1), Math.min(0.35, n0.dur * rng.range(0.25, 0.55)), rng.range(0.3, 0.7));
-        v.g.connect(o.frequency);
-        nodes.push(v.o);
+        // Own vibrato: ±15–25 cents (a real section, not a synth pad), rate,
+        // depth and a delayed onset all personal; shorter notes vibrate less.
+        const depthC = rng.range(15, 25) * Math.min(1, 0.45 + total * 0.5) * (opts.vib ?? 1);
+        const rate = rng.range(4.8, 6.3);
+        // Big sections share one vibrato per desk (the stand partners still
+        // differ in depth and intonation): half the LFOs for the audio thread.
+        const desk = i % desks;
+        let v = nv > 4 ? deskVib[desk] : null;
+        if (!v) {
+          v = lfo(ac, n0.t, rate, f * (cents(depthC) - 1), Math.min(0.4, n0.dur * rng.range(0.25, 0.5)), rng.range(0.35, 0.8));
+          if (rateWob) drive(ac, rateWob.g, v.o.frequency, rng.range(-0.7, 0.7));
+          nodes.push(v.o);
+          if (nv > 4) deskVib[desk] = v;
+          v.g.connect(o.frequency);
+        } else drive(ac, v.g, o.frequency, rng.range(0.7, 1.25));
         if (drift) drift[i % 2].connect(o.frequency);
       }
       o.connect(pg);
@@ -286,7 +327,7 @@ export class Strings extends Instrument {
     if (!opts.noBow && (spic ? vel > 0.5 : vel > 0.15 && total >= 0.2)) {
       const n = ac.createBufferSource();
       n.buffer = noiseBuffer(ac, 'white');
-      const bp = ac.createBiquadFilter();
+      const bp = kbq(ac);
       bp.type = 'bandpass';
       bp.frequency.value = Math.min(7500, Math.max(1800, f * 7));
       bp.Q.value = 0.7;
@@ -329,7 +370,7 @@ Strings.prototype._spic = function spic(n, opts = {}) {
   g.gain.setTargetAtTime(peak * 0.35, n.t + 0.012, len * 0.5);
   g.gain.setTargetAtTime(0, n.t + len, 0.025);
   const end = n.t + len + 0.15;
-  const lp = ac.createBiquadFilter();
+  const lp = kbq(ac);
   lp.type = 'lowpass';
   lp.Q.value = 0.5;
   const top = Math.min(14000, Math.max(f * 6, 1500 + 7000 * this.bright * (0.3 + vel)));
@@ -350,7 +391,7 @@ Strings.prototype._spic = function spic(n, opts = {}) {
   if (!opts.noBow && vel > 0.5) {
     const ns = ac.createBufferSource();
     ns.buffer = noiseBuffer(ac, 'white');
-    const bp = ac.createBiquadFilter();
+    const bp = kbq(ac);
     bp.type = 'bandpass';
     bp.frequency.value = Math.min(7500, Math.max(1800, f * 7));
     bp.Q.value = 0.8;
@@ -414,7 +455,7 @@ export class Choir extends Instrument {
     const last = notes[notes.length - 1];
     const total = last.t + last.dur - n0.t;
     const divisi = Math.max(1, opts.divisi ?? 1);
-    const nv = Math.max(2, Math.round(this.voices / Math.sqrt(divisi)));
+    const nv = voiceBudget(ac, n0.t, last.t + last.dur + 0.8, Math.max(2, Math.round(this.voices / Math.sqrt(divisi))), 2);
     const g = ac.createGain();
     const a = opts.attack ?? Math.min(0.32, 0.3 * n0.dur + 0.04);
     const end = phraseEnv(g.gain, notes, { a, r: opts.release ?? 0.7, s: 0.94, dip: 0.1, level: (v) => ((0.18 + 0.3 * v) * 0.42) / Math.sqrt(nv) });
@@ -435,7 +476,7 @@ export class Choir extends Instrument {
       sec.connect(pn).connect(g);
       const src = ac.createGain();
       for (let fi = 0; fi < 4; fi++) {
-        const bp = ac.createBiquadFilter();
+        const bp = kbq(ac);
         bp.type = 'bandpass';
         const V0 = VOWELS[syl[0].v][fi];
         bp.Q.value = V0[2];
@@ -458,7 +499,7 @@ export class Choir extends Instrument {
         src.connect(bp).connect(fg).connect(sec);
       }
       // Breath air above the formants.
-      const air = ac.createBiquadFilter();
+      const air = kbq(ac);
       air.type = 'highpass';
       air.frequency.value = 4500;
       const ag = ac.createGain();
@@ -466,19 +507,31 @@ export class Choir extends Instrument {
       src.connect(air).connect(ag).connect(sec);
       // Singers.
       const per = Math.ceil(nv / 2);
-      // Two vibratos per half-section (singers alternate between them, each with their own depth).
-      const vibs = [0, 1].map(() => lfo(ac, n0.t, rng.range(4.5, 5.8), f * 0.006, rng.range(0.15, 0.4), rng.range(0.4, 0.8)));
-      nodes.push(...vibs.map((x) => x.o));
+      // Every singer is a person: own vibrato (4.8–6.2 Hz, ±15–30 cents,
+      // arriving late on long notes) and a slow pitch scatter (±8 cents) made
+      // from two wandering LFOs that each singer follows with their own weights.
+      const long = total > 0.5;
+      const wander = long ? [0, 1].map(() => lfo(ac, n0.t, rng.range(0.07, 0.23), f * (cents(8) - 1), 0, 0.6)) : [];
+      nodes.push(...wander.map((x) => x.o));
+      let pairVib = null;
       for (let i = 0; i < per; i++) {
         const o = ac.createOscillator();
         o.setPeriodicWave(wave(ac, 'voice'));
-        const det = cents(rng.range(-10, 10));
+        const det = cents(rng.range(-9, 9));
         o.frequency.setValueAtTime(f * det, n0.t);
         fp.push([o.frequency, det]);
-        const v = { o: null, g: ac.createGain() };
-        v.g.gain.value = rng.range(0.6, 1.3);
-        vibs[i % 2].g.connect(v.g);
-        v.g.connect(o.frequency);
+        if (long) {
+          // Large sections pair neighbours on one vibrato (own depth each); small ones are all individual.
+          let v = per > 3 && i % 2 ? pairVib : null;
+          if (v) drive(ac, v.g, o.frequency, rng.range(0.7, 1.3));
+          else {
+            v = lfo(ac, n0.t, rng.range(4.8, 6.2), f * (cents(rng.range(15, 30)) - 1), rng.range(0.12, Math.min(0.6, total * 0.3)), rng.range(0.4, 0.9));
+            v.g.connect(o.frequency);
+            nodes.push(v.o);
+            pairVib = v;
+          }
+          for (const w of wander) drive(ac, w.g, o.frequency, rng.range(-1, 1));
+        }
         const og = ac.createGain();
         const ts = n0.t + rng.range(0, 0.07);
         og.gain.setValueAtTime(0, ts);
@@ -494,7 +547,7 @@ export class Choir extends Instrument {
         const t0 = Math.max(n0.t, n.t - (c === 's' ? 0.07 : 0.02)) + rng.range(0, 0.015);
         const ns = ac.createBufferSource();
         ns.buffer = noiseBuffer(ac, 'white');
-        const flt = ac.createBiquadFilter();
+        const flt = kbq(ac);
         flt.type = c === 's' ? 'highpass' : 'bandpass';
         flt.frequency.value = c === 's' ? 5500 : c === 'k' ? 2200 : c === 't' ? 3800 : 900;
         flt.Q.value = c === 's' ? 0.7 : 1.5;
@@ -538,6 +591,10 @@ const WIND = {
   brass: { wave: 'horn', a: 0.035, r: 0.2, breath: 0.03, chiff: 0.12, vib: [5, 0.0012, 0.4], lp: 2.8, lpVel: 11, scoop: -30, voices: 3, dip: 0.35, blare: 1 },
   lowbrass: { wave: 'horn', a: 0.06, r: 0.3, breath: 0.025, chiff: 0.08, vib: [4.5, 0.001, 0.5], lp: 2.6, lpVel: 8, scoop: -18, voices: 3, dip: 0.3, blare: 0.85 },
   bassoon: { wave: 'reed', a: 0.05, r: 0.15, breath: 0.03, chiff: 0.1, vib: [5, 0.003, 0.3], lp: 5, scoop: -10, dip: 0.3 },
+  // Orchestral reeds. Oboe: nasal double reed with a 1.1 k / 3 k formant pair and a quick, singing vibrato.
+  oboe: { wave: 'oboe', a: 0.035, r: 0.12, breath: 0.035, chiff: 0.2, vib: [5.3, 0.0042, 0.3], lp: 14, lpVel: 8, scoop: -8, dip: 0.35 },
+  // Clarinet: hollow chalumeau, almost no vibrato, breath a touch louder, soft tongue.
+  clarinet: { wave: 'clarinet', a: 0.05, r: 0.14, breath: 0.05, chiff: 0.12, vib: [4.8, 0.0008, 0.5], lp: 9, lpVel: 10, scoop: -4, dip: 0.28 },
   shawm: { wave: 'reed', a: 0.025, r: 0.08, breath: 0.04, chiff: 0.2, vib: [5.8, 0.004, 0.2], lp: 12, scoop: -15, dip: 0.4 },
 };
 
@@ -554,13 +611,26 @@ function softClipCurve(k) {
 export class Wind extends Instrument {
   constructor(ac, o) {
     const p = WIND[o.preset ?? 'flute'];
-    const eq = p.wave === 'horn' ? [{ type: 'peaking', f: 600, q: 0.8, g: 1.5 }, { type: 'peaking', f: 1400, q: 1.2, g: 1 }, { type: 'highshelf', f: 7000, g: -4 }] : p.wave === 'flute' ? [{ type: 'highshelf', f: 8000, g: -6 }] : [{ type: 'peaking', f: 1200, q: 1.2, g: 3 }, { type: 'highshelf', f: 6000, g: -6 }];
+    const RES = {
+      // Oboe bore + reed formants (fixed: they stay put as the pitch moves, as on the real instrument).
+      oboe: [{ type: 'highpass', f: 220, q: 0.7 }, { type: 'peaking', f: 1150, q: 2.2, g: 7 }, { type: 'peaking', f: 2950, q: 2.6, g: 5 }, { type: 'peaking', f: 1900, q: 4, g: -3 }, { type: 'highshelf', f: 7500, g: -6 }],
+      // Clarinet: woody low register body, register-key 'throat' dip, soft top.
+      clarinet: [{ type: 'peaking', f: 420, q: 1.4, g: 3 }, { type: 'peaking', f: 1500, q: 1.8, g: 2.5 }, { type: 'peaking', f: 2600, q: 3, g: -2.5 }, { type: 'highshelf', f: 6000, g: -7 }],
+    };
+    const eq = RES[p.wave] ?? (p.wave === 'horn' ? [{ type: 'peaking', f: 600, q: 0.8, g: 1.5 }, { type: 'peaking', f: 1400, q: 1.2, g: 1 }, { type: 'highshelf', f: 7000, g: -4 }] : p.wave === 'flute' ? [{ type: 'highshelf', f: 8000, g: -6 }] : [{ type: 'peaking', f: 1200, q: 1.2, g: 3 }, { type: 'highshelf', f: 6000, g: -6 }]);
     const brass = p.wave === 'horn';
     super(ac, { eq, ...o, ...(brass ? { pan: 0 } : {}) });
     this.center = o.pan ?? 0;
     this.p = p;
     this.brass = brass;
-    if (brass) this.clip = softClipCurve(2.6);
+    if (brass) {
+      this.clip = softClipCurve(2.6);
+      // The section's seat: every note's chain stays mono (half the work on the
+      // audio thread) and is placed here once.
+      this.seat = ac.createStereoPanner();
+      this.seat.pan.value = this.center;
+      this.seat.connect(this.input);
+    }
   }
 
   play(t, m, dur, vel = 0.65, opts = {}) {
@@ -584,19 +654,40 @@ export class Wind extends Instrument {
     const envO = { a, r: rel, s: 0.86, dip: opts.dip ?? p.dip };
     const end = phraseEnv(g.gain, notes, { ...envO, level: (v) => (0.22 + 0.25 * v) * 0.36 });
     const nodes = [];
-    const lp = ac.createBiquadFilter();
+    const lp = kbq(ac);
     lp.type = 'lowpass';
     lp.Q.value = isBrass ? 0.9 : 0.5;
     const topOf = (mm, v) => Math.min(14000, mtof(mm) * (p.lp + (p.lpVel ?? 0) * v * v));
     let head = lp;
-    if (isBrass) {
+    if (isBrass && total < 0.5 && art !== 'flutter') {
+      // Short stab: the same tilt (dark → blaring with force) fixed per note,
+      // with the filter opening on the attack — a fraction of the nodes, since
+      // battle ostinati fire several of these a second.
+      const pv = 0.15 + 0.85 * vel * vel;
+      const lo = f * 1.3;
+      const top = lo + (topOf(n0.midi, 1) - lo) * pv;
+      lp.frequency.setValueAtTime(lo, n0.t);
+      lp.frequency.linearRampToValueAtTime(top, n0.t + a * 1.2 + 0.015);
+      lp.frequency.setTargetAtTime(lo + (top - lo) * 0.6, n0.t + total, 0.05);
+      const dark = ac.createGain();
+      dark.gain.value = 1 - 0.6 * pv;
+      const pre = ac.createGain();
+      pre.gain.value = 0.05 + 1.4 * pv;
+      const ws = ac.createWaveShaper();
+      ws.curve = this.clip;
+      const bright = ac.createGain();
+      bright.gain.value = 0.55 * (p.blare ?? 1) * pv;
+      lp.connect(dark).connect(g);
+      lp.connect(pre).connect(ws).connect(bright).connect(g);
+      g.connect(this.seat);
+    } else if (isBrass) {
       // Breath pressure: the lips bite in after the tongue, so pressure lags the attack a little.
       const pr = pressureSignal(ac, notes, { ...envO, a: a * 1.2 + 0.015, level: (v) => 0.15 + 0.85 * v * v });
       nodes.push(pr.cs);
       const lo = f * 1.3;
       lp.frequency.value = lo;
       drive(ac, pr.cs, lp.frequency, Math.max(200, topOf(n0.midi, 1) - lo));
-      const lp2 = ac.createBiquadFilter();
+      const lp2 = kbq(ac);
       lp2.type = 'lowpass';
       lp2.Q.value = 0.5;
       lp2.frequency.value = lo * 1.5;
@@ -621,7 +712,7 @@ export class Wind extends Instrument {
       if (art === 'flutter') {
         const fl = ac.createBufferSource();
         fl.buffer = noiseBuffer(ac, 'white');
-        const fll = ac.createBiquadFilter();
+        const fll = kbq(ac);
         fll.type = 'bandpass';
         fll.frequency.value = 22;
         fll.Q.value = 2;
@@ -633,8 +724,8 @@ export class Wind extends Instrument {
         g.connect(am);
         fl.start(n0.t, noiseOffset(rng, total + 1));
         nodes.push(fl);
-        am.connect(this.input);
-      } else g.connect(this.input);
+        am.connect(this.seat);
+      } else g.connect(this.seat);
     } else {
       const top = topOf(n0.midi, vel);
       lp.frequency.setValueAtTime(top, n0.t);
@@ -648,6 +739,9 @@ export class Wind extends Instrument {
     const vibOk = total > p.vib[2] + 0.1;
     const sharedVib = !isBrass && vibOk ? lfo(ac, n0.t, p.vib[0] + rng.range(-0.3, 0.3), f * p.vib[1] * (opts.vib ?? 1), p.vib[2], 0.45) : null;
     if (sharedVib) nodes.push(sharedVib.o);
+    // Brass: one vibrato for the section, each player following it at their own depth.
+    const brassVib = isBrass && vibOk ? lfo(ac, n0.t, p.vib[0] + rng.range(-0.4, 0.4), f * p.vib[1] * (opts.vib ?? 1), p.vib[2] + rng.range(0, 0.2), 0.5) : null;
+    if (brassVib) nodes.push(brassVib.o);
     for (let i = 0; i < voices; i++) {
       const o = ac.createOscillator();
       o.setPeriodicWave(wave(ac, p.wave));
@@ -664,18 +758,12 @@ export class Wind extends Instrument {
       }
       fp.push([o.frequency, det]);
       if (sharedVib) sharedVib.g.connect(o.frequency);
-      else if (isBrass && vibOk) {
-        const v = lfo(ac, n0.t, p.vib[0] + rng.range(-0.4, 0.4), f * p.vib[1] * rng.range(0.6, 1.4) * (opts.vib ?? 1), p.vib[2] + rng.range(0, 0.2), 0.5);
-        v.g.connect(o.frequency);
-        nodes.push(v.o);
-      }
+      else if (brassVib) drive(ac, brassVib.g, o.frequency, rng.range(0.6, 1.4));
       if (voices > 1) {
-        const pn = ac.createStereoPanner();
-        pn.pan.value = Math.max(-1, Math.min(1, this.center + (i / (voices - 1) - 0.5) * 0.36));
         const og = ac.createGain();
         og.gain.setValueAtTime(0, t0);
         og.gain.linearRampToValueAtTime(rng.range(0.8, 1.1) / Math.sqrt(voices / 2), t0 + 0.012);
-        o.connect(og).connect(pn).connect(head);
+        o.connect(og).connect(head);
       } else o.connect(head);
       o.start(t0);
       nodes.push(o);
@@ -703,7 +791,7 @@ export class Wind extends Instrument {
     // Breath noise (tuned band) + tongue chiff on every articulation.
     const n = ac.createBufferSource();
     n.buffer = noiseBuffer(ac, 'white');
-    const bp = ac.createBiquadFilter();
+    const bp = kbq(ac);
     bp.type = 'bandpass';
     bp.frequency.value = isBrass ? Math.min(3500, Math.max(900, f * 3)) : Math.min(12000, f * 2);
     bp.Q.value = isBrass ? 1.2 : 2;
@@ -740,7 +828,7 @@ export class Drone extends Instrument {
     const f = mtof(m);
     const g = ac.createGain();
     const end = adsr(g.gain, t, dur, { a: opts.attack ?? 0.6, d: 0.3, s: 1, r: opts.release ?? 1.2, peak: (0.12 + 0.15 * vel) * 0.6 });
-    const lp = ac.createBiquadFilter();
+    const lp = kbq(ac);
     lp.type = 'lowpass';
     lp.frequency.value = Math.min(12000, this.reed && opts.bright === undefined ? Math.max(f * 14, 3800) : f * (opts.bright ?? 6));
     lp.connect(g).connect(this.voicePan(opts.pan));
@@ -776,7 +864,7 @@ export class Drone extends Instrument {
         c[i] = Math.sign(x) * Math.min(1, Math.abs(x) * 2.5) ** 0.6;
       }
       ws.curve = c;
-      const bp = ac.createBiquadFilter();
+      const bp = kbq(ac);
       bp.type = 'bandpass';
       bp.frequency.value = 1900;
       bp.Q.value = 1.1;
@@ -785,7 +873,7 @@ export class Drone extends Instrument {
       const pulse = ac.createOscillator();
       pulse.type = 'square';
       pulse.frequency.value = opts.buzz;
-      const sm = ac.createBiquadFilter();
+      const sm = kbq(ac);
       sm.type = 'lowpass';
       sm.frequency.value = 45;
       const pd = ac.createGain();

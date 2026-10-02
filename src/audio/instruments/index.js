@@ -28,6 +28,8 @@ export const PRESETS = {
   brass: [Wind, { preset: 'brass', gain: 0.7, reverb: 0.4 }],
   lowbrass: [Wind, { preset: 'lowbrass', gain: 0.7, reverb: 0.35 }],
   bassoon: [Wind, { preset: 'bassoon', gain: 0.6, reverb: 0.3 }],
+  oboe: [Wind, { preset: 'oboe', gain: 0.55, reverb: 0.4 }],
+  clarinet: [Wind, { preset: 'clarinet', gain: 0.65, reverb: 0.4 }],
   shawm: [Wind, { preset: 'shawm', gain: 0.45, reverb: 0.25 }],
   gurdy: [Drone, { wave: 'reed', gain: 0.55, reverb: 0.2 }],
   organ: [Drone, { wave: 'organ', chorus: 1, gain: 0.6, reverb: 0.6 }],

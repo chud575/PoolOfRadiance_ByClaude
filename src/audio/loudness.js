@@ -14,7 +14,7 @@ import { AudioRng, hashStr } from './core/rng.js';
  * calibration is stale (the composition or synthesis changed since).
  */
 
-/** Integrated LUFS targets for music cues (combat measured at intensity 0.8). */
+/** Integrated LUFS targets for music cues (adaptive cues measured at their `calIntensity`). */
 export const MUSIC_TARGETS = {
   title: -17, intro: -18.5, town: -17, tavern: -17, ruins: -18, dungeon: -18.5, crypt: -18, wilds: -18, camp: -18,
   combat: -16.5, encounter: -17.5, victory: -16, defeat: -17,
@@ -36,12 +36,12 @@ export const SFX_TARGETS = [
   [/^(swing|miss|dodge|pass_through)$/, -21],
   [/^(bow|arrow_in)$/, -20],
   [/^(crit)$/, -15],
-  [/^(hit|hit_armor|hit_bone|parry|shield)$/, -17.5],
-  [/^(bite|claw|block|arrow_hit)$/, -18.5],
+  [/^(hit|hit_armor|hit_bone|parry)$/, -17.5],
+  [/^(bite|claw|block|shield|arrow_hit)$/, -18.5],
   [/^death$/, -20],
   [/^(spell_fire|spell_lightning)$/, -14.5],
-  [/^(spell_cone|spell_shock|spell_turn)$/, -16.5],
-  [/^(spell_missile|spell_cloud|spell_holy|spell_curse)$/, -18.5],
+  [/^(spell_cone|spell_turn)$/, -16.5],
+  [/^(spell_shock|spell_missile|spell_cloud|spell_holy|spell_curse)$/, -18.5],
   [/^(spell|spell_sleep|spell_mind|spell_heal|heal|spell_ward)$/, -20],
   [/^spell_fizzle$/, -23],
   [/^(vox_dragon|vox_dragon_die)$/, -14],
@@ -69,9 +69,49 @@ export function musicGain(song) {
   return c ? clampGain(c.gain) : song.gain ?? 1;
 }
 
+/** Calibration record of a song: {gain, sections?: {name: dB}, curve?: [[x, LUFS]]}. */
+export function musicCal(song) {
+  return CAL.music?.[song.id] ?? {};
+}
+
+/** Linear interpolation in a sorted [[x, y]] table (clamped). */
+function interp(tab, x) {
+  if (x <= tab[0][0]) return tab[0][1];
+  for (let i = 1; i < tab.length; i++) if (x <= tab[i][0]) {
+    const [x0, y0] = tab[i - 1];
+    const [x1, y1] = tab[i];
+    return y0 + ((y1 - y0) * (x - x0)) / (x1 - x0);
+  }
+  return tab[tab.length - 1][1];
+}
+
+/**
+ * Desired loudness offset (LU, relative to the calibration intensity) of an
+ * adaptive cue at intensity x: flat below `calIntensity` (a skirmish is as
+ * loud as an ordinary fight — it is thinner, not quieter), then a smooth
+ * swell of `lift` LU up to 1.0.
+ */
+export function intensityLift(song, x) {
+  const c = song.calIntensity ?? 0.5;
+  const k = Math.max(0, Math.min(1, (x - c) / (1 - c)));
+  return (song.lift ?? 0) * k * k * (3 - 2 * k);
+}
+
+/**
+ * Gain (dB) that brings an adaptive cue rendered at intensity x to its
+ * desired loudness, given the measured raw curve [[x, LUFS]] (no compensation).
+ */
+export function intensityCompDb(song, curve, x) {
+  const c = song.calIntensity ?? 0.5;
+  const want = interp(curve, c) + intensityLift(song, x);
+  return Math.max(-9, Math.min(10, want - interp(curve, x)));
+}
+
 /** Gain multiplier for a named SFX. */
 export function sfxGain(name) {
-  const c = CAL.sfx?.[name];
+  // Footsteps are calibrated per surface (step_stone, step_wood, …).
+  if (name === 'step') name = 'step_cobble';
+  const c = CAL.sfx?.[name] ?? (name.startsWith('step_') ? CAL.sfx?.step_cobble : null);
   return c ? clampGain(c.gain) : 1;
 }
 

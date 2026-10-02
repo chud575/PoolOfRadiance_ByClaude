@@ -1,4 +1,6 @@
-import { noiseBuffer, noiseOffset } from '../dsp/bank.js';
+import { kbq } from '../instruments/base.js';
+import { noiseBuffer, noiseOffset, sample } from '../dsp/bank.js';
+import { glottal } from '../dsp/synth.js';
 import { Fx } from './toolkit.js';
 import { creak, monsterVox } from './library.js';
 import { AudioRng } from '../core/rng.js';
@@ -14,7 +16,7 @@ import { bedGain } from '../loudness.js';
  */
 export const BEDS = {
   title: { layers: ['wind:0.5', 'surf:0.6'], events: { gull: 9, bellFar: 40 } },
-  town: { layers: ['wind:0.3', 'murmur:0.5', 'surf:0.2'], events: { gull: 12, dog: 30, hammer: 18, cart: 25 }, night: { layers: ['wind:0.35', 'surf:0.25'], events: { owl: 20, dog: 40, cricket: 3 } } },
+  town: { layers: ['wind:0.3', 'walla:0.7', 'murmur:0.3', 'surf:0.2'], events: { gull: 9, dog: 22, hammer: 9, cart: 14, callFar: 11, hoof: 19, coinsFar: 13, laughFar: 17 }, night: { layers: ['wind:0.35', 'surf:0.25'], events: { owl: 20, dog: 40, cricket: 3 } } },
   ruins: { layers: ['wind:0.8', 'gusts:0.5'], events: { crow: 14, rubble: 22, creakFar: 16 }, night: { layers: ['wind:0.8', 'gusts:0.5'], events: { owl: 18, rubble: 30, cricket: 4, wolfFar: 60 } } },
   dungeon: { layers: ['rumble:0.7', 'cave:0.35'], events: { drip: 2.6, chain: 35, moanFar: 55, rubble: 40 } },
   crypt: { layers: ['wind:0.55', 'cave:0.2'], events: { crow: 18, bellFar: 45, moanFar: 40 }, night: { layers: ['wind:0.6'], events: { owl: 12, moanFar: 30, cricket: 4 } } },
@@ -48,6 +50,7 @@ export class Ambience {
     this.out.gain.setValueAtTime(0.0001, t);
     this.level = o.gain ?? bedGain(env, !!(o.night && spec.night));
     this.out.gain.linearRampToValueAtTime(this.level, t + (o.fade ?? 2.5));
+    this._fadeIn = [t, t + (o.fade ?? 2.5)];
     this.out.connect(dest);
     this.send = ac.createGain();
     this.send.gain.value = 0.6;
@@ -86,11 +89,24 @@ export class Ambience {
   }
 
   _filter(type, f, q = 0.7) {
-    const b = this.ac.createBiquadFilter();
+    const b = kbq(this.ac);
     b.type = type;
     b.frequency.value = f;
     b.Q.value = q;
     return b;
+  }
+
+  /**
+   * A decorrelated stereo pair: `chain(jitter)` builds one mono branch
+   * (independent noise read head, filter frequencies jittered by `jitter`)
+   * for each ear, merged hard L/R — beds that surround the listener instead
+   * of sitting in the middle as one mono wash.
+   */
+  _stereo(dest, chain) {
+    const m = this.ac.createChannelMerger(2);
+    for (let ch = 0; ch < 2; ch++) chain(1 + this.rng.range(-0.09, 0.09)).connect(m, 0, ch);
+    m.connect(dest);
+    return m;
   }
 
   _layer(name, lvl, t) {
@@ -101,7 +117,7 @@ export class Ambience {
     switch (name) {
       case 'wind': {
         // Two decorrelated bands, each wandering slowly in pitch and level.
-        for (const [side, f, r] of [[-0.6, 420, 0.07], [0.6, 650, 0.053]]) {
+        for (const [side, f, r] of [[-0.9, 420, 0.07], [0.9, 650, 0.053]]) {
           const n = this._noise(t, 'pink');
           const bp = this._filter('bandpass', f, 1.6);
           const lg = ac.createGain();
@@ -116,23 +132,25 @@ export class Ambience {
         return;
       }
       case 'gusts': {
-        const n = this._noise(t, 'white');
-        const bp = this._filter('bandpass', 1200, 3);
-        this._lfo(t, 0.031, 700, bp.frequency);
         g.gain.value = 0;
         this._lfo(t, 0.043, 0.07 * lvl, g.gain);
-        n.connect(bp).connect(g);
+        this._stereo(g, (j) => {
+          const n = this._noise(t, 'white');
+          const bp = this._filter('bandpass', 1200 * j, 3);
+          this._lfo(t, 0.031 * j, 700 * j, bp.frequency);
+          return n.connect(bp);
+        });
         return;
       }
       case 'surf': {
-        // Moonsea waves lapping the harbour: lowpassed noise swelling every ~7 s.
-        const n = this._noise(t, 'pink');
-        const lp = this._filter('lowpass', 700, 0.5);
-        this._lfo(t, 0.09, 380, lp.frequency);
+        // Moonsea waves lapping the harbour: lowpassed noise swelling every ~7 s, each ear its own stretch of shore.
         g.gain.value = 0.18 * lvl;
         this._lfo(t, 0.14, 0.15 * lvl, g.gain);
-        n.connect(lp).connect(pan).connect(g);
-        pan.pan.value = 0.4;
+        this._stereo(g, (j) => {
+          const lp = this._filter('lowpass', 700 * j, 0.5);
+          this._lfo(t, 0.09 * j, 380, lp.frequency);
+          return this._noise(t, 'pink').connect(lp);
+        });
         return;
       }
       case 'murmur': {
@@ -158,65 +176,80 @@ export class Ambience {
         g.gain.value = 1;
         return;
       }
+      case 'walla': {
+        // The market: a babble of a dozen distant voices (pre-rendered stereo loop, see wallaData).
+        const n = ac.createBufferSource();
+        n.buffer = sample(ac, 'walla:1', (sr) => wallaData(sr, 1));
+        n.loop = true;
+        n.start(t, this.rng.range(0, 10));
+        this.nodes.push(n);
+        g.gain.value = 0.5 * lvl;
+        this._lfo(t, 0.045, 0.12 * lvl, g.gain);
+        n.connect(g);
+        return;
+      }
       case 'rumble': {
-        const n = this._noise(t, 'brown');
-        const lp = this._filter('lowpass', 110, 0.8);
         g.gain.value = 0.09 * lvl;
         this._lfo(t, 0.05, 0.035 * lvl, g.gain);
-        n.connect(lp).connect(g);
+        this._stereo(g, (j) => this._noise(t, 'brown').connect(this._filter('lowpass', 110 * j, 0.8)));
         return;
       }
       case 'cave': {
-        // Air moving through tunnels: a hollow resonant whistle.
-        const n = this._noise(t, 'pink');
-        const bp = this._filter('bandpass', 260, 12);
-        const bp2 = this._filter('bandpass', 610, 14);
-        this._lfo(t, 0.021, 30, bp.frequency);
+        // Air moving through tunnels: hollow resonant whistles, a different pipe in each ear.
         g.gain.value = 0.5 * lvl;
         this._lfo(t, 0.037, 0.3 * lvl, g.gain);
-        n.connect(bp).connect(g);
-        n.connect(bp2).connect(g);
+        this._stereo(g, (j) => {
+          const n = this._noise(t, 'pink');
+          const bp = this._filter('bandpass', 260 * j, 12);
+          const bp2 = this._filter('bandpass', 610 * (2 - j), 14);
+          this._lfo(t, 0.021 * j, 30, bp.frequency);
+          const sum = ac.createGain();
+          n.connect(bp).connect(sum);
+          n.connect(bp2).connect(sum);
+          return sum;
+        });
         return;
       }
       case 'leaves': {
-        const n = this._noise(t, 'white');
-        const hp = this._filter('highpass', 3000);
-        const lp = this._filter('lowpass', 9000);
         g.gain.value = 0.02 * lvl;
         this._lfo(t, 0.11, 0.018 * lvl, g.gain);
-        n.connect(hp).connect(lp).connect(g);
+        this._stereo(g, (j) => {
+          const lg = ac.createGain();
+          this._lfo(t, 0.17 * j, 0.5, lg.gain, 0.6);
+          return this._noise(t, 'white').connect(this._filter('highpass', 3000 * j)).connect(this._filter('lowpass', 9000)).connect(lg);
+        });
         return;
       }
       case 'fire': {
-        const n = this._noise(t, 'brown');
-        const lp = this._filter('lowpass', 260, 0.6);
-        g.gain.value = 0.08 * lvl;
-        this._lfo(t, 0.6, 0.03 * lvl, g.gain);
-        n.connect(lp).connect(g);
-        const n2 = this._noise(t, 'pink');
-        const bp = this._filter('bandpass', 900, 0.8);
-        const g2 = ac.createGain();
-        g2.gain.value = 0.04 * lvl;
-        this._lfo(t, 1.7, 0.03 * lvl, g2.gain);
-        n2.connect(bp).connect(g2).connect(g);
+        g.gain.value = 1;
+        this._stereo(g, (j) => {
+          const sum = ac.createGain();
+          const g1 = ac.createGain();
+          g1.gain.value = 0.08 * lvl;
+          this._lfo(t, 0.6 * j, 0.03 * lvl, g1.gain);
+          this._noise(t, 'brown').connect(this._filter('lowpass', 260 * j, 0.6)).connect(g1).connect(sum);
+          const g2 = ac.createGain();
+          g2.gain.value = 0.04 * lvl;
+          this._lfo(t, 1.7 * j, 0.03 * lvl, g2.gain);
+          this._noise(t, 'pink').connect(this._filter('bandpass', 900 * j, 0.8)).connect(g2).connect(sum);
+          return sum;
+        });
         return;
       }
       case 'roomtone': {
         // The air of a lived-in room: a soft broadband hush with a gentle presence.
-        const n = this._noise(t, 'pink');
-        const bp = this._filter('bandpass', 2200, 0.5);
-        const hs = this._filter('highshelf', 6000, 0.7);
-        hs.gain.value = -6;
         g.gain.value = 0.03 * lvl;
         this._lfo(t, 0.07, 0.008 * lvl, g.gain);
-        n.connect(bp).connect(hs).connect(g);
+        this._stereo(g, (j) => {
+          const hs = this._filter('highshelf', 6000, 0.7);
+          hs.gain.value = -6;
+          return this._noise(t, 'pink').connect(this._filter('bandpass', 2200 * j, 0.5)).connect(hs);
+        });
         return;
       }
       case 'room': {
-        const n = this._noise(t, 'brown');
-        const lp = this._filter('lowpass', 180);
         g.gain.value = 0.16 * lvl;
-        n.connect(lp).connect(g);
+        this._stereo(g, (j) => this._noise(t, 'brown').connect(this._filter('lowpass', 180 * j)));
         return;
       }
       default:
@@ -267,6 +300,37 @@ export class Ambience {
       case 'cart': {
         for (let i = 0; i < 10; i++) fx.burst(t + i * 0.12 + r.range(0, 0.03), { dur: 0.05, peak: 0.025, filters: [{ type: 'bandpass', f: 500, q: 2 }] });
         creak(fx, t + 0.1, { rate: [20, 40], dur: 1, f: 700, peak: 0.02 });
+        break;
+      }
+      case 'callFar': {
+        // A vendor crying his wares across the square: a sung two-note call, far off.
+        const fv = new Fx(this.ac, this.out, this.rng, { vol: 0.5, pan: r.range(-0.9, 0.9) });
+        const f0 = r.range(150, 230) * (r.chance(0.3) ? 1.6 : 1);
+        const up = r.pick([1.12, 1.19, 1.33]);
+        fv.voice(t, { dur: 0.45, a: 0.05, contour: [[0, f0], [0.15, f0 * up], [0.7, f0 * up], [1, f0 * 0.95]], vowels: ['a', 'o'], breath: 0.15, rough: 0.1, peak: 0.06 });
+        fv.voice(t + 0.55, { dur: 0.6, a: 0.05, contour: [[0, f0 * up], [0.3, f0], [1, f0 * 0.85]], vowels: ['e', 'a', 'o'], breath: 0.15, rough: 0.1, peak: 0.05 });
+        break;
+      }
+      case 'laughFar': {
+        const fv = new Fx(this.ac, this.out, this.rng, { vol: 0.4, pan: r.range(-0.9, 0.9) });
+        const f0 = r.range(140, 260);
+        for (let i = 0; i < r.int(3, 6); i++) fv.voice(t + i * 0.13, { dur: 0.08, a: 0.01, release: 0.05, contour: [[0, f0 * (1.1 - i * 0.03)], [1, f0 * (0.95 - i * 0.03)]], vowels: ['a'], breath: 0.4, peak: 0.05 });
+        break;
+      }
+      case 'hoof': {
+        // A horse led across the cobbles: four-beat walk, a jingle of tack.
+        const n = r.int(6, 12);
+        const pan = r.range(-0.9, 0.9);
+        for (let i = 0; i < n; i++) {
+          const tt = t + i * 0.27 + (i % 2 ? 0.05 : 0) + r.range(0, 0.02);
+          fx.modes(tt, { f: r.range(900, 1300), ratios: [1, 2.2], decays: [0.03, 0.015], peak: 0.02, pan: pan + i * 0.03 });
+          fx.burst(tt, { dur: 0.03, peak: 0.02, filters: [{ type: 'bandpass', f: 600, q: 1.5 }], pan: pan + i * 0.03 });
+        }
+        fx.grains(t + 0.2, { count: 6, spread: n * 0.25, fLo: 5000, fHi: 8000, q: 8, peak: 0.01 });
+        break;
+      }
+      case 'coinsFar': {
+        for (let i = 0; i < r.int(3, 7); i++) fx.modes(t + i * r.range(0.03, 0.08), { f: r.range(3000, 5200), ratios: [1, 2.7], decays: [0.12, 0.05], peak: 0.012 });
         break;
       }
       case 'bellFar': {
@@ -345,8 +409,11 @@ export class Ambience {
     this.stopped = true;
     const t = this.ac.currentTime;
     const g = this.out.gain;
+    // Anchor at the level the fade-in has reached (never trust a stale event).
+    const [a, b] = this._fadeIn;
+    const v = t >= b ? this.level : t <= a ? 0.0001 : 0.0001 + ((this.level - 0.0001) * (t - a)) / (b - a);
     g.cancelScheduledValues(t);
-    g.setValueAtTime(Math.max(0.0001, g.value), t);
+    g.setValueAtTime(Math.max(0.0001, v), t);
     g.linearRampToValueAtTime(0.0001, t + seconds);
     for (const n of this.nodes) n.stop(t + seconds + 0.1);
     this._disposeAt = t + seconds + 0.5;
@@ -359,4 +426,91 @@ export class Ambience {
       /* ignore */
     }
   }
+}
+
+/** One-pole-free RBJ bandpass applied in place (constant-skirt), for offline rendering. */
+function bandpassInPlace(x, sr, f, q, from, to, st) {
+  const w0 = (2 * Math.PI * f) / sr;
+  const al = Math.sin(w0) / (2 * q);
+  const a0 = 1 + al;
+  const b0 = al / a0;
+  const a1 = (-2 * Math.cos(w0)) / a0;
+  const a2 = (1 - al) / a0;
+  for (let i = from; i < to; i++) {
+    const v = b0 * x[i] - b0 * st.x2 - a1 * st.y1 - a2 * st.y2;
+    st.x2 = st.x1;
+    st.x1 = x[i];
+    st.y2 = st.y1;
+    st.y1 = v;
+    x[i] = v;
+  }
+}
+
+/**
+ * Market walla, rendered once per sample rate: twelve speakers at different
+ * distances and seats, each talking in phrases of syllables (glottal source,
+ * jitter and drifting intonation, two formants that jump syllable to syllable,
+ * pauses for breath), muffled by distance. A 12 s seamless stereo loop.
+ */
+export function wallaData(sr, seed = 1) {
+  const rng = new AudioRng(seed * 7919);
+  const secs = 12;
+  const N = Math.ceil(sr * secs);
+  const xf = Math.floor(sr * 0.5);
+  const L = new Float32Array(N + xf);
+  const R = new Float32Array(N + xf);
+  const VOW = [[730, 1090], [530, 1840], [290, 2250], [570, 840], [440, 1020], [660, 1700], [400, 1900]];
+  for (let s = 0; s < 12; s++) {
+    const fem = rng.chance(0.45);
+    const f0 = (fem ? 205 : 118) * rng.range(0.85, 1.2);
+    const dist = rng.range(0.3, 1);
+    const pan = rng.range(-1, 1);
+    // A wandering intonation contour across the whole loop.
+    const pts = [];
+    for (let k = 0; k <= 40; k++) pts.push([k / 40, f0 * (1 + rng.gauss(0.08))]);
+    const src = glottal(sr, { dur: secs + 0.5, contour: pts, jitter: 0.02, shimmer: 0.1, walk: 0.01, breath: 0.25, seed: rng.int(1, 1e9) });
+    const env = new Float32Array(src.length);
+    const sts = [{ x1: 0, x2: 0, y1: 0, y2: 0 }, { x1: 0, x2: 0, y1: 0, y2: 0 }];
+    const a = new Float32Array(src.length);
+    const b = new Float32Array(src.length);
+    a.set(src);
+    b.set(src);
+    let i = Math.floor(rng.range(0, 1.2) * sr);
+    while (i < src.length) {
+      // A phrase of 3–9 syllables, then a pause.
+      const n = rng.int(3, 9);
+      for (let k = 0; k < n && i < src.length; k++) {
+        const len = Math.floor(rng.range(0.1, 0.26) * sr);
+        const v = rng.pick(VOW);
+        const to = Math.min(src.length, i + len);
+        bandpassInPlace(a, sr, v[0] * (fem ? 1.15 : 1), 5, i, to, sts[0]);
+        bandpassInPlace(b, sr, v[1] * (fem ? 1.15 : 1), 7, i, to, sts[1]);
+        const pk = rng.range(0.5, 1) * (k === 0 ? 1.15 : 1) * (1 - (k / n) * 0.3);
+        for (let j = i; j < to; j++) {
+          const u = (j - i) / len;
+          env[j] = pk * Math.sin(Math.PI * Math.min(1, u * 1.15)) ** 0.7;
+        }
+        i = to + Math.floor(rng.range(0, 0.05) * sr);
+      }
+      i += Math.floor(rng.range(0.25, 1.4) * sr);
+    }
+    // Distance: quieter and duller further away (one-pole lowpass).
+    const lpk = Math.exp((-2 * Math.PI * (1200 + 2600 * (1 - dist))) / sr);
+    const gain = 0.12 * (1.2 - dist);
+    const gl = gain * Math.sqrt(0.5 * (1 - pan));
+    const gr = gain * Math.sqrt(0.5 * (1 + pan));
+    let y = 0;
+    for (let j = 0; j < Math.min(src.length, N + xf); j++) {
+      y = (1 - lpk) * (a[j] + b[j] * 0.6) * env[j] + lpk * y;
+      L[j] += y * gl;
+      R[j] += y * gr;
+    }
+  }
+  // Seamless loop: crossfade the tail into the head.
+  for (let j = 0; j < xf; j++) {
+    const u = j / xf;
+    L[j] = L[j] * u + L[N + j] * (1 - u);
+    R[j] = R[j] * u + R[N + j] * (1 - u);
+  }
+  return [L.subarray(0, N), R.subarray(0, N)];
 }

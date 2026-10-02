@@ -11,8 +11,9 @@ import { chart, mel, pad, riff, drums, counter, arp, soften } from '../compose.j
  *   D   development in G minor: the title motif in augmentation (low brass,
  *       celli) under driving violin ostinati
  * Adaptive layers in every section:
- *   L0 (always)  taiko ostinato, celli root–fifth–octave figures, basses, low brass
- *   L1 (≥ .35)   melody, brass stabs, toms/snare, violin spiccato
+ *   L0 (always)  the tune (horn / trumpet / violin theme), taiko ostinato,
+ *                celli root–fifth–octave figures, basses, low brass
+ *   L1 (≥ .35)   counterlines, brass stabs, toms/snare, violin spiccato
  *   L2 (≥ .7)    choir, high violins, crashes, timpani — desperate / boss fights
  */
 const MA = 'D4:q. A4:e A4:q G4:e F4:e | E4:q. F4:e D4:h | D4:q. Bb4:e Bb4:q A4:e G4:e | G4:q. A4:e E4:h | D5:q. A4:e A4:q Bb4:e C5:e | D5:q. C5:e A4:h | G4:e A4:e Bb4:e C5:e A4:q G4:e E4:e | A4:w';
@@ -58,10 +59,10 @@ const SECTIONS = {
     const cb = chart(CB, 4, at + 32);
     const all = [...ca, ...cb];
     engine(ev, all, at, 16);
-    ev.push(...mel('horn', MA, { at, vel: 0.8, layer: 1 }));
+    ev.push(...mel('horn', MA, { at, vel: 0.8 }));
     ev.push(...stabs('brass', ca, { low: 'F3', vel: 0.72, layer: 1 }));
     // Bars 9–16 keep a tune at mid intensity: the horns sing MB (violins double it above at L2).
-    ev.push(...mel('horn', MB, { at: at + 32, vel: 0.76, transpose: -12, layer: 1 }));
+    ev.push(...mel('horn', MB, { at: at + 32, vel: 0.76, transpose: -12 }));
     ev.push(...soften(mel('horn2', MBC, { at: at + 32, transpose: -12, layer: 1 }), 0.8));
     ev.push(...drums('tom', '....x.......x.xx|....x.....x.xxxx', { bars: 16, at, vel: 0.6, layer: 1 }));
     ev.push(...drums('snare', 'x.xxx.x.x.xxx.x.', { bars: 16, at, vel: 0.35, layer: 1, skipBars: first ? [0, 1, 2, 3] : [] }));
@@ -83,10 +84,10 @@ const SECTIONS = {
     const all = [...ca, ...cb];
     engine(ev, all, at, 16, { taiko: 'X.x.X..xX.x.X.x.|X.x.X..xX.x.XXxx', celli: 'R.R5R.R8R.R5R.8.' });
     ev.push(...mel('violins', MA, { at, vel: 0.72, transpose: 12, layer: 1 }));
-    ev.push(...mel('brass', MA, { at, vel: 0.62, layer: 1 }));
+    ev.push(...mel('brass', MA, { at, vel: 0.62 }));
     ev.push({ inst: 'horn', t: at + 30, midi: [62, 69], dur: 1.5, vel: 0.85, layer: 1, opts: { art: 'rip' } });
     ev.push(...counter('horn2', ca, { low: 'A3', vel: 0.5, key: 2, layer: 1 }));
-    ev.push(...mel('horn', MB, { at: at + 32, vel: 0.78, transpose: -12, layer: 1 }));
+    ev.push(...mel('horn', MB, { at: at + 32, vel: 0.78, transpose: -12 }));
     ev.push(...riff('violins2', cb, 'R8R8R8R8', { low: 'D5', step: 0.25, vel: 0.36, opts: { art: 'spic' }, layer: 1 }));
     ev.push(...drums('snare', '....x.......x.x.', { bars: 16, at, vel: 0.45, layer: 1 }));
     ev.push(...drums('tom', 'x.x.....x.x..x..', { bars: 16, at, vel: 0.5, layer: 1 }));
@@ -102,8 +103,8 @@ const SECTIONS = {
     const c2 = chart('Bb | C | Dm | Bb | Gm | Eb | A | A', 4, at + 32);
     const all = [...c1, ...c2];
     engine(ev, all, at, 16, { taiko: 'X...X..xX...X.x.|X...X..xX..xX.xx', celli: 'R.5.R.8.R.5.8.5.', brassVel: 0.38 });
-    ev.push(...mel('horn', MC, { at, vel: 0.8, layer: 1 }));
-    ev.push(...mel('violins', MC2, { at: at + 32, vel: 0.68, layer: 1 }));
+    ev.push(...mel('horn', MC, { at, vel: 0.8 }));
+    ev.push(...mel('violins', MC2, { at: at + 32, vel: 0.68 }));
     ev.push(...pad('strings', all, { low: 'A3', count: 3, vel: 0.42, layer: 1, cadence: true }));
     ev.push(...drums('snare', 'x..x..x.x..x.xxx', { bars: 16, at, vel: 0.32, layer: 1 }));
     ev.push(...mel('brass', MC, { at: at + 32, vel: 0.66, layer: 2 }));
@@ -124,7 +125,7 @@ const SECTIONS = {
     ev.push(...drums('rim', 'x..x..x.x..x..x.', { bars: 8, at, vel: 0.45, layer: 1 }));
     const cb = chart('Dm | Dm | Bb | Bb | Gm | Gm | A | A', 4, at + 32);
     engine(ev, cb, at + 32, 8, { taiko: 'X..x..X.X..x..x.|X..x..X.XxxXxXXX' });
-    ev.push(...stabs('brass', cb, { low: 'F3', times: [0, 1.5, 3], vel: 0.7, layer: 1 }));
+    ev.push(...stabs('brass', cb, { low: 'F3', times: [0, 1.5, 3], vel: 0.7 }));
     ev.push({ inst: 'snare', t: at + 48, dur: 16, vel: 0.6, roll: [0.08, 0.85], layer: 1 });
     ev.push(...mel('violins', 'D5:w | Eb5:w | D5:w | F5:w | G5:w | Bb5:w | A5:w | A5:w', { at: at + 32, vel: 0.4, opts: { art: 'trem', tremRate: 14 }, layer: 1, slur: false }));
     ev.push(...mel('horn', 'r:w | r:w | r:w | r:w | D4:q. A4:e A4:h | Bb4:q. A4:e G4:h | A4:w | E4:h A4:h', { at: at + 32, vel: 0.78, layer: 2 }));
@@ -171,10 +172,14 @@ export default {
   loop: true,
   gain: 0.69,
   intensity: 0.55,
+  // Loudness is calibrated where ordinary fights sit (0.45); below that the
+  // cue is compensated to the same level (thinner, not quieter), above it
+  // swells by `lift` LU up to a desperate 1.0 (see loudness.js intensityLift).
+  calIntensity: 0.45,
+  lift: 3.5,
   key: 2,
   room: 'hall',
   wet: 0.45,
-  lift: 3,
   // Presence for bite (the driving cue must cut through on laptop speakers).
   eq: [{ type: 'peaking', f: 3000, q: 0.6, g: 5.5 }, { type: 'highshelf', f: 7000, g: 3 }],
   // Orchestra seating: 1st violins hard left, 2nds left-centre, violas/strings centre, celli right,

@@ -1,8 +1,14 @@
+import { kbq } from '../instruments/base.js';
+import { noiseBuffer, noiseOffset } from '../dsp/bank.js';
+
 /**
  * The procedural SFX library. Each entry is `(fx, t, opts) => void` where `fx`
  * is a toolkit bound to the destination bus (see toolkit.js) and `t` an
  * absolute AudioContext time. Names are what scenes pass to `audio.sfx()`.
  */
+
+/** One-shots with sharp transients that get their own peak limiter (Fx `limit`). */
+export const LIMITED = /^(hit|hit_armor|hit_bone|crit|shield|parry|block|bite|claw|arrow_hit|death|spell_shock|spell_fire|spell_lightning|spell_cone|spell_turn|trap|door|door_close|door_locked|chest|vox_(dragon|ogre|troll|giant)(_die)?)$/;
 
 // ------------------------------------------------------------------ footsteps
 /**
@@ -117,8 +123,40 @@ const thud = (fx, t, peak = 0.5, f = 85) => {
   fx.burst(t, { dur: 0.12, peak: peak * 0.6, filters: [{ type: 'lowpass', f: 380 }] });
 };
 
+/**
+ * An arcing swish: air pushed aside by a blade or limb. The level follows a
+ * bell (swelling to the closest point of the arc at ~60 %, then falling away)
+ * while a band of noise sweeps up to f1 and back down (the doppler of the
+ * arc), plus a thin high "edge" layer that peaks with it — 150–300 ms, not a tick.
+ */
 function whoosh(fx, t, { f0 = 500, f1 = 2000, dur = 0.22, peak = 0.3, q = 1.4, pan } = {}) {
-  fx.burst(t, { kind: 'pink', a: dur * 0.45, dur: dur * 0.6, peak: peak * 4, curve: 'lin', filters: [{ type: 'bandpass', f: f0, f1, q, dt: dur * 0.6 }], pan });
+  const ac = fx.ac;
+  const len = Math.max(0.12, dur * 1.25);
+  const N = 32;
+  const bell = new Float32Array(N);
+  for (let i = 0; i < N; i++) {
+    const x = i / (N - 1);
+    const k = x < 0.6 ? x / 0.6 : 1 - (x - 0.6) / 0.4;
+    bell[i] = Math.max(0.0001, Math.pow(Math.sin((Math.PI / 2) * Math.max(0, k)), 2.2)) * peak * 2.6;
+  }
+  const layer = (lo, hi, qq, amp, kind) => {
+    const src = ac.createBufferSource();
+    src.buffer = noiseBuffer(ac, kind);
+    const bp = kbq(ac);
+    bp.type = 'bandpass';
+    bp.Q.value = qq;
+    bp.frequency.setValueAtTime(lo * fx.pitch, t);
+    bp.frequency.exponentialRampToValueAtTime(hi * fx.pitch, t + len * 0.6);
+    bp.frequency.exponentialRampToValueAtTime(Math.max(80, lo * 1.3 * fx.pitch), t + len);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.setValueCurveAtTime(bell.map((v) => v * amp), t, len);
+    src.connect(bp).connect(g).connect(fx._dest({ pan }));
+    src.start(t, noiseOffset(fx.rng, 2));
+    src.stop(t + len + 0.02);
+  };
+  layer(f0, f1, q, 1, 'pink');
+  layer(f1 * 1.4, Math.min(12000, f1 * 3), 2.5, 0.25, 'white');
 }
 
 function metalClang(fx, t, peak = 0.25, f = 820) {
@@ -145,7 +183,7 @@ export function keyRatio(key, base = 2) {
 function chord(fx, t, freqs, { dur = 1.2, peak = 0.08, vowel = 'a', a = 0.3, k = 1 } = {}) {
   for (const f0 of freqs) {
     const f = f0 * k;
-    fx.voice(t, { dur, a, release: 0.6, peak, contour: [[0, f], [1, f]], vowels: [vowel], voices: 2, vib: [5, 0.006], breath: 0.03 });
+    fx.voice(t, { dur, a, release: 0.6, peak, contour: [[0, f], [1, f]], vowels: [vowel], voices: 2, vib: [5, 0.006], breath: 0.03, jitter: 0.004, shimmer: 0.03, walk: 0.002 });
   }
 }
 
@@ -419,7 +457,7 @@ export const SFX = {
   },
 
   // --- weapons
-  swing: (fx, t, o) => whoosh(fx, t, { f0: 450 * (o.heavy ? 0.7 : 1), f1: 1900, dur: 0.24, peak: 0.28 }),
+  swing: (fx, t, o) => whoosh(fx, t, { f0: 380 * (o.heavy ? 0.7 : 1), f1: 1700, dur: 0.24, peak: 0.28, q: 1.1 }),
   miss: (fx, t) => {
     whoosh(fx, t, { f0: fx.rng.range(450, 650), f1: fx.rng.range(1800, 2600), dur: 0.22, peak: 0.26 });
     whoosh(fx, t + 0.08, { f0: 2400, f1: 900, dur: 0.18, peak: 0.08 });

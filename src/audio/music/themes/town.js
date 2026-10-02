@@ -73,7 +73,35 @@ function strain(ev, at, { tune, counter, chords, lead, cm, tavern, repeat, strai
   ev.push({ inst: 'gurdy', t: at, midi: root, dur: 24, vel: 0.4, opts: { fifth: 0.5, buzz: (tavern ? 184 : 160) / 60 / 1.5, buzzLevel: tavern ? 1 : repeat ? 0.8 : 0.55 } });
 }
 
-function jigSet(ev, cycle, tavern) {
+/**
+ * A band, not a sequencer: the accompaniment (lute picking and strums, bass,
+ * bodhrán, tambourine) gets the jig's lilt — in each dotted-quarter beat the
+ * first eighth leans long, the second comes late and light — plus per-hit
+ * timing scatter (±8–15 ms) and velocity jitter, and every strain its own
+ * accent shape (lean into bar 4, breathe, drive into bar 8). Slurred melody
+ * lines keep their written jig rhythm (they already swing in q–e).
+ */
+function humanise(ev, from, rng, { tavern, at, strainIdx }) {
+  const q = 60 / (tavern ? 184 : 160);
+  const lilt = [0, 0.055, 0.025];
+  const shape = (bar) => [0.9, 0.95, 1, 1.06, 0.92, 0.98, 1.04, 1.1][bar] ?? 1;
+  const tilt = [1, 0.96, 1.03, 0.98][strainIdx % 4];
+  for (let i = from; i < ev.length; i++) {
+    const e = ev[i];
+    if (e.slur || e.roll) continue;
+    const rel = e.t - at;
+    const pos = ((rel % 1.5) + 1.5) % 1.5;
+    const k = Math.round(pos / 0.5);
+    if (Math.abs(pos - k * 0.5) < 0.02) e.t += lilt[k % 3];
+    // Scatter: σ ≈ 7 ms, clamped to ±15 ms.
+    e.t = Math.max(0, e.t + Math.max(-0.015, Math.min(0.015, rng.gauss(0.007))) / q);
+    const bar = Math.floor(rel / BAR);
+    const v = e.vel ?? 0.6;
+    e.vel = Math.max(0.05, Math.min(1, v * shape(bar) * tilt * (1 + rng.range(-0.1, 0.1)) * (k % 3 === 1 ? 0.9 : 1)));
+  }
+}
+
+function jigSet(ev, cycle, tavern, rng) {
   const leads = tavern ? ['fiddle', 'recorder'] : ['recorder', 'fiddle', 'shawm'];
   const lead1 = leads[cycle % leads.length];
   const lead2 = leads[(cycle + 1) % leads.length];
@@ -89,7 +117,11 @@ function jigSet(ev, cycle, tavern) {
     [TD, null, 'Em | Em,D | Em,G | D | Em,A | D | Em,D | Em', lead1, null, 3],
     [TD_, CD, 'Em | Em,D | Em,G | D | Em,A | D | Em,D | Em', lead2, cm === 'dulcimer' ? 'dulcimer' : 'fiddle2', 3],
   ];
-  plan.forEach(([tune, counter, chords, lead, c, si], i) => strain(ev, i * 24, { tune, counter, chords, lead, cm: tavern && !c ? 'dulcimer' : c, tavern, repeat: i % 2 === 1, strainIdx: si }));
+  plan.forEach(([tune, counter, chords, lead, c, si], i) => {
+    const from = ev.length;
+    strain(ev, i * 24, { tune, counter, chords, lead, cm: tavern && !c ? 'dulcimer' : c, tavern, repeat: i % 2 === 1, strainIdx: si });
+    humanise(ev, from, rng, { tavern, at: i * 24, strainIdx: si });
+  });
   return 8 * 24;
 }
 
@@ -111,10 +143,10 @@ function slowAir(ev, cycle, tavern) {
   return 4 * 8 * L;
 }
 
-function build(pass, { tavern }) {
+function build(pass, rng, { tavern }) {
   const ev = [];
   const cycle = Math.floor(pass / 2);
-  const lengthQ = pass % 2 === 0 ? jigSet(ev, cycle, tavern) : slowAir(ev, cycle, tavern);
+  const lengthQ = pass % 2 === 0 ? jigSet(ev, cycle, tavern, rng) : slowAir(ev, cycle, tavern);
   return { lengthQ, events: ev, tailQ: 3, section: pass % 2 === 0 ? 'set' : 'air', rit: pass % 2 ? [[lengthQ - 6, lengthQ, 0.75]] : [] };
 }
 
@@ -137,5 +169,5 @@ const instruments = {
 };
 
 // A jig: dotted quarter ≈ 107 in town, ≈ 123 in the tavern (bpm counts quarters; a 6/8 bar = 3 quarters).
-export default { id: 'town', bpm: 160, barQ: 3, loop: true, gain: 1.06, key: 7, room: 'street', wet: 0.4, rest: { after: [200, 280], length: [30, 60] }, instruments, build: (p) => build(p, { tavern: false }) };
-export const tavern = { id: 'tavern', bpm: 184, barQ: 3, loop: true, gain: 0.94, key: 7, room: 'tavern', wet: 0.55, instruments, build: (p) => build(p, { tavern: true }) };
+export default { id: 'town', bpm: 160, barQ: 3, loop: true, gain: 1.06, key: 7, room: 'street', wet: 0.4, rest: { after: [200, 280], length: [30, 60] }, instruments, build: (p, rng) => build(p, rng, { tavern: false }) };
+export const tavern = { id: 'tavern', bpm: 184, barQ: 3, loop: true, gain: 0.94, key: 7, room: 'tavern', wet: 0.55, instruments, build: (p, rng) => build(p, rng, { tavern: true }) };

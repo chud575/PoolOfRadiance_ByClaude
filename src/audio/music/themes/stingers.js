@@ -71,24 +71,31 @@ export const defeat = {
     basses: { preset: 'basses', pan: 0.6 },
     choir: { preset: 'choirOo' },
     bell: { preset: 'churchBell', pan: -0.4 },
-    boom: { preset: 'boom', eq: [{ type: 'highpass', f: 52, q: 0.7 }] },
-    lowbrass: { preset: 'lowbrass' },
+    boom: { preset: 'boom', eq: [{ type: 'highpass', f: 75, q: 0.7 }] },
+    lowbrass: { preset: 'lowbrass', eq: [{ type: 'highpass', f: 70, q: 0.7 }] },
     flute: { preset: 'flute', pan: 0.3 },
+    oboe: { preset: 'oboe', pan: 0.25, reverb: 0.6 },
   },
   build() {
     const ev = [];
-    // The motif again, broken: D–A–A in mourning, sinking to the tonic.
-    const ch = chart('Dm | F/C | Gm,A | Dm', 4);
-    ev.push({ inst: 'boom', t: 0, dur: 2, vel: 0.9 });
+    // The motif again, broken: D–A–A in mourning, sinking to the tonic; the
+    // oboe tries the octave leap once more and falls back. Six bars.
+    const ch = chart('Dm | F/C | Gm,A | Dm | Bb | Gm,A', 4);
+    ev.push({ inst: 'boom', t: 0, dur: 2, vel: 0.75 });
     ev.push({ inst: 'bell', t: 0, midi: 50, dur: 4, vel: 0.6 });
     ev.push({ inst: 'bell', t: 8, midi: 50, dur: 4, vel: 0.45 });
-    ev.push(...mel('strings', 'D4:h. A4:q | A4:h G4:q F4:q | Bb3:h A3:h | D4:w', { vel: 0.5 }));
+    ev.push({ inst: 'bell', t: 20, midi: 50, dur: 4, vel: 0.32 });
+    ev.push(...mel('strings', 'D4:h. A4:q | A4:h G4:q F4:q | Bb3:h A3:h | D4:w | D4:h. F4:q | E4:h C#4:h', { vel: 0.5 }));
     ev.push(...mel('flute', 'r:w | r:w | D5:h C#5:h | D5:w', { vel: 0.35 }));
+    ev.push(...mel('oboe', 'r:w | r:w | r:w | r:h A4:q. D5:e | D5:h C5:q Bb4:q | A4:h. G4:e E4:e', { vel: 0.42 }));
     ev.push(...pad('choir', ch, { low: 'D3', count: 3, vel: 0.45 }));
     ev.push(...pad('celli', ch, { low: 'D2', count: 2, vel: 0.4 }));
-    ev.push(...pad('basses', ch, { low: 'D2', count: 1, vel: 0.45 }));
+    ev.push(...pad('basses', ch, { low: 'D2', count: 1, vel: 0.42 }));
     ev.push({ inst: 'lowbrass', t: 0, midi: [38, 45], dur: 4, vel: 0.45 });
-    return { lengthQ: 16, events: ev, tailQ: 4 };
+    // Final tonic, a picardy-less open fifth that just fades.
+    ev.push({ inst: 'strings', t: 24, midi: [50, 57], dur: 6, vel: 0.35, opts: { release: 2 } });
+    ev.push({ inst: 'basses', t: 24, midi: 38, dur: 6, vel: 0.35 });
+    return { lengthQ: 30, events: ev, tailQ: 4, rit: [[20, 26, 0.8]] };
   },
 };
 

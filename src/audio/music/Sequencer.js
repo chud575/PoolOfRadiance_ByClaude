@@ -1,6 +1,6 @@
 import { createInstrument } from '../instruments/index.js';
 import { AudioRng, hashStr } from '../core/rng.js';
-import { musicGain } from '../loudness.js';
+import { musicGain, musicCal, intensityCompDb } from '../loudness.js';
 import { noiseBuffer } from '../dsp/bank.js';
 
 const clock = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
@@ -77,19 +77,36 @@ export class TrackPlayer {
     tail.connect(o.dest);
     this.sendOut = ac.createGain();
     this.sendOut.connect(o.send);
+    // Per-section loudness trim (multi-pass cues: every variant at the same
+    // level) and the intensity compensation table, from the calibration.
+    this.cal = o.cal ?? (o.rawGain ? {} : musicCal(song));
+    this.noComp = !!o.noComp;
+    this.trim = ac.createGain();
+    this.trimS = ac.createGain();
+    this.trim.connect(this.out);
+    this.trimS.connect(this.sendOut);
     const start = o.at ?? ac.currentTime + 0.05;
     const g = o.rawGain ? (o.gainOverride ?? 1) : musicGain(song);
     this.gain = g;
+    // The out-gain automation is tracked analytically (_curve) so fadeOut can
+    // anchor its ramp at the exact scheduled value instead of trusting
+    // cancelAndHoldAtTime, which (per spec) inserts no hold event after a
+    // completed ramp / old setValueAtTime and makes the new ramp start from
+    // that stale event — an instant gain drop.
     if (o.fadeIn) {
       this.out.gain.setValueAtTime(0.0001, start);
       this.out.gain.linearRampToValueAtTime(g, start + o.fadeIn);
-    } else this.out.gain.setValueAtTime(g, start);
+      this._curve = { t0: start, v0: 0.0001, t1: start + o.fadeIn, v1: g };
+    } else {
+      this.out.gain.setValueAtTime(g, start);
+      this._curve = { t0: start, v0: g, t1: start, v1: g };
+    }
     this.sendOut.gain.value = 1;
     this.layers = [0, 1, 2].map(() => {
       const lg = ac.createGain();
       const ls = ac.createGain();
-      lg.connect(this.out);
-      ls.connect(this.sendOut);
+      lg.connect(this.trim);
+      ls.connect(this.trimS);
       return { g: lg, s: ls };
     });
     this.intensity = o.intensity ?? song.intensity ?? 1;
@@ -155,12 +172,29 @@ export class TrackPlayer {
       this.musicPass = mp + 1;
     }
     this.section = r.section ?? null;
+    this._applyTrim();
     this.events = this._slurs(r.events.slice().sort((a, b) => a.t - b.t));
     this.lengthQ = r.lengthQ;
     this.tailQ = r.tailQ ?? 0;
     this.rit = (r.rit ?? []).slice().sort((a, b) => a[0] - b[0]);
     this.cursor = 0;
     this._queueWarm();
+  }
+
+  /** Section loudness trim at the start of the pass (rest windows keep the last one). */
+  _applyTrim() {
+    if (this.section === 'rest') return;
+    const db = this.cal?.sections?.[this.section] ?? 0;
+    const v = Math.pow(10, db / 20);
+    const t = this.passStart;
+    for (const p of [this.trim.gain, this.trimS.gain]) {
+      if (this.pass === 0) p.setValueAtTime(v, t);
+      else {
+        p.setValueAtTime(this._trimV ?? 1, Math.max(this.ac.currentTime, t - 0.15));
+        p.linearRampToValueAtTime(v, Math.max(this.ac.currentTime + 0.01, t + 0.05));
+      }
+    }
+    this._trimV = v;
   }
 
   /** Join slurred single notes of one instrument/layer into legato phrase events. */
@@ -229,8 +263,18 @@ export class TrackPlayer {
     return Math.pow(10, ((this.song.lift ?? 0) * k * k * (3 - 2 * k)) / 20);
   }
 
+  /**
+   * Overall gain at intensity x: the calibrated compensation (combat: the
+   * cue is as loud at 0.3 as at its typical 0.45, and swells by `lift` LU
+   * to 1.0) when the song has an intensity curve, else the plain lift.
+   */
+  _level(x) {
+    if (this.cal?.curve && !this.noComp) return Math.pow(10, intensityCompDb(this.song, this.cal.curve, x) / 20);
+    return this._lift(x);
+  }
+
   _applyIntensity(t, tc) {
-    const lift = this._lift(this.intensity);
+    const lift = this._level(this.intensity);
     this.layers.forEach((L, i) => {
       const v = Math.max(0.0001, this._layerGain(i, this.intensity) * lift);
       const sv = v * (i === 2 ? 1.35 : 1);
@@ -390,30 +434,44 @@ export class TrackPlayer {
     this.fadeOut(0.12, at);
     if (!evs.length) return null;
     const song = { ...this.song, id: `${this.song.id}:coda`, loop: false, gain: this.gain, build: () => ({ lengthQ: 4, tailQ: 2, events: evs.map((e) => ({ ...e, layer: 0, exact: true })) }) };
-    const p = new TrackPlayer(this.ac, song, { dest: this.dest, send: this.send, at });
+    const p = new this.constructor(this.ac, song, { dest: this.dest, send: this.send, at });
     p.tick(at + 8);
     return p;
+  }
+
+  /** Scheduled value of the out gain at time `t` (from the tracked automation). */
+  gainAt(t) {
+    const c = this._curve;
+    if (t <= c.t0) return c.v0;
+    if (t >= c.t1) return c.v1;
+    return c.v0 + ((c.v1 - c.v0) * (t - c.t0)) / (c.t1 - c.t0);
   }
 
   /** Keep playing until `at` (AudioContext time), then fade out over `seconds`. */
   fadeOut(seconds = 2, at = this.ac.currentTime) {
     if (this.stopped || this.stopAt !== undefined) return;
-    const t = Math.max(this.ac.currentTime, at);
-    if (t <= this.ac.currentTime + 0.01) this.stopped = true;
+    const now = this.ac.currentTime;
+    const t = Math.max(now, at);
+    if (t <= now + 0.01) this.stopped = true;
     else this.stopAt = t;
-    const hold = (p) => {
-      if (p.cancelAndHoldAtTime) p.cancelAndHoldAtTime(t);
-      else {
-        p.cancelScheduledValues(t);
-        p.setValueAtTime(Math.max(0.0001, p.value), t);
-      }
-    };
+    const len = Math.max(0.05, seconds);
+    // Out gain: cancel what lies ahead and re-anchor explicitly at t with the
+    // value the curve has there, so the cue holds full level until t.
     const g = this.out.gain;
-    hold(g);
-    g.linearRampToValueAtTime(0.0001, t + Math.max(0.05, seconds));
+    const v = Math.max(0.0001, this.gainAt(t));
+    g.cancelScheduledValues(now);
+    const vNow = Math.max(0.0001, this.gainAt(now));
+    g.setValueAtTime(vNow, now);
+    if (t > now + 1e-4) g.linearRampToValueAtTime(v, t); // continues a running fade-in exactly
+    g.setValueAtTime(v, t);
+    g.linearRampToValueAtTime(0.0001, t + len);
+    this._curve = { t0: t, v0: v, t1: t + len, v1: 0.0001 };
+    // Reverb send: constant 1 until t, then a slightly longer release.
     const s = this.sendOut.gain;
-    hold(s);
-    s.linearRampToValueAtTime(0, t + Math.max(0.05, seconds) + 0.5);
+    s.cancelScheduledValues(now);
+    s.setValueAtTime(1, now);
+    s.setValueAtTime(1, t);
+    s.linearRampToValueAtTime(0, t + len + 0.5);
     this._disposeAt = t + seconds + 1.5;
   }
 

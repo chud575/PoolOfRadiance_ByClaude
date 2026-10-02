@@ -108,3 +108,46 @@ export function adsr(param, t, dur, { a = 0.01, d = 0.1, s = 0.7, r = 0.2, peak 
 }
 
 export const cents = (c) => Math.pow(2, c / 1200);
+
+/**
+ * Voice budget (per context): how many of `want` section players may sound
+ * for a note scheduled at [t, end). When the whole score already has more
+ * than `cap` players overlapping, big sections thin out (never below `min`),
+ * so a desperate battle can't outrun the live audio thread.
+ */
+const active = new WeakMap();
+export function voiceBudget(ac, t, end, want, min = 2, cap = 110) {
+  let a = active.get(ac);
+  if (!a) active.set(ac, (a = []));
+  const now = ac.currentTime ?? 0;
+  let n = 0;
+  for (let i = a.length - 1; i >= 0; i--) {
+    const [s0, e0, c] = a[i];
+    if (e0 < now - 0.5) a.splice(i, 1);
+    else if (s0 < end && e0 > t) n += c;
+  }
+  const give = Math.max(Math.min(min, want), Math.min(want, cap - n));
+  a.push([t, end, give]);
+  if (a.length > 2000) a.splice(0, a.length - 2000);
+  return give;
+}
+
+/**
+ * A biquad whose parameters update once per 128-sample block (k-rate). Filters
+ * swept by envelopes, LFOs or a pressure signal otherwise recompute their
+ * coefficients every sample — the single biggest cost of a dense score on the
+ * audio thread. The sweeps here are slow (≥ 20 ms), so block rate is inaudible.
+ */
+export function kbq(ac, type) {
+  const b = ac.createBiquadFilter();
+  if (type) b.type = type;
+  try {
+    b.frequency.automationRate = 'k-rate';
+    b.Q.automationRate = 'k-rate';
+    b.gain.automationRate = 'k-rate';
+    b.detune.automationRate = 'k-rate';
+  } catch {
+    /* older engines: a-rate only */
+  }
+  return b;
+}

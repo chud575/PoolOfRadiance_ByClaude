@@ -187,3 +187,91 @@ export function noiseData(sr, seconds, kind = 'white', seed = 11) {
   }
   return out.subarray(0, N - xf);
 }
+
+/**
+ * Glottal source for creature and party voices: a Rosenberg glottal-flow
+ * pulse train, differentiated (lip radiation), with everything that makes a
+ * throat sound alive rather than a clean harmonic ladder —
+ *   jitter   per-period pitch scatter (1–3 %),
+ *   shimmer  per-period amplitude scatter,
+ *   walk     a slow random walk of the pitch around the written contour,
+ *   sub      subharmonic / period doubling (alternate periods long and weak:
+ *            the f0/2 growl of orcs, ogres, trolls),
+ *   breath   aspiration noise, louder while the folds are open (pulsed with
+ *            the voice, as in real breathy phonation),
+ *   vib      [rate Hz, depth fraction] vibrato/tremor.
+ * Returns mono samples (DC-blocked, RMS-normalised to ~0.35).
+ * @param {number} sr
+ * @param {{dur:number, contour:number[][], jitter?:number, shimmer?:number, walk?:number, sub?:number, breath?:number, vib?:number[], open?:number, seed?:number}} o
+ */
+export function glottal(sr, o) {
+  const rng = new AudioRng(o.seed ?? 7);
+  const dur = o.dur;
+  const N = Math.max(16, Math.ceil(sr * dur));
+  const out = new Float32Array(N);
+  const c = o.contour;
+  const f0At = (k) => {
+    if (k <= c[0][0]) return c[0][1];
+    for (let i = 1; i < c.length; i++) if (k <= c[i][0]) return c[i - 1][1] + ((c[i][1] - c[i - 1][1]) * (k - c[i - 1][0])) / Math.max(1e-6, c[i][0] - c[i - 1][0]);
+    return c[c.length - 1][1];
+  };
+  const jit = o.jitter ?? 0.015;
+  const shim = o.shimmer ?? 0.08;
+  const walkSd = o.walk ?? 0.006;
+  const sub = o.sub ?? 0;
+  const breath = o.breath ?? 0;
+  const openQ = o.open ?? 0.6;
+  const vib = o.vib;
+  let walk = 0;
+  let n = 0;
+  let period = 0;
+  let prevFlow = 0;
+  let lp = 0;
+  while (n < N) {
+    const t = n / sr;
+    walk = walk * 0.97 + rng.gauss(walkSd);
+    let f = f0At(t / dur) * (1 + walk) * (1 + rng.gauss(jit));
+    if (vib) f *= 1 + vib[1] * Math.sin(6.283185307179586 * vib[0] * t);
+    let P = Math.max(4, sr / Math.max(20, f));
+    let amp = Math.max(0.2, 1 + rng.gauss(shim));
+    if (sub > 0 && period % 2 === 1) {
+      P *= 1 + sub * 0.35;
+      amp *= 1 - sub * 0.55;
+    }
+    const To = P * openQ;
+    const Tp = To * 0.68;
+    const Tn = To - Tp;
+    // Larger periods give a bigger flow pulse; scale the derivative so loudness is pitch-independent.
+    const scale = (P / 60) * amp;
+    const end = Math.min(N, n + Math.round(P));
+    for (let i = 0; n < end; i++, n++) {
+      let flow = 0;
+      if (i < Tp) flow = 0.5 * (1 - Math.cos((Math.PI * i) / Tp));
+      else if (i < To) flow = Math.cos((Math.PI * (i - Tp)) / (2 * Tn));
+      let v = (flow - prevFlow) * scale;
+      prevFlow = flow;
+      if (breath > 0) {
+        lp += 0.55 * (rng.next() * 2 - 1 - lp);
+        v += lp * breath * (0.25 + flow) * 0.3;
+      }
+      out[n] = v;
+    }
+    period++;
+  }
+  // DC blocker, then RMS normalisation and click-free edges.
+  let x1 = 0;
+  let y1 = 0;
+  let sum = 0;
+  for (let i = 0; i < N; i++) {
+    const y = out[i] - x1 + 0.995 * y1;
+    x1 = out[i];
+    y1 = y;
+    out[i] = y;
+    sum += y * y;
+  }
+  const g = 0.35 / Math.sqrt(sum / N + 1e-12);
+  const fi = Math.min(N >> 2, Math.floor(sr * 0.003));
+  const fo = Math.min(N >> 2, Math.floor(sr * 0.012));
+  for (let i = 0; i < N; i++) out[i] *= g * Math.min(1, i / Math.max(1, fi), (N - i) / Math.max(1, fo));
+  return out;
+}

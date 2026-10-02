@@ -46,7 +46,10 @@ export function createGraph(ac, dest = ac.destination) {
   limiter.attack.value = 0.002;
   limiter.release.value = 0.1;
   const makeup = g(1.15);
-  master.connect(glue).connect(makeup).connect(limiter).connect(dest);
+  // The limiter's automatic make-up gain lifts its ceiling to about -1 dBFS;
+  // trim after it so the output's true peak stays under -1 dBTP (≈ -2.5 dBFS ceiling).
+  const ceiling = g(0.84);
+  master.connect(glue).connect(makeup).connect(limiter).connect(ceiling).connect(dest);
 
   const musicBus = g(0.6);
   const musicDuck = g(1);

@@ -208,4 +208,63 @@ describe('audio director', () => {
     bus.emit('time:changed', { minutes: 22 * 60 });
     expect(calls).toContainEqual(['amb', 'wilds', true]);
   });
+
+  describe('structured combat feed', () => {
+    const fakeEngine = () => {
+      const all = [
+        { id: 1, side: 'party', name: 'Taran', ref: { name: 'Taran' }, hp: { cur: 10, max: 10 } },
+        { id: 2, side: 'monster', monsterId: 'orc', name: 'Orc 1', hp: { cur: 6, max: 6 } },
+        { id: 3, side: 'monster', monsterId: 'orc', name: 'Orc 2', hp: { cur: 6, max: 6 } },
+        { id: 4, side: 'monster', monsterId: 'kobold', name: 'Kobold 1', hp: { cur: 3, max: 3 } },
+        { id: 5, side: 'monster', monsterId: 'kobold', name: 'Kobold 2', hp: { cur: 3, max: 3 } },
+      ];
+      return { all, byId: (id) => all.find((c) => c.id === id) };
+    };
+
+    it('keeps an attack\'s context until its impact, even seconds later (Speed: Slow)', () => {
+      const { bus, d, engine } = setup();
+      bus.emit('scene:enter', { name: 'combat', params: {} });
+      const eng = fakeEngine();
+      bus.emit('combat:event', { ev: { type: 'attack', id: 2, target: 1, ranged: true, hit: true }, engine: eng });
+      d.remapSfx('miss', { pitch: 1.4 });
+      engine.ctx.currentTime += 1.9;
+      const r = d.remapSfx('hit', {});
+      expect(r.map(([n]) => n)).toContain('arrow_hit');
+      // A melee miss resolved late still becomes a parry / shield / dodge, not a generic miss.
+      bus.emit('combat:event', { ev: { type: 'attack', id: 1, target: 2, hit: false }, engine: eng });
+      d.remapSfx('miss', { pitch: 1.4 });
+      engine.ctx.currentTime += 2.5;
+      const m = d.remapSfx('miss', {}).map(([n]) => n);
+      expect(m.some((n) => ['parry', 'shield', 'dodge'].includes(n))).toBe(true);
+      // The next round ends it.
+      bus.emit('combat:event', { ev: { type: 'round', round: 2 }, engine: eng });
+      expect(d.remapSfx('miss', {})[0][0]).toBe('miss');
+    });
+
+    it('voices blows that played without animation (snap / QUICK), staggered', () => {
+      const { bus, calls } = setup();
+      bus.emit('scene:enter', { name: 'combat', params: {} });
+      const eng = fakeEngine();
+      calls.length = 0;
+      for (const [id, target, hit] of [[1, 2, true], [1, 3, false], [1, 4, true], [1, 5, true]]) bus.emit('combat:event', { ev: { type: 'attack', id, target, hit }, engine: eng });
+      bus.emit('combat:event', { ev: { type: 'round', round: 2 }, engine: eng });
+      const blows = calls.filter((c) => c[0] === 'sfx' && ['hit', 'parry', 'shield', 'dodge'].includes(c[1]));
+      expect(blows.length).toBe(4);
+      const delays = blows.map((c) => c[2].delay).sort((a, b) => a - b);
+      for (let i = 1; i < delays.length; i++) expect(delays[i] - delays[i - 1]).toBeGreaterThanOrEqual(0.059);
+    });
+
+    it('staggers simultaneous death cries instead of stacking them', () => {
+      const { bus, calls } = setup();
+      bus.emit('scene:enter', { name: 'combat', params: {} });
+      const eng = fakeEngine();
+      calls.length = 0;
+      for (const id of [2, 3, 4, 5]) bus.emit('combat:event', { ev: { type: 'down', id }, engine: eng });
+      const cries = calls.filter((c) => c[0] === 'sfx' && /^vox_.*_die$/.test(c[1]));
+      expect(cries.length).toBeGreaterThanOrEqual(3);
+      const ds = cries.map((c) => c[2].delay);
+      expect(new Set(ds.map((x) => x.toFixed(2))).size).toBe(ds.length);
+      expect(Math.min(...ds.slice(1).map((x, i) => x - ds[i]))).toBeGreaterThanOrEqual(0.2);
+    });
+  });
 });

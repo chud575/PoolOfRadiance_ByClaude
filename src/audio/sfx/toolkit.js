@@ -1,4 +1,6 @@
+import { kbq } from '../instruments/base.js';
 import { noiseBuffer, noiseOffset } from '../dsp/bank.js';
+import { glottal } from '../dsp/synth.js';
 
 /**
  * Tiny synthesis toolkit for one-shot sound effects. Every helper schedules
@@ -20,7 +22,19 @@ export class Fx {
     this.out.gain.value = o.vol ?? 1;
     const p = ac.createStereoPanner();
     p.pan.value = o.pan ?? 0;
-    this.out.connect(p).connect(out);
+    if (o.limit) {
+      // Transient safety for blows and blasts: a fast peak limiter on this
+      // sound alone, so its 0.5 ms edge click never reaches 0 dBFS and the
+      // master limiter is not doing the work (the body is untouched).
+      const lim = ac.createDynamicsCompressor();
+      // (A high threshold: the node adds automatic make-up gain that grows as the threshold drops.)
+      lim.threshold.value = -6;
+      lim.knee.value = 0;
+      lim.ratio.value = 20;
+      lim.attack.value = 0.0005;
+      lim.release.value = 0.08;
+      this.out.connect(lim).connect(p).connect(out);
+    } else this.out.connect(p).connect(out);
     if (o.send) {
       const s = ac.createGain();
       s.gain.value = o.sendLevel ?? 0.25;
@@ -39,7 +53,7 @@ export class Fx {
   _filters(src, filters = [], t, dur) {
     let n = src;
     for (const f of filters) {
-      const b = this.ac.createBiquadFilter();
+      const b = kbq(this.ac);
       b.type = f.type ?? 'lowpass';
       const f0 = Math.min(20000, f.f * (f.noPitch ? 1 : this.pitch));
       b.frequency.setValueAtTime(f0, t);
@@ -133,9 +147,13 @@ export class Fx {
   }
 
   /**
-   * Formant voice (monster vocalisations, shouts). Glottal source = saw (or
-   * noise for whispers) following an f0 contour, through a vowel filter bank
-   * that morphs between vowels. `rough` adds jitter/growl, `drive` distorts.
+   * Formant voice (monster vocalisations, shouts, sung spell chords). The
+   * source is a glottal pulse train (dsp/synth.js glottal) with jitter,
+   * shimmer and a random-walk pitch around the written contour; rough voices
+   * add subharmonic period doubling (the growl) and noise AM, breathy ones
+   * aspiration pulsed with the folds. It runs through a vowel filter bank
+   * that morphs between vowels; `drive` saturates (DC-blocked after the
+   * shaper). `type` forces a plain oscillator (a pure howl), `whisper` noise.
    * contour: [[timeFrac, f0], ...]  vowels: ['a','o',...] spread over dur.
    */
   voice(t, o) {
@@ -157,7 +175,12 @@ export class Fx {
       // Distortion adds a lot of energy: compensate so driven roars sit level.
       const post = ac.createGain();
       post.gain.value = 0.5 / (1 + o.drive * 1.6);
-      ws.connect(post).connect(dest);
+      // DC blocker after the shaper.
+      const dc = kbq(ac);
+      dc.type = 'highpass';
+      dc.frequency.value = 30;
+      dc.Q.value = 0.6;
+      ws.connect(post).connect(dc).connect(dest);
       dest = ws;
     }
     out.connect(dest);
@@ -173,34 +196,61 @@ export class Fx {
       n.start(t, noiseOffset(this.rng, 3));
     } else {
       const contour = o.contour ?? [[0, 120], [1, 100]];
+      const rough = o.rough ?? 0;
       for (let v = 0; v < (o.voices ?? 1); v++) {
-        const osc = ac.createOscillator();
-        osc.type = o.type ?? 'sawtooth';
         const det = 1 + (v ? (v % 2 ? 1 : -1) * 0.012 * v : 0);
-        osc.frequency.setValueAtTime(contour[0][1] * this.pitch * det, t);
-        for (const [k, f] of contour.slice(1)) osc.frequency.linearRampToValueAtTime(f * this.pitch * det, t + k * dur);
-        if (o.vib) {
-          const l = ac.createOscillator();
-          l.frequency.value = o.vib[0];
-          const lg = ac.createGain();
-          lg.gain.value = contour[0][1] * o.vib[1] * this.pitch;
-          l.connect(lg).connect(osc.frequency);
-          l.start(t);
-          src.push(l);
+        if (o.type) {
+          const osc = ac.createOscillator();
+          osc.type = o.type;
+          osc.frequency.setValueAtTime(contour[0][1] * this.pitch * det, t);
+          for (const [k, f] of contour.slice(1)) osc.frequency.linearRampToValueAtTime(f * this.pitch * det, t + k * dur);
+          if (o.vib) {
+            const l = ac.createOscillator();
+            l.frequency.value = o.vib[0];
+            const lg = ac.createGain();
+            lg.gain.value = contour[0][1] * o.vib[1] * this.pitch;
+            l.connect(lg).connect(osc.frequency);
+            l.start(t);
+            src.push(l);
+          }
+          osc.connect(mix);
+          osc.start(t);
+          src.push(osc);
+          continue;
         }
-        osc.connect(mix);
-        osc.start(t);
-        src.push(osc);
+        // Each voice of a group is its own throat (own seed, own jitter).
+        const len = dur + (o.release ?? 0.15) * 1.6 + 0.05;
+        const data = glottal(ac.sampleRate, {
+          dur: len,
+          contour: contour.map(([k, f]) => [(k * dur) / len, f * this.pitch * det]),
+          jitter: o.jitter ?? 0.012 + rough * 0.018,
+          shimmer: o.shimmer ?? 0.06 + rough * 0.12,
+          walk: o.walk ?? 0.004 + rough * 0.006,
+          sub: o.sub ?? (rough > 0.45 ? Math.min(0.8, (rough - 0.3) * 1.1) : 0),
+          breath: (o.breath ?? 0.04) * 1.2,
+          vib: o.vib,
+          open: o.open ?? (rough > 0.5 ? 0.5 : 0.62),
+          seed: Math.floor(this.rng.next() * 1e9),
+        });
+        const b = ac.createBuffer(1, data.length, ac.sampleRate);
+        b.copyToChannel(data, 0);
+        const bs = ac.createBufferSource();
+        bs.buffer = b;
+        const vg = ac.createGain();
+        vg.gain.value = 1.5;
+        bs.connect(vg).connect(mix);
+        bs.start(t);
+        src.push(bs);
       }
-      if (o.rough) {
+      if (rough) {
         // Growl: amplitude modulation by low-passed noise (vocal-fold chaos).
         const n = ac.createBufferSource();
         n.buffer = noiseBuffer(ac, 'white');
-        const lp = ac.createBiquadFilter();
+        const lp = kbq(ac);
         lp.type = 'lowpass';
         lp.frequency.value = o.roughRate ?? 60;
         const ng = ac.createGain();
-        ng.gain.value = o.rough * 6;
+        ng.gain.value = rough * 2.2;
         const am = ac.createGain();
         am.gain.value = 1;
         n.connect(lp).connect(ng).connect(am.gain);
@@ -209,7 +259,7 @@ export class Fx {
         src.push(n);
         head = am;
       }
-      if (o.breath) {
+      if (o.breath && o.type) {
         const n = ac.createBufferSource();
         n.buffer = noiseBuffer(ac, 'white');
         const ng = ac.createGain();
@@ -227,7 +277,7 @@ export class Fx {
       l.type = 'square';
       l.frequency.setValueAtTime(o.pulse[0], t);
       if (o.pulse[2]) l.frequency.linearRampToValueAtTime(o.pulse[2], t + dur);
-      const sm = ac.createBiquadFilter();
+      const sm = kbq(ac);
       sm.type = 'lowpass';
       sm.frequency.value = o.pulse[0] * 3;
       const lg = ac.createGain();
@@ -249,7 +299,7 @@ export class Fx {
     const vs = (o.vowels ?? ['a']).map((k) => V[k]);
     const scale = o.formant ?? 1;
     for (let fi = 0; fi < 3; fi++) {
-      const bp = ac.createBiquadFilter();
+      const bp = kbq(ac);
       bp.type = 'bandpass';
       bp.Q.value = vs[0][fi][2] * (o.qScale ?? 1);
       bp.frequency.setValueAtTime(vs[0][fi][0] * scale, t);

@@ -1,7 +1,7 @@
 import { createGraph } from './graph.js';
 import { TrackPlayer, LOOKAHEAD } from './music/Sequencer.js';
 import { SONGS, STINGERS } from './music/songs.js';
-import { SFX } from './sfx/library.js';
+import { SFX, LIMITED } from './sfx/library.js';
 import { Fx } from './sfx/toolkit.js';
 import { Ambience } from './sfx/ambience.js';
 import { AudioRng } from './core/rng.js';
@@ -227,7 +227,16 @@ export class AudioEngine {
   _sfx(name, opts) {
     const ac = this.ctx;
     if (!ac || ac.state === 'closed') return;
-    const fn = SFX[name] ?? SFX.click;
+    const fn = SFX[name];
+    if (!fn) {
+      // An unknown name is a bug in the caller: say so once, never fake it with a click.
+      this._unknown ??= new Set();
+      if (!this._unknown.has(name)) {
+        this._unknown.add(name);
+        console.warn(`[audio] unknown sfx "${name}"`);
+      }
+      return;
+    }
     this.log?.push(name);
     // Anti-machine-gun: identical sounds (same name and pitch) within 25 ms collapse.
     const now = ac.currentTime;
@@ -240,7 +249,7 @@ export class AudioEngine {
     const ui = opts.bus === 'ui';
     const out = ui ? this.graph.uiBus : this.graph.sfxIn;
     const pitch = (opts.pitch ?? 1) * (ui ? 1 : 1 + this.rng.range(-0.03, 0.03));
-    const fx = new Fx(ac, out, this.rng, { pitch, vol: (opts.vol ?? 1) * sfxGain(name), pan: opts.pan ?? 0, send: ui ? undefined : this.graph.envSend, sendLevel: opts.reverb ?? 0.3 });
+    const fx = new Fx(ac, out, this.rng, { pitch, vol: (opts.vol ?? 1) * sfxGain(name === 'step' ? `step_${opts.surface ?? this.env.surface ?? 'cobble'}` : name), pan: opts.pan ?? 0, send: ui ? undefined : this.graph.envSend, sendLevel: opts.reverb ?? 0.3, limit: LIMITED.test(name) });
     try {
       // Spell chords sound in the key of the score that is playing.
       fn(fx, now + 0.005 + (opts.delay ?? 0), { surface: this.env.surface, key: this.key ?? 2, ...opts });

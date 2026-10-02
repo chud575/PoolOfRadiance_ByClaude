@@ -12,6 +12,8 @@
  *              brings each cue to its target (see src/audio/loudness.js). Merges with existing data.
  * --wiring     load gallery scenes with ?audio=1 (unmuted debug mode, autoplay allowed) and check
  *              that each one drives the expected music state / ambience (scene → music wiring).
+ * --perf      play title, town and the battle cue (intensity 1, with blows and voices) in a realtime
+ *             AudioContext for 20 s each and report audio-thread load (renderCapacity / underruns).
  * --list      print the cue names and exit       --out DIR  output directory (default audio_out)
  * --help      this text. Unknown flags are an error.
  * Prints peak / RMS (dBFS), integrated + momentary-max loudness (LUFS), the LRA-ish momentary
@@ -25,7 +27,7 @@ import { launch, CHROME, CHROME_ARGS } from './lib/browser.mjs';
 import { chromium } from 'playwright';
 
 const a = process.argv.slice(2);
-const FLAGS = { only: 1, match: 1, out: 1, port: 1, passes: 1, spectro: 0, bands: 0, list: 0, calibrate: 0, wiring: 0, help: 0 };
+const FLAGS = { only: 1, match: 1, out: 1, port: 1, passes: 1, spectro: 0, bands: 0, list: 0, calibrate: 0, wiring: 0, perf: 0, help: 0 };
 {
   const usage = () => {
     const src = fs.readFileSync(new URL(import.meta.url), 'utf8');
@@ -65,6 +67,7 @@ const port = opt('port', null);
 
 const srv = await ensureServer({ port: port ? Number(port) : undefined });
 if (a.includes('--wiring')) process.exit(await wiring());
+if (a.includes('--perf')) process.exit(await perf());
 const browser = await launch();
 const page = await browser.newPage();
 const errors = [];
@@ -94,7 +97,7 @@ try {
   if (a.includes('--list')) {
     console.log(cues.join('\n'));
   } else if (calibrate) {
-    await runCalibration(todo.filter((c) => /^(music_|sting_|amb_|sfx_)/.test(c) && !/^sfx_step_(?!cobble)/.test(c)));
+    await runCalibration(todo.filter((c) => /^(music_|sting_|amb_|sfx_)/.test(c)));
   } else {
     fs.mkdirSync(outDir, { recursive: true });
     for (const name of todo) {
@@ -104,7 +107,8 @@ try {
       fs.writeFileSync(path.join(outDir, `${name}${suffix}.wav`), Buffer.from(r.wav, 'base64'));
       if (r.png) fs.writeFileSync(path.join(outDir, `${name}${suffix}.png`), Buffer.from(r.png.split(',')[1], 'base64'));
       const s = r.stats;
-      const bad = s.nan > 0 || s.peak < 0.003 || s.clip > 50;
+      // Mastering gate: not one clipped sample, no NaN, no silence.
+      const bad = s.nan > 0 || s.peak < 0.003 || s.clip > 0;
       if (bad) failures++;
       console.log(`${bad ? 'FAIL' : 'OK  '} ${name.padEnd(28)} ${s.seconds.toFixed(1).padStart(6)}s  peak ${db(s.peak).padStart(6)}  rms ${db(s.rms).padStart(6)}  LUFS ${f1(s.lufs).padStart(6)}  M ${f1(s.lufsM).padStart(6)}  S/M ${f1(s.width).padStart(6)}  r ${Number.isFinite(s.corr) ? s.corr.toFixed(2) : '-'}  spread ${f1(s.spread)}${s.clip ? `  clip ${s.clip}` : ''}${s.nan ? `  NaN ${s.nan}` : ''}  (${Date.now() - t0} ms)`);
       if (showBands && s.bands) console.log('      ', Object.entries(s.bands).map(([k, v]) => `${k} ${v}`).join('  '));
@@ -116,6 +120,62 @@ try {
   await srv.close();
 }
 process.exit(failures || errors.length ? 1 : 0);
+
+// ------------------------------------------------------------------ realtime perf
+async function perf() {
+  const b = await chromium.launch({ executablePath: CHROME, args: [...CHROME_ARGS, '--autoplay-policy=no-user-gesture-required', '--enable-blink-features=AudioContextRenderCapacity,AudioContextPlaybackStats'], headless: true });
+  const pg = await b.newPage();
+  const errs = [];
+  pg.on('pageerror', (e) => errs.push(e.message));
+  await pg.goto(`${srv.base}src/audio/offline.js`, { waitUntil: 'load' });
+  let bad = 0;
+  for (const [state, intensity, blows] of [['title', 1, false], ['town', 1, false], ['combat', 1, true]]) {
+    const r = await pg.evaluate(async ({ state, intensity, blows }) => {
+      const { createGraph } = await import('/src/audio/graph.js');
+      const { AudioEngine } = await import('/src/audio/AudioEngine.js');
+      const ac = new AudioContext({ latencyHint: 'interactive' });
+      await ac.resume();
+      const g = createGraph(ac);
+      const e = AudioEngine.offline(ac, g);
+      e.offlineMode = false;
+      e.music(state, { intensity });
+      const loads = [];
+      if (ac.renderCapacity) {
+        ac.renderCapacity.addEventListener('update', (ev) => loads.push([ev.averageLoad, ev.peakLoad, ev.underrunRatio]));
+        ac.renderCapacity.start({ updateInterval: 1 });
+      }
+      const t0 = performance.now();
+      const ct0 = ac.currentTime;
+      const iv = setInterval(() => e._tick(), 50);
+      let k = 0;
+      const bv = blows ? setInterval(() => {
+        k++;
+        e._sfx(k % 3 ? 'hit' : 'parry', { material: k % 2 ? 'armor' : 'flesh' });
+        if (k % 4 === 0) e._sfx('vox_orc', {});
+        if (k % 7 === 0) e._sfx('spell_fire', {});
+      }, 400) : null;
+      await new Promise((res) => setTimeout(res, 20000));
+      clearInterval(iv);
+      if (bv) clearInterval(bv);
+      const wall = (performance.now() - t0) / 1000;
+      const ps = ac.playbackStats ? { underrunEvents: ac.playbackStats.underrunEvents, underrunDuration: ac.playbackStats.underrunDuration } : null;
+      const out = { wall, audio: ac.currentTime - ct0, loads, ps };
+      await ac.close();
+      return out;
+    }, { state, intensity, blows });
+    const avg = r.loads.length ? r.loads.reduce((x, l) => x + l[0], 0) / r.loads.length : null;
+    const peak = r.loads.length ? Math.max(...r.loads.map((l) => l[1])) : null;
+    const under = r.loads.length ? Math.max(...r.loads.map((l) => l[2])) : null;
+    const lag = r.wall - r.audio;
+    const ok = (under === null || under < 0.01) && lag < 0.5;
+    if (!ok) bad++;
+    console.log(`${ok ? 'OK  ' : 'SLOW'} ${state.padEnd(8)} wall ${r.wall.toFixed(1)}s audio ${r.audio.toFixed(1)}s  load avg ${avg === null ? '-' : (avg * 100).toFixed(0) + '%'} peak ${peak === null ? '-' : (peak * 100).toFixed(0) + '%'} underrun ${under === null ? '-' : (under * 100).toFixed(1) + '%'}${r.ps ? `  playbackStats ${JSON.stringify(r.ps)}` : ''}`);
+  }
+  for (const e of errs) console.error('[error]', e);
+  await b.close();
+  await srv.close();
+  return bad || errs.length ? 1 : 0;
+}
 
 // ------------------------------------------------------------------ wiring check
 async function wiring() {
@@ -201,14 +261,42 @@ async function runCalibration(list) {
       measure = 'lufs';
     } else {
       fam = 'sfx';
-      key = name === 'sfx_step_cobble' ? 'step' : name.slice(4);
+      key = name.slice(4);
       target = L.sfxTarget(key);
       measure = 'lufsM';
     }
     if (target === undefined) continue;
     const t0 = Date.now();
+    const song = fam === 'music' ? SONGS[key] ?? STINGERS[key] : null;
+    const extra = {};
+    if (song?.loop && SONGS[key]) {
+      // Multi-pass cues: every section (variant) normalised to the mean, so a
+      // later pass never steps down (measured at the cue's calibration intensity).
+      const secs = await page.evaluate(async (id) => (await import('/src/audio/offline.js')).songSections(id), key);
+      if (secs.length > 1) {
+        const lv = {};
+        for (const sec of secs) {
+          const r = await render(name, { raw: true, gain: 1, sampleRate: 24000, maxSeconds: 90, section: sec, cal: {} });
+          lv[sec] = r.stats.lufs;
+        }
+        const ok = Object.values(lv).filter(Number.isFinite);
+        const mean = ok.reduce((x, y) => x + y, 0) / ok.length;
+        extra.sections = Object.fromEntries(Object.entries(lv).map(([k, v]) => [k, Math.round(Math.max(-9, Math.min(9, mean - v + (song.sectionOffset?.[k] ?? 0))) * 10) / 10]));
+        console.log(`     ${name} sections: ${Object.entries(lv).map(([k, v]) => `${k} ${f1(v)}`).join('  ')}  → trims ${JSON.stringify(extra.sections)}`);
+      }
+      if (song.calIntensity !== undefined && song.lift !== undefined) {
+        // Adaptive cue: the raw loudness curve across intensity (no compensation).
+        extra.curve = [];
+        for (const x of [0.2, 0.3, 0.45, 0.6, 0.75, 0.9, 1]) {
+          const r = await render(name, { raw: true, gain: 1, sampleRate: 24000, maxSeconds: 60, intensity: x, noComp: true, cal: { sections: extra.sections } });
+          extra.curve.push([x, Math.round(r.stats.lufs * 10) / 10]);
+        }
+        console.log(`     ${name} raw curve: ${extra.curve.map(([x, v]) => `${x}: ${v}`).join('  ')}`);
+      }
+    }
+    const cal1 = Object.keys(extra).length ? { cal: extra } : {};
     let g = 1;
-    const ro = { raw: true, sampleRate: 32000, maxSeconds: 75 };
+    const ro = { raw: true, sampleRate: 32000, maxSeconds: 75, ...cal1 };
     let r = await render(name, { ...ro, gain: 1 });
     let v = r.stats[measure];
     let tries = 0;
@@ -219,8 +307,18 @@ async function runCalibration(list) {
       tries++;
       if (g === 0.03 || g === 16) break;
     }
-    const entry = { gain: Math.round(g * 10000) / 10000, [measure === 'lufs' ? 'lufs' : 'm']: Math.round(v * 10) / 10, target };
-    if (fam === 'music') entry.fp = L.songFingerprint(SONGS[key] ?? STINGERS[key]);
+    const entry = { gain: Math.round(g * 10000) / 10000, [measure === 'lufs' ? 'lufs' : 'm']: Math.round(v * 10) / 10, target, ...extra };
+    if (fam === 'music') entry.fp = L.songFingerprint(song);
+    if (extra.curve) {
+      // Verify the compensated cue where fights actually sit.
+      entry.check = {};
+      for (const x of [0.3, 0.5, 0.8, 1]) {
+        const rc = await render(name, { ...ro, gain: g, intensity: x });
+        entry.check[x] = Math.round(rc.stats.lufs * 10) / 10;
+      }
+      console.log(`     ${name} check: ${JSON.stringify(entry.check)}`);
+    }
+    if (fam === 'sfx' && measure === 'lufsM') entry.peak = Math.round(20 * Math.log10(Math.max(1e-9, r.stats.peak)) * 10) / 10;
     cal[fam][key] = entry;
     const off = v - target;
     console.log(`${Math.abs(off) <= 1 ? 'OK  ' : 'OFF '} ${name.padEnd(28)} target ${target.toFixed(1).padStart(6)}  got ${f1(v).padStart(6)}  gain ${entry.gain.toFixed(3).padStart(7)} (${(20 * Math.log10(g)).toFixed(1)} dB)  (${Date.now() - t0} ms)`);

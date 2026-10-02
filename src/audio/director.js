@@ -355,9 +355,9 @@ export class Director {
     this.foes = n;
     this.strengthSet = true;
     const r = hd / this._partyLevels();
-    let x = 0.3 + 0.32 * r;
+    let x = 0.36 + 0.32 * r;
     if (boss) x = Math.max(x, 0.78);
-    this.baseDanger = Math.max(0.3, Math.min(0.9, x));
+    this.baseDanger = Math.max(0.4, Math.min(0.9, x));
     return this.baseDanger;
   }
 
@@ -386,7 +386,8 @@ export class Director {
     else if (hp > 0.8) target -= 0.05;
     if (downFrac >= 0.75) target -= 0.3;
     else if (downFrac >= 0.5) target -= 0.15;
-    target = Math.max(0.25, Math.min(1, target));
+    // While foes remain the battle never drops below a real fight (0.4).
+    target = Math.max(0.4, Math.min(1, target));
     const cur = this.e.intensity ?? 0.5;
     if (target > cur + 0.08) {
       this.lowerVotes = 0;
@@ -411,6 +412,9 @@ export class Director {
     if (this.combatOver) return;
     this.structured = true;
     this.engine = engine ?? this.engine;
+    // The previous attack never asked for a sound (QUICK on slow hardware
+    // resolves blows instantly, silently): voice it now, staggered.
+    if (this.blowPending) this._snapBlow();
     const by = (id) => (id !== undefined && engine?.byId ? engine.byId(id) : null);
     const now = this.now;
     if (!this.strengthSet && Array.isArray(engine?.all)) {
@@ -423,6 +427,7 @@ export class Director {
         const a = by(ev.id);
         const d = by(ev.target);
         this.hint = this._hintFrom({ attId: a?.monsterId ?? null, tgtId: d?.monsterId ?? null, tgtParty: d?.side === 'party', attParty: a?.side === 'party', attRef: a?.ref, tgtRef: d?.ref, ranged: !!ev.ranged, hit: !!ev.hit, crit: !!(ev.crit || ev.backstab), immune: !!ev.immune, bite: a?.monsterId === 'giantRat' }, 'event');
+        this.blowPending = this.hint;
         this._reassess();
         break;
       }
@@ -442,8 +447,12 @@ export class Director {
         if (by(ev.id)?.side === 'monster') this.foesDown++;
         this._reassess();
         break;
-      case 'heal':
       case 'round':
+        // A structured hint lives until the next attack or round (not a wall-clock window).
+        if (this.hint?.src === 'event') this.hint.live = false;
+        this._reassess();
+        break;
+      case 'heal':
         this._reassess();
         break;
       default:
@@ -465,15 +474,55 @@ export class Director {
     else this._reassess();
   }
 
-  /** A foe is slain: its death cry (one per 600 ms in QUICK combat) and a thud. */
+  /** Play a sound without remapping (the director already made it specific). */
+  _raw(name, opts) {
+    if (this.e._sfx) this.e._sfx(name, opts);
+    else this.e.sfx(name, opts);
+  }
+
+  /**
+   * Next slot on a stagger lane: simultaneous events (QUICK resolves a
+   * whole round in one frame) are spread 60–120 ms apart instead of stacked
+   * on one sample; returns the delay, or null when the lane is too backed up.
+   */
+  _stagger(lane, gap = [0.06, 0.12], max = 1.2) {
+    const now = this.now;
+    this._lanes ??= {};
+    const at = Math.max(now, this._lanes[lane] ?? 0);
+    if (at - now > max) return null;
+    this._lanes[lane] = at + this.e.rng.range(gap[0], gap[1]);
+    return at - now;
+  }
+
+  /** The blow of an attack that played without animation (snap/QUICK): hit or miss, staggered. */
+  _snapBlow() {
+    const h = this.blowPending;
+    this.blowPending = null;
+    if (!h || h.immune) return;
+    const delay = this._stagger('blow');
+    if (delay === null) return;
+    const vol = 0.75;
+    if (h.hit) {
+      if (h.ranged) this._raw('arrow_hit', { delay, vol });
+      this._raw('hit', { delay, vol, material: h.ranged && h.material === 'armor' ? 'flesh' : h.material, crit: h.crit });
+    } else if (h.ranged) this._raw('arrow_in', { delay, vol: vol * 0.7 });
+    else {
+      const r = this.e.rng.next();
+      this._raw(BEASTS.test(h.tgtId ?? '') || r < 0.4 ? 'dodge' : r < 0.7 ? 'parry' : 'shield', { delay, vol: vol * 0.85 });
+    }
+  }
+
+  /** A foe is slain: its death cry (staggered when several fall at once) and a thud. */
   _foeDown(id) {
     const now = this.now;
     const fresh = now - (this.lastDeathVox ?? -10) > 0.6;
     if (id) {
       this.foesDown++;
-      if (fresh) {
+      // Up to ~1 s of queued cries, each a beat after the last, quieter as they pile up.
+      const delay = this._stagger('death', [0.22, 0.38], 1.0);
+      if (delay !== null) {
         this.lastDeathVox = now;
-        this.e.sfx(`vox_${voiceOf(id)}_die`, { vol: 0.85 });
+        this._raw(`vox_${voiceOf(id)}_die`, { vol: 0.85 * (delay > 0.3 ? 0.8 : 1), delay: delay + 0.03 });
       }
     }
     if (now - (this.lastThud ?? -10) > 0.3) {
@@ -498,7 +547,7 @@ export class Director {
     let material = 'flesh';
     if (a.tgtId && /skeleton/i.test(a.tgtId)) material = 'bone';
     else if (a.tgtParty || ARMOURED.test(a.tgtId ?? '')) material = this.e.rng.chance(0.55) ? 'armor' : 'flesh';
-    return { at: this.now, src, used: false, ...a, material };
+    return { at: this.now, src, used: false, live: true, ...a, material };
   }
 
   /** Party member (with race/gender) for an engine ref or a name. */
@@ -657,7 +706,12 @@ export class Director {
    */
   remapSfx(name, opts) {
     const now = this.now;
-    const hint = this.hint && now - this.hint.at < 1.2 ? this.hint : null;
+    // A structured (combat:event) hint belongs to its attack until the next
+    // attack or round replaces it — at Speed 'Slow' or on slow frames the
+    // impact can land seconds after the swing. Log-derived hints are short-lived.
+    const h0 = this.hint;
+    const hint = h0 && (h0.src === 'event' ? h0.live && now - h0.at < 10 : now - h0.at < 1.2) ? h0 : null;
+    if (this.scene === 'combat' && (name === 'hit' || name === 'miss')) this.blowPending = null;
     const late = this.deferred && now - this.deferred.at < 0.15 ? this.deferred : null;
     const nudge = (o) => (late ? { ...o, delay: (o.delay ?? 0) + (late.ranged ? 0.12 : 0.07) } : o);
     switch (name) {
@@ -672,7 +726,7 @@ export class Director {
           // Attack wind-up, requested before the blow lands. Only a structured
           // combat:attack announced for *this* swing may shape it.
           const h = this.hint;
-          if (h && h.src === 'event' && !h.used && now - h.at < 1.5) {
+          if (h && h.src === 'event' && !h.used && h.live) {
             h.used = true;
             const out = [[h.ranged ? 'bow' : 'swing', { heavy: h.attId && /ogre|troll|giant|bugbear/i.test(h.attId) }]];
             const v = this._voice(h.attId);

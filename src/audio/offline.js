@@ -1,7 +1,7 @@
 import { createGraph } from './graph.js';
 import { TrackPlayer } from './music/Sequencer.js';
 import { SONGS, STINGERS } from './music/songs.js';
-import { SFX } from './sfx/library.js';
+import { SFX, LIMITED } from './sfx/library.js';
 import { Fx } from './sfx/toolkit.js';
 import { Ambience, BEDS } from './sfx/ambience.js';
 import { AudioRng } from './core/rng.js';
@@ -36,6 +36,42 @@ export function listCues() {
   return cues;
 }
 
+/**
+ * The distinct sections (variants) a looping song plays, discovered by
+ * building its passes (rest windows excluded).
+ */
+export function songSections(id) {
+  const song = SONGS[id];
+  if (!song?.loop) return [];
+  const st = {};
+  const seen = new Set();
+  for (let p = 0; p < 24; p++) {
+    const r = song.build(p, new AudioRng(p + 1), st);
+    if (r.section) seen.add(r.section);
+  }
+  return [...seen];
+}
+
+/** A copy of `song` whose every pass is section `sec` (replays the pass sequence until it comes up). */
+function forceSection(song, sec) {
+  let found = null;
+  const st = {};
+  for (let p = 0; p < 64 && !found; p++) {
+    const r = song.build(p, new AudioRng(p + 1), st);
+    if (r.section === sec) found = { p };
+  }
+  if (!found) throw new Error(`${song.id}: no section ${sec}`);
+  return {
+    ...song,
+    build() {
+      const st2 = {};
+      let r;
+      for (let p = 0; p <= found.p; p++) r = song.build(p, new AudioRng(p + 1), st2);
+      return r;
+    },
+  };
+}
+
 /** Seconds of `n` passes of a song (honours ritardandi; sections are equal-length per song). */
 function passesSeconds(song, n) {
   const spq = 60 / song.bpm;
@@ -57,11 +93,14 @@ function passesSeconds(song, n) {
  */
 function cueSpec(name, o = {}) {
   const gainOpt = o.raw ? { rawGain: true, gainOverride: o.gain ?? 1 } : {};
+  if (o.cal) gainOpt.cal = o.cal;
+  if (o.noComp) gainOpt.noComp = true;
   const isSong = name.startsWith('music_') || name.startsWith('sting_');
   if (isSong) {
     const id = name.replace(/^(music|sting)_/, '');
-    const song = SONGS[id] ?? STINGERS[id];
+    let song = SONGS[id] ?? STINGERS[id];
     if (!song) throw new Error(`no song ${name}`);
+    if (o.section) song = forceSection(song, o.section);
     const passes = song.loop ? Math.max(1, o.passes ?? 1) : 1;
     const { secs: body, tail } = passesSeconds(song, passes);
     const cap = o.maxSeconds ?? (o.passes ? 600 : 100);
@@ -71,7 +110,7 @@ function cueSpec(name, o = {}) {
       room: 'street',
       setup(ac, g) {
         g.setMusicRoom(song.room ?? 'hall', 0, song.wet ?? 0.5);
-        const p = new TrackPlayer(ac, song, { dest: g.musicIn, send: g.musicSend, at: 0.05, intensity: song.id === 'combat' ? 0.8 : undefined, ...gainOpt });
+        const p = new TrackPlayer(ac, song, { dest: g.musicIn, send: g.musicSend, at: 0.05, intensity: o.intensity ?? song.calIntensity, ...gainOpt });
         for (let x = 1; x <= Math.ceil(secs); x++) p.tick(Math.min(secs, x));
         if (song.loop) {
           // Fade the last 1.5 s so the file ends cleanly.
@@ -98,7 +137,7 @@ function cueSpec(name, o = {}) {
   }
   if (name.startsWith('sfx_step_')) {
     const surface = name.slice(9);
-    const vol = o.raw ? o.gain ?? 1 : sfxGain('step');
+    const vol = o.raw ? o.gain ?? 1 : sfxGain(`step_${surface}`);
     return {
       seconds: 4.4,
       room: surface === 'wood' ? 'room' : surface === 'stone' ? 'dungeon' : 'street',
@@ -119,7 +158,7 @@ function cueSpec(name, o = {}) {
       trim: true,
       room: 'dungeon',
       setup(ac, g) {
-        const fx = new Fx(ac, UI_SFX.test(id) ? g.uiBus : g.sfxIn, new AudioRng(7), { send: g.envSend, sendLevel: 0.25, vol });
+        const fx = new Fx(ac, UI_SFX.test(id) ? g.uiBus : g.sfxIn, new AudioRng(7), { send: g.envSend, sendLevel: 0.25, vol, limit: LIMITED.test(id) });
         fn(fx, 0.08, { surface: 'stone' });
       },
     };

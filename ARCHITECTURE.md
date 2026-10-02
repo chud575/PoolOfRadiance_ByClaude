@@ -447,33 +447,49 @@ spell_lightning spell_shock spell_missile spell_sleep spell_mind spell_cloud spe
 spell_turn spell_fizzle pass_through potion click hover focus confirm cancel error page open close map coins save equip
 sparkle levelup vox_<family> vox_<family>_die` (families: kobold goblin orc gnoll ogre troll giant skeleton zombie ghost rat
 wolf spider frog lizard human dragon party; `VOICE_OF` maps monster ids; `vox_party`/`vox_party_die` take `{race, gender,
-mode: attack|hurt}` — the party's own voices). Spell chords are transposed to the key of the score that is playing
-(`song.key`). Blades have six round-robin takes per material; footsteps are heel/roll/toe contact noise per surface.
+mode: attack|hurt}` — the party's own voices; every voice is a glottal pulse source with jitter, shimmer, random-walk
+pitch, breath through the formants and subharmonic period doubling for growls). Unknown names are ignored with a console
+warning (never a fallback click). Spell chords are transposed to the key of the score that is playing
+(`song.key`). Blades have six round-robin takes per material; footsteps are heel/roll/toe contact noise per surface,
+each surface calibrated on its own (`step_<surface>`). Blows, blasts and big voices get their own transient limiter.
 Generic requests are made specific by the director (structured events first, the combat log as fallback): `step` uses the
 map's surface and a party of feet; in combat `miss` with pitch > 1.2 is the attack wind-up — a bow twang or sword swing plus
-the attacker's voice when a `combat:attack` event announced it, otherwise a neutral `ready` rustle followed by the specific
+the attacker's voice when a `combat:attack` / `combat:event` attack announced it (a structured hint belongs to its attack
+until the next attack or round, so slow speeds and slow frames keep arrow hits and parries specific), otherwise a neutral `ready` rustle followed by the specific
 swing / incoming arrow the moment the attack's own log line lands (never a sound inferred from an older attack); `hit`
 becomes armour/bone/flesh + pain voices; a melee `miss` becomes a parry, shield block or dodge; `spell` becomes the cast
-spell's family. World log lines (omens, secret doors, journal entries) sound once even when several scenes log them.
+spell's family. When the combat scene resolves attacks without animation (snap / QUICK on slow hardware) and requests no
+sound, the director voices each `combat:event` attack's blow itself, staggered 60–120 ms; simultaneous death cries are
+staggered too (~0.3 s apart, at most ~1 s queued). World log lines (omens, secret doors, journal entries) sound once even when several scenes log them.
 Buttons get hover/click ticks globally (the generic click yields to a scene's own pitched click for the same press);
 keyboard/gamepad navigation ticks (`focus`) when DOM focus or a menu highlight (`aria-selected`) moves. The AudioContext starts on the first gesture; in debug/screenshot mode
 (`?scene=`) audio is muted unless `&audio=1` is added (then the context starts at once and `window.__AUDIO.debugState()`
 reports the music state / ambience — `node tools/audiorender.mjs --wiring` checks title/explore/town/combat/camp this way).
 Settings read: `masterVolume musicVolume sfxVolume ambienceVolume uiVolume` (+ optional `muteAll muteInBackground`).
 
+**Transitions**: `TrackPlayer.fadeOut(seconds, at)` holds the outgoing cue at full level until `at` (the next bar line
+for calm changes, the downbeat for `endWithCoda`) and only then ramps — the out-gain curve is tracked analytically and
+re-anchored explicitly (never `cancelAndHoldAtTime`, which drops to a stale event). `tests/audio/fade.test.js` models
+AudioParam automation per spec and fails on any drop > 1 dB within 50 ms of a `music()` call.
+
 **Scheduler**: a Worker clock ticks every 50 ms (not throttled in background tabs) and hands notes to the audio thread
 `LOOKAHEAD` = 1.8 s ahead, so main-thread stalls up to that long are inaudible; a note that still arrives > 40 ms late is
 dropped (long held notes join mid-way), never bunched (`tests/audio/scheduler.test.js` blocks the clock for 1 s mid-cue).
 Each song may declare `key` (pitch class), `room`/`wet` (its own reverb: `street` town band, `tavern` taproom, `cathedral`
 crypt, `vault` dungeon, `hall` title/combat — crossfaded per cue, IRs cached), `eq` (per-cue EQ), `lift` (dB the whole
-cue swells by at full intensity) and `rest {after:[s,s], length:[s,s]}` (exploration cues drop to ambience only for a
+cue swells by at full intensity, measured from `calIntensity`) and `rest {after:[s,s], length:[s,s]}` (exploration cues drop to ambience only for a
 while every few minutes).
 
-**Orchestra** (`instruments/sustained.js`): strings are 4–8 players per section (own intonation, drift, vibrato, onset,
-seat; divisi chords split the section) whose spectrum follows a bow-pressure envelope (two-pole brightness filter, bridge
+**Orchestra** (`instruments/sustained.js`): strings are 4–8 players per section (own intonation, drift, ±15–25 cent
+vibrato with a wandering rate and delayed onset, onset, seat, one of three instrument spectra; divisi chords split the
+section; narrow body modes turn vibrato into amplitude/timbre shimmer; a voice budget thins sections when > 150 players
+overlap (110) and big sections share a vibrato per desk; brass stabs use a lean fixed-tilt path and every brass note chain is mono, seated once per section) whose spectrum follows a bow-pressure envelope (two-pole brightness filter, bridge
 hill, rosin noise); brass are 3–4 players with a breath-pressure envelope that opens the filter and crossfades a clean
 path into a saturated one (dynamic spectral tilt) plus `art: 'rip' | 'fall' | 'flutter'`; the choir is two half-sections
-with jittered formant banks, vowels that change syllable by syllable (and drift in long notes) and consonant onsets.
+with jittered formant banks, every singer with their own vibrato (4.8–6.2 Hz, ±15–30 cents) and slow ±8 cent pitch
+scatter, vowels that change syllable by syllable (and drift in long notes) and consonant onsets. Woodwinds: flute,
+recorder, oboe (double-reed spectrum + fixed 1.1 k / 3 k formants), clarinet (odd-harmonic bore, woody body), bassoon,
+shawm.
 
 **Music** (`music/`): songs are data — `build(pass, rng, state)` returns note events in quarters (`compose.js`: `chart`,
 `mel` (slurred + phrase-shaped dynamics), `pad` (voice-led: nearest inversion, common tones held, sus4→3 / V7 colour at
@@ -487,8 +503,12 @@ augmentation) chosen per pass, never repeating; encounter rotates three variants
 recurs in combat, victory (major), camp and defeat.
 
 **Loudness** (`loudness.js`, `loudness.data.js`): every cue is measured offline (BS.1770 K-weighted LUFS) and calibrated
-to a target — exploration −18, town −17, combat −16.5 (at intensity 0.8), stingers −16, ambience beds −27 integrated;
-SFX by momentary max per family (UI/footsteps −26…−30, blows −17.5, fireball −14.5). `tests/audio/loudness.test.js` fails
+to a target — exploration −18, town −17, combat −16.5 (at its typical intensity 0.45), stingers −16, ambience beds −27
+integrated; SFX by momentary max per family (UI −27…−30, every footstep surface −26 ±1.5, blows −17.5, fireball −14.5).
+Multi-pass cues store a trim per section (`sections`: every variant normalised to the mean, applied at the pass seam).
+Adaptive cues (`calIntensity` + `lift`) store their raw loudness curve across intensity (`curve`): the player compensates
+so a 0.3 skirmish is as loud as a 0.45 fight and 1.0 adds only `lift` LU (combat 3.5); `check` records the verified
+result at 0.3/0.5/0.8/1. The master output has a ceiling trim after the limiter (sample peak ≤ about −2.5 dBFS). `tests/audio/loudness.test.js` fails
 when a cue is off target or its calibration is stale. After changing a theme or any synthesis code, re-run
 `node tools/audiorender.mjs --calibrate [--match music_]`.
 
@@ -499,7 +519,8 @@ Review renders: `node tools/audiorender.mjs [--match music_|--only sfx_door,...]
 cue's real tail. Cues: `music_*`, `sting_*`, `amb_*`, `sfx_*`, `sfx_step_<surface>`, `inst_<preset>` (incl. a legato run),
 `demo_combat_adaptive`, `demo_victory` (quantised win → coda → fanfare), `demo_crossfade` (town → ruins through the
 live `AudioEngine.music()` path, ticked from OfflineAudioContext.suspend points), `demo_stall` (1.2 s frozen main thread
-mid-battle), `demo_rest` (a rest window). Fails on NaN, silence or clipping.
+mid-battle), `demo_rest` (a rest window). Fails on NaN, silence or a single clipped sample. `--perf` plays title, town and
+a full-intensity battle (with blows and voices) in a realtime AudioContext and reports whether the audio clock keeps up.
 
 ## Coding conventions
 

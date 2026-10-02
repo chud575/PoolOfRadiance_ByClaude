@@ -58,8 +58,15 @@ export const ruins = {
   room: 'hall',
   wet: 0.6,
   rest: REST,
+  // Open the 2–6 kHz band (the cue must not vanish under the ambience on laptop speakers).
+  eq: [{ type: 'peaking', f: 3200, q: 0.6, g: 6 }, { type: 'highshelf', f: 5500, g: 4 }],
   instruments: {
     celli: { preset: 'celli', pan: 0.4 },
+    // Sul tasto high violins: a glassy, airy colour line far above the bass.
+    violinsHi: { preset: 'violins', pan: -0.45, bright: 0.4, gain: 0.55, reverb: 0.7 },
+    celesta: { preset: 'celesta', pan: 0.45, reverb: 0.85, gain: 0.35 },
+    oboe: { preset: 'oboe', pan: 0.2, reverb: 0.65 },
+    clarinet: { preset: 'clarinet', pan: 0.25, reverb: 0.65 },
     basses: { preset: 'basses', pan: 0.6 },
     pizz: { preset: 'pizz', pan: -0.35 },
     choir: { preset: 'choirOo', pan: 0 },
@@ -77,12 +84,16 @@ export const ruins = {
     if (v === 2) {
       // III. "The Cellist in the Rubble": a solo cello lament over pizzicato and a low bell-like harp.
       const ch = chart('Em | Dm | F | Em | Am | G | F | Em | Em | Dm | C | Bm | Am | F | B | Em', 4);
-      ev.push(...pad('basses', chart('Em | Dm | F | Em | Am | G | F | Em', 8), { low: 'E2', count: 1, vel: 0.32, opts: { attack: 1.5 } }));
+      // The bass follows the harmony bar by bar (no E pedal under the Dm).
+      ev.push(...pad('basses', ch, { low: 'E2', count: 1, vel: 0.32, opts: { attack: 1.5 } }));
       ev.push(...arp('pizz', ch, { low: 'E3', pattern: [0, null, 2, null, 1, null, null, null], step: 0.5, vel: 0.38 }));
       ev.push(...mel('celli', 'r:w | E3:h F3:q G3:q | A3:h. G3:e F3:e | E3:w | C4:h B3:q A3:q | B3:h. G3:q | A3:q G3:q F3:q D3:q | E3:w', { at: 0, vel: 0.52 }));
       ev.push(...mel('celli', 'r:w | B3:h C4:q D4:q | E4:h. D4:e C4:e | B3:h F#3:h | A3:h. B3:e C4:e | A3:h F3:h | D#3:w | E3:w', { at: 32, vel: 0.55 }));
       ev.push(...pad('choir', chart('Em | F | Am | Em', 16), { low: 'G3', count: 3, vel: 0.22, layer: 1 }));
       ev.push(...glints('harmonics', rng, { scale: [0, 1, 3, 7, 8], low: 'E5', bars: 16, perBar: 0.4, vel: 0.3, dur: 3 }));
+      // The clarinet answers the cello's last phrase from far away.
+      ev.push(...mel('clarinet', 'r:w | r:w | r:w | r:w | E4:h. F4:q | E4:h D4:h | B3:w | B3:w', { at: 32, vel: 0.4 }));
+      ev.push({ inst: 'violinsHi', t: 8, midi: [88, 95], dur: 20, vel: 0.22, opts: { art: 'swell', vib: 0.6 } });
     } else if (v === 3) {
       // IV. "Ghosts of the Market": a distant wordless choir sings the old town jig, slowed and broken, over a heartbeat.
       ev.push({ inst: 'basses', t: 0, midi: 28, dur: 64, vel: 0.36, opts: { attack: 4, release: 4 } });
@@ -92,6 +103,7 @@ export const ruins = {
       ev.push(...pad('celli', chart('Em | Am | Em | B', 16), { low: 'E2', count: 2, vel: 0.28, opts: { art: 'swell' } }));
       ev.push(...mel('flute', 'r:w | r:w | r:w | r:w | r:w | r:w | E5:h F5:h | E5:w', { at: 32, vel: 0.35, opts: { vib: 2 } }));
       ev.push(...glints('chime', rng, { scale: [0, 7], low: 'E4', bars: 16, perBar: 0.18, vel: 0.28 }));
+      ev.push(...glints('celesta', rng, { scale: [0, 3, 7, 10], low: 'E6', bars: 16, perBar: 0.3, vel: 0.26, dur: 2 }));
     } else {
       const ch = chart('Em | Em | F | F | Em | Em | Dm | C | Em | Em | F | F | Am | G | F | Em', 4);
       ev.push({ inst: 'basses', t: 0, midi: 28, dur: 32, vel: 0.4, opts: { attack: 3, release: 3 } });
@@ -103,12 +115,15 @@ export const ruins = {
         ev.push(...mel('flute', 'E5:h F5:q E5:q | D5:h. B4:q | C5:w | B4:w', { at: 16, vel: 0.45 }));
         ev.push(...mel('flute', 'A4:h C5:q E5:q | D5:h. B4:q | C5:h A4:h | B4:w', { at: 48, vel: 0.45 }));
       } else {
-        ev.push(...mel('horn', 'B3:q. E4:e E4:h | F4:q E4:q B3:h', { at: 32, vel: 0.5 }));
+        ev.push(...mel('oboe', 'B4:q. E5:e E5:h | F5:q E5:q B4:h', { at: 32, vel: 0.42 }));
+        ev.push(...mel('horn', 'B3:q. E4:e E4:h | F4:q E4:q B3:h', { at: 40, vel: 0.45 }));
         ev.push(...mel('harp', 'E4:e F4:e G4:e B4:e C5:h | B4:e A4:e G4:e F4:e E4:h', { at: 20, vel: 0.4 }));
         ev.push(...mel('violins', 'B4:w | C5:w | E5:h D5:h | B4:w', { at: 48, vel: 0.35, layer: 1 }));
       }
       ev.push(...drums('taiko', 'Xo..............', { bars: 8, at: 32, vel: 0.45, layer: 1 }));
       ev.push(...glints('chime', rng, { scale: [0], low: 'E4', bars: 16, perBar: 0.12, vel: 0.3 }));
+      ev.push({ inst: 'violinsHi', t: 0, midi: [88, 95], dur: 28, vel: 0.2, opts: { art: 'swell', vib: 0.6 } });
+      ev.push(...glints('celesta', rng, { scale: [0, 7, 8], low: 'E6', bars: 16, perBar: 0.2, vel: 0.24, dur: 2 }));
       // Dissonant swell before the turn.
       ev.push({ inst: 'violins', t: 40, midi: [77, 83], dur: 8, vel: 0.3, opts: { art: 'swell' }, layer: 1 });
     }
@@ -127,7 +142,9 @@ export const dungeon = {
   room: 'vault',
   wet: 0.55,
   rest: REST,
+  eq: [{ type: 'peaking', f: 3400, q: 0.6, g: 6 }, { type: 'highshelf', f: 6000, g: 4 }],
   instruments: {
+    violinsHi: { preset: 'violins', pan: 0.4, bright: 0.38, gain: 0.5, reverb: 0.8 },
     choirMm: { preset: 'choirMm', pan: -0.2 },
     pizz: { preset: 'pizz', pan: 0.35 },
     horn: { preset: 'horn', pan: -0.45, reverb: 0.9, gain: 0.6 },
@@ -163,6 +180,9 @@ export const dungeon = {
       ev.push(...mel('horn', 'r:w | r:w | C4:q. G4:e G4:h | r:w | r:w | Ab3:h G3:h | F#3:w | G3:w', { at: 32, vel: 0.55 }));
       ev.push(...pad('celli', ch, { low: 'C3', count: 2, vel: 0.26, opts: { art: 'trem', tremRate: 8 }, layer: 1 }));
       ev.push(...drums('taiko', 'X.......x.......', { bars: 8, at: 32, vel: 0.4, layer: 1 }));
+      // A thin, high cluster that never resolves: something is listening.
+      ev.push({ inst: 'violinsHi', t: 16, midi: [84, 85], dur: 16, vel: 0.2, opts: { art: 'trem', tremRate: 7 } });
+      ev.push(...glints('harmonics', rng, { scale: [0, 1, 6], low: 'C6', bars: 16, perBar: 0.25, vel: 0.22, dur: 3 }));
     } else {
       const ch = chart('Cm | Cm | Db | Db | Cm | Cm | Ab | G | Cm | Cm | Fm | Fm | Db | Db | G | G', 4);
       ev.push(...pad('choir', ch, { low: 'G3', count: 3, vel: 0.3 }));
@@ -176,6 +196,8 @@ export const dungeon = {
       ev.push({ inst: 'timpani', t: 58, midi: 31, dur: 6, vel: 0.5, roll: [0.08, 0.6] });
       ev.push(...drums('taiko', 'X...............|................', { bars: 16, vel: 0.4, layer: 1 }));
       ev.push({ inst: 'celli', t: 50, midi: [54, 60], dur: 6, vel: 0.35, opts: { art: 'swell' }, layer: 1 });
+      ev.push({ inst: 'violinsHi', t: 4, midi: [84, 91], dur: 24, vel: 0.2, opts: { art: 'swell', vib: 0.5 } });
+      ev.push({ inst: 'violinsHi', t: 36, midi: [85, 91], dur: 20, vel: 0.2, opts: { art: 'swell', vib: 0.5 } });
     }
     return { lengthQ: 64, events: ev, tailQ: 6, section: `v${v}` };
   },
@@ -191,6 +213,7 @@ export const crypt = {
   room: 'cathedral',
   wet: 0.6,
   rest: REST,
+  eq: [{ type: 'peaking', f: 3000, q: 0.7, g: 4 }, { type: 'highshelf', f: 6000, g: 3 }],
   instruments: {
     kyrie: { preset: 'choir', pan: 0, text: ['ee', 'ee', 'eh', 'eh', 'ee', 'oh', 'ah', 'ee'] },
     chant: { preset: 'choirOh', pan: 0, voices: 5 },
@@ -307,6 +330,8 @@ export const camp = {
     lute: { preset: 'lute', pan: 0.45 },
     flute: { preset: 'flute', pan: 0.2 },
     recorder: { preset: 'recorder', pan: 0.15 },
+    oboe: { preset: 'oboe', pan: 0.2, reverb: 0.45 },
+    clarinet: { preset: 'clarinet', pan: 0.2, reverb: 0.45 },
     strings: { preset: 'strings', pan: -0.1, gain: 0.7 },
     violins: { preset: 'violins', pan: -0.4, gain: 0.7 },
     violins2: { preset: 'violins', pan: -0.25, gain: 0.6 },
@@ -324,10 +349,12 @@ export const camp = {
     ev.push(...pad('strings', all, { low: 'A3', count: 3, vel: 0.22, cadence: true }));
     ev.push(...counter('violins2', cb, { low: 'F4', vel: 0.2, scale: [0, 2, 4, 5, 7, 9, 10], key: 5 }));
     ev.push(...pad('basses', all, { low: 'F2', count: 1, vel: 0.28 }));
-    const lead = ['flute', 'lute', 'recorder'][pass % 3];
-    ev.push(...mel(lead, MA, { vel: 0.52, transpose: lead === 'lute' ? 0 : 0 }));
-    ev.push(...mel(lead, MB, { at: 24, vel: 0.5 }));
-    if (pass % 3 === 2) ev.push(...soften(mel('violins', MB, { at: 24, transpose: -12 }), 0.55));
+    // The lead passes round the camp fire: flute, clarinet, lute, oboe, recorder.
+    const lead = ['flute', 'clarinet', 'lute', 'oboe', 'recorder'][pass % 5];
+    const low = lead === 'clarinet' ? -12 : 0;
+    ev.push(...mel(lead, MA, { vel: 0.52, transpose: low }));
+    ev.push(...mel(lead === 'clarinet' ? 'oboe' : lead, MB, { at: 24, vel: 0.5 }));
+    if (lead === 'recorder' || lead === 'lute') ev.push(...soften(mel('violins', MB, { at: 24, transpose: -12 }), 0.55));
     return { lengthQ: 48, events: ev, tailQ: 3, rit: [[45, 48, 0.85]] };
   },
 };
