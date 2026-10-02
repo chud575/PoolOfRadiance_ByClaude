@@ -482,8 +482,16 @@ export function buildProps(map, block, opts = {}) {
         pg.dispose();
       }
       g.geometry('prop_limestone', geos.attic, m.clone().multiply(new THREE.Matrix4().makeRotationY(hash(fc.x, fc.y, 'br') * 6.3)), { uv: 'world', ao: colAO });
-      const sh = geos.shaft[Math.floor(hash(fc.x, fc.y, 'sv') * geos.shaft.length)];
-      g.geometry('prop_limestone', sh, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.54, 0)).multiply(new THREE.Matrix4().makeRotationY(hash(fc.x, fc.y, 'sr') * 6.3)), { uv: 'world', ao: colAO });
+      // no two stumps alike: each its own fracture, height, lean and settling (never a mirrored pair)
+      const sv = Math.floor(hash(fc.x * 3 + fc.y * 5, 'sv') * geos.shaft.length);
+      const sh = geos.shaft[sv];
+      const hk = 0.5 + hash(fc.x, fc.y, 'shk') * 0.55;
+      const lean = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler((hash(fc.x, fc.y, 'lx') - 0.5) * 0.08, 0, (hash(fc.x, fc.y, 'lz') - 0.5) * 0.08));
+      g.geometry('prop_limestone', sh, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.54, 0)).multiply(lean).multiply(new THREE.Matrix4().makeRotationY(hash(fc.x, fc.y, 'sr') * 6.3)).multiply(new THREE.Matrix4().makeScale(1, hk, 1)), { uv: 'world', ao: colAO });
+      if (hk < 0.75) {
+        // the rest of this shaft lies broken across the paving in two drums
+        g.geometry('prop_limestone', geos.drum, m.clone().multiply(new THREE.Matrix4().makeTranslation(-1.0, 0.33, 0.35)).multiply(new THREE.Matrix4().makeRotationY(0.4 + hash(fc.x, fc.y, 'dr') * 0.6)).multiply(new THREE.Matrix4().makeRotationZ(Math.PI / 2)), { uvScale: [2, 1] });
+      }
       // a fallen fragment of the shaft beside the plinth
       g.geometry('prop_limestone', geos.chunk[Math.floor(hash(fc.x, fc.y, 'fc') * geos.chunk.length)], m.clone().multiply(new THREE.Matrix4().makeTranslation(0.7, 0.14, 0.25)).multiply(new THREE.Matrix4().makeRotationY(hash(fc.x, fc.y, 'fr') * 6.3)).multiply(new THREE.Matrix4().makeScale(0.5, 0.42, 0.45)), { uv: 'world', ao: colAO });
     }

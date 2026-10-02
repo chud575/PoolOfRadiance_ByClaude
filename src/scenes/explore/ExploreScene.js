@@ -607,7 +607,7 @@ export default class ExploreScene extends Scene {
     // blank from the headless compositor's screenshot
     if (frozen && !this.tween && (this._settled ?? 0) >= 3) {
       this._idleFrames = (this._idleFrames ?? 0) + 1;
-      if (this._idleFrames % 12 !== 0) return;
+      if (this._idleFrames % 120 !== 0) return;
     }
     if (this.godRays) this.godRays.enabled = true;
     super.render();
@@ -894,6 +894,8 @@ export default class ExploreScene extends Scene {
     if (!this.ready) return;
     const time = this.ctx.clock.time;
     const frozen = this.ctx.clock.frozen;
+    // frozen and settled: the world cannot change (time stands still), so skip the per-frame work
+    if (frozen && !this.tween && (this._settled ?? 0) >= 3) return;
     this._animateWorld(time, dt, frozen);
     const tw = this.tween;
     if (!tw) return;

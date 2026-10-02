@@ -1441,3 +1441,58 @@ export function getRutTexture() {
     g.fillRect(0, 0, w, h);
   }, { srgb: false, repeat: true });
 }
+
+/**
+ * Normal map for a carved inscription plaque (pairs with getInscriptionTexture: same layout):
+ * the letters are V-cut into the face, the border moulding stands proud, so each stroke catches
+ * light on one lip and falls into shadow on the other.
+ */
+export function getInscriptionNormal(text) {
+  const key = `inscrN_${text}`;
+  return canvasTex(key, 1024, 256, (g, w, h) => {
+    // height field: white = face, dark = cut
+    const hc = document.createElement('canvas');
+    hc.width = w;
+    hc.height = h;
+    const hg = hc.getContext('2d');
+    hg.scale(2, 2);
+    const W = w / 2;
+    const H = h / 2;
+    hg.fillStyle = '#c0c0c0';
+    hg.fillRect(0, 0, W, H);
+    hg.strokeStyle = '#ffffff';
+    hg.lineWidth = 6;
+    hg.strokeRect(11, 11, W - 22, H - 22);
+    hg.font = `600 60px Georgia, 'Times New Roman', serif`;
+    hg.textAlign = 'center';
+    hg.textBaseline = 'middle';
+    const sx = Math.min(1, (W - 80) / Math.max(1, hg.measureText(text).width));
+    hg.save();
+    hg.translate(W / 2, H / 2);
+    hg.scale(sx, 1);
+    hg.filter = 'blur(1.2px)';
+    hg.fillStyle = '#202020';
+    hg.fillText(text, 0, 1);
+    hg.restore();
+    const src = hg.getImageData(0, 0, w, h).data;
+    const out = g.createImageData(w, h);
+    const ht = (x, y) => src[((Math.min(h - 1, Math.max(0, y)) * w) + Math.min(w - 1, Math.max(0, x))) * 4] / 255;
+    const k = 3.0;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const dx = (ht(x + 1, y) - ht(x - 1, y)) * k;
+        const dy = (ht(x, y + 1) - ht(x, y - 1)) * k;
+        const nx = -dx;
+        const ny = dy; // canvas y runs down; normal-map green is up
+        const nz = 1;
+        const l = Math.hypot(nx, ny, nz);
+        const i = (y * w + x) * 4;
+        out.data[i] = (nx / l * 0.5 + 0.5) * 255;
+        out.data[i + 1] = (ny / l * 0.5 + 0.5) * 255;
+        out.data[i + 2] = (nz / l * 0.5 + 0.5) * 255;
+        out.data[i + 3] = 255;
+      }
+    }
+    g.putImageData(out, 0, 0);
+  }, { srgb: false });
+}

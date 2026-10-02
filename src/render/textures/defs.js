@@ -68,6 +68,7 @@ export const TEXTURE_DEFS = {
   hd2_plaster_int: { size: 1024, gen: () => HD.plaster({ seed: 33, base: [0.82, 0.77, 0.66], decay: 0.8, interior: true }), normalStrength: 3.2, cavity: 0.22 },
   hd2_ceiling: { size: 512, gen: () => HD.floorBoards({ seed: 193, count: 12, base: [0.33, 0.23, 0.15] }), normalStrength: 2.5, cavity: 0.25 },
   hd3_dungeon_floor: { size: 1024, gen: () => HD2.settsV({ seed: 95, rows: 7, minW: 0.09, maxW: 0.24, moss: 0.12, sand: 0.35, flags: true }), normalStrength: 3.2, cavity: 0.3 },
+  hd3_flags: { size: 1024, gen: () => HD2.settsV({ seed: 73, rows: 9, minW: 0.07, maxW: 0.2, moss: 0.4, sand: 0.5, flags: true }), normalStrength: 3.2, cavity: 0.3 },
   hd4_setts: { size: 1024, gen: () => HD2.settsV({ seed: 64 }), normalStrength: 3.6, cavity: 0.34 },
   hd3_setts: { size: 1024, gen: () => HD2.setts({ seed: 63 }), normalStrength: 3.4, cavity: 0.34 },
   hd2_cobble: { size: 512, gen: () => HD.cobbleSetts({ seed: 61 }), normalStrength: 3.0, cavity: 0.32 },

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { EDGE, CELL } from '../../data/maps/MapGrid.js';
 import { getMaterial, getWindowMaterial } from '../../render/materials.js';
-import { getInscriptionTexture, getEmberTexture, getSootTexture, getScorchTexture, getBlobTexture, getRunoffTexture, getPlinthGrimeTexture, getRutTexture } from '../../render/textures/index.js';
+import { getInscriptionTexture, getEmberTexture, getSootTexture, getScorchTexture, getBlobTexture, getRunoffTexture, getPlinthGrimeTexture, getRutTexture, getInscriptionNormal } from '../../render/textures/index.js';
 import { GeoBuilder, hash, defaultAO, roughBlockGeometry, roughen } from './GeoBuilder.js';
 import { TILESETS } from './tilesets.js';
 
@@ -381,6 +381,29 @@ export function buildBlock(map, opts = {}) {
       const s1 = S / 2 + copingExt(e, sd.N, Tn, 1, horizontal);
       const hc = e.H;
       localBox(ef, 'arch_trim', s0, s1, hc, hc + 0.16, -T / 2 - 0.06, T / 2 + 0.06, { chamfer: 0.035 });
+      if (!inA || !inB) {
+        // the town wall: merlons along the wall-walk (a broken skyline against the sky; a few have
+        // fallen) and a battered buttress on every other bay of the town-side face
+        const inSign = inA ? 1 : -1; // basis +N side is fA's side; town side is the in-bounds one
+        for (let k = 0; k < 3; k++) {
+          if (hash(e.key, k, 'mer') < 0.18) continue;
+          const sc = -S / 2 + 0.5 + k * 1.0 + (hash(e.key, k, 'mo') - 0.5) * 0.1;
+          const mh = 0.55 + (hash(e.key, k, 'mh') - 0.5) * 0.12;
+          const mg = roughBlockGeometry(0.62, mh, T + 0.06, { bevel: 0.03, amp: 0.012, seed: hash(e.key, k, 'ms') * 100, chip: 0.05 });
+          g.geometry('arch_trim', mg, localMatrix(ef, sc, hc + 0.16 + mh / 2, 0, (hash(e.key, k, 'mr') - 0.5) * 0.03), { uv: 'world', ao: 0.9 });
+          mg.dispose();
+        }
+        if ((e.i + e.j) % 2 === 0 && e.H > 2.5) {
+          const fd = (fA === 0 ? 1 : -1) * inSign;
+          const d0 = fd > 0 ? T / 2 : -T / 2 - 0.55;
+          const d1 = fd > 0 ? T / 2 + 0.55 : -T / 2;
+          localBox(ef, 'arch_stone', -0.32, 0.32, 0, e.H * 0.55, Math.min(d0, d1), Math.max(d0, d1), { chamfer: 0.04 });
+          const t0 = fd > 0 ? T / 2 : -T / 2 - 0.3;
+          const t1 = fd > 0 ? T / 2 + 0.3 : -T / 2;
+          localBox(ef, 'arch_stone', -0.3, 0.3, e.H * 0.55, e.H * 0.85, Math.min(t0, t1), Math.max(t0, t1), { chamfer: 0.04 });
+          localBox(ef, 'arch_trim', -0.36, 0.36, e.H * 0.55 - 0.08, e.H * 0.55 + 0.04, Math.min(d0, d1) - 0.02, Math.max(d0, d1) + 0.02, { chamfer: 0.03 });
+        }
+      }
     }
     // ruin tops: capstones scattered
   }
@@ -1363,7 +1386,7 @@ export function buildBlock(map, opts = {}) {
       }
     }
     // ground-floor iron bars on some windows
-    if (!indoor && !o.upper && (r > 0.92 || templeWall)) {
+    if (!indoor && !o.upper && ((r > 0.92 && night < 0.3) || templeWall)) {
       for (let s = s0 + 0.12; s < s1 - 0.05; s += 0.16) {
         const m = localMatrix(f, s, (y0 + y1) / 2, dOut + outSign * 0.02);
         g.box('arch_iron', { matrix: m, s: [0.025, y1 - y0, 0.025] });
@@ -1959,7 +1982,7 @@ export function buildBlock(map, opts = {}) {
       const f = { basis };
       localBox(f, 'arch_trim', -1.05, 1.05, top - 0.06, top + 0.52, T / 2 - 0.02, T / 2 + 0.07, { chamfer: 0.03 });
       const ruinPlaque = ts.id === 'ruins' || !!compAt(ev.x + dx, ev.y + dy)?.partRuin;
-      const mat = new THREE.MeshStandardMaterial({ map: getInscriptionTexture(m[1].toUpperCase(), { weathered: ruinPlaque }), roughness: 0.92, alphaTest: 0.5 });
+      const mat = new THREE.MeshStandardMaterial({ map: getInscriptionTexture(m[1].toUpperCase(), { weathered: ruinPlaque }), normalMap: getInscriptionNormal(m[1].toUpperCase()), normalScale: new THREE.Vector2(1.6, 1.6), roughness: 0.92, alphaTest: 0.5 });
       const geo = new THREE.PlaneGeometry(1.9, 0.46);
       const plane = new THREE.Mesh(geo, mat);
       // in a ruin the slab has slipped in its frame
@@ -2339,7 +2362,7 @@ export function buildBlock(map, opts = {}) {
     mesh.userData.ownMaterial = true;
     group.add(mesh);
   }
-  for (const [list, tex, col, op, key] of [[runQuads, getRunoffTexture(), 0x1c1812, 0.62, 'runoff'], [plinthQuads, getPlinthGrimeTexture(), 0x241d14, 0.72, 'plinth']]) {
+  for (const [list, tex, col, op, key] of [[runQuads, getRunoffTexture(), 0x15120d, 0.82, 'runoff'], [plinthQuads, getPlinthGrimeTexture(), 0x1f1810, 0.8, 'plinth']]) {
     if (!list.length) continue;
     const sb = new GeoBuilder();
     for (const [q, uv] of list) sb.quad(key, q[0], q[1], q[2], q[3], uv, { ao: 1 });
