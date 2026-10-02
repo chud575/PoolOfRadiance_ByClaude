@@ -379,7 +379,7 @@ export function lockedDoor(g, mx, my, horiz, L, t, side = 1) {
   g.lineWidth = 1;
   g.strokeRect(-L / 2, -t / 2, L, t);
   // the padlock, hung on the room side of the bar
-  const s = t * 1.25;
+  const s = t * 1.9;
   g.translate(0, side * (t / 2 + s * 0.42));
   g.lineWidth = s * 0.16;
   g.strokeStyle = INK.ink;

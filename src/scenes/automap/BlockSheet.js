@@ -430,6 +430,12 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
         const side = sg.horiz ? -oy : ox;
         lockedDoor(ig, cmx, cmy, sg.horiz, gap * 2.1, cs * 0.13, side);
       } else {
+        // keep names clear of the leaf's swing into the room
+        const sx0 = cmx - along[0] * gap - ox * gap * 2.1;
+        const sy0 = cmy - along[1] * gap - oy * gap * 2.1;
+        const sx1 = cmx + along[0] * gap;
+        const sy1 = cmy + along[1] * gap;
+        wallRects.push([Math.min(sx0, sx1), Math.min(sy0, sy1), Math.abs(sx1 - sx0) || 2, Math.abs(sy1 - sy0) || 2]);
         // a plan door: the leaf hung from one jamb, swung open over a pencilled arc
         const hx = cmx - along[0] * gap;
         const hy = cmy - along[1] * gap;

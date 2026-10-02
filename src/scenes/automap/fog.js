@@ -276,7 +276,7 @@ export function paintSurveyFog(W, H, k, cover, area, { seed = 1 } = {}) {
   const [ax, ay, aw, ah] = area;
   const r = prng(seed + 71);
   // the wash: a cool grey vellum tone, mottled at low frequency
-  g.fillStyle = 'rgba(104,112,128,0.15)';
+  g.fillStyle = 'rgba(104,112,128,0.13)';
   g.fillRect(ax, ay, aw, ah);
   {
     const q = 8;
@@ -289,7 +289,7 @@ export function paintSurveyFog(W, H, k, cover, area, { seed = 1 } = {}) {
       const n = fbm(x / 22, y / 22, { period: 64, octaves: 4, seed: seed + 3 });
       const i = (y * mw + x) * 4;
       im.data[i] = 70; im.data[i + 1] = 76; im.data[i + 2] = 92;
-      im.data[i + 3] = Math.max(0, Math.min(255, (n - 0.35) * 1.4 * 255 * 0.32));
+      im.data[i + 3] = Math.max(0, Math.min(255, (n - 0.35) * 1.4 * 255 * 0.22));
     }
     mg.putImageData(im, 0, 0);
     g.imageSmoothingEnabled = true;
@@ -310,7 +310,7 @@ export function paintSurveyFog(W, H, k, cover, area, { seed = 1 } = {}) {
     const ca = Math.cos(a);
     const sa = Math.sin(a);
     const gap = 2.4 + (1 - d) * 2.6 + r() * 0.8;
-    const press = 0.13 + d * 0.3 + r() * 0.06;
+    const press = 0.16 + d * 0.32 + r() * 0.06;
     const bow = (r() - 0.5) * 3;
     for (let o = -R; o <= R; o += gap * (0.8 + r() * 0.4)) {
       const half = Math.sqrt(Math.max(0, R * R - o * o)) * (0.45 + r() * 0.55);
