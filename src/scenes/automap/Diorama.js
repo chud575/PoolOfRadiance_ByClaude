@@ -760,7 +760,7 @@ export class Diorama {
     if (party) {
       const grp = new THREE.Group();
       const pewter = T(new THREE.MeshStandardMaterial({ color: 0x8e9298, roughness: 0.42, metalness: 0.85, envMapIntensity: 1.1 }));
-      const paint = (c, r = 0.58) => T(new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: 0, envMapIntensity: 0.5 }));
+      const paint = (c, r = 0.78) => T(new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: 0, envMapIntensity: 0.35 }));
       const V = (pts) => pts.map(([x, y]) => new THREE.Vector2(x, y));
       const base = new THREE.Mesh(T(new THREE.LatheGeometry(V([[0, 0], [0.3, 0], [0.318, 0.008], [0.322, 0.03], [0.31, 0.046], [0.29, 0.052], [0, 0.052]]), 48)), pewter);
       base.castShadow = base.receiveShadow = true;
@@ -866,7 +866,8 @@ export class Diorama {
         cs2.renderOrder = 1;
         grp.add(cs2);
       }
-      grp.scale.setScalar(2.3);
+      // scaled to sit within its own square, clear of the neighbouring walls
+      grp.scale.setScalar(1.75);
       // a cool rim light behind the hero (from the far side of the board) to cut it out
       const rimL = new THREE.PointLight(0xc4d6ff, 9, 5.5, 1.6);
       rimL.position.set(party.x + 1.1, 2.4, party.y - 1.4);
@@ -1157,10 +1158,10 @@ export class Diorama {
       const py = MY + (party.y + 0.5) * cs;
       // the standard-bearer and his flag stand tall: from the camera's side they hide
       // a good stretch of paper north of the base as well
-      hard.push([px - cs * 1.1, py - cs * 2.7, cs * 2.2, cs * 3.8]);
+      hard.push([px - cs * 0.9, py - cs * 2.2, cs * 1.8, cs * 3.1]);
     }
     // marker flags on their poles likewise rise over the paper just north of them
-    for (const m of sheet.markerSpots ?? []) hard.push([m[0] - cs * 0.15, m[1] - cs * 1.0, m[2] + cs * 0.55, m[3] + cs * 1.0]);
+    for (const m of sheet.markerSpots ?? []) hard.push([m[0] - cs * 0.1, m[1] - cs * 0.7, m[2] + cs * 0.4, m[3] + cs * 0.7]);
     if (secrets) {
       const { segs, effective } = collectEdges(map, sheet.info, seenCell, secrets);
       for (const q of segs) {
@@ -1213,7 +1214,7 @@ export class Diorama {
           const tw = Math.max(...lines.map((l) => g.measureText(l).width));
           const bw = tw + fs * 1.6;
           const bh = fs * (0.35 + 1.2 * lines.length);
-          for (const [ox, oy] of [[0, 0], [0, -0.5], [0, 0.5], [0, -1], [0, 1], [-0.7, 0], [0.7, 0], [0, -1.5], [0, 1.5], [-0.7, -1], [0.7, -1], [-0.7, 1], [0.7, 1], [0, -2], [0, 2]]) {
+          for (const [ox, oy] of [[0, 0], [0, -0.5], [0, 0.5], [0, -1], [0, 1], [-0.7, 0], [0.7, 0], [0, -1.5], [0, 1.5], [-0.7, -1], [0.7, -1], [-0.7, 1], [0.7, 1], [0, -2], [0, 2], [-1.4, 0], [1.4, 0], [0, -2.6], [0, 2.6], [-1.2, -2.2], [1.2, -2.2], [-1.2, 2.2], [1.2, 2.2], [0, -3.1], [0, 3.1]]) {
             const cx = MX + (fx + ox) * cs;
             const cy = MY + (fy + oy) * cs;
             const box = [cx - bw / 2 - fs * 0.5, cy - bh / 2, bw + fs, bh];
@@ -1222,6 +1223,12 @@ export class Diorama {
             for (const o of hard) { const ov = overlap(box, o); if (ov > 0) score += 20 + (ov / area) * 40; }
             for (const o of placed) score += (overlap(box, o) / area) * 30;
             if (!seenCell(Math.floor(fx + ox), Math.floor(fy + oy))) score += 3;
+            // never out past the city wall, and rather inside the district it names
+            const inner = [MX + cs * 0.45, MY + cs * 0.45, map.w * cs - cs * 0.9, map.h * cs - cs * 0.9];
+            if (box[0] < inner[0] || box[1] < inner[1] || box[0] + box[2] > inner[0] + inner[2] || box[1] + box[3] > inner[1] + inner[3]) score += 60;
+            const zx = fx + ox;
+            const zy = fy + oy;
+            if (zx < z.x || zy < z.y || zx > z.x + z.w || zy > z.y + z.h) score += 6;
             if (!pick || score < pick.score) pick = { cx, cy, bw, bh, fs, box, score, lines };
           }
         }
@@ -1284,7 +1291,7 @@ export class Diorama {
   _pennantTexture(T) {
     const c = makeCanvas(256, 160);
     const g = c.getContext('2d');
-    g.fillStyle = '#a8301e';
+    g.fillStyle = '#8a2a1c';
     g.fillRect(0, 0, 256, 160);
     g.fillStyle = 'rgba(255,200,150,0.12)';
     for (let i = 0; i < 40; i++) g.fillRect(0, i * 4, 256, 1);
@@ -1292,7 +1299,7 @@ export class Diorama {
     g.lineWidth = 8;
     g.strokeRect(6, 6, 244, 148);
     // a gilt chevron (the Company's device)
-    g.fillStyle = '#f0cf78';
+    g.fillStyle = '#d4b066';
     g.beginPath(); g.moveTo(40, 120); g.lineTo(128, 40); g.lineTo(216, 120); g.lineTo(186, 120); g.lineTo(128, 70); g.lineTo(70, 120); g.closePath(); g.fill();
     const t = T(new THREE.CanvasTexture(c));
     t.colorSpace = THREE.SRGBColorSpace;
