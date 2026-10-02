@@ -328,3 +328,135 @@ export function heraldry(field, device, charge = 0xf5d98b) {
   heraldryCache.set(key, t);
   return t;
 }
+
+/**
+ * Granite setts for the combat street: one tile = 1 m with 9 courses of
+ * small (~11 cm) rounded rectangular stones, staggered, varied in width,
+ * tone and wear. Most stones are matte; a few are foot-polished. Deep mortar
+ * joints filled with dark grit. The roughness map carries height in .r and
+ * roughness in .g (the ground shader fills puddles into the low joints).
+ * @returns {{map:THREE.Texture, normalMap:THREE.Texture, roughnessMap:THREE.Texture}}
+ */
+export function settsSet(size = 512) {
+  if (texCache.has('setts')) return texCache.get('setts');
+  const ROWS = 8;
+  const rows = [];
+  for (let r = 0; r < ROWS; r++) {
+    // Stone widths for this course summing to exactly 1 (tileable in u).
+    const n = 7 + Math.floor(hash2(r, 3, 51) * 3);
+    const w = [];
+    let sum = 0;
+    for (let i = 0; i < n; i++) {
+      const x = 0.75 + hash2(r, i, 52) * 0.6;
+      w.push(x);
+      sum += x;
+    }
+    const off = hash2(r, 9, 53);
+    let acc = 0;
+    rows.push({ edges: w.map((x) => (acc += x / sum) - x / sum), widths: w.map((x) => x / sum), off });
+  }
+  const N = size * size;
+  const height = new Float32Array(N);
+  const color = new Uint8Array(N * 4);
+  const rough = new Uint8Array(N * 4);
+  const normal = new Uint8Array(N * 4);
+  const rh = 1 / ROWS;
+  for (let y = 0; y < size; y++) {
+    const v = y / size;
+    void 0;
+    for (let x = 0; x < size; x++) {
+      const u0 = x / size;
+      // Gently undulating courses (tileable: whole sine periods).
+      const vw = (v + Math.sin(u0 * Math.PI * 2) * 0.012 + Math.sin(u0 * Math.PI * 6 + 1) * 0.005 + 1) % 1;
+      const r = Math.min(ROWS - 1, Math.floor(vw / rh));
+      const row = rows[r];
+      const fv = (vw - r * rh) / rh;
+      const u = (u0 + row.off + 1) % 1;
+      let k = row.edges.length - 1;
+      for (let i = 0; i < row.edges.length; i++) if (u < row.edges[i] + row.widths[i]) { k = i; break; }
+      const fu = (u - row.edges[k]) / row.widths[k];
+      // Rounded-rect distance inside the stone (in stone-relative units, aspect-corrected).
+      const sw = row.widths[k] / rh; // stone width / height ratio
+      const jx = (hash2(r, k, 61) - 0.5) * 0.12;
+      const jy = (hash2(r, k, 62) - 0.5) * 0.12;
+      const px = (fu - 0.5 + jx * 0.3) * sw;
+      const py = fv - 0.5 + jy * 0.3;
+      const hx = sw * 0.5 - 0.09 - hash2(r, k, 63) * 0.05;
+      const hy = 0.5 - 0.09 - hash2(r, k, 64) * 0.05;
+      const rad = 0.16 + hash2(r, k, 65) * 0.12;
+      const qx = Math.abs(px) - hx + rad;
+      const qy = Math.abs(py) - hy + rad;
+      const outside = Math.hypot(Math.max(qx, 0), Math.max(qy, 0));
+      const inside = Math.min(Math.max(qx, qy), 0);
+      // Edge noise so stones are chipped, not machined.
+      const en = fbm(u0 * 24, v * 24, { octaves: 3, period: 24, seed: 71 }) - 0.5;
+      const sd = outside + inside - rad + en * 0.08;
+      const stone = smooth(0.02, -0.04, sd);
+      // Dome: highest mid-stone, falling to the joint; worn tops are flatter.
+      const dome = clamp01(-sd / 0.32);
+      const n1 = fbm(u0 * 40, v * 40, { octaves: 3, period: 40, seed: 73 });
+      const tone = hash2(r, k, 66);
+      const warm = hash2(r, k, 67);
+      const polish = hash2(r, k, 68) > 0.82 ? 1 : 0;
+      const h = stone * (0.55 + 0.45 * Math.sqrt(dome)) + (n1 - 0.5) * 0.06 * stone;
+      // Mortar: dark grit and dirt, damp and rough.
+      const grit = fbm(u0 * 64, v * 64, { octaves: 2, period: 64, seed: 79 });
+      let cr = 0.05 + grit * 0.035;
+      let cg = 0.045 + grit * 0.03;
+      let cb = 0.036 + grit * 0.025;
+      // Stone albedo: grey granite, some warm, some blue-grey, speckled; edges darker (cavity).
+      const g0 = (0.12 + tone * 0.2 + (n1 - 0.5) * 0.08) * (hash2(r, k, 69) > 0.9 ? 0.7 : 1);
+      const sr = g0 * (0.96 + warm * 0.1);
+      const sg = g0 * (0.95 + (0.5 - Math.abs(warm - 0.5)) * 0.04);
+      const sb = g0 * (1.04 - warm * 0.12);
+      const speck = hash2(x, y, 81) > 0.93 ? 0.85 : 1;
+      const cav = 0.62 + 0.38 * Math.sqrt(dome);
+      const sk = stone;
+      cr = cr * (1 - sk) + sr * speck * cav * sk;
+      cg = cg * (1 - sk) + sg * speck * cav * sk;
+      cb = cb * (1 - sk) + sb * speck * cav * sk;
+      const i = y * size + x;
+      height[i] = h;
+      const o = i * 4;
+      color[o] = Math.min(255, Math.max(0, Math.pow(cr, 1 / 2.2) * 255));
+      color[o + 1] = Math.min(255, Math.max(0, Math.pow(cg, 1 / 2.2) * 255));
+      color[o + 2] = Math.min(255, Math.max(0, Math.pow(cb, 1 / 2.2) * 255));
+      color[o + 3] = 255;
+      const ro = sk * (polish ? 0.5 + n1 * 0.15 : 0.82 + n1 * 0.16) + (1 - sk) * 0.97;
+      rough[o] = Math.min(255, h * 255);
+      rough[o + 1] = Math.min(255, ro * 255);
+      rough[o + 2] = rough[o];
+      rough[o + 3] = 255;
+    }
+  }
+  const H = (x, y) => height[((y + size) % size) * size + ((x + size) % size)];
+  const ns = 5.5;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = (H(x + 1, y - 1) + 2 * H(x + 1, y) + H(x + 1, y + 1)) - (H(x - 1, y - 1) + 2 * H(x - 1, y) + H(x - 1, y + 1));
+      const dy = (H(x - 1, y + 1) + 2 * H(x, y + 1) + H(x + 1, y + 1)) - (H(x - 1, y - 1) + 2 * H(x, y - 1) + H(x + 1, y - 1));
+      const nx = -dx * ns;
+      const ny = -dy * ns;
+      const l = Math.hypot(nx, ny, 1);
+      const o = (y * size + x) * 4;
+      normal[o] = ((nx / l) * 0.5 + 0.5) * 255;
+      normal[o + 1] = ((ny / l) * 0.5 + 0.5) * 255;
+      normal[o + 2] = ((1 / l) * 0.5 + 0.5) * 255;
+      normal[o + 3] = 255;
+    }
+  }
+  const mk = (arr, srgb) => {
+    const t = new THREE.DataTexture(arr, size, size, THREE.RGBAFormat, THREE.UnsignedByteType);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+    t.anisotropy = 8;
+    t.generateMipmaps = true;
+    t.minFilter = THREE.LinearMipmapLinearFilter;
+    t.magFilter = THREE.LinearFilter;
+    t.needsUpdate = true;
+    return t;
+  };
+  const set = { map: mk(color, true), normalMap: mk(normal, false), roughnessMap: mk(rough, false) };
+  texCache.set('setts', set);
+  return set;
+}

@@ -151,10 +151,16 @@ export default class CombatScene extends Scene {
         l.intensity = this.night ? 16 : 5;
         l.distance = 9;
       } else {
-        l.intensity = (this.night ? 30 : 7) * (f.brazier ? 1.4 : 1);
-        l.distance = f.brazier ? 13 : 10;
+        // Capped per light, with a gentler falloff: flames pool warm light on
+        // the masonry instead of blowing a hot disc onto the nearest wall.
+        l.intensity = (this.night ? 13 : 4) * (f.brazier ? 1.25 : 1);
+        l.distance = f.brazier ? 13 : 11;
+        l.decay = 1.5;
       }
       l.position.set(f.x, f.y, f.z);
+      // Wall torches: the light sits out from the wall, not in the bracket.
+      if (f.yaw !== undefined) l.position.add(new THREE.Vector3(Math.sin(f.yaw) * 0.5, 0.1, Math.cos(f.yaw) * 0.5));
+      l.userData.home = l.position.clone();
       l.userData.base = l.intensity;
       f.light = l;
     });
@@ -191,6 +197,12 @@ export default class CombatScene extends Scene {
       const blob = new THREE.Mesh(this._blobGeo ??= new THREE.CircleGeometry(0.55, 24).rotateX(-Math.PI / 2), this._blobMat ??= new THREE.MeshBasicMaterial({ map: blobTexture(), transparent: true, depthWrite: false, opacity: 0.6, color: 0x000000 }));
       blob.renderOrder = 1;
       blob.scale.setScalar(Math.max(0.8, model.radius * 2.4));
+      // Tight contact core right under the feet (ambient occlusion), so figures sit on the paving.
+      const core = new THREE.Mesh(this._blobGeo, this._blobCoreMat ??= new THREE.MeshBasicMaterial({ map: blobTexture(), transparent: true, depthWrite: false, opacity: 0.7, color: 0x000000 }));
+      core.scale.setScalar(0.5);
+      core.position.y = 0.002;
+      core.renderOrder = 1;
+      blob.add(core);
       s.add(blob);
       fig.blob = blob;
       // Invisible pick proxy.
@@ -453,7 +465,7 @@ export default class CombatScene extends Scene {
       const fig = this.figures.get(c.id);
       return c.side === 'party'
         ? `p|${c.ref.id}|${c.ref.race}|${c.ref.inventory.filter((e) => e.equipped).map((e) => e.id).join(',')}|${this.night ? 1 : 0}`
-        : `m|${c.monsterId}|${fig.model.kit?.helm ?? ''}|${this.night ? 1 : 0}`;
+        : `m|${c.monsterId}|${c.id}|${fig.model.kit?.helm ?? ''}|${this.night ? 1 : 0}`;
     };
     for (const c of [...this.party, ...this.monsters]) {
       // Same species + kit (or the same hero) → reuse the portrait (also across fights).
@@ -474,9 +486,13 @@ export default class CombatScene extends Scene {
       if (fig.rig === 'biped') head.y += 0.07 * sc;
       const d = fig.rig === 'biped' ? 1.0 * sc : 1.2 * Math.max(0.6, fig.model.height);
       // Three-quarter view from the figure's weapon side (the shield would hide the face).
-      const yaw = fig.yaw - 0.3;
+      // Each foe gets its own framing (head turn, tilt, distance) so a pack of
+      // identical skeletons doesn't read as one portrait copied down the bar.
+      const hv = c.side === 'party' ? 0.5 : ((String(c.id).split('').reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7) % 1000) / 1000);
+      const yaw = fig.yaw - 0.3 + (c.side === 'party' ? 0 : (hv - 0.5) * 0.9);
       key.set(Math.sin(yaw), 0, Math.cos(yaw));
-      cam.position.set(head.x + key.x * d, head.y + d * 0.12, head.z + key.z * d);
+      const dd = d * (c.side === 'party' ? 1 : 0.9 + hv * 0.25);
+      cam.position.set(head.x + key.x * dd, head.y + dd * (0.12 + (c.side === 'party' ? 0 : (hv - 0.5) * 0.25)), head.z + key.z * dd);
       cam.lookAt(head.x, head.y - 0.04 * sc, head.z);
       r.setRenderTarget(rt);
       r.clear();
@@ -679,6 +695,15 @@ export default class CombatScene extends Scene {
         const [hx, hy] = String(this.params.hover).split(',').map(Number);
         this._hoverSquare({ x: hx, y: hy });
       }
+      // Debug: &aim=1 / &cast=<spell> open targeting with Tab on the nearest valid target.
+      if (this.params.aim) {
+        this._enterMode('aim');
+        this._cycleTarget(0);
+      } else if (this.params.cast) {
+        const spell = String(this.params.cast);
+        this._enterMode('target', { spell, label: SPELLS[spell]?.name ?? spell });
+        this._cycleTarget(0);
+      }
     });
   }
 
@@ -708,6 +733,7 @@ export default class CombatScene extends Scene {
     this.overlay.setPath(null, null);
     this.overlay.setRay(null, null);
     this.overlay.targetRing.visible = false;
+    this.overlay.setReticle(null);
     if (!c) return;
     if (mode === 'move') {
       this.flood = this.engine.reach(c, c.mp);
@@ -753,6 +779,7 @@ export default class CombatScene extends Scene {
     this.overlay.setHover(null);
     this.overlay.setPath(null, null);
     this.overlay.targetRing.visible = false;
+    this.overlay.setReticle(null);
     this.hud.setPrompt('');
     this.hud.showInspect(null);
   }
@@ -1154,6 +1181,7 @@ export default class CombatScene extends Scene {
     const c = this.cur;
     const e = this.engine;
     this.overlay.targetRing.visible = false;
+    this.overlay.setReticle(null);
     if (!sq) {
       this.overlay.setHover(null);
       this.overlay.setPath(null, null);
@@ -1229,10 +1257,15 @@ export default class CombatScene extends Scene {
       }
       if (!can.ok) { content.push(h('div.warn', [can.reason])); bad = true; }
       if (can.ok && affected.some((o) => !e.hostileTo(c, o)) && tact.hostile && tact.shape !== 'single') content.push(h('div.warn', ['Allies are in the area!']));
-      if (tact.target !== 'self' && tact.target !== 'direction') this.overlay.setRay({ x: c.x, y: c.y }, sq, this.field.losBlock(c.x, c.y, sq.x, sq.y));
+      if (tact.target !== 'self' && tact.target !== 'direction') this.overlay.setRay({ x: c.x, y: c.y }, sq, this.field.losBlock(c.x, c.y, sq.x, sq.y), { arc: tact.vfx === 'fireball' || tact.vfx === 'missile' ? 0.7 : 0.25 });
       else this.overlay.setRay(null, null);
+      if (can.ok && tact.target !== 'self') this.overlay.setReticle(sq, tact.hostile === false || tact.target === 'ally' ? 0x7cf0a0 : 0xff7a40);
     } else if (this.mode === 'aim' && myTurn) {
-      this.overlay.setRay({ x: c.x, y: c.y }, sq, this.field.losBlock(c.x, c.y, sq.x, sq.y));
+      this.overlay.setRay({ x: c.x, y: c.y }, sq, this.field.losBlock(c.x, c.y, sq.x, sq.y), { arc: 0.6 });
+      if (occ && e.hostileTo(c, occ) && !isDown(occ)) {
+        this.overlay.setReticle(sq, e.canAttack(c, occ).ok ? 0xff5a3c : 0x8a8a8a);
+        this.overlay.targetRing.visible = false;
+      }
     } else this.overlay.setRay(null, null);
     if (this.mode === 'aim' && myTurn && !occ) content.push(h('div.s', ['No target here']));
     this.overlay.setHover(sq, bad);
@@ -1364,6 +1397,8 @@ export default class CombatScene extends Scene {
   /** Play engine events with animation, VFX, floating text and log lines. */
   async play(evs) {
     const e = this.engine;
+    // The player has acted: the "your move" banner never lingers over the result.
+    if (this.cur?.side === 'party' && this.turnDone && !this._aiActing) this.hud.hideBanner();
     this._veil(evs);
     try {
       await this._playEvents(evs);
@@ -1758,7 +1793,10 @@ export default class CombatScene extends Scene {
       if (!f2) continue;
       if (hh.dmg) {
         f2.play('hit', this.time, 0.6 / Math.sqrt(sp), { power: 1.3 });
-        if (tact.vfx === 'fireball' || tact.vfx === 'cone') f2.burn(this.time);
+        if (tact.vfx === 'fireball' || tact.vfx === 'cone') {
+          f2.burn(this.time);
+          if (!this.snap) this.vfx.bodyFire(this.time, () => f2.root.position, f2.model.height, this._seed(), 1.8);
+        }
         if (tact.vfx === 'fireball') f2.knock(this.time, f2.pos.x - centre.x, f2.pos.z - centre.z, 0.45);
         // Every number rides its own victim's head, coloured by the damage type,
         // with a name plate + hp tick for area spells (who took what).
@@ -1984,7 +2022,7 @@ export default class CombatScene extends Scene {
     }
     if (this.hoverSq) push(this.hoverSq.x * TILE + TILE / 2, 0.1, this.hoverSq.y * TILE + TILE / 2);
     pts.length = n;
-    this.diorama.setView(this.camera.position, pts);
+    this.diorama.setView(this.camera.position, pts, this.camera);
     // Fade hole: centred on the view target, wide enough for the visible actors.
     const r = this.ctx.render.renderer;
     const buf = r.getDrawingBufferSize(this._buf ??= new THREE.Vector2());
@@ -2056,9 +2094,13 @@ export default class CombatScene extends Scene {
     if (af && !this.engine.out(act) && !this.done) {
       this.overlay.activeRing.visible = true;
       this.overlay.activeRing.position.set(af.root.position.x, 0.035, af.root.position.z);
+      // A gilt marker bobbing over the active figure's head: findable in a crowd.
+      this.overlay.activeMarker.visible = act.side === 'party' && !this.busy;
+      this.overlay.activeMarker.position.set(af.root.position.x, af.model.height * 1.05 + 0.42 + Math.sin(this.time * 3) * 0.05, af.root.position.z);
       this.overlay.setFocus(undefined, { x: act.x, y: act.y });
     } else {
       this.overlay.activeRing.visible = false;
+      this.overlay.activeMarker.visible = false;
       this.overlay.setFocus(undefined, null);
     }
   }
@@ -2120,6 +2162,8 @@ export default class CombatScene extends Scene {
     for (const l of this.torchLights) {
       const s = l.userData.seed;
       l.intensity = l.userData.hidden ? 0 : l.userData.base * (0.86 + 0.09 * Math.sin(t * 11 + s) + 0.05 * Math.sin(t * 23.7 + s * 3));
+      // The flame gutters: its light pool sways a little across the stones.
+      if (l.userData.home) l.position.set(l.userData.home.x + Math.sin(t * 7.3 + s) * 0.05, l.userData.home.y + Math.sin(t * 9.1 + s * 2) * 0.04, l.userData.home.z + Math.sin(t * 6.1 + s * 3) * 0.05);
     }
     this.overlay.update(t);
     this._updateCamera(dt);
@@ -2206,7 +2250,9 @@ export default class CombatScene extends Scene {
     this.overlay.setPath(null, null);
     this.overlay.setRay(null, null);
     this.overlay.targetRing.visible = false;
+    this.overlay.setReticle(null);
     this.overlay.activeRing.visible = false;
+    this.overlay.activeMarker.visible = false;
     for (const r of this.overlay.teamRings.values()) r.visible = false;
     this.vfx.clearLingering?.();
     this.cur = null;
@@ -2249,6 +2295,7 @@ export default class CombatScene extends Scene {
     this.diorama?.dispose();
     this._blobGeo?.dispose();
     this._blobMat?.dispose();
+    this._blobCoreMat?.dispose();
     this._preRT?.dispose();
     for (const m of Object.values(this._eyeMat ?? {})) m.dispose();
     for (const d of this._decals ?? []) {

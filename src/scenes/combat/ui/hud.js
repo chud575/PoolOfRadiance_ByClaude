@@ -25,7 +25,7 @@ export class CombatHud {
     this.timeline = h('div.cb-timeline');
     this.card = Frame({ title: 'Combat', variant: 'blue', className: 'cb-card' });
     this.cardBody = this.card.body;
-    this.log = new MessageLog(ctx.bus, { lines: 3, max: 80 });
+    this.log = new MessageLog(ctx.bus, { lines: 4, max: 80 });
     this.logBox = h('div.cb-logbox', { dataset: { tip: 'Combat log — hover to expand' } }, [this.log.el]);
     this.cmds = h('div.por-commandbar.cb-cmds');
     this.prompt = h('div.cb-prompt');
@@ -53,14 +53,20 @@ export class CombatHud {
     const order = engine.order;
     const nodes = [h('div.cb-round', ['Round', h('b', [String(Math.max(1, engine.round))])])];
     let lastSide = null;
+    // Types present among the foes get distinct badge letters and frame tints.
+    const types = [...new Set(order.filter((c) => c.side !== 'party').map((c) => monsterType(c.name)))];
+    const TINTS = ['#b8322a', '#c07a1a', '#7a3ab0', '#2a8a7a', '#9a9a2a', '#3a6ac0'];
     order.forEach((c) => {
       const down = this.shownOut(c, engine);
+      // The slain drop out of the order; fallen allies stay, marked with a skull.
+      if (down && c.side !== 'party') return;
       const hpNow = this.shownHp(c);
       const done = c._actedRound === engine.round && c.id !== activeId;
       if (lastSide && lastSide !== c.side && false) nodes.push(h('div.cb-sep'));
       lastSide = c.side;
       const pct = Math.max(0, hpNow) / Math.max(1, c.hp.max);
       const fx = Object.keys(c.fx ?? {}).filter((k) => FX_LABEL[k] && c.fx[k]).map((k) => ({ asleep: 'z', held: '⛓', nauseous: '~', blessed: '✦', hasted: '»', cursed: '✖', mirror: '◈', invisible: '◌', shielded: '⛨', prot: '☼' }[k] ?? '')).join('');
+      const ti = c.side === 'party' ? -1 : types.indexOf(monsterType(c.name));
       const tok = h(`div.cb-token.${c.side}`, {
         class: `${c.id === activeId ? 'current' : ''} ${down ? 'down' : ''} ${done ? 'done' : ''}`,
         dataset: { tip: `${c.name} — ${c.side === 'party' ? `HP ${hpNow}/${c.hp.max}` : describeHealth({ hp: { cur: hpNow, max: c.hp.max } })} · AC ${c.ac}${c.initiative ? ` · Init ${c.initiative}` : ''}` },
@@ -69,10 +75,12 @@ export class CombatHud {
         onclick: () => onClick?.(c.id),
       }, [
         this.portraits.get(c.id) ? this._portraitImg(c.id) : h('div', { style: { width: '100%', height: '100%', background: c.side === 'party' ? '#1f3a7a' : '#6e1814' } }),
-        c.side === 'party' ? h('div.nm', [shortName(c.name)]) : h('div.no', [monsterNo(c.name)]),
+        c.side === 'party' ? h('div.nm', [shortName(c.name)]) : h('div.no', [`${monsterType(c.name)[0] ?? ''}${monsterNo(c.name)}`]),
+        down ? h('div.skull', ['☠']) : null,
         fx ? h('div.fx', [fx]) : null,
         h('div.hpb', [h('i', { style: { width: `${pct * 100}%` } })]),
       ]);
+      if (ti >= 0 && types.length > 1) tok.style.setProperty('--tint', TINTS[ti % TINTS.length]);
       nodes.push(tok);
     });
     this.timeline.replaceChildren(...nodes);
@@ -412,6 +420,10 @@ function hdText(c) {
 }
 
 /** Monsters show their number as a badge (the full name is in the tooltip). */
+function monsterType(n) {
+  return String(n).replace(/\s*\d+$/, '');
+}
+
 function monsterNo(n) {
   const m = /(\d+)$/.exec(n);
   return m ? m[1] : '';

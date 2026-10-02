@@ -172,6 +172,7 @@ export const DEMOS = {
         fm.play('hit', detonate + 0.02, 0.6, { power: 1.8 });
         fm.burn(detonate + 0.01);
         fm.knock(detonate + 0.01, fm.pos.x - centre.x, fm.pos.z - centre.z, 0.5);
+        sc.vfx.bodyFire(detonate + 0.01, () => fm.root.position, fm.model.height, 11 + k * 7);
         // Each number rides its victim's head, fire-coloured, with a name plate + hp tick.
         const hp0 = m.hp.cur;
         sc._say(fm, String(d), 'dmg', detonate + 0.08 + k * 0.05, { cls: 'fire', tag: { name: m.name, hp: Math.max(0, hp0 - d) / m.hp.max, lost: Math.min(hp0, d) / m.hp.max } });
@@ -182,8 +183,13 @@ export const DEMOS = {
         });
       });
       sc.at(detonate + 0.05, () => {
+        // One line per outcome, naming every victim (the same names the floaters carry).
+        const list = (a) => (a.length > 1 ? `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}` : a[0]);
+        const slain = hitList.filter((m) => m.hp.cur <= 0).map((m) => m.name);
+        const hurt = hitList.filter((m) => m.hp.cur > 0).map((m) => m.name);
         sc.ctx.ui.message(`The fireball engulfs ${hitList.length} foes.`, 'combat');
-        for (const m of hitList) sc.ctx.ui.message(m.hp.cur <= 0 ? `${m.name} is slain.` : `${m.name} is scorched.`, 'combat');
+        if (slain.length) sc.ctx.ui.message(`Slain: ${list(slain)}.`, 'combat');
+        if (hurt.length) sc.ctx.ui.message(`Scorched: ${list(hurt)}.`, 'combat');
       });
       sc.overlay.setTemplate([]);
       // Camera: frame caster and blast, slightly closer.

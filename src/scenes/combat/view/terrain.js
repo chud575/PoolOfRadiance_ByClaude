@@ -4,7 +4,7 @@ import { getGlowTexture } from '../../../render/textures/index.js';
 import { CELL, EDGE } from '../../../data/maps/MapGrid.js';
 import { SUB } from '../logic/battlefield.js';
 import { Batcher, worldBox, wallQuad } from './batch.js';
-import { pbr } from './textures.js';
+import { pbr, settsSet } from './textures.js';
 import { statueGeometry, statueMaterial } from './sculpted.js';
 import { fbm } from '../../../render/textures/noise.js';
 
@@ -45,9 +45,14 @@ function addMacro(mat, { scale = 0.18, amount = 0.45, grime = 0.35, key = 'macro
         float stk = smoothstep(0.55, 0.9, mNoise(vec3(vMWPos.x * 2.3, vMWPos.y * 0.16, vMWPos.z * 2.3)));
         diffuseColor.rgb *= 1.0 - stk * 0.3 * smoothstep(0.4, 2.0, vMWPos.y);
         float baseMoss = (1.0 - smoothstep(0.05, 0.75, vMWPos.y)) * smoothstep(0.4, 0.7, mNoise(vMWPos * 1.7));
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.16, 0.19, 0.09), baseMoss * 0.6);` : ''}`);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.16, 0.19, 0.09), baseMoss * 0.6);` : ''}`)
+      .replace('#include <opaque_fragment>', `
+        // Torch-lit masonry rolls off softly instead of blowing out to a flat blob.
+        float mPk = max(outgoingLight.r, max(outgoingLight.g, outgoingLight.b));
+        outgoingLight *= mPk > 0.45 ? (0.45 + (mPk - 0.45) / (1.0 + (mPk - 0.45) / 0.45)) / mPk : 1.0;
+        #include <opaque_fragment>`);
   };
-  mat.customProgramCacheKey = () => `${key}-${scale}-${amount}-${grime}-v4`;
+  mat.customProgramCacheKey = () => `${key}-${scale}-${amount}-${grime}-v5`;
   return mat;
 }
 
@@ -179,7 +184,7 @@ export function buildDiorama(field, o = {}) {
   disposables.push(splat);
   // Street: small granite setts (~11 cm); temple / courtyard: dressed rectangular
   // flagstones; rubble: packed dirt and grit. Each its own albedo/normal/roughness set.
-  const cob = getTextureSet('hd_cobble');
+  const cob = settsSet();
   const rub = getTextureSet('floor_rubble');
   const flg = getTextureSet('hd_flags');
   const groundMat = new THREE.MeshStandardMaterial({ map: cob.map, normalMap: cob.normalMap, roughnessMap: cob.roughnessMap, roughness: 1, metalness: 0, normalScale: new THREE.Vector2(1.3, 1.3) });
@@ -215,17 +220,27 @@ export function buildDiorama(field, o = {}) {
         vec4 gs = texture2D(tSplat, gsp + (vec2(gn, gFbm(vWPos.xz*0.45+7.1)) - 0.5) * 0.01);
         float gAO = gs.r;
         float wR = smoothstep(0.25, 0.75, gs.g + (gn - 0.5) * 0.7);
-        float wF = smoothstep(0.35, 0.65, gs.b + (gn - 0.5) * 0.25);
+        // Paving change: a blurred, noise-broken boundary (no hard rectangle)
+        // with a band of grit and loose setts where the flagstones give out.
+        vec2 gdx = vec2(0.7 / uSize.x, 0.0), gdz = vec2(0.0, 0.7 / uSize.y);
+        float bB = (gs.b * 2.0 + texture2D(tSplat, gsp + gdx).b + texture2D(tSplat, gsp - gdx).b + texture2D(tSplat, gsp + gdz).b + texture2D(tSplat, gsp - gdz).b) / 6.0;
+        float wF = smoothstep(0.44, 0.56, bB + (gn - 0.5) * 0.5 + (gFbm(vWPos.xz * 1.9 + 3.0) - 0.5) * 0.32);
+        float fEdge = 1.0 - abs(wF * 2.0 - 1.0);
         float wet = smoothstep(0.35, 0.6, gs.a + (gFbm(vWPos.xz * 0.9) - 0.5) * 0.6);
-        vec2 uv1 = vec2(vWPos.x, -vWPos.z) / 1.3;
+        // Setts: 1 m tiles of ~11 cm stones; neighbouring patches use the
+        // same courses shifted a whole number of rows (seamless), so the
+        // repeat never lines up.
+        vec2 uv1 = vec2(vWPos.x, -vWPos.z) / 1.2;
+        float tSel = step(0.5, gFbm(vWPos.xz * 0.23 + 17.0));
+        uv1 += tSel * vec2(0.413, 3.0 / 8.0);
         vec2 uv2 = vec2(vWPos.x, -vWPos.z) / 3.2 + 0.37;
         vec2 uv3 = vec2(vWPos.x, -vWPos.z) / 2.7;
         vec4 gc = texture2D(map, uv1);
-        // Smaller setts along wall feet and kerbs (edge courses), larger mid-street.
-        float edgeC = smoothstep(0.92, 0.7, gAO) * (1.0 - wF);
-        if (edgeC > 0.01) gc = mix(gc, texture2D(map, uv1 * 1.85 + 0.31), edgeC);
         if (wR > 0.001) gc = mix(gc, texture2D(map2, uv2), wR);
         if (wF > 0.001) gc = mix(gc, texture2D(map3, uv3), wF);
+        // Worn boundary: grit, dirt and broken setts between the pavings.
+        gc = mix(gc, texture2D(map2, uv2 * 1.3) * vec4(0.62, 0.56, 0.48, 1.0), smoothstep(0.25, 0.85, fEdge) * 0.75);
+        float sH = texture2D(roughnessMap, uv1).r;
         // Ruin: on dressed flagstones, broken / missing slabs open onto grit and
         // rubble, meandering hairline cracks run across slabs, moss fills seams.
         float brkN = gFbm(vWPos.xz * 0.52 + 9.0) + (gn - 0.5) * 0.12;
@@ -260,8 +275,16 @@ export function buildDiorama(field, o = {}) {
         gc.rgb = mix(gc.rgb, gc.rgb * vec3(0.95, 0.9, 0.82), smoothstep(0.55, 0.8, gFbm(vWPos.xz * 0.21 + 3.0)) * 0.6);
         // Gutters: a damp, darker band along wall feet and kerbs (rain runs off the eaves).
         float gutter = smoothstep(0.9, 0.62, gAO) * (1.0 - wR) * smoothstep(0.25, 0.55, gFbm(vWPos.xz * 0.8 + 5.0) + (1.0 - gAO) * 0.5);
-        wet = max(wet, gutter * 0.7);
-        gc.rgb *= mix(1.0, 0.42, wet);
+        wet = max(wet, gutter * 0.55);
+        // Water settles in the joints first, then floods whole patches:
+        // standing puddles (dark, mirror-smooth) inside a damp margin.
+        float pLevel = wet * 0.85 - 0.08;
+        float sHh = mix(sH, 0.3 + gFbm(vWPos.xz * 1.3 + 6.0) * 0.6, clamp(wF + wR * 0.6, 0.0, 1.0));
+        float puddle = smoothstep(sHh - 0.03, sHh + 0.05, pLevel) * step(0.02, wet);
+        gc.rgb *= mix(1.0, 0.62, wet);
+        gc.rgb = mix(gc.rgb, gc.rgb * vec3(0.6, 0.62, 0.66), puddle);
+        // Grime gradient: soot and dirt darkening toward wall feet and gutters.
+        gc.rgb *= mix(0.62, 1.0, smoothstep(0.55, 0.95, gAO));
         gc.rgb *= mix(0.35, 1.0, gAO);
         diffuseColor *= gc;
       `)
@@ -270,9 +293,12 @@ export function buildDiorama(field, o = {}) {
         if (wR > 0.001) gr = mix(gr, texture2D(rough2, uv2).g, wR);
         if (wF > 0.001) gr = mix(gr, texture2D(rough3, uv3).g, wF);
         gr = mix(gr, 1.0, brk * 0.8);
-        float roughnessFactor = roughness * gr;
-        roughnessFactor *= 1.0 - 0.25 * smoothstep(0.55, 0.78, gFbm(vWPos.xz * 0.09 + 11.0));
-        roughnessFactor = mix(roughnessFactor, 0.22, wet);
+        // Matte stone (the texture's own per-stone variation, a few polished),
+        // satin where damp, mirror-smooth only in the standing water.
+        float roughnessFactor = max(0.62, roughness * gr);
+        roughnessFactor *= 1.0 - 0.12 * smoothstep(0.55, 0.78, gFbm(vWPos.xz * 0.09 + 11.0));
+        roughnessFactor = mix(roughnessFactor, 0.5, wet * 0.8);
+        roughnessFactor = mix(roughnessFactor, 0.14, puddle);
       `)
       .replace('#include <normal_fragment_maps>', `
         vec3 mapN = texture2D(normalMap, uv1).xyz * 2.0 - 1.0;
@@ -280,14 +306,20 @@ export function buildDiorama(field, o = {}) {
         if (wF > 0.001) mapN = mix(mapN, texture2D(normal3, uv3).xyz * 2.0 - 1.0, wF);
         if (brk > 0.001) mapN = mix(mapN, texture2D(normal2, uv2 * 1.6 + 0.2).xyz * 2.0 - 1.0, brk);
         mapN = normalize(mapN);
-        mapN.xy *= normalScale * (1.0 - wet * 0.9);
+        mapN.xy *= normalScale * (1.0 - wet * 0.35) * (1.0 - puddle);
         normal = normalize( tbn * mapN );
       `)
       .replace('#include <aomap_fragment>', `#include <aomap_fragment>
         reflectedLight.indirectDiffuse *= mix(0.5, 1.0, gAO);
+      `)
+      .replace('#include <opaque_fragment>', `
+        // Puddle glints and fire-lit paving never blow out into bloom blobs.
+        float gPk = max(outgoingLight.r, max(outgoingLight.g, outgoingLight.b));
+        outgoingLight *= gPk > 0.35 ? (0.35 + (gPk - 0.35) / (1.0 + (gPk - 0.35) / 0.42)) / gPk : 1.0;
+        #include <opaque_fragment>
       `);
   };
-  groundMat.customProgramCacheKey = () => 'combat-ground-v5';
+  groundMat.customProgramCacheKey = () => 'combat-ground-v7';
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(SW * TILE, SH * TILE, 1, 1), groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(originX + (SW * TILE) / 2, 0, originZ + (SH * TILE) / 2);
@@ -425,12 +457,22 @@ export function buildDiorama(field, o = {}) {
           }
         }
       }
-      // Houses no longer cut away into dollhouses: they dither out where they
-      // would hide the fight (see setView), so only the full variant is built.
-      for (const variant of ['full']) {
+      // Two variants: the full house, and a cut-away (a weathered, broken-topped
+      // knee-to-hip wall with a coping) shown when a tall facade near the
+      // camera would eat the frame or hide the fight (see setView).
+      for (const variant of ['full', 'cut']) {
         const B = house[variant];
         const hh = variant === 'cut' ? 1.05 + seed * 0.25 : height;
-        if (ruined && variant === 'full') {
+        if (variant === 'cut') {
+          const segs = Math.max(2, Math.round(len / 0.9));
+          const sl = len / segs;
+          for (let k = 0; k < segs; k++) {
+            const sh = hh * (0.72 + hash(k, f.d.charCodeAt(0), seed * 131) * 0.4);
+            B.add(place(worldBox(sl + 0.01, sh, 0.34, 2.5), k * sl + sl / 2, sh / 2, -0.17), wallMat);
+            // Coping stones, a little uneven.
+            B.add(place(worldBox(sl + 0.03, 0.08, 0.4, 2.5), k * sl + sl / 2, sh + 0.04, -0.17), capMat, { cast: false });
+          }
+        } else if (ruined) {
           // Jagged broken wall top.
           const segs = Math.max(2, Math.round(len / 1.1));
           for (let k = 0; k < segs; k++) {
@@ -440,11 +482,6 @@ export function buildDiorama(field, o = {}) {
           }
         } else {
           B.add(place(wallQuad(len, hh, 2.6), 0, 0, 0), wallMat);
-          // Back faces so cut-aways read as thick walls.
-          if (variant === 'cut') {
-            B.add(place(worldBox(len, 0.08, 0.34, 2.5), len / 2, hh, -0.17), capMat);
-            B.add(place(wallQuad(len, hh, 2.6).rotateY(Math.PI).translate(len, 0, -0.34), 0, 0, 0), wallMat);
-          }
         }
         // Plinth.
         B.add(place(worldBox(len + 0.1, 0.45, 0.1, 2.5), len / 2, 0.225, 0.03), plinthMat);
@@ -474,6 +511,10 @@ export function buildDiorama(field, o = {}) {
               B.add(place(worldBox(0.86, 0.1, 0.16, 1), at, floorY - 0.52, 0.04), darkWood);
               B.add(place(worldBox(0.86, 0.1, 0.1, 1), at, floorY + 0.52, 0.03), darkWood);
               B.add(place(worldBox(0.06, 0.95, 0.06, 1), at, floorY, 0.03), darkWood, { cast: false });
+              // Deep reveals: side jambs and a heavy lintel stand proud of the
+              // plaster so each window reads as a recess with its own shadow.
+              for (const jx of [-0.41, 0.41]) B.add(place(worldBox(0.07, 1.05, 0.2, 1), at + jx, floorY, 0.08), darkWood);
+              B.add(place(worldBox(1.0, 0.14, 0.22, 1), at, floorY + 0.58, 0.09), darkWood);
               // Shutters, some hanging askew.
               if (hash(k, 3, seed * 77) > 0.4) {
                 const ang = hash(k, 4, seed) * 0.6;
@@ -502,7 +543,9 @@ export function buildDiorama(field, o = {}) {
     floor.rotateX(-Math.PI / 2);
     const fuv = floor.attributes.uv;
     for (let i = 0; i < fuv.count; i++) fuv.setXY(i, fuv.getX(i) * iw / 1.1, fuv.getY(i) * id / 1.1);
-    void furnish;
+    // Cut-away: an interior floor and a furnished dollhouse inside the low walls.
+    house.cut.add(floor.clone(), ruined ? libMat('floor_rubble', 0x9a8a7a) : pbr('plank', 0x9a8878), { p: [(hx0 + hx1) / 2, 0.02, (hz0 + hz1) / 2] }, { cast: false });
+    if (!ruined) furnish(house, iw, id);
     if (!ruined) {
       const alongX = iw >= id;
       const span = alongX ? id : iw;
@@ -834,9 +877,11 @@ export function buildDiorama(field, o = {}) {
       batch.add(barrelHoops(), ironMat, { p: [x + (r - 0.5) * 0.3, 0, z] });
       if (r < 0.02) batch.add(barrelGeo(), barrelMat, { p: [x + 0.4, 0, z + 0.3], r: [0, r * 9, 0], s: 0.85 });
     } else if (p.type === 'crate') {
-      const s = 0.8 + r * 3;
-      batch.add(worldBox(s, s, s, 1.2), crateMat, { p: [x, s / 2, z], r: [0, r * 20, 0] });
-      batch.add(crateFrame(s), darkWood, { p: [x, s / 2, z], r: [0, r * 20, 0] });
+      // Kept inside its square (rotation included) so no one standing next to it clips.
+      const s = 0.8 + Math.min(r, 0.08) * 3;
+      const ry = ((r * 20) % 0.6) - 0.3;
+      batch.add(worldBox(s, s, s, 1.2), crateMat, { p: [x, s / 2, z], r: [0, ry, 0] });
+      batch.add(crateFrame(s), darkWood, { p: [x, s / 2, z], r: [0, ry, 0] });
       if (r > 0.055) batch.add(worldBox(0.6, 0.6, 0.6, 1.2), crateMat, { p: [x + 0.1, s + 0.3, z], r: [0, r * 40, 0] });
     } else if (p.type === 'rubble') {
       for (let k = 0; k < 5; k++) batch.add(rockGeo(hash(p.x, p.y + k, 3), 0.25 + hash(p.x + k, p.y, 4) * 0.35), rockMat, { p: [x + (hash(k, p.x, 5) - 0.5) * 0.9, 0.05, z + (hash(k, p.y, 6) - 0.5) * 0.9] });
@@ -967,7 +1012,7 @@ export function buildDiorama(field, o = {}) {
     f.position.set(t.x, t.y + 0.3, t.z);
     group.add(f);
     flames.push(f);
-    const torch = { x: t.x, y: t.y + 0.35, z: t.z, house: t.house, flame: f };
+    const torch = { x: t.x, y: t.y + 0.35, z: t.z, house: t.house, flame: f, yaw: t.yaw };
     torches.push(torch);
     if (t.house) (t.house.torches ??= []).push(torch);
   }
@@ -1063,10 +1108,12 @@ export function buildDiorama(field, o = {}) {
       statue.receiveShadow = true;
       group.add(statue);
       // The scales hang from the stump of the right wrist.
-      batch.add(new THREE.CylinderGeometry(0.016, 0.016, 0.9, 6).rotateZ(Math.PI / 2), pbr('gold', 0x8a6a2a), { p: [sx + 0.5, 2.5, sz + 0.4] });
-      for (const dx of [-0.42, 0.42]) {
-        batch.add(new THREE.SphereGeometry(0.12, 12, 6, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), pbr('gold', 0x8a6a2a), { p: [sx + 0.5 + dx, 2.2, sz + 0.4] });
-        batch.add(new THREE.CylinderGeometry(0.004, 0.004, 0.3, 4), pbr('gold', 0x8a6a2a), { p: [sx + 0.5 + dx, 2.35, sz + 0.4] }, { cast: false });
+      const gilt = pbr('gold', 0x9a7a32);
+      batch.add(new THREE.CylinderGeometry(0.018, 0.018, 0.62, 6).rotateZ(Math.PI / 2), gilt, { p: [sx + 0.5, 2.3, sz + 0.42] });
+      batch.add(new THREE.SphereGeometry(0.035, 8, 6), gilt, { p: [sx + 0.5, 2.3, sz + 0.42] }, { cast: false });
+      for (const dx of [-0.29, 0.29]) {
+        batch.add(new THREE.SphereGeometry(0.12, 14, 6, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), gilt, { p: [sx + 0.5 + dx, 2.06, sz + 0.42] });
+        for (const cx of [-0.07, 0.07]) batch.add(new THREE.CylinderGeometry(0.005, 0.005, 0.25, 4).rotateZ(cx * 3.4), gilt, { p: [sx + 0.5 + dx + cx * 0.5, 2.18, sz + 0.42] }, { cast: false });
       }
       // A great crack through the statue and a fallen fragment at its feet.
       batch.add(rockGeo(hash(p.x, 3, 3), 0.3), stoneT, { p: [sx + 0.7, 0.1, sz + 0.75] });
@@ -1151,34 +1198,64 @@ export function buildDiorama(field, o = {}) {
       batch.add(rockGeo(hash(k, 4, 511), 0.08 + hash(k, 5, 511) * 0.18), rubM, { p: [px + (hash(k, 6, 511) - 0.5) * 0.3, 0.03, pz + (hash(k, 7, 511) - 0.5) * 0.3] }, { cast: false });
     }
     if (night) {
-      // Moonbeams through the open roof: slanted soft shafts with drifting motes.
+      // Moonbeams through the open roof: slanted volumetric shafts (soft,
+      // view-dependent edges, dust caught in them) that pool on the floor.
       const beamMat = new THREE.ShaderMaterial({
         transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
         uniforms: { uT: { value: 0 }, tNoise: { value: noiseTexture() } },
-        vertexShader: 'varying vec2 vUv; varying vec3 vW; void main(){ vUv = uv; vW = (modelMatrix * vec4(position,1.0)).xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
-        fragmentShader: `varying vec2 vUv; varying vec3 vW; uniform float uT; uniform sampler2D tNoise;
-          void main(){ float across = 1.0 - abs(vUv.x - 0.5) * 2.0;
-            float n = texture2D(tNoise, vec2(vW.x * 0.08 + uT * 0.01, vW.y * 0.05 - uT * 0.02)).r;
-            float a = smoothstep(0.0, 1.0, across) * smoothstep(0.0, 0.3, vUv.y) * smoothstep(1.0, 0.55, vUv.y) * (0.55 + n * 0.6);
-            gl_FragColor = vec4(vec3(0.55, 0.65, 1.0) * 0.5, a * a * 0.3); }`,
+        vertexShader: `varying vec2 vUv; varying vec3 vW; varying vec3 vN; varying vec3 vV;
+          void main(){ vUv = uv; vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz;
+            vN = normalize(mat3(modelMatrix) * normal); vV = normalize(cameraPosition - w.xyz);
+            gl_Position = projectionMatrix * viewMatrix * w; }`,
+        fragmentShader: `varying vec2 vUv; varying vec3 vW; varying vec3 vN; varying vec3 vV; uniform float uT; uniform sampler2D tNoise;
+          void main(){
+            float core = pow(abs(dot(normalize(vN), normalize(vV))), 2.2);
+            float n = texture2D(tNoise, vec2(vW.x * 0.11 + vW.z * 0.07 + uT * 0.008, vW.y * 0.06 - uT * 0.015)).r;
+            float n2 = texture2D(tNoise, vec2(vW.z * 0.23 - uT * 0.01, vW.y * 0.17 + vW.x * 0.05)).r;
+            float h = smoothstep(0.0, 0.12, vUv.y) * smoothstep(1.0, 0.55, vUv.y);
+            float a = core * h * (0.45 + n * 0.55) * (0.75 + n2 * 0.5);
+            gl_FragColor = vec4(vec3(0.55, 0.66, 1.0) * 0.32 * a, 1.0); }`,
       });
       disposables.push(beamMat);
+      // Where each shaft lands: a soft, slightly stretched pool of moonlight.
+      const poolMat = new THREE.ShaderMaterial({
+        transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+        uniforms: { tNoise: { value: noiseTexture() } },
+        vertexShader: 'varying vec2 vUv; varying vec3 vW; void main(){ vUv = uv; vW = (modelMatrix * vec4(position,1.0)).xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+        fragmentShader: `varying vec2 vUv; varying vec3 vW; uniform sampler2D tNoise;
+          void main(){ float r = length(vUv * 2.0 - 1.0); float k = smoothstep(1.0, 0.25, r);
+            float n = texture2D(tNoise, vW.xz * 0.35).r;
+            gl_FragColor = vec4(vec3(0.5, 0.6, 0.95) * 0.16 * k * k * (0.7 + 0.6 * n), 1.0); }`,
+      });
+      disposables.push(poolMat);
       const beams = new THREE.Group();
-      for (const [fx, fz, w] of [[0.32, 0.45, 1.6], [0.66, 0.7, 1.2], [0.45, 0.85, 0.9]]) {
-        for (const rot of [0, Math.PI / 3, (Math.PI * 2) / 3]) {
-          const g = new THREE.PlaneGeometry(w, 9);
-          const m = new THREE.Mesh(g, beamMat);
-          m.position.set(hx0 + hw * fx + 1.2, 4.0, hz0 + hd * fz - 1.0);
-          m.rotation.set(0, rot + 0.5, 0);
-          m.rotateX(0.32);
-          m.renderOrder = 5;
-          beams.add(m);
-          disposables.push(g);
-        }
+      const tilt = 0.32;
+      for (const [fx, fz, w, yaw] of [[0.32, 0.45, 0.8, 0.5], [0.66, 0.7, 0.6, 0.62], [0.45, 0.85, 0.48, 0.4]]) {
+        const bx = hx0 + hw * fx + 1.2 - Math.sin(yaw) * 1.3;
+        const bz = hz0 + hd * fz - 1.0 - Math.cos(yaw) * 1.3;
+        const g = new THREE.CylinderGeometry(w * 0.85, w, 9, 28, 1, true).translate(0, 4.5, 0);
+        const m = new THREE.Mesh(g, beamMat);
+        m.position.set(bx, 0, bz);
+        m.rotation.set(tilt, yaw, 0, 'YXZ');
+        m.renderOrder = 5;
+        beams.add(m);
+        disposables.push(g);
+        const pg = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+        const pool = new THREE.Mesh(pg, poolMat);
+        pool.position.set(bx, 0.03, bz);
+        pool.rotation.y = yaw;
+        pool.scale.set(w * 2.6, 1, w * 2.6 / Math.cos(tilt));
+        pool.renderOrder = 4;
+        beams.add(pool);
+        disposables.push(pg);
+        // Dust motes drifting inside the shaft.
+        const dm = loopingParticles({ count: 26, at: new THREE.Vector3(bx + Math.sin(yaw) * 0.6, 1.8, bz + Math.cos(yaw) * 0.6), spread: w * 0.7, spreadY: 1.5, vel: [0.03, 0.02, 0.02], turb: 0.12, life: 8, size: 0.022, color: 0xd0dcff, additive: true, alpha: 0.75, seed: 41 + fx * 10 });
+        group.add(dm.obj);
+        ambient.push(dm);
       }
       group.add(beams);
       ambient.push({ update: (t) => (beamMat.uniforms.uT.value = t), dispose: () => {} });
-      const motes = loopingParticles({ count: 60, at: new THREE.Vector3(hx0 + hw * 0.5, 1.8, hz0 + hd * 0.6), spread: hw * 0.35, spreadY: 1.6, vel: [0.04, 0.03, 0.02], turb: 0.15, life: 8, size: 0.03, color: 0xb8c8ff, additive: true, alpha: 0.6, seed: 31 });
+      const motes = loopingParticles({ count: 40, at: new THREE.Vector3(hx0 + hw * 0.5, 1.8, hz0 + hd * 0.6), spread: hw * 0.35, spreadY: 1.6, vel: [0.04, 0.03, 0.02], turb: 0.15, life: 8, size: 0.025, color: 0xb8c8ff, additive: true, alpha: 0.45, seed: 31 });
       group.add(motes.obj);
       ambient.push(motes);
     }
@@ -1331,7 +1408,21 @@ export function buildDiorama(field, o = {}) {
    * Cut away houses and walls that would hide any of `points` (combatants,
    * cursor) from the camera — a dollhouse view that keeps the fight readable.
    */
-  function setView(camPos, points) {
+  const _corner = new THREE.Vector3();
+  /** Fraction of the screen a box covers (clamped NDC bbox). */
+  function screenCover(box, camera) {
+    let x0 = 9, y0 = 9, x1 = -9, y1 = -9;
+    for (let i = 0; i < 8; i++) {
+      _corner.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).project(camera);
+      x0 = Math.min(x0, _corner.x); x1 = Math.max(x1, _corner.x);
+      y0 = Math.min(y0, _corner.y); y1 = Math.max(y1, _corner.y);
+    }
+    const w = Math.max(0, Math.min(1, x1) - Math.max(-1, x0));
+    const h = Math.max(0, Math.min(1, y1) - Math.max(-1, y0));
+    return (w * h) / 4;
+  }
+
+  function setView(camPos, points, camera = null) {
     const cdx = camPos.x - W / 2;
     const cdz = camPos.z - H / 2;
     const cl = Math.hypot(cdx, cdz) || 1;
@@ -1370,6 +1461,25 @@ export function buildDiorama(field, o = {}) {
         g.box.getCenter(_c);
         const dc = camPos.distanceTo(_c);
         fore = dc < fightD - (g.w?.prop ? 1.5 : 4.5) && _c.y + 0.5 > 0;
+      }
+      if (g.h) {
+        // Houses: a tall facade that hides the fight, or looms near the lens
+        // and eats a big slice of the frame, drops to its cut-away low wall.
+        let big = false;
+        if (camera && !hides) {
+          g.box.getCenter(_c);
+          big = screenCover(g.box, camera) > 0.09 && camPos.distanceTo(_c) < fightD + 5;
+        }
+        const cut = hides || big || fore;
+        g.full.visible = !cut;
+        g.cut.visible = cut;
+        for (const tc of g.h.torches ?? []) {
+          tc.flame.visible = !cut;
+          if (tc.light) tc.light.userData.hidden = cut;
+        }
+        g.fadeTarget = 1;
+        if (g.fade) g.fade.value = 1;
+        continue;
       }
       if (g.w?.low) {
         // Low field walls simply drop to their knee-high cut-away course.

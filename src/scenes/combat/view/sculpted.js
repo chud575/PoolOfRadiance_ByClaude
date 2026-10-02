@@ -297,13 +297,13 @@ function fleshBody(B, o, look) {
   }
   // ---- tail (one smooth mass with the pelvis)
   if (o.tail) {
-    const tk = o.tail === 'long' ? 1.35 : 1;
+    const tk = o.tail === 'long' ? 1.45 : 1;
     const t1 = J.tail1;
     const t2 = J.tail2;
     const t3 = J.tail3;
-    const tip = add(t3, [0, -0.03 * s, -0.22 * s * tk]);
+    const tip = add(t3, [0, 0.02 * s, -0.3 * s * tk]);
     const TT = { k: 0.04 * s, g: G.torso };
-    B.cone('tail1', add(t1, [0, 0.02 * s, 0.05 * s]), t2, 0.07 * tk * s, 0.05 * tk * s, TT);
+    B.cone('tail1', add(t1, [0, 0.02 * s, 0.05 * s]), t2, 0.075 * tk * s, 0.05 * tk * s, TT);
     B.cone('tail2', t2, t3, 0.05 * tk * s, 0.03 * tk * s, TT);
     B.cone('tail3', t3, tip, 0.03 * tk * s, 0.006 * s, TT);
     B.cone('tail1', add(t1, [0, 0.05 * s, -0.02 * s]), add(t2, [0, 0.04 * s, 0]), 0.03 * s, 0.025 * s, { ...TT, mat: 'back' });
@@ -328,13 +328,13 @@ const HEADS = {
     // Big round skull, heavy cheeks, a long blunt dog-lizard snout.
     B.ell('head', H(0, 0.1, -0.02), [0.088 * hs, 0.082 * hs, 0.096 * hs], T);
     for (const sx of [1, -1]) B.ell('head', H(sx * 0.045, 0.075, 0.035), [0.04 * hs, 0.04 * hs, 0.05 * hs], T);
-    B.cone('head', H(0, 0.096, 0.04), H(0, 0.074, 0.222), 0.054 * hs, 0.032 * hs, T);
-    B.cone('head', H(0, 0.12, 0.02), H(0, 0.094, 0.18), 0.03 * hs, 0.022 * hs, { ...T, mat: 'back' });
-    B.cone('head', H(0, 0.044, 0.03), H(0, 0.044, 0.196), 0.04 * hs, 0.022 * hs, { ...T, mat: 'belly' });
+    B.cone('head', H(0, 0.096, 0.04), H(0, 0.07, 0.26), 0.054 * hs, 0.03 * hs, T);
+    B.cone('head', H(0, 0.12, 0.02), H(0, 0.092, 0.21), 0.03 * hs, 0.02 * hs, { ...T, mat: 'back' });
+    B.cone('head', H(0, 0.044, 0.03), H(0, 0.042, 0.23), 0.04 * hs, 0.02 * hs, { ...T, mat: 'belly' });
     // Mouth line + nostrils + eye sockets carved.
-    B.box('head', H(0, 0.06, 0.15), [0.05 * hs, 0.0045 * hs, 0.075 * hs], { g: G.torso, sub: true, k: 0.004 * hs, R: mEuler(-0.08, 0, 0) });
+    B.box('head', H(0, 0.058, 0.17), [0.05 * hs, 0.0045 * hs, 0.09 * hs], { g: G.torso, sub: true, k: 0.004 * hs, R: mEuler(-0.08, 0, 0) });
     for (const sx of [1, -1]) {
-      B.sph('head', H(sx * 0.015, 0.088, 0.222), 0.008 * hs, { g: G.torso, sub: true, k: 0.004 * hs });
+      B.sph('head', H(sx * 0.015, 0.084, 0.258), 0.008 * hs, { g: G.torso, sub: true, k: 0.004 * hs });
       B.sph('head', H(sx * 0.042, 0.112, 0.07), 0.02 * hs, { g: G.torso, sub: true, k: 0.008 * hs });
     }
     // Heavy brow ridges.
@@ -514,7 +514,7 @@ function skeletonBody(B, o) {
   const { J, s, w } = o;
   const G = { torso: 0, armL: 1, armR: 2, legL: 3, legR: 4, hard: 5, hair: 6 };
   const bone = { k: 0.008 * s, g: G.torso, mat: 'skin' };
-  const R = 0.02 * s;
+  const R = 0.026 * s;
   // Spine: vertebrae from the pelvis to the skull.
   const back = -0.04 * s;
   const y0 = J.hips[1] + 0.02 * s;
@@ -523,22 +523,22 @@ function skeletonBody(B, o) {
     const y = y0 + (y1 - y0) * (k / 11);
     const tag = y < J.spine[1] ? 'hips' : y < J.chest[1] ? 'spine' : y < J.neck[1] ? 'chest' : 'neck';
     const z = back + Math.sin((k / 11) * Math.PI) * -0.01 * s + (tag === 'neck' ? 0.03 * s : 0);
-    B.ell(tag, [0, y, z], [0.022 * s, 0.014 * s, 0.02 * s], bone);
-    B.cone(tag, [0, y, z], [0, y, z - 0.022 * s], 0.008 * s, 0.004 * s, bone);
+    B.ell(tag, [0, y, z], [0.03 * s, 0.017 * s, 0.027 * s], bone);
+    B.cone(tag, [0, y, z], [0, y, z - 0.03 * s], 0.011 * s, 0.005 * s, bone);
   }
   // Pelvis bowl (iliac wings) with the hollow carved out.
-  B.ell('hips', add(J.hips, [0, 0.0, 0]), [0.125 * w * s, 0.065 * s, 0.075 * s], bone);
+  B.ell('hips', add(J.hips, [0, 0.0, 0]), [0.145 * w * s, 0.08 * s, 0.085 * s], bone);
   B.ell('hips', add(J.hips, [0, 0.03 * s, 0.01 * s]), [0.09 * w * s, 0.07 * s, 0.05 * s], { g: G.torso, sub: true, k: 0.01 * s });
   B.ell('hips', add(J.hips, [0, -0.05 * s, 0.03 * s]), [0.05 * s, 0.03 * s, 0.05 * s], { g: G.torso, sub: true, k: 0.01 * s });
   // Ribcage: curved ribs (clipped tori) from the spine round to the sternum.
-  for (let k = 0; k < 6; k++) {
-    const y = J.chest[1] + 0.02 * s + k * 0.036 * s;
-    const rr = (0.125 - Math.abs(k - 2.2) * 0.012) * w * s;
-    const tor = B.sc.torus([0, y, -0.005 * s], rr, 0.0125 * s, mEuler(-0.32, 0, 0), { mat: B.mats.skin, g: G.torso, k: 0.006 * s, clip: [[0, 0, 1, 0.075 * s], [0, 0, -1, 0.035 * s]] });
+  for (let k = 0; k < 7; k++) {
+    const y = J.chest[1] - 0.005 * s + k * 0.034 * s;
+    const rr = (0.145 - Math.abs(k - 2.6) * 0.012) * w * s;
+    const tor = B.sc.torus([0, y, -0.005 * s], rr, 0.017 * s, mEuler(-0.32, 0, 0), { mat: B.mats.skin, g: G.torso, k: 0.006 * s, clip: [[0, 0, 1, 0.075 * s], [0, 0, -1, 0.035 * s]] });
     B.tags[tor] = 'chest';
     void tor;
   }
-  B.box('chest', add(J.chest, [0, 0.11 * s, 0.085 * s]), [0.014 * s, 0.085 * s, 0.008 * s], { ...bone, rr: 0.006 * s, R: mEuler(-0.25, 0, 0) });
+  B.box('chest', add(J.chest, [0, 0.11 * s, 0.095 * s]), [0.022 * s, 0.1 * s, 0.01 * s], { ...bone, rr: 0.006 * s, R: mEuler(-0.25, 0, 0) });
   // Clavicles + shoulder blades.
   for (const [side, sx] of [['L', 1], ['R', -1]]) {
     const sh = J[`upperArm${side}`];
@@ -555,14 +555,14 @@ function skeletonBody(B, o) {
   for (const [side, sx] of [['L', 1], ['R', -1]]) {
     const gA = side === 'L' ? G.armL : G.armR;
     const gL = side === 'L' ? G.legL : G.legR;
-    longBone(`upperArm${side}`, J[`upperArm${side}`], J[`foreArm${side}`], gA, 0.019 * s, 0.016 * s);
-    longBone(`foreArm${side}`, J[`foreArm${side}`], J[`hand${side}`], gA, 0.015 * s, 0.013 * s);
+    longBone(`upperArm${side}`, J[`upperArm${side}`], J[`foreArm${side}`], gA, 0.025 * s, 0.021 * s);
+    longBone(`foreArm${side}`, J[`foreArm${side}`], J[`hand${side}`], gA, 0.02 * s, 0.017 * s);
     // Bony hand: a palm and four finger rays.
     const ha = J[`hand${side}`];
     B.box(`hand${side}`, add(ha, [0, -0.04 * s, 0.008 * s]), [0.03 * s, 0.03 * s, 0.012 * s], { k: 0.006 * s, g: gA, mat: 'skin', rr: 0.008 * s });
     for (let k = 0; k < 4; k++) B.cone(`hand${side}`, add(ha, [(k - 1.5) * 0.016 * s, -0.065 * s, 0.01 * s]), add(ha, [(k - 1.5) * 0.017 * s, -0.08 * s, 0.045 * s]), 0.006 * s, 0.004 * s, { k: 0.004 * s, g: gA, mat: 'skin' });
-    longBone(`thigh${side}`, add(J[`thigh${side}`], [0, 0.01 * s, 0]), J[`shin${side}`], gL, 0.024 * s, 0.02 * s);
-    longBone(`shin${side}`, J[`shin${side}`], J[`foot${side}`], gL, 0.02 * s, 0.016 * s);
+    longBone(`thigh${side}`, add(J[`thigh${side}`], [0, 0.01 * s, 0]), J[`shin${side}`], gL, 0.032 * s, 0.026 * s);
+    longBone(`shin${side}`, J[`shin${side}`], J[`foot${side}`], gL, 0.026 * s, 0.021 * s);
     B.sph(`shin${side}`, add(J[`shin${side}`], [0, 0.01 * s, 0.025 * s]), 0.02 * s, { k: 0.008 * s, g: gL, mat: 'skin' });
     const ft = J[`foot${side}`];
     B.box(`foot${side}`, add(ft, [0, -0.035 * s, 0.03 * s]), [0.032 * s, 0.018 * s, 0.05 * s], { k: 0.008 * s, g: gL, mat: 'skin', rr: 0.012 * s });
@@ -883,9 +883,27 @@ export function statueGeometry() {
   const S = { k: 0.06, g: 0, mat: B.mats.skin };
   // Robe: a flared skirt with deep vertical folds, belted waist, broad shoulders.
   sc.cone([0, 0.0, 0], [0, 1.45, 0], 0.44, 0.27, S);
-  for (let k = 0; k < 9; k++) {
-    const a = (k / 9) * Math.PI * 2 + 0.2;
-    sc.cone([Math.sin(a) * 0.4, 0.02, Math.cos(a) * 0.36], [Math.sin(a) * 0.25, 1.3, Math.cos(a) * 0.22], 0.07, 0.03, { ...S, k: 0.05 });
+  for (let k = 0; k < 13; k++) {
+    const a = (k / 13) * Math.PI * 2 + 0.2;
+    const big = k % 2 ? 0.065 : 0.095;
+    sc.cone([Math.sin(a) * 0.42, 0.02, Math.cos(a) * 0.38], [Math.sin(a) * 0.25, 1.3, Math.cos(a) * 0.22], big, 0.025, { ...S, k: 0.035 });
+  }
+  // Toga sash: draped from the left shoulder across the chest to the right
+  // hip in heavy swags, its loose end hanging down the side.
+  for (let k = 0; k <= 8; k++) {
+    const u = k / 8;
+    const x = -0.26 + u * 0.52;
+    const y = 2.0 - u * 0.62 - Math.sin(u * Math.PI) * 0.06;
+    const z = 0.19 + Math.sin(u * Math.PI) * 0.06;
+    sc.ellipsoid([x, y, z], [0.1, 0.075, 0.06], mEuler(0, 0, -0.85), { ...S, k: 0.03 });
+    if (k % 2 === 0) sc.box([x, y + 0.01, z + 0.05], [0.08, 0.008, 0.02], mEuler(0, 0, -0.85), 0.004, { g: 0, sub: true, k: 0.012 });
+  }
+  sc.cone([0.3, 1.4, 0.18], [0.36, 0.7, 0.22], 0.085, 0.06, { ...S, k: 0.03 });
+  sc.cone([0.36, 0.7, 0.22], [0.38, 0.35, 0.2], 0.06, 0.07, { ...S, k: 0.03 });
+  // Cloak falling down the back in broad folds.
+  for (let k = 0; k < 5; k++) {
+    const x = (k - 2) * 0.13;
+    sc.cone([x, 1.95, -0.2], [x * 1.5, 0.05, -0.36 - Math.abs(x) * 0.2], 0.09, 0.07, { ...S, k: 0.04 });
   }
   sc.ellipsoid([0, 1.72, 0], [0.31, 0.33, 0.22], M_ID, S);
   sc.ellipsoid([0, 1.97, -0.01], [0.36, 0.12, 0.2], M_ID, S);
@@ -897,15 +915,22 @@ export function statueGeometry() {
   sc.ellipsoid([0, 2.22, 0.125], [0.03, 0.04, 0.03], M_ID, { ...S, k: 0.02 });
   sc.torus([0, 2.29, 0.01], 0.135, 0.022, mEuler(0.12, 0, 0), { g: 1, mat: B.mats.dark, k: 0.01 });
   sc.ellipsoid([0, 2.36, -0.02], [0.135, 0.07, 0.14], M_ID, { ...S, k: 0.03 });
-  // Left arm raised with the warhammer of justice.
-  sc.cone([-0.32, 1.96, 0], [-0.5, 2.28, 0.06], 0.075, 0.06, S);
-  sc.cone([-0.5, 2.28, 0.06], [-0.56, 2.62, 0.06], 0.06, 0.05, S);
-  sc.ellipsoid([-0.56, 2.66, 0.06], [0.055, 0.06, 0.055], M_ID, S);
-  sc.cone([-0.56, 2.1, 0.06], [-0.56, 3.2, 0.06], 0.026, 0.026, { g: 2, mat: B.mats.skin, k: 0.005 });
-  sc.box([-0.56, 3.22, 0.06], [0.18, 0.09, 0.09], M_ID, 0.02, { g: 2, mat: B.mats.skin, k: 0.01 });
-  // Right arm: forearm ends at the wrist (Tyr's lost hand).
-  sc.cone([0.32, 1.96, 0], [0.42, 1.62, 0.16], 0.075, 0.06, S);
-  sc.cone([0.42, 1.62, 0.16], [0.5, 1.5, 0.36], 0.06, 0.05, S);
+  // Left arm raised high with the longsword of justice, blade to the sky.
+  sc.cone([-0.32, 1.96, 0], [-0.5, 2.28, 0.06], 0.08, 0.064, S);
+  sc.cone([-0.5, 2.28, 0.06], [-0.56, 2.62, 0.06], 0.064, 0.052, S);
+  sc.ellipsoid([-0.56, 2.66, 0.06], [0.06, 0.065, 0.06], M_ID, S);
+  sc.sphere([-0.56, 2.55, 0.06], 0.04, { g: 2, mat: B.mats.skin, k: 0.005 });
+  sc.cone([-0.56, 2.58, 0.06], [-0.56, 2.76, 0.06], 0.026, 0.026, { g: 2, mat: B.mats.skin, k: 0.005 });
+  sc.box([-0.56, 2.77, 0.06], [0.22, 0.028, 0.05], M_ID, 0.012, { g: 2, mat: B.mats.skin, k: 0.008 });
+  sc.box([-0.56, 3.22, 0.06], [0.05, 0.44, 0.014], M_ID, 0.008, { g: 2, mat: B.mats.skin, k: 0.004 });
+  sc.cone([-0.56, 3.64, 0.06], [-0.56, 3.78, 0.06], 0.045, 0.004, { g: 2, mat: B.mats.skin, k: 0.004 });
+  sc.box([-0.56, 3.15, 0.075], [0.008, 0.36, 0.006], M_ID, 0.002, { g: 2, sub: true, k: 0.002 });
+  // Right arm: forearm ends at the wrist (Tyr's lost hand); from the stump
+  // hang the Scales of Justice on a short chain.
+  sc.cone([0.32, 1.96, 0], [0.42, 1.62, 0.16], 0.08, 0.064, S);
+  sc.cone([0.42, 1.62, 0.16], [0.5, 1.5, 0.36], 0.064, 0.052, S);
+  sc.cone([0.5, 1.47, 0.38], [0.5, 1.3, 0.42], 0.016, 0.016, { g: 2, mat: B.mats.skin, k: 0.004 });
+  // (the gilt beam and pans themselves are metal, added by the diorama)
   // Carved detail: a mantle draped over the shoulders with a hem band, chest
   // folds, beard strands, cuffs and a knotted blindfold trailing behind.
   sc.ellipsoid([0, 1.9, -0.02], [0.4, 0.1, 0.25], M_ID, { ...S, k: 0.03, grow: 0.02, clip: [[0, -1, 0, -1.82]] });
@@ -921,8 +946,7 @@ export function statueGeometry() {
     const a = (k / 12) * Math.PI * 2;
     sc.box([Math.sin(a) * 0.41, 0.55, Math.cos(a) * 0.37], [0.014, 0.5, 0.02], mEuler(0, a, 0), 0.008, { g: 0, sub: true, k: 0.03 });
   }
-  sc.torus([-0.53, 2.47, 0.06], 0.065, 0.014, mEuler(0.0, 0, 0.35), { g: 1, mat: B.mats.skin, k: 0.008 });
-  sc.torus([0.48, 1.53, 0.31], 0.062, 0.014, mEuler(1.1, 0, 0.4), { g: 1, mat: B.mats.skin, k: 0.008 });
+    sc.torus([0.48, 1.53, 0.31], 0.062, 0.014, mEuler(1.1, 0, 0.4), { g: 1, mat: B.mats.skin, k: 0.008 });
   sc.ellipsoid([0, 2.3, -0.15], [0.04, 0.03, 0.03], M_ID, { g: 1, mat: B.mats.dark, k: 0.01 });
   sc.cone([0.02, 2.29, -0.16], [0.05, 2.1, -0.2], 0.02, 0.012, { g: 1, mat: B.mats.dark, k: 0.01 });
   sc.cone([-0.02, 2.29, -0.16], [-0.06, 2.12, -0.19], 0.02, 0.012, { g: 1, mat: B.mats.dark, k: 0.01 });

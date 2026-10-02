@@ -81,7 +81,7 @@ export class Overlay {
           // Grid marks only where they help: inside the move range and around the
           // cursor / active unit, fading with distance (no printed lattice everywhere).
           float near = max(1.0 - smoothstep(1.2, 3.2, length(g - uFocus - 0.5)), 1.0 - smoothstep(0.8, 2.4, length(g - uFocus2 - 0.5)));
-          float gridVis = max(step(0.1, s.r) * 0.8, near) * walk * uShowGrid;
+          float gridVis = max(step(0.1, s.r) * 0.45, near) * walk * uShowGrid;
           float grid = (1.0 - smoothstep(0.0, 0.016, ed)) * gridVis;
           LAYER(mix(vec3(0.06, 0.05, 0.04), vec3(0.8, 0.75, 0.6), uNight), grid * mix(0.28, 0.07, uNight));
           vec2 cf = min(f, 1.0 - f);
@@ -104,21 +104,20 @@ export class Overlay {
               float nObs = step(0.2, I(c + dd).r) * step(I(c + dd).r, 0.5);
               if (S(c + dd).r < 0.1 && nObs < 0.5) de = min(de, length(vec2(dd.x > 0.0 ? 1.0 - f.x : f.x, dd.y > 0.0 ? 1.0 - f.y : f.y)));
             }
-            // Crisp ~1.5 px rim on the outer boundary (pixel-sized via fwidth), a
-            // faint per-square inlay and a low, even tint: the cobbles stay readable.
+            // Soft painted range: a low fill with an inner glow feathered in
+            // from the boundary and a thin, soft-edged lip (no hard white rim).
             float px = pxG;
-            float rim = 1.0 - smoothstep(px * 0.9, px * 2.1, de);
-            float halo = exp(-de * 22.0) * (1.0 - rim);
             float shimmer = 0.5 + 0.5 * sin(uTime * 1.2 - (g.x * 0.8 + g.y * 0.55));
             vec3 rc = r > 0.9 ? uRangeColor : vec3(1.0, 0.8, 0.45);
-            float tileEd = ed;
-            float pxT = pxG;
-            float inlay = smoothstep(0.035, 0.035 + pxT * 1.5, tileEd);
-            LAYER(rc * 0.55, (0.11 + 0.025 * shimmer) * inlay);
-            LAYER(rc * 0.9, (1.0 - smoothstep(0.035, 0.035 + pxT * 1.2, tileEd)) * smoothstep(0.0, pxT, tileEd) * 0.1);
-            LAYER(rc, halo * 0.1);
-            LAYER(vec3(0.0), (1.0 - smoothstep(px * 2.1, px * 3.4, de)) * (1.0 - rim) * 0.35);
-            LAYER(rc * 1.25 + 0.1, rim * 0.9);
+            float glowIn = exp(-de * 4.5);
+            // Far edges of a big range recede (no lone bright fragments at the
+            // frame's rim): the lip fades with distance from the mover.
+            float farK = uFocus2.x > -50.0 ? mix(1.0, 0.3, smoothstep(4.0, 9.0, length(g - uFocus2 - 0.5))) : 1.0;
+            float lip = (1.0 - smoothstep(px * 0.5, px * 3.5, de)) * farK;
+            glowIn *= mix(0.6, 1.0, farK);
+            LAYER(rc * 0.5, 0.035 + 0.012 * shimmer);
+            LAYER(rc * 0.85, glowIn * 0.22);
+            LAYER(rc * 1.15 + 0.06, lip * 0.42);
             // Rough ground costs extra: darker, with a stipple.
             if (inf.g > 0.2 && inf.g < 0.5) {
               float st = step(0.82, fract(sin(dot(floor(g * 9.0), vec2(12.9898, 78.233))) * 43758.5453));
@@ -128,12 +127,12 @@ export class Overlay {
           // Threatened squares (moving out provokes): thin, desaturated diagonal
           // hairlines plus a faint red vignette hugging the square edges.
           if (s.a > 0.1 && r > 0.1) {
-            float hv = (g.x + g.y) * 4.0;
+            float hv = (g.x + g.y) * 2.0;
             float hd = abs(fract(hv) - 0.5);
-            float hpx = pxG * 8.0;
+            float hpx = pxG * 4.0;
             float hatch = 1.0 - smoothstep(hpx * 0.6, hpx * 1.4, hd);
-            LAYER(vec3(0.62, 0.3, 0.26), hatch * 0.2);
-            LAYER(vec3(0.55, 0.12, 0.08), exp(-ed * 9.0) * 0.16);
+            LAYER(vec3(0.62, 0.3, 0.26), hatch * 0.1);
+            LAYER(vec3(0.55, 0.12, 0.08), exp(-ed * 9.0) * 0.08);
           }
           // Spell template.
           if (s.g > 0.9) {
@@ -144,10 +143,12 @@ export class Overlay {
             LAYER(uTemplateColor * 0.7, 0.13 + 0.05 * pulse);
             LAYER(uTemplateColor * 1.5, rimT * 0.6 + e2 * 0.12);
           } else if (s.g > 0.4) {
-            // Valid target squares (enemies in reach).
-            float e2 = 1.0 - smoothstep(0.0, 0.08, ed);
-            LAYER(vec3(1.0, 0.3, 0.2) * 0.6, 0.12);
-            LAYER(vec3(1.0, 0.35, 0.25) * 1.4, e2 * 0.7);
+            // Valid target squares (enemies in reach): quiet corner brackets —
+            // the current target gets the bright reticle on top.
+            vec2 cq = min(f, 1.0 - f);
+            float br = (1.0 - smoothstep(pxG * 1.0, pxG * 2.6, min(cq.x, cq.y) - 0.06)) * step(max(cq.x, cq.y), 0.24) * step(0.06 - pxG, min(cq.x, cq.y));
+            LAYER(vec3(1.0, 0.45, 0.3) * 1.1, br * 0.55);
+            LAYER(vec3(1.0, 0.3, 0.2) * 0.5, 0.05);
           }
           // Path and hover.
           if (s.b > 0.9) {
@@ -224,15 +225,16 @@ export class Overlay {
           bool blocked = vT > uBlock;
           float dash = step(0.45, fract(vT * uLen * 1.4 - uTime * 1.2));
           vec3 c = blocked ? vec3(1.0, 0.18, 0.12) : vec3(1.0, 0.88, 0.55);
-          float a = smoothstep(0.0, 0.6, across) * (blocked ? 0.85 : 0.35 + dash * 0.45);
+          float a = smoothstep(0.0, 0.5, across) * (blocked ? 0.9 : 0.6 + dash * 0.4);
           // A bright tick where the line is cut.
           a += (1.0 - smoothstep(0.0, 0.04 / max(uLen, 1.0), abs(vT - uBlock))) * step(uBlock, 0.999) * 0.9;
-          float fadeIn = smoothstep(0.0, 0.06, vT);
+          float fadeIn = smoothstep(0.0, 0.08, vT) * (1.0 - smoothstep(0.9, 1.0, vT) * 0.6);
           gl_FragColor = vec4(c * 1.6, a * fadeIn);
         }`,
     });
     this.ray = new THREE.Mesh(new THREE.BufferGeometry(), this.rayMat);
-    this.ray.renderOrder = 3;
+    this.ray.renderOrder = 13;
+    this.rayMat.depthTest = false;
     this.ray.frustumCulled = false;
     this.ray.visible = false;
     this.group.add(this.ray);
@@ -258,17 +260,70 @@ export class Overlay {
     this.activeRing = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5).rotateX(-Math.PI / 2), this.ringMat(0xffd36b, 0.09));
     this.activeRing.renderOrder = 4;
     this.group.add(this.activeRing);
+    // Active-unit marker: a small faceted gilt diamond floating over the head.
+    const dg = new THREE.OctahedronGeometry(0.11, 0);
+    dg.scale(1, 1.7, 1);
+    this.activeMarker = new THREE.Mesh(dg, new THREE.MeshBasicMaterial({ color: 0xffd36b, transparent: true, opacity: 0.95, depthTest: false, depthWrite: false }));
+    this.activeMarker.renderOrder = 14;
+    this.activeMarker.visible = false;
+    this.group.add(this.activeMarker);
     this.targetRing = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5).rotateX(-Math.PI / 2), this.ringMat(0xff5040, 0.09));
     this.targetRing.material.uniforms.uSpin.value = -2;
     this.targetRing.renderOrder = 4;
     this.targetRing.visible = false;
     this.group.add(this.targetRing);
+    // Current target: rotating corner brackets, a pulsing ring sweeping in, and a
+    // soft pillar of light — unmistakable among the other valid targets.
+    this.reticle = new THREE.Group();
+    this.reticleMat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      uniforms: { uTime: this.uniforms.uTime, uColor: { value: new THREE.Color(0xff6a48) } },
+      vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `varying vec2 vUv; uniform float uTime; uniform vec3 uColor;
+        void main(){
+          vec2 p = vUv * 2.0 - 1.0;
+          float a0 = uTime * 0.6;
+          vec2 q = mat2(cos(a0), -sin(a0), sin(a0), cos(a0)) * p;
+          float px = fwidth(p.x) * 1.2;
+          // Four corner brackets.
+          vec2 aq = abs(q);
+          float boxD = max(aq.x, aq.y);
+          float brk = (1.0 - smoothstep(0.022, 0.022 + px * 1.5, abs(boxD - 0.62))) * step(0.36, min(aq.x, aq.y));
+          float r = length(p);
+          float ph = fract(uTime * 0.9);
+          float pulse = (1.0 - smoothstep(0.0, 0.05 + px, abs(r - mix(0.95, 0.5, ph)))) * (1.0 - ph) * 0.8;
+          float ring = (1.0 - smoothstep(px, px * 3.0, abs(r - 0.5))) * 0.9;
+          float fill = (1.0 - smoothstep(0.0, 0.5, r)) * 0.18;
+          float a = max(max(brk, ring), pulse) + fill;
+          gl_FragColor = vec4(uColor * (1.4 + ring), a * smoothstep(1.0, 0.92, r));
+        }`,
+    });
+    const rp = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 2.0).rotateX(-Math.PI / 2), this.reticleMat);
+    rp.position.y = 0.05;
+    rp.renderOrder = 5;
+    this.pillarMat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+      uniforms: { uTime: this.uniforms.uTime, uColor: this.reticleMat.uniforms.uColor },
+      vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `varying vec2 vUv; uniform float uTime; uniform vec3 uColor;
+        void main(){ float a = pow(1.0 - vUv.y, 2.2) * (0.16 + 0.05 * sin(uTime * 4.0)); gl_FragColor = vec4(uColor * 1.4, a); }`,
+    });
+    const pil = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.55, 2.2, 28, 1, true).translate(0, 1.1, 0), this.pillarMat);
+    pil.renderOrder = 5;
+    this.reticle.add(rp, pil);
+    this.reticle.visible = false;
+    this.group.add(this.reticle);
     this.teamRings = new Map();
     this.teamMat = {
-      party: new THREE.MeshBasicMaterial({ color: 0x5aa0ff, transparent: true, opacity: 0.55, depthWrite: false }),
-      monster: new THREE.MeshBasicMaterial({ color: 0xff5a4a, transparent: true, opacity: 0.45, depthWrite: false }),
+      party: new THREE.MeshBasicMaterial({ color: 0x5aa0ff, transparent: true, opacity: 0.42, depthWrite: false }),
+      monster: new THREE.MeshBasicMaterial({ color: 0xff5a4a, transparent: true, opacity: 0.36, depthWrite: false }),
     };
-    this.teamGeo = new THREE.RingGeometry(0.5, 0.56, 40).rotateX(-Math.PI / 2);
+    this.teamGeo = new THREE.RingGeometry(0.5, 0.538, 48).rotateX(-Math.PI / 2);
   }
 
   /** Team ring under each combatant (blue party / red foes). */
@@ -382,18 +437,19 @@ export class Overlay {
   }
 
   /** Sight line from square a to square b, blocked at fraction tBlock (1 = clear). */
-  setRay(a, b, tBlock = 1) {
+  setRay(a, b, tBlock = 1, { arc = 0.35, h0 = 1.0, h1 = 0.95 } = {}) {
     if (!a || !b || (a.x === b.x && a.y === b.y)) {
       this.ray.visible = false;
       return;
     }
-    const A = new THREE.Vector3(a.x * TILE + TILE / 2, 0.07, a.y * TILE + TILE / 2);
-    const B = new THREE.Vector3(b.x * TILE + TILE / 2, 0.07, b.y * TILE + TILE / 2);
+    // Raised to chest height and gently arched, so figures and rings never hide it.
+    const A = new THREE.Vector3(a.x * TILE + TILE / 2, h0, a.y * TILE + TILE / 2);
+    const B = new THREE.Vector3(b.x * TILE + TILE / 2, h1, b.y * TILE + TILE / 2);
     const dir = new THREE.Vector3().subVectors(B, A);
     const len = dir.length();
     dir.normalize();
-    const side = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(0.07);
-    const n = 24;
+    const side = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(0.05);
+    const n = 32;
     const pos = [];
     const uv = [];
     const tt = [];
@@ -401,6 +457,7 @@ export class Overlay {
     for (let i = 0; i <= n; i++) {
       const u = i / n;
       const p = A.clone().lerp(B, u);
+      p.y += Math.sin(u * Math.PI) * arc * Math.min(1, len / 6);
       pos.push(p.x - side.x, p.y, p.z - side.z, p.x + side.x, p.y, p.z + side.z);
       uv.push(u, 0, u, 1);
       tt.push(u, u);
@@ -418,10 +475,22 @@ export class Overlay {
     this.ray.visible = true;
   }
 
+  /** Bright reticle on the current target square (null hides); color by intent. */
+  setReticle(sq, color = 0xff6a48) {
+    if (!sq) {
+      this.reticle.visible = false;
+      return;
+    }
+    this.reticle.visible = true;
+    this.reticle.position.set(sq.x * TILE + TILE / 2, 0, sq.y * TILE + TILE / 2);
+    this.reticleMat.uniforms.uColor.value.set(color);
+  }
+
   update(t) {
     this.uniforms.uTime.value = t;
     const k = 1 + Math.sin(t * 4) * 0.04;
     this.activeRing.scale.setScalar(k);
+    this.activeMarker.rotation.y = t * 1.6;
     this.arrow.scale.setScalar(1 + Math.sin(t * 5) * 0.08);
   }
 

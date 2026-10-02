@@ -50,6 +50,7 @@ function addRim(mat) {
 
 const _FLASH = new THREE.Color(1, 0.82, 0.68);
 const _HOLY = new THREE.Color(1, 0.9, 0.6);
+const _SOOT = new THREE.Color(0x0c0907);
 const _BURN = new THREE.Color(1, 0.32, 0.05);
 
 export class Figure {
@@ -236,6 +237,16 @@ export class Figure {
       } else if (ka >= 1.4 && this.death) this.root.position.add(this.knockDir);
     }
     const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+    {
+      // Blast lean: the body is thrown back away from the blast, then rights itself.
+      const ka = t - this.knockT;
+      if (ka >= 0 && ka < 1.2 && this.knockDir.lengthSq() > 1e-6) {
+        const k = ka < 0.1 ? ka / 0.1 : Math.max(0, 1 - (ka - 0.1) / (this.death ? 0.35 : 0.8)) ** 2;
+        const d = this.knockDir.clone().normalize();
+        const axis = new THREE.Vector3(d.z, 0, -d.x);
+        q.premultiply(new THREE.Quaternion().setFromAxisAngle(axis, k * 0.42));
+      }
+    }
     const off = rootOff.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
     this.root.position.add(off);
     if (this.death) {
@@ -260,7 +271,7 @@ export class Figure {
     const holy = this.death?.holy ? clamp01((t - this.death.t0) / 0.6) : 0;
     const bAge = t - this.burnT;
     const burn = bAge < 0 ? 0 : Math.exp(-bAge * 2.4) * (0.75 + 0.25 * Math.sin(bAge * 37 + this.seed * 9));
-    const char = bAge < 0 ? 0 : Math.min(1, bAge * 6) * 0.45;
+    const char = bAge < 0 ? 0 : Math.min(1, bAge * 8) * (0.62 - 0.12 * Math.min(1, bAge / 3));
     for (const mm of this.mats) {
       if (mm.m.emissive) {
         mm.m.emissive.copy(mm.emissive).lerp(_FLASH, flash * 0.13);
@@ -269,6 +280,7 @@ export class Figure {
         mm.m.emissiveIntensity = mm.ei;
       }
       mm.m.color.copy(mm.color).multiplyScalar((1 - deadDim * 0.35) * (1 - char));
+      if (char > 0) mm.m.color.lerp(_SOOT, char * 0.5);
     }
   }
 
@@ -363,10 +375,26 @@ export class Figure {
       set('capeB', 0.06 + sway * 0.5 + Math.sin(it * 1.7) * 0.03, 0, 0);
       set('capeC', 0.04 + sway * 0.3 + Math.sin(it * 2.1 + 1) * 0.04, 0, 0);
     }
-    if (m.hasTail) {
+    if (m.hasTail && m.longTail) {
+      // Kobold: the tail rides out behind as a counterweight to the hunched
+      // body, curling up at the tip in a lazy S — readable from above.
+      set('tail1', 0.0, 0.25 + Math.sin(it * 1.2) * 0.3, 0);
+      set('tail2', 0.04, -0.4 + Math.sin(it * 1.2 - 0.8) * 0.35, 0);
+      set('tail3', 0.16, 0.5 + Math.sin(it * 1.2 - 1.6) * 0.45, 0);
+    } else if (m.hasTail) {
       set('tail1', -0.35, Math.sin(it * 1.2) * 0.35, 0);
       set('tail2', -0.2, Math.sin(it * 1.2 - 0.8) * 0.35, 0);
       set('tail3', -0.1, Math.sin(it * 1.2 - 1.6) * 0.45, 0);
+    }
+    if (m.digitigrade && !walking) {
+      // Crouched, spring-loaded stance on bent haunches.
+      add('thighL', -0.35);
+      add('shinL', 0.6);
+      add('footL', -0.25);
+      add('thighR', -0.35);
+      add('shinR', 0.6);
+      add('footR', -0.25);
+      P['hips@'][1] -= 0.06 * s;
     }
     // --- Walking cycle.
     if (walking) {
