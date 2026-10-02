@@ -63,7 +63,7 @@ export default class TitleScene extends Scene {
     this.camTween = null;
     this.logoState = { ...LOGO.card };
     this.logoTween = null;
-    this.enterTime = ctx.clock.time;
+    this.enterTime = this._now();
     this.fromBoot = !ctx.debug.active;
 
     this._buildDom();
@@ -180,7 +180,9 @@ export default class TitleScene extends Scene {
       c.style.height = `${hh}px`;
       c.style.left = `${Math.round((cx - w / 2) / dot) * dot}px`;
       c.style.top = `${Math.round((cy + logoW * 0.5 * (s.v - 0.5) * 1 - hh / 2) / dot) * dot}px`;
-      c.style.opacity = String(alpha);
+      // EGA had no fades: the bitmap lines are either on or off (a part-faded
+      // canvas lands on the dark palette entries and turns illegible)
+      c.style.opacity = alpha > 0.5 ? '1' : '0';
     }
   }
 
@@ -227,11 +229,11 @@ export default class TitleScene extends Scene {
       this.panel = new LoadPanel(this.ctx, { onClose: () => this.setMode('menu'), onLoad: (slot) => this._loadSlot(slot) });
       this.panelEl.replaceChildren(this.panel.el);
     } else if (mode === 'credits') {
-      this.panel = new Credits(this.ctx, { onClose: () => this.setMode('menu'), t0: instant ? 0 : this.ctx.clock.time });
+      this.panel = new Credits(this.ctx, { onClose: () => this.setMode('menu'), t0: this._now() });
       this.panelEl.replaceChildren(this.panel.el);
     } else if (mode === 'intro') {
       this.intro = new IntroCinematic(this.ctx, this.world, {
-        t0: instant ? 0 : this.ctx.clock.time,
+        t0: instant ? 0 : this._now(),
         onDone: () => this._finishIntro(),
       });
       this.panelEl.replaceChildren(this.intro.el);
@@ -253,7 +255,7 @@ export default class TitleScene extends Scene {
       this.camTween = null;
       return;
     }
-    this.camTween = { from: { p: this.cam.p.clone(), l: this.cam.l.clone() }, to, t0: this.ctx.clock.time, dur };
+    this.camTween = { from: { p: this.cam.p.clone(), l: this.cam.l.clone() }, to, t0: this._now(), dur };
   }
 
   _tweenLogo(to, dur) {
@@ -262,7 +264,7 @@ export default class TitleScene extends Scene {
       this.logoTween = null;
       return;
     }
-    this.logoTween = { from: { ...this.logoState }, to: { ...to }, t0: this.ctx.clock.time, dur };
+    this.logoTween = { from: { ...this.logoState }, to: { ...to }, t0: this._now(), dur };
   }
 
   // ------------------------------------------------------------------- input
@@ -335,14 +337,41 @@ export default class TitleScene extends Scene {
   }
 
   // ------------------------------------------------------------------ frame
+  /**
+   * Presentation clock for the title's UI, camera tweens and intro: the game
+   * clock's uiTime (frame steps capped at 2 s, not 0.1 s) so a keypress shows its
+   * result promptly even at software-GL frame rates. Equals clock.time when frozen.
+   */
+  _now() {
+    const c = this.ctx.clock;
+    return c.uiTime ?? c.time;
+  }
+
   onResize() {
     this.camera.aspect = this.ctx.render.aspect;
     this.camera.updateProjectionMatrix();
   }
 
   update(dt) {
-    const t = this.ctx.clock.time;
+    const t = this._now();
     const snap = dt === 0;
+    const uiDt = snap ? 0 : Math.max(0, t - (this._lastT ?? t));
+    this._lastT = t;
+    // classic 1988 toggle first, so this very frame already hides the light column
+    // and shows the bitmap sub-titles (a slow frame must never show the mix)
+    const classic = !!this.ctx.render?.classic;
+    if (classic !== this._classic) {
+      this._classic = classic;
+      this.world.setClassic(classic);
+      this.logo.uniforms.uClassic.value = classic ? 1 : 0;
+      // flat EGA fills in the title's large surfaces: dither only where a cell
+      // is genuinely between two colours (the shader default dithers wider)
+      const u = this.ctx.render?.passes?.classic?.uniforms?.uEdge;
+      if (u) {
+        this._edge0 ??= u.value;
+        u.value = classic ? 0.478 : this._edge0;
+      }
+    }
     if (this.camTween) {
       const k = snap ? 1 : Math.min(1, (t - this.camTween.t0) / this.camTween.dur);
       const e = ease(k);
@@ -382,21 +411,9 @@ export default class TitleScene extends Scene {
     this.root.classList.toggle('booted', snap || !this.fromBoot || since > 2.6);
     this.panel?.update?.(t, snap);
     const beamTo = BEAM[this.mode] ?? 1;
-    this._beam = snap || this._beam === undefined ? beamTo : this._beam + (beamTo - this._beam) * Math.min(1, dt * 2.5);
-    this.world.terrace.setBeam(this._beam * (this._classic ? 0.2 : 1));
-    const classic = !!this.ctx.render?.classic;
-    if (classic !== this._classic) {
-      this._classic = classic;
-      this.world.setClassic(classic);
-      this.logo.uniforms.uClassic.value = classic ? 1 : 0;
-      // flat EGA fills in the title's large surfaces: dither only where a cell
-      // is genuinely between two colours (the shader default dithers wider)
-      const u = this.ctx.render?.passes?.classic?.uniforms?.uEdge;
-      if (u) {
-        this._edge0 ??= u.value;
-        u.value = classic ? 0.478 : this._edge0;
-      }
-    }
+    this._beam = snap || this._beam === undefined ? beamTo : this._beam + (beamTo - this._beam) * Math.min(1, uiDt * 2.5);
+    // classic 1988: no volumetric column (it quantises to a dithered blob)
+    this.world.terrace.setBeam(this._classic ? 0 : this._beam);
     if (this.mode !== 'intro') this.world.setDragonLane(this.camTween ? null : DRAGON[this.mode] ?? null);
     this.world.update(t, this.camera, this.ctx.render.renderer?.getPixelRatio?.() ?? 1);
   }

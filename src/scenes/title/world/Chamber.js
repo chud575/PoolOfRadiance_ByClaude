@@ -2,9 +2,9 @@ import * as THREE from 'three';
 import { getTextureSet, getGlowTexture } from '../../../render/textures/index.js';
 import { createFlameBatch } from '../../../render/lighting.js';
 import { prng, ni, worldUV, tint, box, merge } from './geom.js';
-import { column, contactShadow } from './arch.js';
+import { column, contactShadow, matteFigure, addRimLight } from './arch.js';
 import { buildMiniature } from '../../../ui/components/Miniature.js';
-import { armsTexture, bannerTexture, ledgerTexture, paperTexture, featherTexture, marbleFloorTexture } from './heraldry.js';
+import { armsTexture, bannerTexture, ledgerTexture, paperTexture, featherTexture, marbleFloorTexture, tapestryTexture } from './heraldry.js';
 
 export const CHAMBER_TEXTURES = ['hd2_ashlar', 'hd_limestone', 'hd_beam_dark', 'hd2_plaster_int'];
 
@@ -26,13 +26,12 @@ export function createChamber({ seed = 1337 } = {}) {
   group.position.copy(CHAMBER_ORIGIN);
   const disposables = [];
   const stone = [], fine = [], wood = [], floor = [], cloth = [], skin = [], glass = [], gold = [];
-  const armsGeo = [], bannerGeo = [], ledgerGeo = [], paperGeo = [], quillGeo = [];
+  const armsGeo = [], bannerGeo = [], ledgerGeo = [], paperGeo = [], quillGeo = [], tapGeo = [];
   const W = 14, D = 26, H = 9.5; // room x: -7..7, z: -13..13 (council at -z end)
 
   // ---- shell -------------------------------------------------------------------
   floor.push(tint(worldUV(ni(new THREE.BoxGeometry(W, 0.2, D).translate(0, -0.1, 0)), 2.2), 0xb8ab98));
-  // a runner carpet down the middle
-  cloth.push(tint(worldUV(ni(new THREE.BoxGeometry(2.4, 0.03, D - 4).translate(0, 0.015, 1)), 1), 0x5a1410));
+  // the runner carpet down the middle is its own mesh (pile, wear, gilt binding): see below
   for (const sx of [-1, 1]) {
     const wall = box(0.6, H, D, { x: sx * (W / 2 + 0.3) });
     stone.push(tint(worldUV(wall, 2.3), 0x9a8e7e, { aoBottom: 0, aoTop: 3 }));
@@ -131,6 +130,49 @@ export function createChamber({ seed = 1337 } = {}) {
         gold.push(tint(ni(new THREE.CylinderGeometry(0.012, 0.02, 0.16, 4).translate(bx + x, yy - 0.08, z + 0.17 + Math.sin(x * 4.2 + bx) * 0.07)), 0xd0a040));
       }
     }
+  }
+
+  // ---- oak wainscot along the side walls, tapestries, the hearth's hood ---------------
+  // breaks the ashlar up: panelled oak to dado height (stiles, rails, fielded
+  // panels with a moulded cap), hangings between the windows, a stone hood
+  {
+    const WH = 1.75;
+    for (const sx of [-1, 1]) {
+      const x = sx * (W / 2 - 0.04);
+      wood.push(tint(worldUV(box(0.08, WH, D - 0.4, { x }), 1.2), 0x3a2618));
+      wood.push(tint(worldUV(box(0.16, 0.1, D - 0.4, { x: x - sx * 0.04, y: WH }), 1), 0x5a3c24)); // capping rail
+      wood.push(tint(worldUV(box(0.13, 0.2, D - 0.4, { x: x - sx * 0.03, y: 0 }), 1), 0x2a1a10)); // skirting
+      for (let z = -D / 2 + 0.5; z < D / 2 - 0.6; z += 0.9) {
+        const tone = 0.85 + 0.3 * R.next();
+        // a fielded panel: raised centre, thin bolection frame
+        wood.push(tint(worldUV(box(0.05, WH - 0.55, 0.62, { x: x - sx * 0.05, y: 0.3, z: z + 0.45 }), 1), new THREE.Color(0x4a3020).multiplyScalar(tone)));
+        wood.push(tint(worldUV(box(0.07, WH - 0.35, 0.06, { x: x - sx * 0.05, y: 0.2, z }), 1), 0x2e1e12)); // stile
+      }
+      wood.push(tint(worldUV(box(0.07, 0.07, D - 0.4, { x: x - sx * 0.06, y: 0.24 }), 1), 0x2e1e12)); // bottom rail
+      wood.push(tint(worldUV(box(0.07, 0.07, D - 0.4, { x: x - sx * 0.06, y: WH - 0.12 }), 1), 0x2e1e12)); // top rail
+    }
+    // tapestries: hunting and harbour scenes woven in faded madder and woad,
+    // hung on rods between the windows (each its own weave and fold)
+    for (const [sx, z] of [[-1, -11], [1, -11], [-1, 11], [1, 11], [-1, -1], [1, 3]]) {
+      const tg = new THREE.PlaneGeometry(1.9, 3.4, 10, 1);
+      const tp = tg.attributes.position;
+      for (let i = 0; i < tp.count; i++) tp.setZ(i, Math.sin(tp.getX(i) * 5.5 + z) * 0.04);
+      tg.computeVertexNormals();
+      tg.rotateY(-sx * Math.PI / 2);
+      tg.translate(sx * (W / 2 - 0.1), 2.2 + 1.7 + 0.15, z);
+      tapGeo.push(tg);
+      gold.push(tint(ni(new THREE.CylinderGeometry(0.03, 0.03, 2.2, 6).rotateX(Math.PI / 2).translate(sx * (W / 2 - 0.12), 5.65, z)), 0x6a5020));
+    }
+    // hearth hood: a tapered stone chimney-breast rising from the mantel shelf
+    const zz = -D / 2 + 0.05;
+    const hood = new THREE.CylinderGeometry(1.4, 2.4, 1.6, 4, 1);
+    hood.rotateY(Math.PI / 4);
+    hood.scale(1, 1, 0.42);
+    hood.translate(0, 3.8 + 0.8, zz + 0.62);
+    fine.push(tint(worldUV(ni(hood), 1.5), 0xa89c88));
+    fine.push(tint(worldUV(box(2.1, 0.25, 0.75, { y: 5.4, z: zz + 0.4 }), 1.5), 0xb8ac98));
+    // soot licking up the hood's face
+    stone.push(tint(worldUV(box(1.6, 1.0, 0.05, { y: 3.85, z: zz + 1.02 }), 1), 0x2a2420));
   }
 
   // ---- the council table -----------------------------------------------------------
@@ -246,9 +288,11 @@ export function createChamber({ seed = 1337 } = {}) {
   // finer sculpt cells and the ray-marched heads (brow, nose, hair mass, ears)
   // the party portraits use, so the council read as people, not mannequins
   const person = (ch, x, z, ry, q = 0.018, o = {}) => {
-    const f = buildMiniature({ race: 'human', ...ch }, { pose: o.pose ?? 'stand', base: false, gear: false, quality: Math.min(q, 0.0108), faceSize: 256, noWeapon: o.noWeapon ?? true, noShield: o.noShield ?? true, rayHead: true, headGain: 0.75 });
+    const f = buildMiniature({ race: 'human', ...ch }, { pose: o.pose ?? 'stand', mod: o.mod, base: false, gear: o.gear ?? false, quality: Math.min(q, 0.0108), faceSize: 256, noWeapon: o.noWeapon ?? true, noShield: o.noShield ?? true, rayHead: true, headGain: 0.75 });
+    matteFigure(f);
     f.position.set(x, 0, z);
     f.rotation.y = ry;
+    if (o.lean) f.rotation.z = o.lean;
     f.traverse((m) => { if (m.isMesh) { m.castShadow = false; m.receiveShadow = false; } });
     group.add(f);
     figures.push(f);
@@ -303,17 +347,21 @@ export function createChamber({ seed = 1337 } = {}) {
     const crest = new THREE.CircleGeometry(0.1, 16).translate(0, SEAT + 0.42 + tall + 0.08, -0.215);
     wood.push(tint(worldUV(crest.applyMatrix4(m), 1), 0x6a4a28));
   };
-  const seated = (ch, x, z, ry, q = 0.016) => {
+  const seated = (ch, x, z, ry, q = 0.016, o = {}) => {
     chair(x, z, ry);
-    const f = person(ch, x, z, ry, q, { pose: 'sit' });
+    const f = person(ch, x, z, ry, q, { pose: 'sit', ...o });
     f.position.y = SEAT;
     return f;
   };
   [-3.2, -1.1, 1.1, 3.2].forEach((dz, i) => {
     // the nearer the councillor sits to the foot, the further they turn to look
     const turn = 0.5 + 0.12 * (dz + 3.2) / 6.4;
-    seated(council[i], -1.78, tz + dz, Math.PI / 2 - turn);
-    seated(council[i + 4], 1.78, tz + dz, -Math.PI / 2 + turn);
+    // no two alike: one leans in to talk with a gesture, one rests both hands
+    // on the board, one sits back listening with a hand on the knee, heads turned
+    const L = ['warm', 'talkR', 'listen', 'warm'][i];
+    const Rm = ['listen', 'warm', 'talkL', 'talkR'][i];
+    seated(council[i], -1.78, tz + dz, Math.PI / 2 - turn + (i % 2 ? 0.12 : -0.05), 0.016, { mod: L, lean: i % 2 ? 0.04 : -0.025 });
+    seated(council[i + 4], 1.78, tz + dz, -Math.PI / 2 + turn - (i % 2 ? 0.08 : -0.1), 0.016, { mod: Rm, lean: i % 2 ? -0.035 : 0.03 });
   });
   // the First Councillor in the great chair at the head of the table
   chair(0, tz - tl / 2 - 0.85, 0, 2.1, 0.78);
@@ -361,8 +409,10 @@ export function createChamber({ seed = 1337 } = {}) {
   }
   // three adventurers seen from behind at the foot of the table: fighter in plate,
   // cleric in mail and tabard, mage in robes with a staff
-  person({ gender: 'male', classSpec: 'fighter', look: { seed: 61, head: 0, body: 0, cloth: 1, hair: 2 } }, -2.45, 2.2, Math.PI + 0.35, 0.013, { noWeapon: false, noShield: false });
-  person({ gender: 'female', classSpec: 'cleric', look: { seed: 62, head: 5, body: 5, cloth: 0, hair: 4 } }, 1.95, 2.5, Math.PI - 0.35, 0.013, { noWeapon: false, noShield: false });
+  // turned three-quarters toward the table so their faces and helms read in
+  // profile against the candlelight (not featureless backs of heads)
+  person({ gender: 'male', classSpec: 'fighter', look: { seed: 61, head: 0, body: 0, cloth: 1, hair: 2 } }, -2.45, 2.2, Math.PI - 1.0, 0.013, { noWeapon: false, noShield: true, mod: 'talkL' });
+  person({ gender: 'female', classSpec: 'cleric', look: { seed: 62, head: 5, body: 5, cloth: 0, hair: 4 } }, 1.95, 2.5, Math.PI + 0.95, 0.013, { noWeapon: true, noShield: true, mod: 'talkR' });
 
   // ---- meshes ------------------------------------------------------------------------------
   const texMat = (name, extra = {}) => {
@@ -379,7 +429,9 @@ export function createChamber({ seed = 1337 } = {}) {
     group.add(mesh);
     disposables.push(g);
   };
-  add(stone, texMat('hd2_ashlar'));
+  // the ashlar gets world-space weathering (patches of re-faced stone, damp
+  // at the foot, candle-smoke streaks) so it never reads as one brick tiling
+  add(stone, addRimLight(texMat('hd2_ashlar'), { uSunView: { value: new THREE.Vector3(0, 0, -1) }, uRimColor: { value: new THREE.Color(0, 0, 0) } }, 0, { weather: 0.9, ground: -240, soot: 0.5 }));
   add(fine, texMat('hd_limestone'));
   add(wood, texMat('hd_beam_dark'));
   const plain = (r, m = 0) => {
@@ -394,6 +446,38 @@ export function createChamber({ seed = 1337 } = {}) {
   {
     const mt = marbleFloorTexture();
     const mm = new THREE.MeshStandardMaterial({ map: mt.map, roughnessMap: mt.roughnessMap, vertexColors: true, roughness: 0.42, metalness: 0 });
+    // world-space wear over the chequer: each slab its own tone, broad grime
+    // and candle-smoke near the walls, polished lanes where feet go (they
+    // mirror the candles), dull scuffed patches elsewhere
+    mm.onBeforeCompile = (sh) => {
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vFW;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvFW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', `#include <common>
+          varying vec3 vFW;
+          float fh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+          float fn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(fh(i), fh(i + vec2(1, 0)), f.x), mix(fh(i + vec2(0, 1)), fh(i + vec2(1, 1)), f.x), f.y); }
+          float ffbm(vec2 p) { return fn(p) * 0.5 + fn(p * 2.1) * 0.3 + fn(p * 4.3) * 0.2; }`)
+        .replace('#include <map_fragment>', `#include <map_fragment>
+          {
+            vec2 w = vFW.xz;
+            float slab = fh(floor(w / 1.1) + 7.0);
+            diffuseColor.rgb *= 0.82 + 0.3 * slab;
+            float grime = smoothstep(0.45, 0.8, ffbm(w * 0.35)) * 0.4 + smoothstep(4.2, 6.8, abs(w.x)) * 0.35;
+            diffuseColor.rgb *= 1.0 - grime;
+            diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.8, 0.72, 0.62), smoothstep(0.5, 0.9, ffbm(w * 1.3 + 4.0)) * 0.5);
+          }`)
+        .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+          {
+            vec2 w = vFW.xz;
+            float lane = 1.0 - smoothstep(1.4, 3.6, abs(w.x));
+            float polish = smoothstep(0.35, 0.75, ffbm(w * 0.6 + 2.0));
+            roughnessFactor = clamp(mix(roughnessFactor + 0.18, roughnessFactor * 0.45, max(lane * 0.6, polish * 0.7)), 0.12, 1.0);
+          }`);
+    };
+    mm.customProgramCacheKey = () => 'chamber-floor-v2';
     disposables.push(mm, mt.map, mt.roughnessMap);
     add(floor.slice(0, 1), mm);
     add(floor.slice(1), plain(0.8));
@@ -407,6 +491,50 @@ export function createChamber({ seed = 1337 } = {}) {
     disposables.push(g);
   };
   texd(armsGeo, armsTexture(), { roughness: 0.55, metalness: 0.25 });
+  texd(tapGeo, tapestryTexture(), { roughness: 1.0 });
+  // the runner: deep red pile with a worn, flattened lane down its centre, a
+  // woven border and a gilt-thread binding along both edges, lying 2 cm proud
+  {
+    const cg = new THREE.PlaneGeometry(2.4, D - 4, 1, 1);
+    cg.rotateX(-Math.PI / 2);
+    cg.translate(0, 0.022, 1);
+    const cm = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, metalness: 0 });
+    cm.onBeforeCompile = (sh) => {
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vCW;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', `#include <common>
+          varying vec3 vCW;
+          float ch(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+          float cn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(ch(i), ch(i + vec2(1, 0)), f.x), mix(ch(i + vec2(0, 1)), ch(i + vec2(1, 1)), f.x), f.y); }`)
+        .replace('#include <map_fragment>', `#include <map_fragment>
+          {
+            vec2 m = vec2(vCW.x + 1.2, vCW.z + ${((D - 4) / 2 - 1).toFixed(1)});
+            float ex = min(m.x, 2.4 - m.x);
+            // pile: fine tufts + a woven field of small lozenges
+            float pile = 0.8 + 0.2 * cn(m * 140.0) + 0.08 * cn(m * 31.0);
+            vec2 lz = abs(fract(vec2(m.x * 3.0 + m.y * 3.0, m.x * 3.0 - m.y * 3.0) * 0.5) - 0.5);
+            float loz = smoothstep(0.42, 0.46, max(lz.x, lz.y));
+            vec3 c = vec3(0.085, 0.016, 0.014) * pile;
+            c = mix(c, vec3(0.05, 0.01, 0.01), loz * 0.5);
+            // border band of indigo with a gold meander, then the gilt binding
+            float border = step(ex, 0.26);
+            float meander = step(0.5, fract(m.y * 4.0 + step(0.145, ex) * 0.5)) * step(0.09, ex) * step(ex, 0.2);
+            c = mix(c, mix(vec3(0.02, 0.02, 0.05), vec3(0.2, 0.14, 0.05), meander), border * 0.9);
+            c = mix(c, vec3(0.3, 0.21, 0.07) * (0.8 + 0.4 * cn(m * 60.0)), step(ex, 0.05));
+            // the worn lane: flattened, faded, greyed pile where feet go
+            float lane = (1.0 - smoothstep(0.25, 0.6, abs(m.x - 1.2))) * (0.6 + 0.4 * cn(m * vec2(2.0, 0.4)));
+            c = mix(c, vec3(0.06, 0.028, 0.025) * (0.9 + 0.2 * cn(m * 90.0)), lane * 0.55);
+            diffuseColor.rgb = c;
+          }`);
+    };
+    cm.customProgramCacheKey = () => 'chamber-carpet-v1';
+    disposables.push(cg, cm);
+    group.add(new THREE.Mesh(cg, cm));
+    for (const sx of [-1, 1]) cloth.push(tint(worldUV(ni(new THREE.BoxGeometry(0.04, 0.022, D - 4).translate(sx * 1.2, 0.011, 1)), 1), 0x6a4a18));
+  }
   texd(bannerGeo, bannerTexture(), { roughness: 0.95 });
   texd(ledgerGeo, ledgerTexture(), { roughness: 0.9 });
   texd(paperGeo, paperTexture(), { roughness: 0.92 });

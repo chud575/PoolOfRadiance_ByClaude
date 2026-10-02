@@ -284,8 +284,8 @@ export function marbleFloorTexture() {
       r += (vein + vein2) * 60; g += (vein + vein2) * 50; b += (vein + vein2) * 42;
     } else {
       // cream limestone with grey-gold veins
-      r = 150 + cloud * 28; g = 136 + cloud * 24; b = 112 + cloud * 20; // aged, candle-smoked limestone
-      r -= (vein + vein2) * 50; g -= (vein + vein2) * 48; b -= (vein + vein2) * 38;
+      r = 96 + cloud * 22; g = 84 + cloud * 18; b = 66 + cloud * 14; // aged, candle-smoked limestone (toned well down)
+      r -= (vein + vein2) * 34; g -= (vein + vein2) * 32; b -= (vein + vein2) * 25;
     }
     r *= s.tone; g *= s.tone; b *= s.tone;
     // joints: dark grout + dirt creeping in, bevelled arris highlight
@@ -313,4 +313,97 @@ export function marbleFloorTexture() {
   const roughnessMap = tex(rc, { srgb: false, aniso: 8 });
   for (const t of [map, roughnessMap]) t.wrapS = t.wrapT = THREE.RepeatWrapping;
   return { map, roughnessMap };
+}
+
+/**
+ * A faded wool tapestry: a millefleurs field (tiny flowers on deep woad green),
+ * a central roundel with a ship on the Moonsea under the city's towers, a
+ * madder-red border with a running vine, and the weave's warp/weft grain.
+ */
+export function tapestryTexture() {
+  const W = 256, H = 448;
+  const [c, x] = canvas(W, H);
+  const R = prng(91);
+  x.fillStyle = '#1e2a22';
+  x.fillRect(0, 0, W, H);
+  // millefleurs
+  const flowers = ['#8a3a2a', '#b08a4a', '#6a7a9a', '#c8b890', '#7a2a3a'];
+  for (let i = 0; i < 700; i++) {
+    x.fillStyle = R.pick(flowers);
+    const fx = R.range(0, W), fy = R.range(0, H);
+    x.globalAlpha = R.range(0.45, 0.9);
+    x.beginPath();
+    x.arc(fx, fy, R.range(1.2, 2.6), 0, Math.PI * 2);
+    x.fill();
+    x.fillStyle = '#2e4a2a';
+    x.fillRect(fx - 0.5, fy + 2, 1, R.range(3, 6));
+  }
+  x.globalAlpha = 1;
+  // central roundel: dusk sky, the sea, a cog under sail and three towers
+  const cx = W / 2, cy = H * 0.46, r = 78;
+  x.save();
+  x.beginPath();
+  x.arc(cx, cy, r, 0, Math.PI * 2);
+  x.clip();
+  const g = x.createLinearGradient(0, cy - r, 0, cy + r);
+  g.addColorStop(0, '#3a3a6a');
+  g.addColorStop(0.55, '#8a5a4a');
+  g.addColorStop(0.56, '#2a3a5a');
+  g.addColorStop(1, '#1a2440');
+  x.fillStyle = g;
+  x.fillRect(cx - r, cy - r, r * 2, r * 2);
+  x.strokeStyle = '#6a7aa0';
+  x.lineWidth = 2;
+  for (let k = 0; k < 5; k++) {
+    x.beginPath();
+    for (let px = cx - r; px <= cx + r; px += 4) x.lineTo(px, cy + 14 + k * 11 + Math.sin(px * 0.2 + k) * 2.5);
+    x.stroke();
+  }
+  x.fillStyle = '#c8b890';
+  for (const [tx, tw, th] of [[-46, 16, 46], [-24, 20, 62], [0, 16, 40]]) x.fillRect(cx + tx, cy + 10 - th, tw, th);
+  x.fillStyle = '#4a2a1a';
+  x.beginPath();
+  x.moveTo(cx + 14, cy + 12); x.lineTo(cx + 62, cy + 12); x.lineTo(cx + 54, cy + 24); x.lineTo(cx + 22, cy + 24); x.closePath();
+  x.fill();
+  x.fillStyle = '#d8c8a0';
+  x.beginPath();
+  x.moveTo(cx + 37, cy - 34); x.quadraticCurveTo(cx + 54, cy - 12, cx + 37, cy + 10); x.lineTo(cx + 37, cy - 34);
+  x.fill();
+  x.restore();
+  x.strokeStyle = '#b08a4a';
+  x.lineWidth = 6;
+  x.beginPath();
+  x.arc(cx, cy, r + 3, 0, Math.PI * 2);
+  x.stroke();
+  // border with a running vine
+  const B = 22;
+  x.fillStyle = '#6a1e18';
+  x.fillRect(0, 0, W, B); x.fillRect(0, H - B, W, B); x.fillRect(0, 0, B, H); x.fillRect(W - B, 0, B, H);
+  x.strokeStyle = '#b89a5a';
+  x.lineWidth = 2;
+  const vine = (x0, y0, x1, y1) => {
+    const n = Math.hypot(x1 - x0, y1 - y0) / 6;
+    x.beginPath();
+    for (let k = 0; k <= n; k++) {
+      const t = k / n;
+      const px = x0 + (x1 - x0) * t, py = y0 + (y1 - y0) * t;
+      const o = Math.sin(k * 0.9) * 5;
+      x.lineTo(px + (y1 !== y0 ? o : 0), py + (x1 !== x0 ? o : 0));
+    }
+    x.stroke();
+  };
+  vine(B / 2, B / 2, W - B / 2, B / 2); vine(B / 2, H - B / 2, W - B / 2, H - B / 2); vine(B / 2, B / 2, B / 2, H - B / 2); vine(W - B / 2, B / 2, W - B / 2, H - B / 2);
+  x.strokeStyle = '#d0b070';
+  x.lineWidth = 1.5;
+  x.strokeRect(B, B, W - B * 2, H - B * 2);
+  // weave grain and age: warp lines, fading toward the top, a fringe at the hem
+  const img = x.getImageData(0, 0, W, H);
+  for (let py = 0; py < H; py++) for (let px = 0; px < W; px++) {
+    const k = (py * W + px) * 4;
+    const weave = (px % 2 === 0 ? 0.9 : 1.0) * (py % 3 === 0 ? 0.93 : 1.0);
+    const fade = 0.78 + 0.22 * (py / H) + (R.next() - 0.5) * 0.06;
+    for (let ch = 0; ch < 3; ch++) img.data[k + ch] = Math.min(255, img.data[k + ch] * weave * fade);
+  }
+  x.putImageData(img, 0, 0);
+  return tex(c, { aniso: 8 });
 }

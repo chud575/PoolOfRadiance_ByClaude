@@ -300,6 +300,12 @@ export function createLogo() {
         // cyan under-light from the pool
         float under = max(dot(n, normalize(vec3(0.0, -0.8, 0.6))), 0.0);
         col += vec3(0.25, 0.85, 1.0) * pow(under, 3.0) * 0.55 * body;
+        // the scene's light on the metal: the set sun (frame left) rims the
+        // bevels that face it in hot orange, the dusk sky cools the far side,
+        // so the logo sits in the world's light instead of floating over it
+        float sunRim = pow(max(dot(normalize(n.xy + 1e-4), normalize(vec2(-0.92, 0.3))), 0.0), 2.0) * clamp(length(n.xy) * 3.0, 0.0, 1.0);
+        col += vec3(1.35, 0.62, 0.24) * sunRim * 0.55 * body;
+        col *= mix(vec3(1.08, 0.99, 0.88), vec3(0.9, 0.94, 1.06), smoothstep(0.1, 0.95, vUv.x));
         // travelling glint across the bevel shoulders
         float sweep = exp(-pow((vUv.x - uSweep) + (vUv.y - 0.5) * 0.45, 2.0) * 900.0);
         col += vec3(2.4, 2.0, 1.4) * sweep * (0.25 + spec * 2.0) * body;
@@ -318,7 +324,7 @@ export function createLogo() {
           vec3 fill = mix(vec3(1.25, 1.25, 0.09), en, step(0.5, enamel));
           float sh2 = texture2D(uMap, vUv + vec2(-uTexel.x * 5.0, uTexel.y * 7.0)).r;
           outCol = mix(vec3(0.5, 0.1, 0.0), fill, step(0.5, body));
-          a = max(step(0.5, body), step(0.5, sh2)) * uAlpha;
+          a = max(step(0.5, body), step(0.5, sh2)) * step(0.5, uAlpha);
           gl_FragColor = vec4(outCol, a);
           return;
         }
@@ -338,9 +344,11 @@ export function createLogo() {
     fragmentShader: /* glsl */ `uniform float uAlpha, uClassic; varying vec2 vUv;
       void main(){
         if (uClassic > 0.5) discard;
-        vec2 d = (vUv - vec2(0.5, 0.56)) * vec2(1.0, 2.3);
-        float k = exp(-dot(d, d) * 5.5);
-        gl_FragColor = vec4(vec3(0.05, 0.02, 0.05), k * 0.5 * uAlpha);
+        // a soft, wide dusk shadow (no tight glow ring): just enough to seat the
+        // lettering on the bright sky, weighted to the sun side
+        vec2 d = (vUv - vec2(0.5, 0.56)) * vec2(0.9, 2.0);
+        float k = exp(-dot(d, d) * 4.0) * (0.85 + 0.3 * (1.0 - vUv.x));
+        gl_FragColor = vec4(vec3(0.06, 0.025, 0.05), k * 0.34 * uAlpha);
       }`,
   });
   const halo = new THREE.Mesh(haloGeo, haloMat);

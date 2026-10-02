@@ -15,6 +15,8 @@
     linear-gradient(0deg, rgba(3, 3, 8, 0.75) 0%, rgba(3, 3, 8, 0) 18%);
 }
 .por-title[data-mode='menu'] .por-title-scrim { opacity: 1; }
+/* the card: a low dusk shade under the footer so the hint bar never sits on the Pool's glow */
+.por-title[data-mode='card'] .por-title-scrim { opacity: 1; background: linear-gradient(0deg, rgba(3, 3, 8, 0.62) 0%, rgba(3, 3, 8, 0.28) 7%, rgba(3, 3, 8, 0) 15%); }
 .por-title[data-mode='settings'] .por-title-scrim, .por-title[data-mode='load'] .por-title-scrim, .por-title[data-mode='credits'] .por-title-scrim {
   opacity: 1;
   background: radial-gradient(ellipse at 50% 45%, rgba(4, 4, 12, 0.45), rgba(4, 4, 12, 0.86) 75%);
@@ -36,7 +38,7 @@
 .por-title[data-mode='card'].booted .por-title-card { opacity: 1; }
 .por-title-prompt { display: flex; flex-direction: column; align-items: center; gap: 0.7em; text-align: center; }
 .por-title-prompt-text {
-  font-family: var(--font-display); font-weight: 700; font-size: 1.12em; letter-spacing: 0.62em; margin-right: -0.62em; text-transform: uppercase;
+  font-family: var(--font-display); font-weight: 700; font-size: 1.12em; letter-spacing: 0.34em; margin-right: -0.34em; text-transform: uppercase;
   color: var(--por-parchment);
   text-shadow: 0 0 18px rgba(255, 200, 120, 0.55), 0 2px 3px rgba(0, 0, 0, 0.9);
   animation: por-breathe 2.8s ease-in-out infinite;
@@ -57,7 +59,7 @@
    point, crest at the head, so the menu sits on the skin instead of a void */
 .por-mm-banner {
   --pt: 3.2em;
-  position: absolute; left: 5.2vw; top: -1px; bottom: 19vh; width: 28em; pointer-events: none !important;
+  position: absolute; left: 5.2vw; top: -1px; bottom: 20.5vh; width: 28em; pointer-events: none !important;
   background: linear-gradient(90deg, #5e4418, #e6c477 12%, #fff1c0 22%, #a07a30 40%, #f0cf7c 60%, #7a5a22 82%, #d6b05a 92%, #4a3410);
   clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--pt)), 50% 100%, 0 calc(100% - var(--pt)));
   filter: drop-shadow(0 18px 40px rgba(0, 0, 0, 0.7));
@@ -73,7 +75,7 @@
     var(--tex-brocade, none),
     var(--tex-leather, none),
     #0c1230;
-  background-size: auto, auto, auto, 2.6em 3.03em, 12em 12em, auto;
+  background-size: auto, auto, auto, 2.6em 3.03em, 8em 8em, auto;
 }
 .por-mm-banner::after {
   /* material grain */
@@ -273,11 +275,12 @@ html[data-classic='1'] .por-credits-h2::before, html[data-classic='1'] .por-cred
   letter-spacing: 0.012em; text-shadow: 0 1px 2px #000; hanging-punctuation: first;
 }
 /* the crawl opens on an engraved gilt initial, like the heading caps */
-.por-intro-text::first-letter {
+.por-intro-text .init {
   font-family: var(--font-display); font-style: normal; font-weight: 700; font-size: 1.5em; line-height: 0.8; color: var(--por-gilt-hi);
   text-shadow: 0 0 12px rgba(245, 200, 110, 0.35), 0 2px 0 #140c02; padding-right: 0.04em;
 }
 .por-intro-text .ghost { color: transparent; text-shadow: none; }
+.por-intro-text .init.ghost { color: transparent; text-shadow: none; }
 .por-intro.final .por-intro-text { font-style: italic; color: #fff3d6; }
 .por-intro-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: rgba(216, 178, 90, 0.12); }
 .por-intro-progress i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--por-gilt-lo), var(--por-gilt-hi)); box-shadow: 0 0 8px rgba(245, 217, 139, 0.6); }

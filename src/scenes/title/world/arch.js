@@ -319,7 +319,7 @@ export function robedFigure({ height = 1.75, robe = 0x5a1a14, hood = true, stoop
  * steps (rim · body · shadow) instead of one flat black. `uniforms.uSunView`
  * must be updated each frame with the sun direction in view space.
  */
-export function addRimLight(mat, uniforms, strength = 1, { weather = 0, ground = -14 } = {}) {
+export function addRimLight(mat, uniforms, strength = 1, { weather = 0, ground = -14, soot = 0, flat = 0 } = {}) {
   mat.onBeforeCompile = (sh) => {
     if (weather > 0) {
       // weathering in world space: rain streaks running down from every ledge,
@@ -341,6 +341,14 @@ export function addRimLight(mat, uniforms, strength = 1, { weather = 0, ground =
             float damp = 1.0 - smoothstep(${ground.toFixed(1)}, ${(ground + 3.2).toFixed(1)}, vWthr.y);
             float mott = wn(vWthr.xz * 0.35 + vWthr.y * 0.2);
             vec3 c = diffuseColor.rgb;
+            ${flat > 0 ? `{
+              // even out a blotchy albedo map: keep its hue, replace its luminance
+              // swings with a fine, clean lime-wash grain and gentle broad wash
+              float lm = dot(sampledDiffuseColor.rgb, vec3(0.299, 0.587, 0.114));
+              vec3 even = diffuse * sampledDiffuseColor.rgb / max(lm, 0.04) * 0.62;
+              even *= 0.93 + 0.1 * wn(vWthr.xy * 14.0 + vWthr.zy * 14.0) + 0.05 * wn(vec2(u * 0.6, vWthr.y * 0.5));
+              c = mix(c, even, ${flat.toFixed(2)});
+            }` : ''}
             // macro variation: patches of differently-quarried / re-faced stone a few
             // metres across (tone + a warm/cool hue drift), so the tiled ashlar never
             // repeats visibly across a whole tower or curtain wall
@@ -351,6 +359,17 @@ export function addRimLight(mat, uniforms, strength = 1, { weather = 0, ground =
             c *= mix(vec3(1.06, 0.98, 0.9), vec3(0.92, 0.97, 1.06), wn(mq * 0.7 + 3.0));
             c *= 1.0 - ${weather.toFixed(2)} * (0.42 * smoothstep(0.25, 0.7, streak) + 0.18 * mott);
             c = mix(c, c * vec3(0.55, 0.62, 0.45), damp * ${weather.toFixed(2)} * 0.8);
+            ${soot > 0 ? `{
+              // fire-blackening from the sack: long soot tongues licking up from
+              // windows and loops, streaks bleeding down from the burnt wall-heads,
+              // and broad scorched patches, heaviest high on the towers
+              float hi = smoothstep(${(ground + 4).toFixed(1)}, ${(ground + 22).toFixed(1)}, vWthr.y);
+              float tongue = wn(vec2(u * 1.7, vWthr.y * 0.16)) * wn(vec2(u * 4.3 + 7.0, vWthr.y * 0.07));
+              float drip = smoothstep(0.55, 0.85, wn(vec2(u * 9.0, 1.3))) * smoothstep(0.2, 0.9, wn(vec2(u * 9.0, vWthr.y * 0.04 + 5.0)));
+              float scorch = smoothstep(0.5, 0.78, wn(vec2(u * 0.35, vWthr.y * 0.12) + 11.0));
+              float k = clamp((smoothstep(0.18, 0.55, tongue) * 0.6 + drip * 0.5) * (0.35 + 0.65 * hi) + scorch * 0.45, 0.0, 1.0);
+              c = mix(c, c * vec3(0.16, 0.14, 0.13), k * ${soot.toFixed(2)});
+            }` : ''}
             diffuseColor.rgb = c;
           }`);
     }
@@ -371,7 +390,7 @@ export function addRimLight(mat, uniforms, strength = 1, { weather = 0, ground =
           totalEmissiveRadiance += vec3(0.055, 0.05, 0.11) * uRimK * up * diffuseColor.rgb;
         }`);
   };
-  mat.customProgramCacheKey = () => `rim${strength}w${weather}`;
+  mat.customProgramCacheKey = () => `rim${strength}w${weather}s${soot}f${flat}`;
   return mat;
 }
 
@@ -406,4 +425,33 @@ export function contactShadow(rx = 0.42, rz = 0.32, strength = 0.75) {
   m.renderOrder = 1;
   m.position.y = 0.012;
   return m;
+}
+
+/**
+ * Matte the party-miniature rig for cinematic use: cloth and skin get a broad,
+ * soft roughness (no plastic glints), skin keeps a warm wrap of light in its
+ * shadows, and only true metals (metalness > 0.5) stay polished.
+ */
+export function matteFigure(root) {
+  root.traverse((o) => {
+    if (!o.isMesh || !o.material || o.material.userData?.matted) return;
+    const m = o.material;
+    if (!m.isMeshStandardMaterial || !m.onBeforeCompile || !m.customProgramCacheKey) return;
+    const key = m.customProgramCacheKey();
+    if (!String(key).startsWith('por-mini')) return;
+    const prev = m.onBeforeCompile;
+    m.onBeforeCompile = (sh, r) => {
+      prev.call(m, sh, r);
+      sh.fragmentShader = sh.fragmentShader
+        .replace('roughnessFactor = clamp(vMat.y + miniR, 0.06, 1.0);', 'roughnessFactor = clamp(vMat.y + miniR, 0.06, 1.0);\nroughnessFactor = mix(max(roughnessFactor, 0.78), roughnessFactor, step(0.5, vMat.z));')
+        .replace('#include <aomap_fragment>', `#include <aomap_fragment>
+          reflectedLight.indirectSpecular *= mix(0.35, 1.0, step(0.5, vMat.z));
+          // skin: soft wrapped warmth in the shadow side (cheap sub-surface)
+          if (floor(vMat.x + 0.5) > 8.5 && floor(vMat.x + 0.5) < 9.5) reflectedLight.indirectDiffuse += diffuseColor.rgb * vec3(0.06, 0.025, 0.015);`);
+    };
+    m.customProgramCacheKey = () => `${key}-matte`;
+    m.userData.matted = true;
+    m.needsUpdate = true;
+  });
+  return root;
 }

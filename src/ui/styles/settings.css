@@ -6,7 +6,7 @@
 .por-settings-backdrop { backdrop-filter: blur(3px); }
 .por-set-frame { width: 66em; max-width: 90vw; height: 41em; max-height: 84vh; padding: 2.3em 2.5em 1.3em; display: flex; flex-direction: column; }
 .por-set-frame > .por-frame-body { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.por-set-layout { flex: 1; display: grid; grid-template-columns: 13.5em 1fr; gap: 1.6em; min-height: 0; }
+.por-set-layout { flex: 1; display: grid; grid-template-columns: 15em minmax(0, 1fr); gap: 1.6em; min-height: 0; }
 
 /* tabs */
 .por-set-tabs { display: flex; flex-direction: column; gap: 0.2em; padding-right: 1.4em; border-right: 1px solid rgba(216, 178, 90, 0.22); position: relative; }
@@ -24,8 +24,8 @@ html[data-input='pad'] .por-set-tabs-head .por-keycap { display: none; }
 .por-set-tabs-cap { font-family: var(--font-display); font-weight: 700; font-size: 0.82em; letter-spacing: 0.3em; text-transform: uppercase; color: var(--por-gilt); opacity: 0.8; }
 .por-set-tab {
   position: relative; display: flex; align-items: center; gap: 0.8em; text-align: left;
-  font: inherit; font-family: var(--font-display); font-weight: 700; font-size: 0.95em; letter-spacing: 0.14em; text-transform: uppercase;
-  color: var(--por-text-dim); background: none; border: 1px solid transparent; border-radius: 2px; padding: 0.7em 0.8em; cursor: pointer;
+  font: inherit; font-family: var(--font-display); font-weight: 700; font-size: 0.95em; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--por-text-dim); background: none; border: 1px solid transparent; border-radius: 2px; padding: 0.7em 1.1em 0.7em 0.8em; cursor: pointer; white-space: nowrap;
   transition: color 0.15s var(--ease), background 0.2s var(--ease), border-color 0.2s var(--ease);
 }
 .por-set-tab:hover { color: var(--por-text); background: rgba(255, 255, 255, 0.04); }
@@ -52,11 +52,11 @@ html[data-classic='1'] .por-set-seal-svg { display: none; }
 .por-set-title { font-family: var(--font-display); font-weight: 700; font-size: 1.55em; letter-spacing: 0.2em; text-transform: uppercase; margin: 0; color: var(--por-gilt-hi); text-shadow: 0 2px 0 #140c02, 0 0 14px rgba(245, 200, 110, 0.25); }
 .por-set-blurb { color: var(--por-text-dim); font-style: italic; margin-top: 0.25em; font-size: calc(0.92em * var(--text-scale)); }
 .por-set-head .por-rule { margin: 0.6em 0 0.4em; }
-.por-set-bodywrap { position: relative; flex: 1; min-height: 0; display: flex; }
-.por-set-body { flex: 1; display: flex; flex-direction: column; overflow-y: auto; padding: 0.2em 0.6em 0.4em 0.2em; scrollbar-width: thin; scrollbar-color: var(--por-gilt-lo) rgba(0, 0, 0, 0.25); }
+.por-set-bodywrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; padding-bottom: 2.1em; }
+.por-set-body { flex: 1 1 auto; display: flex; flex-direction: column; overflow-y: auto; padding: 0.2em 0.6em 0.4em 0.2em; scrollbar-width: thin; scrollbar-color: var(--por-gilt-lo) rgba(0, 0, 0, 0.25); }
 .por-set-bodywrap::after {
   /* scroll fade: rows dissolve into the leather instead of being clipped mid-row */
-  content: ''; position: absolute; left: 0; right: 0.6em; bottom: 0; height: 3.4em; pointer-events: none; opacity: 0; transition: opacity 0.25s var(--ease);
+  content: ''; position: absolute; left: 0; right: 0.6em; bottom: 2.1em; height: 0.9em; pointer-events: none; opacity: 0; transition: opacity 0.25s var(--ease);
   background: linear-gradient(180deg, rgba(14, 22, 56, 0), rgba(13, 21, 54, 0.97) 52%, rgb(12, 19, 50));
 }
 .por-set-bodywrap::before {
@@ -66,7 +66,7 @@ html[data-classic='1'] .por-set-seal-svg { display: none; }
 .por-set-main.more-below .por-set-bodywrap::after, .por-set-main.more-above .por-set-bodywrap::before { opacity: 1; }
 .por-set-more {
   /* inside the scroll region, riding the fade above the last visible row */
-  position: absolute; left: 50%; bottom: 0.55em; transform: translateX(-50%); z-index: 2; display: inline-flex; align-items: center; gap: 0.5em;
+  position: absolute; left: 50%; bottom: 0.1em; transform: translateX(-50%); z-index: 2; display: inline-flex; align-items: center; gap: 0.5em;
   font: inherit; font-family: var(--font-display); font-weight: 700; font-size: 0.68em; letter-spacing: 0.28em; text-transform: uppercase;
   color: var(--por-gilt-hi); background: linear-gradient(180deg, #1a2550, #0b1130); border: 1px solid rgba(216, 178, 90, 0.75); border-radius: 1em; padding: 0.3em 1.1em; box-shadow: 0 0 0 3px #0e1638, 0 2px 6px rgba(0, 0, 0, 0.6);
   cursor: pointer; opacity: 0; pointer-events: none; transition: opacity 0.25s var(--ease), border-color 0.15s var(--ease);
@@ -220,18 +220,35 @@ html[data-classic='1'] .por-set-seal-svg { display: none; }
 }
 .por-bind-key:active { transform: translateY(2px); border-bottom-width: 1px; box-shadow: inset 0 1px 0 rgba(255, 240, 200, 0.15), 0 1px 0 rgba(3, 5, 14, 0.9); }
 .por-bind-key:hover { border-color: var(--por-gilt-hi); color: #fff; }
-.por-bind-key.empty { color: var(--por-text-dim); background: rgba(0, 0, 0, 0.25); border-style: dashed; }
+/* an empty slot: a recessed, engraved socket in the leather, not a broken button */
+.por-bind-key.empty {
+  color: rgba(216, 190, 130, 0.38); background: linear-gradient(180deg, #04060f, #0b1022 70%, #10162e);
+  border: 1px solid #03040a; border-bottom-color: rgba(216, 178, 90, 0.35); border-top-color: #000;
+  box-shadow: inset 0 3px 5px rgba(0, 0, 0, 0.9), inset 0 0 0 1px rgba(216, 178, 90, 0.08), 0 1px 0 rgba(255, 236, 180, 0.07);
+  text-shadow: 0 1px 0 rgba(255, 236, 180, 0.1), 0 -1px 0 rgba(0, 0, 0, 0.8); font-weight: 400;
+}
 .por-bind-key.waiting { color: #1b1206; background: var(--gilt-grad); border-color: #000; animation: por-breathe 1.2s ease-in-out infinite; font-family: var(--font-display); font-weight: 700; letter-spacing: 0.06em; font-size: 0.74em; }
 .por-bind-row.conflict .por-bind-key:not(.empty) { border-color: var(--por-blood); box-shadow: 0 0 8px rgba(208, 71, 60, 0.5); }
 .por-bind-pad { display: flex; gap: 0.3em; justify-content: center; align-items: center; color: var(--por-text-dim); }
 .por-arrow { width: 1.45em; height: 1.45em; display: block; margin: 0 auto; filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.7)); }
 .por-bind-key { display: flex; align-items: center; justify-content: center; }
-.por-bind-pad .por-pad { font-size: 0.92em; height: 2.05em; min-width: 2.05em; border-width: 2px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 -2px 0 rgba(0, 0, 0, 0.35), 0 2px 3px rgba(0, 0, 0, 0.7); }
-.por-bind-pad .por-pad.pill { min-width: 3em; height: 1.85em; font-size: 0.78em; border-radius: 0.95em; }
-.por-bind-pad .por-pad.unbound { box-shadow: none; }
+/* one icon family: every pad glyph is the same dark enamel button (same rim,
+   same bevel, same height), only its outline and legend change: face buttons
+   carry their colour in the legend, bumpers are the same button stretched, the
+   d-pad sits in the same housing with its pressed arm lit */
+.por-bind-pad .por-pad {
+  font-size: 0.86em; height: 2.15em; min-width: 2.15em; border: 1.5px solid color-mix(in srgb, var(--pc) 55%, #8a6a2a);
+  background: radial-gradient(circle at 42% 30%, #3a4266, #12162a 72%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 -2px 0 rgba(0, 0, 0, 0.4), 0 2px 3px rgba(0, 0, 0, 0.7);
+}
+.por-bind-pad .por-pad.face, .por-bind-pad .por-pad.pill { color: var(--pc); }
+.por-bind-pad .por-pad.pill { --pc: #e6dcc0; }
+.por-bind-pad .por-pad.pill { min-width: 3.3em; height: 2.15em; font-size: 0.86em; border-radius: 1.075em; padding: 0 0.7em; }
+.por-bind-pad .por-pad.pill { font-size: 0.86em; letter-spacing: 0.04em; }
+.por-bind-pad .por-pad.unbound { border-color: #03040a; border-bottom-color: rgba(216, 178, 90, 0.35); background: radial-gradient(circle at 50% 70%, #10142a, #04060e 80%); box-shadow: inset 0 3px 5px rgba(0, 0, 0, 0.9); color: rgba(216, 190, 130, 0.38); }
 /* d-pad: a full-size cross with the pressed arm lit, legible at a glance */
-.por-bind-pad .por-pad.dpad { height: 2.3em; min-width: 2.3em; padding: 0; border: none; background: none; box-shadow: none; }
-.por-bind-pad .por-pad.dpad .por-dpad { width: 2.3em; height: 2.3em; filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.9)) drop-shadow(0 2px 3px rgba(0, 0, 0, 0.6)); }
+.por-bind-pad .por-pad.dpad { --pc: #e6dcc0; padding: 0; }
+.por-bind-pad .por-pad.dpad .por-dpad { width: 1.7em; height: 1.7em; filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.9)); }
 .por-dpad { width: 1.55em; height: 1.55em; display: block; }
 .por-bind-foot { display: flex; justify-content: space-between; align-items: center; gap: 1em; padding: 1em 0.9em 0.3em 1.1em; font-size: calc(0.85em * var(--text-scale)); }
 
@@ -249,7 +266,9 @@ html[data-classic='1'] .por-set-seal-svg { display: none; }
   margin-top: auto; display: flex; flex-direction: column; gap: 0.45em; padding: 0.9em 0.95em 0.8em;
   border: 1px solid rgba(216, 178, 90, 0.3); border-radius: 2px;
   background: linear-gradient(180deg, rgba(4, 7, 22, 0.55), rgba(4, 7, 22, 0.25)), var(--tex-grain, none);
-  box-shadow: inset 0 1px 0 rgba(255, 236, 180, 0.07), 0 0 0 3px rgba(4, 7, 22, 0.35);
+  /* an inset, bevelled well cut into the leather */
+  border-top-color: rgba(0, 0, 0, 0.75); border-left-color: rgba(0, 0, 0, 0.55); border-bottom-color: rgba(232, 200, 119, 0.45);
+  box-shadow: inset 0 3px 6px rgba(0, 0, 0, 0.7), inset 0 0 0 1px rgba(216, 178, 90, 0.1), 0 1px 0 rgba(255, 236, 180, 0.1), 0 0 0 3px rgba(4, 7, 22, 0.35);
   transition: border-color 0.2s var(--ease);
 }
 .por-set-help.warn { border-color: rgba(220, 90, 70, 0.75); }

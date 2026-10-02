@@ -87,9 +87,14 @@ export function createSea(U, { level = -15, nearZ = -150, width = 6000, depth = 
       // long readable swells rolling in from the open Moonsea, a chop on top, and a
       // fine ripple that fades out with distance (so far water never turns to speckle)
       float uLod;
+      vec2 gWarp; float gPatch; // computed once per pixel (not per wave sample)
       float waves(vec2 p) {
         float t = uTime;
-        float swell = sin(p.x * 0.045 + p.y * 0.11 + t * 0.55) * 0.55 + sin(p.x * -0.028 + p.y * 0.075 - t * 0.4) * 0.4;
+        // domain-warped swells whose height wanders in broad patches (wind
+        // slicks and calmer lanes), so the pattern never repeats across the bay
+        vec2 wp = p + gWarp;
+        float patchA = gPatch;
+        float swell = (sin(wp.x * 0.045 + wp.y * 0.11 + t * 0.55) * 0.55 + sin(wp.x * -0.028 + wp.y * 0.075 - t * 0.4) * 0.4) * patchA;
         float chop = fbm3(p * vec2(0.08, 0.22) + vec2(t * 0.05, t * 0.02));
         float fine = vnoise(p * vec2(0.35, 0.9) - vec2(t * 0.12, 0.0));
         return swell * 0.55 + chop * 0.45 + fine * 0.3 * uLod;
@@ -99,6 +104,8 @@ export function createSea(U, { level = -15, nearZ = -150, width = 6000, depth = 
         float dist = length(vWorld.xz - cameraPosition.xz);
         vec2 p = vWorld.xz;
         uLod = 1.0 - smoothstep(50.0, 240.0, dist);
+        gWarp = vec2(vnoise(p * 0.006 + 3.0), vnoise(p * 0.006 + 9.0)) * 70.0;
+        gPatch = 0.45 + 0.8 * vnoise(p * 0.0045 + vec2(uTime * 0.004, 0.0));
         float e = 0.6 + dist * 0.004;
         float h0 = waves(p);
         float hx = waves(p + vec2(e, 0.0));
@@ -119,6 +126,11 @@ export function createSea(U, { level = -15, nearZ = -150, width = 6000, depth = 
         // haze toward the horizon
         vec3 hor = duskSky(normalize(vec3(v.x, 0.001, v.z)), uSunDir, uTime, 0.0);
         c = mix(c, hor, smoothstep(300.0, 2400.0, dist) * 0.9);
+        // aerial perspective over the water: a mauve haze that thickens toward
+        // the horizon (sun side warmer), so the sea never meets the sky as a hard line
+        float hzK = smoothstep(90.0, 900.0, dist);
+        vec3 hazeC = mix(vec3(0.16, 0.1, 0.2), vec3(0.42, 0.2, 0.18), pow(max(dot(normalize(v.xz), normalize(uSunDir.xz)), 0.0), 3.0));
+        c = mix(c, mix(hor, hazeC, 0.45), hzK * 0.45 * (1.0 - uClassic));
         if (uClassic > 0.5) {
           // flat EGA water: dark blue with light-blue swell streaks
           float sw = step(0.78, vnoise(p * vec2(0.05, 0.35) + vec2(uTime * 0.05, 0.0))) * (1.0 - smoothstep(150.0, 700.0, dist));

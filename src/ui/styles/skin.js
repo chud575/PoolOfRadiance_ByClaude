@@ -69,7 +69,7 @@ function noiseTexture(size, { seed = 1, base, amp, octaves = 5, scale = 4, fibre
  * Pebbled book-binding leather (tileable): jittered cellular pebbles with dark
  * creases between them, a soft top-light on each pebble and fine pores.
  */
-function leatherTexture(size, { seed = 23, base = [22, 30, 66], cells = 22 } = {}) {
+function leatherTexture(size, { seed = 23, base = [26, 36, 80], cells = 22 } = {}) {
   if (typeof document === 'undefined') return '';
   const c = document.createElement('canvas');
   c.width = c.height = size;
@@ -94,7 +94,7 @@ function leatherTexture(size, { seed = 23, base = [22, 30, 66], cells = 22 } = {
       const dome = best ? Math.max(0, -best[1] * cells * 0.9 + 0.2) : 0; // light from above
       const pore = hash(px, py, seed + 5) > 0.93 ? -0.06 : 0;
       const mott = (valueNoise(u * 4, v * 4, seed + 9, 4) - 0.5) * 0.18;
-      const k = 0.62 + 0.38 * crease + dome * 0.12 + pore + mott;
+      const k = 0.42 + 0.58 * crease + dome * 0.24 + pore * 1.6 + mott * 1.4;
       const o = (py * size + px) * 4;
       img.data[o] = base[0] * k;
       img.data[o + 1] = base[1] * k;
@@ -270,7 +270,7 @@ function vellumTexture(size = 512, seed = 31) {
   const x = c.getContext('2d');
   const img = x.createImageData(size, size);
   const spots = [];
-  for (let i = 0; i < 14; i++) spots.push([hash(i, 1, seed) * size, hash(i, 2, seed) * size, 1.2 + hash(i, 3, seed) ** 3 * 6, 0.12 + hash(i, 4, seed) * 0.3]);
+  for (let i = 0; i < 30; i++) spots.push([hash(i, 1, seed) * size, hash(i, 2, seed) * size, 1.4 + hash(i, 3, seed) ** 3 * 9, 0.18 + hash(i, 4, seed) * 0.42]);
   for (let j = 0; j < size; j++) {
     for (let i = 0; i < size; i++) {
       const u = i / size, v = j / size;
@@ -281,9 +281,11 @@ function vellumTexture(size = 512, seed = 31) {
       // hair-fine fibres: short and broken (a wobble in their direction), never a grain
       const wob = valueNoise(u * 5, v * 5, seed + 44, 5) * 3;
       const fu = u * 48 + wob, fv = v * 160 + u * 24;
-      const fib = (valueNoise(fu, fv, seed + 40, 160) - 0.5) * 0.05 + (valueNoise(u * 120 + v * 30, v * 120 - u * 30, seed + 41, 120) - 0.5) * 0.035;
+      const fib = (valueNoise(fu, fv, seed + 40, 160) - 0.5) * 0.1 + (valueNoise(u * 120 + v * 30, v * 120 - u * 30, seed + 41, 120) - 0.5) * 0.06;
       const pit = hash(i, j, seed + 7) > 0.996 ? -0.07 : 0;
-      let k = 1 + (n - 0.5) * 0.24 + fib + pit;
+      // broad cloudy tonal drift (the hide's thicker and thinner areas) + mottling
+      const cloud = (valueNoise(u * 2, v * 2, seed + 60, 2) - 0.5) * 0.22;
+      let k = 1 + (n - 0.5) * 0.46 + cloud + fib + pit;
       let fox = 0;
       for (const [sx, sy, r, st] of spots) {
         let dx = Math.abs(i - sx), dy = Math.abs(j - sy);
@@ -319,12 +321,13 @@ function vellumSheet(size = 640, seed = 57) {
       const u = i / size, v = j / size;
       const ragged = (valueNoise(u * 22, v * 22, seed, 22) - 0.5) * 0.035 + (valueNoise(u * 7, v * 7, seed + 1, 7) - 0.5) * 0.05;
       const e = Math.min(u, 1 - u, v, 1 - v) + ragged;
-      const edge = Math.max(0, 1 - e / 0.06) ** 1.7; // deckle browning
+      const edge = Math.max(0, 1 - e / 0.09) ** 1.6; // deckle browning
+      const fall = Math.max(0, 1 - e / 0.4) ** 2.2 * 0.3; // the sheet darkens and yellows toward its edges
       const tide = Math.exp(-(((e - 0.052) / 0.01) ** 2)) * 0.16; // the tide-line
       // curl: top and bottom edges roll away (darker), a lit ridge just inside them
       const curl = Math.max(0, 1 - Math.min(v, 1 - v) / 0.12) ** 2.2 * 0.17 - Math.exp(-(((Math.min(v, 1 - v) - 0.15) / 0.04) ** 2)) * 0.06;
       const fox = Math.max(0, valueNoise(u * 9, v * 9, seed + 3, 9) - 0.72) * 2.4 * Math.max(0, 1 - e / 0.2) * 0.16;
-      const a = Math.min(0.92, edge * 0.85 + tide + Math.max(0, curl) + fox);
+      const a = Math.min(0.94, edge * 0.85 + fall + tide + Math.max(0, curl) + fox * 1.6);
       const p = (j * size + i) * 4;
       // browns: darker and redder toward the very edge
       img.data[p] = 120 - edge * 60;

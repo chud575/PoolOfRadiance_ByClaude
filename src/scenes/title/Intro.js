@@ -45,7 +45,7 @@ const SHOTS = [
   },
   {
     t: [24.4, 32.4],
-    keys: [{ p: V(-32.5, -10.2, -31), l: V(-19.5, -10.5, -58) }, { p: V(-26, -10.5, -37.5), l: V(-20, -10.1, -58) }],
+    keys: [{ p: V(-29.5, -11.0, -38.0), l: V(-16.5, -10.7, -57) }, { p: V(-25.0, -11.3, -42.5), l: V(-16.0, -10.6, -57) }],
     look: 0.7,
     moon: 2.4,
     caption: 'City Hall',
@@ -171,7 +171,15 @@ export class IntroCinematic {
     const shown = s.text.slice(0, n);
     if (this.textEl.dataset.shown !== shown) {
       this.textEl.dataset.shown = shown;
-      this.textEl.replaceChildren(h('span.typed', [shown]), h('span.ghost', [s.text.slice(n)]));
+      // the gilt initial is its own span, and only lit once it has been typed (a
+      // ::first-letter rule would also catch the transparent ghost text and float a
+      // lone initial over the bar before typing starts); the ghost keeps the layout
+      const head = s.text.slice(0, 1);
+      this.textEl.replaceChildren(
+        h(n > 0 ? 'span.init' : 'span.init.ghost', [head]),
+        h('span.typed', [shown.slice(1)]),
+        h('span.ghost', [s.text.slice(Math.max(1, n))]),
+      );
     }
     this.textEl.style.opacity = String(1 - smooth(s.t[1] - 0.6, s.t[1] - 0.2, lt) * (i < SHOTS.length - 1 ? 1 : 0));
     this.progress.style.width = `${Math.min(100, (lt / INTRO_LENGTH) * 100)}%`;

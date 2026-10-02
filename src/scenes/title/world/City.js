@@ -3,7 +3,7 @@ import { getTextureSet, getGlowTexture } from '../../../render/textures/index.js
 import { createFlameBatch } from '../../../render/lighting.js';
 import { NOISE } from './glsl.js';
 import { prng, ni, worldUV, tint, box, gable, pyramid, cylinder, cone, merge } from './geom.js';
-import { column, dome, gableRoof, robedFigure, addRimLight, contactShadow } from './arch.js';
+import { column, dome, gableRoof, robedFigure, addRimLight, contactShadow, matteFigure } from './arch.js';
 import { bannerTexture } from './heraldry.js';
 import { buildMiniature } from '../../../ui/components/Miniature.js';
 
@@ -36,6 +36,7 @@ export function createCity({ seed = 1988 } = {}) {
   const beams = [];
   const fine = []; // dressed limestone (columns, mouldings)
   const people = [];
+  const iron = []; // wrought-iron stands and fittings
   const windows = [];
   const fires = [];
   const lamps = [];
@@ -60,6 +61,7 @@ export function createCity({ seed = 1988 } = {}) {
     windows.push(g);
   };
 
+  const side0 = (ry) => new THREE.Vector3(Math.cos(ry), 0, -Math.sin(ry));
   /** Oak window frame: lintel, sill and a pair of shutters folded back. */
   const winFrame = (m, lx, ly, lz, ry, w = 0.5, h = 0.8) => {
     const off = new THREE.Vector3(Math.sin(ry), 0, Math.cos(ry));
@@ -67,6 +69,8 @@ export function createCity({ seed = 1988 } = {}) {
     put(box(w + 0.22, 0.11, 0.14, { x: lx, y: ly + h / 2, z: lz, ry }), beams, 0x3a2a1e);
     put(box(w + 0.28, 0.08, 0.2, { x: lx + off.x * 0.04, y: ly - h / 2 - 0.08, z: lz + off.z * 0.04, ry }), beams, 0x4a3424);
     const side = new THREE.Vector3(Math.cos(ry), 0, -Math.sin(ry));
+    // jambs: the opening's reveal, standing proud so the window reads recessed
+    for (const sx of [-1, 1]) put(box(0.09, h + 0.04, 0.16, { x: lx + side0(ry).x * sx * (w / 2 + 0.045), y: ly - h / 2 - 0.02, z: lz + side0(ry).z * sx * (w / 2 + 0.045), ry }), beams, 0x33251a);
     for (const sx of [-1, 1]) put(box(w * 0.48, h * 0.98, 0.04, { x: lx + side.x * sx * (w * 0.76) + off.x * 0.03, y: ly - h * 0.49, z: lz + side.z * sx * (w * 0.76) + off.z * 0.03, ry }), beams, R.chance(0.5) ? 0x3a4a3a : 0x5a3a22);
   };
 
@@ -194,7 +198,11 @@ export function createCity({ seed = 1988 } = {}) {
       for (const [ox, oz, len, r] of segs) {
         if (R.chance(0.22)) continue; // a wall gone entirely
         const tt = t * R.range(0.9, 1.2);
-        const g = ruinWall(len + tt, h * R.range(0.55, 1.05), tt, { openings: detail, tops: detail ? [] : null });
+        // stub heights vary wildly: knee-high footings, half-height shells and
+        // the odd gable end still standing near full height
+        const hk = R.next();
+        const wh = h * (hk < 0.22 ? R.range(0.16, 0.34) : hk < 0.75 ? R.range(0.45, 0.9) : R.range(1.0, 1.4));
+        const g = ruinWall(len + tt, wh, tt, { openings: detail, tops: detail ? [] : null });
         const tops = g.userData.tops;
         g.rotateY(r);
         g.translate(ox, 0, oz);
@@ -224,6 +232,35 @@ export function createCity({ seed = 1988 } = {}) {
           if (R.chance(0.6)) rubbleMound(0, 0, 0, 0, 0, 0, { m: wm, x: R.range(-len / 3, len / 3), z: side * (tt / 2 + 0.5), r: R.range(0.9, 1.6), h: R.range(0.4, 0.9), base, col });
         }
       }
+      // a lone chimney stack outliving the house (the classic burnt-town silhouette)
+      if (R.chance(0.38)) {
+        const sx = (R.chance(0.5) ? -1 : 1) * (w / 2 - 0.45), sz = R.range(-0.3, 0.3) * d;
+        const shh = h * R.range(1.05, 1.5);
+        const st = box(0.95, shh, 0.8, { x: sx, z: sz });
+        st.applyMatrix4(m);
+        rubble.push(sootify(tint(worldUV(st, 2.2), new THREE.Color(col).multiplyScalar(0.72), { aoBottom: base, aoTop: base + 2 }), base, base + shh));
+        // the hearth opening at its foot
+        const hb = box(0.7, 0.9, 0.12, { x: sx, y: 0.1, z: sz + 0.41 });
+        hb.applyMatrix4(m);
+        beams.push(tint(hb, 0x080605));
+      }
+      // what is left of an upper floor: charred joists still socketed in one
+      // wall, a few boards on them, the rest fallen through
+      if (detail && R.chance(0.55)) {
+        const fy = Math.min(2.7, h * 0.42);
+        const nj = R.int(3, 6);
+        for (let k = 0; k < nj; k++) {
+          const jx = -w / 2 + 0.4 + (w - 0.8) * (k / Math.max(1, nj - 1));
+          const len2 = d * R.range(0.35, 0.95);
+          const jg = box(0.16, 0.2, len2, { x: jx, y: fy, z: -d / 2 + len2 / 2, rx: R.range(-0.08, 0.12) });
+          jg.applyMatrix4(m);
+          beams.push(tint(worldUV(jg, 1.5), R.chance(0.5) ? 0x1c1410 : 0x34261a));
+        }
+        const bw = w * R.range(0.3, 0.6);
+        const bd = box(bw, 0.05, d * 0.3, { x: -w / 2 + bw / 2 + 0.2, y: fy + 0.2, z: -d / 2 + d * 0.15 });
+        bd.applyMatrix4(m);
+        beams.push(tint(worldUV(bd, 1.5), 0x4a3828));
+      }
       // heaps of fallen masonry inside the shell and spilling into the street
       rubbleMound(x + R.range(-w, w) * 0.25, z + R.range(-d, d) * 0.25, Math.min(w, d) * R.range(0.3, 0.45), R.range(0.7, 1.6), base, col);
       if (R.chance(0.5)) rubbleMound(x + R.range(-1, 1) * w * 0.6, z + R.range(-1, 1) * d * 0.6, R.range(0.8, 1.6), R.range(0.4, 0.9), base, col);
@@ -247,49 +284,69 @@ export function createCity({ seed = 1988 } = {}) {
       }
       return;
     }
-    // lime-washed plaster between oak timbers on a rubble-stone plinth
-    const lime = new THREE.Color().setHSL(0.09 + R.range(-0.02, 0.03), R.range(0.18, 0.32), R.range(0.62, 0.74));
-    const g = box(w, h, d);
-    g.applyMatrix4(m);
-    if (burnt) plaster.push(sootify(tint(worldUV(g, 2.6), lime.clone().multiplyScalar(0.72), { aoBottom: base, aoTop: base + 3, aoStrength: 0.3 }), base, base + h, { ivy: 0.25 }));
-    else plaster.push(tint(worldUV(g, 2.6), lime, { aoBottom: base, aoTop: base + 3, aoStrength: 0.3 }));
+    // lime-washed plaster between oak timbers on a rubble-stone plinth. Near
+    // houses of two storeys get a jettied upper floor (overhanging front and
+    // back on projecting joists), so the street fronts read as hand-built
+    // half-timbering rather than boxes.
+    const lime = new THREE.Color().setHSL(0.09 + R.range(-0.02, 0.03), R.range(0.14, 0.26), R.range(0.64, 0.76));
+    const jet = detail && h > 4.6 ? R.range(0.32, 0.5) : 0;
+    const h1 = jet ? Math.min(3.0, h * R.range(0.46, 0.55)) : h;
+    const dR = d + jet * 2; // depth under the roof
+    const limeOf = (k = 1) => lime.clone().multiplyScalar((burnt ? 0.72 : 1) * k);
+    const putPlaster = (g, k = 1) => {
+      g.applyMatrix4(m);
+      const t = tint(worldUV(g, 1.4), limeOf(k), { aoBottom: base, aoTop: base + 3, aoStrength: 0.3 });
+      plaster.push(burnt ? sootify(t, base, base + h, { ivy: 0.2 }) : t);
+    };
+    putPlaster(box(w, h1, d));
+    if (jet) putPlaster(box(w, h - h1, dR, { y: h1 }), R.range(0.92, 1.04));
     const pl = box(w + 0.16, 0.9, d + 0.16);
     pl.applyMatrix4(m);
     walls.push(tint(worldUV(pl, 2.4), new THREE.Color(col).multiplyScalar(0.85), { aoBottom: base, aoTop: base + 1 }));
+    // the face a storey's windows sit on (front/back of the upper floor stand proud)
+    const faceZ = (y) => (jet && y > h1 ? d / 2 + jet : d / 2);
     if (detail) {
       const T = 0.2, P = 0.05; // timber width, proud of the plaster
       const tc = R.chance(0.5) ? 0x3a2a1e : 0x4a3424;
-      const floorsN = Math.max(1, Math.floor(h / 2.6));
       const tim = (geo) => { geo.applyMatrix4(m); beams.push(tint(worldUV(geo, 1.6), tc)); };
-      // corner posts
-      for (const [cx, cz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) tim(box(T + P * 2, h - 0.9, T + P * 2, { x: cx * (w / 2 - T / 2 + P), y: 0.9, z: cz * (d / 2 - T / 2 + P) }));
-      // sill, floor and wall-plate beams round the house
-      for (let f = 0; f <= floorsN; f++) {
-        const y = f === floorsN ? h - T : 0.9 + f * 2.6 - T / 2;
-        if (y > h - T + 0.01) continue;
-        tim(box(w + P * 2, T, T * 0.6, { y, z: d / 2 + P - T * 0.3 }));
-        tim(box(w + P * 2, T, T * 0.6, { y, z: -d / 2 - P + T * 0.3 }));
-        tim(box(T * 0.6, T, d + P * 2, { x: w / 2 + P - T * 0.3, y }));
-        tim(box(T * 0.6, T, d + P * 2, { x: -w / 2 - P + T * 0.3, y }));
+      const storeys = jet ? [[0.9, h1, d / 2], [h1, h, d / 2 + jet]] : [[0.9, h, d / 2]];
+      for (const [y0, y1, hz] of storeys) {
+        const sh = y1 - y0;
+        // corner posts
+        for (const [cx, cz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) tim(box(T + P * 2, sh, T + P * 2, { x: cx * (w / 2 - T / 2 + P), y: y0, z: cz * (hz - T / 2 + P) }));
+        // sill / bressumer and wall plate round the storey
+        for (const y of [y0 - (y0 > 1 ? 0 : T / 2), y1 - T]) {
+          tim(box(w + P * 2, T, T * 0.6, { y, z: hz + P - T * 0.3 }));
+          tim(box(w + P * 2, T, T * 0.6, { y, z: -hz - P + T * 0.3 }));
+          tim(box(T * 0.6, T, hz * 2 + P * 2, { x: w / 2 + P - T * 0.3, y }));
+          tim(box(T * 0.6, T, hz * 2 + P * 2, { x: -w / 2 - P + T * 0.3, y }));
+        }
+        // close studding on the street front, a pair of curved-looking down-braces
+        const studs = Math.max(2, Math.round(w / (y0 > 1 ? 1.1 : 1.6)));
+        for (let i = 1; i < studs; i++) tim(box(T * 0.7, sh - 0.1, T * 0.5, { x: -w / 2 + (w / studs) * i, y: y0 + 0.05, z: hz + P }));
+        const bh = Math.min(2.2, sh - 0.3);
+        const run = w / studs - T;
+        const blen = Math.hypot(run, bh);
+        for (const sx of [-1, 1]) tim(box(T * 0.6, blen, T * 0.45, { x: sx * (w / 2 - T), y: y0 + 0.1, z: hz + P + 0.01, rz: Math.atan2(sx * run, bh) }));
+        // a mid-rail on the gable sides
+        tim(box(T * 0.5, T * 0.8, hz * 2, { x: w / 2 + P, y: y0 + sh * 0.5 }));
+        tim(box(T * 0.5, T * 0.8, hz * 2, { x: -w / 2 - P, y: y0 + sh * 0.5 }));
       }
-      // studs and a pair of down-braces on the street front
-      const studs = Math.max(2, Math.round(w / 1.6));
-      for (let i = 1; i < studs; i++) {
-        const x = -w / 2 + (w / studs) * i;
-        tim(box(T * 0.7, h - 1.0, T * 0.5, { x, y: 0.95, z: d / 2 + P }));
+      if (jet) {
+        // joist ends carrying the overhang, front and back, and a moulded bressumer
+        for (const sz of [-1, 1]) {
+          for (let jx = -w / 2 + 0.25; jx <= w / 2 - 0.2; jx += 0.42) tim(box(0.14, 0.16, jet + 0.06, { x: jx, y: h1 - 0.2, z: sz * (d / 2 + jet / 2) }));
+          tim(box(w + 0.3, 0.12, 0.12, { y: h1 - 0.06, z: sz * (d / 2 + jet + 0.04) }));
+        }
       }
-      const bh = Math.min(2.4, h - 1.1);
-      const run = w / studs - T;
-      const blen = Math.hypot(run, bh);
-      for (const sx of [-1, 1]) tim(box(T * 0.6, blen, T * 0.45, { x: sx * (w / 2 - T), y: 0.9, z: d / 2 + P + 0.01, rz: Math.atan2(sx * run, bh) }));
     }
     const kind = burnt ? 0 : R.next();
     if (kind < 0.66 && burnt) {
       // burnt out: one roof slope fallen in, the charred rafters of the other
       // still standing against the sky
-      const rise = d * R.range(0.36, 0.5);
-      const o = 0.4;
-      const gr = gableRoof(w, d, rise, { o, t: 0.2, ridge: false });
+      const rise = dR * R.range(0.36, 0.5);
+      const o = 0.55;
+      const gr = gableRoof(w, dR, rise, { o, t: 0.2, ridge: false });
       const mm = new THREE.Matrix4().makeTranslation(0, h, 0).premultiply(m);
       const keep = R.chance(0.5) ? 0 : 1;
       const list = R.chance(0.5) ? roofs : shake;
@@ -297,21 +354,43 @@ export function createCity({ seed = 1988 } = {}) {
       const nR = Math.max(3, Math.round(w / 0.7));
       for (let k = 0; k < nR; k++) {
         if (R.chance(0.3)) continue;
-        const rr = gableRoof(0.13, d, rise, { o: o * R.range(0.2, 1), t: 0.15, ridge: false }).roof[1 - keep];
+        const rr = gableRoof(0.13, dR, rise, { o: o * R.range(0.2, 1), t: 0.15, ridge: false }).roof[1 - keep];
         rr.translate(-w / 2 + 0.2 + (w - 0.4) * (k / (nR - 1)), 0, 0);
         beams.push(tint(worldUV(rr.applyMatrix4(mm), 1.5), 0x1e1612));
       }
-      for (const g2 of gr.gables) plaster.push(sootify(tint(worldUV(g2.applyMatrix4(mm), 2.6), lime.clone().multiplyScalar(0.6)), base + h - 1, base + h + rise));
+      for (const g2 of gr.gables) plaster.push(sootify(tint(worldUV(g2.applyMatrix4(mm), 1.4), lime.clone().multiplyScalar(0.6)), base + h - 1, base + h + rise));
+      // the surviving slope has lost tiles in places: charred holes with the
+      // battens showing across them
+      {
+        const ang = Math.atan2(rise, dR / 2);
+        const L = (dR / 2 + o) / Math.cos(ang);
+        const sgn = keep === 0 ? -1 : 1;
+        const np = R.int(1, 3);
+        for (let k = 0; k < np; k++) {
+          const pw = R.range(0.6, 1.5), pd = R.range(0.6, 1.3);
+          const px = R.range(-w / 2 + pw, w / 2 - pw), pz = R.range(0.25, 0.75) * L;
+          const ph = box(pw, 0.24, pd, { x: px, y: -0.2 + 0.015, z: sgn * pz });
+          ph.rotateX(sgn * ang);
+          ph.translate(0, rise + 0.2 * 0.35, 0);
+          beams.push(tint(worldUV(ph.applyMatrix4(mm), 1.5), 0x0e0a08));
+          for (let q = -1; q <= 1; q += 2) {
+            const bt = box(pw + 0.2, 0.05, 0.07, { x: px, y: 0.0, z: sgn * (pz + q * pd * 0.22) });
+            bt.rotateX(sgn * ang);
+            bt.translate(0, rise + 0.2 * 0.35, 0);
+            beams.push(tint(worldUV(bt.applyMatrix4(mm), 1.5), 0x3a281a));
+          }
+        }
+      }
     } else if (kind < 0.66) {
-      const rise = d * R.range(0.36, 0.55);
-      const gr = gableRoof(w, d, rise, { o: R.range(0.35, 0.6), t: R.range(0.18, 0.26) });
+      const rise = dR * R.range(0.36, 0.55);
+      const gr = gableRoof(w, dR, rise, { o: R.range(0.45, 0.7), t: R.range(0.18, 0.26) });
       const mm = new THREE.Matrix4().makeTranslation(0, h, 0).premultiply(m);
       const pick = R.next();
       const list = pick < 0.45 ? roofs : pick < 0.78 ? slate : shake;
       const rc = list === roofs ? R.pick(roofCols) : list === slate ? R.pick(slateCols) : R.pick(shakeCols);
       for (const g of gr.roof) list.push(tint(g.applyMatrix4(mm), rc));
       for (const g of gr.caps) list.push(tint(g.applyMatrix4(mm), new THREE.Color(rc).multiplyScalar(0.8)));
-      for (const g of gr.gables) plaster.push(tint(worldUV(g.applyMatrix4(mm), 2.6), lime));
+      for (const g of gr.gables) plaster.push(tint(worldUV(g.applyMatrix4(mm), 1.4), lime));
       if (R.chance(0.7)) {
         // a rubble-stone chimney stack through the roof, with a dressed cap and pots
         const chx = (R.chance(0.5) ? -1 : 1) * (w / 2 - 0.5), chz = R.range(-0.25, 0.25) * d;
@@ -344,25 +423,31 @@ export function createCity({ seed = 1988 } = {}) {
       cg.applyMatrix4(m);
       walls.push(tint(worldUV(cg, 3), col));
     }
-    // lit windows (facing the camera and the flanks)
-    if (lit > 0) {
+    // windows (facing the camera and the flanks): lit panes in the living town;
+    // in the dead quarter, dark empty openings - still framed, shuttered, with
+    // a sill and a deep reveal, so the house reads as built, not boxed
+    if (lit > 0 || detail) {
       const floors = Math.max(1, Math.floor(h / 2.6));
       for (let f = 0; f < floors; f++) {
-        const wy = 1.4 + f * 2.6;
+        const wy = jet ? (f === 0 ? Math.min(1.5, h1 * 0.5) : h1 + (h - h1) * 0.5 + (f - 1) * 2.6) : 1.4 + f * 2.6;
+        if (wy > h - 0.6) continue;
+        const fz = faceZ(wy);
         const nx = Math.max(1, Math.floor(w / 1.8));
         for (let i = 0; i < nx; i++) {
           const wx = -w / 2 + (w / nx) * (i + 0.5);
-          if (R.chance(lit)) addWin(m, wx, wy, d / 2 + 0.03, 0, 0.5, 0.8, R.range(0.8, 1.4));
-          else if (detail) addWin(m, wx, wy, d / 2 + 0.03, 0, 0.5, 0.8, burnt ? 0.0 : 0.07);
-          if (h < 9 && detail) winFrame(m, wx, wy, d / 2 + 0.03, 0);
+          if (lit > 0 && R.chance(lit)) addWin(m, wx, wy, fz + 0.03, 0, 0.5, 0.8, R.range(0.8, 1.4));
+          else if (detail) addWin(m, wx, wy, fz + 0.03, 0, 0.5, 0.8, burnt || lit === 0 ? (R.chance(0.12) ? 0.35 : 0.0) : 0.07);
+          if (h < 11 && detail) winFrame(m, wx, wy, fz + 0.03, 0);
         }
         for (let i = 0; i < nx; i++) {
-          if (R.chance(lit * 0.45)) addWin(m, -w / 2 + (w / nx) * (i + 0.5), wy, -d / 2 - 0.03, Math.PI, 0.5, 0.8, R.range(0.8, 1.5));
+          if (R.chance(lit * 0.45)) addWin(m, -w / 2 + (w / nx) * (i + 0.5), wy, -fz - 0.03, Math.PI, 0.5, 0.8, R.range(0.8, 1.5));
         }
         const nz = Math.max(1, Math.floor(d / 2));
         for (let i = 0; i < nz; i++) {
-          if (R.chance(lit * 0.6)) addWin(m, w / 2 + 0.03, wy, -d / 2 + (d / nz) * (i + 0.5), Math.PI / 2, 0.5, 0.8, R.range(0.7, 1.3));
-          if (R.chance(lit * 0.6)) addWin(m, -w / 2 - 0.03, wy, -d / 2 + (d / nz) * (i + 0.5), -Math.PI / 2, 0.5, 0.8, R.range(0.7, 1.3));
+          const zz = -d / 2 + (d / nz) * (i + 0.5);
+          if (R.chance(lit * 0.6)) addWin(m, w / 2 + 0.03, wy, zz, Math.PI / 2, 0.5, 0.8, R.range(0.7, 1.3));
+          else if (detail && lit === 0 && R.chance(0.5)) { addWin(m, w / 2 + 0.03, wy, zz, Math.PI / 2, 0.45, 0.7, 0); winFrame(m, w / 2 + 0.03, wy, zz, Math.PI / 2, 0.45, 0.7); }
+          if (R.chance(lit * 0.6)) addWin(m, -w / 2 - 0.03, wy, zz, -Math.PI / 2, 0.5, 0.8, R.range(0.7, 1.3));
         }
       }
     }
@@ -526,6 +611,66 @@ export function createCity({ seed = 1988 } = {}) {
     }
   }
 
+  // ---- New Phlan rebuilding: skyline silhouettes behind the terrace ----------
+  // (seen over the Pool on the title card) a timber treadwheel crane, a slender
+  // belfry and scaffolding round half-rebuilt houses, so the midground skyline
+  // has chimneys, poles and broken lines instead of a row of blocks
+  {
+    const Rs = prng(seed + 501);
+    const savedR = R;
+    R = Rs; // ruinWall/addWin draw from R: keep the main layout stream untouched
+    const tb = (g, c = 0x3a2a1e) => beams.push(tint(worldUV(g, 1.5), c));
+    // treadwheel crane
+    {
+      const cx = -9, cz = -41, b0 = GROUND;
+      tb(box(0.5, 19, 0.5, { x: cx, y: b0, z: cz }));
+      for (const a of [0, 2.1, 4.2]) tb(box(0.3, 8.5, 0.3, { x: cx + Math.cos(a) * 1.6, y: b0, z: cz + Math.sin(a) * 1.6, rx: Math.sin(a) * 0.2, rz: -Math.cos(a) * 0.2 }));
+      const jib = box(0.35, 0.35, 13, { x: cx, y: b0 + 18.2, z: cz + 3.5, rx: -0.28 });
+      tb(jib);
+      tb(box(0.06, 7.5, 0.06, { x: cx, y: b0 + 12.2, z: cz + 9.4 }), 0x1a1410);
+      tb(box(0.9, 0.7, 0.9, { x: cx, y: b0 + 11.5, z: cz + 9.4 }), 0x6a6056);
+      const wheel = new THREE.TorusGeometry(2.0, 0.16, 6, 22);
+      wheel.translate(cx + 1.1, b0 + 2.2, cz);
+      tb(ni(wheel));
+    }
+    // a slender belfry with an open lantern and a pyramid cap
+    {
+      const bx = 24, bz = -47, b0 = GROUND;
+      walls.push(tint(worldUV(box(3.0, 17, 3.0, { x: bx, y: b0, z: bz }), 2.4), 0x857a6b, { aoBottom: b0, aoTop: b0 + 4 }));
+      for (const [ox, oz] of [[-1.25, -1.25], [1.25, -1.25], [-1.25, 1.25], [1.25, 1.25]]) fine.push(tint(worldUV(box(0.5, 3.2, 0.5, { x: bx + ox, y: b0 + 17, z: bz + oz }), 2), 0x9a8f80));
+      fine.push(tint(worldUV(box(3.4, 0.35, 3.4, { x: bx, y: b0 + 20.2, z: bz }), 2), 0x9a8f80));
+      slate.push(tint(worldUV(pyramid(3.6, 3.4, { x: bx, y: b0 + 20.5, z: bz }), 2), 0x5d6475));
+      tb(box(0.9, 1.1, 0.9, { x: bx, y: b0 + 17.8, z: bz }), 0x7a5a2a);
+      addWin(new THREE.Matrix4(), bx, b0 + 13, bz + 1.53, 0, 0.5, 1.0, 1.2);
+      addWin(new THREE.Matrix4(), bx, b0 + 9, bz + 1.53, 0, 0.5, 1.0, 0.9);
+    }
+    // scaffolding: standards, ledgers and putlogs round two houses being rebuilt
+    for (const [sx, sz, sw, sh] of [[-4, -36, 6, 11], [10, -43, 6, 12.5], [17, -35, 5, 10]]) {
+      for (let i = 0; i <= Math.round(sw / 1.8); i++) {
+        const x = sx - sw / 2 + (sw / Math.round(sw / 1.8)) * i;
+        tb(box(0.12, sh + Rs.range(-0.6, 1.2), 0.12, { x, y: GROUND, z: sz, rz: Rs.range(-0.02, 0.02) }), 0x4a3a2a);
+      }
+      for (let y = 2; y < sh; y += 2.1) {
+        tb(box(sw + 0.4, 0.1, 0.1, { x: sx, y: GROUND + y, z: sz }), 0x4a3a2a);
+        if (Rs.chance(0.7)) tb(box(sw * Rs.range(0.4, 0.9), 0.06, 0.7, { x: sx + Rs.range(-1, 1), y: GROUND + y + 0.08, z: sz - 0.4 }), 0x5a4632);
+      }
+      tb(box(0.1, Math.hypot(sw, sh) * 0.9, 0.1, { x: sx, y: GROUND + 0.5, z: sz + 0.05, rz: Math.atan2(sw, sh) * 0.9 }), 0x4a3a2a);
+      // the half-built gable behind it: a raw stone wall with a ragged top
+      const g = ruinWall(sw - 0.6, sh - 1.5, 0.7, { openings: true });
+      g.translate(sx, GROUND, sz - 1.2);
+      walls.push(tint(worldUV(g, 2.2), 0x8a8072, { aoBottom: GROUND, aoTop: GROUND + 3 }));
+    }
+    // chimney stacks with smoke-pots poking above the near roofline
+    for (let k = 0; k < 9; k++) {
+      const x = Rs.range(-7, 16), z = Rs.range(-34, -56);
+      const hh = Rs.range(9, 13.5);
+      walls.push(tint(worldUV(box(0.8, hh, 0.8, { x, y: GROUND, z }), 2.4), 0x7a7068));
+      fine.push(tint(worldUV(box(1.0, 0.2, 1.0, { x, y: GROUND + hh, z }), 2), 0x8a8070));
+      roofs.push(tint(worldUV(ni(new THREE.CylinderGeometry(0.13, 0.16, 0.45, 6).translate(x + 0.2, GROUND + hh + 0.42, z)), 1), 0x8a4a34));
+    }
+    R = savedR;
+  }
+
   // ---- city wall, gatehouse, towers ----------------------------------------
   wallRun(-190, -34, -12, -30, 7, { gaps: 0.05 });
   wallRun(12, -30, 190, -38, 7, { gaps: 0.35 });
@@ -655,6 +800,21 @@ export function createCity({ seed = 1988 } = {}) {
     fine.push(tint(worldUV(box(hw + 0.4, 0.9, hd + 0.4, { x: hx, y: GROUND, z: hz }), 2), 0x9a8c78));
     fine.push(tint(worldUV(box(hw + 0.3, 0.25, hd + 0.3, { x: hx, y: GROUND + 4.3, z: hz }), 2), 0xbcae98));
     fine.push(tint(worldUV(box(hw + 0.8, 0.7, hd + 0.8, { x: hx, y: GROUND + hh, z: hz }), 2), 0xc0b29c));
+    // quoins: long-and-short dressed blocks up every corner, standing proud of the
+    // walling; a second string course at the upper sill line; a moulded plinth cap
+    for (const [qx, qz] of [[-1, 1], [1, 1], [-1, -1], [1, -1]]) {
+      for (let k = 0, y = 0.9; y < hh - 0.4; k++) {
+        const bh = 0.52;
+        const long = k % 2 === 0;
+        const g = box(long ? 0.95 : 0.55, bh - 0.04, 0.14, { x: hx + qx * (hw / 2 - (long ? 0.475 : 0.275) + 0.03), y: GROUND + y, z: hz + qz * (hd / 2 + 0.05) });
+        fine.push(tint(worldUV(g, 1.2), new THREE.Color(0xc2b49c).multiplyScalar(0.92 + 0.12 * Rw.next())));
+        const g2 = box(0.14, bh - 0.04, long ? 0.55 : 0.95, { x: hx + qx * (hw / 2 + 0.05), y: GROUND + y, z: hz + qz * (hd / 2 - (long ? 0.275 : 0.475) + 0.03) });
+        fine.push(tint(worldUV(g2, 1.2), new THREE.Color(0xc2b49c).multiplyScalar(0.92 + 0.12 * Rw.next())));
+        y += bh;
+      }
+    }
+    fine.push(tint(worldUV(box(hw + 0.3, 0.18, hd + 0.3, { x: hx, y: GROUND + 7.75, z: hz }), 2), 0xbcae98));
+    fine.push(tint(worldUV(box(hw + 0.5, 0.16, hd + 0.5, { x: hx, y: GROUND + 0.9, z: hz }), 2), 0xb0a28c));
     const hr = gableRoof(hw, hd + 0.8, 3.8, { o: 0.55, t: 0.3 });
     const rm = new THREE.Matrix4().makeTranslation(hx, GROUND + hh + 0.7, hz);
     for (const g of hr.roof) slate.push(tint(g.applyMatrix4(rm), 0x8c96b4));
@@ -735,10 +895,34 @@ export function createCity({ seed = 1988 } = {}) {
       windows.push(tint(ni(glass), new THREE.Color(0xffa040).multiplyScalar(1.4)));
     }
     // braziers on the plaza flank the steps (set wide, clear of the camera's path)
+    // wrought-iron stands: three splayed legs with scrolled feet, a twisted stem
+    // with forged collars, and a riveted bowl with a rolled lip, embers glowing in it
     for (const lx of [-7.2, 7.2]) {
-      walls.push(tint(worldUV(cylinder(0.12, 0.2, 1.1, 8, { x: hx + lx, y: GROUND, z: pz + 6.2 }), 1), 0x3a3430));
-      fine.push(tint(worldUV(cylinder(0.42, 0.22, 0.32, 12, { x: hx + lx, y: GROUND + 1.1, z: pz + 6.2 }), 1), 0x5a4a38));
-      lamps.push(new THREE.Vector3(hx + lx, GROUND + 1.6, pz + 6.2));
+      const X = hx + lx, Z = pz + 6.2;
+      const ir = (g, c = 0x2a2624) => iron.push(tint(ni(g), c));
+      for (let k = 0; k < 3; k++) {
+        const a = (k / 3) * Math.PI * 2 + 0.4;
+        const leg = new THREE.CylinderGeometry(0.035, 0.05, 1.05, 6);
+        leg.translate(0, 0.52, 0);
+        leg.rotateZ(0.32);
+        leg.rotateY(-a);
+        leg.translate(X + Math.cos(a) * 0.34, GROUND, Z + Math.sin(a) * 0.34);
+        // splay outward: lean the leg's foot away from the stem
+        ir(leg);
+        const curl = new THREE.TorusGeometry(0.08, 0.02, 5, 12, Math.PI * 1.4);
+        curl.rotateY(-a + Math.PI / 2);
+        curl.translate(X + Math.cos(a) * 0.38, GROUND + 0.08, Z + Math.sin(a) * 0.38);
+        ir(curl);
+      }
+      ir(new THREE.CylinderGeometry(0.045, 0.06, 1.0, 8).translate(X, GROUND + 0.6, Z));
+      for (const cy of [0.35, 0.72, 1.02]) ir(new THREE.TorusGeometry(0.075, 0.025, 5, 12).rotateX(Math.PI / 2).translate(X, GROUND + cy, Z));
+      const bowl = new THREE.LatheGeometry([[0.05, 0], [0.26, 0.04], [0.4, 0.16], [0.46, 0.3], [0.44, 0.33], [0.36, 0.2], [0.04, 0.1]].map(([r, y]) => new THREE.Vector2(r, y)), 18);
+      bowl.translate(X, GROUND + 1.08, Z);
+      ir(bowl, 0x3a3230);
+      ir(new THREE.TorusGeometry(0.45, 0.03, 5, 24).rotateX(Math.PI / 2).translate(X, GROUND + 1.39, Z), 0x3a3230);
+      // the coal bed: glowing seams in the bowl
+      windows.push(tint(ni(new THREE.CircleGeometry(0.38, 14).rotateX(-Math.PI / 2).translate(X, GROUND + 1.33, Z)), new THREE.Color(0xff6a20).multiplyScalar(1.1)));
+      lamps.push(new THREE.Vector3(X, GROUND + 1.6, Z));
     }
     banners.push([hx - 3.6, pz + 3.3], [hx + 3.6, pz + 3.3]);
     tower(hx + 10.5, hz, 2.2, 19, { roof: 'cone', lit: 1 });
@@ -754,18 +938,25 @@ export function createCity({ seed = 1988 } = {}) {
     ];
     // built on demand (only the City Hall shot ever sees them)
     buildCrowd = () => {
-      for (const [fx, fz, ry, ch] of folk) {
-        const f = buildMiniature({ race: 'human', ...ch }, { pose: 'stand', base: false, gear: false, quality: 0.0108, faceSize: 256, noWeapon: true, noShield: true, rayHead: true, headGain: 0.75, fog: true });
+      // varied, asymmetric stances: some talk to a neighbour with a gesture, some
+      // hold their hands out to the brazier, the rest read; each leans a little
+      const mods = ['talkL', null, 'talkR', 'warm', 'talkL', null];
+      folk.forEach(([fx, fz, ry, ch], i) => {
+        const f = buildMiniature({ race: 'human', ...ch }, { pose: 'stand', mod: mods[i] ?? undefined, base: false, gear: false, quality: 0.0108, faceSize: 256, noWeapon: true, noShield: true, rayHead: true, headGain: 0.75, fog: true });
+        matteFigure(f);
         f.position.set(hx + fx, GROUND, pz + fz);
         f.rotation.y = ry;
+        f.rotation.z = (i % 2 ? 1 : -1) * 0.03;
+        f.scale.setScalar(0.96 + 0.08 * ((i * 37) % 5) / 4);
         group.add(f);
         figures.push(f);
         const sh = contactShadow(0.45, 0.36);
         sh.position.set(hx + fx, GROUND + 0.04, pz + fz);
         group.add(sh);
-      }
+      });
       // the door guard (robed in the Council's red) on the top step, facing the plaza
       const guard = buildMiniature({ race: 'human', gender: 'male', classSpec: 'fighter', look: { seed: 77, head: 0, body: 0, cloth: 0, hair: 1 } }, { pose: 'guard', base: false, gear: true, quality: 0.0108, faceSize: 256, rayHead: true, headGain: 0.75, fog: true });
+      matteFigure(guard);
       guard.position.set(hx - 1.7, GROUND + 1.04, pz + 2.3);
       guard.rotation.y = 0.2;
       group.add(guard);
@@ -808,10 +999,10 @@ export function createCity({ seed = 1988 } = {}) {
   const wallMat = addRimLight(texMat('hd2_ashlar'), rimU, 1, { weather: 1 });
   // the castle gets its own, brighter rim and a touch of warm self-light so it
   // separates from the town in the dusk haze
-  const castleMat = addRimLight(texMat('hd2_ashlar', { emissive: 0x1a0c06 }), rimU, 2.2, { weather: 1, ground: -10 });
-  const hallMat = addRimLight(texMat('hd2_ashlar'), rimU, 1, { weather: 0.55 });
-  const plasterMat = addRimLight(texMat('hd2_plaster'), rimU, 0.9);
-  const rubbleMat = addRimLight(texMat('hd2_ruin'), rimU, 1, { weather: 0.8 });
+  const castleMat = addRimLight(texMat('hd2_ashlar', { emissive: 0x1a0c06 }), rimU, 2.2, { weather: 1.25, ground: -10, soot: 0.85 });
+  const hallMat = addRimLight(texMat('hd2_ashlar'), rimU, 1, { weather: 1.0 });
+  const plasterMat = addRimLight(texMat('hd2_plaster'), rimU, 0.9, { weather: 0.3, flat: 0.8 });
+  const rubbleMat = addRimLight(texMat('hd2_ruin'), rimU, 1, { weather: 0.8, soot: 0.6 });
   const groundMat = texMat('hd_mud');
   const cobbleMat = texMat('hd_cobble', { polygonOffset: true, polygonOffsetFactor: -1 });
   const roofMat = addRimLight(texMat('hd_roof_clay'), rimU, 1.2);
@@ -845,6 +1036,11 @@ export function createCity({ seed = 1988 } = {}) {
   addMesh(beams, beamMat);
   addMesh(fine, fineMat);
   addMesh(people, peopleMat);
+  {
+    const ironMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.8 });
+    disposables.push(ironMat);
+    addMesh(iron, ironMat);
+  }
   const slitMat = new THREE.MeshBasicMaterial({ vertexColors: true });
   disposables.push(slitMat);
   addMesh(slits, slitMat);

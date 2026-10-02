@@ -54,8 +54,13 @@ export class Credits {
   }
 
   update(t) {
-    const y = Math.max(0, (t - this.t0) * 34);
-    const H = this.crawl.offsetHeight + (this.window.offsetHeight || 500);
+    // open with the first block already risen clear of the top fade, fully
+    // legible, then crawl; the loop wraps back to the same opening frame
+    const win = this.window.offsetHeight || 500;
+    const pad = parseFloat(getComputedStyle(this.crawl).paddingTop) || 0;
+    const start = Math.max(0, pad - win * 0.2);
+    const H = this.crawl.offsetHeight + win;
+    const y = start + Math.max(0, t - this.t0 - 1.5) * 34;
     this.crawl.style.transform = `translateY(${-(y % H)}px)`;
   }
 

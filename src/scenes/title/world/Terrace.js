@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { getTextureSet, getGlowTexture } from '../../../render/textures/index.js';
 import { createTorch, FLAME_UNIFORMS } from '../../../render/lighting.js';
-import { NOISE } from './glsl.js';
+import { NOISE, DUSK_SKY } from './glsl.js';
 import { prng, ni, worldUV, tint, merge } from './geom.js';
 import { column as archColumn, entablature, addRimLight } from './arch.js';
 
@@ -92,7 +92,7 @@ export function createTerrace({ seed = 7 } = {}) {
           crack = step(0.04, hs) * step(hs, 0.16) * (1.0 - smoothstep(0.004, 0.018, cl));
           wet = smoothstep(0.63, 0.69, fbm(w * 0.2 + vec2(11.0, 2.0))) * (1.0 - smoothstep(4.0, 2.5, abs(abs(w.x) - 6.2) + abs(w.y + 1.2) * 0.5));
           // splashed and seeping round the Pool: wet setts that darken and glint
-          wet = max(wet, (1.0 - smoothstep(5.0, 7.6, rr0)) * smoothstep(0.35, 0.6, fbm(w * 0.9 + 4.0)));
+          wet = max(wet, (1.0 - smoothstep(5.0, 7.6, rr0)) * smoothstep(0.35, 0.6, fbm(w * 0.9 + 4.0)) * 0.45 * (1.0 - (1.0 - smoothstep(2.0, 3.5, abs(w.x))) * smoothstep(1.0, 3.0, w.y)));
         }`)
       .replace('#include <map_fragment>', `#include <map_fragment>
         vec3 pvT; float pvWet, pvGap, pvJoint, pvCrack;
@@ -128,7 +128,7 @@ export function createTerrace({ seed = 7 } = {}) {
         }`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
         if (uClassic > 0.5) { pvWet = 0.0; }
-        roughnessFactor = clamp(roughnessFactor - 0.25 * (1.0 - smoothstep(4.5, 7.5, length(vWP.xz))), 0.3, 1.0);
+        roughnessFactor = clamp(roughnessFactor - 0.08 * (1.0 - smoothstep(4.5, 7.5, length(vWP.xz))), 0.45, 1.0);
         roughnessFactor = mix(roughnessFactor, 0.2, pvWet * (1.0 - pvJoint) * (1.0 - pvGap));
         roughnessFactor = mix(roughnessFactor, 1.0, max(pvGap, pvJoint * 0.7));`);
   };
@@ -236,57 +236,107 @@ export function createTerrace({ seed = 7 } = {}) {
     disposables.push(g);
   }
 
-  // ---- the pool rim: a carved coping of sixteen dressed blocks ----------------------
+  // ---- the pool rim: a carved kerb of sixteen dressed blocks, seated in the flags ----
   // bull-nosed inner lip, a sunken rune channel in the coping, a rolled outer
-  // moulding and a broad plinth step; each block cut separately (tight mortar
-  // joints), with its own tone and slightly chipped arrises.
+  // moulding and a broad plinth step that sinks below the paving (no gap where
+  // it meets the floor); each block cut separately (tight mortar joints), with
+  // its own tone and slightly chipped arrises. The profile runs from the buried
+  // outer foot over the top and down the inner wall, so the lathe faces point
+  // out of the stone (outward, upward, and toward the water on the inner wall).
   const rimProfile = [
-    [2.9, -0.5], [2.9, 0.36], [2.94, 0.52], [3.03, 0.64], [3.14, 0.7], [3.25, 0.71], [3.27, 0.64], [3.67, 0.64], [3.69, 0.71],
-    [3.92, 0.7], [4.06, 0.65], [4.15, 0.53], [4.17, 0.34], [4.22, 0.31], [4.74, 0.29], [4.82, 0.23], [4.85, 0.04], [4.95, 0.0],
+    [5.02, -0.12], [4.98, 0.0], [4.92, 0.05], [4.86, 0.2], [4.8, 0.27], [4.74, 0.3], [4.22, 0.32], [4.17, 0.36], [4.15, 0.53],
+    [4.06, 0.65], [3.92, 0.7], [3.69, 0.71], [3.67, 0.64], [3.27, 0.64], [3.25, 0.71], [3.14, 0.7], [3.03, 0.64], [2.94, 0.52],
+    [2.9, 0.36], [2.9, -0.6],
   ].map(([r, y]) => new THREE.Vector2(r, y));
   {
     const blocks = [];
     const NB = 16;
     for (let b = 0; b < NB; b++) {
-      const gap = 0.006;
-      const g = new THREE.LatheGeometry(rimProfile, 8, (b / NB) * Math.PI * 2 + gap, (Math.PI * 2) / NB - gap * 2);
+      const gap = 0.0;
+      const g = new THREE.LatheGeometry(rimProfile, 10, (b / NB) * Math.PI * 2 + gap, (Math.PI * 2) / NB - gap * 2);
       const pp = g.attributes.position;
+      const a0 = (b / NB) * Math.PI * 2, a1 = ((b + 1) / NB) * Math.PI * 2;
       for (let i = 0; i < pp.count; i++) {
-        // chipped arrises: the outer roll and inner nose lose a little here and there
+        // chipped arrises: the outer roll and inner nose lose a little here and
+        // there, and every block's ends are pencil-rounded so the joints read
         const x = pp.getX(i), y = pp.getY(i), z = pp.getZ(i);
-        const r = Math.hypot(x, z);
         const ch = Math.sin(x * 9.1 + z * 7.3 + b) * Math.cos(z * 11.7 - x * 5.1);
-        if (y > 0.55 && ch > 0.75) pp.setY(i, y - 0.03 * (ch - 0.75) * 4);
-        void r;
+        if (y > 0.55 && ch > 0.72) pp.setY(i, y - 0.035 * (ch - 0.72) * 4);
+        let ang = Math.atan2(x, z);
+        if (ang < 0) ang += Math.PI * 2;
+        const de = Math.min(Math.abs(ang - a0), Math.abs(a1 - ang));
+        if (de < 0.012 && y > 0.5) pp.setY(i, pp.getY(i) - 0.03);
       }
       g.computeVertexNormals();
       const uv = g.attributes.uv;
       for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 14, uv.getY(i) * 1.2);
-      const tone = 0.86 + 0.16 * R.next();
-      tint(g, new THREE.Color(0xd8cfc0).multiplyScalar(tone), { aoBottom: 0, aoTop: 0.45, aoStrength: 0.35 });
-      // the inner face is wet, algae-dark stone down to the waterline
+      const tone = 0.82 + 0.2 * R.next();
+      const warm = R.next();
+      const base = new THREE.Color(0xd8cfc0).lerp(new THREE.Color(0xc8c2b8), warm).multiplyScalar(tone);
+      tint(g, base, { aoBottom: 0, aoTop: 0.45, aoStrength: 0.5 });
       const cc = g.attributes.color;
       for (let i = 0; i < pp.count; i++) {
-        const r = Math.hypot(pp.getX(i), pp.getZ(i));
-        if (r < 2.96 && pp.getY(i) < 0.5) cc.setXYZ(i, cc.getX(i) * 0.32, cc.getY(i) * 0.36, cc.getZ(i) * 0.34);
-        else if (r < 3.08) cc.setXYZ(i, cc.getX(i) * 0.62, cc.getY(i) * 0.64, cc.getZ(i) * 0.66); // the nose: worn, damp
+        const x = pp.getX(i), z = pp.getZ(i), y = pp.getY(i);
+        const r = Math.hypot(x, z);
+        let k = 1;
+        if (r < 2.96 && y < 0.5) k = 0.3 + 0.25 * Math.max(0, Math.min(1, (y - 0.0) / 0.5)); // wet, algae-dark down to the water
+        else if (r < 3.08) k = 0.66; // the nose: worn, damp
+        else if (r > 3.26 && r < 3.68 && y < 0.66) k = 0.42; // the sunken rune channel: soot and shadow
+        else if (r > 4.16 && y < 0.36) k = 0.62; // the step's re-entrant corner
+        if (y < 0.06 && r > 4.85) k *= 0.55; // grime where the kerb sinks into the flags
+        {
+          let ang = Math.atan2(x, z);
+          if (ang < 0) ang += Math.PI * 2;
+          if (Math.min(Math.abs(ang - a0), Math.abs(a1 - ang)) < 0.012) k *= 0.55; // mortar joint
+        }
+        // rain-streaked weathering, a few lichen-stained blocks
+        const st = 0.88 + 0.12 * Math.sin(Math.atan2(x, z) * 61 + b * 3.1) * Math.sin(Math.atan2(x, z) * 17.0);
+        k *= st;
+        cc.setXYZ(i, cc.getX(i) * k, cc.getY(i) * k * (b % 5 === 2 ? 1.04 : 1), cc.getZ(i) * k * (b % 5 === 2 ? 0.9 : 1));
       }
       blocks.push(ni(g));
     }
     const g = merge(blocks);
-    const rim = new THREE.Mesh(g, addRimLight(texMat('hd_limestone', { vertexColors: true, roughness: 0.9 }), rimU, 1.4));
+    const rim = new THREE.Mesh(g, addRimLight(texMat('hd_limestone', { vertexColors: true, roughness: 0.92 }), rimU, 1.2));
     rim.castShadow = true;
     rim.receiveShadow = true;
     group.add(rim);
     disposables.push(g);
-    // rune ring inlaid in the coping: glowing glyph band
+    // contact shadow + AO where the kerb sits in the paving: a soft darkening
+    // ring (multiplied, not additive) and a tighter crease right at the foot
+    {
+      const cg = new THREE.RingGeometry(4.9, 6.6, 128, 1);
+      cg.rotateX(-Math.PI / 2);
+      cg.translate(0, 0.012, 0);
+      const cm = new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        vertexShader: /* glsl */ `varying vec2 vP; void main(){ vP = position.xz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+        fragmentShader: /* glsl */ `varying vec2 vP;
+          void main(){
+            float r = length(vP);
+            float ao = exp(-(r - 4.95) * 2.2) * 0.55 + exp(-(r - 4.95) * 14.0) * 0.4;
+            gl_FragColor = vec4(0.0, 0.0, 0.0, clamp(ao, 0.0, 0.85));
+          }`,
+      });
+      disposables.push(cg, cm);
+      const contact = new THREE.Mesh(cg, cm);
+      contact.renderOrder = 1;
+      group.add(contact);
+    }
+    // rune ring inlaid in the coping's channel: cut glyphs filled with the Pool's
+    // light (capped: the carving must stay readable, not bloom into a halo)
     const band = new THREE.RingGeometry(3.28, 3.66, 128, 1);
     band.rotateX(-Math.PI / 2);
-    band.translate(0, 0.645, 0);
+    band.translate(0, 0.643, 0);
     const bandMat = new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
       uniforms: U,
       vertexShader: /* glsl */ `varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
       fragmentShader: /* glsl */ `
@@ -300,66 +350,146 @@ export function createTerrace({ seed = 7 } = {}) {
           // procedural glyph: a few strokes per cell
           float h1 = hash12(vec2(cell, 1.0)), h2 = hash12(vec2(cell, 2.0)), h3 = hash12(vec2(cell, 3.0));
           float g = 0.0;
-          g += step(abs(f.x - (0.3 + h1 * 0.4)), 0.07) * step(0.22, f.y) * step(f.y, 0.78);
-          g += step(abs(f.y - (0.3 + h2 * 0.4)), 0.06) * step(0.2, f.x) * step(f.x, 0.8) * step(0.35, h3);
-          g += step(abs((f.x - 0.5) - (f.y - 0.5) * (h3 > 0.5 ? 1.0 : -1.0)), 0.07) * step(0.25, f.y) * step(f.y, 0.75) * step(h1, 0.6);
+          g += smoothstep(0.075, 0.04, abs(f.x - (0.3 + h1 * 0.4))) * step(0.24, f.y) * step(f.y, 0.76);
+          g += smoothstep(0.065, 0.035, abs(f.y - (0.3 + h2 * 0.4))) * step(0.22, f.x) * step(f.x, 0.78) * step(0.35, h3);
+          g += smoothstep(0.075, 0.04, abs((f.x - 0.5) - (f.y - 0.5) * (h3 > 0.5 ? 1.0 : -1.0))) * step(0.27, f.y) * step(f.y, 0.73) * step(h1, 0.6);
           g = clamp(g, 0.0, 1.0);
-          float border = smoothstep(0.08, 0.0, abs(r - 0.06)) + smoothstep(0.08, 0.0, abs(r - 0.94));
-          float pulse = 0.55 + 0.45 * sin(uTime * 1.3 - a * 18.849);
-          vec3 c = vec3(0.15, 0.75, 1.0) * (g * (0.35 + 0.5 * pulse) + border * 0.3);
-          gl_FragColor = vec4(c, 1.0);
+          // some glyphs are worn shallow and only faintly lit
+          g *= 0.45 + 0.55 * step(0.18, hash12(vec2(cell, 7.0)));
+          float pulse = 0.6 + 0.4 * sin(uTime * 1.3 - a * 18.849);
+          vec3 c = vec3(0.12, 0.62, 0.85) * g * (0.3 + 0.32 * pulse);
+          gl_FragColor = vec4(min(c, vec3(0.75)), 1.0);
         }`,
     });
     disposables.push(band, bandMat);
     group.add(new THREE.Mesh(band, bandMat));
   }
 
-  // ---- the radiant water ----------------------------------------------------------
+  // ---- the radiant water: a deep stone basin seen through a moving surface -------------
+  // Each fragment refracts the view ray through a rippled surface and marches it
+  // analytically into the basin (a cylinder of coursed, algae-dark stone with a
+  // glowing glyph floor). Absorption darkens the walls with depth, light from the
+  // floor scatters up through the water, and a Schlick Fresnel term mirrors the
+  // dusk sky at grazing angles. The core is clamped so bloom never whites it out.
   const waterMat = new THREE.ShaderMaterial({
-    uniforms: U,
-    vertexShader: /* glsl */ `varying vec2 vP; varying vec3 vW; void main(){ vP = position.xy / 2.95; vW = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vW, 1.0); }`,
+    uniforms: { uTime: U.uTime, uClassic },
+    vertexShader: /* glsl */ `varying vec3 vW; void main(){ vW = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vW, 1.0); }`,
     fragmentShader: /* glsl */ `
-      uniform float uTime; varying vec2 vP; varying vec3 vW;
-      ${NOISE}
+      uniform float uTime, uClassic; varying vec3 vW;
+      ${DUSK_SKY}
+      const float RAD = 2.9;
+      const float YW = 0.26;
+      const float DEPTH = 2.1;
+      vec3 basin(vec3 H, bool wall, float t) {
+        float depth = YW - H.y;
+        vec3 c;
+        if (wall) {
+          float ang = atan(H.z, H.x);
+          float course = (depth + 0.05) / 0.36;
+          float row = floor(course);
+          float u = ang * RAD / 0.82 + hash12(vec2(row, 3.0)) * 4.0;
+          float id = floor(u);
+          float jv = min(fract(u), 1.0 - fract(u)) * 0.82;
+          float jh = min(fract(course), 1.0 - fract(course)) * 0.36;
+          float joint = 1.0 - smoothstep(0.012, 0.03, min(jv, jh));
+          float tone = 0.75 + 0.5 * hash12(vec2(id, row));
+          float n = vnoise(vec2(ang * 18.0, depth * 9.0));
+          c = vec3(0.17, 0.19, 0.18) * tone * (0.8 + 0.4 * n);
+          // algae and lime near the waterline
+          c = mix(c, vec3(0.1, 0.2, 0.12), smoothstep(0.35, 0.0, depth) * 0.6);
+          c *= 1.0 - joint * 0.7;
+        } else {
+          // the basin floor: a great carved star of glyphs, the source of the radiance
+          vec2 fp = H.xz / RAD;
+          float fr = length(fp);
+          float fa = atan(fp.y, fp.x);
+          float star = abs(sin(fa * 4.0 + 0.4)) * 0.5 + 0.5;
+          float rings = smoothstep(0.03, 0.0, abs(fr - 0.62)) + smoothstep(0.025, 0.0, abs(fr - 0.38));
+          float spokes = smoothstep(0.05, 0.0, abs(fract(fa / 6.2831853 * 8.0 + 0.5) - 0.5) * fr * 6.2831853 / 8.0 * 6.0) * step(0.38, fr) * step(fr, 0.62);
+          float cell = vnoise(fp * 14.0);
+          c = vec3(0.1, 0.13, 0.13) * (0.75 + 0.5 * cell);
+          float lines = clamp(rings + spokes, 0.0, 1.0);
+          float core = exp(-fr * fr * 16.0);
+          c += vec3(0.25, 0.9, 1.05) * (lines * (0.7 + 0.4 * sin(t * 1.3 - fr * 9.0)) + core * 3.4);
+          c *= 0.85 + 0.3 * star * (1.0 - core);
+        }
+        // caustics dancing over the stone
+        vec2 cq = H.xz * 1.9 + vec2(H.y * 1.3);
+        float n1 = fbm3(cq + vec2(t * 0.21, -t * 0.17));
+        float n2 = fbm3(cq * 1.6 - vec2(t * 0.13, t * 0.19) + n1 * 2.0);
+        float web = pow(1.0 - abs(sin(n2 * 9.0)), 6.0);
+        c += vec3(0.25, 0.75, 0.85) * web * 0.4 * exp(-depth * 0.5);
+        return c;
+      }
       void main(){
-        float r = length(vP);
-        float a = atan(vP.y, vP.x);
         float t = uTime;
-        // swirling vortex coordinates
-        float sw = a + (1.0 - r) * 3.2 - t * 0.35;
-        vec2 q = vec2(cos(sw), sin(sw)) * r;
-        float n = fbm(q * 3.0 + vec2(t * 0.1, 0.0));
-        float n2 = fbm(q * 7.0 - vec2(0.0, t * 0.25) + n);
-        // caustic web
-        float c1 = abs(sin(n2 * 12.0 + t));
-        float caustic = pow(1.0 - c1, 6.0);
-        float rings = pow(0.5 + 0.5 * sin(r * 26.0 - t * 2.4), 10.0) * (1.0 - r);
-        vec3 deep = vec3(0.02, 0.16, 0.26);
-        vec3 mid = vec3(0.08, 0.55, 0.75);
-        vec3 core = vec3(0.42, 0.95, 1.1);
-        vec3 col = mix(core, mid, smoothstep(0.0, 0.45, r + (n - 0.5) * 0.25));
-        col = mix(col, deep, smoothstep(0.55, 1.02, r));
-        col += vec3(0.35, 1.0, 1.15) * caustic * (1.0 - r * 0.5) * 0.55;
-        col += vec3(0.5, 1.2, 1.35) * rings * 0.35;
-        // keep the vortex readable at the core: darker spiral lanes
-        col *= 0.78 + 0.22 * smoothstep(0.2, 0.8, n2);
-        col += vec3(0.1, 0.4, 0.5) * n2 * 0.6;
-        // depth: the carved wall shows through the shallows as a darker band, the
-        // light deepening toward the heart of the vortex
-        col *= 1.0 - smoothstep(0.86, 0.985, r) * 0.62;
-        // the surface itself: a Fresnel sheen that mirrors the warm dusk sky on the
-        // far side, broken up by the swirl's ripples
+        vec2 p = vW.xz;
+        float rr = length(p);
+        float r = rr / RAD;
+        // surface slope: a slow swirl, crossing wind ripples and rings off the centre
+        vec2 g = vec2(0.0);
+        vec2 dirs[3]; dirs[0] = vec2(0.8, 0.6); dirs[1] = vec2(-0.5, 0.86); dirs[2] = vec2(0.17, -0.98);
+        float ks[3]; ks[0] = 3.1; ks[1] = 5.3; ks[2] = 8.9;
+        for (int i = 0; i < 3; i++) {
+          float ph = dot(dirs[i], p) * ks[i] - t * (1.1 + float(i) * 0.6);
+          g += dirs[i] * ks[i] * 0.006 * cos(ph);
+        }
+        vec2 radial = p / max(rr, 1e-3);
+        g += radial * 7.5 * 0.006 * cos(rr * 7.5 - t * 2.2) * (1.0 - r);
+        vec2 tang = vec2(-radial.y, radial.x);
+        g += tang * 0.03 * sin(rr * 3.0 - t * 0.7) * r;
+        vec3 N = normalize(vec3(-g.x, 1.0, -g.y));
         vec3 V = normalize(cameraPosition - vW);
-        float fres = pow(1.0 - clamp(V.y, 0.0, 1.0), 4.0);
-        float rip = 0.75 + 0.25 * sin(n2 * 18.0 + t * 1.7);
-        col = mix(col, vec3(1.0, 0.62, 0.42) * 0.9, clamp(fres * 0.55 * rip, 0.0, 0.6) * smoothstep(0.1, 0.9, r));
-        // the meniscus: a thin bright line where the water climbs the stone
-        float men = exp(-pow((r - 0.988) / 0.008, 2.0));
-        col += vec3(0.75, 1.15, 1.25) * men * (0.6 + 0.4 * rip);
+        vec3 I = -V;
+        vec3 Tr = refract(I, N, 1.0 / 1.33);
+        // march into the basin: exit through the cylinder wall or hit the floor
+        vec2 d2 = Tr.xz;
+        float A = max(dot(d2, d2), 1e-5);
+        float B = 2.0 * dot(p, d2);
+        float Cc = dot(p, p) - RAD * RAD;
+        float disc = max(B * B - 4.0 * A * Cc, 0.0);
+        float sWall = (-B + sqrt(disc)) / (2.0 * A);
+        float sFloor = DEPTH / max(-Tr.y, 1e-3);
+        bool wall = sWall < sFloor;
+        float s = min(sWall, sFloor);
+        vec3 H = vec3(p.x, YW, p.y) + Tr * s;
+        vec3 base = basin(H, wall, t);
+        // light from the glowing floor reaches the walls in proportion to depth
+        float depthH = YW - H.y;
+        float lit = 0.35 + 0.9 * smoothstep(0.0, DEPTH, depthH);
+        base *= lit;
+        // absorption along the path (red dies first): the deep reads teal-black
+        vec3 absorb = exp(-s * vec3(1.0, 0.26, 0.18));
+        vec3 under = base * absorb;
+        // in-scattered radiance: the column of light rising from the floor through
+        // the water, brightest where the ray passes nearest the axis
+        vec3 mid = vec3(p.x, YW, p.y) + Tr * (s * 0.5);
+        float axis = length(mid.xz) / RAD;
+        float swirl = fbm3(vec2(atan(mid.z, mid.x) * 1.6 + axis * 4.0 - t * 0.35, axis * 3.0 + t * 0.05));
+        under += vec3(0.16, 0.95, 1.1) * (1.0 - exp(-s * 0.55)) * (exp(-axis * axis * 3.5) * (0.7 + 1.3 * swirl * swirl) * 1.25 + 0.05);
+        // surface reflection of the dusk sky (Schlick, water F0 = 0.02)
+        float cosv = max(dot(N, V), 0.0);
+        float F = 0.02 + 0.98 * pow(1.0 - cosv, 5.0);
+        vec3 refl = duskSky(reflect(I, N), normalize(vec3(-0.45, 0.014, -1.0)), t, 0.4);
+        // the far wall of the kerb occludes the low sky: a dark band in the reflection
+        float rimOcc = smoothstep(0.03, 0.12, reflect(I, N).y);
+        refl = mix(vec3(0.05, 0.05, 0.06), refl, rimOcc);
+        vec3 col = mix(under, refl * 0.6, clamp(F * 0.85, 0.0, 0.35));
+        // the meniscus where water meets stone: a thin lit line, and the shade the lip casts
+        float men = exp(-pow((r - 0.993) / 0.007, 2.0));
+        col *= 1.0 - smoothstep(0.9, 0.99, r) * 0.35;
+        col += vec3(0.35, 0.75, 0.8) * men * 0.45;
+        // cap: the carved rim and runes must stay readable beside it
+        col = min(col, vec3(0.95, 1.15, 1.2));
+        if (uClassic > 0.5) {
+          // 1988: a flat light-cyan pool with a white heart and a blue shadow under the lip
+          col = mix(vec3(0.04, 0.62, 0.62), vec3(0.95), step(r, 0.3 + 0.04 * sin(atan(p.y, p.x) * 5.0 + t)));
+          col = mix(col, vec3(0.03, 0.03, 0.55), step(0.9, r));
+        }
         gl_FragColor = vec4(col, 1.0);
       }`,
   });
-  const water = new THREE.Mesh(new THREE.CircleGeometry(2.99, 96), waterMat);
+  const water = new THREE.Mesh(new THREE.CircleGeometry(2.93, 96), waterMat);
   water.rotation.x = -Math.PI / 2;
   water.position.y = 0.26;
   group.add(water);
@@ -385,7 +515,7 @@ export function createTerrace({ seed = 7 } = {}) {
         float streak = fbm(vec2(vUv.x * 18.0, y * 3.0 - uTime * 0.6));
         float streak2 = vnoise(vec2(vUv.x * 44.0, y * 6.0 - uTime * 1.1));
         float body = pow(facing, 2.2) * (0.45 + 0.9 * streak * streak2);
-        float fall = pow(1.0 - y, 3.4) * smoothstep(0.0, 0.03, y);
+        float fall = pow(1.0 - y, 3.4) * smoothstep(0.004, 0.06, y);
         vec3 c = mix(vec3(0.35, 1.25, 1.6), vec3(1.2, 1.9, 2.1), pow(1.0 - y, 6.0));
         gl_FragColor = vec4(c * body * fall * uStrength * 0.06, 1.0);
       }`,
@@ -489,29 +619,37 @@ export function createTerrace({ seed = 7 } = {}) {
     bm.position.y = 1.15;
     bm.castShadow = true;
     b.add(bm);
-    const lip = new THREE.Mesh(new THREE.TorusGeometry(0.88, 0.035, 6, 40), ironMat);
+    const lip = new THREE.Mesh(new THREE.TorusGeometry(0.88, 0.055, 8, 40), ironMat);
     lip.rotation.x = Math.PI / 2;
     lip.position.y = 1.62;
     b.add(lip);
-    const band = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.025, 5, 32), ironMat);
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.64, 0.04, 6, 32), ironMat);
     band.rotation.x = Math.PI / 2;
     band.position.y = 1.36;
     b.add(band);
-    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.09, 0.9, 10), ironMat);
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.15, 0.9, 12), ironMat);
     stem.position.y = 0.72;
+    stem.castShadow = true;
+    // forged collars on the stem
+    for (const [cy, cr] of [[0.42, 0.17], [0.86, 0.14], [1.12, 0.2]]) {
+      const col = new THREE.Mesh(new THREE.TorusGeometry(cr, 0.045, 6, 18), ironMat);
+      col.rotation.x = Math.PI / 2;
+      col.position.y = cy;
+      b.add(col);
+    }
     b.add(stem);
     for (let i = 0; i < 3; i++) {
       const a = (i / 3) * Math.PI * 2;
-      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.05, 1.3, 6), ironMat);
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.095, 1.3, 8), ironMat);
       leg.position.set(Math.cos(a) * 0.35, 0.62, Math.sin(a) * 0.35);
       leg.rotation.set(Math.sin(a) * 0.3, 0, -Math.cos(a) * 0.3);
       leg.castShadow = true;
       b.add(leg);
-      const curl = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.022, 5, 14, Math.PI * 1.5), ironMat);
+      const curl = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.04, 6, 14, Math.PI * 1.5), ironMat);
       curl.position.set(Math.cos(a) * 0.5, 0.34, Math.sin(a) * 0.5);
       curl.rotation.y = -a;
       b.add(curl);
-      const foot = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 8), ironMat);
+      const foot = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), ironMat);
       foot.scale.set(1, 0.6, 1.3);
       foot.position.set(Math.cos(a) * 0.56, 0.04, Math.sin(a) * 0.56);
       b.add(foot);
@@ -729,17 +867,23 @@ export function createTerrace({ seed = 7 } = {}) {
   }
   {
     const tufts = [];
-    for (let i = 0; i < 230; i++) {
-      // along the broken edge, round column plinths, and in random cracks
+    for (let i = 0; i < 120; i++) {
+      // along the broken edge, round column plinths, and in random cracks; each
+      // seed grows a clump: one or two big tussocks ringed by smaller, younger tufts
       let x, z;
       const k = R.next();
       if (k < 0.45) { x = R.range(-40, 40); z = -8.6 + R.range(0, 1.6); }
-      else if (k < 0.7) { const c = R.pick([[-13, -6], [-9.2, -8.2], [12.5, -6.6], [16.5, -4], [-17, 2]]); const a = R.range(0, 6.28); x = c[0] + Math.cos(a) * 1.1; z = c[1] + Math.sin(a) * 1.1; }
+      else if (k < 0.72) { const c = R.pick([[-13, -6], [-9.2, -8.2], [12.5, -6.6], [16.5, -4], [-17, 2]]); const a = R.range(0, 6.28); x = c[0] + Math.cos(a) * 1.1; z = c[1] + Math.sin(a) * 1.1; }
       else { x = R.range(-30, 30); z = R.range(-8, 7); }
-      if (Math.hypot(x, z) < 5.2) continue;
-      tufts.push([x, z, R.range(0.35, 0.8), R.range(0, Math.PI)]);
-      // satellites: tufts grow in clumps
-      for (let k = R.int(0, 2); k > 0; k--) tufts.push([x + R.range(-0.5, 0.5), z + R.range(-0.4, 0.4), R.range(0.25, 0.55), 0]);
+      if (Math.hypot(x, z) < 6.2) continue;
+      const big = R.range(0.55, 1.05);
+      tufts.push([x, z, big, 0]);
+      if (R.chance(0.5)) tufts.push([x + R.range(-0.3, 0.3), z + R.range(-0.25, 0.25), big * R.range(0.6, 0.9), 0]);
+      const ring = R.int(2, 6);
+      for (let q = 0; q < ring; q++) {
+        const a = R.range(0, Math.PI * 2), d = R.range(0.35, 1.1) * big;
+        tufts.push([x + Math.cos(a) * d, z + Math.sin(a) * d * 0.8, R.range(0.18, 0.5) * big, 0]);
+      }
     }
     // clustered tufts of real blades (tapered, bent, root-dark to sun-bleached tips),
     // a few seed heads, lit by the scene instead of flat alpha cards
@@ -755,7 +899,7 @@ export function createTerrace({ seed = 7 } = {}) {
       for (let k = 0; k < 3; k++) nor.push(n.x, n.y, n.z);
     };
     tufts.forEach(([x, z, sc, ry]) => {
-      const n = 9 + Math.floor(R.next() * 8);
+      const n = Math.round((8 + R.next() * 8) * (0.6 + sc * 0.9));
       const dry = R.next();
       for (let i = 0; i < n; i++) {
         const a = R.range(0, Math.PI * 2);
@@ -803,8 +947,8 @@ export function createTerrace({ seed = 7 } = {}) {
   }
 
   // soft glow at the heart of the pool
-  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: getGlowTexture(), color: 0x9ff6ff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.12 }));
-  glow.position.set(0, 1.0, 0);
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: getGlowTexture(), color: 0x9ff6ff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.06 }));
+  glow.position.set(0, 1.4, 0);
   glow.scale.set(8, 3.5, 1);
   group.add(glow);
   disposables.push(glow.material);
@@ -815,7 +959,10 @@ export function createTerrace({ seed = 7 } = {}) {
     braziers,
     /** Scale the column of radiance (the menu dims it so the castle behind stays solid). */
     setBeam(k) {
-      for (const m of beams) m.material.uniforms.uStrength.value = m.userData.base * k;
+      for (const m of beams) {
+        m.material.uniforms.uStrength.value = m.userData.base * k;
+        m.visible = k > 0.001;
+      }
     },
     /** Classic 1988 mode: no soft glow sprites or heat haze (they quantise to blobs). */
     setClassic(on) {

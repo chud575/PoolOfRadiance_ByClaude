@@ -301,7 +301,7 @@ export class SettingsPanel {
         h('button.por-btn.primary', { type: 'button', onclick: () => this.close() }, ['Done']),
       ]),
     ]);
-    this.moreEl = h('button.por-set-more', { type: 'button', onclick: () => { this.bodyEl.scrollBy({ top: this.bodyEl.clientHeight * 0.7, behavior: 'smooth' }); } }, ['More below', h('span.por-set-more-arrow', ['▾'])]);
+    this.moreEl = h('button.por-set-more', { type: 'button', onclick: () => this._pageDown() }, ['More below', h('span.por-set-more-arrow', ['▾'])]);
     this.bodyEl.addEventListener('scroll', () => this._updateScrollCue());
     const main = h('div.por-set-main', [this.headEl, h('div.por-set-bodywrap', [this.bodyEl, this.moreEl])]);
     this.mainEl = main;
@@ -325,8 +325,8 @@ export class SettingsPanel {
     const note = this._note(sec.id);
     if (note) this.bodyEl.append(note);
     this._markFocus();
-    queueMicrotask(() => this._updateScrollCue());
-    if (typeof requestAnimationFrame !== 'undefined') requestAnimationFrame(() => this._updateScrollCue());
+    queueMicrotask(() => { this._fitRows(); this._updateScrollCue(); });
+    if (typeof requestAnimationFrame !== 'undefined') requestAnimationFrame(() => { this._fitRows(); this._updateScrollCue(); });
     if (!silent) this.ctx.audio?.sfx?.('click', { bus: 'ui', pitch: 0.9 });
   }
 
@@ -352,6 +352,51 @@ export class SettingsPanel {
       ]);
     }
     return null;
+  }
+
+  /**
+   * Fit the scrolling body to a whole number of rows, so the last visible row
+   * is never cut in half behind the fade or the "More below" pill.
+   */
+  _fitRows() {
+    const b = this.bodyEl;
+    const wrap = b?.parentElement;
+    if (!b || !wrap || !b.isConnected) return;
+    b.style.flex = '';
+    b.style.height = '';
+    const cs = getComputedStyle(wrap);
+    const avail = wrap.clientHeight - (parseFloat(cs.paddingBottom) || 0) - (parseFloat(cs.paddingTop) || 0);
+    if (!(avail > 0) || b.scrollHeight <= avail + 1) return;
+    const top0 = b.getBoundingClientRect().top - b.scrollTop;
+    let fit = 0;
+    for (const el of b.querySelectorAll('.por-set-row, .por-bind-row, .por-bind-group, .por-set-note')) {
+      const bottom = el.getBoundingClientRect().bottom - top0;
+      if (bottom <= avail) fit = Math.max(fit, bottom);
+    }
+    if (fit > 40) {
+      b.style.flex = 'none';
+      b.style.height = `${Math.ceil(fit + 3)}px`;
+    }
+    if (!this._fitObs && typeof ResizeObserver !== 'undefined') {
+      this._fitObs = new ResizeObserver(() => {
+        if (this._fitting) return;
+        this._fitting = true;
+        requestAnimationFrame(() => { this._fitting = false; this._fitRows(); this._updateScrollCue(); });
+      });
+      this._fitObs.observe(this.frame.el);
+    }
+  }
+
+  /** Scroll down a page, landing on a whole row (the first one cut by the bottom edge goes to the top). */
+  _pageDown() {
+    const b = this.bodyEl;
+    const top0 = b.getBoundingClientRect().top;
+    let target = b.scrollTop + b.clientHeight * 0.7;
+    for (const el of b.querySelectorAll('.por-set-row, .por-bind-row, .por-bind-group')) {
+      const r = el.getBoundingClientRect();
+      if (r.bottom - top0 > b.clientHeight + 1) { target = b.scrollTop + (r.top - top0) - 4; break; }
+    }
+    b.scrollTo({ top: target, behavior: 'smooth' });
   }
 
   _updateScrollCue() {
@@ -652,6 +697,7 @@ export class SettingsPanel {
   }
 
   dispose() {
+    this._fitObs?.disconnect();
     window.removeEventListener('keydown', this._onKey, true);
     this._offBus?.();
     this._offSettings?.();

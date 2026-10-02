@@ -136,10 +136,10 @@ html, body {
     radial-gradient(90% 70% at 50% 120%, rgba(0, 0, 0, 0.45), transparent 70%),
     radial-gradient(ellipse 72% 66% at 50% 46%, transparent 52%, rgba(2, 4, 14, 0.42) 88%, rgba(0, 0, 6, 0.62) 100%),
     var(--tex-brocade, none),
-    linear-gradient(180deg, rgba(34, 54, 118, 0.34) 0%, rgba(14, 22, 58, 0.5) 100%),
+    linear-gradient(180deg, rgba(34, 54, 118, 0.22) 0%, rgba(14, 22, 58, 0.34) 100%),
     var(--tex-leather, none),
     var(--panel-grad);
-  background-size: auto, auto, auto, 2.6em 3.03em, auto, 12em 12em, auto;
+  background-size: auto, auto, auto, 2.6em 3.03em, auto, 8em 8em, auto;
 }
 .por-frame--dark {
   background:
@@ -230,7 +230,7 @@ html, body {
 .por-pad.face.a { --pc: #6fdc6a; } .por-pad.face.b { --pc: #ff6a5a; } .por-pad.face.x { --pc: #4ea3ff; } .por-pad.face.y { --pc: #ffd23a; }
 .por-pad.pill { border-radius: 0.8em; padding: 0 0.55em; font-size: 0.66em; height: 1.75em; letter-spacing: 0.06em; }
 .por-pad.dpad { font-size: 0.9em; height: 1.35em; min-width: 1.35em; }
-.por-pad.unbound { --pc: #8088a0; border-style: dashed; background: rgba(0, 0, 0, 0.25); box-shadow: none; font-weight: 400; }
+.por-pad.unbound { --pc: #7a7f94; border-color: rgba(0, 0, 0, 0.7); border-bottom-color: rgba(216, 178, 90, 0.28); background: radial-gradient(circle at 50% 70%, #10142a, #05070f 80%); box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.85); font-weight: 400; text-shadow: 0 1px 0 rgba(255, 236, 180, 0.12); }
 
 /* ---------- Command bar (the Gold Box command line) ---------- */
 .por-commandbar {
