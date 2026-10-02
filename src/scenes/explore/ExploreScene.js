@@ -132,7 +132,7 @@ export default class ExploreScene extends Scene {
       const sunCol = night ? new THREE.Color(0x9db4ff) : new THREE.Color(k.sun).lerp(new THREE.Color(0xffd6a0), 0.3);
       this.sun = new THREE.DirectionalLight(sunCol, night ? 1.15 : k.sunI * 1.85);
       this.sunDir = (night ? k.moonDir : k.trueSunDir).clone();
-      if (!night) this.sunDir.y *= 0.75; // lower arc → longer, more legible shadows
+      if (!night) this.sunDir.y *= 0.88; // slightly lower arc → legible shadows (not a band across the foreground)
       if (this.sunDir.y < 0.2) this.sunDir.y = 0.2;
       this.sunDir.normalize();
       this.sun.castShadow = true;
@@ -164,18 +164,23 @@ export default class ExploreScene extends Scene {
         grimeTint: ts.grime,
         mossTint: ts.moss,
         wet: 0.4,
+        // puddles mirror the sky above the roofline and the shadowed house fronts below it
+        reflZenith: new THREE.Color(k.top).multiplyScalar(night ? 0.9 : 0.75),
+        reflHorizon: new THREE.Color(k.hor).multiplyScalar(night ? 0.9 : 0.8),
+        reflWall: new THREE.Color(k.fog).lerp(new THREE.Color(night ? 0x0a0806 : 0x3a3026), 0.6).multiplyScalar(night ? 0.5 : 0.55),
       });
     } else {
       const dungeon = ts.id === 'dungeon';
       // raised ambient floor so silhouettes always read, even far from a torch; underground it is a
       // cool counter-light (cold air, wet stone) against the warm torches — the warrens greener,
       // Bane's temple a dead grey-green over a blood-red floor bounce
-      const amb = { warrens: [0x5a8480, 0x2a1e12, 6.5], bane: [0x4c5a52, 0x340c0a, 6.0] }[ts.variant] ?? (dungeon ? [0x4a6a90, 0x1c150e, 1.8] : this.hour > 6.5 && this.hour < 18.5 ? [0xb4c4de, 0x8e5e38, 1.9] : [0xeedcc8, 0x5a3e28, 1.45]); // interiors by day: cool sky fill from the windows, warm hearth/board bounce up onto the joists
+      const amb = { warrens: [0x56769a, 0x2e2216, 6.2], bane: [0x48566a, 0x340c0a, 5.4] }[ts.variant] ?? (dungeon ? [0x4a6c9c, 0x1c150e, 2.3] : this.hour > 6.5 && this.hour < 18.5 ? [0xb4c4de, 0xb07a4c, 2.35] : [0xeedcc8, 0x5a3e28, 1.45]); // interiors by day: cool sky fill from the windows, warm hearth/board bounce up onto the joists
       this.hemi = new THREE.HemisphereLight(amb[0], amb[1], amb[2]);
       s.add(this.hemi);
       if (dungeon) {
         // faint cold key from above-ahead: separates walls, floor and vault in value and hue
-        this.coolKey = new THREE.DirectionalLight(ts.variant === 'bane' ? 0x7a9a8a : 0x7090c0, 0.22);
+        // (strong enough to separate cool stone from the warm torch pools: two hues, not a sepia wash)
+        this.coolKey = new THREE.DirectionalLight(ts.variant === 'bane' ? 0x7f94b0 : 0x7096d0, ts.variant === 'warrens' ? 0.95 : ts.variant === 'bane' ? 0.55 : 0.6);
         this.coolKey.position.set(0.3, 1, 0.6);
         this.camera.add(this.coolKey);
         this.camera.add(this.coolKey.target);
@@ -201,7 +206,7 @@ export default class ExploreScene extends Scene {
       }
       s.fog = new THREE.FogExp2(ts.variant === 'warrens' ? 0x060909 : ts.variant === 'bane' ? 0x050706 : dungeon ? 0x07080b : 0x1a120c, dungeon ? 0.055 : 0.025);
       s.background = new THREE.Color(dungeon ? 0x020203 : 0x0a0604);
-      setSurfaceAtmosphere({ sunDir: new THREE.Vector3(0, 1, 0), sunColor: 0x000000, scatter: 0, heightFog: dungeon ? 0.35 : 0.08, heightFalloff: 0.8, grimeTint: ts.grime, mossTint: ts.moss, wet: dungeon ? 0.3 : 0 });
+      setSurfaceAtmosphere({ sunDir: new THREE.Vector3(0, 1, 0), sunColor: 0x000000, scatter: 0, heightFog: dungeon ? 0.35 : 0.08, heightFalloff: 0.8, grimeTint: ts.grime, mossTint: ts.moss, wet: dungeon ? 0.3 : 0, reflWall: dungeon ? 0x0c0b0a : 0, reflHorizon: dungeon ? 0x0a0a0a : 0, reflZenith: dungeon ? 0x050505 : 0 });
     }
     // pooled torch lights (constant count → no shader recompiles)
     this.poolLights = [];
@@ -402,11 +407,13 @@ export default class ExploreScene extends Scene {
       if (src.kind === 'hearth') {
         // a bed of fire along the logs: a tall heart, licking flankers and low flames at the ends
         for (const [dx, dz, sc] of [[-0.3, 0.02, 0.3], [-0.16, -0.04, 0.5], [0.0, 0.03, 0.66], [0.15, -0.03, 0.48], [0.29, 0.02, 0.32], [0.06, 0.1, 0.36]]) flames.push({ pos: src.pos.clone().add(new THREE.Vector3(src.N.z * dx + src.N.x * dz, -0.14, -src.N.x * dx + src.N.z * dz)), scale: sc, seed: src.seed + dx * 10 + dz * 7 });
-        glows.push({ pos: src.pos.clone().add(new THREE.Vector3(0, 0.3, 0)), size: 1.6, color: 0xff7a30, seed: src.seed, opacity: 0.22 });
+        glows.push({ pos: src.pos.clone().add(new THREE.Vector3(0, 0.35, 0)), size: 1.4, color: 0xff6a20, seed: src.seed, opacity: 0.1 });
         continue;
       }
       if (src.kind === 'brazier') {
-        for (const [dx, dz, sc] of [[0, 0, 0.56], [0.14, 0.09, 0.26]]) flames.push({ pos: src.pos.clone().add(new THREE.Vector3(dx, -0.12, dz)), scale: sc, color: src.flameColor, seed: src.seed + dx * 30 });
+        // a bed of fire across the bowl: a tall heart and lower tongues around it
+        const bk = src.big ? 1.25 : 1;
+        for (const [dx, dz, sc] of [[0, 0, 0.62], [0.13, 0.08, 0.36], [-0.12, 0.06, 0.32], [0.02, -0.12, 0.3]]) flames.push({ pos: src.pos.clone().add(new THREE.Vector3(dx * bk, -0.12, dz * bk)), scale: sc * bk, color: src.flameColor, seed: src.seed + dx * 30 + dz * 17 });
         glows.push({ pos: src.pos.clone().add(new THREE.Vector3(0, 0.2, 0)), size: 0.8, color: src.lightColor ?? 0xff8a40, seed: src.seed, opacity: 0.16 });
         glows.push({ pos: src.pos.clone().add(new THREE.Vector3(0, 0.3, 0)), size: 2.2, color: src.lightColor ?? 0xff8a40, seed: src.seed + 3, opacity: 0.06 });
         continue;
@@ -445,7 +452,7 @@ export default class ExploreScene extends Scene {
     if (this.tileset.outdoors && this.keys.night < 0.5) {
       // crepuscular rays through the gaps between buildings (strongest at low sun)
       const low = this.keys.scatter > 0.8 || this.sunDir.y < 0.4;
-      this.sunShafts = buildSunShafts(this.map, this.block, { sunDir: this.sunDir, color: new THREE.Color(this.keys.sunCol).lerp(new THREE.Color(0xfff0d8), 0.3), strength: low ? 0.55 : 0.07, time: PROP_UNIFORMS.uTime });
+      this.sunShafts = buildSunShafts(this.map, this.block, { sunDir: this.sunDir, color: new THREE.Color(this.keys.sunCol).lerp(new THREE.Color(0xfff0d8), 0.3), strength: low ? 0.34 : 0.06, time: PROP_UNIFORMS.uTime });
       if (this.sunShafts) this.scene3d.add(this.sunShafts);
     }
     if (this.tileset.outdoors || !this.sun || !this.sun.intensity) return;
@@ -504,9 +511,11 @@ export default class ExploreScene extends Scene {
       if (!l) break;
       l.userData.src = src;
       l.userData.fade = snap ? 1 : 0;
-      l.position.copy(src.pos).addScaledVector(src.N ?? new THREE.Vector3(), 0.25);
       const candle = src.kind === 'candle';
       const hearth = src.kind === 'hearth';
+      // (the hearth's light sits up in the firebox mouth, not on the floor: no hot spot on the boards)
+      l.position.copy(src.pos).addScaledVector(src.N ?? new THREE.Vector3(), hearth ? 0.45 : 0.25);
+      if (hearth) l.position.y += 0.55;
       l.color.setHex(src.lightColor ?? (hearth ? 0xff8f50 : candle ? 0xffb060 : src.kind === 'lamp' ? 0xffb56a : 0xff9040));
       // inverse-square pools (~3 m effective reach); a torch by day barely registers against the sun
       const day = this.tileset.outdoors && this.night < 0.12;

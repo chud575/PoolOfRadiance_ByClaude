@@ -43,7 +43,14 @@ export function buildCog(g, M, o, out) {
     const w = s.half * (1 - Math.pow(1 - f, 2.4)) * (0.92 + 0.08 * f);
     return [y, w];
   };
-  const tone = (j) => (j % 2 ? [0.82, 0.74, 0.66] : [0.95, 0.86, 0.76]);
+  // tarred oak strakes, each plank its own tone; the sheer strake painted red ochre, the one
+  // below it a pale band, so the hull reads as planked timber and not a black cutout
+  const tone = (j, i) => {
+    if (j === NJ - 1) return [1.35, 0.62, 0.42];
+    if (j === NJ - 2) return [1.55, 1.42, 1.18];
+    const v = (j % 2 ? 1.0 : 1.14) * (0.92 + hash(seed, i, j, 'pl') * 0.18);
+    return [v * 1.25, v * 1.12, v * 0.98];
+  };
   for (let i = 0; i < NS; i++) {
     const a = station(i / NS);
     const b = station((i + 1) / NS);
@@ -59,9 +66,9 @@ export function buildCog(g, M, o, out) {
         const p1 = P(b.x, yb0, side * wb0);
         const p2 = P(b.x, yb1, side * (wb1 + lap));
         const p3 = P(a.x, ya1, side * (wa1 + lap));
-        const tint = tone(j + (ya1 < 0 ? 0 : 0)).map((v) => v * (ya1 < 0.05 ? 0.55 : 1)); // wet, weedy below the waterline
-        if (side > 0) g.quad('arch_beam_dark', p0, p1, p2, p3, null, { tint, ao: 0.6 + 0.4 * (j / NJ) });
-        else g.quad('arch_beam_dark', p1, p0, p3, p2, null, { tint, ao: 0.6 + 0.4 * (j / NJ) });
+        const tint = tone(j, i).map((v, ci) => v * (ya1 < 0.05 ? [0.42, 0.48, 0.4][ci] : 1)); // wet, weedy below the waterline
+        if (side > 0) g.quad('arch_beam', p0, p1, p2, p3, null, { tint, ao: 0.6 + 0.4 * (j / NJ) });
+        else g.quad('arch_beam', p1, p0, p3, p2, null, { tint, ao: 0.6 + 0.4 * (j / NJ) });
       }
     }
     // deck
@@ -81,8 +88,15 @@ export function buildCog(g, M, o, out) {
       const p1 = P(b.x, yb - 0.14, side * (b.half + 0.08));
       const p2 = P(b.x, yb + 0.14, side * (b.half + 0.08));
       const p3 = P(a.x, ya + 0.14, side * (a.half + 0.08));
-      if (side > 0) g.quad('arch_beam_dark', p0, p1, p2, p3, null, { tint: [0.45, 0.38, 0.32], ao: 0.9 });
-      else g.quad('arch_beam_dark', p1, p0, p3, p2, null, { tint: [0.45, 0.38, 0.32], ao: 0.9 });
+      if (side > 0) g.quad('arch_beam', p0, p1, p2, p3, null, { tint: [0.7, 0.58, 0.48], ao: 0.9 });
+      else g.quad('arch_beam', p1, p0, p3, p2, null, { tint: [0.7, 0.58, 0.48], ao: 0.9 });
+      // gunwale rail cap: a pale, worn top edge that catches the sky
+      const q0 = P(a.x, a.top + 0.02, side * (a.half + 0.05));
+      const q1 = P(b.x, b.top + 0.02, side * (b.half + 0.05));
+      const q2 = P(b.x, b.top + 0.02, side * (b.half - 0.12));
+      const q3 = P(a.x, a.top + 0.02, side * (a.half - 0.12));
+      if (side > 0) g.quad('arch_beam', q3, q2, q1, q0, null, { tint: [1.7, 1.55, 1.3], ao: 1 });
+      else g.quad('arch_beam', q0, q1, q2, q3, null, { tint: [1.7, 1.55, 1.3], ao: 1 });
     }
   }
   // stem and stern posts (straight, raking)
@@ -136,7 +150,7 @@ export function buildCog(g, M, o, out) {
   const mast = new THREE.CylinderGeometry(0.16, 0.26, mastH, 8);
   g.geometry('arch_beam_dark', mast, at(mastX, mastH / 2 + F * 0.5, 0), { uv: 'world', ao: 0.85 });
   mast.dispose();
-  const top = new THREE.CylinderGeometry(0.75, 0.55, 0.6, 10);
+  const top = new THREE.CylinderGeometry(0.55, 0.42, 0.7, 10);
   g.geometry('arch_beam_dark', top, at(mastX, mastH * 0.9 + F * 0.5, 0), { uv: 'world', ao: 0.85 });
   top.dispose();
   const set = o.set ?? hash(seed, 'set') < 0.5;
@@ -156,8 +170,8 @@ export function buildCog(g, M, o, out) {
   if (set) {
     // bellied square sail: rows from the yard down to the foot, bulging forward (+x) in the middle
     const sh = mastH * 0.62;
-    const NX = 8;
-    const NY = 6;
+    const NX = 18;
+    const NY = 12;
     const pt = (i, j) => {
       const u = i / NX - 0.5;
       const v = j / NY;
@@ -183,21 +197,27 @@ export function buildCog(g, M, o, out) {
   } else {
     // sail furled on the yard: a lumpy roll of canvas with gaskets
     // a fat bunt in the middle, tapering to the yardarms, sagging between the gaskets
-    const roll = new THREE.CylinderGeometry(0.5, 0.5, yardL * 0.94, 10, 16);
+    // a slim, even bundle of canvas lashed along the yard (not a lens): full thickness to near the
+    // yardarms, pinched at each gasket, sagging in festoons between them, a heavier bunt amidships
+    const roll = new THREE.CylinderGeometry(0.3, 0.3, yardL * 0.9, 10, 40);
     const rp = roll.attributes.position;
-    const hl = (yardL * 0.94) / 2;
+    const hl = (yardL * 0.9) / 2;
     for (let i = 0; i < rp.count; i++) {
       const yy = rp.getY(i);
       const t = Math.abs(yy) / hl;
-      const gasket = 1 - 0.22 * Math.pow(Math.max(0, Math.cos(yy * 2.6 + seed)), 12);
-      const k = (1 - 0.7 * t * t) * gasket * (1 + 0.12 * Math.sin(yy * 4.1 + seed * 2));
+      const gs = Math.cos((yy / hl) * Math.PI * 4.5 + seed);
+      const gasket = 1 - 0.32 * Math.pow(Math.max(0, gs), 16);
+      const taper = 1 - 0.55 * Math.pow(Math.max(0, (t - 0.8) / 0.2), 1.5);
+      const bunt = 1 + 0.35 * Math.max(0, 1 - t * 4);
+      const k = taper * gasket * bunt * (1 + 0.08 * Math.sin(yy * 5.3 + seed * 2));
+      const sag = 0.1 * (1 - Math.max(0, gs)) * taper + 0.12 * Math.max(0, 1 - t * 4);
       rp.setX(i, rp.getX(i) * k);
-      rp.setZ(i, rp.getZ(i) * k * 1.15 + 0.18 * (1 - t * t)); // (becomes -y: the bunt hangs below the yard)
+      rp.setZ(i, rp.getZ(i) * k * 1.2 + sag); // (becomes -y: the cloth hangs below the yard)
     }
     roll.computeVertexNormals();
     roll.rotateX(Math.PI / 2);
     roll.rotateY(Math.PI / 2);
-    g.geometry('arch_plaster', roll, at(mastX + 0.25, yardY - 0.3, 0).multiply(new THREE.Matrix4().makeRotationY(Math.PI / 2)), { uv: 'world', ao: 0.85, tint: [0.95, 0.9, 0.82] });
+    g.geometry('arch_plaster', roll, at(mastX + 0.25, yardY - 0.22, 0).multiply(new THREE.Matrix4().makeRotationY(Math.PI / 2)), { uv: 'world', ao: 0.85, tint: [0.95, 0.9, 0.82] });
     roll.dispose();
   }
   // standing rigging: shrouds to the channels with ratlines, fore- and backstay

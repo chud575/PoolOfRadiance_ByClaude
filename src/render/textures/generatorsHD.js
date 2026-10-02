@@ -183,9 +183,10 @@ export function plaster({ seed = 31, base = [0.78, 0.72, 0.6], decay = 1, interi
     // fine hairline craquelure: warped small cells, thin lines, only in patches
     const wu = u + (fbm(u * 18, v * 18, { octaves: 2, period: 18, seed: seed + 14 }) - 0.5) * 0.02;
     const wv = v + (fbm(u * 18 + 3.1, v * 18, { octaves: 2, period: 18, seed: seed + 15 }) - 0.5) * 0.02;
-    const w = worley(wu * 22, wv * 22, 22, seed + 6);
-    const crackMask = smooth(0.6, 0.72, fbm(u * 5, v * 5, { octaves: 3, period: 5, seed: seed + 7 })) * smooth(0.25, 0.6, w.id + 0.2);
-    const crack = (1 - smooth(0.0, 0.035, w.f2 - w.f1)) * crackMask * decay * 0.8; // ≥ 1 texel wide: continuous hairlines, never dotted
+    const w = worley(wu * 34, wv * 34, 34, seed + 6);
+    // hairlines only in a few tight clusters (sparse, low contrast): never a mud-flat network
+    const crackMask = smooth(0.7, 0.8, fbm(u * 5, v * 5, { octaves: 3, period: 5, seed: seed + 7 })) * smooth(0.35, 0.7, w.id);
+    const crack = (1 - smooth(0.0, 0.03, w.f2 - w.f1)) * crackMask * Math.min(decay, 1) * 0.55;
     // a few longer settlement cracks (wandering lines, very thin)
     // two sparse settlement cracks per tile: thin, jagged at the cm scale, slowly drifting
     let settle = 0;
@@ -201,9 +202,9 @@ export function plaster({ seed = 31, base = [0.78, 0.72, 0.6], decay = 1, interi
       settle = Math.max(settle, (1 - smooth(0.0, 0.0018, du - 0.0004)) * (1 - span));
     }
     settle *= decay * 0.8;
-    const ck = Math.max(crack * 0.7, settle);
-    c = mul3(c, 1 - ck * 0.4);
-    h -= ck * 0.06;
+    const ck = Math.max(crack * 0.7, settle * 0.8);
+    c = mul3(c, 1 - ck * 0.22);
+    h -= ck * 0.018;
     // small spalls exposing riven oak lath (with dark gaps) behind the render
     if (!interior) {
       const sp = wfbm(u, v, 9, seed + 8, 4, 0.5);

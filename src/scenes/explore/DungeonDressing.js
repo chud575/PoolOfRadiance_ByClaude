@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { CELL, EDGE } from '../../data/maps/MapGrid.js';
 import { getMaterial } from '../../render/materials.js';
 import { getBaneBannerTexture, getRunnerTexture, getBlobTexture, getSoftTexture, getAltarClothTexture, getAltarClothORM } from '../../render/textures/index.js';
-import { GeoBuilder, hash } from './GeoBuilder.js';
+import { GeoBuilder, roughBlockGeometry, hash } from './GeoBuilder.js';
 import { CELL_SIZE, WALL_T } from './BlockBuilder.js';
 import { fracturedRock, PROP_UNIFORMS } from './Props.js';
 
@@ -32,6 +32,7 @@ export function dressDungeon(map, block, opts = {}) {
   const lamps = [];
   const g = new GeoBuilder();
   const blobs = [];
+  const haloQuads = [];
   const runnelQuads = [];
   const rocks = [0, 1, 2, 3, 4].map((k) => fracturedRock(40 + k, false));
   const chunks = [0, 1, 2].map((k) => fracturedRock(60 + k, true));
@@ -177,9 +178,14 @@ export function dressDungeon(map, block, opts = {}) {
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    // one continuous top-down projection over the whole lumpy roof: per-normal planar UVs flip axis
+    // across the haunches and smear the texture into contour-like striations
+    const ruv = [];
+    for (let i = 0; i < pos.length; i += 3) ruv.push(pos[i] / 3, pos[i + 2] / 3);
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(ruv, 2));
     geo.setIndex(idx);
     geo.computeVertexNormals();
-    g.geometry('arch_hewn_ceil', geo, M4(), { uv: 'world', ao: (p) => 0.5 + 0.5 * THREE.MathUtils.smoothstep(ceil - p.y, 0.0, 0.45) });
+    g.geometry('arch_hewn_ceil', geo, M4(), { ao: (p) => 0.5 + 0.5 * THREE.MathUtils.smoothstep(ceil - p.y, 0.0, 0.45) });
     geo.dispose();
     // a few knuckles of harder rock hanging well clear of the roof (never a flat disc)
     for (let k = 0; k < 2; k++) {
@@ -204,14 +210,17 @@ export function dressDungeon(map, block, opts = {}) {
       const sd = hash(f.seed, end, 'crn');
       const sC = end * (S / 2 + T / 2 - 0.06);
       let y = -0.05;
-      for (let k = 0; y < H - 0.1 && k < 9; k++) {
-        const sc = 0.36 + hash(sd, k, 'cz') * 0.38;
-        const h = sc * 0.62;
-        const m = onFace(f, sC + (hash(sd, k, 'cs') - 0.5) * 0.18 - end * 0.04, y + h * 0.5, T / 2 - 0.08 + hash(sd, k, 'cd') * 0.08)
-          .multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler((hash(sd, k, 'rx') - 0.5) * 0.8, hash(sd, k, 'ry') * 6.3, (hash(sd, k, 'rz') - 0.5) * 0.8)))
-          .multiply(new THREE.Matrix4().makeScale(sc * 1.05, sc * 1.25, sc * 1.05));
-        g.geometry('arch_hewn', rocks[(k + Math.floor(sd * 5)) % rocks.length], m, { uv: 'world', tint: rt(sd, k), ao: (p) => 0.55 + 0.45 * THREE.MathUtils.smoothstep(p.y, 0, 0.8) });
-        y += h * (0.62 + hash(sd, k, 'cy') * 0.25);
+      // bedded rock: flat, fractured slabs of varying thickness stacked with a common dip, each
+      // stepping in or out a little (the strata weather back unevenly), never round lumps
+      const dip = (hash(sd, 'dip') - 0.5) * 0.16;
+      for (let k = 0; y < H - 0.1 && k < 16; k++) {
+        const th = 0.16 + hash(sd, k, 'th') * 0.26;
+        const wd = 0.55 + hash(sd, k, 'cz') * 0.35;
+        const m = onFace(f, sC + (hash(sd, k, 'cs') - 0.5) * 0.16 - end * 0.05, y + th * 0.5, T / 2 - 0.12 + hash(sd, k, 'cd') * 0.14)
+          .multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(dip + (hash(sd, k, 'rx') - 0.5) * 0.06, (hash(sd, k, 'ry') - 0.5) * 0.5, dip * 0.5 + (hash(sd, k, 'rz') - 0.5) * 0.06)))
+          .multiply(new THREE.Matrix4().makeScale(wd * 1.1, th / 0.62, wd));
+        g.geometry('arch_hewn', chunks[(k + Math.floor(sd * 3)) % chunks.length], m, { uv: 'world', tint: rt(sd, k).map((v) => v * (0.85 + (k % 2) * 0.2)), ao: (p) => 0.55 + 0.45 * THREE.MathUtils.smoothstep(p.y, 0, 0.8) });
+        y += th * 0.96;
       }
       // overhanging shoulder where the corner meets the roof
       const m = onFace(f, sC - end * 0.1, H - 0.3, T / 2 - 0.1)
@@ -442,6 +451,29 @@ export function dressDungeon(map, block, opts = {}) {
         if (!/sanctum/i.test(zone) || fc.x === 7) runner.push({ cx, cz, alongZ });
       }
     }
+    // the sanctum nave: pairs of braziers (each a different casting) march toward the altar, and
+    // fire-bowls on brackets light the side walls, so the hall reads as architecture, not void
+    for (const fc of block.spots.floorCells) {
+      if (!/sanctum/i.test(map.zoneAt(fc.x, fc.y) ?? '')) continue;
+      const cx = fc.x * S + S / 2;
+      const cz = fc.y * S + S / 2;
+      if ((fc.x === 6 || fc.x === 9) && (fc.y === 2 || fc.y === 4)) {
+        const sx = fc.x === 6 ? -0.9 : 0.9;
+        brazier(tr(cx + sx, 0, cz), fc.x * 13 + fc.y, (fc.y === 2 ? 1 : 2));
+      }
+    }
+    for (const f of block.spots.bane) {
+      if (f.openings.length || f.relief) continue;
+      if (!/sanctum/i.test(map.zoneAt(f.cell.x, f.cell.y) ?? '')) continue;
+      if (hash(f.seed, 'wb') > 0.6) continue;
+      const bm = onFace(f, 0, 2.15, T / 2);
+      g.box('prop_iron', { matrix: bm.clone().multiply(tr(0, -0.1, 0.02)), s: [0.12, 0.34, 0.03], chamfer: 0.01 });
+      g.box('prop_iron', { matrix: bm.clone().multiply(tr(0, -0.06, 0.18)), s: [0.04, 0.04, 0.34], chamfer: 0.008 });
+      const cup = new THREE.LatheGeometry([[0, 0], [0.08, 0.01], [0.17, 0.08], [0.2, 0.14], [0.17, 0.14], [0, 0.07]].map(([r, y]) => new THREE.Vector2(r, y)), 14);
+      g.geometry('prop_iron', cup, bm.clone().multiply(tr(0, -0.06, 0.38)), { uv: 'world' });
+      cup.dispose();
+      lamps.push({ pos: new THREE.Vector3(0, 0.08, 0.38).applyMatrix4(bm), kind: 'brazier', lit: true, seed: Math.floor(f.seed * 997), flameColor: BANE_FLAME, lightColor: BANE_LIGHT });
+    }
     // the altar: wherever an event names it (or the sanctum's heart)
     const altarEv = (map.events ?? []).find((e) => /altar/i.test(`${e.id} ${e.ref ?? ''}`));
     if (altarEv) altar(altarEv.x, altarEv.y);
@@ -524,7 +556,61 @@ export function dressDungeon(map, block, opts = {}) {
     }
   }
 
-  function brazier(m, seed) {
+  function brazier(m, seed, style = Math.floor(hash(seed, 'bst') * 3)) {
+    if (style === 1) {
+      // a tall fluted basalt pedestal carrying a wide, lipped bronze-black bowl on four claws
+      const ped = new THREE.LatheGeometry([[0, 0], [0.26, 0], [0.26, 0.08], [0.2, 0.12], [0.13, 0.2], [0.11, 0.7], [0.15, 0.78], [0.2, 0.84], [0, 0.84]].map(([r, y]) => new THREE.Vector2(r, y)), 16);
+      g.geometry('arch_basalt', ped, m, { uv: 'world', tint: [0.9, 0.86, 0.86] });
+      ped.dispose();
+      const bw = new THREE.LatheGeometry([[0.02, 0], [0.18, 0.02], [0.34, 0.1], [0.42, 0.2], [0.45, 0.24], [0.41, 0.24], [0.3, 0.14], [0, 0.1]].map(([r, y]) => new THREE.Vector2(r, y)), 20);
+      g.geometry('prop_iron', bw, m.clone().multiply(tr(0, 0.86, 0)), { uv: 'world', tint: [0.75, 0.62, 0.45] });
+      bw.dispose();
+      for (let k = 0; k < 4; k++) {
+        const a = (k / 4) * Math.PI * 2 + 0.4;
+        const cm = m.clone().multiply(new THREE.Matrix4().makeRotationY(a)).multiply(tr(0.22, 0.86, 0)).multiply(new THREE.Matrix4().makeRotationZ(-0.7));
+        g.box('prop_iron', { matrix: cm, s: [0.05, 0.2, 0.05], chamfer: 0.01 });
+      }
+      const co = new THREE.CircleGeometry(0.38, 16);
+      co.rotateX(-Math.PI / 2);
+      g.geometry('arch_beam_dark', co, m.clone().multiply(tr(0, 1.06, 0)), { uv: 'world', tint: [0.16, 0.13, 0.11] });
+      co.dispose();
+      const c = new THREE.Vector3(0, 0, 0).applyMatrix4(m);
+      blobs.push({ x: c.x, z: c.z, r: 0.65, a: 0.6 });
+      lamps.push({ pos: new THREE.Vector3(0, 1.1, 0).applyMatrix4(m), kind: 'brazier', big: true, lit: true, seed: Math.floor(seed * 991) % 997, flameColor: BANE_FLAME, lightColor: BANE_LIGHT });
+      return;
+    }
+    if (style === 2) {
+      // a squat iron cauldron-brazier on three lion-paw legs, ring handles, a riveted band
+      for (let k = 0; k < 3; k++) {
+        const a = (k / 3) * Math.PI * 2 + seed;
+        const lm = m.clone().multiply(new THREE.Matrix4().makeRotationY(a)).multiply(tr(0.27, 0.22, 0)).multiply(new THREE.Matrix4().makeRotationZ(-0.25));
+        g.box('prop_iron', { matrix: lm, s: [0.07, 0.46, 0.07], chamfer: 0.02 });
+        const paw = new THREE.SphereGeometry(0.07, 8, 6);
+        paw.scale(1.2, 0.6, 1);
+        g.geometry('prop_iron', paw, m.clone().multiply(new THREE.Matrix4().makeRotationY(a)).multiply(tr(0.33, 0.03, 0)), { uv: 'world' });
+        paw.dispose();
+      }
+      const cauld = new THREE.LatheGeometry([[0, 0.3], [0.2, 0.32], [0.34, 0.42], [0.38, 0.56], [0.36, 0.68], [0.39, 0.7], [0.34, 0.7], [0.3, 0.6], [0, 0.55]].map(([r, y]) => new THREE.Vector2(r, y)), 18);
+      g.geometry('prop_iron', cauld, m, { uv: 'world' });
+      cauld.dispose();
+      const band = new THREE.TorusGeometry(0.385, 0.018, 5, 24);
+      band.rotateX(Math.PI / 2);
+      g.geometry('prop_iron', band, m.clone().multiply(tr(0, 0.55, 0)), { uv: 'world', tint: [1.3, 1.2, 1.1] });
+      band.dispose();
+      for (const sx of [-1, 1]) {
+        const ring = new THREE.TorusGeometry(0.07, 0.014, 5, 12);
+        g.geometry('prop_iron', ring, m.clone().multiply(tr(sx * 0.42, 0.6, 0)).multiply(new THREE.Matrix4().makeRotationY(Math.PI / 2)), { uv: 'world' });
+        ring.dispose();
+      }
+      const co = new THREE.CircleGeometry(0.33, 16);
+      co.rotateX(-Math.PI / 2);
+      g.geometry('arch_beam_dark', co, m.clone().multiply(tr(0, 0.66, 0)), { uv: 'world', tint: [0.16, 0.13, 0.11] });
+      co.dispose();
+      const c = new THREE.Vector3(0, 0, 0).applyMatrix4(m);
+      blobs.push({ x: c.x, z: c.z, r: 0.65, a: 0.6 });
+      lamps.push({ pos: new THREE.Vector3(0, 0.72, 0).applyMatrix4(m), kind: 'brazier', big: true, lit: true, seed: Math.floor(seed * 991) % 997, flameColor: BANE_FLAME, lightColor: BANE_LIGHT });
+      return;
+    }
     // iron tripod with a deep bowl of coals; green fire
     for (let k = 0; k < 3; k++) {
       const a = (k / 3) * Math.PI * 2 + seed;
@@ -549,8 +635,14 @@ export function dressDungeon(map, block, opts = {}) {
     const cz = y * S + S / 2;
     // the altar faces the way into the sanctum (south by default)
     const rot = 0;
-    const m = tr(cx, 0, cz).multiply(new THREE.Matrix4().makeRotationY(rot));
+    // the altar is the hall's focus: built a third over life size on a broad three-step dais
+    const m = tr(cx, 0.16, cz).multiply(new THREE.Matrix4().makeRotationY(rot)).multiply(new THREE.Matrix4().makeScale(1.32, 1.32, 1.32));
     const at = (px, py, pz) => m.clone().multiply(tr(px, py, pz));
+    {
+      const lowest = roughBlockGeometry(4.2, 0.16, 3.4, { bevel: 0.03, amp: 0.006, seed: 11, chip: 0.02 });
+      g.geometry('arch_basalt', lowest, tr(cx, 0.08, cz - 0.2), { uv: 'world', tint: [0.72, 0.68, 0.68] });
+      lowest.dispose();
+    }
     // stepped dais: two chamfered treads, each with a worn, slightly lighter nosing
     g.box('arch_basalt', { matrix: at(0, 0.1, -0.2), s: [2.9, 0.2, 2.2], chamfer: 0.03, tint: [0.8, 0.76, 0.76] });
     g.box('arch_basalt', { matrix: at(0, 0.27, -0.35), s: [2.4, 0.15, 1.5], chamfer: 0.03, tint: [0.85, 0.8, 0.8] });
@@ -686,8 +778,7 @@ export function dressDungeon(map, block, opts = {}) {
     // the stele behind it: a tall slab carrying a great relief of the Black Hand
     g.box('arch_basalt', { matrix: at(0, 1.9, -1.25), s: [2.3, 3.8, 0.4], chamfer: 0.05 });
     g.box('arch_basalt', { matrix: at(0, 3.86, -1.25), s: [2.6, 0.18, 0.55], chamfer: 0.04, tint: [0.9, 0.85, 0.85] });
-    const rp = (px, py) => new THREE.Vector3(px, py, -1.04).applyMatrix4(m);
-    g.quad('arch_relief', rp(-0.95, 1.55), rp(0.95, 1.55), rp(0.95, 3.45), rp(-0.95, 3.45), [[0, 1], [1, 1], [1, 0], [0, 0]], { ao: 1 });
+    blackHand(m.clone().multiply(tr(0, 2.5, -1.05)));
     // candles of oxblood wax along the back of the altar: varied heights, drips running down,
     // wax pooled at the foot, a melted cup at the top
     for (let k = 0; k < 7; k++) {
@@ -720,7 +811,85 @@ export function dressDungeon(map, block, opts = {}) {
     blobs.push({ x: cx, z: cz - 0.35, r: 1.6, a: 0.5 });
   }
 
+  /**
+   * The Black Hand: an open gauntleted hand of black iron, deep-carved (thick extrusion, bevelled
+   * knuckles and finger joints), raised palm-out inside a ring of iron spikes, with a sickly green
+   * halo behind it that rims the silhouette. m: origin at the palm centre, +z out of the stele.
+   */
+  function blackHand(m) {
+    const at2 = (x, y, z) => m.clone().multiply(tr(x, y, z));
+    // sunken roundel the hand stands in (a dark recess with a moulded rim)
+    const rim = new THREE.TorusGeometry(0.86, 0.06, 8, 40);
+    g.geometry('arch_basalt', rim, at2(0, 0, 0.02), { uv: 'world', tint: [0.95, 0.9, 0.9] });
+    rim.dispose();
+    const back = new THREE.CircleGeometry(0.86, 40);
+    g.geometry('arch_basalt', back, at2(0, 0, 0.005), { uv: 'world', tint: [0.35, 0.33, 0.34], ao: 0.6 });
+    back.dispose();
+    // spikes radiating from the ring
+    for (let k = 0; k < 16; k++) {
+      const a = (k / 16) * Math.PI * 2;
+      const len = k % 2 ? 0.22 : 0.34;
+      const sp = new THREE.ConeGeometry(0.045, len, 6);
+      const sm = at2(Math.cos(a) * (0.9 + len / 2), Math.sin(a) * (0.9 + len / 2), 0.03).multiply(new THREE.Matrix4().makeRotationZ(a - Math.PI / 2));
+      g.geometry('prop_iron', sp, sm, { uv: 'world', tint: [0.5, 0.48, 0.5] });
+      sp.dispose();
+    }
+    const parts = [];
+    const rr = (x0, y0, w, h, r) => {
+      const sh = new THREE.Shape();
+      sh.moveTo(x0 + r, y0);
+      sh.lineTo(x0 + w - r, y0);
+      sh.quadraticCurveTo(x0 + w, y0, x0 + w, y0 + r);
+      sh.lineTo(x0 + w, y0 + h - r);
+      sh.quadraticCurveTo(x0 + w, y0 + h, x0 + w - r, y0 + h);
+      sh.lineTo(x0 + r, y0 + h);
+      sh.quadraticCurveTo(x0, y0 + h, x0, y0 + h - r);
+      sh.lineTo(x0, y0 + r);
+      sh.quadraticCurveTo(x0, y0, x0 + r, y0);
+      return sh;
+    };
+    // palm + cuff
+    parts.push([rr(-0.3, -0.4, 0.6, 0.62, 0.12), 0.16, 0, 0]);
+    parts.push([rr(-0.26, -0.72, 0.52, 0.34, 0.05), 0.12, 0, 0]);
+    // four fingers in two phalanx segments each (a hair apart so the joints read), thumb angled out
+    const fx = [-0.235, -0.078, 0.078, 0.235];
+    const fl = [0.36, 0.44, 0.42, 0.32];
+    fx.forEach((x, i) => {
+      parts.push([rr(x - 0.055, 0.24, 0.11, fl[i] * 0.5, 0.045), 0.13, 0, 0]);
+      parts.push([rr(x - 0.05, 0.25 + fl[i] * 0.53, 0.1, fl[i] * 0.45, 0.05), 0.12, 0, 0]);
+    });
+    parts.push([rr(-0.07, -0.12, 0.14, 0.36, 0.06), 0.13, -0.36, 0.7]);
+    for (const [sh, dep, ox, ang] of parts) {
+      const eg = new THREE.ExtrudeGeometry(sh, { depth: dep, bevelEnabled: true, bevelThickness: 0.035, bevelSize: 0.03, bevelSegments: 3, curveSegments: 6 });
+      const pm = at2(ox, ang ? -0.05 : 0, 0.08).multiply(new THREE.Matrix4().makeRotationZ(ang));
+      g.geometry('prop_iron', eg, pm, { uv: 'world', tint: [0.42, 0.4, 0.42], ao: 0.95 });
+      eg.dispose();
+    }
+    // knuckle studs across the back of the gauntlet cuff
+    for (let k = 0; k < 4; k++) {
+      const st = new THREE.SphereGeometry(0.03, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2);
+      st.rotateX(Math.PI / 2);
+      g.geometry('prop_iron', st, at2(-0.18 + k * 0.12, -0.55, 0.28), { uv: 'world', tint: [0.7, 0.68, 0.7] });
+      st.dispose();
+    }
+    // green halo behind the hand (additive): rims the black silhouette, the hand never glows itself
+    haloQuads.push(new THREE.Vector3(0, 0, 0.04).applyMatrix4(m), 1.05, m);
+  }
+
   // ---------------------------------------------------------------- assemble
+  if (haloQuads.length) {
+    const mat = new THREE.MeshBasicMaterial({ map: getSoftTexture(), color: new THREE.Color(BANE_LIGHT).multiplyScalar(0.12), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
+    for (let i = 0; i < haloQuads.length; i += 3) {
+      const r = haloQuads[i + 1];
+      const pg = new THREE.PlaneGeometry(r * 2.2, r * 2.2);
+      const mesh = new THREE.Mesh(pg, mat);
+      mesh.applyMatrix4(haloQuads[i + 2].clone().multiply(tr(0, 0, 0.045)));
+      mesh.renderOrder = 4;
+      group.add(mesh);
+      own.push(pg);
+    }
+    own.push(mat);
+  }
   for (const [key, geo] of g.build()) {
     const mesh = new THREE.Mesh(geo, getMaterial(key));
     mesh.castShadow = true;

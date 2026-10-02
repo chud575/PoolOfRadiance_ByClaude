@@ -711,28 +711,42 @@ export function getBlobTexture() {
 
 /** Glowing ember bed (emissive map): coals with hot cracks. */
 export function getEmberTexture() {
-  return canvasTex('embers', 128, 128, (g, w, h) => {
+  // a bed of charcoal: dark crusted lumps with glowing cracks between them, a few hot hearts
+  return canvasTex('embers', 256, 128, (g, w, h) => {
     const r = rng(83);
-    g.fillStyle = '#000';
+    g.fillStyle = 'rgb(70,14,2)';
     g.fillRect(0, 0, w, h);
-    for (let i = 0; i < 140; i++) {
+    // hot glow under everything, strongest in the middle of the bed
+    const hg = g.createRadialGradient(w / 2, h / 2, 4, w / 2, h / 2, w * 0.5);
+    hg.addColorStop(0, 'rgba(255,120,30,0.9)');
+    hg.addColorStop(0.5, 'rgba(200,50,8,0.6)');
+    hg.addColorStop(1, 'rgba(40,6,0,0.9)');
+    g.fillStyle = hg;
+    g.fillRect(0, 0, w, h);
+    // charcoal lumps (leave thin bright cracks between them)
+    for (let i = 0; i < 260; i++) {
       const x = r() * w;
       const y = r() * h;
-      const rad = 3 + r() * 9;
-      const hot = r();
-      const gr = g.createRadialGradient(x, y, 0, x, y, rad);
-      gr.addColorStop(0, hot > 0.7 ? 'rgba(255,200,90,1)' : 'rgba(255,90,20,0.9)');
-      gr.addColorStop(0.6, 'rgba(160,30,5,0.6)');
-      gr.addColorStop(1, 'rgba(0,0,0,0)');
-      g.fillStyle = gr;
-      g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
-    }
-    // dark coal crusts on top
-    for (let i = 0; i < 90; i++) {
-      g.fillStyle = `rgba(10,6,4,${0.5 + r() * 0.5})`;
+      const rx = 4 + r() * 10;
+      const ry = 3 + r() * 7;
+      const v = 6 + r() * 16;
+      g.fillStyle = `rgb(${v + 4},${v * 0.7},${v * 0.5})`;
       g.beginPath();
-      g.arc(r() * w, r() * h, 2 + r() * 6, 0, Math.PI * 2);
+      g.ellipse(x, y, rx, ry, r() * Math.PI, 0, Math.PI * 2);
       g.fill();
+      if (r() < 0.25) {
+        // a glowing rim on one side of the lump
+        g.strokeStyle = `rgba(255,${90 + r() * 80},20,${0.3 + r() * 0.4})`;
+        g.lineWidth = 1;
+        g.beginPath();
+        g.ellipse(x, y, rx, ry, r() * Math.PI, 0, Math.PI * (0.4 + r() * 0.6));
+        g.stroke();
+      }
+    }
+    // white-ash dusting
+    for (let i = 0; i < 120; i++) {
+      g.fillStyle = `rgba(120,110,100,${0.15 + r() * 0.25})`;
+      g.fillRect(r() * w, r() * h, 1 + r() * 2, 1);
     }
   });
 }

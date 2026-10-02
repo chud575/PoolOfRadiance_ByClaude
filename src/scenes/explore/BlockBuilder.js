@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { EDGE, CELL } from '../../data/maps/MapGrid.js';
 import { getMaterial, getWindowMaterial } from '../../render/materials.js';
-import { getInscriptionTexture, getEmberTexture, getSootTexture, getScorchTexture } from '../../render/textures/index.js';
-import { GeoBuilder, hash, defaultAO } from './GeoBuilder.js';
+import { getInscriptionTexture, getEmberTexture, getSootTexture, getScorchTexture, getBlobTexture } from '../../render/textures/index.js';
+import { GeoBuilder, hash, defaultAO, roughBlockGeometry, roughen } from './GeoBuilder.js';
 import { TILESETS } from './tilesets.js';
 
 /** World scale (metres). One grid cell = CELL_SIZE x CELL_SIZE. */
@@ -401,6 +401,7 @@ export function buildBlock(map, opts = {}) {
     }
   }
   const sootQuads = [];
+  const spillQuads = [];
 
   /** Corner type for a face end: 'inside' | 'straight' | 'convexExt' | 'convexNon' | 'free' */
   function classifyEnd(e, N, Tn, end, horizontal) {
@@ -928,7 +929,11 @@ export function buildBlock(map, opts = {}) {
           const s0 = sgn < 0 ? a - ext : a;
           const s1 = sgn < 0 ? b : b + ext;
           const m = localMatrix(f, (s0 + s1) / 2, y + bh / 2, 0, (hash(e.key, sgn, k, 'jr') - 0.5) * 0.012);
-          g.box(blockKey, { matrix: m, s: [s1 - s0 - 0.006, bh - 0.007, fd1 - fd0 - 0.05 + proud * 2 + (long ? 0 : -0.015)], chamfer: cham, ao: revealAO, tint: tone(k, sgn) });
+          // hand-cut block: arrises worn round, faces slightly winding, corners knocked off;
+          // the jambs stand well proud of the wall so the door sits deep in its reveal
+          const jg = roughBlockGeometry(s1 - s0 - 0.008, bh - 0.009, fd1 - fd0 + 0.1 + proud * 2 + (long ? 0 : -0.02), { bevel: 0.014 + cham, amp: 0.005, seed: hash(e.key, sgn, k, 'js') * 100, chip: 0.02 });
+          g.geometry(blockKey, jg, m, { uv: 'world', ao: revealAO, tint: tone(k, sgn) });
+          jg.dispose();
           y += bh;
         }
         // mortar bed behind the dressings: the joints show lime, never daylight or a void
@@ -937,22 +942,32 @@ export function buildBlock(map, opts = {}) {
     }
     if (stoneFrame) {
       // stone lintel under the arch (the voussoirs bear on it; no daylight between them and the door)
-      localBox(f, blockKey, -w / 2 - 0.08, w / 2 + 0.08, h - 0.02, h + 0.12, fd0 + 0.03, fd1 - 0.03, { chamfer: 0.015, ao: revealAO, tint: [0.84, 0.8, 0.76] });
+      {
+        const lg0 = roughBlockGeometry(w + 0.16, 0.15, fd1 - fd0 + 0.06, { bevel: 0.02, amp: 0.005, seed: hash(e.key, 'lin') * 100, chip: 0.02 });
+        g.geometry(blockKey, lg0, localMatrix(f, 0, h + 0.055, 0, 0), { uv: 'world', ao: revealAO, tint: [0.84, 0.8, 0.76] });
+        lg0.dispose();
+      }
       // segmental relieving arch over the lintel: wedge voussoirs on a true arc (each cut as a
       // trapezoid so joints stay tight and radial), a proud keystone, set in a lime bed with a
       // tympanum of small rubble between arch and lintel
-      const n = 9;
+      const n = 7;
       const span = w + 0.42;
       const th0 = 0.62;
       const R = span / 2 / Math.sin(th0);
       const cyA = h + 0.12 - R * Math.cos(th0) + 0.02;
       const vd = fd1 - fd0 - 0.07;
       localBox(f, 'arch_trim', -span / 2 - 0.05, span / 2 + 0.05, h + 0.12, h + 0.12 + 0.18 + (R - R * Math.cos(th0)), fd0 + 0.04, fd1 - 0.04, { tint: [0.4, 0.38, 0.35], ao: 0.6 });
+      // irregular voussoir widths (each stone cut to what the quarry gave), keystone wider + taller
+      const wts = [];
+      for (let k = 0; k < n; k++) wts.push(k === (n - 1) / 2 ? 1.25 : 0.8 + hash(e.key, k, 'vw') * 0.45);
+      const wsum = wts.reduce((p, q) => p + q, 0);
+      let acc = 0;
       for (let k = 0; k < n; k++) {
-        const a0 = -th0 + (2 * th0 * k) / n + 0.004;
-        const a1 = -th0 + (2 * th0 * (k + 1)) / n - 0.004;
+        const a0 = -th0 + (2 * th0 * acc) / wsum + 0.006;
+        acc += wts[k];
+        const a1 = -th0 + (2 * th0 * acc) / wsum - 0.006;
         const key = k === (n - 1) / 2;
-        const vh = (key ? 0.44 : 0.34 + hash(e.key, k, 'vh') * 0.04);
+        const vh = (key ? 0.58 : 0.33 + hash(e.key, k, 'vh') * 0.1);
         const r0 = R;
         const r1 = R + vh;
         const pr = (rr, aa) => [Math.sin(aa) * rr, cyA + Math.cos(aa) * rr];
@@ -961,9 +976,11 @@ export function buildBlock(map, opts = {}) {
         shp.moveTo(q[0][0], q[0][1]);
         for (let i = 1; i < 4; i++) shp.lineTo(q[i][0], q[i][1]);
         shp.closePath();
-        const dep = vd + (key ? 0.05 : hash(e.key, k, 'vp') * 0.012);
-        const geo = new THREE.ExtrudeGeometry(shp, { depth: dep - 0.016, bevelEnabled: true, bevelThickness: 0.008, bevelSize: 0.008, bevelSegments: 1, curveSegments: 1 });
-        geo.translate(0, 0, -(dep - 0.016) / 2);
+        const dep = vd + 0.1 + (key ? 0.08 : hash(e.key, k, 'vp') * 0.03);
+        const bv = 0.018;
+        const geo = new THREE.ExtrudeGeometry(shp, { depth: dep - bv * 2, bevelEnabled: true, bevelThickness: bv, bevelSize: bv * 0.8, bevelSegments: 2, curveSegments: 1 });
+        geo.translate(0, 0, -(dep - bv * 2) / 2);
+        roughen(geo, { amp: 0.006, seed: hash(e.key, k, 'vs') * 100, chip: 0.025, freq: 7 });
         g.geometry(blockKey, geo, f.basis, { uv: 'world', ao: revealAO, tint: tone(k, 7) });
         geo.dispose();
       }
@@ -1159,6 +1176,20 @@ export function buildBlock(map, opts = {}) {
     };
     if (!indoor) quad(outSign, 'win_ext');
     if (!o.upper) quad(-outSign, 'win_int');
+    if (!indoor && night > 0.3) {
+      // warm lamplight spilling out: a glow on the reveal/sill/wall around the opening and,
+      // for ground-floor windows, a pool on the street below
+      const dw = dOut + outSign * 0.012;
+      const W2 = (s1 - s0) / 2 + 0.75;
+      const cxs = (s0 + s1) / 2;
+      const P = (sv, yy, dd) => new THREE.Vector3(sv, yy, dd).applyMatrix4(f.basis);
+      const q = [P(cxs - W2, y0 - 0.9, dw), P(cxs + W2, y0 - 0.9, dw), P(cxs + W2, y1 + 0.5, dw), P(cxs - W2, y1 + 0.5, dw)];
+      spillQuads.push(outSign > 0 ? q : [q[1], q[0], q[3], q[2]]);
+      if (!o.upper) {
+        const gq = [P(cxs - W2 - 0.3, 0.015, dOut), P(cxs + W2 + 0.3, 0.015, dOut), P(cxs + W2 + 0.3, 0.015, dOut + outSign * 2.2), P(cxs - W2 - 0.3, 0.015, dOut + outSign * 2.2)];
+        spillQuads.push(gq);
+      }
+    }
     // shutters (exterior, some windows), opened at an angle
     const r = hash(e.key, o.y0, 'sh');
     const templeWall = [sides[0], sides[1]].some((sd) => compAt(sd.cx, sd.cy)?.temple);
@@ -1311,7 +1342,7 @@ export function buildBlock(map, opts = {}) {
       localBox(f, 'arch_iron', a - 0.03, a + 0.03, 0.09, 0.42, d + 0.53, d + 0.58, { chamfer: 0.01 });
     }
     {
-      const emat = new THREE.MeshStandardMaterial({ color: 0x050302, emissive: new THREE.Color(0xff6a24), emissiveMap: getEmberTexture(), emissiveIntensity: 2.6, roughness: 1 });
+      const emat = new THREE.MeshStandardMaterial({ color: 0x050302, emissive: new THREE.Color(0xff6a24), emissiveMap: getEmberTexture(), emissiveIntensity: 1.25, roughness: 1 });
       const egeo = new THREE.PlaneGeometry(1.0, 0.42);
       egeo.rotateX(-Math.PI / 2);
       const em = new THREE.Mesh(egeo, emat);
@@ -1443,6 +1474,15 @@ export function buildBlock(map, opts = {}) {
       // candle lantern
       localBox(face, 'arch_iron', s - 0.1, s + 0.1, y - 0.1, y - 0.07, d + 0.16, d + 0.36);
       localBox(face, 'arch_iron', s - 0.11, s + 0.11, y + 0.22, y + 0.26, d + 0.15, d + 0.37, { chamfer: 0.01 });
+    }
+    if (kind === 'torch') {
+      // years of pitch smoke: a soot plume fanning up the wall above the torch head
+      const dd = d + 0.006;
+      const P = (sv, yy) => new THREE.Vector3(sv, yy, dd).applyMatrix4(face.basis);
+      const w = 0.62 + hash(face.seed, s, 'sootw') * 0.3;
+      const y0 = y - 0.02;
+      const y1 = Math.min(face.H - 0.05, y + 1.25 + hash(face.seed, s, 'sooth') * 0.5);
+      if (y1 > y0 + 0.4) sootQuads.push([P(s - w / 2, y0), P(s + w / 2, y0), P(s + w / 2, y1), P(s - w / 2, y1)]);
     }
     torches.push({ pos: kind === 'torch' ? tip.clone().add(new THREE.Vector3(0, 0.1, 0)) : tip.clone(), base, N: out, lit, kind, seed: Math.floor(face.seed * 1000) });
   }
@@ -1980,6 +2020,17 @@ export function buildBlock(map, opts = {}) {
     const mat = new THREE.MeshStandardMaterial({ color: 0x0a0806, alphaMap: getScorchTexture(), transparent: true, opacity: 0.78, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2 });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.renderOrder = 3;
+    mesh.userData.ownMaterial = true;
+    group.add(mesh);
+  }
+  if (spillQuads.length) {
+    const sb = new GeoBuilder();
+    for (const q of spillQuads) sb.quad('spill', q[0], q[1], q[2], q[3], [[0, 0], [1, 0], [1, 1], [0, 1]], { ao: 1 });
+    const geo = sb.build().get('spill');
+    geo.deleteAttribute('color');
+    const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff9a48).multiplyScalar(0.16 * night), map: getBlobTexture(), blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.renderOrder = 4;
     mesh.userData.ownMaterial = true;
     group.add(mesh);
   }

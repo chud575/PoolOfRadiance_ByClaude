@@ -295,10 +295,11 @@ export function getFlameMaterial() {
         return mix(mix(h(i), h(i+vec2(1,0)), f.x), mix(h(i+vec2(0,1)), h(i+vec2(1,1)), f.x), f.y); }
       float fbm(vec2 p){ float s = 0.0; float a = 0.5; for (int i = 0; i < 4; i++){ s += a * n(p); p = p * 2.07 + vec2(1.7, 9.2); a *= 0.5; } return s; }
       vec3 ramp(float k){
-        vec3 c = mix(vec3(0.42, 0.05, 0.008), vec3(0.95, 0.27, 0.03), smoothstep(0.0, 0.32, k));
-        c = mix(c, vec3(1.0, 0.56, 0.12), smoothstep(0.28, 0.6, k));
-        c = mix(c, vec3(1.0, 0.76, 0.34), smoothstep(0.58, 0.86, k));
-        c = mix(c, vec3(1.0, 0.88, 0.62), smoothstep(0.88, 1.0, k));
+        // red tips -> orange body -> small saturated yellow core (never white: bloom stays capped)
+        vec3 c = mix(vec3(0.36, 0.035, 0.004), vec3(0.86, 0.17, 0.015), smoothstep(0.0, 0.3, k));
+        c = mix(c, vec3(1.0, 0.38, 0.05), smoothstep(0.26, 0.58, k));
+        c = mix(c, vec3(1.0, 0.6, 0.13), smoothstep(0.56, 0.86, k));
+        c = mix(c, vec3(1.0, 0.74, 0.3), smoothstep(0.9, 1.0, k));
         return c;
       }
       // one tongue: rounded root, tapering licking tip; returns soft coverage
@@ -330,7 +331,7 @@ export function getFlameMaterial() {
         body *= smoothstep(0.12, 0.55, d2 + (1.0 - y) * 0.8);
         // temperature: hottest low in the middle, cooling outward and upward
         float core = (1.0 - smoothstep(0.0, 0.26, abs(xd))) * (1.0 - smoothstep(0.05, 0.62, y)) * smoothstep(0.0, 0.08, y);
-        float k = clamp(body * (0.5 - y * 0.32) + core * 0.6 + (d1 - 0.5) * 0.15, 0.0, 1.0);
+        float k = clamp(body * (0.42 - y * 0.36) + core * 0.55 + (d1 - 0.5) * 0.15, 0.0, 1.0);
         vec3 col = ramp(k);
         // a dim blue root where the fuel is
         float root = (1.0 - smoothstep(0.0, 0.11, y)) * (1.0 - smoothstep(0.0, 0.3, abs(xd))) * body;
@@ -338,16 +339,25 @@ export function getFlameMaterial() {
         // tinted (unholy / magical) fire: the tint drives the ramp instead of black-body colours
         float tintAmt = step(vTint.r + vTint.g + vTint.b, 2.99);
         vec3 tc = mix(vTint * 0.28, vTint * 0.8, smoothstep(0.0, 0.55, k));
-        tc = mix(tc, mix(vTint, vec3(1.0), 0.5), smoothstep(0.7, 1.0, k));
-        col = mix(col, tc * 0.75, tintAmt);
-        float I = body * (0.55 + 0.85 * k) * (0.85 + 0.15 * vFlick);
+        tc = mix(tc, mix(vTint, vec3(1.0), 0.18), smoothstep(0.75, 1.0, k));
+        col = mix(col, tc * 0.62, tintAmt);
+        float I = body * (0.5 + 0.6 * k) * (0.85 + 0.15 * vFlick) * (1.0 - 0.35 * tintAmt);
         // smoke wisp: a faint curl of lit haze rising off the tip
         float sy = (uv.y - 0.5) / 0.5;
         float sx = x + (fbm(vec2(x * 2.0, uv.y * 3.0 - t * 1.2)) - 0.5) * 1.2 * sy + sin(uv.y * 7.0 - t * 1.7) * 0.12 * sy;
         float wisp = (1.0 - smoothstep(0.04, 0.14 + 0.2 * sy, abs(sx))) * smoothstep(0.0, 0.3, sy) * (1.0 - smoothstep(0.5, 1.0, sy));
         wisp *= smoothstep(0.35, 0.7, fbm(vec2(x * 3.0, uv.y * 5.0 - t * 2.0))) * detail * (1.0 - tintAmt * 0.6);
-        vec3 outc = col * I * 0.98 + vec3(0.11, 0.095, 0.085) * wisp * 0.35;
-        float a = clamp(body * (0.35 + 0.3 * (1.0 - k)) + wisp * 0.12, 0.0, 1.0);
+        // embers: a few sparks lifting off the tongues
+        float ember = 0.0;
+        for (int i = 0; i < 3; i++) {
+          float fi = float(i);
+          float life = fract(t * (0.55 + fi * 0.17) + fi * 0.37 + vSeed);
+          vec2 ep = vec2(sin(fi * 2.3 + vSeed * 9.0 + life * 3.0) * 0.35 * life, 0.35 + life * 0.62);
+          vec2 dd = vec2(x * 0.5, uv.y) - vec2(ep.x * 0.5, ep.y);
+          ember += (1.0 - smoothstep(0.0, 0.012, length(dd))) * (1.0 - life) * detail;
+        }
+        vec3 outc = col * I * 0.98 + vec3(0.075, 0.068, 0.062) * wisp * 0.6 + vec3(1.0, 0.45, 0.08) * ember * 0.9;
+        float a = clamp(body * (0.4 + 0.3 * (1.0 - k)) + wisp * 0.28 + ember * 0.5, 0.0, 1.0);
         gl_FragColor = vec4(outc, a);
       }`,
   });
@@ -494,7 +504,7 @@ export function flicker(time, seed = 0) {
 }
 
 /** Push sun/scatter info into the SurfaceFX uniforms (height fog, sun in-scatter). */
-export function setSurfaceAtmosphere({ sunDir, sunColor, scatter = 0, heightFog = 0, heightFalloff = 0.35, grimeTint, mossTint, wet = 0 } = {}) {
+export function setSurfaceAtmosphere({ sunDir, sunColor, scatter = 0, heightFog = 0, heightFalloff = 0.35, grimeTint, mossTint, wet = 0, reflZenith = 0, reflHorizon = 0, reflWall = 0 } = {}) {
   const U = SURFACE_UNIFORMS;
   if (sunDir) U.uFxSunDir.value.copy(sunDir).normalize();
   if (sunColor !== undefined) U.uFxSunColor.value.set(sunColor);
@@ -504,4 +514,7 @@ export function setSurfaceAtmosphere({ sunDir, sunColor, scatter = 0, heightFog 
   if (grimeTint !== undefined) U.uFxGrimeTint.value.set(grimeTint);
   if (mossTint !== undefined) U.uFxMossTint.value.set(mossTint);
   U.uFxWet.value = wet;
+  U.uFxReflZenith.value.set(reflZenith);
+  U.uFxReflHorizon.value.set(reflHorizon);
+  U.uFxReflWall.value.set(reflWall);
 }

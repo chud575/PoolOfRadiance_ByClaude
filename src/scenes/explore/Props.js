@@ -3,7 +3,7 @@ import { toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.j
 import { CELL, EDGE } from '../../data/maps/MapGrid.js';
 import { getMaterial, getLampGlassMaterial, SURFACE_UNIFORMS } from '../../render/materials.js';
 import { getStainTexture, getBannerTexture, getGrassTexture, getIvyClusterTexture, getCobwebTexture, getPuddleTexture, getSoftTexture, getRugTexture, getRugBumpTexture, getRugFringeTexture, getTapestryTexture, getNoticeTexture, getBlobTexture } from '../../render/textures/index.js';
-import { GeoBuilder, hash } from './GeoBuilder.js';
+import { GeoBuilder, hash, roughBlockGeometry } from './GeoBuilder.js';
 import { puddleChance } from './exploreRules.js';
 import { isTavernZone } from './RoomDressing.js';
 import { CELL_SIZE, WALL_T } from './BlockBuilder.js';
@@ -43,6 +43,8 @@ export function buildProps(map, block, opts = {}) {
   const tapestries = [[], []];
   const notices = [];
   const blob = (x, z, r, a = 0.55) => aoBlobs.push({ x, z, r, a });
+  const dustBlobs = []; // pale grit and stone dust fanned out around fallen masonry
+  const dust = (x, z, r, a = 0.4) => dustBlobs.push({ x, z, r, a });
 
   const place = (face, s, d, rot = 0) => {
     const m = new THREE.Matrix4().multiplyMatrices(face.basis, new THREE.Matrix4().makeTranslation(s, 0, d));
@@ -81,11 +83,27 @@ export function buildProps(map, block, opts = {}) {
       g.geometry(chunk ? chunkKey : 'prop_rock', geo, mm, { uv: 'world', tint: [t * (1 + warm * 0.08), t, t * (1 - warm * 0.1)], ao: (p) => 0.55 + 0.45 * THREE.MathUtils.smoothstep(p.y, 0.0, 0.35) });
     }
     const c = new THREE.Vector3().applyMatrix4(m);
-    blob(c.x, c.z, spread * 1.4 + 0.3, 0.5);
+    blob(c.x, c.z, spread * 1.1 + 0.25, 0.62);
+    if (ts.outdoors) dust(c.x, c.z, spread * 1.9 + 0.5, 0.42);
   };
   const addBlock = (m, seed) => {
     const mm = m.clone().multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(0, hash(seed, 'by') * 1.2 - 0.6, hash(seed, 'bz') * 0.3)));
-    g.box('prop_stone', { matrix: mm.multiply(new THREE.Matrix4().makeTranslation(0, 0.2, 0)), s: [0.7 + hash(seed, 'bl') * 0.4, 0.4, 0.45], chamfer: 0.05 });
+    const bg = roughBlockGeometry(0.7 + hash(seed, 'bl') * 0.4, 0.4, 0.45, { bevel: 0.04, amp: 0.012, seed: seed * 31, chip: 0.05 });
+    g.geometry('prop_stone', bg, mm.multiply(new THREE.Matrix4().makeTranslation(0, 0.19, 0)), { uv: 'world', ao: (p) => 0.5 + 0.5 * THREE.MathUtils.smoothstep(p.y, 0.0, 0.3) });
+    bg.dispose();
+    const bc = new THREE.Vector3().applyMatrix4(m);
+    blob(bc.x, bc.z, 0.6, 0.6);
+  };
+  /** Loose straw: separate stalks scattered every which way in a thin drift (never a stamped star). */
+  const addStraw = (m, seed, n, tint) => {
+    for (let q = 0; q < n; q++) {
+      const a = hash(seed, q, 'a') * Math.PI * 2;
+      const r = Math.sqrt(hash(seed, q, 'r')) * 0.32;
+      const len = 0.1 + hash(seed, q, 'l') * 0.18;
+      const t = 0.75 + hash(seed, q, 't') * 0.5;
+      const mm = m.clone().multiply(new THREE.Matrix4().makeTranslation(Math.cos(a) * r, 0.004 + (q % 3) * 0.003, Math.sin(a) * r)).multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(0, hash(seed, q, 'y') * 6.3, (hash(seed, q, 'z') - 0.5) * 0.15)));
+      g.box('prop_burlap', { matrix: mm, s: [len, 0.005, 0.007], tint: [tint[0] * t, tint[1] * t, tint[2] * t], ao: 0.85 });
+    }
   };
   /** A clump of weeds: a few cards of varied size, tallest in the middle. */
   const addGrass = (face, s, d, scale, seed) => {
@@ -302,7 +320,7 @@ export function buildProps(map, block, opts = {}) {
           const sc = 0.05 + hash(fc.x, fc.y, k, 'ls') * 0.07;
           g.geometry('prop_rock', geos.pebble, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, sc * 0.15, 0)).multiply(new THREE.Matrix4().makeScale(sc, sc * 0.6, sc)), { uv: 'world', tint: [0.8, 0.78, 0.74], ao: 0.8 });
         } else if (kind < 0.85) {
-          for (let q = 0; q < 3; q++) g.box('prop_burlap', { matrix: m.clone().multiply(new THREE.Matrix4().makeRotationY(q * 0.7)).multiply(new THREE.Matrix4().makeTranslation(q * 0.03, 0.005, 0)), s: [0.18 + q * 0.05, 0.008, 0.012], tint: [1.2, 1.05, 0.6] });
+          addStraw(m, hash(fc.x, fc.y, k, 'sw'), 7, [1.2, 1.05, 0.6]);
         } else {
           const shard = new THREE.CylinderGeometry(0.08, 0.07, 0.06, 6, 1, true, 0, 1.2);
           g.geometry('arch_brick', shard, m.clone().multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2)), { uv: 'world', tint: [0.8, 0.62, 0.5] });
@@ -327,6 +345,25 @@ export function buildProps(map, block, opts = {}) {
         g.box('prop_iron', { matrix: at(0, 0.014, 0), s: [0.5, 0.018, 0.024], ao: 0.7 });
         puddles.push({ x: cx, z: cz, s: 1.1, r: hash(fc.x, fc.y, 'dr') * 6 });
       }
+      if (!ts.variant && hash(map.id, fc.x, fc.y, 'gap') < 0.45) {
+        // a lifted or missing flag: packed earth and grit in the hole, the broken slab beside it
+        const gx = cx + (hash(fc.x, fc.y, 'gx') - 0.5) * 1.6;
+        const gz = cz + (hash(fc.x, fc.y, 'gz') - 0.5) * 1.6;
+        const gw = 0.35 + hash(fc.x, fc.y, 'gw') * 0.35;
+        const gd = 0.3 + hash(fc.x, fc.y, 'gd') * 0.3;
+        const gr = hash(fc.x, fc.y, 'gr') * 0.3;
+        const gm = new THREE.Matrix4().makeTranslation(gx, 0, gz).multiply(new THREE.Matrix4().makeRotationY(gr));
+        g.box('arch_mud', { matrix: gm.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.004, 0)), s: [gw, 0.008, gd], uv: 'world', tint: [0.55, 0.5, 0.45], ao: 0.55 });
+        for (let q = 0; q < 2; q++) {
+          const fm = gm.clone().multiply(new THREE.Matrix4().makeTranslation(gw * (0.4 + q * 0.5), 0.03, (hash(fc.x, fc.y, q, 'fz') - 0.5) * gd)).multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler((hash(fc.x, fc.y, q, 'fx') - 0.5) * 0.3, hash(fc.x, fc.y, q, 'fy') * 6.3, 0.12)));
+          g.geometry('arch_dungeon', geos.chunk[q % geos.chunk.length], fm.multiply(new THREE.Matrix4().makeScale(gw * 0.6, 0.08, gd * 0.7)), { uv: 'world', tint: [0.85, 0.82, 0.78], ao: (p) => 0.6 + 0.4 * THREE.MathUtils.smoothstep(p.y, 0, 0.06) });
+        }
+        for (let q = 0; q < 5; q++) {
+          const sc = 0.03 + hash(fc.x, fc.y, q, 'gs') * 0.05;
+          g.geometry('prop_rock', geos.pebble, gm.clone().multiply(new THREE.Matrix4().makeTranslation((hash(fc.x, fc.y, q, 'px') - 0.5) * gw, sc * 0.2, (hash(fc.x, fc.y, q, 'pz') - 0.5) * gd)).multiply(new THREE.Matrix4().makeScale(sc, sc * 0.6, sc)), { uv: 'world', tint: [0.6, 0.58, 0.55], ao: 0.7 });
+        }
+        blob(gx, gz, gw * 0.9, 0.5);
+      }
       const nl = (ts.variant === 'warrens' ? 8 : 3) + Math.floor(hash(fc.x, fc.y, 'dlit') * 6);
       for (let k = 0; k < nl; k++) {
         const ax = (hash(fc.x, fc.y, k, 'dx') - 0.5) * 2.6;
@@ -340,7 +377,7 @@ export function buildProps(map, block, opts = {}) {
           const sc = 0.04 + hash(fc.x, fc.y, k, 'ds') * 0.08;
           g.geometry('prop_rock', geos.pebble, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, sc * 0.15, 0)).multiply(new THREE.Matrix4().makeScale(sc, sc * 0.6, sc)), { uv: 'world', tint: [0.6, 0.58, 0.55], ao: 0.75 });
         } else if (kind < 0.85) {
-          for (let q = 0; q < 4; q++) g.box('prop_burlap', { matrix: m.clone().multiply(new THREE.Matrix4().makeRotationY(q * 0.6)).multiply(new THREE.Matrix4().makeTranslation(q * 0.03, 0.004, 0)), s: [0.16 + q * 0.05, 0.007, 0.011], tint: [0.5, 0.43, 0.28] });
+          addStraw(m, hash(fc.x, fc.y, k, 'sw'), 10, [0.62, 0.52, 0.32]);
         } else {
           const bone = new THREE.CylinderGeometry(0.014, 0.012, 0.22, 6);
           g.geometry('prop_bone', bone, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.014, 0)).multiply(new THREE.Matrix4().makeRotationZ(Math.PI / 2)), { uv: 'world', tint: [0.85, 0.8, 0.68] });
@@ -424,7 +461,11 @@ export function buildProps(map, block, opts = {}) {
       // broken shaft on its plinth
       const colAO = (p) => 0.5 + 0.5 * THREE.MathUtils.smoothstep(p.y, 0.0, 0.9);
       // square plinth with a chipped corner, Attic base mouldings, then the fluted, fractured shaft
-      g.box('prop_limestone', { matrix: m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.15, 0)), s: [0.98, 0.3, 0.98], chamfer: 0.035, uv: 'world', ao: colAO });
+      {
+        const pg = roughBlockGeometry(0.98, 0.3, 0.98, { bevel: 0.03, amp: 0.008, seed: fc.x * 7 + fc.y, chip: 0.06 });
+        g.geometry('prop_limestone', pg, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.15, 0)), { uv: 'world', ao: colAO });
+        pg.dispose();
+      }
       g.geometry('prop_limestone', geos.attic, m.clone().multiply(new THREE.Matrix4().makeRotationY(hash(fc.x, fc.y, 'br') * 6.3)), { uv: 'world', ao: colAO });
       const sh = geos.shaft[Math.floor(hash(fc.x, fc.y, 'sv') * geos.shaft.length)];
       g.geometry('prop_limestone', sh, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.54, 0)).multiply(new THREE.Matrix4().makeRotationY(hash(fc.x, fc.y, 'sr') * 6.3)), { uv: 'world', ao: colAO });
@@ -433,7 +474,8 @@ export function buildProps(map, block, opts = {}) {
     }
     {
       const mc = new THREE.Vector3().applyMatrix4(m);
-      blob(mc.x, mc.z, 0.9, 0.55);
+      blob(mc.x, mc.z, 0.85, 0.7);
+      dust(mc.x, mc.z, 1.5, 0.4);
     }
     addRubble(m, h * 100, 5, 0.9, 0.8);
   }
@@ -477,6 +519,29 @@ export function buildProps(map, block, opts = {}) {
     const mat = new THREE.MeshBasicMaterial({ alphaMap: getBlobTexture(), color: 0x000000, transparent: true, vertexColors: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.renderOrder = 3;
+    group.add(mesh);
+    own.push(geo, mat);
+  }
+  if (dustBlobs.length) {
+    const pos = [];
+    const uv = [];
+    const col = [];
+    for (const bl of dustBlobs) {
+      for (const [a, c] of [[-1, -1], [1, 1], [1, -1], [-1, -1], [-1, 1], [1, 1]]) {
+        pos.push(bl.x + a * bl.r, 0.01, bl.z + c * bl.r);
+        uv.push((a + 1) / 2, (c + 1) / 2);
+        col.push(1, 1, 1, bl.a);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(new Array(pos.length).fill(0).map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
+    const mat = new THREE.MeshLambertMaterial({ alphaMap: getStainTexture(1), color: 0x8f8170, transparent: true, vertexColors: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.receiveShadow = true;
+    mesh.renderOrder = 2;
     group.add(mesh);
     own.push(geo, mat);
   }

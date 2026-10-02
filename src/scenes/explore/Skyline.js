@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { getLambertMaterial, getWindowMaterial } from '../../render/materials.js';
 import { getTextureSet } from '../../render/textures/index.js';
 import { GeoBuilder, hash } from './GeoBuilder.js';
@@ -195,7 +196,7 @@ export function buildSkyline(map, ts, opts = {}) {
     // moored and anchored cogs (clinker hulls, castles, set or furled sails, shrouds with ratlines)
     // an anchorage, not a parade: cogs at staggered depths, swinging to their cables at different
     // headings, sails set on some and furled on others (dx from the block centre, dz past the quay)
-    const FLEET = [[-4, 26, 2.25, 17, true], [-30, 44, 0.95, 14, false], [14, 64, 3.9, 13, true], [34, 36, 1.35, 15, false], [-52, 84, 2.75, 12, true], [52, 96, 0.4, 13, false]];
+    const FLEET = [[-10, 28, 0.62, 17, true], [-30, 44, 0.95, 14, false], [14, 64, 3.9, 13, true], [34, 36, 1.35, 15, false], [-52, 84, 2.75, 12, true], [52, 96, 0.4, 13, false]];
     FLEET.forEach(([dx, dz, rot, len, set], k) => {
       const x = cx + dx + (hash(seedBase, k, 'hx') - 0.5) * 4;
       const z = H + dz + (hash(seedBase, k, 'hz') - 0.5) * 4;
@@ -277,7 +278,10 @@ export function buildSkyline(map, ts, opts = {}) {
     const sg = new THREE.BufferGeometry();
     sg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     sg.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
-    sg.computeVertexNormals();
+    // weld the triangle soup so the cloth shades smoothly (no facets on the bellied sail)
+    const sgw = mergeVertices(sg, 1e-3);
+    sgw.computeVertexNormals();
+    sg.dispose();
     const c = document.createElement('canvas');
     c.width = 256;
     c.height = 256;
@@ -286,10 +290,10 @@ export function buildSkyline(map, ts, opts = {}) {
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = 4;
     const sm = new THREE.MeshLambertMaterial({ map: tex, side: THREE.DoubleSide, color: night > 0.5 ? 0x50586a : 0xf0e8dc });
-    const mesh = new THREE.Mesh(sg, sm);
+    const mesh = new THREE.Mesh(sgw, sm);
     mesh.renderOrder = 5;
     group.add(mesh);
-    own.push(sg, sm, tex);
+    own.push(sgw, sm, tex);
   }
   if (rig.lines.length) {
     const lg = new THREE.BufferGeometry();

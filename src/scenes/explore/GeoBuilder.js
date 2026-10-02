@@ -293,3 +293,80 @@ export function hash(...args) {
   h ^= h >>> 15;
   return (h >>> 0) / 4294967296;
 }
+
+function vnoise3(x, y, z, seed) {
+  const xi = Math.floor(x);
+  const yi = Math.floor(y);
+  const zi = Math.floor(z);
+  const fx = x - xi;
+  const fy = y - yi;
+  const fz = z - zi;
+  const s = (t) => t * t * (3 - 2 * t);
+  const h = (a, b, c) => {
+    const n = Math.sin(a * 127.1 + b * 311.7 + c * 74.7 + seed * 19.19) * 43758.5453;
+    return n - Math.floor(n);
+  };
+  const ux = s(fx);
+  const uy = s(fy);
+  const uz = s(fz);
+  const l = (a, b, t) => a + (b - a) * t;
+  return l(
+    l(l(h(xi, yi, zi), h(xi + 1, yi, zi), ux), l(h(xi, yi + 1, zi), h(xi + 1, yi + 1, zi), ux), uy),
+    l(l(h(xi, yi, zi + 1), h(xi + 1, yi, zi + 1), ux), l(h(xi, yi + 1, zi + 1), h(xi + 1, yi + 1, zi + 1), ux), uy),
+    uz,
+  );
+}
+
+/**
+ * Displace a (non-indexed or indexed) geometry's vertices outward/inward by smooth 3D noise and
+ * knock in a few corners, so dressed stone reads hand-cut and worn instead of extruded.
+ * Coincident vertices move together (displacement depends on position only). Recomputes normals.
+ * @param {THREE.BufferGeometry} geo
+ * @param {{amp?: number, freq?: number, seed?: number, chip?: number, half?: number[]}} [o]
+ */
+export function roughen(geo, { amp = 0.006, freq = 9, seed = 0, chip = 0, half = null } = {}) {
+  const P = geo.attributes.position;
+  geo.computeBoundingBox();
+  const bb = geo.boundingBox;
+  const c = bb.getCenter(new THREE.Vector3());
+  const hs = half ?? bb.getSize(new THREE.Vector3()).multiplyScalar(0.5).toArray();
+  for (let i = 0; i < P.count; i++) {
+    const x = P.getX(i);
+    const y = P.getY(i);
+    const z = P.getZ(i);
+    const dx = (x - c.x) / Math.max(hs[0], 1e-3);
+    const dy = (y - c.y) / Math.max(hs[1], 1e-3);
+    const dz = (z - c.z) / Math.max(hs[2], 1e-3);
+    const len = Math.hypot(dx, dy, dz) || 1;
+    let n = (vnoise3(x * freq, y * freq, z * freq, seed) - 0.5) * 2 + (vnoise3(x * freq * 2.7, y * freq * 2.7, z * freq * 2.7, seed + 7) - 0.5) * 0.7;
+    // corners (all three coordinates near the extremes) get bitten off
+    const corner = Math.min(Math.abs(dx), Math.abs(dy), Math.abs(dz));
+    if (chip && corner > 0.82) n -= chip * (0.5 + vnoise3(x * 31, y * 31, z * 31, seed + 3)) * (corner - 0.82) * 5.5;
+    const k = (amp * n) / len;
+    P.setXYZ(i, x + dx * k, y + dy * k, z + dz * k);
+  }
+  P.needsUpdate = true;
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/**
+ * A dressed stone block with worn, slightly irregular arrises: a bevelled extrusion (two bevel
+ * segments) roughened by noise, corners chipped. Centred on the origin.
+ * @param {number} sx @param {number} sy @param {number} sz
+ * @param {{bevel?: number, amp?: number, seed?: number, chip?: number}} [o]
+ */
+export function roughBlockGeometry(sx, sy, sz, { bevel = 0.02, amp = 0.005, seed = 0, chip = 0.012 } = {}) {
+  const b = Math.min(bevel, sx * 0.3, sy * 0.3, sz * 0.3);
+  const hx = sx / 2 - b;
+  const hy = sy / 2 - b;
+  const shp = new THREE.Shape();
+  shp.moveTo(-hx, -hy);
+  shp.lineTo(hx, -hy);
+  shp.lineTo(hx, hy);
+  shp.lineTo(-hx, hy);
+  shp.closePath();
+  const geo = new THREE.ExtrudeGeometry(shp, { depth: Math.max(0.001, sz - 2 * b), bevelEnabled: true, bevelThickness: b, bevelSize: b, bevelSegments: 2, curveSegments: 1, steps: 1 });
+  geo.translate(0, 0, -Math.max(0.001, sz - 2 * b) / 2);
+  return roughen(geo, { amp, seed, chip, freq: 7 });
+}

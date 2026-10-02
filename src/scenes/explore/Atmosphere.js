@@ -66,20 +66,38 @@ export function buildSunShafts(map, block, o) {
   const side = [];
   const uv = [];
   const seed = [];
+  // height of the occluder whose edge forms the gap: the shaft is only visible below it (above
+  // the eaves the whole air is sunlit and there is no light/shadow contrast to read as a beam)
+  const edgeTop = (x, z) => {
+    let top = 0;
+    for (let t = 0.3; t < 40; t += 0.3) {
+      const y = t * tanE;
+      if (y > maxH) break;
+      top = Math.max(top, Math.min(block.heightAt(x + flat.x * t, z + flat.y * t), y + 0.01) > y ? y : 0);
+    }
+    return top;
+  };
   for (const c of chosen) {
-    // broad, soft shafts (a thin ribbon reads as a lens streak, not as light in air)
-    const w = 1.0 + c.k * 2.2;
-    const len = (maxH * 0.7) / sun.y;
-    const off = c.side * w * 0.5;
-    const p0 = new THREE.Vector3(c.x + perp.x * off, 0.05, c.z + perp.y * off);
-    const p1 = p0.clone().addScaledVector(sun, len);
-    const quad = [[p0, -1, 0], [p0, 1, 0], [p1, 1, 1], [p0, -1, 0], [p1, 1, 1], [p1, -1, 1]];
-    for (const [p, sd, v] of quad) {
-      pos.push(p.x, p.y, p.z);
-      axis.push(sun.x, sun.y, sun.z);
-      side.push(sd * w * 0.5);
-      uv.push(sd * 0.5 + 0.5, v);
-      seed.push(c.k * 97.0);
+    const sh = edgeTop(c.x - c.side * perp.x * 0.6, c.z - c.side * perp.y * 0.6);
+    const hTop = THREE.MathUtils.clamp(sh || 6, 2.5, maxH);
+    const len = hTop / sun.y;
+    // a sheaf of broken strands (light leaking through ragged roof edges), not one solid wedge
+    const n = 3 + Math.floor(c.k * 3);
+    for (let s2 = 0; s2 < n; s2++) {
+      const r1 = hash(c.x, c.z, s2, 'sw');
+      const r2 = hash(c.x, c.z, s2, 'so');
+      const w = 0.18 + r1 * 0.55;
+      const off = c.side * (0.2 + r2 * 2.6);
+      const p0 = new THREE.Vector3(c.x + perp.x * off, 0.02, c.z + perp.y * off);
+      const p1 = p0.clone().addScaledVector(sun, len);
+      const quad = [[p0, -1, 0], [p0, 1, 0], [p1, 1, 1], [p0, -1, 0], [p1, 1, 1], [p1, -1, 1]];
+      for (const [p, sd, v] of quad) {
+        pos.push(p.x, p.y, p.z);
+        axis.push(sun.x, sun.y, sun.z);
+        side.push(sd * w * 0.5);
+        uv.push(sd * 0.5 + 0.5, v);
+        seed.push(c.k * 97.0 + s2 * 13.7 + r1 * 5.0);
+      }
     }
   }
   const geo = new THREE.BufferGeometry();
@@ -108,19 +126,21 @@ export function buildSunShafts(map, block, o) {
     fragmentShader: /* glsl */ `
       uniform vec3 uColor; uniform float uStrength; uniform vec3 uSun; uniform float uTime;
       varying vec2 vUv; varying float vSeed; varying vec3 vW;
+      float h1(float n){ return fract(sin(n) * 43758.5453); }
+      float n1(float x){ float i = floor(x); float f = fract(x); f = f * f * (3.0 - 2.0 * f); return mix(h1(i), h1(i + 1.0), f); }
       void main(){
         float xc = (clamp(vUv.x, 0.0, 1.0) - 0.5) * 2.0;
-        float across = exp(-xc * xc * 4.0) * (1.0 - xc * xc);
-        float along = smoothstep(0.0, 0.08, vUv.y) * (1.0 - smoothstep(0.35, 1.0, vUv.y));
-        float streak = 0.8 + 0.2 * sin(vUv.x * 7.0 + vSeed) * sin(vUv.x * 13.0 + vSeed * 1.7);
-        // density modulation along the shaft (drifting dust and mist)
-        float dens = 0.55 + 0.45 * sin(vUv.y * 11.0 + vSeed * 2.3 + uTime * 0.05) * sin(vUv.y * 4.3 + vSeed);
-        float motes = 0.85 + 0.15 * sin(vW.x * 3.0 + vW.y * 2.0 + uTime * 0.3 + vSeed);
+        float across = exp(-xc * xc * 3.0) * (1.0 - xc * xc);
+        // born at the gap (soft start just below the eave), dissolving into the haze toward the ground
+        float along = smoothstep(1.0, 0.86, vUv.y) * (0.25 + 0.75 * smoothstep(0.0, 0.55, vUv.y));
+        // broken along its length: occluding tiles, laundry, a chimney — gaps and flares
+        float brk = smoothstep(0.25, 0.7, n1(vUv.y * 9.0 + vSeed * 3.1)) * 0.75 + 0.25;
+        float dens = 0.6 + 0.4 * n1(vUv.y * 23.0 - uTime * 0.04 + vSeed);
         vec3 V = normalize(vW - cameraPosition);
-        float phase = 0.3 + 1.6 * pow(max(dot(V, uSun), 0.0), 4.0);
+        float phase = 0.3 + 0.8 * pow(max(dot(V, uSun), 0.0), 6.0);
         float d = length(vW - cameraPosition);
-        float nearFade = smoothstep(3.0, 11.0, d);
-        float a = across * along * streak * dens * motes * phase * nearFade * uStrength;
+        float nearFade = smoothstep(2.5, 9.0, d) * (1.0 - smoothstep(30.0, 55.0, d));
+        float a = across * along * brk * dens * phase * nearFade * uStrength * (0.45 + 0.55 * h1(vSeed));
         gl_FragColor = vec4(uColor * a, 1.0);
       }`,
   });

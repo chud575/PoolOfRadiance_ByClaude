@@ -103,8 +103,69 @@ export function dressRooms(map) {
         cells.push(cc);
       }
     }
+    // a stair up to the rooms along the far side wall (rising away from the door end toward the
+    // hearth wall), with a newel, balusters and a handrail; the cells it runs past stay clear
+    const stairSideC = barSideMin ? (alongX ? z1 : x1) - T / 2 : (alongX ? z0 : x0) + T / 2;
+    const ss = barSideMin ? -1 : 1;
+    const ceil = 3.3;
+    const nSteps = 13;
+    const rise = (ceil - 0.05) / nSteps;
+    const run = 0.27;
+    const stairStart = hearthAtMin ? barA + nSteps * run + 1.2 : barB - nSteps * run - 1.2;
+    const dirA = hearthAtMin ? -1 : 1;
+    const sw = 0.95;
+    for (let k = 0; k < nSteps; k++) {
+      const a = stairStart + dirA * (k + 0.5) * run;
+      const y = (k + 1) * rise;
+      g.box('prop_wood', { matrix: M(a, y - 0.03, stairSideC + ss * sw / 2), s: [run + 0.03, 0.05, sw], chamfer: 0.008, uv: 'along', tint: [0.7, 0.55, 0.4] });
+      g.box('prop_wood', { matrix: M(a - dirA * (run / 2 - 0.01), y - rise / 2 - 0.02, stairSideC + ss * sw / 2), s: [0.025, rise - 0.04, sw - 0.04], uv: 'along', tint: [0.45, 0.34, 0.25] });
+      // a baluster per tread
+      g.box('prop_wood', { matrix: M(a, y + 0.45, stairSideC + ss * (sw - 0.03)), s: [0.035, 0.9, 0.035], chamfer: 0.006, uv: 'along', tint: [0.55, 0.42, 0.3] });
+    }
+    // strings (sloping side boards) and the handrail
+    {
+      const aEnd = stairStart + dirA * nSteps * run;
+      const L = Math.hypot(nSteps * run, ceil);
+      const ang = Math.atan2(ceil, nSteps * run) * dirA * (alongX ? 1 : -1);
+      const am = (stairStart + aEnd) / 2;
+      for (const off of [0.02, sw - 0.02]) g.box('prop_wood', { matrix: M(am, ceil / 2 - 0.1, stairSideC + ss * off).multiply(new THREE.Matrix4().makeRotationZ(ang)), s: [L, 0.24, 0.05], uv: 'along', tint: [0.5, 0.38, 0.28] });
+      g.box('prop_wood', { matrix: M(am, ceil / 2 + 0.85, stairSideC + ss * (sw - 0.03)).multiply(new THREE.Matrix4().makeRotationZ(ang)), s: [L, 0.07, 0.08], chamfer: 0.02, uv: 'along', tint: [0.68, 0.52, 0.38] });
+      // newel post at the foot with a turned cap
+      g.box('prop_wood', { matrix: M(stairStart, 0.6, stairSideC + ss * (sw - 0.03)), s: [0.12, 1.2, 0.12], chamfer: 0.015, uv: 'along', tint: [0.6, 0.46, 0.33] });
+      const cap = new THREE.SphereGeometry(0.08, 10, 6);
+      g.geometry('prop_wood', cap, M(stairStart, 1.25, stairSideC + ss * (sw - 0.03)), { uv: 'world', tint: [0.6, 0.46, 0.33] });
+      cap.dispose();
+      // a dark trap in the ceiling the stair climbs through
+      const trap = new THREE.PlaneGeometry(nSteps * run * 0.45, sw + 0.1);
+      trap.rotateX(Math.PI / 2);
+      g.geometry('arch_beam_dark', trap, M(aEnd - dirA * nSteps * run * 0.22, ceil - 0.03, stairSideC + ss * sw / 2), { uv: 'world', tint: [0.06, 0.05, 0.04], ao: 0.3 });
+      trap.dispose();
+      blobs.push({ ...vec2(P(am, 0, stairSideC + ss * sw / 2)), r: 1.4, a: 0.4 });
+    }
+    // under the stair: stacked casks, sacks of meal and a crate
+    for (let k = 0; k < 2; k++) cask(M(stairStart + dirA * (1.9 + k * 0.85), 0.42, stairSideC + ss * 0.45, Math.PI / 2), 0.8);
+    cask(M(stairStart + dirA * 2.3, 1.05, stairSideC + ss * 0.45, Math.PI / 2), 0.72);
+    for (let k = 0; k < 3; k++) {
+      const sk = new THREE.LatheGeometry([[0, 0], [0.18, 0.01], [0.24, 0.08], [0.25, 0.2], [0.22, 0.34], [0.14, 0.42], [0.06, 0.48], [0.07, 0.54], [0, 0.56]].map(([r, y]) => new THREE.Vector2(r, y)), 12);
+      g.geometry('prop_cloth', sk, M(stairStart + dirA * (3.4 + k * 0.42), 0, stairSideC + ss * (0.35 + (k % 2) * 0.2), k), { uv: 'world', tint: [0.75, 0.66, 0.5] });
+      sk.dispose();
+    }
+    // bunches of drying herbs and a string of onions hung from the joists over the bar
+    for (let k = 0; k < 7; k++) {
+      const a = barA + 0.4 + k * ((len - 0.8) / 6);
+      const hm = M(a, ceil - 0.2, barC - sh * 0.2 + (hash(z.name, k, 'hz') - 0.5) * 0.3);
+      g.box('prop_burlap', { matrix: hm.clone().multiply(tr(0, 0.08, 0)), s: [0.006, 0.2, 0.006], tint: [0.5, 0.42, 0.3] });
+      const bunch = new THREE.ConeGeometry(0.07 + hash(z.name, k, 'hb') * 0.04, 0.32, 7);
+      const herbT = k % 3 === 2 ? [0.62, 0.5, 0.3] : [0.42, 0.5, 0.26];
+      g.geometry('prop_cloth', bunch, hm.clone().multiply(tr(0, -0.18, 0)), { uv: 'world', tint: herbT });
+      bunch.dispose();
+    }
     for (const [k, c] of cells.entries()) {
       if (hash(z.name, k, 'tbl') < 0.25) continue;
+      // keep the stair's foot clear
+      const ca = alongX ? c.x : c.z;
+      const cc = alongX ? c.z : c.x;
+      if (Math.abs(cc - stairSideC) < 1.6 && (dirA < 0 ? ca < stairStart + 0.8 : ca > stairStart - 0.8)) continue;
       tableSet(c, hash(z.name, k, 'tr') < 0.5 ? 0 : Math.PI / 2, k);
     }
   }

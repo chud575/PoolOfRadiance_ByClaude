@@ -40,7 +40,7 @@ const DEFS = {
   arch_roof_slate: { tex: 'hd_roof_slate', texScale: 2, vc: true, fx: { macro: 0.3, moss: 0.25 } },
   arch_roof_clay: { tex: 'hd_roof_clay', texScale: 2, vc: true, fx: { macro: 0.3, moss: 0.2 } },
   arch_roof_shake: { tex: 'hd_roof_shake', texScale: 2, vc: true, fx: { macro: 0.3, moss: 0.3 } },
-  arch_cobble: { tex: 'hd2_cobble', texScale: 2, vc: true, fx: { macro: 0.4, floor: 1 } },
+  arch_cobble: { tex: 'hd3_setts', texScale: 2, vc: true, fx: { macro: 0.4, floor: 1 } },
   arch_flags: { tex: 'hd2_flags', texScale: 2.8, vc: true, fx: { macro: 0.36, floor: 1 } },
   arch_mud: { tex: 'hd_mud', texScale: 3, vc: true, fx: { macro: 0.3, floor: 1 } },
   arch_boards: { tex: 'hd_boards', texScale: 2, vc: true, fx: { macro: 0.15, floor: 1 } },
@@ -89,6 +89,10 @@ export const SURFACE_UNIFORMS = {
   uFxMossTint: { value: new THREE.Color(0x3c4a22) },
   uFxWet: { value: 0.0 },
   uFxNoiseTex: { value: null },
+  // puddle reflections: sky gradient + the street walls that line it (set per scene)
+  uFxReflZenith: { value: new THREE.Color(0x000000) },
+  uFxReflHorizon: { value: new THREE.Color(0x000000) },
+  uFxReflWall: { value: new THREE.Color(0x000000) },
 };
 
 const FX_NOISE = /* glsl */ `
@@ -165,8 +169,10 @@ function applySurfaceFX(mat, fx) {
         uniform vec3 uFxSunDir; uniform vec3 uFxSunColor; uniform float uFxScatter;
         uniform float uFxHeightFog; uniform float uFxHeightFalloff;
         uniform vec3 uFxGrimeTint; uniform vec3 uFxMossTint; uniform float uFxWet;
+        uniform vec3 uFxReflZenith; uniform vec3 uFxReflHorizon; uniform vec3 uFxReflWall;
         float vFxWet = 0.0;
         float vFxFloor = 0.0;
+        float vFxPud = 0.0;
         ${FX_NOISE}`,
       )
       .replace(
@@ -216,13 +222,24 @@ function applySurfaceFX(mat, fx) {
           #endif
           float fl = ${floor};
           diffuseColor.rgb *= mix(1.0, 0.8 + nz.a * 0.4, fl);
-          vFxWet = max(vFxWet, smoothstep(0.6, 0.66, nz.r) * smoothstep(0.45, 0.62, nz.g) * fl);
+          // standing water: broad, soft-edged pools in the low spots (metre-scale noise only — no
+          // per-pixel speckle), a darker damp halo around each, the joints wet a little beyond
+          float pudF = nz.r * 0.7 + nz.a * 0.3 + (nz.g - 0.5) * 0.08;
+          float wetAmt = clamp(uFxWet * 2.0, 0.0, 1.0) * fl;
+          vFxPud = smoothstep(0.64, 0.7, pudF) * wetAmt;
+          float halo = smoothstep(0.6, 0.66, pudF) * wetAmt;
+          diffuseColor.rgb *= 1.0 - halo * 0.28 - vFxPud * 0.42;
           vFxFloor = fl;
         }`,
       )
       .replace(
         '#include <normal_fragment_maps>',
         `#include <normal_fragment_maps>
+        if (vFxPud > 0.0) {
+          // the water surface is flat: it fills the joints and hides the stones' relief
+          vec3 fxUpV = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
+          normal = normalize(mix(normal, fxUpV, smoothstep(0.0, 0.6, vFxPud)));
+        }
         #if ${grain === '0.000' ? 0 : 1}
         {
           // close-up micro relief (≈1 cm grit) as a derivative bump in world space
@@ -248,16 +265,29 @@ function applySurfaceFX(mat, fx) {
         `#include <roughnessmap_fragment>
         {
           // paving: tops stay matte, water lies in the joints and in shallow puddles only
-          float gap = smoothstep(0.86, 0.95, roughnessFactor);
+          // (never glossy where the normal map is busy: a low roughness on bumpy stone glitters)
           float wetK = clamp(uFxWet * 2.0, 0.0, 1.0);
-          roughnessFactor = mix(roughnessFactor, max(roughnessFactor, 0.93), vFxFloor * (1.0 - gap) * wetK);
-          roughnessFactor = mix(roughnessFactor, 0.42, vFxFloor * gap * wetK * 0.6);
-          roughnessFactor = mix(roughnessFactor, 0.07, vFxWet * wetK);
+          roughnessFactor = mix(roughnessFactor, max(roughnessFactor, 0.5), vFxWet * wetK);
+          roughnessFactor = mix(roughnessFactor, 0.06, smoothstep(0.2, 0.9, vFxPud));
         }`,
       )
       .replace(
         '#include <fog_fragment>',
-        `#ifdef USE_FOG
+        `if (vFxPud > 0.0) {
+          // mirror of the sky and the street walls, Fresnel-weighted (grazing views reflect most)
+          vec3 fxI = normalize(vFxWorldPos - cameraPosition);
+          float cosT = clamp(-fxI.y, 0.0, 1.0);
+          float fres = 0.02 + 0.98 * pow(1.0 - cosT, 5.0);
+          vec3 fxR = reflect(fxI, vec3(0.0, 1.0, 0.0));
+          // a ragged roofline (walls up to ~25-40 degrees) between the street and the sky
+          float az = atan(fxR.z, fxR.x);
+          float roof = 0.26 + 0.16 * texture2D(uFxNoiseTex, vec2(az * 0.6, 0.31)).r + 0.04 * step(0.5, fract(az * 5.0 + 0.3));
+          float skyK = smoothstep(roof - 0.02, roof + 0.02, fxR.y);
+          vec3 skyC = mix(uFxReflHorizon, uFxReflZenith, smoothstep(roof, 0.9, fxR.y));
+          vec3 rc = mix(uFxReflWall * (0.75 + 0.5 * texture2D(uFxNoiseTex, vec2(az * 2.0, fxR.y)).g), skyC, skyK);
+          gl_FragColor.rgb += rc * fres * smoothstep(0.15, 0.85, vFxPud);
+        }
+        #ifdef USE_FOG
         {
           vec3 fxV = vFxWorldPos - cameraPosition;
           float fxD = length(fxV);
@@ -355,6 +385,61 @@ export function getWindowMaterial(side = 'ext') {
     envMapIntensity: 1.4,
   });
   m.name = key;
+  if (side === 'ext') {
+    // interior mapping: a lamplit room behind the glazing (back wall, side walls, beamed ceiling,
+    // floor) traced per pixel from the view ray, so lit windows have depth and parallax instead of
+    // a flat orange card; curtains hang at the sides and the frame casts a soft inner shadow
+    m.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vWinWP;\nvarying vec3 vWinN;')
+        .replace(
+          '#include <fog_vertex>',
+          `#include <fog_vertex>
+          vWinWP = (modelMatrix * vec4(transformed, 1.0)).xyz;
+          vWinN = normalize(mat3(modelMatrix) * objectNormal);`,
+        );
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vWinWP;\nvarying vec3 vWinN;')
+        .replace(
+          '#include <emissivemap_fragment>',
+          `#include <emissivemap_fragment>
+          {
+            vec3 Nw = normalize(vWinN);
+            vec3 Tw = normalize(cross(vec3(0.0, 1.0, 0.0), Nw));
+            vec3 V = normalize(vWinWP - cameraPosition);
+            vec3 rd = vec3(dot(V, Tw), V.y, -dot(V, Nw));
+            vec2 uv0 = vMapUv;
+            vec3 ro = vec3(uv0.x, uv0.y, 0.0);
+            float D = 1.1;
+            vec3 tt = vec3((rd.x > 0.0 ? (1.6 - ro.x) : (-0.6 - ro.x)) / rd.x, (rd.y > 0.0 ? (1.25 - ro.y) : (-0.35 - ro.y)) / rd.y, D / max(rd.z, 1e-3));
+            float t = min(min(tt.x, tt.y), tt.z);
+            vec3 hp = ro + rd * t;
+            float room;
+            if (t == tt.z) {
+              // back wall: warm plaster, a lamp glow in the middle, a dark dresser low down
+              float glow = exp(-dot(hp.xy - vec2(0.55, 0.62), hp.xy - vec2(0.55, 0.62)) * 3.0);
+              room = 0.55 + 0.75 * glow;
+              float dresser = step(abs(hp.x - 0.25), 0.28) * step(hp.y, 0.22);
+              room *= 1.0 - dresser * 0.6;
+            } else if (t == tt.y) {
+              room = rd.y > 0.0 ? 0.42 * (0.55 + 0.45 * step(0.25, fract(hp.x * 2.5))) : 0.3 + 0.1 * step(0.5, fract(hp.z * 4.0));
+            } else {
+              room = 0.36 + 0.3 * (hp.z / D);
+            }
+            // curtains drawn to either side, folds catching the lamp
+            float cx = min(uv0.x, 1.0 - uv0.x);
+            float curtain = 1.0 - smoothstep(0.12, 0.2, cx + 0.03 * sin(uv0.y * 9.0));
+            float folds = 0.6 + 0.4 * sin(uv0.x * 90.0);
+            room = mix(room, 0.32 * folds, curtain);
+            // the frame's inner shadow on the glazing edges
+            float edge = smoothstep(0.0, 0.06, min(cx, min(uv0.y, 1.0 - uv0.y)));
+            room *= 0.45 + 0.55 * edge;
+            totalEmissiveRadiance *= room * vec3(1.0, 0.92, 0.82) * 1.25;
+          }`,
+        );
+    };
+    m.customProgramCacheKey = () => 'win_ext_im';
+  }
   special.set(key, m);
   return m;
 }
@@ -387,7 +472,7 @@ export function setWindowGlow(night, flicker = 1) {
     int.needsUpdate = true;
   }
   int.emissive.setHex(night > 0.5 ? 0x1a2648 : 0xffffff);
-  int.emissiveIntensity = night > 0.5 ? 0.35 : 1.15;
+  int.emissiveIntensity = night > 0.5 ? 0.35 : 0.62; // bright, but held below the clip so the glazing keeps its leads
   const lamp = getLampGlassMaterial();
   lamp.emissiveIntensity = (0.2 + night * 4) * flicker;
 }
