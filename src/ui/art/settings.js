@@ -1080,13 +1080,9 @@ S.docks = (g, W, H, R, o) => {
   const horizon = H * 0.55;
   const lights = [];
   paintSky(g, W, H, sky, R, { horizon });
-  // distant keep on its island
-  g.fillStyle = rgba(mix('#0a0c14', sky.fog, 0.45));
-  poly(g, [[W * 0.62, horizon + 2], [W * 0.64, horizon - 30], [W * 0.66, horizon - 30], [W * 0.66, horizon - 60], [W * 0.68, horizon - 70], [W * 0.7, horizon - 60], [W * 0.7, horizon - 36], [W * 0.78, horizon - 36], [W * 0.8, horizon + 2]]);
-  g.fill();
-  g.fillStyle = '#bff8ff';
-  g.fillRect(W * 0.68 - 1, horizon - 54, 2, 4);
-  glow(g, W * 0.68, horizon - 52, 14, '#8ff0ff', 0.5);
+  // Sokol Keep on its island across the water: curtain wall, drum towers, the great square keep and
+  // the beacon tower, dark (the beacon the Council wants relit), a ghost-light in one high window
+  sokolKeep(g, W * 0.71, horizon + 3, H * 0.0021, sky, R);
   // water
   g.fillStyle = linGrad(g, 0, horizon, 0, H, [[0, rgba(mix(sky.hor, '#10202e', 0.55))], [1, '#050a10']]);
   g.fillRect(0, horizon, W, H - horizon);
@@ -1121,23 +1117,150 @@ S.docks = (g, W, H, R, o) => {
       g.fillRect(x - w / 2, y - w * 2.5, w, w * 2.5 + 8);
     }
   }
-  // a rowing boat moored
-  const bx = W * 0.24;
-  const by = H * 0.8;
-  g.fillStyle = linGrad(g, 0, by - 30, 0, by + 10, [[0, '#6a4a2a'], [1, '#1a100a']]);
-  g.beginPath();
-  g.moveTo(bx - 120, by - 26);
-  g.quadraticCurveTo(bx, by + 30, bx + 120, by - 30);
-  g.lineTo(bx + 100, by - 40);
-  g.quadraticCurveTo(bx, by - 18, bx - 110, by - 36);
-  g.closePath();
-  g.fill();
+  // the Grey Gull: a clinker-built rowing boat moored at the pier, Kell Saltbeard at the oars
+  const bx = W * 0.15;
+  const by = H * 0.79;
+  rowingBoat(g, o.fg ?? g, bx, by, H * 0.003, R);
   // lamp post
   P.torchSconce(g, W * 0.7, H * 0.52, 60);
   lights.push({ x: W * 0.7, y: H * 0.52, s: 18, kind: 'flame', color: '#ffa040' });
   fog(g, W, horizon + 10, H * 0.14, sky.fog, 0.6, 19);
-  return { sky, horizon, lights, motes: { color: '#fff0c8', count: 20, rise: 0.05 }, floorY: H * 0.7 };
+  return { sky, horizon, lights, motes: { color: '#fff0c8', count: 20, rise: 0.05 }, floorY: H * 0.7, fgUsed: !!o.fg, actorSlot: { x: bx + H * 0.02, y: by - H * 0.03, h: H * 0.3, pose: 'row', yaw: 0.75 } };
 };
+
+/** A distant island fortress in aerial perspective, reflected in the water. */
+function sokolKeep(g, x, base, s, sky, R) {
+  const far = rgba(mix('#0a0c14', sky.fog, 0.42));
+  const rim = rgba(mix(sky.hor, '#ffffff', 0.2), 0.35);
+  const px = (u) => x + u * s * 100;
+  const py = (v) => base - v * s * 100;
+  const shape = () => {
+    g.beginPath();
+    // the island's rock, low and ragged
+    g.moveTo(px(-1.9), py(0)); g.lineTo(px(-1.6), py(0.12)); g.lineTo(px(-1.2), py(0.16)); g.lineTo(px(-0.9), py(0.22));
+    // curtain wall with merlons, left drum tower
+    g.lineTo(px(-0.9), py(0.42));
+    for (let i = 0; i < 4; i++) { const u = -0.9 + i * 0.1; g.lineTo(px(u), py(0.46)); g.lineTo(px(u + 0.05), py(0.46)); g.lineTo(px(u + 0.05), py(0.42)); g.lineTo(px(u + 0.1), py(0.42)); }
+    g.lineTo(px(-0.5), py(0.42)); g.lineTo(px(-0.5), py(0.72)); g.lineTo(px(-0.52), py(0.72)); g.lineTo(px(-0.36), py(0.98)); g.lineTo(px(-0.2), py(0.72)); g.lineTo(px(-0.22), py(0.72)); g.lineTo(px(-0.22), py(0.5));
+    // the great keep: square, crenellated, a stair turret
+    g.lineTo(px(-0.12), py(0.5)); g.lineTo(px(-0.12), py(1.12));
+    for (let i = 0; i < 5; i++) { const u = -0.12 + i * 0.1; g.lineTo(px(u), py(1.18)); g.lineTo(px(u + 0.05), py(1.18)); g.lineTo(px(u + 0.05), py(1.12)); g.lineTo(px(u + 0.1), py(1.12)); }
+    g.lineTo(px(0.38), py(1.12)); g.lineTo(px(0.38), py(1.3)); g.lineTo(px(0.44), py(1.38)); g.lineTo(px(0.5), py(1.3)); g.lineTo(px(0.5), py(0.6));
+    // the beacon tower on the seaward point: tall, slender, an iron fire-basket on top (unlit)
+    g.lineTo(px(0.72), py(0.6)); g.lineTo(px(0.74), py(1.42)); g.lineTo(px(0.7), py(1.48)); g.lineTo(px(0.7), py(1.56)); g.lineTo(px(0.84), py(1.56)); g.lineTo(px(0.84), py(1.48)); g.lineTo(px(0.8), py(1.42)); g.lineTo(px(0.82), py(0.6));
+    g.lineTo(px(1.05), py(0.42)); g.lineTo(px(1.05), py(0.38));
+    g.lineTo(px(1.4), py(0.18)); g.lineTo(px(1.8), py(0.1)); g.lineTo(px(2.1), py(0));
+    g.closePath();
+  };
+  // reflection first, broken by the swell
+  g.save();
+  g.translate(0, base * 2);
+  g.scale(1, -1);
+  g.globalAlpha = 0.3;
+  g.fillStyle = far;
+  shape(); g.fill();
+  g.restore();
+  for (let i = 0; i < 18; i++) { g.fillStyle = rgba(sky.hor, 0.12); g.fillRect(px(-1.8 + R() * 3.6), base + 2 + R() * s * 60, s * (20 + R() * 60), 1); }
+  g.fillStyle = far;
+  shape(); g.fill();
+  // the sky's last light on the left edges
+  g.save(); shape(); g.clip();
+  g.strokeStyle = rim; g.lineWidth = 1.2;
+  for (const [u0, v0, v1] of [[-0.9, 0.22, 0.42], [-0.5, 0.42, 0.72], [-0.12, 0.5, 1.12], [0.72, 0.6, 1.42]]) { g.beginPath(); g.moveTo(px(u0) + 0.8, py(v0)); g.lineTo(px(u0) + 0.8, py(v1)); g.stroke(); }
+  // arrow slits and one cold window light (the ghost keeps his vigil)
+  g.fillStyle = 'rgba(0,0,0,0.5)';
+  for (const [u, v] of [[-0.02, 0.9], [0.18, 0.9], [0.28, 0.75], [-0.4, 0.6], [0.77, 1.2], [0.77, 0.95]]) g.fillRect(px(u), py(v), Math.max(1, s * 2.5), s * 7);
+  g.restore();
+  g.fillStyle = '#bff8ff';
+  g.fillRect(px(0.08), py(0.84), Math.max(1.5, s * 3), s * 6);
+  glow(g, px(0.09), py(0.81), s * 24, '#8ff0ff', 0.45);
+  // the cold, unlit fire-basket of the beacon
+  g.strokeStyle = 'rgba(10,8,8,0.9)'; g.lineWidth = Math.max(1, s * 1.5);
+  g.beginPath(); g.moveTo(px(0.7), py(1.56)); g.lineTo(px(0.72), py(1.66)); g.moveTo(px(0.84), py(1.56)); g.lineTo(px(0.82), py(1.66)); g.moveTo(px(0.72), py(1.66)); g.lineTo(px(0.82), py(1.66)); g.stroke();
+}
+
+/**
+ * A clinker-built rowing boat seen three-quarter on: the far side's inner planking and the thwarts
+ * on the back layer, the near side (strakes, gunwale, rowlocks) on the foreground layer so whoever
+ * sits in it sits inside it; oars out, blades in the water, a reflection and a mooring line.
+ */
+function rowingBoat(g, fg, x, y, s, R) {
+  const S = (u, v) => [x + u * s * 100, y + v * s * 100];
+  const sheerN = (t) => S(-1.25 + t * 2.6, -0.28 + 0.3 * Math.sin(Math.PI * t) * 0 - 0.12 * (1 - Math.sin(Math.PI * t)) + 0.02 * t);
+  const sheerF = (t) => S(-1.05 + t * 2.35, -0.44 - 0.1 * (1 - Math.sin(Math.PI * t)) + 0.04 * t);
+  const keel = (t) => S(-1.2 + t * 2.5, 0.22 * Math.sin(Math.PI * Math.pow(t, 0.9)) - 0.02);
+  const N = 24;
+  const line = (f) => Array.from({ length: N + 1 }, (_, i) => f(i / N));
+  const sn = line(sheerN); const sf = line(sheerF); const kl = line(keel);
+  // reflection and the dark water round the hull
+  g.save();
+  g.globalAlpha = 0.35;
+  g.fillStyle = '#05080c';
+  g.beginPath(); g.moveTo(sn[0][0], y + (y - sn[0][1]) * 0.5); for (const p of kl) g.lineTo(p[0], y + (y - p[1]) * 0.2 + s * 30); for (let i = N; i >= 0; i--) g.lineTo(sn[i][0], y + (y - sn[i][1]) * 0.55 + s * 30); g.closePath(); g.fill();
+  g.restore();
+  // back layer: the inside of the far side and the bottom boards
+  g.save();
+  g.beginPath(); g.moveTo(sf[0][0], sf[0][1]); for (const p of sf) g.lineTo(p[0], p[1]); for (let i = N; i >= 0; i--) g.lineTo(sn[i][0], sn[i][1]); g.closePath();
+  g.fillStyle = linGrad(g, 0, sf[12][1], 0, sn[12][1], [[0, '#7a5634'], [0.5, '#4a321c'], [1, '#2a1a0e']]);
+  g.fill();
+  g.clip();
+  g.strokeStyle = 'rgba(20,12,6,0.55)'; g.lineWidth = Math.max(1, s * 1.2);
+  for (let k = 1; k < 4; k++) { g.beginPath(); for (let i = 0; i <= N; i++) { const p = sf[i]; const q = sn[i]; const px0 = p[0] + (q[0] - p[0]) * (k / 4); const py0 = p[1] + (q[1] - p[1]) * (k / 4); if (i) g.lineTo(px0, py0); else g.moveTo(px0, py0); } g.stroke(); }
+  // thwarts across the boat
+  for (const t of [0.3, 0.62]) {
+    const a = sf[Math.round(t * N)]; const b = sn[Math.round(t * N)];
+    g.strokeStyle = '#8a6440'; g.lineWidth = s * 9;
+    g.beginPath(); g.moveTo(a[0], a[1] + s * 6); g.lineTo(b[0], b[1] - s * 4); g.stroke();
+    g.strokeStyle = 'rgba(255,220,170,0.25)'; g.lineWidth = s * 2;
+    g.beginPath(); g.moveTo(a[0], a[1] + s * 3); g.lineTo(b[0], b[1] - s * 7); g.stroke();
+  }
+  g.restore();
+  // the far gunwale
+  g.strokeStyle = '#8a6240'; g.lineWidth = s * 6; g.lineCap = 'round';
+  g.beginPath(); sf.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]))); g.stroke();
+  // oars: shafts from the rowlocks out over the water, blades dipped
+  for (const [t, dir] of [[0.5, -1], [0.56, 1]]) {
+    const a = (dir < 0 ? sf : sn)[Math.round(t * N)];
+    // oars stand out square to the hull: the far one foreshortened away from us, the near one toward us
+    const e = dir < 0 ? [a[0] - s * 50, a[1] - s * 28] : [a[0] - s * 70, a[1] + s * 135];
+    const layer = dir < 0 ? g : fg;
+    layer.strokeStyle = '#b08a5a'; layer.lineWidth = s * 4.5; layer.lineCap = 'round';
+    layer.beginPath(); layer.moveTo(a[0] + s * 20, a[1] - dir * s * 8); layer.lineTo(e[0], e[1]); layer.stroke();
+    layer.fillStyle = '#7a5a36';
+    layer.save(); layer.translate(e[0], e[1]); layer.rotate(Math.atan2(e[1] - a[1], e[0] - a[0]));
+    layer.beginPath(); layer.ellipse(0, 0, s * 26, s * 7, 0, 0, Math.PI * 2); layer.fill(); layer.restore();
+    for (let k = 0; k < 3; k++) glowEllipse(layer, e[0], e[1] + s * 4, s * (20 + k * 16), s * (4 + k * 3), '#a8c0d0', 0.12, 'screen');
+  }
+  // front layer: the near side's strakes, lit along their lands
+  fg.save();
+  fg.beginPath(); fg.moveTo(sn[0][0], sn[0][1]); for (const p of sn) fg.lineTo(p[0], p[1]); for (let i = N; i >= 0; i--) fg.lineTo(kl[i][0], kl[i][1]); fg.closePath();
+  fg.fillStyle = linGrad(fg, 0, sn[12][1], 0, kl[12][1], [[0, '#6a4628'], [0.6, '#3a2414'], [1, '#160c06']]);
+  fg.fill();
+  fg.clip();
+  for (let k = 1; k < 5; k++) {
+    const st = sn.map((p, i) => [p[0] + (kl[i][0] - p[0]) * (k / 5), p[1] + (kl[i][1] - p[1]) * (k / 5)]);
+    fg.strokeStyle = 'rgba(14,8,4,0.7)'; fg.lineWidth = Math.max(1, s * 1.6);
+    fg.beginPath(); st.forEach((p, i) => (i ? fg.lineTo(p[0], p[1]) : fg.moveTo(p[0], p[1]))); fg.stroke();
+    fg.strokeStyle = 'rgba(255,214,160,0.18)'; fg.lineWidth = Math.max(1, s * 1.2);
+    fg.beginPath(); st.forEach((p, i) => (i ? fg.lineTo(p[0], p[1] + s * 2.2) : fg.moveTo(p[0], p[1] + s * 2.2))); fg.stroke();
+  }
+  // weed and wet at the waterline
+  fg.fillStyle = linGrad(fg, 0, kl[12][1] - s * 22, 0, kl[12][1], [[0, 'rgba(20,40,30,0)'], [1, 'rgba(20,40,30,0.7)']]);
+  fg.fillRect(x - s * 140, kl[12][1] - s * 22, s * 280, s * 26);
+  fg.restore();
+  // the near gunwale, a rowlock, the painted name band
+  fg.strokeStyle = '#a07650'; fg.lineWidth = s * 7; fg.lineCap = 'round';
+  fg.beginPath(); sn.forEach((p, i) => (i ? fg.lineTo(p[0], p[1]) : fg.moveTo(p[0], p[1]))); fg.stroke();
+  fg.strokeStyle = 'rgba(255,226,180,0.4)'; fg.lineWidth = s * 2;
+  fg.beginPath(); sn.forEach((p, i) => (i ? fg.lineTo(p[0], p[1] - s * 2.5) : fg.moveTo(p[0], p[1] - s * 2.5))); fg.stroke();
+  const nb = sn.slice(14, 21).map((p) => [p[0], p[1] + s * 12]);
+  fg.strokeStyle = 'rgba(200,200,190,0.55)'; fg.lineWidth = s * 5;
+  fg.beginPath(); nb.forEach((p, i) => (i ? fg.lineTo(p[0], p[1]) : fg.moveTo(p[0], p[1]))); fg.stroke();
+  // the mooring line to the pile
+  fg.strokeStyle = 'rgba(190,170,130,0.8)'; fg.lineWidth = Math.max(1, s * 1.5);
+  fg.beginPath(); fg.moveTo(sn[N][0], sn[N][1]); fg.quadraticCurveTo(sn[N][0] + s * 60, sn[N][1] + s * 40, sn[N][0] + s * 120, sn[N][1] - s * 30); fg.stroke();
+  void R;
+}
 
 S.well_head = (g, W, H, R, o) => {
   const sc = S.plaza(g, W, H, R, { ...o, light: o.light ?? 'dusk' });

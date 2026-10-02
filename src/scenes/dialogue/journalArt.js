@@ -1,6 +1,6 @@
 import { paintPanel, npcActor, ghostActor } from '../../ui/art/index.js';
 import { NPCS } from '../../data/npcs.js';
-import { rngOf } from '../../ui/art/paint.js';
+import { rngOf, makeCanvas } from '../../ui/art/paint.js';
 
 /**
  * The Adventurer's Journal as a physical book: page textures with curvature,
@@ -12,7 +12,7 @@ import { rngOf } from '../../ui/art/paint.js';
 // subject of each entry's plate
 const PLATES = {
   1: { setting: 'docks', light: 'dusk' }, 2: { setting: 'docks', light: 'day' }, 3: { setting: 'cityhall', actor: 'clerk' }, 4: { setting: 'cityhall', actor: 'clerk' },
-  5: { setting: 'slums', monsters: [{ id: 'kobold', count: 3 }] }, 6: { setting: 'keep', light: 'night' }, 7: { setting: 'chapel', actor: 'ferran', light: 'ghost', pose: 'stand' },
+  5: { setting: 'slums', monsters: [{ id: 'kobold', count: 3 }] }, 6: { setting: 'keep', light: 'night' }, 7: { setting: 'chapel', actor: 'ferran', light: 'ghost', pose: 'vigil' },
   8: { setting: 'well_head' }, 9: { setting: 'plaza', light: 'day' }, 10: { setting: 'library', actor: 'sage' }, 11: { setting: 'library' }, 12: { setting: 'textile' },
   13: { setting: 'temple_bane', actor: 'bane_priest' }, 14: { setting: 'graveyard', monsters: [{ id: 'skeleton', count: 3 }] }, 15: { setting: 'castle', monsters: [{ id: 'hillGiant', count: 1 }] },
   16: { setting: 'gate', monsters: [{ id: 'orc', count: 3 }] }, 17: { setting: 'temple_bane' }, 18: { setting: 'pool', monsters: [{ id: 'tyranthraxus', count: 1 }] }, 19: { setting: 'wilds' },
@@ -29,16 +29,14 @@ export function engravedPlate(n) {
   if (!spec) return null;
   if (plateCache.has(n)) return plateCache.get(n);
   const W = 720;
-  const H = 290;
+  const H = 340;
   // paint wider than the plate, then frame the subject in the centre third
   const PW = 1000;
   const npc = spec.actor ? NPCS[spec.actor] : null;
   const actor = npc ? (npc.kind === 'ghost' ? ghostActor(spec.pose) : npcActor(npc)) : null;
   const { canvas: wide, composer } = paintPanel({ setting: spec.setting, light: spec.light, monsters: spec.monsters, actor, w: PW, h: H, seed: n * 17 + 3 });
   // the subject's silhouette: every figure sprite drawn as a flat mask
-  const wmask = document.createElement('canvas');
-  wmask.width = PW;
-  wmask.height = H;
+  const wmask = makeCanvas(PW, H);
   const mg = wmask.getContext('2d');
   for (const a of composer.actors) composer._sprite(mg, { ...a, ghost: false, r: { ...a.r, emit: [] } }, 0);
   for (const o of composer.ops) if (o.kind === 'sprite') composer._sprite(mg, { ...o, ghost: false, r: { ...o.r, emit: [] } }, 0);
@@ -47,7 +45,7 @@ export function engravedPlate(n) {
   for (let y = 0; y < H; y += 2) for (let x = 0; x < PW; x += 2) { const a = md[(y * PW + x) * 4 + 3]; if (a > 128) { sx += x; sn++; } }
   const cx = sn ? sx / sn : PW / 2;
   const x0 = Math.round(Math.max(0, Math.min(PW - W, cx - W / 2)));
-  const crop = (src) => { const c = document.createElement('canvas'); c.width = W; c.height = H; c.getContext('2d').drawImage(src, -x0, 0); return c; };
+  const crop = (src) => { const c = makeCanvas(W, H); c.getContext('2d').drawImage(src, -x0, 0); return c; };
   const url = engrave(crop(wide), crop(wmask), n).toDataURL('image/png');
   plateCache.set(n, url);
   return url;
@@ -78,8 +76,18 @@ function engrave(src, maskC, seed) {
     for (let x = 0; x < W; x++) { let s = 0; for (let y = -r; y <= r; y++) s += T[Math.max(0, Math.min(H - 1, y)) * W + x]; for (let y = 0; y < H; y++) { O[y * W + x] = s / (2 * r + 1); s += T[Math.min(H - 1, y + r + 1) * W + x] - T[Math.max(0, y - r) * W + x]; } }
     return O;
   };
-  const B = blur(L, 1);
+  // the subject keeps its detail; the background is softened first so its masonry never turns to scribble
+  const B1 = blur(L, 1);
+  const B3 = blur(L, 3);
   const Mb = blur(M, 1);
+  const B = new Float32Array(N);
+  // local contrast: the setting's big shapes (altar, windows, pews) are lifted out of a dark room, as
+  // an engraver would key them, before the tone is mapped
+  const Bw = blur(L, 24);
+  for (let i = 0; i < N; i++) {
+    const b = B1[i] * Mb[i] + B3[i] * (1 - Mb[i]);
+    B[i] = Math.max(0, Math.min(1, b + (b - Bw[i]) * 1.3 * (1 - Mb[i])));
+  }
   // tone: normalised darkness, the background flattened a little so the subject carries the plate
   const sample = [];
   for (let i = 0; i < N; i += 11) sample.push(B[i]);
@@ -134,9 +142,7 @@ function engrave(src, maskC, seed) {
     const s2 = Math.sin(2 * th) * coh + Math.sin(2 * base) * (1 - coh);
     ang[i] = 0.5 * Math.atan2(s2, c);
   }
-  const out = document.createElement('canvas');
-  out.width = W;
-  out.height = H;
+  const out = makeCanvas(W, H);
   const og = out.getContext('2d');
   og.lineCap = 'round';
   og.lineJoin = 'round';

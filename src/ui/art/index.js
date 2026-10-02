@@ -1,11 +1,12 @@
-import { makeCanvas, vignette, grade, grain, rgba, glow, glowEllipse, flame, rngOf, hashStr, fog as fogBand, clamp01, contactShadow } from './paint.js';
+import { makeCanvas, gpuCopy, vignette, grade, grain, rgba, glow, glowEllipse, flame, rngOf, hashStr, fog as fogBand, clamp01, contactShadow } from './paint.js';
 import { paintSetting } from './settings.js';
 import './interiors.js';
 import { placeCreature, creatureScale, paintCreature, dragonHead, hasCreature, isSculpted, renderCreature, flattenSprite } from './creatures.js';
 import { paintPortrait, defaultLook, SKIN_TONES, RACE_SKINS, HAIR_COLORS, CLOTH_COLORS, EYE_COLORS, HEADS, BODIES } from '../components/portraitPainter.js';
 import { buildPerson } from './bodies.js';
 import { buildNpc } from './people.js';
-import { renderFigure } from './sculpt.js';
+import { renderFigure, mul3, rotX, rotY, ap3 } from './sculpt.js';
+import { paintPortraitDesign, paintFaceDecal, paintGhostKnight } from './facePaint.js';
 
 /**
  * Illustrated panels for the dialogue / encounter / shop screens — the big
@@ -87,7 +88,11 @@ export function paintPanel(spec) {
   if (info.fgUsed) composer.fg = fg;
   if (spec.actor) composer.addActor(spec.actor, info.actorSlot ?? { x: W * 0.5, y: H * 0.95, h: H * 0.74, pose: 'stand', yaw: 0.15 });
   if (spec.monsters?.length) placeGroup(composer, g, W, H, spec.monsters, info, light, seed, spec.mood);
-  const canvas = makeCanvas(W, H);
+  // painting is done on CPU canvases (fast pixel access); the layers composited every frame move to
+  // the GPU, as does the canvas that is shown
+  composer.bg = gpuCopy(bg);
+  if (composer.fg) composer.fg = gpuCopy(fg);
+  const canvas = makeCanvas(W, H, { gpu: true });
   composer.draw(canvas.getContext('2d'), 0);
   return { canvas, info, composer };
 }
@@ -118,8 +123,10 @@ export class PanelComposer {
 
   /** An NPC standing in the setting's actor slot (behind its desk/anvil/altar). */
   addActor(actor, slot) {
-    const r = actor.render(slot, rigAt(this.light, this.info, slot.x, slot.y, this.W));
-    if (!r) return;
+    const r0 = actor.render(slot, rigAt(this.light, this.info, slot.x, slot.y, this.W));
+    if (!r0) return;
+    const r = r0;
+    if (r.dx) slot = { ...slot, x: slot.x + r.dx };
     const g = this.bg.getContext('2d');
     contactShadow(g, slot.x, slot.y, slot.h * 0.16, slot.h * 0.03, 0.5);
     this.actors.push({ r, x: slot.x, y: slot.y, ph: 1.3, amp: 0.7, ghost: !!actor.ghost && !r.spectral, hover: !!actor.ghost, sway: 0.4 });
@@ -245,13 +252,16 @@ function castShadow(g, r, x, y, h, keyDir, flip) {
  */
 function placeGroup(comp, g, W, H, groups, info, light, seed, mood = null) {
   const hostile = mood === 'hostile';
+  const calm = mood === 'calm';
+  const flee = mood === 'flee';
   const list = [];
   for (const gr of groups) {
     const n = Math.max(1, Math.min(8, gr.count ?? 1));
     for (let i = 0; i < n; i++) list.push(gr.id);
   }
   const R = rngOf(seed + 5);
-  const shown = list.slice(0, 7);
+  // scattered: the street empties but for two stragglers running for the rubble
+  const shown = list.slice(0, flee ? 2 : 7);
   const floor = info.floorY ?? H * 0.64;
   const L = LIGHTS[light] ?? LIGHTS.dusk;
   const hazeColor = info.sky?.fog ?? (light === 'green' ? '#0a2010' : '#1a1410');
@@ -259,14 +269,20 @@ function placeGroup(comp, g, W, H, groups, info, light, seed, mood = null) {
   const human = Math.min(H * 0.6, (H * 0.7) / Math.max(1, biggest));
   const depth = (t) => floor + (H - floor) * t;
   const front = [[0.5, 0.95, 1.0, 0], [0.29, 0.8, 0.9, 0.05], [0.71, 0.82, 0.9, 0.05]];
-  const back = [[0.39, 0.42, 0.66, 0.3], [0.61, 0.45, 0.66, 0.3], [0.17, 0.5, 0.7, 0.26], [0.83, 0.5, 0.7, 0.26]];
+  // the second rank stands in the gaps of the first, so no spear runs into a neighbour's snout
+  const back = [[0.365, 0.42, 0.66, 0.3], [0.645, 0.45, 0.66, 0.3], [0.15, 0.5, 0.7, 0.26], [0.85, 0.5, 0.7, 0.26]];
   const n = shown.length;
-  const slots = n === 1 && shown[0] === 'tyranthraxus' ? [[0.5, 0.25, 0.6, 0]] : n === 1 && shown[0] === 'ghostKnight' ? [[0.5, 0.3, 0.82, 0]] : n === 1 ? [[0.5, 0.92, 1.05, 0]] : n === 2 ? [[0.4, 0.9, 1, 0], [0.62, 0.84, 0.95, 0.03]] : [...front, ...back].slice(0, n);
+  const slots = flee ? [[0.8, 0.16, 0.5, 0.45], [0.16, 0.24, 0.56, 0.38]] : n === 1 && shown[0] === 'tyranthraxus' ? [[0.5, 0.25, 0.6, 0]] : n === 1 && shown[0] === 'ghostKnight' ? [[0.5, 0.3, 0.82, 0]] : n === 1 ? [[0.5, 0.92, 1.05, 0]] : n === 2 ? [[0.4, 0.9, 1, 0], [0.62, 0.84, 0.95, 0.03]] : [...front, ...back].slice(0, n);
   const items = shown.map((id, i) => ({ id, slot: slots[i], i }));
   items.sort((a, b) => a.slot[1] - b.slot[1]);
   let fogged = false;
   for (const it of items) {
     let [sx, t, sc, haze] = it.slot;
+    if (calm) {
+      // weapons lowered, they hang back a pace
+      t = Math.max(0, t - 0.05);
+      sc *= 0.96;
+    }
     if (hostile) {
       // the band advances on the party: a step closer, drawing in toward the centre
       t = Math.min(1.02, t + 0.06 + (1 - t) * 0.12);
@@ -289,8 +305,11 @@ function placeGroup(comp, g, W, H, groups, info, light, seed, mood = null) {
       const toward = (0.5 - sx) * 1.6;
       const lead = it.i === 0 && n > 2;
       const jit = (R() - 0.5) * 0.5;
-      const yaw = lead ? (jit < 0 ? -0.22 : 0.22) : Math.max(-0.95, Math.min(0.95, toward + jit + (Math.abs(toward) < 0.2 ? (R() < 0.5 ? -0.45 : 0.45) : 0)));
-      const r = renderCreature(it.id, hpx, rig, fseed, { yaw, haze, hazeColor, leader: lead, mood });
+      let yaw = lead ? (jit < 0 ? -0.22 : 0.22) : Math.max(-0.95, Math.min(0.95, toward + jit + (Math.abs(toward) < 0.2 ? (R() < 0.5 ? -0.45 : 0.45) : 0)));
+      // fleeing: backs to us, bent into the run, heads turned to look back over a shoulder
+      if (flee) yaw = Math.PI + (sx > 0.5 ? -0.55 : 0.55);
+      const extra = flee ? { poseOverride: { weaponPose: 'low', offPose: 'fist', lean: 0.34, crouch: 0.18, twist: 0, headYaw: sx > 0.5 ? 0.7 : -0.7, headPitch: 0, headTilt: 0, stance: 0.12, footZ: [0.12, -0.14], sway: 0, hipTilt: 0 } } : calm ? { pose: 'low' } : {};
+      const r = renderCreature(it.id, hpx, rig, fseed, { yaw, haze, hazeColor, leader: lead && !calm, mood: calm || flee ? null : mood, ...extra });
       if (!r) continue;
       if (!r.sp.ghost) castShadow(g, r, x, y, hpx, rig.key.dir, false);
       comp.addSprite({ r, x, y, ph: R() * 6.28, period: 2.8 + R() * 1.4, amp: 0.8 + R() * 0.5, haze, ghost: !!r.sp.ghost, sway: r.sp.tail ? 1.2 : 1 });
@@ -299,7 +318,35 @@ function placeGroup(comp, g, W, H, groups, info, light, seed, mood = null) {
       placeCreature(g, it.id, x, y, hpx, L, { haze, hazeColor, seed: fseed, flip: sx > 0.55 && R() < 0.6 });
     }
   }
+  if (flee) droppedGear(g, W, H, floor, R);
   comp.addFog(H * 0.97, H * 0.12, hazeColor, 0.22, (seed + 3) % 13);
+}
+
+/** What a scattered war-band leaves behind: a dropped spear, a kicked-over pot, scuffed dust. */
+function droppedGear(g, W, H, floor, R) {
+  const y = floor + (H - floor) * 0.72;
+  const x = W * 0.47;
+  g.save();
+  contactShadow(g, x, y + 4, W * 0.11, 6, 0.5);
+  // the spear lies at a slant across the street
+  g.translate(x, y);
+  g.rotate(-0.12);
+  const sg = g.createLinearGradient(0, -4, 0, 4);
+  sg.addColorStop(0, '#9a7448'); sg.addColorStop(0.5, '#6a4a2a'); sg.addColorStop(1, '#2a1a0e');
+  g.fillStyle = sg;
+  g.fillRect(-W * 0.12, -3, W * 0.22, 6);
+  g.fillStyle = '#3a2a1a';
+  for (let i = 0; i < 3; i++) g.fillRect(W * 0.07 + i * 5, -4, 2, 8); // binding
+  g.beginPath(); g.moveTo(W * 0.1, -6); g.lineTo(W * 0.15, 0); g.lineTo(W * 0.1, 6); g.closePath();
+  const ig = g.createLinearGradient(W * 0.1, -6, W * 0.1, 6);
+  ig.addColorStop(0, '#c8ccd0'); ig.addColorStop(1, '#4a4c54');
+  g.fillStyle = ig; g.fill();
+  g.restore();
+  // scuffed dust where they broke and ran
+  for (let i = 0; i < 26; i++) {
+    const dx = W * (0.25 + R() * 0.5); const dy = floor + (H - floor) * (0.2 + R() * 0.6);
+    glowEllipse(g, dx, dy, 18 + R() * 30, 5 + R() * 6, '#b8a080', 0.06, 'screen');
+  }
 }
 
 // ------------------------------------------------------------------ NPC actors
@@ -328,6 +375,45 @@ export function npcFigureSpec(npc, pose) {
     beard: F.beard ?? tpl.beard ?? 'none',
     pose: pose ?? F.pose ?? 'idle', outfit: F.outfit, headYaw: F.headYaw, nose: F.nose, jaw: F.jaw, smile: F.smile, lipC: F.lipC,
   };
+}
+
+const PAINT_HAIR = { bald: 'none', short: 'short', fringe: 'short', long: 'wavy', braid: 'wavy', bun: 'bun', tonsure: 'tonsure', topknot: 'topknot' };
+const PAINT_COSTUME = { robe: 'robe', bodice: 'bodice', doublet: 'tunic', jerkin: 'tunic', tabard: 'tabard', chain: 'mail' };
+
+/**
+ * The painted-portrait design of an NPC: its own `paint` block if it has one (a designed
+ * character), otherwise derived from the figure spec so every townsperson gets a painted bust
+ * in the same hand, dressed like their figure in the scene.
+ */
+export function portraitDesign(npc) {
+  const sp = npcFigureSpec(npc);
+  const F = npc.figure ?? {};
+  const O = F.outfit ?? {};
+  const R = rngOf(hashStr(npc.id, 'face'));
+  const small = ['dwarf', 'halfling', 'gnome'].includes(sp.race);
+  const fem = sp.gender === 'female';
+  const base = {
+    seed: hashStr(npc.id) % 100000,
+    sex: fem ? 'f' : 'm',
+    age: Math.min(0.85, (sp.age ?? 0) * 1.1 + (fem ? 0.1 : 0.25)),
+    skin: sp.skin,
+    yaw: (R() < 0.5 ? -1 : 1) * (0.18 + R() * 0.14),
+    gaze: [(R() - 0.5) * 0.2, 0],
+    face: { w: small ? 1.1 : 0.95 + R() * 0.12, jaw: fem ? 0.9 : 0.95 + R() * 0.3, cheek: 0.9 + R() * 0.3, brow: fem ? 0.8 : 1 + R() * 0.4, neck: small ? 1.2 : 1 },
+    nose: { len: small ? 1.1 : 0.9 + R() * 0.25, w: small ? 1.25 : 0.9 + R() * 0.3, tip: small ? 1.25 : 1, hook: R() < 0.2 ? 0.6 : 0 },
+    eyes: { c: sp.eyeC, size: 0.95 + R() * 0.1, lid: R() * 0.5 },
+    mouth: { w: 0.95 + R() * 0.1, full: fem ? 1.1 : 0.8, smile: sp.smile ?? 0.1, c: sp.lipC },
+    brows: { c: sp.hair, w: fem ? 0.8 : 1.1 },
+    hair: { style: PAINT_HAIR[sp.hairStyle] ?? 'short', c: sp.hair },
+    beard: { style: sp.beard ?? 'none', c: sp.hair },
+    head: O.hood ? { kind: 'hood', c: O.hood } : null,
+    costume: { kind: O.stole ? 'priest' : PAINT_COSTUME[O.topKind] ?? 'tunic', a: O.top ?? O.shirt ?? '#4a4038', b: O.shirt ?? '#d8ccb0', collar: O.collar, stole: O.stole, symbol: O.symbol, cloak: O.mantle, apron: O.apron },
+    spectacles: !!O.spectacles,
+    aura: npc.aura,
+    bg: ['#4e3e2a', '#0c0806'],
+    dark: npc.kind === 'hooded' ? 0.45 : 0,
+  };
+  return npc.paint ? { ...base, seed: base.seed, ...npc.paint } : base;
 }
 
 /**
@@ -388,6 +474,24 @@ function figureBust(npc, W, H) {
   return c;
 }
 
+/** Paint the NPC's portrait features (eyes, brows, nostrils, lips) onto its rendered scene figure. */
+function faceDecal(npc, r, head, cam) {
+  const D = portraitDesign(npc);
+  const V = mul3(rotX(cam.pitch), rotY(cam.yaw));
+  const Fl = [1, 0, 0, 0, -1, 0, 0, 0, 1];
+  const toFig = (p) => {
+    // portrait head units (y down, eyes at the equator) → sculpted head units (y up) → figure space
+    const a = [p[0] * 0.88, -p[1] * 0.63 + 0.03, p[2] * 0.92];
+    const w = ap3(head.R, a);
+    return [head.c[0] + w[0] * head.r, head.c[1] + w[1] * head.r, head.c[2] + w[2] * head.r];
+  };
+  const P = (p) => { const v = ap3(V, toFig(p)); return [r.ox + v[0] * r.ppu, r.oy - v[1] * r.ppu, v[2]]; };
+  const HR = mul3(Fl, mul3(V, mul3(head.R, Fl)));
+  // the face must point at us at least partly for the features to read
+  if (HR[8] < 0.35) return;
+  paintFaceDecal(r.canvas.getContext('2d'), D, { P, U: 0.88 * head.r * r.ppu, HR });
+}
+
 export function npcActor(npc, o = {}) {
   if (!npc || (npc.kind && npc.kind !== 'portrait' && npc.kind !== 'hooded')) return null;
   return {
@@ -404,7 +508,9 @@ export function npcActor(npc, o = {}) {
         const pose = generic ? F.pose ?? generic : slot.pose ?? o.pose ?? F.pose ?? 'idle';
         const bn = buildNpc(npcFigureSpec(npc, o.poseOverride ?? pose));
         // cropped at the floor: a floor-length hem's rounded cap never shows below the feet
-        return renderFigure(bn.fig, { ppu: slot.h / bn.top * (ch.race === 'dwarf' || ch.race === 'halfling' || ch.race === 'gnome' ? 0.8 : 1), yaw: slot.yaw ?? 0, rig, pitch: slot.pitch ?? 0.1, ink: 0.7, minY: -0.03 });
+        const r = renderFigure(bn.fig, { ppu: slot.h / bn.top * (ch.race === 'dwarf' || ch.race === 'halfling' || ch.race === 'gnome' ? 0.8 : 1), yaw: slot.yaw ?? 0, rig, pitch: slot.pitch ?? 0.1, ink: 0.7, minY: -0.03 });
+        if (r && bn.head && npc.kind !== 'hooded' && !o.noDecal) faceDecal(npc, r, bn.head, { yaw: slot.yaw ?? 0, pitch: slot.pitch ?? 0.1 });
+        return r;
       }
       const b = buildPerson({
         seed: look.seed, race: ch.race, gender,
@@ -450,11 +556,15 @@ export function ghostActor(pose = 'vigil') {
     ghost: true,
     render(slot, rig) {
       const P = GHOST_POSES[pose] ?? GHOST_POSES.vigil;
-      const yaw = pose === 'vigil' ? slot.yaw ?? 0.5 : 0.25;
+      // at vigil he kneels with his back three-quarters to us, facing the altar; risen, he stands
+      // aside from the east window, turned three-quarters toward the living
+      const yaw = pose === 'vigil' ? slot.vigilYaw ?? 2.55 : -0.55;
       const h = pose === 'vigil' ? slot.h : slot.h * 1.42;
       const r = renderCreature('ghostKnight', h, { ...rig, key: { dir: [-0.3, 0.8, 0.5], color: '#e8fbff', i: 1.25 }, rim: { dir: [0.7, 0.4, -0.6], color: '#e0ffff', i: 1.4 }, sky: '#6aa8c0', ground: '#0a1a20', amb: 0.62 }, 7, { yaw, poseOverride: P, solid: true, ink: 0.9 });
       if (!r) return null;
-      return spectral(flattenSprite(r), r.emit);
+      const sp = spectral(flattenSprite(r), r.emit);
+      if (pose !== 'vigil') sp.dx = slot.h * 0.42;
+      return sp;
     },
   };
 }
@@ -462,7 +572,7 @@ export function ghostActor(pose = 'vigil') {
 /** Turn a solid figure sprite into a ghost (see ghostActor). */
 function spectral(f, emit = []) {
   const { canvas: src, ox, oy } = f;
-  const pad = 26;
+  const pad = 40;
   const W = src.width + pad * 2;
   const H = src.height + pad * 2;
   const mask = (blur = 0, color = '#fff') => {
@@ -478,112 +588,111 @@ function spectral(f, emit = []) {
   };
   const out = makeCanvas(W, H);
   const g = out.getContext('2d');
-  // 1. the veil: a deep teal body of fog that hides the altar's edges behind him
-  g.globalAlpha = 0.5;
-  g.drawImage(mask(6, '#0a2a34'), 0, 0);
+  const R = rngOf(77);
+  // 1. the veil: a deep teal body of fog that hides what lies behind him, soft at its edges
+  g.globalAlpha = 0.45;
+  g.drawImage(mask(8, '#0a2a34'), 0, 0);
   g.globalAlpha = 1;
-  // 2. the knight's own light and shade, gradient-mapped into cold cyan (helm, face, plates, cape all read)
+  // 2. the knight's own light and shade mapped into cold cyan: lit plates hold, shadowed ones go
+  //    glassy; everything thins toward the floor
   const body = makeCanvas(W, H);
   const bg = body.getContext('2d');
+  bg.filter = 'blur(0.6px)';
   bg.drawImage(src, pad, pad);
+  bg.filter = 'none';
   const img = bg.getImageData(0, 0, W, H);
   const d = img.data;
-  const stops = [[0, [6, 26, 40]], [0.3, [24, 92, 116]], [0.55, [90, 190, 214]], [0.8, [190, 246, 255]], [1, [250, 255, 255]]];
+  const stops = [[0, [4, 20, 32]], [0.3, [18, 74, 96]], [0.58, [80, 176, 204]], [0.82, [176, 240, 252]], [1, [240, 255, 255]]];
   for (let i = 0; i < d.length; i += 4) {
     if (!d[i + 3]) continue;
     const a = d[i + 3] / 255;
     let l = (d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11) / 255 / Math.max(0.01, a);
-    l = Math.min(1, Math.pow(l, 0.85) * 1.15);
+    l = Math.min(1, Math.pow(l, 0.9) * 1.1);
     let k = 1;
     while (k < stops.length - 1 && stops[k][0] < l) k++;
     const [t0, c0] = stops[k - 1];
     const [t1, c1] = stops[k];
     const u = Math.max(0, Math.min(1, (l - t0) / (t1 - t0)));
-    // legs dissolve into vapour toward the floor
     const y = Math.floor(i / 4 / W);
     const fy = (y - pad) / Math.max(1, oy);
-    const fade = Math.min(1, Math.max(0.12, (1 - fy) * 3.2 + 0.1));
+    const fade = Math.min(1, Math.max(0.05, (1 - fy) * 3.0 + 0.05));
     d[i] = (c0[0] + (c1[0] - c0[0]) * u) * a;
     d[i + 1] = (c0[1] + (c1[1] - c0[1]) * u) * a;
     d[i + 2] = (c0[2] + (c1[2] - c0[2]) * u) * a;
-    // shadowed plates go glassy (the chapel shows through), lit plates hold their light
-    d[i + 3] = 255 * a * (0.2 + l * l * 0.62) * fade;
+    d[i + 3] = 255 * a * (0.16 + l * l * 0.56) * fade;
   }
   bg.putImageData(img, 0, 0);
   g.drawImage(body, 0, 0);
-  // 2b. the armour's edges traced in light: lames, rivet rows, the helm's sight and the cape's
-  // folds read as luminous lines (a luminance gradient of the solid render), so the ghost keeps
-  // the knight's construction instead of melting into a smooth toy
-  {
-    const sw = src.width; const sh = src.height;
-    const sd = src.getContext('2d').getImageData(0, 0, sw, sh).data;
-    const L = new Float32Array(sw * sh);
-    for (let j = 0; j < sw * sh; j++) L[j] = sd[j * 4 + 3] ? (sd[j * 4] * 0.3 + sd[j * 4 + 1] * 0.59 + sd[j * 4 + 2] * 0.11) / 255 : -1;
-    const lines = makeCanvas(W, H);
-    const lg = lines.getContext('2d');
-    const li = lg.createImageData(W, H);
-    const ld = li.data;
-    for (let y = 1; y < sh - 1; y++) {
-      const fy = y / Math.max(1, oy);
-      const fade = Math.min(1, Math.max(0, (1 - fy) * 3.2 + 0.1));
-      for (let x = 1; x < sw - 1; x++) {
-        const j = y * sw + x;
-        if (L[j] < 0) continue;
-        const at = (k) => (L[k] < 0 ? L[j] : L[k]);
-        const gx = at(j + 1) - at(j - 1) + 0.5 * (at(j - sw + 1) - at(j - sw - 1) + at(j + sw + 1) - at(j + sw - 1));
-        const gy = at(j + sw) - at(j - sw) + 0.5 * (at(j + sw - 1) - at(j - sw - 1) + at(j + sw + 1) - at(j - sw + 1));
-        const e = Math.min(1, Math.max(0, Math.hypot(gx, gy) * 2.4 - 0.12));
-        if (e <= 0) continue;
-        const o = ((y + pad) * W + x + pad) * 4;
-        ld[o] = 200; ld[o + 1] = 250; ld[o + 2] = 255; ld[o + 3] = 255 * e * 0.75 * fade;
-      }
-    }
-    lg.putImageData(li, 0, 0);
-    g.globalCompositeOperation = 'lighter';
-    g.drawImage(lines, 0, 0);
-    g.globalAlpha = 0.6;
-    g.filter = 'blur(2px)';
-    g.drawImage(lines, 0, 0);
-    g.filter = 'none';
-    g.globalAlpha = 1;
-    g.globalCompositeOperation = 'source-over';
-  }
-  // 3. internal mist: soft noise clipped to the body, drifting upward
+  // 3. internal fog: slow billows of light drifting inside the body, denser low down
   const mist = makeCanvas(W, H);
   const mg = mist.getContext('2d');
-  const R = rngOf(77);
   mg.globalCompositeOperation = 'lighter';
-  for (let i = 0; i < 70; i++) {
+  for (let i = 0; i < 110; i++) {
     const x = R() * W;
-    const y = R() * H;
-    const rr = 8 + R() * 26;
+    const y = pad + Math.pow(R(), 0.7) * (H - pad);
+    const rr = W * (0.04 + R() * 0.1);
     const gr = mg.createRadialGradient(x, y, 0, x, y, rr);
-    gr.addColorStop(0, 'rgba(170,240,255,0.16)');
-    gr.addColorStop(1, 'rgba(170,240,255,0)');
+    gr.addColorStop(0, 'rgba(160,236,255,0.13)');
+    gr.addColorStop(1, 'rgba(160,236,255,0)');
     mg.fillStyle = gr;
     mg.fillRect(x - rr, y - rr, rr * 2, rr * 2);
   }
   mg.globalCompositeOperation = 'destination-in';
-  mg.drawImage(mask(3), 0, 0);
+  mg.drawImage(mask(4), 0, 0);
   g.globalCompositeOperation = 'lighter';
   g.drawImage(mist, 0, 0);
-  // 4. Fresnel rim: the silhouette's edge glows (mask minus its blurred self)
-  const rim = mask(0, '#c8fbff');
+  // 4. Fresnel rim: the silhouette's edge glows softly (mask minus its blurred self), no hard lines
+  const rim = mask(0, '#bff8ff');
   const rg = rim.getContext('2d');
   rg.globalCompositeOperation = 'destination-out';
-  rg.filter = 'blur(3px)';
+  rg.filter = 'blur(5px)';
   rg.drawImage(mask(0), 0, 0);
-  rg.drawImage(mask(0), 0, 0);
+  rg.filter = 'none';
+  g.globalAlpha = 0.85;
   g.drawImage(rim, 0, 0);
-  g.filter = 'blur(8px)';
-  g.globalAlpha = 0.5;
+  g.filter = 'blur(10px)';
+  g.globalAlpha = 0.45;
   g.drawImage(rim, 0, 0);
   g.filter = 'none';
   g.globalAlpha = 1;
-  // 5. an aura of cold light around him
+  // 5. wisps: ectoplasm streaming off the lower edges (hem, cape, the dissolving legs), curling as it rises
+  const sw = src.width; const sh = src.height;
+  const sd = src.getContext('2d').getImageData(0, 0, sw, sh).data;
+  const wisp = makeCanvas(W, H);
+  const wg = wisp.getContext('2d');
+  wg.lineCap = 'round';
+  for (let k = 0; k < 46; k++) {
+    const x = Math.floor(R() * sw);
+    // the lowest solid pixel in this column (from the hem up to the waist)
+    let yb = -1;
+    for (let y = sh - 1; y > sh * 0.35; y--) if (sd[(y * sw + x) * 4 + 3] > 80) { yb = y; break; }
+    if (yb < 0) continue;
+    const x0 = x + pad; const y0 = yb + pad;
+    const len = sh * (0.08 + R() * 0.2);
+    const dir = (x - sw / 2) / sw;
+    const c1 = [x0 + dir * len * 0.8 + (R() - 0.5) * len * 0.5, y0 - len * 0.35];
+    const c2 = [x0 + dir * len * 1.4 + (R() - 0.5) * len * 0.6, y0 - len * 0.85];
+    const e = [x0 + dir * len * 1.6 + (R() - 0.5) * len * 0.8, y0 - len * (1.1 + R() * 0.4)];
+    const gr = wg.createLinearGradient(x0, y0, e[0], e[1]);
+    gr.addColorStop(0, 'rgba(170,240,255,0.35)');
+    gr.addColorStop(1, 'rgba(170,240,255,0)');
+    wg.strokeStyle = gr;
+    wg.lineWidth = 2 + R() * sw * 0.025;
+    wg.beginPath(); wg.moveTo(x0, y0); wg.bezierCurveTo(c1[0], c1[1], c2[0], c2[1], e[0], e[1]); wg.stroke();
+  }
+  // a pooled mist where he meets the floor
+  const fl = wg.createRadialGradient(W / 2, oy + pad, 0, W / 2, oy + pad, sw * 0.6);
+  fl.addColorStop(0, 'rgba(150,230,255,0.28)');
+  fl.addColorStop(1, 'rgba(150,230,255,0)');
+  wg.fillStyle = fl;
+  wg.save(); wg.translate(0, oy + pad); wg.scale(1, 0.25); wg.translate(0, -(oy + pad)); wg.fillRect(0, 0, W, H * 2); wg.restore();
+  g.filter = 'blur(3px)';
+  g.drawImage(wisp, 0, 0);
+  g.filter = 'none';
+  // 6. an aura of cold light around him
   g.globalCompositeOperation = 'destination-over';
-  g.globalAlpha = 0.35;
-  g.filter = 'blur(18px)';
+  g.globalAlpha = 0.32;
+  g.filter = 'blur(22px)';
   g.drawImage(mask(0, '#5ad8f0'), 0, 0);
   g.filter = 'none';
   g.globalAlpha = 1;
@@ -646,12 +755,19 @@ export function paintNpcPortrait(npc, scale = 1) {
     // crop to head & shoulders (small humanoids carry their head at ~0.8 of their height)
     g.drawImage(fig.canvas, W / 2 - fig.ox, H * 0.46 + fh * 0.79 - fig.oy);
     vignette(g, W, H, 0.55);
-  } else if (npc.figure && (!npc.kind || npc.kind === 'portrait')) {
-    c = figureBust(npc, W, H);
+  } else if (npc.paint || (npc.figure && (!npc.kind || npc.kind === 'portrait' || npc.kind === 'hooded'))) {
+    // a painted bust (2D oil sketch over a sculpted relief), downsampled from 2x for a clean finish
+    const big = paintPortraitDesign(portraitDesign(npc), W * 2, H * 2);
+    c = makeCanvas(W, H);
+    const g = c.getContext('2d');
+    g.imageSmoothingQuality = 'high';
+    g.drawImage(big, 0, 0, W, H);
   } else {
     const ch = { race: npc.race ?? 'human', gender: npc.gender ?? 'male', look: npc.look ?? {}, name: npc.name };
     if (npc.kind === 'hooded') ch.look = { ...ch.look, head: 6 };
-    c = npc.kind === 'ghost' ? ghostBust(W, H) : paintPortrait(ch, { scale });
+    if (npc.kind === 'ghost') {
+      c = npc.paintGhost !== false ? (() => { const big = paintGhostKnight(W * 2, H * 2); const cc = makeCanvas(W, H); cc.getContext('2d').drawImage(big, 0, 0, W, H); return cc; })() : ghostBust(W, H);
+    } else c = paintPortrait(ch, { scale });
     if (npc.kind === 'ghost') {
       // the same spectral knight that kneels in the chapel, helm and all
     } else if (npc.kind === 'hooded') {
@@ -686,7 +802,7 @@ function ghostBust(W, H) {
     const x = W * 0.5 - r.ox * up + W * 0.02;
     const y = H * 0.07 - top * up;
     g.globalCompositeOperation = 'lighter';
-    g.globalAlpha = 0.72; // the traced plate edges would blow the bust out at full strength
+    g.globalAlpha = 0.9;
     g.drawImage(r.canvas, x, y, r.canvas.width * up, r.canvas.height * up);
     g.globalAlpha = 1;
     g.globalCompositeOperation = 'source-over';
@@ -786,9 +902,7 @@ export function framedPortraitURL(npc) {
   const src = paintNpcPortrait(npc, 1);
   const W = 344;
   const H = 424;
-  const c = document.createElement('canvas');
-  c.width = W;
-  c.height = H;
+  const c = makeCanvas(W, H);
   const g = c.getContext('2d');
   const arch = (x, y, w, hh) => {
     const r = w / 2;

@@ -154,7 +154,7 @@ function sculptHeadIn(f, skinM, o) {
   if (o.spectacles) spectacles(f, o.spectacles === true ? '#b08a40' : o.spectacles);
 }
 
-/** Round wire spectacles on the nose, with a black ribbon looping from the temples to the chest. */
+/** Round wire spectacles on the nose, the arms running back over the ears. */
 function spectacles(f, wire) {
   const wm = mat(wire, { metal: true, rough: 0.3, spec: 0.9, ink: 0.6 });
   const g = { group: null, blend: 0 };
@@ -170,9 +170,8 @@ function spectacles(f, wire) {
     // faint lens glint
     // a small glint on the glass (a full lens disc reads as opaque white in an SDF render)
     f.ell([c[0] - r * 0.4, c[1] + r * 0.42, c[2] + 0.012], [r * 0.22, r * 0.08, 0.006], mat('#ffffff', { emissive: '#c8d8e8', ink: 0 }), { group: null, shadow: false, R: rotZ(0.6) });
-    // temple arm back to the ear, and the ribbon hanging from it
-    f.cone([c[0] + d * r, c[1] + 0.02, c[2] - 0.04], [d * 0.86, 0.06, 0.05], 0.018, 0.018, wm, g);
-    f.cone([d * 0.86, 0.04, 0.02], [d * 0.62, -1.2, 0.35], 0.022, 0.022, mat('#141010', { pattern: 'cloth', scale: 0.004, rough: 0.9 }), g);
+    // temple arm back to the ear, where it ends (tucked over the ear, never down the neck)
+    f.cone([c[0] + d * r, c[1] + 0.02, c[2] - 0.04], [d * 0.84, 0.05, 0.12], 0.016, 0.014, wm, g);
   }
   f.cone([-0.31 + r * 0.98, 0.06, 0.99], [0.31 - r * 0.98, 0.06, 0.99], 0.02, 0.02, wm, g);
 }
@@ -185,6 +184,18 @@ function headwear(f, skinM, o) {
   const hairM = hairMat(o.hair ?? '#3a2416');
   const hard = { group: 'hair', k: 0.12 };
   const style = o.hairStyle ?? 'short';
+  if (o.mitre) {
+    // the bishop's mitre over a close cap: two tall peaks with gilt orphreys
+    const mm = mat(o.mitre, { pattern: 'cloth', scale: 0.01, rough: 0.8, spec: 0.1 });
+    const gm = mat(o.mitreTrim ?? '#d8b050', { metal: true, rough: 0.35, spec: 0.8 });
+    f.ell([0, 0.42, -0.1], [0.94, 0.62, 1.0], mm, { group: 'mitre', k: 0.05 });
+    f.cone([0, 0.6, -0.1], [0, 1.85, -0.12], 0.84, 0.08, mm, { group: 'mitre', k: 0.08, R: null });
+    f.carve('box', [0, 1.5, -0.12], [1.2, 0.5, 0.03], null, { group: 'mitre', k: 0.02 });
+    f.ell([0, 0.55, -0.1], [0.97, 0.1, 1.03], gm, { group: null });
+    f.box([0, 1.1, 0.62], [0.08, 0.5, 0.04], gm, { group: null, bevel: 0.02, R: rotX(-0.45) });
+    for (const d of [-1, 1]) f.box([d * 0.3, -0.6, -0.86], [0.08, 0.5, 0.02], mm, { group: null, bevel: 0.01 });
+    if (!o.hood) return;
+  }
   if (o.hood) {
     const hm = mat(o.hood, { pattern: 'cloth', scale: 0.015, rough: 0.95, spec: 0.03 });
     const hg = { group: 'hood', k: 0.2 };
@@ -205,6 +216,15 @@ function headwear(f, skinM, o) {
     for (const d of [-1, 1]) f.ell([d * 0.86, -0.25, 0.08], [0.14, 0.58, 0.64], hm, hh);
     f.ell([0, 0.3, -0.06], [1.02, 0.1, 1.08], o.trimM ?? mat('#a07838', { metal: true, rough: 0.3, spec: 0.9 }), { group: null });
     if (o.crest) f.ell([0, 1.02, -0.15], [0.12, 0.5, 0.9], mat(o.crest, { pattern: 'fur', scale: 0.01 }), { group: null });
+    if (o.visor) {
+      // a closed bascinet face: a hollow, dark sight with two cold points of light inside it
+      f.ell([0, -0.14, 0.2], [0.93, 0.98, 0.98], hm, { group: 'visor', k: 0.05 });
+      f.cone([0, -0.1, 0.9], [0, -0.75, 1.02], 0.14, 0.05, hm, { group: 'visor', k: 0.05 }); // the snout ridge
+      f.carve('box', [0, 0.05, 1.06], [0.62, 0.05, 0.32], null, { group: 'visor', k: 0.02, R: rotZ(0) });
+      f.ell([0, 0.05, 0.86], [0.6, 0.06, 0.14], mat('#020406', { rough: 1, spec: 0, ink: 0 }), { group: null });
+      for (const d of [-1, 1]) f.sphere([d * 0.25, 0.05, 0.94], 0.045, mat('#e8ffff', { emissive: '#d8ffff', ink: 0 }), { group: null, shadow: false });
+      for (let i = 0; i < 4; i++) for (const d of [-1, 1]) f.sphere([d * (0.18 + i * 0.07), -0.42 - i * 0.02, 1.0 - i * 0.05], 0.02, mat('#020406', { rough: 1, ink: 0 }), { group: null }); // breaths
+    }
     return;
   }
   if (o.bandana) {
@@ -213,6 +233,18 @@ function headwear(f, skinM, o) {
     f.cone([-0.55, 0.3, -0.8], [-0.72, -0.35, -1.0], 0.13, 0.05, bm, { group: 'band', k: 0.08 });
   } else if (style === 'bald') {
     f.ell([0, -0.02, -0.42], [0.88, 0.42, 0.66], hairM, hard);
+  } else if (style === 'tonsure') {
+    // the crown shaved: a ring of cropped hair round the sides and back, a wisp of forelock
+    f.ell([0, 0.12, -0.12], [0.95, 0.4, 1.02], hairM, { ...hard, disp: { amp: 0.03, freq: 18 } });
+    f.carve('ell', [0, 0.62, 0.05], [0.78, 0.36, 0.86], null, { group: 'hair', k: 0.06 });
+    f.carve('ell', [0, -0.28, 0.6], [0.7, 0.5, 0.5], null, { group: 'hair', k: 0.08 });
+  } else if (style === 'topknot') {
+    // shaved scalp (a shadow of stubble), the knot on the crown bound with a cord, a tail behind
+    f.ell([0, 0.3, -0.12], [0.89, 0.86, 0.98], mat(mixc(skinM.color, '#5a5a68', 0.18), { pattern: 'skin', scale: 0.004, rough: 0.8 }), { group: 'head', k: 0.04 });
+    f.sphere([0, 1.08, -0.15], 0.24, hairM, { group: 'knot', k: 0.08 });
+    f.cone([0, 0.92, -0.12], [0, 1.22, -0.18], 0.16, 0.2, hairM, { group: 'knot', k: 0.08 });
+    f.ell([0, 1.0, -0.14], [0.2, 0.06, 0.2], mat('#3a1a0e', { pattern: 'leather', scale: 0.01 }), { group: null });
+    for (let i = 0; i < 5; i++) f.sphere([0.04 * Math.sin(i), 1.12 - i * 0.22, -0.4 - i * 0.12], 0.11 - i * 0.012, hairM, { group: 'tail', k: 0.05 });
   } else {
     // cap following the skull, ending at a hairline above the forehead
     if (style === 'bun') {
@@ -228,9 +260,10 @@ function headwear(f, skinM, o) {
     if (style === 'fringe') f.ell([0, 0.66, 0.42], [0.78, 0.24, 0.42], hairM, { ...hard, R: rotX(0.4) });
     if (style === 'short') f.ell([0.2, 0.78, 0.25], [0.6, 0.22, 0.5], hairM, { ...hard, R: rotZ(-0.2) });
     if (style === 'long' || style === 'wavy') {
-      const wav = style === 'wavy' ? 0.045 : 0.03;
-      f.ell([0, -0.35, -0.55], [0.86, 1.15, 0.5], hairM, { ...hard, disp: { amp: wav, freq: 14 } });
-      for (const d of [-1, 1]) f.cone([d * 0.66, 0.3, -0.1], [d * 0.78, -1.45, -0.3], 0.3, 0.26, hairM, { ...hard, disp: { amp: wav * 0.6, freq: 16, twist: 2 } });
+      // loose waves in a few big clumps (a high-frequency ripple reads as noodles at panel size)
+      const wav = style === 'wavy' ? 0.07 : 0.035;
+      f.ell([0, -0.35, -0.55], [0.86, 1.15, 0.5], hairM, { ...hard, disp: { amp: wav, freq: 5 } });
+      for (const d of [-1, 1]) f.cone([d * 0.66, 0.3, -0.1], [d * 0.8, -1.45, -0.3], 0.32, 0.27, hairM, { ...hard, disp: { amp: wav * 0.7, freq: 6, twist: 1 } });
       // a side parting: the hair sweeps from the part across the brow in two soft wings that
       // frame the face (no straight cap edge), then falls in locks in front of the shoulders
       const part = [0.2, 0.95, 0.3];
@@ -243,8 +276,8 @@ function headwear(f, skinM, o) {
         const s0 = [d * 0.8, 0.1, 0.32];
         const s1 = [d * 0.92, -0.9, 0.28];
         const s2 = [d * 0.98, -2.0, 0.5];
-        f.cone(s0, s1, 0.17, 0.16, hairM, { group: `lock${d}`, k: 0.1, disp: { amp: wav, freq: 12, twist: 2 } });
-        f.cone(s1, s2, 0.16, 0.06, hairM, { group: `lock${d}`, k: 0.1, disp: { amp: wav, freq: 12, twist: 2 } });
+        f.cone(s0, s1, 0.19, 0.17, hairM, { group: `lock${d}`, k: 0.1, disp: { amp: wav, freq: 5, twist: 1 } });
+        f.cone(s1, s2, 0.17, 0.07, hairM, { group: `lock${d}`, k: 0.1, disp: { amp: wav, freq: 5, twist: 1 } });
       }
     }
     if (style === 'bun') {
@@ -279,7 +312,15 @@ function headwear(f, skinM, o) {
     f.carve('ell', [0, -0.53, 0.98], [0.16, 0.055, 0.14], null, { group: 'beard', k: 0.08 });
   }
   if (beard === 'goatee') f.ell([0, -0.84, 0.66], [0.22, 0.28, 0.2], bm, bg);
-  if (beard === 'moustache' || beard === 'full' || beard === 'long' || beard === 'goatee') {
+  if (beard === 'braided') {
+    // a long moustache whose ends are plaited and hang past the chin, ringed in iron
+    const iron = mat('#8a8c94', { metal: true, rough: 0.3, spec: 0.9 });
+    for (const d of [-1, 1]) {
+      for (let i = 0; i < 5; i++) f.sphere([d * (0.27 + i * 0.005), -0.6 - i * 0.12, 0.84 - i * 0.03], 0.055 - i * 0.004, bm, { group: `braid${d}`, k: 0.03 });
+      f.cone([d * 0.28, -0.82, 0.8], [d * 0.28, -0.9, 0.79], 0.06, 0.06, iron, { group: null });
+    }
+  }
+  if (beard === 'moustache' || beard === 'full' || beard === 'long' || beard === 'goatee' || beard === 'braided') {
     // one moustache over the philtrum, drooping to the corners of the mouth
     f.ell([0, -0.415, 0.955], [0.1, 0.042, 0.05], bm, { group: 'beard', k: 0.06 });
     for (const d of [-1, 1]) f.cone([d * 0.03, -0.42, 0.965], [d * 0.27, -0.57, 0.84], 0.06, 0.03, bm, { group: 'beard', k: 0.06 });

@@ -975,7 +975,7 @@ export function buildCreature(id, seed = 1, o = {}) {
     if (sp.gauntlet) gear.gloveM = mat('#1a1a1a', { metal: true, rough: 0.4, spec: 0.6 });
     if (sp.ghost) {
       gear.legM = metalM; gear.armM = metalM; gear.foreM = metalM; gear.torsoM = metalM; gear.bootM = metalM; gear.gloveM = metalM;
-      gear.headOpts = { helm: true, helmM: metalM, trimM: M.bronze, crest: '#5a8a98' };
+      gear.headOpts = { helm: true, visor: true, helmM: metalM, trimM: M.bronze, crest: '#5a8a98' };
     }
   } else if (sp.armor === 'plate') {
     gear.legM = metalM; gear.armM = skinM; gear.bootM = metalM; gear.torsoM = skinM;

@@ -22,7 +22,7 @@
 .shp-keeper .say .hid { visibility: hidden; }
 
 /* detail card */
-.shp-detail { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-color: var(--por-gilt-lo) transparent; display: grid; grid-template-columns: 6.2em 1fr; gap: 0.4em 1.2em; align-content: start; padding: 1.1em 1.3em !important; }
+.shp-detail { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 6.2em 1fr; gap: 0.4em 1.2em; align-content: start; padding: 1.1em 1.3em !important; }
 .shp-detail .icon { grid-row: 1 / span 2; width: 6.2em; height: 6.2em; border-radius: 4px; display: grid; place-items: center;
   background: radial-gradient(circle at 45% 40%, rgba(80, 110, 190, 0.35), rgba(5, 8, 20, 0.9)); box-shadow: 0 0 0 1px var(--por-gilt-lo), inset 0 0 18px rgba(0,0,0,0.8); }
 .shp-detail .icon img { width: 80%; height: 80%; image-rendering: auto; filter: drop-shadow(0 3px 4px rgba(0,0,0,0.7)); }
@@ -236,3 +236,7 @@
 .shp-book-next tr.next td.up { color: #8de08a; }
 .shp-book-next tbody tr + tr { border-top: 1px dotted rgba(216, 178, 90, 0.16); }
 .shp-book-next tfoot td { text-align: left; font-family: var(--font-body); font-style: italic; color: var(--por-text-dim); padding-top: 0.35em; }
+/* a long description must never push the usable-by row over the frame: clamp it */
+.shp-detail .desc { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; }
+.shp-detail .shp-users { margin-top: 0.35em; }
+.shp-detail .shp-user { width: 2.3em; height: 2.8em; }

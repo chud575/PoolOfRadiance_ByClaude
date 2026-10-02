@@ -69,7 +69,76 @@ function candle3d(f, at, h, r, seed) {
   }
   f.ell([at[0], at[1] + h, at[2]], [r * 1.02, r * 0.3, r * 1.02], waxM, { group: 'wax', blend: 0.004 });
   f.cone([at[0], at[1] + h, at[2]], [at[0], at[1] + h + r * 0.7, at[2]], r * 0.12, r * 0.08, M.dark, { group: null });
-  return [at[0], at[1] + h + r * 0.7, at[2]];
+  const tip = [at[0], at[1] + h + r * 0.7, at[2]];
+  tip.candle = { at, h, r, seed };
+  return tip;
+}
+
+/**
+ * Paint lit wax over the sculpted candles: ivory wax glowing warm and translucent under the flame,
+ * a molten pool at the rim, drips down the sides, a dark wick, and the candle's light falling in a
+ * warm pool on whatever it stands on.
+ */
+function waxCandles(g, tips, x, y, ppu, yaw = 0, o = {}) {
+  for (const t of tips) {
+    const c = t.candle;
+    if (!c) continue;
+    const R = rngOf(c.seed * 13 + 5);
+    const [bx, by] = proj(x, y, ppu, c.at, yaw);
+    const [tx, ty] = proj(x, y, ppu, [c.at[0], c.at[1] + c.h, c.at[2]], yaw);
+    const w = Math.max(2.5, c.r * ppu * 2.1);
+    const hh = by - ty;
+    if (hh < 3) continue;
+    paintWax(g, bx, by, tx, ty, w, R, o.pool);
+  }
+}
+
+/** One lit wax candle in 2D from its foot (bx, by) to its rim (tx, ty), w px wide. */
+function paintWax(g, bx, by, tx, ty, w, R, pool) {
+  const hh = by - ty;
+  const o = { pool };
+  // the light it throws on the surface beneath
+  glowEllipse(g, bx, by + 1, w * 5, w * 1.3, o.pool ?? '#ffb860', 0.32, 'screen');
+  g.save();
+  // body: warm ivory, rounded by the light from its own flame and the room
+  const bg = g.createLinearGradient(bx - w / 2, 0, bx + w / 2, 0);
+  bg.addColorStop(0, '#d8c49c'); bg.addColorStop(0.3, '#fff2d6'); bg.addColorStop(0.65, '#ead6ae'); bg.addColorStop(1, '#8a7452');
+  g.fillStyle = bg;
+  g.beginPath();
+  g.moveTo(bx - w / 2, by); g.lineTo(tx - w / 2, ty + w * 0.15);
+  g.quadraticCurveTo(tx, ty - w * 0.2, tx + w / 2, ty + w * 0.15);
+  g.lineTo(bx + w / 2, by); g.closePath(); g.fill();
+  // the flame lights the wax from inside near the top: warm, translucent
+  const tg = g.createLinearGradient(0, ty, 0, ty + Math.min(hh, w * 3.5));
+  tg.addColorStop(0, 'rgba(255,190,90,0.75)'); tg.addColorStop(1, 'rgba(255,190,90,0)');
+  g.fillStyle = tg;
+  g.fillRect(tx - w / 2, ty - w * 0.2, w, Math.min(hh, w * 3.5) + w * 0.2);
+  // drips running down from the rim, catching light on their left
+  for (let k = 0; k < 3; k++) {
+    const dx = (R() - 0.5) * w * 0.9;
+    const dl = hh * (0.15 + R() * 0.55);
+    g.fillStyle = 'rgba(255,244,220,0.9)';
+    g.beginPath();
+    g.moveTo(tx + dx - w * 0.09, ty + w * 0.1);
+    g.lineTo(tx + dx - w * 0.07, ty + dl);
+    g.arc(tx + dx, ty + dl, w * 0.08, Math.PI, 0, true);
+    g.lineTo(tx + dx + w * 0.09, ty + w * 0.1);
+    g.closePath(); g.fill();
+  }
+  // the molten pool at the rim
+  g.fillStyle = 'rgba(255,214,140,0.95)';
+  g.beginPath(); g.ellipse(tx, ty + w * 0.08, w * 0.42, w * 0.13, 0, 0, Math.PI * 2); g.fill();
+  g.fillStyle = 'rgba(255,250,230,0.9)';
+  g.beginPath(); g.ellipse(tx - w * 0.12, ty + w * 0.04, w * 0.14, w * 0.04, 0, 0, Math.PI * 2); g.fill();
+  // wick
+  g.strokeStyle = '#1a120c'; g.lineWidth = Math.max(1, w * 0.12); g.lineCap = 'round';
+  g.beginPath(); g.moveTo(tx, ty + w * 0.05); g.lineTo(tx + w * 0.05, ty - w * 0.35); g.stroke();
+  // the pooled wax at its foot
+  g.fillStyle = 'rgba(240,226,196,0.85)';
+  g.beginPath(); g.ellipse(bx, by, w * 0.8, w * 0.22, 0, 0, Math.PI * 2); g.fill();
+  g.restore();
+  // warm glow round the top of the candle
+  glow(g, tx, ty - w * 0.6, w * 4, '#ffb050', 0.22, 'screen');
 }
 
 /** Stone altar block with a slab top, carved front panel, runner and candles. */
@@ -660,9 +729,10 @@ S.cityhall = (g, W, H, R, o) => {
   const dx = W * 0.8;
   const dy = H * 1.02;
   prop3d(fg, d.f, dx, dy, ppu, lr, { yaw: -0.12, shadowW: 0.5 });
+  waxCandles(fg, d.tips, dx, dy, ppu, -0.12, { pool: '#ffb050' });
   for (const t of d.tips) { const [x, y] = proj(dx, dy, ppu, t, -0.12); lights.push({ x, y, s: 5, kind: 'candle', color: '#ffc060', front: true }); }
   P.column(fg, W * 0.035, -10, H * 1.02, 74, { base: '#7a6a58', seed: 9 });
-  return { ...rm, lights, motes: { color: '#ffe0b0', count: 55, rise: 0.03 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.81, y: H * 0.9, h: H * 0.78, pose: 'clerk', yaw: -0.4 } };
+  return { ...rm, lights, motes: { color: '#ffe0b0', count: 55, rise: 0.03 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.81, y: H * 0.9, h: H * 0.78, pose: 'ledger', yaw: -0.25 } };
 };
 
 // ================================================================== Roland's forge
@@ -856,58 +926,103 @@ function templeTyr(g, W, H, R, o, d) {
   const al = altar3d({ stone: '#dcd4c4', runner: d.banner ?? '#1d3574', emblemC: '#e0b850', candles: 6, seed: 31 });
   const ppu = H * 0.78;
   prop3d(fg, al.f, cx, H * 1.04, ppu, lr, { shadowW: 0.5 });
+  waxCandles(fg, al.tips, cx, H * 1.04, ppu, 0, { pool: '#ffd080' });
   for (const t of al.tips) { const [x, y] = proj(cx, H * 1.04, ppu, t); lights.push({ x, y, s: 5, kind: 'candle', color: '#ffd070', front: true }); }
   return { lights, motes: { color: '#fff4d8', count: 90, rise: 0.02 }, floorY, fgUsed: true, actorSlot: { x: cx, y: H * 0.92, h: H * 0.74, pose: 'priest', yaw: 0, vestments: '#1d3574' } };
 }
 
-/** A fluted marble column: an Attic base, an Ionic capital with volutes, crisp flute shading. */
+/**
+ * A fluted marble column: warm veined stone, concave flutes each with its own shadowed and lit
+ * edge, an Ionic capital with volutes and an egg-and-dart band, an Attic base, grime at the foot.
+ */
 function marbleColumn(g, x, yTop, yBot, w, { base = '#c4c6c8', seed = 1 } = {}) {
   const R = rngOf(seed);
-  const shaft = (k) => rgba(base, 1, k);
+  const stone = mix(base, '#e8dcc8', 0.45).map((v) => Math.round(v));
+  const shaft = (k) => rgba(stone, 1, k);
+  const top = yTop + w * 0.5;
+  const bot = yBot - w * 0.45;
   g.save();
-  // shaft: cylinder shading across, then flutes as alternating light and dark strips
-  g.fillStyle = linGrad(g, x - w / 2, 0, x + w / 2, 0, [[0, shaft(0.45)], [0.22, shaft(1.12)], [0.4, shaft(1.0)], [0.75, shaft(0.62)], [1, shaft(0.3)]]);
+  g.beginPath(); g.rect(x - w / 2, yTop, w, yBot - yTop); g.clip();
+  // the round of the shaft
+  g.fillStyle = linGrad(g, x - w / 2, 0, x + w / 2, 0, [[0, shaft(0.42)], [0.2, shaft(1.08)], [0.36, shaft(1.0)], [0.72, shaft(0.6)], [1, shaft(0.28)]]);
   g.fillRect(x - w / 2, yTop, w, yBot - yTop);
-  const n = 9;
-  for (let i = 0; i < n; i++) {
-    const u = (i + 0.5) / n;
-    const fx = x + Math.sin((u - 0.5) * Math.PI) * w * 0.5;
-    const fw = Math.cos((u - 0.5) * Math.PI) * (w / n) * 0.8;
-    g.fillStyle = `rgba(0,0,0,${0.12 + (u > 0.5 ? 0.14 : 0)})`;
-    g.fillRect(fx - fw * 0.35, yTop + w * 0.5, fw * 0.7, yBot - yTop - w * 0.9);
-    g.fillStyle = `rgba(255,255,255,${u < 0.5 ? 0.12 : 0.04})`;
-    g.fillRect(fx + fw * 0.35, yTop + w * 0.5, Math.max(1, fw * 0.15), yBot - yTop - w * 0.9);
+  // mottling in the stone
+  for (let i = 0; i < 26; i++) {
+    const vx = x + (R() - 0.5) * w; const vy = yTop + R() * (yBot - yTop);
+    glowEllipse(g, vx, vy, w * (0.1 + R() * 0.2), w * (0.3 + R() * 0.8), R() < 0.5 ? '#fff6e6' : '#6a6458', 0.07, 'source-over');
   }
-  // marble veins
-  g.strokeStyle = 'rgba(80,84,96,0.18)';
-  g.lineWidth = 1;
-  for (let i = 0; i < 4; i++) {
-    const vx = x + (R() - 0.5) * w * 0.8;
-    g.beginPath();
-    g.moveTo(vx, yTop + (yBot - yTop) * R());
-    g.bezierCurveTo(vx + (R() - 0.5) * w, yTop + (yBot - yTop) * R(), vx + (R() - 0.5) * w, yTop + (yBot - yTop) * R(), vx + (R() - 0.5) * w * 0.5, yBot - (yBot - yTop) * R() * 0.3);
+  // flutes: concave channels, each dark on its lit side's lip and bright on the far wall
+  const n = 11;
+  for (let i = 0; i < n; i++) {
+    const u0 = i / n; const u1 = (i + 1) / n;
+    const x0 = x + Math.sin((u0 - 0.5) * Math.PI) * w * 0.5;
+    const x1 = x + Math.sin((u1 - 0.5) * Math.PI) * w * 0.5;
+    const fw = x1 - x0;
+    if (fw < 1.2) continue;
+    const lit = 1 - (u0 + u1) / 2;
+    const fg = g.createLinearGradient(x0, 0, x1, 0);
+    fg.addColorStop(0, `rgba(20,16,12,${0.28 + (1 - lit) * 0.2})`);
+    fg.addColorStop(0.45, 'rgba(20,16,12,0.06)');
+    fg.addColorStop(0.85, `rgba(255,250,236,${0.12 + lit * 0.18})`);
+    fg.addColorStop(1, 'rgba(20,16,12,0.2)');
+    g.fillStyle = fg;
+    g.fillRect(x0 + 0.5, top, fw - 1, bot - top);
+    // the channel's rounded ends
+    g.beginPath(); g.ellipse((x0 + x1) / 2, top, fw * 0.45, fw * 0.6, 0, Math.PI, 0); g.fill();
+  }
+  // veins: wandering grey-blue threads with a few warm ones, branching
+  for (let i = 0; i < 7; i++) {
+    let vx = x + (R() - 0.5) * w * 0.9; let vy = yTop + R() * (yBot - yTop) * 0.5;
+    g.strokeStyle = R() < 0.3 ? 'rgba(160,120,60,0.35)' : 'rgba(70,76,92,0.38)';
+    g.lineWidth = Math.max(0.6, w * (0.008 + R() * 0.018));
+    g.beginPath(); g.moveTo(vx, vy);
+    const steps = 14;
+    for (let k = 0; k < steps; k++) {
+      vx += (R() - 0.5) * w * 0.18; vy += (yBot - yTop) / steps * (0.4 + R() * 0.8);
+      g.lineTo(vx, vy);
+      if (R() < 0.12) { g.moveTo(vx, vy); g.lineTo(vx + (R() - 0.5) * w * 0.4, vy + w * 0.3 * R()); g.moveTo(vx, vy); }
+    }
     g.stroke();
   }
-  // Ionic capital: abacus slab and two volutes
+  // grime rising from the floor and soot beneath the capital
+  g.fillStyle = linGrad(g, 0, bot - w * 1.6, 0, yBot, [[0, 'rgba(40,30,20,0)'], [1, 'rgba(40,30,20,0.45)']]);
+  g.fillRect(x - w / 2, bot - w * 1.6, w, yBot - bot + w * 1.6);
+  g.fillStyle = linGrad(g, 0, yTop, 0, top + w * 1.2, [[0, 'rgba(20,16,12,0.5)'], [1, 'rgba(20,16,12,0)']]);
+  g.fillRect(x - w / 2, yTop, w, top + w * 1.2 - yTop);
+  g.restore();
+  // Ionic capital: abacus slab, an egg-and-dart band and two volutes
   const cy = yTop + Math.max(0, -yTop);
   g.fillStyle = linGrad(g, x - w, 0, x + w, 0, [[0, shaft(0.5)], [0.3, shaft(1.15)], [1, shaft(0.35)]]);
   g.fillRect(x - w * 0.78, cy, w * 1.56, w * 0.16);
+  g.fillStyle = 'rgba(20,16,12,0.35)';
+  g.fillRect(x - w * 0.78, cy + w * 0.16, w * 1.56, w * 0.03);
+  for (let k = 0; k < 7; k++) {
+    const ex = x - w * 0.45 + k * w * 0.15;
+    g.fillStyle = linGrad(g, ex - w * 0.05, 0, ex + w * 0.05, 0, [[0, shaft(1.1)], [1, shaft(0.5)]]);
+    g.beginPath(); g.ellipse(ex, cy + w * 0.27, w * 0.05, w * 0.07, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(20,16,12,0.45)';
+    g.fillRect(ex + w * 0.065, cy + w * 0.21, Math.max(1, w * 0.015), w * 0.12);
+  }
   for (const d of [-1, 1]) {
+    const vx = x + d * w * 0.6; const vy = cy + w * 0.3;
+    g.fillStyle = linGrad(g, vx - w * 0.18, 0, vx + w * 0.18, 0, [[0, shaft(d < 0 ? 1.1 : 0.7)], [1, shaft(d < 0 ? 0.6 : 0.35)]]);
+    g.beginPath(); g.arc(vx, vy, w * 0.18, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(30,26,22,0.6)';
+    g.lineWidth = Math.max(1, w * 0.025);
     g.beginPath();
-    g.arc(x + d * w * 0.55, cy + w * 0.28, w * 0.16, 0, Math.PI * 2);
-    g.fill();
-    g.strokeStyle = 'rgba(30,30,40,0.5)';
-    g.lineWidth = Math.max(1, w * 0.03);
-    g.beginPath();
-    g.arc(x + d * w * 0.55, cy + w * 0.28, w * 0.09, 0, Math.PI * 1.6);
+    for (let a = 0; a < Math.PI * 4; a += 0.2) { const r = w * 0.15 * (1 - a / (Math.PI * 4.4)); const px = vx + Math.cos(a * d) * r; const py = vy + Math.sin(a) * r; if (a === 0) g.moveTo(px, py); else g.lineTo(px, py); }
     g.stroke();
   }
-  // Attic base: two tori and a plinth
+  // Attic base: two tori and a plinth, chipped
   g.fillStyle = linGrad(g, x - w, 0, x + w, 0, [[0, shaft(0.5)], [0.3, shaft(1.1)], [1, shaft(0.3)]]);
   g.beginPath(); g.ellipse(x, yBot - w * 0.42, w * 0.62, w * 0.1, 0, 0, Math.PI * 2); g.fill();
+  g.fillStyle = 'rgba(20,16,12,0.35)';
+  g.beginPath(); g.ellipse(x, yBot - w * 0.35, w * 0.6, w * 0.05, 0, 0, Math.PI * 2); g.fill();
+  g.fillStyle = linGrad(g, x - w, 0, x + w, 0, [[0, shaft(0.5)], [0.3, shaft(1.1)], [1, shaft(0.3)]]);
   g.beginPath(); g.ellipse(x, yBot - w * 0.26, w * 0.7, w * 0.12, 0, 0, Math.PI * 2); g.fill();
   g.fillRect(x - w * 0.75, yBot - w * 0.18, w * 1.5, w * 0.18);
-  g.restore();
+  g.fillStyle = 'rgba(30,22,14,0.4)';
+  g.fillRect(x - w * 0.75, yBot - w * 0.05, w * 1.5, w * 0.05);
 }
 
 /** Tyr's balance carved in relief into the apse wall and gilded: shadow, gilt, highlight. */
@@ -1001,8 +1116,7 @@ function templeSune(g, W, H, R, o, d) {
     g.beginPath(); g.moveTo(cx - 34 * sc, top); g.quadraticCurveTo(cx, top + 26 * sc, cx + 34 * sc, top); g.stroke();
     for (const dx of [-34, -17, 0, 17, 34]) {
       const ty = top - (dx === 0 ? 10 : Math.abs(dx) === 17 ? 4 : 0) * sc;
-      g.fillStyle = '#f2e6cc';
-      g.fillRect(cx + dx * sc - 2.5 * sc, ty - 16 * sc, 5 * sc, 16 * sc);
+      paintWax(g, cx + dx * sc, ty, cx + dx * sc, ty - 16 * sc, 5.5 * sc, R, '#ffb090');
       lights.push({ x: cx + dx * sc, y: ty - 18 * sc, s: 4.5 * sc, kind: 'candle', color: '#ffb070' });
     }
     glow(g, cx, top - 14 * sc, 230 * sc, '#ff9a70', 0.32, 'screen');
@@ -1012,8 +1126,7 @@ function templeSune(g, W, H, R, o, d) {
   for (let i = 0; i < 14; i++) {
     const vx = W * (0.27 + R() * 0.26);
     const vy = H * (0.82 + R() * 0.04);
-    g.fillStyle = 'rgba(255,240,220,0.9)';
-    g.fillRect(vx - 2, vy - 7, 4, 7);
+    paintWax(g, vx, vy, vx, vy - 7, 4, R, '#ffc080');
     lights.push({ x: vx, y: vy - 8, s: 2.5, kind: 'candle', color: '#ffc080' });
   }
   // petals on the floor
@@ -1038,6 +1151,7 @@ function templeSune(g, W, H, R, o, d) {
   const al = altar3d({ stone: '#e8cac0', runner: '#a01e2c', emblemC: '#f0c870', candles: 6, seed: 51 });
   const ppu = H * 0.78;
   prop3d(fg, al.f, W * 0.4, H * 1.04, ppu, lr, { shadowW: 0.5 });
+  waxCandles(fg, al.tips, W * 0.4, H * 1.04, ppu, 0, { pool: '#ffb878' });
   for (const t of al.tips) { const [x, y] = proj(W * 0.4, H * 1.04, ppu, t); lights.push({ x, y, s: 5, kind: 'candle', color: '#ffc880', front: true }); }
   return { ...rm, lights, motes: { color: '#ffc0c8', count: 70, rise: 0.04 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.4, y: H * 0.92, h: H * 0.74, pose: 'priest', yaw: 0.15, vestments: '#a01e2c' } };
 }
@@ -1184,6 +1298,7 @@ S.chapel = (g, W, H, R, o) => {
   const ax = W * 0.5;
   const ay = rm.by1 + H * 0.12;
   prop3d(g, al.f, ax, ay, ppu, lr, { shadowW: 0.5, shadowA: 0.7 });
+  waxCandles(g, al.tips, ax, ay, ppu, 0, { pool: '#ffb050' });
   for (const t of al.tips) { const [x, y] = proj(ax, ay, ppu, t); lights.push({ x, y, s: 4.5, kind: 'candle', color: '#ffc060' }); }
   glowEllipse(g, ax, ay - ppu * 0.42, ppu * 0.5, ppu * 0.12, '#ffb050', 0.3);
   glowEllipse(g, ax, ay, ppu * 0.7, ppu * 0.12, '#ffa040', 0.22);
@@ -1195,7 +1310,7 @@ S.chapel = (g, W, H, R, o) => {
   pew(fg, W * 0.7, H * 1.02, W * 0.34, 1.9, { side: -1, seed: 4 });
   pew(g, W * 0.06, H * 0.84, W * 0.26, 1.2, { side: 1, seed: 5 });
   pew(g, W * 0.68, H * 0.86, W * 0.26, 1.25, { broken: 0.6, side: -1, seed: 6 });
-  return { ...rm, lights, motes: { color: '#aef4ff', count: 70, rise: 0.06 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.41, y: H * 0.93, h: H * 0.56, pose: 'vigil', yaw: 0.75 } };
+  return { ...rm, lights, motes: { color: '#aef4ff', count: 70, rise: 0.06 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.43, y: H * 0.95, h: H * 0.6, pose: 'vigil', yaw: 0.75, vigilYaw: 2.55 } };
 };
 
 // ================================================================== Hall of Training

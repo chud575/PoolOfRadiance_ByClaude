@@ -44,6 +44,8 @@ const POSES = {
   judge: { lean: -0.02, headPitch: -0.04, hands: (d) => d < 0 ? { at: [-0.03, 0.02, 0.17], dir: [-0.1, 1, 0.2], curl: 0.2, spread: 0.3, pole: [-1, -0.6, -0.3] } : { at: [0.02, -0.12, 0.24], dir: [0, 1, 0.2], grip: true, weapon: 'balance', pole: [1, -0.6, -0.2] } },
   // seated on a stool or bench, hands on the knees (a mug in one)
   sit: { lean: 0.08, sit: true, headPitch: 0.04, hands: (d) => d < 0 ? { at: [0.02, -0.22, 0.24], dir: [0, 1, 0.2], grip: true, weapon: 'tankard', pole: [-1, -0.4, -0.4] } : { at: [-0.01, -0.29, 0.2], dir: [0, -0.4, 1], curl: 0.5, pole: [1, -0.4, -0.4] } },
+  // at the oars: seated on the thwart, leaning into the stroke, fists round the looms
+  row: { lean: 0.22, sit: true, headPitch: -0.12, headYaw: 0.35, hands: (d) => ({ at: [-d * 0.02, -0.1, 0.3], dir: [-d * 0.7, 0.05, 0.7], grip: true, pole: [d, -0.4, -0.4] }) },
   // leaning over a table, knuckles down — the dice game
   lean: { lean: 0.3, headPitch: 0.25, hands: (d) => ({ at: [-d * 0.01, -0.2, 0.26], dir: [0, -0.5, 1], curl: 0.7, pole: [d, -0.3, -0.5] }) },
   // a watchman jabbing a finger mid-argument
@@ -96,7 +98,7 @@ export function buildNpc(spec) {
   const neck = add(pelvis, scl(up, torso));
   const shW = (fem ? 0.09 : 0.104) * b;
   const sh = { [-1]: add(chest, T([-shW, 0.064, -0.012])), [1]: add(chest, T([shW, 0.064, -0.012])) };
-  const headC = add(neck, T([0, hr * 1.3, hr * 0.22]));
+  const headC = add(neck, T([0, hr * (fem ? 1.12 : 1.3), hr * 0.22]));
 
   // ---- legs (hidden under long skirts: only the shoe tips show)
   const longSkirt = skirtM && (O.skirtLen ?? 'floor') === 'floor';
@@ -280,10 +282,10 @@ export function buildNpc(spec) {
   // ---- head
   const HR = mul3(rotY(twist + (P.headYaw ?? 0) + (spec.headYaw ?? 0)), mul3(rotX(-lean * 0.8 + (P.headPitch ?? 0)), rotZ((P.headTilt ?? 0) + (R() - 0.5) * 0.06)));
   f.push(headC, HR, hr);
-  sculptHead(f, skinM, { smile: spec.smile, lipC: spec.lipC, gender: spec.gender, age, hair: spec.hair, hairStyle: spec.hairStyle, beard: spec.beard, eyeC: spec.eyeC, hood: O.hood ?? null, helm: O.helm, nose: spec.nose, jaw: spec.jaw, spectacles: O.spectacles, cap: O.cap });
+  sculptHead(f, skinM, { smile: spec.smile, lipC: spec.lipC, gender: spec.gender, age, hair: spec.hair, hairStyle: spec.hairStyle, beard: spec.beard, eyeC: spec.eyeC, hood: O.hood ?? null, helm: O.helm, nose: spec.nose, jaw: spec.jaw, spectacles: O.spectacles, cap: O.cap, mitre: O.mitre, mitreTrim: O.mitreTrim });
   f.pop();
   f.top = headC[1] + hr * 1.15;
-  return { fig: f, top: f.top, sp: { legs: short ? 0.4 : 0.49 }, hands };
+  return { fig: f, top: f.top, sp: { legs: short ? 0.4 : 0.49 }, hands, head: { c: headC, R: HR, r: hr } };
 }
 
 /** A small holy symbol / heraldic charge in relief. */

@@ -26,7 +26,7 @@ export const TRAVEL = [
   { id: 'slums_civ', from: 'phlan_slums', at: { x: 0, y: 14, facing: 'W' }, to: { map: 'phlan_civilized', x: 15, y: 14, dir: 'W' }, edge: true,
     title: 'The Slum Gate', art: 'gate', text: 'The palisade gate of New Phlan. A watchman peers down from the walk, counts you, and shouts for the bar to be lifted.', go: 'Enter New Phlan' },
   { id: 'civ_sokol', from: 'phlan_civilized', at: { x: 4, y: 15, facing: 'S' }, to: { map: 'sokol_keep', x: 7, y: 15, dir: 'N' }, minutes: 90,
-    title: 'The Grey Gull', art: 'docks', text: 'Kell Saltbeard\'s boat bobs at the end of the pier. "Sokol Keep? I\'ll row you across and wait off the landing till dusk. Not a moment after."', go: 'Row to Sokol Keep' },
+    title: 'The Grey Gull', art: 'docks', npc: 'bosun', text: 'Kell Saltbeard\'s boat bobs at the end of the pier. "Sokol Keep? I\'ll row you across and wait off the landing till dusk. Not a moment after."', go: 'Row to Sokol Keep' },
   { id: 'sokol_civ', from: 'sokol_keep', at: { x: 7, y: 15, facing: 'S' }, to: { map: 'phlan_civilized', x: 4, y: 14, dir: 'N' }, minutes: 90,
     title: 'The Landing', art: 'keep', text: 'The Grey Gull waits off the landing, the dwarf hunched over his oars, watching the walls and not you.', go: 'Row back to Phlan' },
   { id: 'slums_well', from: 'phlan_slums', at: { x: 13, y: 0, facing: 'N' }, to: { map: 'kutos_well', x: 13, y: 15, dir: 'N' }, edge: true,

@@ -62,10 +62,20 @@ export function mix(c1, c2, t) {
 
 // ------------------------------------------------------------------ canvases
 
-export function makeCanvas(w, h) {
+export function makeCanvas(w, h, { gpu = false } = {}) {
   const c = document.createElement('canvas');
   c.width = Math.max(1, Math.round(w));
   c.height = Math.max(1, Math.round(h));
+  // the painters read pixels back constantly (relief shading, engraving, masks): keep their canvases
+  // in CPU memory, or every getImageData stalls on a GPU readback (crippling under SwiftShader)
+  if (!gpu) c.getContext('2d', { willReadFrequently: true });
+  return c;
+}
+
+/** A GPU-backed copy of a finished canvas, for compositing every frame. */
+export function gpuCopy(src) {
+  const c = makeCanvas(src.width, src.height, { gpu: true });
+  c.getContext('2d').drawImage(src, 0, 0);
   return c;
 }
 
@@ -222,12 +232,16 @@ export function grade(g, W, H, { shadow = '#1a2440', highlight = '#ffcc88', amou
   g.restore();
 }
 
+const grainCache = new Map();
 /** Fine film grain / canvas weave. */
 export function grain(g, W, H, amount = 0.08, seed = 9) {
   g.save();
   g.globalAlpha = amount;
   g.globalCompositeOperation = 'overlay';
-  const pat = g.createPattern(noiseCanvas(128, 64, 1, seed), 'repeat');
+  const key = `${seed}`;
+  let nz = grainCache.get(key);
+  if (!nz) { nz = gpuCopy(noiseCanvas(128, 64, 1, seed)); grainCache.set(key, nz); }
+  const pat = g.createPattern(nz, 'repeat');
   g.fillStyle = pat;
   g.fillRect(0, 0, W, H);
   g.restore();

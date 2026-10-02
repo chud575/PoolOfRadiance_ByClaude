@@ -75,7 +75,7 @@ export default class DialogueScene extends Scene {
       ctx.audio.playMusic?.(this.script.id.startsWith('go_') ? 'explore' : 'town');
     } else {
       await this.encounterIntro({ parley: params.parley === '1' || params.parley === 1 });
-      if (params.beat === 'hostile') await this._hostile(); // (debug) the failed-parley beat
+      if (params.beat) await this._beat(params.beat); // (debug) a story beat: hostile | calm | flee
       ctx.audio.playMusic?.('encounter');
     }
     await this._decoded();
@@ -631,6 +631,7 @@ export default class DialogueScene extends Scene {
     if (o === 'wait') {
       const morale = Math.min(...enc.groups.map((g) => MONSTERS[g.monster].morale ?? 50));
       if (rng.chance(Math.max(10, 70 - morale))) {
+        this._beat('flee');
         this._setText(['Both sides regard each other warily. At last, muttering, they lose interest and slink away into the ruins.']);
         return this._setChoices([{ label: 'Continue', key: 'C', isLeave: true, run: () => this.leave() }]);
       }
@@ -644,8 +645,17 @@ export default class DialogueScene extends Scene {
 
   /** Story beat: the war-band snarls and advances (re-posed figures cross-fade in). */
   _hostile() {
-    if (!this.encSpec) return;
-    this._showArt({ ...this.encSpec, mood: 'hostile' }, this.encounter.name, this._zoneName());
+    return this._beat('hostile');
+  }
+
+  /**
+   * Story beats re-stage the war-band: 'hostile' (weapons levelled, the band advances), 'calm'
+   * (weapons lowered, they stand off), 'flee' (they scatter into the rubble: the street empties
+   * but for a straggler running and a dropped spear).
+   */
+  _beat(mood) {
+    if (!this.encSpec) return null;
+    return this._showArt({ ...this.encSpec, mood }, this.encounter.name, this._zoneName());
   }
 
   parleyMenu() {
@@ -675,15 +685,18 @@ export default class DialogueScene extends Scene {
       return this._setChoices([{ label: 'Combat', key: 'C', run: () => this.startCombat(enc.id) }]);
     }
     if (kind === 'leave') {
+      this._beat('calm');
       this._setText([line ?? `${who} exchange${who.startsWith('The') ? '' : 's'} glances, shrug, and let you pass. There will be other prey tonight.`]);
       return this._setChoices([{ label: 'Continue', key: 'C', isLeave: true, run: () => this.leave() }]);
     }
     if (kind === 'flee') {
+      this._beat('flee');
       this._setText([line ?? `${who} decide${who.startsWith('The') ? '' : 's'} that you are more trouble than you are worth, and flee.`]);
       return this._setChoices([{ label: 'Continue', key: 'C', isLeave: true, run: () => this.leave() }]);
     }
     if (kind === 'bribe') {
       const gp = Number(arg);
+      this._beat('calm');
       this._setText([line ?? `${who} consider${who.startsWith('The') ? '' : 's'} your words. "Pay the toll," the leader growls, "${gp} gold, and walk away."`]);
       return this._setChoices([
         { label: `Pay ${gp} gp`, key: 'P', disabled: partyGold(this.ctx.game) < gp, run: () => { spendGold(this.ctx.game, gp); this.ctx.game.notifyPartyChanged(); this.ctx.ui.message(`The party pays ${gp} gold pieces.`, 'warn'); this.leave(); } },

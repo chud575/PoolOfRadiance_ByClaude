@@ -634,10 +634,11 @@ export const DIALOGUES = {
 // Travel scripts, generated from data/travel.js.
 for (const t of TRAVEL) {
   DIALOGUES[`go_${t.id}`] = {
-    id: `go_${t.id}`, title: t.title, art: { setting: t.art ?? 'street_day' }, start: 'a',
+    id: `go_${t.id}`, title: t.title, art: { setting: t.art ?? 'street_day', ...(t.npc ? { npc: t.npc, pose: 'row' } : {}) }, start: 'a',
     nodes: {
       a: {
         branch: t.requires ? [{ if: { notFlag: t.requires }, goto: 'barred' }] : undefined,
+        speaker: t.npc,
         text: t.text,
         choices: [
           { label: t.go ?? 'Go', travel: { ...t.to, minutes: t.minutes ?? 10 } },
