@@ -3,7 +3,8 @@ import { getMap, hasMap } from '../../data/maps/index.js';
 import { TRAVEL } from '../../data/travel.js';
 import { INK, makeCanvas, makeParchment, quillStroke, planWall, pencilShade, hatchRect, lineShade, stipple, featherMask, prng } from './ink.js';
 import { regions, washRegion, hatchBand, cobbleRegion, scatter } from './paint.js';
-import { fogCoverage, setOutline } from './fog.js';
+import { surveyFog, paintSurveyFog, drawSurveyLimit, sightedCells } from './fog.js';
+import { stoneWall, timberWall, cityWall, tower, chunk, doorLeaf, lockedDoor, secretDoor } from './walls.js';
 import { drawFloor, wallShadow, furnish, partition, themeOf } from './plan.js';
 import { drawMarker } from './glyphs.js';
 import { SERIF, drawCompassRose, drawCartouche, drawIlluminatedInitial, drawFlourish, fitFont, wrapText, haloText, goldGradient } from './ornaments.js';
@@ -150,42 +151,58 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
   g.stroke();
   g.restore();
 
-  // ---------- fog of war: explored cells, soft-edged, tied to the grid ----------
-  const mk = 1; // mask resolution (px per unit)
-  const rects = [];
+  // ---------- fog of war: walked cells clean, sighted ones veiled, a hand-laid edge ----------
   const nearSeen = (x, y) => {
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (seenCell(x + dx, y + dy)) return true;
     return false;
   };
   const known = (x, y) => map.inBounds(x, y) && (seenCell(x, y) || (info.isRock(x, y) && nearSeen(x, y)));
+  const sighted = sightedCells(map, seenCell, info.isRock, 3);
+  const sightCell = (x, y) => sighted.has(`${x},${y}`);
+  const rects = [];
+  const sightRects = [];
   for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) {
-    if (known(x, y)) rects.push([CX(x) * mk, CY(y) * mk, cs * mk, cs * mk]);
+    if (known(x, y)) rects.push([CX(x), CY(y), cs, cs]);
+    if (known(x, y) || sightCell(x, y)) sightRects.push([CX(x), CY(y), cs, cs]);
   }
-  // the wash/ink mask: a hair inside the cells' edge, softened by ~0.3 cell
-  const mask = featherMask(W * mk, H * mk, rects, { blur: cs * mk * 0.11, grow: cs * mk * 0.04 });
   const fogArea = [MX, MY, MS, MS];
-  const fogCov = fogCoverage(W, H, rects.map(([x, y, w2, h2]) => [x - cs * 0.04, y - cs * 0.04, w2 + cs * 0.08, h2 + cs * 0.08]), fogArea, { soft: cs * 0.3 });
-
-  // unexplored tone: a cool grey-blue vellum wash with a faint graphite stipple
-  // (the calm pencil hatching over it is laid live, in screen space, by the viewer)
-  const fog = makeCanvas(W * k, H * k);
-  {
-    const f = fog.getContext('2d');
-    f.scale(k, k);
-    f.fillStyle = 'rgba(104,118,140,0.2)';
-    f.fillRect(MX, MY, MS, MS);
-    const vg = f.createRadialGradient(MX + MS / 2, MY + MS / 2, MS * 0.1, MX + MS / 2, MY + MS / 2, MS * 0.75);
-    vg.addColorStop(0, 'rgba(150,160,176,0.0)');
-    vg.addColorStop(1, 'rgba(70,80,100,0.1)');
-    f.fillStyle = vg;
-    f.fillRect(MX, MY, MS, MS);
-    stipple(f, MX, MY, MS, MS, { seed: seed + 21, count: 2600, r: 0.55, color: '#3c4458', alpha: 0.28 });
-    f.setTransform(1, 0, 0, 1, 0, 0);
-    f.globalCompositeOperation = 'destination-in';
-    f.imageSmoothingEnabled = true;
-    f.drawImage(fogCov, 0, 0, W * k, H * k);
+  const survey = surveyFog(W, H, rects, sightRects, fogArea, { cs, seed: seed + 17 });
+  const mask = survey.walk;
+  const fogCov = survey.cover;
+  g.drawImage(paintSurveyFog(W, H, k, fogCov, fogArea, { seed: seed + 21 }), 0, 0, W, H);
+  // under the unsurveyed shading, the council's old, faded street plan: loose pencilled
+  // outlines of where the blocks of houses are said to stand (no doors, no secrets)
+  if (!dungeon) {
+    const gh = makeCanvas(W * k, H * k);
+    const hg = gh.getContext('2d');
+    hg.scale(k, k);
+    hg.lineCap = 'round';
+    const gr = prng(seed + 33);
+    for (const rg of regions(map, info).list) {
+      if (rg.type !== CELL.INTERIOR || rg.cells.length < 2) continue;
+      let x0 = 99; let y0 = 99; let x1 = -1; let y1 = -1;
+      for (const [i, j] of rg.cells) { x0 = Math.min(x0, i); y0 = Math.min(y0, j); x1 = Math.max(x1, i + 1); y1 = Math.max(y1, j + 1); }
+      const jt = () => (gr() - 0.5) * cs * 0.35;
+      const pts = [[CX(x0) + jt(), CY(y0) + jt()], [CX(x1) + jt(), CY(y0) + jt()], [CX(x1) + jt(), CY(y1) + jt()], [CX(x0) + jt(), CY(y1) + jt()]];
+      for (let q = 0; q < 4; q++) {
+        if (gr() < 0.2) continue;
+        const [ax, ay] = pts[q];
+        const [bx, by] = pts[(q + 1) % 4];
+        const ox = (bx - ax) * 0.07;
+        const oy = (by - ay) * 0.07;
+        hg.strokeStyle = `rgba(66,56,46,${(0.32 + gr() * 0.2).toFixed(2)})`;
+        hg.lineWidth = 0.7 + gr() * 0.4;
+        hg.beginPath();
+        hg.moveTo(ax - ox, ay - oy);
+        hg.quadraticCurveTo((ax + bx) / 2 + (gr() - 0.5) * 4, (ay + by) / 2 + (gr() - 0.5) * 4, bx + ox, by + oy);
+        hg.stroke();
+      }
+    }
+    hg.setTransform(1, 0, 0, 1, 0, 0);
+    hg.globalCompositeOperation = 'destination-in';
+    hg.drawImage(fogCov, 0, 0, W * k, H * k);
+    g.drawImage(gh, 0, 0, W, H);
   }
-  g.drawImage(fog, 0, 0, W, H);
 
   // ---------- watercolour washes (masked) ----------
   const reg = regions(map, info);
@@ -244,6 +261,12 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
     // texture: drawn setts on plazas, grit on the streets, broken masonry in rubble, ripples on water
     for (const rg of reg.list) {
       if (rg.type === CELL.COURTYARD) cobbleRegion(w, rg.cells, { ...P, seed: seed + rg.index * 17 });
+      // worn stretches of paving along the streets, laid with the run of the street
+      if (rg.type === CELL.STREET && !wild && !dungeon) {
+        const open = (x, y, d) => map.getEdge(x, y, d) === EDGE.OPEN;
+        const axisAt = (x, y) => ((open(x, y, 'E') ? 1 : 0) + (open(x, y, 'W') ? 1 : 0) >= (open(x, y, 'N') ? 1 : 0) + (open(x, y, 'S') ? 1 : 0) ? 'h' : 'v');
+        cobbleRegion(w, rg.cells, { ...P, seed: seed + rg.index * 23 + 5, axisAt, patch: 0.5 });
+      }
     }
     scatter(w, map, (x, y) => !info.isRock(x, y) && map.getCell(x, y) === CELL.STREET, { ...P, seed: seed + 3, kind: wild ? 'grass' : 'street' });
     scatter(w, map, (x, y) => !info.isRock(x, y) && map.getCell(x, y) === CELL.RUBBLE, { ...P, seed: seed + 4, kind: 'rubble' });
@@ -300,119 +323,45 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
     d.drawImage(mask, 0, 0, W * k, H * k);
     g.drawImage(det, 0, 0, W, H);
   }
-  // the surveyor's limit: a fine dashed line along the edge of the explored cells
-  g.save();
-  g.strokeStyle = 'rgba(70,52,40,0.62)';
-  g.lineWidth = 0.9;
-  g.setLineDash([5, 3.5]);
-  g.lineCap = 'butt';
-  g.beginPath();
-  for (const [x0, y0, x1, y1] of setOutline(map.w, map.h, known)) { g.moveTo(CX(x0), CY(y0)); g.lineTo(CX(x1), CY(y1)); }
-  g.stroke();
-  g.restore();
+  // the surveyor's limit: an irregular pencil line where the walked survey stops
+  drawSurveyLimit(g, survey.limit, { seed: seed + 5 });
 
-  // ---------- walls: a surveyor's drafted plan on its own ink layer ----------
-  const wallW = cs * 0.13;
+  // ---------- walls: masonry, timber framing and the city wall, on their own ink layer ----------
+  const wallW = cs * 0.16;
+  const timberW = cs * 0.11;
+  const cityW = cs * 0.32;
+  const cityOff = cityW * 0.3; // the curtain stands a little inside the block's edge
   const { segs: cellSegs, effective } = collectEdges(map, info, seenCell, secrets);
   const segs = cellSegs.map((q) => ({ ...q, x0: CX(q.x0), y0: CY(q.y0), x1: CX(q.x1), y1: CY(q.y1) }));
   const exitAt = new Set(info.travel.filter((t) => t.edge).map((t) => `${t.at.x},${t.at.y},${t.at.facing}`));
   const ruin = (q) => q.style === 2 && !dungeon;
   const border = (q) => !dungeon && !wild && ((q.horiz && (q.cell[1] === 0 && q.cell[2] === 'N' || q.cell[1] === map.h - 1 && q.cell[2] === 'S')) || (!q.horiz && (q.cell[0] === 0 && q.cell[2] === 'W' || q.cell[0] === map.w - 1 && q.cell[2] === 'E')));
-  const runs = mergeRuns(segs.filter((q) => effective(q) === EDGE.WALL && !ruin(q)));
+  const isTimber = (q) => q.style === 1 && !dungeon && !border(q);
+  const widthOf = (q) => (border(q) ? cityW : isTimber(q) ? timberW : wallW);
+  const outward = (q) => (q.horiz ? [0, q.cell[2] === 'N' ? -1 : 1] : [q.cell[2] === 'W' ? -1 : 1, 0]);
   const inkL = makeCanvas(W * k, H * k);
   const ig = inkL.getContext('2d');
   ig.scale(k, k);
-  const outward = (q) => (q.horiz ? [0, q.cell[2] === 'N' ? -1 : 1] : [q.cell[2] === 'W' ? -1 : 1, 0]);
-  /** a broken stone, outlined, for ruins and rubble spill */
-  const chunk = (x, y, rad, rr) => {
-    ig.beginPath();
-    const n = 4 + Math.floor(rr() * 3);
-    const rot = rr() * 6;
-    for (let i = 0; i < n; i++) {
-      const a = rot + (i / n) * Math.PI * 2;
-      const q = rad * (0.7 + rr() * 0.5);
-      if (i === 0) ig.moveTo(x + Math.cos(a) * q, y + Math.sin(a) * q * 0.8); else ig.lineTo(x + Math.cos(a) * q, y + Math.sin(a) * q * 0.8);
-    }
-    ig.closePath();
-    ig.fillStyle = 'rgba(214,196,160,0.9)';
-    ig.fill();
-    ig.strokeStyle = INK.ink;
-    ig.lineWidth = 0.6;
-    ig.stroke();
+  /** one length of wall in the style its edge calls for */
+  const wallPiece = (q, ax, ay, bx, by, sd, { rag = 0 } = {}) => {
+    if (Math.hypot(bx - ax, by - ay) < 0.5) return;
+    if (border(q)) {
+      const [ox, oy] = outward(q);
+      cityWall(ig, ax - ox * cityOff, ay - oy * cityOff, bx - ox * cityOff, by - oy * cityOff, { width: cityW, seed: sd, out: [ox, oy] });
+    } else if (isTimber(q)) timberWall(ig, ax, ay, bx, by, { width: timberW, seed: sd, cs });
+    else stoneWall(ig, ax, ay, bx, by, { width: wallW, seed: sd, courses: 2, tone: dungeon ? [132, 124, 112] : [146, 128, 104], ragged: rag });
   };
+  const wallRects = [];
+  const keepOut = (q, w) => wallRects.push([Math.min(q.x0, q.x1) - w / 2, Math.min(q.y0, q.y1) - w / 2, Math.abs(q.x1 - q.x0) + w, Math.abs(q.y1 - q.y0) + w]);
   if (inkWalls) {
+    const runs = mergeRuns(segs.filter((q) => effective(q) === EDGE.WALL && !ruin(q)));
     for (const rn of runs) {
-      const city = border(rn);
-      const timber = rn.style === 1 && !city && !dungeon;
-      const width = wallW * (city ? 1.55 : timber ? 0.72 : 1);
-      const ext = width * 0.5;
+      const w = widthOf(rn);
+      const ext = w * 0.5;
       const dx = rn.horiz ? ext : 0;
       const dy = rn.horiz ? 0 : ext;
-      const sd = (rn.x0 * 7 + rn.y0 * 13) | 0;
-      planWall(ig, rn.x0 - dx, rn.y0 - dy, rn.x1 + dx, rn.y1 + dy, { width, seed: sd, amp: cs * 0.012, dry: timber ? 0.2 : 0.45, fill: timber ? 0.55 : 0.82, over: city ? 0.6 : 1 });
-      const rr = prng(sd + 9);
-      const len = Math.hypot(rn.x1 - rn.x0, rn.y1 - rn.y0);
-      const ux = (rn.x1 - rn.x0) / len;
-      const uy = (rn.y1 - rn.y0) / len;
-      if (!timber) {
-        // ashlar in plan: the poché broken by masonry joints in two staggered courses
-        ig.save();
-        ig.strokeStyle = 'rgba(236,222,190,0.55)';
-        ig.lineWidth = Math.max(0.5, width * 0.09);
-        ig.lineCap = 'butt';
-        const nx = -uy;
-        const ny = ux;
-        for (const [course, o0, o1] of [[0, -0.42, 0], [1, 0, 0.42]]) {
-          let t = rr() * cs * 0.2 + (course ? cs * 0.12 : 0);
-          ig.beginPath();
-          while (t < len) {
-            const px = rn.x0 + ux * t;
-            const py = rn.y0 + uy * t;
-            ig.moveTo(px + nx * width * o0, py + ny * width * o0);
-            ig.lineTo(px + nx * width * o1, py + ny * width * o1);
-            t += cs * (0.2 + rr() * 0.14);
-          }
-          ig.stroke();
-        }
-        // the bed joint down the middle
-        ig.strokeStyle = 'rgba(236,222,190,0.3)';
-        ig.lineWidth = Math.max(0.4, width * 0.06);
-        ig.beginPath();
-        ig.moveTo(rn.x0, rn.y0);
-        ig.lineTo(rn.x1, rn.y1);
-        ig.stroke();
-        ig.restore();
-      }
-      if (timber) {
-        // timber framing: square posts along the run
-        ig.fillStyle = INK.ink;
-        const n = Math.max(1, Math.round(len / cs));
-        for (let i = 0; i <= n; i++) {
-          const t = (i / n) * len;
-          const ps = width * (1.12 + rr() * 0.15);
-          ig.globalAlpha = 0.9;
-          ig.fillRect(rn.x0 + ux * t - ps / 2, rn.y0 + uy * t - ps / 2, ps, ps);
-        }
-        ig.globalAlpha = 1;
-      }
-      if (city) {
-        // the city wall: a finer rule on the inner face, merlons on the outer
-        const [ox, oy] = outward(rn);
-        const io = -width * 1.05;
-        quillStroke(ig, rn.x0 - dx + ox * io, rn.y0 - dy + oy * io, rn.x1 + dx + ox * io, rn.y1 + dy + oy * io, { width: wallW * 0.22, amp: cs * 0.01, seed: sd + 3, pool: 0, taper: 0.5 });
-        ig.fillStyle = INK.ink;
-        const n = Math.floor(len / (cs * 0.32));
-        for (let i = 0; i < n; i++) {
-          const t = (i + 0.5) * (len / n);
-          const mw = cs * 0.09;
-          const md = width * 0.42;
-          const cx = rn.x0 + ux * t + ox * (width * 0.5 + md * 0.5);
-          const cy = rn.y0 + uy * t + oy * (width * 0.5 + md * 0.5);
-          ig.globalAlpha = 0.78 + rr() * 0.2;
-          ig.fillRect(cx - (rn.horiz ? mw : md) / 2, cy - (rn.horiz ? md : mw) / 2, rn.horiz ? mw : md, rn.horiz ? md : mw);
-        }
-        ig.globalAlpha = 1;
-      }
+      wallPiece(rn, rn.x0 - dx, rn.y0 - dy, rn.x1 + dx, rn.y1 + dy, (rn.x0 * 7 + rn.y0 * 13) | 0);
+      keepOut(rn, w);
     }
     // crumbling ruin walls: broken lengths with ragged ends and spilled masonry
     for (const sg of segs.filter((q) => effective(q) === EDGE.WALL && ruin(q))) {
@@ -421,15 +370,16 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
       const [ox, oy] = outward(sg);
       for (let i = 0; i < n; i++) {
         const t0 = i / n + r() * 0.1;
-        const t1 = (i + 1) / n - 0.1 - r() * 0.15;
-        if (t1 - t0 < 0.12) continue;
-        planWall(ig, sg.x0 + (sg.x1 - sg.x0) * t0, sg.y0 + (sg.y1 - sg.y0) * t0, sg.x0 + (sg.x1 - sg.x0) * t1, sg.y0 + (sg.y1 - sg.y0) * t1, { width: wallW * (0.7 + r() * 0.3), seed: i + sg.x0 * 3 + sg.y0, dry: 0.9, fill: 0.62, over: 0.4, amp: 0.6 });
+        const t1 = (i + 1) / n - 0.08 - r() * 0.15;
+        if (t1 - t0 < 0.14) continue;
+        wallPiece(sg, sg.x0 + (sg.x1 - sg.x0) * t0, sg.y0 + (sg.y1 - sg.y0) * t0, sg.x0 + (sg.x1 - sg.x0) * t1, sg.y0 + (sg.y1 - sg.y0) * t1, i + sg.x0 * 3 + sg.y0, { rag: 0.6 });
       }
-      for (let i = 0; i < 4; i++) {
-        const t = 0.1 + r() * 0.8;
-        const side = (r() < 0.5 ? -1 : 1) * (wallW * 0.8 + r() * cs * 0.12);
-        chunk(sg.x0 + (sg.x1 - sg.x0) * t + ox * side, sg.y0 + (sg.y1 - sg.y0) * t + oy * side, cs * (0.025 + r() * 0.035), r);
+      for (let i = 0; i < 5; i++) {
+        const t = 0.05 + r() * 0.9;
+        const side = (r() < 0.5 ? -1 : 1) * (wallW * 0.7 + r() * cs * 0.14);
+        chunk(ig, sg.x0 + (sg.x1 - sg.x0) * t + ox * side, sg.y0 + (sg.y1 - sg.y0) * t + oy * side, cs * (0.025 + r() * 0.04), r);
       }
+      keepOut(sg, wallW);
     }
     // doors, locked doors, arches, found secret doors
     for (const sg of segs) {
@@ -440,112 +390,123 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
       const along = sg.horiz ? [1, 0] : [0, 1];
       const gap = cs * 0.26;
       const sd = (sg.x0 * 5 + sg.y0 * 11) | 0;
-      const timber = sg.style === 1 && !dungeon;
-      const ww = wallW * (timber ? 0.72 : 1);
+      const ww = widthOf(sg);
       const P = (a) => [sg.x0 + (sg.x1 - sg.x0) * a, sg.y0 + (sg.y1 - sg.y0) * a];
-      const piece = (a, b2, o = {}) => {
+      const piece = (a, b2) => {
         const [ax, ay] = P(a);
         const [bx, by] = P(b2);
-        planWall(ig, ax, ay, bx, by, { width: ww, seed: sd + a * 10, amp: cs * 0.01, dry: 0.3, fill: timber ? 0.55 : 0.82, ...o });
+        wallPiece(sg, ax, ay, bx, by, sd + Math.round(a * 10), { rag: ruin(sg) ? 0.5 : 0 });
       };
+      const [ox, oy] = outward(sg);
+      keepOut(sg, ww);
       if (t === EDGE.SECRET) {
-        // the wall in broken dashes, and a vermilion S
-        for (let i = 0; i < 5; i++) piece(i / 5 + 0.03, (i + 0.6) / 5, { width: ww * 0.8, faces: false, dry: 0 });
-        ig.save();
-        ig.font = `italic bold ${Math.round(cs * 0.42)}px ${SERIF}`;
-        ig.textAlign = 'center';
-        ig.textBaseline = 'middle';
-        ig.fillStyle = INK.vermilion;
-        ig.fillText('S', mx + (sg.horiz ? 0 : cs * 0.22), my + (sg.horiz ? -cs * 0.2 : 0));
-        ig.restore();
+        secretDoor(ig, sg.x0, sg.y0, sg.x1, sg.y1, { width: ww, cs, side: [-ox, -oy], seed: sd });
         continue;
       }
-      piece(-ww * 0.5 / cs, 0.5 - gap / cs, { over: 0.5 });
-      piece(0.5 + gap / cs, 1 + ww * 0.5 / cs, { over: 0.5 });
-      // jambs: short pen strokes across the opening's ends
-      const jl = ww * 0.95;
-      ig.save();
-      ig.strokeStyle = INK.ink;
-      ig.lineWidth = 1.1;
-      ig.lineCap = 'round';
-      for (const sgn of [-1, 1]) {
-        const jx = mx + along[0] * gap * sgn;
-        const jy = my + along[1] * gap * sgn;
-        ig.beginPath(); ig.moveTo(jx - along[1] * jl, jy - along[0] * jl); ig.lineTo(jx + along[1] * jl, jy + along[0] * jl); ig.stroke();
-      }
-      ig.restore();
+      piece(-ww * 0.5 / cs, 0.5 - gap / cs);
+      piece(0.5 + gap / cs, 1 + ww * 0.5 / cs);
+      const shift = border(sg) ? -cityOff : 0;
+      const cmx = mx + ox * shift;
+      const cmy = my + oy * shift;
       if (t === EDGE.ARCH) {
         const out = exitAt.has(sg.cell.join(','));
-        ig.save();
-        ig.fillStyle = INK.ink;
         for (const sgn of [-1, 1]) {
-          const px = mx + along[0] * gap * sgn;
-          const py = my + along[1] * gap * sgn;
-          const ps = ww * 1.9;
-          ig.globalAlpha = 0.9;
-          ig.fillRect(px - ps / 2, py - ps / 2, ps, ps);
+          const px = cmx + along[0] * gap * sgn;
+          const py = cmy + along[1] * gap * sgn;
+          const ps = ww * 1.6;
+          stoneWall(ig, px - along[0] * ps * 0.5, py - along[1] * ps * 0.5, px + along[0] * ps * 0.5, py + along[1] * ps * 0.5, { width: ps, seed: sd + sgn, courses: 1, tone: [168, 152, 126], faceW: 1.1 });
         }
-        ig.globalAlpha = 1;
+        ig.save();
         ig.strokeStyle = out ? INK.vermilion : INK.ink;
         ig.lineWidth = 0.9;
         ig.setLineDash([2.2, 2.4]);
         ig.beginPath();
-        ig.moveTo(mx - along[0] * gap, my - along[1] * gap);
-        ig.lineTo(mx + along[0] * gap, my + along[1] * gap);
+        ig.moveTo(cmx - along[0] * gap * 0.8, cmy - along[1] * gap * 0.8);
+        ig.lineTo(cmx + along[0] * gap * 0.8, cmy + along[1] * gap * 0.8);
         ig.stroke();
         ig.restore();
+      } else if (t === EDGE.LOCKED) {
+        // shut, barred in vermilion, padlocked on the side of the square that owns it
+        const side = sg.horiz ? -oy : ox;
+        lockedDoor(ig, cmx, cmy, sg.horiz, gap * 2.1, cs * 0.13, side);
       } else {
-        // a plan door: the leaf hung from one jamb, swung open over a pencilled arc;
-        // locked doors are drawn shut, washed vermilion, with a gilt lock
-        const [ox, oy] = sg.horiz ? [0, sg.cell[2] === 'N' ? 1 : -1] : [sg.cell[2] === 'W' ? 1 : -1, 0];
-        const hx = mx - along[0] * gap;
-        const hy = my - along[1] * gap;
-        const L = gap * 2;
-        const lt = Math.max(1.8, ww * 0.7);
-        ig.save();
-        if (t === EDGE.LOCKED) {
-          ig.translate(mx, my);
-          if (!sg.horiz) ig.rotate(Math.PI / 2);
-          ig.fillStyle = 'rgba(168,52,32,0.92)';
-          ig.fillRect(-L / 2, -lt * 0.9, L, lt * 1.8);
-          ig.strokeStyle = INK.ink;
-          ig.lineWidth = 0.8;
-          ig.strokeRect(-L / 2, -lt * 0.9, L, lt * 1.8);
-          ig.fillStyle = INK.goldHi;
-          ig.beginPath(); ig.arc(0, 0, lt * 1.15, 0, Math.PI * 2); ig.fill();
-          ig.lineWidth = 0.7;
-          ig.stroke();
-          ig.fillStyle = INK.ink;
-          ig.beginPath(); ig.arc(0, -lt * 0.25, lt * 0.32, 0, Math.PI * 2); ig.fill();
-          ig.fillRect(-lt * 0.13, -lt * 0.2, lt * 0.26, lt * 0.65);
-        } else {
-          const a0 = Math.atan2(along[1], along[0]);
-          const a1 = Math.atan2(oy, ox);
-          let da = a1 - a0;
-          while (da > Math.PI) da -= Math.PI * 2;
-          while (da < -Math.PI) da += Math.PI * 2;
-          const open = a0 + da * 0.82;
-          // swing arc
-          ig.strokeStyle = 'rgba(43,26,13,0.7)';
-          ig.lineWidth = 0.7;
-          ig.setLineDash([2.2, 1.8]);
-          ig.beginPath();
-          ig.arc(hx, hy, L, Math.min(a0, a0 + da * 0.82), Math.max(a0, a0 + da * 0.82));
-          ig.stroke();
-          ig.setLineDash([]);
-          // leaf: oak, washed and ruled
-          ig.translate(hx, hy);
-          ig.rotate(open);
-          ig.fillStyle = 'rgba(176,118,58,0.92)';
-          ig.fillRect(0, -lt / 2, L, lt);
-          ig.strokeStyle = INK.ink;
-          ig.lineWidth = 0.8;
-          ig.strokeRect(0, -lt / 2, L, lt);
-          ig.fillStyle = INK.ink;
-          ig.beginPath(); ig.arc(0, 0, lt * 0.55, 0, Math.PI * 2); ig.fill();
-        }
-        ig.restore();
+        // a plan door: the leaf hung from one jamb, swung open over a pencilled arc
+        const hx = cmx - along[0] * gap;
+        const hy = cmy - along[1] * gap;
+        const a0 = Math.atan2(along[1], along[0]);
+        let da = Math.atan2(-oy, -ox) - a0;
+        while (da > Math.PI) da -= Math.PI * 2;
+        while (da < -Math.PI) da += Math.PI * 2;
+        doorLeaf(ig, hx, hy, a0 + da * 0.8, a0, gap * 2, Math.max(2.2, cs * 0.075));
       }
+    }
+    // the city wall's bastions: at its corners and either side of every gate (from the whole
+    // block's plan, so a tower is never guessed at the edge of what has been seen)
+    {
+      const all = collectEdges(map, info, (x, y) => map.inBounds(x, y) && !info.isRock(x, y), new Set());
+      const bRuns = mergeRuns(all.segs.filter((q) => border(q) && all.effective(q) === EDGE.WALL));
+      const spots = [];
+      const add = (x, y, out) => {
+        if (spots.some((p) => Math.hypot(p[0] - x, p[1] - y) < 1.2)) return;
+        spots.push([x, y, out]);
+      };
+      for (const rn of bRuns) {
+        const out = outward(rn);
+        add(rn.x0, rn.y0, out);
+        add(rn.x1, rn.y1, out);
+        const len = Math.hypot(rn.x1 - rn.x0, rn.y1 - rn.y0);
+        const n = Math.floor(len / 5.5);
+        for (let i = 1; i <= n; i++) add(rn.x0 + ((rn.x1 - rn.x0) * i) / (n + 1), rn.y0 + ((rn.y1 - rn.y0) * i) / (n + 1), out);
+      }
+      for (const [x, y, out] of spots) {
+        let near = false;
+        for (let j = -1; j <= 0 && !near; j++) for (let i = -1; i <= 0; i++) if (seenCell(Math.floor(x) + i, Math.floor(y) + j)) { near = true; break; }
+        if (!near) continue;
+        const px = CX(x) - out[0] * cityOff;
+        const py = CY(y) - out[1] * cityOff;
+        const R = cityW * 1.12;
+        // a corner tower faces both ways
+        const corner = (x <= 0 || x >= map.w) && (y <= 0 || y >= map.h);
+        const o2 = corner ? [x <= 0 ? -1 : 1, y <= 0 ? -1 : 1] : out;
+        tower(ig, px, py, R, { seed: (x * 17 + y * 31) | 0, out: o2 });
+        wallRects.push([px - R, py - R, R * 2, R * 2]);
+      }
+    }
+    // squares only sighted down a street: their walls pencilled in, faint and unfinished
+    {
+      const { segs: sSegs, effective: sEff } = collectEdges(map, info, sightCell, secrets);
+      ig.save();
+      ig.strokeStyle = 'rgba(54,46,36,0.66)';
+      ig.lineCap = 'round';
+      const r = prng(seed + 61);
+      for (const q of sSegs) {
+        const [a, b] = q.horiz ? [[q.cell[0], q.cell[1] + (q.cell[2] === 'N' ? -1 : 1)], [q.cell[0], q.cell[1]]] : [[q.cell[0] + (q.cell[2] === 'W' ? -1 : 1), q.cell[1]], [q.cell[0], q.cell[1]]];
+        if (seenCell(a[0], a[1]) || seenCell(b[0], b[1])) continue;
+        const e = sEff(q);
+        const x0 = CX(q.x0);
+        const y0 = CY(q.y0);
+        const x1 = CX(q.x1);
+        const y1 = CY(q.y1);
+        const hw = (border(q) ? cityW : wallW) * 0.4;
+        const [nx, ny] = q.horiz ? [0, 1] : [1, 0];
+        const opening = e === EDGE.DOOR || e === EDGE.LOCKED || e === EDGE.ARCH;
+        for (const s of [-1, 1]) {
+          ig.lineWidth = 0.5 + r() * 0.3;
+          ig.beginPath();
+          const j = () => (r() - 0.5) * 1.4;
+          if (opening) {
+            ig.moveTo(x0 + nx * hw * s + j(), y0 + ny * hw * s + j());
+            ig.lineTo(x0 + (x1 - x0) * 0.32 + nx * hw * s, y0 + (y1 - y0) * 0.32 + ny * hw * s);
+            ig.moveTo(x0 + (x1 - x0) * 0.68 + nx * hw * s, y0 + (y1 - y0) * 0.68 + ny * hw * s);
+            ig.lineTo(x1 + nx * hw * s + j(), y1 + ny * hw * s + j());
+          } else {
+            ig.moveTo(x0 + nx * hw * s + j(), y0 + ny * hw * s + j());
+            ig.lineTo(x1 + nx * hw * s + j(), y1 + ny * hw * s + j());
+          }
+          ig.stroke();
+        }
+      }
+      ig.restore();
     }
   }
   g.drawImage(inkL, 0, 0, W, H);
@@ -746,13 +707,13 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
   g.letterSpacing = '0px';
   drawFlourish(g, RX + RW / 2, KY + 18, RW * 0.5, { color: '#5a3a1c', width: 1 });
   const rows = [
-    ['wall', 'Wall'], ['door', 'Door'], ['locked', 'Locked'], ['secret', 'Secret door'], ['arch', 'Archway'],
-    ['exit', 'Way out'], ['sign', 'Inscription'], ['battle', 'Battle won'], ['treasure', 'Treasure'], ['rock', 'Solid rock'],
+    ['wall', 'Stone wall'], ['timber', 'Timber'], ['city', 'City wall'], ['door', 'Door'], ['locked', 'Locked'], ['secret', 'Secret door'],
+    ['arch', 'Archway'], ['exit', 'Way out'], ['sign', 'Inscription'], ['battle', 'Battle won'], ['treasure', 'Treasure'], ['rock', 'Solid rock'],
   ];
-  const rowH = 38;
+  const rowH = 36;
   rows.forEach(([key, label], i) => {
-    const col = i < 5 ? 0 : 1;
-    const row = col ? i - 5 : i;
+    const col = i < 6 ? 0 : 1;
+    const row = col ? i - 6 : i;
     const x = RX + 2 + col * (RW / 2 + 4);
     const y = KY + 50 + row * rowH;
     drawKeySwatch(g, key, x + 17, y, 30);
@@ -762,7 +723,7 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
     g.fillText(label, x + 38, y + 1);
   });
   // scale bar
-  const sy = KY + 50 + 5 * rowH + 22;
+  const sy = KY + 50 + 6 * rowH + 16;
   g.strokeStyle = INK.ink;
   g.lineWidth = 1;
   const bx = RX + RW / 2 - cs * 2;
@@ -780,7 +741,6 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
   g.restore();
 
   g.restore();
-  const wallRects = segs.filter((q) => effective(q) !== EDGE.OPEN).map((q) => [Math.min(q.x0, q.x1) - wallW, Math.min(q.y0, q.y1) - wallW, Math.abs(q.x1 - q.x0) + wallW * 2, Math.abs(q.y1 - q.y0) + wallW * 2]);
   return { canvas, k, cs, info, seenCell, fog: fogCov, fogArea, wallRects, cellRect: (x, y) => [M + CX(x), M + CY(y), cs, cs], seed, labels, markerSpots, regions: reg };
 }
 
@@ -790,46 +750,32 @@ export function drawKeySwatch(g, key, x, y, s) {
   g.save();
   g.strokeStyle = INK.ink;
   g.fillStyle = INK.ink;
-  const wall = (a, b) => planWall(g, x - h + a * s, y, x - h + b * s, y, { width: s * 0.17, amp: 0.25, seed: 3 + a * 7, dry: 0, over: 0.4 });
+  const wall = (a, b) => stoneWall(g, x - h + a * s, y, x - h + b * s, y, { width: s * 0.2, seed: 3 + a * 7, faceW: 0.8 });
   switch (key) {
     case 'wall': wall(0, 1); break;
+    case 'city':
+      cityWall(g, x - h, y + s * 0.08, x + h * 0.4, y + s * 0.08, { width: s * 0.34, seed: 5, out: [0, 1] });
+      tower(g, x + h * 0.45, y + s * 0.08, s * 0.3, { seed: 2, out: [1, 1] });
+      break;
+    case 'timber': timberWall(g, x - h, y, x + h, y, { width: s * 0.17, seed: 4, cs: s * 1.3 }); break;
     case 'door':
-    case 'locked': {
-      wall(0, 0.25); wall(0.75, 1);
-      if (key === 'locked') {
-        g.fillStyle = 'rgba(168,52,32,0.92)';
-        g.fillRect(x - s * 0.25, y - s * 0.07, s * 0.5, s * 0.14);
-        g.lineWidth = 0.8; g.strokeRect(x - s * 0.25, y - s * 0.07, s * 0.5, s * 0.14);
-        g.fillStyle = INK.goldHi; g.beginPath(); g.arc(x, y, s * 0.09, 0, Math.PI * 2); g.fill(); g.stroke();
-      } else {
-        g.save();
-        g.strokeStyle = 'rgba(43,26,13,0.55)'; g.lineWidth = 0.6; g.setLineDash([1.5, 1.8]);
-        g.beginPath(); g.arc(x - s * 0.25, y, s * 0.5, -Math.PI * 0.41, 0); g.stroke();
-        g.setLineDash([]);
-        g.translate(x - s * 0.25, y); g.rotate(-Math.PI * 0.41);
-        g.fillStyle = 'rgba(176,118,58,0.92)'; g.fillRect(0, -s * 0.045, s * 0.5, s * 0.09);
-        g.lineWidth = 0.8; g.strokeStyle = INK.ink; g.strokeRect(0, -s * 0.045, s * 0.5, s * 0.09);
-        g.restore();
-      }
+      wall(0, 0.22); wall(0.78, 1);
+      doorLeaf(g, x - s * 0.28, y, -Math.PI * 0.4, 0, s * 0.56, s * 0.1);
       break;
-    }
-    case 'secret': {
-      g.setLineDash([s * 0.14, s * 0.09]);
-      g.lineWidth = s * 0.1;
-      g.beginPath(); g.moveTo(x - h, y + s * 0.12); g.lineTo(x + h, y + s * 0.12); g.stroke();
-      g.setLineDash([]);
-      g.font = `italic bold ${Math.round(s * 0.55)}px ${SERIF}`;
-      g.textAlign = 'center';
-      g.fillStyle = INK.vermilion;
-      g.fillText('S', x, y - s * 0.1);
+    case 'locked':
+      wall(0, 0.22); wall(0.78, 1);
+      lockedDoor(g, x, y, true, s * 0.58, s * 0.17, -1);
       break;
-    }
+    case 'secret':
+      wall(0, 0.18); wall(0.82, 1);
+      secretDoor(g, x - s * 0.32, y + s * 0.12, x + s * 0.32, y + s * 0.12, { width: s * 0.2, cs: s * 0.95, side: [0, -0.62], seed: 3 });
+      break;
     case 'arch': {
-      wall(0, 0.25); wall(0.75, 1);
-      g.fillRect(x - s * 0.33, y - s * 0.12, s * 0.2, s * 0.24);
-      g.fillRect(x + s * 0.13, y - s * 0.12, s * 0.2, s * 0.24);
+      wall(0, 0.18); wall(0.82, 1);
+      for (const sx of [-1, 1]) stoneWall(g, x + sx * s * 0.27 - s * 0.1, y, x + sx * s * 0.27 + s * 0.1, y, { width: s * 0.3, seed: 6 + sx, faceW: 0.8 });
       g.setLineDash([2, 2]); g.lineWidth = 1;
-      g.beginPath(); g.moveTo(x - s * 0.16, y); g.lineTo(x + s * 0.16, y); g.stroke();
+      g.beginPath(); g.moveTo(x - s * 0.14, y); g.lineTo(x + s * 0.14, y); g.stroke();
+      g.setLineDash([]);
       break;
     }
     case 'rock': {

@@ -9,7 +9,6 @@ import { SheetView } from './SheetView.js';
 import { drawPartyArrow, partyConeCanvas, drawPin, drawMarker, PIN_KINDS, PIN_ORDER, glyphDataURL } from './glyphs.js';
 import { SERIF, wrapText, haloText } from './ornaments.js';
 import { INK, makeParchment } from './ink.js';
-import { drawFogHatch } from './fog.js';
 import { foundSecrets, notesFor, setNote, removeNote, exploredStats, applyDemoExploration } from './state.js';
 
 let locatorPaper = null;
@@ -887,11 +886,6 @@ export default class AutomapScene extends Scene {
     const X = (x) => SHEET.MX + x * cs;
     const Y = (y) => SHEET.MY + y * cs;
     const { game } = this.ctx;
-    // fog of war: calm pencil hatching at a constant on-screen density
-    if (this.sheet.fog) {
-      this._fogLayer ??= document.createElement('canvas');
-      drawFogHatch(g, this._fogLayer, this.sheet.fog, this.sheet.fogArea, SHEET, { dpr: this.sv.dpr });
-    }
     // hover
     if (this.hover && !this.editor) {
       const { x, y } = this.hover;
@@ -969,7 +963,8 @@ export default class AutomapScene extends Scene {
     for (const n of notes) {
       const fl = this.flash && this.flash.x === n.x && this.flash.y === n.y ? Math.max(0, 1 - (t - this.flash.t) / 1.2) : 0;
       const hov = this.hover && this.hover.x === n.x && this.hover.y === n.y;
-      drawPin(g, X(n.x) + cs * 0.72, Y(n.y) + cs * 0.3, cs * (0.66 + (hov ? 0.08 : 0) + fl * 0.2), n.kind, { lift: hov ? cs * 0.04 : 0 });
+      const pk = Math.max(0.75, this.sv.zoom ** -0.45);
+      drawPin(g, X(n.x) + cs * 0.72, Y(n.y) + cs * 0.3, cs * pk * (0.74 + (hov ? 0.08 : 0) + fl * 0.2), n.kind, { lift: hov ? cs * 0.04 : 0 });
     }
   }
 
@@ -988,7 +983,14 @@ export default class AutomapScene extends Scene {
     const obs = [...(this.sheet.markerSpots ?? [])];
     const walls = this.sheet.wallRects ?? [];
     for (const n of notesFor(game, m.id)) obs.push([X(n.x) + cs * 0.36, Y(n.y) - cs * 0.06, cs * 0.72, cs * 0.72]);
-    if (this.isHome) obs.push([X(game.location.x) - cs * 0.2, Y(game.location.y) - cs * 0.2, cs * 1.4, cs * 1.4]);
+    // the party token's full ring (it grows a little when zoomed out) is a hard keep-out
+    const hard = [...walls];
+    if (this.isHome) {
+      const hr = cs * Math.max(0.6, this.sv.zoom ** -0.6) * 0.98;
+      const px = X(game.location.x) + cs / 2;
+      const py = Y(game.location.y) + cs / 2;
+      hard.push([px - hr, py - hr, hr * 2, hr * 2]);
+    }
     const pad = 12;
     const vr = this.viewRect;
     const [vx0, vy0] = this.sv.screenToUnits(vr.x + pad, vr.y + pad);
@@ -1030,36 +1032,50 @@ export default class AutomapScene extends Scene {
         zy1 = Y(Math.max(...home.map((c) => c[1])) + 1);
       }
       const zw = (zx1 - zx0) / cs;
-      const base = Math.min(cs * 0.42, Math.max(cs * 0.3, (zw * cs * 0.92) / 7));
-      const fs = Math.max(base * zoom ** -0.42, 17 / this.sv.scaleAt());
-      // district names in the surveyor's spaced capitals, inked in sepia
-      const caps = fs * 0.8;
+      const base0 = Math.min(cs * 0.42, Math.max(cs * 0.3, (zw * cs * 0.92) / 7));
+      const fs0 = Math.max(base0 * zoom ** -0.42, 17 / this.sv.scaleAt());
+      const name = z.name.toUpperCase();
+      let best = null;
+      // try full size first; shrink only when every placement would touch a wall or the party
+      for (const shrink of [1, 0.86, 0.74]) {
+        const fs = fs0 * shrink;
+        const caps = fs * 0.8;
+        g.font = `bold ${caps.toFixed(2)}px ${SERIF}`;
+        g.letterSpacing = `${(caps * 0.16).toFixed(2)}px`;
+        const lh = caps * 1.3;
+        const options = [1, 2, 3].map((n) => balancedLines(g, name, n)).filter((o, i, a) => i === 0 || o.length > a[i - 1].length);
+        for (const [wi, lines] of options.entries()) {
+          const lw = Math.max(...lines.map((l) => g.measureText(l).width));
+          const bh = lines.length * lh;
+          const tooWide = Math.max(0, lw - (zx1 - zx0) * 0.94) / cs;
+          for (const fx of [0, -0.3, 0.3, -0.6, 0.6]) {
+            for (const fy of [0, -0.35, 0.35, -0.7, 0.7, -1.15, 1.15, -1.6, 1.6]) {
+              const cx = clamp((zx0 + zx1) / 2 + fx * (zx1 - zx0) * 0.5, bx0 + lw / 2, bx1 - lw / 2);
+              const cy = clamp((zy0 + zy1) / 2 + fy * Math.max(zy1 - zy0, cs * 1.2) * 0.5, by0 + bh / 2, by1 - bh / 2);
+              const box = [cx - lw / 2 - caps * 0.2, cy - bh / 2 + caps * 0.12, lw + caps * 0.4, bh - caps * 0.24];
+              const area = box[2] * box[3];
+              let score = Math.abs(fx) * 0.6 + Math.abs(fy) * 0.5 + wi * 0.6 + tooWide * 0.45 + (1 - shrink) * 6;
+              for (const o of obs) score += (overlap(box, o) / area) * 12;
+              for (const o of placed) score += (overlap(box, o) / area) * 12;
+              for (const o of hard) {
+                const ov = overlap(box, o);
+                if (ov > 0) score += 30 + (ov / area) * 60;
+              }
+              if (cx < zx0 || cx > zx1 || cy < zy0 || cy > zy1) score += 1.5;
+              const ccx = Math.floor((cx - SHEET.MX) / cs);
+              const ccy = Math.floor((cy - SHEET.MY) / cs);
+              if (onHome && !onHome.has(`${ccx},${ccy}`)) score += 2;
+              if (!seen(ccx, ccy)) score += 4;
+              if (!best || score < best.score) best = { cx, cy, box, score, lines, bh, lh, caps };
+            }
+          }
+        }
+        if (best.score < 30) break;
+      }
+      const caps = best.caps;
+      const lh = best.lh;
       g.font = `bold ${caps.toFixed(2)}px ${SERIF}`;
       g.letterSpacing = `${(caps * 0.16).toFixed(2)}px`;
-      const lh = caps * 1.3;
-      let best = null;
-      // try the name on one line and balanced over two or three; keep the placement that
-      // sits inside its building or district, clear of walls, pins, markers and other names
-      const name = z.name.toUpperCase();
-      const options = [1, 2, 3].map((n) => balancedLines(g, name, n)).filter((o, i, a) => i === 0 || o.length > a[i - 1].length);
-      for (const [wi, lines] of options.entries()) {
-        const lw = Math.max(...lines.map((l) => g.measureText(l).width));
-        const bh = lines.length * lh;
-        const tooWide = Math.max(0, lw - (zx1 - zx0) * 0.94) / cs;
-        for (const [fx, fy] of [[0, 0], [0, -0.35], [0, 0.35], [0, -0.7], [0, 0.7], [-0.3, 0], [0.3, 0], [0, -1.15], [0, 1.15]]) {
-          const cx = clamp((zx0 + zx1) / 2 + fx * (zx1 - zx0) * 0.5, bx0 + lw / 2, bx1 - lw / 2);
-          const cy = clamp((zy0 + zy1) / 2 + fy * Math.max(zy1 - zy0, cs * 1.2) * 0.5, by0 + bh / 2, by1 - bh / 2);
-          const box = [cx - lw / 2 - fs * 0.15, cy - bh / 2, lw + fs * 0.3, bh];
-          const area = box[2] * box[3];
-          let score = Math.abs(fx) * 0.6 + Math.abs(fy) * 0.5 + wi * 0.6 + tooWide * 0.45;
-          for (const o of obs) score += (overlap(box, o) / area) * 12;
-          for (const o of placed) score += (overlap(box, o) / area) * 12;
-          for (const o of walls) if (overlap(box, o) > 0) score += 0.6;
-          if (cx < zx0 || cx > zx1 || cy < zy0 || cy > zy1) score += 1.5;
-          if (onHome && !onHome.has(`${Math.floor((cx - SHEET.MX) / cs)},${Math.floor((cy - SHEET.MY) / cs)}`)) score += 2;
-          if (!best || score < best.score) best = { cx, cy, box, score, lines, bh };
-        }
-      }
       const { lines, bh } = best;
       placed.push(best.box);
       lines.forEach((l, i) => haloText(g, l, best.cx + caps * 0.1, best.cy - bh / 2 + lh * (i + 0.5), { color: '#3e1a0c', width: caps * 0.5, halo: 'rgba(238,226,194,0.95)' }));

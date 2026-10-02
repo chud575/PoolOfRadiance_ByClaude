@@ -116,86 +116,113 @@ export function partyConeCanvas() {
   return c;
 }
 
-/** Pin kinds for player notes. */
+/** Pin kinds for player notes (muted illuminator's pigments). */
 export const PIN_KINDS = {
-  note: { label: 'Note', color: '#a8323a', mark: 'quill' },
-  danger: { label: 'Danger', color: '#3a2a22', mark: 'skull' },
-  treasure: { label: 'Treasure', color: '#b8862a', mark: 'gem' },
-  quest: { label: 'Quest', color: '#2c4a8c', mark: 'star' },
+  note: { label: 'Note', color: '#a8323a', wash: [158, 62, 50], mark: 'quill' },
+  danger: { label: 'Danger', color: '#3a2a22', wash: [70, 58, 54], mark: 'skull' },
+  treasure: { label: 'Treasure', color: '#b8862a', wash: [196, 146, 58], mark: 'gem' },
+  quest: { label: 'Quest', color: '#2c4a8c', wash: [58, 86, 146], mark: 'star' },
 };
 export const PIN_ORDER = ['note', 'danger', 'treasure', 'quest'];
 
-/** Wax-seal pin. */
+/**
+ * A note pin as the cartographer paints it: a roundel of paper ringed with a
+ * watercolour band in the kind's pigment, ruled with two ink circles, the
+ * kind's emblem drawn in pen and hatched. Flat, matte, in the sheet's own ink.
+ */
 export function drawPin(g, x, y, s, kind = 'note', { lift = 0 } = {}) {
   const k = PIN_KINDS[kind] ?? PIN_KINDS.note;
+  const w = k.wash;
   withTransform(g, x, y - lift, s, (g) => {
-    g.fillStyle = 'rgba(20,8,0,0.35)';
-    g.beginPath(); g.ellipse(6, 10 + lift * 100 / s, 34, 30, 0, 0, Math.PI * 2); g.fill();
-    // blobby seal edge
-    g.beginPath();
-    for (let i = 0; i <= 24; i++) {
-      const a = (i / 24) * Math.PI * 2;
-      const r = 36 + Math.sin(i * 2.7) * 2.5 + Math.cos(i * 5.1) * 1.8;
-      const px = Math.cos(a) * r;
-      const py = Math.sin(a) * r;
-      if (i === 0) g.moveTo(px, py); else g.lineTo(px, py);
-    }
-    g.closePath();
-    const gr = g.createRadialGradient(-12, -14, 4, 0, 0, 40);
-    gr.addColorStop(0, shade(k.color, 1.6));
-    gr.addColorStop(0.55, k.color);
-    gr.addColorStop(1, shade(k.color, 0.55));
-    g.fillStyle = gr;
+    const ring = (R, wob) => {
+      g.beginPath();
+      for (let i = 0; i <= 28; i++) {
+        const a = (i / 28) * Math.PI * 2;
+        const r = R + Math.sin(i * 2.7 + R) * wob + Math.cos(i * 5.1) * wob * 0.6;
+        if (i === 0) g.moveTo(Math.cos(a) * r, Math.sin(a) * r); else g.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+      }
+      g.closePath();
+    };
+    // a pale wash shadow, as if the roundel were pasted on
+    g.save(); g.translate(3, 4); ring(36, 1.2); g.fillStyle = `rgba(70,40,18,${(0.14 + lift * 0.02).toFixed(3)})`; g.fill(); g.restore();
+    ring(35, 1.4);
+    g.fillStyle = 'rgba(244,234,208,0.97)';
     g.fill();
-    g.strokeStyle = 'rgba(0,0,0,0.35)';
-    g.lineWidth = 2;
+    // the pigment band, pooling darker toward its outer edge
+    const gr = g.createRadialGradient(0, 0, 20, 0, 0, 35);
+    gr.addColorStop(0, `rgba(${w[0]},${w[1]},${w[2]},0.12)`);
+    gr.addColorStop(0.62, `rgba(${w[0]},${w[1]},${w[2]},0.88)`);
+    gr.addColorStop(1, `rgba(${w[0] * 0.72 | 0},${w[1] * 0.72 | 0},${w[2] * 0.72 | 0},0.97)`);
+    g.fillStyle = gr;
+    ring(34, 1.4);
+    g.fill();
+    g.beginPath(); g.arc(0, 0, 21, 0, Math.PI * 2);
+    g.fillStyle = 'rgba(246,238,214,0.95)';
+    g.fill();
+    g.strokeStyle = INK.ink;
+    g.lineWidth = 2.6;
+    ring(35, 1.4);
     g.stroke();
-    // inner ring
-    g.strokeStyle = shade(k.color, 0.6);
-    g.lineWidth = 3;
-    g.beginPath(); g.arc(0, 0, 25, 0, Math.PI * 2); g.stroke();
-    g.strokeStyle = 'rgba(255,240,210,0.35)';
-    g.lineWidth = 1.5;
-    g.beginPath(); g.arc(-1, -1, 25, Math.PI * 0.9, Math.PI * 1.7); g.stroke();
-    drawMark(g, k.mark, shade(k.color, 0.45), 'rgba(255,235,200,0.35)');
+    g.lineWidth = 1.3;
+    g.beginPath(); g.arc(0, 0, 21, 0, Math.PI * 2); g.stroke();
+    drawMark(g, k.mark, w);
   });
 }
 
-function drawMark(g, mark, dark, light) {
+function drawMark(g, mark, w) {
   g.save();
-  const both = (fn) => {
-    g.save(); g.translate(-1, -1); g.fillStyle = light; g.strokeStyle = light; fn(); g.restore();
-    g.save(); g.fillStyle = dark; g.strokeStyle = dark; fn(); g.restore();
-  };
-  g.lineWidth = 4;
   g.lineCap = 'round';
+  g.lineJoin = 'round';
+  g.strokeStyle = INK.ink;
+  const tint = `rgba(${w[0]},${w[1]},${w[2]},0.55)`;
+  const hatch = (clip, a = 0.8) => {
+    g.save();
+    clip();
+    g.clip();
+    g.lineWidth = 0.9;
+    g.globalAlpha = 0.6;
+    g.beginPath();
+    for (let i = -24; i < 24; i += 3.2) { g.moveTo(i, -20); g.lineTo(i + 20 * a, 20); }
+    g.stroke();
+    g.restore();
+  };
   if (mark === 'quill') {
-    both(() => {
-      g.beginPath(); g.moveTo(-12, 14); g.quadraticCurveTo(0, -4, 14, -16); g.quadraticCurveTo(4, 2, -12, 14); g.fill();
-      g.beginPath(); g.moveTo(-14, 16); g.lineTo(-4, 6); g.stroke();
-    });
+    const vane = () => { g.beginPath(); g.moveTo(-11, 15); g.bezierCurveTo(-6, -2, 4, -12, 15, -17); g.bezierCurveTo(8, -4, 2, 6, -11, 15); g.closePath(); };
+    vane(); g.fillStyle = tint; g.fill();
+    g.save(); g.translate(0, 0); hatch(() => { g.beginPath(); g.moveTo(-11, 15); g.bezierCurveTo(-4, 4, 6, -6, 15, -17); g.lineTo(15, 20); g.lineTo(-11, 20); g.closePath(); }); g.restore();
+    vane(); g.lineWidth = 2.2; g.stroke();
+    g.lineWidth = 1.6;
+    g.beginPath(); g.moveTo(-15, 19); g.lineTo(-11, 15); g.quadraticCurveTo(0, 2, 13, -15); g.stroke();
   } else if (mark === 'skull') {
-    both(() => {
-      g.beginPath(); g.arc(0, -3, 13, Math.PI * 0.9, Math.PI * 2.1); g.lineTo(8, 13); g.lineTo(-8, 13); g.closePath(); g.fill();
-    });
-    g.fillStyle = 'rgba(255,230,200,0.55)';
-    g.beginPath(); g.arc(-5, -2, 3.5, 0, Math.PI * 2); g.arc(5, -2, 3.5, 0, Math.PI * 2); g.fill();
+    const cran = () => { g.beginPath(); g.arc(0, -3, 12.5, Math.PI * 0.82, Math.PI * 2.18); g.lineTo(7, 9); g.lineTo(6, 14); g.lineTo(-6, 14); g.lineTo(-7, 9); g.closePath(); };
+    cran(); g.fillStyle = 'rgba(232,220,196,0.95)'; g.fill();
+    hatch(() => { g.beginPath(); g.rect(1, -16, 14, 32); }, 0.5);
+    cran(); g.lineWidth = 2.2; g.stroke();
+    g.fillStyle = INK.ink;
+    g.beginPath(); g.ellipse(-5, -2, 3.6, 4.2, 0.2, 0, Math.PI * 2); g.ellipse(5, -2, 3.6, 4.2, -0.2, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.moveTo(0, 3); g.lineTo(-2, 7); g.lineTo(2, 7); g.closePath(); g.fill();
+    g.lineWidth = 1.2;
+    g.beginPath(); for (let i = -1; i <= 1; i++) { g.moveTo(i * 3, 10); g.lineTo(i * 3, 14); } g.stroke();
   } else if (mark === 'gem') {
-    both(() => {
-      g.beginPath(); g.moveTo(-13, -5); g.lineTo(-6, -13); g.lineTo(6, -13); g.lineTo(13, -5); g.lineTo(0, 14); g.closePath(); g.fill();
-    });
-    g.strokeStyle = 'rgba(255,240,210,0.4)'; g.lineWidth = 1.5;
-    g.beginPath(); g.moveTo(-13, -5); g.lineTo(13, -5); g.moveTo(-5, -5); g.lineTo(0, 14); g.lineTo(5, -5); g.stroke();
+    const gem = () => { g.beginPath(); g.moveTo(-14, -5); g.lineTo(-7, -13); g.lineTo(7, -13); g.lineTo(14, -5); g.lineTo(0, 15); g.closePath(); };
+    gem(); g.fillStyle = tint; g.fill();
+    hatch(() => { g.beginPath(); g.moveTo(0, -5); g.lineTo(14, -5); g.lineTo(0, 15); g.closePath(); });
+    gem(); g.lineWidth = 2.2; g.stroke();
+    g.lineWidth = 1.1;
+    g.beginPath(); g.moveTo(-14, -5); g.lineTo(14, -5); g.moveTo(-7, -13); g.lineTo(-4, -5); g.lineTo(0, 15); g.lineTo(4, -5); g.lineTo(7, -13); g.stroke();
   } else {
-    both(() => {
+    const star = () => {
       g.beginPath();
       for (let i = 0; i < 10; i++) {
         const a = -Math.PI / 2 + (i / 10) * Math.PI * 2;
-        const r = i % 2 ? 6 : 15;
+        const r = i % 2 ? 6.5 : 16;
         if (i === 0) g.moveTo(Math.cos(a) * r, Math.sin(a) * r); else g.lineTo(Math.cos(a) * r, Math.sin(a) * r);
       }
-      g.closePath(); g.fill();
-    });
+      g.closePath();
+    };
+    star(); g.fillStyle = tint; g.fill();
+    hatch(() => { g.beginPath(); g.rect(0, -18, 18, 36); });
+    star(); g.lineWidth = 2.2; g.stroke();
   }
   g.restore();
 }
@@ -225,7 +252,7 @@ export function drawMarker(g, kind, x, y, s, { color = INK.ink, accent = INK.ver
       g.beginPath(); g.moveTo(-26, -24); g.lineTo(26, -24); g.stroke();
       g.lineWidth = 3;
       g.beginPath(); g.moveTo(-16, -24); g.lineTo(-16, -14); g.moveTo(16, -24); g.lineTo(16, -14); g.stroke();
-      g.fillStyle = 'rgba(160,110,50,0.55)';
+      g.fillStyle = 'rgba(150,112,70,0.45)';
       g.fillRect(-24, -14, 48, 28);
       g.lineWidth = 4;
       g.strokeRect(-24, -14, 48, 28);
@@ -273,12 +300,14 @@ export function drawMarker(g, kind, x, y, s, { color = INK.ink, accent = INK.ver
       break;
     }
     case 'treasure': {
-      g.fillStyle = 'rgba(170,110,40,0.75)';
+      g.fillStyle = 'rgba(150,104,60,0.6)';
       g.beginPath(); g.rect(-24, -6, 48, 26); g.fill();
       g.lineWidth = 4; g.stroke();
+      g.save(); g.beginPath(); g.rect(4, -6, 20, 26); g.clip(); g.lineWidth = 1.4; g.globalAlpha = 0.6;
+      g.beginPath(); for (let i = -10; i < 30; i += 5) { g.moveTo(i, -6); g.lineTo(i + 14, 20); } g.stroke(); g.restore();
       g.beginPath(); g.moveTo(-24, -6); g.quadraticCurveTo(0, -30, 24, -6); g.closePath();
-      g.fillStyle = 'rgba(200,140,60,0.75)'; g.fill(); g.stroke();
-      g.fillStyle = INK.gold;
+      g.fillStyle = 'rgba(176,130,76,0.55)'; g.fill(); g.stroke();
+      g.fillStyle = 'rgba(214,180,110,0.9)';
       g.beginPath(); g.rect(-5, -2, 10, 12); g.fill();
       g.lineWidth = 2; g.stroke();
       break;

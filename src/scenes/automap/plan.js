@@ -10,7 +10,12 @@ import { INK, prng } from './ink.js';
  */
 
 const DV = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] };
-const PAPER = 'rgba(240,226,192,0.92)';
+const PAPER = 'rgba(238,226,198,0.9)';
+// one muted ink-and-wash palette for every plan symbol
+const WOOD = 'rgba(150,110,70,0.5)';
+const WOOD_D = 'rgba(122,86,54,0.55)';
+const STONE = 'rgba(196,186,166,0.7)';
+const LINEN = 'rgba(240,232,212,0.92)';
 
 /** What kind of place a zone name describes. */
 export function themeOf(name = '') {
@@ -157,11 +162,26 @@ function outline(g, lw = 0.8) {
   g.stroke();
 }
 
+/** A plan symbol's body: muted wash, hatched on its shadow (south-east) side, inked outline. */
 function box(g, x, y, w, h, fill = PAPER) {
   g.beginPath();
   g.rect(x, y, w, h);
   g.fillStyle = fill;
   g.fill();
+  if (w > 3 && h > 3) {
+    g.save();
+    g.beginPath();
+    g.rect(x + w * 0.55, y, w * 0.45, h);
+    g.clip();
+    g.strokeStyle = 'rgba(43,26,13,0.38)';
+    g.lineWidth = 0.4;
+    g.beginPath();
+    for (let t = -h; t < w + h; t += 1.5) { g.moveTo(x + t, y); g.lineTo(x + t + h, y + h); }
+    g.stroke();
+    g.restore();
+  }
+  g.beginPath();
+  g.rect(x, y, w, h);
   outline(g);
 }
 
@@ -169,10 +189,10 @@ const SYMBOLS = {
   hearth(g, cs) {
     const w = cs * 0.62;
     const d = cs * 0.26;
-    box(g, -w / 2, 0, w, d, 'rgba(206,190,160,0.95)');
+    box(g, -w / 2, 0, w, d, STONE);
     // firebox, soot-hatched, with a glowing heart
     g.beginPath(); g.rect(-w * 0.3, 0, w * 0.6, d * 0.62); g.fillStyle = 'rgba(40,24,14,0.85)'; g.fill();
-    g.fillStyle = 'rgba(200,90,40,0.75)';
+    g.fillStyle = 'rgba(184,96,52,0.55)';
     g.beginPath(); g.arc(0, d * 0.32, d * 0.16, 0, Math.PI * 2); g.fill();
     g.strokeStyle = INK.ink; g.lineWidth = 0.5;
     for (let i = -2; i <= 2; i++) { g.beginPath(); g.moveTo(-w / 2 + 2, d * (0.2 + (i + 2) * 0.15)); g.lineTo(-w * 0.32, d * (0.2 + (i + 2) * 0.15)); g.moveTo(w * 0.32, d * (0.2 + (i + 2) * 0.15)); g.lineTo(w / 2 - 2, d * (0.2 + (i + 2) * 0.15)); g.stroke(); }
@@ -181,28 +201,28 @@ const SYMBOLS = {
     const w = cs * 0.4;
     const L = cs * 0.66;
     box(g, -w / 2, 0.5, w, L);
-    box(g, -w * 0.38, cs * 0.04, w * 0.76, cs * 0.12, 'rgba(250,244,226,0.95)');
+    box(g, -w * 0.38, cs * 0.04, w * 0.76, cs * 0.12, LINEN);
     // the blanket turned down
-    g.beginPath(); g.rect(-w / 2, cs * 0.24, w, L - cs * 0.24 + 0.5); g.fillStyle = 'rgba(150,70,52,0.55)'; g.fill(); outline(g, 0.6);
+    g.beginPath(); g.rect(-w / 2, cs * 0.24, w, L - cs * 0.24 + 0.5); g.fillStyle = 'rgba(146,72,56,0.32)'; g.fill(); outline(g, 0.6);
     g.beginPath(); g.moveTo(-w / 2, cs * 0.3); g.lineTo(w / 2, cs * 0.3); outline(g, 0.5);
   },
   chest(g, cs) {
     const w = cs * 0.34;
     const d = cs * 0.2;
-    box(g, -w / 2, cs * 0.03, w, d, 'rgba(176,122,66,0.85)');
+    box(g, -w / 2, cs * 0.03, w, d, WOOD_D);
     g.beginPath(); g.moveTo(-w / 2, cs * 0.03 + d * 0.5); g.lineTo(w / 2, cs * 0.03 + d * 0.5); outline(g, 0.5);
     g.fillStyle = INK.goldHi; g.beginPath(); g.arc(0, cs * 0.03 + d, 1.4, 0, Math.PI * 2); g.fill(); outline(g, 0.5);
   },
   table(g, cs, r) {
     const round = r() < 0.5;
     if (round) {
-      g.beginPath(); g.arc(0, cs * 0.5, cs * 0.17, 0, Math.PI * 2); g.fillStyle = 'rgba(190,140,84,0.8)'; g.fill(); outline(g);
+      g.beginPath(); g.arc(0, cs * 0.5, cs * 0.17, 0, Math.PI * 2); g.fillStyle = WOOD; g.fill(); outline(g);
       for (let i = 0; i < 4; i++) {
         const a = i * Math.PI / 2 + 0.6 + r() * 0.3;
         g.beginPath(); g.arc(Math.cos(a) * cs * 0.28, cs * 0.5 + Math.sin(a) * cs * 0.28, cs * 0.055, 0, Math.PI * 2); g.fillStyle = PAPER; g.fill(); outline(g, 0.6);
       }
     } else {
-      box(g, -cs * 0.24, cs * 0.36, cs * 0.48, cs * 0.26, 'rgba(190,140,84,0.8)');
+      box(g, -cs * 0.24, cs * 0.36, cs * 0.48, cs * 0.26, WOOD);
       for (const sx of [-0.14, 0.14]) for (const sy of [0.26, 0.72]) box(g, sx * cs - cs * 0.05, sy * cs - cs * 0.04, cs * 0.1, cs * 0.08);
     }
   },
@@ -211,7 +231,7 @@ const SYMBOLS = {
     for (let i = 0; i < n; i++) {
       const x = (i - (n - 1) / 2) * cs * 0.2;
       const y = cs * (0.13 + (i % 2) * 0.12);
-      g.beginPath(); g.arc(x, y, cs * 0.095, 0, Math.PI * 2); g.fillStyle = 'rgba(170,112,60,0.85)'; g.fill(); outline(g, 0.7);
+      g.beginPath(); g.arc(x, y, cs * 0.095, 0, Math.PI * 2); g.fillStyle = WOOD_D; g.fill(); outline(g, 0.7);
       g.beginPath(); g.arc(x, y, cs * 0.055, 0, Math.PI * 2); outline(g, 0.45);
     }
   },
@@ -222,7 +242,7 @@ const SYMBOLS = {
       const x = (i - (n - 1) / 2) * cs * 0.19 + (r() - 0.5) * 2;
       const y = cs * (0.04 + (i % 2) * 0.15);
       g.save(); g.translate(x, y + s / 2); g.rotate((r() - 0.5) * 0.3);
-      box(g, -s / 2, -s / 2, s, s, 'rgba(206,166,104,0.85)');
+      box(g, -s / 2, -s / 2, s, s, WOOD);
       g.beginPath(); g.moveTo(-s / 2, -s / 2); g.lineTo(s / 2, s / 2); g.moveTo(s / 2, -s / 2); g.lineTo(-s / 2, s / 2); outline(g, 0.45);
       g.restore();
     }
@@ -231,35 +251,35 @@ const SYMBOLS = {
     for (let i = 0; i < 3; i++) {
       const x = (i - 1) * cs * 0.16;
       const y = cs * (0.12 + (i % 2) * 0.08);
-      g.beginPath(); g.ellipse(x, y, cs * 0.08, cs * 0.1, (r() - 0.5) * 0.8, 0, Math.PI * 2); g.fillStyle = 'rgba(214,190,140,0.9)'; g.fill(); outline(g, 0.6);
+      g.beginPath(); g.ellipse(x, y, cs * 0.08, cs * 0.1, (r() - 0.5) * 0.8, 0, Math.PI * 2); g.fillStyle = 'rgba(206,184,140,0.6)'; g.fill(); outline(g, 0.6);
     }
   },
   shelves(g, cs) {
     const w = cs * 0.84;
-    box(g, -w / 2, 0.5, w, cs * 0.12, 'rgba(176,122,66,0.75)');
+    box(g, -w / 2, 0.5, w, cs * 0.12, WOOD);
     g.beginPath();
     for (let i = 1; i < 8; i++) { g.moveTo(-w / 2 + (i / 8) * w, 0.5); g.lineTo(-w / 2 + (i / 8) * w, cs * 0.12 + 0.5); }
     outline(g, 0.45);
   },
   counter(g, cs) {
     const w = cs * 0.9;
-    box(g, -w / 2, cs * 0.22, w, cs * 0.13, 'rgba(176,122,66,0.85)');
-    box(g, -cs * 0.08, cs * 0.04, cs * 0.16, cs * 0.12, 'rgba(120,110,100,0.85)');
+    box(g, -w / 2, cs * 0.22, w, cs * 0.13, WOOD_D);
+    box(g, -cs * 0.08, cs * 0.04, cs * 0.16, cs * 0.12, 'rgba(120,110,100,0.55)');
     g.fillStyle = INK.goldHi; g.beginPath(); g.arc(0, cs * 0.1, 1.5, 0, Math.PI * 2); g.fill();
   },
   desk(g, cs) {
-    box(g, -cs * 0.22, cs * 0.06, cs * 0.44, cs * 0.2, 'rgba(176,122,66,0.85)');
+    box(g, -cs * 0.22, cs * 0.06, cs * 0.44, cs * 0.2, WOOD_D);
     box(g, -cs * 0.06, cs * 0.32, cs * 0.12, cs * 0.1);
     // an open ledger
-    g.beginPath(); g.rect(-cs * 0.1, cs * 0.1, cs * 0.2, cs * 0.11); g.fillStyle = 'rgba(250,244,226,0.95)'; g.fill(); outline(g, 0.45);
+    g.beginPath(); g.rect(-cs * 0.1, cs * 0.1, cs * 0.2, cs * 0.11); g.fillStyle = LINEN; g.fill(); outline(g, 0.45);
     g.beginPath(); g.moveTo(0, cs * 0.1); g.lineTo(0, cs * 0.21); outline(g, 0.45);
   },
   altar(g, cs) {
     const w = cs * 0.7;
     // two steps and the altar stone, with a candle either side
-    box(g, -w / 2, 0.5, w, cs * 0.42, 'rgba(214,204,184,0.9)');
-    box(g, -w * 0.4, 0.5, w * 0.8, cs * 0.3, 'rgba(226,216,196,0.95)');
-    box(g, -w * 0.28, cs * 0.04, w * 0.56, cs * 0.18, 'rgba(236,228,210,0.98)');
+    box(g, -w / 2, 0.5, w, cs * 0.42, STONE);
+    box(g, -w * 0.4, 0.5, w * 0.8, cs * 0.3, 'rgba(214,206,188,0.75)');
+    box(g, -w * 0.28, cs * 0.04, w * 0.56, cs * 0.18, 'rgba(230,222,204,0.85)');
     g.save(); g.beginPath(); g.rect(-w * 0.28, cs * 0.04, w * 0.56, cs * 0.18); g.clip();
     g.strokeStyle = 'rgba(43,26,13,0.5)'; g.lineWidth = 0.45;
     for (let i = -6; i < 8; i++) { g.beginPath(); g.moveTo(i * 3, cs * 0.04); g.lineTo(i * 3 + cs * 0.18, cs * 0.22); g.stroke(); }
@@ -270,12 +290,12 @@ const SYMBOLS = {
   },
   pews(g, cs) {
     for (let i = 0; i < 3; i++) {
-      for (const s of [-1, 1]) box(g, s > 0 ? cs * 0.06 : -cs * 0.42, cs * (0.12 + i * 0.27), cs * 0.36, cs * 0.08, 'rgba(176,122,66,0.75)');
+      for (const s of [-1, 1]) box(g, s > 0 ? cs * 0.06 : -cs * 0.42, cs * (0.12 + i * 0.27), cs * 0.36, cs * 0.08, WOOD);
     }
   },
   brazier(g, cs) {
-    g.beginPath(); g.arc(0, cs * 0.2, cs * 0.1, 0, Math.PI * 2); g.fillStyle = 'rgba(120,110,100,0.9)'; g.fill(); outline(g);
-    g.fillStyle = 'rgba(220,110,40,0.8)';
+    g.beginPath(); g.arc(0, cs * 0.2, cs * 0.1, 0, Math.PI * 2); g.fillStyle = 'rgba(120,110,100,0.6)'; g.fill(); outline(g);
+    g.fillStyle = 'rgba(190,104,56,0.6)';
     g.beginPath();
     for (let i = 0; i < 10; i++) {
       const a = (i / 10) * Math.PI * 2;
@@ -286,26 +306,26 @@ const SYMBOLS = {
   },
   rack(g, cs) {
     const w = cs * 0.7;
-    box(g, -w / 2, 0.5, w, cs * 0.07, 'rgba(176,122,66,0.75)');
+    box(g, -w / 2, 0.5, w, cs * 0.07, WOOD);
     g.strokeStyle = INK.ink; g.lineWidth = 0.7;
     for (let i = 0; i < 5; i++) { const x = -w / 2 + (i + 0.5) * (w / 5); g.beginPath(); g.moveTo(x, 0.5); g.lineTo(x, cs * 0.26); g.stroke(); g.beginPath(); g.moveTo(x - 1.5, cs * 0.24); g.lineTo(x, cs * 0.29); g.lineTo(x + 1.5, cs * 0.24); g.stroke(); }
   },
   lectern(g, cs) {
     g.save(); g.translate(0, cs * 0.45); g.rotate(0.3);
-    box(g, -cs * 0.1, -cs * 0.07, cs * 0.2, cs * 0.14, 'rgba(176,122,66,0.85)');
-    g.beginPath(); g.rect(-cs * 0.08, -cs * 0.05, cs * 0.16, cs * 0.1); g.fillStyle = 'rgba(250,244,226,0.95)'; g.fill(); outline(g, 0.45);
+    box(g, -cs * 0.1, -cs * 0.07, cs * 0.2, cs * 0.14, WOOD_D);
+    g.beginPath(); g.rect(-cs * 0.08, -cs * 0.05, cs * 0.16, cs * 0.1); g.fillStyle = LINEN; g.fill(); outline(g, 0.45);
     g.restore();
   },
   font(g, cs) {
-    g.beginPath(); g.arc(0, cs * 0.5, cs * 0.14, 0, Math.PI * 2); g.fillStyle = 'rgba(214,204,184,0.95)'; g.fill(); outline(g);
-    g.beginPath(); g.arc(0, cs * 0.5, cs * 0.09, 0, Math.PI * 2); g.fillStyle = 'rgba(80,120,160,0.55)'; g.fill(); outline(g, 0.5);
+    g.beginPath(); g.arc(0, cs * 0.5, cs * 0.14, 0, Math.PI * 2); g.fillStyle = STONE; g.fill(); outline(g);
+    g.beginPath(); g.arc(0, cs * 0.5, cs * 0.09, 0, Math.PI * 2); g.fillStyle = 'rgba(80,110,140,0.4)'; g.fill(); outline(g, 0.5);
   },
   debris(g, cs, r) {
     // a broken beam and scattered stones
     g.save(); g.translate(0, cs * 0.4); g.rotate((r() - 0.5) * 1.6);
-    box(g, -cs * 0.3, -cs * 0.035, cs * 0.6, cs * 0.07, 'rgba(120,80,44,0.8)');
+    box(g, -cs * 0.3, -cs * 0.035, cs * 0.6, cs * 0.07, WOOD_D);
     g.restore();
-    g.fillStyle = 'rgba(214,196,160,0.9)';
+    g.fillStyle = STONE;
     for (let i = 0; i < 6; i++) { g.beginPath(); g.arc((r() - 0.5) * cs * 0.6, cs * (0.15 + r() * 0.6), cs * (0.02 + r() * 0.03), 0, Math.PI * 2); g.fill(); outline(g, 0.5); }
   },
 };
