@@ -31,7 +31,7 @@ const rig = (o = {}) => ({
 
 /** Render a 3D prop figure standing at (x, y) (its origin) with a contact shadow. */
 function prop3d(g, fig, x, y, ppu, lr, o = {}) {
-  const r = renderFigure(fig, { ppu, yaw: o.yaw ?? 0, pitch: o.pitch ?? 0.16, rig: lr, ink: o.ink ?? 0.55, ss: 2, haze: o.haze ?? 0, hazeColor: o.hazeColor });
+  const r = renderFigure(fig, { ppu, yaw: o.yaw ?? 0, pitch: o.pitch ?? 0.16, rig: lr, ink: o.ink ?? 0.55, ss: o.ss ?? 2, haze: o.haze ?? 0, hazeColor: o.hazeColor });
   if (!r) return null;
   if (o.shadow !== false) contactShadow(g, x + (o.shadowDx ?? 0), y + 2, (o.shadowW ?? 0.3) * ppu, (o.shadowW ?? 0.3) * ppu * 0.16, o.shadowA ?? 0.6);
   g.drawImage(r.canvas, x - r.ox, y - r.oy);
@@ -587,29 +587,32 @@ function chandelier(g, x, y, r, lights) {
 
 /** Broken pew (painted) seen from the aisle. */
 function pew(g, x, y, w, s, { broken = 0, side = 1, seed = 1 } = {}) {
+  // a modelled oak pew: plank seat with a rounded front edge, a slatted back on posts, carved
+  // end boards with a scrolled top, wood grain and worn, lighter edges; broken ones snap short
   const R = rngOf(seed);
-  const h = 34 * s;
-  g.save();
-  contactShadow(g, x + w / 2, y + 2, w * 0.6, 8 * s, 0.6);
-  const x1 = broken ? x + w * (1 - broken * 0.5) : x + w;
-  g.fillStyle = linGrad(g, 0, y - h, 0, y, [[0, '#4a3018'], [0.15, '#2e1c0e'], [1, '#120a04']]);
-  if (broken) poly(g, [[x, y], [x, y - h], [x1, y - h], [x1 + 8 * s, y - h * 0.55], [x1 - 6 * s, y - h * 0.3], [x1 + 4 * s, y]]);
-  else poly(g, [[x, y], [x, y - h], [x + w, y - h], [x + w, y]]);
-  g.fill();
-  planks(g, x, y - h * 1.6, x1 - x, h * 0.55, { base: '#3a2414', width: h * 0.18, vertical: false, seed });
-  g.fillStyle = 'rgba(255,220,180,0.12)';
-  g.fillRect(x, y - h, x1 - x, 2 * s);
-  // end board
-  const ex = side > 0 ? x : x1 - 10 * s;
-  g.fillStyle = linGrad(g, ex, 0, ex + 10 * s, 0, [[0, '#5a3a1e'], [1, '#1a0e06']]);
-  g.beginPath();
-  g.moveTo(ex, y);
-  g.lineTo(ex, y - h * 1.75);
-  g.quadraticCurveTo(ex + 5 * s, y - h * 1.95, ex + 10 * s, y - h * 1.75);
-  g.lineTo(ex + 10 * s, y);
-  g.fill();
-  texture(g, x, y - h * 2, w, h * 2, { alpha: 0.3, cells: 24, seed: seed + R.int(1, 9) });
-  g.restore();
+  const f = new Figure();
+  const oak = mat('#4a2e16', { pattern: 'wood', scale: 0.01, rough: 0.7, spec: 0.12 });
+  const oakL = mat('#5e3c1e', { pattern: 'wood', scale: 0.01, rough: 0.6, spec: 0.16 });
+  const L = 0.8 * (broken ? 1 - broken * 0.45 : 1);
+  const x0 = -0.4; const x1 = x0 + L;
+  f.box([(x0 + x1) / 2, 0.2, 0], [L / 2, 0.012, 0.09], oakL, { group: null, bevel: 0.008 });
+  f.box([(x0 + x1) / 2, 0.19, 0.088], [L / 2, 0.02, 0.008], oak, { group: null, bevel: 0.006 });
+  for (let k = 0; k < 3; k++) f.box([(x0 + x1) / 2, 0.29 + k * 0.07, -0.085], [L / 2 - (broken && k === 2 ? 0.08 : 0), 0.024, 0.008], k % 2 ? oak : oakL, { group: null, bevel: 0.005, R: rotX(-0.12) });
+  for (const ex of [x0, broken ? null : x1]) {
+    if (ex == null) continue;
+    f.box([ex, 0.25, -0.01], [0.014, 0.25, 0.11], oak, { group: null, bevel: 0.008 });
+    f.ell([ex, 0.5, -0.04], [0.016, 0.045, 0.08], oak, { group: null });
+    f.box([ex + (ex < 0 ? 0.016 : -0.016), 0.3, 0.04], [0.003, 0.08, 0.04], oakL, { group: null, bevel: 0.002 }); // carved panel
+  }
+  if (broken) {
+    // the snapped end: splintered plank tips hanging down
+    for (let k = 0; k < 4; k++) f.cone([x1, 0.2, -0.06 + k * 0.04], [x1 + 0.02 + R() * 0.03, 0.16 - R() * 0.06, -0.06 + k * 0.04], 0.01, 0.002, oakL, { group: null });
+    f.box([x1 + 0.08, 0.02, 0.05], [0.07, 0.01, 0.03], oakL, { group: null, bevel: 0.005, R: rotY(0.6) });
+  }
+  f.box([(x0 + x1) / 2, 0.06, 0], [L / 2, 0.01, 0.012], oak, { group: null, bevel: 0.004 }); // stretcher
+  const lr = rig({ key: [-0.3, 0.8, 0.5], keyC: '#d8f0ff', keyI: 1.1, rimC: '#9ff4ff', rim: [0.6, 0.4, -0.6], amb: 0.35, sky: '#2a3a48', ground: '#0e0c0a' });
+  prop3d(g, f, x + w / 2, y, w / 0.95, lr, { yaw: side * 0.35, pitch: 0.22, shadowW: 0.5, shadowA: 0.65, ss: 1.4 });
+  void s;
 }
 
 // ================================================================== City Hall
