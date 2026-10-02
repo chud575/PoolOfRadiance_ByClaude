@@ -248,14 +248,26 @@ const SYMBOLS = {
     g.strokeStyle = INK.ink; g.lineWidth = 0.5;
     for (let i = -2; i <= 2; i++) { g.beginPath(); g.moveTo(-w / 2 + 2, d * (0.2 + (i + 2) * 0.15)); g.lineTo(-w * 0.32, d * (0.2 + (i + 2) * 0.15)); g.moveTo(w * 0.32, d * (0.2 + (i + 2) * 0.15)); g.lineTo(w / 2 - 2, d * (0.2 + (i + 2) * 0.15)); g.stroke(); }
   },
-  bed(g, cs) {
+  bed(g, cs, r) {
     const w = cs * 0.4;
     const L = cs * 0.66;
-    box(g, -w / 2, 0.5, w, L);
-    box(g, -w * 0.38, cs * 0.04, w * 0.76, cs * 0.12, LINEN);
-    // the blanket turned down
-    g.beginPath(); g.rect(-w / 2, cs * 0.24, w, L - cs * 0.24 + 0.5); g.fillStyle = 'rgba(146,72,56,0.32)'; g.fill(); outline(g, 0.6);
-    g.beginPath(); g.moveTo(-w / 2, cs * 0.3); g.lineTo(w / 2, cs * 0.3); outline(g, 0.5);
+    box(g, -w / 2, 0.5, w, L, WOOD);
+    // straw bolster
+    g.beginPath(); g.ellipse(0, cs * 0.11, w * 0.38, cs * 0.055, 0, 0, Math.PI * 2); g.fillStyle = LINEN; g.fill(); outline(g, 0.55);
+    // a coarse wool blanket turned down, its folds hatched
+    const by = cs * 0.22;
+    g.beginPath();
+    g.moveTo(-w / 2 + 1, by); g.quadraticCurveTo(0, by + cs * 0.04, w / 2 - 1, by - cs * 0.01);
+    g.lineTo(w / 2 - 1, L); g.lineTo(-w / 2 + 1, L); g.closePath();
+    g.fillStyle = r && r() < 0.5 ? 'rgba(96,104,122,0.42)' : 'rgba(128,104,70,0.42)';
+    g.fill(); outline(g, 0.6);
+    g.save(); g.clip();
+    g.strokeStyle = 'rgba(43,26,13,0.42)'; g.lineWidth = 0.4;
+    for (let i = 0; i < 4; i++) {
+      const x = -w * 0.3 + i * w * 0.2;
+      g.beginPath(); g.moveTo(x, by + 2); g.quadraticCurveTo(x + w * 0.08, by + L * 0.4, x - w * 0.03, L); g.stroke();
+    }
+    g.restore();
   },
   chest(g, cs) {
     const w = cs * 0.34;
@@ -273,8 +285,12 @@ const SYMBOLS = {
         g.beginPath(); g.arc(Math.cos(a) * cs * 0.28, cs * 0.5 + Math.sin(a) * cs * 0.28, cs * 0.055, 0, Math.PI * 2); g.fillStyle = PAPER; g.fill(); outline(g, 0.6);
       }
     } else {
-      box(g, -cs * 0.24, cs * 0.36, cs * 0.48, cs * 0.26, WOOD);
-      for (const sx of [-0.14, 0.14]) for (const sy of [0.26, 0.72]) box(g, sx * cs - cs * 0.05, sy * cs - cs * 0.04, cs * 0.1, cs * 0.08);
+      // a trestle board with a bench along each long side
+      box(g, -cs * 0.27, cs * 0.38, cs * 0.54, cs * 0.22, WOOD);
+      g.beginPath();
+      for (const f of [0.33, 0.66]) { g.moveTo(-cs * 0.27, cs * (0.38 + 0.22 * f)); g.lineTo(cs * 0.27, cs * (0.38 + 0.22 * f)); }
+      outline(g, 0.4);
+      for (const sy of [0.29, 0.65]) box(g, -cs * 0.24 + (r() - 0.5) * 2, sy * cs, cs * 0.48, cs * 0.055, WOOD_D);
     }
   },
   barrels(g, cs, r) {

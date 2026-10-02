@@ -781,9 +781,19 @@ export default class AutomapScene extends Scene {
       if (known || here) {
         g.fillStyle = 'rgba(40,20,6,0.18)';
         g.save(); g.translate(1, 1.4); g.fill(); g.restore();
-        g.fillStyle = shape === 'round' ? '#2c3040' : 'rgba(250,240,214,0.95)';
+        g.fillStyle = shape === 'round' ? 'rgba(232,214,170,0.96)' : 'rgba(250,240,214,0.95)';
         g.fill();
-        if (shape !== 'round') {
+        if (shape === 'round') {
+          // an inked roundel like the overview's: a gilt band and a dark entrance at its heart
+          g.save();
+          g.strokeStyle = 'rgba(176,132,52,0.9)';
+          g.lineWidth = r * 0.28;
+          g.beginPath(); g.arc(X, Y, r * 0.84, 0, Math.PI * 2); g.stroke();
+          g.fillStyle = 'rgba(43,26,13,0.8)';
+          g.beginPath(); g.arc(X, Y + r * 0.2, r * 0.26, Math.PI, 0); g.lineTo(X + r * 0.26, Y + r * 0.38); g.lineTo(X - r * 0.26, Y + r * 0.38); g.closePath(); g.fill();
+          g.restore();
+          g.beginPath(); g.arc(X, Y, r, 0, Math.PI * 2);
+        } else {
           // a few washed roofs, like the overview's little plans
           const rr = (n) => ((Math.sin(n * 91.7 + cx * 0.37 + cy) * 43758.5) % 1 + 1) % 1;
           g.save(); g.clip();

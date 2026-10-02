@@ -130,64 +130,85 @@ export function timberWall(g, x0, y0, x1, y1, { width = 6, seed = 1, cs = 50 } =
   const hw = width / 2;
   g.save();
   const body = [f.P(0, -hw), f.P(f.len, -hw), f.P(f.len, hw), f.P(0, hw)];
+  // daub: a pale lime-washed infill, mottled
   poly(g, body);
-  g.fillStyle = 'rgba(150,118,82,0.97)';
+  g.fillStyle = 'rgba(176,146,104,0.97)';
   g.fill();
-  // wattle: fine diagonal hatching inside the daub
   g.save();
   poly(g, body);
   g.clip();
-  g.strokeStyle = 'rgba(50,32,18,0.45)';
-  g.lineWidth = 0.4;
+  // wattle: woven hurdles show as a fine cross-hatch through the daub
+  g.strokeStyle = 'rgba(70,46,26,0.32)';
+  g.lineWidth = 0.35;
   g.beginPath();
-  for (let t = -width; t < f.len + width; t += 1.6 + r() * 0.8) {
+  for (let t = -width; t < f.len + width; t += 1.5 + r() * 1.1) {
     const [ax, ay] = f.P(t, -hw);
-    const [bx, by] = f.P(t + width * 0.9, hw);
-    g.moveTo(ax, ay);
-    g.lineTo(bx, by);
+    const [bx, by] = f.P(t + width * 0.7, hw);
+    g.moveTo(ax, ay); g.lineTo(bx, by);
   }
   g.stroke();
+  // daub stains: soft blotches of damp
+  for (let t = r() * cs * 0.3; t < f.len; t += cs * (0.2 + r() * 0.4)) {
+    const [cx, cy] = f.P(t, (r() - 0.5) * hw);
+    g.fillStyle = `rgba(110,80,48,${(0.08 + r() * 0.12).toFixed(3)})`;
+    g.beginPath(); g.ellipse(cx, cy, width * (0.5 + r()), hw * 0.8, Math.atan2(f.uy, f.ux), 0, Math.PI * 2); g.fill();
+  }
   g.restore();
-  // posts
+  // posts at irregular centres (studs crowd here, bays open there)
   const posts = [0];
   let t = 0;
   while (true) {
-    t += cs * (0.42 + r() * 0.36);
-    if (t > f.len - cs * 0.15) break;
+    t += cs * (0.22 + r() * 0.5);
+    if (t > f.len - cs * 0.12) break;
     posts.push(t);
   }
   posts.push(f.len);
   // braces in some bays
-  g.strokeStyle = 'rgba(66,42,24,0.95)';
+  g.strokeStyle = 'rgba(62,40,22,0.92)';
   g.lineCap = 'butt';
   for (let i = 0; i < posts.length - 1; i++) {
-    if (r() > 0.45) continue;
+    if (r() > 0.4 || posts[i + 1] - posts[i] < cs * 0.3) continue;
     const s = r() < 0.5 ? 1 : -1;
-    const [ax, ay] = f.P(posts[i] + width * 0.5, -hw * 0.6 * s);
-    const [bx, by] = f.P(posts[i + 1] - width * 0.5, hw * 0.6 * s);
-    g.lineWidth = width * 0.26;
+    const [ax, ay] = f.P(posts[i] + width * 0.4, -hw * 0.5 * s);
+    const [bx, by] = f.P(posts[i + 1] - width * 0.4, hw * 0.5 * s);
+    g.lineWidth = width * 0.2;
     g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke();
   }
   for (const p of posts) {
-    const ps = width * (1.04 + r() * 0.26);
-    const pl = ps * (0.9 + r() * 0.35);
-    const [cx, cy] = f.P(p + (r() - 0.5) * 1.2, (r() - 0.5) * 0.8);
+    // squared oak, flush with the faces; length and shade vary post to post
+    const ps = width * (0.96 + r() * 0.1);
+    const pl = width * (0.7 + r() * 0.75);
+    const [cx, cy] = f.P(p + (r() - 0.5) * 1.6, 0);
     g.save();
     g.translate(cx, cy);
-    g.rotate(Math.atan2(f.uy, f.ux) + (r() - 0.5) * 0.12);
-    g.fillStyle = `rgba(${62 + r() * 18 | 0},${40 + r() * 12 | 0},${24 + r() * 8 | 0},0.97)`;
+    g.rotate(Math.atan2(f.uy, f.ux) + (r() - 0.5) * 0.08);
+    const v = r();
+    g.fillStyle = `rgba(${74 + v * 26 | 0},${50 + v * 16 | 0},${30 + v * 10 | 0},0.97)`;
     g.fillRect(-pl / 2, -ps / 2, pl, ps);
+    // end grain: growth rings as a few arcs, and a radial check
+    g.strokeStyle = 'rgba(200,160,110,0.3)';
+    g.lineWidth = 0.3;
+    g.beginPath(); g.arc(-pl * 0.15, ps * 0.1, Math.min(pl, ps) * 0.28, 0, Math.PI * 1.4); g.stroke();
+    g.beginPath(); g.moveTo(0, 0); g.lineTo(pl * 0.35, -ps * 0.3); g.stroke();
     g.strokeStyle = INK.ink;
-    g.lineWidth = 0.55;
+    g.lineWidth = 0.5;
     g.strokeRect(-pl / 2, -ps / 2, pl, ps);
-    // end grain: a check line
-    g.strokeStyle = 'rgba(210,170,120,0.35)';
-    g.lineWidth = 0.35;
-    g.beginPath(); g.moveTo(-pl * 0.3, -ps * 0.2); g.lineTo(pl * 0.25, ps * 0.15); g.stroke();
     g.restore();
   }
+  // sole and head plates: dark oak beams running both faces of the wall
+  const plate = Math.max(0.9, width * 0.27);
+  for (const s of [-1, 1]) {
+    const pts = [];
+    for (let t = -width * 0.3; t <= f.len + width * 0.3; t += cs * 0.25) pts.push(f.P(Math.min(t, f.len + width * 0.3), s * (hw - plate / 2) + (r() - 0.5) * 0.25));
+    g.strokeStyle = `rgba(${58 + r() * 14 | 0},${38 + r() * 8 | 0},${22 + r() * 6 | 0},0.96)`;
+    g.lineWidth = plate;
+    g.lineCap = 'butt';
+    g.beginPath();
+    pts.forEach(([px, py], i) => (i ? g.lineTo(px, py) : g.moveTo(px, py)));
+    g.stroke();
+  }
   g.restore();
-  for (const s of [-1, 1]) face(g, f.P(-width * 0.2, s * hw), f.P(f.len + width * 0.2, s * hw), { seed: seed + s * 3, width: 0.95, amp: 0.25 });
+  for (const s of [-1, 1]) face(g, f.P(-width * 0.2, s * hw), f.P(f.len + width * 0.2, s * hw), { seed: seed + s * 3, width: 0.8, amp: 0.3 });
 }
 
 /**
@@ -421,7 +442,7 @@ export function secretDoor(g, ax, ay, bx, by, { width = 8, cs = 50, side = [0, -
   // the rubric S sits right on the wall line, about the size of a door leaf
   const mx = (ax + bx) / 2 + side[0] * 0;
   const my = (ay + by) / 2 + side[1] * 0;
-  const fs = Math.max(7, Math.round(cs * 0.3));
+  const fs = Math.max(9, Math.round(cs * 0.44));
   // a small knocked-out cartouche in the wall so the letter reads
   g.fillStyle = 'rgba(242,230,200,0.96)';
   g.beginPath(); g.ellipse(mx, my, fs * 0.36, fs * 0.46, 0, 0, Math.PI * 2); g.fill();

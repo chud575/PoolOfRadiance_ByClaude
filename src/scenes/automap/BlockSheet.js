@@ -328,7 +328,7 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
 
   // ---------- walls: masonry, timber framing and the city wall, on their own ink layer ----------
   const wallW = cs * 0.16;
-  const timberW = cs * 0.11;
+  const timberW = cs * 0.13;
   const cityW = cs * 0.32;
   const cityOff = cityW * 0.3; // the curtain stands a little inside the block's edge
   const { segs: cellSegs, effective } = collectEdges(map, info, seenCell, secrets);
@@ -428,7 +428,7 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
       } else if (t === EDGE.LOCKED) {
         // shut, barred in vermilion, padlocked on the side of the square that owns it
         const side = sg.horiz ? -oy : ox;
-        lockedDoor(ig, cmx, cmy, sg.horiz, gap * 2.1, cs * 0.13, side);
+        lockedDoor(ig, cmx, cmy, sg.horiz, gap * 2.1, cs * 0.17, side);
       } else {
         // keep names clear of the leaf's swing into the room
         const sx0 = cmx - along[0] * gap - ox * gap * 2.1;
@@ -496,6 +496,7 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
     markerSpots.push([mxp - cs * 0.22, myp - cs * 0.22, cs * 0.44, cs * 0.44]);
   }
   // exits: arrows in the margin + destination names
+  const exitSpans = [];
   g.save();
   g.textBaseline = 'middle';
   for (const t of info.travel) {
@@ -511,6 +512,12 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
       drawMarker(g, 'exit', ax, ay, cs * 0.5, { angle: ang, accent: INK.vermilion });
       g.font = `italic ${Math.round(cs * 0.3)}px ${SERIF}`;
       const label = `to ${t.destName}`;
+      {
+        // keep the margin's ruled numbers clear of this label and its arrow
+        const half = g.measureText(label).width / 2 + cs * 0.15;
+        const c = facing === 'N' || facing === 'S' ? ax : ay;
+        exitSpans.push({ side: facing, a: Math.min(c - half, c - cs * 0.4), b: Math.max(c + half, c + cs * 0.4) });
+      }
       if (facing === 'N' || facing === 'S') {
         g.textAlign = 'center';
         haloText(g, label, ax, ay + oy * cs * 0.42, { width: 3, color: '#3b2210' });
@@ -625,9 +632,10 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
   g.fillStyle = '#7a2a1c';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
+  const clearOf = (side, c) => !exitSpans.some((e) => e.side === side && c > e.a && c < e.b);
   for (let i = 0; i < map.w; i++) {
-    g.fillText(String(i), CX(i) + cs / 2, MY - 40);
-    g.fillText(String(i), MX - 42, CY(i) + cs / 2);
+    if (clearOf('N', CX(i) + cs / 2)) g.fillText(String(i), CX(i) + cs / 2, MY - 40);
+    if (clearOf('W', CY(i) + cs / 2)) g.fillText(String(i), MX - 42, CY(i) + cs / 2);
   }
   // corner rosettes
   for (const [px, py] of [[MX - 22, MY - 22], [MX + MS + 22, MY - 22], [MX - 22, MY + MS + 22], [MX + MS + 22, MY + MS + 22]]) {
@@ -754,7 +762,7 @@ export function drawKeySwatch(g, key, x, y, s) {
       break;
     case 'secret':
       wall(0, 0.18); wall(0.82, 1);
-      secretDoor(g, x - s * 0.32, y + s * 0.12, x + s * 0.32, y + s * 0.12, { width: s * 0.2, cs: s * 0.95, side: [0, -0.62], seed: 3 });
+      secretDoor(g, x - s * 0.32, y + s * 0.12, x + s * 0.32, y + s * 0.12, { width: s * 0.2, cs: s * 0.7, side: [0, -0.62], seed: 3 });
       break;
     case 'arch': {
       wall(0, 0.18); wall(0.82, 1);

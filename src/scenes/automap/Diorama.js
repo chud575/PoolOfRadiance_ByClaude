@@ -1134,7 +1134,7 @@ export class Diorama {
     g.imageSmoothingEnabled = true;
     g.drawImage(sc, 0, 0, out.width, out.height);
     g.restore();
-    this._paintLabels(g, map, sheet, seenCell, party, notes);
+    this._paintLabels(g, map, sheet, seenCell, party, notes, secrets);
     return out;
   }
 
@@ -1144,7 +1144,7 @@ export class Diorama {
    * in its district's largest explored building, clear of every wall, of the
    * band a wall hides from the camera, and of the party's base.
    */
-  _paintLabels(g, map, sheet, seenCell, party, notes = []) {
+  _paintLabels(g, map, sheet, seenCell, party, notes = [], secrets = null) {
     const { M, MX, MY } = SHEET;
     const k = sheet.k;
     const cs = sheet.cs;
@@ -1155,7 +1155,21 @@ export class Diorama {
     if (party) {
       const px = MX + (party.x + 0.5) * cs;
       const py = MY + (party.y + 0.5) * cs;
-      hard.push([px - cs * 1.1, py - cs * 1.1, cs * 2.2, cs * 2.2]);
+      // the standard-bearer and his flag stand tall: from the camera's side they hide
+      // a good stretch of paper north of the base as well
+      hard.push([px - cs * 1.1, py - cs * 2.7, cs * 2.2, cs * 3.8]);
+    }
+    // marker flags on their poles likewise rise over the paper just north of them
+    for (const m of sheet.markerSpots ?? []) hard.push([m[0] - cs * 0.15, m[1] - cs * 1.0, m[2] + cs * 0.55, m[3] + cs * 1.0]);
+    if (secrets) {
+      const { segs, effective } = collectEdges(map, sheet.info, seenCell, secrets);
+      for (const q of segs) {
+        const t = effective(q);
+        if (t !== EDGE.SECRET && t !== EDGE.LOCKED) continue;
+        const mx = MX + ((q.x0 + q.x1) / 2) * cs;
+        const my = MY + ((q.y0 + q.y1) / 2) * cs;
+        hard.push([mx - cs * 0.45, my - cs * 1.1, cs * 0.9, cs * 1.5]);
+      }
     }
     // note pins stand up off the paper: keep the banners clear of them and of the inked markers
     for (const n of notes ?? []) hard.push([MX + (n.x + 0.42) * cs, MY + (n.y + 0.02) * cs, cs * 0.56, cs * 0.6]);
