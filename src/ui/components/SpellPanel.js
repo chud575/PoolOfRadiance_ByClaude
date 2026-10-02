@@ -4,7 +4,7 @@ import { ITEMS } from '../../data/items.js';
 import { deriveStats, activeClasses } from '../../rules/character.js';
 import { CLASSES, classSpecName, spellSlots } from '../../rules/classes.js';
 import { knownSpells, slotsFor, freeSlots, prepareSpells, memorizationTime, partyMemorizationTime, autoPrepare, spellsToMemorize } from '../../rules/camp.js';
-import { getSpell, spellLevel, spellsForClass, castProblem, castSpell, isMemorized, consumeMemorized } from '../../rules/spells.js';
+import { getSpell, spellLevel, spellsForClass, castProblem, castSpell, isMemorized, consumeMemorized, spellSummary } from '../../rules/spells.js';
 import { scribeScroll } from '../../rules/magicItems.js';
 import { itemName } from '../../rules/items.js';
 import { miniPortrait, lore } from './CharacterSheet.js';
@@ -245,15 +245,17 @@ export class SpellPanel {
     if (!id) return null;
     const sp = getSpell(id);
     const d = SPELL_DATA[id] ?? {};
-    const save = { none: 'none', 'neg:sp': 'spell negates', 'half:sp': 'spell for half', 'neg:ppdm': 'poison negates' }[d.save] ?? d.save ?? 'none';
-    const where = { both: 'combat or camp', combat: 'combat only', camp: 'camp only' }[sp?.usable ?? d.usable] ?? '';
+    // Range/area/duration/save come from the rules at this caster's level, so the card shows what the engine does.
+    const sum = spellSummary(id, cls, this.ch?.levels?.[cls] ?? 1);
+    const save = sum?.save ?? ({ none: 'none', 'neg:sp': 'spell negates', 'half:sp': 'spell for half', 'neg:ppdm': 'poison negates' }[d.save] ?? d.save ?? 'none');
+    const where = sum?.usable ?? { both: 'combat or camp', combat: 'combat only', camp: 'camp only' }[sp?.usable ?? d.usable] ?? '';
     this._cardId = id;
     return h('div.pc-spellcard', [
       h('img', { src: spellGlyphURL(id), alt: '' }),
       h('div.body', [
         h('div.t', [sp?.name ?? id]),
         h('div.s', [`${spellFamilyName(id)} · ${CLASSES[cls]?.name ?? ''} level ${ROMAN[spellLevel(id, cls)]} · ${where}`]),
-        h('div.kv', [['Range', d.range ?? '—'], ['Area', d.area ?? 'one'], ['Duration', d.duration ?? 'instant'], ['Save', save]].map(([k, v]) => h('span', [h('b', [k]), ` ${v}`]))),
+        h('div.kv', [['Range', sum?.range ?? d.range ?? '—'], ['Area', sum?.area ?? d.area ?? 'one'], ['Duration', sum?.duration ?? d.duration ?? 'instant'], ['Save', save], ...(sum ? [['Cast', sum.castTime]] : [])].map(([k, v]) => h('span', [h('b', [k]), ` ${v}`]))),
         h('div.d', [sp?.flavor && sp.flavor !== sp.tip ? sp.flavor : sp?.tip ?? d.desc ?? '']),
       ]),
     ]);

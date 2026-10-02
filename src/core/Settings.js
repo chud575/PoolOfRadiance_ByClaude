@@ -16,6 +16,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   showMinimap: true,
   combatSpeed: 1,
   confirmDangerous: true,
+  fighterThac0: 'goldBox', // rules: 'goldBox' (PoR sheet, -1 per level) | 'dmg' (DMG matrix)
   bindings: null, // null → InputManager defaults; else {action: [codes]}
 });
 

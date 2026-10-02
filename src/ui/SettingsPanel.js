@@ -227,6 +227,7 @@ export class SettingsPanel {
         id: 'gameplay', label: 'Gameplay', blurb: 'Pace, difficulty and conveniences.',
         rows: [
           { key: 'difficulty', label: 'Difficulty', desc: 'Gold Box levels. Novice and Squire soften monsters; Adept and Champion toughen them and reduce experience less.', type: 'choice', options: [['novice', 'Novice'], ['squire', 'Squire'], ['veteran', 'Veteran'], ['adept', 'Adept'], ['champion', 'Champion']] },
+          { key: 'fighterThac0', label: 'Fighter THAC0', desc: 'Pool of Radiance improves a fighter\'s THAC0 every level; the Dungeon Masters Guide matrix improves it by 2 every second level.', type: 'choice', options: [['goldBox', 'Pool of Radiance'], ['dmg', 'DMG matrix']] },
           { key: 'textSpeed', label: 'Text speed', desc: 'How quickly narration and messages are written out.', type: 'choice', options: [[0.5, 'Slow'], [1, 'Normal'], [2, 'Fast'], [0, 'Instant']] },
           { key: 'combatSpeed', label: 'Combat speed', desc: 'The classic "game speed": delay between combat actions and messages.', type: 'choice', options: [[0.5, 'Slow'], [1, 'Normal'], [1.5, 'Fast'], [2.5, 'Swift']] },
           { key: 'moveSpeed', label: 'Movement speed', desc: 'How fast the party steps and turns in the streets and dungeons.', type: 'choice', options: [[0.75, 'Stately'], [1, 'Normal'], [1.5, 'Brisk'], [2.5, 'Swift']] },

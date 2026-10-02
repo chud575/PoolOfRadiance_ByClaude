@@ -289,3 +289,94 @@ export function surpriseMods(party, o = {}) {
   }
   return { monsterMod: 0, partyMod: 0, reason: null };
 }
+
+// ------------------------------------------------------- scene-facing helpers
+
+/**
+ * Canonical key of a wall edge seen from either side, so a door picked from
+ * the street is open from inside too: `${mapId}:${x},${y},${dir}` of the
+ * lexically smaller of the two faces.
+ */
+export function edgeKey(mapId, x, y, dir) {
+  const V = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] };
+  const O = { N: 'S', S: 'N', E: 'W', W: 'E' };
+  const [dx, dy] = V[dir] ?? [0, 0];
+  const a = `${x},${y},${dir}`;
+  const b = `${x + dx},${y + dy},${O[dir] ?? dir}`;
+  return `${mapId}:${a < b ? a : b}`;
+}
+
+/**
+ * The persistent rules state of a LOCKED edge (game.flags.doors[key]),
+ * created on first touch from `def` (default: an ordinary lock). Saved with
+ * the game like every other flag.
+ */
+export function lockedDoorState(game, key, def = { locked: true }) {
+  const doors = (game.flags ??= {}).doors ??= {};
+  return (doors[key] ??= { ...def });
+}
+
+/** Has this LOCKED edge been opened (picked, forced or knocked)? */
+export function isDoorOpened(game, key) {
+  return !!game.flags?.doors?.[key]?.opened;
+}
+
+/** A conscious member with Knock memorized, as {ch, cls}, or null. */
+export function knockCaster(party) {
+  for (const ch of ableMembers(party)) {
+    for (const [cls, ids] of Object.entries(ch.spells?.memorized ?? {})) if (ids?.includes('knock')) return { ch, cls };
+  }
+  return null;
+}
+
+/**
+ * The whole locked-door interaction for the explore scene, Gold Box style:
+ * the party walks into a LOCKED edge → the best thief tries the lock (once per
+ * thief level per lock), then the strongest member tries to force it; if both
+ * fail and someone has Knock memorized, they cast it (the slot is spent).
+ * The door's state persists under `key` (see edgeKey); once opened it stays
+ * open. The caller spends `minutes` with game.advanceTime and prints `text`.
+ * @param {import('./dice.js').Rng} rng
+ * @param {{party:object[], flags:object}} game
+ * @param {string} key edgeKey(...)
+ * @param {{useKnock?:boolean, door?:object}} [o] useKnock false: never spend a Knock; door: initial state
+ * @returns {{opened:boolean, method:string|null, who:object|null, minutes:number, text:string, knocked?:boolean}}
+ */
+export function openLockedDoor(rng, game, key, o = {}) {
+  const door = lockedDoorState(game, key, o.door);
+  if (door.opened) return { opened: true, method: 'open', who: null, minutes: 0, text: 'The door stands open.' };
+  const party = game.party ?? [];
+  let r = tryOpenLock(rng, party, door);
+  let minutes = r.minutes;
+  if (!r.opened && o.useKnock !== false) {
+    const k = knockCaster(party);
+    if (k) {
+      const ids = k.ch.spells.memorized[k.cls];
+      ids.splice(ids.indexOf('knock'), 1);
+      r = tryOpenLock(rng, party, door, { knock: true });
+      minutes += 1;
+      r = { ...r, who: k.ch, text: `${k.ch.name} speaks the word of opening. ${r.text}`, knocked: true };
+    }
+  }
+  if (r.opened) door.opened = true;
+  return { opened: r.opened, method: r.method, who: r.who, minutes, text: r.text, knocked: !!r.knocked };
+}
+
+/**
+ * The SEARCH command at one square: each hidden door among `walls` (edges
+ * not yet found) is rolled for separately with searchSecret — elves and
+ * half-elves find one 2 in 6, everyone else 1 in 6, a dwarf may sense a
+ * sliding wall. One search takes a turn (10 minutes) whatever is found.
+ * Also the passive elven notice when merely walking past (`o.passive`: no
+ * time spent, only elves/half-elves roll, 1 in 6).
+ * @param {{dir:string}[]} walls hidden doors at this square
+ * @returns {{found:{dir:string, by:object}[], minutes:number}}
+ */
+export function searchSquare(rng, party, walls, o = {}) {
+  const found = [];
+  for (const w of walls ?? []) {
+    const r = searchSecret(rng, party, { passive: !!o.passive, sliding: !!w.sliding });
+    if (r.found) found.push({ dir: w.dir, by: r.by });
+  }
+  return { found, minutes: o.passive ? 0 : 10 };
+}

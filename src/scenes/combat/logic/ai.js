@@ -1,5 +1,6 @@
 import { Battlefield, DIR8 } from './battlefield.js';
 import { SPELLS } from '../../../data/spells.js';
+import { isAfraid } from '../../../rules/specials.js';
 
 /**
  * Combat AI for monsters and QUICK (computer-controlled) party members.
@@ -9,6 +10,7 @@ import { SPELLS } from '../../../data/spells.js';
  *   {kind:'cast', spell, at, path?}
  *   {kind:'move', path}            reposition only
  *   {kind:'flee', path}            run for the nearest rim square, then step off
+ *   {kind:'special', id:'breath'|'rocks', at, path:[]}  monster breath / boulder (engine.special)
  *   {kind:'turn'} {kind:'bandage', target, path} {kind:'guard'} {kind:'end'}
  */
 export function decide(engine, c) {
@@ -16,7 +18,8 @@ export function decide(engine, c) {
   const foes = engine.enemiesOf(c);
   if (!foes.length) return { kind: 'end' };
 
-  if (c.fleeing) return planFlee(engine, c) ?? planMelee(engine, c, foes) ?? { kind: 'end' };
+  // Routed by morale or gripped by a fear aura (rules isAfraid): run for the edge.
+  if (c.fleeing || isAfraid(c)) return planFlee(engine, c) ?? planMelee(engine, c, foes) ?? { kind: 'end' };
 
   if (c.side === 'party') {
     // Bind the dying first.
@@ -29,6 +32,9 @@ export function decide(engine, c) {
     const spell = pickSpell(engine, c, foes);
     if (spell) return spell;
   } else {
+    // Dragon breath and giants' boulders (rules monsterSpecialActions).
+    const special = pickMonsterSpecial(engine, c, foes);
+    if (special) return special;
     // Priests of Bane and other monster casters (rules monsterSpells).
     const spell = pickMonsterSpell(engine, c, foes);
     if (spell) return spell;
@@ -248,6 +254,45 @@ function pickMonsterSpell(engine, c, foes) {
   if (has('magicMissile')) {
     const t = foes.filter((e) => engine.canCast(c, 'magicMissile', { x: e.x, y: e.y }).ok).sort((a, b) => a.hp.cur - b.hp.cur)[0];
     if (t) return cast('magicMissile', { x: t.x, y: t.y });
+  }
+  return null;
+}
+
+/**
+ * Monster special actions (rules monsterSpecialActions). Breath: aim the
+ * template where it catches the most foes — at least two (or the last foe
+ * standing), allies spared unless the dragon fights alone. Boulders: a giant
+ * not yet engaged hurls a rock at the most attractive foe 2-20 squares away
+ * in sight rather than lumbering forward.
+ */
+function pickMonsterSpecial(engine, c, foes) {
+  const acts = engine.specialActions?.(c) ?? [];
+  if (!acts.length) return null;
+  const adj = engine.adjacentEnemies(c);
+  for (const a of acts) {
+    if (a.id === 'breath') {
+      let best = null;
+      for (const e of foes) {
+        const at = { x: e.x, y: e.y };
+        if (Battlefield.dist(c.x, c.y, e.x, e.y) > Math.max(a.size, 1.5) + 0.5) continue;
+        const sq = new Set(engine.specialArea(c, 'breath', at).map((q) => `${q.x},${q.y}`));
+        const inside = engine.all.filter((o) => o !== c && !engine.out(o) && sq.has(`${o.x},${o.y}`));
+        const n = inside.filter((o) => engine.hostileTo(c, o)).length;
+        const friends = inside.filter((o) => !engine.hostileTo(c, o)).length;
+        if (friends || !n) continue;
+        if (!best || n > best.n) best = { n, at };
+      }
+      if (best && (best.n >= 2 || foes.length === 1)) return { kind: 'special', id: 'breath', at: best.at, path: [] };
+    }
+    if (a.id === 'rocks' && !adj.length) {
+      const t = foes
+        .filter((e) => {
+          const d = Battlefield.dist(c.x, c.y, e.x, e.y);
+          return d >= a.minRange && d <= a.range && engine.field.los(c.x, c.y, e.x, e.y);
+        })
+        .sort((x, y) => score(engine, c, y) - score(engine, c, x))[0];
+      if (t) return { kind: 'special', id: 'rocks', at: { x: t.x, y: t.y }, path: [] };
+    }
   }
   return null;
 }

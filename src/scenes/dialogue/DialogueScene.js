@@ -562,7 +562,7 @@ export default class DialogueScene extends Scene {
       if (r.who) this.ctx.ui.message(`${r.who.name} tries${r.ok ? ' — and succeeds.' : ' — and fails.'}`, r.ok ? 'info' : 'warn');
       return this.gotoNode(r.ok ? c.check.pass : c.check.fail);
     }
-    if (c.combat) return this.startCombat(c.combat, c.win);
+    if (c.combat) return this.startCombat(c.combat, c.win, c.surprise);
     if (c.travel) return this.travel(c.travel);
     if (c.shop) return this.ctx.scenes.goto('shop', { shop: c.shop });
     if (c.goto) return this.gotoNode(c.goto);
@@ -683,7 +683,7 @@ export default class DialogueScene extends Scene {
   }
 
   // ------------------------------------------------------------------ transitions
-  startCombat(encId, win = null) {
+  startCombat(encId, win = null, surprise = null) {
     const { game } = this.ctx;
     const enc = ENCOUNTERS[encId];
     game.flags._pendingFight = {
@@ -694,7 +694,7 @@ export default class DialogueScene extends Scene {
       items: enc?.treasure?.items ?? [],
     };
     this.busy = true;
-    this.ctx.scenes.goto('combat', { encounter: encId });
+    this.ctx.scenes.goto('combat', { encounter: encId, ...(surprise ? { surprise } : {}) });
   }
 
   travel(t) {

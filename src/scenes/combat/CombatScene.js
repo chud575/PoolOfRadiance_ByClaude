@@ -13,6 +13,7 @@ import { combatantFromCharacter, combatantFromMonster, xpForVictory, isDown } fr
 import { awardXp } from '../../rules/character.js';
 import { endBattle, battleItemUse } from '../../rules/battle.js';
 import { victorySpoils } from '../../rules/treasure.js';
+import { endBattleTime } from '../../rules/camp.js';
 import { Battlefield, DIR8 } from './logic/battlefield.js';
 import { CombatEngine } from './logic/engine.js';
 import { decide } from './logic/ai.js';
@@ -169,7 +170,12 @@ export default class CombatScene extends Scene {
 
     this._placeCombatants();
     this.engine = new CombatEngine({ rng, field: this.field, party: this.party, monsters: this.monsters });
-    this.engine.startRound();
+    // Rules surprise (1-2 on d6 each side; elven stealth; forced by the encounter or a sneak choice).
+    // Debug shots and demos keep their staged first round unless they ask for surprise.
+    const forced = params.surprise ?? this.encounter.surprise ?? null;
+    if (forced || (!this.frozen && !this.demo)) this.engine.rollSurprise({ forced, party: game.party });
+    // Round 1's opening events (dragon awe, stench) play when the battle starts.
+    this.engine._queued.push(...this.engine.startRound().filter((e) => e.type !== 'round'));
     this.engine.turnIdx = -1;
 
     // ------------------------------------------------ figures
@@ -625,7 +631,7 @@ export default class CombatScene extends Scene {
     fig.guard = false;
     this._refresh(c);
     this._focus(c);
-    const auto = c.side === 'monster' || c.quick || this.quickAll || c.charmed;
+    const auto = c.side === 'monster' || c.quick || this.quickAll || c.charmed || this.engine.mustAutoAct(c);
     if (!auto && !this.snap) this.hud.showBanner(`${c.name}`, 'Your move', this.time, 0.8);
     if (auto) {
       this._aiActing = true;
@@ -650,6 +656,7 @@ export default class CombatScene extends Scene {
     if (this.engine.out(c)) return;
     if (plan.kind === 'attack') await this.play(this.engine.attack(c, plan.target));
     else if (plan.kind === 'cast') await this.play(this.engine.cast(c, plan.spell, plan.at));
+    else if (plan.kind === 'special') await this.play(this.engine.special(c, plan.id, plan.at));
     else if (plan.kind === 'turn') await this.play(this.engine.turn(c));
     else if (plan.kind === 'bandage') await this.play(this.engine.bandage(c, plan.target));
     else if (plan.kind === 'guard') await this.play(this.engine.guard(c));
@@ -1490,6 +1497,11 @@ export default class CombatScene extends Scene {
         case 'cast':
           await this._playCast(ev);
           break;
+        case 'surprise':
+          this._log(ev.text, ev.side === 'party' ? 'warn' : 'combat');
+          this.hud.showBanner('Surprise!', ev.side === 'party' ? 'The party is caught off guard' : 'The foe is caught off guard', this.time, 1.6);
+          if (!this.snap) await this.wait(1.0 / this.speed);
+          break;
         case 'effect':
           this._log(ev.text, 'combat');
           if (fig) this._say(fig, ev.kind === 'fear' ? 'Panics!' : ev.kind, 'status', this.time);
@@ -2203,6 +2215,7 @@ export default class CombatScene extends Scene {
     const { game, ui, scenes, rng } = this.ctx;
     // Rules: combat-only effects (held, asleep, charmed, hasted, nauseous...) end with the battle.
     endBattle(this.party);
+    endBattleTime(game, this.engine.round); // rules: 1 round = 1 minute on the clock, effects not ticked twice
     this.ctx.bus.emit('combat:end', { winner }); // audio: victory coda / defeat
     if (winner === 'party') {
       // Let the last death and its VFX settle before the fanfare.

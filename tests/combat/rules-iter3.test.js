@@ -17,6 +17,7 @@ import { victorySpoils } from '../../src/rules/treasure.js';
 import { trainingSpellChoices, learnSpell } from '../../src/rules/camp.js';
 import { serviceProblem } from '../../src/rules/temple.js';
 import { neededToHit } from '../../src/rules/tohit.js';
+import { thac0For } from '../../src/rules/classes.js';
 import { Battlefield } from '../../src/scenes/combat/logic/battlefield.js';
 import { CombatEngine } from '../../src/scenes/combat/logic/engine.js';
 import { decide } from '../../src/scenes/combat/logic/ai.js';
@@ -168,8 +169,9 @@ describe('items in battle go through the rules', () => {
     expect(hasEffect(inv.c.ref, 'invisible')).toBe(true);
     const her = quaff('potionHeroism');
     expect(hasEffect(her.c.ref, 'heroism')).toBe(true);
-    // DMG: a 1st-level fighter fights as a 4th (+3 levels): THAC0 20 → 18, +3d10 temporary hp.
-    expect(deriveStats(her.c.ref).thac0).toBe(18);
+    // DMG: a 1st-level fighter fights as a 4th (+3 levels): THAC0 20 → 17 on the PoR
+    // per-level sheet (18 under the DMG matrix), +3d10 temporary hp.
+    expect(deriveStats(her.c.ref).thac0).toBe(thac0For('fighter', 4));
     expect(her.c.ref.hp.cur).toBeGreaterThan(her.hp + 2);
     const c = pc('human', 'fighter');
     addEffect(c.ref, 'poisoned', { rounds: Infinity, data: { onset: 5 } });

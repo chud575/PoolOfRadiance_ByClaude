@@ -12,13 +12,13 @@ export const SPELLS = {
   resistCold: S('resistCold', 'Resist Cold', 'cleric', 1, { usable: 'both', desc: 'Half damage from cold.' }),
   // Cleric 2
   findTraps: S('findTraps', 'Find Traps', 'cleric', 2, { usable: 'camp', range: 'self', desc: 'Reveals traps.' }),
-  holdPerson: S('holdPerson', 'Hold Person', 'cleric', 2, { range: '12 squares', save: 'neg:sp', desc: 'Paralyzes up to 3 humanoids.' }),
+  holdPerson: S('holdPerson', 'Hold Person', 'cleric', 2, { range: '6 squares', save: 'neg:sp', desc: 'Paralyzes up to 3 humanoids.' }),
   silence15: S('silence15', "Silence 15' Radius", 'cleric', 2, { range: '12 squares', desc: 'Prevents spellcasting in an area.' }),
   // Cleric 3
   dispelMagic: S('dispelMagic', 'Dispel Magic', 'cleric', 3, { desc: 'Ends magical effects.' }),
   prayer: S('prayer', 'Prayer', 'cleric', 3, { area: 'all', desc: '+1 allies / -1 enemies.' }),
   // Magic-User 1
-  burningHands: S('burningHands', 'Burning Hands', 'magicUser', 1, { range: '1 square', area: 'cone', desc: '1 hp damage per level to all in the cone.' }),
+  burningHands: S('burningHands', 'Burning Hands', 'magicUser', 1, { range: '1 square', area: 'adjacent', desc: '1 hp fire damage per level to the foe beside the caster.' }),
   charmPerson: S('charmPerson', 'Charm Person', 'magicUser', 1, { range: '12 squares', save: 'neg:sp', desc: 'A humanoid fights for you.' }),
   enlarge: S('enlarge', 'Enlarge', 'magicUser', 1, { usable: 'both', desc: 'Grows a creature, increasing strength.' }),
   friends: S('friends', 'Friends', 'magicUser', 1, { usable: 'camp', range: 'self', desc: 'Raises charisma.' }),
@@ -26,7 +26,7 @@ export const SPELLS = {
   readMagic: S('readMagic', 'Read Magic', 'magicUser', 1, { usable: 'camp', range: 'self', desc: 'Read magical scrolls.' }),
   shield: S('shield', 'Shield', 'magicUser', 1, { usable: 'both', range: 'self', desc: 'AC 2 vs missiles, blocks magic missile.' }),
   shockingGrasp: S('shockingGrasp', 'Shocking Grasp', 'magicUser', 1, { desc: '1d8 + 1/level electrical damage.' }),
-  sleep: S('sleep', 'Sleep', 'magicUser', 1, { range: '6 squares', area: '3x3', desc: 'Puts 2d4 HD of creatures to sleep.' }),
+  sleep: S('sleep', 'Sleep', 'magicUser', 1, { range: '3 + 1/level squares', area: '3x3', desc: 'Puts 4d4 weak creatures to sleep (fewer of up to 4+4 HD).' }),
   // Magic-User 2
   invisibility: S('invisibility', 'Invisibility', 'magicUser', 2, { usable: 'both', desc: 'Target becomes invisible.' }),
   mirrorImage: S('mirrorImage', 'Mirror Image', 'magicUser', 2, { range: 'self', desc: 'Creates illusory duplicates.' }),

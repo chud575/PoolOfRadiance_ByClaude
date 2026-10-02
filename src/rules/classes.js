@@ -142,8 +142,45 @@ export function levelForXp(classId, xp) {
   return lvl;
 }
 
-/** THAC0 for one class at a level (DMG attack matrices). */
-export function thac0For(classId, level) {
+/**
+ * Table choices where Pool of Radiance and the books differ. Mutable through
+ * setRulesOptions (the settings screen's "Fighter THAC0" option):
+ *  - fighterThac0: 'goldBox' (default) — PoR's character sheet: a fighter's
+ *    THAC0 improves every level (20 at 1st, 13 at 8th); 'dmg' — the DMG
+ *    attack matrix, two points every two levels (20, 20, 18, 18, 16...).
+ */
+export const RULES_OPTIONS = { fighterThac0: 'goldBox' };
+export const RULES_OPTION_CHOICES = Object.freeze({ fighterThac0: Object.freeze(['goldBox', 'dmg']) });
+
+/** Change rules options ({fighterThac0:'dmg'}); unknown keys or values are ignored. Returns the options. */
+export function setRulesOptions(o = {}) {
+  for (const [k, v] of Object.entries(o)) if (RULES_OPTION_CHOICES[k]?.includes(v)) RULES_OPTIONS[k] = v;
+  return { ...RULES_OPTIONS };
+}
+
+/**
+ * Keep RULES_OPTIONS in step with the user settings (`settings.get(key)`,
+ * 'settings:changed' {key, value} on the bus). main.js calls it once.
+ * @returns {function():void} unsubscribe
+ */
+export function attachRulesSettings(settings, bus) {
+  for (const k of Object.keys(RULES_OPTION_CHOICES)) setRulesOptions({ [k]: settings?.get?.(k) });
+  const off = bus?.on?.('settings:changed', ({ key, value } = {}) => {
+    if (key in RULES_OPTION_CHOICES) setRulesOptions({ [key]: value });
+  });
+  return typeof off === 'function' ? off : () => {};
+}
+
+/**
+ * THAC0 for one class at a level: the DMG attack matrices, except fighters
+ * under the Gold Box option (default), whose THAC0 is 21 − level as on the
+ * PoR sheet. `o.fighterThac0` overrides the global option.
+ * @param {{fighterThac0?:'goldBox'|'dmg'}} [o]
+ */
+export function thac0For(classId, level, o = {}) {
+  if (classId === 'fighter' && (o.fighterThac0 ?? RULES_OPTIONS.fighterThac0) === 'goldBox') {
+    return level <= 0 ? 21 : Math.max(1, 21 - level);
+  }
   const rows = CLASSES[classId].thac0;
   return rows.find(([max]) => level <= max)[1];
 }
@@ -362,8 +399,8 @@ export function attacksThisRound(rate, round = 1) {
  */
 export const TURN_UNDEAD = {
   skeleton: [10, 7, 4, 'T', 'T', 'D', 'D', 'D*', 'D*', 'D*'],
-  zombie: [13, 10, 7, 'T', 'T', 'D', 'D', 'D', 'D*', 'D*'],
-  ghoul: [16, 13, 10, 4, 'T', 'T', 'D', 'D', 'D', 'D*'],
+  zombie: [13, 10, 7, 'T', 'T', 'D', 'D', 'D*', 'D*', 'D*'],
+  ghoul: [16, 13, 10, 4, 'T', 'T', 'D', 'D', 'D*', 'D*'],
   shadow: [19, 16, 13, 7, 4, 'T', 'T', 'D', 'D', 'D*'],
   wight: [20, 19, 16, 10, 7, 4, 'T', 'T', 'D', 'D'],
   ghast: ['-', 20, 19, 13, 10, 7, 4, 'T', 'T', 'D'],

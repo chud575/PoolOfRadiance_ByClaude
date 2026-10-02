@@ -1,5 +1,5 @@
 import { roll } from './dice.js';
-import { deriveStats, applyDamage, isConscious, bleed, drainLevel, effectiveAbilities } from './character.js';
+import { deriveStats, applyDamage, isConscious, bleed, drainLevel, effectiveAbilities, activeClasses } from './character.js';
 import { trimMemorized } from './camp.js';
 import { dexterityMods, strengthTable } from './abilities.js';
 import { turnNeeded, fighterAttacksPerRound, attacksThisRound } from './classes.js';
@@ -435,8 +435,9 @@ export function attackRateOf(c, o = {}) {
   return mult;
 }
 
+/** Fighter level whose abilities are usable now (a dormant dual-class fighter counts 0). */
 function activeFighterLevel(ch) {
-  return ch.classSpec.split('/').includes('fighter') || ch.dual?.from === 'fighter' ? ch.levels?.fighter ?? 0 : 0;
+  return activeClasses(ch).includes('fighter') ? ch.levels?.fighter ?? 0 : 0;
 }
 
 /**
@@ -460,7 +461,7 @@ export function attacksFor(c, round = 1, o = {}) {
  * Returns the number of attacks vs such a target (0 = no sweep).
  */
 export function sweepAttacks(ch, target) {
-  const lvl = ch.levels?.fighter ?? 0;
+  const lvl = activeFighterLevel(ch);
   const small = typeof target === 'number' ? target < 1 : belowOneHd(target);
   if (!lvl || !small) return 0;
   return Math.max(fighterAttacksPerRound(lvl), lvl);
@@ -471,7 +472,8 @@ export const DRAIN_LEVELS = Object.freeze({ wight: 1, spectre: 2, wraith: 1, vam
 
 /**
  * Monster special attacks that ride on a successful hit (MM): ghoul/ghast
- * paralysis (save vs paralysis, elves immune, 3d4 rounds), poison (save vs
+ * paralysis (save vs paralysis, 3d4 rounds; elves are immune to the ghoul's
+ * touch but not the ghast's), poison (save vs
  * poison; giant centipedes' weak venom at +4), giant rat disease (5%, save vs
  * poison), energy drain (`drainLevel`, see DRAIN_LEVELS), shadow strength
  * drain (`drainStr`). Returns log-ready outcomes; effects are applied to the defender.
@@ -485,7 +487,9 @@ export function onHitSpecials(rng, attacker, defender) {
   const host = effectHost(defender);
   const dname = defender.name ?? characterOf(defender)?.name ?? 'the victim';
   if (special.includes('paralyze') && !hasEffect(host, 'paralyzed')) {
-    const elf = characterOf(defender)?.race === 'elf';
+    // MM: elves are immune to the ghoul's touch only — a ghast paralyzes even elves.
+    const ghoulish = special.includes('paralyzeNoElf') || (m.turnAs ?? m.id) === 'ghoul';
+    const elf = ghoulish && characterOf(defender)?.race === 'elf';
     if (elf) out.push({ kind: 'paralyze', saved: true, text: `${dname} shrugs off the ghoulish touch.` });
     else {
       const sv = savingThrow(rng, defender, 'ppdm');

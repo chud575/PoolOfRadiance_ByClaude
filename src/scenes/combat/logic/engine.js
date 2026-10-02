@@ -1,8 +1,9 @@
-import { diceStats } from '../../../rules/dice.js';
+import { diceStats, Rng } from '../../../rules/dice.js';
 import {
   rollInitiative, isDown, resolveAttack, hitChance, dealDamage, savingThrow, moraleCheck, turnUndead, weaponImmunity,
-  isSilverWeapon, isEdgedWeapon,
+  isSilverWeapon, isEdgedWeapon, rollSurprise,
 } from '../../../rules/combat.js';
+import { regenerationOf, breathOf, isAfraid } from '../../../rules/specials.js';
 import { bandage as bandageCharacter, armorAllowsThieving } from '../../../rules/character.js';
 import { effectMods, hasEffect } from '../../../rules/conditions.js';
 import { effectHost } from '../../../rules/creature.js';
@@ -10,6 +11,7 @@ import {
   fxView, ableToAct, attacksThisTurn, castInBattle, roundUpkeep, hammerTurn, specialsOnHit,
   castableInBattle, battleCastProblem, monsterSpells, consumeMonsterSpell, stenchAuras, battleItemUse, quaffInBattle,
   beginCasting, finishCasting, castDueBefore, castingDelay, cloudExposure,
+  monsterSpecialActions, breathInBattle, rockInBattle, fearInBattle,
 } from '../../../rules/battle.js';
 import { dexterityMods } from '../../../rules/abilities.js';
 import { backstabMultiplier } from '../../../rules/classes.js';
@@ -57,6 +59,11 @@ export class CombatEngine {
     this.areas = [];
     /** casters whose spell goes off later this round (rules beginCasting / finishCasting) */
     this.casting = [];
+    /** side caught by surprise ('party' | 'monster' | null) and for how many rounds (rules rollSurprise) */
+    this.surprised = null;
+    this.surpriseRounds = 0;
+    /** events produced before the first turn (surprise), delivered by the next nextTurn() */
+    this._queued = [];
     for (const c of this.all) {
       if (!c._fxView) {
         const old = c.fx ?? {};
@@ -244,6 +251,50 @@ export class CombatEngine {
     return attacksThisTurn(att, Math.max(1, this.round), def, { ranged, weapon: rp?.id ? ITEMS[rp.id] : undefined });
   }
 
+  // --------------------------------------------------------------- surprise
+  /**
+   * 1e surprise before the first round (rules rollSurprise: each side is
+   * surprised on 1-2 in d6; an all-elf/halfling party in non-metal armour
+   * surprises on 1-4). The surprised side loses the first round. `forced`:
+   * 'party' — the party has the drop (sneaked up: the monsters are
+   * surprised), 'monsters' — the monsters ambush the party, 'none' — no
+   * surprise. Uses an RNG derived from the engine's state without
+   * advancing it, so the battle's own dice stream is unchanged.
+   * @param {{forced?:'party'|'monsters'|'none'|null, party?:object[]}} [o] party = characters
+   * @returns {object[]} events (also queued for the next nextTurn())
+   */
+  rollSurprise({ forced = null, party = null } = {}) {
+    let r;
+    if (forced === 'party') r = { party: false, monsters: true, rounds: 1 };
+    else if (forced === 'monsters') r = { party: true, monsters: false, rounds: 1 };
+    else if (forced === 'none') r = { party: false, monsters: false, rounds: 0 };
+    else {
+      const rng = new Rng((this.rng.getState?.() ?? this.rng.seed ?? 1) ^ 0x51f15e);
+      r = rollSurprise(rng, { party: party ?? this.party.map((c) => c.ref).filter((ch) => ch?.classSpec) });
+    }
+    this.surprised = r.party ? 'party' : r.monsters ? 'monster' : null;
+    this.surpriseRounds = this.surprised ? r.rounds || 1 : 0;
+    if (!this.surprised) return [];
+    const foes = this.monsters.filter((m) => !this.out(m));
+    const kind = foes[0]?.name ?? 'the foe';
+    const text = this.surprised === 'monster'
+      ? `Surprise! The party falls upon ${foes.length > 1 ? 'the enemy' : kind} before they can react.`
+      : `Surprise! ${foes.length > 1 ? 'The enemy strike' : `${kind} strikes`} before the party can react.`;
+    const ev = [{ type: 'surprise', side: this.surprised, rounds: this.surpriseRounds, text }];
+    this._queued.push(...ev);
+    return ev;
+  }
+
+  /** Is this creature's side still reeling from surprise this round? */
+  isSurprised(c) {
+    return !!this.surprised && c.side === this.surprised && !c.charmed && this.round <= this.surpriseRounds;
+  }
+
+  /** Must the AI act for this creature even on the player's side (panicked by a fear aura)? */
+  mustAutoAct(c) {
+    return isAfraid(c) || !!c.fleeing;
+  }
+
   // ------------------------------------------------------------ round flow
   /** Roll initiative for a new round. */
   startRound() {
@@ -259,11 +310,15 @@ export class CombatEngine {
     }
     // Ghast stench: those within 10' save vs poison once or fight at -2.
     ev.push(...stenchAuras(this.rng, this.all.filter((c) => !this.out(c)), (a, b) => Battlefield.dist(a.x, a.y, b.x, b.y) <= 1.5));
+    // Dragon awe (Tyranthraxus): foes in sight check once per battle or flee in terror.
+    ev.push(...fearInBattle(this.rng, this.all.filter((c) => !this.out(c)), (a, b) => this.field.los(a.x, a.y, b.x, b.y)));
     const ready = this.all.filter((c) => !this.out(c));
     // Sleepers/held still hold a place in the order so the timeline stays readable.
     const actors = rollInitiative(this.rng, ready.filter((c) => ableToAct(c)));
     const sleepers = ready.filter((c) => !ableToAct(c));
-    this.order = [...actors, ...sleepers];
+    // The surprised stand at the back of the timeline while they gape (they lose this round).
+    const caught = actors.filter((c) => this.isSurprised(c));
+    this.order = [...actors.filter((c) => !caught.includes(c)), ...caught, ...sleepers];
     for (const c of this.all) c.delayed = false;
     this.turnIdx = -1;
     ev.push({ type: 'round', round: this.round });
@@ -277,11 +332,11 @@ export class CombatEngine {
       if (c.fled) continue;
       // Rules upkeep: bleeding (bandaged allies don't), poison onset, effects expiring.
       if (!(c.side === 'monster' && isDown(c))) ev.push(...roundUpkeep(c));
-      const regen = (c.ref?.special ?? []).find?.((s) => String(s).startsWith('regenerate'));
-      if (regen && c.side === 'monster' && c.status === 'ok' && c.hp.cur < c.hp.max) {
-        const n = Number(regen.split(':')[1] ?? 1);
+      // Rules regeneration (trolls 3/round from the 3rd round after first wounded; fire damage stays).
+      const n = c.side === 'monster' && !isDown(c) ? regenerationOf(c) : 0;
+      if (n > 0) {
         c.hp.cur = Math.min(c.hp.max, c.hp.cur + n);
-        ev.push({ type: 'heal', id: c.id, amount: n, text: `${c.name} regenerates.` });
+        ev.push({ type: 'heal', id: c.id, amount: n, text: `${c.name}'s wounds knit closed.` });
       }
     }
     for (const a of this.areas) a.rounds--;
@@ -296,7 +351,7 @@ export class CombatEngine {
    * @returns {object[]} events (round / turn); engine.active() is the new actor.
    */
   nextTurn() {
-    const ev = [];
+    const ev = this._queued.splice(0);
     for (let guard = 0; guard < 400; guard++) {
       if (this.outcome()) return ev;
       this.turnIdx++;
@@ -320,6 +375,10 @@ export class CombatEngine {
         continue;
       }
       if (c.side === 'party' && c.ref.status !== 'ok') continue;
+      if (this.isSurprised(c)) {
+        c._actedRound = this.round;
+        continue;
+      }
       // Rules: haste doubles / slow halves movement; attacksFor gives 3/2
       // fighters their alternate-round second blow and halves a slowed orc.
       c.mp = Math.max(0, Math.round(c.move * effectMods(effectHost(c)).moveMult));
@@ -602,7 +661,69 @@ export class CombatEngine {
 
   /** Rules targeting for c's cast of a spell (range/shape/size/maxTargets at its level) + scene hints. */
   tactics(c, spellId, level = null) {
+    if (spellId === 'breath') return this.specialTactics(c, 'breath');
     return spellTactics(spellId, c, level ? { level } : {});
+  }
+
+  // ------------------------------------------------- monster special actions
+  /** What a monster can do besides attacking and casting (rules monsterSpecialActions: breath, boulders). */
+  specialActions(c) {
+    return monsterSpecialActions(c);
+  }
+
+  /** Aiming data for a special action, in the shape of spell tactics (so the scene presents a breath like a spell). */
+  specialTactics(c, id) {
+    if (id !== 'breath') return null;
+    const b = breathOf(c);
+    if (!b) return null;
+    const vfx = { electricity: 'lightning', acid: 'lightning', fire: 'cone', cold: 'cone' }[b.element] ?? 'cone';
+    const shape = b.shape === 'cloud' ? 'radius' : b.shape;
+    return { target: 'direction', shape, size: b.size, range: b.shape === 'line' ? b.size : 1, hostile: true, vfx, level: 1, school: null, special: true };
+  }
+
+  /** Squares a special action covers when aimed at `at`. */
+  specialArea(c, id, at) {
+    const t = this.specialTactics(c, id);
+    return t ? this.field.template(t.shape, { x: c.x, y: c.y }, at, t.size) : [];
+  }
+
+  /**
+   * Perform a monster special action: 'breath' aimed at square `at` (every
+   * creature in the template, friend or foe, saves vs breath for half of the
+   * dragon's current hp — rules breathInBattle), or 'rocks' hurled at the
+   * creature on `at` (rules rockInBattle: 2d8, 2-20 squares, missile AC).
+   */
+  special(c, id, at) {
+    const ev = [];
+    if (id === 'breath') {
+      const t = this.specialTactics(c, id);
+      if (!t) return [{ type: 'log', text: `${c.name} cannot breathe.`, kind: 'warn' }];
+      this._face(c, at.x, at.y);
+      const squares = this.specialArea(c, id, at);
+      const set = new Set(squares.map((q) => `${q.x},${q.y}`));
+      const targets = this.all.filter((o) => o !== c && !this.out(o) && set.has(`${o.x},${o.y}`));
+      const r = breathInBattle(this.rng, c, targets);
+      if (!r.ok) return r.events;
+      const b = r.events[0];
+      if (b.element === 'fire' || b.element === 'acid') for (const x of r.results ?? []) if (x.damage) x.target.burnt = (x.target.burnt ?? 0) + x.damage;
+      ev.push({ type: 'cast', id: c.id, spell: 'breath', special: 'breath', element: b.element, at, squares, vfx: t.vfx, hits: b.hits, text: b.text });
+      for (const hh of b.hits) {
+        const o = this.byId(hh.id);
+        if (o && isDown(o)) ev.push(...this._downEvents(o));
+      }
+      for (const hh of b.hits) ev.push(...this._afterKill(this.byId(hh.id)));
+    } else if (id === 'rocks') {
+      const target = this.occupantAt(at.x, at.y);
+      if (!target) return [{ type: 'log', text: 'No target there.', kind: 'warn' }];
+      this._face(c, target.x, target.y);
+      const r = rockInBattle(this.rng, c, target, Math.round(Battlefield.dist(c.x, c.y, target.x, target.y)));
+      if (!r.ok) return r.events;
+      ev.push(...r.events, ...this._downEvents(target), ...this._afterKill(target));
+    } else return [{ type: 'log', text: `${c.name} hesitates.`, kind: 'warn' }];
+    c.acted = true;
+    c.attacksLeft = 0;
+    c.mp = 0;
+    return ev;
   }
 
   /** Targets/area for a spell aimed at square `at`. */
@@ -683,6 +804,13 @@ export class CombatEngine {
     else targets = near(inArea.filter((o) => !(t.notCaster && o === c)));
     const r = castInBattle(this.rng, spellId, c, targets, { level: lvl, school: t.school, fromItem: !!source });
     hits.push(...r.hits);
+    // Fire and acid wounds do not regenerate (rules regenerationOf reads `burnt`).
+    if (['fire', 'acid'].includes(SPELL_RULES[spellId]?.element)) {
+      for (const hh of r.hits) {
+        const o = hh.id ? this.byId(hh.id) : null;
+        if (o && hh.dmg) o.burnt = (o.burnt ?? 0) + hh.dmg;
+      }
+    }
     if (r.failed) ev[0].failed = true;
     if (r.ok) {
       for (const tr of r.results) {

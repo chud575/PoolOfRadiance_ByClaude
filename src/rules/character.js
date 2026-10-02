@@ -406,7 +406,10 @@ export const PROTECTION_CLOAK = /^cloakProtection/;
 export function effectiveAbilities(ch) {
   const a = { ...ch.abilities, strPct: ch.abilities.strPct ?? 0 };
   const fx = effectMods(ch);
-  const fighter = splitClasses(ch.classSpec).includes('fighter');
+  // PHB: exceptional strength is a fighter's — a dual-classed ex-fighter loses
+  // the percentile while the fighter class lies dormant, and regains it after.
+  const fighter = activeClasses(ch).includes('fighter');
+  if (!fighter) a.strPct = 0;
   if (fx.strBonus) Object.assign(a, addStrength(a.str, a.strPct, fx.strBonus, fighter));
   const sets = [];
   for (const [e, d] of equipped(ch)) if (d.setStr && canEquip(ch, d.id)) sets.push({ strPct: 0, ...d.setStr, _e: e });
@@ -719,19 +722,22 @@ export function trainLevels(ch, rng, o = {}) {
 
 /**
  * Energy drain (MM wight 1 level, spectre 2): each level is lost from the
- * character's highest-level class (ties: first listed). The class's hit die
+ * character's highest-level class (ties: first listed), counting a dual-classed
+ * human's dormant old class (its `dual.level` follows). The class's hit die
  * for that level goes, XP drops to the midpoint of the new level (DMG), and
- * hit points are recomputed (current hp falls by the same amount). Drained
- * below 1st level the character dies.
+ * hit points are recomputed (current hp falls by the same amount). Only when
+ * every class is at 1st level does a drain kill.
  * @returns {{drained:{cls:string, level:number}[], died:boolean}}
  */
 export function drainLevel(ch, n = 1) {
   const out = { drained: [], died: false };
   if (!isAlive(ch)) return out;
   for (let i = 0; i < n; i++) {
-    const classes = activeClasses(ch).filter((c) => ch.levels[c]);
+    // Every class with a level counts — a dual-classed human's dormant old
+    // class too — and the highest goes first; death only when all are at 1.
+    const classes = Object.keys(ch.levels ?? {}).filter((c) => (ch.levels[c] ?? 0) > 1);
     const cls = classes.reduce((best, c) => (ch.levels[c] > ch.levels[best] ? c : best), classes[0]);
-    if (!cls || ch.levels[cls] <= 1) {
+    if (!cls) {
       ch.status = 'dead';
       ch.hp.cur = Math.min(ch.hp.cur, -10);
       out.died = true;
@@ -740,6 +746,7 @@ export function drainLevel(ch, n = 1) {
     const lvl = ch.levels[cls] - 1;
     ch.levels[cls] = lvl;
     ch.hpRolls[cls]?.pop();
+    if (ch.dual && ch.dual.from === cls) ch.dual.level = lvl;
     ch.xp[cls] = Math.floor((xpForLevel(cls, lvl) + xpForLevel(cls, lvl + 1)) / 2);
     out.drained.push({ cls, level: lvl });
   }

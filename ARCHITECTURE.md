@@ -41,7 +41,7 @@ src/rules/                 AD&D 1e engine — pure, deterministic, unit-tested, 
   dice.js                  seeded Rng (mulberry32), roll('3d6+1'), parseDice
   abilities.js             full PHB ability tables (STR 18/xx + giant, INT, WIS, DEX, CON, CHA)
   races.js                 6 races: adjustments, min/max (by gender), classes, ability-dependent level limits, thief adj, ages
-  classes.js               XP, THAC0 (DMG matrices), saves, slots, thief skills, turn undead, alignments, PoR level caps
+  classes.js               XP, THAC0 (DMG matrices; fighters per PoR by option), saves, slots, thief skills, turn undead, alignments, PoR level caps
   tohit.js                 neededToHit() with the 1e repeating-20 rule
   conditions.js            condition registry + timed effects (bless, held, asleep, poisoned...) and their modifiers
   items.js                 +N enchantments, item names/values/weights, rate of fire, armour move, encumbrance
@@ -112,8 +112,11 @@ Durations are combat rounds (1 round = 1 minute; 1 turn = 10 rounds). Ranges/are
 * `createCharacter({rng, name, race, classSpec, abilities?, gender?, alignment?, items?, level?, spellbook?, ignoreLimits?})` — `level`
   stops at the racial level limit unless `ignoreLimits`.
 * Class ability minimums are the **Gold Box subset** PoR enforces (fighter STR 9 / CON 7, cleric WIS 9, magic-user INT 9 /
-  DEX 6, thief DEX 9), not the full PHB rows (fighter WIS 6, cleric STR/INT/CON/CHA 6...). Fighter THAC0 follows the 1e
-  DMG matrix (2 points per 2 levels: 20 at 1-2, 18 at 3-4...), not the Gold Box's later 21−level shortcut.
+  DEX 6, thief DEX 9), not the full PHB rows (fighter WIS 6, cleric STR/INT/CON/CHA 6...). Fighter THAC0 defaults to
+  the **PoR sheet** (21 − level: 20 at 1st, 13 at 8th); the settings option **Fighter THAC0** (`fighterThac0`:
+  `'goldBox'` | `'dmg'`) switches to the DMG matrix (2 points per 2 levels). Rules side: `RULES_OPTIONS`,
+  `setRulesOptions({fighterThac0})`, `thac0For(cls, lvl, {fighterThac0})`, `attachRulesSettings(settings, bus)` (main.js).
+  Other classes always use the DMG matrices.
 * `deriveStats(ch)` → `{thac0, ac, acRear, acMissile, saves, savePoison, hitBonus, dmgBonus, weapon, weaponMagic, ranged, damage,
   attacks, move, baseMove, weight, encumbrance, spellSlots, canCastArcane, thief, backstab, levels, className, classAbbr,
   classLevels ('F8 / MU3'), dual, dualActive, abilities (effective), mods (effects), ...}`. `acRear` = no shield, no DEX
@@ -146,8 +149,10 @@ of the level after next — Gold Box training rule), `trainableClasses(ch)`, `tr
 can never exceed the old level — **shop owner**: show it on the chip; humans; PoR lets them
 change class at the Training Hall — **shop owner**: list `dualClassChoices` there, charge the training fee, call `dualClass`). **Consumer obligation**: when `trainLevels` raised
 `'magicUser'`, offer `trainingSpellChoices(ch)` (camp.js; PoR: one new spell per level trained) and `learnSpell` the
-pick — ShopScene does. `drainLevel(ch, n)` (energy drain: highest class loses a level, its hit die, XP to the new
-level's midpoint; drained below 1st = dead) + `trimMemorized(ch)` (camp.js). Multiclass CON bonus: the fighter's
+pick — ShopScene does. `drainLevel(ch, n)` (energy drain: the highest of *all* classes with a level — a dual-classed
+human's dormant old class too, `dual.level` follows — loses a level, its hit die, XP to the new level's midpoint; death
+only when every class is at 1st). A dormant dual class lends nothing: no sweeps, 3/2 attacks or exceptional STR
+(`activeClasses`) + `trimMemorized(ch)` (camp.js). Multiclass CON bonus: the fighter's
 +3/+4 applies to every class's die before dividing while fighter is one of the classes (Gold Box ruling); a dual-classed
 human's dice each use their own class's bonus (an MU turned fighter gains nothing retroactively). `tempHpOf(ch)` —
 temporary hit points (heroism) are part of `hp.max` while they last and leave with the effect.
@@ -172,14 +177,22 @@ the game clock via a per-character `timeMark`; `rest`/`passTime` advance the mar
 `game.advanceTime` never ticks twice. `attachTimeSync(bus, game)` — wired once in main.js — calls `syncPartyTime` on every
 `time:changed`, so every `GameState.advanceTime` (explore steps and searches, dialogue, shops, travel, rest) runs effects
 and poison down; when something expired, a member died or was bound it emits `party:time` (`{minutes, expired, died,
-bandaged}`) and `party:changed`. Tested end to end with a real GameState + EventBus (Bless expires after 30 minutes of
+bandaged}`) and `party:changed`. **Combat rounds** count on the clock: 1 round = 1 minute (`MINUTES_PER_ROUND`);
+`endBattleTime(game, rounds)` (CombatScene.finish) moves the time marks with the rounds — which already ticked effects
+and poison — and then advances `game.minutes`, so nothing ticks twice. Tested end to end with a real GameState + EventBus (Bless expires after 30 minutes of
 walking; poison kills on the road).
 
 **Spells** (`SPELL_RULES`, 54 PoR spells incl. temple-only cures/raise dead, plus item-only `wandParalyzation`)
 * `spellsForClass(cls, level)`, `getSpell(id)` (rules + data display merged: `name, desc, tip, schools, usable, ...`),
   `spellLevel(id, cls)`, `spellTargeting(id, casterLevel, cls)` → `{target, range, shape, size, maxTargets, hostile, duration,
   castTime}`. `castingDelay(id, cls, L, {fromItem})` → 1e casting time in segments (Magic Missile 1, Fireball 3, CLW 5,
-  Bless 10 = end of round; items 0) — see **casting time** under the battle bridge.
+  Bless 10 = end of round; items 0; clamped to one round) — see **casting time** under the battle bridge.
+  `castingTime(id, cls, L)` is the unclamped PHB figure (Strength and Cure Disease 100 = 1 turn: camp only; tested for
+  every spell against the PHB). Burning Hands is the PHB 3' fan: a cone of size 1 (adjacent squares only).
+* `spellSummary(id, cls, level)` → `{range:'6 squares', area:'3x3 squares, up to 3', duration:'7 rounds', save:'spell
+  negates', castTime:'5 segments', usable:'combat only'}` — **the** display strings for spell cards and tooltips,
+  computed from SPELL_RULES at the caster's class and level (SpellPanel's card uses it); `durationText(rounds)`,
+  `castTimeText(segments)`.
 * `castingClass(caster, id, cls?)` — multiclass casters keep separate memories: the class comes from the memorized slot
   (`cls`, else the first class in `spells.memorized` order holding the spell, else the first active class). A half-elf C/MU
   with Hold Person memorized only as MU casts the MU version (range 12, 4 persons, −3 alone, 2 rounds/level, 3 segments).
@@ -225,7 +238,8 @@ gnomes; helpless targets per `HelplessRule`: `'bonus'` +4 (default), `'auto'` me
 `hitChance(a, d, mods, {ranged, helpless})`, `attackRateOf(c, {weapon})` / `attacksFor(c, round, {weapon})` — the single
 source of truth for attack counts, computed live (3/2 fighters alternate 1,2; haste ×2, slow ×½ for characters *and*
 monsters, whose count is routines × attacks in the routine), `sweepAttacks(ch, target)` (fighters vs < 1 full HD incl.
-1-1 HD goblins, `belowOneHd`; the same creatures save as 0-level men and have THAC0 20 — one ruling), `onHitSpecials` (ghoul paralysis — elves immune — poison, rat disease), `savingThrow`,
+1-1 HD goblins, `belowOneHd`; the same creatures save as 0-level men and have THAC0 20 — one ruling), `onHitSpecials` (ghoul paralysis — elves immune; a ghast's touch paralyzes elves too (MM); a `paralyzeNoElf` tag marks
+other ghoul-like touches — poison, rat disease), `savingThrow`,
 `poison(rng, target, {mode:'deadly'|'damage', onset})`, `turnUndead(rng, level, type)` (unknown types: no effect),
 `endOfRound(c)` (bleeding, poison onset, effect expiry), `endCombat(party)`, `rollSurprise(rng, {partyMod, monsterMod,
 party, scout})` (with `party`, elves/halflings in non-metal armour surprise 4 in 6 — explore.js `surpriseMods`), `moraleCheck`,
@@ -269,8 +283,18 @@ condition and end-of-round tick through these; it uses the `'slay'` helpless rul
 * Monster actions for the AI: `monsterSpecialActions(c)` → `[{id:'breath'|'rocks', shape, size, range, element?, uses?}]`,
   `breathInBattle(rng, c, targetsInTemplate)` → one `breath` event with castInBattle-style `hits`, `rockInBattle(rng, c,
   target, distance)` → an `attack` event (`rock: true`), `fearInBattle(rng, all, seen?)` → effect events (call at round
-  start). **Combat owner**: the engine/AI must offer these (they replace the old ad-hoc morale 'fear' for Tyranthraxus) and
-  may swap its own regeneration for `regenerationOf`.
+  start). **Wired**: `CombatEngine.specialActions/specialTactics/specialArea/special(c, 'breath'|'rocks', at)`; the AI
+  (`pickMonsterSpecial`) breathes when the template catches 2+ foes (or the last one) and no friends, and a giant not in
+  melee hurls boulders 2-20 squares; a breath is presented as a `cast` event (`spell:'breath'`, `special:'breath'`,
+  `vfx` lightning/cone) and `engine.tactics(c,'breath')` describes it. `fearInBattle` runs in `startRound` (once per
+  creature per battle); the afraid flee under AI control (`engine.mustAutoAct`). End-of-round regeneration is
+  `regenerationOf` (fire/acid damage accumulates in `c.burnt` and is not regenerated). Morale routs remain separate.
+* Surprise: `CombatEngine.rollSurprise({forced, party})` before the first `startRound` — rules `rollSurprise` (1-2 in 6
+  per side, elven stealth via `surpriseMods`) on an RNG derived from the engine's state without advancing it; the
+  surprised side loses round 1 (`isSurprised`), a `surprise` event (banner) leads the first `nextTurn`. `forced`:
+  `'party'` = the party has the drop (an encounter's or dialogue choice's `surprise: 'party'`, e.g. sneaking up on the
+  orc boss), `'monsters'` = ambush, `'none'`. CombatScene skips the roll for frozen debug shots and demos unless
+  `?surprise=` is given.
 * `battleItemUse(ch, i)` → `{kind, spellId, level, saveKey}` (potion / spell at `itemCasterLevel`, scrolls gated by
   `canUseScroll`, wands save vs `rsw` — remembered for the following `castInBattle`, but pass `saveKey` through when you can;
   the Necklace of Missiles throws fireball beads — `usableInBattle(ch, i)` says which entries qualify) and
@@ -301,10 +325,15 @@ these and spend the returned `minutes` with `game.advanceTime`):
   searching costs 10 minutes. `stoneSense(rng, ch, kind)` / `stoneSenseChance` (PHB dwarf/gnome senses).
 * `surpriseMods(party, {scout})` → `{monsterMod}` (−2 when the moving group / scout is all elves and halflings in non-metal
   armour) — fed into `rollSurprise({party})`.
+* Scene-facing (wired in ExploreScene): `edgeKey(mapId, x, y, dir)` (same key from both faces of a wall),
+  `openLockedDoor(rng, game, key, {useKnock, door})` — walking into a LOCKED edge: thief picks, then STR, then a
+  memorized Knock (slot spent); state persists in `game.flags.doors[key]` (`lockedDoorState`, `isDoorOpened`) and an
+  opened door stays open; `searchSquare(rng, party, [{dir}], {passive})` — the SEARCH command (10 minutes) and the elven
+  1-in-6 notice on every arrival; `knockCaster(party)`.
 
 **Items, treasure, temple**: `useItem(rng, ch, index, targets, {spellId})`, `scribeScroll`, `identifyItem`, `detectMagicIn`;
 `generateTreasure(rng, types, {scale, count})` → `{coins, gems, jewelry, items, maps?}` (MM types A–Z incl. W; U/V give one
-/ two of each magic kind except potions and scrolls, `EACH_MAGIC_KIND`),
+/ two of each magic kind except potions and scrolls, `EACH_MAGIC_KIND`; Z any 3 except potions — kind `'noPotions'`),
 `victorySpoils(rng, encounter.treasure, slainMonsterDefs)` → `{gold, items, gems, jewelry, text}` (what CombatScene awards:
 encounter gold/items/`types` + each slain monster's `treasure` type, individual J–N per creature),
 `rollMagicItem`, `treasureValue`, `shareCoins`; `TEMPLE_SERVICES`, `serviceApplies(id, ch)`, `serviceProblem(id, ch)`

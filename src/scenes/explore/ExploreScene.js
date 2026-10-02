@@ -17,6 +17,7 @@ import { dressRooms } from './RoomDressing.js';
 import { tilesetFor, tilesetMaterials } from './tilesets.js';
 import { hasDemoMap, getDemoMap } from './demoMaps.js';
 import { deriveStats } from '../../rules/character.js';
+import { edgeKey, isDoorOpened, openLockedDoor, searchSquare } from '../../rules/explore.js';
 import { headBobEnabled, inferHarbour } from './exploreRules.js';
 import { SHOPS } from '../../data/shops.js';
 
@@ -616,9 +617,11 @@ export default class ExploreScene extends Scene {
 
   move(dir, keepFacing = false) {
     if (this.tween) return;
-    const res = this.map.tryMove(this.pos.x, this.pos.y, dir, { foundSecrets: this._foundSecrets() });
+    let res = this.map.tryMove(this.pos.x, this.pos.y, dir, { foundSecrets: this._foundSecrets() });
+    // Rules: a locked door yields to a thief's picks, a strong shoulder or Knock, and stays open after.
+    if (!res.ok && res.reason === 'locked' && this._openLocked(dir)) res = { ...res, ok: true, reason: undefined };
     if (!res.ok) {
-      if (res.reason === 'locked') this.ctx.ui.message('The door is locked.', 'warn');
+      if (res.reason === 'locked') { /* _openLocked reported the attempt */ }
       else if (res.reason === 'edge') this.ctx.ui.message('The way is barred.', 'warn');
       this.ctx.audio.sfx('bump');
       this.tween = { kind: 'bump', t: 0, dur: 0.24, dir, fromYaw: DIR_YAW[this.pos.dir], toYaw: DIR_YAW[this.pos.dir], x0: this.pos.x, y0: this.pos.y, x1: this.pos.x, y1: this.pos.y };
@@ -649,6 +652,7 @@ export default class ExploreScene extends Scene {
     game.setLocation({ x: this.pos.x, y: this.pos.y, dir: this.pos.dir });
     game.markExplored(this.map.id, this.pos.x, this.pos.y, this.map.w);
     game.advanceTime(1);
+    this._noticeSecrets();
     this._assignLights();
     this._updateHud();
     this._checkEvents();
@@ -723,25 +727,53 @@ export default class ExploreScene extends Scene {
     this.ctx.scenes.goto('camp', {});
   }
 
+  /** Rules openLockedDoor at the edge ahead: true once the door is open (time spent, outcome printed). */
+  _openLocked(dir) {
+    const { game, ui, rng } = this.ctx;
+    const key = edgeKey(this.map.id, this.pos.x, this.pos.y, dir);
+    if (isDoorOpened(game, key)) return true;
+    const r = openLockedDoor(rng, game, key);
+    if (r.minutes) game.advanceTime(r.minutes);
+    ui.message(r.opened ? r.text : `The door is locked. ${r.text}`, r.opened ? 'loot' : 'warn');
+    if (r.knocked) game.notifyPartyChanged?.();
+    return r.opened;
+  }
+
+  /** Rules: elves and half-elves notice a hidden door 1 in 6 just walking past it (PHB). */
+  _noticeSecrets() {
+    const { game, ui, rng } = this.ctx;
+    const { x, y } = this.pos;
+    const list = (game.flags.secrets ??= []);
+    const hidden = DIRS.filter((d) => this.map.getEdge(x, y, d) === EDGE.SECRET && !list.includes(`${this.map.id}:${x},${y},${d}`)).map((dir) => ({ dir }));
+    if (!hidden.length) return;
+    const { found } = searchSquare(rng, game.party, hidden, { passive: true });
+    if (!found.length) return;
+    for (const { dir: d } of found) {
+      const [dx, dy] = DIR_VEC[d];
+      list.push(`${this.map.id}:${x},${y},${d}`, `${this.map.id}:${x + dx},${y + dy},${OPPOSITE[d]}`);
+    }
+    ui.message(`${found[0].by?.name ?? 'Someone'}'s keen elven eyes spot a hidden door.`, 'loot');
+    this._buildBlock();
+    this._buildShafts();
+    this._assignLights(true);
+  }
+
   cmdSearch() {
-    const { game, ui } = this.ctx;
+    const { game, ui, rng } = this.ctx;
     game.advanceTime(10);
     const { x, y } = this.pos;
-    let found = false;
-    for (const d of DIRS) {
-      if (this.map.getEdge(x, y, d) === EDGE.SECRET) {
-        const key = `${this.map.id}:${x},${y},${d}`;
-        const list = (game.flags.secrets ??= []);
-        if (!list.includes(key)) {
-          list.push(key);
-          const [dx, dy] = DIR_VEC[d];
-          list.push(`${this.map.id}:${x + dx},${y + dy},${OPPOSITE[d]}`);
-          found = true;
-        }
-      }
+    const list = (game.flags.secrets ??= []);
+    // Rules searchSquare: each hidden door is rolled for — elves and half-elves 2 in 6, others 1 in 6.
+    const hidden = DIRS.filter((d) => this.map.getEdge(x, y, d) === EDGE.SECRET && !list.includes(`${this.map.id}:${x},${y},${d}`)).map((dir) => ({ dir }));
+    const { found: hits } = searchSquare(rng, game.party, hidden);
+    for (const { dir: d } of hits) {
+      const [dx, dy] = DIR_VEC[d];
+      list.push(`${this.map.id}:${x},${y},${d}`, `${this.map.id}:${x + dx},${y + dy},${OPPOSITE[d]}`);
     }
+    const found = hits.length > 0;
     if (found) {
-      ui.message('You discover a hidden door!', 'loot');
+      const by = hits[0].by;
+      ui.message(by && game.party.length > 1 ? `${by.name} discovers a hidden door!` : 'You discover a hidden door!', 'loot');
       this._buildBlock();
       this._buildShafts();
       this._assignLights(true);

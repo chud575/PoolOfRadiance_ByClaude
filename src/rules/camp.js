@@ -272,6 +272,28 @@ export function syncPartyTime(party, now) {
 }
 
 /**
+ * Combat rounds on the game clock. 1e: a melee round is one minute, so a
+ * 10-round fight costs ten minutes of the day. The rounds already ran every
+ * timed effect and poison onset down (roundUpkeep, once per round), so each
+ * member's time mark moves with them first — the clock then advances without
+ * ticking those minutes a second time. Call once when the battle ends.
+ * @param {{party:object[], minutes:number, advanceTime?:function(number):void}} game
+ * @param {number} rounds
+ * @returns {number} minutes added
+ */
+export function endBattleTime(game, rounds) {
+  const minutes = Math.max(0, Math.floor(rounds ?? 0)) * MINUTES_PER_ROUND;
+  if (!minutes || !game) return 0;
+  for (const ch of game.party ?? []) ch.timeMark = (ch.timeMark ?? game.minutes) + minutes;
+  if (typeof game.advanceTime === 'function') game.advanceTime(minutes);
+  else game.minutes += minutes;
+  return minutes;
+}
+
+/** 1e: one melee round = one minute (ten segments of six seconds). */
+export const MINUTES_PER_ROUND = 1;
+
+/**
  * Wire the game clock to the party's timed effects — the one line main.js
  * needs: `attachTimeSync(bus, game)`. Every 'time:changed' (each explore
  * step, search, dialogue, shop visit, travel, rest) calls

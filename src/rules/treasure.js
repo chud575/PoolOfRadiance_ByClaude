@@ -45,7 +45,7 @@ export const TREASURE_TYPES = {
   W: { gp: [60, '5d6x1000'], pp: [15, '1d8x100'], gems: [60, '10d8'], jewelry: [50, '5d8'], maps: [55, 1] },
   X: { magic: [60, 1, 'misc'], potions: [60, 1] },
   Y: { gp: [70, '2d6x1000'] },
-  Z: { cp: [20, '1d3x1000'], sp: [25, '1d4x1000'], ep: [25, '1d4x1000'], gp: [30, '1d4x1000'], pp: [30, '1d6x100'], gems: [55, '10d6'], jewelry: [50, '5d6'], magic: [50, 3, 'any'] },
+  Z: { cp: [20, '1d3x1000'], sp: [25, '1d4x1000'], ep: [25, '1d4x1000'], gp: [30, '1d4x1000'], pp: [30, '1d6x100'], gems: [55, '10d6'], jewelry: [50, '5d6'], magic: [50, 3, 'noPotions'] },
 };
 
 const GEM_NAMES = {
@@ -126,15 +126,16 @@ export function rollScroll(rng) {
 }
 
 /**
- * Roll one magic item of a kind: 'any' | 'armsArmor' | 'noWeapons' | 'misc' |
+ * Roll one magic item of a kind: 'any' | 'armsArmor' | 'noWeapons' | 'noPotions' | 'misc' |
  * 'potions' | 'scrolls' | 'rings' | 'wands' | 'armor' | 'swords' | 'weapons'. A kind with no item
  * in data falls back to a potion unless `o.noFallback`.
  * @returns {import('./character.js').InventoryEntry|null}
  */
 export function rollMagicItem(rng, kind = 'any', o = {}) {
   let cat = kind;
-  if (kind === 'any' || kind === 'noWeapons' || kind === 'armsArmor') {
-    const r = rng.int(1, 100);
+  if (kind === 'any' || kind === 'noWeapons' || kind === 'armsArmor' || kind === 'noPotions') {
+    // MM type Z: "any 3 except potions" — roll past the potion band.
+    const r = rng.int(kind === 'noPotions' ? 21 : 1, 100);
     if (kind === 'armsArmor') cat = r <= 40 ? 'armor' : r <= 75 ? 'swords' : 'weapons';
     else {
       cat = r <= 20 ? 'potions' : r <= 35 ? 'scrolls' : r <= 40 ? 'rings' : r <= 45 ? 'wands' : r <= 57 ? 'misc' : r <= 72 ? 'armor' : r <= 86 ? 'swords' : 'weapons';
@@ -144,7 +145,7 @@ export function rollMagicItem(rng, kind = 'any', o = {}) {
   if (cat === 'scrolls') return rollScroll(rng);
   const rows = MAGIC_TABLE[cat];
   const id = weighted(rng, rows);
-  if (!id) return !o.noFallback && (cat === 'misc' || cat === 'rings' || cat === 'wands') ? rollMagicItem(rng, 'potions') : null;
+  if (!id) return !o.noFallback && (cat === 'misc' || cat === 'rings' || cat === 'wands') ? rollMagicItem(rng, kind === 'noPotions' ? 'scrolls' : 'potions') : null;
   if (cat === 'armor' || cat === 'swords' || cat === 'weapons') {
     const plus = rollPlus(rng);
     const e = makeEntry(id, { magic: plus, identified: false });

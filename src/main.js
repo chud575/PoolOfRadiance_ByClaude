@@ -8,6 +8,7 @@ import { Settings } from './core/Settings.js';
 import { SaveManager } from './core/SaveManager.js';
 import { GameState } from './core/GameState.js';
 import { attachTimeSync } from './rules/camp.js';
+import { attachRulesSettings } from './rules/classes.js';
 import { parseDebugParams, sceneParamsFromRaw } from './core/debug.js';
 import { RenderContext } from './render/RenderContext.js';
 import { UI } from './ui/UI.js';
@@ -43,6 +44,7 @@ async function boot() {
   if (debug.party && debug.party !== 'none') game.setParty(buildParty(debug.party, debug.seed));
   if (debug.raw.hour !== undefined) game.minutes = Number(debug.raw.hour) * 60;
   attachTimeSync(bus, game); // rules: timed effects and poison follow the game clock
+  attachRulesSettings(settings, bus); // rules: table options (fighter THAC0) follow the settings
 
   // Global hotkeys.
   bus.on('input:action', ({ action }) => {

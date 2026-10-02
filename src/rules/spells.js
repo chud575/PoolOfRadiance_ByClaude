@@ -193,13 +193,13 @@ export const SPELL_RULES = {
     desc: 'Darkness falls over the victim\'s eyes.', tip: 'Touch: blinds (-4 to hit, +4 AC). Save vs spell negates.',
   },
   cureDisease: {
-    name: 'Cure Disease', schools: { cleric: 3 }, usable: 'both', castTime: 10, range: 1, target: 'ally',
+    name: 'Cure Disease', schools: { cleric: 3 }, usable: 'camp', castTime: 100 /* PHB: 1 turn */, range: 1, target: 'ally',
     area: { shape: 'single' }, reverse: 'causeDisease',
     ops: [{ op: 'remove', ids: ['diseased'] }],
     desc: 'Fever breaks; the sickness is purged.', tip: 'Touch: cures disease.',
   },
   causeDisease: {
-    name: 'Cause Disease', schools: { cleric: 3 }, usable: 'combat', castTime: 10, range: 1, target: 'enemy',
+    name: 'Cause Disease', schools: { cleric: 3 }, usable: 'combat', castTime: 100 /* PHB 1 turn; PoR lets it be cast in battle (resolves at round's end) */, range: 1, target: 'enemy',
     area: { shape: 'single' }, hostile: true, reverse: 'cureDisease', save: { key: 'sp', type: 'neg' },
     ops: [{ op: 'touch' }, { op: 'condition', id: 'diseased', rounds: Infinity }],
     desc: 'A sickly touch spreads rot.', tip: 'Touch: disease (-2 to hit, no natural healing). Save vs spell negates.',
@@ -247,7 +247,7 @@ export const SPELL_RULES = {
     desc: 'Even grievous harm is undone.', tip: 'Heals 3d8+3 hit points.',
   },
   raiseDead: {
-    name: 'Raise Dead', schools: { cleric: 5 }, usable: 'camp', castTime: 60, range: 1, target: 'ally', templeOnly: true,
+    name: 'Raise Dead', schools: { cleric: 5 }, usable: 'camp', castTime: 10, range: 1, target: 'ally', templeOnly: true,
     area: { shape: 'single' }, affects: 'dead', ops: [{ op: 'flag', flag: 'raiseDead' }],
     desc: 'The soul is called back to its body.', tip: 'Returns the dead to life (resurrection survival roll; -1 CON).',
   },
@@ -255,9 +255,11 @@ export const SPELL_RULES = {
   // ======================================================== MAGIC-USER 1
   burningHands: {
     name: 'Burning Hands', schools: { magicUser: 1 }, usable: 'combat', castTime: 1, range: 1, target: 'direction',
-    area: { shape: 'cone', size: 3 }, hostile: true, element: 'fire',
+    // PHB: a 3' fan of flame from the fingertips — only what stands next to
+    // the caster in the chosen direction burns (cone of size 1).
+    area: { shape: 'cone', size: 1 }, hostile: true, element: 'fire',
     ops: [{ op: 'damage', dice: (L) => String(L), element: 'fire' }],
-    desc: 'A fan of flame roars from outspread fingers.', tip: 'Cone: 1 hp of fire damage per level, no save.',
+    desc: 'A fan of flame roars from outspread fingers.', tip: 'Adjacent foe in the chosen direction: 1 hp of fire damage per level, no save.',
   },
   charmPerson: {
     name: 'Charm Person', schools: { magicUser: 1 }, usable: 'combat', castTime: 1, range: 12, target: 'enemy',
@@ -292,7 +294,7 @@ export const SPELL_RULES = {
     desc: 'Darts of force streak unerringly to the mark.', tip: '1d4+1 per missile (1 + 1 per 2 levels above 1st); never misses.',
   },
   readMagic: {
-    name: 'Read Magic', schools: { magicUser: 1 }, usable: 'camp', castTime: 1, range: 0, target: 'self',
+    name: 'Read Magic', schools: { magicUser: 1 }, usable: 'camp', castTime: 10, range: 0, target: 'self',
     area: { shape: 'single' }, duration: (L) => R(2 * L),
     ops: [{ op: 'flag', flag: 'readMagic' }],
     desc: 'Arcane script resolves into meaning.', tip: 'Read magic-user scrolls so they can be scribed.',
@@ -330,7 +332,7 @@ export const SPELL_RULES = {
     desc: 'The subject fades from sight.', tip: 'Invisible until attacking: foes -4 to hit and cannot target with spells.',
   },
   knock: {
-    name: 'Knock', schools: { magicUser: 2 }, usable: 'camp', castTime: 2, range: 6, target: 'none',
+    name: 'Knock', schools: { magicUser: 2 }, usable: 'camp', castTime: 1, range: 6, target: 'none',
     area: { shape: 'single' },
     ops: [{ op: 'flag', flag: 'unlock' }],
     desc: 'Locks spring and bars slide aside.', tip: 'Opens a locked or stuck door.',
@@ -354,7 +356,7 @@ export const SPELL_RULES = {
     desc: 'A choking yellow fog rolls out.', tip: 'Creatures in a 2x2 area are helpless 1d4+1 rounds. Save vs poison negates.',
   },
   strength: {
-    name: 'Strength', schools: { magicUser: 2 }, usable: 'both', castTime: 1, range: 1, target: 'ally',
+    name: 'Strength', schools: { magicUser: 2 }, usable: 'camp', castTime: 100 /* PHB: 1 turn — cast before the fight */, range: 1, target: 'ally',
     area: { shape: 'single' }, duration: (L) => H(L),
     ops: [{ op: 'strength' }],
     desc: 'Sinews tighten with borrowed might.', tip: '+1d8 STR for fighters, 1d6 clerics/thieves, 1d4 magic-users; 1 hour/level.',
@@ -529,6 +531,71 @@ export function castingDelay(id, cls, L = 1, o = {}) {
   if (!s) return 0;
   const seg = val(s.castTime ?? 1, L, cls ?? s.school);
   return Math.max(0, Math.min(10, Math.round(seg)));
+}
+
+/**
+ * Full PHB casting time in segments, unclamped (Strength and Cure Disease 100
+ * = 1 turn; Bless 10 = 1 round). castingDelay is this clamped to one round.
+ */
+export function castingTime(id, cls, L = 1) {
+  const s = SPELL_RULES[id];
+  return s ? Math.max(0, Math.round(val(s.castTime ?? 1, L, cls ?? s.school))) : 0;
+}
+
+/** Dice durations the formula functions roll at cast time (shown as dice, not their average). */
+const DURATION_TEXT = { snakeCharm: '4 rounds + 1d4', wandParalyzation: '5d4 rounds', stinkingCloud: 'helpless 1d4+1 rounds', causeBlindness: 'until cured', causeDisease: 'until cured' };
+const SAVE_TEXT = { neg: 'negates', half: 'half' };
+const SAVE_NAME = { sp: 'spell', ppdm: 'poison', rsw: 'wand', pp: 'petrification', bw: 'breath' };
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+
+/** Rounds as the PHB would say them: '5 rounds', '3 turns', '2 hours'. */
+export function durationText(rounds) {
+  if (rounds === Infinity) return 'until broken';
+  if (!rounds) return 'instant';
+  if (rounds >= ROUNDS_PER_HOUR && rounds % ROUNDS_PER_HOUR === 0) return plural(rounds / ROUNDS_PER_HOUR, 'hour');
+  if (rounds >= ROUNDS_PER_TURN && rounds % ROUNDS_PER_TURN === 0) return plural(rounds / ROUNDS_PER_TURN, 'turn');
+  return plural(rounds, 'round');
+}
+
+/** Segments as the PHB would say them: '3 segments', '1 round', '1 turn'. */
+export function castTimeText(seg) {
+  if (seg >= 100 && seg % 100 === 0) return plural(seg / 100, 'turn');
+  if (seg >= 10 && seg % 10 === 0) return plural(seg / 10, 'round');
+  return plural(seg, 'segment');
+}
+
+/**
+ * Player-facing numbers for a spell card or tooltip, computed from SPELL_RULES
+ * at the caster's class and level — the same values the engine resolves with
+ * (cleric Hold Person 6 squares, magic-user 12; Sleep 3+L squares, 5 rounds/L).
+ * Squares are 10'. All fields are short display strings.
+ * @returns {{range:string, area:string, duration:string, save:string, castTime:string, usable:string}|null}
+ */
+export function spellSummary(id, cls, level = 1) {
+  const s = SPELL_RULES[id];
+  if (!s) return null;
+  const sc = cls && s.schools[cls] ? cls : s.school ?? Object.keys(s.schools)[0];
+  const L = Math.max(1, level | 0);
+  const t = spellTargeting(id, L, sc);
+  const range = s.target === 'direction' ? 'from caster' : t.range === 0 ? 'self' : t.range === 1 ? 'touch' : plural(t.range, 'square');
+  let area;
+  switch (t.shape) {
+    case 'radius': area = t.size <= 1 ? '3x3 squares' : `${t.size}-square radius`; break;
+    case 'square': area = `${t.size}x${t.size} squares`; break;
+    case 'cone': area = t.size <= 1 ? 'adjacent square' : `${t.size}-square cone`; break;
+    case 'line': area = `${t.size}-square line`; break;
+    case 'all': area = s.target === 'party' ? 'whole party' : 'all in sight'; break;
+    default: area = s.target === 'self' ? 'caster' : id === 'knock' ? 'one door or lock' : s.target === 'none' ? '—' : 'one creature';
+  }
+  if (Number.isFinite(t.maxTargets) && t.shape !== 'single') area += `, up to ${t.maxTargets}`;
+  const save = s.save ? `${SAVE_NAME[s.save.key] ?? s.save.key} ${SAVE_TEXT[s.save.type] ?? s.save.type}` : 'none';
+  return {
+    range, area,
+    duration: DURATION_TEXT[id] ?? durationText(t.duration),
+    save,
+    castTime: castTimeText(castingTime(id, sc, L)),
+    usable: { both: 'combat or camp', combat: 'combat only', camp: 'camp only' }[s.usable] ?? '',
+  };
 }
 
 /**

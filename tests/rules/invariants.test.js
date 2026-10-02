@@ -126,7 +126,7 @@ describe('DMG matrices, cell by cell', () => {
   it('turn undead, types 1-9 at cleric levels 1-8 (DMG p.75)', () => {
     const want = {
       skeleton: [10, 7, 4, 'T', 'T', 'D', 'D', 'D*'],
-      zombie: [13, 10, 7, 'T', 'T', 'D', 'D', 'D'],
+      zombie: [13, 10, 7, 'T', 'T', 'D', 'D', 'D*'], // re-verified: D* from 8th, like skeletons
       ghoul: [16, 13, 10, 4, 'T', 'T', 'D', 'D'],
       shadow: [19, 16, 13, 7, 4, 'T', 'T', 'D'],
       wight: [20, 19, 16, 10, 7, 4, 'T', 'T'],
@@ -138,6 +138,10 @@ describe('DMG matrices, cell by cell', () => {
     for (const [type, row] of Object.entries(want)) {
       row.forEach((v, i) => expect(turnNeeded(i + 1, type), `${type} L${i + 1}`).toBe(v));
     }
+    // 9th-13th and 14th+ columns of the first rows: ghouls are D* from 9th, shadows only at 14th.
+    expect([9, 13, 14].map((l) => turnNeeded(l, 'ghoul'))).toEqual(['D*', 'D*', 'D*']);
+    expect([9, 14].map((l) => turnNeeded(l, 'shadow'))).toEqual(['D', 'D*']);
+    expect([9, 14].map((l) => turnNeeded(l, 'wight'))).toEqual(['D', 'D']);
   });
   it('monster THAC0 by hit dice (DMG monster attack matrix)', () => {
     const want = [[0.5, 0, 20], [1, -1, 20], [1, 0, 19], [1, 2, 18], [2, 0, 16], [3, 3, 16], [4, 1, 15], [5, 0, 15],
