@@ -75,16 +75,16 @@ const hashf = (n) => {
 // ------------------------------------------------------------------ species looks
 /** Colours / patterns per species (hide, accent, belly, horn, cloth). */
 export const LOOKS = {
-  kobold: { skin: [0x6e3a20, 'scales'], back: [0x2e1810, 'scales'], belly: [0xb08050, 'scales'], horn: 0xa89068, cloth: 0x4a3a28, head: 'kobold' },
+  kobold: { skin: [0xb0602a, 'scales'], back: [0x6e3014, 'scales'], belly: [0xe8c48a, 'scales'], horn: 0xe2d2a8, cloth: 0x4a3a28, head: 'kobold' },
   goblin: { skin: [0x86963a, 'skin'], back: [0x5a6a26, 'skin'], belly: [0xa0aa60, 'skin'], horn: 0xd8c8a0, cloth: 0x4a3020, head: 'goblin', pants: 0x3a2a1a },
-  orc: { skin: [0x464a38, 'skin'], back: [0x2a2c22, 'skin'], belly: [0x56584a, 'skin'], horn: 0xa89a7c, cloth: 0x2e2418, head: 'orc', pants: 0x2a221a, jerkin: 0x2a1c12, plate: 0x3e3630, hair: 0x0e0c0a },
+  orc: { skin: [0x6a7650, 'skin'], back: [0x434d30, 'skin'], belly: [0x939c78, 'skin'], horn: 0xeadfc0, cloth: 0x3a2c1c, head: 'orc', pants: 0x3a2c1e, jerkin: 0x5a3a20, plate: 0x6a625a, hair: 0x0e0c0a },
   // Hobgoblins: dark rust-brown hide with an orange cast, a flat simian face,
   // bronze scale coats under a red-and-ochre legion tabard, leather boots.
-  hobgoblin: { skin: [0x5a2a14, 'skin'], back: [0x381608, 'skin'], belly: [0x6a321a, 'skin'], horn: 0xd8c8a8, cloth: 0x5a1e18, head: 'hobgoblin', pants: 0x2e1c12, mail: 0x6e5a3e, hair: 0x0e0a08, nose: 0x3a1a0e, tabard: 0x7a1a12, trim: 0xb88a2e, boots: 0x2a1a10 },
+  hobgoblin: { skin: [0x9a4a22, 'skin'], back: [0x5e2810, 'skin'], belly: [0xc0784a, 'skin'], horn: 0xeadcb8, cloth: 0x2a2a22, head: 'hobgoblin', pants: 0x2e1c12, mail: 0x6e5a3e, hair: 0x0e0a08, nose: 0x3a1a0e, tabard: 0x24261e, trim: 0xc89a3a, boots: 0x2a1a10 },
   gnoll: { skin: [0xa88450, 'spots'], back: [0x6a5030, 'fur'], belly: [0xc8a878, 'fur'], horn: 0xe0d4b0, cloth: 0x3a2e22, head: 'gnoll', hair: 0x2a1a10, pants: 0x3a2e22 },
   bugbear: { skin: [0x7a5a30, 'fur'], back: [0x4a3418, 'fur'], belly: [0x9a7a50, 'fur'], horn: 0xd8c8a0, cloth: 0x3a2a1a, head: 'bugbear', hair: 0x2a1a0a, pants: 0x3a2a1a },
   lizardMan: { skin: [0x4a6a3a, 'scales'], back: [0x2e4a26, 'scales'], belly: [0xb0b07a, 'scales'], horn: 0xd8d0a0, cloth: 0x4a3a20, head: 'lizard' },
-  skeleton: { skin: [0xbfb08e, 'bone'], back: [0x9a8a6a, 'bone'], belly: [0xbfb08e, 'bone'], horn: 0xe8e0c8, head: 'skull', shirt: 0x3a3028 },
+  skeleton: { skin: [0xeadbb4, 'bone'], back: [0xc4ac80, 'bone'], belly: [0xf2e6c4, 'bone'], horn: 0xf6eed6, head: 'skull', shirt: 0x3a3028 },
   zombie: { skin: [0x7a8466, 'skin'], back: [0x5a6450, 'skin'], belly: [0x8a9070, 'skin'], horn: 0xd8d0b0, cloth: 0x3a3a30, head: 'zombie', pants: 0x2e2c26, shirt: 0x4a4438, hair: 0x2a2620 },
   ghoul: { skin: [0x9a9a88, 'skin'], back: [0x6a6a5c, 'skin'], belly: [0xa8a898, 'skin'], horn: 0xe0d8c0, cloth: 0x2a2a28, head: 'ghoul', pants: 0x2a2a28, hair: 0x1a1a18 },
   ogre: { skin: [0xa08a5a, 'skin'], back: [0x7a6a42, 'skin'], belly: [0xb09a6a, 'skin'], horn: 0xd8c8a0, cloth: 0x4a3a28, head: 'ogre', pants: 0x4a3a28, hair: 0x2a1e12 },

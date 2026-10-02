@@ -78,9 +78,9 @@ export default class CombatScene extends Scene {
     const keys = timeOfDayKeys(hour);
     if (this.night) {
       this.rig.sun.intensity = 1.5;
-      this.rig.sun.color.set(0x8aa8ff);
-      this.rig.hemi.intensity = 0.7;
-      this.rig.hemi.color.set(0x4a5a9a);
+      this.rig.sun.color.set(0x9cb0e4);
+      this.rig.hemi.intensity = 0.75;
+      this.rig.hemi.color.set(0x525c80);
       s.fog = new THREE.FogExp2(0x0a1124, 0.016);
     } else {
       this.rig.sun.intensity *= 1.1;
@@ -115,7 +115,9 @@ export default class CombatScene extends Scene {
       this.torchLights.push(l);
     }
     // Soft camera-side fill so figures read against the ground (a classic tactics-cam trick).
-    this.fill = new THREE.DirectionalLight(this.night ? 0x6a80c0 : 0xfff2e0, this.night ? 0.35 : 0.55);
+    // At night the fill is the warm spill of the braziers and candles, so the
+    // party keeps its local colour under the cold moon.
+    this.fill = new THREE.DirectionalLight(this.night ? 0xffc48a : 0xfff2e0, this.night ? 0.5 : 0.55);
     s.add(this.fill, this.fill.target);
     // Rim light from behind the fight: separates figures from the ground.
     this.rim = new THREE.DirectionalLight(this.night ? 0x8fb0ff : 0xffe8c8, this.night ? 0.9 : 0.8);
@@ -127,7 +129,7 @@ export default class CombatScene extends Scene {
     [...this.party, ...this.monsters].forEach((c, i) => models.set(c.id, makeFigureModel(c, c.side === 'party' ? this.party.indexOf(c) : i)));
     this.figures = new Map();
     [...this.party, ...this.monsters].forEach((c, i) => {
-      const fig = new Figure(models.get(c.id), { seed: i * 13.7 + 1 });
+      const fig = new Figure(models.get(c.id), { seed: i * 13.7 + 1, faction: c.side === 'party' ? 'party' : c.undead || /skeleton|zombie|ghoul|wight|ghast|spectre|wraith/i.test(c.monsterId ?? '') ? 'undead' : 'foe' });
       s.add(fig.root);
       this.figures.set(c.id, fig);
     });
@@ -223,6 +225,19 @@ export default class CombatScene extends Scene {
     // ------------------------------------------------ HUD
     const zone = loc.map?.zoneAt?.(loc.at.x, loc.at.y) ?? 'Phlan';
     this.hud = new CombatHud(this.ctx, { location: zone, sub: `${this.encounter.name} · ${String(Math.floor(hour)).padStart(2, '0')}:00` });
+    // The inspect / spell card keeps clear of every standing figure (chest-height screen points).
+    this.hud.avoid = () => {
+      const out = [];
+      const v = new THREE.Vector3();
+      for (const c of this.engine?.all ?? []) {
+        if (this.engine.out(c)) continue;
+        const f = this.figures.get(c.id);
+        if (!f) continue;
+        v.copy(f.root.position).setY((f.model.height ?? 1.6) * 0.6).project(this.camera);
+        out.push({ x: (v.x * 0.5 + 0.5) * window.innerWidth, y: (-v.y * 0.5 + 0.5) * window.innerHeight });
+      }
+      return out;
+    };
     this.own(() => this.hud.dispose());
     // Results are shown when they land (see _veil), not when the dice are rolled.
     this.veil = new Map();
@@ -241,6 +256,7 @@ export default class CombatScene extends Scene {
     this._frameCombatants(true, null, false, true);
     if (!this.demo) {
       this._chooseYaw();
+
       // Debug/screenshot overrides: &yaw= &pitch= (radians), &dist= (metres).
       const num = (k) => (params[k] !== undefined && Number.isFinite(+params[k]) ? +params[k] : null);
       if (num('yaw') !== null) this.cam.yaw = this.cam.goalYaw = num('yaw');
@@ -741,6 +757,7 @@ export default class CombatScene extends Scene {
     this.overlay.setRay(null, null);
     this.overlay.targetRing.visible = false;
     this.overlay.setReticle(null);
+    this._highlight?.(null);
     if (!c) return;
     if (mode === 'move') {
       this.flood = this.engine.reach(c, c.mp);
@@ -787,6 +804,7 @@ export default class CombatScene extends Scene {
     this.overlay.setPath(null, null);
     this.overlay.targetRing.visible = false;
     this.overlay.setReticle(null);
+    this._highlight?.(null);
     this.hud.setPrompt('');
     this.hud.showInspect(null);
   }
@@ -1189,6 +1207,7 @@ export default class CombatScene extends Scene {
     const e = this.engine;
     this.overlay.targetRing.visible = false;
     this.overlay.setReticle(null);
+    this._highlight?.(null);
     if (!sq) {
       this.overlay.setHover(null);
       this.overlay.setPath(null, null);
@@ -1266,11 +1285,15 @@ export default class CombatScene extends Scene {
       if (can.ok && affected.some((o) => !e.hostileTo(c, o)) && tact.hostile && tact.shape !== 'single') content.push(h('div.warn', ['Allies are in the area!']));
       if (tact.target !== 'self' && tact.target !== 'direction') this.overlay.setRay({ x: c.x, y: c.y }, sq, this.field.losBlock(c.x, c.y, sq.x, sq.y), { arc: tact.vfx === 'fireball' || tact.vfx === 'missile' ? 0.7 : 0.25 });
       else this.overlay.setRay(null, null);
-      if (can.ok && tact.target !== 'self') this.overlay.setReticle(sq, tact.hostile === false || tact.target === 'ally' ? 0x7cf0a0 : 0xff7a40);
+      if (can.ok && tact.target !== 'self') {
+        this.overlay.setReticle(sq, tact.hostile === false || tact.target === 'ally' ? 0x7cf0a0 : 0xff7a40);
+        if (occ) this._highlight(occ);
+      }
     } else if (this.mode === 'aim' && myTurn) {
       this.overlay.setRay({ x: c.x, y: c.y }, sq, this.field.losBlock(c.x, c.y, sq.x, sq.y), { arc: 0.6 });
       if (occ && e.hostileTo(c, occ) && !isDown(occ)) {
         this.overlay.setReticle(sq, e.canAttack(c, occ).ok ? 0xff5a3c : 0x8a8a8a);
+        this._highlight(occ);
         this.overlay.targetRing.visible = false;
       }
     } else this.overlay.setRay(null, null);
@@ -1317,6 +1340,14 @@ export default class CombatScene extends Scene {
       return pool.filter((o) => e.canCast(c, spell, { x: o.x, y: o.y }, lv).ok);
     }
     return e.enemiesOf(c).filter((o) => e.canAttack(c, o).ok);
+  }
+
+  /** Bright silhouette edge on the targeted figure (null clears). */
+  _highlight(c) {
+    const f = c ? this.figures.get(c.id) : null;
+    if (this._hlFig && this._hlFig !== f) this._hlFig.setHighlight(0);
+    this._hlFig = f;
+    f?.setHighlight(1);
   }
 
   _screenOf(sq) {
@@ -1698,7 +1729,13 @@ export default class CombatScene extends Scene {
   /** Persistent ground decal (blood pool, bone dust, scorch). */
   _decal(pos, kind, size = 1) {
     const tex = decalTexture(kind);
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(size * 1.6, size * 1.6).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: tex, transparent: true, depthWrite: false, roughness: kind === 'blood' ? 0.25 : 1, color: kind === 'blood' ? 0x5a0806 : kind === 'scorch' ? 0x080604 : 0xb8b0a0, polygonOffset: true, polygonOffsetFactor: -1 }));
+    // Blood is a wet pool: dark clotted heart, brighter thin edge, a glossy
+    // meniscus (bump from the mask) that catches the light.
+    const blood = kind === 'blood';
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(size * 1.6, size * 1.6).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({
+      map: blood ? bloodColorTexture() : tex, bumpMap: blood ? tex : null, bumpScale: blood ? 3 : 1, transparent: true, depthWrite: false,
+      roughness: blood ? 0.14 : 1, color: blood ? 0xffffff : kind === 'scorch' ? 0x080604 : 0xb8b0a0, envMapIntensity: blood ? 1.6 : 1, polygonOffset: true, polygonOffsetFactor: -1,
+    }));
     m.position.set(pos.x + (Math.sin(pos.x * 7) * 0.2), 0.02 + (this._decals?.length ?? 0) * 0.0005, pos.z + (Math.cos(pos.z * 5) * 0.2));
     m.rotation.y = pos.x * 3.1;
     m.renderOrder = 1;
@@ -1882,7 +1919,20 @@ export default class CombatScene extends Scene {
       cx += (ap.x - cx) * k;
       cz += (ap.z - cz) * k;
     }
-    const dist = Math.max(MIN, Math.min(MAX, need));
+    let dist = Math.max(MIN, Math.min(MAX, need));
+    // A temple's statue is the hero prop: when it stands near the fight, the
+    // frame leans toward it (and widens a touch) so it sits in the picture.
+    const st = (this.field.features?.props ?? []).find((p) => p.type === 'statue');
+    if (st) {
+      const sx = st.x * TILE + TILE / 2;
+      const sz = st.y * TILE + TILE / 2;
+      const sd = Math.hypot(sx - cx, sz - cz);
+      if (sd < 11) {
+        cx += (sx - cx) * 0.28;
+        cz += (sz - cz) * 0.28;
+        dist = Math.min(MAX + 1.5, dist + sd * 0.12);
+      }
+    }
     this.fightCenter = new THREE.Vector3(cx, 0, cz);
     if (soft) {
       // Small corrections while walking: drift, don't lurch.
@@ -1943,7 +1993,7 @@ export default class CombatScene extends Scene {
     const mm = mean('monster');
     let sep = pm && mm && pm.distanceTo(mm) > 0.1 ? mm.sub(pm).setY(0).normalize() : null;
     if (around?.length >= 2) sep = sq2w(around[1].x, around[1].y).sub(sq2w(around[0].x, around[0].y)).setY(0).normalize();
-    const marks = (this.field.features?.props ?? []).filter((p) => p.type === 'statue' || p.type === 'altar').map((p) => Object.assign(new THREE.Vector3(p.x * TILE + TILE / 2, p.type === 'statue' ? 2.2 : 1.0, p.y * TILE + TILE / 2), { w: p.type === 'statue' ? 8 : 4 }));
+    const marks = (this.field.features?.props ?? []).filter((p) => p.type === 'statue' || p.type === 'altar').map((p) => Object.assign(new THREE.Vector3(p.x * TILE + TILE / 2, p.type === 'statue' ? 2.2 : 1.0, p.y * TILE + TILE / 2), { w: p.type === 'statue' ? 14 : 4 }));
     const probe = this.camera.clone();
         const yaws = around ? Array.from({ length: 16 }, (_, i) => (i / 16) * Math.PI * 2 - Math.PI) : [0.32, -0.32, 0, 0.62, -0.62, 0.95, -0.95, Math.PI / 2, -Math.PI / 2];
     for (const yaw of yaws) {
@@ -2264,6 +2314,7 @@ export default class CombatScene extends Scene {
     this.overlay.setRay(null, null);
     this.overlay.targetRing.visible = false;
     this.overlay.setReticle(null);
+    this._highlight?.(null);
     this.overlay.activeRing.visible = false;
     this.overlay.activeMarker.visible = false;
     for (const r of this.overlay.teamRings.values()) r.visible = false;
@@ -2360,6 +2411,31 @@ function decalTexture(kind) {
   }
   const t = new THREE.CanvasTexture(c);
   _decalTex[kind] = t;
+  return t;
+}
+
+let _bloodCol = null;
+/** Colour + alpha for blood pools (the shape from decalTexture('blood')). */
+function bloodColorTexture() {
+  if (_bloodCol) return _bloodCol;
+  const mask = decalTexture('blood').image;
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  // Edge: brighter arterial red; heart: near-black clot.
+  g.fillStyle = '#7a0a06';
+  g.fillRect(0, 0, 128, 128);
+  const grd = g.createRadialGradient(64, 64, 4, 64, 64, 46);
+  grd.addColorStop(0, 'rgba(26,2,2,1)');
+  grd.addColorStop(0.55, 'rgba(48,3,3,0.9)');
+  grd.addColorStop(1, 'rgba(48,3,3,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 128, 128);
+  g.globalCompositeOperation = 'destination-in';
+  g.drawImage(mask, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  _bloodCol = t;
   return t;
 }
 

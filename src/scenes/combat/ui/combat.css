@@ -87,6 +87,11 @@
 /* Never an empty frame: the log box only exists once it has something to say. */
 .cb-logbox:not(:has(.por-log-line)) { display: none; }
 .cb-logbox:hover .por-log { --lines: 12; }
+.cb-cmds .por-cmd { color: #ecebe4; text-shadow: 0 1px 2px #000; }
+/* Gold Box signature: the hotkey capital in saturated EGA yellow, the rest of the word in white. */
+.cb-cmds .por-cmd .por-hk { color: #ffe23a; font-size: 1.18em; text-shadow: 0 0 8px rgba(255, 214, 40, 0.55), 0 1px 2px #000; }
+.cb-cmds .por-cmd:disabled { color: #8a8a90; }
+.cb-cmds .por-cmd:disabled .por-hk { color: #a89a50; text-shadow: none; }
 .cb-cmds .por-cmd.active { color: #1b1206; background: var(--gilt-grad); border-color: #000; }
 .cb-cmds .por-cmd.active .por-hk { color: #1b1206; }
 .cb-prompt {
@@ -139,8 +144,9 @@
 .cb-float.dmg.fire, .cb-float.crit.fire { color: #ffae4a; text-shadow: 0 0 2px #000, 0 2px 4px #000, 0 0 14px rgba(255, 90, 10, 0.75); }
 .cb-float.dmg.magic, .cb-float.crit.magic { color: #9fc4ff; text-shadow: 0 0 2px #000, 0 2px 4px #000, 0 0 14px rgba(70, 120, 255, 0.75); }
 .cb-float.dmg.shock { color: #cfe8ff; text-shadow: 0 0 2px #000, 0 2px 4px #000, 0 0 14px rgba(120, 190, 255, 0.85); }
-.cb-float .tag { display: block; margin-top: 0.12em; font-size: 0.36em; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #f0e6cc; }
-.cb-float .tag i { display: block; height: 3px; width: 4.2em; margin: 0.25em auto 0; background: rgba(0, 0, 0, 0.7); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.8); }
+.cb-float .tag { display: block; margin-top: 0.16em; font-family: var(--font-body, var(--font-display)); font-size: 14px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #fff6e0;
+  -webkit-text-stroke: 3px rgba(0, 0, 0, 0.92); paint-order: stroke fill; text-shadow: 0 1px 3px #000, 0 0 8px rgba(0, 0, 0, 0.9); }
+.cb-float .tag i { display: block; height: 4px; width: 4.6em; -webkit-text-stroke: 0; margin: 0.25em auto 0; background: rgba(0, 0, 0, 0.7); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.8); }
 .cb-float .tag i b { display: block; height: 100%; background: linear-gradient(90deg, #c8321e, #ff7a3a); }
 .cb-float .tag i b.lost { background: rgba(255, 220, 160, 0.9); }
 .cb-float.crit { color: #ffd24a; font-size: 2.5em; }

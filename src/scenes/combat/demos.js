@@ -231,10 +231,12 @@ export const DEMOS = {
       const mid = ca.clone().lerp(cb, 0.5);
       sc.cam.goalTarget.copy(mid);
       sc.cam.target.copy(mid);
-      sc.cam.goalDist = sc.cam.dist = 13;
-      sc.cam.goalPitch = sc.cam.pitch = 0.7;
-      sc._chooseYaw({ around: [a, b] });
-      sc.cam.yaw = sc.cam.goalYaw;
+      sc.cam.goalDist = sc.cam.dist = 12;
+      sc.cam.goalPitch = sc.cam.pitch = 0.74;
+      // Shoot from the party's side, over the caster's shoulder, so the
+      // kobolds in the cloud face the lens.
+      const cp = sq2w(caster.x, caster.y);
+      sc.cam.goalYaw = sc.cam.yaw = Math.atan2(cp.x - mid.x, cp.z - mid.z) + 0.5;
       sc._refresh(caster);
     },
   },

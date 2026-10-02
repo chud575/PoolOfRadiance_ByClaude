@@ -231,13 +231,26 @@ export class CombatHud {
     const minY = (this.timeline.getBoundingClientRect().bottom || 80) + 8;
     const cardL = this.card.el.getBoundingClientRect().left || W;
     const maxX = Math.min(W - w - 10, cardL - w - 12);
-    // Up and to the right of the anchor (clear of the figure standing on it).
-    let px = x + 34;
-    if (px > maxX) px = x - w - 34;
-    px = Math.max(10, Math.min(maxX, px));
-    let py = y - hh - 26;
-    py = Math.max(minY, Math.min(maxY, py));
-    this.inspect.style.transform = `translate(${px}px, ${py}px)`;
+    // Candidate spots around the anchor (up-right first); the card takes the
+    // one that covers the fewest figures (screen points from the scene), so it
+    // never sits on the group it describes.
+    const pts = this.avoid?.() ?? [];
+    const cands = [[34, -hh - 26], [-w - 34, -hh - 26], [34, 30], [-w - 34, 30], [90, -hh / 2], [-w - 90, -hh / 2], [160, -hh - 60], [-w - 160, -hh - 60], [60, -hh - 140], [-w - 60, -hh - 140]];
+    let best = null;
+    cands.forEach(([dx, dy], i) => {
+      const px = Math.max(10, Math.min(maxX, x + dx));
+      const py = Math.max(minY, Math.min(maxY, y + dy));
+      let cost = i * 0.15;
+      for (const p of pts) {
+        const ox = Math.max(0, Math.min(px + w + 14, p.x + 26) - Math.max(px - 14, p.x - 26));
+        const oy = Math.max(0, Math.min(py + hh + 14, p.y + 40) - Math.max(py - 14, p.y - 50));
+        if (ox > 0 && oy > 0) cost += 1 + (ox * oy) / 2600;
+      }
+      // Never over the anchor itself.
+      if (x > px - 20 && x < px + w + 20 && y > py - 20 && y < py + hh + 20) cost += 6;
+      if (!best || cost < best.cost) best = { px, py, cost };
+    });
+    this.inspect.style.transform = `translate(${best.px}px, ${best.py}px)`;
   }
 
   // ---------------------------------------------------------------- menus

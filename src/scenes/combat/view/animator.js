@@ -25,13 +25,18 @@ const angLerp = (a, b, t) => {
  * Shared fresnel rim (one program for every figure): a thin bright edge so the
  * silhouettes separate from cobbles and walls. Colour/strength set per scene.
  */
-export const RIM = { uRimColor: { value: new THREE.Color(0.18, 0.16, 0.14) }, uRimPower: { value: 3.0 } };
+export const RIM = { uRimColor: { value: new THREE.Color(0.18, 0.16, 0.14) }, uRimPower: { value: 3.0 }, uFacK: { value: 1.0 } };
+/** Per-faction back-light edge colours. */
+export const FACTION_RIM = { party: new THREE.Color(0.30, 0.24, 0.13), foe: new THREE.Color(0.55, 0.2, 0.06), undead: new THREE.Color(0.22, 0.42, 0.55) };
 
 // Rigid kit material kind (from pbr()'s name) → surface-detail pattern id.
 const RIGID_PID = { cloth: 3, leather: 5, chain: 9, metal: 8, gold: 6, skin: 6, scales: 10, reptile: 1, fur: 2, bone: 4, wood: 6, hair: 2, plank: 6 };
 
-function addRim(mat) {
+function addRim(mat, facRim = null) {
   if (!mat.isMeshStandardMaterial) return;
+  const uFac = { value: facRim ? facRim.clone() : new THREE.Color(0, 0, 0) };
+  mat.userData.uFac = uFac;
+  mat.userData.facBase = uFac.value.clone();
   const sculpt = !!mat.userData?.sculpt;
   const pid = sculpt ? -1 : RIGID_PID[String(mat.name ?? '').split('|')[0]] ?? -1;
   mat.onBeforeCompile = (sh) => {
@@ -39,11 +44,19 @@ function addRim(mat) {
     else if (pid >= 0) patchRigidShader(sh, pid);
     sh.uniforms.uRimColor = RIM.uRimColor;
     sh.uniforms.uRimPower = RIM.uRimPower;
+    sh.uniforms.uFacRim = uFac;
+    sh.uniforms.uFacK = RIM.uFacK;
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform vec3 uRimColor; uniform float uRimPower;')
+      .replace('#include <common>', '#include <common>\nuniform vec3 uRimColor, uFacRim; uniform float uRimPower, uFacK;')
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         { float rimF = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), uRimPower);
-          totalEmissiveRadiance += uRimColor * rimF * (0.6 + 0.4 * diffuseColor.rgb / max(0.001, max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b)))); }`);
+          totalEmissiveRadiance += uRimColor * rimF * (0.6 + 0.4 * diffuseColor.rgb / max(0.001, max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b))));
+          // Faction rim: a thin coloured back-light edge (ember on foes, cold steel
+          // on undead, warm gilt on the party) kept to the upper silhouette so it
+          // reads like a light behind the figure, not a glow around it.
+          vec3 nV = normalize(normal);
+          float facF = pow(1.0 - clamp(dot(nV, normalize(vViewPosition)), 0.0, 1.0), 2.4) * smoothstep(-0.5, 0.6, nV.y);
+          totalEmissiveRadiance += uFacRim * facF * uFacK; }`);
   };
   mat.customProgramCacheKey = () => (sculpt ? 'fig-rim-sculpt' : pid >= 0 ? 'fig-rim-detail' : 'fig-rim');
 }
@@ -51,6 +64,7 @@ function addRim(mat) {
 const _FLASH = new THREE.Color(1, 0.82, 0.68);
 const _HOLY = new THREE.Color(1, 0.9, 0.6);
 const _SOOT = new THREE.Color(0x0c0907);
+const _HL = new THREE.Color(1, 0.85, 0.6);
 const _BURN = new THREE.Color(1, 0.32, 0.05);
 
 export class Figure {
@@ -71,7 +85,7 @@ export class Figure {
     this.mats = [];
     for (const m of model.meshes) {
       m.material = m.material.clone();
-      addRim(m.material);
+      addRim(m.material, FACTION_RIM[o.faction] ?? null);
       this.mats.push({ m: m.material, emissive: m.material.emissive?.clone() ?? new THREE.Color(0), ei: m.material.emissiveIntensity ?? 1, color: m.material.color.clone() });
     }
     this.pos = new THREE.Vector3();
@@ -90,6 +104,16 @@ export class Figure {
     this.guard = false;
     this.rest = {};
     for (const [k, bone] of Object.entries(this.b)) this.rest[k] = bone.position.clone();
+  }
+
+  /** Targeting highlight: the faction edge flares bright (k = 0..1). */
+  setHighlight(k) {
+    for (const mm of this.mats) {
+      const u = mm.m.userData.uFac;
+      if (!u) continue;
+      const base = mm.m.userData.facBase;
+      u.value.copy(base).multiplyScalar(1 + k * 3).add(_HL.clone().multiplyScalar(k * 0.35));
+    }
   }
 
   place(x, z, yaw) {
@@ -271,16 +295,16 @@ export class Figure {
     const holy = this.death?.holy ? clamp01((t - this.death.t0) / 0.6) : 0;
     const bAge = t - this.burnT;
     const burn = bAge < 0 ? 0 : Math.exp(-bAge * 2.4) * (0.75 + 0.25 * Math.sin(bAge * 37 + this.seed * 9));
-    const char = bAge < 0 ? 0 : Math.min(1, bAge * 8) * (0.62 - 0.12 * Math.min(1, bAge / 3));
+    const char = bAge < 0 ? 0 : Math.min(1, bAge * 8) * (0.5 - 0.1 * Math.min(1, bAge / 3));
     for (const mm of this.mats) {
       if (mm.m.emissive) {
         mm.m.emissive.copy(mm.emissive).lerp(_FLASH, flash * 0.13);
-        if (burn > 0.01) mm.m.emissive.lerp(_BURN, Math.min(1, burn * 0.2));
+        if (burn > 0.01) mm.m.emissive.lerp(_BURN, Math.min(1, burn * 0.07));
         if (holy) mm.m.emissive.lerp(_HOLY, Math.sin(holy * Math.PI) * 0.9);
         mm.m.emissiveIntensity = mm.ei;
       }
       mm.m.color.copy(mm.color).multiplyScalar((1 - deadDim * 0.35) * (1 - char));
-      if (char > 0) mm.m.color.lerp(_SOOT, char * 0.5);
+      if (char > 0) mm.m.color.lerp(_SOOT, char * 0.3);
     }
   }
 

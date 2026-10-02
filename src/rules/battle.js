@@ -191,7 +191,14 @@ export function castInBattle(rng, spellId, caster, targets, o = {}) {
     if (tr.charmed) h.effect = 'charmed';
     hits.push(h);
   }
-  if (!hits.length) hits.push({ text: s.hostile ? 'Nobody succumbs to the spell.' : 'Nothing happens.' });
+  if (!hits.length) {
+    // A spell whose target fell during the casting delay has nothing to strike.
+    const live = (targets ?? []).filter((t) => t && (t.hp?.cur ?? 1) > 0);
+    const text = spellId === 'magicMissile' ? 'The missiles find no target.'
+      : s.hostile && !live.length ? 'The spell finds no target.'
+      : s.hostile ? 'Nobody succumbs to the spell.' : 'Nothing happens.';
+    hits.push({ text });
+  }
   return { ...res, hits };
 }
 

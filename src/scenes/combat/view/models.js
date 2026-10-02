@@ -27,13 +27,13 @@ const HAIR = [0x2a1a10, 0x5a3418, 0x8a5a2a, 0xb88a4a, 0xd8c08a, 0x7a2a14, 0x1a1a
 // ------------------------------------------------------------------ species
 const SPECIES = {
   human: { height: 1.0, bulk: 1.0, head: 'human' },
-  kobold: { height: 0.74, bulk: 0.86, limbK: 1.08, head: 'kobold', headScale: 1.62, skin: ['reptile', 0x8a4624], shieldChance: 0.45, tail: 'long', legs: 'digitigrade', hunch: 0.5, thickNeck: true, cloth: 0x4a3a28, armor: 'harness', weapon: 'spear', weapons: ['spear', 'club', 'sling', 'spear', 'shortSword', 'club', 'sling'], helms: [null, 'kCap', 'kSkull', 'kBand'], stature: 0.26, shields: ['round', 'hide'], eyes: 0xffc040 },
+  kobold: { height: 0.74, bulk: 0.86, limbK: 1.08, head: 'kobold', headScale: 1.62, skin: ['reptile', 0xb0602a], shieldChance: 0.45, tail: 'long', legs: 'digitigrade', hunch: 0.5, thickNeck: true, cloth: 0x4a3a28, armor: 'harness', weapon: 'spear', weapons: ['spear', 'club', 'sling', 'spear', 'shortSword', 'club', 'sling'], helms: [null, 'kCap', 'kSkull', 'kBand'], stature: 0.26, shields: ['round', 'hide'], eyes: 0xffc040 },
   goblin: { height: 0.66, bulk: 0.95, limbK: 1.2, head: 'goblin', skin: ['skin', 0x8a9a3a], hunch: 0.15, cloth: 0x4a3020, weapon: 'shortSword', eyes: 0xffe060 },
-  orc: { height: 1.04, bulk: 1.28, head: 'orc', skin: ['skin', 0x474d38], hunch: 0.42, cloth: 0x2e2418, armor: 'orcish', weapon: 'battleAxe', weapons: ['battleAxe', 'battleAxe', 'spear', 'morningStar', 'club'], helmChance: 0.55, eyes: 0xff4020 },
-  hobgoblin: { height: 1.08, bulk: 1.12, head: 'hobgoblin', skin: ['skin', 0x5a2a14], cloth: 0x5a1e18, armor: 'scale', weapon: 'glaive', weapons: ['glaive', 'glaive', 'glaive', 'longSword'], shield: null, shieldWith: { longSword: 'round' }, helms: ['hobHelm'], eyes: 0xffa020 },
+  orc: { height: 1.04, bulk: 1.28, head: 'orc', skin: ['skin', 0x74864c], hunch: 0.42, cloth: 0x2e2418, armor: 'orcish', weapon: 'battleAxe', weapons: ['battleAxe', 'battleAxe', 'spear', 'morningStar', 'club'], helmChance: 0.55, eyes: 0xff4020 },
+  hobgoblin: { height: 1.08, bulk: 1.12, head: 'hobgoblin', skin: ['skin', 0x9a4a22], cloth: 0x2a2a22, armor: 'scale', weapon: 'glaive', weapons: ['glaive', 'glaive', 'glaive', 'longSword'], shield: null, shieldWith: { longSword: 'round' }, helms: ['hobHelm'], eyes: 0xffa020 },
   gnoll: { height: 1.2, bulk: 1.15, limbK: 1.1, head: 'gnoll', skin: ['fur', 0x9a7a4a], hunch: 0.3, legs: 'digitigrade', cloth: 0x3a2e22, armor: 'scraps', weapon: 'flail', eyes: 0xffd040 },
   giantRat: { rig: 'quad', skin: ['fur', 0x4a3a30], height: 0.55, eyes: 0xff3020 },
-  skeleton: { undead: true, height: 1.0, bulk: 0.95, headScale: 1.22, head: 'skull', body: 'bones', skin: ['bone', 0xd8ccb0], weapon: 'shortSword', shield: 'round', eyes: 0x60d0ff },
+  skeleton: { undead: true, height: 1.0, bulk: 0.95, headScale: 1.22, head: 'skull', body: 'bones', skin: ['bone', 0xeadbb4], weapon: 'shortSword', shield: 'round', eyes: 0x60d0ff },
   zombie: { undead: true, height: 1.0, bulk: 1.0, head: 'zombie', skin: ['skin', 0x7a8a6a], cloth: 0x3a3a30, tattered: true, hunch: 0.25, weapon: null, eyes: 0xc0ff60, armsForward: true },
   ghoul: { undead: true, height: 0.98, bulk: 0.9, head: 'zombie', skin: ['skin', 0x9a9a8a], cloth: 0x2a2a28, tattered: true, hunch: 0.35, weapon: null, eyes: 0xff4040 },
   bugbear: { height: 1.3, bulk: 1.3, head: 'gnoll', skin: ['fur', 0x7a5a30], hunch: 0.2, cloth: 0x3a2a1a, armor: 'scraps', weapon: 'morningStar', eyes: 0xffc040 },

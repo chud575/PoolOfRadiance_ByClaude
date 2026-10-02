@@ -192,15 +192,19 @@ export class Overlay {
     this.pathMat = new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: false,
-      uniforms: { uTime: this.uniforms.uTime, uLen: { value: 1 }, uColor: { value: new THREE.Color(0xffe39a) } },
+      uniforms: { uTime: this.uniforms.uTime, uLen: { value: 1 }, uColor: { value: new THREE.Color(0xe8dcb8) } },
       vertexShader: `attribute float aDist; varying float vD; varying vec2 vUv; void main(){ vD = aDist; vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
       fragmentShader: `varying float vD; varying vec2 vUv; uniform float uTime, uLen; uniform vec3 uColor;
         void main(){
-          float across = 1.0 - abs(vUv.y - 0.5) * 2.0;
-          float dash = smoothstep(0.35, 0.5, fract(vD * 1.6 - uTime * 1.5));
-          float core = smoothstep(0.35, 0.8, across);
-          float a = (core * (0.55 + dash * 0.45) + smoothstep(0.0, 0.5, across) * 0.25);
-          gl_FragColor = vec4(uColor * (1.2 + dash * 0.8), a);
+          // Footstep chevrons marching along the route (muted parchment, not an
+          // emitter), over a faint hairline so the route still reads as one line.
+          float side = abs(vUv.y - 0.5) * 2.0;
+          float c = fract(vD * 2.4 - side * 0.55 - uTime * 0.6);
+          float px = fwidth(vD * 2.4) * 1.2;
+          float chev = smoothstep(0.0, 0.05 + px, c) * (1.0 - smoothstep(0.24, 0.29 + px, c)) * (1.0 - smoothstep(0.82, 1.0, side));
+          float line = (1.0 - smoothstep(0.08, 0.2, side)) * 0.22;
+          float a = max(chev * 0.62, line);
+          gl_FragColor = vec4(uColor * 0.85, a);
         }`,
     });
     this.path = new THREE.Mesh(new THREE.BufferGeometry(), this.pathMat);
@@ -208,7 +212,7 @@ export class Overlay {
     this.path.frustumCulled = false;
     this.group.add(this.path);
     // Path end marker (a cone arrow).
-    this.arrow = new THREE.Mesh(new THREE.RingGeometry(0.26, 0.4, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffe39a, transparent: true, opacity: 0.9, depthWrite: false }));
+    this.arrow = new THREE.Mesh(new THREE.RingGeometry(0.3, 0.36, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xe8dcb8, transparent: true, opacity: 0.7, depthWrite: false }));
     this.arrow.renderOrder = 3;
     this.arrow.visible = false;
     this.group.add(this.arrow);
@@ -224,12 +228,12 @@ export class Overlay {
           float across = 1.0 - abs(vUv.y - 0.5) * 2.0;
           bool blocked = vT > uBlock;
           float dash = step(0.45, fract(vT * uLen * 1.4 - uTime * 1.2));
-          vec3 c = blocked ? vec3(1.0, 0.18, 0.12) : vec3(1.0, 0.88, 0.55);
-          float a = smoothstep(0.0, 0.5, across) * (blocked ? 0.9 : 0.6 + dash * 0.4);
+          vec3 c = blocked ? vec3(1.0, 0.18, 0.12) : vec3(0.95, 0.84, 0.58);
+          float a = smoothstep(0.2, 0.8, across) * (blocked ? 0.85 : 0.4 + dash * 0.3);
           // A bright tick where the line is cut.
           a += (1.0 - smoothstep(0.0, 0.04 / max(uLen, 1.0), abs(vT - uBlock))) * step(uBlock, 0.999) * 0.9;
-          float fadeIn = smoothstep(0.0, 0.08, vT) * (1.0 - smoothstep(0.9, 1.0, vT) * 0.6);
-          gl_FragColor = vec4(c * 1.6, a * fadeIn);
+          float fadeIn = smoothstep(0.0, 0.08, vT) * (1.0 - smoothstep(0.78, 0.97, vT) * 0.85);
+          gl_FragColor = vec4(c * 1.05, a * fadeIn);
         }`,
     });
     this.ray = new THREE.Mesh(new THREE.BufferGeometry(), this.rayMat);
@@ -295,9 +299,9 @@ export class Overlay {
           float ph = fract(uTime * 0.9);
           float pulse = (1.0 - smoothstep(0.0, 0.05 + px, abs(r - mix(0.95, 0.5, ph)))) * (1.0 - ph) * 0.8;
           float ring = (1.0 - smoothstep(px, px * 3.0, abs(r - 0.5))) * 0.9;
-          float fill = (1.0 - smoothstep(0.0, 0.5, r)) * 0.18;
+          float fill = (1.0 - smoothstep(0.0, 0.5, r)) * 0.05;
           float a = max(max(brk, ring), pulse) + fill;
-          gl_FragColor = vec4(uColor * (1.4 + ring), a * smoothstep(1.0, 0.92, r));
+          gl_FragColor = vec4(uColor * (1.0 + ring * 0.4), a * smoothstep(1.0, 0.92, r));
         }`,
     });
     const rp = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 2.0).rotateX(-Math.PI / 2), this.reticleMat);
@@ -311,7 +315,7 @@ export class Overlay {
       uniforms: { uTime: this.uniforms.uTime, uColor: this.reticleMat.uniforms.uColor },
       vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
       fragmentShader: `varying vec2 vUv; uniform float uTime; uniform vec3 uColor;
-        void main(){ float a = pow(1.0 - vUv.y, 2.2) * (0.16 + 0.05 * sin(uTime * 4.0)); gl_FragColor = vec4(uColor * 1.4, a); }`,
+        void main(){ float a = pow(1.0 - vUv.y, 3.0) * (0.06 + 0.02 * sin(uTime * 4.0)); gl_FragColor = vec4(uColor, a); }`,
     });
     const pil = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.55, 2.2, 28, 1, true).translate(0, 1.1, 0), this.pillarMat);
     pil.renderOrder = 5;
@@ -406,7 +410,7 @@ export class Overlay {
     const dist = [];
     const idx = [];
     let acc = 0;
-    const width = 0.16;
+    const width = 0.15;
     for (let i = 0; i < sam.length; i++) {
       const p = sam[i];
       const q = sam[Math.min(sam.length - 1, i + 1)];

@@ -169,8 +169,8 @@ export function buildDiorama(field, o = {}) {
       void n;
       const flag = k === 'flag' || k === 'room' ? 1 : 0;
       // Puddles in low spots of the street.
-      const pn = hash(Math.floor(sx / 2), Math.floor(sy / 2), 91);
-      const wet = (k === 'street' || k === 'flag') && pn > (night ? 0.8 : 0.86) ? 180 : 0;
+      // Paved (can hold water); the puddles themselves come from smooth noise in the shader.
+      const wet = k === 'street' || k === 'flag' ? 255 : 0;
       sp[i] = ao * 255;
       sp[i + 1] = rub * 255;
       sp[i + 2] = flag * 255;
@@ -187,7 +187,7 @@ export function buildDiorama(field, o = {}) {
   const cob = settsSet();
   const rub = getTextureSet('floor_rubble');
   const flg = getTextureSet('hd_flags');
-  const groundMat = new THREE.MeshStandardMaterial({ map: cob.map, normalMap: cob.normalMap, roughnessMap: cob.roughnessMap, roughness: 1, metalness: 0, normalScale: new THREE.Vector2(1.3, 1.3) });
+  const groundMat = new THREE.MeshStandardMaterial({ map: cob.map, normalMap: cob.normalMap, roughnessMap: cob.roughnessMap, roughness: 1, metalness: 0, normalScale: new THREE.Vector2(0.8, 0.8) });
   const originX = -margin * TILE;
   const originZ = -margin * TILE;
   groundMat.onBeforeCompile = (sh) => {
@@ -226,16 +226,20 @@ export function buildDiorama(field, o = {}) {
         float bB = (gs.b * 2.0 + texture2D(tSplat, gsp + gdx).b + texture2D(tSplat, gsp - gdx).b + texture2D(tSplat, gsp + gdz).b + texture2D(tSplat, gsp - gdz).b) / 6.0;
         float wF = smoothstep(0.44, 0.56, bB + (gn - 0.5) * 0.5 + (gFbm(vWPos.xz * 1.9 + 3.0) - 0.5) * 0.32);
         float fEdge = 1.0 - abs(wF * 2.0 - 1.0);
-        float wet = smoothstep(0.35, 0.6, gs.a + (gFbm(vWPos.xz * 0.9) - 0.5) * 0.6);
+        // Standing water: broad, organic puddles from low-frequency noise (no
+        // square blocks), only on paving; their margins break up at stone scale.
+        float pN = gFbm(vWPos.xz * 0.16 + 21.0) * 0.75 + gFbm(vWPos.xz * 0.5 + 4.0) * 0.25;
+        float wet = smoothstep(${night ? '0.56, 0.68' : '0.63, 0.75'}, pN) * smoothstep(0.5, 0.9, gs.a);
         // Setts: 1 m tiles of ~11 cm stones; neighbouring patches use the
         // same courses shifted a whole number of rows (seamless), so the
         // repeat never lines up.
         vec2 uv1 = vec2(vWPos.x, -vWPos.z) / 1.2;
-        float tSel = step(0.5, gFbm(vWPos.xz * 0.23 + 17.0));
-        uv1 += tSel * vec2(0.413, 3.0 / 8.0);
         vec2 uv2 = vec2(vWPos.x, -vWPos.z) / 3.2 + 0.37;
         vec2 uv3 = vec2(vWPos.x, -vWPos.z) / 2.7;
         vec4 gc = texture2D(map, uv1);
+        // Per-stone contrast held down at tactics distance: pull each sett toward
+        // the local mean so the field reads as one surface with big value shapes.
+        gc.rgb = mix(texture2D(map, uv1, 4.0).rgb, gc.rgb, 0.5);
         if (wR > 0.001) gc = mix(gc, texture2D(map2, uv2), wR);
         if (wF > 0.001) gc = mix(gc, texture2D(map3, uv3), wF);
         // Worn boundary: grit, dirt and broken setts between the pavings.
@@ -244,17 +248,24 @@ export function buildDiorama(field, o = {}) {
         // Ruin: on dressed flagstones, broken / missing slabs open onto grit and
         // rubble, meandering hairline cracks run across slabs, moss fills seams.
         float brkN = gFbm(vWPos.xz * 0.52 + 9.0) + (gn - 0.5) * 0.12;
-        float brk = wF * smoothstep(0.57, 0.6, brkN);
+        float brk = wF * smoothstep(0.545, 0.575, brkN);
         if (brk > 0.001) gc = mix(gc, texture2D(map2, uv2 * 1.6 + 0.2) * vec4(0.4, 0.36, 0.31, 1.0) * (0.7 + 0.6 * gFbm(vWPos.xz * 3.1)), brk);
         float crN = gFbm(vWPos.xz * 0.75 + 2.7) - 0.5;
         float crW = fwidth(crN) * 1.6 + 0.006;
-        float crack = wF * (1.0 - brk) * (1.0 - smoothstep(crW * 0.5, crW * 1.6, abs(crN))) * smoothstep(0.45, 0.65, gFbm(vWPos.xz * 0.21 + 13.0));
+        float crack = wF * (1.0 - brk) * (1.0 - smoothstep(crW * 0.5, crW * 1.6, abs(crN))) * smoothstep(0.38, 0.58, gFbm(vWPos.xz * 0.21 + 13.0));
         gc.rgb *= 1.0 - crack * 0.8;
         // A dark sunken rim where a slab is missing.
-        float brkRim = wF * smoothstep(0.53, 0.57, brkN) * (1.0 - brk);
+        float brkRim = wF * smoothstep(0.5, 0.545, brkN) * (1.0 - brk);
+        // Ruin grime on the dressed floor: soot and damp blooms, darker toward the walls.
+        gc.rgb *= mix(1.0, 0.68, wF * smoothstep(0.42, 0.78, gFbm(vWPos.xz * 0.2 + 50.0)));
         gc.rgb *= 1.0 - brkRim * 0.45;
         float mac = gFbm(vWPos.xz * 0.07);
-        gc.rgb *= 0.78 + 0.42 * mac;
+        gc.rgb *= 0.74 + 0.5 * mac;
+        // Packed dirt and grit silting over the low setts in broad drifts (stone
+        // crowns poke through at the margins).
+        float dirtP = smoothstep(0.5, 0.72, gFbm(vWPos.xz * 0.12 + 31.0) + (gn - 0.5) * 0.35) * (1.0 - wF * 0.6);
+        float dCover = smoothstep(sH - 0.12, sH + 0.12, dirtP * 1.15);
+        gc.rgb = mix(gc.rgb, texture2D(map2, uv2 * 1.7).rgb * vec3(0.78, 0.68, 0.55), dCover * 0.85);
         // Kerbs: a lighter dressed-stone band with a dark gutter where paving changes.
         float kerb = 1.0 - abs(wF - 0.5) * 2.0;
         gc.rgb = mix(gc.rgb, vec3(0.42, 0.4, 0.37) * (0.85 + 0.3 * gn), smoothstep(0.62, 0.92, kerb) * 0.55);
@@ -262,27 +273,33 @@ export function buildDiorama(field, o = {}) {
         // Mortar gaps (dark in the albedo) collect moss and grime in patches.
         float lum = dot(gc.rgb, vec3(0.3, 0.55, 0.15));
         float gap = 1.0 - smoothstep(0.08, 0.2, lum);
-        float mossN = smoothstep(0.42 - wF * 0.14, 0.7, gFbm(vWPos.xz * 0.33 + 4.0));
+        float mossN = smoothstep(0.46, 0.74, gFbm(vWPos.xz * 0.33 + 4.0)) * (0.55 + 0.45 * (1.0 - gAO * 0.6));
         gc.rgb = mix(gc.rgb, vec3(0.13, 0.17, 0.07), gap * mossN * 0.85);
         // Moss and weeds creeping into cracks and around broken slabs.
         gc.rgb = mix(gc.rgb, vec3(0.11, 0.15, 0.06), (crack * 0.5 + brkRim * 0.6) * mossN);
         // Worn, polished wheel/foot paths.
         float worn = smoothstep(0.55, 0.78, gFbm(vWPos.xz * 0.09 + 11.0)) * (1.0 - wR);
-        gc.rgb *= 1.0 + 0.14 * worn;
+        gc.rgb *= 1.0 + 0.2 * worn;
         // Dirt drifts heaped against walls, broken up by noise.
         float drift = smoothstep(0.08, 0.5, 1.0 - gAO) * smoothstep(0.3, 0.6, gFbm(vWPos.xz * 0.6 + 2.0) + (1.0 - gAO) * 0.4);
         gc.rgb = mix(gc.rgb, vec3(0.24, 0.2, 0.15) * (0.75 + 0.5 * gn), drift * 0.8);
+        // Dead leaves and straw caught in the drifts.
+        vec2 lc = floor(vWPos.xz * 11.0);
+        float leaf = step(0.8, gHash(lc)) * smoothstep(0.25, 0.6, drift + dirtP * 0.3);
+        gc.rgb = mix(gc.rgb, mix(vec3(0.42, 0.24, 0.1), vec3(0.5, 0.42, 0.2), gHash(lc + 3.1)) * 0.8, leaf * 0.7);
         gc.rgb = mix(gc.rgb, gc.rgb * vec3(0.95, 0.9, 0.82), smoothstep(0.55, 0.8, gFbm(vWPos.xz * 0.21 + 3.0)) * 0.6);
         // Gutters: a damp, darker band along wall feet and kerbs (rain runs off the eaves).
         float gutter = smoothstep(0.9, 0.62, gAO) * (1.0 - wR) * smoothstep(0.25, 0.55, gFbm(vWPos.xz * 0.8 + 5.0) + (1.0 - gAO) * 0.5);
         wet = max(wet, gutter * 0.55);
         // Water settles in the joints first, then floods whole patches:
         // standing puddles (dark, mirror-smooth) inside a damp margin.
-        float pLevel = wet * 0.85 - 0.08;
+        float pLevel = wet * 1.25 - 0.2;
         float sHh = mix(sH, 0.3 + gFbm(vWPos.xz * 1.3 + 6.0) * 0.6, clamp(wF + wR * 0.6, 0.0, 1.0));
-        float puddle = smoothstep(sHh - 0.03, sHh + 0.05, pLevel) * step(0.02, wet);
-        gc.rgb *= mix(1.0, 0.62, wet);
-        gc.rgb = mix(gc.rgb, gc.rgb * vec3(0.6, 0.62, 0.66), puddle);
+        // Puddles cover whole stones (no water-only-in-the-joints lattice that
+        // would glint as a waffle under torchlight).
+        float puddle = smoothstep(0.62, 0.8, wet) * smoothstep(sHh - 0.25, sHh + 0.05, pLevel);
+        gc.rgb *= mix(1.0, 0.66, wet);
+        gc.rgb = mix(gc.rgb, gc.rgb * vec3(0.42, 0.45, 0.5), puddle);
         // Grime gradient: soot and dirt darkening toward wall feet and gutters.
         gc.rgb *= mix(0.62, 1.0, smoothstep(0.55, 0.95, gAO));
         gc.rgb *= mix(0.35, 1.0, gAO);
@@ -297,8 +314,8 @@ export function buildDiorama(field, o = {}) {
         // satin where damp, mirror-smooth only in the standing water.
         float roughnessFactor = max(0.62, roughness * gr);
         roughnessFactor *= 1.0 - 0.12 * smoothstep(0.55, 0.78, gFbm(vWPos.xz * 0.09 + 11.0));
-        roughnessFactor = mix(roughnessFactor, 0.5, wet * 0.8);
-        roughnessFactor = mix(roughnessFactor, 0.3, puddle);
+        roughnessFactor = mix(roughnessFactor, 0.6, wet * 0.7);
+        roughnessFactor = mix(roughnessFactor, ${night ? '0.2' : '0.42'}, puddle);
       `)
       .replace('#include <normal_fragment_maps>', `
         vec3 mapN = texture2D(normalMap, uv1).xyz * 2.0 - 1.0;
@@ -311,15 +328,23 @@ export function buildDiorama(field, o = {}) {
       `)
       .replace('#include <aomap_fragment>', `#include <aomap_fragment>
         reflectedLight.indirectDiffuse *= mix(0.5, 1.0, gAO);
+        // Standing water mirrors a dim slice of sky, never a white glare.
+        reflectedLight.indirectSpecular *= mix(1.0, 0.3, puddle) * mix(0.6, 1.0, gAO);
+        reflectedLight.directSpecular *= mix(1.0, 0.45, puddle);
       `)
       .replace('#include <opaque_fragment>', `
+        // Puddles mirror the sky (a Fresnel sheen; the lights' own highlights
+        // come from the low roughness), with a soft ripple of the far rooftops.
+        { float pf = pow(1.0 - clamp(dot(normalize(vNormal), normalize(vViewPosition)), 0.0, 1.0), 3.0);
+          vec3 skyR = ${night ? 'vec3(0.05, 0.07, 0.13)' : 'vec3(0.34, 0.4, 0.5)'} * (0.8 + 0.4 * gFbm(vWPos.xz * 0.6 + 40.0));
+          outgoingLight = mix(outgoingLight, outgoingLight * 0.5 + skyR, puddle * (0.3 + 0.6 * pf)); }
         // Puddle glints and fire-lit paving never blow out into bloom blobs.
         float gPk = max(outgoingLight.r, max(outgoingLight.g, outgoingLight.b));
         outgoingLight *= gPk > 0.35 ? (0.35 + (gPk - 0.35) / (1.0 + (gPk - 0.35) / 0.42)) / gPk : 1.0;
         #include <opaque_fragment>
       `);
   };
-  groundMat.customProgramCacheKey = () => 'combat-ground-v7';
+  groundMat.customProgramCacheKey = () => `combat-ground-v8-${night ? 1 : 0}`;
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(SW * TILE, SH * TILE, 1, 1), groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(originX + (SW * TILE) / 2, 0, originZ + (SH * TILE) / 2);
@@ -344,6 +369,89 @@ export function buildDiorama(field, o = {}) {
   const wallMats = [libMat('wall_stone', 0xd8d0c4), libMat('wall_timber', 0xe8e0d0), libMat('wall_ruin', 0xc8beb0)];
   const plinthMat = libMat('wall_stone', 0x8a8278);
   const capMat = libMat('wall_ruin', 0x6a6258);
+  const linenMat = pbr('cloth', 0xd8ccb2);
+  const rubbleMat = libMat('wall_ruin', 0x9a9082);
+  const coreMat = libMat('floor_rubble', 0x7a6e60);
+  const gloomMat = (() => {
+    const c = document.createElement('canvas');
+    c.width = 4;
+    c.height = 64;
+    const g = c.getContext('2d');
+    const gr = g.createLinearGradient(0, 0, 0, 64);
+    gr.addColorStop(0, 'rgba(0,0,0,0.78)');
+    gr.addColorStop(0.35, 'rgba(0,0,0,0.42)');
+    gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, 4, 64);
+    const t = new THREE.CanvasTexture(c);
+    const m = new THREE.MeshBasicMaterial({ map: t, color: 0x0a0806, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+    disposables.push(m, t);
+    return m;
+  })();
+  /** worldBox whose along-the-wall UVs continue from u0 (no texture restart per column). */
+  const runBox = (w, h, d, u0, tex = 2.5) => {
+    const g = worldBox(w, h, d, tex);
+    const nor = g.attributes.normal;
+    const uv = g.attributes.uv;
+    for (let i = 0; i < uv.count; i++) if (Math.abs(nor.getZ(i)) > 0.5 || Math.abs(nor.getY(i)) > 0.5) uv.setX(i, uv.getX(i) + u0 / tex);
+    return g;
+  };
+  /**
+   * Broken masonry for cut-aways: brick-width columns whose tops random-walk in
+   * whole courses (stepped, jagged, never a level cut), notched where a section
+   * has fallen, a few loose bricks left on the break, rubble core showing on top,
+   * and (half-timbered houses) snapped posts and a ragged lath edge.
+   * `place(g, lx, ly, lz)` maps face-local coords (x along, z outward).
+   */
+  const brokenWall = (B, place, len, base, salt, mat, { thick = 0.34, timber = false, debris = true } = {}) => {
+    const bw = 0.3;
+    const course = 0.12;
+    const n = Math.max(2, Math.round(len / bw));
+    const cwid = len / n;
+    let hc = base;
+    for (let k = 0; k < n; k++) {
+      const r = hash(k, salt, 17);
+      hc += (r < 0.32 ? -1 : r > 0.68 ? 1 : 0) * course + (base - hc) * 0.22;
+      let hk = Math.max(0.36, Math.round(hc / course) * course);
+      if (hash(k, salt, 29) > 0.9) hk = Math.max(0.3, hk - course * (2 + Math.floor(hash(k, salt, 31) * 3)));
+      if (k === 0 || k === n - 1) hk = Math.max(hk, base + course * 3);
+      B.add(place(runBox(cwid + 0.004, hk, thick, k * cwid), k * cwid + cwid / 2, hk / 2, -thick / 2), mat);
+      // Broken rubble core on the top course (rough, darker than the face).
+      B.add(place(worldBox(cwid * 0.9, 0.04, thick * 0.7, 0.8), k * cwid + cwid / 2, hk + 0.01, -thick / 2 + (hash(k, salt, 33) - 0.5) * 0.06), coreMat, { cast: false });
+      if (hash(k, salt, 41) > 0.8) {
+        B.add(place(worldBox(0.22, 0.08, 0.11, 0.6).rotateY((hash(k, salt, 43) - 0.5) * 0.9), k * cwid + cwid / 2, hk + 0.05, -thick / 2 + (hash(k, salt, 47) - 0.5) * 0.14), mat, { cast: false });
+      }
+      // Fallen brick and rubble at the foot, both sides.
+      if (debris && hash(k, salt, 53) > 0.72) {
+        const side = hash(k, salt, 59) > 0.5 ? 1 : -1;
+        B.add(place(rockGeo(hash(k, salt, 61), 0.1 + hash(k, salt, 67) * 0.12), k * cwid + cwid / 2, 0.03, -thick / 2 + side * (thick / 2 + 0.12 + hash(k, salt, 71) * 0.25)), rubbleMat, { cast: false });
+      }
+      if (debris && hash(k, salt, 73) > 0.86) {
+        B.add(place(worldBox(0.22, 0.07, 0.11, 0.6).rotateY(hash(k, salt, 79) * 3).rotateZ(0.25), k * cwid + cwid / 2, 0.05, 0.22 + hash(k, salt, 83) * 0.3), mat, { cast: false });
+      }
+    }
+    if (timber) {
+      // Snapped posts: split, slanted stubs standing above the masonry.
+      const posts = Math.max(2, Math.round(len / 1.5) + 1);
+      for (let k = 0; k < posts; k++) {
+        const endPost = k === 0 || k === posts - 1;
+        if (!endPost && hash(k, salt, 87) < 0.45) continue;
+        const at = Math.min(len - 0.08, Math.max(0.08, (k / (posts - 1)) * len));
+        const ph = base + 0.05 + hash(k, salt, 89) * (endPost ? 0.6 : 0.35);
+        B.add(place(worldBox(0.14, ph, 0.16, 1), at, ph / 2, -0.06), darkWood);
+        // Splintered top: two thin shards at angles.
+        B.add(place(worldBox(0.06, 0.32, 0.12, 1).rotateZ(0.35), at - 0.03, ph + 0.1, -0.06), darkWood, { cast: false });
+        B.add(place(worldBox(0.05, 0.22, 0.1, 1).rotateZ(-0.5), at + 0.04, ph + 0.05, -0.06), darkWood, { cast: false });
+      }
+      // A ragged lath edge where plaster has fallen away: thin strips at the break.
+      for (let k = 0; k < Math.floor(len / 0.9); k++) {
+        if (hash(k, salt, 97) < 0.45) continue;
+        const at = (k + 0.5) * 0.9;
+        const lh = base + 0.1 + hash(k, salt, 101) * 0.3;
+        for (let j = 0; j < 3; j++) B.add(place(worldBox(0.55 + hash(k, j, salt) * 0.3, 0.025, 0.02, 1).rotateZ((hash(j, k, salt) - 0.5) * 0.2), at, lh + j * 0.07, 0.005), woodMat, { cast: false });
+      }
+    }
+  };
   const roofMat = addMacro(pbr('roof', 0xb09a8c).clone(), { scale: 0.22, amount: 0.6, grime: 0, key: 'roof' });
   const slateMat = addMacro(pbr('roof', 0x5a6470).clone(), { scale: 0.22, amount: 0.5, grime: 0, key: 'slate' });
   disposables.push(slateMat);
@@ -464,14 +572,7 @@ export function buildDiorama(field, o = {}) {
         const B = house[variant];
         const hh = variant === 'cut' ? 1.05 + seed * 0.25 : height;
         if (variant === 'cut') {
-          const segs = Math.max(2, Math.round(len / 0.9));
-          const sl = len / segs;
-          for (let k = 0; k < segs; k++) {
-            const sh = hh * (0.72 + hash(k, f.d.charCodeAt(0), seed * 131) * 0.4);
-            B.add(place(worldBox(sl + 0.01, sh, 0.34, 2.5), k * sl + sl / 2, sh / 2, -0.17), wallMat);
-            // Coping stones, a little uneven.
-            B.add(place(worldBox(sl + 0.03, 0.08, 0.4, 2.5), k * sl + sl / 2, sh + 0.04, -0.17), capMat, { cast: false });
-          }
+          brokenWall(B, place, len, hh, Math.floor(seed * 9973) + f.d.charCodeAt(0) * 31, wallMat, { timber: style === 1 });
         } else if (ruined) {
           // Jagged broken wall top.
           const segs = Math.max(2, Math.round(len / 1.1));
@@ -544,7 +645,21 @@ export function buildDiorama(field, o = {}) {
     const fuv = floor.attributes.uv;
     for (let i = 0; i < fuv.count; i++) fuv.setXY(i, fuv.getX(i) * iw / 1.1, fuv.getY(i) * id / 1.1);
     // Cut-away: an interior floor and a furnished dollhouse inside the low walls.
-    house.cut.add(floor.clone(), ruined ? libMat('floor_rubble', 0x9a8a7a) : pbr('plank', 0x9a8878), { p: [(hx0 + hx1) / 2, 0.02, (hz0 + hz1) / 2] }, { cast: false });
+    house.cut.add(floor.clone(), ruined ? libMat('floor_rubble', 0x7a6c60) : pbr('plank', 0x6e6258), { p: [(hx0 + hx1) / 2, 0.02, (hz0 + hz1) / 2] }, { cast: false });
+    // Interior gloom: a soft dark gradient creeping in from every wall foot
+    // (rooms read as roofless shadowed shells, not lit display boxes).
+    for (const [cx, cz, w, d, rot] of [[(hx0 + hx1) / 2, hz0 + 0.95, iw - 0.4, 1.5, 0], [(hx0 + hx1) / 2, hz1 - 0.95, iw - 0.4, 1.5, Math.PI], [hx0 + 0.95, (hz0 + hz1) / 2, id - 0.4, 1.5, Math.PI / 2], [hx1 - 0.95, (hz0 + hz1) / 2, id - 0.4, 1.5, -Math.PI / 2]]) {
+      house.cut.add(new THREE.PlaneGeometry(w, d).rotateX(-Math.PI / 2), gloomMat, { p: [cx, 0.035, cz], r: [0, rot, 0] }, { cast: false, receive: false });
+    }
+    // Debris across the floor: fallen masonry, a snapped beam, broken boards.
+    for (let k = 0; k < Math.round(iw * id * 0.35); k++) {
+      const px = hx0 + 0.5 + hash(k, 21, seed * 37) * (iw - 1);
+      const pz = hz0 + 0.5 + hash(k, 22, seed * 37) * (id - 1);
+      const kind = hash(k, 23, seed * 37);
+      if (kind < 0.55) house.cut.add(rockGeo(hash(k, 24, seed), 0.08 + hash(k, 25, seed) * 0.14), rubbleMat, { p: [px, 0.03, pz] }, { cast: false });
+      else if (kind < 0.85) house.cut.add(worldBox(0.6 + hash(k, 26, seed) * 0.7, 0.03, 0.14, 1), woodMat, { p: [px, 0.05, pz], r: [0, hash(k, 27, seed) * 3, (hash(k, 28, seed) - 0.5) * 0.15] }, { cast: false });
+      else house.cut.add(worldBox(0.2, 0.2, 1.6 + hash(k, 29, seed), 1), darkWood, { p: [px, 0.12, pz], r: [0.1, hash(k, 30, seed) * 3, 0.12] });
+    }
     if (!ruined) furnish(house, iw, id);
     if (!ruined) {
       const alongX = iw >= id;
@@ -666,9 +781,16 @@ export function buildDiorama(field, o = {}) {
         const len = (b - a) * span;
         if (len < 0.2) continue;
         const mid = a0 + ((a + b) / 2) * span;
-        const g = worldBox(alongX ? 0.2 : len, cutH * 0.95, alongX ? len : 0.2, 2.5);
-        B.add(g, wallMats[house.style === 1 ? 1 : 0], { p: [alongX ? at : mid, (cutH * 0.95) / 2, alongX ? mid : at] });
-        B.add(worldBox(alongX ? 0.24 : len, 0.06, alongX ? len : 0.24, 2.5), capMat, { p: [alongX ? at : mid, cutH * 0.95 + 0.03, alongX ? mid : at] });
+        // Partition: broken like the outer walls, placed along x (or z).
+        const sx = alongX ? at : mid - len / 2;
+        const sz = alongX ? mid - len / 2 : at;
+        const yaw = alongX ? -Math.PI / 2 : 0;
+        const pl = (g, lx, ly, lz = 0) => {
+          const m = new THREE.Matrix4().makeRotationY(yaw);
+          m.setPosition(sx + Math.cos(yaw) * lx + Math.sin(yaw) * (lz + 0.1), ly, sz - Math.sin(yaw) * lx + Math.cos(yaw) * (lz + 0.1));
+          return g.applyMatrix4(m);
+        };
+        brokenWall(B, pl, len, cutH * 0.7, salt * 13 + Math.floor(a * 100), wallMats[house.style === 1 ? 1 : 0], { thick: 0.2, debris: false });
       }
       if (alongX) take(at - 0.12, a0, at + 0.12, a0 + span * (door - dw / 2)), take(at - 0.12, a0 + span * (door + dw / 2), at + 0.12, a1);
       else take(a0, at - 0.12, a0 + span * (door - dw / 2), at + 0.12), take(a0 + span * (door + dw / 2), at - 0.12, a1, at + 0.12);
@@ -712,10 +834,13 @@ export function buildDiorama(field, o = {}) {
           const tz = iz0 + 1 + r2 * Math.max(0, iz1 - iz0 - 2);
           if (!free(tx - 1.1, tz - 0.9, tx + 1.1, tz + 0.9)) continue;
           B.add(worldBox(1.5, 0.08, 0.85, 1), woodMat, { p: [tx, 0.76, tz] });
-          for (const [dx, dz] of [[-0.62, -0.32], [0.62, -0.32], [-0.62, 0.32], [0.62, 0.32]]) B.add(worldBox(0.08, 0.72, 0.08, 1), darkWood, { p: [tx + dx, 0.36, tz + dz] });
+          for (const [dx, dz] of [[-0.62, -0.32], [0.62, -0.32], [-0.62, 0.32], [0.62, 0.32]]) B.add(turnedLeg(0.72, 0.05), darkWood, { p: [tx + dx, 0, tz + dz] });
+          // Apron rails under the top.
+          B.add(worldBox(1.3, 0.1, 0.04, 1), darkWood, { p: [tx, 0.67, tz - 0.32] }, { cast: false });
+          B.add(worldBox(1.3, 0.1, 0.04, 1), darkWood, { p: [tx, 0.67, tz + 0.32] }, { cast: false });
           for (const [dx, dz] of [[-0.4, -0.75], [0.4, 0.75], [0.0, -0.75]]) {
             B.add(worldBox(0.42, 0.06, 0.42, 1), woodMat, { p: [tx + dx, 0.46, tz + dz] });
-            for (const [ex, ez] of [[-0.17, -0.17], [0.17, -0.17], [-0.17, 0.17], [0.17, 0.17]]) B.add(worldBox(0.05, 0.44, 0.05, 1), darkWood, { p: [tx + dx + ex, 0.22, tz + dz + ez] }, { cast: false });
+            for (const [ex, ez] of [[-0.15, -0.15], [0.15, -0.15], [-0.15, 0.15], [0.15, 0.15]]) B.add(turnedLeg(0.44, 0.03), darkWood, { p: [tx + dx + ex, 0, tz + dz + ez], r: [ex * 0.5, 0, -ez * 0.5] }, { cast: false });
           }
           // Tankard and candle.
           B.add(new THREE.CylinderGeometry(0.05, 0.05, 0.12, 8), ironMat, { p: [tx + 0.3, 0.86, tz + 0.1] }, { cast: false });
@@ -725,19 +850,29 @@ export function buildDiorama(field, o = {}) {
         }
         if (!free(cx - ww / 2, cz - dd / 2, cx + ww / 2, cz + dd / 2)) continue;
         if (kind === 'bed') {
-          B.add(worldBox(ww, 0.3, dd, 1), darkWood, { p: [cx, 0.2, cz] });
-          B.add(worldBox(ww - 0.1, 0.16, dd - 0.1, 1), pbr('cloth', 0xd8ccb0), { p: [cx, 0.42, cz] });
-          const bx = vert ? ww - 0.06 : ww * 0.98;
-          const bz = vert ? dd * 0.62 : dd - 0.06;
-          B.add(worldBox(bx, 0.06, bz, 1), pbr('cloth', blanket), { p: [cx + (vert ? 0 : 0), 0.52, cz + (vert ? (side === 0 ? 0.3 : 0.3) : 0.3)] });
-          B.add(worldBox(vert ? 0.6 : 0.5, 0.12, vert ? 0.35 : 0.6, 1), pbr('cloth', 0xe8e0d0), { p: [cx + (vert ? 0 : -ww * 0.3), 0.56, cz + (vert ? -dd * 0.36 : 0)] });
+          // Frame with posts, a soft rounded mattress, a pillow and a blanket
+          // that drapes over the sides.
+          B.add(worldBox(ww, 0.12, dd, 1), darkWood, { p: [cx, 0.26, cz] });
+          for (const [px, pz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) B.add(turnedLeg(0.62, 0.045), darkWood, { p: [cx + px * (ww / 2 - 0.05), 0, cz + pz * (dd / 2 - 0.05)] });
+          const head = vert ? [0, -1] : [-1, 0];
+          B.add(worldBox(vert ? ww : 0.06, 0.4, vert ? 0.06 : dd, 1), darkWood, { p: [cx + head[0] * (ww / 2 - 0.03), 0.5, cz + head[1] * (dd / 2 - 0.03)] });
+          B.add(softSlab(ww - 0.08, 0.16, dd - 0.08), linenMat, { p: [cx, 0.4, cz] });
+          const bx = vert ? ww + 0.06 : ww * 0.62;
+          const bz = vert ? dd * 0.62 : dd + 0.06;
+          B.add(drape(bx, bz, 0.22), pbr('cloth', blanket), { p: [cx - head[0] * ww * 0.18, 0.5, cz - head[1] * dd * 0.18] }, { cast: false });
+          B.add(softSlab(vert ? 0.62 : 0.34, 0.12, vert ? 0.34 : 0.62), linenMat, { p: [cx + head[0] * (ww / 2 - 0.26), 0.53, cz + head[1] * (dd / 2 - 0.26)] }, { cast: false });
         } else if (kind === 'barrels') {
           B.add(barrelGeo(), barrelMat, { p: [cx - 0.2, 0, cz], s: 0.9 });
           B.add(barrelHoops(), ironMat, { p: [cx - 0.2, 0, cz], s: 0.9 });
           if (r2 > 0.4) B.add(barrelGeo(), barrelMat, { p: [cx + 0.35, 0, cz + 0.2], s: 0.75 });
         } else if (kind === 'chest') {
-          B.add(worldBox(ww * 0.8, 0.5, dd * 0.7, 1), woodMat, { p: [cx, 0.25, cz] });
-          B.add(worldBox(ww * 0.82, 0.06, dd * 0.72, 1), ironMat, { p: [cx, 0.48, cz] });
+          B.add(worldBox(ww * 0.8, 0.42, dd * 0.7, 1), woodMat, { p: [cx, 0.21, cz] });
+          // Barrel-vaulted lid and iron straps.
+          const lid = new THREE.CylinderGeometry(1, 1, 1, 12, 1, false, 0, Math.PI).rotateZ(Math.PI / 2).rotateY(Math.PI / 2);
+          lid.scale(vert ? dd * 0.35 : ww * 0.8, 0.14, vert ? ww * 0.8 : dd * 0.35);
+          if (vert) lid.rotateY(Math.PI / 2);
+          B.add(lid, woodMat, { p: [cx, 0.42, cz] });
+          for (const o of [-0.3, 0.3]) B.add(worldBox(vert ? dd * 0.74 : 0.05, 0.6, vert ? 0.05 : dd * 0.74, 1), ironMat, { p: [cx + (vert ? 0 : o * ww * 0.8), 0.27, cz + (vert ? o * ww * 0.8 : 0)] }, { cast: false });
         } else if (kind === 'shelf') {
           B.add(worldBox(ww, 1.9, dd, 1), darkWood, { p: [cx, 0.95, cz] });
           for (let k2 = 0; k2 < 6; k2++) B.add(worldBox(0.12, 0.22, 0.12, 1), k2 % 2 ? barrelMat : pbr('cloth', 0x8a6a4a), { p: [cx + (vert ? 0 : (k2 - 2.5) * 0.18), 0.5 + (k2 % 3) * 0.5, cz + (vert ? (k2 - 2.5) * 0.18 : 0)] }, { cast: false });
@@ -1067,6 +1202,7 @@ export function buildDiorama(field, o = {}) {
   // open roof.
   const stoneT = libMat('wall_stone', 0xd8d4cc);
   let statueMat = null;
+  let statuePos = null;
   const crackMat = new THREE.MeshStandardMaterial({ color: 0x14100c, roughness: 1 });
   disposables.push(crackMat);
   const candleMat = pbr('glow', 0xf0e8d0, { emissive: 0xffc070, emissiveIntensity: night ? 0.9 : 0.4 });
@@ -1102,19 +1238,28 @@ export function buildDiorama(field, o = {}) {
       batch.add(worldBox(1.45, 0.12, 1.25, 1.5), stoneT, { p: [sx, 0.96, sz] });
       // The god himself: one sculpted stone mesh (robe folds, blindfold, beard,
       // raised hammer, the lost right hand), with occlusion baked in.
+      // The hero prop: larger than life and turned three-quarters toward the
+      // hall, so its face, blindfold and the scales read from the tactics camera.
+      const sg = new THREE.Group();
+      sg.position.set(sx, 1.02, sz);
+      sg.scale.setScalar(1.4);
+      sg.rotation.y = 0.55;
       const statue = new THREE.Mesh(statueGeometry(), statueMat ??= statueMaterial());
-      statue.position.set(sx, 1.02, sz);
       statue.castShadow = true;
       statue.receiveShadow = true;
-      group.add(statue);
+      sg.add(statue);
       // The scales hang from the stump of the right wrist.
-      const gilt = pbr('gold', 0x9a7a32);
-      batch.add(new THREE.CylinderGeometry(0.018, 0.018, 0.62, 6).rotateZ(Math.PI / 2), gilt, { p: [sx + 0.5, 2.3, sz + 0.42] });
-      batch.add(new THREE.SphereGeometry(0.035, 8, 6), gilt, { p: [sx + 0.5, 2.3, sz + 0.42] }, { cast: false });
+      const gilt = pbr('gold', 0xb8923e);
+      const SB = new Batcher();
+      SB.add(new THREE.CylinderGeometry(0.018, 0.018, 0.62, 6).rotateZ(Math.PI / 2), gilt, { p: [0.5, 1.28, 0.42] });
+      SB.add(new THREE.SphereGeometry(0.035, 8, 6), gilt, { p: [0.5, 1.28, 0.42] }, { cast: false });
       for (const dx of [-0.29, 0.29]) {
-        batch.add(new THREE.SphereGeometry(0.12, 14, 6, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), gilt, { p: [sx + 0.5 + dx, 2.06, sz + 0.42] });
-        for (const cx of [-0.07, 0.07]) batch.add(new THREE.CylinderGeometry(0.005, 0.005, 0.25, 4).rotateZ(cx * 3.4), gilt, { p: [sx + 0.5 + dx + cx * 0.5, 2.18, sz + 0.42] }, { cast: false });
+        SB.add(new THREE.SphereGeometry(0.12, 14, 6, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), gilt, { p: [0.5 + dx, 1.04, 0.42] });
+        for (const cx of [-0.07, 0.07]) SB.add(new THREE.CylinderGeometry(0.005, 0.005, 0.25, 4).rotateZ(cx * 3.4), gilt, { p: [0.5 + dx + cx * 0.5, 1.16, 0.42] }, { cast: false });
       }
+      SB.flush(sg);
+      group.add(sg);
+      statuePos = { x: sx, z: sz };
       // A great crack through the statue and a fallen fragment at its feet.
       batch.add(rockGeo(hash(p.x, 3, 3), 0.3), stoneT, { p: [sx + 0.7, 0.1, sz + 0.75] });
       batch.add(rockGeo(hash(p.x, 4, 3), 0.18), stoneT, { p: [sx + 0.45, 0.05, sz + 0.95] }, { cast: false });
@@ -1202,19 +1347,19 @@ export function buildDiorama(field, o = {}) {
       // view-dependent edges, dust caught in them) that pool on the floor.
       const beamMat = new THREE.ShaderMaterial({
         transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-        uniforms: { uT: { value: 0 }, tNoise: { value: noiseTexture() } },
+        uniforms: { uT: { value: 0 }, uK: { value: 1 }, tNoise: { value: noiseTexture() } },
         vertexShader: `varying vec2 vUv; varying vec3 vW; varying vec3 vN; varying vec3 vV;
           void main(){ vUv = uv; vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz;
             vN = normalize(mat3(modelMatrix) * normal); vV = normalize(cameraPosition - w.xyz);
             gl_Position = projectionMatrix * viewMatrix * w; }`,
-        fragmentShader: `varying vec2 vUv; varying vec3 vW; varying vec3 vN; varying vec3 vV; uniform float uT; uniform sampler2D tNoise;
+        fragmentShader: `varying vec2 vUv; varying vec3 vW; varying vec3 vN; varying vec3 vV; uniform float uT, uK; uniform sampler2D tNoise;
           void main(){
             float core = pow(abs(dot(normalize(vN), normalize(vV))), 2.2);
             float n = texture2D(tNoise, vec2(vW.x * 0.11 + vW.z * 0.07 + uT * 0.008, vW.y * 0.06 - uT * 0.015)).r;
             float n2 = texture2D(tNoise, vec2(vW.z * 0.23 - uT * 0.01, vW.y * 0.17 + vW.x * 0.05)).r;
             float h = smoothstep(0.0, 0.12, vUv.y) * smoothstep(1.0, 0.55, vUv.y);
             float a = core * h * (0.45 + n * 0.55) * (0.75 + n2 * 0.5);
-            gl_FragColor = vec4(vec3(0.55, 0.66, 1.0) * 0.32 * a, 1.0); }`,
+            gl_FragColor = vec4(vec3(0.55, 0.66, 1.0) * 0.32 * uK * a, 1.0); }`,
       });
       disposables.push(beamMat);
       // Where each shaft lands: a soft, slightly stretched pool of moonlight.
@@ -1252,6 +1397,27 @@ export function buildDiorama(field, o = {}) {
         const dm = loopingParticles({ count: 26, at: new THREE.Vector3(bx + Math.sin(yaw) * 0.6, 1.8, bz + Math.cos(yaw) * 0.6), spread: w * 0.7, spreadY: 1.5, vel: [0.03, 0.02, 0.02], turb: 0.12, life: 8, size: 0.022, color: 0xd0dcff, additive: true, alpha: 0.75, seed: 41 + fx * 10 });
         group.add(dm.obj);
         ambient.push(dm);
+      }
+      if (statuePos) {
+        // A moonbeam falls squarely on Tyr: the hall's key light on its hero prop.
+        const g = new THREE.CylinderGeometry(0.95, 1.15, 10, 28, 1, true).translate(0, 5, 0);
+        const sbm = beamMat.clone();
+        sbm.uniforms.uT = beamMat.uniforms.uT;
+        sbm.uniforms.uK.value = 0.45;
+        disposables.push(sbm);
+        const m = new THREE.Mesh(g, sbm);
+        m.position.set(statuePos.x + 0.2, 0, statuePos.z + 0.6);
+        m.rotation.set(tilt, 0.5, 0, 'YXZ');
+        m.renderOrder = 5;
+        beams.add(m);
+        disposables.push(g);
+        const pg = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+        const pool = new THREE.Mesh(pg, poolMat);
+        pool.position.set(statuePos.x + 0.2, 0.03, statuePos.z + 0.9);
+        pool.scale.set(2.8, 1, 3.2);
+        pool.renderOrder = 4;
+        beams.add(pool);
+        disposables.push(pg);
       }
       group.add(beams);
       ambient.push({ update: (t) => (beamMat.uniforms.uT.value = t), dispose: () => {} });
@@ -1911,6 +2077,47 @@ function columnGeo(h, broken, seed) {
     let ny = y;
     if (broken && y > h - 0.01) ny = h - 0.05 - hash(Math.round(a * 4), seed, 431) * 0.35 - Math.max(0, Math.cos(a + seed)) * 0.25;
     pos.setXYZ(i, x * k, ny, z * k);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+
+/** Lathe-turned furniture leg (base at y=0): bead, taper, collar, foot. */
+function turnedLeg(h, r) {
+  const prof = [[0.0, 0], [r * 1.1, 0], [r * 1.2, h * 0.04], [r * 0.8, h * 0.09], [r * 0.75, h * 0.3], [r * 1.25, h * 0.36], [r * 0.8, h * 0.42], [r * 0.95, h * 0.7], [r * 1.3, h * 0.78], [r * 1.0, h * 0.84], [r * 1.05, h], [0, h]];
+  return new THREE.LatheGeometry(prof.map(([x, y]) => new THREE.Vector2(x, y)), 8);
+}
+
+/** A soft, rounded slab (mattress, pillow): a box with its edges pillowed. */
+function softSlab(w, h, d) {
+  const g = new THREE.BoxGeometry(w, h, d, 6, 2, 6);
+  const pos = g.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i) / (w / 2);
+    const z = pos.getZ(i) / (d / 2);
+    const y = pos.getY(i);
+    const edge = Math.max(Math.abs(x), Math.abs(z));
+    const puff = 1 - edge ** 4;
+    pos.setY(i, y > 0 ? y * (0.55 + 0.45 * puff) : y);
+    pos.setX(i, pos.getX(i) * (1 - 0.06 * (y > 0 ? 1 - puff : 0)));
+    pos.setZ(i, pos.getZ(i) * (1 - 0.06 * (y > 0 ? 1 - puff : 0)));
+  }
+  g.computeVertexNormals();
+  return g;
+}
+
+/** A cloth sheet lying over a surface and falling over its edges by `fall` (blanket). */
+function drape(w, d, fall) {
+  const g = new THREE.PlaneGeometry(w + fall * 2, d + fall * 2, 14, 14).rotateX(-Math.PI / 2);
+  const pos = g.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const z = pos.getZ(i);
+    const ox = Math.max(0, Math.abs(x) - w / 2);
+    const oz = Math.max(0, Math.abs(z) - d / 2);
+    const o = Math.max(ox, oz);
+    const wr = Math.sin(x * 9.0 + z * 3.0) * 0.012 + Math.sin(z * 7.0) * 0.01;
+    pos.setXYZ(i, x - Math.sign(x) * ox * 0.85, -o * 0.95 + wr, z - Math.sign(z) * oz * 0.85);
   }
   g.computeVertexNormals();
   return g;

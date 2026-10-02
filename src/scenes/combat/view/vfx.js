@@ -235,7 +235,7 @@ function volumeFire({ steps = 24, smoke = false, gas = false } = {}) {
             sc += uSky * clamp(p.y * 1.2 + 0.1, 0.0, 1.0) * lit * 0.5;
             sc += vec3(1.0, 0.3, 0.05) * uHeat * clamp(0.2 - p.y, 0.0, 1.0) * (1.0 - lit) * 1.2;
             col += T * a * sc;` : `
-            float temp = uHeat * (0.24 + core * 0.9 + (n - 0.5) * 1.25) - uSmoke * (1.0 - core) * 1.05;
+            float temp = uHeat * (0.24 + core * 1.25 + (n - 0.5) * 1.25) - uSmoke * (1.0 - core) * 1.05;
             float a = 1.0 - exp(-dens * mix(7.0, 12.0, clamp(temp, 0.0, 1.0)) * dt);
             // Sooty rim: near-black in the folds, a little grey on sky-lit crowns.
             vec3 soot = mix(vec3(0.006, 0.005, 0.005), vec3(0.11, 0.095, 0.085), n * n * n);
@@ -244,6 +244,12 @@ function volumeFire({ steps = 24, smoke = false, gas = false } = {}) {
             e = mix(e, vec3(1.0, 0.3, 0.035) * 0.95, smoothstep(0.28, 0.52, temp));
             e = mix(e, vec3(1.0, 0.56, 0.14) * 1.3, smoothstep(0.52, 0.8, temp));
             e = mix(e, vec3(1.0, 0.82, 0.5) * 1.75, smoothstep(0.88, 1.35, temp));
+            e = mix(e, vec3(1.0, 0.97, 0.9) * 2.6, smoothstep(1.0, 1.35, temp));
+            // Rolling flame front: billow crests burn bright, the folds between
+            // them sink into shadowed, redder fire (reads as 3D lobes, not a disc).
+            float crest = smoothstep(0.25, 0.85, n);
+            e *= mix(0.3, 1.25, crest) + smoothstep(0.95, 1.3, temp) * 0.5;
+            e = mix(e * vec3(1.0, 0.7, 0.55), e, crest);
             // Soot near the cool edge picks up the fire's own glow from within.
             soot += vec3(0.9, 0.25, 0.04) * clamp(uHeat, 0.0, 1.0) * 0.16 * smoothstep(0.0, 0.25, temp);
             vec3 sc = mix(soot, e, smoothstep(0.08, 0.3, temp));
@@ -269,6 +275,124 @@ function volumeFire({ steps = 24, smoke = false, gas = false } = {}) {
       inv.copy(mesh.matrixWorld).invert();
       if (camera) mat.uniforms.uCam.value.copy(camera.position).applyMatrix4(inv);
       mat.uniforms.uFloor.value = (groundY - mesh.position.y) / mesh.scale.y;
+    },
+    dispose() {
+      mesh.geometry.dispose();
+      mat.dispose();
+    },
+  };
+}
+
+/**
+ * Ground-hugging gas (stinking cloud): a flattened box ray-marched through a
+ * slowly curling, domain-warped fBm. Density falls off with height and with
+ * distance from the centre, and the rim tears into tendrils that spill across
+ * the neighbouring squares. Lit, not emissive: each sample takes a short
+ * shadow probe toward the key light, so lobes self-shadow (olive folds, sickly
+ * yellow-green crowns, pale back-lit rims). Opacity is capped so figures
+ * inside stay visible at 50-70% obscurity. Premultiplied output.
+ */
+function gasVolume({ steps = 26 } = {}) {
+  const mat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    side: THREE.FrontSide,
+    blending: THREE.CustomBlending,
+    blendSrc: THREE.OneFactor,
+    blendDst: THREE.OneMinusSrcAlphaFactor,
+    uniforms: {
+      uCam: { value: new THREE.Vector3(0, 5, 5) }, uAge: { value: 0 }, uSeed: { value: 0 }, uFade: { value: 1 },
+      uHalf: { value: new THREE.Vector3(3, 1, 3) }, uLightDir: { value: new THREE.Vector3(0.4, 0.85, 0.3).normalize() },
+      uKey: { value: new THREE.Color(1, 0.96, 0.85) }, uAmb: { value: new THREE.Color(0.35, 0.4, 0.45) }, uMaxA: { value: 0.68 },
+    },
+    vertexShader: 'varying vec3 vO; void main(){ vO = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `
+      uniform vec3 uCam, uHalf, uLightDir, uKey, uAmb; uniform float uAge, uSeed, uFade, uMaxA;
+      varying vec3 vO;
+      float h31(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+      float vn(vec3 x){ vec3 i = floor(x); vec3 f = fract(x); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(mix(h31(i), h31(i + vec3(1,0,0)), f.x), mix(h31(i + vec3(0,1,0)), h31(i + vec3(1,1,0)), f.x), f.y),
+                   mix(mix(h31(i + vec3(0,0,1)), h31(i + vec3(1,0,1)), f.x), mix(h31(i + vec3(0,1,1)), h31(i + vec3(1,1,1)), f.x), f.y), f.z); }
+      // Density at world-scaled local position q (metres from centre, y up from the ground).
+      float dens(vec3 q){
+        float a = uAge;
+        // Slow curl: two counter-rotating warps.
+        vec3 w = vec3(vn(q * 0.55 + vec3(0.0, a * 0.12, uSeed)), vn(q * 0.55 + vec3(5.2, -a * 0.1, uSeed + 3.1)), vn(q * 0.55 + vec3(1.7, a * 0.08, uSeed + 7.7)));
+        vec3 p = q * vec3(1.5, 1.9, 1.5) + (w - 0.5) * 1.8 + vec3(a * 0.05, -a * 0.04, -a * 0.03);
+        float n = vn(p) * 0.5 + vn(p * 2.03 + 3.3) * 0.3 + vn(p * 4.1 + 7.9 - vec3(0.0, a * 0.2, 0.0)) * 0.2;
+        // Horizontal reach: a soft disc whose edge is torn into tendrils.
+        vec2 e = q.xz / uHalf.xz;
+        float r = length(e) + (vn(vec3(q.xz * 0.9, a * 0.06 + uSeed)) - 0.5) * 0.36;
+        float reach = 1.0 - smoothstep(0.38, 0.84, r);
+        // Height: thick at the cobbles, lobed crowns, thinning upward.
+        float top = 0.3 + 1.0 * n * reach;
+        float hf = smoothstep(top, top * 0.35, q.y) * smoothstep(-0.02, 0.06, q.y);
+        float d = (n - 0.46 + reach * 0.26) * hf * reach;
+        return clamp(d * 5.5, 0.0, 1.0);
+      }
+      void main(){
+        vec3 ro = uCam;
+        vec3 rd = normalize(vO - uCam);
+        // Ray vs. unit box (object space), then march in metres.
+        vec3 inv = 1.0 / rd;
+        vec3 ta = (-1.0 - ro) * inv, tb = (1.0 - ro) * inv;
+        vec3 tmin = min(ta, tb), tmax = max(ta, tb);
+        float t0 = max(max(max(tmin.x, tmin.y), tmin.z), 0.0);
+        float t1 = min(min(tmax.x, tmax.y), tmax.z);
+        if (t1 <= t0) discard;
+        const int N = ${steps};
+        float dt = (t1 - t0) / float(N);
+        float jit = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+        vec3 col = vec3(0.0); float T = 1.0;
+        vec3 Ls = normalize(uLightDir / uHalf);
+        for (int i = 0; i < N; i++) {
+          vec3 po = ro + rd * (t0 + (float(i) + jit) * dt);
+          vec3 q = vec3(po.x, po.y + 1.0, po.z) * uHalf;
+          q.y *= 0.5;
+          float d = dens(q);
+          if (d > 0.002) {
+            float stepM = dt * length(rd * uHalf);
+            float a = 1.0 - exp(-d * 1.5 * stepM);
+            // Self-shadow: two probes toward the key light.
+            float s1 = dens(q + uLightDir * 0.18);
+            float s2 = dens(q + uLightDir * 0.45);
+            float lit = exp(-(s1 * 2.6 + s2 * 2.2));
+            float hgt = clamp(q.y / 1.1, 0.0, 1.0);
+            vec3 fold = vec3(0.05, 0.065, 0.015);
+            vec3 body = vec3(0.3, 0.37, 0.07);
+            vec3 crown = vec3(0.62, 0.66, 0.2);
+            vec3 alb = mix(fold, body, smoothstep(0.05, 0.55, lit));
+            alb = mix(alb, crown, smoothstep(0.55, 1.0, lit) * (0.4 + 0.6 * hgt));
+            // Thin margins scatter more: lighter, greyer rims.
+            alb = mix(alb, vec3(0.5, 0.54, 0.36), (1.0 - smoothstep(0.0, 0.3, d)) * 0.5 * lit);
+            vec3 c = alb * (uKey * (0.25 + 0.95 * lit) + uAmb * (0.55 + 0.45 * hgt));
+            col += T * a * c;
+            T *= 1.0 - a;
+            if (T < 0.02) break;
+          }
+        }
+        float A = min(1.0 - T, uMaxA) * uFade;
+        col *= A / max(1.0 - T, 0.0001);
+        gl_FragColor = vec4(col, A);
+      }`,
+  });
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), mat);
+  mesh.renderOrder = 8;
+  mesh.frustumCulled = false;
+  const inv = new THREE.Matrix4();
+  return {
+    obj: mesh,
+    u: mat.uniforms,
+    /** Footprint half-extents (m) and height (m); the box sits on the ground. */
+    place(x, z, hx, hy, hz) {
+      mesh.position.set(x, hy, z);
+      mesh.scale.set(hx, hy, hz);
+      mat.uniforms.uHalf.value.set(hx, hy * 2, hz);
+    },
+    sync(camera) {
+      mesh.updateMatrixWorld(true);
+      inv.copy(mesh.matrixWorld).invert();
+      if (camera) mat.uniforms.uCam.value.copy(camera.position).applyMatrix4(inv);
     },
     dispose() {
       mesh.geometry.dispose();
@@ -537,46 +661,6 @@ function groundRing(color, soft = 0.2) {
       void main(){ float r = length(vUv * 2.0 - 1.0); float k = 1.0 - smoothstep(0.0, uW, abs(r - uR));
         float inner = smoothstep(uR, 0.0, r) * uSoft;
         gl_FragColor = vec4(uColor * 2.0, (k + inner) * uA); }`,
-  });
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), mat);
-  m.renderOrder = 5;
-  return m;
-}
-
-/** Additive radial light pool on the ground (light falloff, no hard edge). */
-function groundGlow(color) {
-  const mat = new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    uniforms: { uA: { value: 1 }, uColor: { value: new THREE.Color(color) } },
-    vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-    fragmentShader: `varying vec2 vUv; uniform float uA; uniform vec3 uColor;
-      void main(){ float r = length(vUv * 2.0 - 1.0); float k = 1.0 / (1.0 + r * r * 22.0) - 1.0 / 23.0;
-        gl_FragColor = vec4(uColor * k * uA, 1.0); }`,
-  });
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), mat);
-  m.renderOrder = 4;
-  return m;
-}
-
-/** Soft, noise-distorted ground shockwave band (radius 0.8 of the plane). */
-function shockRing(color) {
-  const mat = new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    uniforms: { uT: { value: 0 }, uA: { value: 1 }, uColor: { value: new THREE.Color(color) } },
-    vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-    fragmentShader: `${NOISE_GLSL}
-      varying vec2 vUv; uniform float uT, uA; uniform vec3 uColor;
-      void main(){ vec2 p = vUv * 2.0 - 1.0; float r = length(p); float a = atan(p.y, p.x);
-        float n = noise3(vec3(cos(a) * 2.5, sin(a) * 2.5, uT * 3.0)) * 0.06 + noise3(vec3(cos(a) * 7.0, sin(a) * 7.0, uT * 5.0)) * 0.025;
-        float d = r - (0.8 + n);
-        float band = exp(-d * d / 0.004) * (0.65 + 0.35 * noise3(vec3(p * 6.0, uT)));
-        float wake = smoothstep(0.82, 0.2, r) * smoothstep(0.0, 0.5, r) * 0.04;
-        float edge = 1.0 - smoothstep(0.92, 1.0, r);
-        gl_FragColor = vec4(mix(uColor, vec3(1.0, 0.85, 0.6), 0.3) * 1.6, (band + wake) * edge * uA); }`,
   });
   const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), mat);
   m.renderOrder = 5;
@@ -963,7 +1047,7 @@ export class VFX {
     const cap = volumeFire({ steps: 18, smoke: true });
     const stem = volumeFire({ steps: 14, smoke: true });
     ball.u.uSeed.value = seed * 3.1;
-    ball.u.uFreq.value = 2.1;
+    ball.u.uFreq.value = 3.0;
     ball2.u.uFreq.value = 2.4;
     ball2.u.uSeed.value = seed * 7.7 + 11;
     cap.u.uSeed.value = seed * 5.3 + 2;
@@ -980,23 +1064,16 @@ export class VFX {
     }));
     shock.renderOrder = 11;
     shock.frustumCulled = false;
-    const ring = shockRing(0xffa050);
     const scorch = new THREE.Mesh(new THREE.CircleGeometry(1, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: scorchTexture(), transparent: true, depthWrite: false, color: 0x000000, opacity: 0.8 }));
     scorch.renderOrder = 1;
     const sparks = sparkStreaks({ at: to, count: 44, speed: 10, life: 1.3, gravity: 8, drag: 1.4, hemi: true, width: 1.7, streak: 0.03, intensity: 1.6, seed: seed + 3, r0: R * 0.15 });
     const lateSparks = sparkStreaks({ at: { x: to.x, y: to.y + 0.4, z: to.z }, count: 40, speed: 4, up: 1.4, life: 1.6, gravity: 3, drag: 1.6, hemi: true, width: 1.6, streak: 0.12, intensity: 2.2, seed: seed + 9, delay: 0.15, stagger: 0.5, r0: R * 0.4 });
     const debris = particleBurst({ at: { x: to.x, y: 0.2, z: to.z }, count: 36, speed: 6.5, life: 1.2, size: 0.09, drag: 1, gravity: 12, hemi: true, colors: [0x5a4a3a, 0x3a3028, 0x2a2420], additive: false, intensity: 1, soft: 0.2, seed: seed + 5, floor: 0.03 });
     const dust = particleBurst({ at: { x: to.x, y: 0.15, z: to.z }, count: 34, spread: 0.3, flatY: true, hemi: true, speed: 7.5, up: 0.1, life: 1.8, size: 0.55, grow: 2.0, drag: 3.2, colors: [0x2e2924, 0x26221e, 0x1c1916], additive: false, intensity: 1, soft: 0.95, seed: seed + 13, fadeIn: 0.15 });
-    // Light falloff on the paving: an additive radial wash (~2x the blast
-    // radius) standing in for the fire's bounce — no flat decal disc.
-    const wash = groundGlow(0xff7a28);
     const flash = glowSprite(0xfff2d8, R * 3.2, 0);
     const flashCore = glowSprite(0xffffff, R * 1.2, 0);
     const groundFire = particleBurst({ at: { x: to.x, y: 0.12, z: to.z }, count: 70, spread: R * 0.7, flatY: true, speed: 0.2, gravity: -1.4, life: 0.8, stagger: 1.4, delay: 0.3, size: 0.16, grow: 1.0, drag: 1, turb: 0.4, colors: [0xffb050, 0xff4a08, 0x200804], intensity: 1.1, seed: seed + 21, fadeIn: 0.15 });
-    this.add(T, 4.5, () => ({ list: [scorch, wash, ring, dust, groundFire, stem, cap, ball2, ball, shock, sparks, lateSparks, debris, flash, flashCore] }), (age, parts, ctx) => {
-      wash.position.set(to.x, 0.04, to.z);
-      wash.scale.setScalar(R * 4.2);
-      wash.material.uniforms.uA.value = (age < 0.05 ? age / 0.05 : Math.exp(-(age - 0.05) * 1.1)) * 0.3 * clamp01((3.2 - age) / 1.2);
+    this.add(T, 4.5, () => ({ list: [scorch, dust, groundFire, stem, cap, ball2, ball, shock, sparks, lateSparks, debris, flash, flashCore] }), (age, parts, ctx) => {
       // White-hot flash: 2-3 frames of glare, then gone.
       const fl = age < 0.03 ? age / 0.03 : Math.exp(-(age - 0.03) * 14);
       flash.position.set(to.x, to.y + 0.3, to.z);
@@ -1013,8 +1090,8 @@ export class VFX {
       ball.obj.scale.set(Rb, Rb * 0.92, Rb);
       ball.u.uAge.value = age;
       ball.u.uGrow.value = 0.18 + 0.62 * (1 - Math.exp(-age * 9)) + age * 0.06;
-      ball.u.uHeat.value = age < 0.06 ? 1.6 : 0.32 + 1.05 * Math.exp(-(age - 0.06) * 2.4);
-      ball.u.uSmoke.value = clamp01(0.45 + age * 1.1);
+      ball.u.uHeat.value = age < 0.06 ? 1.6 : 0.3 + 1.0 * Math.exp(-(age - 0.06) * 2.6);
+      ball.u.uSmoke.value = clamp01(0.22 + age * 1.0);
       ball.u.uErode.value = Math.max(0, age - 0.5) * 0.75;
       ball.u.uFade.value = clamp01((2.6 - age) / 0.8);
       ball.obj.visible = age < 2.6;
@@ -1033,7 +1110,7 @@ export class VFX {
       ball2.sync(cam, 0.02);
       // Smoke: a dark mushrooming cap boils up out of the crown almost at
       // once (sooty, near-black folds against the orange), a stem beneath it.
-      const ac = age - 0.02;
+      const ac = age - 0.3;
       cap.obj.visible = ac > 0 && age < 4.4;
       if (cap.obj.visible) {
         const g = R * (0.5 + ac * 0.3) * (0.7 + 0.3 * (1 - Math.exp(-ac * 6)));
@@ -1046,7 +1123,7 @@ export class VFX {
         cap.u.uFade.value = clamp01(ac * 8) * clamp01((4.4 - age) / 1.4) * 0.92;
         cap.sync(cam, 0.02);
       }
-      const as = age - 0.25;
+      const as = age - 0.7;
       stem.obj.visible = as > 0 && age < 4.0;
       if (stem.obj.visible) {
         const g = R * (0.22 + as * 0.08);
@@ -1063,22 +1140,17 @@ export class VFX {
       shock.scale.setScalar(R * (0.3 + 0.7 * (1 - Math.exp(-age * 9))));
       shock.material.uniforms.uA.value = clamp01(1 - age / 0.25) ** 2 * 0.12;
       shock.visible = age < 0.3;
-      // Ground shockwave: a soft, noise-distorted band racing out to ~1.2x the blast.
-      const rr = R * (0.35 + 0.85 * (1 - Math.exp(-age * 7)));
-      ring.scale.setScalar(rr * 2 / 0.8);
-      ring.position.set(to.x, 0.06, to.z);
-      ring.material.uniforms.uT.value = age;
-      ring.material.uniforms.uA.value = clamp01(1 - age / 0.6) ** 1.3 * 0.42;
-      ring.visible = age < 0.66;
       scorch.position.set(to.x, 0.03, to.z);
       scorch.scale.setScalar(R * 0.95);
       scorch.material.opacity = clamp01(age * 5) * 0.75;
       // A big warm key light: white-orange flash settling to a deep orange glow.
       // A big warm flare that washes walls, windows and figures, settling to a burn.
-      const li = age < 0.03 ? 700 * (age / 0.03) : 650 * Math.exp(-(age - 0.03) * 22) + 18 * Math.exp(-age * 1.2) + 7 * Math.max(0, 1 - age / 2.6);
+      // Sits inside the fireball (low), so the victims' near sides, the
+      // paving and the nearest wall take the light; held for the whole burn.
+      const li = age < 0.03 ? 700 * (age / 0.03) : 620 * Math.exp(-(age - 0.03) * 20) + 46 * Math.exp(-age * 1.1) + 10 * Math.max(0, 1 - age / 2.6);
       // Exposure kick on the flash, easing back as the fire settles.
       const expo = age < 0.03 ? 0.8 * (age / 0.03) : 0.8 * Math.exp(-(age - 0.03) * 16) + 0.05 * Math.exp(-age * 3);
-      return { exposure: expo, light: { i: li, color: age < 0.12 ? 0xffd6a0 : 0xff8434, pos: new THREE.Vector3(to.x, to.y + 2.2 + rise * 0.6, to.z) } };
+      return { exposure: expo, light: { i: li, color: age < 0.12 ? 0xffd6a0 : 0xff9040, pos: new THREE.Vector3(to.x, to.y + 0.7 + rise * 0.6, to.z) } };
     });
     this.addShake(T, 0.35, 0.6);
     return { flight, detonate: flight };
@@ -1162,74 +1234,54 @@ export class VFX {
     return 0.12;
   }
 
-  /** Sleep: small, sharp blue-violet sparkles drift down in lazy arcs and settle over the area. */
+  /** Sleep: a brief, quiet fall of a few soft violet motes over the area (no screen-wide sparkle). */
   sleepCloud(t, centre, size, seed = 1) {
-    const r = size * 0.62;
+    const r = size * 0.4;
     const motes = particleBurst({
-      at: { x: centre.x, y: 3.2, z: centre.z }, count: 90, spread: r, speed: 0.18, gravity: 0.16, life: 2.6, stagger: 0.9, size: 0.065, drag: 0.6, turb: 0.4,
-      colors: [0xe4dcff, 0xa898ff, 0x5a4ac8], intensity: 1.9, seed, floor: -2, fadeIn: 0.2, soft: 0.45,
+      at: { x: centre.x, y: 2.2, z: centre.z }, count: 22, spread: r, speed: 0.12, gravity: 0.12, life: 2.2, stagger: 0.7, size: 0.05, drag: 0.8, turb: 0.25,
+      colors: [0xe8e0ff, 0xb0a0ff, 0x6a58d0], intensity: 1.3, seed, floor: 0.3, fadeIn: 0.25, soft: 0.5,
     });
-    const dust = particleBurst({
-      at: { x: centre.x, y: 2.6, z: centre.z }, count: 70, spread: r * 1.05, speed: 0.15, gravity: 0.22, life: 2.8, stagger: 1.0, size: 0.025, drag: 0.5, turb: 0.3,
-      colors: [0xe8e0ff, 0xb8a8ff, 0x6a58d0], intensity: 1.6, seed: seed + 5, floor: -2, fadeIn: 0.2,
-    });
-    this.add(t, 3.0, () => ({ list: [motes, dust] }), (age) => {
-      return { light: { i: 2.2 * Math.sin(clamp01(age / 2.6) * Math.PI), color: 0x9a86ff, pos: new THREE.Vector3(centre.x, 2.4, centre.z) } };
+    this.add(t, 2.6, () => ({ list: [motes] }), (age) => {
+      return { light: { i: 1.2 * Math.sin(clamp01(age / 2.2) * Math.PI), color: 0x9a86ff, pos: new THREE.Vector3(centre.x, 2.0, centre.z) } };
     });
   }
 
-  /** A sleeper: soft violet glow pulse and lazy "Z"s rising from the head (persistent until woken). */
+  /** A sleeper: a faint violet glow and three slow motes drifting about the head (persistent until woken). */
   sleepZ(t, getPos, id, seed = 1) {
-    const zs = [0, 1, 2].map(() => {
-      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: zTexture(), color: 0xd8ccff, transparent: true, depthWrite: false, opacity: 0 }));
-      sp.renderOrder = 12;
-      return sp;
-    });
-    const glow = glowSprite(0x9a88ff, 0.9, 0);
-    this.add(t, 999, () => ({ list: [glow, ...zs] }), (age) => {
+    const motes = [0, 1, 2].map((k) => glowSprite(k === 1 ? 0xd8d0ff : 0xa898ff, 0.11, 0));
+    const glow = glowSprite(0x9a88ff, 0.7, 0);
+    this.add(t, 999, () => ({ list: [glow, ...motes] }), (age) => {
       const p = getPos();
-      glow.position.copy(p).setY(p.y - 0.15);
-      glow.material.opacity = 0.18 + 0.12 * Math.sin(age * 2.2 + seed);
-      zs.forEach((z, k) => {
-        const ph = (age * 0.45 + k / 3 + seed * 0.13) % 1;
-        z.position.set(p.x + Math.sin(ph * 5 + k) * 0.12 + ph * 0.25, p.y + ph * 0.75, p.z);
-        z.scale.setScalar(0.14 + ph * 0.16);
-        z.material.opacity = Math.sin(ph * Math.PI) * 0.85 * clamp01(age * 2);
+      glow.position.copy(p).setY(p.y - 0.1);
+      glow.material.opacity = 0.12 + 0.06 * Math.sin(age * 1.6 + seed);
+      motes.forEach((m, k) => {
+        const ph = (age * 0.22 + k / 3 + seed * 0.13) % 1;
+        const a = ph * Math.PI * 2 + k * 2.1;
+        m.position.set(p.x + Math.cos(a) * 0.22, p.y + 0.12 + ph * 0.4, p.z + Math.sin(a) * 0.22);
+        m.scale.setScalar(0.08 + 0.05 * Math.sin(ph * Math.PI));
+        m.material.opacity = Math.sin(ph * Math.PI) * 0.75 * clamp01(age * 1.5);
       });
     }, { persistent: true, id });
   }
 
   /**
-   * Stinking cloud: persistent, ray-marched yellow-green vapour hugging the
-   * ground — three overlapping squashed volumes with slow curling billows and
-   * edges that drift and breathe.
+   * Stinking cloud: persistent, ground-hugging vapour (see gasVolume) over the
+   * 2×2 area, its tendrils spilling half a square past the template edge.
    */
   stinkingCloud(t, centre, size, id, seed = 1, { night = false } = {}) {
-    // Five overlapping ground-hugging lumps (one core, four drifting around
-    // it) so the silhouette is lobed and the edge breaks into wisps.
-    const N = 5;
-    const vols = Array.from({ length: N }, (_, k) => {
-      const v = volumeFire({ steps: 22, gas: true });
-      v.u.uSeed.value = seed * 3.7 + k * 11.3;
-      v.u.uFreq.value = 2.6;
-      v.u.uDrift.value.set(0.45 * (k % 2 ? 1 : -1), 0.22, 0.3 * (k % 3 ? 1 : -1));
-      v.u.uHeat.value = night ? 0.45 : 1.0;
-      return v;
-    });
-    this.add(t, 999, () => ({ list: vols }), (age, parts, ctx) => {
-      const fade = clamp01(age / 0.9);
-      vols.forEach((v, k) => {
-        const a = hashf(seed + k) * Math.PI * 2 + age * 0.06 * (k % 2 ? 1 : -1);
-        const off = k === 0 ? 0 : size * (0.26 + hashf(seed + k * 3) * 0.1);
-        const g = size * (k === 0 ? 0.56 : 0.36 + hashf(seed + k * 5) * 0.08) * (0.85 + 0.15 * fade) * (1 + 0.05 * Math.sin(age * 0.6 + k * 1.7));
-        v.obj.position.set(centre.x + Math.cos(a) * off, g * 0.28, centre.z + Math.sin(a) * off);
-        v.obj.scale.set(g, g * 0.48, g * 0.95);
-        v.u.uAge.value = age * 0.45 + k * 3;
-        v.u.uGrow.value = 0.55 + 0.25 * fade;
-        v.u.uErode.value = 0.04;
-        v.u.uFade.value = fade * 0.95;
-        v.sync(ctx.camera, 0.01);
-      });
+    const v = gasVolume({ steps: 26 });
+    v.u.uSeed.value = seed * 3.7;
+    if (night) {
+      v.u.uKey.value.setRGB(0.28, 0.32, 0.45);
+      v.u.uAmb.value.setRGB(0.12, 0.14, 0.2);
+    }
+    const half = size * 0.5 + 0.9;
+    v.place(centre.x, centre.z, half, 1.0, half);
+    this.add(t, 999, () => ({ list: [v] }), (age, parts, ctx) => {
+      const fade = clamp01(age / 1.2);
+      v.u.uAge.value = age;
+      v.u.uFade.value = fade;
+      v.sync(ctx.camera);
     }, { persistent: true, id });
   }
 
@@ -1324,24 +1376,6 @@ export class VFX {
       return { light: { i: 5 * k, color, pos: p } };
     });
   }
-}
-
-let _zTex = null;
-function zTexture() {
-  if (_zTex) return _zTex;
-  const c = document.createElement('canvas');
-  c.width = c.height = 64;
-  const g = c.getContext('2d');
-  g.font = 'italic bold 52px Georgia, serif';
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  g.shadowColor = 'rgba(120, 100, 255, 0.9)';
-  g.shadowBlur = 10;
-  g.fillStyle = '#fff';
-  g.fillText('z', 32, 34);
-  _zTex = new THREE.CanvasTexture(c);
-  _zTex.colorSpace = THREE.SRGBColorSpace;
-  return _zTex;
 }
 
 let _sigil = null;
