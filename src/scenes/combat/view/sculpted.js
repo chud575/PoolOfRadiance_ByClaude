@@ -75,16 +75,16 @@ const hashf = (n) => {
 // ------------------------------------------------------------------ species looks
 /** Colours / patterns per species (hide, accent, belly, horn, cloth). */
 export const LOOKS = {
-  kobold: { skin: [0xb0602a, 'scales'], back: [0x6e3014, 'scales'], belly: [0xe8c48a, 'scales'], horn: 0xe2d2a8, cloth: 0x4a3a28, head: 'kobold' },
+  kobold: { skin: [0x5c4232, 'scales'], back: [0x281c16, 'scales'], belly: [0xa89070, 'scales'], horn: 0xe2d2a8, cloth: 0x4a3a28, head: 'kobold', jerkin: 0x86643e, boots: 0x3a2414 },
   goblin: { skin: [0x86963a, 'skin'], back: [0x5a6a26, 'skin'], belly: [0xa0aa60, 'skin'], horn: 0xd8c8a0, cloth: 0x4a3020, head: 'goblin', pants: 0x3a2a1a },
-  orc: { skin: [0x6a7650, 'skin'], back: [0x434d30, 'skin'], belly: [0x939c78, 'skin'], horn: 0xeadfc0, cloth: 0x3a2c1c, head: 'orc', pants: 0x3a2c1e, jerkin: 0x5a3a20, plate: 0x6a625a, hair: 0x0e0c0a },
+  orc: { skin: [0x66624a, 'skin'], back: [0x34321f, 'skin'], belly: [0x8a8468, 'skin'], horn: 0xeadfc0, cloth: 0x3a2c1c, head: 'orc', pants: 0x3a2c1e, jerkin: 0x5a3a20, plate: 0x6a625a, hair: 0x0e0c0a },
   // Hobgoblins: dark rust-brown hide with an orange cast, a flat simian face,
   // bronze scale coats under a red-and-ochre legion tabard, leather boots.
   hobgoblin: { skin: [0x9a4a22, 'skin'], back: [0x5e2810, 'skin'], belly: [0xc0784a, 'skin'], horn: 0xeadcb8, cloth: 0x2a2a22, head: 'hobgoblin', pants: 0x2e1c12, mail: 0x6e5a3e, hair: 0x0e0a08, nose: 0x3a1a0e, tabard: 0x24261e, trim: 0xc89a3a, boots: 0x2a1a10 },
   gnoll: { skin: [0xa88450, 'spots'], back: [0x6a5030, 'fur'], belly: [0xc8a878, 'fur'], horn: 0xe0d4b0, cloth: 0x3a2e22, head: 'gnoll', hair: 0x2a1a10, pants: 0x3a2e22 },
   bugbear: { skin: [0x7a5a30, 'fur'], back: [0x4a3418, 'fur'], belly: [0x9a7a50, 'fur'], horn: 0xd8c8a0, cloth: 0x3a2a1a, head: 'bugbear', hair: 0x2a1a0a, pants: 0x3a2a1a },
   lizardMan: { skin: [0x4a6a3a, 'scales'], back: [0x2e4a26, 'scales'], belly: [0xb0b07a, 'scales'], horn: 0xd8d0a0, cloth: 0x4a3a20, head: 'lizard' },
-  skeleton: { skin: [0xeadbb4, 'bone'], back: [0xc4ac80, 'bone'], belly: [0xf2e6c4, 'bone'], horn: 0xf6eed6, head: 'skull', shirt: 0x3a3028 },
+  skeleton: { skin: [0xe4dcc6, 'bone'], back: [0xb4aa92, 'bone'], belly: [0xefe8d6, 'bone'], horn: 0xf4efe0, head: 'skull', shirt: 0x3a3028 },
   zombie: { skin: [0x7a8466, 'skin'], back: [0x5a6450, 'skin'], belly: [0x8a9070, 'skin'], horn: 0xd8d0b0, cloth: 0x3a3a30, head: 'zombie', pants: 0x2e2c26, shirt: 0x4a4438, hair: 0x2a2620 },
   ghoul: { skin: [0x9a9a88, 'skin'], back: [0x6a6a5c, 'skin'], belly: [0xa8a898, 'skin'], horn: 0xe0d8c0, cloth: 0x2a2a28, head: 'ghoul', pants: 0x2a2a28, hair: 0x1a1a18 },
   ogre: { skin: [0xa08a5a, 'skin'], back: [0x7a6a42, 'skin'], belly: [0xb09a6a, 'skin'], horn: 0xd8c8a0, cloth: 0x4a3a28, head: 'ogre', pants: 0x4a3a28, hair: 0x2a1e12 },
@@ -292,6 +292,12 @@ function fleshBody(B, o, look) {
     }
   } else if (o.kit.tattered) {
     jerkin('shirt', G.jerkin, 0.01 * s, J.neck[1] - 0.04 * s, J.hips[1] - 0.1 * s);
+  } else if (o.kit.armor === 'harness') {
+    // Kobold war-gear: a boiled-leather jerkin over the chest and a hide kilt
+    // of split tassets (three materials: scaled hide, leather, the belly scutes).
+    jerkin('leather', G.jerkin, 0.014 * s, J.chest[1] + 0.2 * s, J.spine[1] - 0.02 * s);
+    B.ell('hips', add(J.hips, [0, -0.02 * s, -0.005 * s]), [0.165 * w * s, 0.1 * s, 0.13 * s], { g: G.plate, k: 0.01 * s, grow: 0.012 * s, mat: 'leather', clip: [[0, 1, 0, J.hips[1] + 0.04 * s], [0, -1, 0, -(J.hips[1] - 0.12 * s)]], clipK: 0.006 * s });
+    B.ell('hips', add(J.hips, [0, 0.035 * s, -0.005 * s]), [0.17 * w * s, 0.025 * s, 0.135 * s], { g: G.plate, k: 0.008 * s, mat: 'boots' });
   } else if (o.kit.armor === 'scraps') {
     jerkin('leather', G.jerkin, 0.012 * s, J.chest[1] + 0.2 * s, J.chest[1] + 0.02 * s);
   }
@@ -548,6 +554,9 @@ function skeletonBody(B, o) {
   // Limb bones with knobbly joint ends.
   const longBone = (tag, a, b, g, r0 = R, r1 = R * 0.85) => {
     const L = { k: 0.01 * s, g, mat: 'skin' };
+    // A touch heavier than anatomy so limbs read as bone, not wire, at tactics zoom.
+    r0 *= 1.3;
+    r1 *= 1.3;
     B.cone(tag, a, b, r0, r1, L);
     B.sph(tag, mid(a, b, 0.06), r0 * 1.45, L);
     B.sph(tag, mid(a, b, 0.94), r1 * 1.45, L);

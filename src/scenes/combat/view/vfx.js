@@ -36,7 +36,7 @@ const PARTICLE_VS = `
     gl_PointSize = (t < 0.0 || life > 1.0) ? 0.0 : sz * uPix / max(0.1, -mv.z);
   }`;
 const PARTICLE_FS = `
-  uniform vec3 uC0, uC1, uC2; uniform float uIntensity, uSoft, uFadeIn;
+  uniform vec3 uC0, uC1, uC2; uniform float uIntensity, uSoft, uFadeIn, uAlpha;
   varying float vLife; varying float vSeed;
   void main(){
     vec2 d = gl_PointCoord - 0.5;
@@ -46,7 +46,7 @@ const PARTICLE_FS = `
     float l = clamp(vLife, 0.0, 1.0);
     vec3 c = l < 0.5 ? mix(uC0, uC1, l * 2.0) : mix(uC1, uC2, (l - 0.5) * 2.0);
     float a = disc * smoothstep(0.0, uFadeIn, l) * (1.0 - smoothstep(0.6, 1.0, l));
-    gl_FragColor = vec4(c * uIntensity, a);
+    gl_FragColor = vec4(c * uIntensity, a * uAlpha);
   }`;
 
 /**
@@ -92,7 +92,7 @@ export function particleBurst(o) {
       uAge: { value: 0 }, uDrag: { value: o.drag ?? 1.5 }, uGrav: { value: o.gravity ?? 0 }, uGrow: { value: o.grow ?? 0 },
       uPix: { value: 600 }, uTurb: { value: o.turb ?? 0 }, uFloor: { value: o.floor ?? -99 },
       uC0: { value: cols[0] }, uC1: { value: cols[1] ?? cols[0] }, uC2: { value: cols[2] ?? cols[1] ?? cols[0] },
-      uIntensity: { value: o.intensity ?? 1.5 }, uSoft: { value: o.soft ?? 0.6 }, uFadeIn: { value: o.fadeIn ?? 0.05 },
+      uIntensity: { value: o.intensity ?? 1.5 }, uSoft: { value: o.soft ?? 0.6 }, uFadeIn: { value: o.fadeIn ?? 0.05 }, uAlpha: { value: o.alpha ?? 1 },
     },
     vertexShader: PARTICLE_VS,
     fragmentShader: PARTICLE_FS,
@@ -303,7 +303,7 @@ function gasVolume({ steps = 26 } = {}) {
     uniforms: {
       uCam: { value: new THREE.Vector3(0, 5, 5) }, uAge: { value: 0 }, uSeed: { value: 0 }, uFade: { value: 1 },
       uHalf: { value: new THREE.Vector3(3, 1, 3) }, uLightDir: { value: new THREE.Vector3(0.4, 0.85, 0.3).normalize() },
-      uKey: { value: new THREE.Color(1, 0.96, 0.85) }, uAmb: { value: new THREE.Color(0.35, 0.4, 0.45) }, uMaxA: { value: 0.75 },
+      uKey: { value: new THREE.Color(1, 0.96, 0.85) }, uAmb: { value: new THREE.Color(0.35, 0.4, 0.45) }, uMaxA: { value: 0.7 },
     },
     vertexShader: 'varying vec3 vO; void main(){ vO = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: `
@@ -319,18 +319,23 @@ function gasVolume({ steps = 26 } = {}) {
         // Slow curl: two counter-rotating warps.
         vec3 w = vec3(vn(q * 0.55 + vec3(0.0, a * 0.12, uSeed)), vn(q * 0.55 + vec3(5.2, -a * 0.1, uSeed + 3.1)), vn(q * 0.55 + vec3(1.7, a * 0.08, uSeed + 7.7)));
         vec3 p = q * vec3(1.5, 1.9, 1.5) + (w - 0.5) * 1.8 + vec3(a * 0.05, -a * 0.04, -a * 0.03);
-        float n = vn(p) * 0.5 + vn(p * 2.03 + 3.3) * 0.3 + vn(p * 4.1 + 7.9 - vec3(0.0, a * 0.2, 0.0)) * 0.2;
-        // Horizontal reach: a soft disc whose edge is torn into tendrils.
+        // Churning: the whole mass rolls slowly upward and over (a vertical
+        // turnover on top of the curl), so it heaves rather than sits.
+        p += vec3(sin(q.y * 1.3 + a * 0.35) * 0.4, -a * 0.18, cos(q.y * 1.1 - a * 0.3) * 0.4);
+        float n = vn(p) * 0.5 + vn(p * 2.03 + 3.3) * 0.3 + vn(p * 4.1 + 7.9 - vec3(0.0, a * 0.3, 0.0)) * 0.2;
+        // Horizontal reach: a soft disc whose edge is torn into long tendrils
+        // that spill past the template.
         vec2 e = q.xz / uHalf.xz;
-        float r = length(e) + (vn(vec3(q.xz * 0.9, a * 0.06 + uSeed)) - 0.5) * 0.36;
-        float reach = 1.0 - smoothstep(0.38, 0.84, r);
-        // Height: thick at the cobbles, lobed crowns, thinning upward.
-        // Lumpy crowns: a few big billows heave up well above the rest.
-        float lump = smoothstep(0.45, 0.8, vn(vec3(q.xz * 0.7, a * 0.05 + uSeed + 2.0)));
-        float top = 0.3 + (0.9 + 1.1 * lump) * n * reach;
-        float hf = smoothstep(top, top * 0.35, q.y) * smoothstep(-0.02, 0.06, q.y);
-        float d = (n - 0.5 + reach * 0.28) * hf * reach;
-        return clamp(d * 6.5, 0.0, 1.0);
+        float tear = vn(vec3(q.xz * 0.8, a * 0.08 + uSeed)) - 0.5;
+        float r = length(e) + tear * 0.6;
+        float reach = 1.0 - smoothstep(0.32, 0.95, r);
+        // Height: a tall column of billows (1.5-2 m), thin at the cobbles so
+        // the figures' legs and the rings below stay readable.
+        float lump = smoothstep(0.4, 0.8, vn(vec3(q.xz * 0.7, a * 0.05 + uSeed + 2.0)));
+        float top = 0.7 + (0.9 + 0.9 * lump) * (0.4 + 0.6 * n) * reach;
+        float hf = smoothstep(top, top * 0.5, q.y) * mix(0.25, 1.0, smoothstep(0.1, 0.9, q.y));
+        float d = (n - 0.54 + reach * 0.26) * hf * reach;
+        return clamp(d * 7.0, 0.0, 1.0);
       }
       void main(){
         vec3 ro = uCam;
@@ -354,7 +359,7 @@ function gasVolume({ steps = 26 } = {}) {
           float d = dens(q);
           if (d > 0.002) {
             float stepM = dt * length(rd * uHalf);
-            float a = 1.0 - exp(-d * 2.3 * stepM);
+            float a = 1.0 - exp(-d * 2.0 * stepM);
             // Self-shadow: two probes toward the key light.
             float s1 = dens(q + uLightDir * 0.18);
             float s2 = dens(q + uLightDir * 0.45);
@@ -370,6 +375,9 @@ function gasVolume({ steps = 26 } = {}) {
             // Upper wisps and the thin outer drift age to a sour grey.
             alb = mix(alb, vec3(0.34, 0.35, 0.32) * (0.5 + 0.6 * lit), smoothstep(0.35, 1.0, hgt) * 0.55);
             vec3 c = alb * (uKey * (0.25 + 0.95 * lit) + uAmb * (0.55 + 0.45 * hgt));
+            // A faint sickly glow deep in the core, pulsing like breath.
+            float coreK = (1.0 - smoothstep(0.0, 0.7, length(q.xz / uHalf.xz))) * (1.0 - smoothstep(0.2, 1.3, q.y)) * smoothstep(0.1, 0.5, d);
+            c += vec3(0.32, 0.42, 0.04) * coreK * (0.7 + 0.3 * sin(uAge * 1.7 + uSeed));
             col += T * a * c;
             T *= 1.0 - a;
             if (T < 0.02) break;
@@ -654,6 +662,53 @@ function flameTongues(n, seed) {
 }
 
 /** Expanding ground ring (shockwave / pulses). */
+/**
+ * Smouldering embers scattered over a scorch: tiny additive points that flare
+ * and dim on their own rhythm, cooling from yellow-orange to dull red over
+ * ~10 s (never fully out while the battle lasts). Pure function of age.
+ */
+function emberBed(at, radius, seed = 1, count = 90) {
+  const pos = new Float32Array(count * 3);
+  const dat = new Float32Array(count * 2);
+  for (let i = 0; i < count; i++) {
+    const a = hashf(seed * 3.1 + i * 1.7) * Math.PI * 2;
+    const r = Math.sqrt(hashf(seed * 5.3 + i * 2.9)) * radius;
+    pos.set([at.x + Math.cos(a) * r, 0.05 + hashf(i * 7.7 + seed) * 0.04, at.z + Math.sin(a) * r], i * 3);
+    dat.set([hashf(seed + i * 11.3), 0.03 + hashf(seed * 2 + i * 4.1) * 0.06], i * 2);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('aD', new THREE.BufferAttribute(dat, 2));
+  const mat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    uniforms: { uAge: { value: 0 }, uPix: { value: 600 } },
+    vertexShader: `attribute vec2 aD; uniform float uAge, uPix; varying float vF; varying float vH;
+      void main(){ float fl = 0.55 + 0.45 * sin(uAge * (1.5 + aD.x * 4.0) + aD.x * 60.0) * sin(uAge * (0.7 + aD.x * 2.0) + aD.x * 13.0);
+        float cool = exp(-uAge * (0.12 + aD.x * 0.2));
+        vF = fl * smoothstep(0.0, 0.25, uAge) * (0.25 + 0.75 * cool); vH = cool;
+        vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv;
+        gl_PointSize = aD.y * (0.7 + 0.6 * fl) * uPix / max(0.1, -mv.z); }`,
+    fragmentShader: `varying float vF; varying float vH;
+      void main(){ float r = length(gl_PointCoord - 0.5) * 2.0; float d = 1.0 - smoothstep(0.15, 1.0, r); if (d <= 0.0) discard;
+        vec3 c = mix(vec3(1.0, 0.18, 0.03), vec3(1.0, 0.62, 0.2), vH * vF) * 2.4;
+        gl_FragColor = vec4(c * d * vF, d * vF); }`,
+  });
+  const pts = new THREE.Points(g, mat);
+  pts.frustumCulled = false;
+  pts.renderOrder = 6;
+  return {
+    obj: pts,
+    update(age, ctx) {
+      mat.uniforms.uAge.value = age;
+      mat.uniforms.uPix.value = ctx.pix;
+    },
+    dispose() {
+      g.dispose();
+      mat.dispose();
+    },
+  };
+}
+
 function groundRing(color, soft = 0.2) {
   const mat = new THREE.ShaderMaterial({
     transparent: true,
@@ -877,35 +932,90 @@ export class VFX {
   }
 
   // ---------------------------------------------------------------- recipes
-  /** Metal-on-metal sparks + a little blood for flesh hits. */
-  hitSparks(t, at, { blood = true, crit = false, seed = 1, bone = false } = {}) {
+  /**
+   * A blow lands: velocity-streaked steel sparks, a directional spurt of blood
+   * (or bone chips) thrown away from the attacker, a brief hot flash of light
+   * on the figures and the setts, and an exposure kick on crits.
+   * `dir` (optional) = horizontal direction of the blow.
+   */
+  hitSparks(t, at, { blood = true, crit = false, seed = 1, bone = false, dir = null } = {}) {
+    const d = dir ? new THREE.Vector3(dir.x, 0, dir.z).normalize() : null;
+    const spurtDir = d ? { x: d.x * 0.9, y: 0.45, z: d.z * 0.9 } : null;
     this.add(t, 0.9, () => ({
       list: [
-        // Velocity-streaked steel sparks spraying off the blow (not round specks).
-        sparkStreaks({ at, count: crit ? 18 : 11, speed: crit ? 6.5 : 5, life: 0.3, gravity: 9, drag: 2.2, width: 1.6, streak: 0.035, intensity: 2.0, seed, r0: 0.05 }),
-        ...(blood && !bone ? [particleBurst({ at, count: crit ? 26 : 14, speed: 2.2, life: 0.7, size: 0.07, drag: 1.5, gravity: 9.8, colors: [0x7a0a06, 0x4a0504, 0x2a0303], additive: false, intensity: 1, soft: 0.3, seed: seed + 7, floor: 0.02 })] : []),
-        ...(bone ? [particleBurst({ at, count: 16, speed: 2.5, life: 0.8, size: 0.06, drag: 1.2, gravity: 9.8, colors: [0xe8e0c8, 0xc8b898, 0x8a7a60], additive: false, intensity: 1, soft: 0.2, seed: seed + 9, floor: 0.02 })] : []),
-        glowSprite(0xffc070, crit ? 0.9 : 0.6, 0.7),
+        sparkStreaks({ at, count: crit ? 22 : 13, speed: crit ? 7 : 5.2, life: 0.3, gravity: 9, drag: 2.2, width: 1.7, streak: 0.04, intensity: 2.4, seed, r0: 0.05 }),
+        ...(blood && !bone ? [
+          particleBurst({ at, count: crit ? 26 : 14, speed: 2.2, life: 0.7, size: 0.07, drag: 1.5, gravity: 9.8, colors: [0x8a0c08, 0x5a0605, 0x2a0303], additive: false, intensity: 1, soft: 0.3, seed: seed + 7, floor: 0.02 }),
+          particleBurst({ at, count: crit ? 30 : 18, speed: crit ? 4.2 : 3.2, dir: spurtDir ?? undefined, life: 0.55, size: 0.045, drag: 1.2, gravity: 9.8, colors: [0xa01410, 0x6a0806, 0x300404], additive: false, intensity: 1.1, soft: 0.25, seed: seed + 11, floor: 0.02 }),
+        ] : []),
+        ...(bone ? [particleBurst({ at, count: 18, speed: 2.8, dir: spurtDir ?? undefined, life: 0.8, size: 0.06, drag: 1.2, gravity: 9.8, colors: [0xe8e0c8, 0xc8b898, 0x8a7a60], additive: false, intensity: 1, soft: 0.2, seed: seed + 9, floor: 0.02 })] : []),
+        glowSprite(0xffd090, crit ? 1.3 : 0.9, 0.7),
+        glowSprite(0xffffff, crit ? 0.45 : 0.3, 1),
       ],
     }), (age, parts) => {
-      const sp = parts.list[parts.list.length - 1];
+      const n = parts.list.length;
+      const sp = parts.list[n - 2];
+      const core = parts.list[n - 1];
       sp.position.copy(at);
-      sp.material.opacity = Math.max(0, 1 - age / 0.07) * 0.35;
-      sp.scale.setScalar((crit ? 0.9 : 0.6) * (1 + age * 3));
+      core.position.copy(at);
+      const k = Math.max(0, 1 - age / 0.09);
+      sp.material.opacity = k * 0.6;
+      sp.scale.setScalar((crit ? 1.3 : 0.9) * (1 + age * 4));
+      core.material.opacity = Math.max(0, 1 - age / 0.05);
+      return { light: { i: (crit ? 60 : 32) * k * k, color: 0xffc888, pos: at }, exposure: crit ? 0.18 * k : 0.06 * k };
     });
   }
 
-  /** A swipe arc trail for melee swings. */
+  /**
+   * Melee swing smear: a crescent sheet swept by the blade — brightest along
+   * the outer (tip) edge, fading to nothing toward the hilt and along the
+   * tail, the head racing round in ~0.12 s and the whole smear dying by 0.3 s.
+   */
   swipe(t, at, yaw, { color = 0xfff0d0, seed = 1 } = {}) {
-    const pts = [];
-    for (let i = 0; i <= 12; i++) {
-      const a = -1.1 + (i / 12) * 2.2;
-      pts.push(new THREE.Vector3(at.x + Math.sin(yaw + a) * 0.9, at.y + 0.5 - (i / 12) * 0.9, at.z + Math.cos(yaw + a) * 0.9));
+    const N = 20;
+    const r0 = 0.35;
+    const r1 = 1.05;
+    const pos = [];
+    const uv = [];
+    const idx = [];
+    const tilt = (hashf(seed) - 0.5) * 0.5;
+    for (let i = 0; i <= N; i++) {
+      const u = i / N;
+      const a = yaw - 1.2 + u * 2.4;
+      const y = at.y + 0.55 - u * 0.95;
+      const cx = Math.sin(a);
+      const cz = Math.cos(a);
+      pos.push(at.x + cx * r0, y + tilt * 0.2, at.z + cz * r0, at.x + cx * r1, y + tilt * (u - 0.5), at.z + cz * r1);
+      uv.push(u, 0, u, 1);
+      if (i < N) idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2);
     }
-    this.add(t, 0.3, () => ({ list: [ribbon(pts, 0.05, color)] }), (age, parts) => {
-      parts.list[0].material.uniforms.uA.value = Math.max(0, 1 - age / 0.22) * 0.8;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx);
+    const mat = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+      uniforms: { uHead: { value: 0 }, uA: { value: 1 }, uColor: { value: new THREE.Color(color) } },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: `varying vec2 vUv; uniform float uHead, uA; uniform vec3 uColor;
+        void main(){
+          float behind = uHead - vUv.x;
+          if (behind < 0.0) discard;
+          float tail = 1.0 - smoothstep(0.0, 0.7, behind);
+          float edge = pow(vUv.y, 3.0);
+          float rim = smoothstep(0.86, 0.98, vUv.y) * (1.0 - smoothstep(0.98, 1.0, vUv.y));
+          float a = (edge * 0.6 + rim * 0.9) * tail * uA;
+          vec3 c = mix(vec3(1.0, 0.62, 0.22), uColor, tail) * (1.2 + rim * 2.5);
+          gl_FragColor = vec4(c * a, 1.0);
+        }`,
     });
-    void seed;
+    const m = new THREE.Mesh(g, mat);
+    m.renderOrder = 8;
+    m.frustumCulled = false;
+    this.add(t, 0.34, () => ({ list: [m] }), (age) => {
+      mat.uniforms.uHead.value = Math.min(1.25, age / 0.12);
+      mat.uniforms.uA.value = Math.max(0, 1 - Math.max(0, age - 0.1) / 0.22);
+    });
   }
 
   /**
@@ -1073,11 +1183,11 @@ export class VFX {
     const sparks = sparkStreaks({ at: to, count: 16, speed: 9, life: 0.9, gravity: 8, drag: 1.6, hemi: true, width: 1.2, streak: 0.018, intensity: 1.3, seed: seed + 3, r0: R * 0.3 });
     const lateSparks = sparkStreaks({ at: { x: to.x, y: to.y + 0.4, z: to.z }, count: 26, speed: 2.5, up: 1.6, life: 1.6, gravity: 1.5, drag: 1.6, hemi: true, width: 1.1, streak: 0.04, intensity: 2.0, seed: seed + 9, delay: 0.15, stagger: 0.8, r0: R * 0.5 });
     const debris = particleBurst({ at: { x: to.x, y: 0.2, z: to.z }, count: 36, speed: 6.5, life: 1.2, size: 0.09, drag: 1, gravity: 12, hemi: true, colors: [0x5a4a3a, 0x3a3028, 0x2a2420], additive: false, intensity: 1, soft: 0.2, seed: seed + 5, floor: 0.03 });
-    const dust = particleBurst({ at: { x: to.x, y: 0.15, z: to.z }, count: 34, spread: 0.3, flatY: true, hemi: true, speed: 7.5, up: 0.1, life: 1.8, size: 0.55, grow: 2.0, drag: 3.2, colors: [0x2e2924, 0x26221e, 0x1c1916], additive: false, intensity: 1, soft: 0.95, seed: seed + 13, fadeIn: 0.15 });
+    const dust = particleBurst({ at: { x: to.x, y: 0.35, z: to.z }, count: 30, spread: 0.3, flatY: true, hemi: true, speed: 6.5, up: 0.25, life: 1.5, size: 0.45, grow: 1.8, drag: 3.2, colors: [0x8a7a6a, 0x6a6058, 0x56504a], additive: false, intensity: 1, soft: 1.0, seed: seed + 13, fadeIn: 0.2, alpha: 0.28 });
     const flash = glowSprite(0xfff2d8, R * 3.2, 0);
     const flashCore = glowSprite(0xffffff, R * 1.2, 0);
     const groundFire = particleBurst({ at: { x: to.x, y: 0.12, z: to.z }, count: 70, spread: R * 0.7, flatY: true, speed: 0.2, gravity: -1.4, life: 0.8, stagger: 1.4, delay: 0.3, size: 0.16, grow: 1.0, drag: 1, turb: 0.4, colors: [0xffb050, 0xff4a08, 0x200804], intensity: 1.1, seed: seed + 21, fadeIn: 0.15 });
-    this.add(T, 4.5, () => ({ list: [scorch, dust, groundFire, stem, cap, ball2, ball, shock, sparks, lateSparks, debris, flash, flashCore] }), (age, parts, ctx) => {
+    this.add(T, 4.5, () => ({ list: [dust, groundFire, stem, cap, ball2, ball, shock, sparks, lateSparks, debris, flash, flashCore] }), (age, parts, ctx) => {
       // White-hot flash: 2-3 frames of glare, then gone.
       const fl = age < 0.03 ? age / 0.03 : Math.exp(-(age - 0.03) * 22);
       flash.position.set(to.x, to.y + 0.3, to.z);
@@ -1146,18 +1256,30 @@ export class VFX {
       shock.scale.setScalar(R * (0.3 + 0.7 * (1 - Math.exp(-age * 9))));
       shock.material.uniforms.uA.value = clamp01(1 - age / 0.25) ** 2 * 0.12;
       shock.visible = age < 0.3;
-      scorch.position.set(to.x, 0.03, to.z);
-      scorch.scale.setScalar(R * 0.95);
-      scorch.material.opacity = clamp01(age * 5) * 0.75;
       // A big warm key light: white-orange flash settling to a deep orange glow.
       // A big warm flare that washes walls, windows and figures, settling to a burn.
       // Sits inside the fireball (low), so the victims' near sides, the
       // paving and the nearest wall take the light; held for the whole burn.
-      const li = age < 0.03 ? 700 * (age / 0.03) : 620 * Math.exp(-(age - 0.03) * 20) + 46 * Math.exp(-age * 1.1) + 10 * Math.max(0, 1 - age / 2.6);
+      // Strong and short: the setts, walls and victims within ~3 squares
+      // glow orange through the bloom, then the light settles into the burn.
+      const li = age < 0.03 ? 1100 * (age / 0.03) : 950 * Math.exp(-(age - 0.03) * 12) + 300 * Math.exp(-age * 1.3) + 36 * Math.max(0, 1 - age / 3);
       // Exposure kick on the flash, easing back as the fire settles.
       const expo = age < 0.03 ? 0.8 * (age / 0.03) : 0.8 * Math.exp(-(age - 0.03) * 16) + 0.05 * Math.exp(-age * 3);
-      return { exposure: expo, light: { i: li, color: age < 0.12 ? 0xffd6a0 : 0xff9040, pos: new THREE.Vector3(to.x, to.y + 0.7 + rise * 0.6, to.z) } };
+      return { exposure: expo, light: { i: li, color: age < 0.12 ? 0xffd6a0 : 0xff8a38, pos: new THREE.Vector3(to.x, to.y + 0.35 + rise * 0.4, to.z) } };
     });
+    // What the blast leaves: a char scar on the setts with a dying heat glow,
+    // and a bed of embers that smoulder and wink out over the next seconds.
+    const glowScar = new THREE.Mesh(new THREE.CircleGeometry(1, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: scorchTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, color: 0xff5a10, opacity: 0 }));
+    glowScar.renderOrder = 2;
+    const embers = emberBed(to, R * 0.95, seed + 31);
+    this.add(T, 999, () => ({ list: [scorch, glowScar, embers] }), (age) => {
+      scorch.position.set(to.x, 0.025, to.z);
+      scorch.scale.setScalar(R * 0.95);
+      scorch.material.opacity = clamp01(age * 5) * 0.82;
+      glowScar.position.set(to.x, 0.03, to.z);
+      glowScar.scale.setScalar(R * 0.8);
+      glowScar.material.opacity = clamp01(age * 6) * (0.18 + 0.5 * Math.exp(-age * 0.9));
+    }, { persistent: true, id: `scorch-${seed}` });
     this.addShake(T, 0.35, 0.6);
     return { flight, detonate: flight };
   }
@@ -1252,20 +1374,90 @@ export class VFX {
     });
   }
 
-  /** A sleeper: a faint violet glow and three slow motes drifting about the head (persistent until woken). */
+  /** A sleeper: a faint violet glow and a slow drift of glowing "z" glyphs rising off the head (persistent until woken). */
   sleepZ(t, getPos, id, seed = 1) {
-    const motes = [0, 1, 2].map((k) => glowSprite(k === 1 ? 0xf0ecff : 0xc8bcff, 0.06, 0));
+    const zs = [0, 1, 2].map(() => {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: zGlyphTexture(), color: 0xe4dcff, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, transparent: true, opacity: 0 }));
+      sp.renderOrder = 12;
+      return sp;
+    });
+    const motes = [0, 1].map(() => glowSprite(0xc8bcff, 0.05, 0));
     const glow = glowSprite(0x9a88ff, 0.55, 0);
-    this.add(t, 999, () => ({ list: [glow, ...motes] }), (age) => {
+    this.add(t, 999, () => ({ list: [glow, ...motes, ...zs] }), (age) => {
       const p = getPos();
       glow.position.copy(p).setY(p.y - 0.1);
-      glow.material.opacity = 0.07 + 0.03 * Math.sin(age * 1.6 + seed);
+      glow.material.opacity = 0.08 + 0.03 * Math.sin(age * 1.6 + seed);
+      zs.forEach((z, k) => {
+        const ph = (age * 0.3 + k / 3 + seed * 0.13) % 1;
+        z.position.set(p.x + 0.15 + Math.sin(ph * 5 + k) * 0.1 + ph * 0.25, p.y + 0.1 + ph * 0.8, p.z);
+        z.scale.setScalar(0.2 + ph * 0.2);
+        z.material.rotation = -0.25 + Math.sin(ph * 4 + k) * 0.15;
+        z.material.opacity = Math.sin(ph * Math.PI) * clamp01(age * 1.5) * 0.95;
+      });
       motes.forEach((m, k) => {
-        const ph = (age * 0.22 + k / 3 + seed * 0.13) % 1;
+        const ph = (age * 0.22 + k / 2 + seed * 0.21) % 1;
         const a = ph * Math.PI * 2 + k * 2.1;
-        m.position.set(p.x + Math.cos(a) * 0.22, p.y + 0.12 + ph * 0.4, p.z + Math.sin(a) * 0.22);
-        m.scale.setScalar(0.04 + 0.025 * Math.sin(ph * Math.PI));
-        m.material.opacity = Math.sin(ph * Math.PI) * 0.95 * clamp01(age * 1.5);
+        m.position.set(p.x + Math.cos(a) * 0.2, p.y + 0.1 + ph * 0.3, p.z + Math.sin(a) * 0.2);
+        m.material.opacity = Math.sin(ph * Math.PI) * 0.8 * clamp01(age * 1.5);
+      });
+    }, { persistent: true, id });
+  }
+
+  /**
+   * Nauseous: a sickly green halo, bile dripping from the mouth in slow
+   * retches and wavering stink wisps curling up off the figure (persistent
+   * until the effect ends). `getPos` returns the head position.
+   */
+  retch(t, getPos, id, seed = 1, getYaw = () => 0) {
+    const N = 26;
+    const pos = new Float32Array(N * 3);
+    const dat = new Float32Array(N * 2);
+    for (let i = 0; i < N; i++) dat.set([hashf(seed + i * 3.3), hashf(seed * 2 + i * 7.1)], i * 2);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('aD', new THREE.BufferAttribute(dat, 2));
+    const mat = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false,
+      uniforms: { uAge: { value: 0 }, uPix: { value: 600 }, uO: { value: new THREE.Vector3() }, uF: { value: new THREE.Vector3(0, 0, 1) } },
+      vertexShader: `attribute vec2 aD; uniform float uAge, uPix; uniform vec3 uO, uF; varying float vA;
+        void main(){
+          // Retches come in bursts every ~1.6 s; each drop falls from the mouth under gravity.
+          float cyc = uAge * 0.62 + aD.x * 0.18;
+          float ph = fract(cyc);
+          float tt = ph * 1.6;
+          float burst = step(ph, 0.55);
+          vec3 v = uF * (0.5 + aD.y * 0.6) + vec3((aD.x - 0.5) * 0.4, 0.2 + aD.y * 0.3, (aD.y - 0.5) * 0.4);
+          vec3 p = uO + uF * 0.08 + v * tt; p.y -= 4.9 * tt * tt; p.y = max(p.y, 0.02);
+          vA = burst * (1.0 - smoothstep(0.35, 0.55, ph)) * smoothstep(0.0, 0.03, ph);
+          vec4 mv = modelViewMatrix * vec4(p, 1.0); gl_Position = projectionMatrix * mv;
+          gl_PointSize = (0.025 + aD.y * 0.025) * uPix / max(0.1, -mv.z); }`,
+      fragmentShader: `varying float vA; void main(){ float r = length(gl_PointCoord - 0.5) * 2.0; float d = 1.0 - smoothstep(0.4, 1.0, r); if (d * vA <= 0.01) discard;
+        gl_FragColor = vec4(vec3(0.55, 0.62, 0.12) * (0.8 + 0.4 * (1.0 - r)), d * vA * 0.9); }`,
+    });
+    const drops = new THREE.Points(g, mat);
+    drops.frustumCulled = false;
+    drops.renderOrder = 7;
+    const halo = glowSprite(0x9ac020, 0.9, 0);
+    const wisps = [0, 1, 2].map(() => {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: wispTexture(), color: 0xb8d040, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 }));
+      sp.renderOrder = 7;
+      return sp;
+    });
+    this.add(t, 999, () => ({ list: [halo, drops, ...wisps] }), (age, parts, ctx) => {
+      const p = getPos();
+      mat.uniforms.uAge.value = age;
+      mat.uniforms.uPix.value = ctx.pix;
+      mat.uniforms.uO.value.copy(p).setY(p.y - 0.05);
+      const yw = getYaw();
+      mat.uniforms.uF.value.set(Math.sin(yw), 0, Math.cos(yw));
+      halo.position.copy(p).setY(p.y - 0.35);
+      halo.material.opacity = 0.16 + 0.06 * Math.sin(age * 2.2 + seed);
+      wisps.forEach((w, k) => {
+        const ph = (age * 0.35 + k / 3 + seed * 0.17) % 1;
+        w.position.set(p.x + Math.sin(ph * 6 + k * 2) * 0.12 + (k - 1) * 0.12, p.y - 0.1 + ph * 0.7, p.z + Math.cos(ph * 5 + k) * 0.08);
+        w.scale.set(0.16, 0.3 + ph * 0.2, 1);
+        w.material.rotation = Math.sin(ph * 7 + k) * 0.4;
+        w.material.opacity = Math.sin(ph * Math.PI) * 0.55 * clamp01(age * 1.5);
       });
     }, { persistent: true, id });
   }
@@ -1281,8 +1473,8 @@ export class VFX {
       v.u.uKey.value.setRGB(0.28, 0.32, 0.45);
       v.u.uAmb.value.setRGB(0.12, 0.14, 0.2);
     }
-    const half = size * 0.5 + 0.9;
-    v.place(centre.x, centre.z, half, 1.3, half);
+    const half = size * 0.5 + 1.3;
+    v.place(centre.x, centre.z, half, 1.15, half);
     this.add(t, 999, () => ({ list: [v] }), (age, parts, ctx) => {
       const fade = clamp01(age / 1.2);
       v.u.uAge.value = age;
@@ -1423,6 +1615,49 @@ function holySigilTexture() {
 }
 
 let _scorch = null;
+let _zTex = null;
+/** A hand-lettered "z" (sleep glyph) with a soft glow. */
+function zGlyphTexture() {
+  if (_zTex) return _zTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  g.font = 'italic 700 50px Georgia, serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.shadowColor = 'rgba(170,150,255,0.9)';
+  g.shadowBlur = 10;
+  g.fillStyle = '#ffffff';
+  g.fillText('z', 32, 30);
+  _zTex = new THREE.CanvasTexture(c);
+  _zTex.colorSpace = THREE.SRGBColorSpace;
+  return _zTex;
+}
+
+let _wispTex = null;
+/** A soft wavering S-curl of vapour (stink lines). */
+function wispTexture() {
+  if (_wispTex) return _wispTex;
+  const c = document.createElement('canvas');
+  c.width = 32;
+  c.height = 64;
+  const g = c.getContext('2d');
+  g.strokeStyle = 'rgba(255,255,255,0.9)';
+  g.lineWidth = 4;
+  g.lineCap = 'round';
+  g.shadowColor = 'rgba(255,255,255,0.8)';
+  g.shadowBlur = 6;
+  g.beginPath();
+  for (let y = 58; y >= 6; y -= 2) {
+    const x = 16 + Math.sin(y * 0.16) * 7;
+    if (y === 58) g.moveTo(x, y);
+    else g.lineTo(x, y);
+  }
+  g.stroke();
+  _wispTex = new THREE.CanvasTexture(c);
+  return _wispTex;
+}
+
 function scorchTexture() {
   if (_scorch) return _scorch;
   const c = document.createElement('canvas');

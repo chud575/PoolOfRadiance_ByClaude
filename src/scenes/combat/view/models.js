@@ -27,9 +27,9 @@ const HAIR = [0x2a1a10, 0x5a3418, 0x8a5a2a, 0xb88a4a, 0xd8c08a, 0x7a2a14, 0x1a1a
 // ------------------------------------------------------------------ species
 const SPECIES = {
   human: { height: 1.0, bulk: 1.0, head: 'human' },
-  kobold: { height: 0.74, bulk: 0.86, limbK: 1.08, head: 'kobold', headScale: 1.62, skin: ['reptile', 0xb0602a], shieldChance: 0.45, tail: 'long', legs: 'digitigrade', hunch: 0.5, thickNeck: true, cloth: 0x4a3a28, armor: 'harness', weapon: 'spear', weapons: ['spear', 'club', 'sling', 'spear', 'shortSword', 'club', 'sling'], helms: [null, 'kCap', 'kSkull', 'kBand'], stature: 0.26, shields: ['round', 'hide'], eyes: 0xffc040 },
+  kobold: { height: 0.74, bulk: 0.86, limbK: 1.08, head: 'kobold', headScale: 1.62, skin: ['reptile', 0x6a3e2a], shieldChance: 0.45, tail: 'long', legs: 'digitigrade', hunch: 0.5, thickNeck: true, cloth: 0x4a3a28, armor: 'harness', weapon: 'spear', weapons: ['spear', 'club', 'sling', 'spear', 'shortSword', 'club', 'sling'], helms: [null, 'kCap', 'kSkull', 'kBand'], stature: 0.26, shields: ['round', 'hide'], eyes: 0xffc040 },
   goblin: { height: 0.66, bulk: 0.95, limbK: 1.2, head: 'goblin', skin: ['skin', 0x8a9a3a], hunch: 0.15, cloth: 0x4a3020, weapon: 'shortSword', eyes: 0xffe060 },
-  orc: { height: 1.04, bulk: 1.28, head: 'orc', skin: ['skin', 0x74864c], hunch: 0.42, cloth: 0x2e2418, armor: 'orcish', weapon: 'battleAxe', weapons: ['battleAxe', 'battleAxe', 'spear', 'morningStar', 'club'], helmChance: 0.55, eyes: 0xff4020 },
+  orc: { height: 1.04, bulk: 1.34, headScale: 0.9, head: 'orc', skin: ['skin', 0x74864c], hunch: 0.42, cloth: 0x2e2418, armor: 'orcish', weapon: 'battleAxe', weapons: ['battleAxe', 'battleAxe', 'spear', 'morningStar', 'club'], helmChance: 0.55, eyes: 0xff4020 },
   hobgoblin: { height: 1.08, bulk: 1.12, head: 'hobgoblin', skin: ['skin', 0x9a4a22], cloth: 0x2a2a22, armor: 'scale', weapon: 'glaive', weapons: ['glaive', 'glaive', 'glaive', 'longSword'], shield: null, shieldWith: { longSword: 'round' }, helms: ['hobHelm'], eyes: 0xffa020 },
   gnoll: { height: 1.2, bulk: 1.15, limbK: 1.1, head: 'gnoll', skin: ['fur', 0x9a7a4a], hunch: 0.3, legs: 'digitigrade', cloth: 0x3a2e22, armor: 'scraps', weapon: 'flail', eyes: 0xffd040 },
   giantRat: { rig: 'quad', skin: ['fur', 0x4a3a30], height: 0.55, eyes: 0xff3020 },
@@ -241,6 +241,17 @@ function buildBiped(o) {
       belly: o.belly, tail: o.tail, digitigrade: o.digitigrade, thickNeck: o.thickNeck, claws: o.claws, kit,
     });
     R.skin(flesh.geometry, sculptMaterial(), flesh.names);
+    if (sculpt === 'orc') {
+      // Tusks that read at tactics zoom: thick yellowed ivory jutting up from
+      // the underbite past the upper lip, splayed outward (rigid kit — too fine
+      // for the sculpt grid).
+      const hs2 = s * (o.headScale ?? 1);
+      const ivory = pbr('bone', 0xd8c89a);
+      for (const sx of [1, -1]) {
+        R.part('head', cone(0.017 * hs2, 0.075 * hs2, 8), ivory, { p: [sx * 0.042 * hs2, 0.062 * hs2, 0.112 * hs2], r: [0.35, 0, sx * -0.38] });
+        R.part('head', sphere(0.016 * hs2, 8, 6), ivory, { p: [sx * 0.04 * hs2, 0.036 * hs2, 0.106 * hs2] });
+      }
+    }
     sculptEyes = flesh;
     o.sculptEyesOut = flesh;
   }
@@ -290,8 +301,29 @@ function buildBiped(o) {
     R.part(`upperArm${side}`, limb(0.055 * s * bw, 0.045 * s * bw, armU), armMat);
     R.part(`foreArm${side}`, limb(0.046 * s * bw, 0.036 * s * bw, armF), kit.armor === 'robe' ? clothMat : o.claws || kit.armor === 'loincloth' || kit.armor === 'scraps' || kit.armor === 'orcish' || kit.armor === 'harness' || kit.armor === 'none' ? skinMat : kit.armor === 'chain' || kit.armor === 'plate' ? armMat : skinMat);
     // Hand: palm + thumb; claws for beasts.
-    R.part(`hand${side}`, rbox(0.075 * s * bw, 0.095 * s, 0.05 * s, 0.018 * s), skinMat, { p: [0, -0.05 * s, 0.005 * s] });
-    R.part(`hand${side}`, limb(0.014 * s, 0.012 * s, 0.045 * s, { seg: 6 }), skinMat, { p: [sx * -0.03 * s, -0.03 * s, 0.025 * s], r: [0.6, 0, sx * 0.4] });
+    if (kit.race !== 'monster') {
+      // A gripping hand, not a mitten: a narrow palm, a row of knuckles and
+      // curled fingers wrapped round the grip (+z), the thumb over them; an
+      // armoured hand wears a flared, riveted gauntlet cuff, others a bracer.
+      const armoured = kit.armor === 'chain' || kit.armor === 'plate';
+      const handM = armoured ? (kit.armor === 'plate' ? metal : pbr('leather', 0x2e2018)) : skinMat;
+      R.part(`hand${side}`, rbox(0.056 * s * bw, 0.07 * s, 0.042 * s, 0.014 * s), handM, { p: [0, -0.042 * s, 0] });
+      for (let k = 0; k < 4; k++) {
+        const fx = (k - 1.5) * 0.0135 * s * bw;
+        R.part(`hand${side}`, sphere(0.0105 * s, 7, 5), handM, { p: [fx, -0.078 * s, 0.012 * s], s: [1, 0.9, 1.15] });
+        R.part(`hand${side}`, limb(0.0095 * s, 0.008 * s, 0.032 * s, { seg: 5 }), handM, { p: [fx, -0.08 * s, 0.018 * s], r: [-2.1, 0, 0] });
+      }
+      R.part(`hand${side}`, limb(0.012 * s, 0.009 * s, 0.042 * s, { seg: 5 }), handM, { p: [sx * -0.026 * s, -0.022 * s, 0.018 * s], r: [0.9, 0, sx * 0.55] });
+      if (armoured) {
+        R.part(`hand${side}`, cyl(0.05 * s * bw, 0.036 * s * bw, 0.07 * s, 12, true), kit.armor === 'plate' ? metal : darkMetal, { p: [0, 0.012 * s, 0] });
+        R.part(`hand${side}`, torus(0.05 * s * bw, 0.006 * s, 5, 14), darkMetal, { p: [0, 0.047 * s, 0], r: [Math.PI / 2, 0, 0] });
+      } else if (kit.armor !== 'robe') {
+        R.part(`foreArm${side}`, cyl(0.043 * s * bw, 0.038 * s * bw, 0.1 * s, 10), darkLeather, { p: [0, -armF + 0.06 * s, 0] });
+      }
+    } else {
+      R.part(`hand${side}`, rbox(0.075 * s * bw, 0.095 * s, 0.05 * s, 0.018 * s), skinMat, { p: [0, -0.05 * s, 0.005 * s] });
+      R.part(`hand${side}`, limb(0.014 * s, 0.012 * s, 0.045 * s, { seg: 6 }), skinMat, { p: [sx * -0.03 * s, -0.03 * s, 0.025 * s], r: [0.6, 0, sx * 0.4] });
+    }
     if (o.claws) for (let k = 0; k < 3; k++) R.part(`hand${side}`, cone(0.01 * s, 0.08 * s, 5), pbr('bone', 0x3a3024), { p: [(k - 1) * 0.022 * s, -0.12 * s, 0.01 * s], r: [Math.PI, 0, 0] });
     const legMat = kit.armor === 'robe' ? darkCloth : kit.armor === 'plate' ? pbr('chain', 0x9a9ea6) : kit.armor === 'orcish' ? pbr('cloth', 0x2a221a) : o.skin[0] === 'fur' || o.skin[0] === 'scales' || o.skin[0] === 'reptile' ? skinMat : kit.armor === 'loincloth' || kit.armor === 'none' ? skinMat : darkCloth;
     // Brutes (orcs, ogres) get heavy legs; everyone else the classic proportions.
@@ -959,13 +991,18 @@ function addShield(R, bone, kind, s, kit, m) {
     return;
   }
   if (kind === 'round') {
-    const g = cyl(0.26 * s, 0.26 * s, 0.03 * s, 28);
-    const uv = g.attributes.uv;
-    const pos = g.attributes.position;
-    for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getX(i) / (0.56 * s) + 0.5, pos.getZ(i) / (0.56 * s) + 0.5);
-    R.part(bone, g, face, place);
-    R.part(bone, torus(0.26 * s, 0.018 * s, 6, 28), m.darkMetal, { p: place.p, r: [Math.PI / 2, 0, 0] });
-    R.part(bone, sphere(0.06 * s, 12, 8, { thetaLength: Math.PI / 2 }), m.metal, { p: [0.03 * s, -0.12 * s, 0.02 * s], r: [Math.PI, 0, 0] });
+    // A real board: thick planks behind a domed, painted face, an iron rim
+    // band with rivets and a raised boss (reads as a solid object, not a card).
+    R.part(bone, cyl(0.25 * s, 0.25 * s, 0.045 * s, 28), m.wood, place);
+    const dome = domeDisc(0.255 * s, 0.035 * s, 28, 6);
+    R.part(bone, dome, face, { p: [place.p[0], place.p[1] - 0.022 * s, place.p[2]] });
+    R.part(bone, torus(0.258 * s, 0.024 * s, 7, 32), m.darkMetal, { p: [place.p[0], place.p[1] - 0.012 * s, place.p[2]], r: [Math.PI / 2, 0, 0], s: [1, 1, 1.35] });
+    for (let k = 0; k < 12; k++) {
+      const a = (k / 12) * Math.PI * 2;
+      R.part(bone, sphere(0.011 * s, 6, 4), m.metal, { p: [place.p[0] + Math.cos(a) * 0.222 * s, place.p[1] - 0.034 * s, place.p[2] + Math.sin(a) * 0.222 * s] });
+    }
+    R.part(bone, sphere(0.068 * s, 14, 8, { thetaLength: Math.PI / 2 }), m.metal, { p: [0.03 * s, -0.152 * s, 0.02 * s], r: [Math.PI, 0, 0], s: [1, 0.8, 1] });
+    R.part(bone, torus(0.068 * s, 0.009 * s, 5, 18), m.darkMetal, { p: [0.03 * s, -0.152 * s, 0.02 * s], r: [Math.PI / 2, 0, 0] });
     return;
   }
   // Kite / heater shield outline.
@@ -973,16 +1010,46 @@ function addShield(R, bone, kind, s, kit, m) {
     ? [[-0.22, 0.24], [0.22, 0.24], [0.22, 0.02], [0.14, -0.2], [0, -0.3], [-0.14, -0.2], [-0.22, 0.02]]
     : [[-0.21, 0.3], [0.21, 0.3], [0.22, 0.1], [0.12, -0.25], [0, -0.44], [-0.12, -0.25], [-0.22, 0.1]];
   const shape = new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2(x * s, y * s)));
-  const g = new THREE.ExtrudeGeometry(shape, { depth: 0.02 * s, bevelEnabled: true, bevelThickness: 0.012 * s, bevelSize: 0.012 * s, bevelSegments: 2 });
+  const g = new THREE.ExtrudeGeometry(shape, { depth: 0.03 * s, bevelEnabled: true, bevelThickness: 0.014 * s, bevelSize: 0.012 * s, bevelSegments: 2, curveSegments: 4 });
   // Planar UVs for the heraldry.
   const pos = g.attributes.position;
   const uv = g.attributes.uv;
   for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getX(i) / (0.48 * s) + 0.5, pos.getY(i) / (0.78 * s) + 0.55);
-  g.translate(0, 0, -0.01 * s);
+  g.translate(0, 0, -0.015 * s);
+  // Curved like a real shield: the edges sweep back from the convex face.
+  const bend = (geo) => {
+    const p2 = geo.attributes.position;
+    for (let i = 0; i < p2.count; i++) p2.setZ(i, p2.getZ(i) - ((p2.getX(i) / s) ** 2) * 0.9 * s);
+    geo.computeVertexNormals();
+    return geo;
+  };
+  bend(g);
+  // Raised iron edging all round the outline, and a central boss.
+  const edge = new THREE.CurvePath();
+  const P3 = pts.map(([x, y]) => new THREE.Vector3(x * s * 1.03, y * s * 1.03, 0.02 * s));
+  for (let i = 0; i < P3.length; i++) edge.add(new THREE.LineCurve3(P3[i], P3[(i + 1) % P3.length]));
+  const rim = bend(new THREE.TubeGeometry(edge, 70, 0.014 * s, 5, true));
   // Shape lies in XY; face +Z. Rotate so the face looks along -Y of the hand and "up" is +Z.
   R.part(bone, g, face, { p: [0.03 * s, -0.12 * s, 0.05 * s], r: [Math.PI / 2, 0, 0] });
-  R.part(bone, g.clone().scale(1.04, 1.04, 0.5), m.darkMetal, { p: [0.03 * s, -0.105 * s, 0.05 * s], r: [Math.PI / 2, 0, 0] });
-  R.part(bone, sphere(0.04 * s, 10, 6, { thetaLength: Math.PI / 2 }), m.gold, { p: [0.03 * s, -0.14 * s, 0.07 * s], r: [Math.PI, 0, 0] });
+  R.part(bone, rim, m.darkMetal, { p: [0.03 * s, -0.12 * s, 0.05 * s], r: [Math.PI / 2, 0, 0] });
+  R.part(bone, sphere(0.045 * s, 12, 6, { thetaLength: Math.PI / 2 }), m.gold, { p: [0.03 * s, -0.162 * s, 0.07 * s], r: [Math.PI, 0, 0] });
+}
+
+/** A shallow dome (concentric rings, planar UVs) facing -Y: a shield's painted face. */
+function domeDisc(r, h, seg = 24, rings = 5) {
+  const g = new THREE.RingGeometry(r * 0.002, r, seg, rings);
+  const pos = g.attributes.position;
+  const uv = g.attributes.uv;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const q = (x * x + y * y) / (r * r);
+    pos.setZ(i, h * (1 - q));
+    uv.setXY(i, x / (2.15 * r) + 0.5, y / (2.15 * r) + 0.5);
+  }
+  g.computeVertexNormals();
+  g.rotateX(Math.PI / 2);
+  return g;
 }
 
 // ------------------------------------------------------------------ quadrupeds

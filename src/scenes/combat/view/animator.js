@@ -27,16 +27,19 @@ const angLerp = (a, b, t) => {
  */
 export const RIM = { uRimColor: { value: new THREE.Color(0.18, 0.16, 0.14) }, uRimPower: { value: 3.0 }, uFacK: { value: 1.0 } };
 /** Per-faction back-light edge colours. */
-export const FACTION_RIM = { party: new THREE.Color(0.30, 0.24, 0.13), foe: new THREE.Color(0.55, 0.2, 0.06), undead: new THREE.Color(0.22, 0.42, 0.55) };
+export const FACTION_RIM = { party: new THREE.Color(0.30, 0.26, 0.16), foe: new THREE.Color(0.34, 0.09, 0.04), undead: new THREE.Color(0.2, 0.36, 0.5) };
 
 // Rigid kit material kind (from pbr()'s name) → surface-detail pattern id.
 const RIGID_PID = { cloth: 3, leather: 5, chain: 9, metal: 8, gold: 6, skin: 6, scales: 10, reptile: 1, fur: 2, bone: 4, wood: 6, hair: 2, plank: 6 };
 
-function addRim(mat, facRim = null) {
+function addRim(mat, facRim = null, tint = null) {
   if (!mat.isMeshStandardMaterial) return;
+  const uTint = { value: tint ?? new THREE.Color(1, 1, 1) };
   const uFac = { value: facRim ? facRim.clone() : new THREE.Color(0, 0, 0) };
   mat.userData.uFac = uFac;
   mat.userData.facBase = uFac.value.clone();
+  const uBurn = { value: new THREE.Vector2(0, 0) };
+  mat.userData.uBurn = uBurn;
   const sculpt = !!mat.userData?.sculpt;
   const pid = sculpt ? -1 : RIGID_PID[String(mat.name ?? '').split('|')[0]] ?? -1;
   mat.onBeforeCompile = (sh) => {
@@ -46,8 +49,31 @@ function addRim(mat, facRim = null) {
     sh.uniforms.uRimPower = RIM.uRimPower;
     sh.uniforms.uFacRim = uFac;
     sh.uniforms.uFacK = RIM.uFacK;
+    sh.uniforms.uBurn = uBurn;
+    sh.uniforms.uTint = uTint;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vBP;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvBP = position;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform vec3 uRimColor, uFacRim; uniform float uRimPower, uFacK;')
+      .replace('#include <common>', `#include <common>
+        uniform vec3 uRimColor, uFacRim, uTint; uniform float uRimPower, uFacK; uniform vec2 uBurn; varying vec3 vBP;
+        float bH3(vec3 p){ p = fract(p * 0.3183099 + vec3(0.1, 0.71, 0.37)); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+        float bN3(vec3 x){ vec3 i = floor(x); vec3 f = fract(x); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(mix(bH3(i), bH3(i + vec3(1,0,0)), f.x), mix(bH3(i + vec3(0,1,0)), bH3(i + vec3(1,1,0)), f.x), f.y),
+                     mix(mix(bH3(i + vec3(0,0,1)), bH3(i + vec3(1,0,1)), f.x), mix(bH3(i + vec3(0,1,1)), bH3(i + vec3(1,1,1)), f.x), f.y), f.z); }
+        float burnMask, burnEdge;`)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        ${sculpt ? `{ float pidT = floor(vMat.x + 0.5); if (pidT < 2.5 || abs(pidT - 7.0) < 0.5 || abs(pidT - 4.0) < 0.5) diffuseColor.rgb *= uTint; }` : ''}
+        burnMask = 0.0; burnEdge = 0.0;
+        if (uBurn.x > 0.001) {
+          // Char creeps in patches (sooty black blotches, not a uniform tint);
+          // their ragged borders smoulder while the fire is fresh.
+          float bn = bN3(vBP * 13.0) * 0.6 + bN3(vBP * 31.0) * 0.4;
+          float th = 1.0 - uBurn.x;
+          burnMask = smoothstep(th - 0.08, th + 0.08, bn);
+          burnEdge = smoothstep(0.1, 0.0, abs(bn - th + 0.05)) * step(0.02, uBurn.x);
+          diffuseColor.rgb = mix(diffuseColor.rgb * (1.0 - uBurn.x * 0.35), vec3(0.025, 0.02, 0.018), burnMask * 0.92);
+        }`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         { float rimF = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), uRimPower);
           totalEmissiveRadiance += uRimColor * rimF * (0.6 + 0.4 * diffuseColor.rgb / max(0.001, max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b))));
@@ -56,16 +82,17 @@ function addRim(mat, facRim = null) {
           // reads like a light behind the figure, not a glow around it.
           vec3 nV = normalize(normal);
           float facF = pow(1.0 - clamp(dot(nV, normalize(vViewPosition)), 0.0, 1.0), 2.4) * smoothstep(-0.5, 0.6, nV.y);
-          totalEmissiveRadiance += uFacRim * facF * uFacK; }`);
+          totalEmissiveRadiance += uFacRim * facF * uFacK;
+          totalEmissiveRadiance += vec3(1.0, 0.32, 0.05) * burnEdge * uBurn.y * 2.2 + vec3(0.6, 0.12, 0.02) * burnMask * uBurn.y * 0.35; }`);
   };
-  mat.customProgramCacheKey = () => (sculpt ? 'fig-rim-sculpt' : pid >= 0 ? 'fig-rim-detail' : 'fig-rim');
+  mat.customProgramCacheKey = () => (sculpt ? 'fig-rim-sculpt-b' : pid >= 0 ? 'fig-rim-detail-b' : 'fig-rim-b');
 }
 
 const _FLASH = new THREE.Color(1, 0.82, 0.68);
 const _HOLY = new THREE.Color(1, 0.9, 0.6);
-const _SOOT = new THREE.Color(0x0c0907);
 const _HL = new THREE.Color(1, 0.85, 0.6);
 const _BURN = new THREE.Color(1, 0.32, 0.05);
+const _SICK = new THREE.Color(0.45, 0.62, 0.08);
 
 export class Figure {
   /**
@@ -81,11 +108,18 @@ export class Figure {
     this.s = model.scale ?? 1;
     this.seed = o.seed ?? 0;
     this.phase = hashf(this.seed) * 10;
+    // Each foe wears its own hide: a small palette jitter (hue lean + value)
+    // so a warband reads as individuals, never as clones off one mould.
+    if (o.faction && o.faction !== 'party') {
+      const v = 0.8 + hashf(this.seed * 3.7) * 0.34;
+      const lean = hashf(this.seed * 5.1) - 0.5;
+      this.tint = new THREE.Color(v * (1 + lean * 0.3), v * (1 + Math.abs(lean) * 0.06), v * (1 - lean * 0.34));
+    }
     // Per-figure material clones so hits can flash and the dead can dim.
     this.mats = [];
     for (const m of model.meshes) {
       m.material = m.material.clone();
-      addRim(m.material, FACTION_RIM[o.faction] ?? null);
+      addRim(m.material, FACTION_RIM[o.faction] ?? null, this.tint);
       this.mats.push({ m: m.material, emissive: m.material.emissive?.clone() ?? new THREE.Color(0), ei: m.material.emissiveIntensity ?? 1, color: m.material.color.clone() });
     }
     this.pos = new THREE.Vector3();
@@ -293,18 +327,20 @@ export class Figure {
     const flash = fAge < 0 || this.death ? 0 : Math.max(0, 1 - fAge / 0.12) ** 2;
     const deadDim = this.death ? clamp01((t - this.death.t0 - 1.2) / 2.5) : 0;
     const holy = this.death?.holy ? clamp01((t - this.death.t0) / 0.6) : 0;
-    const bAge = t - this.burnT;
+    const bAge = this.burnT < -50 ? -1 : t - this.burnT;
     const burn = bAge < 0 ? 0 : Math.exp(-bAge * 2.4) * (0.75 + 0.25 * Math.sin(bAge * 37 + this.seed * 9));
-    const char = bAge < 0 ? 0 : Math.min(1, bAge * 8) * (0.5 - 0.1 * Math.min(1, bAge / 3));
+    const char = bAge < 0 ? 0 : Math.min(1, bAge * 6) * 0.62;
+    const smoulder = bAge < 0 ? 0 : Math.min(1, bAge * 10) * (0.25 + 0.75 * Math.exp(-bAge * 0.9)) * (0.8 + 0.2 * Math.sin(bAge * 23 + this.seed * 5));
     for (const mm of this.mats) {
+      mm.m.userData.uBurn?.value.set(char, smoulder);
       if (mm.m.emissive) {
         mm.m.emissive.copy(mm.emissive).lerp(_FLASH, flash * 0.13);
-        if (burn > 0.01) mm.m.emissive.lerp(_BURN, Math.min(1, burn * 0.32));
+        if (burn > 0.01) mm.m.emissive.lerp(_BURN, Math.min(1, burn * 0.1));
         if (holy) mm.m.emissive.lerp(_HOLY, Math.sin(holy * Math.PI) * 0.9);
+        if (this.state === 'sick' && !this.death) mm.m.emissive.lerp(_SICK, 0.07 + 0.04 * Math.sin(t * 2.2 + this.seed));
         mm.m.emissiveIntensity = mm.ei;
       }
-      mm.m.color.copy(mm.color).multiplyScalar((1 - deadDim * 0.35) * (1 - char));
-      if (char > 0) mm.m.color.lerp(_SOOT, char * 0.3);
+      mm.m.color.copy(mm.color).multiplyScalar(1 - deadDim * 0.35);
     }
   }
 
@@ -545,6 +581,21 @@ export class Figure {
         add('foreArmR', 0.8 * k);
         rootOff.y += Math.abs(Math.sin(u * Math.PI * 2)) * 0.08 * k;
       }
+    }
+    // --- Nauseous: doubled over, a hand to the belly, heaving in slow retches.
+    if (this.state === 'sick' && !dead) {
+      const heave = Math.max(0, Math.sin(it * 2.2 + this.seed)) ** 3;
+      add('spine', 0.4 + heave * 0.35);
+      add('chest', 0.25 + heave * 0.2);
+      add('neck', 0.25 + heave * 0.3, Math.sin(it * 0.9) * 0.2);
+      add('head', 0.15 + heave * 0.25);
+      set('upperArmL', -0.75, 0, 0.25);
+      set('foreArmL', -1.5);
+      add('thighL', -0.2);
+      add('thighR', -0.2);
+      add('shinL', 0.3);
+      add('shinR', 0.3);
+      P['hips@'][1] -= 0.05 * s;
     }
     // --- Asleep / held.
     if (this.state === 'asleep' && !dead) {

@@ -65,6 +65,23 @@ function kill(sc, c, t, from) {
   if (f.eyeGlow) f.eyeGlow.visible = false;
 }
 
+/**
+ * Centre the camera on `core` (the actors that matter) and fit every living
+ * combatant within `radius` squares of them inside the HUD-free safe area.
+ */
+function frameAround(sc, core, radius, minD, maxD) {
+  const live = sc.engine.all.filter((c) => !sc.engine.out(c));
+  const set = live.filter((c) => core.some((k) => Battlefield.dist(c.x, c.y, k.x, k.y) <= radius));
+  const fit = sc._fitBox(set.length ? set : core);
+  const core0 = sc._fitBox(core);
+  // Lean the centre toward the core pair (the clash reads in the middle).
+  const cx = fit.cx * 0.6 + core0.cx * 0.4;
+  const cz = fit.cz * 0.6 + core0.cz * 0.4;
+  sc.cam.goalTarget.set(cx, 0, cz);
+  sc.cam.target.copy(sc.cam.goalTarget);
+  sc.cam.goalDist = sc.cam.dist = Math.max(minD, Math.min(maxD, fit.need + Math.hypot(cx - fit.cx, cz - fit.cz) * 1.2));
+}
+
 export const DEMOS = {
   /** Debug line-up of every figure for model review (?demo=lineup&monsters=...). */
   lineup: {
@@ -175,7 +192,11 @@ export const DEMOS = {
         sc.vfx.bodyFire(detonate + 0.01, () => fm.root.position, fm.model.height, 11 + k * 7);
         // Each number rides its victim's head, fire-coloured, with a name plate + hp tick.
         const hp0 = m.hp.cur;
-        sc._say(fm, String(d), 'dmg', detonate + 0.08 + k * 0.05, { cls: 'fire', tag: { name: m.name, hp: Math.max(0, hp0 - d) / m.hp.max, lost: Math.min(hp0, d) / m.hp.max } });
+        // Numbers wait for the bloom, then step out past the fire's rim one by one.
+        const out = new THREE.Vector3(fm.pos.x - centre.x, 0, fm.pos.z - centre.z);
+        if (out.lengthSq() < 0.01) out.set(0.3, 0, 0.6);
+        out.normalize().multiplyScalar(R * 0.42).setY(0.5);
+        sc._say(fm, String(d), 'dmg', detonate + 0.3 + k * 0.11, { cls: 'fire', push: out, tag: { name: m.name, hp: Math.max(0, hp0 - d) / m.hp.max, lost: Math.min(hp0, d) / m.hp.max } });
         // Results land with the blast, not before it.
         sc.at(detonate + 0.02, () => {
           m.hp.cur -= d;
@@ -188,8 +209,9 @@ export const DEMOS = {
         const slain = hitList.filter((m) => m.hp.cur <= 0).map((m) => m.name);
         const hurt = hitList.filter((m) => m.hp.cur > 0).map((m) => m.name);
         sc.ctx.ui.message(`The fireball engulfs ${hitList.length} foes.`, 'combat');
-        if (slain.length) sc.ctx.ui.message(`Slain: ${list(slain)}.`, 'combat');
         if (hurt.length) sc.ctx.ui.message(`Scorched: ${list(hurt)}.`, 'combat');
+        // The roll of the dead waits until the bodies have hit the ground.
+        if (slain.length) sc.at(detonate + 1.25, () => sc.ctx.ui.message(`Slain: ${list(slain)}.`, 'combat'));
       });
       sc.overlay.setTemplate([]);
       // Camera: frame caster and blast, slightly closer.
@@ -218,6 +240,16 @@ export const DEMOS = {
       const b = foes.slice().sort((p, q) => Battlefield.dist(q.x, q.y, a.x, a.y) - Battlefield.dist(p.x, p.y, a.x, a.y))[0];
       const ca = sq2w(a.x + 0.5, a.y + 0.5);
       sc.vfx.stinkingCloud(-4, ca, 2 * TILE, 'demo-cloud', 2.3, { night: sc.night });
+      // Whoever stands in the vapour is retching (the status shows on the figure).
+      for (const m of foes) {
+        if (m.x >= a.x - 0 && m.x <= a.x + 1 && m.y >= a.y && m.y <= a.y + 1) {
+          m.fx.nauseous = 3;
+          const f = sc.figures.get(m.id);
+          f.setState('sick');
+          (sc._sick ??= new Set()).add(m.id);
+          sc.vfx.retch(-2 + m.x * 0.37, () => sc._mouthPos(f), `sick-${m.id}`, m.x * 3 + m.y, () => f.yaw);
+        }
+      }
       const cb = sq2w(b.x, b.y);
       sc.vfx.sleepCloud(0, cb, 3 * TILE, 4.1);
       for (const m of foes) {
@@ -231,12 +263,13 @@ export const DEMOS = {
       const mid = ca.clone().lerp(cb, 0.5);
       sc.cam.goalTarget.copy(mid);
       sc.cam.target.copy(mid);
-      sc.cam.goalDist = sc.cam.dist = 12;
       sc.cam.goalPitch = sc.cam.pitch = 0.74;
       // Shoot from the party's side, over the caster's shoulder, so the
       // kobolds in the cloud face the lens.
       const cp = sq2w(caster.x, caster.y);
       sc.cam.goalYaw = sc.cam.yaw = Math.atan2(cp.x - mid.x, cp.z - mid.z) + 0.5;
+      // Frame the affected area and the caster, every figure whole.
+      frameAround(sc, [a, b, caster], 2.5, 10, 15);
       sc._refresh(caster);
     },
   },
@@ -340,7 +373,7 @@ export const DEMOS = {
       const impact = 0.8 * 0.46;
       ff.play('hit', impact, 0.5, { power: 1.5 });
       const at = ff.root.position.clone().setY(ff.model.height * 0.62);
-      sc.vfx.hitSparks(impact, at, { crit: true, seed: 5, blood: true });
+      sc.vfx.hitSparks(impact, at, { crit: true, seed: 5, blood: true, dir: new THREE.Vector3(ff.pos.x - fh.pos.x, 0, ff.pos.z - fh.pos.z) });
       sc.vfx.swipe(impact - 0.06, fh.root.position.clone().setY(fh.model.height * 0.55), fh.yaw);
       sc.vfx.addShake(impact, 0.12, 0.3);
       sc._say(ff, '9', 'crit', impact + 0.01);
@@ -354,7 +387,7 @@ export const DEMOS = {
         kill(sc, foe3, -0.12, sq2w(hero.x, hero.y));
         const from3 = sq2w(hero.x, hero.y);
         sc.vfx.dust(0.33, sc._killPos(sc.figures.get(foe3.id), from3).setY(0), { seed: 8 });
-        sc.hud.float('Slain', 'kill', sc._killPos(sc.figures.get(foe3.id), from3), 0.02, { rise: 0.25 });
+        sc.hud.float('Slain', 'kill', sc._killPos(sc.figures.get(foe3.id), from3), 0.02, { rise: 1.7 });
       }
       // A missile from a rear rank for depth.
       const archer = sc.party.find((c) => c !== hero && c !== second && e.rangedProfile(c));
@@ -370,18 +403,15 @@ export const DEMOS = {
       }
       if (foe3) sc.ctx.ui.message(`${foe3.name} is slain.`, 'combat');
       sc.at(impact, () => sc.ctx.ui.message(`${hero.name} hits ${foe.name} for 9 (critical!).`, 'combat'));
-      // Camera close on the clash.
+      // Camera close on the clash: centred on the hero/target pair, wide enough
+      // that every combatant near it sits whole inside the HUD-free frame.
       const midW = sq2w((hero.x + foe.x) / 2, (hero.y + foe.y) / 2);
       sc.cam.goalTarget.copy(midW);
       sc.cam.target.copy(midW);
-      sc.cam.goalDist = sc.cam.dist = Math.max(11, sc.cam.dist * 0.5);
       sc.cam.goalPitch = sc.cam.pitch = 0.68;
       if (Number.isFinite(+sc.params.yaw) && sc.params.yaw !== undefined) sc.cam.goalYaw = sc.cam.yaw = +sc.params.yaw;
       else sc._chooseYaw({ around: [hero, foe] });
-      // Nudge the frame toward the camera so the near rank isn't cut by the bottom edge.
-      const toCam = new THREE.Vector3(Math.sin(sc.cam.yaw), 0, Math.cos(sc.cam.yaw));
-      sc.cam.goalTarget.addScaledVector(toCam, 1.1);
-      sc.cam.target.copy(sc.cam.goalTarget);
+      frameAround(sc, [hero, foe], 4.5, 10.5, 15);
       sc._refresh(hero);
     },
   },

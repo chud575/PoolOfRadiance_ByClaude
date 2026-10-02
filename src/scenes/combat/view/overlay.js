@@ -220,25 +220,41 @@ export class Overlay {
     this.arrow.visible = false;
     this.group.add(this.arrow);
 
-    // Line-of-sight ray (aim / spell targeting): gold while clear, red past the block.
+    // Line-of-sight ray (aim / spell targeting): a glowing gilt ribbon with
+    // chevrons flowing to the target while clear; past a block it turns red
+    // and a cover marker stands where the shot is stopped.
     this.rayMat = new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: false,
+      blending: THREE.AdditiveBlending,
       uniforms: { uTime: this.uniforms.uTime, uBlock: { value: 1 }, uLen: { value: 1 } },
       vertexShader: `attribute float aT; varying float vT; varying vec2 vUv; void main(){ vT = aT; vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
       fragmentShader: `varying float vT; varying vec2 vUv; uniform float uTime, uBlock, uLen;
         void main(){
           float across = 1.0 - abs(vUv.y - 0.5) * 2.0;
           bool blocked = vT > uBlock;
-          float dash = step(0.45, fract(vT * uLen * 1.4 - uTime * 1.2));
-          vec3 c = blocked ? vec3(1.0, 0.18, 0.12) : vec3(0.95, 0.84, 0.58);
-          float a = smoothstep(0.2, 0.8, across) * (blocked ? 0.85 : 0.4 + dash * 0.3);
-          // A bright tick where the line is cut.
-          a += (1.0 - smoothstep(0.0, 0.04 / max(uLen, 1.0), abs(vT - uBlock))) * step(uBlock, 0.999) * 0.9;
-          float fadeIn = smoothstep(0.0, 0.08, vT) * (1.0 - smoothstep(0.78, 0.97, vT) * 0.85);
-          gl_FragColor = vec4(c * 1.05, a * fadeIn);
+          // Core thread + a wide soft glow either side.
+          float core = smoothstep(0.62, 0.9, across);
+          float glow = across * across * 0.42;
+          // Chevrons streaming toward the target (clear shots only).
+          float f = fract(vT * uLen * 0.9 - uTime * 0.8);
+          float chev = (1.0 - smoothstep(0.0, 0.1, abs(f - 0.5 - (1.0 - across) * 0.35))) * smoothstep(0.15, 0.6, across);
+          vec3 gold = vec3(1.0, 0.74, 0.3);
+          vec3 red = vec3(1.0, 0.16, 0.1);
+          vec3 c = blocked ? red : gold;
+          float a = blocked ? (core * 0.75 + glow * 0.8) * (0.55 + 0.45 * step(0.5, fract(vT * uLen * 1.6))) : core * 0.8 + glow + chev * 0.55;
+          // A hot tick where the line is cut.
+          a += (1.0 - smoothstep(0.0, 0.05 / max(uLen, 1.0), abs(vT - uBlock))) * step(uBlock, 0.999) * 1.4 * across;
+          float fadeIn = smoothstep(0.0, 0.07, vT) * (1.0 - smoothstep(0.86, 0.99, vT) * 0.7);
+          gl_FragColor = vec4(c * a * fadeIn * 1.15, 1.0);
         }`,
     });
+    // Cover marker: a red-rimmed shield glyph where the sight line is broken.
+    this.coverMark = new THREE.Sprite(new THREE.SpriteMaterial({ map: coverGlyph(), depthTest: false, depthWrite: false, transparent: true }));
+    this.coverMark.scale.setScalar(0.55);
+    this.coverMark.renderOrder = 14;
+    this.coverMark.visible = false;
+    this.group.add(this.coverMark);
     this.ray = new THREE.Mesh(new THREE.BufferGeometry(), this.rayMat);
     this.ray.renderOrder = 13;
     this.rayMat.depthTest = false;
@@ -463,6 +479,7 @@ export class Overlay {
   setRay(a, b, tBlock = 1, { arc = 0.35, h0 = 1.0, h1 = 0.95 } = {}) {
     if (!a || !b || (a.x === b.x && a.y === b.y)) {
       this.ray.visible = false;
+      this.coverMark.visible = false;
       return;
     }
     // Raised to chest height and gently arched, so figures and rings never hide it.
@@ -471,7 +488,7 @@ export class Overlay {
     const dir = new THREE.Vector3().subVectors(B, A);
     const len = dir.length();
     dir.normalize();
-    const side = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(0.05);
+    const side = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(0.17);
     const n = 32;
     const pos = [];
     const uv = [];
@@ -496,6 +513,12 @@ export class Overlay {
     this.rayMat.uniforms.uBlock.value = tBlock;
     this.rayMat.uniforms.uLen.value = len;
     this.ray.visible = true;
+    if (tBlock < 0.999) {
+      const pc = A.clone().lerp(B, tBlock);
+      pc.y += Math.sin(tBlock * Math.PI) * arc * Math.min(1, len / 6) + 0.35;
+      this.coverMark.position.copy(pc);
+      this.coverMark.visible = true;
+    } else this.coverMark.visible = false;
   }
 
   /** Bright reticle on the current target square (null hides); color by intent. */
@@ -528,4 +551,28 @@ export class Overlay {
     this.rayMat.dispose();
     this.teamGeo.dispose();
   }
+}
+
+let _cover = null;
+/** A small heater shield with a red slash: "this shot is blocked". */
+function coverGlyph() {
+  if (_cover) return _cover;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  g.shadowColor = 'rgba(0,0,0,0.9)';
+  g.shadowBlur = 6;
+  g.beginPath();
+  g.moveTo(14, 12); g.lineTo(50, 12); g.lineTo(50, 30); g.quadraticCurveTo(50, 48, 32, 56); g.quadraticCurveTo(14, 48, 14, 30); g.closePath();
+  g.fillStyle = 'rgba(30,22,18,0.9)';
+  g.fill();
+  g.shadowBlur = 0;
+  g.lineWidth = 4;
+  g.strokeStyle = '#ff5a3a';
+  g.stroke();
+  g.lineWidth = 5;
+  g.beginPath(); g.moveTo(20, 20); g.lineTo(44, 46); g.moveTo(44, 20); g.lineTo(20, 46); g.stroke();
+  _cover = new THREE.CanvasTexture(c);
+  _cover.colorSpace = THREE.SRGBColorSpace;
+  return _cover;
 }

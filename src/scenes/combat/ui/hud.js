@@ -30,6 +30,8 @@ export class CombatHud {
     this.cmds = h('div.por-commandbar.cb-cmds');
     this.prompt = h('div.cb-prompt');
     this.inspect = h('div.cb-inspect');
+    // A thin gilt leader from the card to the figure it describes.
+    this.lead = h('div.cb-lead');
     this.banner = h('div.cb-banner');
     this.help = h('div.cb-help', { html: '<kbd>RMB</kbd> orbit &nbsp;<kbd>MMB</kbd> pan &nbsp;<kbd>Wheel</kbd> zoom<br><kbd>,</kbd> <kbd>.</kbd> rotate &nbsp;<kbd>Tab</kbd> target &nbsp;<kbd>Esc</kbd> back' });
     this.speedEl = h('div.cb-speed');
@@ -38,7 +40,7 @@ export class CombatHud {
     this.roster = h('div.por-roster');
     this.rosterFrame.body.append(this.roster);
     const bottom = h('div.cb-bottom', [this.cmds]);
-    this.root.append(this.floatLayer, this.speedEl, this.loc, this.timeline, this.card.el, this.rosterFrame.el, this.logBox, this.prompt, bottom, this.help, this.banner, this.inspect);
+    this.root.append(this.floatLayer, this.speedEl, this.loc, this.timeline, this.card.el, this.rosterFrame.el, this.logBox, this.prompt, bottom, this.help, this.banner, this.lead, this.inspect);
     ctx.ui.mount(this.root);
     this.floats = [];
     this.banners = [];
@@ -210,6 +212,7 @@ export class CombatHud {
   showInspect(content, x, y, world = null) {
     if (!content) {
       this.inspect.classList.remove('show');
+      this.lead.classList.remove('show');
       this._inspectWorld = null;
       return;
     }
@@ -235,22 +238,38 @@ export class CombatHud {
     // one that covers the fewest figures (screen points from the scene), so it
     // never sits on the group it describes.
     const pts = this.avoid?.() ?? [];
-    const cands = [[34, -hh - 26], [-w - 34, -hh - 26], [34, 30], [-w - 34, 30], [90, -hh / 2], [-w - 90, -hh / 2], [160, -hh - 60], [-w - 160, -hh - 60], [60, -hh - 140], [-w - 60, -hh - 140]];
+    // Close spots only: the card stays attached to its target (a leader line
+    // joins them), preferring the side that covers the fewest other figures.
+    const cands = [[40, -hh - 30], [-w - 40, -hh - 30], [56, -hh / 2], [-w - 56, -hh / 2], [40, 34], [-w - 40, 34], [90, -hh - 50], [-w - 90, -hh - 50]];
     let best = null;
     cands.forEach(([dx, dy], i) => {
       const px = Math.max(10, Math.min(maxX, x + dx));
       const py = Math.max(minY, Math.min(maxY, y + dy));
-      let cost = i * 0.15;
+      let cost = i * 0.12;
       for (const p of pts) {
-        const ox = Math.max(0, Math.min(px + w + 14, p.x + 26) - Math.max(px - 14, p.x - 26));
-        const oy = Math.max(0, Math.min(py + hh + 14, p.y + 40) - Math.max(py - 14, p.y - 50));
-        if (ox > 0 && oy > 0) cost += 1 + (ox * oy) / 2600;
+        const ox = Math.max(0, Math.min(px + w + 10, p.x + 24) - Math.max(px - 10, p.x - 24));
+        const oy = Math.max(0, Math.min(py + hh + 10, p.y + 40) - Math.max(py - 10, p.y - 50));
+        if (ox > 0 && oy > 0) cost += 0.6 + (ox * oy) / 4000;
       }
-      // Never over the anchor itself.
+      // Never over the anchor itself, and never drift far from it.
       if (x > px - 20 && x < px + w + 20 && y > py - 20 && y < py + hh + 20) cost += 6;
+      const cxp = Math.max(px, Math.min(px + w, x));
+      const cyp = Math.max(py, Math.min(py + hh, y));
+      cost += Math.hypot(cxp - x, cyp - y) / 60;
       if (!best || cost < best.cost) best = { px, py, cost };
     });
     this.inspect.style.transform = `translate(${best.px}px, ${best.py}px)`;
+    // Leader: from the card's nearest edge point to just beside the anchor.
+    const ex = Math.max(best.px, Math.min(best.px + w, x));
+    const ey = Math.max(best.py, Math.min(best.py + hh, y));
+    const dx = x - ex;
+    const dy = y - ey;
+    const len = Math.hypot(dx, dy) - 10;
+    if (len > 8) {
+      this.lead.style.width = `${len}px`;
+      this.lead.style.transform = `translate(${ex}px, ${ey}px) rotate(${Math.atan2(dy, dx)}rad)`;
+      this.lead.classList.add('show');
+    } else this.lead.classList.remove('show');
   }
 
   // ---------------------------------------------------------------- menus
@@ -339,7 +358,7 @@ export class CombatHud {
     }
     const el = h(`div.cb-float.${kind}`, { class: o.cls ?? '', style: { opacity: '0' } }, kids);
     this.floatLayer.append(el);
-    this.floats.push({ el, kind, unit: o.unit ?? null, follow: o.follow ?? null, solo: !!o.solo, n: 1, sum: anchor.clone(), plural: o.plural, pos: anchor.clone(), t0: t, life: o.life ?? (kind === 'kill' ? 1.2 : 1.1), dx: o.dx ?? 0, rise: o.rise ?? 1 });
+    this.floats.push({ el, kind, unit: o.unit ?? null, follow: o.follow ?? null, solo: !!o.solo, n: 1, sum: anchor.clone(), plural: o.plural, pos: anchor.clone(), t0: t, life: o.life ?? (kind === 'kill' ? 1.2 : 1.1), dx: o.dx ?? 0, rise: o.rise ?? 1, push: o.push ?? null });
   }
 
   /** Battle over: no callouts or stale cards survive into the summary. */
@@ -388,6 +407,8 @@ export class CombatHud {
         if (p && Number.isFinite(p.x)) f.pos.copy(p);
       }
       this._v.copy(f.pos);
+      // World-space nudge (e.g. outward from a blast so numbers frame the fire, not cover it).
+      if (f.push) this._v.addScaledVector(f.push, Math.min(1, age * 4));
       this._v.project(camera);
       // Behind the camera / degenerate projection: never draw at the screen origin.
       if (!Number.isFinite(this._v.x) || !Number.isFinite(this._v.y) || this._v.z > 1 || this._v.z < -1) {

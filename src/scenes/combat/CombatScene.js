@@ -71,6 +71,21 @@ export default class CombatScene extends Scene {
     const H = this.field.h * TILE;
     this.center = new THREE.Vector3(W / 2, 0, H / 2);
     this.rig = createOutdoorRig(s, { hour, target: this.center, extent: Math.max(W, H) * 0.62, shadowSize: 2048 });
+    {
+      // Tactics readability: a low morning/evening sun throws figure shadows
+      // metres long across the board (read as stains). Keep its azimuth and
+      // warmth but hold it at least ~40° up, so shadows stay near the feet.
+      const d = this.rig.sun.position.clone().sub(this.center);
+      const len = d.length();
+      d.normalize();
+      const minY = 0.64;
+      if (d.y < minY) {
+        const hl = Math.hypot(d.x, d.z) || 1;
+        const k = Math.sqrt(1 - minY * minY) / hl;
+        d.set(d.x * k, minY, d.z * k);
+        this.rig.sun.position.copy(this.center).addScaledVector(d, len);
+      }
+    }
     this.rig.sun.shadow.radius = 3.5;
     this.rig.sun.shadow.bias = -0.0006;
     this.rig.sun.shadow.normalBias = 0.04;
@@ -1660,6 +1675,15 @@ export default class CombatScene extends Scene {
     return p;
   }
 
+  /** Roughly the mouth: in front of and just below the head bone. */
+  _mouthPos(fig) {
+    const p = fig.b?.head ? fig.bonePos('head', new THREE.Vector3()) : fig.root.position.clone().setY(fig.model.height * 0.85);
+    p.y += fig.model.height * 0.12;
+    p.x += Math.sin(fig.yaw) * 0.12 * fig.s;
+    p.z += Math.cos(fig.yaw) * 0.12 * fig.s;
+    return p;
+  }
+
   _head(fig) {
     const p = fig.root.position.clone();
     p.y += fig.model.height * 1.02;
@@ -1716,7 +1740,7 @@ export default class CombatScene extends Scene {
     if (ev.hit) {
       fd.play('hit', t, 0.62 / Math.sqrt(this.speed), { power: ev.crit ? 1.6 : ev.dmg > 5 ? 1.25 : 0.95 });
       const bone = def.monsterId === 'skeleton';
-      this.vfx.hitSparks(t, at, { crit: ev.crit, seed: this._seed(), bone, blood: !bone });
+      this.vfx.hitSparks(t, at, { crit: ev.crit, seed: this._seed(), bone, blood: !bone, dir: new THREE.Vector3(fd.pos.x - fa.pos.x, 0, fd.pos.z - fa.pos.z) });
       this._say(fd, String(ev.dmg), ev.crit ? 'crit' : 'dmg', t, { cls: def.side === 'party' ? 'party' : '', dx: (Math.sin(t * 13) * 0.5) });
       this.ctx.audio.sfx('hit');
       // Every connecting blow gets a beat of hit-stop; heavy ones shake the camera.
@@ -1770,7 +1794,7 @@ export default class CombatScene extends Scene {
     } else {
       fig.die(this.time, from.x, from.z, { holy: ev.holy });
       this.vfx.dust(this.time + 0.45, this._killPos(fig, from).setY(0), { seed: this._seed(), big: c.size === 'L', night: this.night });
-      this.hud.float(c.side === 'party' ? (c.ref.status === 'dead' ? 'Killed' : 'Down') : 'Slain', 'kill', this._killPos(fig, from), this.time + 0.15, { rise: 0.25, solo: c.side === 'party' });
+      this.hud.float(c.side === 'party' ? (c.ref.status === 'dead' ? 'Killed' : 'Down') : 'Slain', 'kill', this._killPos(fig, from), this.time + 0.15, { rise: 1.7, solo: c.side === 'party' });
     }
     this.overlay.teamRing(c.id, c.side).visible = false;
     fig.blob.visible = false;
@@ -1811,7 +1835,6 @@ export default class CombatScene extends Scene {
       case 'missile': delay = this.vfx.magicMissile(T, hand, tgtPos, ev.hits?.[0]?.bolts?.length ?? 1, this._seed()); break;
       case 'fireball':
         delay = this.vfx.fireball(T, hand, centre.clone().setY(0.9), (tact.size + 0.5) * TILE, this._seed()).detonate;
-        this._decal(centre, 'scorch', (tact.size + 0.5) * TILE * 0.85);
         break;
       case 'cone': delay = this.vfx.coneFire(T, hand, fig.yaw, (tact.size + 0.5) * TILE, this._seed()); break;
       case 'lightning': {
@@ -1858,7 +1881,15 @@ export default class CombatScene extends Scene {
         const vic = e.byId(hh.id);
         const dtype = { fireball: 'fire', cone: 'fire', missile: 'magic', lightning: 'shock', shock: 'shock' }[tact.vfx] ?? '';
         const shownHp = this.veil.has(hh.id) ? this.veil.get(hh.id).hp : vic.hp.cur;
-        this._say(f2, String(hh.dmg), 'dmg', this.time + (hh.saved ? 0.05 : 0) + (area ? 0.08 + k * 0.05 : 0), {
+        // Blast numbers wait for the bloom and step out past the fire's rim.
+        let push = null;
+        if (tact.vfx === 'fireball') {
+          push = new THREE.Vector3(f2.pos.x - centre.x, 0, f2.pos.z - centre.z);
+          if (push.lengthSq() < 0.01) push.set(0.3, 0, 0.6);
+          push.normalize().multiplyScalar((tact.size + 0.5) * TILE * 0.42).setY(0.5);
+        }
+        this._say(f2, String(hh.dmg), 'dmg', this.time + (hh.saved ? 0.05 : 0) + (area ? (push ? 0.3 + k * 0.11 : 0.08 + k * 0.05) : 0), {
+          push,
           cls: `${vic.side === 'party' ? 'party' : ''} ${dtype}`,
           tag: area ? { name: vic.name, hp: Math.max(0, shownHp) / vic.hp.max, lost: hh.dmg / vic.hp.max } : null,
         });
@@ -1875,7 +1906,12 @@ export default class CombatScene extends Scene {
         this._say(f2, 'Asleep', 'status', this.time + 0.2);
       }
       if (hh.effect === 'held') this._say(f2, 'Held', 'status', this.time);
-      if (hh.effect === 'nauseous') this._say(f2, 'Nauseous', 'status', this.time);
+      if (hh.effect === 'nauseous') {
+        this._say(f2, 'Nauseous', 'status', this.time);
+        f2.setState('sick');
+        (this._sick ??= new Set()).add(hh.id);
+        this.vfx.retch(this.time + 0.2, () => this._mouthPos(f2), `sick-${hh.id}`, this._seed(), () => f2.yaw);
+      }
       if (hh.effect === 'charmed') {
         this._say(f2, 'Charmed', 'status', this.time);
         this.overlay.teamRing(hh.id, 'party');
@@ -1912,31 +1948,23 @@ export default class CombatScene extends Scene {
     // Keep the whole fight in view when it fits (a stable tactical camera);
     // otherwise frame the actor, its likely targets and its neighbours.
     const MAX = all ? 21.5 : 18.5;
-    let fit = this._fitBox(live);
+    // A temple's statue is the hero prop: when it stands near the fight it is
+    // framed with the combatants (whole, not sliced by the screen edge).
+    const st = (this.field.features?.props ?? []).find((p) => p.type === 'statue');
+    const mark = st && live.some((c) => Battlefield.dist(c.x, c.y, st.x, st.y) <= 6) ? [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([dx, dy]) => ({ x: st.x + dx, y: st.y + dy })) : [];
+    let fit = this._fitBox([...live, ...mark]);
+    if (fit.need > MAX + 6.5) fit = this._fitBox(live);
     if (fit.need > MAX) fit = this._fitBox([act, ...near, ...allies]);
     // Too spread out: keep the actor and its nearest foe (and its neighbours) only.
     if (fit.need > MAX && near.length > 1) fit = this._fitBox([act, near[0], ...allies.filter((o) => d(o, act) <= 1.5)]);
     let { cx, cz, need } = fit;
     const ap = sq2w(act.x, act.y);
-    if (need > MAX) {
+    if (need > MAX && !(mark.length && need <= MAX + 6.5)) {
       const k = Math.min(0.3, 1 - MAX / need);
       cx += (ap.x - cx) * k;
       cz += (ap.z - cz) * k;
     }
-    let dist = Math.max(MIN, Math.min(MAX, need));
-    // A temple's statue is the hero prop: when it stands near the fight, the
-    // frame leans toward it (and widens a touch) so it sits in the picture.
-    const st = (this.field.features?.props ?? []).find((p) => p.type === 'statue');
-    if (st) {
-      const sx = st.x * TILE + TILE / 2;
-      const sz = st.y * TILE + TILE / 2;
-      const sd = Math.hypot(sx - cx, sz - cz);
-      if (sd < 11) {
-        cx += (sx - cx) * 0.28;
-        cz += (sz - cz) * 0.28;
-        dist = Math.min(MAX + 1.5, dist + sd * 0.12);
-      }
-    }
+    const dist = Math.max(MIN, Math.min(MAX + (mark.length ? 6.5 : 0), need));
     this.fightCenter = new THREE.Vector3(cx, 0, cz);
     if (soft) {
       // Small corrections while walking: drift, don't lurch.
@@ -1997,10 +2025,17 @@ export default class CombatScene extends Scene {
     const mm = mean('monster');
     let sep = pm && mm && pm.distanceTo(mm) > 0.1 ? mm.sub(pm).setY(0).normalize() : null;
     if (around?.length >= 2) sep = sq2w(around[1].x, around[1].y).sub(sq2w(around[0].x, around[0].y)).setY(0).normalize();
-    const marks = (this.field.features?.props ?? []).filter((p) => p.type === 'statue' || p.type === 'altar').map((p) => Object.assign(new THREE.Vector3(p.x * TILE + TILE / 2, p.type === 'statue' ? 2.2 : 1.0, p.y * TILE + TILE / 2), { w: p.type === 'statue' ? 14 : 4 }));
+    const marks = (this.field.features?.props ?? []).filter((p) => p.type === 'statue' || p.type === 'altar').map((p) => Object.assign(new THREE.Vector3(p.x * TILE + TILE / 2, p.type === 'statue' ? 2.2 : 1.0, p.y * TILE + TILE / 2), { w: p.type === 'statue' ? 20 : 4 }));
     const probe = this.camera.clone();
-        const yaws = around ? Array.from({ length: 16 }, (_, i) => (i / 16) * Math.PI * 2 - Math.PI) : [0.32, -0.32, 0, 0.62, -0.62, 0.95, -0.95, Math.PI / 2, -Math.PI / 2];
+        const yaws = around ? Array.from({ length: 16 }, (_, i) => (i / 16) * Math.PI * 2 - Math.PI) : [0.32, -0.32, 0, 0.62, -0.62, 0.95, -0.95, 1.25, -1.25, Math.PI / 2, -Math.PI / 2];
+    const yaw0 = this.cam.goalYaw;
     for (const yaw of yaws) {
+      // Score each bearing with the framing it would really get (target and
+      // distance depend on the bearing), so landmarks are judged where they land.
+      if (!around && marks.length) {
+        this.cam.goalYaw = yaw;
+        this._frameCombatants(false, null, false, true);
+      }
       const off = new THREE.Vector3(Math.sin(yaw) * Math.cos(this.cam.pitch), Math.sin(this.cam.pitch), Math.cos(yaw) * Math.cos(this.cam.pitch)).multiplyScalar(this.cam.goalDist);
       const pos = this.cam.goalTarget.clone().add(off);
       // Prefer a bearing that lays the two sides out across the (wide) screen.
@@ -2025,15 +2060,18 @@ export default class CombatScene extends Scene {
         probe.position.copy(pos);
         probe.lookAt(this.cam.goalTarget.x, 0.6, this.cam.goalTarget.z);
         probe.updateMatrixWorld(true);
-        for (const m of marks) {
-          const v = m.clone().project(probe);
-          if (v.z < 1 && v.x > -0.7 && v.x < 0.12 && v.y > -0.6 && v.y < 0.55) land += m.w;
-        }
+        const inside = (p) => {
+          const v = p.clone().project(probe);
+          return v.z < 1 && v.x > -0.94 && v.x < 0.3 && v.y > -0.7 && v.y < 0.74;
+        };
+        // The statue counts only when it is whole on screen: plinth and head.
+        for (const m of marks) if (inside(m) && (m.w < 10 || (inside(m.clone().setY(0.1)) && inside(m.clone().setY(3.0))))) land += m.w;
       }
       const n = this.diorama.occluders(pos, pts) * (around ? 3 : 1) + (around ? 0 : Math.abs(yaw - 0.32) * 2) + along * 14 + crowd - land;
       if (this.params.camlog) console.warn('YAW', yaw.toFixed(2), 'occ', this.diorama.occluders(pos, pts), 'along', along.toFixed(2), 'land', land, 'n', n.toFixed(2));
       if (!best || n < best.n) best = { n, yaw };
     }
+    this.cam.goalYaw = yaw0;
     this.cam.yaw = this.cam.goalYaw = best.yaw;
   }
 
@@ -2132,6 +2170,18 @@ export default class CombatScene extends Scene {
 
   _updateFigures() {
     const t = this.time;
+    // The nauseous recover (or fall): their retching ends.
+    if (this._sick?.size) {
+      for (const id of [...this._sick]) {
+        const c = this.engine.byId(id);
+        if (!c || !c.fx?.nauseous || this.engine.out(c)) {
+          this.vfx.kill(`sick-${id}`);
+          this._sick.delete(id);
+          const f = this.figures.get(id);
+          if (f && f.state === 'sick') f.setState('idle');
+        }
+      }
+    }
     // Sleepers' "Z"s end when they wake (or fall).
     if (this._zzz?.size) {
       for (const id of [...this._zzz]) {

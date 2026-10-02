@@ -165,7 +165,7 @@ export function buildDiorama(field, o = {}) {
         if (fy > 0 && field.wallS[field.idx(fx, fy - 1)]) ao = Math.min(ao, 0.55 + 0.45 * Math.min(1, ly / 0.4));
       }
       const n = hash(tx >> 2, ty >> 2, 77);
-      const rub = k === 'rubble' ? 1 : k === 'outside' ? 0.85 : k === 'house' ? 0.5 : 0;
+      const rub = k === 'rubble' ? 1 : k === 'outside' ? 0.4 : k === 'house' ? 0.5 : 0;
       void n;
       const flag = k === 'flag' || k === 'room' ? 1 : 0;
       // Puddles in low spots of the street.
@@ -272,11 +272,13 @@ export function buildDiorama(field, o = {}) {
         gc.rgb *= 1.0 - smoothstep(0.3, 0.5, kerb) * (1.0 - smoothstep(0.5, 0.62, kerb)) * 0.45;
         // Mortar gaps (dark in the albedo) collect moss and grime in patches.
         float lum = dot(gc.rgb, vec3(0.3, 0.55, 0.15));
-        float gap = 1.0 - smoothstep(0.08, 0.2, lum);
-        float mossN = smoothstep(0.46, 0.74, gFbm(vWPos.xz * 0.33 + 4.0)) * (0.55 + 0.45 * (1.0 - gAO * 0.6));
-        gc.rgb = mix(gc.rgb, vec3(0.13, 0.17, 0.07), gap * mossN * 0.85);
+        // (Only the true joints: dark stones themselves never turn to moss,
+        // which read as big dark stains across the flags.)
+        float gap = 1.0 - smoothstep(0.04, 0.1, lum);
+        float mossN = smoothstep(0.5, 0.78, gFbm(vWPos.xz * 0.33 + 4.0)) * (0.55 + 0.45 * (1.0 - gAO * 0.6));
+        gc.rgb = mix(gc.rgb, vec3(0.2, 0.25, 0.11), gap * mossN * 0.5);
         // Moss and weeds creeping into cracks and around broken slabs.
-        gc.rgb = mix(gc.rgb, vec3(0.11, 0.15, 0.06), (crack * 0.5 + brkRim * 0.6) * mossN);
+        gc.rgb = mix(gc.rgb, vec3(0.18, 0.23, 0.1), (crack * 0.4 + brkRim * 0.45) * mossN);
         // Worn, polished wheel/foot paths.
         float worn = smoothstep(0.55, 0.78, gFbm(vWPos.xz * 0.09 + 11.0)) * (1.0 - wR);
         gc.rgb *= 1.0 + 0.2 * worn;
@@ -298,8 +300,9 @@ export function buildDiorama(field, o = {}) {
         // Puddles cover whole stones (no water-only-in-the-joints lattice that
         // would glint as a waffle under torchlight).
         float puddle = smoothstep(0.62, 0.8, wet) * smoothstep(sHh - 0.25, sHh + 0.05, pLevel);
-        gc.rgb *= mix(1.0, 0.66, wet);
-        gc.rgb = mix(gc.rgb, gc.rgb * vec3(0.42, 0.45, 0.5), puddle);
+        // Damp and standing water read as sheen, not as dark stains on the setts.
+        gc.rgb *= mix(1.0, 0.8, wet);
+        gc.rgb = mix(gc.rgb, gc.rgb * vec3(0.6, 0.63, 0.68), puddle);
         // Grime gradient: soot and dirt darkening toward wall feet and gutters.
         gc.rgb *= mix(0.62, 1.0, smoothstep(0.55, 0.95, gAO));
         gc.rgb *= mix(0.35, 1.0, gAO);
@@ -337,10 +340,10 @@ export function buildDiorama(field, o = {}) {
         // come from the low roughness), with a soft ripple of the far rooftops.
         { float pf = pow(1.0 - clamp(dot(normalize(vNormal), normalize(vViewPosition)), 0.0, 1.0), 3.0);
           vec3 skyR = ${night ? 'vec3(0.05, 0.07, 0.13)' : 'vec3(0.34, 0.4, 0.5)'} * (0.8 + 0.4 * gFbm(vWPos.xz * 0.6 + 40.0));
-          outgoingLight = mix(outgoingLight, outgoingLight * 0.5 + skyR, puddle * (0.3 + 0.6 * pf)); }
+          outgoingLight = mix(outgoingLight, outgoingLight * 0.6 + skyR * 0.8, puddle * (0.45 + 0.5 * pf)); }
         // Puddle glints and fire-lit paving never blow out into bloom blobs.
         float gPk = max(outgoingLight.r, max(outgoingLight.g, outgoingLight.b));
-        outgoingLight *= gPk > 0.35 ? (0.35 + (gPk - 0.35) / (1.0 + (gPk - 0.35) / 0.42)) / gPk : 1.0;
+        outgoingLight *= gPk > 0.5 ? (0.5 + (gPk - 0.5) / (1.0 + (gPk - 0.5) / 0.7)) / gPk : 1.0;
         #include <opaque_fragment>
       `);
   };
@@ -372,6 +375,9 @@ export function buildDiorama(field, o = {}) {
   const linenMat = pbr('cloth', 0xd8ccb2);
   const rubbleMat = libMat('wall_ruin', 0x9a9082);
   const coreMat = libMat('floor_rubble', 0x7a6e60);
+  const CUT_H = 0.62;
+  const interiorVeil = new THREE.MeshBasicMaterial({ color: 0x080605, transparent: true, opacity: 0.5, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 });
+  disposables.push(interiorVeil);
   const gloomMat = (() => {
     const c = document.createElement('canvas');
     c.width = 4;
@@ -570,9 +576,14 @@ export function buildDiorama(field, o = {}) {
       // camera would eat the frame or hide the fight (see setView).
       for (const variant of ['full', 'cut']) {
         const B = house[variant];
-        const hh = variant === 'cut' ? 1.05 + seed * 0.25 : height;
+        const hh = variant === 'cut' ? CUT_H : height;
         if (variant === 'cut') {
-          brokenWall(B, place, len, hh, Math.floor(seed * 9973) + f.d.charCodeAt(0) * 31, wallMat, { timber: style === 1 });
+          // A short, cleanly capped wall base: the house drops to its footprint
+          // (no tall jagged shell, no dollhouse) so the eye stays on the fight.
+          B.add(place(runBox(len + 0.004, hh, 0.34, 0), len / 2, hh / 2, -0.17), wallMat);
+          B.add(place(worldBox(len + 0.1, 0.08, 0.46, 1), len / 2, hh + 0.04, -0.17), capMat);
+          B.add(place(worldBox(len + 0.02, 0.025, 0.3, 1), len / 2, hh + 0.09, -0.17), coreMat, { cast: false });
+          if (style === 1) for (const at of [0.07, len - 0.07]) B.add(place(worldBox(0.2, hh + 0.16, 0.22, 1), at, (hh + 0.16) / 2, -0.11), darkWood);
         } else if (ruined) {
           // Jagged broken wall top.
           const segs = Math.max(2, Math.round(len / 1.1));
@@ -665,13 +676,16 @@ export function buildDiorama(field, o = {}) {
     for (let i = 0; i < fuv.count; i++) fuv.setXY(i, fuv.getX(i) * iw / 1.1, fuv.getY(i) * id / 1.1);
     // Cut-away: an interior floor and a furnished dollhouse inside the low walls.
     house.cut.add(floor.clone(), ruined ? libMat('floor_rubble', 0x7a6c60) : pbr('plank', 0x6e6258), { p: [(hx0 + hx1) / 2, 0.02, (hz0 + hz1) / 2] }, { cast: false });
+    // The unplayable interior recedes into shadow: one even dark veil over the
+    // whole floor (it reads as the shade inside the walls, not a lit room).
+    house.cut.add(new THREE.PlaneGeometry(iw - 0.5, id - 0.5).rotateX(-Math.PI / 2), interiorVeil, { p: [(hx0 + hx1) / 2, 0.04, (hz0 + hz1) / 2] }, { cast: false, receive: false });
     // Interior gloom: a soft dark gradient creeping in from every wall foot
     // (rooms read as roofless shadowed shells, not lit display boxes).
     for (const [cx, cz, w, d, rot] of [[(hx0 + hx1) / 2, hz0 + 0.95, iw - 0.4, 1.5, 0], [(hx0 + hx1) / 2, hz1 - 0.95, iw - 0.4, 1.5, Math.PI], [hx0 + 0.95, (hz0 + hz1) / 2, id - 0.4, 1.5, Math.PI / 2], [hx1 - 0.95, (hz0 + hz1) / 2, id - 0.4, 1.5, -Math.PI / 2]]) {
       house.cut.add(new THREE.PlaneGeometry(w, d).rotateX(-Math.PI / 2), gloomMat, { p: [cx, 0.035, cz], r: [0, rot, 0] }, { cast: false, receive: false });
     }
     // Debris across the floor: fallen masonry, a snapped beam, broken boards.
-    for (let k = 0; k < Math.round(iw * id * 0.35); k++) {
+    for (let k = 0; k < Math.round(iw * id * 0.16); k++) {
       const px = hx0 + 0.5 + hash(k, 21, seed * 37) * (iw - 1);
       const pz = hz0 + 0.5 + hash(k, 22, seed * 37) * (id - 1);
       const kind = hash(k, 23, seed * 37);
@@ -679,7 +693,6 @@ export function buildDiorama(field, o = {}) {
       else if (kind < 0.85) house.cut.add(worldBox(0.6 + hash(k, 26, seed) * 0.7, 0.03, 0.14, 1), woodMat, { p: [px, 0.05, pz], r: [0, hash(k, 27, seed) * 3, (hash(k, 28, seed) - 0.5) * 0.15] }, { cast: false });
       else house.cut.add(worldBox(0.2, 0.2, 1.6 + hash(k, 29, seed), 1), darkWood, { p: [px, 0.12, pz], r: [0.1, hash(k, 30, seed) * 3, 0.12] });
     }
-    if (!ruined) furnish(house, iw, id);
     if (!ruined) {
       const alongX = iw >= id;
       const span = alongX ? id : iw;
@@ -1379,7 +1392,7 @@ export function buildDiorama(field, o = {}) {
             float n2 = texture2D(tNoise, vec2(vW.z * 0.23 - uT * 0.01, vW.y * 0.17 + vW.x * 0.05)).r;
             float h = smoothstep(0.0, 0.12, vUv.y) * smoothstep(1.0, 0.55, vUv.y);
             float a = core * h * (0.45 + n * 0.55) * (0.75 + n2 * 0.5);
-            gl_FragColor = vec4(vec3(0.55, 0.66, 1.0) * 0.32 * uK * a, 1.0); }`,
+            gl_FragColor = vec4(vec3(0.55, 0.66, 1.0) * 0.19 * uK * a, 1.0); }`,
       });
       disposables.push(beamMat);
       // Where each shaft lands: a soft, slightly stretched pool of moonlight.
@@ -1395,7 +1408,8 @@ export function buildDiorama(field, o = {}) {
       disposables.push(poolMat);
       const beams = new THREE.Group();
       const tilt = 0.32;
-      for (const [fx, fz, w, yaw] of [[0.32, 0.45, 0.8, 0.5], [0.66, 0.7, 0.6, 0.62], [0.45, 0.85, 0.48, 0.4]]) {
+      // Narrow, dim shafts (they model the scene, they don't wash it out).
+      for (const [fx, fz, w, yaw] of [[0.32, 0.45, 0.4, 0.5], [0.66, 0.7, 0.3, 0.62], [0.45, 0.85, 0.26, 0.4]]) {
         const bx = hx0 + hw * fx + 1.2 - Math.sin(yaw) * 1.3;
         const bz = hz0 + hd * fz - 1.0 - Math.cos(yaw) * 1.3;
         const g = new THREE.CylinderGeometry(w * 0.85, w, 9, 28, 1, true).translate(0, 4.5, 0);
@@ -1414,13 +1428,13 @@ export function buildDiorama(field, o = {}) {
         beams.add(pool);
         disposables.push(pg);
         // Dust motes drifting inside the shaft.
-        const dm = loopingParticles({ count: 26, at: new THREE.Vector3(bx + Math.sin(yaw) * 0.6, 1.8, bz + Math.cos(yaw) * 0.6), spread: w * 0.7, spreadY: 1.5, vel: [0.03, 0.02, 0.02], turb: 0.12, life: 8, size: 0.022, color: 0xd0dcff, additive: true, alpha: 0.75, seed: 41 + fx * 10 });
+        const dm = loopingParticles({ count: 44, at: new THREE.Vector3(bx + Math.sin(yaw) * 0.6, 1.8, bz + Math.cos(yaw) * 0.6), spread: w * 0.9, spreadY: 1.6, vel: [0.03, 0.02, 0.02], turb: 0.12, life: 8, size: 0.024, color: 0xd8e2ff, additive: true, alpha: 0.85, seed: 41 + fx * 10 });
         group.add(dm.obj);
         ambient.push(dm);
       }
       if (statuePos) {
         // A moonbeam falls squarely on Tyr: the hall's key light on its hero prop.
-        const g = new THREE.CylinderGeometry(0.95, 1.15, 10, 28, 1, true).translate(0, 5, 0);
+        const g = new THREE.CylinderGeometry(0.5, 0.6, 10, 28, 1, true).translate(0, 5, 0);
         const sbm = beamMat.clone();
         sbm.uniforms.uT = beamMat.uniforms.uT;
         sbm.uniforms.uK.value = 0.45;
@@ -1434,7 +1448,7 @@ export function buildDiorama(field, o = {}) {
         const pg = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
         const pool = new THREE.Mesh(pg, poolMat);
         pool.position.set(statuePos.x + 0.2, 0.03, statuePos.z + 0.9);
-        pool.scale.set(2.8, 1, 3.2);
+        pool.scale.set(1.6, 1, 1.9);
         pool.renderOrder = 4;
         beams.add(pool);
         disposables.push(pg);
@@ -1654,11 +1668,12 @@ export function buildDiorama(field, o = {}) {
         let big = false;
         if (camera && !hides) {
           g.box.getCenter(_c);
-          big = screenCover(g.box, camera) > 0.09 && camPos.distanceTo(_c) < fightD + 5;
+          big = screenCover(g.box, camera) > 0.12 && camPos.distanceTo(_c) < fightD - 1.5;
         }
         const cut = hides || big || fore;
         g.full.visible = !cut;
         g.cut.visible = cut;
+        if (g.h.smoke) g.h.smoke.visible = !cut;
         for (const tc of g.h.torches ?? []) {
           tc.flame.visible = !cut;
           if (tc.light) tc.light.userData.hidden = cut;
@@ -1675,8 +1690,10 @@ export function buildDiorama(field, o = {}) {
       }
       // Loose props (high beams, tall columns) dissolve and then drop out
       // entirely (no speckled ghost past the hole's rim); walls keep a ghost.
-      g.fadeTarget = hides ? (g.w?.prop ? 0 : 0.22) : fore ? (g.w?.prop ? 0 : 0.6) : 1;
-      g.full.visible = !(g.w?.prop && (hides || fore) && g.fade && g.fade.value < 0.04);
+      // Walls in the way dissolve completely (a half-dithered dark ghost
+      // reads as a stain on the paving from the tactics camera).
+      g.fadeTarget = hides || fore ? 0 : 1;
+      g.full.visible = !((hides || fore) && g.fade && g.fade.value < 0.04);
       g.cut.visible = false;
     }
   }
@@ -1698,8 +1715,10 @@ export function buildDiorama(field, o = {}) {
   // Chimney smoke.
   for (const hs of houses) {
     if (!hs.chimney) continue;
-    const sm = loopingParticles({ count: 10, at: new THREE.Vector3(hs.chimney.x, hs.chimney.y, hs.chimney.z), spread: 0.15, vel: [0.25, 0.7, 0.12], turb: 0.3, life: 7, size: 1.1, grow: 2.5, color: night ? 0x1c1e24 : 0x5a5854, additive: false, alpha: night ? 0.3 : 0.2, seed: hs.seed * 50 });
+    const sm = loopingParticles({ count: 10, at: new THREE.Vector3(hs.chimney.x, hs.chimney.y, hs.chimney.z), spread: 0.15, vel: [0.25, 0.7, 0.12], turb: 0.3, life: 7, size: 1.1, grow: 2.5, color: night ? 0x2a2c34 : 0x8a8680, additive: false, alpha: night ? 0.22 : 0.14, seed: hs.seed * 50 });
     group.add(sm.obj);
+    // A cut-away house has no chimney: its smoke must not hang over the street.
+    hs.smoke = sm.obj;
     ambient.push(sm);
   }
   // Dust motes hanging in the air over the fight (day) / drifting ash (night).
