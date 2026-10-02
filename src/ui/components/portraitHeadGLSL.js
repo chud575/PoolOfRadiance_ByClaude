@@ -222,7 +222,7 @@ float skin(vec3 p) {
     float ear = sdEll(eq, vec3(0.0085, 0.029 * es, 0.0175 * es));
     ear = smax(ear, -sdEll(eq - vec3(0.0068, -0.003 * es, 0.002), vec3(0.004, 0.0155 * es, 0.009 * es)), 0.0028);
     ear = smin(ear, sdEll(eq - vec3(0.002, -0.026 * es, 0.003), vec3(0.0052, 0.0072, 0.0068)), 0.004);
-    if (ELF > 0.01) ear = smin(ear, sdRC(eq, vec3(0.0, 0.012, -0.004), vec3(0.004 + 0.007 * ELF, 0.022 + 0.032 * ELF, -0.014 - 0.012 * ELF), 0.0075, 0.0014), 0.007);
+    if (ELF > 0.01) ear = smin(ear, sdRC(eq, vec3(0.0, 0.01, -0.004), vec3(0.008 + 0.012 * ELF, 0.026 + 0.046 * ELF, -0.02 - 0.016 * ELF), 0.008, 0.0012), 0.008);
     gEar = ear;
     d = smin(d, ear, 0.006);
   }

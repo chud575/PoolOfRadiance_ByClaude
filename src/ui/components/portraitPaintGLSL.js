@@ -111,6 +111,11 @@ float hairField(vec3 p, float sk) {
     if (uHair == 1 && FEM > 0.5) d = smin(d, sdEll(p - vec3(0.0, -0.01, -0.05), vec3(0.08, 0.07, 0.068)) + clumps(p, 18.0, 0.002), 0.02);
   }
   if (uHelm == 1) d = max(d, p.y - (0.018 + 0.13 * p.z));
+  // Elves wear their hair behind the ears: the long points always show.
+  if (ELF > 0.3) {
+    vec3 eq = vec3(abs(p.x), p.y, p.z) - vec3(0.074 * W, 0.006, -0.016);
+    d = smax(d, -(sdEll(eq, vec3(0.03, 0.05 + 0.02 * ELF, 0.028)) ), 0.008);
+  }
   return d;
 }
 

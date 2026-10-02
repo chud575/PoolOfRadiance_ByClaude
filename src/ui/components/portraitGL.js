@@ -196,8 +196,17 @@ function setup(ch, o) {
   // differences at half strength, with the race's own cues restored on top.
   const ix = (k) => HEAD_PARAMS.indexOf(k);
   for (const k of ['W', 'LONG', 'JAW', 'CHIN', 'CHEEK', 'NOSE', 'BRIDGE', 'TIP', 'EYE', 'SP', 'LIPS', 'MOUTH']) params[ix(k)] = 1 + (params[ix(k)] - 1) * 0.5;
-  const RACE = { elf: { LONG: 1.03, W: 0.95, CHEEK: 1.06, JAW: 0.94 }, halfElf: { LONG: 1.015, W: 0.98 }, dwarf: { W: 1.06, NOSE: 1.08, BRIDGE: 1.15, TIP: 1.12, JAW: 1.06 }, halfling: { W: 1.04, LONG: 0.95, CHEEK: 1.06, NOSE: 0.94 }, gnome: { NOSE: 1.25, TIP: 1.3, W: 1.02 } }[app.race] ?? {};
+  const RACE = {
+    elf: { LONG: 1.04, W: 0.94, CHEEK: 1.08, JAW: 0.92, CHIN: 0.92 },
+    halfElf: { LONG: 1.015, W: 0.98 },
+    // dwarves (women too): broad face, heavy brow, broad strong nose
+    dwarf: { W: 1.09, NOSE: 1.1, BRIDGE: 1.25, TIP: 1.2, NWIDTH: 1.12, JAW: 1.08, BROW: 1.2, LONG: 0.97 },
+    // halflings: round face, apple cheeks, button nose, large eyes
+    halfling: { W: 1.1, LONG: 0.9, CHEEK: 1.1, NOSE: 0.86, TIP: 0.95, EYE: 1.12, JAW: 0.9, CHIN: 0.88 },
+    gnome: { NOSE: 1.3, TIP: 1.4, W: 1.04, EYE: 1.06 },
+  }[app.race] ?? {};
   for (const [k, v] of Object.entries(RACE)) params[ix(k)] *= v;
+  if (app.race === 'halfling') params[ix('HOOK')] -= 0.5;
   u.uP.value.set(params);
   const torso = o.crop === 'torso';
   // A three-quarter turn (alternating sides by seed, as a painter varies a gallery of portraits).

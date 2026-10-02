@@ -334,7 +334,8 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
 
   // ================================================================ BODY
   // Pelvis, belly, ribcage and shoulder girdle melt into one torso.
-  const hipW = B.hip / 0.09;
+  // Hips scale with the race, but never into a gourd: stocky races carry their breadth in the shoulders.
+  const hipW = Math.min(1.12, B.hip / 0.09) * (app.race === 'dwarf' ? 0.9 : 1);
   E(at(J.pelvis, pR, [0, 0.0, -0.012]), [0.145 * g * hipW, 0.105 * s, 0.1 * g], pR, torsoMat);
   E(vlerp(J.pelvis, J.neck, 0.36), [0.132 * g, 0.13 * s, 0.09 * g], sR, torsoMat);
   const chestC = at(vlerp(J.pelvis, J.neck, 0.66), sR, [0, 0, 0.008]);
@@ -782,7 +783,7 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
     for (let i = 0; i < 4; i++) sc.torus(at(chestC, sR, [0, 0.12 - i * 0.03, 0.112 * g / s + 0.016]), 0.016 * s, 0.0028 * s, mMul(sR, mRotX(Math.PI / 2)), { mat: M.darkLeather, g: GR.belt, k: 0 });
     sleeves(M.cloth, 0.004 * s, 0.7);
     splitSkirt(M.cloth, 0.3 * s);
-    skirt(M.leather, 0.13 * s, 0.045, { k: 0.01 * s });
+    skirt(M.leather, 0.13 * s, app.race === 'dwarf' || app.fem ? 0.012 : 0.03, { k: 0.01 * s });
     for (const k of ['L', 'R']) {
       const sg = k === 'L' ? 1 : -1;
       const { sh, el, wr } = arms[k];
