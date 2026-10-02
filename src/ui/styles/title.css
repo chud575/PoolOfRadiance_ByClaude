@@ -11,7 +11,7 @@
   position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.9s var(--ease);
   background:
     radial-gradient(ellipse 34% 52% at 17% 52%, rgba(3, 3, 10, 0.55), transparent 100%),
-    linear-gradient(90deg, rgba(4, 4, 12, 0.92) 0%, rgba(6, 6, 16, 0.8) 22%, rgba(6, 6, 16, 0.3) 42%, rgba(6, 6, 16, 0) 58%),
+    linear-gradient(90deg, rgba(4, 4, 12, 0.55) 0%, rgba(6, 6, 16, 0.42) 22%, rgba(6, 6, 16, 0.16) 42%, rgba(6, 6, 16, 0) 58%),
     linear-gradient(0deg, rgba(3, 3, 8, 0.75) 0%, rgba(3, 3, 8, 0) 18%);
 }
 .por-title[data-mode='menu'] .por-title-scrim { opacity: 1; }
@@ -57,7 +57,7 @@
    point, crest at the head, so the menu sits on the skin instead of a void */
 .por-mm-banner {
   --pt: 3.2em;
-  position: absolute; left: 5.2vw; top: -1px; bottom: 9.5vh; width: 28em; pointer-events: none !important;
+  position: absolute; left: 5.2vw; top: -1px; bottom: 19vh; width: 28em; pointer-events: none !important;
   background: linear-gradient(90deg, #5e4418, #e6c477 12%, #fff1c0 22%, #a07a30 40%, #f0cf7c 60%, #7a5a22 82%, #d6b05a 92%, #4a3410);
   clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--pt)), 50% 100%, 0 calc(100% - var(--pt)));
   filter: drop-shadow(0 18px 40px rgba(0, 0, 0, 0.7));
@@ -144,8 +144,16 @@ html[data-classic='1'] .por-mm-banner { display: none; }
 @keyframes por-mm-bar { from { transform: scaleX(0.82); } to { transform: scaleX(1); } }
 .por-mm-list .por-menu-item { transition: color 0.12s var(--ease); }
 .por-mm-list .por-menu-item:disabled { opacity: 0.5; }
-.por-mm-list .por-menu-item.locked { color: #a8a090; text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9); cursor: not-allowed; }
-.por-mm-list .por-menu-item.locked.hl { color: #ddd5c2; }
+.por-mm-list .por-menu-item.locked { color: rgba(150, 146, 140, 0.62); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9); cursor: not-allowed; filter: saturate(0.2); }
+.por-mm-list .por-menu-item.locked .por-lock { opacity: 0.8; }
+.por-mm-list .por-menu-item.locked.hl { color: #cfc8b8; filter: none; }
+/* the lock's reason, set inline beside the row once it is focused */
+.por-menu-lockwhy {
+  display: inline-block; margin-left: 0.9em; font-family: var(--font-body); font-style: italic; font-weight: 400; text-transform: none;
+  font-size: 0.5em; letter-spacing: 0.04em; vertical-align: 0.25em; color: #e0b98a; opacity: 0; transform: translateX(-0.4em);
+  transition: opacity 0.18s var(--ease), transform 0.22s var(--ease);
+}
+.por-menu-item.hl .por-menu-lockwhy { opacity: 1; transform: none; }
 .por-mm-list .por-menu-item.locked.hl::before { background: linear-gradient(135deg, #e4ddcc, #8a8478); box-shadow: 0 0 6px rgba(220, 214, 200, 0.45); }
 .por-mm-list .por-menu-item.locked.hl::after { background: linear-gradient(90deg, rgba(190, 186, 200, 0.24), rgba(190, 186, 200, 0.06) 55%, transparent); border-left-color: #c8bfa8; }
 .por-lock { width: 0.62em; height: 0.7em; margin-left: 0.7em; vertical-align: 0.02em; color: #b8a77e; opacity: 0.95; filter: drop-shadow(0 1px 1px #000); }
@@ -230,8 +238,8 @@ button.por-title-legend-item:hover { color: #fff; border-color: rgba(216, 178, 9
 .por-credits-s { font-family: var(--font-display); font-weight: 700; letter-spacing: 0.24em; text-transform: uppercase; color: #3a2410; font-size: 0.92em; }
 .por-credits-role { margin: 0 0 1.25em; }
 .por-credits-role .role { font-family: var(--font-display); font-weight: 700; font-size: 0.7em; letter-spacing: 0.3em; text-transform: uppercase; color: #8a2a14; margin-bottom: 0.3em; }
-.por-credits-role .name { font-family: var(--font-display); font-size: calc(1.14em * var(--text-scale)); line-height: 1.35; color: #241608; max-width: 24em; margin: 0 auto; }
-.por-credits-p { font-family: var(--font-display); font-style: italic; color: #3a2814; line-height: 1.6; max-width: 26em; margin: 0 auto 1em; font-size: calc(0.98em * var(--text-scale)); }
+.por-credits-role .name { font-family: var(--font-display); font-variant-caps: small-caps; font-feature-settings: 'kern', 'onum'; letter-spacing: 0.07em; font-size: calc(1.16em * var(--text-scale)); line-height: 1.3; color: #241608; max-width: 24em; margin: 0 auto; }
+.por-credits-p { font-family: var(--font-body); font-feature-settings: 'kern', 'onum'; font-style: italic; color: #3a2814; line-height: 1.6; max-width: 26em; margin: 0 auto 1em; font-size: calc(0.98em * var(--text-scale)); }
 .por-credits-gap { height: 2.4em; display: grid; place-items: center; }
 .por-credits-gap i { width: 0.42em; height: 0.42em; transform: rotate(45deg); background: #8a5a22; opacity: 0.55; box-shadow: -1.2em 1.2em 0 -0.08em rgba(138, 90, 34, 0.5), 1.2em -1.2em 0 -0.08em rgba(138, 90, 34, 0.5); }
 html[data-classic='1'] .por-credits-crawl, html[data-classic='1'] .por-credits-crawl * { color: var(--ega-15) !important; }
@@ -260,8 +268,14 @@ html[data-classic='1'] .por-credits-h2::before, html[data-classic='1'] .por-cred
 }
 .por-intro-skip:hover { color: #fff; border-color: var(--por-gilt-lo); }
 .por-intro-text {
-  max-width: 50em; text-align: center; font-size: calc(1.28em * var(--text-scale)); line-height: 1.6; color: var(--por-parchment);
-  letter-spacing: 0.01em; text-shadow: 0 1px 2px #000;
+  max-width: 46em; text-align: center; font-family: var(--font-body); font-style: italic; font-feature-settings: 'kern', 'onum', 'liga';
+  font-size: calc(1.3em * var(--text-scale)); line-height: 1.62; color: #f1e6c8;
+  letter-spacing: 0.012em; text-shadow: 0 1px 2px #000; hanging-punctuation: first;
+}
+/* the crawl opens on an engraved gilt initial, like the heading caps */
+.por-intro-text::first-letter {
+  font-family: var(--font-display); font-style: normal; font-weight: 700; font-size: 1.5em; line-height: 0.8; color: var(--por-gilt-hi);
+  text-shadow: 0 0 12px rgba(245, 200, 110, 0.35), 0 2px 0 #140c02; padding-right: 0.04em;
 }
 .por-intro-text .ghost { color: transparent; text-shadow: none; }
 .por-intro.final .por-intro-text { font-style: italic; color: #fff3d6; }
@@ -271,14 +285,23 @@ html[data-classic='1'] .por-credits-h2::before, html[data-classic='1'] .por-cred
   position: absolute !important; right: 8vw; top: 50%; width: 25em; padding: 1.8em 2em 1.4em; z-index: 1;
   font-size: calc(0.95em * var(--text-scale)); text-align: center; visibility: hidden;
 }
-.por-intro-procl p { margin: 0 0 0.9em; line-height: 1.55; text-align: left; }
+.por-intro-procl p { margin: 0 0 0.9em; line-height: 1.55; text-align: left; font-family: var(--font-body); font-feature-settings: 'kern', 'onum'; hyphens: auto; }
+/* a rubricated drop initial opens the decree */
+.por-intro-procl p:first-of-type::first-letter {
+  float: left; font-family: var(--font-display); font-weight: 700; font-size: 3.05em; line-height: 0.82; margin: 0.06em 0.1em 0 0; color: #8a1a10;
+  text-shadow: 0 1px 0 rgba(255, 240, 210, 0.6);
+}
 .por-procl-head { font-family: var(--font-display); font-weight: 700; font-size: 1.12em; letter-spacing: 0.12em; white-space: nowrap; text-transform: uppercase; color: #3a1a08; }
 .por-procl-city { font-style: italic; color: #5a3a1a; margin-top: 0.1em; }
 .por-intro-procl .por-rule { filter: sepia(1) saturate(1.5) brightness(0.55); }
 .por-procl-sign { display: flex; justify-content: space-between; align-items: center; font-style: italic; color: #5a3a1a; margin-top: 0.6em; }
 .por-procl-seal {
-  display: grid; place-items: center; width: 3.2em; height: 3.2em; border-radius: 50%; font-size: 1em; color: rgba(255, 210, 190, 0.8);
-  background: radial-gradient(circle at 38% 35%, #d8453a, #8e1a14 60%, #5a0c08);
-  box-shadow: 0 2px 4px rgba(60, 10, 0, 0.6), inset 0 0 0 0.35em rgba(120, 20, 14, 0.9), inset 0 0 0 0.45em rgba(255, 120, 100, 0.25);
+  display: block; width: 3.6em; height: 3.6em; font-size: 0; color: transparent;
+  background: var(--wax-seal) center / contain no-repeat;
+  filter: drop-shadow(0 2px 2px rgba(50, 8, 0, 0.55)) drop-shadow(0 0 1px rgba(40, 6, 0, 0.6));
   transform: rotate(-8deg);
 }
+
+/* classic 1988 mode: bitmap sub-titles over the EGA-quantised card */
+.por-title-classic-subs { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+.por-title-classic-sub { position: absolute; image-rendering: pixelated; image-rendering: crisp-edges; }

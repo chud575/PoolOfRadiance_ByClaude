@@ -280,7 +280,7 @@ export function marbleFloorTexture() {
     let r, g, b;
     if (s.dark) {
       // oxblood marble with pale veins
-      r = 104 + cloud * 36; g = 44 + cloud * 18; b = 38 + cloud * 14;
+      r = 84 + cloud * 30; g = 46 + cloud * 16; b = 42 + cloud * 14; // a muted, dusty oxblood
       r += (vein + vein2) * 60; g += (vein + vein2) * 50; b += (vein + vein2) * 42;
     } else {
       // cream limestone with grey-gold veins

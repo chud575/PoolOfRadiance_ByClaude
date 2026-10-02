@@ -119,5 +119,16 @@ export function merge(list) {
   });
   const out = mergeGeometries(norm, false);
   for (const g of list) g.dispose();
+  // degenerate faces (collapsed slivers, coincident extrude points) leave zero
+  // normals; normalize(vec3(0)) is NaN in GLSL and one NaN pixel spreads across
+  // the whole frame through the bloom blur, so patch them to face up
+  const n = out.attributes.normal;
+  if (n) {
+    const a = n.array;
+    for (let i = 0; i < a.length; i += 3) {
+      const l = a[i] * a[i] + a[i + 1] * a[i + 1] + a[i + 2] * a[i + 2];
+      if (!(l > 1e-10)) { a[i] = 0; a[i + 1] = 1; a[i + 2] = 0; }
+    }
+  }
   return out;
 }

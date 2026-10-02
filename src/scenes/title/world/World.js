@@ -33,8 +33,20 @@ export function createWorld() {
   const city = createCity();
   const terrace = createTerrace();
   const dragon = createDragon({ sunDir: SUN_DIR });
-  const chamber = createChamber();
-  scene.add(sky, sea, city.group, terrace.group, dragon.group, chamber.group);
+  // the council chamber (and its dozen sculpted figures) is only built once the
+  // prologue needs it: the title card and menus never pay for it
+  let chamber = null;
+  const ensureChamber = () => {
+    if (!chamber) {
+      chamber = createChamber();
+      chamber.group.visible = false;
+      scene.add(chamber.group);
+      api.chamber = chamber;
+    }
+    return chamber;
+  };
+  const outdoor = [sky, sea, city.group, terrace.group, dragon.group];
+  scene.add(...outdoor);
 
   // ---- lighting: sunset rim from the sea, cool dusk fill, pool + braziers are the keys
   const hemi = new THREE.HemisphereLight(0x8a6aaa, 0x241618, 0.95);
@@ -64,10 +76,31 @@ export function createWorld() {
   castleKey.position.set(150, 70, -40);
   castleKey.target.position.set(55, -2, -128);
   scene.add(castleKey, castleKey.target);
+  // The Old City aerial's own rig: a low warm key raking in from the west (frame
+  // left, the sunset side) with long shadows across the ruins and the castle
+  // mound, and a cool moonrise rim from the east that edges every tower.
+  const cityKey = new THREE.DirectionalLight(0xffa070, 0);
+  cityKey.position.set(55 - 100, -10 + 34, -120 + 22);
+  cityKey.target.position.set(55, -10, -120);
+  cityKey.shadow.mapSize.set(2048, 2048);
+  {
+    const c = cityKey.shadow.camera;
+    c.left = -70; c.right = 70; c.top = 55; c.bottom = -45; c.near = 20; c.far = 260;
+  }
+  cityKey.shadow.bias = -0.0006;
+  cityKey.shadow.normalBias = 0.08;
+  cityKey.visible = false;
+  const cityRim = new THREE.DirectionalLight(0x8fa4ff, 0);
+  cityRim.position.set(55 + 110, -10 + 30, -120 - 6);
+  cityRim.target.position.set(55, -10, -120);
+  cityRim.visible = false;
+  scene.add(cityKey, cityKey.target, cityRim, cityRim.target);
   // warm spill from City Hall's open doors (lights the portico in the prologue)
   const hall = new THREE.PointLight(0xffa860, 30, 22, 1.6);
   hall.position.set(-20, -11.2, -50.5);
+  hall.visible = false;
   scene.add(hall);
+  outdoor.push(hemi, sun, fill, moon, castleKey);
 
   // ---- low sun raking through the ruined colonnade: soft volumetric shafts ----------
   const shaftMat = new THREE.ShaderMaterial({
@@ -121,6 +154,7 @@ export function createWorld() {
   });
   const systems = [motes, embersL, embersR, drift];
   for (const s of systems) scene.add(s.points);
+  outdoor.push(shafts, ...systems.map((s) => s.points));
 
   // the dragon glides along a screen-space lane the current camera pose keeps
   // clear of the logo and panels (see TitleScene DRAGON / Intro shots)
@@ -135,7 +169,9 @@ export function createWorld() {
     dragon,
     sun,
     sky,
-    chamber,
+    chamber: null,
+    ensureChamber,
+    ensureCrowd: () => city.ensureCrowd(),
     hemi,
     fill,
     /**
@@ -159,6 +195,16 @@ export function createWorld() {
       sun.color.setHex(0xff8a4a).lerp(new THREE.Color(0xffa060), k);
       moon.intensity = k * 0.55 + (this._moon ?? 0);
       castleKey.intensity = 4.5 * (0.4 + 0.6 * k);
+      if (this._stage?.cityKey && !this._classic) {
+        // the Old City aerial is lit by its own raking key: drop the soft fills so
+        // the shadow side falls to a cool violet and the lit planes carry the frame
+        hemi.intensity *= 0.5;
+        fill.intensity *= 0.35;
+        sun.intensity *= 0.55;
+        castleKey.intensity = 0;
+        scene.fog.color.setHex(0x584c88);
+        scene.fog.density = 0.0068;
+      }
       if (this._classic) {
         // 1988: no sunset grade — neutral light so stone lands on EGA greys and
         // the scene quantises to flat fills instead of orange/pink dither
@@ -179,11 +225,43 @@ export function createWorld() {
       if (on === !!this._classic) return;
       this._classic = on;
       U.uClassic.value = on ? 1 : 0;
-      shafts.visible = !on;
-      drift.points.visible = !on;
+      this._applyStage();
       dragon.setClassic(on);
       terrace.setClassic?.(on);
+      city.setClassic?.(on);
+      // 1988 had single-pixel stars, not soft sprites: motes shrink to one EGA pixel
+      motes.material.uniforms.uMaxPx.value = on ? 4 : 64;
       if (!this._interior) this.setLook(this._look ?? 0);
+    },
+    /**
+     * Which outdoor sets a shot needs (the intro's city shots never see the
+     * terrace, only City Hall needs its door light): lights and meshes that are
+     * off-screen cost nothing, which keeps software GL captures quick.
+     */
+    setStage({ terrace: tv = true, hall: hv = false, drift: dv = true, cityKey: ck = false } = {}) {
+      const was = this._stage?.cityKey;
+      this._stage = { terrace: tv, hall: hv, drift: dv, cityKey: ck };
+      if (hv) city.ensureCrowd();
+      if (was !== ck) city.setShadows(ck);
+      this._applyStage();
+    },
+    _applyStage() {
+      const st = this._stage ?? { terrace: true, hall: false, drift: true };
+      const inside = !!this._interior;
+      for (const o of outdoor) o.visible = !inside;
+      terrace.group.visible = !inside && st.terrace;
+      for (const s of [motes, embersL, embersR]) s.points.visible = !inside && st.terrace && !(this._classic && s !== motes);
+      drift.points.visible = !inside && st.drift && !this._classic;
+      shafts.visible = !inside && st.terrace && !this._classic;
+      hall.visible = !inside && st.hall;
+      const ck = !inside && !!st.cityKey && !this._classic;
+      cityKey.visible = ck;
+      cityRim.visible = ck;
+      cityKey.castShadow = ck;
+      sun.castShadow = !ck;
+      cityKey.intensity = ck ? 10 : 0;
+      cityRim.intensity = ck ? 3.6 : 0;
+      if (chamber) chamber.group.visible = inside;
     },
     /** Show or hide the dragon (the intro keeps it out of the close city shots). */
     setDragon(on) {
@@ -204,6 +282,8 @@ export function createWorld() {
       on = !!on;
       if (on === !!this._interior) return;
       this._interior = on;
+      if (on) ensureChamber();
+      this._applyStage();
       if (on) {
         sun.intensity = 0; hemi.intensity = 0.06; fill.intensity = 0; moon.intensity = 0; castleKey.intensity = 0;
         scene.fog.density = 0.012;
@@ -219,14 +299,14 @@ export function createWorld() {
       city.update(t, camera, SUN_DIR);
       terrace.update(t, camera, SUN_DIR);
       dragon.update(t, camera, dragonOn ? dragonLane : null);
-      chamber.update(t);
+      if (chamber && this._interior) chamber.update(t);
       for (const s of systems) s.update(t, px);
     },
     dispose() {
       city.dispose();
       terrace.dispose();
       dragon.dispose();
-      chamber.dispose();
+      chamber?.dispose();
       for (const s of systems) s.dispose();
       shaftMat.dispose();
       shafts.children.forEach((m) => m.geometry.dispose());

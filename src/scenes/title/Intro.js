@@ -45,7 +45,7 @@ const SHOTS = [
   },
   {
     t: [24.4, 32.4],
-    keys: [{ p: V(-32, -10.3, -32), l: V(-19, -9.9, -58) }, { p: V(-25.5, -10.6, -38.5), l: V(-19.5, -9.5, -58) }],
+    keys: [{ p: V(-32.5, -10.2, -31), l: V(-19.5, -10.5, -58) }, { p: V(-26, -10.5, -37.5), l: V(-20, -10.1, -58) }],
     look: 0.7,
     moon: 2.4,
     caption: 'City Hall',
@@ -113,6 +113,11 @@ export class IntroCinematic {
       this.fade,
     ]);
     this._lastShot = -1;
+    // live runs open on black: build the council chamber now, while the hitch is invisible
+    if (t0 > 0) {
+      world?.ensureChamber?.();
+      world?.ensureCrowd?.();
+    }
   }
 
   /** Current shot index for intro-local time. */
@@ -135,13 +140,14 @@ export class IntroCinematic {
     camera.lookAt(look);
     const L = Array.isArray(s.look) ? s.look[0] + (s.look[1] - s.look[0]) * e : s.look;
     this.world?.setInterior?.(!!s.interior);
+    this.world?.setStage?.({ terrace: i === 0 || i === SHOTS.length - 1, hall: i === 3, drift: i !== 1 && i !== 3, cityKey: i === 1 });
     this.world?.setMoon?.(s.moon ?? 0);
     // the dragon only wheels over the open sea and the final crane; in the close
     // city shots it would cross the lens at an awkward, cropped scale
     // over the sea it crosses the frame in profile, high in the sky; on the final
     // crane it returns to the title card's lane once the camera has settled
     this.world?.setDragonLane?.(i === 0
-      ? { x: [1.25, -0.5], y: [0.4, 0.52], d: [95, 120], period: 10, duty: 0.82, time: lt + 0.2, scale: 1.2, bank: 0.55 }
+      ? { x: [0.92, -0.72], y: [0.36, 0.5], d: [95, 120], period: 10, duty: 0.82, time: lt + 0.2, scale: 1.2, bank: 0.55 }
       : i === SHOTS.length - 1 && lt > 45.5 ? { ...DRAGON.card, time: lt - 45.5 - DRAGON.card.phase } : null);
     this.world?.setLook?.(L);
 
@@ -195,6 +201,7 @@ export class IntroCinematic {
 
   dispose() {
     this.world?.setInterior?.(false);
+    this.world?.setStage?.({});
     this.world?.setMoon?.(0);
     this.world?.setDragonLane?.(null);
     this.world?.setLook?.(0);

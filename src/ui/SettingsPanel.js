@@ -106,8 +106,11 @@ export function arrowSvg(dir) {
 }
 /** D-pad glyph: the cross with the pressed arm lit. */
 function dpadSvg(dir) {
-  return svgEl(`<path d="M6 1.5h4v4.5h4.5v4H10v4.5H6V10H1.5V6H6z" fill="rgba(8,10,20,0.85)" stroke="currentColor" stroke-opacity="0.55" stroke-width="0.8" stroke-linejoin="round"/>`
-    + `<g transform="rotate(${ROT[dir] ?? 0} 8 8)"><path d="M6.2 1.8h3.6v3.9L8 7.5 6.2 5.7z" fill="#fff4cc"/></g>`, 'por-dpad');
+  // the dark cross, then the pressed arm filled gilt with a black arrowhead
+  // pointing out along it: Up/Down/Left/Right read at a glance
+  return svgEl(`<path d="M5.9 1.2h4.2v4.7h4.7v4.2h-4.7v4.7H5.9v-4.7H1.2V5.9h4.7z" fill="rgba(8,10,20,0.9)" stroke="currentColor" stroke-opacity="0.6" stroke-width="0.7" stroke-linejoin="round"/>`
+    + `<circle cx="8" cy="8" r="1.1" fill="currentColor" fill-opacity="0.35"/>`
+    + `<g transform="rotate(${ROT[dir] ?? 0} 8 8)"><path d="M6.1 1.4h3.8v4.6H6.1z" fill="#f5d98b" stroke="#fff4cc" stroke-width="0.4"/><path d="M8 2.1 L9.55 4.6 H6.45 Z" fill="#140c02"/></g>`, 'por-dpad');
 }
 const keyCap = (code) => {
   const l = keyLabel(code);
@@ -272,8 +275,17 @@ export class SettingsPanel {
         h('span.por-set-tabs-hint', [padGlyph('RB'), h('span.por-keycap', ['E'])]),
       ]),
       ...this.tabBtns,
-      h('div.por-set-seal', [phlanSeal(), h('div.por-set-seal-cap', ['Changes take effect at once and are kept between sessions.'])]),
     );
+    // context help for the focused option, anchored to the foot of the sidebar
+    this.helpName = h('div.por-set-help-name');
+    this.helpText = h('div.por-set-help-text');
+    this.helpEl = h('div.por-set-help', [
+      h('div.por-set-help-head', [phlanSeal(), h('span.por-set-help-cap', ['About this option'])]),
+      this.helpName,
+      this.helpText,
+      h('div.por-set-help-foot', ['Changes apply at once and are kept between sessions.']),
+    ]);
+    this.tabsEl.append(this.helpEl);
     this.headEl = h('div.por-set-head');
     this.bodyEl = h('div.por-set-body');
     const footer = h('div.por-set-footer', [
@@ -477,12 +489,19 @@ export class SettingsPanel {
     for (const [a, codes] of Object.entries(input.bindings)) for (const c of codes) if (!c.startsWith('pad:')) seen.set(c, [...(seen.get(c) ?? []), a]);
     // movement/menu overlaps are by design (arrows drive both)
     const benign = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+    const names = new Map(ACTION_LABELS.flatMap(([, list]) => list));
     for (const row of this.rowEls) {
       const a = row.dataset.action;
       const codes = (input.bindings[a] ?? []).filter((c) => !c.startsWith('pad:'));
-      const bad = codes.some((c) => !benign.has(c) && (seen.get(c)?.length ?? 0) > 1);
+      const others = new Set();
+      for (const c of codes) if (!benign.has(c)) for (const b of seen.get(c) ?? []) if (b !== a) others.add(names.get(b) ?? b);
+      const bad = others.size > 0;
       row.classList.toggle('conflict', bad);
+      row._conflict = bad ? [...others].join(', ') : null;
+      row.querySelector('.por-bind-warn')?.remove();
+      if (bad) row.querySelector('.por-bind-label')?.append(h('span.por-bind-warn', { title: `Also bound to ${row._conflict}` }, [`⚠ also ${row._conflict}`]));
     }
+    this._updateHelp();
   }
 
   _beginCapture(action, slot) {
@@ -525,8 +544,28 @@ export class SettingsPanel {
     this._markFocus();
   }
 
+  /** Fill the sidebar's help box from the focused row. */
+  _updateHelp() {
+    if (!this.helpEl) return;
+    const r = this.rowEls[this.focus];
+    if (!r) return;
+    if (r._row) {
+      this.helpName.textContent = r._row.label;
+      this.helpText.textContent = r._row.help ?? r._row.desc ?? 'Adjust with ← and →.';
+    } else if (r.dataset.action) {
+      const label = r.querySelector('.por-bind-label')?.firstChild?.textContent ?? r.dataset.action;
+      const warn = r._conflict;
+      this.helpName.textContent = label;
+      this.helpText.textContent = warn
+        ? `This key is also bound to ${warn}. Pressing it will do both — rebind one of them.`
+        : 'Click a key (or press Enter) and then the new key. Esc cancels, Del clears the slot.';
+    }
+    this.helpEl.classList.toggle('warn', !!r._conflict);
+  }
+
   _markFocus() {
     this.rowEls.forEach((r, j) => r.classList.toggle('focus', j === this.focus));
+    this._updateHelp();
     this._updateScrollCue();
     const r = this.rowEls[this.focus];
     if (r && this.bodyEl.scrollHeight > this.bodyEl.clientHeight) {

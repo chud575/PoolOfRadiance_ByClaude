@@ -18,6 +18,7 @@ export function createTerrace({ seed = 7 } = {}) {
   group.name = 'terrace';
   const disposables = [];
   const U = { uTime: { value: 0 } };
+  const uClassic = { value: 0 };
 
   const texMat = (name, extra = {}) => {
     const t = getTextureSet(name);
@@ -36,21 +37,41 @@ export function createTerrace({ seed = 7 } = {}) {
   // grime/damp layer and the pilgrims' polished path sit on top.
   const floorMat = texMat('hd_limestone', { vertexColors: true });
   floorMat.onBeforeCompile = (sh) => {
+    sh.uniforms.uClassic = uClassic;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWP;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
         varying vec3 vWP;
+        uniform float uClassic;
         ${NOISE}
         void paving(vec2 w, out vec3 tc, out float wet, out float gap, out float joint, out float crack) {
-          float setts = step(0.66, fbm(w * 0.05 + vec2(3.1, 8.4))) * (1.0 - step(length(w), 7.5));
+          float setts = step(0.66, fbm(w * 0.05 + vec2(3.1, 8.4))) * (1.0 - step(length(w), 9.5));
           vec2 cs = setts > 0.5 ? vec2(0.5, 0.42) : vec2(2.1, 1.35);
           float row = floor(w.y / cs.y);
           float xx = w.x + hash12(vec2(row, 7.0 + setts)) * cs.x;
           vec2 id = vec2(floor(xx / cs.x), row + setts * 1000.0);
           vec2 local = vec2(fract(xx / cs.x) * cs.x, fract(w.y / cs.y) * cs.y);
           float cw = cs.x;
+          float rr0 = length(w);
+          float ringed = step(4.8, rr0) * (1.0 - step(9.2, rr0));
+          if (ringed > 0.5) {
+            // the Pool's surround: concentric courses of small dressed setts, each
+            // ring broken into voussoir-like stones that grow with the radius
+            float ringW = rr0 < 6.4 ? 0.42 : 0.56;
+            float r0 = rr0 < 6.4 ? 4.8 : 6.4;
+            float ri = floor((rr0 - r0) / ringW);
+            float rc = r0 + (ri + 0.5) * ringW;
+            float circ = 6.2831853 * rc;
+            float nseg = floor(circ / (ringW * 1.45));
+            float sgm = (atan(w.y, w.x) / 6.2831853 + 0.5) * nseg + hash12(vec2(ri, r0)) ;
+            id = vec2(floor(sgm), ri + r0 * 100.0 + 2000.0);
+            cw = circ / nseg;
+            cs = vec2(cw, ringW);
+            local = vec2(fract(sgm) * cw, rr0 - r0 - ri * ringW);
+            setts = 1.0;
+          }
           if (setts < 0.5 && hash12(id + 13.0) < 0.45) {
             float sp = cs.x * (0.34 + 0.32 * hash12(id + 5.0));
             if (local.x > sp) { local.x -= sp; cw = cs.x - sp; id += vec2(0.5, 0.0); } else { cw = sp; }
@@ -70,6 +91,8 @@ export function createTerrace({ seed = 7 } = {}) {
           float cl = abs(lc.x * (hash12(id + 2.0) - 0.5) * 2.0 + lc.y + (vnoise(w * 4.0) - 0.5) * 0.25);
           crack = step(0.04, hs) * step(hs, 0.16) * (1.0 - smoothstep(0.004, 0.018, cl));
           wet = smoothstep(0.63, 0.69, fbm(w * 0.2 + vec2(11.0, 2.0))) * (1.0 - smoothstep(4.0, 2.5, abs(abs(w.x) - 6.2) + abs(w.y + 1.2) * 0.5));
+          // splashed and seeping round the Pool: wet setts that darken and glint
+          wet = max(wet, (1.0 - smoothstep(5.0, 7.6, rr0)) * smoothstep(0.35, 0.6, fbm(w * 0.9 + 4.0)));
         }`)
       .replace('#include <map_fragment>', `#include <map_fragment>
         vec3 pvT; float pvWet, pvGap, pvJoint, pvCrack;
@@ -96,9 +119,15 @@ export function createTerrace({ seed = 7 } = {}) {
           c = mix(c, c * 1.16 + 0.025, wear * (1.0 - pvJoint) * (1.0 - pvGap) * 0.55);
           // wet stone darkens
           c *= mix(1.0, 0.58, pvWet * (1.0 - pvGap));
+          if (uClassic > 0.5) {
+            // the 1988 card's paving: two flat greys and black joints
+            c = mix(vec3(0.3), vec3(0.55), step(0.93, pvT.r));
+            c = mix(c, vec3(0.02), step(0.5, pvJoint));
+          }
           diffuseColor.rgb = c;
         }`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+        if (uClassic > 0.5) { pvWet = 0.0; }
         roughnessFactor = clamp(roughnessFactor - 0.25 * (1.0 - smoothstep(4.5, 7.5, length(vWP.xz))), 0.3, 1.0);
         roughnessFactor = mix(roughnessFactor, 0.2, pvWet * (1.0 - pvJoint) * (1.0 - pvGap));
         roughnessFactor = mix(roughnessFactor, 1.0, max(pvGap, pvJoint * 0.7));`);
@@ -207,16 +236,45 @@ export function createTerrace({ seed = 7 } = {}) {
     disposables.push(g);
   }
 
-  // ---- the pool rim (lathe) ----------------------------------------------------
+  // ---- the pool rim: a carved coping of sixteen dressed blocks ----------------------
+  // bull-nosed inner lip, a sunken rune channel in the coping, a rolled outer
+  // moulding and a broad plinth step; each block cut separately (tight mortar
+  // joints), with its own tone and slightly chipped arrises.
   const rimProfile = [
-    [2.9, -0.7], [2.9, 0.18], [2.98, 0.34], [3.12, 0.44], [3.5, 0.5], [3.86, 0.46], [3.98, 0.36], [3.98, 0.1], [4.35, 0.08], [4.45, 0.0],
+    [2.9, -0.5], [2.9, 0.36], [2.94, 0.52], [3.03, 0.64], [3.14, 0.7], [3.25, 0.71], [3.27, 0.64], [3.67, 0.64], [3.69, 0.71],
+    [3.92, 0.7], [4.06, 0.65], [4.15, 0.53], [4.17, 0.34], [4.22, 0.31], [4.74, 0.29], [4.82, 0.23], [4.85, 0.04], [4.95, 0.0],
   ].map(([r, y]) => new THREE.Vector2(r, y));
   {
-    const g = new THREE.LatheGeometry(rimProfile, 96);
-    const uv = g.attributes.uv;
-    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 14, uv.getY(i) * 1.2);
-    tint(g, 0xcfc6b8);
-    const rim = new THREE.Mesh(g, stoneMat);
+    const blocks = [];
+    const NB = 16;
+    for (let b = 0; b < NB; b++) {
+      const gap = 0.006;
+      const g = new THREE.LatheGeometry(rimProfile, 8, (b / NB) * Math.PI * 2 + gap, (Math.PI * 2) / NB - gap * 2);
+      const pp = g.attributes.position;
+      for (let i = 0; i < pp.count; i++) {
+        // chipped arrises: the outer roll and inner nose lose a little here and there
+        const x = pp.getX(i), y = pp.getY(i), z = pp.getZ(i);
+        const r = Math.hypot(x, z);
+        const ch = Math.sin(x * 9.1 + z * 7.3 + b) * Math.cos(z * 11.7 - x * 5.1);
+        if (y > 0.55 && ch > 0.75) pp.setY(i, y - 0.03 * (ch - 0.75) * 4);
+        void r;
+      }
+      g.computeVertexNormals();
+      const uv = g.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 14, uv.getY(i) * 1.2);
+      const tone = 0.86 + 0.16 * R.next();
+      tint(g, new THREE.Color(0xd8cfc0).multiplyScalar(tone), { aoBottom: 0, aoTop: 0.45, aoStrength: 0.35 });
+      // the inner face is wet, algae-dark stone down to the waterline
+      const cc = g.attributes.color;
+      for (let i = 0; i < pp.count; i++) {
+        const r = Math.hypot(pp.getX(i), pp.getZ(i));
+        if (r < 2.96 && pp.getY(i) < 0.5) cc.setXYZ(i, cc.getX(i) * 0.32, cc.getY(i) * 0.36, cc.getZ(i) * 0.34);
+        else if (r < 3.08) cc.setXYZ(i, cc.getX(i) * 0.62, cc.getY(i) * 0.64, cc.getZ(i) * 0.66); // the nose: worn, damp
+      }
+      blocks.push(ni(g));
+    }
+    const g = merge(blocks);
+    const rim = new THREE.Mesh(g, addRimLight(texMat('hd_limestone', { vertexColors: true, roughness: 0.9 }), rimU, 1.4));
     rim.castShadow = true;
     rim.receiveShadow = true;
     group.add(rim);
@@ -224,7 +282,7 @@ export function createTerrace({ seed = 7 } = {}) {
     // rune ring inlaid in the coping: glowing glyph band
     const band = new THREE.RingGeometry(3.28, 3.66, 128, 1);
     band.rotateX(-Math.PI / 2);
-    band.translate(0, 0.505, 0);
+    band.translate(0, 0.645, 0);
     const bandMat = new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: false,
@@ -259,9 +317,9 @@ export function createTerrace({ seed = 7 } = {}) {
   // ---- the radiant water ----------------------------------------------------------
   const waterMat = new THREE.ShaderMaterial({
     uniforms: U,
-    vertexShader: /* glsl */ `varying vec2 vP; void main(){ vP = position.xy / 2.95; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    vertexShader: /* glsl */ `varying vec2 vP; varying vec3 vW; void main(){ vP = position.xy / 2.95; vW = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vW, 1.0); }`,
     fragmentShader: /* glsl */ `
-      uniform float uTime; varying vec2 vP;
+      uniform float uTime; varying vec2 vP; varying vec3 vW;
       ${NOISE}
       void main(){
         float r = length(vP);
@@ -286,14 +344,24 @@ export function createTerrace({ seed = 7 } = {}) {
         // keep the vortex readable at the core: darker spiral lanes
         col *= 0.78 + 0.22 * smoothstep(0.2, 0.8, n2);
         col += vec3(0.1, 0.4, 0.5) * n2 * 0.6;
-        // dark meniscus against the stone
-        col *= 1.0 - smoothstep(0.93, 1.0, r) * 0.7;
+        // depth: the carved wall shows through the shallows as a darker band, the
+        // light deepening toward the heart of the vortex
+        col *= 1.0 - smoothstep(0.86, 0.985, r) * 0.62;
+        // the surface itself: a Fresnel sheen that mirrors the warm dusk sky on the
+        // far side, broken up by the swirl's ripples
+        vec3 V = normalize(cameraPosition - vW);
+        float fres = pow(1.0 - clamp(V.y, 0.0, 1.0), 4.0);
+        float rip = 0.75 + 0.25 * sin(n2 * 18.0 + t * 1.7);
+        col = mix(col, vec3(1.0, 0.62, 0.42) * 0.9, clamp(fres * 0.55 * rip, 0.0, 0.6) * smoothstep(0.1, 0.9, r));
+        // the meniscus: a thin bright line where the water climbs the stone
+        float men = exp(-pow((r - 0.988) / 0.008, 2.0));
+        col += vec3(0.75, 1.15, 1.25) * men * (0.6 + 0.4 * rip);
         gl_FragColor = vec4(col, 1.0);
       }`,
   });
-  const water = new THREE.Mesh(new THREE.CircleGeometry(2.95, 96), waterMat);
+  const water = new THREE.Mesh(new THREE.CircleGeometry(2.99, 96), waterMat);
   water.rotation.x = -Math.PI / 2;
-  water.position.y = 0.12;
+  water.position.y = 0.26;
   group.add(water);
   disposables.push(water.geometry, waterMat);
 
@@ -336,6 +404,7 @@ export function createTerrace({ seed = 7 } = {}) {
     group.add(m);
   }
   // light spill decal on the flagstones
+  let spill = null;
   {
     const g = new THREE.CircleGeometry(12, 64);
     g.rotateX(-Math.PI / 2);
@@ -344,20 +413,35 @@ export function createTerrace({ seed = 7 } = {}) {
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
+      uniforms: U,
       vertexShader: /* glsl */ `varying vec2 vP; void main(){ vP = position.xz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-      fragmentShader: /* glsl */ `varying vec2 vP; void main(){ float r = length(vP); float k = exp(-max(r - 4.2, 0.0) * 0.45) * smoothstep(4.0, 4.6, r); gl_FragColor = vec4(vec3(0.05, 0.22, 0.28) * k, 1.0); }`,
+      fragmentShader: /* glsl */ `uniform float uTime; varying vec2 vP; ${NOISE}
+        void main(){
+          float r = length(vP);
+          float k = exp(-max(r - 4.2, 0.0) * 0.45) * smoothstep(4.6, 5.1, r);
+          // caustics thrown up out of the Pool: a slowly crawling web of light on the flags
+          vec2 q = vP * 1.35;
+          float n1 = fbm(q + vec2(uTime * 0.11, -uTime * 0.07));
+          float n2 = fbm(q * 1.7 - vec2(uTime * 0.09, uTime * 0.13) + n1 * 1.5);
+          float web = pow(1.0 - abs(sin(n2 * 9.0)), 7.0);
+          float reach = exp(-max(r - 4.9, 0.0) * 0.55) * smoothstep(4.85, 5.3, r);
+          vec3 c = vec3(0.05, 0.22, 0.28) * k + vec3(0.2, 0.75, 0.9) * web * reach * 0.42;
+          gl_FragColor = vec4(c, 1.0);
+        }`,
     });
     disposables.push(g, m);
-    group.add(new THREE.Mesh(g, m));
+    spill = new THREE.Mesh(g, m);
+    group.add(spill);
   }
   const poolLight = new THREE.PointLight(0x7fe8ff, 30, 34, 1.4);
   poolLight.position.set(0, 2.2, 0);
   group.add(poolLight);
   // warm bounce off the left brazier and the paving onto the standing colonnade, so
   // the two tall columns read as fluted stone with a lit face, not flat cut-outs
-  const colBounce = new THREE.PointLight(0xffa868, 20, 13, 1.5);
-  colBounce.position.set(-8.6, 3.6, 0.6);
-  group.add(colBounce);
+  const colBounce = new THREE.SpotLight(0xffb478, 260, 30, 0.45, 0.8, 1.4);
+  colBounce.position.set(-2.5, 6.5, 6.5);
+  colBounce.target.position.set(-11.5, 4.6, -7.4);
+  group.add(colBounce, colBounce.target);
 
   // ---- braziers --------------------------------------------------------------------
   const ironMat = new THREE.MeshStandardMaterial({ color: 0x2a2624, roughness: 0.55, metalness: 0.85 });
@@ -489,15 +573,15 @@ export function createTerrace({ seed = 7 } = {}) {
     const m = new THREE.Matrix4().compose(new THREE.Vector3(x, 0, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, ry, lean)), new THREE.Vector3(1, 1, 1));
     for (const g of archColumn({ h: h + 1.6, r: 0.6, flutes: 20, capital, broken, seed, color: 0xd6cdbd })) pieces.push(g.applyMatrix4(m));
   };
-  column(-13, -6, 9.5, { seed: 1 });
-  column(-9.2, -8.2, 9.5, { seed: 2 });
+  column(-13, -6, 7.4, { seed: 1 });
+  column(-9.2, -8.2, 7.4, { seed: 2 });
   column(12.5, -6.6, 5.2, { capital: false, broken: 0.35, seed: 3 });
   column(16.5, -4, 8.6, { capital: false, broken: 0.25, seed: 4 });
   column(-17, 2, 3.4, { capital: false, broken: 0.5, seed: 5 });
   // entablature across the left pair (architrave · triglyph frieze · cornice), sheared off at the right
   {
     const ang = Math.atan2(-8.2 + 6, -9.2 + 13);
-    const m = new THREE.Matrix4().compose(new THREE.Vector3(-11.0, 11.12 + 0.02, -7.05), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -ang, 0.03)), new THREE.Vector3(1, 1, 1));
+    const m = new THREE.Matrix4().compose(new THREE.Vector3(-11.0, 9.02 + 0.02, -7.05), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -ang, 0.03)), new THREE.Vector3(1, 1, 1));
     for (const g of entablature(6.8, { depth: 1.7, seed: 9, color: 0xc8bdaa, brokenEnd: 0.9 })) pieces.push(g.applyMatrix4(m));
   }
   // fallen drums and rubble
@@ -580,8 +664,8 @@ export function createTerrace({ seed = 7 } = {}) {
         }
       }
     };
-    ivy(-13, -6, 10, 41);
-    ivy(-9.2, -8.2, 10, 42);
+    ivy(-13, -6, 8, 41);
+    ivy(-9.2, -8.2, 8, 42);
     ivy(16.5, -4, 8, 43);
     ivy(-17, 2, 4.5, 44);
     const g = new THREE.BufferGeometry();
@@ -593,7 +677,10 @@ export function createTerrace({ seed = 7 } = {}) {
     disposables.push(g, im);
   }
   const ruin = merge(pieces);
-  const ruinMesh = new THREE.Mesh(ruin, stoneMat);
+  // the colonnade's own stone: rain streaks, damp green feet and lichen, and a
+  // stronger sunset rim so the backlit shafts keep their fluting
+  const colMat = addRimLight(texMat('hd_limestone', { vertexColors: true }), rimU, 2.0, { weather: 0.7, ground: 0 });
+  const ruinMesh = new THREE.Mesh(ruin, colMat);
   ruinMesh.castShadow = true;
   ruinMesh.receiveShadow = true;
   group.add(ruinMesh);
@@ -732,6 +819,12 @@ export function createTerrace({ seed = 7 } = {}) {
     },
     /** Classic 1988 mode: no soft glow sprites or heat haze (they quantise to blobs). */
     setClassic(on) {
+      uClassic.value = on ? 1 : 0;
+      brSmoke.visible = !on;
+      spill.visible = !on;
+      // no warm bounce or brazier pools: they quantise to red/orange dither on the greys
+      colBounce.visible = !on;
+      for (const b of braziers) if (b.userData.light) b.userData.light.visible = !on;
       for (const h of hazes) h.visible = !on;
       for (const b of braziers) if (b.userData.sprite) b.userData.sprite.visible = !on;
       glow.visible = !on;

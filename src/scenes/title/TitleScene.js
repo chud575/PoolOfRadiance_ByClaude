@@ -10,6 +10,7 @@ import { IntroCinematic } from './Intro.js';
 import { LoadPanel } from './LoadPanel.js';
 import { Credits } from './Credits.js';
 import { DRAGON } from './world/lanes.js';
+import { glyph, GLYPH_W, GLYPH_H } from '../../render/bitmapFont5x7.js';
 
 /**
  * Title scene: the Pool of Radiance glowing on the old temple terrace above
@@ -83,9 +84,9 @@ export default class TitleScene extends Scene {
     const saves = ctx.saves.list().sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
     this.latestSave = saves[0] ?? null;
     const items = [
-      { id: 'continue', label: 'Continue', key: 'C', locked: !this.latestSave, desc: this.latestSave ? this._saveLine(this.latestSave) : 'Locked — no adventure in progress yet. Begin a New Game; Phlan autosaves as you go.' },
+      { id: 'continue', label: 'Continue', key: 'C', locked: !this.latestSave, lockReason: 'No adventure yet', desc: this.latestSave ? this._saveLine(this.latestSave) : 'Locked — no adventure in progress yet. Begin a New Game; Phlan autosaves as you go.' },
       { id: 'new', label: 'New Game', key: 'N', desc: 'Hear the Council of Phlan, then roll up a party of six.' },
-      { id: 'load', label: 'Load Game', key: 'L', locked: !saves.length, desc: saves.length ? `${saves.length} saved game${saves.length > 1 ? 's' : ''} in the chronicle.` : 'Locked — the chronicle is empty. Save from camp (Encamp) or with F5.' },
+      { id: 'load', label: 'Load Game', key: 'L', locked: !saves.length, lockReason: 'Chronicle empty', desc: saves.length ? `${saves.length} saved game${saves.length > 1 ? 's' : ''} in the chronicle.` : 'Locked — the chronicle is empty. Save from camp (Encamp) or with F5.' },
       { id: 'quick', label: 'Quick Start', key: 'Q', desc: 'Skip ahead with a ready-made party of six adventurers.' },
       { id: 'settings', label: 'Settings', key: 'S', desc: 'Graphics, classic 1988 mode, pace, audio, controls and accessibility.' },
       { id: 'credits', label: 'About & Credits', key: 'A', desc: 'Those who made this homage, and those who made the original.' },
@@ -119,10 +120,18 @@ export default class TitleScene extends Scene {
         this.descEl,
       ]),
     ]);
+    // classic 1988 mode: the card's sub-titles in the 5x7 bitmap font, drawn on
+    // pixel-exact canvases above the EGA pass (see _layoutClassicSubs)
+    this.classicSubs = [
+      { el: this._bitmapLine('ADVANCED DUNGEONS & DRAGONS', '#ff5555'), v: 150 / 1024 },
+      { el: this._bitmapLine('FORGOTTEN REALMS', '#55ffff'), v: 680 / 1024 },
+    ];
+    this.classicSubEl = h('div.por-title-classic-subs', this.classicSubs.map((s) => s.el));
     this.panelEl = h('section.por-title-panel');
     this.legendEl = h('div.por-title-legend');
     this.root = h('div.por-title', [
       h('div.por-title-scrim'),
+      this.classicSubEl,
       this.cardEl,
       this.menuEl,
       this.panelEl,
@@ -134,6 +143,45 @@ export default class TitleScene extends Scene {
       this.fadeEl,
     ]);
     ctx.ui.mount(this.root);
+  }
+
+  /** A line of 5x7 bitmap text on a 1-pixel-per-dot canvas (scaled up with crisp edges). */
+  _bitmapLine(txt, color) {
+    const c = document.createElement('canvas');
+    c.width = txt.length * (GLYPH_W + 1) - 1;
+    c.height = GLYPH_H;
+    const x = c.getContext('2d');
+    x.fillStyle = color;
+    let px = 0;
+    for (const ch of txt) {
+      const cols = glyph(ch);
+      for (let gx = 0; gx < GLYPH_W; gx++) for (let gy = 0; gy < GLYPH_H; gy++) if ((cols[gx] >> gy) & 1) x.fillRect(px + gx, gy, 1, 1);
+      px += GLYPH_W + 1;
+    }
+    c.className = 'por-title-classic-sub';
+    return c;
+  }
+
+  /** Pin the bitmap sub-titles to where the logo's engraved lines sit, one EGA pixel per dot. */
+  _layoutClassicSubs(L, alpha) {
+    const on = !!this._classic && alpha > 0.01;
+    this.classicSubEl.style.display = on ? '' : 'none';
+    if (!on) return;
+    const W = this.root.clientWidth || window.innerWidth;
+    const H = this.root.clientHeight || window.innerHeight;
+    const dot = Math.max(1, Math.round(W / 320));
+    const logoW = L.width * W;
+    const cx = ((L.cx + 1) / 2) * W;
+    const cy = ((1 - L.cy) / 2) * H;
+    for (const s of this.classicSubs) {
+      const c = s.el;
+      const w = c.width * dot, hh = c.height * dot;
+      c.style.width = `${w}px`;
+      c.style.height = `${hh}px`;
+      c.style.left = `${Math.round((cx - w / 2) / dot) * dot}px`;
+      c.style.top = `${Math.round((cy + logoW * 0.5 * (s.v - 0.5) * 1 - hh / 2) / dot) * dot}px`;
+      c.style.opacity = String(alpha);
+    }
   }
 
   _saveLine(s) {
@@ -253,6 +301,7 @@ export default class TitleScene extends Scene {
     if (id === 'new') this.setMode('intro');
     else if (id === 'quick') {
       game.setParty(buildParty('default', rng.int(1, 1e6)));
+      this._leave();
       scenes.goto('explore', { map: 'phlan_slums', x: 1, y: 14, dir: 'E' });
     } else if (id === 'continue' && this.latestSave) this._loadSlot(this.latestSave.slot);
     else if (id === 'load' || id === 'settings' || id === 'credits') this.setMode(id);
@@ -265,11 +314,24 @@ export default class TitleScene extends Scene {
       return;
     }
     this.ctx.game.loadJSON(st);
+    this._leave();
     this.ctx.scenes.goto('explore', {});
   }
 
   _finishIntro() {
+    this._leave();
     this.ctx.scenes.goto('create', {});
+  }
+
+  /**
+   * Leaving for another scene: fade to black and stop shading the title world,
+   * so the next scene's loading never competes with (slow, software-GL) title
+   * frames.
+   */
+  _leave() {
+    this._leaving = true;
+    this.fadeEl.style.transition = 'opacity 0.25s ease';
+    this.fadeEl.style.opacity = '1';
   }
 
   // ------------------------------------------------------------------ frame
@@ -309,11 +371,14 @@ export default class TitleScene extends Scene {
     const reveal = snap || !this.fromBoot ? 1 : THREE.MathUtils.smoothstep(since, 1.2, 3.2);
     const L = this.logoState;
     const introLogo = this.intro?.logoAlpha ?? 0;
-    this.logo.layout(this.camera, { width: L.width * (0.96 + 0.04 * reveal), cx: L.cx, cy: L.cy, alpha: Math.max(L.alpha * reveal, introLogo) });
+    const logoA = Math.max(L.alpha * reveal, introLogo);
+    this.logo.layout(this.camera, { width: L.width * (0.96 + 0.04 * reveal), cx: L.cx, cy: L.cy, alpha: logoA });
+    this._layoutClassicSubs({ ...L, width: L.width * (0.96 + 0.04 * reveal) }, logoA);
     this.logo.uniforms.uSweep.value = this.fromBoot && since < 5 && !snap ? -0.3 + (since - 1.5) * 0.6 : ((t * 0.16) % 1.8) - 0.4;
     this.logo.uniforms.uTime.value = t;
     const fade = snap || !this.fromBoot ? 0 : 1 - THREE.MathUtils.smoothstep(since, 0.2, 2.2);
-    this.fadeEl.style.opacity = String(fade);
+    if (!this._leaving) this.fadeEl.style.opacity = String(fade);
+    else return;
     this.root.classList.toggle('booted', snap || !this.fromBoot || since > 2.6);
     this.panel?.update?.(t, snap);
     const beamTo = BEAM[this.mode] ?? 1;
@@ -334,6 +399,25 @@ export default class TitleScene extends Scene {
     }
     if (this.mode !== 'intro') this.world.setDragonLane(this.camTween ? null : DRAGON[this.mode] ?? null);
     this.world.update(t, this.camera, this.ctx.render.renderer?.getPixelRatio?.() ?? 1);
+  }
+
+  /**
+   * With the clock frozen (debug stills) the frame never changes unless the
+   * camera, mode or look does: render it twice (shadow maps, lazy uploads) and
+   * then keep the preserved canvas instead of re-shading an identical image —
+   * software GL captures spend seconds per title frame.
+   */
+  render() {
+    if (this._leaving) return;
+    if (this.ctx.clock.frozen && this.ctx.render.renderer?.getContextAttributes?.()?.preserveDrawingBuffer) {
+      const m = this.camera.matrixWorld.elements;
+      const sig = `${this.mode}|${this._classic}|${this.ctx.render.width}x${this.ctx.render.height}|${m.map((v) => v.toFixed(4)).join(',')}|${this.logo.uniforms.uAlpha.value.toFixed(3)}`;
+      if (sig === this._frozenSig && this._frozenFrames >= 2) return;
+      if (sig !== this._frozenSig) this._frozenFrames = 0;
+      this._frozenSig = sig;
+      this._frozenFrames++;
+    }
+    super.render();
   }
 
   exit() {

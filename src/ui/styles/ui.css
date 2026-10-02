@@ -149,10 +149,10 @@ html, body {
 .por-frame--parchment {
   color: var(--por-ink);
   background:
-    radial-gradient(ellipse at 30% 18%, rgba(255, 255, 255, 0.32), transparent 60%),
-    radial-gradient(ellipse at 85% 95%, rgba(110, 70, 25, 0.3), transparent 55%),
-    radial-gradient(ellipse at 0% 100%, rgba(110, 70, 25, 0.22), transparent 45%),
-    var(--tex-parchment, linear-gradient(180deg, var(--por-parchment), var(--por-parchment-lo)));
+    var(--tex-vellum-sheet, none) 0 0 / 100% 100% no-repeat,
+    radial-gradient(ellipse at 30% 18%, rgba(255, 255, 255, 0.26), transparent 60%),
+    radial-gradient(ellipse at 85% 95%, rgba(110, 70, 25, 0.22), transparent 55%),
+    var(--tex-parchment, linear-gradient(180deg, var(--por-parchment), var(--por-parchment-lo))) 0 0 / 24em 24em;
   border-image: linear-gradient(135deg, #e8cf8a, #8a6a2a 50%, #5a4216) 1;
   box-shadow:
     0 0 0 1px #000, 0 0 0 4px #2a1d10, 0 0 0 5px var(--por-gilt-lo), 0 18px 50px rgba(0, 0, 0, 0.62),

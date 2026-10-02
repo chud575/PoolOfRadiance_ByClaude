@@ -3,7 +3,7 @@ import { getTextureSet, getGlowTexture } from '../../../render/textures/index.js
 import { createFlameBatch } from '../../../render/lighting.js';
 import { NOISE } from './glsl.js';
 import { prng, ni, worldUV, tint, box, gable, pyramid, cylinder, cone, merge } from './geom.js';
-import { column, dome, gableRoof, robedFigure, addRimLight } from './arch.js';
+import { column, dome, gableRoof, robedFigure, addRimLight, contactShadow } from './arch.js';
 import { bannerTexture } from './heraldry.js';
 import { buildMiniature } from '../../../ui/components/Miniature.js';
 
@@ -42,6 +42,7 @@ export function createCity({ seed = 1988 } = {}) {
   const banners = [];
   const disposables = [];
   const figures = [];
+  let buildCrowd = null;
   const cityTime = { value: 0 };
 
   const stoneCols = [0x8a8076, 0x7a7068, 0x958778, 0x6f675f, 0x857a6b];
@@ -75,9 +76,9 @@ export function createCity({ seed = 1988 } = {}) {
    * door openings, soot darkening toward the burnt top. Local frame: runs
    * along x from -len/2..len/2, base y=0, thickness along z.
    */
-  const ruinWall = (len, h, t, { breach = R.chance(0.5) ? 1 : -1, openings = true } = {}) => {
+  const ruinWall = (len, h, t, { breach = R.chance(0.5) ? 1 : -1, openings = true, tops: topOut = null } = {}) => {
     const sh = new THREE.Shape();
-    const n = Math.max(3, Math.round(len / 0.3));
+    const n = Math.max(3, Math.round(len / (topOut ? 0.55 : 0.3)));
     const hi = h * R.range(0.75, 1);
     const lo = h * R.range(0.12, 0.45);
     sh.moveTo(-len / 2, 0);
@@ -88,7 +89,15 @@ export function createCity({ seed = 1988 } = {}) {
       const along = breach > 0 ? f : 1 - f; // 1 at the breach side
       // a high shoulder that collapses into a ragged V toward the breach
       const prof = hi - (hi - lo) * Math.pow(THREE.MathUtils.smoothstep(along, 0.3, 1), 1.4);
-      const y = Math.max(0.35, prof + (R.next() - 0.5) * 0.55 * Math.min(1, prof / 2));
+      let y = Math.max(0.35, prof + (R.next() - 0.5) * 0.55 * Math.min(1, prof / 2));
+      if (topOut) {
+        // broken along the courses: each block's top sits on a 0.32 m bed joint,
+        // and the break slopes within the block (no flat stepped card silhouette)
+        y = Math.max(0.32, Math.round(y / 0.32) * 0.32);
+        const x0 = -len / 2 + len * f;
+        sh.lineTo(x0 + (i === n ? 0 : len / n * 0.15), y + R.range(-0.08, 0.1));
+        topOut.push([x0, y]);
+      }
       tops.push(y);
       sh.lineTo(-len / 2 + len * f, y);
     }
@@ -113,8 +122,11 @@ export function createCity({ seed = 1988 } = {}) {
         sh.holes.push(hole);
       }
     }
-    const g = new THREE.ExtrudeGeometry(sh, { depth: t, bevelEnabled: false, curveSegments: 3 });
-    g.translate(0, 0, -t / 2);
+    const g = topOut
+      ? new THREE.ExtrudeGeometry(sh, { depth: t - 0.12, bevelEnabled: true, bevelThickness: 0.06, bevelSize: 0.05, bevelSegments: 1, curveSegments: 3 })
+      : new THREE.ExtrudeGeometry(sh, { depth: t, bevelEnabled: false, curveSegments: 3 });
+    g.translate(0, 0, topOut ? -(t - 0.12) / 2 : -t / 2);
+    g.userData.tops = topOut;
     return g;
   };
   /** Soot: darken a tinted geometry toward its burnt top (and green damp at the foot). */
@@ -131,7 +143,13 @@ export function createCity({ seed = 1988 } = {}) {
     return g;
   };
   /** Rubble mound: a squashed, noise-displaced heap of broken stone with blocks on it. */
-  const rubbleMound = (x, z, r, hgt, base, col) => {
+  const rubbleMound = (x, z, r, hgt, base, col, local = null) => {
+    if (local) {
+      // a heap placed in a wall's local frame
+      const p = new THREE.Vector3(local.x, 0, local.z).applyMatrix4(local.m);
+      ({ r, h: hgt, base, col } = local);
+      x = p.x; z = p.z;
+    }
     const g = new THREE.IcosahedronGeometry(1, 2);
     const p = g.attributes.position;
     for (let i = 0; i < p.count; i++) {
@@ -169,18 +187,42 @@ export function createCity({ seed = 1988 } = {}) {
     const m = new THREE.Matrix4().makeRotationY(ry).setPosition(x, base, z);
     if (ruined) {
       // four walls of differing broken heights, no roof
-      const t = 0.5;
+      const t = 0.8;
       const segs = [
         [0, d / 2, w, 0], [0, -d / 2, w, 0], [w / 2, 0, d, Math.PI / 2], [-w / 2, 0, d, Math.PI / 2],
       ];
       for (const [ox, oz, len, r] of segs) {
         if (R.chance(0.22)) continue; // a wall gone entirely
-        const g = ruinWall(len + t, h * R.range(0.55, 1.05), t * R.range(0.9, 1.15), { openings: detail });
+        const tt = t * R.range(0.9, 1.2);
+        const g = ruinWall(len + tt, h * R.range(0.55, 1.05), tt, { openings: detail, tops: detail ? [] : null });
+        const tops = g.userData.tops;
         g.rotateY(r);
         g.translate(ox, 0, oz);
         g.applyMatrix4(m);
         const c = new THREE.Color(col).multiplyScalar(R.range(0.7, 0.86));
         rubble.push(sootify(tint(worldUV(g, 2.2), c, { aoBottom: base, aoTop: base + 2.5 }), base, base + h, { ivy: 0.18 }));
+        if (!detail || !tops) continue;
+        // broken masonry: loose squared blocks sitting proud on the ragged top
+        // (thicker than the core, some half-dislodged), and scree spilling from the foot
+        const wm = new THREE.Matrix4().makeRotationY(r).setPosition(ox, 0, oz).premultiply(m);
+        for (const [tx, ty] of tops) {
+          if (R.chance(0.45)) continue;
+          const bs = R.range(0.35, 0.6);
+          const bg = box(bs * R.range(1, 1.6), bs * 0.7, tt * R.range(0.8, 1.25), { x: tx, y: ty - bs * 0.3, z: R.range(-0.12, 0.12), ry: R.range(-0.25, 0.25), rz: R.range(-0.3, 0.3) });
+          bg.applyMatrix4(wm);
+          rubble.push(sootify(tint(worldUV(bg, 2.2), c.clone().multiplyScalar(R.range(0.8, 1.05))), base, base + h));
+        }
+        for (const side of [-1, 1]) {
+          const nb = R.int(4, 9);
+          for (let k = 0; k < nb; k++) {
+            const bs = R.range(0.2, 0.55);
+            const bx = R.range(-len / 2, len / 2), bz = side * (tt / 2 + R.range(0.1, 1.2));
+            const bg = box(bs, bs * R.range(0.5, 0.9), bs * R.range(0.7, 1.3), { x: bx, y: -0.08, z: bz, ry: R.range(0, 3), rx: R.range(-0.4, 0.4), rz: R.range(-0.4, 0.4) });
+            bg.applyMatrix4(wm);
+            rubble.push(tint(worldUV(bg, 2.2), c.clone().multiplyScalar(R.range(0.65, 0.95))));
+          }
+          if (R.chance(0.6)) rubbleMound(0, 0, 0, 0, 0, 0, { m: wm, x: R.range(-len / 3, len / 3), z: side * (tt / 2 + 0.5), r: R.range(0.9, 1.6), h: R.range(0.4, 0.9), base, col });
+        }
       }
       // heaps of fallen masonry inside the shell and spilling into the street
       rubbleMound(x + R.range(-w, w) * 0.25, z + R.range(-d, d) * 0.25, Math.min(w, d) * R.range(0.3, 0.45), R.range(0.7, 1.6), base, col);
@@ -270,6 +312,20 @@ export function createCity({ seed = 1988 } = {}) {
       for (const g of gr.roof) list.push(tint(g.applyMatrix4(mm), rc));
       for (const g of gr.caps) list.push(tint(g.applyMatrix4(mm), new THREE.Color(rc).multiplyScalar(0.8)));
       for (const g of gr.gables) plaster.push(tint(worldUV(g.applyMatrix4(mm), 2.6), lime));
+      if (R.chance(0.7)) {
+        // a rubble-stone chimney stack through the roof, with a dressed cap and pots
+        const chx = (R.chance(0.5) ? -1 : 1) * (w / 2 - 0.5), chz = R.range(-0.25, 0.25) * d;
+        const chh = rise + R.range(0.9, 1.8);
+        const cg = box(0.75, chh + 0.6, 0.75, { x: chx, y: -0.6, z: chz });
+        cg.applyMatrix4(mm);
+        walls.push(tint(worldUV(cg, 2.4), new THREE.Color(col).multiplyScalar(0.8)));
+        const cap = box(0.95, 0.18, 0.95, { x: chx, y: chh, z: chz });
+        cap.applyMatrix4(mm);
+        fine.push(tint(worldUV(cap, 2), 0x8a8070));
+        const pot = new THREE.CylinderGeometry(0.12, 0.15, 0.4, 6).translate(chx, chh + 0.38, chz);
+        pot.applyMatrix4(mm);
+        roofs.push(tint(worldUV(ni(pot), 1), 0x8a4a34));
+      }
     } else if (kind < 0.87) {
       const rg = pyramid(Math.max(w, d) * 1.12, Math.max(w, d) * 0.5, { y: h - 0.15 });
       rg.applyMatrix4(m);
@@ -312,31 +368,104 @@ export function createCity({ seed = 1988 } = {}) {
     }
   };
 
-  const tower = (x, z, r, h, { roof = 'cone', base = GROUND, lit = 0, list = walls } = {}) => {
+  const flags = []; // pennants on the castle and gate towers (vertex-coloured cloth)
+  const slits = []; // arrow slits and loops: dark recesses that read at any distance
+  /**
+   * A round tower, hand-built: a battered (flared) foot, string course, arrow
+   * slits staggered up the drum, and either a corbelled machicolation gallery
+   * under crenels, a timber hoarding, or a conical roof whose pitch, eaves and
+   * finial vary tower to tower (some carry a pennant).
+   */
+  const tower = (x, z, r, h, { roof = 'cone', base = GROUND, lit = 0, list = walls, flag = false, hoard = false } = {}) => {
     const col = R.pick(stoneCols);
     list.push(tint(worldUV(cylinder(r, r * 1.08, h, 18, { x, y: base, z }), 3.2), col, { aoBottom: base, aoTop: base + 5 }));
+    // battered foot: a talus flaring out over the first metres
+    list.push(tint(worldUV(cylinder(r * 1.08, r * 1.3, Math.min(3, h * 0.2), 18, { x, y: base, z }), 3.2), new THREE.Color(col).multiplyScalar(0.9), { aoBottom: base, aoTop: base + 3 }));
     // string course a third of the way up
     fine.push(tint(worldUV(cylinder(r * 1.12, r * 1.12, 0.3, 16, { x, y: base + h * 0.62, z }), 2), new THREE.Color(col).multiplyScalar(1.12)));
+    // arrow slits: staggered round the drum, three tiers
+    const nS = Math.max(3, Math.round(r * 2));
+    for (let tier = 0; tier < 3; tier++) {
+      const sy = base + h * (0.28 + tier * 0.22);
+      for (let i = 0; i < nS; i++) {
+        if (Rw.chance(0.3)) continue;
+        const a = ((i + tier * 0.5) / nS) * Math.PI * 2;
+        const rr = r * (1.075 - 0.08 * (sy - base) / h) + 0.02;
+        slits.push(tint(box(0.16, 1.05, 0.12, { x: x + Math.cos(a) * rr, y: sy, z: z + Math.sin(a) * rr, ry: -a + Math.PI / 2 }), 0x060406));
+      }
+    }
     if (roof === 'cone') {
-      // eaves ring, conical roof, lead finial
-      beams.push(tint(worldUV(cylinder(r * 1.32, r * 1.18, 0.3, 16, { x, y: base + h - 0.05, z }), 2), 0x3a2a1e));
-      slate.push(tint(worldUV(cone(r * 1.28, r * 2.6, 16, { x, y: base + h + 0.2, z }), 2), R.pick(slateCols)));
-      fine.push(tint(worldUV(cylinder(0.06, 0.1, r * 0.9, 6, { x, y: base + h + 0.2 + r * 2.5, z }), 1), 0x6a6050));
+      if (hoard) {
+        // timber hoarding: a boarded gallery cantilevered out on beams under the roof
+        const hy = base + h - 1.9;
+        for (let i = 0; i < 12; i++) {
+          const a = (i / 12) * Math.PI * 2;
+          beams.push(tint(worldUV(box(1.0, 0.18, 0.18, { x: x + Math.cos(a) * (r + 0.35), y: hy - 0.3, z: z + Math.sin(a) * (r + 0.35), ry: -a }), 1.2), 0x2e2016));
+        }
+        beams.push(tint(worldUV(cylinder(r * 1.32, r * 1.32, 1.9, 16, { x, y: hy, z, open: true }), 1.4), 0x4a3424));
+        beams.push(tint(worldUV(cylinder(r * 1.34, r * 1.34, 0.12, 16, { x, y: hy + 0.5, z }), 1.4), 0x2a1c12));
+      }
+      // eaves ring, conical roof (pitch varies tower to tower), lead finial
+      const pitch = R.range(1.9, 3.3);
+      const rr = r * (hoard ? 1.5 : R.range(1.2, 1.36));
+      beams.push(tint(worldUV(cylinder(rr * 1.02, rr * 0.92, 0.3, 16, { x, y: base + h - 0.05, z }), 2), 0x3a2a1e));
+      slate.push(tint(worldUV(cone(rr, r * pitch, 16, { x, y: base + h + 0.2, z }), 2), R.pick(slateCols)));
+      // a bellcast kick at the eaves
+      slate.push(tint(worldUV(cylinder(rr * 0.96, rr * 1.08, 0.45, 16, { x, y: base + h - 0.15, z, open: true }), 2), new THREE.Color(R.pick(slateCols)).multiplyScalar(0.85)));
+      const tipY = base + h + 0.2 + r * pitch;
+      fine.push(tint(worldUV(cylinder(0.06, 0.1, r * 0.9, 6, { x, y: tipY - 0.1, z }), 1), 0x6a6050));
+      fine.push(tint(ni(new THREE.SphereGeometry(0.16, 8, 6).translate(x, tipY + 0.25, z)), 0x8a7a50));
+      if (flag) pennant(x, tipY + r * 0.9 - 0.2, z);
     } else {
-      // corbelled, crenellated top
-      fine.push(tint(worldUV(cylinder(r * 1.15, r * 1.04, 0.55, 16, { x, y: base + h - 0.55, z }), 2), new THREE.Color(col).multiplyScalar(0.95)));
-      list.push(tint(worldUV(cylinder(r * 1.15, r * 1.15, 0.9, 18, { x, y: base + h, z }), 3.2), col));
-      const n = Math.round(r * 3);
+      // corbelled machicolation gallery: a ring of stepped corbels carrying an
+      // oversailing parapet, murder-holes between them, crenels on top
+      const py = base + h - 0.55;
+      const nC = Math.max(10, Math.round(r * 6));
+      for (let i = 0; i < nC; i++) {
+        const a = (i / nC) * Math.PI * 2;
+        for (let k = 0; k < 3; k++) {
+          const cr = r * 1.02 + 0.12 + k * 0.12;
+          fine.push(tint(worldUV(box(0.32, 0.22, 0.24 + k * 0.12, { x: x + Math.cos(a) * cr, y: py - 0.66 + k * 0.22, z: z + Math.sin(a) * cr, ry: -a + Math.PI / 2 }), 2), new THREE.Color(col).multiplyScalar(0.98 - k * 0.04)));
+        }
+      }
+      fine.push(tint(worldUV(cylinder(r * 1.2, r * 1.12, 0.55, 18, { x, y: py, z }), 2), new THREE.Color(col).multiplyScalar(0.95)));
+      list.push(tint(worldUV(cylinder(r * 1.2, r * 1.2, 0.9, 18, { x, y: base + h, z }), 3.2), col));
+      const n = Math.round(r * 3.2);
       for (let i = 0; i < n; i++) {
         if (roof === 'broken' && R.chance(0.4)) continue;
         const a = (i / n) * Math.PI * 2;
-        list.push(tint(worldUV(box(0.7, 0.8, 0.5, { x: x + Math.cos(a) * r * 1.1, y: base + h + 0.9, z: z + Math.sin(a) * r * 1.1, ry: -a }), 3.2), col));
+        list.push(tint(worldUV(box(0.7, R.chance(0.2) ? 0.5 : 0.85, 0.5, { x: x + Math.cos(a) * r * 1.15, y: base + h + 0.9, z: z + Math.sin(a) * r * 1.15, ry: -a }), 3.2), col));
       }
+      if (roof !== 'broken' && R.chance(0.5)) {
+        // a stair turret riding the parapet, capped with a little cone
+        const a = R.range(0, Math.PI * 2);
+        const tx = x + Math.cos(a) * r * 0.75, tz = z + Math.sin(a) * r * 0.75;
+        list.push(tint(worldUV(cylinder(r * 0.32, r * 0.34, 2.6, 12, { x: tx, y: base + h, z: tz }), 3.2), col));
+        slate.push(tint(worldUV(cone(r * 0.44, r * 1.1, 12, { x: tx, y: base + h + 2.6, z: tz }), 2), R.pick(slateCols)));
+      }
+      if (flag) pennant(x, base + h + 1.0, z, 4.5);
     }
     if (lit) {
       const m = new THREE.Matrix4().setPosition(x, base, z);
       for (let k = 0; k < 2; k++) addWin(m, 0, h * (0.45 + k * 0.25), r * 1.02 + 0.05, 0, 0.5, 0.9, 1.2);
     }
+  };
+  /** A pole with a long swallow-tailed pennant streaming west on the sea wind. */
+  const pennant = (x, y, z, pole = 2.2) => {
+    fine.push(tint(ni(new THREE.CylinderGeometry(0.05, 0.07, pole, 6).translate(x, y + pole / 2, z)), 0x3a3028));
+    const g = new THREE.PlaneGeometry(2.8, 0.9, 10, 2);
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const u = (p.getX(i) + 1.4) / 2.8;
+      // taper toward the fly and cut a swallowtail into it
+      let yy = p.getY(i) * (1 - u * 0.55);
+      if (u > 0.8) yy *= 1 + (Math.abs(p.getY(i)) < 0.1 ? -0.9 : 0) * (u - 0.8) * 5;
+      p.setXYZ(i, p.getX(i) + 1.4, yy, Math.sin(u * 7.0 + x) * 0.22 * u);
+    }
+    g.computeVertexNormals();
+    g.rotateY(Math.PI + 0.35);
+    g.translate(x, y + pole - 0.5, z);
+    flags.push(tint(ni(g), R.chance(0.5) ? 0x8a1410 : 0x1a2a6a));
   };
 
   const crenel = (x0, z0, x1, z1, y, t, col, list = walls) => {
@@ -408,22 +537,94 @@ export function createCity({ seed = 1988 } = {}) {
   // ---- Valjevo Castle on its mound ------------------------------------------
   {
     const cx = 55, cz = -128, base = GROUND + 4;
-    const mound = new THREE.CylinderGeometry(20, 30, 4, 28, 2);
+    const mound = new THREE.CylinderGeometry(20, 31, 4, 40, 4);
+    {
+      const mp = mound.attributes.position;
+      for (let i = 0; i < mp.count; i++) {
+        const x0 = mp.getX(i), y0 = mp.getY(i), z0 = mp.getZ(i);
+        const a = Math.atan2(z0, x0);
+        if (y0 < 1.99) {
+          const k = 1 + 0.07 * Math.sin(a * 5 + 1.3) + 0.05 * Math.sin(a * 11);
+          mp.setXYZ(i, x0 * k, y0 + (y0 > -1.99 ? 0.5 * Math.sin(a * 7) : 0), z0 * k);
+        }
+      }
+      mound.computeVertexNormals();
+    }
     mound.translate(cx, GROUND + 2, cz);
-    rubble.push(tint(worldUV(mound, 3), 0x5d564c));
+    rubble.push(tint(worldUV(ni(mound), 3), 0x5a5a40, { aoBottom: GROUND, aoTop: GROUND + 4, aoStrength: 0.5 }));
     castle.push(tint(worldUV(box(14, 15, 12, { x: cx, y: base, z: cz }), 3.6), 0x9a8e7e, { aoBottom: base, aoTop: base + 6 }));
-    // buttresses, machicolation band and lit arrow slits on the keep
-    for (const bx of [-4.6, 0, 4.6]) castle.push(tint(worldUV(box(1.2, 13.5, 0.9, { x: cx + bx, y: base, z: cz + 6.3 }), 3.6), 0x928676, { aoBottom: base, aoTop: base + 6 }));
+    // buttresses (stepped offsets), machicolation band and arrow loops on the keep
+    for (const bx of [-4.6, 0, 4.6]) {
+      castle.push(tint(worldUV(box(1.2, 13.5, 0.9, { x: cx + bx, y: base, z: cz + 6.3 }), 3.6), 0x928676, { aoBottom: base, aoTop: base + 6 }));
+      castle.push(tint(worldUV(box(1.4, 3.2, 1.4, { x: cx + bx, y: base, z: cz + 6.4 }), 3.6), 0x8a7e6e, { aoBottom: base, aoTop: base + 3 }));
+    }
     fine.push(tint(worldUV(box(14.8, 0.9, 12.8, { x: cx, y: base + 14.1, z: cz }), 2), 0x958a7c));
-    for (let k = 0; k < 4; k++) addWin(new THREE.Matrix4().setPosition(cx, base, cz), -6.9 + k * 4.6 + 2.3 * (k % 2 ? 0 : 0), 9.5, 6.06, 0, 0.35, 1.1, 0.8);
-    crenel(cx - 7, cz + 6, cx + 7, cz + 6, base + 15, 0.6, 0x9a8e7e, castle);
-    crenel(cx - 7, cz - 6, cx + 7, cz - 6, base + 15, 0.6, 0x9a8e7e, castle);
-    for (const [dx, dz] of [[-10, 8], [10, 8], [-10, -8], [10, -8]]) tower(cx + dx, cz + dz, 2.4, 19, { roof: dx > 0 && dz > 0 ? 'broken' : 'cone', base, list: castle });
+    // corbels under the oversailing parapet, all four faces
+    for (const [len, fx, fz, ry] of [[14, 0, 6.3, 0], [14, 0, -6.3, 0], [12, 7.3, 0, Math.PI / 2], [12, -7.3, 0, Math.PI / 2]]) {
+      const nC = Math.round(len / 0.9);
+      for (let i = 0; i < nC; i++) {
+        const f = -len / 2 + (i + 0.5) * (len / nC);
+        const ox = ry ? fx : f, oz = ry ? f : fz;
+        for (let k = 0; k < 2; k++) fine.push(tint(worldUV(box(0.3, 0.3, 0.3 + k * 0.25, { x: cx + ox + (ry ? Math.sign(fx) * k * 0.12 : 0), y: base + 13.3 + k * 0.3, z: cz + oz + (ry ? 0 : Math.sign(fz) * k * 0.12), ry }), 2), 0x968a7a));
+      }
+    }
+    for (let k = 0; k < 4; k++) addWin(new THREE.Matrix4().setPosition(cx, base, cz), -6.9 + k * 4.6, 9.5, 6.06, 0, 0.35, 1.1, 0.8);
+    for (let k = 0; k < 6; k++) for (const yy of [4.2, 7.0, 11.4]) {
+      if (Rw.chance(0.35)) continue;
+      slits.push(tint(box(0.18, 1.0, 0.1, { x: cx - 5.8 + k * 2.3, y: base + yy, z: cz + 6.04 }), 0x060406));
+      slits.push(tint(box(0.1, 1.0, 0.18, { x: cx + 7.04, y: base + yy, z: cz - 4.8 + k * 1.9 }), 0x060406));
+    }
+    crenel(cx - 7.3, cz + 6.3, cx + 7.3, cz + 6.3, base + 15, 0.6, 0x9a8e7e, castle);
+    crenel(cx - 7.3, cz - 6.3, cx + 7.3, cz - 6.3, base + 15, 0.6, 0x9a8e7e, castle);
+    crenel(cx + 7.3, cz - 6.3, cx + 7.3, cz + 6.3, base + 15, 0.6, 0x9a8e7e, castle);
+    // a steep lead-and-slate roof behind the keep's parapet with two chimney stacks
+    {
+      const gr = gableRoof(11.4, 9.6, 5.2, { o: 0.1, t: 0.25 });
+      const mm = new THREE.Matrix4().makeTranslation(cx, base + 15, cz);
+      for (const g of gr.roof) slate.push(tint(g.applyMatrix4(mm), 0x5a6070));
+      for (const g of gr.caps) slate.push(tint(g.applyMatrix4(mm), 0x4a4f5c));
+      for (const g of gr.gables) castle.push(tint(worldUV(g.applyMatrix4(mm), 3.6), 0x8a7e6e));
+      for (const [chx, chz] of [[-3.6, -2.2], [2.8, 2.4]]) {
+        castle.push(tint(worldUV(box(0.9, 4.6, 0.9, { x: cx + chx, y: base + 15, z: cz + chz }), 3.6), 0x857a6a));
+        fine.push(tint(worldUV(box(1.15, 0.25, 1.15, { x: cx + chx, y: base + 19.6, z: cz + chz }), 2), 0x958a7c));
+      }
+    }
+    // bartizans: little corbelled turrets hanging off the keep's corners
+    for (const [bx2, bz2] of [[-7.2, 6.2], [7.2, 6.2], [7.2, -6.2], [-7.2, -6.2]]) {
+      const ty = base + 12.6;
+      fine.push(tint(worldUV(ni(new THREE.ConeGeometry(1.15, 1.6, 12, 1, true).rotateX(Math.PI).translate(cx + bx2, ty - 0.8, cz + bz2)), 2), 0x928676));
+      castle.push(tint(worldUV(cylinder(1.1, 1.1, 3.0, 12, { x: cx + bx2, y: ty, z: cz + bz2 }), 3.6), 0x9a8e7e));
+      slate.push(tint(worldUV(cone(1.4, R.range(2.6, 3.4), 12, { x: cx + bx2, y: ty + 3.0, z: cz + bz2 }), 2), R.pick(slateCols)));
+    }
+    for (const [dx, dz, roof, hh, extra] of [[-10, 8, 'cone', 19, { flag: true, hoard: true }], [10, 8, 'broken', 17.5, {}], [-10, -8, 'cone', 22, { flag: true }], [10, -8, 'flat', 20.5, { flag: true }]]) {
+      tower(cx + dx, cz + dz, dx < 0 && dz < 0 ? 2.7 : 2.4, hh, { roof, base, list: castle, ...extra });
+    }
     wallRun(cx - 18, cz + 14, cx + 18, cz + 14, 9, { base: GROUND + 5, list: castle });
     wallRun(cx - 18, cz + 14, cx - 18, cz - 14, 9, { base: GROUND + 5, list: castle });
     wallRun(cx + 18, cz + 14, cx + 18, cz - 14, 9, { base: GROUND + 5, gaps: 0.4, list: castle });
-    tower(cx - 18, cz + 14, 3.2, 13, { roof: 'flat', base: GROUND + 5, list: castle });
+    tower(cx - 18, cz + 14, 3.2, 13, { roof: 'flat', base: GROUND + 5, list: castle, flag: true });
     tower(cx + 18, cz + 14, 3.2, 11, { roof: 'broken', base: GROUND + 5, list: castle });
+    // the gatehouse: twin half-drum towers flanking a dark arched passage in the curtain
+    for (const sx of [-1, 1]) tower(cx + sx * 3.4, cz + 15.2, 2.2, 13.5, { roof: 'cone', base: GROUND + 5, list: castle, flag: sx < 0 });
+    castle.push(tint(worldUV(box(5.0, 4.0, 2.4, { x: cx, y: GROUND + 5 + 9, z: cz + 15.2 }), 3.6), 0x928676));
+    slits.push(tint(box(2.2, 3.8, 0.2, { x: cx, y: GROUND + 5, z: cz + 16.45 }), 0x080506));
+    // a cobbled bailey inside the curtain, worn into grass at the margins
+    {
+      const g = new THREE.CircleGeometry(19.5, 48, 0, Math.PI * 2);
+      g.rotateX(-Math.PI / 2);
+      g.translate(cx, GROUND + 4.03, cz);
+      const pp = g.attributes.position;
+      const cc = new Float32Array(pp.count * 3);
+      for (let i = 0; i < pp.count; i++) {
+        const dx = pp.getX(i) - cx, dz = pp.getZ(i) - cz;
+        const rr = Math.hypot(dx, dz) / 19.5;
+        const grass = THREE.MathUtils.smoothstep(rr + 0.25 * Math.sin(dx * 0.7) * Math.cos(dz * 0.6), 0.55, 0.95);
+        const c = new THREE.Color(0x9a9288).lerp(new THREE.Color(0x4e5a2e), grass);
+        cc.set([c.r, c.g, c.b], i * 3);
+      }
+      g.setAttribute('color', new THREE.BufferAttribute(cc, 3));
+      cobbles.push(worldUV(ni(g), 2.0));
+    }
     fires.push(new THREE.Vector3(cx + 10, base + 19, cz + 8));
     // watch-fires along the curtain wall (warm points that pick out the battlements)
     for (const [dx, dz] of [[-18, 14], [-6, 14], [6, 14], [-18, 0]]) lamps.push(new THREE.Vector3(cx + dx, GROUND + 5 + 10.2, cz + dz + 0.6));
@@ -520,6 +721,19 @@ export function createCity({ seed = 1988 } = {}) {
     for (const sx of [-1, 1]) fine.push(tint(worldUV(box(0.45, 0.45, 0.45, { x: hx + sx * 5.9, y: colBase + 6.96, z: pz + 3.8 }), 1), 0xc6baa4));
     addWin(hm, 0, 1.75, hd / 2 + 0.05, 0, 2.2, 3.1, 0.95); // open doors, warm light within
     lamps.push(new THREE.Vector3(hx - 2.2, GROUND + 3.4, pz + 3.9), new THREE.Vector3(hx + 2.2, GROUND + 3.4, pz + 3.9));
+    // the portico lanterns those glows belong to: iron cages on chains from the soffit
+    for (const lx of [-2.2, 2.2]) {
+      const X = hx + lx, Y = GROUND + 3.4, Z = pz + 3.9;
+      beams.push(tint(worldUV(cylinder(0.02, 0.02, 2.6, 4, { x: X, y: Y + 0.42, z: Z }), 1), 0x151210));
+      beams.push(tint(worldUV(ni(new THREE.ConeGeometry(0.24, 0.26, 6).translate(X, Y + 0.38, Z)), 1), 0x1a1612));
+      beams.push(tint(worldUV(cylinder(0.2, 0.2, 0.05, 6, { x: X, y: Y - 0.32, z: Z }), 1), 0x1a1612));
+      for (let k = 0; k < 4; k++) {
+        const a = (k / 4) * Math.PI * 2 + Math.PI / 4;
+        beams.push(tint(worldUV(box(0.03, 0.56, 0.03, { x: X + Math.cos(a) * 0.15, y: Y - 0.3, z: Z + Math.sin(a) * 0.15 }), 1), 0x1a1612));
+      }
+      const glass = new THREE.CylinderGeometry(0.13, 0.13, 0.5, 4, 1, true).rotateY(Math.PI / 4).translate(X, Y - 0.03, Z);
+      windows.push(tint(ni(glass), new THREE.Color(0xffa040).multiplyScalar(1.4)));
+    }
     // braziers on the plaza flank the steps (set wide, clear of the camera's path)
     for (const lx of [-7.2, 7.2]) {
       walls.push(tint(worldUV(cylinder(0.12, 0.2, 1.1, 8, { x: hx + lx, y: GROUND, z: pz + 6.2 }), 1), 0x3a3430));
@@ -531,26 +745,32 @@ export function createCity({ seed = 1988 } = {}) {
     // townsfolk gathered at the steps to read the proclamation, a guard at the
     // door: sculpted figures (faces, hands, clothes) from the miniature rig
     const folk = [
-      [-1.9, 6.0, Math.PI - 0.15, { gender: 'male', classSpec: 'fighter', look: { seed: 71, head: 1, body: 0, cloth: 2, hair: 3 } }],
-      [-0.7, 6.5, Math.PI + 0.25, { gender: 'female', classSpec: 'cleric', look: { seed: 72, head: 4, body: 5, cloth: 1, hair: 4 } }],
-      [0.6, 6.2, Math.PI - 0.35, { gender: 'male', classSpec: 'thief', look: { seed: 73, head: 3, body: 2, cloth: 4, hair: 0 } }],
-      [1.8, 6.8, Math.PI + 0.1, { gender: 'male', classSpec: 'magicUser', look: { seed: 74, head: 6, body: 4, cloth: 6, hair: 8 } }],
-      [3.0, 6.0, Math.PI - 0.5, { gender: 'female', classSpec: 'thief', look: { seed: 75, head: 5, body: 3, cloth: 3, hair: 2 } }],
-      [-3.1, 7.0, Math.PI + 0.4, { gender: 'male', classSpec: 'cleric', look: { seed: 76, head: 2, body: 7, cloth: 5, hair: 7 } }],
+      [-3.0, 5.6, Math.PI - 0.15, { gender: 'male', classSpec: 'fighter', look: { seed: 71, head: 1, body: 0, cloth: 2, hair: 3 } }],
+      [-1.9, 6.1, Math.PI + 0.25, { gender: 'female', classSpec: 'cleric', look: { seed: 72, head: 4, body: 5, cloth: 1, hair: 4 } }],
+      [-0.6, 5.7, Math.PI - 0.35, { gender: 'male', classSpec: 'thief', look: { seed: 73, head: 3, body: 2, cloth: 4, hair: 0 } }],
+      [0.6, 6.4, Math.PI + 0.1, { gender: 'male', classSpec: 'magicUser', look: { seed: 74, head: 6, body: 4, cloth: 6, hair: 8 } }],
+      [1.8, 5.6, Math.PI - 0.5, { gender: 'female', classSpec: 'thief', look: { seed: 75, head: 5, body: 3, cloth: 3, hair: 2 } }],
+      [-4.2, 6.6, Math.PI + 0.4, { gender: 'male', classSpec: 'cleric', look: { seed: 76, head: 2, body: 7, cloth: 5, hair: 7 } }],
     ];
-    for (const [fx, fz, ry, ch] of folk) {
-      const f = buildMiniature({ race: 'human', ...ch }, { pose: 'stand', base: false, gear: false, quality: 0.022, faceSize: 128, noWeapon: true, noShield: true });
-      f.position.set(hx + fx, GROUND, pz + fz);
-      f.rotation.y = ry;
-      group.add(f);
-      figures.push(f);
-    }
-    // the door guard (robed in the Council's red) on the top step, facing the plaza
-    const guard = buildMiniature({ race: 'human', gender: 'male', classSpec: 'fighter', look: { seed: 77, head: 0, body: 0, cloth: 0, hair: 1 } }, { pose: 'guard', base: false, gear: true, quality: 0.022, faceSize: 128 });
-    guard.position.set(hx - 1.7, GROUND + 1.04, pz + 2.3);
-    guard.rotation.y = 0.2;
-    group.add(guard);
-    figures.push(guard);
+    // built on demand (only the City Hall shot ever sees them)
+    buildCrowd = () => {
+      for (const [fx, fz, ry, ch] of folk) {
+        const f = buildMiniature({ race: 'human', ...ch }, { pose: 'stand', base: false, gear: false, quality: 0.0108, faceSize: 256, noWeapon: true, noShield: true, rayHead: true, headGain: 0.75, fog: true });
+        f.position.set(hx + fx, GROUND, pz + fz);
+        f.rotation.y = ry;
+        group.add(f);
+        figures.push(f);
+        const sh = contactShadow(0.45, 0.36);
+        sh.position.set(hx + fx, GROUND + 0.04, pz + fz);
+        group.add(sh);
+      }
+      // the door guard (robed in the Council's red) on the top step, facing the plaza
+      const guard = buildMiniature({ race: 'human', gender: 'male', classSpec: 'fighter', look: { seed: 77, head: 0, body: 0, cloth: 0, hair: 1 } }, { pose: 'guard', base: false, gear: true, quality: 0.0108, faceSize: 256, rayHead: true, headGain: 0.75, fog: true });
+      guard.position.set(hx - 1.7, GROUND + 1.04, pz + 2.3);
+      guard.rotation.y = 0.2;
+      group.add(guard);
+      figures.push(guard);
+    };
   }
 
   // ---- harbour: quays, lighthouse ------------------------------------------
@@ -601,6 +821,7 @@ export function createCity({ seed = 1988 } = {}) {
   const fineMat = addRimLight(texMat('hd_limestone'), rimU, 1);
   const peopleMat = addRimLight(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }), rimU, 1.4);
   disposables.push(wallMat, castleMat, hallMat, plasterMat, rubbleMat, groundMat, cobbleMat, roofMat, slateMat, shakeMat, beamMat, fineMat, peopleMat);
+  const solid = []; // opaque architecture that can join a shot's shadow pass
   const addMesh = (list, mat, shadow = false) => {
     if (!list.length) return null;
     const g = merge(list);
@@ -608,6 +829,7 @@ export function createCity({ seed = 1988 } = {}) {
     mesh.receiveShadow = shadow;
     group.add(mesh);
     disposables.push(g);
+    if (mat.isMeshStandardMaterial) solid.push(mesh);
     return mesh;
   };
   addMesh(walls, wallMat);
@@ -623,6 +845,12 @@ export function createCity({ seed = 1988 } = {}) {
   addMesh(beams, beamMat);
   addMesh(fine, fineMat);
   addMesh(people, peopleMat);
+  const slitMat = new THREE.MeshBasicMaterial({ vertexColors: true });
+  disposables.push(slitMat);
+  addMesh(slits, slitMat);
+  const flagMat = addRimLight(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide, emissive: 0x1a0806 }), rimU, 1.6);
+  disposables.push(flagMat);
+  addMesh(flags, flagMat);
   // lit windows: leaded panes (mullions + transom), brighter at the sill like firelight within
   const winMat = new THREE.ShaderMaterial({
     vertexColors: true,
@@ -669,8 +897,8 @@ export function createCity({ seed = 1988 } = {}) {
   lamps.forEach((p, i) => {
     const s = new THREE.Sprite(lampMat);
     s.position.copy(p);
-    s.scale.setScalar(0.65);
-    s.userData.base = 0.65;
+    s.scale.setScalar(0.5);
+    s.userData.base = 0.5;
     s.userData.seed = 10 + i;
     group.add(s);
     glows.push(s);
@@ -751,6 +979,23 @@ export function createCity({ seed = 1988 } = {}) {
     fires,
     ships,
     ground: GROUND,
+    /** Sculpt the townsfolk at City Hall's steps (first time the shot needs them). */
+    ensureCrowd() {
+      if (buildCrowd) {
+        const f = buildCrowd;
+        buildCrowd = null;
+        f();
+      }
+    },
+    /** Cast and receive the shot key's shadows (the Old City aerial only: it costs a pass over the city). */
+    setShadows(on) {
+      for (const m of solid) { m.castShadow = on; m.receiveShadow = on; }
+    },
+    /** Classic 1988 mode: no smoke columns or glow sprites (they quantise to grey/orange blobs). */
+    setClassic(on) {
+      smoke.mesh.visible = !on;
+      for (const s of glows) s.visible = !on;
+    },
     /** @param {number} t @param {THREE.Camera} [camera] @param {THREE.Vector3} [sunDir] */
     update(t, camera, sunDir) {
       if (camera && sunDir) rimU.uSunView.value.copy(sunDir).transformDirection(camera.matrixWorldInverse);

@@ -2,7 +2,7 @@ import { h, clear, hotkeyLabel } from '../dom.js';
 
 /**
  * Vertical keyboard/mouse/gamepad menu.
- *   items: [{id, label, key?, hint?, desc?, disabled?, locked?}]
+ *   items: [{id, label, key?, hint?, desc?, disabled?, locked?, lockReason?}]
  *   `disabled` rows are skipped entirely; `locked` rows can be highlighted (so
  *   their `desc` can explain why) but not chosen — they show a padlock.
  *   opts:  {onSelect(item), onHighlight?(item, i), onCancel?(), bus?, className?, autofocus?, hotkeys?}
@@ -51,7 +51,7 @@ export class Menu {
         onclick: () => this.select(i),
         onmouseenter: () => !it.disabled && this.highlight(i),
       }, [
-        h('span.por-menu-label', [hotkeyLabel(it.label, it.locked ? null : it.key), it.locked ? lockIcon() : null]),
+        h('span.por-menu-label', [hotkeyLabel(it.label, it.locked ? null : it.key), it.locked ? lockIcon() : null, it.locked && it.lockReason ? h('span.por-menu-lockwhy', [it.lockReason]) : null]),
         it.hint ? h('span.por-menu-hint', [it.hint]) : null,
         it.desc ? h('span.por-menu-desc', [it.desc]) : null,
       ]),

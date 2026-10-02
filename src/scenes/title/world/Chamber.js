@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { getTextureSet, getGlowTexture } from '../../../render/textures/index.js';
 import { createFlameBatch } from '../../../render/lighting.js';
 import { prng, ni, worldUV, tint, box, merge } from './geom.js';
-import { column } from './arch.js';
+import { column, contactShadow } from './arch.js';
 import { buildMiniature } from '../../../ui/components/Miniature.js';
 import { armsTexture, bannerTexture, ledgerTexture, paperTexture, featherTexture, marbleFloorTexture } from './heraldry.js';
 
@@ -233,13 +233,20 @@ export function createChamber({ seed = 1337 } = {}) {
   // Sculpted figures from the party-miniature rig (faces, hands, robes and armour),
   // in councillors' robes and vestments; lit only by the candles.
   const figures = [];
+  // finer sculpt cells and the ray-marched heads (brow, nose, hair mass, ears)
+  // the party portraits use, so the council read as people, not mannequins
   const person = (ch, x, z, ry, q = 0.018, o = {}) => {
-    const f = buildMiniature({ race: 'human', ...ch }, { pose: o.pose ?? 'stand', base: false, gear: false, quality: q, faceSize: 128, noWeapon: o.noWeapon ?? true, noShield: o.noShield ?? true });
+    const f = buildMiniature({ race: 'human', ...ch }, { pose: o.pose ?? 'stand', base: false, gear: false, quality: Math.min(q, 0.0108), faceSize: 256, noWeapon: o.noWeapon ?? true, noShield: o.noShield ?? true, rayHead: true, headGain: 0.75 });
     f.position.set(x, 0, z);
     f.rotation.y = ry;
     f.traverse((m) => { if (m.isMesh) { m.castShadow = false; m.receiveShadow = false; } });
     group.add(f);
     figures.push(f);
+    if (o.pose !== 'sit') {
+      const sh = contactShadow(0.42, 0.34);
+      sh.position.set(x, 0.035, z);
+      group.add(sh);
+    }
     return f;
   };
   // councillors along both sides of the table and the First Councillor at its head
@@ -257,6 +264,10 @@ export function createChamber({ seed = 1337 } = {}) {
   // seated councillors turned toward the adventurers at the foot of the table
   const SEAT = 0.2; // the dais under the chairs lifts the seated figures
   const chair = (x, z, ry, tall = 1.55, w = 0.6) => {
+    const csh = contactShadow(w * 0.95, 0.6, 0.9);
+    csh.position.set(x, 0.035, z);
+    csh.rotation.y = ry;
+    group.add(csh);
     const m = new THREE.Matrix4().makeRotationY(ry).setPosition(x, 0, z);
     const put = (g, list, c) => list.push(tint(worldUV(g.applyMatrix4(m), 1), c));
     put(box(w + 0.1, 0.2, 0.75, { z: -0.08 }), wood, 0x3a2818); // footboard / dais
@@ -365,7 +376,7 @@ export function createChamber({ seed = 1337 } = {}) {
   // floor + candles/scrolls: the marble chequer (its own texture, never the terrace's crazy paving)
   {
     const mt = marbleFloorTexture();
-    const mm = new THREE.MeshStandardMaterial({ map: mt.map, roughnessMap: mt.roughnessMap, vertexColors: true, roughness: 1, metalness: 0 });
+    const mm = new THREE.MeshStandardMaterial({ map: mt.map, roughnessMap: mt.roughnessMap, vertexColors: true, roughness: 0.42, metalness: 0 });
     disposables.push(mm, mt.map, mt.roughnessMap);
     add(floor.slice(0, 1), mm);
     add(floor.slice(1), plain(0.8));
@@ -427,6 +438,11 @@ export function createChamber({ seed = 1337 } = {}) {
   const advRim = new THREE.PointLight(0xffa458, 7, 6, 1.6);
   advRim.position.set(0, 1.9, 0.6);
   group.add(advRim);
+  // a candle-side rim for the left foreground adventurer (plate catches it on the
+  // shoulder and helm instead of reading as a flat blue cut-out)
+  const advRimL = new THREE.PointLight(0xffb060, 9, 4.2, 1.5);
+  advRimL.position.set(-1.35, 2.15, 1.05);
+  group.add(advRimL);
   const advFill = new THREE.PointLight(0x8090e0, 13, 9, 1.4);
   advFill.position.set(0.2, 2.8, 5.4);
   group.add(advFill);

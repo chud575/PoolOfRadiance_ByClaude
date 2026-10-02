@@ -312,6 +312,9 @@ export function createLogo() {
           // with a brown drop shadow, light-cyan Forgotten Realms (pre-tonemap
           // values chosen to land on the palette entries)
           vec3 en = vUv.y > 0.8 ? vec3(1.25, 0.09, 0.09) : vec3(0.09, 1.25, 1.25);
+          // sub-titles are set in the 5x7 bitmap font on a DOM overlay (after the
+          // EGA pass, so the dots never get re-quantised): nothing drawn here
+          if (vUv.y > 0.8 || vUv.y < 0.38) discard;
           vec3 fill = mix(vec3(1.25, 1.25, 0.09), en, step(0.5, enamel));
           float sh2 = texture2D(uMap, vUv + vec2(-uTexel.x * 5.0, uTexel.y * 7.0)).r;
           outCol = mix(vec3(0.5, 0.1, 0.0), fill, step(0.5, body));

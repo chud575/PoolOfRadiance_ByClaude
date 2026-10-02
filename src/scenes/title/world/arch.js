@@ -341,6 +341,14 @@ export function addRimLight(mat, uniforms, strength = 1, { weather = 0, ground =
             float damp = 1.0 - smoothstep(${ground.toFixed(1)}, ${(ground + 3.2).toFixed(1)}, vWthr.y);
             float mott = wn(vWthr.xz * 0.35 + vWthr.y * 0.2);
             vec3 c = diffuseColor.rgb;
+            // macro variation: patches of differently-quarried / re-faced stone a few
+            // metres across (tone + a warm/cool hue drift), so the tiled ashlar never
+            // repeats visibly across a whole tower or curtain wall
+            vec2 mq = vec2(u * 0.16, vWthr.y * 0.22);
+            float patchK = wn(floor(mq * vec2(1.0, 1.6)) + 17.0);
+            float macro = wn(vWthr.xz * 0.045 + vWthr.y * 0.03) * 0.6 + patchK * 0.4;
+            c *= 0.78 + 0.42 * macro;
+            c *= mix(vec3(1.06, 0.98, 0.9), vec3(0.92, 0.97, 1.06), wn(mq * 0.7 + 3.0));
             c *= 1.0 - ${weather.toFixed(2)} * (0.42 * smoothstep(0.25, 0.7, streak) + 0.18 * mott);
             c = mix(c, c * vec3(0.55, 0.62, 0.45), damp * ${weather.toFixed(2)} * 0.8);
             diffuseColor.rgb = c;
@@ -365,4 +373,37 @@ export function addRimLight(mat, uniforms, strength = 1, { weather = 0, ground =
   };
   mat.customProgramCacheKey = () => `rim${strength}w${weather}`;
   return mat;
+}
+
+let contactMat = null;
+/**
+ * A soft contact shadow under a figure or prop: a dark radial blot on the
+ * ground (multiplied in by alpha), so sculpted figures sit on the cobbles or
+ * marble instead of floating. Shares one material.
+ */
+export function contactShadow(rx = 0.42, rz = 0.32, strength = 0.75) {
+  contactMat ??= new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    uniforms: {},
+    vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /* glsl */ `varying vec2 vUv;
+      void main(){
+        vec2 d = (vUv - 0.5) * 2.0;
+        float r = dot(d, d);
+        float a = exp(-r * 3.2) - 0.04;
+        float core = exp(-r * 14.0) * 0.5;
+        gl_FragColor = vec4(0.0, 0.0, 0.0, clamp(a + core, 0.0, 1.0));
+      }`,
+  });
+  const g = new THREE.PlaneGeometry(rx * 2, rz * 2);
+  g.rotateX(-Math.PI / 2);
+  const m = new THREE.Mesh(g, contactMat);
+  m.scale.setScalar(1);
+  m.material.opacity = strength;
+  m.renderOrder = 1;
+  m.position.y = 0.012;
+  return m;
 }

@@ -39,10 +39,11 @@ export function createParticles(o = {}) {
       uPx: { value: 1 },
       uRes: { value: new THREE.Vector2(1600, 900) },
       uStreak: { value: o.streak ? 1 : 0 },
+      uMaxPx: { value: 64 },
     },
     vertexShader: /* glsl */ `
       attribute vec4 aSeed;
-      uniform float uTime, uHeight, uSize, uSway, uDisc, uPx, uStreak;
+      uniform float uTime, uHeight, uSize, uSway, uDisc, uPx, uStreak, uMaxPx;
       uniform vec3 uOrigin, uSpread, uWind; uniform vec2 uSpeed, uRes;
       varying float vLife; varying float vFlick; varying vec2 vDir; varying float vStretch;
       vec3 at(float t, out float life) {
@@ -80,7 +81,7 @@ export function createParticles(o = {}) {
         float len = (life1 < life) ? length(dpx) * uStreak : 0.0;
         vStretch = clamp(len / max(ps, 1.0), 0.0, 1.0);
         vDir = len > 1e-3 ? normalize(vec2(dpx.x, -dpx.y)) : vec2(1.0, 0.0);
-        gl_PointSize = min(64.0, ps * (1.0 + vStretch * 1.2));
+        gl_PointSize = min(uMaxPx, ps * (1.0 + vStretch * 1.2));
       }`,
     fragmentShader: /* glsl */ `
       uniform vec3 uColA, uColB; uniform float uIntensity;

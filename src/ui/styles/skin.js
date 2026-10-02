@@ -258,6 +258,126 @@ function flourishSVG() {
     <path d="M56 5 L60 9 L56 13 L52 9 Z" fill="url(#g)"/></svg>`;
 }
 
+/**
+ * Vellum (tileable): a warm calfskin ground with soft cloudy mottling, long
+ * hair-fine fibres running mostly one way, faint follicle pits, and foxing —
+ * rust-brown spots with a darker core and a soft tide-line halo.
+ */
+function vellumTexture(size = 512, seed = 31) {
+  if (typeof document === 'undefined') return '';
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const x = c.getContext('2d');
+  const img = x.createImageData(size, size);
+  const spots = [];
+  for (let i = 0; i < 14; i++) spots.push([hash(i, 1, seed) * size, hash(i, 2, seed) * size, 1.2 + hash(i, 3, seed) ** 3 * 6, 0.12 + hash(i, 4, seed) * 0.3]);
+  for (let j = 0; j < size; j++) {
+    for (let i = 0; i < size; i++) {
+      const u = i / size, v = j / size;
+      let n = 0, a = 0.5, f = 3, tot = 0;
+      for (let o = 0; o < 5; o++) { n += a * valueNoise(u * f, v * f, seed + o, f); tot += a; a *= 0.5; f *= 2; }
+      n /= tot;
+      // fibres: stretched along a slight diagonal, two scales
+      // hair-fine fibres: short and broken (a wobble in their direction), never a grain
+      const wob = valueNoise(u * 5, v * 5, seed + 44, 5) * 3;
+      const fu = u * 48 + wob, fv = v * 160 + u * 24;
+      const fib = (valueNoise(fu, fv, seed + 40, 160) - 0.5) * 0.05 + (valueNoise(u * 120 + v * 30, v * 120 - u * 30, seed + 41, 120) - 0.5) * 0.035;
+      const pit = hash(i, j, seed + 7) > 0.996 ? -0.07 : 0;
+      let k = 1 + (n - 0.5) * 0.24 + fib + pit;
+      let fox = 0;
+      for (const [sx, sy, r, st] of spots) {
+        let dx = Math.abs(i - sx), dy = Math.abs(j - sy);
+        dx = Math.min(dx, size - dx); dy = Math.min(dy, size - dy);
+        const d = Math.hypot(dx, dy) / r;
+        if (d < 3) fox = Math.max(fox, st * (Math.exp(-d * d * 1.8) + 0.12 * Math.exp(-((d - 1.6) ** 2) * 5)));
+      }
+      const p = (j * size + i) * 4;
+      img.data[p] = Math.max(0, Math.min(255, 232 * k - fox * 70));
+      img.data[p + 1] = Math.max(0, Math.min(255, 214 * k - fox * 96));
+      img.data[p + 2] = Math.max(0, Math.min(255, 174 * k - fox * 112));
+      img.data[p + 3] = 255;
+    }
+  }
+  x.putImageData(img, 0, 0);
+  return c.toDataURL('image/png');
+}
+
+/**
+ * Vellum sheet overlay (non-tiling, stretched over a panel): deckle edges that
+ * darken and brown irregularly, a scorched tide-line, foxing clustered toward
+ * the margins, and the curl — the sheet bowing so its top and bottom roll away
+ * from the light. Transparent in the middle; drawn over the tiled vellum.
+ */
+function vellumSheet(size = 640, seed = 57) {
+  if (typeof document === 'undefined') return '';
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const x = c.getContext('2d');
+  const img = x.createImageData(size, size);
+  for (let j = 0; j < size; j++) {
+    for (let i = 0; i < size; i++) {
+      const u = i / size, v = j / size;
+      const ragged = (valueNoise(u * 22, v * 22, seed, 22) - 0.5) * 0.035 + (valueNoise(u * 7, v * 7, seed + 1, 7) - 0.5) * 0.05;
+      const e = Math.min(u, 1 - u, v, 1 - v) + ragged;
+      const edge = Math.max(0, 1 - e / 0.06) ** 1.7; // deckle browning
+      const tide = Math.exp(-(((e - 0.052) / 0.01) ** 2)) * 0.16; // the tide-line
+      // curl: top and bottom edges roll away (darker), a lit ridge just inside them
+      const curl = Math.max(0, 1 - Math.min(v, 1 - v) / 0.12) ** 2.2 * 0.17 - Math.exp(-(((Math.min(v, 1 - v) - 0.15) / 0.04) ** 2)) * 0.06;
+      const fox = Math.max(0, valueNoise(u * 9, v * 9, seed + 3, 9) - 0.72) * 2.4 * Math.max(0, 1 - e / 0.2) * 0.16;
+      const a = Math.min(0.92, edge * 0.85 + tide + Math.max(0, curl) + fox);
+      const p = (j * size + i) * 4;
+      // browns: darker and redder toward the very edge
+      img.data[p] = 120 - edge * 60;
+      img.data[p + 1] = 78 - edge * 44;
+      img.data[p + 2] = 34 - edge * 20;
+      img.data[p + 3] = Math.max(0, a) * 255;
+      if (curl < 0) {
+        // the lit ridge: a whisper of warm white instead
+        img.data[p] = 255; img.data[p + 1] = 246; img.data[p + 2] = 220;
+        img.data[p + 3] = -curl * 255;
+      }
+    }
+  }
+  x.putImageData(img, 0, 0);
+  return c.toDataURL('image/png');
+}
+
+/**
+ * The Council's wax seal: an irregular blob of red wax with a raised rim, a
+ * pressed sigil (the tower of Phlan over the waves, with a ring of beads) in
+ * relief — lit edge up-left, shadowed edge down-right — and a hot specular.
+ */
+function waxSealSVG() {
+  const blob = [];
+  for (let i = 0; i < 28; i++) {
+    const a = (i / 28) * Math.PI * 2;
+    const r = 46 + Math.sin(a * 3 + 1) * 2.4 + Math.sin(a * 7) * 1.6 + (hash(i, 9, 3) - 0.5) * 2.4;
+    blob.push(`${(50 + Math.cos(a) * r).toFixed(1)},${(50 + Math.sin(a) * r).toFixed(1)}`);
+  }
+  const tower = 'M38 66 L38 44 L35 44 L35 37 L39 37 L39 40 L43 40 L43 37 L47 37 L47 40 L53 40 L53 37 L57 37 L57 40 L61 40 L61 37 L65 37 L65 44 L62 44 L62 66 Z M47 66 L47 57 Q50 53 53 57 L53 66 Z';
+  const waves = 'M30 72 Q35 68 40 72 T50 72 T60 72 T70 72';
+  const beads = Array.from({ length: 24 }, (_, i) => {
+    const a = (i / 24) * Math.PI * 2;
+    return `<circle cx="${(50 + Math.cos(a) * 33).toFixed(1)}" cy="${(50 + Math.sin(a) * 33).toFixed(1)}" r="1.6"/>`;
+  }).join('');
+  const relief = (fill, dx, dy, op) => `<g transform="translate(${dx} ${dy})" fill="${fill}" stroke="${fill}" opacity="${op}"><path d="${tower}" stroke="none"/><path d="${waves}" fill="none" stroke-width="2.6" stroke-linecap="round"/>${beads}<circle cx="50" cy="50" r="37" fill="none" stroke-width="1.6"/></g>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+    <defs>
+      <radialGradient id="w" cx="38%" cy="34%" r="70%"><stop offset="0" stop-color="#e2493c"/><stop offset="0.45" stop-color="#a81e16"/><stop offset="0.85" stop-color="#6a0d08"/><stop offset="1" stop-color="#4a0805"/></radialGradient>
+      <radialGradient id="pool" cx="50%" cy="52%" r="50%"><stop offset="0.72" stop-color="#000" stop-opacity="0"/><stop offset="0.86" stop-color="#3a0402" stop-opacity="0.55"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>
+      <radialGradient id="spec" cx="34%" cy="28%" r="22%"><stop offset="0" stop-color="#fff" stop-opacity="0.75"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+    </defs>
+    <polygon points="${blob.join(' ')}" fill="url(#w)"/>
+    <circle cx="50" cy="51" r="40" fill="url(#pool)"/>
+    <circle cx="50" cy="50" r="39" fill="none" stroke="#ff8a70" stroke-opacity="0.35" stroke-width="1.2" transform="translate(-0.8 -0.8)"/>
+    <circle cx="50" cy="50" r="39" fill="none" stroke="#2a0201" stroke-opacity="0.6" stroke-width="1.2" transform="translate(0.8 0.8)"/>
+    ${relief('#2a0302', 1.1, 1.2, 0.75)}
+    ${relief('#ff9a7e', -0.8, -0.9, 0.55)}
+    ${relief('#a01a12', 0, 0, 1)}
+    <ellipse cx="36" cy="30" rx="16" ry="10" fill="url(#spec)" transform="rotate(-25 36 30)"/>
+  </svg>`;
+}
+
 const url = (svg) => `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}")`;
 
 /** Generate textures + filigree and publish them as CSS custom properties. */
@@ -266,7 +386,8 @@ export function installSkin() {
   installed = true;
   const root = document.documentElement.style;
   try {
-    root.setProperty('--tex-parchment', `url(${noiseTexture(256, { seed: 11, base: [228, 210, 170], amp: 0.22, scale: 4, fibres: 0.05, mottle: 0.22 })})`);
+    root.setProperty('--tex-parchment', `url(${vellumTexture(512)})`);
+    root.setProperty('--tex-vellum-sheet', `url(${vellumSheet(640)})`);
     root.setProperty('--tex-leather', `url(${leatherTexture(256)})`);
     root.setProperty('--tex-grain', `url(${grainTexture(128)})`);
   } catch {
@@ -277,6 +398,7 @@ export function installSkin() {
   root.setProperty('--tex-brocade', url(brocadeSVG()));
   root.setProperty('--filigree-rule', url(ruleSVG()));
   root.setProperty('--filigree-flourish', url(flourishSVG()));
+  root.setProperty('--wax-seal', url(waxSealSVG()));
 }
 
 /** Setting keys + defaults owned by the UI skin (stored in core Settings). */
