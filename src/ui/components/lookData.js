@@ -244,6 +244,9 @@ export function resolveAppearance(ch, o = {}) {
     eyeHex: EYE_COLORS[look.eyes % EYE_COLORS.length],
     clothHex: CLOTH_COLORS[look.cloth % CLOTH_COLORS.length][1],
     trimHex: CLOTH_COLORS[(look.cloth + 3) % CLOTH_COLORS.length][1],
+    // A full robe in a colour close to the wearer's complexion reads as bare skin by firelight: such
+    // robes take the trim colour (and the house colour becomes the trim).
+    robeHex: nearSkin(CLOTH_COLORS[look.cloth % CLOTH_COLORS.length][1], skinHex) ? CLOTH_COLORS[(look.cloth + 3) % CLOTH_COLORS.length][1] : CLOTH_COLORS[look.cloth % CLOTH_COLORS.length][1],
     lin: hexToLin,
     weapon,
     shield: shield ? (cl || (has('cleric') && !has('fighter')) ? 'round' : 'heater') : null,
@@ -255,6 +258,20 @@ export function resolveAppearance(ch, o = {}) {
     thief: has('thief'),
     seed: look.seed,
   };
+}
+
+/** Is a cloth colour close in hue to a complexion (orange-brown family)? */
+function nearSkin(cloth, skin) {
+  const hsv = (hex) => {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+    let hh = 0;
+    if (d > 0) hh = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return [(hh * 60 + 360) % 360, mx ? d / mx : 0];
+  };
+  const [hc, sc] = hsv(cloth);
+  const [hs] = hsv(skin);
+  return sc > 0.25 && Math.abs(hc - hs) < 22;
 }
 
 /** Stable key of everything that changes the rendered appearance. */

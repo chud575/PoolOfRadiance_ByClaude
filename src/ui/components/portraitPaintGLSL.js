@@ -16,7 +16,7 @@ export const GLSL_DRESS = /* glsl */`
 float hairline(vec3 p) {
   float ax = abs(p.x);
   float tuft = 0.0016 * sin(p.x * 150.0 + 1.3) + 0.0009 * sin(p.x * 330.0 + p.y * 60.0);
-  float front = (0.012 + tuft - 2.2 * p.x * p.x + 0.004 * FEM - 0.012 * AGE * (1.0 - FEM)) - (-0.62 * p.y + 0.78 * p.z - 0.05);
+  float front = (0.021 + tuft - 2.4 * p.x * p.x + 0.006 * FEM - 0.012 * AGE * (1.0 - FEM)) - (-0.62 * p.y + 0.78 * p.z - 0.05);
   float burn = max(0.0, 1.0 - abs(ax - 0.067) / 0.012) * max(0.0, 1.0 - abs(p.z - 0.018) / 0.018) * 0.045;
   float side = (-0.012 + burn + tuft * 0.6 - (-p.y + 0.62 * p.z)) / 1.18;
   float nape = p.y + 0.062 + 0.02 * ax / 0.07;
@@ -53,7 +53,7 @@ float hairField(vec3 p, float sk) {
     d = sk - 0.0045 * band + clumps(p, 26.0, 0.001) * band + 0.002 * (1.0 - band);
   } else {
     float hl = hairline(p);
-    float m = sat(hl / 0.022);
+    float m = sat(hl / 0.009);
     m = m * m * (3.0 - 2.0 * m);
     float top = sat((p.y + 0.01) / 0.11);
     float T = (0.005 + 0.011 * vol * top) * m;
@@ -395,7 +395,7 @@ vec3 skinAlbedo(vec3 p) {
   vec3 q = vec3(abs(p.x), p.y, p.z);
   vec3 base = mix(uSkin, vec3(dot(uSkin, vec3(0.3, 0.59, 0.11))), 0.18) * 0.8;
   float ex = EX();
-  vec3 ruddy = base * vec3(1.22, 0.8, 0.76);
+  vec3 ruddy = base * vec3(1.14, 0.84, 0.8);
   vec3 warm = base * vec3(1.1, 1.04, 0.8);
   vec3 cool = base * vec3(0.8, 0.9, 1.06);
   float cheek = exp(-pow(length((q.xy - vec2(0.044, -0.028)) / vec2(0.024, 0.02)), 2.0));
@@ -719,7 +719,7 @@ void main() {
   vec3 dif;
   if (sss > 0.5) {
     // skin: per-channel wrap (red light bleeds round the terminator), red-tinted shadow edge
-    vec3 wrap = vec3(0.36, 0.2, 0.15);
+    vec3 wrap = vec3(0.3, 0.19, 0.15);
     dif = clamp((vec3(nk) + wrap) / (1.0 + wrap), 0.0, 1.0);
     dif *= dif;
     vec3 sh3 = vec3(pow(sh, 0.65), pow(sh, 0.95), pow(sh, 1.1));

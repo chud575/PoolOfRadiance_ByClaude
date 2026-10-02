@@ -70,11 +70,11 @@ mat2 rot2(float a) { float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }
 /** Feature anchors + the skin field. Expects the parameter #defines and GLSL_COMMON. */
 export const GLSL_HEAD = /* glsl */`
 float EX() { return 0.0312 * SP * (0.9 + 0.1 * W); }
-float ER() { return 0.0124 * sqrt(EYE) * (1.0 + 0.05 * FEM); }
+float ER() { return 0.0124 * sqrt(EYE) * (1.0 + 0.07 * FEM); }
 float EZ() { return 0.0688 - 0.002 * EDEPTH; }
-float LOWF() { return LONG * (1.0 - 0.06 * FEM); }
+float LOWF() { return LONG * (1.0 - 0.08 * FEM); }
 float MOUTHY() { return -0.0665 * LOWF(); }
-float TIPY() { return -0.037 * NOSE * (0.9 + 0.1 * LONG) * (1.0 - 0.08 * FEM); }
+float TIPY() { return -0.037 * NOSE * (0.9 + 0.1 * LONG) * (1.0 - 0.12 * FEM); }
 float TIPZ() { return 0.104 + 0.011 * (NOSE - 1.0) - 0.0055 * FEM; }
 float LIPZ() { return 0.0905 + 0.004 * PROT - 0.003 * FEM; }
 
@@ -86,7 +86,7 @@ vec2 lidLines(vec3 q) {
   float open = EOPEN * (1.0 - 0.35 * LID);
   float edx = (q.x - ex + 0.0012) / (0.0146 * sqrt(EYE));
   float alm = max(0.0, 1.0 - edx * edx);
-  float up = (0.0047 * open + 0.0007 * FEM) * alm - 0.0006 + sl * (q.x - ex) * 4.0 + 0.0012 * max(0.0, -edx) * alm;
+  float up = (0.0047 * open + 0.0011 * FEM) * alm - 0.0006 + sl * (q.x - ex) * 4.0 + 0.0012 * max(0.0, -edx) * alm;
   if (ASLEEP > 0.5) up = -0.004;
   float lo = -0.0056 * EOPEN * pow(alm, 0.8) - 0.0006 + sl * (q.x - ex) * 2.0;
   return vec2(up, lo);
@@ -104,10 +104,10 @@ float gau2(vec2 u) { return exp(-dot(u, u)); }
 // sockets, cheekbones, the muzzle and the nasolabial folds where it meets the cheeks) are drawn as
 // smooth curves and swellings, so every head has one continuous, controllable surface.
 float halfWidth(float y) {
-  float w = 0.0695 * W - 0.004 * FEM;
-  float jawHW = (0.051 * (0.86 + 0.14 * JAW) - 0.0065 * FEM) * W;
+  float w = 0.0695 * W - 0.0055 * FEM;
+  float jawHW = (0.051 * (0.86 + 0.14 * JAW) - 0.0095 * FEM) * W;
   float hw = mix(w, jawHW, smoothstep(-0.015, -0.075 * LOWF(), y));
-  hw = mix(hw, 0.017 * CHIN + 0.004, smoothstep(-0.07 * LOWF(), -0.112 * LOWF(), y));
+  hw = mix(hw, (0.017 - 0.003 * FEM) * CHIN + 0.004, smoothstep(-0.07 * LOWF(), -0.112 * LOWF(), y));
   hw = mix(hw, w * 0.92, smoothstep(0.03, 0.09, y));
   return hw;
 }
@@ -133,14 +133,14 @@ float faceF(float x, float y) {
   z -= (0.0105 + 0.002 * EDEPTH - 0.003 * fem) * gau2(vec2(ax - ex, y - 0.0025) / vec2(0.0165, 0.0115));
   float ck = CHEEK;
   z += 0.0062 * ck * gau2(vec2(ax - 0.045 * W, y + 0.013 + 0.003 * fem) / vec2(0.017, 0.011));
-  z += (0.0042 + 0.003 * fem + 0.005 * HALF) * gau2(vec2(ax - 0.031 * W, y + 0.036 * lf) / vec2(0.016, 0.019));
+  z += (0.0042 + 0.0045 * fem + 0.005 * HALF) * gau2(vec2(ax - 0.031 * W, y + 0.034 * lf) / vec2(0.017, 0.02));
   z -= 0.003 * sat(HOLLOW) * gau2(vec2(ax - 0.05 * W, y + 0.048 * lf) / vec2(0.012, 0.016));
   // the nose: bridge rising from the nasion to the tip, side walls widening to the wings
   float nt = sat((0.009 - y) / (0.009 - tipY));
   float nh;
   if (y > tipY) nh = (0.0035 + 0.0205 * pow(nt, 1.15)) * (0.85 + 0.15 * NOSE) + 0.0022 * HOOK * gau((nt - 0.5) / 0.22);
   else nh = (0.024 * (0.85 + 0.15 * NOSE)) * gau((tipY - y) / 0.0068);
-  nh *= (1.0 - 0.2 * fem) * smoothstep(0.022, 0.006, y);
+  nh *= (1.0 - 0.3 * fem) * smoothstep(0.022, 0.006, y);
   float nw = (0.0055 * BRIDGE + 0.0085 * pow(nt, 1.6) * TIP) * (1.0 - 0.15 * fem);
   if (y < tipY) nw = (0.0055 * BRIDGE + 0.0085 * TIP) * (1.0 - 0.15 * fem);
   float nu = ax / (nw * 1.55);
@@ -156,7 +156,7 @@ float faceF(float x, float y) {
   z += 0.0068 * gau(ax / (0.03 * mw)) * gau((y - mY - 0.004) / 0.022) * (1.0 + 0.3 * PROT - 0.25 * fem);
   z += 0.0009 * gau((ax - 0.0042) / 0.0016) * smoothstep(tipY - 0.009, tipY - 0.013, y) * smoothstep(my + 0.004, my + 0.007, y);
   float lw = smoothstep(0.0215 * mw, 0.011 * mw, ax);
-  float lipK = LIPS * (1.0 + 0.32 * fem);
+  float lipK = LIPS * (1.0 + 0.4 * fem);
   z += 0.0028 * lipK * gau((y - my - 0.0046) / (0.0028 * lipK)) * lw;
   z -= 0.0036 * gau((y - my) / 0.0011) * smoothstep(0.0205 * mw, 0.0165 * mw, ax);
   z += 0.0034 * lipK * gau((y - my + 0.0058) / (0.0036 * lipK)) * smoothstep(0.019 * mw, 0.008 * mw, ax);

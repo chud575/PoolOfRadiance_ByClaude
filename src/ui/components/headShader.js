@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { faceParams } from './figureRig.js';
 import { hashNum, rngFrom } from './lookData.js';
+import { GLSL_HEAD } from './portraitHeadGLSL.js';
 
 /**
  * Ray-marched heads. The party's faces are signed-distance sculpts evaluated
@@ -212,153 +213,30 @@ float sdCone(vec3 p, vec3 a, vec3 b, float r1, float r2) {
 mat2 rot(float a) { float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }
 float sat(float x) { return clamp(x, 0.0, 1.0); }
 
-// Feature anchors (head-local metres, human scale).
-float EX() { return 0.0305 * SP * W; }
-const float EYEY = 0.006;
-float ER() { return 0.0126 * sqrt(EYE); }
-float MOUTHY() { return -0.062 * LONG; }
-float TIPY() { return -0.03 * NOSE; }
-float TIPZ() { return 0.104 + 0.012 * (NOSE - 1.0) + 0.006 * HOOK * 0.3; }
-
-// ---------------------------------------------------------------- the skin field (skull, face, ears, neck)
-float gEye;      // distance to the eyeballs (kept for materials)
-float gLid;      // upper-lid proximity (lash line)
-float skin(vec3 p) {
-  vec3 q = vec3(abs(p.x), p.y, p.z);
-  float ex = EX();
-  // Cranium + forehead (sloped back on heavy-browed skulls).
-  // The cranium tapers below the temples, so its sides never balloon out behind the cheeks.
-  float wc = mix(1.0, 0.8, smoothstep(0.012, -0.06, p.y));
-  vec3 pc = p - vec3(0.0, 0.028 + 0.004 * (CRAN - 1.0), -0.014);
-  pc.x /= wc;
-  float d = sdEll(pc, vec3(0.074 * W, 0.092 * CRAN, 0.097)) * wc;
-  float fh = sdEll(p - vec3(0.0, 0.045, 0.036 - 0.01 * SLOPE), vec3(0.06 * W, 0.05 * CRAN, 0.046));
-  d = smin(d, fh, 0.03);
-  // Temple hollows.
-  d = smax(d, -sdEll(q - vec3(0.077 * W, 0.034, 0.046), vec3(0.012, 0.026, 0.02)), 0.016);
-  // Face mass: one smooth form from the cheekbones tapering to the jaw and chin.
-  float wf = mix(1.0, 0.6 * (0.84 + 0.16 * JAW) + 0.04 * FEM, smoothstep(-0.004, -0.1 * LONG, p.y));
-  // The face's frontal plane wraps round: the outer cheeks and jaw fall back from the nose line
-  // (a flat mask is what read as clay).
-  vec3 pb = p;
-  pb.z += 3.2 * p.x * p.x;
-  vec3 qb = vec3(abs(pb.x), pb.y, pb.z);
-  vec3 fpp = pb - vec3(0.0, -0.03 * LONG, 0.01 + 0.004 * PROT);
-  fpp.x /= wf;
-  float face = sdEll(fpp, vec3(0.066 * W, 0.074 * LONG, 0.07)) * wf;
-  d = smin(d, face, 0.02);
-  // Cheekbones and zygomatic arches.
-  float ck = sqrt(CHEEK);
-  vec3 cq = qb - vec3(0.046 * W, -0.004 + (CHEEK - 1.0) * 0.008, 0.05);
-  cq.xy = rot(0.35) * cq.xy;
-  d = smin(d, sdEll(cq, vec3(0.021 * ck, 0.012 * CHEEK, 0.019)), 0.018);
-  d = smin(d, sdCap(q, vec3(0.05 * W, -0.003, 0.04), vec3(0.067 * W, 0.002, 0.004), 0.0065), 0.026);
-  // Halfling apple cheeks.
-  if (HALF > 0.5) d = smin(d, sdEll(q - vec3(0.04, -0.03, 0.062), vec3(0.022, 0.019, 0.018)), 0.018);
-  // Mandible: gonial angle → chin, the jaw corner squarer on men.
-  vec3 go = vec3(0.045 * W * (0.84 + 0.16 * JAW), -0.06 * LONG, -0.008 - 0.004 * JDEPTH);
-  vec3 me = vec3(0.015 * CHIN, -0.097 * LONG, 0.058 + 0.005 * JDEPTH);
-  d = smin(d, sdCone(q, go, me, 0.01 * sqrt(JAW), 0.011), 0.018);
-  d = smin(d, sdCap(q, vec3(0.05 * W * (0.9 + 0.1 * JAW), -0.018, -0.014), go, 0.009), 0.018);
-  if (FEM < 0.5) d = smin(d, sdEll(q - go - vec3(-0.004, 0.005, 0.004), vec3(0.009 * JAW, 0.011, 0.012)), 0.014);
-  // Chin (a cleft-free mental protuberance; square on men).
-  d = smin(d, sdEll(p - vec3(0.0, -0.097 * LONG, 0.065 + 0.005 * JDEPTH), vec3((0.019 + 0.004 * FEM) * CHIN * (0.85 + 0.15 * JAW), 0.015 * CHIN, 0.016)), 0.014 + 0.008 * FEM);
-  if (FEM < 0.5) d = smin(d, sdEll(q - vec3(0.011, -0.1 * LONG, 0.064 + 0.005 * JDEPTH), vec3(0.01, 0.011, 0.012)), 0.01);
-  // Muzzle (orbicularis), cheek pads lateral to it: their junction is the nasolabial fold.
-  float mY = MOUTHY();
-  d = smin(d, sdEll(p - vec3(0.0, -0.054 * LONG, 0.064 + 0.005 * PROT), vec3(0.029, 0.03 * LONG, 0.024)), 0.022);
-  float full = FEM * 0.25 + HALF * 0.35;
-  float pad = sdEll(qb - vec3(0.034 * W, -0.034 * LONG, 0.056 + 0.002 * full), vec3(0.016, 0.019, 0.014) * (1.0 + full));
-  d = smin(d, pad, 0.014 - 0.005 * AGE - 0.003 * HOLLOW);
-  // Buccal hollows under the cheekbones (gaunt faces, age).
-  d = mix(d, smax(d, -sdEll(qb - vec3(0.061 * W, -0.05 * LONG, 0.045), vec3(0.011, 0.019, 0.011)), 0.028), sat(HOLLOW) * 0.7);
-  gEye = 1e3;
-  gLid = 1.0;
-  float dFront = sdEll(p - vec3(0.0, -0.022, 0.078), vec3(0.06 * W, 0.07 * LONG, 0.04));
-  if (dFront < 0.032) {
-    // Brow ridge (pinched by a scowl, sagging at the outer ends when weary) and glabella.
-    vec3 bq = q - vec3(ex * 0.95, 0.026 - 0.003 * SCOWL, 0.075 - 0.002 * EDEPTH);
-    bq.xz = rot(0.25) * bq.xz;
-    bq.xy = rot(0.16 * BTILT) * bq.xy;
-    d = smin(d, sdEll(bq, vec3(0.027 * W, 0.0085 * BROW, 0.0125 + 0.004 * (BROW - 1.0))), 0.012);
-    d = smin(d, sdEll(p - vec3(0.0, 0.029, 0.081 - 0.002 * EDEPTH), vec3(0.014, 0.012, 0.011)), 0.014);
-    // Scowl lines between the brows.
-    if (SCOWL > 0.5) d = smax(d, -sdCap(q, vec3(0.005, 0.022, 0.09), vec3(0.007, 0.036, 0.088), 0.0011), 0.002);
-    // Orbital sockets.
-    vec3 ec = vec3(ex, EYEY, 0.0715 - 0.003 * EDEPTH);
-    d = smax(d, -sdEll(q - vec3(ex, EYEY + 0.002, 0.0875 - 0.003 * EDEPTH), vec3(0.0155 * sqrt(EYE), 0.0105, 0.011)), 0.01);
-    // Eyeballs.
-    float er = ER();
-    float eye = length(q - ec) - er;
-    gEye = eye;
-    // Lids: an upper cap down to the lid line (droops when weary), a fold crease above it, a lower rim.
-    float slant = 0.18 * SLANT;
-    float lidLine = EYEY + 0.0049 * EOPEN - LID * 0.0042 + slant * (q.x - ex) * 6.0;
-    if (ASLEEP > 0.5) lidLine = EYEY - 0.004;
-    float up = length(q - ec) - (er + 0.0016);
-    up = smax(up, lidLine - q.y, 0.0012);
-    float lo = length(q - ec) - (er + 0.0011);
-    lo = smax(lo, q.y - (EYEY - 0.0066 * EOPEN + slant * (q.x - ex) * 3.0), 0.0012);
-    gLid = abs(q.y - lidLine) + max(up, 0.0) * 3.0;
-    d = smin(d, min(up, lo), 0.0035);
-    // Upper-lid fold: a soft crease along the top of the cap.
-    d = smax(d, -sdCap(q, ec + vec3(-0.012, 0.0115 - 0.003 * LID, 0.006), ec + vec3(0.012, 0.0105 - 0.004 * LID + slant * 0.06, 0.004), 0.0012), 0.003);
-    d = min(d, eye);
-    // Nose: bridge (straight, aquiline or snub), tip, alae, nostrils.
-    float nl = NOSE;
-    float tipY = TIPY();
-    float tipZ = TIPZ();
-    vec3 nb = vec3(0.0, 0.017, 0.085 - 0.002 * EDEPTH);
-    vec3 nt = vec3(0.0, tipY + 0.004, tipZ - 0.004);
-    d = smin(d, sdCone(p, nb, nt, 0.0062 * BRIDGE, 0.0094 * TIP), 0.008);
-    d = smin(d, sdEll(p - mix(nb, nt, 0.45) - vec3(0.0, 0.0, 0.0035 * HOOK), vec3(0.0058 * BRIDGE, 0.009, 0.006)), 0.006);
-    d = smin(d, sdEll(p - vec3(0.0, tipY - 0.001 * HOOK, tipZ - 0.006), vec3(0.0102 * TIP, 0.0094 * TIP, 0.0098 * TIP)), 0.006);
-    d = smin(d, sdEll(q - vec3(0.0108 * pow(TIP, 0.6) * NWIDTH, tipY + 0.0015, tipZ - 0.017), vec3(0.0072 * NWIDTH, 0.0062, 0.0078)), 0.0085);
-    d = smax(d, -sdEll(q - vec3(0.0062 * NWIDTH, tipY - 0.0085, tipZ - 0.015), vec3(0.003 * NWIDTH, 0.0016, 0.004)), 0.0016);
-    // Philtrum: two soft columns from the nose to the cupid's bow.
-    float phTop = tipY - 0.009;
-    d = smin(d, sdCap(q, vec3(0.0034, phTop, 0.0905 + 0.004 * PROT), vec3(0.0042, mY + 0.008, 0.0865 + 0.005 * PROT), 0.0016), 0.004);
-    // Lips: cupid's-bow upper lip, fuller lower lip, mouth line curving with the expression.
-    float mw = MOUTH;
-    float lk = LIPS;
-    float cx = q.x / (0.021 * mw);
-    float curve = (SMILE * 0.0035 + SMIRK * 0.003 * sign(p.x + 0.0001) * 0.6) * cx * cx;
-    if (SMIRK > 0.5) curve += 0.0022 * sat(p.x / 0.02) * cx;
-    float lipZ = 0.0805 + 0.005 * PROT;
-    vec3 ul = p - vec3(0.0, mY + 0.0047 + curve * 0.6, lipZ);
-    float upper = sdEll(ul, vec3(0.0196 * mw, 0.0047 * lk, 0.0074));
-    upper = smax(upper, -sdEll(q - vec3(0.0, mY + 0.0098, lipZ + 0.0075), vec3(0.0026, 0.0016, 0.004)), 0.0014);
-    float lower = sdEll(p - vec3(0.0, mY - 0.0054 + curve * 0.4, lipZ - 0.0014), vec3(0.0168 * mw, 0.0056 * lk, 0.0076));
-    d = smin(d, min(upper, lower), 0.0042);
-    d = smax(d, -sdEll(p - vec3(0.0, mY + curve, lipZ + 0.006), vec3(0.0205 * mw, 0.00055, 0.009)), 0.0012);
-    // Mouth corners and the mentolabial sulcus under the lower lip.
-    d = smax(d, -sdEll(q - vec3(0.0215 * mw, mY + curve * 1.2, lipZ - 0.004), vec3(0.0018, 0.0022, 0.004)), 0.0022);
-    d = smax(d, -sdEll(p - vec3(0.0, mY - 0.0145, lipZ - 0.002), vec3(0.012, 0.0022, 0.004)), 0.004);
-  }
-  // Ears: helix rim, concha bowl, lobe; elves and half-elves get the long point.
-  vec3 eq = q - vec3(0.0752 * W, -0.002, -0.012);
-  if (length(eq) < 0.06 + 0.04 * ELF) {
-  eq.xz = rot(-0.38) * eq.xz;
-  float earS = EARS;
-  float ear = sdEll(eq, vec3(0.0092, 0.029 * earS, 0.0185 * earS));
-  ear = smax(ear, -sdEll(eq - vec3(0.0072, -0.003 * earS, 0.002), vec3(0.0042, 0.016 * earS, 0.0095 * earS)), 0.003);
-  ear = smin(ear, sdEll(eq - vec3(0.002, -0.026 * earS, 0.003), vec3(0.0055, 0.0075, 0.007)), 0.004);
-  if (ELF > 0.01) {
-    float lenE = ELF;
-    ear = smin(ear, sdCone(eq, vec3(0.0, 0.012, -0.004), vec3(0.004 + 0.008 * lenE, 0.022 + 0.034 * lenE, -0.014 - 0.012 * lenE), 0.008, 0.0016), 0.007);
-  }
-  d = smin(d, ear, 0.007);
-  }
-  // Neck with the sterno-mastoid cords and (men) the larynx.
-  float nr = FEM > 0.5 ? 0.039 : 0.047;
-  vec3 np = p - vec3(0.0, 0.0, -0.03);
-  np.x *= 0.92;
-  float neck = sdCone(np, vec3(0.0, -0.045, 0.0), vec3(0.0, -0.22, -0.004), nr, nr * 1.18);
-  neck = smin(neck, sdCap(q, vec3(0.04, -0.07, -0.026), vec3(0.014, -0.19, 0.022), 0.0045 - 0.001 * FEM), 0.03);
-  if (FEM < 0.5) neck = smin(neck, sdEll(p - vec3(0.0, -0.125, 0.02), vec3(0.009, 0.013, 0.008)), 0.018);
-  d = smin(d, neck, 0.014);
-  return d;
+// The skull and face are the portrait painter's sculpt (portraitHeadGLSL), so a miniature's face
+// is the face in its portrait: the same relief, brow, sockets, nose, lips and chin.
+const float EYEY = 0.0;
+// Tapered capsule (iq's round cone).
+float sdRC(vec3 p, vec3 a, vec3 b, float r1, float r2) {
+  vec3 ba = b - a;
+  float l2 = dot(ba, ba);
+  float rr = r1 - r2;
+  float a2 = l2 - rr * rr;
+  float il2 = 1.0 / l2;
+  vec3 pa = p - a;
+  float y = dot(pa, ba);
+  float z = y - l2;
+  vec3 xv = pa * l2 - ba * y;
+  float x2 = dot(xv, xv);
+  float y2 = y * y * l2;
+  float z2 = z * z * l2;
+  float k = sign(rr) * rr * rr * x2;
+  if (sign(z) * a2 * z2 > k) return sqrt(x2 + z2) * il2 - r2;
+  if (sign(y) * a2 * y2 < k) return sqrt(x2 + y2) * il2 - r1;
+  return (sqrt(x2 * a2 * il2) + y * rr) * il2 - r1;
 }
+mat2 rot2(float a) { float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }
+${GLSL_HEAD}
 
 // ---------------------------------------------------------------- hair, brows and beards (offsets of the skin)
 // Hairline distance: > 0 on the scalp, < 0 on the face (forehead line receding at the temples, sideburns).
@@ -768,7 +646,7 @@ void main() {
   float aniso = 0.0;
   float clearc = 0.0;
   vec3 q = vec3(abs(pos.x), pos.y, pos.z);
-  vec3 ec = vec3(EX(), EYEY, 0.0715 - 0.003 * EDEPTH);
+  vec3 ec = vec3(EX(), EYEY, EZ());
   if (mat < 1.5) {
     alb = skinAlbedo(pos, n);
     // Oily T-zone, matte cheeks; lash line darkens the lid edge.

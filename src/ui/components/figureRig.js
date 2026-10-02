@@ -281,8 +281,9 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
   // ---- materials
   const skinC = desat(L(app.skinHex), 0.26);
   const hairC = L(app.hairHex);
-  const clothC = L(app.clothHex);
-  const trimC = L(app.trimHex);
+  // House colours as dyed wool, not paint: muted and a shade darker (an ochre robe must never read as bare skin).
+  const clothC = mulc(desat(L(app.clothHex), 0.3), 0.78);
+  const trimC = mulc(desat(L(app.trimHex), 0.25), 0.85);
   const mat = (color, o = {}) => sc.material({ color, ...o });
   const M = {
     skin: mat(skinC, { rough: 0.52, pattern: PATTERN.skin, soft: 0.004, edge: 0.18, wash: 0.55, face: 1 }),
@@ -319,9 +320,11 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
   const halfling = app.race === 'halfling';
 
   // Base garment colours by body.
-  const torsoMat = robe ? (body === 'vestments' ? M.linen : M.cloth) : tunic ? M.cloth : M.clothDark;
+  // Robes are dyed deep (the house colour darkened), so cloth never reads as bare skin by firelight.
+  M.robe = mat(mulc(desat(L(app.robeHex ?? app.clothHex), 0.25), 0.66), { rough: 0.92, pattern: PATTERN.cloth, soft: 0.003, edge: 0.3, wash: 0.65 });
+  const torsoMat = robe ? (body === 'vestments' ? M.linen : M.robe) : tunic ? M.cloth : M.clothDark;
   const legMat = robe ? M.trousers : M.trousers;
-  const armMat = robe ? (body === 'vestments' ? M.linen : M.cloth) : tunic ? M.cloth : M.clothDark;
+  const armMat = robe ? (body === 'vestments' ? M.linen : M.robe) : tunic ? M.cloth : M.clothDark;
 
   const limb = (a, b, ra, rb, m, o = {}) => sc.cone(a, b, ra, rb, { mat: m, g: GR.body, k: 0.03 * s, ...o });
   const E = (c, r, R, m, o = {}) => sc.ellipsoid(c, r, R, { mat: m, g: GR.body, k: 0.035 * s, ...o });
@@ -792,9 +795,14 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
       sc.torus(c, B.sh * 0.68, 0.06 * g, sR, { mat: M.fur, g: GR.cloak, k: 0, disp: furDisp(0.006 * s), amp: 0.008 * s });
     }
   } else if (robe) {
-    const m = body === 'vestments' ? M.linen : M.cloth;
+    const m = body === 'vestments' ? M.linen : M.robe;
     const pc = J.pelvis;
-    torsoShell(m, 0.01 * s, { disp: (x, y, z) => 0.0028 * s * Math.sin(Math.atan2(x - pc[0], z - pc[2]) * 9 + y * 18), amp: 0.003 * s });
+    torsoShell(m, 0.024 * s, { disp: (x, y, z) => 0.0045 * s * Math.sin(Math.atan2(x - pc[0], z - pc[2]) * 9 + y * 18 + Math.sin(y * 40) * 0.8), amp: 0.005 * s });
+    // The robe hangs loose from the shoulders: one fuller form over chest and belly hides the figure
+    // beneath (never a body-painted torso), gathered at the cord.
+    A(at(vlerp(J.pelvis, J.neck, 0.52), sR, [0, -0.01, 0.006]), [0.165 * g + 0.02 * s, 0.24 * s, 0.122 * g + 0.022 * s], sR, m, {
+      k: 0.05 * s, disp: (x, y, z) => 0.005 * s * Math.sin(Math.atan2(x - pc[0], z - pc[2]) * 7 + y * 14) + 0.002 * s * Math.sin(y * 60 + x * 30), amp: 0.006 * s,
+    });
     // Collar and a trimmed front opening.
     sc.torus(at(J.neck, sR, [0, -0.012, 0.0]), 0.068 * g, 0.018 * s, sR, { mat: body === 'vestments' ? M.gilt : M.trim, g: GR.belt, k: 0 });
     sc.box(at(chestC, sR, [0, 0.0, 0.112 * g / s + 0.014]), [0.018 * s, 0.17 * s, 0.006 * s], mMul(sR, mRotX(-0.08)), 0.004 * s, { mat: body === 'vestments' ? M.gilt : M.trim, g: GR.belt, k: 0 });
@@ -814,8 +822,8 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
     // Bell sleeves.
     for (const k of ['L', 'R']) {
       const { sh, el, wr } = arms[k];
-      AC(sh, el, 0.05 * g, 0.046 * g, m);
-      AC(el, vlerp(el, wr, 0.85), 0.05 * g, 0.065 * g, m, { k: 0.015 * s });
+      AC(sh, el, 0.058 * g, 0.056 * g, m, { disp: (x, y, z) => 0.004 * s * Math.sin(x * 120 + y * 70 + z * 90), amp: 0.005 * s });
+      AC(el, vlerp(el, wr, 0.92), 0.058 * g, 0.082 * g, m, { k: 0.015 * s, disp: (x, y, z) => 0.005 * s * Math.sin(x * 110 - y * 60 + z * 80), amp: 0.006 * s });
     }
     // Long skirt with folds (standing) or draped over the knees (sitting).
     if (!sitting && !asleep) {
@@ -823,8 +831,15 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
       const len = top[1] - 0.012;
       sc.custom(robeSkirt(top, pR, len, 0.155 * g * hipW, 0.27 * g, 0.012 * s), [top[0] - 0.4 * s, 0, top[2] - 0.4 * s, top[0] + 0.4 * s, top[1] + 0.02, top[2] + 0.4 * s], { mat: m, g: GR.armor, k: 0.02 * s });
     } else if (sitting) {
-      skirt(m, B.thigh * 0.98, 0, { k: 0.08 * s });
-      for (const k of ['L', 'R']) AC(legs[k].kn, vadd(legs[k].an, [0, -0.02 * s, 0]), 0.075 * g, 0.1 * g, m, { k: 0.08 * s });
+      // One drape across both thighs (cloth spans the gap between the knees), falling in folds to the feet.
+      const kneeMid = vlerp(legs.L.kn, legs.R.kn, 0.5);
+      const hipMid = vlerp(legs.L.hip, legs.R.hip, 0.5);
+      const ankleMid = vlerp(legs.L.an, legs.R.an, 0.5);
+      const kw = vlen(vsub(legs.L.kn, legs.R.kn)) * 0.5 + 0.075 * g;
+      const fold = (x, y, z) => 0.006 * s * Math.sin(x * 95 + Math.sin(y * 30) * 1.5) + 0.003 * s * Math.sin(z * 140 + y * 20);
+      AC(hipMid, kneeMid, 0.17 * g * hipW, kw, m, { k: 0.05 * s, disp: fold, amp: 0.008 * s });
+      AC(kneeMid, vadd(ankleMid, [0, -0.03 * s, 0.02 * s]), kw * 0.92, kw * 1.02, m, { k: 0.06 * s, disp: fold, amp: 0.008 * s });
+      for (const k of ['L', 'R']) AC(legs[k].kn, vadd(legs[k].an, [0, -0.025 * s, 0]), 0.08 * g, 0.105 * g, m, { k: 0.06 * s, disp: fold, amp: 0.008 * s });
     } else {
       const top = at(J.pelvis, pR, [0, 0.03, -0.005]);
       AC(top, vadd(legs.L.an, vscale(vsub(legs.R.an, legs.L.an), 0.5)), 0.155 * g, 0.16 * g, m, { k: 0.05 * s });

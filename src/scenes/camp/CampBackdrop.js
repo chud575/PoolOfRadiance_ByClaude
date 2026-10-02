@@ -102,17 +102,20 @@ float density(vec3 p) {
   vec2 xz = p.xz - sway;
   // Three tongues round a core; each tapers to a point.
   float d = 0.0;
-  for (int k = 0; k < 4; k++) {
-    float a = float(k) * 2.094 + 0.6;
-    vec2 c = k == 3 ? vec2(0.0) : vec2(cos(a), sin(a)) * 0.11;
-    float hk = k == 3 ? 1.0 : 0.62 + 0.13 * float(k);
+  for (int k = 0; k < 7; k++) {
+    float fk = float(k);
+    float a = fk * 2.39996 + 0.6;
+    vec2 c = k == 6 ? vec2(0.0) : vec2(cos(a), sin(a)) * (0.07 + 0.025 * mod(fk, 2.0));
+    float hk = k == 6 ? 1.0 : 0.55 + 0.07 * fk;
+    // each tongue flickers in height on its own beat
+    hk *= 0.85 + 0.15 * sin(t * (2.3 + fk * 0.7) + fk * 1.7);
     float yk = y / hk;
     if (yk > 1.0) continue;
-    float r = (k == 3 ? 0.22 : 0.15) * pow(1.0 - yk, 0.7) * smoothstep(0.0, 0.1, yk + 0.05);
-    d = max(d, smoothstep(r, r * 0.25, length(xz - c)) * (1.0 - smoothstep(0.55, 1.0, yk + (n2 - 0.5) * 0.5)));
+    float r = (k == 6 ? 0.21 : 0.13) * pow(1.0 - yk, 0.75) * smoothstep(0.0, 0.12, yk + 0.04);
+    d = max(d, smoothstep(r, r * 0.2, length(xz - c)) * (1.0 - smoothstep(0.5, 1.0, yk + (n2 - 0.5) * 0.6)));
   }
-  // Torn by the noise, more so toward the tips.
-  d *= smoothstep(0.2 + 0.45 * y, 0.75, n + (1.0 - y) * 0.35);
+  // Torn by the noise, more so toward the tips (licks break off and vanish).
+  d *= smoothstep(0.25 + 0.5 * y, 0.7, n + (1.0 - y) * 0.32);
   return d;
 }
 void main() {
@@ -133,9 +136,9 @@ void main() {
     if (d > 0.001) {
       float y = p.y / uHeight;
       float temp = d * (1.15 - y * 0.75);
-      vec3 c = mix(vec3(0.55, 0.06, 0.01), vec3(1.0, 0.36, 0.05), smoothstep(0.1, 0.55, temp));
-      c = mix(c, vec3(1.0, 0.62, 0.22), smoothstep(0.6, 1.0, temp));
-      acc += c * d * dt * 14.0;
+      vec3 c = mix(vec3(0.42, 0.04, 0.01), vec3(1.0, 0.3, 0.04), smoothstep(0.12, 0.55, temp));
+      c = mix(c, vec3(1.0, 0.58, 0.2), smoothstep(0.62, 1.0, temp));
+      acc += c * d * dt * 10.0;
     }
     t += dt;
   }
@@ -184,9 +187,10 @@ function splitLogGeometry(len, r, seed) {
     z += (z / rr) * knot;
     p.setXYZ(i, x, y, z);
     // Charred toward the burning end (−y), pale split wood, bark elsewhere.
-    const burn = Math.max(0, Math.min(1, (-y / len + 0.5) * 1.6 - 0.15));
-    const base = split ? [0.62, 0.48, 0.32] : [1, 1, 1];
-    const k = 1 - burn * 0.82;
+    // Char climbs the log unevenly (licked by the flames), the split face scorched too.
+    const burn = Math.max(0, Math.min(1, (-y / len + 0.5) * 1.9 + 0.12 * Math.sin(y * 23 + seed * 3 + Math.atan2(z, x) * 2)));
+    const base = split ? [0.42, 0.32, 0.22] : [0.78, 0.74, 0.7];
+    const k = 1 - burn * 0.9;
     col.push(base[0] * k, base[1] * k, base[2] * k);
   }
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));

@@ -231,7 +231,8 @@ function setup(ch, o) {
   u.uHairC.value.copy(lin(app.hairHex));
   u.uEyeC.value.copy(lin(app.eyeHex));
   const muted = (v, k, m) => { const g = (v.x + v.y + v.z) / 3; return v.lerp(new THREE.Vector3(g, g, g), k).multiplyScalar(m); };
-  u.uCloth.value.copy(muted(lin(app.clothHex), 0.28, 0.85));
+  const robed = app.body === 'robe' || app.body === 'vestments';
+  u.uCloth.value.copy(muted(lin(robed ? app.robeHex : app.clothHex), 0.28, 0.85));
   u.uTrim.value.copy(muted(lin(app.trimHex), 0.25, 0.9));
   u.uHair.value = HAIR_ID[app.hair] ?? 1;
   u.uBeard.value = BEARD_ID[app.beard] ?? 0;
