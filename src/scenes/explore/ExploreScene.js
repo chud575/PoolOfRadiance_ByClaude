@@ -282,7 +282,7 @@ export default class ExploreScene extends Scene {
     const ts = this.tileset;
     if (!ts.outdoors) {
       if (ts.variant === 'bane') return { bloomStrength: 0.6, bloomThreshold: 0.72, bloomRadius: 0.55, exposure: 1.85, vignette: 0.5, saturation: 0.92, contrast: 1.08 };
-      if (ts.variant === 'warrens') return { bloomStrength: 0.6, bloomThreshold: 0.7, bloomRadius: 0.55, exposure: 1.8, vignette: 0.48, saturation: 0.95, contrast: 1.06 };
+      if (ts.variant === 'warrens') return { bloomStrength: 0.6, bloomThreshold: 0.7, bloomRadius: 0.55, exposure: 2.15, vignette: 0.48, saturation: 0.95, contrast: 1.06 };
       return ts.id === 'dungeon'
         ? { bloomStrength: 0.65, bloomThreshold: 0.7, bloomRadius: 0.55, exposure: 1.35, vignette: 0.5, saturation: 1.0, contrast: 1.06 }
         : { bloomStrength: 0.55, bloomThreshold: 0.75, bloomRadius: 0.5, exposure: 1.25, vignette: 0.42, saturation: 1.05, contrast: 1.05 };
