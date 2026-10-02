@@ -104,6 +104,8 @@ export function applyDemoExploration(game, mapId) {
       ...walkable(m, 13, 12, 1),
     ]);
     for (let x = 1; x <= 14; x++) cells.add(`${x},15`);
+    // the corner of the counting-house where the thief found the hidden door
+    for (const c of ['9,13', '10,13', '10,12']) cells.add(c);
     markAll(game, m, cells);
     Object.assign(game.spentEvents, { slums_kobolds: true, slums_thugs: true, slums_rats: true, slums_skeletons: true, slums_cache: true });
     const secrets = (game.flags.secrets ??= []);
