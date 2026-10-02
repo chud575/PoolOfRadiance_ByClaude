@@ -389,11 +389,20 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
     const hip = J[`hip${k}`];
     const kn = J[`knee${k}`];
     const an = J[`ankle${k}`];
-    limb(hip, kn, 0.083 * g, 0.054 * g, legMat, { k: 0.035 * s });
-    E(vlerp(hip, kn, 0.3), [0.075 * g, 0.12 * s, 0.072 * g], mAlongY(vsub(kn, hip)), legMat, { k: 0.04 * s });
-    limb(kn, an, 0.052 * g, 0.032 * g, legMat, { k: 0.025 * s });
+    // Trousers are cloth, not skin: loose, barely tapering, with folds bunched at the knee and over the boot.
+    const kneeC = kn;
+    const ankC = an;
+    const trouserFold = (x, y, z) => {
+      const dk = Math.hypot(x - kneeC[0], y - kneeC[1], z - kneeC[2]);
+      const da = Math.hypot(x - ankC[0], y - ankC[1], z - ankC[2]);
+      const bunch = Math.max(0, 1 - dk / (0.09 * s)) + Math.max(0, 1 - da / (0.14 * s)) * 0.8;
+      return 0.0035 * s * Math.sin(y * 140 / s + Math.sin(x * 90 + z * 70) * 1.6) * (0.35 + bunch);
+    };
+    limb(hip, kn, 0.088 * g, 0.06 * g, legMat, { k: 0.035 * s, disp: trouserFold, amp: 0.005 * s });
+    E(vlerp(hip, kn, 0.32), [0.074 * g, 0.12 * s, 0.07 * g], mAlongY(vsub(kn, hip)), legMat, { k: 0.04 * s });
+    limb(kn, an, 0.058 * g, 0.043 * g, legMat, { k: 0.025 * s, disp: trouserFold, amp: 0.005 * s });
     const calfR = mAlongY(vsub(an, kn), J.side);
-    E(vadd(vlerp(kn, an, 0.28), mApply(calfR, [0, 0, -0.012 * g])), [0.048 * g, 0.1 * s, 0.05 * g], calfR, legMat, { k: 0.03 * s });
+    E(vadd(vlerp(kn, an, 0.3), mApply(calfR, [0, 0, -0.01 * g])), [0.05 * g, 0.1 * s, 0.05 * g], calfR, legMat, { k: 0.03 * s });
     legs[k] = { hip, kn, an };
   }
 
@@ -409,8 +418,12 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
     if (!halfling) {
       // Boot shaft over the lower shin.
       const kn = J[`knee${k}`];
-      sc.cone(an, vlerp(an, kn, plate ? 0.85 : 0.62), 0.04 * g, 0.054 * g, { mat: fm, g: GR.armor, k: 0.01 * s });
-      sc.ellipsoid(vadd(vlerp(an, kn, plate ? 0.85 : 0.62), [0, 0, 0]), [0.058 * g, 0.012 * s, 0.058 * g], mAlongY(vsub(kn, an)), { mat: fm, g: GR.armor, k: 0.006 * s });
+      // Tall riding boots: wrinkled at the ankle, a turned-down cuff below the knee.
+      const bTop = plate ? 0.85 : 0.74;
+      const ankW = (x, y, z) => 0.003 * s * Math.sin(y * 260 / s + x * 40) * Math.max(0, 1 - Math.abs(y - an[1] - 0.05 * s) / (0.06 * s));
+      sc.cone(an, vlerp(an, kn, bTop), 0.046 * g, 0.06 * g, { mat: fm, g: GR.armor, k: 0.01 * s, disp: ankW, amp: 0.004 * s });
+      const cuffC = vlerp(an, kn, bTop - 0.03);
+      sc.cone(cuffC, vlerp(an, kn, bTop + 0.06), 0.068 * g, 0.064 * g, { mat: fm, g: GR.armor, k: 0.006 * s });
     } else {
       sc.ellipsoid(vadd(an, vadd(vscale(footDir, 0.06 * s), [0, -0.005, 0])), [0.045 * g, 0.03 * s, 0.07 * s], fR, { mat: M.hair, g: GR.hair, k: 0.01 * s, disp: grooveDisp(an, 0.004 * s, 30) });
     }
