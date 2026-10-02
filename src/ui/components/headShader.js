@@ -88,9 +88,10 @@ export function headParams(app, o = {}) {
   // ray-marched head resolves subtle differences, so pull them back into a
   // believable range.
   const soft = new Set(['W', 'LONG', 'JAW', 'CHIN', 'CHEEK', 'NOSE', 'BRIDGE', 'TIP', 'EYE', 'SP', 'LIPS', 'MOUTH']);
-  const RANGE = { W: [0.86, 1.14], LONG: [0.88, 1.12], JAW: [0.78, 1.28], CHIN: [0.75, 1.3], CHEEK: [0.85, 1.35], NOSE: [0.8, 1.3], BRIDGE: [0.75, 1.4], TIP: [0.8, 1.5], EYE: [0.88, 1.15], SP: [0.92, 1.08], LIPS: [0.8, 1.25], MOUTH: [0.88, 1.12] };
+  // Wide enough that the eight heads are eight skulls (long and lean, broad and square, round and soft…).
+  const RANGE = { W: [0.82, 1.18], LONG: [0.85, 1.16], JAW: [0.72, 1.36], CHIN: [0.7, 1.38], CHEEK: [0.82, 1.42], NOSE: [0.78, 1.36], BRIDGE: [0.72, 1.45], TIP: [0.78, 1.55], EYE: [0.86, 1.17], SP: [0.9, 1.1], LIPS: [0.78, 1.3], MOUTH: [0.86, 1.15] };
   const set = (k, v) => {
-    if (soft.has(k)) v = Math.min(RANGE[k][1], Math.max(RANGE[k][0], 1 + (v - 1) * 0.7));
+    if (soft.has(k)) v = Math.min(RANGE[k][1], Math.max(RANGE[k][0], 1 + (v - 1) * 1.05));
     p[P.indexOf(k)] = v;
   };
   set('W', f.w * (1 + j(0.03)));

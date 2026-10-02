@@ -45,20 +45,20 @@ export const CLOTH_COLORS = [
  */
 export const HEADS = {
   male: [
-    { name: 'Soldier', hair: 'short', beard: 'stubble', expr: 'stern', face: { jaw: 1.16, chin: 1.2, cheek: 0.95, nose: 1.0, bridge: 1.1, brow: 1.15, lips: 0.85, sp: 1.0 } },
-    { name: 'Wanderer', hair: 'swept', beard: 'full', expr: 'weary', age: 0.25, face: { w: 0.96, nose: 1.15, bridge: 0.9, eye: 0.95, lid: 0.55, cheek: 1.08, sp: 1.04 } },
-    { name: 'Noble', hair: 'long', beard: 'goatee', expr: 'proud', face: { w: 0.9, jaw: 0.84, chin: 0.9, nose: 1.18, bridge: 0.8, cheek: 1.25, long: 1.08, lips: 0.85, sp: 0.96 } },
+    { name: 'Soldier', hair: 'short', beard: 'stubble', expr: 'stern', face: { w: 1.07, long: 0.95, jaw: 1.2, chin: 1.2, cheek: 0.95, nose: 1.0, bridge: 1.1, brow: 1.15, lips: 0.85, sp: 1.0 } },
+    { name: 'Wanderer', hair: 'swept', beard: 'full', expr: 'weary', age: 0.25, face: { w: 0.93, long: 1.06, nose: 1.15, bridge: 0.9, eye: 0.95, lid: 0.55, cheek: 1.12, jaw: 0.94, sp: 1.04 } },
+    { name: 'Noble', hair: 'long', beard: 'goatee', expr: 'proud', face: { w: 0.88, jaw: 0.82, chin: 0.92, nose: 1.22, bridge: 0.78, cheek: 1.25, long: 1.12, lips: 0.82, sp: 0.95 } },
     { name: 'Veteran', hair: 'bald', beard: 'full', scar: true, age: 0.7, expr: 'scowl', face: { w: 1.08, jaw: 1.22, brow: 1.55, nose: 1.22, bridge: 1.35, tip: 1.25, eye: 0.88, lips: 0.8, sp: 1.02 } },
-    { name: 'Guardsman', hair: 'short', beard: 'moustache', helm: true, expr: 'stern', face: { jaw: 1.18, chin: 1.12, mouth: 1.08, nose: 1.05, brow: 1.2, sp: 1.0 } },
-    { name: 'Rogue', hair: 'topknot', beard: 'stubble', expr: 'smirk', face: { w: 0.92, jaw: 0.86, chin: 0.78, eye: 0.92, long: 1.05, cheek: 1.18, nose: 0.92, lid: 0.25, sp: 0.95 } },
+    { name: 'Guardsman', hair: 'short', beard: 'moustache', helm: true, expr: 'stern', face: { w: 1.08, long: 0.93, jaw: 1.28, chin: 1.12, mouth: 1.1, nose: 0.95, tip: 1.2, brow: 1.25, sp: 1.03 } },
+    { name: 'Rogue', hair: 'topknot', beard: 'stubble', expr: 'smirk', face: { w: 0.89, jaw: 0.84, chin: 0.76, eye: 0.92, long: 1.09, cheek: 1.24, nose: 0.9, tip: 0.85, lid: 0.25, sp: 0.94 } },
     { name: 'Hooded', hair: 'hood', beard: 'stubble', expr: 'neutral', face: { w: 0.95, nose: 1.12, cheek: 1.1, sp: 0.97, lid: 0.3 } },
     { name: 'Sage', hair: 'long', beard: 'long', age: 1, expr: 'kind', face: { w: 0.94, nose: 1.28, tip: 1.2, long: 1.06, eye: 0.9, lid: 0.45, brow: 1.2, cheek: 0.9 } },
   ],
   female: [
-    { name: 'Maiden', hair: 'long', beard: 'none', expr: 'kind', face: { w: 0.96, cheek: 1.1, nose: 0.84, eye: 1.14, lips: 1.18, chin: 0.82, long: 0.95 } },
+    { name: 'Maiden', hair: 'long', beard: 'none', expr: 'kind', face: { w: 0.98, cheek: 1.14, nose: 0.82, eye: 1.16, lips: 1.2, chin: 0.8, long: 0.93 } },
     { name: 'Ranger', hair: 'braid', beard: 'none', expr: 'stern', age: 0.15, face: { w: 0.94, jaw: 1.04, nose: 1.1, bridge: 1.1, cheek: 1.2, brow: 1.05, sp: 1.02, long: 1.04 } },
-    { name: 'Priestess', hair: 'bun', beard: 'none', expr: 'kind', age: 0.3, face: { w: 1.05, chin: 0.88, eye: 1.0, lid: 0.45, cheek: 0.95, lips: 1.0, long: 0.96 } },
-    { name: 'Duelist', hair: 'bob', beard: 'none', expr: 'smirk', face: { w: 0.93, jaw: 0.86, nose: 1.08, eye: 0.94, mouth: 0.92, cheek: 1.22, sp: 0.96 } },
+    { name: 'Priestess', hair: 'bun', beard: 'none', expr: 'kind', age: 0.3, face: { w: 1.07, chin: 0.86, eye: 1.02, lid: 0.45, cheek: 0.92, lips: 1.04, long: 0.93, nose: 0.92 } },
+    { name: 'Duelist', hair: 'bob', beard: 'none', expr: 'smirk', face: { w: 0.9, long: 1.07, jaw: 0.84, nose: 1.1, eye: 0.94, mouth: 0.92, cheek: 1.24, sp: 0.95 } },
     { name: 'Sorceress', hair: 'wavy', beard: 'none', expr: 'proud', face: { w: 0.92, long: 1.07, eye: 1.12, chin: 0.82, cheek: 1.3, nose: 0.95, lips: 1.2, lid: 0.3 } },
     { name: 'Shieldmaiden', hair: 'long', beard: 'none', helm: true, expr: 'stern', face: { jaw: 1.08, chin: 1.08, brow: 1.1, nose: 1.02 } },
     { name: 'Hooded', hair: 'hood', beard: 'none', expr: 'weary', face: { w: 0.95, lid: 0.5, cheek: 1.05, nose: 0.95 } },
