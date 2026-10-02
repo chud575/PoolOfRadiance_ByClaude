@@ -104,7 +104,7 @@ function engrave(src, maskC, seed) {
       t = 0.08 + Math.pow(t, 1.1) * 0.88;
     } else {
       t = 1 - Math.max(0, Math.min(1, (B[i] - lo) / Math.max(0.05, hi - lo)));
-      t = 0.12 + Math.pow(t, 1.35) * 0.72; // background compressed toward a mid tone
+      t = 0.08 + Math.pow(t, 1.4) * 0.74; // background kept light and quiet: open paper, ruled tints, the subject carries the plate
     }
     // oval vignette wholly inside the plate mark
     const vx = (x - W / 2) / (W * 0.48);
@@ -126,7 +126,9 @@ function engrave(src, maskC, seed) {
   const base = 0.62; // the engraver's default diagonal where the picture has no form
   for (let i = 0; i < N; i++) {
     const th = 0.5 * Math.atan2(2 * Jxy[i], Jxx[i] - Jyy[i]) + Math.PI / 2; // isophote direction
-    const coh = Math.min(1, Math.sqrt((Jxx[i] - Jyy[i]) ** 2 + 4 * Jxy[i] ** 2) * 40);
+    // the background's masonry noise must not steer the burin (that reads as scribble): there the
+    // engraver keeps to long ruled diagonals and only bends with strong structure
+    const coh = Math.min(1, Math.sqrt((Jxx[i] - Jyy[i]) ** 2 + 4 * Jxy[i] ** 2) * 40) * (Mb[i] > 0.3 ? 1 : 0.55);
     // blend toward the default by coherence (on the double-angle circle)
     const c = Math.cos(2 * th) * coh + Math.cos(2 * base) * (1 - coh);
     const s2 = Math.sin(2 * th) * coh + Math.sin(2 * base) * (1 - coh);
@@ -161,11 +163,12 @@ function engrave(src, maskC, seed) {
         const y0 = gy0 + (R() - 0.5) * sp * 0.25;
         const t0 = at(tone, x0, y0);
         if (t0 < thr || !free(x0, y0)) continue;
-        // trace both ways along the direction field
+        // trace both ways along the direction field (background tints run long, like ruled lines)
         const pts = [[x0, y0]];
+        const reach = at(Mb, x0, y0) > 0.5 ? len : len * 2;
         for (const dir of [1, -1]) {
           let x = x0; let y = y0;
-          for (let k = 0; k < len; k++) {
+          for (let k = 0; k < reach; k++) {
             const a = at(ang, x, y) + off;
             x += Math.cos(a) * dir * 1.4;
             y += Math.sin(a) * dir * 1.4;

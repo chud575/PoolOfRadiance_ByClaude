@@ -506,10 +506,48 @@ function spectral(f, emit = []) {
     d[i] = (c0[0] + (c1[0] - c0[0]) * u) * a;
     d[i + 1] = (c0[1] + (c1[1] - c0[1]) * u) * a;
     d[i + 2] = (c0[2] + (c1[2] - c0[2]) * u) * a;
-    d[i + 3] = 255 * a * (0.4 + l * 0.42) * fade;
+    // shadowed plates go glassy (the chapel shows through), lit plates hold their light
+    d[i + 3] = 255 * a * (0.2 + l * l * 0.62) * fade;
   }
   bg.putImageData(img, 0, 0);
   g.drawImage(body, 0, 0);
+  // 2b. the armour's edges traced in light: lames, rivet rows, the helm's sight and the cape's
+  // folds read as luminous lines (a luminance gradient of the solid render), so the ghost keeps
+  // the knight's construction instead of melting into a smooth toy
+  {
+    const sw = src.width; const sh = src.height;
+    const sd = src.getContext('2d').getImageData(0, 0, sw, sh).data;
+    const L = new Float32Array(sw * sh);
+    for (let j = 0; j < sw * sh; j++) L[j] = sd[j * 4 + 3] ? (sd[j * 4] * 0.3 + sd[j * 4 + 1] * 0.59 + sd[j * 4 + 2] * 0.11) / 255 : -1;
+    const lines = makeCanvas(W, H);
+    const lg = lines.getContext('2d');
+    const li = lg.createImageData(W, H);
+    const ld = li.data;
+    for (let y = 1; y < sh - 1; y++) {
+      const fy = y / Math.max(1, oy);
+      const fade = Math.min(1, Math.max(0, (1 - fy) * 3.2 + 0.1));
+      for (let x = 1; x < sw - 1; x++) {
+        const j = y * sw + x;
+        if (L[j] < 0) continue;
+        const at = (k) => (L[k] < 0 ? L[j] : L[k]);
+        const gx = at(j + 1) - at(j - 1) + 0.5 * (at(j - sw + 1) - at(j - sw - 1) + at(j + sw + 1) - at(j + sw - 1));
+        const gy = at(j + sw) - at(j - sw) + 0.5 * (at(j + sw - 1) - at(j - sw - 1) + at(j + sw + 1) - at(j - sw + 1));
+        const e = Math.min(1, Math.max(0, Math.hypot(gx, gy) * 2.4 - 0.12));
+        if (e <= 0) continue;
+        const o = ((y + pad) * W + x + pad) * 4;
+        ld[o] = 200; ld[o + 1] = 250; ld[o + 2] = 255; ld[o + 3] = 255 * e * 0.75 * fade;
+      }
+    }
+    lg.putImageData(li, 0, 0);
+    g.globalCompositeOperation = 'lighter';
+    g.drawImage(lines, 0, 0);
+    g.globalAlpha = 0.6;
+    g.filter = 'blur(2px)';
+    g.drawImage(lines, 0, 0);
+    g.filter = 'none';
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = 'source-over';
+  }
   // 3. internal mist: soft noise clipped to the body, drifting upward
   const mist = makeCanvas(W, H);
   const mg = mist.getContext('2d');
@@ -648,7 +686,9 @@ function ghostBust(W, H) {
     const x = W * 0.5 - r.ox * up + W * 0.02;
     const y = H * 0.07 - top * up;
     g.globalCompositeOperation = 'lighter';
+    g.globalAlpha = 0.72; // the traced plate edges would blow the bust out at full strength
     g.drawImage(r.canvas, x, y, r.canvas.width * up, r.canvas.height * up);
+    g.globalAlpha = 1;
     g.globalCompositeOperation = 'source-over';
   }
   const mist = g.createLinearGradient(0, H * 0.6, 0, H);
