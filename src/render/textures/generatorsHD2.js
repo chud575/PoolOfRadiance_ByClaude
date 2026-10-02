@@ -304,11 +304,14 @@ export function hewnRock({ seed = 241, base = [0.33, 0.29, 0.24], floor = false,
     const fine = fFine(u, v);
     const micro = fMicro(u, v);
     // strata: tilted bedding planes with steps
-    const sv = floor ? big * 9 : v * 7 + big * 2.2 + u * 0.6;
+    const sv = floor ? big * 9 : v * 9 + big * 3.2 + (mid - 0.5) * 1.2 + u * 0.6;
     const layer = Math.floor(sv);
     const lf = sv - layer;
     const strataStep = ceiling ? 0 : smooth(0.0, 0.08, lf) * 0.06;
-    const layerTone = ceiling ? 0.96 + hash2(layer, 1, seed) * 0.08 : 0.85 + hash2(layer, 1, seed) * 0.3;
+    const layerTone = ceiling ? 0.96 + hash2(layer, 1, seed) * 0.08 : 0.84 + hash2(layer, 1, seed) * 0.3;
+    // thin dark partings between the beds (shale seams), the odd pale sandy bed
+    const parting = ceiling || floor ? 0 : 1 - smooth(0.0, 0.035, lf);
+    const paleBed = !ceiling && !floor && hash2(layer, 5, seed) > 0.82 ? 1 : 0;
     // pick scars: short diagonal gouges
     const pk = worley(u * 34, v * 22, 34, seed + 7);
     const gouge = floor ? 0 : (1 - smooth(0.0, 0.18, Math.abs(pk.f2 - pk.f1))) * 0.5 * (pk.id > 0.4 ? 1 : 0);
@@ -317,14 +320,16 @@ export function hewnRock({ seed = 241, base = [0.33, 0.29, 0.24], floor = false,
     const crack = (1 - smooth(0.0, 0.018, fr.f2 - fr.f1 + (fine - 0.5) * 0.04)) * (hash2(Math.floor(fr.id * 97), 3, seed) > 0.55 ? 1 : 0.15);
     const h = 0.5 + (big - 0.5) * 0.5 + (mid - 0.5) * 0.28 + (fine - 0.5) * 0.08 + (micro - 0.5) * 0.02 + strataStep - gouge * 0.05 - crack * 0.12;
     let c = mul3(base, layerTone * (0.78 + (big - 0.5) * 0.4 + (mid - 0.5) * 0.25 + (fine - 0.5) * 0.12 + (micro - 0.5) * 0.08));
-    c = mul3(c, 1 - crack * 0.55 + gouge * 0.08);
+    c = mul3(c, 1 - crack * 0.55 + gouge * 0.08 - parting * 0.3);
+    if (paleBed) c = mix3(c, [0.5, 0.48, 0.42], 0.35);
     const vein = (1 - smooth(0.0, 0.012, Math.abs(fVein(u, v) - 0.5))) * smooth(0.45, 0.65, big);
     c = mix3(c, [0.5, 0.48, 0.43], vein * 0.08);
     // seeps darken; only the wettest cores of a seep lose roughness (and never on the roof: no glints)
     const seep = ceiling ? 0 : smooth(0.55, 0.8, fSeep(u, v));
     c = mix3(c, mul3(c, 0.55), seep * 0.6);
     c = mix3(c, [0.2, 0.26, 0.14], smooth(0.68, 0.8, mid) * seep * 0.6);
-    const r = ceiling ? clamp01(0.96 + (fine - 0.5) * 0.04) : clamp01(0.9 + (fine - 0.5) * 0.08 - smooth(0.75, 0.95, seep) * 0.3);
+    // wet rock: seeps run glossy (water film), the beds below a parting stay damp and semi-gloss
+    const r = ceiling ? clamp01(0.96 + (fine - 0.5) * 0.04) : clamp01(0.86 + (fine - 0.5) * 0.08 - smooth(0.6, 0.9, seep) * 0.55 - parting * 0.15);
     return { c, h, r };
   };
 }
@@ -483,7 +488,7 @@ export function setts({ seed = 63, rows = 16, minW = 0.07, maxW = 0.125, moss = 
  * arcs across the tile. Joints vary in width and fill (dark grit, pale sand, moss); stones vary
  * in crown height (proud and foot-polished, or sunk and dirty). Tile ≈ 2 m. {c, h, r} contract.
  */
-export function settsV({ seed = 64, rows = 16, minW = 0.045, maxW = 0.095, moss = 0.35, sand = 0.5 } = {}) {
+export function settsV({ seed = 64, rows = 16, minW = 0.045, maxW = 0.095, moss = 0.35, sand = 0.5, flags = false } = {}) {
   const rb = [0];
   const wts = [];
   for (let r = 0; r < rows; r++) wts.push(0.72 + hash2(r, 3, seed) * 0.6);
@@ -565,10 +570,17 @@ export function settsV({ seed = 64, rows = 16, minW = 0.045, maxW = 0.095, moss 
     const stone = smooth(jw, jw + 0.0016, e);
     const t = clamp01((e - jw) / (0.016 + sA * 0.016));
     const dome = 1 - (1 - t) * (1 - t);
-    const settle = (hash2(row, k, seed + 63) - 0.5) * 0.14;
+    const settle = (hash2(row, k, seed + 63) - 0.5) * (flags ? 0.2 : 0.14);
     const ly = tv;
     const tilt = lx * (hash2(row, k, seed + 61) - 0.5) * 0.12 + ly * (hash2(row, k, seed + 62) - 0.5) * 0.12;
-    const crown = 0.42 + dome * 0.3 + settle + tilt + (fine - 0.5) * 0.05 + (grain - 0.5) * 0.015;
+    // flags: a hairline fracture across some slabs (a fallen weight, a frost-split)
+    let crk = 0;
+    if (flags && sB > 0.6) {
+      const ang = sA * 3.1;
+      const across = (lx * Math.cos(ang) + ly * Math.sin(ang)) + (mid - 0.5) * 0.25 + (fine - 0.5) * 0.06;
+      crk = 1 - smooth(0.0, 0.012, Math.abs(across));
+    }
+    const crown = 0.42 + dome * (flags ? 0.14 : 0.3) + settle + tilt + (fine - 0.5) * 0.05 + (grain - 0.5) * 0.015 - crk * 0.06;
     const jfill = 0.1 + (fine - 0.5) * 0.05 + mid * 0.04;
     const sd = smooth(0.5, 0.72, fSand(u, v0)) * sand;
     const h = lerp(jfill + sd * 0.05, crown, stone);
@@ -583,6 +595,7 @@ export function settsV({ seed = 64, rows = 16, minW = 0.045, maxW = 0.095, moss 
     const mz = smooth(0.6, 0.8, fMoss(u, v0)) * moss;
     jc = mix3(jc, mul3([0.14, 0.2, 0.07], 0.8 + fine * 0.5), mz);
     c = mix3(c, mix3(c, [0.2, 0.26, 0.1], 0.5), mz * (1 - dome) * 0.5);
+    if (flags) c = mul3(c, (0.78 - crk * 0.4) * (1 - Math.max(0, -settle) * 1.5));
     const col = mix3(jc, c, stone);
     const r = lerp(0.97 - sd * 0.03, clamp01(0.84 - dome * 0.18 - Math.max(0, settle) * 0.4 + (fine - 0.5) * 0.1), stone);
     return { c: col, h, r };

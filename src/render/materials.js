@@ -46,11 +46,11 @@ const DEFS = {
   arch_boards: { tex: 'hd_boards', texScale: 2, vc: true, fx: { macro: 0.15, floor: 1 } },
   arch_ceiling: { tex: 'hd2_ceiling', texScale: 3, vc: true, color: 0xffffff, fx: { macro: 0.1 } },
   arch_dungeon: { tex: 'hd2_dungeon', texScale: 3, vc: true, fx: { macro: 0.34, grime: 0.6, moss: 0.4, streak: 1 } },
-  arch_dungeon_floor: { tex: 'hd2_dungeon_floor', texScale: 3, vc: true, fx: { macro: 0.3, floor: 1 } },
+  arch_dungeon_floor: { tex: 'hd3_dungeon_floor', texScale: 3, vc: true, fx: { macro: 0.3, floor: 1 } },
   arch_hewn: { tex: 'hd2_hewn', texScale: 3, vc: true, fx: { macro: 0.35, grime: 0.5, moss: 0.5 } },
   arch_hewn_ceil: { tex: 'hd2_hewn_ceil', texScale: 3, vc: true, roughness: 1, fx: { macro: 0.3 } },
   arch_cave_floor: { tex: 'hd2_cave_floor', texScale: 3, vc: true, fx: { macro: 0.35, floor: 1 } },
-  arch_basalt: { tex: 'hd2_basalt', texScale: 3, vc: true, fx: { macro: 0.22, grime: 0.3, streak: 0.8 } },
+  arch_basalt: { tex: 'hd2_basalt', texScale: 2.2, vc: true, fx: { macro: 0.22, grime: 0.3, streak: 0.8 } },
   arch_basalt_floor: { tex: 'hd2_basalt_floor', texScale: 3, vc: true, fx: { macro: 0.2, floor: 1 } },
   arch_relief: { tex: 'hd2_relief', texScale: 0, vc: true, fx: { macro: 0.1 } },
   arch_brick: { tex: 'hd_brick', texScale: 1, vc: true, fx: { macro: 0.3, grime: 0.5 } },
@@ -239,7 +239,7 @@ function applySurfaceFX(mat, fx) {
         if (vFxPud > 0.0) {
           // the water surface is flat: it fills the joints and hides the stones' relief
           vec3 fxUpV = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
-          normal = normalize(mix(normal, fxUpV, smoothstep(0.0, 0.6, vFxPud)));
+          normal = normalize(mix(normal, fxUpV, smoothstep(0.0, 0.3, vFxPud)));
         }
         #if ${grain === '0.000' ? 0 : 1}
         {
@@ -269,7 +269,7 @@ function applySurfaceFX(mat, fx) {
           // (never glossy where the normal map is busy: a low roughness on bumpy stone glitters)
           float wetK = clamp(uFxWet * 2.0, 0.0, 1.0);
           roughnessFactor = mix(roughnessFactor, max(roughnessFactor, 0.5), vFxWet * wetK);
-          roughnessFactor = mix(roughnessFactor, 0.06, smoothstep(0.2, 0.9, vFxPud));
+          roughnessFactor = mix(roughnessFactor, 0.06, smoothstep(0.45, 0.95, vFxPud)); // matte wet rim: no glint ribbon at the edge
           // after rain the whole carriageway is slick: crowns glossy, joints still matte
           roughnessFactor = mix(roughnessFactor, roughnessFactor * 0.5, vFxFloor * uFxSlick);
         }`,

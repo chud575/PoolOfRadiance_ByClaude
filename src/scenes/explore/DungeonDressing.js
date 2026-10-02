@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { CELL, EDGE } from '../../data/maps/MapGrid.js';
 import { getMaterial } from '../../render/materials.js';
 import { getBaneBannerTexture, getRunnerTexture, getBlobTexture, getSoftTexture, getAltarClothTexture, getAltarClothORM } from '../../render/textures/index.js';
-import { GeoBuilder, roughBlockGeometry, hash } from './GeoBuilder.js';
+import { GeoBuilder, roughBlockGeometry, roughen, hash } from './GeoBuilder.js';
 import { CELL_SIZE, WALL_T } from './BlockBuilder.js';
 import { fracturedRock, PROP_UNIFORMS } from './Props.js';
 
@@ -209,24 +209,49 @@ export function dressDungeon(map, block, opts = {}) {
       if (kind !== 'convexExt' && kind !== 'convexNon') continue;
       const sd = hash(f.seed, end, 'crn');
       const sC = end * (S / 2 + T / 2 - 0.06);
-      let y = -0.05;
-      // bedded rock: flat, fractured slabs of varying thickness stacked with a common dip, each
-      // stepping in or out a little (the strata weather back unevenly), never round lumps
-      const dip = (hash(sd, 'dip') - 0.5) * 0.16;
-      for (let k = 0; y < H - 0.1 && k < 16; k++) {
-        const th = 0.16 + hash(sd, k, 'th') * 0.26;
-        const wd = 0.55 + hash(sd, k, 'cz') * 0.35;
-        const m = onFace(f, sC + (hash(sd, k, 'cs') - 0.5) * 0.16 - end * 0.05, y + th * 0.5, T / 2 - 0.12 + hash(sd, k, 'cd') * 0.14)
-          .multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(dip + (hash(sd, k, 'rx') - 0.5) * 0.06, (hash(sd, k, 'ry') - 0.5) * 0.5, dip * 0.5 + (hash(sd, k, 'rz') - 0.5) * 0.06)))
-          .multiply(new THREE.Matrix4().makeScale(wd * 1.1, th / 0.62, wd));
-        g.geometry('arch_hewn', chunks[(k + Math.floor(sd * 3)) % chunks.length], m, { uv: 'world', tint: rt(sd, k).map((v) => v * (0.85 + (k % 2) * 0.2)), ao: (p) => 0.55 + 0.45 * THREE.MathUtils.smoothstep(p.y, 0, 0.8) });
-        y += th * 0.96;
+      // a timber prop shoring the corner of the tunnel mouth: a rough, wet log post on a stone pad,
+      // a squared corbel block under the roof, a couple of rock lumps wedged at its foot
+      const ps = sC - end * 0.12;
+      const pd = T / 2 + 0.1;
+      const lean = (hash(sd, 'pl') - 0.5) * 0.05;
+      const post = new THREE.CylinderGeometry(0.105, 0.125, H - 0.3, 8, 4);
+      roughen(post, { amp: 0.012, seed: sd * 100, freq: 5 });
+      g.geometry('prop_wood', post, onFace(f, ps, (H - 0.3) / 2, pd).multiply(new THREE.Matrix4().makeRotationZ(lean)), { uv: 'world', tint: [0.42, 0.34, 0.27], ao: (p) => 0.5 + 0.5 * THREE.MathUtils.smoothstep(p.y, 0, 0.8) });
+      post.dispose();
+      const cb = roughBlockGeometry(0.42, 0.22, 0.34, { bevel: 0.02, amp: 0.01, seed: sd * 50, chip: 0.03 });
+      g.geometry('prop_wood', cb, onFace(f, ps, H - 0.38, pd), { uv: 'world', tint: [0.38, 0.3, 0.24], ao: 0.7 });
+      cb.dispose();
+      for (let k = 0; k < 2; k++) {
+        const sc = 0.22 + hash(sd, k, 'pr') * 0.18;
+        g.geometry('arch_hewn', rocks[(k + 1) % rocks.length], onFace(f, ps + (k ? 0.2 : -0.2) * end, sc * 0.2, pd + 0.06).multiply(new THREE.Matrix4().makeScale(sc, sc * 0.7, sc)), { uv: 'world', tint: rt(sd, k), ao: 0.7 });
       }
-      // overhanging shoulder where the corner meets the roof
-      const m = onFace(f, sC - end * 0.1, H - 0.3, T / 2 - 0.1)
-        .multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(0.5, sd * 6.3, 0.6 * end)))
-        .multiply(new THREE.Matrix4().makeScale(0.75, 0.6, 0.65));
-      g.geometry('arch_hewn_ceil', rocks[Math.floor(sd * 5) % rocks.length], m, { uv: 'world', tint: rt(sd, 99), ao: 0.6 });
+    }
+  }
+
+  /**
+   * A mine timber set across a corridor: two rough log posts against the walls, a squared cap log
+   * across the roof, wedged with a few lagging boards — the warrens are shored, not stacked plates.
+   */
+  function timberSet(cx, cz, alongZ, seed) {
+    const ceil = ts.ceilH;
+    const half = S / 2 - T / 2 - 0.12;
+    const capY = ceil - 0.42;
+    const at = (u, y) => (alongZ ? tr(cx + u, y, cz) : tr(cx, y, cz + u));
+    for (const side of [-1, 1]) {
+      const post = new THREE.CylinderGeometry(0.1, 0.12, capY, 8, 4);
+      roughen(post, { amp: 0.012, seed: seed * 10 + side, freq: 5 });
+      g.geometry('prop_wood', post, at(side * half, capY / 2).multiply(new THREE.Matrix4().makeRotationZ((hash(seed, side, 'ln') - 0.5) * 0.06)), { uv: 'world', tint: [0.4, 0.32, 0.26], ao: (p) => 0.5 + 0.5 * THREE.MathUtils.smoothstep(p.y, 0, 0.8) });
+      post.dispose();
+    }
+    const cap = roughBlockGeometry(2 * half + 0.4, 0.24, 0.26, { bevel: 0.02, amp: 0.012, seed: seed * 7, chip: 0.03 });
+    const rot = alongZ ? M4() : new THREE.Matrix4().makeRotationY(Math.PI / 2);
+    g.geometry('prop_wood', cap, at(0, capY + 0.12).multiply(rot), { uv: 'world', tint: [0.36, 0.29, 0.23], ao: 0.6 });
+    cap.dispose();
+    // lagging boards wedged between the cap and the rock
+    for (let k = 0; k < 3; k++) {
+      const u = (k - 1) * 0.6 + (hash(seed, k, 'lg') - 0.5) * 0.2;
+      const bm = at(u, capY + 0.27).multiply(alongZ ? new THREE.Matrix4().makeRotationY(Math.PI / 2) : M4()).multiply(new THREE.Matrix4().makeRotationZ((hash(seed, k, 'lr') - 0.5) * 0.1));
+      g.box('prop_wood', { matrix: bm, s: [0.9, 0.04, 0.16], uv: 'along', tint: [0.34, 0.28, 0.22], ao: 0.5 });
     }
   }
 
@@ -298,6 +323,10 @@ export function dressDungeon(map, block, opts = {}) {
       const ns = walls.includes('E') && walls.includes('W');
       const ew = walls.includes('N') && walls.includes('S');
       if ((ns || ew) && hash(map.id, fc.x, fc.y, 'run') < 0.75) runnel(cx, cz, ns);
+      if ((ns || ew) && hash(map.id, fc.x, fc.y, 'tset') < 0.55) {
+        const off = (hash(map.id, fc.x, fc.y, 'tso') - 0.5) * 1.4;
+        timberSet(ns ? cx : cx + off, ns ? cz + off : cz, ns, hash(map.id, fc.x, fc.y, 'tss') * 100);
+      }
       // kobold refuse against the walls
       for (const d of walls) {
         const r = hash(map.id, fc.x, fc.y, d, 'ref');
@@ -308,7 +337,8 @@ export function dressDungeon(map, block, opts = {}) {
         const pz = cz - nz * (S / 2 - T / 2 - 0.45) + nx * along;
         const m = tr(px, 0, pz).multiply(new THREE.Matrix4().makeRotationY(Math.atan2(nx, nz) + hash(map.id, fc.x, fc.y, d) * 0.6));
         const seed = hash(map.id, fc.x, fc.y, d, 'sd') * 100;
-        if (r < 0.18) bonePile(m, seed);
+        if (r < 0.1) skeleton(m.clone().multiply(new THREE.Matrix4().makeRotationY(Math.PI / 2)), seed);
+        else if (r < 0.18) bonePile(m, seed);
         else if (r < 0.3) potsherds(m, seed);
         else if (r < 0.42) ragNest(m, seed);
         else skullStake(m, seed);
@@ -341,6 +371,70 @@ export function dressDungeon(map, block, opts = {}) {
       const sz = alongZ ? len : 0.22;
       runnelQuads.push([x, z, sx, sz]);
     }
+  }
+
+  /**
+   * A dead adventurer, long picked clean: a skeleton lying slumped on its back along the wall —
+   * skull turned aside with the jaw dropped, a spine of vertebrae, the ribcage half collapsed,
+   * pelvis, splayed limbs, and the rags of a tunic and a rusted sword beside it.
+   */
+  function skeleton(m, seed) {
+    const B = (geo, mm, tint = [0.86, 0.8, 0.68]) => g.geometry('prop_bone', geo, mm, { uv: 'world', tint, ao: (p) => 0.55 + 0.45 * THREE.MathUtils.smoothstep(p.y, 0, 0.12) });
+    const L = (mm, len, r = 0.016) => {
+      const sh = new THREE.CylinderGeometry(r, r * 0.85, len, 6);
+      B(sh, mm);
+      sh.dispose();
+      const knob = new THREE.SphereGeometry(r * 1.9, 6, 5);
+      for (const sy of [-1, 1]) B(knob, mm.clone().multiply(tr(0, (sy * len) / 2, 0)));
+      knob.dispose();
+    };
+    const flat = (x, y, z, ry, rz = Math.PI / 2) => m.clone().multiply(tr(x, y, z)).multiply(new THREE.Matrix4().makeRotationY(ry)).multiply(new THREE.Matrix4().makeRotationZ(rz));
+    // rags of the tunic under the torso
+    const rag = new THREE.SphereGeometry(0.3, 8, 5);
+    g.geometry('prop_burlap', rag, m.clone().multiply(tr(0.05, 0.015, 0)).multiply(new THREE.Matrix4().makeScale(1.25, 0.06, 0.75)), { uv: 'world', tint: [0.32, 0.27, 0.22], ao: 0.6 });
+    rag.dispose();
+    // skull, turned aside, jaw dropped
+    const skull = new THREE.SphereGeometry(0.09, 12, 9);
+    skull.scale(1, 0.9, 1.2);
+    const sm = m.clone().multiply(tr(-0.55, 0.085, 0.02)).multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(0.3, 1.2 + hash(seed, 'sk') * 0.6, 0.4)));
+    B(skull, sm, [0.9, 0.85, 0.74]);
+    skull.dispose();
+    for (const ex of [-0.032, 0.032]) g.box('arch_beam_dark', { matrix: sm.clone().multiply(tr(ex, 0.012, 0.095)), s: [0.034, 0.03, 0.02], tint: [0.08, 0.07, 0.06] });
+    g.box('prop_bone', { matrix: sm.clone().multiply(tr(0, -0.075, 0.06)).multiply(new THREE.Matrix4().makeRotationX(0.5)), s: [0.09, 0.025, 0.07], tint: [0.8, 0.74, 0.62] });
+    // spine
+    const vert = new THREE.BoxGeometry(0.035, 0.03, 0.04);
+    for (let k = 0; k < 13; k++) B(vert, m.clone().multiply(tr(-0.44 + k * 0.034, 0.03 + Math.sin(k * 0.4) * 0.006, (hash(seed, k, 'sv') - 0.5) * 0.01)));
+    vert.dispose();
+    // ribcage: arcs either side, the upper ones still sprung, the lower ones fallen flat
+    for (let k = 0; k < 6; k++) {
+      for (const side of [-1, 1]) {
+        const fallen = k > 2 || hash(seed, k, side, 'rb') < 0.3;
+        const rib = new THREE.TorusGeometry(0.11 - k * 0.006, 0.007, 4, 10, Math.PI * 0.7);
+        const rm = m.clone().multiply(tr(-0.4 + k * 0.045, 0.03, 0)).multiply(new THREE.Matrix4().makeRotationY(Math.PI / 2)).multiply(new THREE.Matrix4().makeRotationZ(side > 0 ? 0.15 : Math.PI * 0.85));
+        if (fallen) rm.multiply(new THREE.Matrix4().makeRotationX(side * 1.2));
+        B(rib, rm);
+        rib.dispose();
+      }
+    }
+    // pelvis
+    const pel = new THREE.TorusGeometry(0.07, 0.022, 5, 10);
+    B(pel, m.clone().multiply(tr(0.0, 0.035, 0)).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2 - 0.3)).multiply(new THREE.Matrix4().makeScale(1, 1.3, 1)));
+    pel.dispose();
+    // legs (one drawn up and fallen sideways) and arms
+    L(flat(0.22, 0.03, 0.08, 0.15), 0.42, 0.018);
+    L(flat(0.62, 0.025, 0.12, -0.1), 0.38, 0.015);
+    L(flat(0.2, 0.03, -0.12, -0.5), 0.42, 0.018);
+    L(flat(0.48, 0.025, -0.32, 0.6), 0.38, 0.015);
+    L(flat(-0.3, 0.03, 0.17, 0.5), 0.3, 0.013);
+    L(flat(-0.08, 0.025, 0.28, 0.9), 0.26, 0.011);
+    L(flat(-0.3, 0.03, -0.17, -0.3), 0.3, 0.013);
+    L(flat(-0.12, 0.025, -0.24, -0.1), 0.26, 0.011);
+    // a rusted sword dropped beside the hand
+    const sw = m.clone().multiply(tr(0.1, 0.012, -0.42)).multiply(new THREE.Matrix4().makeRotationY(0.25));
+    g.box('prop_iron', { matrix: sw, s: [0.8, 0.012, 0.045], tint: [0.9, 0.7, 0.55] });
+    g.box('prop_iron', { matrix: sw.clone().multiply(tr(-0.42, 0, 0)), s: [0.025, 0.02, 0.2] });
+    g.box('prop_wood', { matrix: sw.clone().multiply(tr(-0.5, 0, 0)), s: [0.14, 0.025, 0.03], tint: [0.4, 0.3, 0.22] });
+    blobs.push({ x: new THREE.Vector3().applyMatrix4(m).x, z: new THREE.Vector3().applyMatrix4(m).z, r: 0.9, a: 0.5 });
   }
 
   function bonePile(m, seed) {
@@ -388,8 +482,8 @@ export function dressDungeon(map, block, opts = {}) {
     // a sleeping nest: flattened sacking, straw tufts and gnawed sticks
     for (let k = 0; k < 4; k++) {
       const sack = new THREE.SphereGeometry(0.3, 8, 5);
-      const mm = m.clone().multiply(tr((hash(seed, k, 'x') - 0.5) * 0.6, 0.05, (hash(seed, k, 'z') - 0.5) * 0.4)).multiply(new THREE.Matrix4().makeRotationY(hash(seed, k) * 6.3)).multiply(new THREE.Matrix4().makeScale(1.1, 0.22, 0.8));
-      g.geometry('prop_burlap', sack, mm, { uv: 'world', tint: k % 2 ? [0.6, 0.5, 0.4] : [0.42, 0.36, 0.3] });
+      const mm = m.clone().multiply(tr((hash(seed, k, 'x') - 0.5) * 0.6, 0.05, (hash(seed, k, 'z') - 0.5) * 0.4)).multiply(new THREE.Matrix4().makeRotationY(hash(seed, k) * 6.3)).multiply(new THREE.Matrix4().makeScale(1.1, 0.14, 0.8));
+      g.geometry('prop_burlap', sack, mm, { uv: 'world', tint: k % 2 ? [0.36, 0.3, 0.24] : [0.26, 0.22, 0.18], ao: (p) => 0.45 + 0.55 * THREE.MathUtils.smoothstep(p.y, 0, 0.08) });
       sack.dispose();
     }
     for (let k = 0; k < 9; k++) {
@@ -834,43 +928,87 @@ export function dressDungeon(map, block, opts = {}) {
       g.geometry('prop_iron', sp, sm, { uv: 'world', tint: [0.5, 0.48, 0.5] });
       sp.dispose();
     }
-    const parts = [];
-    const rr = (x0, y0, w, h, r) => {
-      const sh = new THREE.Shape();
-      sh.moveTo(x0 + r, y0);
-      sh.lineTo(x0 + w - r, y0);
-      sh.quadraticCurveTo(x0 + w, y0, x0 + w, y0 + r);
-      sh.lineTo(x0 + w, y0 + h - r);
-      sh.quadraticCurveTo(x0 + w, y0 + h, x0 + w - r, y0 + h);
-      sh.lineTo(x0 + r, y0 + h);
-      sh.quadraticCurveTo(x0, y0 + h, x0, y0 + h - r);
-      sh.lineTo(x0, y0 + r);
-      sh.quadraticCurveTo(x0, y0, x0 + r, y0);
-      return sh;
+    // the gauntlet: a raised armoured fist turning into a claw — back of the hand toward the
+    // faithful, fingers curling forward over it in three articulated, plated segments ending in
+    // hooked iron claws, a ridge of knuckle plates, the thumb hooked across, a flared lamed cuff
+    const IRON = [0.42, 0.41, 0.45];
+    const EDGE = [0.72, 0.7, 0.74];
+    const put = (geo, mm, tint = IRON) => {
+      g.geometry('prop_iron', geo, mm, { uv: 'world', tint, ao: 0.95 });
+      geo.dispose();
     };
-    // palm + cuff
-    parts.push([rr(-0.3, -0.4, 0.6, 0.62, 0.12), 0.16, 0, 0]);
-    parts.push([rr(-0.26, -0.72, 0.52, 0.34, 0.05), 0.12, 0, 0]);
-    // four fingers in two phalanx segments each (a hair apart so the joints read), thumb angled out
-    const fx = [-0.235, -0.078, 0.078, 0.235];
-    const fl = [0.36, 0.44, 0.42, 0.32];
-    fx.forEach((x, i) => {
-      parts.push([rr(x - 0.055, 0.24, 0.11, fl[i] * 0.5, 0.045), 0.13, 0, 0]);
-      parts.push([rr(x - 0.05, 0.25 + fl[i] * 0.53, 0.1, fl[i] * 0.45, 0.05), 0.12, 0, 0]);
-    });
-    parts.push([rr(-0.07, -0.12, 0.14, 0.36, 0.06), 0.13, -0.36, 0.7]);
-    for (const [sh, dep, ox, ang] of parts) {
-      const eg = new THREE.ExtrudeGeometry(sh, { depth: dep, bevelEnabled: true, bevelThickness: 0.035, bevelSize: 0.03, bevelSegments: 3, curveSegments: 6 });
-      const pm = at2(ox, ang ? -0.05 : 0, 0.08).multiply(new THREE.Matrix4().makeRotationZ(ang));
-      g.geometry('prop_iron', eg, pm, { uv: 'world', tint: [0.42, 0.4, 0.42], ao: 0.95 });
-      eg.dispose();
+    /** Rounded plate: a box whose front face bulges (domed armour). */
+    const plate = (w, h, d, bulge) => {
+      const geo = new THREE.BoxGeometry(w, h, d, 6, 6, 1);
+      const pp = geo.attributes.position;
+      for (let i = 0; i < pp.count; i++) {
+        const x = pp.getX(i) / (w / 2);
+        const y = pp.getY(i) / (h / 2);
+        if (pp.getZ(i) > 0) pp.setZ(i, pp.getZ(i) + bulge * (1 - x * x) * (1 - y * y));
+        // round the corners in
+        const k = 1 - 0.12 * Math.pow(Math.max(Math.abs(x), Math.abs(y)), 6);
+        pp.setX(i, pp.getX(i) * k);
+        pp.setY(i, pp.getY(i) * k);
+      }
+      geo.computeVertexNormals();
+      return geo;
+    };
+    const base = at2(0, -0.04, 0.25).multiply(new THREE.Matrix4().makeScale(1.25, 1.25, 1.25));
+    // back of the hand: two overlapping domed plates
+    put(plate(0.62, 0.34, 0.12, 0.08), base.clone().multiply(tr(0, 0.05, 0)));
+    put(plate(0.5, 0.16, 0.1, 0.05), base.clone().multiply(tr(0, -0.17, 0.0)).multiply(new THREE.Matrix4().makeRotationX(-0.12)), EDGE);
+    // cuff: flared bell of lames below the wrist
+    for (let k = 0; k < 3; k++) {
+      const r0 = 0.2 + k * 0.025;
+      const lame = new THREE.CylinderGeometry(r0, r0 + 0.025, 0.11, 18, 1, true);
+      put(lame, base.clone().multiply(tr(0, -0.38 - k * 0.1, -0.04)), k % 2 ? IRON : EDGE);
+      const band = new THREE.TorusGeometry(r0 + 0.025, 0.012, 5, 22);
+      band.rotateX(Math.PI / 2);
+      put(band, base.clone().multiply(tr(0, -0.44 - k * 0.1, -0.04)), EDGE);
     }
-    // knuckle studs across the back of the gauntlet cuff
-    for (let k = 0; k < 4; k++) {
-      const st = new THREE.SphereGeometry(0.03, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2);
+    // fingers
+    const fx = [-0.25, -0.085, 0.085, 0.25];
+    const flen = [[0.25, 0.17, 0.13], [0.3, 0.2, 0.15], [0.29, 0.19, 0.15], [0.22, 0.15, 0.12]];
+    const spread = [0.42, 0.14, -0.14, -0.42];
+    const curl = [[0.1, 0.18, 0.5], [0.08, 0.16, 0.48], [0.09, 0.17, 0.5], [0.12, 0.2, 0.55]];
+    fx.forEach((x, i) => {
+      // knuckle plate: a ridged boss over each knuckle
+      const kn = plate(0.12, 0.09, 0.1, 0.035);
+      put(kn, base.clone().multiply(tr(x, 0.23, 0.03)), EDGE);
+      let mm = base.clone().multiply(tr(x, 0.24, 0)).multiply(new THREE.Matrix4().makeRotationZ(spread[i]));
+      flen[i].forEach((L, j) => {
+        mm = mm.multiply(new THREE.Matrix4().makeRotationX(curl[i][j]));
+        const r = 0.04 - j * 0.005;
+        const seg = new THREE.CapsuleGeometry(r, L - r, 4, 10);
+        put(seg, mm.clone().multiply(tr(0, L / 2, 0)));
+        // articulated plate on the back of each segment
+        put(plate(r * 1.7, L * 0.7, 0.025, 0.01), mm.clone().multiply(tr(0, L / 2, r * 0.85)), EDGE);
+        mm = mm.multiply(tr(0, L, 0));
+      });
+      // hooked claw
+      const claw = new THREE.ConeGeometry(0.03, 0.13, 7);
+      claw.translate(0, 0.065, 0);
+      put(claw, mm.clone().multiply(new THREE.Matrix4().makeRotationX(0.55)), EDGE);
+    });
+    // thumb, hooked across the front of the palm
+    {
+      let mm = base.clone().multiply(tr(-0.3, -0.12, 0.02)).multiply(new THREE.Matrix4().makeRotationZ(0.9)).multiply(new THREE.Matrix4().makeRotationX(0.5));
+      for (const [L, c] of [[0.16, 0.0], [0.13, 0.6], [0.1, 0.6]]) {
+        mm = mm.multiply(new THREE.Matrix4().makeRotationX(c));
+        const seg = new THREE.CapsuleGeometry(0.05, L - 0.05, 4, 10);
+        put(seg, mm.clone().multiply(tr(0, L / 2, 0)));
+        put(plate(0.11, L * 0.75, 0.03, 0.012), mm.clone().multiply(tr(0, L / 2, 0.045)), EDGE);
+        mm = mm.multiply(tr(0, L, 0));
+      }
+      const claw = new THREE.ConeGeometry(0.032, 0.12, 7);
+      claw.translate(0, 0.06, 0);
+      put(claw, mm.clone().multiply(new THREE.Matrix4().makeRotationX(0.5)), EDGE);
+    }
+    // rivets along the knuckle ridge and the cuff
+    for (let k = 0; k < 6; k++) {
+      const st = new THREE.SphereGeometry(0.018, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2);
       st.rotateX(Math.PI / 2);
-      g.geometry('prop_iron', st, at2(-0.18 + k * 0.12, -0.55, 0.28), { uv: 'world', tint: [0.7, 0.68, 0.7] });
-      st.dispose();
+      put(st, base.clone().multiply(tr(-0.25 + k * 0.1, -0.06, 0.16)), EDGE);
     }
     // green halo behind the hand (additive): rims the black silhouette, the hand never glows itself
     haloQuads.push(new THREE.Vector3(0, 0, 0.04).applyMatrix4(m), 1.05, m);

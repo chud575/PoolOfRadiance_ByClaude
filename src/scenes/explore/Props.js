@@ -802,9 +802,41 @@ export function buildProps(map, block, opts = {}) {
     if (!list.length) return;
     const mat = new THREE.MeshStandardMaterial({ map: getBannerTexture(v), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.85 });
     clothPatch(mat);
-    const b = new GeoBuilder();
-    for (const q of list) b.quad('ban', q[0], q[1], q[2], q[3], [[0, 1], [1, 1], [1, 0], [0, 0]], { ao: 1 });
-    const geo = b.build().get('ban');
+    // heavy wool on a pole: a subdivided sheet gathered into soft vertical folds that deepen toward
+    // the hem (smooth normals), so the cloth both catches the light in its folds and can sway
+    const pos = [];
+    const uvs = [];
+    const idx = [];
+    const NU = 12;
+    const NV = 10;
+    for (const [g0, g1, , b0, Tn, ph] of list) {
+      const base = pos.length / 3;
+      const du = g1.clone().sub(g0);
+      const dv = b0.clone().sub(g0);
+      for (let j = 0; j <= NV; j++) {
+        for (let i = 0; i <= NU; i++) {
+          const u = i / NU;
+          const v = j / NV;
+          const fold = Math.sin(u * Math.PI * 4 + ph) * (0.012 + 0.045 * v) + Math.sin(u * Math.PI * 9 + ph * 2) * 0.006 * v;
+          const p = g0.clone().addScaledVector(du, u).addScaledVector(dv, v).addScaledVector(Tn, fold);
+          // the free edge droops a little and the hem swings out from the pole line
+          p.y -= Math.sin(u * Math.PI * 0.5) * 0.04 * v;
+          pos.push(p.x, p.y, p.z);
+          uvs.push(u, 1 - v);
+        }
+      }
+      for (let j = 0; j < NV; j++) {
+        for (let i = 0; i < NU; i++) {
+          const a = base + j * (NU + 1) + i;
+          idx.push(a, a + NU + 1, a + 1, a + 1, a + NU + 1, a + NU + 2);
+        }
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
     const mesh = new THREE.Mesh(geo, mat);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -1261,7 +1293,7 @@ function banner(g, f, s, y, d, list) {
   const g1 = new THREE.Vector3(s, y - 0.03, d + len - 0.05).applyMatrix4(f.basis);
   const b1 = new THREE.Vector3(s, y - 1.75, d + len - 0.05).applyMatrix4(f.basis);
   const b0 = new THREE.Vector3(s, y - 1.75, d + 0.12).applyMatrix4(f.basis);
-  list.push([g0, g1, b1, b0]);
+  list.push([g0, g1, b1, b0, f.T.clone(), hash(f.seed, s, 'fold') * 6.3]);
 }
 
 /** Cloth wave for banners (uv.y = 1 at the pole). */

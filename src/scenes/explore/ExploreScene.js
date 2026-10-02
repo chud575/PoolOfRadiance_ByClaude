@@ -182,13 +182,13 @@ export default class ExploreScene extends Scene {
       // raised ambient floor so silhouettes always read, even far from a torch; underground it is a
       // cool counter-light (cold air, wet stone) against the warm torches — the warrens greener,
       // Bane's temple a dead grey-green over a blood-red floor bounce
-      const amb = { warrens: [0x56769a, 0x2e2216, 6.2], bane: [0x48566a, 0x340c0a, 5.4] }[ts.variant] ?? (dungeon ? [0x4a6c9c, 0x1c150e, 2.3] : this.hour > 6.5 && this.hour < 18.5 ? [0xb4c4de, 0xb07a4c, 2.35] : [0xeedcc8, 0x5a3e28, 1.45]); // interiors by day: cool sky fill from the windows, warm hearth/board bounce up onto the joists
+      const amb = { warrens: [0x4a8494, 0x1c2620, 6.0], bane: [0x48566a, 0x340c0a, 5.4] }[ts.variant] ?? (dungeon ? [0x4a6c9c, 0x1c150e, 2.3] : this.hour > 6.5 && this.hour < 18.5 ? [0xb4c4de, 0xb07a4c, 2.35] : [0xeedcc8, 0x5a3e28, 1.45]); // interiors by day: cool sky fill from the windows, warm hearth/board bounce up onto the joists
       this.hemi = new THREE.HemisphereLight(amb[0], amb[1], amb[2]);
       s.add(this.hemi);
       if (dungeon) {
         // faint cold key from above-ahead: separates walls, floor and vault in value and hue
         // (strong enough to separate cool stone from the warm torch pools: two hues, not a sepia wash)
-        this.coolKey = new THREE.DirectionalLight(ts.variant === 'bane' ? 0x7f94b0 : 0x7096d0, ts.variant === 'warrens' ? 0.95 : ts.variant === 'bane' ? 0.55 : 0.6);
+        this.coolKey = new THREE.DirectionalLight(ts.variant === 'bane' ? 0x7f94b0 : ts.variant === 'warrens' ? 0x64aab8 : 0x7096d0, ts.variant === 'warrens' ? 0.95 : ts.variant === 'bane' ? 0.55 : 0.6);
         this.coolKey.position.set(0.3, 1, 0.6);
         this.camera.add(this.coolKey);
         this.camera.add(this.coolKey.target);
@@ -212,7 +212,8 @@ export default class ExploreScene extends Scene {
         this.sun.shadow.radius = 3;
         s.add(this.sun, this.sun.target);
       }
-      s.fog = new THREE.FogExp2(ts.variant === 'warrens' ? 0x060909 : ts.variant === 'bane' ? 0x050706 : dungeon ? 0x07080b : 0x1a120c, dungeon ? 0.055 : 0.025);
+      // a plain dungeon gets thinner, cooler air so the corridor reads several bays deep
+      s.fog = new THREE.FogExp2(ts.variant === 'warrens' ? 0x050d0e : ts.variant === 'bane' ? 0x050706 : dungeon ? 0x090c13 : 0x1a120c, dungeon ? (ts.variant ? 0.055 : 0.038) : 0.025);
       s.background = new THREE.Color(dungeon ? 0x020203 : 0x0a0604);
       setSurfaceAtmosphere({ sunDir: new THREE.Vector3(0, 1, 0), sunColor: 0x000000, scatter: 0, heightFog: dungeon ? 0.35 : 0.08, heightFalloff: 0.8, grimeTint: ts.grime, mossTint: ts.moss, wet: dungeon ? 0.3 : 0, reflWall: dungeon ? 0x0c0b0a : 0, reflHorizon: dungeon ? 0x0a0a0a : 0, reflZenith: dungeon ? 0x050505 : 0 });
     }
@@ -228,7 +229,7 @@ export default class ExploreScene extends Scene {
     }
     // party lantern: carried a little ahead and to the right, warm, ~5 m reach
     // outdoors it only pools on the nearest walls so the moonlight stays dominant
-    const lanternI = ts.outdoors ? this.night * 4.5 : ts.variant === 'bane' ? 13 : ts.id === 'dungeon' ? 11 : 2;
+    const lanternI = ts.outdoors ? this.night * 4.5 : ts.variant === 'bane' ? 7.5 : ts.id === 'dungeon' ? 11 : 2;
     this.lantern = new THREE.PointLight(0xffb468, lanternI, ts.outdoors ? 8 : 13, 2);
     this.lantern.position.set(0.45, -0.25, -0.15);
     this.lantern.userData.base = lanternI;
@@ -347,6 +348,14 @@ export default class ExploreScene extends Scene {
       add(createParticles('fireflies', { count: 70, box: [new THREE.Vector3(-16, 0.3, -16), new THREE.Vector3(16, 2.6, 16)], color: 0xe0ff80, color2: 0xe0ff80, size: 0.05, intensity: 3.5, seed: 12 }));
     }
     this._rebuildEmbers();
+    if (ts.id === 'interior' && this.sun?.intensity) {
+      // dust turning in each daylight beam
+      this.block.windows.filter((w) => !w.upper).forEach((w, i) => {
+        const c = w.pos.clone().addScaledVector(w.N, -1.5).add(new THREE.Vector3(0, -0.5, 0));
+        const ext = new THREE.Vector3(0.75 + Math.abs(w.N.x) * 0.8, 1.0, 0.75 + Math.abs(w.N.z) * 0.8);
+        add(createParticles('dust', { count: 70, box: [c.clone().sub(ext), c.clone().add(ext)], color: 0xfff4e0, size: 0.016, intensity: 1.3, seed: 40 + i }));
+      });
+    }
     if (ts.particles.includes('smoke')) {
       const origins = [...(this.block?.chimneys ?? []), ...(this.skyline?.smoke ?? [])];
       add(createParticles('smoke', { origins, size: 1.1, color: night ? 0x1c2028 : 0xa8a6a2, intensity: night ? 0.5 : 0.32, seed: 13 }));
@@ -443,9 +452,22 @@ export default class ExploreScene extends Scene {
       if (src.kind === 'brazier') {
         // a bed of fire across the bowl: a tall heart and lower tongues around it
         const bk = src.big ? 1.25 : 1;
-        for (const [dx, dz, sc] of [[0, 0, 0.62], [0.13, 0.08, 0.36], [-0.12, 0.06, 0.32], [0.02, -0.12, 0.3]]) flames.push({ pos: src.pos.clone().add(new THREE.Vector3(dx * bk, -0.12, dz * bk)), scale: sc * bk, color: src.flameColor, seed: src.seed + dx * 30 + dz * 17 });
-        glows.push({ pos: src.pos.clone().add(new THREE.Vector3(0, 0.2, 0)), size: 0.8, color: src.lightColor ?? 0xff8a40, seed: src.seed, opacity: 0.16 });
-        glows.push({ pos: src.pos.clone().add(new THREE.Vector3(0, 0.3, 0)), size: 2.2, color: src.lightColor ?? 0xff8a40, seed: src.seed + 3, opacity: 0.06 });
+        // each fire its own shape: a varying number of tongues, one dominant or two leaning apart,
+        // low licks round the rim (seeded per brazier — no two read alike)
+        const hs = (k, t) => ((Math.sin((src.seed + 1) * 12.9898 + k * 78.233 + t * 37.719) * 43758.5453) % 1 + 1) % 1;
+        const nT = 3 + Math.floor(hs(0, 1) * 4);
+        const twin = hs(0, 2) < 0.35;
+        for (let k = 0; k < nT; k++) {
+          const main = k === 0 || (twin && k === 1);
+          const a = hs(k, 3) * Math.PI * 2;
+          const r = main ? (twin ? 0.07 : 0.02) : 0.08 + hs(k, 4) * 0.08;
+          const dx = Math.cos(twin && k === 1 ? a + Math.PI : a) * r;
+          const dz = Math.sin(twin && k === 1 ? a + Math.PI : a) * r;
+          const sc = main ? (twin ? 0.42 : 0.5) + hs(k, 5) * 0.2 : 0.18 + hs(k, 6) * 0.18;
+          flames.push({ pos: src.pos.clone().add(new THREE.Vector3(dx * bk, -0.12, dz * bk)), scale: sc * bk, color: src.flameColor, seed: src.seed + k * 13.7 });
+        }
+        glows.push({ pos: src.pos.clone().add(new THREE.Vector3(0, 0.2, 0)), size: 0.7, color: src.lightColor ?? 0xff8a40, seed: src.seed, opacity: 0.09 });
+        glows.push({ pos: src.pos.clone().add(new THREE.Vector3(0, 0.3, 0)), size: 2.0, color: src.lightColor ?? 0xff8a40, seed: src.seed + 3, opacity: 0.04 });
         continue;
       }
       if (src.kind !== 'lamp') flames.push({ pos: src.pos.clone().add(new THREE.Vector3(0, candle ? 0 : -0.1, 0)), scale: candle ? 0.07 : 0.3, color: src.flameColor, seed: src.seed });
@@ -499,7 +521,7 @@ export default class ExploreScene extends Scene {
       // (direct sun only enters on its own side; the rest of the sky still pours in)
       const UP = new THREE.Vector3(0, 1, 0);
       const dirFor = (w) => w.N.clone().multiplyScalar(0.72).addScaledVector(UP, 0.7).normalize();
-      this.shafts = buildLightShafts(this.block.windows.filter((w) => !w.upper), dirFor, { color: 0xd8e6ff, strength: 0.03, length: 4.2 });
+      this.shafts = buildLightShafts(this.block.windows.filter((w) => !w.upper), dirFor, { color: 0xe4ecff, strength: 0.06, length: 4.4 });
     } else this.shafts = buildLightShafts(this.block.windows.filter((w) => !w.upper), this.sunDir, { strength: 0.032, length: 3.6 });
     if (this.shafts) this.scene3d.add(this.shafts);
   }
@@ -559,11 +581,13 @@ export default class ExploreScene extends Scene {
       // (the hearth's light sits up in the firebox mouth, not on the floor: no hot spot on the boards)
       l.position.copy(src.pos).addScaledVector(src.N ?? new THREE.Vector3(), hearth ? 0.45 : 0.25);
       if (hearth) l.position.y += 0.55;
+      // a brazier's light rides above the flames (never inside the bowl: no blown-out rim)
+      if (src.kind === 'brazier') l.position.y += 0.45;
       l.color.setHex(src.lightColor ?? (hearth ? 0xff8f50 : candle ? 0xffb060 : src.kind === 'lamp' ? 0xffb56a : 0xff9040));
       // inverse-square pools (~3 m effective reach); a torch by day barely registers against the sun
       const day = this.tileset.outdoors && this.night < 0.12;
       const under = this.tileset.id === 'dungeon';
-      l.userData.base = (hearth ? 15 : candle ? 1.6 : src.kind === 'brazier' ? 12 : src.kind === 'lamp' ? 6 : src.lightColor ? 6 : under ? 11 : 7) * (day ? 0.28 : 1);
+      l.userData.base = (hearth ? 15 : candle ? 1.6 : src.kind === 'brazier' ? 6.5 : src.kind === 'lamp' ? 6 : src.lightColor ? 6 : under ? 11 : 7) * (day ? 0.28 : 1);
       l.distance = hearth ? 12 : candle ? 4 : src.kind === 'brazier' ? 11 : 8;
     }
     for (const l of free) {
@@ -578,7 +602,13 @@ export default class ExploreScene extends Scene {
    */
   render() {
     const frozen = this.ctx.clock.frozen;
-    if (frozen && !this.tween && (this._settled ?? 0) >= 3) return;
+    // settled + frozen: the frame cannot change, so skip most re-renders — but re-present it now and
+    // then (identical pixels): a WebGL canvas that has not presented for a long while can come back
+    // blank from the headless compositor's screenshot
+    if (frozen && !this.tween && (this._settled ?? 0) >= 3) {
+      this._idleFrames = (this._idleFrames ?? 0) + 1;
+      if (this._idleFrames % 12 !== 0) return;
+    }
     if (this.godRays) this.godRays.enabled = true;
     super.render();
     if (this.godRays) this.godRays.enabled = false;

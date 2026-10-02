@@ -130,7 +130,7 @@ export const RECIPE_MATERIALS = {
   int_panel: ['arch_wainscot', 'arch_beam_dark', 'arch_plaster_int'],
   int_stone: ['arch_stone_cold', 'arch_trim'],
   hewn: ['arch_hewn', 'arch_hewn_ceil', 'arch_cave_floor', 'prop_bone'],
-  basalt: ['arch_basalt', 'arch_basalt_floor', 'arch_relief', 'arch_trim'],
+  basalt: ['arch_basalt', 'arch_basalt_floor', 'arch_relief', 'arch_trim', 'arch_plaster_int'],
 };
 
 /**

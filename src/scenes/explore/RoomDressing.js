@@ -88,8 +88,8 @@ export function dressRooms(map) {
       }
     }
     for (let k = 0; k < 3; k++) cask(M(barA + 0.6 + k * 0.85, 0.42, wallC + sh * 0.42, Math.PI / 2), 0.78);
-    // the innkeeper, between the counter and the shelves, leaning on the bar
-    innkeeper(M(barA + len * 0.42, 0, barC - sh * 0.62, sh > 0 ? 0 : Math.PI));
+    // (no innkeeper figure: the house's people are drawn by the dialogue scenes, not as a mannequin here)
+    void innkeeper;
     // trestle tables in the open cells (keep the hearth's approach and the bar clear)
     const cells = [];
     for (let j = 0; j < z.h; j++) {
@@ -128,7 +128,12 @@ export function dressRooms(map) {
       const L = Math.hypot(nSteps * run, ceil);
       const ang = Math.atan2(ceil, nSteps * run) * dirA * (alongX ? 1 : -1);
       const am = (stairStart + aEnd) / 2;
-      for (const off of [0.02, sw - 0.02]) g.box('prop_wood', { matrix: M(am, ceil / 2 - 0.1, stairSideC + ss * off).multiply(new THREE.Matrix4().makeRotationZ(ang)), s: [L, 0.24, 0.05], uv: 'along', tint: [0.5, 0.38, 0.28] });
+      // deep closed strings either side, and a boarded soffit underneath: the stair is a solid
+      // piece of joinery, not a see-through ladder of treads
+      for (const off of [0.02, sw - 0.02]) g.box('prop_wood', { matrix: M(am, ceil / 2 - 0.16, stairSideC + ss * off).multiply(new THREE.Matrix4().makeRotationZ(ang)), s: [L, 0.42, 0.055], chamfer: 0.01, uv: 'along', tint: [0.5, 0.38, 0.28] });
+      g.box('prop_wood', { matrix: M(am, ceil / 2 - 0.33, stairSideC + ss * sw / 2).multiply(new THREE.Matrix4().makeRotationZ(ang)), s: [L, 0.03, sw - 0.06], uv: 'along', tint: [0.36, 0.28, 0.21], ao: 0.55 });
+      // a stout carriage post propping the string at mid-flight
+      g.box('prop_wood', { matrix: M(am, ceil / 4 - 0.22, stairSideC + ss * (sw - 0.03)), s: [0.12, ceil / 2 - 0.44, 0.12], chamfer: 0.015, uv: 'along', tint: [0.5, 0.38, 0.28] });
       g.box('prop_wood', { matrix: M(am, ceil / 2 + 0.85, stairSideC + ss * (sw - 0.03)).multiply(new THREE.Matrix4().makeRotationZ(ang)), s: [L, 0.07, 0.08], chamfer: 0.02, uv: 'along', tint: [0.68, 0.52, 0.38] });
       // newel post at the foot with a turned cap
       g.box('prop_wood', { matrix: M(stairStart, 0.6, stairSideC + ss * (sw - 0.03)), s: [0.12, 1.2, 0.12], chamfer: 0.015, uv: 'along', tint: [0.6, 0.46, 0.33] });

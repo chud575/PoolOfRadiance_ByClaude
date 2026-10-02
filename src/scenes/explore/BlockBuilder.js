@@ -26,6 +26,8 @@ const DOOR_W = 1.36;
 const DOOR_H = 2.36;
 const ARCH_W = 2.0;
 const ARCH_SPRING = 2.05;
+/** Rise of the Temple of Bane's groin vaults (they spring this far below the ceiling). */
+const BANE_VAULT_RISE = 1.25;
 
 /** Plaster limewash tints (vertex-colour multipliers) for timber buildings. */
 const PLASTER_TINTS = [[1, 1, 1], [1.02, 0.95, 0.82], [0.95, 0.97, 1.0], [1.04, 0.9, 0.8], [0.93, 0.93, 0.86], [1.0, 0.98, 0.9]];
@@ -319,7 +321,7 @@ export function buildBlock(map, opts = {}) {
       openings.push({ s0: -w, s1: w, y0: 3.55, y1: faceExtH >= 7 ? 5.4 : 4.6, kind: 'window', upper: true });
     }
     // interior tileset: daylight windows in the outer border
-    if (indoor && ts.id === 'interior' && (!inA || !inB) && !isDoor && !hearthEdge && seedE < 0.55) openings.push({ s0: -0.5, s1: 0.5, y0: 1.0, y1: 2.35, kind: 'window', ground: true, border: true });
+    if (indoor && ts.id === 'interior' && (!inA || !inB) && !isDoor && !hearthEdge && seedE < 0.55) openings.push({ s0: -0.46, s1: 0.46, y0: 1.05, y1: 2.2, kind: 'window', ground: true, border: true }); // same size as street windows: one lattice scale
     // ruin: jagged profile shared by both faces
     const jag = makeJag(e, seedE);
 
@@ -731,15 +733,17 @@ export function buildBlock(map, opts = {}) {
       f.uvOff = [hash(f.seed, 'bu') * 7.3, hash(f.seed, 'bv') * 3.1];
       slab(f, 'arch_basalt', 0, H, 0, T / 2);
       slab(f, 'arch_basalt', 0, 0.42, T / 2, T / 2 + 0.09, { chamfer: 0.02, tint: [0.7, 0.66, 0.66] });
-      slab(f, 'arch_basalt', H - 0.62, H - 0.42, T / 2, T / 2 + 0.16, { chamfer: 0.03, tint: [0.85, 0.8, 0.8] });
-      slab(f, 'arch_basalt', H - 0.42, H - 0.36, T / 2, T / 2 + 0.1, { chamfer: 0.01, tint: [0.6, 0.55, 0.55] });
+      // impost moulding at the vault's springing line (the groin vault rises from here)
+      const SP = H - BANE_VAULT_RISE - 0.05;
+      slab(f, 'arch_basalt', SP - 0.2, SP, T / 2, T / 2 + 0.16, { chamfer: 0.03, tint: [0.85, 0.8, 0.8] });
+      slab(f, 'arch_basalt', SP - 0.26, SP - 0.2, T / 2, T / 2 + 0.1, { chamfer: 0.01, tint: [0.6, 0.55, 0.55] });
       for (const end of [-1, 1]) {
         if (f.ends[end] === 'inside' || f.ends[end] === 'free') continue;
         const s = end * (S / 2);
-        localBox(f, 'arch_basalt', s - 0.28, s + 0.28, 0, H - 0.62, T / 2, T / 2 + 0.15, { chamfer: 0.04 });
+        localBox(f, 'arch_basalt', s - 0.28, s + 0.28, 0, SP - 0.28, T / 2, T / 2 + 0.15, { chamfer: 0.04 });
         localBox(f, 'arch_basalt', s - 0.36, s + 0.36, 0, 0.55, T / 2, T / 2 + 0.22, { chamfer: 0.04, tint: [0.7, 0.66, 0.66] });
-        // capital
-        localBox(f, 'arch_basalt', s - 0.38, s + 0.38, H - 0.9, H - 0.62, T / 2, T / 2 + 0.24, { chamfer: 0.05, tint: [0.9, 0.85, 0.85] });
+        // capital carrying the ribs
+        localBox(f, 'arch_basalt', s - 0.38, s + 0.38, SP - 0.28, SP + 0.02, T / 2, T / 2 + 0.24, { chamfer: 0.05, tint: [0.9, 0.85, 0.85] });
       }
       const free = !f.openings.length && f.ends[-1] !== 'free';
       if (free && hash(f.seed, 'relief') < 0.5) {
@@ -1841,6 +1845,8 @@ export function buildBlock(map, opts = {}) {
         g.quad(ceilKey, new THREE.Vector3(x0, ch, z0), new THREE.Vector3(x0 + S, ch, z0), new THREE.Vector3(x0 + S, ch, z0 + S), new THREE.Vector3(x0, ch, z0 + S), null, { ao: 0.8 });
         if (ts.variant === 'warrens') {
           // natural rock roof: no ribs; the dressing pass hangs roots and lumps from it
+        } else if (ts.variant === 'bane') {
+          baneVault(x, y, ch);
         } else if (ts.id === 'dungeon') {
           // stone ribs across open cell boundaries (N and W) → rhythmic vaulting; the cross ribs
           // vary cell to cell (some missing, some fallen to a single beam) so the vault never repeats
@@ -1869,6 +1875,69 @@ export function buildBlock(map, opts = {}) {
         }
       }
     }
+  }
+
+  /**
+   * A ribbed groin vault over one cell of the Temple of Bane: two intersecting barrels (the ceiling
+   * is the higher of the two at each point), so semicircular lunettes meet the walls and the webs
+   * fold down along the diagonals. Heavy chamfered ribs follow both groins and every transverse arch
+   * over an open cell boundary, with a carved boss at the crown.
+   */
+  function baneVault(x, y, ch) {
+    const x0 = x * S;
+    const z0 = y * S;
+    const rise = BANE_VAULT_RISE;
+    const base = ch - rise - 0.05;
+    const hw = S / 2;
+    const vy = (u, v) => base + rise * Math.max(Math.sqrt(Math.max(0, 1 - u * u)), Math.sqrt(Math.max(0, 1 - v * v)));
+    const N = 14;
+    const P = (u, v) => new THREE.Vector3(x0 + hw + u * hw, vy(u, v), z0 + hw + v * hw);
+    for (let j = 0; j < N; j++) {
+      for (let i = 0; i < N; i++) {
+        const u0 = -1 + (2 * i) / N;
+        const u1 = -1 + (2 * (i + 1)) / N;
+        const v0 = -1 + (2 * j) / N;
+        const v1 = -1 + (2 * (j + 1)) / N;
+        // faces down (seen from below)
+        // the webs are rubble rendered over and limewashed, long since smoked dark (stone ribs carry them)
+        g.quad('arch_plaster_int', P(u0, v0), P(u1, v0), P(u1, v1), P(u0, v1), null, { tint: [0.34, 0.35, 0.33], ao: (p) => 0.5 + 0.5 * THREE.MathUtils.smoothstep(p.y, base, ch - 0.1) });
+      }
+    }
+    // ribs: short chamfered segments following a curve
+    const rib = (pts, w, d) => {
+      for (let k = 0; k < pts.length - 1; k++) {
+        const a = pts[k];
+        const b = pts[k + 1];
+        const mid = a.clone().add(b).multiplyScalar(0.5).add(new THREE.Vector3(0, -d / 2 + 0.02, 0));
+        const dir = b.clone().sub(a);
+        const len = dir.length();
+        const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), dir.normalize());
+        g.box('arch_basalt', { matrix: new THREE.Matrix4().compose(mid, q, new THREE.Vector3(1, 1, 1)), s: [len + 0.03, d, w], chamfer: 0.03, tint: [0.85, 0.8, 0.82], ao: 0.85 });
+      }
+    };
+    const M = 16;
+    for (const sgn of [-1, 1]) {
+      const pts = [];
+      for (let k = 0; k <= M; k++) {
+        const t = -1 + (2 * k) / M;
+        pts.push(P(t * 0.999, sgn * t * 0.999));
+      }
+      rib(pts, 0.16, 0.14);
+    }
+    for (const [d, horiz, sgn] of [['N', true, -1], ['W', false, -1], ['S', true, 1], ['E', false, 1]]) {
+      if (map.getEdge(x, y, d) !== EDGE.OPEN) continue;
+      if (sgn > 0 && (d === 'S' ? y + 1 < Hh : x + 1 < W)) continue; // shared arches drawn once (by the N/W cell)
+      const pts = [];
+      for (let k = 0; k <= M; k++) {
+        const t = -1 + (2 * k) / M;
+        pts.push(horiz ? P(t, sgn * 0.999) : P(sgn * 0.999, t));
+      }
+      rib(pts, 0.34, 0.2);
+    }
+    // carved boss at the crown
+    const boss = new THREE.SphereGeometry(0.2, 10, 6, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2);
+    g.geometry('arch_basalt', boss, new THREE.Matrix4().makeTranslation(x0 + hw, ch - 0.06, z0 + hw), { uv: 'world', tint: [0.9, 0.85, 0.85], ao: 0.8 });
+    boss.dispose();
   }
 
   // ------------------------------------------------------------ inscriptions
