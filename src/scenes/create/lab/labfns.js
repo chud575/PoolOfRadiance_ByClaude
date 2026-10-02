@@ -7,12 +7,13 @@ import { renderToCanvas } from '../../../ui/components/paintPass.js';
 
 export async function current(chars, o = {}) {
   window.__NOHEAD = !!o.nohead;
+  globalThis.__HEADDBG = o.dbg ?? 0;
   chars ??= [{ name: 'Taran', race: 'human', gender: 'male', classSpec: 'fighter', look: { seed: 11 } }];
   const images = [];
   const t = [];
   for (const ch of chars) {
     const t0 = performance.now();
-    images.push(renderPortrait3D({ classSpec: 'fighter', name: 'X', ...ch }, { scale: o.scale ?? 1, crop: o.crop }));
+    images.push(renderPortrait3D({ classSpec: 'fighter', name: 'X', ...ch }, { scale: o.scale ?? 1, crop: o.crop, brush: o.brush }));
     t.push(Math.round(performance.now() - t0));
   }
   if (o.sheet) return { images: [sheet(images, o.cols ?? images.length)], info: t };
@@ -81,4 +82,24 @@ export async function heads(chars, o = {}) {
   }
   if (o.sheet) return { images: [sheet(images, o.cols ?? images.length)], info: t };
   return { images, info: t };
+}
+
+export async function warmtest(chars, o = {}) {
+  const { warmPortraits } = await import('../../../ui/components/portrait3d.js');
+  const off = offscreen();
+  const gl = off.renderer.getContext();
+  const info = { ext: !!gl.getExtension('KHR_parallel_shader_compile') };
+  let t0 = performance.now();
+  await warmPortraits();
+  info.warm = Math.round(performance.now() - t0);
+  info.programsAfterWarm = off.renderer.info.programs.length;
+  t0 = performance.now();
+  const img = renderPortrait3D({ race: 'dwarf', gender: 'female', classSpec: 'fighter', name: 'X', look: { seed: 5 } }, { scale: 0.3 });
+  info.first = Math.round(performance.now() - t0);
+  info.programsAfterFirst = off.renderer.info.programs.length;
+  info.keys = off.renderer.info.programs.map((p) => p.name + ':' + (p.cacheKey ?? '').length);
+  t0 = performance.now();
+  renderPortrait3D({ race: 'elf', gender: 'female', classSpec: 'fighter', name: 'X', look: { seed: 6 } }, { scale: 1 });
+  info.second = Math.round(performance.now() - t0);
+  return { images: [img], info };
 }

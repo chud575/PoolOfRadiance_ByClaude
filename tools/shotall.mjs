@@ -24,7 +24,7 @@ try {
     if (only?.length && !only.includes(g.name)) continue;
     const out = `${outDir}/${g.name}.png`;
     try {
-      const r = await capture(browser, `${srv.base}?${g.query}`, out, { w, h });
+      const r = await capture(browser, `${srv.base}?${g.query}`, out, { w: g.w ?? w, h: g.h ?? h });
       for (const e of r.errors) console.error(`  [error] ${e}`);
       console.log(`${r.errors.length ? 'FAIL' : 'OK  '} ${out} (${r.ms} ms)`);
       if (r.errors.length) failures++;

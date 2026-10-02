@@ -3,6 +3,7 @@ export const CREATE_TEXT = {
   hub: 'Phlan needs heroes. Gather up to six adventurers — create them here, or add companions from your roster — then set out for the ruined city.',
   emptyParty: 'No one has answered the call yet. Create a character to begin.',
   roster: 'Every character you create is kept on the roster, so they can rejoin later parties.',
+  rosterEmpty: 'No one waits on the roster yet. Each adventurer you CREATE is kept here, ready to rejoin a later party with ADD.',
   race: 'Your blood decides your gifts and your limits. Humans may rise without bound; the elder races trade that for talents of their own and multiple classes.',
   raceShort: {
     human: 'Unlimited levels; may dual-class.',
@@ -34,3 +35,33 @@ export const NAMES = {
   gnome: { male: ['Fonkin', 'Orryn', 'Wrenn', 'Dimble', 'Zook'], female: ['Nissa', 'Bimpnottin', 'Ellyjobell', 'Carlin', 'Roywyn'] },
   halfling: { male: ['Pip', 'Merric', 'Corrin', 'Milo', 'Roscoe', 'Wendel'], female: ['Lidda', 'Verna', 'Callie', 'Seraphina', 'Bree'] },
 };
+
+/**
+ * Starting kit built from ALL the classes of a (multi-)class spec, so armour never blocks a calling:
+ * arcane casters go unarmoured, thieves wear leather, warriors and priests take mail and shield.
+ * Clerics keep to blunt weapons. Pure fighters get a bow; the arrows ride in the pack (unreadied)
+ * until the bow is readied.
+ * @param {string} classSpec e.g. 'fighter/thief'
+ * @returns {string[]} item ids
+ */
+export function kitFor(classSpec) {
+  const cs = classSpec.split('/');
+  const has = (c) => cs.includes(c);
+  const arcane = has('magicUser');
+  const thief = has('thief');
+  const kit = [];
+  // Hand weapon.
+  if (has('cleric')) kit.push(arcane ? 'staff' : 'mace');
+  else if (has('fighter')) kit.push(thief || arcane ? (thief ? 'shortSword' : 'longSword') : 'longSword');
+  else if (thief) kit.push(arcane ? 'dagger' : 'shortSword');
+  else kit.push('staff');
+  // Body: arcane casting forbids armour; thieving needs leather at most.
+  if (!arcane && thief) kit.push('leather');
+  else if (!arcane && (has('fighter') || has('cleric'))) kit.push('shield', 'chainMail');
+  // Extras.
+  if (has('cleric')) kit.push('holySymbol');
+  if (arcane && !has('cleric') && !kit.includes('dagger')) kit.push('dagger');
+  if (thief) kit.push('sling');
+  if (classSpec === 'fighter') kit.push('shortBow', 'arrows');
+  return kit;
+}

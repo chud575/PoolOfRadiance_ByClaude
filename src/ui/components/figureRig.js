@@ -54,6 +54,10 @@ export function faceParams(app) {
   if (app.fem) {
     f.jaw *= 0.84; f.chin *= 0.8; f.brow *= 0.55; f.nose *= 0.88; f.bridge *= 0.85; f.lips *= 1.06; f.cheek *= 1.06; f.w *= 0.95; f.eye *= 1.05;
   }
+  // Demi-human women keep their race's cues but read as women: a dwarf woman's broad face is
+  // softened at jaw, nose and brow, with fuller lips and larger eyes.
+  if (app.fem && (app.race === 'dwarf' || app.race === 'gnome')) { f.jaw *= 0.84; f.nose *= 0.86; f.bridge *= 0.85; f.brow *= 0.75; f.w *= 0.95; f.lips *= 1.12; f.eye *= 1.07; f.chin *= 0.9; }
+  if (app.fem && app.race === 'halfling') { f.cheek *= 1.05; f.eye *= 1.03; }
   if (app.expr === 'weary') f.lid += 0.4;
   f.brow = Math.min(1.7, f.brow);
   return f;

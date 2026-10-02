@@ -10,6 +10,7 @@ import { useItem } from '../../rules/magicItems.js';
 import { strengthTable } from '../../rules/abilities.js';
 import { itemIconURL, iconFor } from './itemIcons.js';
 import { lore, miniPortrait } from './CharacterSheet.js';
+import { itemLore } from './itemLore.js';
 
 const miniPortraitImg = (c) => miniPortrait(c);
 
@@ -21,16 +22,6 @@ const DOLL = [
   ['feet', 'Boots', 'boots', 'R'], ['ring2', 'Ring', 'ring', 'R'], ['quiver', 'Quiver', 'arrow', 'R'],
 ];
 
-const LORE_BY_TYPE = {
-  weapon: 'Honest steel from a Phlan smithy, oiled against the sea air.',
-  armor: 'Worn by a dozen owners before you; every dent is a story.',
-  shield: 'Painted wood and iron, scarred by kobold spears.',
-  ammo: 'Fletched by hand. Retrieve what you can after the fight.',
-  potion: 'A stoppered vial. Shake well; drink quickly.',
-  scroll: 'Crackling vellum, the ink still faintly warm.',
-  treasure: 'Worth more to a moneychanger than to you.',
-  gear: 'The kit every adventurer forgets until it is needed.',
-};
 const TYPE_NAMES = { weapon: 'Weapon', armor: 'Armor', shield: 'Shield', helm: 'Helm', ring: 'Ring', potion: 'Potion', scroll: 'Scroll', wand: 'Wand', ammo: 'Ammunition', gear: 'Gear', treasure: 'Treasure' };
 
 /** Stat line for an item definition. */
@@ -102,7 +93,18 @@ export function ammoProblem(ch) {
   if (!ammo) return null;
   const launcher = eq.find((e) => ITEMS[e.id].type === 'weapon' && ITEMS[e.id].ammo === ammo.id);
   if (launcher) return null;
+  // A bow carried in the pack is the Gold Box norm (swap to it with READY); only warn when there is none at all.
+  if (ch.inventory.some((e) => ITEMS[e.id]?.ammo === ammo.id)) return null;
   return `${itemName(ammo)} readied, but no ${ammo.id === 'quarrels' ? 'crossbow' : 'bow'} to shoot them`;
+}
+
+/** Calm note when ammunition is readied and its launcher waits in the pack ("ready the Short Bow to shoot"). */
+export function ammoHint(ch) {
+  const eq = ch.inventory.filter((e) => e.equipped && ITEMS[e.id]);
+  const ammo = eq.find((e) => ITEMS[e.id].type === 'ammo');
+  if (!ammo || eq.some((e) => ITEMS[e.id].ammo === ammo.id)) return null;
+  const bow = ch.inventory.find((e) => !e.equipped && ITEMS[e.id]?.ammo === ammo.id);
+  return bow ? `${itemName(bow)} in the pack — ready it to shoot` : null;
 }
 
 /** Paint the paperdoll figure, dressed in what is equipped. */
@@ -296,6 +298,7 @@ export class InventoryPanel {
         h('div.pc-doll-fig', [fig]),
         h('div.pc-doll-col', DOLL.filter((d) => d[3] === 'R').map(slotEl)),
       ]),
+      ammoHint(ch) ? h('div.pc-note', { dataset: lore({ title: 'Ammunition', text: 'Arrows sit readied in the quiver; READY the bow (it takes both hands, so the shield is slung) when you want to shoot.' }) }, [ammoHint(ch)]) : null,
       ammoProblem(ch) ? h('div.pc-warn', { dataset: lore({ title: 'Ammunition', text: 'Arrows need a bow and quarrels a crossbow readied in the weapon hand; otherwise they cannot be fired.' }) }, ['⚠ ', ammoProblem(ch)]) : null,
       h('div.pc-bigrow', { style: { marginTop: '0.6em', marginBottom: 0 } }, [
         h('div.pc-big', [h('span.n', [String(s.ac)]), h('span.l', ['AC'])]),
@@ -325,7 +328,7 @@ export class InventoryPanel {
       ]);
     });
     // The pack grid fits its contents (one spare row); the space below holds the selected item's lore.
-    const capacity = Math.max(12, Math.ceil((inv.length + 1) / 6) * 6);
+    const capacity = Math.max(18, Math.ceil((inv.length + 1) / 6) * 6);
     for (let k = inv.length; k < capacity; k++) tiles.push(h('div.pc-tile.empty'));
     const weightNow = carriedWeight(ch);
     const list = h('div.pc-sect.pc-items', [
@@ -412,7 +415,7 @@ export class InventoryPanel {
       h('div.txt', [
         h('div.t', [itemName(e)]),
         h('div.s', [`${TYPE_NAMES[def.type] ?? def.type} · ${itemWeight(e)} cn · ${itemValue(e)} gp${e.equipped ? ' · readied' : ''}`]),
-        h('p.d', [def.desc ?? LORE_BY_TYPE[def.type] ?? 'Plain, serviceable gear of the Moonsea towns.']),
+        h('p.d', [itemLore(e)]),
         stat ? h('p.r', [stat]) : null,
         cmp && cmp.bits.length ? h('p.c', cmp.bits.map((b) => h(`span.${b.good ? 'up' : 'down'}`, [b.good ? '▲ ' : '▼ ', b.text, ' ']))) : null,
       ]),

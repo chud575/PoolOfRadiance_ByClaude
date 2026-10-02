@@ -1,6 +1,6 @@
 import './partyui.css';
 import { h } from '../dom.js';
-import { deriveStats, statusLabel, maxLevel } from '../../rules/character.js';
+import { deriveStats, statusLabel, maxLevel, armorAllowsThieving } from '../../rules/character.js';
 import { ABILITIES, ABILITY_ABBR, formatStr, strengthTable, dexterityMods, constitutionTable, intelligenceTable, wisdomSaveAdj, charismaTable } from '../../rules/abilities.js';
 import { RACES } from '../../rules/races.js';
 import { CLASSES, ALIGNMENT_NAMES, SAVE_KEYS, SAVE_SHORT, THIEF_SKILL_IDS, THIEF_SKILL_NAMES, splitClasses, xpForLevel } from '../../rules/classes.js';
@@ -9,11 +9,10 @@ import { itemName } from '../../rules/items.js';
 import { spellLevel } from '../../rules/spells.js';
 import { ITEMS } from '../../data/items.js';
 import { itemIconURL, iconFor } from './itemIcons.js';
-import { portraitURL } from './portraitPainter.js';
 import { portraitImg } from './lazyPortrait.js';
 import { abilityTip, STAT_TIPS } from './rulesText.js';
 import { miniatureSnapshot, useRenderer } from './Miniature.js';
-import { ammoProblem } from './Inventory.js';
+import { ammoProblem, ammoHint } from './Inventory.js';
 
 export { useRenderer };
 
@@ -27,7 +26,8 @@ const ORD = (n) => `${n}${n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !=
  */
 export function portraitEl(ch, o = {}) {
   const st = ch.status === 'dead' ? '.dead' : ch.status && ch.status !== 'ok' ? '.down' : '';
-  return h(`div.pc-portrait${st}`, { class: o.className ?? '' }, [h('img', { src: portraitURL(ch, o.scale ?? 1), alt: ch.name ?? 'portrait', draggable: false })]);
+  // Painted lazily (placeholder first, the hero portrait ahead of any thumbnails) so a click never stalls on the GPU.
+  return h(`div.pc-portrait${st}`, { class: o.className ?? '' }, [portraitImg(ch, o.scale ?? 1, { alt: ch.name ?? 'portrait', priority: o.priority !== false })]);
 }
 
 /** Small portrait (roster strips). */
@@ -84,7 +84,7 @@ export function renderSheet(ch) {
       h('div', [h('b', [`${race.name} ${ch.gender === 'female' ? 'Female' : 'Male'}`]), ` · age ${ch.age}`]),
       h('div', { dataset: lore(STAT_TIPS.align(ch.alignment)) }, [ALIGNMENT_NAMES[ch.alignment]]),
     ]),
-    h('div', { style: { textAlign: 'center' } }, [
+    h('div.pc-idchips', { style: { textAlign: 'center' } }, [
       ch.status === 'ok' ? null : h('span.pc-chip.warn', [statusLabel(ch)]),
       ...effects.filter((e) => e.kind !== 'status' || e.id !== 'ok').slice(0, 4).map((e) => h('span.pc-chip', { dataset: lore({ title: e.name, text: e.desc }) }, [e.name])),
     ]),
@@ -153,8 +153,12 @@ export function renderSheet(ch) {
   const saves = sect('Saving Throws', [h('div.pc-kv', SAVE_KEYS.flatMap((k) => kv(SAVE_SHORT[k], s.saves[k], STAT_TIPS.save(k, s.saves[k]))))]);
   const extra = [];
   if (s.thief) {
-    extra.push(sect('Thieving Skills', [h('div.pc-kv', THIEF_SKILL_IDS.flatMap((k) => kv(THIEF_SKILL_NAMES[k], `${s.thief[k]}%`, STAT_TIPS.thief(THIEF_SKILL_NAMES[k], s.thief[k])))),
-      h('div', { style: { marginTop: '0.4em', fontSize: '0.8em', color: 'var(--por-text-dim)' } }, [`Backstab ×${s.backstab}`])]));
+    const armored = !armorAllowsThieving(ch);
+    const armorName = itemName(ch.inventory.find((e) => e.equipped && ITEMS[e.id]?.type === 'armor') ?? { id: 'chainMail' });
+    const SHORT = { pp: 'Pick pockets', ol: 'Open locks', ft: 'Traps', ms: 'Move silent', hs: 'Hide', hn: 'Hear noise', cw: 'Climb walls', rl: 'Read lang.' };
+    extra.push(sect('Thieving Skills', [h('div.pc-kv.pc-kv-2', THIEF_SKILL_IDS.flatMap((k) => kv(SHORT[k] ?? THIEF_SKILL_NAMES[k], `${s.thief[k]}%`, STAT_TIPS.thief(THIEF_SKILL_NAMES[k], s.thief[k])))),
+      armored ? h('div.pc-warn.soft', { dataset: lore({ title: 'Armour and thieving', text: `Thieving needs freedom of movement: in anything heavier than leather a thief cannot pick locks, find traps, move silently, hide or climb (0%). Hearing and reading are unaffected. Remove the ${armorName} in ITEMS to restore the skills.` }) }, [`0% — thieving requires leather armour (${armorName} worn)`]) : null,
+      h('div', { style: { marginTop: '0.4em', fontSize: '0.8em', color: 'var(--por-text-dim)' } }, [`Backstab ×${s.backstab}`])].filter(Boolean)));
   }
   const casting = Object.entries(s.spellSlots);
   if (casting.length) {
@@ -174,6 +178,8 @@ export function renderSheet(ch) {
   if (race.missileBonus) traits.push(['Sling & bow', `+${race.missileBonus}`, 'Halflings are deadly with slings and bows.']);
   if (race.vsGiants) traits.push(['Giant-wary', '−4', 'Giants, ogres and trolls suffer −4 to hit this small folk.']);
   if (race.canDualClass) traits.push(['Dual class', 'able', 'Humans may abandon their class for a new one and later regain the old abilities.']);
+  const abbr = (c) => c.split('/').map((x) => CLASSES[x].abbr ?? x[0].toUpperCase()).join('/');
+  traits.push(['Classes', race.classes.length > 4 ? `${race.classes.length} paths` : race.classes.map(abbr).join(' · '), `${race.name} may follow: ${race.classes.map((c) => c.split('/').map((x) => CLASSES[x].name).join('/')).join(', ')}.`]);
   traits.push(['Racial level limit', ch.race === 'human' ? 'none' : 'yes', ch.race === 'human' ? 'Humans have no racial level limit; only the Phlan level cap (see RECORD) applies.' : 'Demi-humans reach only so far in each class by race; exceptional prime requisites raise the limit. The lower of this and the Phlan level cap applies (see RECORD).']);
   extra.push(sect('Racial Traits', [h('div.pc-kv', traits.flatMap(([k, v, t]) => kv(k, v, { title: k, text: t }))),
     h('div', { style: { marginTop: '0.45em' } }, race.languages.map((l) => h('span.pc-chip', { dataset: lore({ title: 'Languages', text: `${ch.name} speaks ${race.languages.join(', ')}. Intelligence allows more tongues to be learned.` }) }, [l])))]));
@@ -183,7 +189,7 @@ export function renderSheet(ch) {
   const kit = sect('Readied', [...(gear.length ? gear.map((e) => h('div', { style: { display: 'flex', alignItems: 'center', gap: '0.6em', padding: '0.12em 0' }, dataset: lore({ title: itemName(e), text: `Readied ${ITEMS[e.id].type}. Open ITEMS to change equipment.` }) }, [
     h('img', { src: itemIconURL(iconFor(ITEMS[e.id])), alt: '', style: { width: '1.9em', height: '1.9em' } }),
     h('span', { style: { color: 'var(--por-text)' } }, [itemName(e), (e.qty ?? 1) > 1 ? ` ×${e.qty}` : '']),
-  ])) : [h('div.pc-rest-note', ['Nothing readied.'])]), ammoWarn ? h('div.pc-warn', { dataset: lore({ title: 'Ammunition', text: 'Arrows need a bow and quarrels a crossbow readied in the weapon hand; otherwise they cannot be fired.' }) }, ['⚠ ', ammoWarn]) : null].filter(Boolean));
+  ])) : [h('div.pc-rest-note', ['Nothing readied.'])]), ammoHint(ch) ? h('div.pc-note', { dataset: lore({ title: 'Ammunition', text: 'Arrows sit readied in the quiver; READY the bow (it takes both hands, so the shield is slung) when you want to shoot.' }) }, [ammoHint(ch)]) : null, ammoWarn ? h('div.pc-warn', { dataset: lore({ title: 'Ammunition', text: 'Arrows need a bow and quarrels a crossbow readied in the weapon hand; otherwise they cannot be fired.' }) }, ['⚠ ', ammoWarn]) : null].filter(Boolean));
   const langs = sect('Languages', [h('div', race.languages.map((l) => h('span.pc-chip', [l])))]);
   // ---- record: experience, limits, wealth
   const totalXp = classes.reduce((t, c) => t + (ch.xp[c] ?? 0), 0);
@@ -203,18 +209,23 @@ export function renderSheet(ch) {
   const pack = ch.inventory.filter((e) => !e.equipped && ITEMS[e.id]);
   const packSect = sect('Pack', [
     h('div.pc-packline', pack.length ? pack.slice(0, 8).map((e) => h('span.pc-packi', { dataset: lore({ title: itemName(e), text: 'Carried in the pack. Open ITEMS to ready, use, trade or drop it.' }) }, [h('img', { src: itemIconURL(iconFor(ITEMS[e.id])), alt: '' }), (e.qty ?? 1) > 1 ? h('b', [String(e.qty)]) : null])) : [h('span.pc-rest-note', ['Nothing else carried.'])]),
-    h('div.pc-rest-note', { style: { marginTop: '0.35em' } }, [`${pack.length} item${pack.length === 1 ? '' : 's'} in the pack · ${s.weight} cn carried · ${s.encumbrance.label.toLowerCase()}`]),
+    h('div.pc-rest-note', { style: { marginTop: '0.35em' } }, [`${pack.length} item${pack.length === 1 ? '' : 's'} in the pack · ${s.weight} cn carried`]),
   ]);
   // Spells per day sit under the readied kit, so the right column never overflows on casters.
   const spellSect = casting.length ? extra.find((x) => x.textContent.startsWith('Spells per Day')) : null;
   const rest = extra.filter((x) => x !== spellSect);
-  const side = [saves, ...rest.slice(0, 2)];
+  const side = [saves, ...rest];
   void langs;
-  side.push(cond, packSect);
+  // A clean bill of health is a chip in the identity column; only real conditions take a card.
+  if (fx.length || ch.hp.cur < ch.hp.max) side.push(cond);
+  else id.querySelector('.pc-idchips')?.prepend(h('span.pc-chip.ok', { dataset: lore({ title: 'Hale', text: 'No wounds, curses or lingering magic.' }) }, ['Hale']));
+  // The pack summary sits under the readied kit when there is no spell table there; otherwise at the end of the side column.
+  const packInMiddle = !spellSect;
+  if (!packInMiddle) side.push(packSect);
   const sheet = h('div.pc-sheet', [
     id,
     h('div.pc-col', [abil, cls, record]),
-    h('div.pc-col', [combat, kit, spellSect].filter(Boolean)),
+    h('div.pc-col', [combat, kit, spellSect, packInMiddle ? packSect : null].filter(Boolean)),
     h('div.pc-col.pc-col-scroll', side),
   ]);
   // Every rules-bearing row takes keyboard focus, so arrows walk the sheet and the lore strip follows.

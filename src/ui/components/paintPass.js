@@ -162,48 +162,130 @@ export function renderToCanvas(renderer, scene, camera, o) {
     renderer.setClearColor(0x000000, o.alpha ? 0 : 1);
     renderer.clear();
     renderer.render(scene, camera);
-    const out = rtFor(`out:${o.key ?? 'fig'}`, o.w, o.h, { depthBuffer: false });
-    if (o.paint === 'light') {
-      // Brushwork only: tone-mapped source smeared along the forms (keeps the anatomy crisp).
-      const mid = rtFor(`mid:${o.key ?? 'fig'}`, RW, RH, { depthBuffer: false });
-      p.plain.uniforms.tSrc.value = hdr.texture;
-      p.plain.uniforms.exposure.value = o.exposure ?? 1;
-      p.quad.material = p.plain;
-      renderer.setRenderTarget(mid);
-      renderer.render(p.scene, p.cam);
-      p.strokes.uniforms.tSrc.value = mid.texture;
-      p.strokes.uniforms.texel.value.set(1 / RW, 1 / RH);
-      p.strokes.uniforms.res.value.set(RW, RH);
-      p.strokes.uniforms.seed.value = o.seed ?? 0;
-      p.quad.material = p.strokes;
-    } else if (o.paint) {
-      const mid = rtFor(`mid:${o.key ?? 'fig'}`, RW, RH, { depthBuffer: false });
-      p.kuw.uniforms.tSrc.value = hdr.texture;
-      p.kuw.uniforms.texel.value.set(1 / RW, 1 / RH);
-      p.kuw.uniforms.exposure.value = o.exposure ?? 1;
-      p.quad.material = p.kuw;
-      renderer.setRenderTarget(mid);
-      renderer.render(p.scene, p.cam);
-      p.strokes.uniforms.tSrc.value = mid.texture;
-      p.strokes.uniforms.texel.value.set(1 / RW, 1 / RH);
-      p.strokes.uniforms.res.value.set(RW, RH);
-      p.strokes.uniforms.seed.value = o.seed ?? 0;
-      p.quad.material = p.strokes;
-    } else {
-      p.plain.uniforms.tSrc.value = hdr.texture;
-      p.plain.uniforms.exposure.value = o.exposure ?? 1;
-      p.quad.material = p.plain;
-    }
-    renderer.setRenderTarget(out);
-    renderer.setClearColor(0x000000, 0);
-    renderer.clear();
-    renderer.render(p.scene, p.cam);
-    return readCanvas(renderer, out);
+    return finishPasses(renderer, hdr, o, RW, RH);
   } finally {
     renderer.setRenderTarget(prevRT);
     renderer.setClearColor(prevColor, prevAlpha);
     renderer.autoClear = prevAuto;
     renderer.shadowMap.autoUpdate = prevShadowAuto;
+  }
+}
+
+/** Tone-map / brush the HDR render into the output target and read it back. */
+function finishPasses(renderer, hdr, o, RW, RH) {
+  const p = passes();
+  const out = rtFor(`out:${o.key ?? 'fig'}`, o.w, o.h, { depthBuffer: false });
+  if (o.paint === 'light') {
+    // Brushwork only: tone-mapped source smeared along the forms (keeps the anatomy crisp).
+    const mid = rtFor(`mid:${o.key ?? 'fig'}`, RW, RH, { depthBuffer: false });
+    p.plain.uniforms.tSrc.value = hdr.texture;
+    p.plain.uniforms.exposure.value = o.exposure ?? 1;
+    p.quad.material = p.plain;
+    renderer.setRenderTarget(mid);
+    renderer.render(p.scene, p.cam);
+    p.strokes.uniforms.tSrc.value = mid.texture;
+    p.strokes.uniforms.texel.value.set(1 / RW, 1 / RH);
+    p.strokes.uniforms.res.value.set(RW, RH);
+    p.strokes.uniforms.seed.value = o.seed ?? 0;
+    p.quad.material = p.strokes;
+  } else if (o.paint) {
+    const mid = rtFor(`mid:${o.key ?? 'fig'}`, RW, RH, { depthBuffer: false });
+    p.kuw.uniforms.tSrc.value = hdr.texture;
+    p.kuw.uniforms.texel.value.set(1 / RW, 1 / RH);
+    p.kuw.uniforms.exposure.value = o.exposure ?? 1;
+    p.quad.material = p.kuw;
+    renderer.setRenderTarget(mid);
+    renderer.render(p.scene, p.cam);
+    p.strokes.uniforms.tSrc.value = mid.texture;
+    p.strokes.uniforms.texel.value.set(1 / RW, 1 / RH);
+    p.strokes.uniforms.res.value.set(RW, RH);
+    p.strokes.uniforms.seed.value = o.seed ?? 0;
+    p.quad.material = p.strokes;
+  } else {
+    p.plain.uniforms.tSrc.value = hdr.texture;
+    p.plain.uniforms.exposure.value = o.exposure ?? 1;
+    p.quad.material = p.plain;
+  }
+  renderer.setRenderTarget(out);
+  renderer.setClearColor(0x000000, 0);
+  renderer.clear();
+  renderer.render(p.scene, p.cam);
+  return readCanvas(renderer, out);
+}
+
+const tick = () => new Promise((r) => setTimeout(r, 0));
+/** Yield until the GPU has drained the queued work (WebGL2 fence), so readbacks never stall the page. */
+async function gpuIdle(renderer) {
+  const gl = renderer.getContext();
+  if (!gl.fenceSync) return tick();
+  const f = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+  gl.flush();
+  try {
+    for (let i = 0; i < 4000; i++) {
+      await new Promise((r) => setTimeout(r, i ? 8 : 0));
+      if (gl.getSyncParameter(f, gl.SYNC_STATUS) === gl.SIGNALED) break;
+    }
+  } finally {
+    gl.deleteSync(f);
+  }
+}
+
+/**
+ * renderToCanvas in horizontal scissor bands, yielding to the page between them (the game loop
+ * keeps drawing). The scene must not change between bands; the shadow map is drawn once.
+ * @returns {Promise<HTMLCanvasElement>}
+ */
+export async function renderToCanvasBanded(renderer, scene, camera, o) {
+  const bands = Math.max(1, o.bands ?? 4);
+  const ss = o.ss ?? 1;
+  const RW = Math.round(o.w * ss), RH = Math.round(o.h * ss);
+  const hdr = hdrTarget(`${o.key ?? 'band'}`, RW, RH, 0);
+  for (let b = 0; b < bands; b++) {
+    const prevRT = renderer.getRenderTarget();
+    const prevColor = renderer.getClearColor(new THREE.Color());
+    const prevAlpha = renderer.getClearAlpha();
+    const prevAuto = renderer.autoClear;
+    const prevShadowAuto = renderer.shadowMap.autoUpdate;
+    const prevShadowNeeds = renderer.shadowMap.needsUpdate;
+    const prevScissorTest = renderer.getScissorTest();
+    try {
+      renderer.setRenderTarget(hdr);
+      renderer.shadowMap.autoUpdate = b === 0;
+      renderer.shadowMap.needsUpdate = b === 0;
+      if (b === 0) {
+        renderer.setClearColor(0x000000, o.alpha ? 0 : 1);
+        renderer.setScissorTest(false);
+        renderer.clear();
+      }
+      const y0 = Math.floor((RH * b) / bands), y1 = Math.floor((RH * (b + 1)) / bands);
+      renderer.autoClear = false;
+      hdr.scissor.set(0, y0, RW, y1 - y0);
+      hdr.scissorTest = true;
+      renderer.setRenderTarget(hdr);
+      renderer.render(scene, camera);
+    } finally {
+      hdr.scissorTest = false;
+      hdr.scissor.set(0, 0, RW, RH);
+      renderer.setRenderTarget(prevRT);
+      renderer.setClearColor(prevColor, prevAlpha);
+      renderer.autoClear = prevAuto;
+      renderer.shadowMap.autoUpdate = prevShadowAuto;
+      renderer.shadowMap.needsUpdate = prevShadowNeeds;
+      renderer.setScissorTest(prevScissorTest);
+    }
+    await gpuIdle(renderer);
+  }
+  const prevRT = renderer.getRenderTarget();
+  const prevColor = renderer.getClearColor(new THREE.Color());
+  const prevAlpha = renderer.getClearAlpha();
+  const prevAuto = renderer.autoClear;
+  try {
+    renderer.autoClear = true;
+    return finishPasses(renderer, hdr, o, RW, RH);
+  } finally {
+    renderer.setRenderTarget(prevRT);
+    renderer.setClearColor(prevColor, prevAlpha);
+    renderer.autoClear = prevAuto;
   }
 }
 
@@ -220,4 +302,24 @@ function readCanvas(renderer, rt) {
   c.height = h;
   c.getContext('2d', { willReadFrequently: true }).putImageData(img, 0, 0);
   return c;
+}
+
+/**
+ * Compile the programs `scene` needs for renderToCanvas without blocking the main thread
+ * (KHR_parallel_shader_compile): the ray-marched head shader takes many seconds to link under
+ * software GL, so scenes warm it on enter instead of stalling on the first portrait.
+ * Compiles against an HDR target so the program variant matches renderToCanvas's.
+ * @returns {Promise<void>}
+ */
+export function warmCompile(renderer, scene, camera, key = 'warm') {
+  const prev = renderer.getRenderTarget();
+  try {
+    renderer.setRenderTarget(hdrTarget(key, 8, 8, 4));
+    const p = renderer.compileAsync(scene, camera);
+    return p.then(() => {}, () => {});
+  } catch {
+    return Promise.resolve();
+  } finally {
+    renderer.setRenderTarget(prev);
+  }
 }

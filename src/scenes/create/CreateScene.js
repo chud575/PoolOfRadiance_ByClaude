@@ -8,20 +8,27 @@ import { RACES, RACE_IDS, raceAbilityCaps } from '../../rules/races.js';
 import { CLASSES, ALIGNMENTS, ALIGNMENT_NAMES, PR_LEVEL_CAPS, classSpecName, splitClasses, allowedAlignments, xpForLevel } from '../../rules/classes.js';
 import { ABILITIES, ABILITY_NAMES, ABILITY_ABBR, formatStr } from '../../rules/abilities.js';
 import { SAVE_SLOTS } from '../../core/SaveManager.js';
-import { createCharacter, deriveStats, applyRace, meetsClassMinimums, rollExceptionalStr, validateConcept } from '../../rules/character.js';
-import { STARTING_KITS } from '../../data/items.js';
+import { createCharacter, unequipItem, deriveStats, applyRace, meetsClassMinimums, rollExceptionalStr, validateConcept } from '../../rules/character.js';
 import { portraitURL, HEADS, BODIES, RACE_SKINS, SKIN_TONES, HAIR_COLORS, EYE_COLORS, CLOTH_COLORS, defaultLook } from '../../ui/components/portraitPainter.js';
 import { portraitEl, miniPortrait, abilityMods } from '../../ui/components/CharacterSheet.js';
 import { openCharacterView } from '../../ui/components/CharacterView.js';
 import { STAT_TIPS, ALIGNMENT_TEXT, levelLimitText, abilityTip } from '../../ui/components/rulesText.js';
 import { buildMiniature, miniatureEnvironment, useRenderer } from '../../ui/components/Miniature.js';
+import { warmPortraits } from '../../ui/components/portrait3d.js';
 import { UINav } from '../../ui/components/uiNav.js';
 import { portraitImg, setPortraitSync } from '../../ui/components/lazyPortrait.js';
 import { ITEMS } from '../../data/items.js';
 import { itemName } from '../../rules/items.js';
 import { itemIconURL, iconFor } from '../../ui/components/itemIcons.js';
 import { createFlame } from '../../render/lighting.js';
-import { CREATE_TEXT, NAMES } from './createData.js';
+import { CREATE_TEXT, NAMES, kitFor } from './createData.js';
+
+/** Ammunition rides in the pack until a launcher is readied (no '⚠ arrows but no bow' on a fresh sheet). */
+function settleKit(ch) {
+  const launcher = ch.inventory.some((e) => e.equipped && ITEMS[e.id]?.ammo);
+  if (!launcher) ch.inventory.forEach((e, i) => { if (e.equipped && ITEMS[e.id]?.type === 'ammo') unequipItem(ch, i); });
+  return ch;
+}
 
 const STEPS = [['race', 'Race'], ['class', 'Class'], ['align', 'Alignment'], ['stats', 'Abilities'], ['portrait', 'Portrait'], ['name', 'Name']];
 const BUY_POOL = 32;
@@ -43,8 +50,11 @@ export default class CreateScene extends Scene {
     const { render } = this.ctx;
     useRenderer(render.renderer);
     setPortraitSync(!!this.ctx.debug?.frozen);
+    // Link the ray-marched portrait shader in the background now, not on the first click.
     this.rng = this.ctx.rng;
     await this._build3d();
+    // Link the ray-marched portrait shader while the hall loads, not on the first click.
+    if (!this.ctx.debug?.frozen) await warmPortraits();
     this.post = { bloomStrength: 0.5, bloomThreshold: 0.92, vignette: 0.62, exposure: 1.08 };
 
     this.newParty = [...this.ctx.game.party];
@@ -298,13 +308,22 @@ export default class CreateScene extends Scene {
     const key = JSON.stringify([d.race, d.gender, d.classSpec, d.look]);
     if (key === this._figKey) return;
     this._figKey = key;
-    for (const c of [...this.figureRoot.children]) {
-      c.userData.dispose?.();
-      this.figureRoot.remove(c);
-    }
-    const f = buildMiniature(d, { pose: 'stand', rayHead: true, headGain: 0.9 });
-    f.scale.setScalar(1.42);
-    this.figureRoot.add(f);
+    const build = () => {
+      if (this._figKey !== key || !this.figureRoot) return;
+      // The old figure is disposed only after the new one has drawn, so its compiled programs are
+      // reused rather than released and relinked (seconds under software GL).
+      for (const c of [...this.figureRoot.children]) {
+        this.figureRoot.remove(c);
+        (this._retired ??= []).push(c);
+      }
+      this._retireAt = (this._frameNo ?? 0) + 2;
+      const f = buildMiniature({ ...d, look: { ...d.look } }, { pose: 'stand', rayHead: true, headGain: 0.9 });
+      f.scale.setScalar(1.42);
+      this.figureRoot.add(f);
+    };
+    // Interactive: let the panel repaint first, then sculpt the miniature on a later tick.
+    if (this.ctx.debug?.frozen || !this.figureRoot.children.length) build();
+    else setTimeout(build, 40);
   }
 
   // ------------------------------------------------------------------ state
@@ -388,7 +407,7 @@ export default class CreateScene extends Scene {
     const d = this.draft;
     if (!d.abilities) return null;
     try {
-      return createCharacter({ rng: this.rng.fork(7), name: d.name || 'Adventurer', race: d.race, classSpec: d.classSpec, gender: d.gender, alignment: d.alignment, abilities: d.abilities, items: STARTING_KITS[splitClasses(d.classSpec)[0]] });
+      return settleKit(createCharacter({ rng: this.rng.fork(7), name: d.name || 'Adventurer', race: d.race, classSpec: d.classSpec, gender: d.gender, alignment: d.alignment, abilities: d.abilities, items: kitFor(d.classSpec) }));
     } catch {
       return null;
     }
@@ -489,8 +508,10 @@ export default class CreateScene extends Scene {
         b.append(h('p.cc-lead', { style: { textAlign: 'center', marginTop: '2em' } }, [CREATE_TEXT.emptyParty]));
       }
       b.append(h('div', { style: { flex: '1' } }));
-      b.append(h('div.pc-sect-h', [h('span', [`Roster · ${this.roster.length} saved`])]));
-      b.append(h('p.pc-rest-note', { style: { fontSize: '0.8em' } }, [CREATE_TEXT.roster]));
+      const R = this.roster;
+      b.append(h('div.pc-sect-h', [h('span', [R.length ? `Roster · ${R.length} kept` : 'Roster'])]));
+      if (R.length) b.append(h('div.cc-rosterstrip', R.slice(-8).map((c) => miniPortrait(c, { tip: `${c.name} — ${RACES[c.race]?.name ?? ''} ${classSpecName(c.classSpec)}. ADD brings them into the party.` }))));
+      b.append(h('p.pc-rest-note', { style: { fontSize: '0.8em' } }, [R.length ? CREATE_TEXT.roster : CREATE_TEXT.rosterEmpty]));
       return;
     }
     this.card.title.textContent = this.editing ? 'Modify' : 'New Adventurer';
@@ -863,7 +884,7 @@ export default class CreateScene extends Scene {
       this.ctx.ui.toast(`${d.name} is changed.`);
     } else {
       if (this.newParty.length >= 6) return this.ctx.ui.toast('The party is full (six).');
-      const ch = createCharacter({ rng: this.rng, name: d.name.trim(), race: d.race, classSpec: d.classSpec, alignment: d.alignment, gender: d.gender, abilities: d.abilities, items: STARTING_KITS[splitClasses(d.classSpec)[0]] });
+      const ch = settleKit(createCharacter({ rng: this.rng, name: d.name.trim(), race: d.race, classSpec: d.classSpec, alignment: d.alignment, gender: d.gender, abilities: d.abilities, items: kitFor(d.classSpec) }));
       ch.look = { ...defaultLook(d) };
       this.newParty.push(ch);
       this.roster = [...this.roster.filter((r) => r.id !== ch.id), structuredClone(ch)];
@@ -931,6 +952,11 @@ export default class CreateScene extends Scene {
     if (this._viewOpen && this._lastRender != null && Math.abs(t - this._lastRender) < 0.5) return;
     this._lastRender = t;
     super.render();
+    this._frameNo = (this._frameNo ?? 0) + 1;
+    if (this._retired?.length && this._frameNo >= this._retireAt) {
+      for (const c of this._retired) c.userData.dispose?.();
+      this._retired = [];
+    }
   }
 
   update() {
@@ -959,6 +985,8 @@ export default class CreateScene extends Scene {
   exit() {
     this._gone = true;
     for (const c of this.figureRoot?.children ?? []) c.userData.dispose?.();
+    for (const c of this._retired ?? []) c.userData.dispose?.();
+    this._retired = [];
     for (const g of this._geos ?? []) g.dispose();
     this._trimMat?.dispose();
     for (const m of this._mats ?? []) m.dispose();

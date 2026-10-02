@@ -321,11 +321,11 @@ float skin(vec3 p) {
     d = smax(d, -sdEll(p - vec3(0.0, mY - 0.0145, lipZ - 0.002), vec3(0.012, 0.0022, 0.004)), 0.004);
   }
   // Ears: helix rim, concha bowl, lobe; elves and half-elves get the long point.
-  vec3 eq = q - vec3(0.0715 * W, -0.001, -0.009);
+  vec3 eq = q - vec3(0.0752 * W, -0.002, -0.012);
   if (length(eq) < 0.06 + 0.04 * ELF) {
   eq.xz = rot(-0.38) * eq.xz;
   float earS = EARS;
-  float ear = sdEll(eq, vec3(0.0085, 0.028 * earS, 0.018 * earS));
+  float ear = sdEll(eq, vec3(0.0092, 0.029 * earS, 0.0185 * earS));
   ear = smax(ear, -sdEll(eq - vec3(0.0072, -0.003 * earS, 0.002), vec3(0.0042, 0.016 * earS, 0.0095 * earS)), 0.003);
   ear = smin(ear, sdEll(eq - vec3(0.002, -0.026 * earS, 0.003), vec3(0.0055, 0.0075, 0.007)), 0.004);
   if (ELF > 0.01) {
@@ -335,11 +335,11 @@ float skin(vec3 p) {
   d = smin(d, ear, 0.007);
   }
   // Neck with the sterno-mastoid cords and (men) the larynx.
-  float nr = FEM > 0.5 ? 0.045 : 0.054;
+  float nr = FEM > 0.5 ? 0.039 : 0.047;
   vec3 np = p - vec3(0.0, 0.0, -0.03);
   np.x *= 0.92;
   float neck = sdCone(np, vec3(0.0, -0.045, 0.0), vec3(0.0, -0.22, -0.004), nr, nr * 1.18);
-  neck = smin(neck, sdCap(q, vec3(0.052, -0.035, -0.022), vec3(0.014, -0.19, 0.03), 0.0105), 0.016);
+  neck = smin(neck, sdCap(q, vec3(0.046, -0.04, -0.022), vec3(0.013, -0.19, 0.03), 0.0088 - 0.0015 * FEM), 0.014);
   if (FEM < 0.5) neck = smin(neck, sdEll(p - vec3(0.0, -0.125, 0.026), vec3(0.01, 0.014, 0.009)), 0.012);
   d = smin(d, neck, 0.014);
   return d;
@@ -437,14 +437,19 @@ float hairField(vec3 p, float sk) {
   if (uHair == 1 && FEM > 0.5) d = smin(d, sdEll(p - vec3(0.0, 0.0, -0.05), vec3(0.082, 0.07, 0.07)) + strands(p, 18.0, 0.002), 0.02);
   return d;
 }
-float browField(vec3 p, float sk) {
+// Brow coverage 0..1: thick at the head, tapering to the tail, arched (higher and finer on women).
+float browBand(vec3 p) {
   vec3 q = vec3(abs(p.x), p.y, p.z);
   float ex = EX();
   float u = (q.x - ex * 0.95) / 0.022;
-  float arch = 0.0205 + 0.0045 * (1.0 - u * u) - 0.0022 * BTILT * (-u) - 0.002 * SCOWL;
-  float band = sat((1.0 - abs(q.y - arch - 0.0015 * (1.0 - u)) / (0.0038 * (1.0 - 0.55 * sat(u)) * (0.75 + 0.25 * BROW))) * 2.0);
-  band *= sat((1.2 - abs(u)) * 3.0) * sat((q.z - 0.06) / 0.01);
-  return sk - 0.0014 * band * (1.0 + 0.3 * BROW) + (1.0 - band) * 0.002;
+  float arch = 0.0205 + (0.0045 + 0.0025 * FEM) * (1.0 - u * u) - 0.0022 * BTILT * (-u) - 0.002 * SCOWL + 0.0015 * FEM;
+  float thick = 0.0038 * (1.0 - 0.6 * sat(u)) * (0.75 + 0.25 * BROW) * (1.0 - 0.35 * FEM);
+  float band = smoothstep(0.0, 0.6, 1.0 - abs(q.y - arch - 0.0015 * (1.0 - u)) / thick);
+  return band * sat((1.2 - abs(u)) * 3.0) * sat((q.z - 0.06) / 0.01);
+}
+float browField(vec3 p, float sk) {
+  float band = browBand(p);
+  return sk - 0.0009 * band * (1.0 + 0.3 * BROW) + (1.0 - band) * 0.002;
 }
 float beardField(vec3 p, float sk) {
   if (uBeard < 2) return 1e3;
@@ -561,7 +566,7 @@ float softShadow(vec3 ro, vec3 rd, float jit) {
   float t = 0.006 + jit * 0.003;
   for (int i = ZERO; i < 16; i++) {
     float h = mapD(ro + rd * t);
-    res = min(res, 5.0 * max(h, 0.0) / t);
+    res = min(res, 2.8 * max(h, 0.0) / t);
     t += clamp(h * 0.8, 0.0025, 0.02);
     if (res < 0.01 || t > 0.2) break;
   }
@@ -596,32 +601,38 @@ vec3 skinAlbedo(vec3 p, vec3 n) {
   float ex = EX();
   float lum = dot(base, vec3(0.3, 0.59, 0.11));
   // Zones are tinted relative to the base tone so dark complexions keep their hue.
-  vec3 ruddy = base * vec3(1.18, 0.82, 0.78);
-  vec3 warm = base * vec3(1.08, 1.02, 0.86);
-  vec3 cool = base * vec3(0.86, 0.94, 1.02);
+  // The painter's three zones: golden forehead, red cheeks/nose/ears, blue-grey jaw.
+  vec3 ruddy = base * vec3(1.2, 0.8, 0.76);
+  vec3 warm = base * vec3(1.1, 1.05, 0.8);
+  vec3 cool = base * vec3(0.82, 0.9, 1.04);
   float cheek = exp(-pow(length((q.xy - vec2(0.045, -0.026)) / vec2(0.024, 0.018)), 2.0));
   float noseZ = exp(-pow(length((p.xy - vec2(0.0, TIPY())) / vec2(0.012, 0.012)), 2.0)) * sat((p.z - 0.09) / 0.01);
   float earZ = sat((q.x - 0.066 * W) / 0.008) * sat((0.03 - abs(p.y)) / 0.02);
   float brow = sat((p.y - 0.035) / 0.03) * sat(p.z / 0.06);
   float jaw = sat((-0.055 - p.y) / 0.03) * sat((p.z + 0.01) / 0.04) * (1.0 - FEM);
   vec3 c = base;
-  c = mix(c, warm, brow * 0.6);
-  c = mix(c, ruddy, sat(cheek * (0.5 + 0.25 * FEM) + noseZ * 0.55 + earZ * 0.6));
-  c = mix(c, cool, jaw * (uBeard == 1 ? 0.75 : 0.35));
+  c = mix(c, warm, brow * 0.85);
+  c = mix(c, ruddy, sat(cheek * (0.72 + 0.2 * FEM) + noseZ * 0.65 + earZ * 0.75));
+  float muzzle = exp(-pow(length((p.xy - vec2(0.0, MOUTHY())) / vec2(0.03, 0.02)), 2.0)) * sat((p.z - 0.06) / 0.02) * (1.0 - FEM);
+  c = mix(c, cool, sat(jaw * (uBeard == 1 ? 0.8 : 0.55) + muzzle * 0.35 + sat((-0.075 - p.y) / 0.03) * 0.25));
   if (uBeard == 1) c *= 1.0 - jaw * 0.18 * (0.6 + 0.4 * vnoise(p * 900.0));
   // Sockets: a violet-brown glaze; lids slightly pinker.
   float sock = exp(-pow(length((q.xy - vec2(ex, EYEY + 0.004)) / vec2(0.02, 0.013)), 2.0)) * sat((p.z - 0.05) / 0.02);
-  c = mix(c, base * vec3(0.72, 0.6, 0.66), sock * 0.4);
+  c = mix(c, base * vec3(0.66, 0.54, 0.6), sock * 0.5);
+  // Shadowed upper-lid crease under the brow (reads as a real socket at thumbnail size).
+  float crease = exp(-pow(length((q.xy - vec2(ex, EYEY + 0.0125)) / vec2(0.016, 0.0045)), 2.0)) * sat((p.z - 0.06) / 0.02);
+  c = mix(c, base * vec3(0.55, 0.44, 0.46), crease * 0.45);
   // Lips.
   float mY = MOUTHY();
   float lip = exp(-pow(length((p.xy - vec2(0.0, mY)) / vec2(0.019 * MOUTH, 0.0085 * LIPS)), 4.0)) * sat((p.z - 0.072) / 0.006);
-  vec3 lipC = mix(base * vec3(1.05, 0.66, 0.66), base * vec3(0.95, 0.55, 0.6), FEM * 0.6);
+  vec3 lipC = mix(base * vec3(1.05, 0.66, 0.66), base * vec3(1.02, 0.5, 0.56), FEM * 0.8);
   c = mix(c, lipC, lip * (0.8 + 0.15 * FEM));
   float slit = exp(-pow((p.y - mY) / 0.0011, 2.0)) * sat(1.0 - abs(p.x) / (0.021 * MOUTH)) * sat((p.z - 0.07) / 0.008);
   c *= 1.0 - slit * 0.75;
   // Mottling, freckles of variation, age spots.
   float mot = fbm(p * 140.0 + uSeed);
-  c *= 0.93 + 0.12 * mot;
+  c *= 0.9 + 0.18 * mot;
+  c *= 0.97 + 0.06 * vnoise(p * 1400.0 + uSeed);
   c *= 1.0 - AGE * 0.12 * smoothstep(0.6, 0.8, vnoise(p * 300.0 + 3.0));
   // Hair roots darken the skin just below a hairline (a soft edge, not a cap).
   if (uHood == 0 && uHelm == 0 && uHair != 0) {
@@ -642,15 +653,20 @@ vec3 eyeAlbedo(vec3 p, vec3 ec, out float spec) {
   vec3 d = normalize(q - ec);
   float r = length(d.xy);
   float er = ER();
-  vec3 sclera = vec3(0.5, 0.46, 0.43);
-  sclera = mix(sclera, vec3(0.6, 0.4, 0.38), sat((r - 0.6) * 2.0) * 0.5);
-  float iris = 1.0 - smoothstep(0.47, 0.51, r);
-  float pupil = 1.0 - smoothstep(0.17, 0.2, r);
+  vec3 sclera = vec3(0.66, 0.62, 0.58);
+  sclera = mix(sclera, vec3(0.62, 0.44, 0.42), sat((r - 0.62) * 2.2) * 0.5);
+  float iris = 1.0 - smoothstep(0.53, 0.58, r);
+  float pupil = 1.0 - smoothstep(0.19, 0.22, r);
   float a = atan(d.y, d.x);
   vec3 ic = uEyeC * (0.55 + 0.45 * vnoise(vec3(a * 9.0, r * 30.0, 1.0)));
   ic = mix(ic * 1.15, ic * 0.3, smoothstep(0.33, 0.5, r));
+  // Limbal ring and a lighter collarette so the iris colour reads at thumbnail size.
+  ic = mix(ic, ic * 1.5 + 0.03, smoothstep(0.3, 0.22, r) * 0.5);
   vec3 c = mix(sclera, ic, iris);
+  c = mix(c, vec3(0.06, 0.04, 0.035), smoothstep(0.47, 0.56, r) * iris * 0.8);
   c = mix(c, vec3(0.01), pupil);
+  // The upper lid shades the top of the eyeball.
+  c *= mix(1.0, 0.42, smoothstep(0.05, 0.75, d.y));
   spec = iris;
   return c;
 }
@@ -704,15 +720,25 @@ void main() {
     alb = skinAlbedo(pos, n);
     // Oily T-zone, matte cheeks; lash line darkens the lid edge.
     float tz = sat(1.0 - abs(pos.x) / 0.02) * sat((pos.z - 0.07) / 0.02);
-    rough = mix(0.62, 0.46, tz);
+    // Skin is not clay: an oily sheen on brow, nose and cheekbones breaks the matte.
+    float sheen = sat(tz + exp(-pow(length((q.xy - vec2(0.045, -0.006)) / vec2(0.016, 0.01)), 2.0)) * 0.6 + sat((pos.y - 0.035) / 0.03) * 0.5);
+    rough = mix(0.6, 0.34, sheen) + 0.06 * vnoise(pos * 900.0);
+    specK = 0.04;
     sss = 1.0;
-    float lash = sat(1.0 - gLid / 0.0011) * sat((pos.z - 0.06) / 0.01) * sat(1.0 - length(q.xy - ec.xy) / 0.02) * (1.0 - ASLEEP * 0.5);
+    float lash = sat(1.0 - gLid / (0.0011 + 0.0007 * FEM)) * sat((pos.z - 0.06) / 0.01) * sat(1.0 - length(q.xy - ec.xy) / 0.02) * (1.0 - ASLEEP * 0.5);
     alb = mix(alb, vec3(0.03, 0.02, 0.018), lash * 0.9);
   } else if (mat < 2.5) {
     alb = eyeAlbedo(pos, ec, clearc);
     rough = 0.08;
     specK = 0.06;
     clearc = 1.0;
+  } else if (mat < 3.5 && pos.z > 0.055 && browBand(pos) > 0.0 && abs(pos.y - 0.024) < 0.016) {
+    // Brows: hairs over skin, broken at the edges (never a painted-on stripe).
+    float bb = browBand(pos);
+    float hairs = vnoise(vec3(pos.x * 2600.0 + pos.y * 900.0, pos.y * 500.0, 1.0));
+    alb = mix(skinAlbedo(pos, n), uHairC * 0.75, sat(bb * 1.4 - 0.25 + (hairs - 0.5) * 0.9));
+    rough = 0.55;
+    sss = 0.6;
   } else if (mat < 3.5) {
     alb = uHairC;
     float ang = atan(pos.x, pos.z + 0.02);
@@ -787,7 +813,8 @@ void main() {
   float best = -1.0;
   for (int i = ZERO; i < 8; i++) {
     if (i >= nl) break;
-    float b = dot(lightC[i], vec3(0.3, 0.59, 0.11)) * sat(dot(nv, lightL[i]) + 0.3);
+    // One shadow caster for the whole head (choosing per pixel switched lights mid-face: a seam).
+    float b = dot(lightC[i], vec3(0.3, 0.59, 0.11));
     if (b > best) { best = b; key = i; }
   }
   for (int i = ZERO; i < 8; i++) {
@@ -798,8 +825,11 @@ void main() {
     float sh = 1.0;
     if (uDbg != 1.0 && uLite < 0.5 && i == key && ndl > -0.2) sh = softShadow(pos + n * 0.0012, normalize(toLocal * L), h13(vec3(gl_FragCoord.xy, 1.7)));
     // Wrapped, red-shifted subsurface for skin.
-    float wrap = 0.38 * sss;
+    float wrap = 0.3 * sss;
     float d0 = sat((ndl + wrap) / (1.0 + wrap));
+    // A painter's planes: skin light settles into a few soft value steps (forehead, cheek, side plane)
+    // instead of an airbrushed gradient.
+    if (sss > 0.0) { float qd = d0 * 3.0; float fq = fract(qd); qd = (floor(qd) + smoothstep(0.3, 0.7, fq)) / 3.0; d0 = mix(d0, qd, 0.55); }
     vec3 diff = vec3(d0);
     if (sss > 0.0) {
       float term = smoothstep(-0.3, 0.25, ndl) - smoothstep(0.0, 0.55, ndl);
@@ -837,7 +867,8 @@ void main() {
     amb += mix(hemisphereLights[i].groundColor, hemisphereLights[i].skyColor, hw);
   }
 #endif
-  col += dif * amb * ao * (sss > 0.0 ? vec3(1.0, 0.92, 0.9) : vec3(1.0));
+  // Skin's shadow side takes the cool fill (the warm is in the subsurface terminator).
+  col += dif * amb * ao * (sss > 0.0 ? vec3(0.9, 0.97, 1.1) : vec3(1.0));
   if (metal > 0.5) col += alb * amb * 0.6 * ao * (0.6 + 0.4 * nv.y);
   gl_FragColor = vec4(col * uGain, 1.0);
 #ifdef USE_FOG
@@ -867,13 +898,19 @@ function geometry() {
 }
 
 const shared = new Map();
-function sharedMaterial(fog, own) {
-  let m = shared.get(fog);
+/**
+ * One material per (fog, consumer): three.js keeps one program per material, so a material shared
+ * between scenes with different light rigs (the hall, the portrait studio, the snapshot alcove)
+ * would relink the huge head program on every switch — seconds each under software GL.
+ */
+function sharedMaterial(fog, own, variant = 'scene') {
+  const key = `${fog}|${variant}`;
+  let m = shared.get(key);
   if (!m) {
     const u = THREE.UniformsUtils.merge([THREE.UniformsLib.lights, THREE.UniformsLib.fog]);
     for (const k in own) u[k] = { value: own[k].value };
     m = new THREE.ShaderMaterial({ uniforms: u, vertexShader: VS, fragmentShader: FS, lights: true, fog });
-    shared.set(fog, m);
+    shared.set(key, m);
   }
   return m;
 }
@@ -901,7 +938,7 @@ export function createHead(app, frame, o = {}) {
     uDetail: { value: o.detail ?? 0.00025 },
     uPix: { value: 0.001 },
     uSteps: { value: o.steps ?? 96 },
-    uDbg: { value: o.dbg ?? 0 },
+    uDbg: { value: o.dbg ?? (globalThis.__HEADDBG ?? 0) },
     uGain: { value: o.gain ?? 1 },
     uLite: { value: o.lite ? 1 : 0 },
     uSeed: { value: (app.seed % 97) * 0.37 },
@@ -912,7 +949,7 @@ export function createHead(app, frame, o = {}) {
     uBoxMin: { value: BOX_MIN.clone() },
     uBoxMax: { value: BOX_MAX.clone() },
   };
-  const mat = sharedMaterial(!!o.fog, own);
+  const mat = sharedMaterial(!!o.fog, own, o.variant);
   const uniforms = own;
   const mesh = new THREE.Mesh(geometry(), mat);
   const { c, R, hs } = frame;

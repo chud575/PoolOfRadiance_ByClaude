@@ -14,7 +14,7 @@ export const PORTRAIT_W = 300;
 export const PORTRAIT_H = 375;
 
 import { SKIN_TONES, RACE_SKINS, HAIR_COLORS, EYE_COLORS, CLOTH_COLORS, HEADS, BODIES, defaultLook, rngFrom, hashNum, appearanceKey } from './lookData.js';
-import { renderPortrait3D } from './portrait3d.js';
+import { renderPortrait3D, renderPortrait3DAsync } from './portrait3d.js';
 
 export { SKIN_TONES, RACE_SKINS, HAIR_COLORS, EYE_COLORS, CLOTH_COLORS, HEADS, BODIES, defaultLook };
 
@@ -1526,4 +1526,24 @@ export function portraitURL(ch, scale = 1, o = {}) {
     urlCache.set(key, u);
   }
   return u;
+}
+
+const pending = new Map();
+/**
+ * portraitURL without long main-thread stalls: painted in bands across ticks (cached alike).
+ * @returns {Promise<string>}
+ */
+export function portraitURLAsync(ch, scale = 1, o = {}) {
+  const crop = o.crop ?? 'head';
+  const key = portraitKey(ch, scale, crop);
+  if (urlCache.has(key)) return Promise.resolve(urlCache.get(key));
+  if (pending.has(key)) return pending.get(key);
+  const p = renderPortrait3DAsync(ch, { scale, crop }).then((c) => {
+    const u = (c ?? paintPortrait2D(ch, { scale, crop })).toDataURL('image/png');
+    if (urlCache.size > 160) urlCache.delete(urlCache.keys().next().value);
+    urlCache.set(key, u);
+    return u;
+  }).finally(() => pending.delete(key));
+  pending.set(key, p);
+  return p;
 }

@@ -13,6 +13,7 @@ import { buildCamp } from './CampBackdrop.js';
 import { useRenderer } from '../../ui/components/Miniature.js';
 import { UINav } from '../../ui/components/uiNav.js';
 import { setPortraitSync } from '../../ui/components/lazyPortrait.js';
+import { warmPortraits } from '../../ui/components/portrait3d.js';
 
 const CURES = ['cureSeriousWounds', 'cureLightWounds'];
 
@@ -26,6 +27,7 @@ export default class CampScene extends Scene {
     const { render, game } = this.ctx;
     useRenderer(render.renderer);
     setPortraitSync(!!this.ctx.debug?.frozen);
+    if (!this.ctx.debug?.frozen) warmPortraits();
     this.params = params;
     // Casters with no chosen spells get a sensible load-out (they can change it in MAGIC).
     for (const ch of game.party) if (castingClassesOf(ch).length && !Object.values(ch.spells?.prepared ?? {}).some((l) => l.length)) autoPrepare(ch);

@@ -582,3 +582,43 @@ img.pc-pending { background: radial-gradient(ellipse at 50% 40%, rgba(120, 96, 7
 .pc-itemlore .r { margin: 0; font-size: 0.88em; color: #3a2a18; }
 .pc-itemlore .c { margin: 0.25em 0 0; font-size: 0.82em; }
 .pc-itemlore .c .up { color: #2a6a2a; } .pc-itemlore .c .down { color: #8a2a1a; }
+
+/* iter3: readable hotkey chip on the selected (gilt) tab */
+.pc-tab.sel .por-hk-badge { background: #1b1206; color: #f5d98b; border-color: #1b1206; opacity: 1; box-shadow: inset 0 0 0 1px rgba(245, 217, 139, 0.35); }
+.pc-chip.ok { color: #9be39b; border-color: rgba(120, 220, 120, 0.5); }
+.pc-note { margin-top: 0.45em; padding: 0.3em 0.6em; border-left: 2px solid var(--por-gilt); background: rgba(245, 217, 139, 0.06); color: var(--por-text-dim); font-size: 0.8em; font-style: italic; }
+.pc-warn.soft { border-color: rgba(245, 217, 139, 0.4); background: rgba(60, 40, 10, 0.35); color: #f0d49a; }
+.pc-col-scroll { mask-image: linear-gradient(to bottom, #000 calc(100% - 1.6em), transparent); padding-bottom: 1.4em; }
+.pc-lvl-h.locked { color: #8d8064; border-bottom-color: rgba(216, 178, 90, 0.16); margin-top: 1em; }
+.pc-lvl-h.locked .lk { font-family: var(--font-body, serif); letter-spacing: 0.04em; text-transform: none; font-size: 1.1em; font-style: italic; color: #9a8d70; }
+.pc-spell.locked { opacity: 0.5; cursor: default; filter: saturate(0.4); }
+.pc-spell.locked:hover { opacity: 0.75; }
+.pc-locked-note { font-size: 0.8em; font-style: italic; color: var(--por-text-dim); padding: 0.2em 0.45em 0.4em; }
+.pc-memo-list { flex: 0 1 auto !important; }
+.pc-ladder { margin-top: auto; padding: 0.6em 0.7em 0.5em; border: 1px solid rgba(216, 178, 90, 0.18); background: rgba(0, 0, 0, 0.18); margin-bottom: 0.6em; }
+.pc-ladder .h { font-family: var(--font-display); font-size: 0.66em; letter-spacing: 0.2em; text-transform: uppercase; color: var(--por-gilt); margin-bottom: 0.35em; }
+.pc-ladder table { width: 100%; border-collapse: collapse; font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 0.86em; }
+.pc-ladder th, .pc-ladder td { text-align: center; padding: 0.12em 0; color: var(--por-text-dim); }
+.pc-ladder th { font-family: var(--font-display); font-size: 0.8em; color: #a8987a; font-weight: normal; }
+.pc-ladder td { color: var(--por-amber); }
+.pc-ladder td.z { color: rgba(200, 190, 160, 0.3); }
+.pc-ladder .now { background: rgba(245, 217, 139, 0.12); color: #fff3cf; }
+.pc-ladder th.now { color: #f5d98b; }
+
+/* iter3: six full party cards always fit (portrait shrinks to the row, name and class line stay visible) */
+.cc-scroll:has(> .cc-hub) { overflow: hidden; display: flex; }
+.cc-hub { flex: 1; height: 100%; grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 0.6em; }
+.cc-hubslot { display: flex; flex-direction: column; align-items: center; min-height: 0; padding: 0.45em 0.45em 0.35em; }
+.cc-hubslot .pc-portrait { flex: 1 1 0; min-height: 0; width: auto; max-width: 100%; height: auto; }
+.cc-hubslot .nm, .cc-hubslot .cl { flex: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.cc-hubslot .nm { margin-top: 0.35em; }
+.cc-hubslot.empty { min-height: 0; }
+.cc-rosterstrip { display: flex; flex-wrap: wrap; gap: 0.35em; margin: 0.3em 0 0.4em; }
+img.pc-pending { filter: saturate(0.7) brightness(0.9); }
+.pc-portrait img, .pc-mini img { transition: filter 0.25s ease-out; }
+.pc-kv.pc-kv-2 { grid-template-columns: 1fr auto 1fr auto; column-gap: 0.7em; }
+.pc-kv.pc-kv-2 > .k { letter-spacing: 0.06em; font-size: 0.72em; }
+.pc-kv.pc-kv-2 > .v { font-size: 0.95em; }
+.pc-ladder table { table-layout: fixed; }
+.pc-ladder th:first-child { width: 2.2em; }
+.pc-ladder .now { border-radius: 2px; }

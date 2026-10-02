@@ -2,9 +2,9 @@ import './partyui.css';
 import { h, clear } from '../dom.js';
 import { ITEMS } from '../../data/items.js';
 import { deriveStats, activeClasses } from '../../rules/character.js';
-import { CLASSES, classSpecName } from '../../rules/classes.js';
+import { CLASSES, classSpecName, spellSlots } from '../../rules/classes.js';
 import { knownSpells, slotsFor, freeSlots, prepareSpells, memorizationTime, partyMemorizationTime, autoPrepare, spellsToMemorize } from '../../rules/camp.js';
-import { getSpell, spellLevel, castProblem, castSpell, isMemorized, consumeMemorized } from '../../rules/spells.js';
+import { getSpell, spellLevel, spellsForClass, castProblem, castSpell, isMemorized, consumeMemorized } from '../../rules/spells.js';
 import { scribeScroll } from '../../rules/magicItems.js';
 import { itemName } from '../../rules/items.js';
 import { miniPortrait, lore } from './CharacterSheet.js';
@@ -89,7 +89,7 @@ export class SpellPanel {
           onclick: () => { if (cc.length || this.o.lockMember) { this.setMember(i); this.o.onSelectMember?.(i); } },
         }, [
           miniPortrait(c),
-          h('div', [h('div.nm', [c.name]), h('div.cl', [cc.length ? `${cc.map((x) => CLASSES[x].name).join(' / ')} · ${mem} ready` : 'no spells'])]),
+          h('div', [h('div.nm', [c.name]), h('div.cl', [cc.length ? `${classSpecName(c.classSpec)} · ${mem} ready` : 'no spells'])]),
         ]);
       })),
       h('div', { style: { flex: '1' } }),
@@ -141,6 +141,34 @@ export class SpellPanel {
       }
     });
     if (!lists.length) lists.push(h('div.pc-rest-note', ['No spells known.']));
+    // The road ahead: the next spell levels, locked, with the class level that opens them.
+    const lvlNow = ch.levels?.[cls] ?? 1;
+    for (let L = slots.length + 1; L <= Math.min(3, slots.length + 2); L++) {
+      let at = lvlNow;
+      while (at < 20 && spellSlots(cls, at).length < L) at++;
+      const pool = spellsForClass(cls, L);
+      lists.push(h('div.pc-lvl-h.locked', [h('span', [`Level ${ROMAN[L]}`]), h('span.lk', [`opens at ${CLASSES[cls].name.toLowerCase()} level ${at}`])]));
+      if (cls === 'cleric') {
+        for (const id of pool) {
+          const sp = getSpell(id);
+          lists.push(h('div.pc-spell.locked', { tabindex: '0', dataset: { ...lore(spellTip(id, cls)), nav: '1' }, onmouseenter: () => this._swapCard(id, cls), onfocus: () => this._swapCard(id, cls) }, [
+            h('img.gl', { src: spellGlyphURL(id, { dim: true }), alt: '' }),
+            h('span', [h('div.nm', [sp?.name ?? id]), h('div.tg', [sp?.tip ?? ''])]),
+            h('span.ct', ['']),
+          ]));
+        }
+      } else {
+        lists.push(h('div.pc-locked-note', [`${pool.length} spells of this circle exist in Phlan — find them on scrolls and SCRIBE them into the book (INT ${ch.abilities?.int ?? '?'}: ${intelligenceTable(ch.abilities?.int ?? 10).knowChance ?? '—'}% to learn each).`]));
+        for (const id of pool.slice(0, 6)) {
+          const sp = getSpell(id);
+          lists.push(h('div.pc-spell.locked', { tabindex: '0', dataset: { ...lore(spellTip(id, cls)), nav: '1' }, onmouseenter: () => this._swapCard(id, cls), onfocus: () => this._swapCard(id, cls) }, [
+            h('img.gl', { src: spellGlyphURL(id, { dim: true }), alt: '' }),
+            h('span', [h('div.nm', [sp?.name ?? id]), h('div.tg', [ch.spells?.book?.includes(id) ? 'in the book' : 'not yet in the book'])]),
+            h('span.ct', ['']),
+          ]));
+        }
+      }
+    }
     const knownCol = h('div.pc-sect', { style: { display: 'flex', flexDirection: 'column', minHeight: '0' } }, [
       sub,
       h('div.pc-sect-h.left', [h('span', [`${cls === 'cleric' ? 'Prayers granted by the gods' : 'Spells in the book'} · click to memorize`])]),
@@ -170,6 +198,7 @@ export class SpellPanel {
         h('div.pc-sect-h', [h('span', [`${ch.name}'s ${cls === 'cleric' ? 'prayers' : 'spells'}`])]),
         this._sockets(ch, cls, slots, prepared),
         h('div.pc-spell-scroll.pc-memo-list', rows.length ? rows : [h('div.empty', ['No spells chosen. Pick from the list, or AUTO.'])]),
+        this._ladder(ch, cls),
         this._restPlan(partyNeed),
         h('div.pc-rest-note', { style: { marginTop: '0.5em' } }, need
           ? [`${ch.name} needs `, h('b', [fmtMinutes(need)]), ` to memorize ${nToLearn} spell${nToLearn === 1 ? '' : 's'} (1e: ${need > 300 ? 6 : 4} hours of sleep, then 15 minutes per spell level).`, partyNeed > need ? [' The party rests ', h('b', [fmtMinutes(partyNeed)]), ' for its slowest caster.'] : null]
@@ -182,6 +211,25 @@ export class SpellPanel {
       ]),
     ]);
     this.el.append(casters, knownCol, loadout);
+  }
+
+  /** Spells per day as the caster rises: the 1e table for levels 1-6, the current level lit. */
+  _ladder(ch, cls) {
+    const now = ch.levels?.[cls] ?? 1;
+    const bonus = slotsFor(ch, cls).map((n, i) => n - (spellSlots(cls, now)[i] ?? 0));
+    const lv = [1, 2, 3, 4, 5, 6];
+    const cols = lv.map((L) => spellSlots(cls, L));
+    return h('div.pc-ladder', { dataset: lore({ title: 'Spells per day', text: `${CLASSES[cls].name} spell slots by experience level (Phlan trains to 6th). ${cls === 'cleric' ? 'High wisdom adds bonus prayers at each level (shown with +).' : 'Magic-users must also know a spell (scribed into the book) to memorize it.'}` }) }, [
+      h('div.h', ['Spells per day by level']),
+      h('table', [
+        h('tr', [h('th', ['']), ...lv.map((L) => h(`th${L === now ? '.now' : ''}`, [String(L)]))]),
+        ...[0, 1, 2].map((si) => h('tr', [h('th', [ROMAN[si + 1]]), ...cols.map((c, k) => {
+          const n = c[si] ?? 0;
+          const b = lv[k] === now && bonus[si] > 0 ? bonus[si] : 0;
+          return h(`td${lv[k] === now ? '.now' : ''}${n ? '' : '.z'}`, [n ? `${n}${b ? `+${b}` : ''}` : '·']);
+        })])),
+      ]),
+    ]);
   }
 
   /** The one spell-detail surface follows the pointer / keyboard focus. */
@@ -274,11 +322,37 @@ export class SpellPanel {
     g.fillStyle = '#f0d27a';
     g.font = 'bold 18px serif';
     g.fillText(arcane ? 'M' : 'P', 32, 40);
-    g.strokeStyle = arcane ? 'rgba(40,60,140,0.7)' : 'rgba(140,40,20,0.7)';
-    g.beginPath(); g.arc(160, 52, 18, 0, Math.PI * 2); g.stroke();
-    g.beginPath();
-    for (let k = 0; k < 5; k++) { const a = -Math.PI / 2 + k * (Math.PI * 4 / 5); g[k ? 'lineTo' : 'moveTo'](160 + Math.cos(a) * 18, 52 + Math.sin(a) * 18); }
-    g.closePath(); g.stroke();
+    if (arcane) {
+      // A warding circle with runes (the magic-user's diagram).
+      g.strokeStyle = 'rgba(40,60,140,0.7)';
+      g.beginPath(); g.arc(160, 52, 18, 0, Math.PI * 2); g.stroke();
+      g.beginPath(); g.arc(160, 52, 13, 0, Math.PI * 2); g.stroke();
+      for (let k = 0; k < 8; k++) {
+        const a = (k / 8) * Math.PI * 2;
+        g.beginPath(); g.moveTo(160 + Math.cos(a) * 13, 52 + Math.sin(a) * 13); g.lineTo(160 + Math.cos(a) * 18, 52 + Math.sin(a) * 18); g.stroke();
+      }
+      g.beginPath(); g.moveTo(160, 41); g.lineTo(169, 58); g.lineTo(151, 58); g.closePath(); g.stroke();
+    } else {
+      // Holy symbol: the balanced scales of Tyr, set on a sunburst, in gilt and red.
+      g.save();
+      g.translate(160, 54);
+      g.strokeStyle = 'rgba(176,128,40,0.55)';
+      g.lineWidth = 1;
+      for (let k = 0; k < 16; k++) { const a = (k / 16) * Math.PI * 2; g.beginPath(); g.moveTo(Math.cos(a) * 14, Math.sin(a) * 14); g.lineTo(Math.cos(a) * (k % 2 ? 18 : 22), Math.sin(a) * (k % 2 ? 18 : 22)); g.stroke(); }
+      g.strokeStyle = '#7a1a10';
+      g.fillStyle = '#7a1a10';
+      g.lineWidth = 2;
+      g.beginPath(); g.moveTo(0, -16); g.lineTo(0, 14); g.stroke();
+      g.beginPath(); g.moveTo(-8, 15); g.lineTo(8, 15); g.stroke();
+      g.beginPath(); g.moveTo(-15, -10); g.lineTo(15, -10); g.stroke();
+      g.beginPath(); g.arc(0, -17, 2.4, 0, Math.PI * 2); g.fill();
+      g.lineWidth = 1;
+      for (const sx of [-13, 13]) {
+        g.beginPath(); g.moveTo(sx, -10); g.lineTo(sx - 5, 2); g.moveTo(sx, -10); g.lineTo(sx + 5, 2); g.stroke();
+        g.beginPath(); g.moveTo(sx - 6, 2); g.quadraticCurveTo(sx, 8, sx + 6, 2); g.closePath(); g.fill();
+      }
+      g.restore();
+    }
     g.fillStyle = '#8a1a1a';
     g.fillRect(118, 92, 6, 22);
     const known = classes.map((cl) => knownSpells(ch, cl).length).reduce((a, b) => a + b, 0);

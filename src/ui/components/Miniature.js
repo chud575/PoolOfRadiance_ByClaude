@@ -422,7 +422,7 @@ export function buildMiniature(ch, opt = {}) {
   fig.add(body);
   if (rayHead) {
     // The ray-marched head (exact anatomy at any size) and an invisible stand-in that casts its shadow.
-    const head = createHead(app, fr.face, { asleep: fr.asleep, ambient: opt.headAmbient, fog: !!opt.fog, gain: opt.headGain, lite: opt.headLite });
+    const head = createHead(app, fr.face, { asleep: fr.asleep, ambient: opt.headAmbient, fog: !!opt.fog, gain: opt.headGain, lite: opt.headLite, variant: opt.headVariant });
     fig.add(head);
     disposables.push({ dispose: () => head.userData.dispose() });
     const { c, R, hs } = fr.face;
@@ -701,6 +701,17 @@ const snapCache = new Map();
  * @param {{w?: number, h?: number, backdrop?: boolean}} [o]
  * @returns {string|null}
  */
+const keepers = [];
+/**
+ * Hold the last few offscreen figures undisposed: their materials keep their compiled programs
+ * alive, so the next portrait or snapshot of the same kind reuses them instead of relinking.
+ * @param {THREE.Object3D} fig
+ */
+export function keepAlive(fig) {
+  keepers.push(fig);
+  while (keepers.length > 3) keepers.shift().userData.dispose();
+}
+
 export function miniatureSnapshot(ch, o = {}) {
   const w = o.w ?? 360;
   const h = o.h ?? 600;
@@ -711,7 +722,7 @@ export function miniatureSnapshot(ch, o = {}) {
     if (!st) return null;
     const { renderer } = offscreen();
     const cam = st.camera;
-    const m = buildMiniature(ch, { pose: 'display', base: true, quality: 'snap', rayHead: true, headGain: 0.85, headAmbient: [0.04, 0.04, 0.05] });
+    const m = buildMiniature(ch, { pose: 'display', base: true, quality: 'snap', rayHead: true, headGain: 0.85, headAmbient: [0.04, 0.04, 0.05], headVariant: 'snap' });
     const H = m.userData.height;
     cam.aspect = w / h;
     cam.fov = 24;
@@ -729,7 +740,7 @@ export function miniatureSnapshot(ch, o = {}) {
     if (!m.userData.head) try { finishFace(renderer, st.scene, cam, m, cv, m.userData.app, { mini: true, key: 'snapMask' }); } catch { /* keep the plain render */ }
     const url = cv.toDataURL('image/png');
     st.scene.remove(m);
-    m.userData.dispose();
+    keepAlive(m);
     if (snapCache.size > 24) snapCache.delete(snapCache.keys().next().value);
     snapCache.set(key, url);
     return url;
