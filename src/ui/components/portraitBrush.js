@@ -122,8 +122,9 @@ export function paintStrokes(canvas, o = {}) {
           if (e < L.thr * 3) continue;
         }
         const fw = faceW(px, py);
-        // On the face: no broad strokes at all, and only a sprinkling of the fine ones.
-        if (fw > 0 && (L.r > 2.5 ? R() < fw : R() < fw * 0.75)) continue;
+        // On the face: no broad strokes; the fine ones model the planes (colour from a softened
+        // reference so a dark lash never smears across a cheek).
+        if (fw > 0 && L.r > 2.5 && R() < fw) continue;
         strokes.push([px, py, R(), R()]);
       }
     }
@@ -131,7 +132,15 @@ export function paintStrokes(canvas, o = {}) {
     for (let i = strokes.length - 1; i > 0; i--) { const j = (R() * (i + 1)) | 0; const t = strokes[i]; strokes[i] = strokes[j]; strokes[j] = t; }
     for (const [x, y, r1, r2] of strokes) {
       const idx = ((y | 0) * w + (x | 0)) * 3;
-      const cr = src[idx], cg = src[idx + 1], cb = src[idx + 2];
+      const onFace = faceW(x, y);
+      const sc = onFace > 0 ? soft : src;
+      let cr = sc[idx], cg = sc[idx + 1], cb = sc[idx + 2];
+      if (onFace > 0) {
+        // The painter's temperature: lights lean warm, shadows lean cool (never one waxy orange).
+        const l = (0.3 * cr + 0.59 * cg + 0.11 * cb) / 255;
+        const warm = Math.max(0, l - 0.45) * 2, cool = Math.max(0, 0.42 - l) * 2;
+        cr += (18 * warm - 10 * cool) * onFace; cg += (8 * warm - 2 * cool) * onFace; cb += (-10 * warm + 16 * cool) * onFace;
+      }
       let dx, dy, len;
       if (isBackdrop(x, y)) {
         // Loose diagonal sweeps on the backdrop, a little wavy.
@@ -173,7 +182,7 @@ export function paintStrokes(canvas, o = {}) {
     const x = (j / 3) % w, y = ((j / 3) / w) | 0;
     const [gx, gy] = grad(x, y);
     const e = Math.min(1, Math.hypot(gx, gy) / 30);
-    const kk = Math.min(1, keep + e * 0.25 + faceW(x, y) * 0.75);
+    const kk = Math.min(1, keep + e * 0.3 + faceW(x, y) * 0.5);
     P[i] = P[i] * (1 - kk) + ref[j] * kk;
     P[i + 1] = P[i + 1] * (1 - kk) + ref[j + 1] * kk;
     P[i + 2] = P[i + 2] * (1 - kk) + ref[j + 2] * kk;

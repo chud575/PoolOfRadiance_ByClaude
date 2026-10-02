@@ -566,7 +566,7 @@ float softShadow(vec3 ro, vec3 rd, float jit) {
   float t = 0.006 + jit * 0.003;
   for (int i = ZERO; i < 16; i++) {
     float h = mapD(ro + rd * t);
-    res = min(res, 2.8 * max(h, 0.0) / t);
+    res = min(res, 1.7 * max(h, 0.0) / t);
     t += clamp(h * 0.8, 0.0025, 0.02);
     if (res < 0.01 || t > 0.2) break;
   }
@@ -825,14 +825,16 @@ void main() {
     float sh = 1.0;
     if (uDbg != 1.0 && uLite < 0.5 && i == key && ndl > -0.2) sh = softShadow(pos + n * 0.0012, normalize(toLocal * L), h13(vec3(gl_FragCoord.xy, 1.7)));
     // Wrapped, red-shifted subsurface for skin.
-    float wrap = 0.3 * sss;
+    // Wrap and the red terminator belong to the key; fills and rims stay crisp (else they flood the shadow side).
+    bool isKey = i == key;
+    float wrap = (isKey ? 0.22 : 0.0) * sss;
     float d0 = sat((ndl + wrap) / (1.0 + wrap));
     // A painter's planes: skin light settles into a few soft value steps (forehead, cheek, side plane)
     // instead of an airbrushed gradient.
     if (sss > 0.0) { float qd = d0 * 3.0; float fq = fract(qd); qd = (floor(qd) + smoothstep(0.3, 0.7, fq)) / 3.0; d0 = mix(d0, qd, 0.55); }
     vec3 diff = vec3(d0);
     if (sss > 0.0) {
-      float term = smoothstep(-0.3, 0.25, ndl) - smoothstep(0.0, 0.55, ndl);
+      float term = (smoothstep(-0.3, 0.25, ndl) - smoothstep(0.0, 0.55, ndl)) * (isKey ? 1.0 : 0.15);
       diff = vec3(d0) + vec3(0.32, 0.07, 0.04) * term * sss;
       diff *= mix(vec3(1.0), vec3(1.0, 0.55, 0.45), (1.0 - sh) * 0.35 * sss);
       sh = mix(sh, 1.0, 0.12 * sss);

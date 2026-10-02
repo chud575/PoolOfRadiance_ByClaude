@@ -28,19 +28,19 @@ function portraitStage(which = 'sync') {
   const scene = new THREE.Scene();
   scene.environment = o.env;
   scene.environmentIntensity = 0.8;
-  scene.add(new THREE.HemisphereLight(0x6a7cae, 0x2a1a10, 0.5));
-  const key = new THREE.SpotLight(0xfff0e0, 7, 10, 0.55, 0.8, 1.2);
+  scene.add(new THREE.HemisphereLight(0x6a7cae, 0x2a1a10, 0.12));
+  const key = new THREE.SpotLight(0xfff0e0, 10, 10, 0.55, 0.8, 1.2);
   key.castShadow = true;
   key.shadow.mapSize.set(1024, 1024);
   key.shadow.bias = -0.0004;
   key.shadow.normalBias = 0.006;
   key.shadow.radius = 3;
   scene.add(key, key.target);
-  const fill = new THREE.PointLight(0x8ea4dc, 4.6, 6, 1.5);
+  const fill = new THREE.PointLight(0x8ea4dc, 1.7, 6, 1.5);
   scene.add(fill);
-  const rim = new THREE.DirectionalLight(0xa8c4ff, 2.6);
+  const rim = new THREE.DirectionalLight(0xa8c4ff, 1.6);
   scene.add(rim, rim.target);
-  const rimWarm = new THREE.DirectionalLight(0xffb070, 0.8);
+  const rimWarm = new THREE.DirectionalLight(0xffb070, 0.5);
   scene.add(rimWarm, rimWarm.target);
   const camera = new THREE.PerspectiveCamera(18, PORTRAIT_W / PORTRAIT_H, 0.05, 20);
   stages[which] = { scene, key, fill, rim, rimWarm, camera, env: o.env };
@@ -66,7 +66,8 @@ function setupPortrait(st, ch, o) {
   st.scene.background = bgTex;
   st.scene.backgroundIntensity = 0.55;
   const torso = crop === 'torso';
-  const quality = scale <= 0.3 ? 0.0088 : scale <= 0.5 ? 'thumb' : 'portrait';
+  // The head is ray-marched at full detail; the bust under it needs no finer than ~5 mm cells.
+  const quality = scale <= 0.3 ? 0.0088 : scale <= 0.5 ? 'thumb' : 0.005;
   const fig = buildMiniature(ch, {
     pose: 'portrait', base: false, quality, noWeapon: true, noShield: true, rayHead: true, headAmbient: [0.035, 0.035, 0.045], headGain: 0.6, headLite: scale < 0.5, headVariant: 'portrait', boundsKey: crop, faceSize: scale <= 0.5 ? 256 : 512,
     boundsFn: (fr) => {
@@ -90,18 +91,20 @@ function setupPortrait(st, ch, o) {
   cam.lookAt(target);
   cam.updateProjectionMatrix();
   // Lights relative to the head: a high three-quarter key (loop lighting, not a split), a cool fill, two rims.
-  st.key.position.copy(hc).add(new THREE.Vector3(-1.15, 1.1, 1.1));
+  st.key.position.copy(hc).add(new THREE.Vector3(-1.45, 1.0, 0.75));
   st.key.target.position.copy(hc);
   st.key.target.updateMatrixWorld();
   // Always the same light set (castShadow is part of the program key): one compiled variant for every size.
   st.key.castShadow = true;
   st.fill.position.copy(hc).add(new THREE.Vector3(1.3, -0.05, 1.1));
-  st.rim.position.copy(hc).add(new THREE.Vector3(1.4, 0.7, -1.3));
+  st.rim.position.copy(hc).add(new THREE.Vector3(1.0, 0.7, -2.4));
   st.rim.target.position.copy(hc);
   st.rim.target.updateMatrixWorld();
-  st.rimWarm.position.copy(hc).add(new THREE.Vector3(-1.5, 0.3, -1.2));
+  st.rimWarm.position.copy(hc).add(new THREE.Vector3(-1.1, 0.3, -2.4));
   st.rimWarm.target.position.copy(hc);
   st.rimWarm.target.updateMatrixWorld();
+  const PL = globalThis.__PL;
+  if (PL) { st.scene.children.forEach((c) => { if (c.isHemisphereLight) c.intensity = PL.hemi ?? c.intensity; }); if (PL.fill != null) st.fill.intensity = PL.fill; if (PL.key != null) st.key.intensity = PL.key; if (PL.rim != null) st.rim.intensity = PL.rim; if (PL.rimWarm != null) st.rimWarm.intensity = PL.rimWarm; if (PL.env != null) st.scene.environmentIntensity = PL.env; }
   // The head's ellipse on screen (for the brush pass: keep the features crisp).
   cam.updateMatrixWorld();
   const pr = (v) => { const q = v.clone().project(cam); return [(q.x * 0.5 + 0.5) * W, (0.5 - q.y * 0.5) * H]; };

@@ -8,6 +8,7 @@ import { renderToCanvas } from '../../../ui/components/paintPass.js';
 export async function current(chars, o = {}) {
   window.__NOHEAD = !!o.nohead;
   globalThis.__HEADDBG = o.dbg ?? 0;
+  globalThis.__PL = o.pl ?? null;
   chars ??= [{ name: 'Taran', race: 'human', gender: 'male', classSpec: 'fighter', look: { seed: 11 } }];
   const images = [];
   const t = [];

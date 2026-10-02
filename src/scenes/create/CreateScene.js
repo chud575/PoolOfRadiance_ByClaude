@@ -715,7 +715,7 @@ export default class CreateScene extends Scene {
     const look = (d.look = defaultLook(d));
     b.append(h('div.cc-title', ['Choose a Likeness']), h('p.cc-lead', [CREATE_TEXT.portrait]));
     const thumbs = (list, key, mk, cls = '', crop = 'head') => h(`div.cc-thumbs${cls}`, list.map((it, i) => h(`button.cc-thumb${look[key] === i ? '.sel' : ''}`, { onclick: () => { d.look = { ...look, [key]: i }; this.show('portrait'); }, dataset: { tip: it.name } }, [
-      h('div.im', [portraitImg(mk(i), 0.34, { crop })]), h('span', [it.name]),
+      h('div.im', [portraitImg(mk(i), crop === 'head' ? 0.46 : 0.34, { crop })]), h('span', [it.name]),
     ])));
     const sw = (colors, key) => h('div.cc-sw', colors.map((c, i) => h(`button${look[key] === i ? '.sel' : ''}`, { style: { background: c }, onclick: () => { d.look = { ...look, [key]: i }; this.show('portrait'); } })));
     const skins = (RACE_SKINS[d.race] ?? RACE_SKINS.human).map((k) => SKIN_TONES[k]);
