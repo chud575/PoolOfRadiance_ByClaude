@@ -535,8 +535,9 @@ export default class CampScene extends Scene {
       const want = this.busy ? 1 : 0;
       this._camK = this._camK == null || dt === 0 ? want : this._camK + (want - this._camK) * Math.min(1, dt * 2.5);
       const k = this._camK * this._camK * (3 - 2 * this._camK);
-      this.camera.position.set(0, 1.75 + 0.75 * k, 5.2 - 1.2 * k);
-      this.camera.lookAt(0, 0.95 - 0.5 * k, -0.6 - 0.9 * k);
+      // Low over the hearth, so the sleepers lie in profile (shoulder, hip and knee read under the wool).
+      this.camera.position.set(0.15 * k, 1.75 - 0.2 * k, 5.2 - 1.6 * k);
+      this.camera.lookAt(0, 0.95 - 0.62 * k, -0.6 - 0.95 * k);
     }
     const b = this.busy;
     if (b) {

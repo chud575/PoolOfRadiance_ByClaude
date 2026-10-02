@@ -603,7 +603,7 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
   bed.position.y = 0.012;
   hearth.add(bed);
   const coalChunkMat = Mt(new THREE.MeshStandardMaterial({ color: 0x1a120e, map: bark.map, emissive: 0xff5a18, emissiveMap: coal.emissive, emissiveIntensity: 0.9, roughness: 0.95 }));
-  const chunkGeo = G(new THREE.IcosahedronGeometry(0.03, 1));
+  const chunkGeo = G(new THREE.IcosahedronGeometry(0.03, 2));
   {
     // Lumpy, split charcoal (no flat facets catching the light as hexagons).
     const p = chunkGeo.attributes.position;
@@ -628,6 +628,7 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
   const logMat = Mt(new THREE.MeshStandardMaterial({ vertexColors: true, map: bark.map, normalMap: bark.normalMap, normalScale: new THREE.Vector2(2.2, 2.2), roughness: 0.92, emissive: 0xffffff, emissiveMap: embers, emissiveIntensity: 0.8 }));
   const barkMat = Mt(new THREE.MeshStandardMaterial({ color: 0xb09078, map: bark.map, normalMap: bark.normalMap, roughness: 0.9 }));
   const logs = new THREE.Group();
+  const teepee = [];
   const nLogs = 6;
   for (let i = 0; i < nLogs; i++) {
     const a = (i / nLogs) * Math.PI * 2 + 0.25;
@@ -647,6 +648,7 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
     log.castShadow = true;
     log.receiveShadow = true;
     logs.add(log);
+    teepee.push(log);
   }
   // Two burnt-down logs lying in the embers.
   for (let i = 0; i < 2; i++) {
@@ -658,6 +660,24 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
     log.position.set(0.05 - i * 0.1, 0.05, i * 0.06);
     log.castShadow = true;
     logs.add(log);
+  }
+  // Burned-down logs fallen inward (seen while the party sleeps): radial, their charred ends in the coals.
+  const collapsed = [];
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 + 0.7;
+    const lg = G(splitLogGeometry(0.5 + hrand(i, 95) * 0.12, 0.045 + hrand(i, 96) * 0.012, 60 + i));
+    const uv = lg.attributes.uv;
+    for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getY(k), uv.getX(k) * 2);
+    const log = new THREE.Mesh(lg, logMat);
+    const foot = new THREE.Vector3(Math.cos(a) * 0.44, 0.06, Math.sin(a) * 0.44);
+    const tip = new THREE.Vector3(Math.cos(a + 0.25) * 0.06, 0.035 + hrand(i, 97) * 0.03, Math.sin(a + 0.25) * 0.06);
+    const dir = tip.clone().sub(foot);
+    log.position.copy(foot.clone().add(tip).multiplyScalar(0.5));
+    log.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), dir.normalize());
+    log.castShadow = true;
+    log.visible = false;
+    logs.add(log);
+    collapsed.push(log);
   }
   hearth.add(logs);
   // The flame: one ray-marched volume of licking tongues (no crossed cards).
@@ -965,14 +985,17 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
     fireLight.intensity = (night ? 14 : 9) * burn * fl;
     fireLight.color.setHex(restingNow ? 0xff7a34 : 0xffa25a);
     emberLight.intensity = (restingNow ? 1.1 : 0.6) * (0.9 + 0.1 * Math.sin(time * 3.1));
-    moon.intensity = night ? (restingNow ? 2.6 : 1.15) : 1.6;
+    moon.intensity = night ? (restingNow ? 1.9 : 1.15) : 1.6;
     backMoon.intensity = night ? (restingNow ? 1.5 : 1.1) : 0.5;
-    hemi.intensity = night ? (restingNow ? 1.25 : 0.62) : 0.9;
+    hemi.intensity = night ? (restingNow ? 0.9 : 0.62) : 0.9;
     sentryRim.intensity = restingNow ? 60 : 0;
     sentryFire.intensity = restingNow ? 26 * fl : 0;
     coalMat.emissiveIntensity = (restingNow ? 1.6 : 1.1) * (0.9 + 0.1 * Math.sin(time * 2.3));
     logMat.emissiveIntensity = (restingNow ? 1.1 : 0.8) * (0.85 + 0.15 * Math.sin(time * 5.7 + 0.4));
-    coalChunkMat.emissiveIntensity = (restingNow ? 1.4 : 0.9) * (0.85 + 0.15 * Math.sin(time * 6.1));
+    coalChunkMat.emissiveIntensity = (restingNow ? 0.75 : 0.55) * (0.85 + 0.15 * Math.sin(time * 6.1));
+    // Burned down for the night: the teepee has collapsed into the embers, a low flame licks the coals.
+    for (const lg of teepee) lg.visible = !restingNow;
+    for (const lg of collapsed) lg.visible = restingNow;
     volMat.uniforms.uTime.value = time;
     // Resting: the fire burns down to a low flicker over the embers.
     volMat.uniforms.uIntensity.value = (restingNow ? 0.45 : 0.85) * (0.92 + 0.08 * Math.sin(time * 7.3));
