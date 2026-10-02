@@ -19,6 +19,8 @@ export function createTerrace({ seed = 7 } = {}) {
   const disposables = [];
   const U = { uTime: { value: 0 } };
   const uClassic = { value: 0 };
+  const classicSwaps = []; // [mesh, flat EGA material] swapped in by setClassic
+  const classicHide = [];
 
   const texMat = (name, extra = {}) => {
     const t = getTextureSet(name);
@@ -130,7 +132,17 @@ export function createTerrace({ seed = 7 } = {}) {
         if (uClassic > 0.5) { pvWet = 0.0; }
         roughnessFactor = clamp(roughnessFactor - 0.08 * (1.0 - smoothstep(4.5, 7.5, length(vWP.xz))), 0.45, 1.0);
         roughnessFactor = mix(roughnessFactor, 0.2, pvWet * (1.0 - pvJoint) * (1.0 - pvGap));
-        roughnessFactor = mix(roughnessFactor, 1.0, max(pvGap, pvJoint * 0.7));`);
+        roughnessFactor = mix(roughnessFactor, 1.0, max(pvGap, pvJoint * 0.7));`)
+      .replace('#include <dithering_fragment>', `#include <dithering_fragment>
+        if (uClassic > 0.5) {
+          // 1988: the card's paving is two flat greys, unlit — no cyan pool cast or
+          // blue fill, so the EGA pass lands every slab on 0x555555 or 0xAAAAAA
+          // flat dark grey (the kerb is the one light-grey ellipse), joints only near the Pool
+          float rr = length(vWP.xz);
+          vec3 eg = vec3(0.105);
+          eg = mix(eg, vec3(0.0), step(0.5, pvJoint) * (1.0 - smoothstep(7.0, 9.0, rr)));
+          gl_FragColor.rgb = eg;
+        }`);
   };
 
   // ---- floor with a broken front edge -----------------------------------------
@@ -301,6 +313,10 @@ export function createTerrace({ seed = 7 } = {}) {
     rim.castShadow = true;
     rim.receiveShadow = true;
     group.add(rim);
+    // classic 1988: the kerb is one flat light-grey ellipse round the water
+    const rimEGA = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.42, 0.42, 0.42), fog: false });
+    disposables.push(rimEGA);
+    classicSwaps.push([rim, rimEGA]);
     disposables.push(g);
     // contact shadow + AO where the kerb sits in the paving: a soft darkening
     // ring (multiplied, not additive) and a tighter crease right at the foot
@@ -325,6 +341,7 @@ export function createTerrace({ seed = 7 } = {}) {
       const contact = new THREE.Mesh(cg, cm);
       contact.renderOrder = 1;
       group.add(contact);
+      classicHide.push(contact);
     }
     // rune ring inlaid in the coping's channel: cut glyphs filled with the Pool's
     // light (capped: the carving must stay readable, not bloom into a halo)
@@ -967,6 +984,11 @@ export function createTerrace({ seed = 7 } = {}) {
     /** Classic 1988 mode: no soft glow sprites or heat haze (they quantise to blobs). */
     setClassic(on) {
       uClassic.value = on ? 1 : 0;
+      for (const [m, mat] of classicSwaps) {
+        if (on && !m.userData.preClassic) { m.userData.preClassic = m.material; m.material = mat; }
+        else if (!on && m.userData.preClassic) { m.material = m.userData.preClassic; delete m.userData.preClassic; }
+      }
+      for (const m of classicHide) m.visible = !on;
       brSmoke.visible = !on;
       spill.visible = !on;
       // no warm bounce or brazier pools: they quantise to red/orange dither on the greys

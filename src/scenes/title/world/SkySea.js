@@ -35,7 +35,7 @@ export function createSky(U, { radius = 900, cloud = 1 } = {}) {
         if (uClassic > 0.5) {
           // 1988: a black night sky with a field of white stars and one band of
           // EGA blue on the horizon (a narrow ramp, so the post dithers only there)
-          vec3 k = mix(vec3(0.0, 0.0, 0.42), vec3(0.0), smoothstep(0.03, 0.06, d.y));
+          vec3 k = vec3(0.0); // pure black to the horizon: the blue is the skyline itself
           float st = step(0.9972, hash13(floor(d * 380.0))) * step(0.07, d.y);
           k = mix(k, vec3(1.4), st);
           if (d.y < 0.0) k = vec3(0.0);
@@ -134,7 +134,7 @@ export function createSea(U, { level = -15, nearZ = -150, width = 6000, depth = 
         if (uClassic > 0.5) {
           // flat EGA water: dark blue with light-blue swell streaks
           float sw = step(0.78, vnoise(p * vec2(0.05, 0.35) + vec2(uTime * 0.05, 0.0))) * (1.0 - smoothstep(150.0, 700.0, dist));
-          c = mix(vec3(0.0, 0.0, 0.4), vec3(0.45, 0.45, 1.4), sw);
+          c = mix(vec3(0.0), vec3(0.0, 0.0, 0.42), sw * 0.0); // black water: the blue skyline reads against it
         }
         gl_FragColor = vec4(c, 1.0);
       }`,

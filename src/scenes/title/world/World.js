@@ -251,17 +251,27 @@ export function createWorld() {
       for (const o of outdoor) o.visible = !inside;
       terrace.group.visible = !inside && st.terrace;
       for (const s of [motes, embersL, embersR]) s.points.visible = !inside && st.terrace && !(this._classic && s !== motes);
-      drift.points.visible = !inside && st.drift && !this._classic;
+      drift.points.visible = !inside && st.drift && !this._classic && !this._low;
       shafts.visible = !inside && st.terrace && !this._classic;
       hall.visible = !inside && st.hall;
       const ck = !inside && !!st.cityKey && !this._classic;
       cityKey.visible = ck;
       cityRim.visible = ck;
-      cityKey.castShadow = ck;
-      sun.castShadow = !ck;
+      cityKey.castShadow = ck && !this._low;
+      sun.castShadow = !ck && !this._low;
       cityKey.intensity = ck ? 15 : 0;
       cityRim.intensity = ck ? 3.6 : 0;
       if (chamber) chamber.group.visible = inside;
+    },
+    /**
+     * Low-cost path (quality preset 'low', or a live session on software GL):
+     * no shadow maps (cheaper shaders and no depth passes) and no drifting ash.
+     */
+    setLowCost(on) {
+      on = !!on;
+      if (on === !!this._low) return;
+      this._low = on;
+      this._applyStage();
     },
     /** Show or hide the dragon (the intro keeps it out of the close city shots). */
     setDragon(on) {

@@ -347,6 +347,28 @@ export default class TitleScene extends Scene {
     return c.uiTime ?? c.time;
   }
 
+  /**
+   * The 'low' quality preset, or a live (non-debug) session on a software
+   * rasteriser (SwiftShader / llvmpipe), drops the title's shadow maps and ash
+   * drift so menus stay responsive. Debug stills keep full quality.
+   */
+  _lowCost() {
+    if (this.ctx.settings?.get?.('quality') === 'low') return true;
+    if (this.ctx.debug?.active) return false;
+    if (this._softGL === undefined) {
+      this._softGL = false;
+      try {
+        const gl = this.ctx.render?.renderer?.getContext?.();
+        const ext = gl?.getExtension('WEBGL_debug_renderer_info');
+        const name = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : '';
+        this._softGL = /swiftshader|llvmpipe|software/i.test(name);
+      } catch {
+        /* unknown renderer: assume hardware */
+      }
+    }
+    return this._softGL;
+  }
+
   onResize() {
     this.camera.aspect = this.ctx.render.aspect;
     this.camera.updateProjectionMatrix();
@@ -359,6 +381,7 @@ export default class TitleScene extends Scene {
     this._lastT = t;
     // classic 1988 toggle first, so this very frame already hides the light column
     // and shows the bitmap sub-titles (a slow frame must never show the mix)
+    this.world.setLowCost(this._lowCost());
     const classic = !!this.ctx.render?.classic;
     if (classic !== this._classic) {
       this._classic = classic;

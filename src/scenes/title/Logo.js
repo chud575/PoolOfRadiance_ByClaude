@@ -199,18 +199,31 @@ export function buildLogoTexture() {
   const u = union.getContext('2d');
   u.drawImage(gilt, 0, 0);
   u.drawImage(enamel, 0, 0);
-  const blurred = (src, px) => {
+  // wide kernels are blurred at reduced resolution and scaled back up (identical
+  // to the eye, several times cheaper on software canvas — boot was ~1.4 s here)
+  const blurred = (src, px, down = 1) => {
     const c = mkCanvas();
     const x = c.getContext('2d');
-    x.filter = `blur(${px}px)`;
-    x.drawImage(src, 0, 0);
+    if (down > 1) {
+      const sc = document.createElement('canvas');
+      sc.width = W / down; sc.height = H / down;
+      const sx = sc.getContext('2d');
+      sx.filter = `blur(${px / down}px)`;
+      sx.drawImage(src, 0, 0, W / down, H / down);
+      x.imageSmoothingEnabled = true;
+      x.imageSmoothingQuality = 'high';
+      x.drawImage(sc, 0, 0, W, H);
+    } else {
+      x.filter = `blur(${px}px)`;
+      x.drawImage(src, 0, 0);
+    }
     return x.getImageData(0, 0, W, H).data;
   };
   const gd = g.getImageData(0, 0, W, H).data;
   const ed = e.getImageData(0, 0, W, H).data;
   const b1 = blurred(union, 3);
-  const b2 = blurred(union, 9);
-  const sh = blurred(union, 14);
+  const b2 = blurred(union, 9, 2);
+  const sh = blurred(union, 14, 4);
   const img = o.createImageData(W, H);
   const d = img.data;
   for (let i = 0; i < d.length; i += 4) {

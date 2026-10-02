@@ -40,6 +40,7 @@ export function createCity({ seed = 1988 } = {}) {
   const windows = [];
   const fires = [];
   const lamps = [];
+  const braziers = []; // City Hall plaza brazier mouths: real flames, not bare glow balls
   const banners = [];
   const disposables = [];
   const figures = [];
@@ -922,7 +923,8 @@ export function createCity({ seed = 1988 } = {}) {
       ir(new THREE.TorusGeometry(0.45, 0.03, 5, 24).rotateX(Math.PI / 2).translate(X, GROUND + 1.39, Z), 0x3a3230);
       // the coal bed: glowing seams in the bowl
       windows.push(tint(ni(new THREE.CircleGeometry(0.38, 14).rotateX(-Math.PI / 2).translate(X, GROUND + 1.33, Z)), new THREE.Color(0xff6a20).multiplyScalar(1.1)));
-      lamps.push(new THREE.Vector3(X, GROUND + 1.6, Z));
+      lamps.push(new THREE.Vector3(X, GROUND + 1.62, Z));
+      braziers.push(new THREE.Vector3(X, GROUND + 1.36, Z));
     }
     banners.push([hx - 3.6, pz + 3.3], [hx + 3.6, pz + 3.3]);
     tower(hx + 10.5, hz, 2.2, 19, { roof: 'cone', lit: 1 });
@@ -1001,7 +1003,7 @@ export function createCity({ seed = 1988 } = {}) {
   // separates from the town in the dusk haze
   const castleMat = addRimLight(texMat('hd2_ashlar', { emissive: 0x1a0c06 }), rimU, 2.2, { weather: 1.25, ground: -10, soot: 0.85 });
   const hallMat = addRimLight(texMat('hd2_ashlar'), rimU, 1, { weather: 1.0 });
-  const plasterMat = addRimLight(texMat('hd2_plaster'), rimU, 0.9, { weather: 0.3, flat: 0.8 });
+  const plasterMat = addRimLight(texMat('hd2_plaster', { color: 0xd8ccbc }), rimU, 0.9, { weather: 0.65, soot: 0.3, flat: 0.8 });
   const rubbleMat = addRimLight(texMat('hd2_ruin'), rimU, 1, { weather: 0.8, soot: 0.6 });
   const groundMat = texMat('hd_mud');
   const cobbleMat = texMat('hd_cobble', { polygonOffset: true, polygonOffsetFactor: -1 });
@@ -1073,6 +1075,10 @@ export function createCity({ seed = 1988 } = {}) {
   });
   disposables.push(winMat);
   addMesh(windows, winMat);
+  // classic 1988 fills (see setClassic): unlit, fog-free flat EGA colours
+  const classicBlue = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.0, 0.0, 0.42), fog: false });
+  const classicWin = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 1.6, 0.3), fog: false });
+  disposables.push(classicBlue, classicWin);
 
   // ---- fires, smoke, glow ---------------------------------------------------
   fires.push(lighthouse);
@@ -1133,6 +1139,13 @@ export function createCity({ seed = 1988 } = {}) {
   fires.slice(0, -1).forEach((p) => {
     for (let k = 0; k < 4; k++) flameItems.push({ pos: new THREE.Vector3(p.x + R.range(-1.2, 1.2), p.y - 0.5, p.z + R.range(-1.2, 1.2)), scale: R.range(1.2, 2.4) });
   });
+  // brazier fires: a cluster of short tongues sitting on the coal bed
+  braziers.forEach((p, i) => {
+    for (let k = 0; k < 4; k++) {
+      const a = k * 2.1 + i;
+      flameItems.push({ pos: new THREE.Vector3(p.x + Math.cos(a) * 0.12 * (k > 0), p.y, p.z + Math.sin(a) * 0.12 * (k > 0)), scale: k === 0 ? 0.62 : 0.4 });
+    }
+  });
   if (flameItems.length) group.add(createFlameBatch(flameItems));
   // street lanterns and hearth-glows twinkling across New Phlan
   {
@@ -1191,6 +1204,18 @@ export function createCity({ seed = 1988 } = {}) {
     setClassic(on) {
       smoke.mesh.visible = !on;
       for (const s of glows) s.visible = !on;
+      // 1988: the skyline is one flat mass of EGA blue with yellow windows
+      for (const m of group.children) {
+        if (!m.isMesh || !m.material) continue;
+        if (on) {
+          if (m.userData.preClassic) continue;
+          m.userData.preClassic = m.material;
+          m.material = m.material === winMat ? classicWin : classicBlue;
+        } else if (m.userData.preClassic) {
+          m.material = m.userData.preClassic;
+          delete m.userData.preClassic;
+        }
+      }
     },
     /** @param {number} t @param {THREE.Camera} [camera] @param {THREE.Vector3} [sunDir] */
     update(t, camera, sunDir) {

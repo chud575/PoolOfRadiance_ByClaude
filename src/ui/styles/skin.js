@@ -12,6 +12,7 @@
  */
 
 import { registerBitmapFont } from './bitmapFontFace.js';
+import { registerBookFonts } from './bookFace.js';
 
 let installed = false;
 
@@ -271,6 +272,20 @@ function vellumTexture(size = 512, seed = 31) {
   const img = x.createImageData(size, size);
   const spots = [];
   for (let i = 0; i < 30; i++) spots.push([hash(i, 1, seed) * size, hash(i, 2, seed) * size, 1.4 + hash(i, 3, seed) ** 3 * 9, 0.18 + hash(i, 4, seed) * 0.42]);
+  // foxing splatted per spot over its own footprint (wrapping), not tested per pixel
+  const foxMap = new Float32Array(size * size);
+  for (const [sx, sy, r, st] of spots) {
+    const R3 = Math.ceil(r * 3);
+    for (let dy = -R3; dy <= R3; dy++) {
+      for (let dx = -R3; dx <= R3; dx++) {
+        const d = Math.hypot(dx + (sx % 1), dy + (sy % 1)) / r;
+        if (d >= 3) continue;
+        const ii = (((Math.floor(sx) + dx) % size) + size) % size, jj = (((Math.floor(sy) + dy) % size) + size) % size;
+        const q = jj * size + ii;
+        foxMap[q] = Math.max(foxMap[q], st * (Math.exp(-d * d * 1.8) + 0.12 * Math.exp(-((d - 1.6) ** 2) * 5)));
+      }
+    }
+  }
   for (let j = 0; j < size; j++) {
     for (let i = 0; i < size; i++) {
       const u = i / size, v = j / size;
@@ -286,13 +301,7 @@ function vellumTexture(size = 512, seed = 31) {
       // broad cloudy tonal drift (the hide's thicker and thinner areas) + mottling
       const cloud = (valueNoise(u * 2, v * 2, seed + 60, 2) - 0.5) * 0.22;
       let k = 1 + (n - 0.5) * 0.46 + cloud + fib + pit;
-      let fox = 0;
-      for (const [sx, sy, r, st] of spots) {
-        let dx = Math.abs(i - sx), dy = Math.abs(j - sy);
-        dx = Math.min(dx, size - dx); dy = Math.min(dy, size - dy);
-        const d = Math.hypot(dx, dy) / r;
-        if (d < 3) fox = Math.max(fox, st * (Math.exp(-d * d * 1.8) + 0.12 * Math.exp(-((d - 1.6) ** 2) * 5)));
-      }
+      const fox = foxMap[j * size + i];
       const p = (j * size + i) * 4;
       img.data[p] = Math.max(0, Math.min(255, 232 * k - fox * 70));
       img.data[p + 1] = Math.max(0, Math.min(255, 214 * k - fox * 96));
@@ -388,6 +397,7 @@ export function installSkin() {
   if (installed || typeof document === 'undefined') return;
   installed = true;
   const root = document.documentElement.style;
+  registerBookFonts();
   try {
     root.setProperty('--tex-parchment', `url(${vellumTexture(512)})`);
     root.setProperty('--tex-vellum-sheet', `url(${vellumSheet(640)})`);
