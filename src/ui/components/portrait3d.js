@@ -36,7 +36,7 @@ function portraitStage(which = 'sync') {
   key.shadow.normalBias = 0.006;
   key.shadow.radius = 3;
   scene.add(key, key.target);
-  const fill = new THREE.PointLight(0x8ea4dc, 1.7, 6, 1.5);
+  const fill = new THREE.PointLight(0x8ea4dc, 1.0, 6, 1.5);
   scene.add(fill);
   const rim = new THREE.DirectionalLight(0xa8c4ff, 1.6);
   scene.add(rim, rim.target);
@@ -69,7 +69,7 @@ function setupPortrait(st, ch, o) {
   // The head is ray-marched at full detail; the bust under it needs no finer than ~5 mm cells.
   const quality = scale <= 0.3 ? 0.0088 : scale <= 0.5 ? 'thumb' : 0.005;
   const fig = buildMiniature(ch, {
-    pose: 'portrait', base: false, quality, noWeapon: true, noShield: true, rayHead: true, headAmbient: [0.035, 0.035, 0.045], headGain: 0.6, headLite: scale < 0.5, headVariant: 'portrait', boundsKey: crop, faceSize: scale <= 0.5 ? 256 : 512,
+    pose: 'portrait', base: false, quality, noWeapon: true, noShield: true, rayHead: true, headAmbient: [0.035, 0.035, 0.045], headGain: 0.44, headLite: scale < 0.5, headVariant: 'portrait', boundsKey: crop, faceSize: scale <= 0.5 ? 256 : 512,
     boundsFn: (fr) => {
       const c = fr.face.c;
       const hs = fr.face.hs;
@@ -84,19 +84,19 @@ function setupPortrait(st, ch, o) {
   const cam = st.camera;
   cam.aspect = W / H;
   cam.fov = 18;
-  const viewH = torso ? 0.92 * Math.max(0.85, hs) : 0.43 * hs;
+  const viewH = torso ? 0.92 * Math.max(0.85, hs) : 0.35 * hs;
   const target = hc.clone().add(new THREE.Vector3(0, torso ? -0.3 * Math.max(0.85, hs) : -0.04 * hs, 0));
   const dist = viewH / (2 * Math.tan((cam.fov * Math.PI) / 360));
   cam.position.set(target.x - dist * 0.08, target.y + (torso ? dist * 0.03 : 0.04 * hs), target.z + dist);
   cam.lookAt(target);
   cam.updateProjectionMatrix();
   // Lights relative to the head: a high three-quarter key (loop lighting, not a split), a cool fill, two rims.
-  st.key.position.copy(hc).add(new THREE.Vector3(-1.45, 1.0, 0.75));
+  st.key.position.copy(hc).add(new THREE.Vector3(...(globalThis.__PL?.keyPos ?? [-0.85, 1.45, 1.2])));
   st.key.target.position.copy(hc);
   st.key.target.updateMatrixWorld();
   // Always the same light set (castShadow is part of the program key): one compiled variant for every size.
   st.key.castShadow = true;
-  st.fill.position.copy(hc).add(new THREE.Vector3(1.3, -0.05, 1.1));
+  st.fill.position.copy(hc).add(new THREE.Vector3(0.75, -0.2, 1.7));
   st.rim.position.copy(hc).add(new THREE.Vector3(1.0, 0.7, -2.4));
   st.rim.target.position.copy(hc);
   st.rim.target.updateMatrixWorld();
@@ -113,6 +113,20 @@ function setupPortrait(st, ch, o) {
   const [ex] = pr(fc.clone().add(new THREE.Vector3(0.075 * hs, 0, 0)));
   const [, ey] = pr(fc.clone().add(new THREE.Vector3(0, 0.1 * hs, 0)));
   const face = { x: fx, y: fy, rx: Math.abs(ex - fx), ry: Math.abs(fy - ey) };
+  // Feature anchors on screen (head-local metres through the head's own frame), so the brush keeps
+  // the eyes, nose tip and mouth crisp while it blocks the planes in broadly.
+  const R3 = fr.face.R;
+  const hm = new THREE.Matrix4().set(R3[0], R3[3], R3[6], 0, R3[1], R3[4], R3[7], 0, R3[2], R3[5], R3[8], 0, 0, 0, 0, 1);
+  hm.scale(new THREE.Vector3(hs, hs, hs)).setPosition(hc);
+  const at = (x, y, z) => pr(new THREE.Vector3(x, y, z).applyMatrix4(hm));
+  const px1 = Math.abs(at(0.01, 0, 0.1)[0] - at(0, 0, 0.1)[0]) * 100; // pixels per head-metre
+  face.features = [
+    { p: at(-0.031, 0.008, 0.082), r: 0.02 * px1 },
+    { p: at(0.031, 0.008, 0.082), r: 0.02 * px1 },
+    { p: at(0, -0.03, 0.105), r: 0.014 * px1 },
+    { p: at(0, -0.062, 0.088), r: 0.022 * px1 },
+  ];
+  face.px = px1;
   return { fig, cam, W, H, bgTex, app, look, scale, torso, face };
 }
 
@@ -134,7 +148,9 @@ function finish(off, st, job, out, o) {
 /** The illustrator's last pass: directional brush strokes over the render (2D, cheap). */
 function brushOver(out, job, o) {
   if (o.brush === false || job.scale < 0.25) return out;
-  try { paintStrokes(out, { seed: job.look.seed, fine: job.scale >= 0.6, face: job.torso ? null : job.face }); } catch { /* keep the render */ }
+  const sk = job.app.skinHex;
+  const skin = [1, 3, 5].map((i) => parseInt(sk.slice(i, i + 2), 16));
+  try { paintStrokes(out, { seed: job.look.seed, fine: job.scale >= 0.6, face: job.torso ? null : job.face, skin }); } catch { /* keep the render */ }
   return out;
 }
 
@@ -152,7 +168,7 @@ export function renderPortrait3D(ch, o = {}) {
   let job = null;
   try {
     job = setupPortrait(st, ch, o);
-    const out = renderToCanvas(off.renderer, st.scene, job.cam, { w: job.W, h: job.H, ss: job.scale < 0.5 ? 1 : 1.25, paint: o.paint === false ? false : 'light', seed: (job.look.seed % 997) / 997, key: 'portrait' });
+    const out = renderToCanvas(off.renderer, st.scene, job.cam, { w: job.W, h: job.H, ss: job.scale < 0.5 ? 1 : 1.25, paint: o.paint === false ? false : 'light', smear: 0.35, seed: (job.look.seed % 997) / 997, key: 'portrait' });
     return finish(off, st, job, out, o);
   } catch (err) {
     console.warn('portrait3d', err);
@@ -177,7 +193,7 @@ export async function renderPortrait3DAsync(ch, o = {}) {
   let job = null;
   try {
     job = setupPortrait(st, ch, o);
-    const out = await renderToCanvasBanded(off.renderer, st.scene, job.cam, { w: job.W, h: job.H, ss: job.scale < 0.5 ? 1 : 1.25, paint: o.paint === false ? false : 'light', seed: (job.look.seed % 997) / 997, key: 'portraitAsync', bands: job.scale >= 0.6 ? 6 : job.scale >= 0.35 ? 2 : 1 });
+    const out = await renderToCanvasBanded(off.renderer, st.scene, job.cam, { w: job.W, h: job.H, ss: job.scale < 0.5 ? 1 : 1.25, paint: o.paint === false ? false : 'light', smear: 0.35, seed: (job.look.seed % 997) / 997, key: 'portraitAsync', bands: job.scale >= 0.6 ? 6 : job.scale >= 0.35 ? 2 : 1 });
     return finish(off, st, job, out, o);
   } catch (err) {
     console.warn('portrait3d async', err);

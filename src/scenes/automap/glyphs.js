@@ -119,7 +119,7 @@ export function partyConeCanvas() {
 /** Pin kinds for player notes (muted illuminator's pigments). */
 export const PIN_KINDS = {
   note: { label: 'Note', color: '#a8323a', wash: [158, 62, 50], mark: 'quill' },
-  danger: { label: 'Danger', color: '#3a2a22', wash: [70, 58, 54], mark: 'skull' },
+  danger: { label: 'Danger', color: '#3a2a22', wash: [112, 52, 42], mark: 'skull' },
   treasure: { label: 'Treasure', color: '#b8862a', wash: [196, 146, 58], mark: 'gem' },
   quest: { label: 'Quest', color: '#2c4a8c', wash: [58, 86, 146], mark: 'star' },
 };
@@ -143,28 +143,32 @@ export function drawPin(g, x, y, s, kind = 'note', { lift = 0 } = {}) {
       }
       g.closePath();
     };
-    // a pale wash shadow, as if the roundel were pasted on
-    g.save(); g.translate(3, 4); ring(36, 1.2); g.fillStyle = `rgba(70,40,18,${(0.14 + lift * 0.02).toFixed(3)})`; g.fill(); g.restore();
-    ring(35, 1.4);
-    g.fillStyle = 'rgba(244,234,208,0.97)';
+    // flat, painted on the sheet like the other glyphs: a pigment band laid in one even
+    // wash (no gloss, no bevel, no cast shadow), ruled with fine ink and engraved hatching
+    ring(34, 1.1);
+    g.fillStyle = `rgba(${w[0]},${w[1]},${w[2]},${(0.6 + lift * 0.004).toFixed(3)})`;
     g.fill();
-    // the pigment band, pooling darker toward its outer edge
-    const gr = g.createRadialGradient(0, 0, 20, 0, 0, 35);
-    gr.addColorStop(0, `rgba(${w[0]},${w[1]},${w[2]},0.12)`);
-    gr.addColorStop(0.62, `rgba(${w[0]},${w[1]},${w[2]},0.88)`);
-    gr.addColorStop(1, `rgba(${w[0] * 0.72 | 0},${w[1] * 0.72 | 0},${w[2] * 0.72 | 0},0.97)`);
-    g.fillStyle = gr;
-    ring(34, 1.4);
-    g.fill();
-    g.beginPath(); g.arc(0, 0, 21, 0, Math.PI * 2);
-    g.fillStyle = 'rgba(246,238,214,0.95)';
+    // the engraver's hatching across the band
+    g.save();
+    ring(34, 1.1);
+    g.clip();
+    g.strokeStyle = `rgba(${w[0] * 0.45 | 0},${w[1] * 0.45 | 0},${w[2] * 0.45 | 0},0.32)`;
+    g.lineWidth = 0.8;
+    g.beginPath();
+    for (let i = -40; i < 40; i += 3.4) { g.moveTo(i, -36); g.lineTo(i + 22, 36); }
+    g.stroke();
+    g.restore();
+    g.beginPath(); g.arc(0, 0, 22, 0, Math.PI * 2);
+    g.fillStyle = 'rgb(243,233,206)';
     g.fill();
     g.strokeStyle = INK.ink;
-    g.lineWidth = 2.6;
-    ring(35, 1.4);
+    g.lineWidth = 1.6;
+    ring(34, 1.1);
     g.stroke();
+    g.lineWidth = 0.8;
+    g.beginPath(); g.arc(0, 0, 30, 0, Math.PI * 2); g.stroke();
     g.lineWidth = 1.3;
-    g.beginPath(); g.arc(0, 0, 21, 0, Math.PI * 2); g.stroke();
+    g.beginPath(); g.arc(0, 0, 22, 0, Math.PI * 2); g.stroke();
     drawMark(g, k.mark, w);
   });
 }

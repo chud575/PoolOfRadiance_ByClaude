@@ -76,7 +76,30 @@ export const BODIES = [
   { id: 'fur', name: 'Furs' },
   { id: 'vestments', name: 'Vestments' },
 ];
-const CLASS_BODY = { fighter: 0, cleric: 5, magicUser: 4, thief: 3 };
+/**
+ * The default likeness body follows the starting kit (createData.kitFor): thieves without arcane
+ * training start in leather, fighters and clerics in mail (clerics in a tabard over it), arcane
+ * casters unarmoured in robes (cleric/magic-users in vestments). So a new Fighter/Thief stands on
+ * the plinth in the leathers he will actually wear, not in plate.
+ * @param {string} classSpec
+ * @returns {number} index into BODIES
+ */
+export function kitBody(classSpec) {
+  const cls = String(classSpec ?? 'fighter').split('/');
+  const has = (c) => cls.includes(c);
+  const arcane = has('magicUser');
+  if (!arcane && has('thief')) return 3;
+  if (!arcane && has('fighter')) return 1;
+  if (!arcane && has('cleric')) return 5;
+  if (arcane && has('cleric')) return 7;
+  return 4;
+}
+/** Does a body template show a given readied armour group (or none)? */
+export function bodyShowsArmor(tmplBody, armorGroup) {
+  const g = armorGroup ? ARMOR_BODY[armorGroup] ?? 'chain' : 'none';
+  if (g === 'none') return VARIANT.none.includes(tmplBody);
+  return g === tmplBody || !!VARIANT[g]?.includes(tmplBody);
+}
 const CLASS_HEAD = { male: { fighter: 0, cleric: 1, magicUser: 7, thief: 5 }, female: { fighter: 5, cleric: 2, magicUser: 4, thief: 3 } };
 
 // ------------------------------------------------------------------ utilities
@@ -113,7 +136,7 @@ export function defaultLook(ch) {
   const skins = RACE_SKINS[ch.race] ?? RACE_SKINS.human;
   look.seed = seed;
   look.head ??= CLASS_HEAD[gender][cls] ?? Math.floor(R() * 8);
-  look.body ??= CLASS_BODY[cls] ?? 0;
+  look.body ??= kitBody(ch.classSpec);
   look.skin ??= Math.floor(R() * skins.length);
   const hairPool = ch.race === 'elf' ? [0, 5, 6, 7, 9, 2] : ch.race === 'dwarf' ? [3, 4, 2, 1, 0, 8] : ch.race === 'gnome' ? [8, 9, 1, 4, 2] : [0, 1, 2, 3, 4, 5, 6];
   look.hair ??= hairPool[Math.floor(R() * hairPool.length)];

@@ -33,7 +33,7 @@ const RACE_BODY = {
 /** Race face shape (multiplies the head template's own face values). */
 const RACE_FACE = {
   human: {},
-  elf: { w: 0.88, jaw: 0.78, cheek: 1.35, nose: 0.86, bridge: 0.8, long: 1.08, chin: 0.85, brow: 0.7, eye: 1.08, slant: 1 },
+  elf: { w: 0.9, jaw: 0.8, cheek: 1.25, nose: 0.88, bridge: 0.8, long: 1.06, chin: 0.85, brow: 0.7, eye: 1.08, slant: 0.45 },
   halfElf: { w: 0.94, jaw: 0.9, cheek: 1.15, nose: 0.94, long: 1.03, brow: 0.85, slant: 0.5 },
   dwarf: { w: 1.16, jaw: 1.25, cheek: 1.08, nose: 1.32, bridge: 1.4, tip: 1.4, long: 0.95, brow: 1.3, eye: 0.92, lips: 0.85 },
   gnome: { w: 1.02, jaw: 0.92, cheek: 1.2, nose: 1.9, bridge: 1.2, tip: 2.1, long: 0.95, eye: 1.08, brow: 1.1, ears: 1.35 },
@@ -133,7 +133,7 @@ const POSES = {
     asleep: true,
   }),
   portrait: (B) => ({
-    pelvis: [0, B.hipY, 0], pelvisRot: [0, 0.28, 0], torso: [0.02, 0.0, 0], head: [-0.08, -0.2, 0.0],
+    pelvis: [0, B.hipY, 0], pelvisRot: [0, 0.28, 0], torso: [0.02, 0.0, 0], head: [-0.06, -0.32, 0.0],
     feet: { R: [-0.11, 0, 0], L: [0.11, 0, 0] }, footYaw: { R: -0.2, L: 0.2 }, kneePole: [0, 0.2, 1],
     hands: { R: { from: 'hipR', d: [-0.07, -0.08, 0.05] }, L: { from: 'hipL', d: [0.07, -0.08, 0.05] } },
     elbowPole: { R: [-1, 0, -0.6], L: [1, 0, -0.6] },

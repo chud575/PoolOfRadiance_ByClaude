@@ -294,25 +294,74 @@ export function cobbleRegion(g, cells, { CX, CY, cs, seed = 1, ink = '#3a2a18', 
           continue;
         }
         const scale = fadeEdge < 1 ? 0.7 + fadeEdge * 0.3 : 1;
-        const sw = w * (0.8 + rnd() * 0.1) * scale;
-        const sh = ch * (0.74 + rnd() * 0.12) * scale;
+        const sw = w * (0.88 + rnd() * 0.08) * scale;
+        const sh = ch * (0.84 + rnd() * 0.1) * scale;
         const patina = fbm(x * 0.25, y * 0.25, { period: 64, octaves: 2, seed: seed + 11 });
         const val = 128 + patina * 60 + (rnd() - 0.5) * 34;
+        // an irregular hand-cut stone: 5-7 corners jittered off a rounded box
+        const nv = 5 + Math.floor(rnd() * 3);
+        const pts = [];
+        const a0 = rnd() * Math.PI * 2;
+        for (let q = 0; q < nv; q++) {
+          const t = a0 + (q / nv) * Math.PI * 2 + (rnd() - 0.5) * 0.5;
+          const ct = Math.cos(t);
+          const st = Math.sin(t);
+          // superellipse-ish radius so stones stay blocky, not round
+          const rr = 1 / Math.max(Math.abs(ct) / (sw / 2), Math.abs(st) / (sh / 2)) * (0.86 + rnd() * 0.18);
+          pts.push([ct * rr, st * rr]);
+        }
+        const poly = () => {
+          g.beginPath();
+          pts.forEach(([px, py], q) => (q ? g.lineTo(px, py) : g.moveTo(px, py)));
+          g.closePath();
+        };
         g.save();
         g.translate(X, Y);
         g.rotate(ang);
-        g.beginPath();
-        g.roundRect(-sw / 2, -sh / 2, sw, sh, Math.min(sw, sh) * (0.25 + rnd() * 0.2));
-        g.fillStyle = `rgba(${val | 0},${(val * 0.94) | 0},${(val * 0.8) | 0},${(0.3 + rnd() * 0.22).toFixed(2)})`;
-        g.fill();
-        g.strokeStyle = ink;
-        g.globalAlpha = 0.28 + rnd() * 0.24;
-        g.lineWidth = 0.4 + rnd() * 0.25;
+        // the joint: a dark bed of grit around each stone
+        poly();
+        g.strokeStyle = `rgba(58,40,24,${(0.16 + rnd() * 0.1).toFixed(3)})`;
+        g.lineWidth = Math.max(1.1, Math.min(sw, sh) * 0.2);
+        g.lineJoin = 'round';
         g.stroke();
-        // shadow edge on the south-east of the stone
-        g.globalAlpha = 0.22;
-        g.lineWidth = 0.6;
-        g.beginPath(); g.moveTo(-sw / 2 + 0.8, sh / 2); g.lineTo(sw / 2, sh / 2); g.lineTo(sw / 2, -sh / 2 + 0.8); g.stroke();
+        poly();
+        g.fillStyle = `rgba(${val | 0},${(val * 0.94) | 0},${(val * 0.8) | 0},${(0.34 + rnd() * 0.22).toFixed(2)})`;
+        g.fill();
+        // a lit face toward the north-west
+        g.fillStyle = `rgba(255,246,220,${(0.08 + rnd() * 0.08).toFixed(3)})`;
+        g.beginPath();
+        g.ellipse(-sw * 0.12, -sh * 0.12, sw * 0.26, sh * 0.2, 0, 0, Math.PI * 2);
+        g.fill();
+        // inked outline in broken strokes: the pen lifts here and there
+        g.strokeStyle = ink;
+        g.globalAlpha = 0.42 + rnd() * 0.3;
+        g.lineWidth = 0.45 + rnd() * 0.3;
+        g.beginPath();
+        for (let q = 0; q < nv; q++) {
+          if (rnd() < 0.22) continue;
+          const [p0x, p0y] = pts[q];
+          const [p1x, p1y] = pts[(q + 1) % nv];
+          const t0 = rnd() * 0.12;
+          const t1 = 1 - rnd() * 0.12;
+          g.moveTo(p0x + (p1x - p0x) * t0, p0y + (p1y - p0y) * t0);
+          g.lineTo(p0x + (p1x - p0x) * t1, p0y + (p1y - p0y) * t1);
+        }
+        g.stroke();
+        // shadowed south-east lip
+        g.globalAlpha = 0.3;
+        g.lineWidth = 0.7;
+        g.beginPath();
+        for (let q = 0; q < nv; q++) {
+          const [p0x, p0y] = pts[q];
+          const [p1x, p1y] = pts[(q + 1) % nv];
+          const mx2 = (p0x + p1x) / 2;
+          const my2 = (p0y + p1y) / 2;
+          // rotate the edge midpoint back to sheet space to test if it faces south-east
+          const wx = mx2 * Math.cos(ang) - my2 * Math.sin(ang);
+          const wy = mx2 * Math.sin(ang) + my2 * Math.cos(ang);
+          if (wx + wy > 0) { g.moveTo(p0x, p0y); g.lineTo(p1x, p1y); }
+        }
+        g.stroke();
         g.restore();
       }
       v += chu;

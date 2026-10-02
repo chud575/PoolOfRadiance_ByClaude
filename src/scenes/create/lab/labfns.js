@@ -9,12 +9,14 @@ export async function current(chars, o = {}) {
   window.__NOHEAD = !!o.nohead;
   globalThis.__HEADDBG = o.dbg ?? 0;
   globalThis.__PL = o.pl ?? null;
+  globalThis.__FEATDBG = !!o.featdbg;
+  globalThis.__PYAW = o.yaw;
   chars ??= [{ name: 'Taran', race: 'human', gender: 'male', classSpec: 'fighter', look: { seed: 11 } }];
   const images = [];
   const t = [];
   for (const ch of chars) {
     const t0 = performance.now();
-    images.push(renderPortrait3D({ classSpec: 'fighter', name: 'X', ...ch }, { scale: o.scale ?? 1, crop: o.crop, brush: o.brush }));
+    images.push(renderPortrait3D({ classSpec: 'fighter', name: 'X', ...ch }, { scale: o.scale ?? 1, crop: o.crop, brush: o.brush, paint: o.paint }));
     t.push(Math.round(performance.now() - t0));
   }
   if (o.sheet) return { images: [sheet(images, o.cols ?? images.length)], info: t };
@@ -103,4 +105,23 @@ export async function warmtest(chars, o = {}) {
   renderPortrait3D({ race: 'elf', gender: 'female', classSpec: 'fighter', name: 'X', look: { seed: 6 } }, { scale: 1 });
   info.second = Math.round(performance.now() - t0);
   return { images: [img], info };
+}
+
+export async function icons(names, o = {}) {
+  const { itemIconURL } = await import('../../../ui/components/itemIcons.js');
+  const sz = o.size ?? 96;
+  const cols = o.cols ?? 8;
+  const c = document.createElement('canvas');
+  c.width = cols * sz;
+  c.height = Math.ceil(names.length / cols) * sz;
+  const g = c.getContext('2d');
+  g.fillStyle = '#1a1e2c';
+  g.fillRect(0, 0, c.width, c.height);
+  for (let i = 0; i < names.length; i++) {
+    const img = new Image();
+    img.src = itemIconURL(names[i], { magic: o.magic });
+    await img.decode();
+    g.drawImage(img, (i % cols) * sz, Math.floor(i / cols) * sz, sz, sz);
+  }
+  return { images: [c], info: [] };
 }

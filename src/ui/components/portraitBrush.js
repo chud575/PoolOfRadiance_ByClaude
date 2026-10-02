@@ -88,6 +88,55 @@ export function paintStrokes(canvas, o = {}) {
     const d = Math.hypot((x - F.x) / F.rx, (y - F.y) / F.ry);
     return Math.max(0, Math.min(1, (1.15 - d) / 0.3));
   };
+  const feats = F?.features ?? [];
+  /** 1 on the eyes, nose tip and mouth (edges stay sharp there), 0 elsewhere. */
+  const featW = (x, y) => {
+    let m = 0;
+    for (const f of feats) {
+      const d = Math.hypot(x - f.p[0], y - f.p[1]) / Math.max(1, f.r);
+      m = Math.max(m, Math.exp(-d * d * 1.6));
+    }
+    return m;
+  };
+  /**
+   * The painter's value planes and palette: luminance pulled toward four steps (light, half-tone,
+   * core shadow, reflected light), and skin re-coloured from a limited palette built on the
+   * complexion — warm lights, a red half-tone at the turn, cool violet-grey shadows — instead of
+   * the render's one saturated orange.
+   */
+  const sk = o.skin ?? [214, 160, 124];
+  const skS = sk[0] + sk[1] + sk[2];
+  const skc = [sk[0] / skS, sk[1] / skS];
+  const stops = [
+    [0.0, [sk[0] * 0.2, sk[1] * 0.17, sk[2] * 0.24]],
+    [0.22, [sk[0] * 0.42, sk[1] * 0.34, sk[2] * 0.42]],
+    [0.45, [sk[0] * 0.78, sk[1] * 0.55, sk[2] * 0.5]],
+    [0.7, [sk[0] * 1.02, sk[1] * 0.86, sk[2] * 0.72]],
+    [1.0, [Math.min(255, sk[0] * 1.2 + 20), Math.min(255, sk[1] * 1.14 + 22), Math.min(255, sk[2] * 1.05 + 20)]],
+  ];
+  const palette = (t) => {
+    for (let i = 1; i < stops.length; i++) {
+      if (t <= stops[i][0]) {
+        const a = stops[i - 1], b = stops[i];
+        const u = (t - a[0]) / (b[0] - a[0]);
+        return [a[1][0] + (b[1][0] - a[1][0]) * u, a[1][1] + (b[1][1] - a[1][1]) * u, a[1][2] + (b[1][2] - a[1][2]) * u];
+      }
+    }
+    return stops[stops.length - 1][1];
+  };
+  const plane = (r, g, b) => {
+    const l = Math.max(1, 0.3 * r + 0.59 * g + 0.11 * b);
+    const t = (l / 255) * 4;
+    const f = t - Math.floor(t);
+    const q = ((Math.floor(t) + (f < 0.36 ? 0 : f > 0.64 ? 1 : (f - 0.36) / 0.28)) / 4) * 255 + 16;
+    const lq = l + (q - l) * 0.25;
+    const S = Math.max(1, r + g + b);
+    const dc = (r / S - skc[0]) ** 2 + (g / S - skc[1]) ** 2;
+    const wSkin = Math.exp(-dc / 0.012) * Math.min(1, l / 30);
+    const pc = palette(Math.min(1, lq / 225));
+    const k = lq / l;
+    return [r * k + (pc[0] - r * k) * wSkin * 0.35, g * k + (pc[1] - g * k) * wSkin * 0.35, b * k + (pc[2] - b * k) * wSkin * 0.35];
+  };
   const cur = new Float32Array(w * h * 3);
   for (let i = 0; i < cur.length; i++) cur[i] = ref[i];
   // The canvas starts as a toned ground: the reference blurred heavily (the underpainting).
@@ -96,7 +145,13 @@ export function paintStrokes(canvas, o = {}) {
   for (let i = 0, j = 0; j < ground.length; i += 4, j += 3) {
     const x = (j / 3) % w, y = ((j / 3) / w) | 0;
     const f = faceW(x, y);
-    for (let c = 0; c < 3; c++) { ground[j + c] = ground[j + c] * (1 - f) + ref[j + c] * f; out.data[i + c] = ground[j + c]; }
+    // Under the face: the softened render laid in as flat value planes (the block-in).
+    // The face itself is already painted in planes by the head shader: keep it.
+    for (let c = 0; c < 3; c++) {
+      const faceC = ref[j + c];
+      ground[j + c] = ground[j + c] * (1 - f) + faceC * f;
+      out.data[i + c] = ground[j + c];
+    }
     out.data[i + 3] = 255;
   }
   g.putImageData(out, 0, 0);
@@ -122,9 +177,10 @@ export function paintStrokes(canvas, o = {}) {
           if (e < L.thr * 3) continue;
         }
         const fw = faceW(px, py);
-        // On the face: no broad strokes; the fine ones model the planes (colour from a softened
-        // reference so a dark lash never smears across a cheek).
-        if (fw > 0 && L.r > 2.5 && R() < fw) continue;
+        // On the face: no very broad strokes; medium ones block in the planes, fine ones only on the
+        // features. Never smear across an eye or the mouth.
+        if (fw > 0.55) continue;
+        if (fw > 0 && L.r > 2.5 && R() < fw * 1.6) continue;
         strokes.push([px, py, R(), R()]);
       }
     }
@@ -135,6 +191,10 @@ export function paintStrokes(canvas, o = {}) {
       const onFace = faceW(x, y);
       const sc = onFace > 0 ? soft : src;
       let cr = sc[idx], cg = sc[idx + 1], cb = sc[idx + 2];
+      if (onFace > 0 && featW(x, y) < 0.5) {
+        const pc = plane(cr, cg, cb);
+        cr += (pc[0] - cr) * onFace; cg += (pc[1] - cg) * onFace; cb += (pc[2] - cb) * onFace;
+      }
       if (onFace > 0) {
         // The painter's temperature: lights lean warm, shadows lean cool (never one waxy orange).
         const l = (0.3 * cr + 0.59 * cg + 0.11 * cb) / 255;
@@ -142,11 +202,14 @@ export function paintStrokes(canvas, o = {}) {
         cr += (18 * warm - 10 * cool) * onFace; cg += (8 * warm - 2 * cool) * onFace; cb += (-10 * warm + 16 * cool) * onFace;
       }
       let dx, dy, len;
-      if (isBackdrop(x, y)) {
-        // Loose diagonal sweeps on the backdrop, a little wavy.
-        const a = -0.62 + (r1 - 0.5) * 0.5;
+      const lumHere = lum[Math.min(h - 1, y | 0) * w + Math.min(w - 1, x | 0)];
+      if (isBackdrop(x, y) || (lumHere < 30 && onFace === 0)) {
+        // The backdrop: short, cross-laid strokes whose direction wanders over the canvas (a worked
+        // oil ground, not a field of parallel streaks). Deep shadows on the figure take the same
+        // strokes, so the shadow-side contour is lost into the ground.
+        const a = Math.sin(x * 0.021 + y * 0.013) * 1.4 + Math.cos(y * 0.027 - x * 0.008) * 0.9 + (r1 - 0.5) * 0.9;
         dx = Math.cos(a); dy = Math.sin(a);
-        len = r * (3.2 + r2 * 3);
+        len = r * (1.8 + r2 * 2.2);
       } else {
         const [gx, gy] = grad(x, y);
         const m = Math.hypot(gx, gy);
@@ -182,7 +245,9 @@ export function paintStrokes(canvas, o = {}) {
     const x = (j / 3) % w, y = ((j / 3) / w) | 0;
     const [gx, gy] = grad(x, y);
     const e = Math.min(1, Math.hypot(gx, gy) / 30);
-    const kk = Math.min(1, keep + e * 0.3 + faceW(x, y) * 0.5);
+    // The face keeps the painted planes; only the features take the render back at full strength.
+    const fwv = faceW(x, y);
+    const kk = Math.min(1, keep + e * 0.3 * (1 - fwv) + fwv * 0.9 + featW(x, y));
     P[i] = P[i] * (1 - kk) + ref[j] * kk;
     P[i + 1] = P[i + 1] * (1 - kk) + ref[j + 1] * kk;
     P[i + 2] = P[i + 2] * (1 - kk) + ref[j + 2] * kk;
@@ -190,5 +255,6 @@ export function paintStrokes(canvas, o = {}) {
     P[i] += weave; P[i + 1] += weave; P[i + 2] += weave;
   }
   g.putImageData(painted, 0, 0);
+  if (globalThis.__FEATDBG) { g.strokeStyle = '#0f0'; for (const f of feats) { g.beginPath(); g.arc(f.p[0], f.p[1], f.r, 0, 7); g.stroke(); } }
   return canvas;
 }

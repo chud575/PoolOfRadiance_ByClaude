@@ -150,7 +150,19 @@ export function renderSheet(ch) {
   ]);
 
   // ---- saves & skills
-  const saves = sect('Saving Throws', [h('div.pc-kv', SAVE_KEYS.flatMap((k) => kv(SAVE_SHORT[k], s.saves[k], STAT_TIPS.save(k, s.saves[k]))))]);
+  // The stout races' constitution bonus also covers poison (PHB), but not paralysis or death magic:
+  // when it applies, poison gets its own line so the sheet shows the number actually rolled against.
+  const poisonSplit = s.savePoison != null && s.savePoison !== s.saves.ppdm;
+  const saveRows = SAVE_KEYS.flatMap((k) => {
+    if (k === 'ppdm' && poisonSplit) {
+      return [
+        ...kv('Para/Death', s.saves.ppdm, STAT_TIPS.save(k, s.saves.ppdm)),
+        ...kv('Poison', s.savePoison, { title: `Save vs Poison: ${s.savePoison}`, text: `Roll ${s.savePoison} or more on a d20 to shake off venom. The ${RACES[ch.race]?.name?.toLowerCase() ?? ch.race}'s stout constitution adds its bonus against poison as well as against rods, staves, wands and spells (but not against paralysis or death magic).` }),
+      ];
+    }
+    return kv(SAVE_SHORT[k], s.saves[k], STAT_TIPS.save(k, s.saves[k]));
+  });
+  const saves = sect('Saving Throws', [h('div.pc-kv', saveRows)]);
   const extra = [];
   if (s.thief) {
     const armored = !armorAllowsThieving(ch);

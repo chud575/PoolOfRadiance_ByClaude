@@ -231,6 +231,11 @@ function paintDoll(canvas, ch) {
   }
 }
 
+/** A command label with its hotkey letter (the first) picked out, Gold Box style. */
+function hkLabel(label) {
+  return [h('span.por-hk.pc-hk', [label[0]]), label.slice(1)];
+}
+
 /**
  * Inventory panel: paperdoll, item list, detail + actions, encumbrance, coins.
  * Actions: Ready/Remove, Use, Trade (give to another member), Halve/Join stacks, Drop.
@@ -370,12 +375,13 @@ export class InventoryPanel {
       const qty = e.qty ?? 1;
       const joinable = inv.some((o, j) => j !== this.sel && o.id === e.id && !o.equipped);
       detail.push(h('div.pc-actions', [
-        h('button.por-btn.primary', { disabled: !slotOf(def) || (!!prob && !e.equipped), onclick: () => this.ready() }, [e.equipped ? 'Remove' : 'Ready']),
-        h('button.por-btn', { disabled: !usable, onclick: () => this.use() }, ['Use']),
-        h('button.por-btn', { disabled: this.ctx.game.party.length < 2, onclick: () => this.trade() }, ['Trade']),
-        h('button.por-btn', { disabled: !!(e.equipped && e.cursed), onclick: () => this.drop() }, ['Drop']),
-        h('button.por-btn', { disabled: qty < 2, onclick: () => this.halve() }, ['Halve']),
-        h('button.por-btn', { disabled: !joinable, onclick: () => this.join() }, ['Join']),
+        // The Gold Box item line, every command on its letter (R U T D H J), as in the original.
+        h('button.por-btn.primary.pc-hkbtn', { disabled: !slotOf(def) || (!!prob && !e.equipped), onclick: () => this.ready(), dataset: { tip: `${e.equipped ? 'Remove' : 'Ready'} (R)` } }, hkLabel(e.equipped ? 'Remove' : 'Ready')),
+        h('button.por-btn.pc-hkbtn', { disabled: !usable, onclick: () => this.use(), dataset: { tip: 'Use (U)' } }, hkLabel('Use')),
+        h('button.por-btn.pc-hkbtn', { disabled: this.ctx.game.party.length < 2, onclick: () => this.trade(), dataset: { tip: 'Trade (T): give to another member' } }, hkLabel('Trade')),
+        h('button.por-btn.pc-hkbtn', { disabled: !!(e.equipped && e.cursed), onclick: () => this.drop(), dataset: { tip: 'Drop (D)' } }, hkLabel('Drop')),
+        h('button.por-btn.pc-hkbtn', { disabled: qty < 2, onclick: () => this.halve(), dataset: { tip: 'Halve (H): split the stack in two' } }, hkLabel('Halve')),
+        h('button.por-btn.pc-hkbtn', { disabled: !joinable, onclick: () => this.join(), dataset: { tip: 'Join (J): merge with a matching stack' } }, hkLabel('Join')),
       ]));
     }
     const str = strengthTable(s.abilities.str, s.abilities.strPct);

@@ -31,22 +31,23 @@ function distSeg(px, py, [ax, ay], [bx, by]) {
 const ROOFS = [[178, 96, 70], [160, 104, 78], [140, 128, 120], [168, 118, 84], [150, 92, 72], [126, 120, 116]];
 
 /** One building in plan: a washed hip roof with ridge, hips and tile courses, or a roofless ruin. */
-function building(g, x, y, w, h, r, { ruined = false } = {}) {
+function building(g, x, y, w, h, r, { ruined = false, muted = false } = {}) {
+  const mu = muted ? 0.5 : 1;
   g.save();
   g.translate(x + w / 2, y + h / 2);
   g.rotate((r() - 0.5) * 0.09);
   const hw = w / 2;
   const hh = h / 2;
   if (ruined) {
-    g.fillStyle = 'rgba(130,104,78,0.16)';
+    g.fillStyle = `rgba(130,104,78,${(0.16 * mu).toFixed(3)})`;
     g.fillRect(-hw, -hh, w, h);
-    g.fillStyle = 'rgba(43,26,13,0.5)';
+    g.fillStyle = `rgba(43,26,13,${(0.5 * mu).toFixed(3)})`;
     for (let i = 0; i < Math.max(2, (w * h) / 14); i++) {
       g.beginPath(); g.arc(-hw + r() * w, -hh + r() * h, 0.35 + r() * 0.5, 0, Math.PI * 2); g.fill();
     }
     // broken walls: two or three sides left standing, ragged
-    g.strokeStyle = 'rgba(43,26,13,0.8)';
-    g.lineWidth = 0.9;
+    g.strokeStyle = `rgba(43,26,13,${(0.8 * mu).toFixed(3)})`;
+    g.lineWidth = muted ? 0.6 : 0.9;
     g.lineCap = 'butt';
     const sides = [[-hw, -hh, hw, -hh], [hw, -hh, hw, hh], [hw, hh, -hw, hh], [-hw, hh, -hw, -hh]];
     const skip = Math.floor(r() * 4);
@@ -59,35 +60,37 @@ function building(g, x, y, w, h, r, { ruined = false } = {}) {
     g.restore();
     return;
   }
-  const c = ROOFS[Math.floor(r() * ROOFS.length)];
+  const c0 = ROOFS[Math.floor(r() * ROOFS.length)];
+  // muted: an engraved sepia roofscape, so the districts it surrounds lead the eye
+  const c = muted ? [c0[0] * 0.35 + 150 * 0.65, c0[1] * 0.35 + 128 * 0.65, c0[2] * 0.35 + 100 * 0.65] : c0;
   const v = 0.85 + r() * 0.25;
-  g.fillStyle = `rgba(${c[0] * v | 0},${c[1] * v | 0},${c[2] * v | 0},0.62)`;
+  g.fillStyle = `rgba(${c[0] * v | 0},${c[1] * v | 0},${c[2] * v | 0},${muted ? 0.32 : 0.62})`;
   g.fillRect(-hw, -hh, w, h);
   const long = w >= h;
   const inset = Math.min(hw, hh);
   const [rx0, ry0, rx1, ry1] = long ? [-hw + inset, 0, hw - inset, 0] : [0, -hh + inset, 0, hh - inset];
   // the shadowed roof slopes (south and east)
-  g.fillStyle = 'rgba(60,30,14,0.22)';
+  g.fillStyle = `rgba(60,30,14,${(0.22 * mu).toFixed(3)})`;
   g.beginPath();
   if (long) { g.moveTo(-hw, hh); g.lineTo(rx0, ry0); g.lineTo(rx1, ry1); g.lineTo(hw, -hh); g.lineTo(hw, hh); } else { g.moveTo(hw, -hh); g.lineTo(rx0, ry0); g.lineTo(rx1, ry1); g.lineTo(-hw, hh); g.lineTo(hw, hh); }
   g.closePath();
   g.fill();
   // tile courses parallel to the ridge
-  g.strokeStyle = 'rgba(60,30,14,0.28)';
+  g.strokeStyle = `rgba(60,30,14,${(0.28 * mu).toFixed(3)})`;
   g.lineWidth = 0.35;
   g.beginPath();
   if (long) for (let t = -hh + 1.4; t < hh; t += 1.6) { g.moveTo(-hw + 0.5, t); g.lineTo(hw - 0.5, t); } else for (let t = -hw + 1.4; t < hw; t += 1.6) { g.moveTo(t, -hh + 0.5); g.lineTo(t, hh - 0.5); }
   g.stroke();
   // ridge and hips
-  g.strokeStyle = 'rgba(43,26,13,0.85)';
-  g.lineWidth = 0.7;
+  g.strokeStyle = `rgba(43,26,13,${(0.85 * mu).toFixed(3)})`;
+  g.lineWidth = muted ? 0.5 : 0.7;
   g.beginPath();
   g.moveTo(rx0, ry0); g.lineTo(rx1, ry1);
   g.moveTo(-hw, -hh); g.lineTo(rx0, ry0); g.lineTo(-hw, hh);
   g.moveTo(hw, -hh); g.lineTo(rx1, ry1); g.lineTo(hw, hh);
   g.stroke();
-  g.lineWidth = 0.85;
-  g.strokeStyle = INK.ink;
+  g.lineWidth = muted ? 0.55 : 0.85;
+  g.strokeStyle = muted ? 'rgba(43,26,13,0.55)' : INK.ink;
   g.strokeRect(-hw, -hh, w, h);
   // a chimney now and then
   if (r() < 0.3) {
@@ -101,7 +104,7 @@ function building(g, x, y, w, h, r, { ruined = false } = {}) {
  * Streets, lanes, plazas and houses over the walled city, avoiding `blocked(x, y)`.
  * streets: [[x0,y0,x1,y1], ...] street centre lines.
  */
-export function drawOldCity(g, { wall, blocked, streets, seed = 7, cell = 11 }) {
+export function drawOldCity(g, { wall, blocked, streets, seed = 7, cell = 11, muted = false }) {
   const r = prng(seed);
   let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
   for (const [x, y] of wall) { minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); }
@@ -129,7 +132,7 @@ export function drawOldCity(g, { wall, blocked, streets, seed = 7, cell = 11 }) 
   wall.forEach(([x, y], i) => (i ? poly.lineTo(x, y) : poly.moveTo(x, y)));
   poly.closePath();
   g.globalCompositeOperation = 'multiply';
-  g.fillStyle = 'rgba(206,180,134,0.42)';
+  g.fillStyle = muted ? 'rgba(206,182,140,0.3)' : 'rgba(206,180,134,0.42)';
   g.fill(poly);
   g.globalCompositeOperation = 'source-over';
   g.clip(poly);
@@ -174,10 +177,10 @@ export function drawOldCity(g, { wall, blocked, streets, seed = 7, cell = 11 }) 
     if (w >= 2 && r() < 0.5) {
       const cut = Math.max(0.35, Math.min(0.65, 0.5 + (r() - 0.5) * 0.3));
       const W2 = w * cell - pad * 2;
-      building(g, x + pad, y + pad, W2 * cut, h * cell - pad * 2, r, { ruined });
-      building(g, x + pad + W2 * cut, y + pad, W2 * (1 - cut), h * cell - pad * 2, r, { ruined: r() < ruinBias });
+      building(g, x + pad, y + pad, W2 * cut, h * cell - pad * 2, r, { ruined, muted });
+      building(g, x + pad + W2 * cut, y + pad, W2 * (1 - cut), h * cell - pad * 2, r, { ruined: r() < ruinBias, muted });
     } else {
-      building(g, x + pad, y + pad, w * cell - pad * 2, h * cell - pad * 2 - r() * 1.2, r, { ruined });
+      building(g, x + pad, y + pad, w * cell - pad * 2, h * cell - pad * 2 - r() * 1.2, r, { ruined, muted });
     }
   }
 }

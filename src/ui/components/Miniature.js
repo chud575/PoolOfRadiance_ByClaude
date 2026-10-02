@@ -432,7 +432,7 @@ export function buildMiniature(ch, opt = {}) {
   if (rayHead) {
     // The ray-marched head (exact anatomy at any size) and an invisible stand-in that casts its shadow.
     const head = createHead(app, fr.face, { asleep: fr.asleep, ambient: opt.headAmbient, fog: !!opt.fog, gain: opt.headGain, lite: opt.headLite, variant: opt.headVariant });
-    fig.add(head);
+    if (!globalThis.__NOHEAD) fig.add(head); // DBGTMP
     disposables.push({ dispose: () => head.userData.dispose() });
     const { c, R, hs } = fr.face;
     const caster = new THREE.Mesh(headCasterGeo(), shadowOnlyMat());

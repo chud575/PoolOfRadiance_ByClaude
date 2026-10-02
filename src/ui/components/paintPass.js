@@ -50,6 +50,7 @@ uniform sampler2D tSrc;
 uniform vec2 texel;
 uniform vec2 res;
 uniform float seed;
+uniform float smear;
 varying vec2 vUv;
 float h21(vec2 p) { p = fract(p * vec2(123.34, 456.21) + seed); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float n2(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -62,7 +63,7 @@ void main() {
   float gm = length(vec2(gx, gy));
   // Stroke direction: along the isophote where there is form, a loose diagonal hatch in flat areas.
   vec2 dir = gm > 0.012 ? normalize(vec2(-gy, gx)) : normalize(vec2(0.8, -0.6) + (n2(vUv * res / 18.0) - 0.5) * 0.8);
-  float len = mix(5.0, 1.4, clamp(gm * 7.0, 0.0, 1.0));
+  float len = mix(5.0, 1.4, clamp(gm * 7.0, 0.0, 1.0)) * smear;
   vec3 acc = vec3(0.0);
   float wsum = 0.0;
   for (int k = -3; k <= 3; k++) {
@@ -112,7 +113,7 @@ function passes() {
   if (P) return P;
   const mk = (fs, u) => new THREE.ShaderMaterial({ uniforms: u, vertexShader: VS, fragmentShader: fs, depthTest: false, depthWrite: false, toneMapped: false, transparent: false });
   const kuw = mk(KUWAHARA, { tSrc: { value: null }, texel: { value: new THREE.Vector2() }, exposure: { value: 1 } });
-  const strokes = mk(STROKES, { tSrc: { value: null }, texel: { value: new THREE.Vector2() }, res: { value: new THREE.Vector2() }, seed: { value: 0 } });
+  const strokes = mk(STROKES, { tSrc: { value: null }, texel: { value: new THREE.Vector2() }, res: { value: new THREE.Vector2() }, seed: { value: 0 }, smear: { value: 1 } });
   const plain = mk(PLAIN, { tSrc: { value: null }, exposure: { value: 1 } });
   const scene = new THREE.Scene();
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), plain);
@@ -187,6 +188,7 @@ function finishPasses(renderer, hdr, o, RW, RH) {
     p.strokes.uniforms.texel.value.set(1 / RW, 1 / RH);
     p.strokes.uniforms.res.value.set(RW, RH);
     p.strokes.uniforms.seed.value = o.seed ?? 0;
+    p.strokes.uniforms.smear.value = o.smear ?? 1;
     p.quad.material = p.strokes;
   } else if (o.paint) {
     const mid = rtFor(`mid:${o.key ?? 'fig'}`, RW, RH, { depthBuffer: false });
@@ -200,6 +202,7 @@ function finishPasses(renderer, hdr, o, RW, RH) {
     p.strokes.uniforms.texel.value.set(1 / RW, 1 / RH);
     p.strokes.uniforms.res.value.set(RW, RH);
     p.strokes.uniforms.seed.value = o.seed ?? 0;
+    p.strokes.uniforms.smear.value = o.smear ?? 1;
     p.quad.material = p.strokes;
   } else {
     p.plain.uniforms.tSrc.value = hdr.texture;

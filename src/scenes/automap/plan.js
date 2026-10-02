@@ -10,12 +10,12 @@ import { INK, prng } from './ink.js';
  */
 
 const DV = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] };
-const PAPER = 'rgba(238,226,198,0.9)';
+const PAPER = 'rgba(224,204,162,0.95)';
 // one muted ink-and-wash palette for every plan symbol
-const WOOD = 'rgba(150,110,70,0.5)';
-const WOOD_D = 'rgba(122,86,54,0.55)';
-const STONE = 'rgba(196,186,166,0.7)';
-const LINEN = 'rgba(240,232,212,0.92)';
+const WOOD = 'rgba(150,98,54,0.78)';
+const WOOD_D = 'rgba(112,72,40,0.82)';
+const STONE = 'rgba(176,164,142,0.88)';
+const LINEN = 'rgba(238,226,198,0.96)';
 
 /** What kind of place a zone name describes. */
 export function themeOf(name = '') {
@@ -83,41 +83,92 @@ export function drawFloor(g, cells, { CX, CY, cs, seed = 1, kind = 'planks' }) {
       }
     }
     g.stroke();
-  } else {
-    // flagstones in running courses; broken paving loses some, cracks others
+  } else if (kind === 'earth' || kind === 'broken') {
+    // beaten earth: a mottled umber wash, straw and grit; a ruin keeps a few
+    // shattered flags lying where they fell
     const broken = kind === 'broken';
-    const rh = cs * (0.24 + r() * 0.06);
-    for (let y = y0; y < y1; y += rh) {
+    g.fillStyle = broken ? 'rgba(132,104,72,0.14)' : 'rgba(156,120,76,0.12)';
+    g.fillRect(x0, y0, x1 - x0, y1 - y0);
+    for (let i = 0; i < ((x1 - x0) * (y1 - y0)) / (cs * cs) * 7; i++) {
+      const px = x0 + r() * (x1 - x0);
+      const py = y0 + r() * (y1 - y0);
+      g.fillStyle = `rgba(96,66,38,${(0.03 + r() * 0.05).toFixed(3)})`;
+      g.beginPath(); g.ellipse(px, py, cs * (0.1 + r() * 0.2), cs * (0.06 + r() * 0.12), r() * 3, 0, Math.PI * 2); g.fill();
+    }
+    g.strokeStyle = broken ? 'rgba(60,44,28,0.4)' : 'rgba(120,90,40,0.45)';
+    g.lineWidth = 0.5;
+    g.beginPath();
+    for (let i = 0; i < ((x1 - x0) * (y1 - y0)) / (cs * cs) * (broken ? 14 : 26); i++) {
+      const px = x0 + r() * (x1 - x0);
+      const py = y0 + r() * (y1 - y0);
+      const a = r() * Math.PI;
+      const L = cs * (broken ? 0.02 + r() * 0.03 : 0.04 + r() * 0.07);
+      g.moveTo(px, py); g.lineTo(px + Math.cos(a) * L, py + Math.sin(a) * L);
+    }
+    g.stroke();
+    if (broken) {
+      for (let i = 0; i < ((x1 - x0) * (y1 - y0)) / (cs * cs) * 3; i++) {
+        const px = x0 + r() * (x1 - x0);
+        const py = y0 + r() * (y1 - y0);
+        const R = cs * (0.07 + r() * 0.09);
+        const nv = 4 + Math.floor(r() * 3);
+        const a0 = r() * 6;
+        g.beginPath();
+        for (let q = 0; q < nv; q++) {
+          const t = a0 + (q / nv) * Math.PI * 2;
+          const rr = R * (0.6 + r() * 0.5);
+          if (q) g.lineTo(px + Math.cos(t) * rr, py + Math.sin(t) * rr); else g.moveTo(px + Math.cos(t) * rr, py + Math.sin(t) * rr);
+        }
+        g.closePath();
+        const v = 176 + r() * 40;
+        g.fillStyle = `rgba(${v | 0},${(v * 0.94) | 0},${(v * 0.82) | 0},0.55)`;
+        g.fill();
+        g.strokeStyle = 'rgba(52,36,22,0.6)';
+        g.lineWidth = 0.6;
+        g.stroke();
+      }
+    }
+  } else {
+    // flagstones: courses of hand-dressed slabs, each its own size and tone, with
+    // a broken inked joint, a darker bed of mortar and the odd crack
+    const rh0 = cs * (0.25 + r() * 0.06);
+    for (let y = y0; y < y1; ) {
+      const rh = rh0 * (0.8 + r() * 0.4);
       let x = x0 - r() * cs * 0.3;
       while (x < x1) {
-        const w = cs * (0.26 + r() * 0.24);
-        const jx = (r() - 0.5) * 1.2;
-        const jy = (r() - 0.5) * 1.2;
-        const gone = broken && r() < 0.22;
-        if (!gone) {
-          const v = 200 + r() * 40;
-          g.fillStyle = `rgba(${v | 0},${(v * 0.93) | 0},${(v * 0.8) | 0},${(0.12 + r() * 0.16).toFixed(2)})`;
-          g.fillRect(x + 1 + jx, y + 1 + jy, w - 2, rh - 2);
-          g.strokeStyle = `rgba(60,40,22,${(0.3 + r() * 0.15).toFixed(2)})`;
-          g.lineWidth = 0.55;
-          g.strokeRect(x + 1 + jx, y + 1 + jy, w - 2, rh - 2);
-          if (broken && r() < 0.4) {
-            g.beginPath();
-            const cx = x + w * (0.2 + r() * 0.6);
-            g.moveTo(cx, y + 1);
-            g.lineTo(cx + (r() - 0.5) * w * 0.4, y + rh * 0.5);
-            g.lineTo(cx + (r() - 0.5) * w * 0.5, y + rh - 1);
-            g.stroke();
-          }
-        } else {
-          // a hole in the paving: a few loose stones in the earth
-          g.fillStyle = 'rgba(90,64,40,0.2)';
-          g.fillRect(x + 1, y + 1, w - 2, rh - 2);
-          g.fillStyle = 'rgba(60,40,22,0.4)';
-          for (let k = 0; k < 3; k++) { g.beginPath(); g.arc(x + r() * w, y + r() * rh, 0.6 + r() * 0.8, 0, Math.PI * 2); g.fill(); }
+        const w = cs * (0.24 + r() * 0.3);
+        const J = () => (r() - 0.5) * cs * 0.025;
+        const q = [[x + 1 + J(), y + 1 + J()], [x + w - 1 + J(), y + 1 + J()], [x + w - 1 + J(), y + rh - 1 + J()], [x + 1 + J(), y + rh - 1 + J()]];
+        const quad = () => { g.beginPath(); q.forEach(([px, py], i) => (i ? g.lineTo(px, py) : g.moveTo(px, py))); g.closePath(); };
+        quad();
+        g.strokeStyle = 'rgba(70,48,28,0.2)';
+        g.lineWidth = 1.6;
+        g.stroke();
+        const v = 186 + r() * 50;
+        const warm = r();
+        g.fillStyle = `rgba(${v | 0},${(v * (0.9 + warm * 0.05)) | 0},${(v * (0.74 + warm * 0.08)) | 0},${(0.22 + r() * 0.2).toFixed(2)})`;
+        g.fill();
+        g.strokeStyle = `rgba(56,38,22,${(0.4 + r() * 0.2).toFixed(2)})`;
+        g.lineWidth = 0.55;
+        g.beginPath();
+        for (let i = 0; i < 4; i++) {
+          if (r() < 0.18) continue;
+          const [ax, ay] = q[i];
+          const [bx, by] = q[(i + 1) % 4];
+          g.moveTo(ax, ay); g.lineTo(bx, by);
+        }
+        g.stroke();
+        if (r() < 0.16) {
+          g.beginPath();
+          const cx = x + w * (0.2 + r() * 0.6);
+          g.moveTo(cx, y + 1);
+          g.lineTo(cx + (r() - 0.5) * w * 0.4, y + rh * 0.5);
+          g.lineTo(cx + (r() - 0.5) * w * 0.5, y + rh - 1);
+          g.stroke();
         }
         x += w;
       }
+      y += rh;
     }
   }
   g.restore();
@@ -156,7 +207,7 @@ export function wallShadow(g, cells, { CX, CY, cs, seed = 1, walled, band = 0.24
 // Each draws in a local frame: origin at the anchor, +y pointing away from the wall
 // it stands against (into the room); sizes in cell units multiplied by cs.
 
-function outline(g, lw = 0.8) {
+function outline(g, lw = 1.05) {
   g.strokeStyle = INK.ink;
   g.lineWidth = lw;
   g.stroke();
@@ -389,8 +440,8 @@ export function furnish(g, cells, { CX, CY, cs, seed = 1, map, theme = 'house', 
     g.translate(0, -cs / 2 + (wall ? inset : 0));
     // a soft pencil shadow (light from the north-west)
     g.save();
-    g.globalAlpha = 0.22;
-    g.translate(1.4, 1.6);
+    g.globalAlpha = 0.34;
+    g.translate(1.8, 2.1);
     SYMBOLS[sym](g, cs, prng(seed + i * 17));
     g.restore();
     SYMBOLS[sym](g, cs, prng(seed + i * 17));

@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { EDGE, CELL } from '../../data/maps/MapGrid.js';
-import { SHEET, collectEdges, mergeRuns } from './BlockSheet.js';
-import { makeCanvas, makeDesk, grainTile, prng } from './ink.js';
-import { PIN_KINDS, drawPin } from './glyphs.js';
+import { SHEET, collectEdges, mergeRuns, eventMarker } from './BlockSheet.js';
+import { makeCanvas, makeDesk, grainTile, prng, INK } from './ink.js';
+import { PIN_KINDS, drawPin, drawMarker } from './glyphs.js';
 import { SERIF } from './ornaments.js';
 import { hash2, fbm } from '../../render/textures/noise.js';
 import { preloadTextureSets, getTextureSet } from '../../render/textures/index.js';
@@ -22,13 +22,19 @@ class Batch {
     this.uv = [];
     this.c = [];
     this.i = [];
+    /** per-run paint tint (a painted miniature: each building mixed a shade apart) */
+    this.hue = [1, 1, 1];
+    /** drybrush: upward faces and arrises catch a lighter dusting of pigment */
+    this.dry = 1.16;
   }
 
   _v(x, y, z, nx, ny, nz, u, v, c) {
     this.p.push(x, y, z);
     this.n.push(nx, ny, nz);
     this.uv.push(u, v);
-    this.c.push(c, c, c);
+    const d = ny > 0.5 ? this.dry : 1;
+    const h = this.hue;
+    this.c.push(c * h[0] * d, c * h[1] * d, c * h[2] * d);
     return this.p.length / 3 - 1;
   }
 
@@ -164,8 +170,9 @@ export class Diorama {
     this.scene = null;
     this.camera = new THREE.PerspectiveCamera(30, 16 / 9, 0.1, 300);
     this.own = [];
-    this.az = -0.24;
-    this.el = 0.86;
+    this.az = -0.26;
+    // a lower three-quarter view: the walls stand up as miniatures
+    this.el = 0.68;
     this.dist = 30;
     this.fitDist = 30;
     this.zoomLevel = 1;
@@ -225,7 +232,7 @@ export class Diorama {
    * @param {import('../../data/maps/MapGrid.js').MapGrid} map
    * @param {ReturnType<import('./BlockSheet.js').buildBlockSheet>} sheet
    */
-  build(map, sheet, { seen, secrets, party, notes, zoom = 1 }) {
+  build(map, sheet, { seen, secrets, party, notes, zoom = 1, spent = null }) {
     this._disposeScene();
     const T = this._track.bind(this);
     const scene = new THREE.Scene();
@@ -240,9 +247,23 @@ export class Diorama {
     const { W, H, M, MX, MY } = SHEET;
     const cs = sheet.cs;
     const info = sheet.info;
-    const seenCell = (x, y) => map.inBounds(x, y) && !info.isRock(x, y) && seen(x, y);
+    // walls follow the sheet: walked squares and those in plain sight down a street
+    const seenCell = sheet.seenCell ?? ((x, y) => map.inBounds(x, y) && !info.isRock(x, y) && seen(x, y));
+    const walkedCell = (x, y) => map.inBounds(x, y) && !info.isRock(x, y) && seen(x, y);
     const dungeon = map.tileset === 'dungeon' || map.kind === 'dungeon';
     const wild = map.tileset === 'wilderness' || map.tileset === 'graveyard';
+    // per-building paint: each run of masonry takes the tint of the building it bounds
+    const regId = sheet.regions?.id;
+    const hueAt = (x, z) => {
+      const cx = Math.max(0, Math.min(map.w - 1, Math.floor(x)));
+      const cz = Math.max(0, Math.min(map.h - 1, Math.floor(z)));
+      const rid = regId ? regId[cz * map.w + cx] : cx * 7 + cz;
+      const a = hash2(rid, 3, 17);
+      const b = hash2(rid, 5, 23);
+      const v = 0.9 + b * 0.16;
+      // warm ochre .. cool grey-green, kept subtle
+      return [v * (1 + (a - 0.5) * 0.1), v * (1 + (b - 0.5) * 0.05), v * (1 - (a - 0.5) * 0.12)];
+    };
 
     // ---------- desk: walnut planks ----------
     const deskCanvas = makeDesk(1024, 1024, { lit: false, seed: 9, tone: [70, 48, 32] });
@@ -349,6 +370,7 @@ export class Diorama {
       const s = span(x0, z0, x1, z1, th);
       const L = s.len + ext * 2;
       const b = batch(key);
+      b.hue = key === 'city' ? [1, 1, 1] : hueAt(s.cx + (s.horiz ? 0 : 0.3), s.cz + (s.horiz ? 0.3 : 0));
       const runH = vary ? h * (0.9 + rr() * 0.18) : h;
       const capH = cap ? 0.04 : 0;
       const ch = (runH - capH) / courses;
@@ -392,6 +414,7 @@ export class Diorama {
       const s = span(x0, z0, x1, z1, th);
       const L = s.len + th;
       const P = batch('plaster');
+      P.hue = hueAt(s.cx + (s.horiz ? 0 : 0.3), s.cz + (s.horiz ? 0.3 : 0));
       P.box(s.cx, h / 2, s.cz, s.horiz ? L : th, h, s.horiz ? th : L, { tint: 0.92 + rr() * 0.1 });
       const bm = batch('beam');
       const bt = th + 0.022;
@@ -574,6 +597,7 @@ export class Diorama {
     {
       const uvFn = (x, z) => [(x - px0) / pw, 1 - (z - pz0) / ph];
       const fl = batch('floor');
+      fl.dry = 1;
       const fh = 0.06;
       for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) {
         if (!seenCell(x, y) || map.getCell(x, y) !== CELL.INTERIOR) continue;
@@ -643,27 +667,92 @@ export class Diorama {
       scene.add(wm);
     }
 
-    // ---------- fog of war: drifting veils of mist over the unexplored squares ----------
+    // ---------- fog of war: the unsurveyed ground as a raised, crumpled layer of vellum ----------
+    // laid over the sheet like a second, blank leaf not yet cut back by the survey: it lifts
+    // and buckles over the unknown, creases catching the candle, and settles flat to the
+    // paper exactly where the charted ground begins (so it never covers a known wall)
     this.veils = [];
     if (sheet.fog) {
-      const mc = makeCanvas(512);
+      const N = 160;
+      const mc = makeCanvas(N + 1);
       const mg = mc.getContext('2d');
-      mg.fillStyle = '#000';
-      mg.fillRect(0, 0, 512, 512);
-      mg.drawImage(sheet.fog, MX, MY, sheet.cs * map.w, sheet.cs * map.h, 0, 0, 512, 512);
-      const maskTex = T(new THREE.CanvasTexture(mc));
-      [[0.1, 0.2, 0x9a9ca2, 1]].forEach(([y, op, col, sd]) => {
-        const nTex = T(new THREE.CanvasTexture(this._mistCanvas(sd)));
-        nTex.wrapS = nTex.wrapT = THREE.RepeatWrapping;
-        nTex.repeat.set(1.6, 1.6);
-        const mat = T(new THREE.MeshLambertMaterial({ color: col, map: nTex, alphaMap: maskTex, transparent: true, opacity: op, depthWrite: false }));
-        const veil = new THREE.Mesh(T(new THREE.PlaneGeometry(map.w + 0.6, map.h + 0.6)), mat);
-        veil.rotation.x = -Math.PI / 2;
-        veil.position.set(map.w / 2, y, map.h / 2);
-        veil.renderOrder = 2 + sd;
-        scene.add(veil);
-        this.veils.push({ tex: nTex, speed: 0.004 * sd, phase: sd * 1.7 });
-      });
+      mg.drawImage(sheet.fog, MX, MY, sheet.cs * map.w, sheet.cs * map.h, 0, 0, N + 1, N + 1);
+      const md = mg.getImageData(0, 0, N + 1, N + 1).data;
+      const raw = new Float32Array((N + 1) * (N + 1));
+      for (let i = 0; i < raw.length; i++) raw[i] = md[i * 4 + 3] / 255;
+      // erode a touch, then soften, so the leaf meets the paper just inside the fog line
+      const soft = new Float32Array(raw.length);
+      const R = 2;
+      for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++) {
+        let mn = 1;
+        let sum = 0;
+        let n = 0;
+        for (let dj = -R; dj <= R; dj++) for (let di = -R; di <= R; di++) {
+          const ii = Math.max(0, Math.min(N, i + di));
+          const jj = Math.max(0, Math.min(N, j + dj));
+          const v = raw[jj * (N + 1) + ii];
+          mn = Math.min(mn, v);
+          sum += v;
+          n++;
+        }
+        soft[j * (N + 1) + i] = Math.min(sum / n, mn * 0.5 + (sum / n) * 0.5);
+      }
+      let any = false;
+      for (let i = 0; i < soft.length; i++) if (soft[i] > 0.05) { any = true; break; }
+      if (any) {
+        const geo2 = T(new THREE.PlaneGeometry(map.w, map.h, N, N));
+        geo2.rotateX(-Math.PI / 2);
+        geo2.translate(map.w / 2, 0, map.h / 2);
+        const p2 = geo2.attributes.position;
+        const uv2 = geo2.attributes.uv;
+        const col = new Float32Array(p2.count * 3);
+        for (let i = 0; i < p2.count; i++) {
+          const x = p2.getX(i);
+          const z = p2.getZ(i);
+          const ii = Math.round((x / map.w) * N);
+          const jj = Math.round((z / map.h) * N);
+          const m = soft[jj * (N + 1) + ii];
+          // crumple: ridged noise for creases plus a slow swell, lifting where the fog is deep
+          const cr = Math.abs(fbm(x * 0.6, z * 0.6, { period: 64, octaves: 3, seed: 61 }) - 0.5) * 2;
+          const cr2 = Math.abs(fbm(x * 1.5 + 9, z * 1.5, { period: 64, octaves: 2, seed: 63 }) - 0.5) * 2;
+          const sw = fbm(x * 0.16, z * 0.16, { period: 64, octaves: 2, seed: 67 });
+          const hgt = m * m * (0.06 + sw * 0.2 + (1 - cr) ** 2 * 0.16 + (1 - cr2) ** 3 * 0.05);
+          p2.setY(i, 0.012 + hgt);
+          // the leaf's UVs sample the sheet itself, so its face shows the graphite unknown
+          uv2.setXY(i, (x - px0) / pw, 1 - (z - pz0) / ph);
+          const sh = 0.86 + cr * 0.14;
+          col.set([sh, sh * 0.985, sh * 0.96], i * 3);
+        }
+        geo2.setAttribute('color', new THREE.BufferAttribute(col, 3));
+        geo2.computeVertexNormals();
+        // the leaf's alpha: fog mask, so it feathers out where the survey begins
+        const am = makeCanvas(N + 1);
+        const ag = am.getContext('2d');
+        const aimg = ag.createImageData(N + 1, N + 1);
+        for (let i = 0; i < soft.length; i++) {
+          const v = Math.round(Math.min(1, soft[i] * 1.6) * 255);
+          aimg.data[i * 4] = aimg.data[i * 4 + 1] = aimg.data[i * 4 + 2] = v;
+          aimg.data[i * 4 + 3] = 255;
+        }
+        ag.putImageData(aimg, 0, 0);
+        const alphaTex = T(new THREE.CanvasTexture(am));
+        // alphaMap uses the mesh UVs, so remap: draw it into sheet-UV space
+        const fullA = makeCanvas(512, Math.round(512 * ph / pw));
+        const fa = fullA.getContext('2d');
+        fa.fillStyle = '#000';
+        fa.fillRect(0, 0, fullA.width, fullA.height);
+        fa.imageSmoothingEnabled = true;
+        fa.drawImage(am, (-px0 / pw) * fullA.width, (-pz0 / ph) * fullA.height, (map.w / pw) * fullA.width, (map.h / ph) * fullA.height);
+        const alphaSheet = T(new THREE.CanvasTexture(fullA));
+        alphaTex.dispose();
+        const leaf = new THREE.Mesh(geo2, T(new THREE.MeshStandardMaterial({
+          map: tex, alphaMap: alphaSheet, transparent: true, alphaTest: 0.04, vertexColors: true,
+          roughness: 0.92, metalness: 0, bumpMap: grain, bumpScale: 0.6, envMapIntensity: 0.35, depthWrite: true,
+        })));
+        leaf.castShadow = true;
+        leaf.receiveShadow = true;
+        scene.add(leaf);
+      }
     }
 
     // ---------- party: a painted lead miniature on a pewter base with an enamel compass arrow ----------
@@ -697,7 +786,7 @@ export class Diorama {
       // the figure: a cloaked standard-bearer with helm, kite shield and the Company's banner
       const fig = new THREE.Group();
       const cloak = new THREE.Mesh(T(new THREE.LatheGeometry(V([[0, 0.05], [0.1, 0.05], [0.106, 0.066], [0.09, 0.13], [0.074, 0.2], [0.07, 0.24], [0.086, 0.272], [0.08, 0.292], [0.05, 0.31], [0.026, 0.32], [0, 0.322]]), 28)), paint(0x2a4686));
-      const cape = new THREE.Mesh(T(new THREE.CylinderGeometry(0.084, 0.118, 0.25, 16, 1, true, -Math.PI * 0.55, Math.PI * 1.1)), T(new THREE.MeshStandardMaterial({ color: 0x8a1c14, roughness: 0.62, side: THREE.DoubleSide })));
+      const cape = new THREE.Mesh(T(new THREE.CylinderGeometry(0.084, 0.112, 0.22, 16, 1, true, -Math.PI * 0.42, Math.PI * 0.84)), T(new THREE.MeshStandardMaterial({ color: 0x5e1812, roughness: 0.7, side: THREE.DoubleSide })));
       cape.position.set(0, 0.17, 0.012);
       const pauldL = new THREE.Mesh(T(new THREE.SphereGeometry(0.034, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.6)), T(new THREE.MeshStandardMaterial({ color: 0xa8acb2, roughness: 0.35, metalness: 0.9, envMapIntensity: 1.2 })));
       pauldL.position.set(-0.07, 0.272, 0);
@@ -747,8 +836,12 @@ export class Diorama {
       flag.geometry.translate(0.13, 0, 0);
       flag.position.set(0.095, 0.68, 0.03);
       flag.castShadow = true;
+      // the hero piece stands twice the old height: the focal point of the table
+      const hero = new THREE.Group();
+      hero.add(fig, pole, finial, flag);
+      hero.scale.setScalar(1.75);
       const head3 = new THREE.Group();
-      head3.add(rim, arrow, fig, pole, finial, flag);
+      head3.add(rim, arrow, hero);
       head3.rotation.y = { N: 0, E: -Math.PI / 2, S: Math.PI, W: Math.PI / 2 }[party.dir] ?? 0;
       grp.add(base, groove, head3);
       grp.position.set(party.x + 0.5, 0, party.y + 0.5);
@@ -757,11 +850,119 @@ export class Diorama {
       glow.rotation.x = -Math.PI / 2;
       glow.position.y = 0.008;
       grp.add(glow);
-      grp.scale.setScalar(2.25);
+      // a soft contact shadow pooled under the base, so the piece sits on the paper
+      {
+        const c = makeCanvas(128);
+        const g2 = c.getContext('2d');
+        const gr = g2.createRadialGradient(64, 64, 10, 64, 64, 64);
+        gr.addColorStop(0, 'rgba(20,10,4,0.9)');
+        gr.addColorStop(0.55, 'rgba(20,10,4,0.55)');
+        gr.addColorStop(1, 'rgba(20,10,4,0)');
+        g2.fillStyle = gr;
+        g2.fillRect(0, 0, 128, 128);
+        const cs2 = new THREE.Mesh(T(new THREE.CircleGeometry(0.46, 40)), T(new THREE.MeshBasicMaterial({ map: T(new THREE.CanvasTexture(c)), transparent: true, depthWrite: false })));
+        cs2.rotation.x = -Math.PI / 2;
+        cs2.position.set(0.03, 0.005, 0.03);
+        cs2.renderOrder = 1;
+        grp.add(cs2);
+      }
+      grp.scale.setScalar(2.3);
+      // a cool rim light behind the hero (from the far side of the board) to cut it out
+      const rimL = new THREE.PointLight(0xc4d6ff, 9, 5.5, 1.6);
+      rimL.position.set(party.x + 1.1, 2.4, party.y - 1.4);
+      scene.add(rimL);
+      const warmL = new THREE.PointLight(0xffd29a, 3.5, 4, 1.8);
+      warmL.position.set(party.x - 0.6, 1.6, party.y + 1.6);
+      scene.add(warmL);
       this.partyRing = null;
       this.partyGlow = glow;
       scene.add(grp);
       this.marker = { grp, flag, flagGeo };
+    }
+
+    // ---------- markers stand up as little painted flags ----------
+    {
+      const flags = [];
+      for (const ev of map.events) {
+        if (!walkedCell(ev.x, ev.y)) continue;
+        const k = eventMarker(ev, !!(spent ?? {})[ev.id]);
+        if (!k || k === 'text') continue;
+        flags.push({ x: ev.x + 0.5, z: ev.y + 0.5, kind: k });
+      }
+      for (const q of segs) {
+        const t = effective(q);
+        if (t !== EDGE.SECRET && t !== EDGE.LOCKED) continue;
+        const mx = (q.x0 + q.x1) / 2;
+        const mz = (q.y0 + q.y1) / 2;
+        // stand the flag just inside the square that owns the edge
+        const [ox, oz] = q.horiz ? [0, q.cell[2] === 'N' ? 0.28 : -0.28] : [q.cell[2] === 'W' ? 0.28 : -0.28, 0];
+        flags.push({ x: mx + ox, z: mz + oz, kind: t === EDGE.SECRET ? 'secret' : 'locked' });
+      }
+      if (flags.length) {
+        const poleGeo = T(new THREE.CylinderGeometry(0.012, 0.014, 0.62, 6));
+        const knob = T(new THREE.SphereGeometry(0.026, 10, 8));
+        const baseGeo = T(new THREE.CylinderGeometry(0.075, 0.085, 0.03, 18));
+        const banner = T(new THREE.PlaneGeometry(0.3, 0.22, 8, 1));
+        const bp = banner.attributes.position;
+        for (let i = 0; i < bp.count; i++) {
+          const u = bp.getX(i) / 0.3 + 0.5;
+          bp.setZ(i, Math.sin(u * Math.PI * 1.4) * 0.025 * u);
+        }
+        banner.translate(0.15, 0, 0);
+        banner.computeVertexNormals();
+        const texCache = new Map();
+        const flagTex = (kind) => {
+          if (texCache.has(kind)) return texCache.get(kind);
+          const c = makeCanvas(128, 96);
+          const g2 = c.getContext('2d');
+          const field = kind === 'secret' || kind === 'locked' ? '#a8321e' : kind === 'battle' ? '#2c3e68' : '#e8d6aa';
+          g2.fillStyle = field;
+          g2.fillRect(0, 0, 128, 96);
+          g2.strokeStyle = kind === 'secret' || kind === 'locked' || kind === 'battle' ? '#e8c46a' : '#3a2412';
+          g2.lineWidth = 5;
+          g2.strokeRect(5, 5, 118, 86);
+          const ink = kind === 'secret' || kind === 'locked' || kind === 'battle' ? '#f4e6c4' : INK.ink;
+          if (kind === 'secret') {
+            g2.font = `italic bold 70px ${SERIF}`;
+            g2.textAlign = 'center';
+            g2.textBaseline = 'middle';
+            g2.fillStyle = ink;
+            g2.fillText('S', 64, 52);
+          } else {
+            drawMarker(g2, kind === 'locked' ? 'treasure' : kind, 64, 48, 62, { color: ink, accent: '#e8c46a', seed: 3 });
+            if (kind === 'locked') {
+              g2.fillStyle = field; g2.fillRect(20, 10, 88, 76);
+              g2.strokeStyle = ink; g2.lineWidth = 6;
+              g2.beginPath(); g2.arc(64, 40, 14, Math.PI, 0); g2.stroke();
+              g2.fillStyle = ink; g2.fillRect(44, 40, 40, 32);
+              g2.fillStyle = field; g2.beginPath(); g2.arc(64, 54, 5, 0, Math.PI * 2); g2.fill(); g2.fillRect(62, 54, 4, 10);
+            }
+          }
+          const t2 = T(new THREE.CanvasTexture(c));
+          t2.colorSpace = THREE.SRGBColorSpace;
+          texCache.set(kind, t2);
+          return t2;
+        };
+        const poleMat = M_.beam;
+        flags.forEach((f, i) => {
+          const grp2 = new THREE.Group();
+          const b = new THREE.Mesh(baseGeo, M_.city);
+          b.position.y = 0.015;
+          const pl = new THREE.Mesh(poleGeo, poleMat);
+          pl.position.y = 0.34;
+          const kn = new THREE.Mesh(knob, M_.gold);
+          kn.position.y = 0.66;
+          const bn = new THREE.Mesh(banner, T(new THREE.MeshStandardMaterial({ map: flagTex(f.kind), side: THREE.DoubleSide, roughness: 0.8 })));
+          bn.position.set(0.01, 0.52, 0);
+          for (const m of [b, pl, kn, bn]) { m.castShadow = true; m.receiveShadow = true; }
+          grp2.add(b, pl, kn, bn);
+          grp2.position.set(f.x, 0, f.z);
+          // banners turned toward the camera's side of the board, each a little differently
+          grp2.rotation.y = -0.35 + hash2(i, 7, 3) * 0.5;
+          grp2.scale.setScalar(1.15);
+          scene.add(grp2);
+        });
+      }
     }
 
     // ---------- note pins with their seals as flags ----------
@@ -791,7 +992,12 @@ export class Diorama {
     this.bounds.push(new THREE.Vector3(-4.5, 0, 1.6), new THREE.Vector3(-3.3, 3.3, 1.6), new THREE.Vector3(-3.9, 0, 15.4), new THREE.Vector3(-3.6, 3.2, 12.4));
 
     // ---------- lights ----------
-    scene.add(new THREE.HemisphereLight(0xa8b0c0, 0x2a2018, 0.34));
+    scene.add(new THREE.HemisphereLight(0xb0b6c4, 0x3a2c20, 0.5));
+    // a soft bounce off the desk on the shadow side, so north faces never go black
+    const fill = new THREE.DirectionalLight(0xffd8b0, 0.55);
+    fill.position.set(18, 9, 24);
+    fill.target.position.set(8, 0, 8);
+    scene.add(fill, fill.target);
     // the key comes from the candle's side of the desk (west-north-west), so every
     // shadow on the board falls east-south-east, the way the baked contact shadows lie
     const key = new THREE.DirectionalLight(0xffe2bc, 2.7);
@@ -813,7 +1019,25 @@ export class Diorama {
     bounce.position.set(8, 6, 26);
     scene.add(bounce);
 
-    // ---------- camera: fit the whole sheet inside the view rect ----------
+    // ---------- camera: frame the explored footprint (the whole sheet bounds the dolly) ----------
+    {
+      let x0 = Infinity; let z0 = Infinity; let x1 = -Infinity; let z1 = -Infinity;
+      for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) {
+        if (!seenCell(x, y)) continue;
+        x0 = Math.min(x0, x); z0 = Math.min(z0, y); x1 = Math.max(x1, x + 1); z1 = Math.max(z1, y + 1);
+      }
+      if (party) { x0 = Math.min(x0, party.x); z0 = Math.min(z0, party.y); x1 = Math.max(x1, party.x + 1); z1 = Math.max(z1, party.y + 1); }
+      if (!Number.isFinite(x0)) { x0 = 0; z0 = 0; x1 = map.w; z1 = map.h; }
+      // never frame tighter than a few squares round the party
+      const minW = 9;
+      const minH = 7;
+      if (x1 - x0 < minW) { const c = (x0 + x1) / 2; x0 = Math.max(-0.5, c - minW / 2); x1 = x0 + minW; }
+      if (z1 - z0 < minH) { const c = (z0 + z1) / 2; z0 = Math.max(-0.5, c - minH / 2); z1 = z0 + minH; }
+      this.focusBounds = [];
+      for (const [bx, bz] of [[x0 - 0.3, z0 - 0.3], [x1 + 0.3, z0 - 0.3], [x0 - 0.3, z1 + 0.3], [x1 + 0.3, z1 + 0.3]]) {
+        this.focusBounds.push(new THREE.Vector3(bx, 0, bz), new THREE.Vector3(bx, 0.9, bz));
+      }
+    }
     this.zoomLevel = Math.max(0.5, zoom);
     this.target.set(px0 + pw / 2, 0, pz0 + ph / 2);
     this._fitted = false;
@@ -881,6 +1105,20 @@ export class Diorama {
       sg.lineTo(bx, by);
     }
     sg.stroke();
+    // ambient occlusion: a tight dark seam on both faces where every wall meets the paper
+    sg.filter = `blur(${(cs * k / q * 0.04).toFixed(1)}px)`;
+    sg.strokeStyle = 'rgba(24,12,4,0.7)';
+    sg.lineWidth = (cs * k / q) * 0.22;
+    sg.beginPath();
+    for (const sgm of segs) {
+      if (effective(sgm) === EDGE.OPEN) continue;
+      const [ax, ay] = P(sgm.x0, sgm.y0);
+      const [bx, by] = P(sgm.x1, sgm.y1);
+      sg.moveTo(ax, ay);
+      sg.lineTo(bx, by);
+    }
+    sg.stroke();
+    sg.filter = `blur(${(cs * k / q * 0.09).toFixed(1)}px)`;
     // plinth shadows: a thin offset rim on the south and east of each building floor
     sg.fillStyle = 'rgba(30,16,6,0.55)';
     for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) {
@@ -1247,15 +1485,15 @@ export class Diorama {
     if (this.bounds) this._refit(!this._fitted);
   }
 
-  /** Projected screen bbox of the sheet's corners for a camera at the given orbit. */
-  _projectBox(az, el, dist, target) {
+  /** Projected screen bbox of a set of points for a camera at the given orbit. */
+  _projectBox(az, el, dist, target, pts = this.bounds) {
     const cam = this.camera;
     cam.position.set(target.x + dist * Math.cos(el) * Math.sin(az), target.y + dist * Math.sin(el), target.z + dist * Math.cos(el) * Math.cos(az));
     cam.lookAt(target);
     cam.updateMatrixWorld(true);
     const v = new THREE.Vector3();
     let minX = Infinity; let maxX = -Infinity; let minY = Infinity; let maxY = -Infinity;
-    for (const b of this.bounds) {
+    for (const b of pts) {
       v.copy(b).project(cam);
       const sx = (v.x + 1) / 2 * this.w;
       const sy = (1 - v.y) / 2 * this.h;
@@ -1264,24 +1502,23 @@ export class Diorama {
     return { minX, maxX, minY, maxY };
   }
 
-  /** Find the distance (and centring) at which the whole sheet fits the view rect. */
-  _refit(snap) {
-    if (!this.w || !this.bounds) return;
-    const r = this.rect;
-    const m = Math.min(r.w, r.h) * 0.015;
-    const target = this.target.clone();
-    let dist = this.fitDist;
+  /** Distance and target at which `pts` fit the rect r (shrunk by `fill`). */
+  _fitPoints(pts, fill, start) {
+    const r0 = this.rect;
+    const r = { x: r0.x + r0.w * (1 - fill) / 2, y: r0.y + r0.h * (1 - fill) / 2, w: r0.w * fill, h: r0.h * fill };
+    const target = start.clone();
+    let dist = 30;
     for (let it = 0; it < 4; it++) {
-      let lo = 4;
+      let lo = 2;
       let hi = 160;
       for (let k = 0; k < 24; k++) {
         const mid = (lo + hi) / 2;
-        const b = this._projectBox(this.az, this.el, mid, target);
-        const fits = b.minX >= r.x + m && b.maxX <= r.x + r.w - m && b.minY >= r.y + m && b.maxY <= r.y + r.h - m;
+        const b = this._projectBox(this.az, this.el, mid, target, pts);
+        const fits = b.minX >= r.x && b.maxX <= r.x + r.w && b.minY >= r.y && b.maxY <= r.y + r.h;
         if (fits) hi = mid; else lo = mid;
       }
       dist = hi;
-      const b = this._projectBox(this.az, this.el, dist, target);
+      const b = this._projectBox(this.az, this.el, dist, target, pts);
       const dx = (b.minX + b.maxX) / 2 - (r.x + r.w / 2);
       const dy = (b.minY + b.maxY) / 2 - (r.y + r.h / 2);
       const upp = (2 * dist * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2))) / this.h;
@@ -1290,16 +1527,27 @@ export class Diorama {
       target.addScaledVector(right, dx * upp);
       target.addScaledVector(fwd, (-dy * upp) / Math.max(0.3, Math.sin(this.el)));
     }
-    this.fitDist = dist;
+    return { dist, target };
+  }
+
+  /** Frame the explored footprint at ~70% of the view; the whole sheet sets the dolly's far limit. */
+  _refit(snap) {
+    if (!this.w || !this.bounds) return;
+    const whole = this._fitPoints(this.bounds, 0.97, this.target);
+    this.sheetDist = whole.dist;
+    const foc = this.focusBounds ? this._fitPoints(this.focusBounds, 0.84, whole.target) : whole;
+    this.fitDist = Math.min(foc.dist, whole.dist);
     this._fitted = true;
-    this.fitTarget = target;
-    this.target.copy(target);
+    this.fitTarget = foc.target;
+    this.target.copy(foc.target);
     // leaning in (zoom > 1) drifts the view toward the party
     if (this.party && this.zoomLevel > 1) {
       const k = Math.min(1, (this.zoomLevel - 1) / 1.2);
       this.target.lerp(new THREE.Vector3(this.party.x + 0.5, 0, this.party.y + 0.5), k);
     }
-    this.dist = dist / this.zoomLevel;
+    // zoom < 1 backs off toward the whole sheet
+    if (this.zoomLevel < 1) this.target.lerp(whole.target, Math.min(1, (1 - this.zoomLevel) / 0.4));
+    this.dist = this.fitDist / this.zoomLevel;
     if (snap) {
       this.cur = { az: this.az, el: this.el, dist: this.dist, target: this.target.clone() };
     }
@@ -1326,7 +1574,7 @@ export class Diorama {
   }
 
   dolly(f) {
-    this.dist = Math.max(this.fitDist * 0.22, Math.min(this.fitDist * 1.12, this.dist * f));
+    this.dist = Math.max(this.fitDist * 0.3, Math.min(Math.max(this.fitDist, this.sheetDist ?? this.fitDist) * 1.1, this.dist * f));
     this.zoomLevel = this.fitDist / this.dist;
   }
 

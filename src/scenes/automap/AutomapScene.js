@@ -5,6 +5,7 @@ import { getMap, hasMap } from '../../data/maps/index.js';
 import { EDGE, CELL, DIRS } from '../../data/maps/MapGrid.js';
 import { SHEET, buildBlockSheet, eventMarker, MARKER_LABELS } from './BlockSheet.js';
 import { WORLD, LAYOUT, buildWorldSheet } from './WorldSheet.js';
+import { inPoly } from './worldcity.js';
 import { SheetView } from './SheetView.js';
 import { drawPartyArrow, partyConeCanvas, drawPin, drawMarker, PIN_KINDS, PIN_ORDER, glyphDataURL } from './glyphs.js';
 import { SERIF, wrapText, haloText } from './ornaments.js';
@@ -42,7 +43,11 @@ export default class AutomapScene extends Scene {
     this.homeId = hasMap(params.map ?? '') ? params.map : game.location.map;
     const demo = debug.active && params.explored === 'demo';
     if (demo) applyDemoExploration(game, this.homeId);
-    this.reveal = params.reveal ? params.reveal === '1' : debug.active && !demo;
+    // fog of war: real explored state unless reveal=1 is asked for. A debug automap
+    // opened directly (no explored= history) shows everything; one pushed from
+    // explore always uses what the party has actually seen (honouring explore's reveal=).
+    const rv = params.reveal ?? (this.overlay ? debug.raw?.reveal : undefined);
+    this.reveal = rv !== undefined ? rv === '1' : debug.active && !demo && !this.overlay;
     if (hasMap(game.location.map)) {
       const m = getMap(game.location.map);
       if (m.inBounds(game.location.x, game.location.y)) game.markExplored(m.id, game.location.x, game.location.y, m.w);
@@ -187,11 +192,13 @@ export default class AutomapScene extends Scene {
     const { game } = this.ctx;
     const map = getMap(id);
     const reveal = this.reveal;
+    // k=3: the ink stays crisp at 2.6x and beyond, and the diorama shares this sheet
     const sheet = buildBlockSheet(map, {
-      k: 2,
+      k: 3,
       seen: (x, y) => reveal || game.isExplored(id, x, y, map.w),
       secrets: foundSecrets(game, id),
       spent: game.spentEvents,
+      party: id === game.location.map ? { x: game.location.x, y: game.location.y } : null,
     });
     this.sheets.set(id, sheet);
     return sheet;
@@ -216,10 +223,11 @@ export default class AutomapScene extends Scene {
     if (!this.world) {
       this.world = buildWorldSheet({
         k: 2,
-        seenFn: (m) => (x, y) => this.reveal || game.isExplored(m.id, x, y, m.w),
+        // New Phlan, the Company's base, is charted from the start (the council's own plan)
+        seenFn: (m) => (m.id === 'phlan_civilized' ? () => true : (x, y) => this.reveal || game.isExplored(m.id, x, y, m.w)),
         secretsFn: (id) => foundSecrets(game, id),
         spent: game.spentEvents,
-        known: (id) => this.reveal || id === game.location.map || exploredStats(game, getMap(id)).seen > 0,
+        known: (id) => this.reveal || id === 'phlan_civilized' || id === game.location.map || exploredStats(game, getMap(id)).seen > 0,
         here: game.location.map,
       });
     }
@@ -263,7 +271,7 @@ export default class AutomapScene extends Scene {
 
   _blockAtScreen(sx, sy) {
     const [ux, uy] = this.sv.screenToUnits(sx, sy);
-    return this.world.blocks.find((b) => (b.round ? Math.hypot(ux - b.cx, uy - b.cy) <= b.r : ux >= b.x && uy >= b.y && ux <= b.x + b.s && uy <= b.y + b.s)) ?? null;
+    return this.world.blocks.find((b) => (b.round ? Math.hypot(ux - b.cx, uy - b.cy) <= b.r : b.poly ? inPoly(b.poly, ux, uy) : ux >= b.x && uy >= b.y && ux <= b.x + b.s && uy <= b.y + b.s)) ?? null;
   }
 
   _centreOnParty(zoom = this.sv.tZoom, immediate = false) {
@@ -295,18 +303,14 @@ export default class AutomapScene extends Scene {
     const { game } = this.ctx;
     const id = this.map.id;
     const reveal = this.reveal;
-    // the tabletop view gets its own, finer copy of the sheet so the inked plan stays crisp when tilted
-    this._dioSheets ??= new Map();
-    let fine = this._dioSheets.get(id);
-    if (!fine || fine.src !== this.sheet) {
-      fine = { src: this.sheet, sheet: buildBlockSheet(this.map, { k: 3, seen: (x, y) => reveal || game.isExplored(id, x, y, this.map.w), secrets: foundSecrets(game, id), spent: game.spentEvents }) };
-      this._dioSheets.set(id, fine);
-    }
+    // the tabletop view lays the same (k=3) sheet on the desk
+    const fine = { sheet: this.sheet };
     this.dio.build(this.map, fine.sheet, {
       seen: (x, y) => reveal || game.isExplored(id, x, y, this.map.w),
       secrets: foundSecrets(game, id),
       party: this.isHome ? { ...game.location } : null,
       notes: notesFor(game, id),
+      spent: game.spentEvents,
       zoom,
     });
     this.dio.resize(window.innerWidth, window.innerHeight, this.viewRect);
@@ -348,9 +352,26 @@ export default class AutomapScene extends Scene {
     else if (code === 'pad:9' && this.view === 'block') this._pinAt(this.hover ?? (this.isHome ? { ...this.ctx.game.location } : { x: 7, y: 7 }));
   }
 
+  /** Keyboard / bar zoom: about the hovered square, else the party, else the sheet centre. */
   _zoom(f) {
-    if (this.mode === 'diorama' && this.dio) this.dio.dolly(1 / f);
-    else this.sv.zoomCenter(f);
+    if (this.mode === 'diorama' && this.dio) { this.dio.dolly(1 / f); return; }
+    if (this.view === 'block') {
+      const c = this.hover ?? (this.isHome ? this.ctx.game.location : null);
+      if (c) {
+        const cs = SHEET.MS / this.map.w;
+        const [sx, sy] = this.sv.unitsToScreen(SHEET.MX + (c.x + 0.5) * cs, SHEET.MY + (c.y + 0.5) * cs);
+        const r = this.viewRect;
+        if (sx >= r.x && sy >= r.y && sx <= r.x + r.w && sy <= r.y + r.h) {
+          // pull the anchor gently toward the middle so it stays in view as the sheet grows
+          const ax = sx + (r.x + r.w / 2 - sx) * (f > 1 ? 0.35 : 0);
+          const ay = sy + (r.y + r.h / 2 - sy) * (f > 1 ? 0.35 : 0);
+          this.sv.zoomAt(f, sx, sy);
+          if (f > 1) this.sv.panBy(ax - sx, ay - sy);
+          return;
+        }
+      }
+    }
+    this.sv.zoomCenter(f);
   }
 
   _resetHover() {
@@ -749,7 +770,7 @@ export default class AutomapScene extends Scene {
     g.restore();
     for (const [id, [cx, cy, shape]] of Object.entries(LAYOUT)) {
       if (!hasMap(id)) continue;
-      const known = this.reveal || id === game.location.map || exploredStats(game, getMap(id)).seen > 0;
+      const known = this.reveal || id === 'phlan_civilized' || id === game.location.map || exploredStats(game, getMap(id)).seen > 0;
       const here = id === this.map.id;
       const r = (shape === 'round' ? 50 : 66) * k;
       const X = sx(cx);
@@ -1053,6 +1074,10 @@ export default class AutomapScene extends Scene {
         zx1 = X(Math.max(...home.map((c) => c[0])) + 1);
         zy1 = Y(Math.max(...home.map((c) => c[1])) + 1);
       }
+      // a name whose district lies mostly off the view is not dragged in to float
+      const zcx = (zx0 + zx1) / 2;
+      const zcy = (zy0 + zy1) / 2;
+      if (zcx < vx0 - cs * 0.3 || zcx > vx1 + cs * 0.3 || zcy < vy0 - cs * 0.3 || zcy > vy1 + cs * 0.3) continue;
       const zw = (zx1 - zx0) / cs;
       const base0 = Math.min(cs * 0.42, Math.max(cs * 0.3, (zw * cs * 0.92) / 7));
       const fs0 = Math.max(base0 * zoom ** -0.42, 17 / this.sv.scaleAt());
@@ -1115,15 +1140,37 @@ export default class AutomapScene extends Scene {
       g.lineWidth = 3;
       g.shadowColor = 'rgba(255,210,120,0.8)';
       g.shadowBlur = 12 * s;
-      if (b.round) { g.beginPath(); g.arc(b.cx, b.cy, b.r + 4, 0, Math.PI * 2); g.stroke(); } else g.strokeRect(b.x - 4, b.y - 4, b.s + 8, b.s + 8);
+      if (b.round) { g.beginPath(); g.arc(b.cx, b.cy, b.r + 4, 0, Math.PI * 2); g.stroke(); } else if (b.poly) {
+        g.beginPath();
+        b.poly.forEach(([px, py], i) => (i ? g.lineTo(px, py) : g.moveTo(px, py)));
+        g.closePath();
+        g.stroke();
+      } else g.strokeRect(b.x - 4, b.y - 4, b.s + 8, b.s + 8);
       g.restore();
     }
     const here = this.world.blocks.find((q) => q.id === game.location.map);
     if (here) {
       const { x, y, dir } = game.location;
       const [px, py] = this.world.cellToUnits(here, x + 0.5, y + 0.5);
-      const pulse = 0.55 + 0.45 * Math.sin(t * 3.2);
-      drawPartyArrow(g, px, py, 30, DIR_ANGLE[dir], { glow: pulse });
+      const pulse = this.ctx.clock.frozen ? 0.6 : 0.55 + 0.45 * Math.sin(t * 3.2);
+      // you are here: a vermilion survey ring and a large arrow, found at a glance
+      g.save();
+      const halo = g.createRadialGradient(px, py, 4, px, py, 46);
+      halo.addColorStop(0, 'rgba(255,236,190,0.75)');
+      halo.addColorStop(0.6, 'rgba(232,150,90,0.25)');
+      halo.addColorStop(1, 'rgba(200,80,40,0)');
+      g.fillStyle = halo;
+      g.beginPath(); g.arc(px, py, 46, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = 'rgba(168,40,24,0.9)';
+      g.lineWidth = 2.2;
+      g.setLineDash([6, 4]);
+      g.beginPath(); g.arc(px, py, 30, 0, Math.PI * 2); g.stroke();
+      g.setLineDash([]);
+      g.strokeStyle = 'rgba(201,160,69,0.95)';
+      g.lineWidth = 1.2;
+      g.beginPath(); g.arc(px, py, 34, 0, Math.PI * 2); g.stroke();
+      g.restore();
+      drawPartyArrow(g, px, py, 44, DIR_ANGLE[dir], { glow: pulse });
     }
   }
 

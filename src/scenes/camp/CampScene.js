@@ -12,7 +12,7 @@ import { SAVE_SLOTS } from '../../core/SaveManager.js';
 import { buildCamp } from './CampBackdrop.js';
 import { useRenderer } from '../../ui/components/Miniature.js';
 import { UINav } from '../../ui/components/uiNav.js';
-import { setPortraitSync } from '../../ui/components/lazyPortrait.js';
+import { setPortraitSync, portraitsPending } from '../../ui/components/lazyPortrait.js';
 import { warmPortraits } from '../../ui/components/portrait3d.js';
 
 const CURES = ['cureSeriousWounds', 'cureLightWounds'];
@@ -133,7 +133,7 @@ export default class CampScene extends Scene {
       h('div.pc-kv', [
         ...row('Time', `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`, 'Resting advances the clock. Spells are memorized after sleep.'),
         ...row('Day', String(day)),
-        ...row('Memorize', memo ? fmtMinutes(memo) : 'done', 'Rest the casters need to memorize their chosen spells (1e: sleep, then 15 minutes per spell level).'),
+        ...row('Memorize', this._memoText(memo), 'Rest the casters need to memorize their chosen spells (1e: sleep, then 15 minutes per spell level).'),
         ...row('Wounded', wounded.length ? `${wounded.length} of ${party.length}` : 'none', 'Natural rest heals 1 hp per day; FIX lets clerics heal the party.'),
         ...row('Full health', heal > memo ? `${Math.ceil(heal / MINUTES_PER_DAY)} day${Math.ceil(heal / MINUTES_PER_DAY) === 1 ? '' : 's'}` : 'now'),
         ...row('Cures', clerics.length ? `${clerics.reduce((t, c) => t + CURES.reduce((u, id) => u + (c.spells?.memorized?.cleric ?? []).filter((x) => x === id).length, 0), 0)} memorized` : 'none memorized', 'Cure spells memorized by the party\'s clerics, ready for FIX. Choose cures in MAGIC and rest to memorize them.'),
@@ -338,7 +338,18 @@ export default class CampScene extends Scene {
     if (delta !== 0 || b.demo != null) this._refreshClock();
   }
 
-  /** Header + TIME row only (cheap; called every rest frame). */
+  /** The MEMORIZE row: while resting it counts down with the rest (also in the frozen gallery state). */
+  _memoText(memo = partyMemorizationTime(this.ctx.game.party)) {
+    const b = this.busy;
+    // A live rest applies study as it goes (memo already shrinks); the demo state only shows it.
+    const left = b && b.demo != null ? Math.max(0, memo - b.applied) : memo;
+    if (!b) return memo ? fmtMinutes(memo) : 'done';
+    const total = b.demo != null ? memo : left + b.applied;
+    const pct = total ? Math.round((1 - left / total) * 100) : 100;
+    return left ? `${fmtMinutes(left)} left · ${pct}%` : 'done';
+  }
+
+  /** Header + TIME and MEMORIZE rows only (cheap; called every rest frame). */
   _refreshClock() {
     const b = this.busy;
     const mins = b ? b.from + b.applied : this.ctx.game.minutes;
@@ -347,8 +358,9 @@ export default class CampScene extends Scene {
     const loc = this.ctx.game.location?.map;
     const where = loc && hasMap(loc) ? getMap(loc).name ?? loc : 'Phlan';
     if (this.topSub) this.topSub.textContent = `${where} · Day ${Math.floor(mins / MINUTES_PER_DAY) + 1}, ${hh}:${mm}`;
-    const t = this.statusBody?.querySelector('.pc-kv > .v');
-    if (t) t.textContent = `${hh}:${mm}`;
+    const vals = this.statusBody?.querySelectorAll('.pc-kv > .v');
+    if (vals?.[0]) vals[0].textContent = `${hh}:${mm}`;
+    if (vals?.[2] && b) vals[2].textContent = this._memoText();
   }
 
   interruptRest() {
@@ -484,12 +496,28 @@ export default class CampScene extends Scene {
     this.camera.updateProjectionMatrix();
   }
 
-  /** Behind a full-screen VIEW the campfire is only glimpsed: redraw it twice a second, not every frame. */
+  /**
+   * Behind a full-screen VIEW the campfire is only glimpsed: redraw it twice a second, not every
+   * frame. The same while a dialog is up or portraits are still being painted, and whenever a
+   * frame has proved expensive (software GL), so the 3D pass gives the panels the frame budget.
+   */
   render() {
     const t = this.ctx.clock.time;
     if (this.view && this._lastRender != null && Math.abs(t - this._lastRender) < 0.5) return;
+    if (!this.ctx.debug?.frozen && this._lastWall != null) {
+      const now = performance.now();
+      const modal = this.ctx.ui.layers.modal.children.length > 0;
+      const gap = modal || portraitsPending() ? 500 : this._slow ? 120 : 0;
+      if (gap && now - this._lastWall < gap) return;
+    }
     this._lastRender = t;
+    const now = performance.now();
+    // Three drawn frames in a row more than ~110 ms apart mark a slow GPU (software GL): cap the
+    // campfire at ~8 fps from then on, so the DOM panels and dialogs stay responsive.
+    if (this._lastWall != null) this._slowRun = now - this._lastWall > 110 ? (this._slowRun ?? 0) + 1 : 0;
+    this._slow = this._slow || (this._slowRun ?? 0) >= 3;
     super.render();
+    this._lastWall = now;
   }
 
   update(dt) {

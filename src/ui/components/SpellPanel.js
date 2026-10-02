@@ -16,6 +16,14 @@ const CASTERS = ['cleric', 'magicUser'];
 const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
 
 /** Casting classes a character can currently use. */
+/** Compact class line for narrow lists: Fighter, Cleric, Magic-User; F/MU, C/MU/T for multi-classes. */
+function shortClass(spec) {
+  const parts = String(spec).split('/');
+  if (parts.length === 1) return classSpecName(spec);
+  const AB = { fighter: 'F', cleric: 'C', magicUser: 'MU', thief: 'T' };
+  return parts.map((p) => AB[p] ?? p[0].toUpperCase()).join('/');
+}
+
 export function castingClassesOf(ch) {
   return activeClasses(ch).filter((c) => CASTERS.includes(c) && (slotsFor(ch, c).some((n) => n > 0)));
 }
@@ -89,7 +97,7 @@ export class SpellPanel {
           onclick: () => { if (cc.length || this.o.lockMember) { this.setMember(i); this.o.onSelectMember?.(i); } },
         }, [
           miniPortrait(c),
-          h('div', [h('div.nm', [c.name]), h('div.cl', [cc.length ? `${classSpecName(c.classSpec)} · ${mem} ready` : 'no spells'])]),
+          h('div', [h('div.nm', [c.name]), h('div.cl', { dataset: { tip: classSpecName(c.classSpec) } }, [cc.length ? `${shortClass(c.classSpec)} · ${mem} ready` : 'no spells'])]),
         ]);
       })),
       h('div', { style: { flex: '1' } }),

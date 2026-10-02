@@ -418,20 +418,24 @@ export function secretDoor(g, ax, ay, bx, by, { width = 8, cs = 50, side = [0, -
     g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
   }
   g.setLineDash([]);
-  const mx = (ax + bx) / 2 + side[0] * cs * 0.3;
-  const my = (ay + by) / 2 + side[1] * cs * 0.3;
-  const fs = Math.round(cs * 0.6);
+  // the rubric S sits right on the wall line, about the size of a door leaf
+  const mx = (ax + bx) / 2 + side[0] * 0;
+  const my = (ay + by) / 2 + side[1] * 0;
+  const fs = Math.max(7, Math.round(cs * 0.3));
+  // a small knocked-out cartouche in the wall so the letter reads
+  g.fillStyle = 'rgba(242,230,200,0.96)';
+  g.beginPath(); g.ellipse(mx, my, fs * 0.36, fs * 0.46, 0, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = 'rgba(43,26,13,0.75)';
+  g.lineWidth = 0.6;
+  g.stroke();
   g.font = `italic bold ${fs}px ${SERIF}`;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.lineJoin = 'round';
-  g.strokeStyle = 'rgba(244,232,204,0.85)';
-  g.lineWidth = fs * 0.16;
-  g.strokeText('S', mx, my);
   g.fillStyle = INK.vermilion;
-  g.fillText('S', mx, my);
-  g.strokeStyle = 'rgba(70,14,8,0.8)';
-  g.lineWidth = 0.6;
-  g.strokeText('S', mx, my);
+  g.fillText('S', mx, my + fs * 0.04);
+  g.strokeStyle = 'rgba(70,14,8,0.85)';
+  g.lineWidth = 0.45;
+  g.strokeText('S', mx, my + fs * 0.04);
   g.restore();
 }

@@ -15,6 +15,7 @@ export const PORTRAIT_H = 375;
 
 import { SKIN_TONES, RACE_SKINS, HAIR_COLORS, EYE_COLORS, CLOTH_COLORS, HEADS, BODIES, defaultLook, rngFrom, hashNum, appearanceKey } from './lookData.js';
 import { renderPortrait3D, renderPortrait3DAsync } from './portrait3d.js';
+import { storedPortrait, storePortrait } from './portraitStore.js';
 
 export { SKIN_TONES, RACE_SKINS, HAIR_COLORS, EYE_COLORS, CLOTH_COLORS, HEADS, BODIES, defaultLook };
 
@@ -1510,6 +1511,11 @@ export function portraitKey(ch, scale = 1, crop = 'head') {
 export function hasPortrait(ch, scale = 1, crop = 'head') {
   return urlCache.has(portraitKey(ch, scale, crop));
 }
+function remember(key, u, persist = true) {
+  if (urlCache.size > 160) urlCache.delete(urlCache.keys().next().value);
+  urlCache.set(key, u);
+  if (persist) storePortrait(key, u);
+}
 /**
  * PNG data URL of a character's portrait (cached).
  * @param {object} ch  character or {race, gender, classSpec, look}
@@ -1522,15 +1528,38 @@ export function portraitURL(ch, scale = 1, o = {}) {
   let u = urlCache.get(key);
   if (!u) {
     u = paintPortrait(ch, { scale, crop }).toDataURL('image/png');
-    if (urlCache.size > 160) urlCache.delete(urlCache.keys().next().value);
-    urlCache.set(key, u);
+    remember(key, u);
   }
   return u;
 }
 
+/** A larger painting of the same face already in memory, scaled down (no GPU work at all). */
+async function fromLarger(ch, scale, crop) {
+  const base = `${appearanceKey(ch)}|`;
+  let best = null;
+  let bestScale = Infinity;
+  for (const [key, u] of urlCache) {
+    if (!key.startsWith(base) || !key.endsWith(`|${crop}`)) continue;
+    const s = Number(key.slice(base.length).split('|')[0]);
+    if (s > scale && s < bestScale) { best = u; bestScale = s; }
+  }
+  if (!best) return null;
+  const img = new Image();
+  img.src = best;
+  try { await img.decode(); } catch { return null; }
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(PORTRAIT_W * scale));
+  c.height = Math.max(1, Math.round(PORTRAIT_H * scale));
+  const g = c.getContext('2d');
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(img, 0, 0, c.width, c.height);
+  return c.toDataURL('image/png');
+}
+
 const pending = new Map();
 /**
- * portraitURL without long main-thread stalls: painted in bands across ticks (cached alike).
+ * portraitURL without long main-thread stalls: memory, then a larger copy scaled down, then the
+ * IndexedDB store, and only then painted in bands across ticks (cached alike).
  * @returns {Promise<string>}
  */
 export function portraitURLAsync(ch, scale = 1, o = {}) {
@@ -1538,12 +1567,16 @@ export function portraitURLAsync(ch, scale = 1, o = {}) {
   const key = portraitKey(ch, scale, crop);
   if (urlCache.has(key)) return Promise.resolve(urlCache.get(key));
   if (pending.has(key)) return pending.get(key);
-  const p = renderPortrait3DAsync(ch, { scale, crop }).then((c) => {
+  const p = (async () => {
+    const stored = await storedPortrait(key);
+    if (stored) { remember(key, stored, false); return stored; }
+    const small = await fromLarger(ch, scale, crop);
+    if (small) { remember(key, small); return small; }
+    const c = await renderPortrait3DAsync(ch, { scale, crop });
     const u = (c ?? paintPortrait2D(ch, { scale, crop })).toDataURL('image/png');
-    if (urlCache.size > 160) urlCache.delete(urlCache.keys().next().value);
-    urlCache.set(key, u);
+    remember(key, u);
     return u;
-  }).finally(() => pending.delete(key));
+  })().finally(() => pending.delete(key));
   pending.set(key, p);
   return p;
 }

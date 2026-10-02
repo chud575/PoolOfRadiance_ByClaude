@@ -18,6 +18,7 @@ import { buildMiniature, miniatureEnvironment, useRenderer } from '../../ui/comp
 import { warmPortraits } from '../../ui/components/portrait3d.js';
 import { UINav } from '../../ui/components/uiNav.js';
 import { portraitImg, setPortraitSync } from '../../ui/components/lazyPortrait.js';
+import { bodyShowsArmor } from '../../ui/components/lookData.js';
 import { ITEMS } from '../../data/items.js';
 import { itemName } from '../../rules/items.js';
 import { itemIconURL, iconFor } from '../../ui/components/itemIcons.js';
@@ -90,6 +91,8 @@ export default class CreateScene extends Scene {
       if (raw.gender) this.draft.gender = raw.gender;
       if (raw.cls) this.draft.classSpec = raw.cls;
       for (const k of ['head', 'body', 'cloth', 'hair', 'skin']) if (raw[k] != null) this.draft.look[k] = Number(raw[k]);
+      // A name that fits the race and sex (the first of the list: deterministic for the gallery).
+      if (raw.race || raw.gender) this.draft.name = raw.name ?? (NAMES[this.draft.race]?.[this.draft.gender] ?? NAMES.human[this.draft.gender])[0];
       this.roll();
     }
     this.show(step);
@@ -732,8 +735,18 @@ export default class CreateScene extends Scene {
         h('div.cc-row', [h('span.k', ['Eyes']), sw(EYE_COLORS, 'eyes')]),
         h('div.cc-row', [h('span.k', ['Colours']), sw(CLOTH_COLORS.map((x) => x[1]), 'cloth')]),
       ]),
-      h('p.pc-rest-note', { style: { marginTop: '0.6em' } }, [CREATE_TEXT.icon]),
+      h('p.pc-rest-note', { style: { marginTop: '0.6em' } }, [this._kitNote(look)]),
     ]));
+  }
+
+  /** The plinth note: says plainly when the chosen likeness body differs from the starting kit. */
+  _kitNote(look) {
+    const d = this.draft;
+    const armor = kitFor(d.classSpec).map((id) => ITEMS[id]).find((it) => it?.type === 'armor');
+    const tmpl = BODIES[look.body % BODIES.length];
+    if (bodyShowsArmor(tmpl.id, armor?.armorGroup ?? null)) return CREATE_TEXT.icon;
+    const kit = armor ? (armor.name ?? 'armour').toLowerCase() : 'no armour';
+    return `The likeness shows ${tmpl.name.toLowerCase()}, but your starting kit is ${kit}: on the battlefield the miniature wears what you have readied, so it will appear in ${armor ? kit : 'plain clothes'} until you buy and ready better.`;
   }
 
   _mainName(b) {
@@ -803,9 +816,9 @@ export default class CreateScene extends Scene {
       h('div.cc-sumtiles', [
         tile(front, 'Fighters', 'Characters with the fighter class: the front line.'),
         tile(divine, 'Clerics', 'Divine casters: healing and protection.'),
-        tile(arcane, 'Magic-users', 'Arcane casters: Sleep, Magic Missile and worse.'),
+        tile(arcane, 'Mages', 'Magic-users, the arcane casters: Sleep, Magic Missile and worse.'),
         tile(thieves, 'Thieves', 'Locks, traps and backstabs.'),
-        tile(hp, 'Total HP', 'The party\'s combined hit points.'),
+        tile(hp, 'HP', 'The party\'s combined hit points.'),
         tile(bestAC, 'Best AC', 'Lower is better.'),
         tile(gold.toLocaleString('en-US'), 'Gold', 'Pooled starting gold for arms and armour.'),
       ]),

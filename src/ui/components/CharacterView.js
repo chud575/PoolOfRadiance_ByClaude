@@ -131,6 +131,8 @@ export function openCharacterView(ctx, o = {}) {
     else if (tab === 'items' && panel && (k === 'u' || k === 'U')) panel.use();
     else if (tab === 'items' && panel && (k === 't' || k === 'T')) panel.trade();
     else if (tab === 'items' && panel && (k === 'd' || k === 'D' || k === 'Delete')) panel.drop();
+    else if (tab === 'items' && panel && (k === 'h' || k === 'H')) panel.halve();
+    else if (tab === 'items' && panel && (k === 'j' || k === 'J')) panel.join();
     else used = false;
     if (used) e.preventDefault();
     // The view is modal: nothing underneath (explore movement, camp hotkeys) sees the keys.

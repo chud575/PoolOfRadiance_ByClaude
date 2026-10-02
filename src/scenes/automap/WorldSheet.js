@@ -3,12 +3,11 @@ import { getMap, hasMap } from '../../data/maps/index.js';
 import { TRAVEL } from '../../data/travel.js';
 import { INK, makeCanvas, makeParchment, inkLine, quillStroke, lineShade, featherMask, mottleTile, prng, wobblePoints } from './ink.js';
 import { regions, washRegion, hatchBand, deckleMask, boundaryPath } from './paint.js';
-import { paintSurveyFog } from './fog.js';
 import { drawMarker } from './glyphs.js';
 import { analyseMap, collectEdges, mergeRuns } from './BlockSheet.js';
 import { SERIF, drawCompassRose, drawCartouche, drawIlluminatedInitial, drawFlourish, haloText, goldGradient, fitFont } from './ornaments.js';
 import { fbm } from '../../render/textures/noise.js';
-import { drawOldCity, drawCityWall, drawHarbour } from './worldcity.js';
+import { drawOldCity, drawCityWall, drawHarbour, inPoly } from './worldcity.js';
 
 /**
  * Overview of Phlan: every block drawn as its own miniature survey (explored
@@ -66,6 +65,152 @@ const ROUTES = {
   well_gate: [[520, null], [520, 420], [700, 420], [700, null]],
 };
 
+// ---------------- wards: the districts as the old streets cut them ----------------
+// A lattice of street junctions inside the wall, each nudged off the grid so the
+// streets run at angles; every block's district is the cell of that lattice, inset
+// by half a street, with a bend in each side and the corners cut back at the plazas.
+const LX = [150, 340, 520, 700, 906];
+const LY = [52, 240, 420, 600, 780];
+const WALLPTS = [[150, 250], [160, 60], [700, 48], [890, 50], [905, 250], [915, 470], [900, 780], [140, 780], [150, 250]];
+const PLAZAS = [[2, 3], [3, 2], [1, 2]];
+const hashW = (a, b, sd) => {
+  const v = Math.sin(a * 127.1 + b * 311.7 + sd * 74.7) * 43758.5453;
+  return v - Math.floor(v);
+};
+function latticePt(i, j) {
+  let x = LX[i];
+  let y = LY[j];
+  if (i > 0 && i < LX.length - 1) x += (hashW(i, j, 1) - 0.5) * 66;
+  if (j > 0 && j < LY.length - 1) y += (hashW(i, j, 2) - 0.5) * 52;
+  return [x, y];
+}
+/** Inset a closed polygon edge by edge (d per edge), intersecting neighbouring offset lines. */
+function insetPoly(pts, ds) {
+  const n = pts.length;
+  let area = 0;
+  for (let i = 0; i < n; i++) { const [ax, ay] = pts[i]; const [bx, by] = pts[(i + 1) % n]; area += ax * by - bx * ay; }
+  const sgn = area > 0 ? 1 : -1;
+  const lines = pts.map((a, i) => {
+    const b = pts[(i + 1) % n];
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const L = Math.hypot(dx, dy) || 1;
+    // inward normal for this winding
+    const nx = (-dy / L) * sgn;
+    const ny = (dx / L) * sgn;
+    const d = ds[i];
+    return [a[0] + nx * d, a[1] + ny * d, dx, dy];
+  });
+  return lines.map((l1, i) => {
+    const l0 = lines[(i - 1 + n) % n];
+    const den = l0[2] * l1[3] - l0[3] * l1[2];
+    if (Math.abs(den) < 1e-6) return [l1[0], l1[1]];
+    const t = ((l1[0] - l0[0]) * l1[3] - (l1[1] - l0[1]) * l1[2]) / den;
+    return [l0[0] + l0[2] * t, l0[1] + l0[3] * t];
+  });
+}
+/** The district polygon of lattice cell (i, j). */
+function wardPoly(i, j) {
+  const c = [latticePt(i, j), latticePt(i + 1, j), latticePt(i + 1, j + 1), latticePt(i, j + 1)];
+  const wallSide = [j === 0, i + 1 === LX.length - 1, j + 1 === LY.length - 1, i === 0];
+  // edge keys shared with the neighbour, so a street bends the same way on both kerbs
+  const keys = [`h${i},${j}`, `v${i + 1},${j}`, `h${i},${j + 1}`, `v${i},${j}`];
+  const pts = [];
+  const ds = [];
+  for (let e = 0; e < 4; e++) {
+    const a = c[e];
+    const b = c[(e + 1) % 4];
+    const d = wallSide[e] ? 24 : 11;
+    pts.push(a);
+    ds.push(d);
+    if (!wallSide[e]) {
+      const kh = [...keys[e]].reduce((q, ch) => q * 31 + ch.charCodeAt(0), 3);
+      const bend = (hashW(kh, 7, 3) - 0.5) * 30;
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+      pts.push([(a[0] + b[0]) / 2 + ((b[1] - a[1]) / L) * bend, (a[1] + b[1]) / 2 - ((b[0] - a[0]) / L) * bend]);
+      ds.push(d);
+    }
+  }
+  let poly = insetPoly(pts, ds);
+  // cut the corners back where a plaza opens at the junction
+  const corners = [[i, j], [i + 1, j], [i + 1, j + 1], [i, j + 1]];
+  for (const [pi, pj] of PLAZAS) {
+    const ci = corners.findIndex(([a, b]) => a === pi && b === pj);
+    if (ci < 0) continue;
+    const [px, py] = latticePt(pi, pj);
+    const R = 40;
+    const out = [];
+    const nP = poly.length;
+    for (let q = 0; q < nP; q++) {
+      const v = poly[q];
+      if (Math.hypot(v[0] - px, v[1] - py) >= R) { out.push(v); continue; }
+      const prev = poly[(q - 1 + nP) % nP];
+      const next = poly[(q + 1) % nP];
+      const along = (from, to) => {
+        for (let t = 0; t <= 1; t += 0.02) {
+          const x = from[0] + (to[0] - from[0]) * t;
+          const y = from[1] + (to[1] - from[1]) * t;
+          if (Math.hypot(x - px, y - py) >= R) return [x, y];
+        }
+        return from;
+      };
+      const a0 = along(v, prev);
+      const a1 = along(v, next);
+      const t0 = Math.atan2(a0[1] - py, a0[0] - px);
+      let t1 = Math.atan2(a1[1] - py, a1[0] - px);
+      while (t1 - t0 > Math.PI) t1 -= Math.PI * 2;
+      while (t0 - t1 > Math.PI) t1 += Math.PI * 2;
+      for (let k2 = 0; k2 <= 5; k2++) {
+        const t = t0 + (t1 - t0) * (k2 / 5);
+        out.push([px + Math.cos(t) * R, py + Math.sin(t) * R]);
+      }
+    }
+    poly = out;
+  }
+  return poly;
+}
+const polyPath = (pts) => {
+  const p = new Path2D();
+  pts.forEach(([x, y], i) => (i ? p.lineTo(x, y) : p.moveTo(x, y)));
+  p.closePath();
+  return p;
+};
+/** Inside the ward, or within pad of its kerb. */
+function wardHit(poly, x, y, pad = 0) {
+  if (inPoly(poly, x, y)) return true;
+  if (!pad) return false;
+  for (let i = 0; i < poly.length; i++) {
+    const [ax, ay] = poly[i];
+    const [bx, by] = poly[(i + 1) % poly.length];
+    const dx = bx - ax;
+    const dy = by - ay;
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy || 1)));
+    if (Math.hypot(x - ax - dx * t, y - ay - dy * t) < pad) return true;
+  }
+  return false;
+}
+/** Street centre lines along the lattice (with each side's bend), as [x0,y0,x1,y1,w] runs. */
+function latticeStreets() {
+  const out = [];
+  for (let j = 0; j < LY.length; j++) for (let i = 0; i < LX.length; i++) {
+    const a = latticePt(i, j);
+    if (i + 1 < LX.length && j > 0 && j < LY.length - 1) { const b = latticePt(i + 1, j); out.push([a[0], a[1], b[0], b[1], 9]); }
+    if (j + 1 < LY.length && i > 0 && i < LX.length - 1) { const b = latticePt(i, j + 1); out.push([a[0], a[1], b[0], b[1], 9]); }
+  }
+  return out;
+}
+function polyArea(pts) {
+  let a = 0;
+  for (let i = 0; i < pts.length; i++) { const [x0, y0] = pts[i]; const [x1, y1] = pts[(i + 1) % pts.length]; a += x0 * y1 - x1 * y0; }
+  return Math.abs(a) / 2;
+}
+function polyCentroid(pts) {
+  let x = 0;
+  let y = 0;
+  for (const p of pts) { x += p[0]; y += p[1]; }
+  return [x / pts.length, y / pts.length];
+}
+
 /**
  * @param {{k?:number, seenFn:(m:any)=>(x:number,y:number)=>boolean, secretsFn:(id:string)=>Set<string>, spent:Record<string,boolean>, known:(id:string)=>boolean, here:string}} o
  */
@@ -83,10 +228,16 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
     const round = shape === 'round';
     const r = 64;
     const s = round ? r * Math.SQRT2 * 0.92 : S;
-    blocks.push({ id, cx, cy, round, r, s, x: cx - s / 2, y: cy - s / 2, known: known(id), rumour: RUMOURS[id] });
+    blocks.push({ id, cx, cy, round, r, s, x: cx - s / 2, y: cy - s / 2, rot: 0, known: known(id), rumour: RUMOURS[id] });
   }
   const byId = Object.fromEntries(blocks.map((b) => [b.id, b]));
-  const cellToUnits = (b, x, y) => [b.x + (x / 16) * b.s, b.y + (y / 16) * b.s];
+  const cellToUnits = (b, x, y) => {
+    const u = (x / 16 - 0.5) * b.s;
+    const v = (y / 16 - 0.5) * b.s;
+    const c = Math.cos(b.rot);
+    const sn = Math.sin(b.rot);
+    return [b.cx + u * c - v * sn, b.cy + u * sn + v * c];
+  };
 
   // ---------------- sea, coast, island, river ----------------
   const coastY = (x) => 800 + (fbm(x / 160, 3, { period: 64, octaves: 4, seed: 21 }) - 0.5) * 60 + Math.max(0, x - 950) * 0.05;
@@ -110,6 +261,44 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
     if (i === 0) isl.moveTo(px, py); else isl.lineTo(px, py);
   }
   isl.closePath();
+  // each block's district: a lattice ward inside the walls, a clearing in the woods,
+  // or the island itself; the block's plan is laid into it, turned with its streets
+  for (const b of blocks) {
+    if (b.round) continue;
+    let poly;
+    if (b.id === 'sokol_keep') {
+      poly = [];
+      for (let i = 0; i < 64; i++) poly.push(islandPt((i / 64) * Math.PI * 2, -22));
+    } else if (b.cx > 950) {
+      poly = [];
+      for (let i = 0; i < 40; i++) {
+        const a = (i / 40) * Math.PI * 2;
+        const q = 1 + (fbm(Math.cos(a) * 1.3 + 2, Math.sin(a) * 1.3 + 2, { period: 64, octaves: 3, seed: 31 }) - 0.5) * 0.4;
+        poly.push([b.cx + Math.cos(a) * 92 * q, b.cy + Math.sin(a) * 96 * q]);
+      }
+    } else {
+      const i = Math.round((b.cx - 250) / 180);
+      const j = Math.round((b.cy - 150) / 180);
+      poly = wardPoly(i, j);
+      const c0 = latticePt(i, j);
+      const c1 = latticePt(i + 1, j);
+      const c2 = latticePt(i + 1, j + 1);
+      const c3 = latticePt(i, j + 1);
+      const angT = Math.atan2(c1[1] - c0[1], c1[0] - c0[0]);
+      const angB = Math.atan2(c2[1] - c3[1], c2[0] - c3[0]);
+      b.rot = Math.max(-0.12, Math.min(0.12, (angT + angB) / 2));
+    }
+    b.poly = poly;
+    const [pcx, pcy] = polyCentroid(poly);
+    b.cx = pcx;
+    b.cy = pcy;
+    b.s = Math.sqrt(polyArea(poly)) * (b.id === 'sokol_keep' ? 0.82 : 1.02);
+    b.x = b.cx - b.s / 2;
+    b.y = b.cy - b.s / 2;
+    let maxY = -Infinity;
+    for (const p of poly) maxY = Math.max(maxY, p[1]);
+    b.labelY = maxY + 6;
+  }
   g.save();
   g.clip(sea);
   // sea wash: deeper toward the bottom, mottled
@@ -424,8 +613,34 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
   drawOldCity(g, {
     wall: wallPts,
     seed: 77,
-    blocked: (x, y) => inCartouche(x, y) || Math.abs(x - riverX(y)) < rw(y) + 14 || blocks.some((b) => (b.round ? Math.hypot(x - b.cx, y - b.cy) < b.r + 14 : (x > b.x - 9 && x < b.x + b.s + 9 && y > b.y - 9 && y < b.y + b.s + 9) || (Math.abs(x - b.cx) < 70 && y > b.y + b.s && y < b.y + b.s + 27))),
-    streets: [[340, 40, 340, 790], [520, 40, 520, 790], [700, 40, 700, 790], [140, 600, 920, 600], [140, 420, 920, 420], [140, 240, 920, 240], [610, 250, 610, 420, 5], [700, 510, 900, 510, 5]],
+    blocked: (x, y) => inCartouche(x, y) || Math.abs(x - riverX(y)) < rw(y) + 14 || PLAZAS.some(([pi, pj]) => { const [px, py] = latticePt(pi, pj); return Math.hypot(x - px, y - py) < 36; }) || blocks.some((b) => (b.round ? Math.hypot(x - b.cx, y - b.cy) < b.r + 14 : b.poly ? wardHit(b.poly, x, y, 6) : false)),
+    streets: latticeStreets(),
+    muted: true,
+  });
+  // plazas at the junctions: open paving, a fountain or a market cross
+  PLAZAS.forEach(([pi, pj], n) => {
+    const [px, py] = latticePt(pi, pj);
+    g.save();
+    g.globalCompositeOperation = 'multiply';
+    g.fillStyle = 'rgba(226,210,176,0.5)';
+    g.beginPath(); g.arc(px, py, 30, 0, Math.PI * 2); g.fill();
+    g.globalCompositeOperation = 'source-over';
+    g.strokeStyle = 'rgba(43,26,13,0.5)';
+    g.lineWidth = 0.6;
+    for (let rr2 = 8; rr2 < 30; rr2 += 4.5) { g.beginPath(); g.arc(px, py, rr2, 0, Math.PI * 2); g.stroke(); }
+    g.fillStyle = 'rgba(246,236,210,1)';
+    g.strokeStyle = INK.ink;
+    g.lineWidth = 1.1;
+    if (n % 2 === 0) {
+      g.beginPath(); g.arc(px, py, 7, 0, Math.PI * 2); g.fill(); g.stroke();
+      g.fillStyle = 'rgba(90,130,170,0.6)';
+      g.beginPath(); g.arc(px, py, 4.5, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.arc(px, py, 1.5, 0, Math.PI * 2); g.fillStyle = INK.ink; g.fill();
+    } else {
+      g.fillRect(px - 4, py - 4, 8, 8); g.strokeRect(px - 4, py - 4, 8, 8);
+      g.beginPath(); g.moveTo(px, py - 9); g.lineTo(px, py + 9); g.moveTo(px - 6, py - 3); g.lineTo(px + 6, py - 3); g.stroke();
+    }
+    g.restore();
   });
   g.save();
   g.translate(1158, 646);
@@ -476,13 +691,16 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
       g.lineWidth = 1.5;
       path(); g.stroke();
     } else {
-      if (dashed) g.setLineDash([5, 5]);
+      // a road through the old streets: a fine double kerb line, not a pipe
+      if (dashed) g.setLineDash([5, 4]);
       g.strokeStyle = color;
-      g.lineWidth = 9;
+      g.globalAlpha = 0.8;
+      g.lineWidth = 5.4;
       path(); g.stroke();
       g.setLineDash([]);
-      g.strokeStyle = dashed ? '#e8d9b6' : '#e9d6a8';
-      g.lineWidth = 6;
+      g.globalAlpha = 1;
+      g.strokeStyle = dashed ? 'rgba(232,217,182,0.95)' : 'rgba(236,220,182,0.98)';
+      g.lineWidth = 3.4;
       path(); g.stroke();
     }
     g.restore();
@@ -569,7 +787,7 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
   // labels (ribbons)
   for (const b of blocks) {
     const m = getMap(b.id);
-    const ly = b.round ? b.cy + b.r + 16 : b.y + b.s + 16;
+    const ly = b.round ? b.cy + b.r + 16 : b.labelY ?? b.y + b.s + 16;
     drawRibbon(g, b.cx, ly, b.known ? m.name : m.name, { known: b.known, here: b.id === here });
   }
 
@@ -696,7 +914,15 @@ function drawMiniBlock(g, b, m, { seen, secrets, known, here, k }) {
   const soft = featherMask(L, L, rects, { blur: cs * k * 0.4, grow: cs * k * 0.3 });
   const { mask, edge } = deckleMask(soft, { seed: seed + 2, scale: cs * k * 0.7, amount: 0.7 });
   // unknown remainder: the same hand-laid graphite as the block sheets, drawn finer for the plate
-  const fog = surveyPlateFog(s, L, mask, seed + 4);
+  // a clean vellum patch under the surveyed squares (the knowledge mask, tinted)
+  const clean = makeCanvas(L, L);
+  {
+    const cg = clean.getContext('2d');
+    cg.fillStyle = 'rgba(252,246,228,0.85)';
+    cg.fillRect(0, 0, L, L);
+    cg.globalCompositeOperation = 'destination-in';
+    cg.drawImage(mask, 0, 0);
+  }
   // washes
   const wash = makeCanvas(L, L);
   {
@@ -741,32 +967,91 @@ function drawMiniBlock(g, b, m, { seen, secrets, known, here, k }) {
     const runs = mergeRuns(segs.filter((q) => effective(q) !== EDGE.OPEN && effective(q) !== EDGE.ARCH && effective(q) !== EDGE.DOOR).map((q) => ({ ...q, x0: CX(q.x0), y0: CY(q.y0), x1: CX(q.x1), y1: CY(q.y1) })));
     for (const r of runs) quillStroke(ig, r.x0, r.y0, r.x1, r.y1, { width: r.style === 2 ? cs * 0.12 : cs * 0.16, amp: 0.12, seed: (r.x0 * 3 + r.y0 * 7) | 0, pool: 0.6, dry: r.style === 2 ? 1 : 0 });
   }
+  // the council's old plan of the district, faint, where the survey has not reached
+  const lay = councilPlan(m, s, k, seed, 0.85);
+  const ward = b.poly ? polyPath(b.poly) : null;
   g.save();
-  g.translate(x, y);
-  // the plate: a cleaner patch of paper, laid down slightly askew in shadow
-  g.fillStyle = 'rgba(60,35,12,0.16)';
-  g.fillRect(3, 4, s, s);
-  g.fillStyle = 'rgba(248,238,212,0.75)';
-  g.fillRect(0, 0, s, s);
-  g.drawImage(fog, 0, 0, s, s);
+  if (ward) {
+    // the district's ground: a cleaner, warmer wash than the old city round it
+    g.save();
+    g.globalCompositeOperation = 'multiply';
+    g.fillStyle = 'rgba(244,230,196,0.9)';
+    g.fill(ward);
+    g.restore();
+    g.fillStyle = 'rgba(250,242,220,0.55)';
+    g.fill(ward);
+    g.clip(ward);
+  }
+  g.translate(b.cx, b.cy);
+  g.rotate(b.rot ?? 0);
+  g.translate(-s / 2, -s / 2);
+  if (!ward) {
+    g.fillStyle = 'rgba(248,238,212,0.75)';
+    g.fillRect(0, 0, s, s);
+  }
+  // unknown squares: the faint council plan on the ward's ground; the surveyed part
+  // is laid on a clean vellum patch so it leads the eye
+  g.globalAlpha = 0.7;
+  g.drawImage(lay, 0, 0, s, s);
+  g.globalAlpha = 1;
+  g.drawImage(clean, 0, 0, s, s);
   g.globalCompositeOperation = 'multiply';
   g.drawImage(wash, 0, 0, s, s);
   g.globalCompositeOperation = 'source-over';
   g.drawImage(edge, 0, 0, s, s);
   g.drawImage(ink, 0, 0, s, s);
-  // frame: double rule
-  g.strokeStyle = here ? INK.vermilion : INK.ink;
-  g.lineWidth = here ? 2.4 : 1.5;
-  g.strokeRect(0, 0, s, s);
-  g.lineWidth = 0.6;
-  g.strokeStyle = INK.ink;
-  g.strokeRect(-3.5, -3.5, s + 7, s + 7);
-  if (here) {
-    g.strokeStyle = goldGradient(g, 0, 0, s, s);
-    g.lineWidth = 1.6;
-    g.strokeRect(-6, -6, s + 12, s + 12);
-  }
   g.restore();
+  // the kerb: the street's edge inked round the district (a gilt rule for the party's own)
+  if (b.poly) {
+    g.save();
+    g.lineJoin = 'round';
+    g.strokeStyle = here ? INK.vermilion : INK.ink;
+    g.lineWidth = here ? 2.6 : 1.5;
+    g.stroke(ward);
+    g.lineWidth = 0.6;
+    g.strokeStyle = 'rgba(43,26,13,0.7)';
+    g.stroke(polyPath(insetPoly(b.poly, b.poly.map(() => -4))));
+    if (here) {
+      g.strokeStyle = goldGradient(g, b.cx - 80, b.cy - 80, b.cx + 80, b.cy + 80);
+      g.lineWidth = 2;
+      g.stroke(polyPath(insetPoly(b.poly, b.poly.map(() => -7))));
+    }
+    g.restore();
+  }
+}
+
+/** The council's old plan of a block: washed roofs and pencilled outlines from the map data, at plate size. */
+function councilPlan(m, s, k, seed, alpha = 0.75) {
+  const cs = s / m.w;
+  const L = Math.ceil(s * k);
+  const lay = makeCanvas(L, L);
+  const lg = lay.getContext('2d');
+  lg.scale(k, k);
+  const CX = (i) => i * cs;
+  const CY = (j) => j * cs;
+  const gr = prng(seed + 9);
+  const wild = m.tileset === 'wilderness' || m.tileset === 'graveyard';
+  for (const rg of regs0(m).list) {
+    const path = new Path2D();
+    for (const [i, j] of rg.cells) path.rect(CX(i) - 0.2, CY(j) - 0.2, cs + 0.4, cs + 0.4);
+    if (rg.type === CELL.INTERIOR) {
+      const c = (rg.style === 1 ? PIGMENT.timber : rg.style === 2 ? PIGMENT.ruin : PIGMENT.stone)[Math.floor(gr() * 4) % 4] ?? PIGMENT.stone[0];
+      const mc = [c[0] * 0.4 + 150 * 0.6, c[1] * 0.4 + 128 * 0.6, c[2] * 0.4 + 100 * 0.6];
+      lg.fillStyle = `rgba(${mc[0] | 0},${mc[1] | 0},${mc[2] | 0},${(0.42 * alpha).toFixed(3)})`;
+      lg.fill(path);
+      roofLines(lg, rg.cells, CX, CY, cs, gr, { alpha: 0.6 * alpha });
+      lg.strokeStyle = `rgba(43,26,13,${(0.6 * alpha).toFixed(3)})`;
+      lg.lineWidth = 0.6;
+      lg.stroke(boundaryPath(rg.cells, CX, CY));
+    } else if (rg.type === CELL.WATER) {
+      lg.fillStyle = 'rgba(70,120,170,0.3)';
+      lg.fill(path);
+    } else if (wild && rg.type === CELL.STREET) {
+      lg.fillStyle = 'rgba(120,150,80,0.2)';
+      lg.fill(path);
+    }
+  }
+  return lay;
 }
 
 /**
@@ -808,86 +1093,261 @@ function roofLines(g, cells, CX, CY, cs, rr, { alpha = 1 } = {}) {
   g.restore();
 }
 
-/** Graphite survey fog for a small plate (s units, L px), cut away where `known` (alpha) says. */
-function surveyPlateFog(s, L, known, seed) {
-  const VS = 2.6;
-  const VW = Math.ceil(s * VS);
-  const cover = makeCanvas(VW, VW);
-  const cg = cover.getContext('2d');
-  cg.fillStyle = '#fff';
-  cg.fillRect(0, 0, VW, VW);
-  if (known) {
-    cg.globalCompositeOperation = 'destination-out';
-    cg.drawImage(known, 0, 0, VW, VW);
-  }
-  return paintSurveyFog(VW, VW, L / VW, cover, [0, 0, VW, VW], { seed });
-}
-
-/** An unexplored block: the district's roofs as the council's old plan has them, under the unsurveyed graphite. */
+/**
+ * An unexplored district: its ward under a soft graphite wash with the council's
+ * old plan showing faintly through, a unique engraved vignette of what is said to
+ * stand there, and the clerks' hearsay lettered beneath it.
+ */
 function drawUnknownBlock(g, b, m, { k }) {
-  const { x, y, s } = b;
-  const cs = s / m.w;
-  const L = Math.ceil(s * k);
+  const { s } = b;
   const seed = [...m.id].reduce((a, c) => a * 31 + c.charCodeAt(0), 7) & 0xffff;
-  const lay = makeCanvas(L, L);
-  const lg = lay.getContext('2d');
-  lg.scale(k, k);
-  const CX = (i) => i * cs;
-  const CY = (j) => j * cs;
-  const gr = prng(seed + 9);
-  const wild = m.tileset === 'wilderness' || m.tileset === 'graveyard';
-  for (const rg of regs0(m).list) {
-    const path = new Path2D();
-    for (const [i, j] of rg.cells) path.rect(CX(i) - 0.2, CY(j) - 0.2, cs + 0.4, cs + 0.4);
-    if (rg.type === CELL.INTERIOR) {
-      const c = (rg.style === 1 ? PIGMENT.timber : rg.style === 2 ? PIGMENT.ruin : PIGMENT.stone)[Math.floor(gr() * 4) % 4] ?? PIGMENT.stone[0];
-      lg.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},0.42)`;
-      lg.fill(path);
-      roofLines(lg, rg.cells, CX, CY, cs, gr, { alpha: 0.8 });
-      lg.strokeStyle = 'rgba(43,26,13,0.75)';
-      lg.lineWidth = 0.7;
-      lg.stroke(boundaryPath(rg.cells, CX, CY));
-    } else if (rg.type === CELL.WATER) {
-      lg.fillStyle = 'rgba(70,120,170,0.35)';
-      lg.fill(path);
-    } else if (wild && rg.type === CELL.STREET) {
-      lg.fillStyle = 'rgba(120,150,80,0.22)';
-      lg.fill(path);
-    }
-  }
-  const fog = surveyPlateFog(s, L, null, seed + 4);
+  const ward = b.poly ? polyPath(b.poly) : null;
+  const lay = councilPlan(m, s, k, seed, 0.5);
   g.save();
-  g.translate(x, y);
-  g.fillStyle = 'rgba(60,35,12,0.12)';
-  g.fillRect(3, 4, s, s);
-  g.fillStyle = 'rgba(236,224,196,0.6)';
-  g.fillRect(0, 0, s, s);
-  g.globalAlpha = 0.75;
-  g.drawImage(lay, 0, 0, s, s);
-  g.globalAlpha = 1;
-  g.drawImage(fog, 0, 0, s, s);
-  g.strokeStyle = 'rgba(43,26,13,0.75)';
-  g.lineWidth = 1.2;
-  g.strokeRect(0, 0, s, s);
-  g.lineWidth = 0.5;
-  g.strokeRect(-3.5, -3.5, s + 7, s + 7);
+  if (ward) {
+    g.save();
+    g.globalCompositeOperation = 'multiply';
+    g.fillStyle = 'rgba(214,200,172,0.75)';
+    g.fill(ward);
+    g.restore();
+    g.clip(ward);
+  }
+  g.save();
+  g.translate(b.cx, b.cy);
+  g.rotate(b.rot ?? 0);
+  g.globalAlpha = 0.5;
+  g.drawImage(lay, -s / 2, -s / 2, s, s);
+  g.restore();
+  // a calm pencil hatch over the whole ward (the unsurveyed)
+  if (ward) {
+    g.strokeStyle = 'rgba(80,64,48,0.13)';
+    g.lineWidth = 0.6;
+    g.beginPath();
+    for (let t = -260; t < 260; t += 3.2) { g.moveTo(b.cx + t - 120, b.cy - 120); g.lineTo(b.cx + t + 120, b.cy + 120); }
+    g.stroke();
+  }
+  // a pale ground for the vignette, so its line work reads
+  const vg = g.createRadialGradient(b.cx, b.cy - 6, 8, b.cx, b.cy - 6, 62);
+  vg.addColorStop(0, 'rgba(246,236,212,0.92)');
+  vg.addColorStop(0.7, 'rgba(246,236,212,0.6)');
+  vg.addColorStop(1, 'rgba(246,236,212,0)');
+  g.fillStyle = vg;
+  g.fillRect(b.cx - 70, b.cy - 70, 140, 130);
+  (DISTRICT_VIGNETTES[b.id] ?? DISTRICT_VIGNETTES.houses)(g, b.cx, b.cy - 10, 1);
   const note = HEARSAY[b.id] ?? 'terra incognita';
-  g.font = `italic 15px ${SERIF}`;
+  g.font = `italic 14px ${SERIF}`;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  g.save();
-  g.translate(s / 2, s * 0.62);
-  g.rotate(((seed % 7) - 3) * 0.015);
-  haloText(g, note, 0, 0, { color: 'rgba(70,40,18,0.95)', halo: 'rgba(240,228,196,0.92)', width: 6 });
+  haloText(g, note, b.cx, b.cy + 44, { color: 'rgba(70,40,18,0.95)', halo: 'rgba(240,228,196,0.9)', width: 5 });
   g.restore();
-  const wax = WAX[seed % WAX.length];
-  g.save();
-  g.translate(s / 2 + ((seed % 5) - 2) * 3, s * 0.38);
-  g.rotate(((seed % 9) - 4) * 0.08);
-  drawSeal(g, 0, 0, 14 + (seed % 3), m.name.replace(/^The\s+/i, '')[0], { seed, color: wax });
-  g.restore();
-  g.restore();
+  if (ward) {
+    g.save();
+    g.setLineDash([5, 3.5]);
+    g.strokeStyle = 'rgba(43,26,13,0.7)';
+    g.lineWidth = 1.1;
+    g.stroke(ward);
+    g.restore();
+  }
 }
+
+/** Engraving helpers: a filled, inked shape and hatched shade inside a clip. */
+const ENG = {
+  fill: 'rgba(244,234,208,1)',
+  shape(g, path, fill = ENG.fill, lw = 1.1) {
+    g.fillStyle = fill;
+    g.fill(path);
+    g.strokeStyle = INK.ink;
+    g.lineWidth = lw;
+    g.stroke(path);
+  },
+  hatch(g, path, { gap = 2, ang = 1, a = 0.7 } = {}) {
+    g.save();
+    g.clip(path);
+    g.strokeStyle = `rgba(43,26,13,${a})`;
+    g.lineWidth = 0.55;
+    g.beginPath();
+    for (let t = -80; t < 80; t += gap) { g.moveTo(t - 60 * ang, -60); g.lineTo(t + 60 * ang, 60); }
+    g.stroke();
+    g.restore();
+  },
+  rect(x, y, w, h) { const p = new Path2D(); p.rect(x, y, w, h); return p; },
+  poly(pts) { const p = new Path2D(); pts.forEach(([x, y], i) => (i ? p.lineTo(x, y) : p.moveTo(x, y))); p.closePath(); return p; },
+  ground(g, w = 50) {
+    g.strokeStyle = 'rgba(43,26,13,0.7)';
+    g.lineWidth = 0.7;
+    g.beginPath();
+    for (let x = -w; x < w; x += 5) { g.moveTo(x, 22 + Math.sin(x) * 0.6); g.lineTo(x + 3, 22 + Math.sin(x) * 0.6); }
+    g.stroke();
+  },
+};
+
+/** One engraved vignette per district never walked (each ~100 units wide, drawn at its centre). */
+const DISTRICT_VIGNETTES = {
+  // the market square: a fountain between two awninged stalls
+  podol_plaza(g, x, y) {
+    g.save(); g.translate(x, y);
+    ENG.ground(g);
+    for (const sx of [-30, 30]) {
+      const body = ENG.rect(sx - 13, 4, 26, 18);
+      ENG.shape(g, body);
+      ENG.hatch(g, ENG.rect(sx - 13, 4, 26, 6), { gap: 1.6 });
+      const aw = ENG.poly([[sx - 17, 4], [sx + 17, 4], [sx + 12, -8], [sx - 12, -8]]);
+      ENG.shape(g, aw, 'rgba(176,64,44,0.75)');
+      g.strokeStyle = 'rgba(246,236,210,0.9)'; g.lineWidth = 2.2;
+      for (let i = -9; i <= 9; i += 6) { g.beginPath(); g.moveTo(sx + i * 1.15, 3); g.lineTo(sx + i * 0.8, -7); g.stroke(); }
+    }
+    ENG.shape(g, ENG.poly([[-10, 22], [10, 22], [7, 12], [-7, 12]]));
+    const basin = new Path2D(); basin.ellipse(0, 12, 12, 4, 0, 0, Math.PI * 2);
+    ENG.shape(g, basin, 'rgba(110,150,180,0.65)');
+    ENG.shape(g, ENG.rect(-1.6, -6, 3.2, 18));
+    g.strokeStyle = 'rgba(60,100,140,0.85)'; g.lineWidth = 0.8;
+    for (const d of [-1, 1]) { g.beginPath(); g.moveTo(0, -6); g.quadraticCurveTo(d * 8, -14, d * 10, 8); g.stroke(); }
+    g.restore();
+  },
+  // the textile house: a long warehouse, its great door chained
+  cadorna_textile(g, x, y) {
+    g.save(); g.translate(x, y);
+    ENG.ground(g);
+    const wall = ENG.rect(-36, -2, 72, 24);
+    ENG.shape(g, wall);
+    ENG.hatch(g, ENG.rect(16, -2, 20, 24), { gap: 1.8 });
+    const roof = ENG.poly([[-40, -2], [40, -2], [30, -18], [-30, -18]]);
+    ENG.shape(g, roof, 'rgba(150,112,80,0.7)');
+    g.strokeStyle = 'rgba(43,26,13,0.5)'; g.lineWidth = 0.5;
+    for (let t = -16; t < -2; t += 2.4) { g.beginPath(); g.moveTo(-38 + (t + 18) * 0.5, t); g.lineTo(38 - (t + 18) * 0.5, t); g.stroke(); }
+    const door = ENG.rect(-9, 4, 18, 18);
+    ENG.shape(g, door, 'rgba(96,64,40,0.85)');
+    g.strokeStyle = 'rgba(200,190,170,1)'; g.lineWidth = 1.6;
+    g.beginPath(); for (let i = 0; i < 7; i++) { g.moveTo(-12 + i * 4, 10 + (i % 2) * 2.5); g.arc(-12 + i * 4 + 1.6, 10 + (i % 2) * 2.5, 1.6, Math.PI, Math.PI * 3); } g.stroke();
+    for (const wx of [-28, -20, 20, 28]) ENG.shape(g, ENG.rect(wx - 2.5, 4, 5, 7), 'rgba(60,40,24,0.8)', 0.7);
+    g.restore();
+  },
+  // Kuto's well: a stone well under a windlass roof
+  kutos_well(g, x, y) {
+    g.save(); g.translate(x, y);
+    ENG.ground(g, 34);
+    const drum = new Path2D(); drum.moveTo(-16, 6); drum.lineTo(-16, 22); drum.ellipse(0, 22, 16, 4, 0, Math.PI, 0, true); drum.lineTo(16, 6); drum.closePath();
+    ENG.shape(g, drum);
+    ENG.hatch(g, drum, { gap: 2.4, a: 0.4 });
+    g.strokeStyle = 'rgba(43,26,13,0.75)'; g.lineWidth = 0.6;
+    for (let r2 = 0; r2 < 3; r2++) { g.beginPath(); g.ellipse(0, 11 + r2 * 4.5, 16, 4, 0, 0, Math.PI); g.stroke(); }
+    const mouth = new Path2D(); mouth.ellipse(0, 6, 16, 4.5, 0, 0, Math.PI * 2);
+    ENG.shape(g, mouth, 'rgba(30,20,12,0.9)');
+    for (const sx of [-13, 13]) ENG.shape(g, ENG.rect(sx - 1.5, -20, 3, 26));
+    ENG.shape(g, ENG.poly([[-20, -18], [20, -18], [0, -32]]), 'rgba(140,100,70,0.75)');
+    g.strokeStyle = INK.ink; g.lineWidth = 1; g.beginPath(); g.moveTo(-13, -12); g.lineTo(13, -12); g.moveTo(0, -12); g.lineTo(0, 0); g.stroke();
+    ENG.shape(g, ENG.poly([[-3, 0], [3, 0], [2.4, 5], [-2.4, 5]]), 'rgba(120,90,60,0.9)', 0.8);
+    g.restore();
+  },
+  // Mendor's library: an arcaded front, an open book, smoke curling from a broken roof
+  mendors_library(g, x, y) {
+    g.save(); g.translate(x, y);
+    ENG.ground(g);
+    const front = ENG.rect(-30, -14, 60, 36);
+    ENG.shape(g, front);
+    ENG.shape(g, ENG.poly([[-34, -14], [34, -14], [0, -30]]), 'rgba(160,132,104,0.7)');
+    for (let i = -2; i <= 2; i++) {
+      const ar = new Path2D(); ar.moveTo(i * 11 - 4, 22); ar.lineTo(i * 11 - 4, -2); ar.arc(i * 11, -2, 4, Math.PI, 0); ar.lineTo(i * 11 + 4, 22); ar.closePath();
+      ENG.shape(g, ar, 'rgba(46,32,22,0.85)', 0.8);
+    }
+    g.strokeStyle = 'rgba(90,80,70,0.7)'; g.lineWidth = 1.2;
+    g.beginPath(); g.moveTo(14, -26); g.bezierCurveTo(22, -34, 10, -40, 20, -48); g.stroke();
+    g.beginPath(); g.moveTo(20, -24); g.bezierCurveTo(30, -30, 18, -38, 28, -44); g.stroke();
+    const book = ENG.poly([[-14, 26], [0, 23], [14, 26], [14, 32], [0, 29], [-14, 32]]);
+    ENG.shape(g, book, 'rgba(250,244,226,1)', 0.9);
+    g.beginPath(); g.moveTo(0, 23); g.lineTo(0, 29); g.stroke();
+    g.restore();
+  },
+  // Valhingen: headstones, a cross and a dead tree under a crescent
+  valhingen_graveyard(g, x, y) {
+    g.save(); g.translate(x, y);
+    ENG.ground(g);
+    g.strokeStyle = INK.ink; g.lineWidth = 1.6; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(26, 22); g.lineTo(24, -6); g.moveTo(24, -2); g.lineTo(34, -14); g.moveTo(24, -4); g.lineTo(14, -18); g.moveTo(29, -8); g.lineTo(32, -22); g.stroke();
+    for (const [sx, sz] of [[-26, 1], [-8, 1.2], [8, 0.9]]) {
+      const st = new Path2D(); st.moveTo(sx - 6 * sz, 22); st.lineTo(sx - 6 * sz, 8 - 6 * sz); st.arc(sx, 8 - 6 * sz, 6 * sz, Math.PI, 0); st.lineTo(sx + 6 * sz, 22); st.closePath();
+      ENG.shape(g, st);
+      ENG.hatch(g, ENG.rect(sx + 2 * sz, -10, 6, 34), { gap: 1.4 });
+    }
+    ENG.shape(g, ENG.poly([[-1.5, -20], [1.5, -20], [1.5, -14], [6, -14], [6, -11], [1.5, -11], [1.5, 2], [-1.5, 2], [-1.5, -11], [-6, -11], [-6, -14], [-1.5, -14]]));
+    const moon = new Path2D(); moon.arc(-26, -26, 7, 0, Math.PI * 2);
+    g.fillStyle = 'rgba(244,234,208,1)'; g.fill(moon); g.strokeStyle = INK.ink; g.lineWidth = 0.9; g.stroke(moon);
+    g.fillStyle = 'rgba(214,200,172,1)'; g.beginPath(); g.arc(-23, -28, 6, 0, Math.PI * 2); g.fill();
+    g.restore();
+  },
+  // Stojanow gate: twin drum towers, the arch and its portcullis, a war-band's banner
+  stojanow_gate(g, x, y) {
+    g.save(); g.translate(x, y);
+    ENG.ground(g);
+    ENG.shape(g, ENG.rect(-16, -10, 32, 32));
+    const arch = new Path2D(); arch.moveTo(-8, 22); arch.lineTo(-8, 4); arch.arc(0, 4, 8, Math.PI, 0); arch.lineTo(8, 22); arch.closePath();
+    ENG.shape(g, arch, 'rgba(36,24,16,0.9)');
+    g.strokeStyle = 'rgba(200,190,170,0.9)'; g.lineWidth = 0.7;
+    g.beginPath(); for (let i = -6; i <= 6; i += 3) { g.moveTo(i, -2); g.lineTo(i, 14); } for (let j = 0; j < 14; j += 4) { g.moveTo(-7, j); g.lineTo(7, j); } g.stroke();
+    for (const sx of [-24, 24]) {
+      const tw = ENG.rect(sx - 10, -22, 20, 44);
+      ENG.shape(g, tw);
+      ENG.hatch(g, ENG.rect(sx + 3, -22, 7, 44), { gap: 1.6 });
+      for (let i = 0; i < 3; i++) ENG.shape(g, ENG.rect(sx - 10 + i * 7.5, -27, 5, 5), ENG.fill, 0.8);
+      ENG.shape(g, ENG.rect(sx - 1.5, -12, 3, 6), 'rgba(36,24,16,0.9)', 0.6);
+    }
+    g.strokeStyle = INK.ink; g.lineWidth = 1; g.beginPath(); g.moveTo(24, -27); g.lineTo(24, -44); g.stroke();
+    ENG.shape(g, ENG.poly([[24, -44], [40, -40], [24, -35]]), 'rgba(40,40,40,0.85)', 0.8);
+    g.restore();
+  },
+  // Valjevo: the castle keep on its rise, towers and a flag
+  valjevo_castle(g, x, y) {
+    g.save(); g.translate(x, y);
+    ENG.shape(g, ENG.poly([[-46, 24], [-30, 14], [30, 14], [46, 24]]), 'rgba(200,184,150,0.8)', 0.8);
+    ENG.shape(g, ENG.rect(-30, -2, 60, 18));
+    for (let i = 0; i < 8; i++) ENG.shape(g, ENG.rect(-30 + i * 8, -6, 5, 4), ENG.fill, 0.7);
+    ENG.shape(g, ENG.rect(-11, -30, 22, 30));
+    ENG.hatch(g, ENG.rect(3, -30, 8, 46), { gap: 1.5 });
+    for (let i = 0; i < 3; i++) ENG.shape(g, ENG.rect(-11 + i * 8, -35, 6, 5), ENG.fill, 0.7);
+    for (const sx of [-30, 30]) {
+      ENG.shape(g, ENG.rect(sx - 6, -14, 12, 30));
+      ENG.shape(g, ENG.poly([[sx - 8, -14], [sx + 8, -14], [sx, -26]]), 'rgba(90,96,110,0.8)', 0.8);
+    }
+    ENG.shape(g, ENG.rect(-2, -22, 4, 8), 'rgba(36,24,16,0.9)', 0.6);
+    g.strokeStyle = INK.ink; g.lineWidth = 1; g.beginPath(); g.moveTo(0, -35); g.lineTo(0, -50); g.stroke();
+    ENG.shape(g, ENG.poly([[0, -50], [14, -46], [0, -42]]), 'rgba(150,40,30,0.85)', 0.8);
+    g.restore();
+  },
+  // the wild shore beyond the gate: a road winding off between trees
+  wilderness(g, x, y) {
+    g.save(); g.translate(x, y);
+    const road = new Path2D(); road.moveTo(-6, 26); road.bezierCurveTo(-20, 8, 20, 0, 4, -20); road.lineTo(8, -20); road.bezierCurveTo(26, 0, -12, 8, 6, 26); road.closePath();
+    ENG.shape(g, road, 'rgba(226,206,164,1)', 0.9);
+    for (const [tx, ty, ts] of [[-30, 0, 1.2], [-20, -18, 0.9], [26, 12, 1.1], [30, -14, 1], [-36, 18, 0.8], [18, -26, 0.7]]) {
+      const tr2 = new Path2D(); tr2.moveTo(tx, ty - 16 * ts); tr2.lineTo(tx + 8 * ts, ty + 4 * ts); tr2.lineTo(tx - 8 * ts, ty + 4 * ts); tr2.closePath();
+      ENG.shape(g, tr2, 'rgba(120,140,90,0.85)', 0.9);
+      ENG.hatch(g, tr2, { gap: 1.6, a: 0.5 });
+      g.strokeStyle = INK.ink; g.lineWidth = 1; g.beginPath(); g.moveTo(tx, ty + 4 * ts); g.lineTo(tx, ty + 9 * ts); g.stroke();
+    }
+    g.restore();
+  },
+  // Sokol keep: a lone tower on the rocks with a light in its window
+  sokol_keep(g, x, y) {
+    g.save(); g.translate(x, y);
+    ENG.shape(g, ENG.poly([[-40, 24], [-26, 10], [-12, 14], [6, 6], [24, 12], [40, 24]]), 'rgba(170,150,120,0.8)', 0.9);
+    ENG.shape(g, ENG.poly([[-9, 10], [9, 10], [7, -30], [-7, -30]]));
+    ENG.hatch(g, ENG.poly([[2, 10], [9, 10], [7, -30], [2, -30]]), { gap: 1.5 });
+    for (let i = 0; i < 3; i++) ENG.shape(g, ENG.rect(-9 + i * 6.5, -35, 4.5, 5), ENG.fill, 0.7);
+    ENG.shape(g, ENG.rect(-2, -18, 4, 6), 'rgba(240,190,90,1)', 0.7);
+    g.restore();
+  },
+  // the slums: a huddle of roofs and a broken wall
+  houses(g, x, y) {
+    g.save(); g.translate(x, y);
+    ENG.ground(g);
+    for (const [hx, hw, hh] of [[-26, 18, 16], [-6, 20, 22], [16, 16, 14], [32, 12, 18]]) {
+      ENG.shape(g, ENG.rect(hx - hw / 2, 22 - hh, hw, hh));
+      ENG.shape(g, ENG.poly([[hx - hw / 2 - 2, 22 - hh], [hx + hw / 2 + 2, 22 - hh], [hx, 22 - hh - 10]]), 'rgba(160,110,80,0.75)', 0.9);
+      ENG.shape(g, ENG.rect(hx - 2, 14, 4, 8), 'rgba(40,26,16,0.9)', 0.6);
+    }
+    g.restore();
+  },
+};
 
 /** What the council's clerks wrote across the blocks no one has walked. */
 const HEARSAY = {
@@ -899,49 +1359,39 @@ const HEARSAY = {
   wilderness: 'the river road, wild',
   kutos_well: 'kobolds, they say',
   podol_plaza: 'tolls are taken',
+  sokol_keep: 'lights burn by night',
+  phlan_slums: 'just past the palisade',
 };
 const WAX = [[150, 34, 26], [104, 26, 30], [52, 82, 52], [120, 70, 30], [128, 30, 60]];
 
-/** A red wax seal pressed with a letter or emblem. */
+/** A seal printed flat on the sheet: one even pigment, an engraved ring and letter (no gloss). */
 function drawSeal(g, x, y, r, letter, { seed = 1, color = [150, 34, 26], emblem = null } = {}) {
   const rnd = prng(seed);
   g.save();
   g.translate(x, y);
-  g.fillStyle = 'rgba(40,10,0,0.35)';
-  g.beginPath(); g.ellipse(2, 3, r * 1.05, r, 0, 0, Math.PI * 2); g.fill();
   g.beginPath();
   for (let i = 0; i <= 28; i++) {
     const a = (i / 28) * Math.PI * 2;
-    const q = r * (1 + (rnd() - 0.5) * 0.14 + Math.sin(i * 2.3) * 0.04);
+    const q = r * (1 + (rnd() - 0.5) * 0.08);
     if (i === 0) g.moveTo(Math.cos(a) * q, Math.sin(a) * q); else g.lineTo(Math.cos(a) * q, Math.sin(a) * q);
   }
   g.closePath();
-  const gr = g.createRadialGradient(-r * 0.35, -r * 0.4, r * 0.1, 0, 0, r * 1.1);
-  gr.addColorStop(0, `rgb(${Math.min(255, color[0] * 1.6) | 0},${Math.min(255, color[1] * 1.8) | 0},${Math.min(255, color[2] * 1.8) | 0})`);
-  gr.addColorStop(0.55, `rgb(${color.join(',')})`);
-  gr.addColorStop(1, `rgb(${(color[0] * 0.55) | 0},${(color[1] * 0.5) | 0},${(color[2] * 0.5) | 0})`);
-  g.fillStyle = gr;
+  g.fillStyle = `rgba(${color.join(',')},0.82)`;
   g.fill();
-  g.strokeStyle = 'rgba(40,8,4,0.6)';
-  g.lineWidth = 0.8;
+  g.strokeStyle = INK.ink;
+  g.lineWidth = 0.9;
   g.stroke();
-  // pressed ring
-  g.strokeStyle = `rgba(${(color[0] * 0.5) | 0},${(color[1] * 0.4) | 0},${(color[2] * 0.4) | 0},0.9)`;
-  g.lineWidth = r * 0.08;
+  g.strokeStyle = 'rgba(250,236,210,0.8)';
+  g.lineWidth = r * 0.07;
   g.beginPath(); g.arc(0, 0, r * 0.72, 0, Math.PI * 2); g.stroke();
-  g.strokeStyle = 'rgba(255,220,200,0.35)';
-  g.lineWidth = r * 0.04;
-  g.beginPath(); g.arc(-r * 0.03, -r * 0.03, r * 0.72, Math.PI * 0.9, Math.PI * 1.7); g.stroke();
-  const press = (fn) => {
-    g.save(); g.translate(-r * 0.04, -r * 0.05); g.fillStyle = 'rgba(255,215,190,0.4)'; g.strokeStyle = 'rgba(255,215,190,0.4)'; fn(); g.restore();
-    g.save(); g.fillStyle = `rgba(${(color[0] * 0.45) | 0},${(color[1] * 0.35) | 0},${(color[2] * 0.35) | 0},0.95)`; g.strokeStyle = g.fillStyle; fn(); g.restore();
-  };
-  if (emblem) press(() => emblem(g, r));
-  else {
+  g.fillStyle = 'rgba(250,236,210,0.92)';
+  g.strokeStyle = g.fillStyle;
+  if (emblem) emblem(g, r);
+  else if (letter) {
     g.font = `bold ${Math.round(r * 0.95)}px ${SERIF}`;
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    press(() => g.fillText(letter, 0, r * 0.06));
+    g.fillText(letter, 0, r * 0.06);
   }
   g.restore();
 }
@@ -1466,7 +1916,17 @@ function drawKey(g, x, y, w, h) {
     g.save();
     switch (k) {
       case 'block': g.fillStyle = 'rgba(248,238,212,0.9)'; g.fillRect(cx - 13, cy - 10, 26, 20); g.fillStyle = 'rgba(190,96,70,0.6)'; g.fillRect(cx - 9, cy - 6, 10, 7); g.fillRect(cx + 3, cy, 7, 6); g.strokeStyle = INK.ink; g.lineWidth = 1.2; g.strokeRect(cx - 13, cy - 10, 26, 20); break;
-      case 'unknown': g.strokeStyle = 'rgba(80,65,50,0.6)'; g.strokeRect(cx - 13, cy - 10, 26, 20); drawSeal(g, cx, cy, 7.5, '', { seed: 3 }); break;
+      case 'unknown': {
+        g.fillStyle = 'rgba(214,200,172,0.8)'; g.fillRect(cx - 13, cy - 10, 26, 20);
+        g.save(); g.beginPath(); g.rect(cx - 13, cy - 10, 26, 20); g.clip();
+        g.strokeStyle = 'rgba(80,64,48,0.35)'; g.lineWidth = 0.6; g.beginPath();
+        for (let t = -30; t < 30; t += 3) { g.moveTo(cx + t - 10, cy - 10); g.lineTo(cx + t + 10, cy + 10); }
+        g.stroke(); g.restore();
+        g.setLineDash([3, 2]); g.strokeStyle = 'rgba(43,26,13,0.8)'; g.lineWidth = 1; g.strokeRect(cx - 13, cy - 10, 26, 20); g.setLineDash([]);
+        // a tiny engraved tower: the vignettes that stand on unwalked districts
+        g.fillStyle = 'rgba(244,234,208,1)'; g.fillRect(cx - 3, cy - 6, 6, 12); g.strokeStyle = INK.ink; g.strokeRect(cx - 3, cy - 6, 6, 12);
+        break;
+      }
       case 'road': g.strokeStyle = '#4a3220'; g.lineWidth = 8; g.beginPath(); g.moveTo(cx - 15, cy); g.lineTo(cx + 15, cy); g.stroke(); g.strokeStyle = '#e9d6a8'; g.lineWidth = 5; g.stroke(); break;
       case 'sea': g.setLineDash([5, 4]); g.strokeStyle = 'rgba(40,40,60,0.85)'; g.lineWidth = 1.8; g.beginPath(); g.moveTo(cx - 15, cy); g.lineTo(cx + 15, cy); g.stroke(); break;
       case 'under': drawMarker(g, 'stairs', cx, cy, 24, { color: INK.vermilion }); break;

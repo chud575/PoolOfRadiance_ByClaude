@@ -552,7 +552,7 @@
 .cc-sumtiles { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.4em; }
 .cc-sumtiles .pc-big { padding: 0.3em 0.1em; }
 .cc-sumtiles .pc-big .n { font-size: 1.25em; }
-.cc-sumtiles .pc-big .l { font-size: 0.58em; letter-spacing: 0.08em; }
+.cc-sumtiles .pc-big .l { font-size: max(11px, 0.66em); letter-spacing: 0.04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cc-sumline { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35em; margin-top: 0.55em; }
 .cc-advice { margin-left: auto; font-style: italic; color: var(--por-text-dim); font-size: 0.82em; }
 
@@ -596,10 +596,10 @@ img.pc-pending { background: radial-gradient(ellipse at 50% 40%, rgba(120, 96, 7
 .pc-locked-note { font-size: 0.8em; font-style: italic; color: var(--por-text-dim); padding: 0.2em 0.45em 0.4em; }
 .pc-memo-list { flex: 0 1 auto !important; }
 .pc-ladder { margin-top: auto; padding: 0.6em 0.7em 0.5em; border: 1px solid rgba(216, 178, 90, 0.18); background: rgba(0, 0, 0, 0.18); margin-bottom: 0.6em; }
-.pc-ladder .h { font-family: var(--font-display); font-size: 0.66em; letter-spacing: 0.2em; text-transform: uppercase; color: var(--por-gilt); margin-bottom: 0.35em; }
-.pc-ladder table { width: 100%; border-collapse: collapse; font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 0.86em; }
-.pc-ladder th, .pc-ladder td { text-align: center; padding: 0.12em 0; color: var(--por-text-dim); }
-.pc-ladder th { font-family: var(--font-display); font-size: 0.8em; color: #a8987a; font-weight: normal; }
+.pc-ladder .h { font-family: var(--font-display); font-size: max(11px, 0.72em); letter-spacing: 0.16em; text-transform: uppercase; color: var(--por-gilt); margin-bottom: 0.35em; }
+.pc-ladder table { width: 100%; border-collapse: collapse; font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: max(13px, 1em); }
+.pc-ladder th, .pc-ladder td { text-align: center; padding: 0.2em 0; color: var(--por-text-dim); }
+.pc-ladder th { font-family: var(--font-display); font-size: max(11px, 0.85em); color: #a8987a; font-weight: normal; }
 .pc-ladder td { color: var(--por-amber); }
 .pc-ladder td.z { color: rgba(200, 190, 160, 0.3); }
 .pc-ladder .now { background: rgba(245, 217, 139, 0.12); color: #fff3cf; }
@@ -630,3 +630,5 @@ img.pc-pending { filter: saturate(0.7) brightness(0.9); }
 .cc-likeness .cc-row { margin: 0.05em 0; }
 .cc-likeness > .pc-sect { padding-top: 0.4em; padding-bottom: 0.45em; margin-top: 0.5em !important; }
 .cc-likeness > .pc-sect-h { margin-top: 0.45em !important; }
+.pc-hkbtn .pc-hk { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.pc-hkbtn:disabled .pc-hk { color: inherit; text-shadow: none; }

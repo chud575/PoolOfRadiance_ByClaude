@@ -18,6 +18,10 @@ export function setPortraitSync(v) {
 
 const queue = [];
 let pumping = false;
+/** True while portraits are still being painted (scenes ease off their own GPU work meanwhile). */
+export function portraitsPending() {
+  return pumping || queue.length > 0;
+}
 function pump() {
   if (pumping) return;
   pumping = true;

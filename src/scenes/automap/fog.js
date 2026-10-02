@@ -1,6 +1,6 @@
 import { makeCanvas, prng } from './ink.js';
 import { fbm, valueNoise } from '../../render/textures/noise.js';
-import { EDGE } from '../../data/maps/MapGrid.js';
+import { EDGE, CELL } from '../../data/maps/MapGrid.js';
 
 /**
  * Fog of war for the survey sheets: the unknown is a cool grey-blue vellum
@@ -398,6 +398,214 @@ export function sightedCells(map, walked, isRock, reach = 3) {
         cy += DV[d][1];
         if (!map.inBounds(cx, cy) || isRock(cx, cy)) break;
         if (!walked(cx, cy)) out.add(`${cx},${cy}`);
+      }
+    }
+  }
+  return out;
+}
+
+// ------------------------------------------------------------------ survey fog (v4)
+/**
+ * The fog of war, v4: the limit of survey is a soft pencil fade, never a contour.
+ *  - Inside buildings (any cell that is not open street / plaza) the fog is
+ *    clipped to the cell grid: a room either is charted or is not, so no wash
+ *    ever wanders into its walls.
+ *  - In open street cells the fade wobbles a little, and only into the
+ *    uncharted square (a known square is always fully clear).
+ * @param {number} W @param {number} H sheet size in units (1 px per unit)
+ * @param {{mx:number,my:number,cs:number,w:number,h:number,state:(x:number,y:number)=>number,hard:(x:number,y:number)=>boolean,area:number[],seed?:number}} o
+ *   state: 0 unknown, 1 sighted, 2 walked
+ * @returns {{cover:HTMLCanvasElement, clean:HTMLCanvasElement}} cover alpha = fog; clean alpha = how fully the survey is inked
+ */
+export function surveyFogGrid(W, H, { mx, my, cs, w, h, state, hard, area, seed = 1 }) {
+  const known = [];
+  const walked = [];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const s = state(x, y);
+    if (s > 0) known.push([mx + x * cs, my + y * cs, cs, cs]);
+    if (s > 1) walked.push([mx + x * cs, my + y * cs, cs, cs]);
+  }
+  const kn = known.length ? blurredAlpha(W, H, known, cs * 0.2, cs * 0.18) : new Float32Array(W * H);
+  const wk = walked.length ? blurredAlpha(W, H, walked, cs * 0.35, cs * 0.05) : new Float32Array(W * H);
+  const cover = makeCanvas(W, H);
+  const cg = cover.getContext('2d');
+  const img = cg.createImageData(W, H);
+  const cleanC = makeCanvas(W, H);
+  const kg = cleanC.getContext('2d');
+  const kimg = kg.createImageData(W, H);
+  const [ax, ay, aw, ah] = area.map(Math.round);
+  // per-cell lookups, so the per-pixel loop stays cheap
+  const st = new Uint8Array(w * h);
+  const hd = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { st[y * w + x] = state(x, y); hd[y * w + x] = hard(x, y) ? 1 : 0; }
+  for (let y = ay; y < ay + ah; y++) {
+    const cy = Math.min(h - 1, Math.max(0, Math.floor((y + 0.5 - my) / cs)));
+    for (let x = ax; x < ax + aw; x++) {
+      const cx = Math.min(w - 1, Math.max(0, Math.floor((x + 0.5 - mx) / cs)));
+      const ci = cy * w + cx;
+      const i = y * W + x;
+      const s = st[ci];
+      let fog;
+      if (s > 0) fog = 0;
+      else if (hd[ci]) fog = 1;
+      else {
+        const k = kn[i];
+        if (k <= 0.002) fog = 1;
+        else {
+          const n = fbm(x / (cs * 0.9), y / (cs * 0.9), { period: 256, octaves: 3, seed }) - 0.5;
+          fog = 1 - smooth(0.22, 0.62, k + n * 0.55);
+        }
+      }
+      // the survey's ink: walked squares at full strength, squares only sighted pencilled lighter
+      const level = s > 0 ? 0.74 + 0.26 * wk[i] : (1 - fog) * 0.6;
+      img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = 255;
+      img.data[i * 4 + 3] = Math.round(fog * 255);
+      kimg.data[i * 4] = kimg.data[i * 4 + 1] = kimg.data[i * 4 + 2] = 255;
+      kimg.data[i * 4 + 3] = Math.round(level * 255);
+    }
+  }
+  cg.putImageData(img, 0, 0);
+  kg.putImageData(kimg, 0, 0);
+  return { cover, clean: cleanC };
+}
+
+/**
+ * Unsurveyed ground, v4: a warm graphite field on bare vellum, a shade darker
+ * and flatter than the charted streets so it recedes. Soft hand-laid tone,
+ * very calm hatching, no cool tint, no outline. Masked by `cover`.
+ */
+export function paintUnsurveyed(W, H, k, cover, area, { seed = 1 } = {}) {
+  const c = makeCanvas(W * k, H * k);
+  const g = c.getContext('2d');
+  g.scale(k, k);
+  const [ax, ay, aw, ah] = area;
+  const r = prng(seed + 71);
+  g.fillStyle = 'rgba(112,94,72,0.2)';
+  g.fillRect(ax, ay, aw, ah);
+  {
+    const q = 6;
+    const mw = Math.ceil(aw / q);
+    const mh = Math.ceil(ah / q);
+    const mc = makeCanvas(mw, mh);
+    const mg = mc.getContext('2d');
+    const im = mg.createImageData(mw, mh);
+    for (let y = 0; y < mh; y++) for (let x = 0; x < mw; x++) {
+      const n = fbm(x / 26, y / 26, { period: 64, octaves: 4, seed: seed + 3 });
+      const i = (y * mw + x) * 4;
+      im.data[i] = 92; im.data[i + 1] = 74; im.data[i + 2] = 54;
+      im.data[i + 3] = Math.max(0, Math.min(255, (n - 0.3) * 255 * 0.3));
+    }
+    mg.putImageData(im, 0, 0);
+    g.imageSmoothingEnabled = true;
+    g.drawImage(mc, ax, ay, aw, ah);
+  }
+  // soft graphite: broad, calm patches laid with the side of the lead
+  g.lineCap = 'round';
+  const dens = (x, y) => fbm(x / 280, y / 280, { period: 64, octaves: 3, seed: seed + 9 });
+  const patches = Math.round((aw * ah) / 420);
+  for (let p = 0; p < patches; p++) {
+    const cx = ax + r() * aw;
+    const cy = ay + r() * ah;
+    const d = dens(cx, cy);
+    if (r() > (d - 0.2) * 1.6) continue;
+    const R = 10 + r() * 18;
+    const a = 0.8 + (r() - 0.5) * 0.7 + (r() < 0.3 ? Math.PI / 2 : 0);
+    const ca = Math.cos(a);
+    const sa = Math.sin(a);
+    const gap = 2.4 + (1 - d) * 1.6 + r() * 0.6;
+    const press = 0.06 + d * 0.1;
+    for (let o = -R; o <= R; o += gap) {
+      const half = Math.sqrt(Math.max(0, R * R - o * o)) * (0.5 + r() * 0.5);
+      if (half < 2) continue;
+      const sx = cx - sa * o + ca * (r() - 0.5) * R * 0.3;
+      const sy = cy + ca * o + sa * (r() - 0.5) * R * 0.3;
+      g.strokeStyle = `rgba(78,62,46,${(press * (0.6 + r() * 0.6)).toFixed(3)})`;
+      g.lineWidth = 0.5 + r() * 0.4;
+      g.beginPath();
+      g.moveTo(sx - ca * half, sy - sa * half);
+      g.lineTo(sx + ca * half, sy + sa * half);
+      g.stroke();
+    }
+  }
+  for (let i = 0; i < (aw * ah) / 300; i++) {
+    const x = ax + r() * aw;
+    const y = ay + r() * ah;
+    g.fillStyle = `rgba(70,56,42,${(0.06 + r() * 0.12).toFixed(3)})`;
+    g.fillRect(x, y, 0.5 + r() * 0.7, 0.5 + r() * 0.5);
+  }
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalCompositeOperation = 'destination-in';
+  g.imageSmoothingEnabled = true;
+  g.drawImage(cover, 0, 0, W * k, H * k);
+  return c;
+}
+
+/**
+ * What the company can see from the squares it walked: straight down every
+ * open street or corridor to the next wall (with the side openings along the
+ * way, as the first-person view shows them), and the whole of any room it
+ * stood in.
+ * @param {(x:number,y:number)=>boolean} walked
+ * @param {(x:number,y:number)=>boolean} isRock
+ * @param {{rooms?:boolean, reach?:number}} [o]
+ */
+export function sightLines(map, walked, isRock, { rooms = true, reach = 16 } = {}) {
+  const out = new Set();
+  const DV = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] };
+  const SIDES = { N: ['E', 'W'], S: ['E', 'W'], E: ['N', 'S'], W: ['N', 'S'] };
+  const see = (e) => e === EDGE.OPEN || e === EDGE.ARCH;
+  const add = (x, y) => { if (map.inBounds(x, y) && !isRock(x, y) && !walked(x, y)) out.add(`${x},${y}`); };
+  for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) {
+    if (!walked(x, y)) continue;
+    for (const d of ['N', 'E', 'S', 'W']) {
+      let cx = x;
+      let cy = y;
+      for (let i = 0; i < reach; i++) {
+        if (i > 0 && i <= 3) {
+          // side openings close ahead are seen a little way in, as the 3D view shows them
+          for (const sd of SIDES[d]) {
+            let sx = cx;
+            let sy = cy;
+            for (let j = 0; j < 4 - i; j++) {
+              if (!see(map.getEdge(sx, sy, sd))) break;
+              sx += DV[sd][0];
+              sy += DV[sd][1];
+              if (!map.inBounds(sx, sy) || isRock(sx, sy)) break;
+              add(sx, sy);
+            }
+          }
+        }
+        if (!see(map.getEdge(cx, cy, d))) break;
+        cx += DV[d][0];
+        cy += DV[d][1];
+        if (!map.inBounds(cx, cy) || isRock(cx, cy)) break;
+        add(cx, cy);
+      }
+    }
+  }
+  if (rooms) {
+    // a room you stood in is seen whole (flood through open floor of the same kind)
+    const seenRoom = new Set();
+    for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) {
+      if (!walked(x, y)) continue;
+      const t = map.getCell(x, y);
+      if (t === CELL.STREET || t === CELL.COURTYARD) continue;
+      if (seenRoom.has(`${x},${y}`)) continue;
+      const q = [[x, y]];
+      seenRoom.add(`${x},${y}`);
+      let n = 0;
+      while (q.length && n < 48) {
+        const [cx, cy] = q.shift();
+        n++;
+        add(cx, cy);
+        for (const d of ['N', 'E', 'S', 'W']) {
+          if (map.getEdge(cx, cy, d) !== EDGE.OPEN) continue;
+          const nx = cx + DV[d][0];
+          const ny = cy + DV[d][1];
+          if (!map.inBounds(nx, ny) || isRock(nx, ny) || map.getCell(nx, ny) !== t || seenRoom.has(`${nx},${ny}`)) continue;
+          seenRoom.add(`${nx},${ny}`);
+          q.push([nx, ny]);
+        }
       }
     }
   }
