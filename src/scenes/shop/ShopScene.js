@@ -590,7 +590,7 @@ export default class ShopScene extends Scene {
       const cost = fee(m);
       const row = h('div.shp-book-dual', [h('span.l', ['Change class'])]);
       for (const ch of choices) {
-        row.append(h('button.shp-chip', { disabled: !ch.ok || m.gold < cost, onclick: () => this.changeClass(m, ch.cls, cost), dataset: { tip: ch.ok ? `Begin again as a ${CLASSES[ch.cls].name} (${cost.toLocaleString('en-US')} gp). ${CLASSES[classes[0]].name} skills return at ${CLASSES[ch.cls].name} level ${m.levels[classes[0]] + 1}.` : `${CLASSES[ch.cls].name}: ${ch.reason}` } }, [CLASSES[ch.cls].name]));
+        row.append(h('button.shp-chip', { disabled: !ch.ok || m.gold < cost, onclick: () => this.changeClass(m, ch.cls, cost), dataset: { tip: ch.ok ? `Begin again as a ${CLASSES[ch.cls].name} (${cost.toLocaleString('en-US')} gp). ${CLASSES[classes[0]].name} skills return at ${CLASSES[ch.cls].name} level ${m.levels[classes[0]] + 1}.${ch.warning ? ` Beware: ${ch.warning}.` : ''}` : `${CLASSES[ch.cls].name}: ${ch.reason}` } }, [CLASSES[ch.cls].name]));
       }
       card.append(row);
     } else {
