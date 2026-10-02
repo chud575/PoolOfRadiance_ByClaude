@@ -454,7 +454,9 @@ export default class AutomapScene extends Scene {
     const hh = t.offsetHeight;
     const r = this.root.getBoundingClientRect();
     const px = Math.min(sx + r.left + 18, window.innerWidth - w - 8);
-    const py = sy + r.top + 22 + hh > window.innerHeight - 50 ? sy + r.top - hh - 14 : sy + r.top + 22;
+    // on the overview the block names hang below each district: the tip rises above the cursor
+    const above = this.view === 'world' ? sy + r.top - hh - 18 >= 8 : sy + r.top + 22 + hh > window.innerHeight - 50;
+    const py = above ? sy + r.top - hh - 18 : sy + r.top + 22;
     t.style.transform = `translate(${Math.max(8, px)}px, ${Math.max(8, py)}px)`;
   }
 
@@ -632,23 +634,17 @@ export default class AutomapScene extends Scene {
           onclick: () => { this.flash = { x: n.x, y: n.y, t: this.ctx.clock.time }; const cs = SHEET.MS / m.w; this.sv.focus(SHEET.MX + (n.x + 0.5) * cs, SHEET.MY + (n.y + 0.5) * cs, Math.max(this.sv.tZoom, 2)); },
           dataset: { tip: 'Show on the map · right-click the pin on the map to edit' },
         }, [
-          h('img', { src: glyphDataURL(`pin-${n.kind}`, (g, x, y, s) => drawPin(g, x, y, s, n.kind)), alt: '' }),
+          h('img', { src: glyphDataURL(`pinL-${n.kind}`, (g, x, y, s) => drawPin(g, x, y, s * 1.65, n.kind)), alt: '' }),
           h('span.am-note-text', [n.text || PIN_KINDS[n.kind]?.label || 'Note']),
           h('span.am-note-xy', [`${n.x},${n.y}`]),
         ])))
         : h('div.am-empty', ['Right-click any square to pin a note: danger, treasure, a quest lead.']),
       ...this._chartedSection(),
-      h('div.am-sec', ['Controls']),
-      h('div.am-help.two', [
-        helpRow('Drag', 'pan'), helpRow('Wheel', 'zoom'), helpRow('R-click', 'pin note'),
-        helpRow('Enter', 'centre'), helpRow('T', 'diorama'), helpRow('O', 'overview'),
-      ]),
       ...(notes.length ? [] : [h('div.am-sec', ['Pins']), h('div.am-pinkey', PIN_ORDER.map((k) => h('div.am-pinkey-row', { dataset: { tip: 'Right-click a square, then choose the seal' } }, [
-        h('img', { src: glyphDataURL(`pin-${k}`, (g, x, y, sz) => drawPin(g, x, y, sz, k)), alt: '' }),
+        h('img', { src: glyphDataURL(`pinL-${k}`, (g, x, y, sz) => drawPin(g, x, y, sz * 1.65, k)), alt: '' }),
         h('span', [PIN_KINDS[k].label]),
       ])))]),
-      h('div.am-sec', ['Phlan']),
-      this._locator(),
+      h('div.am-hint', ['Drag to pan · wheel to zoom · right-click to pin']),
     );
   }
 
@@ -1017,7 +1013,11 @@ export default class AutomapScene extends Scene {
       const fl = this.flash && this.flash.x === n.x && this.flash.y === n.y ? Math.max(0, 1 - (t - this.flash.t) / 1.2) : 0;
       const hov = this.hover && this.hover.x === n.x && this.hover.y === n.y;
       const pk = Math.max(0.75, this.sv.zoom ** -0.45);
+      // inked onto the sheet (multiplied into the paper), not a sticker laid over it
+      g.save();
+      g.globalCompositeOperation = 'multiply';
       drawPin(g, X(n.x) + cs * 0.72, Y(n.y) + cs * 0.3, cs * pk * (0.74 + (hov ? 0.08 : 0) + fl * 0.2), n.kind, { lift: hov ? cs * 0.04 : 0 });
+      g.restore();
     }
   }
 
@@ -1100,7 +1100,7 @@ export default class AutomapScene extends Scene {
         g.font = `bold ${caps.toFixed(2)}px ${SERIF}`;
         g.letterSpacing = `${(caps * 0.16).toFixed(2)}px`;
         const lh = caps * 1.3;
-        const options = [1, 2, 3].map((n) => balancedLines(g, name, n)).filter((o, i, a) => i === 0 || o.length > a[i - 1].length);
+        const options = [1, 2].map((n) => balancedLines(g, name, n)).filter((o, i, a) => i === 0 || o.length > a[i - 1].length);
         for (const [wi, lines] of options.entries()) {
           const lw = Math.max(...lines.map((l) => g.measureText(l).width));
           const bh = lines.length * lh;
@@ -1135,7 +1135,39 @@ export default class AutomapScene extends Scene {
       g.letterSpacing = `${(caps * 0.16).toFixed(2)}px`;
       const { lines, bh } = best;
       placed.push(best.box);
-      lines.forEach((l, i) => haloText(g, l, best.cx + caps * 0.1, best.cy - bh / 2 + lh * (i + 0.5), { color: '#3e1a0c', width: caps * 0.5, halo: 'rgba(238,226,194,0.95)' }));
+      // lettered on a knocked-out slip of parchment, so no name ever sits on a busy floor
+      {
+        const lw = Math.max(...lines.map((l) => g.measureText(l).width));
+        const sx = best.cx - lw / 2 - caps * 0.75;
+        const sy = best.cy - bh / 2 - caps * 0.28;
+        const sw = lw + caps * 1.5;
+        const sh = bh + caps * 0.5;
+        g.save();
+        g.fillStyle = 'rgba(50,28,10,0.28)';
+        g.fillRect(sx + caps * 0.12, sy + caps * 0.16, sw, sh);
+        const pg = g.createLinearGradient(0, sy, 0, sy + sh);
+        pg.addColorStop(0, 'rgba(246,236,208,0.97)');
+        pg.addColorStop(1, 'rgba(232,214,174,0.97)');
+        g.fillStyle = pg;
+        g.beginPath();
+        // the slip's ends notched like a swallow-tail ribbon
+        const nt = caps * 0.35;
+        g.moveTo(sx, sy); g.lineTo(sx + sw, sy); g.lineTo(sx + sw - nt, sy + sh / 2); g.lineTo(sx + sw, sy + sh);
+        g.lineTo(sx, sy + sh); g.lineTo(sx + nt, sy + sh / 2); g.closePath();
+        g.fill();
+        g.strokeStyle = 'rgba(43,26,13,0.85)';
+        g.lineWidth = Math.max(0.5, caps * 0.05);
+        g.stroke();
+        g.strokeStyle = 'rgba(168,50,32,0.65)';
+        g.lineWidth = Math.max(0.4, caps * 0.035);
+        g.beginPath();
+        g.moveTo(sx + nt + caps * 0.2, sy + caps * 0.16); g.lineTo(sx + sw - nt - caps * 0.2, sy + caps * 0.16);
+        g.moveTo(sx + nt + caps * 0.2, sy + sh - caps * 0.16); g.lineTo(sx + sw - nt - caps * 0.2, sy + sh - caps * 0.16);
+        g.stroke();
+        g.fillStyle = '#3a1709';
+        lines.forEach((l, i) => g.fillText(l, best.cx + caps * 0.08, best.cy - bh / 2 + lh * (i + 0.5) + caps * 0.04));
+        g.restore();
+      }
     }
     g.letterSpacing = '0px';
     g.restore();

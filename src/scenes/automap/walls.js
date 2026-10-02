@@ -113,7 +113,7 @@ export function stoneWall(g, x0, y0, x1, y1, { width = 8, seed = 1, courses = 1,
   }
   g.restore();
   if (faces) {
-    const fw = faceW ?? Math.max(0.9, width * 0.13);
+    const fw = faceW ?? Math.max(1.2, width * 0.17);
     const e0 = width * (0.1 + r() * 0.35);
     const e1 = width * (0.1 + r() * 0.35);
     for (const s of [-1, 1]) face(g, f.P(-e0, s * hw), f.P(f.len + e1, s * hw), { seed: seed + s * 7, width: fw * (s === shadeDir ? 1.25 : 0.9) });
@@ -208,7 +208,7 @@ export function timberWall(g, x0, y0, x1, y1, { width = 6, seed = 1, cs = 50 } =
     g.stroke();
   }
   g.restore();
-  for (const s of [-1, 1]) face(g, f.P(-width * 0.2, s * hw), f.P(f.len + width * 0.2, s * hw), { seed: seed + s * 3, width: 0.8, amp: 0.3 });
+  for (const s of [-1, 1]) face(g, f.P(-width * 0.2, s * hw), f.P(f.len + width * 0.2, s * hw), { seed: seed + s * 3, width: (f.nx + f.ny) * s > 0 ? 1.6 : 1.1, amp: 0.3 });
 }
 
 /**
@@ -217,7 +217,7 @@ export function timberWall(g, x0, y0, x1, y1, { width = 6, seed = 1, cs = 50 } =
  * out: unit vector pointing outside the city.
  */
 export function cityWall(g, x0, y0, x1, y1, { width = 16, seed = 1, out = [0, -1] } = {}) {
-  stoneWall(g, x0, y0, x1, y1, { width, seed, courses: 3, tone: [158, 148, 130], faceW: 1.5 });
+  stoneWall(g, x0, y0, x1, y1, { width, seed, courses: 3, tone: [158, 148, 130], faceW: 2.7 });
   const f = frame(x0, y0, x1, y1);
   const r = prng(seed + 41);
   const so = Math.sign(f.nx * out[0] + f.ny * out[1]) || 1;
@@ -442,21 +442,16 @@ export function secretDoor(g, ax, ay, bx, by, { width = 8, cs = 50, side = [0, -
   // the rubric S sits right on the wall line, about the size of a door leaf
   const mx = (ax + bx) / 2 + side[0] * 0;
   const my = (ay + by) / 2 + side[1] * 0;
-  const fs = Math.max(9, Math.round(cs * 0.44));
-  // a small knocked-out cartouche in the wall so the letter reads
-  g.fillStyle = 'rgba(242,230,200,0.96)';
-  g.beginPath(); g.ellipse(mx, my, fs * 0.36, fs * 0.46, 0, 0, Math.PI * 2); g.fill();
-  g.strokeStyle = 'rgba(43,26,13,0.75)';
-  g.lineWidth = 0.6;
-  g.stroke();
-  g.font = `italic bold ${fs}px ${SERIF}`;
+  const fs = Math.max(8, Math.round(cs * 0.34));
+  // the rubricator's S, lettered with a fine pen straight over the wall line
+  g.font = `italic ${fs}px ${SERIF}`;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.lineJoin = 'round';
+  g.strokeStyle = 'rgba(242,230,200,0.9)';
+  g.lineWidth = fs * 0.22;
+  g.strokeText('S', mx, my + fs * 0.04);
   g.fillStyle = INK.vermilion;
   g.fillText('S', mx, my + fs * 0.04);
-  g.strokeStyle = 'rgba(70,14,8,0.85)';
-  g.lineWidth = 0.45;
-  g.strokeText('S', mx, my + fs * 0.04);
   g.restore();
 }

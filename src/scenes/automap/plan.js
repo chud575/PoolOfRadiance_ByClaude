@@ -1,5 +1,7 @@
 import { EDGE, DIRS } from '../../data/maps/MapGrid.js';
 import { INK, prng } from './ink.js';
+import { irregularStone, inkStone } from './paint.js';
+import { fbm } from '../../render/textures/noise.js';
 
 /**
  * Floor plans for the buildings on a survey sheet: plank, flagstone or broken
@@ -129,44 +131,43 @@ export function drawFloor(g, cells, { CX, CY, cs, seed = 1, kind = 'planks' }) {
       }
     }
   } else {
-    // flagstones: courses of hand-dressed slabs, each its own size and tone, with
-    // a broken inked joint, a darker bed of mortar and the odd crack
-    const rh0 = cs * (0.25 + r() * 0.06);
+    // flagstones: courses of hand-dressed slabs, each its own size and tone (some
+    // replaced, some sunk and darkened, a few cracked or spalled), joints filled with
+    // dark grit, worn pale down the middle of the room where feet have passed
+    g.fillStyle = 'rgba(70,52,34,0.32)';
+    g.fillRect(x0, y0, x1 - x0, y1 - y0);
+    const rh0 = cs * (0.27 + r() * 0.05);
+    const mx = (x0 + x1) / 2;
+    const my = (y0 + y1) / 2;
+    const R = Math.hypot(x1 - x0, y1 - y0) / 2;
     for (let y = y0; y < y1; ) {
-      const rh = rh0 * (0.8 + r() * 0.4);
+      const rh = rh0 * (0.78 + r() * 0.44);
       let x = x0 - r() * cs * 0.3;
       while (x < x1) {
-        const w = cs * (0.24 + r() * 0.3);
-        const J = () => (r() - 0.5) * cs * 0.025;
-        const q = [[x + 1 + J(), y + 1 + J()], [x + w - 1 + J(), y + 1 + J()], [x + w - 1 + J(), y + rh - 1 + J()], [x + 1 + J(), y + rh - 1 + J()]];
-        const quad = () => { g.beginPath(); q.forEach(([px, py], i) => (i ? g.lineTo(px, py) : g.moveTo(px, py))); g.closePath(); };
-        quad();
-        g.strokeStyle = 'rgba(70,48,28,0.2)';
-        g.lineWidth = 1.6;
-        g.stroke();
-        const v = 186 + r() * 50;
-        const warm = r();
-        g.fillStyle = `rgba(${v | 0},${(v * (0.9 + warm * 0.05)) | 0},${(v * (0.74 + warm * 0.08)) | 0},${(0.22 + r() * 0.2).toFixed(2)})`;
-        g.fill();
-        g.strokeStyle = `rgba(56,38,22,${(0.4 + r() * 0.2).toFixed(2)})`;
-        g.lineWidth = 0.55;
-        g.beginPath();
-        for (let i = 0; i < 4; i++) {
-          if (r() < 0.18) continue;
-          const [ax, ay] = q[i];
-          const [bx, by] = q[(i + 1) % 4];
-          g.moveTo(ax, ay); g.lineTo(bx, by);
-        }
-        g.stroke();
-        if (r() < 0.16) {
-          g.beginPath();
-          const cx = x + w * (0.2 + r() * 0.6);
-          g.moveTo(cx, y + 1);
-          g.lineTo(cx + (r() - 0.5) * w * 0.4, y + rh * 0.5);
-          g.lineTo(cx + (r() - 0.5) * w * 0.5, y + rh - 1);
-          g.stroke();
-        }
+        const w = cs * (0.26 + r() * 0.34);
+        const cx = x + w / 2;
+        const cy = y + rh / 2;
         x += w;
+        const tone = fbm(cx * 0.02, cy * 0.02, { period: 64, octaves: 2, seed: seed + 5 });
+        const path = 1 - Math.min(1, Math.hypot(cx - mx, (cy - my) * 1.4) / R);
+        let v = 132 + tone * 70 + (r() - 0.5) * 60;
+        const odd = r();
+        // a replacement slab in a different stone, or a sunk one holding damp
+        let tint = [1, 0.95, 0.84];
+        if (odd < 0.07) tint = [0.97, 0.95, 0.92];
+        else if (odd < 0.16) { v *= 0.78; tint = [1, 0.92, 0.8]; }
+        v += path * 24;
+        const pts = irregularStone(r, w / 2 - 0.9, rh / 2 - 0.9, { extra: [0, 2], jit: 0.05, bulge: 0.04, chamfer: 0.18 });
+        inkStone(g, pts, {
+          X: cx, Y: cy, ang: (r() - 0.5) * 0.025, rgb: [v * tint[0], v * tint[1], v * tint[2]], alpha: 0.8 + r() * 0.15,
+          lw: 0.85, rnd: r, bed: 0.12, crack: 0.2, pits: 0.55, worn: path > 0.45 ? 1 : 0,
+        });
+        // a spalled corner: the arris broken away, a few chips round it
+        if (r() < 0.12) {
+          const [px, py] = pts[Math.floor(r() * pts.length)];
+          g.fillStyle = 'rgba(82,60,38,0.45)';
+          g.beginPath(); g.ellipse(cx + px * 0.82, cy + py * 0.82, w * 0.09, rh * 0.11, r() * 3, 0, Math.PI * 2); g.fill();
+        }
       }
       y += rh;
     }
@@ -207,7 +208,7 @@ export function wallShadow(g, cells, { CX, CY, cs, seed = 1, walled, band = 0.24
 // Each draws in a local frame: origin at the anchor, +y pointing away from the wall
 // it stands against (into the room); sizes in cell units multiplied by cs.
 
-function outline(g, lw = 1.05) {
+function outline(g, lw = 0.62) {
   g.strokeStyle = INK.ink;
   g.lineWidth = lw;
   g.stroke();
@@ -493,12 +494,12 @@ export function partition(g, cells, { CX, CY, cs, seed = 1 }) {
     const gy = vertical ? CY(t) : CY(at);
     // a thin double rule (studs and boards)
     for (const o of [-1.1, 1.1]) {
-      g.lineWidth = 0.6;
+      g.lineWidth = 0.45;
       g.beginPath();
       if (vertical) { g.moveTo(gx + o, gy); g.lineTo(gx + o, gy + cs); } else { g.moveTo(gx, gy + o); g.lineTo(gx + cs, gy + o); }
       g.stroke();
     }
-    g.lineWidth = 1.4;
+    g.lineWidth = 0.8;
     g.beginPath();
     for (let k = 0; k <= 2; k++) {
       if (vertical) { g.moveTo(gx - 1.1, gy + (k / 2) * cs); g.lineTo(gx + 1.1, gy + (k / 2) * cs); } else { g.moveTo(gx + (k / 2) * cs, gy - 1.1); g.lineTo(gx + (k / 2) * cs, gy + 1.1); }

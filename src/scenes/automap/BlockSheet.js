@@ -19,7 +19,7 @@ import { SERIF, drawCompassRose, drawCartouche, drawIlluminatedInitial, drawFlou
  *
  * Sheet units: 1300 x 1000 (plus MARGIN on each side for the baked shadow).
  */
-export const SHEET = { W: 1300, H: 1000, M: 40, MX: 78, MY: 78, MS: 844 };
+export const SHEET = { W: 1300, H: 940, M: 40, MX: 78, MY: 56, MS: 844 };
 
 /** Pre-computed facts about a map used by the renderers. */
 export function analyseMap(map) {
@@ -141,16 +141,6 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
   const wild = map.tileset === 'wilderness' || map.tileset === 'graveyard';
   const dungeon = map.tileset === 'dungeon' || map.kind === 'dungeon';
 
-  // ---------- pencil survey grid (everywhere) ----------
-  g.save();
-  g.strokeStyle = 'rgba(90,75,55,0.16)';
-  g.lineWidth = 0.6;
-  g.beginPath();
-  for (let i = 0; i <= map.w; i++) { g.moveTo(CX(i), MY); g.lineTo(CX(i), MY + MS); }
-  for (let j = 0; j <= map.h; j++) { g.moveTo(MX, CY(j)); g.lineTo(MX + MS, CY(j)); }
-  g.stroke();
-  g.restore();
-
   // ---------- fog of war: walked squares inked, squares in sight pencilled, a soft fade ----------
   // what the company saw from where it stood: down each street to the next wall, and
   // the whole of any room it entered (so the sheet rewards the very first step)
@@ -167,6 +157,23 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
   const mask = survey.clean;
   const fogCov = survey.cover;
   g.drawImage(paintUnsurveyed(W, H, k, fogCov, fogArea, { seed: seed + 21 }), 0, 0, W, H);
+  // ---------- pencil survey grid: only where the ground is still unsurveyed (the inked
+  // plan stands on its own, no squares showing through the floors) ----------
+  {
+    const gl = makeCanvas(W * k, H * k);
+    const gg = gl.getContext('2d');
+    gg.scale(k, k);
+    gg.strokeStyle = 'rgba(90,75,55,0.2)';
+    gg.lineWidth = 0.6;
+    gg.beginPath();
+    for (let i = 0; i <= map.w; i++) { gg.moveTo(CX(i), MY); gg.lineTo(CX(i), MY + MS); }
+    for (let j = 0; j <= map.h; j++) { gg.moveTo(MX, CY(j)); gg.lineTo(MX + MS, CY(j)); }
+    gg.stroke();
+    gg.setTransform(1, 0, 0, 1, 0, 0);
+    gg.globalCompositeOperation = 'destination-in';
+    gg.drawImage(fogCov, 0, 0, W * k, H * k);
+    g.drawImage(gl, 0, 0, W, H);
+  }
   // under the unsurveyed shading, the council's old, faded street plan: loose pencilled
   // outlines of where the blocks of houses are said to stand (no doors, no secrets)
   if (!dungeon) {
@@ -257,16 +264,6 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
         washRegion(w, rg.cells, { ...P, color: wild ? [120, 152, 80] : [220, 184, 122], alpha: wild ? 0.3 : 0.22, seed: rs, edge: 0.22, mottle: 0.55, gran: 0.25, blooms: 0 });
       }
     }
-    // texture: drawn setts on plazas, grit on the streets, broken masonry in rubble, ripples on water
-    for (const rg of reg.list) {
-      if (rg.type === CELL.COURTYARD) cobbleRegion(w, rg.cells, { ...P, seed: seed + rg.index * 17 });
-      // worn stretches of paving along the streets, laid with the run of the street
-      if (rg.type === CELL.STREET && !wild && !dungeon) {
-        const open = (x, y, d) => map.getEdge(x, y, d) === EDGE.OPEN;
-        const axisAt = (x, y) => ((open(x, y, 'E') ? 1 : 0) + (open(x, y, 'W') ? 1 : 0) >= (open(x, y, 'N') ? 1 : 0) + (open(x, y, 'S') ? 1 : 0) ? 'h' : 'v');
-        cobbleRegion(w, rg.cells, { ...P, seed: seed + rg.index * 23 + 5, axisAt, patch: 0.36 });
-      }
-    }
     scatter(w, map, (x, y) => !info.isRock(x, y) && map.getCell(x, y) === CELL.STREET, { ...P, seed: seed + 3, kind: wild ? 'grass' : 'street' });
     scatter(w, map, (x, y) => !info.isRock(x, y) && map.getCell(x, y) === CELL.RUBBLE, { ...P, seed: seed + 4, kind: 'rubble' });
     if (dungeon) scatter(w, map, (x, y) => !info.isRock(x, y) && map.getCell(x, y) === CELL.INTERIOR, { ...P, seed: seed + 6, kind: 'street' });
@@ -302,6 +299,48 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
     const busy = new Set();
     for (const ev of map.events) if (eventMarker(ev, !!spent[ev.id])) busy.add(`${ev.x},${ev.y}`);
     for (const t of info.travel) busy.add(`${t.at.x},${t.at.y}`);
+    // paving: setts laid continuously along the street network, flags on the plazas
+    if (!wild && !dungeon) {
+      const ground = (x, y) => map.inBounds(x, y) && !info.isRock(x, y) && (map.getCell(x, y) === CELL.STREET || map.getCell(x, y) === CELL.COURTYARD);
+      const DV2 = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] };
+      const opn = (x, y, dd) => map.getEdge(x, y, dd) === EDGE.OPEN && ground(x + DV2[dd][0], y + DV2[dd][1]);
+      const run = (x, y, a, b) => {
+        let n = 1;
+        for (const dd of [a, b]) {
+          let cx = x; let cy = y;
+          for (let i = 0; i < 6 && opn(cx, cy, dd); i++) { cx += DV2[dd][0]; cy += DV2[dd][1]; n++; }
+        }
+        return n;
+      };
+      const axisAt = (x, y) => {
+        const h = run(x, y, 'E', 'W');
+        const v = run(x, y, 'N', 'S');
+        return h > v ? 'h' : v > h ? 'v' : (x + y) % 2 ? 'h' : 'v';
+      };
+      // alleys: one square wide between two walls, left as beaten earth
+      const walled = (x, y, dd) => map.getEdge(x, y, dd) !== EDGE.OPEN;
+      const bareAt = (x, y) => map.getCell(x, y) === CELL.STREET && ((walled(x, y, 'N') && walled(x, y, 'S')) || (walled(x, y, 'E') && walled(x, y, 'W')));
+      // wear: before every door and arch, at the gates, and where lanes cross between buildings
+      const wearAt = (x, y) => {
+        let w = 0;
+        for (const dd of DIRS) {
+          const e = map.getEdge(x, y, dd);
+          if (e === EDGE.DOOR || e === EDGE.ARCH || e === EDGE.LOCKED) w = Math.max(w, 0.62);
+        }
+        if (info.travel.some((t) => t.at.x === x && t.at.y === y)) w = 1;
+        const opens = DIRS.filter((dd) => opn(x, y, dd)).length;
+        let diag = 0;
+        for (const [dx2, dy2] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) if (!ground(x + dx2, y + dy2)) diag++;
+        if (opens >= 3 && diag >= 2) w = Math.max(w, 0.42);
+        return w;
+      };
+      for (const rg of reg.list) {
+        if (rg.type !== CELL.STREET && rg.type !== CELL.COURTYARD) continue;
+        if (!rg.cells.some(([x, y]) => seenCell(x, y))) continue;
+        const plaza = rg.type === CELL.COURTYARD;
+        cobbleRegion(d, rg.cells, { CX, CY, cs, seed: seed + rg.index * 23 + 5, axisAt: plaza ? null : axisAt, wearAt, groundAt: ground, bareAt: plaza ? () => false : bareAt, kind: plaza ? 'flags' : 'setts' });
+      }
+    }
     for (const rg of reg.list) {
       if (rg.type !== CELL.INTERIOR) continue;
       if (!rg.cells.some(([x, y]) => seenCell(x, y))) continue;
@@ -352,6 +391,33 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
     else stoneWall(ig, ax, ay, bx, by, { width: wallW, seed: sd, courses: 2, tone: dungeon ? [132, 124, 112] : [146, 128, 104], ragged: rag });
   };
   const wallRects = [];
+  // a cartographer's drop shadow: fine diagonal hatching cast on the ground south and east
+  // of every wall (light from the north-west), drawn under the masonry
+  if (inkWalls) {
+    const hr = prng(seed + 91);
+    ig.save();
+    ig.strokeStyle = INK.ink;
+    ig.lineCap = 'round';
+    for (const rn of mergeRuns(segs.filter((q) => effective(q) !== EDGE.OPEN))) {
+      const isB = border(rn);
+      if (isB && ((rn.horiz && rn.cell[2] === 'S') || (!rn.horiz && rn.cell[2] === 'E'))) continue;
+      const w0 = widthOf(rn) / 2 + (isB ? cityOff : 0);
+      const band = cs * (isB ? 0.26 : ruin(rn) ? 0.12 : 0.19);
+      const a0 = rn.horiz ? rn.x0 : rn.y0;
+      const a1 = rn.horiz ? rn.x1 : rn.y1;
+      const base = (rn.horiz ? rn.y0 : rn.x0) + w0;
+      for (let p = a0 + hr() * 1.2; p < a1; p += 1.9 + hr() * 0.8) {
+        // the shadow frays: strokes shorten here and there, never a ruled edge
+        const L = band * (0.55 + hr() * 0.45) * (0.8 + 0.2 * Math.sin(p * 0.37));
+        ig.globalAlpha = 0.34 + hr() * 0.26;
+        ig.lineWidth = 0.45 + hr() * 0.3;
+        ig.beginPath();
+        if (rn.horiz) { ig.moveTo(p, base + 0.3); ig.lineTo(p + L * 0.75, base + L); } else { ig.moveTo(base + 0.3, p); ig.lineTo(base + L, p + L * 0.75); }
+        ig.stroke();
+      }
+    }
+    ig.restore();
+  }
   const keepOut = (q, w) => wallRects.push([Math.min(q.x0, q.x1) - w / 2, Math.min(q.y0, q.y1) - w / 2, Math.abs(q.x1 - q.x0) + w, Math.abs(q.y1 - q.y0) + w]);
   if (inkWalls) {
     const runs = mergeRuns(segs.filter((q) => effective(q) === EDGE.WALL && !ruin(q)));

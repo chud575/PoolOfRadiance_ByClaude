@@ -228,157 +228,292 @@ function stone(g, x, y, rad, rnd, verts = 6, squash = 0.8) {
   g.closePath();
 }
 
+// light falls from the north-west: an edge whose outward normal looks south-east is in shadow
+const SHADOW = [Math.SQRT1_2, Math.SQRT1_2];
+
 /**
- * Paved ground: setts laid in courses that follow the run of the street
- * (axisAt(x, y) → 'h' | 'v' per cell, or the region's long axis), courses
- * gently undulating and varying in size; stones vary in size and value with
- * a low-frequency patina, wear leaves gaps of bare earth, rain leaves a few
- * puddle stains, and the paving thins out to earth toward the region's edge.
- * patch > 0 lays only scattered paved stretches (worn streets).
+ * An irregular hand-cut stone: a jittered box with some corners knocked off
+ * and some faces bulged or dished, 5-7 sides (more with `extra`).
+ * Points are local, clockwise (screen y down), centred on the origin.
  */
-export function cobbleRegion(g, cells, { CX, CY, cs, seed = 1, ink = '#3a2a18', axisAt = null, patch = 0 }) {
+export function irregularStone(rnd, hw, hh, { extra = [1, 3], jit = 0.13, bulge = 0.1, chamfer = 0.24 } = {}) {
+  const m = Math.min(hw, hh);
+  const c = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([x, y]) => [x + (rnd() - 0.5) * 2 * m * jit, y + (rnd() - 0.5) * 2 * m * jit]);
+  const nExtra = extra[0] + Math.floor(rnd() * (extra[1] - extra[0] + 1));
+  const slots = [0, 1, 2, 3, 4, 5, 6, 7];
+  for (let i = slots.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    [slots[i], slots[j]] = [slots[j], slots[i]];
+  }
+  const pick = new Set(slots.slice(0, nExtra));
+  const pts = [];
+  const toward = (p, q, d) => {
+    const L = Math.hypot(q[0] - p[0], q[1] - p[1]) || 1;
+    return [p[0] + ((q[0] - p[0]) / L) * d, p[1] + ((q[1] - p[1]) / L) * d];
+  };
+  for (let i = 0; i < 4; i++) {
+    const p = c[i];
+    const prev = c[(i + 3) % 4];
+    const next = c[(i + 1) % 4];
+    if (pick.has(i)) {
+      const d = m * chamfer * (0.6 + rnd() * 0.9);
+      pts.push(toward(p, prev, d), toward(p, next, d));
+    } else pts.push(p);
+    if (pick.has(4 + i)) {
+      const t = 0.3 + rnd() * 0.4;
+      const ex = next[0] - p[0];
+      const ey = next[1] - p[1];
+      const L = Math.hypot(ex, ey) || 1;
+      const o = (rnd() - 0.3) * m * bulge * 2;
+      pts.push([p[0] + ex * t + (ey / L) * o, p[1] + ey * t - (ex / L) * o]);
+    }
+  }
+  return pts;
+}
+
+/**
+ * Ink one stone at (X, Y), turned by `ang`: a bed of grit round it, its own
+ * wash, lit from the north-west (a pale crown, a shaded south-east flank), a
+ * pit or crack now and then, and an outline drawn in broken pen strokes that
+ * swell on the shadow side, thin to nothing on the lit side and pool at the
+ * shadowed corners.
+ */
+export function inkStone(g, pts, { X, Y, ang = 0, rgb = [170, 158, 136], alpha = 0.85, lw = 0.7, rnd, ink = '43,26,13', bed = 0.24, crack = 0.08, pits = 0.4, worn = 0 } = {}) {
+  const n = pts.length;
+  const ca = Math.cos(ang);
+  const sa = Math.sin(ang);
+  g.save();
+  g.translate(X, Y);
+  g.rotate(ang);
+  const path = () => {
+    g.beginPath();
+    g.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < n; i++) g.lineTo(pts[i][0], pts[i][1]);
+    g.closePath();
+  };
+  let r0 = 0;
+  for (const [x, y] of pts) r0 = Math.max(r0, Math.hypot(x, y));
+  if (bed > 0) {
+    path();
+    g.strokeStyle = `rgba(58,40,24,${(bed * (0.8 + rnd() * 0.4)).toFixed(3)})`;
+    g.lineWidth = Math.max(1, r0 * 0.28);
+    g.lineJoin = 'round';
+    g.stroke();
+  }
+  path();
+  g.fillStyle = `rgba(${rgb[0] | 0},${rgb[1] | 0},${rgb[2] | 0},${alpha.toFixed(3)})`;
+  g.fill();
+  // modelling: light toward the north-west corner, shade toward the south-east
+  const lx = -(ca + sa) * Math.SQRT1_2;
+  const ly = -(-sa + ca) * Math.SQRT1_2;
+  g.save();
+  path();
+  g.clip();
+  const lg = g.createLinearGradient(lx * r0, ly * r0, -lx * r0, -ly * r0);
+  lg.addColorStop(0, `rgba(255,248,226,${(0.2 + rnd() * 0.12).toFixed(3)})`);
+  lg.addColorStop(0.45, 'rgba(255,248,226,0)');
+  lg.addColorStop(0.62, 'rgba(36,22,10,0)');
+  lg.addColorStop(1, `rgba(36,22,10,${(0.26 + rnd() * 0.14).toFixed(3)})`);
+  g.fillStyle = lg;
+  g.fillRect(-r0, -r0, r0 * 2, r0 * 2);
+  if (worn > 0) {
+    // a dished, foot-polished crown
+    g.fillStyle = `rgba(255,246,220,${(worn * 0.16).toFixed(3)})`;
+    g.beginPath(); g.ellipse(lx * r0 * 0.15, ly * r0 * 0.15, r0 * 0.5, r0 * 0.36, rnd() * 3, 0, Math.PI * 2); g.fill();
+  }
+  if (rnd() < pits) {
+    g.fillStyle = `rgba(${ink},0.42)`;
+    const np = 2 + Math.floor(rnd() * 4);
+    for (let q = 0; q < np; q++) { g.beginPath(); g.arc((rnd() - 0.5) * r0 * 1.1, (rnd() - 0.5) * r0 * 0.9, 0.25 + rnd() * 0.35, 0, Math.PI * 2); g.fill(); }
+  }
+  if (rnd() < crack) {
+    // a hairline crack from one face toward the middle, forking once
+    const a = pts[Math.floor(rnd() * n)];
+    const mx = (rnd() - 0.5) * r0 * 0.5;
+    const my = (rnd() - 0.5) * r0 * 0.5;
+    g.strokeStyle = `rgba(${ink},0.6)`;
+    g.lineWidth = lw * 0.55;
+    g.lineCap = 'round';
+    g.beginPath();
+    g.moveTo(a[0] * 0.98, a[1] * 0.98);
+    g.lineTo((a[0] + mx) * 0.5 + (rnd() - 0.5) * r0 * 0.2, (a[1] + my) * 0.5 + (rnd() - 0.5) * r0 * 0.2);
+    g.lineTo(mx, my);
+    g.lineTo(mx + (rnd() - 0.5) * r0 * 0.5, my + (rnd() - 0.5) * r0 * 0.5);
+    g.stroke();
+  }
+  g.restore();
+  // the pen: each face its own stroke, weight by how far it turns from the light
+  g.lineCap = 'round';
+  const face = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const [ax, ay] = pts[i];
+    const [bx, by] = pts[(i + 1) % n];
+    const ex = bx - ax;
+    const ey = by - ay;
+    const L = Math.hypot(ex, ey) || 1;
+    // outward normal (local), turned into the sheet's frame
+    const nx = ey / L;
+    const ny = -ex / L;
+    const wx = nx * ca - ny * sa;
+    const wy = nx * sa + ny * ca;
+    face[i] = wx * SHADOW[0] + wy * SHADOW[1];
+  }
+  for (let i = 0; i < n; i++) {
+    const f = face[i];
+    const shade = Math.max(0, Math.min(1, f * 0.6 + 0.5));
+    if (rnd() < (f < -0.2 ? 0.34 : f < 0.3 ? 0.12 : 0.03)) continue;
+    const [ax, ay] = pts[i];
+    const [bx, by] = pts[(i + 1) % n];
+    // strokes start a touch late and stop a touch early on the lit side
+    const t0 = f < 0 ? rnd() * 0.18 : 0;
+    const t1 = f < 0 ? 1 - rnd() * 0.18 : 1;
+    const sx = ax + (bx - ax) * t0;
+    const sy = ay + (by - ay) * t0;
+    const exx = ax + (bx - ax) * t1;
+    const eyy = ay + (by - ay) * t1;
+    const mxx = (sx + exx) / 2 + (rnd() - 0.5) * lw * 0.9;
+    const myy = (sy + eyy) / 2 + (rnd() - 0.5) * lw * 0.9;
+    g.strokeStyle = `rgba(${ink},${(0.5 + shade * 0.45).toFixed(3)})`;
+    g.lineWidth = lw * (0.35 + shade ** 1.4 * 1.45) * (0.85 + rnd() * 0.3);
+    g.beginPath();
+    g.moveTo(sx, sy);
+    g.quadraticCurveTo(mxx, myy, exx, eyy);
+    g.stroke();
+  }
+  // ink pools where two shadowed faces meet (and now and then where the pen paused)
+  g.fillStyle = `rgba(${ink},0.85)`;
+  for (let i = 0; i < n; i++) {
+    const f0 = face[(i + n - 1) % n];
+    const f1 = face[i];
+    if ((f0 > 0.15 && f1 > 0.15) || rnd() < 0.08) {
+      g.beginPath();
+      g.arc(pts[i][0], pts[i][1], lw * (0.5 + rnd() * 0.45), 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+  g.restore();
+}
+
+/**
+ * Paved ground laid as a street mason would: setts in courses that run with
+ * the street (axisAt(x, y) → 'h' | 'v' per cell), continuous along the whole
+ * walkable network; a strip of bare earth at the foot of every wall; wear
+ * patches where feet and wheels concentrate (wearAt(x, y) → 0..1: junctions,
+ * doorways, the gate), where stones have been lifted or lie loose; alleys
+ * (bareAt) left as beaten earth. kind: 'setts' | 'flags' (a plaza of large
+ * squared flags).
+ */
+export function cobbleRegion(g, cells, { CX, CY, cs, seed = 1, ink = '43,26,13', axisAt = null, wearAt = () => 0, bareAt = () => false, groundAt = null, kind = 'setts' }) {
   const has = cellSet(cells);
   const rnd = prng(seed);
   let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
   for (const [x, y] of cells) { minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x + 1); maxY = Math.max(maxY, y + 1); }
   const regionAxis = maxX - minX >= maxY - minY ? 'h' : 'v';
   const axisOf = axisAt ?? (() => regionAxis);
+  const paved = (x, y) => (groundAt ? groundAt(x, y) : has(x, y)) && !bareAt(x, y);
+  const own = (x, y) => has(x, y) && !bareAt(x, y);
+  // distance (cells) to the nearest unpaved ground: the earth strip at the wall foot
   const edgeDist = (ux, uy) => {
     const cx = Math.floor(ux);
     const cy = Math.floor(uy);
     let d = 2;
-    for (let j = -2; j <= 2; j++) for (let i = -2; i <= 2; i++) {
-      if (has(cx + i, cy + j)) continue;
+    for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
+      if (paved(cx + i, cy + j)) continue;
       const ex = Math.max(cx + i, Math.min(ux, cx + i + 1));
       const ey = Math.max(cy + j, Math.min(uy, cy + j + 1));
       d = Math.min(d, Math.hypot(ux - ex, uy - ey));
     }
     return d;
   };
+  // the wear field: each worn cell spreads a soft, ragged patch round its centre
+  const wearCells = [];
+  for (const [x, y] of cells) { const w = wearAt(x, y); if (w > 0) wearCells.push([x + 0.5, y + 0.5, w]); }
+  const wearField = (ux, uy) => {
+    let w = 0;
+    for (const [wx, wy, a] of wearCells) {
+      const d = Math.hypot(ux - wx, uy - wy);
+      if (d < 1.1) w = Math.max(w, a * (1 - d / 1.1));
+    }
+    const n = fbm(ux * 1.3, uy * 1.3, { period: 64, octaves: 3, seed: seed + 41 });
+    return w * (0.55 + n * 0.9) + Math.max(0, n - 0.74) * 1.4;
+  };
   g.save();
   g.lineJoin = 'round';
-  const base = cs * 0.14;
+  // the bed: a dark earth wash under every paved square, so joints and gaps read as soil
+  for (const [x, y] of cells) {
+    g.fillStyle = `rgba(118,88,58,${(bareAt(x, y) ? 0.1 : 0.16).toFixed(3)})`;
+    g.fillRect(CX(x), CY(y), cs, cs);
+  }
+  const flags = kind === 'flags';
+  const base = cs * (flags ? 0.21 : 0.135);
   for (const ax of ['h', 'v']) {
     const [u0, u1, v0, v1] = ax === 'h' ? [minX, maxX, minY, maxY] : [minY, maxY, minX, maxX];
     const ph = rnd() * 6;
     let v = v0;
     while (v < v1) {
-      const ch = base * (0.8 + rnd() * 0.45);
+      const ch = base * (flags ? 0.62 + rnd() * 0.8 : 0.82 + rnd() * 0.36);
       const chu = ch / cs;
       let u = u0 - rnd() * chu;
       while (u < u1) {
-        const w = ch * (1.05 + rnd() * 0.75);
+        const w = ch * (flags ? 0.7 + rnd() * 1.3 : 1.1 + rnd() * 0.7);
         const wu = w / cs;
         const cu = u + wu / 2;
-        const bend = Math.sin(cu * 1.1 + ph + v * 0.3) * 0.05;
+        const bend = flags ? 0 : Math.sin(cu * 1.1 + ph + v * 0.3) * 0.045;
         const cv = v + chu / 2 + bend;
         u += wu;
         const x = ax === 'h' ? cu : cv;
         const y = ax === 'h' ? cv : cu;
         const ix = Math.floor(x);
         const iy = Math.floor(y);
-        if (!has(ix, iy) || axisOf(ix, iy) !== ax) continue;
-        const pn = fbm(x * 0.33, y * 0.33, { period: 64, octaves: 2, seed: seed + 7 });
-        if (patch && pn < patch + rnd() * 0.06) continue;
+        if (!own(ix, iy) || axisOf(ix, iy) !== ax) continue;
         const d = edgeDist(x, y);
-        const wear = fbm(x * 0.9, y * 0.9, { period: 64, octaves: 3, seed: seed + 3 });
-        const fadeEdge = Math.min(1, d / 0.55) * (patch ? Math.min(1, (pn - patch) / 0.08) : 1);
-        if (rnd() > fadeEdge * 1.15 - 0.05) continue;
+        // bare earth hugging the wall foot, the paving ragged at its margin
+        const foot = d - 0.12 - rnd() * 0.14;
+        if (foot < 0) continue;
+        const wear = wearField(x, y);
         const X = CX(0) + x * cs;
         const Y = CY(0) + y * cs;
-        const ang = (ax === 'h' ? 0 : Math.PI / 2) + Math.atan(Math.cos(cu * 1.1 + ph) * 0.055) * (ax === 'h' ? 1 : -1) + (rnd() - 0.5) * 0.18;
-        if (wear < 0.3) {
-          // worn away: bare earth showing where stones were lifted
-          g.fillStyle = `rgba(120,88,56,${(0.05 + rnd() * 0.06).toFixed(3)})`;
-          g.beginPath(); g.ellipse(X, Y, w * 0.5, ch * 0.45, ang, 0, Math.PI * 2); g.fill();
-          if (rnd() < 0.25) {
-            // a loose stone left behind, tilted out of its course
-            g.save(); g.translate(X + (rnd() - 0.5) * w * 0.4, Y); g.rotate(ang + (rnd() - 0.5) * 0.9);
-            g.fillStyle = 'rgba(150,136,112,0.55)'; g.strokeStyle = ink; g.lineWidth = 0.5;
-            g.beginPath(); g.rect(-w * 0.22, -ch * 0.2, w * 0.44, ch * 0.4); g.fill(); g.globalAlpha = 0.5; g.stroke();
-            g.restore();
+        const ang = (ax === 'h' ? 0 : Math.PI / 2) + (flags ? (rnd() - 0.5) * 0.04 : Math.atan(Math.cos(cu * 1.1 + ph) * 0.05) * (ax === 'h' ? 1 : -1) + (rnd() - 0.5) * 0.16);
+        if (wear > 0.7) {
+          // lifted: a soft hollow of earth, now and then a loose stone left tilted in it
+          g.fillStyle = `rgba(104,74,46,${(0.08 + rnd() * 0.08).toFixed(3)})`;
+          g.beginPath(); g.ellipse(X, Y, w * 0.55, ch * 0.5, ang + (rnd() - 0.5), 0, Math.PI * 2); g.fill();
+          if (rnd() < 0.2) {
+            const pts = irregularStone(rnd, w * 0.24, ch * 0.24, { extra: [2, 3], jit: 0.2 });
+            inkStone(g, pts, { X: X + (rnd() - 0.5) * w * 0.3, Y, ang: ang + (rnd() - 0.5) * 1.2, rgb: [176, 160, 132], alpha: 0.8, lw: 0.55, rnd, ink, bed: 0.1, crack: 0, pits: 0.2 });
           }
           continue;
         }
-        const scale = fadeEdge < 1 ? 0.62 + fadeEdge * 0.38 : 1;
-        // setts are laid tight: only a hairline joint between neighbours
-        const sw = w * (0.9 + rnd() * 0.06) * scale;
-        const sh = ch * (0.86 + rnd() * 0.08) * scale;
+        const scale = Math.min(1, 0.7 + foot * 1.5);
+        const loose = wear > 0.5;
+        const tight = flags ? 0.06 : 0;
+        const sw = w * (0.88 + tight + rnd() * 0.06) * scale * (loose ? 0.86 : 1);
+        const sh = ch * (0.86 + tight + rnd() * 0.08) * scale * (loose ? 0.86 : 1);
         const patina = fbm(x * 0.25, y * 0.25, { period: 64, octaves: 2, seed: seed + 11 });
-        const val = 136 + patina * 64 + (rnd() - 0.5) * 38 - (wear < 0.42 ? 16 : 0);
-        // a squared hand-cut sett: a jittered box with small chamfered corners
-        const hx = sw / 2;
-        const hy = sh / 2;
-        const j = () => (rnd() - 0.5) * Math.min(sw, sh) * 0.16;
-        const c = Math.min(sw, sh) * (0.1 + rnd() * 0.14);
-        const corners = [[-hx + j(), -hy + j()], [hx + j(), -hy + j()], [hx + j(), hy + j()], [-hx + j(), hy + j()]];
-        const pts = [];
-        for (let q = 0; q < 4; q++) {
-          const [px, py] = corners[q];
-          const [ax2, ay2] = corners[(q + 3) % 4];
-          const [bx2, by2] = corners[(q + 1) % 4];
-          const la = Math.hypot(ax2 - px, ay2 - py) || 1;
-          const lb = Math.hypot(bx2 - px, by2 - py) || 1;
-          pts.push([px + (ax2 - px) / la * c, py + (ay2 - py) / la * c]);
-          pts.push([px + (bx2 - px) / lb * c, py + (by2 - py) / lb * c]);
-        }
-        const nv = pts.length;
-        const poly = () => {
-          g.beginPath();
-          pts.forEach(([px, py], q) => (q ? g.lineTo(px, py) : g.moveTo(px, py)));
-          g.closePath();
-        };
-        g.save();
-        g.translate(X, Y);
-        g.rotate(ang);
-        // the joint: a dark bed of grit around each stone
-        poly();
-        g.strokeStyle = `rgba(52,36,22,${(0.22 + rnd() * 0.12).toFixed(3)})`;
-        g.lineWidth = Math.max(1.2, Math.min(sw, sh) * 0.17);
-        g.lineJoin = 'round';
-        g.stroke();
-        poly();
-        g.fillStyle = `rgba(${val | 0},${(val * 0.93) | 0},${(val * 0.8) | 0},${(0.5 + rnd() * 0.2).toFixed(2)})`;
-        g.fill();
-        // a lit face toward the north-west, a shaded one to the south-east
-        g.save();
-        poly();
-        g.clip();
-        g.fillStyle = `rgba(255,246,220,${(0.1 + rnd() * 0.08).toFixed(3)})`;
-        g.fillRect(-hx * 1.2, -hy * 1.2, sw * 1.2, sh * 0.42);
-        g.fillStyle = `rgba(40,28,16,${(0.08 + rnd() * 0.08).toFixed(3)})`;
-        g.fillRect(-hx * 1.2, hy * 0.45, sw * 1.2, sh * 0.6);
-        // a pit or two of stipple on some stones
-        if (rnd() < 0.5) {
-          g.fillStyle = 'rgba(46,32,18,0.4)';
-          for (let q = 0; q < 3; q++) { g.beginPath(); g.arc((rnd() - 0.5) * sw * 0.7, (rnd() - 0.5) * sh * 0.6, 0.35 + rnd() * 0.35, 0, Math.PI * 2); g.fill(); }
-        }
-        g.restore();
-        // inked outline in broken strokes: the pen lifts here and there
-        g.strokeStyle = ink;
-        g.globalAlpha = 0.45 + rnd() * 0.3;
-        g.lineWidth = 0.45 + rnd() * 0.3;
-        g.beginPath();
-        for (let q = 0; q < nv; q++) {
-          if (rnd() < 0.18) continue;
-          const [p0x, p0y] = pts[q];
-          const [p1x, p1y] = pts[(q + 1) % nv];
-          g.moveTo(p0x, p0y);
-          g.lineTo(p1x, p1y);
-        }
-        g.stroke();
-        g.restore();
+        const dirt = fbm(x * 0.8, y * 0.8, { period: 64, octaves: 2, seed: seed + 13 });
+        const val = (flags ? 146 : 140) + patina * 70 + (rnd() - 0.5) * 46 - (loose ? 14 : 0) - Math.max(0, 0.55 - d) * 30;
+        const warm = (dirt - 0.5) * 0.12 + (rnd() - 0.5) * 0.06;
+        const hueR = rnd();
+        const rgb = flags ? (hueR < 0.3 ? [val * 1.06, val * 0.9, val * 0.7] : hueR < 0.55 ? [val * 0.96, val * 0.95, val * 0.9] : [val * 1.02, val * 0.93, val * 0.79]) : [val * (1.0 + warm * 0.3), val * (0.94 + warm * 0.1), val * (0.82 - warm * 0.2)];
+        const pts = irregularStone(rnd, sw / 2, sh / 2, flags ? { extra: [1, 2], jit: 0.1, bulge: 0.08, chamfer: 0.2 } : { extra: [1, 3], jit: 0.14, bulge: 0.12, chamfer: 0.28 });
+        inkStone(g, pts, {
+          X: X + (loose ? (rnd() - 0.5) * w * 0.12 : 0),
+          Y: Y + (loose ? (rnd() - 0.5) * ch * 0.12 : 0),
+          ang: ang + (loose ? (rnd() - 0.5) * 0.5 : 0),
+          rgb, alpha: 0.72 + rnd() * 0.2, lw: flags ? 0.8 : 0.62, rnd, ink, bed: flags ? 0.2 : 0.26,
+          crack: flags ? 0.22 : 0.05, pits: flags ? 0.5 : 0.35, worn: wear > 0.25 ? 1 : 0,
+        });
       }
       v += chu;
     }
   }
   // puddle stains: a cool wash pooled in the low spots, darker at its rim
-  const nP = Math.floor(cells.length / (patch ? 18 : 9));
+  const nP = Math.floor(cells.length / 10);
   for (let i = 0; i < nP; i++) {
     const [px, py] = cells[Math.floor(rnd() * cells.length)];
     const X = CX(px) + cs * (0.25 + rnd() * 0.5);
     const Y = CY(py) + cs * (0.25 + rnd() * 0.5);
-    const rx = cs * (0.16 + rnd() * 0.22);
+    const rx = cs * (0.14 + rnd() * 0.2);
     const ry = rx * (0.45 + rnd() * 0.3);
     const a = rnd() * Math.PI;
     g.beginPath();
@@ -392,7 +527,7 @@ export function cobbleRegion(g, cells, { CX, CY, cs, seed = 1, ink = '#3a2a18', 
       if (k === 0) g.moveTo(xx, yy); else g.lineTo(xx, yy);
     }
     g.closePath();
-    g.fillStyle = 'rgba(92,112,128,0.2)';
+    g.fillStyle = 'rgba(92,112,128,0.18)';
     g.fill();
     g.strokeStyle = 'rgba(56,66,76,0.3)';
     g.lineWidth = 0.6;

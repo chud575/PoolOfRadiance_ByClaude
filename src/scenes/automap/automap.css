@@ -116,3 +116,8 @@
 /* the overview's tooltip: opaque, and shown at once, so map lettering never mixes into its text */
 .am-tip { background: linear-gradient(180deg, #18214a, #0c1230) !important; opacity: 0; transition: none !important; }
 .am-tip.show { opacity: 1; }
+/* pin seals large enough to read at 1080p (>= 20px) */
+.am-note { grid-template-columns: 2.2em 1fr auto; }
+.am-note img, .am-pinkey-row img { width: 2.2em; height: 2.2em; min-width: 22px; min-height: 22px; }
+.am-hint { font-size: 0.74em; font-style: italic; color: var(--por-text-dim); text-align: center; margin-top: 0.2em; }
+.am-root > .am-side { width: 18em; }

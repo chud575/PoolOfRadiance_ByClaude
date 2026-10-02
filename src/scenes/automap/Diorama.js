@@ -4,6 +4,7 @@ import { SHEET, collectEdges, mergeRuns, eventMarker } from './BlockSheet.js';
 import { makeCanvas, makeDesk, grainTile, prng, INK } from './ink.js';
 import { PIN_KINDS, drawPin, drawMarker } from './glyphs.js';
 import { SERIF } from './ornaments.js';
+import { buildPartyMiniature } from './miniature.js';
 import { hash2, fbm } from '../../render/textures/noise.js';
 import { preloadTextureSets, getTextureSet } from '../../render/textures/index.js';
 
@@ -136,6 +137,45 @@ class Batch {
       return this._v(P[0], P[1], P[2], 0, 1, 0, P[0] * us, P[2] * us, tint);
     });
     this.quad(q[3], q[2], q[1], q[0]);
+  }
+
+  /**
+   * A box between two points p0 -> p1 (its long axis), `w` wide across the long axis
+   * within the plane perpendicular to `n`, and `dp` deep along `n` (unit, horizontal).
+   */
+  beam(p0, p1, w, dp, n, { tint = 1, us = 3 } = {}) {
+    const ux = p1[0] - p0[0];
+    const uy = p1[1] - p0[1];
+    const uz = p1[2] - p0[2];
+    const L = Math.hypot(ux, uy, uz) || 1;
+    const u = [ux / L, uy / L, uz / L];
+    // v = n x u
+    const v = [n[1] * u[2] - n[2] * u[1], n[2] * u[0] - n[0] * u[2], n[0] * u[1] - n[1] * u[0]];
+    const c = [(p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2, (p0[2] + p1[2]) / 2];
+    const P = (a, b, e) => [c[0] + u[0] * a + v[0] * b + n[0] * e, c[1] + u[1] * a + v[1] * b + n[1] * e, c[2] + u[2] * a + v[2] * b + n[2] * e];
+    const ha = L / 2;
+    const hb = w / 2;
+    const he = dp / 2;
+    const faces = [
+      [n, [[-ha, -hb, he], [ha, -hb, he], [ha, hb, he], [-ha, hb, he]]],
+      [[-n[0], -n[1], -n[2]], [[ha, -hb, -he], [-ha, -hb, -he], [-ha, hb, -he], [ha, hb, -he]]],
+      [v, [[-ha, hb, he], [ha, hb, he], [ha, hb, -he], [-ha, hb, -he]]],
+      [[-v[0], -v[1], -v[2]], [[ha, -hb, he], [-ha, -hb, he], [-ha, -hb, -he], [ha, -hb, -he]]],
+    ];
+    for (const [nn, q] of faces) {
+      const ids = q.map(([a, b, e], k) => {
+        const p = P(a, b, e);
+        return this._v(p[0], p[1], p[2], nn[0], nn[1], nn[2], (k === 1 || k === 2 ? L : 0) * us, (k >= 2 ? w : 0) * us, tint);
+      });
+      // winding: make the face point along nn
+      const a = q[0]; const b = q[1]; const cc = q[2];
+      const pa = P(...a); const pb = P(...b); const pc = P(...cc);
+      const e1 = [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]];
+      const e2 = [pc[0] - pa[0], pc[1] - pa[1], pc[2] - pa[2]];
+      const cr = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+      if (cr[0] * nn[0] + cr[1] * nn[1] + cr[2] * nn[2] >= 0) this.quad(ids[0], ids[1], ids[2], ids[3]);
+      else this.quad(ids[3], ids[2], ids[1], ids[0]);
+    }
   }
 
   mesh(material) {
@@ -390,7 +430,8 @@ export class Diorama {
           const tt = th - 0.006 + (rr() - 0.5) * 0.01;
           const jx = s.horiz ? 0 : (rr() - 0.5) * 0.006;
           const jz = s.horiz ? (rr() - 0.5) * 0.006 : 0;
-          b.bevelBox(X + jx, c * ch + bh / 2, Z + jz, s.horiz ? bl : tt, bh, s.horiz ? tt : bl, { bevel: 0.009, tint: 0.8 + rr() * 0.24, aoH: 0.08 });
+          const grime = key === 'city' ? (rr() < 0.12 ? 0.72 : 1) * (0.84 + 0.16 * Math.min(1, (c + 0.5) / courses)) : 1;
+          b.bevelBox(X + jx, c * ch + bh / 2, Z + jz, s.horiz ? bl : tt, bh, s.horiz ? tt : bl, { bevel: 0.009, tint: (0.78 + rr() * 0.28) * grime, aoH: 0.08, uo: rr() * 17, vo: rr() * 13 });
         }
       }
       if (!cap) return;
@@ -407,23 +448,46 @@ export class Diorama {
         b.bevelBox(X, runH - capH / 2 + lift, Z, s.horiz ? bl : ct, capH, s.horiz ? ct : bl, { bevel: 0.014, tint: 0.98 + rr() * 0.12, ao: 0.85 });
       }
     };
-    /** Timber & plaster: limewashed infill between dark oak posts, sill, rail, wall-plate and braces. */
+    /**
+     * Timber & plaster, a storey taller than the stone houses: thick limewashed or
+     * ochre infill panels between proud oak posts, sill beam, mid rail and a jettied
+     * wall-plate, with diagonal braces in some bays (proper half-timbering).
+     */
+    const INFILL = [[1.0, 0.97, 0.9], [1.02, 0.9, 0.72], [0.98, 0.86, 0.78], [0.94, 0.94, 0.88]];
     const timberRun = (x0, z0, x1, z1) => {
-      const th = 0.1;
-      const h = wallH * (0.88 + rr() * 0.08);
+      const th = 0.15;
+      const h = wallH * (1.22 + rr() * 0.1);
       const s = span(x0, z0, x1, z1, th);
       const L = s.len + th;
       const P = batch('plaster');
-      P.hue = hueAt(s.cx + (s.horiz ? 0 : 0.3), s.cz + (s.horiz ? 0.3 : 0));
-      P.box(s.cx, h / 2, s.cz, s.horiz ? L : th, h, s.horiz ? th : L, { tint: 0.92 + rr() * 0.1 });
+      const inf = INFILL[Math.floor(rr() * INFILL.length)];
+      const hb = hueAt(s.cx + (s.horiz ? 0 : 0.3), s.cz + (s.horiz ? 0.3 : 0));
+      P.hue = [hb[0] * inf[0], hb[1] * inf[1], hb[2] * inf[2]];
+      P.box(s.cx, h / 2, s.cz, s.horiz ? L : th, h, s.horiz ? th : L, { tint: 0.9 + rr() * 0.1, uo: rr() * 9, vo: rr() * 9 });
       const bm = batch('beam');
-      const bt = th + 0.022;
+      const bt = th + 0.03;
       const at = (c, y, len, hh, o = {}) => bm.bevelBox(s.cx + (s.horiz ? c : 0), y, s.cz + (s.horiz ? 0 : c), s.horiz ? len : bt, hh, s.horiz ? bt : len, { ao: 0.7, us: 3, bevel: 0.006, ...o });
-      at(0, 0.035, L, 0.07);
-      at(0, h - 0.026, L + 0.02, 0.052, { bevel: 0.012 });
-      at(0, h * 0.55, L, 0.032);
-      const posts = Math.max(1, Math.round(L / (0.42 + rr() * 0.12)));
-      for (let i = 0; i <= posts; i++) at(-L / 2 + 0.035 + (i / posts) * (L - 0.07) + (rr() - 0.5) * 0.03, h / 2, 0.06, h, { tint: 0.85 + rr() * 0.2 });
+      at(0, 0.04, L + 0.01, 0.08);
+      at(0, h * 0.52, L, 0.04);
+      // the jettied plate oversails the wall a touch
+      at(0, h - 0.03, L + 0.04, 0.06, { bevel: 0.012 });
+      const n = Math.max(1, Math.round(L / (0.34 + rr() * 0.1)));
+      const posts = [];
+      for (let i = 0; i <= n; i++) posts.push(-L / 2 + 0.04 + (i / n) * (L - 0.08) + (i && i < n ? (rr() - 0.5) * 0.03 : 0));
+      for (const p of posts) at(p, h / 2, 0.065, h, { tint: 0.8 + rr() * 0.25 });
+      // braces: diagonal oak in some bays, lower and upper storeys
+      const nrm = s.horiz ? [0, 0, 1] : [1, 0, 0];
+      const W3 = (c, y) => (s.horiz ? [s.cx + c, y, s.cz] : [s.cx, y, s.cz + c]);
+      for (let i = 0; i < posts.length - 1; i++) {
+        const a0 = posts[i] + 0.03;
+        const a1 = posts[i + 1] - 0.03;
+        if (a1 - a0 < 0.16) continue;
+        for (const [y0, y1] of [[0.08, h * 0.5], [h * 0.54, h - 0.06]]) {
+          if (rr() > 0.45) continue;
+          const flip = rr() < 0.5;
+          bm.beam(W3(flip ? a0 : a1, y0), W3(flip ? a1 : a0, y1), 0.032, bt - 0.006, nrm, { tint: 0.82 + rr() * 0.2 });
+        }
+      }
     };
     /** The city wall: taller, thicker, battered at the foot, crenellated along its outer face. */
     const cityRun = (x0, z0, x1, z1, q) => {
@@ -599,10 +663,15 @@ export class Diorama {
       const fl = batch('floor');
       fl.dry = 1;
       const fh = 0.06;
+      // a room the company has stood in shows its floor plan; one only glimpsed is veiled
+      const walkedRoom = new Set();
+      for (const rg of sheet.regions?.list ?? []) if (rg.type === CELL.INTERIOR && rg.cells.some(([x, y]) => walkedCell(x, y))) for (const [x, y] of rg.cells) walkedRoom.add(`${x},${y}`);
       for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) {
         if (!seenCell(x, y) || map.getCell(x, y) !== CELL.INTERIOR) continue;
+        if (!dungeon && !walkedRoom.has(`${x},${y}`)) continue;
         fl.box(x + 0.5, fh / 2, y + 0.5, 1.002, fh, 1.002, { uvFn, ao: 0.35, aoH: fh, tint: 1 });
       }
+      if (!dungeon) this._veils(scene, T, map, sheet, seenCell, walkedRoom, wallH);
     }
     for (const [k, b] of Object.entries(B)) {
       const m = b.mesh(M_[k]);
@@ -618,7 +687,19 @@ export class Diorama {
       const uv = drum.attributes.uv;
       for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * Math.PI * 2 * R * 1.6, uv.getY(i) * H * 1.6);
       const cap = T(new THREE.CylinderGeometry(R + 0.02, R + 0.02, 0.05, 28));
-      const floorDisc = T(new THREE.CylinderGeometry(R - 0.06, R - 0.06, 0.02, 24));
+      const floorDisc = T(new THREE.CylinderGeometry(R - 0.02, R - 0.02, 0.02, 28));
+      {
+        // the fighting platform: radial flagstones in the UVs so the stone set reads as paving
+        const fu = floorDisc.attributes.uv;
+        const fpos = floorDisc.attributes.position;
+        for (let i = 0; i < fu.count; i++) fu.setXY(i, fpos.getX(i) * 2.2 + 3, fpos.getZ(i) * 2.2 + 1);
+      }
+      const parapet = T(new THREE.CylinderGeometry(R - 0.01, R - 0.01, 0.07, 28, 1, true));
+      const pUv = parapet.attributes.uv;
+      for (let i = 0; i < pUv.count; i++) pUv.setXY(i, pUv.getX(i) * Math.PI * 2 * R * 1.6, pUv.getY(i) * 0.12);
+      parapet.setAttribute('color', new THREE.BufferAttribute(new Float32Array(parapet.attributes.position.count * 3).fill(0.82), 3));
+      const hatch = T(new THREE.BoxGeometry(0.11, 0.018, 0.11));
+      hatch.setAttribute('color', new THREE.BufferAttribute(new Float32Array(hatch.attributes.position.count * 3).fill(1), 3));
       const colours = new Float32Array(drum.attributes.position.count * 3);
       for (let i = 0; i < drum.attributes.position.count; i++) {
         const y = drum.attributes.position.getY(i) + H / 2;
@@ -628,7 +709,7 @@ export class Diorama {
       drum.setAttribute('color', new THREE.BufferAttribute(colours, 3));
       const capCol = new Float32Array(cap.attributes.position.count * 3).fill(1);
       cap.setAttribute('color', new THREE.BufferAttribute(capCol, 3));
-      floorDisc.setAttribute('color', new THREE.BufferAttribute(new Float32Array(floorDisc.attributes.position.count * 3).fill(0.75), 3));
+      floorDisc.setAttribute('color', new THREE.BufferAttribute(new Float32Array(floorDisc.attributes.position.count * 3).fill(0.95), 3));
       for (const [x, z] of towers) {
         const d = new THREE.Mesh(drum, M_.city);
         d.position.set(x, H / 2, z);
@@ -636,10 +717,17 @@ export class Diorama {
         const c = new THREE.Mesh(cap, M_.city);
         c.position.set(x, H - 0.005, z);
         c.castShadow = c.receiveShadow = true;
-        const f = new THREE.Mesh(floorDisc, M_.beam);
+        const f = new THREE.Mesh(floorDisc, M_.stone);
         f.position.set(x, H + 0.03, z);
         f.receiveShadow = true;
-        scene.add(d, c, f);
+        const pp = new THREE.Mesh(parapet, M_.city);
+        pp.position.set(x, H + 0.06, z);
+        pp.castShadow = pp.receiveShadow = true;
+        const hb = new THREE.Mesh(hatch, M_.door);
+        hb.position.set(x + 0.08, H + 0.045, z + 0.06);
+        hb.rotation.y = 0.4;
+        hb.receiveShadow = true;
+        scene.add(d, c, f, pp, hb);
       }
     }
     if (doorRings.length) {
@@ -759,91 +847,14 @@ export class Diorama {
     this.marker = null;
     if (party) {
       const grp = new THREE.Group();
-      const pewter = T(new THREE.MeshStandardMaterial({ color: 0x8e9298, roughness: 0.42, metalness: 0.85, envMapIntensity: 1.1 }));
-      const paint = (c, r = 0.78) => T(new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: 0, envMapIntensity: 0.35 }));
-      const V = (pts) => pts.map(([x, y]) => new THREE.Vector2(x, y));
-      const base = new THREE.Mesh(T(new THREE.LatheGeometry(V([[0, 0], [0.3, 0], [0.318, 0.008], [0.322, 0.03], [0.31, 0.046], [0.29, 0.052], [0, 0.052]]), 48)), pewter);
-      base.castShadow = base.receiveShadow = true;
-      const groove = new THREE.Mesh(T(new THREE.TorusGeometry(0.262, 0.005, 6, 48)), paint(0x2a2620, 0.5));
-      groove.rotation.x = Math.PI / 2;
-      groove.position.y = 0.052;
-      // the compass arrow, enamelled into the base and rimmed in brass
-      const shape = new THREE.Shape();
-      shape.moveTo(0, 0.275);
-      shape.quadraticCurveTo(0.05, 0.08, 0.13, -0.05);
-      shape.quadraticCurveTo(0.06, -0.02, 0, -0.01);
-      shape.quadraticCurveTo(-0.06, -0.02, -0.13, -0.05);
-      shape.quadraticCurveTo(-0.05, 0.08, 0, 0.275);
-      const ag = T(new THREE.ExtrudeGeometry(shape, { depth: 0.008, bevelEnabled: true, bevelThickness: 0.003, bevelSize: 0.003, bevelSegments: 1, curveSegments: 8 }));
-      ag.rotateX(-Math.PI / 2);
-      const enamel = T(new THREE.MeshPhysicalMaterial({ color: 0xa82a18, roughness: 0.25, metalness: 0, clearcoat: 0.8, clearcoatRoughness: 0.2, envMapIntensity: 0.9 }));
-      const arrow = new THREE.Mesh(ag, enamel);
-      arrow.position.y = 0.05;
-      const rimG = T(new THREE.ExtrudeGeometry(shape, { depth: 0.004, bevelEnabled: true, bevelThickness: 0.002, bevelSize: 0.016, bevelSegments: 1, curveSegments: 8 }));
-      rimG.rotateX(-Math.PI / 2);
-      const rim = new THREE.Mesh(rimG, M_.gold);
-      rim.position.y = 0.049;
-      // the figure: a cloaked standard-bearer with helm, kite shield and the Company's banner
-      const fig = new THREE.Group();
-      const cloak = new THREE.Mesh(T(new THREE.LatheGeometry(V([[0, 0.05], [0.1, 0.05], [0.106, 0.066], [0.09, 0.13], [0.074, 0.2], [0.07, 0.24], [0.086, 0.272], [0.08, 0.292], [0.05, 0.31], [0.026, 0.32], [0, 0.322]]), 28)), paint(0x2a4686));
-      const cape = new THREE.Mesh(T(new THREE.CylinderGeometry(0.084, 0.112, 0.22, 16, 1, true, -Math.PI * 0.42, Math.PI * 0.84)), T(new THREE.MeshStandardMaterial({ color: 0x5e1812, roughness: 0.7, side: THREE.DoubleSide })));
-      cape.position.set(0, 0.17, 0.012);
-      const pauldL = new THREE.Mesh(T(new THREE.SphereGeometry(0.034, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.6)), T(new THREE.MeshStandardMaterial({ color: 0xa8acb2, roughness: 0.35, metalness: 0.9, envMapIntensity: 1.2 })));
-      pauldL.position.set(-0.07, 0.272, 0);
-      const pauldR = pauldL.clone();
-      pauldR.position.x = 0.07;
-      const armL = new THREE.Mesh(T(new THREE.CapsuleGeometry(0.018, 0.09, 4, 8)), paint(0x2a4686));
-      armL.position.set(-0.084, 0.215, -0.02);
-      armL.rotation.set(0.5, 0, 0.3);
-      const belt = new THREE.Mesh(T(new THREE.TorusGeometry(0.074, 0.008, 6, 24)), paint(0x5a3a20, 0.5));
-      belt.rotation.x = Math.PI / 2;
-      belt.position.y = 0.2;
-      const head = new THREE.Mesh(T(new THREE.SphereGeometry(0.042, 16, 12)), paint(0xd6a486, 0.6));
-      head.position.y = 0.355;
-      const helm = new THREE.Mesh(T(new THREE.SphereGeometry(0.047, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.55)), T(new THREE.MeshStandardMaterial({ color: 0xb8bcc2, roughness: 0.35, metalness: 0.9, envMapIntensity: 1.2 })));
-      helm.position.y = 0.36;
-      const nasal = new THREE.Mesh(T(new THREE.BoxGeometry(0.008, 0.035, 0.01)), helm.material);
-      nasal.position.set(0, 0.35, -0.046);
-      const shield = new THREE.Mesh(T(new THREE.CylinderGeometry(0.075, 0.075, 0.014, 20)), paint(0x9a2a1c, 0.45));
-      shield.rotation.set(Math.PI / 2, 0, 0.35);
-      shield.position.set(-0.085, 0.2, -0.03);
-      shield.rotation.y = -0.6;
-      const boss = new THREE.Mesh(T(new THREE.SphereGeometry(0.018, 10, 8)), M_.gold);
-      boss.position.set(-0.098, 0.2, -0.05);
-      const armR = new THREE.Mesh(T(new THREE.CapsuleGeometry(0.018, 0.1, 4, 8)), cloak.material);
-      armR.position.set(0.075, 0.25, -0.02);
-      armR.rotation.z = -0.5;
-      const hand = new THREE.Mesh(T(new THREE.SphereGeometry(0.02, 10, 8)), head.material);
-      hand.position.set(0.1, 0.29, -0.02);
-      fig.add(cloak, cape, pauldL, pauldR, armL, belt, head, helm, nasal, shield, boss, armR, hand);
-      fig.scale.setScalar(0.9);
-      fig.position.z = 0.05;
-      for (const m of fig.children) { m.castShadow = true; m.receiveShadow = true; }
-      const pole = new THREE.Mesh(T(new THREE.CylinderGeometry(0.008, 0.009, 0.72, 8)), M_.beam);
-      pole.position.set(0.09, 0.4, 0.03);
-      pole.castShadow = true;
-      const finial = new THREE.Mesh(T(new THREE.ConeGeometry(0.014, 0.05, 8)), M_.gold);
-      finial.position.set(0.09, 0.78, 0.03);
-      const flagGeo = T(new THREE.PlaneGeometry(0.26, 0.16, 12, 2));
-      const fp = flagGeo.attributes.position;
-      for (let i = 0; i < fp.count; i++) {
-        const u = fp.getX(i) / 0.26 + 0.5;
-        fp.setZ(i, Math.sin(u * Math.PI * 1.6) * 0.02 * u);
-        if (u > 0.85) fp.setY(i, fp.getY(i) * (1 - (u - 0.85) * 1.6));
-      }
-      flagGeo.computeVertexNormals();
-      const flag = new THREE.Mesh(flagGeo, T(new THREE.MeshStandardMaterial({ map: this._pennantTexture(T), side: THREE.DoubleSide, roughness: 0.75 })));
-      flag.geometry.translate(0.13, 0, 0);
-      flag.position.set(0.095, 0.68, 0.03);
-      flag.castShadow = true;
-      // the hero piece stands twice the old height: the focal point of the table
-      const hero = new THREE.Group();
-      hero.add(fig, pole, finial, flag);
-      hero.scale.setScalar(1.75);
-      const head3 = new THREE.Group();
-      head3.add(rim, arrow, hero);
+      // a painted 28mm figure on a flocked base (see miniature.js), turned to the party's facing
+      const mini = buildPartyMiniature(T, { pennant: this._pennantTexture(T) });
+      const head3 = mini.group;
+      head3.scale.setScalar(1.0);
       head3.rotation.y = { N: 0, E: -Math.PI / 2, S: Math.PI, W: Math.PI / 2 }[party.dir] ?? 0;
-      grp.add(base, groove, head3);
+      grp.add(head3);
+      const flag = mini.flag;
+      const flagGeo = mini.flagGeo;
       grp.position.set(party.x + 0.5, 0, party.y + 0.5);
       // a soft candle-gold glow on the paper under the base, so it is found at once
       const glow = new THREE.Mesh(T(new THREE.CircleGeometry(0.5, 48)), T(new THREE.MeshBasicMaterial({ map: this._glowTexture(T), color: 0xffb060, transparent: true, opacity: 0.7, depthWrite: false, blending: THREE.AdditiveBlending })));
@@ -972,7 +983,7 @@ export class Diorama {
     const headGeo = T(new THREE.SphereGeometry(0.11, 20, 14));
     for (const n of notes ?? []) {
       const kind = PIN_KINDS[n.kind] ?? PIN_KINDS.note;
-      const mat = T(new THREE.MeshStandardMaterial({ color: new THREE.Color(kind.color), roughness: 0.3, metalness: 0.05 }));
+      const mat = T(new THREE.MeshStandardMaterial({ color: new THREE.Color(kind.color), roughness: 0.62, metalness: 0, envMapIntensity: 0.4 }));
       const px = n.x + 0.7;
       const pz = n.y + 0.32;
       const needle = new THREE.Mesh(needleGeo, needleMat);
@@ -1043,6 +1054,81 @@ export class Diorama {
     this.target.set(px0 + pw / 2, 0, pz0 + ph / 2);
     this._fitted = false;
     this._refit(true);
+  }
+
+  /**
+   * Buildings seen from the street but never entered: each is shrouded under a
+   * draped cloth, as a wargamer covers terrain not yet revealed. The cloth hangs
+   * over the walls, sags between them, gathers in creases and spreads its hem on
+   * the paper; painted in a graphite wash.
+   */
+  _veils(scene, T, map, sheet, seenCell, walkedRoom, wallH) {
+    const near = (x, y) => { for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) if (seenCell(x + i, y + j)) return true; return false; };
+    const list = (sheet.regions?.list ?? []).filter((rg) => rg.type === CELL.INTERIOR && rg.cells.length >= 2 && rg.cells.some(([x, y]) => near(x, y)) && !rg.cells.some(([x, y]) => walkedRoom.has(`${x},${y}`)));
+    if (!list.length) return;
+    const mat = T(new THREE.MeshStandardMaterial({ color: 0x8e8c8a, roughness: 0.95, metalness: 0, vertexColors: true, envMapIntensity: 0.3, side: THREE.DoubleSide }));
+    const R = 10;
+    for (const rg of list) {
+      const has = new Set(rg.cells.map(([x, y]) => `${x},${y}`));
+      let x0 = 99; let z0 = 99; let x1 = -1; let z1 = -1;
+      for (const [x, y] of rg.cells) { x0 = Math.min(x0, x); z0 = Math.min(z0, y); x1 = Math.max(x1, x + 1); z1 = Math.max(z1, y + 1); }
+      const pad = 0.32;
+      const W = x1 - x0 + pad * 2;
+      const D = z1 - z0 + pad * 2;
+      const nx = Math.ceil(W * R);
+      const nz = Math.ceil(D * R);
+      const geo = T(new THREE.PlaneGeometry(W, D, nx, nz));
+      geo.rotateX(-Math.PI / 2);
+      geo.translate(x0 - pad + W / 2, 0, z0 - pad + D / 2);
+      const p = geo.attributes.position;
+      const col = new Float32Array(p.count * 3);
+      const seedR = rg.index * 13 + 5;
+      // signed distance (cells) into the building: + inside, - outside
+      const sdist = (px, pz) => {
+        const cx = Math.floor(px);
+        const cz = Math.floor(pz);
+        const inside = has.has(`${cx},${cz}`);
+        let d = 3;
+        for (let j = -3; j <= 3; j++) for (let i = -3; i <= 3; i++) {
+          if (has.has(`${cx + i},${cz + j}`) === inside) continue;
+          const ex = Math.max(cx + i, Math.min(px, cx + i + 1));
+          const ez = Math.max(cz + j, Math.min(pz, cz + j + 1));
+          d = Math.min(d, Math.hypot(px - ex, pz - ez));
+        }
+        return inside ? d : -d;
+      };
+      const top = wallH * 1.35;
+      for (let i = 0; i < p.count; i++) {
+        const x = p.getX(i);
+        const z = p.getZ(i);
+        const sd = sdist(x, z);
+        const ridge = 1 - Math.abs(fbm(x * 1.7, z * 1.7, { period: 64, octaves: 3, seed: seedR }) - 0.5) * 2;
+        const swell = fbm(x * 0.6, z * 0.6, { period: 64, octaves: 2, seed: seedR + 3 });
+        let y;
+        if (sd >= 0) {
+          // over the roof: the cloth rides the wall-tops and bellies up over the middle
+          const k = Math.min(1, sd / 1.3);
+          y = top + 0.03 + k ** 0.6 * (0.14 + swell * 0.16) + ridge ** 3 * 0.09 * (0.4 + k);
+        } else {
+          // hanging over the wall face and spreading on the paper as a hem
+          const t = Math.min(1, -sd / pad);
+          const fall = Math.cos(t * Math.PI * 0.5) ** 0.35;
+          y = 0.012 + (top + 0.03) * fall * (1 - t * 0.15) + ridge ** 2 * 0.03 * (1 - t);
+          // vertical folds in the hanging part
+          const fold = Math.sin((x + z) * 23 + swell * 6) * 0.025 * fall;
+          p.setX(i, x + (sd < -0.05 ? fold * Math.sign(x - (x0 + x1) / 2) * 0.3 : 0));
+        }
+        p.setY(i, Math.max(0.012, y));
+        const sh = 0.52 + ridge ** 2 * 0.42 + swell * 0.12;
+        col.set([sh * 0.98, sh * 0.98, sh], i * 3);
+      }
+      geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      geo.computeVertexNormals();
+      const m = new THREE.Mesh(geo, mat);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      scene.add(m);
+    }
   }
 
   /** A tileable cloudy alpha field for the mist veils. */
@@ -1556,8 +1642,10 @@ export class Diorama {
     if (!this.w || !this.bounds) return;
     const whole = this._fitPoints(this.bounds, 0.97, this.target);
     this.sheetDist = whole.dist;
-    const foc = this.focusBounds ? this._fitPoints(this.focusBounds, 0.84, whole.target) : whole;
-    this.fitDist = Math.min(foc.dist, whole.dist);
+    // the opening view shows the whole sheet inside the frame (never sliding under the
+    // side panel, the key either whole or not at all); leaning in closes on the party
+    const foc = whole;
+    this.fitDist = whole.dist;
     this._fitted = true;
     this.fitTarget = foc.target;
     this.target.copy(foc.target);

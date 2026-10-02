@@ -226,7 +226,7 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
   for (const [id, [cx, cy, shape]] of Object.entries(LAYOUT)) {
     if (!hasMap(id)) continue;
     const round = shape === 'round';
-    const r = 64;
+    const r = id === 'pool_pyramid' ? 88 : 64;
     const s = round ? r * Math.SQRT2 * 0.92 : S;
     blocks.push({ id, cx, cy, round, r, s, x: cx - s / 2, y: cy - s / 2, rot: 0, known: known(id), rumour: RUMOURS[id] });
   }
@@ -302,9 +302,10 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
   g.save();
   g.clip(sea);
   // sea wash: deeper toward the bottom, mottled
-  const sg = g.createLinearGradient(0, 760, 0, H);
-  sg.addColorStop(0, 'rgba(110,160,170,0.26)');
-  sg.addColorStop(1, 'rgba(56,100,140,0.46)');
+  const sg = g.createLinearGradient(0, 770, 0, H);
+  sg.addColorStop(0, 'rgba(150,190,180,0.3)');
+  sg.addColorStop(0.25, 'rgba(96,146,164,0.42)');
+  sg.addColorStop(1, 'rgba(40,78,124,0.72)');
   g.globalCompositeOperation = 'multiply';
   g.fillStyle = sg;
   g.fillRect(0, 700, W, 400);
@@ -319,8 +320,8 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
       const len = 16 + r() * 34;
       const y = coastY(x) + 12 + j * 9 + (r() - 0.5) * 2;
       if (y > H) break;
-      g.strokeStyle = `rgba(28,58,98,${(0.42 * fade).toFixed(3)})`;
-      g.lineWidth = 0.55 + r() * 0.35;
+      g.strokeStyle = `rgba(24,50,90,${(0.62 * fade + 0.12).toFixed(3)})`;
+      g.lineWidth = 0.7 + r() * 0.45;
       g.beginPath();
       g.moveTo(x, y);
       g.bezierCurveTo(x + len * 0.3, y - 2.6, x + len * 0.6, y + 1.6, x + len, y - 0.6);
@@ -540,20 +541,42 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
   const tr = prng(99);
   const avoid = (x, y, pad) => blocks.some((b) => x > b.cx - b.s / 2 - pad && x < b.cx + b.s / 2 + pad && y > b.cy - b.s / 2 - pad && y < b.cy + b.s / 2 + pad);
   const inCartouche = (x, y) => (x < 510 && y < 250) || (x > 890 && y < 245 && x < 1285);
-  // hachured hills west of the walls, drawn back to front
-  const hills = [];
-  for (let i = 0; i < 70; i++) {
-    const x = 18 + tr() * 112;
-    const y = 250 + tr() * 520;
-    if (y > coastY(x) - 26) continue;
-    if (Math.abs(x - 70) < 34 && Math.abs(y - 520) < 104) continue; // keep the hills' name legible
-    hills.push([x, y, 26 + tr() * 32, 9 + tr() ** 1.5 * 16]);
+  // the Barren Hills: a massed range west of the walls, peaks crowded two and three deep
+  // along a spine, foothills stepping down toward the wall, a shadow wash under the mass
+  {
+    const peaks = [];
+    const spine = (y) => 62 + Math.sin(y / 90) * 14 + (fbm(y / 120, 7, { period: 64, octaves: 2, seed: 44 }) - 0.5) * 20;
+    for (let y = 236; y < 780; y += 11 + tr() * 6) {
+      if (y > coastY(spine(y)) - 30) continue;
+      // the main ridge, big and close; flanking rows smaller (back) and foothills (front, east)
+      peaks.push([spine(y) + (tr() - 0.5) * 12, y, 48 + tr() * 30, 26 + tr() ** 1.3 * 26]);
+      if (tr() < 0.7) peaks.push([spine(y) - 30 + (tr() - 0.5) * 10, y - 6, 34 + tr() * 18, 18 + tr() * 14]);
+      if (tr() < 0.75) peaks.push([spine(y) + 42 + tr() * 22, y + 8, 26 + tr() * 16, 9 + tr() * 9]);
+    }
+    for (let i = 0; i < 14; i++) peaks.push([200 + tr() * 680, 22 + tr() * 18, 22 + tr() * 16, 10 + tr() * 8]);
+    const shown = peaks.filter(([x, y]) => !inCartouche(x, y) && x > 4);
+    // the range's shadow and earth: one warm granulated wash under all of it
+    const mw = makeCanvas(W * k, H * k);
+    const mg = mw.getContext('2d');
+    mg.scale(k, k);
+    mg.filter = `blur(${(7 * k).toFixed(0)}px)`;
+    mg.fillStyle = 'rgba(150,110,62,0.4)';
+    for (const [x, y, ww, hh] of shown) { if (x > 160) continue; mg.beginPath(); mg.ellipse(x + ww * 0.1, y - hh * 0.3, ww * 0.6, hh * 0.75, 0, 0, Math.PI * 2); mg.fill(); }
+    mg.filter = 'none';
+    mg.setTransform(1, 0, 0, 1, 0, 0);
+    mg.globalCompositeOperation = 'destination-out';
+    mg.globalAlpha = 0.4;
+    mg.fillStyle = mg.createPattern(mottleTile(), 'repeat');
+    mg.fillRect(0, 0, W * k, H * k);
+    g.save();
+    g.globalCompositeOperation = 'multiply';
+    g.drawImage(mw, 0, 0, W, H);
+    g.restore();
+    shown.sort((a, b) => a[1] - b[1]).forEach(([x, y, ww, hh]) => hill(g, x, y, ww, hh, tr));
   }
-  for (let i = 0; i < 14; i++) hills.push([200 + tr() * 680, 22 + tr() * 18, 22 + tr() * 16, 10 + tr() * 8]);
-  hills.filter(([x, y]) => !inCartouche(x, y)).sort((a, b) => a[1] - b[1]).forEach(([x, y, w, hh]) => hill(g, x, y, w, hh, tr));
   // the Quivering Forest east of the river, clustered by noise
   const trees = [];
-  for (let i = 0; i < 1500; i++) {
+  for (let i = 0; i < 5000; i++) {
     const x = 1000 + tr() * 290;
     const y = 250 + tr() * 560;
     if (y > coastY(x) - 14) continue;
@@ -562,9 +585,9 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
     if (avoid(x, y, 26) || inCartouche(x, y)) continue;
     if (Math.abs(x - 1158) < 128 && y > 618 && y < 668) continue; // a clearing for the forest's name
     const n = fbm(x / 70, y / 70, { period: 64, octaves: 3, seed: 12 });
-    if (n < 0.46 || tr() > (n - 0.46) * 4) continue;
-    if (trees.some(([tx, ty]) => Math.hypot(tx - x, (ty - y) * 1.5) < 9.5)) continue;
-    trees.push([x, y, 4.6 + tr() ** 1.6 * 6]);
+    if (n < 0.43 || tr() > (n - 0.43) * 8) continue;
+    if (trees.some(([tx, ty]) => Math.hypot(tx - x, (ty - y) * 1.5) < 8)) continue;
+    trees.push([x, y, 4.8 + tr() ** 1.6 * 5.5, 1]);
   }
   // a few copses west and north, and along the river
   for (let i = 0; i < 160; i++) {
@@ -608,6 +631,25 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
     g.restore();
   }
   trees.sort((a, b) => a[1] - b[1]).forEach(([x, y, sz]) => tree(g, x, y, sz, tr));
+  // the forest edge: one continuous inked line round the massed canopy (the union of
+  // the crowns, dilated a hair), so the wood reads as a drawn mass, not a scatter
+  {
+    const fm = makeCanvas(W * k, H * k);
+    const fmg = fm.getContext('2d');
+    fmg.scale(k, k);
+    fmg.fillStyle = '#000';
+    for (const [x, y, sz, f] of trees) { if (!f) continue; fmg.beginPath(); fmg.arc(x, y - sz * 1.05, sz * 1.2, 0, Math.PI * 2); fmg.fill(); }
+    const ring = makeCanvas(W * k, H * k);
+    const rg = ring.getContext('2d');
+    const d = 1.3 * k;
+    for (let a = 0; a < 8; a++) rg.drawImage(fm, Math.cos(a * Math.PI / 4) * d, Math.sin(a * Math.PI / 4) * d);
+    rg.globalCompositeOperation = 'destination-out';
+    rg.drawImage(fm, 0, 0);
+    rg.globalCompositeOperation = 'source-in';
+    rg.fillStyle = 'rgba(43,26,13,0.85)';
+    rg.fillRect(0, 0, W * k, H * k);
+    g.drawImage(ring, 0, 0, W, H);
+  }
   // the Old City between the blocks: streets, plazas and rooftops, ruins thickening northward
   const wallPts = [[150, 250], [160, 60], [700, 48], [890, 50], [905, 250], [915, 470], [900, 780], [140, 780], [150, 250]];
   drawOldCity(g, {
@@ -651,12 +693,12 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
   haloText(g, 'THE QUIVERING FOREST', 0, 0, { color: '#22301a', halo: 'rgba(240,228,196,0.95)', width: 7 });
   g.restore();
   g.save();
-  g.translate(70, 520);
+  g.translate(24, 520);
   g.rotate(-Math.PI / 2);
   g.textAlign = 'center';
-  g.font = `italic 15px ${SERIF}`;
+  g.font = `italic 17px ${SERIF}`;
   g.letterSpacing = '6px';
-  haloText(g, 'THE BARREN HILLS', 0, 0, { color: '#4a2e14', halo: 'rgba(240,228,196,0.85)', width: 5 });
+  haloText(g, 'THE BARREN HILLS', 0, 0, { color: '#4a2e14', halo: 'rgba(240,228,196,0.95)', width: 7 });
   g.restore();
 
   // ---------------- the old city wall: a continuous crenellated curtain, towers, gates, two breaches ----------------
@@ -785,10 +827,34 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
     if (p.known) drawMarker(g, 'stairs', x0, y0, 16, { color: INK.vermilion });
   }
   // labels (ribbons)
-  for (const b of blocks) {
-    const m = getMap(b.id);
-    const ly = b.round ? b.cy + b.r + 16 : b.labelY ?? b.y + b.s + 16;
-    drawRibbon(g, b.cx, ly, b.known ? m.name : m.name, { known: b.known, here: b.id === here });
+  {
+    // ribbons never overprint one another: a ribbon that would collide steps down (or up)
+    const placedR = [];
+    g.save();
+    g.font = `bold 15px ${SERIF}`;
+    for (const b of blocks) {
+      const m = getMap(b.id);
+      const label = m.name.toUpperCase();
+      g.letterSpacing = label.length > 16 ? '1px' : '2px';
+      const rw2 = Math.min(g.measureText(label).width + 24, 220) + 30;
+      const ly0 = b.round ? b.cy + b.r + (b.id === 'pool_pyramid' ? 24 : 16) : b.labelY ?? b.y + b.s + 16;
+      let best = null;
+      for (const dy of [0, -12, 12, -24, 24, -36, 36]) {
+        for (const dx of [0, -30, 30, -60, 60]) {
+          const box = [b.cx + dx - rw2 / 2, ly0 + dy - 13, rw2, 26];
+          let score = Math.abs(dy) * 0.4 + Math.abs(dx) * 0.3;
+          for (const o of placedR) {
+            const ov = Math.max(0, Math.min(box[0] + box[2], o[0] + o[2]) - Math.max(box[0], o[0])) * Math.max(0, Math.min(box[1] + box[3], o[1] + o[3]) - Math.max(box[1], o[1]));
+            if (ov > 0) score += 100 + ov;
+          }
+          if (!best || score < best.score) best = { score, box, x: b.cx + dx, y: ly0 + dy };
+        }
+      }
+      placedR.push(best.box);
+      b.ribbon = best.box;
+      drawRibbon(g, best.x, best.y, m.name, { known: b.known, here: b.id === here });
+    }
+    g.restore();
   }
 
   // ---------------- sea labels, island, ship, serpent ----------------
@@ -853,10 +919,10 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
 function drawRibbon(g, cx, cy, text, { known, here }) {
   g.save();
   const label = text.toUpperCase();
-  g.font = `bold 13px ${SERIF}`;
+  g.font = `bold 15px ${SERIF}`;
   g.letterSpacing = label.length > 16 ? '1px' : '2px';
-  const w = Math.min(g.measureText(label).width + 22, 200);
-  const hh = 20;
+  const w = Math.min(g.measureText(label).width + 24, 220);
+  const hh = 23;
   g.globalAlpha = known ? 1 : 0.88;
   g.fillStyle = 'rgba(60,35,10,0.2)';
   g.fillRect(cx - w / 2 + 3, cy - hh / 2 + 3, w, hh);
@@ -880,7 +946,7 @@ function drawRibbon(g, cx, cy, text, { known, here }) {
   g.fillStyle = here ? '#fff2d6' : known ? INK.ink : '#5a4028';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  fitFont(g, label, w - 14, 13, 'bold');
+  fitFont(g, label, w - 14, 15, 'bold');
   g.fillText(label, cx, cy + 1);
   g.restore();
 }
@@ -1134,11 +1200,7 @@ function drawUnknownBlock(g, b, m, { k }) {
   g.fillStyle = vg;
   g.fillRect(b.cx - 70, b.cy - 70, 140, 130);
   (DISTRICT_VIGNETTES[b.id] ?? DISTRICT_VIGNETTES.houses)(g, b.cx, b.cy - 10, 1);
-  const note = HEARSAY[b.id] ?? 'terra incognita';
-  g.font = `italic 14px ${SERIF}`;
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  haloText(g, note, b.cx, b.cy + 44, { color: 'rgba(70,40,18,0.95)', halo: 'rgba(240,228,196,0.9)', width: 5 });
+  // (the hearsay lives in the tooltip and the side panel's rumours, never in tiny print here)
   g.restore();
   if (ward) {
     g.save();
@@ -1437,8 +1499,36 @@ function drawMedallion(g, b, m, { seen, secrets, known }) {
   const { cx, cy, r } = b;
   const info = analyseMap(m);
   const md = MEDALS[b.id] ?? MEDALS.kutos_warrens;
-  const R = r + 7;
+  const R = r + (b.id === 'pool_pyramid' ? 10 : 7);
   g.save();
+  if (b.id === 'pool_pyramid') {
+    // the Pool's radiance: a gilt sunburst of alternating straight and flame rays behind the roundel
+    g.save();
+    const glow = g.createRadialGradient(cx, cy, R * 0.9, cx, cy, R * 1.6);
+    glow.addColorStop(0, 'rgba(232,184,80,0.42)');
+    glow.addColorStop(1, 'rgba(232,184,80,0)');
+    g.fillStyle = glow;
+    g.beginPath(); g.arc(cx, cy, R * 1.6, 0, Math.PI * 2); g.fill();
+    for (let i = 0; i < 32; i++) {
+      const a = (i / 32) * Math.PI * 2;
+      const L = R * (i % 2 ? 1.32 : 1.5);
+      const hw = i % 2 ? 0.035 : 0.06;
+      g.beginPath();
+      g.moveTo(cx + Math.cos(a - hw) * R, cy + Math.sin(a - hw) * R);
+      if (i % 2) g.lineTo(cx + Math.cos(a) * L, cy + Math.sin(a) * L);
+      else g.quadraticCurveTo(cx + Math.cos(a + 0.05) * L * 0.85, cy + Math.sin(a + 0.05) * L * 0.85, cx + Math.cos(a) * L, cy + Math.sin(a) * L);
+      g.lineTo(cx + Math.cos(a + hw) * R, cy + Math.sin(a + hw) * R);
+      g.closePath();
+      g.fillStyle = goldGradient(g, cx - R, cy - R, cx + R, cy + R);
+      g.globalAlpha = 0.85;
+      g.fill();
+      g.globalAlpha = 1;
+      g.strokeStyle = 'rgba(90,60,20,0.8)';
+      g.lineWidth = 0.6;
+      g.stroke();
+    }
+    g.restore();
+  }
   // a pale wash shadow and the paper disc
   g.fillStyle = 'rgba(70,40,16,0.16)';
   g.beginPath(); g.arc(cx + 2.5, cy + 3, R + 1, 0, Math.PI * 2); g.fill();
@@ -1514,7 +1604,7 @@ function drawMedallion(g, b, m, { seen, secrets, known }) {
     (VIGNETTES[b.id] ?? VIGNETTES.kutos_warrens)(g, cx, cy - 4, r);
     g.restore();
     g.save();
-    arcText(g, md.motto, cx, cy, r * 0.82, Math.PI / 2, { font: `italic bold 10px ${SERIF}`, color: 'rgba(60,30,14,0.95)', spacing: md.motto.length > 13 ? 0.6 : 1.4 });
+    if (b.id === 'pool_pyramid') arcText(g, md.motto, cx, cy, r * 0.82, Math.PI / 2, { font: `italic bold ${b.id === 'pool_pyramid' ? 15 : 13}px ${SERIF}`, color: 'rgba(60,30,14,0.95)', spacing: md.motto.length > 13 ? 0.4 : 1.2 });
   }
   g.restore();
 }
@@ -1674,14 +1764,15 @@ function hill(g, x, y, w, h, r) {
   for (const [px, py] of prof) shape.lineTo(px, py);
   shape.lineTo(prof[N][0], y);
   shape.closePath();
-  g.fillStyle = 'rgba(226,206,160,0.96)';
+  const tv = 0.92 + r() * 0.12;
+  g.fillStyle = `rgba(${222 * tv | 0},${196 * tv | 0},${148 * tv | 0},0.94)`;
   g.fill(shape);
   g.save();
   g.clip(shape);
-  // a light wash on the shadowed flank of each summit
+  // a wash on the shadowed flank of each summit
   for (const pk of peaks) {
     const px = x - w / 2 + pk.u * w;
-    g.fillStyle = 'rgba(122,88,46,0.2)';
+    g.fillStyle = 'rgba(110,76,40,0.34)';
     g.beginPath(); g.moveTo(px, y - pk.hgt * h - 2); g.lineTo(px + w * 0.7, y + 1); g.lineTo(px + w * 0.02, y + 1); g.closePath(); g.fill();
   }
   // hachures down the east flanks
