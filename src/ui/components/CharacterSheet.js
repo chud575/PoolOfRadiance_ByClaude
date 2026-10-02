@@ -220,7 +220,7 @@ export function renderSheet(ch) {
   if (fx.length || ch.hp.cur < ch.hp.max) side.push(cond);
   else id.querySelector('.pc-idchips')?.prepend(h('span.pc-chip.ok', { dataset: lore({ title: 'Hale', text: 'No wounds, curses or lingering magic.' }) }, ['Hale']));
   // The pack summary sits under the readied kit when there is no spell table there; otherwise at the end of the side column.
-  const packInMiddle = !spellSect;
+  const packInMiddle = !spellSect && !!s.thief;
   if (!packInMiddle) side.push(packSect);
   const sheet = h('div.pc-sheet', [
     id,

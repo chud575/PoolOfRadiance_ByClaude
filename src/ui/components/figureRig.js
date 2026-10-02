@@ -144,6 +144,8 @@ const POSES = {
 function bodyOf(app) {
   const R = { ...(RACE_BODY[app.race] ?? RACE_BODY.human) };
   if (app.fem) { R.H *= 0.94; R.girth *= 0.88; R.sh *= 0.87; R.hip *= 1.08; R.head *= 0.97; }
+  // A dwarf woman is broad and strong, not barrel-round: trim the girth toward a waist.
+  if (app.fem && app.race === 'dwarf') { R.girth *= 0.88; R.sh *= 1.04; }
   const H = R.H;
   const s = H / 1.78;
   const g = s * R.girth;
@@ -838,11 +840,30 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
   } else if (tunic) {
     // A loose tunic with folds and a dark collar over a linen shirt.
     const pcT = J.pelvis;
-    torsoShell(M.cloth, 0.022 * s, { disp: (x, y, z) => 0.005 * s * Math.sin(Math.atan2(x - pcT[0], z - pcT[2]) * 7 + y * 12) * (0.6 + 0.4 * Math.sin(y * 31 + x * 17)), amp: 0.006 * s });
+    // A quilted gambeson: stitched horizontal channels over loose folds (never a skin-tight suit).
+    torsoShell(M.cloth, 0.036 * s, { disp: (x, y, z) => {
+      const fold = 0.004 * s * Math.sin(Math.atan2(x - pcT[0], z - pcT[2]) * 7 + y * 12) * (0.6 + 0.4 * Math.sin(y * 31 + x * 17));
+      const ch = (y / (0.034 * s)) % 1;
+      const quilt = -0.0035 * s * Math.max(0, 1 - Math.abs(ch - 0.5) * 9);
+      return fold + quilt;
+    }, amp: 0.008 * s });
     sc.torus(at(J.neck, sR, [0, -0.01, 0.0]), 0.064 * g, 0.016 * s, sR, { mat: M.clothDark, g: GR.belt, k: 0 });
     sc.box(at(chestC, sR, [0, 0.09, 0.118 * g / s + 0.012]), [0.02 * s, 0.06 * s, 0.006 * s], mMul(sR, mRotX(-0.12)), 0.004 * s, { mat: M.linen, g: GR.belt, k: 0 });
     sleeves(M.clothDark, 0.006 * s, 0.75);
     splitSkirt(M.cloth, 0.38 * s, { disp: (x, y, z) => 0.003 * s * Math.sin(Math.atan2(x - pcT[0], z - pcT[2]) * 10 + y * 6), amp: 0.004 * s });
+    if (sitting) for (const k of ['L', 'R']) AC(legs[k].hip, vlerp(legs[k].hip, legs[k].kn, 0.85), 0.135 * g, 0.12 * g, M.cloth, { k: 0.08 * s });
+    // A loose blouse over the belt (bloused tunic): the waist reads as cloth, not skin.
+    A(vlerp(J.pelvis, J.neck, 0.3), [0.15 * g + 0.03 * s, 0.09 * s, 0.11 * g + 0.03 * s], sR, M.cloth, { k: 0.04 * s });
+    // A short travelling capelet in the trim colour over the shoulders: breaks the line of the torso.
+    {
+      const cc = at(J.neck, sR, [0, -0.17, -0.012]);
+      const pcC = J.neck;
+      sc.ellipsoid(cc, [B.sh * 1.55 + 0.03 * s, 0.2 * s, 0.17 * g + 0.02 * s], sR, {
+        mat: M.trim, g: GR.cloak, k: 0, shell: 0.008 * s,
+        clip: [planeAlong(sR, [0, -1, 0], at(J.neck, sR, [0, -0.17, 0])), planeAlong(sR, [0, 1, 0], at(J.neck, sR, [0, 0.0, 0]))],
+        disp: (x, y, z) => 0.007 * s * Math.sin(Math.atan2(x - pcC[0], z - pcC[2]) * 9) * Math.max(0, Math.min(1, (pcC[1] - y) / (0.12 * s))), amp: 0.008 * s,
+      });
+    }
   }
 
   // Belt with buckle and pouch (a rope cord for robes).

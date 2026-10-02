@@ -622,3 +622,11 @@ img.pc-pending { filter: saturate(0.7) brightness(0.9); }
 .pc-ladder table { table-layout: fixed; }
 .pc-ladder th:first-child { width: 2.2em; }
 .pc-ladder .now { border-radius: 2px; }
+/* iter3: the likeness panel breathes — slightly shorter head tiles, compact swatch rows with room under COLOURS */
+.cc-likeness .cc-thumbs:not(.body) .im { aspect-ratio: 1 / 0.84; }
+.cc-likeness .cc-thumbs:not(.body) .im img { object-position: 50% 30%; }
+.cc-likeness .cc-sw { gap: 0.28em; }
+.cc-likeness .cc-sw button { width: 1.45em; height: 1.45em; }
+.cc-likeness .cc-row { margin: 0.05em 0; }
+.cc-likeness > .pc-sect { padding-top: 0.4em; padding-bottom: 0.45em; margin-top: 0.5em !important; }
+.cc-likeness > .pc-sect-h { margin-top: 0.45em !important; }

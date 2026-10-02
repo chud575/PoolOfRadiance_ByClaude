@@ -3,7 +3,8 @@ import { Scene } from '../../core/Scene.js';
 import { h, clear, Frame, CommandBar } from '../../ui/UI.js';
 import { createTorch } from '../../render/lighting.js';
 import { getMaterial, preloadMaterials } from '../../render/materials.js';
-import { getBannerTexture, getGlowTexture } from '../../render/textures/index.js';
+import { getGlowTexture } from '../../render/textures/index.js';
+import { bannerMaps } from './bannerArt.js';
 import { RACES, RACE_IDS, raceAbilityCaps } from '../../rules/races.js';
 import { CLASSES, ALIGNMENTS, ALIGNMENT_NAMES, PR_LEVEL_CAPS, classSpecName, splitClasses, allowedAlignments, xpForLevel } from '../../rules/classes.js';
 import { ABILITIES, ABILITY_NAMES, ABILITY_ABBR, formatStr } from '../../rules/abilities.js';
@@ -155,7 +156,8 @@ export default class CreateScene extends Scene {
     }
     // Heraldic banners hung between the pillars and the wall.
     for (const [x, v] of [[-1.3, 1], [1.3, 0]]) {
-      const bm = new THREE.MeshStandardMaterial({ map: getBannerTexture(v), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.85 });
+      const bt = bannerMaps(v);
+      const bm = new THREE.MeshStandardMaterial({ map: bt.map, normalMap: bt.normalMap, roughnessMap: bt.roughnessMap, metalness: 0.15, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 1 });
       this._mats.push(bm);
       const bg = G(new THREE.PlaneGeometry(0.8, 2.2, 6, 12));
       const bp = bg.attributes.position;

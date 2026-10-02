@@ -302,6 +302,10 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
   const sentryRim = new THREE.SpotLight(0x9ab8ff, 0, 9, 0.38, 0.6, 1.2);
   sentryRim.position.set(-2.8, 4.4, -7.8);
   scene.add(sentryRim, sentryRim.target);
+  // The embers' glow catching the sentry from below and in front (warm), against the moon rim behind (cold).
+  const sentryFire = new THREE.SpotLight(0xff8a40, 0, 8, 0.32, 0.7, 1.4);
+  sentryFire.position.set(0.1, 0.45, 0.2);
+  scene.add(sentryFire, sentryFire.target);
   // The moon low behind the ruins: rims the arch, the wall tops and the party's backs in cold silver.
   const backMoon = new THREE.DirectionalLight(0x86a2ff, night ? 1.6 : 0.6);
   backMoon.position.set(2.5, 18, -9);
@@ -876,6 +880,7 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
         partyGroup.add(m);
         shadowBlob(partyGroup, -1.35, -3.75, 0.75, 0.75);
         sentryRim.target.position.set(-1.35, 1.1, -3.75);
+        sentryFire.target.position.set(-1.35, 1.25, -3.75);
         minis.push(m);
         return;
       }
@@ -960,6 +965,7 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
     backMoon.intensity = night ? (restingNow ? 1.5 : 1.1) : 0.5;
     hemi.intensity = night ? (restingNow ? 1.25 : 0.62) : 0.9;
     sentryRim.intensity = restingNow ? 60 : 0;
+    sentryFire.intensity = restingNow ? 26 * fl : 0;
     coalMat.emissiveIntensity = (restingNow ? 1.6 : 1.1) * (0.9 + 0.1 * Math.sin(time * 2.3));
     logMat.emissiveIntensity = (restingNow ? 1.1 : 0.8) * (0.85 + 0.15 * Math.sin(time * 5.7 + 0.4));
     coalChunkMat.emissiveIntensity = (restingNow ? 1.4 : 0.9) * (0.85 + 0.15 * Math.sin(time * 6.1));

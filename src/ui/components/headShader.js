@@ -435,6 +435,8 @@ float hairField(vec3 p, float sk) {
     d = smin(d, sdCone(p, vec3(0.0, 0.135, -0.05), vec3(0.0, 0.06, -0.135), 0.016, 0.006) + strands(p, 14.0, 0.0015), 0.01);
   }
   if (uHair == 1 && FEM > 0.5) d = smin(d, sdEll(p - vec3(0.0, 0.0, -0.05), vec3(0.082, 0.07, 0.07)) + strands(p, 18.0, 0.002), 0.02);
+  // Under a helm only the hair below its rim shows (no strands poking through the bowl).
+  if (uHelm == 1) d = max(d, p.y - (0.02 + 0.13 * p.z));
   return d;
 }
 // Brow coverage 0..1: thick at the head, tapering to the tail, arched (higher and finer on women).
@@ -457,7 +459,12 @@ float beardField(vec3 p, float sk) {
   float mY = MOUTHY();
   float tipY = TIPY();
   // Moustache: over the upper lip, drooping at the corners.
-  float mo = sat((tipY - 0.008 - p.y) / 0.003) * sat((p.y - (mY + 0.006 - 0.012 * sat((q.x - 0.012) / 0.02))) / 0.003) * sat((0.034 - q.x) / 0.006) * sat((p.z - 0.07) / 0.01);
+  // Two lobes from under the nose, sweeping out and drooping past the mouth corners, tapering to points.
+  float u = q.x / 0.034;
+  float cy = tipY - 0.0125 - 0.013 * u * u;
+  float th = 0.0058 * (1.0 - 0.75 * u * u) + 0.0012;
+  float mo = sat((th - abs(p.y - cy)) / 0.0018) * sat((1.0 - u) / 0.12) * sat((p.z - 0.07) / 0.01);
+  mo *= 0.75 + 0.25 * sat(1.0 - abs(q.x - 0.003) / 0.003 + 0.6);
   float m = mo;
   float T = 0.0055;
   if (uBeard >= 3) {
@@ -507,7 +514,8 @@ float gHelmPart;
 float helmField(vec3 p) {
   if (uHelm == 0) return 1e3;
   float cap = sdEll(p - vec3(0.0, 0.034, -0.013), vec3(0.088 * W, 0.108, 0.111));
-  float rim = -0.214 * p.z - p.y + 0.004;
+  // The rim sits above the brow at the front (the eyes stay visible under it) and dips at the nape.
+  float rim = 0.024 + 0.13 * p.z - p.y;
   float bowl = max(cap, rim);
   // Brow band, nasal, ridge.
   float band = sdEll(p - vec3(0.0, 0.018, -0.013), vec3(0.092 * W, 0.112, 0.115));
