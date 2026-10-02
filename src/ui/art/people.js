@@ -133,16 +133,16 @@ export function buildNpc(spec) {
   if (spec.belly) f.ell([0, 0.12, 0.04], [0.085 * b, 0.09, 0.07 * b], topM, tg);
   // neckline: a chemise or shirt collar showing at the throat, skin above it
   const neckM = O.top && !robe ? shirtM : topM;
-  f.ell([0, torso * 0.93, 0.012], [0.052, 0.022, 0.045], neckM, { group: 'collar', k: 0.01 });
+  f.ell([0, torso * 0.94, 0.004], [0.05, 0.016, 0.038], neckM, { group: 'collar', k: 0.01 });
   if (O.collar) f.ell([0, torso * 0.96, -0.004], [0.07, 0.026, 0.06], cloth(O.collar), { group: 'collar2', k: 0.01 });
   if (O.topKind === 'bodice') {
     // laced bodice: cross lacing over the front, a low chemise neckline
     for (let i = 0; i < 4; i++) {
       const y = torso * (0.35 + i * 0.12);
-      f.cone([-0.016, y, 0.074 * b], [0.016, y + 0.04, 0.072 * b], 0.0028, 0.0028, mat('#d8c8a0', { rough: 0.8 }), { group: null });
-      f.cone([0.016, y, 0.074 * b], [-0.016, y + 0.04, 0.072 * b], 0.0028, 0.0028, mat('#d8c8a0', { rough: 0.8 }), { group: null });
+      f.cone([-0.016, y, 0.074 * b], [0.016, y + 0.04, 0.072 * b], 0.0028, 0.0028, mat('#3a2418', { rough: 0.85 }), { group: null });
+      f.cone([0.016, y, 0.074 * b], [-0.016, y + 0.04, 0.072 * b], 0.0028, 0.0028, mat('#3a2418', { rough: 0.85 }), { group: null });
     }
-    f.ell([0, torso * 0.88, 0.02], [0.068, 0.026, 0.03], shirtM, { group: 'chemise', k: 0.02 });
+    f.ell([0, torso * 0.9, 0.012], [0.074, 0.02, 0.042], shirtM, { group: 'chemise', k: 0.02 });
   }
   if (O.topKind === 'doublet' || O.topKind === 'tabard') for (let i = 0; i < 5; i++) f.sphere([0, torso * (0.25 + i * 0.13), 0.073 * b], 0.0055, brass, { group: null });
   if (O.topKind === 'tabard' && O.symbol) emblem(f, O.symbol, [0, torso * 0.55, 0.077 * b], 0.03);

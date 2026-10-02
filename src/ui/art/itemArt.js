@@ -91,14 +91,22 @@ function bowArc(f, H, depth, m, { recurve = 0, r = 0.022 } = {}) {
  * with great pauldrons and tassets.
  */
 function armour(f, kind) {
+  // a garment torso, not a snowman: a broad chest tapering to the waist, square shoulders with a
+  // sloped yoke, a scooped neck opening and armholes
   const torso = (m, { waist = 0.26, chestW = 0.3 } = {}) => {
-    f.ell([0, 0.08, 0], [chestW, 0.34, 0.16], m, { group: 'a' });
-    f.ell([0, -0.22, 0], [waist, 0.14, 0.15], m, { group: 'a' });
-    for (const d of [-1, 1]) f.ell([d * 0.3, 0.28, 0], [0.12, 0.1, 0.13], m, { group: 'a' });
-    f.ell([0, 0.4, 0.02], [0.13, 0.05, 0.08], mat('#1a120a'), { group: null });
+    f.box([0, 0.14, 0], [chestW, 0.22, 0.14], m, { group: 'a', bevel: 0.11, k: 0.06 });
+    f.box([0, -0.18, 0], [waist, 0.14, 0.13], m, { group: 'a', bevel: 0.1, k: 0.06 });
+    for (const d of [-1, 1]) f.box([d * 0.2, 0.34, 0], [0.13, 0.05, 0.12], m, { group: 'a', bevel: 0.045, k: 0.05, R: rotZ(d * -0.22) });
+    f.ell([0, 0.39, 0.03], [0.12, 0.06, 0.1], mat('#1a120a'), { group: null });
+    f.ell([0, 0.33, 0.12], [0.07, 0.07, 0.04], mat('#1a120a'), { group: null });
   };
   const sleeves = (m, len = 0.3, r = 0.075) => { for (const d of [-1, 1]) f.cone([d * 0.33, 0.27, 0], [d * (0.4 + len * 0.3), 0.27 - len, 0.02], r, r * 0.85, m, { group: 'a' }); };
-  const skirt = (m, y1 = -0.55, flare = 0.34) => f.cone([0, -0.25, 0], [0, y1, 0.01], 0.25, flare, m, { group: 'a' });
+  // a skirt that hangs and flares, cut straight at the hem (a round cap reads as a bowling pin)
+  const skirt = (m, y1 = -0.55, flare = 0.34) => {
+    const hl = (-0.25 - y1) / 2;
+    f.box([0, -0.25 - hl * 0.6, 0], [0.25, hl * 0.6, 0.12], m, { group: 'a', bevel: 0.05, k: 0.05 });
+    for (const d of [-1, 1]) f.box([d * flare * 0.42, y1 + hl * 0.55, 0.01], [flare * 0.48, hl * 0.55, 0.11], m, { group: 'a', bevel: 0.04, k: 0.05, R: rotZ(d * 0.12) });
+  };
   const leatherL = mat('#8a5a32', { pattern: 'leather', scale: 0.05, rough: 0.65, spec: 0.2 });
   const strap = mat('#3a2010', { pattern: 'leather', scale: 0.02 });
   switch (kind) {
@@ -262,21 +270,34 @@ function model(def) {
       return { f, R: euler3(0, 0, -0.6) };
     }
     case 'lightCrossbow': case 'heavyCrossbow': {
+      // seen from above: a long stock with a stepped butt, the prod across the front with recurved
+      // tips, the string drawn back in a V to the nut, a bolt in the groove, the stirrup, the trigger
       const heavy = id === 'heavyCrossbow';
-      f.box([0, -0.05, 0], [0.04, heavy ? 0.46 : 0.38, 0.03], darkWood, { group: null, bevel: 0.015 });
-      f.box([0, -0.4, 0], [0.05, 0.12, 0.04], wood, { group: null, bevel: 0.02, R: rotX(0.1) });
-      const span = heavy ? 0.42 : 0.34;
-      const n = 10;
-      for (let i = 0; i < n; i++) {
-        const t0 = (i / n) * 2 - 1;
-        const t1 = ((i + 1) / n) * 2 - 1;
-        f.cone([t0 * span, 0.32 - t0 * t0 * 0.07, 0], [t1 * span, 0.32 - t1 * t1 * 0.07, 0], 0.016, 0.016, heavy ? iron : wood, { group: 'prod', blend: 0.01 });
+      const L = heavy ? 0.5 : 0.42;
+      f.box([0, 0.0, 0], [0.032, L, 0.026], darkWood, { group: 'stock', bevel: 0.012 });
+      f.box([0, -L - 0.08, 0], [0.055, 0.14, 0.034], wood, { group: 'stock', bevel: 0.025 });
+      const span = heavy ? 0.44 : 0.36;
+      const py = L - 0.05;
+      const n = 12;
+      const prodM = heavy ? iron : mat('#5a3a1e', { pattern: 'wood', scale: 0.02, rough: 0.5, spec: 0.3 });
+      const P = (t) => [t * span, py - Math.abs(t) * 0.06 + Math.pow(Math.abs(t), 6) * 0.05, 0];
+      for (let i = 0; i < n; i++) f.cone(P(i / n * 2 - 1), P((i + 1) / n * 2 - 1), 0.02 * (1 - Math.abs(i / n * 2 - 1) * 0.45), 0.02 * (1 - Math.abs((i + 1) / n * 2 - 1) * 0.45), prodM, { group: 'prod', blend: 0.01 });
+      const nut = [0, py - (heavy ? 0.32 : 0.26), 0.03];
+      const stringM = mat('#e8dcc0', { rough: 0.6, ink: 0.4 });
+      for (const t of [-1, 1]) f.cone(P(t), nut, 0.007, 0.007, stringM, { group: null });
+      f.sphere(nut, 0.022, iron, { group: null });
+      // bolt in the groove: shaft, iron head past the prod, fletching at the nut
+      f.cone([0, nut[1] + 0.01, 0.036], [0, py + 0.1, 0.036], 0.007, 0.007, wood, { group: null });
+      f.cone([0, py + 0.08, 0.036], [0, py + 0.15, 0.036], 0.016, 0.002, steel, { group: null });
+      for (const d of [-1, 1]) f.box([d * 0.014, nut[1] + 0.05, 0.036], [0.012, 0.03, 0.002], mat('#c8c0b0', { rough: 0.9 }), { group: null });
+      // stirrup loop at the front, trigger lever below
+      for (let i = 0; i < 8; i++) {
+        const a0 = Math.PI * (i / 8); const a1 = Math.PI * ((i + 1) / 8);
+        f.cone([Math.cos(a0) * 0.06, py + 0.02 + Math.sin(a0) * 0.09, 0], [Math.cos(a1) * 0.06, py + 0.02 + Math.sin(a1) * 0.09, 0], 0.009, 0.009, iron, { group: null });
       }
-      f.cone([-span, 0.25, 0], [span, 0.25, 0], 0.004, 0.004, cord, { group: null });
-      f.box([0, 0.3, 0], [0.05, 0.03, 0.035], iron, { group: null, bevel: 0.01 });
-      f.box([0, -0.15, -0.03], [0.008, 0.06, 0.02], iron, { group: null, bevel: 0.004 });
-      if (heavy) { f.cone([-0.08, -0.32, 0], [0.08, -0.32, 0], 0.03, 0.03, iron, { group: null }); for (const d of [-1, 1]) f.box([d * 0.1, -0.32, 0], [0.008, 0.06, 0.008], iron, { group: null, bevel: 0.004 }); }
-      return { f, R: euler3(0, 0, -0.78) };
+      f.box([0, nut[1] - 0.12, -0.04], [0.008, 0.07, 0.016], iron, { group: null, bevel: 0.004, R: rotX(0.3) });
+      if (heavy) { f.cone([-0.08, -0.25, 0], [0.08, -0.25, 0], 0.03, 0.03, iron, { group: null }); for (const d of [-1, 1]) f.box([d * 0.1, -0.25, 0], [0.008, 0.06, 0.008], iron, { group: null, bevel: 0.004 }); }
+      return { f, R: euler3(0, 0, -0.62) };
     }
     case 'arrows': case 'quarrels': {
       const q = id === 'quarrels';

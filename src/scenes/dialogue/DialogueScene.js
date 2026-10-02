@@ -842,7 +842,7 @@ export default class DialogueScene extends Scene {
         right.append(h('div.jr-entry-head', [h('span.jr-entry-num', [String(e.n)]), h('span.jr-entry-title', [e.title])]));
         if (e.where) right.append(h('div.jr-entry-where', [e.where]));
         right.append(h('div.jr-rule'));
-        right.append(h('div.jr-entry-text', [...e.text.map((p, i) => { if (i) return h('p', [p]); const d = dropCap(p); return h(`p${d.lead.length ? '.dlg-capped' : ''}`, [...d.lead, d.body]); }), journalPlate(e.n)]));
+        right.append(h('div.jr-entry-text', [...e.text.map(smartQuotes).map((p, i) => { if (i) return h('p', [p]); const d = dropCap(p); return h(`p${d.lead.length ? '.dlg-capped' : ''}`, [...d.lead, d.body]); }), journalPlate(e.n)]));
         right.append(h('div.jr-folio', [`— ${romanize(e.n)} —`]));
       } else right.append(h('div.jr-empty', ['Select an entry.']));
       game.flags.journalUnread = [...unread];

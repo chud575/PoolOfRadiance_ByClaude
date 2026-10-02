@@ -30,17 +30,25 @@ export function engravedPlate(n) {
   if (plateCache.has(n)) return plateCache.get(n);
   const W = 720;
   const H = 290;
+  // paint wider than the plate, then frame the subject in the centre third
+  const PW = 1000;
   const npc = spec.actor ? NPCS[spec.actor] : null;
   const actor = npc ? (npc.kind === 'ghost' ? ghostActor(spec.pose) : npcActor(npc)) : null;
-  const { canvas, composer } = paintPanel({ setting: spec.setting, light: spec.light, monsters: spec.monsters, actor, w: W, h: H, seed: n * 17 + 3 });
+  const { canvas: wide, composer } = paintPanel({ setting: spec.setting, light: spec.light, monsters: spec.monsters, actor, w: PW, h: H, seed: n * 17 + 3 });
   // the subject's silhouette: every figure sprite drawn as a flat mask
-  const mask = document.createElement('canvas');
-  mask.width = W;
-  mask.height = H;
-  const mg = mask.getContext('2d');
+  const wmask = document.createElement('canvas');
+  wmask.width = PW;
+  wmask.height = H;
+  const mg = wmask.getContext('2d');
   for (const a of composer.actors) composer._sprite(mg, { ...a, ghost: false, r: { ...a.r, emit: [] } }, 0);
   for (const o of composer.ops) if (o.kind === 'sprite') composer._sprite(mg, { ...o, ghost: false, r: { ...o.r, emit: [] } }, 0);
-  const url = engrave(canvas, mask, n).toDataURL('image/png');
+  const md = mg.getImageData(0, 0, PW, H).data;
+  let sx = 0; let sn = 0;
+  for (let y = 0; y < H; y += 2) for (let x = 0; x < PW; x += 2) { const a = md[(y * PW + x) * 4 + 3]; if (a > 128) { sx += x; sn++; } }
+  const cx = sn ? sx / sn : PW / 2;
+  const x0 = Math.round(Math.max(0, Math.min(PW - W, cx - W / 2)));
+  const crop = (src) => { const c = document.createElement('canvas'); c.width = W; c.height = H; c.getContext('2d').drawImage(src, -x0, 0); return c; };
+  const url = engrave(crop(wide), crop(wmask), n).toDataURL('image/png');
   plateCache.set(n, url);
   return url;
 }
@@ -78,18 +86,30 @@ function engrave(src, maskC, seed) {
   sample.sort((a, b) => a - b);
   const lo = sample[Math.floor(sample.length * 0.04)];
   const hi = sample[Math.floor(sample.length * 0.97)];
+  const ss = [];
+  for (let i = 0; i < N; i += 3) if (M[i] > 0.5) ss.push(B[i]);
+  ss.sort((a, b) => a - b);
+  const slo = ss.length ? ss[Math.floor(ss.length * 0.03)] : lo;
+  const shi = ss.length ? ss[Math.floor(ss.length * 0.97)] : hi;
   const R = rngOf(seed * 31 + 7);
   const tone = new Float32Array(N);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const i = y * W + x;
-    let t = 1 - Math.max(0, Math.min(1, (B[i] - lo) / Math.max(0.05, hi - lo)));
-    t = Math.pow(t, 1.35);
     const subj = Mb[i];
-    t = subj > 0.5 ? t * 0.92 : 0.12 + t * 0.78; // background compressed toward a mid tone
+    let t;
+    if (subj > 0.5) {
+      // the subject is shaded on its own range (a pale ghost still gets form-following hatching):
+      // light planes stay open paper, the turning planes take one and two layers, the core shadow three
+      t = 1 - Math.max(0, Math.min(1, (B[i] - slo) / Math.max(0.05, shi - slo)));
+      t = 0.08 + Math.pow(t, 1.1) * 0.88;
+    } else {
+      t = 1 - Math.max(0, Math.min(1, (B[i] - lo) / Math.max(0.05, hi - lo)));
+      t = 0.12 + Math.pow(t, 1.35) * 0.72; // background compressed toward a mid tone
+    }
     // oval vignette wholly inside the plate mark
-    const vx = (x - W / 2) / (W * 0.47);
-    const vy = (y - H / 2) / (H * 0.43);
-    const v = vx * vx + vy * vy + Math.sin(x * 0.07 + seed) * Math.cos(y * 0.09) * 0.04;
+    const vx = (x - W / 2) / (W * 0.48);
+    const vy = (y - H / 2) / (H * 0.46);
+    const v = vx ** 4 + vy ** 4 + Math.sin(x * 0.07 + seed) * Math.cos(y * 0.09) * 0.03;
     tone[i] = t * Math.max(0, Math.min(1, (1 - v) * 3.2));
   }
   // structure tensor → stroke direction along the forms
@@ -178,15 +198,19 @@ function engrave(src, maskC, seed) {
   const o = img.data;
   for (let y = 2; y < H - 2; y++) for (let x = 2; x < W - 2; x++) {
     const i = y * W + x;
-    const vx = (x - W / 2) / (W * 0.47);
-    const vy = (y - H / 2) / (H * 0.43);
-    const fade = Math.max(0, Math.min(1, (1 - (vx * vx + vy * vy)) * 3));
+    const vx = (x - W / 2) / (W * 0.48);
+    const vy = (y - H / 2) / (H * 0.46);
+    const fade = Math.max(0, Math.min(1, (1 - (vx ** 4 + vy ** 4)) * 3));
     if (fade <= 0) continue;
     const e = Math.hypot(gx[i], gy[i]) * 0.25 * fade;
-    const me = Math.abs(Mb[i + 1] - Mb[i - 1]) + Math.abs(Mb[i + W] - Mb[i - W]);
+    // silhouette: the mask's edge sampled two pixels out, so the line is 2-3 px, the heaviest on the plate
+    const me = Math.abs(Mb[i + 2] - Mb[i - 2]) + Math.abs(Mb[i + 2 * W] - Mb[i - 2 * W]);
+    const inSubj = Mb[i] > 0.5;
     let a = 0;
-    if (e > 0.14) a = Math.min(0.75, (e - 0.14) * 5);
-    if (me > 0.25) a = Math.max(a, Math.min(1, me * 1.4) * fade);
+    // creases inside the subject read firmer than the background's edges, which stay hairlines
+    if (inSubj && e > 0.1) a = Math.min(0.85, (e - 0.1) * 6);
+    else if (!inSubj && e > 0.2) a = Math.min(0.5, (e - 0.2) * 3);
+    if (me > 0.35) a = Math.max(a, Math.min(1, me * 1.1) * fade);
     if (a <= 0) continue;
     const k = i * 4;
     const prev = o[k + 3] / 255;

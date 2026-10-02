@@ -337,7 +337,7 @@
 .jr-aside-row i { font-style: normal; color: #7a1e12; }
 .jr-aside-row small { font-style: italic; color: #6a4a28; }
 .jr-page.left .jr-list { min-height: 0; flex: 1 1 0; }
-.jr-page.left .jr-list { mask-image: linear-gradient(180deg, #000 calc(100% - 1.6em), transparent); -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 1.6em), transparent); }
+.jr-page.left .jr-list { border-bottom: 1px solid rgba(90, 60, 20, 0.22); }
 .jr-aside { margin-top: 0.4em; }
 
 /* ---------- paged speech: ▼ more ---------- */

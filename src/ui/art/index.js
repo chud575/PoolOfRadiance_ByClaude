@@ -230,10 +230,12 @@ function castShadow(g, r, x, y, h, keyDir, flip) {
   const lean = -(keyDir[0] / Math.max(0.25, keyDir[1])) * 0.35 * (flip ? -1 : 1);
   g.transform(1, 0, lean, -0.26, 0, 0);
   g.filter = `blur(${Math.max(2, h * 0.012).toFixed(1)}px)`;
-  g.globalAlpha = 0.42;
+  g.globalAlpha = 0.55;
   g.drawImage(sh, -r.ox, -r.oy);
   g.restore();
-  contactShadow(g, x, y + h * 0.005, h * 0.2, h * 0.035, 0.6);
+  // ambient occlusion where the figure meets the ground: a broad soft pool and a tight dark core
+  contactShadow(g, x, y + h * 0.005, h * 0.22, h * 0.04, 0.65);
+  contactShadow(g, x, y + h * 0.004, h * 0.1, h * 0.018, 0.85);
 }
 
 /**
@@ -610,9 +612,9 @@ export function paintNpcPortrait(npc, scale = 1) {
   } else {
     const ch = { race: npc.race ?? 'human', gender: npc.gender ?? 'male', look: npc.look ?? {}, name: npc.name };
     if (npc.kind === 'hooded') ch.look = { ...ch.look, head: 6 };
-    c = paintPortrait(ch, { scale });
+    c = npc.kind === 'ghost' ? ghostBust(W, H) : paintPortrait(ch, { scale });
     if (npc.kind === 'ghost') {
-      c = ghostly(c);
+      // the same spectral knight that kneels in the chapel, helm and all
     } else if (npc.kind === 'hooded') {
       const g = c.getContext('2d');
       g.fillStyle = 'rgba(0,0,0,0.25)';
@@ -621,6 +623,39 @@ export function paintNpcPortrait(npc, scale = 1) {
     }
   }
   portraitCache.set(key, c);
+  return c;
+}
+
+/** Ferran's portrait: the chapel's spectral knight, risen, head and shoulders. */
+function ghostBust(W, H) {
+  const c = makeCanvas(W, H);
+  const g = c.getContext('2d');
+  const bg = g.createRadialGradient(W * 0.5, H * 0.38, 6, W * 0.5, H * 0.5, H * 0.8);
+  bg.addColorStop(0, '#1e4450');
+  bg.addColorStop(0.5, '#0a1c24');
+  bg.addColorStop(1, '#02070a');
+  g.fillStyle = bg;
+  g.fillRect(0, 0, W, H);
+  glow(g, W * 0.5, H * 0.36, H * 0.4, '#8ff0ff', 0.2);
+  // rendered at a modest size and enlarged: the spectral blur hides the upscale, and a full
+  // figure at bust scale would cost seconds
+  const zoom = 3.3;
+  const up = 3;
+  const r = ghostActor('stand').render({ h: H * zoom / 1.42 / up }, {});
+  if (r) {
+    const top = r.oy - (H * zoom * 0.97) / up; // helm crest, sprite px
+    const x = W * 0.5 - r.ox * up + W * 0.02;
+    const y = H * 0.07 - top * up;
+    g.globalCompositeOperation = 'lighter';
+    g.drawImage(r.canvas, x, y, r.canvas.width * up, r.canvas.height * up);
+    g.globalCompositeOperation = 'source-over';
+  }
+  const mist = g.createLinearGradient(0, H * 0.6, 0, H);
+  mist.addColorStop(0, 'rgba(160,240,255,0)');
+  mist.addColorStop(1, 'rgba(160,240,255,0.25)');
+  g.fillStyle = mist;
+  g.fillRect(0, 0, W, H);
+  vignette(g, W, H, 0.5);
   return c;
 }
 

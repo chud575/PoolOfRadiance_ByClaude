@@ -83,15 +83,15 @@ function sculptHeadIn(f, skinM, o) {
     f.sphere(add(ic, [-0.022, 0.02, zf + 0.022]), 0.011, SHINE, { group: null, shadow: false });
     // lids: separate groups, so neither melts across the eye
     const lidT = rotZ(d * -0.07);
-    f.ell(add(c, [0, 0.074 - age * 0.01, -0.004]), [0.18, 0.088, 0.166], skinM, { group: `ulid${d}`, k: 0.02, R: lidT });
+    f.ell(add(c, [0, (fem ? 0.098 : 0.078) - age * 0.01, -0.004]), [0.18, 0.088, 0.166], skinM, { group: `ulid${d}`, k: 0.02, R: lidT });
     f.ell(add(c, [0, -0.1, -0.006]), [0.17, 0.062, 0.162], skinM, { group: `llid${d}`, k: 0.02 });
     // lash line on the upper lid edge
-    f.ell(add(c, [d * 0.004, 0.03, 0.146]), [fem ? 0.13 : 0.12, fem ? 0.012 : 0.008, 0.02], LASH, { group: null, R: lidT });
+    f.ell(add(c, [d * 0.004, fem ? 0.052 : 0.034, 0.146]), [fem ? 0.13 : 0.12, fem ? 0.012 : 0.008, 0.02], LASH, { group: null, R: lidT });
     // brows on the brow ridge
     const browM = hairMat(o.hair ?? '#3a2416', age > 0.5 ? 0.95 : fem ? 0.6 : 0.8);
     // a tapered brow: thick at the inner end, thinning and arching toward the temple
-    const b0 = [d * 0.16, 0.235, 0.86]; const b1 = [d * 0.33, 0.27, 0.835]; const b2 = [d * 0.48, 0.235, 0.76];
-    const bw = fem ? 0.55 : 1;
+    const b0 = [d * 0.15, fem ? 0.275 : 0.235, 0.86]; const b1 = [d * 0.33, fem ? 0.3 : 0.27, 0.835]; const b2 = [d * 0.48, fem ? 0.24 : 0.235, 0.76];
+    const bw = fem ? 0.45 : 1;
     f.cone(b0, b1, 0.034 * bw, 0.028 * bw, browM, { group: `brow${d}`, k: 0.02 });
     f.cone(b1, b2, 0.028 * bw, 0.012 * bw, browM, { group: `brow${d}`, k: 0.02 });
   }
