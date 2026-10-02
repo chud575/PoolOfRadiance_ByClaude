@@ -218,8 +218,10 @@ export function createWorld({ deferred = false } = {}) {
 
   // ---- particles ------------------------------------------------------------------
   const motes = createParticles({
-    count: 160, seed: 3, disc: true, origin: new THREE.Vector3(0, 0.3, 0), spread: new THREE.Vector3(2.8, 0, 2.8),
-    height: 16, speed: [0.03, 0.08], size: 0.55, colorA: 0xe8ffff, colorB: 0x3fc8ff, sway: 1.4, intensity: 2.4,
+    // motes of the Pool's light: fewer, finer and tinted (pale cyan fading to
+    // deep blue as they rise), twinkling, never a field of uniform white dots
+    count: 110, seed: 3, disc: true, origin: new THREE.Vector3(0, 0.3, 0), spread: new THREE.Vector3(2.8, 0, 2.8),
+    height: 12, speed: [0.03, 0.08], size: 0.42, colorA: 0xbaf6ff, colorB: 0x1890d8, sway: 1.4, intensity: 1.9,
   });
   const embersL = createParticles({
     count: 120, seed: 5, origin: new THREE.Vector3(-6.2, 1.8, -1.2), spread: new THREE.Vector3(0.7, 0.2, 0.7),

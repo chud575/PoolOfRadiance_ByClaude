@@ -340,8 +340,10 @@ export function createTerrace({ seed = 7 } = {}) {
       blocks.push(ni(mg));
     }
     const g = merge(blocks);
-    const kerbMat = addRimLight(texMat('hd_limestone', { vertexColors: true, roughness: 0.95 }), rimU, 0.9);
-    kerbMat.normalScale = new THREE.Vector2(1.6, 1.6);
+    // weathered in world space: rain streaks down the faces, damp mottling and
+    // lichen, so the dressed stone never reads as smooth plastic
+    const kerbMat = addRimLight(texMat('hd_limestone', { vertexColors: true, roughness: 0.95 }), rimU, 0.9, { weather: 1.1, ground: -2.9 });
+    kerbMat.normalScale = new THREE.Vector2(2.6, 2.6);
     const rim = new THREE.Mesh(g, kerbMat);
     rim.castShadow = true;
     rim.receiveShadow = true;
