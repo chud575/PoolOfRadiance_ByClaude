@@ -199,29 +199,32 @@ export function buildLogoTexture() {
   const u = union.getContext('2d');
   u.drawImage(gilt, 0, 0);
   u.drawImage(enamel, 0, 0);
-  // wide kernels are blurred at reduced resolution and scaled back up (identical
-  // to the eye, several times cheaper on software canvas — boot was ~1.4 s here)
+  // wide kernels are blurred (and read back) at reduced resolution and sampled
+  // bilinearly: identical to the eye, and the 8 MB full-size readbacks were the
+  // bulk of the title's boot on software canvas
   const blurred = (src, px, down = 1) => {
-    const c = mkCanvas();
-    const x = c.getContext('2d');
-    if (down > 1) {
-      const sc = document.createElement('canvas');
-      sc.width = W / down; sc.height = H / down;
-      const sx = sc.getContext('2d');
-      sx.filter = `blur(${px / down}px)`;
-      sx.drawImage(src, 0, 0, W / down, H / down);
-      x.imageSmoothingEnabled = true;
-      x.imageSmoothingQuality = 'high';
-      x.drawImage(sc, 0, 0, W, H);
-    } else {
-      x.filter = `blur(${px}px)`;
-      x.drawImage(src, 0, 0);
-    }
-    return x.getImageData(0, 0, W, H).data;
+    const w = W / down, h = H / down;
+    const c = mkCanvas(w, h);
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.filter = `blur(${px / down}px)`;
+    x.drawImage(src, 0, 0, w, h);
+    const d = x.getImageData(0, 0, w, h).data;
+    if (down === 1) return (i) => d[i + 3];
+    const inv = 1 / down;
+    return (i) => {
+      const p = i >> 2;
+      const fx = ((p % W) + 0.5) * inv - 0.5, fy = (((p / W) | 0) + 0.5) * inv - 0.5;
+      const x0 = Math.max(0, Math.floor(fx)), y0 = Math.max(0, Math.floor(fy));
+      const x1 = Math.min(w - 1, x0 + 1), y1 = Math.min(h - 1, y0 + 1);
+      const tx = Math.min(1, Math.max(0, fx - x0)), ty = Math.min(1, Math.max(0, fy - y0));
+      const a = d[(y0 * w + x0) * 4 + 3], b = d[(y0 * w + x1) * 4 + 3];
+      const cc = d[(y1 * w + x0) * 4 + 3], e = d[(y1 * w + x1) * 4 + 3];
+      return (a + (b - a) * tx) * (1 - ty) + (cc + (e - cc) * tx) * ty;
+    };
   };
   const gd = g.getImageData(0, 0, W, H).data;
   const ed = e.getImageData(0, 0, W, H).data;
-  const b1 = blurred(union, 3);
+  const b1 = blurred(union, 3, 2);
   const b2 = blurred(union, 9, 2);
   const sh = blurred(union, 14, 4);
   const img = o.createImageData(W, H);
@@ -231,9 +234,9 @@ export function buildLogoTexture() {
     d[i] = ga;
     d[i + 1] = ea;
     // bevel height: rounded shoulders inside the glyphs
-    const hgt = Math.min(255, (b1[i + 3] * 0.55 + b2[i + 3] * 0.45) * Math.max(ga, ea) / 255 * 1.25);
+    const hgt = Math.min(255, (b1(i) * 0.55 + b2(i) * 0.45) * Math.max(ga, ea) / 255 * 1.25);
     d[i + 2] = hgt;
-    d[i + 3] = Math.min(255, sh[i + 3] * 2.2);
+    d[i + 3] = Math.min(255, sh(i) * 2.2);
   }
   o.putImageData(img, 0, 0);
   const tex = new THREE.CanvasTexture(out);

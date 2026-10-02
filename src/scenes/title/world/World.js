@@ -6,6 +6,7 @@ import { createTerrace, TERRACE_TEXTURES } from './Terrace.js';
 import { createDragon } from './Dragon.js';
 import { createParticles } from './Particles.js';
 import { createChamber, CHAMBER_TEXTURES } from './Chamber.js';
+import { NOISE } from './glsl.js';
 
 /** Direction of the set sun (just below the sea horizon, WSW). */
 export const SUN_DIR = new THREE.Vector3(-0.45, 0.014, -1).normalize();
@@ -133,6 +134,42 @@ export function createWorld() {
   }
   scene.add(shafts);
 
+  // ---- Old City aerial: low ground mist lying in the streets between the ruins ----
+  // stacked soft sheets, thick in the hollows and torn by the sea wind; warm where
+  // the raking key catches them, so foreground ruins, the castle mound and the
+  // far quarter separate into planes of depth
+  const mistMat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide,
+    uniforms: { uTime: U.uTime, uOp: { value: 1 } },
+    vertexShader: /* glsl */ `varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: /* glsl */ `uniform float uTime, uOp; varying vec3 vW;
+      ${NOISE}
+      void main(){
+        vec2 p = vW.xz * 0.045 + vec2(uTime * 0.012, uTime * 0.004);
+        float n = fbm(p + fbm(p * 1.7 + 3.1) * 0.8);
+        float a = smoothstep(0.5, 0.85, n);
+        // fade out at the sheet's rim and toward the camera's own street
+        vec2 c = (vW.xz - vec2(60.0, -118.0)) / vec2(95.0, 70.0);
+        a *= 1.0 - smoothstep(0.55, 1.0, length(c));
+        a *= smoothstep(-55.0, -85.0, vW.z);
+        // warm on the sun (west) side, cool lilac in the lee
+        vec3 col = mix(vec3(0.55, 0.42, 0.62), vec3(1.0, 0.62, 0.42), smoothstep(110.0, 10.0, vW.x));
+        gl_FragColor = vec4(col * 0.75, a * 0.13 * uOp);
+      }`,
+  });
+  const mist = new THREE.Group();
+  for (const [y, k] of [[-9.7, 1], [-9.0, 0.8]]) {
+    const g = new THREE.PlaneGeometry(200, 150);
+    g.rotateX(-Math.PI / 2);
+    const m = new THREE.Mesh(g, mistMat);
+    m.position.set(60, y, -118);
+    m.scale.setScalar(1 + (1 - k) * 0.1);
+    m.renderOrder = 2;
+    mist.add(m);
+  }
+  mist.visible = false;
+  scene.add(mist);
+
   // ---- particles ------------------------------------------------------------------
   const motes = createParticles({
     count: 160, seed: 3, disc: true, origin: new THREE.Vector3(0, 0.3, 0), spread: new THREE.Vector3(2.8, 0, 2.8),
@@ -257,6 +294,7 @@ export function createWorld() {
       const ck = !inside && !!st.cityKey && !this._classic;
       cityKey.visible = ck;
       cityRim.visible = ck;
+      mist.visible = ck;
       cityKey.castShadow = ck && !this._low;
       sun.castShadow = !ck && !this._low;
       cityKey.intensity = ck ? 15 : 0;
@@ -319,6 +357,8 @@ export function createWorld() {
       chamber?.dispose();
       for (const s of systems) s.dispose();
       shaftMat.dispose();
+      mistMat.dispose();
+      mist.children.forEach((m) => m.geometry.dispose());
       shafts.children.forEach((m) => m.geometry.dispose());
       sky.geometry.dispose();
       sky.material.dispose();
