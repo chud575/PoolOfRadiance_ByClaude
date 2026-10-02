@@ -272,6 +272,32 @@ export function syncPartyTime(party, now) {
 }
 
 /**
+ * Wire the game clock to the party's timed effects — the one line main.js
+ * needs: `attachTimeSync(bus, game)`. Every 'time:changed' (each explore
+ * step, search, dialogue, shop visit, travel, rest) calls
+ * syncPartyTime(game.party, game.minutes), so Bless and Strength run out
+ * while walking and poison kills on the road, not only at the next rest.
+ * When anything changed it emits 'party:time' with the passTime report
+ * ({minutes, expired, died, bandaged}) and 'party:changed' so the roster
+ * refreshes. Returns an unsubscribe function.
+ * @param {{on:Function, emit:Function, off?:Function}} bus
+ * @param {{party:object[], minutes:number}} game
+ */
+export function attachTimeSync(bus, game) {
+  const handler = () => {
+    const r = syncPartyTime(game.party ?? [], game.minutes);
+    if (r && (r.died.length || r.bandaged.length || Object.keys(r.expired).length)) {
+      bus.emit('party:time', r);
+      bus.emit('party:changed', { party: game.party });
+    }
+  };
+  // Prime the marks so the first step after a load does not tick from 0.
+  syncPartyTime(game.party ?? [], game.minutes);
+  const off = bus.on('time:changed', handler);
+  return typeof off === 'function' ? off : () => bus.off?.('time:changed', handler);
+}
+
+/**
  * Advance one caster's memorization by `minutes` of rest. After the 1e rest
  * period (set by the highest missing spell level), each spell takes 15
  * minutes per spell level and is memorized as soon as its own study is done.

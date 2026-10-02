@@ -263,8 +263,8 @@ describe('spell fidelity', () => {
     expect(spellTargeting('holdPerson', 3, 'cleric').range).toBe(6);
     expect(spellTargeting('holdPerson', 5, 'magicUser').range).toBe(12);
   });
-  it('sleep bands: up to 1 HD 4d4, 1+1-2 2d4, 2+1-3 1d4, 3+1-4+4 0-1', () => {
-    expect(SLEEP_BANDS.map((b) => [b.max, b.dice])).toEqual([[1, '4d4'], [2, '2d4'], [3, '1d4'], [4.5, '1d2-1']]);
+  it('sleep bands: up to 1 HD 4d4, 1+1-2 2d4, 2+1-3 1d4, 3+1-4 1-2, 4+1-4+4 0-1', () => {
+    expect(SLEEP_BANDS.map((b) => [b.max, b.dice])).toEqual([[1, '4d4'], [2, '2d4'], [3, '1d4'], [4, '1d2'], [4.5, '1d2-1']]);
     const rng = new Rng(9);
     for (let i = 0; i < 20; i++) {
       const lizards = Array.from({ length: 8 }, (_, k) => combatantFromMonster(rng, 'lizardMan', k + 1)); // 2+1 HD
@@ -272,7 +272,9 @@ describe('spell fidelity', () => {
       const slept = castSpell(rng, 'sleep', mage(1), lizards, opts).results.filter((r) => r.affected).length;
       expect(slept).toBeLessThanOrEqual(4);
       const bugbears = Array.from({ length: 4 }, (_, k) => combatantFromMonster(rng, 'bugbear', k + 1)); // 3+1 HD
-      expect(castSpell(rng, 'sleep', mage(1), bugbears, opts).results.filter((r) => r.affected).length).toBeLessThanOrEqual(1);
+      const nb = castSpell(rng, 'sleep', mage(1), bugbears, opts).results.filter((r) => r.affected).length;
+      expect(nb).toBeGreaterThanOrEqual(1);
+      expect(nb).toBeLessThanOrEqual(2);
     }
   });
   it('dispel magic: +5% per level above, -2% per level below', () => {

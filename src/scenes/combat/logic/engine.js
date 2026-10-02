@@ -9,6 +9,7 @@ import { effectHost } from '../../../rules/creature.js';
 import {
   fxView, ableToAct, attacksThisTurn, castInBattle, roundUpkeep, hammerTurn, specialsOnHit,
   castableInBattle, battleCastProblem, monsterSpells, consumeMonsterSpell, stenchAuras, battleItemUse, quaffInBattle,
+  beginCasting, finishCasting, castDueBefore, castingDelay, cloudExposure,
 } from '../../../rules/battle.js';
 import { dexterityMods } from '../../../rules/abilities.js';
 import { backstabMultiplier } from '../../../rules/classes.js';
@@ -54,6 +55,8 @@ export class CombatEngine {
     this.turnIdx = -1;
     /** persistent area effects: {kind, squares:Set<string>, rounds, casterId} */
     this.areas = [];
+    /** casters whose spell goes off later this round (rules beginCasting / finishCasting) */
+    this.casting = [];
     for (const c of this.all) {
       if (!c._fxView) {
         const old = c.fx ?? {};
@@ -250,13 +253,8 @@ export class CombatEngine {
     for (const a of this.areas) {
       if (a.kind !== 'cloud') continue;
       for (const c of this.all) {
-        if (this.out(c) || !a.squares.has(`${c.x},${c.y}`) || c.fx.nauseous) continue;
-        if (c.ref?.special?.includes?.('undead')) continue;
-        const sv = savingThrow(this.rng, c, 'ppdm');
-        if (!sv.saved) {
-          c.fx.nauseous = 2;
-          ev.push({ type: 'effect', id: c.id, kind: 'nauseous', text: `${c.name} retches in the cloud!` });
-        }
+        if (this.out(c) || !a.squares.has(`${c.x},${c.y}`)) continue;
+        ev.push(...cloudExposure(this.rng, c, a, this.round)); // rules: save vs poison or retch
       }
     }
     // Ghast stench: those within 10' save vs poison once or fight at -2.
@@ -303,12 +301,19 @@ export class CombatEngine {
       if (this.outcome()) return ev;
       this.turnIdx++;
       if (this.turnIdx >= this.order.length) {
+        ev.push(...this._resolveCasts(null)); // 1-round spells go off at the end of the round
+        if (this.outcome()) return ev;
         if (this.round > 0) ev.push(...this.endRound());
         if (this.outcome()) return ev;
         ev.push(...this.startRound());
         continue;
       }
       const c = this.order[this.turnIdx];
+      // Spells begun earlier go off before slower actors (1e casting time).
+      if (c && this.casting.length) {
+        ev.push(...this._resolveCasts(ableToAct(c) && !this.out(c) ? c.initiative : null));
+        if (this.outcome()) return ev;
+      }
       if (!c || this.out(c) || c._actedRound === this.round) continue;
       if (!ableToAct(c)) {
         c._actedRound = this.round;
@@ -334,6 +339,31 @@ export class CombatEngine {
         ev.push(hammer, ...this._downEvents(t), ...this._afterKill(t));
       }
       return ev;
+    }
+    return ev;
+  }
+
+  /**
+   * Resolve pending casts due before an actor of initiative `init` (null =
+   * all of them: end of round). A caster struck, downed, held or silenced
+   * meanwhile loses the spell (the slot is already spent).
+   */
+  _resolveCasts(init) {
+    const ev = [];
+    const due = this.casting.filter((c) => castDueBefore(c, init));
+    if (!due.length) return ev;
+    this.casting = this.casting.filter((c) => !due.includes(c));
+    due.sort((a, b) => (b.castingAt ?? 0) - (a.castingAt ?? 0));
+    for (const c of due) {
+      delete c.castingAt;
+      const r = finishCasting(c);
+      if (!r) continue;
+      if (!r.ok) {
+        ev.push({ type: 'effect', id: c.id, kind: 'Spell lost', spellLost: true, text: r.text });
+        continue;
+      }
+      ev.push(...this.cast(c, r.spellId, r.at ?? { x: c.x, y: c.y }, { free: true, resolving: true }));
+      if (this.outcome()) break;
     }
     return ev;
   }
@@ -460,6 +490,8 @@ export class CombatEngine {
       c.mp -= cost;
       c.moved += cost;
       ev.push({ type: 'step', id: c.id, from, x: c.x, y: c.y, facing: c.facing });
+      // Walking into a stinking cloud: save vs poison or retch (rules cloudExposure).
+      for (const a of this.areas) if (a.kind === 'cloud' && a.squares.has(`${c.x},${c.y}`)) ev.push(...cloudExposure(this.rng, c, a, this.round));
       // Guards strike at anything stepping next to them.
       for (const g of this.enemiesOf(c)) {
         if (!g.guarding || !this.awake(g) || !this.adjacent(c, g)) continue;
@@ -601,17 +633,34 @@ export class CombatEngine {
   }
 
   /** Cast a memorized spell at a square. */
-  cast(c, spellId, at, { free = false, level = null, source = null } = {}) {
+  cast(c, spellId, at, { free = false, level = null, source = null, resolving = false } = {}) {
     const t = this.tactics(c, spellId, level);
     const def = SPELLS[spellId];
     const can = this.canCast(c, spellId, at, level);
-    if (!can.ok) return [{ type: 'log', text: can.reason, kind: 'warn' }];
+    if (!can.ok) return [{ type: 'log', text: resolving ? `${c.name}'s spell fizzles: ${can.reason.toLowerCase()}.` : can.reason, kind: 'warn' }];
     // Rules gate (silence, held, armour for arcane magic) before the slot is spent; items need no casting.
     const problem = source ? null : battleCastProblem(c, spellId);
     if (problem) return [{ type: 'log', text: `${c.name}: ${problem}.`, kind: 'warn' }];
     if (!free) {
       const spent = c.side === 'party' && c.ref?.classSpec ? consumeSpell(c.ref, spellId) : consumeMonsterSpell(c, spellId);
       if (!spent) return [{ type: 'log', text: 'That spell is not memorized.', kind: 'warn' }];
+      // 1e casting time: the spell goes off `segments` after the caster's
+      // initiative. If a faster foe still has to act before then, the cast
+      // is pending — a blow landed meanwhile loses it (rules beginCasting).
+      const seg = castingDelay(spellId, t.school, t.level);
+      const resolveAt = (c.initiative ?? 0) - seg;
+      const before = this.order.slice(this.turnIdx + 1).some((o) => o !== c && !this.out(o) && ableToAct(o) && o._actedRound !== this.round && (o.initiative ?? -Infinity) > resolveAt);
+      if (seg > 0 && this.round > 0 && before) {
+        beginCasting(c, spellId, { at, cls: t.school, level: t.level, round: this.round });
+        c.castingAt = resolveAt;
+        this.casting.push(c);
+        if (t.target !== 'self') this._face(c, at.x, at.y);
+        c.acted = true;
+        c.attacksLeft = 0;
+        c.mp = 0;
+        const name = def?.name ?? SPELL_RULES[spellId]?.name ?? spellId;
+        return [{ type: 'effect', id: c.id, kind: 'Casting', casting: true, spell: spellId, at, text: `${c.name} begins to cast ${name}...` }];
+      }
     }
     const lvl = t.level;
     if (t.target !== 'self') this._face(c, at.x, at.y);

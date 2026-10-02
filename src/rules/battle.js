@@ -4,7 +4,7 @@ import {
 } from './conditions.js';
 import {
   castSpell, conditionLine, hammerStrike, SPELL_RULES, castProblem, spellTargeting, castingClass, casterLevel,
-  spellsForClass,
+  spellsForClass, castingDelay,
 } from './spells.js';
 import { effectHost, nameOf, isDownCreature, characterOf, monsterOf, sideOf, isUndead, classAsOf } from './creature.js';
 import {
@@ -195,6 +195,101 @@ export function castInBattle(rng, spellId, caster, targets, o = {}) {
   return { ...res, hits };
 }
 
+// --------------------------------------------- casting time & disruption
+
+export { castingDelay };
+
+/**
+ * Start casting a spell whose 1e casting time makes it go off later in the
+ * round. The memorized slot is spent by the caller *before* this (a
+ * disrupted spell is lost, slot and all). Records a 'casting' effect on the
+ * caster with what to resolve and when:
+ *   resolveAt = caster's initiative − castingDelay segments
+ * The tactical engine resolves it once every actor with a higher initiative
+ * has had its turn (ties: the spell first), or at the end of the round. Any
+ * damage meanwhile (conditions.onDamaged) marks it lost; so do sleep, hold,
+ * silence or death (see finishCasting).
+ * @param {object} c combatant
+ * @param {string} spellId
+ * @param {{at?:object, cls?:string, level?:number, initiative?:number, round?:number, data?:object}} [o]
+ * @returns {{segments:number, resolveAt:number, effect:object}}
+ */
+export function beginCasting(c, spellId, o = {}) {
+  const cls = o.cls ?? castingClass(c, spellId);
+  const L = o.level ?? casterLevel(c, spellId, cls);
+  const segments = castingDelay(spellId, cls, L);
+  const init = o.initiative ?? c.initiative ?? 0;
+  const resolveAt = init - segments;
+  const effect = addEffect(effectHost(c), 'casting', { rounds: 2, source: spellId, level: L });
+  // A fresh cast replaces any stale record wholesale (addEffect would merge).
+  effect.data = { spellId, cls, level: L, at: o.at ?? null, segments, resolveAt, round: o.round ?? null, lost: false, ...(o.data ?? {}) };
+  return { segments, resolveAt, effect };
+}
+
+/** The spell a combatant is in the middle of casting ({spellId, at, resolveAt, lost...}), or null. */
+export function castingOf(c) {
+  return getEffect(effectHost(c), 'casting')?.data ?? null;
+}
+
+/**
+ * Does a pending cast go off before an actor with initiative `init` acts?
+ * (Ties go to the spell; `init` undefined/-Infinity = end of round.)
+ */
+export function castDueBefore(c, init) {
+  const d = castingOf(c);
+  if (!d) return false;
+  return init === undefined || init === null || d.resolveAt >= init;
+}
+
+/**
+ * Finish a pending cast: removes the 'casting' effect and says whether the
+ * spell goes off. Lost when the caster was struck (onDamaged), is down, or
+ * can no longer cast (asleep, held, paralyzed, silenced...). The slot stays
+ * spent either way. Returns null when nothing was being cast.
+ * @returns {{ok:boolean, lost:boolean, reason?:string, spellId:string, at:object, cls:string, level:number, text?:string}|null}
+ */
+export function finishCasting(c) {
+  const host = effectHost(c);
+  const e = getEffect(host, 'casting');
+  if (!e) return null;
+  const d = { ...(e.data ?? {}) };
+  removeEffect(host, 'casting');
+  const name = nameOf(c);
+  const spell = SPELL_RULES[d.spellId]?.name ?? d.spellId;
+  let reason = null;
+  if (d.lost) reason = d.lostReason ?? 'struck';
+  else if (isDownCreature(c) || isDown(c)) reason = 'down';
+  else if (!conditionsAllowCasting(host)) reason = 'incapacitated';
+  if (reason) {
+    const why = reason === 'struck' ? `${name} is struck and loses the ${spell}!` : reason === 'down' ? `${name}'s ${spell} dies on the lips.` : `${name} cannot finish the ${spell}.`;
+    return { ...d, ok: false, lost: true, reason, text: why };
+  }
+  return { ...d, ok: true, lost: false };
+}
+
+/**
+ * Lingering Stinking Cloud (PHB: 1 round/level): anyone *in* the cloud —
+ * who walks into it or starts/ends a turn there — saves vs poison (dwarf and
+ * halfling CON bonus applies) or is nauseous (helpless) for 1d4+1 rounds.
+ * Undead and the already-retching are skipped; a creature saves at most
+ * once per round per cloud (`area.checked`, keyed by round). Returns
+ * tactical effect events.
+ * @param {object} area {kind:'cloud', squares:Set<string>, rounds, casterId, checked?:Map}
+ * @param {number} [round] the current combat round
+ */
+export function cloudExposure(rng, c, area, round = 0) {
+  const host = effectHost(c);
+  if (isDown(c) || isUndead(c) || getEffect(host, 'nauseous')) return [];
+  area.checked ??= new Map();
+  if (area.checked.get(c.id) === round) return [];
+  area.checked.set(c.id, round);
+  const name = c.name ?? nameOf(c);
+  const sv = savingThrow(rng, c, 'ppdm', 0, { poison: true });
+  if (sv.saved) return [{ type: 'effect', id: c.id, kind: 'Resists', saved: true, text: `${name} holds breath against the cloud.` }];
+  addEffect(host, 'nauseous', { rounds: 1 + rng.die(4), source: 'stinkingCloud' });
+  return [{ type: 'effect', id: c.id, kind: 'nauseous', text: `${name} retches in the cloud!` }];
+}
+
 /**
  * End-of-round upkeep for one combatant, as tactical events: bleeding for
  * the dying (bandaged allies don't bleed), poison onset, and timed effects
@@ -378,7 +473,7 @@ export function stenchAuras(rng, all, near) {
     if (isDown(v) || v.fled || v.stenchChecked || isUndead(v)) continue;
     if (!sources.some((src) => sideOf(src) !== sideOf(v) && near(src, v))) continue;
     v.stenchChecked = true;
-    const sv = savingThrow(rng, v, 'ppdm');
+    const sv = savingThrow(rng, v, 'ppdm', 0, { poison: true });
     const name = v.name ?? nameOf(v);
     if (sv.saved) ev.push({ type: 'effect', id: v.id, kind: 'Resists', special: 'stench', saved: true, text: `${name} masters the charnel stench.` });
     else {

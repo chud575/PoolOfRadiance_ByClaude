@@ -40,8 +40,8 @@ export const TREASURE_TYPES = {
   R: { gp: [40, '2d4x1000'], pp: [50, '10d6x100'], gems: [55, '4d8'], jewelry: [45, '1d12'] },
   S: { potions: [40, '2d4'] },
   T: { scrolls: [50, '1d4'] },
-  U: { gems: [90, '10d8'], jewelry: [80, '5d6'], magic: [70, 1, 'any'] },
-  V: { magic: [85, 2, 'any'] },
+  U: { gems: [90, '10d8'], jewelry: [80, '5d6'], magic: [70, 1, 'eachNoPotionsScrolls'] },
+  V: { magic: [85, 2, 'eachNoPotionsScrolls'] },
   W: { gp: [60, '5d6x1000'], pp: [15, '1d8x100'], gems: [60, '10d8'], jewelry: [50, '5d8'], maps: [55, 1] },
   X: { magic: [60, 1, 'misc'], potions: [60, 1] },
   Y: { gp: [70, '2d6x1000'] },
@@ -127,10 +127,11 @@ export function rollScroll(rng) {
 
 /**
  * Roll one magic item of a kind: 'any' | 'armsArmor' | 'noWeapons' | 'misc' |
- * 'potions' | 'scrolls' | 'rings' | 'wands' | 'armor' | 'swords' | 'weapons'.
+ * 'potions' | 'scrolls' | 'rings' | 'wands' | 'armor' | 'swords' | 'weapons'. A kind with no item
+ * in data falls back to a potion unless `o.noFallback`.
  * @returns {import('./character.js').InventoryEntry|null}
  */
-export function rollMagicItem(rng, kind = 'any') {
+export function rollMagicItem(rng, kind = 'any', o = {}) {
   let cat = kind;
   if (kind === 'any' || kind === 'noWeapons' || kind === 'armsArmor') {
     const r = rng.int(1, 100);
@@ -143,7 +144,7 @@ export function rollMagicItem(rng, kind = 'any') {
   if (cat === 'scrolls') return rollScroll(rng);
   const rows = MAGIC_TABLE[cat];
   const id = weighted(rng, rows);
-  if (!id) return cat === 'misc' || cat === 'rings' || cat === 'wands' ? rollMagicItem(rng, 'potions') : null;
+  if (!id) return !o.noFallback && (cat === 'misc' || cat === 'rings' || cat === 'wands') ? rollMagicItem(rng, 'potions') : null;
   if (cat === 'armor' || cat === 'swords' || cat === 'weapons') {
     const plus = rollPlus(rng);
     const e = makeEntry(id, { magic: plus, identified: false });
@@ -155,6 +156,9 @@ export function rollMagicItem(rng, kind = 'any') {
   if (ITEMS[id].type === 'wand') e.charges = ITEMS[id].charges ? Math.max(1, ITEMS[id].charges - rng.int(0, 10)) : rng.int(5, 25);
   return e;
 }
+
+/** Magic kinds of the MM "1 of each magic excluding potions and scrolls" (types U, V). */
+export const EACH_MAGIC_KIND = Object.freeze(['rings', 'wands', 'misc', 'armor', 'swords', 'weapons']);
 
 /**
  * Generate treasure of a type.
@@ -187,9 +191,14 @@ export function generateTreasure(rng, types, o = {}) {
         for (let i = 0; i < n; i++) out.jewelry.push(rollJewelry(rng));
       }
       if (def.magic && rng.chance(def.magic[0])) {
-        for (let i = 0; i < def.magic[1]; i++) {
-          const e = rollMagicItem(rng, def.magic[2]);
-          if (e) out.items.push(e);
+        // MM types U/V: one (U) or two (V) of *each* kind of magic item
+        // except potions and scrolls (rings, wands, misc, armour, swords, weapons).
+        const kinds = def.magic[2] === 'eachNoPotionsScrolls' ? EACH_MAGIC_KIND : [def.magic[2]];
+        for (const kind of kinds) {
+          for (let i = 0; i < def.magic[1]; i++) {
+            const e = rollMagicItem(rng, kind, { noFallback: kinds.length > 1 });
+            if (e) out.items.push(e);
+          }
         }
       }
       if (def.maps && rng.chance(def.maps[0])) out.maps = (out.maps ?? 0) + def.maps[1];

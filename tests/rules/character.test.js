@@ -83,7 +83,8 @@ describe('multiclass', () => {
     const ch = createCharacter({ rng: new Rng(3), name: 'P', race: 'halfling', classSpec: 'fighter/thief', abilities: abil({ str: 14, dex: 18, con: 14 }), items: ['shortSword', 'leather'] });
     const s = deriveStats(ch);
     expect(s.thac0).toBe(20);
-    expect(s.saves.ppdm).toBe(13 - 4); // thief 13, halfling +4 (CON 14) vs poison
+    expect(s.saves.ppdm).toBe(13); // poison bonus is not folded into the whole line
+    expect(s.savePoison).toBe(13 - 4); // thief 13, halfling +4 (CON 14) vs poison
     expect(s.thief.hs).toBe(10 + 15 + 10); // base + halfling + dex 18
     expect(s.backstab).toBe(2);
   });

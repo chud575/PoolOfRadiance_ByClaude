@@ -90,6 +90,7 @@ export const CONDITIONS = {
   findTraps: { name: 'Find Traps', kind: 'buff', magical: true, desc: 'Traps are revealed.' },
   spiritualHammer: { name: 'Spiritual Hammer', kind: 'buff', magical: true, desc: 'A hammer of force fights at the cleric\'s command.' },
   guarding: { name: 'Guarding', kind: 'buff', desc: 'Ready to strike the first foe that approaches.' },
+  casting: { name: 'Casting', kind: 'status', lostOnDamage: true, desc: 'Weaving a spell. Struck before it goes off, the spell is lost.' },
 };
 
 /** Ensure the storage arrays exist. */
@@ -123,9 +124,10 @@ export function addEffect(target, id, o = {}) {
     if (o.mods) e.mods = { ...e.mods, ...o.mods };
     if (o.data) e.data = { ...e.data, ...o.data };
     if (o.level !== undefined) e.level = Math.max(e.level ?? 0, o.level);
+    if (o.persist) e.persist = true;
   } else {
     e = { id, rounds };
-    for (const k of ['source', 'casterId', 'level', 'mods', 'data']) if (o[k] !== undefined) e[k] = o[k];
+    for (const k of ['source', 'casterId', 'level', 'mods', 'data', 'persist']) if (o[k] !== undefined) e[k] = o[k];
     list.push(e);
   }
   syncCondition(target, id, true);
@@ -277,6 +279,12 @@ export function tickPoison(target, minutes = 1) {
  */
 export function onDamaged(target) {
   const removed = [];
+  // 1e spell disruption: a caster struck before the spell goes off loses it
+  // (the slot is already spent). The effect stays, marked lost, so the
+  // resolution can report "the spell is lost".
+  for (const e of target.effects ?? []) {
+    if (CONDITIONS[e.id]?.lostOnDamage && !e.data?.lost) e.data = { ...(e.data ?? {}), lost: true, lostReason: 'struck' };
+  }
   for (const id of conditionIds(target)) {
     if (CONDITIONS[id]?.breaksOnDamage) {
       removeEffect(target, id);
@@ -310,10 +318,16 @@ export function clearEffects(target, pred = () => true) {
   return removed;
 }
 
-/** Strip combat-only effects after a battle (keeps poison, disease, curses, blindness). */
+/**
+ * Strip combat-only effects after a battle. Kept: poison, disease, curses,
+ * blindness, bandages, drained strength, and every effect flagged `persist`
+ * (cast from a spell whose duration runs in turns or hours — Enlarge, Prot.
+ * from Normal Missiles, Strength, Resist Fire... see spells
+ * LONG_DURATION_SPELLS) or from a potion; those run out with passTime.
+ */
 export function clearCombatEffects(target) {
   const keep = new Set(['poisoned', 'diseased', 'blinded', 'bestowCurse', 'slowPoison', 'bandaged', 'detectMagic', 'findTraps', 'detectInvisibility', 'friends', 'resistCold', 'resistFire', 'strength', 'giantStrength', 'protEvil', 'protGood', 'invisible', 'strDrain', 'heroism']);
-  return clearEffects(target, (e) => !keep.has(e.id));
+  return clearEffects(target, (e) => !keep.has(e.id) && !e.persist);
 }
 
 /** Tooltip-ready list: [{id, name, desc, rounds, kind}] */

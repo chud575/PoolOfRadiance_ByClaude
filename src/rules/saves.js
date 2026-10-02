@@ -2,6 +2,7 @@ import { dexterityMods, wisdomSaveAdj } from './abilities.js';
 import { effectMods } from './conditions.js';
 import { characterOf, savesOf, effectHost, isEvil, isGood } from './creature.js';
 import { effectiveAbilities } from './character.js';
+import { racialPoisonBonus } from './races.js';
 
 /**
  * Saving throws for any creature, with the situational bonuses 1e applies:
@@ -9,12 +10,16 @@ import { effectiveAbilities } from './character.js';
  *  - Dexterity defensive adjustment vs dodgeable magic (`dodge`: fireball, lightning),
  *  - element resistance (+3 from resist fire/cold),
  *  - protection from evil/good vs an evil/good source (`source`),
+ *  - the stout races' CON bonus against poison (`poison`: venom, stinking
+ *    cloud, ghast stench, disease) — on the Paralyzation/Poison/Death Magic
+ *    line but *only* when the danger is poison (PHB: dwarves, halflings; not
+ *    ghoul paralysis, wands of paralyzation or death magic),
  *  - any flat `bonus` from the caller (hold person's multi-target penalty...).
  *
  * @param {import('./dice.js').Rng} rng
  * @param {object} c creature
  * @param {'ppdm'|'pp'|'rsw'|'bw'|'sp'} key
- * @param {{bonus?:number, mental?:boolean, dodge?:boolean, element?:string, source?:object}} [o]
+ * @param {{bonus?:number, mental?:boolean, dodge?:boolean, poison?:boolean, element?:string, source?:object}} [o]
  * @returns {{roll:number, target:number, bonus:number, saved:boolean}}
  */
 export function rollSave(rng, c, key, o = {}) {
@@ -33,6 +38,7 @@ export function saveBonus(c, o = {}) {
     const a = effectiveAbilities(ch);
     if (o.mental) bonus += wisdomSaveAdj(a.wis);
     if (o.dodge) bonus += Math.max(0, -dexterityMods(a.dex).ac);
+    if (o.poison) bonus += racialPoisonBonus(ch.race, ch.abilities.con);
   }
   if (o.element) bonus += fx.saveVsElement[o.element] ?? 0;
   if (o.source) {

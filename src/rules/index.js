@@ -18,3 +18,4 @@ export * from './combat.js';
 export * from './specials.js';
 export * from './party.js';
 export * from './battle.js';
+export * from './explore.js';

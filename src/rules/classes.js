@@ -211,10 +211,14 @@ export function savesFor(classId, level) {
 
 /**
  * Effective hit dice of a monster for saves/attacks: each +N hp bonus of 1-2
- * counts as a partial die (DMG: 1+1 HD saves as 2 HD). < 1 HD = 0.
+ * counts as a partial die (DMG: 1+1 HD saves as 2 HD). Less than one full
+ * die — under 1 HD, or 1-1 / 1-N like goblins and kobolds — is 0 (saves as a
+ * 0-level man), the same ruling as monsterThac0 (20) and creature.belowOneHd
+ * (fighters sweep them).
  */
 export function effectiveHd(hd, hpBonus = 0) {
   if (hd < 1) return 0;
+  if (hd === 1 && hpBonus < 0) return 0;
   return Math.floor(hd) + (hpBonus > 0 ? 1 : 0);
 }
 

@@ -101,7 +101,7 @@ export function rollExceptionalStr(rng, abilities, raceId, classSpec, gender = '
   if (abilities.str !== 18 || !splitClasses(classSpec).includes('fighter')) return 0;
   const cap = raceAbilityCaps(raceId, gender).maxStrPct;
   if (!cap) return 0;
-  return Math.min(cap, rng.int(1, 100));
+  return rng.int(1, cap); // uniform up to the race/gender cap (not min(cap, d100))
 }
 
 /**
@@ -456,13 +456,13 @@ export function armorAllowsThieving(ch) {
 
 /**
  * All derived combat stats. Pure function of the character.
- * @returns {{thac0:number, ac:number, acRear:number, acMissile:number, saves:Record<string,number>,
+ * @returns {{thac0:number, ac:number, acRear:number, acMissile:number, saves:Record<string,number>, savePoison:number,
  *   hitBonus:number, dmgBonus:number, missileHit:number, weapon: import('../data/schema.js').ItemDef|null,
  *   weaponEntry: InventoryEntry|null, weaponMagic:number, ranged:boolean, range:number, damage:string,
  *   damageLarge:string, attacks:number, move:number, baseMove:number, weight:number,
  *   encumbrance:{category:number, move:number, label:string, next:number}, spellSlots:Record<string,number[]>,
  *   canCastArcane:boolean, thief:Record<string,number>|null, backstab:number, levels:string, className:string,
- *   classAbbr:string, abilities:object, mods:object, immune:string[], resist:Record<string,number>,
+ *   classAbbr:string, classLevels:string, dual:boolean, dualActive:boolean, abilities:object, mods:object, immune:string[], resist:Record<string,number>,
  *   images:number, attackerHit:number, missChance:number}}
  */
 export function deriveStats(ch) {
@@ -538,10 +538,13 @@ export function deriveStats(ch) {
   for (const k of SAVE_KEYS) {
     saves[k] = Math.min(...classes.map((c) => savesFor(c, lvlOf(c))[k]));
     if (k === 'rsw' || k === 'sp') saves[k] -= magicBonus;
-    if (k === 'ppdm') saves[k] -= poisonBonus;
+    // The stout races' poison bonus is NOT folded into ppdm (it would also
+    // cover paralysis and death magic): rollSave({poison:true}) adds it.
     saves[k] -= saveBonus + fx.save + (fx.saveVs[k] ?? 0);
     saves[k] = Math.max(2, saves[k]);
   }
+  // Display-only: the number this character needs against poison.
+  const savePoison = Math.max(2, saves.ppdm - poisonBonus);
 
   // ---- weapon
   const ranged = !!weapon?.ranged;
@@ -589,6 +592,7 @@ export function deriveStats(ch) {
     acRear,
     acMissile,
     saves,
+    savePoison,
     hitBonus,
     dmgBonus,
     missileHit: dex.missile + (weapon?.thrown ? str.hit : 0) + wMagic + fx.hit,
@@ -608,9 +612,7 @@ export function deriveStats(ch) {
     canCastArcane: armorAllowsArcane(ch),
     thief,
     backstab: classes.includes('thief') ? backstabMultiplier(ch.levels.thief) : 0,
-    levels: splitClasses(ch.classSpec).map((c) => ch.levels[c]).join('/'),
-    className: classSpecName(ch.classSpec),
-    classAbbr: classSpecAbbr(ch.classSpec),
+    ...classLabels(ch),
     abilities: a,
     mods: fx,
     immune: [...fx.immune],
@@ -618,6 +620,26 @@ export function deriveStats(ch) {
     images: fx.images,
     attackerHit: fx.attackerHit,
     missChance: fx.missChance,
+  };
+}
+
+/**
+ * Class/level labels for sheets: multiclass 'F2/MU2'; a dual-classed human
+ * shows both careers, old first ('8/3', 'Fighter/Magic-User', 'F8 / MU3'),
+ * with `dual` set and `dualActive` once the old class's abilities are back.
+ * @returns {{levels:string, className:string, classAbbr:string, classLevels:string, dual:boolean, dualActive:boolean}}
+ */
+export function classLabels(ch) {
+  const now = splitClasses(ch.classSpec);
+  const cls = ch.dual ? [ch.dual.from, ...now.filter((c) => c !== ch.dual.from)] : now;
+  const lvl = (c) => (ch.dual && c === ch.dual.from ? ch.dual.level : ch.levels[c]);
+  return {
+    levels: cls.map(lvl).join('/'),
+    className: ch.dual ? `${cls.map((c) => CLASSES[c].name).join('/')} (dual)` : classSpecName(ch.classSpec),
+    classAbbr: cls.map((c) => CLASSES[c].abbr).join('/'),
+    classLevels: cls.map((c) => `${CLASSES[c].abbr}${lvl(c)}`).join(' / '),
+    dual: !!ch.dual,
+    dualActive: !!ch.dual && activeClasses(ch).includes(ch.dual.from),
   };
 }
 
@@ -757,10 +779,30 @@ export function dualClassProblem(ch, newClass) {
  * allows it — the shop lists them with the reason as the tooltip.
  */
 export function dualClassChoices(ch) {
+  const from = splitClasses(ch.classSpec)[0];
   return Object.keys(CLASSES).filter((c) => !splitClasses(ch.classSpec).includes(c)).map((cls) => {
     const reason = dualClassProblem(ch, cls);
-    return { cls, ok: !reason, reason };
+    const cap = maxLevel(ch, cls);
+    return { cls, ok: !reason, reason, warning: dualClassWarning(ch, cls), regainAt: (ch.levels[from] ?? 1) + 1, cap };
   });
+}
+
+/**
+ * The trap in dual-classing under Pool of Radiance caps: the old class's
+ * abilities come back only once the new class *exceeds* the old level. If the
+ * new class's maximum (PR cap or racial limit) is at or below the current
+ * level, they never will. Returns a warning string, or null.
+ * e.g. "you will never regain Fighter abilities (MU cap 6 ≤ F8)".
+ */
+export function dualClassWarning(ch, newClass) {
+  if (ch.dual || !CLASSES[newClass]) return null;
+  const cur = splitClasses(ch.classSpec);
+  if (cur.length !== 1 || cur[0] === newClass) return null;
+  const from = cur[0];
+  const lvl = ch.levels[from] ?? 1;
+  const cap = maxLevel(ch, newClass);
+  if (cap > lvl) return null;
+  return `you will never regain ${CLASSES[from].name} abilities (${CLASSES[newClass].abbr} cap ${cap} \u2264 ${CLASSES[from].abbr}${lvl})`;
 }
 
 /** Switch a human to a new class at level 1 (keeps old hp/levels in reserve). */

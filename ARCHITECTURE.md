@@ -114,8 +114,12 @@ Durations are combat rounds (1 round = 1 minute; 1 turn = 10 rounds). Ranges/are
 * Class ability minimums are the **Gold Box subset** PoR enforces (fighter STR 9 / CON 7, cleric WIS 9, magic-user INT 9 /
   DEX 6, thief DEX 9), not the full PHB rows (fighter WIS 6, cleric STR/INT/CON/CHA 6...). Fighter THAC0 follows the 1e
   DMG matrix (2 points per 2 levels: 20 at 1-2, 18 at 3-4...), not the Gold Box's later 21−level shortcut.
-* `deriveStats(ch)` → `{thac0, ac, acRear, acMissile, saves, hitBonus, dmgBonus, weapon, weaponMagic, ranged, damage, attacks,
-  move, baseMove, weight, encumbrance, spellSlots, canCastArcane, thief, backstab, abilities (effective), mods (effects), ...}`
+* `deriveStats(ch)` → `{thac0, ac, acRear, acMissile, saves, savePoison, hitBonus, dmgBonus, weapon, weaponMagic, ranged, damage,
+  attacks, move, baseMove, weight, encumbrance, spellSlots, canCastArcane, thief, backstab, levels, className, classAbbr,
+  classLevels ('F8 / MU3'), dual, dualActive, abilities (effective), mods (effects), ...}`. `acRear` = no shield, no DEX
+  bonus (what rear attacks and backstabs hit); `acMissile` includes the Shield spell's AC 2 vs missiles. `saves.ppdm` does
+  **not** include the dwarf/halfling CON bonus — it applies against poison only (`savePoison` for the sheet, `rollSave(...,
+  {poison:true})` in play). A dual-classed human's labels show both careers (`classLabels(ch)`).
 * Tables for tooltips: `abilitySummary(abilities)`, `strengthTable`, `intelligenceTable`, `constitutionTable`, `charismaTable`,
   `THIEF_SKILL_NAMES`, `SAVE_NAMES`, `CONDITIONS[id].{name,desc}`, `describeEffects(ch)`, `statusLabel(ch)`.
 * Races/classes: `RACES`, `CLASSES`, `racialLevelLimit(race, cls, abilities)`, `allowedAlignments(spec)`, `PR_LEVEL_CAPS`
@@ -137,7 +141,9 @@ are armour + shield (a shield adds only its enchantment) — plate +1, shield +1
 **Experience & training**: `awardXp(ch, xp)` (splits multiclass, +10% prime requisite, banks at most one point short
 of the level after next — Gold Box training rule), `trainableClasses(ch)`, `trainingCost(ch)` (PoR: 1,000 gp),
 `trainLevels(ch, rng)` (one level per visit, capped by race and PoR caps), `maxLevel(ch, cls)`,
-`dualClassProblem(ch, cls)` / `dualClass(ch, cls)` / `dualClassChoices(ch)` → `[{cls, ok, reason}]` (humans; PoR lets them
+`dualClassProblem(ch, cls)` / `dualClass(ch, cls)` / `dualClassChoices(ch)` → `[{cls, ok, reason, warning, regainAt, cap}]`
+(`dualClassWarning(ch, cls)`: "you will never regain Fighter abilities (MU cap 6 ≤ F8)" when the new class's PR/racial cap
+can never exceed the old level — **shop owner**: show it on the chip; humans; PoR lets them
 change class at the Training Hall — **shop owner**: list `dualClassChoices` there, charge the training fee, call `dualClass`). **Consumer obligation**: when `trainLevels` raised
 `'magicUser'`, offer `trainingSpellChoices(ch)` (camp.js; PoR: one new spell per level trained) and `learnSpell` the
 pick — ShopScene does. `drainLevel(ch, n)` (energy drain: highest class loses a level, its hit die, XP to the new
@@ -153,7 +159,9 @@ temporary hit points (heroism) are part of `hp.max` while they last and leave wi
 **Conditions**: `addEffect(target, id, {rounds, source, level, mods, data})`, `removeEffect`, `hasEffect`, `getEffect`,
 `effectMods(target)`, `tickEffects(target, rounds)`, `tickPoison(target, minutes)` (the one poison model: onset in
 rounds = minutes counts down in combat, exploration and rest alike, except the minutes Slow Poison covers),
-`isIncapacitated`, `isHelpless`, `conditionsAllowCasting`, `clearCombatEffects`. Conditions include `afraid` (fear aura:
+`isIncapacitated`, `isHelpless`, `conditionsAllowCasting`, `clearCombatEffects` (keeps poison, disease, curses and every
+effect flagged `persist` — spells whose duration runs in turns/hours, `LONG_DURATION_SPELLS`: Enlarge, Strength, Prot.
+from Normal Missiles, Resist Fire/Cold, Invisibility...; Bless, Haste, Mirror Image end with the battle). Conditions include `afraid` (fear aura:
 flees, −2 to hit if cornered) and the `fighterLevels` mod (heroism). Effects live in `target.effects`; `target.conditions` mirrors their ids as strings.
 Party combatants share `hp`, `conditions` and `effects` with their Character.
 
@@ -161,13 +169,17 @@ Party combatants share `hp`, `conditions` and `effects` with their Character.
 Bless, Detect Magic, Find Traps, Prot. from Evil... expire while walking), poison onset counts down, the dying are bound;
 no healing or memorization (that is `rest`). `syncPartyTime(party, game.minutes)` — idempotent: brings every member up to
 the game clock via a per-character `timeMark`; `rest`/`passTime` advance the marks so a camp that rests and then calls
-`game.advanceTime` never ticks twice. **Consumer obligation**: after every `GameState.advanceTime` (ExploreScene steps and
-searches, dialogue, shops, travel) call `syncPartyTime(game.party, game.minutes)` — e.g. once from a `time:changed` bus
-listener in main.js.
+`game.advanceTime` never ticks twice. `attachTimeSync(bus, game)` — wired once in main.js — calls `syncPartyTime` on every
+`time:changed`, so every `GameState.advanceTime` (explore steps and searches, dialogue, shops, travel, rest) runs effects
+and poison down; when something expired, a member died or was bound it emits `party:time` (`{minutes, expired, died,
+bandaged}`) and `party:changed`. Tested end to end with a real GameState + EventBus (Bless expires after 30 minutes of
+walking; poison kills on the road).
 
 **Spells** (`SPELL_RULES`, 54 PoR spells incl. temple-only cures/raise dead, plus item-only `wandParalyzation`)
 * `spellsForClass(cls, level)`, `getSpell(id)` (rules + data display merged: `name, desc, tip, schools, usable, ...`),
-  `spellLevel(id, cls)`, `spellTargeting(id, casterLevel, cls)` → `{target, range, shape, size, maxTargets, hostile, duration}`.
+  `spellLevel(id, cls)`, `spellTargeting(id, casterLevel, cls)` → `{target, range, shape, size, maxTargets, hostile, duration,
+  castTime}`. `castingDelay(id, cls, L, {fromItem})` → 1e casting time in segments (Magic Missile 1, Fireball 3, CLW 5,
+  Bless 10 = end of round; items 0) — see **casting time** under the battle bridge.
 * `castingClass(caster, id, cls?)` — multiclass casters keep separate memories: the class comes from the memorized slot
   (`cls`, else the first class in `spells.memorized` order holding the spell, else the first active class). A half-elf C/MU
   with Hold Person memorized only as MU casts the MU version (range 12, 4 persons, −3 alone, 2 rounds/level, 3 segments).
@@ -182,13 +194,15 @@ listener in main.js.
   Clerics roll the PHB low-WIS spell failure (WIS 9: 20%…12: 5%; the slot is spent; items never fail; `noFailure` for
   scripted casts). The caller picks targets from the template (primary/nearest first); the engine filters by `affects`,
   applies `maxTargets`, saves (WIS vs mind magic, DEX vs fireball/lightning, hold person: cleric −2 alone / MU −3 alone,
-  −1 for two; range cleric 6 / MU 12), Sleep as one 4d4 budget spent weakest-first (`SLEEP_BANDS`, `SLEEP_COST`
-1/2/4/8 per band, the 3+1–4+4 band capped at its own 0–1 roll), magic resistance (`magicResistanceOf(t, casterLevel)`:
+  −1 for two; range cleric 6 / MU 12), Sleep on the five PHB bands (`SLEEP_BANDS`: ≤1 HD 4d4, 1+1–2 2d4, 2+1–3 1d4,
+3+1–4 1–2, 4+1–4+4 0–1), weakest first, each band's number rolled when first reached and each sleeper using 1/N of
+the spell — a group of one kind gets exactly the PHB number (two bugbears: 1d2), mixed groups share it — magic resistance (`magicResistanceOf(t, casterLevel)`:
 `magicResistance` field or `magicResist:N` tag, DMG ±5%/level from 11th), haste/slow cancelling each other, `dispelChance` (DMG +5%/level above,
   −2%/level below), elf/half-elf sleep-charm resistance, undead immunity, shield vs magic missile, and returns terse Gold
   Box log lines. Utility spells report `flags` (`detectMagic`, `findTraps`, `unlock`, `readMagic`, `raiseDead`,
   `poisonCured`...). `hammerStrike(rng, cleric, target, magic)` is one Spiritual Hammer blow.
-* Verified values: Spiritual Hammer +1 per 6 levels or fraction (`ceil(L/6)`); Ray of Enfeeblement range 1 + L/4;
+* Verified values: Spiritual Hammer +1 per 6 levels or fraction (`ceil(L/6)`), range 1"/level (one square per level);
+  Stinking Cloud lingers 1 round/level (battle.js `cloudExposure`: saves vs poison on entering or each round inside); Ray of Enfeeblement range 1 + L/4;
   Mirror Image 1d4 images, 3 rounds/level (1e PHB); Strength above 18 adds tenths (10% exceptional per point, PHB).
 * Deliberate simplifications: Shield is AC 2 vs missiles / AC 4 vs melee (1e: AC 2 hurled, AC 3 small missiles, +1 saves
   vs frontal attacks); thieves may be any alignment but LG (PoR creation rule); clerics may use slings (Gold Box);
@@ -202,16 +216,19 @@ listener in main.js.
   in memory (casting removes), `ch.spells.study` = banked minutes.
 
 **Combat** (combat.js, co-owned): `combatantFromCharacter`, `combatantFromMonster`, `rollInitiative`, `canAct`, `resolveAttack(rng,
-a, d, {mods, dmgMod, backstab, rear, ranged, helpless})` (applies live effects: bless/prayer, shield, invisibility, blink,
+a, d, {mods, dmgMod, backstab, rear, ranged, helpless})` (the base AC is by direction — `defenderAc(a, d, {rear,
+ranged})`: rear and backstab strike `acRear` (no shield, no DEX; a monster's declared `shield`/`shieldAc` is ignored),
+missiles strike `acMissile` (Shield spell AC 2, even if cast before the combatant was built), else melee AC; applies live effects: bless/prayer, shield, invisibility, blink,
 mirror image, prot. from evil/missiles; racial adjustments via `racialCombatMods` — dwarves +1 vs orcs/half-orcs/goblins/
 hobgoblins, gnomes +1 vs kobolds/goblins, giants/ogres/trolls/titans (+ gnolls/bugbears vs gnomes) −4 to hit dwarves and
 gnomes; helpless targets per `HelplessRule`: `'bonus'` +4 (default), `'auto'` melee auto-hit, `'slay'` coup de grace),
 `hitChance(a, d, mods, {ranged, helpless})`, `attackRateOf(c, {weapon})` / `attacksFor(c, round, {weapon})` — the single
 source of truth for attack counts, computed live (3/2 fighters alternate 1,2; haste ×2, slow ×½ for characters *and*
 monsters, whose count is routines × attacks in the routine), `sweepAttacks(ch, target)` (fighters vs < 1 full HD incl.
-1-1 HD goblins, `belowOneHd`), `onHitSpecials` (ghoul paralysis — elves immune — poison, rat disease), `savingThrow`,
+1-1 HD goblins, `belowOneHd`; the same creatures save as 0-level men and have THAC0 20 — one ruling), `onHitSpecials` (ghoul paralysis — elves immune — poison, rat disease), `savingThrow`,
 `poison(rng, target, {mode:'deadly'|'damage', onset})`, `turnUndead(rng, level, type)` (unknown types: no effect),
-`endOfRound(c)` (bleeding, poison onset, effect expiry), `endCombat(party)`, `rollSurprise`, `moraleCheck`,
+`endOfRound(c)` (bleeding, poison onset, effect expiry), `endCombat(party)`, `rollSurprise(rng, {partyMod, monsterMod,
+party, scout})` (with `party`, elves/halflings in non-metal armour surprise 4 in 6 — explore.js `surpriseMods`), `moraleCheck`,
 `xpForVictory`, `autoResolve`. Rear/backstab: pass `{rear, backstab}` flags (never fold them into `mods`);
 `situationalHit` gives rear +2, backstab +4 *instead*, and `hitChance` takes the same flags so the preview equals the roll.
 Persons (Charm/Hold Person): `monsterIsPerson(m)` — an explicit `person: true|false` wins; class-based NPCs are persons;
@@ -259,11 +276,35 @@ condition and end-of-round tick through these; it uses the `'slay'` helpless rul
   the Necklace of Missiles throws fireball beads — `usableInBattle(ch, i)` says which entries qualify) and
   `quaffInBattle(rng, c, i)` (rules `useItem`: giant strength sets STR, speed hastes and ages, heroism, invisibility,
   neutralize…).
+* **Casting time & disruption (1e)**: `beginCasting(c, id, {at, cls, level})` records a `casting` effect resolving at
+  `initiative − castingDelay` segments; the slot is spent when casting begins. Any damage meanwhile marks it lost
+  (`conditions.onDamaged`); `finishCasting(c)` → `{ok}` or `{lost, reason:'struck'|'down'|'incapacitated', text}`;
+  `castingOf(c)`, `castDueBefore(c, init)`. The CombatEngine casts at once when no faster actor is still to act, else
+  holds the spell (`engine.casting`) and resolves it in `nextTurn` before the first slower actor (ties: the spell) or at
+  the end of the round — events `effect` `Casting` / `Spell lost`. Items release at once.
+* `cloudExposure(rng, c, area, round)` — the lingering Stinking Cloud: save vs poison (CON bonus applies) or nauseous
+  1d4+1 rounds; the engine calls it at round start for those inside and on every step into the cloud (once per round).
 * `endBattle(partyCombatants)` — **consumer obligation** at the end of every battle (CombatScene.finish): strips held,
   asleep, charmed, hasted, nauseous, stench… from the Characters (poison, disease, curses, strength drain persist).
 
+**Exploration** (explore.js — for ExploreScene's LOCKED/SECRET edges, traps and encounters; **explore owner**: call
+these and spend the returned `minutes` with `game.advanceTime`):
+* `tryOpenLock(rng, party, door, {knock, force, pick, retry})` → `{opened, method:'knock'|'pick'|'force'|'bars'|'open'|null,
+  who, chance, roll, minutes, attempts, text}`. Door = `{locked, barred, stuck, wizardLocked, bars, lockMod, knocked}`.
+  Order: Knock (the spell's `flags.unlock`, opens even wizard locks) → best thief's Open Locks (DEX, race, armour; PHB:
+  once per lock per thief level, `door.failedBy`) → the strongest member forcing it (`openDoorsChance(str, pct,
+  {locked})`: x in 6, the locked/barred figure only at 18/91+ and giant STR) or bending bars (`bendBarsChance`).
+* `detectTrap(rng, party, trap)` (Find Traps spell finds outright; thief F/RT; dwarves/gnomes 50% for stonework traps),
+  `findRemoveTraps(rng, ch, trap, {safe})` (F/RT %; failing by 20+ springs it).
+* `searchSecret(rng, party, {passive, concealed, sliding})` — `secretDoorChance(race, o)`: elves/half-elves 1 in 6
+  passing, 2 in 6 searching (3 concealed); others 1 in 6 searching only; dwarves use their 66% for sliding walls;
+  searching costs 10 minutes. `stoneSense(rng, ch, kind)` / `stoneSenseChance` (PHB dwarf/gnome senses).
+* `surpriseMods(party, {scout})` → `{monsterMod}` (−2 when the moving group / scout is all elves and halflings in non-metal
+  armour) — fed into `rollSurprise({party})`.
+
 **Items, treasure, temple**: `useItem(rng, ch, index, targets, {spellId})`, `scribeScroll`, `identifyItem`, `detectMagicIn`;
-`generateTreasure(rng, types, {scale, count})` → `{coins, gems, jewelry, items, maps?}` (MM types A–Z incl. W),
+`generateTreasure(rng, types, {scale, count})` → `{coins, gems, jewelry, items, maps?}` (MM types A–Z incl. W; U/V give one
+/ two of each magic kind except potions and scrolls, `EACH_MAGIC_KIND`),
 `victorySpoils(rng, encounter.treasure, slainMonsterDefs)` → `{gold, items, gems, jewelry, text}` (what CombatScene awards:
 encounter gold/items/`types` + each slain monster's `treasure` type, individual J–N per creature),
 `rollMagicItem`, `treasureValue`, `shareCoins`; `TEMPLE_SERVICES`, `serviceApplies(id, ch)`, `serviceProblem(id, ch)`
@@ -291,7 +332,7 @@ GameContext (`ctx`): `bus, clock, input, settings, saves, game, scenes, render, 
 ### Event catalogue (ctx.bus)
 `scene:enter {name, params, overlay?}`, `scene:resume {name, result}`, `input:action {action, code}`,
 `message {text, kind}` (kinds: info/combat/loot/warn/lore/system), `party:changed`, `location:changed`,
-`time:changed`, `settings:changed {key, value}`, `save:written {slot}`, `audio:music {trackId}`, `app:ready`.
+`time:changed`, `party:time {minutes, expired, died, bandaged}` (rules attachTimeSync), `settings:changed {key, value}`, `save:written {slot}`, `audio:music {trackId}`, `app:ready`.
 Structured events the audio director listens for — the **primary** integration path (it falls back to parsing
 `message` text and `party:changed` when they are absent, so emitting them is optional but makes contextual audio survive
 any rewording of the log):

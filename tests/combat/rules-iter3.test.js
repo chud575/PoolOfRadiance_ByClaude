@@ -462,7 +462,7 @@ describe('spell fixes', () => {
     }
   });
 
-  it('one Sleep never exceeds its 4d4 budget across HD bands', () => {
+  it('one Sleep never exceeds its capacity across HD bands (each sleeper uses 1/N of the spell)', () => {
     const rng = new Rng(8);
     const mage = mkChar('human', 'magicUser');
     for (let i = 0; i < 30; i++) {
@@ -472,8 +472,8 @@ describe('spell fixes', () => {
         ...Array.from({ length: 4 }, (_, k) => combatantFromMonster(rng, 'bugbear', k + 1)),
       ];
       const r = castSpell(rng, 'sleep', mage, crowd, { ignoreMemory: true });
-      const cost = r.results.filter((x) => x.affected || x.resisted).reduce((t, x) => t + ({ kobold: 1, gnoll: 2, bugbear: 8 }[x.target.monsterId]), 0);
-      expect(cost).toBeLessThanOrEqual(r.sleepBudget);
+      expect(r.sleepUsed).toBeLessThanOrEqual(1 + 1e-9);
+      expect(r.results.filter((x) => x.target.monsterId === 'kobold' && (x.affected || x.resisted)).length).toBeLessThanOrEqual(r.sleepBudget);
       expect(r.results.filter((x) => x.affected).length).toBeLessThanOrEqual(16);
       // Weakest first: no gnoll sleeps while a kobold stays awake.
       const koboldsAwake = r.results.some((x) => x.target.monsterId === 'kobold' && !x.affected && !x.resisted);

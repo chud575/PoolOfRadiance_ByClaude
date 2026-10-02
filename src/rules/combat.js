@@ -12,6 +12,7 @@ import { neededToHit } from './tohit.js';
 import { isEvil, isGood, effectHost, characterOf, racialCombatMods, belowOneHd, monsterOf, monsterBaseSaves, monsterBaseThac0 } from './creature.js';
 import { rateOfFire } from './items.js';
 import { rollSave } from './saves.js';
+import { surpriseMods } from './explore.js';
 
 export { neededToHit };
 
@@ -83,7 +84,7 @@ export function combatantFromCharacter(ch) {
     xp: 0,
     ref: ch,
     snap: {
-      ac: s.ac, acMissile: s.acMissile, fxHit: s.mods.hit, fxDmg: s.mods.dmg, thac0: s.thac0,
+      ac: s.ac, acMissile: s.acMissile, acRear: s.acRear, fxHit: s.mods.hit, fxDmg: s.mods.dmg, thac0: s.thac0,
       strHit: strengthTable(s.abilities.str, s.abilities.strPct).hit, strDmg: strengthTable(s.abilities.str, s.abilities.strPct).dmg,
     },
   };
@@ -163,7 +164,7 @@ export function toHitNeeded(attacker, defender, mods = 0) {
  * combatants were built (bless, prayer, shield, invisibility, prot. from evil...).
  * @returns {{hit:number, dmg:number, ac:number, missChance:number, images:number, immune:Set<string>}}
  */
-export function liveMods(attacker, defender, { ranged = false } = {}) {
+export function liveMods(attacker, defender, { ranged = false, rear = false } = {}) {
   const aHost = effectHost(attacker);
   const dHost = effectHost(defender);
   const out = { hit: 0, dmg: 0, ac: 0, missChance: 0, images: 0, immune: new Set() };
@@ -189,12 +190,24 @@ export function liveMods(attacker, defender, { ranged = false } = {}) {
   // Defender.
   const dfx = effectMods(dHost);
   if (characterOf(defender) && defender.snap) {
+    // The combatant's `ac` is the melee AC at creation (plus anything the
+    // scene adjusted since). The base for this attack is the matching live
+    // AC: rear (no shield, no DEX bonus, no frontal Shield spell), missile
+    // (Shield spell AC 2, Prot. from Normal Missiles...) or melee.
     const s = deriveStats(characterOf(defender));
-    out.ac += (ranged ? s.acMissile - defender.snap.acMissile : s.ac - defender.snap.ac);
-  } else if (!characterOf(defender)) {
+    const live = rear ? s.acRear : ranged ? s.acMissile : s.ac;
+    out.ac += live - defender.snap.ac;
+  } else if (characterOf(defender)) {
+    // A bare Character used as a defender (camp tests, scripted events).
+    const s = deriveStats(characterOf(defender));
+    out.ac += (rear ? s.acRear : ranged ? s.acMissile : s.ac) - (defender.ac ?? s.ac);
+  } else {
     let ac = defender.ac + dfx.ac;
-    const cap = ranged ? dfx.acVsMissile : dfx.acVsMelee;
-    if (cap != null) ac = Math.min(ac, cap);
+    if (rear) ac += monsterShieldAc(defender); // a shield guards the front only
+    else {
+      const cap = ranged ? dfx.acVsMissile : dfx.acVsMelee;
+      if (cap != null) ac = Math.min(ac, cap);
+    }
     out.ac += ac - defender.ac;
   }
   out.hit += dfx.attackerHit;
@@ -204,6 +217,28 @@ export function liveMods(attacker, defender, { ranged = false } = {}) {
   out.images = dfx.images;
   out.immune = dfx.immune;
   return out;
+}
+
+/**
+ * AC points a monster's shield gives (MonsterDef `shieldAc`, or `shield: true`
+ * = 1). Attacks from behind ignore it (DMG); characters use deriveStats().acRear.
+ */
+export function monsterShieldAc(c) {
+  const m = monsterOf(c);
+  return m?.shieldAc ?? (m?.shield ? 1 : 0);
+}
+
+/**
+ * The defender's armour class against one attack, before the attacker's
+ * bonuses — the number neededToHit() reads. Rear and backstab attacks use the
+ * rear AC (no shield, no DEX bonus); missiles the missile AC; else melee AC.
+ * Timed effects, racial AC adjustments and protection from evil are included.
+ * @param {{ranged?:boolean, rear?:boolean, backstab?:boolean}} [o]
+ */
+export function defenderAc(attacker, defender, o = {}) {
+  const ranged = o.ranged ?? !!attacker?.ranged;
+  const lm = liveMods(attacker ?? {}, defender, { ranged, rear: !!(o.rear || o.backstab) });
+  return defender.ac + lm.ac;
 }
 
 /** Is the defender helpless (asleep, held, paralyzed, nauseous, unconscious)? */
@@ -299,7 +334,7 @@ export function weaponImmunity(attacker, defender, o = {}) {
  */
 export function resolveAttack(rng, attacker, defender, opts = {}) {
   const ranged = opts.ranged ?? !!attacker.ranged;
-  const lm = liveMods(attacker, defender, { ranged });
+  const lm = liveMods(attacker, defender, { ranged, rear: !!(opts.rear || opts.backstab) });
   const helpless = isHelplessTarget(defender);
   const rule = opts.helpless ?? 'bonus';
   const autoHit = helpless && !ranged && (rule === 'auto' || rule === 'slay');
@@ -362,7 +397,7 @@ export function resolveAttack(rng, attacker, defender, opts = {}) {
  */
 export function hitChance(attacker, defender, mods = 0, opts = {}) {
   const ranged = opts.ranged ?? !!attacker.ranged;
-  const lm = liveMods(attacker, defender, { ranged });
+  const lm = liveMods(attacker, defender, { ranged, rear: !!(opts.rear || opts.backstab) });
   const helpless = isHelplessTarget(defender);
   const rule = opts.helpless ?? 'bonus';
   let p;
@@ -490,7 +525,7 @@ export function onHitSpecials(rng, attacker, defender) {
     } else out.push({ kind: 'drainStr', saved: false, text: `${dname} feels strength ebb away (STR ${str}).` });
   }
   if (special.includes('disease') && !hasEffect(host, 'diseased') && rng.int(1, 100) <= 5) {
-    const sv = savingThrow(rng, defender, 'ppdm');
+    const sv = savingThrow(rng, defender, 'ppdm', 0, { poison: true });
     if (!sv.saved) {
       addEffect(host, 'diseased', { rounds: Infinity, source: m.id });
       out.push({ kind: 'disease', saved: false, text: `${dname} is infected by the filthy bite.` });
@@ -536,7 +571,9 @@ export function dealDamage(c, dmg) {
 /**
  * Saving throw: d20 + bonus >= target (lower target = better). Includes live
  * effects (prayer, bless of the dwarves...), and optional situational options
- * (see saves.js rollSave: mental, dodge, element, source).
+ * (see saves.js rollSave: mental, dodge, poison, element, source). Pass
+ * `{poison:true}` only for poison (venom, stinking cloud, stench, disease):
+ * the dwarf/halfling CON bonus applies to poison, not to paralysis.
  */
 export function savingThrow(rng, combatant, saveKey, bonus = 0, o = {}) {
   if (combatant.ref?.classSpec || !combatant.saves) return rollSave(rng, combatant, saveKey, { ...o, bonus });
@@ -553,7 +590,7 @@ export function savingThrow(rng, combatant, saveKey, bonus = 0, o = {}) {
  * @returns {{saved:boolean, roll:number, target:number, damage?:number}}
  */
 export function poison(rng, target, { saveMod = 0, mode = 'deadly', onset = 10, damage = '2d6' } = {}) {
-  const sv = savingThrow(rng, target, 'ppdm', saveMod);
+  const sv = savingThrow(rng, target, 'ppdm', saveMod, { poison: true });
   if (sv.saved) return { saved: true, roll: sv.roll, target: sv.target };
   if (mode === 'damage') {
     const d = roll(rng, damage);
@@ -592,10 +629,19 @@ export function endCombat(party) {
 }
 
 /**
- * Surprise (1e): each side is surprised on 1-2 on d6 (modifiers lower/raise).
+ * Surprise (1e): each side is surprised on 1-2 on d6 (modifiers lower/raise:
+ * monsterMod −2 = monsters surprised on 1-4). Pass `party` (Characters) to
+ * add the racial modifiers of explore.surpriseMods (elves and halflings in
+ * non-metal armour surprise others 4 in 6), and `scout` for one scouting ahead.
+ * @param {{partyMod?:number, monsterMod?:number, party?:object[], scout?:object}} [o]
  * @returns {{party:boolean, monsters:boolean, rounds:number}}
  */
-export function rollSurprise(rng, { partyMod = 0, monsterMod = 0 } = {}) {
+export function rollSurprise(rng, { partyMod = 0, monsterMod = 0, party = null, scout = null } = {}) {
+  if (party || scout) {
+    const r = surpriseMods(party ?? [], scout ? { scout } : {});
+    partyMod += r.partyMod;
+    monsterMod += r.monsterMod;
+  }
   const p = rng.die(6) + partyMod <= 2;
   const m = rng.die(6) + monsterMod <= 2;
   return { party: p && !m, monsters: m && !p, rounds: p !== m ? 1 : 0 };

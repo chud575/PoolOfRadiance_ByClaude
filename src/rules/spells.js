@@ -55,6 +55,20 @@ import { neededToHit } from './tohit.js';
  */
 
 const lvlDice = (n, die) => `${Math.max(1, n)}d${die}`;
+/**
+ * Spells whose PHB duration runs in turns or hours (or until broken): their
+ * effects outlive a battle — clearCombatEffects keeps them and passTime /
+ * syncPartyTime expire them — so a buff cast in camp is not wasted by the
+ * first fight. Round-measured spells (Bless, Haste, Mirror Image...) end with
+ * the battle.
+ */
+export const LONG_DURATION_SPELLS = new Set([
+  'resistCold', 'resistFire', 'slowPoison', 'bestowCurse', 'enlarge', 'reduce', 'strength', 'protNormalMissiles',
+  'invisibility', 'invisibility10', 'detectInvisibility', 'detectMagic', 'findTraps', 'cureBlindness', 'causeBlindness',
+  'causeDisease',
+]);
+const persistsOf = (s) => LONG_DURATION_SPELLS.has(s.id) || undefined;
+
 const R = (n) => n; // rounds
 const T = (n) => n * ROUNDS_PER_TURN; // turns → rounds
 const H = (n) => n * ROUNDS_PER_HOUR; // hours → rounds
@@ -153,7 +167,7 @@ export const SPELL_RULES = {
     desc: 'Serpents sway, entranced by the chant.', tip: 'Snakes whose HP total no more than the cleric\'s are entranced.',
   },
   spiritualHammer: {
-    name: 'Spiritual Hammer', schools: { cleric: 2 }, usable: 'combat', castTime: 5, range: 3, target: 'enemy',
+    name: 'Spiritual Hammer', schools: { cleric: 2 }, usable: 'combat', castTime: 5, range: (L) => Math.max(1, L), target: 'enemy',
     area: { shape: 'single' }, hostile: true, duration: (L) => R(L),
     ops: [{ op: 'hammer' }],
     desc: 'A hammer of pure force strikes at the cleric\'s command.', tip: 'Magical attack each round: 1d4+1 (1d4 vs large), +1 to hit and damage per 6 levels or fraction.',
@@ -335,7 +349,7 @@ export const SPELL_RULES = {
   },
   stinkingCloud: {
     name: 'Stinking Cloud', schools: { magicUser: 2 }, usable: 'combat', castTime: 2, range: 3, target: 'area',
-    area: { shape: 'square', size: 2 }, hostile: true, affects: 'living', save: { key: 'ppdm', type: 'neg' },
+    area: { shape: 'square', size: 2 }, hostile: true, affects: 'living', save: { key: 'ppdm', type: 'neg', poison: true },
     ops: [{ op: 'condition', id: 'nauseous', rounds: (L, s, rng) => 1 + (rng ? rng.die(4) : 2) }],
     desc: 'A choking yellow fog rolls out.', tip: 'Creatures in a 2x2 area are helpless 1d4+1 rounds. Save vs poison negates.',
   },
@@ -501,6 +515,23 @@ export function spellTargeting(id, level = 1, school) {
 }
 
 /**
+ * 1e casting time in segments (1 round = 10 segments, matching the d10
+ * initiative span) for a spell at a caster level and class: Magic Missile 1,
+ * Fireball 3, Cure Light Wounds 5, Bless 10 (a full round: it goes off at the
+ * end of the round). Hold Person and Dispel Magic differ by class. Items
+ * (wands, scrolls read in battle...) release their magic at once: pass
+ * `{fromItem:true}` for 0.
+ * @param {{fromItem?:boolean}} [o]
+ */
+export function castingDelay(id, cls, L = 1, o = {}) {
+  if (o.fromItem) return 0;
+  const s = SPELL_RULES[id];
+  if (!s) return 0;
+  const seg = val(s.castTime ?? 1, L, cls ?? s.school);
+  return Math.max(0, Math.min(10, Math.round(seg)));
+}
+
+/**
  * Why a character cannot cast a spell right now, or null.
  * Checks the spell is memorized (unless opts.ignoreMemory), conditions
  * (silence, held, asleep...), and armour for arcane magic.
@@ -648,13 +679,15 @@ function applyElement(host, dmg, element) {
 
 /**
  * PHB Sleep table, on hitDiceOf() values (a "+" counts as half a die):
- * up to 1 HD → 4d4; 1+1 to 2 → 2d4; 2+1 to 3 → 1d4; 3+1 to 4+4 → 0-1.
+ * up to 1 HD → 4d4 creatures; 1+1 to 2 → 2d4; 2+1 to 3 → 1d4;
+ * 3+1 to 4 → 1-2 (1d2); 4+1 to 4+4 → 0-1 (1d2-1). Above 4+4: immune.
  */
 export const SLEEP_BANDS = [
-  { max: 1, dice: '4d4' },
-  { max: 2, dice: '2d4' },
-  { max: 3, dice: '1d4' },
-  { max: 4.5, dice: '1d2-1' },
+  { max: 1, dice: '4d4', label: 'up to 1 HD' },
+  { max: 2, dice: '2d4', label: '1+1 to 2 HD' },
+  { max: 3, dice: '1d4', label: '2+1 to 3 HD' },
+  { max: 4, dice: '1d2', label: '3+1 to 4 HD' },
+  { max: 4.5, dice: '1d2-1', label: '4+1 to 4+4 HD' },
 ];
 
 /**
@@ -767,7 +800,7 @@ export function castSpell(rng, id, caster, targets = [], opts = {}) {
     }
     let saved = false;
     if (s.save && hostile) {
-      const sv = rollSave(rng, t, opts.saveKey ?? s.save.key, { bonus: holdPenalty, mental: s.mental, dodge: s.dodge, element: s.element, source: caster });
+      const sv = rollSave(rng, t, opts.saveKey ?? s.save.key, { bonus: holdPenalty, mental: s.mental, dodge: s.dodge, poison: !!s.save.poison && !opts.saveKey, element: s.element, source: caster });
       tr.save = { roll: sv.roll, target: sv.target, bonus: sv.bonus };
       tr.saved = saved = sv.saved;
       if (saved && s.save.type === 'neg') {
@@ -838,7 +871,7 @@ function applyOp(rng, op, ctx) {
       }
       const rounds = op.rounds !== undefined ? val(op.rounds, L, school, rng) : duration || Infinity;
       const mods = op.mods ? op.mods(L, rng) : undefined;
-      addEffect(host, op.id, { rounds, source: s.id, casterId: caster.id, level: L, mods });
+      addEffect(host, op.id, { rounds, source: s.id, casterId: caster.id, level: L, mods, persist: persistsOf(s) });
       tr.applied.push(op.id);
       tr.affected = true;
       res.log.push(conditionLine(tr.name, op.id));
@@ -888,7 +921,7 @@ function applyOp(rng, op, ctx) {
         die = cls.includes('fighter') ? 8 : cls.includes('cleric') || cls.includes('thief') ? 6 : 4;
       } else die = 6;
       const bonus = rng.die(die);
-      addEffect(host, 'strength', { rounds: duration, source: s.id, level: L, mods: tch ? { strBonus: bonus } : { dmg: 1 }, data: { bonus } });
+      addEffect(host, 'strength', { rounds: duration, source: s.id, level: L, persist: true, mods: tch ? { strBonus: bonus } : { dmg: 1 }, data: { bonus } });
       tr.applied.push('strength');
       tr.affected = true;
       res.log.push(`${tr.name} grows stronger.`);
@@ -898,7 +931,7 @@ function applyOp(rng, op, ctx) {
       const tch = characterOf(t);
       const pct = L <= 1 ? 50 : L <= 3 ? 75 : L <= 5 ? 90 : 100;
       const mods = tch ? { dmg: 0, strSet: { str: 18, strPct: pct } } : { dmg: 1 + Math.floor(L / 2) };
-      addEffect(host, 'enlarged', { rounds: duration, source: s.id, level: L, mods });
+      addEffect(host, 'enlarged', { rounds: duration, source: s.id, level: L, mods, persist: true });
       tr.applied.push('enlarged');
       tr.affected = true;
       res.log.push(`${tr.name} swells to giant size.`);
@@ -982,21 +1015,23 @@ function sizeLarge(t) {
 }
 
 /**
- * 1e Sleep: one roll of 4d4 "creatures of up to 1 HD" is spent from the
- * weakest victims upward. A creature of a higher band costs as many 1-HD
- * creatures as the band's dice imply (PHB table: 4d4 at ≤1 HD, 2d4 at 1+1-2,
- * 1d4 at 2+1-3, 0-1 at 3+1-4+4 → costs 1, 2, 4, 8), so a single casting
- * never sleeps more than 16 creatures. The top band is "0-1": at most one
- * 3+1 to 4+4 HD creature, and only on its own 1d2-1 roll. Undead, mindless
- * and creatures over 4+4 HD are unaffected.
+ * 1e Sleep. Each band of the PHB table says how many creatures *of that
+ * band* one casting puts to sleep (4d4 / 2d4 / 1d4 / 1-2 / 0-1). Against a
+ * mixed group the spell's capacity is shared: a band's number is rolled the
+ * first time a creature of that band is reached (weakest first), and each
+ * sleeper uses 1/N of the whole spell, N being its band's roll. A group of
+ * one kind therefore gets exactly the PHB number (two bugbears, 3+1 HD: 1d2
+ * asleep), and goblins slept first leave less for the hobgoblins behind
+ * them. Undead, mindless creatures and anything over 4+4 HD are unaffected.
+ * SLEEP_COST is the old fixed cost in 1-HD creatures, kept for UI estimates.
  */
-export const SLEEP_COST = [1, 2, 4, 8];
+export const SLEEP_COST = [1, 2, 4, 8, 16];
 
 function resolveSleep(rng, s, caster, list, L, duration, res) {
   const sorted = [...list].sort((a, b) => hitDiceOf(a) - hitDiceOf(b));
-  let budget = roll(rng, SLEEP_BANDS[0].dice);
-  res.sleepBudget = budget;
-  let topBand = -1; // the 0-1 band's roll, made when first needed
+  const counts = []; // band → creatures of that band this casting can sleep
+  let used = 0; // fraction of the spell's capacity spent
+  const EPS = 1e-9;
   for (const t of sorted) {
     const tr = { target: t, name: nameOf(t), affected: false, applied: [], removed: [] };
     res.results.push(tr);
@@ -1007,14 +1042,13 @@ function resolveSleep(rng, s, caster, list, L, duration, res) {
       res.log.push(`${tr.name} is unaffected.`);
       continue;
     }
-    const cost = SLEEP_COST[band];
-    if (budget < cost) continue;
-    if (band === SLEEP_BANDS.length - 1) {
-      if (topBand < 0) topBand = Math.max(0, roll(rng, SLEEP_BANDS[band].dice));
-      if (topBand <= 0) continue;
-      topBand--;
+    if (counts[band] === undefined) {
+      counts[band] = Math.max(0, roll(rng, SLEEP_BANDS[band].dice));
+      if (band === 0) res.sleepBudget = counts[0];
     }
-    budget -= cost;
+    const n = counts[band];
+    if (n <= 0 || used + 1 / n > 1 + EPS) continue;
+    used += 1 / n;
     if (magicResists(rng, t, L) || racialResists(rng, s, t)) {
       tr.resisted = true;
       res.log.push(`${tr.name} resists!`);
@@ -1025,6 +1059,8 @@ function resolveSleep(rng, s, caster, list, L, duration, res) {
     tr.affected = true;
     res.log.push(`${tr.name} falls asleep.`);
   }
+  res.sleepCounts = counts.map((n, b) => (n === undefined ? null : { band: SLEEP_BANDS[b].label, n }));
+  res.sleepUsed = used;
   return res;
 }
 
