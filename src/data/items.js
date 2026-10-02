@@ -31,8 +31,8 @@ export const ITEMS = {
   longSwordPlus1: W('longSwordPlus1', 'Long Sword +1', '1d8', '1d12', 2000, 60, { weaponGroup: 'longSword', magic: 1, unidName: 'Long Sword' }),
 
   // Armor (base AC)
-  padded: A('padded', 'Padded Armor', 8, 4, 100),
-  leather: A('leather', 'Leather Armor', 8, 5, 150),
+  padded: A('padded', 'Padded Armour', 8, 4, 100),
+  leather: A('leather', 'Leather Armour', 8, 5, 150),
   studdedLeather: A('studdedLeather', 'Studded Leather', 7, 15, 200, { armorGroup: 'studded' }),
   ringMail: A('ringMail', 'Ring Mail', 7, 30, 250, { armorGroup: 'ring' }),
   scaleMail: A('scaleMail', 'Scale Mail', 6, 45, 400, { armorGroup: 'scale' }),
@@ -68,7 +68,7 @@ export const ITEMS = {
   longSwordPlus2: W('longSwordPlus2', 'Long Sword +2', '1d8', '1d12', 5000, 60, { weaponGroup: 'longSword', magic: 2, unidName: 'Long Sword', desc: 'The blade of Sokol\'s castellan, bright as the day it was forged.' }),
   shieldPlus1: { id: 'shieldPlus1', name: 'Shield +1', unidName: 'Shield', type: 'shield', acBonus: 1, magic: 1, cost: 2500, weight: 50, icon: 'shield' },
   plateMailPlus1: A('plateMailPlus1', 'Plate Mail +1', 3, 5000, 450, { armorGroup: 'plate', magic: 1, unidName: 'Plate Mail' }),
-  leatherPlus1: A('leatherPlus1', 'Leather Armor +1', 8, 1500, 150, { armorGroup: 'leather', magic: 1, unidName: 'Leather Armor' }),
+  leatherPlus1: A('leatherPlus1', 'Leather Armour +1', 8, 1500, 150, { armorGroup: 'leather', magic: 1, unidName: 'Leather Armour' }),
   elfinChain: A('elfinChain', 'Elfin Chain Mail', 5, 6000, 150, { armorGroup: 'elfin', magic: 1, desc: 'Fine as silk. A mage may cast in it, the elves say, though they never say which mage.' }),
 
   ringProtection2: { id: 'ringProtection2', name: 'Ring of Protection +2', unidName: 'Ring', type: 'ring', acBonus: 2, saveBonus: 2, cost: 10000, weight: 1, icon: 'ring', magic: 2 },

@@ -108,7 +108,7 @@ export const SHOPS = {
     npc: 'barkeep',
     keeper: 'Mother Gedda',
     setting: 'tavern',
-    greeting: 'Sit, sit. Ale\'s a copper, stew\'s two, and gossip is free if you drink enough of the first.',
+    greeting: 'Sit, sit. Ale\'s a copper, stew\'s two. Gossip\'s a coin a tale, or free with a round for the house.',
     drink: 1,
     ambience: 'Smoke hangs under the beams. A dwarf is losing at dice to a halfling who is not cheating, quite; two off-duty watchmen argue about the Slum Wall; by the fire an old sailor waits for someone to buy him a drink and ask for a story.',
     // the people the picture shows (setting cast: dice, watch, sailor), each worth a listen

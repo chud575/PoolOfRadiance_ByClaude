@@ -16,7 +16,7 @@ import { mat, add, scl, rotX, rotY, rotZ, mul3, shade, mixc } from './sculpt.js'
 const WHITE = mat('#e9e2d6', { rough: 0.25, spec: 0.7, ink: 0, sss: 0.3 });
 const PUPIL = mat('#050403', { rough: 0.1, spec: 1, ink: 0 });
 const SHINE = mat('#ffffff', { emissive: '#d8d0c0', ink: 0 });
-const MOUTH = mat('#2a0c0a', { rough: 0.6, spec: 0.2, ink: 0.2 });
+const MOUTH = mat('#4a1a16', { rough: 0.6, spec: 0.2, ink: 0.2 });
 const LASH = mat('#1a0e08', { rough: 0.7, spec: 0.1, ink: 0 });
 
 /**
@@ -25,60 +25,84 @@ const LASH = mat('#1a0e08', { rough: 0.7, spec: 0.1, ink: 0 });
  * @param o {gender, age (0..1), hair, hairStyle, beard, eyeC, hood, helm, helmM, trimM, crest, bandana, lipC, brow, jaw, nose}
  */
 export function sculptHead(f, skinM, o = {}) {
+  // carves subtract from the figure's current group: make that the head while it is built
+  const g0 = f.group;
+  f.group = 'head';
+  sculptHeadIn(f, skinM, o);
+  f.group = g0;
+}
+
+function sculptHeadIn(f, skinM, o) {
   const fem = o.gender === 'female';
   const age = o.age ?? 0;
-  const S = { group: 'head', k: 0.22 };
-  const soft = { group: 'head', k: 0.16 };
-  const fine = { group: 'head', k: 0.08 };
-  const jaw = (o.jaw ?? (fem ? 0.78 : 1));
-  const lipC = o.lipC ?? mixc(skinM.color, fem ? '#b04a48' : '#9a5a4c', fem ? 0.55 : 0.4);
-  const lipM = mat(lipC, { pattern: 'skin', scale: skinM.scale, sss: 0.55, rough: 0.45, spec: 0.35 });
-  // skull and face masses
-  f.ell([0, 0.2, -0.12], [0.84, 0.93, 0.96], skinM, S);
-  f.ell([0, -0.1, 0.3], [0.7, 0.82, 0.62], skinM, S);
-  f.ell([0, 0.4, 0.42], [0.66, 0.42, 0.46], skinM, S);
-  // brow ridge, cheekbones, fleshy cheeks
-  f.ell([0, 0.21, 0.74], [0.6, fem ? 0.08 : 0.11, fem ? 0.13 : 0.17], skinM, soft);
+  const S = { group: 'head', k: 0.2 };
+  const soft = { group: 'head', k: 0.14 };
+  const fine = { group: 'head', k: 0.07 };
+  const jaw = (o.jaw ?? (fem ? 0.8 : 1));
+  const lipC = o.lipC ?? mixc(skinM.color, fem ? '#b84a50' : '#9a5a4c', fem ? 0.6 : 0.38);
+  const lipM = mat(lipC, { pattern: 'skin', scale: skinM.scale, sss: 0.6, rough: fem ? 0.4 : 0.55, spec: fem ? 0.4 : 0.25 });
+  // cranium, face mask, forehead
+  f.ell([0, 0.18, -0.1], [0.86, 0.95, 0.98], skinM, S);
+  f.ell([0, -0.06, 0.28], [0.7, 0.84, 0.63], skinM, S);
+  f.ell([0, 0.42, 0.36], [0.68, 0.42, 0.52], skinM, S);
+  // brow ridge (heavier on men), cheekbones, the jaw from ear to chin, the chin, the muzzle round the mouth
+  f.ell([0, 0.22, 0.74], [0.56, fem ? 0.06 : 0.09, fem ? 0.1 : 0.14], skinM, soft);
   for (const d of [-1, 1]) {
-    f.ell([d * 0.44, -0.06, 0.58], [0.24, 0.15, 0.22], skinM, { ...soft, R: rotZ(d * 0.35) });
-    f.ell([d * 0.35, -0.38, 0.52], [0.25, 0.25, 0.26], skinM, soft);
-    // jaw line from the ear to the chin
-    f.cone([d * 0.62, -0.18, -0.02], [d * 0.24 * jaw, -0.78, 0.52], 0.17 * jaw, 0.13 * jaw, skinM, soft);
+    f.ell([d * 0.44, -0.1, 0.52], [0.2, 0.11, 0.2], skinM, { ...S, R: rotZ(d * 0.3) });
+    f.cone([d * 0.6, -0.2, 0.0], [d * 0.21 * jaw, -0.76, 0.5], 0.16 * jaw, 0.12 * jaw, skinM, soft);
   }
-  f.ell([0, -0.82, 0.6], [0.24 * jaw, 0.17, 0.2], skinM, soft);
-  f.ell([0, -0.47, 0.72], [0.33, 0.22, 0.22], skinM, soft);
-  if (age > 0.4) for (const d of [-1, 1]) f.carve('ell', [d * 0.4, -0.3, 0.74], [0.12, 0.2, 0.08], null, { k: 0.12 });
+  f.ell([0, -0.78, 0.56], [0.2 * jaw, 0.13, 0.16], skinM, soft);
+  f.ell([0, -0.48, 0.64], [0.32, 0.25, 0.26], skinM, soft);
+  // age: nasolabial folds and hollow temples (only where no beard hides them)
+  if (age > 0.35 && !['full', 'long'].includes(o.beard)) {
+    for (const d of [-1, 1]) f.carve('ell', [d * 0.27, -0.38, 0.86], [0.025, 0.14, 0.04], null, { k: 0.06, R: rotZ(d * -0.35) });
+  }
   // nose: bridge, tip, alae, nostrils
-  const nw = (o.nose ?? 1) * (fem ? 0.85 : 1);
-  f.cone([0, 0.14, 0.84], [0, -0.24, 1.04], 0.07 * nw, 0.1 * nw, skinM, fine);
-  f.sphere([0, -0.25, 1.02], 0.105 * nw, skinM, fine);
+  const nw = (o.nose ?? 1) * (fem ? 0.84 : 1);
+  f.cone([0, 0.12, 0.84], [0, -0.22, 1.0], 0.06 * nw, 0.085 * nw, skinM, fine);
+  f.sphere([0, -0.24, 0.99], 0.095 * nw, skinM, fine);
   for (const d of [-1, 1]) {
-    f.ell([d * 0.12 * nw, -0.3, 0.91], [0.085, 0.07, 0.075], skinM, fine);
-    f.carve('ell', [d * 0.07, -0.37, 0.97], [0.04, 0.025, 0.045], null, { k: 0.03 });
+    f.ell([d * 0.11 * nw, -0.3, 0.9], [0.075, 0.062, 0.07], skinM, fine);
+    f.carve('ell', [d * 0.06, -0.355, 0.95], [0.035, 0.02, 0.04], null, { k: 0.02 });
   }
-  // eye sockets carved under the brow, lidded eyeballs, iris, pupil, catchlight
-  const eyeM = mat(o.eyeC ?? '#4a3020', { rough: 0.2, spec: 0.9, ink: 0 });
+  // eyes: shallow sockets, eyeballs, irises with a darker limbal ring, pupils and a wet catchlight,
+  // and lids that wrap the ball to an almond opening
+  const eyeM = mat(o.eyeC ?? '#4a3020', { rough: 0.15, spec: 0.9, ink: 0 });
+  const ringM = mat(shade(o.eyeC ?? '#4a3020', 0.45), { rough: 0.15, spec: 0.9, ink: 0 });
   for (const d of [-1, 1]) {
-    f.carve('ell', [d * 0.31, 0.05, 0.86], [0.21, 0.13, 0.17], null, { k: 0.12 });
-    const c = [d * 0.31, 0.05, 0.6];
-    const eg = { group: `eye${d}`, k: 0.02 };
-    f.sphere(c, 0.14, WHITE, eg);
-    f.ell(add(c, [d * -0.01, 0, 0.115]), [0.072, 0.072, 0.035], eyeM, { group: null });
-    f.ell(add(c, [d * -0.01, 0, 0.138]), [0.034, 0.034, 0.018], PUPIL, { group: null });
-    f.sphere(add(c, [d * -0.01 - 0.028, 0.03, 0.146]), 0.016, SHINE, { group: null, shadow: false });
-    // upper lid (covers the top of the eyeball, with a crease) and lower lid
-    f.ell(add(c, [0, 0.112, 0.025]), [0.17, 0.07, 0.15], skinM, { group: 'head', k: 0.05, R: rotZ(d * -0.1) });
-    f.ell(add(c, [0, -0.122, 0.02]), [0.155, 0.045, 0.135], skinM, { group: 'head', k: 0.05 });
-    // lash line along the lid edge: what makes an eye read at a distance
-    f.ell(add(c, [d * 0.005, 0.05, 0.125]), [0.15, 0.016, 0.045], LASH, { group: null, R: rotZ(d * -0.1) });
-    if (!fem && age < 0.6) f.ell([d * 0.34, 0.27, 0.76], [0.19, 0.05, 0.07], hairMat(o.hair ?? '#3a2416', o.brow ?? 1), { group: null, R: rotZ(d * -0.15) });
-    else f.ell([d * 0.34, 0.26, 0.77], [0.18, 0.03, 0.05], hairMat(o.hair ?? '#3a2416', 0.8), { group: null, R: rotZ(d * -0.22) });
+    // the ball stands just proud of the face; no carved orbit (carved holes read as goggles once
+    // ambient occlusion darkens them) — the lids and the brow ridge model the socket instead
+    const c = [d * 0.3, 0.035, 0.745];
+    const R0 = 0.155;
+    f.sphere(c, R0, WHITE, { group: `eye${d}`, k: 0.01 });
+    const ic = add(c, [-d * 0.008, -0.012, 0]);
+    const zf = R0 - 0.02;
+    f.ell(add(ic, [0, 0, zf - 0.004]), [0.066, 0.066, 0.028], ringM, { group: null });
+    f.ell(add(ic, [0, 0, zf + 0.001]), [0.057, 0.057, 0.028], eyeM, { group: null });
+    f.ell(add(ic, [0, 0, zf + 0.014]), [0.027, 0.027, 0.017], PUPIL, { group: null });
+    f.sphere(add(ic, [-0.022, 0.02, zf + 0.022]), 0.011, SHINE, { group: null, shadow: false });
+    // lids: separate groups, so neither melts across the eye
+    const lidT = rotZ(d * -0.07);
+    f.ell(add(c, [0, 0.074 - age * 0.01, -0.004]), [0.18, 0.088, 0.166], skinM, { group: `ulid${d}`, k: 0.02, R: lidT });
+    f.ell(add(c, [0, -0.1, -0.006]), [0.17, 0.062, 0.162], skinM, { group: `llid${d}`, k: 0.02 });
+    // lash line on the upper lid edge
+    f.ell(add(c, [d * 0.004, 0.03, 0.146]), [fem ? 0.13 : 0.12, fem ? 0.012 : 0.008, 0.02], LASH, { group: null, R: lidT });
+    // brows on the brow ridge
+    const browM = hairMat(o.hair ?? '#3a2416', age > 0.5 ? 0.95 : fem ? 0.6 : 0.8);
+    // a tapered brow: thick at the inner end, thinning and arching toward the temple
+    const b0 = [d * 0.16, 0.235, 0.86]; const b1 = [d * 0.33, 0.27, 0.835]; const b2 = [d * 0.48, 0.235, 0.76];
+    const bw = fem ? 0.55 : 1;
+    f.cone(b0, b1, 0.034 * bw, 0.028 * bw, browM, { group: `brow${d}`, k: 0.02 });
+    f.cone(b1, b2, 0.028 * bw, 0.012 * bw, browM, { group: `brow${d}`, k: 0.02 });
   }
-  // lips and the mouth line
-  f.ell([0, -0.47, 0.89], [0.19, fem ? 0.06 : 0.05, 0.07], lipM, { group: 'head', k: 0.06 });
-  f.ell([0, -0.57, 0.87], [0.16, fem ? 0.07 : 0.06, 0.075], lipM, { group: 'head', k: 0.06 });
-  f.carve('ell', [0, -0.515, 0.95], [0.18, 0.014, 0.06], null, { k: 0.03 });
-  f.ell([0, -0.515, 0.86], [0.17, 0.012, 0.03], MOUTH, { group: null });
+  // lips, the parting line, a shadowed mouth slit deep inside the line, corners tucked in
+  f.ell([0, -0.462, 0.865], [0.165, fem ? 0.06 : 0.042, fem ? 0.078 : 0.07], lipM, { group: 'head', k: 0.05 });
+  f.ell([0, -0.56, 0.85], [0.14, fem ? 0.072 : 0.05, fem ? 0.082 : 0.072], lipM, { group: 'head', k: 0.05 });
+  // the parting line, its corners lifted by a smile (o.smile 0..1)
+  const sm = o.smile ?? 0;
+  for (const d of [-1, 1]) f.carve('cone', [0, -0.507, 0.93], [d * 0.165, -0.507 + sm * 0.09, 0.89], 0.011, { k: 0.02, rb: 0.009 });
+  f.ell([0, -0.507, 0.872], [0.1, 0.006, 0.02], MOUTH, { group: null });
+  if (sm > 0) for (const d of [-1, 1]) f.ell([d * 0.2, -0.47, 0.8], [0.06, 0.05, 0.06], skinM, { group: 'head', k: 0.06 }); // cheeks lift
   // ears
   for (const d of [-1, 1]) {
     f.ell([d * 0.84, -0.04, -0.06], [0.1, 0.24, 0.15], skinM, { group: 'head', k: 0.06, R: rotY(d * 0.35) });
@@ -102,7 +126,8 @@ function spectacles(f, wire) {
       f.cone([c[0] + Math.cos(a0) * r, c[1] + Math.sin(a0) * r * 0.86, c[2] - Math.abs(Math.cos(a0)) * 0.03], [c[0] + Math.cos(a1) * r, c[1] + Math.sin(a1) * r * 0.86, c[2] - Math.abs(Math.cos(a1)) * 0.03], 0.02, 0.02, wm, g);
     }
     // faint lens glint
-    f.ell([c[0], c[1], c[2] + 0.01], [r * 0.92, r * 0.8, 0.012], mat('#c8d8e8', { rough: 0.05, spec: 1.2, ink: 0, emissive: '#1a2228' }), { group: null, shadow: false });
+    // a small glint on the glass (a full lens disc reads as opaque white in an SDF render)
+    f.ell([c[0] - r * 0.4, c[1] + r * 0.42, c[2] + 0.012], [r * 0.22, r * 0.08, 0.006], mat('#ffffff', { emissive: '#c8d8e8', ink: 0 }), { group: null, shadow: false, R: rotZ(0.6) });
     // temple arm back to the ear, and the ribbon hanging from it
     f.cone([c[0] + d * r, c[1] + 0.02, c[2] - 0.04], [d * 0.86, 0.06, 0.05], 0.018, 0.018, wm, g);
     f.cone([d * 0.86, 0.04, 0.02], [d * 0.62, -1.2, 0.35], 0.022, 0.022, mat('#141010', { pattern: 'cloth', scale: 0.004, rough: 0.9 }), g);
@@ -153,7 +178,7 @@ function headwear(f, skinM, o) {
     if (style === 'fringe') f.ell([0, 0.66, 0.42], [0.78, 0.24, 0.42], hairM, { ...hard, R: rotX(0.4) });
     if (style === 'short') f.ell([0.2, 0.78, 0.25], [0.6, 0.22, 0.5], hairM, { ...hard, R: rotZ(-0.2) });
     if (style === 'long' || style === 'wavy') {
-      const wav = style === 'wavy' ? 0.07 : 0.035;
+      const wav = style === 'wavy' ? 0.045 : 0.03;
       f.ell([0, -0.35, -0.55], [0.86, 1.15, 0.5], hairM, { ...hard, disp: { amp: wav, freq: 14 } });
       for (const d of [-1, 1]) f.cone([d * 0.66, 0.3, -0.1], [d * 0.78, -1.45, -0.3], 0.3, 0.26, hairM, { ...hard, disp: { amp: wav * 0.6, freq: 16, twist: 2 } });
     }
@@ -171,10 +196,21 @@ function headwear(f, skinM, o) {
   const bm = hairMat(o.hair ?? '#3a2416', 0.92);
   const bg = { group: 'beard', k: 0.18 };
   if (beard === 'full' || beard === 'long') {
-    f.ell([0, -0.66, 0.42], [0.7, 0.42, 0.55], bm, bg);
-    f.ell([0, beard === 'long' ? -1.05 : -0.86, 0.6], [0.5, beard === 'long' ? 0.75 : 0.36, 0.38], bm, { ...bg, disp: { amp: 0.04, freq: 18 } });
-    for (const d of [-1, 1]) f.ell([d * 0.55, -0.4, 0.3], [0.2, 0.42, 0.34], bm, bg);
-    f.carve('ell', [0, -0.52, 1.0], [0.16, 0.05, 0.12], null, { group: 'beard', k: 0.05 });
+    const long = beard === 'long';
+    // the mass that hides the jaw, then hanging clumps of strands with their own tips
+    // (a ragged, tapering silhouette instead of a block)
+    f.ell([0, -0.62, 0.42], [0.68, 0.38, 0.52], bm, bg);
+    for (const d of [-1, 1]) f.ell([d * 0.56, -0.36, 0.28], [0.18, 0.4, 0.32], bm, bg);
+    const n = 9;
+    for (let i = 0; i < n; i++) {
+      const u = i / (n - 1) - 0.5; // -0.5..0.5 across the chin
+      const ax = u * 1.05;
+      const top = [ax, -0.7 + Math.abs(u) * 0.3, 0.6 - Math.abs(u) * 0.35];
+      const lenC = (long ? 0.95 : 0.5) * (1 - Math.abs(u) * 1.1) + 0.12 + ((i * 37) % 7) * 0.025;
+      const tip = [ax * 0.62 + Math.sin(i * 2.3) * 0.04, top[1] - lenC, top[2] + 0.06 - Math.abs(u) * 0.1];
+      f.cone(top, tip, 0.21 - Math.abs(u) * 0.07, 0.06, bm, { group: 'beard', k: 0.14, disp: { amp: 0.014, freq: 26, twist: 2 } });
+    }
+    f.carve('ell', [0, -0.53, 1.0], [0.13, 0.035, 0.1], null, { group: 'beard', k: 0.04 });
   }
   if (beard === 'goatee') f.ell([0, -0.84, 0.66], [0.22, 0.28, 0.2], bm, bg);
   if (beard === 'moustache' || beard === 'full' || beard === 'long' || beard === 'goatee') {

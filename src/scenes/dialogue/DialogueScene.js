@@ -192,7 +192,7 @@ export default class DialogueScene extends Scene {
     this.questEl = h('div.dlg-quests');
     this.questFrame = Frame({ title: 'Journal', className: 'dlg-questframe', children: [this.questEl] });
     this.side = h('div.dlg-side', [Frame({ title: 'Party', children: [this.roster.el] }).el, this.infoFrame.el, this.questFrame.el, this.logFrame.el, this.hints]);
-    this.listen('message', () => queueMicrotask(() => this._renderQuests()));
+    this.listen('message', () => queueMicrotask(() => { this._renderQuests(); if (this.script) this._renderStatus(this.script); }));
     this.bar = new CommandBar([]);
     this.barWrap = h('div.por-hud-bottom.dlg-bar', [this.bar.el]);
     this.root.append(bg, this.main, this.side, this.barWrap);
@@ -275,28 +275,70 @@ export default class DialogueScene extends Scene {
 
   /** Show prose with a typewriter reveal. paragraphs: string[]; extra: trailing nodes. */
   _setText(paragraphs, { journal = null, see = null } = {}) {
-    clear(this.prose);
-    clear(this.chipRow);
     const leader = this.ctx.game.activeCharacter?.name ?? 'the party';
-    const text = paragraphs.map((p) => p.replace(/\{leader\}/g, leader).replace(/\{gold\}/g, String(partyGold(this.ctx.game))));
-    const ps = text.map((t, i) => {
-      const { lead, body } = i === 0 ? dropCap(t) : { lead: [], body: t };
-      const shown = h('span');
-      const hidden = h('span.dlg-hidden', [body]);
-      const p = h(`p${lead.length ? '.dlg-capped' : ''}`, [...lead, shown, hidden]);
-      this.prose.append(p);
-      return { shown, hidden, text: body };
-    });
-    if (see) this.prose.append(h('p.dlg-see', [see]));
-    this.reveal = { ps, shown: 0, total: text.reduce((t, s) => t + s.length, 0) };
+    const text = paragraphs.map((p) => smartQuotes(p.replace(/\{leader\}/g, leader).replace(/\{gold\}/g, String(partyGold(this.ctx.game)))));
+    clear(this.chipRow);
     if (journal) {
       const e = getJournalEntry(journal);
       const chip = h('div.dlg-journal-chip', { onclick: (ev) => { ev.stopPropagation(); this.openJournal({ entry: journal }); }, dataset: { tip: 'Read it in the Journal (J)' } }, [`Journal Entry ${journal}${e ? ` · ${e.title}` : ''}`]);
       this.chipRow.append(chip);
     }
+    this.see = see;
+    // pages are laid out once the choices (and their notes) have taken their room: see _paginate()
+    this.pages = [text];
+    this.pageIdx = 0;
+    this._paginated = false;
+    this._showPage(0);
+  }
+
+  /** Page long speeches the way the old game did: as many paragraphs as fit, then ▼ MORE. */
+  _paginate() {
+    this._paginated = true;
+    const text = this.pages[0];
+    if (this.pages.length !== 1 || text.length < 2 || !this._overflows()) return false;
+    const pages = [];
+    let cur = [];
+    for (const t of text) {
+      this._fillProse([...cur, t], null, pages.length > 0);
+      this.prose.append(h('p.dlg-more', ['▼ more']));
+      if (cur.length && this._overflows()) {
+        pages.push(cur);
+        cur = [t];
+      } else cur.push(t);
+    }
+    if (cur.length) pages.push(cur);
+    this.pages = pages;
+    return pages.length > 1;
+  }
+
+  _overflows() {
+    return this.prose.scrollHeight > this.prose.clientHeight + 2;
+  }
+
+  /** Lay out paragraphs in the prose box (first paragraph of a speech gets the drop cap). */
+  _fillProse(text, see, cont = false) {
+    clear(this.prose);
+    const ps = text.map((t, i) => {
+      const { lead, body } = i === 0 && !cont ? dropCap(t) : { lead: [], body: t };
+      const shown = h('span');
+      const hidden = h('span.dlg-hidden', [body]);
+      this.prose.append(h(`p${lead.length ? '.dlg-capped' : ''}`, [...lead, shown, hidden]));
+      return { shown, hidden, text: body };
+    });
+    if (see) this.prose.append(h('p.dlg-see', [see]));
+    return ps;
+  }
+
+  _showPage(i) {
+    this.pageIdx = i;
+    const last = i >= this.pages.length - 1;
+    const ps = this._fillProse(this.pages[i], last ? this.see : null, i > 0);
+    if (!last) this.prose.append(h('p.dlg-more', [`▼ more · ${i + 1}/${this.pages.length}`]));
+    this.reveal = { ps, shown: 0, total: ps.reduce((t, p) => t + p.text.length, 0) };
     this.prose.scrollTop = 0;
     if (this.ctx.clock.frozen) this.skipReveal();
     else this._renderReveal();
+    if (i > 0) this._setChoices(this._pendingChoices ?? [], true);
   }
 
   _renderReveal() {
@@ -314,7 +356,17 @@ export default class DialogueScene extends Scene {
     this._renderReveal();
   }
 
-  _setChoices(choices) {
+  _setChoices(choices, paging = false) {
+    if (!paging) this._pendingChoices = choices;
+    this._buildChoices(choices);
+    // a speech too long for the parchment is paged; while pages remain the only command is MORE
+    if (!this._paginated && this._paginate()) this._showPage(0);
+    if (this.pages && this.pageIdx < this.pages.length - 1) {
+      this._buildChoices([{ label: 'More', key: 'M', quiet: true, run: () => this._showPage(this.pageIdx + 1) }]);
+    }
+  }
+
+  _buildChoices(choices) {
     const used = new Set();
     const cmds = choices.map((c, i) => {
       let key = c.key;
@@ -500,7 +552,7 @@ export default class DialogueScene extends Scene {
       h('span.lbl', ['Commissions']), h('span.v', [`${n('rewarded')} paid · ${n('done')} to report · ${n('active')} in hand · ${n('offered')} open · ${n('locked')} sealed`]),
       owed ? h('span.v.owed', [`${owed.toLocaleString('en-US')} gp awaiting your REPORT`]) : null,
     ]);
-    this.body.append(this.statusEl);
+    this.body.insertBefore(this.statusEl, this.tipsEl?.parentNode === this.body ? this.tipsEl : null);
   }
 
   _runChoice(c) {
@@ -688,7 +740,7 @@ export default class DialogueScene extends Scene {
         if (kind === 'report' && st !== 'rewarded' && st !== 'done' && st !== 'active') return;
         const stampText = { locked: 'Sealed', offered: '', active: 'Accepted', done: 'Complete', rewarded: 'Paid' }[st];
         const accept = st === 'offered'
-          ? h('button.por-btn', { onclick: () => { (game.flags.quests ??= {})[q.id] = 'active'; addJournal(game, q.journal); this.ctx.ui.message(`Commission accepted: ${q.title}. Journal entry ${q.journal} recorded.`, 'lore'); this._showPanel(kind); } }, ['Accept'])
+          ? h('button.por-btn', { onclick: () => { (game.flags.quests ??= {})[q.id] = 'active'; addJournal(game, q.journal); this.ctx.ui.message(`Commission accepted: ${q.title}. Journal entry ${q.journal} recorded.`, 'lore'); this._showPanel(kind); this._renderStatus(this.script); this._renderQuests(); } }, ['Accept'])
           : h(`span.dlg-stamp.${st === 'offered' ? 'active' : st}`, [stampText]);
         rows.append(h(`div.dlg-lrow${st === 'locked' ? '.locked' : ''}`, [
           h('span.n', [romanize(i + 1)]),
@@ -860,6 +912,15 @@ function journalPlate(n) {
  * Split a paragraph's opening into a drop-cap letter and a hanging quotation
  * mark (so “"The Council…" reads as one word, with the quote in the margin).
  */
+/** Typographic quotes: straight " and ' become curly, so a hanging open quote matches its close. */
+export function smartQuotes(t) {
+  return t
+    .replace(/(^|[\s(\[{\u2014-])"/g, '$1\u201c')
+    .replace(/"/g, '\u201d')
+    .replace(/(^|[\s(\[{\u2014-])'/g, '$1\u2018')
+    .replace(/'/g, '\u2019');
+}
+
 export function dropCap(t) {
   const m = t.match(/^([“"'‘(«]*)([\p{L}\p{N}])/u);
   if (!m) return { lead: [], body: t };

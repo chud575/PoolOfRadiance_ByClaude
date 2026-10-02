@@ -213,3 +213,22 @@
 /* ---------- temple: the creed follows the services and fills the board, the god's sign behind it ---------- */
 .shp-creed { margin-top: 0.7em; flex: 1 0 auto; display: flex; flex-direction: column; justify-content: center; overflow: hidden; }
 .shp-creed::after { content: var(--sign, '⚖'); position: absolute; right: 0.4em; bottom: -0.15em; font-size: 6.5em; line-height: 1; color: rgba(245, 217, 139, 0.07); pointer-events: none; }
+
+/* ---------- disabled actions read as disabled: flat, desaturated, no glow ---------- */
+.shp-root .por-btn[disabled], .shp-root .shp-chip[disabled] {
+  opacity: 1 !important; cursor: not-allowed; filter: grayscale(0.85) brightness(0.62); box-shadow: none !important;
+  background: linear-gradient(180deg, rgba(40, 44, 60, 0.9), rgba(22, 24, 34, 0.9)) !important; color: #8a8f9e !important;
+  border-style: dashed !important; text-shadow: none !important;
+}
+.shp-train .por-btn .lock::before { content: '🔒︎'; font-size: 0.8em; margin-right: 0.4em; filter: grayscale(1); }
+
+/* ---------- the master's book: next level preview ---------- */
+.shp-book-next { width: 100%; border-collapse: collapse; font-size: 0.84em; margin-top: 0.1em; }
+.shp-book-next caption { text-align: left; font-family: var(--font-display); font-size: 0.78em; letter-spacing: 0.2em; text-transform: uppercase; color: var(--por-gilt); padding: 0.4em 0 0.3em; border-top: 1px solid rgba(216, 178, 90, 0.18); }
+.shp-book-next thead th { font-family: var(--font-display); font-weight: 400; font-size: 0.78em; letter-spacing: 0.1em; text-transform: uppercase; color: var(--por-gilt); text-align: right; padding: 0.1em 0.3em; }
+.shp-book-next tbody th { text-align: left; font-weight: 400; color: var(--por-text-dim); padding: 0.14em 0; white-space: nowrap; }
+.shp-book-next td { text-align: right; font-family: var(--font-num); color: var(--por-text); padding: 0.14em 0.3em; }
+.shp-book-next tr.next td { color: var(--por-text-dim); }
+.shp-book-next tr.next td.up { color: #8de08a; }
+.shp-book-next tbody tr + tr { border-top: 1px dotted rgba(216, 178, 90, 0.16); }
+.shp-book-next tfoot td { text-align: left; font-family: var(--font-body); font-style: italic; color: var(--por-text-dim); padding-top: 0.35em; }

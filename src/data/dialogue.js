@@ -29,7 +29,7 @@ const HALL = [
   { label: 'Commissions', key: 'C', goto: 'commissions' },
   { label: 'Report', key: 'R', goto: 'report' },
   { label: 'Hall of heroes', key: 'H', goto: 'heroes' },
-  { label: 'Leave', key: 'L', end: true },
+  { label: 'Leave', key: 'L', end: true, do: [{ flag: 'clerk_return' }] },
 ];
 
 /** @type {Record<string, any>} */
@@ -42,7 +42,7 @@ export const DIALOGUES = {
     start: 'enter',
     nodes: {
       enter: {
-        branch: [{ if: { notFlag: 'met_clerk' }, goto: 'first' }],
+        branch: [{ if: { notFlag: 'met_clerk' }, goto: 'first' }, { if: { notFlag: 'clerk_return' }, goto: 'hub' }],
         speaker: 'clerk',
         text: 'The Clerk dips his pen, blots it, and looks up at you over his spectacles. "Back again, and all your limbs attached. The Council is impressed. What will it be?"',
         choices: HALL,
@@ -53,7 +53,13 @@ export const DIALOGUES = {
           'The hall is cold and far too large for the handful of clerks who work in it. Faded banners of the old city hang over the dais.',
           'A stooped man with ink-stained fingers looks up from his ledger. "New names. Good. The Council has more work than it has living hands. Read the proclamations, take a commission, and come back with proof."',
         ],
-        next: 'enter',
+        next: 'hub',
+      },
+      // the first visit's menu: the Clerk has only just met you
+      hub: {
+        speaker: 'clerk',
+        text: 'He turns the ledger a quarter-turn toward you and taps it with the dry end of his pen. "Proclamations on the board, commissions in the book. What will it be?"',
+        choices: HALL,
       },
       procl: { speaker: 'clerk', panel: 'proclamations', text: '"The board. Most of it is bounties. The rest is bounties with better handwriting."', choices: HALL },
       commissions: { speaker: 'clerk', panel: 'commissions', art: { pose: 'ledger' }, text: '"The Council\'s commissions. Take any that suit you — but take them before you go and do the work. The Council does not pay for favours it did not ask for."', choices: HALL },

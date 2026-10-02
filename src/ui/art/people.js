@@ -142,7 +142,7 @@ export function buildNpc(spec) {
       f.cone([-0.016, y, 0.074 * b], [0.016, y + 0.04, 0.072 * b], 0.0028, 0.0028, mat('#d8c8a0', { rough: 0.8 }), { group: null });
       f.cone([0.016, y, 0.074 * b], [-0.016, y + 0.04, 0.072 * b], 0.0028, 0.0028, mat('#d8c8a0', { rough: 0.8 }), { group: null });
     }
-    f.ell([0, torso * 0.86, 0.034], [0.07, 0.03, 0.03], shirtM, { group: 'chemise', k: 0.02 });
+    f.ell([0, torso * 0.88, 0.02], [0.068, 0.026, 0.03], shirtM, { group: 'chemise', k: 0.02 });
   }
   if (O.topKind === 'doublet' || O.topKind === 'tabard') for (let i = 0; i < 5; i++) f.sphere([0, torso * (0.25 + i * 0.13), 0.073 * b], 0.0055, brass, { group: null });
   if (O.topKind === 'tabard' && O.symbol) emblem(f, O.symbol, [0, torso * 0.55, 0.077 * b], 0.03);
@@ -161,7 +161,9 @@ export function buildNpc(spec) {
     const hemY = floor ? 0.015 : hipH - 0.19;
     const rTop = (fem ? 0.084 : 0.09) * b;
     const rBot = (floor ? 0.165 : 0.11) * b;
-    f.cone(top, [0, hemY, 0.004], rTop, rBot, skirtM, { group: 'skirt', k: 0.02, disp: { amp: floor ? 0.013 : 0.008, freq: floor ? 15 : 11, twist: 1.6 } });
+    f.cone(top, [0, hemY + (floor ? 0.03 : 0), 0.004], rTop, rBot, skirtM, { group: 'skirt', k: 0.02, disp: { amp: floor ? 0.013 : 0.008, freq: floor ? 15 : 11, twist: 1.6 } });
+    // a floor-length hem breaks on the floor and is cut flat there (a round cone's cap reads as a bowling pin)
+    if (floor) f.carve('box', [0, -0.25, 0], [0.5, 0.25, 0.5], null, { group: 'skirt', k: 0.006 });
     f.ell(add(waist, T([0, -0.035, 0])), [rTop * 1.04, 0.05, rTop * 0.82], skirtM, { group: 'skirt', k: 0.03 });
   }
   // tabards, doublets and jerkins hang below the belt: a hem to mid-thigh, split at the sides,
@@ -242,10 +244,16 @@ export function buildNpc(spec) {
       // forearm instead of opening toward the viewer like a bowl
       const fw = norm(sub(wrist, elbow));
       const lift = Math.max(0, fw[1] + 0.35) + Math.max(0, fw[2]) * 0.6;
-      const hang = add(wrist, [0, -0.025 - 0.09 * lift, -0.02 * lift]);
-      f.cone(elbow, lerp3(elbow, hang, 1.0), 0.038 * b, 0.064 * b, sleeveTop, { ...sg, disp: { amp: 0.006, freq: 9, twist: 1 } });
-      f.carve('cone', lerp3(elbow, hang, 0.78), lerp3(elbow, hang, 1.3), 0.046 * b, { group: `arm${d}`, k: 0.01, rb: 0.056 * b });
-      f.cone(lerp3(elbow, wrist, 0.6), wrist, 0.027, 0.023, skinM, { group: `wrist${d}`, k: 0.01 });
+      const hang = add(wrist, [0, -0.02 - 0.05 * lift, -0.015 * lift]);
+      f.cone(elbow, lerp3(elbow, hang, 1.0), 0.038 * b, 0.054 * b, sleeveTop, { ...sg, disp: { amp: 0.006, freq: 9, twist: 1 } });
+      // the mouth of the sleeve: a shallow recess lined in the undershirt, the shirt cuff and the wrist
+      // coming out of it (no open tube: a hollow cone renders as a black void)
+      const ax = norm(sub(hang, elbow));
+      const mouth = lerp3(elbow, hang, 1.0);
+      f.carve('ell', add(mouth, scl(ax, 0.012)), [0.05 * b, 0.022, 0.05 * b], null, { group: `arm${d}`, k: 0.012, R: alignY(ax) });
+      f.ell(add(mouth, scl(ax, -0.004)), [0.05 * b, 0.012, 0.05 * b], cloth(O.lining ?? O.shirt ?? '#d8ccb0'), { group: `lining${d}`, k: 0.006, R: alignY(ax) });
+      f.cone(lerp3(elbow, wrist, 0.55), lerp3(elbow, wrist, 0.92), 0.03, 0.028, cloth(O.cuff ?? O.shirt ?? '#d8ccb0'), { group: `cuff${d}`, k: 0.008 });
+      f.cone(lerp3(elbow, wrist, 0.85), wrist, 0.025, 0.022, skinM, { group: `wrist${d}`, k: 0.01 });
     } else if (sleeves === 'rolled') {
       f.cone(lerp3(elbow, wrist, 0.12), wrist, 0.034 * b, 0.024 * b, skinM, { group: `forearm${d}`, k: 0.02 });
       f.ell(lerp3(elbow, wrist, 0.3), [0.036 * b, 0.05, 0.034 * b], skinM, { group: `forearm${d}`, k: 0.02, R: alignY(sub(wrist, elbow)) });
@@ -266,7 +274,7 @@ export function buildNpc(spec) {
   // ---- head
   const HR = mul3(rotY(twist + (P.headYaw ?? 0) + (spec.headYaw ?? 0)), mul3(rotX(-lean * 0.8 + (P.headPitch ?? 0)), rotZ((P.headTilt ?? 0) + (R() - 0.5) * 0.06)));
   f.push(headC, HR, hr);
-  sculptHead(f, skinM, { gender: spec.gender, age, hair: spec.hair, hairStyle: spec.hairStyle, beard: spec.beard, eyeC: spec.eyeC, hood: O.hood ?? null, helm: O.helm, nose: spec.nose, jaw: spec.jaw, spectacles: O.spectacles, cap: O.cap });
+  sculptHead(f, skinM, { smile: spec.smile, lipC: spec.lipC, gender: spec.gender, age, hair: spec.hair, hairStyle: spec.hairStyle, beard: spec.beard, eyeC: spec.eyeC, hood: O.hood ?? null, helm: O.helm, nose: spec.nose, jaw: spec.jaw, spectacles: O.spectacles, cap: O.cap });
   f.pop();
   f.top = headC[1] + hr * 1.15;
   return { fig: f, top: f.top, sp: { legs: short ? 0.4 : 0.49 }, hands };

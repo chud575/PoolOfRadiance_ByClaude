@@ -548,6 +548,10 @@ export function renderFigure(fig, o = {}) {
   // extents (view units)
   let x0 = Infinity; let x1 = -Infinity; let y0 = Infinity; let y1 = -Infinity;
   for (const p of prims) { x0 = Math.min(x0, p.x0); x1 = Math.max(x1, p.x1); y0 = Math.min(y0, p.y0); y1 = Math.max(y1, p.y1); }
+  // optional crop window (view units): busts render only the head and shoulders
+  if (o.minY != null) y0 = Math.max(y0, o.minY);
+  if (o.minX != null) x0 = Math.max(x0, o.minX);
+  if (o.maxX != null) x1 = Math.min(x1, o.maxX);
   const pad = 4 * ss;
   const W = Math.ceil((x1 - x0) * P) + pad * 2;
   const H = Math.ceil((y1 - y0) * P) + pad * 2;

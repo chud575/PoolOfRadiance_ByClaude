@@ -45,6 +45,12 @@ function proj(x, y, ppu, p, yaw = 0, pitch = 0.16) {
   return [x + v[0] * ppu, y - v[1] * ppu];
 }
 
+const I3z = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+function shadeHex(hex, k) {
+  const n = parseInt(hex.slice(1), 16);
+  const c = (v) => Math.max(0, Math.min(255, Math.round(v * k))).toString(16).padStart(2, '0');
+  return `#${c(n >> 16)}${c((n >> 8) & 255)}${c(n & 255)}`;
+}
 const stoneM = (c, o = {}) => mat(c, { pattern: 'stone', scale: o.scale ?? 0.06, rough: 0.85, spec: 0.08, sss: 0.15, ...o });
 const waxM = mat('#efe2c4', { pattern: 'skin', scale: 0.01, sss: 0.9, rough: 0.5, spec: 0.25, ink: 0.4 });
 const clothM = (c) => mat(c, { pattern: 'cloth', scale: 0.012, rough: 0.8 });
@@ -126,14 +132,71 @@ function anvil3d() {
 function barrel3d(seed = 1, { open = false, water = false } = {}) {
   const f = new Figure();
   const R = rngOf(seed);
-  const wood = mat(R() < 0.5 ? '#5a3a20' : '#6a4826', { pattern: 'wood', scale: 0.012, rough: 0.8 });
-  f.ell([0, 0.17, 0], [0.11, 0.18, 0.11], wood, { group: null });
-  f.box([0, 0.16, 0], [0.095, 0.16, 0.095], wood, { group: null, bevel: 0.09, R: rotY(0.4) });
-  for (const y of [0.05, 0.12, 0.22, 0.29]) f.ell([0, y, 0], [0.108 + (y > 0.1 && y < 0.25 ? 0.006 : 0), 0.007, 0.108 + (y > 0.1 && y < 0.25 ? 0.006 : 0)], M.iron, { group: null });
-  if (open) f.ell([0, 0.32, 0], [0.09, 0.004, 0.09], water ? mat('#10161c', { rough: 0.05, spec: 1, metal: true }) : wood, { group: null });
+  // coopered staves: each a bowed plank of its own tone, bulging at the belly, with a chamfered
+  // head and iron hoops riveted round (no single faceted box: that read as a chevron pattern)
+  const base = R() < 0.5 ? '#5a3a20' : '#6a4826';
+  const n = 16;
+  const rB = 0.088; const rM = 0.108; const hgt = 0.32;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const tone = mat(shadeHex(base, 0.82 + R() * 0.32), { pattern: 'wood', scale: 0.01, rough: 0.82, spec: 0.06 });
+    const ca = Math.cos(a); const sa = Math.sin(a);
+    const Rr = rotY(-a);
+    const p0 = [ca * rB, 0.005, sa * rB]; const p1 = [ca * rM, hgt / 2, sa * rM]; const p2 = [ca * rB, hgt, sa * rB];
+    for (const [q0, q1] of [[p0, p1], [p1, p2]]) {
+      const c = [(q0[0] + q1[0]) / 2, (q0[1] + q1[1]) / 2, (q0[2] + q1[2]) / 2];
+      const d = [q1[0] - q0[0], q1[1] - q0[1], q1[2] - q0[2]];
+      const L = Math.hypot(...d) / 2;
+      f.box(c, [0.02, L + 0.004, 0.009], tone, { group: null, bevel: 0.004, R: mul3(alignY(d, [-sa, 0, ca]), I3z) });
+    }
+    void Rr;
+  }
+  f.ell([0, hgt / 2, 0], [rM - 0.006, hgt / 2 - 0.004, rM - 0.006], mat('#1a0e06', { rough: 1 }), { group: null });
+  for (const y of [0.035, 0.1, 0.22, 0.285]) {
+    const bul = rB + (rM - rB) * (1 - Math.pow((y - hgt / 2) / (hgt / 2), 2));
+    f.ell([0, y, 0], [bul + 0.006, 0.008, bul + 0.006], M.iron, { group: null });
+  }
+  const headM = open && water ? mat('#0c1216', { rough: 0.04, spec: 1.2, metal: true }) : mat(shadeHex(base, 0.7), { pattern: 'wood', scale: 0.01 });
+  f.ell([0, hgt - 0.008, 0], [rB - 0.004, 0.004, rB - 0.004], headM, { group: null });
   return f;
 }
 
+/** A wooden armour stand: crossbar shoulders, a breastplate with fauld and pauldrons, mail skirt, a helm. */
+function armourStand3d(seed = 1, { plate = true } = {}) {
+  const f = new Figure();
+  const R = rngOf(seed);
+  const wood = M.darkWood;
+  const steel = mat('#a8acb4', { pattern: 'metal', metal: true, rough: 0.28, spec: 1, scale: 0.05 });
+  const mail = mat('#7a7c84', { pattern: 'mail', metal: true, scale: 0.05, rough: 0.45, spec: 0.7 });
+  // feet and post
+  for (const a of [0, Math.PI / 2]) f.box([0, 0.018, 0], [0.13, 0.016, 0.022], wood, { group: null, bevel: 0.008, R: rotY(a + 0.3) });
+  f.cone([0, 0.02, 0], [0, 0.86, 0], 0.016, 0.014, wood, { group: null });
+  f.cone([-0.15, 0.7, 0], [0.15, 0.7, 0], 0.014, 0.014, wood, { group: null });
+  // mail skirt and hauberk under the plate
+  f.cone([0, 0.62, 0], [0, 0.4, 0.004], 0.1, 0.12, mail, { group: 'mail', k: 0.02, disp: { amp: 0.004, freq: 16, twist: 1 } });
+  if (plate) {
+    // breastplate: a ridged, waisted shell with a rolled neck edge, then fauld lames
+    f.ell([0, 0.62, 0.012], [0.112, 0.105, 0.078], steel, { group: 'plate', k: 0.03 });
+    f.ell([0, 0.55, 0.016], [0.098, 0.06, 0.07], steel, { group: 'plate', k: 0.03 });
+    f.cone([0, 0.5, 0.075], [0, 0.69, 0.088], 0.006, 0.006, steel, { group: 'plate', k: 0.01 }); // medial ridge
+    f.ell([0, 0.715, 0.02], [0.07, 0.014, 0.05], mat('#c8a050', { metal: true, rough: 0.3, spec: 0.9 }), { group: null }); // brass neck roll
+    for (let i = 0; i < 3; i++) f.ell([0, 0.49 - i * 0.03, 0.01 + i * 0.002], [0.106 + i * 0.006, 0.017, 0.078 + i * 0.004], steel, { group: null });
+    for (const d of [-1, 1]) {
+      // pauldrons: three overlapping lames over the bar's ends
+      for (let i = 0; i < 3; i++) f.ell([d * (0.13 + i * 0.008), 0.705 - i * 0.026, 0], [0.058 - i * 0.004, 0.026, 0.06 - i * 0.004], steel, { group: null, R: rotZ(d * (0.35 + i * 0.1)) });
+      for (let k = 0; k < 4; k++) f.sphere([d * 0.06, 0.66 - k * 0.04, 0.083], 0.0045, mat('#c8a050', { metal: true }), { group: null }); // rivets
+    }
+  } else {
+    f.ell([0, 0.62, 0.006], [0.11, 0.1, 0.075], mat('#5a3a22', { pattern: 'leather', scale: 0.03 }), { group: 'plate', k: 0.03 });
+  }
+  // a bascinet hung on the post-top, visor up
+  f.ell([0, 0.9, 0], [0.068, 0.078, 0.074], steel, { group: 'helm', k: 0.02 });
+  f.cone([0, 0.92, -0.01], [0, 0.99, -0.03], 0.05, 0.006, steel, { group: 'helm', k: 0.03 });
+  f.ell([0, 0.875, 0.06], [0.06, 0.02, 0.03], steel, { group: null, R: rotX(-0.5) });
+  f.box([0, 0.86, 0.072], [0.04, 0.003, 0.006], M.dark, { group: null, bevel: 0.002 });
+  if (R() < 2) f.ell([0, 0.83, 0], [0.074, 0.032, 0.074], mail, { group: null }); // aventail
+  return f;
+}
 
 function brazier3d() {
   const f = new Figure();
@@ -149,23 +212,49 @@ function brazier3d() {
   return f;
 }
 
-/** Straw practice dummy with a dented bucket helm. */
+/** Straw practice pell: a burlap torso stuffed and roped, straw bursting at the seams, crossbar arms, a hacked shield and a dented helm. */
 function dummy3d(seed = 1) {
   const R = rngOf(seed);
   const f = new Figure();
-  const post = mat('#4a3018', { pattern: 'wood', scale: 0.02 });
-  const straw = mat('#b89a58', { pattern: 'fur', scale: 0.01, rough: 0.9 });
-  const sack = mat('#9a8460', { pattern: 'cloth', scale: 0.008 });
-  f.cone([0, 0, 0], [0, 0.9, 0], 0.02, 0.018, post, { group: null });
-  f.box([0, 0.03, 0], [0.12, 0.02, 0.03], post, { group: null, bevel: 0.01 });
-  f.box([0, 0.03, 0], [0.03, 0.02, 0.12], post, { group: null, bevel: 0.01 });
-  f.ell([0, 0.58, 0], [0.12, 0.2, 0.09], straw, { group: 'b' });
-  f.cone([-0.2, 0.7, 0], [0.2, 0.7, 0], 0.016, 0.016, post, { group: null });
-  for (const d of [-1, 1]) f.ell([d * 0.15, 0.7, 0], [0.07, 0.035, 0.035], straw, { group: null });
-  f.sphere([0, 0.86, 0], 0.07, sack, { group: null });
-  f.cone([0, 0.88, 0], [0, 0.97, 0], 0.075, 0.065, mat('#7a7c80', { pattern: 'metal', metal: true, rough: 0.5, spec: 0.6, scale: 0.03 }), { group: null });
-  for (const y of [0.5, 0.64]) f.ell([0, y, 0], [0.122, 0.01, 0.092], M.rope, { group: null });
-  if (R() < 0.6) f.box([0.04, 0.56, 0.09], [0.04, 0.05, 0.006], mat('#5a1a14', { pattern: 'cloth', scale: 0.008 }), { group: null, R: rotZ(0.2), bevel: 0.004 });
+  const post = mat('#4a3018', { pattern: 'wood', scale: 0.016, rough: 0.85 });
+  const straw = mat('#c8a860', { pattern: 'fur', scale: 0.006, rough: 0.95 });
+  const sack = mat('#8a7450', { pattern: 'cloth', scale: 0.006, rough: 0.95 });
+  // a squared post in a cross-foot, the timber split and darkened
+  f.box([0, 0.45, 0], [0.018, 0.45, 0.018], post, { group: null, bevel: 0.006 });
+  f.box([0, 0.025, 0], [0.13, 0.022, 0.03], post, { group: null, bevel: 0.01 });
+  f.box([0, 0.025, 0], [0.03, 0.022, 0.13], post, { group: null, bevel: 0.01 });
+  for (const d of [-1, 1]) f.box([d * 0.06, 0.07, 0], [0.008, 0.05, 0.012], post, { group: null, bevel: 0.004, R: rotZ(d * 0.8) });
+  // the torso: a stuffed sack, broad at the chest and pinched at the waist by rope
+  f.ell([0, 0.66, 0], [0.13, 0.12, 0.085], sack, { group: 'body', k: 0.05, disp: { amp: 0.006, freq: 9 } });
+  f.ell([0, 0.52, 0.004], [0.1, 0.09, 0.075], sack, { group: 'body', k: 0.05, disp: { amp: 0.006, freq: 9 } });
+  for (const y of [0.58, 0.47]) f.ell([0, y, 0.002], [0.103, 0.009, 0.08], M.rope, { group: null });
+  // straw bursting from a slash and the bottom of the sack
+  for (let i = 0; i < 18; i++) {
+    const a = R() * Math.PI * 2;
+    const y = i < 10 ? 0.43 : 0.64 + R() * 0.06;
+    const r0 = i < 10 ? 0.08 : 0.04;
+    const o0 = [Math.cos(a) * r0 * (i < 10 ? 1 : 0.6), y, i < 10 ? Math.sin(a) * r0 * 0.8 : 0.07];
+    const o1 = [o0[0] * 1.5 + (R() - 0.5) * 0.04, y - 0.04 - R() * 0.05, o0[2] * 1.4 + 0.01];
+    f.cone(o0, o1, 0.006, 0.002, straw, { group: null });
+  }
+  // crossbar arms wrapped in straw and bound
+  f.box([0, 0.73, 0], [0.24, 0.012, 0.012], post, { group: null, bevel: 0.005 });
+  for (const d of [-1, 1]) {
+    f.cone([d * 0.11, 0.73, 0], [d * 0.22, 0.725, 0], 0.03, 0.022, straw, { group: `arm${d}`, k: 0.01, disp: { amp: 0.004, freq: 30, twist: 3 } });
+    f.ell([d * 0.17, 0.73, 0], [0.006, 0.032, 0.032], M.rope, { group: null });
+  }
+  // a hacked round shield hung on one arm
+  const sd = seed % 2 ? 1 : -1;
+  f.ell([sd * 0.2, 0.62, 0.05], [0.085, 0.085, 0.012], mat(seed % 2 ? '#6a2018' : '#20365a', { pattern: 'wood', scale: 0.01 }), { group: 'shield', k: 0.004, R: rotY(sd * 0.3) });
+  f.ell([sd * 0.2, 0.62, 0.062], [0.088, 0.088, 0.006], M.iron, { group: null, R: rotY(sd * 0.3) });
+  f.carve('box', [sd * 0.26, 0.66, 0.06], [0.03, 0.01, 0.03], null, { group: 'shield', k: 0.004 });
+  f.sphere([sd * 0.2, 0.62, 0.07], 0.02, M.iron, { group: null });
+  // the head: a tied sack under a dented helm
+  f.ell([0, 0.83, 0], [0.065, 0.075, 0.06], sack, { group: 'head', k: 0.02, disp: { amp: 0.005, freq: 8 } });
+  f.ell([0, 0.765, 0], [0.04, 0.012, 0.035], M.rope, { group: null });
+  f.ell([0, 0.875, 0], [0.074, 0.06, 0.07], mat('#7a7c80', { pattern: 'metal', metal: true, rough: 0.5, spec: 0.6, scale: 0.03 }), { group: 'helm', k: 0.01 });
+  f.carve('ell', [0.05, 0.9, 0.05], [0.03, 0.02, 0.02], null, { group: 'helm', k: 0.01 });
+  f.ell([0, 0.85, 0], [0.08, 0.008, 0.076], M.iron, { group: null });
   return f;
 }
 
@@ -638,7 +727,6 @@ S.smithy = (g, W, H, R, o) => {
     g.fillStyle = '#2a2826';
     g.fillRect(x - 6, H * 0.2 + (i % 3) * 8, 12, 6);
   }
-  P.armourStand(g, W * 0.9, H * 0.94, 170, { plate: true });
   // foreground: the anvil and a quench tub, sculpted
   const lr = rig({ key: [-0.85, 0.35, 0.4], keyC: '#ff9a40', keyI: 1.45, rimC: '#ffb070', rim: [0.7, 0.5, -0.5], amb: 0.32, sky: '#3a2a24', ground: '#1e100a' });
   const ppu = H * 0.95;
@@ -648,6 +736,7 @@ S.smithy = (g, W, H, R, o) => {
   const [wx, wy] = proj(ax, ay, ppu, [0.03, 0.3, 0.01], 0.25);
   lights.push({ x: wx, y: wy, s: 14, kind: 'glow', color: '#ff8030', front: true });
   prop3d(fg, barrel3d(5, { open: true, water: true }), W * 0.76, H * 1.02, ppu * 0.95, lr, { yaw: 0.3 });
+  prop3d(g, armourStand3d(3), W * 0.9, H * 0.95, H * 0.62, lr, { yaw: -0.4, shadowW: 0.22 });
   return { ...rm, lights, motes: { color: '#ffa050', count: 80, rise: 0.45 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.61, y: H * 1.06, h: H * 0.96, pose: 'smith', yaw: -0.3, apron: true } };
 };
 
@@ -1263,19 +1352,38 @@ function yardView(g, x, y, w, h, i, R) {
     g.beginPath(); g.moveTo(tx, tb); g.lineTo(tx - w * 0.02, tb - h * 0.2); g.stroke();
     g.lineWidth = w * 0.025;
     for (const [dx, dy] of [[-0.14, -0.3], [0.12, -0.32], [0.02, -0.38]]) { g.beginPath(); g.moveTo(tx - w * 0.02, tb - h * 0.18); g.lineTo(tx + w * dx, tb + h * dy); g.stroke(); }
-    for (let k = 0; k < 26; k++) {
-      const a = R() * Math.PI * 2;
-      const rr = R();
-      const cx = tx + Math.cos(a) * w * 0.2 * rr;
-      const cy = tb - h * 0.34 + Math.sin(a) * h * 0.12 * rr;
-      const cr = w * (0.05 + R() * 0.05);
-      const gr = g.createRadialGradient(cx - cr * 0.3, cy - cr * 0.4, 1, cx, cy, cr);
-      gr.addColorStop(0, '#8ab060');
-      gr.addColorStop(0.6, '#4e7a3a');
-      gr.addColorStop(1, '#2a4a24');
-      g.fillStyle = gr;
-      g.beginPath(); g.arc(cx, cy, cr, 0, Math.PI * 2); g.fill();
+    // canopy: irregular lobes of thousands of leaf dabs, dark in the core and under the lobes,
+    // sunlit on the upper left, with sky holes and a ragged silhouette (no green balls)
+    const lobes = [];
+    for (let k = 0; k < 9; k++) {
+      const a = (k / 9) * Math.PI * 2 + R() * 0.5;
+      lobes.push([tx + Math.cos(a) * w * 0.13 * (0.6 + R() * 0.5), tb - h * 0.34 + Math.sin(a) * h * 0.09 * (0.6 + R() * 0.5), w * (0.07 + R() * 0.04)]);
     }
+    lobes.push([tx, tb - h * 0.36, w * 0.11]);
+    const leafC = ['#1e3418', '#2c4a22', '#3e6430', '#5a8040', '#86a85a', '#b0c878'];
+    for (let pass = 0; pass < 3; pass++) {
+      for (const [lx, ly, lr2] of lobes) {
+        const nn = 140;
+        for (let k = 0; k < nn; k++) {
+          const a = R() * Math.PI * 2;
+          const rr = Math.sqrt(R()) * lr2;
+          const cx = lx + Math.cos(a) * rr;
+          const cy = ly + Math.sin(a) * rr * 0.8;
+          // light: up-left of the lobe is lit; each later pass sits on top and is brighter
+          const lit = Math.max(0, Math.min(1, 0.5 - ((cx - lx) / lr2) * 0.35 - ((cy - ly) / lr2) * 0.45 + pass * 0.18 + (R() - 0.5) * 0.35));
+          if (pass === 2 && lit < 0.55) continue;
+          const ci = Math.min(leafC.length - 1, Math.floor(lit * leafC.length));
+          g.fillStyle = leafC[ci];
+          g.globalAlpha = 0.85;
+          g.beginPath();
+          g.ellipse(cx, cy, w * (0.006 + R() * 0.006), w * (0.003 + R() * 0.003), R() * Math.PI, 0, Math.PI * 2);
+          g.fill();
+        }
+      }
+    }
+    g.globalAlpha = 1;
+    // a few sky holes punched through the canopy
+    for (let k = 0; k < 7; k++) { g.fillStyle = 'rgba(200,220,240,0.55)'; g.beginPath(); g.arc(tx + (R() - 0.5) * w * 0.26, tb - h * 0.34 + (R() - 0.5) * h * 0.14, w * 0.005, 0, Math.PI * 2); g.fill(); }
     g.fillStyle = 'rgba(40,50,30,0.3)';
     g.beginPath(); g.ellipse(tx + w * 0.05, tb + h * 0.02, w * 0.22, h * 0.025, 0, 0, Math.PI * 2); g.fill();
   } else {
@@ -1414,7 +1522,7 @@ S.tavern = (g, W, H, R, o) => {
     for (const y of [0.02, 0.08]) f.ell([0, y, 0], [0.048, 0.006, 0.048], M.iron, { group: null });
     f.ell([0, 0.1, 0], [0.04, 0.012, 0.04], mat('#f0e4c8', { rough: 0.9 }), { group: null });
     f.cone([0.045, 0.03, 0], [0.07, 0.065, 0], 0.008, 0.008, M.darkWood, { group: null });
-    prop3d(fg, f, W * x, top + 4 - (x - 0.5) * 30, H * 0.7 * s, lrBar, { shadowW: 0.05 });
+    prop3d(fg, f, W * x, top + 4 - (x - 0.5) * 30, H * 0.42 * s, lrBar, { shadowW: 0.09 });
   }
   return { ...rm, lights, motes: { color: '#ffc880', count: 35, rise: 0.15 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.73, y: H * 0.92, h: H * 0.8, pose: 'barkeep', yaw: -0.35 } };
 };

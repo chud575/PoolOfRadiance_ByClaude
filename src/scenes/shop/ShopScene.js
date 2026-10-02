@@ -13,7 +13,7 @@ import { itemName, itemValue, encumbranceCategory } from '../../rules/items.js';
 import { TEMPLE_SERVICES, serviceApplies, serviceProblem, performService } from '../../rules/temple.js';
 import { trainingSpellChoices, learnSpell } from '../../rules/camp.js';
 import { SPELL_RULES } from '../../rules/spells.js';
-import { CLASSES, splitClasses, xpForLevel } from '../../rules/classes.js';
+import { CLASSES, splitClasses, xpForLevel, thac0For, savesFor, spellSlots } from '../../rules/classes.js';
 import { itemIconURL, iconFor } from '../../ui/components/itemIcons.js';
 import { itemArtURL } from '../../ui/art/itemArt.js';
 import { portraitURL } from '../../ui/components/portraitPainter.js';
@@ -403,7 +403,7 @@ export default class ShopScene extends Scene {
       ]);
       // custom properties must go through setProperty (h()'s style object assigns plain keys only)
       creed.style.setProperty('--god', god.banner ?? '#1d3574');
-      creed.style.setProperty('--sign', `'${{ scales: '⚖', heart: '♥', sword: '⚔', hand: '✋', fist: '✊' }[god.symbol] ?? '✦'}'`);
+      creed.style.setProperty('--sign', `'${{ scales: '⚖', heart: '\u2661', sword: '⚔', hand: '✋', fist: '✊' }[god.symbol] ?? '✦'}'`);
       this.listEl.append(creed);
     }
   }
@@ -443,7 +443,7 @@ export default class ShopScene extends Scene {
         h('span.t', [m.name]),
         h('span.d', [classes.map((c) => `${CLASSES[c].name} ${m.levels[c]}${ready.includes(c) ? ` → ${m.levels[c] + 1}` : ''}`).join(' / ')]),
         h('div.shp-xp', [h(`span.lbl${ready.length ? '.ready' : ''}`, [lbl]), h('div.bar', [h('i', { style: { width: `${pct * 100}%` } })])]),
-        h('button.por-btn', { disabled: !ready.length || m.gold < cost, dataset: { tip: atMax ? `${m.name} has learned all the hall can teach.` : !ready.length ? `${m.name} needs more experience first. The fee will be ${cost.toLocaleString('en-US')} gp.` : m.gold < cost ? `${m.name} carries ${m.gold} gp — POOL the party's gold.` : `Pay ${cost.toLocaleString('en-US')} gp and train` }, onclick: (e) => { e.stopPropagation(); this.train(m); } }, [atMax ? 'Mastered' : `Train · ${cost.toLocaleString('en-US')} gp`]),
+        h('button.por-btn', { disabled: !ready.length || m.gold < cost, dataset: { tip: atMax ? `${m.name} has learned all the hall can teach.` : !ready.length ? `${m.name} needs more experience first. The fee will be ${cost.toLocaleString('en-US')} gp.` : m.gold < cost ? `${m.name} carries ${m.gold} gp — POOL the party's gold.` : `Pay ${cost.toLocaleString('en-US')} gp and train` }, onclick: (e) => { e.stopPropagation(); this.train(m); } }, [atMax ? 'Mastered' : ready.length ? `Train · ${cost.toLocaleString('en-US')} gp` : h('span.lock', ['Not ready'])]),
       ]));
     }
   }
@@ -568,6 +568,22 @@ export default class ShopScene extends Scene {
         h('span.x', [at ? 'Limit' : `${m.xp[c].toLocaleString('en-US')} / ${next.toLocaleString('en-US')}`]),
       ]));
     }
+    // the next page of the book: what the coming level brings (THAC0, saves, hit die, spells)
+    const c0 = classes.find((c) => m.levels[c] < maxLevel(m, c)) ?? classes[0];
+    const l0 = m.levels[c0];
+    const l1 = Math.min(l0 + 1, maxLevel(m, c0));
+    const cols = [['THAC0', (l) => thac0For(c0, l)], ['Death', (l) => savesFor(c0, l).ppdm], ['Petri.', (l) => savesFor(c0, l).pp], ['Wand', (l) => savesFor(c0, l).rsw], ['Breath', (l) => savesFor(c0, l).bw], ['Spell', (l) => savesFor(c0, l).sp]];
+    const tips = ['Number needed to hit armour class 0 (lower is better)', 'Save vs paralysis, poison and death magic', 'Save vs petrification and polymorph', 'Save vs rod, staff and wand', 'Save vs breath weapon', 'Save vs spell'];
+    const slots = (l) => spellSlots(c0, l).join(' / ');
+    const row = (label, l, cmp) => h(`tr${cmp ? '.next' : ''}`, [h('th', [label]), ...cols.map(([, f]) => h(`td${cmp && f(l) < f(cmp) ? '.up' : ''}`, [String(f(l))]))]);
+    const table = h('table.shp-book-next', [
+      h('caption', [l1 > l0 ? `What level ${l1} brings` : `${CLASSES[c0].name} · at the limit`]),
+      h('thead', [h('tr', [h('th'), ...cols.map(([k], i) => h('th', { dataset: { tip: tips[i] } }, [k]))])]),
+      h('tbody', [row(`Level ${l0}`, l0), l1 > l0 ? row(`Level ${l1}`, l1, l0) : null]),
+    ]);
+    const extra = [l1 > l0 ? `Hit points +1d${CLASSES[c0].hitDie}${CLASSES[c0].hitDie >= 8 ? ' + CON' : ''}` : null, slots(l0) || slots(l1) ? `Spells ${slots(l0) || '—'}${slots(l1) !== slots(l0) ? ` → ${slots(l1)}` : ''}` : null].filter(Boolean);
+    if (extra.length) table.append(h('tfoot', [h('tr', [h('td', { colSpan: 7 }, [extra.join('  ·  ')])])]));
+    card.append(table);
     // humans may change class here (PHB dual-classing), for the usual fee
     const choices = m.race === 'human' && !m.dual && classes.length === 1 ? dualClassChoices(m) : [];
     if (choices.length) {

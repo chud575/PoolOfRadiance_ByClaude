@@ -309,6 +309,83 @@ const HAIR_STYLE = { short: 'short', swept: 'short', crop: 'short', topknot: 'sh
  * as their portrait (skin, hair, beard, clothing colour and body).
  * @returns {{render:(slot:object, rig:object)=>object}|null}
  */
+/** The buildNpc() spec of a named NPC: one rig, outfit and palette for both the scene figure and the portrait. */
+export function npcFigureSpec(npc, pose) {
+  const ch = { race: npc.race ?? 'human', gender: npc.gender ?? 'male', look: npc.look ?? {}, name: npc.name };
+  const look = defaultLook(ch);
+  const gender = ch.gender === 'female' ? 'female' : 'male';
+  const tpl = HEADS[gender][look.head] ?? HEADS[gender][0];
+  const skins = RACE_SKINS[ch.race] ?? RACE_SKINS.human;
+  const F = npc.figure ?? {};
+  return {
+    seed: look.seed, race: ch.race, gender, age: F.age ?? (tpl.age ? 0.5 * tpl.age : 0), build: F.build ?? 1, belly: F.belly,
+    skin: F.skin ?? SKIN_TONES[skins[look.skin % skins.length]],
+    hair: F.hair ?? HAIR_COLORS[look.hair % HAIR_COLORS.length][1],
+    eyeC: EYE_COLORS[look.eyes % EYE_COLORS.length],
+    hairStyle: F.hairStyle ?? HAIR_STYLE[tpl.hair] ?? 'short',
+    beard: F.beard ?? tpl.beard ?? 'none',
+    pose: pose ?? F.pose ?? 'idle', outfit: F.outfit, headYaw: F.headYaw, nose: F.nose, jaw: F.jaw, smile: F.smile, lipC: F.lipC,
+  };
+}
+
+/**
+ * Head-and-shoulders portrait rendered from the very figure that stands in the scene
+ * (same sculpted head, hair, beard, spectacles, outfit and palette), lit like a
+ * painting: a warm key from the upper left, the NPC's aura as a rim, a brushed backdrop.
+ */
+function figureBust(npc, W, H) {
+  const c = makeCanvas(W, H);
+  const g = c.getContext('2d');
+  const aura = npc.aura ?? '#ffcf8a';
+  const R = rngOf(hashStr(npc.id));
+  // backdrop: dark umber field, a warm pool of light behind the head, loose brush strokes
+  const bg = g.createRadialGradient(W * 0.42, H * 0.34, 8, W * 0.5, H * 0.5, H * 0.85);
+  bg.addColorStop(0, '#5a4430');
+  bg.addColorStop(0.45, '#2a1e16');
+  bg.addColorStop(1, '#0a0705');
+  g.fillStyle = bg;
+  g.fillRect(0, 0, W, H);
+  g.save();
+  g.globalAlpha = 0.07;
+  for (let i = 0; i < 140; i++) {
+    const x = R() * W; const y = R() * H; const a = -0.9 + R() * 0.5; const l = 20 + R() * 60;
+    g.strokeStyle = R() < 0.5 ? '#c89a6a' : '#140c08';
+    g.lineWidth = 3 + R() * 7;
+    g.lineCap = 'round';
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke();
+  }
+  g.restore();
+  glow(g, W * 0.5, H * 0.32, H * 0.42, aura, 0.18);
+  const F = npc.figure ?? {};
+  const bn = buildNpc(npcFigureSpec(npc, F.portraitPose ?? F.pose ?? 'idle'));
+  const headY = bn.top - 0.1; // head centre, figure units
+  const ppu = H * (F.portraitZoom ?? 3.1);
+  const rig = { key: { dir: [-0.6, 0.5, 0.7], color: '#ffe2bc', i: 1.35 }, rim: { dir: [0.75, 0.35, -0.55], color: aura, i: 1.15 }, sky: '#5a5060', ground: '#20160e', amb: 0.52 };
+  const span = (W * 0.62) / ppu;
+  const r = renderFigure(bn.fig, { ppu, ss: 1.25, yaw: F.portraitYaw ?? 0.28, rig, pitch: 0.04, ink: 0.55, minY: headY - (H * 0.62) / ppu, minX: -span, maxX: span });
+  if (r) {
+    const x = W * 0.5 - r.ox;
+    const y = H * 0.4 - (r.oy - headY * ppu);
+    // soft cast shadow on the backdrop, then the figure
+    g.save();
+    g.filter = 'blur(14px)';
+    g.globalAlpha = 0.45;
+    g.globalCompositeOperation = 'multiply';
+    g.drawImage(r.canvas, x + W * 0.05, y + H * 0.02);
+    g.restore();
+    g.drawImage(r.canvas, x, y);
+  }
+  // painterly finish: warm glaze, a breath of grain, and a vignette that holds the face
+  g.save();
+  g.globalCompositeOperation = 'soft-light';
+  g.globalAlpha = 0.35;
+  g.fillStyle = '#c08040';
+  g.fillRect(0, 0, W, H);
+  g.restore();
+  vignette(g, W, H, 0.55);
+  return c;
+}
+
 export function npcActor(npc, o = {}) {
   if (!npc || (npc.kind && npc.kind !== 'portrait' && npc.kind !== 'hooded')) return null;
   return {
@@ -323,15 +400,7 @@ export function npcActor(npc, o = {}) {
         // the NPC's own signature pose wins over a setting's generic slot pose ('stand', 'priest')
         const generic = { stand: 'idle', priest: 'bless' }[slot.pose ?? o.pose];
         const pose = generic ? F.pose ?? generic : slot.pose ?? o.pose ?? F.pose ?? 'idle';
-        const bn = buildNpc({
-          seed: look.seed, race: ch.race, gender, age: F.age ?? (tpl.age ? 0.5 * tpl.age : 0), build: F.build ?? 1, belly: F.belly,
-          skin: SKIN_TONES[skins[look.skin % skins.length]],
-          hair: F.hair ?? HAIR_COLORS[look.hair % HAIR_COLORS.length][1],
-          eyeC: EYE_COLORS[look.eyes % EYE_COLORS.length],
-          hairStyle: F.hairStyle ?? HAIR_STYLE[tpl.hair] ?? 'short',
-          beard: F.beard ?? tpl.beard ?? 'none',
-          pose: o.poseOverride ?? pose, outfit: F.outfit, headYaw: F.headYaw, nose: F.nose, jaw: F.jaw,
-        });
+        const bn = buildNpc(npcFigureSpec(npc, o.poseOverride ?? pose));
         return renderFigure(bn.fig, { ppu: slot.h / bn.top * (ch.race === 'dwarf' || ch.race === 'halfling' || ch.race === 'gnome' ? 0.8 : 1), yaw: slot.yaw ?? 0, rig, pitch: slot.pitch ?? 0.1, ink: 0.7 });
       }
       const b = buildPerson({
@@ -536,6 +605,8 @@ export function paintNpcPortrait(npc, scale = 1) {
     // crop to head & shoulders (small humanoids carry their head at ~0.8 of their height)
     g.drawImage(fig.canvas, W / 2 - fig.ox, H * 0.46 + fh * 0.79 - fig.oy);
     vignette(g, W, H, 0.55);
+  } else if (npc.figure && (!npc.kind || npc.kind === 'portrait')) {
+    c = figureBust(npc, W, H);
   } else {
     const ch = { race: npc.race ?? 'human', gender: npc.gender ?? 'male', look: npc.look ?? {}, name: npc.name };
     if (npc.kind === 'hooded') ch.look = { ...ch.look, head: 6 };
