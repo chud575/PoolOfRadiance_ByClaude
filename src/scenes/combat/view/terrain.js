@@ -1032,8 +1032,9 @@ export function buildDiorama(field, o = {}) {
       if (r < 0.02) batch.add(barrelGeo(), barrelMat, { p: [x + 0.4, 0, z + 0.3], r: [0, r * 9, 0], s: 0.85 });
     } else if (p.type === 'crate') {
       // Kept inside its square (rotation included) so no one standing next to it clips.
-      const s = 0.8 + Math.min(r, 0.08) * 3;
-      const ry = ((r * 20) % 0.6) - 0.3;
+      // Rotated half-diagonal stays clear of a neighbouring house plinth.
+      const s = 0.72 + Math.min(r, 0.08) * 2;
+      const ry = ((r * 20) % 0.4) - 0.2;
       batch.add(worldBox(s, s, s, 1.2), crateMat, { p: [x, s / 2, z], r: [0, ry, 0] });
       batch.add(crateFrame(s), darkWood, { p: [x, s / 2, z], r: [0, ry, 0] });
       if (r > 0.055) batch.add(worldBox(0.6, 0.6, 0.6, 1.2), crateMat, { p: [x + 0.1, s + 0.3, z], r: [0, r * 40, 0] });
