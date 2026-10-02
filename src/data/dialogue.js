@@ -203,7 +203,7 @@ export const DIALOGUES = {
         text: 'Torchlight spills from the doorway of the old counting-house, and with it the smell of roasting meat and unwashed orc. A voice like gravel in a bucket is laughing inside.',
         choices: [
           { label: 'Burst in', key: 'B', combat: 'slums_orc_boss', win: [{ flag: 'slums_boss_dead' }, { flag: 'slums_cleared' }] },
-          { label: 'Sneak in', key: 'S', check: { stat: 'thief', dc: 0, pass: 'sneak', fail: 'caught' } },
+          { label: 'Sneak in', key: 'S', check: { stat: 'ms', dc: 0, pass: 'sneak', fail: 'caught' } },
           { label: 'Leave', key: 'L', end: true },
         ],
       },
@@ -471,7 +471,7 @@ export const DIALOGUES = {
         text: 'The Cadorna strongbox sits in the counting-room, sealed with a spindle and a crown. It is heavy and cold, and something inside it shifts when you lift it, as if settling in to be carried.',
         choices: [
           { label: 'Take it', key: 'T', goto: 'take' },
-          { label: 'Open it', key: 'O', check: { stat: 'thief', dc: 0, pass: 'open', fail: 'locked' } },
+          { label: 'Open it', key: 'O', check: { stat: 'ol', dc: 0, pass: 'open', fail: 'locked' } },
           { label: 'Leave it', key: 'L', end: true },
         ],
       },

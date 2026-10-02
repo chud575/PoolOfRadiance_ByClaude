@@ -531,3 +531,26 @@ describe('locked doors and hidden doors for the explore scene', () => {
     expect(searchSquare(new Rng(1), [], [{ dir: 'N' }]).minutes).toBe(10);
   });
 });
+
+// ------------------------------------------------ dialogue skill checks
+import { check } from '../../src/scenes/dialogue/effects.js';
+import { DIALOGUES } from '../../src/data/dialogue.js';
+
+describe('dialogue thief checks use the rules thief table', () => {
+  it('open locks and move silently come from deriveStats, the best thief tries', () => {
+    const t1 = mk('human', 'thief', { level: 1, abilities: { dex: 12 }, name: 'Novice' });
+    const t4 = mk('halfling', 'thief', { level: 4, abilities: { dex: 17, str: 12 }, name: 'Pip' });
+    const game = { party: [mk('human', 'fighter'), t1, t4], flags: {} };
+    const r = check({ game, rng: new Rng(3) }, 'ol', 0);
+    expect(r.who).toBe(t4);
+    expect(r.chance).toBe(deriveStats(t4).thief.ol);
+    expect(check({ game, rng: new Rng(3) }, 'ms', 0).chance).toBe(deriveStats(t4).thief.ms);
+    expect(check({ game: { party: [mk('human', 'fighter')], flags: {} }, rng: new Rng(1) }, 'ol', 0)).toMatchObject({ ok: false, reason: 'no thief' });
+  });
+  it('every dialogue check names a known stat or thief skill', () => {
+    const ok = new Set(['str', 'int', 'wis', 'dex', 'con', 'cha', 'thief', 'pp', 'ol', 'ft', 'ms', 'hs', 'hn', 'cw']);
+    const stats = JSON.stringify(DIALOGUES).match(/"stat":"[a-z]+"/g) ?? [];
+    expect(stats.length).toBeGreaterThan(0);
+    for (const s of stats) expect(ok.has(s.slice(8, -1)), s).toBe(true);
+  });
+});

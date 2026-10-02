@@ -1,4 +1,6 @@
-import { addItem, awardXp, heal, isAlive, removeItem } from '../../rules/character.js';
+import { addItem, awardXp, heal, isAlive, removeItem, deriveStats } from '../../rules/character.js';
+
+const THIEF_SKILLS = ['pp', 'ol', 'ft', 'ms', 'hs', 'hn', 'cw'];
 import { roll } from '../../rules/dice.js';
 import { ITEMS } from '../../data/items.js';
 import { QUESTS } from '../../data/quests.js';
@@ -148,13 +150,15 @@ export function check(ctx, stat, bonus = 0) {
   const { game, rng } = ctx;
   const members = living(game);
   if (!members.length) return { ok: false, who: null };
-  if (stat === 'thief') {
-    const thieves = members.filter((c) => c.classSpec.includes('thief'));
+  // Thief skills come from the rules (PHB table by level, race and DEX, armour): 'ol' open locks,
+  // 'ms' move silently, 'hs', 'ft', 'pp', 'hn', 'cw'; plain 'thief' means open locks. Best thief tries.
+  const skill = stat === 'thief' ? 'ol' : THIEF_SKILLS.includes(stat) ? stat : null;
+  if (skill) {
+    const thieves = members.map((c) => ({ c, pct: deriveStats(c).thief?.[skill] ?? 0 })).filter((t) => t.pct > 0).sort((x, y) => y.pct - x.pct);
     if (!thieves.length) return { ok: false, who: null, reason: 'no thief' };
-    const who = thieves[0];
-    const lvl = who.levels.thief ?? 1;
-    const pct = Math.min(95, 35 + lvl * 5 + Math.max(0, (who.abilities.dex ?? 10) - 15) * 5 + bonus);
-    return { ok: rng.int(1, 100) <= pct, who };
+    const { c: who, pct } = thieves[0];
+    const chance = Math.max(1, Math.min(99, pct + bonus));
+    return { ok: rng.int(1, 100) <= chance, who, chance };
   }
   const who = members.reduce((b, c) => ((c.abilities[stat] ?? 0) > (b.abilities[stat] ?? 0) ? c : b), members[0]);
   const score = (who.abilities[stat] ?? 10) + bonus;
