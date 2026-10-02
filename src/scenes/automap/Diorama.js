@@ -97,6 +97,41 @@ class Batch {
     }
   }
 
+  /**
+   * A box whose top edges are chamfered (a 45-degree bevel ring round an
+   * inset top), so cut stone and planks catch a highlight along their arrises.
+   */
+  bevelBox(cx, cy, cz, sx, sy, sz, o = {}) {
+    const b = Math.max(0.001, Math.min(o.bevel ?? 0.012, sx * 0.3, sz * 0.3, sy * 0.4));
+    this.box(cx, cy - b / 2, cz, sx, sy - b, sz, { ...o, top: false });
+    const ry = o.ry ?? 0;
+    const cr = Math.cos(ry);
+    const sr = Math.sin(ry);
+    const W = (lx, ly, lz) => [cx + lx * cr + lz * sr, ly, cz - lx * sr + lz * cr];
+    const hx = sx / 2;
+    const hz = sz / 2;
+    const yt = cy + sy / 2 - b;
+    const ytop = cy + sy / 2;
+    const tint = o.tint ?? 1;
+    const us = o.us ?? 1.6;
+    const outer = [[-hx, -hz], [hx, -hz], [hx, hz], [-hx, hz]];
+    const inner = [[-hx + b, -hz + b], [hx - b, -hz + b], [hx - b, hz - b], [-hx + b, hz - b]];
+    const nl = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+    for (let i = 0; i < 4; i++) {
+      const j = (i + 1) % 4;
+      const nx = (nl[i][0] * cr + nl[i][1] * sr) * Math.SQRT1_2;
+      const nz = (-nl[i][0] * sr + nl[i][1] * cr) * Math.SQRT1_2;
+      const pts = [W(outer[i][0], yt, outer[i][1]), W(outer[j][0], yt, outer[j][1]), W(inner[j][0], ytop, inner[j][1]), W(inner[i][0], ytop, inner[i][1])];
+      const ids = pts.map((P) => this._v(P[0], P[1], P[2], nx, Math.SQRT1_2, nz, P[0] * us, P[2] * us, Math.min(1.15, tint * 1.06)));
+      this.quad(ids[3], ids[2], ids[1], ids[0]);
+    }
+    const q = inner.map(([lx, lz]) => {
+      const P = W(lx, ytop, lz);
+      return this._v(P[0], P[1], P[2], 0, 1, 0, P[0] * us, P[2] * us, tint);
+    });
+    this.quad(q[3], q[2], q[1], q[0]);
+  }
+
   mesh(material) {
     if (!this.i.length) return null;
     const g = new THREE.BufferGeometry();
@@ -111,12 +146,6 @@ class Batch {
     m.receiveShadow = true;
     return m;
   }
-}
-
-let needleMatCache = null;
-function needleMatShared() {
-  needleMatCache ??= new THREE.MeshStandardMaterial({ color: 0xcfd3d8, roughness: 0.25, metalness: 1 });
-  return needleMatCache;
 }
 
 /**
@@ -157,6 +186,7 @@ export class Diorama {
 
   _disposeScene() {
     for (const o of this.own.splice(0)) o.dispose?.();
+    this.hoverMark = null;
     this.scene = null;
   }
 
@@ -231,7 +261,7 @@ export class Diorama {
     scene.add(desk);
 
     // ---------- the parchment sheet, corners curling ----------
-    const tex = T(new THREE.CanvasTexture(this._paperWithContactShadows(map, sheet, seenCell, secrets)));
+    const tex = T(new THREE.CanvasTexture(this._paperWithContactShadows(map, sheet, seenCell, secrets, party, notes)));
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = maxAniso;
     const pw = (W + 2 * M) / cs;
@@ -288,8 +318,8 @@ export class Diorama {
       beam: pbr('hd_beam_dark', {}, 1.5),
       ruin: pbr('hd_ruin', { color: 0xe8ddc8 }, 2.2),
       rock: pbr('hd_rock', { color: 0xd8ccb8 }, 1.6),
-      door: pbr('hd_door', { color: 0xffe0c0 }, 2.4),
-      locked: pbr('hd_door', { color: 0xe07860 }, 2.4),
+      door: pbr('hd_beam_dark', { color: 0xffe2c4 }, 4.6),
+      locked: pbr('hd_beam_dark', { color: 0xff5a3a }, 4.4),
       iron: pbr('hd_iron', { metalness: 0.75, roughness: 0.55, envMapIntensity: 0.9 }),
       secret: pbr('hd_ashlar', { color: 0xf0b898 }, 1.7),
       gold: T(new THREE.MeshStandardMaterial({ color: 0xd8b25a, roughness: 0.28, metalness: 1, envMapIntensity: 1.2 })),
@@ -305,116 +335,185 @@ export class Diorama {
     const wallH = dungeon ? 0.62 : 0.5;
     const { segs, effective } = collectEdges(map, info, seenCell, secrets);
     const rr = prng(31);
+    const towers = [];
     const span = (x0, z0, x1, z1, th) => {
       const horiz = Math.abs(z1 - z0) < 1e-6;
       return { cx: (x0 + x1) / 2, cz: (z0 + z1) / 2, sx: horiz ? Math.abs(x1 - x0) : th, sz: horiz ? th : Math.abs(z1 - z0), horiz, len: Math.hypot(x1 - x0, z1 - z0) };
     };
     /**
-     * A stone wall run: coursed blocks of slightly varied height, each capped
-     * with a bevelled coping (an overhanging cap and a narrower ridge), the odd
-     * stone chipped away.
+     * A stone wall run: coursed, chamfered blocks bedded with hairline joints,
+     * each course offset, the run's height varying a little, then a coping of
+     * overhanging bevelled capstones with the odd one fallen.
      */
-    const stoneRun = (x0, z0, x1, z1, { h = wallH, th = 0.12, key = 'stone', ext = th / 2, cap = true, vary = true } = {}) => {
+    const stoneRun = (x0, z0, x1, z1, { h = wallH, th = 0.12, key = 'stone', ext = th / 2, cap = true, vary = true, courses = 2, broken = 0 } = {}) => {
       const s = span(x0, z0, x1, z1, th);
       const L = s.len + ext * 2;
-      const n = Math.max(1, Math.round(L / 0.3));
       const b = batch(key);
-      const runH = vary ? h * (0.92 + rr() * 0.16) : h;
-      for (let i = 0; i < n; i++) {
-        const a = -L / 2 + (i / n) * L;
-        const len = L / n;
-        const chip = rr() < 0.14;
-        const hh = runH + (vary ? (rr() - 0.5) * 0.05 - (chip ? 0.04 + rr() * 0.03 : 0) : (rr() - 0.5) * 0.02);
-        const c = a + len / 2;
-        const X = s.cx + (s.horiz ? c : 0);
-        const Z = s.cz + (s.horiz ? 0 : c);
-        b.box(X, hh / 2, Z, s.horiz ? len - 0.004 : th, hh, s.horiz ? th : len - 0.004, { tint: 0.86 + rr() * 0.16 });
-        if (!cap || chip) continue;
-        // coping: an overhanging cap stone, then a narrower ridge (reads as a bevel)
-        const ct = th * 1.28;
-        b.box(X, hh + 0.012, Z, s.horiz ? len + 0.002 : ct, 0.024, s.horiz ? ct : len + 0.002, { ao: 0.9, tint: 1.05 + rr() * 0.06 });
-        b.box(X, hh + 0.031, Z, s.horiz ? len : th * 0.62, 0.016, s.horiz ? th * 0.62 : len, { ao: 1, tint: 1.12 });
+      const runH = vary ? h * (0.9 + rr() * 0.18) : h;
+      const capH = cap ? 0.04 : 0;
+      const ch = (runH - capH) / courses;
+      const at = (c) => [s.cx + (s.horiz ? c : 0), s.cz + (s.horiz ? 0 : c)];
+      for (let c = 0; c < courses; c++) {
+        let a = -L / 2 - (c % 2 ? 0.05 + rr() * 0.1 : rr() * 0.04);
+        while (a < L / 2) {
+          const lo = Math.max(-L / 2, a);
+          const hi = Math.min(L / 2, a + 0.15 + rr() * 0.17);
+          a = hi;
+          if (hi - lo < 0.025) continue;
+          // a broken course: blocks fall away toward the top of a ruin
+          if (broken && c > 0 && rr() < broken * (c / courses)) continue;
+          const [X, Z] = at((lo + hi) / 2);
+          const bl = hi - lo - 0.007;
+          const bh = ch - 0.005 + (c === courses - 1 && !cap ? (rr() - 0.5) * 0.04 : 0);
+          const tt = th - 0.006 + (rr() - 0.5) * 0.01;
+          const jx = s.horiz ? 0 : (rr() - 0.5) * 0.006;
+          const jz = s.horiz ? (rr() - 0.5) * 0.006 : 0;
+          b.bevelBox(X + jx, c * ch + bh / 2, Z + jz, s.horiz ? bl : tt, bh, s.horiz ? tt : bl, { bevel: 0.009, tint: 0.8 + rr() * 0.24, aoH: 0.08 });
+        }
+      }
+      if (!cap) return;
+      const ct = th * 1.3;
+      let a = -L / 2 - 0.01;
+      while (a < L / 2) {
+        const lo = a;
+        const hi = Math.min(L / 2 + 0.01, a + 0.2 + rr() * 0.16);
+        a = hi;
+        if (rr() < 0.07) continue;
+        const [X, Z] = at((lo + hi) / 2);
+        const bl = hi - lo - 0.006;
+        const lift = (rr() - 0.5) * 0.008;
+        b.bevelBox(X, runH - capH / 2 + lift, Z, s.horiz ? bl : ct, capH, s.horiz ? ct : bl, { bevel: 0.014, tint: 0.98 + rr() * 0.12, ao: 0.85 });
       }
     };
-    /** Timber & plaster: limewashed infill between dark oak posts, sill and wall-plate. */
+    /** Timber & plaster: limewashed infill between dark oak posts, sill, rail, wall-plate and braces. */
     const timberRun = (x0, z0, x1, z1) => {
       const th = 0.1;
-      const h = wallH * 0.92;
+      const h = wallH * (0.88 + rr() * 0.08);
       const s = span(x0, z0, x1, z1, th);
       const L = s.len + th;
       const P = batch('plaster');
-      P.box(s.cx, h / 2, s.cz, s.horiz ? L : th, h, s.horiz ? th : L);
+      P.box(s.cx, h / 2, s.cz, s.horiz ? L : th, h, s.horiz ? th : L, { tint: 0.92 + rr() * 0.1 });
       const bm = batch('beam');
-      const bt = th + 0.018;
-      const at = (c, y, len, hh) => bm.box(s.cx + (s.horiz ? c : 0), y, s.cz + (s.horiz ? 0 : c), s.horiz ? len : bt, hh, s.horiz ? bt : len, { ao: 0.7, us: 3 });
-      at(0, 0.03, L, 0.06);
-      at(0, h - 0.022, L + 0.01, 0.045);
-      at(0, h * 0.55, L, 0.03);
-      const posts = Math.max(1, Math.round(L / 0.48));
-      for (let i = 0; i <= posts; i++) at(-L / 2 + 0.03 + (i / posts) * (L - 0.06), h / 2, 0.055, h);
+      const bt = th + 0.022;
+      const at = (c, y, len, hh, o = {}) => bm.bevelBox(s.cx + (s.horiz ? c : 0), y, s.cz + (s.horiz ? 0 : c), s.horiz ? len : bt, hh, s.horiz ? bt : len, { ao: 0.7, us: 3, bevel: 0.006, ...o });
+      at(0, 0.035, L, 0.07);
+      at(0, h - 0.026, L + 0.02, 0.052, { bevel: 0.012 });
+      at(0, h * 0.55, L, 0.032);
+      const posts = Math.max(1, Math.round(L / (0.42 + rr() * 0.12)));
+      for (let i = 0; i <= posts; i++) at(-L / 2 + 0.035 + (i / posts) * (L - 0.07) + (rr() - 0.5) * 0.03, h / 2, 0.06, h, { tint: 0.85 + rr() * 0.2 });
     };
-    /** The city wall: taller, thicker, battered at the foot and crenellated on its outer face. */
+    /** The city wall: taller, thicker, battered at the foot, crenellated along its outer face. */
     const cityRun = (x0, z0, x1, z1, q) => {
-      const th = 0.2;
+      const th = 0.22;
       const h = 0.74;
       const s = span(x0, z0, x1, z1, th);
-      stoneRun(x0, z0, x1, z1, { h, th, key: 'city', ext: th / 2, cap: false, vary: false });
+      stoneRun(x0, z0, x1, z1, { h, th, key: 'city', ext: th / 2, cap: false, vary: false, courses: 3 });
       const b = batch('city');
       const L = s.len + th;
-      b.box(s.cx, 0.04, s.cz, s.horiz ? L : th + 0.07, 0.08, s.horiz ? th + 0.07 : L, { ao: 0.5 });
+      b.bevelBox(s.cx, 0.05, s.cz, s.horiz ? L : th + 0.08, 0.1, s.horiz ? th + 0.08 : L, { ao: 0.5, bevel: 0.03 });
+      // the wall-walk's paving and the parapet
+      b.bevelBox(s.cx, h + 0.008, s.cz, s.horiz ? L : th + 0.02, 0.016, s.horiz ? th + 0.02 : L, { ao: 1, bevel: 0.006, tint: 1.05 });
       const out = q.horiz ? (q.cell[2] === 'N' ? -1 : 1) : (q.cell[2] === 'W' ? -1 : 1);
-      const mDepth = th * 0.42;
+      const mDepth = th * 0.36;
       const off = (th - mDepth) / 2 * out;
-      const n = Math.max(1, Math.floor(L / 0.22));
+      const n = Math.max(1, Math.floor(L / 0.2));
       for (let i = 0; i < n; i++) {
         const c = -L / 2 + (i + 0.5) * (L / n);
-        const mh = 0.1 + (rr() - 0.5) * 0.02;
-        b.box(s.cx + (s.horiz ? c : off), h + mh / 2 - 0.005, s.cz + (s.horiz ? off : c), s.horiz ? 0.11 : mDepth, mh, s.horiz ? mDepth : 0.11, { ao: 0.85 });
+        if (rr() < 0.06) continue;
+        const mh = 0.11 + (rr() - 0.5) * 0.02;
+        b.bevelBox(s.cx + (s.horiz ? c : off), h + 0.016 + mh / 2, s.cz + (s.horiz ? off : c), s.horiz ? 0.1 : mDepth, mh, s.horiz ? mDepth : 0.1, { ao: 0.9, bevel: 0.012, tint: 0.9 + rr() * 0.15 });
       }
     };
     // merge runs per kind so each reads as one piece of masonry
     const plain = segs.filter((q) => effective(q) === EDGE.WALL && !ruin(q));
     for (const r of mergeRuns(plain.filter((q) => isBorder(q)))) cityRun(r.x0, r.y0, r.x1, r.y1, r);
     for (const r of mergeRuns(plain.filter((q) => !isBorder(q) && q.style === 1 && !dungeon))) timberRun(r.x0, r.y0, r.x1, r.y1);
-    for (const r of mergeRuns(plain.filter((q) => !isBorder(q) && (q.style !== 1 || dungeon)))) stoneRun(r.x0, r.y0, r.x1, r.y1);
+    for (const r of mergeRuns(plain.filter((q) => !isBorder(q) && (q.style !== 1 || dungeon)))) stoneRun(r.x0, r.y0, r.x1, r.y1, { courses: dungeon ? 3 : 2 });
+    // the city wall's round towers, at corners and either side of each gate
+    {
+      const all = collectEdges(map, info, (x, y) => map.inBounds(x, y) && !info.isRock(x, y), new Set());
+      const bRuns = mergeRuns(all.segs.filter((q) => isBorder(q) && all.effective(q) === EDGE.WALL));
+      const spots = [];
+      const add = (x, z) => { if (!spots.some((p) => Math.hypot(p[0] - x, p[1] - z) < 1.2)) spots.push([x, z]); };
+      for (const rn of bRuns) {
+        add(rn.x0, rn.y0);
+        add(rn.x1, rn.y1);
+        const len = Math.hypot(rn.x1 - rn.x0, rn.y1 - rn.y0);
+        const n = Math.floor(len / 5.5);
+        for (let i = 1; i <= n; i++) add(rn.x0 + ((rn.x1 - rn.x0) * i) / (n + 1), rn.y0 + ((rn.y1 - rn.y0) * i) / (n + 1));
+      }
+      const tb = batch('city');
+      for (const [x, z] of spots) {
+        let near = false;
+        for (let j = -1; j <= 0 && !near; j++) for (let i = -1; i <= 0; i++) if (seenCell(Math.floor(x) + i, Math.floor(z) + j)) { near = true; break; }
+        if (!near) continue;
+        towers.push([x, z]);
+        // crenellated top: merlons round the drum
+        const R = 0.36;
+        const H = 0.98;
+        for (let i = 0; i < 10; i++) {
+          if (i % 2) continue;
+          const a = (i / 10) * Math.PI * 2;
+          tb.bevelBox(x + Math.cos(a) * (R - 0.04), H + 0.06, z + Math.sin(a) * (R - 0.04), 0.16, 0.12, 0.07, { ry: -a + Math.PI / 2, bevel: 0.012, ao: 0.9 });
+        }
+      }
+    }
     const rubble = (px, pz, n, spread) => {
       const b = batch('ruin');
       for (let i = 0; i < n; i++) {
-        const s = 0.025 + rr() ** 2 * 0.07;
-        b.box(px + (rr() - 0.5) * spread, s * 0.4, pz + (rr() - 0.5) * spread, s * (1 + rr()), s * 0.9, s * (0.8 + rr() * 0.8), { ry: rr() * 3, ao: 0.6, us: 4 });
+        const sz = 0.025 + rr() ** 2 * 0.07;
+        b.bevelBox(px + (rr() - 0.5) * spread, sz * 0.4, pz + (rr() - 0.5) * spread, sz * (1 + rr()), sz * 0.9, sz * (0.8 + rr() * 0.8), { ry: rr() * 3, ao: 0.6, us: 4, bevel: sz * 0.2 });
       }
     };
     const doorRings = [];
+    /** A plank door leaf: boards with hairline gaps, two iron straps, a ring; hinged at (hx,hz). */
+    const leaf = (hx, hz, ang, L, dh, { locked = false } = {}) => {
+      const ca = Math.cos(ang);
+      const sa = Math.sin(ang);
+      const P = (lx, lz) => [hx + lx * ca + lz * sa, hz - lx * sa + lz * ca];
+      const key = locked ? 'locked' : 'door';
+      const n = 4;
+      let x = 0.004;
+      for (let i = 0; i < n; i++) {
+        const pw = i === n - 1 ? L - x - 0.004 : (L / n) * (0.86 + rr() * 0.28);
+        const [cx, cz] = P(x + pw / 2, 0);
+        const ph = dh - (rr() * 0.012);
+        batch(key).bevelBox(cx, ph / 2, cz, pw - 0.006, ph, 0.042, { ry: ang, bevel: 0.005, tint: 0.8 + rr() * 0.3, ao: 0.6, us: 5 });
+        x += pw;
+      }
+      for (const yy of [0.24, 0.76]) {
+        for (const side of [-1, 1]) {
+          const [cx, cz] = P(L * 0.5, side * 0.025);
+          batch('iron').box(cx, dh * yy, cz, L * 0.94, 0.026, 0.008, { ry: ang, ao: 1, us: 6 });
+        }
+      }
+      const [rx, rz] = P(L * 0.78, 0.04);
+      doorRings.push({ x: rx, z: rz, y: dh * 0.5, ry: ang });
+      if (locked) {
+        // a heavy iron bar across the leaf and a padlock hanging from its hasp
+        const [bx, bz] = P(L * 0.5, 0.034);
+        batch('iron').bevelBox(bx, dh * 0.5, bz, L * 1.08, 0.045, 0.022, { ry: ang, bevel: 0.006, ao: 1 });
+        const [lx, lz] = P(L * 0.5, 0.06);
+        batch('gold').bevelBox(lx, dh * 0.4, lz, 0.075, 0.07, 0.03, { ry: ang, bevel: 0.01, ao: 1 });
+      }
+    };
     for (const q of segs) {
       const t = effective(q);
       const lerp = (a) => [q.x0 + (q.x1 - q.x0) * a, q.y0 + (q.y1 - q.y0) * a];
       const wallKey = q.style === 1 && !dungeon ? 'plaster' : ruin(q) ? 'ruin' : 'stone';
       if (t === EDGE.WALL && ruin(q)) {
-        // broken stubs with stepped, jagged tops and fallen masonry at their feet
-        const n = 2 + Math.floor(rr() * 3);
+        // broken stubs: coursed masonry falling away toward ragged tops, rubble at their feet
+        const n = 2 + Math.floor(rr() * 2);
         for (let i = 0; i < n; i++) {
           const a = i / n + rr() * 0.05;
-          const b2 = (i + 1) / n - rr() * 0.12;
-          if (b2 - a < 0.06) continue;
+          const b2 = (i + 1) / n - rr() * 0.14;
+          if (b2 - a < 0.12) continue;
           const [ax, az] = lerp(a);
           const [bx, bz] = lerp(b2);
-          let h = wallH * (0.18 + rr() * 0.5);
-          let s0 = 0;
-          let s1 = 1;
-          for (let k = 0; k < 3 && h > 0.04; k++) {
-            const [cx0, cz0] = [ax + (bx - ax) * s0, az + (bz - az) * s0];
-            const [cx1, cz1] = [ax + (bx - ax) * s1, az + (bz - az) * s1];
-            const sp = span(cx0, cz0, cx1, cz1, 0.11);
-            batch('ruin').box(sp.cx, h / 2, sp.cz, Math.max(0.02, sp.sx), h, Math.max(0.02, sp.sz), { tint: 0.85 + rr() * 0.15 });
-            const cut = rr() < 0.5;
-            s0 = cut ? s0 + (s1 - s0) * (0.25 + rr() * 0.3) : s0;
-            s1 = cut ? s1 : s1 - (s1 - s0) * (0.25 + rr() * 0.3);
-            h *= 1.25 + rr() * 0.35;
-            if (h > wallH * 0.85) break;
-          }
+          stoneRun(ax, az, bx, bz, { key: 'ruin', h: wallH * (0.35 + rr() * 0.55), th: 0.11, ext: 0, cap: false, courses: 3, broken: 0.75 });
         }
         const [mx, mz] = lerp(0.5);
-        rubble(mx, mz, 9, 0.7);
+        rubble(mx, mz, 11, 0.75);
         continue;
       }
       if (t === EDGE.WALL) continue;
@@ -428,33 +527,38 @@ export class Diorama {
       const piece = (a, b2) => {
         const [ax, az] = lerp(a);
         const [bx, bz] = lerp(b2);
-        if (wallKey === 'plaster') timberRun(ax, az, bx, bz);
-        else stoneRun(ax, az, bx, bz, { key: wallKey === 'ruin' ? 'ruin' : 'stone', ext: 0.06 });
+        if (isBorder(q)) cityRun(ax, az, bx, bz, q);
+        else if (wallKey === 'plaster') timberRun(ax, az, bx, bz);
+        else stoneRun(ax, az, bx, bz, { key: wallKey === 'ruin' ? 'ruin' : 'stone', ext: 0.06, broken: wallKey === 'ruin' ? 0.5 : 0, courses: wallKey === 'ruin' ? 3 : 2 });
       };
       piece(0, 0.5 - gap);
       piece(0.5 + gap, 1);
       const [mx, mz] = lerp(0.5);
+      const dh = wallH * 0.82;
+      // jambs and lintel: dressed stone (or oak in a timber wall)
+      const jk = wallKey === 'plaster' ? 'beam' : 'stone';
+      for (const sg of [-1, 1]) {
+        const [px, pz] = lerp(0.5 + sg * (gap + 0.02));
+        batch(jk).bevelBox(px, (dh + 0.06) / 2, pz, q.horiz ? 0.05 : 0.15, dh + 0.06, q.horiz ? 0.15 : 0.05, { bevel: 0.008, ao: 0.6 });
+      }
       if (t === EDGE.ARCH) {
         const st = batch('stone');
         for (const sg of [-1, 1]) {
           const [px, pz] = lerp(0.5 + sg * gap);
-          st.box(px, wallH * 0.62, pz, 0.15, wallH * 1.24, 0.15);
+          st.bevelBox(px, wallH * 0.62, pz, 0.15, wallH * 1.24, 0.15, { bevel: 0.016 });
         }
-        st.box(mx, wallH * 1.2, mz, q.horiz ? gap * 2 + 0.2 : 0.17, 0.1, q.horiz ? 0.17 : gap * 2 + 0.2, { ao: 1 });
-        st.box(mx, wallH * 1.29, mz, q.horiz ? 0.08 : 0.12, 0.08, q.horiz ? 0.12 : 0.08, { ao: 1 });
+        st.bevelBox(mx, wallH * 1.2, mz, q.horiz ? gap * 2 + 0.2 : 0.17, 0.1, q.horiz ? 0.17 : gap * 2 + 0.2, { ao: 1, bevel: 0.016 });
+        st.bevelBox(mx, wallH * 1.29, mz, q.horiz ? 0.08 : 0.12, 0.08, q.horiz ? 0.12 : 0.08, { ao: 1, bevel: 0.012 });
       } else {
-        // plank leaf with two iron straps and a ring; doors stand ajar, locked doors are shut
-        const open = t === EDGE.DOOR ? 0.65 : 0;
+        batch(jk).bevelBox(mx, dh + 0.06, mz, q.horiz ? gap * 2 + 0.16 : 0.15, 0.06, q.horiz ? 0.15 : gap * 2 + 0.16, { bevel: 0.01, ao: 0.9 });
+        // doors stand ajar into their room; locked doors are shut and barred
+        const into = q.horiz ? (q.cell[2] === 'N' ? 1 : -1) : (q.cell[2] === 'W' ? 1 : -1);
+        const open = t === EDGE.DOOR ? 1.1 : 0;
         const [hx, hz] = lerp(0.5 - gap);
-        const L = gap * 2;
-        const ang = (q.horiz ? 0 : -Math.PI / 2) + open;
-        const dh = wallH * 0.8;
-        const cx = hx + Math.cos(ang) * L / 2;
-        const cz = hz - Math.sin(ang) * L / 2;
-        batch(t === EDGE.LOCKED ? 'locked' : 'door').box(cx, dh / 2, cz, L, dh, 0.045, { ry: ang, uv: 'local', ao: 0.7 });
-        for (const yy of [0.22, 0.74]) batch('iron').box(cx, dh * yy, cz, L * 0.92, 0.028, 0.06, { ry: ang, ao: 1, us: 6 });
-        doorRings.push({ x: cx + Math.sin(ang) * 0.035, z: cz + Math.cos(ang) * 0.035, y: dh * 0.48, ry: ang });
-        if (t === EDGE.LOCKED) batch('gold').box(mx, dh * 0.45, mz, 0.08, 0.1, 0.08, { ao: 1 });
+        const base = q.horiz ? 0 : -Math.PI / 2;
+        // rotating by +ry turns local +x toward -z, so swing the sign to open into the room
+        const swing = q.horiz ? -into : into;
+        leaf(hx, hz, base + swing * open, gap * 2, dh, { locked: t === EDGE.LOCKED });
       }
     }
     // bedrock next to explored ground
@@ -481,6 +585,38 @@ export class Diorama {
       if (!m) continue;
       this.own.push(m.geometry);
       scene.add(m);
+    }
+    // tower drums: coursed stone cylinders with a battered foot
+    if (towers.length) {
+      const R = 0.36;
+      const H = 0.98;
+      const drum = T(new THREE.CylinderGeometry(R, R * 1.08, H, 28, 1, true));
+      const uv = drum.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * Math.PI * 2 * R * 1.6, uv.getY(i) * H * 1.6);
+      const cap = T(new THREE.CylinderGeometry(R + 0.02, R + 0.02, 0.05, 28));
+      const floorDisc = T(new THREE.CylinderGeometry(R - 0.06, R - 0.06, 0.02, 24));
+      const colours = new Float32Array(drum.attributes.position.count * 3);
+      for (let i = 0; i < drum.attributes.position.count; i++) {
+        const y = drum.attributes.position.getY(i) + H / 2;
+        const v = Math.min(1, 0.55 + y * 1.4);
+        colours.set([v, v, v], i * 3);
+      }
+      drum.setAttribute('color', new THREE.BufferAttribute(colours, 3));
+      const capCol = new Float32Array(cap.attributes.position.count * 3).fill(1);
+      cap.setAttribute('color', new THREE.BufferAttribute(capCol, 3));
+      floorDisc.setAttribute('color', new THREE.BufferAttribute(new Float32Array(floorDisc.attributes.position.count * 3).fill(0.75), 3));
+      for (const [x, z] of towers) {
+        const d = new THREE.Mesh(drum, M_.city);
+        d.position.set(x, H / 2, z);
+        d.castShadow = d.receiveShadow = true;
+        const c = new THREE.Mesh(cap, M_.city);
+        c.position.set(x, H - 0.005, z);
+        c.castShadow = c.receiveShadow = true;
+        const f = new THREE.Mesh(floorDisc, M_.beam);
+        f.position.set(x, H + 0.03, z);
+        f.receiveShadow = true;
+        scene.add(d, c, f);
+      }
     }
     if (doorRings.length) {
       const ringGeo = T(new THREE.TorusGeometry(0.035, 0.009, 6, 16));
@@ -516,7 +652,7 @@ export class Diorama {
       mg.fillRect(0, 0, 512, 512);
       mg.drawImage(sheet.fog, MX, MY, sheet.cs * map.w, sheet.cs * map.h, 0, 0, 512, 512);
       const maskTex = T(new THREE.CanvasTexture(mc));
-      [[0.05, 0.6, 0x84878e, 1], [0.2, 0.38, 0x96989e, 2], [0.42, 0.26, 0xa8aaae, 3]].forEach(([y, op, col, sd]) => {
+      [[0.1, 0.2, 0x9a9ca2, 1]].forEach(([y, op, col, sd]) => {
         const nTex = T(new THREE.CanvasTexture(this._mistCanvas(sd)));
         nTex.wrapS = nTex.wrapT = THREE.RepeatWrapping;
         nTex.repeat.set(1.6, 1.6);
@@ -530,86 +666,100 @@ export class Diorama {
       });
     }
 
-    // ---------- zone names: paper flags on pins stuck into the sheet ----------
-    for (const z of sheet.labels ?? []) {
-      // stick the flag into the zone's largest explored building, else its middle
-      let best = null;
-      for (const rg of sheet.regions?.list ?? []) {
-        if (rg.type !== CELL.INTERIOR) continue;
-        const cells = rg.cells.filter(([x, y]) => x >= z.x && y >= z.y && x < z.x + z.w && y < z.y + z.h && seenCell(x, y));
-        if (cells.length && (!best || cells.length > best.length)) best = cells;
-      }
-      let fx = z.x + z.w / 2;
-      let fz = z.y + z.h / 2;
-      if (best) {
-        fx = best.reduce((a2, c) => a2 + c[0] + 0.5, 0) / best.length;
-        fz = best.reduce((a2, c) => a2 + c[1] + 0.5, 0) / best.length;
-      }
-      if (party && Math.abs(party.x + 0.5 - fx) < 1.4 && Math.abs(party.y + 0.5 - fz) < 1.4) fz += party.y + 0.5 > fz ? -1.2 : 1.2;
-      const flag = this._flagLabel(z.name, T, needleMatShared(T));
-      flag.position.set(fx, 0, fz);
-      flag.rotation.y = this.az * 0.6;
-      scene.add(flag);
-    }
-
-    // ---------- party token: painted arrow on a brass base, with a pennant ----------
+    // ---------- party: a painted lead miniature on a pewter base with an enamel compass arrow ----------
     this.marker = null;
     if (party) {
       const grp = new THREE.Group();
-      const base = new THREE.Mesh(T(new THREE.CylinderGeometry(0.34, 0.37, 0.06, 40)), M_.gold);
-      base.position.y = 0.03;
+      const pewter = T(new THREE.MeshStandardMaterial({ color: 0x8e9298, roughness: 0.42, metalness: 0.85, envMapIntensity: 1.1 }));
+      const paint = (c, r = 0.58) => T(new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: 0, envMapIntensity: 0.5 }));
+      const V = (pts) => pts.map(([x, y]) => new THREE.Vector2(x, y));
+      const base = new THREE.Mesh(T(new THREE.LatheGeometry(V([[0, 0], [0.3, 0], [0.318, 0.008], [0.322, 0.03], [0.31, 0.046], [0.29, 0.052], [0, 0.052]]), 48)), pewter);
       base.castShadow = base.receiveShadow = true;
-      const disc = new THREE.Mesh(T(new THREE.CylinderGeometry(0.3, 0.3, 0.012, 40)), T(new THREE.MeshStandardMaterial({ color: 0x2a3a2a, roughness: 0.8 })));
-      disc.position.y = 0.066;
+      const groove = new THREE.Mesh(T(new THREE.TorusGeometry(0.262, 0.005, 6, 48)), paint(0x2a2620, 0.5));
+      groove.rotation.x = Math.PI / 2;
+      groove.position.y = 0.052;
+      // the compass arrow, enamelled into the base and rimmed in brass
       const shape = new THREE.Shape();
-      shape.moveTo(0, 0.3);
-      shape.quadraticCurveTo(0.07, 0.08, 0.2, -0.2);
-      shape.quadraticCurveTo(0.1, -0.13, 0, -0.1);
-      shape.quadraticCurveTo(-0.1, -0.13, -0.2, -0.2);
-      shape.quadraticCurveTo(-0.07, 0.08, 0, 0.3);
-      const ag = T(new THREE.ExtrudeGeometry(shape, { depth: 0.04, bevelEnabled: true, bevelThickness: 0.012, bevelSize: 0.012, bevelSegments: 2, curveSegments: 8 }));
+      shape.moveTo(0, 0.275);
+      shape.quadraticCurveTo(0.05, 0.08, 0.13, -0.05);
+      shape.quadraticCurveTo(0.06, -0.02, 0, -0.01);
+      shape.quadraticCurveTo(-0.06, -0.02, -0.13, -0.05);
+      shape.quadraticCurveTo(-0.05, 0.08, 0, 0.275);
+      const ag = T(new THREE.ExtrudeGeometry(shape, { depth: 0.008, bevelEnabled: true, bevelThickness: 0.003, bevelSize: 0.003, bevelSegments: 1, curveSegments: 8 }));
       ag.rotateX(-Math.PI / 2);
-      const enamel = T(new THREE.MeshPhysicalMaterial({ color: 0xa82a18, roughness: 0.35, metalness: 0, clearcoat: 0.6, clearcoatRoughness: 0.3, envMapIntensity: 0.8 }));
+      const enamel = T(new THREE.MeshPhysicalMaterial({ color: 0xa82a18, roughness: 0.25, metalness: 0, clearcoat: 0.8, clearcoatRoughness: 0.2, envMapIntensity: 0.9 }));
       const arrow = new THREE.Mesh(ag, enamel);
-      arrow.position.y = 0.085;
-      arrow.castShadow = true;
-      // a gilt rim under the enamel, like a brass compass pointer
-      const rimGeo = T(new THREE.ExtrudeGeometry(shape, { depth: 0.03, bevelEnabled: true, bevelThickness: 0.01, bevelSize: 0.03, bevelSegments: 2, curveSegments: 8 }));
-      rimGeo.rotateX(-Math.PI / 2);
-      const rim = new THREE.Mesh(rimGeo, M_.gold);
-      rim.position.y = 0.068;
-      rim.castShadow = true;
-      const head = new THREE.Group();
-      head.add(rim, arrow);
-      head.rotation.y = { N: 0, E: -Math.PI / 2, S: Math.PI, W: Math.PI / 2 }[party.dir] ?? 0;
-      const pole = new THREE.Mesh(T(new THREE.CylinderGeometry(0.012, 0.014, 1.1, 8)), M_.beam);
-      pole.position.set(-0.2, 0.6, 0.18);
+      arrow.position.y = 0.05;
+      const rimG = T(new THREE.ExtrudeGeometry(shape, { depth: 0.004, bevelEnabled: true, bevelThickness: 0.002, bevelSize: 0.016, bevelSegments: 1, curveSegments: 8 }));
+      rimG.rotateX(-Math.PI / 2);
+      const rim = new THREE.Mesh(rimG, M_.gold);
+      rim.position.y = 0.049;
+      // the figure: a cloaked standard-bearer with helm, kite shield and the Company's banner
+      const fig = new THREE.Group();
+      const cloak = new THREE.Mesh(T(new THREE.LatheGeometry(V([[0, 0.05], [0.1, 0.05], [0.106, 0.066], [0.09, 0.13], [0.074, 0.2], [0.07, 0.24], [0.086, 0.272], [0.08, 0.292], [0.05, 0.31], [0.026, 0.32], [0, 0.322]]), 28)), paint(0x2a4686));
+      const cape = new THREE.Mesh(T(new THREE.CylinderGeometry(0.084, 0.118, 0.25, 16, 1, true, -Math.PI * 0.55, Math.PI * 1.1)), T(new THREE.MeshStandardMaterial({ color: 0x8a1c14, roughness: 0.62, side: THREE.DoubleSide })));
+      cape.position.set(0, 0.17, 0.012);
+      const pauldL = new THREE.Mesh(T(new THREE.SphereGeometry(0.034, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.6)), T(new THREE.MeshStandardMaterial({ color: 0xa8acb2, roughness: 0.35, metalness: 0.9, envMapIntensity: 1.2 })));
+      pauldL.position.set(-0.07, 0.272, 0);
+      const pauldR = pauldL.clone();
+      pauldR.position.x = 0.07;
+      const armL = new THREE.Mesh(T(new THREE.CapsuleGeometry(0.018, 0.09, 4, 8)), paint(0x2a4686));
+      armL.position.set(-0.084, 0.215, -0.02);
+      armL.rotation.set(0.5, 0, 0.3);
+      const belt = new THREE.Mesh(T(new THREE.TorusGeometry(0.074, 0.008, 6, 24)), paint(0x5a3a20, 0.5));
+      belt.rotation.x = Math.PI / 2;
+      belt.position.y = 0.2;
+      const head = new THREE.Mesh(T(new THREE.SphereGeometry(0.042, 16, 12)), paint(0xd6a486, 0.6));
+      head.position.y = 0.355;
+      const helm = new THREE.Mesh(T(new THREE.SphereGeometry(0.047, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.55)), T(new THREE.MeshStandardMaterial({ color: 0xb8bcc2, roughness: 0.35, metalness: 0.9, envMapIntensity: 1.2 })));
+      helm.position.y = 0.36;
+      const nasal = new THREE.Mesh(T(new THREE.BoxGeometry(0.008, 0.035, 0.01)), helm.material);
+      nasal.position.set(0, 0.35, -0.046);
+      const shield = new THREE.Mesh(T(new THREE.CylinderGeometry(0.075, 0.075, 0.014, 20)), paint(0x9a2a1c, 0.45));
+      shield.rotation.set(Math.PI / 2, 0, 0.35);
+      shield.position.set(-0.085, 0.2, -0.03);
+      shield.rotation.y = -0.6;
+      const boss = new THREE.Mesh(T(new THREE.SphereGeometry(0.018, 10, 8)), M_.gold);
+      boss.position.set(-0.098, 0.2, -0.05);
+      const armR = new THREE.Mesh(T(new THREE.CapsuleGeometry(0.018, 0.1, 4, 8)), cloak.material);
+      armR.position.set(0.075, 0.25, -0.02);
+      armR.rotation.z = -0.5;
+      const hand = new THREE.Mesh(T(new THREE.SphereGeometry(0.02, 10, 8)), head.material);
+      hand.position.set(0.1, 0.29, -0.02);
+      fig.add(cloak, cape, pauldL, pauldR, armL, belt, head, helm, nasal, shield, boss, armR, hand);
+      fig.scale.setScalar(0.9);
+      fig.position.z = 0.05;
+      for (const m of fig.children) { m.castShadow = true; m.receiveShadow = true; }
+      const pole = new THREE.Mesh(T(new THREE.CylinderGeometry(0.008, 0.009, 0.72, 8)), M_.beam);
+      pole.position.set(0.09, 0.4, 0.03);
       pole.castShadow = true;
-      const finial = new THREE.Mesh(T(new THREE.SphereGeometry(0.03, 12, 8)), M_.gold);
-      finial.position.set(-0.2, 1.16, 0.18);
-      const flagGeo = T(new THREE.PlaneGeometry(0.42, 0.26, 12, 2));
+      const finial = new THREE.Mesh(T(new THREE.ConeGeometry(0.014, 0.05, 8)), M_.gold);
+      finial.position.set(0.09, 0.78, 0.03);
+      const flagGeo = T(new THREE.PlaneGeometry(0.26, 0.16, 12, 2));
       const fp = flagGeo.attributes.position;
       for (let i = 0; i < fp.count; i++) {
-        const u = fp.getX(i) / 0.42 + 0.5;
-        fp.setZ(i, Math.sin(u * Math.PI * 1.6) * 0.035 * u);
+        const u = fp.getX(i) / 0.26 + 0.5;
+        fp.setZ(i, Math.sin(u * Math.PI * 1.6) * 0.02 * u);
         if (u > 0.85) fp.setY(i, fp.getY(i) * (1 - (u - 0.85) * 1.6));
       }
       flagGeo.computeVertexNormals();
       const flag = new THREE.Mesh(flagGeo, T(new THREE.MeshStandardMaterial({ map: this._pennantTexture(T), side: THREE.DoubleSide, roughness: 0.75 })));
-      flag.position.set(0.01, 1.0, 0.18);
+      flag.geometry.translate(0.13, 0, 0);
+      flag.position.set(0.095, 0.68, 0.03);
       flag.castShadow = true;
-      grp.add(base, disc, head, pole, finial, flag);
+      const head3 = new THREE.Group();
+      head3.add(rim, arrow, fig, pole, finial, flag);
+      head3.rotation.y = { N: 0, E: -Math.PI / 2, S: Math.PI, W: Math.PI / 2 }[party.dir] ?? 0;
+      grp.add(base, groove, head3);
       grp.position.set(party.x + 0.5, 0, party.y + 0.5);
-      // a soft gilt glow ring on the paper under the token, so it is found at once
-      const ring = new THREE.Mesh(T(new THREE.RingGeometry(0.4, 0.47, 48)), T(new THREE.MeshBasicMaterial({ color: 0xffc070, transparent: true, opacity: 0.85, depthWrite: false })));
-      ring.rotation.x = -Math.PI / 2;
-      ring.position.y = 0.012;
-      const glow = new THREE.Mesh(T(new THREE.CircleGeometry(0.62, 48)), T(new THREE.MeshBasicMaterial({ map: this._glowTexture(T), color: 0xffb060, transparent: true, opacity: 0.7, depthWrite: false, blending: THREE.AdditiveBlending })));
+      // a soft candle-gold glow on the paper under the base, so it is found at once
+      const glow = new THREE.Mesh(T(new THREE.CircleGeometry(0.5, 48)), T(new THREE.MeshBasicMaterial({ map: this._glowTexture(T), color: 0xffb060, transparent: true, opacity: 0.7, depthWrite: false, blending: THREE.AdditiveBlending })));
       glow.rotation.x = -Math.PI / 2;
-      glow.position.y = 0.01;
-      grp.add(ring, glow);
-      grp.scale.setScalar(2.35);
-      this.partyRing = ring;
+      glow.position.y = 0.008;
+      grp.add(glow);
+      grp.scale.setScalar(2.25);
+      this.partyRing = null;
+      this.partyGlow = glow;
       scene.add(grp);
       this.marker = { grp, flag, flagGeo };
     }
@@ -642,8 +792,10 @@ export class Diorama {
 
     // ---------- lights ----------
     scene.add(new THREE.HemisphereLight(0xa8b0c0, 0x2a2018, 0.34));
-    const key = new THREE.DirectionalLight(0xffe4c4, 2.7);
-    key.position.set(-14, 22, 14);
+    // the key comes from the candle's side of the desk (west-north-west), so every
+    // shadow on the board falls east-south-east, the way the baked contact shadows lie
+    const key = new THREE.DirectionalLight(0xffe2bc, 2.7);
+    key.position.set(-15, 21, 1);
     key.target.position.set(9, 0, 8);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
@@ -653,8 +805,8 @@ export class Diorama {
     key.shadow.normalBias = 0.02;
     key.shadow.radius = 2;
     scene.add(key, key.target);
-    const moon = new THREE.DirectionalLight(0x9aaed8, 0.35);
-    moon.position.set(26, 16, -14);
+    const moon = new THREE.DirectionalLight(0x9aaed8, 0.3);
+    moon.position.set(28, 14, 20);
     moon.target.position.set(8, 0, 8);
     scene.add(moon, moon.target);
     const bounce = new THREE.PointLight(0xffc090, 1.4, 40, 1.2);
@@ -701,7 +853,7 @@ export class Diorama {
    * shadows inked under every raised wall and plinth (south-east of them,
    * away from the desk light), so the miniature sits on the paper.
    */
-  _paperWithContactShadows(map, sheet, seenCell, secrets) {
+  _paperWithContactShadows(map, sheet, seenCell, secrets, party, notes = []) {
     const src = sheet.canvas;
     const k = sheet.k;
     const { M, MX, MY } = SHEET;
@@ -718,12 +870,13 @@ export class Diorama {
     sg.lineCap = 'round';
     sg.lineWidth = (cs * k / q) * 0.26;
     const off = 0.08;
+    const offZ = 0.035;
     sg.beginPath();
     const { segs, effective } = collectEdges(map, sheet.info, seenCell, secrets);
     for (const sgm of segs) {
       if (effective(sgm) === EDGE.OPEN) continue;
-      const [ax, ay] = P(sgm.x0 + off, sgm.y0 + off);
-      const [bx, by] = P(sgm.x1 + off, sgm.y1 + off);
+      const [ax, ay] = P(sgm.x0 + off, sgm.y0 + offZ);
+      const [bx, by] = P(sgm.x1 + off, sgm.y1 + offZ);
       sg.moveTo(ax, ay);
       sg.lineTo(bx, by);
     }
@@ -732,8 +885,8 @@ export class Diorama {
     sg.fillStyle = 'rgba(30,16,6,0.55)';
     for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) {
       if (!seenCell(x, y) || map.getCell(x, y) !== CELL.INTERIOR) continue;
-      const [ax, ay] = P(x + 0.06, y + 0.06);
-      const [bx, by] = P(x + 1.06, y + 1.06);
+      const [ax, ay] = P(x + 0.07, y + 0.03);
+      const [bx, by] = P(x + 1.07, y + 1.03);
       sg.fillRect(ax, ay, bx - ax, by - ay);
     }
     sg.filter = 'none';
@@ -743,72 +896,137 @@ export class Diorama {
     g.imageSmoothingEnabled = true;
     g.drawImage(sc, 0, 0, out.width, out.height);
     g.restore();
+    this._paintLabels(g, map, sheet, seenCell, party, notes);
     return out;
   }
 
   /**
-   * A zone name as a paper flag on a steel pin pushed into the sheet: a
-   * swallow-tailed slip of parchment with the name inked on both faces,
-   * gently curled, casting its own shadow.
+   * Zone names painted flat on the sheet as small banners, so they lie on the
+   * paper under the miniature instead of floating through it: each is placed
+   * in its district's largest explored building, clear of every wall, of the
+   * band a wall hides from the camera, and of the party's base.
    */
-  _flagLabel(text, T, needleMat) {
-    const grp = new THREE.Group();
-    const fs = 56;
-    const probe = makeCanvas(8).getContext('2d');
-    probe.font = `bold ${fs}px ${SERIF}`;
-    probe.letterSpacing = '6px';
-    const label = text.toUpperCase();
-    const tw = probe.measureText(label).width;
-    const W = Math.ceil(tw + 120);
-    const H = 104;
-    const c = makeCanvas(W, H);
-    const g = c.getContext('2d');
-    // paper slip with a swallowtail
-    g.beginPath();
-    g.moveTo(0, 6); g.lineTo(W - 4, 6); g.lineTo(W - 40, H / 2); g.lineTo(W - 4, H - 6); g.lineTo(0, H - 6); g.closePath();
-    const body = g.createLinearGradient(0, 0, 0, H);
-    body.addColorStop(0, '#f4e8cc');
-    body.addColorStop(1, '#ddc79a');
-    g.fillStyle = body;
-    g.fill();
+  _paintLabels(g, map, sheet, seenCell, party, notes = []) {
+    const { M, MX, MY } = SHEET;
+    const k = sheet.k;
+    const cs = sheet.cs;
+    const walls = sheet.wallRects ?? [];
+    const hard = [...walls];
+    // a wall standing on the south side of a label hides its lower half from the camera
+    for (const w of walls) if (w[2] > w[3] * 2) hard.push([w[0], w[1] - cs * 0.42, w[2], cs * 0.42]);
+    if (party) {
+      const px = MX + (party.x + 0.5) * cs;
+      const py = MY + (party.y + 0.5) * cs;
+      hard.push([px - cs * 1.1, py - cs * 1.1, cs * 2.2, cs * 2.2]);
+    }
+    // note pins stand up off the paper: keep the banners clear of them and of the inked markers
+    for (const n of notes ?? []) hard.push([MX + (n.x + 0.42) * cs, MY + (n.y + 0.02) * cs, cs * 0.56, cs * 0.6]);
+    const overlap = (a, b) => Math.max(0, Math.min(a[0] + a[2], b[0] + b[2]) - Math.max(a[0], b[0])) * Math.max(0, Math.min(a[1] + a[3], b[1] + b[3]) - Math.max(a[1], b[1]));
+    const placed = [...(sheet.markerSpots ?? [])];
+    g.save();
+    g.scale(k, k);
+    g.translate(M, M);
+    for (const z of sheet.labels ?? []) {
+      let best = null;
+      for (const rg of sheet.regions?.list ?? []) {
+        if (rg.type !== CELL.INTERIOR) continue;
+        const cells = rg.cells.filter(([x, y]) => x >= z.x && y >= z.y && x < z.x + z.w && y < z.y + z.h && seenCell(x, y));
+        if (cells.length && (!best || cells.length > best.length)) best = cells;
+      }
+      let fx = z.x + z.w / 2;
+      let fy = z.y + z.h / 2;
+      if (best) {
+        fx = best.reduce((a2, c) => a2 + c[0] + 0.5, 0) / best.length;
+        fy = best.reduce((a2, c) => a2 + c[1] + 0.5, 0) / best.length;
+      }
+      const text = z.name.toUpperCase();
+      const words = text.split(/\s+/);
+      const splits = [[text]];
+      if (words.length > 1) {
+        let bestSplit = null;
+        for (let i = 1; i < words.length; i++) {
+          const a2 = words.slice(0, i).join(' ');
+          const b2 = words.slice(i).join(' ');
+          const d = Math.abs(a2.length - b2.length);
+          if (!bestSplit || d < bestSplit.d) bestSplit = { d, lines: [a2, b2] };
+        }
+        splits.push(bestSplit.lines);
+      }
+      let pick = null;
+      for (const shrink of [1, 0.85, 0.72]) {
+        for (const [li, lines] of splits.entries()) {
+          const fs = cs * 0.3 * shrink;
+          g.font = `bold ${fs.toFixed(1)}px ${SERIF}`;
+          g.letterSpacing = `${(fs * 0.14).toFixed(1)}px`;
+          const tw = Math.max(...lines.map((l) => g.measureText(l).width));
+          const bw = tw + fs * 1.6;
+          const bh = fs * (0.35 + 1.2 * lines.length);
+          for (const [ox, oy] of [[0, 0], [0, -0.5], [0, 0.5], [0, -1], [0, 1], [-0.7, 0], [0.7, 0], [0, -1.5], [0, 1.5], [-0.7, -1], [0.7, -1], [-0.7, 1], [0.7, 1], [0, -2], [0, 2]]) {
+            const cx = MX + (fx + ox) * cs;
+            const cy = MY + (fy + oy) * cs;
+            const box = [cx - bw / 2 - fs * 0.5, cy - bh / 2, bw + fs, bh];
+            const area = box[2] * box[3];
+            let score = Math.hypot(ox, oy) * 0.5 + (1 - shrink) * 5 + li * 0.8;
+            for (const o of hard) { const ov = overlap(box, o); if (ov > 0) score += 20 + (ov / area) * 40; }
+            for (const o of placed) score += (overlap(box, o) / area) * 30;
+            if (!seenCell(Math.floor(fx + ox), Math.floor(fy + oy))) score += 3;
+            if (!pick || score < pick.score) pick = { cx, cy, bw, bh, fs, box, score, lines };
+          }
+        }
+        if (pick.score < 20) break;
+      }
+      placed.push(pick.box);
+      this._banner(g, pick.cx, pick.cy, pick.bw, pick.bh, pick.fs, pick.lines);
+    }
+    g.restore();
+  }
+
+  /** A painted ribbon banner lying flat on the sheet: cream slip, folded tails, inked caps. */
+  _banner(g, cx, cy, w, h, fs, lines) {
+    g.save();
+    g.font = `bold ${fs.toFixed(1)}px ${SERIF}`;
+    g.letterSpacing = `${(fs * 0.14).toFixed(1)}px`;
+    const tail = fs * 1.15;
+    const th = fs * 1.55;
+    // folded tails tucked behind the slip, in a darker sepia wash
+    g.fillStyle = 'rgba(150,96,52,0.95)';
     g.strokeStyle = 'rgba(43,26,13,0.9)';
-    g.lineWidth = 3;
+    g.lineWidth = fs * 0.06;
+    for (const s of [-1, 1]) {
+      g.beginPath();
+      const x0 = cx + s * (w / 2 - th * 0.2);
+      g.moveTo(x0, cy - th * 0.3);
+      g.lineTo(x0 + s * tail, cy - th * 0.3);
+      g.lineTo(x0 + s * tail * 0.72, cy + th * 0.12);
+      g.lineTo(x0 + s * tail, cy + th * 0.55);
+      g.lineTo(x0, cy + th * 0.55);
+      g.closePath();
+      g.fill();
+      g.stroke();
+    }
+    // a soft wash shadow, then the slip
+    g.fillStyle = 'rgba(60,34,14,0.22)';
+    g.fillRect(cx - w / 2 + fs * 0.12, cy - h / 2 + fs * 0.16, w, h);
+    const body = g.createLinearGradient(0, cy - h / 2, 0, cy + h / 2);
+    body.addColorStop(0, 'rgba(246,236,210,0.98)');
+    body.addColorStop(1, 'rgba(226,206,164,0.98)');
+    g.fillStyle = body;
+    g.beginPath();
+    g.moveTo(cx - w / 2, cy - h / 2);
+    g.quadraticCurveTo(cx, cy - h / 2 - fs * 0.12, cx + w / 2, cy - h / 2);
+    g.lineTo(cx + w / 2, cy + h / 2);
+    g.quadraticCurveTo(cx, cy + h / 2 - fs * 0.12, cx - w / 2, cy + h / 2);
+    g.closePath();
+    g.fill();
     g.stroke();
-    g.strokeStyle = 'rgba(43,26,13,0.45)';
-    g.lineWidth = 1.5;
-    g.strokeRect(12, 16, W - 70, H - 32);
-    g.fillStyle = 'rgba(120,80,40,0.12)';
-    for (let i = 0; i < 30; i++) g.fillRect((i * 97) % W, 8 + ((i * 53) % (H - 16)), 3 + (i % 5), 1);
-    g.font = `bold ${fs}px ${SERIF}`;
-    g.letterSpacing = '6px';
+    g.strokeStyle = 'rgba(168,50,32,0.7)';
+    g.lineWidth = fs * 0.04;
+    g.strokeRect(cx - w / 2 + fs * 0.2, cy - h / 2 + fs * 0.18, w - fs * 0.4, h - fs * 0.36);
+    g.fillStyle = '#3a1a0c';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    g.fillStyle = '#3e1a0c';
-    g.fillText(label, (W - 40) / 2 + 6, H / 2 + 3);
-    const tex = T(new THREE.CanvasTexture(c));
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.anisotropy = 8;
-    const fh = 0.56;
-    const fw = fh * (W / H);
-    const geo = T(new THREE.PlaneGeometry(fw, fh, 16, 1));
-    const p = geo.attributes.position;
-    for (let i = 0; i < p.count; i++) {
-      const u = p.getX(i) / fw + 0.5;
-      p.setX(i, p.getX(i) + fw / 2);
-      p.setZ(i, Math.sin(u * Math.PI * 1.2) * 0.05 * u);
-    }
-    geo.computeVertexNormals();
-    const mat = T(new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide, alphaTest: 0.5, roughness: 0.9, envMapIntensity: 0.4 }));
-    const flag = new THREE.Mesh(geo, mat);
-    flag.position.set(0.012, 1.06, 0);
-    flag.castShadow = true;
-    const needle = new THREE.Mesh(T(new THREE.CylinderGeometry(0.01, 0.004, 1.3, 6)), needleMat);
-    needle.position.y = 0.65;
-    needle.castShadow = true;
-    const head = new THREE.Mesh(T(new THREE.SphereGeometry(0.035, 12, 8)), needleMat);
-    head.position.y = 1.3;
-    grp.add(flag, needle, head);
-    return grp;
+    lines.forEach((l, i) => g.fillText(l, cx + fs * 0.07, cy + fs * 0.06 + (i - (lines.length - 1) / 2) * fs * 1.2));
+    g.restore();
   }
 
   _pennantTexture(T) {
@@ -937,7 +1155,8 @@ export class Diorama {
     vane.castShadow = true;
     quill.add(shaft, vane);
     quill.position.set(-2.9, 0.62, 14.6);
-    quill.rotation.set(-0.62, 0.2, 0.18);
+    quill.rotation.set(-0.5, 0.2, 0.32);
+    quill.scale.setScalar(0.66);
     scene.add(quill);
   }
 
@@ -987,6 +1206,33 @@ export class Diorama {
     t.colorSpace = THREE.SRGBColorSpace;
     t.anisotropy = 4;
     return t;
+  }
+
+  /** The board cell under a screen point (raycast onto the sheet), or null. */
+  cellAt(sx, sy) {
+    if (!this.map || !this.w) return null;
+    const ndc = new THREE.Vector2((sx / this.w) * 2 - 1, -(sy / this.h) * 2 + 1);
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(ndc, this.camera);
+    const p = new THREE.Vector3();
+    if (!ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.03), p)) return null;
+    const x = Math.floor(p.x);
+    const y = Math.floor(p.z);
+    return this.map.inBounds(x, y) ? { x, y } : null;
+  }
+
+  /** A gilt square traced on the paper round the hovered cell (null hides it). */
+  setHover(c) {
+    if (!this.scene) return;
+    if (!this.hoverMark) {
+      const geo = new THREE.BufferGeometry().setFromPoints([[0.04, 0.04], [0.96, 0.04], [0.96, 0.96], [0.04, 0.96]].map(([x, z]) => new THREE.Vector3(x, 0, z)));
+      this.hoverMark = new THREE.LineLoop(geo, new THREE.LineBasicMaterial({ color: 0xffc860, transparent: true, opacity: 0.95, depthTest: false }));
+      this.hoverMark.renderOrder = 10;
+      this.own.push(geo, this.hoverMark.material);
+    }
+    if (this.hoverMark.parent !== this.scene) this.scene.add(this.hoverMark);
+    this.hoverMark.visible = !!c;
+    if (c) this.hoverMark.position.set(c.x, 0.075, c.y);
   }
 
   resize(w, h, rect) {
@@ -1107,7 +1353,7 @@ export class Diorama {
     this._applyCamera();
     if (this.marker) this.marker.flag.rotation.y = Math.sin(t * 1.7) * 0.12;
     for (const v of this.veils ?? []) v.tex.offset.set(t * v.speed + v.phase, t * v.speed * 0.6);
-    if (this.partyRing) this.partyRing.material.opacity = 0.6 + 0.3 * Math.sin(t * 2.6);
+    if (this.partyGlow) this.partyGlow.material.opacity = 0.45 + 0.15 * Math.sin(t * 2.6);
     if (this.candleLight) {
       const f = 0.86 + 0.1 * Math.sin(t * 11.3) + 0.06 * Math.sin(t * 23.7 + 1.3) + 0.05 * (hash2(Math.floor(t * 18), 3, 1) - 0.5);
       this.candleLight.intensity = 14 * f;

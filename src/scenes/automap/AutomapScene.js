@@ -206,7 +206,7 @@ export default class AutomapScene extends Scene {
     this.sv.setSheet(this.sheet, SHEET);
     this.hover = null;
     this._closeEditor();
-    if (this.dio) this._rebuildDiorama();
+    if (this.dio) this._rebuildDiorama(this.dio.zoomLevel);
   }
 
   _openWorld() {
@@ -295,7 +295,14 @@ export default class AutomapScene extends Scene {
     const { game } = this.ctx;
     const id = this.map.id;
     const reveal = this.reveal;
-    this.dio.build(this.map, this.sheet, {
+    // the tabletop view gets its own, finer copy of the sheet so the inked plan stays crisp when tilted
+    this._dioSheets ??= new Map();
+    let fine = this._dioSheets.get(id);
+    if (!fine || fine.src !== this.sheet) {
+      fine = { src: this.sheet, sheet: buildBlockSheet(this.map, { k: 3, seen: (x, y) => reveal || game.isExplored(id, x, y, this.map.w), secrets: foundSecrets(game, id), spent: game.spentEvents }) };
+      this._dioSheets.set(id, fine);
+    }
+    this.dio.build(this.map, fine.sheet, {
       seen: (x, y) => reveal || game.isExplored(id, x, y, this.map.w),
       secrets: foundSecrets(game, id),
       party: this.isHome ? { ...game.location } : null,
@@ -348,6 +355,7 @@ export default class AutomapScene extends Scene {
 
   _resetHover() {
     this.hover = null;
+    this.dio?.setHover(null);
     this._hideTip();
     this.root.style.cursor = '';
   }
@@ -367,7 +375,13 @@ export default class AutomapScene extends Scene {
   }
 
   _clickAt(sx, sy, button) {
-    if (this.mode === 'diorama') return;
+    if (this.mode === 'diorama') {
+      const c = this.dio?.cellAt(sx, sy);
+      if (!c || this.view !== 'block') return;
+      const n = notesFor(this.ctx.game, this.map.id).find((q) => q.x === c.x && q.y === c.y);
+      if (button === 2 || n) this._pinAt(c, sx, sy);
+      return;
+    }
     if (this.view === 'world') {
       const b = this._blockAtScreen(sx, sy);
       if (b && b.known) this._toBlock(b.id);
@@ -383,7 +397,15 @@ export default class AutomapScene extends Scene {
   }
 
   _hoverAt(sx, sy) {
-    if (this.mode === 'diorama') return;
+    if (this.mode === 'diorama') {
+      const c = this.dio?.cellAt(sx, sy) ?? null;
+      if (c?.x !== this.hover?.x || c?.y !== this.hover?.y) {
+        this.hover = c;
+        this.dio?.setHover(c);
+      }
+      if (c) this._showTip(sx, sy, this._cellTip(c)); else this._hideTip();
+      return;
+    }
     if (this.view === 'world') {
       const b = this._blockAtScreen(sx, sy);
       const key = b?.id ?? null;
@@ -495,7 +517,7 @@ export default class AutomapScene extends Scene {
       this.flash = { x: note.x, y: note.y, t: this.ctx.clock.time };
       this._closeEditor();
       this._refreshUi();
-      if (this.dio) this._rebuildDiorama();
+      if (this.dio) this._rebuildDiorama(this.dio.zoomLevel);
       this._draw();
     };
     input.addEventListener('keydown', (e) => {
@@ -508,7 +530,7 @@ export default class AutomapScene extends Scene {
       kinds,
       input,
       h('div.am-editor-row', [
-        existing ? h('button.por-btn.am-del', { type: 'button', onclick: () => { removeNote(game, this.map.id, c.x, c.y); this._closeEditor(); this._refreshUi(); if (this.dio) this._rebuildDiorama(); this._draw(); } }, ['Remove']) : null,
+        existing ? h('button.por-btn.am-del', { type: 'button', onclick: () => { removeNote(game, this.map.id, c.x, c.y); this._closeEditor(); this._refreshUi(); if (this.dio) this._rebuildDiorama(this.dio.zoomLevel); this._draw(); } }, ['Remove']) : null,
         h('button.por-btn', { type: 'button', onclick: () => this._closeEditor() }, ['Cancel']),
         h('button.por-btn.primary', { type: 'button', onclick: save }, ['Pin']),
       ]),
@@ -549,7 +571,7 @@ export default class AutomapScene extends Scene {
       ]
       : [
         { id: 'centre', label: 'Centre', key: 'C', tip: 'Centre on the party (Enter)', onSelect: () => (dio ? this.dio?.focusParty() : this._centreOnParty()) },
-        { id: 'pin', label: 'Pin', key: 'P', disabled: dio, tip: 'Pin a note on the hovered square (or right-click the map)', onSelect: () => this._pinAt(this.hover ?? (this.isHome ? { ...game.location } : { x: 7, y: 7 })) },
+        { id: 'pin', label: 'Pin', key: 'P', tip: 'Pin a note on the hovered square (or right-click the map)', onSelect: () => this._pinAt(this.hover ?? (this.isHome ? { ...game.location } : { x: 7, y: 7 })) },
         { id: 'tilt', label: dio ? 'Flat' : 'Tilt', key: dio ? 'F' : 'T', tip: dio ? 'Back to the parchment' : 'Tabletop diorama of the explored block', onSelect: () => this._setMode(dio ? 'parchment' : 'diorama') },
         { id: 'overview', label: 'Overview', key: 'O', tip: 'Overview map of Phlan', onSelect: () => this._toWorld() },
         ...zoomCmds,

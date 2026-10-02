@@ -111,3 +111,7 @@
 .am-pinkey { display: grid; grid-template-columns: 1fr 1fr; gap: 0.3em 0.8em; font-size: 0.8em; }
 .am-pinkey-row { display: flex; align-items: center; gap: 0.5em; color: var(--por-text-dim); }
 .am-pinkey-row img { width: 1.6em; height: 1.6em; }
+
+/* the overview's tooltip: opaque, and shown at once, so map lettering never mixes into its text */
+.am-tip { background: linear-gradient(180deg, #18214a, #0c1230) !important; opacity: 0; transition: none !important; }
+.am-tip.show { opacity: 1; }
