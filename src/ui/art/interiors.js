@@ -740,7 +740,7 @@ S.smithy = (g, W, H, R, o) => {
   lights.push({ x: wx, y: wy, s: 14, kind: 'glow', color: '#ff8030', front: true });
   prop3d(fg, barrel3d(5, { open: true, water: true }), W * 0.76, H * 1.02, ppu * 0.95, lr, { yaw: 0.3 });
   prop3d(g, armourStand3d(3), W * 0.9, H * 0.95, H * 0.62, lr, { yaw: -0.4, shadowW: 0.22 });
-  return { ...rm, lights, motes: { color: '#ffa050', count: 80, rise: 0.45 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.61, y: H * 1.06, h: H * 0.96, pose: 'smith', yaw: -0.3, apron: true } };
+  return { ...rm, lights, motes: { color: '#ffa050', count: 80, rise: 0.45 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.6, y: H * 1.0, h: H * 0.78, pose: 'smith', yaw: -0.3, apron: true } };
 };
 
 // ================================================================== temples

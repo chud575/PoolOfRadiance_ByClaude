@@ -46,7 +46,7 @@ export const NPCS = {
   priestess_sune: {
     id: 'priestess_sune', name: 'Mother Ilsabet', title: 'Priestess of Sune', race: 'halfElf', gender: 'female',
     look: { seed: 5203, head: 4, body: 7, hair: 3, cloth: 0, skin: 1, eyes: 5 }, aura: '#ff9aa8',
-    figure: { hairStyle: 'wavy', hair: '#c0381e', smile: 0.8, lipC: '#c0404c', jaw: 0.72, nose: 0.85, pose: 'welcome', outfit: { shirt: '#f0d8c8', top: '#9a1e2e', topKind: 'bodice', sleeves: 'bell', skirt: '#b4243a', sash: '#e8b050', symbol: 'sune', mantle: '#6a0e1a' } },
+    figure: { hairStyle: 'wavy', hair: '#c0381e', skin: '#eab896', portraitZoom: 3.5, portraitYaw: 0.2, smile: 0.8, lipC: '#c0404c', jaw: 0.72, nose: 0.85, pose: 'welcome', outfit: { shirt: '#f0d8c8', top: '#9a1e2e', topKind: 'bodice', sleeves: 'bell', skirt: '#b4243a', sash: '#e8b050', symbol: 'sune', mantle: '#6a0e1a' } },
   },
   priest_tempus: {
     id: 'priest_tempus', name: 'Warpriest Harkon', title: 'Voice of Tempus', race: 'human', gender: 'male',
@@ -71,7 +71,7 @@ export const NPCS = {
   barkeep: {
     id: 'barkeep', name: 'Mother Gedda', title: 'Keeper of the Gilded Tankard', race: 'human', gender: 'female',
     look: { seed: 7101, head: 2, body: 5, hair: 4, cloth: 6, skin: 4, eyes: 2 }, aura: '#ffb060',
-    figure: { age: 0.35, hairStyle: 'bun', hair: '#8a3a1e', smile: 0.6, build: 1.12, belly: true, pose: 'barkeep', outfit: { shirt: '#e6dcc4', top: '#3a2420', topKind: 'bodice', sleeves: 'rolled', skirt: '#6a2a20', apron: '#e2d8c0' } },
+    figure: { age: 0.35, hairStyle: 'bun', hair: '#8a3a1e', skin: '#d29a72', lipC: '#b04a4c', smile: 0.6, build: 1.12, belly: true, pose: 'barkeep', outfit: { shirt: '#e6dcc4', top: '#3a2420', topKind: 'bodice', sleeves: 'rolled', skirt: '#6a2a20', apron: '#e2d8c0' } },
   },
   bosun: {
     id: 'bosun', name: 'Kell Saltbeard', title: 'Bosun of the Grey Gull', race: 'dwarf', gender: 'male',

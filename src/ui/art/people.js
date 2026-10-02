@@ -189,14 +189,17 @@ export function buildNpc(spec) {
     const len = (longSkirt ? 0.38 : 0.26);
     const bot = [0, waist[1] - len, 0.14 * b];
     const mid = lerp3(top, bot, 0.5);
-    f.box(mid, [0.075 * b, len / 2, 0.006], am, { group: 'apron', k: 0.01, bevel: 0.005, R: alignY(sub(top, bot), [1, 0, 0]), disp: { amp: 0.004, freq: 60 } });
+    f.box(mid, [0.075 * b, len / 2, 0.006], am, { group: 'apron', k: 0.01, bevel: 0.005, R: alignY(sub(top, bot), [1, 0, 0]), disp: { amp: 0.0025, freq: 16 } });
     if (fem) f.box(add(chest, T([0, -0.02, 0.078 * b])), [0.05, 0.05, 0.005], am, { group: 'apron', k: 0.01, bevel: 0.004, R: TR });
   }
   // belt or sash with a pouch
   if (O.sash) {
     const sm = cloth(O.sash);
     f.ell(add(waist, T([0, -0.01, 0])), [0.088 * b, 0.022, 0.07 * b], sm, { group: 'sash', k: 0.01 });
-    f.cone(add(waist, T([0.05, -0.02, 0.06])), add(waist, T([0.07, -0.2, 0.08])), 0.014, 0.02, sm, { group: 'sash', k: 0.01, disp: null });
+    // the knotted tail hangs as a flat ribbon, not a rod
+    const s0 = add(waist, T([0.05, -0.03, 0.068])); const s1 = add(waist, T([0.07, -0.2, 0.085]));
+    f.box(lerp3(s0, s1, 0.5), [0.016, Math.hypot(...sub(s1, s0)) / 2, 0.004], sm, { group: 'sashTail', k: 0.004, bevel: 0.003, R: alignY(sub(s0, s1), [1, 0, 0]), disp: { amp: 0.002, freq: 20 } });
+    f.sphere(s0, 0.016, sm, { group: 'sashTail', k: 0.006 });
   } else if (O.belt !== false) {
     f.ell(add(waist, T([0, -0.02, 0])), [(fem ? 0.079 : 0.086) * b, 0.016, (fem ? 0.064 : 0.07) * b], beltM, { group: 'belt', k: 0.006 });
     f.box(add(waist, T([0, -0.02, (fem ? 0.066 : 0.072) * b])), [0.014, 0.012, 0.005], brass, { group: null, bevel: 0.003, R: TR });
@@ -245,13 +248,16 @@ export function buildNpc(spec) {
       const fw = norm(sub(wrist, elbow));
       const lift = Math.max(0, fw[1] + 0.35) + Math.max(0, fw[2]) * 0.6;
       const hang = add(wrist, [0, -0.02 - 0.05 * lift, -0.015 * lift]);
-      f.cone(elbow, lerp3(elbow, hang, 1.0), 0.038 * b, 0.054 * b, sleeveTop, { ...sg, disp: { amp: 0.006, freq: 9, twist: 1 } });
-      // the mouth of the sleeve: a shallow recess lined in the undershirt, the shirt cuff and the wrist
-      // coming out of it (no open tube: a hollow cone renders as a black void)
+      // the bell: a flared cone with a few long folds (shallow, so the rim stays a clean edge)
       const ax = norm(sub(hang, elbow));
       const mouth = lerp3(elbow, hang, 1.0);
-      f.carve('ell', add(mouth, scl(ax, 0.012)), [0.05 * b, 0.022, 0.05 * b], null, { group: `arm${d}`, k: 0.012, R: alignY(ax) });
-      f.ell(add(mouth, scl(ax, -0.004)), [0.05 * b, 0.012, 0.05 * b], cloth(O.lining ?? O.shirt ?? '#d8ccb0'), { group: `lining${d}`, k: 0.006, R: alignY(ax) });
+      const rM = 0.054 * b;
+      f.cone(elbow, mouth, 0.038 * b, rM, sleeveTop, { ...sg, disp: { amp: 0.0035, freq: 7, twist: 0.6 } });
+      // the mouth of the sleeve: a hollow behind a thin rim (a flat-bottomed cut along the axis, not a
+      // scooped ellipsoid whose folds read as black notches), lined in the undershirt colour, with
+      // the shirt cuff and the wrist coming out of it
+      f.carve('cone', add(mouth, scl(ax, 0.03)), add(mouth, scl(ax, -0.012)), rM * 0.8, { group: `arm${d}`, k: 0.006, rb: rM * 0.78 });
+      f.ell(add(mouth, scl(ax, -0.009)), [rM * 0.8, 0.005, rM * 0.8], cloth(shade(O.lining ?? O.shirt ?? '#d8ccb0', 0.5)), { group: `lining${d}`, k: 0.004, R: alignY(ax) });
       f.cone(lerp3(elbow, wrist, 0.55), lerp3(elbow, wrist, 0.92), 0.03, 0.028, cloth(O.cuff ?? O.shirt ?? '#d8ccb0'), { group: `cuff${d}`, k: 0.008 });
       f.cone(lerp3(elbow, wrist, 0.85), wrist, 0.025, 0.022, skinM, { group: `wrist${d}`, k: 0.01 });
     } else if (sleeves === 'rolled') {

@@ -362,7 +362,7 @@ function figureBust(npc, W, H) {
   const bn = buildNpc(npcFigureSpec(npc, F.portraitPose ?? F.pose ?? 'idle'));
   const headY = bn.top - 0.1; // head centre, figure units
   const ppu = H * (F.portraitZoom ?? 3.1);
-  const rig = { key: { dir: [-0.6, 0.5, 0.7], color: '#ffe2bc', i: 1.35 }, rim: { dir: [0.75, 0.35, -0.55], color: aura, i: 1.15 }, sky: '#5a5060', ground: '#20160e', amb: 0.52 };
+  const rig = { key: { dir: [-0.6, 0.5, 0.7], color: '#ffe2bc', i: 1.5 }, rim: { dir: [0.75, 0.35, -0.55], color: aura, i: 1.2 }, sky: '#5a5060', ground: '#2a1c12', amb: 0.44 };
   const span = (W * 0.62) / ppu;
   const r = renderFigure(bn.fig, { ppu, ss: 1.25, yaw: F.portraitYaw ?? 0.28, rig, pitch: 0.04, ink: 0.55, minY: headY - (H * 0.62) / ppu, minX: -span, maxX: span });
   if (r) {
@@ -403,7 +403,8 @@ export function npcActor(npc, o = {}) {
         const generic = { stand: 'idle', priest: 'bless' }[slot.pose ?? o.pose];
         const pose = generic ? F.pose ?? generic : slot.pose ?? o.pose ?? F.pose ?? 'idle';
         const bn = buildNpc(npcFigureSpec(npc, o.poseOverride ?? pose));
-        return renderFigure(bn.fig, { ppu: slot.h / bn.top * (ch.race === 'dwarf' || ch.race === 'halfling' || ch.race === 'gnome' ? 0.8 : 1), yaw: slot.yaw ?? 0, rig, pitch: slot.pitch ?? 0.1, ink: 0.7 });
+        // cropped at the floor: a floor-length hem's rounded cap never shows below the feet
+        return renderFigure(bn.fig, { ppu: slot.h / bn.top * (ch.race === 'dwarf' || ch.race === 'halfling' || ch.race === 'gnome' ? 0.8 : 1), yaw: slot.yaw ?? 0, rig, pitch: slot.pitch ?? 0.1, ink: 0.7, minY: -0.03 });
       }
       const b = buildPerson({
         seed: look.seed, race: ch.race, gender,

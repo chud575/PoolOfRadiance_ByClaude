@@ -51,7 +51,7 @@ float fbm(vec2 p) { return fbm3(vec3(p, 1.3)); }
 `;
 
 const MAXP = 512; // primitives per figure (uniform block of 8 vec4 each)
-const MAXL = 72; // primitives per tile list
+const MAXL = 96; // primitives per tile list
 
 const FS_HEAD = `${COMMON}
 layout(std140) uniform Prims { vec4 PR[${MAXP * PRIM_TEX}]; };
@@ -160,22 +160,32 @@ void loadList(int off, int cnt) {
 // scene distance over the loaded list; best = nearest primitive
 float mapB(vec3 p, out int best) {
   float res = 1e9; float acc = 1e9; float gid = -2.0; float kcur = 0.0; float bd = 1e9; best = -1;
+  // groups compete by their blended (carved) distance, and inside the winning group the nearest
+  // volume lends its material: a small feature of one group (a brow) no longer steals the colour of
+  // another group's smooth-union bulge around it, and a carved-away shell (an eyelid over the
+  // eyeball) never lends its material to what lies inside
+  float gbd = 1e9; int gbest = -1;
   for (int j = 0; j < ${MAXL}; j++) {
     if (j >= LN) break;
     int i = L_[j];
     vec4 h = P_(i, 0);
     vec4 bs = P_(i, 7);
     float lo = length(p - bs.xyz) - bs.w; // bounding sphere: lower bound of this volume's distance
-    if (h.y < 0.0 || h.y != gid) { res = min(res, acc); acc = 1e9; gid = h.y; kcur = abs(h.z); }
+    if (h.y < 0.0 || h.y != gid) {
+      if (gbest >= 0 && acc < bd) { bd = acc; best = gbest; }
+      res = min(res, acc); acc = 1e9; gid = h.y; kcur = abs(h.z);
+      gbd = 1e9; gbest = -1;
+    }
     if (h.z < 0.0 ? lo > 0.03 : lo > min(res, acc) + 0.06) continue;
     float d = primD(i, p, h);
     if (h.z < 0.0) { acc = smax(acc, -d, -h.z); continue; }
-    if (d < bd) { bd = d; best = i; }
+    if (d < gbd) { gbd = d; gbest = i; }
     float k = min(kcur, h.z);
     float pre = acc;
     acc = (h.y < 0.0 || acc > 1e8) ? min(acc, d) : smin(acc, d, k);
     if (d < pre) kcur = h.z;
   }
+  if (gbest >= 0 && acc < bd) { bd = acc; best = gbest; }
   return min(res, acc);
 }
 float mapD(vec3 p) {
@@ -384,7 +394,7 @@ void main() {
       float k = max(h.z, hb.z) * 0.6 + 1e-4;
       if (length(p - bs.xyz) - bs.w > k) continue;
       float di = primD(i, p, h);
-      float w = clamp(1.0 - max(di, 0.0) / k, 0.0, 1.0); w = w * w * (i == best ? 1.0 : 0.85);
+      float w = clamp(1.0 - max(di, 0.0) / k, 0.0, 1.0); w = w * w * (i == best ? 1.0 : 0.85) / max(bs.w, 1e-3); // the smaller enclosing volume (lips, a blush on the cheek) wins over the mass it sits in
       if (w <= 0.0) continue;
       col += M_(int(h.w + 0.5), 0).rgb * w; wsum += w;
     }
@@ -619,8 +629,10 @@ function binTiles(prims, nx, ny, bbox, idx, byGroup) {
   const lists = Array.from({ length: nx * ny }, () => []);
   const zr = new Float32Array(nx * ny * 2);
   for (let k = 0; k < nx * ny; k++) { zr[k * 2] = -1e9; zr[k * 2 + 1] = 1e9; }
+  const front = new Float32Array(prims.length);
   prims.forEach((p, i) => {
     const [x0, x1, y0, y1, zmax, zmin] = bbox(p);
+    front[i] = zmax;
     const tx0 = Math.max(0, Math.floor(x0 / TILE)); const tx1 = Math.min(nx - 1, Math.floor(x1 / TILE));
     const ty0 = Math.max(0, Math.floor(y0 / TILE)); const ty1 = Math.min(ny - 1, Math.floor(y1 / TILE));
     for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
@@ -633,8 +645,31 @@ function binTiles(prims, nx, ny, bbox, idx, byGroup) {
   const tiles = new Float32Array(nx * ny * 4);
   let over = 0;
   for (let k = 0; k < lists.length; k++) {
-    const L = lists[k].sort(byGroup);
-    if (L.length > MAXL) over++;
+    let L = lists[k];
+    if (L.length > MAXL) {
+      // overfull tile (a face over a body over a cloak): keep the volumes nearest the eye, whole
+      // smooth groups at a time, so what is dropped is hidden behind what is kept (truncating in
+      // index order used to drop the head's last features — lids, carves — in square blocks)
+      over++;
+      const groups = new Map();
+      for (const i of L) {
+        const key = byGroup.key ? byGroup.key(i) : i;
+        const g = key === -1 ? `s${i}` : key;
+        if (!groups.has(g)) groups.set(g, { f: -1e9, m: [] });
+        const G = groups.get(g);
+        G.m.push(i);
+        G.f = Math.max(G.f, front[i]);
+      }
+      const order = [...groups.values()].sort((a, b) => b.f - a.f);
+      const keep = [];
+      for (const G of order) {
+        if (keep.length + G.m.length <= MAXL) keep.push(...G.m);
+        else if (keep.length < MAXL) keep.push(...G.m.sort((a, b) => front[b] - front[a]).slice(0, MAXL - keep.length));
+        if (keep.length >= MAXL) break;
+      }
+      L = keep;
+    }
+    L.sort(byGroup);
     tiles.set([idx.length, Math.min(MAXL, L.length), zr[k * 2], zr[k * 2 + 1]], k * 4);
     for (const i of L.slice(0, MAXL)) idx.push(i);
   }
@@ -711,6 +746,7 @@ export function traceFigure(prims, shadowPrims, o) {
     const ga = gid(all[a].group); const gb = gid(all[b].group);
     return ga === gb ? a - b : ga - gb;
   };
+  byGroup.key = (i) => gid(all[i].group);
   // ---- screen tiles (the margin covers the AO taps and smooth-min reach)
   const idx = [];
   const tnx = Math.ceil(W / TILE);
@@ -736,7 +772,7 @@ export function traceFigure(prims, shadowPrims, o) {
     const res = binTiles(sp.map((e) => e.q), lnx, lny, (q) => {
       const m = Math.min(q.blend ?? 0, 0.05) + 0.01 + (q.disp?.amp ?? 0);
       return [(q.x0 - m - a0) * SP, (q.x1 + m - a0) * SP, (b1 - q.y1 - m) * SP, (b1 - q.y0 + m) * SP, q.z1 + 0.05, q.z0 - 0.05];
-    }, lidx, (x, y) => byGroup(sp[x].i, sp[y].i));
+    }, lidx, Object.assign((x, y) => byGroup(sp[x].i, sp[y].i), { key: (x) => byGroup.key(sp[x].i) }));
     ltiles = res.tiles;
     // remap local indices to table indices and append after the screen lists
     const base = idx.length;
