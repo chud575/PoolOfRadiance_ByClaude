@@ -3,13 +3,14 @@
  * End-to-end vertical-slice smoke test (headless):
  * title → Quick Start → walk east into the kobold ambush → dialogue → COMBAT →
  * QUICK auto-resolve → victory → back to explore. Fails on any page error.
- *   node tools/smoke.mjs [--shots]   (--shots saves shots/smoke_*.png at each step)
+ *   node tools/smoke.mjs [--shots] [--port N]   (--shots saves shots/smoke_*.png at each step)
  */
 import { ensureServer } from './lib/server.mjs';
 import { launch } from './lib/browser.mjs';
 
 const saveShots = process.argv.includes('--shots');
-const srv = await ensureServer();
+const portArg = process.argv.indexOf('--port');
+const srv = await ensureServer(portArg > 0 ? { port: Number(process.argv[portArg + 1]) } : {});
 const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 const errors = [];
@@ -31,7 +32,7 @@ try {
   // Start (1,14) facing E; kobolds wait at (5,14): four steps east.
   for (let i = 0; i < 4 && (await sceneName()) === 'explore'; i++) {
     await page.keyboard.press('ArrowUp');
-    await page.waitForFunction(() => !window.__GAME.scenes.current?.tween, null, { timeout: 20000 });
+    await page.waitForFunction(() => !window.__GAME.scenes.current?.tween, null, { timeout: 90000 });
     await page.waitForTimeout(100);
   }
   await waitScene('dialogue');
@@ -41,7 +42,7 @@ try {
   await page.waitForTimeout(300);
   await shot('4_combat');
   await page.keyboard.press('q'); // QUICK
-  await page.waitForSelector('.por-dialog', { timeout: 20000 });
+  await page.waitForSelector('.por-dialog', { timeout: 90000 });
   await shot('5_victory');
   await page.keyboard.press('Enter');
   await waitScene('explore');

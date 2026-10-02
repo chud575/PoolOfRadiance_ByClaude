@@ -396,11 +396,15 @@ export default class ShopScene extends Scene {
     // the god's creed fills the foot of the board: a carved tablet over the offering box
     const god = DEITIES[this.shop.deity];
     if (god?.creed) {
-      this.listEl.append(h('div.shp-creed', { style: { '--god': god.banner ?? '#1d3574', '--sign': `'${{ scales: '⚖', heart: '♥', sword: '⚔', hand: '✋' }[god.symbol] ?? '✦'}'` } }, [
+      const creed = h('div.shp-creed', { dataset: { deity: this.shop.deity } }, [
         h('div.shp-creed-head', [h('b', [`${god.name}, ${god.title}`]), h('small', [god.domain ?? ''])]),
         h('ol', god.creed.map((c) => h('li', [c]))),
         god.tithe ? h('p', [god.tithe]) : null,
-      ]));
+      ]);
+      // custom properties must go through setProperty (h()'s style object assigns plain keys only)
+      creed.style.setProperty('--god', god.banner ?? '#1d3574');
+      creed.style.setProperty('--sign', `'${{ scales: '⚖', heart: '♥', sword: '⚔', hand: '✋', fist: '✊' }[god.symbol] ?? '✦'}'`);
+      this.listEl.append(creed);
     }
   }
 
@@ -516,14 +520,14 @@ export default class ShopScene extends Scene {
       list.append(h('div.shp-patron', [
         h('span.ic', [p.icon ?? '❧']),
         h('span.t', [p.who, h('small', [p.what])]),
-        h('button.por-btn', { onclick: () => this.listen(p), dataset: { tip: cost ? `Buy ${p.short ?? 'them'} a drink (${cost} gp) and listen` : 'Listen in' } }, [cost ? `Buy a drink · ${cost} gp` : 'Listen']),
+        h('button.por-btn', { onclick: () => this.listenTo(p), dataset: { tip: cost ? `Buy ${p.short ?? 'them'} a drink (${cost} gp) and listen` : 'Listen in' } }, [cost ? `Buy a drink · ${cost} gp` : 'Listen']),
       ]));
     }
     if (!list.children.length) return this._detailParty(add);
     add(list);
   }
 
-  listen(p) {
+  listenTo(p) {
     const { game, ui } = this.ctx;
     const ch = this.member;
     if (p.cost) {
@@ -716,7 +720,7 @@ export default class ShopScene extends Scene {
     game.notifyPartyChanged();
   }
 
-  exit() {
+  leave() {
     if (this.leaving) return;
     this.leaving = true;
     this.ctx.scenes.goto('explore', {});
@@ -737,12 +741,12 @@ export default class ShopScene extends Scene {
       cmds.push({ id: 'appraise', label: 'Appraise', key: 'A', onSelect: () => this.appraise() });
     }
     cmds.push({ id: 'pool', label: 'Pool', key: 'P', onSelect: () => this.pool() });
-    cmds.push({ id: 'exit', label: 'Exit', key: 'X', onSelect: () => this.exit() });
+    cmds.push({ id: 'exit', label: 'Exit', key: 'X', onSelect: () => this.leave() });
     this.bar.set(cmds);
   }
 
   _onAction(action) {
-    if (action === 'cancel') this.exit();
+    if (action === 'cancel') this.leave();
     else if (action === 'confirm') {
       if (this.tab === 'buy') this.buy();
       else if (this.tab === 'sell') this.sell();
