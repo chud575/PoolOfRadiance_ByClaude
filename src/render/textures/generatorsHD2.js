@@ -414,10 +414,10 @@ export function forgedIron({ seed = 157 } = {}) {
     const micro = fMicro(u, v);
     const ham = worley(u * 16, v * 16, 16, seed + 4);
     const facet = smooth(0.0, 0.5, ham.f1) * 0.06;
-    const rust = smooth(0.56, 0.76, big + (micro - 0.5) * 0.35) * 0.9;
+    const rust = smooth(0.5, 0.72, big + (micro - 0.5) * 0.35 + (mid - 0.5) * 0.25) * 0.9;
     // bloom of fresh orange rust inside the older brown scale, and pits where it has flaked
     const fresh = smooth(0.7, 0.85, big + (mid - 0.5) * 0.4) * rust;
-    let c = mul3([0.17, 0.165, 0.17], 0.8 + mid * 0.45 + (micro - 0.5) * 0.15 + ham.id * 0.12);
+    let c = mul3([0.2, 0.195, 0.2], 0.8 + mid * 0.45 + (micro - 0.5) * 0.15 + ham.id * 0.12);
     // hammer facets catch light: polished high spots, a bluish forge scale in the hollows
     c = mul3(c, 1 + (0.5 - ham.f1) * 0.5);
     c = mix3(c, [0.12, 0.13, 0.17], smooth(0.4, 0.7, mid) * 0.3);

@@ -485,7 +485,7 @@ export function buildProps(map, block, opts = {}) {
       // no two stumps alike: each its own fracture, height, lean and settling (never a mirrored pair)
       const sv = Math.floor(hash(fc.x * 3 + fc.y * 5, 'sv') * geos.shaft.length);
       const sh = geos.shaft[sv];
-      const hk = 0.5 + hash(fc.x, fc.y, 'shk') * 0.55;
+      const hk = 0.4 + Math.pow(hash(fc.x * 5 + 1, fc.y * 3 + 2, 'shk'), 0.8) * 0.85;
       const lean = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler((hash(fc.x, fc.y, 'lx') - 0.5) * 0.08, 0, (hash(fc.x, fc.y, 'lz') - 0.5) * 0.08));
       g.geometry('prop_limestone', sh, m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.54, 0)).multiply(lean).multiply(new THREE.Matrix4().makeRotationY(hash(fc.x, fc.y, 'sr') * 6.3)).multiply(new THREE.Matrix4().makeScale(1, hk, 1)), { uv: 'world', ao: colAO });
       if (hk < 0.75) {

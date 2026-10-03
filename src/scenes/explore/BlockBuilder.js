@@ -763,7 +763,7 @@ export function buildBlock(map, opts = {}) {
       for (const end of [-1, 1]) {
         if (f.ends[end] === 'inside' || f.ends[end] === 'free') continue;
         const s = end * (S / 2);
-        localBox(f, 'arch_basalt', s - 0.28, s + 0.28, 0, SP - 0.28, T / 2, T / 2 + 0.15, { chamfer: 0.04 });
+        localBox(f, 'arch_basalt', s - 0.28, s + 0.28, 0, SP - 0.28, T / 2, T / 2 + 0.15, { chamfer: 0.015, tint: [0.8, 0.78, 0.78] }); // a fine arris: a wide polished chamfer reads as a pale stripe
         localBox(f, 'arch_basalt', s - 0.36, s + 0.36, 0, 0.55, T / 2, T / 2 + 0.22, { chamfer: 0.04, tint: [0.7, 0.66, 0.66] });
         // capital carrying the ribs
         localBox(f, 'arch_basalt', s - 0.38, s + 0.38, SP - 0.28, SP + 0.02, T / 2, T / 2 + 0.24, { chamfer: 0.05, tint: [0.9, 0.85, 0.85] });
