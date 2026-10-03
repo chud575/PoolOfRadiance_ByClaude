@@ -17,7 +17,7 @@ import { victorySpoils } from '../../src/rules/treasure.js';
 import { trainingSpellChoices, learnSpell } from '../../src/rules/camp.js';
 import { serviceProblem } from '../../src/rules/temple.js';
 import { neededToHit } from '../../src/rules/tohit.js';
-import { thac0For } from '../../src/rules/classes.js';
+import { thac0For, setRulesOptions, resetRulesOptions } from '../../src/rules/classes.js';
 import { Battlefield } from '../../src/scenes/combat/logic/battlefield.js';
 import { CombatEngine } from '../../src/scenes/combat/logic/engine.js';
 import { decide } from '../../src/scenes/combat/logic/ai.js';
@@ -114,7 +114,21 @@ describe('backstab and rear attacks', () => {
 });
 
 describe('armour and arcane casting in battle', () => {
-  it('an elf F/MU in plate is offered no magic-user spells and cannot cast them', () => {
+  it('strict ruling: an elf F/MU in plate is offered no magic-user spells and cannot cast them', () => {
+    setRulesOptions({ multiclassArmorCasting: 'strict' });
+    try { strictPlate(); } finally { resetRulesOptions(); }
+  });
+  it('Gold Box ruling (default): the same elf F/MU in plate casts', () => {
+    const ch = mkChar('elf', 'fighter/magicUser', { items: ['longSword', 'plateMail'] });
+    ch.spells.memorized.magicUser = ['sleep', 'magicMissile'];
+    ch.spells._prepared = true;
+    const c = combatantFromCharacter(ch);
+    const { engine } = battle([c], ['orc']);
+    activate(engine, c);
+    expect(castProblem(ch, 'sleep', { context: 'combat', ignoreMemory: true })).toBeNull();
+    expect(engine.spellsOf(c).length).toBeGreaterThan(0);
+  });
+  function strictPlate() {
     const ch = mkChar('elf', 'fighter/magicUser', { items: ['longSword', 'plateMail'] });
     ch.spells.memorized.magicUser = ['sleep', 'magicMissile'];
     ch.spells._prepared = true;
@@ -126,7 +140,7 @@ describe('armour and arcane casting in battle', () => {
     const ev = engine.cast(c, 'magicMissile', { x: 6, y: 3 });
     expect(ev[0].type).toBe('log');
     expect(ch.spells.memorized.magicUser).toContain('magicMissile'); // the slot is not spent
-  });
+  }
 
   it('an elf F/MU in elfin chain may cast', () => {
     const ch = mkChar('elf', 'fighter/magicUser', { items: ['longSword', 'elfinChain'] });

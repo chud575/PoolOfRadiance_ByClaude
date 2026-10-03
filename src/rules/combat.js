@@ -11,7 +11,7 @@ import {
 import { neededToHit } from './tohit.js';
 import {
   isEvil, isGood, effectHost, characterOf, racialCombatMods, belowOneHd, monsterOf, monsterBaseSaves, monsterBaseThac0,
-  magicVsBonus,
+  magicVsBonus, sizeOf,
 } from './creature.js';
 import { rateOfFire } from './items.js';
 import { rollSave } from './saves.js';
@@ -77,7 +77,7 @@ export function combatantFromCharacter(ch) {
     magicVs: s.weaponMagicVs ?? null,
     weaponSilver: isSilverWeapon(s.weapon),
     weaponEdged: isEdgedWeapon(s.weapon),
-    size: 'M',
+    size: sizeOf(ch), // halflings and gnomes are Small
     hp: ch.hp,
     move: Math.round(s.move / 2) + 1,
     initMod: dexterityMods(s.abilities.dex).reaction,

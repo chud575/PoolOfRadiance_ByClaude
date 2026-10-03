@@ -133,10 +133,10 @@ export const RACES = {
     maxStrPct: { male: 0, female: 0 },
     femaleMaxStr: 14,
     classes: ['fighter', 'thief', 'fighter/thief'],
-    // PoR lists halfling fighters at 6th level flat. (The PHB's STR-dependent
-    // 4/5/6 can never reach 6 because halfling STR tops out at 17.)
-    levelLimits: { fighter: 6, thief: U },
-    limitBy: {},
+    // PHB: halfling fighters reach 4th (STR under 17), 5th (STR 17) or 6th
+    // (STR 18). Halfling STR caps at 17, so 5th is the real maximum.
+    levelLimits: { fighter: 5, thief: U },
+    limitBy: { fighter: ['str', [[18, 6], [17, 5], [0, 4]]] },
     infravision: 30,
     move: 9,
     size: 'S',

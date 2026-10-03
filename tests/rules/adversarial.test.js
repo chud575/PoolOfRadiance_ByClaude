@@ -185,7 +185,7 @@ describe('fighter-only potions and heroism (DMG)', () => {
     expect(R.effectiveAbilities(mu).str).toBe(12);
     drink(mu, 'potionHeroism');
     expect(R.hasEffect(mu, 'heroism')).toBe(false);
-    expect(R.deriveStats(mu).thac0).toBe(21);
+    expect(R.deriveStats(mu).thac0).toBe(20); // MU1, no heroic levels
   });
 
   it('a fighter gets them; a multiclass fighter counts', () => {

@@ -143,43 +143,75 @@ export function levelForXp(classId, xp) {
 }
 
 /**
- * Table choices where Pool of Radiance and the books differ. Mutable through
- * setRulesOptions (the settings screen's "Fighter THAC0" option):
- *  - fighterThac0: 'goldBox' (default) — PoR's character sheet: a fighter's
- *    THAC0 improves every level (20 at 1st, 13 at 8th); 'dmg' — the DMG
- *    attack matrix, two points every two levels (20, 20, 18, 18, 16...).
+ * Rulings where Pool of Radiance and the books differ. Mutable through
+ * setRulesOptions / attachRulesSettings (the settings screen):
+ *  - thac0Table: 'goldBox' (default) — the Gold Box engine's per-level
+ *    progressions, every class at THAC0 20 at 1st level: fighters 1 point per
+ *    level (21 − level, the PoR sheet), clerics 2 points per 3 levels, thieves
+ *    1 point per 2 levels, magic-users 1 point per 3 levels (the progressions
+ *    AD&D 2nd edition later printed). 'dmg' — the 1e DMG attack matrices
+ *    (fighter 20,20,18,18...; cleric 20 ×3; MU 21 ×5; thief 21 ×4).
+ *    The legacy key `fighterThac0` (the settings key) is an alias.
+ *  - multiclassArmorCasting: 'goldBox' (default) — multi-class magic-users
+ *    cast in any armour their other class allows; 'strict' — no armour or
+ *    shield, except elfin chain on an elf or half-elf (see armorAllowsArcane).
+ * Tests that change an option should restore it (resetRulesOptions()).
  */
-export const RULES_OPTIONS = { fighterThac0: 'goldBox' };
-export const RULES_OPTION_CHOICES = Object.freeze({ fighterThac0: Object.freeze(['goldBox', 'dmg']) });
+export const RULES_DEFAULTS = Object.freeze({ thac0Table: 'goldBox', multiclassArmorCasting: 'goldBox' });
+export const RULES_OPTIONS = { ...RULES_DEFAULTS };
+export const RULES_OPTION_CHOICES = Object.freeze({
+  thac0Table: Object.freeze(['goldBox', 'dmg']),
+  multiclassArmorCasting: Object.freeze(['goldBox', 'strict']),
+});
+/** Old option names → current ones (the settings store still uses `fighterThac0`). */
+export const RULES_OPTION_ALIASES = Object.freeze({ fighterThac0: 'thac0Table' });
+const optKey = (k) => RULES_OPTION_ALIASES[k] ?? k;
 
-/** Change rules options ({fighterThac0:'dmg'}); unknown keys or values are ignored. Returns the options. */
+/** Change rules options ({thac0Table:'dmg'}); unknown keys or values are ignored. Returns the options. */
 export function setRulesOptions(o = {}) {
-  for (const [k, v] of Object.entries(o)) if (RULES_OPTION_CHOICES[k]?.includes(v)) RULES_OPTIONS[k] = v;
+  for (const [k0, v] of Object.entries(o)) {
+    const k = optKey(k0);
+    if (RULES_OPTION_CHOICES[k]?.includes(v)) RULES_OPTIONS[k] = v;
+  }
+  return { ...RULES_OPTIONS };
+}
+
+/** Restore every rules option to its default. Returns the options. */
+export function resetRulesOptions() {
+  Object.assign(RULES_OPTIONS, RULES_DEFAULTS);
   return { ...RULES_OPTIONS };
 }
 
 /**
  * Keep RULES_OPTIONS in step with the user settings (`settings.get(key)`,
  * 'settings:changed' {key, value} on the bus). main.js calls it once.
+ * Both current names and aliases (`fighterThac0`) are read.
  * @returns {function():void} unsubscribe
  */
 export function attachRulesSettings(settings, bus) {
-  for (const k of Object.keys(RULES_OPTION_CHOICES)) setRulesOptions({ [k]: settings?.get?.(k) });
+  const keys = [...Object.keys(RULES_OPTION_ALIASES), ...Object.keys(RULES_OPTION_CHOICES)];
+  for (const k of keys) setRulesOptions({ [k]: settings?.get?.(k) });
   const off = bus?.on?.('settings:changed', ({ key, value } = {}) => {
-    if (key in RULES_OPTION_CHOICES) setRulesOptions({ [key]: value });
+    if (optKey(key) in RULES_OPTION_CHOICES) setRulesOptions({ [key]: value });
   });
   return typeof off === 'function' ? off : () => {};
 }
 
+/** Gold Box THAC0 step: [levels per step, points per step] (all start at 20). */
+export const GOLDBOX_THAC0_STEP = Object.freeze({ fighter: [1, 1], cleric: [3, 2], thief: [2, 1], magicUser: [3, 1] });
+
 /**
- * THAC0 for one class at a level: the DMG attack matrices, except fighters
- * under the Gold Box option (default), whose THAC0 is 21 − level as on the
- * PoR sheet. `o.fighterThac0` overrides the global option.
- * @param {{fighterThac0?:'goldBox'|'dmg'}} [o]
+ * THAC0 for one class at a level under the active table (RULES_OPTIONS.thac0Table,
+ * or `o.thac0Table` / legacy `o.fighterThac0`). Level 0 (or below) is a
+ * 0-level man: 21 under the DMG fighter row, 21 under the Gold Box table.
+ * @param {{thac0Table?:'goldBox'|'dmg', fighterThac0?:'goldBox'|'dmg'}} [o]
  */
 export function thac0For(classId, level, o = {}) {
-  if (classId === 'fighter' && (o.fighterThac0 ?? RULES_OPTIONS.fighterThac0) === 'goldBox') {
-    return level <= 0 ? 21 : Math.max(1, 21 - level);
+  const table = o.thac0Table ?? o.fighterThac0 ?? RULES_OPTIONS.thac0Table;
+  if (table === 'goldBox' && GOLDBOX_THAC0_STEP[classId]) {
+    if (level <= 0) return 21;
+    const [per, pts] = GOLDBOX_THAC0_STEP[classId];
+    return Math.max(1, 20 - pts * Math.floor((level - 1) / per));
   }
   const rows = CLASSES[classId].thac0;
   return rows.find(([max]) => level <= max)[1];

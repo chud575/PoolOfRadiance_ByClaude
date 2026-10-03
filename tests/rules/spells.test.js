@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Rng } from '../../src/rules/dice.js';
+import { setRulesOptions, resetRulesOptions } from '../../src/rules/classes.js';
 import { createCharacter, deriveStats, applyDamage } from '../../src/rules/character.js';
 import { combatantFromMonster, combatantFromCharacter } from '../../src/rules/combat.js';
 import {
@@ -84,7 +85,14 @@ describe('casting prerequisites', () => {
     addEffect(m, 'silenced', { rounds: 2 });
     expect(castProblem(m, 'sleep')).toBe('cannot cast now');
     const e = createCharacter({ rng: new Rng(1), name: 'E', race: 'elf', classSpec: 'fighter/magicUser', abilities: abil({ int: 16 }), items: ['chainMail'] });
-    expect(castProblem(e, 'sleep', { ignoreMemory: true })).toBe('armor prevents arcane casting');
+    // Gold Box default: a multi-class F/MU casts in armour; strict: it cannot.
+    expect(castProblem(e, 'sleep', { ignoreMemory: true })).toBeNull();
+    setRulesOptions({ multiclassArmorCasting: 'strict' });
+    try {
+      expect(castProblem(e, 'sleep', { ignoreMemory: true })).toBe('armor prevents arcane casting');
+    } finally {
+      resetRulesOptions();
+    }
     expect(castProblem(priest(), 'sleep', { ignoreMemory: true })).toBe('not a spell of this class');
     expect(castProblem(priest(), 'detectMagic', { ignoreMemory: true, context: 'combat' })).toBe('not in combat');
   });

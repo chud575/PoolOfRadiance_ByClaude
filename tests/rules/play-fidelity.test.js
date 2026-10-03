@@ -61,8 +61,8 @@ describe('armour class by direction (DMG)', () => {
   it('a backstab also strikes the rear AC, with +4 instead of +2', () => {
     const f = combatantFromCharacter(fighter());
     const t = combatantFromCharacter(mk('human', 'thief', { abilities: { dex: 16 } }));
-    // thief THAC0 21 at 1st (DMG: 21 for 1-4), rear AC 5, +4 → needs 12
-    expect(resolveAttack(new Rng(2), t, f, { backstab: true, backstabMult: 2 }).needed).toBe(21 - 5 - 4);
+    // thief THAC0 20 at 1st (Gold Box), rear AC 5, +4 → needs 11
+    expect(resolveAttack(new Rng(2), t, f, { backstab: true, backstabMult: 2 }).needed).toBe(20 - 5 - 4);
   });
 
   it('rear attacks ignore a monster\'s declared shield', () => {

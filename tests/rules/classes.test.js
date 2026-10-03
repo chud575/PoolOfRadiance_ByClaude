@@ -3,71 +3,71 @@ import {
   CLASSES, CLASS_IDS, thac0For, savesFor, levelForXp, xpForLevel, spellSlots, thiefSkills, thiefDexAdj, backstabMultiplier,
   fighterAttacksPerRound, attacksThisRound, turnNeeded, turnColumn, TURN_UNDEAD, allowedAlignments, monsterSaves,
   monsterThac0, effectiveHd, PR_LEVEL_CAPS, classSpecName, classSpecAbbr, maxSpellLevel, splitClasses,
-  RULES_OPTIONS, setRulesOptions, attachRulesSettings,
+  RULES_OPTIONS, setRulesOptions, attachRulesSettings, resetRulesOptions,
 } from '../../src/rules/classes.js';
 import { neededToHit } from '../../src/rules/tohit.js';
 
-describe('THAC0 (DMG attack matrices; fighters per the PoR sheet by default)', () => {
-  it('DMG option: fighters improve 2 every 2 levels', () => {
-    const dmg = { fighterThac0: 'dmg' };
-    expect(thac0For('fighter', 0, dmg)).toBe(21);
-    expect(thac0For('fighter', 1, dmg)).toBe(20);
-    expect(thac0For('fighter', 2, dmg)).toBe(20);
-    expect(thac0For('fighter', 3, dmg)).toBe(18);
-    expect(thac0For('fighter', 5, dmg)).toBe(16);
-    expect(thac0For('fighter', 8, dmg)).toBe(14);
-    expect(thac0For('fighter', 17, dmg)).toBe(4);
+describe('THAC0 (one Gold Box progression by default; the DMG matrices by option)', () => {
+  it('DMG option: the 1e attack matrices for every class', () => {
+    const dmg = { thac0Table: 'dmg' };
+    expect([0, 1, 2, 3, 5, 8, 17].map((l) => thac0For('fighter', l, dmg))).toEqual([21, 20, 20, 18, 16, 14, 4]);
+    expect([1, 3, 4, 7, 19].map((l) => thac0For('cleric', l, dmg))).toEqual([20, 20, 18, 16, 9]);
+    expect([1, 5, 6, 11].map((l) => thac0For('magicUser', l, dmg))).toEqual([21, 21, 19, 16]);
+    expect([1, 4, 5, 9].map((l) => thac0For('thief', l, dmg))).toEqual([21, 21, 19, 16]);
+    // the legacy option name still works per call
+    expect(thac0For('magicUser', 1, { fighterThac0: 'dmg' })).toBe(21);
   });
-  it('Gold Box option (default): a fighter improves every level, 20 at 1st to 13 at 8th', () => {
-    expect(RULES_OPTIONS.fighterThac0).toBe('goldBox');
-    expect([0, 1, 2, 3, 4, 5, 6, 7, 8].map((l) => thac0For('fighter', l))).toEqual([21, 20, 19, 18, 17, 16, 15, 14, 13]);
-    // Both tables agree at the band edges the DMG uses (1st, 3rd, 5th...).
-    for (const l of [1, 3, 5, 7, 17]) expect(thac0For('fighter', l)).toBe(thac0For('fighter', l, { fighterThac0: 'dmg' }));
+  it('Gold Box (default): every class is THAC0 20 at 1st, then its own steady progression', () => {
+    expect(RULES_OPTIONS.thac0Table).toBe('goldBox');
+    const at = (c, n) => Array.from({ length: n }, (_, i) => thac0For(c, i + 1));
+    expect(thac0For('fighter', 0)).toBe(21);
+    expect(at('fighter', 8)).toEqual([20, 19, 18, 17, 16, 15, 14, 13]);
+    expect(at('cleric', 9)).toEqual([20, 20, 20, 18, 18, 18, 16, 16, 16]);
+    expect(at('thief', 9)).toEqual([20, 20, 19, 19, 18, 18, 17, 17, 16]);
+    expect(at('magicUser', 9)).toEqual([20, 20, 20, 19, 19, 19, 18, 18, 18]);
+    for (const c of CLASS_IDS) expect(thac0For(c, 1)).toBe(20);
+    // Fighters agree with the DMG at its band edges (1st, 3rd, 5th...); clerics everywhere.
+    for (const l of [1, 3, 5, 7, 17]) expect(thac0For('fighter', l)).toBe(thac0For('fighter', l, { thac0Table: 'dmg' }));
+    for (let l = 1; l <= 18; l++) expect(thac0For('cleric', l)).toBe(thac0For('cleric', l, { thac0Table: 'dmg' }));
+    // Never worse than the DMG for anyone at PoR levels.
+    for (const c of CLASS_IDS) for (let l = 1; l <= 10; l++) expect(thac0For(c, l)).toBeLessThanOrEqual(thac0For(c, l, { thac0Table: 'dmg' }));
   });
-  it('setRulesOptions switches the global table and ignores bad values; non-fighters are unaffected', () => {
+  it('setRulesOptions switches the whole table, accepts the legacy key and ignores bad values', () => {
     try {
-      setRulesOptions({ fighterThac0: 'dmg' });
+      setRulesOptions({ thac0Table: 'dmg' });
       expect(thac0For('fighter', 2)).toBe(20);
-      setRulesOptions({ fighterThac0: 'bogus', nonsense: 1 });
-      expect(RULES_OPTIONS.fighterThac0).toBe('dmg');
-      expect(thac0For('cleric', 4)).toBe(18);
-    } finally {
+      expect(thac0For('thief', 1)).toBe(21);
+      setRulesOptions({ thac0Table: 'bogus', nonsense: 1 });
+      expect(RULES_OPTIONS.thac0Table).toBe('dmg');
+      expect('nonsense' in RULES_OPTIONS).toBe(false);
       setRulesOptions({ fighterThac0: 'goldBox' });
+      expect(RULES_OPTIONS.thac0Table).toBe('goldBox');
+      setRulesOptions({ multiclassArmorCasting: 'strict' });
+      expect(RULES_OPTIONS.multiclassArmorCasting).toBe('strict');
+    } finally {
+      expect(resetRulesOptions()).toEqual({ thac0Table: 'goldBox', multiclassArmorCasting: 'goldBox' });
     }
     expect(thac0For('fighter', 2)).toBe(19);
-    expect(thac0For('cleric', 4)).toBe(18);
+    expect(thac0For('thief', 1)).toBe(20);
   });
-  it('attachRulesSettings follows the settings store and its change events', () => {
+  it('attachRulesSettings follows the settings store (legacy fighterThac0 key) and its change events', () => {
     const handlers = [];
     const bus = { on: (e, f) => { handlers.push([e, f]); return () => handlers.splice(0); } };
-    const off = attachRulesSettings({ get: (k) => (k === 'fighterThac0' ? 'dmg' : undefined) }, bus);
+    const off = attachRulesSettings({ get: (k) => (k === 'fighterThac0' ? 'dmg' : k === 'multiclassArmorCasting' ? 'strict' : undefined) }, bus);
     try {
-      expect(RULES_OPTIONS.fighterThac0).toBe('dmg');
-      handlers.find(([e]) => e === 'settings:changed')[1]({ key: 'fighterThac0', value: 'goldBox' });
-      expect(RULES_OPTIONS.fighterThac0).toBe('goldBox');
-      handlers.find(([e]) => e === 'settings:changed')[1]({ key: 'musicVolume', value: 0.2 });
-      expect(RULES_OPTIONS.fighterThac0).toBe('goldBox');
+      expect(RULES_OPTIONS.thac0Table).toBe('dmg');
+      expect(RULES_OPTIONS.multiclassArmorCasting).toBe('strict');
+      const fire = handlers.find(([e]) => e === 'settings:changed')[1];
+      fire({ key: 'fighterThac0', value: 'goldBox' });
+      expect(RULES_OPTIONS.thac0Table).toBe('goldBox');
+      fire({ key: 'thac0Table', value: 'dmg' });
+      expect(RULES_OPTIONS.thac0Table).toBe('dmg');
+      fire({ key: 'musicVolume', value: 0.2 });
+      expect(RULES_OPTIONS.thac0Table).toBe('dmg');
     } finally {
       off();
-      setRulesOptions({ fighterThac0: 'goldBox' });
+      resetRulesOptions();
     }
-  });
-  it('clerics every 3 levels', () => {
-    expect(thac0For('cleric', 3)).toBe(20);
-    expect(thac0For('cleric', 4)).toBe(18);
-    expect(thac0For('cleric', 7)).toBe(16);
-    expect(thac0For('cleric', 19)).toBe(9);
-  });
-  it('magic-users every 5 levels (21 at first)', () => {
-    expect(thac0For('magicUser', 1)).toBe(21);
-    expect(thac0For('magicUser', 5)).toBe(21);
-    expect(thac0For('magicUser', 6)).toBe(19);
-    expect(thac0For('magicUser', 11)).toBe(16);
-  });
-  it('thieves every 4 levels', () => {
-    expect(thac0For('thief', 4)).toBe(21);
-    expect(thac0For('thief', 5)).toBe(19);
-    expect(thac0For('thief', 9)).toBe(16);
   });
   it('repeating-20 rule', () => {
     expect(neededToHit(20, 7)).toBe(13);

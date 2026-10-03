@@ -158,7 +158,7 @@ describe('dual-class (humans)', () => {
     expect(ch.classSpec).toBe('magicUser');
     expect(activeClasses(ch)).toEqual(['magicUser']);
     expect(ch.hp.max).toBe(hp);
-    expect(deriveStats(ch).thac0).toBe(21);
+    expect(deriveStats(ch).thac0).toBe(20); // MU1, not the dormant F3's 18
     const rng = new Rng(4);
     for (let l = 2; l <= 4; l++) {
       ch.xp.magicUser = xpForLevel('magicUser', l);
@@ -185,13 +185,14 @@ describe('equipment', () => {
     expect(equipProblem(ch, 'chainMail')).toBe('armor not allowed');
     expect(equipProblem(ch, 'longSword')).toBe('weapon not allowed');
   });
-  it('clerics use only blunt weapons; F/MU may wear armour but cannot cast in it', () => {
+  it('clerics use only blunt weapons; F/MU may wear armour and casts in it under the Gold Box ruling only', () => {
     const c = createCharacter({ rng: new Rng(3), name: 'C', race: 'human', classSpec: 'cleric', abilities: abil({ wis: 15 }) });
     expect(canEquip(c, 'mace')).toBe(true);
     expect(canEquip(c, 'longSword')).toBe(false);
     const e = createCharacter({ rng: new Rng(3), name: 'E', race: 'elf', classSpec: 'fighter/magicUser', abilities: abil({ int: 15 }), items: ['chainMail'] });
-    expect(armorAllowsArcane(e)).toBe(false);
-    expect(deriveStats(e).canCastArcane).toBe(false);
+    expect(armorAllowsArcane(e)).toBe(true);
+    expect(deriveStats(e).canCastArcane).toBe(true);
+    expect(armorAllowsArcane(e, { multiclassArmorCasting: 'strict' })).toBe(false);
   });
   it('two-handed weapons and shields exclude each other', () => {
     const ch = mk({ items: ['shield', 'twoHandedSword'] });

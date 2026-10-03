@@ -47,9 +47,14 @@ describe('races', () => {
     expect(racialLevelLimit('elf', 'magicUser', { int: 16 })).toBe(9);
     expect(racialLevelLimit('dwarf', 'fighter', { str: 17 })).toBe(8);
     expect(racialLevelLimit('halfElf', 'cleric', { wis: 18 })).toBe(5);
-    // PoR: halfling fighters reach 6th flat (the PHB's STR 18 row is unreachable).
-    expect(racialLevelLimit('halfling', 'fighter', { str: 17 })).toBe(6);
-    expect(racialLevelLimit('halfling', 'fighter', { str: 12 })).toBe(6);
+    // PHB: halfling fighters 4/5/6 at STR <17/17/18; STR caps at 17, so 5 is the real maximum.
+    expect(racialLevelLimit('halfling', 'fighter')).toBe(5);
+    expect(racialLevelLimit('halfling', 'fighter', { str: 17 })).toBe(5);
+    expect(racialLevelLimit('halfling', 'fighter', { str: 9 })).toBe(4);
+    expect(racialLevelLimit('gnome', 'fighter', { str: 9 })).toBe(4);
+    expect(racialLevelLimit('elf', 'fighter', { str: 9 })).toBe(5);
+    expect(racialLevelLimit('dwarf', 'fighter', { str: 9 })).toBe(7);
+    expect(racialLevelLimit('halfElf', 'fighter', { str: 9 })).toBe(6);
     expect(racialLevelLimit('gnome', 'fighter', { str: 18 })).toBe(6);
     expect(racialLevelLimit('gnome', 'fighter', { str: 17 })).toBe(5);
     expect(racialLevelLimit('gnome', 'thief', { str: 3 })).toBe(Infinity);

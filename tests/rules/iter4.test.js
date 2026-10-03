@@ -102,7 +102,7 @@ describe('a dormant dual class lends nothing', () => {
     expect(attackRateOf(c, { weapon: ITEMS.staff })).toBe(1);
     expect(deriveStats(f).attacks).toBe(1);
     for (const round of [1, 2, 3]) expect(attacksThisTurn(c, round, kob)).toBe(1);
-    expect(deriveStats(f).thac0).toBe(21); // MU1 matrix, not the fighter's
+    expect(deriveStats(f).thac0).toBe(20); // MU1, not the fighter's
   });
 
   it('the same ex-fighter sweeps again once the fighter class returns', () => {

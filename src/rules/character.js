@@ -8,7 +8,7 @@ import {
 import {
   CLASSES, splitClasses, levelForXp, xpForLevel, thac0For, savesFor, SAVE_KEYS, spellSlots, thiefSkills,
   thiefDexAdj, THIEF_ARMOR_ADJ, classSpecName, classSpecAbbr, PR_LEVEL_CAPS, allowedAlignments, fighterAttacksPerRound,
-  backstabMultiplier,
+  backstabMultiplier, RULES_OPTIONS,
 } from './classes.js';
 import { ITEMS } from '../data/items.js';
 import {
@@ -486,10 +486,21 @@ export function highestLevel(ch) {
 }
 
 /**
- * Can the character cast arcane spells in their current armour? No armour or
- * shield, except elfin chain, which only elves and half-elves can cast in (1e).
+ * Can the character cast arcane spells in their current armour?
+ * RULES_OPTIONS.multiclassArmorCasting (or `o.multiclassArmorCasting`):
+ *  - 'goldBox' (default): multi-class magic-users cast in any armour, as in
+ *    the Gold Box games; single-class and dual-class magic-users follow the
+ *    strict rule below.
+ *  - 'strict': no armour or shield at all, the one exception being elfin
+ *    chain worn by an elf or half-elf (a table ruling, not a cited PHB rule).
+ * @param {{multiclassArmorCasting?:'goldBox'|'strict'}} [o]
  */
-export function armorAllowsArcane(ch) {
+export function armorAllowsArcane(ch, o = {}) {
+  const mode = o.multiclassArmorCasting ?? RULES_OPTIONS.multiclassArmorCasting;
+  // Gold Box ruling (default): a multi-class magic-user (F/MU, MU/T, F/MU/T,
+  // C/MU...) casts in any armour and shield the other class lets them wear.
+  // A dual-class human is a single class at a time, so this never applies.
+  if (mode === 'goldBox' && !ch.dual && splitClasses(ch.classSpec).length > 1 && splitClasses(ch.classSpec).includes('magicUser')) return true;
   const elfish = ch.race === 'elf' || ch.race === 'halfElf';
   return !equipped(ch).some(([, d]) => d.type === 'armor' && !(d.armorGroup === 'elfin' && elfish)) && !equipped(ch).some(([, d]) => d.type === 'shield');
 }
@@ -1083,10 +1094,13 @@ export function raiseDead(rng, ch, { allowElves = false } = {}) {
   }
   ch.abilities.con = Math.max(3, ch.abilities.con - 1);
   ch.status = 'ok';
-  ch.hp.max = computeMaxHp(ch);
-  ch.hp.cur = 1;
+  // Strip every lingering effect first: computeMaxHp counts temporary hit
+  // points (Heroism), which must not be baked into the raised body's max.
+  for (const e of [...(ch.effects ?? [])]) removeEffect(ch, e.id);
   ch.effects = [];
   ch.conditions = [];
+  ch.hp.max = computeMaxHp(ch);
+  ch.hp.cur = 1;
   return { ok: true, roll: r, needed };
 }
 

@@ -348,9 +348,9 @@ export const SPELL_RULES = {
   },
   mirrorImage: {
     name: 'Mirror Image', schools: { magicUser: 2 }, usable: 'combat', castTime: 2, range: 0, target: 'self',
-    area: { shape: 'single' }, duration: (L) => R(3 * L),
+    area: { shape: 'single' }, duration: (L) => R(2 * L),
     ops: [{ op: 'mirror' }],
-    desc: 'The caster splits into shimmering doubles.', tip: '1d4 images for 3 rounds/level (1e PHB); each attack that hits has a chance to strike an image instead.',
+    desc: 'The caster splits into shimmering doubles.', tip: '1d4 images for 2 rounds/level; each attack that hits has a chance to strike an image instead.',
   },
   rayOfEnfeeblement: {
     name: 'Ray of Enfeeblement', schools: { magicUser: 2 }, usable: 'combat', castTime: 2, range: (L) => 1 + Math.floor(L / 4), target: 'enemy',
@@ -853,6 +853,8 @@ export function castSpell(rng, id, caster, targets = [], opts = {}) {
   // Self-targeted spells ignore the target list.
   let list = s.target === 'self' ? [caster] : targets.length ? [...targets] : ['ally', 'creature', 'party'].includes(s.target) ? [caster] : [];
   list = list.filter((t) => t && (s.affects === 'dead' || isAliveCreature(t)));
+  // How many creatures the spell was aimed at (before non-persons/immunes drop out).
+  const aimedAt = list.length;
   for (const t of list.filter((x) => !affectsTarget(s, caster, x))) {
     if (s.affects === 'allies' || s.affects === 'enemies') continue;
     res.results.push({ target: t, name: nameOf(t), affected: false, immune: true, applied: [], removed: [] });
@@ -867,8 +869,11 @@ export function castSpell(rng, id, caster, targets = [], opts = {}) {
   if (s.ops[0]?.op === 'sleep') return resolveSleep(rng, s, caster, list, L, duration, res);
 
   // Hold person: fewer targets → harsher save.
-  // PHB: cleric one target -2, two -1; magic-user one target -3, two -1.
-  const holdPenalty = s.id === 'holdPerson' ? (list.length === 1 ? (school === 'magicUser' ? -3 : -2) : list.length === 2 ? -1 : 0) : 0;
+  // PHB: cleric one target -2, two -1; magic-user one target -3, two -1. The
+  // count is the creatures the spell was cast at (capped at maxTargets), so a
+  // person standing among immune bugbears or ogres is not penalised as if alone.
+  const aimed = Math.min(aimedAt, maxT);
+  const holdPenalty = s.id === 'holdPerson' ? (aimed === 1 ? (school === 'magicUser' ? -3 : -2) : aimed === 2 ? -1 : 0) : 0;
   // Snake charm spends the caster's current hp as a pool of snake hp.
   let hpPool = s.id === 'snakeCharm' ? (ch ? ch.hp.cur : caster.hp?.cur ?? 10) : Infinity;
 

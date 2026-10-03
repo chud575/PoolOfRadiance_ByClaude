@@ -41,7 +41,7 @@ src/rules/                 AD&D 1e engine — pure, deterministic, unit-tested, 
   dice.js                  seeded Rng (mulberry32), roll('3d6+1'), parseDice
   abilities.js             full PHB ability tables (STR 18/xx + giant, INT, WIS, DEX, CON, CHA)
   races.js                 6 races: adjustments, min/max (by gender), classes, ability-dependent level limits, thief adj, ages
-  classes.js               XP, THAC0 (DMG matrices; fighters per PoR by option), saves, slots, thief skills, turn undead, alignments, PoR level caps
+  classes.js               XP, THAC0 (Gold Box progressions or DMG matrices by option), saves, slots, thief skills, turn undead, alignments, PoR level caps
   tohit.js                 neededToHit() with the 1e repeating-20 rule
   conditions.js            condition registry + timed effects (bless, held, asleep, poisoned...) and their modifiers
   items.js                 +N enchantments, item names/values/weights, rate of fire, armour move, encumbrance
@@ -112,11 +112,19 @@ Durations are combat rounds (1 round = 1 minute; 1 turn = 10 rounds). Ranges/are
 * `createCharacter({rng, name, race, classSpec, abilities?, gender?, alignment?, items?, level?, spellbook?, ignoreLimits?})` — `level`
   stops at the racial level limit unless `ignoreLimits`.
 * Class ability minimums are the **Gold Box subset** PoR enforces (fighter STR 9 / CON 7, cleric WIS 9, magic-user INT 9 /
-  DEX 6, thief DEX 9), not the full PHB rows (fighter WIS 6, cleric STR/INT/CON/CHA 6...). Fighter THAC0 defaults to
-  the **PoR sheet** (21 − level: 20 at 1st, 13 at 8th); the settings option **Fighter THAC0** (`fighterThac0`:
-  `'goldBox'` | `'dmg'`) switches to the DMG matrix (2 points per 2 levels). Rules side: `RULES_OPTIONS`,
-  `setRulesOptions({fighterThac0})`, `thac0For(cls, lvl, {fighterThac0})`, `attachRulesSettings(settings, bus)` (main.js).
-  Other classes always use the DMG matrices.
+  DEX 6, thief DEX 9), not the full PHB rows (fighter WIS 6, cleric STR/INT/CON/CHA 6...). 
+* **Rules options** (`RULES_OPTIONS`, defaults `RULES_DEFAULTS`; `setRulesOptions(o)`, `resetRulesOptions()`,
+  `attachRulesSettings(settings, bus)` in main.js; tests that change an option must reset it):
+  * `thac0Table`: `'goldBox'` (default) — one consistent model, every class THAC0 20 at 1st: fighter 21 − level (the PoR
+    sheet: 13 at 8th), cleric −2 per 3 levels, thief −1 per 2 levels, magic-user −1 per 3 levels (`GOLDBOX_THAC0_STEP`; the
+    progressions AD&D 2e later printed). `'dmg'` — the 1e DMG attack matrices for all classes (fighter 20,20,18,18...,
+    cleric 20×3, MU 21×5, thief 21×4). The settings key `fighterThac0` is accepted as an alias (`RULES_OPTION_ALIASES`);
+    **UI owner**: the setting now governs every class — relabel it "THAC0 table" and drop "paladins and rangers" from its help.
+    `thac0For(cls, lvl, {thac0Table})`.
+  * `multiclassArmorCasting`: `'goldBox'` (default) — a multi-class magic-user (F/MU, MU/T, F/MU/T, C/MU...) casts in any
+    armour and shield its other class lets it wear, as in the Gold Box games; `'strict'` — no armour or shield at all, the one
+    exception being elfin chain on an elf or half-elf (a table ruling, not a cited PHB rule). Single-class and dual-class
+    magic-users always follow the strict rule. `armorAllowsArcane(ch, {multiclassArmorCasting})`.
 * `deriveStats(ch)` → `{thac0, ac, acRear, acMissile, acHurled, saves, savePoison, hitBonus, dmgBonus, weapon, weaponMagic, ranged, damage,
   attacks, move, baseMove, weight, encumbrance, spellSlots, canCastArcane, thief, backstab, levels, className, classAbbr,
   classLevels ('F8 / MU3'), dual, dualActive, abilities (effective), mods (effects), ...}`. `acRear` = no shield, no DEX
@@ -126,6 +134,10 @@ Durations are combat rounds (1 round = 1 minute; 1 turn = 10 rounds). Ranges/are
   {poison:true})` in play). A dual-classed human's labels show both careers (`classLabels(ch)`).
 * Tables for tooltips: `abilitySummary(abilities)`, `strengthTable`, `intelligenceTable`, `constitutionTable`, `charismaTable`,
   `THIEF_SKILL_NAMES`, `SAVE_NAMES`, `CONDITIONS[id].{name,desc}`, `describeEffects(ch)`, `statusLabel(ch)`.
+* Racial level limits follow one model, the PHB's: fighters and magic-users capped by STR / INT where the PHB says so
+  (elf F 5/6/7, MU 9/10/11; half-elf F 6/7/8, MU 6/7/8; dwarf F 7/8/9; gnome F 4/5/6; halfling F 4/5/6 at STR <17/17/18 —
+  halfling STR caps at 17, so 5th), flat otherwise (half-elf cleric 5; thieves unlimited). PR_LEVEL_CAPS apply on top.
+  Raise Dead strips every effect (and its temporary hp) before recomputing max hp.
 * Races/classes: `RACES`, `CLASSES`, `racialLevelLimit(race, cls, abilities)`, `allowedAlignments(spec)`, `PR_LEVEL_CAPS`
   (fighter 8, cleric 6, magic-user 6, thief 9), `thac0For`, `savesFor`, `spellSlots`, `thiefSkills`, `turnNeeded`.
 
@@ -208,8 +220,8 @@ walking; poison kills on the road).
   `consumeMemorized(ch, id, cls?)` / `isMemorized(ch, id, cls?)` act on that class. `castTime` is per class where the PHB
   differs (MU Hold Person / Dispel Magic 3 segments, cleric 5 / 6). MU Hold Person lasts 2 rounds/level (PHB p. 79; OSRIC
   agrees).
-* `castProblem(caster, id, {context, ignoreMemory, cls})` → reason or null (memorized, silence/held, armour for arcane — elfin
-  chain only for elves/half-elves — camp/combat usability).
+* `castProblem(caster, id, {context, ignoreMemory, cls})` → reason or null (memorized, silence/held, armour for arcane — see
+  `multiclassArmorCasting` — camp/combat usability).
 * `castSpell(rng, id, caster, targets, {consume, ignoreMemory, check, context, level, cls, fromItem, saveKey, noFailure, centre, strict1e})` → `{ok, reason,
   failed, level, results:[{target, affected, saved, save, resisted, immune, missed, damage, healed, applied, removed, down,
   charmed}], flags, log}`. `saveKey` overrides the save category (wands/staves/rods pass `'rsw'`, DMG). Memory is always checked unless `ignoreMemory: true` (or `check: false`) is passed explicitly.
@@ -236,7 +248,8 @@ the spell — a group of one kind gets exactly the PHB number (two bugbears: 1d2
   which creatures it can strike (`weaponImmunity`); range 1"/level (one square per level); Silence 15' Radius gives no save
   to creatures in the area — only the creature it is cast upon saves (`castSpell`/`castInBattle` `centre`);
   Stinking Cloud lingers 1 round/level (battle.js `cloudExposure`: saves vs poison on entering or each round inside); Ray of Enfeeblement range 1 + L/4;
-  Mirror Image 1d4 images, 3 rounds/level (1e PHB); Strength above 18 adds tenths (10% exceptional per point, PHB).
+  Mirror Image 1d4 images, 2 rounds/level (PHB magic-user; 3/level is the illusionist spell); Hold Person's save penalty
+  counts the creatures it was cast at (capped at its maximum), before non-persons and immunes drop out; Strength above 18 adds tenths (10% exceptional per point, PHB).
 * **Concentration** (conditions.js): `isConcentrating(c)` → `'spiritualHammer' | 'chanting' | null`, `concentrationOf(c)`,
   `breakConcentration(c, {only})` → ids removed (with every linked effect on others: Chant's +1/−1), `linkConcentration`.
   Casting any spell or using a wand/scroll/potion (`castSpell` → `flags.concentrationBroken`) and any weapon attack
@@ -258,7 +271,7 @@ the spell — a group of one kind gets exactly the PHB number (two bugbears: 1d2
   and lightning cast at 6th (6-die bolts). Combatant `range` is `deriveStats(ch).range` (rules `missileRange`: short bow 15)
   — **UI owner**: show `missileRange(def)` in Inventory.js rather than the raw data `range`.
 * Deliberate simplifications: thieves may be any alignment but LG (PoR creation rule); clerics may use slings (Gold Box);
-  halfling fighters reach 6th flat (PoR); magic armour moves at the PHB base rate (its benefit is half weight).
+  magic armour moves at the PHB base rate (its benefit is half weight).
 * Memorization (camp.js): `knownSpells(ch, cls)`, `slotsFor`, `checkLoadout`, `prepareSpells(ch, cls, ids)`, `autoPrepare(ch)`,
   `spellsToMemorize`, `memorizationTime(ch)` (1e: 4/6/8 h rest + 15 min per spell level, net of banked study),
   `study(ch, minutes)` (spells return one at a time once their own 15 min/level is done — an interrupted rest keeps them),
@@ -267,7 +280,7 @@ the spell — a group of one kind gets exactly the PHB number (two bugbears: 1d2
   level, optional chance to know). Model: `ch.spells.prepared[cls]` = chosen load-out, `ch.spells.memorized[cls]` = still
   in memory (casting removes), `ch.spells.study` = banked minutes.
 
-**Combat** (combat.js, co-owned): `combatantFromCharacter`, `combatantFromMonster(rng, id, index, {id})` (ids are
+**Combat** (combat.js, co-owned): `combatantFromCharacter` (size from the race: halflings and gnomes are S), `combatantFromMonster(rng, id, index, {id})` (ids are
 scoped to the battle's Rng — `m1_kobold`, `m2_kobold`… — never to session history; character ids likewise come from the
 creating Rng's own sequence, or `opts.id`), `rollInitiative`, `canAct`, `resolveAttack(rng,
 a, d, {mods, dmgMod, backstab, rear, ranged, helpless})` (the base AC is by direction — `defenderAc(a, d, {rear,
