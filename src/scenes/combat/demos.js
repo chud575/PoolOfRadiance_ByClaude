@@ -245,7 +245,8 @@ export const DEMOS = {
       const a = foes[0];
       const b = foes.slice().sort((p, q) => Battlefield.dist(q.x, q.y, a.x, a.y) - Battlefield.dist(p.x, p.y, a.x, a.y))[0];
       const ca = sq2w(a.x + 0.5, a.y + 0.5);
-      sc.vfx.stinkingCloud(-4, ca, 2 * TILE, 'demo-cloud', 2.3, { night: sc.night });
+      const inCloud = () => [...(sc._sick ?? [])].map((id) => sc.figures.get(id)).filter(Boolean).map((f) => ({ pos: f.root.position, h: f.model.height }));
+      sc.vfx.stinkingCloud(-4, ca, 2 * TILE, 'demo-cloud', 2.3, { night: sc.night, victims: inCloud });
       sc._log(`${caster.name.toUpperCase()} CASTS STINKING CLOUD.`, 'combat');
       // Whoever stands in the vapour is retching (the status shows on the figure).
       for (const m of foes) {

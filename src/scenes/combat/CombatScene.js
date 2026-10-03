@@ -260,8 +260,9 @@ export default class CombatScene extends Scene {
         fig.b.head.add(glow);
         fig.eyeGlow = glow;
         if (c.monsterId === 'skeleton' || c.monsterId === 'zombie' || c.monsterId === 'ghoul') {
-          // The dead: a cold pin-point glint deep in each dark socket, not a glowing orb.
-          glow.scale.setScalar(0.07 * (model.scale ?? 1));
+          // The dead: a cold pin-point glint deep in each dark socket, not a glowing orb
+          // (by day the socket's own glint is enough: no halo at all).
+          glow.scale.setScalar((this.night ? 0.05 : 0.0001) * (model.scale ?? 1));
           glow.position.x = 0.034 * (model.scale ?? 1);
           const g2 = glow.clone();
           g2.position.x = -glow.position.x;
@@ -2094,7 +2095,14 @@ export default class CombatScene extends Scene {
         break;
       }
       case 'sleep': this.vfx.sleepCloud(T, centre, (tact.size ?? 3) * TILE, this._seed()); delay = 0.9; break;
-      case 'cloud': this.vfx.stinkingCloud(T, centre, (tact.size ?? 2) * TILE, `area-${ev.at.x},${ev.at.y}`, this._seed(), { night: this.night }); delay = 0.6; break;
+      case 'cloud': {
+        // Whoever stands in the vapour (now or later) shows through its thin veil.
+        const area = new Set(sq.map((s2) => `${s2.x},${s2.y}`));
+        const victims = () => e.all.filter((o) => !o.fled && area.has(`${o.x},${o.y}`)).slice(0, 6).map((o) => this.figures.get(o.id)).filter(Boolean).map((f2) => ({ pos: f2.root.position, h: f2.model.height ?? 1.6 }));
+        this.vfx.stinkingCloud(T, centre, (tact.size ?? 2) * TILE, `area-${ev.at.x},${ev.at.y}`, this._seed(), { night: this.night, victims });
+        delay = 0.6;
+        break;
+      }
       case 'heal': this.vfx.heal(T, tgtFig ? tgtFig.root.position.clone() : target, this._seed()); delay = 0.4; break;
       case 'bless': for (const s of sq) this.vfx.aura(T, sq2w(s.x, s.y), 0xffd070, this._seed()); delay = 0.5; break;
       case 'curse': for (const s of sq) this.vfx.aura(T, sq2w(s.x, s.y), 0xa03050, this._seed(), { down: true }); delay = 0.5; break;
@@ -2696,6 +2704,9 @@ export default class CombatScene extends Scene {
     const r = this.ctx.render;
     const pix = (r.height * r.renderer.getPixelRatio()) / (2 * Math.tan((this.camera.fov * Math.PI) / 360));
     this.vfx.update(t, this.camera, pix, (this._res ??= new THREE.Vector2()).set(r.width ?? window.innerWidth, r.height ?? window.innerHeight));
+    // A big spell light (fireball) floods the street: the sun's shadows wash
+    // out under it instead of lying as dark ghosts across the lit paving.
+    this.rig.sun.shadow.intensity = 1 - Math.min(0.8, Math.max(0, this.vfx.light.intensity - 10) / 130);
     // Spell flashes kick the exposure for a few frames (white-hot fireball glare).
     r.renderer.toneMappingExposure = (this.post?.exposure ?? 1) * (1 + (this.vfx.exposure ?? 0));
     this.hud.update(t, this.camera, window.innerWidth, window.innerHeight);

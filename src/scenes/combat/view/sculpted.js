@@ -87,7 +87,7 @@ export const LOOKS = {
   bugbear: { skin: [0x7a5a30, 'fur'], back: [0x4a3418, 'fur'], belly: [0x9a7a50, 'fur'], horn: 0xd8c8a0, cloth: 0x3a2a1a, head: 'bugbear', hair: 0x2a1a0a, pants: 0x3a2a1a },
   lizardMan: { skin: [0x4a6a3a, 'scales'], back: [0x2e4a26, 'scales'], belly: [0xb0b07a, 'scales'], horn: 0xd8d0a0, cloth: 0x4a3a20, head: 'lizard' },
   // Old grave bone: yellowed and earth-stained, darker in the hollows, with rags.
-  skeleton: { skin: [0xc2c0b6, 'bone'], back: [0x8a8a84, 'bone'], belly: [0xd4d2c8, 'bone'], horn: 0xd8ceb0, head: 'skull', shirt: 0x34291e },
+  skeleton: { skin: [0x9c9078, 'bone'], back: [0x5e5546, 'bone'], belly: [0xaea288, 'bone'], horn: 0xb8ac90, head: 'skull', shirt: 0x2c241a },
   zombie: { skin: [0x7a8466, 'skin'], back: [0x5a6450, 'skin'], belly: [0x8a9070, 'skin'], horn: 0xd8d0b0, cloth: 0x3a3a30, head: 'zombie', pants: 0x2e2c26, shirt: 0x4a4438, hair: 0x2a2620 },
   ghoul: { skin: [0x9a9a88, 'skin'], back: [0x6a6a5c, 'skin'], belly: [0xa8a898, 'skin'], horn: 0xe0d8c0, cloth: 0x2a2a28, head: 'ghoul', pants: 0x2a2a28, hair: 0x1a1a18 },
   ogre: { skin: [0xa08a5a, 'skin'], back: [0x7a6a42, 'skin'], belly: [0xb09a6a, 'skin'], horn: 0xd8c8a0, cloth: 0x4a3a28, head: 'ogre', pants: 0x4a3a28, hair: 0x2a1e12 },

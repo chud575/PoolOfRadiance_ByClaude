@@ -400,7 +400,7 @@ export function buildDiorama(field, o = {}) {
   disposables.push(ground.geometry, groundMat);
 
   // Room floors (reachable interiors) — planks.
-  const plank = pbr('plank', 0x9a8878);
+  const plank = pbr('plank', 0xae9a86);
   const hall = (field.features.rooms ?? []).length >= 6;
   const roomFloor = plank;
   // Halls/temples keep the splatted flagstone ground (with its contact shadows); houses get planks.
@@ -422,6 +422,9 @@ export function buildDiorama(field, o = {}) {
   // roofless room it read as dark camouflage blotches).
   const heapMat = libMat('wall_ruin', 0xc4b8a6, { grime: 0, amount: 0.3 });
   const coreMat = libMat('floor_rubble', 0x7a6e60);
+  const ruinWeedMat = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.85, metalness: 0 });
+  const leafMat = new THREE.MeshStandardMaterial({ color: 0x4a6a2a, roughness: 0.8, metalness: 0, flatShading: true });
+  disposables.push(ruinWeedMat, leafMat);
   const CUT_H = 0.62;
   const interiorVeil = new THREE.MeshBasicMaterial({ color: 0x080605, transparent: true, opacity: 0.07, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 });
   disposables.push(interiorVeil);
@@ -519,6 +522,105 @@ export function buildDiorama(field, o = {}) {
   const glassLit = new THREE.MeshStandardMaterial({ color: 0x201008, emissive: 0xffa040, emissiveIntensity: night ? 1.5 : 0.25, roughness: 0.4 });
   const glassDark = new THREE.MeshStandardMaterial({ color: 0x0a0c10, roughness: 0.15, metalness: 0.2 });
   disposables.push(glassLit, glassDark);
+
+  // ---------------------------------------------------------------- room dressing
+  // Reachable house interiors (roofless rooms the fight spills into) are
+  // dressed like the ransacked homes they are: plaster and brick fallen in
+  // heaps in the corners, a roof beam come down with its laths, tipped
+  // stools, sacks, baskets, broken crockery and straw along the wall feet,
+  // a trodden rug — all low and hugging the walls (never on a square's
+  // centre, so nothing hides a figure or blocks a move), plus a soft gloom
+  // creeping in from every wall foot.
+  if (!hall) {
+    const roomSet = new Set((field.features.rooms ?? []).map((r) => `${r.mx},${r.my}`));
+    const sackMat = pbr('cloth', 0x9a8a6a);
+    const strawMat = new THREE.MeshStandardMaterial({ color: 0xb89a58, roughness: 0.95, side: THREE.DoubleSide });
+    const potMat = new THREE.MeshStandardMaterial({ color: 0x9a5a3a, roughness: 0.7 });
+    disposables.push(strawMat, potMat);
+    const strawBlade = new THREE.PlaneGeometry(0.34, 0.03).rotateX(-Math.PI / 2);
+    for (const r of field.features.rooms ?? []) {
+      const x0 = cw(r.mx);
+      const z0 = ch(r.my);
+      const H = (k, salt) => hash(r.mx * 7 + k, r.my * 13 + salt, 977);
+      // Which sides are walls (the neighbour cell is not part of the room).
+      const walls = [[-1, 0], [1, 0], [0, -1], [0, 1]].filter(([dx, dy]) => !roomSet.has(`${r.mx + dx},${r.my + dy}`));
+      // Gloom gradient at each wall foot.
+      for (const [dx, dy] of walls) {
+        const rot = dx === -1 ? Math.PI / 2 : dx === 1 ? -Math.PI / 2 : dy === -1 ? 0 : Math.PI;
+        const gx = x0 + CELLM / 2 + dx * (CELLM / 2 - 0.55);
+        const gz = z0 + CELLM / 2 + dy * (CELLM / 2 - 0.55);
+        batch.add(new THREE.PlaneGeometry(CELLM, 1.1).rotateX(-Math.PI / 2), gloomMat, { p: [gx, 0.03, gz], r: [0, rot, 0] }, { cast: false, receive: false });
+      }
+      // Corner heaps where two walls meet.
+      for (const [ax, ay] of walls) {
+        for (const [bx, by] of walls) {
+          if (ax === 0 || by === 0) continue; // a = x side, b = z side
+          const cxp = x0 + (ax > 0 ? CELLM - 0.38 : 0.38);
+          const czp = z0 + (by > 0 ? CELLM - 0.38 : 0.38);
+          for (let k = 0; k < 9; k++) {
+            const rr = 0.07 + H(k, 31 + ax + by * 3) * (k < 3 ? 0.16 : 0.09);
+            const px = cxp - ax * H(k, 32) * 0.55;
+            const pz = czp - by * H(k, 33) * 0.55;
+            batch.add(rockGeo(H(k, 34) * 99, rr), k % 3 ? heapMat : rubbleMat, { p: [px, rr * 0.35, pz] }, { cast: k < 3 });
+          }
+        }
+      }
+      // Clutter along each wall foot.
+      walls.forEach(([dx, dy], wi) => {
+        const n = 2 + Math.floor(H(wi, 40) * 3);
+        for (let k = 0; k < n; k++) {
+          const u = (k + 0.25 + H(k + wi * 5, 41) * 0.5) / n; // along the wall
+          const off = 0.22 + H(k + wi * 5, 42) * 0.18; // from the wall
+          const px = dx ? x0 + (dx > 0 ? CELLM - off : off) : x0 + 0.35 + u * (CELLM - 0.7);
+          const pz = dy ? z0 + (dy > 0 ? CELLM - off : off) : z0 + 0.35 + u * (CELLM - 0.7);
+          const yaw = H(k + wi * 5, 43) * Math.PI * 2;
+          const kind = H(k + wi * 5, 44);
+          if (kind < 0.2) {
+            // Grain sack, slumped.
+            batch.add(softSlab(0.42, 0.3, 0.3), sackMat, { p: [px, 0.15, pz], r: [0, yaw, 0.15] });
+          } else if (kind < 0.36) {
+            // Tipped stool: seat on its edge, legs sticking out.
+            batch.add(new THREE.CylinderGeometry(0.17, 0.17, 0.05, 12), woodMat, { p: [px, 0.17, pz], r: [Math.PI / 2, yaw, 0] });
+            for (let l = 0; l < 3; l++) batch.add(new THREE.CylinderGeometry(0.02, 0.025, 0.36, 5), darkWood, { p: [px + Math.cos(yaw) * 0.16, 0.12 + l * 0.05, pz + Math.sin(yaw) * 0.16], r: [0.3 * l, yaw, Math.PI / 2] }, { cast: false });
+          } else if (kind < 0.5) {
+            // Broken crockery: a jug on its side and shards.
+            batch.add(new THREE.SphereGeometry(0.11, 10, 8).scale(1, 1.3, 1), potMat, { p: [px, 0.1, pz], r: [Math.PI / 2 - 0.2, yaw, 0] });
+            for (let l = 0; l < 5; l++) batch.add(worldBox(0.07, 0.015, 0.05, 1), potMat, { p: [px + (H(l, 45 + k) - 0.5) * 0.5, 0.01, pz + (H(l, 46 + k) - 0.5) * 0.5], r: [0, H(l, 47) * 3, 0] }, { cast: false });
+          } else if (kind < 0.64) {
+            // A wicker basket.
+            batch.add(new THREE.CylinderGeometry(0.2, 0.15, 0.24, 12, 1, true), strawMat, { p: [px, 0.12, pz] });
+            batch.add(new THREE.CircleGeometry(0.15, 12).rotateX(-Math.PI / 2), darkWood, { p: [px, 0.02, pz] }, { cast: false });
+          } else if (kind < 0.82) {
+            // Loose boards leaning against the wall.
+            for (let l = 0; l < 3; l++) batch.add(worldBox(0.16, 0.9 + l * 0.1, 0.03, 1), woodMat, { p: [px + (dy ? (l - 1) * 0.18 : 0), 0.42, pz + (dx ? (l - 1) * 0.18 : 0)], r: [dy ? -dy * 0.3 : 0, dy ? 0 : Math.PI / 2, dx ? dx * 0.3 : 0] });
+          } else {
+            // Plaster fallen off the wall.
+            for (let l = 0; l < 4; l++) batch.add(worldBox(0.14 + H(l, 48) * 0.16, 0.025, 0.1 + H(l, 49) * 0.12, 1), heapMat, { p: [px + (H(l, 50) - 0.5) * 0.4, 0.015, pz + (H(l, 51) - 0.5) * 0.4], r: [0, H(l, 52) * 3, 0] }, { cast: false });
+          }
+          // A tuft of straw at the wall foot.
+          for (let l = 0; l < 6; l++) batch.add(strawBlade, strawMat, { p: [px + (H(l, 53 + k) - 0.5) * 0.5, 0.012 + l * 0.002, pz + (H(l, 54 + k) - 0.5) * 0.5], r: [0, H(l, 55 + k) * 3.14, 0] }, { cast: false });
+        }
+      });
+      // A roof beam come down along one wall, with laths, in some rooms.
+      if (walls.length && H(0, 60) < 0.55) {
+        const [dx, dy] = walls[Math.floor(H(0, 61) * walls.length)];
+        const along = dy !== 0;
+        const bx = dx ? x0 + (dx > 0 ? CELLM - 0.3 : 0.3) : x0 + CELLM / 2;
+        const bz = dy ? z0 + (dy > 0 ? CELLM - 0.3 : 0.3) : z0 + CELLM / 2;
+        const tilt = 0.18 + H(0, 62) * 0.1;
+        batch.add(worldBox(along ? CELLM * 0.92 : 0.2, 0.2, along ? 0.2 : CELLM * 0.92, 1), darkWood, { p: [bx, 0.32, bz], r: [along ? 0 : tilt, 0, along ? tilt : 0] });
+        for (let l = 0; l < 4; l++) {
+          const t = (l + 0.5) / 4 - 0.5;
+          batch.add(worldBox(along ? 0.06 : 0.75, 0.03, along ? 0.75 : 0.06, 1), woodMat, { p: [bx + (along ? t * CELLM * 0.85 : -dx * 0.25), 0.1 + l * 0.02, bz + (along ? -dy * 0.25 : t * CELLM * 0.85)], r: [0, (H(l, 63) - 0.5) * 0.5, 0] }, { cast: false });
+        }
+      }
+      // A trodden rug in some rooms.
+      if (H(0, 70) < 0.4) {
+        const rug = new THREE.PlaneGeometry(1.9, 1.3).rotateX(-Math.PI / 2);
+        batch.add(rug, rugMaterial(Math.floor(H(0, 71) * 3)), { p: [x0 + CELLM / 2, 0.02, z0 + CELLM / 2], r: [0, (H(0, 72) - 0.5) * 0.4 + (H(0, 73) > 0.5 ? Math.PI / 2 : 0), 0] }, { cast: false });
+      }
+    }
+  }
 
   // ---------------------------------------------------------------- houses
   // Connected components of solid cells in the extended region.
@@ -873,6 +975,57 @@ export function buildDiorama(field, o = {}) {
       house.cut.add(barrelGeo(), barrelMat, { p: [bx, 0, bz], s: 0.85 });
       house.cut.add(barrelHoops(), ironMat, { p: [bx, 0, bz], s: 0.85 });
       house.cut.add(barrelGeo().rotateZ(Math.PI / 2), barrelMat, { p: [bx + 0.7, 0.3, bz + 0.3], r: [0, 0.6, 0], s: 0.8 }, { cast: false });
+    }
+    // A standing house seen in cut-away is a ransacked home: partitions,
+    // hearth, beds, tables, shelves and chests along its walls.
+    if (!ruined) furnish(house, iw, id);
+    if (ruined) {
+      // A gutted ruin has been open to the sky for years: big mounds of fallen
+      // masonry against the walls, a stub of the old partition, smashed roof
+      // tiles fanned across the boards, and weeds and saplings colonising the
+      // corners — a lived-in, overgrown wreck rather than an empty floor.
+      const tileMat = pbr('roof', 0xb07a5a);
+      for (let k = 0; k < 3 + Math.round(iw * id * 0.03); k++) {
+        const side = Math.floor(hash(k, 81, seed * 19) * 4);
+        const u = 0.15 + hash(k, 82, seed * 19) * 0.7;
+        const px = side === 0 ? hx0 + 0.75 : side === 1 ? hx1 - 0.75 : hx0 + u * iw;
+        const pz = side === 2 ? hz0 + 0.75 : side === 3 ? hz1 - 0.75 : hz0 + u * id;
+        const sz = 0.5 + hash(k, 83, seed) * 0.45;
+        house.cut.add(rockGeo(hash(k, 84, seed) * 50, sz), k % 2 ? heapMat : rubbleMat, { p: [px, -sz * 0.25, pz], s: [1.5, 0.75, 1.3], r: [0, hash(k, 85, seed) * 3, 0] });
+        for (let j = 0; j < 7; j++) {
+          const a = hash(k * 11 + j, 86, seed) * Math.PI * 2;
+          const rr = sz * (0.8 + hash(k * 11 + j, 87, seed) * 0.9);
+          const r2 = 0.08 + hash(k * 11 + j, 88, seed) * 0.16;
+          house.cut.add(rockGeo(hash(j, k, 89) * 70, r2), j % 3 ? heapMat : rubbleMat, { p: [px + Math.cos(a) * rr, r2 * 0.3, pz + Math.sin(a) * rr] }, { cast: j < 2 });
+        }
+      }
+      // Smashed roof tiles fanned over the floor.
+      for (let k = 0; k < Math.round(iw * id * 0.9); k++) {
+        const px = hx0 + 0.5 + hash(k, 91, seed * 23) * (iw - 1);
+        const pz = hz0 + 0.5 + hash(k, 92, seed * 23) * (id - 1);
+        house.cut.add(worldBox(0.2, 0.018, 0.14, 1), tileMat, { p: [px, 0.04, pz], r: [(hash(k, 93, seed) - 0.5) * 0.5, hash(k, 94, seed) * 3, (hash(k, 95, seed) - 0.5) * 0.5] }, { cast: false });
+      }
+      // Weeds and young elder bushes colonising the corners and wall feet.
+      for (let k = 0; k < 6 + Math.round((iw + id) * 0.8); k++) {
+        const side = Math.floor(hash(k, 101, seed * 29) * 4);
+        const u = hash(k, 102, seed * 29);
+        const off = 0.45 + hash(k, 103, seed) * 0.5;
+        const px = side === 0 ? hx0 + off : side === 1 ? hx1 - off : hx0 + 0.4 + u * (iw - 0.8);
+        const pz = side === 2 ? hz0 + off : side === 3 ? hz1 - off : hz0 + 0.4 + u * (id - 0.8);
+        const sc = 0.8 + hash(k, 104, seed) * 0.9;
+        house.cut.add(weedGeo(k % 5 === 4 ? 'rosette' : k % 3 ? 'grass' : 'dry', Math.floor(hash(k, 105, seed) * 9) + 1), ruinWeedMat, { p: [px, 0.02, pz], r: [0, hash(k, 106, seed) * 6, 0], s: sc }, { cast: false });
+      }
+      for (let k = 0; k < 2; k++) {
+        // A bushy sapling rooted in a corner (clustered leafy blobs on a crooked stem).
+        const cx = k ? hx1 - 0.7 : hx0 + 0.7;
+        const cz = hash(k, 111, seed) > 0.5 ? hz1 - 0.7 : hz0 + 0.7;
+        house.cut.add(new THREE.CylinderGeometry(0.03, 0.05, 0.9, 5), darkWood, { p: [cx, 0.45, cz], r: [0.15, 0, 0.1] });
+        for (let j = 0; j < 6; j++) {
+          const a = hash(j, k, 112 + seed) * Math.PI * 2;
+          const rr = 0.12 + hash(j, k, 113) * 0.25;
+          house.cut.add(rockGeo(j * 7 + k, 0.2 + hash(j, k, 114) * 0.12), leafMat, { p: [cx + Math.cos(a) * rr, 0.75 + hash(j, k, 115) * 0.35, cz + Math.sin(a) * rr], s: [1, 0.8, 1] });
+        }
+      }
     }
     if (!ruined) {
       const alongX = iw >= id;

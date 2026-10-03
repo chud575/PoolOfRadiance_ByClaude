@@ -165,19 +165,19 @@ function limeRender() {
     let c = [0.83, 0.78, 0.67];
     const warm = mott - 0.5;
     c = [c[0] * (1 + warm * 0.1), c[1] * (1 + warm * 0.05), c[2] * (1 - warm * 0.06)];
-    let k = 0.9 + (n - 0.5) * 0.16 + (fine - 0.5) * 0.03;
+    let k = 0.9 + (n - 0.5) * 0.26 + (mott - 0.5) * 0.12 + (fine - 0.5) * 0.04;
     // Grime soaking out of the timbers, heavier under the rails (water runs down).
     const soak = Math.exp(-dBeam / 0.022) * 0.3 + Math.exp(-dBeam / 0.07) * 0.1;
     let streak = 0;
     for (const [rv, w] of rails) {
       const below = rv - w - v;
-      if (below > 0 && below < 0.3) streak = Math.max(streak, Math.exp(-below / 0.11) * smooth(0.45, 0.8, valueNoise(u * 34, v * 1.5, 34, 88)));
+      if (below > 0 && below < 0.3) streak = Math.max(streak, Math.exp(-below / 0.07) * smooth(0.55, 0.85, valueNoise(u * 11, v * 4, 11, 88)));
     }
-    k *= 1 - soak - streak * 0.22;
+    k *= 1 - soak - streak * 0.1;
     c = c.map((x, i) => x * k * (i === 2 ? 1 - soak * 0.3 : 1));
     // Spalls: a few blotches where the render has fallen, showing wattle or brick.
     const sp = fbm(u * 4.2 + 11, v * 4.2, { octaves: 3, period: 8.4, seed: 89 });
-    const spall = smooth(0.77, 0.79, sp) * smooth(0.02, 0.05, dBeam);
+    const spall = smooth(0.73, 0.75, sp) * smooth(0.02, 0.05, dBeam);
     let h = 0.42 + (mott - 0.5) * 0.06 + (fine - 0.5) * 0.015;
     if (spall > 0) {
       const brick = hash2(Math.floor(u * 2), Math.floor(v * 2), 90) > 0.5;
@@ -199,7 +199,7 @@ function limeRender() {
         ih = 0.2 + w2 * 0.08;
       }
       // Shadowed, slightly raised broken lip of render around the hole.
-      const lip = smooth(0.765, 0.775, sp) * (1 - smooth(0.785, 0.81, sp));
+      const lip = smooth(0.725, 0.735, sp) * (1 - smooth(0.745, 0.77, sp));
       c = [lerp(c[0], ic[0], spall), lerp(c[1], ic[1], spall), lerp(c[2], ic[2], spall)];
       c = c.map((x) => x * (1 - lip * 0.25));
       h = lerp(h, ih, spall) + lip * 0.04;
@@ -276,10 +276,10 @@ function genData(size, fn, normalStrength) {
 /** Material presets: detail texture + PBR params. */
 const KIND = {
   cloth: { tex: 'cloth', roughness: 1, metalness: 0, normalScale: 0.5, repeat: 3 },
-  leather: { tex: 'leather', roughness: 1, metalness: 0, normalScale: 0.7, repeat: 2 },
-  chain: { tex: 'chain', roughness: 1, metalness: 0.9, normalScale: 1.2, repeat: 3 },
-  metal: { tex: 'metal', roughness: 1.35, metalness: 1, normalScale: 0.4 },
-  gold: { tex: 'metal', roughness: 0.8, metalness: 1, normalScale: 0.3 },
+  leather: { tex: 'leather', roughness: 0.88, metalness: 0, normalScale: 0.8, repeat: 2 },
+  chain: { tex: 'chain', roughness: 0.82, metalness: 0.9, normalScale: 1.3, repeat: 3 },
+  metal: { tex: 'metal', roughness: 0.78, metalness: 1, normalScale: 0.4 },
+  gold: { tex: 'metal', roughness: 0.55, metalness: 1, normalScale: 0.3 },
   skin: { tex: 'skin', roughness: 1, metalness: 0, normalScale: 0.15, repeat: 2 },
   scales: { tex: 'scales', roughness: 1, metalness: 0, normalScale: 1, repeat: 2 },
   reptile: { tex: 'skin', roughness: 0.78, metalness: 0, normalScale: 0.55, repeat: 4 },

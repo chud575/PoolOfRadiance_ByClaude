@@ -501,7 +501,16 @@ function buildBiped(o) {
     const hs = s * (o.headScale ?? 1);
     // Undead eyes burn; the living get a beady, wet glint that only glows by night (sprite).
     const eyeMat = o.eyes != null ? (o.undead ? pbr('glow', 0x000000, { emissive: o.eyes, emissiveIntensity: 2.4 }) : pbr('glow', 0x140604, { emissive: o.eyes, emissiveIntensity: 1.2 })) : pbr('eye', 0x1a120c);
-    for (const e of sculptEyes.eyes ?? []) R.part('head', sphere(sculptEyes.eyeR * hs, 8, 6), eyeMat, { p: [e[0] * hs, e[1] * hs, e[2] * hs] });
+    if (o.undead && o.eyes != null) {
+      // The dead: deep black sockets with only a pin-prick of cold light far
+      // back in each (no glowing orbs).
+      const socket = pbr('eye', 0x030202);
+      const glint = pbr('glow', 0x000000, { emissive: o.eyes, emissiveIntensity: 3.5 });
+      for (const e of sculptEyes.eyes ?? []) {
+        R.part('head', sphere(sculptEyes.eyeR * hs * 1.05, 8, 6), socket, { p: [e[0] * hs, e[1] * hs, e[2] * hs - sculptEyes.eyeR * hs * 0.25] });
+        R.part('head', sphere(sculptEyes.eyeR * hs * 0.3, 6, 4), glint, { p: [e[0] * hs, e[1] * hs, e[2] * hs + sculptEyes.eyeR * hs * 0.55] });
+      }
+    } else for (const e of sculptEyes.eyes ?? []) R.part('head', sphere(sculptEyes.eyeR * hs, 8, 6), eyeMat, { p: [e[0] * hs, e[1] * hs, e[2] * hs] });
     if (o.head === 'orc') {
       // Yellowed tusks jutting up from the underbite (two-part, slightly hooked).
       const tusk = pbr('bone', 0x9a8a68);

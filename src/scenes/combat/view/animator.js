@@ -83,8 +83,14 @@ function addRim(mat, facRim = null, tint = null) {
           vec3 nV = normalize(normal);
           float facF = pow(1.0 - clamp(dot(nV, normalize(vViewPosition)), 0.0, 1.0), 2.4) * smoothstep(-0.5, 0.6, nV.y);
           totalEmissiveRadiance += uFacRim * facF * uFacK;
-          float emb = smoothstep(0.62, 0.9, bN3(vBP * 41.0)) * burnMask;
-          totalEmissiveRadiance += vec3(1.0, 0.36, 0.05) * burnEdge * uBurn.y * 2.8 + vec3(1.0, 0.25, 0.03) * emb * uBurn.y * 1.4 + vec3(0.5, 0.08, 0.01) * burnMask * uBurn.y * 0.18; }`);
+          // Charred, not gilded: sparse ember cracks deep in the soot (two
+          // octaves so they never tile), a thin smouldering seam where the
+          // char meets the kit, and an ember rim on the silhouette so a
+          // victim reads as a dark burning body against the fire.
+          float embN = bN3(vBP * 17.0) * 0.6 + bN3(vBP * 47.0 + 3.1) * 0.4;
+          float emb = smoothstep(0.74, 0.92, embN) * burnMask;
+          float rimE = pow(1.0 - clamp(dot(nV, normalize(vViewPosition)), 0.0, 1.0), 3.0);
+          totalEmissiveRadiance += vec3(1.0, 0.34, 0.05) * burnEdge * uBurn.y * 1.5 + vec3(1.0, 0.22, 0.02) * emb * uBurn.y * 0.9 + vec3(1.0, 0.42, 0.08) * rimE * uBurn.y * 0.9; }`);
   };
   mat.customProgramCacheKey = () => (sculpt ? 'fig-rim-sculpt-c' : pid >= 0 ? 'fig-rim-detail-c' : 'fig-rim-c');
 }
@@ -337,7 +343,7 @@ export class Figure {
       mm.m.userData.uBurn?.value.set(char, smoulder);
       if (mm.m.emissive) {
         mm.m.emissive.copy(mm.emissive).lerp(_FLASH, flash * 0.13);
-        if (burn > 0.01) mm.m.emissive.lerp(_BURN, Math.min(1, burn * 0.1));
+        if (burn > 0.01) mm.m.emissive.lerp(_BURN, Math.min(1, burn * 0.04));
         if (holy) mm.m.emissive.lerp(_HOLY, Math.sin(holy * Math.PI) * 0.9);
         if (this.state === 'sick' && !this.death) mm.m.emissive.lerp(_SICK, 0.07 + 0.04 * Math.sin(t * 2.2 + this.seed));
         mm.m.emissiveIntensity = mm.ei;
