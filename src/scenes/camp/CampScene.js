@@ -604,8 +604,10 @@ export default class CampScene extends Scene {
       // Resting: down at sleeping height beside the embers, so the sleepers lie in profile across the
       // view (head on the rolled cloak, shoulder, hip and knee under the wool) and the sentry stands
       // against the night beyond them.
-      this.camera.position.set(-0.6 * k, 1.75 - 0.92 * k, 5.2 - 2.4 * k);
-      this.camera.lookAt(-0.05 * k, 0.95 - 0.55 * k, -0.6 - 1.45 * k);
+      // (from the fire's side, across the bedrolls: the nearest sleeper's head on its pillow in the
+      // foreground, the others beyond the embers, the sentry against the night)
+      this.camera.position.set(-2.3 * k, 1.75 - 0.85 * k, 5.2 - 3.3 * k);
+      this.camera.lookAt(0.45 * k, 0.95 - 0.72 * k, -0.6 - 1.35 * k);
       // the camera low over the embers: bloom eased off so the fire keeps its flame shape
       if (this.post) { this.post.bloomStrength = 0.7 - 0.38 * k; this.post.bloomThreshold = 0.9 + 0.12 * k; }
     }

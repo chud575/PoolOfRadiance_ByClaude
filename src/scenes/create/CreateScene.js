@@ -319,7 +319,7 @@ export default class CreateScene extends Scene {
     if (!d0) return;
     // The miniature wears what the character has actually readied (the starting kit for a draft),
     // never the class's generic look: no shield on a figure whose kit has none.
-    const inv = Array.isArray(d0.inventory) ? d0.inventory : (this._preview()?.inventory ?? kitFor(d0.classSpec).filter((id) => ITEMS[id] && ITEMS[id].type !== 'ammo').map((id) => ({ id, equipped: true })));
+    const inv = Array.isArray(d0.inventory) ? d0.inventory : (this._preview()?.inventory ?? kitFor(d0.classSpec, d0.race).filter((id) => ITEMS[id] && ITEMS[id].type !== 'ammo').map((id) => ({ id, equipped: true })));
     const d = { ...d0, inventory: inv };
     const key = JSON.stringify([d.race, d.gender, d.classSpec, d.look, inv.filter((e) => e.equipped).map((e) => e.id)]);
     if (key === this._figKey) return;
@@ -424,7 +424,7 @@ export default class CreateScene extends Scene {
     const d = this.draft;
     if (!d.abilities) return null;
     try {
-      return settleKit(createCharacter({ rng: this.rng.fork(7), name: d.name || 'Adventurer', race: d.race, classSpec: d.classSpec, gender: d.gender, alignment: d.alignment, abilities: d.abilities, items: kitFor(d.classSpec) }));
+      return settleKit(createCharacter({ rng: this.rng.fork(7), name: d.name || 'Adventurer', race: d.race, classSpec: d.classSpec, gender: d.gender, alignment: d.alignment, abilities: d.abilities, items: kitFor(d.classSpec, d.race) }));
     } catch {
       return null;
     }
@@ -771,7 +771,7 @@ export default class CreateScene extends Scene {
   /** The plinth note: says plainly when the chosen likeness body differs from the starting kit. */
   _kitNote(look) {
     const d = this.draft;
-    const armor = kitFor(d.classSpec).map((id) => ITEMS[id]).find((it) => it?.type === 'armor');
+    const armor = kitFor(d.classSpec, d.race).map((id) => ITEMS[id]).find((it) => it?.type === 'armor');
     const tmpl = BODIES[look.body % BODIES.length];
     if (bodyShowsArmor(tmpl.id, armor?.armorGroup ?? null)) return CREATE_TEXT.icon;
     const kit = armor ? (armor.name ?? 'armour').toLowerCase() : 'no armour';
@@ -928,7 +928,7 @@ export default class CreateScene extends Scene {
       this.ctx.ui.toast(`${d.name} is changed.`);
     } else {
       if (this.newParty.length >= 6) return this.ctx.ui.toast('The party is full (six).');
-      const ch = settleKit(createCharacter({ rng: this.rng, name: d.name.trim(), race: d.race, classSpec: d.classSpec, alignment: d.alignment, gender: d.gender, abilities: d.abilities, items: kitFor(d.classSpec) }));
+      const ch = settleKit(createCharacter({ rng: this.rng, name: d.name.trim(), race: d.race, classSpec: d.classSpec, alignment: d.alignment, gender: d.gender, abilities: d.abilities, items: kitFor(d.classSpec, d.race) }));
       ch.look = { ...defaultLook(d) };
       this.newParty.push(ch);
       this.roster = [...this.roster.filter((r) => r.id !== ch.id), structuredClone(ch)];

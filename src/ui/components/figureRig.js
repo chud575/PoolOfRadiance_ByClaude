@@ -312,7 +312,8 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
     darkSteel: mat(L('#666a72'), { rough: 0.62, metal: 0.85, pattern: PATTERN.metal, edge: 0.35, wash: 0.5 }),
     mail: mat(L('#6e7279'), { rough: 0.8, metal: 0.72, pattern: PATTERN.mail, edge: 0.2, wash: 0.6 }),
     scale: mat(L('#9a7c48'), { rough: 0.62, metal: 0.85, pattern: PATTERN.scale, edge: 0.3, wash: 0.65 }),
-    gilt: mat(L('#d0a650'), { rough: 0.3, metal: 1, pattern: PATTERN.metal, edge: 0.4 }),
+    // (satin, not mirror: a polished clasp catching the fire bloomed into an orange halo)
+    gilt: mat(L('#c09a4c'), { rough: 0.55, metal: 1, pattern: PATTERN.metal, edge: 0.4 }),
     fur: mat(L('#8a7258'), { rough: 0.95, pattern: PATTERN.fur, edge: 0.6, wash: 0.8, soft: 0.006 }),
     rope: mat(L('#9a8458'), { rough: 0.9, pattern: PATTERN.cloth, edge: 0.4 }),
     blanket: mat(L(opt.blanket ?? '#5a4a3a'), { rough: 0.95, pattern: PATTERN.cloth, edge: 0.35, wash: 0.75 }),
@@ -754,15 +755,17 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
       // A short surcoat skirt in the house colour over the mail, open at the sides: it hangs over the
       // thighs and breaks the line of the legs.
       for (const sg of [1, -1]) {
-        const c = at(J.pelvis, pR, [0, -0.13, sg * 0.165]);
-        sc.box(c, [0.125 * g, 0.2 * s, 0.007 * s], mMul(pR, mRotX(sg * -0.16)), 0.005 * s, { mat: M.cloth, g: GR.cloak, k: 0, disp: (x, y, z) => 0.003 * s * Math.sin(x * 90 + y * 8), amp: 0.004 * s });
+        // (held clear of the flared mail skirt, which otherwise pushed through it as a ragged hole)
+        const c = at(J.pelvis, pR, [0, -0.13, sg * 0.19]);
+        sc.box(c, [0.125 * g, 0.2 * s, 0.01 * s], mMul(pR, mRotX(sg * -0.22)), 0.005 * s, { mat: M.cloth, g: GR.cloak, k: 0, disp: (x, y, z) => 0.003 * s * Math.sin(x * 90 + y * 8), amp: 0.004 * s });
       }
     }
     if (body === 'tabard') {
       // Surcoat panels front and back in the house colour, hanging to the knee and breaking the legs' line.
       for (const sg of [1, -1]) {
-        const c = at(J.pelvis, sR, [0, sitting ? 0.04 : -0.06, sg * 0.13]);
-        sc.box(c, [0.115 * g, (sitting ? 0.2 : 0.36) * s, 0.008 * s], mMul(sR, mRotX(sg * -0.06)), 0.006 * s, { mat: M.cloth, g: GR.cloak, k: 0 });
+        // (stood clear of the mail shell: where the two met, the mail showed through as a ragged hole)
+        const c = at(J.pelvis, sR, [0, sitting ? 0.04 : -0.06, sg * 0.172]);
+        sc.box(c, [0.115 * g, (sitting ? 0.2 : 0.36) * s, 0.011 * s], mMul(sR, mRotX(sg * -0.07)), 0.006 * s, { mat: M.cloth, g: GR.cloak, k: 0 });
       }
       sc.ellipsoid(at(chestC, sR, [0, 0.02, 0.131]), [0.04 * s, 0.045 * s, 0.006 * s], sR, { mat: M.gilt, g: GR.belt });
     }

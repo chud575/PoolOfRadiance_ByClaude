@@ -1617,7 +1617,7 @@ async function fromLarger(ch, scale, crop) {
 
 const quick = new Map();
 /**
- * A rough first pass of a portrait (a small, unpainted render, ~40 px wide): shown at once while
+ * A rough first pass of a portrait (a small, unpainted render, ~70 px wide): shown at once while
  * the oil painting is made, so a picker never sits on blank tiles. Cheap even on a software GPU
  * once the painter's shader is built. Returns null if no WebGL.
  * @returns {string|null}
@@ -1629,7 +1629,7 @@ export function portraitQuickURL(ch, crop = 'head') {
   if (!off) return null;
   let u = null;
   try {
-    u = renderPortraitWith(off.renderer, ch, { scale: 0.15, crop, raw: true, ss: 1 }).toDataURL('image/png');
+    u = renderPortraitWith(off.renderer, ch, { scale: 0.24, crop, raw: true, ss: 1 }).toDataURL('image/png');
   } catch { return null; }
   if (quick.size > 64) quick.delete(quick.keys().next().value);
   quick.set(key, u);

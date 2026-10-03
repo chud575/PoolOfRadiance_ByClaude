@@ -168,16 +168,16 @@ float skin(vec3 p) {
   float jw = (0.046 * (0.86 + 0.14 * JAW) - 0.011 * fem * (1.0 - 0.55 * dwf)) * w;
   vec3 go = vec3(jw, -0.078 * lf, -0.012 - 0.003 * JDEPTH);
   float rGo = 0.012 + 0.003 * (JAW - 1.0) - 0.0035 * fem * (1.0 - 0.5 * dwf);
-  vec3 me = vec3(0.015 * CHIN, -0.103 * lf, 0.064 + 0.004 * JDEPTH);
+  vec3 me = vec3(0.015 * CHIN, -0.103 * lf, 0.064 - 0.005 * fem * (1.0 - dwf) + 0.004 * JDEPTH);
   float jaw = sdRC(q, vec3(0.058 * w, -0.022, -0.022), go, 0.014, rGo);
   jaw = smin(jaw, sdRC(q, go, me, rGo, 0.012 + 0.002 * CHIN), 0.012);
   d = smin(d, jaw, 0.022 - 0.004 * man);
   // the masseter: the full muscle over the ramus between the cheekbone's arch and the jaw angle
   d = smin(d, sdEll(q - vec3(0.047 * w, -0.05 * lf, 0.004), vec3(0.014, 0.028 * lf, 0.026)), 0.02);
   // lower face: the soft fill between the jaw and the mouth (the cheek's lower half)
-  d = smin(d, sdEll(p - vec3(0.0, -0.068 * lf, 0.032), vec3((0.047 - 0.006 * fem * (1.0 - dwf)) * w, 0.042 * lf, 0.054)), 0.026);
+  d = smin(d, sdEll(p - vec3(0.0, -0.068 * lf, 0.03 - 0.003 * fem), vec3((0.047 - 0.006 * fem * (1.0 - dwf)) * w, 0.042 * lf, 0.054)), 0.026);
   // chin: the mental protuberance, square and cleft-able on men, small and round on women
-  vec3 chq = p - vec3(0.0, -0.099 * lf, 0.077 + 0.004 * JDEPTH);
+  vec3 chq = p - vec3(0.0, -0.099 * lf, 0.077 - 0.008 * fem * (1.0 - dwf) + 0.004 * JDEPTH);
   float chin = sdEll(chq, vec3((0.02 - 0.005 * fem * (1.0 - 0.6 * dwf)) * CHIN, 0.0165 - 0.002 * fem, 0.0155));
   chin = smin(chin, sdEll(vec3(abs(chq.x) - 0.008 * CHIN * man, chq.yz), vec3(0.012, 0.0135, 0.0135)), 0.01);
   d = smin(d, chin, 0.018);
@@ -189,7 +189,7 @@ float skin(vec3 p) {
   float lipK = LIPS * (1.0 + 0.1 * fem);
   float lz = LIPZ();
   // the barrel of the teeth under the lips
-  d = smin(d, sdEll(p - vec3(0.0, mY + 0.006, 0.058 + 0.003 * PROT - 0.003 * fem), vec3(0.03 * mw * (1.0 - 0.06 * fem), 0.028, 0.028)), 0.018);
+  d = smin(d, sdEll(p - vec3(0.0, mY + 0.006, 0.056 + 0.003 * PROT - 0.004 * fem), vec3(0.03 * mw * (1.0 - 0.06 * fem), 0.028, 0.028)), 0.018);
   // the mentalis: the soft pad between the lower lip and the chin
   d = smin(d, sdEll(p - vec3(0.0, mY - 0.018, lz - 0.0125 - 0.002 * fem), vec3(0.0145 * mw, 0.0095, 0.0105)), 0.012);
   if (p.z > 0.06 && abs(p.y - mY) < 0.03 && q.x < 0.032) {
@@ -226,9 +226,9 @@ float skin(vec3 p) {
     float nb = smin(sdRC(np, nN, nM, br * 0.82, br * 1.0), sdRC(np, nM, nT, br * 1.0, 0.0074 * TIP), 0.007);
     // the ball of the tip
     vec3 tc = vec3(0.0, tipY, tipZ - 0.0094);
-    nb = smin(nb, sdEll(p - tc, vec3(0.0102 * TIP * (1.0 - 0.12 * fem), 0.009 * (1.0 - 0.1 * fem), 0.0094)), 0.008);
+    nb = smin(nb, sdEll(p - tc, vec3(0.0102 * TIP * (1.0 - 0.18 * fem), 0.009 * (1.0 - 0.14 * fem), 0.0094 * (1.0 - 0.1 * fem))), 0.008);
     // the wings, tucked against the tip and blended wide into it and the cheek
-    float aw = 0.0108 * NWIDTH * (1.0 - 0.1 * fem);
+    float aw = 0.0108 * NWIDTH * (1.0 - 0.16 * fem);
     nb = smin(nb, sdEll(q - vec3(aw, tipY - 0.0032, tipZ - 0.0172), vec3(0.0072, 0.0064, 0.0078) * (1.0 - 0.1 * fem)), 0.009);
     // columella
     nb = smin(nb, sdCap(p, vec3(0.0, tipY - 0.0055, tipZ - 0.01), vec3(0.0, tipY - 0.0085, tipZ - 0.02), 0.0032), 0.005);
@@ -280,7 +280,7 @@ float skin(vec3 p) {
     d = smin(d, ear, 0.006);
   }
   // ---- neck with the sterno-mastoid cords and (men) the larynx; dwarves are bull-necked
-  float nr = mix(0.054, 0.044, fem) * (1.0 + 0.1 * HALF) * (1.0 + 0.4 * sat(BLEN - 1.0) / 0.3) * (1.0 + 0.12 * fem * sat(BLEN - 1.0) / 0.3);
+  float nr = mix(0.054, 0.047, fem) * (1.0 + 0.1 * HALF) * (1.0 + 0.4 * sat(BLEN - 1.0) / 0.3) * (1.0 + 0.1 * fem * sat(BLEN - 1.0) / 0.3);
   vec3 np = p - vec3(0.0, 0.0, -0.028);
   np.x *= 0.95;
   float neck = sdRC(np, vec3(0.0, -0.06, 0.0), vec3(0.0, -0.2, 0.004), nr, nr * 1.12);

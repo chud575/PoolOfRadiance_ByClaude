@@ -60,9 +60,12 @@ void main() {
   // temperature: hottest just above the root and along the core of the tongue
   float core = 1.0 - abs(x) / max(w, 0.02);
   float temp = d * (1.2 - y * 0.95) * (0.7 + 0.45 * core) * smoothstep(0.0, 0.12, y + 0.02);
-  vec3 c = mix(vec3(0.35, 0.03, 0.005), vec3(0.95, 0.24, 0.03), smoothstep(0.05, 0.45, temp));
-  c = mix(c, vec3(1.0, 0.5, 0.1), smoothstep(0.45, 0.9, temp));
-  c = mix(c, vec3(1.0, 0.8, 0.45), smoothstep(0.95, 1.3, temp));
+  // (the ramp stops short of white: overlapping tongues add up, and bloom does the rest)
+  vec3 c = mix(vec3(0.3, 0.025, 0.004), vec3(0.85, 0.2, 0.025), smoothstep(0.05, 0.45, temp));
+  c = mix(c, vec3(1.0, 0.42, 0.07), smoothstep(0.45, 0.9, temp));
+  c = mix(c, vec3(1.0, 0.62, 0.22), smoothstep(0.95, 1.35, temp));
+  // the tip dies into smoke: a dull brown-red veil instead of a hard cut
+  c = mix(c, vec3(0.22, 0.06, 0.03), smoothstep(0.55, 0.95, y) * 0.6);
   gl_FragColor = vec4(c * d * uIntensity, 1.0);
 }`;
 
@@ -297,14 +300,14 @@ export function buildCampfire({ G, Mt, night }) {
   const tongues = [];
   const FL = [
     // [x, z, width, height, seed, lean]
-    [0.0, 0.0, 0.5, 1.0, 0.11, 0.0],
-    [-0.09, 0.05, 0.34, 0.74, 0.37, -0.06],
-    [0.1, -0.04, 0.36, 0.8, 0.59, 0.07],
-    [0.03, 0.11, 0.28, 0.56, 0.83, 0.03],
-    [-0.05, -0.1, 0.3, 0.62, 0.21, -0.04],
-    [0.2, 0.08, 0.18, 0.34, 0.71, 0.1],
-    [-0.21, -0.02, 0.18, 0.3, 0.47, -0.1],
-    [0.06, 0.24, 0.14, 0.22, 0.93, 0.05],
+    [0.0, 0.0, 0.46, 1.18, 0.11, 0.0],
+    [-0.13, 0.06, 0.3, 0.82, 0.37, -0.08],
+    [0.14, -0.05, 0.32, 0.9, 0.59, 0.09],
+    [0.04, 0.15, 0.24, 0.6, 0.83, 0.03],
+    [-0.07, -0.14, 0.26, 0.66, 0.21, -0.05],
+    [0.24, 0.1, 0.16, 0.38, 0.71, 0.12],
+    [-0.25, -0.02, 0.16, 0.34, 0.47, -0.12],
+    [0.08, 0.28, 0.12, 0.24, 0.93, 0.05],
   ];
   for (const [x, z, w, hgt, seed, lean] of FL) {
     const mat = Mt(new THREE.ShaderMaterial({
@@ -366,7 +369,7 @@ export function buildCampfire({ G, Mt, night }) {
     flick = 0.84 + 0.1 * Math.sin(time * 9.1) + 0.06 * Math.sin(time * 23.7 + 1.3) + 0.05 * Math.sin(time * 4.3);
     for (const lg of teepee) lg.visible = !resting;
     for (const lg of collapsed) lg.visible = resting;
-    logMat.emissiveIntensity = (resting ? 0.62 : 0.9) * (0.85 + 0.15 * Math.sin(time * 5.7 + 0.4));
+    logMat.emissiveIntensity = (resting ? 0.5 : 0.62) * (0.85 + 0.15 * Math.sin(time * 5.7 + 0.4));
     coalMat.emissiveIntensity = (resting ? 0.8 : 1.0) * (0.9 + 0.1 * Math.sin(time * 2.3));
     chunkMat.emissiveIntensity = (resting ? 0.6 : 0.85) * (0.85 + 0.15 * Math.sin(time * 6.1));
     // the tongues face the camera (turning about the vertical only) and dance on their own beats
@@ -381,7 +384,7 @@ export function buildCampfire({ G, Mt, night }) {
       c.scale.y = k * (0.9 + 0.1 * Math.sin(time * (3.1 + i * 0.7) + i * 1.9));
       c.scale.x = resting ? 0.8 : 1;
       c.material.uniforms.uTime.value = time;
-      c.material.uniforms.uIntensity.value = (resting ? 0.4 : i === 0 ? 0.62 : 0.5) * (0.9 + 0.1 * Math.sin(time * 7.3 + i));
+      c.material.uniforms.uIntensity.value = (resting ? 0.42 : i === 0 ? 0.78 : 0.56) * (0.9 + 0.1 * Math.sin(time * 7.3 + i));
     });
     glowMat.opacity = (resting ? 0.06 : 0.18) * flick;
     poolMat.uniforms.uK.value = (resting ? 0.16 : 0.26) * flick * (night ? 1 : 0.4);

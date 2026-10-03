@@ -236,8 +236,8 @@ export function oilPaint(color, info, w, h, o = {}) {
         if (reg === REG.hair) { len = r * (3.2 + r2 * 3.5); wid = r * (0.55 + r1 * 0.3); }
         else if (reg === REG.skin) { len = r * (1.8 + r2 * 1.8); wid = r * (0.75 + r1 * 0.35); }
         else if (reg === REG.eye) { len = r * 1.2; wid = r * 0.8; }
-        else if (reg === REG.metal) { len = r * (1.8 + r2 * 2.0); wid = r * (0.8 + r1 * 0.3); }
-        else { len = r * (1.5 + r2 * 1.6); wid = r * (1.05 + r1 * 0.35); }
+        else if (reg === REG.metal) { len = r * (1.2 + r2 * 1.1); wid = r * (1.0 + r1 * 0.4); }
+        else { len = r * (1.1 + r2 * 1.0); wid = r * (1.25 + r1 * 0.45); }
       }
       // value breaks: on the skin the mid brushes carry a mixed tone (the light, the half-tone, the
       // shadow as distinct pigments), so the planes read as laid strokes, not a smooth gradient
@@ -249,9 +249,9 @@ export function oilPaint(color, info, w, h, o = {}) {
         cr *= k; cg *= k; cb *= k;
       }
       // pigment variation
-      const jv = (r2 - 0.5) * (reg === REG.skin ? 11 : 14);
+      const jv = (r2 - 0.5) * (reg === REG.skin ? 14 : 15);
       // warm/cool pigment shifts in the skin (a painter mixes each stroke a little differently)
-      if (reg === REG.skin) { const hs = (r1 - 0.5) * 9; cr += hs; cb -= hs * 0.8; }
+      if (reg === REG.skin) { const hs = (r1 - 0.5) * 12; cr += hs; cb -= hs * 0.8; }
       cr += jv; cg += jv * 0.85; cb += jv * 0.7;
       // paint loading: a loaded stroke is opaque, a dragged one breaks up into its bristles
       const load = reg === REG.eye ? 1 : 0.62 + 0.38 * ((r2 * 7.31 + r1 * 3.7) % 1);
@@ -347,14 +347,14 @@ export function oilPaint(color, info, w, h, o = {}) {
   for (let i = 0; i < N; i++) {
     const x = i % w, y = (i / w) | 0;
     const reg = region[i];
-    const keep = Math.min(1, detail[i] * 0.8 + (reg === REG.eye ? 0.6 : reg === REG.skin ? 0.12 : 0.04));
+    const keep = Math.min(1, detail[i] * 0.8 + (reg === REG.eye ? 0.6 : reg === REG.skin ? 0.06 : 0.03));
     let pr = P[i * 4] * (1 - keep) + ref[i * 3] * keep;
     let pg = P[i * 4 + 1] * (1 - keep) + ref[i * 3 + 1] * keep;
     let pb = P[i * 4 + 2] * (1 - keep) + ref[i * 3 + 2] * keep;
     let dx = dirX[i], dy = dirY[i];
     if (reg === REG.bg) [dx, dy] = bgDir(x, y);
     const along = x * dx + y * dy, across = -x * dy + y * dx;
-    const br = (vn(along * 0.09 / k, across * 0.75 / k) - 0.5) * (reg === REG.eye ? 0 : reg === REG.cloth ? 0.55 : reg === REG.hair ? 1.2 : 1);
+    const br = (vn(along * 0.09 / k, across * 0.75 / k) - 0.5) * (reg === REG.eye ? 0 : reg === REG.cloth ? 0.35 : reg === REG.metal ? 0.4 : reg === REG.hair ? 1.2 : 1);
     const m = 1 + br * 0.05 * (1 - keep * 0.7);
     const weave = (Math.sin(x * 2.2) * Math.sin(y * 2.05)) * 2.2;
     P[i * 4] = pr * m + weave; P[i * 4 + 1] = pg * m + weave; P[i * 4 + 2] = pb * m + weave;

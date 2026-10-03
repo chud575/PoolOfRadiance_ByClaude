@@ -41,10 +41,13 @@ export const NAMES = {
  * arcane casters go unarmoured, thieves wear leather, warriors and priests take mail and shield.
  * Clerics keep to blunt weapons. Pure fighters get a bow; the arrows ride in the pack (unreadied)
  * until the bow is readied.
+ * An elf or half-elf fighter/magic-user (no thieving) inherits a shirt of elfin chain: the one armour
+ * an elven caster may cast in, so the warrior-mage starts armoured as the 1e elf was meant to.
  * @param {string} classSpec e.g. 'fighter/thief'
+ * @param {string} [race]
  * @returns {string[]} item ids
  */
-export function kitFor(classSpec) {
+export function kitFor(classSpec, race) {
   const cs = classSpec.split('/');
   const has = (c) => cs.includes(c);
   const arcane = has('magicUser');
@@ -58,6 +61,7 @@ export function kitFor(classSpec) {
   // Body: arcane casting forbids armour; thieving needs leather at most.
   if (!arcane && thief) kit.push('leather');
   else if (!arcane && (has('fighter') || has('cleric'))) kit.push('shield', 'chainMail');
+  else if (arcane && has('fighter') && !thief && (race === 'elf' || race === 'halfElf')) kit.push('elfinChain');
   // Extras.
   if (has('cleric')) kit.push('holySymbol');
   if (arcane && !has('cleric') && !kit.includes('dagger')) kit.push('dagger');

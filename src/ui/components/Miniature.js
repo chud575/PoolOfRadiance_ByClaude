@@ -135,7 +135,8 @@ void miniPattern(float pid, out float h, out float alb, out float rmod) {
     float lowAO = 0.72 + 0.28 * wear;
     h = tiltH * 0.0009 * fd;
     // far off, the rings resolve into rows: soft horizontal courses of darker and lighter links
-    float rows = 0.86 + 0.14 * sin(p.y * 160.0 + vn3(p * 30.0) * 2.0) * aaFade(26.0);
+    // (a soft mottle of links, never regular stripes: those read as a knitted jumper)
+    float rows = 0.88 + 0.12 * vn3(vec3(p.x * 45.0, p.y * 80.0, p.z * 45.0));
     alb = mix(0.78 * rows, mix(0.42, 1.15, tiltH), fd) * lowAO * (0.92 + 0.12 * oil);
     rmod = 0.06 + (0.5 - wear) * 0.12 + (1.0 - ring) * 0.15 * fd;  } else if (pid < 2.5) { // scales
     vec2 uv = triUV(p, vObjN) * vec2(55.0, 70.0);

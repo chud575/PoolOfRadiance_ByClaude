@@ -209,6 +209,26 @@ export function buildBedroll(ch, o = {}) {
       }
     }
   }
+  // The dilation leaves knife ridges where two slopes meet (pyramids, not cloth): relax the sheet
+  // with a few passes of smoothing so it hangs in soft, rounded drapes over the body.
+  {
+    const tmp = new Float32Array(grid.length);
+    for (let pass = 0; pass < 6; pass++) {
+      for (let j = 0; j <= NZ; j++) {
+        for (let i = 0; i <= NX; i++) {
+          let sum = 0, n = 0;
+          for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+            const ii = i + di, jj = j + dj;
+            if (ii < 0 || jj < 0 || ii > NX || jj > NZ) continue;
+            const w = di === 0 && dj === 0 ? 2 : 1;
+            sum += grid[jj * (NX + 1) + ii] * w; n += w;
+          }
+          tmp[j * (NX + 1) + i] = sum / n;
+        }
+      }
+      grid.set(tmp);
+    }
+  }
   const blanketGeo = D(new THREE.PlaneGeometry(bW, bL, NX, NZ));
   blanketGeo.rotateX(-Math.PI / 2);
   {

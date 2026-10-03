@@ -248,12 +248,13 @@ function setup(ch, o) {
   u.uBodyR.value.copy(bodyM);
   const hs = RACE_SCALE[app.race] ?? 1;
   u.uHeadScale.value = hs;
-  u.uHeadC.value.set(0, dwarf ? -0.024 : 0, 0);
+  // (sunk deep between the shoulders on a short bull neck)
+  u.uHeadC.value.set(0, dwarf ? -0.048 : 0, 0);
   // Camera: a long lens (no distortion), eye level a touch below the eyes.
   const viewH = o.viewH ?? (torso ? 0.74 : 0.41);
   const fov = 14;
   const dist = viewH / (2 * Math.tan((fov * Math.PI) / 360));
-  const target = new THREE.Vector3(0, o.targetY ?? (torso ? -0.24 : -0.082) - (dwarf ? 0.018 : 0), 0);
+  const target = new THREE.Vector3(0, o.targetY ?? (torso ? -0.24 : -0.082) - (dwarf ? 0.036 : 0), 0);
   u.uCamPos.value.set(target.x + (o.camX ?? 0), target.y + (torso ? 0.05 : 0.075), dist);
   const fwd = target.clone().sub(u.uCamPos.value).normalize();
   const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
@@ -397,7 +398,7 @@ function applyFrame(job) {
   u.uMode.value = o.mode ?? 0;
   u.uDbg.value = o.dbg ?? 0;
   u.uKeyDir.value.fromArray(o.key ?? [-0.8, 0.5, 0.34]);
-  u.uLightK.value.fromArray(o.lightK ?? [1.45, 0.27, 0.8, 0.3]);
+  u.uLightK.value.fromArray(o.lightK ?? [1.32, 0.28, 0.8, 0.3]);
   u.uLite.value = job.scale < 0.35 ? 1 : 0;
   u.uSpot.value.set(0.02, o.crop === 'torso' ? -0.2 : 0, 0, o.crop === 'torso' ? 0.14 : 0.028);
 }

@@ -803,6 +803,8 @@ void main() {
     float strand = vnoise2(fc + vec2(0.0, lock * 7.0));
     float fine = vnoise2(fc * vec2(2.7, 1.2) + 7.0);
     float tone = (0.5 + 0.7 * strand) * (0.66 + 0.7 * lock);
+    // pale hair (flaxen, silver, snow) varies less in value: dark clumps on it read as dirt
+    tone = mix(tone, 0.85 + 0.25 * strand, sat(dot(hc, vec3(0.3, 0.59, 0.11)) * 2.2 - 0.25));
     // painters lift the darkest hair so the locks still read in it
     vec3 hcl = hc + vec3(0.022, 0.014, 0.008) * (1.0 - sat(dot(hc, vec3(0.33)) * 4.0));
     alb = hcl * tone * (0.85 + 0.25 * fine);
@@ -811,6 +813,8 @@ void main() {
     if (!hang) alb *= 0.8 + 0.2 * sat((ph.y - 0.02) / 0.08);
     aniso = 1.0;
     rough = 0.35;
+    // hair carries a real sheen: a bright band across the locks where they turn to the light
+    specK = 0.12;
     vec3 flowL = hang ? normalize(vec3(0.0, -1.0, mat > 3.5 ? 0.2 : -0.1)) : normalize(vec3(0.0, cc.z, -cc.y));
     tang = normalize(transpose(uHeadR) * flowL);
     ao *= 0.75 + 0.25 * strand;
@@ -957,7 +961,7 @@ void main() {
     float fr = 0.65 + 0.35 * fres;
     col = alb * diffuse * 0.12 + env * alb * 1.05 * fr * (0.45 + 0.55 * ao);
   } else {
-    vec3 specC = sss > 0.5 ? vec3(1.0, 0.9, 0.82) : (aniso > 0.5 ? mix(vec3(1.0), uHairC * 3.0, 0.4) : vec3(1.0));
+    vec3 specC = sss > 0.5 ? vec3(1.0, 0.9, 0.82) : (aniso > 0.5 ? mix(vec3(0.9, 0.85, 0.78), uHairC * 2.5 + 0.02, 0.55) : vec3(1.0));
     float F = sss > 0.5 ? 0.35 + 0.65 * pow(1.0 - vh, 5.0) * 4.0 : 1.0;
     col = alb * diffuse;
     col += specC * Ck * spec * specK * F * sh * (0.4 + 0.6 * ao);
