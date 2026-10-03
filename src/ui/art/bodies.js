@@ -817,8 +817,8 @@ export function humanoid(f, sp, pose, R, gear) {
   // the castellan's death-wound, still open at the throat: a cold light that reads at scene scale
   if (sp.ghost) {
     const wound = add(neck, ap3(TR, [0.008, -0.004, 0.05 * b]));
-    f.glow(wound, 0.07, '#e8ffff', 0.95);
-    f.glow(wound, 0.025, '#ffffff', 1);
+    f.glow(wound, 0.034, '#e8ffff', 0.8);
+    f.glow(wound, 0.012, '#ffffff', 1);
   }
   // ---- head
   const hp = add(neck, ap3(TR, [0, hr * 0.95, hr * 0.25 + (sp.hunch ?? 0) * 0.05]));
@@ -1142,9 +1142,10 @@ export function buildCreature(id, seed = 1, o = {}) {
     // scavenged gear varies the pack — and every one wears something: a stolen jerkin or a
     // strapped scrap of plate, a ragged kilt, a bandolier with a pouch, bracers, a lone pauldron
     const r = R();
-    if (r < 0.34) gear.armor = 'vest';
-    else if (r < 0.58) gear.armor = 'scraps';
-    gear.vestM = mat(R.pick(['#8a6a44', '#7a5a38', '#6e5a3e', '#5a4a3a']), { pattern: 'leather', scale: 0.03, rough: 0.75, spec: 0.12 });
+    if (r < 0.5) gear.armor = 'vest';
+    else if (r < 0.8) gear.armor = 'scraps';
+    // stolen leather, darker and cooler than their rust hide so the gear reads against it
+    gear.vestM = mat(R.pick(['#3e3a30', '#4a3a2a', '#2e3428', '#54422e', '#3a2c22']), { pattern: 'leather', scale: 0.03, rough: 0.75, spec: 0.14 });
     const rag = mat(R.pick(['#5e4c34', '#5a2016', '#3e3a2c', '#4a3420', '#2e3a30']), { pattern: 'cloth', scale: 0.016, rough: 0.97, spec: 0.02 });
     // a ragged hide kilt on every one of them (no pouch-like flaps)
     gear.hideKilt = mat(R.pick(['#6a5236', '#5e4a30', '#7a5e3c', '#4e3e2a']), { pattern: 'leather', scale: 0.025, rough: 0.95, spec: 0.04 });

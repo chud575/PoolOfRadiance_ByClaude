@@ -48,7 +48,7 @@ const M3 = (M) => `mat3(${[M[0], M[3], M[6], M[1], M[4], M[7], M[2], M[5], M[8]]
 
 const HAIR = { none: 0, short: 1, tonsure: 2, wavy: 3, bun: 4, topknot: 5, long: 6, braid: 3, fringe: 1 };
 const BEARD = { none: 0, full: 1, long: 2, braided: 3, goatee: 4, moustache: 5, stubble: 6 };
-const COSTUME = { robe: 0, priest: 1, gown: 2, tabard: 3, smith: 4, mail: 5, bodice: 6, tunic: 7 };
+const COSTUME = { robe: 0, priest: 1, gown: 2, tabard: 3, smith: 4, mail: 5, bodice: 6, tunic: 7, plate: 8 };
 
 /** Turn a portrait design into the constants block of its shader. */
 function constants(D, o = {}) {
@@ -63,7 +63,7 @@ function constants(D, o = {}) {
   const build = D.build ?? (fem ? 0.9 : 1);
   const hair = HAIR[D.hair?.style ?? 'short'] ?? 1;
   const beard = BEARD[D.beard?.style ?? 'none'] ?? 0;
-  const head = D.head?.kind === 'mitre' ? 2 : D.head?.kind === 'hood' ? 1 : 0;
+  const head = D.head?.kind === 'helm' ? 3 : D.head?.kind === 'mitre' ? 2 : D.head?.kind === 'hood' ? 1 : 0;
   const cos = D.costume ?? {};
   const costume = COSTUME[cos.kind] ?? 7;
   const skin = D.skin ?? '#d9a77a';
@@ -86,7 +86,7 @@ function constants(D, o = {}) {
   const H2W = (v) => toW(HR, PIV, v);
   const BODYY = 0.72; // the torso is modelled with its shoulders at y≈-2.6; it sits this much higher
   const T2W = (v) => toW(TR, TPV, [v[0], v[1] + BODYY, v[2]]);
-  const neckW = face.neck * (fem ? 0.84 : 1.08) * (race === 'dwarf' ? 1.15 : 1);
+  const neckW = face.neck * (fem ? 0.92 : 1.1) * (race === 'dwarf' ? 1.15 : 1);
   let key = [side * 0.86, 0.46, 0.2];
   if (D.key) key = [D.key[0], -D.key[1], D.key[2]];
   const kl = Math.hypot(...key);
@@ -104,13 +104,13 @@ function constants(D, o = {}) {
     `#define HAIR ${hair}`, `#define BEARD ${beard}`, `#define HEADW ${head}`, `#define COSTUME ${costume}`,
     `#define FEM ${fem ? 1 : 0}`, `#define SPECS ${D.spectacles ? 1 : 0}`, `#define EARS ${ears}`,
     `#define CLOAK ${cos.cloak || costume === 5 ? 1 : 0}`, `#define SCAR ${D.scar ? 1 : 0}`, `#define HOOK ${nose.hook > 0 ? 1 : 0}`,
-    `#define DARK ${D.dark ? 1 : 0}`,
+    `#define DARK ${D.dark ? 1 : 0}`, `#define GHOSTLY ${D.ghost ? 1 : 0}`,
   ];
   const consts = {
     FW: face.w * (race === 'dwarf' ? 1.08 : 1) * (fem ? 0.95 : 1), JAW: face.jaw * (fem ? 0.82 : 1), CHIN: face.chin * (fem ? 0.9 : 1), CHEEK: face.cheek,
     HOLLOW: face.hollow ?? 0, BROW: face.brow * (fem ? 0.6 : 1), NECK: neckW, AGE: age,
     NL: nose.len * (fem ? 0.9 : 1), NW: nose.w * (fem ? 0.88 : 1), NTIP: nose.tip * (fem ? 0.9 : 1), NHOOK: nose.hook, NBRK: nose.broken ? 0.035 : 0,
-    ES: eyes.size * (fem ? 1.08 : 1.04), LID: 0.12 + lidAge * (fem ? 0.75 : 1), TILT: eyes.tilt ?? 0,
+    ES: eyes.size * (fem ? 1.0 : 1.0), LID: 0.2 + lidAge * (fem ? 0.75 : 1), TILT: eyes.tilt ?? 0,
     MW: mouth.w * (fem ? 0.95 : 1), FULL: Math.min(1.25, mouth.full * (fem ? 1.05 : 1)), SMILE: mouth.smile ?? 0.1,
     BRW: brows.w, ARCH: brows.arch ?? 0.4, BUILD: build * (race === 'dwarf' ? 1.12 : 1),
     GX: gaze[0], GY: gaze[1],
@@ -136,8 +136,8 @@ function constants(D, o = {}) {
   src += `const vec3 HTOP = ${V3(H2W([0, 0.3, -0.25]))};\nconst vec3 HBOT = ${V3(T2W([0, -2.15, -0.35]))};\n`;
   src += `const vec3 KEY = ${V3(key)};\n`;
   // frame: the camera looks at the bust from in front, slightly above the eyes
-  const top = head === 2 ? 2.45 : head === 1 ? 1.62 : hair === 5 ? 1.85 : 1.48;
-  const bottom = head === 2 ? -3.05 : -2.75;
+  const top = head === 2 ? 2.45 : head === 3 ? 1.78 : head === 1 ? 1.62 : hair === 5 ? 1.85 : 1.48;
+  const bottom = head === 2 ? -3.05 : head === 3 ? -2.55 : -2.75;
   return { src, top, bottom, side };
 }
 
@@ -183,7 +183,7 @@ float lids(vec3 a, float d) {
   vec3 nu = normalize(vec3(-0.28 * TILT, 1.0, -0.32 + LID * 0.18));
   float upper = max(sh, R * (0.24 - LID * 0.26) - dot(e, nu));
   vec3 nl = normalize(vec3(0.12 * TILT, -1.0, -0.12));
-  float lower = max(sh, R * 0.44 - dot(e, nl));
+  float lower = max(sh, R * 0.38 - dot(e, nl));
   d = smin(d, upper, 0.035);
   d = smin(d, lower, 0.03);
   // the crease of the upper lid and the soft bag under the eye
@@ -203,7 +203,11 @@ float faceSkin(vec3 p) {
   d = smin(d, sdEll(a - vec3(0.45, -0.14, 0.5), vec3(0.18, 0.09, 0.15) * CHEEK), 0.16);
   d = smin(d, sdCap(a, vec3(0.44, -0.12, 0.5), vec3(0.64, -0.1, 0.02), 0.07), 0.12);
   d = smin(d, sdEll(a - vec3(0.28, 0.24, 0.76), vec3(0.26, 0.075 * BROW, 0.11)), 0.14);
+#if FEM
+  d = smin(d, sdEll(q - vec3(0.0, -0.66, 0.55), vec3(0.31, 0.26, 0.27)), 0.2);
+#else
   d = smin(d, sdEll(q - vec3(0.0, -0.66, 0.6), vec3(0.32, 0.27, 0.29)), 0.2);
+#endif
   // pressed in: eye sockets, temples, cheek hollows under the zygoma
   d = smax(d, -sdEll(a - vec3(0.3, 0.0, 0.88), vec3(0.19, 0.13, 0.17)), 0.1);
   d = smax(d, -sdEll(a - vec3(0.75, 0.25, 0.3), vec3(0.08, 0.2, 0.22)), 0.12);
@@ -432,6 +436,47 @@ float headgear(vec3 p) {
   float az = atan(p.x, p.z);
   shell -= 0.025 * sin(az * 7.0 + vnoise3(p * 2.0) * 3.0) * smoothstep(0.6, -0.6, p.y);
   d = shell;
+#elif HEADW == 3
+  // armet: a round skull with a low comb, a sparrow-beak visor with a sight and breaths, a bevor
+  // lapped over the chin, and the visor's pivot rivets
+  vec3 a = vec3(abs(p.x), p.y, p.z);
+  float skull = sdEll(p - vec3(0.0, 0.3, -0.12), vec3(0.97, 1.13, 1.16));
+  float comb = max(sdEll(p - vec3(0.0, 0.32, -0.14), vec3(0.07, 1.22, 1.25)), 0.5 - p.y);
+  skull = smin(skull, comb, 0.03);
+  // the brow of the skull juts a little over the sight
+  skull = smin(skull, max(sdEll(p - vec3(0.0, 0.12, 0.1), vec3(0.95, 0.2, 1.08)), -p.y + 0.04), 0.03);
+  vec3 vq = p - vec3(0.0, -0.1, 0.2);
+  // the sparrow's beak: the visor pinches to a keel down the middle of the face (narrower the
+  // further forward), so its cheeks stay curved and catch the light
+  vq.x *= 1.0 + 0.55 * max(vq.z, 0.0);
+  float visor = sdEll(vq, vec3(0.9, 0.74, 1.1)) * 0.8;
+  visor = smax(visor, abs(vq.x) * 0.45 + vq.z * 0.9 - 1.02, 0.08);
+  visor = smax(visor, -(p.z - 0.0), 0.04);
+  visor = max(visor, p.y - 0.09);
+  float h = min(skull, visor - 0.004);
+  // the sight: one dark slot between brow and visor
+  float slit = max(abs(p.y - 0.01) - 0.055, 0.45 - p.z);
+  slit = max(slit, a.x - 0.6);
+  h = smax(h, -slit, 0.012);
+  // breaths: a grid of small holes on the visor's cheek
+  vec2 g = vec2(a.x - 0.33, p.y + 0.3);
+  vec2 cell = vec2(0.075, 0.072);
+  vec2 id = clamp(floor(g / cell + 0.5), vec2(-1.0, -1.0), vec2(1.0, 1.0));
+  float holes = max(length(g - id * cell) - 0.017, 0.45 - p.z);
+  h = max(h, -holes);
+  // bevor
+  vec3 bq = p - vec3(0.0, -0.86, 0.1);
+  bq.x *= 1.0 + 0.5 * max(bq.z, 0.0);
+  float bev = sdEll(bq, vec3(0.88, 0.52, 1.04)) * 0.8;
+  bev = smax(bev, abs(bq.x) * 0.45 + bq.z * 0.9 - 0.96, 0.08);
+  bev = max(bev, p.y + 0.5);
+  // the bevor's turned edge
+  bev = smin(bev, max(abs(p.y + 0.52) - 0.025, sdEll(bq, vec3(0.92, 0.56, 1.08)) * 0.8), 0.01);
+  bev = max(bev, p.y + 0.49);
+  h = min(h, bev);
+  // pivot rivets and a row of rivets along the bevor's edge
+  h = min(h, length(a - vec3(0.95, 0.06, 0.02)) - 0.07);
+  d = h;
 #endif
   return d;
 }
@@ -458,6 +503,23 @@ float bodyD(vec3 tp) {
   d = smin(d, sdCap(a, vec3(1.58 * BUILD, -2.85, -0.32), vec3(1.72 * BUILD, -4.9, -0.25), 0.36 * BUILD), 0.32);
 #if FEM
   d = smin(d, sdEll(a - vec3(0.42, -3.0, 0.3), vec3(0.34, 0.3, 0.3)), 0.25);
+#endif
+#if COSTUME == 8
+  // plate: a keeled breastplate, a gorget of three lames about the neck, pauldrons of four
+  d = smin(d, sdEll(tp - vec3(0.0, -3.25, -0.12), vec3(0.09, 1.25, 0.62)), 0.22);
+  for (int i = 0; i < 3; i++) {
+    float fi = float(i);
+    float y0 = -1.86 - fi * 0.17;
+    d = min(d, sdRC(tp, vec3(0.0, y0, -0.3), vec3(0.0, y0 - 0.2, -0.3), 0.5 + fi * 0.13, 0.6 + fi * 0.13));
+  }
+  for (int i = 0; i < 4; i++) {
+    float fi = float(i);
+    vec3 c = vec3(1.3 * BUILD + fi * 0.07, -2.42 - fi * 0.19, -0.34);
+    float e = sdEll(a - c, vec3(0.6 - fi * 0.035, 0.4 - fi * 0.02, 0.58 - fi * 0.035));
+    e = max(e, (c.y - 0.14) - a.y);
+    d = min(d, e);
+  }
+  return d;
 #endif
   // drapery: folds that hang from each shoulder point toward the middle, sharp ridges, soft troughs
   float ang = atan(tp.y + 2.45, a.x - 1.15 * BUILD);
@@ -493,8 +555,8 @@ float bodyD(vec3 tp) {
 
 float neckD(vec3 pw) {
   float d = sdRC(pw, NBOT, NTOP, 0.5 * NECK, 0.41 * NECK);
-  d = smin(d, sdCap(pw, MASTL, STERL, (FEM == 1 ? 0.05 : 0.075) * NECK), 0.14);
-  d = smin(d, sdCap(pw, MASTR, STERR, (FEM == 1 ? 0.05 : 0.075) * NECK), 0.14);
+  d = smin(d, sdCap(pw, MASTL, STERL, (FEM == 1 ? 0.065 : 0.08) * NECK), 0.18);
+  d = smin(d, sdCap(pw, MASTR, STERR, (FEM == 1 ? 0.065 : 0.08) * NECK), 0.18);
   return d;
 }
 
@@ -635,7 +697,7 @@ void main() {
   vec3 hp = HRT * (p - PIV) + PIV;
   vec3 tp = TRT * (p - TPV) + TPV; tp.y -= BODYY;
   vec3 v = -rd;
-  vec3 keyC = vec3(1.0, 0.88, 0.74) * 2.35;
+  vec3 keyC = vec3(1.0, 0.91, 0.8) * 2.3;
   vec3 fillD = normalize(vec3(-L.x * 1.2, 0.1, 0.65));
   vec3 fillC = vec3(0.38, 0.46, 0.66) * 0.3;
   vec3 rimD = normalize(vec3(-L.x * 0.9, 0.35, -0.75));
@@ -745,7 +807,11 @@ void main() {
     iris *= 1.0 - 0.5 * smoothstep(ir * 0.65, ir, ang);   // limbal ring
     iris = mix(iris, vec3(0.01), smoothstep(0.2, 0.17, ang)); // pupil
     alb = mix(iris, sclera, smoothstep(ir - 0.03, ir + 0.02, ang));
+    // the upper lid shades the top of the eyeball
+    alb *= 1.0 - 0.6 * smoothstep(-0.15, 0.3, dot(e, normalize(vec3(0.0, 1.0, -0.2))));
     rough = 0.08; specK = 1.4;
+    vec3 Lh = HRT * L; if (hp.x < 0.0) Lh.x = -Lh.x;
+    eN = smoothstep(0.11, 0.06, acos(clamp(dot(e, normalize(g + Lh * 0.38)), -1.0, 1.0)));
   } else if (m == M_SPEC) {
     kind = 4; alb = vec3(0.75, 0.6, 0.35); rough = 0.25; metal = 1.0; specK = 1.0;
   } else if (m == M_HEADW) {
@@ -757,6 +823,10 @@ void main() {
     alb *= 0.85 + 0.2 * vnoise3(hp * vec3(30.0, 30.0, 30.0));
     if (trim > 0.5) { metal = 0.6; rough = 0.35; specK = 0.9; kind = 4; }
     else { rough = 0.55; specK = 0.25; }
+#elif HEADW == 3
+    // old plate: worn steel with pitting, darker in the sight and the breaths
+    alb = vec3(0.56, 0.57, 0.6) * (0.85 + 0.2 * vnoise3(hp * 9.0)) * (1.0 - 0.25 * smoothstep(0.6, 0.85, vnoise3(hp * 40.0)));
+    kind = 4; metal = 1.0; rough = 0.32; specK = 1.0;
 #else
     alb = HEADC * (0.85 + 0.25 * vnoise3(hp * 12.0)); rough = 0.8; specK = 0.08;
 #endif
@@ -801,6 +871,9 @@ void main() {
     n = normalize(n + (HRW * vec3(f.x, -f.y, 0.0)) * ring * 0.9);
     kind = 4; metal = 1.0; rough = 0.35; specK = 1.0;
     if (tp.y > -2.32 && length(tp.xz - vec2(0.0, -0.3)) < 0.8) { alb = CB; kind = 0; metal = 0.0; rough = 0.8; specK = 0.1; }
+#elif COSTUME == 8
+    alb = vec3(0.55, 0.56, 0.59) * (0.85 + 0.2 * vnoise3(tp * 6.0)) * (1.0 - 0.2 * smoothstep(0.6, 0.85, vnoise3(tp * 30.0)));
+    kind = 4; metal = 1.0; rough = 0.3; specK = 1.0;
 #elif COSTUME == 6
     float neckline = -2.55;
     if (tp.y > -2.42 && length((tp.xz - vec2(0.0, -0.3)) / vec2(1.0, 0.7)) > 0.58) { alb = KERCH; }
@@ -862,6 +935,7 @@ void main() {
     col *= ao;
     float spec = pow(max(dot(n, hv), 0.0), 220.0) * 6.0 * max(sh, 0.35);
     col += vec3(spec);
+    col += vec3(1.3, 1.25, 1.2) * eN; // the catchlight: a window of the key in the wet cornea
   } else if (kind == 4) {
     vec3 r = reflect(-v, n);
     vec3 env = mix(vec3(0.12, 0.09, 0.07), vec3(0.75, 0.62, 0.5), smoothstep(-0.3, 0.6, r.y)) + AURA * 0.25 * smoothstep(0.2, 0.9, dot(r, rimD));
@@ -896,6 +970,25 @@ void main() {
       }
     }
   }
+#endif
+#if GHOSTLY
+  // a ghost is glass: a dim core, edges that burn (fresnel), the key only a sheen on the plate
+  {
+    float lum = dot(col, vec3(0.3, 0.59, 0.11));
+    float fr = pow(1.0 - ndv, 2.2);
+    float l1 = min(lum, 1.2);
+    vec3 gc = vec3(0.05, 0.2, 0.25) * (0.3 + l1 * 1.3) * (0.4 + 0.6 * ao) + vec3(0.6, 0.95, 1.0) * smoothstep(0.8, 1.8, lum) * 0.6;
+    // translucent: the backdrop shows through the body, least at the burning rims; wisps of denser
+    // mist drift up through it
+    float wisp = fbm3(vec3(p.x * 2.5, p.y * 1.2 - p.x * 0.6, p.z * 2.5));
+    float al = clamp(0.42 + 0.35 * smoothstep(0.35, 0.75, wisp) + 0.6 * fr, 0.0, 1.0);
+    col = mix(background(uv), gc, al) + vec3(0.3, 0.8, 0.9) * fr * 0.9 * ao;
+  }
+  // eyes that burn in the sight, the face behind the visor only half there, the wound alight
+  if (m == M_EYE) col = vec3(1.4, 2.1, 2.2);
+  else if (m == M_SKIN && length(hp - vec3(0.0, -0.1, -0.1)) < 1.3) col *= 0.75;
+  // the wound: a gash of cold light across the throat, between the bevor and the gorget
+  col += vec3(0.9, 1.8, 2.0) * exp(-pow((hp.y + 1.3 + 0.12 * hp.x) / 0.05, 2.0)) * smoothstep(-0.3, 0.3, hp.z) * smoothstep(0.6, 0.15, abs(hp.x + 0.05));
 #endif
   // tone: soft shoulder, then gamma
   col = col / (1.0 + col * 0.55) * 1.3;
@@ -998,6 +1091,9 @@ function initGL() {
   }
   return GL;
 }
+
+/** Create the portrait context now (a context created while the GPU is busy with a panel waits for it). */
+export function warmPortraitGL() { initGL(); }
 
 function compile(gl, type, src) {
   const s = gl.createShader(type);

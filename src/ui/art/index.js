@@ -7,7 +7,7 @@ import { buildPerson } from './bodies.js';
 import { buildNpc } from './people.js';
 import { renderFigure, mul3, rotX, rotY, ap3 } from './sculpt.js';
 import { paintPortraitDesign, paintFaceDecal, paintGhostKnight } from './facePaint.js';
-import { paintPortraitGL } from './portraitGL.js';
+import { paintPortraitGL, warmPortraitGL } from './portraitGL.js';
 
 /**
  * Illustrated panels for the dialogue / encounter / shop screens — the big
@@ -93,6 +93,7 @@ const perfLog = (label, t0) => { if (PERF) console.info(`[perf] ${label} ${Math.
 export { perfNow, perfLog };
 
 export function paintPanel(spec) {
+  warmPortraitGL();
   const T0 = perfNow();
   const W = spec.w ?? 1280;
   const H = spec.h ?? 640;
@@ -918,7 +919,9 @@ function paintNpcPortraitIn(npc, scale) {
     const ch = { race: npc.race ?? 'human', gender: npc.gender ?? 'male', look: npc.look ?? {}, name: npc.name };
     if (npc.kind === 'hooded') ch.look = { ...ch.look, head: 6 };
     if (npc.kind === 'ghost') {
-      c = npc.paintGhost !== false ? (() => { const big = paintGhostKnight(W * 2, H * 2); const cc = makeCanvas(W, H); cc.getContext('2d').drawImage(big, 0, 0, W, H); return cc; })() : ghostBust(W, H);
+      // raymarched armet and plate (the same field as the living portraits), then washed spectral
+      const gl = paintPortraitGL(FERRAN_DESIGN, W, H, { race: 'human', aura: '#8ff0ff' });
+      c = gl ? spectralPortrait(gl) : npc.paintGhost !== false ? (() => { const big = paintGhostKnight(W * 2, H * 2); const cc = makeCanvas(W, H); cc.getContext('2d').drawImage(big, 0, 0, W, H); return cc; })() : ghostBust(W, H);
     } else c = paintPortrait(ch, { scale });
     if (npc.kind === 'ghost') {
       // the same spectral knight that kneels in the chapel, helm and all
@@ -929,6 +932,66 @@ function paintNpcPortraitIn(npc, scale) {
       if (npc.aura) glow(g, c.width / 2, c.height * 0.44, c.height * 0.25, npc.aura, 0.12);
     }
   }
+  return c;
+}
+
+/** Ferran in his armet: a bust design for the raymarched portrait painter. */
+const FERRAN_DESIGN = {
+  seed: 9101, sex: 'm', age: 0.45, skin: '#c8a088', yaw: -0.3, gaze: [0, 0],
+  face: { w: 1, jaw: 1.1, cheek: 1, brow: 1.2, neck: 1.1 }, eyes: { c: '#9ae8ff', size: 1, lid: 0.35 },
+  hair: { style: 'none' }, beard: { style: 'none' },
+  head: { kind: 'helm' }, costume: { kind: 'plate' }, ghost: true,
+  aura: '#8ff0ff', bg: ['#10303a', '#010305'],
+};
+
+/**
+ * The spectral wash for Ferran's rendered bust: luminance mapped from night through cyan to
+ * white (so the lit plate edges burn and the shadows are glass), a bloom on the bright planes,
+ * a cold mist welling up from below and drifting tendrils.
+ */
+function spectralPortrait(src) {
+  const W = src.width;
+  const H = src.height;
+  const c = makeCanvas(W, H);
+  const g = c.getContext('2d');
+  g.drawImage(src, 0, 0);
+  // bloom: the burning edges, eyes and wound spill light
+  g.save();
+  g.globalCompositeOperation = 'lighter';
+  g.filter = 'blur(5px)';
+  g.globalAlpha = 0.45;
+  g.drawImage(src, 0, 0);
+  g.filter = 'blur(16px)';
+  g.globalAlpha = 0.3;
+  g.drawImage(src, 0, 0);
+  g.restore();
+  // the lower body dissolves into mist: fade toward the background colour with noise
+  const img = g.getImageData(0, 0, W, H);
+  const d = img.data;
+  for (let y = 0; y < H; y++) {
+    const fy = y / H;
+    for (let x = 0; x < W; x++) {
+      const n = Math.sin(x * 0.045 + y * 0.013) * 0.5 + Math.sin(x * 0.11 - y * 0.05 + 1.7) * 0.3 + Math.sin((x + y) * 0.021) * 0.2;
+      const k = Math.max(0, Math.min(1, (fy - 0.62 + n * 0.08) / 0.38));
+      const i = (y * W + x) * 4;
+      d[i] = d[i] * (1 - k * 0.75) + 10 * k;
+      d[i + 1] = d[i + 1] * (1 - k * 0.7) + 40 * k;
+      d[i + 2] = d[i + 2] * (1 - k * 0.68) + 52 * k;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  g.save();
+  g.globalCompositeOperation = 'lighter';
+  g.strokeStyle = 'rgba(150,240,255,0.10)';
+  for (let i = 0; i < 9; i++) {
+    g.lineWidth = 2 + (i % 3) * 2;
+    g.beginPath();
+    const x0 = W * (0.1 + i * 0.1);
+    g.moveTo(x0, H);
+    g.bezierCurveTo(x0 + Math.sin(i * 2.1) * W * 0.12, H * 0.82, x0 - Math.cos(i * 1.3) * W * 0.1, H * 0.7, x0 + Math.sin(i) * W * 0.06, H * (0.55 + (i % 4) * 0.04));
+    g.stroke();
+  }
+  g.restore();
   return c;
 }
 

@@ -96,6 +96,9 @@ export default class ShopScene extends Scene {
   _build() {
     const { ctx } = this;
     const deity = this.shop.deity ? DEITIES[this.shop.deity] : null;
+    // the keeper's portrait first: its GL context is cheap while the GPU is idle, slow behind a panel
+    const npc = NPCS[this.shop.npc];
+    const portURL = npc ? framedPortraitURL(npc) : null;
     const { canvas, info, composer } = paintPanel({ setting: this.shop.setting ?? 'shop', cast: this.shop.cast, deity, w: 1280, h: 600, seed: this.shop.id.length * 31, actor: npcActor(NPCS[this.shop.npc]) });
     this.composer = composer;
     const fx = h('canvas.fx', { width: 1280, height: 600 });
@@ -107,10 +110,9 @@ export default class ShopScene extends Scene {
     this.artCanvas = canvas;
     const art = Frame({ title: this.shop.name, variant: 'dark', className: 'shp-art', children: [artView] });
     // keeper
-    const npc = NPCS[this.shop.npc];
     this.sayEl = h('div.say');
     const keeper = Frame({ variant: 'parchment', className: 'shp-keeper', children: [
-      npc ? h('img.port', { src: framedPortraitURL(npc), alt: npc.name }) : null,
+      npc ? h('img.port', { src: portURL, alt: npc.name }) : null,
       h('div.who', [npc?.name ?? this.shop.keeper, npc?.title ? h('small', [npc.title]) : null]),
       this.sayEl,
       this.noteEl = h('div.note'),

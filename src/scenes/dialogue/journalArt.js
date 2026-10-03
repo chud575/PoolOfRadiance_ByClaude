@@ -28,6 +28,11 @@ export function engravedPlate(n) {
   const spec = PLATES[n];
   if (!spec) return null;
   if (plateCache.has(n)) return plateCache.get(n);
+  if (n === 7) {
+    const url = drawnVigilPlate().toDataURL('image/png');
+    plateCache.set(n, url);
+    return url;
+  }
   const W = 720;
   const H = 340;
   // paint wider than the plate, then frame the subject in the centre third
@@ -337,4 +342,246 @@ export function pageTexture(side) {
   const url = c.toDataURL('image/jpeg', 0.9);
   pageCache.set(side, url);
   return url;
+}
+
+// ------------------------------------------------------------------ hand-composed plates
+
+/**
+ * Plate VII, drawn rather than traced: the ghost of Ferran Martinez kneeling in vigil before the
+ * broken altar of Sokol's chapel. Built as an engraver works: each mass is a path, hatched in its
+ * own direction (wall courses ruled level, the cloak cut along its folds, the helm in arcs round its
+ * dome), in three keyed values (open paper, one ruled tint, crosshatch), then contoured. The ghost
+ * is left as clean paper in a halo of open lines, cut out of a crosshatched night.
+ */
+function drawnVigilPlate(W = 720, H = 340) {
+  const S = 2;
+  const c = makeCanvas(W * S, H * S);
+  const g = c.getContext('2d');
+  g.scale(S, S);
+  const R = rngOf(707);
+  const INK = (a) => `rgba(38,24,14,${a})`;
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  const poly = (pts) => { const p = new Path2D(); p.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) p.lineTo(pts[i][0], pts[i][1]); p.closePath(); return p; };
+  // parallel burin lines across a clip path; wobble keeps them hand-cut, swell with weight
+  const hatch = (path, ang, sp, w, a = 0.85, bbox = [0, 0, W, H]) => {
+    g.save();
+    g.clip(path);
+    g.strokeStyle = INK(a);
+    const [x0, y0, x1, y1] = bbox;
+    const cx = (x0 + x1) / 2; const cy = (y0 + y1) / 2;
+    const L = Math.hypot(x1 - x0, y1 - y0) / 2 + 4;
+    const dx = Math.cos(ang); const dy = Math.sin(ang);
+    for (let o = -L; o <= L; o += sp) {
+      g.lineWidth = w * (0.8 + R() * 0.4);
+      g.beginPath();
+      const px = cx - dy * o; const py = cy + dx * o;
+      const n = 8;
+      for (let k = 0; k <= n; k++) {
+        const t = -L + (2 * L * k) / n;
+        const wob = (R() - 0.5) * 0.5;
+        const x = px + dx * t - dy * wob; const y = py + dy * t + dx * wob;
+        if (k) g.lineTo(x, y); else g.moveTo(x, y);
+      }
+      g.stroke();
+    }
+    g.restore();
+  };
+  // arcs round a centre (domes, the halo)
+  const arcs = (path, cx, cy, r0, r1, sp, w, a0 = 0, a1 = Math.PI * 2, al = 0.85) => {
+    g.save();
+    g.clip(path);
+    g.strokeStyle = INK(al);
+    for (let r = r0; r <= r1; r += sp) { g.lineWidth = w; g.beginPath(); g.arc(cx, cy, r, a0, a1); g.stroke(); }
+    g.restore();
+  };
+  // curved strokes from a list of guide curves: each guide is [[x,y]...]; strokes are spaced along a normal
+  const folds = (path, guides, count, spread, w, al = 0.85) => {
+    g.save();
+    g.clip(path);
+    g.strokeStyle = INK(al);
+    for (const gd of guides) {
+      for (let k = 0; k < count; k++) {
+        const off = (k - (count - 1) / 2) * spread;
+        g.lineWidth = w * (0.7 + 0.6 * (1 - Math.abs(off) / (spread * count)));
+        g.beginPath();
+        gd.forEach(([x, y], i) => { const xx = x + off; if (i) g.lineTo(xx, y + Math.abs(off) * 0.15); else g.moveTo(xx, y); });
+        g.stroke();
+      }
+    }
+    g.restore();
+  };
+  const line = (pts, w, a = 0.92) => { g.strokeStyle = INK(a); g.lineWidth = w; g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.stroke(); };
+  const contour = (path, w, a = 0.95) => { g.strokeStyle = INK(a); g.lineWidth = w; g.stroke(path); };
+
+  // paper
+  g.fillStyle = '#f3e7c6';
+  g.fillRect(0, 0, W, H);
+  const all = poly([[15, 15], [W - 15, 15], [W - 15, H - 15], [15, H - 15]]);
+  const floorY = 268;
+
+  // ---- the wall: ashlar courses ruled level (one tint), the joints cut short
+  const wall = poly([[15, 15], [W - 15, 15], [W - 15, floorY], [15, floorY]]);
+  hatch(wall, 0, 3.1, 0.55, 0.7);
+  g.strokeStyle = INK(0.75);
+  for (let y = 15, row = 0; y < floorY; y += 21, row++) {
+    line([[15, y], [W - 15, y]], 1.0, 0.7);
+    for (let x = 15 + (row % 2) * 26 + R() * 6; x < W - 15; x += 46 + R() * 10) line([[x, y], [x, Math.min(floorY, y + 21)]], 0.9, 0.7);
+  }
+  // ---- the vault in shadow: crosshatch along the top and in the far corners
+  const gloomL = poly([[15, 15], [175, 15], [120, floorY], [15, floorY]]);
+  const gloomR = poly([[W - 15, 15], [W - 170, 15], [W - 110, floorY], [W - 15, floorY]]);
+  const gloomT = poly([[15, 15], [W - 15, 15], [W - 15, 52], [15, 60]]);
+  for (const p of [gloomL, gloomR, gloomT]) { hatch(p, 0.8, 3.2, 0.65, 0.82); hatch(p, -0.75, 3.8, 0.6, 0.78); }
+  const deepL = poly([[15, 15], [90, 15], [55, floorY], [15, floorY]]);
+  const deepR = poly([[W - 15, 15], [W - 85, 15], [W - 50, floorY], [W - 15, floorY]]);
+  for (const p of [deepL, deepR]) hatch(p, Math.PI / 2, 3, 0.6, 0.8);
+
+  // ---- the lancet window behind the altar: open paper, its leading drawn fine; light falls from it
+  const wx = 452; const wtop = 44; const wbot = 172; const ww = 40;
+  const lancet = new Path2D();
+  lancet.moveTo(wx - ww, wbot); lancet.lineTo(wx - ww, wtop + 48);
+  lancet.quadraticCurveTo(wx - ww, wtop, wx, wtop - 6); lancet.quadraticCurveTo(wx + ww, wtop, wx + ww, wtop + 48);
+  lancet.lineTo(wx + ww, wbot); lancet.closePath();
+  // the splay of the window: a deep reveal, cross-hatched
+  const reveal = new Path2D();
+  reveal.moveTo(wx - ww - 14, wbot + 8); reveal.lineTo(wx - ww - 14, wtop + 46);
+  reveal.quadraticCurveTo(wx - ww - 14, wtop - 14, wx, wtop - 22); reveal.quadraticCurveTo(wx + ww + 14, wtop - 14, wx + ww + 14, wtop + 46);
+  reveal.lineTo(wx + ww + 14, wbot + 8); reveal.closePath();
+  g.save(); g.fillStyle = '#f3e7c6'; g.fill(reveal); g.restore();
+  hatch(reveal, Math.PI / 2, 3, 0.6, 0.8); hatch(reveal, 0.4, 4, 0.5, 0.7);
+  g.save(); g.fillStyle = '#f6ecd0'; g.fill(lancet); g.restore();
+  contour(reveal, 1.4);
+  contour(lancet, 1.6);
+  // tracery: mullion, transom, a quatrefoil in the head, quarries
+  line([[wx, wtop + 30], [wx, wbot]], 1.4);
+  line([[wx - ww, 118], [wx + ww, 118]], 1.0);
+  g.save(); g.clip(lancet);
+  g.strokeStyle = INK(0.35); g.lineWidth = 0.6;
+  for (let k = -12; k < 12; k++) { g.beginPath(); g.moveTo(wx + k * 9, wtop); g.lineTo(wx + k * 9 + 80, wbot); g.stroke(); g.beginPath(); g.moveTo(wx + k * 9, wtop); g.lineTo(wx + k * 9 - 80, wbot); g.stroke(); }
+  g.restore();
+  g.strokeStyle = INK(0.9); g.lineWidth = 1.2;
+  for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2; g.beginPath(); g.arc(wx + Math.cos(a) * 7, wtop + 22 + Math.sin(a) * 7, 7, 0, Math.PI * 2); g.stroke(); }
+  // the beam of light falling to the floor: the wall's tint is scraped away in a wedge
+  const beam = new Path2D(); beam.ellipse(wx - 90, floorY + 26, 150, 22, 0, 0, Math.PI * 2);
+
+  // ---- the floor: flagstones in perspective, a light tint
+  const floor = poly([[15, floorY], [W - 15, floorY], [W - 15, H - 15], [15, H - 15]]);
+  hatch(floor, 0.06, 4.2, 0.5, 0.55);
+  const vp = [wx - 20, 120];
+  for (let k = -9; k <= 11; k++) { const fx = vp[0] + k * 70; line([[vp[0] + (fx - vp[0]) * ((floorY - vp[1]) / (H - vp[1])), floorY], [fx, H - 15]], 0.8, 0.55); }
+  for (const fy of [282, 300, 322]) line([[15, fy], [W - 15, fy]], 0.8, 0.55);
+  g.save(); g.globalAlpha = 0.7; g.fillStyle = '#f6ecd0'; g.fill(beam); g.restore();
+
+  // ---- the altar: a slab on a block, the front in a vertical tint, the shadowed end crosshatched
+  const ax0 = 372; const ax1 = 540; const aTop = 196;
+  const slab = poly([[ax0 - 8, aTop], [ax1 + 10, aTop], [ax1 + 4, aTop - 9], [ax0 - 2, aTop - 9]]);
+  const front = poly([[ax0, aTop], [ax1, aTop], [ax1, floorY + 4], [ax0, floorY + 4]]);
+  const side = poly([[ax0, aTop], [ax0 - 16, aTop - 6], [ax0 - 16, floorY - 2], [ax0, floorY + 4]]);
+  hatch(front, Math.PI / 2, 3.2, 0.7, 0.8);
+  hatch(side, Math.PI / 2, 2.6, 0.8, 0.85); hatch(side, 0.6, 3, 0.7, 0.85);
+  hatch(slab, 0.1, 3.5, 0.5, 0.5);
+  // the altar cloth, its edge scalloped; the broken corner of the slab
+  const cloth = poly([[ax0 + 44, aTop], [ax1 - 44, aTop], [ax1 - 44, aTop + 44], [ax0 + 44, aTop + 44]]);
+  g.save(); g.fillStyle = '#f3e7c6'; g.fill(cloth); g.restore();
+  hatch(cloth, Math.PI / 2, 5, 0.5, 0.55);
+  contour(cloth, 1.2);
+  // Tyr's scales on the cloth
+  const sx = (ax0 + ax1) / 2; const sy = aTop + 20;
+  line([[sx, sy - 12], [sx, sy + 12]], 1.2); line([[sx - 14, sy - 8], [sx + 14, sy - 8]], 1.2);
+  for (const d of [-1, 1]) { line([[sx + d * 14, sy - 8], [sx + d * 10, sy + 2]], 0.7); line([[sx + d * 14, sy - 8], [sx + d * 18, sy + 2]], 0.7); line([[sx + d * 8, sy + 2], [sx + d * 20, sy + 2]], 1.0); }
+  contour(front, 1.5); contour(side, 1.5); contour(slab, 1.4);
+  line([[ax1 - 18, aTop - 9], [ax1 - 6, aTop - 2], [ax1 + 10, aTop]], 1.2); // a crack where the slab broke
+  line([[ax1 - 30, aTop + 2], [ax1 - 34, aTop + 30], [ax1 - 28, aTop + 52]], 0.9);
+  // candles with flames: tapered sticks, drips, haloes of open paper
+  for (const cxp of [ax0 + 16, ax0 + 30, ax1 - 30, ax1 - 14]) {
+    const hgt = 22 + ((cxp * 7) % 9);
+    const top = aTop - 9 - hgt;
+    const stick = poly([[cxp - 3.2, aTop - 9], [cxp + 3.2, aTop - 9], [cxp + 2.4, top], [cxp - 2.4, top]]);
+    g.save(); g.fillStyle = '#f6ecd0'; g.fill(stick); g.restore();
+    hatch(stick, Math.PI / 2, 1.8, 0.5, 0.6, [cxp - 1, top, cxp + 4, aTop]);
+    contour(stick, 0.9);
+    line([[cxp - 2.4, top + 3], [cxp - 3, top + 9]], 0.8);
+    const fl = new Path2D(); fl.moveTo(cxp, top - 13); fl.quadraticCurveTo(cxp + 4.5, top - 4, cxp, top - 1); fl.quadraticCurveTo(cxp - 4.5, top - 4, cxp, top - 13);
+    g.save(); g.fillStyle = '#fbf4dc'; g.beginPath(); g.arc(cxp, top - 6, 11, 0, Math.PI * 2); g.fill(); g.restore();
+    contour(fl, 0.9);
+    line([[cxp, top], [cxp, top - 4]], 1.0);
+  }
+
+  // ---- pews in the foreground: near-black, crosshatched to the plate's darkest
+  const pewL = poly([[15, 236], [118, 230], [124, H - 15], [15, H - 15]]);
+  const pewR = poly([[W - 15, 226], [W - 120, 232], [W - 128, H - 15], [W - 15, H - 15]]);
+  for (const p of [pewL, pewR]) { hatch(p, 0.7, 2.6, 0.8, 0.9); hatch(p, -0.8, 2.8, 0.75, 0.9); hatch(p, Math.PI / 2, 3.4, 0.6, 0.85); contour(p, 1.6); }
+  line([[15, 250], [120, 244]], 1.6); line([[W - 15, 240], [W - 122, 246]], 1.6);
+  for (const x of [40, 80]) line([[x, 236 - (x - 15) * 0.06], [x + 2, H - 15]], 1.2);
+
+  // ---- the knight: the halo first — the wall's tint lifted round him (open, sparse lines)
+  const kx = 256;
+  const halo = new Path2D(); halo.ellipse(kx + 8, 200, 92, 110, 0, 0, Math.PI * 2);
+  g.save(); g.clip(halo);
+  const hg = g.createRadialGradient(kx + 8, 200, 20, kx + 8, 200, 110);
+  hg.addColorStop(0, 'rgba(246,236,208,1)'); hg.addColorStop(0.6, 'rgba(246,236,208,0.85)'); hg.addColorStop(1, 'rgba(246,236,208,0)');
+  g.fillStyle = hg; g.fillRect(0, 0, W, H);
+  g.restore();
+  arcs(halo, kx + 8, 200, 70, 110, 5, 0.5, 0, Math.PI * 2, 0.35);
+
+  // the figure, kneeling in profile toward the altar, sword reversed before him
+  const cloak = poly([[244, 120], [228, 132], [208, 186], [182, 238], [160, floorY + 2], [252, floorY + 2], [246, 232], [238, 186]]);
+  const backLeg = poly([[232, 206], [250, 208], [232, 260], [214, floorY], [176, floorY + 1], [176, floorY - 9], [214, 254]]);
+  const thigh = poly([[244, 202], [298, 206], [306, 220], [252, 226]]);
+  const shin = poly([[292, 210], [308, 216], [310, floorY - 6], [318, floorY], [290, floorY + 1], [294, floorY - 6]]);
+  const torso = poly([[232, 214], [228, 170], [236, 136], [268, 132], [282, 150], [280, 186], [264, 214]]);
+  const pauld = new Path2D(); pauld.ellipse(262, 146, 15, 12, -0.3, 0, Math.PI * 2);
+  const arm = poly([[258, 152], [272, 150], [284, 184], [312, 176], [316, 188], [282, 198], [270, 196]]);
+  const helm = new Path2D();
+  helm.moveTo(242, 120); helm.bezierCurveTo(238, 90, 262, 80, 276, 92); helm.quadraticCurveTo(286, 104, 296, 118);
+  helm.lineTo(282, 128); helm.quadraticCurveTo(268, 136, 250, 132); helm.closePath();
+  const gorget = poly([[246, 128], [278, 126], [282, 138], [244, 140]]);
+  const sword = poly([[318.5, 186], [322.5, 186], [323, floorY - 2], [320.5, floorY + 3], [318, floorY - 2]]);
+  const guard = poly([[304, 184], [338, 182], [338, 187], [304, 189]]);
+  const grip = poly([[318, 168], [323, 168], [323, 183], [318, 183]]);
+  const knight = [cloak, backLeg, thigh, shin, torso, arm, pauld, helm, gorget];
+  // ghost: open paper; form only in the turning planes, cut along the form
+  for (const p of knight) { g.save(); g.fillStyle = '#f8efd4'; g.fill(p); g.restore(); }
+  // the wall seen faintly through the cloak's hem
+  g.save(); g.clip(cloak); for (let y = 15; y < floorY; y += 21) line([[150, y], [260, y]], 0.5, 0.25); g.restore();
+  folds(cloak, [[[236, 132], [222, 180], [200, 232], [184, floorY]], [[240, 150], [232, 200], [222, 240], [214, floorY]]], 4, 3.2, 0.6, 0.6);
+  hatch(backLeg, 1.2, 3, 0.55, 0.6);
+  arcs(helm, 270, 112, 4, 30, 3.4, 0.55, Math.PI * 0.55, Math.PI * 1.25, 0.65);
+  folds(torso, [[[236, 140], [232, 176], [238, 212]]], 3, 3, 0.55, 0.55);
+  hatch(shin, 1.62, 3, 0.5, 0.5);
+  hatch(thigh, 0.1, 3.4, 0.45, 0.45, [244, 202, 306, 226]);
+  arcs(pauld, 262, 150, 4, 16, 3.5, 0.5, Math.PI * 0.2, Math.PI * 0.9, 0.6);
+  // lames on the pauldron and the tasset, a breath-grid and the sight on the helm
+  for (let k = 0; k < 3; k++) line([[252, 150 + k * 5], [274, 146 + k * 5]], 0.7, 0.75);
+  line([[262, 108], [294, 116]], 1.6); // the sight
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) { g.fillStyle = INK(0.85); g.beginPath(); g.arc(276 + i * 5, 121 + j * 4.5, 0.9, 0, Math.PI * 2); g.fill(); }
+  line([[242, 100], [270, 84]], 0.8, 0.7); // the comb
+  for (const p of knight) contour(p, 1.5, 0.92);
+  // the sword (steel, drawn firmer), crossguard and pommel under the hands
+  g.save(); g.fillStyle = '#f8efd4'; g.fill(sword); g.fill(guard); g.restore();
+  hatch(sword, Math.PI / 2, 2, 0.4, 0.5, [317, 186, 324, floorY]);
+  contour(sword, 1.2); contour(guard, 1.2); contour(grip, 1.1);
+  g.fillStyle = '#f8efd4'; g.beginPath(); g.arc(320.5, 165, 4.5, 0, Math.PI * 2); g.fill(); g.strokeStyle = INK(0.9); g.lineWidth = 1.2; g.stroke();
+  // the hands closed on the pommel
+  const hands = new Path2D(); hands.ellipse(318, 176, 7, 6, 0.3, 0, Math.PI * 2);
+  g.save(); g.fillStyle = '#f8efd4'; g.fill(hands); g.restore(); contour(hands, 1.2);
+  // the wound at the throat: a short, firm cut with rays of open lines
+  line([[262, 136], [276, 134]], 1.6);
+  for (let k = 0; k < 5; k++) { const a = -2.6 + k * 0.5; line([[269 + Math.cos(a) * 6, 135 + Math.sin(a) * 6], [269 + Math.cos(a) * 12, 135 + Math.sin(a) * 12]], 0.5, 0.6); }
+  // mist curling from the hem along the floor
+  for (let k = 0; k < 5; k++) {
+    const y = floorY - 4 + k * 4;
+    g.strokeStyle = INK(0.5); g.lineWidth = 0.7; g.beginPath();
+    g.moveTo(150 - k * 10, y); g.bezierCurveTo(180, y - 6, 210, y + 4, 250 + k * 8, y - 2); g.stroke();
+  }
+  // a cast shadow of the kneeling figure on the flags (thin ruled tint)
+  const cast = poly([[170, floorY + 2], [318, floorY + 2], [300, floorY + 12], [160, floorY + 10]]);
+  hatch(cast, 0.05, 2.2, 0.55, 0.7);
+
+  // ---- the plate mark
+  g.strokeStyle = INK(0.92); g.lineWidth = 2.2; g.strokeRect(6, 6, W - 12, H - 12);
+  g.lineWidth = 1; g.strokeRect(14.5, 14.5, W - 29, H - 29);
+  void all;
+  return c;
 }

@@ -244,6 +244,8 @@ export default class DialogueScene extends Scene {
     const npc = spec.actorId ? NPCS[spec.actorId] : null;
     // story beats re-pose the figures: spec.pose for the person spoken to, spec.mood for a war-band
     const actor = npc ? (npc.kind === 'ghost' ? ghostActor(spec.pose) : npcActor(npc, spec.pose ? { poseOverride: spec.pose } : {})) : null;
+    // bake the speaker's portrait before the panel: its GL work is quick on an idle GPU
+    if (npc) framedPortraitURL(npc);
     const { canvas, info, composer } = paintPanel({ ...spec, actor, w: 1280, h: 600 });
     this.composer = composer;
     canvas.className = 'dlg-art-cur';
