@@ -1703,9 +1703,9 @@ export function createCity({ seed = 1988 } = {}) {
               vec2 gq = abs(fract(w / vec2(17.0, 13.0) + vec2(0.31, 0.12)) - 0.5) * vec2(17.0, 13.0);
               float lane = (1.0 - smoothstep(1.1, 2.1, min(gq.x, gq.y) + (n2 - 0.5) * 1.4)) * M.r * (1.0 - M.a);
               float buried = smoothstep(0.35, 0.65, n2 * 0.6 + n3 * 0.5);
-              vec3 cobO = texture2D(uCob, w / 2.2).rgb * vec3(0.8, 0.78, 0.76);
-              c = mix(c, cobO, lane * buried * old * 0.75);
-              c *= 1.0 - 0.25 * lane * (1.0 - buried) * old;
+              vec3 cobO = texture2D(uCob, w / 2.2).rgb * vec3(1.05, 1.0, 0.95);
+              c = mix(c, cobO, lane * buried * old * 0.85);
+              c *= 1.0 - 0.3 * lane * (1.0 - buried) * old;
               float burnt = smoothstep(0.7, 0.82, vnoise(w * 0.09 + 40.0) + 0.15 * n2);
               float ashRing = smoothstep(0.62, 0.7, vnoise(w * 0.09 + 40.0) + 0.15 * n2) - burnt;
               c = mix(c, vec3(0.025, 0.022, 0.02) + vec3(0.06) * n3, burnt * 0.85 * old);
@@ -1728,7 +1728,7 @@ export function createCity({ seed = 1988 } = {}) {
             }
           }`);
     };
-    groundMat.customProgramCacheKey = () => 'cityGround';
+    groundMat.customProgramCacheKey = () => 'cityGround-v2';
   }
   const charredMat = addRimLight(texMat('hd2_plaster', { color: 0xb8ac9c }), rimU, 0.7, { weather: 1.0, soot: 1.0, flat: 0.55, flake: 0.7 });
   const weedMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide });
@@ -1750,9 +1750,24 @@ export function createCity({ seed = 1988 } = {}) {
           float sco = smoothstep(0.62, 0.8, vnoise(vMW.xz * 0.12 + 5.0));
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.05, 0.045, 0.04), sco * 0.6);
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.36, 0.34, 0.31) * (0.7 + 0.6 * n3), smoothstep(0.78, 0.86, n2 * 0.7 + n3 * 0.35) * 0.8);
+          // the siege-churned mound: broad dark loam and ash fields, burnt
+          // blotches ringed with grey ash, drifts of fallen masonry chips and
+          // the scree of the walls, so the hill never reads as one sand plane
+          float big = vnoise(vMW.xz * 0.05 + 31.0);
+          diffuseColor.rgb *= 0.6 + 0.55 * big;
+          float bn = vnoise(vMW.xz * 0.1 + 40.0) + 0.15 * n2;
+          float burnt = smoothstep(0.68, 0.8, bn);
+          float ring = max(smoothstep(0.6, 0.68, bn) - burnt, 0.0);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.03, 0.026, 0.024) + vec3(0.05) * n3, burnt * 0.85);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.24, 0.23, 0.22) * (0.7 + 0.5 * n3), ring * 0.5);
+          float chips = smoothstep(0.6, 0.74, vnoise(vMW.xz * 0.5 + 60.0)) * smoothstep(0.4, 0.75, n3);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.33, 0.3, 0.27) * (0.5 + 0.8 * vnoise(vMW.xz * 13.0)), chips * 0.75);
+          // a worn track of old setts half buried, winding over the hill
+          float trk = 1.0 - smoothstep(0.8, 1.8, abs(vMW.x - 55.0 - 9.0 * sin(vMW.z * 0.09 + 1.3)));
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.55 + vec3(0.05, 0.045, 0.04), trk * 0.6);
         }`);
   };
-  moundMat.customProgramCacheKey = () => 'cityMound';
+  moundMat.customProgramCacheKey = () => 'cityMound-v2';
   const cobbleMat = texMat('hd_cobble', { polygonOffset: true, polygonOffsetFactor: -1 });
   // rain standing in the council plaza's worn hollows: puddles that mirror the
   // braziers, the open door and the lit windows as true reflected glints (each

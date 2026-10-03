@@ -166,8 +166,8 @@ export function createWorld({ deferred = false } = {}) {
         a *= smoothstep(-50.0, -78.0, vW.z);
         // thin near the lens, banking up with distance: it separates the planes
         a *= smoothstep(35.0, 120.0, distance(cameraPosition, vW));
-        // warm on the sun (west) side, cool lilac in the lee
-        vec3 col = mix(vec3(0.5, 0.44, 0.7), vec3(1.0, 0.64, 0.46), smoothstep(110.0, 10.0, vW.x) * 0.8);
+        // warm on the sun (west) side, cool teal-grey in the lee
+        vec3 col = mix(vec3(0.42, 0.52, 0.58), vec3(0.95, 0.66, 0.42), smoothstep(110.0, 10.0, vW.x) * 0.8);
         gl_FragColor = vec4(col * 0.7, a * uAlpha * uOp);
       }`,
   });
@@ -175,7 +175,7 @@ export function createWorld({ deferred = false } = {}) {
   // four sheets lying in the streets: dense and low in the hollows, thin and
   // torn higher up, so the foreground ruins, the castle mound and the far
   // quarter separate into planes
-  [[-12.9, 0.3], [-11.8, 0.3], [-10.2, 0.22], [-8.2, 0.12]].forEach(([y, alpha], i) => {
+  [[-12.9, 0.22], [-11.8, 0.2], [-10.2, 0.15], [-8.2, 0.09]].forEach(([y, alpha], i) => {
     const g = new THREE.PlaneGeometry(200, 150);
     g.rotateX(-Math.PI / 2);
     const mat = mistMat.clone();
