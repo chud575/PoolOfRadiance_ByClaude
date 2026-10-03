@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { createSkyDome } from '../../render/lighting.js';
-import { getGrassTexture } from '../../render/textures/index.js';
+import { getGrassTexture, getGlowTexture } from '../../render/textures/index.js';
 import { CLOTH_COLORS, defaultLook } from '../../ui/components/lookData.js';
 import { buildMiniature, miniatureEnvironment } from '../../ui/components/Miniature.js';
 import { isAlive } from '../../rules/character.js';
@@ -111,11 +111,11 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
   scene.add(fireLight);
   // Moon rim on the sentry (resting only): from behind and above, so he stands out against the ruins.
   const sentryRim = new THREE.SpotLight(0x9ab8ff, 0, 9, 0.38, 0.6, 1.2);
-  sentryRim.position.set(-2.8, 4.4, -7.8);
+  sentryRim.position.set(-3.2, 4.6, -5.2);
   scene.add(sentryRim, sentryRim.target);
   // The embers' glow catching the sentry from below and in front (warm), against the moon rim behind (cold).
   const sentryFire = new THREE.SpotLight(0xff8a40, 0, 8, 0.32, 0.7, 1.4);
-  sentryFire.position.set(0.1, 0.45, 0.2);
+  sentryFire.position.set(-0.15, 0.5, -0.05);
   scene.add(sentryFire, sentryFire.target);
   // The moon low behind the ruins: rims the arch, the wall tops and the party's backs in cold silver.
   const backMoon = new THREE.DirectionalLight(0x86a2ff, night ? 1.6 : 0.6);
@@ -207,12 +207,21 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
         set.push({ p: [x, c * 0.345 + 0.17, 0], s: [0.73, 0.345, 0.66], mortar: true, frame: archF });
       }
     }
-    const nV = 11;
+    // The ring of voussoirs: wedge-cut stones, each a little narrower than its share of the arc so
+    // the joints read as dark lines, deep radially, the extrados stepped (long and short in turn),
+    // a proud keystone; three have fallen from the right haunch.
+    const nV = 13;
+    const step = Math.PI / nV;
     for (let i = 0; i < nV; i++) {
-      if (i >= 6 && i <= 8) continue;
-      const a = Math.PI - (i + 0.5) / nV * Math.PI;
+      if (i >= 8 && i <= 10) continue;
+      const a = Math.PI - (i + 0.5) * step;
+      const key = i === 6;
       const t = 0.72 + hrand(i, 44) * 0.28;
-      set.push({ p: [Math.cos(a) * 1.5, 3.1 + Math.sin(a) * 1.5, 0], s: [0.6, 0.36, 0.72], r: [0, 0, a - Math.PI / 2], col: [t * 1.02, t, t * 0.93], dmg: i === 5 || i === 9 ? 0.9 : 0.35, moss: 0.8, frame: archF });
+      const depth = key ? 0.68 : i % 2 ? 0.5 : 0.6;
+      const rr = 1.5 + depth / 2 - 0.18;
+      const tw = 2 * Math.PI * 1.5 / (2 * nV) * 0.86 * (key ? 1.12 : 1);
+      set.push({ p: [Math.cos(a) * rr, 3.1 + Math.sin(a) * rr, key ? 0.04 : 0], s: [tw, depth, key ? 0.8 : 0.72], r: [0, 0, a - Math.PI / 2], col: [t * 1.02, t, t * 0.93], dmg: i === 7 || i === 11 ? 0.9 : 0.3, moss: 0.8, soot: 0.25, frame: archF });
+      set.push({ p: [Math.cos(a + step / 2) * (1.5 + 0.12), 3.1 + Math.sin(a + step / 2) * (1.5 + 0.12), 0], s: [0.05, 0.52, 0.62], r: [0, 0, a + step / 2 - Math.PI / 2], mortar: true, frame: archF });
     }
     for (let i = 0; i < 3; i++) set.push({ p: [2.3 + i * 0.5, 0.18, -8.0 + i * 0.25], s: [0.6, 0.36, 0.72], r: [hrand(i, 41) * 0.6, hrand(i, 42) * 3, hrand(i, 43) * 0.5], col: [0.72, 0.7, 0.65], dmg: 1, moss: 0.9 });
     // A collapsed tower: coursed rings of blocks with a ragged top and a dark window.
@@ -232,11 +241,16 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
       }
     }
     // Column stumps: stacked drums (squared off a little where they broke).
+    // (each on a square plinth, the drums seated on one another — slightly shifted by the quake
+    // that threw the city down — never floating with gaps between them)
     for (const [x, z, hh] of [[4.2, -7.8, 2.6], [6.6, -7.2, 1.2], [-4.2, -8.6, 1.7]]) {
+      set.push({ p: [x, 0.14, z], s: [0.86, 0.28, 0.86], r: [0, hrand(1, z) * 0.3, 0], col: [0.66, 0.64, 0.6], dmg: 0.4, moss: 0.8 });
       const nd = Math.max(1, Math.round(hh / 0.5));
+      const dh = (hh - 0.28) / nd;
       for (let k = 0; k < nd; k++) {
         const t = 0.7 + hrand(k, x) * 0.3;
-        set.push({ p: [x, (k + 0.5) * (hh / nd), z], s: [0.62, hh / nd - 0.02, 0.62], r: [0, hrand(k, z) * 3, 0], col: [t * 1.02, t, t * 0.93], dmg: k === nd - 1 ? 1 : 0.5, moss: 0.7 });
+        const off = (hrand(k, x + 2) - 0.5) * 0.04 * k;
+        set.push({ p: [x + off, 0.28 + (k + 0.5) * dh, z + off * 0.5], s: [0.6 - k * 0.006, dh + 0.012, 0.6 - k * 0.006], r: [0, hrand(k, z) * 3, 0], col: [t * 1.02, t, t * 0.93], dmg: k === nd - 1 ? 1 : 0.18, moss: 0.7 });
       }
     }
     // Foreground: a fallen drum, a broken stump of wall and two tumbled blocks framing the lower corners.
@@ -451,6 +465,91 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
     root.add(sword);
   }
 
+  // ---- the hearth's mark on the court: a scorched ring, drifts of pale ash, scattered kit
+  {
+    const c = document.createElement('canvas');
+    c.width = c.height = 256;
+    const g = c.getContext('2d');
+    let sd = 71;
+    const rnd = () => ((sd = (sd * 16807) % 2147483647) / 2147483647);
+    // scorch: a dark burn fading out irregularly, blotched where embers fell
+    const rg = g.createRadialGradient(128, 128, 30, 128, 128, 128);
+    rg.addColorStop(0, 'rgba(8,6,5,0.9)'); rg.addColorStop(0.45, 'rgba(14,10,8,0.62)'); rg.addColorStop(0.8, 'rgba(20,14,10,0.18)'); rg.addColorStop(1, 'rgba(20,14,10,0)');
+    g.fillStyle = rg; g.fillRect(0, 0, 256, 256);
+    for (let k = 0; k < 90; k++) {
+      const a = rnd() * Math.PI * 2, r = 50 + rnd() * 70, rad = 3 + rnd() * 12;
+      g.fillStyle = `rgba(10,8,6,${0.15 + rnd() * 0.3})`;
+      g.beginPath(); g.ellipse(128 + Math.cos(a) * r, 128 + Math.sin(a) * r, rad, rad * (0.4 + rnd() * 0.6), rnd() * 3, 0, Math.PI * 2); g.fill();
+    }
+    // ash: pale grey drifts, heaviest just outside the stones, and a few kicked-out streaks
+    for (let k = 0; k < 260; k++) {
+      const a = rnd() * Math.PI * 2, r = 60 + Math.abs(rnd() + rnd() - 1) * 70, rad = 1 + rnd() * 5;
+      g.fillStyle = `rgba(${150 + rnd() * 40 | 0},${145 + rnd() * 35 | 0},${140 + rnd() * 30 | 0},${0.12 + rnd() * 0.3})`;
+      g.beginPath(); g.ellipse(128 + Math.cos(a) * r, 128 + Math.sin(a) * r, rad * 1.6, rad, a, 0, Math.PI * 2); g.fill();
+    }
+    for (let k = 0; k < 7; k++) {
+      const a = rnd() * Math.PI * 2;
+      g.strokeStyle = `rgba(160,152,145,${0.12 + rnd() * 0.12})`;
+      g.lineWidth = 2 + rnd() * 4;
+      g.beginPath(); g.moveTo(128 + Math.cos(a) * 70, 128 + Math.sin(a) * 70); g.lineTo(128 + Math.cos(a + 0.2) * (110 + rnd() * 18), 128 + Math.sin(a + 0.2) * (110 + rnd() * 18)); g.stroke();
+    }
+    const tx = new THREE.CanvasTexture(c);
+    tx.colorSpace = THREE.SRGBColorSpace;
+    texs.push(tx);
+    const scorch = new THREE.Mesh(G(new THREE.PlaneGeometry(2.7, 2.7)), Mt(new THREE.MeshStandardMaterial({ map: tx, transparent: true, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2 })));
+    scorch.rotation.x = -Math.PI / 2;
+    scorch.position.y = 0.008;
+    scorch.renderOrder = 1;
+    scorch.receiveShadow = true;
+    root.add(scorch);
+    // kit about the hearth: a wooden bowl and spoon, a tin cup on its side, a waterskin, kindling
+    const wood = Mt(new THREE.MeshStandardMaterial({ color: 0x6a4a2c, roughness: 0.85 }));
+    const tin = Mt(new THREE.MeshStandardMaterial({ color: 0x8a8478, roughness: 0.55, metalness: 0.7 }));
+    const hide = Mt(new THREE.MeshStandardMaterial({ color: 0x5a3c22, roughness: 0.8 }));
+    const bowl = new THREE.Mesh(G(new THREE.LatheGeometry([[0.001, 0], [0.06, 0.004], [0.085, 0.03], [0.09, 0.05], [0.082, 0.05], [0.055, 0.02], [0.001, 0.016]].map(([x, y]) => new THREE.Vector2(x, y)), 14)), wood);
+    bowl.position.set(-0.78, 0.0, 0.55);
+    const spoon = new THREE.Mesh(G(new THREE.CapsuleGeometry(0.008, 0.16, 3, 6)), wood);
+    spoon.position.set(-0.7, 0.012, 0.66); spoon.rotation.set(Math.PI / 2, 0, 0.9);
+    const cup = new THREE.Mesh(G(new THREE.CylinderGeometry(0.035, 0.03, 0.08, 12, 1, true)), tin);
+    cup.position.set(0.72, 0.035, 0.7); cup.rotation.set(Math.PI / 2, 0, 0.6);
+    const skin = new THREE.Mesh(G(new THREE.SphereGeometry(0.11, 12, 8)), hide);
+    skin.scale.set(1.3, 0.55, 0.9); skin.position.set(0.95, 0.055, 0.35); skin.rotation.y = 0.7;
+    const neck = new THREE.Mesh(G(new THREE.CylinderGeometry(0.018, 0.024, 0.08, 8)), hide);
+    neck.position.set(1.1, 0.07, 0.42); neck.rotation.z = -1.2;
+    for (const o of [bowl, spoon, cup, skin, neck]) { o.castShadow = true; o.receiveShadow = true; root.add(o); }
+    const stick = G(new THREE.CylinderGeometry(0.012, 0.016, 0.42, 6));
+    for (let k = 0; k < 5; k++) {
+      const st = new THREE.Mesh(stick, woodMat);
+      st.position.set(-0.95 + k * 0.05, 0.02 + (k % 2) * 0.02, -0.25 + k * 0.03);
+      st.rotation.set(Math.PI / 2, 0, 0.3 + k * 0.12);
+      st.castShadow = true;
+      root.add(st);
+    }
+  }
+  // ---- the city beyond keeps a few lights: shuttered windows and the embers of old fires,
+  // dimmer and bluer with distance (depth in the skyline, not flat cards)
+  if (night) {
+    const N = 26;
+    const pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
+    for (let k = 0; k < N; k++) {
+      const z = -16 - hrand(k, 301) * 26;
+      pos[k * 3] = (hrand(k, 302) - 0.5) * (30 + (-z - 16) * 1.4);
+      pos[k * 3 + 1] = 0.8 + hrand(k, 303) * (k % 3 ? 3.5 : 1.2);
+      pos[k * 3 + 2] = z;
+      const far = (-z - 16) / 26;
+      const ember = k % 4 === 0;
+      col[k * 3] = (ember ? 1.0 : 0.95) * (1 - far * 0.55);
+      col[k * 3 + 1] = (ember ? 0.42 : 0.66) * (1 - far * 0.5);
+      col[k * 3 + 2] = (ember ? 0.12 : 0.3) * (1 - far * 0.2);
+    }
+    const lg = G(new THREE.BufferGeometry());
+    lg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    lg.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const lights = new THREE.Points(lg, Mt(new THREE.PointsMaterial({ map: getGlowTexture(), size: 0.3, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.8, sizeAttenuation: true })));
+    lights.renderOrder = 3;
+    root.add(lights);
+  }
+
   // ---- the party
   const blob = blobTexture();
   const blobMat = Mt(new THREE.MeshBasicMaterial({ map: blob, transparent: true, depthWrite: false, color: 0x000000, opacity: 0.85 }));
@@ -495,8 +594,11 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
       if (sentry) {
         // The watch: on the edge of the firelight, turned three-quarters to us, rim-lit by the moon.
         const m = buildMiniature(ch, { pose: 'guard', base: false, rayHead: true, headGain: 0.85, noWeapon: true });
-        m.position.set(0.05, 0, -3.85);
-        m.rotation.y = 0.55;
+        // At the fire's edge on the left, three-quarters to us and half turned to the flames (his
+        // shield arm away from us): the fire lights his face and mail, the moon rims him from behind.
+        const SX = -0.95, SZ = -2.05;
+        m.position.set(SX, 0, SZ);
+        m.rotation.y = 0.68;
         partyGroup.add(m);
         // His spear grounded at his side, both hands on the shaft, the head catching the fire.
         {
@@ -522,9 +624,9 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
           spear.traverse((o) => { o.castShadow = true; });
           m.add(spear);
         }
-        shadowBlob(partyGroup, 0.05, -3.85, 0.75, 0.75);
-        sentryRim.target.position.set(0.05, 1.1, -3.85);
-        sentryFire.target.position.set(0.05, 1.25, -3.85);
+        shadowBlob(partyGroup, SX, SZ, 0.75, 0.75);
+        sentryRim.target.position.set(SX, 1.1, SZ);
+        sentryFire.target.position.set(SX, 1.25, SZ);
         minis.push(m);
         return;
       }
@@ -532,7 +634,7 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
       // Sleepers lie across the view behind the fire (seen in profile from the low resting camera):
       // heads on their rolled cloaks toward the right, faces to the fire, feet to the left.
       const H = -Math.PI / 2;
-      const SLEEP = [[-1.2, -1.0, H + 0.55], [1.3, -1.35, H - 0.55], [-0.35, -2.15, H + 0.12], [1.0, -2.75, H - 0.2], [-1.25, -2.95, H + 0.3]];
+      const SLEEP = [[1.25, -1.05, H - 0.55], [0.4, -2.2, H - 0.2], [-1.45, -1.0, H + 0.45], [1.55, -2.95, H - 0.35], [-0.3, -3.3, H + 0.2]];
       const a = seats[seat % seats.length];
       const r = 1.5;
       const x = sleeping ? SLEEP[seat % SLEEP.length][0] : Math.cos(a) * r;

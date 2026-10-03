@@ -4,6 +4,7 @@ import { headParams } from './headShader.js';
 import { HEAD_PARAMS, GLSL_COMMON, GLSL_HEAD } from './portraitHeadGLSL.js';
 import { GLSL_DRESS, GLSL_SHADE, GLSL_POST, BODY_ID, HAIR_ID, BEARD_ID } from './portraitPaintGLSL.js';
 import { oilPaint } from './portraitOil.js';
+import { isBlankRGBA } from './portraitGuard.js';
 
 /**
  * The portrait painter. One full-screen fragment shader ray-marches a
@@ -214,7 +215,15 @@ function setup(ch, o) {
   }[app.race] ?? {};
   for (const [k, v] of Object.entries(RACE)) params[ix(k)] *= v;
   // dwarf women are dwarves first: the heavy brow and jaw the female template would soften stay
-  if (app.race === 'dwarf' && app.fem) { params[ix('BROW')] *= 1.25; params[ix('JAW')] *= 1.08; params[ix('LIPS')] *= 1.05; params[ix('AGE')] = Math.max(params[ix('AGE')], 0.15); }
+  // (faceParams softens a dwarf woman's face for the miniature; the painting restores the race:
+  // a broad, square face, a heavy brow, a strong broad nose, a full chin)
+  if (app.race === 'dwarf' && app.fem) {
+    const atLeast = (k, v) => { params[ix(k)] = Math.max(params[ix(k)], v); };
+    atLeast('W', 1.13); atLeast('JAW', 1.32); atLeast('CHIN', 1.18); atLeast('BROW', 2.0); atLeast('NOSE', 1.08);
+    atLeast('NWIDTH', 1.2); atLeast('BRIDGE', 1.15); atLeast('CHEEK', 1.12);
+    params[ix('LONG')] = Math.min(params[ix('LONG')], 0.95);
+    params[ix('LIPS')] *= 1.05; params[ix('AGE')] = Math.max(params[ix('AGE')], 0.18);
+  }
   if (app.race === 'halfling') params[ix('HOOK')] -= 0.5;
   u.uP.value.set(params);
   const torso = o.crop === 'torso';
@@ -311,13 +320,16 @@ export function renderPortraitWith(renderer, ch, o = {}) {
  */
 export async function renderPortraitBanded(renderer, ch, o = {}) {
   const gl = renderer.getContext();
-  const job = beginPortrait(renderer, ch, o);
+  // A banded portrait keeps its own G-buffer: quick sync renders made between its bands (rough
+  // previews, a thumbnail painted on demand) must never resize or overwrite it.
+  const job = beginPortrait(renderer, ch, { ...o, rtKey: 'hdrBanded' });
   endPortrait(renderer, job);
   const bands = o.bands ?? Math.max(1, Math.round((job.RW * job.RH) / 30000));
   for (let b = 0; b < bands; b++) {
     const prev = saveState(renderer);
     try {
       setupState(renderer, job);
+      if (passes().rts.get(job.rtKey) !== job.hdr) throw new Error('portrait: G-buffer lost mid-paint');
       drawBand(renderer, job, b / bands, (b + 1) / bands);
     } finally {
       restoreState(renderer, prev);
@@ -367,7 +379,8 @@ function beginPortrait(renderer, ch, o) {
   renderer.autoClear = false;
   setup(ch, o);
   applyFrame(job);
-  job.hdr = rtFor('hdr', job.RW, job.RH, THREE.HalfFloatType, 2);
+  job.rtKey = o.rtKey ?? 'hdr';
+  job.hdr = rtFor(job.rtKey, job.RW, job.RH, THREE.HalfFloatType, 2);
   return job;
 }
 function endPortrait(renderer, job) {
@@ -380,8 +393,8 @@ function applyFrame(job) {
   u.uRes.value.set(job.RW, job.RH);
   u.uMode.value = o.mode ?? 0;
   u.uDbg.value = o.dbg ?? 0;
-  u.uKeyDir.value.fromArray(o.key ?? [-0.82, 0.5, 0.28]);
-  u.uLightK.value.fromArray(o.lightK ?? [1.5, 0.62, 0.8, 0.4]);
+  u.uKeyDir.value.fromArray(o.key ?? [-0.74, 0.58, 0.34]);
+  u.uLightK.value.fromArray(o.lightK ?? [1.32, 0.42, 0.85, 0.36]);
   u.uLite.value = job.scale < 0.35 ? 1 : 0;
   u.uSpot.value.set(0.02, o.crop === 'torso' ? -0.2 : 0, 0, o.crop === 'torso' ? 0.14 : 0.028);
 }
@@ -415,6 +428,8 @@ function finishPortrait(renderer, job, o) {
   renderer.setRenderTarget(out);
   renderer.render(p.scene, p.cam);
   const color = readPixels(renderer, out);
+  // Read back in the same task as the draw; a black frame means the G-buffer was lost — reject it.
+  if (isBlankRGBA(color, W, H)) throw new Error('portrait: blank render');
   portraitStats.post = Math.round(performance.now() - t0);
   if (o.raw || o.oil === false) return toCanvas(color, W, H);
   const inf = rtFor('info', W, H, THREE.UnsignedByteType, 1, THREE.NearestFilter);

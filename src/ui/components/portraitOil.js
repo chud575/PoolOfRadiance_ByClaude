@@ -136,15 +136,31 @@ export function oilPaint(color, info, w, h, o = {}) {
     const kw = kuwahara(ref, w, h, kr);
     for (let i = 0; i < N; i++) {
       const keep = Math.min(1, detail[i] * 1.1 + (region[i] === REG.eye ? 1 : 0));
-      const t = (region[i] === REG.bg ? 0.4 : region[i] === REG.metal ? 0.45 : region[i] === REG.hair ? 0.4 : region[i] === REG.skin ? 0.3 : 0.7) * (1 - keep);
+      const t = (region[i] === REG.bg ? 0.4 : region[i] === REG.metal ? 0.45 : region[i] === REG.hair ? 0.4 : region[i] === REG.skin ? 0.18 : 0.6) * (1 - keep);
       for (let c = 0; c < 3; c++) ref[i * 3 + c] += (kw[i * 3 + c] - ref[i * 3 + c]) * t;
     }
   }
-  // Backdrop strokes: cross-laid sweeps whose direction wanders over the canvas.
+  // Backdrop strokes: the wall is brushed in patches, each laid at its own angle (a painter turns
+  // the brush as he works round the head), the patches overlapping where they meet; strokes near
+  // the sitter follow the silhouette, as an outline is cut in against the ground.
+  const cell = 34 * k;
+  const cellAng = (cx, cy) => {
+    let t = Math.imul(cx + 101, 374761393) ^ Math.imul(cy + 37, 668265263) ^ ((o.seed ?? 1) * 2246822519);
+    t = Math.imul(t ^ (t >>> 13), 1274126177);
+    return (((t ^ (t >>> 16)) >>> 0) / 4294967296) * Math.PI;
+  };
   const bgDir = (x, y) => {
-    // broad diagonal sweeps, laid one way then across (never a swirl)
-    const cross = Math.sin(x * 0.013 / k + 1.7) * Math.sin(y * 0.017 / k + 0.4) > 0.15 ? 1.15 : 0;
-    const a = 0.7 + cross + Math.sin(x * 0.011 / k + y * 0.007 / k) * 0.25;
+    const fx = x / cell, fy = y / cell;
+    const cx = Math.floor(fx), cy = Math.floor(fy);
+    const tx = fx - cx, ty = fy - cy;
+    const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+    // blend the four neighbouring patch angles as doubled-angle vectors (orientation, not direction)
+    let vx = 0, vy = 0;
+    for (const [ox, oy, wgt] of [[0, 0, (1 - sx) * (1 - sy)], [1, 0, sx * (1 - sy)], [0, 1, (1 - sx) * sy], [1, 1, sx * sy]]) {
+      const a = cellAng(cx + ox, cy + oy) * 2;
+      vx += Math.cos(a) * wgt ** 3; vy += Math.sin(a) * wgt ** 3;
+    }
+    const a = Math.atan2(vy, vx) / 2;
     return [Math.cos(a), Math.sin(a)];
   };
   const canvas = makeCanvas(w, h);
@@ -207,8 +223,11 @@ export function oilPaint(color, info, w, h, o = {}) {
         const a = (r1 - 0.5) * 0.7;
         const ca = Math.cos(a), sa = Math.sin(a);
         [dx, dy] = [dx * ca - dy * sa, dx * sa + dy * ca];
-        len = r * (2.5 + r2 * 3);
-        wid = r * (1.1 + r1 * 0.5);
+        // sizes vary: long sweeps, short dabs, a few broad scumbles
+        const kind = (r2 * 5.3) % 1;
+        if (kind < 0.25) { len = r * (1.0 + r1 * 1.2); wid = r * (1.2 + r2 * 0.8); }
+        else if (kind < 0.8) { len = r * (2.2 + r2 * 3.5); wid = r * (0.9 + r1 * 0.6); }
+        else { len = r * (4 + r1 * 3); wid = r * (1.5 + r2 * 0.6); }
       } else {
         dx = dirX[i]; dy = dirY[i];
         const jit = (r1 - 0.5) * (reg === REG.hair ? 0.15 : 0.35);
@@ -224,9 +243,9 @@ export function oilPaint(color, info, w, h, o = {}) {
       // shadow as distinct pigments), so the planes read as laid strokes, not a smooth gradient
       if (reg === REG.skin && L.r >= 1.8 && detail[i] < 0.5) {
         const lum = 0.3 * cr + 0.59 * cg + 0.11 * cb + 1;
-        const stepV = 255 / 13;
-        const qv = Math.round(lum / stepV + (r1 - 0.5) * 0.6) * stepV;
-        const k = 0.55 * (qv / lum) + 0.45;
+        const stepV = 255 / 16;
+        const qv = Math.round(lum / stepV + (r1 - 0.5) * 0.8) * stepV;
+        const k = 0.25 * (qv / lum) + 0.75;
         cr *= k; cg *= k; cb *= k;
       }
       // pigment variation
@@ -234,14 +253,40 @@ export function oilPaint(color, info, w, h, o = {}) {
       // warm/cool pigment shifts in the skin (a painter mixes each stroke a little differently)
       if (reg === REG.skin) { const hs = (r1 - 0.5) * 9; cr += hs; cb -= hs * 0.8; }
       cr += jv; cg += jv * 0.85; cb += jv * 0.7;
-      g.strokeStyle = `rgba(${cr | 0},${cg | 0},${cb | 0},${L.a})`;
-      g.lineWidth = wid;
+      // paint loading: a loaded stroke is opaque, a dragged one breaks up into its bristles
+      const load = reg === REG.eye ? 1 : 0.62 + 0.38 * ((r2 * 7.31 + r1 * 3.7) % 1);
+      const alpha = L.a * load;
       const hx = dx * len * 0.5, hy = dy * len * 0.5;
       const bend = (r1 - 0.5) * r * 0.7;
-      g.beginPath();
-      g.moveTo(x - hx, y - hy);
-      g.quadraticCurveTo(x - dy * bend, y + dx * bend, x + hx, y + hy);
-      g.stroke();
+      if (wid > 3.2 && reg !== REG.eye) {
+        // a broad brush: a body of paint, then its bristles dragged along it, lighter and darker
+        g.strokeStyle = `rgba(${cr | 0},${cg | 0},${cb | 0},${alpha * 0.7})`;
+        g.lineWidth = wid * 0.8;
+        g.beginPath();
+        g.moveTo(x - hx * 0.9, y - hy * 0.9);
+        g.quadraticCurveTo(x - dy * bend, y + dx * bend, x + hx * 0.9, y + hy * 0.9);
+        g.stroke();
+        const nb = 3 + ((r1 * 13) | 0) % 3;
+        for (let b = 0; b < nb; b++) {
+          const off = ((b + 0.5) / nb - 0.5) * wid;
+          const hb = ((r2 * 97 + b * 31.7) % 1) - 0.5;
+          const sh = 1 + hb * 0.14;
+          g.strokeStyle = `rgba(${Math.min(255, cr * sh) | 0},${Math.min(255, cg * sh) | 0},${Math.min(255, cb * sh) | 0},${alpha * (0.45 + 0.4 * ((hb + 0.5) % 1))})`;
+          g.lineWidth = Math.max(0.8, wid / nb * 0.9);
+          const lb = 0.75 + 0.25 * ((b * 0.37 + r1) % 1);
+          g.beginPath();
+          g.moveTo(x - hx * lb - dy * off, y - hy * lb + dx * off);
+          g.quadraticCurveTo(x - dy * (bend + off), y + dx * (bend + off), x + hx * lb - dy * off, y + hy * lb + dx * off);
+          g.stroke();
+        }
+      } else {
+        g.strokeStyle = `rgba(${cr | 0},${cg | 0},${cb | 0},${alpha})`;
+        g.lineWidth = wid;
+        g.beginPath();
+        g.moveTo(x - hx, y - hy);
+        g.quadraticCurveTo(x - dy * bend, y + dx * bend, x + hx, y + hy);
+        g.stroke();
+      }
       // Track the canvas roughly (the stroke's footprint takes its colour).
       const rr = Math.ceil(wid * 0.5);
       const ll = Math.ceil(len * 0.5);
@@ -251,7 +296,7 @@ export function oilPaint(color, info, w, h, o = {}) {
           const qx = (qx0 + ox) | 0, qy = (qy0 + oy) | 0;
           if (qx < 0 || qy < 0 || qx >= w || qy >= h) continue;
           const q = (qy * w + qx) * 3;
-          cur[q] += (cr - cur[q]) * L.a; cur[q + 1] += (cg - cur[q + 1]) * L.a; cur[q + 2] += (cb - cur[q + 2]) * L.a;
+          cur[q] += (cr - cur[q]) * alpha; cur[q + 1] += (cg - cur[q + 1]) * alpha; cur[q + 2] += (cb - cur[q + 2]) * alpha;
         }
       }
     }
@@ -310,7 +355,7 @@ export function oilPaint(color, info, w, h, o = {}) {
     if (reg === REG.bg) [dx, dy] = bgDir(x, y);
     const along = x * dx + y * dy, across = -x * dy + y * dx;
     const br = (vn(along * 0.09 / k, across * 0.75 / k) - 0.5) * (reg === REG.eye ? 0 : reg === REG.cloth ? 0.55 : reg === REG.hair ? 1.2 : 1);
-    const m = 1 + br * 0.09 * (1 - keep * 0.7);
+    const m = 1 + br * 0.05 * (1 - keep * 0.7);
     const weave = (Math.sin(x * 2.2) * Math.sin(y * 2.05)) * 2.2;
     P[i * 4] = pr * m + weave; P[i * 4 + 1] = pg * m + weave; P[i * 4 + 2] = pb * m + weave;
   }

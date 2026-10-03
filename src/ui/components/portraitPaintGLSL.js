@@ -16,7 +16,10 @@ export const GLSL_DRESS = /* glsl */`
 float hairline(vec3 p) {
   float ax = abs(p.x);
   float tuft = 0.0016 * sin(p.x * 150.0 + 1.3) + 0.0009 * sin(p.x * 330.0 + p.y * 60.0) + 0.0035 * (vnoise(p * 260.0 + uSeed * 9.0) - 0.5);
-  float front = (0.021 + tuft - 2.4 * p.x * p.x + 0.006 * FEM - 0.012 * AGE * (1.0 - FEM)) - (-0.62 * p.y + 0.78 * p.z - 0.05);
+  // women part the hair and sweep it off the brow to the sides: the hairline lifts at the parting
+  // and curves down over the temples (never a straight fringe across the forehead)
+  float part = FEM * (0.016 * exp(-pow((p.x - 0.006) / 0.024, 2.0)) - 0.004);
+  float front = (0.021 + tuft * (1.0 + FEM) - 2.4 * p.x * p.x + 0.006 * FEM - part - 0.012 * AGE * (1.0 - FEM)) - (-0.62 * p.y + 0.78 * p.z - 0.05);
   float burn = max(0.0, 1.0 - abs(ax - 0.067) / 0.012) * max(0.0, 1.0 - abs(p.z - 0.018) / 0.018) * 0.045;
   float side = (-0.012 + burn + tuft * 0.6 - (-p.y + 0.62 * p.z)) / 1.18;
   float nape = p.y + 0.062 + 0.02 * ax / 0.07;
@@ -132,7 +135,9 @@ float hairField(vec3 p, float sk) {
     if (uHair == 6) {
       float e = (length(vec3(p.x / (0.088 * W), (p.y - 0.018) / 0.116, (p.z + 0.012) / 0.112)) - 1.0) * 0.08;
       e = max(e, -(p.y + 0.072));
-      e = max(e, -0.6 * p.y + 0.8 * p.z - 0.05);
+      // the fringe cut ragged and swept to one side (points, not a ruled line)
+      float rag = 0.007 * abs(sin(p.x * 140.0 + uSeed * 9.0)) + 0.005 * vnoise(p * 220.0) + 0.05 * (p.x + 0.02) * (p.x + 0.02) * 6.0 - 0.006 * sat(p.x / 0.05);
+      e = max(e, -0.6 * p.y + 0.8 * p.z - 0.05 + rag);
       float a = atan(p.x, p.z);
       e += fallClumps(p, 12.0, 0.003, 0.0);
       d = smin(d, e, 0.01);
@@ -249,13 +254,41 @@ float beardField(vec3 p, float sk) {
 }
 
 // ------------------------------------------------------------------ hood / helm
+float gHoodIn;
+// A cloth hood: a deep cowl peaked at the back of the crown, its opening framed by a rolled,
+// hemmed rim that overhangs the brow (and so shades the face), soft vertical drapes that deepen
+// toward the shoulders and a few heavier folds gathering under the chin. The inner lining shows
+// darker inside the opening.
 float hoodField(vec3 p) {
   if (uHood == 0) return 1e3;
+  vec3 q = vec3(abs(p.x), p.y, p.z);
   float a = atan(p.x, -p.z);
-  float fold = 0.0045 * sin(a * 7.0 + p.y * 20.0) + 0.0018 * sin(a * 15.0 - p.y * 31.0);
-  float sh = abs(sdEll(p - vec3(0.0, 0.03, -0.012), vec3(0.1, 0.13, 0.124))) - 0.007 + fold;
-  sh = smax(sh, -sdEll(p - vec3(0.0, -0.02, 0.112), vec3(0.074 * W, 0.11, 0.1)), 0.014);
-  sh = smax(sh, -sdEll(p - vec3(0.0, -0.17, -0.02), vec3(0.2, 0.08, 0.2)), 0.02);
+  float low = sat(-(p.y + 0.01) / 0.13);
+  // drapes: few and broad at the crown, more and deeper toward the shoulders, slightly irregular
+  float fold = (0.0012 + 0.0055 * low) * sin(a * (4.0 + 3.0 * low) + p.y * 9.0 + 1.3 * sin(a * 2.0 + uSeed * 6.0));
+  fold += 0.0016 * low * sin(a * 13.0 - p.y * 25.0 + 2.0);
+  vec3 c = p - vec3(0.0, 0.028, -0.016);
+  float outer = sdEll(c, vec3(0.098, 0.128, 0.124) * vec3(W * 0.6 + 0.4, 1.0, 1.0));
+  // the peak: the cloth falls off a point behind the crown
+  outer = smin(outer, sdRC(p, vec3(0.0, 0.09, -0.05), vec3(0.0, 0.135, -0.105), 0.05, 0.008), 0.03);
+  // the cowl spreads over the shoulders
+  outer = smin(outer, sdEll(p - vec3(0.0, -0.15, -0.03), vec3(0.15, 0.06, 0.13)), 0.05);
+  outer += fold;
+  float sh = abs(outer) - 0.0055;
+  gHoodIn = outer < 0.0 ? 1.0 : 0.0;
+  // the opening: an oval round the face, its top edge low over the brow
+  vec3 oc = p - vec3(0.0, -0.028, 0.118);
+  float open = sdEll(oc, vec3(0.071 * W, 0.104, 0.1));
+  sh = smax(sh, -open, 0.006);
+  // the rolled rim of the opening, hemmed and thick, standing a little proud
+  float rim = length(vec2(open, outer)) - 0.0068;
+  rim = max(rim, p.y - 0.12);
+  sh = smin(sh, rim, 0.004);
+  // under the chin the cowl's folds gather toward the throat
+  float bib = sdEll(p - vec3(0.0, -0.14, 0.04), vec3(0.085, 0.045, 0.06)) + 0.004 * sin(p.x * 160.0) * sat(-(p.y + 0.12) / 0.03);
+  bib = smax(bib, -sdEll(p - vec3(0.0, -0.06, 0.06), vec3(0.06, 0.08, 0.07)), 0.02);
+  sh = smin(sh, bib, 0.02);
+  sh = smax(sh, -sdEll(p - vec3(0.0, -0.24, -0.02), vec3(0.24, 0.06, 0.24)), 0.02);
   return sh;
 }
 float gHelmPart;
@@ -456,7 +489,7 @@ float gLipMask;
 vec3 skinAlbedo(vec3 p) {
   vec3 q = vec3(abs(p.x), p.y, p.z);
   float lumS = dot(uSkin, vec3(0.3, 0.59, 0.11));
-  vec3 base = mix(uSkin, vec3(lumS), 0.06) * 0.74;
+  vec3 base = mix(uSkin, vec3(lumS), 0.08) * 0.72;
   float dark = sat((0.25 - lumS) / 0.2);
   float ex = EX();
   float mY = MOUTHY();
@@ -476,6 +509,9 @@ vec3 skinAlbedo(vec3 p) {
   c = mix(c, ruddy, red * (1.0 - 0.5 * dark));
   float stub = (1.0 - FEM) * (uBeard == 1 ? 1.0 : uBeard == 0 ? 0.45 : 0.6);
   c = mix(c, cool, sat(jaw * (0.25 + 0.5 * stub) + muzzle * 0.45 * stub));
+  c = mix(c, base * vec3(0.86, 0.9, 0.8), muzzle * (0.18 + 0.1 * FEM) * (1.0 - stub));
+  // the temples and the sides of the forehead a cooler, greyer passage
+  c = mix(c, base * vec3(0.88, 0.9, 0.96), sat((q.x - 0.045) / 0.02) * sat((p.y - 0.01) / 0.03) * 0.35);
   if (stub > 0.0) {
     // the beard shadow: a cool grey-blue glaze stippled with hair roots
     float region = sat(jaw + muzzle * 0.8 - sat((q.x - 0.05) / 0.012));
@@ -502,14 +538,18 @@ vec3 skinAlbedo(vec3 p) {
     vec3 lp = p - vec3(0.0, curve, 0.0);
     float lipK = LIPS * (1.0 + 0.07 * FEM);
     float lz = LIPZ();
-    float ul = sdEll(lp - vec3(0.0, mY + 0.0043, lz - 0.0042), vec3(0.0192 * MOUTH, 0.0052 * lipK, 0.0078));
-    float lo = sdEll(lp - vec3(0.0, mY - 0.0058, lz - 0.0058), vec3(0.0168 * MOUTH, 0.0062 * lipK, 0.0086));
+    vec2 lips2 = lipsD(lp, mY, lz, MOUTH, lipK);
+    float ul = lips2.x, lo = lips2.y;
     float lm = smoothstep(0.0035, 0.0005, min(ul, lo));
     lm *= sat((1.0 - cx) * 4.0);
     gLipMask = lm;
     vec3 lipC = mix(base * vec3(0.95, 0.56, 0.56), base * vec3(1.02, 0.44, 0.5), FEM * 0.85);
     lipC = mix(lipC, base * vec3(0.8, 0.55, 0.55), dark * 0.5);
     c = mix(c, lipC, lm * (0.62 + 0.25 * FEM));
+    // the upper lip a deeper, cooler red (it turns from the light); the lower lip fuller and lighter
+    float um = smoothstep(0.003, 0.0004, ul) * lm;
+    c = mix(c, c * vec3(0.78, 0.72, 0.78), um * 0.55);
+    c = mix(c, c * vec3(1.08, 1.04, 1.02), smoothstep(0.003, 0.0004, lo) * lm * (1.0 - um) * 0.6);
     // the vermilion border catches the light: a pale line along the top of the upper lip
     float bow = gau((ul + 0.0003) / 0.0005) * sat((lp.y - mY - 0.004) / 0.002) * sat(1.0 - cx);
     c = mix(c, base * 1.1, bow * 0.3);
@@ -608,8 +648,9 @@ vec3 backdrop(vec2 uv) {
   // directional brush sweeps whose angle wanders across the canvas
   float ang = 0.75 + 0.6 * (vnoise2(uv * 2.0 + uSeed * 7.0) - 0.5);
   vec2 r = rot2(ang) * (uv * vec2(uRes.x / uRes.y, 1.0));
-  float s1 = vnoise2(vec2(r.x * 5.0, r.y * 38.0) + uSeed * 13.0);
-  float s2 = vnoise2(vec2(r.x * 11.0, r.y * 80.0) + 3.0);
+  // (soft value masses only: the strokes are the oil pass's job)
+  float s1 = vnoise2(vec2(r.x * 4.0, r.y * 9.0) + uSeed * 13.0);
+  float s2 = vnoise2(vec2(r.x * 7.0, r.y * 13.0) + 3.0);
   float big = vnoise2(uv * 3.0 + uSeed * 3.0);
   // light behind the head on the shadow side (the painter's counterchange)
   float halo = exp(-dot((uv - vec2(0.64, 0.62)) * vec2(1.4, 1.0), (uv - vec2(0.64, 0.62)) * vec2(1.4, 1.0)) * 5.0);
@@ -783,7 +824,10 @@ void main() {
     ao *= 0.75 + 0.25 * strand;
     detail = 0.25;
   } else if (mat < 5.5) {
-    alb = uCloth * 0.85;
+    hoodField(ph);
+    // wool: a fine weave, the lining inside the opening darker and warmer
+    alb = uCloth * 0.85 * (0.9 + 0.16 * fbm3(ph * vec3(40.0, 120.0, 40.0)));
+    alb = mix(alb, uCloth * vec3(0.45, 0.4, 0.38), gHoodIn * 0.8);
     rough = 0.9;
   } else if (mat < 7.5) {
     alb = mat > 6.5 ? vec3(0.55, 0.42, 0.25) : vec3(0.36, 0.37, 0.4);
@@ -873,16 +917,22 @@ void main() {
   float spot = mix(0.3, 1.0, exp(-dot(pw - uSpot.xyz, pw - uSpot.xyz) / uSpot.w));
   Ck *= spot;
   vec3 dif;
+  float halfT = 0.0, coreS = 0.0, litF = 1.0;
   if (sss > 0.5) {
-    // skin: per-channel wrap (red light bleeds round the terminator, the shadow edge warm), the
-    // shadow softened in red the same way
-    // the painter's statement: light and shadow as two families of value joined by a narrow, soft
-    // half-tone (no smooth CG falloff); within the light the form turns gently
-    float ls = smoothstep(-0.12, 0.4, nk) * mix(0.15, 1.0, smoothstep(0.05, 0.7, sh));
-    float form = 0.6 + 0.4 * sat(nk * 1.2);
+    // skin, lit as a painter models a head: the light family, a broad half-tone where the plane
+    // turns (cooler and greyer than the light), the core shadow just past the turn (the darkest
+    // value of the form) and reflected light lifting the shadow beyond it. The terminator follows
+    // the forms — brow ridge, cheekbone, jaw — because the key is high and three-quarter frontal,
+    // and the cast shadows (brow, nose, lip, jaw on the neck) come from the marched shadow.
+    float shK = mix(0.1, 1.0, smoothstep(0.03, 0.75, sh));
+    float ls = smoothstep(-0.2, 0.62, nk) * shK;
+    float form = 0.66 + 0.34 * sat(nk * 1.25);
     dif = vec3(ls * form);
+    litF = ls;
+    halfT = exp(-pow((nk - 0.12) / 0.2, 2.0)) * shK;
+    coreS = exp(-pow((nk + 0.2) / 0.16, 2.0)) * (1.0 - 0.6 * (1.0 - shK));
     // red light bleeds into the edge of the shadow (subsurface), warmest where the form turns
-    dif += vec3(0.2, 0.045, 0.015) * exp(-pow(nk / 0.17, 2.0)) * mix(0.35, 1.0, sh);
+    dif += vec3(0.17, 0.04, 0.013) * exp(-pow((nk + 0.02) / 0.15, 2.0)) * mix(0.3, 1.0, sh);
   } else {
     dif = vec3(sat(nk) * sh);
   }
@@ -898,8 +948,14 @@ void main() {
   // ambient: a cool fill from the right, the sky above, warm light bounced up from the chest
   vec3 Cb = vec3(0.42, 0.26, 0.16) * 0.2 * uLightK.w;
   vec3 amb = Cf * (0.5 + 0.5 * dot(n, Lf)) * ao + Csky * ao * (0.35 + 0.65 * sat(n.y * 0.5 + 0.5)) + Cb * ao * sat(-n.y * 0.6 + 0.3);
-  // skin scatters the light it gets: its shadows stay warm-blooded, never the blue-grey of stone
-  if (sss > 0.5) amb *= vec3(1.22, 1.0, 0.82);
+  // skin scatters the light it gets: its shadows stay warm-blooded, never the blue-grey of stone;
+  // the core shadow takes less of the fill, and warm light bounced off the shoulder and collar
+  // lifts the far side of the shadow (reflected light), never as bright as the half-tone
+  if (sss > 0.5) {
+    amb *= vec3(1.22, 1.0, 0.82) * (1.0 - 0.55 * coreS);
+    vec3 Lb = normalize(vec3(0.55, -0.55, 0.45));
+    amb += vec3(0.5, 0.3, 0.19) * 0.32 * uLightK.w * sat(dot(n, Lb)) * (1.0 - litF) * (1.0 - coreS) * ao;
+  }
   vec3 diffuse = Ck * dif + amb;
   if (DBG(131072)) { oColor = vec4(Ck * dif * alb, 1.0); oInfo = vec4(0.0); return; }
   if (DBG(262144)) { oColor = vec4(amb * alb, 1.0); oInfo = vec4(0.0); return; }
@@ -929,10 +985,12 @@ void main() {
     col += alb * vec3(0.3, 0.06, 0.03) * dif.r * Ck.r * 0.08;
     // subsurface: a saturated red-orange band where the light turns into shadow (soft terminator)
 
-    // the shadow side cooler and greyer (the fill and sky, not the key, light it)
+    // the shadow side cooler and greyer (the fill and sky, not the key, light it); the half-tone
+    // a greyed, slightly cool passage between the warm light and the warm shadow
     float shade = sat(1.0 - dif.g * 1.6);
     float lumC = dot(col, vec3(0.3, 0.59, 0.11));
-    col = mix(col, vec3(lumC) * vec3(0.86, 0.93, 1.1), shade * 0.25);
+    col = mix(col, vec3(lumC) * vec3(0.86, 0.93, 1.1), shade * 0.22);
+    col = mix(col, vec3(lumC) * vec3(0.93, 0.97, 1.04), halfT * 0.3);
   }
   // eye catch-light: the key's window and a soft reflection of the room
   if (mat > 1.5 && mat < 2.5) col += vec3(1.0, 0.95, 0.9) * (pow(nh, 900.0) * 9.0 * max(sh, 0.5) + pow(nh, 60.0) * 0.18) + vec3(0.5, 0.6, 0.8) * 0.05 * fres;

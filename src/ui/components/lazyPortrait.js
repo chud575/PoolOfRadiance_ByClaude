@@ -173,9 +173,15 @@ export function portraitImg(ch, scale = 1, o = {}) {
   } catch { /* plain pending tile */ }
   const snap = { ...ch, look: ch.look ? { ...ch.look } : ch.look };
   void portraitKey;
-  const job = { img, age: 0, run: async () => {
-    // Painted in bands across ticks: no single long stall even on a software GPU.
-    img.src = await portraitURLAsync(snap, scale, { crop });
+  const job = { img, age: 0, retries: 0, run: async () => {
+    // Painted in bands across ticks: no single long stall even on a software GPU. A failed
+    // painting (null) keeps the sketch or rough tier showing and is queued again a little later.
+    const u = await portraitURLAsync(snap, scale, { crop });
+    if (!u) {
+      if (job.retries++ < 3 && img.isConnected) setTimeout(() => { queue.push(job); pump(); }, 1500);
+      return;
+    }
+    img.src = u;
     img.style.background = '';
     img.classList.remove('pc-pending', 'pc-rough');
   } };

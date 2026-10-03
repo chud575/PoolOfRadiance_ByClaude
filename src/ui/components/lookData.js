@@ -50,7 +50,7 @@ export const HEADS = {
     { name: 'Noble', hair: 'long', beard: 'goatee', expr: 'proud', face: { w: 0.88, jaw: 0.82, chin: 0.92, nose: 1.22, bridge: 0.78, cheek: 1.25, long: 1.12, lips: 0.82, sp: 0.95 } },
     { name: 'Veteran', hair: 'bald', beard: 'full', scar: true, age: 0.7, expr: 'scowl', face: { w: 1.08, jaw: 1.22, brow: 1.55, nose: 1.22, bridge: 1.35, tip: 1.25, eye: 0.88, lips: 0.8, sp: 1.02 } },
     { name: 'Guardsman', hair: 'short', beard: 'moustache', helm: true, expr: 'stern', face: { w: 1.08, long: 0.93, jaw: 1.28, chin: 1.12, mouth: 1.1, nose: 0.95, tip: 1.2, brow: 1.25, sp: 1.03 } },
-    { name: 'Rogue', hair: 'topknot', beard: 'stubble', expr: 'smirk', face: { w: 0.89, jaw: 0.84, chin: 0.76, eye: 0.92, long: 1.09, cheek: 1.24, nose: 0.9, tip: 0.85, lid: 0.25, sp: 0.94 } },
+    { name: 'Rogue', hair: 'topknot', beard: 'stubble', expr: 'smirk', face: { w: 0.92, jaw: 0.94, chin: 0.98, eye: 0.93, long: 1.04, cheek: 1.18, nose: 1.06, tip: 0.92, bridge: 0.92, lid: 0.25, sp: 0.95, lips: 0.88, mouth: 0.95 } },
     { name: 'Hooded', hair: 'hood', beard: 'stubble', expr: 'neutral', face: { w: 0.95, nose: 1.12, cheek: 1.1, sp: 0.97, lid: 0.3 } },
     { name: 'Sage', hair: 'long', beard: 'long', age: 1, expr: 'kind', face: { w: 0.94, nose: 1.28, tip: 1.2, long: 1.06, eye: 0.9, lid: 0.45, brow: 1.2, cheek: 0.9 } },
   ],

@@ -89,7 +89,7 @@ export function renderSheet(ch) {
       ...effects.filter((e) => e.kind !== 'status' || e.id !== 'ok').slice(0, 4).map((e) => h('span.pc-chip', { dataset: lore({ title: e.name, text: e.desc }) }, [e.name])),
     ]),
   ]);
-  const icon = miniatureSnapshot(ch, { w: 300, h: 400 });
+  const icon = miniatureSnapshot(ch, { w: 330, h: 300, tight: true });
   if (icon) {
     id.append(h('div.pc-icon', { dataset: lore({ title: 'Combat icon', text: 'Your miniature on the battlefield, dressed in whatever is readied. Change its look with MODIFY at the party screen.' }) }, [
       h('img', { src: icon, alt: '', draggable: false }),
@@ -139,7 +139,8 @@ export function renderSheet(ch) {
       ...kv('Damage', `${s.damage}${s.dmgBonus ? sgn(s.dmgBonus) : ''}`, STAT_TIPS.damage(s)),
       ...kv('To hit', sgn(s.hitBonus), STAT_TIPS.thac0(s)),
       ...kv('Attacks', `${s.attacks}/round`, STAT_TIPS.attacks(s)),
-      ...kv('AC rear · missile', `${s.acRear ?? s.ac} · ${s.acMissile ?? s.ac}`, { title: 'Rear and missile armour class', text: 'Attacks from behind ignore the shield and dexterity bonus, and thieves may backstab: keep your fighters between the foe and your casters. Missile AC applies to arrows, bolts and sling stones.' }),
+      ...kv('AC from behind', String(s.acRear ?? s.ac), { title: 'Armour class from behind', text: 'Attacks from behind ignore the shield and the dexterity bonus, and thieves may backstab: keep your fighters between the foe and your casters.' }),
+      ...kv('AC vs missiles', String(s.acMissile ?? s.ac), { title: 'Armour class against missiles', text: 'Against arrows, bolts and sling stones. The same as your front armour class unless a Shield spell or magic guards you.' }),
       ...kv('Movement', s.move, STAT_TIPS.move(s)),
       ...kv('Burden', `${s.weight} cn`, STAT_TIPS.enc(s)),
     ]),
@@ -229,12 +230,16 @@ export function renderSheet(ch) {
   // Pack summary: what is carried beyond the readied kit.
   const pack = ch.inventory.filter((e) => !e.equipped && ITEMS[e.id]);
   const packSect = sect('Pack', [
-    h('div.pc-packline', pack.length ? pack.slice(0, 8).map((e) => h('span.pc-packi', { dataset: lore({ title: itemName(e), text: 'Carried in the pack. Open ITEMS to ready, use, trade or drop it.' }) }, [h('img', { src: itemIconURL(iconFor(ITEMS[e.id])), alt: '' }), (e.qty ?? 1) > 1 ? h('b', [String(e.qty)]) : null])) : [h('span.pc-rest-note', ['Nothing else carried.'])]),
+    // the pack as a grid of its own: every loose item as a labelled tile, the burden bar beneath
+    h('div.pc-packgrid', [
+      ...pack.slice(0, 8).map((e) => h('span.pc-packi', { dataset: lore({ title: itemName(e), text: 'Carried in the pack. Open ITEMS to ready, use, trade or drop it.' }) }, [h('img', { src: itemIconURL(iconFor(ITEMS[e.id])), alt: '' }), (e.qty ?? 1) > 1 ? h('b', [String(e.qty)]) : null, h('i', [itemName(e)])])),
+      ...Array.from({ length: Math.max(0, 4 - pack.length) }, () => h('span.pc-packi.empty')),
+    ]),
     h('div.pc-rest-note', { style: { marginTop: '0.35em' } }, [(() => {
       // the same count as the ITEMS tab: everything carried, of which so many readied
       const all = ch.inventory.filter((e) => ITEMS[e.id]).length;
       const ready = all - pack.length;
-      return `${all} item${all === 1 ? '' : 's'} carried (${ready} readied, ${pack.length} loose) · ${s.weight} cn`;
+      return `${all} item${all === 1 ? '' : 's'} carried · ${ready} readied · ${pack.length} in the pack`;
     })()]),
   ]);
   // Spells per day sit under the readied kit, so the right column never overflows on casters.

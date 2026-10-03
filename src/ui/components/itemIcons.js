@@ -745,12 +745,30 @@ export function itemIconURL(icon, o = {}) {
   if (!o.ghost) {
     try { finishIcon(obj); } catch { /* plain vector icon */ }
   }
-  g.save();
   if (o.ghost) {
-    // Empty-slot ghost: a faint gilt engraving rather than a grey smudge.
-    g.globalAlpha = 0.46;
-    g.filter = 'grayscale(1) sepia(1) saturate(1.8) brightness(1.9)';
-  } else {
+    // Empty-slot ghost: every slot the same dim gilt engraving — the object's silhouette in one
+    // flat tone with its inner lines faintly showing — however bright the object itself (steel
+    // gauntlets and bracers read as empty as a cloak or a ring).
+    const sil = document.createElement('canvas');
+    sil.width = obj.width; sil.height = obj.height;
+    const sg = sil.getContext('2d');
+    sg.drawImage(obj, 0, 0);
+    sg.globalCompositeOperation = 'source-in';
+    sg.fillStyle = 'rgb(176,146,86)';
+    sg.fillRect(0, 0, sil.width, sil.height);
+    g.globalAlpha = 0.24;
+    g.drawImage(sil, 0, 0);
+    g.globalAlpha = 0.1;
+    g.filter = 'grayscale(1) contrast(0.6)';
+    g.drawImage(obj, 0, 0);
+    g.filter = 'none';
+    g.globalAlpha = 1;
+    u = c.toDataURL('image/png');
+    cache.set(key, u);
+    return u;
+  }
+  g.save();
+  {
     g.shadowColor = 'rgba(0,0,0,0.7)';
     g.shadowBlur = 4 * R;
     g.shadowOffsetX = 1.5 * R;

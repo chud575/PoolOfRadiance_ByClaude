@@ -8,7 +8,7 @@ import { getSpell, spellLevel, spellsForClass, castProblem, castSpell, isMemoriz
 import { scribeScroll } from '../../rules/magicItems.js';
 import { itemName } from '../../rules/items.js';
 import { miniPortrait, lore } from './CharacterSheet.js';
-import { spellGlyphURL, spellFamilyName } from './spellArt.js';
+import { spellGlyphURL, spellFamilyName, familyColour } from './spellArt.js';
 import { SPELLS as SPELL_DATA } from '../../data/spells.js';
 import { intelligenceTable } from '../../rules/abilities.js';
 
@@ -101,6 +101,7 @@ export class SpellPanel {
         ]);
       })),
       h('div', { style: { flex: '1' } }),
+      this._schools(ch, classes),
       this._grimoire(ch, classes),
     ]);
 
@@ -291,6 +292,18 @@ export class SpellPanel {
       rows.push(h('div.pc-socket-row', [h('span.lv', [ROMAN[lvl]]), h('span.cells', cells), h('span.ct', [`${picks.length}/${n}`])]));
     });
     return h('div.pc-sockets', rows);
+  }
+
+  /** The schools of what this caster knows, each with its enamel colour and how many spells. */
+  _schools(ch, classes) {
+    if (!classes.length) return null;
+    const count = new Map();
+    for (const cl of classes) for (const id of knownSpells(ch, cl)) { const f = spellFamilyName(id); count.set(f, (count.get(f) ?? 0) + 1); }
+    if (!count.size) return null;
+    return h('div.pc-schools', [
+      h('div.h', ['Schools known']),
+      ...[...count].map(([f, n]) => h('div.r', { dataset: { tip: `${n} ${f.toLowerCase()} spell${n === 1 ? '' : 's'} known` } }, [h('i', { style: { background: familyColour(f) } }), h('span', [f]), h('b', [String(n)])])),
+    ]);
   }
 
   /** The caster's book or prayer roll: a small illuminated grimoire with what they know. */

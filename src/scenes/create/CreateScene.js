@@ -949,13 +949,34 @@ export default class CreateScene extends Scene {
     const has = (c, k) => splitClasses(c.classSpec).includes(k);
     const short = (c) => String(c.name ?? '').replace(/^Brother |^Sister /, '').split(' ')[0];
     const list = (arr) => arr.map(short).join(', ');
-    const ranged = P.filter((c) => (c.inventory ?? []).some((e) => ITEMS[e.id]?.ranged));
+    const ranged = P.filter((c) => (c.inventory ?? []).some((e) => ITEMS[e.id]?.ranged && e.equipped));
+    const packed = P.filter((c) => !ranged.includes(c) && (c.inventory ?? []).some((e) => ITEMS[e.id]?.ranged && ITEMS[e.id]?.type !== 'ammo' && !e.equipped));
+    // The front rank is a real check: whoever stands in the first three should be among the
+    // company's toughest (armour class and hit points); a softer member up front is flagged with
+    // the swap that would fix it.
+    const tough = (c) => {
+      let ac = 10;
+      try { ac = deriveStats(c).ac; } catch { /* default */ }
+      const hp = c.hp?.max ?? 0;
+      return { ac, hp, score: hp + (10 - ac) * 1.6 + (has(c, 'fighter') ? 3 : 0) + (has(c, 'cleric') ? 1.5 : 0) - (has(c, 'magicUser') && !has(c, 'fighter') ? 4 : 0) };
+    };
+    const front = P.slice(0, 3), back = P.slice(3);
+    const weakest = front.map((c) => ({ c, t: tough(c) })).sort((a, b) => a.t.score - b.t.score)[0];
+    const strongest = back.map((c) => ({ c, t: tough(c) })).sort((a, b) => b.t.score - a.t.score)[0];
+    const swap = weakest && strongest && strongest.t.score > weakest.t.score + 2.5 ? { out: weakest, in: strongest } : null;
+    const frontV = swap
+      ? `${short(swap.out.c)} (AC ${swap.out.t.ac}, ${swap.out.t.hp}hp) → swap in ${short(swap.in.c)} (AC ${swap.in.t.ac}, ${swap.in.t.hp}hp)`
+      : list(front);
+    const frontTip = swap
+      ? `The first three in the marching order meet the enemy first. ${swap.in.c.name} is tougher than ${swap.out.c.name}: move ${short(swap.in.c)} up with ALTER (order) at camp, or MODIFY the order here.`
+      : 'The first three in the marching order meet the enemy first: fighters and clerics in good armour belong there. Reorder with ALTER at camp.';
+    const missV = ranged.length ? list(ranged) + (packed.length ? ` · ${list(packed)}: not readied` : '') : packed.length ? `${list(packed)}: bow packed, not readied` : 'none';
     const rows = [
-      ['Front rank', list(P.slice(0, 3)), true, 'The first three in the marching order meet the enemy first. Put fighters and clerics there; reorder with ALTER at camp.'],
+      ['Front rank', frontV, !swap, frontTip],
       ['Healing', list(P.filter((c) => has(c, 'cleric'))) || 'none', P.some((c) => has(c, 'cleric')), 'Clerics pray for cure spells and FIX the party at camp. Without one, wounds heal at a day per hit point.'],
       ['Locks & traps', list(P.filter((c) => has(c, 'thief'))) || 'none', P.some((c) => has(c, 'thief')), 'A thief opens locks, finds and removes traps, and backstabs.'],
       ['Arcane magic', list(P.filter((c) => has(c, 'magicUser'))) || 'none', P.some((c) => has(c, 'magicUser')), 'Magic-users bring sleep, magic missile and later fireball: the spells that win the hard fights.'],
-      ['Missiles', list(ranged) || 'none', ranged.length > 0, 'Bows and slings strike before the melee is joined. Ready the launcher in ITEMS to shoot.'],
+      ['Missiles', missV, ranged.length > 0 && !packed.length, packed.length ? `${packed.map((c) => c.name).join(', ')} carr${packed.length > 1 ? 'y' : 'ies'} a missile weapon in the pack. READY it in ITEMS (with its ammunition) to shoot before the melee is joined.` : 'Bows and slings strike before the melee is joined. Ready the launcher in ITEMS to shoot.'],
       ['Infravision', list(P.filter((c) => (RACES[c.race]?.infravision ?? 0) > 0)) || 'none', true, 'Demi-humans see the heat of living things in the dark.'],
     ];
     return h('div.cc-check', [

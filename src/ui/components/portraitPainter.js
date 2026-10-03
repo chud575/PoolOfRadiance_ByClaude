@@ -17,6 +17,7 @@ import { SKIN_TONES, RACE_SKINS, HAIR_COLORS, EYE_COLORS, CLOTH_COLORS, HEADS, B
 import { renderPortraitWith, renderPortraitBanded } from './portraitGL.js';
 import { offscreen } from './Miniature.js';
 import { storedPortrait, storePortrait } from './portraitStore.js';
+import { isBlankCanvas } from './portraitGuard.js';
 
 export { SKIN_TONES, RACE_SKINS, HAIR_COLORS, EYE_COLORS, CLOTH_COLORS, HEADS, BODIES, defaultLook };
 
@@ -1556,7 +1557,7 @@ export function portraitURL(ch, scale = 1, o = {}) {
     // scale: one face is painted once, not once per size.
     // A thumbnail with no master painted yet is painted at its own size (a quarter of the GPU work).
     const mk = portraitKey(ch, MASTER, crop);
-    if (scale <= 0.3 && !masters.has(mk) && !urlCache.has(mk)) u = paintPortrait(ch, { scale, crop }).toDataURL('image/png');
+    if (scale <= OWN && !masters.has(mk) && !urlCache.has(mk)) u = paintPortrait(ch, { scale, crop }).toDataURL('image/png');
     else if (scale < MASTER) u = downscaled(masterCanvas(ch, crop), scale);
     else u = paintPortrait(ch, { scale, crop }).toDataURL('image/png');
     remember(key, u);
@@ -1565,6 +1566,9 @@ export function portraitURL(ch, scale = 1, o = {}) {
 }
 
 const MASTER = 0.5;
+/** Thumbnails up to this scale (picker tiles, body crops, roster heads) are painted at their own
+ *  size when no master exists yet: a third of a master's pixels, so a picker fills in fast. */
+const OWN = 0.36;
 const masters = new Map();
 /** The master-scale painting of a face (painted once, kept as a canvas for further cuts). */
 function masterCanvas(ch, crop) {
@@ -1636,7 +1640,8 @@ const pending = new Map();
 /**
  * portraitURL without long main-thread stalls: memory, then a larger copy scaled down, then the
  * IndexedDB store, and only then painted in bands across ticks (cached alike).
- * @returns {Promise<string>}
+ * Resolves null when the painting failed (the caller keeps what it shows and may ask again).
+ * @returns {Promise<string|null>}
  */
 export function portraitURLAsync(ch, scale = 1, o = {}) {
   const crop = o.crop ?? 'head';
@@ -1651,8 +1656,15 @@ export function portraitURLAsync(ch, scale = 1, o = {}) {
     // Painted in bands across ticks (the ray-marched pass yields to the game's own frames between
     // them): no single long stall, even on a software GPU.
     let c = null;
-    const ps = scale < MASTER ? MASTER : scale;
-    try { c = await banded(ch, { scale: ps, crop }); } catch (err) { console.warn('portrait', err); }
+    const ps = scale <= OWN ? scale : scale < MASTER ? MASTER : scale;
+    // A portrait that comes back black or lost is painted again (twice at most), never cached.
+    for (let attempt = 0; attempt < 3 && !c; attempt++) {
+      try {
+        c = await banded(ch, { scale: ps, crop });
+        if (c && isBlankCanvas(c)) c = null;
+      } catch { c = null; }
+    }
+    if (!c && offscreen()) return null;
     if (c && ps !== scale) {
       const mk = portraitKey(ch, MASTER, crop);
       if (masters.size > 48) masters.delete(masters.keys().next().value);

@@ -57,7 +57,7 @@ const SKULL = {
   Noble: { cran: 1.1, slope: 0.15, edepth: 0.45, hollow: 0.55, jdepth: -0.35, prot: -0.25, hook: 1.1, nwidth: 0.78, smile: 0.08, lines: 0.1, eopen: 1.0, bthick: 0.8 },
   Veteran: { cran: 0.9, slope: 1.0, edepth: 1.15, hollow: 0.3, jdepth: 1.1, prot: 0.4, hook: -0.35, nwidth: 1.38, smile: -0.3, lines: 0.9, eopen: 0.8, bthick: 1.45 },
   Guardsman: { cran: 0.97, slope: 0.4, edepth: 0.7, hollow: 0.05, jdepth: 0.85, prot: 0.15, hook: -0.5, nwidth: 1.25, smile: -0.05, lines: 0.3, eopen: 0.95, bthick: 1.2 },
-  Rogue: { cran: 1.0, slope: 0.45, edepth: 0.5, hollow: 0.7, jdepth: -0.45, prot: 0.15, hook: 0.35, nwidth: 0.86, smile: 0.25, lines: 0.15, eopen: 0.82, bthick: 0.85 },
+  Rogue: { cran: 1.0, slope: 0.45, edepth: 0.6, hollow: 0.7, jdepth: 0.1, prot: -0.3, hook: 0.75, nwidth: 0.86, smile: 0.12, lines: 0.2, eopen: 0.84, bthick: 0.9 },
   Hooded: { cran: 1.0, slope: 0.5, edepth: 0.9, hollow: 0.6, jdepth: 0.15, prot: 0.0, hook: 0.7, nwidth: 0.96, smile: -0.08, lines: 0.35, eopen: 0.9, bthick: 1.0 },
   Sage: { cran: 1.14, slope: 0.1, edepth: 1.1, hollow: 0.9, jdepth: -0.05, prot: -0.1, hook: 0.9, nwidth: 1.0, smile: 0.15, lines: 0.7, eopen: 0.88, bthick: 1.3 },
   Maiden: { cran: 1.03, slope: 0.05, edepth: 0.3, hollow: 0.0, jdepth: -0.5, prot: 0.05, hook: -0.55, nwidth: 0.82, smile: 0.28, lines: 0.0, eopen: 1.12, bthick: 0.8 },

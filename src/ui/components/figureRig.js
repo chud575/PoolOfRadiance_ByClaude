@@ -149,7 +149,8 @@ function bodyOf(app) {
   const R = { ...(RACE_BODY[app.race] ?? RACE_BODY.human) };
   if (app.fem) { R.H *= 0.94; R.girth *= 0.88; R.sh *= 0.87; R.hip *= 1.08; R.head *= 0.97; }
   // A dwarf woman is broad and strong, not barrel-round: trim the girth toward a waist.
-  if (app.fem && app.race === 'dwarf') { R.girth *= 0.88; R.sh *= 1.04; }
+  // (stocky: broad shoulders, a short strong torso, sturdy legs; no wide hips or long trunk)
+  if (app.fem && app.race === 'dwarf') { R.girth *= 0.96; R.sh *= 1.12; R.hip *= 0.9; R.torso *= 0.92; R.leg *= 1.07; }
   const H = R.H;
   const s = H / 1.78;
   const g = s * R.girth;
@@ -164,7 +165,8 @@ function bodyOf(app) {
     torsoL: R.torso * H,
     upper: R.arm * H * 0.53,
     fore: R.arm * H * 0.47,
-    hs: R.head / 0.232,
+    // heroic-scale heads (a painted 28 mm figure, not a mannequin): a tenth larger than life
+    hs: (R.head / 0.232) * 1.1,
     hand: (0.86 + 0.14 * R.girth) * Math.max(0.62, s),
     seatH: 0.24 * H,
   };
@@ -294,7 +296,7 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
   const trimC = mulc(desat(L(app.trimHex), 0.25), 0.85);
   const mat = (color, o = {}) => sc.material({ color, ...o });
   const M = {
-    skin: mat(skinC, { rough: 0.52, pattern: PATTERN.skin, soft: 0.004, edge: 0.18, wash: 0.55, face: 1 }),
+    skin: mat(skinC, { rough: 0.64, pattern: PATTERN.skin, soft: 0.004, edge: 0.18, wash: 0.55, face: 1 }),
     lip: mat(mix(skinC, [0.4, 0.14, 0.12], app.fem ? 0.16 : 0.08), { rough: 0.42, pattern: PATTERN.skin, soft: 0.004, face: 1, edge: 0.15 }),
     eye: mat([0.56, 0.52, 0.47], { rough: 0.15, pattern: PATTERN.eye, soft: 0.001, edge: 0, wash: 0.3, face: 1 }),
     hair: mat(hairC, { rough: 0.62, pattern: PATTERN.hair, soft: 0.007, edge: 0.55, wash: 0.75 }),
@@ -303,13 +305,13 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
     trim: mat(trimC, { rough: 0.9, pattern: PATTERN.cloth, edge: 0.3 }),
     trousers: mat(L('#33323a'), { rough: 0.95, pattern: PATTERN.cloth, edge: 0.25, wash: 0.6 }),
     linen: mat(L('#a89c82'), { rough: 0.9, pattern: PATTERN.linen, edge: 0.25, wash: 0.7 }),
-    leather: mat(L('#4a2c18'), { rough: 0.6, pattern: PATTERN.leather, edge: 0.45, wash: 0.65 }),
-    darkLeather: mat(L('#2f2016'), { rough: 0.58, pattern: PATTERN.leather, edge: 0.45, wash: 0.6 }),
-    boots: mat(L('#33241a'), { rough: 0.5, pattern: PATTERN.leather, edge: 0.5, wash: 0.6 }),
-    steel: mat(L('#a9adb5'), { rough: 0.42, metal: 1, pattern: PATTERN.metal, edge: 0.35, wash: 0.5 }),
-    darkSteel: mat(L('#666a72'), { rough: 0.5, metal: 1, pattern: PATTERN.metal, edge: 0.35, wash: 0.5 }),
-    mail: mat(L('#80858d'), { rough: 0.6, metal: 1, pattern: PATTERN.mail, edge: 0.2, wash: 0.6 }),
-    scale: mat(L('#9a7c48'), { rough: 0.48, metal: 1, pattern: PATTERN.scale, edge: 0.3, wash: 0.65 }),
+    leather: mat(L('#4a2c18'), { rough: 0.76, pattern: PATTERN.leather, edge: 0.45, wash: 0.65 }),
+    darkLeather: mat(L('#2f2016'), { rough: 0.74, pattern: PATTERN.leather, edge: 0.45, wash: 0.6 }),
+    boots: mat(L('#33241a'), { rough: 0.7, pattern: PATTERN.leather, edge: 0.5, wash: 0.6 }),
+    steel: mat(L('#a9adb5'), { rough: 0.56, metal: 0.9, pattern: PATTERN.metal, edge: 0.35, wash: 0.5 }),
+    darkSteel: mat(L('#666a72'), { rough: 0.62, metal: 0.85, pattern: PATTERN.metal, edge: 0.35, wash: 0.5 }),
+    mail: mat(L('#6e7279'), { rough: 0.8, metal: 0.72, pattern: PATTERN.mail, edge: 0.2, wash: 0.6 }),
+    scale: mat(L('#9a7c48'), { rough: 0.62, metal: 0.85, pattern: PATTERN.scale, edge: 0.3, wash: 0.65 }),
     gilt: mat(L('#d0a650'), { rough: 0.3, metal: 1, pattern: PATTERN.metal, edge: 0.4 }),
     fur: mat(L('#8a7258'), { rough: 0.95, pattern: PATTERN.fur, edge: 0.6, wash: 0.8, soft: 0.006 }),
     rope: mat(L('#9a8458'), { rough: 0.9, pattern: PATTERN.cloth, edge: 0.4 }),

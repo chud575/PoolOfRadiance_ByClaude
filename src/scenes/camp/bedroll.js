@@ -55,15 +55,13 @@ function woolTexture(hex) {
   const css = (col, k = 1) => `rgb(${Math.round(Math.min(1, col.r * k) * 255)},${Math.round(Math.min(1, col.g * k) * 255)},${Math.round(Math.min(1, col.b * k) * 255)})`;
   g.fillStyle = css(base);
   g.fillRect(0, 0, S, S);
-  // Plaid: broad dark bands, thin light stripes.
-  g.globalAlpha = 0.35;
-  g.fillStyle = css(base, 0.55);
-  g.fillRect(0, 20, S, 22);
-  g.fillRect(20, 0, 22, S);
-  g.globalAlpha = 0.5;
-  g.fillStyle = css(base.clone().lerp(new THREE.Color(0xd8c8a0), 0.6));
-  g.fillRect(0, 70, S, 3);
-  g.fillRect(70, 0, 3, S);
+  // Heathered wool (no plaid): soft mottling of lighter and darker fleece, a few slubs.
+  for (let k = 0; k < 220; k++) {
+    const x = hash(k, 11) * S, y = hash(k, 12) * S, r = 3 + hash(k, 13) * 9;
+    g.globalAlpha = 0.08 + hash(k, 14) * 0.08;
+    g.fillStyle = css(base, hash(k, 15) > 0.5 ? 1.18 : 0.78);
+    g.beginPath(); g.ellipse(x, y, r, r * (0.5 + hash(k, 16)), hash(k, 17) * 3, 0, Math.PI * 2); g.fill();
+  }
   // Weave grain: one shared greyscale canvas multiplied over the colour.
   g.globalAlpha = 1;
   g.globalCompositeOperation = 'multiply';
@@ -298,9 +296,8 @@ export function buildBedroll(ch, o = {}) {
     handG.traverse((o) => { o.castShadow = true; });
     root.add(handG);
   };
-  if (pose === 'back') arm(0.21 * L, -0.28 * L, 0.03, -0.42 * L);
-  else if (pose === 'side') arm(0.1, -0.36 * L, 0.24, -0.22 * L);
-  else arm(0.12, -0.34 * L, 0.22, -0.4 * L);
+  // Arms stay under the wool against the night's cold (no forearms poking out of the blanket).
+  void arm;
 
   // ---- the head on the pillow, eyes closed.
   const head = new THREE.Group();

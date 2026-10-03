@@ -134,7 +134,9 @@ void miniPattern(float pid, out float h, out float alb, out float rmod) {
     float oil = vn3(p * 5.0 + 3.0);
     float lowAO = 0.72 + 0.28 * wear;
     h = tiltH * 0.0009 * fd;
-    alb = mix(0.82, mix(0.42, 1.15, tiltH), fd) * lowAO * (0.92 + 0.12 * oil);
+    // far off, the rings resolve into rows: soft horizontal courses of darker and lighter links
+    float rows = 0.86 + 0.14 * sin(p.y * 160.0 + vn3(p * 30.0) * 2.0) * aaFade(26.0);
+    alb = mix(0.78 * rows, mix(0.42, 1.15, tiltH), fd) * lowAO * (0.92 + 0.12 * oil);
     rmod = 0.06 + (0.5 - wear) * 0.12 + (1.0 - ring) * 0.15 * fd;  } else if (pid < 2.5) { // scales
     vec2 uv = triUV(p, vObjN) * vec2(55.0, 70.0);
     uv.x += 0.5 * mod(floor(uv.y), 2.0);
@@ -787,7 +789,7 @@ export function keepAlive(fig) {
 export function miniatureSnapshot(ch, o = {}) {
   const w = o.w ?? 360;
   const h = o.h ?? 600;
-  const key = `${appearanceKey(ch)}|${ch.hp ? (ch.hp.cur <= 0 ? 'down' : '') : ''}|${w}|${h}|${o.backdrop !== false}`;
+  const key = `${appearanceKey(ch)}|${ch.hp ? (ch.hp.cur <= 0 ? 'down' : '') : ''}|${w}|${h}|${o.backdrop !== false}|${o.tight ? 't' : ''}`;
   if (snapCache.has(key)) return snapCache.get(key);
   try {
     const st = snapshotStage();
@@ -799,15 +801,16 @@ export function miniatureSnapshot(ch, o = {}) {
     cam.aspect = w / h;
     cam.fov = 24;
     // Frame the whole figure with its weapon (the sword is held out to the side).
-    const dist = (H * 1.12) / (2 * Math.tan((cam.fov * Math.PI) / 360));
-    cam.position.set(0, H * 0.62, dist);
-    cam.lookAt(0, H * 0.54, 0);
+    // (tight: the figure fills the frame, the plinth's rim at the bottom edge — the sheet's icon)
+    const dist = (H * (o.tight ? 0.98 : 1.12)) / (2 * Math.tan((cam.fov * Math.PI) / 360));
+    cam.position.set(0, H * (o.tight ? 0.66 : 0.62), dist);
+    cam.lookAt(0, H * (o.tight ? 0.5 : 0.54), 0);
     cam.updateProjectionMatrix();
     m.rotation.y = -0.28;
     st.scene.add(m);
     st.scene.background = o.backdrop === false ? null : st.background;
     st.plinth.visible = o.backdrop !== false;
-    const cv = renderToCanvas(renderer, st.scene, cam, { w, h, exposure: 1.32, alpha: o.backdrop === false, key: 'snap' });
+    const cv = renderToCanvas(renderer, st.scene, cam, { w, h, exposure: o.tight ? 1.55 : 1.32, alpha: o.backdrop === false, key: 'snap' });
     // Painted eyes, brows and mouth at the snapshot's own resolution.
     if (!m.userData.head) try { finishFace(renderer, st.scene, cam, m, cv, m.userData.app, { mini: true, key: 'snapMask' }); } catch { /* keep the plain render */ }
     const url = cv.toDataURL('image/png');

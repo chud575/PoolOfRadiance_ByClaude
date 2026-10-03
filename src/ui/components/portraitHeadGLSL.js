@@ -92,6 +92,17 @@ vec2 lidLines(vec3 q) {
   float lo = -0.0047 * EOPEN * pow(alm, 0.75) * (1.0 - 0.1 * edx) - 0.0008 + sl * (q.x - ex) * 2.0;
   return vec2(up, lo);
 }
+// The lips: the upper lip a plane turned down (it takes the shadow), the lower lip turned up to
+// the light and fuller, sitting a little behind the upper; their corners tuck into the cheeks.
+vec2 lipsD(vec3 lp, float mY, float lz, float mw, float lipK) {
+  vec3 u = lp - vec3(0.0, mY + 0.0043, lz - 0.0038);
+  u.yz = rot2(-0.42) * u.yz;
+  float ul = sdEll(u, vec3(0.0192 * mw, 0.0052 * min(lipK, 1.25), 0.0074));
+  vec3 l = lp - vec3(0.0, mY - 0.0058, lz - 0.005);
+  l.yz = rot2(0.38) * l.yz;
+  float ll = sdEll(l, vec3(0.0166 * mw, 0.0058 * min(lipK, 1.3), 0.0082));
+  return vec2(ul, ll);
+}
 float gEye;   // distance to the eyeballs
 float gLid;   // distance to the lid line (lash shading)
 float gEar;   // distance to the ears
@@ -110,13 +121,15 @@ float skin(vec3 p) {
   float w = W * (1.0 - 0.03 * FEM);
   float fem = FEM;
   float lf = LOWF();
+  // dwarves (women too) keep a heavy brow and a broad jaw
+  float dwf = sat((BLEN - 1.0) / 0.3);
   // ---- cranium: an egg, flatter at the sides, the back of the skull full
   vec3 c = p - vec3(0.0, 0.022 + 0.004 * (CRAN - 1.0), -0.011);
   float d = sdEll(c, vec3(0.0715 * w, 0.085 * CRAN, 0.097));
   d = smax(d, q.x - (0.0685 * w + 0.005 * sat((0.02 - p.z) / 0.08)), 0.03);
   // ---- the brow bar over the eyes (heavy on men, dwarves and the old), with the glabella and the
   // outer orbital rims running down to the cheekbones
-  float browK = BROW * (1.0 - 0.65 * fem);
+  float browK = BROW * (1.0 - 0.65 * fem * (1.0 - 0.45 * dwf));
   d = smin(d, sdEll(p - vec3(0.0, 0.0165, 0.066 + 0.0012 * browK), vec3(0.052 * w, 0.0122, 0.02 + 0.0018 * browK)), 0.014);
   d = smin(d, sdCap(q, vec3(0.05 * w, 0.012, 0.06), vec3(0.054 * w, -0.008, 0.056), 0.0075), 0.012);
   // ---- the maxilla: a keel behind the nose and mouth (the cheeks are built on it, not a balloon)
@@ -125,21 +138,22 @@ float skin(vec3 p) {
   float ckz = 0.9 + 0.15 * CHEEK;
   vec3 cq = q - vec3(0.048 * w, -0.0135 - 0.002 * fem, 0.0445);
   cq.xy = rot2(0.35) * cq.xy;
-  d = smin(d, sdEll(cq, vec3(0.023, 0.0135, 0.0155 * ckz) * (1.0 + 0.08 * HALF)), 0.024);
-  d = smin(d, sdCap(q, vec3(0.055 * w, -0.013, 0.04), vec3(0.067 * w, -0.012, 0.0), 0.0078), 0.014);
+  // (women and the young: the cheekbone melts into the cheek; no knob on the far silhouette)
+  d = smin(d, sdEll(cq, vec3(0.023 - 0.003 * fem, 0.0135, 0.0155 * ckz) * (1.0 + 0.08 * HALF)), 0.024 + 0.008 * fem);
+  d = smin(d, sdCap(q, vec3(0.055 * w, -0.013, 0.04), vec3(0.066 * w, -0.012, 0.0), 0.0078 - 0.0015 * fem), 0.014 + 0.006 * fem);
   // the buccal plane under the cheekbone, full on the young, halflings and women, hollow on the lean
-  float buc = (1.0 - 0.45 * sat(HOLLOW)) * (1.0 + 0.25 * HALF + 0.1 * fem);
-  d = smin(d, sdEll(q - vec3(0.038 * w, -0.048 * lf, 0.036), vec3(0.02 * buc, 0.028, 0.03 * buc)), 0.022);
+  float buc = (1.0 - 0.45 * sat(HOLLOW) * (1.0 - 0.5 * fem)) * (1.0 + 0.25 * HALF + 0.14 * fem);
+  d = smin(d, sdEll(q - vec3(0.038 * w, -0.048 * lf, 0.036), vec3(0.02 * buc, 0.028 + 0.004 * fem, 0.03 * buc)), 0.022 + 0.008 * fem);
   // ---- the mandible: ramus, angle, body and chin
-  float jw = (0.05 * (0.86 + 0.14 * JAW) - 0.0075 * fem) * w;
+  float jw = (0.05 * (0.86 + 0.14 * JAW) - 0.0075 * fem * (1.0 - 0.55 * dwf)) * w;
   vec3 go = vec3(jw, -0.079 * lf, -0.01 - 0.003 * JDEPTH);
-  float rGo = 0.0105 + 0.003 * (JAW - 1.0) - 0.0032 * fem;
+  float rGo = 0.0105 + 0.003 * (JAW - 1.0) - 0.0032 * fem * (1.0 - 0.5 * dwf);
   vec3 me = vec3(0.016 * CHIN, -0.106 * lf, 0.066 + 0.004 * JDEPTH);
   d = smin(d, sdRC(q, vec3(0.06 * w, -0.02, -0.022), go, 0.013, rGo), 0.016);
   d = smin(d, sdRC(q, go, me, rGo, 0.0115 + 0.002 * CHIN), 0.016);
   // chin: the mental protuberance, square on men
   vec3 chq = p - vec3(0.0, -0.1 * lf, 0.08 + 0.004 * JDEPTH);
-  float chin = sdEll(chq, vec3((0.021 - 0.005 * fem) * CHIN, 0.0165 - 0.002 * fem, 0.0155));
+  float chin = sdEll(chq, vec3((0.021 - 0.005 * fem * (1.0 - 0.6 * dwf)) * CHIN, 0.0165 - 0.002 * fem, 0.0155));
   chin = smin(chin, sdEll(vec3(abs(chq.x) - 0.009 * CHIN * (1.0 - fem), chq.yz), vec3(0.012, 0.014, 0.014)), 0.008);
   d = smin(d, chin, 0.014);
   // the fill of the lower face between the jaw and the mouth
@@ -152,13 +166,14 @@ float skin(vec3 p) {
   float lipK = LIPS * (1.0 + 0.07 * fem);
   float lz = LIPZ();
   d = smin(d, sdEll(p - vec3(0.0, mY + 0.006, 0.066 + 0.003 * PROT - 0.003 * fem), vec3(0.03 * mw * (1.0 - 0.08 * fem), 0.028, 0.028)), 0.018);
+  // the mentalis: the soft pad between the lower lip and the chin (no pit under the lip)
+  d = smin(d, sdEll(p - vec3(0.0, mY - 0.017, lz - 0.0125 - 0.002 * fem), vec3(0.0145 * mw, 0.0095, 0.0105)), 0.009);
   if (p.z > 0.07 && abs(p.y - mY) < 0.03) {
     float cx = min(q.x / (0.021 * mw), 1.3);
     float curve = SMILE * 0.0034 * cx * cx + SMIRK * 0.0028 * sat(p.x / 0.02) * cx - SCOWL * 0.0012 * cx * cx;
     vec3 lp = p - vec3(0.0, curve, 0.0);
-    float ul = sdEll(lp - vec3(0.0, mY + 0.0043, lz - 0.0042), vec3(0.0192 * mw, 0.0052 * lipK, 0.0078));
-    float ll = sdEll(lp - vec3(0.0, mY - 0.0058, lz - 0.0058), vec3(0.0168 * mw, 0.0062 * lipK, 0.0086));
-    d = smin(d, min(ul, ll), 0.0045);
+    vec2 lips = lipsD(lp, mY, lz, mw, lipK);
+    d = smin(d, smin(lips.x, lips.y, 0.003), 0.0055 + 0.0025 * fem);
     // the mouth line, the corners tucked in
     vec3 sp = lp - vec3(0.0, mY, lz - 0.004);
     float sx = abs(sp.x) / (0.0188 * mw);
@@ -166,7 +181,8 @@ float skin(vec3 p) {
     slit = max(slit, abs(sp.x) - 0.0195 * mw);
     d = smax(d, -max(slit, abs(sp.z) - 0.0105), 0.0016);
     // the fold under the lower lip
-    d = smax(d, -sdCap(p, vec3(-0.0095, mY - 0.0175, lz - 0.001), vec3(0.0095, mY - 0.0175, lz - 0.001), 0.0034), 0.006);
+    // (men only: on women the mentalis pad runs smoothly from the lip into the chin)
+    if (fem < 0.5) d = smax(d, -sdCap(p, vec3(-0.0095, mY - 0.018, lz - 0.0015), vec3(0.0095, mY - 0.018, lz - 0.0015), 0.0019), 0.008);
   }
   // nasolabial fold: a soft ridge of the cheek beside the muzzle, deeper with age (a gaussian of the
   // squared distance to a line just outside the fold, so the field stays smooth)

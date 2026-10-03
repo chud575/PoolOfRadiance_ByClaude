@@ -55,7 +55,7 @@ export default class CampScene extends Scene {
     window.addEventListener('pointerdown', wake, true);
     this.own(() => window.removeEventListener('pointerdown', wake, true));
     this.ctx.audio?.playMusic?.('camp');
-    this.ctx.ui.message('The party makes camp among the ruins. Sentries are posted.', 'lore');
+    if (!params.sleep) this.ctx.ui.message('The party makes camp among the ruins. Sentries are posted.', 'lore');
     // Arrow keys / D-pad walk the camp panel and the command line.
     this.nav = new UINav(this.ctx, { roots: () => (this.view || this.busy ? [] : [this.statusBody, this.bar?.el]) });
     this.own(() => this.nav.dispose());
@@ -230,13 +230,15 @@ export default class CampScene extends Scene {
         h(`button.pc-tab${mode === 'save' ? '.sel' : ''}`, { onclick: () => { mode = 'save'; draw(); } }, ['Save']),
         h(`button.pc-tab${mode === 'load' ? '.sel' : ''}`, { onclick: () => { mode = 'load'; draw(); } }, ['Load']),
       ]));
-      if (debug?.nosave) body.append(h('p.pc-rest-note', ['Saving is disabled in debug/screenshot mode.']));
+      if (debug?.nosave && mode === 'save') body.append(h('p.pc-rest-note', ['Saving is off in debug/screenshot mode: the slots below are shown but not written.']));
       body.append(h('div.camp-slots', SAVE_SLOTS.filter((s) => mode === 'load' || s !== 'auto').map((slot) => {
         const r = list.get(slot);
         return h(`button.camp-slot${r ? '' : '.empty'}`, {
           disabled: mode === 'load' && !r,
           onclick: async () => {
             if (mode === 'save') {
+              // the note above says saving is off in debug/screenshot runs; the slots agree
+              if (debug?.nosave) { ui.toast(`Not saved: saving is off in debug/screenshot mode (slot ${slot} untouched)`); return; }
               if (r && this.ctx.settings.get('confirmDangerous') !== false) {
                 const ok = await ui.dialog({ title: 'Overwrite?', variant: 'blue', body: `Replace the game in slot ${slot}?`, buttons: [{ id: 'y', label: 'Overwrite', primary: true }, { id: null, label: 'Cancel' }] });
                 if (ok !== 'y') return;
@@ -590,7 +592,9 @@ export default class CampScene extends Scene {
       // view (head on the rolled cloak, shoulder, hip and knee under the wool) and the sentry stands
       // against the night beyond them.
       this.camera.position.set(-0.6 * k, 1.75 - 0.92 * k, 5.2 - 2.4 * k);
-      this.camera.lookAt(-0.05 * k, 0.95 - 0.62 * k, -0.6 - 1.45 * k);
+      this.camera.lookAt(-0.05 * k, 0.95 - 0.55 * k, -0.6 - 1.45 * k);
+      // the camera low over the embers: bloom eased off so the fire keeps its flame shape
+      if (this.post) { this.post.bloomStrength = 0.7 - 0.38 * k; this.post.bloomThreshold = 0.9 + 0.12 * k; }
     }
     const b = this.busy;
     if (b) {

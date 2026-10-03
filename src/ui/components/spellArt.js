@@ -24,16 +24,16 @@ export const SPELL_FAMILY = {
 export const FAMILY_STYLE = {
   heal: ['Healing', '#c8f0c0', '#2e6a3a', '#0e2a14'],
   ward: ['Warding', '#cfe0ff', '#2f4f9a', '#0c1838'],
-  bless: ['Blessing', '#fff2c8', '#b88a2a', '#3a2606'],
+  bless: ['Blessing', '#fff6c8', '#c8a018', '#3a2a02'],
   curse: ['Curse', '#e6c8f0', '#5a2a6a', '#1c0a24'],
   fire: ['Fire', '#ffd8b0', '#b8401a', '#3a0e04'],
   bolt: ['Lightning', '#e0f6ff', '#2a7ab8', '#06223a'],
   force: ['Force', '#f0e0ff', '#6a48c8', '#1a0a40'],
   mind: ['Enchantment', '#f8d0ec', '#9a3478', '#2a0820'],
-  lore: ['Divination', '#fff0d0', '#9a7a3a', '#2a1c06'],
+  lore: ['Divination', '#f2f4ff', '#6e7790', '#12141c'],
   change: ['Alteration', '#d8f4ec', '#2a8a72', '#06261e'],
-  veil: ['Illusion', '#dce8f0', '#4a6a7e', '#0c1a24'],
-  hammer: ['Holy Weapon', '#fff4d8', '#c89a3a', '#3a2606'],
+  veil: ['Illusion', '#e4e0ff', '#343a78', '#0a0c26'],
+  hammer: ['Holy Weapon', '#ffe2c8', '#8a4e26', '#2a1206'],
 };
 
 const GLYPH = {
@@ -153,6 +153,12 @@ ${o.dim ? '<circle cx="16" cy="16" r="15.2" fill="#05060c" fill-opacity="0.58"/>
   u = `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
   urlCache.set(key, u);
   return u;
+}
+
+/** The enamel colour of a family by its display name ("Healing" → its roundel's colour). */
+export function familyColour(name) {
+  const st = Object.values(FAMILY_STYLE).find((f) => f[0] === name);
+  return st ? `radial-gradient(circle at 35% 30%, ${st[1]}, ${st[2]} 60%, #05040a)` : '#555';
 }
 
 /** Family name for a spell ("Healing", "Fire"...). */

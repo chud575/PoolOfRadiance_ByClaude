@@ -351,26 +351,25 @@ export class InventoryPanel {
     if (e) {
       const prob = equipProblem(ch, e.id);
       const magic = isMagical(e) && e.identified !== false;
-      detail.push(h('div.pc-detail-card', [
-        h(`span.ic.r-${itemRarity(e)}`, [h('img', { src: itemIconURL(iconFor(def), { magic }), alt: '' })]),
-        h('div', [
-          h('div.t', [itemName(e)]),
-          h('div.s', [`${TYPE_NAMES[def.type] ?? def.type}${e.equipped ? ' · readied' : ''}`]),
-        ]),
+      // The parchment card under the pack carries the item's art, lore, weight, value and effect;
+      // this box is the order panel: can this member use it, what readying it changes, the commands.
+      const slot = slotOf(def);
+      const SLOT_NAMES = { hand: 'weapon hand', offhand: 'shield arm', body: 'body', head: 'head', neck: 'neck', cloak: 'shoulders', feet: 'feet', hands: 'hands', arms: 'forearms', waist: 'waist', ring: 'ring finger', ammo: 'quiver' };
+      const inSlot = slot ? inv.find((o) => o !== e && o.equipped && slotOf(ITEMS[o.id]) === slot) : null;
+      detail.push(h('div.pc-order-h', [
+        h('div.t', [itemName(e)]),
+        h('div.s', [e.equipped ? `Readied · ${SLOT_NAMES[slot] ?? 'worn'}` : slot ? `In the pack · goes on the ${SLOT_NAMES[slot] ?? slot}` : `In the pack · ${TYPE_NAMES[def.type] ?? def.type}`]),
       ]));
       detail.push(h('div.pc-kv', [
-        ...(itemStatLine(def, e) ? [h('span.k', ['Effect']), h('span.v', { style: { fontSize: '0.82em' } }, [itemStatLine(def, e)])] : []),
-        h('span.k', ['Weight']), h('span.v', [`${itemWeight(e)} cn`]),
-        h('span.k', ['Value']), h('span.v', [`${itemValue(e)} gp`]),
-        h('span.k', ['Usable']), h('span.v', { style: { color: prob && slotOf(def) ? '#ff9a86' : 'var(--por-green)' } }, [slotOf(def) ? (prob ? prob : 'yes') : def.type === 'potion' || def.type === 'scroll' || def.type === 'wand' ? 'use' : '—']),
+        h('span.k', ['Usable']), h('span.v', { style: { color: prob && slot ? '#ff9a86' : 'var(--por-green)' } }, [slot ? (prob ? prob : 'yes') : def.type === 'potion' || def.type === 'scroll' || def.type === 'wand' ? 'use' : '—']),
+        ...(slot ? [h('span.k', ['In that slot']), h('span.v', { style: { fontSize: '0.86em' } }, [e.equipped ? 'this' : inSlot ? itemName(inSlot) : 'nothing'])] : []),
       ]));
       const cmp = compareItem(ch, e);
-      if (cmp) {
-        detail.push(h('div.pc-compare', [
-          h('div.h', [`Compared with ${cmp.against}`]),
-          cmp.bits.length ? h('div.b', cmp.bits.map((b) => h(`span.${b.good ? 'up' : 'down'}`, [b.good ? '▲ ' : '▼ ', b.text]))) : h('div.b', [h('span', ['No difference'])]),
-        ]));
-      }
+      detail.push(h('div.pc-compare', [
+        h('div.h', [cmp ? `Readying it, against ${cmp.against}` : e.equipped ? 'Readied now' : slot ? 'Readying it' : 'Carried']),
+        cmp && cmp.bits.length ? h('div.b', cmp.bits.map((b) => h(`span.${b.good ? 'up' : 'down'}`, [b.good ? '▲ ' : '▼ ', b.text])))
+          : h('div.b', [h('span', [cmp ? 'No difference' : e.equipped ? (itemStatLine(def, e) || 'Worn') : slot ? (itemStatLine(def, e) || 'Fills an empty slot') : 'Weight only'])]),
+      ]));
       const usable = ['potion', 'scroll', 'wand'].includes(def.type);
       const qty = e.qty ?? 1;
       const joinable = inv.some((o, j) => j !== this.sel && o.id === e.id && !o.equipped);
@@ -405,7 +404,7 @@ export class InventoryPanel {
       h('div.pc-coins', [['pp', coins.pp ?? 0], ['gp', ch.gold ?? 0], ['ep', coins.ep ?? 0], ['sp', coins.sp ?? 0], ['cp', coins.cp ?? 0]].map(([k, v]) =>
         h('div.pc-coin', [h('div.n', [String(v)]), h('div.l', [k.toUpperCase()])]))),
     ]);
-    const side = h('div.pc-detail', [h('div.pc-sect', { style: { display: 'flex', flexDirection: 'column', gap: '0.7em' } }, [h('div.pc-sect-h', [h('span', ['Item'])]), ...detail]), enc, purse]);
+    const side = h('div.pc-detail', [h('div.pc-sect', { style: { display: 'flex', flexDirection: 'column', gap: '0.7em' } }, [h('div.pc-sect-h', [h('span', ['Orders'])]), ...detail]), enc, purse]);
     this.el.append(doll, list, side);
   }
 
@@ -415,7 +414,6 @@ export class InventoryPanel {
     if (!def) return h('div.pc-itemlore.empty', [h('p', ['Select an item to read its lore.'])]);
     const magic = isMagical(e) && e.identified !== false;
     const stat = itemStatLine(def, e);
-    const cmp = compareItem(ch, e);
     return h(`div.pc-itemlore.r-${itemRarity(e)}`, [
       h('div.plate', [h('img', { src: itemIconURL(iconFor(def), { magic }), alt: '' })]),
       h('div.txt', [
@@ -423,7 +421,6 @@ export class InventoryPanel {
         h('div.s', [`${TYPE_NAMES[def.type] ?? def.type} · ${itemWeight(e)} cn · ${itemValue(e)} gp${e.equipped ? ' · readied' : ''}`]),
         h('p.d', [itemLore(e)]),
         stat ? h('p.r', [stat]) : null,
-        cmp && cmp.bits.length ? h('p.c', cmp.bits.map((b) => h(`span.${b.good ? 'up' : 'down'}`, [b.good ? '▲ ' : '▼ ', b.text, ' ']))) : null,
       ]),
     ]);
   }

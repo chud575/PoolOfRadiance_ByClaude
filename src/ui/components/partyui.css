@@ -369,7 +369,7 @@
 
 /* ---- resting overlay ---- */
 .camp-resting {
-  position: absolute; left: 50%; top: 6.2em; transform: translateX(-50%);
+  position: absolute; left: 50%; top: auto; bottom: 9.2em; transform: translateX(-50%);
   width: min(44em, 48vw); display: grid; grid-template-columns: 4.2em 1fr auto; gap: 1em; align-items: center;
   padding: 0.9em 1.2em; border: 1px solid rgba(216, 178, 90, 0.55); border-radius: 3px;
   background: linear-gradient(180deg, rgba(10, 14, 34, 0.92), rgba(4, 6, 16, 0.94));
@@ -397,8 +397,8 @@
 .cc-kit-row img { width: 1.9em; height: 1.9em; }
 
 /* ---- magic: glyphs, sockets, grimoire ---- */
-.pc-spell img.gl { width: 2.15em; height: 2.15em; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7)); }
-.pc-spell { grid-template-columns: 2.3em 1fr auto; }
+.pc-spell img.gl { width: 2.7em; height: 2.7em; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7)); }
+.pc-spell { grid-template-columns: 2.9em 1fr auto; }
 .pc-spell.full { opacity: 0.82; }
 .pc-spell.full .nm { color: #cfc6b0; }
 .pc-sockets { display: flex; flex-direction: column; gap: 0.35em; margin-bottom: 0.6em; padding: 0.5em 0.6em; border-radius: 3px; background: radial-gradient(ellipse at 50% 0%, rgba(245, 217, 139, 0.08), rgba(0, 0, 0, 0.35)); border: 1px solid rgba(216, 178, 90, 0.2); }
@@ -560,7 +560,7 @@
 img.pc-pending { background: radial-gradient(ellipse at 50% 40%, rgba(120, 96, 70, 0.35), rgba(10, 10, 20, 0.9) 70%); min-height: 2em; }
 
 /* Spells: readable unselected rows; the spell card is the one detail surface (no lore strip on MAGIC). */
-.pc-spells .pc-spell .tg { color: #a9b3cf; font-size: 0.76em; }
+.pc-spells .pc-spell .tg { color: #cbd2e6; font-size: 0.8em; text-wrap: pretty; line-height: 1.25; }
 .pc-spells .pc-spell .nm { color: #ece4cc; }
 .pc-view:has(.pc-spells .pc-spellcard) .pc-lore { display: none; }
 .pc-cast-empty { padding: 1.2em 0.6em; text-align: center; }
@@ -656,11 +656,12 @@ img.pc-pending.pc-rough { filter: blur(0.7px) saturate(0.85) brightness(0.95); b
 .pc-spell.dis .tg { color: #8f97ae; }
 /* The company check in the party hub's card. */
 .cc-check { margin-top: 0.6em; }
-.cc-check-row { display: grid; grid-template-columns: 1.2em 7.2em 1fr; align-items: baseline; gap: 0.3em; padding: 0.12em 0; font-size: 0.86em; border-bottom: 1px solid rgba(216, 178, 90, 0.12); cursor: default; }
+.cc-check-row { display: grid; grid-template-columns: 1.2em 8.6em 1fr; align-items: baseline; gap: 0.3em; padding: 0.12em 0; font-size: 0.86em; border-bottom: 1px solid rgba(216, 178, 90, 0.12); cursor: default; }
 .cc-check-row .mk { color: #8fd18a; font-weight: bold; text-align: center; }
 .cc-check-row.warn .mk { color: #f0a050; }
-.cc-check-row .k { font-family: var(--font-display); letter-spacing: 0.08em; font-size: 0.82em; color: var(--por-gilt); text-transform: uppercase; }
+.cc-check-row .k { font-family: var(--font-display); letter-spacing: 0.06em; font-size: 0.8em; white-space: nowrap; color: var(--por-gilt); text-transform: uppercase; }
 .cc-check-row .v { color: var(--por-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cc-check-row.warn .v { white-space: normal; line-height: 1.25; }
 .cc-check-row.warn .v { color: #f0c090; font-style: italic; }
 @media (max-height: 700px) { .cc-check { display: none; } }
 .cc-hubhead { display: grid; grid-template-columns: 5.2em 1fr; gap: 0.8em; align-items: center; }
@@ -670,3 +671,23 @@ img.pc-pending.pc-rough { filter: blur(0.7px) saturate(0.85) brightness(0.95); b
 /* The combat icon fills its box (the whole figure, larger and lighter). */
 .pc-icon { background: radial-gradient(ellipse at 50% 40%, #3a2c22, #120d0a 75%); }
 .pc-icon img { width: auto; height: 100%; max-width: 100%; object-fit: contain; object-position: 50% 100%; }
+
+/* inventory order panel header (the parchment card carries the art and lore) */
+.pc-order-h .t { font-family: var(--font-display); font-size: 1.15em; letter-spacing: 0.06em; color: var(--por-gilt-hi); }
+.pc-order-h .s { font-size: 0.8em; color: var(--por-text-dim); margin-top: 0.15em; }
+
+/* character sheet: the pack as a grid of labelled tiles */
+.pc-packgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.35em; }
+.pc-packgrid .pc-packi { width: auto; height: auto; position: relative; display: flex; flex-direction: column; align-items: center; gap: 0.1em; padding: 0.3em 0.15em 0.25em; border: 1px solid rgba(216, 178, 90, 0.28); border-radius: 3px; background: radial-gradient(ellipse at 50% 35%, rgba(60, 74, 120, 0.55), rgba(10, 14, 30, 0.7)); min-height: 3.6em; }
+.pc-packgrid .pc-packi img { width: 2.2em; height: 2.2em; }
+.pc-packgrid .pc-packi i { font-style: normal; font-size: 0.68em; color: var(--por-text); text-align: center; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.pc-packgrid .pc-packi b { position: absolute; top: 0.15em; right: 0.3em; font-size: 0.7em; color: var(--por-gilt-hi); }
+.pc-packgrid .pc-packi.empty { border-style: dashed; border-color: rgba(216, 178, 90, 0.14); background: rgba(8, 12, 26, 0.45); }
+
+/* MAGIC: the schools the caster knows, in their enamel colours (fills the casters column) */
+.pc-schools { border-top: 1px solid rgba(216, 178, 90, 0.18); padding-top: 0.45em; margin-bottom: 0.4em; display: grid; grid-template-columns: 1fr 1fr; column-gap: 0.8em; }
+.pc-schools .h { grid-column: 1 / -1; }
+.pc-schools .h { font-family: var(--font-display); font-size: 0.68em; letter-spacing: 0.18em; text-transform: uppercase; color: var(--por-gilt); margin-bottom: 0.35em; }
+.pc-schools .r { display: grid; grid-template-columns: 1.1em 1fr auto; align-items: center; gap: 0.4em; font-size: 0.78em; padding: 0.12em 0; color: var(--por-text); }
+.pc-schools .r i { width: 0.95em; height: 0.95em; border-radius: 50%; box-shadow: 0 0 0 1px #c9973e, 0 0 0 2px #140c04; }
+.pc-schools .r b { font-family: var(--font-num); font-weight: normal; color: var(--por-amber); }

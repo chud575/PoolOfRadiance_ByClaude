@@ -142,13 +142,14 @@ function stoneGeometry(seed, sootDir) {
   const tone = 0.34 + hrand(seed, 3) * 0.16;
   // a few cleavage planes give the lump flat, broken faces
   const planes = [];
-  for (let k = 0; k < 5; k++) {
+  // (eight cuts, deep: an angular, split fieldstone, not a pebble)
+  for (let k = 0; k < 8; k++) {
     const a = hrand(seed, 10 + k) * 6.28, b = (hrand(seed, 20 + k) - 0.3) * 2.2;
-    planes.push([Math.cos(a) * Math.cos(b), Math.sin(b), Math.sin(a) * Math.cos(b), 0.62 + hrand(seed, 30 + k) * 0.25]);
+    planes.push([Math.cos(a) * Math.cos(b), Math.sin(b), Math.sin(a) * Math.cos(b), 0.5 + hrand(seed, 30 + k) * 0.22]);
   }
   for (let i = 0; i < p.count; i++) {
     let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-    const n = 1 + 0.12 * Math.sin(x * 3.1 + seed) * Math.cos(z * 2.7 + seed * 2) + 0.06 * Math.sin(y * 5 + x * 4 + seed) + 0.025 * Math.sin(x * 13 + z * 11 + y * 9 + seed);
+    const n = 1 + 0.08 * Math.sin(x * 3.1 + seed) * Math.cos(z * 2.7 + seed * 2) + 0.04 * Math.sin(y * 5 + x * 4 + seed) + 0.03 * Math.sign(Math.sin(x * 13 + z * 11 + y * 9 + seed)) * Math.abs(Math.sin(x * 7 + seed));
     x *= n; y *= n; z *= n;
     for (const [nx, ny, nz, d] of planes) {
       const s = x * nx + y * ny + z * nz;
@@ -160,7 +161,7 @@ function stoneGeometry(seed, sootDir) {
     const toward = Math.max(0, x * sootDir[0] + z * sootDir[1]);
     const soot = Math.max(0, Math.min(1, toward * 1.1 + Math.max(0, y) * 0.5 - 0.15 + 0.2 * Math.sin(x * 9 + y * 14 + seed)));
     const lichen = Math.max(0, Math.sin(x * 4 + seed) * Math.cos(z * 5 + seed) - 0.55) * (1 - soot);
-    const k = tone * (1 - soot * 0.82) * (0.9 + 0.1 * Math.sin(x * 9 + z * 7));
+    const k = tone * (1 - soot * 0.9) * (0.88 + 0.12 * Math.sin(x * 9 + z * 7));
     col.push(k * 1.02 - lichen * 0.05, k * 0.98 + lichen * 0.06, k * 0.9 - lichen * 0.08);
   }
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
@@ -246,12 +247,12 @@ export function buildCampfire({ G, Mt, night }) {
     logs.add(log);
     return log;
   };
-  // A loose teepee of five split logs leaning into one another, one fallen half out of it.
-  const nT = 5;
+  // A loose teepee of eight split logs and branches leaning into one another, one fallen half out of it.
+  const nT = 8;
   for (let i = 0; i < nT; i++) {
     const a = (i / nT) * Math.PI * 2 + 0.35 + (hrand(i, 90) - 0.5) * 0.4;
-    const len = 0.62 + hrand(i, 91) * 0.12;
-    const r = 0.036 + hrand(i, 92) * 0.014;
+    const len = (i >= 5 ? 0.48 : 0.62) + hrand(i, 91) * 0.12;
+    const r = (i >= 5 ? 0.024 : 0.036) + hrand(i, 92) * 0.014;
     const lg = G(logGeometry(len, r, i * 7 + 3, 1));
     // the burning end (top, u = 0) is where the logs cross in the flames
     const foot = new THREE.Vector3(Math.cos(a) * (0.36 + hrand(i, 94) * 0.06), 0.03, Math.sin(a) * (0.36 + hrand(i, 94) * 0.06));
@@ -269,6 +270,14 @@ export function buildCampfire({ G, Mt, night }) {
     const a = i * 1.7 + 0.5;
     const foot = new THREE.Vector3(Math.cos(a) * 0.3, 0.04, Math.sin(a) * 0.3);
     const tip = new THREE.Vector3(-Math.cos(a) * 0.3, 0.05, -Math.sin(a) * 0.3);
+    teepee.push(place(lg, foot, tip));
+  }
+  // Kindling: twigs and split sticks crossed in the coals at the heart of the fire.
+  for (let i = 0; i < 7; i++) {
+    const a = hrand(i, 140) * Math.PI * 2;
+    const lg = G(logGeometry(0.22 + hrand(i, 141) * 0.12, 0.01 + hrand(i, 142) * 0.008, 80 + i, 1));
+    const foot = new THREE.Vector3(Math.cos(a) * 0.2, 0.03, Math.sin(a) * 0.2);
+    const tip = new THREE.Vector3(Math.cos(a + 2.4) * 0.06, 0.08 + hrand(i, 143) * 0.12, Math.sin(a + 2.4) * 0.06);
     teepee.push(place(lg, foot, tip));
   }
   // Burned-down logs fallen inward (seen while the party sleeps): their charred ends in the coals.
@@ -357,9 +366,9 @@ export function buildCampfire({ G, Mt, night }) {
     flick = 0.84 + 0.1 * Math.sin(time * 9.1) + 0.06 * Math.sin(time * 23.7 + 1.3) + 0.05 * Math.sin(time * 4.3);
     for (const lg of teepee) lg.visible = !resting;
     for (const lg of collapsed) lg.visible = resting;
-    logMat.emissiveIntensity = (resting ? 1.15 : 0.9) * (0.85 + 0.15 * Math.sin(time * 5.7 + 0.4));
-    coalMat.emissiveIntensity = (resting ? 1.2 : 0.85) * (0.9 + 0.1 * Math.sin(time * 2.3));
-    chunkMat.emissiveIntensity = (resting ? 0.95 : 0.7) * (0.85 + 0.15 * Math.sin(time * 6.1));
+    logMat.emissiveIntensity = (resting ? 0.62 : 0.9) * (0.85 + 0.15 * Math.sin(time * 5.7 + 0.4));
+    coalMat.emissiveIntensity = (resting ? 0.8 : 1.0) * (0.9 + 0.1 * Math.sin(time * 2.3));
+    chunkMat.emissiveIntensity = (resting ? 0.6 : 0.85) * (0.85 + 0.15 * Math.sin(time * 6.1));
     // the tongues face the camera (turning about the vertical only) and dance on their own beats
     if (camera) camera.getWorldPosition(_v);
     tongues.forEach((c, i) => {
@@ -367,14 +376,14 @@ export function buildCampfire({ G, Mt, night }) {
         const wp = c.getWorldPosition(new THREE.Vector3());
         c.rotation.y = Math.atan2(_v.x - wp.x, _v.z - wp.z);
       }
-      const k = resting ? (i < 5 ? 0.42 : 0) : 1;
+      const k = resting ? (i < 5 ? 0.5 : 0) : 1;
       c.visible = k > 0;
       c.scale.y = k * (0.9 + 0.1 * Math.sin(time * (3.1 + i * 0.7) + i * 1.9));
-      c.scale.x = resting ? 1.25 : 1;
+      c.scale.x = resting ? 0.8 : 1;
       c.material.uniforms.uTime.value = time;
-      c.material.uniforms.uIntensity.value = (resting ? 0.6 : i === 0 ? 0.62 : 0.5) * (0.9 + 0.1 * Math.sin(time * 7.3 + i));
+      c.material.uniforms.uIntensity.value = (resting ? 0.4 : i === 0 ? 0.62 : 0.5) * (0.9 + 0.1 * Math.sin(time * 7.3 + i));
     });
-    glowMat.opacity = (resting ? 0.14 : 0.18) * flick;
+    glowMat.opacity = (resting ? 0.06 : 0.18) * flick;
     poolMat.uniforms.uK.value = (resting ? 0.16 : 0.26) * flick * (night ? 1 : 0.4);
     hazeMat.uniforms.uTime.value = time;
     hazeMat.uniforms.uStrength.value = resting ? 0.02 : 0.04;
