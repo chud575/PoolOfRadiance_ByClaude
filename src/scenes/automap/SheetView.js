@@ -321,11 +321,16 @@ export class SheetView {
       const r = this.rect;
       const e = 70 * d;
       const x1 = (r.x + r.w) * d;
-      const right = g.createLinearGradient(x1 - e, 0, x1 + 24 * d, 0);
-      right.addColorStop(0, 'rgba(10,6,3,0)');
-      right.addColorStop(1, `rgba(10,6,3,${(0.6 * over).toFixed(3)})`);
+      // the sheet rolls away under a soft shadow into the desk, no hard cut at the frame
+      const e2 = 120 * d;
+      const right = g.createLinearGradient(x1 - e2, 0, x1, 0);
+      right.addColorStop(0, 'rgba(18,10,5,0)');
+      right.addColorStop(0.55, `rgba(18,10,5,${(0.35 * over).toFixed(3)})`);
+      right.addColorStop(1, `rgba(18,10,5,${(0.94 * over).toFixed(3)})`);
       g.fillStyle = right;
-      g.fillRect(x1 - e, 0, e + this.canvas.width - x1, this.canvas.height);
+      g.fillRect(x1 - e2, 0, e2, this.canvas.height);
+      g.fillStyle = `rgba(18,10,5,${(0.94 * over).toFixed(3)})`;
+      g.fillRect(x1, 0, this.canvas.width - x1, this.canvas.height);
       const yb = (r.y + r.h) * d;
       const bottom = g.createLinearGradient(0, yb - e * 0.7, 0, this.canvas.height);
       bottom.addColorStop(0, 'rgba(10,6,3,0)');

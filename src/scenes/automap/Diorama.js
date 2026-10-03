@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { EDGE, CELL } from '../../data/maps/MapGrid.js';
-import { SHEET, collectEdges, mergeRuns, eventMarker } from './BlockSheet.js';
+import { SHEET, collectEdges, mergeRuns, eventMarker, exitBanner } from './BlockSheet.js';
 import { makeCanvas, makeDesk, grainTile, prng, INK } from './ink.js';
 import { PIN_KINDS, drawPin, drawMarker } from './glyphs.js';
 import { SERIF } from './ornaments.js';
@@ -10,6 +10,9 @@ import { preloadTextureSets, getTextureSet } from '../../render/textures/index.j
 
 /** Fold lines of the blank leaf over unsurveyed ground: [dir x, dir z, offset (fraction), +1 mountain / -1 valley]. */
 const LEAF_FOLDS = [[1, 0, 0.5, 1], [0, 1, 0.34, -1], [0, 1, 0.67, 1], [0.7071, 0.7071, 0.52, -0.6]];
+
+/** A white vertex-colour set, for primitives drawn with the AO-baked (vertexColors) materials. */
+const whiteCol = (geo) => { geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(geo.attributes.position.count * 3).fill(1), 3)); return geo; };
 
 /** Shared procedural material sets the miniature is built from (cached library sets; never disposed here). */
 const SETS = ['hd_ashlar', 'hd_ashlar_cold', 'hd_plaster', 'hd_beam_dark', 'hd_ruin', 'hd_door', 'hd_iron', 'hd_rock', 'hd_water'];
@@ -238,12 +241,16 @@ export class Diorama {
     for (const o of this.own.splice(0)) o.dispose?.();
     this.hoverMark = null;
     this.scene = null;
+    this.signScene = null;
+    this.signs = [];
   }
 
   dispose() {
     this._disposeScene();
     this.rt?.dispose();
     this.rt = null;
+    this.rtS?.dispose();
+    this.rtS = null;
     this.dof?.material.dispose();
     this.dof?.geometry.dispose();
     this.env?.dispose();
@@ -733,7 +740,16 @@ export class Diorama {
     }
     // ---------- building floors: each explored room raised as a plinth ----------
     {
-      const uvFn = (x, z) => [(x - px0) / pw, 1 - (z - pz0) / ph];
+      // floors are laid per building in their own stuff (oak boards, flagstones, packed
+      // earth and straw, rubble-strewn dirt in the ruins), painted into one atlas
+      const atlas = this._floorAtlas(map, sheet, seenCell);
+      const aTex = T(new THREE.CanvasTexture(atlas));
+      aTex.colorSpace = THREE.SRGBColorSpace;
+      aTex.anisotropy = maxAniso;
+      const aBump = T(new THREE.CanvasTexture(atlas));
+      aBump.anisotropy = maxAniso;
+      M_.floor = T(new THREE.MeshStandardMaterial({ map: aTex, bumpMap: aBump, bumpScale: 2.4, vertexColors: true, roughness: 0.86, metalness: 0, envMapIntensity: 0.3 }));
+      const uvFn = (x, z) => [x / map.w, 1 - z / map.h];
       const fl = batch('floor');
       fl.dry = 1;
       const fh = 0.06;
@@ -750,6 +766,7 @@ export class Diorama {
       if (!dungeon) this._veils(scene, T, map, sheet, seenCell, walkedRoom, wallH);
       // the rooms the company charted are furnished as on the plan (roofs lifted off)
       if (!dungeon) this._furnish(scene, T, batch, sheet, walkedRoom, fh, M_);
+      if (!dungeon) this._clutter(scene, T, batch, map, sheet, walkedRoom, fh, M_);
     }
     for (const [k, b] of Object.entries(B)) {
       const m = b.mesh(M_[k]);
@@ -1016,9 +1033,9 @@ export class Diorama {
         flags.push({ x: mx + ox, z: mz + oz, kind: t === EDGE.SECRET ? 'secret' : 'locked' });
       }
       if (flags.length) {
-        const poleGeo = T(new THREE.CylinderGeometry(0.012, 0.014, 0.62, 6));
+        const poleGeo = T(whiteCol(new THREE.CylinderGeometry(0.012, 0.014, 0.62, 6)));
         const knob = T(new THREE.SphereGeometry(0.026, 10, 8));
-        const baseGeo = T(new THREE.CylinderGeometry(0.075, 0.085, 0.03, 18));
+        const baseGeo = T(whiteCol(new THREE.CylinderGeometry(0.075, 0.085, 0.03, 18)));
         const banner = T(new THREE.PlaneGeometry(0.3, 0.22, 8, 1));
         const bp = banner.attributes.position;
         for (let i = 0; i < bp.count; i++) {
@@ -1086,11 +1103,20 @@ export class Diorama {
     const needleMat = T(new THREE.MeshStandardMaterial({ color: 0xcfd3d8, roughness: 0.25, metalness: 1 }));
     const needleGeo = T(new THREE.CylinderGeometry(0.014, 0.004, 0.6, 6));
     const headGeo = T(new THREE.SphereGeometry(0.11, 20, 14));
+    const pinsAt = new Map();
     for (const n of notes ?? []) {
       const kind = PIN_KINDS[n.kind] ?? PIN_KINDS.note;
       const mat = T(new THREE.MeshStandardMaterial({ color: new THREE.Color(kind.color), roughness: 0.62, metalness: 0, envMapIntensity: 0.4 }));
-      const px = n.x + 0.7;
-      const pz = n.y + 0.32;
+      // pins sharing a square fan out round it; one on the party's own square stands
+      // off to the north-east corner, clear of the miniature and its facing notch
+      const key = `${n.x},${n.y}`;
+      const nth = pinsAt.get(key) ?? 0;
+      pinsAt.set(key, nth + 1);
+      const onParty = party && n.x === party.x && n.y === party.y;
+      const fanA = (onParty ? -0.75 : -0.35) + nth * 0.9;
+      const fanR = onParty ? 0.62 : 0.22 + (nth ? 0.14 : 0);
+      const px = n.x + 0.5 + Math.cos(fanA) * fanR;
+      const pz = n.y + 0.5 + Math.sin(fanA) * fanR * (onParty ? 1 : 0.8);
       const needle = new THREE.Mesh(needleGeo, needleMat);
       needle.position.set(px, 0.28, pz);
       needle.rotation.z = 0.1;
@@ -1103,6 +1129,9 @@ export class Diorama {
       seal.position.set(px - 0.03, 0.82, pz);
       scene.add(needle, head, seal);
     }
+
+    // ---------- district names on painted signboards, standing on posts ----------
+    this._signboards(scene, T, map, sheet, seenCell, party, M_);
 
     // ---------- props: candle, inkwell & quill (kept inside the framing) ----------
     this._props(scene, T, M_);
@@ -1181,14 +1210,21 @@ export class Diorama {
     const near = (x, y) => { for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) if (seenCell(x + i, y + j)) return true; return false; };
     const list = (sheet.regions?.list ?? []).filter((rg) => rg.type === CELL.INTERIOR && rg.cells.length >= 2 && rg.cells.some(([x, y]) => near(x, y)) && !rg.cells.some(([x, y]) => walkedRoom.has(`${x},${y}`)));
     if (!list.length) return;
-    const tex = T(new THREE.CanvasTexture(this._linenCanvas()));
+    // the weave alone tiles (a plain over-under at thread scale, with its own normal map);
+    // every stain, water mark and sun-fade is laid in world space on the vertices, so no
+    // two veils and no two stretches of one veil carry the same marks
+    const linen = this._linenCanvas();
+    const tex = T(new THREE.CanvasTexture(linen.color));
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     tex.anisotropy = Math.min(8, this.ctx.render?.maxAnisotropy ?? 4);
+    const nrm = T(new THREE.CanvasTexture(linen.normal));
+    nrm.wrapS = nrm.wrapT = THREE.RepeatWrapping;
+    nrm.anisotropy = tex.anisotropy;
     // a cool, unbleached grey-green linen: a different value and hue from the warm paper
     const mat = T(new THREE.MeshPhysicalMaterial({
-      map: tex, color: 0xa8a090, roughness: 0.92, metalness: 0, vertexColors: true, envMapIntensity: 0.2, side: THREE.DoubleSide,
-      sheen: 0.6, sheenRoughness: 0.7, sheenColor: new THREE.Color(0xd8d2c4), specularIntensity: 0.25,
+      map: tex, normalMap: nrm, normalScale: new THREE.Vector2(0.45, 0.45), color: 0xb0a898, roughness: 0.9, metalness: 0, vertexColors: true, envMapIntensity: 0.22, side: THREE.DoubleSide,
+      sheen: 0.7, sheenRoughness: 0.6, sheenColor: new THREE.Color(0xe0dacc), specularIntensity: 0.25,
     }));
     const R = 14;
     for (const rg of list) {
@@ -1225,16 +1261,31 @@ export class Diorama {
       const top = wallH * (rg.style === 1 ? 1.5 : 1.2);
       const minDim = Math.min(x1 - x0, z1 - z0);
       const sagMax = Math.min(top * 0.82, 0.22 + minDim * 0.12);
-      // the cloth was thrown on from one corner: its long folds all run one way
+      // the cloth was thrown on from one side: its long folds all run one way
       const th = rnd() * Math.PI;
       const dx = Math.cos(th);
       const dz = Math.sin(th);
       const span = Math.max(x1 - x0, z1 - z0);
-      const nF = 3 + Math.floor(rnd() * 3);
-      const lam = span / nF;
       const ph = rnd() * 10;
-      // the corners do not pull equally: one or two carry the weight of the cloth
-      const cw = [0, 1, 2, 3].map(() => 0.35 + rnd() * 0.95);
+      // where the slack pools: never the middle, a different spot under every veil
+      const ccx = (x0 + x1) / 2;
+      const ccz = (z0 + z1) / 2;
+      const lowX = ccx + (rnd() - 0.5) * (x1 - x0) * 0.5;
+      const lowZ = ccz + (rnd() - 0.5) * (z1 - z0) * 0.5;
+      // the cloth catches on two to four points of the wall-tops (a jutting stone, a
+      // beam end), each pulling its own tension fold down into the pool of slack
+      const anchors = [];
+      const nA = 2 + Math.floor(rnd() * 3);
+      for (let a = 0; a < nA; a++) {
+        const side = Math.floor(rnd() * 4);
+        const t = 0.1 + rnd() * 0.8;
+        const ax = side === 0 || side === 2 ? x0 + (x1 - x0) * t : side === 1 ? x1 : x0;
+        const az = side === 1 || side === 3 ? z0 + (z1 - z0) * t : side === 2 ? z1 : z0;
+        anchors.push([ax, az, 0.45 + rnd() * 0.9, 0.05 + rnd() * 0.07, 0.75 + rnd() * 0.5]);
+      }
+      // where along the walls the cloth spills long down over the lip onto the street
+      const spillSeed = seedR + 41;
+      const spillAmt = 0.55 + rnd() * 0.6;
       const crest = (t) => { const v = Math.sin(t); return Math.sign(v) * Math.abs(v) ** 0.6; };
       const hide = new Uint8Array(p.count);
       const relief = new Float32Array(p.count);
@@ -1254,25 +1305,25 @@ export class Diorama {
         let rel = 0;
         if (sd >= 0) {
           // slack between the wall-tops: sags toward the middle, folds where it is loose
-          const k = 1 - Math.exp(-sd / 0.45);
-          // catenary drape: the cloth hangs from the four wall-top corners, so a few deep
-          // tension folds run from each corner down into the sag at the middle
-          const ccx = (x0 + x1) / 2;
-          const ccz = (z0 + z1) / 2;
+          let k = 1 - Math.exp(-sd / 0.45);
           let ridge = 0;
-          for (const [qx, qz, qw] of [[x0, z0, cw[0]], [x1, z0, cw[1]], [x0, z1, cw[2]], [x1, z1, cw[3]]]) {
-            const vx = ccx - qx;
-            const vz = ccz - qz;
+          for (const [qx, qz, qw, qwid, qreach] of anchors) {
+            const vx = lowX - qx;
+            const vz = lowZ - qz;
             const L = Math.hypot(vx, vz) || 1;
             const t = Math.max(0, Math.min(1, ((x - qx) * vx + (z - qz) * vz) / (L * L)));
-            const dl = Math.abs((x - qx) * vz - (z - qz) * vx) / L;
-            const w = 0.06 + t * 0.17;
-            ridge += qw * Math.exp(-((dl / w) ** 2)) * Math.sin(Math.PI * Math.min(1, t * 1.15));
+            // the fold wanders a little as it falls, rather than running ruler-straight
+            const dl = Math.abs((x - qx) * vz - (z - qz) * vx) / L + (n1 - 0.5) * 0.08;
+            const w = qwid + t * 0.12;
+            ridge += qw * Math.exp(-((dl / w) ** 2)) * Math.sin(Math.PI * Math.min(1, t / qreach)) * (t < qreach ? 1 : 0.3);
           }
           // one long slack fold across the middle, where the cloth was pulled over
           const tLin = (x * dx + z * dz) / Math.max(0.8, span * 0.5) * Math.PI * 2 + ph;
-          const swag = Math.sin(tLin) * (0.35 + 0.3 * n1);
-          const fold = ridge * 0.85 + swag * 0.6;
+          const swag = Math.sin(tLin) * (0.3 + 0.35 * n1);
+          // a pool of slack: the cloth bellies lowest round its own low point
+          const pool = Math.exp(-(((x - lowX) ** 2 + (z - lowZ) ** 2) / (span * 0.38) ** 2));
+          const fold = ridge * 0.85 + swag * 0.5 + (n1 - 0.5) * 0.5;
+          k *= 0.62 + 0.55 * pool;
           const catenary = Math.cosh(Math.min(3, sd * 1.4)) - 1;
           y = Math.max(top * 0.14, top - sagMax * k * 1.25 + fold * 0.34 * k * (0.5 + sagMax / top) + 0.012 * (1 - k) - catenary * 0.002);
           rel = fold * 0.9 - k * 0.45 + (1 - k) * 0.6;
@@ -1280,7 +1331,11 @@ export class Diorama {
           const o = -sd;
           const face = 0.07;
           const drop = 0.2;
-          const hem = 0.27 + 0.06 * fbm(along * 1.6 + 3, seedR * 0.1, { period: 64, octaves: 2, seed: seedR + 9 });
+          // the skirt length varies round the building: here it barely clears the wall
+          // foot, there a long tongue of cloth has slid off the lip and lies on the street
+          const sp = fbm(along * 0.55 + 7, seedR * 0.13, { period: 64, octaves: 2, seed: spillSeed });
+          const tongue = Math.max(0, (sp - 0.5) * 2.4) ** 1.5 * spillAmt;
+          const hem = 0.24 + 0.06 * fbm(along * 1.6 + 3, seedR * 0.1, { period: 64, octaves: 2, seed: seedR + 9 }) + tongue * 0.42;
           if (o > hem) hide[i] = 1;
           if (o < face) {
             // rounding over the wall's arris
@@ -1300,10 +1355,10 @@ export class Diorama {
             // the skirt settles on the paper in a short apron, ending in a weighted,
             // rolled hem: a crisp raised bead with a stitched line just inside it
             const q = Math.min(1, (o - drop) / Math.max(0.05, hem - drop));
-            const pleat = crest(along * Math.PI * 2 / 0.42 + n1 * 2);
+            const pleat = crest(along * Math.PI * 2 / (0.42 + tongue * 0.3) + n1 * 2 + o * tongue * 6);
             const toHem = hem - o;
             const bead = toHem < 0.05 ? Math.sin(Math.max(0, toHem) / 0.05 * Math.PI) * 0.016 : 0;
-            y = 0.014 + (1 - q) * (0.02 + Math.max(0, pleat) * 0.03) + bead;
+            y = 0.014 + (1 - q) * (0.02 + Math.max(0, pleat) * (0.03 + tongue * 0.04)) + Math.max(0, pleat) * tongue * 0.012 + bead;
             rel = pleat * 0.5 * (1 - q) - 0.15 + (bead > 0 ? 0.5 : 0) - (toHem > 0.06 && toHem < 0.075 ? 0.7 : 0);
           }
         }
@@ -1311,14 +1366,27 @@ export class Diorama {
         relief[i] = rel;
         // weave UVs in world units (one repeat per half square), wrapped down the
         // hanging faces along the wall so the threads never stretch
-        if (sd >= 0) uv.setXY(i, p.getX(i) * 2, p.getZ(i) * 2);
-        else if (Math.abs(gz) >= Math.abs(gx)) uv.setXY(i, p.getX(i) * 2, (z0 + z1) + (sd < 0 ? Math.sign(gz) : 0) * (top - y) * 2 + p.getZ(i) * 0.4);
-        else uv.setXY(i, p.getZ(i) * 2, (x0 + x1) + Math.sign(gx) * (top - y) * 2 + p.getX(i) * 0.4);
+        const U = 2.2;
+        if (sd >= 0) uv.setXY(i, p.getX(i) * U, p.getZ(i) * U);
+        else if (Math.abs(gz) >= Math.abs(gx)) uv.setXY(i, p.getX(i) * U, (z0 + z1) + (sd < 0 ? Math.sign(gz) : 0) * (top - y) * U + p.getZ(i) * 0.3);
+        else uv.setXY(i, p.getZ(i) * U, (x0 + x1) + Math.sign(gx) * (top - y) * U + p.getX(i) * 0.3);
       }
       for (let i = 0; i < p.count; i++) {
         const rv = relief[i];
         const sh = Math.max(0.34, Math.min(1.12, 0.8 + rv * 0.42));
-        col.set([sh, sh, sh], i * 3);
+        // world-space staining: broad sun-faded and damp-darkened drifts, a few tide-lined
+        // water marks, soot settling in the low folds; never periodic within the block
+        const wx = p.getX(i);
+        const wz = p.getZ(i);
+        const broad = fbm(wx * 0.45 + 11, wz * 0.45 - 4, { period: 256, octaves: 3, seed: 517 });
+        const blot = fbm(wx * 1.7 - 2, wz * 1.7 + 9, { period: 256, octaves: 3, seed: 523 + rg.index });
+        const tide = Math.abs(blot - 0.62);
+        const mark = blot > 0.62 ? 0.16 : tide < 0.014 ? 0.22 : 0;
+        const soot = Math.max(0, -rv) * 0.18;
+        const fade = (broad - 0.5) * 0.24;
+        const d = Math.max(0, Math.min(0.55, mark + soot - fade * 0.6));
+        const v = sh * (1 + fade * 0.4);
+        col.set([v * (1 - d * 0.75), v * (1 - d * 0.85), v * (1 - d * 1.0)], i * 3);
       }
       geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
       // trim the hem: drop every triangle lying wholly beyond it
@@ -1338,6 +1406,277 @@ export class Diorama {
     }
   }
 
+  /** Floor stuff of a building: 0 boards, 1 flags, 2 packed earth, 3 rubble-strewn dirt. */
+  _floorKind(rg) {
+    if (rg.style === 2) return 3;
+    if (rg.style === 1) return hash2(rg.index, 2, 7) < 0.75 ? 0 : 2;
+    const h = hash2(rg.index, 3, 11);
+    return h < 0.45 ? 1 : h < 0.8 ? 0 : 2;
+  }
+
+  /**
+   * One canvas over the whole block (PX px a square) carrying each charted building's
+   * floor: oak boards running one way per room with staggered butt joints and nail
+   * heads, irregular coursed flagstones, packed earth with straw and grit, and in the
+   * ruins dirt strewn with broken stone; woven rugs lie in the better rooms. Inked
+   * joints keep it of a piece with the survey.
+   */
+  _floorAtlas(map, sheet, seenCell) {
+    const PX = 96;
+    const c = makeCanvas(map.w * PX, map.h * PX);
+    const g = c.getContext('2d');
+    g.fillStyle = '#8a7656';
+    g.fillRect(0, 0, c.width, c.height);
+    for (const rg of sheet.regions?.list ?? []) {
+      if (rg.type !== CELL.INTERIOR || !rg.cells.some(([x, y]) => seenCell(x, y))) continue;
+      const r = prng(rg.index * 97 + 13);
+      const kind = this._floorKind(rg);
+      let x0 = 99; let y0 = 99; let x1 = -1; let y1 = -1;
+      for (const [x, y] of rg.cells) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x + 1); y1 = Math.max(y1, y + 1); }
+      const X0 = x0 * PX; const Y0 = y0 * PX; const X1 = x1 * PX; const Y1 = y1 * PX;
+      g.save();
+      g.beginPath();
+      for (const [x, y] of rg.cells) g.rect(x * PX, y * PX, PX, PX);
+      g.clip();
+      if (kind === 0) {
+        // boards
+        const vert = r() < 0.5;
+        const bw = PX / (5 + Math.floor(r() * 2));
+        const base = [[118, 78, 44], [104, 70, 40], [132, 92, 54]][Math.floor(r() * 3)];
+        const along = vert ? Y1 - Y0 : X1 - X0;
+        const across = vert ? X1 - X0 : Y1 - Y0;
+        for (let a = 0; a < across; a += bw) {
+          let b = -r() * PX * 1.5;
+          while (b < along) {
+            const L = PX * (1.1 + r() * 1.6);
+            const t = 0.82 + r() * 0.3;
+            const col = `rgb(${base[0] * t | 0},${base[1] * t | 0},${base[2] * t | 0})`;
+            const [rx, ry, rw, rh] = vert ? [X0 + a, Y0 + b, bw, L] : [X0 + b, Y0 + a, L, bw];
+            g.fillStyle = col;
+            g.fillRect(rx, ry, rw, rh);
+            // grain: fine dark streaks along the board
+            g.strokeStyle = 'rgba(40,22,10,0.22)';
+            g.lineWidth = 0.8;
+            for (let k = 0; k < 4; k++) {
+              const o = (0.15 + r() * 0.7) * bw;
+              g.beginPath();
+              if (vert) { g.moveTo(rx + o, ry); g.bezierCurveTo(rx + o + (r() - 0.5) * 3, ry + rh * 0.3, rx + o + (r() - 0.5) * 3, ry + rh * 0.7, rx + o, ry + rh); } else { g.moveTo(rx, ry + o); g.bezierCurveTo(rx + rw * 0.3, ry + o + (r() - 0.5) * 3, rx + rw * 0.7, ry + o + (r() - 0.5) * 3, rx + rw, ry + o); }
+              g.stroke();
+            }
+            if (r() < 0.25) { g.fillStyle = 'rgba(40,20,8,0.5)'; g.beginPath(); g.ellipse(rx + rw * (0.3 + r() * 0.4), ry + rh * (0.3 + r() * 0.4), 2.2, 1.4, vert ? Math.PI / 2 : 0, 0, Math.PI * 2); g.fill(); }
+            // inked joints and nail heads at the butt ends
+            g.strokeStyle = 'rgba(30,16,6,0.85)';
+            g.lineWidth = 1.4;
+            g.strokeRect(rx, ry, rw, rh);
+            g.fillStyle = 'rgba(30,20,14,0.8)';
+            for (const e of [3, (vert ? rh : rw) - 3]) for (const q of [0.3, 0.7]) {
+              const [nx, ny] = vert ? [rx + rw * q, ry + e] : [rx + e, ry + rh * q];
+              g.fillRect(nx - 0.9, ny - 0.9, 1.8, 1.8);
+            }
+            b += L;
+          }
+        }
+      } else if (kind === 1) {
+        // flagstones in rough courses of varying height
+        const tone = [[150, 140, 122], [138, 132, 120], [158, 144, 118]][Math.floor(r() * 3)];
+        let y = Y0 - r() * 20;
+        while (y < Y1) {
+          const ch = PX * (0.32 + r() * 0.3);
+          let x = X0 - r() * 30;
+          while (x < X1) {
+            const cw = PX * (0.35 + r() * 0.5);
+            const t = 0.82 + r() * 0.3;
+            const j = () => (r() - 0.5) * 3;
+            g.fillStyle = `rgb(${tone[0] * t | 0},${tone[1] * t | 0},${tone[2] * t | 0})`;
+            g.beginPath();
+            g.moveTo(x + 2 + j(), y + 2 + j());
+            g.lineTo(x + cw - 2 + j(), y + 2 + j());
+            g.lineTo(x + cw - 2 + j(), y + ch - 2 + j());
+            g.lineTo(x + 2 + j(), y + ch - 2 + j());
+            g.closePath();
+            g.fill();
+            g.strokeStyle = 'rgba(34,24,14,0.9)';
+            g.lineWidth = 1.6;
+            g.stroke();
+            // a worn hollow, a crack, lichen in the odd joint
+            if (r() < 0.35) { g.fillStyle = 'rgba(255,248,230,0.12)'; g.beginPath(); g.ellipse(x + cw / 2, y + ch / 2, cw * 0.28, ch * 0.24, 0, 0, Math.PI * 2); g.fill(); }
+            if (r() < 0.2) { g.strokeStyle = 'rgba(30,20,10,0.6)'; g.lineWidth = 0.9; g.beginPath(); g.moveTo(x + cw * r(), y + 3); g.lineTo(x + cw * r(), y + ch * 0.5); g.lineTo(x + cw * r(), y + ch - 3); g.stroke(); }
+            x += cw;
+          }
+          y += ch;
+        }
+      } else {
+        // packed earth (and in the ruins, dirt and broken stone)
+        const img = g.getImageData(X0, Y0, X1 - X0, Y1 - Y0);
+        const d = img.data;
+        const W2 = X1 - X0;
+        for (let i = 0; i < d.length; i += 4) {
+          const px = X0 + (i / 4) % W2;
+          const py = Y0 + Math.floor(i / 4 / W2);
+          const n = fbm(px / 30, py / 30, { period: 256, octaves: 4, seed: 71 + rg.index });
+          const v = 0.78 + (n - 0.5) * 0.5 + (hash2(px, py, 3) - 0.5) * 0.12;
+          d[i] = 128 * v; d[i + 1] = 100 * v; d[i + 2] = 70 * v; d[i + 3] = 255;
+        }
+        g.putImageData(img, X0, Y0);
+        // straw wisps, grit, a trodden path
+        g.lineCap = 'round';
+        for (let k = 0; k < (X1 - X0) * (Y1 - Y0) / 500; k++) {
+          const x = X0 + r() * (X1 - X0);
+          const y = Y0 + r() * (Y1 - Y0);
+          if (kind === 2 && r() < 0.6) {
+            const a = r() * Math.PI;
+            g.strokeStyle = `rgba(${200 + r() * 30 | 0},${170 + r() * 30 | 0},90,0.7)`;
+            g.lineWidth = 1;
+            g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * 7, y + Math.sin(a) * 7); g.stroke();
+          } else {
+            g.fillStyle = `rgba(${60 + r() * 60 | 0},${50 + r() * 40 | 0},${36 + r() * 30 | 0},0.8)`;
+            const s2 = kind === 3 ? 1.5 + r() * 5 : 1 + r() * 2;
+            g.beginPath(); g.ellipse(x, y, s2, s2 * (0.6 + r() * 0.4), r() * 3, 0, Math.PI * 2); g.fill();
+            if (kind === 3) { g.strokeStyle = 'rgba(30,20,10,0.7)'; g.lineWidth = 0.8; g.stroke(); }
+          }
+        }
+      }
+      // a rug in the better rooms (boards or flags, four squares or more)
+      const furnAt = (x, y) => (sheet.furniture ?? []).some((f) => f.x === x && f.y === y);
+      if ((kind === 0 || kind === 1) && rg.cells.length >= 4 && r() < 0.85) {
+        const has = new Set(rg.cells.map(([x, y]) => `${x},${y}`));
+        // the largest 2x1 / 2x2 block of the room
+        let spot = null;
+        for (const [x, y] of rg.cells) {
+          const two = has.has(`${x + 1},${y}`);
+          const sc = (two ? 1 : 0) + r() * 0.8 - (furnAt(x, y) || (two && furnAt(x + 1, y)) ? 3 : 0);
+          if (!spot || sc > spot.sc) spot = { x, y, sc, w: two ? 2 : 1, h: 1 };
+        }
+        const pal = [['#6a2a1c', '#b89058', '#2e2a3a'], ['#2e3a52', '#b09060', '#5a2418'], ['#5a4a2a', '#c0a070', '#4a2418']][Math.floor(r() * 3)];
+        const m = PX * 0.2;
+        const rx = spot.x * PX + m; const ry = spot.y * PX + m; const rw = spot.w * PX - m * 2; const rh = spot.h * PX - m * 2;
+        g.fillStyle = 'rgba(20,10,4,0.35)';
+        g.fillRect(rx + 3, ry + 4, rw, rh);
+        g.fillStyle = pal[0];
+        g.fillRect(rx, ry, rw, rh);
+        g.strokeStyle = pal[1];
+        g.lineWidth = 4;
+        g.strokeRect(rx + 7, ry + 7, rw - 14, rh - 14);
+        g.strokeStyle = pal[2];
+        g.lineWidth = 2;
+        g.strokeRect(rx + 13, ry + 13, rw - 26, rh - 26);
+        // a central medallion and a lozenge field
+        g.fillStyle = pal[1];
+        g.beginPath();
+        const mx = rx + rw / 2; const my = ry + rh / 2; const mr = Math.min(rw, rh) * 0.2;
+        g.moveTo(mx, my - mr); g.lineTo(mx + mr * 1.3, my); g.lineTo(mx, my + mr); g.lineTo(mx - mr * 1.3, my); g.closePath(); g.fill();
+        g.fillStyle = pal[2];
+        g.beginPath(); g.moveTo(mx, my - mr * 0.5); g.lineTo(mx + mr * 0.65, my); g.lineTo(mx, my + mr * 0.5); g.lineTo(mx - mr * 0.65, my); g.closePath(); g.fill();
+        // fringes
+        g.strokeStyle = 'rgba(230,214,170,0.9)';
+        g.lineWidth = 1;
+        for (let fx = rx + 2; fx < rx + rw; fx += 3) for (const fy of [ry, ry + rh]) { g.beginPath(); g.moveTo(fx, fy); g.lineTo(fx + (r() - 0.5) * 2, fy + (fy === ry ? -5 : 5)); g.stroke(); }
+        // worn: a pale nap streak
+        g.fillStyle = 'rgba(255,240,210,0.08)';
+        g.fillRect(rx + rw * 0.2, ry, rw * 0.25, rh);
+        g.strokeStyle = 'rgba(20,10,4,0.8)';
+        g.lineWidth = 1.2;
+        g.strokeRect(rx, ry, rw, rh);
+      }
+      // dirt and soot gathered at the wall foot
+      const has = new Set(rg.cells.map(([x, y]) => `${x},${y}`));
+      for (const [x, y] of rg.cells) {
+        for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
+          if (has.has(`${x + dx},${y + dy}`)) continue;
+          const gx = dx === 1 ? (x + 1) * PX : x * PX;
+          const gy = dy === 1 ? (y + 1) * PX : y * PX;
+          const gr = dx ? g.createLinearGradient(gx, 0, gx - dx * PX * 0.18, 0) : g.createLinearGradient(0, gy, 0, gy - dy * PX * 0.18);
+          gr.addColorStop(0, 'rgba(30,18,8,0.55)');
+          gr.addColorStop(1, 'rgba(30,18,8,0)');
+          g.fillStyle = gr;
+          g.fillRect(x * PX, y * PX, PX, PX);
+        }
+      }
+      g.restore();
+    }
+    return c;
+  }
+
+  /**
+   * Clutter at the density of the flat sheet's glyphs: barrels, crates and sacks
+   * stacked against the walls, broken pots, fallen beams and heaps of rubble in the
+   * ruins, a scatter of loose stones, kept off the squares the plan furnishes.
+   */
+  _clutter(scene, T, batch, map, sheet, walkedRoom, fh, M_) {
+    const furn = new Set((sheet.furniture ?? []).map((f) => `${f.x},${f.y}`));
+    const white = (geo) => { geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(geo.attributes.position.count * 3).fill(1), 3)); return geo; };
+    const cyl = T(white(new THREE.CylinderGeometry(1, 1, 1, 10)));
+    const sph = T(white(new THREE.IcosahedronGeometry(1, 1)));
+    const put = (geo, mat, x, y, z, sx, sy, sz, ry = 0) => {
+      const m = new THREE.Mesh(geo, mat);
+      m.scale.set(sx, sy, sz);
+      m.position.set(x, y, z);
+      m.rotation.y = ry;
+      m.castShadow = m.receiveShadow = true;
+      scene.add(m);
+    };
+    for (const rg of sheet.regions?.list ?? []) {
+      if (rg.type !== CELL.INTERIOR || !rg.cells.some(([x, y]) => walkedRoom.has(`${x},${y}`))) continue;
+      const kind = this._floorKind(rg);
+      const r = prng(rg.index * 53 + 7);
+      const has = new Set(rg.cells.map(([x, y]) => `${x},${y}`));
+      for (const [x, y] of rg.cells) {
+        if (furn.has(`${x},${y}`)) continue;
+        // walls of this square
+        const sides = [[0, -1], [1, 0], [0, 1], [-1, 0]].filter(([dx, dy]) => !has.has(`${x + dx},${y + dy}`));
+        if (kind === 3) {
+          // rubble heaps and fallen stones
+          if (r() < 0.7) {
+            const hx = x + 0.25 + r() * 0.5;
+            const hz = y + 0.25 + r() * 0.5;
+            const n = 5 + Math.floor(r() * 7);
+            for (let k = 0; k < n; k++) {
+              const a = r() * Math.PI * 2;
+              const d = Math.sqrt(r()) * 0.2;
+              const sz = 0.035 + r() * 0.06;
+              batch(r() < 0.6 ? 'ruin' : 'stone').bevelBox(hx + Math.cos(a) * d, fh + sz * 0.4 + (d < 0.08 ? sz * 0.5 : 0), hz + Math.sin(a) * d, sz * (1 + r()), sz * 0.8, sz * (0.8 + r()), { ry: r() * 3, bevel: 0.008, tint: 0.75 + r() * 0.3, ao: 0.7 });
+            }
+          }
+          if (r() < 0.25) batch('beam').bevelBox(x + 0.5, fh + 0.025, y + 0.5, 0.7, 0.04, 0.06, { ry: r() * Math.PI, bevel: 0.006, tint: 0.7 });
+          continue;
+        }
+        if (!sides.length || r() > 0.6) {
+          // a few loose things in the open floor
+          if (r() < 0.3) put(sph, M_.plaster, x + 0.2 + r() * 0.6, fh + 0.02, y + 0.2 + r() * 0.6, 0.05, 0.035, 0.045, r() * 3);
+          continue;
+        }
+        const [dx, dy] = sides[Math.floor(r() * sides.length)];
+        // along the wall: a point inset from it
+        const t = 0.2 + r() * 0.6;
+        const wx = dx ? x + (dx > 0 ? 0.84 : 0.16) : x + t;
+        const wz = dy ? y + (dy > 0 ? 0.84 : 0.16) : y + t;
+        const pick = r();
+        if (pick < 0.3) {
+          for (let k = 0; k < 1 + Math.floor(r() * 3); k++) {
+            const o = (k - 1) * 0.15;
+            const bx = wx + (dy ? o : 0);
+            const bz = wz + (dx ? o : 0);
+            put(cyl, M_.door, bx, fh + 0.1, bz, 0.07, 0.2, 0.07);
+            put(cyl, M_.iron, bx, fh + 0.05, bz, 0.073, 0.012, 0.073);
+            put(cyl, M_.iron, bx, fh + 0.15, bz, 0.073, 0.012, 0.073);
+          }
+        } else if (pick < 0.55) {
+          const sz = 0.13 + r() * 0.06;
+          batch('door').bevelBox(wx, fh + sz / 2, wz, sz, sz, sz, { ry: (r() - 0.5) * 0.4, bevel: 0.01, ao: 0.7 });
+          if (r() < 0.5) batch('door').bevelBox(wx + (r() - 0.5) * 0.04, fh + sz + sz * 0.4, wz, sz * 0.8, sz * 0.8, sz * 0.8, { ry: r() * 0.6, bevel: 0.01, ao: 0.8 });
+        } else if (pick < 0.75) {
+          for (let k = 0; k < 2 + Math.floor(r() * 2); k++) put(sph, M_.plaster, wx + (r() - 0.5) * 0.2, fh + 0.05, wz + (r() - 0.5) * 0.2, 0.07, 0.06, 0.08, r() * 3);
+        } else if (pick < 0.9) {
+          // pots and jugs
+          for (let k = 0; k < 2; k++) put(cyl, M_.ruin, wx + (r() - 0.5) * 0.16, fh + 0.05, wz + (r() - 0.5) * 0.16, 0.04, 0.1, 0.04);
+        } else {
+          // a broken stool or plank
+          batch('wood').bevelBox(wx, fh + 0.015, wz, 0.3, 0.025, 0.06, { ry: r() * 3, bevel: 0.005 });
+        }
+      }
+    }
+  }
+
   /**
    * Furniture in the rooms the company entered, built as little props from the
    * same placements the sheet's plan symbols use (beds, tables and stools,
@@ -1347,8 +1686,10 @@ export class Diorama {
     const list = (sheet.furniture ?? []).filter((f) => walkedRoom.has(`${f.x},${f.y}`));
     if (!list.length) return;
     const ember = T(new THREE.MeshStandardMaterial({ color: 0x401808, emissive: 0xff6a20, emissiveIntensity: 2.2, roughness: 0.8 }));
-    const cyl = T(new THREE.CylinderGeometry(1, 1, 1, 12));
-    const sph = T(new THREE.SphereGeometry(1, 10, 8));
+    // the shared materials read vertex colours (baked AO): give the primitives a white set
+    const white = (geo) => { geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(geo.attributes.position.count * 3).fill(1), 3)); return geo; };
+    const cyl = T(white(new THREE.CylinderGeometry(1, 1, 1, 12)));
+    const sph = T(white(new THREE.SphereGeometry(1, 10, 8)));
     const ANG = { N: 0, E: Math.PI / 2, S: Math.PI, W: -Math.PI / 2 };
     const y0 = fh;
     for (const f of list) {
@@ -1473,48 +1814,58 @@ export class Diorama {
    * shimmered into checks and diamonds when the camera leaned in).
    */
   _linenCanvas() {
-    // a coarse, hand-loomed shroud at miniature scale: a visible over-under plain weave
-    // (16 px threads), slubbed runs, and charcoal-grey staining soaked into the cloth
+    // a coarse, hand-loomed plain weave at miniature scale (16 threads a tile): only the
+    // threads themselves tile, slubs varying thread by thread; a matching normal map
+    // carries the over-under relief so the cloth catches the candle as woven stuff
     const S = 256;
     const P = 16;
-    const c = makeCanvas(S);
-    const g = c.getContext('2d');
-    const img = g.createImageData(S, S);
+    const hgt = new Float32Array(S * S);
+    const alb = new Float32Array(S * S);
     for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
       const cx = Math.floor(x / P);
       const cy = Math.floor(y / P);
       const fx = (x % P) / P;
       const fy = (y % P) / P;
-      // which thread lies on top at this crossing
       const warpTop = ((cx + cy) & 1) === 0;
-      // a thread is a rounded cylinder across its width, dark in the gaps between
-      const warpProf = Math.sin(fx * Math.PI) ** 0.7;
-      const weftProf = Math.sin(fy * Math.PI) ** 0.7;
-      // along its length the top thread dips under at the ends of the float
-      const warpDip = Math.sin(fy * Math.PI) ** 0.35;
-      const weftDip = Math.sin(fx * Math.PI) ** 0.35;
-      let w = warpTop ? 0.74 + 0.26 * warpProf * warpDip : 0.74 + 0.26 * weftProf * weftDip;
-      const gap = Math.min(warpProf, weftProf);
-      w *= 0.86 + 0.14 * Math.min(1, gap * 3);
-      // slubs: whole threads a little thicker or paler for a run
-      const slub = warpTop ? hash2(cx, Math.floor(cy / 5), 3) : hash2(Math.floor(cx / 5), cy, 5);
-      const runX = fbm(x / 6, y / 64, { period: 32, octaves: 2, seed: 77 });
-      const runY = fbm(x / 64, y / 6, { period: 32, octaves: 2, seed: 79 });
-      const cloud = fbm(x / 48, y / 48, { period: 4, octaves: 3, seed: 902 });
-      const stain = fbm(x / 72 + 3, y / 72, { period: 4, octaves: 4, seed: 913 });
-      let v = w * (0.92 + (slub - 0.5) * 0.12 + (runX - 0.5) * 0.08 + (runY - 0.5) * 0.08 + (cloud - 0.5) * 0.12);
-      // charcoal rubbed into the cloth in drifts
-      const ch = Math.max(0, Math.min(1, (stain - 0.5) * 3.2));
-      v *= 1 - ch * 0.32;
-      v += (hash2(x, y, 9) - 0.5) * 0.03;
-      const i = (y * S + x) * 4;
-      img.data[i] = Math.max(0, Math.min(255, v * (232 - ch * 18)));
-      img.data[i + 1] = Math.max(0, Math.min(255, v * (224 - ch * 14)));
-      img.data[i + 2] = Math.max(0, Math.min(255, v * (200 - ch * 4)));
-      img.data[i + 3] = 255;
+      // per-thread wobble: each yarn a touch thicker or thinner along its length
+      const wobX = (hash2(cx, 1, 41) - 0.5) * 0.18;
+      const wobY = (hash2(1, cy, 43) - 0.5) * 0.18;
+      const warpProf = Math.max(0, Math.sin(Math.min(1, Math.max(0, (fx - wobX * 0.5) / (1 - Math.abs(wobX)))) * Math.PI)) ** 0.6;
+      const weftProf = Math.max(0, Math.sin(Math.min(1, Math.max(0, (fy - wobY * 0.5) / (1 - Math.abs(wobY)))) * Math.PI)) ** 0.6;
+      const warpDip = Math.sin(fy * Math.PI) ** 0.4;
+      const weftDip = Math.sin(fx * Math.PI) ** 0.4;
+      const warpH = warpProf * (warpTop ? 0.55 + 0.45 * warpDip : 0.3 * (1 - weftProf));
+      const weftH = weftProf * (!warpTop ? 0.55 + 0.45 * weftDip : 0.3 * (1 - warpProf));
+      const hh = Math.max(warpH, weftH);
+      hgt[y * S + x] = hh;
+      // slubs: whole thread runs a little paler or darker; fibre twist along each yarn
+      const slub = warpH >= weftH ? hash2(cx, Math.floor(cy / 3), 3) : hash2(Math.floor(cx / 3), cy, 5);
+      const twist = warpH >= weftH ? Math.sin((y / P) * Math.PI * 6 + cx * 1.7) : Math.sin((x / P) * Math.PI * 6 + cy * 1.3);
+      alb[y * S + x] = (0.84 + 0.16 * hh) * (0.93 + (slub - 0.5) * 0.14 + twist * 0.025) + (hash2(x, y, 9) - 0.5) * 0.035;
     }
-    g.putImageData(img, 0, 0);
-    return c;
+    const color = makeCanvas(S);
+    const normal = makeCanvas(S);
+    const ci = color.getContext('2d').createImageData(S, S);
+    const ni = normal.getContext('2d').createImageData(S, S);
+    const H = (x, y) => hgt[((y + S) % S) * S + ((x + S) % S)];
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+      const i = (y * S + x) * 4;
+      const v = alb[y * S + x];
+      ci.data[i] = Math.max(0, Math.min(255, v * 232));
+      ci.data[i + 1] = Math.max(0, Math.min(255, v * 226));
+      ci.data[i + 2] = Math.max(0, Math.min(255, v * 206));
+      ci.data[i + 3] = 255;
+      const ddx = (H(x + 1, y) - H(x - 1, y)) * 2.2;
+      const ddy = (H(x, y + 1) - H(x, y - 1)) * 2.2;
+      const l = Math.hypot(ddx, ddy, 1);
+      ni.data[i] = Math.round((-ddx / l * 0.5 + 0.5) * 255);
+      ni.data[i + 1] = Math.round((ddy / l * 0.5 + 0.5) * 255);
+      ni.data[i + 2] = Math.round((1 / l * 0.5 + 0.5) * 255);
+      ni.data[i + 3] = 255;
+    }
+    color.getContext('2d').putImageData(ci, 0, 0);
+    normal.getContext('2d').putImageData(ni, 0, 0);
+    return { color, normal };
   }
 
   /** A tileable cloudy alpha field for the mist veils. */
@@ -1607,126 +1958,165 @@ export class Diorama {
     g.imageSmoothingEnabled = true;
     g.drawImage(sc, 0, 0, out.width, out.height);
     g.restore();
-    this._paintLabels(g, map, sheet, seenCell, party, notes, secrets);
     return out;
   }
 
   /**
-   * Zone names painted flat on the sheet as small banners, so they lie on the
-   * paper under the miniature instead of floating through it: each is placed
-   * in its district's largest explored building, clear of every wall, of the
-   * band a wall hides from the camera, and of the party's base.
+   * District names as painted ribbon banners on turned oak posts: the post stands in
+   * the district's largest charted building (or its charted street), the banner faces
+   * the camera at every orbit and is drawn sharp over the depth of field, and each
+   * frame the boards are stepped up or down their posts so no two overlap on screen.
    */
-  _paintLabels(g, map, sheet, seenCell, party, notes = [], secrets = null) {
-    const { M, MX, MY } = SHEET;
-    const k = sheet.k;
-    const cs = sheet.cs;
-    const walls = sheet.wallRects ?? [];
-    const hard = [...walls];
-    // a wall standing on the south side of a label hides its lower half from the camera
-    for (const w of walls) if (w[2] > w[3] * 2) hard.push([w[0], w[1] - cs * 0.42, w[2], cs * 0.42]);
-    if (party) {
-      const px = MX + (party.x + 0.5) * cs;
-      const py = MY + (party.y + 0.5) * cs;
-      // the standard-bearer and his flag stand tall: from the camera's side they hide
-      // a good stretch of paper north of the base as well
-      hard.push([px - cs * 0.9, py - cs * 2.2, cs * 1.8, cs * 3.1]);
-    }
-    // marker flags on their poles likewise rise over the paper just north of them
-    for (const m of sheet.markerSpots ?? []) hard.push([m[0] - cs * 0.1, m[1] - cs * 0.7, m[2] + cs * 0.4, m[3] + cs * 0.7]);
-    if (secrets) {
-      const { segs, effective } = collectEdges(map, sheet.info, seenCell, secrets);
-      for (const q of segs) {
-        const t = effective(q);
-        if (t !== EDGE.SECRET && t !== EDGE.LOCKED) continue;
-        const mx = MX + ((q.x0 + q.x1) / 2) * cs;
-        const my = MY + ((q.y0 + q.y1) / 2) * cs;
-        hard.push([mx - cs * 0.45, my - cs * 1.1, cs * 0.9, cs * 1.5]);
-      }
-    }
-    // the furniture stands up off the floors of the charted rooms
-    for (const f of sheet.furniture ?? []) {
-      if (!sheet.regions?.list.some((rg) => rg.type === CELL.INTERIOR && rg.cells.some(([x, y]) => x === f.x && y === f.y) && rg.cells.some(([x, y]) => seenCell(x, y)))) continue;
-      hard.push([MX + f.x * cs, MY + (f.y - 0.45) * cs, cs, cs * 1.45]);
-    }
-    // a building under its linen veil: the cloth and its skirt cover the paper round it,
-    // and from the camera's side it hides a strip north of it too; no name goes there
-    {
-      const near = (x, y) => { for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) if (seenCell(x + i, y + j)) return true; return false; };
-      for (const rg of sheet.regions?.list ?? []) {
-        if (rg.type !== CELL.INTERIOR || rg.cells.length < 2 || rg.cells.some(([x, y]) => seenCell(x, y)) || !rg.cells.some(([x, y]) => near(x, y))) continue;
-        for (const [x, y] of rg.cells) hard.push([MX + (x - 0.35) * cs, MY + (y - 0.9) * cs, cs * 1.7, cs * 2.25]);
-      }
-    }
-    // note pins stand up off the paper: keep the banners clear of them and of the inked markers
-    for (const n of notes ?? []) hard.push([MX + (n.x + 0.42) * cs, MY + (n.y + 0.02) * cs, cs * 0.56, cs * 0.6]);
-    const overlap = (a, b) => Math.max(0, Math.min(a[0] + a[2], b[0] + b[2]) - Math.max(a[0], b[0])) * Math.max(0, Math.min(a[1] + a[3], b[1] + b[3]) - Math.max(a[1], b[1]));
-    const placed = [...(sheet.markerSpots ?? [])];
-    g.save();
-    g.scale(k, k);
-    g.translate(M, M);
+  _signboards(scene, T, map, sheet, seenCell, party, M_) {
+    this.signs = [];
+    this.signScene = new THREE.Scene();
+    const postGeo = T(whiteCol(new THREE.CylinderGeometry(0.022, 0.028, 1, 8)));
+    postGeo.translate(0, 0.5, 0);
+    const footGeo = T(whiteCol(new THREE.CylinderGeometry(0.07, 0.085, 0.04, 12)));
+    const furn = new Set((sheet.furniture ?? []).map((f) => `${f.x},${f.y}`));
+    const taken = [];
     for (const z of sheet.labels ?? []) {
+      // the charted cells of this district: buildings first, then open ground
       let best = null;
       for (const rg of sheet.regions?.list ?? []) {
         if (rg.type !== CELL.INTERIOR) continue;
         const cells = rg.cells.filter(([x, y]) => x >= z.x && y >= z.y && x < z.x + z.w && y < z.y + z.h && seenCell(x, y));
         if (cells.length && (!best || cells.length > best.length)) best = cells;
       }
-      let fx = z.x + z.w / 2;
-      let fy = z.y + z.h / 2;
-      if (best) {
-        fx = best.reduce((a2, c) => a2 + c[0] + 0.5, 0) / best.length;
-        fy = best.reduce((a2, c) => a2 + c[1] + 0.5, 0) / best.length;
+      if (!best) {
+        const open = [];
+        for (let y = z.y; y < z.y + z.h; y++) for (let x = z.x; x < z.x + z.w; x++) if (seenCell(x, y) && map.getCell(x, y) !== CELL.INTERIOR) open.push([x, y]);
+        if (!open.length) continue;
+        best = open;
       }
+      const mx = best.reduce((a, c) => a + c[0] + 0.5, 0) / best.length;
+      const my = best.reduce((a, c) => a + c[1] + 0.5, 0) / best.length;
+      // the post goes in the charted square nearest the middle that is free of furniture,
+      // of the party's square and of another post
+      let spot = null;
+      for (const [x, y] of best) {
+        let d = Math.hypot(x + 0.5 - mx, y + 0.5 - my);
+        if (furn.has(`${x},${y}`)) d += 1.2;
+        if (party && Math.abs(x - party.x) <= 1 && Math.abs(y - party.y) <= 1) d += 3;
+        for (const [tx, ty] of taken) if (Math.hypot(tx - x, ty - y) < 2) d += 2;
+        if (x <= 0 || y <= 0 || x >= map.w - 1 || y >= map.h - 1) d += 1.5;
+        if (!spot || d < spot.d) spot = { x, y, d };
+      }
+      taken.push([spot.x, spot.y]);
+      const px = spot.x + 0.32;
+      const pz = spot.y + 0.62;
       const text = z.name.toUpperCase();
       const words = text.split(/\s+/);
-      const splits = [[text]];
-      if (words.length > 1) {
-        let bestSplit = null;
+      let lines = [text];
+      if (text.length > 13 && words.length > 1) {
+        let bs = null;
         for (let i = 1; i < words.length; i++) {
-          const a2 = words.slice(0, i).join(' ');
-          const b2 = words.slice(i).join(' ');
-          const d = Math.abs(a2.length - b2.length);
-          if (!bestSplit || d < bestSplit.d) bestSplit = { d, lines: [a2, b2] };
+          const a = words.slice(0, i).join(' ');
+          const b = words.slice(i).join(' ');
+          const d = Math.abs(a.length - b.length);
+          if (!bs || d < bs.d) bs = { d, l: [a, b] };
         }
-        splits.push(bestSplit.lines);
+        lines = bs.l;
       }
-      let pick = null;
-      for (const shrink of [1, 0.85, 0.72]) {
-        for (const [li, lines] of splits.entries()) {
-          const fs = cs * 0.3 * shrink;
-          g.font = `bold ${fs.toFixed(1)}px ${SERIF}`;
-          g.letterSpacing = `${(fs * 0.14).toFixed(1)}px`;
-          const tw = Math.max(...lines.map((l) => g.measureText(l).width));
-          const bw = tw + fs * 1.6;
-          const bh = fs * (0.35 + 1.2 * lines.length);
-          for (const [ox, oy] of [[0, 0], [0, -0.5], [0, 0.5], [0, -1], [0, 1], [-0.7, 0], [0.7, 0], [0, -1.5], [0, 1.5], [-0.7, -1], [0.7, -1], [-0.7, 1], [0.7, 1], [0, -2], [0, 2], [-1.4, 0], [1.4, 0], [0, -2.6], [0, 2.6], [-1.2, -2.2], [1.2, -2.2], [-1.2, 2.2], [1.2, 2.2], [0, -3.1], [0, 3.1]]) {
-            const cx = MX + (fx + ox) * cs;
-            const cy = MY + (fy + oy) * cs;
-            const box = [cx - bw / 2 - fs * 0.5, cy - bh / 2, bw + fs, bh];
-            const area = box[2] * box[3];
-            let score = Math.hypot(ox, oy) * 0.5 + (1 - shrink) * 5 + li * 0.8;
-            for (const o of hard) { const ov = overlap(box, o); if (ov > 0) score += 20 + (ov / area) * 40; }
-            for (const o of placed) score += (overlap(box, o) / area) * 30;
-            if (!seenCell(Math.floor(fx + ox), Math.floor(fy + oy))) score += 3;
-            // never out past the city wall, and rather inside the district it names
-            const inner = [MX + cs * 0.45, MY + cs * 0.45, map.w * cs - cs * 0.9, map.h * cs - cs * 0.9];
-            if (box[0] < inner[0] || box[1] < inner[1] || box[0] + box[2] > inner[0] + inner[2] || box[1] + box[3] > inner[1] + inner[3]) score += 60;
-            const zx = fx + ox;
-            const zy = fy + oy;
-            if (zx < z.x || zy < z.y || zx > z.x + z.w || zy > z.y + z.h) score += 6;
-            if (!pick || score < pick.score) pick = { cx, cy, bw, bh, fs, box, score, lines };
-          }
-        }
-        if (pick.score < 20) break;
-      }
-      // a name that can only lie under a veil, a wall or a figure is left off rather than
-      // shown cut in half (the flat sheet still letters it)
-      if (pick.score >= 20) continue;
-      placed.push(pick.box);
-      this._banner(g, pick.cx, pick.cy, pick.bw, pick.bh, pick.fs, pick.lines);
+      const fs = 46;
+      const mc = makeCanvas(8).getContext('2d');
+      mc.font = `bold ${fs}px ${SERIF}`;
+      mc.letterSpacing = `${(fs * 0.14).toFixed(1)}px`;
+      const tw = Math.max(...lines.map((l) => mc.measureText(l).width));
+      const bw = tw + fs * 1.6;
+      const bh = fs * (0.35 + 1.2 * lines.length);
+      const tail = fs * 1.15;
+      const cw = Math.ceil(bw + tail * 2 + fs * 0.6);
+      const chh = Math.ceil(bh + fs * 0.9);
+      const c = makeCanvas(cw, chh);
+      const g = c.getContext('2d');
+      this._banner(g, cw / 2, chh / 2 - fs * 0.08, bw, bh, fs, lines);
+      const tex = T(new THREE.CanvasTexture(c));
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = Math.min(8, this.ctx.render?.maxAnisotropy ?? 4);
+      const spr = new THREE.Sprite(T(new THREE.SpriteMaterial({ map: tex, depthTest: false, depthWrite: false, transparent: true, toneMapped: true })));
+      spr.center.set(0.5, 0.08);
+      const unit = 0.3 / fs; // world units per canvas px: caps ~0.3 of a square
+      spr.userData.base = [cw * unit, chh * unit];
+      this.signScene.add(spr);
+      const post = new THREE.Mesh(postGeo, M_.beam);
+      post.position.set(px, 0, pz);
+      post.castShadow = true;
+      const foot = new THREE.Mesh(footGeo, M_.stone);
+      foot.position.set(px, 0.02, pz);
+      foot.castShadow = foot.receiveShadow = true;
+      scene.add(post, foot);
+      this.signs.push({ spr, post, x: px, z: pz, h: 1.1 });
     }
-    g.restore();
+    // the ways out: vermilion signboards just inside each, naming the next block
+    for (const e of sheet.exitLabels ?? []) {
+      const fs = 46;
+      const k2 = fs / e.fs;
+      const cw = Math.ceil((e.bw + e.bh * 0.4) * k2);
+      const chh = Math.ceil(e.bh * k2 * 1.3);
+      const c = makeCanvas(cw, chh);
+      exitBanner(c.getContext('2d'), e.text, cw / 2, chh / 2, e.bw * k2, e.bh * k2, fs);
+      const tex = T(new THREE.CanvasTexture(c));
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const spr = new THREE.Sprite(T(new THREE.SpriteMaterial({ map: tex, depthTest: false, depthWrite: false, transparent: true })));
+      spr.center.set(0.5, 0.08);
+      const unit = 0.22 / fs;
+      spr.userData.base = [cw * unit, chh * unit];
+      this.signScene.add(spr);
+      const [ix, iz] = { N: [0, 0.35], S: [0, -0.35], E: [-0.35, 0], W: [0.35, 0] }[e.facing] ?? [0, 0];
+      const px = e.x + 0.5 + ix;
+      const pz = e.y + 0.5 + iz;
+      const post = new THREE.Mesh(postGeo, M_.beam);
+      post.position.set(px, 0, pz);
+      post.castShadow = true;
+      const foot = new THREE.Mesh(footGeo, M_.stone);
+      foot.position.set(px, 0.02, pz);
+      scene.add(post, foot);
+      this.signs.push({ spr, post, x: px, z: pz, h: 0.8, low: true });
+    }
+    this._layoutSigns();
+  }
+
+  /** Step each signboard up or down its post so none overlaps another, or the party, on screen. */
+  _layoutSigns() {
+    if (!this.signs?.length || !this.w) return;
+    const cam = this.camera;
+    cam.updateMatrixWorld(true);
+    const k = Math.max(0.5, Math.min(1.15, (this.cur?.dist ?? this.dist ?? 1) / (this.fitDist || 1)));
+    const v = new THREE.Vector3();
+    const scr = (x, y, z) => { v.set(x, y, z).project(cam); return [(v.x + 1) / 2 * this.w, (1 - v.y) / 2 * this.h, v.z]; };
+    const placed = [];
+    if (this.party) {
+      const [ax, ay] = scr(this.party.x + 0.5, 0, this.party.y + 0.5);
+      const [, by] = scr(this.party.x + 0.5, 1.5, this.party.y + 0.5);
+      const hw = Math.abs(ay - by) * 0.35;
+      placed.push([ax - hw, by, hw * 2, ay - by]);
+    }
+    const ov = (a, b) => Math.max(0, Math.min(a[0] + a[2], b[0] + b[2]) - Math.max(a[0], b[0])) * Math.max(0, Math.min(a[1] + a[3], b[1] + b[3]) - Math.max(a[1], b[1]));
+    // nearest the camera first: those boards keep the lowest, steadiest posts
+    const order = [...this.signs].sort((a, b) => b.z - a.z);
+    for (const s of order) {
+      const [bw, bh] = s.spr.userData.base;
+      const sw = bw * k;
+      const sh = bh * k;
+      s.spr.scale.set(sw, sh, 1);
+      let pick = null;
+      for (const h of [0.95, 1.35, 1.75, 0.6, 2.15, 2.6]) {
+        const [x0, y0] = scr(s.x, h, s.z);
+        const [, y1] = scr(s.x, h + sh, s.z);
+        const ph = Math.abs(y0 - y1);
+        const pw = ph * (sw / sh);
+        const r = [x0 - pw / 2, y1 - ph * 0.02, pw, ph * 0.94];
+        let score = Math.abs(h - 0.95) * 0.4;
+        for (const o of placed) score += ov(r, o) / (r[2] * r[3]) * 10;
+        if (r[1] < 0) score += 5;
+        if (!pick || score < pick.score) pick = { h, r, score };
+      }
+      placed.push(pick.r);
+      s.h = pick.h;
+      s.spr.position.set(s.x, pick.h, s.z);
+      s.post.scale.set(1, pick.h + sh * 0.1, 1);
+    }
   }
 
   /** A painted ribbon banner lying flat on the sheet: cream slip, folded tails, inked caps. */
@@ -2007,16 +2397,19 @@ export class Diorama {
         uniforms: {
           tColor: { value: null }, tDepth: { value: null }, uRes: { value: new THREE.Vector2() },
           uNear: { value: 0.1 }, uFar: { value: 300 }, uFocus: { value: 30 }, uBand: { value: 4 }, uMax: { value: 6 },
+          tSigns: { value: null }, uSigns: { value: 0 },
         },
         vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
         fragmentShader: `uniform sampler2D tColor; uniform sampler2D tDepth; uniform vec2 uRes;
+          uniform sampler2D tSigns; uniform float uSigns;
           uniform float uNear, uFar, uFocus, uBand, uMax; varying vec2 vUv;
+          vec3 signs(vec3 c){ if (uSigns < 0.5) return c; vec4 s = texture2D(tSigns, vUv); return c * (1.0 - s.a) + s.rgb; }
           float viewZ(vec2 uv){ float d = texture2D(tDepth, uv).x; return (uNear * uFar) / ((uFar - uNear) * d - uFar); }
-          float coc(vec2 uv){ float z = -viewZ(uv); return clamp((abs(z - uFocus) - uBand) / uFocus * 6.0, 0.0, 1.0) * uMax; }
+          float coc(vec2 uv){ float z = -viewZ(uv); return clamp((abs(z - uFocus) - uBand) / uFocus * 4.0, 0.0, 1.0) * uMax; }
           void main(){
             float c0 = coc(vUv);
             vec4 base = texture2D(tColor, vUv);
-            if (c0 < 0.35) { gl_FragColor = vec4(base.rgb, 1.0); return; }
+            if (c0 < 0.35) { gl_FragColor = vec4(signs(base.rgb), 1.0); return; }
             vec3 acc = base.rgb; float wsum = 1.0;
             for (int i = 0; i < 20; i++) {
               float fi = float(i) + 0.5;
@@ -2028,7 +2421,7 @@ export class Diorama {
               float wgt = smoothstep(0.0, 1.0, cs / max(0.001, rr) );
               acc += texture2D(tColor, vUv + o).rgb * wgt; wsum += wgt;
             }
-            gl_FragColor = vec4(acc / wsum, 1.0);
+            gl_FragColor = vec4(signs(acc / wsum), 1.0);
           }`,
         depthTest: false, depthWrite: false,
       });
@@ -2041,6 +2434,21 @@ export class Diorama {
     r.setRenderTarget(this.rt);
     r.clear();
     r.render(this.scene, this.camera);
+    // the signboards: their own transparent layer, kept sharp over the blur
+    const hasSigns = !!this.signScene?.children.length;
+    if (hasSigns) {
+      if (!this.rtS || this.rtS.width !== w || this.rtS.height !== h) {
+        this.rtS?.dispose();
+        this.rtS = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType });
+      }
+      const cc = r.getClearColor(new THREE.Color());
+      const ca = r.getClearAlpha();
+      r.setRenderTarget(this.rtS);
+      r.setClearColor(0x000000, 0);
+      r.clear();
+      r.render(this.signScene, this.camera);
+      r.setClearColor(cc, ca);
+    }
     r.setRenderTarget(null);
     const u = this.dof.material.uniforms;
     u.tColor.value = this.rt.texture;
@@ -2051,8 +2459,10 @@ export class Diorama {
     // focus on the board's middle (or on the party when leaning in)
     const f = this.camera.position.distanceTo(this.cur?.target ?? this.target);
     u.uFocus.value = f;
-    u.uBand.value = f * 0.13;
-    u.uMax.value = 7 * pr;
+    u.uBand.value = f * 0.2;
+    u.uMax.value = 5.5 * pr;
+    u.tSigns.value = hasSigns ? this.rtS.texture : null;
+    u.uSigns.value = hasSigns ? 1 : 0;
     rc.render(this.dofScene, this.dofCam);
   }
 
@@ -2213,6 +2623,7 @@ export class Diorama {
     c.dist += (this.dist - c.dist) * a;
     c.target.lerp(this.target, a);
     this._applyCamera();
+    this._layoutSigns();
     if (this.marker) this.marker.flag.rotation.y = Math.sin(t * 1.7) * 0.12;
     for (const v of this.veils ?? []) v.tex.offset.set(t * v.speed + v.phase, t * v.speed * 0.6);
     if (this.partyGlow) this.partyGlow.material.opacity = 0.24 + 0.06 * Math.sin(t * 2.6);

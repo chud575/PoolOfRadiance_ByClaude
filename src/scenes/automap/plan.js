@@ -69,7 +69,7 @@ export function drawFloor(g, cells, { CX, CY, cs, seed = 1, kind = 'planks' }) {
       while (a < a1) {
         const w = course * (plaza ? 0.9 + r() * 0.9 : 0.8 + r() * 0.9);
         joints.push([a + w, b, a + w, b + h]);
-        if (r() < (plaza ? 0.22 : 0.14)) tints.push([a, b, w, h, r()]);
+        if (r() < (plaza ? 0.32 : 0.3)) tints.push([a, b, w, h, r()]);
         a += w;
       }
       b += h;
@@ -82,8 +82,27 @@ export function drawFloor(g, cells, { CX, CY, cs, seed = 1, kind = 'planks' }) {
       g.fillStyle = t < 0.6 ? 'rgba(150,124,92,0.1)' : 'rgba(255,248,226,0.22)';
       g.fillRect(px, py, qw, qh);
     }
-    g.strokeStyle = plaza ? 'rgba(66,44,24,0.36)' : 'rgba(78,54,32,0.24)';
-    g.lineWidth = plaza ? 0.65 : 0.5;
+    // stone texture: a scatter of stipple, denser in the worn hollows, and an engraver's
+    // corner hatch on some slabs where the floor has sunk
+    g.fillStyle = 'rgba(66,44,24,0.32)';
+    for (let i = 0; i < cells.length * 46; i++) {
+      const px = x0 + r() * (x1 - x0);
+      const py = y0 + r() * (y1 - y0);
+      g.fillRect(px, py, 0.45 + r() * 0.35, 0.45 + r() * 0.35);
+    }
+    g.strokeStyle = 'rgba(66,44,24,0.26)';
+    g.lineWidth = 0.4;
+    g.beginPath();
+    for (const [a, b, w, h, t] of tints) {
+      if (t > 0.55) continue;
+      const [px, py] = P(a, b);
+      const [qw, qh] = horiz ? [w, h] : [h, w];
+      const k2 = Math.min(qw, qh) * 0.55;
+      for (let o = 1.2; o < k2; o += 1.3) { g.moveTo(px + qw - o, py + qh); g.lineTo(px + qw, py + qh - o); }
+    }
+    g.stroke();
+    g.strokeStyle = plaza ? 'rgba(60,40,22,0.48)' : 'rgba(70,48,28,0.4)';
+    g.lineWidth = plaza ? 0.8 : 0.7;
     g.beginPath();
     for (const [ua, va, ub, vb] of joints) {
       const [ax, ay] = P(ua, va);
@@ -292,6 +311,26 @@ function outline(g, lw = 0.62) {
 
 /** A plan symbol's body: muted wash, hatched on its shadow (south-east) side, inked outline. */
 function box(g, x, y, w, h, fill = PAPER) {
+  // the piece's cast shadow, hatched on the floor toward the sheet's south-east
+  // (whichever way the symbol is turned), so furniture stands up off the plan
+  const m = g.getTransform();
+  const sc = Math.hypot(m.a, m.b) || 1;
+  const det = m.a * m.d - m.b * m.c || 1;
+  const toLocal = (wx, wy) => [(m.d * wx - m.c * wy) / det * sc, (-m.b * wx + m.a * wy) / det * sc];
+  const off = Math.min(w, h, 6) * 0.22 + 0.6;
+  const [sx, sy] = toLocal(off, off);
+  g.save();
+  g.beginPath();
+  g.rect(x + sx, y + sy, w, h);
+  g.fillStyle = 'rgba(60,38,18,0.16)';
+  g.fill();
+  g.clip();
+  g.strokeStyle = 'rgba(43,26,13,0.3)';
+  g.lineWidth = 0.35;
+  g.beginPath();
+  for (let t = -h - 4; t < w + h + 4; t += 1.2) { g.moveTo(x + sx + t, y + sy); g.lineTo(x + sx + t - h, y + sy + h); }
+  g.stroke();
+  g.restore();
   g.beginPath();
   g.rect(x, y, w, h);
   g.fillStyle = fill;
@@ -310,7 +349,20 @@ function box(g, x, y, w, h, fill = PAPER) {
   }
   g.beginPath();
   g.rect(x, y, w, h);
-  outline(g);
+  outline(g, 0.42);
+  // line-weight hierarchy: the two edges turned away from the light carry a heavy rule
+  const edges = [[[x, y], [x + w, y], [0, -1]], [[x + w, y], [x + w, y + h], [1, 0]], [[x, y + h], [x + w, y + h], [0, 1]], [[x, y], [x, y + h], [-1, 0]]];
+  g.beginPath();
+  for (const [[ax, ay], [bx, by], [nx, ny]] of edges) {
+    const wx = m.a * nx + m.c * ny;
+    const wy = m.b * nx + m.d * ny;
+    if (wx + wy <= 0.1) continue;
+    g.moveTo(ax, ay); g.lineTo(bx, by);
+  }
+  g.strokeStyle = INK.ink;
+  g.lineWidth = 1.25;
+  g.lineCap = 'square';
+  g.stroke();
 }
 
 const SYMBOLS = {

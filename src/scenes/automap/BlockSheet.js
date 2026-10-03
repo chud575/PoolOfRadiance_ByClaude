@@ -177,19 +177,12 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
       // stops at them), then the building's own hatch
       ug.fillStyle = 'rgb(226,208,170)';
       ug.fill(path);
-      ug.fillStyle = 'rgba(104,90,74,0.26)';
+      ug.fillStyle = 'rgba(150,120,84,0.1)';
       ug.fill(path);
       let x0 = 1e9; let y0 = 1e9; let x1 = -1e9; let y1 = -1e9;
       for (const [i, j] of rg.cells) { x0 = Math.min(x0, CX(i)); y0 = Math.min(y0, CY(j)); x1 = Math.max(x1, CX(i + 1)); y1 = Math.max(y1, CY(j + 1)); }
-      const L = (x1 - x0) + (y1 - y0);
-      // one uniform 45-degree graphite hatch, ruled evenly with a sharp lead
-      ug.strokeStyle = 'rgba(50,38,28,0.6)';
-      ug.lineWidth = 0.9;
-      ug.beginPath();
-      for (let o = -L; o < L; o += 3.1) {
-        ug.moveTo(x0 + o, y1); ug.lineTo(x0 + o + (y1 - y0), y0);
-      }
-      ug.stroke();
+      const rect = Math.abs((x1 - x0) * (y1 - y0) - rg.cells.length * cs * cs) < 1;
+      unsurveyedRoof(ug, { x0, y0, x1, y1, rect, cs, r: ur, index: rg.index, cells: rg.cells.length });
       // a hard inner edge line pressed just inside the walls
       const inset = cs * 0.125 + 2.2;
       ug.strokeStyle = 'rgba(48,36,26,0.62)';
@@ -678,6 +671,7 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
   }
   // exits: arrows in the margin + destination names
   const exitSpans = [];
+  const exitLabels = [];
   g.save();
   g.textBaseline = 'middle';
   for (const t of info.travel) {
@@ -690,26 +684,26 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
       const [ox, oy] = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] }[facing];
       const ax = X + ox * cs * 0.95;
       const ay = Y + oy * cs * 0.95;
-      drawMarker(g, 'exit', ax, ay, cs * 0.5, { angle: ang, accent: INK.vermilion });
-      g.font = `italic ${Math.round(cs * 0.3)}px ${SERIF}`;
+      drawMarker(g, 'exit', ax, ay, cs * 0.62, { angle: ang, accent: INK.vermilion });
+      // the destination on a small vermilion ribbon standing just inside the way out,
+      // upright whatever the side, the arrow in the margin pointing on
       const label = `to ${t.destName}`;
-      {
-        // keep the margin's ruled numbers clear of this label and its arrow
-        const half = g.measureText(label).width / 2 + cs * 0.15;
-        const c = facing === 'N' || facing === 'S' ? ax : ay;
-        exitSpans.push({ side: facing, a: Math.min(c - half, c - cs * 0.4), b: Math.max(c + half, c + cs * 0.4) });
-      }
-      if (facing === 'N' || facing === 'S') {
-        g.textAlign = 'center';
-        haloText(g, label, ax, ay + oy * cs * 0.42, { width: 3, color: '#3b2210' });
-      } else {
-        g.save();
-        g.translate(ax + ox * cs * 0.22, ay);
-        g.rotate(facing === 'E' ? Math.PI / 2 : -Math.PI / 2);
-        g.textAlign = 'center';
-        haloText(g, label, 0, -cs * 0.14, { width: 3, color: '#3b2210' });
-        g.restore();
-      }
+      exitSpans.push({ side: facing, a: (facing === 'N' || facing === 'S' ? ax : ay) - cs * 0.45, b: (facing === 'N' || facing === 'S' ? ax : ay) + cs * 0.45 });
+      const fsx = cs * 0.23;
+      g.font = `bold ${fsx.toFixed(1)}px ${SERIF}`;
+      g.letterSpacing = `${(fsx * 0.12).toFixed(1)}px`;
+      const tw = g.measureText(label.toUpperCase()).width;
+      const bw = tw + fsx * 1.6;
+      const bh = fsx * 1.55;
+      let bx = X - ox * cs * 0.15;
+      let by = Y - oy * cs * 0.15;
+      // a sign at the gate: astride the wall line just beside the way out
+      if (facing === 'E' || facing === 'W') { bx = X + ox * cs * 0.5; by = Y - cs * 0.6; } else { bx = X + cs * 1.1; by = Y + oy * cs * 0.5; }
+      bx = Math.max(MX + bw / 2 + 3, Math.min(MX + MS - bw / 2 - 3, bx));
+      // lettered live by the viewer (and stood up as a signboard in the diorama)
+      exitLabels.push({ text: label.toUpperCase(), bx, by, bw, bh, fs: fsx, x, y, facing });
+      g.letterSpacing = '0px';
+      markerSpots.push([bx - bw / 2, by - bh / 2, bw, bh]);
     } else {
       const glyph = t.art === 'docks' || t.art === 'keep' ? 'boat' : 'stairs';
       drawMarker(g, glyph, X, Y, cs * 0.5, { color: INK.ink });
@@ -916,10 +910,234 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
   g.restore();
 
   g.restore();
-  return { canvas, k, cs, info, seenCell, fog: fogCov, fogArea, wallRects, cellRect: (x, y) => [M + CX(x), M + CY(y), cs, cs], seed, labels, markerSpots, markers, regions: reg, furniture };
+  handledSheet(g, canvas, k, seed);
+  return { canvas, k, cs, info, seenCell, fog: fogCov, fogArea, wallRects, cellRect: (x, y) => [M + CX(x), M + CY(y), cs, cs], seed, labels, markerSpots, markers, regions: reg, furniture, exitLabels };
 }
 
 /** Small legend swatch drawn in sheet units. */
+/**
+ * A building seen from the street but never entered, drawn as a surveyor draws a
+ * roof he could only see from outside: the roof plan inked over the walls (hipped
+ * or gabled, ridge along the long axis, hips to the corners), each slope shaded in
+ * its own hatch (lit north and west faces left light, shaded south and east faces
+ * ruled close), tile courses or thatch strokes varying building by building, a
+ * chimney stack, and a faint hand-lettered note that the inside is unsurveyed.
+ */
+/**
+ * The sheet has been handled: two fold creases (a soft valley shadow beside a lit
+ * ridge, ink and all), foxing spots in rust brown, and a faint thumb-soiling at the
+ * lower corners, laid over everything so the survey reads as paper, not a screen.
+ */
+function handledSheet(g, canvas, k, seed) {
+  const r = prng(seed + 909);
+  const Wc = canvas.width;
+  const Hc = canvas.height;
+  g.save();
+  // only on the paper itself (the deckled sheet's alpha)
+  g.globalCompositeOperation = 'source-atop';
+  const crease = (x0, y0, x1, y1) => {
+    const nx = -(y1 - y0); const ny = x1 - x0;
+    const L = Math.hypot(nx, ny) || 1;
+    const ox = (nx / L) * 3 * k; const oy = (ny / L) * 3 * k;
+    for (const [s2, col, w] of [[-1, 'rgba(70,44,20,0.10)', 7], [0, 'rgba(60,38,18,0.16)', 1.4], [1, 'rgba(255,248,228,0.14)', 5]]) {
+      g.strokeStyle = col;
+      g.lineWidth = w * k;
+      g.beginPath();
+      const n = 24;
+      for (let i = 0; i <= n; i++) {
+        const t = i / n;
+        const wob = (r() - 0.5) * 1.2 * k;
+        const px = x0 + (x1 - x0) * t + ox * s2 + (ny / L) * wob * 0;
+        const py = y0 + (y1 - y0) * t + oy * s2 + wob * (Math.abs(nx) > Math.abs(ny) ? 0 : 0);
+        if (i) g.lineTo(px + (nx / L) * wob, py + (ny / L) * wob); else g.moveTo(px, py);
+      }
+      g.stroke();
+    }
+  };
+  crease(Wc * 0.5 + 6 * k, 0, Wc * 0.5 - 4 * k, Hc);
+  crease(0, Hc * 0.5 - 3 * k, Wc, Hc * 0.5 + 5 * k);
+  // foxing: rust spots, each a darker core in a pale halo
+  for (let i = 0; i < 26; i++) {
+    const x = r() * Wc;
+    const y = r() * Hc;
+    const rr = (2 + r() * 9) * k;
+    const gr = g.createRadialGradient(x, y, 0, x, y, rr);
+    gr.addColorStop(0, `rgba(140,82,36,${(0.1 + r() * 0.12).toFixed(3)})`);
+    gr.addColorStop(0.5, 'rgba(150,96,46,0.06)');
+    gr.addColorStop(1, 'rgba(150,96,46,0)');
+    g.fillStyle = gr;
+    g.beginPath(); g.arc(x, y, rr, 0, Math.PI * 2); g.fill();
+  }
+  // soiling where hands have held the lower corners
+  for (const cx of [0, Wc]) {
+    const gr = g.createRadialGradient(cx, Hc, 0, cx, Hc, Hc * 0.22);
+    gr.addColorStop(0, 'rgba(96,64,32,0.14)');
+    gr.addColorStop(1, 'rgba(96,64,32,0)');
+    g.fillStyle = gr;
+    g.fillRect(cx - Hc * 0.22, Hc * 0.78, Hc * 0.44, Hc * 0.22);
+  }
+  g.restore();
+}
+
+/** A small vermilion swallow-tail ribbon with cream capitals: the sheet's exit label. */
+export function exitBanner(g, text, cx, cy, w, h, fs) {
+  g.save();
+  const nt = h * 0.32;
+  const x0 = cx - w / 2; const y0 = cy - h / 2;
+  g.fillStyle = 'rgba(40,20,8,0.3)';
+  g.fillRect(x0 + 1.2, y0 + 1.6, w, h);
+  g.beginPath();
+  g.moveTo(x0, y0); g.lineTo(x0 + w, y0); g.lineTo(x0 + w - nt, cy); g.lineTo(x0 + w, y0 + h);
+  g.lineTo(x0, y0 + h); g.lineTo(x0 + nt, cy); g.closePath();
+  const gr = g.createLinearGradient(0, y0, 0, y0 + h);
+  gr.addColorStop(0, 'rgb(170,52,32)');
+  gr.addColorStop(1, 'rgb(132,34,20)');
+  g.fillStyle = gr;
+  g.fill();
+  g.strokeStyle = 'rgba(43,20,8,0.9)';
+  g.lineWidth = 0.9;
+  g.stroke();
+  g.strokeStyle = 'rgba(232,196,120,0.7)';
+  g.lineWidth = 0.6;
+  g.beginPath();
+  g.moveTo(x0 + nt + 2, y0 + 2); g.lineTo(x0 + w - nt - 2, y0 + 2);
+  g.moveTo(x0 + nt + 2, y0 + h - 2); g.lineTo(x0 + w - nt - 2, y0 + h - 2);
+  g.stroke();
+  g.font = `bold ${fs.toFixed(1)}px ${SERIF}`;
+  g.letterSpacing = `${(fs * 0.12).toFixed(1)}px`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillStyle = '#f6e8c8';
+  g.fillText(text, cx + fs * 0.06, cy + fs * 0.06);
+  g.restore();
+}
+
+function unsurveyedRoof(g, { x0, y0, x1, y1, rect, cs, r, index, cells }) {
+  const inset = cs * 0.14;
+  const X0 = x0 + inset; const Y0 = y0 + inset; const X1 = x1 - inset; const Y1 = y1 - inset;
+  const w = X1 - X0; const h = Y1 - Y0;
+  const hatch = (poly, angle, gap, alpha, lw = 0.7) => {
+    g.save();
+    g.beginPath();
+    poly.forEach(([px, py], i) => (i ? g.lineTo(px, py) : g.moveTo(px, py)));
+    g.closePath();
+    g.clip();
+    const L = w + h + cs;
+    const ca = Math.cos(angle); const sa = Math.sin(angle);
+    const cx = (X0 + X1) / 2; const cy = (Y0 + Y1) / 2;
+    g.strokeStyle = `rgba(52,36,22,${alpha})`;
+    g.lineWidth = lw;
+    g.beginPath();
+    for (let o = -L; o < L; o += gap * (0.85 + r() * 0.3)) {
+      g.moveTo(cx + ca * -L - sa * o, cy + sa * -L + ca * o);
+      g.lineTo(cx + ca * L - sa * o, cy + sa * L + ca * o);
+    }
+    g.stroke();
+    g.restore();
+  };
+  const wash = (poly, a) => {
+    g.beginPath();
+    poly.forEach(([px, py], i) => (i ? g.lineTo(px, py) : g.moveTo(px, py)));
+    g.closePath();
+    g.fillStyle = `rgba(92,70,48,${a})`;
+    g.fill();
+  };
+  if (!rect || w < cs * 0.6 || h < cs * 0.6) {
+    // an odd-shaped block: hatched at its own angle and spacing
+    const ang = (index % 4) * 0.5 + 0.4;
+    hatch([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], ang, 2.6 + (index % 3) * 0.8, 0.45);
+    if (index % 2) hatch([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], ang + 1.4, 4.2, 0.25);
+    return;
+  }
+  const horiz = w >= h;
+  const hip = r() < 0.6;
+  const tiles = r() < 0.55;
+  // ridge and facets in a long-axis frame
+  const half = (horiz ? h : w) / 2;
+  const cxm = (X0 + X1) / 2; const cym = (Y0 + Y1) / 2;
+  let facets;
+  let ridge;
+  if (horiz) {
+    const ra = hip ? X0 + half : X0;
+    const rb = hip ? X1 - half : X1;
+    ridge = [[ra, cym], [rb, cym]];
+    facets = [
+      { poly: [[X0, Y0], [X1, Y0], [rb, cym], [ra, cym]], face: 'N' },
+      { poly: [[X0, Y1], [X1, Y1], [rb, cym], [ra, cym]], face: 'S' },
+    ];
+    if (hip) facets.push({ poly: [[X0, Y0], [ra, cym], [X0, Y1]], face: 'W' }, { poly: [[X1, Y0], [rb, cym], [X1, Y1]], face: 'E' });
+  } else {
+    const ra = hip ? Y0 + half : Y0;
+    const rb = hip ? Y1 - half : Y1;
+    ridge = [[cxm, ra], [cxm, rb]];
+    facets = [
+      { poly: [[X0, Y0], [X0, Y1], [cxm, rb], [cxm, ra]], face: 'W' },
+      { poly: [[X1, Y0], [X1, Y1], [cxm, rb], [cxm, ra]], face: 'E' },
+    ];
+    if (hip) facets.push({ poly: [[X0, Y0], [cxm, ra], [X1, Y0]], face: 'N' }, { poly: [[X0, Y1], [cxm, rb], [X1, Y1]], face: 'S' });
+  }
+  const lit = { N: 0.05, W: 0.1, E: 0.26, S: 0.32 };
+  const down = { N: -Math.PI / 2, S: Math.PI / 2, W: Math.PI, E: 0 };
+  for (const f of facets) {
+    wash(f.poly, lit[f.face]);
+    // fall-line strokes run down each slope; tile courses run along the eaves
+    const shade = f.face === 'S' || f.face === 'E';
+    hatch(f.poly, down[f.face], shade ? 1.9 : 4.2, shade ? 0.55 : 0.34, shade ? 0.75 : 0.6);
+    if (tiles) hatch(f.poly, down[f.face] + Math.PI / 2, cs * 0.11, 0.32, 0.55);
+    else if (shade) hatch(f.poly, down[f.face] + 0.5, 3.4, 0.22, 0.5);
+  }
+  // eaves, ridge and hips in firm ink, the ridge heaviest
+  g.save();
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  g.strokeStyle = 'rgba(40,26,14,0.8)';
+  g.lineWidth = 1.1;
+  g.strokeRect(X0, Y0, w, h);
+  g.lineWidth = 1.0;
+  g.beginPath();
+  if (hip) {
+    for (const [cx2, cy2] of [[X0, Y0], [X0, Y1]]) { g.moveTo(cx2, cy2); g.lineTo(...ridge[0]); }
+    for (const [cx2, cy2] of [[X1, Y0], [X1, Y1]]) { g.moveTo(cx2, cy2); g.lineTo(...ridge[1]); }
+  }
+  g.stroke();
+  g.lineWidth = 2.0;
+  g.beginPath(); g.moveTo(...ridge[0]); g.lineTo(...ridge[1]); g.stroke();
+  // a chimney stack astride the ridge, its shadow cast down the slope
+  if (cells >= 3) {
+    const t = 0.25 + r() * 0.5;
+    const ccx = ridge[0][0] + (ridge[1][0] - ridge[0][0]) * t;
+    const ccy = ridge[0][1] + (ridge[1][1] - ridge[0][1]) * t;
+    const cw = cs * 0.2;
+    g.fillStyle = 'rgba(40,26,14,0.35)';
+    g.fillRect(ccx - cw / 2 + cw * 0.4, ccy - cw / 2 + cw * 0.5, cw, cw);
+    g.fillStyle = 'rgb(214,196,160)';
+    g.fillRect(ccx - cw / 2, ccy - cw / 2, cw, cw);
+    g.lineWidth = 1.1;
+    g.strokeRect(ccx - cw / 2, ccy - cw / 2, cw, cw);
+    g.fillStyle = 'rgba(30,20,10,0.85)';
+    g.fillRect(ccx - cw * 0.22, ccy - cw * 0.22, cw * 0.44, cw * 0.44);
+  }
+  // the surveyor's note: lettered faintly on the lit slope
+  const notes = ['unsurveyed', 'not entered', 'unsurveyed', 'door shut', 'unsurveyed', 'not entered'];
+  const note = notes[index % notes.length];
+  const fs = Math.min(cs * 0.3, (horiz ? w : h) / 6.5);
+  g.font = `italic ${fs.toFixed(1)}px ${SERIF}`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  const [tx, ty] = horiz ? [cxm, (Y0 + cym) / 2 + fs * 0.1] : [(X0 + cxm) / 2, cym];
+  g.save();
+  g.translate(tx, ty);
+  if (!horiz) g.rotate(-Math.PI / 2);
+  g.lineJoin = 'round';
+  g.strokeStyle = 'rgba(236,222,190,0.85)';
+  g.lineWidth = fs * 0.32;
+  g.strokeText(note, 0, 0);
+  g.fillStyle = 'rgba(70,46,26,0.85)';
+  g.fillText(note, 0, 0);
+  g.restore();
+  g.restore();
+}
+
 export function drawKeySwatch(g, key, x, y, s) {
   const h = s / 2;
   g.save();

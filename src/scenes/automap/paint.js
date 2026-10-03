@@ -485,14 +485,17 @@ export function cobbleRegion(g, cells, { CX, CY, cs, seed = 1, ink = '43,26,13',
     const ph = rnd() * 6;
     let v = v0;
     while (v < v1) {
-      const ch = base * (flags ? 0.62 + rnd() * 0.8 : 0.82 + rnd() * 0.36);
+      // courses of setts vary in height, and a course now and then is of small stones
+      const small = !flags && rnd() < 0.18;
+      const ch = base * (flags ? 0.62 + rnd() * 0.8 : (small ? 0.55 : 0.7) + rnd() * 0.55);
       const chu = ch / cs;
       let u = u0 - rnd() * chu;
       while (u < u1) {
-        const w = ch * (flags ? 0.7 + rnd() * 1.3 : 1.1 + rnd() * 0.7);
+        const w = ch * (flags ? 0.7 + rnd() * 1.3 : (small ? 0.8 : 0.85) + rnd() * (small ? 0.5 : 1.1));
         const wu = w / cs;
         const cu = u + wu / 2;
-        const bend = flags ? 0 : Math.sin(cu * 1.1 + ph + v * 0.3) * 0.045;
+        // setts laid in shallow segmental arcs (fan paving), not ruled brick courses
+        const bend = flags ? 0 : Math.sin(cu * 1.7 + ph + v * 0.3) * 0.065 + Math.sin(cu * 4.3 + v * 1.7) * 0.012;
         const cv = v + chu / 2 + bend;
         u += wu;
         const x = ax === 'h' ? cu : cv;
@@ -510,7 +513,7 @@ export function cobbleRegion(g, cells, { CX, CY, cs, seed = 1, ink = '43,26,13',
         const wear = wearField(x, y);
         const X = CX(0) + x * cs;
         const Y = CY(0) + y * cs;
-        const ang = (ax === 'h' ? 0 : Math.PI / 2) + (flags ? (rnd() - 0.5) * 0.04 : Math.atan(Math.cos(cu * 1.1 + ph) * 0.05) * (ax === 'h' ? 1 : -1) + (rnd() - 0.5) * 0.16);
+        const ang = (ax === 'h' ? 0 : Math.PI / 2) + (flags ? (rnd() - 0.5) * 0.04 : Math.atan(Math.cos(cu * 1.7 + ph) * 0.11) * (ax === 'h' ? 1 : -1) + (rnd() - 0.5) * 0.2);
         if (wear > 0.7) {
           // lifted: a soft hollow of earth, now and then a loose stone left tilted in it
           g.fillStyle = `rgba(104,74,46,${(0.08 + rnd() * 0.08).toFixed(3)})`;
@@ -537,7 +540,7 @@ export function cobbleRegion(g, cells, { CX, CY, cs, seed = 1, ink = '43,26,13',
           X: X + (loose ? (rnd() - 0.5) * w * 0.12 : 0),
           Y: Y + (loose ? (rnd() - 0.5) * ch * 0.12 : 0),
           ang: ang + (loose ? (rnd() - 0.5) * 0.5 : 0),
-          rgb, alpha: lane ? 0.6 : 0.78, lw: flags ? 0.8 : lane ? 0.5 : 0.58, rnd, ink, bed: flags ? 0.16 : lane ? 0.1 : 0.16,
+          rgb, alpha: lane ? 0.6 : 0.78, lw: flags ? 0.8 : lane ? 0.5 : (rnd() < 0.15 ? 0.95 : 0.38 + rnd() * 0.32), rnd, ink, bed: flags ? 0.16 : lane ? 0.1 : 0.16,
           crack: flags ? 0.22 : 0.05, pits: flags ? 0.3 : 0.2, worn: wear > 0.25 ? 1 : 0, hatch: flags ? 0.48 : lane ? 0.2 : 0.3,
         });
       }

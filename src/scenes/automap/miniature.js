@@ -426,19 +426,49 @@ export function buildPartyMiniature(T, { pennant }) {
     { cloak: 0x2e4a2a, coat: 0x3a2a1a, crest: 0x000000, helm: false, shield: false, pole: 'none' },
     { cloak: 0x6a4a2a, coat: 0x5a6a2a, crest: 0x000000, helm: false, shield: true, pole: 'spear', beard: 0xb86a2a, field: '#2e4a2a' },
   ];
-  const SPOTS = [[0, -0.135], [-0.17, -0.05], [0.17, -0.05], [-0.105, 0.135], [0.105, 0.135], [0, 0.03]];
+  // spread out in a loose wedge, each on its own slotta base ringed in that hero's
+  // colour with a pooled contact shadow, so six people read rather than one lump
+  const SPOTS = [[0, -0.2], [-0.14, -0.06], [0.14, -0.06], [-0.24, 0.11], [0.24, 0.11], [-0.06, 0.17]];
+  const fBaseGeo = T(new THREE.LatheGeometry(V([[0, 0], [0.062, 0], [0.066, 0.004], [0.066, 0.013], [0.06, 0.017], [0, 0.018]]), 28));
+  const fRimGeo = T(new THREE.TorusGeometry(0.064, 0.0045, 6, 28));
+  fRimGeo.rotateX(Math.PI / 2);
+  const shadowTex = (() => {
+    const c = makeCanvas(64);
+    const g = c.getContext('2d');
+    const gr = g.createRadialGradient(32, 32, 4, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(10,6,2,0.95)');
+    gr.addColorStop(0.6, 'rgba(10,6,2,0.5)');
+    gr.addColorStop(1, 'rgba(10,6,2,0)');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, 64, 64);
+    const t = T(new THREE.CanvasTexture(c));
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  })();
+  const fShadowGeo = T(new THREE.CircleGeometry(0.1, 24));
+  fShadowGeo.rotateX(-Math.PI / 2);
+  const fShadowMat = T(new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false }));
+  const fBaseMat = paint(0x1c1812, 0.7);
   let flag = null;
   let flagGeo = null;
   KIT.forEach((v, i) => {
     const f = figure(v);
     const [x, z] = SPOTS[i];
-    f.fig.position.set(x, 0.054, z);
-    f.fig.scale.setScalar(i === 0 ? 0.92 : 0.84 * (i === 5 ? 0.86 : 1));
+    const sh = new THREE.Mesh(fShadowGeo, fShadowMat);
+    sh.position.set(x + 0.012, 0.0555, z + 0.012);
+    sh.renderOrder = 2;
+    const fb = new THREE.Mesh(fBaseGeo, fBaseMat);
+    fb.position.set(x, 0.054, z);
+    const ring = new THREE.Mesh(fRimGeo, paint(v.cloak, 0.6));
+    ring.position.set(x, 0.054 + 0.011, z);
+    root.add(sh, fb, ring);
+    f.fig.position.set(x, 0.072, z);
+    f.fig.scale.setScalar(i === 0 ? 0.9 : 0.8 * (i === 5 ? 0.86 : 1));
     f.fig.rotation.y = (i === 0 ? 0 : (r() - 0.5) * 0.5);
     root.add(f.fig);
     if (f.flag) { flag = f.flag; flagGeo = f.flagGeo; }
   });
 
-  root.traverse((m) => { if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } });
+  root.traverse((m) => { if (m.isMesh && m.material !== fShadowMat) { m.castShadow = true; m.receiveShadow = true; } });
   return { group: root, flag, flagGeo };
 }

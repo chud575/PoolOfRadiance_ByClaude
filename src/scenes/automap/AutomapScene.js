@@ -3,7 +3,7 @@ import { Scene } from '../../core/Scene.js';
 import { h, clear, CommandBar } from '../../ui/UI.js';
 import { getMap, hasMap } from '../../data/maps/index.js';
 import { EDGE, CELL, DIRS } from '../../data/maps/MapGrid.js';
-import { SHEET, buildBlockSheet, eventMarker, MARKER_LABELS } from './BlockSheet.js';
+import { SHEET, buildBlockSheet, eventMarker, MARKER_LABELS, exitBanner } from './BlockSheet.js';
 import { WORLD, LAYOUT, buildWorldSheet } from './WorldSheet.js';
 import { inPoly } from './worldcity.js';
 import { SheetView } from './SheetView.js';
@@ -624,7 +624,8 @@ export default class AutomapScene extends Scene {
     const { day, hour, minute } = game.clock;
     const here = this.isHome;
     const notes = notesFor(game, m.id);
-    const pct = Math.round(st.frac * 100);
+    // the square underfoot counts from the first step: never a bare 0% once walked
+    const pct = st.seen > 0 ? Math.max(1, Math.round(st.frac * 100)) : 0;
     this.side.append(
       h('div.am-side-head', [
         h('div.am-kicker', [here ? 'You are in' : 'Surveyed map of']),
@@ -1064,14 +1065,35 @@ export default class AutomapScene extends Scene {
       drawPartyArrow(g, cx, cy, cs * tk * (1.28 + pulse * 0.05), a, { glow: pulse });
     }
     this._drawZoneLabels(g, s);
+    // ways out: a vermilion ribbon beside each, naming where it leads
+    for (const e of this.sheet.exitLabels ?? []) exitBanner(g, e.text, e.bx, e.by, e.bw, e.bh, e.fs);
     // pins
     const notes = notesFor(game, m.id);
+    const per = new Map();
+    const loc = game.location;
     for (const n of notes) {
       const fl = this.flash && this.flash.x === n.x && this.flash.y === n.y ? Math.max(0, 1 - (t - this.flash.t) / 1.2) : 0;
       const hov = this.hover && this.hover.x === n.x && this.hover.y === n.y;
       // a wax seal pressed onto the sheet, held at a fixed size on screen
       const ps = (34 / s) * (1 + (hov ? 0.1 : 0) + fl * 0.25);
-      drawPin(g, X(n.x) + cs * 0.7, Y(n.y) + cs * 0.32, ps, n.kind, { lift: hov ? 2 / s : 0 });
+      const key = `${n.x},${n.y}`;
+      const nth = per.get(key) ?? 0;
+      per.set(key, nth + 1);
+      let px = X(n.x) + cs * 0.7;
+      let py = Y(n.y) + cs * 0.32;
+      if (this.isHome && n.x === loc.x && n.y === loc.y) {
+        // on the party's own square the seals fan out behind the roundel, clear of its
+        // ring, pips and facing arrow
+        const tk = Math.max(0.6, this.sv.zoom ** -0.6);
+        const fa = DIR_ANGLE[loc.dir] - Math.PI / 2 + Math.PI * 0.78 + nth * 0.62;
+        const rr = cs * tk * 1.02 + ps * 0.55;
+        px = X(n.x) + cs / 2 + Math.cos(fa) * rr;
+        py = Y(n.y) + cs / 2 + Math.sin(fa) * rr;
+      } else if (nth) {
+        px += Math.cos(nth * 2.1) * ps * 0.7;
+        py += Math.sin(nth * 2.1) * ps * 0.7;
+      }
+      drawPin(g, px, py, ps, n.kind, { lift: hov ? 2 / s : 0 });
     }
   }
 
@@ -1183,29 +1205,16 @@ export default class AutomapScene extends Scene {
         }
         if (best.score < 30) break;
       }
-      const caps = best.caps;
-      const lh = best.lh;
+      // a feature (a gate, a corner, a yard) takes a smaller ribbon of the same kind, so
+      // the buildings' banners keep the first rank but every name reads in one hand
+      const minor = !home;
+      const caps = best.caps * (minor ? 0.8 : 1);
+      const lh = caps * 1.3;
       g.font = `bold ${caps.toFixed(2)}px ${SERIF}`;
       g.letterSpacing = `${(caps * 0.16).toFixed(2)}px`;
-      const { lines, bh } = best;
+      const { lines } = best;
+      const bh = lines.length * lh;
       placed.push(best.box);
-      if (!home) {
-        // a feature (a gate, a corner, a yard) is lettered smaller, in italic upper and
-        // lower case straight onto the sheet with a paper halo: no ribbon, so the
-        // buildings' banners keep the first rank
-        const fs = caps * 1.05;
-        g.save();
-        g.font = `italic ${fs.toFixed(2)}px ${SERIF}`;
-        g.letterSpacing = `${(fs * 0.04).toFixed(2)}px`;
-        g.lineJoin = 'round';
-        g.strokeStyle = 'rgba(236,222,186,0.85)';
-        g.lineWidth = fs * 0.2;
-        g.strokeText(z.name, best.cx, best.cy);
-        g.fillStyle = '#7a2412';
-        g.fillText(z.name, best.cx, best.cy);
-        g.restore();
-        continue;
-      }
       // lettered on a knocked-out slip of parchment, so no name ever sits on a busy floor
       {
         const lw = Math.max(...lines.map((l) => g.measureText(l).width));

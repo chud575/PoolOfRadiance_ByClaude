@@ -315,22 +315,50 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
   g.fillRect(0, 700, W, 400);
   g.globalCompositeOperation = 'source-over';
   const r = prng(55);
-  // engraved swell: rows of broken wave strokes, parallel to the shore
+  // the shallows: a pale aqua tint hugging the coast, deepening offshore (a portolan's
+  // coastal gradient), laid as a broad soft stroke along the shore inside the sea clip
+  {
+    const coast = new Path2D();
+    for (let x = -10; x <= W + 10; x += 6) (x === -10 ? coast.moveTo(x, coastY(x)) : coast.lineTo(x, coastY(x)));
+    g.save();
+    g.filter = 'blur(10px)';
+    g.strokeStyle = 'rgba(214,232,214,0.55)';
+    g.lineWidth = 70;
+    g.stroke(coast);
+    g.strokeStyle = 'rgba(232,240,222,0.5)';
+    g.lineWidth = 26;
+    g.stroke(coast);
+    g.restore();
+    const deep = g.createLinearGradient(0, 840, 0, H);
+    deep.addColorStop(0, 'rgba(40,80,120,0)');
+    deep.addColorStop(1, 'rgba(40,80,120,0.22)');
+    g.save();
+    g.globalCompositeOperation = 'multiply';
+    g.fillStyle = deep;
+    g.fillRect(0, 840, W, H - 840);
+    g.restore();
+  }
+  // engraved sea: close horizontal rules, each wavering a little, sparse and broken in
+  // the shallows and ruled closer and darker offshore (tone by line density, as cut)
   g.lineCap = 'round';
-  for (let j = 0; j < 22; j++) {
-    const fade = Math.max(0.32, 1 - j / 26);
-    let x = -10 + r() * 30;
+  for (let y = 760; y < H; y += 3.4) {
+    let x = -10 + r() * 20;
     while (x < W + 10) {
-      const len = 16 + r() * 34;
-      const y = coastY(x) + 12 + j * 9 + (r() - 0.5) * 2;
-      if (y > H) break;
-      g.strokeStyle = `rgba(24,50,90,${(0.62 * fade + 0.12).toFixed(3)})`;
-      g.lineWidth = 0.7 + r() * 0.45;
+      const len = 30 + r() * 90;
+      const d = y - coastY(x + len / 2);
+      x += len;
+      if (d < 6) { x += 4; continue; }
+      const deepK = Math.min(1, d / 150);
+      // the shallows leave gaps: a rule only now and then near the shore
+      if (r() > 0.25 + deepK * 0.75) { x += 6 + r() * 20; continue; }
+      g.strokeStyle = `rgba(22,46,86,${(0.24 + deepK * 0.44).toFixed(3)})`;
+      g.lineWidth = 0.55 + deepK * 0.4;
       g.beginPath();
-      g.moveTo(x, y);
-      g.bezierCurveTo(x + len * 0.3, y - 2.6, x + len * 0.6, y + 1.6, x + len, y - 0.6);
+      const x0 = x - len;
+      g.moveTo(x0, y);
+      for (let t = 1; t <= 4; t++) g.lineTo(x0 + (len * t) / 4, y + Math.sin((x0 + (len * t) / 4) / 23 + y * 0.31) * 0.9);
       g.stroke();
-      x += len + 4 + r() * 18;
+      x += 2 + r() * 8 * (1 - deepK);
     }
   }
   // scalloped wave crests (the engraver's sea), sparse, away from the coast
@@ -555,32 +583,44 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
     // a scatter of peaks over the whole band (no ranks, no rows): the greatest along the
     // spine of the range, smaller and lower toward its margins, each kept a little apart
     // from its neighbours so silhouettes overlap in depth rather than stack
+    // grouped massifs along a zigzag spine: each a dominant peak shouldered by lesser
+    // summits behind and before it, low saddles and passes between the groups, so the
+    // range reads as one irregular chain rather than a column of cones
     {
-      const cand = [];
-      for (let i = 0; i < 900; i++) {
-        const x = 12 + tr() * 140;
-        const y = 262 + tr() * 512;
-        const spineD = Math.abs(x - (84 + Math.sin(y / 130) * 14)) / 70;
-        const swell = fbm(x / 60, y / 90, { period: 64, octaves: 2, seed: 44 });
-        const size = Math.max(0.15, (1 - spineD) * 0.75 + swell * 0.6 + (tr() - 0.5) * 0.3);
-        cand.push({ x, y, size });
+      const groups = [];
+      let gy = 300;
+      let side = tr() < 0.5 ? -1 : 1;
+      while (gy < 760) {
+        const big = 0.65 + tr() * 0.35;
+        groups.push({ x: 84 + side * (10 + tr() * 16), y: gy, big });
+        side = -side;
+        gy += 52 + tr() * 36 + big * 22;
       }
-      cand.sort((p, q) => q.size - p.size);
-      const kept = [];
-      for (const c of cand) {
-        const w = 26 + c.size * 84;
-        const h = w * (0.4 + tr() * 0.32) * (c.size > 0.8 ? 1.15 : 1);
-        if (c.x - w / 2 < 4 || c.x + w / 2 > 164) continue;
-        if (kept.some((q) => Math.abs(q.x - c.x) < (q.w + w) * 0.32 && Math.abs(q.y - c.y) < (q.h + h) * 0.3)) continue;
-        const type = c.size > 0.85 ? (tr() < 0.5 ? 'crag' : 'horn') : c.size > 0.55 ? (tr() < 0.55 ? 'massif' : 'crag') : tr() < 0.6 ? 'foot' : 'massif';
-        kept.push({ x: c.x, y: c.y, w, h, type, fade: 1, back: c.size < 0.45 && c.x < 70 });
-        if (kept.length > 46) break;
+      for (const gp of groups) {
+        const W0 = 92 + gp.big * 52;
+        const H0 = W0 * (0.52 + tr() * 0.2);
+        // lesser summits behind (drawn first, set higher on the sheet) and before
+        const nB = 2 + Math.floor(tr() * 2);
+        for (let i = 0; i < nB; i++) {
+          const w = W0 * (0.45 + tr() * 0.3);
+          mts.push({ x: gp.x + (tr() - 0.5) * W0 * 0.9, y: gp.y - H0 * (0.35 + tr() * 0.25), w, h: w * (0.45 + tr() * 0.25), type: tr() < 0.5 ? 'crag' : 'massif', fade: 0.75, back: true });
+        }
+        mts.push({ x: gp.x, y: gp.y, w: W0, h: H0, type: gp.big > 0.85 ? 'horn' : tr() < 0.5 ? 'crag' : 'massif', fade: 1 });
+        const nF = 1 + Math.floor(tr() * 3);
+        for (let i = 0; i < nF; i++) {
+          const w = W0 * (0.32 + tr() * 0.28);
+          const sgn = tr() < 0.5 ? -1 : 1;
+          mts.push({ x: gp.x + sgn * W0 * (0.25 + tr() * 0.3), y: gp.y + H0 * (0.18 + tr() * 0.3), w, h: w * (0.4 + tr() * 0.25), type: tr() < 0.6 ? 'massif' : 'foot', fade: 1 });
+        }
       }
-      mts.push(...kept);
+      for (const q of mts) {
+        q.w = Math.min(q.w, 150);
+        q.x = Math.max(7 + q.w / 2, Math.min(159 - q.w / 2, q.x));
+      }
     }
     // foothills rolling out of the range toward the wall and down to the shore, fading
-    for (let y = 280; y < 784; y += 24 + tr() * 18) {
-      mts.push({ x: 138 + tr() * 14, y: y + tr() * 8, w: 26 + tr() * 18, h: 7 + tr() * 8, type: 'foot', fade: 0.6 + tr() * 0.3, foot: true });
+    for (let y = 300; y < 784; y += 46 + tr() * 40) {
+      mts.push({ x: 116 + tr() * 34, y: y + tr() * 14, w: 22 + tr() * 22, h: 6 + tr() * 8, type: 'foot', fade: 0.6 + tr() * 0.3, foot: true });
     }
     // the northern heights beyond the wall
     for (let x = 220; x < 880; x += 40 + tr() * 46) mts.push({ x, y: 38 + tr() * 8, w: 30 + tr() * 30, h: 12 + tr() * 14, type: tr() < 0.5 ? 'foot' : tr() < 0.5 ? 'massif' : 'crag', fade: 0.55 + tr() * 0.3 });
@@ -602,6 +642,19 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
     g.globalCompositeOperation = 'multiply';
     g.drawImage(mw, 0, 0, W, H);
     g.restore();
+    // the range's flank toward the city lies in shade: a granulated sepia wash
+    {
+      const sh = g.createLinearGradient(70, 0, 168, 0);
+      sh.addColorStop(0, 'rgba(110,74,40,0)');
+      sh.addColorStop(1, 'rgba(110,74,40,0.22)');
+      g.save();
+      g.globalCompositeOperation = 'multiply';
+      g.fillStyle = sh;
+      g.beginPath();
+      g.rect(70, 250, 98, Math.max(0, coastY(120) - 270));
+      g.fill();
+      g.restore();
+    }
     // far to near: by base line, the pale far rank first; each peak's paper occludes the
     // ones behind, and the far ones are veiled with paper tone (atmospheric recession)
     shown.sort((p, q) => p.y - q.y).forEach((q) => {
@@ -882,9 +935,10 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
     for (const b of blocks) {
       const m = getMap(b.id);
       const label = m.name.toUpperCase();
-      g.letterSpacing = label.length > 16 ? '1px' : '2px';
-      const rw2 = Math.min(g.measureText(label).width + 24, 220) + 30;
-      const ly0 = b.round ? b.cy + b.r + (b.id === 'pool_pyramid' ? 24 : 16) : b.labelY ?? b.y + b.s + 16;
+      g.letterSpacing = '1.6px';
+      const rw2 = Math.min(g.measureText(label).width + 24, 290) + 30;
+      // every ribbon stays inside the sheet's ruled border
+      const ly0 = Math.min(H - 40, b.round ? b.cy + b.r + (b.id === 'pool_pyramid' ? 24 : 16) : b.labelY ?? b.y + b.s + 16);
       let best = null;
       for (const dy of [0, -12, 12, -24, 24, -36, 36]) {
         for (const dx of [0, -30, 30, -60, 60]) {
@@ -909,14 +963,14 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
   g.textAlign = 'center';
   g.font = `italic 34px ${SERIF}`;
   g.letterSpacing = '14px';
-  haloText(g, 'THE MOONSEA', 770, 872, { color: '#1f3358', halo: 'rgba(220,226,222,0.6)', width: 5 });
+  haloText(g, 'THE MOONSEA', 770, 872, { color: '#14264a', halo: 'rgba(236,238,228,0.92)', width: 7 });
   g.letterSpacing = '5px';
   g.font = `italic 15px ${SERIF}`;
   // the island's name in open water off its eastern shore, following the swell
   g.translate(520, 904);
   g.rotate(-0.06);
   g.font = `italic bold 17px ${SERIF}`;
-  haloText(g, 'THORN ISLAND', 0, 0, { color: '#1e2a12', halo: 'rgba(226,230,224,0.9)', width: 5 });
+  haloText(g, 'THORN ISLAND', 0, 0, { color: '#14200c', halo: 'rgba(240,240,230,0.95)', width: 7 });
   g.restore();
   drawShip(g, 690, 952, 100);
   drawSerpent(g, 860, 975, 92);
@@ -976,8 +1030,8 @@ function drawRibbon(g, cx, cy, text, { known, here }) {
   g.save();
   const label = text.toUpperCase();
   g.font = `bold 15px ${SERIF}`;
-  g.letterSpacing = label.length > 16 ? '1px' : '2px';
-  const w = Math.min(g.measureText(label).width + 24, 220);
+  g.letterSpacing = '1.6px';
+  const w = Math.min(g.measureText(label).width + 24, 290);
   const hh = 23;
   g.globalAlpha = known ? 1 : 0.88;
   g.fillStyle = 'rgba(60,35,10,0.2)';
@@ -1421,16 +1475,17 @@ function drawUnknownBlock(g, b, m, { k }) {
     const rx = 56;
     const ry = 47;
     g.save();
+    const fk = frameKind(b.id);
     g.fillStyle = 'rgba(70,40,16,0.14)';
-    g.beginPath(); g.ellipse(ox + 2, oy + 2.5, rx, ry, 0, 0, Math.PI * 2); g.fill();
+    vigFrame(g, ox + 2, oy + 2.5, rx, ry, fk); g.fill();
     g.fillStyle = 'rgba(245,236,212,0.97)';
-    g.beginPath(); g.ellipse(ox, oy, rx, ry, 0, 0, Math.PI * 2); g.fill();
+    vigFrame(g, ox, oy, rx, ry, fk); g.fill();
     g.strokeStyle = INK.ink;
     g.lineWidth = 1.1;
     g.stroke();
     g.lineWidth = 0.45;
-    g.beginPath(); g.ellipse(ox, oy, rx - 3, ry - 3, 0, 0, Math.PI * 2); g.stroke();
-    g.beginPath(); g.ellipse(ox, oy, rx - 4, ry - 4, 0, 0, Math.PI * 2); g.clip();
+    vigFrame(g, ox, oy, rx - 3, ry - 3, fk); g.stroke();
+    vigFrame(g, ox, oy, rx - 4, ry - 4, fk); g.clip();
     g.translate(b.cx, b.cy - 10);
     // a sky of fine horizontal cuts behind the subject, fading upward
     for (let yy = -40; yy < 20; yy += 1.8) {
@@ -1858,6 +1913,44 @@ const EMBLEMS = {
  * inside it either the surveyed plan in sepia ink, or, while unexplored, an
  * engraved vignette of what is rumoured to lie below, with its motto.
  */
+/**
+ * The vignette's plate: an oval, a shield-topped arch, a canted-corner tablet or a
+ * scalloped roundel, chosen per place, so the engraved views do not read as one
+ * pasted icon repeated (the path is begun here; the caller fills, strokes or clips).
+ */
+function vigFrame(g, x, y, rx, ry, kind) {
+  g.beginPath();
+  if (kind === 1) {
+    // round-arched tablet with a flat foot
+    g.moveTo(x - rx, y + ry * 0.9);
+    g.lineTo(x - rx, y - ry * 0.15);
+    g.ellipse(x, y - ry * 0.15, rx, ry * 0.85, 0, Math.PI, Math.PI * 2);
+    g.lineTo(x + rx, y + ry * 0.9);
+    g.quadraticCurveTo(x, y + ry * 1.08, x - rx, y + ry * 0.9);
+    g.closePath();
+  } else if (kind === 2) {
+    // canted-corner tablet
+    const c = Math.min(rx, ry) * 0.32;
+    g.moveTo(x - rx + c, y - ry); g.lineTo(x + rx - c, y - ry); g.lineTo(x + rx, y - ry + c);
+    g.lineTo(x + rx, y + ry - c); g.lineTo(x + rx - c, y + ry); g.lineTo(x - rx + c, y + ry);
+    g.lineTo(x - rx, y + ry - c); g.lineTo(x - rx, y - ry + c); g.closePath();
+  } else if (kind === 3) {
+    // scalloped roundel
+    const n = 22;
+    for (let i = 0; i <= n * 4; i++) {
+      const a = (i / (n * 4)) * Math.PI * 2;
+      const q = 1 + 0.035 * Math.abs(Math.sin(a * n / 2));
+      const px = x + Math.cos(a) * rx * q;
+      const py = y + Math.sin(a) * ry * q;
+      if (i === 0) g.moveTo(px, py); else g.lineTo(px, py);
+    }
+    g.closePath();
+  } else {
+    g.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+  }
+}
+const frameKind = (id) => [...id].reduce((a, c) => (a * 31 + c.charCodeAt(0)) & 0xffff, 7) % 4;
+
 function drawMedallion(g, b, m, { seen, secrets, known }) {
   const { cx, cy, r } = b;
   const info = analyseMap(m);
@@ -1869,16 +1962,17 @@ function drawMedallion(g, b, m, { seen, secrets, known }) {
     const rx = r * 0.98;
     const ry = r * 0.84;
     g.save();
+    const fk = frameKind(b.id);
     g.fillStyle = 'rgba(70,40,16,0.14)';
-    g.beginPath(); g.ellipse(cx + 2, cy + 2.5, rx, ry, 0, 0, Math.PI * 2); g.fill();
+    vigFrame(g, cx + 2, cy + 2.5, rx, ry, fk); g.fill();
     g.fillStyle = 'rgba(245,236,212,0.97)';
-    g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); g.fill();
+    vigFrame(g, cx, cy, rx, ry, fk); g.fill();
     g.strokeStyle = INK.ink;
     g.lineWidth = 1.1;
     g.stroke();
     g.lineWidth = 0.45;
-    g.beginPath(); g.ellipse(cx, cy, rx - 3, ry - 3, 0, 0, Math.PI * 2); g.stroke();
-    g.beginPath(); g.ellipse(cx, cy, rx - 4, ry - 4, 0, 0, Math.PI * 2); g.clip();
+    vigFrame(g, cx, cy, rx - 3, ry - 3, fk); g.stroke();
+    vigFrame(g, cx, cy, rx - 4, ry - 4, fk); g.clip();
     for (let yy = -ry; yy < ry * 0.3; yy += 1.8) {
       g.strokeStyle = `rgba(43,26,13,${(0.04 + Math.max(0, (yy + ry) / (ry * 1.3)) * 0.12).toFixed(3)})`;
       g.lineWidth = 0.35;
