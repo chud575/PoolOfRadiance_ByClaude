@@ -59,7 +59,7 @@
    point, crest at the head, so the menu sits on the skin instead of a void */
 .por-mm-banner {
   --pt: 3.2em;
-  position: absolute; left: 5.2vw; top: 5.4vh; bottom: 22vh; width: 30em; pointer-events: none !important;
+  position: absolute; left: 5.2vw; top: 5.4vh; bottom: 25vh; width: 30em; pointer-events: none !important;
   background: linear-gradient(90deg, #5e4418, #e6c477 12%, #fff1c0 22%, #a07a30 40%, #f0cf7c 60%, #7a5a22 82%, #d6b05a 92%, #4a3410);
   clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--pt)), 50% 100%, 0 calc(100% - var(--pt)));
   filter: drop-shadow(0 18px 40px rgba(0, 0, 0, 0.7));
@@ -115,7 +115,7 @@ html[data-classic='1'] .por-mm-rod, html[data-classic='1'] .por-mm-cords { displ
 .por-mm-banner-line .tool-gilt { stroke: rgba(216, 178, 90, 0.55); }
 /* a gilt cord and tassel hanging from the swallowtail point */
 .por-mm-tassel {
-  position: absolute; left: calc(5.2vw + 15em); bottom: calc(22vh - 6.2em); width: 1.5em; height: 6.4em; margin-left: -0.75em; pointer-events: none !important;
+  position: absolute; left: calc(5.2vw + 15em); bottom: calc(25vh - 6.2em); width: 1.5em; height: 6.4em; margin-left: -0.75em; pointer-events: none !important;
   opacity: 0; transition: opacity 0.55s var(--ease) 0.2s; filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.7));
 }
 .por-title[data-mode='menu'] .por-mm-tassel { opacity: 1; }

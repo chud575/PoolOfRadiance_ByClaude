@@ -133,6 +133,31 @@ export function createTerrace({ seed = 7 } = {}) {
         roughnessFactor = clamp(roughnessFactor - 0.08 * (1.0 - smoothstep(4.5, 7.5, length(vWP.xz))), 0.45, 1.0);
         roughnessFactor = mix(roughnessFactor, 0.2, pvWet * (1.0 - pvJoint) * (1.0 - pvGap));
         roughnessFactor = mix(roughnessFactor, 1.0, max(pvGap, pvJoint * 0.7));`)
+      .replace('#include <opaque_fragment>', `
+        {
+          // standing rainwater in the hollows of the pavement: a few shallow
+          // puddles that mirror the sunset sky (warm at the horizon, violet
+          // overhead) and the Pool's cyan glow, with a Fresnel ramp so they
+          // only flash at grazing angles and a soft wet rim round each one
+          vec2 w = vWP.xz;
+          float rr = length(w);
+          float pn = fbm(w * 0.6 + vec2(5.3, 1.7)) + 0.1 * vnoise(w * 3.1);
+          float zone = smoothstep(5.6, 7.2, rr) * (1.0 - smoothstep(11.0, 14.0, rr)) * smoothstep(-5.0, -2.0, w.y) * (1.0 - smoothstep(2.5, 5.5, w.y - 6.0));
+          float pud = smoothstep(0.69, 0.71, pn) * zone * (1.0 - pvGap) * (1.0 - uClassic);
+          float rim = smoothstep(0.65, 0.69, pn) * zone * (1.0 - pud) * (1.0 - uClassic);
+          if (pud + rim > 0.001) {
+            vec3 V = normalize(vWP - cameraPosition);
+            vec3 Rv = reflect(V, normalize(vec3(0.015 * (vnoise(w * 9.0) - 0.5), 1.0, 0.015 * (vnoise(w * 9.0 + 3.0) - 0.5))));
+            float el = clamp(Rv.y, 0.0, 1.0);
+            float toSun = pow(max(dot(normalize(Rv.xz), normalize(vec2(-0.45, -1.0))), 0.0), 3.0);
+            vec3 sky = mix(vec3(1.05, 0.5, 0.26) * (0.45 + 0.7 * toSun), vec3(0.09, 0.07, 0.17), smoothstep(0.01, 0.2, el));
+            sky += vec3(0.12, 0.55, 0.75) * 0.9 * exp(-max(rr - 3.0, 0.0) * 0.35);
+            float fres = 0.1 + 0.9 * pow(1.0 - clamp(-V.y, 0.0, 1.0), 4.0);
+            outgoingLight = mix(outgoingLight, outgoingLight * 0.18 + sky * fres, pud * 0.95);
+            outgoingLight *= 1.0 - rim * 0.3;
+          }
+        }
+        #include <opaque_fragment>`)
       .replace('#include <dithering_fragment>', `#include <dithering_fragment>
         if (uClassic > 0.5) {
           // 1988: the card's paving is two flat greys, unlit — no cyan pool cast or
