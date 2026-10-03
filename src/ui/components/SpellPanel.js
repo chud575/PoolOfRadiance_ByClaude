@@ -296,75 +296,8 @@ export class SpellPanel {
   /** The caster's book or prayer roll: a small illuminated grimoire with what they know. */
   _grimoire(ch, classes) {
     if (!classes.length) return null;
-    const c = document.createElement('canvas');
-    c.width = 220;
-    c.height = 120;
-    const g = c.getContext('2d');
     const arcane = classes.includes('magicUser');
-    // Open book: two pages with ruled text, an illuminated initial, a ribbon.
-    g.fillStyle = 'rgba(0,0,0,0.5)';
-    g.beginPath(); g.ellipse(110, 108, 100, 9, 0, 0, Math.PI * 2); g.fill();
-    g.fillStyle = arcane ? '#3a1414' : '#2a2416';
-    g.beginPath(); g.moveTo(8, 18); g.quadraticCurveTo(110, 4, 212, 18); g.lineTo(212, 104); g.quadraticCurveTo(110, 92, 8, 104); g.closePath(); g.fill();
-    for (const side of [-1, 1]) {
-      const pg = g.createLinearGradient(110, 0, 110 + side * 98, 0);
-      pg.addColorStop(0, '#b8a37a'); pg.addColorStop(0.12, '#ecdcb6'); pg.addColorStop(1, '#d6c293');
-      g.fillStyle = pg;
-      g.beginPath();
-      g.moveTo(110, 14); g.quadraticCurveTo(110 + side * 50, 6, 110 + side * 96, 14);
-      g.lineTo(110 + side * 96, 98); g.quadraticCurveTo(110 + side * 50, 90, 110, 98); g.closePath(); g.fill();
-      g.strokeStyle = 'rgba(70,40,20,0.35)';
-      g.lineWidth = 1;
-      for (let y = 26; y < 92; y += 6) {
-        g.beginPath();
-        const x0 = 110 + side * (y < 46 && side < 0 ? 36 : 12);
-        g.moveTo(x0, y + (side < 0 ? 0 : 0));
-        g.lineTo(110 + side * (88 - ((y * 7) % 13)), y);
-        g.stroke();
-      }
-    }
-    // Illuminated initial and a little diagram.
-    g.fillStyle = arcane ? '#2a4a9a' : '#9a2a1a';
-    g.fillRect(28, 22, 22, 22);
-    g.strokeStyle = '#d8b25a';
-    g.lineWidth = 1.5;
-    g.strokeRect(28, 22, 22, 22);
-    g.fillStyle = '#f0d27a';
-    g.font = 'bold 18px serif';
-    g.fillText(arcane ? 'M' : 'P', 32, 40);
-    if (arcane) {
-      // A warding circle with runes (the magic-user's diagram).
-      g.strokeStyle = 'rgba(40,60,140,0.7)';
-      g.beginPath(); g.arc(160, 52, 18, 0, Math.PI * 2); g.stroke();
-      g.beginPath(); g.arc(160, 52, 13, 0, Math.PI * 2); g.stroke();
-      for (let k = 0; k < 8; k++) {
-        const a = (k / 8) * Math.PI * 2;
-        g.beginPath(); g.moveTo(160 + Math.cos(a) * 13, 52 + Math.sin(a) * 13); g.lineTo(160 + Math.cos(a) * 18, 52 + Math.sin(a) * 18); g.stroke();
-      }
-      g.beginPath(); g.moveTo(160, 41); g.lineTo(169, 58); g.lineTo(151, 58); g.closePath(); g.stroke();
-    } else {
-      // Holy symbol: the balanced scales of Tyr, set on a sunburst, in gilt and red.
-      g.save();
-      g.translate(160, 54);
-      g.strokeStyle = 'rgba(176,128,40,0.55)';
-      g.lineWidth = 1;
-      for (let k = 0; k < 16; k++) { const a = (k / 16) * Math.PI * 2; g.beginPath(); g.moveTo(Math.cos(a) * 14, Math.sin(a) * 14); g.lineTo(Math.cos(a) * (k % 2 ? 18 : 22), Math.sin(a) * (k % 2 ? 18 : 22)); g.stroke(); }
-      g.strokeStyle = '#7a1a10';
-      g.fillStyle = '#7a1a10';
-      g.lineWidth = 2;
-      g.beginPath(); g.moveTo(0, -16); g.lineTo(0, 14); g.stroke();
-      g.beginPath(); g.moveTo(-8, 15); g.lineTo(8, 15); g.stroke();
-      g.beginPath(); g.moveTo(-15, -10); g.lineTo(15, -10); g.stroke();
-      g.beginPath(); g.arc(0, -17, 2.4, 0, Math.PI * 2); g.fill();
-      g.lineWidth = 1;
-      for (const sx of [-13, 13]) {
-        g.beginPath(); g.moveTo(sx, -10); g.lineTo(sx - 5, 2); g.moveTo(sx, -10); g.lineTo(sx + 5, 2); g.stroke();
-        g.beginPath(); g.moveTo(sx - 6, 2); g.quadraticCurveTo(sx, 8, sx + 6, 2); g.closePath(); g.fill();
-      }
-      g.restore();
-    }
-    g.fillStyle = '#8a1a1a';
-    g.fillRect(118, 92, 6, 22);
+    const c = grimoireCanvas(arcane, ch.name ?? '');
     const known = classes.map((cl) => knownSpells(ch, cl).length).reduce((a, b) => a + b, 0);
     const int = intelligenceTable(ch.abilities?.int ?? 10);
     return h('div.pc-grimoire', [
@@ -561,4 +494,144 @@ export class SpellPanel {
 /** Class line for a caster list ("Cleric 1"). */
 export function casterLine(ch) {
   return `${classSpecName(ch.classSpec)} ${deriveStats(ch).levels}`;
+}
+
+const grimoires = new Map();
+/**
+ * The caster's open book, painted: a tooled leather binding (oxblood for a mage's spell book,
+ * umber for a priest's prayer book) with gilt corner pieces; a thick block of vellum pages that
+ * curve into the gutter, darker there and toward the fore-edge; hand-ruled lines of uneven script;
+ * an illuminated initial; the mage's warding diagram or the scales of Tyr in red and gold; a silk
+ * ribbon; brushed light from the upper left and a grain over everything. 440×240, cached.
+ */
+function grimoireCanvas(arcane, seedName) {
+  const key = arcane ? 'm' : 'p';
+  if (grimoires.has(key)) return grimoires.get(key);
+  const W = 440, H = 240;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  let seed = arcane ? 17 : 29;
+  const R = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const cx = 220;
+  // shadow on the table
+  const sh = g.createRadialGradient(cx, 214, 20, cx, 214, 210);
+  sh.addColorStop(0, 'rgba(0,0,0,0.6)'); sh.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = sh;
+  g.beginPath(); g.ellipse(cx, 214, 210, 22, 0, 0, Math.PI * 2); g.fill();
+  // the binding
+  const cover = arcane ? ['#5a1a16', '#2a0a08'] : ['#4a3418', '#21160a'];
+  const cg = g.createLinearGradient(0, 30, 0, 220);
+  cg.addColorStop(0, cover[0]); cg.addColorStop(1, cover[1]);
+  g.fillStyle = cg;
+  g.beginPath(); g.moveTo(12, 40); g.quadraticCurveTo(cx, 10, W - 12, 40); g.lineTo(W - 12, 212); g.quadraticCurveTo(cx, 190, 12, 212); g.closePath(); g.fill();
+  // gilt tooling along the binding's edge and corner pieces
+  g.strokeStyle = 'rgba(216,178,90,0.55)'; g.lineWidth = 1.4;
+  g.beginPath(); g.moveTo(20, 46); g.quadraticCurveTo(cx, 18, W - 20, 46); g.stroke();
+  g.beginPath(); g.moveTo(20, 206); g.quadraticCurveTo(cx, 185, W - 20, 206); g.stroke();
+  for (const [x, y, sx] of [[14, 40, 1], [W - 14, 40, -1], [14, 212, 1], [W - 14, 212, -1]]) {
+    const gg = g.createLinearGradient(x, y - 10, x + sx * 22, y + 10);
+    gg.addColorStop(0, '#f8e2a0'); gg.addColorStop(0.5, '#a8782a'); gg.addColorStop(1, '#5a3a10');
+    g.fillStyle = gg;
+    g.beginPath(); g.moveTo(x, y - (y < 100 ? 0 : 0)); g.lineTo(x + sx * 24, y + (y < 100 ? -2 : 2)); g.lineTo(x, y + (y < 100 ? 22 : -22)); g.closePath(); g.fill();
+  }
+  // page block: stacked page edges, then the two curved leaves
+  for (const side of [-1, 1]) {
+    for (let k = 4; k >= 0; k--) {
+      g.fillStyle = k % 2 ? '#bfa778' : '#d8c497';
+      g.beginPath();
+      g.moveTo(cx, 30 + k); g.quadraticCurveTo(cx + side * 100, 16 + k, cx + side * 196 + side * k * 0.5, 30 + k);
+      g.lineTo(cx + side * 196 + side * k * 0.5, 200 + k * 1.2); g.quadraticCurveTo(cx + side * 100, 186 + k, cx, 200 + k);
+      g.closePath(); g.fill();
+    }
+    const pg = g.createLinearGradient(cx, 0, cx + side * 192, 0);
+    pg.addColorStop(0, '#8a7448'); pg.addColorStop(0.07, '#cdb78a'); pg.addColorStop(0.2, '#efe2c0'); pg.addColorStop(0.75, '#e6d5ae'); pg.addColorStop(1, '#c7b082');
+    g.fillStyle = pg;
+    g.beginPath();
+    g.moveTo(cx, 26); g.quadraticCurveTo(cx + side * 98, 12, cx + side * 192, 26);
+    g.lineTo(cx + side * 192, 194); g.quadraticCurveTo(cx + side * 98, 180, cx, 194); g.closePath(); g.fill();
+    // light from the upper left: the left leaf a touch brighter, the right cooler toward its edge
+    if (side > 0) { g.fillStyle = 'rgba(40,40,70,0.08)'; g.fill(); }
+    // script: ruled lines of uneven words, an indent under the initial, a rubric line in red
+    for (let line = 0, y = 48; y < 180; y += 10, line++) {
+      let x = cx + side * (side < 0 && y < 92 ? 70 : 20);
+      const end = cx + side * (178 - (R() * 26));
+      const curve = (xx) => y - 7 * Math.sin(Math.PI * Math.abs(xx - cx) / 192) * (1 - Math.abs(y - 110) / 140);
+      while ((side > 0 ? x < end : x > end)) {
+        const wlen = 6 + R() * 18;
+        const x2 = x + side * wlen;
+        g.strokeStyle = line === 6 && side > 0 ? 'rgba(140,30,20,0.75)' : `rgba(52,34,18,${0.55 + R() * 0.25})`;
+        g.lineWidth = 1.5 + R() * 0.6;
+        g.beginPath();
+        g.moveTo(x, curve(x));
+        for (let t = 1; t <= 4; t++) { const xx = x + (x2 - x) * t / 4; g.lineTo(xx, curve(xx) + (R() - 0.5) * 1.4); }
+        g.stroke();
+        x = x2 + side * (3 + R() * 3);
+      }
+    }
+  }
+  // illuminated initial on the left leaf
+  const ix = 62, iy = 48;
+  const ig = g.createLinearGradient(ix, iy, ix + 46, iy + 46);
+  ig.addColorStop(0, arcane ? '#4a6ac8' : '#c8402a'); ig.addColorStop(1, arcane ? '#1a2a6a' : '#5a1408');
+  g.fillStyle = ig; g.fillRect(ix, iy, 46, 46);
+  g.strokeStyle = '#e8c46a'; g.lineWidth = 2.2; g.strokeRect(ix + 1, iy + 1, 44, 44);
+  g.fillStyle = '#f6dc8a'; g.font = 'bold 34px serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(arcane ? 'M' : 'P', ix + 23, iy + 25);
+  g.strokeStyle = 'rgba(232,196,106,0.7)'; g.lineWidth = 1;
+  for (let k = 0; k < 5; k++) { g.beginPath(); g.arc(ix + 46 + 6 + k * 5, iy + 6 + k * 8, 2, 0, Math.PI * 2); g.stroke(); }
+  // the right leaf's emblem
+  g.save();
+  g.translate(cx + 98, 98);
+  if (arcane) {
+    g.strokeStyle = 'rgba(30,50,130,0.8)'; g.lineWidth = 1.8;
+    g.beginPath(); g.arc(0, 0, 34, 0, Math.PI * 2); g.stroke();
+    g.beginPath(); g.arc(0, 0, 25, 0, Math.PI * 2); g.stroke();
+    for (let k = 0; k < 12; k++) { const a = (k / 12) * Math.PI * 2; g.beginPath(); g.moveTo(Math.cos(a) * 25, Math.sin(a) * 25); g.lineTo(Math.cos(a) * 34, Math.sin(a) * 34); g.stroke(); }
+    g.beginPath(); for (let k = 0; k < 5; k++) { const a = -Math.PI / 2 + (k * 4 * Math.PI) / 5; g[k ? 'lineTo' : 'moveTo'](Math.cos(a) * 24, Math.sin(a) * 24); } g.closePath(); g.stroke();
+    g.fillStyle = 'rgba(160,30,20,0.85)'; g.beginPath(); g.arc(0, 0, 4, 0, Math.PI * 2); g.fill();
+  } else {
+    // the scales of Tyr on a gilt sunburst
+    for (let k = 0; k < 24; k++) {
+      const a = (k / 24) * Math.PI * 2;
+      g.strokeStyle = `rgba(190,140,50,${k % 2 ? 0.45 : 0.7})`; g.lineWidth = k % 2 ? 1.2 : 2;
+      g.beginPath(); g.moveTo(Math.cos(a) * 24, Math.sin(a) * 24); g.lineTo(Math.cos(a) * (k % 2 ? 34 : 42), Math.sin(a) * (k % 2 ? 34 : 42)); g.stroke();
+    }
+    g.strokeStyle = '#7a1a10'; g.fillStyle = '#7a1a10'; g.lineWidth = 3.2;
+    g.beginPath(); g.moveTo(0, -30); g.lineTo(0, 26); g.stroke();
+    g.beginPath(); g.moveTo(-15, 28); g.lineTo(15, 28); g.stroke();
+    g.beginPath(); g.moveTo(-28, -18); g.lineTo(28, -18); g.stroke();
+    g.beginPath(); g.arc(0, -32, 4.4, 0, Math.PI * 2); g.fill();
+    g.lineWidth = 1.5;
+    for (const sx of [-24, 24]) {
+      g.beginPath(); g.moveTo(sx, -18); g.lineTo(sx - 9, 4); g.moveTo(sx, -18); g.lineTo(sx + 9, 4); g.stroke();
+      g.beginPath(); g.moveTo(sx - 11, 4); g.quadraticCurveTo(sx, 15, sx + 11, 4); g.closePath(); g.fill();
+    }
+  }
+  g.restore();
+  // the gutter's deep shadow, and the silk ribbon
+  const gut = g.createLinearGradient(cx - 22, 0, cx + 22, 0);
+  gut.addColorStop(0, 'rgba(40,24,8,0)'); gut.addColorStop(0.5, 'rgba(40,24,8,0.45)'); gut.addColorStop(1, 'rgba(40,24,8,0)');
+  g.fillStyle = gut; g.fillRect(cx - 22, 20, 44, 180);
+  const rb = g.createLinearGradient(cx + 6, 0, cx + 18, 0);
+  rb.addColorStop(0, '#5a0a0a'); rb.addColorStop(0.5, '#b02a20'); rb.addColorStop(1, '#4a0808');
+  g.fillStyle = rb;
+  g.beginPath(); g.moveTo(cx + 6, 186); g.lineTo(cx + 18, 186); g.lineTo(cx + 22, 232); g.lineTo(cx + 15, 224); g.lineTo(cx + 9, 233); g.closePath(); g.fill();
+  // vellum grain and a soft vignette of handling
+  const img = g.getImageData(0, 0, W, H);
+  const d = img.data;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 4;
+      if (d[i + 3] < 8) continue;
+      const hh = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+      const n = (hh - Math.floor(hh) - 0.5) * 10;
+      const blot = Math.sin(x * 0.045 + Math.sin(y * 0.06) * 2) * Math.sin(y * 0.05 + 1.3) * 6;
+      d[i] = Math.max(0, Math.min(255, d[i] + n + blot)); d[i + 1] = Math.max(0, Math.min(255, d[i + 1] + n + blot * 0.9)); d[i + 2] = Math.max(0, Math.min(255, d[i + 2] + n * 0.8 + blot * 0.7));
+    }
+  }
+  g.putImageData(img, 0, 0);
+  void seedName;
+  grimoires.set(key, c);
+  return c;
 }

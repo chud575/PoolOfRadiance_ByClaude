@@ -538,14 +538,71 @@ const DRAW = {
     }
   },
   gauntlets(g) {
-    g.translate(32, 32);
+    // A steel gauntlet seen from the back: a flared cuff, overlapping plates over the back of the
+    // hand, four articulated fingers and a thumb, a leather glove showing at the palm edge.
+    g.translate(32, 33);
+    g.rotate(-0.18);
+    // leather glove beneath
     g.beginPath();
-    g.moveTo(-10, 24); g.lineTo(-12, 0); g.lineTo(-14, -14); g.lineTo(-6, -24); g.lineTo(10, -22); g.lineTo(14, -6); g.lineTo(10, 24);
-    g.closePath();
-    g.fillStyle = steel(g, -14, -24, 14, 24);
+    g.moveTo(-11, 10); g.quadraticCurveTo(-15, -2, -12, -12); g.lineTo(11, -12); g.quadraticCurveTo(14, 0, 10, 10); g.closePath();
+    g.fillStyle = leather(g, -12, -12, 12, 10);
     g.fill();
     outline(g);
+    // fingers: three lames each, tapering, slightly spread
+    for (let i = 0; i < 4; i++) {
+      const fx = -8.4 + i * 5.4, len = i === 0 ? 13 : i === 3 ? 12 : 15;
+      const tilt = (i - 1.5) * 0.08;
+      g.save();
+      g.translate(fx, -12);
+      g.rotate(tilt);
+      for (let k = 0; k < 3; k++) {
+        const y0 = -k * (len / 3), w = 4.6 - k * 0.5;
+        g.beginPath();
+        g.moveTo(-w / 2, y0); g.lineTo(-w / 2 + 0.3, y0 - len / 3 - 0.8); g.quadraticCurveTo(0, y0 - len / 3 - 2.2, w / 2 - 0.3, y0 - len / 3 - 0.8); g.lineTo(w / 2, y0); g.closePath();
+        g.fillStyle = steel(g, -w / 2, y0, w / 2, y0 - len / 3, 0.95 - k * 0.05);
+        g.fill();
+        outline(g, 0.9);
+      }
+      g.restore();
+    }
+    // thumb, angled off the side
+    g.save();
+    g.translate(-12, -4);
+    g.rotate(-0.85);
+    for (let k = 0; k < 2; k++) {
+      g.beginPath();
+      g.moveTo(-2.6, -k * 6); g.lineTo(-2.3, -k * 6 - 6.8); g.quadraticCurveTo(0, -k * 6 - 8.4, 2.3, -k * 6 - 6.8); g.lineTo(2.6, -k * 6); g.closePath();
+      g.fillStyle = steel(g, -2.6, 0, 2.6, -12, 0.9);
+      g.fill();
+      outline(g, 0.9);
+    }
+    g.restore();
+    // plates over the back of the hand
+    for (let k = 0; k < 3; k++) {
+      const y = -12 + k * 6.2;
+      g.beginPath();
+      g.moveTo(-12.5 + k * 0.4, y + 6.5); g.quadraticCurveTo(0, y + 3.2, 12 - k * 0.4, y + 6.5); g.lineTo(11.5, y); g.quadraticCurveTo(0, y - 3, -12, y); g.closePath();
+      g.fillStyle = steel(g, -12, y - 3, 12, y + 6, 1.02 - k * 0.04);
+      g.fill();
+      outline(g, 1);
+    }
+    // the flared cuff with a brass edge
+    g.beginPath();
+    g.moveTo(-12, 8.5); g.lineTo(-16, 26); g.quadraticCurveTo(0, 30, 16, 26); g.lineTo(12, 8.5); g.quadraticCurveTo(0, 6, -12, 8.5); g.closePath();
+    g.fillStyle = steel(g, -16, 8, 16, 28, 0.92);
+    g.fill();
+    outline(g);
+    g.beginPath();
+    g.moveTo(-16, 26); g.quadraticCurveTo(0, 30, 16, 26);
+    g.strokeStyle = gold(g, -16, 26, 16, 30);
+    g.lineWidth = 2.2;
+    g.stroke();
+    for (const rx of [-9, 0, 9]) {
+      g.beginPath(); g.arc(rx, 12.5 + Math.abs(rx) * 0.05, 1.1, 0, Math.PI * 2);
+      g.fillStyle = gold(g, rx - 1, 11, rx + 1, 14); g.fill();
+    }
   },
+
   amulet(g) {
     g.translate(32, 30);
     g.beginPath(); g.arc(0, -8, 16, Math.PI * 0.15, Math.PI * 0.85, true);
@@ -635,6 +692,18 @@ function finishIcon(c) {
     const sat = mx ? (mx - mn) / mx : 0;
     const shade = 0.78 + 0.42 * Math.max(-0.4, ndl - 0.52 * 0.0) ;
     r *= shade; gg *= shade; b *= shade;
+    // Painted light: the lit side warmer, the shadow side cooler (a painter's temperature shift)
+    const warmK = Math.max(-1, Math.min(1, (ndl - 0.45) * 2.2));
+    r *= 1 + 0.06 * warmK; b *= 1 - 0.07 * warmK;
+    // a cool reflected rim along the lower-right edges, catching the light of the panel
+    const rim = Math.max(0, -ndl - 0.05) * (1 - nz) * 3;
+    r += 22 * rim; gg += 30 * rim; b += 46 * rim;
+    // bristle strokes laid diagonally across the object (value breaks, not a flat fill)
+    const along = (x + y) * 0.7071, across = (x - y) * 0.7071;
+    const hb = Math.sin(Math.floor(across / 2.2) * 91.7 + Math.floor(along / 9) * 13.1) * 43758.5453;
+    const stroke = ((hb - Math.floor(hb)) - 0.5) * 16 * a;
+    const hb2 = Math.sin(across * 1.9 + Math.sin(along * 0.21) * 2.0) * 3.0;
+    r += stroke + hb2; gg += stroke * 0.95 + hb2; b += stroke * 0.85 + hb2 * 0.9;
     // Specular glint on metal-like pixels along the lit bevel.
     const metal = Math.max(0, 1 - sat * 2.2) * Math.min(1, lum * 1.6);
     const spec = Math.pow(Math.max(0, ndl), 6) * 120 * metal * (1 - nz) * 2.2;
@@ -679,8 +748,8 @@ export function itemIconURL(icon, o = {}) {
   g.save();
   if (o.ghost) {
     // Empty-slot ghost: a faint gilt engraving rather than a grey smudge.
-    g.globalAlpha = 0.3;
-    g.filter = 'grayscale(1) sepia(1) saturate(1.6) brightness(1.7)';
+    g.globalAlpha = 0.46;
+    g.filter = 'grayscale(1) sepia(1) saturate(1.8) brightness(1.9)';
   } else {
     g.shadowColor = 'rgba(0,0,0,0.7)';
     g.shadowBlur = 4 * R;

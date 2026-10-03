@@ -27,6 +27,9 @@ import { itemIconURL, iconFor } from '../../ui/components/itemIcons.js';
 import { createFlame } from '../../render/lighting.js';
 import { CREATE_TEXT, NAMES, kitFor } from './createData.js';
 
+/** Names of the eye colours (lookData EYE_COLORS, in order). */
+const EYE_NAMES = ['Blue', 'Green', 'Brown', 'Hazel', 'Grey', 'Sky', 'Amber'];
+
 /** Ammunition rides in the pack until a launcher is readied (no '⚠ arrows but no bow' on a fresh sheet). */
 function settleKit(ch) {
   const launcher = ch.inventory.some((e) => e.equipped && ITEMS[e.id]?.ammo);
@@ -312,9 +315,13 @@ export default class CreateScene extends Scene {
   }
 
   _updateFigure() {
-    const d = this.step === 'party' ? this.newParty[this.hubSel] : this.draft;
-    if (!d) return;
-    const key = JSON.stringify([d.race, d.gender, d.classSpec, d.look]);
+    const d0 = this.step === 'party' ? this.newParty[this.hubSel] : this.draft;
+    if (!d0) return;
+    // The miniature wears what the character has actually readied (the starting kit for a draft),
+    // never the class's generic look: no shield on a figure whose kit has none.
+    const inv = Array.isArray(d0.inventory) ? d0.inventory : (this._preview()?.inventory ?? kitFor(d0.classSpec).filter((id) => ITEMS[id] && ITEMS[id].type !== 'ammo').map((id) => ({ id, equipped: true })));
+    const d = { ...d0, inventory: inv };
+    const key = JSON.stringify([d.race, d.gender, d.classSpec, d.look, inv.filter((e) => e.equipped).map((e) => e.id)]);
     if (key === this._figKey) return;
     this._figKey = key;
     const build = () => {
@@ -730,18 +737,26 @@ export default class CreateScene extends Scene {
     const thumbs = (list, key, mk, cls = '', crop = 'head') => h(`div.cc-thumbs${cls}`, list.map((it, i) => h(`button.cc-thumb${look[key] === i ? '.sel' : ''}`, { onclick: () => { d.look = { ...look, [key]: i }; this.show('portrait'); }, dataset: { tip: it.name } }, [
       h('div.im', [portraitImg(mk(i), crop === 'head' ? 0.46 : 0.34, { crop })]), h('span', [it.name]),
     ])));
-    const sw = (colors, key) => h('div.cc-sw', colors.map((c, i) => h(`button${look[key] === i ? '.sel' : ''}`, { style: { background: c }, onclick: () => { d.look = { ...look, [key]: i }; this.show('portrait'); } })));
-    const skins = (RACE_SKINS[d.race] ?? RACE_SKINS.human).map((k) => SKIN_TONES[k]);
+    // Each swatch is named (in its tooltip and beside the row for the chosen one): 'Auburn', 'Hazel'.
+    const sw = (colors, key, names) => h('div.cc-sw', colors.map((c, i) => h(`button${look[key] === i ? '.sel' : ''}`, { style: { background: c }, 'aria-label': names[i], dataset: { tip: names[i] }, onclick: () => { d.look = { ...look, [key]: i }; this.show('portrait'); } })));
+    const skinIds = RACE_SKINS[d.race] ?? RACE_SKINS.human;
+    const skins = skinIds.map((k) => SKIN_TONES[k]);
+    const cap = (w) => w[0].toUpperCase() + w.slice(1);
+    const skinNames = skinIds.map(cap);
+    const hairNames = HAIR_COLORS.map((x) => x[0]);
+    const eyeNames = EYE_NAMES;
+    const clothNames = CLOTH_COLORS.map((x) => x[0]);
+    const swRow = (label, colors, key, names) => h('div.cc-row', [h('span.k', [label]), sw(colors, key, names), h('span.cc-swname', [names[(look[key] ?? 0) % names.length]])]);
     b.append(h('div.cc-scroll.cc-likeness', [
       h('div.pc-sect-h.left', [h('span', ['Head'])]),
       thumbs(HEADS[d.gender], 'head', (i) => ({ ...d, look: { ...look, head: i } })),
       h('div.pc-sect-h.left', { style: { marginTop: '0.8em' } }, [h('span', ['Body'])]),
       thumbs(BODIES, 'body', (i) => ({ ...d, look: { ...look, body: i } }), '.body', 'torso'),
       h('div.pc-sect', { style: { marginTop: '0.8em' } }, [
-        h('div.cc-row', [h('span.k', ['Skin']), sw(skins, 'skin')]),
-        h('div.cc-row', [h('span.k', ['Hair']), sw(HAIR_COLORS.map((x) => x[1]), 'hair')]),
-        h('div.cc-row', [h('span.k', ['Eyes']), sw(EYE_COLORS, 'eyes')]),
-        h('div.cc-row', [h('span.k', ['Colours']), sw(CLOTH_COLORS.map((x) => x[1]), 'cloth')]),
+        swRow('Skin', skins, 'skin', skinNames),
+        swRow('Hair', HAIR_COLORS.map((x) => x[1]), 'hair', hairNames),
+        swRow('Eyes', EYE_COLORS, 'eyes', eyeNames),
+        swRow('Colours', CLOTH_COLORS.map((x) => x[1]), 'cloth', clothNames),
       ]),
       h('p.pc-rest-note', { style: { marginTop: '0.6em' } }, [this._kitNote(look)]),
     ]));

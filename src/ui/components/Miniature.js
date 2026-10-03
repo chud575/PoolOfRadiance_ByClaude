@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { resolveAppearance, appearanceKey, readiedGear } from './lookData.js';
 import { buildFigure } from './figureRig.js';
 import { meshSculpt } from './sdfSculpt.js';
@@ -38,7 +39,7 @@ const dataCache = new Map();
 function figureData(app, pose, cell, opt = {}) {
   // With a ray-marched head the body sculpt does not depend on the head template: the eight head
   // thumbnails (and every head change) share one body mesh.
-  const key = `${appearanceKeyOf(app, opt.noHead)}|${pose}|${cell}|${opt.blanket ?? ''}|${opt.noWeapon ? 1 : 0}|${opt.noHead ? 1 : 0}|${opt.mod ?? ''}|${opt.boundsKey ?? (opt.bounds ? opt.bounds.join(',') : '')}`;
+  const key = `${appearanceKeyOf(app, opt.noHead)}|${pose}|${cell}|${opt.blanket ?? ''}|${opt.noWeapon ? 1 : 0}|${opt.noHead ? 1 : 0}|${opt.mod ?? ''}|${opt.boundsKey ?? (opt.bounds ? opt.bounds.join(',') : '')}|${opt.crispHands ? 'h' : ''}`;
   const hit = dataCache.get(key);
   if (hit) {
     dataCache.delete(key);
@@ -118,23 +119,23 @@ void miniPattern(float pid, out float h, out float alb, out float rmod) {
   h = 0.0; alb = 1.0; rmod = 0.0;
   vec3 p = vObj;
   if (pid < 0.5) return;
-  if (pid < 1.5) { // mail rings: interlinked rings at true scale; far away an even, glinting grain
-    vec2 uv = triUV(p, vObjN) * 150.0;
-    uv.x += 0.5 * mod(floor(uv.y), 2.0);
+  if (pid < 1.5) { // mail: a tiled ring normal (rows offset) that resolves into soft low-frequency
+    // occlusion and wear with distance (no speckle, no glitter)
+    vec2 uv = triUV(p, vObjN) * 105.0;
+    float rowI = floor(uv.y);
+    uv.x += 0.5 * mod(rowI, 2.0);
     vec2 f = fract(uv) - 0.5;
-    float r = length(f * vec2(1.0, 1.25));
-    float ring = smoothstep(0.14, 0.24, r) * smoothstep(0.52, 0.36, r);
-    float fd = aaFade(150.0);
-    // Far LOD: no courses or bands (they read as quilting) — a dense isotropic grain of dark gaps
-    // and bright ring tops, with rust/oil patches and a broken, sparkling roughness.
-    float wear = vn3(p * 22.0);
-    float grain = vn3(p * 420.0);
-    float spark = vn3(p * 310.0);
-    float farAlb = (0.5 + 0.38 * wear) * (0.82 + 0.36 * grain) * (0.9 + 0.2 * spark);
-    h = ring * 0.0009 * fd + (grain - 0.5) * 0.00025 * (1.0 - fd);
-    alb = mix(farAlb, mix(0.45, 1.18, ring), fd);
-    rmod = mix(0.12 + (spark - 0.5) * 0.45 + (0.5 - wear) * 0.2, (1.0 - ring) * 0.25, fd);
-  } else if (pid < 2.5) { // scales
+    float r = length(f * vec2(1.0, 1.2));
+    float ring = smoothstep(0.13, 0.23, r) * smoothstep(0.52, 0.37, r);
+    // each ring tilts down over the next row: the upper half catches more light
+    float tiltH = ring * (0.6 + 0.4 * (-f.y));
+    float fd = aaFade(105.0);
+    float wear = vn3(p * 16.0);
+    float oil = vn3(p * 5.0 + 3.0);
+    float lowAO = 0.72 + 0.28 * wear;
+    h = tiltH * 0.0009 * fd;
+    alb = mix(0.82, mix(0.42, 1.15, tiltH), fd) * lowAO * (0.92 + 0.12 * oil);
+    rmod = 0.06 + (0.5 - wear) * 0.12 + (1.0 - ring) * 0.15 * fd;  } else if (pid < 2.5) { // scales
     vec2 uv = triUV(p, vObjN) * vec2(55.0, 70.0);
     uv.x += 0.5 * mod(floor(uv.y), 2.0);
     vec2 f = fract(uv) - vec2(0.5, 0.0);
@@ -355,9 +356,53 @@ function shieldMesh(kind, clothHex, mats, scale = 1) {
   return g;
 }
 
+let handGeo = null;
+/** A gripping hand in the fist frame (x knuckles, y grip axis, z forward), metres at size 1. */
+function handGeometry() {
+  if (handGeo) return handGeo;
+  const parts = [];
+  const seg = (a, b, r1, r2) => {
+    const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b);
+    const len = A.distanceTo(B);
+    const g = new THREE.CylinderGeometry(r2, r1, len, 8, 1);
+    g.translate(0, len / 2, 0);
+    g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), B.clone().sub(A).normalize()));
+    g.translate(A.x, A.y, A.z);
+    parts.push(g);
+    const j = new THREE.SphereGeometry(r2 * 1.02, 8, 6);
+    j.translate(B.x, B.y, B.z);
+    parts.push(j);
+  };
+  // palm (the back of the hand rises toward the knuckles)
+  const palm = new THREE.SphereGeometry(1, 12, 10);
+  palm.scale(0.026, 0.041, 0.019);
+  palm.translate(-0.004, 0.001, -0.006);
+  parts.push(palm);
+  for (let i = 0; i < 4; i++) {
+    const yy = -0.027 + i * 0.0182;
+    const k = i === 0 ? 0.86 : i === 3 ? 0.94 : 1;
+    const r = 0.0082 * k;
+    const p0 = [0.016, yy, -0.008], p1 = [0.03 * k, yy * 1.02, 0.004], p2 = [0.027 * k, yy * 1.03, 0.018], p3 = [0.014, yy * 1.02, 0.023];
+    const kn = new THREE.SphereGeometry(r * 1.08, 8, 6);
+    kn.translate(...p0);
+    parts.push(kn);
+    seg(p0, p1, r, r * 0.95);
+    seg(p1, p2, r * 0.95, r * 0.86);
+    seg(p2, p3, r * 0.86, r * 0.78);
+  }
+  // the thumb wraps the grip from the other side
+  seg([-0.014, 0.026, -0.012], [0.002, 0.036, 0.008], 0.0105, 0.0092);
+  seg([0.002, 0.036, 0.008], [0.016, 0.031, 0.017], 0.0092, 0.008);
+  handGeo = mergeGeometries(parts.map((g) => (g.index ? g.toNonIndexed() : g)));
+  for (const g of parts) g.dispose();
+  handGeo.computeVertexNormals();
+  return handGeo;
+}
+
 function gearMats() {
   const M = (o) => new THREE.MeshStandardMaterial(o);
   return {
+    glove: M({ color: 0x3a2618, roughness: 0.7 }),
     steel: M({ color: 0xc4c8d0, metalness: 1, roughness: 0.26 }),
     darkSteel: M({ color: 0x70737a, metalness: 1, roughness: 0.4 }),
     gilt: M({ color: 0xd6aa52, metalness: 1, roughness: 0.3 }),
@@ -406,7 +451,8 @@ export function buildMiniature(ch, opt = {}) {
   const app = resolveAppearance(ch, { gear: opt.gear });
   const cell = typeof opt.quality === 'number' ? opt.quality : QUALITY[opt.quality ?? (pose === 'sit' || pose === 'sleep' || pose === 'guard' ? 'camp' : 'hero')];
   const rayHead = opt.rayHead === true;
-  const d = figureData(app, pose, cell, { blanket: opt.blanket, noWeapon: opt.noWeapon, noHead: rayHead, mod: opt.mod, bounds: opt.bounds, boundsFn: opt.boundsFn, boundsKey: opt.boundsKey });
+  const crisp = pose !== 'sleep' && opt.crispHands !== false;
+  const d = figureData(app, pose, cell, { blanket: opt.blanket, noWeapon: opt.noWeapon, noHead: rayHead, mod: opt.mod, bounds: opt.bounds, boundsFn: opt.boundsFn, boundsKey: opt.boundsKey, crispHands: crisp });
   const fr = d.frames;
   const root = new THREE.Group();
   const fig = new THREE.Group();
@@ -446,6 +492,24 @@ export function buildMiniature(ch, opt = {}) {
 
   // Weapon and shield.
   const gm = gearMats();
+  // Hands: crisp curled fingers and a thumb round the grip (a sculpted fist melts at miniature scale).
+  if (crisp && fr.hands?.L) {
+    const kind = fr.hands.kind;
+    const hm = kind === 'steel' ? gm.darkSteel : kind === 'glove' ? gm.glove : new THREE.MeshStandardMaterial({ color: new THREE.Color(app.skinHex).multiplyScalar(0.82), roughness: 0.62 });
+    if (kind === 'skin') gm.extra.push(hm);
+    for (const k of ['L', 'R']) {
+      const hd = fr.hands[k];
+      const mesh = new THREE.Mesh(handGeometry(), hm);
+      const R = hd.R;
+      mesh.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3(R[0], R[1], R[2]), new THREE.Vector3(R[3], R[4], R[5]), new THREE.Vector3(R[6], R[7], R[8])));
+      mesh.position.set(...hd.c);
+      mesh.scale.setScalar(hd.size);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.userData.sharedGeo = true;
+      fig.add(mesh);
+    }
+  }
   const wscale = Math.max(0.68, Math.min(1, fr.scale * 1.05));
   if (fr.weapon) {
     const w = weaponMesh(app.weapon, gm, wscale);

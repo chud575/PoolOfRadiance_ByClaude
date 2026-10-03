@@ -545,7 +545,7 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
       partyGroup.add(spot);
       if (!sleeping) {
         // A log to sit on (as high as the sitter's seat), the bedroll rolled up behind, a pack.
-        const m = buildMiniature(ch, { pose: 'sit', base: false, gear: true, rayHead: true, headGain: 0.6, mod: ['warm', 'talkL', 'listen', 'talkR', 'warm', 'listen'][(seat - 1) % 6] });
+        const m = buildMiniature(ch, { pose: 'sit', base: false, gear: true, rayHead: true, headGain: 0.6, mod: ['warm', 'talkL', 'slouch', 'talkR', 'lean', 'listen'][(seat - 1) % 6] });
         const fr = m.userData.frames;
         const seatTop = fr.joints.pelvis[1] - 0.085 * fr.scale;
         const lr = seatTop / 2;

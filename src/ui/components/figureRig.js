@@ -25,7 +25,7 @@ const RACE_BODY = {
   human: { H: 1.78, head: 0.232, leg: 0.5, torso: 0.29, sh: 0.18, hip: 0.09, girth: 1.0, arm: 0.335 },
   elf: { H: 1.68, head: 0.222, leg: 0.52, torso: 0.29, sh: 0.158, hip: 0.083, girth: 0.82, arm: 0.345 },
   halfElf: { H: 1.74, head: 0.228, leg: 0.51, torso: 0.29, sh: 0.17, hip: 0.087, girth: 0.92, arm: 0.34 },
-  dwarf: { H: 1.32, head: 0.238, leg: 0.37, torso: 0.335, sh: 0.215, hip: 0.112, girth: 1.42, arm: 0.37 },
+  dwarf: { H: 1.32, head: 0.238, leg: 0.37, torso: 0.335, sh: 0.225, hip: 0.104, girth: 1.26, arm: 0.37 },
   gnome: { H: 1.04, head: 0.218, leg: 0.39, torso: 0.31, sh: 0.142, hip: 0.086, girth: 1.02, arm: 0.34 },
   halfling: { H: 0.98, head: 0.208, leg: 0.41, torso: 0.3, sh: 0.135, hip: 0.086, girth: 0.98, arm: 0.34 },
 };
@@ -177,6 +177,10 @@ const POSE_MODS = {
   talkL: { head: [0, 0.75, 0.05], torso: [0, 0.2, 0], hands: { L: { from: 'chest', d: [0.18, -0.06, 0.26] } }, grip: { L: [0, 0.6, 1] } },
   talkR: { head: [0, -0.75, -0.05], torso: [0, -0.2, 0], hands: { R: { from: 'chest', d: [-0.18, -0.08, 0.24] } }, grip: { R: [0, 0.6, 1] } },
   listen: { head: [0.18, 0.45, 0.12], torso: [0.06, 0.1, 0], hands: { R: { from: 'kneeL', d: [-0.06, 0.07, -0.02] }, L: { from: 'kneeL', d: [0.04, 0.1, -0.06] } } },
+  // tired: hunched forward, forearms on the knees, hands hanging loose between them, head low
+  slouch: { torso: [0.34, 0.06, 0.04], head: [0.22, 0.15, -0.04], hands: { R: { from: 'kneeR', d: [0.06, -0.05, 0.08] }, L: { from: 'kneeL', d: [-0.05, -0.03, 0.09] } }, elbowPole: { R: [-0.6, -1, 0.4], L: [0.6, -1, 0.4] }, grip: { R: [0.3, 0.2, 1], L: [-0.3, 0.2, 1] } },
+  // at ease: leaning back on one hand planted behind on the log, the other on a knee, head turned
+  lean: { torso: [-0.16, -0.18, -0.08], head: [-0.06, -0.4, 0.06], hands: { L: { from: 'hipL', d: [0.1, -0.06, -0.2] }, R: { from: 'kneeR', d: [0.0, 0.07, -0.02] } }, elbowPole: { L: [1, 0, -1] }, grip: { L: [0, 0, 1] } },
 };
 
 function skeleton(B, poseName, modName) {
@@ -339,13 +343,18 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
   // ================================================================ BODY
   // Pelvis, belly, ribcage and shoulder girdle melt into one torso.
   // Hips scale with the race, but never into a gourd: stocky races carry their breadth in the shoulders.
-  const hipW = Math.min(1.12, B.hip / 0.09) * (app.race === 'dwarf' ? 0.9 : 1);
-  E(at(J.pelvis, pR, [0, 0.0, -0.012]), [0.145 * g * hipW, 0.105 * s, 0.1 * g], pR, torsoMat);
-  E(vlerp(J.pelvis, J.neck, 0.36), [0.132 * g, 0.13 * s, 0.09 * g], sR, torsoMat);
+  const dwarf = app.race === 'dwarf';
+  const hipW = Math.min(1.12, B.hip / 0.09) * (dwarf ? 0.9 : 1);
+  // dwarves are broad, not round: the breadth is in the shoulders and chest, the depth (and the
+  // belly) held in, so the torso reads as a barrel chest over a waist rather than a balloon
+  const gz = dwarf ? s * 1.12 : g;
+  const bellyX = dwarf ? 0.118 : 0.132;
+  E(at(J.pelvis, pR, [0, 0.0, -0.012]), [0.145 * g * hipW, 0.105 * s, 0.1 * gz], pR, torsoMat);
+  E(vlerp(J.pelvis, J.neck, 0.36), [bellyX * g, 0.13 * s, 0.09 * gz], sR, torsoMat);
   const chestC = at(vlerp(J.pelvis, J.neck, 0.66), sR, [0, 0, 0.008]);
-  E(chestC, [(app.fem ? 0.138 : 0.158) * g, 0.15 * s, (app.fem ? 0.098 : 0.108) * g], sR, torsoMat);
-  if (app.fem) for (const sg of [-1, 1]) E(at(chestC, sR, [sg * 0.05, -0.03, 0.05]), [0.05 * g, 0.045 * s, 0.04 * g], sR, torsoMat, { k: 0.07 * s });
-  E(at(J.neck, sR, [0, -0.04, -0.01]), [B.sh * 0.92, 0.055 * s, 0.085 * g], sR, torsoMat, { k: 0.05 * s });
+  E(chestC, [(app.fem ? 0.138 : 0.158) * g, 0.15 * s, (app.fem ? 0.098 : 0.108) * gz * (dwarf ? 1.08 : 1)], sR, torsoMat);
+  if (app.fem) for (const sg of [-1, 1]) E(at(chestC, sR, [sg * 0.05, -0.03, 0.05]), [0.05 * g, 0.045 * s, 0.04 * gz], sR, torsoMat, { k: 0.07 * s });
+  E(at(J.neck, sR, [0, -0.04, -0.01]), [B.sh * 0.92, 0.055 * s, 0.085 * gz], sR, torsoMat, { k: 0.05 * s });
   // Neck and trapezius.
   const headLocal = (p) => vadd(J.head, mApply(J.headR, vscale(p, hs)));
   const neckTopP = headLocal([0, -0.075, -0.018]);
@@ -373,6 +382,12 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
     const R = hd.R;
     const c = hd.c;
     const lp = (x, y, w) => vadd(c, mApply(R, [x * z, y * z, w * z]));
+    if (opt.crispHands) {
+      // the fingers are crisp meshes (Miniature.js): the sculpt keeps only the heel of the hand
+      sc.box(lp(-0.008, 0, -0.006), [0.02 * z, 0.032 * z, 0.016 * z], R, 0.012 * z, { mat: m, g: GR.body, k: 0.012 * s });
+      sc.cone(J[`wrist${k}`], lp(-0.02, 0, -0.004), 0.025 * g, 0.021 * z, { mat: m, g: GR.body, k: 0.015 * s });
+      return;
+    }
     sc.box(lp(-0.004, 0, -0.004), [0.026 * z, 0.04 * z, 0.021 * z], R, 0.014 * z, { mat: m, g: GR.body, k: 0.012 * s });
     for (let i = 0; i < 4; i++) {
       const yy = (-0.027 + i * 0.018) * (i === 3 ? 0.95 : 1);
@@ -676,14 +691,14 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
   const AC = (a, b, ra, rb, m, o = {}) => sc.cone(a, b, ra, rb, { mat: m, g: GR.armor, k: 0.018 * s, ...o });
   const PL = (c, r, R, o = {}) => sc.ellipsoid(c, r, R, { mat: M.steel, g: GR.plate, k: 0, ...o });
   const torsoShell = (m, grow, o = {}) => {
-    A(at(J.pelvis, pR, [0, 0.0, -0.012]), [0.145 * g * hipW + grow, 0.105 * s + grow * 0.5, 0.1 * g + grow], pR, m, o);
-    A(vlerp(J.pelvis, J.neck, 0.36), [0.132 * g + grow, 0.13 * s, 0.09 * g + grow], sR, m, o);
-    A(chestC, [(app.fem ? 0.138 : 0.158) * g + grow, 0.15 * s, (app.fem ? 0.098 : 0.108) * g + grow], sR, m, o);
-    if (app.fem && (mailBody || scaleBody || plate)) for (const sg of [-1, 1]) A(at(chestC, sR, [sg * 0.05, -0.025, 0.055]), [0.055 * g + grow, 0.05 * s + grow, 0.045 * g + grow], sR, m, { k: 0.07 * s, ...o });
-    A(at(J.neck, sR, [0, -0.04, -0.01]), [B.sh * 0.92 + grow, 0.055 * s + grow, 0.085 * g + grow], sR, m, { k: 0.04 * s, ...o });
+    A(at(J.pelvis, pR, [0, 0.0, -0.012]), [0.145 * g * hipW + grow, 0.105 * s + grow * 0.5, 0.1 * gz + grow], pR, m, o);
+    A(vlerp(J.pelvis, J.neck, 0.36), [bellyX * g + grow, 0.13 * s, 0.09 * gz + grow], sR, m, o);
+    A(chestC, [(app.fem ? 0.138 : 0.158) * g + grow, 0.15 * s, (app.fem ? 0.098 : 0.108) * gz * (dwarf ? 1.08 : 1) + grow], sR, m, o);
+    if (app.fem && (mailBody || scaleBody || plate)) for (const sg of [-1, 1]) A(at(chestC, sR, [sg * 0.05, -0.025, 0.055]), [0.055 * g + grow, 0.05 * s + grow, 0.045 * gz + grow], sR, m, { k: 0.07 * s, ...o });
+    A(at(J.neck, sR, [0, -0.04, -0.01]), [B.sh * 0.92 + grow, 0.055 * s + grow, 0.085 * gz + grow], sR, m, { k: 0.04 * s, ...o });
     // One long form from the hips to the chest bridges the masses, so a broad body reads as a
     // single cuirass or jerkin (never a stack of rolls).
-    A(vlerp(J.pelvis, J.neck, 0.42), [0.142 * g * Math.max(1, hipW * 0.95) + grow, 0.3 * s, 0.1 * g + grow], sR, m, { ...o, k: 0.05 * s });
+    A(vlerp(J.pelvis, J.neck, 0.42), [(dwarf ? 0.13 : 0.142) * g * Math.max(1, hipW * 0.95) + grow, 0.3 * s, 0.1 * gz + grow], sR, m, { ...o, k: 0.05 * s });
   };
   // A belt at the waist with a buckle: it breaks the long line of a hauberk or jerkin.
   const belt = () => {
@@ -865,7 +880,8 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
       const hipMid = vlerp(legs.L.hip, legs.R.hip, 0.5);
       const ankleMid = vlerp(legs.L.an, legs.R.an, 0.5);
       const kw = vlen(vsub(legs.L.kn, legs.R.kn)) * 0.5 + 0.075 * g;
-      const fold = (x, y, z) => 0.006 * s * Math.sin(x * 95 + Math.sin(y * 30) * 1.5) + 0.003 * s * Math.sin(z * 140 + y * 20);
+      // broad, irregular drapes (a few deep folds that wander), not a row of corrugations
+      const fold = (x, y, z) => 0.007 * s * Math.sin(x * 34 + Math.sin(y * 9 + z * 6) * 2.4 + z * 13) + 0.0025 * s * Math.sin(z * 57 + y * 14 + x * 9);
       AC(hipMid, kneeMid, 0.17 * g * hipW, kw, m, { k: 0.05 * s, disp: fold, amp: 0.008 * s });
       AC(kneeMid, vadd(ankleMid, [0, -0.03 * s, 0.02 * s]), kw * 0.92, kw * 1.02, m, { k: 0.06 * s, disp: fold, amp: 0.008 * s });
       for (const k of ['L', 'R']) AC(legs[k].kn, vadd(legs[k].an, [0, -0.025 * s, 0]), 0.08 * g, 0.105 * g, m, { k: 0.06 * s, disp: fold, amp: 0.008 * s });
@@ -964,7 +980,7 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
   // ---- frames for meshes placed by Miniature.js
   const frames = {
     face: { c: Hc, R: HR, hs },
-    hands: { L: J.handL, R: J.handR },
+    hands: { L: J.handL, R: J.handR, kind: plate ? 'steel' : leatherBody || mailBody || scaleBody ? 'glove' : 'skin' },
     height: (J.head[1] + 0.125 * hs),
     joints: J,
     body: B,

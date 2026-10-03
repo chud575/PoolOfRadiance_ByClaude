@@ -337,7 +337,7 @@ export class InventoryPanel {
     for (let k = inv.length; k < capacity; k++) tiles.push(h('div.pc-tile.empty'));
     const weightNow = carriedWeight(ch);
     const list = h('div.pc-sect.pc-items', [
-      h('div.pc-sect-h', [h('span', [`Pack · ${inv.length} item${inv.length === 1 ? '' : 's'} · ${weightNow} cn`])]),
+      h('div.pc-sect-h', [h('span', [`Pack · ${inv.length} item${inv.length === 1 ? '' : 's'} carried (${inv.filter((e) => e.equipped).length} readied) · ${weightNow} cn`])]),
       h('div.pc-pack', tiles),
       this._loreCard(ch, inv[this.sel]),
       h('div.pc-legend', [['mundane', 'Common'], ['magic', 'Magic'], ['unknown', 'Unidentified'], ['cursed', 'Cursed'], ['treasure', 'Treasure']].map(([k, l]) => h(`span.r-${k}`, [h('i'), l]))),

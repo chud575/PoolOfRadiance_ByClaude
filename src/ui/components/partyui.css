@@ -648,3 +648,9 @@ img.pc-pending { filter: saturate(0.7) brightness(0.9); }
 .cc-hubslot .nm { font-size: max(12px, 0.95em); }
 /* The rough first pass of a portrait (a small unpainted render) while its oil painting is made. */
 img.pc-pending.pc-rough { filter: blur(0.7px) saturate(0.85) brightness(0.95); background: none; }
+/* The chosen swatch's name at the end of its row ('Auburn', 'Hazel'). */
+.cc-likeness .cc-row { align-items: center; }
+.cc-swname { margin-left: auto; padding-left: 0.6em; font-style: italic; color: var(--por-gilt-hi, #f5d98b); font-size: 0.85em; white-space: nowrap; min-width: 5.5em; text-align: right; }
+/* Spell rules lines: readable size and contrast, wrapped to a comfortable measure (two lines at most). */
+.pc-spell .tg { font-size: max(11.5px, 0.78em); color: #b9c2dc; letter-spacing: 0.02em; line-height: 1.3; max-width: 44em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pc-spell.dis .tg { color: #8f97ae; }

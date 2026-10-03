@@ -3,7 +3,7 @@ import { h } from '../dom.js';
 import { deriveStats, statusLabel, maxLevel, armorAllowsThieving } from '../../rules/character.js';
 import { ABILITIES, ABILITY_ABBR, formatStr, strengthTable, dexterityMods, constitutionTable, intelligenceTable, wisdomSaveAdj, charismaTable } from '../../rules/abilities.js';
 import { RACES } from '../../rules/races.js';
-import { CLASSES, ALIGNMENT_NAMES, SAVE_KEYS, SAVE_SHORT, THIEF_SKILL_IDS, THIEF_SKILL_NAMES, splitClasses, xpForLevel } from '../../rules/classes.js';
+import { CLASSES, ALIGNMENT_NAMES, SAVE_KEYS, SAVE_SHORT, THIEF_SKILL_IDS, THIEF_SKILL_NAMES, PR_LEVEL_CAPS, splitClasses, xpForLevel } from '../../rules/classes.js';
 import { describeEffects } from '../../rules/conditions.js';
 import { itemName } from '../../rules/items.js';
 import { spellLevel } from '../../rules/spells.js';
@@ -191,8 +191,17 @@ export function renderSheet(ch) {
   if (race.vsGiants) traits.push(['Giant-wary', '−4', 'Giants, ogres and trolls suffer −4 to hit this small folk.']);
   if (race.canDualClass) traits.push(['Dual class', 'able', 'Humans may abandon their class for a new one and later regain the old abilities.']);
   const abbr = (c) => c.split('/').map((x) => CLASSES[x].abbr ?? x[0].toUpperCase()).join('/');
-  traits.push(['Classes', race.classes.length > 4 ? `${race.classes.length} paths` : race.classes.map(abbr).join(' · '), `${race.name} may follow: ${race.classes.map((c) => c.split('/').map((x) => CLASSES[x].name).join('/')).join(', ')}.`]);
-  traits.push(['Racial level limit', ch.race === 'human' ? 'none' : 'yes', ch.race === 'human' ? 'Humans have no racial level limit; only the Phlan level cap (see RECORD) applies.' : 'Demi-humans reach only so far in each class by race; exceptional prime requisites raise the limit. The lower of this and the Phlan level cap applies (see RECORD).']);
+  const singles = race.classes.filter((c) => !c.includes('/'));
+  const multis = race.classes.filter((c) => c.includes('/'));
+  const fullNames = (list) => list.map((c) => c.split('/').map((x) => CLASSES[x].name).join('/')).join(', ');
+  traits.push(['Classes', singles.map(abbr).join(' · '), `${race.name} may follow: ${fullNames(singles)}.`]);
+  if (multis.length) traits.push(['Multi-class', multis.map(abbr).join(' · '), `${race.name} may also train in two or three classes at once: ${fullNames(multis)}. Experience is split between them; hit points are averaged.`]);
+  const lim = Object.entries(race.levelLimits);
+  const limTxt = lim.map(([c, l]) => `${CLASSES[c].abbr ?? c[0].toUpperCase()}${l === Infinity ? '∞' : l}`).join(' · ');
+  const phlan = lim.map(([c, l]) => `${CLASSES[c].abbr ?? c[0].toUpperCase()}${Math.min(l, PR_LEVEL_CAPS[c] ?? l)}`).join(' · ');
+  traits.push(['Racial level limit', ch.race === 'human' ? 'none' : limTxt, ch.race === 'human'
+    ? 'Humans have no racial level limit; only the Phlan level cap (see RECORD) applies.'
+    : `${race.name} reach only so far in each class: ${lim.map(([c, l]) => `${CLASSES[c].name} ${l === Infinity ? 'unlimited' : l}`).join(', ')}. In Phlan the lower of this and the city's cap applies: ${phlan}.`]);
   extra.push(sect('Racial Traits', [h('div.pc-kv', traits.flatMap(([k, v, t]) => kv(k, v, { title: k, text: t }))),
     h('div', { style: { marginTop: '0.45em' } }, race.languages.map((l) => h('span.pc-chip', { dataset: lore({ title: 'Languages', text: `${ch.name} speaks ${race.languages.join(', ')}. Intelligence allows more tongues to be learned.` }) }, [l])))]));
 
@@ -221,7 +230,12 @@ export function renderSheet(ch) {
   const pack = ch.inventory.filter((e) => !e.equipped && ITEMS[e.id]);
   const packSect = sect('Pack', [
     h('div.pc-packline', pack.length ? pack.slice(0, 8).map((e) => h('span.pc-packi', { dataset: lore({ title: itemName(e), text: 'Carried in the pack. Open ITEMS to ready, use, trade or drop it.' }) }, [h('img', { src: itemIconURL(iconFor(ITEMS[e.id])), alt: '' }), (e.qty ?? 1) > 1 ? h('b', [String(e.qty)]) : null])) : [h('span.pc-rest-note', ['Nothing else carried.'])]),
-    h('div.pc-rest-note', { style: { marginTop: '0.35em' } }, [`${pack.length} item${pack.length === 1 ? '' : 's'} in the pack · ${s.weight} cn carried`]),
+    h('div.pc-rest-note', { style: { marginTop: '0.35em' } }, [(() => {
+      // the same count as the ITEMS tab: everything carried, of which so many readied
+      const all = ch.inventory.filter((e) => ITEMS[e.id]).length;
+      const ready = all - pack.length;
+      return `${all} item${all === 1 ? '' : 's'} carried (${ready} readied, ${pack.length} loose) · ${s.weight} cn`;
+    })()]),
   ]);
   // Spells per day sit under the readied kit, so the right column never overflows on casters.
   const spellSect = casting.length ? extra.find((x) => x.textContent.startsWith('Spells per Day')) : null;

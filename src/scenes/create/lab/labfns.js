@@ -159,3 +159,21 @@ export async function minitime(chars, o = {}) {
   const c = document.createElement('canvas'); c.width = 10; c.height = 10;
   return { images: [c], info };
 }
+
+/** Miniature snapshots (the combat icon renderer), e.g. for checking hands, mail and faces. */
+export async function mini(chars, o = {}) {
+  const { miniatureSnapshot } = await import('../../../ui/components/Miniature.js');
+  const images = [];
+  for (const ch of chars) {
+    const url = miniatureSnapshot({ classSpec: 'fighter', name: 'X', ...ch }, { w: o.w ?? 360, h: o.h ?? 600 });
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    const c = document.createElement('canvas');
+    c.width = img.width; c.height = img.height;
+    c.getContext('2d').drawImage(img, 0, 0);
+    images.push(c);
+  }
+  if (o.sheet) return { images: [sheet(images, o.cols ?? images.length)], info: [] };
+  return { images, info: [] };
+}

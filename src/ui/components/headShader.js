@@ -846,7 +846,7 @@ void main() {
       float th = dot(T, H);
       float s1 = pow(sqrt(max(0.0, 1.0 - th * th)), 80.0);
       float s2 = pow(sqrt(max(0.0, 1.0 - (th - 0.15) * (th - 0.15))), 20.0);
-      spec = (vec3(0.18) * s1 + alb * 1.4 * s2) * sat(ndlS) * 0.6;
+      spec = (vec3(0.16) * s1 + alb * 0.8 * s2) * sat(ndlS) * 0.55;
     }
     if (clearc > 0.5) spec += vec3(pow(ndh, 900.0) * 6.0);
     col += (dif * RECIPROCAL_PI * diff + spec) * C * sh;
@@ -865,7 +865,10 @@ void main() {
   // Skin's shadow side takes the cool fill (the warm is in the subsurface terminator).
   col += dif * amb * ao * (sss > 0.0 ? vec3(0.9, 0.97, 1.1) : vec3(1.0));
   if (metal > 0.5) col += alb * amb * 0.6 * ao * (0.6 + 0.4 * nv.y);
-  gl_FragColor = vec4(col * uGain, 1.0);
+  // A miniature's paint never glows: keep its brightest highlight under the bloom threshold (copper
+  // hair under a candle used to wear a halo of fire).
+  col = min(col * uGain, vec3(0.86));
+  gl_FragColor = vec4(col, 1.0);
 #ifdef USE_FOG
   float fd = length(pv);
   gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, smoothstep(fogNear, fogFar, fd));
