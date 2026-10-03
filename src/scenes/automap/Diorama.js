@@ -675,45 +675,19 @@ export class Diorama {
       const fl = batch('floor');
       fl.dry = 1;
       const fh = 0.06;
-      // a room the company has stood in shows its floor plan; one only glimpsed is veiled
+      // a room the survey has charted (stood in, or seen into through a door or arch)
+      // shows its floor plan, exactly as the flat sheet draws it; one never seen into
+      // is veiled
       const walkedRoom = new Set();
-      for (const rg of sheet.regions?.list ?? []) if (rg.type === CELL.INTERIOR && rg.cells.some(([x, y]) => walkedCell(x, y))) for (const [x, y] of rg.cells) walkedRoom.add(`${x},${y}`);
+      for (const rg of sheet.regions?.list ?? []) if (rg.type === CELL.INTERIOR && rg.cells.some(([x, y]) => seenCell(x, y))) for (const [x, y] of rg.cells) walkedRoom.add(`${x},${y}`);
       for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) {
-        if (!seenCell(x, y) || map.getCell(x, y) !== CELL.INTERIOR) continue;
-        if (!dungeon && !walkedRoom.has(`${x},${y}`)) continue;
+        if (map.getCell(x, y) !== CELL.INTERIOR) continue;
+        if (dungeon ? !seenCell(x, y) : !walkedRoom.has(`${x},${y}`)) continue;
         fl.box(x + 0.5, fh / 2, y + 0.5, 1.002, fh, 1.002, { uvFn, ao: 0.35, aoH: fh, tint: 1 });
       }
       if (!dungeon) this._veils(scene, T, map, sheet, seenCell, walkedRoom, wallH);
-      // the rooms the company entered are furnished as on the plan, and their roofs
-      // shown cut away: the tie-beams left spanning the walls
-      if (!dungeon) {
-        this._furnish(scene, T, batch, sheet, walkedRoom, fh, M_);
-        for (const rg of sheet.regions?.list ?? []) {
-          if (rg.type !== CELL.INTERIOR || rg.style === 2 || !rg.cells.some(([x, y]) => walkedRoom.has(`${x},${y}`))) continue;
-          const hasC = new Set(rg.cells.map(([x, y]) => `${x},${y}`));
-          let bx0 = 99; let bz0 = 99; let bx1 = -1; let bz1 = -1;
-          for (const [x, y] of rg.cells) { bx0 = Math.min(bx0, x); bz0 = Math.min(bz0, y); bx1 = Math.max(bx1, x + 1); bz1 = Math.max(bz1, y + 1); }
-          const alongX = bx1 - bx0 >= bz1 - bz0;
-          const [a0, a1] = alongX ? [bx0, bx1] : [bz0, bz1];
-          const [b0, b1] = alongX ? [bz0, bz1] : [bx0, bx1];
-          // near each end of the room (its name is lettered across the middle)
-          const spots = a1 - a0 >= 4 ? [a0 + 0.85, a1 - 0.85] : a1 - a0 >= 2 ? [(a0 + a1) / 2] : [];
-          for (const a of spots) {
-            // only where the beam's whole span lies over this one room
-            let ok = true;
-            for (let b = b0; b < b1; b++) if (!hasC.has(alongX ? `${Math.floor(a)},${b}` : `${b},${Math.floor(a)}`)) ok = false;
-            if (!ok) continue;
-            const L = b1 - b0 + 0.08;
-            const yb = wallH * 0.97;
-            const bm = batch('beam');
-            if (alongX) bm.bevelBox(a, yb, (b0 + b1) / 2, 0.075, 0.065, L, { bevel: 0.01, ao: 1 });
-            else bm.bevelBox((b0 + b1) / 2, yb, a, L, 0.065, 0.075, { bevel: 0.01, ao: 1 });
-            // a king-post stub and the sawn ends of two rafters above it
-            const [kx, kz] = alongX ? [a, (b0 + b1) / 2] : [(b0 + b1) / 2, a];
-            bm.bevelBox(kx, yb + 0.09, kz, 0.05, 0.13, 0.05, { bevel: 0.006, ao: 1 });
-          }
-        }
-      }
+      // the rooms the company charted are furnished as on the plan (roofs lifted off)
+      if (!dungeon) this._furnish(scene, T, batch, sheet, walkedRoom, fh, M_);
     }
     for (const [k, b] of Object.entries(B)) {
       const m = b.mesh(M_[k]);

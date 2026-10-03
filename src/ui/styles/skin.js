@@ -437,6 +437,8 @@ export function applySkinSettings(settings) {
   el.dataset.contrast = get('highContrast') ? 'high' : 'normal';
   el.dataset.motion = get('reduceMotion') ? 'reduce' : 'full';
   el.dataset.font = get('readableFont') ? 'readable' : 'classic';
+  // text-size bucket for layouts that reflow at big sizes (settings rows stack, help pane trims)
+  el.dataset.text = get('fontSize');
 }
 
 let boundCtx = null;

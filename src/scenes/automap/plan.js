@@ -14,8 +14,8 @@ import { timberWall } from './walls.js';
 const DV = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] };
 const PAPER = 'rgba(224,204,162,0.95)';
 // one muted ink-and-wash palette for every plan symbol
-const WOOD = 'rgba(150,98,54,0.78)';
-const WOOD_D = 'rgba(112,72,40,0.82)';
+const WOOD = 'rgba(146,88,42,0.92)';
+const WOOD_D = 'rgba(96,56,28,0.95)';
 const STONE = 'rgba(176,164,142,0.88)';
 const LINEN = 'rgba(238,226,198,0.96)';
 
@@ -284,6 +284,7 @@ export function wallShadow(g, cells, { CX, CY, cs, seed = 1, walled, band = 0.24
 // it stands against (into the room); sizes in cell units multiplied by cs.
 
 function outline(g, lw = 0.62) {
+  lw *= 1.45;
   g.strokeStyle = INK.ink;
   g.lineWidth = lw;
   g.stroke();
@@ -335,7 +336,7 @@ const SYMBOLS = {
     g.beginPath();
     g.moveTo(-w / 2 + 1, by); g.quadraticCurveTo(0, by + cs * 0.04, w / 2 - 1, by - cs * 0.01);
     g.lineTo(w / 2 - 1, L); g.lineTo(-w / 2 + 1, L); g.closePath();
-    g.fillStyle = r && r() < 0.5 ? 'rgba(96,104,122,0.42)' : 'rgba(128,104,70,0.42)';
+    g.fillStyle = r && r() < 0.5 ? 'rgba(70,86,132,0.62)' : 'rgba(156,52,38,0.6)';
     g.fill(); outline(g, 0.6);
     g.save(); g.clip();
     g.strokeStyle = 'rgba(43,26,13,0.42)'; g.lineWidth = 0.4;
@@ -532,6 +533,8 @@ export function furnish(g, cells, { CX, CY, cs, seed = 1, map, theme = 'house', 
     g.translate(cx, cy);
     g.rotate(ang);
     g.translate(0, -cs / 2 + (wall ? inset : 0));
+    // drawn a size up from the old survey, so a bed or a hearth reads at a glance
+    g.scale(1.15, 1.15);
     // a soft pencil shadow (light from the north-west)
     g.save();
     g.globalAlpha = 0.34;

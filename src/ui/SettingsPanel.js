@@ -121,6 +121,65 @@ function egaChip(label) {
   ]);
 }
 
+/**
+ * A small drawn preview of what a setting does, for the sidebar help well
+ * (bloom off/on, the EGA palette on a pixel skyline, jagged vs smoothed edges,
+ * the colour-blind status inks...). The current value is captioned in gilt.
+ */
+export function settingPreview(key, value) {
+  if (typeof document === 'undefined') return null;
+  const svg = (inner, w = 200, hh = 76) => {
+    const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    s.setAttribute('viewBox', `0 0 ${w} ${hh}`);
+    s.setAttribute('aria-hidden', 'true');
+    s.innerHTML = inner;
+    return s;
+  };
+  const cap = (items) => h('div.por-set-help-prev-cap', items.map(([t, on]) => h(`span${on ? '.on' : ''}`, [t])));
+  const night = '<defs><linearGradient id="pvsky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1a1430"/><stop offset="1" stop-color="#4a2a3a"/></linearGradient>'
+    + '<radialGradient id="pvglow"><stop offset="0" stop-color="#ffd890" stop-opacity=".95"/><stop offset=".35" stop-color="#ff9a40" stop-opacity=".45"/><stop offset="1" stop-color="#ff6a20" stop-opacity="0"/></radialGradient>'
+    + '<radialGradient id="pvpool"><stop offset="0" stop-color="#bff8ff" stop-opacity=".9"/><stop offset=".4" stop-color="#30b8e8" stop-opacity=".4"/><stop offset="1" stop-color="#1090d0" stop-opacity="0"/></radialGradient></defs>';
+  const scene = (x, glow) => `<g transform="translate(${x} 0)"><rect width="98" height="76" fill="url(#pvsky)"/>`
+    + '<path d="M0 58 L10 58 L10 44 L16 38 L22 44 L22 58 L34 58 L34 48 L44 48 L44 30 L48 24 L52 30 L52 58 L66 58 L66 46 L76 46 L76 58 L98 58 L98 76 L0 76Z" fill="#0c0a14"/>'
+    + (glow ? '<circle cx="28" cy="52" r="16" fill="url(#pvglow)"/><ellipse cx="62" cy="66" rx="26" ry="11" fill="url(#pvpool)"/>' : '')
+    + '<path d="M27 54 q1 -5 1 -8 q1 3 1 8z" fill="#ffd27a"/><ellipse cx="62" cy="66" rx="12" ry="3" fill="#7fe8ff"/></g>';
+  if (key === 'bloom') {
+    return h('div', [svg(night + scene(0, false) + scene(102, true)), cap([['Off', !value], ['On', !!value]])]);
+  }
+  if (key === 'classicMode') {
+    const ega = EGA16;
+    const sw = ega.map((c, i) => `<rect x="${(i % 8) * 25}" y="${i < 8 ? 0 : 7}" width="25" height="7" fill="${c}"/>`).join('');
+    // a 1988 skyline in big EGA pixels beside the modern dusk
+    const px = [];
+    const sky = (x, y, w, hh, c) => px.push(`<rect x="${x}" y="${y}" width="${w}" height="${hh}" fill="${c}"/>`);
+    sky(0, 14, 98, 62, '#0000AA');
+    sky(0, 50, 98, 26, '#000000');
+    for (const [x, hh] of [[4, 14], [16, 22], [28, 10], [36, 30], [52, 16], [64, 24], [78, 12], [88, 18]]) sky(x, 50 - hh, 10, hh + 1, '#555555');
+    sky(40, 16, 4, 4, '#FFFF55'); sky(60, 22, 2, 2, '#FFFFFF'); sky(20, 26, 2, 2, '#FFFFFF');
+    sky(34, 60, 30, 6, '#00AAAA'); sky(40, 62, 18, 2, '#55FFFF');
+    return h('div', [svg(`${night}<g shape-rendering="crispEdges">${sw}${px.join('')}</g><g transform="translate(102 14) scale(1 0.816)">${scene(0, true).replace('translate(0 0)', '')}</g>`), cap([['1988 EGA', !!value], ['Modern', !value]])]);
+  }
+  if (key === 'antialias') {
+    const stair = Array.from({ length: 12 }, (_, i) => `<rect x="${8 + i * 7}" y="${62 - i * 5}" width="7" height="${14 + i * 5}" fill="#d8b25a"/>`).join('');
+    return h('div', [svg(`<rect width="200" height="76" fill="#0e1430"/><g shape-rendering="crispEdges">${stair}</g><path d="M110 76 L110 70 L192 12 L192 76Z" fill="#d8b25a"/><path d="M110 70 L192 12" stroke="#fff2c4" stroke-width="1.2" opacity=".5"/>`),
+      cap([['Off', value === 'none'], ['FXAA', value === 'fxaa'], ['SMAA', value === 'smaa']])]);
+  }
+  if (key === 'quality') {
+    const lv = ['low', 'medium', 'high', 'ultra'];
+    const k = Math.max(0, lv.indexOf(value));
+    const bars = lv.map((_, i) => `<rect x="${18 + i * 44}" y="${62 - (i + 1) * 12}" width="30" height="${(i + 1) * 12}" rx="2" fill="${i <= k ? 'url(#pvq)' : 'rgba(216,178,90,0.18)'}" stroke="rgba(216,178,90,0.5)"/>`).join('');
+    return h('div', [svg(`<defs><linearGradient id="pvq" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff2c4"/><stop offset="1" stop-color="#a87a2a"/></linearGradient></defs><rect width="200" height="76" fill="#0e1430"/>${bars}<text x="100" y="73" fill="#a99c80" font-size="8" text-anchor="middle" letter-spacing="2">FIDELITY · SPEED</text>`),
+      cap(lv.map((l, i) => [l, i === k]))]);
+  }
+  if (key === 'colorblind') {
+    const sets = { off: ['#3cc15a', '#e0b030', '#d0473c'], deutan: ['#3b8fe0', '#e0b030', '#c0602c'], protan: ['#3b8fe0', '#f0d040', '#806040'], tritan: ['#30b0a0', '#e06a90', '#c8302c'] };
+    const c = sets[value] ?? sets.off;
+    const bar = (y, w, col, lbl) => `<rect x="44" y="${y}" width="146" height="12" rx="2" fill="rgba(0,0,0,0.5)" stroke="rgba(216,178,90,0.4)"/><rect x="45" y="${y + 1}" width="${w}" height="10" rx="1.5" fill="${col}"/><text x="38" y="${y + 10}" fill="#e8dcc0" font-size="9" text-anchor="end">${lbl}</text>`;
+    return h('div', [svg(`<rect width="200" height="76" fill="#0e1430"/>${bar(8, 140, c[0], 'Hale')}${bar(30, 80, c[1], 'Hurt')}${bar(52, 26, c[2], 'Dying')}`)]);
+  }
+  return null;
+}
+
 const ROT = { '↑': 0, '→': 90, '↓': 180, '←': 270 };
 const svgEl = (markup, cls) => {
   const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -222,6 +281,7 @@ export class SettingsPanel {
   set(key, value) {
     this.ctx.settings.set(key, value);
     this._apply(key, value);
+    this._updateHelp();
     this.ctx.audio?.sfx?.('click', { bus: 'ui', pitch: 1.2 });
   }
 
@@ -260,48 +320,48 @@ export class SettingsPanel {
       {
         id: 'graphics', label: 'Graphics', blurb: 'How Phlan is drawn.',
         rows: [
-          { key: 'quality', label: 'Quality preset', desc: 'Resolution, anti-aliasing and bloom in one.', help: 'Balances fidelity and speed: render resolution, anti-aliasing and bloom together. Software renderers start on Low.', type: 'choice', options: [['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['ultra', 'Ultra']] },
-          { key: 'classicMode', label: 'Classic 1988 mode', desc: 'Sixteen EGA colours at 320×200, as in 1988. Toggle with F2.', help: 'The sixteen-colour EGA palette, 320×200 pixels and the original 5×7 lettering — as Phlan looked on a PC in 1988. Toggle any time with F2.', type: 'toggle', badge: 'EGA' },
-          { key: 'bloom', label: 'Bloom', desc: 'Glow around torches, spells and the Pool itself.', type: 'toggle' },
-          { key: 'antialias', label: 'Anti-aliasing', desc: 'SMAA is sharper; FXAA is cheaper.', help: 'Smooths jagged edges. SMAA is sharper; FXAA is cheaper.', type: 'choice', options: [['none', 'Off'], ['fxaa', 'FXAA'], ['smaa', 'SMAA']] },
-          { key: 'pixelRatioCap', label: 'Render resolution', desc: 'Pixel density on high-DPI screens.', help: 'Pixel density on high-DPI displays. Lower it if the frame rate stutters.', type: 'choice', options: [[1, '100%'], [1.5, '150%'], [2, '200%']] },
-          { key: 'cameraBob', label: 'Camera motion', desc: 'Gentle head-bob and sway while walking.', help: 'Gentle head-bob and sway while walking the streets.', type: 'toggle' },
+          { key: 'quality', label: 'Quality preset', desc: 'Resolution, anti-aliasing and bloom in one.', help: 'Low drops shadows and drifting ash; Ultra renders at full pixel density with SMAA. Software renderers start on Low automatically.', type: 'choice', options: [['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['ultra', 'Ultra']] },
+          { key: 'classicMode', label: 'Classic 1988 mode', desc: 'Phlan as it looked on a PC in 1988. Toggle any time with F2.', help: 'Sixteen inks at 320×200, the original 5×7 lettering and flat EGA panels. Saves and progress carry over both ways.', type: 'toggle' },
+          { key: 'bloom', label: 'Bloom', desc: 'Glow around torches, spells and the Pool itself.', help: 'Bright light bleeds softly into the dark around it. Off is crisper and slightly faster on older machines.', type: 'toggle' },
+          { key: 'antialias', label: 'Anti-aliasing', desc: 'SMAA is sharper; FXAA is cheaper.', help: 'Smooths the stair-stepped edges on roofs, spears and the lettering. Off keeps every pixel hard.', type: 'choice', options: [['none', 'Off'], ['fxaa', 'FXAA'], ['smaa', 'SMAA']] },
+          { key: 'pixelRatioCap', label: 'Render resolution', desc: 'Pixel density on high-DPI screens.', help: 'Only matters on high-DPI screens. Lower it first if the frame rate stutters; the interface stays sharp either way.', type: 'choice', options: [[1, '100%'], [1.5, '150%'], [2, '200%']] },
+          { key: 'cameraBob', label: 'Camera motion', desc: 'Gentle head-bob and sway while walking.', help: 'Turn off if movement in first person makes you queasy. Reduce motion in Accessibility also stills it.', type: 'toggle' },
         ],
       },
       {
         id: 'gameplay', label: 'Gameplay', blurb: 'Pace, difficulty and conveniences.',
         rows: [
-          { key: 'difficulty', label: 'Difficulty', desc: 'Gold Box levels. Novice and Squire soften monsters; Adept and Champion toughen them and reduce experience less.', type: 'choice', options: [['novice', 'Novice'], ['squire', 'Squire'], ['veteran', 'Veteran'], ['adept', 'Adept'], ['champion', 'Champion']] },
-          { key: 'fighterThac0', label: 'Fighter THAC0', desc: 'Pool of Radiance improves a fighter\'s THAC0 every level; the Dungeon Masters Guide matrix improves it by 2 every second level.', type: 'choice', options: [['goldBox', 'Pool of Radiance'], ['dmg', 'DMG matrix']] },
-          { key: 'textSpeed', label: 'Text speed', desc: 'How quickly narration and messages are written out.', type: 'choice', options: [[0.5, 'Slow'], [1, 'Normal'], [2, 'Fast'], [0, 'Instant']] },
-          { key: 'combatSpeed', label: 'Combat speed', desc: 'The classic "game speed": delay between combat actions and messages.', type: 'choice', options: [[0.5, 'Slow'], [1, 'Normal'], [1.5, 'Fast'], [2.5, 'Swift']] },
-          { key: 'moveSpeed', label: 'Movement speed', desc: 'How fast the party steps and turns in the streets and dungeons.', type: 'choice', options: [[0.75, 'Stately'], [1, 'Normal'], [1.5, 'Brisk'], [2.5, 'Swift']] },
-          { key: 'autosave', label: 'Autosave', desc: 'Save to the Auto slot whenever the party enters a new area. Manual slots are never overwritten.', type: 'toggle' },
-          { key: 'showMinimap', label: 'Mini-map', desc: 'Show the automap corner while exploring.', type: 'toggle' },
-          { key: 'confirmDangerous', label: 'Confirm dangerous actions', desc: 'Ask before dropping items, leaving camp unrested or fleeing combat.', type: 'toggle' },
-          { key: 'showTooltips', label: 'Tooltips', desc: 'Explain stats, spells and commands when hovering or focusing them.', type: 'toggle' },
+          { key: 'difficulty', label: 'Difficulty', desc: 'Gold Box levels. Novice and Squire soften monsters; Adept and Champion toughen them and reduce experience less.', help: 'Veteran is the game as published. Lower levels also cut experience, as they did in 1988 — change it at any time, even mid-adventure.', type: 'choice', options: [['novice', 'Novice'], ['squire', 'Squire'], ['veteran', 'Veteran'], ['adept', 'Adept'], ['champion', 'Champion']] },
+          { key: 'fighterThac0', label: 'Fighter THAC0', desc: 'Pool of Radiance improves a fighter\'s THAC0 every level; the Dungeon Masters Guide matrix improves it by 2 every second level.', help: 'Affects fighters, paladins and rangers only. The 1988 game used the faster Pool of Radiance progression.', type: 'choice', options: [['goldBox', 'Pool of Radiance'], ['dmg', 'DMG matrix']] },
+          { key: 'textSpeed', label: 'Text speed', desc: 'How quickly narration and messages are written out.', help: 'Any key or click finishes the current line at once, whatever the speed.', type: 'choice', options: [[0.5, 'Slow'], [1, 'Normal'], [2, 'Fast'], [0, 'Instant']] },
+          { key: 'combatSpeed', label: 'Combat speed', desc: 'The classic "game speed": delay between combat actions and messages.', help: 'Hold Space in battle to fast-forward a single round without changing this.', type: 'choice', options: [[0.5, 'Slow'], [1, 'Normal'], [1.5, 'Fast'], [2.5, 'Swift']] },
+          { key: 'moveSpeed', label: 'Movement speed', desc: 'How fast the party steps and turns in the streets and dungeons.', help: 'Only the animation: a step is always one square and costs the same game time.', type: 'choice', options: [[0.75, 'Stately'], [1, 'Normal'], [1.5, 'Brisk'], [2.5, 'Swift']] },
+          { key: 'autosave', label: 'Autosave', desc: 'Save to the Auto slot whenever the party enters a new area. Manual slots are never overwritten.', help: 'The Auto slot sits at the top of the Load list and can be continued from the title menu.', type: 'toggle' },
+          { key: 'showMinimap', label: 'Mini-map', desc: 'Show the automap corner while exploring.', help: 'The full automap (M) is always available, mini-map or not.', type: 'toggle' },
+          { key: 'confirmDangerous', label: 'Confirm dangerous actions', desc: 'Ask before dropping items, leaving camp unrested or fleeing combat.', help: 'One extra keypress that has saved many a +1 sword from the gutter.', type: 'toggle' },
+          { key: 'showTooltips', label: 'Tooltips', desc: 'Explain stats, spells and commands when hovering or focusing them.', help: 'With a controller, tooltips follow the focused item instead of the pointer.', type: 'toggle' },
         ],
       },
       {
         id: 'audio', label: 'Audio', blurb: 'Volume of the music and effects.',
         rows: [
-          { key: 'masterVolume', label: 'Master volume', type: 'slider', min: 0, max: 1, step: 0.05, fmt: pct },
-          { key: 'musicVolume', label: 'Music', desc: 'The score of the Moonsea.', type: 'slider', min: 0, max: 1, step: 0.05, fmt: pct },
-          { key: 'sfxVolume', label: 'Effects', desc: 'Steel, spells, doors and footsteps.', type: 'slider', min: 0, max: 1, step: 0.05, fmt: pct },
-          { key: 'uiVolume', label: 'Interface', desc: 'Menu clicks and confirmations.', type: 'slider', min: 0, max: 1, step: 0.05, fmt: pct },
-          { key: 'ambienceVolume', label: 'Ambience', desc: 'Wind, surf, the city and the dungeon dark.', type: 'slider', min: 0, max: 1, step: 0.05, fmt: pct },
+          { key: 'masterVolume', label: 'Master volume', desc: 'Everything at once.', help: 'Scales every other channel. Music and effects keep their balance.', type: 'slider', min: 0, max: 1, step: 0.05, fmt: pct },
+          { key: 'musicVolume', label: 'Music', desc: 'The score of the Moonsea.', help: 'The score follows the party: town, ruins, crypt and battle each have their own themes.', type: 'slider', min: 0, max: 1, step: 0.05, fmt: pct },
+          { key: 'sfxVolume', label: 'Effects', desc: 'Steel, spells, doors and footsteps.', help: 'Spell and weapon cues also carry the timing of combat; keep a little even if you mute music.', type: 'slider', min: 0, max: 1, step: 0.05, fmt: pct },
+          { key: 'uiVolume', label: 'Interface', desc: 'Menu clicks and confirmations.', help: 'The soft ticks you hear while changing these settings.', type: 'slider', min: 0, max: 1, step: 0.05, fmt: pct },
+          { key: 'ambienceVolume', label: 'Ambience', desc: 'Wind, surf, the city and the dungeon dark.', help: 'Beds of sound under each place; they change with the hour as well as the district.', type: 'slider', min: 0, max: 1, step: 0.05, fmt: pct },
         ],
       },
       { id: 'controls', label: 'Controls', blurb: 'Rebind keys. Click a key, then press the new one (Esc cancels, Del clears).', custom: 'bindings' },
       {
         id: 'access', label: 'Accessibility', blurb: 'Make the game comfortable to read and play.',
         rows: [
-          { key: 'uiScale', label: 'Interface scale', desc: 'Size of every panel, menu and piece of text.', type: 'slider', min: 0.8, max: 1.5, step: 0.05, fmt: pct },
-          { key: 'fontSize', label: 'Text size', desc: 'Size of narration, log and descriptions.', type: 'choice', options: [['small', 'Small'], ['normal', 'Normal'], ['large', 'Large'], ['huge', 'Huge']] },
-          { key: 'colorblind', label: 'Colour-blind palette', desc: 'Replaces the red/green health and status colours with distinguishable ones.', type: 'choice', options: [['off', 'Off'], ['deutan', 'Deuteran.'], ['protan', 'Protan.'], ['tritan', 'Tritan.']] },
-          { key: 'highContrast', label: 'High-contrast text', desc: 'Opaque panels and brighter text.', type: 'toggle' },
-          { key: 'readableFont', label: 'Readable font', desc: 'Swap the book serif for a clean, highly legible sans-serif.', type: 'toggle' },
-          { key: 'reduceMotion', label: 'Reduce motion', desc: 'Turns off UI animation, camera sway and screen shake.', type: 'toggle' },
+          { key: 'uiScale', label: 'Interface scale', desc: 'Size of every panel, menu and piece of text.', help: 'For couch play on a television try 120% or more. Panels reflow to fit the screen.', type: 'slider', min: 0.8, max: 1.5, step: 0.05, fmt: pct },
+          { key: 'fontSize', label: 'Text size', desc: 'Size of narration, log and descriptions.', help: 'Only body text grows; headings and buttons follow Interface scale. At Huge, settings rows stack.', type: 'choice', options: [['small', 'Small'], ['normal', 'Normal'], ['large', 'Large'], ['huge', 'Huge']] },
+          { key: 'colorblind', label: 'Colour-blind palette', desc: 'Replaces the red/green health and status colours with distinguishable ones.', help: 'Health, status and hostile/friendly markers switch palette; shapes and labels already carry the meaning too.', type: 'choice', options: [['off', 'Off'], ['deutan', 'Deuteran.'], ['protan', 'Protan.'], ['tritan', 'Tritan.']] },
+          { key: 'highContrast', label: 'High-contrast text', desc: 'Opaque panels and brighter text.', help: 'Removes the translucency over the 3D view so text never sits on a busy background.', type: 'toggle' },
+          { key: 'readableFont', label: 'Readable font', desc: 'Swap the book serif for a clean, highly legible sans-serif.', help: 'Headings keep their display capitals; narration, the log and descriptions change.', type: 'toggle' },
+          { key: 'reduceMotion', label: 'Reduce motion', desc: 'Turns off UI animation, camera sway and screen shake.', help: 'Also holds the title cinematic on still frames and stops the drifting embers.', type: 'toggle' },
         ],
       },
     ];
@@ -327,8 +387,7 @@ export class SettingsPanel {
     this.helpText = h('div.por-set-help-text');
     this.helpEl = h('div.por-set-help', [
       h('div.por-set-help-head', [phlanSeal(), h('span.por-set-help-cap', ['About this option'])]),
-      this.helpName,
-      this.helpText,
+      h('div.por-set-help-body', [this.helpName, this.helpPrev = h('div.por-set-help-prev'), this.helpText]),
       h('div.por-set-help-foot', ['Changes apply at once and are kept between sessions.']),
     ]);
     this.tabsEl.append(this.helpEl);
@@ -386,13 +445,6 @@ export class SettingsPanel {
 
   /** A small illustrated note that closes short sections (no dead space). */
   _note(id) {
-    if (id === 'graphics') {
-      const ega = ['#000000', '#0000AA', '#00AA00', '#00AAAA', '#AA0000', '#AA00AA', '#AA5500', '#AAAAAA', '#555555', '#5555FF', '#55FF55', '#55FFFF', '#FF5555', '#FF55FF', '#FFFF55', '#FFFFFF'];
-      return h('div.por-set-note.compact', [
-        h('div.por-set-swatches', ega.map((c) => h('i', { style: { background: c } }))),
-        h('div.por-set-note-text', [h('b', ['The 1988 palette: ']), 'classic mode paints Phlan in these sixteen colours.']),
-      ]);
-    }
     if (id === 'audio') {
       return h('div.por-set-note', [
         h('div.por-set-note-glyph', ['♪']),
@@ -652,16 +704,25 @@ export class SettingsPanel {
     if (!r) return;
     if (r._row) {
       this.helpName.textContent = r._row.label;
-      this.helpText.textContent = r._row.help ?? r._row.desc ?? 'Adjust with ← and →.';
+      // the pane adds to the row (extra detail and a preview), never repeats it
+      this.helpText.textContent = r._row.help ?? 'Adjust with ← and →.';
+      clear(this.helpPrev);
+      const pv = settingPreview(r._row.key, this.get(r._row.key));
+      if (pv) this.helpPrev.append(pv);
     } else if (r.dataset.action) {
       const label = r.querySelector('.por-bind-label')?.firstChild?.textContent ?? r.dataset.action;
       const warn = r._conflict;
       this.helpName.textContent = label;
+      clear(this.helpPrev);
       this.helpText.textContent = warn
         ? `This key is also bound to ${warn}. Pressing it will do both — rebind one of them.`
         : 'Click a key (or press Enter) and then the new key. Esc cancels, Del clears the slot.';
     }
     this.helpEl.classList.toggle('warn', !!r._conflict);
+    const hb = this.helpEl.querySelector('.por-set-help-body');
+    const clip = () => hb && hb.classList.toggle('clip', hb.scrollHeight > hb.clientHeight + 2);
+    clip();
+    if (typeof requestAnimationFrame !== 'undefined') requestAnimationFrame(clip);
   }
 
   /** Move DOM focus onto the focused row (screen readers and focus rings follow the cursor). */

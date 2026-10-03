@@ -177,16 +177,16 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
       // stops at them), then the building's own hatch
       ug.fillStyle = 'rgb(226,208,170)';
       ug.fill(path);
-      ug.fillStyle = 'rgba(112,96,78,0.2)';
+      ug.fillStyle = 'rgba(104,90,74,0.26)';
       ug.fill(path);
       let x0 = 1e9; let y0 = 1e9; let x1 = -1e9; let y1 = -1e9;
       for (const [i, j] of rg.cells) { x0 = Math.min(x0, CX(i)); y0 = Math.min(y0, CY(j)); x1 = Math.max(x1, CX(i + 1)); y1 = Math.max(y1, CY(j + 1)); }
       const L = (x1 - x0) + (y1 - y0);
       // one uniform 45-degree graphite hatch, ruled evenly with a sharp lead
-      ug.strokeStyle = 'rgba(54,40,28,0.52)';
-      ug.lineWidth = 0.75;
+      ug.strokeStyle = 'rgba(50,38,28,0.6)';
+      ug.lineWidth = 0.9;
       ug.beginPath();
-      for (let o = -L; o < L; o += 3.3) {
+      for (let o = -L; o < L; o += 3.1) {
         ug.moveTo(x0 + o, y1); ug.lineTo(x0 + o + (y1 - y0), y0);
       }
       ug.stroke();
@@ -884,12 +884,12 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
     // a fixed glyph column (clipped, so no swatch ever reaches its label) and a fixed gutter
     const x = RX - 4 + col * (RW / 2 + 8);
     const y = KY + 50 + row * rowH;
-    const GW = 42;
+    const GW = 46;
     g.save();
     g.beginPath();
     g.rect(x, y - rowH / 2, GW, rowH);
     g.clip();
-    drawKeySwatch(g, key, x + GW / 2, y, 28);
+    drawKeySwatch(g, key, x + GW / 2, y, 34);
     g.restore();
     g.font = `19px ${SERIF}`;
     g.textAlign = 'left';

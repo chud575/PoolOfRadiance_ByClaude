@@ -6,10 +6,10 @@
 .por-settings-backdrop { backdrop-filter: blur(3px); }
 .por-set-frame { width: 66em; max-width: 90vw; height: 41em; max-height: 84vh; padding: 2.3em 2.5em 1.3em; display: flex; flex-direction: column; }
 .por-set-frame > .por-frame-body { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.por-set-layout { flex: 1; display: grid; grid-template-columns: 15em minmax(0, 1fr); gap: 1.6em; min-height: 0; }
+.por-set-layout { flex: 1; display: grid; grid-template-columns: 15em minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 1.6em; min-height: 0; overflow: hidden; }
 
 /* tabs */
-.por-set-tabs { display: flex; flex-direction: column; gap: 0.2em; padding-right: 1.4em; border-right: 1px solid rgba(216, 178, 90, 0.22); position: relative; }
+.por-set-tabs { display: flex; flex-direction: column; gap: 0.2em; padding-right: 1.4em; border-right: 1px solid rgba(216, 178, 90, 0.22); position: relative; min-height: 0; }
 .por-set-tabs-head {
   display: flex; align-items: center; justify-content: space-between; gap: 0.4em; padding: 0.1em 0.2em 0.55em; margin-bottom: 0.35em;
   border-bottom: 1px solid rgba(216, 178, 90, 0.22); font-size: 0.82em;
@@ -302,7 +302,24 @@ html[data-classic='1'] .por-set-seal-svg { display: none; }
 .por-set-help-head .por-set-seal-svg { width: 2.4em; height: 2.4em; flex: none; opacity: 0.95; }
 .por-set-help-cap { font-family: var(--font-display); font-weight: 700; font-size: 0.66em; letter-spacing: 0.26em; text-transform: uppercase; color: var(--por-gilt); }
 .por-set-help-name { font-family: var(--font-display); font-weight: 700; letter-spacing: 0.08em; color: #fff6de; font-size: 0.98em; }
-.por-set-help-text { font-size: calc(0.92em * var(--text-scale)); line-height: 1.45; color: rgba(236, 228, 208, 0.86); min-height: 5.8em; }
+.por-set-help-text { font-size: calc(0.92em * var(--text-scale)); line-height: 1.45; color: rgba(236, 228, 208, 0.86); }
+/* the help well never pushes into the footer: it shrinks, and its text scrolls inside it */
+.por-set-help { flex: 0 1 auto; min-height: 0; overflow: hidden; }
+.por-set-help-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--por-gilt-lo) transparent; display: flex; flex-direction: column; gap: 0.5em; }
+.por-set-help-prev { flex: none; }
+.por-set-help-prev:empty { display: none; }
+.por-set-help:has(.por-set-help-prev:not(:empty)) .por-set-help-foot { display: none; }
+/* text that runs past the well fades out under a soft edge (never sliced mid-line); it scrolls */
+.por-set-help-body.clip { -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 2.2em), transparent); mask-image: linear-gradient(180deg, #000 calc(100% - 2.2em), transparent); }
+.por-set-help-prev svg { display: block; width: 100%; height: auto; border-radius: 2px; box-shadow: 0 0 0 1px rgba(216, 178, 90, 0.35), 0 2px 5px rgba(0, 0, 0, 0.6); }
+.por-set-help-prev-cap { display: flex; justify-content: space-between; margin-top: 0.3em; font-family: var(--font-display); font-weight: 700; font-size: 0.6em; letter-spacing: 0.22em; text-transform: uppercase; color: var(--por-text-dim); }
+.por-set-help-prev-cap .on { color: var(--por-gilt-hi); }
+html[data-text='huge'] .por-set-help-foot, html[data-text='large'] .por-set-help-foot { display: none; }
+html[data-text='huge'] .por-set-help-head .por-set-seal-svg { width: 1.8em; height: 1.8em; }
+/* big text: option rows stack (label over control) instead of squeezing the description into a column */
+html[data-text='huge'] .por-set-row, html[data-classic='1'][data-text='large'] .por-set-row { grid-template-columns: minmax(0, 1fr); gap: 0.45em; }
+html[data-text='huge'] .por-set-control, html[data-classic='1'][data-text='large'] .por-set-control { justify-content: flex-start; }
+html[data-text='huge'] .por-set-tabs { padding-right: 1em; }
 .por-set-help.warn .por-set-help-text { color: #ffc4b4; }
 .por-set-help-foot { font-style: italic; font-size: calc(0.8em * var(--text-scale)); line-height: 1.4; color: var(--por-text-dim); padding-top: 0.4em; border-top: 1px solid rgba(216, 178, 90, 0.12); }
 html[data-classic='1'] .por-set-help-head .por-set-seal-svg { display: none; }

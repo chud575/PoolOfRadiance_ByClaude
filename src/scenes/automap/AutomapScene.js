@@ -974,7 +974,7 @@ export default class AutomapScene extends Scene {
     // event markers: inked map symbols held at a fixed size on screen, knocked out of
     // the paving by a soft halo of paper
     for (const mk of this.sheet.markers ?? []) {
-      const px = (mk.kind === 'battle' ? 44 : 40) / s;
+      const px = ({ battle: 44, sign: 56, text: 54, treasure: 52, shop: 48 }[mk.kind] ?? 46) / s;
       g.save();
       g.shadowColor = 'rgba(244,232,204,0.95)';
       g.shadowBlur = 5;
@@ -1116,7 +1116,7 @@ export default class AutomapScene extends Scene {
       const inZone = (x, y) => x >= z.x && y >= z.y && x < z.x + z.w && y < z.y + z.h;
       let home = null;
       for (const rg of reg?.list ?? []) {
-        if (rg.type !== CELL.INTERIOR) continue;
+        if (rg.type !== CELL.INTERIOR && rg.type !== CELL.RUBBLE) continue;
         const cells = rg.cells.filter(([x, y]) => inZone(x, y));
         if (cells.length < 2 || !cells.some(([x, y]) => seen(x, y))) continue;
         if (!home || cells.length > home.length) home = cells;
@@ -1188,8 +1188,8 @@ export default class AutomapScene extends Scene {
         g.font = `italic ${fs.toFixed(2)}px ${SERIF}`;
         g.letterSpacing = `${(fs * 0.04).toFixed(2)}px`;
         g.lineJoin = 'round';
-        g.strokeStyle = 'rgba(240,226,192,0.92)';
-        g.lineWidth = fs * 0.32;
+        g.strokeStyle = 'rgba(236,222,186,0.85)';
+        g.lineWidth = fs * 0.2;
         g.strokeText(z.name, best.cx, best.cy);
         g.fillStyle = '#7a2412';
         g.fillText(z.name, best.cx, best.cy);
