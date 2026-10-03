@@ -294,7 +294,8 @@ otherwise `familyOf(m)` must be in `PERSON_FAMILIES` (human, the demi-humans, ko
 man, troglodyte and the PHB's sprites; human bands like `bandit*`, `buccaneer*`, `*Priest` are family `human`). No id list.
 Class-based NPCs: `classAsOf(m)` (`classAs`/`saveAs` 'cleric5' or `{cls, level}`, else a `spells:clericN` tag → cleric of
 level max(N, HD)); `monsterBaseSaves(m)` / `monsterBaseThac0(m)` use that class table (Priest of Bane = cleric 5: ppdm 9,
-bw 15), else fighter-by-HD saves / the DMG monster matrix. **0-level men** (`isZeroLevelMan(m)`: human family, no class,
+bw 15), else fighter saves at `effectiveHd(hd, hpBonus)` / the DMG monster matrix. Ruling: any `+N` hp bonus
+saves as the next HD (bugbear 3+1 = F4), the same reading as the matrix's '+' rows; 1-1 HD and less save as level 0. **0-level men** (`isZeroLevelMan(m)`: human family, no class,
 ≤ 1 HD with no plus — bandits, buccaneers, thugs; `level0: true|false` overrides) fight at THAC0 20 (`ZERO_LEVEL_THAC0`,
 the PoR value) and save as level-0 men (ppdm 16, pp 17, rsw 18, bw 20, sp 19). `tests/data/monster-consistency.test.js`
 checks every data `thac0` against `monsterBaseThac0` of the def without it; open data mismatches (world owner) are listed

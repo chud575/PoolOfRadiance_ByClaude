@@ -259,7 +259,12 @@ export function effectiveHd(hd, hpBonus = 0) {
   return Math.floor(hd) + (hpBonus > 0 ? 1 : 0);
 }
 
-/** Monster saves: as fighter of level = effective HD (0-level for < 1 HD). */
+/**
+ * Monster saves: as fighter of level = effective HD (0-level for < 1 HD and
+ * 1-1). Ruling: any `+N` hp bonus counts as the next HD (bugbear 3+1 saves as
+ * F4) — the same reading the attack matrix gives its '+' rows. The MM/DMG are
+ * terse here; this is the common table reading and the one Gold Box follows.
+ */
 export function monsterSaves(hd, hpBonus = 0) {
   return savesFor('fighter', effectiveHd(hd, hpBonus));
 }
