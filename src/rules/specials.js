@@ -80,7 +80,7 @@ export function breathWeapon(rng, attacker, targets, o = {}) {
   out.log.push(`${b?.verb ?? 'A blast'} roars from ${nameOf(attacker)}!`);
   for (const t of targets) {
     if (!t || t === attacker || !isAliveCreature(t)) continue;
-    const sv = rollSave(rng, t, 'bw', { element, source: attacker });
+    const sv = rollSave(rng, t, 'bw', { element, source: attacker, dodge: true }); // PHB: DEX defensive adj. vs dodgeable attacks
     let dmg = sv.saved ? Math.floor(full / 2) : full;
     dmg = Math.max(0, Math.floor(dmg * elementMult(t, element)));
     const wasDown = isDownCreature(t);

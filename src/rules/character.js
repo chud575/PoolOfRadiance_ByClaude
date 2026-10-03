@@ -7,7 +7,7 @@ import {
 } from './races.js';
 import {
   CLASSES, splitClasses, levelForXp, xpForLevel, thac0For, savesFor, SAVE_KEYS, spellSlots, thiefSkills,
-  thiefDexAdj, classSpecName, classSpecAbbr, PR_LEVEL_CAPS, allowedAlignments, fighterAttacksPerRound,
+  thiefDexAdj, THIEF_ARMOR_ADJ, classSpecName, classSpecAbbr, PR_LEVEL_CAPS, allowedAlignments, fighterAttacksPerRound,
   backstabMultiplier,
 } from './classes.js';
 import { ITEMS } from '../data/items.js';
@@ -635,7 +635,8 @@ export function deriveStats(ch) {
   // ---- thief
   let thief = null;
   if (classes.includes('thief')) {
-    thief = thiefSkills(ch.levels.thief, race.thiefAdj, thiefDexAdj(a.dex));
+    const body = equipped(ch).find(([, d]) => d.type === 'armor')?.[1];
+    thief = thiefSkills(ch.levels.thief, race.thiefAdj, thiefDexAdj(a.dex), THIEF_ARMOR_ADJ[body?.armorGroup] ?? {});
     if (!armorAllowsThieving(ch)) for (const k of Object.keys(thief)) if (k !== 'rl' && k !== 'hn') thief[k] = 0;
   }
 

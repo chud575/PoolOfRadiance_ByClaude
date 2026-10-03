@@ -291,6 +291,7 @@ export default class ExploreScene extends Scene {
   /** Screen-space crepuscular rays (outdoors by day; strongest with a low sun in the haze). */
   _setupGodRays() {
     if (!this.tileset.outdoors || this.keys.night > 0.5 || this.keys.trueSunDir.y < -0.02) return;
+    if (location.search.includes("nogr")) return; // TMPDEBUG
     const comp = this.ctx.render.composer;
     const gr = new GodRaysPass();
     gr.camera = this.camera;
@@ -331,6 +332,7 @@ export default class ExploreScene extends Scene {
     this.particles = [];
     const add = (p) => {
       if (!p) return;
+      if (location.search.includes('nopart')) return; // TMPDEBUG
       this.scene3d.add(p);
       this.particles.push(p);
     };
@@ -407,6 +409,7 @@ export default class ExploreScene extends Scene {
     this.scene3d.add(this.block.group);
     this.props = buildProps(this.map, this.block, { night: this.night });
     this.scene3d.add(this.props.group);
+    if (location.search.includes('noprops')) this.props.group.visible = false; // TMPDEBUG
     this.dressing = this.tileset.variant ? dressDungeon(this.map, this.block) : null;
     if (this.dressing) this.scene3d.add(this.dressing.group);
     this.rooms = this.tileset.id !== 'dungeon' ? dressRooms(this.map) : null;

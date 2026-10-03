@@ -802,7 +802,7 @@ export class CombatEngine {
     else if (t.shape === 'single') targets = occ ? [occ] : [];
     else if (t.pick === 'foes') targets = near(foesIn); // chosen targets (hold person, slow)
     else targets = near(inArea.filter((o) => !(t.notCaster && o === c)));
-    const r = castInBattle(this.rng, spellId, c, targets, { level: lvl, school: t.school, fromItem: !!source });
+    const r = castInBattle(this.rng, spellId, c, targets, { level: lvl, school: t.school, fromItem: !!source, at });
     hits.push(...r.hits);
     // Fire and acid wounds do not regenerate (rules regenerationOf reads `burnt`).
     if (['fire', 'acid'].includes(SPELL_RULES[spellId]?.element)) {

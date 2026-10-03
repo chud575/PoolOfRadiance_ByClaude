@@ -75,7 +75,7 @@ describe('using magic items', () => {
     expect(ch.hp.cur).toBeGreaterThan(1);
     expect(ch.inventory.length).toBe(0);
   });
-  it('wands spend charges and cast at 6th level', () => {
+  it('wands spend one charge per use; the wand of magic missiles fires one 2-5 missile per charge (DMG)', () => {
     const rng = new Rng(3);
     const ch = createCharacter({ rng, name: 'M', race: 'human', classSpec: 'magicUser', abilities: abil({ int: 16 }), items: ['wandMagicMissile'] });
     const orc = combatantFromMonster(rng, 'ogre', 1);
@@ -84,8 +84,9 @@ describe('using magic items', () => {
     const r = useItem(rng, ch, 0, [orc]);
     expect(r.ok).toBe(true);
     expect(ch.inventory[0].charges).toBe(charges - 1);
-    expect(r.cast.level).toBe(6);
-    expect(r.cast.results[0].damage).toBeGreaterThanOrEqual(6); // 3 missiles
+    expect(r.cast.level).toBe(1);
+    expect(r.cast.results[0].damage).toBeGreaterThanOrEqual(2); // one missile: 1d4+1
+    expect(r.cast.results[0].damage).toBeLessThanOrEqual(5);
     ch.inventory[0].charges = 0;
     expect(useItem(rng, ch, 0, [orc]).reason).toBe('no charges');
   });

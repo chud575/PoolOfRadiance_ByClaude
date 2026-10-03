@@ -5,7 +5,7 @@ import { dexterityMods, strengthTable } from './abilities.js';
 import { turnNeeded, fighterAttacksPerRound, attacksThisRound } from './classes.js';
 import { MONSTERS } from '../data/monsters.js';
 import {
-  effectMods, isIncapacitated, isHelpless, onDamaged, onAttacked, addEffect, hasEffect, getEffect,
+  effectMods, isIncapacitated, isHelpless, onDamaged, onAttacked, breakConcentration, addEffect, hasEffect, getEffect,
   clearCombatEffects, tickPoison, tickEffects,
 } from './conditions.js';
 import { neededToHit } from './tohit.js';
@@ -71,7 +71,7 @@ export function combatantFromCharacter(ch) {
     attackRate: s.attacks,
     attacksLarge: s.damageLarge,
     ranged: !!s.weapon?.ranged,
-    range: s.weapon?.range ?? 1,
+    range: s.range ?? 1, // rules missileRange (short bow 15), not the raw data value
     magicWeapon: s.weaponMagic > 0,
     weaponMagic: s.weaponMagic ?? 0,
     magicVs: s.weaponMagicVs ?? null,
@@ -449,6 +449,15 @@ export function spellAttack(rng, caster, target, o = {}) {
  *   halved?:boolean}}
  */
 export function resolveAttack(rng, attacker, defender, opts = {}) {
+  // PHB concentration: a cleric who swings a weapon stops directing the
+  // Spiritual Hammer / stops chanting (before the roll: no chant bonus on it).
+  const broke = breakConcentration(effectHost(attacker));
+  const r = attackRoll(rng, attacker, defender, opts);
+  if (broke.length) r.concentrationBroken = broke;
+  return r;
+}
+
+function attackRoll(rng, attacker, defender, opts) {
   const ranged = opts.ranged ?? !!attacker.ranged;
   const lm = liveMods(attacker, defender, { ranged, rear: !!(opts.rear || opts.backstab) });
   const helpless = isHelplessTarget(defender);
@@ -706,11 +715,10 @@ export function dealDamage(c, dmg) {
  * the dwarf/halfling CON bonus applies to poison, not to paralysis.
  */
 export function savingThrow(rng, combatant, saveKey, bonus = 0, o = {}) {
-  if (combatant.ref?.classSpec || !combatant.saves) return rollSave(rng, combatant, saveKey, { ...o, bonus });
-  const fx = effectMods(effectHost(combatant));
-  const target = Math.max(2, combatant.saves[saveKey] - fx.save - (fx.saveVs[saveKey] ?? 0));
-  const r = rng.die(20);
-  return { roll: r, target, saved: r + bonus >= target };
+  // One path for everyone: savesOf folds in the creature's own save mods
+  // (bless, prayer, chant...), saveBonus the situational ones (element vs
+  // Resist Fire/Cold, source vs Protection from Evil/Good, WIS/DEX/racial).
+  return rollSave(rng, combatant, saveKey, { ...o, bonus });
 }
 
 /**

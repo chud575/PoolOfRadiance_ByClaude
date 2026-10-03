@@ -366,6 +366,21 @@ export function thiefSkills(level, ...adjs) {
   return base;
 }
 
+/**
+ * Thief-skill adjustments for armour (Unearthed Arcana; the same table
+ * the 2e PHB reprints). The PHB thief wears leather, which is the baseline
+ * (no adjustment). Padded and studded leather are bulky and noisy; elfin chain
+ * is fine and silent but still mail. Other armour forbids the skills outright
+ * (character.armorAllowsThieving). The UA no-armour bonus is not used:
+ * Pool of Radiance never rewarded thieves for going unarmoured.
+ */
+export const THIEF_ARMOR_ADJ = Object.freeze({
+  leather: Object.freeze({}),
+  padded: Object.freeze({ pp: -30, ol: -10, ft: -10, ms: -20, hs: -20, hn: -10, cw: -30 }),
+  studded: Object.freeze({ pp: -30, ol: -10, ft: -10, ms: -20, hs: -20, hn: -10, cw: -30 }),
+  elfin: Object.freeze({ pp: -20, ol: -5, ft: -5, ms: -10, hs: -10, hn: -5, cw: -20 }),
+});
+
 /** Backstab damage multiplier. */
 export function backstabMultiplier(level) {
   return level <= 4 ? 2 : level <= 8 ? 3 : level <= 12 ? 4 : 5;

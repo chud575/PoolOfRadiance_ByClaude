@@ -92,7 +92,10 @@ export const ITEM_RULES = Object.freeze({
   wandParalyzation: { effect: 'wandParalyzation', classes: ['magicUser'] },
   wandFire: { classes: ['magicUser'] },
   wandLightning: { classes: ['magicUser'] },
-  wandMagicMissile: { classes: ['magicUser'] },
+  // DMG: the wand fires one magic missile (2-5 hp, no save) per charge, at
+  // most 1 per round — a 1st-level casting, not a 6th-level volley of three
+  // (wands of fire and lightning do throw the DMG's 6-die bolts: 6th level).
+  wandMagicMissile: { classes: ['magicUser'], casterLevel: 1 },
   wandSleep: { classes: ['magicUser'] },
   gauntletsOgrePower: { classes: ['cleric', 'fighter', 'thief'] },
   potionGiantStrength: { fighterOnly: true },

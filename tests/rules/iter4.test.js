@@ -184,7 +184,7 @@ const PHB_CAST = {
   protectionFromEvil: { cleric: 4, magicUser: 1 }, protectionFromGood: { cleric: 4, magicUser: 1 }, resistCold: 10,
   findTraps: 5, holdPerson: { cleric: 5, magicUser: 3 }, resistFire: 5, silence15: 5, slowPoison: 1, snakeCharm: 5,
   spiritualHammer: 5,
-  chant: 10, // PHB 1 turn; Pool of Radiance makes it a battle prayer that goes off at the end of the round
+  chant: 100, // PHB 1 turn; in battle castingDelay clamps it to the full round (goes off at the round's end)
   cureBlindness: 10, causeBlindness: 10, cureDisease: 100, causeDisease: 100, dispelMagic: { cleric: 6, magicUser: 3 },
   prayer: 6, removeCurse: 6, bestowCurse: 6, cureSeriousWounds: 7, neutralizePoison: 7, cureCriticalWounds: 8,
   raiseDead: 10,
@@ -209,7 +209,8 @@ describe('casting times match the PHB for every spell', () => {
   }
   it('spells longer than a round cannot be cast in battle, except the PoR battle forms', () => {
     const long = Object.keys(PHB_CAST).filter((id) => castingTime(id, Object.keys(SPELL_RULES[id].schools)[0]) > 10);
-    expect(long.sort()).toEqual(['causeDisease', 'cureDisease', 'strength']);
+    expect(long.sort()).toEqual(['causeDisease', 'chant', 'cureDisease', 'strength']);
+    expect(SPELL_RULES.chant.usable).toBe('combat');
     expect(SPELL_RULES.strength.usable).toBe('camp');
     expect(SPELL_RULES.cureDisease.usable).toBe('camp');
     const mu = mk('human', 'magicUser', { level: 3 });

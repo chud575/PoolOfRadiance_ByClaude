@@ -1,6 +1,6 @@
 import {
   CONDITIONS, addEffect, removeEffect, getEffect, conditionIds, isIncapacitated, conditionsAllowCasting,
-  clearCombatEffects,
+  clearCombatEffects, breakConcentration, isConcentrating,
 } from './conditions.js';
 import {
   castSpell, conditionLine, hammerStrike, SPELL_RULES, castProblem, spellTargeting, castingClass, casterLevel,
@@ -138,9 +138,22 @@ const EFFECT_FLOAT = { asleep: 'asleep', held: 'held', nauseous: 'nauseous', cha
  * last resolved for this caster ('rsw' for wands/staves/rods) unless
  * `o.saveKey` is passed. `o.cls` (alias `school`) is the memorized slot's class.
  * `o.centre` is the creature (or id) an area spell was aimed at — for
- * Silence 15' Radius the only one allowed a save.
- * @param {{level?:number, fromItem?:boolean, school?:string, cls?:string, saveKey?:string, centre?:object|string}} [o]
+ * Silence 15' Radius the only one allowed a save. Without it, `o.at` (the
+ * aim square) picks the creature standing there (none: nobody saves); with
+ * neither, the first target (the engine lists targets nearest the aim first).
+ * @param {{level?:number, fromItem?:boolean, school?:string, cls?:string, saveKey?:string, centre?:object|string, at?:{x:number,y:number}}} [o]
  */
+function centreOf(spellId, targets, o) {
+  if (o.centre != null) return o.centre;
+  if (!SPELL_RULES[spellId]?.save?.centreOnly) return undefined;
+  const list = (targets ?? []).filter(Boolean);
+  // The aim square's occupant, when the engine says where it aimed...
+  if (o.at) return list.find((t) => t.x === o.at.x && t.y === o.at.y) ?? null;
+  // ...else the engine's nearest-first order: the first target stands on
+  // (or nearest) the aim point — the creature the spell was cast upon.
+  return list[0] ?? null;
+}
+
 export function castInBattle(rng, spellId, caster, targets, o = {}) {
   // Conditions (silence, held...) and armour for arcane magic are always
   // checked; memory is the engine's business (it spends the slot itself).
@@ -152,7 +165,7 @@ export function castInBattle(rng, spellId, caster, targets, o = {}) {
     PENDING_ITEM.delete(ch);
   }
   const res = castSpell(rng, spellId, caster, targets, {
-    ignoreMemory: true, context: 'combat', level: o.level, fromItem: !!o.fromItem, cls: o.cls ?? o.school, saveKey, centre: o.centre,
+    ignoreMemory: true, context: 'combat', level: o.level, fromItem: !!o.fromItem, cls: o.cls ?? o.school, saveKey, centre: centreOf(spellId, targets, o),
   });
   const hits = [];
   if (!res.ok) {
@@ -308,6 +321,7 @@ export function cloudExposure(rng, c, area, round = 0) {
 export function roundUpkeep(c) {
   const ev = [];
   const name = c.name ?? nameOf(c);
+  ev.push(...concentrationUpkeep(c));
   const r = endOfRound(c);
   if (r.bled) {
     const dead = isDownCreature(c) && (c.ref?.status ?? c.status) === 'dead';
@@ -327,9 +341,47 @@ export function roundUpkeep(c) {
 }
 
 /**
+ * End-of-round concentration check (PHB): the hammer's directing flag
+ * clears for the next round; a Chant ends when the cleric moved off the
+ * square it began on, or is silenced, held, asleep or down; a Spiritual
+ * Hammer ends when its cleric can no longer concentrate (held, asleep,
+ * down). Returns tactical `effectEnd` events.
+ */
+export function concentrationUpkeep(c) {
+  const host = effectHost(c);
+  const ev = [];
+  const hammer = getEffect(host, 'spiritualHammer');
+  if (hammer?.data?.directing) hammer.data = { ...hammer.data, directing: false };
+  const name = c.name ?? nameOf(c);
+  const down = isDown(c) || isDownCreature(c);
+  const chant = getEffect(host, 'chanting');
+  if (chant) {
+    const d = chant.data ?? {};
+    const moved = d.x != null && c.x != null && (c.x !== d.x || c.y !== d.y);
+    if (down || moved || !conditionsAllowCasting(host)) {
+      breakConcentration(host, { only: (e) => e.id === 'chanting' });
+      ev.push({ type: 'effectEnd', id: c.id, effect: 'chanting', text: `${name}'s chant is broken.` });
+    }
+  }
+  if (hammer && (down || isIncapacitated(host))) {
+    breakConcentration(host, { only: (e) => e.id === 'spiritualHammer' });
+    ev.push({ type: 'effectEnd', id: c.id, effect: 'spiritualHammer', text: `${name}'s spiritual hammer fades.` });
+  }
+  return ev;
+}
+
+/**
  * A Spiritual Hammer the caster still holds strikes again (start of the
  * cleric's turn). `pick(range)` returns the target to strike (or null) when
  * the original one is gone. Returns an attack event or null.
+ * PHB concentration: the strike *is* the cleric's action for the round —
+ * it zeroes `caster.attacksLeft` and blocks casting and item use for the
+ * rest of the turn (battleCastProblem / battleItemUse), so hammer + weapon
+ * blow or hammer + spell never both happen in one round. A cleric who wants
+ * to act otherwise ends the hammer first: breakConcentration(c) (UI: "Release
+ * hammer" before the turn), or any attack/cast outside a directing turn.
+ * With no target in reach the hammer waits and the cleric is free to act
+ * (acting then ends it).
  */
 export function hammerTurn(rng, caster, byId, pick) {
   const e = getEffect(effectHost(caster), 'spiritualHammer');
@@ -337,7 +389,11 @@ export function hammerTurn(rng, caster, byId, pick) {
   let t = e.data?.targetId ? byId(e.data.targetId) : null;
   if (!t || isDown(t)) t = pick(3);
   if (!t) return null;
-  e.data = { ...(e.data ?? {}), targetId: t.id };
+  // Concentration: directing the hammer is the cleric's action this round —
+  // no weapon blows, no other spell or item (battleCastProblem) until the
+  // round ends (roundUpkeep clears `directing`). Moving is allowed.
+  e.data = { ...(e.data ?? {}), targetId: t.id, directing: true };
+  caster.attacksLeft = 0;
   const h = hammerStrike(rng, caster, t, e.data?.magic ?? 1);
   return { type: 'attack', id: caster.id, target: t.id, hit: h.hit, dmg: h.damage, roll: h.roll, needed: h.needed, killed: h.down, ranged: true, hammer: true, text: h.text,
     ...(h.image ? { image: true } : {}), ...(h.blinked ? { blinked: true } : {}), ...(h.immune ? { immune: true } : {}) };
@@ -396,8 +452,16 @@ export function battleTargeting(id, caster = {}, o = {}) {
  */
 export function battleCastProblem(c, id) {
   if (!SPELL_RULES[id]) return 'unknown spell';
+  if (directingHammer(c)) return 'directing the Spiritual Hammer this round';
   return castProblem(characterOf(c) ?? c, id, { context: 'combat', ignoreMemory: true });
 }
+
+/** Has the creature spent this round's action directing its Spiritual Hammer? */
+export function directingHammer(c) {
+  return !!getEffect(effectHost(c), 'spiritualHammer')?.data?.directing;
+}
+
+export { breakConcentration, isConcentrating };
 
 /** Filter a memorized-spell list ({id, cls}[]) to what can be cast in battle now. */
 export function castableInBattle(c, spells) {
@@ -508,6 +572,7 @@ export function battleItemUse(ch, index) {
   const e = ch.inventory[index];
   const def = e && itemRulesOf(e);
   if (!def) return { kind: null, reason: 'Nothing to use.' };
+  if (directingHammer(ch)) return { kind: null, reason: 'Directing the Spiritual Hammer this round.' };
   if (def.type === 'potion') return { kind: 'potion' };
   if (def.type === 'wand' || def.type === 'staff' || def.type === 'rod') {
     if (!(e.charges > 0)) return { kind: null, reason: 'The wand is spent.' };

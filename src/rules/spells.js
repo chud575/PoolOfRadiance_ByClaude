@@ -4,7 +4,7 @@ import { splitClasses, CLASSES } from './classes.js';
 import { deriveStats, activeClasses, armorAllowsArcane, highestLevel, effectiveAbilities } from './character.js';
 import { wisdomSpellFailure } from './abilities.js';
 import {
-  addEffect, removeEffect, hasEffect, effectMods, conditionsAllowCasting, clearEffects, CONDITIONS, onAttacked,
+  addEffect, removeEffect, hasEffect, effectMods, conditionsAllowCasting, clearEffects, CONDITIONS, onAttacked, breakConcentration, linkConcentration,
   ROUNDS_PER_TURN, ROUNDS_PER_HOUR,
 } from './conditions.js';
 import {
@@ -172,13 +172,20 @@ export const SPELL_RULES = {
     name: 'Spiritual Hammer', schools: { cleric: 2 }, usable: 'combat', castTime: 5, range: (L) => Math.max(1, L), target: 'enemy',
     area: { shape: 'single' }, hostile: true, duration: (L) => R(L),
     ops: [{ op: 'hammer' }],
-    desc: 'A hammer of pure force strikes at the cleric\'s command.', tip: 'Strikes each round with the cleric\'s to-hit: 1d4+1 (1d4 vs large). No plusses, but it hits creatures needing +1 weapons (+2 at 7th level).',
+    // PHB: lasts only while the cleric concentrates (conditions 'spiritualHammer'
+    // is a concentration effect): directing it is the cleric's action each
+    // round; attacking or casting anything else ends it.
+    desc: 'A hammer of pure force strikes at the cleric\'s command.', tip: 'Strikes each round with the cleric\'s to-hit: 1d4+1 (1d4 vs large). No plusses, but it hits creatures needing +1 weapons (+2 at 7th level). Concentration: directing it is the cleric\'s action; attacking or casting ends it.',
   },
   chant: {
-    name: 'Chant', schools: { cleric: 2 }, usable: 'combat', castTime: 10, range: 0, target: 'party',
-    area: { shape: 'all' }, duration: (L) => R(Math.max(3, L)),
+    // PHB: casting time 1 turn (castingDelay clamps it to the full round:
+    // the chant takes hold at the round's end); duration "time of chanting" —
+    // it holds while the cleric keeps chanting, stationary. Damage, moving,
+    // acting (attacking, casting) or silence ends it (concentration 'chanting').
+    name: 'Chant', schools: { cleric: 2 }, usable: 'combat', castTime: 100, range: 0, target: 'party',
+    area: { shape: 'all' }, duration: Infinity, concentration: 'chanting',
     ops: [{ op: 'condition', id: 'chant', side: 'allies' }, { op: 'condition', id: 'chantFoe', side: 'enemies' }],
-    desc: 'The cleric\'s chant rises: allies surge, foes falter.', tip: 'Allies +1 to hit, damage and saves; enemies -1.',
+    desc: 'The cleric\'s chant rises: allies surge, foes falter.', tip: 'Allies +1 to hit, damage and saves; enemies -1, for as long as the cleric chants. Takes the whole round; being hurt, moving, attacking or casting ends it.',
   },
 
   // ============================================================ CLERIC 3
@@ -545,7 +552,7 @@ export function castingTime(id, cls, L = 1) {
 }
 
 /** Dice durations the formula functions roll at cast time (shown as dice, not their average). */
-const DURATION_TEXT = { snakeCharm: '4 rounds + 1d4', wandParalyzation: '5d4 rounds', stinkingCloud: 'helpless 1d4+1 rounds', causeBlindness: 'until cured', causeDisease: 'until cured' };
+const DURATION_TEXT = { snakeCharm: '4 rounds + 1d4', wandParalyzation: '5d4 rounds', stinkingCloud: 'helpless 1d4+1 rounds', causeBlindness: 'until cured', causeDisease: 'until cured', chant: 'while chanting' };
 const SAVE_TEXT = { neg: 'negates', half: 'half' };
 const SAVE_NAME = { sp: 'spell', ppdm: 'poison', rsw: 'wand', pp: 'petrification', bw: 'breath' };
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
@@ -814,6 +821,12 @@ export function castSpell(rng, id, caster, targets = [], opts = {}) {
   res.ok = true;
   if (opts.consume && ch) consumeMemorized(ch, id, school);
   const cname = nameOf(caster);
+  // PHB concentration: casting any spell (or releasing one from an item)
+  // ends a Spiritual Hammer or Chant the caster was maintaining.
+  if (caster) {
+    const broke = breakConcentration(effectHost(caster));
+    if (broke.length) res.flags.concentrationBroken = broke;
+  }
   // PHB: clerics of low wisdom risk spell failure (the spell is lost).
   if (ch && school === 'cleric' && !opts.fromItem && !opts.noFailure) {
     const pct = wisdomSpellFailure(effectiveAbilities(ch).wis);
@@ -826,6 +839,9 @@ export function castSpell(rng, id, caster, targets = [], opts = {}) {
     }
   }
   res.log.push(opts.fromItem ? `${s.name} is released.` : `${cname} casts ${s.name}.`);
+  const broke = res.flags.concentrationBroken ?? [];
+  if (broke.includes('chanting')) res.log.push(`${cname}'s chant falls silent.`);
+  if (broke.includes('spiritualHammer')) res.log.push(`${cname}'s spiritual hammer fades.`);
   // PHB Invisibility: the spell ends when the recipient attacks, and casting
   // a hostile spell (or releasing one from a wand) is an attack.
   if (s.hostile && caster) {
@@ -909,6 +925,14 @@ export function castSpell(rng, id, caster, targets = [], opts = {}) {
       const stop = applyOp(rng, op, { s, caster, t, host, tr, L, school, duration, saved, res, strict1e: !!opts.strict1e });
       if (stop) break;
     }
+  }
+  // Concentration spells (Chant): the caster keeps chanting; everything the
+  // chant put on others ends when the chant does (conditions.breakConcentration).
+  if (s.concentration && caster) {
+    const host = effectHost(caster);
+    const conc = addEffect(host, s.concentration, { rounds: Infinity, source: s.id, level: L });
+    conc.data = { x: caster.x ?? null, y: caster.y ?? null };
+    for (const tr of res.results) for (const id of tr.applied) linkConcentration(host, effectHost(tr.target), id);
   }
   // Self/party spells with ops that only set flags (detect magic...)
   if (!list.length && s.ops.every((o) => o.op === 'flag')) for (const o of s.ops) res.flags[o.flag] = true;

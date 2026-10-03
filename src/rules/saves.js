@@ -37,7 +37,8 @@ export function saveBonus(c, o = {}) {
   if (ch) {
     const a = effectiveAbilities(ch);
     if (o.mental) bonus += wisdomSaveAdj(a.wis);
-    if (o.dodge) bonus += Math.max(0, -dexterityMods(a.dex).ac);
+    // PHB defensive adjustment applies both ways: DEX 3 -4 ... DEX 18 +4.
+    if (o.dodge) bonus += -dexterityMods(a.dex).ac;
     if (o.poison) bonus += racialPoisonBonus(ch.race, ch.abilities.con);
   }
   if (o.element) bonus += fx.saveVsElement[o.element] ?? 0;

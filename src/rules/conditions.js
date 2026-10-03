@@ -88,7 +88,8 @@ export const CONDITIONS = {
   detectMagic: { name: 'Detect Magic', kind: 'buff', magical: true, desc: 'Magical auras glow.' },
   detectInvisibility: { name: 'Detect Invis.', kind: 'buff', magical: true, desc: 'Sees invisible creatures.' },
   findTraps: { name: 'Find Traps', kind: 'buff', magical: true, desc: 'Traps are revealed.' },
-  spiritualHammer: { name: 'Spiritual Hammer', kind: 'buff', magical: true, desc: 'A hammer of force fights at the cleric\'s command.' },
+  spiritualHammer: { name: 'Spiritual Hammer', kind: 'buff', magical: true, concentration: true, desc: 'A hammer of force fights while the cleric concentrates; attacking or casting ends it.' },
+  chanting: { name: 'Chanting', kind: 'buff', concentration: true, breaksOnHurt: true, desc: 'Chanting the mystic syllables. Being hurt, moving, acting or being silenced ends the chant.' },
   guarding: { name: 'Guarding', kind: 'buff', desc: 'Ready to strike the first foe that approaches.' },
   casting: { name: 'Casting', kind: 'status', lostOnDamage: true, desc: 'Weaving a spell. Struck before it goes off, the spell is lost.' },
 };
@@ -280,6 +281,10 @@ export function tickPoison(target, minutes = 1) {
  */
 export function onDamaged(target) {
   const removed = [];
+  // PHB Chant: "an attack which succeeds and causes damage" breaks it.
+  if ((target.effects ?? []).some((e) => CONDITIONS[e.id]?.breaksOnHurt)) {
+    removed.push(...breakConcentration(target, { only: (e) => CONDITIONS[e.id]?.breaksOnHurt }));
+  }
   // 1e spell disruption: a caster struck before the spell goes off loses it
   // (the slot is already spent). The effect stays, marked lost, so the
   // resolution can report "the spell is lost".
@@ -346,4 +351,58 @@ export function describeEffects(target) {
     out.push({ id, name: def.name, desc: def.desc, kind: def.kind, rounds: e?.rounds ?? Infinity });
   }
   return out;
+}
+
+// ------------------------------------------------------------ concentration
+
+/**
+ * Concentration (PHB): some spells last only while their caster keeps
+ * concentrating — Spiritual Hammer (the cleric directs the hammer instead of
+ * fighting or casting) and Chant (the cleric chants, stationary). Their
+ * caster-side effect carries `concentration: true` in CONDITIONS. Effects the
+ * spell put on *other* creatures (Chant's +1 on allies, -1 on foes) are linked
+ * to the caster with linkConcentration and end with it. Links are battle-
+ * scoped (a WeakMap, never serialized); clearCombatEffects strips the rest.
+ */
+const LINKS = new WeakMap();
+
+/** Concentration effect ids the creature is maintaining (empty array if none). */
+export function concentrationOf(target) {
+  return (target?.effects ?? []).filter((e) => CONDITIONS[e.id]?.concentration).map((e) => e.id);
+}
+
+/** Is the creature concentrating on a spell? Returns the first effect id or null. */
+export function isConcentrating(target) {
+  return concentrationOf(target)[0] ?? null;
+}
+
+/** Tie an effect on `other` to the caster's concentration (it ends when concentration does). */
+export function linkConcentration(caster, other, id) {
+  const list = LINKS.get(caster) ?? [];
+  list.push({ host: other, id });
+  LINKS.set(caster, list);
+}
+
+/**
+ * End the caster's concentration: removes its concentration effects (all, or
+ * those `o.only` accepts) and every linked effect on other creatures.
+ * Returns the caster-side ids removed.
+ */
+export function breakConcentration(target, o = {}) {
+  if (!target) return [];
+  const ids = (target.effects ?? []).filter((e) => CONDITIONS[e.id]?.concentration && (!o.only || o.only(e))).map((e) => e.id);
+  for (const id of ids) {
+    const e = getEffect(target, id);
+    const src = e?.source;
+    removeEffect(target, id);
+    const links = LINKS.get(target) ?? [];
+    const keep = [];
+    for (const l of links) {
+      const le = getEffect(l.host, l.id);
+      if (le && (!src || le.source === src)) removeEffect(l.host, l.id);
+      else if (le) keep.push(l);
+    }
+    LINKS.set(target, keep);
+  }
+  return ids;
 }
