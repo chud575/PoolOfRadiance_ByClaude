@@ -218,7 +218,8 @@ export function ashlar2({ seed = 21, rows = 10, minW = 0.12, maxW = 0.26, palett
     let spall = 0;
     if (spalls > 0 && sB > 0.55 - 0.1 * erosion) {
       const sp = worley(u * 18 + (chipField - 0.5) * 1.6, v * 18 + (mid - 0.5) * 1.6, 18, seed + 13);
-      spall = sp.id > 1 - (0.14 + 0.05 * erosion) * spalls ? smooth(0.37, 0.28, sp.f1 + (fine - 0.5) * 0.25) : 0;
+      // a soft-rimmed scar (the shader decides per stone, per repeat, whether it shows)
+      spall = sp.id > 1 - (0.1 + 0.04 * erosion) * spalls ? smooth(0.37, 0.24, sp.f1 + (fine - 0.5) * 0.25) : 0;
     }
     // hairline cracks: a few stones are split by a wandering fracture (each its own angle / path)
     let crk = 0;
@@ -233,7 +234,7 @@ export function ashlar2({ seed = 21, rows = 10, minW = 0.12, maxW = 0.26, palett
     }
     // each block sits a little proud of or behind its neighbours (laid by hand, weathered unevenly)
     const proud = joints ? (hash2(L.row * 29 + L.col, 23, seed + 51) - 0.5) * relief : 0;
-    let face = 0.62 + proud + tilt + (big - 0.5) * 0.05 + dressing + tool + (micro - 0.5) * 0.012 - spall * 0.05 - crk * 0.05;
+    let face = 0.62 + proud + tilt + (big - 0.5) * 0.05 + dressing + tool + (micro - 0.5) * 0.012 - spall * 0.02 - crk * 0.012;
     // jointless dressings (jambs, voussoirs): a hand-worked face — point-chisel pocks over the
     // field, diagonal claw-tool drafts in patches whose angle changes stone to stone, and broad
     // undulation from the banker mason's eye (never a flat CG plane)
@@ -277,7 +278,10 @@ export function ashlar2({ seed = 21, rows = 10, minW = 0.12, maxW = 0.26, palett
     // fresh stone in chips and spalls; slight lightening on worn arrises
     const fresh = inChip ? 1 - chipEdge : 0;
     // (kept subtle: a strong fresh tint outlines every block like a stencil)
-    c = mul3(c, 1 + fresh * 0.05 + spall * 0.04 - crk * 0.45);
+    c = mul3(c, 1 + fresh * 0.05);
+    // cracks and spalls are a decal mask (roughness R): SurfaceFX shows each on only some
+    // stones, differently on every repeat of the tile, so no scar recurs every 3 m
+    const decal = clamp01(crk * 0.55 + spall * 0.22);
     // dirt lodged along the worn arris and a soft occlusion falloff into the joint
     c = mul3(c, 1 - (1 - camR) * 0.22 * inStone - (1 - smooth(0, chamfer * 3 + 0.004, e - mw)) * 0.08);
     c = [c[0] * (1 + fresh * 0.01), c[1], c[2] * (1 - fresh * 0.015)];
@@ -297,7 +301,7 @@ export function ashlar2({ seed = 21, rows = 10, minW = 0.12, maxW = 0.26, palett
     let r = 0.78 + sB * 0.12 + (fine - 0.5) * 0.08 - sheen * (1 - sA) * 0.35;
     r = lerp(r, 0.93, fresh);
     r = lerp(0.97, clamp01(r), inStone);
-    return { c: col, h, r };
+    return { c: col, h, r, d: decal * inStone, id: joints ? sid : 0 };
   };
 }
 

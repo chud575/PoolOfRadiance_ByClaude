@@ -99,6 +99,11 @@ export function materialData(size, fn, { normalStrength = 2.5, cavity = 0.35 } =
   const col = new Float32Array(n * 3);
   const rgh = new Float32Array(n);
   const emi = new Float32Array(n);
+  // optional per-pixel side channels, packed into the roughness texture's free channels
+  // (three reads roughness from G only): R = decal mask (`d`), B = stone/element id (`id`),
+  // A = height. SurfaceFX uses them to vary decals and tone per stone without tiling.
+  const dec = new Float32Array(n);
+  const sid = new Float32Array(n);
   let hasEmi = false;
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
@@ -109,6 +114,8 @@ export function materialData(size, fn, { normalStrength = 2.5, cavity = 0.35 } =
       col[i * 3 + 1] = s.c[1];
       col[i * 3 + 2] = s.c[2];
       rgh[i] = s.r ?? 0.85;
+      dec[i] = s.d ?? 0;
+      sid[i] = s.id ?? 0;
       if (s.a !== undefined) {
         emi[i] = s.a;
         hasEmi = true;
@@ -145,11 +152,10 @@ export function materialData(size, fn, { normalStrength = 2.5, cavity = 0.35 } =
       normal[o + 1] = (ny * 0.5 + 0.5) * 255;
       normal[o + 2] = (nz * 0.5 + 0.5) * 255;
       normal[o + 3] = 255;
-      const r = rgh[i] * 255;
-      rough[o] = r;
-      rough[o + 1] = r;
-      rough[o + 2] = r;
-      rough[o + 3] = 255;
+      rough[o] = dec[i] * 255;
+      rough[o + 1] = rgh[i] * 255;
+      rough[o + 2] = sid[i] * 255;
+      rough[o + 3] = Math.max(0, Math.min(1, height[i])) * 255;
     }
   }
   return { size, color, normal, rough };
