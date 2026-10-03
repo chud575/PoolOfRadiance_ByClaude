@@ -182,13 +182,13 @@ export default class ExploreScene extends Scene {
       // raised ambient floor so silhouettes always read, even far from a torch; underground it is a
       // cool counter-light (cold air, wet stone) against the warm torches — the warrens greener,
       // Bane's temple a dead grey-green over a blood-red floor bounce
-      const amb = { warrens: [0x4a8494, 0x1c2620, 6.0], bane: [0x48566a, 0x340c0a, 5.4] }[ts.variant] ?? (dungeon ? [0x4a6c9c, 0x1c150e, 2.3] : this.hour > 6.5 && this.hour < 18.5 ? [0xb4c4de, 0xb07a4c, 2.35] : [0xeedcc8, 0x5a3e28, 1.45]); // interiors by day: cool sky fill from the windows, warm hearth/board bounce up onto the joists
+      const amb = { warrens: [0x4a8494, 0x1c2620, 6.0], bane: [0x48566a, 0x340c0a, 5.4] }[ts.variant] ?? (dungeon ? [0x5a7cb0, 0x1c150e, 3.0] : this.hour > 6.5 && this.hour < 18.5 ? [0xb4c4de, 0xb07a4c, 2.35] : [0xeedcc8, 0x5a3e28, 1.45]); // interiors by day: cool sky fill from the windows, warm hearth/board bounce up onto the joists
       this.hemi = new THREE.HemisphereLight(amb[0], amb[1], amb[2]);
       s.add(this.hemi);
       if (dungeon) {
         // faint cold key from above-ahead: separates walls, floor and vault in value and hue
         // (strong enough to separate cool stone from the warm torch pools: two hues, not a sepia wash)
-        this.coolKey = new THREE.DirectionalLight(ts.variant === 'bane' ? 0x7f94b0 : ts.variant === 'warrens' ? 0x64aab8 : 0x7096d0, ts.variant === 'warrens' ? 0.95 : ts.variant === 'bane' ? 0.55 : 0.6);
+        this.coolKey = new THREE.DirectionalLight(ts.variant === 'bane' ? 0x7f94b0 : ts.variant === 'warrens' ? 0x64aab8 : 0x7096d0, ts.variant === 'warrens' ? 0.95 : ts.variant === 'bane' ? 0.55 : 0.95);
         this.coolKey.position.set(0.3, 1, 0.6);
         this.camera.add(this.coolKey);
         this.camera.add(this.coolKey.target);

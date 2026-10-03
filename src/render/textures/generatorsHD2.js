@@ -234,6 +234,20 @@ export function ashlar2({ seed = 21, rows = 10, minW = 0.12, maxW = 0.26, palett
     // each block sits a little proud of or behind its neighbours (laid by hand, weathered unevenly)
     const proud = joints ? (hash2(L.row * 29 + L.col, 23, seed + 51) - 0.5) * relief : 0;
     let face = 0.62 + proud + tilt + (big - 0.5) * 0.05 + dressing + tool + (micro - 0.5) * 0.012 - spall * 0.05 - crk * 0.05;
+    // jointless dressings (jambs, voussoirs): a hand-worked face — point-chisel pocks over the
+    // field, diagonal claw-tool drafts in patches whose angle changes stone to stone, and broad
+    // undulation from the banker mason's eye (never a flat CG plane)
+    let pockC = 0;
+    if (!joints) {
+      const pk = worley(u * 44 + (fine - 0.5) * 0.6, v * 44 + (mid - 0.5) * 0.6, 44, seed + 71);
+      const pock = 1 - smooth(0.0, 0.32 + pk.id * 0.1, pk.f1);
+      const patch = Math.floor(fBig(u, v) * 5);
+      const ang = hash2(patch, 3, seed + 72) * 3.14;
+      const claw = Math.sin((u * Math.cos(ang) + v * Math.sin(ang)) * 300 + fine * 6) * 0.5 + 0.5;
+      const clawK = smooth(0.45, 0.6, fMid(u * 0.7 + 0.2, v * 0.7)) * 0.9;
+      face += -pock * 0.05 * (1 - clawK) + (claw - 0.5) * 0.03 * clawK + (big - 0.5) * 0.08;
+      pockC = pock * (1 - clawK) * 0.12 - (claw - 0.5) * clawK * 0.06;
+    }
     // chip surface: fractured, lower, rougher
     const chipH = 0.62 - 0.06 - chipDepth * 3 + (fine - 0.5) * 0.08 + (micro - 0.5) * 0.02;
     const top = inChip && chipEdge < 1 ? lerp(chipH, face, chipEdge) : face;
@@ -256,7 +270,7 @@ export function ashlar2({ seed = 21, rows = 10, minW = 0.12, maxW = 0.26, palett
     c = [c[0] * (1 + (sC - 0.5) * 0.08), c[1], c[2] * (1 - (sC - 0.5) * 0.09)];
     // weathering wash that ignores the joints (one surface aged as a whole, not a mosaic)
     if (wash) c = mul3(c, 1 + (fStreak(u * 0.5 + 0.3, v) - 0.5) * 0.3 * wash + (fLichen(u + 0.5, v * 0.5) - 0.5) * 0.25 * wash);
-    c = mul3(c, 0.84 + big * 0.3 + (mid - 0.5) * 0.16 + (fine - 0.5) * 0.1 + (micro - 0.5) * 0.08);
+    c = mul3(c, 0.84 + big * 0.3 + (mid - 0.5) * 0.16 + (fine - 0.5) * 0.1 + (micro - 0.5) * 0.08 - pockC);
     // mineral speckle
     if (micro > 0.86) c = mul3(c, 1.08);
     else if (micro < 0.1) c = mul3(c, 0.88);
@@ -304,14 +318,15 @@ export function hewnRock({ seed = 241, base = [0.33, 0.29, 0.24], floor = false,
     const fine = fFine(u, v);
     const micro = fMicro(u, v);
     // strata: tilted bedding planes with steps
-    const sv = floor ? big * 9 : v * 9 + big * 3.2 + (mid - 0.5) * 1.2 + u * 0.6;
+    // thin, many beds (5-12 cm) with low tonal contrast: limestone/shale, not painted stripes
+    const sv = floor ? big * 9 : v * 22 + big * 3.0 + (mid - 0.5) * 4.0 + (fine - 0.5) * 0.5 + u * 0.8;
     const layer = Math.floor(sv);
     const lf = sv - layer;
-    const strataStep = ceiling ? 0 : smooth(0.0, 0.08, lf) * 0.06;
-    const layerTone = ceiling ? 0.96 + hash2(layer, 1, seed) * 0.08 : 0.84 + hash2(layer, 1, seed) * 0.3;
-    // thin dark partings between the beds (shale seams), the odd pale sandy bed
-    const parting = ceiling || floor ? 0 : 1 - smooth(0.0, 0.035, lf);
-    const paleBed = !ceiling && !floor && hash2(layer, 5, seed) > 0.82 ? 1 : 0;
+    const strataStep = ceiling ? 0 : smooth(0.0, 0.12, lf) * 0.012 + (hash2(layer, 9, seed) - 0.5) * 0.01;
+    const layerTone = ceiling ? 0.96 + hash2(layer, 1, seed) * 0.08 : 0.94 + hash2(layer, 1, seed) * 0.1;
+    // thin dark partings between the beds (shale seams) that come and go, the odd pale sandy bed
+    const parting = ceiling || floor ? 0 : (1 - smooth(0.0, 0.05, lf)) * smooth(0.35, 0.6, mid + (fine - 0.5) * 0.3) * 0.8;
+    const paleBed = !ceiling && !floor && hash2(layer, 5, seed) > 0.9 ? 1 : 0;
     // pick scars: short diagonal gouges
     const pk = worley(u * 34, v * 22, 34, seed + 7);
     const gouge = floor ? 0 : (1 - smooth(0.0, 0.18, Math.abs(pk.f2 - pk.f1))) * 0.5 * (pk.id > 0.4 ? 1 : 0);
@@ -491,7 +506,7 @@ export function setts({ seed = 63, rows = 16, minW = 0.07, maxW = 0.125, moss = 
 export function settsV({ seed = 64, rows = 16, minW = 0.045, maxW = 0.095, moss = 0.35, sand = 0.5, flags = false } = {}) {
   const rb = [0];
   const wts = [];
-  for (let r = 0; r < rows; r++) wts.push(0.72 + hash2(r, 3, seed) * 0.6);
+  for (let r = 0; r < rows; r++) wts.push(0.55 + hash2(r, 3, seed) * 0.9);
   const tot = wts.reduce((a, b) => a + b, 0);
   let acc = 0;
   for (let r = 0; r < rows; r++) {
@@ -507,7 +522,8 @@ export function settsV({ seed = 64, rows = 16, minW = 0.045, maxW = 0.095, moss 
     const x0 = x;
     for (let k = 0; k < 80; k++) {
       list.push({ x, lean: (hash2(r, k + 301, seed) - 0.5) * 0.5 });
-      const w = minW + Math.pow(hash2(r, k + 7, seed), 1.2) * (maxW - minW);
+      const hw = hash2(r, k + 7, seed);
+      const w = (minW + Math.pow(hw, 1.5) * (maxW - minW)) * (hash2(r, k + 11, seed) < 0.12 ? 1.6 : 1); // the odd long stone
       if (x + w - x0 > 1 - minW * 0.6) break;
       x += w;
     }
@@ -522,7 +538,8 @@ export function settsV({ seed = 64, rows = 16, minW = 0.045, maxW = 0.095, moss 
   const fSand = bake(128, 5, { octaves: 3, seed: seed + 7, warp: 0.4 });
   const fWob = bake(256, 40, { octaves: 2, seed: seed + 8 });
   return (u, v0) => {
-    const v = fract(v0 + Math.sin(u * Math.PI * 2 + 0.7) * 0.007 + Math.sin(u * Math.PI * 4 + 2.1) * 0.003);
+    // courses drift in broad arcs across the street (hand-laid, never a ruled grid)
+    const v = fract(v0 + Math.sin((u + 0.15 * Math.sin(v0 * Math.PI * 2)) * Math.PI * 2 + 0.7) * 0.016 + Math.sin(u * Math.PI * 6 + 2.1 + v0 * Math.PI * 2) * 0.006 + (fBig(u, v0) - 0.5) * 0.02);
     let row = 0;
     while (row < rows - 1 && v >= rb[row + 1]) row++;
     const y0 = rb[row];
@@ -589,7 +606,7 @@ export function settsV({ seed = 64, rows = 16, minW = 0.045, maxW = 0.095, moss 
     if (grain > 0.82) c = mul3(c, 1.1);
     else if (grain < 0.16) c = mul3(c, 0.84);
     c = mul3(c, (0.82 + dome * 0.22) * (1 + settle * 1.2));
-    c = mix3(c, mul3(c, 0.62), (1 - t) * 0.45);
+    c = mix3(c, mul3(c, 0.7), (1 - t) * 0.25);
     let jc = mul3([0.13, 0.115, 0.095], 0.8 + fine * 0.5 + mid * 0.2);
     jc = mix3(jc, mul3([0.33, 0.29, 0.22], 0.85 + fine * 0.3), sd);
     const mz = smooth(0.6, 0.8, fMoss(u, v0)) * moss;

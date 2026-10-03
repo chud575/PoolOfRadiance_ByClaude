@@ -50,8 +50,8 @@ export function dressDungeon(map, block, opts = {}) {
    */
   function rockSkin(f) {
     const H = f.H;
-    const nS = 16;
-    const nY = Math.max(8, Math.round(H * 3.5));
+    const nS = 22;
+    const nY = Math.max(10, Math.round(H * 5));
     const half = S / 2;
     const ops = f.openings;
     const vn = (x, y, sd) => {
@@ -82,6 +82,7 @@ export function dressDungeon(map, block, opts = {}) {
     };
     const inOp = (s, y) => ops.some((o) => s > o.s0 && s < o.s1 && y > o.y0 && y < o.y1);
     const pos = [];
+    const ruvs = [];
     const idx = [];
     const wp = new THREE.Vector3();
     for (let j = 0; j <= nY; j++) {
@@ -92,12 +93,15 @@ export function dressDungeon(map, block, opts = {}) {
         const w = wp.x + wp.z; // along-wall world coordinate (faces are axis-aligned)
         const n = rockN(w, y);
         // horizontal pick-bench steps: the miners worked the face in lifts
-        const lift = Math.abs(((y + vn(w * 0.8, 3, 'rk4') * 0.4) % 0.9) / 0.9 - 0.5) < 0.04 ? -0.025 : 0;
+        const lift = 0; // (bench steps at this vertex density read as painted contour bands: dropped)
         const te = THREE.MathUtils.smoothstep(Math.min(sv + half, half - sv), 0.05, 0.55);
         const tr2 = THREE.MathUtils.smoothstep(H - y, 0.0, 0.45) * (0.75 + 0.25 * THREE.MathUtils.smoothstep(y, 0, 0.3));
         const to = THREE.MathUtils.smoothstep(opDist(sv, y), 0.02, 0.4);
         const disp = (n * 0.42 + lift) * te * tr2 * to;
         pos.push(sv, y, T / 2 + 0.008 + Math.max(0, disp));
+        // one continuous along-the-wall projection: per-vertex planar UVs flip to top-down on the
+        // upward faces of the bulges and paint wavy contour bands across the rock
+        ruvs.push(w / 3, (y + Math.max(0, disp) * 0.5) / 3);
       }
     }
     for (let j = 0; j < nY; j++) {
@@ -115,9 +119,10 @@ export function dressDungeon(map, block, opts = {}) {
     if (!idx.length) return;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(ruvs, 2));
     geo.setIndex(idx);
     geo.computeVertexNormals();
-    g.geometry('arch_hewn', geo, f.basis, { uv: 'world', ao: (p) => (0.5 + 0.5 * Math.min(1, rockN(p.x + p.z, p.y) * 1.6)) * (0.6 + 0.4 * THREE.MathUtils.smoothstep(p.y, 0, 0.9)) * (0.75 + 0.25 * THREE.MathUtils.smoothstep(H - p.y, 0, 0.5)) });
+    g.geometry('arch_hewn', geo, f.basis, { ao: (p) => (0.5 + 0.5 * Math.min(1, rockN(p.x + p.z, p.y) * 1.6)) * (0.6 + 0.4 * THREE.MathUtils.smoothstep(p.y, 0, 0.9)) * (0.75 + 0.25 * THREE.MathUtils.smoothstep(H - p.y, 0, 0.5)) });
     geo.dispose();
   }
 
@@ -189,7 +194,7 @@ export function dressDungeon(map, block, opts = {}) {
     geo.dispose();
     // a few knuckles of harder rock hanging well clear of the roof (never a flat disc)
     for (let k = 0; k < 2; k++) {
-      if (hash(map.id, fc.x, fc.y, k, 'ck') > 0.45) continue;
+      if (hash(map.id, fc.x, fc.y, k, 'ck') > 0.45 || true) continue; // read as floating boulders: dropped
       const sc = 0.45 + hash(map.id, fc.x, fc.y, k, 'cs') * 0.4;
       const m = tr(x0 + S / 2 + (hash(map.id, fc.x, fc.y, k, 'cx') - 0.5) * 2.2, ceil - 0.12 - sc * 0.12, z0 + S / 2 + (hash(map.id, fc.x, fc.y, k, 'cz') - 0.5) * 2.2)
         .multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(Math.PI + (hash(map.id, fc.x, fc.y, k, 'rx') - 0.5) * 0.6, hash(map.id, fc.x, fc.y, k) * 6.3, 0)))
@@ -931,10 +936,10 @@ export function dressDungeon(map, block, opts = {}) {
     // the gauntlet: a raised armoured fist turning into a claw — back of the hand toward the
     // faithful, fingers curling forward over it in three articulated, plated segments ending in
     // hooked iron claws, a ridge of knuckle plates, the thumb hooked across, a flared lamed cuff
-    const IRON = [0.42, 0.41, 0.45];
-    const EDGE = [0.72, 0.7, 0.74];
+    const IRON = [0.62, 0.6, 0.62];
+    const EDGE = [1.25, 1.2, 1.18]; // worn bright on the high spots
     const put = (geo, mm, tint = IRON) => {
-      g.geometry('prop_iron', geo, mm, { uv: 'world', tint, ao: 0.95 });
+      g.geometry('arch_iron', geo, mm, { uv: 'world', tint, ao: 0.95 });
       geo.dispose();
     };
     /** Rounded plate: a box whose front face bulges (domed armour). */
@@ -953,62 +958,74 @@ export function dressDungeon(map, block, opts = {}) {
       geo.computeVertexNormals();
       return geo;
     };
-    const base = at2(0, -0.04, 0.25).multiply(new THREE.Matrix4().makeScale(1.25, 1.25, 1.25));
-    // back of the hand: two overlapping domed plates
-    put(plate(0.62, 0.34, 0.12, 0.08), base.clone().multiply(tr(0, 0.05, 0)));
-    put(plate(0.5, 0.16, 0.1, 0.05), base.clone().multiply(tr(0, -0.17, 0.0)).multiply(new THREE.Matrix4().makeRotationX(-0.12)), EDGE);
+    // raised palm-out in Bane's salute but clawed: fingers splayed and hooked forward at the last
+    // joints, so the silhouette against the halo reads as a hand first, a weapon second
+    const base = at2(0, -0.15, 0.25).multiply(new THREE.Matrix4().makeScale(0.86, 0.86, 0.86));
+    // back of the hand: a tall domed plate over the metacarpals + a lower plate at the wrist
+    put(plate(0.56, 0.44, 0.13, 0.09), base.clone().multiply(tr(0, 0.04, 0)));
+    put(plate(0.46, 0.14, 0.11, 0.05), base.clone().multiply(tr(0, -0.24, 0.01)).multiply(new THREE.Matrix4().makeRotationX(-0.1)), EDGE);
+    // a raised spine ridge running up the back of the hand to each knuckle
+    for (const x of [-0.19, -0.065, 0.065, 0.19]) {
+      put(plate(0.05, 0.36, 0.03, 0.02), base.clone().multiply(tr(x * 0.9, 0.05, 0.075)).multiply(new THREE.Matrix4().makeRotationZ(-x * 0.5)), EDGE);
+    }
     // cuff: flared bell of lames below the wrist
     for (let k = 0; k < 3; k++) {
-      const r0 = 0.2 + k * 0.025;
-      const lame = new THREE.CylinderGeometry(r0, r0 + 0.025, 0.11, 18, 1, true);
-      put(lame, base.clone().multiply(tr(0, -0.38 - k * 0.1, -0.04)), k % 2 ? IRON : EDGE);
-      const band = new THREE.TorusGeometry(r0 + 0.025, 0.012, 5, 22);
+      const r0 = 0.17 + k * 0.022;
+      const lame = new THREE.CylinderGeometry(r0, r0 + 0.022, 0.1, 18, 1, true);
+      put(lame, base.clone().multiply(tr(0, -0.37 - k * 0.095, -0.04)), k % 2 ? IRON : EDGE);
+      const band = new THREE.TorusGeometry(r0 + 0.022, 0.012, 5, 22);
       band.rotateX(Math.PI / 2);
-      put(band, base.clone().multiply(tr(0, -0.44 - k * 0.1, -0.04)), EDGE);
+      put(band, base.clone().multiply(tr(0, -0.42 - k * 0.095, -0.04)), EDGE);
     }
-    // fingers
-    const fx = [-0.25, -0.085, 0.085, 0.25];
-    const flen = [[0.25, 0.17, 0.13], [0.3, 0.2, 0.15], [0.29, 0.19, 0.15], [0.22, 0.15, 0.12]];
-    const spread = [0.42, 0.14, -0.14, -0.42];
-    const curl = [[0.1, 0.18, 0.5], [0.08, 0.16, 0.48], [0.09, 0.17, 0.5], [0.12, 0.2, 0.55]];
+    // fingers: splayed fan, long segments, the curl concentrated in the last two joints (claws)
+    const fx = [-0.21, -0.07, 0.07, 0.21];
+    const flen = [[0.27, 0.19, 0.14], [0.33, 0.23, 0.16], [0.32, 0.22, 0.15], [0.24, 0.17, 0.13]];
+    const spread = [0.36, 0.11, -0.1, -0.34];
+    const curl = [[0.0, 0.1, 0.22], [-0.02, 0.08, 0.2], [0.0, 0.1, 0.22], [0.02, 0.12, 0.26]];
     fx.forEach((x, i) => {
-      // knuckle plate: a ridged boss over each knuckle
-      const kn = plate(0.12, 0.09, 0.1, 0.035);
-      put(kn, base.clone().multiply(tr(x, 0.23, 0.03)), EDGE);
-      let mm = base.clone().multiply(tr(x, 0.24, 0)).multiply(new THREE.Matrix4().makeRotationZ(spread[i]));
+      // knuckle plate: a ridged boss over each knuckle, with a spike
+      put(plate(0.11, 0.09, 0.1, 0.04), base.clone().multiply(tr(x, 0.27, 0.035)), EDGE);
+      const ks = new THREE.ConeGeometry(0.022, 0.07, 6);
+      ks.rotateX(Math.PI / 2);
+      put(ks, base.clone().multiply(tr(x, 0.28, 0.12)), EDGE);
+      let mm = base.clone().multiply(tr(x, 0.28, 0)).multiply(new THREE.Matrix4().makeRotationZ(spread[i]));
       flen[i].forEach((L, j) => {
         mm = mm.multiply(new THREE.Matrix4().makeRotationX(curl[i][j]));
-        const r = 0.04 - j * 0.005;
+        const r = 0.054 - j * 0.008;
         const seg = new THREE.CapsuleGeometry(r, L - r, 4, 10);
         put(seg, mm.clone().multiply(tr(0, L / 2, 0)));
-        // articulated plate on the back of each segment
-        put(plate(r * 1.7, L * 0.7, 0.025, 0.01), mm.clone().multiply(tr(0, L / 2, r * 0.85)), EDGE);
+        // articulated lame on the back of each segment, overlapping the next like a lobster tail
+        put(plate(r * 2.1, L * 0.82, 0.03, 0.014), mm.clone().multiply(tr(0, L * 0.52, r * 0.8)).multiply(new THREE.Matrix4().makeRotationX(-0.08)), EDGE);
+        // joint ring
+        const jr = new THREE.TorusGeometry(r * 1.05, 0.008, 4, 10);
+        jr.rotateX(Math.PI / 2);
+        put(jr, mm.clone(), EDGE);
         mm = mm.multiply(tr(0, L, 0));
       });
-      // hooked claw
-      const claw = new THREE.ConeGeometry(0.03, 0.13, 7);
-      claw.translate(0, 0.065, 0);
-      put(claw, mm.clone().multiply(new THREE.Matrix4().makeRotationX(0.55)), EDGE);
+      // hooked talon
+      const claw = new THREE.ConeGeometry(0.026, 0.15, 7);
+      claw.translate(0, 0.075, 0);
+      put(claw, mm.clone().multiply(new THREE.Matrix4().makeRotationX(0.75)), EDGE);
     });
-    // thumb, hooked across the front of the palm
+    // thumb: splayed out to the side and up, hooked at the tip
     {
-      let mm = base.clone().multiply(tr(-0.3, -0.12, 0.02)).multiply(new THREE.Matrix4().makeRotationZ(0.9)).multiply(new THREE.Matrix4().makeRotationX(0.5));
-      for (const [L, c] of [[0.16, 0.0], [0.13, 0.6], [0.1, 0.6]]) {
+      let mm = base.clone().multiply(tr(-0.25, -0.1, 0.03)).multiply(new THREE.Matrix4().makeRotationZ(0.95)).multiply(new THREE.Matrix4().makeRotationX(0.15));
+      for (const [L, c] of [[0.16, 0.0], [0.13, 0.3], [0.1, 0.45]]) {
         mm = mm.multiply(new THREE.Matrix4().makeRotationX(c));
-        const seg = new THREE.CapsuleGeometry(0.05, L - 0.05, 4, 10);
+        const seg = new THREE.CapsuleGeometry(0.058, L - 0.058, 4, 10);
         put(seg, mm.clone().multiply(tr(0, L / 2, 0)));
-        put(plate(0.11, L * 0.75, 0.03, 0.012), mm.clone().multiply(tr(0, L / 2, 0.045)), EDGE);
+        put(plate(0.1, L * 0.8, 0.03, 0.014), mm.clone().multiply(tr(0, L / 2, 0.042)), EDGE);
         mm = mm.multiply(tr(0, L, 0));
       }
-      const claw = new THREE.ConeGeometry(0.032, 0.12, 7);
-      claw.translate(0, 0.06, 0);
-      put(claw, mm.clone().multiply(new THREE.Matrix4().makeRotationX(0.5)), EDGE);
+      const claw = new THREE.ConeGeometry(0.03, 0.14, 7);
+      claw.translate(0, 0.07, 0);
+      put(claw, mm.clone().multiply(new THREE.Matrix4().makeRotationX(0.55)), EDGE);
     }
     // rivets along the knuckle ridge and the cuff
     for (let k = 0; k < 6; k++) {
       const st = new THREE.SphereGeometry(0.018, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2);
       st.rotateX(Math.PI / 2);
-      put(st, base.clone().multiply(tr(-0.25 + k * 0.1, -0.06, 0.16)), EDGE);
+      put(st, base.clone().multiply(tr(-0.22 + k * 0.088, -0.2, 0.13)), EDGE);
     }
     // green halo behind the hand (additive): rims the black silhouette, the hand never glows itself
     haloQuads.push(new THREE.Vector3(0, 0, 0.04).applyMatrix4(m), 1.05, m);

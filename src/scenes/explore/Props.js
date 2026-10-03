@@ -825,7 +825,7 @@ export function buildProps(map, block, opts = {}) {
         for (let i = 0; i <= NU; i++) {
           const u = i / NU;
           const v = j / NV;
-          const fold = Math.sin(u * Math.PI * 4 + ph) * (0.012 + 0.045 * v) + Math.sin(u * Math.PI * 9 + ph * 2) * 0.006 * v;
+          const fold = Math.sin(u * Math.PI * 4 + ph) * (0.022 + 0.07 * v) + Math.sin(u * Math.PI * 9 + ph * 2) * 0.012 * v + Math.sin(u * Math.PI * 2.3 + ph * 0.7) * 0.03 * v * v;
           const p = g0.clone().addScaledVector(du, u).addScaledVector(dv, v).addScaledVector(Tn, fold);
           // the free edge droops a little and the hem swings out from the pole line
           p.y -= Math.sin(u * Math.PI * 0.5) * 0.04 * v;

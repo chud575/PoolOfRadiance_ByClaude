@@ -1923,7 +1923,12 @@ export function buildBlock(map, opts = {}) {
         const v1 = -1 + (2 * (j + 1)) / N;
         // faces down (seen from below)
         // the webs are rubble rendered over and limewashed, long since smoked dark (stone ribs carry them)
-        g.quad('arch_plaster_int', P(u0, v0), P(u1, v0), P(u1, v1), P(u0, v1), null, { tint: [0.34, 0.35, 0.33], ao: (p) => 0.5 + 0.5 * THREE.MathUtils.smoothstep(p.y, base, ch - 0.1) });
+        // coursed basalt rubble webs, smoke-blackened toward the crown (never a pale lit panel)
+        // one continuous projection across the whole vault (per-quad planar UVs flip axis on the
+        // curved webs and turn the courses into a patchwork of tiles)
+        const q4 = [P(u0, v0), P(u1, v0), P(u1, v1), P(u0, v1)];
+        const vuv = q4.map((p) => [(p.x + (p.y - base) * 0.6 * Math.sign(p.x - x0 - hw)) / 2.2, (p.z + (p.y - base) * 0.6 * Math.sign(p.z - z0 - hw)) / 2.2]);
+        g.quad('arch_basalt', q4[0], q4[1], q4[2], q4[3], vuv, { tint: [0.62, 0.62, 0.6], ao: (p) => 0.75 - 0.4 * THREE.MathUtils.smoothstep(p.y, base, ch - 0.1) });
       }
     }
     // ribs: short chamfered segments following a curve
