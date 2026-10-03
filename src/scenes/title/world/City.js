@@ -1683,6 +1683,41 @@ export function createCity({ seed = 1988 } = {}) {
   };
   moundMat.customProgramCacheKey = () => 'cityMound';
   const cobbleMat = texMat('hd_cobble', { polygonOffset: true, polygonOffsetFactor: -1 });
+  // rain standing in the council plaza's worn hollows: puddles that mirror the
+  // braziers, the open door and the lit windows as true reflected glints (each
+  // light's direction tested against the mirrored view ray) over a dark sky
+  cobbleMat.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vCW;')
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvCW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+        varying vec3 vCW;
+        float cph(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float cvn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(cph(i), cph(i + vec2(1, 0)), f.x), mix(cph(i + vec2(0, 1)), cph(i + vec2(1, 1)), f.x), f.y); }
+        float cglint(vec3 P, vec3 Rv, vec3 L, float k) { return pow(max(dot(Rv, normalize(L - P)), 0.0), k); }`)
+      .replace('#include <opaque_fragment>', `
+        {
+          vec2 w = vCW.xz;
+          float zone = step(-38.0, w.x) * step(w.x, -2.0) * step(-56.0, w.y) * step(w.y, -36.0) * step(vCW.y, -13.5);
+          float pn = cvn(w * 0.55) * 0.65 + cvn(w * 1.7 + 3.0) * 0.35;
+          float pud = smoothstep(0.6, 0.64, pn) * zone;
+          if (pud > 0.001) {
+            vec3 V = normalize(vCW - cameraPosition);
+            vec3 Rv = reflect(V, normalize(vec3(0.02 * (cvn(w * 11.0) - 0.5), 1.0, 0.02 * (cvn(w * 11.0 + 5.0) - 0.5))));
+            vec3 refl = mix(vec3(0.02, 0.022, 0.05), vec3(0.04, 0.04, 0.09), clamp(Rv.y * 2.0, 0.0, 1.0));
+            float G = ${GROUND.toFixed(1)};
+            refl += vec3(1.6, 0.7, 0.25) * (cglint(vCW, Rv, vec3(-27.2, G + 1.25, -49.3), 1400.0) + cglint(vCW, Rv, vec3(-12.8, G + 1.25, -49.3), 1400.0)) * 2.5;
+            refl += vec3(1.3, 0.62, 0.22) * cglint(vCW, Rv, vec3(-20.0, G + 2.2, -55.4), 500.0) * 1.0;
+            refl += vec3(1.1, 0.55, 0.2) * (cglint(vCW, Rv, vec3(-27.0, G + 5.0, -55.4), 900.0) + cglint(vCW, Rv, vec3(-13.0, G + 5.0, -55.4), 900.0)) * 0.6;
+            float fres = 0.12 + 0.88 * pow(1.0 - clamp(-V.y, 0.0, 1.0), 4.0);
+            outgoingLight = mix(outgoingLight, outgoingLight * 0.3 + refl * fres, pud * 0.9);
+          }
+        }
+        #include <opaque_fragment>`);
+  };
+  cobbleMat.customProgramCacheKey = () => 'cityCobblePuddles';
   const roofMat = addRimLight(texMat('hd_roof_clay'), rimU, 1.2);
   const slateMat = addRimLight(texMat('hd_roof_slate', { metalness: 0.05 }), rimU, 1.2);
   const shakeMat = addRimLight(texMat('hd_roof_shake'), rimU, 1.2);
