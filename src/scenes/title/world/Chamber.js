@@ -341,12 +341,12 @@ export function createChamber({ seed = 1337 } = {}) {
   };
   // councillors along both sides of the table and the First Councillor at its head
   const council = [
-    { gender: 'male', classSpec: 'magicUser', look: { seed: 11, head: 7, body: 4, cloth: 0, hair: 9 } },
-    { gender: 'female', classSpec: 'cleric', look: { seed: 12, head: 2, body: 7, cloth: 1, hair: 1 } },
-    { gender: 'male', classSpec: 'cleric', look: { seed: 13, head: 2, body: 7, cloth: 3, hair: 0 } },
-    { gender: 'male', classSpec: 'magicUser', look: { seed: 14, head: 1, body: 4, cloth: 5, hair: 2 } },
+    { gender: 'male', classSpec: 'magicUser', look: { seed: 11, head: 7, body: 4, cloth: 5, hair: 9 } },
+    { gender: 'female', classSpec: 'cleric', look: { seed: 12, head: 2, body: 7, cloth: 2, hair: 1 } },
+    { gender: 'male', classSpec: 'cleric', look: { seed: 13, head: 2, body: 4, cloth: 4, hair: 0 } },
+    { gender: 'male', classSpec: 'magicUser', look: { seed: 14, head: 1, body: 4, cloth: 7, hair: 2 } },
     { gender: 'male', classSpec: 'magicUser', look: { seed: 21, head: 3, body: 4, cloth: 6, hair: 8 } },
-    { gender: 'female', classSpec: 'magicUser', look: { seed: 22, head: 4, body: 4, cloth: 3, hair: 3 } },
+    { gender: 'female', classSpec: 'magicUser', look: { seed: 22, head: 4, body: 4, cloth: 5, hair: 3 } },
     { gender: 'male', classSpec: 'cleric', look: { seed: 23, head: 7, body: 7, cloth: 4, hair: 7 } },
     { gender: 'male', classSpec: 'magicUser', look: { seed: 24, head: 6, body: 4, cloth: 2, hair: 1 } },
   ];
@@ -362,7 +362,7 @@ export function createChamber({ seed = 1337 } = {}) {
     const put = (g, list, c) => list.push(tint(worldUV(g.applyMatrix4(m), 1), c));
     put(box(w + 0.1, 0.2, 0.75, { z: -0.08 }), wood, 0x3a2818); // footboard / dais
     put(box(w, 0.08, 0.52, { y: SEAT + 0.4, z: -0.02 }), wood, 0x5a3a22);
-    put(box(w - 0.08, 0.05, 0.46, { y: SEAT + 0.48, z: -0.02 }), cloth, 0x6a1410);
+    put(box(w - 0.08, 0.05, 0.46, { y: SEAT + 0.48, z: -0.02 }), cloth, 0x4a100e);
     for (const sx of [-1, 1]) {
       put(box(0.07, SEAT + 0.42, 0.07, { x: sx * (w / 2 - 0.04), y: 0, z: 0.2 }), wood, 0x3a2618);
       put(box(0.08, SEAT + 0.42 + tall, 0.08, { x: sx * (w / 2 - 0.04), y: 0, z: -0.27 }), wood, 0x3a2618);
@@ -371,7 +371,7 @@ export function createChamber({ seed = 1337 } = {}) {
       const fin = new THREE.ConeGeometry(0.045, 0.14, 8).translate(sx * (w / 2 - 0.04), SEAT + 0.49 + tall, -0.27);
       wood.push(tint(worldUV(fin.applyMatrix4(m), 1), 0x5a3a22));
     }
-    put(box(w - 0.08, tall - 0.12, 0.05, { y: SEAT + 0.48, z: -0.27 }), cloth, 0x5a1210);
+    put(box(w - 0.08, tall - 0.12, 0.05, { y: SEAT + 0.48, z: -0.27 }), cloth, 0x3a0d0b);
     // buttoned leather: a carved oak frame round the back panel, brass studs in a grid
     put(box(w - 0.06, 0.05, 0.07, { y: SEAT + 0.48, z: -0.255 }), wood, 0x4a3020);
     for (const sx of [-1, 1]) put(box(0.05, tall - 0.12, 0.07, { x: sx * (w / 2 - 0.07), y: SEAT + 0.48, z: -0.255 }), wood, 0x4a3020);
@@ -397,24 +397,25 @@ export function createChamber({ seed = 1337 } = {}) {
     const L = ['warm', 'talkR', 'listen', 'warm'][i];
     const Rm = ['listen', 'warm', 'talkL', 'talkR'][i];
     if (i === 3) {
-      // the two nearest the foot have risen from their chairs to look the
-      // newcomers over: standing robes hang in long straight folds
-      chair(-1.78, tz + dz, Math.PI / 2 - turn);
-      chair(1.78, tz + dz, -Math.PI / 2 + turn);
-      person(council[i], -2.35, tz + dz + 0.55, Math.PI / 2 - 0.35, 0.016, { mod: 'talkR' });
-      person(council[i + 4], 2.3, tz + dz + 0.6, -Math.PI / 2 + 0.4, 0.016, { mod: 'listen' });
+      // the two chairs nearest the foot stand empty, pushed back and turned
+      // toward the newcomers: they frame the board without a figure filling
+      // the lens
+      chair(-1.86, tz + dz + 0.1, Math.PI / 2 - turn - 0.25);
+      chair(1.86, tz + dz + 0.1, -Math.PI / 2 + turn + 0.25);
       return;
     }
-    seated(council[i], -1.78, tz + dz, Math.PI / 2 - turn + (i % 2 ? 0.12 : -0.05), 0.016, { mod: L, lean: i % 2 ? 0.04 : -0.025 });
-    seated(council[i + 4], 1.78, tz + dz, -Math.PI / 2 + turn - (i % 2 ? 0.08 : -0.1), 0.016, { mod: Rm, lean: i % 2 ? -0.035 : 0.03 });
+    seated(council[i], -1.78, tz + dz, Math.PI / 2 - turn + (i % 2 ? 0.12 : -0.05), 0.016, { mod: L, lean: i % 2 ? 0.04 : -0.025, dim: 0.78 });
+    seated(council[i + 4], 1.78, tz + dz, -Math.PI / 2 + turn - (i % 2 ? 0.08 : -0.1), 0.016, { mod: Rm, lean: i % 2 ? -0.035 : 0.03, dim: 0.78 });
   });
   // the First Councillor in the great chair at the head of the table
   chair(0, tz - tl / 2 - 0.85, 0, 2.1, 0.78);
   person({ gender: 'male', classSpec: 'cleric', look: { seed: 31, head: 2, body: 7, cloth: 0, hair: 7 } }, 0, tz - tl / 2 - 0.85, 0, 0.016, { pose: 'sit' }).position.y = SEAT;
   // the clerk at his lectern beside the foot of the table, turned to the
   // adventurers, quill raised over the open ledger as he takes their names
-  const lx = 2.15, lz = tz + tl / 2 + 0.75;
-  const lry = -0.55; // lectern + clerk face the foot of the hall (toward camera)
+  // (at the head of the board beside the First Councillor's great chair, so
+  // the foreground stays clear and the hall reads in one-point perspective)
+  const lx = 1.55, lz = tz - tl / 2 - 0.35;
+  const lry = -0.35; // lectern + clerk face the foot of the hall (toward camera)
   const lm = new THREE.Matrix4().makeRotationY(lry).setPosition(lx, 0, lz);
   const lput = (g, list, c) => list.push(tint(worldUV(g.applyMatrix4(lm), 1), c));
   lput(box(0.42, 0.98, 0.36, { z: 0 }), wood, 0x4a3220);
@@ -439,7 +440,7 @@ export function createChamber({ seed = 1337 } = {}) {
     }
   }
   candle(lx + Math.cos(lry) * 0.42 + 0.05, 1.0, lz - Math.sin(lry) * 0.42 + 0.12, 0.14);
-  const clerk = person({ gender: 'male', classSpec: 'magicUser', look: { seed: 41, head: 6, body: 4, cloth: 5, hair: 1 } }, lx - Math.sin(lry) * 0.62, lz - Math.cos(lry) * 0.62, lry, 0.014);
+  const clerk = person({ gender: 'male', classSpec: 'magicUser', look: { seed: 41, head: 6, body: 4, cloth: 5, hair: 1 } }, lx - Math.sin(lry) * 0.62, lz - Math.cos(lry) * 0.62, lry, 0.014, { dim: 0.5, rim: 0x7a3c12 });
   {
     // his quill, raised mid-stroke in his right hand (the rig's right hand rests
     // forward of the hip in the standing pose): a feather card plus a dark nib
@@ -674,7 +675,7 @@ export function createChamber({ seed = 1337 } = {}) {
   // moonlight through the tall windows on both walls: cool shafts raking down
   // across the floor and the councillors' backs, against the warm candle core
   for (const sx of [-1, 1]) {
-    const moon = new THREE.SpotLight(0x9aa6e0, 150, 20, 0.6, 0.6, 1.2);
+    const moon = new THREE.SpotLight(0x8a9ae0, 55, 20, 0.6, 0.6, 1.2);
     moon.position.set(sx * (W / 2 + 1.5), 6.2, tz + 1.5);
     moon.target.position.set(-sx * 1.2, 0.6, tz - 0.5);
     group.add(moon, moon.target);
@@ -698,7 +699,7 @@ export function createChamber({ seed = 1337 } = {}) {
           float lead = smoothstep(0.0, 0.08, abs(fract(dq.x) - 0.5)) * smoothstep(0.0, 0.08, abs(fract(dq.y) - 0.5));
           float soft = smoothstep(0.0, 0.12, u.x) * smoothstep(1.0, 0.88, u.x) * smoothstep(0.0, 0.1, u.y);
           float k = pane * mull * tran * mix(0.55, 1.0, lead) * soft;
-          gl_FragColor = vec4(vec3(0.42, 0.52, 0.95) * k * 0.55, 1.0);
+          gl_FragColor = vec4(vec3(0.36, 0.46, 0.92) * k * 0.2, 1.0);
         }`,
     });
     const shaftMat = new THREE.ShaderMaterial({

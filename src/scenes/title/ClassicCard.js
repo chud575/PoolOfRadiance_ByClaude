@@ -36,57 +36,96 @@ const hash = (i, j = 0) => {
  */
 const DRAGON_INK = { d: EGA.dgrey, l: EGA.lgrey, r: EGA.red, R: EGA.lred, y: EGA.yellow, b: EGA.brown };
 function dragonFrame(up) {
-  const W2 = 48, H2 = 26, oy = 14;
+  const W2 = 64, H2 = 34;
   const g = Array.from({ length: H2 }, () => Array(W2).fill('.'));
   const put = (x, y, c) => { x = Math.round(x); y = Math.round(y); if (x >= 0 && x < W2 && y >= 0 && y < H2) g[y][x] = c; };
+  const get = (x, y) => (x >= 0 && x < W2 && y >= 0 && y < H2 ? g[y][x] : '.');
   const line = (x0, y0, x1, y1, c, w = 1) => {
-    const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) * 2 + 1;
-    for (let i = 0; i <= n; i++) for (let k = 0; k < w; k++) put(x0 + ((x1 - x0) * i) / n, y0 + ((y1 - y0) * i) / n + k, c);
+    const n = Math.ceil(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0))) * 2 + 1;
+    for (let i = 0; i <= n; i++) {
+      const x = x0 + ((x1 - x0) * i) / n, y = y0 + ((y1 - y0) * i) / n;
+      for (let k = 0; k < w; k++) put(x, y + k - Math.floor((w - 1) / 2), c);
+    }
   };
-  // wing first (the body overlaps its root)
-  const A = [15, oy - 2], B = [31, oy - 1], T = up ? [27, 0] : [23, H2 - 1];
-  const cross = (o, p, q) => (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0]);
+  const inPoly = (P, x, y) => {
+    let inside = false;
+    for (let i = 0, j = P.length - 1; i < P.length; j = i++) {
+      const [xi, yi] = P[i], [xj, yj] = P[j];
+      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  };
+  const poly = (P, c) => { for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) if (inPoly(P, x + 0.5, y + 0.5)) put(x, y, typeof c === 'function' ? c(x, y) : c); };
+  // a quadratic curve swept with a tapering pen
+  const sweep = (a, m, b, w0, w1, c) => {
+    for (let i = 0; i <= 40; i++) {
+      const t = i / 40, u = 1 - t;
+      const x = u * u * a[0] + 2 * u * t * m[0] + t * t * b[0];
+      const y = u * u * a[1] + 2 * u * t * m[1] + t * t * b[1];
+      const r = (w0 + (w1 - w0) * t) / 2;
+      for (let dy = -Math.ceil(r); dy <= Math.ceil(r); dy++) for (let dx = -Math.ceil(r); dx <= Math.ceil(r); dx++) {
+        if (dx * dx + dy * dy <= r * r + 0.25) put(x + dx, y + dy, typeof c === 'function' ? c(x + dx, y + dy, dy / Math.max(r, 0.5)) : c);
+      }
+    }
+  };
+  const hide = (_x, _y, k) => (k < -0.45 ? 'R' : k > 0.5 ? 'b' : 'r');
+  // tail: a long whip curling up behind, ending in a spade
+  sweep([40, 18], [52, 25], [60, 15], 4, 1, hide);
+  poly([[58, 15], [61, 11], [63, 15], [61, 17]], 'r');
+  put(61, 12, 'R');
+  // hind leg: a heavy thigh, shin raking back, light grey talons
+  sweep([37, 19], [40, 23], [42, 26], 4, 2, 'r');
+  line(41, 27, 45, 27, 'l');
+  put(45, 28, 'l'); put(43, 28, 'l');
+  // foreleg tucked under the chest
+  sweep([24, 20], [22, 24], [24, 26], 3, 2, 'r');
+  put(25, 27, 'l'); put(23, 27, 'l'); put(24, 27, 'l');
+  // body: deep keeled chest tapering to the haunch; lit back, brown belly plates
   for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) {
-    const P = [x + 0.5, y + 0.5];
-    const c1 = cross(A, T, P), c2 = cross(T, B, P), c3 = cross(B, A, P);
-    if (!((c1 >= 0 && c2 >= 0 && c3 >= 0) || (c1 <= 0 && c2 <= 0 && c3 <= 0))) continue;
-    const tx = T[0] - B[0], ty = T[1] - B[1];
-    const L = Math.hypot(tx, ty);
-    const along = ((P[0] - B[0]) * tx + (P[1] - B[1]) * ty) / (L * L);
-    const dist = Math.abs(cross(B, T, P)) / L;
-    if (dist < 1.8 * Math.abs(Math.sin(along * Math.PI * 3)) && along > 0.05 && along < 0.95) continue;
-    put(x, y, 'b');
+    const fx = (x + 0.5 - 31) / 11.5;
+    const ry = 4.8 - 1.6 * Math.max(0, Math.min(1, fx + 0.3));
+    const ey = (y + 0.5 - 18.2) / ry;
+    if (fx * fx + ey * ey <= 1) put(x, y, ey < -0.55 ? 'R' : ey > 0.42 ? 'b' : 'r');
   }
-  line(A[0], A[1], T[0], T[1], 'R'); // leading-edge arm bone
-  const Wr = [A[0] + (T[0] - A[0]) * 0.55, A[1] + (T[1] - A[1]) * 0.55];
-  for (const f of [0.34, 0.67]) line(Wr[0], Wr[1], B[0] + (T[0] - B[0]) * f, B[1] + (T[1] - B[1]) * f, 'R');
-  // body: an egg, deep at the chest, tapering to the haunch; lit back, brown belly
-  for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) {
-    const fx = (x + 0.5 - 23) / 10;
-    const ry = 2.0 + 1.4 * Math.max(0, Math.min(1, 0.6 - fx * 0.8));
-    const ey = (y + 0.5 - (oy + 0.8)) / ry;
-    if (fx * fx + ey * ey <= 1) put(x, y, ey < -0.55 ? 'R' : ey > 0.35 ? 'b' : 'r');
+  for (let x = 23; x <= 36; x += 3) put(x, 20 + (x > 31 ? 0 : 1), 'r'); // belly plate seams
+  // neck: a strong curve rising from the deep chest to the head
+  sweep([25, 16], [18, 17], [13, 12.5], 5, 3, hide);
+  // head: a long wedge, brow ridge, open jaw with teeth, yellow eye, swept horns
+  poly([[1, 12.5], [5, 10.5], [10, 9.2], [14, 10.5], [14.5, 13], [9, 13.4], [3, 13.6]], (x, y) => (y < 11 ? 'R' : 'r'));
+  poly([[3, 15.4], [8, 14.4], [13, 14], [13.5, 15.5], [8, 16.4], [4, 16.6]], 'r');
+  put(2, 13, 'l'); put(4, 13, 'l'); put(6, 13, 'l'); put(4, 15, 'l'); put(6, 15, 'l');
+  put(1, 12, 'r'); // nostril flare
+  put(10, 10, 'y'); put(11, 10, 'y');
+  line(11, 9, 17, 6, 'l'); line(13, 10, 18, 8, 'l');
+  // dorsal spines from the poll down the neck, back and tail
+  for (const [x, y] of [[14, 9], [16, 12], [19, 13], [23, 13], [26, 13], [29, 13], [32, 13], [35, 14], [38, 14], [42, 16], [46, 18]]) put(x, y, 'd');
+  // the near wing: shoulder, elbow, wrist and four finger bones; a brown
+  // membrane between them with a scalloped trailing edge, drawn over the back
+  const S = [27, 15];
+  const E = up ? [22, 7] : [21, 23];
+  const Wr = up ? [29, 1] : [26, 31];
+  const tips = up ? [[41, 0], [50, 3], [54, 9], [47, 13]] : [[35, 33], [44, 31], [50, 26], [46, 21]];
+  const root = up ? [38, 15] : [38, 20];
+  const mem = [S, E, Wr, ...tips, root];
+  poly(mem, 'b');
+  // scallops: bite a soft arc out between each pair of fingertips
+  const edge = [...tips, root];
+  for (let i = 0; i < edge.length - 1; i++) {
+    const [ax, ay] = edge[i], [bx, by] = edge[i + 1];
+    const mx = (ax + bx) / 2, my = (ay + by) / 2;
+    const L = Math.hypot(bx - ax, by - ay);
+    // push the bite centre outward (away from the wrist)
+    let nx = mx - Wr[0], ny = my - Wr[1];
+    const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
+    const cx = mx + nx * L * 0.62, cy = my + ny * L * 0.62;
+    const r = L * 0.74;
+    for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) if (get(x, y) === 'b' && Math.hypot(x + 0.5 - cx, y + 0.5 - cy) < r) g[y][x] = '.';
   }
-  // dorsal spines along the back and neck
-  for (let x = 16; x <= 31; x += 3) put(x, oy - 2 - (x < 24 ? 1 : 0) - (x < 20 ? 1 : 0), 'd');
-  // legs: a tucked foreleg under the chest, a heavy hind leg trailing back
-  line(17, oy + 3, 16, oy + 5, 'r');
-  put(15, oy + 5, 'l');
-  for (let y = oy + 2; y <= oy + 4; y++) for (let x = 27; x <= 30; x++) put(x, y, y === oy + 4 ? 'b' : 'r');
-  line(30, oy + 4, 33, oy + 6, 'r');
-  put(34, oy + 6, 'l'); put(35, oy + 6, 'l');
-  // S-neck (two pixels thick) into a wedge head with an open jaw
-  line(14, oy - 1, 9, oy - 4, 'r', 2);
-  for (let x = 1; x <= 9; x++) put(x, oy - 4, x > 6 ? 'R' : 'r');
-  for (let x = 3; x <= 8; x++) put(x, oy - 5, 'R');
-  for (let x = 5; x <= 8; x++) put(x, oy - 6, 'r');
-  for (let x = 2; x <= 7; x++) put(x, oy - 2, 'r'); // lower jaw, agape
-  put(1, oy - 3, 'l'); put(3, oy - 3, 'l'); // teeth
-  put(5, oy - 5, 'y');
-  put(9, oy - 7, 'l'); put(10, oy - 8, 'l'); put(8, oy - 7, 'l');
-  // tail: a lazy S out behind, ending in a spade
-  for (let x = 32; x <= 44; x++) put(x, oy + 1 + Math.round(Math.sin((x - 32) * 0.33) * 1.4 + (x - 32) * 0.12), 'r');
-  put(45, oy + 3, 'r'); put(46, oy + 2, 'r'); put(46, oy + 3, 'r'); put(46, oy + 4, 'r'); put(47, oy + 3, 'r');
+  // sun through the membrane: light red lit near the bones' roots
+  line(S[0], S[1], E[0], E[1], 'R', 2);
+  line(E[0], E[1], Wr[0], Wr[1], 'R');
+  for (const t of tips) line(Wr[0], Wr[1], t[0], t[1], 'R');
+  put(Wr[0] - 1, Wr[1] + (up ? 0 : -1), 'l'); // the wrist claw
   return g.map((r) => r.join(''));
 }
 const DRAGON_FRAMES = [dragonFrame(true), dragonFrame(false)];
@@ -251,13 +290,13 @@ export class ClassicCard {
 
   _dragon(t) {
     // every 20 s it crosses the sky right to left between the titles and the
-    // rooftops: a hand-placed EGA sprite (dark grey hide, light grey belly,
-    // red membranes on light red wing bones, a yellow eye), whole pixels only
+    // rooftops: the red dragon sprite above (red hide, brown belly and
+    // membranes on light red bones, a yellow eye), whole pixels only
     const P = 20;
     const k = (((t + 19.4) % P) + P) % P / 12;
     if (k > 1) return;
     const x = Math.round(340 - k * 384);
-    const y = Math.round(74 - k * 6 + Math.sin(t * 2) * 1.5);
+    const y = Math.round(81 - k * 6 + Math.sin(t * 2) * 1.5);
     const frame = DRAGON_FRAMES[Math.floor(t * 4) % 2];
     const g = this.g;
     for (let r = 0; r < frame.length; r++) {
@@ -266,7 +305,7 @@ export class ClassicCard {
         const col = DRAGON_INK[row[c]];
         if (!col) continue;
         g.fillStyle = col;
-        g.fillRect(x + c - 24, y + r - 14, 1, 1);
+        g.fillRect(x + c - 32, y + r - 17, 1, 1);
       }
     }
   }

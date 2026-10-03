@@ -42,7 +42,7 @@ html[data-classic='1'] .por-frame--parchment {
 html[data-classic='1'] .por-frame::before, html[data-classic='1'] .por-frame::after,
 html[data-classic='1'] .por-corner, html[data-classic='1'] .por-frame-plate, html[data-classic='1'] .por-frame-crest { display: none !important; }
 html[data-classic='1'] .por-frame-title {
-  background: #000 !important; color: var(--ega-11) !important; clip-path: none !important; padding: 0 0.6em !important; font-weight: 400 !important;
+  background: #000 !important; color: var(--ega-11) !important; clip-path: none !important; padding: 0.2em 0.7em !important; line-height: 1.3 !important; height: auto !important; font-weight: 400 !important;
 }
 html[data-classic='1'] .por-rule, html[data-classic='1'] .por-mm-rule { background: none !important; height: 0 !important; border-top: 2px solid var(--ega-9); margin: 0.6em 0 !important; }
 html[data-classic='1'] .por-gilt-text { background: none !important; color: var(--ega-11) !important; -webkit-background-clip: border-box; }
@@ -154,3 +154,5 @@ html[data-classic='1'] .por-pad.dpad .por-dpad { filter: none; }
 /* the card's bottom slot carries the publisher-style line (drawn in the EGA
    canvas); the footer's [ENTER] BEGIN is the prompt, as in 1988 */
 html[data-classic='1'] .por-title-prompt { visibility: hidden; }
+/* the drawn previews in the help well are painted in the gilt skin: drop them in 1988 mode */
+html[data-classic='1'] .por-set-help-prev { display: none !important; }

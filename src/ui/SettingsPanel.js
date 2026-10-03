@@ -264,6 +264,10 @@ export class SettingsPanel {
     // returns to whatever held it (the title menu, a HUD button) on close
     this._prevFocus = typeof document !== 'undefined' ? document.activeElement : null;
     this._build();
+    // the host attaches el synchronously after construction: take focus in a
+    // microtask (not a frame callback, which can be seconds away on software
+    // GL), and again next frame in case the host attached it later
+    queueMicrotask(() => this._focusRow());
     if (typeof requestAnimationFrame !== 'undefined') requestAnimationFrame(() => this._focusRow());
     this._onKey = this._onKey.bind(this);
     window.addEventListener('keydown', this._onKey, true);
