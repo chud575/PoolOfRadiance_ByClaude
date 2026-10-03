@@ -1879,6 +1879,33 @@ export function buildBlock(map, opts = {}) {
     return 0.03 * THREE.MathUtils.smoothstep(wallDist(px, pz), 0.9, 1.7);
   };
   const groundDecals = { dirt: [], rut: [] };
+  // where two paving systems meet (big flags beside small setts, setts beside beaten earth) a
+  // dressed kerb of long stones runs along the joint, settled unevenly — never a raw texture seam
+  if (!indoor) {
+    const pave = new Set(['arch_cobble', 'arch_flags', 'arch_mud']);
+    const keyAt = (x, y) => (map.inBounds(x, y) && !(solidCell(x, y) && covered(x, y)) && !isPier(x, y) ? ts.floors[map.getCell(x, y)] ?? 'arch_cobble' : null);
+    for (let y = 0; y < Hh; y++) {
+      for (let x = 0; x < W; x++) {
+        const ka = keyAt(x, y);
+        if (!pave.has(ka)) continue;
+        for (const [dx, dy, dir] of [[1, 0, 'E'], [0, 1, 'S']]) {
+          const kb = keyAt(x + dx, y + dy);
+          if (!pave.has(kb) || kb === ka || map.getEdge(x, y, dir) !== EDGE.OPEN) continue;
+          const alongZ = dx === 1;
+          let a = 0.02;
+          for (let k = 0; a < S - 0.05; k++) {
+            const l = Math.min(S - 0.02 - a, 0.55 + hash(map.id, x, y, dir, k, 'kb') * 0.45);
+            const cx = alongZ ? (x + 1) * S : x * S + a + l / 2;
+            const cz = alongZ ? y * S + a + l / 2 : (y + 1) * S;
+            const cy = crownAt(cx, cz) + 0.012 + (hash(map.id, x, y, dir, k, 'kh') - 0.5) * 0.02;
+            const tn = 0.82 + hash(map.id, x, y, dir, k, 'kt') * 0.2;
+            g.box('arch_trim', { c: [cx, cy, cz], s: alongZ ? [0.24, 0.07, l - 0.012] : [l - 0.012, 0.07, 0.24], chamfer: 0.018, rotY: (hash(map.id, x, y, dir, k, 'kr') - 0.5) * 0.03, tint: [tn * 0.8, tn * 0.78, tn * 0.74], ao: (p, nn) => (nn.y > 0.5 ? 0.9 : 0.55) });
+            a += l;
+          }
+        }
+      }
+    }
+  }
   for (let y = 0; y < Hh; y++) {
     for (let x = 0; x < W; x++) {
       const cell = map.getCell(x, y);

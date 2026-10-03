@@ -357,7 +357,7 @@ export function dressRooms(map) {
     };
     const pal = [[0.36, 0.3, 0.26], [0.28, 0.32, 0.38], [0.42, 0.26, 0.2], [0.3, 0.34, 0.24], [0.46, 0.4, 0.3]];
     const coat = pal[Math.floor(hash(seed, 'pc') * pal.length)];
-    const hood = true; // (hooded: a bowed, cowled drinker reads at a glance; a bare mannequin face does not)
+    const hood = hash(seed, 'ph') < 0.5;
     const lean = 0.28 + hash(seed, 'pl') * 0.15;
     const V = (x, y, z) => new THREE.Vector3(x, y, z);
     // thighs along the bench toward the table, shins down, boots
@@ -402,28 +402,58 @@ export function dressRooms(map) {
     // head bowed toward the drink
     const hp = new THREE.Vector3(0, 0.76, 0.04).applyMatrix4(tm).applyMatrix4(inv);
     const hm = m.clone().multiply(tr(hp.x, hp.y, hp.z)).multiply(new THREE.Matrix4().makeRotationX(0.25));
-    const head = new THREE.SphereGeometry(0.1, 12, 10);
-    head.scale(0.92, 1.1, 1);
-    g.geometry('prop_skin', head, hm, { uv: 'world', tint: hash(seed, 'sk') < 0.5 ? [1, 1, 1] : [0.8, 0.7, 0.62] });
-    head.dispose();
+    face(hm, seed, { cap: !hood });
     if (hood) {
-      // hood up: a soft cowl round the head, shadowing the face
-      const hd = new THREE.SphereGeometry(0.135, 12, 10, Math.PI * 0.62, Math.PI * 1.76, 0, Math.PI * 0.72);
-      hd.scale(0.95, 1.12, 1.05);
-      cloth(hd, hm.clone().multiply(tr(0, 0.02, -0.01)), coat.map((v) => v * 0.85));
-    } else {
-      // a felt cap and a short beard
-      const cap = new THREE.SphereGeometry(0.118, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.46);
-      cap.scale(1, 1.05, 1.06);
-      cloth(cap, hm.clone().multiply(tr(0, 0.012, -0.006)), [0.34, 0.24, 0.16]);
-      // beard: jaw and chin only (front-lower part of a shell round the face)
-      const brd = new THREE.SphereGeometry(0.095, 12, 8, Math.PI / 2 - 1.15, 2.3, Math.PI * 0.6, Math.PI * 0.32);
-      brd.scale(0.98, 1.12, 1.02);
-      g.geometry('arch_beam_dark', brd, hm.clone().multiply(tr(0, -0.012, 0.008)), { uv: 'world', tint: hash(seed, 'bc') < 0.5 ? [0.5, 0.36, 0.24] : [0.75, 0.7, 0.62] });
-      brd.dispose();
+      // hood up: a cowl round the back and sides of the head, open at the face
+      const hd = new THREE.SphereGeometry(0.14, 14, 10, Math.PI * 0.72, Math.PI * 1.56, 0, Math.PI * 0.74);
+      hd.scale(0.98, 1.12, 1.08);
+      cloth(hd, hm.clone().multiply(tr(0, 0.025, -0.012)), coat.map((v) => v * 0.85));
     }
     const base = new THREE.Vector3(0, 0, 0.2).applyMatrix4(m);
     blobs.push({ x: base.x, z: base.z, r: 0.45, a: 0.45 });
+  }
+
+  /**
+   * A weathered face on a head (hm: origin at the head centre, +z = facing): skull, jaw, nose,
+   * ears, brow ridge over dark sockets, a beard over jaw and chin, and a felt cap if asked.
+   */
+  function face(hm, seed, { cap = false } = {}) {
+    const skin = hash(seed, 'sk') < 0.5 ? [1, 0.95, 0.9] : [0.78, 0.66, 0.56];
+    const head = new THREE.SphereGeometry(0.1, 14, 12);
+    head.scale(0.9, 1.1, 1);
+    g.geometry('prop_skin', head, hm, { uv: 'world', tint: skin });
+    head.dispose();
+    const jaw = new THREE.SphereGeometry(0.075, 10, 8);
+    jaw.scale(1, 0.8, 1);
+    g.geometry('prop_skin', jaw, hm.clone().multiply(tr(0, -0.06, 0.03)), { uv: 'world', tint: skin });
+    jaw.dispose();
+    const nose = new THREE.SphereGeometry(0.024, 8, 6);
+    nose.scale(0.75, 1.1, 1.2);
+    g.geometry('prop_skin', nose, hm.clone().multiply(tr(0, -0.01, 0.098)), { uv: 'world', tint: skin.map((v, i) => v * [1.08, 0.92, 0.88][i]) });
+    nose.dispose();
+    for (const sx of [-1, 1]) {
+      const ear = new THREE.SphereGeometry(0.024, 6, 5);
+      ear.scale(0.5, 1, 0.8);
+      g.geometry('prop_skin', ear, hm.clone().multiply(tr(sx * 0.092, 0, 0)), { uv: 'world', tint: skin });
+      ear.dispose();
+      g.box('arch_beam_dark', { matrix: hm.clone().multiply(tr(sx * 0.034, 0.022, 0.086)), s: [0.024, 0.012, 0.01], tint: [0.1, 0.07, 0.05] });
+      g.box('prop_skin', { matrix: hm.clone().multiply(tr(sx * 0.036, 0.04, 0.088)).multiply(new THREE.Matrix4().makeRotationZ(-sx * 0.12)), s: [0.045, 0.014, 0.018], tint: skin.map((v) => v * 0.9) });
+    }
+    const hair = hash(seed, 'bc') < 0.5 ? [0.48, 0.34, 0.22] : hash(seed, 'bc2') < 0.5 ? [0.2, 0.16, 0.13] : [0.72, 0.68, 0.6];
+    if (hash(seed, 'beard') < 0.7) {
+      const brd = new THREE.SphereGeometry(0.1, 12, 8, Math.PI / 2 - 1.2, 2.4, Math.PI * 0.58, Math.PI * 0.36);
+      brd.scale(0.95, 1.15, 1.05);
+      g.geometry('arch_beam_dark', brd, hm.clone().multiply(tr(0, -0.02, 0.012)), { uv: 'world', tint: hair });
+      brd.dispose();
+    }
+    const mo = new THREE.CapsuleGeometry(0.012, 0.06, 3, 6);
+    mo.rotateZ(Math.PI / 2);
+    g.geometry('arch_beam_dark', mo, hm.clone().multiply(tr(0, -0.04, 0.095)), { uv: 'world', tint: hair });
+    mo.dispose();
+    const scalp = new THREE.SphereGeometry(0.104, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.42);
+    scalp.scale(0.92, 1.1, 1.02);
+    g.geometry(cap ? 'prop_cloth' : 'arch_beam_dark', scalp, hm.clone().multiply(tr(0, 0.006, -0.006)), { uv: 'world', tint: cap ? [0.36, 0.25, 0.17] : hair });
+    scalp.dispose();
   }
 
   /** A burly innkeeper in a leather apron, one hand on the bar, the other with a rag. */
