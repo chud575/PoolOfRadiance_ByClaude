@@ -1122,25 +1122,26 @@ function buildDragon(sp, seed) {
   tube(R, 'neck1', [0, 0, 0], [0, 0.4 * s, 0.26 * s], 0.27 * s, 0.22 * s, bronze);
   tube(R, 'neck2', [0, 0, 0], [0, 0.32 * s, 0.22 * s], 0.22 * s, 0.18 * s, bronze);
   for (const [b, k] of [['neck1', 0], ['neck1', 1], ['neck2', 0], ['neck2', 1]]) R.part(b, sphere(0.16 * s, 12, 8), belly, { p: [0, (0.1 + k * 0.17) * s, (0.12 + k * 0.1) * s + 0.08 * s], s: [1, 0.6, 0.55] });
+  const hS = s * 1.4; // a big, readable head at tactics zoom
   // Head: long wedge snout, heavy brow, swept horns, a fan frill of spines.
-  R.part('head', lathe([[0.001, -0.02], [0.1, 0.0], [0.15, 0.14], [0.17, 0.3], [0.15, 0.42], [0.001, 0.47]].map(([r, y]) => [r * s, y * s]), 16, { xs: 1.05, zs: 0.7 }), bronze, { p: [0, 0.02 * s, 0.5 * s], r: [-Math.PI / 2, 0, 0] });
-  R.part('head', sphere(0.19 * s, 18, 12), bronze, { p: [0, 0.03 * s, -0.02 * s], s: [1.05, 0.9, 1.2] });
+  R.part('head', lathe([[0.001, -0.02], [0.1, 0.0], [0.15, 0.14], [0.17, 0.3], [0.15, 0.42], [0.001, 0.47]].map(([r, y]) => [r * hS, y * hS]), 16, { xs: 1.05, zs: 0.7 }), bronze, { p: [0, 0.02 * hS, 0.5 * hS], r: [-Math.PI / 2, 0, 0] });
+  R.part('head', sphere(0.19 * hS, 18, 12), bronze, { p: [0, 0.03 * hS, -0.02 * hS], s: [1.05, 0.9, 1.2] });
   for (const sx of [1, -1]) {
-    R.part('head', rbox(0.1 * s, 0.05 * s, 0.26 * s, 0.02 * s), bronze, { p: [sx * 0.09 * s, 0.13 * s, 0.14 * s], r: [0.15, sx * 0.12, 0] });
-    R.part('head', sphere(0.03 * s, 10, 8), eye, { p: [sx * 0.12 * s, 0.09 * s, 0.13 * s], s: [1, 0.6, 1.2] });
+    R.part('head', rbox(0.1 * hS, 0.05 * hS, 0.26 * hS, 0.02 * hS), bronze, { p: [sx * 0.09 * hS, 0.13 * hS, 0.14 * hS], r: [0.15, sx * 0.12, 0] });
+    R.part('head', sphere(0.03 * hS, 10, 8), eye, { p: [sx * 0.12 * hS, 0.09 * hS, 0.13 * hS], s: [1, 0.6, 1.2] });
     // Horns sweeping back from the brow, a second shorter pair below.
-    R.part('head', cone(0.05 * s, 0.55 * s, 8), horn, { p: [sx * 0.1 * s, 0.2 * s, -0.25 * s], r: [-2.15, 0, sx * 0.25] });
-    R.part('head', cone(0.035 * s, 0.32 * s, 8), horn, { p: [sx * 0.15 * s, 0.05 * s, -0.2 * s], r: [-2.0, 0, sx * 0.6] });
+    R.part('head', cone(0.05 * hS, 0.55 * hS, 8), horn, { p: [sx * 0.1 * hS, 0.2 * hS, -0.25 * hS], r: [-2.15, 0, sx * 0.25] });
+    R.part('head', cone(0.035 * hS, 0.32 * hS, 8), horn, { p: [sx * 0.15 * hS, 0.05 * hS, -0.2 * hS], r: [-2.0, 0, sx * 0.6] });
     // Frill: a fan of spines behind the jaw hinge (bronze dragons' crest).
-    for (let k = 0; k < 4; k++) R.part('head', cone(0.025 * s, (0.26 - k * 0.04) * s, 6), horn, { p: [sx * 0.15 * s, (-0.02 - k * 0.04) * s, -0.12 * s], r: [-1.9 - k * 0.2, 0, sx * (0.9 + k * 0.12)] });
+    for (let k = 0; k < 4; k++) R.part('head', cone(0.025 * hS, (0.26 - k * 0.04) * hS, 6), horn, { p: [sx * 0.15 * hS, (-0.02 - k * 0.04) * hS, -0.12 * hS], r: [-1.9 - k * 0.2, 0, sx * (0.9 + k * 0.12)] });
     // Nostril ridges.
-    R.part('head', sphere(0.025 * s, 8, 6), bronze, { p: [sx * 0.05 * s, 0.08 * s, 0.46 * s] });
+    R.part('head', sphere(0.025 * hS, 8, 6), bronze, { p: [sx * 0.05 * hS, 0.08 * hS, 0.46 * hS] });
   }
   // Glowing maw (the fire in its throat) and fangs.
-  R.part('head', box(0.16 * s, 0.02 * s, 0.34 * s), mouth, { p: [0, -0.05 * s, 0.28 * s] });
-  for (let k = 0; k < 5; k++) for (const sx of [1, -1]) R.part('head', cone(0.012 * s, 0.06 * s, 5), horn, { p: [sx * 0.07 * s, -0.07 * s, (0.2 + k * 0.06) * s], r: [Math.PI, 0, 0] });
-  R.part('jaw', lathe([[0.001, 0.0], [0.11, 0.06], [0.12, 0.25], [0.06, 0.42], [0.001, 0.45]].map(([r, y]) => [r * s, y * s]), 14, { xs: 1, zs: 0.45 }), bronze, { p: [0, -0.02 * s, 0.03 * s], r: [-Math.PI / 2 + 0.18, 0, 0] });
-  R.part('jaw', box(0.03 * s, 0.03 * s, 0.25 * s), horn, { p: [0, -0.1 * s, 0.05 * s], r: [0.2, 0, 0] });
+  R.part('head', box(0.16 * hS, 0.02 * hS, 0.34 * hS), mouth, { p: [0, -0.05 * hS, 0.28 * hS] });
+  for (let k = 0; k < 5; k++) for (const sx of [1, -1]) R.part('head', cone(0.012 * hS, 0.06 * hS, 5), horn, { p: [sx * 0.07 * hS, -0.07 * hS, (0.2 + k * 0.06) * hS], r: [Math.PI, 0, 0] });
+  R.part('jaw', lathe([[0.001, 0.0], [0.11, 0.06], [0.12, 0.25], [0.06, 0.42], [0.001, 0.45]].map(([r, y]) => [r * hS, y * hS]), 14, { xs: 1, zs: 0.45 }), bronze, { p: [0, -0.02 * hS, 0.03 * hS], r: [-Math.PI / 2 + 0.18, 0, 0] });
+  R.part('jaw', box(0.03 * hS, 0.03 * hS, 0.25 * hS), horn, { p: [0, -0.1 * hS, 0.05 * hS], r: [0.2, 0, 0] });
   // Tail: tapering segments with a spade tip.
   tube(R, 'body', [0, 0.02 * s, -0.7 * s], [0, -0.04 * s, -0.8 * s], 0.34 * s, 0.26 * s, bronze);
   tube(R, 'tail1', [0, 0, 0], [0, -0.12 * s, -0.82 * s], 0.26 * s, 0.17 * s, bronze);
@@ -1179,7 +1180,7 @@ function buildDragon(sp, seed) {
     void span;
   }
   const built = R.build();
-  return { ...built, rig: 'quad', dragon: true, height: 2.45 * s, radius: 1.0 * s, scale: s, hasTail: true, eyesColor: sp.eyes, eyesBurn: true, eyeAt: [0, 0.09 * s, 0.13 * s] };
+  return { ...built, rig: 'quad', dragon: true, height: 2.45 * s, radius: 1.0 * s, scale: s, hasTail: true, eyesColor: sp.eyes, eyesBurn: true, eyeAt: [0, 0.09 * s * 1.4, 0.13 * s * 1.4] };
 }
 
 // ------------------------------------------------------------------ quadrupeds

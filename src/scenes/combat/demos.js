@@ -219,11 +219,11 @@ export const DEMOS = {
       });
       sc.overlay.setTemplate([]);
       // Camera: frame caster and blast, slightly closer.
-      const mid = sq2w(caster.x + (best.x - caster.x) * 0.6, caster.y + (best.y - caster.y) * 0.6);
+      const mid = sq2w(caster.x + (best.x - caster.x) * 0.63, caster.y + (best.y - caster.y) * 0.63);
       sc.cam.goalTarget.copy(mid);
       sc.cam.target.copy(mid);
       const span = Math.hypot(caster.x - best.x, caster.y - best.y) * TILE;
-      sc.cam.goalDist = sc.cam.dist = Math.max(14.5, span * 1.9);
+      sc.cam.goalDist = sc.cam.dist = Math.max(14, span * 1.8);
       // A lower 3/4 view so the blast's height (tongues, rising core, smoke cap)
       // reads, from the bearing with the fewest buildings in the way.
       sc.cam.goalPitch = sc.cam.pitch = Number.isFinite(+sc.params.pitch) && sc.params.pitch !== undefined ? +sc.params.pitch : 0.66;
