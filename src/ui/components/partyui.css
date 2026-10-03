@@ -654,3 +654,19 @@ img.pc-pending.pc-rough { filter: blur(0.7px) saturate(0.85) brightness(0.95); b
 /* Spell rules lines: readable size and contrast, wrapped to a comfortable measure (two lines at most). */
 .pc-spell .tg { font-size: max(11.5px, 0.78em); color: #b9c2dc; letter-spacing: 0.02em; line-height: 1.3; max-width: 44em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .pc-spell.dis .tg { color: #8f97ae; }
+/* The company check in the party hub's card. */
+.cc-check { margin-top: 0.6em; }
+.cc-check-row { display: grid; grid-template-columns: 1.2em 7.2em 1fr; align-items: baseline; gap: 0.3em; padding: 0.12em 0; font-size: 0.86em; border-bottom: 1px solid rgba(216, 178, 90, 0.12); cursor: default; }
+.cc-check-row .mk { color: #8fd18a; font-weight: bold; text-align: center; }
+.cc-check-row.warn .mk { color: #f0a050; }
+.cc-check-row .k { font-family: var(--font-display); letter-spacing: 0.08em; font-size: 0.82em; color: var(--por-gilt); text-transform: uppercase; }
+.cc-check-row .v { color: var(--por-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cc-check-row.warn .v { color: #f0c090; font-style: italic; }
+@media (max-height: 700px) { .cc-check { display: none; } }
+.cc-hubhead { display: grid; grid-template-columns: 5.2em 1fr; gap: 0.8em; align-items: center; }
+.cc-hubhead .cc-card-name, .cc-hubhead .cc-card-sub { text-align: left; }
+.cc-cameo { border: 2px solid var(--por-gilt-lo, #8a6a2a); box-shadow: 0 0 0 1px #000, 0 3px 8px rgba(0, 0, 0, 0.6); line-height: 0; }
+.cc-cameo img { width: 100%; display: block; }
+/* The combat icon fills its box (the whole figure, larger and lighter). */
+.pc-icon { background: radial-gradient(ellipse at 50% 40%, #3a2c22, #120d0a 75%); }
+.pc-icon img { width: auto; height: 100%; max-width: 100%; object-fit: contain; object-position: 50% 100%; }

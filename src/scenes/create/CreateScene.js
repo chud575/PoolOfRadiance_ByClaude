@@ -508,8 +508,13 @@ export default class CreateScene extends Scene {
       const ch = this.newParty[this.hubSel];
       this.card.title.textContent = 'Party of Phlan';
       if (ch) {
-        b.append(portraitEl(ch), h('div.cc-card-name.por-gilt-text', [ch.name]),
-          h('div.cc-card-sub', [h('div', [h('b', [`${RACES[ch.race].name} ${classSpecName(ch.classSpec)}`])]), h('div', [`${ALIGNMENT_NAMES[ch.alignment]} · level ${deriveStats(ch).levels}`])]));
+        // The painting is already large in the party grid: here a cameo beside the name, leaving the
+        // card room for the kit and the company check.
+        b.append(h('div.cc-hubhead', [
+          h('div.cc-cameo', [portraitImg(ch, 0.28, { alt: ch.name })]),
+          h('div', [h('div.cc-card-name.por-gilt-text', [ch.name]),
+            h('div.cc-card-sub', [h('div', [h('b', [`${RACES[ch.race].name} ${classSpecName(ch.classSpec)}`])]), h('div', [`${ALIGNMENT_NAMES[ch.alignment]} · level ${deriveStats(ch).levels}`])])]),
+        ]));
         const s = deriveStats(ch);
         b.append(h('div.pc-bigrow', [
           h('div.pc-big', [h('span.n', [String(ch.hp.max)]), h('span.l', ['HP'])]),
@@ -527,6 +532,7 @@ export default class CreateScene extends Scene {
       } else {
         b.append(h('p.cc-lead', { style: { textAlign: 'center', marginTop: '2em' } }, [CREATE_TEXT.emptyParty]));
       }
+      if (this.newParty.length >= 2) b.append(this._companyCheck());
       b.append(h('div', { style: { flex: '1' } }));
       const R = this.roster;
       b.append(h('div.pc-sect-h', [h('span', [R.length ? `Roster · ${R.length} kept` : 'Roster'])]));
@@ -932,6 +938,30 @@ export default class CreateScene extends Scene {
     }
     this.resetDraft();
     this.show('party');
+  }
+
+  /**
+   * The company at a glance before setting out: who holds the front rank, who heals, who opens
+   * locks, who casts, who can shoot, who sees in the dark — and what is missing.
+   */
+  _companyCheck() {
+    const P = this.newParty;
+    const has = (c, k) => splitClasses(c.classSpec).includes(k);
+    const short = (c) => String(c.name ?? '').replace(/^Brother |^Sister /, '').split(' ')[0];
+    const list = (arr) => arr.map(short).join(', ');
+    const ranged = P.filter((c) => (c.inventory ?? []).some((e) => ITEMS[e.id]?.ranged));
+    const rows = [
+      ['Front rank', list(P.slice(0, 3)), true, 'The first three in the marching order meet the enemy first. Put fighters and clerics there; reorder with ALTER at camp.'],
+      ['Healing', list(P.filter((c) => has(c, 'cleric'))) || 'none', P.some((c) => has(c, 'cleric')), 'Clerics pray for cure spells and FIX the party at camp. Without one, wounds heal at a day per hit point.'],
+      ['Locks & traps', list(P.filter((c) => has(c, 'thief'))) || 'none', P.some((c) => has(c, 'thief')), 'A thief opens locks, finds and removes traps, and backstabs.'],
+      ['Arcane magic', list(P.filter((c) => has(c, 'magicUser'))) || 'none', P.some((c) => has(c, 'magicUser')), 'Magic-users bring sleep, magic missile and later fireball: the spells that win the hard fights.'],
+      ['Missiles', list(ranged) || 'none', ranged.length > 0, 'Bows and slings strike before the melee is joined. Ready the launcher in ITEMS to shoot.'],
+      ['Infravision', list(P.filter((c) => (RACES[c.race]?.infravision ?? 0) > 0)) || 'none', true, 'Demi-humans see the heat of living things in the dark.'],
+    ];
+    return h('div.cc-check', [
+      h('div.pc-sect-h', [h('span', ['Company'])]),
+      ...rows.map(([k, v, ok, tip]) => h(`div.cc-check-row${ok ? '' : '.warn'}`, { dataset: { tip } }, [h('span.mk', [ok ? '✓' : '!']), h('span.k', [k]), h('span.v', [v])])),
+    ]);
   }
 
   async addFromRoster() {

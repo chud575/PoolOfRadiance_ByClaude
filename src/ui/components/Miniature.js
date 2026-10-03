@@ -799,15 +799,15 @@ export function miniatureSnapshot(ch, o = {}) {
     cam.aspect = w / h;
     cam.fov = 24;
     // Frame the whole figure with its weapon (the sword is held out to the side).
-    const dist = (H * 1.3) / (2 * Math.tan((cam.fov * Math.PI) / 360));
-    cam.position.set(0, H * 0.6, dist);
-    cam.lookAt(0, H * 0.52, 0);
+    const dist = (H * 1.12) / (2 * Math.tan((cam.fov * Math.PI) / 360));
+    cam.position.set(0, H * 0.62, dist);
+    cam.lookAt(0, H * 0.54, 0);
     cam.updateProjectionMatrix();
     m.rotation.y = -0.28;
     st.scene.add(m);
     st.scene.background = o.backdrop === false ? null : st.background;
     st.plinth.visible = o.backdrop !== false;
-    const cv = renderToCanvas(renderer, st.scene, cam, { w, h, exposure: 1.1, alpha: o.backdrop === false, key: 'snap' });
+    const cv = renderToCanvas(renderer, st.scene, cam, { w, h, exposure: 1.32, alpha: o.backdrop === false, key: 'snap' });
     // Painted eyes, brows and mouth at the snapshot's own resolution.
     if (!m.userData.head) try { finishFace(renderer, st.scene, cam, m, cv, m.userData.app, { mini: true, key: 'snapMask' }); } catch { /* keep the plain render */ }
     const url = cv.toDataURL('image/png');

@@ -495,7 +495,7 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
       if (sentry) {
         // The watch: on the edge of the firelight, turned three-quarters to us, rim-lit by the moon.
         const m = buildMiniature(ch, { pose: 'guard', base: false, rayHead: true, headGain: 0.85, noWeapon: true });
-        m.position.set(-0.55, 0, -3.7);
+        m.position.set(0.05, 0, -3.85);
         m.rotation.y = 0.55;
         partyGroup.add(m);
         // His spear grounded at his side, both hands on the shaft, the head catching the fire.
@@ -522,9 +522,9 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
           spear.traverse((o) => { o.castShadow = true; });
           m.add(spear);
         }
-        shadowBlob(partyGroup, -0.55, -3.7, 0.75, 0.75);
-        sentryRim.target.position.set(-0.55, 1.1, -3.7);
-        sentryFire.target.position.set(-0.55, 1.25, -3.7);
+        shadowBlob(partyGroup, 0.05, -3.85, 0.75, 0.75);
+        sentryRim.target.position.set(0.05, 1.1, -3.85);
+        sentryFire.target.position.set(0.05, 1.25, -3.85);
         minis.push(m);
         return;
       }
@@ -532,7 +532,7 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
       // Sleepers lie across the view behind the fire (seen in profile from the low resting camera):
       // heads on their rolled cloaks toward the right, faces to the fire, feet to the left.
       const H = -Math.PI / 2;
-      const SLEEP = [[-1.45, -1.05, H + 0.5], [1.35, -1.45, H - 0.55], [-0.55, -2.25, H + 0.15], [1.05, -2.75, H - 0.2], [-1.9, -2.75, H + 0.35]];
+      const SLEEP = [[-1.2, -1.0, H + 0.55], [1.3, -1.35, H - 0.55], [-0.35, -2.15, H + 0.12], [1.0, -2.75, H - 0.2], [-1.25, -2.95, H + 0.3]];
       const a = seats[seat % seats.length];
       const r = 1.5;
       const x = sleeping ? SLEEP[seat % SLEEP.length][0] : Math.cos(a) * r;

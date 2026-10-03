@@ -578,8 +578,8 @@ export default class CampScene extends Scene {
       // Resting: down at sleeping height beside the embers, so the sleepers lie in profile across the
       // view (head on the rolled cloak, shoulder, hip and knee under the wool) and the sentry stands
       // against the night beyond them.
-      this.camera.position.set(-1.05 * k, 1.75 - 0.95 * k, 5.2 - 2.55 * k);
-      this.camera.lookAt(0.25 * k, 0.95 - 0.62 * k, -0.6 - 1.4 * k);
+      this.camera.position.set(-0.6 * k, 1.75 - 0.92 * k, 5.2 - 2.4 * k);
+      this.camera.lookAt(-0.05 * k, 0.95 - 0.62 * k, -0.6 - 1.45 * k);
     }
     const b = this.busy;
     if (b) {
