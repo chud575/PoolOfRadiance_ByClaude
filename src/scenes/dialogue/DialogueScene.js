@@ -11,7 +11,7 @@ import { QUEST_LIST, QUESTS, PROCLAMATIONS, questStatus } from '../../data/quest
 import { getMap, hasMap } from '../../data/maps/index.js';
 import { ITEMS } from '../../data/items.js';
 import { addItem } from '../../rules/character.js';
-import { paintPanel, framedPortraitURL, PanelOverlay, LIGHTS, npcActor, ghostActor } from '../../ui/art/index.js';
+import { paintPanel, paintNpcPortrait, framedPortraitURL, PanelOverlay, LIGHTS, npcActor, ghostActor } from '../../ui/art/index.js';
 import { paintCreature, CREATURE_IDS, renderCreature, lightRig, flattenSprite } from '../../ui/art/creatures.js';
 import { SETTING_IDS } from '../../ui/art/settings.js';
 import { engravedPlate, pageTexture } from './journalArt.js';
@@ -49,6 +49,21 @@ export default class DialogueScene extends Scene {
       clear(this.root);
       const grid = h('div', { style: { position: 'absolute', inset: '0', display: 'grid', gridTemplateColumns: 'repeat(10, 1fr)', gap: '6px', padding: '6px', background: '#222' } });
       for (const n of Object.values(NPCS)) grid.append(h('div', { style: { color: '#fff', font: '11px sans-serif' } }, [h('img', { src: framedPortraitURL(n), style: { width: '100%' } }), n.id]));
+      this.root.append(grid);
+      return;
+    }
+    if (params.view === 'portraits') {
+      // debug: raw portrait canvases at 2x, side by side
+      clear(this.root);
+      const ids = (params.ids ?? 'clerk,priest_tyr,smith').split(',');
+      const grid = h('div', { style: { position: 'absolute', inset: '0', display: 'flex', gap: '8px', padding: '8px', background: '#222', alignItems: 'flex-start' } });
+      for (const id of ids) {
+        if (!NPCS[id]) continue;
+        const t0 = performance.now();
+        const c = paintNpcPortrait(NPCS[id], Number(params.scale ?? 2));
+        c.style.width = `${Math.floor(1580 / ids.length) - 8}px`;
+        grid.append(h('div', { style: { color: '#fff', font: '12px sans-serif' } }, [c, h('div', {}, `${id} ${Math.round(performance.now() - t0)} ms`)]));
+      }
       this.root.append(grid);
       return;
     }
@@ -382,7 +397,11 @@ export default class DialogueScene extends Scene {
     this.tipsEl?.remove();
     this.tipsEl = null;
     const tipped = cmds.filter((c) => c.tip);
-    if (tipped.length >= 2) {
+    // a strip of tiles (the odds, the manners) already weighs every command: no hint line under it
+    for (const t of this.chipRow?.querySelectorAll('.dlg-odd[data-choice]') ?? []) {
+      t.onclick = () => { const c = choices.find((x) => x.label === t.dataset.choice); if (c && !c.disabled) this._choose(c); };
+    }
+    if (tipped.length >= 2 && !this.chipRow?.querySelector('.dlg-odds')) {
       // the choices live on the command bar alone; the parchment carries one quiet line that
       // names the manner of the command under the pointer (or keyboard focus)
       const idle = () => [h('span.dlg-hint-k', ['Your manner']), h('span', [`${tipped.map((c) => c.label).join(' · ')} — point at a command to weigh it.`])];
@@ -544,6 +563,7 @@ export default class DialogueScene extends Scene {
       const parleyNode = (node.choices ?? []).some((o) => ['haughty', 'sly', 'nice', 'meek', 'abusive'].includes(String(o.label).toLowerCase()));
       ch.push({ label: c.label, key: c.key, tip: c.tip ?? (parleyNode ? stance : undefined), isLeave: !!c.end, run: () => this._runChoice(c) });
     }
+    if (ch.length >= 3 && ch.filter((c) => STANCE_TIPS[String(c.label).toLowerCase()]).length >= 3) this.chipRow.append(this._stanceStrip(ch));
     if (node.next) ch.push({ label: 'Continue', key: 'C', run: () => this.gotoNode(node.next) });
     if (node.end) ch.push({ label: 'Leave', key: 'L', isLeave: true, run: () => this.leave() });
     if (!ch.length) ch.push({ label: 'Leave', key: 'L', isLeave: true, run: () => this.leave() });
@@ -620,7 +640,7 @@ export default class DialogueScene extends Scene {
     const manners = ['haughty', 'sly', 'nice', 'meek', 'abusive'];
     const spare = manners.filter((a) => (enc.parley?.[a] ?? 'fight').split(':')[0] !== 'fight').length;
     const mood = morale < 40 ? 'skittish' : morale < 60 ? 'wary' : morale < 75 ? 'bold' : 'fearless';
-    const tile = (k, big, small, tip, tone = '') => h(`div.dlg-odd${tone ? `.${tone}` : ''}`, { dataset: { tip } }, [h('span.k', [k]), h('b', [big]), h('small', [small])]);
+    const tile = (k, big, small, tip, tone = '') => h(`div.dlg-odd${tone ? `.${tone}` : ''}`, { dataset: { tip, choice: k } }, [h('span.k', [k]), h('b', [big]), h('small', [small])]);
     const T = {
       combat: tile('Combat', `${theirs} to ${ours}`, `${mood} foes`, `${theirs} foes against your ${ours} standing. Their morale reads ${mood}.`, theirs > ours * 1.5 ? 'bad' : ''),
       wait: tile('Wait', `${waitPct}%`, 'they lose interest', `Hold your ground: about ${waitPct} in 100 that they slink away; otherwise they attack.`),
@@ -685,12 +705,49 @@ export default class DialogueScene extends Scene {
   parleyMenu() {
     const enc = this.encounter;
     this._setText([`How will ${this.ctx.game.activeCharacter?.name ?? 'the party'} address them?`], { see: youSee(enc) });
+    this.chipRow.append(this._mannerStrip(enc));
     const tips = STANCE_TIPS;
     const att = ['haughty', 'sly', 'nice', 'meek', 'abusive'];
     this._setChoices([
       ...att.map((a) => ({ label: a[0].toUpperCase() + a.slice(1), key: a[0].toUpperCase(), tip: tips[a], quiet: true, run: () => this.parley(a) })),
       { label: 'Back', key: 'B', run: () => this.encounterIntro() },
     ]);
+  }
+
+  /**
+   * The five manners as a veteran reads this band: what each is likely to buy (the outcome is
+   * the encounter's own, phrased as a judgement, never a promise of the dice).
+   */
+  _mannerStrip(enc) {
+    const READ = {
+      fight: ['they attack', 'Words will only anger them.', 'bad'],
+      flee: ['likely flee', 'They look ready to bolt.', 'good'],
+      leave: ['may let you pass', 'They have no wish to bleed tonight.', 'good'],
+      bribe: ['a toll', 'They will want paying.', ''],
+      talk: ['will talk', 'Someone among them wants to be heard.', 'good'],
+    };
+    const tiles = ['haughty', 'sly', 'nice', 'meek', 'abusive'].map((a) => {
+      const [kind, arg] = (enc.parley?.[a] ?? 'fight').split(':');
+      const [big, small, tone] = READ[kind] ?? READ.fight;
+      const label = a[0].toUpperCase() + a.slice(1);
+      return h(`div.dlg-odd.manner${tone ? `.${tone}` : ''}`, { dataset: { choice: label, tip: `${STANCE_TIPS[a]} ${small}${kind === 'bribe' ? ` (${arg} gp)` : ''}` } }, [h('span.k', [label]), h('b', [kind === 'bribe' ? `${arg} gp toll` : big]), h('small', [STANCE_TIPS[a].split('.')[0]])]);
+    });
+    const el = h('div.dlg-odds', [h('span.dlg-odds-h', ['Reading the band — what each manner is likely to buy']), ...tiles]);
+    el.style.setProperty('--n', '5');
+    return el;
+  }
+
+  /** Scripted stances (a ghost, a priest): each manner and what it signals, as tiles. */
+  _stanceStrip(choices) {
+    const tiles = choices.map((c) => {
+      const k = String(c.label).toLowerCase();
+      const tip = c.tip ?? STANCE_TIPS[k] ?? '';
+      const [head, ...rest] = tip.split('. ');
+      return h('div.dlg-odd.manner', { dataset: { choice: c.label, tip } }, [h('span.k', [c.label]), h('b', [head.replace(/\.$/, '')]), h('small', [rest.join('. ') || ' '])]);
+    });
+    const el = h('div.dlg-odds.stances', [h('span.dlg-odds-h', ['Your manner — point or press its letter']), ...tiles]);
+    el.style.setProperty('--n', String(tiles.length));
+    return el;
   }
 
   parley(att) {

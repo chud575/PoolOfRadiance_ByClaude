@@ -274,3 +274,60 @@
 .shp-rows:has(.shp-terms) .shp-train img { height: 3.15em; width: 2.6em; }
 .shp-rows:has(.shp-terms) .shp-train .t { font-size: 0.98em; }
 .shp-terms ol { font-size: 0.8em; line-height: 1.38; }
+
+/* temple: REQUEST is the primary action — gilt when it can be bought */
+.shp-root .por-btn.go { color: #1b1206; background: var(--gilt-grad); border-color: #000; text-shadow: 0 1px 0 rgba(255, 240, 200, 0.5); box-shadow: 0 0 0 1px rgba(0,0,0,0.8), 0 0 12px rgba(245, 217, 139, 0.3); font-weight: 700; }
+.shp-root .por-btn.go:hover { filter: brightness(1.12); box-shadow: 0 0 0 1px #000, 0 0 18px rgba(245, 217, 139, 0.5); }
+.shp-short { grid-row: 1 / span 2; grid-column: 4; display: flex; flex-direction: column; align-items: flex-end; gap: 0.2em; }
+.shp-short small { font-size: 0.72em; font-style: italic; color: var(--por-amber); white-space: nowrap; }
+.shp-short small.bad { color: #ff8a70; }
+.shp-short .por-btn { grid-row: auto; grid-column: auto; }
+.shp-row > .shp-tipwrap { grid-row: 1 / span 2; grid-column: 4; }
+.shp-purse { font: inherit; display: inline-flex; align-items: baseline; gap: 0.45em; padding: 0.25em 0.7em; border-radius: 2em; cursor: pointer; color: var(--por-text); background: rgba(0, 0, 0, 0.3); border: 1px solid rgba(216, 178, 90, 0.45); }
+.shp-purse:hover { border-color: var(--por-gilt-hi); }
+.shp-purse small { font-family: var(--font-display); font-size: 0.66em; letter-spacing: 0.18em; text-transform: uppercase; color: var(--por-gilt); }
+.shp-purse i { font-style: normal; color: var(--por-gilt); font-size: 0.9em; }
+
+/* training: the level gained */
+.shp-keeper .note .up { color: #2e5a1a; }
+.shp-keeper .note .lbl.up { color: #2e5a1a; }
+.shp-keeper .note .it.up b { color: #2e5a1a; }
+.shp-book-head { grid-template-columns: 3.2em 1fr auto; }
+.shp-book-up { display: grid; grid-template-columns: auto auto; gap: 0.05em 0.8em; padding: 0.35em 0.8em; border-radius: 3px; background: linear-gradient(180deg, rgba(120, 200, 110, 0.18), rgba(60, 120, 50, 0.08)); box-shadow: inset 0 0 0 1px rgba(140, 230, 130, 0.45), 0 0 14px rgba(120, 230, 110, 0.18); font-size: 0.82em; }
+.shp-book-up b { grid-column: 1 / -1; font-family: var(--font-display); letter-spacing: 0.2em; text-transform: uppercase; font-size: 0.82em; color: #9ef09a; font-weight: 400; }
+.shp-book-up span { color: var(--por-text); white-space: nowrap; }
+.shp-book-up em { font-style: normal; color: #9ef09a; font-family: var(--font-num); }
+
+/* tavern: the bill of fare as a two-column tariff with leaders */
+.shp-keeper .note:has(.shp-tariff) { display: grid; grid-template-columns: auto 1fr; gap: 0.2em 1.1em; align-items: center; }
+.shp-tariff { display: grid; grid-template-columns: 1fr 1fr; gap: 0.1em 1.6em; }
+.shp-tariff .it { display: flex; align-items: baseline; gap: 0.35em; white-space: nowrap; }
+.shp-tariff .it i { flex: 1; border-bottom: 1px dotted rgba(90, 50, 20, 0.45); transform: translateY(-0.25em); min-width: 1em; }
+.shp-tariff .it b { margin-left: 0 !important; }
+
+/* the shelf side-by-side ("try it on") under a short list of wares */
+.shp-compare { grid-column: 1 / -1; margin-top: 0.4em; padding: 0.6em 0.8em 0.5em; border-radius: 3px; background: linear-gradient(180deg, rgba(0, 0, 0, 0.28), rgba(0, 0, 0, 0.12)); box-shadow: inset 0 0 0 1px rgba(216, 178, 90, 0.24); }
+.shp-compare-h { display: flex; align-items: baseline; justify-content: space-between; gap: 1em; margin-bottom: 0.3em; }
+.shp-compare-h b { font-family: var(--font-display); font-weight: 400; letter-spacing: 0.18em; text-transform: uppercase; font-size: 0.74em; color: var(--por-gilt-hi); }
+.shp-compare-h small { font-style: italic; color: var(--por-text-dim); font-size: 0.78em; }
+.shp-compare table { width: 100%; border-collapse: collapse; font-size: 0.84em; font-variant-numeric: tabular-nums; }
+.shp-compare thead th { font-family: var(--font-display); font-weight: 400; font-size: 0.74em; letter-spacing: 0.14em; text-transform: uppercase; color: var(--por-gilt); text-align: right; padding: 0.1em 0.5em 0.25em; border-bottom: 1px solid rgba(216, 178, 90, 0.25); }
+.shp-compare thead th:first-child { text-align: left; }
+.shp-compare tbody th { text-align: left; font-weight: 400; color: var(--por-text); padding: 0.18em 0.5em 0.18em 0.2em; white-space: nowrap; }
+.shp-compare td { text-align: right; font-family: var(--font-num); color: var(--por-text); padding: 0.18em 0.5em; white-space: nowrap; }
+.shp-compare tbody tr { cursor: pointer; border-top: 1px dotted rgba(216, 178, 90, 0.12); }
+.shp-compare tbody tr:hover { background: rgba(45, 82, 163, 0.25); }
+.shp-compare tr.now { cursor: default; background: rgba(245, 217, 139, 0.07); }
+.shp-compare tr.now th { color: var(--por-gilt-hi); font-style: italic; }
+.shp-compare tr.sel { background: rgba(45, 82, 163, 0.45); box-shadow: inset 2px 0 0 var(--por-gilt-hi); }
+.shp-compare tr.cant th, .shp-compare tr.cant td { color: var(--por-text-dim); }
+.shp-compare em { font-style: normal; font-size: 0.82em; margin-left: 0.35em; }
+.shp-compare em.up { color: var(--por-green); } .shp-compare em.dn { color: var(--por-blood); }
+.shp-compare .no { font-family: var(--font-body); font-style: italic; font-size: 0.9em; color: var(--por-text-dim); }
+/* with the side-by-side under it the shelf packs three to a row */
+.shp-list.with-compare { grid-template-columns: repeat(3, 1fr); gap: 0.35em 0.45em; }
+.shp-list.with-compare .shp-item { grid-template-columns: 2.6em 1fr auto; padding: 0.28em 0.45em 0.28em 0.3em; gap: 0 0.5em; }
+.shp-list.with-compare .shp-item img { width: 2.6em; height: 2.6em; }
+.shp-list.with-compare .shp-item .n { font-size: 0.9em; }
+.shp-list.with-compare .shp-item .s { font-size: 0.72em; }
+.shp-list.with-compare .shp-item .p { font-size: 0.92em; }

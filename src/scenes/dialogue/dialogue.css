@@ -374,3 +374,13 @@
 .dlg-odd small { font-style: italic; color: #5a4028; font-size: 0.8em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dlg-odd.good b { color: #2e5a1a; }
 .dlg-odd.bad b { color: #8a1a10; }
+
+/* tiles that weigh a command are the command: point, click, or press its letter */
+.dlg-odd[data-choice] { cursor: pointer; transition: box-shadow 0.12s var(--ease, ease), background 0.12s var(--ease, ease); }
+.dlg-odd[data-choice]:hover { box-shadow: inset 0 0 0 1px rgba(140, 40, 16, 0.7), 0 2px 8px rgba(90, 50, 10, 0.25); background: linear-gradient(180deg, rgba(160, 100, 30, 0.2), rgba(120, 80, 30, 0.08)); }
+.dlg-odd .k::first-letter { color: #b0300f; font-weight: 700; }
+.dlg-odd.manner b { font-family: var(--font-body); font-style: normal; font-size: 1.02em; white-space: normal; line-height: 1.2; }
+.dlg-odd.manner small { white-space: normal; line-height: 1.25; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.dlg-odds.stances .dlg-odd { grid-template-columns: 1fr; }
+.dlg-odds.stances .dlg-odd b { font-size: 0.95em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dlg-odds.stances .dlg-odd small { -webkit-line-clamp: 1; }

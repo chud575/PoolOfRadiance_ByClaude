@@ -7,6 +7,7 @@ import { buildPerson } from './bodies.js';
 import { buildNpc } from './people.js';
 import { renderFigure, mul3, rotX, rotY, ap3 } from './sculpt.js';
 import { paintPortraitDesign, paintFaceDecal, paintGhostKnight } from './facePaint.js';
+import { paintPortraitGL } from './portraitGL.js';
 
 /**
  * Illustrated panels for the dialogue / encounter / shop screens — the big
@@ -85,7 +86,14 @@ export function rigAt(light, info, x, y, W) {
  * @param {{setting:string, light?:string, deity?:object, monsters?:{id:string,count:number}[], actor?:object, seed?:number, w?:number, h?:number}} spec
  * @returns {{canvas:HTMLCanvasElement, info:object, composer:PanelComposer}}
  */
+/** ?perf=1 logs where a panel's bake spends its time (dev aid; never affects the image). */
+const PERF = typeof location !== 'undefined' && /[?&]perf=1/.test(location.search);
+const perfNow = () => (PERF ? performance.now() : 0);
+const perfLog = (label, t0) => { if (PERF) console.info(`[perf] ${label} ${Math.round(performance.now() - t0)} ms`); };
+export { perfNow, perfLog };
+
 export function paintPanel(spec) {
+  const T0 = perfNow();
   const W = spec.w ?? 1280;
   const H = spec.h ?? 640;
   const bg = makeCanvas(W, H);
@@ -95,10 +103,15 @@ export function paintPanel(spec) {
   const seed = spec.seed ?? hashStr(spec.setting);
   const info = paintSetting(g, W, H, spec.setting, { light, deity: spec.deity, seed, fg: fg.getContext('2d'), actor: !!spec.actor, cast: spec.cast, pose: spec.pose });
   info.light = light;
+  perfLog(`panel ${spec.setting}: setting`, T0);
   const composer = new PanelComposer(W, H, bg, info, light, seed);
   if (info.fgUsed) composer.fg = fg;
+  const T1 = perfNow();
   if (spec.actor) composer.addActor(spec.actor, info.actorSlot ?? { x: W * 0.5, y: H * 0.95, h: H * 0.74, pose: 'stand', yaw: 0.15 });
+  perfLog(`panel ${spec.setting}: actor`, T1);
+  const T2 = perfNow();
   if (spec.monsters?.length) placeGroup(composer, g, W, H, spec.monsters, info, light, seed, spec.mood);
+  perfLog(`panel ${spec.setting}: monsters`, T2);
   // painting is done on CPU canvases (fast pixel access); the layers composited every frame move to
   // the GPU, as does the canvas that is shown
   composer.bg = gpuCopy(bg);
@@ -767,6 +780,14 @@ const portraitCache = new Map();
 export function paintNpcPortrait(npc, scale = 1) {
   const key = `${npc.id}|${scale}`;
   if (portraitCache.has(key)) return portraitCache.get(key);
+  const T0 = perfNow();
+  const c = paintNpcPortraitIn(npc, scale);
+  perfLog(`portrait ${npc.id}`, T0);
+  portraitCache.set(key, c);
+  return c;
+}
+
+function paintNpcPortraitIn(npc, scale) {
   let c;
   const W = Math.round(300 * scale);
   const H = Math.round(375 * scale);
@@ -812,12 +833,16 @@ export function paintNpcPortrait(npc, scale = 1) {
     g.drawImage(fig.canvas, W / 2 - fig.ox, H * 0.46 + fh * 0.79 - fig.oy);
     vignette(g, W, H, 0.55);
   } else if (npc.paint || (npc.figure && (!npc.kind || npc.kind === 'portrait' || npc.kind === 'hooded'))) {
-    // a painted bust (2D oil sketch over a sculpted relief), downsampled from 2x for a clean finish
-    const big = paintPortraitDesign(portraitDesign(npc), W * 2, H * 2);
-    c = makeCanvas(W, H);
-    const g = c.getContext('2d');
-    g.imageSmoothingQuality = 'high';
-    g.drawImage(big, 0, 0, W, H);
+    // a raymarched bust (hair, beard and headgear are volumes in the same field), painted over;
+    // the 2D oil sketch remains the fallback without WebGL2
+    c = paintPortraitGL(portraitDesign(npc), W, H, { race: npc.race, aura: npc.aura });
+    if (!c) {
+      const big = paintPortraitDesign(portraitDesign(npc), W * 2, H * 2);
+      c = makeCanvas(W, H);
+      const g = c.getContext('2d');
+      g.imageSmoothingQuality = 'high';
+      g.drawImage(big, 0, 0, W, H);
+    }
   } else {
     const ch = { race: npc.race ?? 'human', gender: npc.gender ?? 'male', look: npc.look ?? {}, name: npc.name };
     if (npc.kind === 'hooded') ch.look = { ...ch.look, head: 6 };
@@ -833,7 +858,6 @@ export function paintNpcPortrait(npc, scale = 1) {
       if (npc.aura) glow(g, c.width / 2, c.height * 0.44, c.height * 0.25, npc.aura, 0.12);
     }
   }
-  portraitCache.set(key, c);
   return c;
 }
 

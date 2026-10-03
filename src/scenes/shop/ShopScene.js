@@ -276,14 +276,51 @@ export default class ShopScene extends Scene {
     requestAnimationFrame(snap);
     list.onscroll = () => list.classList.toggle('scrolled', list.scrollTop > 2);
     if (!items.length) this.listEl.append(h('div.shp-empty', [this.tab === 'sell' ? `${ch?.name ?? 'No one'} carries nothing ${this.shop.name} will buy.` : 'Nothing for sale.']));
+    // a short shelf leaves room for the side-by-side: every ware against what the member wears now
+    if (this.tab === 'buy' && ch && items.length && items.length <= 12 && ['armour', 'weapons', 'missile'].includes(this.filter)) {
+      const rows = this.filter === 'armour' ? items.filter((x) => ITEMS[x.id].type === 'armor') : items;
+      if (rows.length) {
+        this.listEl.classList.add('with-compare');
+        this.listEl.append(this._compareTable(rows, ch));
+      }
+    }
+  }
+
+  /** "Try it on": each ware on the shelf as the selected member would have it. */
+  _compareTable(items, ch) {
+    const now = deriveStats(ch);
+    const armour = this.filter === 'armour';
+    const head = armour ? ['Ware', 'AC', 'Move', 'Load', 'Price'] : ['Ware', 'Damage', 'vs large', 'THAC0', 'Price'];
+    const row = (cells, cls = '', onclick = null) => h(`tr${cls}`, onclick ? { onclick } : {}, cells.map((c, i) => h(i ? 'td' : 'th', [c])));
+    const rows = [];
+    rows.push(row(armour ? ['Worn now', String(now.ac), String(now.move), `${now.weight.toLocaleString('en-US')} cn`, '—'] : ['In hand now', now.damage ?? '—', '', String(now.thac0), '—'], '.now'));
+    for (const x of items) {
+      const d = ITEMS[x.id];
+      const ok = !['weapon', 'armor', 'shield', 'helm'].includes(d.type) || canEquip(ch, x.id);
+      const pick = () => { this.selId = x.id; this.refresh(); };
+      const sel = this.selId === x.id ? '.sel' : '';
+      if (!ok) { rows.push(row([d.name, h('span.no', [`${shortName(ch.name)} cannot use`]), '', '', `${this._price(x.id).toLocaleString('en-US')}`], `.cant${sel}`, pick)); continue; }
+      const t = previewStats(ch, x.id);
+      const dl = (a, b, lowerBetter = true) => { const n = lowerBetter ? b - a : a - b; return n ? h(`em.${n > 0 ? 'up' : 'dn'}`, [n > 0 ? `▲${n}` : `▼${-n}`]) : null; };
+      rows.push(row(armour
+        ? [d.name, h('span', [String(t.ac), dl(t.ac, now.ac)]), h('span', [String(t.move), dl(t.move, now.move, false)]), `${t.weight.toLocaleString('en-US')} cn`, `${this._price(x.id).toLocaleString('en-US')}`]
+        : [d.name, d.damage ?? '—', d.damageLarge ?? '—', h('span', [String(t.thac0), dl(t.thac0, now.thac0)]), `${this._price(x.id).toLocaleString('en-US')}`], sel, pick));
+    }
+    return h('div.shp-compare', [
+      h('div.shp-compare-h', [h('b', [armour ? `On ${ch.name}` : `In ${ch.name}'s hand`]), h('small', [armour ? 'armour class, move and load if worn instead' : 'damage and to-hit if wielded instead'])]),
+      h('table', [h('thead', [h('tr', head.map((x) => h('th', [x])))]), h('tbody', rows)]),
+    ]);
   }
 
   _renderFoot() {
     const { game } = this.ctx;
     const ch = this.member;
     const total = game.party.reduce((t, c) => t + c.gold, 0);
+    const payer = this.tab === 'services' ? this._payer() : null;
     this.footEl.append(
-      h('span', [`${ch?.name ?? '—'} carries `, h('b', [`${(ch?.gold ?? 0).toLocaleString('en-US')} gp`])]),
+      payer
+        ? h('button.shp-purse', { onclick: () => this._nextPayer(), dataset: { tip: 'The tithe comes from this purse. Click to draw on another member\'s.' } }, [h('small', ['Tithe from']), `${payer.name} `, h('b', [`${payer.gold.toLocaleString('en-US')} gp`]), h('i', ['⇄'])])
+        : h('span', [`${ch?.name ?? '—'} carries `, h('b', [`${(ch?.gold ?? 0).toLocaleString('en-US')} gp`])]),
       h('span', ['Party ', h('b', [`${total.toLocaleString('en-US')} gp`])]),
       h('span.sp'),
       h('button.por-btn', { onclick: () => this.pool(), dataset: { tip: 'Gather all the party\'s gold into this character\'s purse' } }, ['Pool']),
@@ -402,10 +439,34 @@ export default class ShopScene extends Scene {
     return cures[cures.length - 1] ?? (ok('heal') ? 'heal' : null);
   }
 
+  /**
+   * Who pays the tithe: the purse the player picked; else the patient, if awake and able to pay;
+   * else the richest member still on their feet (an unconscious man does not reach for his purse).
+   */
+  _payer(cost = 0) {
+    const party = this.ctx.game.party;
+    const awake = (m) => m && m.status !== 'dead' && m.hp.cur > 0;
+    if (this.payerIdx != null && awake(party[this.payerIdx])) return party[this.payerIdx];
+    const p = this.member;
+    if (awake(p) && p.gold >= cost) return p;
+    return [...party].filter(awake).sort((a, b) => b.gold - a.gold)[0] ?? p;
+  }
+
+  /** Cycle the purse the temple draws on (awake members only). */
+  _nextPayer() {
+    const party = this.ctx.game.party;
+    const awake = party.map((m, i) => [m, i]).filter(([m]) => m.status !== 'dead' && m.hp.cur > 0).map(([, i]) => i);
+    if (!awake.length) return;
+    const cur = party.indexOf(this._payer());
+    this.payerIdx = awake[(awake.indexOf(cur) + 1) % awake.length];
+    this.refresh();
+  }
+
   _renderServices() {
     const ch = this.member;
     this.listEl.className = 'shp-rows';
     const rec = this._recommend(ch);
+    const partyGold = this.ctx.game.party.reduce((t, m) => t + m.gold, 0);
     for (const [id, cost] of Object.entries(this.shop.services ?? {})) {
       const s = TEMPLE_SERVICES[id];
       if (!s) continue;
@@ -424,7 +485,7 @@ export default class ShopScene extends Scene {
         h('span.t', [s.name, rec === id ? h('span.shp-rec', [`Counselled for ${shortName(ch.name)}`]) : null, needers.length ? h('span.shp-need', needers.map((m) => h('img', { src: portraitURL(m, 0.4), alt: '', dataset: { tip: `${m.name} needs this` } }))) : null]),
         h('span.d', [SERVICE_DESC[id] ?? '']),
         h('span.c', [`${cost.toLocaleString('en-US')} gp`]),
-        h('button.por-btn', { disabled: !applies || (ch?.gold ?? 0) < cost, onclick: () => this.service(id, cost), dataset: { tip: !applies ? (ch && serviceProblem(id, ch) !== 'Not needed.' ? `${ch.name}: ${serviceProblem(id, ch)}` : `${ch?.name ?? 'This character'} does not need this.`) : (ch?.gold ?? 0) < cost ? `${ch.name} needs ${(cost - ch.gold).toLocaleString('en-US')} gp more — POOL the party's gold.` : `Pay ${cost} gp` } }, ['Request']),
+        this._requestButton(id, cost, applies, ch, partyGold),
       ]));
     }
     if (this._others?.length) {
@@ -446,15 +507,37 @@ export default class ShopScene extends Scene {
     }
   }
 
+  /** REQUEST is the primary action: gilt when it can be bought, "POOL & PAY" when the purse is short but the party is not. */
+  _requestButton(id, cost, applies, ch, partyGold) {
+    const payer = this._payer(cost);
+    const short = Math.max(0, cost - (payer?.gold ?? 0));
+    if (!applies) {
+      const why = ch && serviceProblem(id, ch) !== 'Not needed.' ? `${ch.name}: ${serviceProblem(id, ch)}` : `${ch?.name ?? 'This character'} does not need this.`;
+      return this._tipWrap(h('button.por-btn', { disabled: true, dataset: { tip: why } }, ['Request']));
+    }
+    if (!short) {
+      return h('button.por-btn.go', { onclick: () => this.service(id, cost), dataset: { tip: `${payer.name} pays ${cost.toLocaleString('en-US')} gp for ${ch.name}` } }, ['Request']);
+    }
+    if (partyGold >= cost) {
+      return h('span.shp-short', [
+        h('small', [`Need ${short.toLocaleString('en-US')} more`]),
+        h('button.por-btn.go', { onclick: () => { this.pool(payer); this.service(id, cost); }, dataset: { tip: `Gather the party's gold into ${payer.name}'s purse, then pay ${cost.toLocaleString('en-US')} gp` } }, ['Pool & pay']),
+      ]);
+    }
+    return h('span.shp-short', [h('small.bad', [`Party short by ${(cost - partyGold).toLocaleString('en-US')}`]), this._tipWrap(h('button.por-btn', { disabled: true, dataset: { tip: `The whole party holds ${partyGold.toLocaleString('en-US')} gp.` } }, ['Request']))]);
+  }
+
   service(id, cost) {
     const { game, rng, ui } = this.ctx;
     const ch = this.member;
     if (!ch || !serviceApplies(id, ch)) return;
-    if (ch.gold < cost) {
-      this._say(`The tithe is ${cost} gold. ${ch.name} carries only ${ch.gold}. Perhaps your companions will POOL their coin.`);
+    const payer = this._payer(cost);
+    if (!payer || payer.gold < cost) {
+      this._say(`The tithe is ${cost} gold. ${payer?.name ?? ch.name} carries only ${payer?.gold ?? ch.gold}. Perhaps your companions will POOL their coin.`);
       return;
     }
-    ch.gold -= cost;
+    payer.gold -= cost;
+    if (payer !== ch) ui.message(`${payer.name} pays ${cost} gp for ${ch.name}.`, 'info');
     const r = performService(rng, id, ch);
     ui.message(r.text, r.ok ? 'info' : 'warn');
     this._say(r.ok ? `${r.text} ${DEITIES[this.shop.deity]?.name ?? 'The god'} be praised.` : r.text);
@@ -486,7 +569,8 @@ export default class ShopScene extends Scene {
       const open = prog.filter((p) => !p.done);
       const pct = open.length ? Math.max(...open.map((p) => p.pct)) : 1;
       void cur; void next;
-      const lbl = atMax && !open.length ? 'At the limit of what can be taught' : ready.length ? 'Ready to train'
+      const L = this.levelUp?.who === m ? this.levelUp : null;
+      const lbl = L ? `Trained · now ${L.now}` : atMax && !open.length ? 'At the limit of what can be taught' : ready.length ? 'Ready to train'
         : open.length > 1 ? `Next: ${open.map((p) => `${CLASSES[p.c].abbr} ${p.hi.toLocaleString('en-US')}`).join(' · ')} xp`
           : `Next level at ${open[0].hi.toLocaleString('en-US')} xp`;
       const need = open.map((p) => `${CLASSES[p.c].name} ${m.levels[p.c] + 1} at ${p.hi.toLocaleString('en-US')} xp (${(m.xp[p.c] ?? 0).toLocaleString('en-US')} now, ${p.togo.toLocaleString('en-US')} to go)`).join('; ');
@@ -523,10 +607,17 @@ export default class ShopScene extends Scene {
     if (!trainableClasses(m).length) return;
     if (m.gold < cost) return this._say(`Training costs ${cost} gold. Come back with your purse full.`);
     m.gold -= cost;
+    const hp0 = m.hp.max;
+    const before = Object.fromEntries(splitClasses(m.classSpec).map((c) => [c, thac0For(c, m.levels[c])]));
     const raised = trainLevels(m, rng);
-    const txt = `${m.name} trains hard and rises to ${raised.map((c) => `${CLASSES[c].name} ${m.levels[c]}`).join(' / ')}!`;
-    ui.message(txt, 'loot');
-    this._say(`${txt} Garrick claps ${m.name} on the shoulder. "Better. Still slow on the left."`);
+    const now = raised.map((c) => `${CLASSES[c].name} ${m.levels[c]}`).join(' / ');
+    const thac0 = Math.min(...splitClasses(m.classSpec).map((c) => thac0For(c, m.levels[c])));
+    const thac0Was = Math.min(...Object.values(before));
+    this.levelUp = { who: m, now, hp: m.hp.max - hp0, hpMax: m.hp.max, thac0, thac0Was, raised: [...raised] };
+    ui.message(`${m.name} is now ${/^[AEIOU]/.test(now) ? 'an' : 'a'} ${now}! Hit points ${hp0} → ${m.hp.max}.`, 'loot');
+    this.ctx.audio.sfx?.('levelup');
+    const lines = [`"Better. Still slow on the left — but better."`, `"There. That's a ${CLASSES[raised[0]].name.toLowerCase()} now, not a farmhand with a stick."`, `"You've earned that one. Don't let the Slums take it back."`];
+    this._say(`Garrick claps ${m.name} on the shoulder. ${lines[rng.int(0, lines.length - 1)]}`);
     // PoR rule: a magic-user who trains a level adds one new spell to the book.
     if (raised.includes('magicUser')) this._learnNewSpell(m);
     game.notifyPartyChanged();
@@ -626,7 +717,9 @@ export default class ShopScene extends Scene {
     if (!m) return;
     const classes = splitClasses(m.classSpec);
     const card = h('div.shp-book', { style: { gridColumn: '1 / -1' } });
-    card.append(h('div.shp-book-head', [h('img', { src: portraitURL(m, 0.4), alt: '' }), h('div', [h('b', [m.name]), h('small', [`${m.race === 'halfElf' ? 'Half-elf' : m.race[0].toUpperCase() + m.race.slice(1)} · ${classes.map((c) => CLASSES[c].name).join(' / ')}`])])]));
+    const L = this.levelUp?.who === m ? this.levelUp : null;
+    card.append(h('div.shp-book-head', [h('img', { src: portraitURL(m, 0.4), alt: '' }), h('div', [h('b', [m.name]), h('small', [`${m.race === 'halfElf' ? 'Half-elf' : m.race[0].toUpperCase() + m.race.slice(1)} · ${classes.map((c) => CLASSES[c].name).join(' / ')}`])]),
+      L ? h('div.shp-book-up', [h('b', ['Level gained']), h('span', [L.now]), h('span', [`HP +${L.hp} → ${L.hpMax}`]), h('span', ['THAC0 ', h('em', [String(L.thac0)])])]) : null]));
     for (const c of classes) {
       const lvl = m.levels[c];
       const max = maxLevel(m, c);
@@ -691,12 +784,18 @@ export default class ShopScene extends Scene {
     const bits = [];
     if (tab === 'tavern') {
       const fare = this.shop.fare ?? [['Ale', '1 cp'], ['Stew', '2 cp'], ['Wine', '1 sp'], ['A bed', '5 sp']];
-      el.append(h('span.lbl', ['Bill of fare']), ...fare.map(([a, b]) => h('span.it', [a, h('b', [b])])));
+      el.append(h('span.lbl', ['Bill of fare']), h('div.shp-tariff', fare.map(([a, b]) => h('span.it', [h('span.a', [a]), h('i'), h('b', [b])]))));
       return;
     }
     if (tab === 'services' && m) {
       const pct = Math.max(0, m.hp.cur) / m.hp.max;
+      const payer = this._payer();
       bits.push(`${m.name}: ${Math.max(0, m.hp.cur)} / ${m.hp.max} hp`, m.status === 'dead' ? 'dead — only Raise Dead will serve' : m.hp.cur <= 0 ? 'unconscious' : pct < 1 ? `${m.hp.max - m.hp.cur} hp to mend` : 'needs no healing');
+      if (payer && payer !== m) bits.push(`${payer.name} pays`);
+    } else if (tab === 'train' && m && this.levelUp?.who === m) {
+      const L = this.levelUp;
+      el.append(h('span.lbl.up', [`${m.name} is now ${/^[AEIOU]/.test(L.now) ? 'an' : 'a'} ${L.now}`]), h('span.it.up', [`Hit points +${L.hp}`, h('b', [`${L.hpMax}`])]), h('span.it.up', ['THAC0', h('b', [`${L.thac0Was} → ${L.thac0}`])]));
+      return;
     } else if (tab === 'train' && m) {
       const ready = trainableClasses(m);
       bits.push(ready.length ? `${m.name} is ready: ${ready.map((c) => `${CLASSES[c].name} ${m.levels[c] + 1}`).join(', ')}` : `${m.name} is not yet ready to train`, `Fee ${fee(m).toLocaleString('en-US')} gp`);
@@ -787,9 +886,9 @@ export default class ShopScene extends Scene {
     this._say(v ? `That ${itemName(e)}? I'd give you ${v} gold for it.` : 'Worthless to me, I\'m afraid.');
   }
 
-  pool() {
+  pool(into = null) {
     const { game } = this.ctx;
-    const ch = this.member;
+    const ch = into ?? (this.tab === 'services' ? this._payer() : this.member);
     if (!ch) return;
     let n = 0;
     for (const m of game.party) if (m !== ch) { n += m.gold; ch.gold += m.gold; m.gold = 0; }
@@ -916,7 +1015,8 @@ function burdenBar(now, then) {
   const armourCap = then.move < then.encumbrance.move;
   return h('div.shp-burden', { dataset: { tip: `Carried weight in coins (cn): ${now.weight.toLocaleString('en-US')} now, ${then.weight.toLocaleString('en-US')} with this. Move by load: ${cuts.map((c, i) => `${moves[i]} up to ${c.toLocaleString('en-US')}`).join(', ')}; beyond, 0.${armourCap ? ` This armour itself limits move to ${then.move}.` : ''}` } }, [
     h('span.l', ['Move · burden']),
-    h('span.v', [String(then.move), changed ? h(`span.d.${then.move < now.move ? 'dn' : 'up'}`, [deltaText(then.move - now.move)]) : null, h('small', [armourCap ? 'this armour slows you' : then.encumbrance.label.toLowerCase()])]),
+    h('span.v', changed ? [`${now.move} → ${then.move}`, h(`span.d.${then.move < now.move ? 'dn' : 'up'}`, [deltaText(then.move - now.move)]), h('small', [armourCap ? 'this armour slows you' : then.encumbrance.label.toLowerCase()])]
+      : [String(then.move), h('small', [armourCap ? 'no change · already this slow' : `no change · ${then.encumbrance.label.toLowerCase()}`])]),
     h('span.w', [`${then.weight.toLocaleString('en-US')} cn carried`, then.weight !== now.weight ? ` (${then.weight > now.weight ? '+' : '−'}${Math.abs(then.weight - now.weight).toLocaleString('en-US')})` : '']),
     h('div.track', [bands, h('i.now', { style: { width: pct(now.weight) } }), h('i.then', { style: { left: pct(Math.min(now.weight, then.weight)), width: `calc(${pct(Math.max(now.weight, then.weight))} - ${pct(Math.min(now.weight, then.weight))})` } }), ...cuts.map((c) => h('i.cut', { style: { left: pct(c) } }))]),
   ]);
