@@ -1,7 +1,7 @@
 import { EDGE, DIRS } from '../../data/maps/MapGrid.js';
 import { INK, prng } from './ink.js';
 import { irregularStone, inkStone } from './paint.js';
-import { fbm } from '../../render/textures/noise.js';
+import { timberWall } from './walls.js';
 
 /**
  * Floor plans for the buildings on a survey sheet: plank, flagstone or broken
@@ -131,45 +131,59 @@ export function drawFloor(g, cells, { CX, CY, cs, seed = 1, kind = 'planks' }) {
       }
     }
   } else {
-    // flagstones: courses of hand-dressed slabs, each its own size and tone (some
-    // replaced, some sunk and darkened, a few cracked or spalled), joints filled with
-    // dark grit, worn pale down the middle of the room where feet have passed
-    g.fillStyle = 'rgba(70,52,34,0.32)';
+    // flagstones, inked: outline first, a hatched shadow edge, a limited wash of
+    // three tones; courses broken where the floor was relaid in bands, slabs of
+    // very different sizes (a few great ones, many small), some cracked
+    g.fillStyle = 'rgba(70,52,34,0.22)';
     g.fillRect(x0, y0, x1 - x0, y1 - y0);
-    const rh0 = cs * (0.27 + r() * 0.05);
-    const mx = (x0 + x1) / 2;
-    const my = (y0 + y1) / 2;
-    const R = Math.hypot(x1 - x0, y1 - y0) / 2;
-    for (let y = y0; y < y1; ) {
-      const rh = rh0 * (0.78 + r() * 0.44);
-      let x = x0 - r() * cs * 0.3;
-      while (x < x1) {
-        const w = cs * (0.26 + r() * 0.34);
-        const cx = x + w / 2;
-        const cy = y + rh / 2;
-        x += w;
-        const tone = fbm(cx * 0.02, cy * 0.02, { period: 64, octaves: 2, seed: seed + 5 });
-        const path = 1 - Math.min(1, Math.hypot(cx - mx, (cy - my) * 1.4) / R);
-        let v = 132 + tone * 70 + (r() - 0.5) * 60;
-        const odd = r();
-        // a replacement slab in a different stone, or a sunk one holding damp
-        let tint = [1, 0.95, 0.84];
-        if (odd < 0.07) tint = [0.97, 0.95, 0.92];
-        else if (odd < 0.16) { v *= 0.78; tint = [1, 0.92, 0.8]; }
-        v += path * 24;
-        const pts = irregularStone(r, w / 2 - 0.9, rh / 2 - 0.9, { extra: [0, 2], jit: 0.05, bulge: 0.04, chamfer: 0.18 });
-        inkStone(g, pts, {
-          X: cx, Y: cy, ang: (r() - 0.5) * 0.025, rgb: [v * tint[0], v * tint[1], v * tint[2]], alpha: 0.8 + r() * 0.15,
-          lw: 0.85, rnd: r, bed: 0.12, crack: 0.2, pits: 0.55, worn: path > 0.45 ? 1 : 0,
-        });
-        // a spalled corner: the arris broken away, a few chips round it
-        if (r() < 0.12) {
-          const [px, py] = pts[Math.floor(r() * pts.length)];
-          g.fillStyle = 'rgba(82,60,38,0.45)';
-          g.beginPath(); g.ellipse(cx + px * 0.82, cy + py * 0.82, w * 0.09, rh * 0.11, r() * 3, 0, Math.PI * 2); g.fill();
+    const tones = [[220, 203, 170], [198, 180, 148], [170, 152, 122]];
+    const tri = r() < 0.5;
+    // bands: the floor laid in two or three independent strips, joints never lining up
+    const horiz = r() < 0.5;
+    const [A0, A1] = horiz ? [y0, y1] : [x0, x1];
+    const cuts = [A0];
+    let a = A0;
+    while (true) {
+      a += cs * (1.1 + r() * 1.8);
+      if (a > A1 - cs * 0.8) break;
+      cuts.push(a);
+    }
+    cuts.push(A1);
+    for (let bi = 0; bi < cuts.length - 1; bi++) {
+      const b0 = cuts[bi];
+      const b1 = cuts[bi + 1];
+      const rh0 = cs * (0.2 + r() * 0.14);
+      const skip = [];
+      for (let u = b0; u < b1 - 0.5; ) {
+        const rh = Math.min(b1 - u, rh0 * (0.6 + r() * 0.9));
+        let v = (horiz ? x0 : y0) - r() * cs * 0.4;
+        const vEnd = horiz ? x1 : y1;
+        while (v < vEnd) {
+          const big = r() < 0.12;
+          const w = cs * (big ? 0.55 + r() * 0.3 : 0.16 + r() * 0.36);
+          // a great slab sometimes spans two courses (when there is room)
+          const hh = big && u + rh * 2 <= b1 ? rh * 2 : rh;
+          const cu = u + hh / 2;
+          const cv = v + w / 2;
+          v += w;
+          if (hh > rh) {
+            // reserve its lower half: the next course skips this span
+            skip.push([u + rh, cv - w / 2, cv + w / 2]);
+          }
+          if (skip.some(([su, s0, s1]) => Math.abs(su - u) < 0.01 && cv > s0 && cv < s1)) continue;
+          const cx = horiz ? cv : cu;
+          const cy = horiz ? cu : cv;
+          const [hw0, hh0] = horiz ? [w / 2, hh / 2] : [hh / 2, w / 2];
+          const tr = r();
+          const rgb = tones[tr < 0.6 ? 0 : tr < (tri ? 0.9 : 1) ? 1 : 2];
+          const pts = irregularStone(r, hw0 - 0.9, hh0 - 0.9, { extra: [0, 2], jit: 0.07, bulge: 0.05, chamfer: 0.2 });
+          inkStone(g, pts, {
+            X: cx, Y: cy, ang: (r() - 0.5) * 0.03, rgb, alpha: 0.82,
+            lw: 0.85, rnd: r, bed: 0.1, crack: big ? 0.6 : 0.18, pits: 0.3, hatch: 0.5,
+          });
         }
+        u += rh;
       }
-      y += rh;
     }
   }
   g.restore();
@@ -413,7 +427,7 @@ const KIT = {
  * Furnish one room in plan symbols.
  * @param {{CX:Function, CY:Function, cs:number, seed:number, map:any, theme:string, ruined?:boolean, avoid?:(x:number,y:number)=>boolean}} o
  */
-export function furnish(g, cells, { CX, CY, cs, seed = 1, map, theme = 'house', ruined = false, avoid = () => false }) {
+export function furnish(g, cells, { CX, CY, cs, seed = 1, map, theme = 'house', ruined = false, avoid = () => false, out = null }) {
   const r = prng(seed);
   const has = cellSet(cells);
   const doorNear = (x, y) => DIRS.some((d) => {
@@ -447,6 +461,7 @@ export function furnish(g, cells, { CX, CY, cs, seed = 1, map, theme = 'house', 
     if (!spot) continue;
     used.add(`${spot.x},${spot.y}`);
     const { x, y, side } = spot;
+    out?.push({ sym, x, y, side, wall: !!wall });
     const cx = CX(x) + cs / 2;
     const cy = CY(y) + cs / 2;
     const inset = cs * 0.08;
@@ -484,27 +499,14 @@ export function partition(g, cells, { CX, CY, cs, seed = 1 }) {
   const at = vertical ? x0 + Math.max(1, Math.round(w * (0.35 + r() * 0.15))) : y0 + Math.max(1, Math.round(h * (0.35 + r() * 0.15)));
   const span = vertical ? [y0, y1] : [x0, x1];
   const gapAt = span[0] + Math.floor(r() * (span[1] - span[0]));
-  g.save();
-  g.strokeStyle = 'rgba(43,26,13,0.75)';
-  g.lineCap = 'butt';
+  // a framed partition: studs and boards drawn as a light timber wall (never a hairline)
   for (let t = span[0]; t < span[1]; t++) {
     const a = vertical ? has(at - 1, t) && has(at, t) : has(t, at - 1) && has(t, at);
     if (!a || t === gapAt) continue;
     const gx = vertical ? CX(at) : CX(t);
     const gy = vertical ? CY(t) : CY(at);
-    // a thin double rule (studs and boards)
-    for (const o of [-1.1, 1.1]) {
-      g.lineWidth = 0.45;
-      g.beginPath();
-      if (vertical) { g.moveTo(gx + o, gy); g.lineTo(gx + o, gy + cs); } else { g.moveTo(gx, gy + o); g.lineTo(gx + cs, gy + o); }
-      g.stroke();
-    }
-    g.lineWidth = 0.8;
-    g.beginPath();
-    for (let k = 0; k <= 2; k++) {
-      if (vertical) { g.moveTo(gx - 1.1, gy + (k / 2) * cs); g.lineTo(gx + 1.1, gy + (k / 2) * cs); } else { g.moveTo(gx + (k / 2) * cs, gy - 1.1); g.lineTo(gx + (k / 2) * cs, gy + 1.1); }
-    }
-    g.stroke();
+    const near = (q) => (q === gapAt ? cs * 0.18 : 0);
+    if (vertical) timberWall(g, gx, gy + near(t - 1), gx, gy + cs - near(t + 1), { width: cs * 0.085, seed: seed + t, cs });
+    else timberWall(g, gx + near(t - 1), gy, gx + cs - near(t + 1), gy, { width: cs * 0.085, seed: seed + t, cs });
   }
-  g.restore();
 }

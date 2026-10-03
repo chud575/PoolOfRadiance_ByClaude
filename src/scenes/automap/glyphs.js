@@ -94,24 +94,37 @@ export function drawPartyArrow(g, x, y, s, angle = 0, { glow = 0.5 } = {}) {
   g.restore();
 }
 
-/** The party's view: a soft vermilion-ochre wash wedge (cached canvas). */
+/**
+ * The party's view: a surveyor's sighting wedge in vermilion ink (cached canvas):
+ * two fine rays and a few concentric arcs fading with distance, a very pale flat
+ * tint between, no blur.
+ */
 let coneCache = null;
 export function partyConeCanvas() {
   if (coneCache) return coneCache;
-  const S = 256;
+  const S = 512;
   const c = makeCanvas(S);
   const g = c.getContext('2d');
-  g.filter = 'blur(9px)';
-  const gr = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S * 0.48);
-  gr.addColorStop(0, 'rgba(196,84,46,0.42)');
-  gr.addColorStop(0.5, 'rgba(210,136,72,0.2)');
-  gr.addColorStop(1, 'rgba(214,150,80,0)');
-  g.fillStyle = gr;
-  g.beginPath();
-  g.moveTo(S / 2, S / 2);
-  g.arc(S / 2, S / 2, S * 0.46, -Math.PI / 2 - 0.5, -Math.PI / 2 + 0.5);
-  g.closePath();
-  g.fill();
+  const o = S / 2;
+  const R = S * 0.46;
+  const a0 = -Math.PI / 2 - 0.48;
+  const a1 = -Math.PI / 2 + 0.48;
+  g.fillStyle = 'rgba(200,96,56,0.06)';
+  g.beginPath(); g.moveTo(o, o); g.arc(o, o, R * 0.78, a0, a1); g.closePath(); g.fill();
+  g.lineCap = 'round';
+  g.strokeStyle = 'rgba(160,44,26,0.7)';
+  g.lineWidth = 2;
+  g.setLineDash([10, 8]);
+  for (const a of [a0, a1]) {
+    g.beginPath(); g.moveTo(o + Math.cos(a) * S * 0.12, o + Math.sin(a) * S * 0.12); g.lineTo(o + Math.cos(a) * R, o + Math.sin(a) * R); g.stroke();
+  }
+  g.setLineDash([]);
+  for (let i = 1; i <= 4; i++) {
+    const rr = R * (0.22 + i * 0.19);
+    g.strokeStyle = `rgba(160,44,26,${(0.62 - i * 0.12).toFixed(3)})`;
+    g.lineWidth = 2.2 - i * 0.3;
+    g.beginPath(); g.arc(o, o, rr, a0 + 0.04, a1 - 0.04); g.stroke();
+  }
   coneCache = c;
   return c;
 }

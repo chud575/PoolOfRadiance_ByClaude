@@ -433,6 +433,9 @@ export function surveyFogGrid(W, H, { mx, my, cs, w, h, state, hard, area, seed 
   const cleanC = makeCanvas(W, H);
   const kg = cleanC.getContext('2d');
   const kimg = kg.createImageData(W, H);
+  const edgeC = makeCanvas(W, H);
+  const eg = edgeC.getContext('2d');
+  const eimg = eg.createImageData(W, H);
   const [ax, ay, aw, ah] = area.map(Math.round);
   // per-cell lookups, so the per-pixel loop stays cheap
   const st = new Uint8Array(w * h);
@@ -462,11 +465,24 @@ export function surveyFogGrid(W, H, { mx, my, cs, w, h, state, hard, area, seed 
       img.data[i * 4 + 3] = Math.round(fog * 255);
       kimg.data[i * 4] = kimg.data[i * 4 + 1] = kimg.data[i * 4 + 2] = 255;
       kimg.data[i * 4 + 3] = Math.round(level * 255);
+      // the limit of survey: a deckled graphite rim just outside what is known
+      if (fog > 0.02) {
+        const k = kn[i];
+        const band = smooth(0.03, 0.26, k) * (1 - smooth(0.5, 0.85, k));
+        const mid = 4 * fog * (1 - fog);
+        let e = Math.max(band * fog, mid * 0.7);
+        if (e > 0.01) {
+          const n2 = fbm(x / 5.5, y / 5.5, { period: 256, octaves: 2, seed: seed + 5 });
+          e *= Math.max(0, Math.min(1, 0.25 + (n2 - 0.3) * 1.9));
+        }
+        eimg.data[i * 4 + 3] = Math.round(Math.min(1, e) * 255);
+      }
     }
   }
   cg.putImageData(img, 0, 0);
   kg.putImageData(kimg, 0, 0);
-  return { cover, clean: cleanC };
+  eg.putImageData(eimg, 0, 0);
+  return { cover, clean: cleanC, edge: edgeC };
 }
 
 /**
@@ -480,7 +496,7 @@ export function paintUnsurveyed(W, H, k, cover, area, { seed = 1 } = {}) {
   g.scale(k, k);
   const [ax, ay, aw, ah] = area;
   const r = prng(seed + 71);
-  g.fillStyle = 'rgba(112,94,72,0.2)';
+  g.fillStyle = 'rgba(96,80,62,0.3)';
   g.fillRect(ax, ay, aw, ah);
   {
     const q = 6;
@@ -610,4 +626,32 @@ export function sightLines(map, walked, isRock, { rooms = true, reach = 16 } = {
     }
   }
   return out;
+}
+
+/**
+ * The limit of survey drawn as a band of soft graphite: dense side-of-the-lead
+ * strokes and a darker core, masked by the deckled `edge` alpha.
+ */
+export function paintFogEdge(W, H, k, edge, area, { seed = 1 } = {}) {
+  const c = makeCanvas(W * k, H * k);
+  const g = c.getContext('2d');
+  g.scale(k, k);
+  const [ax, ay, aw, ah] = area;
+  const r = prng(seed + 13);
+  g.fillStyle = 'rgba(52,42,34,0.34)';
+  g.fillRect(ax, ay, aw, ah);
+  g.lineCap = 'round';
+  for (let o = -ah; o < aw; o += 1.15 + r() * 0.6) {
+    g.strokeStyle = `rgba(40,32,26,${(0.22 + r() * 0.28).toFixed(3)})`;
+    g.lineWidth = 0.4 + r() * 0.35;
+    g.beginPath();
+    g.moveTo(ax + o, ay + ah);
+    g.lineTo(ax + o + ah * 0.9, ay);
+    g.stroke();
+  }
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalCompositeOperation = 'destination-in';
+  g.imageSmoothingEnabled = true;
+  g.drawImage(edge, 0, 0, W * k, H * k);
+  return c;
 }

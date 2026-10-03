@@ -2,8 +2,8 @@ import { EDGE, CELL, DIRS } from '../../data/maps/MapGrid.js';
 import { getMap, hasMap } from '../../data/maps/index.js';
 import { TRAVEL } from '../../data/travel.js';
 import { INK, makeCanvas, makeParchment, quillStroke, planWall, pencilShade, hatchRect, lineShade, stipple, featherMask, prng } from './ink.js';
-import { regions, washRegion, hatchBand, cobbleRegion, scatter } from './paint.js';
-import { surveyFogGrid, paintUnsurveyed, sightLines } from './fog.js';
+import { regions, washRegion, hatchBand, cobbleRegion, scatter, boundaryPath } from './paint.js';
+import { surveyFogGrid, paintUnsurveyed, paintFogEdge, sightLines } from './fog.js';
 import { stoneWall, timberWall, cityWall, tower, chunk, doorLeaf, lockedDoor, secretDoor } from './walls.js';
 import { drawFloor, wallShadow, furnish, partition, themeOf } from './plan.js';
 import { drawMarker } from './glyphs.js';
@@ -157,6 +157,46 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
   const mask = survey.clean;
   const fogCov = survey.cover;
   g.drawImage(paintUnsurveyed(W, H, k, fogCov, fogArea, { seed: seed + 21 }), 0, 0, W, H);
+  // buildings seen from the street but never entered: shut in pencil cross-hatching,
+  // a closed graphite block with a darker rim inside its walls
+  {
+    const ub = makeCanvas(W * k, H * k);
+    const ug = ub.getContext('2d');
+    ug.scale(k, k);
+    ug.lineCap = 'round';
+    const ur = prng(seed + 57);
+    for (const rg of regions(map, info).list) {
+      if (rg.type !== CELL.INTERIOR) continue;
+      if (rg.cells.some(([i, j]) => seenCell(i, j)) || !rg.cells.some(([i, j]) => nearSeen(i, j))) continue;
+      const path = new Path2D();
+      for (const [i, j] of rg.cells) path.rect(CX(i), CY(j), cs, cs);
+      ug.save();
+      ug.clip(path);
+      ug.fillStyle = 'rgba(92,72,52,0.12)';
+      ug.fill(path);
+      let x0 = 1e9; let y0 = 1e9; let x1 = -1e9; let y1 = -1e9;
+      for (const [i, j] of rg.cells) { x0 = Math.min(x0, CX(i)); y0 = Math.min(y0, CY(j)); x1 = Math.max(x1, CX(i + 1)); y1 = Math.max(y1, CY(j + 1)); }
+      const L = (x1 - x0) + (y1 - y0);
+      for (const dir of [1, -1]) {
+        for (let o = -L; o < L; o += 3.4 + ur() * 1.2) {
+          ug.strokeStyle = `rgba(62,46,32,${((dir > 0 ? 0.26 : 0.16) * (0.7 + ur() * 0.6)).toFixed(3)})`;
+          ug.lineWidth = 0.45 + ur() * 0.3;
+          ug.beginPath();
+          if (dir > 0) { ug.moveTo(x0 + o, y1); ug.lineTo(x0 + o + (y1 - y0), y0); } else { ug.moveTo(x0 + o, y0); ug.lineTo(x0 + o + (y1 - y0), y1); }
+          ug.stroke();
+        }
+      }
+      // a soft graphite rim pressed along the inside of the walls
+      ug.filter = `blur(${(cs * 0.06 * k).toFixed(1)}px)`;
+      ug.strokeStyle = 'rgba(54,40,28,0.42)';
+      ug.lineWidth = cs * 0.2;
+      ug.stroke(boundaryPath(rg.cells, CX, CY));
+      ug.filter = 'none';
+      ug.restore();
+    }
+    g.drawImage(ub, 0, 0, W, H);
+  }
+  g.drawImage(paintFogEdge(W, H, k, survey.edge, fogArea, { seed: seed + 23 }), 0, 0, W, H);
   // ---------- pencil survey grid: only where the ground is still unsurveyed (the inked
   // plan stands on its own, no squares showing through the floors) ----------
   {
@@ -292,6 +332,7 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
   g.restore();
 
   // ---------- floor plans: paving / boards, partitions, furniture, wall shadow (masked) ----------
+  const furniture = [];
   {
     const det = makeCanvas(W * k, H * k);
     const d = det.getContext('2d');
@@ -354,8 +395,8 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
       drawFloor(d, rg.cells, { CX, CY, cs, seed: rs, kind });
       if (!dungeon) {
         wallShadow(d, rg.cells, { CX, CY, cs, seed: rs + 2, walled: P.walled });
-        if (!ruined) partition(d, rg.cells, { CX, CY, cs, seed: rs + 3 });
-        furnish(d, rg.cells, { CX, CY, cs, seed: rs + 5, map, theme: themeOf(map.zoneAt(ax, ay)), ruined, avoid: (x, y) => busy.has(`${x},${y}`) });
+        if (!ruined && !['temple', 'counting', 'library'].includes(theme)) partition(d, rg.cells, { CX, CY, cs, seed: rs + 3 });
+        furnish(d, rg.cells, { CX, CY, cs, seed: rs + 5, map, theme: themeOf(map.zoneAt(ax, ay)), ruined, avoid: (x, y) => busy.has(`${x},${y}`), out: furniture });
       }
     }
     d.setTransform(1, 0, 0, 1, 0, 0);
@@ -558,17 +599,21 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
     const off = same.length > 1 ? (idx - (same.length - 1) / 2) * cs * 0.32 : 0;
     const mxp = CX(ev.x) + cs / 2 + off;
     const myp = CY(ev.y) + cs / 2;
-    // a pale knock-out under the glyph so it reads on top of the drawn paving
+    // a cleared reserve under the glyph, as an engraver leaves it: a hard-edged
+    // disc of clean paper ringed by a thin double rule of ink
     {
-      const kr = cs * 0.34;
-      const kg = g.createRadialGradient(mxp, myp, kr * 0.3, mxp, myp, kr);
-      kg.addColorStop(0, 'rgba(240,228,198,0.85)');
-      kg.addColorStop(0.7, 'rgba(240,228,198,0.6)');
-      kg.addColorStop(1, 'rgba(240,228,198,0)');
-      g.fillStyle = kg;
+      const kr = cs * 0.33;
+      g.save();
+      g.fillStyle = 'rgba(241,229,200,0.97)';
       g.beginPath(); g.arc(mxp, myp, kr, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = 'rgba(43,26,13,0.9)';
+      g.lineWidth = 0.9;
+      g.beginPath(); g.arc(mxp, myp, kr, 0, Math.PI * 2); g.stroke();
+      g.lineWidth = 0.45;
+      g.beginPath(); g.arc(mxp, myp, kr - 1.8, 0, Math.PI * 2); g.stroke();
+      g.restore();
     }
-    drawMarker(g, mk2, mxp, myp, cs * (mk2 === 'battle' ? 0.52 : 0.44), { color: INK.ink, seed: ev.x * 31 + ev.y });
+    drawMarker(g, mk2, mxp, myp, cs * (mk2 === 'battle' ? 0.46 : 0.4), { color: INK.ink, seed: ev.x * 31 + ev.y });
     markerSpots.push([mxp - cs * 0.22, myp - cs * 0.22, cs * 0.44, cs * 0.44]);
   }
   // exits: arrows in the margin + destination names
@@ -811,7 +856,7 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
   g.restore();
 
   g.restore();
-  return { canvas, k, cs, info, seenCell, fog: fogCov, fogArea, wallRects, cellRect: (x, y) => [M + CX(x), M + CY(y), cs, cs], seed, labels, markerSpots, regions: reg };
+  return { canvas, k, cs, info, seenCell, fog: fogCov, fogArea, wallRects, cellRect: (x, y) => [M + CX(x), M + CY(y), cs, cs], seed, labels, markerSpots, regions: reg, furniture };
 }
 
 /** Small legend swatch drawn in sheet units. */

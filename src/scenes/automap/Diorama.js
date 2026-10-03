@@ -8,6 +8,9 @@ import { buildPartyMiniature } from './miniature.js';
 import { hash2, fbm } from '../../render/textures/noise.js';
 import { preloadTextureSets, getTextureSet } from '../../render/textures/index.js';
 
+/** Fold lines of the blank leaf over unsurveyed ground: [dir x, dir z, offset (fraction), +1 mountain / -1 valley]. */
+const LEAF_FOLDS = [[1, 0, 0.5, 1], [0, 1, 0.34, -1], [0, 1, 0.67, 1], [0.7071, 0.7071, 0.52, -0.6]];
+
 /** Shared procedural material sets the miniature is built from (cached library sets; never disposed here). */
 const SETS = ['hd_ashlar', 'hd_ashlar_cold', 'hd_plaster', 'hd_beam_dark', 'hd_ruin', 'hd_door', 'hd_iron', 'hd_rock', 'hd_water'];
 
@@ -306,7 +309,16 @@ export class Diorama {
     };
 
     // ---------- desk: walnut planks ----------
-    const deskCanvas = makeDesk(1024, 1024, { lit: false, seed: 9, tone: [70, 48, 32] });
+    // the desk lies beyond the focal plane of the miniature: its grain softened, as a
+    // macro lens would render it
+    const deskSharp = makeDesk(1024, 1024, { lit: false, seed: 9, tone: [70, 48, 32] });
+    const deskCanvas = makeCanvas(1024);
+    {
+      const dg = deskCanvas.getContext('2d');
+      dg.filter = 'blur(5px)';
+      // drawn three times over (tiled) so the blur wraps and the repeat stays seamless
+      for (const ox of [-1024, 0, 1024]) for (const oy of [-1024, 0, 1024]) dg.drawImage(deskSharp, ox, oy);
+    }
     const deskTex = T(new THREE.CanvasTexture(deskCanvas));
     deskTex.colorSpace = THREE.SRGBColorSpace;
     deskTex.wrapS = deskTex.wrapT = THREE.RepeatWrapping;
@@ -672,6 +684,36 @@ export class Diorama {
         fl.box(x + 0.5, fh / 2, y + 0.5, 1.002, fh, 1.002, { uvFn, ao: 0.35, aoH: fh, tint: 1 });
       }
       if (!dungeon) this._veils(scene, T, map, sheet, seenCell, walkedRoom, wallH);
+      // the rooms the company entered are furnished as on the plan, and their roofs
+      // shown cut away: the tie-beams left spanning the walls
+      if (!dungeon) {
+        this._furnish(scene, T, batch, sheet, walkedRoom, fh, M_);
+        for (const rg of sheet.regions?.list ?? []) {
+          if (rg.type !== CELL.INTERIOR || rg.style === 2 || !rg.cells.some(([x, y]) => walkedRoom.has(`${x},${y}`))) continue;
+          const hasC = new Set(rg.cells.map(([x, y]) => `${x},${y}`));
+          let bx0 = 99; let bz0 = 99; let bx1 = -1; let bz1 = -1;
+          for (const [x, y] of rg.cells) { bx0 = Math.min(bx0, x); bz0 = Math.min(bz0, y); bx1 = Math.max(bx1, x + 1); bz1 = Math.max(bz1, y + 1); }
+          const alongX = bx1 - bx0 >= bz1 - bz0;
+          const [a0, a1] = alongX ? [bx0, bx1] : [bz0, bz1];
+          const [b0, b1] = alongX ? [bz0, bz1] : [bx0, bx1];
+          // near each end of the room (its name is lettered across the middle)
+          const spots = a1 - a0 >= 4 ? [a0 + 0.85, a1 - 0.85] : a1 - a0 >= 2 ? [(a0 + a1) / 2] : [];
+          for (const a of spots) {
+            // only where the beam's whole span lies over this one room
+            let ok = true;
+            for (let b = b0; b < b1; b++) if (!hasC.has(alongX ? `${Math.floor(a)},${b}` : `${b},${Math.floor(a)}`)) ok = false;
+            if (!ok) continue;
+            const L = b1 - b0 + 0.08;
+            const yb = wallH * 0.97;
+            const bm = batch('beam');
+            if (alongX) bm.bevelBox(a, yb, (b0 + b1) / 2, 0.075, 0.065, L, { bevel: 0.01, ao: 1 });
+            else bm.bevelBox((b0 + b1) / 2, yb, a, L, 0.065, 0.075, { bevel: 0.01, ao: 1 });
+            // a king-post stub and the sawn ends of two rafters above it
+            const [kx, kz] = alongX ? [a, (b0 + b1) / 2] : [(b0 + b1) / 2, a];
+            bm.bevelBox(kx, yb + 0.09, kz, 0.05, 0.13, 0.05, { bevel: 0.006, ao: 1 });
+          }
+        }
+      }
     }
     for (const [k, b] of Object.entries(B)) {
       const m = b.mesh(M_[k]);
@@ -800,15 +842,20 @@ export class Diorama {
           const ii = Math.round((x / map.w) * N);
           const jj = Math.round((z / map.h) * N);
           const m = soft[jj * (N + 1) + ii];
-          // crumple: ridged noise for creases plus a slow swell, lifting where the fog is deep
-          const cr = Math.abs(fbm(x * 0.6, z * 0.6, { period: 64, octaves: 3, seed: 61 }) - 0.5) * 2;
-          const cr2 = Math.abs(fbm(x * 1.5 + 9, z * 1.5, { period: 64, octaves: 2, seed: 63 }) - 0.5) * 2;
-          const sw = fbm(x * 0.16, z * 0.16, { period: 64, octaves: 2, seed: 67 });
-          const hgt = m * m * (0.06 + sw * 0.2 + (1 - cr) ** 2 * 0.16 + (1 - cr2) ** 3 * 0.05);
+          // a blank leaf that has been folded and opened out: a few straight creases
+          // (mountain and valley in turn) and one or two broad, slow undulations
+          const sw = fbm(x * 0.12, z * 0.12, { period: 64, octaves: 2, seed: 67 });
+          let crease = 0;
+          for (const [ax, az, ox, sg] of LEAF_FOLDS) {
+            const d = Math.abs((x - ox * map.w) * ax + (z - ox * map.h) * az);
+            crease += sg * Math.max(0, 1 - d / 0.55) ** 1.6;
+          }
+          const cr = crease;
+          const hgt = m * m * (0.05 + sw * 0.16 + crease * 0.05);
           p2.setY(i, 0.012 + hgt);
           // the leaf's UVs sample the sheet itself, so its face shows the graphite unknown
           uv2.setXY(i, (x - px0) / pw, 1 - (z - pz0) / ph);
-          const sh = 0.86 + cr * 0.14;
+          const sh = 0.9 + cr * 0.08;
           col.set([sh, sh * 0.985, sh * 0.96], i * 3);
         }
         geo2.setAttribute('color', new THREE.BufferAttribute(col, 3));
@@ -857,7 +904,7 @@ export class Diorama {
       const flagGeo = mini.flagGeo;
       grp.position.set(party.x + 0.5, 0, party.y + 0.5);
       // a soft candle-gold glow on the paper under the base, so it is found at once
-      const glow = new THREE.Mesh(T(new THREE.CircleGeometry(0.5, 48)), T(new THREE.MeshBasicMaterial({ map: this._glowTexture(T), color: 0xffb060, transparent: true, opacity: 0.7, depthWrite: false, blending: THREE.AdditiveBlending })));
+      const glow = new THREE.Mesh(T(new THREE.CircleGeometry(0.5, 48)), T(new THREE.MeshBasicMaterial({ map: this._glowTexture(T), color: 0xffb060, transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending })));
       glow.rotation.x = -Math.PI / 2;
       glow.position.y = 0.008;
       grp.add(glow);
@@ -1023,6 +1070,12 @@ export class Diorama {
     key.shadow.normalBias = 0.02;
     key.shadow.radius = 2;
     scene.add(key, key.target);
+    // a cool rim from beyond the board (a window behind the desk): it outlines every
+    // wall-top and the miniature against the warm paving
+    const rim = new THREE.DirectionalLight(0xa8c2ff, 1.1);
+    rim.position.set(10, 7, -22);
+    rim.target.position.set(8, 0, 8);
+    scene.add(rim, rim.target);
     const moon = new THREE.DirectionalLight(0x9aaed8, 0.3);
     moon.position.set(28, 14, 20);
     moon.target.position.set(8, 0, 8);
@@ -1045,6 +1098,9 @@ export class Diorama {
       const minH = 7;
       if (x1 - x0 < minW) { const c = (x0 + x1) / 2; x0 = Math.max(-0.5, c - minW / 2); x1 = x0 + minW; }
       if (z1 - z0 < minH) { const c = (z0 + z1) / 2; z0 = Math.max(-0.5, c - minH / 2); z1 = z0 + minH; }
+      // a party at the edge of the block: keep the frame on the board, not the desk
+      if (x1 > map.w + 0.5) { x0 -= x1 - map.w - 0.5; x1 = map.w + 0.5; }
+      if (z1 > map.h + 0.5) { z0 -= z1 - map.h - 0.5; z1 = map.h + 0.5; }
       this.focusBounds = [];
       for (const [bx, bz] of [[x0 - 0.3, z0 - 0.3], [x1 + 0.3, z0 - 0.3], [x0 - 0.3, z1 + 0.3], [x1 + 0.3, z1 + 0.3]]) {
         this.focusBounds.push(new THREE.Vector3(bx, 0, bz), new THREE.Vector3(bx, 0.9, bz));
@@ -1058,38 +1114,49 @@ export class Diorama {
 
   /**
    * Buildings seen from the street but never entered: each is shrouded under a
-   * draped cloth, as a wargamer covers terrain not yet revealed. The cloth hangs
-   * over the walls, sags between them, gathers in creases and spreads its hem on
-   * the paper; painted in a graphite wash.
+   * cloth of unbleached linen, as a wargamer covers terrain not yet revealed.
+   * The cloth rides the wall-tops, sags into the empty room between them in a
+   * few long directional folds, falls down the wall faces in vertical pleats and
+   * pools on the paper in a wrinkled, irregular hem. Plain-weave albedo with a
+   * little charcoal staining; matte, with a faint cloth sheen.
    */
   _veils(scene, T, map, sheet, seenCell, walkedRoom, wallH) {
     const near = (x, y) => { for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) if (seenCell(x + i, y + j)) return true; return false; };
     const list = (sheet.regions?.list ?? []).filter((rg) => rg.type === CELL.INTERIOR && rg.cells.length >= 2 && rg.cells.some(([x, y]) => near(x, y)) && !rg.cells.some(([x, y]) => walkedRoom.has(`${x},${y}`)));
     if (!list.length) return;
-    const mat = T(new THREE.MeshStandardMaterial({ color: 0x8e8c8a, roughness: 0.95, metalness: 0, vertexColors: true, envMapIntensity: 0.3, side: THREE.DoubleSide }));
-    const R = 10;
+    const tex = T(new THREE.CanvasTexture(this._linenCanvas()));
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.anisotropy = Math.min(8, this.ctx.render?.maxAnisotropy ?? 4);
+    const mat = T(new THREE.MeshPhysicalMaterial({
+      map: tex, color: 0xcfc6b4, roughness: 0.96, metalness: 0, vertexColors: true, envMapIntensity: 0.2, side: THREE.DoubleSide,
+      sheen: 0.6, sheenRoughness: 0.7, sheenColor: new THREE.Color(0xfff0d8),
+    }));
+    const R = 14;
     for (const rg of list) {
       const has = new Set(rg.cells.map(([x, y]) => `${x},${y}`));
       let x0 = 99; let z0 = 99; let x1 = -1; let z1 = -1;
       for (const [x, y] of rg.cells) { x0 = Math.min(x0, x); z0 = Math.min(z0, y); x1 = Math.max(x1, x + 1); z1 = Math.max(z1, y + 1); }
-      const pad = 0.32;
+      const pad = 0.5;
       const W = x1 - x0 + pad * 2;
       const D = z1 - z0 + pad * 2;
       const nx = Math.ceil(W * R);
       const nz = Math.ceil(D * R);
-      const geo = T(new THREE.PlaneGeometry(W, D, nx, nz));
+      const geo = new THREE.PlaneGeometry(W, D, nx, nz);
       geo.rotateX(-Math.PI / 2);
       geo.translate(x0 - pad + W / 2, 0, z0 - pad + D / 2);
       const p = geo.attributes.position;
+      const uv = geo.attributes.uv;
       const col = new Float32Array(p.count * 3);
       const seedR = rg.index * 13 + 5;
+      const rnd = prng(seedR);
       // signed distance (cells) into the building: + inside, - outside
       const sdist = (px, pz) => {
         const cx = Math.floor(px);
         const cz = Math.floor(pz);
         const inside = has.has(`${cx},${cz}`);
         let d = 3;
-        for (let j = -3; j <= 3; j++) for (let i = -3; i <= 3; i++) {
+        for (let j = -2; j <= 2; j++) for (let i = -2; i <= 2; i++) {
           if (has.has(`${cx + i},${cz + j}`) === inside) continue;
           const ex = Math.max(cx + i, Math.min(px, cx + i + 1));
           const ez = Math.max(cz + j, Math.min(pz, cz + j + 1));
@@ -1097,38 +1164,251 @@ export class Diorama {
         }
         return inside ? d : -d;
       };
-      const top = wallH * 1.35;
+      const top = wallH * 1.12;
+      const minDim = Math.min(x1 - x0, z1 - z0);
+      const sagMax = Math.min(top * 0.6, 0.14 + minDim * 0.08);
+      // the cloth was thrown on from one corner: its long folds all run one way
+      const th = rnd() * Math.PI;
+      const dx = Math.cos(th);
+      const dz = Math.sin(th);
+      const span = Math.max(x1 - x0, z1 - z0);
+      const nF = 3 + Math.floor(rnd() * 3);
+      const lam = span / nF;
+      const ph = rnd() * 10;
+      const crest = (t) => { const v = Math.sin(t); return Math.sign(v) * Math.abs(v) ** 0.6; };
+      const hide = new Uint8Array(p.count);
+      const relief = new Float32Array(p.count);
       for (let i = 0; i < p.count; i++) {
         const x = p.getX(i);
         const z = p.getZ(i);
         const sd = sdist(x, z);
-        const ridge = 1 - Math.abs(fbm(x * 1.7, z * 1.7, { period: 64, octaves: 3, seed: seedR }) - 0.5) * 2;
-        const swell = fbm(x * 0.6, z * 0.6, { period: 64, octaves: 2, seed: seedR + 3 });
+        // outward normal from the distance field's gradient
+        const e = 0.03;
+        let gx = sdist(x - e, z) - sdist(x + e, z);
+        let gz = sdist(x, z - e) - sdist(x, z + e);
+        const gl = Math.hypot(gx, gz) || 1;
+        gx /= gl; gz /= gl;
+        const along = x * -gz + z * gx;
+        const n1 = fbm(x * 1.3, z * 1.3, { period: 64, octaves: 2, seed: seedR });
         let y;
+        let rel = 0;
         if (sd >= 0) {
-          // over the roof: the cloth rides the wall-tops and bellies up over the middle
-          const k = Math.min(1, sd / 1.3);
-          y = top + 0.03 + k ** 0.6 * (0.14 + swell * 0.16) + ridge ** 3 * 0.09 * (0.4 + k);
+          // slack between the wall-tops: sags toward the middle, folds where it is loose
+          const k = 1 - Math.exp(-sd / 0.45);
+          // long folds: partly run one way (the throw), partly radiating from the middle
+          // out to the corners where the cloth is held on the wall-tops
+          const ccx = (x0 + x1) / 2;
+          const ccz = (z0 + z1) / 2;
+          const rr0 = Math.hypot(x - ccx, z - ccz);
+          const ang = Math.atan2(z - ccz, x - ccx);
+          const tRad = ang * nF + ph + (n1 - 0.5) * 2.4;
+          const tLin = (x * dx + z * dz) / lam * Math.PI * 2 + ph + (n1 - 0.5) * 2.2;
+          const fold = (crest(tRad) * Math.min(1, rr0 / 0.7) * 0.65 + crest(tLin) * 0.45) * (0.3 + 0.7 * k);
+          const fine = Math.sin((x * -dz + z * dx) * 9 + n1 * 5) * 0.12 * k;
+          y = top - sagMax * k + (fold * 0.085 + fine * 0.02) * (0.35 + k) + 0.012 * (1 - k);
+          rel = fold * 0.8 - k * 0.5 + (1 - k) * 0.6;
         } else {
-          // hanging over the wall face and spreading on the paper as a hem
-          const t = Math.min(1, -sd / pad);
-          const fall = Math.cos(t * Math.PI * 0.5) ** 0.35;
-          y = 0.012 + (top + 0.03) * fall * (1 - t * 0.15) + ridge ** 2 * 0.03 * (1 - t);
-          // vertical folds in the hanging part
-          const fold = Math.sin((x + z) * 23 + swell * 6) * 0.025 * fall;
-          p.setX(i, x + (sd < -0.05 ? fold * Math.sign(x - (x0 + x1) / 2) * 0.3 : 0));
+          const o = -sd;
+          const face = 0.07;
+          const drop = 0.2;
+          const hem = pad * (0.62 + 0.38 * fbm(along * 1.6 + 3, seedR * 0.1, { period: 64, octaves: 2, seed: seedR + 9 }));
+          if (o > hem) hide[i] = 1;
+          if (o < face) {
+            // rounding over the wall's arris
+            const q = o / face;
+            y = top - (1 - Math.cos(q * Math.PI * 0.5)) * 0.05;
+            rel = 0.7;
+          } else if (o < drop) {
+            // hanging down the wall face in pleats, flaring as it falls
+            const q = (o - face) / (drop - face);
+            y = (top - 0.05) * (1 - q ** 0.8) + 0.02 * q;
+            const pleat = crest(along * Math.PI * 2 / 0.24 + n1 * 3);
+            const push = pleat * 0.04 * q;
+            p.setX(i, x + gx * push * -1);
+            p.setZ(i, z + gz * push * -1);
+            rel = pleat * 0.9 * q - q * 0.3;
+          } else {
+            // pooled on the paper: low wrinkles running out from the wall
+            const q = Math.min(1, (o - drop) / Math.max(0.05, hem - drop));
+            const wr = Math.abs(Math.sin(along * Math.PI * 2 / 0.16 + n1 * 4 + o * 6));
+            y = 0.014 + (1 - q) * (0.03 + wr * 0.035) + wr * 0.008;
+            rel = (wr - 0.5) * 0.8 * (1 - q) - 0.25;
+          }
         }
         p.setY(i, Math.max(0.012, y));
-        const sh = 0.52 + ridge ** 2 * 0.42 + swell * 0.12;
-        col.set([sh * 0.98, sh * 0.98, sh], i * 3);
+        relief[i] = rel;
+        // weave UVs in world units (one repeat per half square), wrapped down the
+        // hanging faces along the wall so the threads never stretch
+        if (sd >= 0) uv.setXY(i, p.getX(i) * 2, p.getZ(i) * 2);
+        else if (Math.abs(gz) >= Math.abs(gx)) uv.setXY(i, p.getX(i) * 2, (z0 + z1) + (sd < 0 ? Math.sign(gz) : 0) * (top - y) * 2 + p.getZ(i) * 0.4);
+        else uv.setXY(i, p.getZ(i) * 2, (x0 + x1) + Math.sign(gx) * (top - y) * 2 + p.getX(i) * 0.4);
+      }
+      for (let i = 0; i < p.count; i++) {
+        const rv = relief[i];
+        const sh = Math.max(0.4, Math.min(1.08, 0.8 + rv * 0.3));
+        col.set([sh, sh * 0.98, sh * 0.95], i * 3);
       }
       geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      // trim the hem: drop every triangle lying wholly beyond it
+      const idx = geo.index.array;
+      const keep = [];
+      for (let t = 0; t < idx.length; t += 3) {
+        if (hide[idx[t]] && hide[idx[t + 1]] && hide[idx[t + 2]]) continue;
+        keep.push(idx[t], idx[t + 1], idx[t + 2]);
+      }
+      geo.setIndex(keep);
       geo.computeVertexNormals();
+      T(geo);
       const m = new THREE.Mesh(geo, mat);
       m.castShadow = true;
       m.receiveShadow = true;
       scene.add(m);
     }
+  }
+
+  /**
+   * Furniture in the rooms the company entered, built as little props from the
+   * same placements the sheet's plan symbols use (beds, tables and stools,
+   * hearths, chests, barrels, crates, shelves, altars, pews, braziers ...).
+   */
+  _furnish(scene, T, batch, sheet, walkedRoom, fh, M_) {
+    const list = (sheet.furniture ?? []).filter((f) => walkedRoom.has(`${f.x},${f.y}`));
+    if (!list.length) return;
+    const ember = T(new THREE.MeshStandardMaterial({ color: 0x401808, emissive: 0xff6a20, emissiveIntensity: 2.2, roughness: 0.8 }));
+    const cyl = T(new THREE.CylinderGeometry(1, 1, 1, 12));
+    const sph = T(new THREE.SphereGeometry(1, 10, 8));
+    const ANG = { N: 0, E: Math.PI / 2, S: Math.PI, W: -Math.PI / 2 };
+    const y0 = fh;
+    for (const f of list) {
+      const a = ANG[f.side] ?? 0;
+      const ca = Math.cos(a);
+      const sa = Math.sin(a);
+      const cx = f.x + 0.5;
+      const cz = f.y + 0.5;
+      const inset = f.wall ? 0.08 : 0;
+      // local (u across the wall, v out into the room) → world
+      const at = (u, v) => {
+        const ly = -0.5 + inset + v;
+        return [cx + u * ca - ly * sa, cz + u * sa + ly * ca];
+      };
+      const bx = (key, u, v, w, d, h, yb = 0, o = {}) => {
+        const [x, z] = at(u, v);
+        batch(key).bevelBox(x, y0 + yb + h / 2, z, w, h, d, { ry: -a, bevel: Math.min(0.01, h * 0.3), ao: 0.8, us: 4, ...o });
+      };
+      const mesh = (geo, mat, u, v, sx, sy, sz, yb = 0) => {
+        const [x, z] = at(u, v);
+        const m = new THREE.Mesh(geo, mat);
+        m.scale.set(sx, sy, sz);
+        m.position.set(x, y0 + yb + sy / 2, z);
+        m.castShadow = true;
+        m.receiveShadow = true;
+        scene.add(m);
+        return m;
+      };
+      const r = prng(f.x * 31 + f.y * 17 + 3);
+      switch (f.sym) {
+        case 'hearth':
+          bx('stone', 0, 0.13, 0.62, 0.26, 0.2);
+          bx('iron', 0, 0.1, 0.32, 0.17, 0.12, 0.0, { ao: 1 });
+          mesh(sph, ember, 0, 0.14, 0.07, 0.03, 0.06, 0.0);
+          break;
+        case 'bed':
+          bx('beam', 0, 0.33, 0.4, 0.66, 0.06);
+          bx('plaster', 0, 0.35, 0.36, 0.6, 0.035, 0.06);
+          bx('plaster', 0, 0.1, 0.28, 0.1, 0.03, 0.095, { tint: 1.1 });
+          bx('door', 0, 0.45, 0.37, 0.34, 0.02, 0.095, { tint: 0.75 });
+          break;
+        case 'chest':
+          bx('beam', 0, 0.13, 0.34, 0.2, 0.12);
+          bx('iron', 0, 0.13, 0.36, 0.04, 0.125);
+          break;
+        case 'table':
+          bx('door', 0, 0.5, 0.5, 0.34, 0.025, 0.12);
+          for (const [u, v] of [[-0.21, 0.36], [0.21, 0.36], [-0.21, 0.64], [0.21, 0.64]]) bx('beam', u, v, 0.03, 0.03, 0.12);
+          for (const u of [-0.32, 0.32]) mesh(cyl, M_.beam, u, 0.5 + (r() - 0.5) * 0.1, 0.06, 0.08, 0.06);
+          break;
+        case 'barrels':
+          for (let i = 0; i < 2 + Math.floor(r() * 2); i++) mesh(cyl, M_.door, -0.2 + i * 0.2, 0.12 + (i % 2) * 0.06, 0.085, 0.17, 0.085);
+          break;
+        case 'crates':
+          for (let i = 0; i < 3; i++) bx('door', -0.18 + i * 0.18, 0.12 + (i % 2) * 0.05, 0.16, 0.16, 0.14 - (i % 2) * 0.03, 0, { ry: -a + (r() - 0.5) * 0.3 });
+          bx('door', -0.09, 0.14, 0.14, 0.14, 0.12, 0.14);
+          break;
+        case 'sacks':
+          for (let i = 0; i < 3; i++) mesh(sph, M_.plaster, -0.16 + i * 0.16, 0.12 + r() * 0.06, 0.08, 0.07, 0.09);
+          break;
+        case 'shelves':
+          bx('beam', 0, 0.07, 0.62, 0.12, 0.32);
+          for (let k = 0; k < 3; k++) bx('door', 0, 0.1, 0.56, 0.06, 0.02, 0.06 + k * 0.1, { tint: 0.8 });
+          break;
+        case 'counter':
+          bx('beam', 0, 0.2, 0.84, 0.18, 0.14);
+          bx('door', 0, 0.2, 0.88, 0.22, 0.02, 0.14);
+          break;
+        case 'desk':
+          bx('door', 0, 0.16, 0.42, 0.24, 0.12);
+          mesh(cyl, M_.beam, 0, 0.38, 0.05, 0.07, 0.05);
+          break;
+        case 'altar':
+          bx('stone', 0, 0.15, 0.52, 0.26, 0.17);
+          bx('locked', 0, 0.15, 0.3, 0.27, 0.01, 0.17, { tint: 0.7 });
+          bx('gold', 0, 0.12, 0.04, 0.04, 0.08, 0.17);
+          break;
+        case 'pews':
+          for (const v of [0.3, 0.6]) bx('beam', 0, v, 0.62, 0.1, 0.07);
+          break;
+        case 'brazier':
+          mesh(cyl, M_.iron, 0, 0.14, 0.05, 0.12, 0.05);
+          mesh(sph, ember, 0, 0.14, 0.06, 0.04, 0.06, 0.11);
+          break;
+        case 'rack':
+          bx('beam', 0, 0.06, 0.5, 0.06, 0.04, 0.1);
+          for (let k = 0; k < 4; k++) mesh(cyl, M_.iron, -0.18 + k * 0.12, 0.06, 0.008, 0.3, 0.008);
+          break;
+        case 'lectern':
+          mesh(cyl, M_.beam, 0, 0.5, 0.025, 0.14, 0.025);
+          bx('door', 0, 0.5, 0.18, 0.14, 0.02, 0.14, { ry: -a });
+          break;
+        case 'font':
+          mesh(cyl, M_.stone, 0, 0.5, 0.13, 0.12, 0.13);
+          break;
+        case 'debris':
+          for (let k = 0; k < 4; k++) bx('stone', (r() - 0.5) * 0.5, 0.3 + r() * 0.4, 0.06 + r() * 0.08, 0.05 + r() * 0.06, 0.03 + r() * 0.04, 0, { ry: r() * 3 });
+          break;
+        default:
+          break;
+      }
+    }
+  }
+
+  /** Unbleached plain-weave linen with slubs and a little charcoal staining (tileable). */
+  _linenCanvas() {
+    const S = 256;
+    const c = makeCanvas(S);
+    const g = c.getContext('2d');
+    const img = g.createImageData(S, S);
+    const P = 4;
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+      const cx = Math.floor(x / P);
+      const cy = Math.floor(y / P);
+      const over = (cx + cy) % 2 === 0;
+      const fx = (x % P) / P;
+      const fy = (y % P) / P;
+      // a warp or weft thread rounding over the crossing
+      const t = over ? Math.sin(fx * Math.PI) : Math.sin(fy * Math.PI);
+      const slubW = hash2(cx, 7, 3) * 0.5 + hash2(cy, 11, 5) * 0.5;
+      const stain = fbm(x / 64, y / 64, { period: 4, octaves: 4, seed: 902 });
+      const blot = Math.max(0, stain - 0.58) * 1.4;
+      let v = 0.74 + t * 0.2 + (slubW - 0.5) * 0.1 + (hash2(x, y, 9) - 0.5) * 0.04;
+      v *= 1 - blot * 0.3;
+      const i = (y * S + x) * 4;
+      img.data[i] = Math.min(255, v * 232);
+      img.data[i + 1] = Math.min(255, v * 218);
+      img.data[i + 2] = Math.min(255, v * 188);
+      img.data[i + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+    return c;
   }
 
   /** A tileable cloudy alpha field for the mist veils. */
@@ -1644,8 +1924,10 @@ export class Diorama {
     this.sheetDist = whole.dist;
     // the opening view shows the whole sheet inside the frame (never sliding under the
     // side panel, the key either whole or not at all); leaning in closes on the party
-    const foc = whole;
-    this.fitDist = whole.dist;
+    // the opening view frames what has been explored (the board filling the frame);
+    // the whole sheet stays the dolly's far limit
+    const foc = this.focusBounds?.length ? this._fitPoints(this.focusBounds, 0.95, this.target) : whole;
+    this.fitDist = foc.dist;
     this._fitted = true;
     this.fitTarget = foc.target;
     this.target.copy(foc.target);
@@ -1710,7 +1992,7 @@ export class Diorama {
     this._applyCamera();
     if (this.marker) this.marker.flag.rotation.y = Math.sin(t * 1.7) * 0.12;
     for (const v of this.veils ?? []) v.tex.offset.set(t * v.speed + v.phase, t * v.speed * 0.6);
-    if (this.partyGlow) this.partyGlow.material.opacity = 0.45 + 0.15 * Math.sin(t * 2.6);
+    if (this.partyGlow) this.partyGlow.material.opacity = 0.24 + 0.06 * Math.sin(t * 2.6);
     if (this.candleLight) {
       const f = 0.86 + 0.1 * Math.sin(t * 11.3) + 0.06 * Math.sin(t * 23.7 + 1.3) + 0.05 * (hash2(Math.floor(t * 18), 3, 1) - 0.5);
       this.candleLight.intensity = 14 * f;

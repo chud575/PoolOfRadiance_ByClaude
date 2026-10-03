@@ -1,4 +1,41 @@
-import { makeDesk, makeParchment, grainTile } from './ink.js';
+import { makeDesk, makeParchment, grainTile, makeCanvas, prng } from './ink.js';
+
+/** Screen-resolution paper fibres: short curled strands, dark and light (cached). */
+let fibreCache = null;
+function fibreTile() {
+  if (fibreCache) return fibreCache;
+  const S = 384;
+  const c = makeCanvas(S);
+  const g = c.getContext('2d');
+  const r = prng(4711);
+  g.lineCap = 'round';
+  for (let i = 0; i < 2600; i++) {
+    const x = r() * S;
+    const y = r() * S;
+    const L = 2 + r() * r() * 16;
+    const a = r() * Math.PI * 2;
+    const bend = (r() - 0.5) * L * 0.6;
+    const dark = r() < 0.62;
+    g.strokeStyle = dark ? `rgba(84,62,38,${(0.1 + r() * 0.22).toFixed(3)})` : `rgba(255,250,232,${(0.12 + r() * 0.22).toFixed(3)})`;
+    g.lineWidth = 0.5 + r() * 0.6;
+    for (const ox of [0, -S, S]) for (const oy of [0, -S, S]) {
+      const X = x + ox;
+      const Y = y + oy;
+      if (X + L < 0 || X - L > S || Y + L < 0 || Y - L > S) continue;
+      g.beginPath();
+      g.moveTo(X, Y);
+      g.quadraticCurveTo(X + Math.cos(a) * L * 0.5 - Math.sin(a) * bend, Y + Math.sin(a) * L * 0.5 + Math.cos(a) * bend, X + Math.cos(a) * L, Y + Math.sin(a) * L);
+      g.stroke();
+    }
+  }
+  // pores and specks
+  for (let i = 0; i < 1800; i++) {
+    g.fillStyle = r() < 0.7 ? `rgba(70,50,30,${(0.08 + r() * 0.2).toFixed(3)})` : `rgba(255,252,240,${(0.15 + r() * 0.2).toFixed(3)})`;
+    g.fillRect(r() * S, r() * S, 0.6 + r() * 0.9, 0.6 + r() * 0.9);
+  }
+  fibreCache = c;
+  return c;
+}
 
 /**
  * Screen-space viewer for a parchment sheet lying on the cartographer's desk:
@@ -25,6 +62,8 @@ export class SheetView {
     this.desk = null;
     this.under = null;
     this.dirty = true;
+    /** @type {number[]|null} where the candle light pools, in sheet units */
+    this.light = null;
   }
 
   /**
@@ -212,18 +251,34 @@ export class SheetView {
       g.drawImage(this.under, -W * 0.5 - 22, -H * 0.5 + 16, W * 1.01, H * 1.0);
       g.restore();
     }
+    g.save();
+    // zoomed in, the sheet is seen through the frame only: nothing runs on beneath
+    // the side panel, so no marker is ever hidden behind it
+    if (this.zoom > 1.02) {
+      const r = this.rect;
+      g.beginPath();
+      g.rect(r.x * d, 0, r.w * d, (r.y + r.h) * d);
+      g.clip();
+    }
     g.setTransform(d * s, 0, 0, d * s, d * ox, d * oy);
     const k = this.sheet.k;
     g.drawImage(this.sheet.canvas, 0, 0, this.sheet.canvas.width, this.sheet.canvas.height, -M, -M, this.sheet.canvas.width / k, this.sheet.canvas.height / k);
-    // candle light falling across the sheet: warm centre, deepening toward the far corners
+    // raking candle light: a warm pool where the company stands, the sheet falling
+    // away into shadow toward its far corners, and a cool dimming from the lower right
     {
-      const lx = W * 0.42;
-      const ly = H * 0.42;
-      const R = Math.hypot(W, H) * 0.75;
-      const gr = g.createRadialGradient(lx, ly, R * 0.15, lx, ly, R);
-      gr.addColorStop(0, 'rgba(255,214,150,0.07)');
-      gr.addColorStop(0.55, 'rgba(60,30,8,0.0)');
-      gr.addColorStop(1, 'rgba(40,18,4,0.32)');
+      const [lx, ly] = this.light ?? [W * 0.42, H * 0.42];
+      const R = Math.hypot(W, H) * 0.78;
+      const rake = g.createLinearGradient(0, 0, W, H);
+      rake.addColorStop(0, 'rgba(255,232,180,0.06)');
+      rake.addColorStop(0.5, 'rgba(60,30,8,0)');
+      rake.addColorStop(1, 'rgba(24,12,4,0.2)');
+      g.fillStyle = rake;
+      g.fillRect(0, 0, W, H);
+      const gr = g.createRadialGradient(lx, ly, R * 0.06, lx, ly, R);
+      gr.addColorStop(0, 'rgba(255,206,130,0.1)');
+      gr.addColorStop(0.28, 'rgba(255,206,130,0.0)');
+      gr.addColorStop(0.62, 'rgba(40,18,4,0.12)');
+      gr.addColorStop(1, 'rgba(24,10,2,0.42)');
       g.fillStyle = gr;
       g.fillRect(0, 0, W, H);
     }
@@ -236,8 +291,18 @@ export class SheetView {
       }
       this._grainPat.setTransform(new DOMMatrix().scaleSelf(0.22));
       g.globalCompositeOperation = 'multiply';
-      g.globalAlpha = 0.32 * tooth;
+      g.globalAlpha = 0.22 * tooth;
       g.fillStyle = this._grainPat;
+      g.fillRect(0, 0, W, H);
+      g.restore();
+      // and the fibres themselves, drawn at the screen's own resolution so they stay
+      // crisp however far you lean in
+      g.save();
+      if (!this._fibrePat) this._fibrePat = g.createPattern(fibreTile(), 'repeat');
+      const fs = 1 / (d * s);
+      this._fibrePat.setTransform(new DOMMatrix().scaleSelf(fs * 1.25));
+      g.globalAlpha = 0.85 * tooth;
+      g.fillStyle = this._fibrePat;
       g.fillRect(0, 0, W, H);
       g.restore();
     }
@@ -246,6 +311,7 @@ export class SheetView {
       overlay(g, s);
       g.restore();
     }
+    g.restore();
     g.setTransform(1, 0, 0, 1, 0, 0);
     // when the sheet overfills the frame, shade the frame's edges so the map
     // reads as passing beneath the side panel rather than being cut off

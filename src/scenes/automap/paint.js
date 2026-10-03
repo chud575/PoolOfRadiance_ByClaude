@@ -228,6 +228,10 @@ function stone(g, x, y, rad, rnd, verts = 6, squash = 0.8) {
   g.closePath();
 }
 
+// the inked survey's stone washes: paper, a light and a deeper tint of one warm grey
+export const FLAG_TONES = [[220, 203, 170], [198, 180, 148], [170, 152, 122]];
+export const SETT_TONES = [[216, 198, 164], [194, 175, 142], [166, 147, 117]];
+
 // light falls from the north-west: an edge whose outward normal looks south-east is in shadow
 const SHADOW = [Math.SQRT1_2, Math.SQRT1_2];
 
@@ -278,7 +282,7 @@ export function irregularStone(rnd, hw, hh, { extra = [1, 3], jit = 0.13, bulge 
  * swell on the shadow side, thin to nothing on the lit side and pool at the
  * shadowed corners.
  */
-export function inkStone(g, pts, { X, Y, ang = 0, rgb = [170, 158, 136], alpha = 0.85, lw = 0.7, rnd, ink = '43,26,13', bed = 0.24, crack = 0.08, pits = 0.4, worn = 0 } = {}) {
+export function inkStone(g, pts, { X, Y, ang = 0, rgb = [170, 158, 136], alpha = 0.85, lw = 0.7, rnd, ink = '43,26,13', bed = 0.24, crack = 0.08, pits = 0.4, worn = 0, style = 'ink', hatch = 0.34 } = {}) {
   const n = pts.length;
   const ca = Math.cos(ang);
   const sa = Math.sin(ang);
@@ -309,14 +313,44 @@ export function inkStone(g, pts, { X, Y, ang = 0, rgb = [170, 158, 136], alpha =
   g.save();
   path();
   g.clip();
-  const lg = g.createLinearGradient(lx * r0, ly * r0, -lx * r0, -ly * r0);
-  lg.addColorStop(0, `rgba(255,248,226,${(0.2 + rnd() * 0.12).toFixed(3)})`);
-  lg.addColorStop(0.45, 'rgba(255,248,226,0)');
-  lg.addColorStop(0.62, 'rgba(36,22,10,0)');
-  lg.addColorStop(1, `rgba(36,22,10,${(0.26 + rnd() * 0.14).toFixed(3)})`);
-  g.fillStyle = lg;
-  g.fillRect(-r0, -r0, r0 * 2, r0 * 2);
-  if (worn > 0) {
+  if (style === 'ink') {
+    // an engraver's shadow: the stone's south-east crescent laid in with fine
+    // parallel strokes (no airbrushed gradient), the crown left as clean paper
+    const d = r0 * (0.26 + rnd() * 0.12);
+    g.beginPath();
+    g.rect(-r0 * 2, -r0 * 2, r0 * 4, r0 * 4);
+    g.moveTo(pts[0][0] + lx * d, pts[0][1] + ly * d);
+    for (let i = 1; i < n; i++) g.lineTo(pts[i][0] + lx * d, pts[i][1] + ly * d);
+    g.closePath();
+    g.clip('evenodd');
+    g.strokeStyle = `rgba(${ink},${(hatch * (0.8 + rnd() * 0.4)).toFixed(3)})`;
+    g.lineWidth = Math.max(0.28, lw * 0.5);
+    g.beginPath();
+    const gap = Math.max(0.95, r0 * 0.16);
+    // strokes run across the light (north-east to south-west in the sheet's frame)
+    const hx = -ly;
+    const hy = lx;
+    for (let o = -r0 * 1.2; o <= r0 * 1.2; o += gap) {
+      const cx0 = -lx * o;
+      const cy0 = -ly * o;
+      g.moveTo(cx0 - hx * r0 * 1.3, cy0 - hy * r0 * 1.3);
+      g.lineTo(cx0 + hx * r0 * 1.3, cy0 + hy * r0 * 1.3);
+    }
+    g.stroke();
+    g.restore();
+    g.save();
+    path();
+    g.clip();
+  } else {
+    const lg = g.createLinearGradient(lx * r0, ly * r0, -lx * r0, -ly * r0);
+    lg.addColorStop(0, `rgba(255,248,226,${(0.2 + rnd() * 0.12).toFixed(3)})`);
+    lg.addColorStop(0.45, 'rgba(255,248,226,0)');
+    lg.addColorStop(0.62, 'rgba(36,22,10,0)');
+    lg.addColorStop(1, `rgba(36,22,10,${(0.26 + rnd() * 0.14).toFixed(3)})`);
+    g.fillStyle = lg;
+    g.fillRect(-r0, -r0, r0 * 2, r0 * 2);
+  }
+  if (worn > 0 && style !== 'ink') {
     // a dished, foot-polished crown
     g.fillStyle = `rgba(255,246,220,${(worn * 0.16).toFixed(3)})`;
     g.beginPath(); g.ellipse(lx * r0 * 0.15, ly * r0 * 0.15, r0 * 0.5, r0 * 0.36, rnd() * 3, 0, Math.PI * 2); g.fill();
@@ -489,19 +523,19 @@ export function cobbleRegion(g, cells, { CX, CY, cs, seed = 1, ink = '43,26,13',
         const tight = flags ? 0.06 : 0;
         const sw = w * (0.88 + tight + rnd() * 0.06) * scale * (loose ? 0.86 : 1);
         const sh = ch * (0.86 + tight + rnd() * 0.08) * scale * (loose ? 0.86 : 1);
+        // a limited wash: three tones of one stone, chosen by a broad patina field so
+        // darker and paler stretches read as weathering, never per-stone blotches
         const patina = fbm(x * 0.25, y * 0.25, { period: 64, octaves: 2, seed: seed + 11 });
-        const dirt = fbm(x * 0.8, y * 0.8, { period: 64, octaves: 2, seed: seed + 13 });
-        const val = (flags ? 146 : 140) + patina * 70 + (rnd() - 0.5) * 46 - (loose ? 14 : 0) - Math.max(0, 0.55 - d) * 30;
-        const warm = (dirt - 0.5) * 0.12 + (rnd() - 0.5) * 0.06;
-        const hueR = rnd();
-        const rgb = flags ? (hueR < 0.3 ? [val * 1.06, val * 0.9, val * 0.7] : hueR < 0.55 ? [val * 0.96, val * 0.95, val * 0.9] : [val * 1.02, val * 0.93, val * 0.79]) : [val * (1.0 + warm * 0.3), val * (0.94 + warm * 0.1), val * (0.82 - warm * 0.2)];
+        const tr = rnd() + (patina - 0.5) * 0.5 + (loose ? 0.25 : 0) + Math.max(0, 0.45 - d) * 0.5;
+        const tone = tr < 0.62 ? 0 : tr < 0.93 ? 1 : 2;
+        const rgb = (flags ? FLAG_TONES : SETT_TONES)[tone];
         const pts = irregularStone(rnd, sw / 2, sh / 2, flags ? { extra: [1, 2], jit: 0.1, bulge: 0.08, chamfer: 0.2 } : { extra: [1, 3], jit: 0.14, bulge: 0.12, chamfer: 0.28 });
         inkStone(g, pts, {
           X: X + (loose ? (rnd() - 0.5) * w * 0.12 : 0),
           Y: Y + (loose ? (rnd() - 0.5) * ch * 0.12 : 0),
           ang: ang + (loose ? (rnd() - 0.5) * 0.5 : 0),
-          rgb, alpha: 0.72 + rnd() * 0.2, lw: flags ? 0.8 : 0.62, rnd, ink, bed: flags ? 0.2 : 0.26,
-          crack: flags ? 0.22 : 0.05, pits: flags ? 0.5 : 0.35, worn: wear > 0.25 ? 1 : 0,
+          rgb, alpha: 0.8, lw: flags ? 0.8 : 0.62, rnd, ink, bed: flags ? 0.16 : 0.2,
+          crack: flags ? 0.22 : 0.05, pits: flags ? 0.3 : 0.2, worn: wear > 0.25 ? 1 : 0, hatch: flags ? 0.48 : 0.42,
         });
       }
       v += chu;

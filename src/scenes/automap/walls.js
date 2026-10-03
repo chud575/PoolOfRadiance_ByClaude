@@ -206,6 +206,34 @@ export function timberWall(g, x0, y0, x1, y1, { width = 6, seed = 1, cs = 50 } =
     g.beginPath();
     pts.forEach(([px, py], i) => (i ? g.lineTo(px, py) : g.moveTo(px, py)));
     g.stroke();
+    // grain: long wavering strokes down the beam, lighter and darker, a knot now and then
+    g.lineCap = 'round';
+    for (let q = 0; q < 3; q++) {
+      const off = s * (hw - plate / 2) + (q - 1) * plate * 0.28;
+      g.strokeStyle = q === 1 ? 'rgba(150,108,66,0.5)' : 'rgba(26,14,6,0.55)';
+      g.lineWidth = Math.max(0.18, plate * 0.11);
+      let t0 = -width * 0.3 + r() * cs * 0.2;
+      while (t0 < f.len) {
+        const L = cs * (0.25 + r() * 0.5);
+        const t1 = Math.min(f.len + width * 0.3, t0 + L);
+        const wob = (r() - 0.5) * plate * 0.25;
+        const [ax, ay] = f.P(t0, off);
+        const [mx, my] = f.P((t0 + t1) / 2, off + wob);
+        const [bx, by] = f.P(t1, off + wob * 0.3);
+        g.beginPath(); g.moveTo(ax, ay); g.quadraticCurveTo(mx, my, bx, by); g.stroke();
+        t0 = t1 + cs * (0.04 + r() * 0.12);
+      }
+    }
+    // pegs: a pale treenail where each post is jointed into the plate
+    for (const p of posts) {
+      const [px, py] = f.P(p + (r() - 0.5) * 0.6, s * (hw - plate / 2));
+      const pr = Math.max(0.35, plate * 0.2);
+      g.fillStyle = 'rgba(196,160,112,0.9)';
+      g.beginPath(); g.arc(px, py, pr, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = 'rgba(26,14,6,0.85)';
+      g.lineWidth = Math.max(0.15, pr * 0.4);
+      g.stroke();
+    }
   }
   g.restore();
   for (const s of [-1, 1]) face(g, f.P(-width * 0.2, s * hw), f.P(f.len + width * 0.2, s * hw), { seed: seed + s * 3, width: (f.nx + f.ny) * s > 0 ? 1.6 : 1.1, amp: 0.3 });

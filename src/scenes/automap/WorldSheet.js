@@ -541,27 +541,35 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
   const tr = prng(99);
   const avoid = (x, y, pad) => blocks.some((b) => x > b.cx - b.s / 2 - pad && x < b.cx + b.s / 2 + pad && y > b.cy - b.s / 2 - pad && y < b.cy + b.s / 2 + pad);
   const inCartouche = (x, y) => (x < 510 && y < 250) || (x > 890 && y < 245 && x < 1285);
-  // the Barren Hills: a massed range west of the walls, peaks crowded two and three deep
-  // along a spine, foothills stepping down toward the wall, a shadow wash under the mass
+  // the Barren Hills: a range of engraved mountains west of the walls — great crags
+  // and broad massifs along the spine, a horn or two, rounded foothills stepping down
+  // toward the wall — each drawn with its own silhouette, hatched on the shadowed east
   {
-    const peaks = [];
-    const spine = (y) => 62 + Math.sin(y / 90) * 14 + (fbm(y / 120, 7, { period: 64, octaves: 2, seed: 44 }) - 0.5) * 20;
-    for (let y = 236; y < 780; y += 11 + tr() * 6) {
-      if (y > coastY(spine(y)) - 30) continue;
-      // the main ridge, big and close; flanking rows smaller (back) and foothills (front, east)
-      peaks.push([spine(y) + (tr() - 0.5) * 12, y, 48 + tr() * 30, 26 + tr() ** 1.3 * 26]);
-      if (tr() < 0.7) peaks.push([spine(y) - 30 + (tr() - 0.5) * 10, y - 6, 34 + tr() * 18, 18 + tr() * 14]);
-      if (tr() < 0.75) peaks.push([spine(y) + 42 + tr() * 22, y + 8, 26 + tr() * 16, 9 + tr() * 9]);
+    const mts = [];
+    const spine = (y) => 86 + Math.sin(y / 110) * 8 + (fbm(y / 120, 7, { period: 64, octaves: 2, seed: 44 }) - 0.5) * 12;
+    // the great peaks: big, overlapping in depth, a few towering over the rest
+    for (let y = 258; y < 772; ) {
+      const big = tr() < 0.45;
+      const w = big ? 80 + tr() * 22 : 56 + tr() * 18;
+      const h = big ? 46 + tr() * 16 : 28 + tr() * 12;
+      const type = big ? (tr() < 0.6 ? 'crag' : 'massif') : (tr() < 0.35 ? 'horn' : tr() < 0.6 ? 'massif' : 'crag');
+      mts.push({ x: spine(y) + (tr() - 0.5) * 12, y, w, h, type });
+      y += h * (0.42 + tr() * 0.2);
     }
-    for (let i = 0; i < 14; i++) peaks.push([200 + tr() * 680, 22 + tr() * 18, 22 + tr() * 16, 10 + tr() * 8]);
-    const shown = peaks.filter(([x, y]) => !inCartouche(x, y) && x > 4);
+    // a back rank, smaller and paler, showing between the great peaks
+    for (let y = 246; y < 760; y += 28 + tr() * 22) mts.push({ x: spine(y) - 22 + (tr() - 0.5) * 10, y: y - 12, w: 46 + tr() * 18, h: 24 + tr() * 12, type: tr() < 0.6 ? 'crag' : 'horn', back: true });
+    // foothills toward the wall
+    for (let y = 270; y < 780; y += 20 + tr() * 16) mts.push({ x: spine(y) + 40 + tr() * 10, y: y + 8, w: 30 + tr() * 16, h: 9 + tr() * 9, type: 'foot' });
+    // the northern heights beyond the wall
+    for (let x = 220; x < 880; x += 46 + tr() * 40) mts.push({ x, y: 36 + tr() * 8, w: 34 + tr() * 26, h: 14 + tr() * 12, type: tr() < 0.5 ? 'foot' : 'crag' });
+    const shown = mts.filter((q) => !inCartouche(q.x, q.y) && q.y < coastY(q.x) - 26 && (q.y < 100 || (q.x - q.w / 2 > 34 && q.x + q.w / 2 < 148)));
     // the range's shadow and earth: one warm granulated wash under all of it
     const mw = makeCanvas(W * k, H * k);
     const mg = mw.getContext('2d');
     mg.scale(k, k);
     mg.filter = `blur(${(7 * k).toFixed(0)}px)`;
     mg.fillStyle = 'rgba(150,110,62,0.4)';
-    for (const [x, y, ww, hh] of shown) { if (x > 160) continue; mg.beginPath(); mg.ellipse(x + ww * 0.1, y - hh * 0.3, ww * 0.6, hh * 0.75, 0, 0, Math.PI * 2); mg.fill(); }
+    for (const q of shown) { if (q.x > 170) continue; mg.beginPath(); mg.ellipse(q.x + q.w * 0.1, q.y - q.h * 0.3, q.w * 0.55, q.h * 0.7, 0, 0, Math.PI * 2); mg.fill(); }
     mg.filter = 'none';
     mg.setTransform(1, 0, 0, 1, 0, 0);
     mg.globalCompositeOperation = 'destination-out';
@@ -572,7 +580,7 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
     g.globalCompositeOperation = 'multiply';
     g.drawImage(mw, 0, 0, W, H);
     g.restore();
-    shown.sort((a, b) => a[1] - b[1]).forEach(([x, y, ww, hh]) => hill(g, x, y, ww, hh, tr));
+    shown.sort((p, q) => (p.back === q.back ? p.y - q.y : p.back ? -1 : 1)).forEach((q) => mountain(g, q.x, q.y, q.w, q.h, tr, q.type, q.back));
   }
   // the Quivering Forest east of the river, clustered by noise
   const trees = [];
@@ -583,7 +591,7 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
     if (Math.abs(x - riverX(y)) < rw(y) + 16) continue;
     if (Math.hypot((x - LAKE.x) / (LAKE.rx + 16), (y - LAKE.y) / (LAKE.ry + 14)) < 1) continue;
     if (avoid(x, y, 26) || inCartouche(x, y)) continue;
-    if (Math.abs(x - 1158) < 128 && y > 618 && y < 668) continue; // a clearing for the forest's name
+    if (Math.abs(x - 1166) < 118 && y > 624 && y < 692) continue; // a clearing for the forest's name
     const n = fbm(x / 70, y / 70, { period: 64, octaves: 3, seed: 12 });
     if (n < 0.43 || tr() > (n - 0.43) * 8) continue;
     if (trees.some(([tx, ty]) => Math.hypot(tx - x, (ty - y) * 1.5) < 8)) continue;
@@ -685,20 +693,21 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
     g.restore();
   });
   g.save();
-  g.translate(1158, 646);
-  g.rotate(-0.06);
+  g.translate(1166, 646);
+  g.rotate(-0.04);
   g.textAlign = 'center';
-  g.font = `italic 16px ${SERIF}`;
-  g.letterSpacing = '5px';
+  g.font = `italic 14px ${SERIF}`;
+  g.letterSpacing = '2px';
   haloText(g, 'THE QUIVERING FOREST', 0, 0, { color: '#22301a', halo: 'rgba(240,228,196,0.95)', width: 7 });
   g.restore();
+  // the range's name runs up the clear margin of paper west of the peaks
   g.save();
-  g.translate(24, 520);
+  g.translate(19, 520);
   g.rotate(-Math.PI / 2);
   g.textAlign = 'center';
-  g.font = `italic 17px ${SERIF}`;
-  g.letterSpacing = '6px';
-  haloText(g, 'THE BARREN HILLS', 0, 0, { color: '#4a2e14', halo: 'rgba(240,228,196,0.95)', width: 7 });
+  g.font = `italic bold 16px ${SERIF}`;
+  g.letterSpacing = '7px';
+  haloText(g, 'THE BARREN HILLS', 0, 0, { color: '#4a2e14', halo: 'rgba(240,228,196,0.95)', width: 6 });
   g.restore();
 
   // ---------------- the old city wall: a continuous crenellated curtain, towers, gates, two breaches ----------------
@@ -984,7 +993,7 @@ function drawMiniBlock(g, b, m, { seen, secrets, known, here, k }) {
   const clean = makeCanvas(L, L);
   {
     const cg = clean.getContext('2d');
-    cg.fillStyle = 'rgba(252,246,228,0.85)';
+    cg.fillStyle = 'rgba(244,234,206,0.72)';
     cg.fillRect(0, 0, L, L);
     cg.globalCompositeOperation = 'destination-in';
     cg.drawImage(mask, 0, 0);
@@ -1000,6 +1009,7 @@ function drawMiniBlock(g, b, m, { seen, secrets, known, here, k }) {
       w.fillStyle = 'rgba(110,90,70,0.3)';
       w.fillRect(CX(i), CY(j), cs, cs);
     }
+    const later = [];
     for (const rg of regs0(m).list) {
       const rs = seed + rg.index * 37;
       const rr = prng(rs);
@@ -1012,14 +1022,17 @@ function drawMiniBlock(g, b, m, { seen, secrets, known, here, k }) {
         const hj = (rr() - 0.5) * 0.5;
         color = [c[0] * v + hj * 40, c[1] * v + hj * 10, c[2] * v - hj * 25];
         alpha = 0.56 + rr() * 0.14;
-      } else if (rg.type === CELL.WATER) { color = [60, 110, 170]; alpha = 0.6; } else if (rg.type === CELL.RUBBLE) { color = [150, 130, 104]; alpha = 0.42; } else if (rg.type === CELL.COURTYARD) { color = [170, 168, 150]; alpha = 0.3; } else { color = wild ? [120, 150, 80] : [214, 186, 132]; alpha = wild ? 0.42 : 0.24; }
+      } else if (rg.type === CELL.WATER) { color = [60, 110, 170]; alpha = 0.6; } else if (rg.type === CELL.RUBBLE) { color = [150, 130, 104]; alpha = 0.42; } else if (rg.type === CELL.COURTYARD) { color = [170, 168, 150]; alpha = 0.3; } else { color = wild ? [120, 150, 80] : [206, 176, 124]; alpha = wild ? 0.42 : 0.36; }
       const roof = rg.type === CELL.INTERIOR;
-      washRegion(w, rg.cells, { ...P, color, alpha, seed: rs, edge: roof ? 0.7 : 0.25, blooms: 0, mottle: 0.2, gran: 0.3, glaze: roof ? 0.4 + rr() * 0.3 : 0, second: SECOND[Math.floor(rr() * SECOND.length)] });
       if (roof) {
-        hatchBand(w, rg.cells, { ...P, seed: rs + 1, angle: 0.6 + rr() * 0.5, band: 0.32, alpha: 0.5, color: '#4a1e12', width: 0.35 });
-        roofLines(w, rg.cells, CX, CY, cs, rr);
+        later.push([rg, rr, color]);
+      } else {
+        washRegion(w, rg.cells, { ...P, color, alpha, seed: rs, edge: 0.25, blooms: 0, mottle: 0.2, gran: 0.3 });
+        if (!wild && (rg.type === CELL.STREET || rg.type === CELL.COURTYARD)) pavingMarks(w, rg.cells, CX, CY, cs, rr, rg.type === CELL.COURTYARD);
       }
     }
+    // roofs last, so each casts its shadow over the street paving
+    for (const [rg, rr, color] of later) engravedRoof(w, rg.cells, CX, CY, cs, rr, color);
     w.setTransform(1, 0, 0, 1, 0, 0);
     w.globalCompositeOperation = 'destination-in';
     w.drawImage(mask, 0, 0);
@@ -1121,6 +1134,117 @@ function councilPlan(m, s, k, seed, alpha = 0.75) {
 }
 
 /**
+ * A building's roof as an engraver cuts it in plan: a cast shadow hatched on the
+ * ground to the south-east, a pale pigment wash, then a hipped roof whose four
+ * slopes are cut with lines running down the fall of each slope — sparse on the
+ * lit north and west, close and crossed on the shadowed south and east — the
+ * ridge and hips inked, the eaves outlined.
+ */
+function engravedRoof(g, cells, CX, CY, cs, rr, color) {
+  const path = new Path2D();
+  for (const [i, j] of cells) path.rect(CX(i), CY(j), cs + 0.05, cs + 0.05);
+  const sh = cs * 0.28;
+  g.save();
+  // cast shadow
+  const shadow = new Path2D();
+  for (const [i, j] of cells) shadow.rect(CX(i) + sh, CY(j) + sh, cs, cs);
+  g.save();
+  g.clip(shadow);
+  g.strokeStyle = 'rgba(43,26,13,0.62)';
+  g.lineWidth = 0.4;
+  g.beginPath();
+  let x0 = 1e9; let y0 = 1e9; let x1 = -1e9; let y1 = -1e9;
+  for (const [i, j] of cells) { x0 = Math.min(x0, CX(i)); y0 = Math.min(y0, CY(j)); x1 = Math.max(x1, CX(i + 1)); y1 = Math.max(y1, CY(j + 1)); }
+  for (let t = x0 - (y1 - y0); t < x1 + sh * 2; t += 1.1) { g.moveTo(t, y0); g.lineTo(t + (y1 - y0) + sh * 2, y1 + sh * 2); }
+  g.stroke();
+  g.restore();
+  // the roof: opaque paper, then its pigment, pale
+  g.fillStyle = 'rgba(240,228,198,1)';
+  g.fill(path);
+  const c = color.map((v) => v * 0.55 + 200 * 0.45);
+  g.fillStyle = `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},0.75)`;
+  g.fill(path);
+  g.clip(path);
+  const inset = cs * 0.08;
+  const X0 = x0 + inset; const Y0 = y0 + inset; const X1 = x1 - inset; const Y1 = y1 - inset;
+  const w = X1 - X0;
+  const h = Y1 - Y0;
+  const long = w >= h;
+  const half = Math.min(w, h) / 2;
+  const [rx0, ry0, rx1, ry1] = long ? [X0 + half, (Y0 + Y1) / 2, X1 - half, (Y0 + Y1) / 2] : [(X0 + X1) / 2, Y0 + half, (X0 + X1) / 2, Y1 - half];
+  const slopes = [
+    // [polygon, cut direction (dx,dy), gap, alpha, crossed]
+    [[[X0, Y0], [X1, Y0], [rx1, ry1], [rx0, ry0]], [0, 1], 1.7, 0.36, false],
+    [[[X0, Y1], [X1, Y1], [rx1, ry1], [rx0, ry0]], [0, 1], 0.95, 0.62, true],
+    [[[X0, Y0], [rx0, ry0], [X0, Y1]], [1, 0], 1.9, 0.32, false],
+    [[[X1, Y0], [rx1, ry1], [X1, Y1]], [1, 0], 0.95, 0.62, true],
+  ];
+  for (const [poly, [dx, dy], gap, a, crossed] of slopes) {
+    const sp = new Path2D();
+    poly.forEach(([px, py], i) => (i ? sp.lineTo(px, py) : sp.moveTo(px, py)));
+    sp.closePath();
+    g.save();
+    g.clip(sp);
+    g.strokeStyle = `rgba(52,26,12,${a})`;
+    g.lineWidth = 0.38;
+    g.beginPath();
+    if (dx === 0) for (let t = X0 - 2; t < X1 + 2; t += gap) { g.moveTo(t, Y0 - 2); g.lineTo(t, Y1 + 2); }
+    else for (let t = Y0 - 2; t < Y1 + 2; t += gap) { g.moveTo(X0 - 2, t); g.lineTo(X1 + 2, t); }
+    g.stroke();
+    if (crossed) {
+      g.strokeStyle = `rgba(52,26,12,${(a * 0.45).toFixed(3)})`;
+      g.beginPath();
+      for (let t = X0 - h; t < X1 + h; t += 1.6) { g.moveTo(t, Y0); g.lineTo(t + h, Y1); }
+      g.stroke();
+    }
+    g.restore();
+  }
+  g.strokeStyle = 'rgba(36,18,8,0.9)';
+  g.lineWidth = 0.6;
+  g.beginPath();
+  g.moveTo(rx0, ry0); g.lineTo(rx1, ry1);
+  g.moveTo(X0, Y0); g.lineTo(rx0, ry0); g.lineTo(X0, Y1);
+  g.moveTo(X1, Y0); g.lineTo(rx1, ry1); g.lineTo(X1, Y1);
+  g.stroke();
+  // a chimney stack now and then
+  if (rr() < 0.55) {
+    const cx = X0 + w * (0.2 + rr() * 0.6);
+    const cy = Y0 + h * (0.15 + rr() * 0.2);
+    g.fillStyle = 'rgba(240,228,198,1)';
+    g.fillRect(cx, cy, cs * 0.18, cs * 0.18);
+    g.strokeRect(cx, cy, cs * 0.18, cs * 0.18);
+    g.fillStyle = 'rgba(36,18,8,0.85)';
+    g.fillRect(cx + cs * 0.18, cy + cs * 0.04, cs * 0.1, cs * 0.16);
+  }
+  g.restore();
+}
+
+/** Streets and plazas on a plate: rows of tiny setts along each street, flags on a plaza. */
+function pavingMarks(g, cells, CX, CY, cs, rr, plaza) {
+  g.save();
+  g.strokeStyle = 'rgba(52,34,20,0.55)';
+  g.lineWidth = 0.4;
+  g.beginPath();
+  for (const [i, j] of cells) {
+    const x = CX(i);
+    const y = CY(j);
+    if (plaza) {
+      for (let a = 0; a <= 3; a++) { g.moveTo(x, y + (a * cs) / 3); g.lineTo(x + cs, y + (a * cs) / 3); }
+      for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) { const xx = x + ((b + (a % 2) * 0.5) * cs) / 3; g.moveTo(xx, y + (a * cs) / 3); g.lineTo(xx, y + ((a + 1) * cs) / 3); }
+    } else {
+      const n = 4;
+      for (let a = 0; a < n; a++) for (let b = 0; b < n; b++) {
+        const px = x + ((b + 0.5 + (a % 2) * 0.4) * cs) / n + (rr() - 0.5) * 0.4;
+        const py = y + ((a + 0.5) * cs) / n;
+        g.moveTo(px - cs * 0.07, py); g.lineTo(px + cs * 0.07, py);
+      }
+    }
+  }
+  g.stroke();
+  g.restore();
+}
+
+/**
  * The roofs of a building in plan, within its own footprint: a ridge along the
  * long axis, hips to the corners and faint tile courses (clipped to the cells).
  */
@@ -1192,14 +1316,38 @@ function drawUnknownBlock(g, b, m, { k }) {
     for (let t = -260; t < 260; t += 3.2) { g.moveTo(b.cx + t - 120, b.cy - 120); g.lineTo(b.cx + t + 120, b.cy + 120); }
     g.stroke();
   }
-  // a pale ground for the vignette, so its line work reads
-  const vg = g.createRadialGradient(b.cx, b.cy - 6, 8, b.cx, b.cy - 6, 62);
-  vg.addColorStop(0, 'rgba(246,236,212,0.92)');
-  vg.addColorStop(0.7, 'rgba(246,236,212,0.6)');
-  vg.addColorStop(1, 'rgba(246,236,212,0)');
-  g.fillStyle = vg;
-  g.fillRect(b.cx - 70, b.cy - 70, 140, 130);
-  (DISTRICT_VIGNETTES[b.id] ?? DISTRICT_VIGNETTES.houses)(g, b.cx, b.cy - 10, 1);
+  // a hard-edged reserve for the vignette, as an engraver leaves the plate clean
+  // round his subject: an oval of paper ringed by a thin double rule
+  {
+    const ox = b.cx;
+    const oy = b.cy - 6;
+    const rx = 56;
+    const ry = 47;
+    g.save();
+    g.fillStyle = 'rgba(70,40,16,0.14)';
+    g.beginPath(); g.ellipse(ox + 2, oy + 2.5, rx, ry, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(245,236,212,0.97)';
+    g.beginPath(); g.ellipse(ox, oy, rx, ry, 0, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = INK.ink;
+    g.lineWidth = 1.1;
+    g.stroke();
+    g.lineWidth = 0.45;
+    g.beginPath(); g.ellipse(ox, oy, rx - 3, ry - 3, 0, 0, Math.PI * 2); g.stroke();
+    g.beginPath(); g.ellipse(ox, oy, rx - 4, ry - 4, 0, 0, Math.PI * 2); g.clip();
+    g.translate(b.cx, b.cy - 10);
+    // a sky of fine horizontal cuts behind the subject, fading upward
+    for (let yy = -40; yy < 20; yy += 1.8) {
+      g.strokeStyle = `rgba(43,26,13,${(0.04 + Math.max(0, (yy + 40) / 60) * 0.12).toFixed(3)})`;
+      g.lineWidth = 0.35;
+      g.beginPath(); g.moveTo(-60, yy); g.lineTo(60, yy); g.stroke();
+    }
+    g.restore();
+  }
+  g.save();
+  g.translate(b.cx, b.cy - 8);
+  g.scale(1.32, 1.32);
+  (DISTRICT_VIGNETTES[b.id] ?? DISTRICT_VIGNETTES.houses)(g, 0, 0, 1);
+  g.restore();
   // (the hearsay lives in the tooltip and the side panel's rumours, never in tiny print here)
   g.restore();
   if (ward) {
@@ -1215,31 +1363,163 @@ function drawUnknownBlock(g, b, m, { k }) {
 /** Engraving helpers: a filled, inked shape and hatched shade inside a clip. */
 const ENG = {
   fill: 'rgba(244,234,208,1)',
+  /** a filled shape, toned with the engraver's tint (fine parallel cuts) and inked, heavier on its shadow side */
   shape(g, path, fill = ENG.fill, lw = 1.1) {
     g.fillStyle = fill;
     g.fill(path);
+    g.save();
+    g.clip(path);
+    g.strokeStyle = fill === ENG.fill ? 'rgba(43,26,13,0.16)' : 'rgba(43,26,13,0.3)';
+    g.lineWidth = 0.4;
+    g.beginPath();
+    for (let t = -70; t < 70; t += fill === ENG.fill ? 1.7 : 1.3) { g.moveTo(-70, t); g.lineTo(70, t); }
+    g.stroke();
+    g.restore();
     g.strokeStyle = INK.ink;
-    g.lineWidth = lw;
+    g.lineWidth = lw * 0.9;
+    g.lineJoin = 'round';
     g.stroke(path);
+    // the shadow side: the same outline again, nudged south-east, so edges facing
+    // away from the light carry a swelling line
+    g.save();
+    g.translate(0.45, 0.45);
+    g.lineWidth = lw * 0.7;
+    g.stroke(path);
+    g.restore();
   },
+  /** shade: close diagonal cuts crossed by a second set (a dark engraved tone) */
   hatch(g, path, { gap = 2, ang = 1, a = 0.7 } = {}) {
     g.save();
     g.clip(path);
     g.strokeStyle = `rgba(43,26,13,${a})`;
-    g.lineWidth = 0.55;
+    g.lineWidth = 0.5;
     g.beginPath();
     for (let t = -80; t < 80; t += gap) { g.moveTo(t - 60 * ang, -60); g.lineTo(t + 60 * ang, 60); }
+    g.stroke();
+    g.strokeStyle = `rgba(43,26,13,${(a * 0.6).toFixed(3)})`;
+    g.lineWidth = 0.4;
+    g.beginPath();
+    for (let t = -80; t < 80; t += gap * 1.4) { g.moveTo(t + 60 * ang, -60); g.lineTo(t - 60 * ang, 60); }
     g.stroke();
     g.restore();
   },
   rect(x, y, w, h) { const p = new Path2D(); p.rect(x, y, w, h); return p; },
   poly(pts) { const p = new Path2D(); pts.forEach(([x, y], i) => (i ? p.lineTo(x, y) : p.moveTo(x, y))); p.closePath(); return p; },
   ground(g, w = 50) {
-    g.strokeStyle = 'rgba(43,26,13,0.7)';
-    g.lineWidth = 0.7;
+    // an engraved ground: horizontal cuts thinning out to either side, a darker
+    // band of cast shadow under the subject
+    g.lineCap = 'round';
+    for (let i = 0; i < 4; i++) {
+      const yy = 22 + i * 2.2;
+      const half = w * (1 - i * 0.18);
+      g.strokeStyle = `rgba(43,26,13,${(0.7 - i * 0.14).toFixed(3)})`;
+      g.lineWidth = 0.6 - i * 0.08;
+      g.beginPath();
+      for (let x = -half; x < half; x += 6 + i * 2) { g.moveTo(x, yy + Math.sin(x * 1.7) * 0.4); g.lineTo(x + 4 - i * 0.6, yy + Math.sin(x * 1.7 + 2) * 0.4); }
+      g.stroke();
+    }
+    g.strokeStyle = 'rgba(43,26,13,0.55)';
+    g.lineWidth = 0.5;
     g.beginPath();
-    for (let x = -w; x < w; x += 5) { g.moveTo(x, 22 + Math.sin(x) * 0.6); g.lineTo(x + 3, 22 + Math.sin(x) * 0.6); }
+    for (let x = -w * 0.5; x < w * 0.7; x += 1.4) { g.moveTo(x, 22.6); g.lineTo(x + 3, 25.4); }
     g.stroke();
+  },
+};
+
+/**
+ * Engraved solids in a light oblique projection (depth recedes up and to the
+ * right): a lit front face in a fine tint, the side face in close crossed cuts,
+ * a pale top, cast shadows hatched on the ground to the east.
+ */
+const OB = [0.62, -0.42];
+const SOLID = {
+  /** a box standing on the baseline y, centred on x */
+  block(g, x, y, w, h, d, { roof = 'flat', rh = 0, fill = ENG.fill, roofFill = 'rgba(150,108,78,0.85)', crenel = false } = {}) {
+    const dx = d * OB[0];
+    const dy = d * OB[1];
+    const L = x - w / 2;
+    const R = x + w / 2;
+    const T = y - h;
+    // cast shadow on the ground
+    ENG.hatch(g, ENG.poly([[R, y], [R + dx + h * 0.5, y + dy * 0.2 + 3], [R + dx + h * 0.5 + 6, y + 4], [R + 2, y + 4]]), { gap: 1.2, a: 0.55 });
+    ENG.shape(g, ENG.poly([[L, y], [R, y], [R, T], [L, T]]), fill);
+    const side = ENG.poly([[R, y], [R + dx, y + dy], [R + dx, T + dy], [R, T]]);
+    ENG.shape(g, side, fill, 1);
+    ENG.hatch(g, side, { gap: 1.25, a: 0.62 });
+    if (roof === 'flat') {
+      ENG.shape(g, ENG.poly([[L, T], [R, T], [R + dx, T + dy], [L + dx, T + dy]]), 'rgba(236,226,200,1)', 0.9);
+      if (crenel) {
+        const n = Math.max(2, Math.round(w / 7));
+        for (let i = 0; i < n; i++) {
+          const mx = L + (i + 0.5) * (w / n);
+          const mw = (w / n) * 0.55;
+          ENG.shape(g, ENG.poly([[mx - mw / 2, T], [mx + mw / 2, T], [mx + mw / 2, T - 4], [mx - mw / 2, T - 4]]), fill, 0.8);
+        }
+        const m = Math.max(1, Math.round(d / 7));
+        for (let i = 0; i < m; i++) {
+          const t = (i + 0.5) / m;
+          const px = R + dx * t;
+          const py = T + dy * t;
+          const sp = ENG.poly([[px - 1.6, py], [px + 1.6, py - 1], [px + 1.6, py - 5], [px - 1.6, py - 4]]);
+          ENG.shape(g, sp, fill, 0.7);
+          ENG.hatch(g, sp, { gap: 1.1, a: 0.6 });
+        }
+      }
+    } else {
+      // a gable to the front, the roof running back
+      ENG.shape(g, ENG.poly([[L - 2, T], [x, T - rh], [R + 2, T]]), fill);
+      const slope = ENG.poly([[x, T - rh], [x + dx, T - rh + dy], [R + 2 + dx, T + dy], [R + 2, T]]);
+      ENG.shape(g, slope, roofFill, 1);
+      ENG.hatch(g, slope, { gap: 1.3, a: 0.55 });
+      g.strokeStyle = 'rgba(43,26,13,0.45)';
+      g.lineWidth = 0.4;
+      for (let t = 0.15; t < 1; t += 0.15) { g.beginPath(); g.moveTo(x + dx * t, T - rh + dy * t); g.lineTo(R + 2 + dx * t, T + dy * t); g.stroke(); }
+    }
+  },
+  /** a round tower: cylinder shaded across its width, a battlement or cone roof */
+  tower(g, x, y, r, h, { roof = 'crenel', roofFill = 'rgba(96,100,112,0.85)' } = {}) {
+    const ry = r * 0.36;
+    ENG.hatch(g, ENG.poly([[x + r * 0.6, y], [x + r + h * 0.5, y + 2], [x + r + h * 0.5 + 4, y + 5], [x, y + ry]]), { gap: 1.2, a: 0.5 });
+    const body = new Path2D();
+    body.moveTo(x - r, y - h); body.lineTo(x - r, y); body.ellipse(x, y, r, ry, 0, Math.PI, 0, true); body.lineTo(x + r, y - h); body.closePath();
+    ENG.shape(g, body);
+    // shading builds toward the east limb
+    g.save();
+    g.clip(body);
+    for (let t = -r; t < r; t += 1.1) {
+      const k = (t + r) / (2 * r);
+      if (k < 0.45) continue;
+      g.strokeStyle = `rgba(43,26,13,${(0.15 + (k - 0.45) * 1.1).toFixed(3)})`;
+      g.lineWidth = 0.45;
+      g.beginPath(); g.moveTo(x + t, y - h - 2); g.lineTo(x + t, y + ry + 2); g.stroke();
+    }
+    g.restore();
+    // courses
+    g.strokeStyle = 'rgba(43,26,13,0.35)';
+    g.lineWidth = 0.4;
+    for (let yy = y - h + 5; yy < y; yy += 5) { g.beginPath(); g.ellipse(x, yy, r, ry, 0, 0.1, Math.PI - 0.1); g.stroke(); }
+    if (roof === 'cone') {
+      const cone = ENG.poly([[x - r - 2, y - h], [x, y - h - r * 2.2], [x + r + 2, y - h]]);
+      ENG.shape(g, cone, roofFill);
+      ENG.hatch(g, ENG.poly([[x, y - h - r * 2.2], [x + r + 2, y - h], [x + 1, y - h]]), { gap: 1.1, a: 0.6 });
+    } else {
+      const top = new Path2D(); top.ellipse(x, y - h, r, ry, 0, 0, Math.PI * 2);
+      ENG.shape(g, top, 'rgba(236,226,200,1)', 0.9);
+      for (let i = 0; i < 5; i++) {
+        const a = Math.PI * (0.1 + i * 0.2);
+        const mx = x - Math.cos(a) * r * 0.92;
+        const my = y - h + Math.sin(a) * ry * 0.92;
+        const mp = ENG.poly([[mx - 1.8, my], [mx + 1.8, my], [mx + 1.8, my - 4], [mx - 1.8, my - 4]]);
+        ENG.shape(g, mp, ENG.fill, 0.7);
+        if (i > 2) ENG.hatch(g, mp, { gap: 1, a: 0.6 });
+      }
+    }
+  },
+  dark(g, path) { ENG.shape(g, path, 'rgba(34,22,14,0.92)', 0.8); },
+  flag(g, x, y, h, color) {
+    g.strokeStyle = INK.ink; g.lineWidth = 0.9; g.beginPath(); g.moveTo(x, y); g.lineTo(x, y - h); g.stroke();
+    const f = new Path2D(); f.moveTo(x, y - h); f.quadraticCurveTo(x + 7, y - h - 2, x + 14, y - h + 3); f.quadraticCurveTo(x + 7, y - h + 5, x, y - h + 8); f.closePath();
+    ENG.shape(g, f, color, 0.7);
   },
 };
 
@@ -1249,89 +1529,89 @@ const DISTRICT_VIGNETTES = {
   podol_plaza(g, x, y) {
     g.save(); g.translate(x, y);
     ENG.ground(g);
-    for (const sx of [-30, 30]) {
-      const body = ENG.rect(sx - 13, 4, 26, 18);
-      ENG.shape(g, body);
-      ENG.hatch(g, ENG.rect(sx - 13, 4, 26, 6), { gap: 1.6 });
-      const aw = ENG.poly([[sx - 17, 4], [sx + 17, 4], [sx + 12, -8], [sx - 12, -8]]);
-      ENG.shape(g, aw, 'rgba(176,64,44,0.75)');
-      g.strokeStyle = 'rgba(246,236,210,0.9)'; g.lineWidth = 2.2;
-      for (let i = -9; i <= 9; i += 6) { g.beginPath(); g.moveTo(sx + i * 1.15, 3); g.lineTo(sx + i * 0.8, -7); g.stroke(); }
+    for (const sx of [-28, 26]) {
+      SOLID.block(g, sx, 22, 22, 13, 10);
+      const aw = ENG.poly([[sx - 14, 9], [sx + 14, 9], [sx + 14 + 6, 3], [sx - 8, 3]]);
+      ENG.shape(g, aw, 'rgba(176,64,44,0.8)', 0.9);
+      g.save(); g.clip(aw); g.strokeStyle = 'rgba(246,236,210,0.9)'; g.lineWidth = 2;
+      for (let i = -16; i <= 20; i += 5) { g.beginPath(); g.moveTo(sx + i, 10); g.lineTo(sx + i + 6, 2); g.stroke(); }
+      g.restore();
+      SOLID.dark(g, ENG.rect(sx - 4, 14, 8, 8));
     }
-    ENG.shape(g, ENG.poly([[-10, 22], [10, 22], [7, 12], [-7, 12]]));
-    const basin = new Path2D(); basin.ellipse(0, 12, 12, 4, 0, 0, Math.PI * 2);
-    ENG.shape(g, basin, 'rgba(110,150,180,0.65)');
-    ENG.shape(g, ENG.rect(-1.6, -6, 3.2, 18));
+    const basin = new Path2D(); basin.moveTo(-12, 16); basin.lineTo(-12, 21); basin.ellipse(0, 21, 12, 4, 0, Math.PI, 0, true); basin.lineTo(12, 16); basin.closePath();
+    ENG.shape(g, basin); ENG.hatch(g, ENG.rect(4, 14, 10, 12), { gap: 1.2, a: 0.55 });
+    const water = new Path2D(); water.ellipse(0, 16, 12, 4, 0, 0, Math.PI * 2);
+    ENG.shape(g, water, 'rgba(110,150,180,0.7)', 0.8);
+    SOLID.tower(g, 0, 16, 1.8, 18, { roof: 'cone', roofFill: ENG.fill });
     g.strokeStyle = 'rgba(60,100,140,0.85)'; g.lineWidth = 0.8;
-    for (const d of [-1, 1]) { g.beginPath(); g.moveTo(0, -6); g.quadraticCurveTo(d * 8, -14, d * 10, 8); g.stroke(); }
+    for (const d of [-1, 1]) { g.beginPath(); g.moveTo(0, -4); g.quadraticCurveTo(d * 8, -10, d * 10, 14); g.stroke(); }
     g.restore();
   },
   // the textile house: a long warehouse, its great door chained
   cadorna_textile(g, x, y) {
     g.save(); g.translate(x, y);
     ENG.ground(g);
-    const wall = ENG.rect(-36, -2, 72, 24);
-    ENG.shape(g, wall);
-    ENG.hatch(g, ENG.rect(16, -2, 20, 24), { gap: 1.8 });
-    const roof = ENG.poly([[-40, -2], [40, -2], [30, -18], [-30, -18]]);
-    ENG.shape(g, roof, 'rgba(150,112,80,0.7)');
-    g.strokeStyle = 'rgba(43,26,13,0.5)'; g.lineWidth = 0.5;
-    for (let t = -16; t < -2; t += 2.4) { g.beginPath(); g.moveTo(-38 + (t + 18) * 0.5, t); g.lineTo(38 - (t + 18) * 0.5, t); g.stroke(); }
-    const door = ENG.rect(-9, 4, 18, 18);
-    ENG.shape(g, door, 'rgba(96,64,40,0.85)');
-    g.strokeStyle = 'rgba(200,190,170,1)'; g.lineWidth = 1.6;
-    g.beginPath(); for (let i = 0; i < 7; i++) { g.moveTo(-12 + i * 4, 10 + (i % 2) * 2.5); g.arc(-12 + i * 4 + 1.6, 10 + (i % 2) * 2.5, 1.6, Math.PI, Math.PI * 3); } g.stroke();
-    for (const wx of [-28, -20, 20, 28]) ENG.shape(g, ENG.rect(wx - 2.5, 4, 5, 7), 'rgba(60,40,24,0.8)', 0.7);
+    SOLID.block(g, -6, 22, 64, 22, 20, { roof: 'gable', rh: 13, roofFill: 'rgba(150,112,80,0.85)' });
+    SOLID.dark(g, ENG.rect(-15, 6, 18, 16));
+    g.strokeStyle = 'rgba(210,200,180,1)'; g.lineWidth = 1.5;
+    g.beginPath(); for (let i = 0; i < 6; i++) { g.moveTo(-17 + i * 4, 12 + (i % 2) * 2.5); g.arc(-17 + i * 4 + 1.6, 12 + (i % 2) * 2.5, 1.6, Math.PI, Math.PI * 3); } g.stroke();
+    for (const wx of [-32, -24, 10, 18]) SOLID.dark(g, ENG.rect(wx - 2.4, 6, 4.8, 6));
     g.restore();
   },
   // Kuto's well: a stone well under a windlass roof
   kutos_well(g, x, y) {
     g.save(); g.translate(x, y);
     ENG.ground(g, 34);
-    const drum = new Path2D(); drum.moveTo(-16, 6); drum.lineTo(-16, 22); drum.ellipse(0, 22, 16, 4, 0, Math.PI, 0, true); drum.lineTo(16, 6); drum.closePath();
-    ENG.shape(g, drum);
-    ENG.hatch(g, drum, { gap: 2.4, a: 0.4 });
-    g.strokeStyle = 'rgba(43,26,13,0.75)'; g.lineWidth = 0.6;
-    for (let r2 = 0; r2 < 3; r2++) { g.beginPath(); g.ellipse(0, 11 + r2 * 4.5, 16, 4, 0, 0, Math.PI); g.stroke(); }
-    const mouth = new Path2D(); mouth.ellipse(0, 6, 16, 4.5, 0, 0, Math.PI * 2);
-    ENG.shape(g, mouth, 'rgba(30,20,12,0.9)');
-    for (const sx of [-13, 13]) ENG.shape(g, ENG.rect(sx - 1.5, -20, 3, 26));
-    ENG.shape(g, ENG.poly([[-20, -18], [20, -18], [0, -32]]), 'rgba(140,100,70,0.75)');
-    g.strokeStyle = INK.ink; g.lineWidth = 1; g.beginPath(); g.moveTo(-13, -12); g.lineTo(13, -12); g.moveTo(0, -12); g.lineTo(0, 0); g.stroke();
+    for (const sx of [-13, 13]) SOLID.block(g, sx, 6, 3, 26, 3);
+    SOLID.tower(g, 0, 22, 16, 15, { roof: 'none' });
+    const mouth = new Path2D(); mouth.ellipse(0, 7, 13.5, 4.4, 0, 0, Math.PI * 2);
+    SOLID.dark(g, mouth);
+    g.strokeStyle = INK.ink; g.lineWidth = 1.2; g.beginPath(); g.moveTo(-13, -12); g.lineTo(13, -12); g.moveTo(0, -12); g.lineTo(0, 2); g.stroke();
+    const rf = ENG.poly([[-21, -18], [21, -18], [0, -31]]);
+    ENG.shape(g, rf, 'rgba(140,100,70,0.85)');
+    ENG.hatch(g, ENG.poly([[0, -31], [21, -18], [0, -18]]), { gap: 1.1, a: 0.6 });
     ENG.shape(g, ENG.poly([[-3, 0], [3, 0], [2.4, 5], [-2.4, 5]]), 'rgba(120,90,60,0.9)', 0.8);
     g.restore();
   },
-  // Mendor's library: an arcaded front, an open book, smoke curling from a broken roof
+  // Mendor's library: an arcaded front under a pediment, smoke from a broken roof
   mendors_library(g, x, y) {
     g.save(); g.translate(x, y);
     ENG.ground(g);
-    const front = ENG.rect(-30, -14, 60, 36);
-    ENG.shape(g, front);
-    ENG.shape(g, ENG.poly([[-34, -14], [34, -14], [0, -30]]), 'rgba(160,132,104,0.7)');
+    SOLID.block(g, -4, 22, 56, 30, 18, { roof: 'gable', rh: 14, roofFill: 'rgba(160,132,104,0.85)' });
     for (let i = -2; i <= 2; i++) {
-      const ar = new Path2D(); ar.moveTo(i * 11 - 4, 22); ar.lineTo(i * 11 - 4, -2); ar.arc(i * 11, -2, 4, Math.PI, 0); ar.lineTo(i * 11 + 4, 22); ar.closePath();
-      ENG.shape(g, ar, 'rgba(46,32,22,0.85)', 0.8);
+      const ar = new Path2D(); ar.moveTo(-4 + i * 10.5 - 3.6, 22); ar.lineTo(-4 + i * 10.5 - 3.6, 2); ar.arc(-4 + i * 10.5, 2, 3.6, Math.PI, 0); ar.lineTo(-4 + i * 10.5 + 3.6, 22); ar.closePath();
+      SOLID.dark(g, ar);
     }
-    g.strokeStyle = 'rgba(90,80,70,0.7)'; g.lineWidth = 1.2;
-    g.beginPath(); g.moveTo(14, -26); g.bezierCurveTo(22, -34, 10, -40, 20, -48); g.stroke();
-    g.beginPath(); g.moveTo(20, -24); g.bezierCurveTo(30, -30, 18, -38, 28, -44); g.stroke();
-    const book = ENG.poly([[-14, 26], [0, 23], [14, 26], [14, 32], [0, 29], [-14, 32]]);
-    ENG.shape(g, book, 'rgba(250,244,226,1)', 0.9);
-    g.beginPath(); g.moveTo(0, 23); g.lineTo(0, 29); g.stroke();
+    // the broken roof: a ragged hole with charred rafters
+    const hole = ENG.poly([[10, -10], [18, -14], [24, -8], [18, -4]]);
+    SOLID.dark(g, hole);
+    g.strokeStyle = 'rgba(90,80,70,0.75)'; g.lineWidth = 1.2;
+    g.beginPath(); g.moveTo(17, -12); g.bezierCurveTo(25, -20, 13, -26, 23, -34); g.stroke();
+    g.beginPath(); g.moveTo(21, -11); g.bezierCurveTo(31, -17, 19, -25, 29, -31); g.stroke();
     g.restore();
   },
   // Valhingen: headstones, a cross and a dead tree under a crescent
   valhingen_graveyard(g, x, y) {
     g.save(); g.translate(x, y);
     ENG.ground(g);
-    g.strokeStyle = INK.ink; g.lineWidth = 1.6; g.lineCap = 'round';
-    g.beginPath(); g.moveTo(26, 22); g.lineTo(24, -6); g.moveTo(24, -2); g.lineTo(34, -14); g.moveTo(24, -4); g.lineTo(14, -18); g.moveTo(29, -8); g.lineTo(32, -22); g.stroke();
-    for (const [sx, sz] of [[-26, 1], [-8, 1.2], [8, 0.9]]) {
-      const st = new Path2D(); st.moveTo(sx - 6 * sz, 22); st.lineTo(sx - 6 * sz, 8 - 6 * sz); st.arc(sx, 8 - 6 * sz, 6 * sz, Math.PI, 0); st.lineTo(sx + 6 * sz, 22); st.closePath();
+    g.strokeStyle = INK.ink; g.lineWidth = 1.7; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(30, 22); g.lineTo(28, -6); g.moveTo(28, -2); g.lineTo(38, -14); g.moveTo(28, -4); g.lineTo(18, -18); g.moveTo(33, -8); g.lineTo(36, -22); g.moveTo(18, -18); g.lineTo(14, -20); g.stroke();
+    for (const [sx, sz] of [[-28, 1], [-10, 1.2], [8, 0.9]]) {
+      const w = 11 * sz;
+      const h = 16 * sz;
+      const d = 4;
+      const dx = d * OB[0];
+      const dy = d * OB[1];
+      ENG.hatch(g, ENG.poly([[sx + w / 2, 22], [sx + w / 2 + 10, 23], [sx + w / 2 + 12, 25], [sx + w / 2, 25]]), { gap: 1.1, a: 0.55 });
+      const side = ENG.poly([[sx + w / 2, 22], [sx + w / 2 + dx, 22 + dy], [sx + w / 2 + dx, 22 - h + w / 2 + dy], [sx + w / 2, 22 - h + w / 2]]);
+      ENG.shape(g, side); ENG.hatch(g, side, { gap: 1.1, a: 0.65 });
+      const st = new Path2D(); st.moveTo(sx - w / 2, 22); st.lineTo(sx - w / 2, 22 - h + w / 2); st.arc(sx, 22 - h + w / 2, w / 2, Math.PI, 0); st.lineTo(sx + w / 2, 22); st.closePath();
       ENG.shape(g, st);
-      ENG.hatch(g, ENG.rect(sx + 2 * sz, -10, 6, 34), { gap: 1.4 });
+      g.strokeStyle = 'rgba(43,26,13,0.6)'; g.lineWidth = 0.45;
+      for (let k = 0; k < 3; k++) { g.beginPath(); g.moveTo(sx - w * 0.28, 22 - h * 0.55 + k * 2.4); g.lineTo(sx + w * 0.28, 22 - h * 0.55 + k * 2.4); g.stroke(); }
     }
-    ENG.shape(g, ENG.poly([[-1.5, -20], [1.5, -20], [1.5, -14], [6, -14], [6, -11], [1.5, -11], [1.5, 2], [-1.5, 2], [-1.5, -11], [-6, -11], [-6, -14], [-1.5, -14]]));
+    SOLID.block(g, -1, 22, 3.2, 20, 2.5);
+    SOLID.block(g, -1, 8, 12, 3.2, 2.5);
     const moon = new Path2D(); moon.arc(-26, -26, 7, 0, Math.PI * 2);
     g.fillStyle = 'rgba(244,234,208,1)'; g.fill(moon); g.strokeStyle = INK.ink; g.lineWidth = 0.9; g.stroke(moon);
     g.fillStyle = 'rgba(214,200,172,1)'; g.beginPath(); g.arc(-23, -28, 6, 0, Math.PI * 2); g.fill();
@@ -1341,38 +1621,29 @@ const DISTRICT_VIGNETTES = {
   stojanow_gate(g, x, y) {
     g.save(); g.translate(x, y);
     ENG.ground(g);
-    ENG.shape(g, ENG.rect(-16, -10, 32, 32));
-    const arch = new Path2D(); arch.moveTo(-8, 22); arch.lineTo(-8, 4); arch.arc(0, 4, 8, Math.PI, 0); arch.lineTo(8, 22); arch.closePath();
-    ENG.shape(g, arch, 'rgba(36,24,16,0.9)');
+    SOLID.tower(g, -24, 22, 10, 40);
+    SOLID.block(g, 0, 22, 32, 30, 14, { crenel: true });
+    const arch = new Path2D(); arch.moveTo(-8, 22); arch.lineTo(-8, 6); arch.arc(0, 6, 8, Math.PI, 0); arch.lineTo(8, 22); arch.closePath();
+    SOLID.dark(g, arch);
     g.strokeStyle = 'rgba(200,190,170,0.9)'; g.lineWidth = 0.7;
-    g.beginPath(); for (let i = -6; i <= 6; i += 3) { g.moveTo(i, -2); g.lineTo(i, 14); } for (let j = 0; j < 14; j += 4) { g.moveTo(-7, j); g.lineTo(7, j); } g.stroke();
-    for (const sx of [-24, 24]) {
-      const tw = ENG.rect(sx - 10, -22, 20, 44);
-      ENG.shape(g, tw);
-      ENG.hatch(g, ENG.rect(sx + 3, -22, 7, 44), { gap: 1.6 });
-      for (let i = 0; i < 3; i++) ENG.shape(g, ENG.rect(sx - 10 + i * 7.5, -27, 5, 5), ENG.fill, 0.8);
-      ENG.shape(g, ENG.rect(sx - 1.5, -12, 3, 6), 'rgba(36,24,16,0.9)', 0.6);
-    }
-    g.strokeStyle = INK.ink; g.lineWidth = 1; g.beginPath(); g.moveTo(24, -27); g.lineTo(24, -44); g.stroke();
-    ENG.shape(g, ENG.poly([[24, -44], [40, -40], [24, -35]]), 'rgba(40,40,40,0.85)', 0.8);
+    g.beginPath(); for (let i = -6; i <= 6; i += 3) { g.moveTo(i, 0); g.lineTo(i, 16); } for (let j = 2; j < 16; j += 4) { g.moveTo(-7, j); g.lineTo(7, j); } g.stroke();
+    SOLID.tower(g, 24, 22, 10, 40);
+    SOLID.flag(g, 24, -22, 18, 'rgba(40,40,40,0.9)');
     g.restore();
   },
   // Valjevo: the castle keep on its rise, towers and a flag
   valjevo_castle(g, x, y) {
     g.save(); g.translate(x, y);
-    ENG.shape(g, ENG.poly([[-46, 24], [-30, 14], [30, 14], [46, 24]]), 'rgba(200,184,150,0.8)', 0.8);
-    ENG.shape(g, ENG.rect(-30, -2, 60, 18));
-    for (let i = 0; i < 8; i++) ENG.shape(g, ENG.rect(-30 + i * 8, -6, 5, 4), ENG.fill, 0.7);
-    ENG.shape(g, ENG.rect(-11, -30, 22, 30));
-    ENG.hatch(g, ENG.rect(3, -30, 8, 46), { gap: 1.5 });
-    for (let i = 0; i < 3; i++) ENG.shape(g, ENG.rect(-11 + i * 8, -35, 6, 5), ENG.fill, 0.7);
-    for (const sx of [-30, 30]) {
-      ENG.shape(g, ENG.rect(sx - 6, -14, 12, 30));
-      ENG.shape(g, ENG.poly([[sx - 8, -14], [sx + 8, -14], [sx, -26]]), 'rgba(90,96,110,0.8)', 0.8);
-    }
-    ENG.shape(g, ENG.rect(-2, -22, 4, 8), 'rgba(36,24,16,0.9)', 0.6);
-    g.strokeStyle = INK.ink; g.lineWidth = 1; g.beginPath(); g.moveTo(0, -35); g.lineTo(0, -50); g.stroke();
-    ENG.shape(g, ENG.poly([[0, -50], [14, -46], [0, -42]]), 'rgba(150,40,30,0.85)', 0.8);
+    const mound = ENG.poly([[-50, 26], [-34, 16], [34, 16], [50, 26]]);
+    ENG.shape(g, mound, 'rgba(206,190,154,0.9)', 0.8);
+    ENG.hatch(g, ENG.poly([[20, 16], [34, 16], [50, 26], [30, 26]]), { gap: 1.3, a: 0.5 });
+    SOLID.block(g, 2, 18, 22, 46, 14, { crenel: true });
+    SOLID.flag(g, 2, -32, 16, 'rgba(150,40,30,0.9)');
+    SOLID.dark(g, ENG.rect(-1, -16, 4, 8));
+    SOLID.block(g, 0, 22, 58, 16, 16, { crenel: true });
+    SOLID.dark(g, (() => { const p = new Path2D(); p.moveTo(-5, 22); p.lineTo(-5, 14); p.arc(0, 14, 5, Math.PI, 0); p.lineTo(5, 22); p.closePath(); return p; })());
+    SOLID.tower(g, -31, 24, 7, 26, { roof: 'cone' });
+    SOLID.tower(g, 31, 24, 7, 26, { roof: 'cone' });
     g.restore();
   },
   // the wild shore beyond the gate: a road winding off between trees
@@ -1380,32 +1651,27 @@ const DISTRICT_VIGNETTES = {
     g.save(); g.translate(x, y);
     const road = new Path2D(); road.moveTo(-6, 26); road.bezierCurveTo(-20, 8, 20, 0, 4, -20); road.lineTo(8, -20); road.bezierCurveTo(26, 0, -12, 8, 6, 26); road.closePath();
     ENG.shape(g, road, 'rgba(226,206,164,1)', 0.9);
-    for (const [tx, ty, ts] of [[-30, 0, 1.2], [-20, -18, 0.9], [26, 12, 1.1], [30, -14, 1], [-36, 18, 0.8], [18, -26, 0.7]]) {
-      const tr2 = new Path2D(); tr2.moveTo(tx, ty - 16 * ts); tr2.lineTo(tx + 8 * ts, ty + 4 * ts); tr2.lineTo(tx - 8 * ts, ty + 4 * ts); tr2.closePath();
-      ENG.shape(g, tr2, 'rgba(120,140,90,0.85)', 0.9);
-      ENG.hatch(g, tr2, { gap: 1.6, a: 0.5 });
-      g.strokeStyle = INK.ink; g.lineWidth = 1; g.beginPath(); g.moveTo(tx, ty + 4 * ts); g.lineTo(tx, ty + 9 * ts); g.stroke();
-    }
+    const r = prng(808);
+    for (const [tx, ty, ts] of [[-18, -16, 6.5], [20, -22, 5.6], [33, -8, 7], [-31, 4, 7.8], [27, 16, 7.4], [-38, 22, 6.4], [40, 26, 5.8]].sort((p, q) => p[1] - q[1])) tree(g, tx, ty, ts, r);
     g.restore();
   },
   // Sokol keep: a lone tower on the rocks with a light in its window
   sokol_keep(g, x, y) {
     g.save(); g.translate(x, y);
-    ENG.shape(g, ENG.poly([[-40, 24], [-26, 10], [-12, 14], [6, 6], [24, 12], [40, 24]]), 'rgba(170,150,120,0.8)', 0.9);
-    ENG.shape(g, ENG.poly([[-9, 10], [9, 10], [7, -30], [-7, -30]]));
-    ENG.hatch(g, ENG.poly([[2, 10], [9, 10], [7, -30], [2, -30]]), { gap: 1.5 });
-    for (let i = 0; i < 3; i++) ENG.shape(g, ENG.rect(-9 + i * 6.5, -35, 4.5, 5), ENG.fill, 0.7);
-    ENG.shape(g, ENG.rect(-2, -18, 4, 6), 'rgba(240,190,90,1)', 0.7);
+    const rocks = ENG.poly([[-42, 26], [-28, 10], [-14, 14], [4, 6], [24, 12], [42, 26]]);
+    ENG.shape(g, rocks, 'rgba(176,156,124,0.9)', 0.9);
+    ENG.hatch(g, ENG.poly([[4, 6], [24, 12], [42, 26], [10, 26]]), { gap: 1.2, a: 0.55 });
+    SOLID.tower(g, -2, 12, 9, 40);
+    ENG.shape(g, ENG.rect(-4, -12, 4, 6), 'rgba(240,190,90,1)', 0.7);
     g.restore();
   },
   // the slums: a huddle of roofs and a broken wall
   houses(g, x, y) {
     g.save(); g.translate(x, y);
     ENG.ground(g);
-    for (const [hx, hw, hh] of [[-26, 18, 16], [-6, 20, 22], [16, 16, 14], [32, 12, 18]]) {
-      ENG.shape(g, ENG.rect(hx - hw / 2, 22 - hh, hw, hh));
-      ENG.shape(g, ENG.poly([[hx - hw / 2 - 2, 22 - hh], [hx + hw / 2 + 2, 22 - hh], [hx, 22 - hh - 10]]), 'rgba(160,110,80,0.75)', 0.9);
-      ENG.shape(g, ENG.rect(hx - 2, 14, 4, 8), 'rgba(40,26,16,0.9)', 0.6);
+    for (const [hx, hw, hh, hd] of [[-28, 16, 15, 10], [-8, 20, 22, 12], [14, 15, 13, 10], [32, 11, 18, 8]]) {
+      SOLID.block(g, hx, 22, hw, hh, hd, { roof: 'gable', rh: 9, roofFill: 'rgba(160,110,80,0.85)' });
+      SOLID.dark(g, ENG.rect(hx - 2, 15, 4, 7));
     }
     g.restore();
   },
@@ -1739,82 +2005,154 @@ function arcText(g, text, cx, cy, R, at, { font, color, spacing = 1 } = {}) {
 // ---------------------------------------------------------------- countryside glyphs
 
 /**
- * A hill in the engraver's manner: an irregular one- or two-peaked profile,
- * a ridge line falling from the summit, and hachures laid down the shadowed
- * (east) flank, denser near the crest.
+ * A mountain in the engraver's manner. type: 'crag' (several jagged summits),
+ * 'massif' (a broad shouldered mass), 'horn' (one sharp spire), 'foot' (a low
+ * rounded foothill). The silhouette is built by midpoint displacement between
+ * its summits; spurs fall from each summit, and everything east of a spur (the
+ * side away from the light) is laid in with close hachures following the fall
+ * of the slope, crossed again near the foot.
  */
-function hill(g, x, y, w, h, r) {
-  g.save();
-  const peaks = [{ u: 0.38 + (r() - 0.5) * 0.25, hgt: 1 }];
-  if (r() < 0.45) peaks.push({ u: peaks[0].u + (r() < 0.5 ? -1 : 1) * (0.25 + r() * 0.12), hgt: 0.5 + r() * 0.3 });
-  const N = 22;
-  const prof = [];
-  for (let i = 0; i <= N; i++) {
-    const u = i / N;
-    let v = 0;
-    for (const pk of peaks) {
-      const d = Math.abs(u - pk.u) / (u < pk.u ? pk.u + 0.02 : 1.02 - pk.u);
-      v = Math.max(v, pk.hgt * Math.max(0, 1 - d * d) ** 1.6);
-    }
-    v *= 1 + (r() - 0.5) * 0.12;
-    prof.push([x - w / 2 + u * w, y - v * h]);
+function mountain(g, x, y, w, h, r, type = 'crag', back = false) {
+  const rough = { crag: 0.11, massif: 0.06, horn: 0.07, foot: 0.02 }[type];
+  const summits = [];
+  if (type === 'crag') {
+    const n = r() < 0.7 ? 2 : 3;
+    for (let i = 0; i < n; i++) summits.push({ u: 0.3 + (i / Math.max(1, n - 1)) * 0.4 + (r() - 0.5) * 0.06, v: i === Math.floor(n / 2) ? 1 : 0.7 + r() * 0.2 });
+  } else if (type === 'massif') {
+    summits.push({ u: 0.3 + r() * 0.1, v: 0.86 + r() * 0.1 }, { u: 0.52 + r() * 0.08, v: 1 }, { u: 0.72 + r() * 0.06, v: 0.7 + r() * 0.15 });
+  } else if (type === 'horn') {
+    summits.push({ u: 0.44 + r() * 0.1, v: 1 });
+    if (r() < 0.6) summits.push({ u: 0.7, v: 0.45 + r() * 0.15 });
+  } else {
+    summits.push({ u: 0.45 + r() * 0.1, v: 1 });
   }
+  // control points: feet, summits and cols between them
+  let ctrl = [[0, 0]];
+  summits.forEach((sm, i) => {
+    if (i) {
+      const pv = summits[i - 1];
+      ctrl.push([(pv.u + sm.u) / 2, Math.min(pv.v, sm.v) * (type === 'massif' ? 0.86 + r() * 0.08 : 0.72 + r() * 0.12)]);
+    }
+    ctrl.push([sm.u, sm.v]);
+  });
+  ctrl.push([1, 0]);
+  if (type === 'horn') ctrl = ctrl.map(([u, v], i) => (i === 0 || i === ctrl.length - 1 ? [u, v] : [u, v]));
+  // shape the flanks: concave for horns, convex shoulders for massifs and foothills
+  const flank = (t) => (type === 'horn' ? t ** 1.5 : type === 'foot' ? Math.sin(t * Math.PI / 2) : Math.sin(t * Math.PI / 2) ** 1.3);
+  let pts = [];
+  for (let i = 0; i < ctrl.length - 1; i++) {
+    const [u0, v0] = ctrl[i];
+    const [u1, v1] = ctrl[i + 1];
+    const n = 6;
+    for (let k = 0; k < n; k++) {
+      const t = k / n;
+      const up = v1 > v0;
+      const f = up ? flank(t) : 1 - flank(1 - t);
+      pts.push([u0 + (u1 - u0) * t, v0 + (v1 - v0) * f]);
+    }
+  }
+  pts.push([1, 0]);
+  // midpoint displacement for the jagged skyline
+  for (let pass = 0; pass < 2; pass++) {
+    const out = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [ua, va] = pts[i];
+      const [ub, vb] = pts[i + 1];
+      out.push(pts[i]);
+      const L = Math.hypot(ub - ua, vb - va);
+      out.push([(ua + ub) / 2, Math.max(0, (va + vb) / 2 + (r() - 0.5) * L * rough * 3 * (pass ? 0.5 : 1))]);
+    }
+    out.push(pts[pts.length - 1]);
+    pts = out;
+  }
+  const P = pts.map(([u, v]) => [x - w / 2 + u * w, y - v * h]);
   const shape = new Path2D();
-  shape.moveTo(prof[0][0], y);
-  for (const [px, py] of prof) shape.lineTo(px, py);
-  shape.lineTo(prof[N][0], y);
+  shape.moveTo(P[0][0], y);
+  for (const [px, py] of P) shape.lineTo(px, py);
+  shape.lineTo(P[P.length - 1][0], y);
   shape.closePath();
-  const tv = 0.92 + r() * 0.12;
-  g.fillStyle = `rgba(${222 * tv | 0},${196 * tv | 0},${148 * tv | 0},0.94)`;
+  g.save();
+  const tv = back ? 0.97 : 0.92 + r() * 0.06;
+  g.fillStyle = `rgba(${226 * tv | 0},${202 * tv | 0},${156 * tv | 0},0.97)`;
   g.fill(shape);
   g.save();
   g.clip(shape);
-  // a wash on the shadowed flank of each summit
-  for (const pk of peaks) {
-    const px = x - w / 2 + pk.u * w;
-    g.fillStyle = 'rgba(110,76,40,0.34)';
-    g.beginPath(); g.moveTo(px, y - pk.hgt * h - 2); g.lineTo(px + w * 0.7, y + 1); g.lineTo(px + w * 0.02, y + 1); g.closePath(); g.fill();
-  }
-  // hachures down the east flanks
-  g.strokeStyle = 'rgba(43,26,13,0.75)';
   g.lineCap = 'round';
-  for (let i = 1; i < N; i++) {
-    const [px, py] = prof[i];
-    const [qx, qy] = prof[i + 1];
-    if (qy <= py) continue; // only where the profile falls away to the east
-    const depth = y - py;
-    if (depth < 2) continue;
-    for (let k = 0; k < 2; k++) {
-      const sx = px + (qx - px) * (k * 0.5 + r() * 0.2);
-      const sy = py + (qy - py) * (k * 0.5) + 0.8;
-      const L = depth * (0.45 + r() * 0.35);
-      g.lineWidth = 0.45 + r() * 0.25;
-      g.beginPath(); g.moveTo(sx, sy); g.lineTo(sx + L * 0.28, sy + L); g.stroke();
+  // the shadow side of each summit: east of a spur that falls from it to the foot
+  for (const sm of summits) {
+    const sx = x - w / 2 + sm.u * w;
+    const sy = y - sm.v * h;
+    const fx = sx + w * (0.04 + r() * 0.1);
+    const side = new Path2D();
+    side.moveTo(sx, sy - 2);
+    side.quadraticCurveTo(sx + w * 0.02, sy + (y - sy) * 0.5, fx, y + 2);
+    side.lineTo(x + w, y + 2);
+    side.lineTo(x + w, sy - 2);
+    side.closePath();
+    g.save();
+    g.clip(side);
+    g.fillStyle = back ? 'rgba(120,88,52,0.18)' : 'rgba(110,76,40,0.28)';
+    g.fillRect(x - w, y - h * 1.2, w * 2, h * 1.3);
+    // hachures down the fall line, close and dark near the crest
+    g.strokeStyle = back ? 'rgba(43,26,13,0.4)' : 'rgba(43,26,13,0.72)';
+    const gap = back ? 2.4 : 1.55;
+    for (let t = sx - 2; t < x + w / 2 + 4; t += gap * (0.85 + r() * 0.3)) {
+      // where the skyline is at this x
+      let top = y;
+      for (let i = 0; i < P.length - 1; i++) if (P[i][0] <= t && P[i + 1][0] >= t) { const q = (t - P[i][0]) / Math.max(0.01, P[i + 1][0] - P[i][0]); top = P[i][1] + (P[i + 1][1] - P[i][1]) * q; break; }
+      const L = (y - top) * (0.55 + r() * 0.4);
+      g.lineWidth = back ? 0.4 : 0.45 + r() * 0.3;
+      g.beginPath();
+      g.moveTo(t, top + 0.6);
+      g.lineTo(t + L * 0.16, top + L);
+      g.stroke();
+    }
+    // crossed near the foot where the shade deepens
+    if (!back && type !== 'foot') {
+      g.strokeStyle = 'rgba(43,26,13,0.4)';
+      g.lineWidth = 0.4;
+      for (let t = sx - h; t < x + w; t += 2.2) { g.beginPath(); g.moveTo(t, y - h * 0.28); g.lineTo(t + h * 0.3, y + 1); g.stroke(); }
+    }
+    g.restore();
+  }
+  // a few strata and crags on the lit face
+  if (type !== 'foot') {
+    g.strokeStyle = back ? 'rgba(43,26,13,0.3)' : 'rgba(43,26,13,0.5)';
+    g.lineWidth = 0.45;
+    for (let i = 0; i < (type === 'crag' ? 5 : 3); i++) {
+      const sm = summits[Math.floor(r() * summits.length)];
+      const sx = x - w / 2 + sm.u * w - w * (0.05 + r() * 0.2);
+      const sy = y - sm.v * h * (0.3 + r() * 0.5);
+      g.beginPath(); g.moveTo(sx, sy); g.lineTo(sx + w * 0.06, sy + h * 0.04); g.lineTo(sx + w * 0.1, sy + h * 0.02); g.stroke();
     }
   }
   g.restore();
-  // outline (heavier on the shadow side), ridge line from each summit
-  g.strokeStyle = INK.ink;
+  // outline: heavier on the shadowed (descending) runs
+  g.strokeStyle = back ? 'rgba(43,26,13,0.7)' : INK.ink;
   g.lineJoin = 'round';
-  g.lineWidth = 1.05;
-  g.beginPath();
-  prof.forEach(([px, py], i) => (i ? g.lineTo(px, py) : g.moveTo(px, py)));
-  g.stroke();
-  g.lineWidth = 0.6;
-  for (const pk of peaks) {
-    const px = x - w / 2 + pk.u * w;
-    const py = y - pk.hgt * h;
+  for (let i = 0; i < P.length - 1; i++) {
+    const down = P[i + 1][1] > P[i][1];
+    g.lineWidth = (back ? 0.6 : 0.9) * (down ? 1.5 : 0.9);
+    g.beginPath(); g.moveTo(P[i][0], P[i][1]); g.lineTo(P[i + 1][0], P[i + 1][1]); g.stroke();
+  }
+  // spurs from each summit
+  g.lineWidth = back ? 0.45 : 0.7;
+  for (const sm of summits) {
+    const sx = x - w / 2 + sm.u * w;
+    const sy = y - sm.v * h;
     g.beginPath();
-    g.moveTo(px, py + 1);
-    g.quadraticCurveTo(px + w * 0.05, py + (y - py) * 0.5, px + w * (0.02 + r() * 0.08), y - 1);
+    g.moveTo(sx, sy + 1);
+    g.quadraticCurveTo(sx + w * 0.03, sy + (y - sy) * 0.45, sx + w * (0.05 + r() * 0.06), y - (y - sy) * 0.15);
     g.stroke();
   }
-  // scrub at the foot
-  g.strokeStyle = 'rgba(43,26,13,0.5)';
-  g.lineWidth = 0.5;
-  for (let i = 0; i < 3; i++) {
-    const sx = x - w / 2 + r() * w;
-    g.beginPath(); g.moveTo(sx, y + 1.5); g.lineTo(sx + 1, y - 1); g.moveTo(sx + 1.6, y + 1.5); g.lineTo(sx + 2.2, y - 0.6); g.stroke();
+  // scree and scrub at the foot
+  if (!back) {
+    g.strokeStyle = 'rgba(43,26,13,0.5)';
+    g.lineWidth = 0.5;
+    for (let i = 0; i < 4; i++) {
+      const fx = x - w / 2 + r() * w;
+      g.beginPath(); g.moveTo(fx, y + 1.5); g.lineTo(fx + 1, y - 1); g.moveTo(fx + 1.6, y + 1.5); g.lineTo(fx + 2.2, y - 0.6); g.stroke();
+    }
   }
   g.restore();
 }

@@ -81,7 +81,7 @@ export default class AutomapScene extends Scene {
     const z = Number(params.zoom);
     if (Number.isFinite(z) && z > 1) {
       if (this.view === 'block') this._centreOnParty(z, true);
-      else this.sv.focus(this.sv.tcx, this.sv.tcy, z, true);
+      else this.sv.focus(Number(params.fx) || this.sv.tcx, Number(params.fy) || this.sv.tcy, z, true);
     }
     if (this.mode === 'diorama') await this._enterDiorama(Number.isFinite(z) ? z : 1);
     // squares surveyed since the map was last opened ink themselves in
@@ -926,6 +926,11 @@ export default class AutomapScene extends Scene {
     if (this.mode === 'diorama') return;
     const t = this.ctx.clock.time;
     this._needsDraw = false;
+    if (this.view !== 'world' && this.isHome && this.map) {
+      const cs = SHEET.MS / this.map.w;
+      const { x, y } = this.ctx.game.location;
+      this.sv.light = [SHEET.MX + (x + 0.5) * cs, SHEET.MY + (y + 0.5) * cs];
+    } else this.sv.light = null;
     this.sv.draw((g, s) => (this.view === 'world' ? this._overlayWorld(g, s, t) : this._overlayBlock(g, s, t)));
   }
 
@@ -984,25 +989,31 @@ export default class AutomapScene extends Scene {
       // the token grows a little when you lean in, but never swamps the plan
       const tk = Math.max(0.6, this.sv.zoom ** -0.6);
       const pulse = frozen ? 0.6 : 0.55 + 0.45 * Math.sin(t * 3.2);
-      // a vermilion halo and a gilt survey ring under the token, so the party is found at a glance
+      // the party's roundel: a hard-edged reserve of clean paper with a thin double
+      // ink rule, a vermilion ring and the four quarter ticks of a compass card (no glow)
       g.save();
-      const hr = cs * 0.95 * tk;
-      const halo = g.createRadialGradient(cx, cy, cs * 0.1, cx, cy, hr);
-      halo.addColorStop(0, `rgba(255,236,190,${(0.55 + pulse * 0.15).toFixed(3)})`);
-      halo.addColorStop(0.55, 'rgba(232,150,90,0.22)');
-      halo.addColorStop(1, 'rgba(200,80,40,0)');
-      g.fillStyle = halo;
-      g.beginPath(); g.arc(cx, cy, hr, 0, Math.PI * 2); g.fill();
-      const ring = cs * tk * (0.66 + (frozen ? 0 : 0.06 * Math.sin(t * 2.2)));
-      g.strokeStyle = 'rgba(168,40,24,0.85)';
-      g.lineWidth = Math.max(1.6, 2.4 / s);
-      g.setLineDash([cs * tk * 0.12, cs * tk * 0.07]);
-      g.lineDashOffset = frozen ? 0 : -t * cs * 0.15;
+      const ring = cs * tk * 0.66;
+      g.fillStyle = 'rgba(242,230,202,0.96)';
+      g.beginPath(); g.arc(cx, cy, ring + cs * tk * 0.1, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = 'rgba(43,26,13,0.92)';
+      g.lineWidth = Math.max(0.9, 1.3 / s);
+      g.beginPath(); g.arc(cx, cy, ring + cs * tk * 0.1, 0, Math.PI * 2); g.stroke();
+      g.lineWidth = Math.max(0.5, 0.7 / s);
+      g.beginPath(); g.arc(cx, cy, ring + cs * tk * 0.055, 0, Math.PI * 2); g.stroke();
+      g.strokeStyle = `rgba(168,40,24,${(0.75 + pulse * 0.2).toFixed(3)})`;
+      g.lineWidth = Math.max(1.2, 1.8 / s);
       g.beginPath(); g.arc(cx, cy, ring, 0, Math.PI * 2); g.stroke();
-      g.setLineDash([]);
-      g.strokeStyle = 'rgba(201,160,69,0.9)';
-      g.lineWidth = Math.max(0.8, 1.2 / s);
-      g.beginPath(); g.arc(cx, cy, ring + cs * tk * 0.07, 0, Math.PI * 2); g.stroke();
+      g.strokeStyle = 'rgba(43,26,13,0.92)';
+      g.lineWidth = Math.max(0.8, 1.1 / s);
+      g.beginPath();
+      for (let q = 0; q < 4; q++) {
+        const qa = (q * Math.PI) / 2;
+        const r0 = ring + cs * tk * 0.1;
+        const r1 = r0 + cs * tk * 0.12;
+        g.moveTo(cx + Math.cos(qa) * r0, cy + Math.sin(qa) * r0);
+        g.lineTo(cx + Math.cos(qa) * r1, cy + Math.sin(qa) * r1);
+      }
+      g.stroke();
       g.restore();
       drawPartyArrow(g, cx, cy, cs * tk * (1.28 + pulse * 0.05), a, { glow: pulse });
     }
@@ -1195,24 +1206,30 @@ export default class AutomapScene extends Scene {
       const { x, y, dir } = game.location;
       const [px, py] = this.world.cellToUnits(here, x + 0.5, y + 0.5);
       const pulse = this.ctx.clock.frozen ? 0.6 : 0.55 + 0.45 * Math.sin(t * 3.2);
-      // you are here: a vermilion survey ring and a large arrow, found at a glance
+      // you are here: a hard-edged paper roundel with a double ink rule, a vermilion
+      // ring and quarter ticks (the same device as on the block sheets), no glow
       g.save();
-      const halo = g.createRadialGradient(px, py, 4, px, py, 46);
-      halo.addColorStop(0, 'rgba(255,236,190,0.75)');
-      halo.addColorStop(0.6, 'rgba(232,150,90,0.25)');
-      halo.addColorStop(1, 'rgba(200,80,40,0)');
-      g.fillStyle = halo;
-      g.beginPath(); g.arc(px, py, 46, 0, Math.PI * 2); g.fill();
-      g.strokeStyle = 'rgba(168,40,24,0.9)';
-      g.lineWidth = 2.2;
-      g.setLineDash([6, 4]);
-      g.beginPath(); g.arc(px, py, 30, 0, Math.PI * 2); g.stroke();
-      g.setLineDash([]);
-      g.strokeStyle = 'rgba(201,160,69,0.95)';
+      g.fillStyle = 'rgba(244,234,208,0.96)';
+      g.beginPath(); g.arc(px, py, 32, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = 'rgba(43,26,13,0.92)';
+      g.lineWidth = 1.4;
+      g.beginPath(); g.arc(px, py, 32, 0, Math.PI * 2); g.stroke();
+      g.lineWidth = 0.7;
+      g.beginPath(); g.arc(px, py, 29.5, 0, Math.PI * 2); g.stroke();
+      g.strokeStyle = `rgba(168,40,24,${(0.75 + pulse * 0.2).toFixed(3)})`;
+      g.lineWidth = 2;
+      g.beginPath(); g.arc(px, py, 26, 0, Math.PI * 2); g.stroke();
+      g.strokeStyle = 'rgba(43,26,13,0.92)';
       g.lineWidth = 1.2;
-      g.beginPath(); g.arc(px, py, 34, 0, Math.PI * 2); g.stroke();
+      g.beginPath();
+      for (let q = 0; q < 4; q++) {
+        const qa = (q * Math.PI) / 2;
+        g.moveTo(px + Math.cos(qa) * 32, py + Math.sin(qa) * 32);
+        g.lineTo(px + Math.cos(qa) * 38, py + Math.sin(qa) * 38);
+      }
+      g.stroke();
       g.restore();
-      drawPartyArrow(g, px, py, 44, DIR_ANGLE[dir], { glow: pulse });
+      drawPartyArrow(g, px, py, 40, DIR_ANGLE[dir], { glow: pulse });
     }
   }
 

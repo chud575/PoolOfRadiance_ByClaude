@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { makeCanvas, prng } from './ink.js';
 
 /**
- * The Company's standard-bearer as a painted 28mm lead figure: a hooded,
+ * The Company's standard-bearer as a painted 28mm lead figure: a helmed,
  * cloaked warrior with a heater shield on the left arm, a sheathed sword at the
  * hip and the Company's banner raised in the right hand, on a slotta-style base
  * finished with sand and static flock and a gilt facing notch at the front.
@@ -114,7 +114,7 @@ export function buildPartyMiniature(T, { pennant }) {
   // ---------- the figure ----------
   const fig = new THREE.Group();
   fig.position.y = 0.054;
-  fig.scale.setScalar(1.4);
+  fig.scale.setScalar(1.55);
   root.add(fig);
 
   // boots: stout, planted apart, toes showing beneath the cloak
@@ -151,7 +151,7 @@ export function buildPartyMiniature(T, { pennant }) {
   // the cloak: heavy wool falling from the shoulders in deep folds, open at the front
   {
     const prof = V([[0.03, 0.31], [0.07, 0.298], [0.092, 0.272], [0.094, 0.24], [0.092, 0.18], [0.1, 0.11], [0.112, 0.05], [0.12, 0.012], [0.118, 0.004]]);
-    const geo = T(new THREE.LatheGeometry(prof, 64, Math.PI + 0.42, Math.PI * 2 - 0.84));
+    const geo = T(new THREE.LatheGeometry(prof, 64, Math.PI + 0.9, Math.PI * 2 - 1.8));
     const p = geo.attributes.position;
     const relief = new Float32Array(p.count);
     for (let i = 0; i < p.count; i++) {
@@ -175,59 +175,61 @@ export function buildPartyMiniature(T, { pennant }) {
     fig.add(cloak);
     // a gilt-edged hem line down each front edge
     for (const s of [-1, 1]) {
-      const a = Math.PI + s * 0.42;
+      const a = Math.PI + s * 0.9;
       const pts = prof.map((q) => new THREE.Vector3(Math.sin(a) * q.x * 1.0, q.y, Math.cos(a) * q.x * 1.0));
       const trim = new THREE.Mesh(T(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 16, 0.0035, 5)), gilt);
       fig.add(trim);
     }
   }
 
-  // the hood: drawn up, peaked at the back, its opening shadowed round the face
+  // the head: a barrel helm of bright steel with a dark eye-slit, breaths, a gilt
+  // cross on the face and a tall red crest, so the figure reads at a glance
+  const steel = paint(0xb8bcc4, 0.32, { metalness: 0.85, envMapIntensity: 1.1 });
   {
-    const geo = T(new THREE.SphereGeometry(0.058, 28, 18, Math.PI * 1.5 + 0.55, Math.PI * 2 - 1.1, 0, Math.PI * 0.82));
-    const p = geo.attributes.position;
-    const relief = new Float32Array(p.count);
-    for (let i = 0; i < p.count; i++) {
-      const x = p.getX(i);
-      const y = p.getY(i);
-      const z = p.getZ(i);
-      // pulled back into a point, and loose folds at the neck
-      const back = Math.max(0, z / 0.058);
-      p.setZ(i, z + back * back * 0.03 * Math.max(0, y / 0.058 + 0.3));
-      p.setY(i, y + back * back * 0.01);
-      const fold = Math.sin(Math.atan2(x, z) * 7) * Math.max(0, -y / 0.058);
-      p.setX(i, x * (1 + fold * 0.08));
-      relief[i] = fold * 0.8 + (y > 0.03 ? 0.3 : 0);
+    const helmGeo = T(new THREE.LatheGeometry(V([[0, 0.0], [0.046, 0.0], [0.05, 0.006], [0.05, 0.05], [0.048, 0.066], [0.038, 0.08], [0.02, 0.088], [0, 0.09]]), 28));
+    shadeBy(helmGeo, (x, y) => (y < 0.008 ? -0.4 : y > 0.06 ? 0.4 : 0.05));
+    const helm = new THREE.Mesh(helmGeo, vpaint(0xc4c8d0, 0.3, { metalness: 0.85, envMapIntensity: 1.1 }));
+    helm.position.set(0, 0.29, 0);
+    fig.add(helm);
+    const slit = new THREE.Mesh(T(new THREE.BoxGeometry(0.07, 0.009, 0.02)), paint(0x08080a, 0.9));
+    slit.position.set(0, 0.345, -0.042);
+    fig.add(slit);
+    const cross = new THREE.Mesh(T(new THREE.BoxGeometry(0.008, 0.05, 0.012)), gilt);
+    cross.position.set(0, 0.325, -0.047);
+    fig.add(cross);
+    const brow = new THREE.Mesh(T(new THREE.BoxGeometry(0.07, 0.007, 0.012)), gilt);
+    brow.position.set(0, 0.352, -0.046);
+    fig.add(brow);
+    for (let k = 0; k < 3; k++) {
+      const br = new THREE.Mesh(T(new THREE.BoxGeometry(0.005, 0.005, 0.01)), paint(0x08080a, 0.9));
+      br.position.set(0.018, 0.318 - k * 0.009, -0.047);
+      fig.add(br);
     }
-    geo.computeVertexNormals();
-    let j = 0;
-    shadeBy(geo, () => relief[j++], { lo: 0.55, hi: 1.22 });
-    const hood = new THREE.Mesh(geo, vpaint(0x2c4466, 0.88, { side: THREE.DoubleSide }));
-    hood.position.set(0, 0.338, 0.004);
-    fig.add(hood);
-    // the shadowed inside of the hood
-    const inner = new THREE.Mesh(T(new THREE.SphereGeometry(0.052, 18, 12)), paint(0x0e0c0c, 0.95));
-    inner.position.set(0, 0.334, 0.01);
-    fig.add(inner);
-    // the face: brow, nose and a short beard, painted with a warm flesh tone
-    const skin = paint(0xa87458, 0.75);
-    const face = new THREE.Mesh(T(new THREE.SphereGeometry(0.034, 18, 14)), skin);
-    face.scale.set(0.72, 0.9, 0.7);
-    face.position.set(0, 0.33, -0.022);
-    fig.add(face);
-    const nose = new THREE.Mesh(T(new THREE.ConeGeometry(0.007, 0.018, 6)), skin);
-    nose.rotation.x = -Math.PI / 2 - 0.3;
-    nose.position.set(0, 0.332, -0.046);
-    fig.add(nose);
-    const beard = new THREE.Mesh(T(new THREE.SphereGeometry(0.024, 12, 10, 0, Math.PI * 2, Math.PI * 0.45, Math.PI * 0.55)), paint(0x4a2e1a, 0.9));
-    beard.position.set(0, 0.32, -0.03);
-    beard.scale.set(0.8, 1.0, 0.7);
-    fig.add(beard);
-    for (const s of [-1, 1]) {
-      const eye = new THREE.Mesh(T(new THREE.SphereGeometry(0.004, 6, 4)), paint(0x1a1210, 0.6));
-      eye.position.set(s * 0.01, 0.338, -0.043);
-      fig.add(eye);
+    // the crest: a swept horsehair plume, broad at the crown, trailing behind
+    const curve = new THREE.CatmullRomCurve3([[0, 0.375, -0.02], [0, 0.41, 0.0], [0, 0.415, 0.035], [0, 0.39, 0.075], [0, 0.35, 0.1]].map((q) => new THREE.Vector3(...q)));
+    const plumeGeo = T(new THREE.TubeGeometry(curve, 16, 1, 8));
+    {
+      const pp = plumeGeo.attributes.position;
+      for (let i = 0; i <= 16; i++) {
+        const t = i / 16;
+        const c = curve.getPointAt(t);
+        const rr = 0.016 * Math.sin(Math.PI * (0.15 + t * 0.85)) + 0.004;
+        for (let j = 0; j <= 8; j++) {
+          const k = i * 9 + j;
+          const ddx = pp.getX(k) - c.x;
+          const ddy = pp.getY(k) - c.y;
+          const ddz = pp.getZ(k) - c.z;
+          // flattened sideways like a crest, ragged at the hair's ends
+          pp.setXYZ(k, c.x + ddx * rr * 0.55, c.y + ddy * rr * (1.3 + Math.sin(j * 2.3 + i) * 0.15), c.z + ddz * rr);
+        }
+      }
+      plumeGeo.computeVertexNormals();
+      shadeBy(plumeGeo, (x, y) => Math.sin(y * 900 + x * 400) * 0.4);
     }
+    fig.add(new THREE.Mesh(plumeGeo, vpaint(0xb02a1a, 0.9)));
+    const neck = new THREE.Mesh(T(new THREE.CylinderGeometry(0.034, 0.05, 0.03, 18)), vpaint(0x7d8086, 0.55, { metalness: 0.45 }));
+    neck.position.set(0, 0.285, 0);
+    fig.add(neck);
   }
 
   // arms: sleeves as tapering tubes, gauntleted hands
@@ -269,13 +271,21 @@ export function buildPartyMiniature(T, { pennant }) {
   const fistL = new THREE.Mesh(T(new THREE.SphereGeometry(0.015, 10, 8)), glove);
   fistL.position.set(-0.088, 0.186, -0.064);
   fig.add(fistL);
-  // pauldrons of boiled leather over the cloak's shoulders
-  for (const s of [-1, 1]) {
-    const pd = new THREE.Mesh(T(new THREE.SphereGeometry(0.03, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.5)), paint(0x5a3a20, 0.6));
-    pd.position.set(s * 0.074, 0.28, 0);
-    pd.rotation.z = -s * 0.5;
-    pd.scale.set(1, 0.7, 1.1);
-    fig.add(pd);
+  // spaulders: broad rounded steel plates over each shoulder, two lames below,
+  // so the figure's shoulders square off against the paving
+  for (const sgn of [-1, 1]) {
+    for (let k = 0; k < 3; k++) {
+      const rr = 0.044 - k * 0.006;
+      const pd = new THREE.Mesh(T(new THREE.SphereGeometry(rr, 18, 8, 0, Math.PI * 2, 0, Math.PI * 0.5)), steel);
+      pd.position.set(sgn * (0.078 + k * 0.006), 0.285 - k * 0.022, 0.002);
+      pd.rotation.z = -sgn * (0.55 + k * 0.12);
+      pd.scale.set(1, 0.62, 1.05);
+      fig.add(pd);
+    }
+    const rim = new THREE.Mesh(T(new THREE.TorusGeometry(0.043, 0.0035, 5, 22, Math.PI)), gilt);
+    rim.position.set(sgn * 0.08, 0.283, 0.002);
+    rim.rotation.set(0, Math.PI / 2, -sgn * 0.55);
+    fig.add(rim);
   }
 
   // the heater shield: a curved, bevelled board, painted with the Company's chevron, rim worn bright
@@ -312,8 +322,9 @@ export function buildPartyMiniature(T, { pennant }) {
     const tex = T(new THREE.CanvasTexture(c));
     tex.colorSpace = THREE.SRGBColorSpace;
     const shield = new THREE.Mesh(geo, paint(0xffffff, 0.7, { map: tex }));
-    shield.position.set(-0.104, 0.2, -0.07);
+    shield.position.set(-0.112, 0.2, -0.074);
     shield.rotation.set(0.12, -Math.PI + 0.75, 0.08);
+    shield.scale.setScalar(1.35);
     fig.add(shield);
   }
 
@@ -340,9 +351,14 @@ export function buildPartyMiniature(T, { pennant }) {
   const pole = new THREE.Mesh(T(new THREE.CylinderGeometry(0.0055, 0.0065, 0.78, 8)), paint(0x6a4524, 0.65));
   pole.position.set(handR[0], 0.39, handR[2]);
   fig.add(pole);
-  const finial = new THREE.Mesh(T(new THREE.ConeGeometry(0.012, 0.045, 8)), gilt);
-  finial.position.set(handR[0], 0.8, handR[2]);
-  fig.add(finial);
+  // a leaf-bladed spear head of bright steel on a gilt socket
+  const socket = new THREE.Mesh(T(new THREE.CylinderGeometry(0.008, 0.009, 0.03, 8)), gilt);
+  socket.position.set(handR[0], 0.79, handR[2]);
+  fig.add(socket);
+  const blade = new THREE.Mesh(T(new THREE.LatheGeometry(V([[0, 0], [0.014, 0.025], [0.016, 0.045], [0.008, 0.08], [0, 0.1]]), 4)), steel);
+  blade.scale.set(1, 1, 0.3);
+  blade.position.set(handR[0], 0.805, handR[2]);
+  fig.add(blade);
   const flagGeo = T(new THREE.PlaneGeometry(0.24, 0.15, 14, 3));
   const fp = flagGeo.attributes.position;
   for (let i = 0; i < fp.count; i++) {
