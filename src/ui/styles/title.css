@@ -59,7 +59,7 @@
    point, crest at the head, so the menu sits on the skin instead of a void */
 .por-mm-banner {
   --pt: 3.2em;
-  position: absolute; left: 5.2vw; top: -1px; bottom: 20.5vh; width: 28em; pointer-events: none !important;
+  position: absolute; left: 5.2vw; top: 5.4vh; bottom: 27.5vh; width: 28em; pointer-events: none !important;
   background: linear-gradient(90deg, #5e4418, #e6c477 12%, #fff1c0 22%, #a07a30 40%, #f0cf7c 60%, #7a5a22 82%, #d6b05a 92%, #4a3410);
   clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--pt)), 50% 100%, 0 calc(100% - var(--pt)));
   filter: drop-shadow(0 18px 40px rgba(0, 0, 0, 0.7));
@@ -69,18 +69,46 @@
   content: ''; position: absolute; inset: 0 3px 3px;
   clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--pt) + 1px), 50% 100%, 0 calc(100% - var(--pt) + 1px));
   background:
-    radial-gradient(120% 40% at 50% 0%, rgba(110, 150, 255, 0.14), transparent 70%),
-    linear-gradient(90deg, rgba(0, 0, 0, 0.5), transparent 16%, transparent 84%, rgba(0, 0, 0, 0.5)),
-    linear-gradient(180deg, rgba(10, 14, 34, 0.55), rgba(8, 10, 26, 0.82) 40%, rgba(5, 6, 16, 0.9)),
+    /* the fold over the rod: a shadowed lip, then raking light down the hide */
+    linear-gradient(180deg, rgba(0, 0, 0, 0.75), rgba(0, 0, 0, 0.2) 1.1em, transparent 2.4em),
+    radial-gradient(120% 40% at 50% 0%, rgba(110, 150, 255, 0.16), transparent 70%),
+    radial-gradient(90% 60% at 30% 25%, rgba(150, 175, 255, 0.10), transparent 70%),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.55), transparent 14%, transparent 86%, rgba(0, 0, 0, 0.55)),
+    linear-gradient(180deg, rgba(10, 14, 34, 0.18), rgba(8, 10, 26, 0.42) 45%, rgba(5, 6, 16, 0.62)),
     var(--tex-brocade, none),
     var(--tex-leather, none),
-    #0c1230;
-  background-size: auto, auto, auto, 2.6em 3.03em, 8em 8em, auto;
+    #16205a;
+  background-size: auto, auto, auto, auto, auto, 2.6em 3.03em, 10em 10em, auto;
+  background-blend-mode: normal, normal, normal, normal, normal, soft-light, normal, normal;
 }
 .por-mm-banner::after {
   /* material grain */
-  content: ''; position: absolute; inset: 0; background: var(--tex-grain); opacity: 0.5; mix-blend-mode: overlay;
+  content: ''; position: absolute; inset: 0; background: var(--tex-grain); opacity: 0.75; mix-blend-mode: overlay;
 }
+/* the brass rod the banner hangs from, with finials and two cords to the dark */
+.por-mm-rod {
+  position: absolute; left: calc(5.2vw - 1.6em); width: calc(28em + 3.2em); top: calc(5.4vh - 0.62em); height: 1.05em; pointer-events: none !important; z-index: 1;
+  border-radius: 0.5em;
+  background: linear-gradient(180deg, #fff3c8 0%, #e8c46a 22%, #9a7228 55%, #5a3e12 78%, #c9a050 100%);
+  box-shadow: 0 0.35em 0.6em rgba(0, 0, 0, 0.7), inset 0 -1px 0 rgba(0, 0, 0, 0.5);
+  opacity: 0; transform: translateY(-2.5em); transition: opacity 0.55s var(--ease), transform 0.7s var(--ease);
+}
+.por-mm-rod::before, .por-mm-rod::after {
+  /* turned finials: a collar and a gilt acorn at each end */
+  content: ''; position: absolute; top: 50%; width: 1.9em; height: 1.9em; margin-top: -0.95em; border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  background: radial-gradient(circle at 36% 30%, #fffbe2 0%, #f0cf7c 22%, #a07a30 58%, #4a3410 100%);
+  box-shadow: 0 0.3em 0.5em rgba(0, 0, 0, 0.7), inset 0 0 0 1px rgba(40, 26, 4, 0.6);
+}
+.por-mm-rod::before { left: -1.2em; }
+.por-mm-rod::after { right: -1.2em; }
+.por-mm-cords {
+  position: absolute; left: calc(5.2vw + 2.2em); width: calc(28em - 4.4em); top: 0; height: 5.4vh; pointer-events: none !important;
+  border-left: 2px solid #8a6a2a; border-right: 2px solid #8a6a2a; filter: drop-shadow(1px 0 1px rgba(0, 0, 0, 0.8));
+  opacity: 0; transition: opacity 0.55s var(--ease);
+}
+.por-title[data-mode='menu'] .por-mm-rod { opacity: 1; transform: none; transition-delay: 0.05s; }
+.por-title[data-mode='menu'] .por-mm-cords { opacity: 0.9; }
+html[data-classic='1'] .por-mm-rod, html[data-classic='1'] .por-mm-cords { display: none; }
 .por-mm-banner-line {
   position: absolute; inset: 0 0.9em calc(var(--pt) * 0.55); z-index: 1;
   border-left: 1px solid rgba(216, 178, 90, 0.42); border-right: 1px solid rgba(216, 178, 90, 0.42);
@@ -93,7 +121,7 @@
 }
 .por-mm-banner-gem {
   /* the banner's device: a gilt roundel holding a drop of the Pool's radiance, under a crest */
-  position: absolute; left: 50%; top: 9.5vh; width: 3.3em; height: 3.3em; transform: translateX(-50%); z-index: 1; border-radius: 50%;
+  position: absolute; left: 50%; top: 5.6vh; width: 3.3em; height: 3.3em; transform: translateX(-50%); z-index: 1; border-radius: 50%;
   background:
     radial-gradient(circle closest-side at 40% 36%, rgba(255, 255, 255, 0.95), rgba(200, 250, 255, 0.5) 30%, transparent 60%),
     radial-gradient(circle closest-side, #8ef0ff 0%, #1fa6d8 38%, #0a3c6a 68%, #06203c 70%, #2a1d08 71%, #2a1d08 74%, transparent 75%),
@@ -146,9 +174,13 @@ html[data-classic='1'] .por-mm-banner { display: none; }
 @keyframes por-mm-bar { from { transform: scaleX(0.82); } to { transform: scaleX(1); } }
 .por-mm-list .por-menu-item { transition: color 0.12s var(--ease); }
 .por-mm-list .por-menu-item:disabled { opacity: 0.5; }
-.por-mm-list .por-menu-item.locked { color: rgba(150, 146, 140, 0.62); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9); cursor: not-allowed; filter: saturate(0.2); }
-.por-mm-list .por-menu-item.locked .por-lock { opacity: 0.8; }
-.por-mm-list .por-menu-item.locked.hl { color: #cfc8b8; filter: none; }
+.por-mm-list .por-menu-item.locked { color: rgba(200, 194, 182, 1); opacity: 0.45; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9); cursor: not-allowed; filter: saturate(0.2); }
+.por-mm-list .por-menu-item.locked .por-menu-label > span:first-child {
+  /* a struck-through, engraved line: unavailable, at a glance */
+  text-decoration: line-through; text-decoration-thickness: 1.5px; text-decoration-color: rgba(220, 210, 190, 0.7);
+}
+.por-mm-list .por-menu-item.locked .por-lock { opacity: 1; width: 0.78em; height: 0.88em; color: #d8c89e; }
+.por-mm-list .por-menu-item.locked.hl { color: #e4dccb; opacity: 0.72; filter: none; }
 /* the lock's reason, set inline beside the row once it is focused */
 .por-menu-lockwhy {
   display: inline-block; margin-left: 0.9em; font-family: var(--font-body); font-style: italic; font-weight: 400; text-transform: none;
@@ -161,7 +193,13 @@ html[data-classic='1'] .por-mm-banner { display: none; }
 .por-lock { width: 0.62em; height: 0.7em; margin-left: 0.7em; vertical-align: 0.02em; color: #b8a77e; opacity: 0.95; filter: drop-shadow(0 1px 1px #000); }
 .por-menu-item.denied { animation: por-deny 0.32s var(--ease); }
 @keyframes por-deny { 20% { transform: translateX(-0.18em); } 45% { transform: translateX(0.16em); } 70% { transform: translateX(-0.08em); } }
-.por-mm-list .por-menu-item .por-hk { color: #ffd76a; text-shadow: 0 0 12px rgba(255, 200, 90, 0.55), 0 2px 4px rgba(0, 0, 0, 0.85); }
+.por-mm-list .por-menu-item .por-hk {
+  /* Gold Box hotkey: the letter alone in bright yellow, seated on a gilt tick */
+  color: #ffe94a; text-decoration: none; text-shadow: 0 0 12px rgba(255, 214, 60, 0.6), 0 2px 4px rgba(0, 0, 0, 0.85);
+  background: linear-gradient(90deg, transparent 8%, rgba(255, 220, 90, 0.85) 8%, rgba(255, 220, 90, 0.85) 92%, transparent 92%) left bottom / 100% 2px no-repeat;
+  padding-bottom: 0.04em;
+}
+.por-mm-list .por-menu-item:not(.hl):not(.locked) { color: rgba(236, 230, 214, 0.86); }
 .por-mm-list:focus-visible { box-shadow: none; }
 .por-mm-list:focus-visible .por-menu-item.hl::after { box-shadow: -6px 0 14px -6px rgba(255, 220, 140, 0.8); }
 .por-mm-rule { width: 16em; height: 0.9em; margin: 1.1em 0 0.6em 1.9em; background: var(--filigree-rule) left center / 100% 100% no-repeat; opacity: 0.6; }
@@ -221,7 +259,7 @@ button.por-title-legend-item:hover { color: #fff; border-color: rgba(216, 178, 9
 /* credits: an illuminated parchment plate over the dusk */
 .por-credits { position: absolute; inset: 0; }
 .por-credits-plate {
-  position: absolute !important; left: 50%; top: 33vh; bottom: 4.6em; width: 36em; max-width: 90vw; transform: translateX(-50%);
+  position: absolute !important; left: 50%; top: 33vh; bottom: 4.6em; width: 38em; max-width: 90vw; transform: translateX(-50%);
   padding: 1.5em 1.5em 1.3em !important; display: flex;
 }
 /* the leaf's cast shadow on the folio leather (a filter on the wrapper: the
@@ -249,10 +287,12 @@ button.por-title-legend-item:hover { color: #fff; border-color: rgba(216, 178, 9
 }
 .por-credits-window {
   position: relative; flex: 1; overflow: hidden; z-index: 1;
-  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 10%, #000 88%, transparent 100%);
-  mask-image: linear-gradient(180deg, transparent 0%, #000 10%, #000 88%, transparent 100%);
 }
-.por-credits-crawl { padding-top: 13em; text-align: center; color: var(--por-ink); text-wrap: balance; }
+.por-credits-crawl { position: absolute; inset: 0; text-align: center; color: var(--por-ink); text-wrap: balance; }
+.por-credits-page { position: absolute; inset: 0 0 1.6em; display: flex; flex-direction: column; justify-content: center; padding: 0 0.4em; will-change: opacity, transform; }
+.por-credits-dots { position: absolute; left: 0; right: 0; bottom: 0.2em; display: flex; justify-content: center; gap: 0.7em; }
+.por-credits-dots i { width: 0.42em; height: 0.42em; transform: rotate(45deg); border: 1px solid rgba(94, 20, 8, 0.6); transition: background 0.3s var(--ease); }
+.por-credits-dots i.on { background: #6a1a0c; border-color: #6a1a0c; }
 .por-credits-crawl * { text-wrap: balance; }
 .por-credits-h2 {
   display: flex; align-items: center; gap: 0.9em; margin: 0 0 1.1em;
@@ -262,9 +302,10 @@ button.por-title-legend-item:hover { color: #fff; border-color: rgba(216, 178, 9
 .por-credits-h2 > span { padding-right: 0; margin-right: -0.32em; }
 .por-credits-s { font-family: var(--font-display); font-weight: 700; letter-spacing: 0.24em; text-transform: uppercase; color: #3a2410; font-size: 0.92em; }
 .por-credits-role { margin: 0 0 1em; }
-.por-credits-role .role { font-family: var(--font-display); font-weight: 700; font-size: 0.7em; letter-spacing: 0.3em; text-transform: uppercase; color: #8a2a14; margin-bottom: 0.3em; }
-.por-credits-role .name { font-family: var(--font-display); font-variant-caps: small-caps; font-feature-settings: 'kern', 'onum'; letter-spacing: 0.07em; font-size: calc(1.16em * var(--text-scale)); line-height: 1.3; color: #241608; max-width: 24em; margin: 0 auto; }
-.por-credits-p { font-family: var(--font-body); font-feature-settings: 'kern', 'onum'; font-style: italic; color: #3a2814; line-height: 1.6; max-width: 26em; margin: 0 auto 1em; font-size: calc(0.98em * var(--text-scale)); }
+.por-credits-role .role { font-family: var(--font-display); font-weight: 700; font-size: 0.74em; letter-spacing: 0.28em; text-transform: uppercase; color: #5e1408; margin-bottom: 0.35em; text-shadow: 0 1px 0 rgba(255, 246, 220, 0.5); }
+.por-credits-role .name { font-family: var(--font-display); font-weight: 400; letter-spacing: 0.03em; font-size: calc(1.18em * var(--text-scale)); line-height: 1.35; color: #241608; max-width: 24em; margin: 0 auto; }
+.por-credits-role { margin: 0 0 1.25em; }
+.por-credits-p { font-family: var(--font-prose); font-feature-settings: 'kern', 'onum'; font-style: italic; color: #3a2814; line-height: 1.6; max-width: 26em; margin: 0 auto 1em; font-size: calc(0.98em * var(--text-scale)); }
 .por-credits-gap { height: 1.7em; display: grid; place-items: center; }
 .por-credits-gap i { width: 0.42em; height: 0.42em; transform: rotate(45deg); background: #8a5a22; opacity: 0.55; box-shadow: -1.2em 1.2em 0 -0.08em rgba(138, 90, 34, 0.5), 1.2em -1.2em 0 -0.08em rgba(138, 90, 34, 0.5); }
 html[data-classic='1'] .por-credits-crawl, html[data-classic='1'] .por-credits-crawl * { color: var(--ega-15) !important; }
@@ -293,7 +334,7 @@ html[data-classic='1'] .por-credits-h2::before, html[data-classic='1'] .por-cred
 }
 .por-intro-skip:hover { color: #fff; border-color: var(--por-gilt-lo); }
 .por-intro-text {
-  max-width: 46em; text-align: center; font-family: var(--font-body); font-style: italic; font-feature-settings: 'kern', 'onum', 'liga';
+  max-width: 46em; text-align: center; font-family: var(--font-prose); font-style: italic; font-feature-settings: 'kern', 'onum', 'liga';
   font-size: calc(1.3em * var(--text-scale)); line-height: 1.62; color: #f1e6c8;
   letter-spacing: 0.012em; text-shadow: 0 1px 2px #000; hanging-punctuation: first;
 }
@@ -308,10 +349,18 @@ html[data-classic='1'] .por-credits-h2::before, html[data-classic='1'] .por-cred
 .por-intro-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: rgba(216, 178, 90, 0.12); }
 .por-intro-progress i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--por-gilt-lo), var(--por-gilt-hi)); box-shadow: 0 0 8px rgba(245, 217, 139, 0.6); }
 .por-intro-procl {
-  position: absolute !important; right: 8vw; top: 50%; width: 25em; padding: 1.8em 2em 1.4em; z-index: 1;
-  font-size: calc(0.95em * var(--text-scale)); text-align: center; visibility: hidden;
+  /* a small notice pinned in the frame's upper corner (over the sky and roofs,
+     never over the street): the 3D scene keeps the stage */
+  position: absolute !important; right: 2.6vw; top: calc(11vh + 1.6em); width: 21em; padding: 1.3em 1.4em 1em; z-index: 1;
+  font-size: calc(0.7em * var(--text-scale)); text-align: center; visibility: hidden; transform-origin: 70% 0;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.6), 0 2px 4px rgba(0, 0, 0, 0.5) !important;
 }
-.por-intro-procl p { margin: 0 0 0.9em; line-height: 1.55; text-align: left; font-family: var(--font-body); font-feature-settings: 'kern', 'onum'; hyphens: auto; }
+.por-intro-procl::after {
+  /* the iron tack it hangs from */
+  content: ''; position: absolute; left: 50%; top: 0.35em; width: 0.9em; height: 0.9em; margin-left: -0.45em; border-radius: 50%; z-index: 3;
+  background: radial-gradient(circle at 35% 30%, #c8c0b0, #4a4238 55%, #1a1612); box-shadow: 0 2px 3px rgba(0, 0, 0, 0.7);
+}
+.por-intro-procl p { margin: 0 0 0.9em; line-height: 1.55; text-align: left; font-family: var(--font-prose); font-feature-settings: 'kern', 'onum'; hyphens: auto; }
 /* a rubricated drop initial opens the decree */
 .por-intro-procl p:first-of-type::first-letter {
   float: left; font-family: var(--font-display); font-weight: 700; font-size: 3.05em; line-height: 0.82; margin: 0.06em 0.1em 0 0; color: #8a1a10;
@@ -337,3 +386,4 @@ html[data-classic='1'] .por-credits-h2::before, html[data-classic='1'] .por-cred
   position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none;
   image-rendering: pixelated; image-rendering: crisp-edges; background: #000;
 }
+.por-intro-procl .por-procl-head { font-size: 1.02em; letter-spacing: 0.06em; white-space: normal; }

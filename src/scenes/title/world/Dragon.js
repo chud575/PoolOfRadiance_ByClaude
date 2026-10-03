@@ -78,15 +78,23 @@ const FRAG = /* glsl */ `
     float edgeSun = max(0.0, dot(N, sp / max(spl, 1e-4))) * spl;
     float backK = 0.5 + 0.5 * dot(-V, uSun);
     float rim = pow(1.0 - abs(ndv), 4.0);
-    col += uRim * rim * (edgeSun * 0.8 + back * back * 0.6 + 0.12) * backK;
-    col += uRim * pow(sunN, 2.0) * 0.03;
+    // sunset rim: a hot edge on every silhouette line that faces the low sun
+    // (membranes seen edge-on would take the rim over their whole area and
+    // read as pale sails: they keep only a thin share of it)
+    float memK = (vMem.x > 0.5 && vMem.x < 1.5) ? 0.22 + 0.5 * pow(1.0 - vMem.y, 3.0) : 1.0;
+    col += uRim * rim * (edgeSun * 1.6 + back * back * 0.9 + 0.22) * backK * memK;
+    col += uRim * pow(sunN, 2.0) * 0.06;
     if (vMem.x > 0.5 && vMem.x < 1.5) {
-      // membrane: light bleeds through where it's thin; bones and the
-      // scalloped edge stay dark so the finger structure reads
+      // membrane: the low sun shines through where it's thin, orange-red,
+      // with darker veins branching off the finger bones; bones and the
+      // scalloped trailing edge stay dark so the structure reads
       float thin = vMem.y;
-      float trans = (0.12 + 0.7 * pow(back, 2.0)) * thin;
-      vec3 glow = vec3(0.9, 0.2, 0.06) * trans;
-      col = col * (1.0 - 0.35 * thin) + glow * 0.3;
+      float trans = (0.22 + 1.1 * pow(back, 1.6)) * thin;
+      float veinA = 1.0 - smoothstep(0.0, 0.06, abs(fract(thin * 4.0 + sin(vW.x * 0.9 + vW.z * 0.7) * 0.18) - 0.5));
+      float veinB = 1.0 - smoothstep(0.0, 0.05, abs(fract((vW.x * 0.55 - vW.z * 0.35) * 0.6) - 0.5));
+      float vein = max(veinA * 0.7, veinB * 0.45) * smoothstep(0.15, 0.5, thin);
+      vec3 glow = mix(vec3(0.85, 0.2, 0.05), vec3(1.0, 0.46, 0.12), thin * thin) * trans;
+      col = col * (1.0 - 0.35 * thin) + glow * 0.34 * (1.0 - vein * 0.8);
     }
     if (vMem.x > 1.5) col = vec3(1.6, 0.62, 0.16);  // ember eyes
     if (uClassic > 0.5) col = vec3(0.0);

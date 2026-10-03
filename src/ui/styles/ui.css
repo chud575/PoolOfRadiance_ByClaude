@@ -35,7 +35,10 @@
   --por-hp-ok-a: #3fae55;
   --por-hp-ok-b: #9df0a0;
   --font-display: 'PoR Figures', 'PoR Book', 'Cinzel', 'Trajan Pro', 'Cormorant SC', 'Palatino Linotype', 'Book Antiqua', Palatino, 'URW Palladio L', 'P052', 'TeX Gyre Pagella', 'FreeSerif', Georgia, 'DejaVu Serif', serif;
-  --font-body: 'PoR Book', 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Palatino, 'URW Palladio L', 'P052', 'Charter', 'Bitstream Charter', Georgia, 'DejaVu Serif', serif;
+  /* UI text sets lining figures ('PoR Figures': stats, levels, AC, HP, times,
+     320x200 read cleanly); old-style figures are kept for narrative prose only */
+  --font-body: 'PoR Figures', 'PoR Book', 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Palatino, 'URW Palladio L', 'P052', 'Charter', 'Bitstream Charter', Georgia, 'DejaVu Serif', serif;
+  --font-prose: 'PoR Book', 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Palatino, 'URW Palladio L', 'P052', 'Charter', 'Bitstream Charter', Georgia, 'DejaVu Serif', serif;
   --font-num: 'PoR Figures', 'PoR Book', 'Palatino Linotype', 'Book Antiqua', Palatino, 'Charter', 'Bitstream Charter', Georgia, 'DejaVu Serif', serif;
   --font-readable: 'Atkinson Hyperlegible', 'Verdana', 'Segoe UI', 'Liberation Sans', 'DejaVu Sans', sans-serif;
   --ui-base: clamp(12px, calc(100vh * 0.0177778), 25.6px); /* 16px at 900px tall */
@@ -73,7 +76,7 @@ html[data-frozen='1'] *, html[data-frozen='1'] *::before, html[data-frozen='1'] 
 /* state swaps that must land on the next frame (menu highlight, classic-mode toggle): no transitions */
 .por-snap, .por-snap *, .por-snap *::before, .por-snap *::after,
 html[data-snap='1'] *, html[data-snap='1'] *::before, html[data-snap='1'] *::after { transition: none !important; }
-html[data-font='readable'] { --font-body: var(--font-readable); --font-num: var(--font-readable); }
+html[data-font='readable'] { --font-body: var(--font-readable); --font-num: var(--font-readable); --font-prose: var(--font-readable); }
 
 * { box-sizing: border-box; }
 html, body {
@@ -229,7 +232,8 @@ html, body {
 }
 .por-pad.face.a { --pc: #6fdc6a; } .por-pad.face.b { --pc: #ff6a5a; } .por-pad.face.x { --pc: #4ea3ff; } .por-pad.face.y { --pc: #ffd23a; }
 .por-pad.pill { border-radius: 0.8em; padding: 0 0.55em; font-size: 0.66em; height: 1.75em; letter-spacing: 0.06em; }
-.por-pad.dpad { font-size: 0.9em; height: 1.35em; min-width: 1.35em; }
+.por-pad.dpad { font-size: 0.9em; height: 1.45em; min-width: 1.45em; border: 0; background: none; box-shadow: none; }
+.por-pad.dpad .por-dpad { width: 1.45em; height: 1.45em; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.8)); }
 .por-pad.unbound { --pc: #7a7f94; border-color: rgba(0, 0, 0, 0.7); border-bottom-color: rgba(216, 178, 90, 0.28); background: radial-gradient(circle at 50% 70%, #10142a, #05070f 80%); box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.85); font-weight: 400; text-shadow: 0 1px 0 rgba(255, 236, 180, 0.12); }
 
 /* ---------- Command bar (the Gold Box command line) ---------- */

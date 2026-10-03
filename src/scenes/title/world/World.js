@@ -92,7 +92,7 @@ export function createWorld({ deferred = false } = {}) {
   // The Old City aerial's own rig: a low warm key raking in from the west (frame
   // left, the sunset side) with long shadows across the ruins and the castle
   // mound, and a cool moonrise rim from the east that edges every tower.
-  const cityKey = new THREE.DirectionalLight(0xffb27e, 0);
+  const cityKey = new THREE.DirectionalLight(0xffa868, 0);
   cityKey.position.set(55 - 100, -10 + 34, -120 + 22);
   cityKey.target.position.set(55, -10, -120);
   cityKey.shadow.mapSize.set(2048, 2048);
@@ -308,12 +308,27 @@ export function createWorld({ deferred = false } = {}) {
       if (this._stage?.cityKey && !this._classic) {
         // the Old City aerial is lit by its own raking key: drop the soft fills so
         // the shadow side falls to a cool violet and the lit planes carry the frame
-        hemi.intensity *= 0.5;
-        fill.intensity *= 0.35;
+        // shadows sit in a cool blue fill (sky above, never one purple wash);
+        // west faces take the warm sunset key
+        hemi.intensity *= 0.62;
+        hemi.color.setHex(0x5a78d8);
+        hemi.groundColor.setHex(0x1a1210);
+        fill.intensity *= 0.5;
+        fill.color.setHex(0x5a70c8);
         sun.intensity *= 0.55;
         castleKey.intensity = 0;
-        scene.fog.color.setHex(0x5a4c8a);
-        scene.fog.density = 0.0058;
+        scene.fog.color.setHex(0x46507e);
+        scene.fog.density = 0.0047;
+        if (this._low) {
+          // no shadow maps on 'low': a stronger sky/ground split and fill keep
+          // every form readable by its facing (roofs vs walls, lit vs lee side)
+          hemi.intensity = 0.95;
+          hemi.color.setHex(0x7088e0);
+          hemi.groundColor.setHex(0x120c0a);
+          fill.intensity = 0.55;
+        }
+      } else {
+        hemi.groundColor.setHex(0x241618);
       }
       if (this._classic) {
         // 1988: no sunset grade — neutral light so stone lands on EGA greys and
@@ -384,6 +399,7 @@ export function createWorld({ deferred = false } = {}) {
       if (on === !!this._low) return;
       this._low = on;
       this._applyStage();
+      if (!this._interior) this.setLook(this._look ?? 0);
     },
     /** Show or hide the dragon (the intro keeps it out of the close city shots). */
     setDragon(on) {

@@ -81,6 +81,8 @@ export default class TitleScene extends Scene {
     // debug: `cam=px,py,pz,lx,ly,lz` pins the camera (inspect a set up close)
     const cam = String(params.cam ?? '').split(',').map(Number);
     this.debugCam = cam.length === 6 && cam.every(Number.isFinite) ? cam : null;
+    // debug: `quality=low` renders the low-cost path (no shadow maps) in a still
+    this._forceLow = params.quality === 'low';
     this._buildDom();
     const view = params.view ?? 'card';
     this.setMode(POSES[view] || view === 'intro' ? view : 'card', { instant: true, tab: params.tab });
@@ -127,7 +129,9 @@ export default class TitleScene extends Scene {
       ]),
     ]);
     this.menuEl = h('section.por-title-menu', [
+      h('i.por-mm-cords'),
       h('div.por-mm-banner', [h('i.por-mm-banner-line'), h('i.por-mm-banner-gem'), h('i.por-mm-banner-crest')]),
+      h('i.por-mm-rod'),
       h('div.por-mm', [
         h('div.por-mm-kicker', ['Phlan · Year of the Worm']),
         this.menu.el,
@@ -370,7 +374,7 @@ export default class TitleScene extends Scene {
    * drift so menus stay responsive. Debug stills keep full quality.
    */
   _lowCost() {
-    if (this.ctx.settings?.get?.('quality') === 'low') return true;
+    if (this._forceLow || this.ctx.settings?.get?.('quality') === 'low') return true;
     if (this.ctx.debug?.active) return false;
     if (this._softGL === undefined) {
       this._softGL = false;
@@ -470,7 +474,7 @@ export default class TitleScene extends Scene {
     // world and its gilded logo entirely (see ClassicCard / render())
     const egaCard = !!this._classic && this.mode !== 'intro';
     this.ega.el.style.display = egaCard ? '' : 'none';
-    if (egaCard) this.ega.update(snap ? t : Math.floor(t * 12) / 12);
+    if (egaCard) this.ega.update(snap ? t : Math.floor(t * 12) / 12, { logo: this.mode === 'card' || this.mode === 'menu' });
     const logoA = egaCard ? 0 : Math.max(L.alpha * reveal, introLogo);
     this.logo.layout(this.camera, { width: L.width * (0.96 + 0.04 * reveal), cx: L.cx, cy: L.cy, alpha: logoA });
     this._layoutClassicSubs({ ...L, width: L.width * (0.96 + 0.04 * reveal) }, logoA);

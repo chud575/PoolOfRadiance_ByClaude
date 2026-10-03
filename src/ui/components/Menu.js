@@ -47,7 +47,8 @@ export class Menu {
         disabled: !!it.disabled,
         class: it.locked ? 'locked' : '',
         'aria-disabled': it.locked ? 'true' : null,
-        dataset: { id: it.id, ...(it.tip ? { tip: it.tip } : {}) },
+        dataset: { id: it.id, ...(it.tip || (it.locked && it.lockReason) ? { tip: it.tip ?? it.lockReason } : {}) },
+        title: it.locked && it.lockReason ? `Locked: ${it.lockReason}` : null,
         onclick: () => this.select(i),
         onmouseenter: () => !it.disabled && this.highlight(i),
       }, [

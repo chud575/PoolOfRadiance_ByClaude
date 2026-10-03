@@ -289,7 +289,7 @@ export function createChamber({ seed = 1337 } = {}) {
   // the party portraits use, so the council read as people, not mannequins
   const person = (ch, x, z, ry, q = 0.018, o = {}) => {
     const f = buildMiniature({ race: 'human', ...ch }, { pose: o.pose ?? 'stand', mod: o.mod, base: false, gear: o.gear ?? false, quality: Math.min(q, 0.0108), faceSize: 256, noWeapon: o.noWeapon ?? true, noShield: o.noShield ?? true, rayHead: true, headGain: 0.75 });
-    matteFigure(f);
+    matteFigure(f, { dim: o.dim ?? 1, rim: o.rim ?? null });
     f.position.set(x, 0, z);
     f.rotation.y = ry;
     if (o.lean) f.rotation.z = o.lean;
@@ -416,12 +416,12 @@ export function createChamber({ seed = 1337 } = {}) {
     clerk.add(quill);
     disposables.push(qg, quill.material, quill.material.map);
   }
-  // three adventurers seen from behind at the foot of the table: fighter in plate,
-  // cleric in mail and tabard, mage in robes with a staff
+  // the adventurers stand just outside the lens at the foot of the table (the
+  // camera is their point of view): kept for the shot's opening frames only
   // turned three-quarters toward the table so their faces and helms read in
   // profile against the candlelight (not featureless backs of heads)
-  person({ gender: 'male', classSpec: 'fighter', look: { seed: 61, head: 0, body: 0, cloth: 1, hair: 2 } }, -2.45, 2.2, Math.PI - 1.0, 0.013, { noWeapon: false, noShield: true, mod: 'talkL' });
-  person({ gender: 'female', classSpec: 'cleric', look: { seed: 62, head: 5, body: 5, cloth: 0, hair: 4 } }, 1.95, 2.5, Math.PI + 0.95, 0.013, { noWeapon: true, noShield: true, mod: 'talkR' });
+  person({ gender: 'male', classSpec: 'fighter', look: { seed: 61, head: 0, body: 0, cloth: 1, hair: 2 } }, -3.35, 3.7, Math.PI - 1.0, 0.013, { noWeapon: false, noShield: true, mod: 'talkL', dim: 0.2, rim: 0x7a3c12 });
+  person({ gender: 'female', classSpec: 'cleric', look: { seed: 62, head: 5, body: 5, cloth: 0, hair: 4 } }, 3.05, 3.9, Math.PI + 0.95, 0.013, { noWeapon: true, noShield: true, mod: 'talkR', dim: 0.2, rim: 0x7a3c12 });
 
   // ---- meshes ------------------------------------------------------------------------------
   const texMat = (name, extra = {}) => {
@@ -526,8 +526,8 @@ export function createChamber({ seed = 1337 } = {}) {
             float pile = 0.8 + 0.2 * cn(m * 140.0) + 0.08 * cn(m * 31.0);
             vec2 lz = abs(fract(vec2(m.x * 3.0 + m.y * 3.0, m.x * 3.0 - m.y * 3.0) * 0.5) - 0.5);
             float loz = smoothstep(0.42, 0.46, max(lz.x, lz.y));
-            vec3 c = vec3(0.085, 0.016, 0.014) * pile;
-            c = mix(c, vec3(0.05, 0.01, 0.01), loz * 0.5);
+            vec3 c = vec3(0.036, 0.009, 0.010) * pile;
+            c = mix(c, vec3(0.028, 0.007, 0.008), loz * 0.5);
             // border band of indigo with a gold meander, then the gilt binding
             float border = step(ex, 0.26);
             float meander = step(0.5, fract(m.y * 4.0 + step(0.145, ex) * 0.5)) * step(0.09, ex) * step(ex, 0.2);
@@ -535,7 +535,7 @@ export function createChamber({ seed = 1337 } = {}) {
             c = mix(c, vec3(0.3, 0.21, 0.07) * (0.8 + 0.4 * cn(m * 60.0)), step(ex, 0.05));
             // the worn lane: flattened, faded, greyed pile where feet go
             float lane = (1.0 - smoothstep(0.25, 0.6, abs(m.x - 1.2))) * (0.6 + 0.4 * cn(m * vec2(2.0, 0.4)));
-            c = mix(c, vec3(0.06, 0.028, 0.025) * (0.9 + 0.2 * cn(m * 90.0)), lane * 0.55);
+            c = mix(c, vec3(0.036, 0.018, 0.017) * (0.9 + 0.2 * cn(m * 90.0)), lane * 0.55);
             diffuseColor.rgb = c;
           }`);
     };
@@ -553,7 +553,7 @@ export function createChamber({ seed = 1337 } = {}) {
     fragmentShader: /* glsl */ `varying vec3 vW;
       void main(){
         float y = clamp((vW.y + 240.0 - 2.4) / 5.2, 0.0, 1.0);
-        vec3 c = mix(vec3(0.16, 0.12, 0.32), vec3(0.05, 0.08, 0.22), y);
+        vec3 c = mix(vec3(0.2, 0.26, 0.55), vec3(0.08, 0.12, 0.34), y);
         // leaded diamond quarries
         vec2 q = vec2(vW.z + vW.x, vW.y) * 2.6;
         vec2 d = abs(fract(vec2(q.x + q.y, q.x - q.y) * 0.5) - 0.5);
@@ -616,7 +616,7 @@ export function createChamber({ seed = 1337 } = {}) {
   // warm candle pools + cool window fill
   const lights = [];
   for (const [x, y, z, I, d] of [[0, 2.7, tz - 2.5, 22, 11], [0, 2.7, tz + 2.6, 22, 11], [lx + 0.5, 2.4, lz - 0.6, 3, 4], [0, 5.2, tz, 18, 12]]) {
-    const L = new THREE.PointLight(0xffa458, I, d, 1.7);
+    const L = new THREE.PointLight(0xffa458, I * 1.25, d, 2.1);
     L.position.set(x, y, z);
     L.userData.base = I;
     group.add(L);
@@ -624,20 +624,23 @@ export function createChamber({ seed = 1337 } = {}) {
   }
   // candle spill between the adventurers and the table (rims their shoulders and helms)
   // and a cool moonlit fill from the doors behind them, so plate and mail read from the back
-  const advRim = new THREE.PointLight(0xffa458, 7, 6, 1.6);
+  const advRim = new THREE.PointLight(0xffa458, 3, 6, 1.6);
   advRim.position.set(0, 1.9, 0.6);
   group.add(advRim);
-  // a candle-side rim for the left foreground adventurer (plate catches it on the
-  // shoulder and helm instead of reading as a flat blue cut-out)
-  const advRimL = new THREE.PointLight(0xffb060, 4.5, 4.2, 1.5);
-  advRimL.position.set(-1.35, 2.15, 1.05);
-  group.add(advRimL);
   const advFill = new THREE.PointLight(0x8090e0, 13, 9, 1.4);
   advFill.position.set(0.2, 2.8, 5.4);
   group.add(advFill);
   const winFill = new THREE.PointLight(0x5a6ad0, 10, 18, 1.4);
   winFill.position.set(-5.5, 5, 4);
   group.add(winFill);
+  // moonlight through the tall windows on both walls: cool shafts raking down
+  // across the floor and the councillors' backs, against the warm candle core
+  for (const sx of [-1, 1]) {
+    const moon = new THREE.SpotLight(0x7a90ff, 50, 18, 0.6, 0.7, 1.3);
+    moon.position.set(sx * (W / 2 + 1.5), 6.2, tz + 1.5);
+    moon.target.position.set(-sx * 1.2, 0.6, tz - 0.5);
+    group.add(moon, moon.target);
+  }
   const hearth = new THREE.PointLight(0xff7a30, 10, 9, 1.6);
   hearth.position.set(0, 0.8, -D / 2 + 1.4);
   group.add(hearth);

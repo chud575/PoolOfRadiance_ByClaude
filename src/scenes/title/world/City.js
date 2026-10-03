@@ -385,7 +385,30 @@ export function createCity({ seed = 1988 } = {}) {
       const mm = new THREE.Matrix4().makeTranslation(0, h, 0).premultiply(m);
       const keep = R.chance(0.5) ? 0 : 1;
       const list = R.chance(0.5) ? roofs : shake;
-      list.push(sootify(tint(gr.roof[keep].applyMatrix4(mm), new THREE.Color(list === roofs ? R.pick(roofCols) : R.pick(shakeCols)).multiplyScalar(0.62)), base + h, base + h + rise));
+      // the surviving slope is broken into bays between the rafters: some
+      // whole, some sagging off the ridge, some gone (rafters bare against the
+      // sky), and a ragged eave where tiles have slid off - never one clean card
+      {
+        const rc = new THREE.Color(list === roofs ? R.pick(roofCols) : R.pick(shakeCols)).multiplyScalar(0.62);
+        const nb = Math.max(2, Math.round((w + o * 2) / 1.7));
+        const bw = (w + o * 2) / nb;
+        const sg = keep === 0 ? -1 : 1;
+        for (let k = 0; k < nb; k++) {
+          const fate = R.next();
+          if (fate < 0.22 && k > 0 && k < nb - 1) continue; // fallen through
+          const oo = fate < 0.55 ? R.range(-dR * 0.22, o) : o * R.range(0.6, 1);
+          const sl = gableRoof(bw - 0.04, dR, rise, { o: oo, t: 0.2, ridge: false }).roof[keep];
+          if (fate > 0.8) {
+            // a sagging bay: hinged at the ridge, dropped toward the shell
+            const sag = R.range(0.12, 0.28);
+            sl.translate(0, -rise, 0);
+            sl.rotateX(sg * sag);
+            sl.translate(0, rise - 0.05, 0);
+          }
+          sl.translate(-(w + o * 2) / 2 + bw * (k + 0.5), 0, 0);
+          list.push(sootify(tint(sl.applyMatrix4(mm), rc.clone().multiplyScalar(R.range(0.8, 1.1))), base + h, base + h + rise));
+        }
+      }
       const nR = Math.max(3, Math.round(w / 0.7));
       for (let k = 0; k < nR; k++) {
         if (R.chance(0.3)) continue;
@@ -393,7 +416,33 @@ export function createCity({ seed = 1988 } = {}) {
         rr.translate(-w / 2 + 0.2 + (w - 0.4) * (k / (nR - 1)), 0, 0);
         beams.push(tint(worldUV(rr.applyMatrix4(mm), 1.5), 0x1e1612));
       }
-      for (const g2 of gr.gables) charred.push(sootify(tint(worldUV(g2.applyMatrix4(mm), 1.4), lime.clone().multiplyScalar(0.7)), base + h - 1, base + h + rise));
+      // gable ends broken down: the apex has fallen, leaving a ragged stepped
+      // top in the plaster and lath, one side often lower than the other
+      for (const sx of [-1, 1]) {
+        const half = dR / 2;
+        const cut = rise * R.range(0.2, 0.75);
+        const sh = new THREE.Shape();
+        sh.moveTo(-half, 0);
+        sh.lineTo(half, 0);
+        const n = 7;
+        for (let i = 0; i <= n; i++) {
+          const z = half - (2 * half * i) / n;
+          const rake = rise * (1 - Math.abs(z) / half);
+          const y = Math.max(0.05, Math.min(rake, cut + (R.next() - 0.5) * rise * 0.35 + (z * sx > 0 ? rise * 0.15 : -rise * 0.1)));
+          sh.lineTo(z, y);
+        }
+        sh.closePath();
+        const g2 = new THREE.ExtrudeGeometry(sh, { depth: 0.18, bevelEnabled: false });
+        g2.translate(0, 0, -0.09);
+        g2.rotateY(sx > 0 ? Math.PI / 2 : -Math.PI / 2);
+        g2.translate(sx * (w / 2), 0, 0);
+        charred.push(sootify(tint(worldUV(ni(g2).applyMatrix4(mm), 1.4), lime.clone().multiplyScalar(0.7)), base + h - 1, base + h + rise));
+      }
+      // the fallen roof and gable lie in a spill of tiles and rubble at the foot
+      {
+        const side = new THREE.Vector3(0, 0, (keep === 0 ? -1 : 1) * (d / 2 + 0.9)).applyMatrix4(m);
+        rubbleMound(side.x, side.z, R.range(1.2, 2.0), R.range(0.5, 0.9), base, 0x4a3a30);
+      }
       // the surviving slope has lost tiles in places: charred holes with the
       // battens showing across them
       {
@@ -1071,31 +1120,61 @@ export function createCity({ seed = 1988 } = {}) {
       lamps.push(new THREE.Vector3(X, GROUND + 1.62, Z));
       braziers.push(new THREE.Vector3(X, GROUND + 1.36, Z));
     }
+    // warm light spilled on the steps and setts: the open doors throw a long
+    // pool down the stairs, each lit ground-floor window a soft patch, each
+    // brazier a ring of firelight on the stones
+    {
+      const pools = [];
+      const pool = (x, z, sx, sz, y = GROUND + 0.03, a = 1) => {
+        const g = new THREE.PlaneGeometry(sx, sz);
+        g.rotateX(-Math.PI / 2);
+        g.translate(x, y, z);
+        const c = new THREE.Color(0xffa050).multiplyScalar(a);
+        tint(g, c);
+        pools.push(g);
+      };
+      for (let k = 0; k < 4; k++) pool(hx, pz + 2.5 - k * 0.21 + 0.6, 4.2 - k * 0.3, 2.2, GROUND + (k + 1) * 0.26 + 0.01, 0.55);
+      pool(hx, pz + 7.4, 7.5, 6.5, GROUND + 0.03, 0.85);
+      for (const lx of [-7.2, 7.2]) pool(hx + lx, pz + 6.2, 6.4, 6.4, GROUND + 0.035, 0.6);
+      for (let i = 0; i < 8; i++) if (i < 2 || i > 5) pool(hx - 7.7 + i * 2.2, pz + 1.1, 2.0, 2.0, GROUND + 0.03, 0.4);
+      const pm = new THREE.MeshBasicMaterial({ map: getGlowTexture(), vertexColors: true, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, fog: true, polygonOffset: true, polygonOffsetFactor: -2 });
+      disposables.push(pm);
+      const pmesh = new THREE.Mesh(merge(pools), pm);
+      pmesh.renderOrder = 2;
+      pmesh.name = 'hallPools';
+      group.add(pmesh);
+    }
     banners.push([hx - 3.6, pz + 3.3], [hx + 3.6, pz + 3.3]);
     tower(hx + 10.5, hz, 2.2, 19, { roof: 'cone', lit: 1 });
     // townsfolk gathered at the steps to read the proclamation, a guard at the
     // door: sculpted figures (faces, hands, clothes) from the miniature rig
+    // [x, z, facing, character, scale]: a knot of readers at the steps, two
+    // turned to talk across the group, a pair half-facing the street (and the
+    // camera), a dwarf and a lanky sellsword so the heights are never one row
+    const toCam = -0.72; // facing back along the street toward the lens
     const folk = [
-      [-3.0, 5.6, Math.PI - 0.15, { gender: 'male', classSpec: 'fighter', look: { seed: 71, head: 1, body: 0, cloth: 2, hair: 3 } }],
-      [-1.9, 6.1, Math.PI + 0.25, { gender: 'female', classSpec: 'cleric', look: { seed: 72, head: 4, body: 5, cloth: 1, hair: 4 } }],
-      [-0.6, 5.7, Math.PI - 0.35, { gender: 'male', classSpec: 'thief', look: { seed: 73, head: 3, body: 2, cloth: 4, hair: 0 } }],
-      [0.6, 6.4, Math.PI + 0.1, { gender: 'male', classSpec: 'magicUser', look: { seed: 74, head: 6, body: 4, cloth: 6, hair: 8 } }],
-      [1.8, 5.6, Math.PI - 0.5, { gender: 'female', classSpec: 'thief', look: { seed: 75, head: 5, body: 3, cloth: 3, hair: 2 } }],
-      [-4.2, 6.6, Math.PI + 0.4, { gender: 'male', classSpec: 'cleric', look: { seed: 76, head: 2, body: 7, cloth: 5, hair: 7 } }],
+      [-3.0, 5.6, Math.PI - 0.15, { gender: 'male', classSpec: 'fighter', look: { seed: 71, head: 1, body: 0, cloth: 2, hair: 3 } }, 1.06],
+      [-1.9, 6.1, Math.PI + 0.25, { gender: 'female', classSpec: 'cleric', look: { seed: 72, head: 4, body: 5, cloth: 1, hair: 4 } }, 0.94],
+      [-0.7, 6.0, -Math.PI / 2 + 0.3, { gender: 'male', classSpec: 'thief', look: { seed: 73, head: 3, body: 2, cloth: 4, hair: 0 } }, 1.0],
+      [0.5, 6.3, Math.PI / 2 + 0.5, { gender: 'male', classSpec: 'magicUser', look: { seed: 74, head: 6, body: 4, cloth: 6, hair: 8 } }, 0.98],
+      [1.9, 7.4, toCam + 0.35, { gender: 'female', classSpec: 'thief', look: { seed: 75, head: 5, body: 3, cloth: 3, hair: 2 } }, 0.92],
+      [-4.4, 7.0, toCam - 0.1, { gender: 'male', classSpec: 'cleric', look: { seed: 76, head: 2, body: 7, cloth: 5, hair: 7 } }, 1.02],
+      [-2.4, 7.3, Math.PI - 0.6, { race: 'dwarf', gender: 'male', classSpec: 'fighter', look: { seed: 78, head: 2, body: 1, cloth: 7, hair: 5 } }, 1.0],
+      [3.1, 6.0, Math.PI + 0.6, { gender: 'male', classSpec: 'fighter', look: { seed: 79, head: 7, body: 6, cloth: 0, hair: 6 } }, 1.1],
     ];
     // built on demand (only the City Hall shot ever sees them)
     buildCrowd = () => {
       // varied, asymmetric stances: some talk to a neighbour with a gesture, some
       // hold their hands out to the brazier, the rest read; each leans a little
-      const mods = ['talkL', null, 'talkR', 'warm', 'talkL', null];
-      folk.forEach(([fx, fz, ry, ch], i) => {
+      const mods = ['talkL', null, 'talkR', 'talkL', 'warm', 'talkR', null, 'warm'];
+      folk.forEach(([fx, fz, ry, ch, sc], i) => {
         const f = buildMiniature({ race: 'human', ...ch }, { pose: 'stand', mod: mods[i] ?? undefined, base: false, gear: false, quality: 0.0108, faceSize: 256, noWeapon: true, noShield: true, rayHead: true, headGain: 0.75, fog: true });
         // backlit by the open doors: dim the front, a warm lit outline
         matteFigure(f, { dim: 0.42, rim: 0x6a3410 });
         f.position.set(hx + fx, GROUND, pz + fz);
         f.rotation.y = ry;
         f.rotation.z = (i % 2 ? 1 : -1) * 0.03;
-        f.scale.setScalar(0.96 + 0.08 * ((i * 37) % 5) / 4);
+        f.scale.setScalar(sc ?? 1);
         group.add(f);
         figures.push(f);
         const sh = contactShadow(0.45, 0.36);

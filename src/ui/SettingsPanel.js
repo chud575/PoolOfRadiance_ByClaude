@@ -112,6 +112,15 @@ function phlanSeal() {
   return s;
 }
 
+const EGA16 = ['#000000', '#0000AA', '#00AA00', '#00AAAA', '#AA0000', '#AA00AA', '#AA5500', '#AAAAAA', '#555555', '#5555FF', '#55FF55', '#55FFFF', '#FF5555', '#FF55FF', '#FFFF55', '#FFFFFF'];
+/** A palette-swatch chip: the sixteen EGA inks in a 8x2 tile set into a gilt-rimmed badge. */
+function egaChip(label) {
+  return h('span.por-set-badge', { title: 'The sixteen-colour EGA palette' }, [
+    h('span.por-set-badge-sw', { 'aria-hidden': 'true' }, EGA16.map((c) => h('i', { style: { background: c } }))),
+    h('span.por-set-badge-lbl', [label]),
+  ]);
+}
+
 const ROT = { '↑': 0, '→': 90, '↓': 180, '←': 270 };
 const svgEl = (markup, cls) => {
   const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -125,13 +134,24 @@ const svgEl = (markup, cls) => {
 export function arrowSvg(dir) {
   return svgEl(`<g transform="rotate(${ROT[dir] ?? 0} 8 8)"><path d="M8 2.6 L12.6 7.6 H9.6 V13.4 H6.4 V7.6 H3.4 Z" fill="currentColor"/></g>`, 'por-arrow');
 }
-/** D-pad glyph: the cross with the pressed arm lit. */
+/**
+ * D-pad glyph: the same dark-enamel cross a controller has (bevelled, gilt
+ * rim), with the pressed arm lit in molten gold and a dark chevron on it.
+ */
 function dpadSvg(dir) {
-  // a broad dark cross; the pressed arm filled gilt right through the hub, with
-  // a big black arrowhead pointing out along it: Up/Down/Left/Right read at a glance
-  return svgEl(`<path d="M5.4 0.8h5.2v4.6h4.6v5.2h-4.6v4.6H5.4v-4.6H0.8V5.4h4.6z" fill="rgba(8,10,20,0.92)" stroke="currentColor" stroke-opacity="0.55" stroke-width="0.6" stroke-linejoin="round"/>`
-    + `<g transform="rotate(${ROT[dir] ?? 0} 8 8)"><path d="M5.6 1.0h4.8v8.2H5.6z" fill="#f5d98b" stroke="#fff4cc" stroke-width="0.35"/>`
-    + `<path d="M8 1.9 L10.1 5.6 H8.9 V8.4 H7.1 V5.6 H5.9 Z" fill="#140c02"/></g>`, 'por-dpad');
+  const id = `dp${ROT[dir] ?? 0}`;
+  const cross = 'M5.7 1.2 Q5.7 0.7 6.2 0.7 H9.8 Q10.3 0.7 10.3 1.2 V5.7 H14.8 Q15.3 5.7 15.3 6.2 V9.8 Q15.3 10.3 14.8 10.3 H10.3 V14.8 Q10.3 15.3 9.8 15.3 H6.2 Q5.7 15.3 5.7 14.8 V10.3 H1.2 Q0.7 10.3 0.7 9.8 V6.2 Q0.7 5.7 1.2 5.7 H5.7 Z';
+  return svgEl(`<defs>`
+    + `<radialGradient id="${id}e" cx="0.42" cy="0.3" r="0.8"><stop offset="0" stop-color="#3a4266"/><stop offset="0.72" stop-color="#12162a"/><stop offset="1" stop-color="#080a16"/></radialGradient>`
+    + `<linearGradient id="${id}g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fffbe6"/><stop offset="0.4" stop-color="#ffd970"/><stop offset="1" stop-color="#c8902c"/></linearGradient>`
+    + `</defs>`
+    + `<path d="${cross}" fill="url(#${id}e)" stroke="#c9a85c" stroke-width="0.7" stroke-linejoin="round"/>`
+    + `<circle cx="8" cy="8" r="1.25" fill="#070912" opacity="0.85"/>`
+    + `<g transform="rotate(${ROT[dir] ?? 0} 8 8)">`
+    + `<path d="M5.95 1.05 H10.05 V6.6 L8 8 L5.95 6.6 Z" fill="url(#${id}g)" stroke="#fff4cc" stroke-width="0.3" stroke-linejoin="round"/>`
+    + `<path d="M8 2.2 L9.6 4.9 H6.4 Z" fill="#1c1204"/>`
+    + `</g>`
+    + `<path d="M1.3 6.3 H5.7 M6.3 1.3 H9.7 M10.3 6.3 H14.7" stroke="rgba(255,255,255,0.22)" stroke-width="0.35" fill="none"/>`, 'por-dpad');
 }
 const keyCap = (code) => {
   const l = keyLabel(code);
@@ -181,7 +201,11 @@ export class SettingsPanel {
     this.focus = 0;
     this.capture = null; // {action, slot} while waiting for a key
     this.el = h(`div.por-settings.por-settings--${variant}`);
+    // keyboard focus follows the controller/keyboard cursor into the panel and
+    // returns to whatever held it (the title menu, a HUD button) on close
+    this._prevFocus = typeof document !== 'undefined' ? document.activeElement : null;
     this._build();
+    if (typeof requestAnimationFrame !== 'undefined') requestAnimationFrame(() => this._focusRow());
     this._onKey = this._onKey.bind(this);
     window.addEventListener('keydown', this._onKey, true);
     this._offBus = ctx.bus.on('input:action', ({ action, code }) => this._onPad(action, code));
@@ -236,12 +260,12 @@ export class SettingsPanel {
       {
         id: 'graphics', label: 'Graphics', blurb: 'How Phlan is drawn.',
         rows: [
-          { key: 'quality', label: 'Quality preset', desc: 'Balances fidelity and speed: render resolution, anti-aliasing and bloom.', type: 'choice', options: [['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['ultra', 'Ultra']] },
-          { key: 'classicMode', label: 'Classic 1988 mode', desc: 'The sixteen-colour EGA palette, 320×200 pixels and scanlines — as it looked on a PC in 1988. Toggle any time with F2.', type: 'toggle', badge: 'EGA' },
+          { key: 'quality', label: 'Quality preset', desc: 'Resolution, anti-aliasing and bloom in one.', help: 'Balances fidelity and speed: render resolution, anti-aliasing and bloom together. Software renderers start on Low.', type: 'choice', options: [['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['ultra', 'Ultra']] },
+          { key: 'classicMode', label: 'Classic 1988 mode', desc: 'Sixteen EGA colours at 320×200, as in 1988. Toggle with F2.', help: 'The sixteen-colour EGA palette, 320×200 pixels and the original 5×7 lettering — as Phlan looked on a PC in 1988. Toggle any time with F2.', type: 'toggle', badge: 'EGA' },
           { key: 'bloom', label: 'Bloom', desc: 'Glow around torches, spells and the Pool itself.', type: 'toggle' },
-          { key: 'antialias', label: 'Anti-aliasing', desc: 'Smooths jagged edges. SMAA is sharper; FXAA is cheaper.', type: 'choice', options: [['none', 'Off'], ['fxaa', 'FXAA'], ['smaa', 'SMAA']] },
-          { key: 'pixelRatioCap', label: 'Render resolution', desc: 'Pixel density on high-DPI displays. Lower it if the frame rate stutters.', type: 'choice', options: [[1, '100%'], [1.5, '150%'], [2, '200%']] },
-          { key: 'cameraBob', label: 'Camera motion', desc: 'Gentle head-bob and sway while walking the streets.', type: 'toggle' },
+          { key: 'antialias', label: 'Anti-aliasing', desc: 'SMAA is sharper; FXAA is cheaper.', help: 'Smooths jagged edges. SMAA is sharper; FXAA is cheaper.', type: 'choice', options: [['none', 'Off'], ['fxaa', 'FXAA'], ['smaa', 'SMAA']] },
+          { key: 'pixelRatioCap', label: 'Render resolution', desc: 'Pixel density on high-DPI screens.', help: 'Pixel density on high-DPI displays. Lower it if the frame rate stutters.', type: 'choice', options: [[1, '100%'], [1.5, '150%'], [2, '200%']] },
+          { key: 'cameraBob', label: 'Camera motion', desc: 'Gentle head-bob and sway while walking.', help: 'Gentle head-bob and sway while walking the streets.', type: 'toggle' },
         ],
       },
       {
@@ -355,9 +379,9 @@ export class SettingsPanel {
   _note(id) {
     if (id === 'graphics') {
       const ega = ['#000000', '#0000AA', '#00AA00', '#00AAAA', '#AA0000', '#AA00AA', '#AA5500', '#AAAAAA', '#555555', '#5555FF', '#55FF55', '#55FFFF', '#FF5555', '#FF55FF', '#FFFF55', '#FFFFFF'];
-      return h('div.por-set-note', [
+      return h('div.por-set-note.compact', [
         h('div.por-set-swatches', ega.map((c) => h('i', { style: { background: c } }))),
-        h('div.por-set-note-text', [h('b', ['The 1988 palette. ']), 'Classic mode draws Phlan in these sixteen EGA colours, with the original 5×7 lettering.']),
+        h('div.por-set-note-text', [h('b', ['The 1988 palette: ']), 'classic mode paints Phlan in these sixteen colours.']),
       ]);
     }
     if (id === 'audio') {
@@ -430,8 +454,8 @@ export class SettingsPanel {
 
   _row(row) {
     const ctl = h('div.por-set-control');
-    const el = h('div.por-set-row', { dataset: { key: row.key }, onmouseenter: () => this._setFocus(this.rowEls.indexOf(el)) }, [
-      h('div.por-set-label', [h('span.por-set-name', [row.label, row.badge ? h('span.por-set-badge', [row.badge]) : null]), row.desc ? h('span.por-set-desc', [row.desc]) : null]),
+    const el = h('div.por-set-row', { dataset: { key: row.key }, role: 'group', 'aria-label': row.label, tabindex: '-1', onmouseenter: () => this._setFocus(this.rowEls.indexOf(el)) }, [
+      h('div.por-set-label', [h('span.por-set-name', [row.label, row.badge ? egaChip(row.badge) : null]), row.desc ? h('span.por-set-desc', [row.desc]) : null]),
       ctl,
     ]);
     el._row = row;
@@ -535,7 +559,7 @@ export class SettingsPanel {
           title: keys[i] ? undefined : 'Empty — click to bind a key',
           }, [waiting ? 'Press a key…' : keys[i] ? keyCap(keys[i]) : h('span.por-bind-add', [h('i'), 'Bind'])]);
         };
-        const row = h('div.por-bind-row', { dataset: { action } }, [
+        const row = h('div.por-bind-row', { dataset: { action }, role: 'group', 'aria-label': label, tabindex: '-1' }, [
           h('span.por-bind-label', [label]), slot(0), slot(1),
           h('span.por-bind-pad', pads.length ? pads.map((p) => padGlyph(p)) : [padGlyph(null)]),
         ]);
@@ -631,8 +655,22 @@ export class SettingsPanel {
     this.helpEl.classList.toggle('warn', !!r._conflict);
   }
 
+  /** Move DOM focus onto the focused row (screen readers and focus rings follow the cursor). */
+  _focusRow() {
+    const r = this.rowEls?.[this.focus];
+    if (!r || !this.el.isConnected || typeof r.focus !== 'function' || typeof document === 'undefined') return;
+    const a = document.activeElement;
+    // leave focus alone while the pointer is working a control inside the row
+    if (a && a !== document.body && typeof r.contains === 'function' && r.contains(a) && a !== r) return;
+    try { r.focus({ preventScroll: true }); } catch { /* old engines */ }
+  }
+
   _markFocus() {
-    this.rowEls.forEach((r, j) => r.classList.toggle('focus', j === this.focus));
+    this.rowEls.forEach((r, j) => {
+      r.classList.toggle('focus', j === this.focus);
+      r.tabIndex = j === this.focus ? 0 : -1;
+    });
+    this._focusRow();
     this._updateHelp();
     this._updateScrollCue();
     const r = this.rowEls[this.focus];
@@ -723,7 +761,11 @@ export class SettingsPanel {
     window.removeEventListener('keydown', this._onKey, true);
     this._offBus?.();
     this._offSettings?.();
+    const hadFocus = typeof document !== 'undefined' && typeof this.el.contains === 'function' && this.el.contains(document.activeElement);
     this.el.remove();
+    if (hadFocus && this._prevFocus?.isConnected) {
+      try { this._prevFocus.focus({ preventScroll: true }); } catch { /* ignore */ }
+    }
   }
 }
 

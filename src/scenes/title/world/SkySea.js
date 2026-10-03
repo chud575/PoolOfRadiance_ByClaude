@@ -123,6 +123,34 @@ export function createSea(U, { level = -15, nearZ = -150, width = 6000, depth = 
         float spark = step(0.55, vnoise(p * vec2(1.4, 3.5) + uTime * vec2(0.6, 0.2)));
         c += vec3(9.0, 5.0, 2.2) * g * (0.35 + spark * 1.4);
         c += vec3(1.2, 0.55, 0.25) * pow(max(dot(normalize(r), uSunDir), 0.0), 60.0) * 0.35;
+        // sun glints: wave facets tilted toward the low sun flash warm across a
+        // broad band of the bay (not only on the glitter path), finest up close
+        {
+          float facing = pow(max(dot(normalize(r), uSunDir), 0.0), 14.0);
+          float crest = vnoise(p * vec2(0.9, 2.3) + vec2(uTime * 0.45, -uTime * 0.18)) * vnoise(p * vec2(2.1, 0.7) - vec2(uTime * 0.3, 0.0));
+          float glint = smoothstep(0.42, 0.62, crest) * (1.0 - smoothstep(120.0, 900.0, dist));
+          c += vec3(1.9, 1.05, 0.5) * facing * glint * 2.2 * (1.0 - uClassic);
+          // and a warm sheen on the sunward swell faces
+          c += vec3(0.32, 0.15, 0.07) * pow(max(dot(n, normalize(vec3(uSunDir.x, 0.35, uSunDir.z))), 0.0), 6.0) * (1.0 - smoothstep(200.0, 1400.0, dist)) * (1.0 - uClassic);
+        }
+        // surf: foam lapping at the harbour quay face (z = -159) and round the
+        // piers, a broken white band that breathes in and out with the swell
+        {
+          float dq = -159.0 - vWorld.z;
+          float dp = 1e3;
+          for (int i = 0; i < 4; i++) {
+            float px = i == 0 ? -70.0 : i == 1 ? -30.0 : i == 2 ? 20.0 : 64.0;
+            float d = max(abs(vWorld.x - px) - 1.5, (-179.0 - vWorld.z));
+            dp = min(dp, max(d, 0.0));
+          }
+          float ds = max(min(dq, dp), 0.0);
+          float br = vnoise(p * vec2(0.35, 0.9) + vec2(uTime * 0.2, 0.0));
+          float lap = 0.5 + 0.5 * sin(uTime * 1.1 + p.x * 0.07 + br * 3.0);
+          float band = 1.0 - smoothstep(0.2, 1.2 + 2.4 * lap, ds);
+          float lace = smoothstep(0.35, 0.75, vnoise(p * vec2(0.8, 1.6) - vec2(0.0, uTime * 0.35)) + band * 0.35);
+          float foam = band * lace * (1.0 - smoothstep(150.0, 600.0, dist)) * (1.0 - uClassic);
+          c = mix(c, vec3(0.78, 0.72, 0.8) * (0.55 + 0.45 * fres), foam * 0.7);
+        }
         // haze toward the horizon
         vec3 hor = duskSky(normalize(vec3(v.x, 0.001, v.z)), uSunDir, uTime, 0.0);
         c = mix(c, hor, smoothstep(300.0, 2400.0, dist) * 0.9);

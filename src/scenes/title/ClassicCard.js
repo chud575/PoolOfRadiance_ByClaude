@@ -25,6 +25,60 @@ const hash = (i, j = 0) => {
   return v - Math.floor(v);
 };
 
+/**
+ * Dragon sprite, nose left, rasterised once into palette letters on a 40x22
+ * grid: dark grey hide with a light grey belly, a yellow eye and horn, a whip
+ * tail ending in a spade, and one bat wing (light red finger bones, red
+ * membrane, scalloped trailing edge) in two frames of wing beat (up / down).
+ */
+const DRAGON_INK = { d: EGA.dgrey, l: EGA.lgrey, r: EGA.red, R: EGA.lred, y: EGA.yellow };
+function dragonFrame(up) {
+  const W2 = 40, H2 = 22, oy = 11;
+  const g = Array.from({ length: H2 }, () => Array(W2).fill('.'));
+  const put = (x, y, c) => { x = Math.round(x); y = Math.round(y); if (x >= 0 && x < W2 && y >= 0 && y < H2) g[y][x] = c; };
+  const line = (x0, y0, x1, y1, c) => {
+    const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) * 2 + 1;
+    for (let i = 0; i <= n; i++) put(x0 + ((x1 - x0) * i) / n, y0 + ((y1 - y0) * i) / n, c);
+  };
+  // wing first (the body overlaps its root)
+  const A = [10, oy - 1], B = [29, oy - 1], T = up ? [25, 0] : [21, H2 - 1];
+  const cross = (o, p, q) => (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0]);
+  for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) {
+    const P = [x + 0.5, y + 0.5];
+    const c1 = cross(A, T, P), c2 = cross(T, B, P), c3 = cross(B, A, P);
+    if (!((c1 >= 0 && c2 >= 0 && c3 >= 0) || (c1 <= 0 && c2 <= 0 && c3 <= 0))) continue;
+    // scallops: bite arcs out of the trailing edge between the fingers
+    const tx = T[0] - B[0], ty = T[1] - B[1];
+    const L = Math.hypot(tx, ty);
+    const along = ((P[0] - B[0]) * tx + (P[1] - B[1]) * ty) / (L * L);
+    const dist = Math.abs(cross(B, T, P)) / L;
+    if (dist < 1.5 * Math.abs(Math.sin(along * Math.PI * 3)) && along > 0.05 && along < 0.95) continue;
+    put(x, y, 'r');
+  }
+  line(A[0], A[1], T[0], T[1], 'R'); // leading-edge arm bone
+  const Wr = [A[0] + (T[0] - A[0]) * 0.55, A[1] + (T[1] - A[1]) * 0.55];
+  for (const f of [0.34, 0.67]) line(Wr[0], Wr[1], B[0] + (T[0] - B[0]) * f, B[1] + (T[1] - B[1]) * f, 'R');
+  // body, belly, legs
+  for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) {
+    const ex = (x + 0.5 - 17.5) / 8.5, ey = (y + 0.5 - (oy + 0.5)) / 2.2;
+    if (ex * ex + ey * ey <= 1) put(x, y, y > oy && Math.abs(x - 17) < 6 ? 'l' : 'd');
+  }
+  line(14, oy + 2, 13, oy + 4, 'd');
+  line(21, oy + 2, 22, oy + 4, 'd');
+  // neck and head (nose left), eye and horn
+  line(10, oy, 5, oy - 2, 'd');
+  line(10, oy + 1, 5, oy - 1, 'd');
+  for (let x = 0; x <= 5; x++) put(x, oy - 2, 'd');
+  for (let x = 1; x <= 5; x++) put(x, oy - 3, 'd');
+  put(3, oy - 3, 'y');
+  put(5, oy - 4, 'l');
+  // tail: a lazy S out behind, ending in a spade
+  for (let x = 26; x <= 37; x++) put(x, oy + 1 + Math.round(Math.sin((x - 26) * 0.35) * 1.4 + (x - 26) * 0.12), 'd');
+  put(38, oy + 3, 'd'); put(39, oy + 2, 'd'); put(39, oy + 3, 'd'); put(39, oy + 4, 'd');
+  return g.map((r) => r.join(''));
+}
+const DRAGON_FRAMES = [dragonFrame(true), dragonFrame(false)];
+
 export class ClassicCard {
   constructor() {
     this.el = document.createElement('canvas');
@@ -65,7 +119,9 @@ export class ClassicCard {
 
   /** 5x7 text; `bold` doubles each column (the 1988 title's chunky face). */
   _text(str, cx, y, color, { sx = 1, sy = 1, bold = false, shadow = null } = {}) {
-    const adv = (GLYPH_W + 1 + (bold ? 1 : 0)) * sx;
+    // bold thickens each stroke by one EGA pixel (the 1988 title's weight),
+    // never by a whole scaled column
+    const adv = (GLYPH_W + 1) * sx + (bold ? 1 : 0);
     const width = str.length * adv - sx;
     const x0 = Math.round(cx - width / 2);
     const draw = (ox, oy, c) => {
@@ -76,7 +132,7 @@ export class ClassicCard {
         for (let gx = 0; gx < GLYPH_W; gx++) {
           for (let gy = 0; gy < GLYPH_H; gy++) {
             if (!((cols[gx] >> gy) & 1)) continue;
-            this.g.fillRect(px + gx * sx, y + oy + gy * sy, sx * (bold ? 2 : 1), sy);
+            this.g.fillRect(px + gx * sx, y + oy + gy * sy, sx + (bold ? 1 : 0), sy);
           }
         }
         px += adv;
@@ -182,32 +238,33 @@ export class ClassicCard {
   }
 
   _dragon(t) {
-    // every 20 s it crosses the sky right to left, below the title lines
+    // every 20 s it crosses the sky right to left between the titles and the
+    // rooftops: a hand-placed EGA sprite (dark grey hide, light grey belly,
+    // red membranes on light red wing bones, a yellow eye), whole pixels only
     const P = 20;
     const k = (((t + 19.4) % P) + P) % P / 12;
     if (k > 1) return;
-    const x = 340 - k * 380;
-    const y = 76 - k * 8 + Math.sin(t * 2) * 1.5;
-    const up = Math.floor(t * 4) % 2 === 0;
+    const x = Math.round(340 - k * 384);
+    const y = Math.round(74 - k * 6 + Math.sin(t * 2) * 1.5);
+    const frame = DRAGON_FRAMES[Math.floor(t * 4) % 2];
     const g = this.g;
-    g.fillStyle = EGA.dgrey;
-    // body and neck/tail (nose to the left)
-    g.fillRect(x - 6, y, 14, 2);
-    g.fillRect(x - 10, y - 1, 5, 2);
-    g.fillRect(x - 12, y - 2, 3, 2);
-    g.fillRect(x + 8, y + 1, 8, 1);
-    g.fillRect(x + 16, y + 2, 4, 1);
-    // wings: two frames
-    if (up) {
-      for (let i = 0; i < 7; i++) g.fillRect(x - 2 + i, y - 1 - i, 6 - Math.floor(i / 2), 1);
-    } else {
-      for (let i = 0; i < 5; i++) g.fillRect(x - 3 + i, y + 2 + i, 7 - i, 1);
-      for (let i = 0; i < 3; i++) g.fillRect(x - 1 + i, y - 1 - i, 4, 1);
+    for (let r = 0; r < frame.length; r++) {
+      const row = frame[r];
+      for (let c = 0; c < row.length; c++) {
+        const col = DRAGON_INK[row[c]];
+        if (!col) continue;
+        g.fillStyle = col;
+        g.fillRect(x + c - 20, y + r - 11, 1, 1);
+      }
     }
-    this._px(x - 12, y - 2, EGA.lred);
   }
 
-  update(t) {
+  /**
+   * @param {number} t
+   * @param {{logo?: boolean}} [o] logo:false while a panel (settings, load,
+   *   credits) is open — the title lines would peek out around its frame
+   */
+  update(t, { logo = true } = {}) {
     const g = this.g;
     g.fillStyle = EGA.black;
     g.fillRect(0, 0, W, H);
@@ -215,10 +272,12 @@ export class ClassicCard {
       const on = Math.floor(t * 1.3 + s.tw * 17) % 9 !== 0;
       if (on) this._px(s.x, s.y, s.tw > 0.8 ? EGA.white : s.tw > 0.35 ? EGA.lgrey : EGA.dgrey);
     }
-    this._text('ADVANCED DUNGEONS & DRAGONS', 160, 12, EGA.lred);
-    this._text('POOL OF RADIANCE', 160, 26, EGA.yellow, { sx: 2, sy: 2, bold: true, shadow: EGA.red });
-    this._text('FORGOTTEN REALMS', 160, 47, EGA.lcyan);
-    this._dragon(t);
+    if (logo) {
+      this._text('ADVANCED DUNGEONS & DRAGONS', 160, 12, EGA.lred);
+      this._text('POOL OF RADIANCE', 160, 26, EGA.yellow, { sx: 2, sy: 2, bold: true, shadow: EGA.red });
+      this._text('FORGOTTEN REALMS', 160, 47, EGA.lcyan);
+      this._dragon(t);
+    }
     this._skylineDraw(t);
     // the dithered horizon band, then the grey plaza
     for (let y = 128; y < 131; y++) for (let x = (y % 2); x < W; x += 2) this._px(x, y, EGA.dgrey);
@@ -232,5 +291,7 @@ export class ClassicCard {
     this._pool(t);
     this._brazier(92, t, 0);
     this._brazier(228, t, 1);
+    // the publisher's line of the 1988 card, in the same slot and lettering
+    if (logo) this._text('A FAN HOMAGE', 160, 162, EGA.white, { bold: true });
   }
 }

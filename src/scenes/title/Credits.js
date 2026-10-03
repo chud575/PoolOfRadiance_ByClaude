@@ -2,48 +2,59 @@ import { h } from '../../ui/UI.js';
 
 /** Credits text (plain data; the crawl renders it). */
 const CREDITS = [
-  ['s', 'A modern homage'],
-  ['gap'],
-  ['r', 'In memory of the original', 'Pool of Radiance (1988)\nStrategic Simulations, Inc. · TSR, Inc.'],
-  ['r', 'The Gold Box engine', 'Designed and programmed by the SSI Special Projects Group'],
-  ['r', 'The Forgotten Realms', 'Created by Ed Greenwood'],
-  ['gap'],
-  ['h2', 'This homage'],
-  ['r', 'Direction, design, code & art', 'Claude'],
-  ['r', 'Rules engine', 'AD&D 1st Edition, implemented from the books'],
-  ['r', 'Graphics', 'Three.js — every texture, model and glyph generated procedurally'],
-  ['r', 'Sound', 'WebAudio synthesis — no recorded samples'],
-  ['r', 'Typography', 'Your system’s finest serif, gilded in a shader'],
-  ['gap'],
-  ['h2', 'With thanks'],
-  ['p', 'To everyone who mapped the Slums on graph paper, argued over who carries the wand, and saved before opening every door.'],
-  ['gap'],
-  ['p', 'This is a non-commercial fan tribute. Advanced Dungeons & Dragons, Forgotten Realms and Pool of Radiance are trademarks of their respective owners; no affiliation is claimed.'],
-  ['gap'],
-  ['s', 'The Council of Phlan thanks you for your service.'],
+  [
+    ['s', 'A modern homage'],
+    ['gap'],
+    ['r', 'In memory of the original', 'Pool of Radiance (1988)\nStrategic Simulations, Inc. · TSR, Inc.'],
+    ['r', 'The Gold Box engine', 'Designed and programmed by the SSI Special Projects Group'],
+    ['r', 'The Forgotten Realms', 'Created by Ed Greenwood'],
+  ],
+  [
+    ['h2', 'This homage'],
+    ['r', 'Direction, design, code & art', 'Claude'],
+    ['r', 'Rules engine', 'AD&D 1st Edition, implemented from the books'],
+    ['r', 'Graphics', 'Three.js — every texture, model and glyph generated procedurally'],
+    ['r', 'Sound', 'WebAudio synthesis — no recorded samples'],
+    ['r', 'Typography', 'A broad-nib book hand, written in code and gilded in a shader'],
+  ],
+  [
+    ['h2', 'With thanks'],
+    ['p', 'To everyone who mapped the Slums on graph paper, argued over who carries the wand, and saved before opening every door.'],
+    ['gap'],
+    ['p', 'This is a non-commercial fan tribute. Advanced Dungeons & Dragons, Forgotten Realms and Pool of Radiance are trademarks of their respective owners; no affiliation is claimed.'],
+    ['gap'],
+    ['s', 'The Council of Phlan thanks you for your service.'],
+  ],
 ];
+/** Seconds each leaf of the credits holds, and its cross-fade. */
+const PAGE = 8;
+const FADE = 1.1;
 
 /**
- * Slow credits crawl on an illuminated parchment plate over the dusk (the
- * scene stays visible around it). Scroll position is a pure function of clock
- * time (deterministic under a frozen clock); the plate's mask fades lines in
- * and out inside the parchment, never into the void.
+ * Credits on an illuminated vellum leaf over the dusk (the scene stays visible
+ * around it): three pages, each set as a block centred on the leaf, that
+ * cross-fade with a slow drift upward — a settled still always shows one
+ * whole, balanced page, never a line half lost against the torn edge. Pure
+ * function of clock time (deterministic under a frozen clock).
  */
 export class Credits {
   constructor(ctx, { onClose, t0 = 0 }) {
     this.ctx = ctx;
     this.onClose = onClose;
     this.t0 = t0;
-    this.crawl = h('div.por-credits-crawl', CREDITS.map(([k, a, b]) => {
+    const line = ([k, a, b]) => {
       if (k === 'h') return h('h1.por-credits-h', [a]);
       if (k === 'h2') return h('h2.por-credits-h2', [h('span', [a])]);
       if (k === 's') return h('div.por-credits-s', [a]);
       if (k === 'p') return h('p.por-credits-p', [a]);
       if (k === 'gap') return h('div.por-credits-gap', [h('i')]);
       return h('div.por-credits-role', [h('div.role', [a]), h('div.name', String(b).split('\n').map((l) => h('div', [l])))]);
-    }));
+    };
+    this.pages = CREDITS.map((pg) => h('div.por-credits-page', pg.map(line)));
+    this.crawl = h('div.por-credits-crawl', this.pages);
+    this.dots = CREDITS.map(() => h('i'));
     // Back lives in the footer legend (Esc / B / click anywhere), docked to the grid.
-    this.window = h('div.por-credits-window', [this.crawl]);
+    this.window = h('div.por-credits-window', [this.crawl, h('div.por-credits-dots', this.dots)]);
     // a deckled vellum leaf laid in a gilt-framed leather folio: its torn edge
     // (fibres and all) is a mask generated at the leaf's real pixel size, and
     // it casts a soft shadow onto the leather (the shadow lives on a wrapper:
@@ -116,15 +127,23 @@ export class Credits {
       this.sheet.style.webkitMaskImage = url;
       this.sheet.style.maskImage = url;
     }
-    // open with the first block already risen clear of the top fade, fully
-    // legible, then crawl; the loop wraps back to the same opening frame
-    const win = this.window.offsetHeight || 500;
-    const pad = parseFloat(getComputedStyle(this.crawl).paddingTop) || 0;
-    // the first block opens just inside the top fade, so the leaf never starts empty
-    const start = Math.max(0, pad - win * 0.13);
-    const H = this.crawl.offsetHeight + win;
-    const y = start + Math.max(0, t - this.t0 - 1.5) * 34;
-    this.crawl.style.transform = `translateY(${-(y % H)}px)`;
+    const n = this.pages.length;
+    const e = Math.max(0, t - this.t0);
+    const cur = Math.floor(e / PAGE) % n;
+    const ph = e % PAGE;
+    const reduce = document.documentElement.dataset.motion === 'reduce';
+    this.pages.forEach((p, i) => {
+      let a = 0;
+      let dy = 0;
+      if (i === cur) {
+        a = ph < FADE && e >= PAGE ? ph / FADE : ph > PAGE - FADE ? (PAGE - ph) / FADE : 1;
+        dy = (ph / PAGE - 0.5) * -14;
+      }
+      p.style.opacity = a.toFixed(3);
+      p.style.transform = reduce ? '' : `translateY(${dy.toFixed(1)}px)`;
+      p.style.visibility = a > 0.001 ? '' : 'hidden';
+    });
+    this.dots.forEach((d, i) => d.classList.toggle('on', i === cur));
   }
 
   dispose() {

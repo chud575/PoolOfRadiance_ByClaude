@@ -36,9 +36,11 @@ html[data-input='pad'] .por-set-tabs-head .por-keycap { display: none; }
   box-shadow: 0 0 16px rgba(245, 217, 139, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 .por-set-tab.sel::after {
-  /* lozenge seated exactly on the divider rule, tied to the tab by a gilt hairline */
-  content: ''; position: absolute; right: calc(-1.4em - 0.32em - 1px); top: 50%; width: 0.64em; height: 0.64em; margin-top: -0.32em; transform: rotate(45deg);
-  background: var(--gilt-grad); border: 1px solid #2a1a04; box-shadow: 0 0 8px rgba(255, 220, 140, 0.6);
+  /* a gilt pointer notched into the tab's own right edge, aimed at the content */
+  content: ''; position: absolute; right: -0.42em; top: 50%; width: 0.62em; height: 0.62em; margin-top: -0.31em; transform: rotate(45deg);
+  background: var(--gilt-grad); border: 1px solid #2a1a04; border-left-color: transparent; border-bottom-color: transparent;
+  box-shadow: 2px -2px 6px rgba(0, 0, 0, 0.45);
+  clip-path: polygon(0 0, 100% 0, 100% 100%);
 }
 .por-set-seal { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: 0.7em; padding: 1em 0.4em 0.4em; opacity: 0.9; }
 .por-set-seal-svg { width: 5.6em; height: 5.6em; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.7)); opacity: 0.85; }
@@ -105,6 +107,8 @@ html[data-classic='1'] .por-set-seal-svg { display: none; }
 }
 .por-set-row.focus { background: linear-gradient(90deg, rgba(216, 178, 90, 0.13), rgba(216, 178, 90, 0.02) 70%); border-color: rgba(216, 178, 90, 0.3); }
 .por-set-row.focus::before { transform: scaleY(1); }
+.por-set-row:focus, .por-bind-row:focus { outline: none; }
+.por-set-row:focus-visible.focus, .por-bind-row:focus-visible.focus { box-shadow: inset 0 0 0 1px rgba(255, 226, 150, 0.35); }
 .por-set-row.pulse .por-set-control { animation: por-set-pulse 0.35s var(--ease); }
 @keyframes por-set-pulse { 40% { filter: brightness(1.35); } }
 .por-set-label { display: flex; flex-direction: column; gap: 0.18em; min-width: 0; }
@@ -112,9 +116,14 @@ html[data-classic='1'] .por-set-seal-svg { display: none; }
 .por-set-row.focus .por-set-name { color: #fff8e6; }
 .por-set-desc { font-size: calc(0.95em * var(--text-scale)); line-height: 1.42; color: rgba(236, 228, 208, 0.84); }
 .por-set-badge {
-  font-family: var(--font-num); font-size: 0.66em; letter-spacing: 0.12em; padding: 0.1em 0.45em; border-radius: 2px;
-  color: #000; background: linear-gradient(90deg, #55ffff, #ff55ff, #ffff55); font-weight: 700;
+  /* palette-swatch chip: the sixteen EGA inks as a tiny 8x2 tile, then the label */
+  display: inline-flex; align-items: center; gap: 0.45em; padding: 0.18em 0.5em 0.18em 0.22em; border-radius: 2px;
+  font-family: var(--font-display); font-size: 0.62em; letter-spacing: 0.2em; font-weight: 700; color: var(--por-gilt-hi);
+  background: linear-gradient(180deg, rgba(4, 6, 16, 0.85), rgba(10, 14, 32, 0.85)); border: 1px solid rgba(216, 178, 90, 0.55);
+  box-shadow: inset 0 1px 0 rgba(255, 236, 180, 0.1);
 }
+.por-set-badge-sw { display: grid; grid-template-columns: repeat(8, 0.42em); grid-auto-rows: 0.42em; gap: 1px; padding: 1px; background: #000; outline: 1px solid rgba(0, 0, 0, 0.6); }
+.por-set-badge-sw i { display: block; }
 .por-set-control { display: flex; align-items: center; gap: 0.8em; justify-content: flex-end; }
 
 /* segmented choice */
@@ -242,6 +251,9 @@ html[data-classic='1'] .por-set-seal-svg { display: none; }
 .por-bind-pad { display: flex; gap: 0.3em; justify-content: center; align-items: center; color: var(--por-text-dim); }
 .por-arrow { width: 1.45em; height: 1.45em; display: block; margin: 0 auto; filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.7)); }
 .por-bind-key { display: flex; align-items: center; justify-content: center; }
+/* keycaps hug their legend (a letter is a square cap, Tab / Num 7 a wider one) */
+.por-bind-key:not(.empty):not(.waiting) { justify-self: center; min-width: 2.35em; padding-left: 0.75em; padding-right: 0.75em; }
+.por-bind-key.empty, .por-bind-key.waiting { justify-self: stretch; }
 /* one icon family: every pad glyph is the same dark enamel button (same rim,
    same bevel, same height), only its outline and legend change: face buttons
    carry their colour in the legend, bumpers are the same button stretched, the
@@ -258,8 +270,8 @@ html[data-classic='1'] .por-set-seal-svg { display: none; }
 .por-bind-pad .por-pad.unbound { border-color: #03040a; border-bottom-color: rgba(216, 178, 90, 0.35); background: radial-gradient(circle at 50% 70%, #10142a, #04060e 80%); box-shadow: inset 0 3px 5px rgba(0, 0, 0, 0.9); color: rgba(216, 190, 130, 0.38); }
 /* d-pad: a full-size cross with the pressed arm lit, legible at a glance */
 .por-bind-pad .por-pad.dpad { --pc: #e6dcc0; padding: 0; }
-.por-bind-pad .por-pad.dpad { min-width: 2.5em; height: 2.5em; margin: -0.18em 0; border-radius: 0.6em; }
-.por-bind-pad .por-pad.dpad .por-dpad { width: 2.1em; height: 2.1em; filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.9)); }
+.por-bind-pad .por-pad.dpad { min-width: 2.4em; height: 2.4em; margin: -0.14em 0; border: 0; background: none; box-shadow: none; }
+.por-bind-pad .por-pad.dpad .por-dpad { width: 2.35em; height: 2.35em; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.75)); }
 .por-dpad { width: 1.55em; height: 1.55em; display: block; }
 .por-bind-foot { display: flex; justify-content: space-between; align-items: center; gap: 1em; padding: 1em 0.9em 0.3em 1.1em; font-size: calc(0.85em * var(--text-scale)); }
 
@@ -304,3 +316,8 @@ html[data-classic='1'] .por-set-help-head .por-set-seal-svg { display: none; }
 .por-bind-key:not(.empty):not(.waiting):active { transform: translateY(3px); border-bottom-width: 1px; }
 .por-bind-row.conflict .por-bind-key:not(.empty) { border-color: #d0473c; border-bottom-color: #6a1410; box-shadow: inset 0 0.14em 0 rgba(255, 200, 180, 0.25), 0 0 9px rgba(208, 71, 60, 0.6); }
 .por-bind-warn { margin-left: 0.7em; font-size: 0.78em; letter-spacing: 0.02em; color: #ff9a86; font-style: italic; white-space: nowrap; }
+/* a one-line note that seats under a full section without forcing a scroll */
+.por-set-note.compact { padding: 0.4em 0.9em; gap: 0.9em; }
+.por-set-note.compact .por-set-swatches { grid-template-columns: repeat(16, 0.62em); }
+.por-set-note.compact .por-set-swatches i { height: 1em; }
+.por-set-note.compact .por-set-note-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

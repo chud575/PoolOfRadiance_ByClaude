@@ -15,6 +15,7 @@ html[data-classic='1'] {
   --por-hp-ok-a: var(--ega-2); --por-hp-ok-b: var(--ega-10);
   --font-display: 'PoR 5x7', 'Courier New', monospace;
   --font-body: 'PoR 5x7', 'Courier New', monospace;
+  --font-prose: 'PoR 5x7', 'Courier New', monospace;
   --font-num: 'PoR 5x7', 'Courier New', monospace;
   --gilt-grad: linear-gradient(var(--ega-9), var(--ega-9));
   --gilt-edge: linear-gradient(90deg, var(--ega-9), var(--ega-9));
@@ -127,3 +128,28 @@ html[data-classic='1'] .por-credits-plate { padding: 1.2em 1.6em !important; }
 html[data-classic='1'] .por-credits-sheet { background: #000; -webkit-mask-image: none !important; mask-image: none !important; padding: 1em 1.2em; }
 html[data-classic='1'] .por-credits-sheet-tone { display: none; }
 html[data-classic='1'] .por-credits-shadow { filter: none; }
+
+/* settings in the 5x7 face: every line gets real leading (the bitmap face has
+   no internal line gap), the sidebar help clamps instead of spilling into the
+   legend, and the help footer note drops out to make room */
+html[data-classic='1'] .por-settings :is(.por-set-name, .por-set-desc, .por-set-help-name, .por-set-help-text, .por-set-help-cap, .por-set-blurb, .por-set-note-text, .por-bind-label, .por-set-tab) { line-height: 1.4 !important; }
+html[data-classic='1'] .por-set-tabs { min-height: 0; overflow: hidden; }
+html[data-classic='1'] .por-set-help { min-height: 0; flex: 0 1 auto; overflow: hidden; gap: 0.35em; padding: 0.6em 0.7em; border: 2px solid var(--ega-9) !important; background: #000 !important; box-shadow: none !important; }
+html[data-classic='1'] .por-set-help-name { font-size: 0.86em; }
+html[data-classic='1'] .por-set-help-text {
+  min-height: 0; font-size: 0.8em; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 7; overflow: hidden;
+}
+html[data-classic='1'] .por-set-help-foot { display: none; }
+html[data-classic='1'] .por-set-help-cap { font-size: 0.62em; letter-spacing: 0.12em !important; }
+html[data-classic='1'] .por-set-more { background: #000 !important; border: 2px solid var(--ega-9) !important; box-shadow: none !important; color: var(--ega-14) !important; font-size: 0.62em; padding: 0.15em 0.8em; bottom: 0.25em; }
+html[data-classic='1'] .por-set-bodywrap::after { background: linear-gradient(180deg, rgba(0, 0, 0, 0), #000 60%) !important; }
+html[data-classic='1'] .por-set-bodywrap::before { background: linear-gradient(0deg, rgba(0, 0, 0, 0), #000 70%) !important; }
+html[data-classic='1'] .por-set-footer { border-top: 2px solid var(--ega-9); }
+html[data-classic='1'] .por-set-legend { font-size: 0.62em; gap: 1em; letter-spacing: 0.04em !important; }
+html[data-classic='1'] .por-set-badge { background: #000 !important; border: 1px solid var(--ega-9) !important; color: var(--ega-11) !important; }
+html[data-classic='1'] .por-set-badge-sw { outline: 0; }
+html[data-classic='1'] .por-set-tab.sel::after { display: none; }
+html[data-classic='1'] .por-pad.dpad .por-dpad { filter: none; }
+/* the card's bottom slot carries the publisher-style line (drawn in the EGA
+   canvas); the footer's [ENTER] BEGIN is the prompt, as in 1988 */
+html[data-classic='1'] .por-title-prompt { visibility: hidden; }

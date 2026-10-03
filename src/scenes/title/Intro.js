@@ -187,7 +187,7 @@ export class IntroCinematic {
     // the proclamation during the City Hall shot
     const pa = smooth(25.6, 26.6, lt) * (1 - smooth(31.4, 32.2, lt));
     this.proclamation.style.opacity = String(pa);
-    this.proclamation.style.transform = `translateY(-50%) rotate(-1.2deg) scale(${0.96 + 0.04 * pa})`;
+    this.proclamation.style.transform = `rotate(${(1.6 - 0.4 * pa).toFixed(2)}deg) scale(${0.97 + 0.03 * pa})`;
     this.proclamation.style.visibility = pa > 0.001 ? 'visible' : 'hidden';
 
     // logo returns as the camera settles on the Pool
