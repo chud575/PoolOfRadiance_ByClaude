@@ -423,7 +423,7 @@ export function createWorld({ deferred = false } = {}) {
       if (on) ensureChamber();
       this._applyStage();
       if (on) {
-        sun.intensity = 0; hemi.intensity = 0.3; fill.intensity = 0; moon.intensity = 0; castleKey.intensity = 0;
+        sun.intensity = 0; hemi.intensity = 0.24; fill.intensity = 0; moon.intensity = 0; castleKey.intensity = 0;
         scene.fog.density = 0.012;
         scene.fog.color.setHex(0x0c0810);
       } else {

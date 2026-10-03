@@ -26,55 +26,67 @@ const hash = (i, j = 0) => {
 };
 
 /**
- * Dragon sprite, nose left, rasterised once into palette letters on a 40x22
- * grid: dark grey hide with a light grey belly, a yellow eye and horn, a whip
- * tail ending in a spade, and one bat wing (light red finger bones, red
- * membrane, scalloped trailing edge) in two frames of wing beat (up / down).
+ * Dragon sprite, nose left, rasterised once into palette letters on a 48x26
+ * grid, drawn to match the 3D red dragon: a red hide lit light red along the
+ * back with a brown belly, a deep chest and S-neck into a wedge head (open
+ * jaw, yellow eye, light grey horns), a row of dark spines, a tucked foreleg
+ * and a heavy hind leg, a whip tail with a spade, and one bat wing (light red
+ * finger bones over a brown, sun-shot membrane with a scalloped trailing
+ * edge) in two frames of wing beat (up / down).
  */
-const DRAGON_INK = { d: EGA.dgrey, l: EGA.lgrey, r: EGA.red, R: EGA.lred, y: EGA.yellow };
+const DRAGON_INK = { d: EGA.dgrey, l: EGA.lgrey, r: EGA.red, R: EGA.lred, y: EGA.yellow, b: EGA.brown };
 function dragonFrame(up) {
-  const W2 = 40, H2 = 22, oy = 11;
+  const W2 = 48, H2 = 26, oy = 14;
   const g = Array.from({ length: H2 }, () => Array(W2).fill('.'));
   const put = (x, y, c) => { x = Math.round(x); y = Math.round(y); if (x >= 0 && x < W2 && y >= 0 && y < H2) g[y][x] = c; };
-  const line = (x0, y0, x1, y1, c) => {
+  const line = (x0, y0, x1, y1, c, w = 1) => {
     const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) * 2 + 1;
-    for (let i = 0; i <= n; i++) put(x0 + ((x1 - x0) * i) / n, y0 + ((y1 - y0) * i) / n, c);
+    for (let i = 0; i <= n; i++) for (let k = 0; k < w; k++) put(x0 + ((x1 - x0) * i) / n, y0 + ((y1 - y0) * i) / n + k, c);
   };
   // wing first (the body overlaps its root)
-  const A = [10, oy - 1], B = [29, oy - 1], T = up ? [25, 0] : [21, H2 - 1];
+  const A = [15, oy - 2], B = [31, oy - 1], T = up ? [27, 0] : [23, H2 - 1];
   const cross = (o, p, q) => (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0]);
   for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) {
     const P = [x + 0.5, y + 0.5];
     const c1 = cross(A, T, P), c2 = cross(T, B, P), c3 = cross(B, A, P);
     if (!((c1 >= 0 && c2 >= 0 && c3 >= 0) || (c1 <= 0 && c2 <= 0 && c3 <= 0))) continue;
-    // scallops: bite arcs out of the trailing edge between the fingers
     const tx = T[0] - B[0], ty = T[1] - B[1];
     const L = Math.hypot(tx, ty);
     const along = ((P[0] - B[0]) * tx + (P[1] - B[1]) * ty) / (L * L);
     const dist = Math.abs(cross(B, T, P)) / L;
-    if (dist < 1.5 * Math.abs(Math.sin(along * Math.PI * 3)) && along > 0.05 && along < 0.95) continue;
-    put(x, y, 'r');
+    if (dist < 1.8 * Math.abs(Math.sin(along * Math.PI * 3)) && along > 0.05 && along < 0.95) continue;
+    put(x, y, 'b');
   }
   line(A[0], A[1], T[0], T[1], 'R'); // leading-edge arm bone
   const Wr = [A[0] + (T[0] - A[0]) * 0.55, A[1] + (T[1] - A[1]) * 0.55];
   for (const f of [0.34, 0.67]) line(Wr[0], Wr[1], B[0] + (T[0] - B[0]) * f, B[1] + (T[1] - B[1]) * f, 'R');
-  // body, belly, legs
+  // body: an egg, deep at the chest, tapering to the haunch; lit back, brown belly
   for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) {
-    const ex = (x + 0.5 - 17.5) / 8.5, ey = (y + 0.5 - (oy + 0.5)) / 2.2;
-    if (ex * ex + ey * ey <= 1) put(x, y, y > oy && Math.abs(x - 17) < 6 ? 'l' : 'd');
+    const fx = (x + 0.5 - 23) / 10;
+    const ry = 2.0 + 1.4 * Math.max(0, Math.min(1, 0.6 - fx * 0.8));
+    const ey = (y + 0.5 - (oy + 0.8)) / ry;
+    if (fx * fx + ey * ey <= 1) put(x, y, ey < -0.55 ? 'R' : ey > 0.35 ? 'b' : 'r');
   }
-  line(14, oy + 2, 13, oy + 4, 'd');
-  line(21, oy + 2, 22, oy + 4, 'd');
-  // neck and head (nose left), eye and horn
-  line(10, oy, 5, oy - 2, 'd');
-  line(10, oy + 1, 5, oy - 1, 'd');
-  for (let x = 0; x <= 5; x++) put(x, oy - 2, 'd');
-  for (let x = 1; x <= 5; x++) put(x, oy - 3, 'd');
-  put(3, oy - 3, 'y');
-  put(5, oy - 4, 'l');
+  // dorsal spines along the back and neck
+  for (let x = 16; x <= 31; x += 3) put(x, oy - 2 - (x < 24 ? 1 : 0) - (x < 20 ? 1 : 0), 'd');
+  // legs: a tucked foreleg under the chest, a heavy hind leg trailing back
+  line(17, oy + 3, 16, oy + 5, 'r');
+  put(15, oy + 5, 'l');
+  for (let y = oy + 2; y <= oy + 4; y++) for (let x = 27; x <= 30; x++) put(x, y, y === oy + 4 ? 'b' : 'r');
+  line(30, oy + 4, 33, oy + 6, 'r');
+  put(34, oy + 6, 'l'); put(35, oy + 6, 'l');
+  // S-neck (two pixels thick) into a wedge head with an open jaw
+  line(14, oy - 1, 9, oy - 4, 'r', 2);
+  for (let x = 1; x <= 9; x++) put(x, oy - 4, x > 6 ? 'R' : 'r');
+  for (let x = 3; x <= 8; x++) put(x, oy - 5, 'R');
+  for (let x = 5; x <= 8; x++) put(x, oy - 6, 'r');
+  for (let x = 2; x <= 7; x++) put(x, oy - 2, 'r'); // lower jaw, agape
+  put(1, oy - 3, 'l'); put(3, oy - 3, 'l'); // teeth
+  put(5, oy - 5, 'y');
+  put(9, oy - 7, 'l'); put(10, oy - 8, 'l'); put(8, oy - 7, 'l');
   // tail: a lazy S out behind, ending in a spade
-  for (let x = 26; x <= 37; x++) put(x, oy + 1 + Math.round(Math.sin((x - 26) * 0.35) * 1.4 + (x - 26) * 0.12), 'd');
-  put(38, oy + 3, 'd'); put(39, oy + 2, 'd'); put(39, oy + 3, 'd'); put(39, oy + 4, 'd');
+  for (let x = 32; x <= 44; x++) put(x, oy + 1 + Math.round(Math.sin((x - 32) * 0.33) * 1.4 + (x - 32) * 0.12), 'r');
+  put(45, oy + 3, 'r'); put(46, oy + 2, 'r'); put(46, oy + 3, 'r'); put(46, oy + 4, 'r'); put(47, oy + 3, 'r');
   return g.map((r) => r.join(''));
 }
 const DRAGON_FRAMES = [dragonFrame(true), dragonFrame(false)];
@@ -254,7 +266,7 @@ export class ClassicCard {
         const col = DRAGON_INK[row[c]];
         if (!col) continue;
         g.fillStyle = col;
-        g.fillRect(x + c - 20, y + r - 11, 1, 1);
+        g.fillRect(x + c - 24, y + r - 14, 1, 1);
       }
     }
   }

@@ -662,19 +662,19 @@ export function createChamber({ seed = 1337 } = {}) {
   }
   // candle spill between the adventurers and the table (rims their shoulders and helms)
   // and a cool moonlit fill from the doors behind them, so plate and mail read from the back
-  const advRim = new THREE.PointLight(0xffa458, 3, 6, 1.6);
+  const advRim = new THREE.PointLight(0xffa458, 7, 7, 1.6);
   advRim.position.set(0, 1.9, 0.6);
   group.add(advRim);
-  const advFill = new THREE.PointLight(0x8090e0, 13, 9, 1.4);
+  const advFill = new THREE.PointLight(0x8090e0, 6, 9, 1.4);
   advFill.position.set(0.2, 2.8, 5.4);
   group.add(advFill);
-  const winFill = new THREE.PointLight(0x5a6ad0, 10, 18, 1.4);
+  const winFill = new THREE.PointLight(0x5a6ad0, 4, 18, 1.4);
   winFill.position.set(-5.5, 5, 4);
   group.add(winFill);
   // moonlight through the tall windows on both walls: cool shafts raking down
   // across the floor and the councillors' backs, against the warm candle core
   for (const sx of [-1, 1]) {
-    const moon = new THREE.SpotLight(0x7a90ff, 160, 20, 0.6, 0.6, 1.2);
+    const moon = new THREE.SpotLight(0x9aa6e0, 150, 20, 0.6, 0.6, 1.2);
     moon.position.set(sx * (W / 2 + 1.5), 6.2, tz + 1.5);
     moon.target.position.set(-sx * 1.2, 0.6, tz - 0.5);
     group.add(moon, moon.target);
