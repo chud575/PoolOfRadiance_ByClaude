@@ -61,6 +61,8 @@ export function buildCog(g, M, o, out) {
     if (y > s.main + 0.15) return (j % 2 ? [1.2, 1.08, 0.92] : [1.45, 1.32, 1.1]).map((v) => v * (0.94 + hash(seed, i, j, 'cp') * 0.12));
     if (Math.abs(y - (s.main - 0.55)) < 0.3) return [1.35, 0.62, 0.42];
     const v = (j % 2 ? 0.9 : 1.16) * (0.9 + hash(seed, i, j, 'pl') * 0.22);
+    // the boot-top: a wet, dark band just above the waterline where the swell slaps the strakes
+    if (y > -0.1 && y < 0.45) return [v * 0.62, v * 0.56, v * 0.5];
     return [v * 1.25, v * 1.12, v * 0.98];
   };
   for (let i = 0; i < NS; i++) {
@@ -74,7 +76,7 @@ export function buildCog(g, M, o, out) {
       // clinker: each strake's upper edge laps outward over the next; the lap throws a thin
       // dark line under it (the plank seams read at a distance)
       const lap = 0.045;
-      const tint = tone(j, i, (ya0 + ya1) / 2, a).map((v, ci) => v * (ya1 < 0.05 ? [0.42, 0.48, 0.4][ci] : 1)); // wet, weedy below the waterline
+      const tint = tone(j, i, (ya0 + ya1) / 2, a).map((v, ci) => v * (ya1 < -0.05 ? [0.34, 0.42, 0.3][ci] : 1)); // weedy, slimed below the waterline
       const dark = tint.map((v) => v * 0.38);
       for (const side of [-1, 1]) {
         const p0 = P(a.x, ya0, side * wa0);
@@ -176,6 +178,23 @@ export function buildCog(g, M, o, out) {
     return st;
   };
   const acSt = bulk(-0.52, CA + sheer * 0.27 + 0.2, true);
+  // aftercastle lights: small framed windows down each side and across the stern, lamplit at dusk
+  {
+    const winY = F + sheer * 0.6 + CA * 0.55;
+    for (const side of [-1, 1]) {
+      for (let k = 0; k < 2; k++) {
+        const st = station(0.12 + k * 0.09);
+        const wz = side * (strake(st, NJ)[1] + 0.02);
+        g.box('arch_beam_dark', { matrix: at(st.x, winY, wz), s: [0.62, 0.5, 0.06], ao: 0.8, tint: [0.7, 0.6, 0.5] });
+        if (out.glow) out.glow.box('glow', { matrix: at(st.x, winY, wz + side * 0.035), s: [0.42, 0.32, 0.01] });
+      }
+    }
+    const stS = station(0.015);
+    for (const zz of [-0.55, 0.55]) {
+      g.box('arch_beam_dark', { matrix: at(stS.x - 0.1, winY + 0.15, zz), s: [0.06, 0.52, 0.66], ao: 0.8, tint: [0.7, 0.6, 0.5] });
+      if (out.glow) out.glow.box('glow', { matrix: at(stS.x - 0.14, winY + 0.15, zz), s: [0.01, 0.34, 0.46] });
+    }
+  }
   bulk(0.7, CF + 0.5, false);
   const acX = acSt.x;
   const acL = L / 2 + acX;
@@ -273,6 +292,14 @@ export function buildCog(g, M, o, out) {
       const foot = P(mastX - 0.6 - k * 0.7, s.top - 0.3, side * (s.half + 0.12));
       feet.push(foot);
       lines.push(head.x, head.y, head.z, foot.x, foot.y, foot.z);
+      // deadeye pair on the channel and the chain plate down the strakes
+      const dm = at(mastX - 0.6 - k * 0.7, s.top - 0.3, side * (s.half + 0.14));
+      const de = new THREE.CylinderGeometry(0.11, 0.11, 0.07, 8);
+      de.rotateX(Math.PI / 2);
+      g.geometry('arch_beam_dark', de, dm, { uv: 'world', ao: 0.8, tint: [0.5, 0.42, 0.34] });
+      g.geometry('arch_beam_dark', de, dm.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.32, 0)), { uv: 'world', ao: 0.8, tint: [0.5, 0.42, 0.34] });
+      de.dispose();
+      g.box('arch_beam_dark', { matrix: dm.clone().multiply(new THREE.Matrix4().makeTranslation(0, -0.45, 0)), s: [0.05, 0.8, 0.04], ao: 0.7, tint: [0.3, 0.28, 0.26] });
     }
     // ratlines between adjacent shrouds every ~0.45 m
     for (let r = 1; r < 14; r++) {
@@ -282,6 +309,88 @@ export function buildCog(g, M, o, out) {
         const b = feet[k + 1].clone().lerp(head, t);
         lines.push(a.x, a.y, a.z, b.x, b.y, b.z);
       }
+    }
+  }
+  for (const side of [-1, 1]) {
+    const s = station(0.5 + (mastX - 1.65) / L);
+    g.box('arch_beam_dark', { matrix: at(mastX - 1.65, s.top - 0.42, side * (s.half + 0.1)), s: [3.2, 0.08, 0.24], ao: 0.75, tint: [0.7, 0.6, 0.5] });
+  }
+  // a mizzen on the aftercastle with a lateen yard (bigger ships), and a small foremast
+  if (L >= 12) {
+    const mzX = -L * 0.33;
+    const st = station(0.5 + mzX / L);
+    const deck = st.top - 0.95;
+    const mzH = mastH * 0.5;
+    const mz = new THREE.CylinderGeometry(0.09, 0.14, mzH, 7);
+    g.geometry('arch_beam_dark', mz, at(mzX, deck + mzH / 2, 0), { uv: 'world', ao: 0.85 });
+    mz.dispose();
+    const Fp = P(mzX + 2.6, deck + 1.2, 0.2);
+    const Ap = P(mzX - 3.2, deck + mzH * 1.12, 0.2);
+    const yv = new THREE.Vector3().subVectors(Ap, Fp);
+    const yl = yv.length();
+    const yg = new THREE.CylinderGeometry(0.06, 0.06, yl, 6);
+    const ym = new THREE.Matrix4().lookAt(new THREE.Vector3(), yv, new THREE.Vector3(0, 1, 0));
+    yg.rotateX(Math.PI / 2);
+    yg.applyMatrix4(ym);
+    yg.translate((Fp.x + Ap.x) / 2, (Fp.y + Ap.y) / 2, (Fp.z + Ap.z) / 2);
+    g.geometry('arch_beam_dark', yg, new THREE.Matrix4(), { uv: 'world', ao: 0.85 });
+    yg.dispose();
+    if (set) {
+      // triangular lateen: luff along the yard, the clew sheeted aft and low, a gentle belly
+      const C = P(mzX - 2.8, deck + 0.9, 0.2);
+      const N = 8;
+      const side = new THREE.Vector3(0, 0, 1).transformDirection(M);
+      const q = (i, j) => {
+        const top = Fp.clone().lerp(Ap, i / N);
+        const pnt = top.lerp(C, j / N);
+        return pnt.addScaledVector(side, Math.sin((Math.PI * i) / N) * Math.sin((Math.PI * j) / N) * 0.7);
+      };
+      for (let j = 0; j < N; j++) {
+        for (let i = 0; i < N; i++) {
+          const uv = (a, b) => [0.1 + (a / N) * 0.3, 1 - (b / N) * 0.6];
+          pushTri(q(i, j), q(i, j + 1), q(i + 1, j + 1), [uv(i, j), uv(i, j + 1), uv(i + 1, j + 1)]);
+          pushTri(q(i, j), q(i + 1, j + 1), q(i + 1, j), [uv(i, j), uv(i + 1, j + 1), uv(i + 1, j)]);
+        }
+      }
+      out.lines.push(C.x, C.y, C.z, ...P(-L / 2 + 0.2, F + sheer + CA + 0.3, 0).toArray());
+    } else {
+      // brailed up along the yard
+      const roll = new THREE.CylinderGeometry(0.2, 0.2, yl * 0.85, 8, 1);
+      roll.rotateX(Math.PI / 2);
+      roll.applyMatrix4(ym);
+      roll.translate((Fp.x + Ap.x) / 2, (Fp.y + Ap.y) / 2 - 0.2, (Fp.z + Ap.z) / 2);
+      g.geometry('arch_plaster', roll, new THREE.Matrix4(), { uv: 'world', ao: 0.85, tint: [0.95, 0.9, 0.82] });
+      roll.dispose();
+    }
+    const mzTop = P(mzX, deck + mzH, 0);
+    for (const sd of [-1, 1]) {
+      const f = P(mzX - 0.4, st.top - 0.3, sd * (st.half + 0.1));
+      out.lines.push(mzTop.x, mzTop.y, mzTop.z, f.x, f.y, f.z);
+    }
+  }
+  if (L >= 14) {
+    const fmX = L * 0.36;
+    const st = station(0.5 + fmX / L);
+    const deck = st.top - 0.75;
+    const fmH = mastH * 0.45;
+    const fm = new THREE.CylinderGeometry(0.09, 0.15, fmH, 7);
+    g.geometry('arch_beam_dark', fm, at(fmX, deck + fmH / 2, 0), { uv: 'world', ao: 0.85 });
+    fm.dispose();
+    const fyL = B * 1.1;
+    const fy = new THREE.CylinderGeometry(0.06, 0.06, fyL, 6);
+    fy.rotateX(Math.PI / 2);
+    g.geometry('arch_beam_dark', fy, at(fmX + 0.18, deck + fmH * 0.85, 0), { uv: 'world', ao: 0.85 });
+    fy.dispose();
+    const roll = new THREE.CylinderGeometry(0.22, 0.22, fyL * 0.85, 8, 1);
+    roll.rotateX(Math.PI / 2);
+    g.geometry('arch_plaster', roll, at(fmX + 0.18, deck + fmH * 0.85 - 0.2, 0), { uv: 'world', ao: 0.85, tint: [0.95, 0.9, 0.82] });
+    roll.dispose();
+    const fTop = P(fmX, deck + fmH, 0);
+    const bs = P(L / 2 + 2.6, F + sheer + CF + 0.7, 0);
+    out.lines.push(fTop.x, fTop.y, fTop.z, bs.x, bs.y, bs.z);
+    for (const sd of [-1, 1]) {
+      const f = P(fmX - 0.5, st.top - 0.3, sd * (st.half + 0.1));
+      out.lines.push(fTop.x, fTop.y, fTop.z, f.x, f.y, f.z);
     }
   }
   const stem = P(L / 2 + 0.6, F + sheer + 0.6, 0);

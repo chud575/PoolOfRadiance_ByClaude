@@ -28,11 +28,11 @@ const DEFS = {
   water_dark: { color: 0x0a1a24, roughness: 0.05, metalness: 0.2 },
 
   // ---- explore architecture (vertex AO colours required) ----
-  arch_stone: { tex: 'hd2_ashlar', texScale: 3, vc: true, fx: { macro: 0.32, grime: 0.55, moss: 0.35, streak: 0.55, vary: 1, patch: 1 } },
-  arch_stone_cold: { tex: 'hd2_ashlar_cold', texScale: 3, vc: true, fx: { macro: 0.3, grime: 0.6, moss: 0.5, vary: 1, patch: 1 } },
+  arch_stone: { tex: 'hd2_ashlar', texScale: 2.4, vc: true, fx: { macro: 0.32, grime: 0.55, moss: 0.35, streak: 0.55, vary: 1, patch: 1 } },
+  arch_stone_cold: { tex: 'hd2_ashlar_cold', texScale: 2.5, vc: true, fx: { macro: 0.3, grime: 0.6, moss: 0.5, vary: 1, patch: 1 } },
   arch_trim: { tex: 'hd2_quoin', texScale: 1.5, vc: true, color: 0xd8d0c4, fx: { macro: 0.2, grime: 0.4, moss: 0.5 } },
   arch_dressed: { tex: 'hd2_dressed', texScale: 1.5, vc: true, color: 0xe6ded2, fx: { macro: 0.2, grime: 0.45, moss: 0.4 } },
-  arch_ruin: { tex: 'hd2_ruin', texScale: 3, vc: true, fx: { macro: 0.35, grime: 0.7, moss: 0.9, vary: 0.8, patch: 1 } },
+  arch_ruin: { tex: 'hd2_ruin', texScale: 2.6, vc: true, fx: { macro: 0.35, grime: 0.7, moss: 0.9, vary: 0.8, patch: 1 } },
   arch_plaster: { tex: 'hd2_plaster', texScale: 3.7, vc: true, fx: { macro: 0.5, grime: 0.85, moss: 0.15, streak: 0.3, patch: 1.1 } },
   arch_plaster_int: { tex: 'hd2_plaster_int', texScale: 3, vc: true, fx: { macro: 0.32, grime: 0.6, streak: 0.25, soot: 1, patch: 0.9 } },
   arch_beam: { tex: 'hd_beam', texScale: 1.2, vc: true, fx: { macro: 0.18, grime: 0.2, moss: 0.2 } },
@@ -45,7 +45,7 @@ const DEFS = {
   arch_mud: { tex: 'hd_mud', texScale: 3, vc: true, fx: { macro: 0.3, floor: 1 } },
   arch_boards: { tex: 'hd_boards', texScale: 2, vc: true, fx: { macro: 0.15, floor: 1 } },
   arch_ceiling: { tex: 'hd2_ceiling', texScale: 3, vc: true, color: 0xffffff, fx: { macro: 0.1 } },
-  arch_dungeon: { tex: 'hd2_dungeon', texScale: 3, vc: true, fx: { macro: 0.34, grime: 0.6, moss: 0.4, streak: 1, vary: 1, patch: 1 } },
+  arch_dungeon: { tex: 'hd2_dungeon', texScale: 2.6, vc: true, fx: { macro: 0.34, grime: 0.6, moss: 0.4, streak: 1, vary: 1, patch: 1 } },
   arch_dungeon_floor: { tex: 'hd3_dungeon_floor', texScale: 3, vc: true, fx: { macro: 0.3, floor: 1 } },
   arch_hewn: { tex: 'hd2_hewn', texScale: 3, vc: true, fx: { macro: 0.2, grime: 0.5, moss: 0.5, rock: 1 } },
   arch_hewn_ceil: { tex: 'hd2_hewn_ceil', texScale: 3, vc: true, roughness: 1, fx: { macro: 0.2, rock: 1 } },
@@ -67,13 +67,13 @@ const DEFS = {
   prop_iron: { tex: 'hd2_iron', metalness: 0.7, fx: {} },
   prop_burlap: { tex: 'hd_burlap', fx: { macro: 0.2 } },
   prop_rubble: { tex: 'hd_rock', fx: { macro: 0.35, moss: 0.5, dust: 0.45 } },
-  prop_rock: { tex: 'hd_rock', vc: true, fx: { macro: 0.35, moss: 0.4, dust: 0.45 } },
+  prop_rock: { tex: 'hd_rock', vc: true, fx: { macro: 0.35, moss: 0.4, dust: 0.45, rim: 0.4 } },
   prop_wood: { tex: 'hd_beam', fx: { macro: 0.2 } },
   prop_stone: { tex: 'hd2_ashlar', fx: { macro: 0.25, moss: 0.5 } },
   prop_skin: { color: 0xc48a68, roughness: 0.62, vc: true, fx: {} },
   prop_cloth: { tex: 'hd_burlap', color: 0xffffff, vc: true, fx: { macro: 0.15 } },
   prop_bone: { tex: 'hd_limestone', color: 0xc2b292, fx: { dust: 0.5, grime: 0.5 } },
-  prop_limestone: { tex: 'hd_limestone', texScale: 1.5, vc: true, fx: { macro: 0.3, grime: 0.8, moss: 0.8, dust: 0.6 } },
+  prop_limestone: { tex: 'hd_limestone', texScale: 1.5, vc: true, color: [1.3, 1.25, 1.14], fx: { macro: 0.3, grime: 0.8, moss: 0.9, dust: 0.6, rim: 0.6 } },
 };
 
 /** Texture sets each tileset needs (for preloading). */
@@ -96,7 +96,32 @@ export const SURFACE_UNIFORMS = {
   uFxReflZenith: { value: new THREE.Color(0x000000) },
   uFxReflHorizon: { value: new THREE.Color(0x000000) },
   uFxReflWall: { value: new THREE.Color(0x000000) },
+  // planar mirror of the scene for standing water (rendered by the explore scene; 0 = analytic sky only)
+  uFxReflTex: { value: null },
+  uFxReflMat: { value: new THREE.Matrix4() },
+  uFxReflOn: { value: 0 },
+  uFxTime: { value: 0 },
+  // scale on the specular of directional lights (the moon by night: a broad glossy blob on wet
+  // paving reads as a misplaced light; its sheen is left to the mirror pass)
+  uFxDirSpec: { value: 1 },
 };
+
+let lightsChunk = null;
+/** lights_fragment_begin with the directional-light specular scaled by uFxDirSpec. */
+function fxLightsChunk() {
+  if (lightsChunk) return lightsChunk;
+  let c = THREE.ShaderChunk.lights_fragment_begin;
+  for (const tag of ['#if ( NUM_SUN_LIGHTS > 0 ) && defined', '#if ( NUM_DIR_LIGHTS > 0 ) && defined']) {
+    const i = c.indexOf(tag);
+    if (i < 0) continue;
+    const j = c.indexOf('RE_Direct( directLight', i);
+    if (j < 0) continue;
+    const k = c.indexOf(';', j) + 1;
+    c = `${c.slice(0, j)}{ vec3 fxS0 = reflectedLight.directSpecular; ${c.slice(j, k)} reflectedLight.directSpecular = fxS0 + (reflectedLight.directSpecular - fxS0) * uFxDirSpec; }${c.slice(k)}`;
+  }
+  lightsChunk = c;
+  return c;
+}
 
 const FX_NOISE = /* glsl */ `
   uniform sampler2D uFxNoiseTex;
@@ -106,6 +131,17 @@ const FX_NOISE = /* glsl */ `
     return texture2D(uFxNoiseTex, p * (1.0 / 24.0));
   }
 `;
+
+let blackTex = null;
+function getBlackTexture() {
+  if (!blackTex) {
+    blackTex = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+    blackTex.needsUpdate = true;
+  }
+  return blackTex;
+}
+/** 1×1 black stand-in for the puddle mirror (bound while the mirror itself is being drawn). */
+export { getBlackTexture as getFxBlackTexture };
 
 let noiseTex = null;
 /** 256² tileable RGBA noise used by the SurfaceFX patch. */
@@ -146,8 +182,10 @@ function applySurfaceFX(mat, fx) {
   const vary = (fx.vary ?? 0).toFixed(3);
   const patch = (fx.patch ?? 0).toFixed(3);
   const rock = (fx.rock ?? 0).toFixed(3);
+  const rimK = (fx.rim ?? 0).toFixed(3);
   mat.onBeforeCompile = (shader) => {
     if (!SURFACE_UNIFORMS.uFxNoiseTex.value) SURFACE_UNIFORMS.uFxNoiseTex.value = getFxNoiseTexture();
+    if (!SURFACE_UNIFORMS.uFxReflTex.value) SURFACE_UNIFORMS.uFxReflTex.value = getBlackTexture();
     Object.assign(shader.uniforms, SURFACE_UNIFORMS);
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vFxWorldPos;\nvarying vec3 vFxWorldNormal;')
@@ -167,6 +205,7 @@ function applySurfaceFX(mat, fx) {
         }`,
       );
     shader.fragmentShader = shader.fragmentShader
+      .replace('#include <lights_fragment_begin>', fxLightsChunk())
       .replace(
         '#include <common>',
         `#include <common>
@@ -176,6 +215,7 @@ function applySurfaceFX(mat, fx) {
         uniform float uFxHeightFog; uniform float uFxHeightFalloff;
         uniform vec3 uFxGrimeTint; uniform vec3 uFxMossTint; uniform float uFxWet; uniform float uFxSlick;
         uniform vec3 uFxReflZenith; uniform vec3 uFxReflHorizon; uniform vec3 uFxReflWall;
+        uniform sampler2D uFxReflTex; uniform mat4 uFxReflMat; uniform float uFxReflOn; uniform float uFxTime; uniform float uFxDirSpec;
         float vFxWet = 0.0;
         float vFxFloor = 0.0;
         float vFxCav = 0.0;
@@ -325,26 +365,44 @@ function applySurfaceFX(mat, fx) {
             float hA = texture2D(roughnessMap, vRoughnessMapUv, 3.5).a;
             vFxCav = smoothstep(0.0, 0.07, hA - hC);
             vFxCrown = smoothstep(0.0, 0.05, hC - hA);
-            float wj = vFxCav * clamp(uFxWet * 2.0, 0.0, 1.0) * (0.35 + 0.65 * uFxSlick);
-            diffuseColor.rgb *= 1.0 - wj * 0.35;
+            // the joints are packed grit and silt: always dark (AO) and dead matte, wet or dry —
+            // a glossy joint catches every light on its steep sides and reads as glitter
+            float jK = smoothstep(0.01, 0.09, hA - hC);
+            diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.5, 0.47, 0.42), jK * 0.55);
+            // rain darkens the stone tops (water film) more than the joints
+            float wetTop = clamp(uFxWet * 2.0, 0.0, 1.0) * uFxSlick * (1.0 - jK);
+            diffuseColor.rgb *= 1.0 - wetTop * 0.22;
           }
           #endif
           // standing water: broad, soft-edged pools in the low spots (metre-scale noise only — no
           // per-pixel speckle), a darker damp halo around each, the joints wet a little beyond
-          float pudF = nz.r * 0.7 + nz.a * 0.3 + (nz.g - 0.5) * 0.08 + uFxSlick * 0.05;
+          // (the shoreline creeps into the joints and the proud stone crowns break the surface)
+          float pudF = nz.r * 0.7 + nz.a * 0.3 + (nz.g - 0.5) * 0.08 + uFxSlick * 0.05 + vFxCav * 0.035 - vFxCrown * 0.025;
           float wetAmt = clamp(uFxWet * 2.0, 0.0, 1.0) * fl;
-          vFxPud = smoothstep(0.665, 0.705, pudF) * wetAmt;
-          float halo = smoothstep(0.63, 0.67, pudF) * wetAmt;
-          diffuseColor.rgb *= 1.0 - halo * 0.28 - vFxPud * 0.42;
+          vFxPud = smoothstep(0.668, 0.69, pudF) * wetAmt;
+          // a dark rim of soaked stone and silt round each pool, damp fading out beyond it
+          float halo = smoothstep(0.615, 0.668, pudF) * wetAmt;
+          float rim = smoothstep(0.645, 0.668, pudF) * (1.0 - vFxPud) * wetAmt;
+          diffuseColor.rgb *= 1.0 - halo * 0.3 - rim * 0.25 - vFxPud * 0.55;
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.92, 0.88, 0.8), halo * 0.5);
           vFxFloor = fl;
         }`,
       )
       .replace(
         '#include <normal_fragment_maps>',
         `#include <normal_fragment_maps>
+        if (vFxFloor > 0.0 && uFxSlick > 0.0) {
+          // a film of rain levels the stone tops: soften their relief so the gloss forms clean
+          // streaks instead of sparkling on every bump
+          vec3 fxUpW = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
+          normal = normalize(mix(normal, fxUpW, clamp(uFxWet * 2.0, 0.0, 1.0) * uFxSlick * clamp(1.0 - vFxCav * 1.6, 0.0, 1.0) * 0.35));
+        }
         if (vFxPud > 0.0) {
           // the water surface is flat: it fills the joints and hides the stones' relief
-          vec3 fxUpV = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
+          // small wind ripples and drips break the sheet (world-space noise slopes)
+          vec2 rq = vFxWorldPos.xz * 1.7 + vec2(uFxTime * 0.05, uFxTime * 0.03);
+          vec2 rip = (texture2D(uFxNoiseTex, rq).gb - 0.5) * 0.09 + (texture2D(uFxNoiseTex, rq * 3.1 + 0.4).gb - 0.5) * 0.05;
+          vec3 fxUpV = normalize((viewMatrix * vec4(rip.x, 1.0, rip.y, 0.0)).xyz);
           normal = normalize(mix(normal, fxUpV, smoothstep(0.4, 0.9, vFxPud)));
         }
         #if ${rock === '0.000' ? 0 : 1}
@@ -388,15 +446,27 @@ function applySurfaceFX(mat, fx) {
           // and matte: no glossy high-frequency speckle on the stone faces
           roughnessFactor = mix(roughnessFactor, max(roughnessFactor, 0.68), vFxFloor);
           roughnessFactor = mix(roughnessFactor, max(roughnessFactor, 0.82), vFxCrown * vFxFloor);
-          roughnessFactor = mix(roughnessFactor, 0.36, vFxCav * vFxFloor * wetK * (0.4 + 0.6 * uFxSlick));
+          // rain-slick nights: the water film sits on the stone crowns (smooth, glossy; the lamps and
+          // the moon smear into long vertical streaks) while the joints stay rough grit
+          float fxTop = clamp(1.0 - vFxCav * 1.6, 0.0, 1.0);
+          roughnessFactor = mix(roughnessFactor, mix(0.52, 0.42, vFxCrown), fxTop * vFxFloor * wetK * uFxSlick);
+          roughnessFactor = mix(roughnessFactor, 0.97, vFxCav * vFxFloor);
           roughnessFactor = mix(roughnessFactor, 0.22, vFxSeep);
           // puddles: a near-flat sheet with a slightly soft (rippled, dirty) mirror
-          roughnessFactor = mix(roughnessFactor, 0.28, smoothstep(0.4, 0.9, vFxPud));
+          roughnessFactor = mix(roughnessFactor, 0.2, smoothstep(0.4, 0.9, vFxPud));
         }`,
       )
       .replace(
         '#include <fog_fragment>',
-        `if (vFxPud > 0.0) {
+        `#if ${rimK === '0.000' ? 0 : 1}
+        {
+          // skylight wrapping round silhouettes: the edges of a rounded prop turned from the key
+          // still catch the open sky (keeps foreground props from reading as black cut-outs)
+          float fxRim = pow(1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0), 3.0);
+          gl_FragColor.rgb += uFxReflHorizon * diffuseColor.rgb * fxRim * ${rimK} * 2.0;
+        }
+        #endif
+        if (vFxPud > 0.0) {
           // mirror of the sky and the street walls, Fresnel-weighted (grazing views reflect most)
           vec3 fxI = normalize(vFxWorldPos - cameraPosition);
           float cosT = clamp(-fxI.y, 0.0, 1.0);
@@ -410,7 +480,17 @@ function applySurfaceFX(mat, fx) {
           float skyK = smoothstep(roof - 0.1, roof + 0.1, fxR.y);
           vec3 skyC = mix(uFxReflHorizon, uFxReflZenith, smoothstep(roof, 0.9, fxR.y));
           vec3 rc = mix(uFxReflWall * (0.75 + 0.5 * texture2D(uFxNoiseTex, vec2(az * 2.0, fxR.y)).g), skyC, skyK);
-          gl_FragColor.rgb += rc * fres * smoothstep(0.4, 0.9, vFxPud);
+          float pk = smoothstep(0.4, 0.9, vFxPud);
+          if (uFxReflOn > 0.5) {
+            // the real street mirrored (planar reflection pass), broken by ripples and silt
+            vec2 rq = vFxWorldPos.xz * 1.7 + vec2(uFxTime * 0.05, uFxTime * 0.03);
+            vec2 rip = (texture2D(uFxNoiseTex, rq).gb - 0.5) * 0.09 + (texture2D(uFxNoiseTex, rq * 3.1 + 0.4).gb - 0.5) * 0.05;
+            vec4 rp4 = uFxReflMat * vec4(vFxWorldPos + vec3(rip.x, 0.0, rip.y) * 0.35, 1.0);
+            vec2 ruv = clamp(rp4.xy / rp4.w, 0.001, 0.999);
+            vec3 mir = texture2D(uFxReflTex, ruv).rgb * 0.9;
+            // muddy water: the reflection sits over a dark bed, never a white sheet
+            gl_FragColor.rgb = mix(gl_FragColor.rgb, mir, pk * (0.18 + 0.72 * fres));
+          } else gl_FragColor.rgb += rc * fres * pk;
         }
         #ifdef USE_FOG
         {
@@ -430,7 +510,7 @@ function applySurfaceFX(mat, fx) {
         #endif`,
       );
   };
-  mat.customProgramCacheKey = () => `fx:${macro}:${grime}:${moss}:${floor}:${dust}:${grain}:${streak}:${fogCap}:${soot}:${vary}:${patch}:${rock}`;
+  mat.customProgramCacheKey = () => `fx:${macro}:${grime}:${moss}:${floor}:${dust}:${grain}:${streak}:${fogCap}:${soot}:${vary}:${patch}:${rock}:${rimK}`;
 }
 
 const cache = new Map();
@@ -440,7 +520,7 @@ export function getMaterial(key) {
   if (cache.has(key)) return cache.get(key);
   const d = DEFS[key];
   if (!d) throw new Error(`Unknown material "${key}"`);
-  const params = { color: d.color ?? 0xffffff, roughness: d.roughness ?? 1, metalness: d.metalness ?? 0 };
+  const params = { color: Array.isArray(d.color) ? new THREE.Color().setRGB(...d.color) : d.color ?? 0xffffff, roughness: d.roughness ?? 1, metalness: d.metalness ?? 0 };
   if (d.tex) {
     const t = getTextureSet(d.tex);
     Object.assign(params, { map: t.map, normalMap: t.normalMap });
@@ -464,7 +544,7 @@ export function getLambertMaterial(key) {
   if (lambertCache.has(key)) return lambertCache.get(key);
   const d = DEFS[key];
   if (!d) throw new Error(`Unknown material "${key}"`);
-  const m = new THREE.MeshLambertMaterial({ color: d.color ?? 0xffffff, vertexColors: !!d.vc });
+  const m = new THREE.MeshLambertMaterial({ color: Array.isArray(d.color) ? new THREE.Color().setRGB(...d.color) : d.color ?? 0xffffff, vertexColors: !!d.vc });
   if (d.tex) m.map = getTextureSet(d.tex).map;
   m.name = `${key}_lambert`;
   // backdrop: fog never quite swallows a silhouette (distant towers stay readable shapes, not ghosts)
@@ -591,7 +671,7 @@ export function getLampGlassMaterial() {
 export function setWindowGlow(night, flicker = 1) {
   const ext = getWindowMaterial('ext');
   const int = getWindowMaterial('int');
-  ext.emissiveIntensity = (0.015 + night * 1.55) * flicker;
+  ext.emissiveIntensity = (0.015 + night * 1.0) * flicker;
   ext.color.setHex(night > 0.5 ? 0x101418 : 0x8c96a2);
   // from inside by day, windows glow with daylight
   // from inside by day the glazing glows with the cool, bright sky beyond — well above the hearth
@@ -613,3 +693,44 @@ export const MATERIAL_KEYS = Object.keys(DEFS);
 export const WALL_STYLE_MATERIALS = ['wall_stone', 'wall_timber', 'wall_ruin'];
 /** Floor material per MapGrid CELL type (foundation v0.1). */
 export const FLOOR_MATERIALS = ['floor_cobble', 'floor_wood', 'floor_rubble', 'water_dark', 'floor_flag'];
+
+/**
+ * Standing-water decal (puddles laid as quads over paving/mud): directional-light specular scaled
+ * like the SurfaceFX floors (no moon hot-spot), the planar mirror of the street when available,
+ * small ripples, and a Fresnel blend over a dark silty bed.
+ * @param {THREE.MeshStandardMaterial} mat
+ */
+export function patchPuddleMaterial(mat) {
+  mat.onBeforeCompile = (shader) => {
+    if (!SURFACE_UNIFORMS.uFxNoiseTex.value) SURFACE_UNIFORMS.uFxNoiseTex.value = getFxNoiseTexture();
+    if (!SURFACE_UNIFORMS.uFxReflTex.value) SURFACE_UNIFORMS.uFxReflTex.value = getBlackTexture();
+    Object.assign(shader.uniforms, SURFACE_UNIFORMS);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vPdWp;')
+      .replace('#include <fog_vertex>', '#include <fog_vertex>\nvPdWp = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <lights_fragment_begin>', fxLightsChunk())
+      .replace(
+        '#include <common>',
+        `#include <common>
+        varying vec3 vPdWp;
+        uniform sampler2D uFxNoiseTex; uniform sampler2D uFxReflTex; uniform mat4 uFxReflMat;
+        uniform float uFxReflOn; uniform float uFxTime; uniform float uFxDirSpec;`,
+      )
+      .replace(
+        '#include <fog_fragment>',
+        `if (uFxReflOn > 0.5) {
+          vec2 rq = vPdWp.xz * 1.7 + vec2(uFxTime * 0.05, uFxTime * 0.03);
+          vec2 rip = (texture2D(uFxNoiseTex, rq).gb - 0.5) * 0.09 + (texture2D(uFxNoiseTex, rq * 3.1 + 0.4).gb - 0.5) * 0.05;
+          vec4 rp4 = uFxReflMat * vec4(vPdWp + vec3(rip.x, 0.0, rip.y) * 0.35, 1.0);
+          vec3 mir = texture2D(uFxReflTex, clamp(rp4.xy / rp4.w, 0.001, 0.999)).rgb * 0.9;
+          vec3 I = normalize(vPdWp - cameraPosition);
+          float fres = 0.02 + 0.98 * pow(1.0 - clamp(-I.y, 0.0, 1.0), 5.0);
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, mir, 0.2 + 0.7 * fres);
+        }
+        #include <fog_fragment>`,
+      );
+  };
+  mat.customProgramCacheKey = () => 'puddle_fx';
+  return mat;
+}

@@ -140,7 +140,7 @@ const PALETTES = {
  * @param {{seed?:number, rows?:number, minW?:number, maxW?:number, palette?:string, mortarW?:number,
  *   chamfer?:number, chips?:number, erosion?:number, moss?:number, soot?:number, mortar?:number[], sheen?:number}} o
  */
-export function ashlar2({ seed = 21, rows = 10, minW = 0.12, maxW = 0.26, palette = 'warm', mortarW = 0.0035, chamfer = 0.004, chips = 1, erosion = 1, moss = 0.3, soot = 0, mortar = null, sheen = 0, joints = true, cracks = 0, spalls = 1, courseVar = 0.6, toneVar = 1, relief = 0, wash = 0 } = {}) {
+export function ashlar2({ seed = 21, rows = 10, minW = 0.12, maxW = 0.26, palette = 'warm', mortarW = 0.0035, chamfer = 0.004, chips = 1, erosion = 1, moss = 0.3, soot = 0, mortar = null, sheen = 0, joints = true, cracks = 0, spalls = 1, courseVar = 0.6, toneVar = 1, relief = 0, wash = 0, core = 0, tiltK = 1 } = {}) {
   const lay0 = layout({ rows, seed, minW, maxW, courseVar });
   // jointless variant (single dressed blocks: jambs, voussoirs, quoins carry their own geometry bevels)
   const lay = joints ? lay0 : (u, v) => ({ row: 0, col: 0, x0: -2, x1: 3, y0: -2, y1: 3, uu: u, v });
@@ -158,6 +158,7 @@ export function ashlar2({ seed = 21, rows = 10, minW = 0.12, maxW = 0.26, palett
   const fLichen = bake(256, 7, { octaves: 4, seed: seed + 8, warp: 0.4 });
   const fCrust = bake(256, 24, { octaves: 3, seed: seed + 9 });
   const fSoot = bake(128, 3, { octaves: 3, seed: seed + 10, aniso: 0.5 });
+  const fCore = bake(64, 3, { octaves: 3, seed: seed + 12, warp: 0.5 });
   return (u, v) => {
     const L = { ...lay(u, v) };
     // break the perfect running bond: some stones are two half-height pieces, some long ones
@@ -179,6 +180,15 @@ export function ashlar2({ seed = 21, rows = 10, minW = 0.12, maxW = 0.26, palett
       }
     }
     const sid = hash2(L.row * 131 + L.col, L.row, seed + 77);
+    // lost facing stones: where the wall has decayed (broad patches) whole blocks are gone,
+    // leaving the rubble-and-lime core recessed behind the face
+    let lost = 0;
+    if (joints && core > 0) {
+      const cu = fract((L.x0 + L.x1) / 2);
+      const cv = (L.y0 + L.y1) / 2;
+      const pk = fCore(cu, cv) - 0.5 + core * 0.22;
+      lost = hash2(L.row * 97 + L.col, 31, seed + 5) < pk * 1.6 * core ? 1 : 0;
+    }
     const sA = hash2(L.row * 57 + L.col, 3, seed + 41);
     const sB = hash2(L.row * 57 + L.col, 5, seed + 43);
     const sC = hash2(L.row * 57 + L.col, 9, seed + 47);
@@ -207,9 +217,11 @@ export function ashlar2({ seed = 21, rows = 10, minW = 0.12, maxW = 0.26, palett
     // stone mask (crisp: ~1 px transition at 1024)
     const inStone = smooth(mw - 0.0006, mw + 0.0006, e);
     // chamfer: linear ramp from the joint to the face
-    const cham = clamp01((e - mw) / Math.max(1e-4, chamfer * (0.6 + sA * 0.8)));
+    // every stone dressed differently: crisp sharp-arrised blocks beside soft, rounded old ones
+    const chamK = sC < 0.3 ? 0.35 + sC : sC > 0.8 ? 1.4 + (sC - 0.8) * 2 : 0.6 + sA * 0.8;
+    const cham = clamp01((e - mw) / Math.max(1e-4, chamfer * chamK));
     // face: flat plane with a per-stone tilt, a little broad wind and micro relief
-    const tilt = ((dxl / bw - 0.5) * (hash2(L.row, L.col, seed + 61) - 0.5) + (dyt / bh - 0.5) * (hash2(L.row, L.col, seed + 62) - 0.5)) * 0.06;
+    const tilt = ((dxl / bw - 0.5) * (hash2(L.row, L.col, seed + 61) - 0.5) + (dyt / bh - 0.5) * (hash2(L.row, L.col, seed + 62) - 0.5)) * 0.06 * tiltK;
     const dressing = sA > 0.75 ? (fine - 0.5) * 0.1 + (mid - 0.5) * 0.08 : (fine - 0.5) * 0.04 + (mid - 0.5) * 0.035;
     // tooled striations (diagonal batting) on some stones
     const tool = sA < 0.4 ? (valueNoise((u * Math.cos(sC) + v * Math.sin(sC)) * 900, 0.5, 1000, seed + 31) - 0.5) * 0.012 : 0;
@@ -257,7 +269,18 @@ export function ashlar2({ seed = 21, rows = 10, minW = 0.12, maxW = 0.26, palett
     const stoneH = lerp(0.3, top, camR);
     // mortar: recessed soft groove (rounded), slightly sandy
     const groove = 0.12 + 0.12 * smooth(0, mw, e) + (fine - 0.5) * 0.03;
-    const h = lerp(groove, stoneH, inStone);
+    let h = lerp(groove, stoneH, inStone);
+    let coreC = null;
+    if (lost) {
+      // rubble core: fist-sized stones bedded in crumbling lime, deep in shadow
+      const rc = worley(u * 70 + (fine - 0.5) * 1.2, v * 70 + (mid - 0.5) * 1.2, 70, seed + 19);
+      const pebble = smooth(0.62, 0.3, rc.f1);
+      h = 0.06 + pebble * 0.12 + (fine - 0.5) * 0.04;
+      const pc = pal[Math.floor(rc.id * pal.length)];
+      const lime = mul3(mortarC, 0.55 + mid * 0.25);
+      coreC = mix3(lime, mul3(pc, 0.62 + rc.id * 0.3), pebble);
+      coreC = mul3(coreC, 0.72 + fine * 0.2);
+    }
 
     // ---------------------------------------------------------------- colour
     let c = mix3(pAvg, pal[Math.floor(sid * pal.length)], toneVar);
@@ -296,12 +319,13 @@ export function ashlar2({ seed = 21, rows = 10, minW = 0.12, maxW = 0.26, palett
     let mc = mul3(mortarC, 0.78 + mid * 0.3 + (micro - 0.5) * 0.1);
     mc = mix3(mc, mul3(mortarC, 0.6), smooth(0.55, 0.72, big) * 0.6);
     mc = mix3(mc, [0.22, 0.27, 0.15], smooth(0.62, 0.8, lich) * moss * 0.8);
-    const col = mix3(mc, c, inStone);
+    const col = coreC ?? mix3(mc, c, inStone);
     // roughness: honed faces a touch smoother, chips and mortar matte
     let r = 0.78 + sB * 0.12 + (fine - 0.5) * 0.08 - sheen * (1 - sA) * 0.35;
     r = lerp(r, 0.93, fresh);
     r = lerp(0.97, clamp01(r), inStone);
-    return { c: col, h, r, d: decal * inStone, id: joints ? sid : 0 };
+    if (lost) r = 0.97;
+    return { c: col, h, r, d: lost ? 0 : decal * inStone, id: joints ? sid : 0 };
   };
 }
 

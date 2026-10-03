@@ -211,9 +211,9 @@ export function buildSkyline(map, ts, opts = {}) {
   }
   // quay wall along the harbour
   if (!harbour) g.box('arch_stone_cold', { c: [cx, -2.2, H + 26], s: [800, 1.4, 1.6], ao: 0.8 });
-  const rig = { sails: [], lines: [], lamps: [] };
-  // warm lit windows that read even at dusk (lighthouse, keep): their own unlit emissive mesh
+  // warm lit windows that read even at dusk (lighthouse, keep, the cogs' stern lights): their own unlit emissive mesh
   const glow = new GeoBuilder();
+  const rig = { sails: [], lines: [], lamps: [], glow };
   const shadows = [];
   let beacon = null;
   if (harbour) {
@@ -361,7 +361,7 @@ export function buildSkyline(map, ts, opts = {}) {
     const fg = new THREE.BufferGeometry();
     fg.setAttribute('position', new THREE.Float32BufferAttribute(fpos, 3));
     fg.setAttribute('uv', new THREE.Float32BufferAttribute(fuv, 2));
-    const fm = new THREE.MeshBasicMaterial({ color: night > 0.5 ? 0x30384a : 0xd8d4cc, transparent: true, opacity: night > 0.5 ? 0.25 : 0.42, depthWrite: false, alphaMap: foamAlpha() });
+    const fm = new THREE.MeshBasicMaterial({ color: night > 0.5 ? 0x30384a : 0xd8d4cc, transparent: true, opacity: night > 0.5 ? 0.3 : 0.7, depthWrite: false, alphaMap: foamAlpha() });
     const fmesh = new THREE.Mesh(fg, fm);
     fmesh.renderOrder = 7;
     group.add(fmesh);

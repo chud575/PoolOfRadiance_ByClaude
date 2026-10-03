@@ -1,7 +1,8 @@
 import * as THREE from 'three';
+import { buildLightSpill } from './LightSpill.js';
 import { toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { CELL, EDGE } from '../../data/maps/MapGrid.js';
-import { getMaterial, getLampGlassMaterial, SURFACE_UNIFORMS } from '../../render/materials.js';
+import { getMaterial, getLampGlassMaterial, SURFACE_UNIFORMS, patchPuddleMaterial } from '../../render/materials.js';
 import { getStainTexture, getBannerTexture, getGrassTexture, getIvyClusterTexture, getCobwebTexture, getPuddleTexture, getSoftTexture, getRugTexture, getRugBumpTexture, getRugFringeTexture, getTapestryTexture, getNoticeTexture, getBlobTexture } from '../../render/textures/index.js';
 import { GeoBuilder, hash, roughBlockGeometry } from './GeoBuilder.js';
 import { puddleChance } from './exploreRules.js';
@@ -505,10 +506,10 @@ export function buildProps(map, block, opts = {}) {
 
   // warm light pools under lit windows at night
   if (night > 0.3 && ts.outdoors) {
+    // (ground-floor windows light the street themselves — BlockBuilder; here the upper storeys)
     for (const w of block.windows) {
-      if (w.border) continue;
-      const p = w.pos.clone().addScaledVector(w.N, w.upper ? 1.6 : 0.9);
-      pools.push({ x: p.x, z: p.z, sx: w.upper ? 2.2 : 1.6, sz: w.upper ? 2.6 : 1.8, N: w.N, a: (w.upper ? 0.16 : 0.28) * night });
+      if (w.border || !w.upper) continue;
+      pools.push({ w });
     }
   }
 
@@ -717,8 +718,8 @@ export function buildProps(map, block, opts = {}) {
   }
   // puddles (glossy decals that reflect the environment)
   if (puddles.length) {
-    const mat = new THREE.MeshStandardMaterial({ color: 0x050607, roughness: ts.outdoors ? 0.12 : 0.38, metalness: 0.0, transparent: true, alphaMap: getPuddleTexture(), depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, envMapIntensity: 0.45 });
-    mat.opacity = 0.5;
+    const mat = patchPuddleMaterial(new THREE.MeshStandardMaterial({ color: 0x050607, roughness: ts.outdoors ? 0.16 : 0.38, metalness: 0.0, transparent: true, alphaMap: getPuddleTexture(), depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, envMapIntensity: 0.45 }));
+    mat.opacity = 0.62;
     const b = new GeoBuilder();
     for (const p of puddles) {
       const c = Math.cos(p.r) * p.s * 0.5;
@@ -763,20 +764,20 @@ export function buildProps(map, block, opts = {}) {
     group.add(mesh);
     own.push(geo, mat);
   }
-  // window light pools
+  // window light pools: the lamplit opening as a real (soft) light lobe onto the street below
   if (pools.length) {
-    const mat = new THREE.MeshBasicMaterial({ map: getSoftTexture(), color: 0xffa050, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -3, vertexColors: true });
-    const b = new GeoBuilder();
-    for (const p of pools) {
-      const Tt = new THREE.Vector3(-p.N.z, 0, p.N.x);
-      const P = (a, c) => new THREE.Vector3(p.x, 0.02, p.z).addScaledVector(Tt, a * p.sx * 0.5).addScaledVector(p.N, c * p.sz * 0.5);
-      b.quad('pool', P(-1, -1), P(-1, 1), P(1, 1), P(1, -1), [[0, 0], [0, 1], [1, 1], [1, 0]], { ao: p.a });
+    const quads = [];
+    const up = new THREE.Vector3(0, 1, 0);
+    for (const { w } of pools) {
+      const N = new THREE.Vector3(w.N.x, 0, w.N.z).normalize();
+      const Tt = new THREE.Vector3(-N.z, 0, N.x);
+      const c = new THREE.Vector3(w.pos.x, 0.02, w.pos.z);
+      const P = (a, d) => c.clone().addScaledVector(Tt, a).addScaledVector(N, d);
+      quads.push({ q: [P(-2.6, 0.1), P(2.6, 0.1), P(2.6, 5.5), P(-2.6, 5.5)], origin: w.pos.clone().addScaledVector(N, -0.5), dir: N, n: up, k: 1 });
     }
-    const geo = b.build().get('pool');
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.renderOrder = 2;
+    const mesh = buildLightSpill(quads, { color: 0xffb478, gain: 2.0 * night });
     group.add(mesh);
-    own.push(geo, mat);
+    own.push(mesh.geometry, mesh.material);
   }
   // rugs
   let fringeMat = null;

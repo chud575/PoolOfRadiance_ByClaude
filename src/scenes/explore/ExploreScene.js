@@ -13,6 +13,7 @@ import { buildSkyline } from './Skyline.js';
 import { createParticles } from './Particles.js';
 import { GodRaysPass } from './GodRays.js';
 import { buildWetReflections } from './WetReflections.js';
+import { PuddleMirror } from './PuddleMirror.js';
 import { CELL } from '../../data/maps/MapGrid.js';
 import { dressDungeon, BANE_FLAME, BANE_LIGHT } from './DungeonDressing.js';
 import { dressRooms } from './RoomDressing.js';
@@ -82,6 +83,14 @@ export default class ExploreScene extends Scene {
     }
     this._setupParticles();
     this._setupEnvironment();
+    // standing water mirrors the street (one half-res planar pass, only while the ground is wet)
+    if (SURFACE_UNIFORMS.uFxWet.value > 0 && (ts.outdoors || ts.id === 'dungeon')) {
+      this.mirror = new PuddleMirror(0.5);
+      this.own(() => {
+        this.mirror?.dispose();
+        this.mirror = null;
+      });
+    }
 
     this._setupGodRays();
     this.post = this._postFor();
@@ -127,7 +136,7 @@ export default class ExploreScene extends Scene {
       // grade: warm key, cool sky fill — a clear sun-to-ambient ratio by day
       // (low sun: the open sky overhead is still blue — cool shade against the warm key keeps
       // stone, timber and plaster apart instead of one orange-brown wash)
-      const skyFill = night ? new THREE.Color(k.sky) : new THREE.Color(k.sky).lerp(new THREE.Color(k.scatter > 0.8 ? 0x8494c8 : 0xd6dce6), k.scatter > 0.8 ? 0.62 : 0.5);
+      const skyFill = night ? new THREE.Color(k.sky) : new THREE.Color(k.sky).lerp(new THREE.Color(k.scatter > 0.8 ? 0x6c88cc : 0xd6dce6), k.scatter > 0.8 ? 0.74 : 0.5);
       // sunlit paving bounces warm light up into the shade
       const bounce = night ? new THREE.Color(k.ground).multiplyScalar(1.2) : new THREE.Color(k.ground).lerp(new THREE.Color(0x9a8064), 0.75).lerp(new THREE.Color(k.sun), 0.15);
       this.hemi = new THREE.HemisphereLight(skyFill, bounce, k.hemi * (night ? 2.5 : 2.25));
@@ -136,7 +145,8 @@ export default class ExploreScene extends Scene {
       this._hemiOut = { sky: skyFill.clone(), ground: bounce.clone(), i: this.hemi.intensity };
       this._hemiIn = { sky: new THREE.Color(night ? 0x8a6a4a : 0xc8b49a), ground: new THREE.Color(night ? 0x4a3828 : 0x8a6a4c), i: night ? 1.4 : 2.2 }; // ground = warm bounce off the boards onto the ceiling
       this._roofMix = 0;
-      const sunCol = night ? new THREE.Color(0x9db4ff) : new THREE.Color(k.sun).lerp(new THREE.Color(0xffd6a0), 0.3);
+      // (a low sun is desaturated a touch so lit stone, plaster and timber keep their own colours)
+      const sunCol = night ? new THREE.Color(0x9db4ff) : new THREE.Color(k.sun).lerp(new THREE.Color(k.scatter > 0.8 ? 0xffe4c4 : 0xffd6a0), k.scatter > 0.8 ? 0.42 : 0.3);
       this.sun = new THREE.DirectionalLight(sunCol, night ? 1.15 : k.sunI * 1.85);
       this.sunDir = (night ? k.moonDir : k.trueSunDir).clone();
       if (!night) this.sunDir.y *= 0.88; // slightly lower arc → legible shadows (not a band across the foreground)
@@ -173,6 +183,7 @@ export default class ExploreScene extends Scene {
       }
       // low-sun haze kept thin enough that the mid-ground holds its contrast
       s.fog = new THREE.FogExp2(k.fog, k.fogDensity * (this.map.harbour ? 0.38 : 0.72) * (k.scatter > 0.8 && !night ? 0.78 : 1));
+      this._dirSpec = night ? 0.32 : 1;
       setSurfaceAtmosphere({
         sunDir: k.trueSunDir.y > -0.05 ? k.trueSunDir : k.moonDir,
         sunColor: k.sunCol,
@@ -330,7 +341,7 @@ export default class ExploreScene extends Scene {
         : { bloomStrength: 0.55, bloomThreshold: 0.75, bloomRadius: 0.5, exposure: 1.25, vignette: 0.42, saturation: 1.05, contrast: 1.05 };
     }
     if (this.night > 0.5) return { bloomStrength: 0.75, bloomThreshold: 0.62, bloomRadius: 0.55, exposure: 1.3, vignette: 0.45, saturation: 1.05, contrast: 1.05 };
-    if (this.keys.scatter > 0.8) return { bloomStrength: 0.5, bloomThreshold: 0.8, bloomRadius: 0.6, exposure: 1.05, vignette: 0.38, saturation: 1.08 };
+    if (this.keys.scatter > 0.8) return { bloomStrength: 0.5, bloomThreshold: 0.8, bloomRadius: 0.6, exposure: 1.08, vignette: 0.38, saturation: 0.98, contrast: 1.07 };
     return { bloomStrength: 0.32, bloomThreshold: 0.9, bloomRadius: 0.55, exposure: 1.06, vignette: 0.32, saturation: 1.06, contrast: 1.05 };
   }
 
@@ -622,6 +633,10 @@ export default class ExploreScene extends Scene {
     if (frozen && !this.tween && (this._settled ?? 0) >= 3) {
       this._idleFrames = (this._idleFrames ?? 0) + 1;
       if (this._idleFrames % 120 !== 0) return;
+    }
+    if (this.mirror) {
+      this.mirror.hidden = [this.wetRefl].filter(Boolean);
+      this.mirror.render(this.ctx.render.renderer, this.scene3d, this.camera);
     }
     if (this.godRays) this.godRays.enabled = true;
     super.render();
@@ -1007,6 +1022,9 @@ export default class ExploreScene extends Scene {
 
   _animateWorld(time, dt, frozen) {
     FLAME_UNIFORMS.uTime.value = time;
+    SURFACE_UNIFORMS.uFxTime.value = time;
+    // (set every frame: the shared uniform must not be left to whichever scene touched it last)
+    SURFACE_UNIFORMS.uFxDirSpec.value = this._dirSpec ?? 1;
     this._updateRoofLight(dt, frozen);
     // eye adaptation: looking into the sun means looking at shaded faces — open up a little
     if (this.tileset.outdoors && this.keys.night < 0.5 && this.sunDir) {
@@ -1062,6 +1080,7 @@ export default class ExploreScene extends Scene {
   }
 
   exit() {
+    SURFACE_UNIFORMS.uFxDirSpec.value = 1;
     this._disposeBlock();
     for (const p of this.particles ?? []) p.userData.dispose();
     this.shafts?.userData.dispose();

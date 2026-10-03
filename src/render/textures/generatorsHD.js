@@ -161,7 +161,7 @@ export function ashlar({ seed = 21, rows = 8, minW = 0.18, maxW = 0.34, palette 
  * spalls where the render has fallen away exposing riven oak lath.
  * Tile ≈ 3 m.
  */
-export function plaster({ seed = 31, base = [0.78, 0.72, 0.6], decay = 1, interior = false, lumps = 0, flake = 0 } = {}) {
+export function plaster({ seed = 31, base = [0.78, 0.72, 0.6], decay = 1, interior = false, lumps = 0, flake = 0, swirl = 0, wattle = 0 } = {}) {
   return (u, v) => {
     // hand-thrown daub under the limewash: soft lumps and hollows at the 5–20 cm scale
     const lump = lumps ? wfbm(u + 0.37, v + 0.11, 7, seed + 40, 4, 0.3) : 0.5;
@@ -182,6 +182,17 @@ export function plaster({ seed = 31, base = [0.78, 0.72, 0.6], decay = 1, interi
     const drip = fbm(u * 40, v * 1.4, { octaves: 3, period: 40, seed: seed + 5 });
     c = mul3(c, 1 - smooth(0.62, 0.86, drip) * 0.1 * decay);
     let h = 0.6 + trowel * 0.05 + mid * 0.04 + fine * 0.012 + sweep * 0.02 + (lump - 0.5) * 0.12 * lumps + (lump2 - 0.5) * 0.025 * lumps;
+    if (swirl) {
+      // trowel/float swirls: each sweep of the float leaves shallow concentric arcs round its
+      // pivot and a crisp ridge where it overlaps the next sweep (reads under grazing light)
+      const wq = worley(u * 9 + (mid - 0.5) * 0.5, v * 9 + (big - 0.5) * 0.5, 9, seed + 50);
+      const rr = wq.f1 * (5.5 + wq.id * 3) + wq.id * 7;
+      const arc = Math.pow(Math.abs(Math.sin(rr * Math.PI)), 6);
+      const lap = 1 - smooth(0.0, 0.05 + wq.id * 0.04, wq.f2 - wq.f1);
+      const fade = smooth(0.15, 0.5, wq.f1 + (fine - 0.5) * 0.2);
+      h += (arc * 0.022 * fade + lap * 0.05 - wq.f1 * 0.02) * swirl;
+      c = mul3(c, 1 + (lap * 0.05 + arc * fade * 0.025) * swirl);
+    }
     // limewash thicker in the hollows (lighter), worn thin on the lumps (the ochre daub shows)
     c = mul3(c, 1 + (0.5 - lump) * 0.16 * lumps);
     let r = 0.9 - fine * 0.05;
@@ -224,17 +235,31 @@ export function plaster({ seed = 31, base = [0.78, 0.72, 0.6], decay = 1, interi
     // small spalls exposing riven oak lath (with dark gaps) behind the render
     if (!interior) {
       const sp = wfbm(u, v, 9, seed + 8, 4, 0.5);
-      const spMask = smooth(0.7, 0.76, fbm(u * 2, v * 2, { octaves: 2, period: 2, seed: seed + 18 }));
+      const spMask = smooth(0.7 - wattle * 0.1, 0.76 - wattle * 0.1, fbm(u * 2, v * 2, { octaves: 2, period: 2, seed: seed + 18 }));
       const spall = smooth(0.745, 0.755, sp) * decay * spMask;
       if (spall > 0) {
-        const lv = v * 70 + (fbm(u * 8, v * 8, { octaves: 2, period: 8, seed: seed + 9 }) - 0.5) * 2;
+        const lv = v * (wattle ? 46 : 70) + (fbm(u * 8, v * 8, { octaves: 2, period: 8, seed: seed + 9 }) - 0.5) * 2;
         const lf = lv - Math.floor(lv);
-        const lath = smooth(0.08, 0.2, lf) * (1 - smooth(0.72, 0.85, lf));
+        let lath = smooth(0.08, 0.2, lf) * (1 - smooth(0.72, 0.85, lf));
+        let lathH = lath * 0.18;
+        if (wattle) {
+          // woven wattle: hazel rods passing over and under upright staves (each rod rounded,
+          // bulging where it crosses in front), with clay daub still packed in the gaps
+          const su = u * 26;
+          const sf = su - Math.floor(su);
+          const stave = 1 - smooth(0.0, 0.12, Math.abs(sf - 0.5) - 0.3);
+          const over = (Math.floor(su) + Math.floor(lv)) % 2 === 0 ? 1 : 0;
+          const roundRod = Math.sin(Math.min(1, Math.max(0, (lf - 0.06) / 0.88)) * Math.PI);
+          const bulge = over ? 0.7 + 0.3 * Math.sin(sf * Math.PI) : 1 - 0.35 * Math.sin(sf * Math.PI);
+          lath = Math.max(roundRod > 0.15 ? 1 : 0, stave * 0.8);
+          lathH = roundRod * 0.16 * bulge + stave * 0.05;
+        }
         const grain = valueNoise(u * 300, lv * 2, 1000, seed + 10);
         const wood = mul3([0.3, 0.22, 0.15], 0.7 + grain * 0.5);
-        const under = mix3([0.16, 0.13, 0.1], wood, lath);
+        const daub = mul3([0.42, 0.33, 0.22], 0.8 + mid * 0.3);
+        const under = mix3(wattle ? daub : [0.16, 0.13, 0.1], wood, lath);
         c = mix3(c, under, spall);
-        h = lerp(h, 0.3 + lath * 0.18, spall);
+        h = lerp(h, 0.3 + lathH, spall);
         r = lerp(r, 0.95, spall);
       }
       // raised rim of render around each spall (broken edge)
@@ -250,10 +275,12 @@ export function plaster({ seed = 31, base = [0.78, 0.72, 0.6], decay = 1, interi
  * Weathered oak beam — grain runs along V. Checks (drying cracks), nail heads.
  * Tile ≈ 1 m (beam width maps to part of U).
  */
-export function oakBeam({ seed = 41, base = [0.26, 0.18, 0.12], grey = 0.35 } = {}) {
+export function oakBeam({ seed = 41, base = [0.26, 0.18, 0.12], grey = 0.35, fibre = 0 } = {}) {
   return (u, v) => {
     const g1 = valueNoise(u * 40, v * 3, 40, seed);
     const g2 = valueNoise(u * 120, v * 6, 120, seed + 1);
+    // open-pored fibre lines running with the grain (adze-dressed and weathered: raised late wood)
+    const fib = fibre ? valueNoise(u * 420 + Math.sin(v * 12.566 + u * 30) * 1.5, v * 8, 420, seed + 9) : 0.5;
     const g3 = fbm(u * 8, v * 1, { octaves: 3, period: 8, seed: seed + 2 });
     const ring = Math.sin((u * 26 + g3 * 5) * Math.PI * 2) * 0.5 + 0.5;
     let c = mul3(base, 0.72 + g1 * 0.3 + g2 * 0.15 + ring * 0.12);
@@ -263,7 +290,14 @@ export function oakBeam({ seed = 41, base = [0.26, 0.18, 0.12], grey = 0.35 } = 
     const check = 1 - smooth(0.0, 0.03, Math.abs(chk - 0.5));
     const checkMask = smooth(0.4, 0.7, valueNoise(u * 5, v * 3, 5, seed + 5));
     c = mul3(c, 1 - check * checkMask * 0.7);
-    let h = 0.6 + g1 * 0.12 + g2 * 0.08 + ring * 0.05 - check * checkMask * 0.4;
+    let h = 0.6 + g1 * 0.12 + g2 * 0.08 + ring * 0.05 - check * checkMask * 0.4 + (fib - 0.5) * 0.12 * fibre;
+    c = mul3(c, 1 + (fib - 0.5) * 0.22 * fibre);
+    if (fibre) {
+      // adze facets: shallow scallops across the grain, every 6–10 cm
+      const az = v * 14 + g3 * 2;
+      const af = az - Math.floor(az);
+      h += (af * af - 0.33) * 0.06 * fibre;
+    }
     // iron nail heads
     const nw = worley(u * 5, v * 5, 5, seed + 6);
     if (nw.id > 0.8 && nw.f1 < 0.06) {

@@ -64,8 +64,16 @@ export function createSea(o) {
         vec3 I = normalize(vWp - cameraPosition);
         // mirror image, displaced by the wave slope (more up close, where waves are larger on screen)
         vec4 uvr = vUvR;
-        uvr.xy += slope * (fade * 0.11 + near * 0.08) * uvr.w;
-        vec3 refl = texture2DProj(tDiffuse, uvr).rgb;
+        // broken reflections: the swell tears the mirror image into vertical shards (screen-y
+        // displacement dominates), and the image softens with distance (micro-facets average out)
+        uvr.x += slope.x * (fade * 0.14 + near * 0.08) * uvr.w;
+        uvr.y += (slope.y * (fade * 0.3 + near * 0.1) + abs(slope.x) * 0.04 * fade) * uvr.w;
+        float blur = (0.002 + min(dist, 150.0) * 0.00008) * uvr.w;
+        vec3 refl = texture2DProj(tDiffuse, uvr).rgb * 0.4;
+        refl += texture2DProj(tDiffuse, uvr + vec4(blur, blur * 2.5, 0.0, 0.0)).rgb * 0.15;
+        refl += texture2DProj(tDiffuse, uvr + vec4(-blur, -blur * 2.5, 0.0, 0.0)).rgb * 0.15;
+        refl += texture2DProj(tDiffuse, uvr + vec4(blur * 0.6, -blur * 4.0, 0.0, 0.0)).rgb * 0.15;
+        refl += texture2DProj(tDiffuse, uvr + vec4(-blur * 0.6, blur * 4.0, 0.0, 0.0)).rgb * 0.15;
         // analytic sky where the mirror render is empty
         vec3 R = reflect(I, N);
         vec3 sky = mix(uSkyHor, uSkyTop, pow(clamp(R.y, 0.0, 1.0), 0.45));
@@ -73,9 +81,11 @@ export function createSea(o) {
         refl = mix(refl, sky, empty);
         float cosT = clamp(-I.y, 0.0, 1.0);
         float fres = 0.02 + 0.98 * pow(1.0 - cosT, 5.0);
-        fres = clamp(fres * 0.9 + 0.05, 0.0, 0.92);
+        fres = clamp(fres * 0.85 + 0.04, 0.0, 0.8);
         // deep water: darker looking down, a little turbid green near the camera
+        // wave faces tilted toward the viewer show the deep water, the backs the bright sky
         vec3 deep = uDeep * (0.75 + 0.25 * slope.x);
+        fres = clamp(fres + slope.y * 0.12 * fade, 0.0, 0.85);
         vec3 col = mix(deep, refl, fres);
         // foam-white crests where the waves fold (sparse, near)
         float crest = smoothstep(0.82, 1.0, n1.z * 0.5 + 0.5 - length(slope) * 0.25) * 0.0;

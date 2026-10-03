@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { materialData } from './canvas.js';
 import { TEXTURE_DEFS } from './defs.js';
+import { fbm } from './noise.js';
 
 export { TEXTURE_DEFS };
 
@@ -467,22 +468,34 @@ export function getCobwebTexture() {
   });
 }
 
-/** Puddle / wet decal mask (alpha = wetness). */
+/** Puddle / wet decal mask (alpha = wetness): a lobed, ragged pool with a damp fringe. */
 export function getPuddleTexture() {
-  return canvasTex('puddle', 128, 128, (g, w, h) => {
+  return canvasTex('puddle2', 256, 256, (g, w, h) => {
     const r = rng(13);
-    g.clearRect(0, 0, w, h);
-    for (let i = 0; i < 18; i++) {
-      const x = w * (0.3 + r() * 0.4);
-      const y = h * (0.3 + r() * 0.4);
-      const rad = w * (0.08 + r() * 0.18);
-      const grd = g.createRadialGradient(x, y, 0, x, y, rad);
-      grd.addColorStop(0, 'rgba(255,255,255,0.9)');
-      grd.addColorStop(0.7, 'rgba(255,255,255,0.6)');
-      grd.addColorStop(1, 'rgba(255,255,255,0)');
-      g.fillStyle = grd;
-      g.fillRect(0, 0, w, h);
+    const blobs = [];
+    for (let i = 0; i < 7; i++) blobs.push([0.3 + r() * 0.4, 0.3 + r() * 0.4, 0.1 + r() * 0.14]);
+    const img = g.createImageData(w, h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const u = x / w;
+        const v = y / h;
+        let f = 0;
+        for (const [bx, by, br] of blobs) f = Math.max(f, 1 - Math.hypot(u - bx, v - by) / br);
+        // ragged shoreline: two octaves of noise eat into the edge (fingers into the joints)
+        const n = fbm(u * 6, v * 6, { octaves: 4, period: 6, seed: 71 }) - 0.5;
+        const n2 = fbm(u * 24, v * 24, { octaves: 2, period: 24, seed: 72 }) - 0.5;
+        const e = f + n * 0.5 + n2 * 0.16;
+        const edgeFade = Math.min(1, Math.min(u, 1 - u, v, 1 - v) * 8);
+        const water = Math.min(1, Math.max(0, (e - 0.12) / 0.04));
+        const damp = Math.min(1, Math.max(0, (e + 0.1) / 0.2)) * 0.32;
+        const a = Math.max(water, damp) * edgeFade;
+        const o = (y * w + x) * 4;
+        // (three's alphaMap reads the green channel: store the mask in RGB, opaque)
+        img.data[o] = img.data[o + 1] = img.data[o + 2] = a * 255;
+        img.data[o + 3] = 255;
+      }
     }
+    g.putImageData(img, 0, 0);
   }, { srgb: false });
 }
 

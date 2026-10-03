@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { buildLightSpill } from './LightSpill.js';
 import { EDGE, CELL } from '../../data/maps/MapGrid.js';
 import { getMaterial, getWindowMaterial } from '../../render/materials.js';
 import { getInscriptionTexture, getEmberTexture, getSootTexture, getScorchTexture, getBlobTexture, getRunoffTexture, getPlinthGrimeTexture, getRutTexture, getInscriptionNormal } from '../../render/textures/index.js';
@@ -230,9 +231,72 @@ export function buildBlock(map, opts = {}) {
       }
     }
     // weed and wet darkening at the waterline
-    const ring = new THREE.CylinderGeometry(r * 1.04, r * 1.06, 0.35, 9, 1, true);
-    g.geometry('prop_wood', ring, new THREE.Matrix4().makeTranslation(x, -0.35, z), { uv: 'world', tint: [0.2, 0.24, 0.16], ao: 0.6 });
+    if (map.harbour) pileFoam.push([x, z, r]);
+    // slimy green weed below the tide line, a darker wet band above it
+    const ring = new THREE.CylinderGeometry(r * 1.05, r * 1.08, 0.55, 9, 1, true);
+    g.geometry('prop_wood', ring, new THREE.Matrix4().makeTranslation(x, -0.5, z), { uv: 'world', tint: [0.14, 0.21, 0.1], ao: 0.55 });
     ring.dispose();
+    const wetB = new THREE.CylinderGeometry(r * 1.02, r * 1.04, 0.3, 9, 1, true);
+    g.geometry('prop_wood', wetB, new THREE.Matrix4().makeTranslation(x, -0.08, z), { uv: 'world', tint: [0.32, 0.3, 0.26], ao: 0.6 });
+    wetB.dispose();
+  }
+
+  /**
+   * Decorative pier run beyond the block's southern edge: decking on stringers, paired piles every
+   * 1.5 m with cross-bracing below, kerb logs, mooring bollards with rope coiled on the deck.
+   */
+  function pierRun(cx, x0, zA) {
+    const L = 13.5;
+    const n = Math.round(L / 0.3);
+    for (let k = 0; k < n; k++) {
+      if (hash(map.id, cx, k, 'pgone') < 0.035) continue;
+      const z = zA + (k + 0.5) * (L / n);
+      const lift = (hash(map.id, cx, k, 'plf') - 0.5) * 0.014;
+      const tint = 0.74 + hash(map.id, cx, k, 'ptn') * 0.32;
+      const jx = (hash(map.id, cx, k, 'pjx') - 0.5) * 0.12;
+      g.box('arch_boards', { c: [x0 + S / 2 + jx, -0.025 + lift, z], s: [S - 0.06 + Math.abs(jx), 0.06, L / n - 0.025], uv: 'world', tint: [tint, tint * 0.95, tint * 0.88], rotY: (hash(map.id, cx, k, 'pry') - 0.5) * 0.012, ao: (q, nn) => (nn.y > 0.5 ? 0.95 : 0.5) });
+    }
+    for (const o of [-0.9, 0.9]) g.box('prop_wood', { c: [x0 + S / 2 + o, -0.17, zA + L / 2], s: [0.2, 0.22, L], uv: 'along', tint: [0.45, 0.4, 0.35], ao: 0.5 });
+    const np = Math.floor(L / 1.5);
+    for (let k = 0; k <= np; k++) {
+      const z = zA + 0.4 + k * ((L - 0.6) / np);
+      for (const side of [0, 1]) {
+        const px = x0 + (side ? S - 0.14 : 0.14);
+        const bollard = k % 3 === 2 && hash(map.id, cx, k, side, 'bl') < 0.8;
+        pile(px, z, bollard ? 0.55 + hash(map.id, cx, k, side, 'bh') * 0.2 : -0.04, bollard ? 0.16 : 0.13, k * 7 + side);
+        if (bollard && hash(map.id, cx, k, side, 'rc') < 0.7) {
+          // a coil of hawser flaked down on the deck beside the post
+          const rx = px + (side ? -0.45 : 0.45);
+          for (let q = 0; q < 4; q++) {
+            const t = new THREE.TorusGeometry(0.22 - q * 0.025, 0.035, 6, 18);
+            t.rotateX(Math.PI / 2);
+            g.geometry('prop_burlap', t, new THREE.Matrix4().makeTranslation(rx, 0.035 + q * 0.055, z + 0.1), { uv: 'world', tint: [0.72, 0.62, 0.46], ao: q ? 0.9 : 0.6 });
+            t.dispose();
+          }
+        }
+      }
+      // cross-bracing between the pile pair, below the deck
+      if (k < np) {
+        const brace = new THREE.BoxGeometry(Math.hypot(S - 0.3, 1.1), 0.1, 0.08);
+        for (const sg of [-1, 1]) {
+          const m = new THREE.Matrix4().makeTranslation(x0 + S / 2, -0.85, z).multiply(new THREE.Matrix4().makeRotationZ(sg * Math.atan2(1.1, S - 0.3)));
+          g.geometry('prop_wood', brace, m, { uv: 'world', tint: [0.4, 0.38, 0.32], ao: 0.4 });
+        }
+        brace.dispose();
+      }
+    }
+    // kerb logs along both edges, gaps where the lines run out
+    for (const side of [0, 1]) {
+      let a = zA + 0.2;
+      for (let k = 0; a < zA + L - 0.4; k++) {
+        const l = Math.min(zA + L - 0.2 - a, 1.1 + hash(map.id, cx, side, k, 'kl') * 0.9);
+        g.box('prop_wood', { c: [x0 + (side ? S - 0.12 : 0.12), 0.065, a + l / 2], s: [0.16, 0.13, l], uv: 'along', chamfer: 0.02, tint: [0.66, 0.58, 0.5] });
+        a += l + 0.35;
+      }
+    }
+    // a ladder down the end into the water
+    for (const o of [-0.25, 0.25]) g.box('prop_wood', { c: [x0 + S / 2 + o, -0.6, zA + L + 0.05], s: [0.07, 1.4, 0.07], ao: 0.6, tint: [0.5, 0.45, 0.38] });
+    for (let r = 0; r < 4; r++) g.box('prop_wood', { c: [x0 + S / 2, -0.15 - r * 0.3, zA + L + 0.05], s: [0.5, 0.05, 0.05], ao: 0.6, tint: [0.5, 0.45, 0.38] });
   }
 
   // collect all wall edges once
@@ -432,6 +496,8 @@ export function buildBlock(map, opts = {}) {
   }
   const sootQuads = [];
   const spillQuads = [];
+  const creaseQuads = [];
+  const pileFoam = [];
   const torchSpill = [];
   // weathering decals: rain runoff under ledges, splash/damp at wall feet ([corners], [uvs])
   const runQuads = [];
@@ -554,6 +620,20 @@ export function buildBlock(map, opts = {}) {
   function localBox(f, key, s0, s1, y0, y1, d0, d1, o = {}) {
     if (s1 - s0 < 1e-3 || y1 - y0 < 1e-3 || d1 - d0 < 1e-3) return;
     g.box(key, { ...o, matrix: localMatrix(f, (s0 + s1) / 2, (y0 + y1) / 2, (d0 + d1) / 2, o.rotZ ?? 0), s: [s1 - s0, y1 - y0, d1 - d0] });
+    if (o.crease !== undefined) crease(f, (s0 + s1) / 2, (y0 + y1) / 2, s1 - s0, y1 - y0, 0, o.crease);
+  }
+  /**
+   * Contact shadow where a timber stands proud of the daub: a soft dark fringe on the plaster
+   * round the member's footprint (the crease the sun and the lamps never reach into).
+   */
+  function crease(f, cs, cy, w, h, ang, d) {
+    const m = 0.075;
+    const ca = Math.cos(ang);
+    const sa = Math.sin(ang);
+    const P = (a, b) => new THREE.Vector3(cs + a * ca - b * sa, cy + a * sa + b * ca, d + 0.0035).applyMatrix4(f.basis);
+    const hw = w / 2 + m;
+    const hh = h / 2 + m;
+    creaseQuads.push({ q: [P(-hw, -hh), P(hw, -hh), P(hw, hh), P(-hw, hh)], w: w / 2, h: h / 2, m });
   }
   /** Beam between two local points (s,y) at depth range. */
   function beam(f, key, a, b, w, d0, d1, o = {}) {
@@ -563,6 +643,7 @@ export function buildBlock(map, opts = {}) {
     const ang = Math.atan2(dy, dx);
     const m = localMatrix(f, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (d0 + d1) / 2, ang);
     g.box(key, { uv: 'along', skip: ['nz'], ...o, matrix: m, s: [len, w, d1 - d0] });
+    if (o.crease !== undefined) crease(f, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, len, w, ang, o.crease);
   }
   function endExt(f, end, d0, d1) {
     const m = f.ends[end];
@@ -894,7 +975,7 @@ export function buildBlock(map, opts = {}) {
     const dd0 = d - 0.02;
     const dd1 = d + 0.045;
     // sill & head
-    slab(f, key, y0, y0 + 0.16, dd0, dd1, { uv: 'along', skip: ['nz'] });
+    slab(f, key, y0, y0 + 0.16, dd0, dd1, { uv: 'along', skip: ['nz'], crease: d });
     const posts = new Set();
     for (const end of [-1, 1]) if (f.ends[end] !== 'inside') posts.add(end * (S / 2 - (f.ends[end] === 'convexExt' || f.ends[end] === 'convexNon' ? 0 : 0.02)));
     for (const op of f.openings) {
@@ -911,7 +992,7 @@ export function buildBlock(map, opts = {}) {
       }
     }
     const ps = [...posts].filter((s) => s >= -S / 2 - 0.01 && s <= S / 2 + 0.01).sort((a, b) => a - b);
-    for (const s of ps) localBox(f, key, s - bw / 2, s + bw / 2, y0 + 0.16, y1 - 0.02, dd0, dd1, { uv: 'along', skip: ['nz'] });
+    for (const s of ps) localBox(f, key, s - bw / 2, s + bw / 2, y0 + 0.16, y1 - 0.02, dd0, dd1, { uv: 'along', skip: ['nz'], crease: d });
     // braces + mid-rails in free bays between consecutive posts
     for (let k = 0; k < ps.length - 1; k++) {
       const a = ps[k] + bw / 2;
@@ -924,8 +1005,8 @@ export function buildBlock(map, opts = {}) {
         // rails above/below openings
         for (const op of f.openings) {
           if (op.s0 < b && op.s1 > a && op.y1 > y0 && op.y0 < y1) {
-            if (op.y0 > y0 + 0.3) localBox(f, key, a, b, op.y0 - 0.14, op.y0, dd0, dd1 + 0.02, { uv: 'along', skip: ['nz'] });
-            if (op.y1 < y1 - 0.3) localBox(f, key, a, b, op.y1, op.y1 + 0.14, dd0, dd1, { uv: 'along', skip: ['nz'] });
+            if (op.y0 > y0 + 0.3) localBox(f, key, a, b, op.y0 - 0.14, op.y0, dd0, dd1 + 0.02, { uv: 'along', skip: ['nz'], crease: d });
+            if (op.y1 < y1 - 0.3) localBox(f, key, a, b, op.y1, op.y1 + 0.14, dd0, dd1, { uv: 'along', skip: ['nz'], crease: d });
           }
         }
         continue;
@@ -933,16 +1014,16 @@ export function buildBlock(map, opts = {}) {
       const top = y1 - 0.02;
       const bot = y0 + 0.16;
       if (r < 0.4) {
-        beam(f, key, [a, bot], [b, top], 0.15, dd0, dd1 - 0.005);
+        beam(f, key, [a, bot], [b, top], 0.15, dd0, dd1 - 0.005, { crease: d });
       } else if (r < 0.7) {
-        beam(f, key, [a, top], [b, bot], 0.15, dd0, dd1 - 0.005);
+        beam(f, key, [a, top], [b, bot], 0.15, dd0, dd1 - 0.005, { crease: d });
       } else if (r < 0.88) {
         // St Andrew's cross / herringbone
-        beam(f, key, [a, bot], [mid, (bot + top) / 2], 0.14, dd0, dd1 - 0.005);
-        beam(f, key, [b, bot], [mid, (bot + top) / 2], 0.14, dd0, dd1 - 0.005);
-        localBox(f, key, a, b, (bot + top) / 2 - 0.07, (bot + top) / 2 + 0.07, dd0, dd1, { uv: 'along', skip: ['nz'] });
+        beam(f, key, [a, bot], [mid, (bot + top) / 2], 0.14, dd0, dd1 - 0.005, { crease: d });
+        beam(f, key, [b, bot], [mid, (bot + top) / 2], 0.14, dd0, dd1 - 0.005, { crease: d });
+        localBox(f, key, a, b, (bot + top) / 2 - 0.07, (bot + top) / 2 + 0.07, dd0, dd1, { uv: 'along', skip: ['nz'], crease: d });
       } else {
-        localBox(f, key, a, b, (bot + top) / 2 - 0.07, (bot + top) / 2 + 0.07, dd0, dd1, { uv: 'along', skip: ['nz'] });
+        localBox(f, key, a, b, (bot + top) / 2 - 0.07, (bot + top) / 2 + 0.07, dd0, dd1, { uv: 'along', skip: ['nz'], crease: d });
       }
     }
   }
@@ -1403,14 +1484,18 @@ export function buildBlock(map, opts = {}) {
       // warm lamplight spilling out: a glow on the reveal/sill/wall around the opening and,
       // for ground-floor windows, a pool on the street below
       const dw = dOut + outSign * 0.012;
-      const W2 = (s1 - s0) / 2 + 0.75;
       const cxs = (s0 + s1) / 2;
       const P = (sv, yy, dd) => new THREE.Vector3(sv, yy, dd).applyMatrix4(f.basis);
-      const q = [P(cxs - W2, y0 - 0.9, dw), P(cxs + W2, y0 - 0.9, dw), P(cxs + W2, y1 + 0.5, dw), P(cxs - W2, y1 + 0.5, dw)];
-      spillQuads.push(outSign > 0 ? q : [q[1], q[0], q[3], q[2]]);
+      const out = P(0, 0, outSign).sub(P(0, 0, 0)).normalize();
+      // the wall round the opening only gets what bounces off the sill and reveals: a tight,
+      // isotropic glow from a point just proud of the glass (no disc-shaped halo)
+      const W2 = (s1 - s0) / 2 + 0.5;
+      const q = [P(cxs - W2, y0 - 0.55, dw), P(cxs + W2, y0 - 0.55, dw), P(cxs + W2, y1 + 0.4, dw), P(cxs - W2, y1 + 0.4, dw)];
+      spillQuads.push({ q: outSign > 0 ? q : [q[1], q[0], q[3], q[2]], origin: P(cxs, y0 + 0.12, dOut + outSign * 0.3), dir: new THREE.Vector3(), n: out, k: 0.45 });
       if (!o.upper) {
-        const gq = [P(cxs - W2 - 0.3, 0.015, dOut), P(cxs + W2 + 0.3, 0.015, dOut), P(cxs + W2 + 0.3, 0.045, dOut + outSign * 2.2), P(cxs - W2 - 0.3, 0.045, dOut + outSign * 2.2)];
-        spillQuads.push(gq);
+        // lamplight falling out of the window onto the street: a real lobe from the opening
+        const gq = [P(cxs - W2 - 1.6, 0.015, dOut + outSign * 0.02), P(cxs + W2 + 1.6, 0.015, dOut + outSign * 0.02), P(cxs + W2 + 1.6, 0.05, dOut + outSign * 4.2), P(cxs - W2 - 1.6, 0.05, dOut + outSign * 4.2)];
+        spillQuads.push({ q: gq, origin: P(cxs, (y0 + y1) / 2, dOut - outSign * 0.2), dir: out, n: new THREE.Vector3(0, 1, 0), k: 1 });
       }
     }
     // shutters (exterior, some windows), opened at an angle
@@ -1832,6 +1917,8 @@ export function buildBlock(map, opts = {}) {
           g.box('prop_wood', { c, s: alongX ? [S, 0.22, 0.2] : [0.2, 0.22, S], uv: 'along', tint: [0.45, 0.4, 0.35], ao: 0.5 });
         }
         spots.floorCells.push({ x, y, cell, covered: false, pier: true });
+        // the pier head runs on out into the bay past the last walkable square
+        if (y === Hh - 1 && waterAt(x, y + 1) && waterAt(x - 1, y) && waterAt(x + 1, y)) pierRun(x, x0, z0 + S);
         continue;
       }
       const street = !indoor && cell === CELL.STREET;
@@ -2504,15 +2591,93 @@ export function buildBlock(map, opts = {}) {
     mesh.userData.ownMaterial = true;
     group.add(mesh);
   }
-  if (spillQuads.length) {
-    const sb = new GeoBuilder();
-    for (const q of spillQuads) sb.quad('spill', q[0], q[1], q[2], q[3], [[0, 0], [1, 0], [1, 1], [0, 1]], { ao: 1 });
-    const geo = sb.build().get('spill');
-    geo.deleteAttribute('color');
-    const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff9a48).multiplyScalar(0.06 + 0.12 * night), map: getBlobTexture(), blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3 });
+  if (pileFoam.length) {
+    // the swell breaking round each pile: a broken, flecked ring of foam on the water
+    const pos = [];
+    const uv = [];
+    const idx = [];
+    for (const [x, z, r] of pileFoam) {
+      const R = r * 4.2;
+      const b = pos.length / 3;
+      pos.push(x - R, -0.395, z - R, x + R, -0.395, z - R, x + R, -0.395, z + R, x - R, -0.395, z + R);
+      uv.push(0, 0, 1, 0, 1, 1, 0, 1);
+      idx.push(b, b + 2, b + 1, b, b + 3, b + 2);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.setIndex(idx);
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { uCol: { value: new THREE.Color(night > 0.5 ? 0x283040 : 0xd8d6d0) } },
+      vertexShader: 'varying vec2 vUv; varying vec3 vWp; void main(){ vUv = uv; vWp = (modelMatrix * vec4(position,1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vWp, 1.0); }',
+      fragmentShader: /* glsl */ `
+        uniform vec3 uCol; varying vec2 vUv; varying vec3 vWp;
+        float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        void main(){
+          vec2 q = vUv * 2.0 - 1.0;
+          float d = length(q);
+          float a = atan(q.y, q.x);
+          float n = h(floor(vec2(a * 9.0, d * 14.0) + floor(vWp.xz * 3.0)));
+          float ring = smoothstep(0.2, 0.3, d) * (1.0 - smoothstep(0.3, 0.95, d));
+          float fleck = step(0.45, n) * (0.5 + 0.5 * n);
+          gl_FragColor = vec4(uCol, ring * fleck * 0.75);
+        }`,
+      transparent: true,
+      depthWrite: false,
+    });
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.renderOrder = 4;
+    mesh.renderOrder = 7;
     mesh.userData.ownMaterial = true;
+    group.add(mesh);
+  }
+  if (creaseQuads.length) {
+    const pos = [];
+    const uv = [];
+    const rect = [];
+    const idx = [];
+    for (const c of creaseQuads) {
+      const b = pos.length / 3;
+      const W = c.w + c.m;
+      const Hh = c.h + c.m;
+      c.q.forEach((p, i) => {
+        pos.push(p.x, p.y, p.z);
+        uv.push(i === 1 || i === 2 ? W : -W, i >= 2 ? Hh : -Hh);
+        rect.push(c.w, c.h);
+      });
+      idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.setAttribute('aRect', new THREE.Float32BufferAttribute(rect, 2));
+    geo.setIndex(idx);
+    const mat = new THREE.ShaderMaterial({
+      vertexShader: /* glsl */ `
+        attribute vec2 aRect; varying vec2 vL; varying vec2 vR; varying float vD;
+        void main(){ vL = uv; vR = aRect; vec4 mv = modelViewMatrix * vec4(position, 1.0); vD = -mv.z; gl_Position = projectionMatrix * mv; }`,
+      fragmentShader: /* glsl */ `
+        varying vec2 vL; varying vec2 vR; varying float vD;
+        void main(){
+          vec2 q = abs(vL) - vR;
+          float dist = length(max(q, 0.0));
+          float a = (1.0 - smoothstep(0.0, 0.075, dist)) * step(0.0, max(q.x, q.y));
+          a *= a * 0.62 * (1.0 - smoothstep(20.0, 40.0, vD));
+          gl_FragColor = vec4(0.03, 0.025, 0.02, a);
+        }`,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.renderOrder = 2;
+    mesh.userData.ownMaterial = true;
+    group.add(mesh);
+  }
+  if (spillQuads.length) {
+    const mesh = buildLightSpill(spillQuads, { color: 0xffb478, gain: 2.0 * night });
     group.add(mesh);
   }
   for (const [key, geo] of panes.build()) {
