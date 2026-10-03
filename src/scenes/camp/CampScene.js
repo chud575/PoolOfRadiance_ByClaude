@@ -15,6 +15,7 @@ import { useRenderer } from '../../ui/components/Miniature.js';
 import { UINav } from '../../ui/components/uiNav.js';
 import { setPortraitSync, portraitsPending } from '../../ui/components/lazyPortrait.js';
 import { prepaintParty, portraitURL } from '../../ui/components/portraitPainter.js';
+import { restAmbush } from '../../data/wandering.js';
 
 const CURES = ['cureSeriousWounds', 'cureLightWounds'];
 
@@ -324,6 +325,8 @@ export default class CampScene extends Scene {
     const busy = (this.busy = {
       panel, bar, label, clock, from: game.minutes, total: minutes, applied: 0, report: { healed: {}, memorized: {}, died: [] },
       start: this.ctx.clock.time - (o.demo ? o.demo * Math.min(6, 2.2 + minutes / 110) : 0), dur: Math.min(6, 2.2 + minutes / 110), demo: o.demo ?? null,
+      // wandering monsters may find the camp (world content: data/wandering.js), rolled once at bedtime
+      ambush: o.demo == null ? restAmbush(this.ctx.rng, game.location?.map, minutes) : null,
     });
     this._advanceRest(o.demo ?? 0);
     void busy;
@@ -336,6 +339,8 @@ export default class CampScene extends Scene {
     const b = this.busy;
     if (!b) return;
     const { game } = this.ctx;
+    let ambush = null;
+    if (b.ambush && b.demo == null && p * b.total >= b.ambush.at) { p = b.ambush.at / b.total; ambush = b.ambush; b.ambush = null; }
     const target = Math.round(b.total * Math.max(0, Math.min(1, p)));
     const delta = target - b.applied;
     if (delta > 0 && b.demo == null) {
@@ -351,6 +356,12 @@ export default class CampScene extends Scene {
     const m = b.from + target;
     b.clock.textContent = `Day ${Math.floor(m / MINUTES_PER_DAY) + 1} · ${String(Math.floor((m % MINUTES_PER_DAY) / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
     if (delta !== 0 || b.demo != null) this._refreshClock();
+    if (ambush) {
+      b.interrupted = true;
+      this._finishRest();
+      this.ctx.ui.message('The watch cries out — something is in the camp!', 'warn');
+      this.ctx.scenes.goto('dialogue', { encounter: ambush.ref });
+    }
   }
 
   /** The MEMORIZE row: while resting it counts down with the rest (also in the frozen gallery state). */

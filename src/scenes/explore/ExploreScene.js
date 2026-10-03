@@ -22,6 +22,7 @@ import { deriveStats } from '../../rules/character.js';
 import { edgeKey, isDoorOpened, openLockedDoor, searchSquare, triggerMapTrap } from '../../rules/explore.js';
 import { headBobEnabled, inferHarbour } from './exploreRules.js';
 import { SHOPS } from '../../data/shops.js';
+import { rollWandering } from '../../data/wandering.js';
 
 const STEP_TIME = 0.34;
 const TURN_TIME = 0.24;
@@ -754,6 +755,7 @@ export default class ExploreScene extends Scene {
       if (ev.once) game.spentEvents[ev.id] = true;
       switch (ev.type) {
         case 'encounter':
+          game.flags.wanderSteps = 0;
           ui.message('Something stirs in the shadows...', 'warn');
           this.leaving = true;
           this.ctx.scenes.goto('dialogue', { encounter: ev.ref });
@@ -790,6 +792,15 @@ export default class ExploreScene extends Scene {
         }
         default:
       }
+    }
+    // wandering monsters (world content: data/wandering.js): a check per step once the party has walked a while
+    game.flags.wanderSteps = (game.flags.wanderSteps ?? 0) + 1;
+    const wander = rollWandering(this.ctx.rng, this.map.id, { steps: game.flags.wanderSteps, hasEvent: this.map.eventsAt(this.pos.x, this.pos.y).length > 0 });
+    if (wander) {
+      game.flags.wanderSteps = 0;
+      ui.message('Something stirs in the shadows...', 'warn');
+      this.leaving = true;
+      this.ctx.scenes.goto('dialogue', { encounter: wander });
     }
   }
 

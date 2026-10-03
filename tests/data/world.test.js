@@ -125,3 +125,63 @@ describe('shops, quests, journal', () => {
     expect(journalNums.size).toBe(JOURNAL.length);
   });
 });
+
+describe('secret doors and wandering monsters', async () => {
+  const { WANDERING, WANDER_ENCOUNTERS, rollWandering, restAmbush } = await import('../../src/data/wandering.js');
+  const { MONSTERS } = await import('../../src/data/monsters.js');
+  const { Rng } = await import('../../src/rules/dice.js');
+  it('every block hides at least one secret door, and what lies behind it is reachable only through one', () => {
+    for (const id of MAP_IDS) {
+      const m = getMap(id);
+      const secrets = [];
+      for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) for (const d of DIRS) if (m.getEdge(x, y, d) === EDGE.SECRET) secrets.push([x, y, d]);
+      expect(secrets.length, `${id} has no secret door`).toBeGreaterThan(0);
+      // the cell behind a recorded hidden room is unreachable when secrets stay shut
+      const shut = new Set([`${m.start.x},${m.start.y}`]);
+      const q = [[m.start.x, m.start.y]];
+      while (q.length) {
+        const [x, y] = q.shift();
+        for (const d of DIRS) {
+          const r = m.tryMove(x, y, d, { foundSecrets: { has: () => false } });
+          if (!r.ok || r.leaves) continue;
+          const k = `${r.nx},${r.ny}`;
+          if (!shut.has(k)) { shut.add(k); q.push([r.nx, r.ny]); }
+        }
+      }
+      const hidden = new Set((m.secrets ?? []).map((h) => `${h.id}_cache`));
+      for (const e of m.events.filter((ev) => hidden.has(ev.id))) expect(shut.has(`${e.x},${e.y}`), `${id} ${e.id} reachable without the secret door`).toBe(false);
+    }
+  });
+  it('every occupied block keeps a wandering table of real, staged encounters; New Phlan keeps none', () => {
+    expect(WANDERING.phlan_civilized).toBeNull();
+    for (const id of MAP_IDS) {
+      if (id === 'phlan_civilized') continue;
+      const w = WANDERING[id];
+      expect(w, `${id} has no wandering table`).toBeTruthy();
+      expect(w.step).toBeGreaterThan(0);
+      expect(w.rest).toBeGreaterThan(0);
+      for (const [ref, n] of w.table) {
+        expect(n).toBeGreaterThan(0);
+        const e = ENCOUNTERS[ref];
+        expect(e, `${id} ${ref}`).toBeTruthy();
+        expect(e.art?.setting, `${ref} art`).toBeTruthy();
+        for (const g of e.groups) expect(MONSTERS[g.monster], `${ref} ${g.monster}`).toBeTruthy();
+      }
+    }
+    for (const e of Object.values(WANDER_ENCOUNTERS)) for (const r of Object.values(e.parley ?? {})) expect(/^(fight|leave|flee|bribe:\d+)$/.test(r), `${e.id} ${r}`).toBe(true);
+  });
+  it('wandering checks honour the grace after a fight, skip event squares, and are deterministic', () => {
+    const roll = (seed, o) => { const rng = new Rng(seed); let n = 0; for (let i = 0; i < 2000; i++) if (rollWandering(rng, 'phlan_slums', o)) n++; return n; };
+    expect(roll(3, { steps: 0 })).toBe(0);
+    expect(roll(3, { steps: 20, hasEvent: true })).toBe(0);
+    const a = roll(3, { steps: 20 });
+    expect(a).toBeGreaterThan(10);
+    expect(a).toBeLessThan(120);
+    expect(roll(3, { steps: 20 })).toBe(a);
+    expect(rollWandering(new Rng(1), 'phlan_civilized', { steps: 99 })).toBeNull();
+    let ambushes = 0;
+    for (let s = 1; s <= 200; s++) { const r = restAmbush(new Rng(s), 'valhingen_graveyard', 8 * 60); if (r) { ambushes++; expect(r.at).toBeLessThan(8 * 60); expect(ENCOUNTERS[r.ref]).toBeTruthy(); } }
+    expect(ambushes).toBeGreaterThan(100);
+    expect(restAmbush(new Rng(1), 'phlan_civilized', 600)).toBeNull();
+  });
+});

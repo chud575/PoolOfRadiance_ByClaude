@@ -19,6 +19,7 @@
  */
 
 import { TRAVEL } from './travel.js';
+import { WANDER_ENCOUNTERS } from './wandering.js';
 
 const STD = ['combat', 'wait', 'flee', 'parley'];
 const MINDLESS = ['combat', 'flee'];
@@ -346,6 +347,9 @@ export function getEncounter(id) {
   if (!e) throw new Error(`Unknown encounter "${id}"`);
   return e;
 }
+
+// Wandering monsters (data/wandering.js) share the id space too.
+Object.assign(ENCOUNTERS, WANDER_ENCOUNTERS);
 
 // Travel links (data/travel.js) resolve through the same id space: go_<id>.
 for (const t of TRAVEL) ENCOUNTERS[`go_${t.id}`] = { id: `go_${t.id}`, name: t.title, groups: [], dialogue: `go_${t.id}`, travel: t.id };

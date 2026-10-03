@@ -1,5 +1,5 @@
 import { MapGrid, EDGE, CELL } from './MapGrid.js';
-import { applyTravel, sign } from './helpers.js';
+import { applyTravel, sign, hiddenRoom } from './helpers.js';
 
 /**
  * New Phlan — the civilized quarter behind the palisade: City Hall, the
@@ -67,6 +67,9 @@ export function buildPhlanCivilized() {
   m.event({ id: 'civ_captain', x: 14, y: 14, type: 'encounter', ref: 'ev_gate_captain', once: true });
   m.event({ id: 'civ_silk', x: 11, y: 9, type: 'encounter', ref: 'ev_silk', once: true });
   m.event({ id: 'civ_docks', x: 5, y: 14, type: 'text', text: 'Gulls wheel over the pier. Out on the grey water, the black walls of Sokol Keep sit on their island like a crouching animal.' });
+  // behind the Tankard's cellar wall: the smugglers' back room the Watch pretends not to know about
+  hiddenRoom(m, { id: 'civ_tankard_backroom', room: [8, 13, 2, 1], door: [8, 12, 'S'], style: 1, cell: CELL.INTERIOR, at: [9, 13],
+    text: 'A smugglers\' back room: kegs without excise marks, a ledger in cipher, and a forgotten stake from last night\'s dice.', gold: 45 });
   applyTravel(m);
   return m;
 }

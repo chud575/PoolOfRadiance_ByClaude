@@ -1,5 +1,5 @@
 import { MapGrid, EDGE, CELL } from './MapGrid.js';
-import { applyTravel, pillar, sign } from './helpers.js';
+import { applyTravel, pillar, sign, hiddenRoom } from './helpers.js';
 
 /**
  * The occupied blocks of old Phlan that lie open to the sky.
@@ -45,6 +45,9 @@ export function buildSokolKeep() {
   m.event({ id: 'sokol_hall_chest', x: 8, y: 1, type: 'treasure', text: 'The castellan\'s strongbox, its lock rusted through.', once: true, gold: 150 });
   m.event({ id: 'sokol_barracks_loot', x: 1, y: 9, type: 'treasure', text: 'A soldier\'s pay, hidden under a bunk.', once: true, gold: 60 });
   m.event({ id: 'sokol_store', x: 13, y: 7, type: 'text', text: 'Barrels of salt pork and pitch, and a smell of the sea. The garrison was provisioned for a year-long siege. It lasted a night.' });
+  // the castellan's reliquary, walled up between the chapel and the hall
+  hiddenRoom(m, { id: 'sokol_reliquary', room: [5, 1, 1, 1], door: [4, 1, 'E'], style: 0, cell: CELL.INTERIOR,
+    text: 'A reliquary of Tyr in a niche behind the chapel wall: a lock of hair tied with blue ribbon, the castellan\'s signet, and the garrison\'s last pay.', gold: 120 });
   applyTravel(m);
   return m;
 }
@@ -73,6 +76,10 @@ export function buildKutosWell() {
   m.event({ id: 'well_rats', x: 12, y: 5, type: 'encounter', ref: 'rats_1', chance: 12 });
   m.event({ id: 'well_cat', x: 2, y: 12, type: 'text', text: 'A grey cat watches you from a windowsill, blinks once, and is gone. Its collar had a little silver whistle on it.' });
   m.event({ id: 'well_cache', x: 11, y: 13, type: 'treasure', text: 'A well-wright\'s savings in a clay jar.', once: true, gold: 70 });
+  // the well-wright's cellar behind a false wall of his workshop
+  hiddenRoom(m, { id: 'well_cellar', room: [14, 1, 1, 2], door: [13, 1, 'E'], style: 1, cell: CELL.INTERIOR, at: [14, 2],
+    note: 'The plaster rings hollow. Behind it, steps go down into a dry little cellar that smells of rope and lamp oil.',
+    text: 'Kuto\'s own tools, wrapped in oiled cloth, and a purse the well-wright never came back for.', gold: 85 });
   applyTravel(m);
   return m;
 }
@@ -105,6 +112,10 @@ export function buildPodolPlaza() {
   m.event({ id: 'podol_wander', x: 10, y: 10, type: 'encounter', ref: 'podol_bandits', chance: 10 });
   m.event({ id: 'podol_stall', x: 13, y: 3, type: 'treasure', text: 'A money-changer\'s drawer, overlooked by the looters.', once: true, gold: 90 });
   m.event({ id: 'podol_block', x: 8, y: 8, type: 'text', text: 'The auctioneer\'s block. Chalked on it, a long list of names — some crossed out.' });
+  // Hoss's strongroom, entered through a panel at the back of the grain hall
+  hiddenRoom(m, { id: 'podol_strongroom', room: [15, 12, 1, 3], door: [14, 13, 'E'], style: 0, cell: CELL.INTERIOR, at: [15, 14],
+    note: 'A panel in the grain hall swings inward on oiled hinges. Someone has been coming here since the fall.',
+    text: 'Hoss\'s strongroom: tally-sticks, a second set of books, and the plaza tolls the bandits thought they had taken.', gold: 160 });
   applyTravel(m);
   return m;
 }
@@ -134,6 +145,10 @@ export function buildValhingen() {
   m.event({ id: 'grave_wights', x: 12, y: 3, type: 'encounter', ref: 'grave_wights', once: true });
   m.event({ id: 'grave_wander', x: 7, y: 8, type: 'encounter', ref: 'grave_zombies', chance: 10 });
   m.event({ id: 'grave_tomb', x: 12, y: 13, type: 'treasure', text: 'Grave-goods of some forgotten alderman: rings, and a purse for the ferryman.', once: true, gold: 220 });
+  // a false tomb wall: grave-robbers' tunnel into the alderman's crypt
+  hiddenRoom(m, { id: 'grave_false_tomb', room: [14, 12, 1, 2], door: [13, 12, 'E'], style: 0, cell: CELL.INTERIOR, at: [14, 13],
+    note: 'One slab of the tomb wall is newer than the rest. It slides. A robbers\' tunnel, abandoned in a hurry.',
+    text: 'The robbers\' cache: a sack of grave-silver and a pick with a broken haft.', gold: 130 });
   applyTravel(m);
   return m;
 }
@@ -159,6 +174,10 @@ export function buildStojanowGate() {
   m.event({ id: 'stoj_wander', x: 8, y: 7, type: 'encounter', ref: 'orcs_1', chance: 10 });
   m.event({ id: 'stoj_armoury', x: 13, y: 5, type: 'treasure', text: 'The war-band\'s paymaster kept his chest in the tower.', once: true, gold: 260 });
   m.event({ id: 'stoj_river', x: 5, y: 12, type: 'text', text: 'The Stojanow runs fast and brown under the broken bridge. Something large turns over in the current, and is gone.' });
+  // a sally-port store in the thickness of the north tower's wall
+  hiddenRoom(m, { id: 'stoj_sallyport', room: [15, 3, 1, 2], door: [14, 4, 'E'], style: 0, cell: CELL.INTERIOR, at: [15, 3],
+    note: 'Behind a hanging shield the stones are dressed for a door. A sally-port, sealed when the gate fell.',
+    text: 'The garrison\'s emergency stores: arrows, hard biscuit gone to stone, and the sergeant\'s savings.', gold: 110 });
   applyTravel(m);
   return m;
 }
@@ -177,6 +196,10 @@ export function buildWilderness() {
   m.event({ id: 'wild_ogres', x: 9, y: 7, type: 'encounter', ref: 'wild_ogres', once: true });
   m.event({ id: 'wild_camp', x: 11, y: 5, type: 'encounter', ref: 'ev_wild_camp' });
   m.event({ id: 'wild_end', x: 14, y: 7, type: 'encounter', ref: 'ev_wild_return', facing: 'E' });
+  // a smugglers' cave behind a curtain of ivy
+  hiddenRoom(m, { id: 'wild_cave', room: [13, 1, 2, 2], door: [13, 2, 'S'], style: 2, cell: CELL.INTERIOR, at: [14, 1],
+    note: 'Ivy hides a crack in the rock face, wide enough for a man with a pack. Inside, the floor is dry and swept.',
+    text: 'Smugglers\' goods bound for Zhentil Keep: salt, steel needles, and a strongbox of foreign coin.', gold: 150 });
   applyTravel(m);
   return m;
 }

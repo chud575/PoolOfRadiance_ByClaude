@@ -67,3 +67,30 @@ export function applyTravel(m) {
 export function sign(m, id, x, y, text) {
   return m.event({ id, x, y, type: 'sign', text });
 }
+
+/**
+ * A hidden cache behind a secret door: the cell rectangle is walled off (or carved, in a solid
+ * dungeon), one wall of it becomes a SECRET edge from the reachable side, and the room holds a
+ * treasure and a line of discovery prose.
+ *   hiddenRoom(m, {id, room: [x, y, w, h], door: [x, y, dir], style, carveIt, cell, text, gold, note})
+ * `door` is given from the outside cell looking in.
+ */
+export function hiddenRoom(m, o) {
+  const [x, y, w, h] = o.room;
+  if (o.carveIt) carve(m, x, y, w, h, o.style ?? 0);
+  else m.building(x, y, w, h, { style: o.style ?? 0, cell: o.cell });
+  if (o.cell != null) m.fill(x, y, w, h, o.cell);
+  const [dx, dy, dir] = o.door;
+  m.setEdge(dx, dy, dir, EDGE.SECRET, o.style ?? 0);
+  const tx = o.at?.[0] ?? x + w - 1;
+  const ty = o.at?.[1] ?? y;
+  m.event({ id: `${o.id}_cache`, x: tx, y: ty, type: 'treasure', text: o.text, once: true, gold: o.gold ?? 0 });
+  if (o.note) {
+    // the discovery line greets the party in the first cell past the door
+    const nx = dx + { N: 0, E: 1, S: 0, W: -1 }[dir];
+    const ny = dy + { N: -1, E: 0, S: 1, W: 0 }[dir];
+    if (nx !== tx || ny !== ty) m.event({ id: `${o.id}_note`, x: nx, y: ny, type: 'text', text: o.note });
+  }
+  m.secrets = [...(m.secrets ?? []), { id: o.id, x: dx, y: dy, dir }];
+  return m;
+}

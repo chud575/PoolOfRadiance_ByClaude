@@ -1,5 +1,5 @@
 import { MapGrid, EDGE, CELL } from './MapGrid.js';
-import { applyTravel, solid, carve, pillar, door } from './helpers.js';
+import { applyTravel, solid, carve, pillar, door, hiddenRoom } from './helpers.js';
 
 /**
  * Underground and fortress blocks. Dungeon edge styles: 0 = cut stone,
@@ -40,6 +40,12 @@ export function buildKutosWarrens() {
   m.event({ id: 'warrens_centipedes', x: 3, y: 10, type: 'encounter', ref: 'well_centipedes', once: true });
   m.event({ id: 'warrens_hoard', x: 1, y: 1, type: 'treasure', text: 'The kobolds\' hoard: buttons, spoons, a crown of tin — and a surprising amount of real silver.', once: true, gold: 110 });
   m.event({ id: 'warrens_nest', x: 1, y: 12, type: 'treasure', text: 'Among the husks, the remains of an earlier adventurer and his purse.', once: true, gold: 65 });
+  // the chieftain's bolt-hole: a crawl from the well-shaft to a dry chamber
+  carve(m, 9, 13, 2, 1, 2);
+  hiddenRoom(m, { id: 'warrens_bolthole', room: [11, 12, 3, 2], door: [8, 13, 'E'], carveIt: true, style: 2, at: [13, 12],
+    note: 'The kobolds\' bolt-hole: a low chamber scratched with their marks, where the chief kept what he would not share.',
+    text: 'The chieftain\'s private hoard: a silver cup, a lady\'s brooch, and coins in a boot.', gold: 95 });
+  door(m, 10, 13, 'E', EDGE.OPEN, 2);
   // Traps (rules resolveTrap via triggerMapTrap; state in game.flags.traps).
   m.event({ id: 'warrens_darts', x: 7, y: 8, type: 'trap', trap: 'dartVolley', avoidable: true, text: 'Kobold darts hiss from holes bored in the tunnel wall.' });
   m.event({ id: 'warrens_pit', x: 5, y: 9, type: 'trap', trap: 'pit', avoidable: true, text: 'The packed earth gives way: a kobold pit, stakes at the bottom.' });
@@ -113,6 +119,10 @@ export function buildValjevoCastle() {
   m.event({ id: 'valjevo_throne', x: 7, y: 3, type: 'encounter', ref: 'ev_valjevo_throne' });
   m.event({ id: 'valjevo_prisoner', x: 13, y: 13, type: 'encounter', ref: 'ev_valjevo_prisoner' });
   m.event({ id: 'valjevo_armoury', x: 1, y: 13, type: 'treasure', text: 'Racks of black-lacquered hobgoblin arms, and a paymaster\'s coffer.', once: true, gold: 400 });
+  // the warlord's privy chamber behind the throne-room tapestry
+  hiddenRoom(m, { id: 'valjevo_privy', room: [12, 2, 2, 2], door: [11, 2, 'E'], carveIt: true, style: 1, at: [13, 3],
+    note: 'Behind the tapestry of the Valjevo hunt, a narrow door. The warlord kept his own counsel here — and his own coin.',
+    text: 'The warlord\'s privy chest: his share of every raid on the river road.', gold: 320 });
   applyTravel(m);
   return m;
 }
@@ -134,6 +144,12 @@ export function buildPoolPyramid() {
   m.event({ id: 'pool_pool', x: 7, y: 6, type: 'encounter', ref: 'ev_pool', facing: 'N' });
   m.event({ id: 'pool_pool2', x: 8, y: 6, type: 'encounter', ref: 'ev_pool', facing: 'N' });
   m.event({ id: 'pool_light', x: 7, y: 9, type: 'text', text: 'The light ahead is golden and cold, and it moves on the walls like sunlight through water.' });
+  // the offering-niche of the drowned, off the long stair
+  carve(m, 4, 12, 3, 1, 0);
+  hiddenRoom(m, { id: 'pool_offerings', room: [1, 11, 3, 3], door: [6, 12, 'E'], carveIt: true, style: 0, at: [1, 12],
+    note: 'A seam in the stair wall gives under your hand. Beyond, a passage leads to a chamber heaped with offerings.',
+    text: 'Offerings left by those who came to bathe in the Pool and did not come back: rings, coin, a child\'s wooden horse.', gold: 260 });
+  door(m, 3, 12, 'E', EDGE.OPEN, 0);
   applyTravel(m);
   return m;
 }
