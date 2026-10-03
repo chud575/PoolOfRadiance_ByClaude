@@ -867,7 +867,7 @@ void main() {
   if (metal > 0.5) col += alb * amb * 0.6 * ao * (0.6 + 0.4 * nv.y);
   // A miniature's paint never glows: keep its brightest highlight under the bloom threshold (copper
   // hair under a candle used to wear a halo of fire).
-  col = min(col * uGain, vec3(0.86));
+  col = min(col * uGain, vec3(0.7));
   gl_FragColor = vec4(col, 1.0);
 #ifdef USE_FOG
   float fd = length(pv);
