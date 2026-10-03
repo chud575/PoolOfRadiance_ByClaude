@@ -195,7 +195,8 @@ export default class AutomapScene extends Scene {
     // k=3: the ink stays crisp at 2.6x and beyond, and the diorama shares this sheet
     const sheet = buildBlockSheet(map, {
       k: 3,
-      seen: (x, y) => reveal || game.isExplored(id, x, y, map.w),
+      // New Phlan is charted from the start (the council's own plan), as the overview shows it
+      seen: (x, y) => reveal || id === 'phlan_civilized' || game.isExplored(id, x, y, map.w),
       secrets: foundSecrets(game, id),
       spent: game.spentEvents,
       party: id === game.location.map ? { x: game.location.x, y: game.location.y } : null,
@@ -306,7 +307,7 @@ export default class AutomapScene extends Scene {
     // the tabletop view lays the same (k=3) sheet on the desk
     const fine = { sheet: this.sheet };
     this.dio.build(this.map, fine.sheet, {
-      seen: (x, y) => reveal || game.isExplored(id, x, y, this.map.w),
+      seen: (x, y) => reveal || id === 'phlan_civilized' || game.isExplored(id, x, y, this.map.w),
       secrets: foundSecrets(game, id),
       party: this.isHome ? { ...game.location } : null,
       notes: notesFor(game, id),
@@ -455,8 +456,16 @@ export default class AutomapScene extends Scene {
     const r = this.root.getBoundingClientRect();
     const px = Math.min(sx + r.left + 18, window.innerWidth - w - 8);
     // on the overview the block names hang below each district: the tip rises above the cursor
-    const above = this.view === 'world' ? sy + r.top - hh - 18 >= 8 : sy + r.top + 22 + hh > window.innerHeight - 50;
-    const py = above ? sy + r.top - hh - 18 : sy + r.top + 22;
+    let above = this.view === 'world' ? sy + r.top - hh - 18 >= 8 : sy + r.top + 22 + hh > window.innerHeight - 50;
+    let py = above ? sy + r.top - hh - 18 : sy + r.top + 22;
+    if (this.view === 'world') {
+      // never over the PHLAN cartouche: drop below the cursor when it would cover it
+      const [c0x, c0y] = this.sv.unitsToScreen(36, 30);
+      const [c1x, c1y] = this.sv.unitsToScreen(488, 226);
+      const hit = (y0) => px < c1x + r.left && px + w > c0x + r.left && y0 < c1y + r.top && y0 + hh > c0y + r.top;
+      if (hit(py)) { above = false; py = sy + r.top + 24; }
+      if (hit(py)) py = c1y + r.top + 8;
+    }
     t.style.transform = `translate(${Math.max(8, px)}px, ${Math.max(8, py)}px)`;
   }
 
@@ -465,7 +474,7 @@ export default class AutomapScene extends Scene {
   }
 
   _seen(x, y) {
-    return this.reveal || this.ctx.game.isExplored(this.map.id, x, y, this.map.w);
+    return this.reveal || this.map.id === 'phlan_civilized' || this.ctx.game.isExplored(this.map.id, x, y, this.map.w);
   }
 
   _cellTip({ x, y }) {
@@ -507,7 +516,7 @@ export default class AutomapScene extends Scene {
 
   _blockTip(b) {
     const { game } = this.ctx;
-    if (!b.known) return { title: 'Unexplored', lines: [b.rumour ?? 'You have not set foot here.'] };
+    if (!b.known) return { title: `${getMap(b.id).name}: unexplored`, lines: [b.rumour ?? 'You have not set foot here.'] };
     const st = exploredStats(game, getMap(b.id), this.reveal);
     const lines = [`${Math.round(st.frac * 100)}% surveyed.`];
     if (b.id === game.location.map) lines.unshift('The party is here.');
@@ -916,7 +925,7 @@ export default class AutomapScene extends Scene {
         this._dioSig = sig;
         this._dioRenders++;
       }
-      this.ctx.render.render(this.dio.scene, this.dio.camera);
+      this.dio.renderDof(this.ctx.render);
     } else {
       this._dioSig = null;
       this.ctx.render.clear();

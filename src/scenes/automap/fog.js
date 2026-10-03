@@ -467,13 +467,12 @@ export function surveyFogGrid(W, H, { mx, my, cs, w, h, state, hard, area, seed 
       kimg.data[i * 4 + 3] = Math.round(level * 255);
       // the limit of survey: a deckled graphite rim just outside what is known
       if (fog > 0.02) {
-        const k = kn[i];
-        const band = smooth(0.03, 0.26, k) * (1 - smooth(0.5, 0.85, k));
-        const mid = 4 * fog * (1 - fog);
-        let e = Math.max(band * fog, mid * 0.7);
+        // a pencilled limit of survey: a thin ragged graphite line along the middle of the
+        // fade (never a broad smudge)
+        let e = Math.exp(-(((fog - 0.55) / 0.11) ** 2));
         if (e > 0.01) {
           const n2 = fbm(x / 5.5, y / 5.5, { period: 256, octaves: 2, seed: seed + 5 });
-          e *= Math.max(0, Math.min(1, 0.25 + (n2 - 0.3) * 1.9));
+          e *= Math.max(0, Math.min(1, 0.6 + (n2 - 0.3) * 1.4));
         }
         eimg.data[i * 4 + 3] = Math.round(Math.min(1, e) * 255);
       }
@@ -622,7 +621,7 @@ export function paintFogEdge(W, H, k, edge, area, { seed = 1 } = {}) {
   g.scale(k, k);
   const [ax, ay, aw, ah] = area;
   const r = prng(seed + 13);
-  g.fillStyle = 'rgba(52,42,34,0.12)';
+  g.fillStyle = 'rgba(46,36,28,0.5)';
   g.fillRect(ax, ay, aw, ah);
   g.lineCap = 'round';
   for (let o = -ah; o < aw; o += 1.7 + r() * 0.5) {

@@ -546,23 +546,41 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
   // toward the wall — each drawn with its own silhouette, hatched on the shadowed east
   {
     const mts = [];
-    const spine = (y) => 86 + Math.sin(y / 110) * 8 + (fbm(y / 120, 7, { period: 64, octaves: 2, seed: 44 }) - 0.5) * 12;
-    // the great peaks: big, overlapping in depth, a few towering over the rest
-    for (let y = 258; y < 772; ) {
-      const big = tr() < 0.45;
-      const w = big ? 80 + tr() * 22 : 56 + tr() * 18;
-      const h = big ? 46 + tr() * 16 : 28 + tr() * 12;
-      const type = big ? (tr() < 0.6 ? 'crag' : 'massif') : (tr() < 0.35 ? 'horn' : tr() < 0.6 ? 'massif' : 'crag');
-      mts.push({ x: spine(y) + (tr() - 0.5) * 12, y, w, h, type });
-      y += h * (0.42 + tr() * 0.2);
+    // three ranks in depth: a pale far range against the sheet's edge, the great peaks of
+    // the spine, and a lower front rank, then foothills rolling down to the wall
+    // a scatter of peaks over the whole band (no ranks, no rows): the greatest along the
+    // spine of the range, smaller and lower toward its margins, each kept a little apart
+    // from its neighbours so silhouettes overlap in depth rather than stack
+    {
+      const cand = [];
+      for (let i = 0; i < 900; i++) {
+        const x = 12 + tr() * 140;
+        const y = 262 + tr() * 512;
+        const spineD = Math.abs(x - (84 + Math.sin(y / 130) * 14)) / 70;
+        const swell = fbm(x / 60, y / 90, { period: 64, octaves: 2, seed: 44 });
+        const size = Math.max(0.15, (1 - spineD) * 0.75 + swell * 0.6 + (tr() - 0.5) * 0.3);
+        cand.push({ x, y, size });
+      }
+      cand.sort((p, q) => q.size - p.size);
+      const kept = [];
+      for (const c of cand) {
+        const w = 26 + c.size * 84;
+        const h = w * (0.4 + tr() * 0.32) * (c.size > 0.8 ? 1.15 : 1);
+        if (c.x - w / 2 < 4 || c.x + w / 2 > 164) continue;
+        if (kept.some((q) => Math.abs(q.x - c.x) < (q.w + w) * 0.32 && Math.abs(q.y - c.y) < (q.h + h) * 0.3)) continue;
+        const type = c.size > 0.85 ? (tr() < 0.5 ? 'crag' : 'horn') : c.size > 0.55 ? (tr() < 0.55 ? 'massif' : 'crag') : tr() < 0.6 ? 'foot' : 'massif';
+        kept.push({ x: c.x, y: c.y, w, h, type, fade: 1, back: c.size < 0.45 && c.x < 70 });
+        if (kept.length > 46) break;
+      }
+      mts.push(...kept);
     }
-    // a back rank, smaller and paler, showing between the great peaks
-    for (let y = 246; y < 760; y += 28 + tr() * 22) mts.push({ x: spine(y) - 22 + (tr() - 0.5) * 10, y: y - 12, w: 46 + tr() * 18, h: 24 + tr() * 12, type: tr() < 0.6 ? 'crag' : 'horn', back: true });
-    // foothills toward the wall
-    for (let y = 270; y < 780; y += 20 + tr() * 16) mts.push({ x: spine(y) + 40 + tr() * 10, y: y + 8, w: 30 + tr() * 16, h: 9 + tr() * 9, type: 'foot' });
+    // foothills rolling out of the range toward the wall and down to the shore, fading
+    for (let y = 280; y < 784; y += 24 + tr() * 18) {
+      mts.push({ x: 138 + tr() * 14, y: y + tr() * 8, w: 26 + tr() * 18, h: 7 + tr() * 8, type: 'foot', fade: 0.6 + tr() * 0.3, foot: true });
+    }
     // the northern heights beyond the wall
-    for (let x = 220; x < 880; x += 46 + tr() * 40) mts.push({ x, y: 36 + tr() * 8, w: 34 + tr() * 26, h: 14 + tr() * 12, type: tr() < 0.5 ? 'foot' : 'crag' });
-    const shown = mts.filter((q) => !inCartouche(q.x, q.y) && q.y < coastY(q.x) - 26 && (q.y < 100 || (q.x - q.w / 2 > 34 && q.x + q.w / 2 < 148)));
+    for (let x = 220; x < 880; x += 40 + tr() * 46) mts.push({ x, y: 38 + tr() * 8, w: 30 + tr() * 30, h: 12 + tr() * 14, type: tr() < 0.5 ? 'foot' : tr() < 0.5 ? 'massif' : 'crag', fade: 0.55 + tr() * 0.3 });
+    const shown = mts.filter((q) => !inCartouche(q.x, q.y) && q.y < coastY(q.x) - 22 && (q.y < 100 || (q.x - q.w / 2 > 6 && q.x + q.w / 2 < 160)));
     // the range's shadow and earth: one warm granulated wash under all of it
     const mw = makeCanvas(W * k, H * k);
     const mg = mw.getContext('2d');
@@ -580,7 +598,17 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
     g.globalCompositeOperation = 'multiply';
     g.drawImage(mw, 0, 0, W, H);
     g.restore();
-    shown.sort((p, q) => (p.back === q.back ? p.y - q.y : p.back ? -1 : 1)).forEach((q) => mountain(g, q.x, q.y, q.w, q.h, tr, q.type, q.back));
+    // far to near: by base line, the pale far rank first; each peak's paper occludes the
+    // ones behind, and the far ones are veiled with paper tone (atmospheric recession)
+    shown.sort((p, q) => p.y - q.y).forEach((q) => {
+      const shape = mountain(g, q.x, q.y, q.w, q.h, tr, q.type, q.back);
+      if (q.fade < 1) {
+        g.save();
+        g.fillStyle = `rgba(236,222,186,${((1 - q.fade) * 0.6).toFixed(3)})`;
+        g.fill(shape);
+        g.restore();
+      }
+    });
   }
   // the Quivering Forest east of the river, clustered by noise
   const trees = [];
@@ -591,11 +619,17 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
     if (Math.abs(x - riverX(y)) < rw(y) + 16) continue;
     if (Math.hypot((x - LAKE.x) / (LAKE.rx + 16), (y - LAKE.y) / (LAKE.ry + 14)) < 1) continue;
     if (avoid(x, y, 26) || inCartouche(x, y)) continue;
-    if (Math.abs(x - 1166) < 118 && y > 624 && y < 692) continue; // a clearing for the forest's name
+    // a clearing in the wood for its name: an oval glade, its rim thick with trees
+    const glade = Math.hypot((x - 1166) / 132, (y - 652) / 40);
+    if (glade < 1) continue;
+    const rim = glade < 1.3 ? 0.12 : 0;
+    // the wood is dense and old in the north-east, thinning to scattered trees toward
+    // the river and the shore
     const n = fbm(x / 70, y / 70, { period: 64, octaves: 3, seed: 12 });
-    if (n < 0.43 || tr() > (n - 0.43) * 8) continue;
+    const thr = 0.47 - ((x - 1000) / 290) * 0.1 - ((790 - y) / 540) * 0.06 - rim;
+    if (n < thr || tr() > (n - thr) * 8 + rim * 4) continue;
     if (trees.some(([tx, ty]) => Math.hypot(tx - x, (ty - y) * 1.5) < 8)) continue;
-    trees.push([x, y, 4.8 + tr() ** 1.6 * 5.5, 1]);
+    trees.push([x, y, (4.2 + tr() ** 1.8 * 6.5) * (0.8 + (n - thr) * 1.2), 1]);
   }
   // a few copses west and north, and along the river
   for (let i = 0; i < 160; i++) {
@@ -693,11 +727,11 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
     g.restore();
   });
   g.save();
-  g.translate(1166, 646);
+  g.translate(1166, 656);
   g.rotate(-0.04);
   g.textAlign = 'center';
   g.font = `italic 14px ${SERIF}`;
-  g.letterSpacing = '2px';
+  g.letterSpacing = '1.5px';
   haloText(g, 'THE QUIVERING FOREST', 0, 0, { color: '#22301a', halo: 'rgba(240,228,196,0.95)', width: 7 });
   g.restore();
   // the range's name runs up the clear margin of paper west of the peaks
@@ -874,17 +908,19 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
   haloText(g, 'THE MOONSEA', 770, 872, { color: '#1f3358', halo: 'rgba(220,226,222,0.6)', width: 5 });
   g.letterSpacing = '5px';
   g.font = `italic 15px ${SERIF}`;
-  g.translate(364, 888);
-  g.rotate(Math.PI / 2);
-  haloText(g, 'THORN ISLAND', 0, 0, { color: '#2c3518', halo: 'rgba(236,226,200,0.8)', width: 5 });
+  // the island's name in open water off its eastern shore, following the swell
+  g.translate(520, 904);
+  g.rotate(-0.06);
+  g.font = `italic bold 17px ${SERIF}`;
+  haloText(g, 'THORN ISLAND', 0, 0, { color: '#1e2a12', halo: 'rgba(226,230,224,0.9)', width: 5 });
   g.restore();
-  drawShip(g, 520, 942, 106);
-  drawSerpent(g, 840, 984, 100);
-  drawCompassRose(g, 1175, 860, 72);
-  // scale of leagues
+  drawShip(g, 690, 952, 100);
+  drawSerpent(g, 860, 975, 92);
+  drawCompassRose(g, 1180, 822, 66);
+  // scale of leagues, set clear above the sheet's lower border
   g.save();
-  const sx0 = 1105;
-  const sy0 = 970;
+  const sx0 = 1112;
+  const sy0 = 925;
   g.strokeStyle = INK.ink;
   g.lineWidth = 0.9;
   for (let i = 0; i < 4; i++) {
@@ -892,12 +928,19 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
     g.fillRect(sx0 + i * 34, sy0, 34, 5);
     g.strokeRect(sx0 + i * 34, sy0, 34, 5);
   }
-  g.font = `16px ${SERIF}`;
   g.textAlign = 'center';
-  g.fillStyle = '#2b1a0d';
-  ['0', '1', '2'].forEach((t, i) => g.fillText(t, sx0 + i * 68, sy0 - 6));
-  g.font = `italic 16px ${SERIF}`;
-  g.fillText('miles', sx0 + 68, sy0 + 21);
+  g.font = `bold 19px ${SERIF}`;
+  ['0', '1', '2'].forEach((t, i) => haloText(g, t, sx0 + i * 68, sy0 - 8, { color: '#2b1a0d', halo: 'rgba(236,228,206,0.85)', width: 4 }));
+  g.font = `italic bold 19px ${SERIF}`;
+  haloText(g, 'miles', sx0 + 68, sy0 + 24, { color: '#2b1a0d', halo: 'rgba(236,228,206,0.85)', width: 4 });
+  g.restore();
+  // a ruled border round the whole sheet, so its lower edge reads clear of the sea
+  g.save();
+  g.strokeStyle = INK.ink;
+  g.lineWidth = 2.2;
+  g.strokeRect(10, 10, W - 20, H - 20);
+  g.lineWidth = 0.7;
+  g.strokeRect(15, 15, W - 30, H - 30);
   g.restore();
 
   // ---------------- cartouche ----------------
@@ -1070,9 +1113,12 @@ function drawMiniBlock(g, b, m, { seen, secrets, known, here, k }) {
   }
   // unknown squares: the faint council plan on the ward's ground; the surveyed part
   // is laid on a clean vellum patch so it leads the eye
-  g.globalAlpha = 0.7;
-  g.drawImage(lay, 0, 0, s, s);
-  g.globalAlpha = 1;
+  // (the island keep is engraved as buildings instead: see below)
+  if (m.id !== 'sokol_keep') {
+    g.globalAlpha = 0.7;
+    g.drawImage(lay, 0, 0, s, s);
+    g.globalAlpha = 1;
+  }
   g.drawImage(clean, 0, 0, s, s);
   g.globalCompositeOperation = 'multiply';
   g.drawImage(wash, 0, 0, s, s);
@@ -1080,6 +1126,36 @@ function drawMiniBlock(g, b, m, { seen, secrets, known, here, k }) {
   g.drawImage(edge, 0, 0, s, s);
   g.drawImage(ink, 0, 0, s, s);
   g.restore();
+  // Thorn Island: the keep and its outbuildings not yet walked stand engraved in the
+  // oblique, as the vignettes do (a crenellated keep, a drum tower, gabled ranges)
+  if (m.id === 'sokol_keep') {
+    const blds = [];
+    for (const rg of regs0(m).list) {
+      if (rg.type !== CELL.INTERIOR || rg.cells.some(([i, j]) => seenCell(i, j))) continue;
+      let i0 = 99; let j0 = 99; let i1 = -1; let j1 = -1;
+      for (const [i, j] of rg.cells) { i0 = Math.min(i0, i); j0 = Math.min(j0, j); i1 = Math.max(i1, i + 1); j1 = Math.max(j1, j + 1); }
+      blds.push({ i0, j0, i1, j1, n: rg.cells.length });
+    }
+    blds.sort((p, q) => q.n - p.n);
+    const keep = blds[0];
+    g.save();
+    g.translate(b.cx - s / 2, b.cy - s / 2);
+    blds.sort((p, q) => p.j1 - q.j1).forEach((q) => {
+      const w = (q.i1 - q.i0) * cs * 0.92;
+      const d = (q.j1 - q.j0) * cs * 0.55;
+      const x = ((q.i0 + q.i1) / 2) * cs;
+      const y = q.j1 * cs - 1;
+      if (q === keep) {
+        SOLID.block(g, x, y, w, 26, d, { crenel: true });
+        SOLID.dark(g, ENG.rect(x - 3, y - 9, 6, 9));
+        SOLID.tower(g, x + w * 0.5, y + 2, 6.5, 36, { roof: 'cone', roofFill: 'rgba(110,84,70,0.9)' });
+        ENG.shape(g, ENG.rect(x + w * 0.5 - 1.6, y - 26, 3.2, 4.5), 'rgba(240,190,90,1)', 0.6);
+      } else {
+        SOLID.block(g, x, y, w, 9 + Math.min(6, q.n), d, { roof: 'gable', rh: 6 + Math.min(5, d * 0.3), roofFill: 'rgba(150,108,78,0.85)' });
+      }
+    });
+    g.restore();
+  }
   // the kerb: the street's edge inked round the district (a gilt rule for the party's own)
   if (b.poly) {
     g.save();
@@ -1766,30 +1842,64 @@ function drawMedallion(g, b, m, { seen, secrets, known }) {
   const info = analyseMap(m);
   const md = MEDALS[b.id] ?? MEDALS.kutos_warrens;
   const R = r + (b.id === 'pool_pyramid' ? 10 : 7);
+  if (!known && SOLID_DUNGEONS[b.id]) {
+    // unexplored below ground: the same engraved-solid vignette in a double-ruled oval
+    // reserve as the districts above (no pigment band)
+    const rx = r * 0.98;
+    const ry = r * 0.84;
+    g.save();
+    g.fillStyle = 'rgba(70,40,16,0.14)';
+    g.beginPath(); g.ellipse(cx + 2, cy + 2.5, rx, ry, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(245,236,212,0.97)';
+    g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = INK.ink;
+    g.lineWidth = 1.1;
+    g.stroke();
+    g.lineWidth = 0.45;
+    g.beginPath(); g.ellipse(cx, cy, rx - 3, ry - 3, 0, 0, Math.PI * 2); g.stroke();
+    g.beginPath(); g.ellipse(cx, cy, rx - 4, ry - 4, 0, 0, Math.PI * 2); g.clip();
+    for (let yy = -ry; yy < ry * 0.3; yy += 1.8) {
+      g.strokeStyle = `rgba(43,26,13,${(0.04 + Math.max(0, (yy + ry) / (ry * 1.3)) * 0.12).toFixed(3)})`;
+      g.lineWidth = 0.35;
+      g.beginPath(); g.moveTo(cx - rx, cy + yy); g.lineTo(cx + rx, cy + yy); g.stroke();
+    }
+    g.translate(cx, cy - 4);
+    g.scale(r / 56, r / 56);
+    SOLID_DUNGEONS[b.id](g);
+    g.restore();
+    return;
+  }
   g.save();
   if (b.id === 'pool_pyramid') {
-    // the Pool's radiance: a gilt sunburst of alternating straight and flame rays behind the roundel
+    // the Pool's radiance, engraved: alternating straight and flame rays cut in ink
+    // round the roundel, filled with a thin muted-gold wash (no glow)
     g.save();
-    const glow = g.createRadialGradient(cx, cy, R * 0.9, cx, cy, R * 1.6);
-    glow.addColorStop(0, 'rgba(232,184,80,0.42)');
-    glow.addColorStop(1, 'rgba(232,184,80,0)');
-    g.fillStyle = glow;
-    g.beginPath(); g.arc(cx, cy, R * 1.6, 0, Math.PI * 2); g.fill();
     for (let i = 0; i < 32; i++) {
       const a = (i / 32) * Math.PI * 2;
-      const L = R * (i % 2 ? 1.32 : 1.5);
-      const hw = i % 2 ? 0.035 : 0.06;
+      const L = R * (i % 2 ? 1.24 : 1.4);
+      const hw = i % 2 ? 0.03 : 0.05;
       g.beginPath();
       g.moveTo(cx + Math.cos(a - hw) * R, cy + Math.sin(a - hw) * R);
       if (i % 2) g.lineTo(cx + Math.cos(a) * L, cy + Math.sin(a) * L);
       else g.quadraticCurveTo(cx + Math.cos(a + 0.05) * L * 0.85, cy + Math.sin(a + 0.05) * L * 0.85, cx + Math.cos(a) * L, cy + Math.sin(a) * L);
       g.lineTo(cx + Math.cos(a + hw) * R, cy + Math.sin(a + hw) * R);
       g.closePath();
-      g.fillStyle = goldGradient(g, cx - R, cy - R, cx + R, cy + R);
-      g.globalAlpha = 0.85;
+      g.fillStyle = 'rgba(196,160,92,0.32)';
       g.fill();
-      g.globalAlpha = 1;
-      g.strokeStyle = 'rgba(90,60,20,0.8)';
+      // a hatch down one flank of each ray, as the engraver shades it
+      g.save();
+      g.clip();
+      g.strokeStyle = 'rgba(43,26,13,0.45)';
+      g.lineWidth = 0.4;
+      for (let t = 0; t < 1; t += 0.07) {
+        const rr = R + (L - R) * t;
+        g.beginPath();
+        g.moveTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+        g.lineTo(cx + Math.cos(a + hw) * rr, cy + Math.sin(a + hw) * rr);
+        g.stroke();
+      }
+      g.restore();
+      g.strokeStyle = 'rgba(43,26,13,0.8)';
       g.lineWidth = 0.6;
       g.stroke();
     }
@@ -1874,6 +1984,49 @@ function drawMedallion(g, b, m, { seen, secrets, known }) {
   }
   g.restore();
 }
+
+/** Engraved-solid vignettes (the districts' style) for the dungeons not yet entered, centred, ~100 units wide. */
+const SOLID_DUNGEONS = {
+  // the Temple of Bane: a squat black-roofed mausoleum, its door open on a stair going
+  // down into a green glow, the black hand over the lintel, a dead yew beside it
+  temple_bane(g) {
+    ENG.ground(g);
+    g.strokeStyle = INK.ink; g.lineWidth = 1.6; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(-36, 22); g.lineTo(-37, -4); g.moveTo(-37, 0); g.lineTo(-46, -12); g.moveTo(-37, -2); g.lineTo(-28, -16); g.moveTo(-40, -6); g.lineTo(-42, -20); g.stroke();
+    SOLID.block(g, 4, 22, 46, 26, 16, { roof: 'gable', rh: 13, roofFill: 'rgba(52,50,58,0.92)' });
+    for (const px of [-14, 22]) SOLID.block(g, px, 22, 5, 24, 3);
+    const door = new Path2D(); door.moveTo(-6, 22); door.lineTo(-6, 7); door.arc(1, 7, 7, Math.PI, 0); door.lineTo(8, 22); door.closePath();
+    SOLID.dark(g, door);
+    g.fillStyle = 'rgba(110,170,90,0.55)';
+    g.beginPath(); g.ellipse(1, 19, 5, 2.6, 0, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(200,190,170,0.85)'; g.lineWidth = 0.7;
+    for (let k = 0; k < 3; k++) { g.beginPath(); g.moveTo(-5 + k, 20 - k * 3.4); g.lineTo(7 - k, 20 - k * 3.4); g.stroke(); }
+    g.fillStyle = INK.ink;
+    g.beginPath(); g.ellipse(1, -6.5, 3, 2.4, 0, 0, Math.PI * 2); g.fill();
+    for (let i = -1.5; i <= 1.5; i++) g.fillRect(1 + i * 1.6 - 0.55, -11.5, 1.1, 4.4);
+  },
+  // Kuto's warrens: a rocky outcrop split by a dark tunnel mouth shored with timbers,
+  // a lantern hung on the prop and a kobold's spear leant against the rock
+  kutos_warrens(g) {
+    ENG.ground(g);
+    const rocks = ENG.poly([[-48, 24], [-40, 2], [-26, -12], [-8, -18], [10, -16], [28, -8], [42, 6], [50, 24]]);
+    ENG.shape(g, rocks, 'rgba(196,176,140,0.95)', 1);
+    ENG.hatch(g, ENG.poly([[10, -16], [28, -8], [42, 6], [50, 24], [16, 24]]), { gap: 1.2, a: 0.6 });
+    g.strokeStyle = 'rgba(43,26,13,0.55)'; g.lineWidth = 0.6;
+    for (const [ax, ay, bx, by] of [[-34, 2, -26, 14], [-18, -10, -22, 2], [30, -2, 24, 10], [-40, 16, -30, 20]]) { g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke(); }
+    const mouth = new Path2D(); mouth.moveTo(-13, 24); mouth.lineTo(-13, 4); mouth.quadraticCurveTo(0, -8, 13, 4); mouth.lineTo(13, 24); mouth.closePath();
+    SOLID.dark(g, mouth);
+    SOLID.block(g, -15, 24, 3.2, 22, 2.6);
+    SOLID.block(g, 15, 24, 3.2, 22, 2.6);
+    SOLID.block(g, 0, 2, 36, 3.4, 2.6);
+    g.strokeStyle = INK.ink; g.lineWidth = 0.7;
+    g.beginPath(); g.moveTo(15, 4); g.lineTo(15, 8); g.stroke();
+    ENG.shape(g, ENG.rect(12.6, 8, 4.8, 6), 'rgba(240,190,90,1)', 0.7);
+    g.lineWidth = 1.1;
+    g.beginPath(); g.moveTo(26, 24); g.lineTo(34, -6); g.stroke();
+    ENG.shape(g, ENG.poly([[34, -6], [33, -12], [36.5, -5.5]]), 'rgba(200,200,205,1)', 0.6);
+  },
+};
 
 const MEDALS = {
   kutos_warrens: { motto: 'SVBTER TERRAM', wash: [120, 92, 60] },
@@ -2115,6 +2268,22 @@ function mountain(g, x, y, w, h, r, type = 'crag', back = false) {
     }
     g.restore();
   }
+  // the lit (west) faces: no hatching, only an engraver's stipple thinning toward the light
+  {
+    g.fillStyle = 'rgba(43,26,13,0.6)';
+    for (const sm of summits) {
+      const sx = x - w / 2 + sm.u * w;
+      const sy = y - sm.v * h;
+      const n = Math.round(w * h * 0.02);
+      for (let i = 0; i < n; i++) {
+        const t = r();
+        const px = sx - t * w * 0.42;
+        const py = sy + (y - sy) * (0.15 + r() * 0.85);
+        if (r() > 1 - t * 0.85) continue;
+        g.beginPath(); g.arc(px, py, 0.3 + r() * 0.3, 0, Math.PI * 2); g.fill();
+      }
+    }
+  }
   // a few strata and crags on the lit face
   if (type !== 'foot') {
     g.strokeStyle = back ? 'rgba(43,26,13,0.3)' : 'rgba(43,26,13,0.5)';
@@ -2155,6 +2324,7 @@ function mountain(g, x, y, w, h, r, type = 'crag', back = false) {
     }
   }
   g.restore();
+  return shape;
 }
 
 /**
