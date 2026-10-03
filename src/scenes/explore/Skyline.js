@@ -7,7 +7,7 @@ import { CELL_SIZE } from './BlockBuilder.js';
 import { buildCog, drawSail } from './Ships.js';
 import { createSea } from './Sea.js';
 import { timeOfDayKeys } from '../../render/lighting.js';
-import { createFlameBatch, FLAME_UNIFORMS } from '../../render/lighting.js';
+import { createFlameBatch, createGlowBatch, FLAME_UNIFORMS } from '../../render/lighting.js';
 
 const PROP_TIME = FLAME_UNIFORMS.uTime;
 
@@ -211,7 +211,9 @@ export function buildSkyline(map, ts, opts = {}) {
   }
   // quay wall along the harbour
   if (!harbour) g.box('arch_stone_cold', { c: [cx, -2.2, H + 26], s: [800, 1.4, 1.6], ao: 0.8 });
-  const rig = { sails: [], lines: [] };
+  const rig = { sails: [], lines: [], lamps: [] };
+  // warm lit windows that read even at dusk (lighthouse, keep): their own unlit emissive mesh
+  const glow = new GeoBuilder();
   const shadows = [];
   let beacon = null;
   if (harbour) {
@@ -242,8 +244,7 @@ export function buildSkyline(map, ts, opts = {}) {
         if (k % 3 === 0) g.box('arch_ruin', { c: [px + dirz * 3.4, -0.6, pz - dirx * 3.4], s: [1.6, 1.0, 1.4], rotY: hash(k, 'rr') * 3, chamfer: 0.3, ao: 0.6 });
       }
     }
-    tower(g, cx - 40, H + 122, 3.2, 16, false, 'beacon', night, winLit, -0.6);
-    beacon = new THREE.Vector3(cx - 40, -0.6 + 16 + 2.4, H + 122);
+    beacon = beaconTower(g, glow, cx - 40, H + 122, -0.6);
     // Sokol Keep on its island: a dark crag with a black curtain wall and keep
     {
       const ix = cx + 150;
@@ -255,9 +256,7 @@ export function buildSkyline(map, ts, opts = {}) {
         g.geometry('arch_ruin', rock, new THREE.Matrix4().makeTranslation(ix + Math.cos(a) * r * 0.6, -1, iz + Math.sin(a) * r * 0.4).multiply(new THREE.Matrix4().makeScale(r * 0.55, 6 + hash(k, 'ih') * 8, r * 0.45)), { uv: 'world', ao: 0.6, tint: [0.55, 0.55, 0.58] });
         rock.dispose();
       }
-      g.box('arch_stone_cold', { c: [ix, 10, iz], s: [34, 8, 20], ao: 0.6, tint: [0.35, 0.35, 0.38] });
-      for (const [dx, dz] of [[-17, -10], [17, -10], [-17, 10], [17, 10]]) tower(g, ix + dx, iz + dz, 2.4, 14, false, `sokol${dx}${dz}`, night, winLit, 6);
-      tower(g, ix + 4, iz + 2, 4.5, 26, false, 'sokolkeep', night, winLit, 6);
+      sokolKeep(g, glow, ix, iz);
     }
     // the far shore: two receding ridges of hills across the water, with a dark tree line
     for (const [dist, amp, base, tnt] of [[520, 14, 4, 0.55], [380, 7, 1.5, 0.7]]) {
@@ -367,6 +366,28 @@ export function buildSkyline(map, ts, opts = {}) {
     fmesh.renderOrder = 7;
     group.add(fmesh);
     own.push(fg, fm);
+  }
+  const gw = glow.build().get('glow');
+  if (gw) {
+    gw.deleteAttribute('color');
+    const gm = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, color: new THREE.Color(0xffa04a).multiplyScalar(0.55 + 1.1 * Math.min(1, night * 1.5 + ((opts.hour ?? 12) > 16.5 ? 0.35 : 0))), fog: true });
+    const mesh = new THREE.Mesh(gw, gm);
+    mesh.renderOrder = 5;
+    group.add(mesh);
+    own.push(gw, gm);
+  }
+  if (rig.lamps.length) {
+    // stern lanterns: a warm horn-glazed box and a soft halo, brighter as the light goes
+    const k = 0.5 + 1.4 * Math.min(1, night * 1.5 + ((opts.hour ?? 12) > 16.5 ? 0.4 : 0));
+    const lb = new GeoBuilder();
+    for (const p of rig.lamps) lb.box('lamp', { c: [p.x, p.y, p.z], s: [0.26, 0.4, 0.26] });
+    const lgeo = lb.build().get('lamp');
+    lgeo.deleteAttribute('color');
+    const lmat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffb862).multiplyScalar(k), fog: true });
+    group.add(new THREE.Mesh(lgeo, lmat));
+    const halo = createGlowBatch(rig.lamps.map((p, i) => ({ pos: p, size: 1.4, color: 0xffa050, seed: i * 3.1, opacity: Math.min(1, 0.35 + night * 0.8) })));
+    group.add(halo);
+    own.push(lgeo, lmat, { dispose: () => halo.userData.dispose() });
   }
   if (beacon && (night > 0.2 || (opts.hour ?? 12) > 16.5)) {
     const fl = createFlameBatch([{ pos: beacon, scale: 2.6 }]);
@@ -479,9 +500,21 @@ function noise1(x) {
 function house(g, winLit, winDark, x, y0, z, w, d, h, rotX, ruined, id, night, cx, cz, smoke) {
   const plaster = hash(id, 'mat') < 0.55;
   const wallKey = ruined ? 'arch_ruin' : plaster ? 'arch_plaster' : 'arch_stone';
-  const tints = [[1, 0.96, 0.86], [0.92, 0.9, 0.84], [1, 0.9, 0.78], [0.86, 0.88, 0.9]];
-  const tint = plaster ? tints[Math.floor(hash(id, 't') * tints.length)] : undefined;
+  // limewash in many batches: cream, ochre, ox-blood, sage, rose and smoke-browned daub
+  const tints = [[1, 0.96, 0.86], [0.92, 0.9, 0.84], [1, 0.86, 0.64], [0.86, 0.62, 0.5], [0.8, 0.84, 0.76], [0.98, 0.82, 0.76], [0.72, 0.66, 0.58], [0.86, 0.88, 0.9]];
+  const tint = plaster ? tints[Math.floor(hash(id, 't') * tints.length)] : ruined ? [0.7, 0.66, 0.62] : [0.9 + hash(id, 'st') * 0.2, 0.88 + hash(id, 'st') * 0.18, 0.85 + hash(id, 'st') * 0.15];
   if (ruined) {
+    // a burnt-out shell: charred wall heads, a few blackened rafters still spanning the gap
+    const ch = [0.42, 0.38, 0.35];
+    for (let k = 0; k < 3; k++) {
+      if (hash(id, k, 'raft') < 0.45) continue;
+      const along = (k - 1) * (rotX ? w : d) * 0.3;
+      const hh = h * (0.55 + hash(id, k, 'rh') * 0.3);
+      const ang = (hash(id, k, 'ra') - 0.5) * 0.5;
+      const m = new THREE.Matrix4().makeTranslation(x + (rotX ? along : 0), y0 + hh, z + (rotX ? 0 : along)).multiply(new THREE.Matrix4().makeRotationY(rotX ? 0 : Math.PI / 2)).multiply(new THREE.Matrix4().makeRotationX(ang));
+      g.box('arch_beam_dark', { matrix: m, s: [0.16, 0.18, (rotX ? d : w) * 0.95], ao: 0.8, tint: [0.3, 0.26, 0.24] });
+    }
+    void ch;
     // jagged broken shell: 4 walls with random heights
     const th = 0.4;
     for (const [sx, sz, lx, lz] of [[0, -1, w, th], [0, 1, w, th], [-1, 0, th, d], [1, 0, th, d]]) {
@@ -491,18 +524,24 @@ function house(g, winLit, winDark, x, y0, z, w, d, h, rotX, ruined, id, night, c
         const off = (k - (n - 1) / 2) / n;
         const px = x + sx * (w / 2) + (lz > lx ? 0 : off * w);
         const pz = z + sz * (d / 2) + (lz > lx ? off * d : 0);
-        g.box(wallKey, { c: [px, y0 + hh / 2, pz], s: [lx > lz ? w / n : th, hh, lz > lx ? d / n : th] });
+        g.box(wallKey, { c: [px, y0 + hh / 2, pz], s: [lx > lz ? w / n : th, hh, lz > lx ? d / n : th], tint: hh > h * 0.75 ? [0.55, 0.5, 0.47] : tint });
       }
     }
     return;
   }
-  g.box(wallKey, { c: [x, y0 + h / 2, z], s: [w, h, d], tint });
+  const jetty = plaster && h > 5 && hash(id, 'jet') < 0.6;
+  if (jetty) {
+    // ground storey in stone, the upper storeys jettied out over it on a bressumer
+    g.box('arch_stone', { c: [x, y0 + 1.4, z], s: [w - 0.4, 2.8, d - 0.4], tint: [0.85, 0.83, 0.8] });
+    g.box(wallKey, { c: [x, y0 + 2.8 + (h - 2.8) / 2, z], s: [w, h - 2.8, d], tint });
+    g.box('arch_beam_dark', { c: [x, y0 + 2.8, z], s: [w + 0.08, 0.22, d + 0.08], ao: 0.7 });
+  } else g.box(wallKey, { c: [x, y0 + h / 2, z], s: [w, h, d], tint });
   // gable roof
   const A = rotX ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 0, 1);
   const B = rotX ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(1, 0, 0);
   const la = (rotX ? w : d) / 2 + 0.3;
   const lb = (rotX ? d : w) / 2 + 0.4;
-  const rise = lb * (0.8 + hash(id, 'pitch') * 0.5);
+  const rise = lb * (0.55 + hash(id, 'pitch') * 0.95);
   const P = (a, yy, b) => new THREE.Vector3(x, yy, z).addScaledVector(A, a).addScaledVector(B, b);
   const rk = ['arch_roof_slate', 'arch_roof_clay', 'arch_roof_slate'][Math.floor(hash(id, 'rk') * 3)];
   const top = y0 + h;
@@ -583,7 +622,7 @@ function house(g, winLit, winDark, x, y0, z, w, d, h, rotX, ruined, id, night, c
         const P3 = P0.clone().setY(wy + 1.1);
         // by day every pane is glazing that reflects the sky (the ext window material); by night
         // some glow and the rest go dark
-        const lit = night <= 0.3 || hash(id, f, c, 'lit') < 0.45;
+        const lit = night <= 0.3 || hash(id, f, c, 'lit') < 0.6;
         (lit ? winLit : winDark).quad('win', P1, P0, P3, P2, [[0, 0], [1, 0], [1, 1], [0, 1]], { ao: 1 });
         // frame, mullion and sill so windows read as joinery, not holes
         const fk = plaster ? 'arch_beam_dark' : 'arch_trim';
@@ -625,6 +664,114 @@ function house(g, winLit, winDark, x, y0, z, w, d, h, rotX, ruined, id, night, c
       }
     }
   }
+}
+
+/** Warm window slot on a cylinder face (glow builder), facing outward at angle a. */
+function glowSlot(glow, x, z, r, a, y, w, h) {
+  const nx = Math.cos(a);
+  const nz = Math.sin(a);
+  const T = new THREE.Vector3(-nz, 0, nx);
+  const c = new THREE.Vector3(x + nx * (r + 0.04), y, z + nz * (r + 0.04));
+  const P0 = c.clone().addScaledVector(T, -w / 2);
+  const P1 = c.clone().addScaledVector(T, w / 2);
+  glow.quad('glow', P1, P0, P0.clone().setY(y + h), P1.clone().setY(y + h), [[0, 0], [1, 0], [1, 1], [0, 1]], { ao: 1 });
+}
+
+/**
+ * The harbour light at the head of the breakwater: a battered drum with a corbelled,
+ * crenellated wall-walk, a narrower upper stage with string courses and warm windows, and an
+ * open lantern of stone piers under a slate cap. Returns the fire position.
+ */
+function beaconTower(g, glow, x, z, base) {
+  const sides = 16;
+  const ring = (r0, r1, y0, h, key, tint) => {
+    const geo = new THREE.CylinderGeometry(r1, r0, h, sides, 1, true);
+    g.geometry(key, geo, new THREE.Matrix4().makeTranslation(x, base + y0 + h / 2, z), { uv: 'world', ao: 0.85, tint });
+    geo.dispose();
+  };
+  const cap = (r, y) => {
+    const geo = new THREE.CylinderGeometry(r, r, 0.2, sides, 1, false);
+    g.geometry('arch_stone_cold', geo, new THREE.Matrix4().makeTranslation(x, base + y, z), { uv: 'world', ao: 0.9 });
+    geo.dispose();
+  };
+  // stage 1: battered drum on a rough plinth
+  ring(5.0, 5.3, 0, 1.6, 'arch_stone_cold', [0.6, 0.62, 0.6]);
+  ring(4.6, 4.2, 1.6, 6.4, 'arch_stone_cold');
+  // corbel table + crenellated wall-walk
+  ring(4.25, 4.75, 8.0, 0.7, 'arch_trim', [0.75, 0.73, 0.7]);
+  ring(4.75, 4.75, 8.7, 1.0, 'arch_stone_cold');
+  cap(4.75, 9.7);
+  for (let k = 0; k < 14; k++) {
+    const a = (k / 14) * Math.PI * 2;
+    g.box('arch_stone_cold', { c: [x + Math.cos(a) * 4.55, base + 10.25, z + Math.sin(a) * 4.55], s: [0.95, 1.0, 0.45], rotY: -a + Math.PI / 2, ao: 0.9 });
+  }
+  // stage 2: the tower proper, string courses, warm windows climbing the stair
+  ring(3.0, 2.8, 9.7, 7.8, 'arch_stone_cold');
+  for (const y of [12.2, 14.8]) ring(3.02, 3.02, y, 0.3, 'arch_trim', [0.75, 0.73, 0.7]);
+  ring(2.8, 3.25, 17.5, 0.5, 'arch_trim', [0.75, 0.73, 0.7]);
+  cap(3.25, 18.0);
+  for (let k = 0; k < 4; k++) glowSlot(glow, x, z, 2.88, -1.2 + k * 0.9, base + 10.8 + k * 1.7, 0.45, 0.95);
+  for (let k = 0; k < 3; k++) glowSlot(glow, x, z, 4.3, -1.0 + k * 1.1, base + 4.5 + (k % 2) * 1.5, 0.5, 1.0);
+  // stage 3: open lantern — six stone piers, the fire inside, a slate cone over all
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * Math.PI * 2;
+    g.box('arch_stone_cold', { c: [x + Math.cos(a) * 2.2, base + 19.3, z + Math.sin(a) * 2.2], s: [0.55, 2.6, 0.55], rotY: -a, ao: 0.85 });
+  }
+  cap(2.6, 20.6);
+  const cone = new THREE.ConeGeometry(2.9, 3.0, 16, 2, true);
+  g.geometry('arch_roof_slate', cone, new THREE.Matrix4().makeTranslation(x, base + 22.2, z), { uv: 'world', ao: 0.85 });
+  cone.dispose();
+  return new THREE.Vector3(x, base + 18.2, z);
+}
+
+/** Sokol Keep: a crenellated curtain on its crag, round corner towers, a stepped square keep. */
+function sokolKeep(g, glow, ix, iz) {
+  const dark = [0.36, 0.36, 0.4];
+  g.box('arch_stone_cold', { c: [ix, 10, iz], s: [34, 8, 20], ao: 0.6, tint: dark });
+  // wall-walk merlons along all four sides
+  for (const [ax, len, fixed, alongX] of [[0, 34, -10, true], [0, 34, 10, true], [-17, 20, 0, false], [17, 20, 0, false]]) {
+    const n = Math.round(len / 1.8);
+    for (let k = 0; k < n; k++) {
+      const t = -len / 2 + (k + 0.5) * (len / n);
+      const c = alongX ? [ix + t, 14.6, iz + fixed] : [ix + ax, 14.6, iz + t];
+      g.box('arch_stone_cold', { c, s: alongX ? [1.0, 1.2, 0.8] : [0.8, 1.2, 1.0], ao: 0.85, tint: dark });
+    }
+  }
+  for (const [dx, dz] of [[-17, -10], [17, -10], [-17, 10], [17, 10]]) {
+    const geo = new THREE.CylinderGeometry(2.5, 2.8, 12, 12, 1, true);
+    g.geometry('arch_stone_cold', geo, new THREE.Matrix4().makeTranslation(ix + dx, 12, iz + dz), { uv: 'world', ao: 0.75, tint: dark });
+    geo.dispose();
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2;
+      g.box('arch_stone_cold', { c: [ix + dx + Math.cos(a) * 2.6, 18.6, iz + dz + Math.sin(a) * 2.6], s: [0.9, 1.2, 0.6], rotY: -a + Math.PI / 2, ao: 0.85, tint: dark });
+    }
+    glowSlot(glow, ix + dx, iz + dz, 2.55, -Math.PI / 2, 13 + (dx > 0 ? 1.5 : 0), 0.35, 0.9);
+  }
+  // the keep: a tall square donjon, a set-back upper stage with its own battlements and a turret
+  const kx = ix + 3;
+  const kz = iz + 1;
+  g.box('arch_stone_cold', { c: [kx, 17, kz], s: [10, 18, 9], ao: 0.7, tint: [0.4, 0.4, 0.44] });
+  g.box('arch_trim', { c: [kx, 26.3, kz], s: [10.8, 0.6, 9.8], ao: 0.85, tint: [0.6, 0.6, 0.62] });
+  for (let k = 0; k < 6; k++) {
+    for (const sz of [-1, 1]) g.box('arch_stone_cold', { c: [kx - 4.6 + k * 1.84, 27.2, kz + sz * 4.7], s: [1.0, 1.2, 0.6], ao: 0.85, tint: dark });
+  }
+  g.box('arch_stone_cold', { c: [kx - 1, 29.5, kz], s: [6, 5, 5.5], ao: 0.7, tint: [0.42, 0.42, 0.46] });
+  for (let k = 0; k < 4; k++) g.box('arch_stone_cold', { c: [kx - 3.4 + k * 1.6, 32.6, kz - 2.75], s: [0.9, 1.1, 0.5], ao: 0.85, tint: dark });
+  const tur = new THREE.CylinderGeometry(1.2, 1.2, 6, 10, 1, true);
+  g.geometry('arch_stone_cold', tur, new THREE.Matrix4().makeTranslation(kx + 3.8, 31, kz - 3.6), { uv: 'world', ao: 0.8, tint: dark });
+  tur.dispose();
+  const tc = new THREE.ConeGeometry(1.5, 2.6, 10, 1, true);
+  g.geometry('arch_roof_slate', tc, new THREE.Matrix4().makeTranslation(kx + 3.8, 35.3, kz - 3.6), { uv: 'world', ao: 0.85 });
+  tc.dispose();
+  // warm windows on the face toward the city (-z)
+  const wq = (x, y, w, h) => {
+    const z = kz - 4.52;
+    glow.quad('glow', new THREE.Vector3(x - w / 2, y, z), new THREE.Vector3(x + w / 2, y, z), new THREE.Vector3(x + w / 2, y + h, z), new THREE.Vector3(x - w / 2, y + h, z), [[0, 0], [1, 0], [1, 1], [0, 1]], { ao: 1 });
+  };
+  wq(kx - 2.5, 20, 0.6, 1.4);
+  wq(kx + 1.5, 22.5, 0.6, 1.4);
+  wq(kx - 0.5, 16.5, 0.5, 1.1);
+  glow.quad('glow', new THREE.Vector3(kx - 2.5, 29, kz - 2.77), new THREE.Vector3(kx - 1.9, 29, kz - 2.77), new THREE.Vector3(kx - 1.9, 30.3, kz - 2.77), new THREE.Vector3(kx - 2.5, 30.3, kz - 2.77), [[0, 0], [1, 0], [1, 1], [0, 1]], { ao: 1 });
 }
 
 function tower(g, x, z, r, h, broken, id, night, winLit, base = -0.5) {

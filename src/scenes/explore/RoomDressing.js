@@ -98,8 +98,15 @@ export function dressRooms(map) {
         const cy = z.y + j;
         const cc = new THREE.Vector3(cx * S + S / 2, 0, cy * S + S / 2);
         const onBar = alongX ? Math.abs(cc.z - barC) < 1.6 && cc.x > barA - 0.5 && cc.x < barB + 0.5 : Math.abs(cc.x - barC) < 1.6 && cc.z > barA - 0.5 && cc.z < barB + 0.5;
-        const hearthFront = hearth && ((alongX && cy === hearth.y && Math.abs(cx - hearth.x) <= 1) || (!alongX && cx === hearth.x && Math.abs(cy - hearth.y) <= 1));
+        const hearthFront = hearth && ((alongX && cy === hearth.y && cx === hearth.x) || (!alongX && cx === hearth.x && cy === hearth.y));
+        // the cell before the hearth approach keeps a table, pushed aside so the fire stays in view
+        const nearHearth = hearth && ((alongX && cy === hearth.y && Math.abs(cx - hearth.x) === 1) || (!alongX && cx === hearth.x && Math.abs(cy - hearth.y) === 1));
         if (onBar || hearthFront) continue;
+        if (nearHearth) {
+          cc.near = true;
+          if (alongX) cc.z += 0.95;
+          else cc.x += 0.95;
+        }
         cells.push(cc);
       }
     }
@@ -166,12 +173,36 @@ export function dressRooms(map) {
       bunch.dispose();
     }
     for (const [k, c] of cells.entries()) {
-      if (hash(z.name, k, 'tbl') < 0.25) continue;
+      if (!c.near && hash(z.name, k, 'tbl') < 0.25) continue;
       // keep the stair's foot clear
       const ca = alongX ? c.x : c.z;
       const cc = alongX ? c.z : c.x;
       if (Math.abs(cc - stairSideC) < 1.6 && (dirA < 0 ? ca < stairStart + 0.8 : ca > stairStart - 0.8)) continue;
-      tableSet(c, hash(z.name, k, 'tr') < 0.5 ? 0 : Math.PI / 2, k);
+      tableSet(c, c.near ? (alongX ? 0 : Math.PI / 2) : hash(z.name, k, 'tr') < 0.5 ? 0 : Math.PI / 2, k);
+    }
+    // the innkeeper's apron and a coat on pegs by the back shelf, a slate of prices
+    {
+      const pegA = barB - 0.15;
+      const pm = M(pegA, 1.62, wallC + sh * 0.03);
+      g.box('prop_wood', { matrix: pm.clone(), s: [0.7, 0.07, 0.04], chamfer: 0.01, uv: 'along', tint: [0.5, 0.38, 0.28] });
+      for (const dx of [-0.22, 0.2]) g.box('prop_wood', { matrix: pm.clone().multiply(tr(dx, 0.0, sh * 0.06)).multiply(new THREE.Matrix4().makeRotationX(sh * 0.5)), s: [0.025, 0.025, 0.12], uv: 'along', tint: [0.42, 0.32, 0.24] });
+      // apron: a stiff leather panel hanging from its neck strap, folded over at the waist tie
+      const apron = new THREE.PlaneGeometry(0.42, 0.72, 4, 6);
+      const ap = apron.attributes.position;
+      for (let i = 0; i < ap.count; i++) {
+        const x = ap.getX(i);
+        const y = ap.getY(i);
+        ap.setZ(i, Math.cos(x * 7) * 0.012 + (0.36 - y) * 0.05);
+        ap.setX(i, x * (1 - (0.36 - y) * 0.12));
+      }
+      apron.computeVertexNormals();
+      g.geometry('prop_cloth', apron, pm.clone().multiply(tr(-0.22, -0.4, sh * 0.03)).multiply(rotY(sh > 0 ? 0 : Math.PI)), { uv: 'world', tint: [0.55, 0.4, 0.28] });
+      apron.dispose();
+      g.box('prop_cloth', { matrix: pm.clone().multiply(tr(-0.22, -0.02, sh * 0.03)), s: [0.18, 0.012, 0.01], tint: [0.4, 0.3, 0.22] });
+      // a dark wool cloak bunched on the other peg
+      const cl = new THREE.CylinderGeometry(0.06, 0.2, 0.95, 9, 3, true);
+      g.geometry('prop_cloth', cl, pm.clone().multiply(tr(0.2, -0.47, sh * 0.1)), { uv: 'world', tint: [0.3, 0.27, 0.3] });
+      cl.dispose();
     }
   }
 

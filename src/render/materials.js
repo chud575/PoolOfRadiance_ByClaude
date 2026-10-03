@@ -47,10 +47,12 @@ const DEFS = {
   arch_ceiling: { tex: 'hd2_ceiling', texScale: 3, vc: true, color: 0xffffff, fx: { macro: 0.1 } },
   arch_dungeon: { tex: 'hd2_dungeon', texScale: 3, vc: true, fx: { macro: 0.34, grime: 0.6, moss: 0.4, streak: 1, vary: 1, patch: 1 } },
   arch_dungeon_floor: { tex: 'hd3_dungeon_floor', texScale: 3, vc: true, fx: { macro: 0.3, floor: 1 } },
-  arch_hewn: { tex: 'hd2_hewn', texScale: 3, vc: true, fx: { macro: 0.35, grime: 0.5, moss: 0.5, patch: 0.8 } },
-  arch_hewn_ceil: { tex: 'hd2_hewn_ceil', texScale: 3, vc: true, roughness: 1, fx: { macro: 0.3 } },
+  arch_hewn: { tex: 'hd2_hewn', texScale: 3, vc: true, fx: { macro: 0.2, grime: 0.5, moss: 0.5, rock: 1 } },
+  arch_hewn_ceil: { tex: 'hd2_hewn_ceil', texScale: 3, vc: true, roughness: 1, fx: { macro: 0.2, rock: 1 } },
   arch_cave_floor: { tex: 'hd2_cave_floor', texScale: 3, vc: true, fx: { macro: 0.35, floor: 1 } },
-  arch_basalt: { tex: 'hd2_basalt', texScale: 2.2, vc: true, fx: { macro: 0.22, grime: 0.3, streak: 0.8, vary: 0.6, patch: 0.6 } },
+  arch_basalt: { tex: 'hd2_basalt', texScale: 2.2, vc: true, fx: { macro: 0.22, grime: 0.3, streak: 0.8, patch: 0.6 } },
+  // vault webs/ribs: one even, matte, smoke-dark albedo (no per-stone gloss → no checkerboard of lit tiles)
+  arch_basalt_vault: { tex: 'hd2_basalt', texScale: 2.2, vc: true, rough: false, roughness: 0.95, color: 0xb8b8bc, fx: { macro: 0.28, patch: 0.5 } },
   arch_basalt_floor: { tex: 'hd2_basalt_floor', texScale: 3, vc: true, fx: { macro: 0.2, floor: 1 } },
   arch_relief: { tex: 'hd2_relief', texScale: 0, vc: true, fx: { macro: 0.1 } },
   arch_brick: { tex: 'hd_brick', texScale: 1, vc: true, fx: { macro: 0.3, grime: 0.5 } },
@@ -143,6 +145,7 @@ function applySurfaceFX(mat, fx) {
   const soot = (fx.soot ?? 0).toFixed(3);
   const vary = (fx.vary ?? 0).toFixed(3);
   const patch = (fx.patch ?? 0).toFixed(3);
+  const rock = (fx.rock ?? 0).toFixed(3);
   mat.onBeforeCompile = (shader) => {
     if (!SURFACE_UNIFORMS.uFxNoiseTex.value) SURFACE_UNIFORMS.uFxNoiseTex.value = getFxNoiseTexture();
     Object.assign(shader.uniforms, SURFACE_UNIFORMS);
@@ -177,6 +180,10 @@ function applySurfaceFX(mat, fx) {
         float vFxFloor = 0.0;
         float vFxCav = 0.0;
         float vFxCrown = 0.0;
+        vec3 vFxPlate = vec3(0.5);
+        float vFxCrack = 0.0;
+        float vFxSeep = 0.0;
+        vec3 fxHash3(vec3 p){ p = fract(p * vec3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.xxy + p.yxx) * p.zyx); }
         float vFxPud = 0.0;
         ${FX_NOISE}`,
       )
@@ -194,6 +201,11 @@ function applySurfaceFX(mat, fx) {
           float vert = 1.0 - abs(up);
           float g = (1.0 - smoothstep(0.0, 1.1 + mN * 0.9, wp.y)) * vert * ${grime};
           diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * uFxGrimeTint * 2.2, g * 0.75);
+          // contact dirt: a tight, darker band where anything meets the ground (splashed mud, wet
+          // grit, a line of moss in the damp) — props and walls sit in the street, not on it
+          float foot = (1.0 - smoothstep(0.02, 0.16 + nz.b * 0.16, wp.y)) * (0.4 + 0.6 * vert) * ${grime};
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * uFxGrimeTint * 1.7, foot * 0.6);
+          diffuseColor.rgb = mix(diffuseColor.rgb, uFxMossTint * 0.8, foot * smoothstep(0.5, 0.62, nz.g) * 0.45 * ${moss});
           float dampMoss = (1.0 - smoothstep(0.0, 0.5 + mN * 0.7, wp.y)) * smoothstep(0.42, 0.62, nz.g) * vert;
           float topMoss = smoothstep(0.55, 0.9, up) * smoothstep(0.4, 0.62, nz.g) * step(0.3, wp.y);
           diffuseColor.rgb = mix(diffuseColor.rgb, uFxMossTint * (0.7 + nz.b * 0.6), clamp((dampMoss * 0.8 + topMoss) * ${moss}, 0.0, 0.85));
@@ -258,6 +270,51 @@ function applySurfaceFX(mat, fx) {
             diffuseColor.rgb *= 1.0 - hiS * 0.22 * ${patch} * vert;
           }
           #endif
+          #if ${rock === '0.000' ? 0 : 1}
+          {
+            // fractured rock in world space (no UVs → no stretched bands): 3D Voronoi plates
+            // elongated within tilted bedding planes, hairline cracks and wider seams between them,
+            // thin strata partings, each plate its own tone and (below) its own facet tilt
+            vec3 rp = wp * 0.72 + vec3(nz.b * 0.25, nz.r * 0.6, 0.0);
+            vec3 bed = normalize(vec3(0.3, 1.0, 0.16));
+            vec3 ip = floor(rp);
+            vec3 fp = fract(rp);
+            float f1 = 8.0;
+            float f2 = 8.0;
+            vec3 cid = vec3(0.0);
+            for (int k = -1; k <= 1; k++) for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+              vec3 o = vec3(float(i), float(j), float(k));
+              vec3 d = o + fxHash3(ip + o) - fp;
+              d += bed * dot(d, bed) * 0.9; // plates flattened across the bedding
+              float dd = dot(d, d);
+              if (dd < f1) { f2 = f1; f1 = dd; cid = ip + o; } else if (dd < f2) f2 = dd;
+            }
+            float edge = sqrt(f2) - sqrt(f1);
+            vec3 hc = fxHash3(cid + 17.0);
+            // only some plate boundaries are open fractures; the rest are tight, barely-read joints
+            float open = smoothstep(0.35, 0.6, hc.z + (nz.g - 0.5) * 0.6);
+            float crack = (1.0 - smoothstep(0.0, 0.035 + 0.02 * open, edge)) * (0.25 + 0.75 * open);
+            float seam = (1.0 - smoothstep(0.02, 0.28, edge)) * (0.4 + 0.6 * open);
+            #ifdef USE_MAP
+              // keep only the texture's fine grain: its broad cloudy banding is replaced by the plates
+              vec3 tLow = texture2D(map, vMapUv, 5.0).rgb;
+              vec3 tAvg = texture2D(map, vMapUv, 11.0).rgb;
+              diffuseColor.rgb *= mix(vec3(1.0), tAvg / max(tLow, vec3(0.02)), ${rock});
+            #endif
+            diffuseColor.rgb *= 0.74 + hc.x * 0.5;
+            diffuseColor.rgb *= mix(vec3(1.0), vec3(1.08, 1.0, 0.86), (hc.y - 0.5) * 1.2);
+            float sb = dot(wp, bed);
+            float st = fract(sb * 2.6 + nz.g * 0.8);
+            float parting = (1.0 - smoothstep(0.0, 0.05, st)) * smoothstep(0.42, 0.58, nz.a);
+            diffuseColor.rgb *= 1.0 - crack * 0.5 - seam * 0.22 - parting * 0.28;
+            // seeps: water running down from the partings, darkening and glossing the stone
+            float sk = texture2D(uFxNoiseTex, vec2((wp.x + wp.z) * 0.42, wp.y * 0.035 + 0.2)).g;
+            vFxSeep = smoothstep(0.58, 0.7, sk) * (1.0 - abs(up)) * smoothstep(0.3, 0.55, nz.r);
+            diffuseColor.rgb *= 1.0 - vFxSeep * 0.35;
+            vFxPlate = hc;
+            vFxCrack = max(crack, seam * 0.5);
+          }
+          #endif
           float fl = ${floor};
           diffuseColor.rgb *= mix(1.0, 0.8 + nz.a * 0.4, fl);
           #ifdef USE_ROUGHNESSMAP
@@ -290,6 +347,15 @@ function applySurfaceFX(mat, fx) {
           vec3 fxUpV = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
           normal = normalize(mix(normal, fxUpV, smoothstep(0.0, 0.3, vFxPud)));
         }
+        #if ${rock === '0.000' ? 0 : 1}
+        {
+          // each plate a facet at its own angle; the cracks fall back into shadow
+          vec3 tilt = (vFxPlate - 0.5) * 1.4;
+          vec3 nW = normalize(normalize(vFxWorldNormal) + tilt);
+          vec3 nV = normalize((viewMatrix * vec4(nW, 0.0)).xyz);
+          normal = normalize(mix(normal, nV, 0.8 * (1.0 - vFxCrack) * ${rock}));
+        }
+        #endif
         #if ${grain === '0.000' ? 0 : 1}
         {
           // close-up micro relief (≈1 cm grit) as a derivative bump in world space
@@ -320,8 +386,10 @@ function applySurfaceFX(mat, fx) {
           roughnessFactor = mix(roughnessFactor, max(roughnessFactor, 0.5), vFxWet * wetK);
           // after rain the water sits in the joints and hollows (soft sheen), the crowns stay dry
           // and matte: no glossy high-frequency speckle on the stone faces
-          roughnessFactor = mix(roughnessFactor, 0.34, vFxCav * vFxFloor * wetK * (0.4 + 0.6 * uFxSlick));
-          roughnessFactor = mix(roughnessFactor, max(roughnessFactor, 0.78), vFxCrown * vFxFloor);
+          roughnessFactor = mix(roughnessFactor, max(roughnessFactor, 0.68), vFxFloor);
+          roughnessFactor = mix(roughnessFactor, max(roughnessFactor, 0.82), vFxCrown * vFxFloor);
+          roughnessFactor = mix(roughnessFactor, 0.36, vFxCav * vFxFloor * wetK * (0.4 + 0.6 * uFxSlick));
+          roughnessFactor = mix(roughnessFactor, 0.22, vFxSeep);
           // puddles: a near-flat sheet with a slightly soft (rippled, dirty) mirror
           roughnessFactor = mix(roughnessFactor, 0.14, smoothstep(0.45, 0.95, vFxPud));
         }`,
@@ -336,8 +404,10 @@ function applySurfaceFX(mat, fx) {
           vec3 fxR = reflect(fxI, vec3(0.0, 1.0, 0.0));
           // a ragged roofline (walls up to ~25-40 degrees) between the street and the sky
           float az = atan(fxR.z, fxR.x);
-          float roof = 0.26 + 0.16 * texture2D(uFxNoiseTex, vec2(az * 0.6, 0.31)).r + 0.04 * step(0.5, fract(az * 5.0 + 0.3));
-          float skyK = smoothstep(roof - 0.02, roof + 0.02, fxR.y);
+          // (smooth in azimuth: any step here prints hard screen-vertical edges into the pools)
+          float roof = 0.24 + 0.18 * texture2D(uFxNoiseTex, vec2(az * 0.6, 0.31)).r;
+          // the water is never a perfect mirror: ripples and silt blur the roofline
+          float skyK = smoothstep(roof - 0.1, roof + 0.1, fxR.y);
           vec3 skyC = mix(uFxReflHorizon, uFxReflZenith, smoothstep(roof, 0.9, fxR.y));
           vec3 rc = mix(uFxReflWall * (0.75 + 0.5 * texture2D(uFxNoiseTex, vec2(az * 2.0, fxR.y)).g), skyC, skyK);
           gl_FragColor.rgb += rc * fres * smoothstep(0.15, 0.85, vFxPud);
@@ -360,7 +430,7 @@ function applySurfaceFX(mat, fx) {
         #endif`,
       );
   };
-  mat.customProgramCacheKey = () => `fx:${macro}:${grime}:${moss}:${floor}:${dust}:${grain}:${streak}:${fogCap}:${soot}:${vary}:${patch}`;
+  mat.customProgramCacheKey = () => `fx:${macro}:${grime}:${moss}:${floor}:${dust}:${grain}:${streak}:${fogCap}:${soot}:${vary}:${patch}:${rock}`;
 }
 
 const cache = new Map();
@@ -373,7 +443,8 @@ export function getMaterial(key) {
   const params = { color: d.color ?? 0xffffff, roughness: d.roughness ?? 1, metalness: d.metalness ?? 0 };
   if (d.tex) {
     const t = getTextureSet(d.tex);
-    Object.assign(params, { map: t.map, normalMap: t.normalMap, roughnessMap: t.roughnessMap });
+    Object.assign(params, { map: t.map, normalMap: t.normalMap });
+    if (d.rough !== false) params.roughnessMap = t.roughnessMap;
   }
   if (d.vc) params.vertexColors = true;
   const m = new THREE.MeshStandardMaterial(params);

@@ -343,15 +343,21 @@ export function getFlameMaterial() {
         col = mix(col, vec3(0.25, 0.32, 0.9), root * 0.35);
         // tinted (unholy / magical) fire: the tint drives the ramp instead of black-body colours
         float tintAmt = step(vTint.r + vTint.g + vTint.b, 2.99);
-        vec3 tc = mix(vTint * 0.28, vTint * 0.8, smoothstep(0.0, 0.55, k));
-        tc = mix(tc, mix(vTint, vec3(1.0), 0.18), smoothstep(0.75, 1.0, k));
-        col = mix(col, tc * 0.62, tintAmt);
-        float I = body * (0.5 + 0.6 * k) * (0.85 + 0.15 * vFlick) * (1.0 - 0.35 * tintAmt);
+        // (dark smoky edge → saturated body → pale hot core, like the torches but in the tint)
+        vec3 tc = mix(vTint * 0.1, vTint * 0.75, smoothstep(0.05, 0.6, k));
+        tc = mix(tc, mix(vTint, vec3(1.0), 0.4), smoothstep(0.62, 1.0, k));
+        col = mix(col, tc * 0.8, tintAmt);
+        // white-hot heart low in the flame (where the fuel burns cleanest): pale yellow-white,
+        // fading through yellow into the orange body and the red, smoky edge
+        float heart = (1.0 - smoothstep(0.0, 0.17, abs(xd))) * (1.0 - smoothstep(0.08, 0.42, y)) * smoothstep(0.02, 0.1, y) * body;
+        col = mix(col, mix(vec3(1.0, 0.93, 0.72), mix(vTint, vec3(1.0), 0.55), tintAmt), heart * 0.85);
+        col = mix(col, col * vec3(0.8, 0.45, 0.3), (1.0 - smoothstep(0.08, 0.5, body)) * (1.0 - tintAmt) * 0.6);
+        float I = body * (0.5 + 0.6 * k + heart * 0.9) * (0.85 + 0.15 * vFlick) * (1.0 - 0.35 * tintAmt);
         // smoke wisp: a faint curl of lit haze rising off the tip
         float sy = (uv.y - 0.5) / 0.5;
         float sx = x + (fbm(vec2(x * 2.0, uv.y * 3.0 - t * 1.2)) - 0.5) * 1.2 * sy + sin(uv.y * 7.0 - t * 1.7) * 0.12 * sy;
         float wisp = (1.0 - smoothstep(0.04, 0.14 + 0.2 * sy, abs(sx))) * smoothstep(0.0, 0.3, sy) * (1.0 - smoothstep(0.5, 1.0, sy));
-        wisp *= smoothstep(0.35, 0.7, fbm(vec2(x * 3.0, uv.y * 5.0 - t * 2.0))) * detail * (1.0 - tintAmt * 0.6);
+        wisp *= smoothstep(0.35, 0.7, fbm(vec2(x * 3.0, uv.y * 5.0 - t * 2.0))) * detail;
         // embers: a few sparks lifting off the tongues
         float ember = 0.0;
         for (int i = 0; i < 3; i++) {
@@ -361,8 +367,10 @@ export function getFlameMaterial() {
           vec2 dd = vec2(x * 0.5, uv.y) - vec2(ep.x * 0.5, ep.y);
           ember += (1.0 - smoothstep(0.0, 0.012, length(dd))) * (1.0 - life) * detail;
         }
-        vec3 outc = col * I * 0.98 + vec3(0.075, 0.068, 0.062) * wisp * 0.6 + vec3(1.0, 0.45, 0.08) * ember * 0.9;
-        float a = clamp(body * (0.4 + 0.3 * (1.0 - k)) + wisp * 0.28 + ember * 0.5, 0.0, 1.0);
+        // the wisp: grey-brown soot, lit warm from below near the tip
+        vec3 smokeC = mix(vec3(0.16, 0.1, 0.06), vec3(0.05, 0.048, 0.046), smoothstep(0.0, 0.6, sy));
+        vec3 outc = col * I * 0.98 + smokeC * wisp * 0.75 + vec3(1.0, 0.45, 0.08) * ember * 0.9;
+        float a = clamp(body * (0.4 + 0.3 * (1.0 - k)) + wisp * 0.42 + ember * 0.5, 0.0, 1.0);
         gl_FragColor = vec4(outc, a);
       }`,
   });

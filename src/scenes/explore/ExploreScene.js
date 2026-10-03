@@ -156,11 +156,18 @@ export default class ExploreScene extends Scene {
       this.sun.shadow.intensity = night ? 0.92 : 0.8;
       s.add(this.sun, this.sun.target);
       // cool sky bounce from the side away from the sun (no shadows)
-      this.fill = new THREE.DirectionalLight(night ? 0x6a7cb4 : 0x9cb2d8, night ? 0.85 : k.sunI * 0.18);
+      this.fill = new THREE.DirectionalLight(night ? 0x7088c4 : 0x9cb2d8, night ? 1.25 : k.sunI * 0.18);
       // by night a high, cool sky-glow from the north as well: walls facing away from the moon still read
       if (night) this.fill.position.set(-this.sunDir.x * 30, 45, -40);
       else this.fill.position.set(-this.sunDir.x * 50, 30, -this.sunDir.z * 50);
       s.add(this.fill);
+      if (night) {
+        // moonlit sky rim from the opposite quarter: the walls turned away from the moon keep a
+        // cool edge of light instead of dropping into a featureless black-blue void
+        this.rim = new THREE.DirectionalLight(0x8aa2e0, 0.75);
+        this.rim.position.set(this.sunDir.x * -40 + 30, 9, -40);
+        s.add(this.rim);
+      }
       // low-sun haze kept thin enough that the mid-ground holds its contrast
       s.fog = new THREE.FogExp2(k.fog, k.fogDensity * (this.map.harbour ? 0.38 : 0.72) * (k.scatter > 0.8 && !night ? 0.78 : 1));
       setSurfaceAtmosphere({
@@ -291,7 +298,6 @@ export default class ExploreScene extends Scene {
   /** Screen-space crepuscular rays (outdoors by day; strongest with a low sun in the haze). */
   _setupGodRays() {
     if (!this.tileset.outdoors || this.keys.night > 0.5 || this.keys.trueSunDir.y < -0.02) return;
-    if (location.search.includes("nogr")) return; // TMPDEBUG
     const comp = this.ctx.render.composer;
     const gr = new GodRaysPass();
     gr.camera = this.camera;
@@ -332,12 +338,12 @@ export default class ExploreScene extends Scene {
     this.particles = [];
     const add = (p) => {
       if (!p) return;
-      if (location.search.includes('nopart')) return; // TMPDEBUG
       this.scene3d.add(p);
       this.particles.push(p);
     };
     const night = this.night > 0.5;
-    if (ts.particles.includes('dust')) {
+    // (indoors by day the motes live only in the window beams below: a room-wide field reads as snow)
+    if (ts.particles.includes('dust') && !(ts.id === 'interior' && this.sun?.intensity)) {
       add(createParticles('dust', {
         count: ts.outdoors ? 420 : 320,
         box: [new THREE.Vector3(-9, 0.15, -9), new THREE.Vector3(9, ts.outdoors ? 3.6 : ts.ceilH - 0.2, 9)],
@@ -356,7 +362,7 @@ export default class ExploreScene extends Scene {
       this.block.windows.filter((w) => !w.upper).forEach((w, i) => {
         const c = w.pos.clone().addScaledVector(w.N, -1.5).add(new THREE.Vector3(0, -0.5, 0));
         const ext = new THREE.Vector3(0.75 + Math.abs(w.N.x) * 0.8, 1.0, 0.75 + Math.abs(w.N.z) * 0.8);
-        add(createParticles('dust', { count: 70, box: [c.clone().sub(ext), c.clone().add(ext)], color: 0xfff4e0, size: 0.016, intensity: 1.3, seed: 40 + i }));
+        add(createParticles('dust', { count: 90, box: [c.clone().sub(ext), c.clone().add(ext)], color: 0xfff0d8, size: 0.007, intensity: 0.75, seed: 40 + i }));
       });
     }
     if (ts.particles.includes('smoke')) {
@@ -409,7 +415,6 @@ export default class ExploreScene extends Scene {
     this.scene3d.add(this.block.group);
     this.props = buildProps(this.map, this.block, { night: this.night });
     this.scene3d.add(this.props.group);
-    if (location.search.includes('noprops')) this.props.group.visible = false; // TMPDEBUG
     this.dressing = this.tileset.variant ? dressDungeon(this.map, this.block) : null;
     if (this.dressing) this.scene3d.add(this.dressing.group);
     this.rooms = this.tileset.id !== 'dungeon' ? dressRooms(this.map) : null;

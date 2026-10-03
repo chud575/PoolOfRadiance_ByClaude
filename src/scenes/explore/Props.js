@@ -723,8 +723,10 @@ export function buildProps(map, block, opts = {}) {
     for (const p of puddles) {
       const c = Math.cos(p.r) * p.s * 0.5;
       const s = Math.sin(p.r) * p.s * 0.5;
-      const y = 0.01;
-      b.quad('pud', new THREE.Vector3(p.x - c + s, y, p.z + s + c), new THREE.Vector3(p.x + c + s, y, p.z - s + c), new THREE.Vector3(p.x + c - s, y, p.z - s - c), new THREE.Vector3(p.x - c - s, y, p.z + s - c), [[0, 0], [1, 0], [1, 1], [0, 1]], { ao: 1 });
+      // follow the street's crown (a flat decal on a cambered street is cut by the paving into
+      // a hard curved edge)
+      const V = (x, z) => new THREE.Vector3(x, (block.crownAt ? block.crownAt(x, z) : 0) + 0.014, z);
+      b.quad('pud', V(p.x - c + s, p.z + s + c), V(p.x + c + s, p.z - s + c), V(p.x + c - s, p.z - s - c), V(p.x - c - s, p.z + s - c), [[0, 0], [1, 0], [1, 1], [0, 1]], { ao: 1 });
     }
     const geo = b.build().get('pud');
     const mesh = new THREE.Mesh(geo, mat);

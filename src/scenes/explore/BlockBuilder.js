@@ -432,6 +432,7 @@ export function buildBlock(map, opts = {}) {
   }
   const sootQuads = [];
   const spillQuads = [];
+  const torchSpill = [];
   // weathering decals: rain runoff under ledges, splash/damp at wall feet ([corners], [uvs])
   const runQuads = [];
   const plinthQuads = [];
@@ -724,7 +725,18 @@ export function buildBlock(map, opts = {}) {
     },
     ruin_timber(f) {
       slab(f, 'arch_ruin', 0, Math.min(1.2, f.H), 0, T / 2 + 0.03, { chamfer: 0.03 });
-      slab(f, 'arch_plaster', 1.2, f.H, 0, T / 2, { jag: true, tint: [0.7, 0.64, 0.56] }); // weathered, smoke-dulled daub
+      // the daub has burnt and fallen away: what stands is the rubble-stone nogging behind it,
+      // a full wall thick with a broken top, with a few scorched scraps of plaster still clinging
+      slab(f, 'arch_ruin', 1.2, f.H, 0, T / 2, { jag: true, tint: [0.8, 0.76, 0.72] });
+      const np = 1 + Math.floor(hash(f.seed, 'pp') * 2);
+      for (let k = 0; k < np; k++) {
+        const c = (hash(f.seed, k, 'pc') - 0.5) * (S - 1.2);
+        const hw = 0.35 + hash(f.seed, k, 'pw') * 0.45;
+        if (f.openings.some((o) => c + hw > o.s0 - 0.05 && c - hw < o.s1 + 0.05)) continue;
+        const top = Math.min(f.H, 1.2 + (f.H - 1.2) * (f.jag ? f.jag(c) : 1)) - 0.35;
+        if (top < 1.6) continue;
+        localBox(f, 'arch_plaster', c - hw, c + hw, 1.25, Math.min(top, 1.3 + 0.6 + hash(f.seed, k, 'ph') * 0.8), T / 2, T / 2 + 0.025, { chamfer: 0.01, tint: [0.62, 0.56, 0.5] });
+      }
       ruinFrame(f);
     },
     cave(f) {
@@ -824,8 +836,8 @@ export function buildBlock(map, opts = {}) {
     const sd = f.seed;
     const plasterTop = (sv) => (f.jag ? 1.2 + (H - 1.2) * f.jag(sv) : H);
     const clear = (sv, w) => !f.openings.some((o) => sv + w > o.s0 - 0.05 && sv - w < o.s1 + 0.05);
-    const char = [0.13, 0.11, 0.1];
-    const wood = [0.85, 0.8, 0.76];
+    const char = [0.24, 0.2, 0.17];
+    const wood = [1.3, 1.2, 1.08]; // silver-grey weathered oak (never a black cut-out against the sky)
     // sill: two lengths, the shorter one dropped at one end
     const cut = -0.4 + hash(sd, 'sc') * 0.8;
     localBox(f, 'arch_beam_dark', -S / 2, cut - 0.06, 1.2, 1.36, d0, d1, { uv: 'along', skip: ['nz'], tint: wood });
@@ -1173,20 +1185,34 @@ export function buildBlock(map, opts = {}) {
     };
     const np = 5;
     const pw = lw / np;
+    const hasGrille = hash(e.key, 'grille') < 0.6;
     for (let k = 0; k < np; k++) {
       const x0 = k * pw + 0.004;
       const x1 = (k + 1) * pw - 0.004;
       const tk = th - hash(e.key, k, 'pt') * 0.012;
       const dz = (hash(e.key, k, 'pz') - 0.5) * 0.006;
       // vertical segments concentrate vertex AO near the head of the door
-      for (const [y0, y1] of [[0, 0.32], [0.32, lh - 0.6], [lh - 0.6, lh - 0.18], [lh - 0.18, lh - hash(e.key, k, 'ph') * 0.02]]) {
-        lg.box('arch_door', { c: [(x0 + x1) / 2, (y0 + y1) / 2, dz], s: [x1 - x0, y1 - y0, tk], uv: 'local', chamfer: 0.006, uvRect: [x0 / lw, y0 / lh, x1 / lw, y1 / lh], skip: y0 > 0 ? ['ny'] : y1 < lh - 0.1 ? ['py'] : [] });
+      const segs = [[0, 0.32], [0.32, lh - 0.6], [lh - 0.6, lh - 0.18], [lh - 0.18, lh - hash(e.key, k, 'ph') * 0.02]];
+      const hx0 = lw / 2 - 0.15;
+      const hx1 = lw / 2 + 0.15;
+      const cut = hasGrille && x1 > hx0 && x0 < hx1;
+      for (const [y0, y1] of segs) {
+        const pieces = [];
+        if (cut && y0 < 1.42 && y1 > 1.68) {
+          // the speak-hole is cut through this plank: leave the wood around it
+          pieces.push([x0, x1, y0, 1.42], [x0, x1, 1.68, y1]);
+          if (x0 < hx0) pieces.push([x0, hx0, 1.42, 1.68]);
+          if (x1 > hx1) pieces.push([hx1, x1, 1.42, 1.68]);
+        } else pieces.push([x0, x1, y0, y1]);
+        for (const [a0, a1, b0, b1] of pieces) {
+          lg.box('arch_door', { c: [(a0 + a1) / 2, (b0 + b1) / 2, dz], s: [a1 - a0, b1 - b0, tk], uv: 'local', chamfer: 0.006, uvRect: [a0 / lw, b0 / lh, a1 / lw, b1 / lh], skip: b0 > 0 && !cut ? ['ny'] : b1 < lh - 0.1 && !cut ? ['py'] : [] });
+        }
       }
     }
     const rivet = new THREE.SphereGeometry(0.016, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2);
     rivet.rotateX(Math.PI / 2);
     const rivetBack = rivet.clone().rotateY(Math.PI);
-    const strapYs = [0.38, lh - 0.42];
+    const strapYs = [0.82, lh - 0.42];
     for (const yy of strapYs) {
       for (const sgnZ of [1, -1]) {
         const z = sgnZ * (th / 2 + 0.008);
@@ -1208,21 +1234,37 @@ export function buildBlock(map, opts = {}) {
       for (let k = 0; k < np; k++) {
         const x = (k + 0.5) * pw;
         const y = 0.75 + r * ((lh - 1.55) / 3);
+        if (hasGrille && Math.abs(x - lw / 2) < 0.24 && Math.abs(y - 1.55) < 0.2) continue;
         for (const sgnZ of [1, -1]) lg.geometry('prop_iron', sgnZ > 0 ? rivet : rivetBack, new THREE.Matrix4().makeTranslation(x, y, sgnZ * (th / 2 + 0.002)), { ao: 0.9 });
       }
     }
     rivet.dispose();
     rivetBack.dispose();
-    if (hash(e.key, 'grille') < 0.6) {
+    if (hasGrille) {
+      // speak-hole: a moulded oak surround proud of the planks, the opening recessed into the
+      // leaf with a forged lattice set back in it, and a sliding shutter behind, half drawn
       const gy = 1.55;
       const gx = lw / 2;
-      for (const z of [th / 2 + 0.01, -th / 2 - 0.01]) {
-        lg.box('prop_iron', { c: [gx, gy + 0.14, z], s: [0.34, 0.035, 0.022], chamfer: 0.006 });
-        lg.box('prop_iron', { c: [gx, gy - 0.14, z], s: [0.34, 0.035, 0.022], chamfer: 0.006 });
-        for (const bx of [-0.15, 0.15]) lg.box('prop_iron', { c: [gx + bx, gy, z], s: [0.035, 0.31, 0.022], chamfer: 0.006 });
-        for (const bx of [-0.07, 0, 0.07]) lg.box('prop_iron', { c: [gx + bx, gy, z], s: [0.02, 0.26, 0.02] });
+      const gw = 0.3;
+      const gh = 0.26;
+      for (const sz of [1, -1]) {
+        const zf = sz * (th / 2 + 0.012);
+        lg.box('arch_beam_dark', { c: [gx, gy + gh / 2 + 0.03, zf], s: [gw + 0.12, 0.06, 0.03], uv: 'local', chamfer: 0.01 });
+        lg.box('arch_beam_dark', { c: [gx, gy - gh / 2 - 0.035, zf], s: [gw + 0.14, 0.07, 0.034], uv: 'local', chamfer: 0.012 }); // sill
+        for (const bx of [-1, 1]) lg.box('arch_beam_dark', { c: [gx + bx * (gw / 2 + 0.03), gy, zf], s: [0.06, gh, 0.03], uv: 'local', chamfer: 0.01 });
+        // reveal of the cut-out: dark end grain lining the hole
+        for (const bx of [-1, 1]) lg.box('arch_beam_dark', { c: [gx + bx * (gw / 2 - 0.006), gy, sz * th * 0.25], s: [0.012, gh, th * 0.5], uv: 'local', ao: 0.4 });
+        lg.box('arch_beam_dark', { c: [gx, gy + gh / 2 - 0.006, sz * th * 0.25], s: [gw, 0.012, th * 0.5], uv: 'local', ao: 0.35 });
+        lg.box('arch_beam_dark', { c: [gx, gy - gh / 2 + 0.006, sz * th * 0.25], s: [gw, 0.012, th * 0.5], uv: 'local', ao: 0.55 });
       }
-      lg.box('arch_beam_dark', { c: [gx, gy, 0], s: [0.26, 0.24, th * 0.6], uv: 'local', ao: 0.25 }); // dark void behind
+      // lattice set back ~2.5 cm in the opening: two uprights and a cross-bar, riveted at the laps
+      const zb = th / 2 - 0.026;
+      for (const bx of [-0.075, 0.0, 0.075]) lg.box('prop_iron', { c: [gx + bx, gy, zb], s: [0.018, gh, 0.016], chamfer: 0.004 });
+      for (const by of [-0.06, 0.06]) lg.box('prop_iron', { c: [gx, gy + by, zb - 0.012], s: [gw, 0.018, 0.014], chamfer: 0.004 });
+      // the shutter: an oak slide in a groove at the back, drawn two-thirds across
+      lg.box('arch_door', { c: [gx + gw * 0.2, gy, -th / 2 + 0.018], s: [gw * 0.68, gh + 0.02, 0.02], uv: 'local', uvRect: [0.4, 0.5, 0.48, 0.58], chamfer: 0.004, ao: 0.45 });
+      lg.box('prop_iron', { c: [gx - gw * 0.1, gy, -th / 2 + 0.03], s: [0.02, 0.05, 0.02], chamfer: 0.006 }); // its knob
+      lg.box('arch_beam_dark', { c: [gx - gw * 0.2, gy, -th / 2 + 0.008], s: [gw * 0.5, gh, 0.012], uv: 'local', ao: 0.08 }); // dark beyond the gap
     }
     const ringGeo = new THREE.TorusGeometry(0.075, 0.013, 6, 14);
     for (const z of [th / 2 + 0.025, -th / 2 - 0.025]) {
@@ -1670,6 +1712,14 @@ export function buildBlock(map, opts = {}) {
       const y0 = y - 0.02;
       const y1 = Math.min(face.H - 0.05, y + 1.25 + hash(face.seed, s, 'sooth') * 0.5);
       if (y1 > y0 + 0.4) sootQuads.push([P(s - w / 2, y0), P(s + w / 2, y0), P(s + w / 2, y1), P(s - w / 2, y1)]);
+      if (lit) {
+        // the warm radial falloff the flame throws on the stone around it (reads even by day)
+        const dg = d + 0.07;
+        const G = (sv, yy) => new THREE.Vector3(sv, yy, dg).applyMatrix4(face.basis);
+        const R = 1.25;
+        const yc = y + 0.2;
+        torchSpill.push([G(s - R, Math.max(0.02, yc - R)), G(s + R, Math.max(0.02, yc - R)), G(s + R, Math.min(face.H - 0.02, yc + R)), G(s - R, Math.min(face.H - 0.02, yc + R))]);
+      }
     }
     torches.push({ pos: kind === 'torch' ? tip.clone().add(new THREE.Vector3(0, 0.1, 0)) : tip.clone(), base, N: out, lit, kind, seed: Math.floor(face.seed * 1000) });
   }
@@ -1878,6 +1928,18 @@ export function buildBlock(map, opts = {}) {
             if (map.getEdge(x, y, d) !== EDGE.OPEN) continue;
             if (horiz) g.box(rk, { c: [x0 + S / 2, ch - 0.22, z0], s: [S + T, 0.44, 0.5], chamfer: 0.06, ao: 0.75 });
             else g.box(rk, { c: [x0, ch - 0.22, z0 + S / 2], s: [0.5, 0.44, S + T], chamfer: 0.06, ao: 0.75 });
+            // the rib springs from stepped stone corbels on the walls (it is carried, never floating)
+            for (const end of [-1, 1]) {
+              const wallSide = horiz ? (end < 0 ? 'W' : 'E') : end < 0 ? 'N' : 'S';
+              if (map.getEdge(x, y, wallSide) === EDGE.OPEN) continue;
+              const face = (end < 0 ? 0 : S) + end * -(T / 2);
+              for (const [dy, out, hh, wd] of [[0.0, 0.32, 0.22, 0.56], [0.22, 0.2, 0.18, 0.46], [0.4, 0.1, 0.14, 0.36]]) {
+                const yc = ch - 0.44 - dy - hh / 2;
+                const ctr = face - end * out / 2;
+                if (horiz) g.box('arch_trim', { c: [x0 + ctr, yc, z0], s: [out, hh, wd], chamfer: 0.025, ao: 0.7, tint: [0.62, 0.6, 0.57] });
+                else g.box('arch_trim', { c: [x0, yc, z0 + ctr], s: [wd, hh, out], chamfer: 0.025, ao: 0.7, tint: [0.62, 0.6, 0.57] });
+              }
+            }
           }
           const cv = hash(map.id, x, y, 'vault');
           if (cv < 0.45) {
@@ -1928,7 +1990,7 @@ export function buildBlock(map, opts = {}) {
         // curved webs and turn the courses into a patchwork of tiles)
         const q4 = [P(u0, v0), P(u1, v0), P(u1, v1), P(u0, v1)];
         const vuv = q4.map((p) => [(p.x + (p.y - base) * 0.6 * Math.sign(p.x - x0 - hw)) / 2.2, (p.z + (p.y - base) * 0.6 * Math.sign(p.z - z0 - hw)) / 2.2]);
-        g.quad('arch_basalt', q4[0], q4[1], q4[2], q4[3], vuv, { tint: [0.62, 0.62, 0.6], ao: (p) => 0.75 - 0.4 * THREE.MathUtils.smoothstep(p.y, base, ch - 0.1) });
+        g.quad('arch_basalt_vault', q4[0], q4[1], q4[2], q4[3], vuv, { tint: [0.62, 0.62, 0.6], ao: (p) => 0.75 - 0.4 * THREE.MathUtils.smoothstep(p.y, base, ch - 0.1) });
       }
     }
     // ribs: short chamfered segments following a curve
@@ -1940,7 +2002,7 @@ export function buildBlock(map, opts = {}) {
         const dir = b.clone().sub(a);
         const len = dir.length();
         const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), dir.normalize());
-        g.box('arch_basalt', { matrix: new THREE.Matrix4().compose(mid, q, new THREE.Vector3(1, 1, 1)), s: [len + 0.03, d, w], chamfer: 0.03, tint: [0.85, 0.8, 0.82], ao: 0.85 });
+        g.box('arch_basalt_vault', { matrix: new THREE.Matrix4().compose(mid, q, new THREE.Vector3(1, 1, 1)), s: [len + 0.03, d, w], chamfer: 0.03, tint: [0.85, 0.8, 0.82], ao: 0.85 });
       }
     };
     const M = 16;
@@ -1964,7 +2026,7 @@ export function buildBlock(map, opts = {}) {
     }
     // carved boss at the crown
     const boss = new THREE.SphereGeometry(0.2, 10, 6, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2);
-    g.geometry('arch_basalt', boss, new THREE.Matrix4().makeTranslation(x0 + hw, ch - 0.06, z0 + hw), { uv: 'world', tint: [0.9, 0.85, 0.85], ao: 0.8 });
+    g.geometry('arch_basalt_vault', boss, new THREE.Matrix4().makeTranslation(x0 + hw, ch - 0.06, z0 + hw), { uv: 'world', tint: [0.9, 0.85, 0.85], ao: 0.8 });
     boss.dispose();
   }
 
@@ -2169,6 +2231,11 @@ export function buildBlock(map, opts = {}) {
         // back side (attic) to avoid see-through from odd angles
         const back = t.map((p) => p.clone().addScaledVector(outward, -0.15));
         g.tri(gKey, [back[0], back[2], back[1]], null, { ao: 0.4 });
+        if (gut) {
+          // the broken half must read from either winding (stepped rubble face)
+          const fr = t.map((p) => p.clone().addScaledVector(outward, 0.004));
+          g.tri(gKey, [fr[0], fr[2], fr[1]], null, { ao: 0.9, uvOff: [hash(c.id, sa, 'gu2') * 9.1, 1.7] });
+        }
       }
       void tri;
       if (timber) {
@@ -2206,11 +2273,39 @@ export function buildBlock(map, opts = {}) {
               g.geometry('arch_dressed', rg, new THREE.Matrix4().compose(rp, rq, new THREE.Vector3(1, 1, 1)), { uv: 'world', ao: 0.8 });
               rg.dispose();
             }
+            // a snapped stub of the raking cornice still runs down from the apex, its end broken
+            // off raw, so the collapse reads as damage to a complete pediment
+            {
+              const stubEnd = a1.clone().lerp(e0, 0.3 + hash(c.id, 'stub') * 0.08);
+              alongBox('arch_trim', a1, stubEnd, outward, [0.42, 0.32], { chamfer: 0.04, ao: 0.95 });
+              const bm = new THREE.Matrix4().compose(stubEnd.clone().add(new THREE.Vector3(0, -0.04, 0)), new THREE.Quaternion().setFromEuler(new THREE.Euler(0.3, Math.atan2(outward.x, outward.z), 0.5)), new THREE.Vector3(1, 1, 1));
+              const sg = roughBlockGeometry(0.34, 0.3, 0.36, { bevel: 0.02, amp: 0.03, seed: hash(c.id, 'stg') * 50, chip: 0.1 });
+              g.geometry('prop_rock', sg, bm, { uv: 'world', ao: 0.75 });
+              sg.dispose();
+            }
+            // the broken tympanum edge shows its rubble core: rough lumps along the stepped break
+            for (let k = 0; k < 5; k++) {
+              const t = (k + 0.5) / 5;
+              const yTop = He + rise * 0.62 * (1 - t) * 0.85 + 0.05;
+              const cp = P(aa, yTop, sb * spanB * t).add(out(-0.06));
+              const rg = roughBlockGeometry(0.32, 0.2, 0.26, { bevel: 0.02, amp: 0.04, seed: hash(c.id, k, 'core') * 80, chip: 0.12 });
+              g.geometry('prop_rock', rg, new THREE.Matrix4().compose(cp, new THREE.Quaternion().setFromEuler(new THREE.Euler(hash(c.id, k, 'cx') - 0.5, hash(c.id, k, 'cy') * 3, hash(c.id, k, 'cz') - 0.5)), new THREE.Vector3(1, 1, 1)), { uv: 'world', ao: 0.7 });
+              rg.dispose();
+            }
             a1 = null;
-            for (let k = 0; k < 3; k++) {
-              const fb = P(aa, 0.2 + k * 0.05, sb * (spanB * (0.3 + k * 0.25))).add(out(0.9 + hash(c.id, k, 'fbo') * 0.8));
+            // the fallen half lies heaped below: big dressed cornice blocks on top of a skirt of
+            // smaller broken stone and grit spilling onto the paving
+            for (let k = 0; k < 9; k++) {
+              const big = k < 3;
+              const fb = P(aa, big ? 0.24 + k * 0.08 : 0.08 + hash(c.id, k, 'fy0') * 0.1, sb * (spanB * (0.2 + hash(c.id, k, 'fbs') * 0.75))).add(out(0.6 + hash(c.id, k, 'fbo') * (big ? 0.9 : 1.6)));
               const fm = new THREE.Matrix4().compose(fb, new THREE.Quaternion().setFromEuler(new THREE.Euler(hash(c.id, k, 'fx') - 0.5, hash(c.id, k, 'fy') * 3, (hash(c.id, k, 'fz') - 0.5) * 0.6)), new THREE.Vector3(1, 1, 1));
-              g.box('arch_dressed', { matrix: fm, s: [0.9, 0.36, 0.42], chamfer: 0.04, ao: 0.75 });
+              if (big) g.box('arch_dressed', { matrix: fm, s: [0.9, 0.36, 0.42], chamfer: 0.04, ao: 0.75 });
+              else {
+                const sz = 0.18 + hash(c.id, k, 'fsz') * 0.22;
+                const rg = roughBlockGeometry(sz * 1.4, sz * 0.8, sz, { bevel: 0.02, amp: 0.03, seed: hash(c.id, k, 'frg') * 60, chip: 0.1 });
+                g.geometry('prop_rock', rg, fm, { uv: 'world', ao: 0.7 });
+                rg.dispose();
+              }
             }
           }
           if (a1) alongBox('arch_trim', e0, a1, outward, [0.42, 0.32], { chamfer: 0.04, ao: 0.95 });
@@ -2272,7 +2367,7 @@ export function buildBlock(map, opts = {}) {
    */
   function gutted(c, P, A, o) {
     const { aLo, aHi, L, spanB, He, rise, eaveY, oh, frontSign, rk, brkSide } = o;
-    const char = [0.32, 0.27, 0.24];
+    const char = [0.48, 0.42, 0.38];
     const from0 = frontSign > 0 ? aLo : aHi;
     const to = frontSign > 0 ? -L : L;
     const front = frontSign > 0 ? L - 0.3 : -L + 0.3;
@@ -2393,12 +2488,23 @@ export function buildBlock(map, opts = {}) {
     mesh.userData.ownMaterial = true;
     group.add(mesh);
   }
+  if (torchSpill.length) {
+    const sb = new GeoBuilder();
+    for (const q of torchSpill) sb.quad('tspill', q[0], q[1], q[2], q[3], [[0, 0], [1, 0], [1, 1], [0, 1]], { ao: 1 });
+    const geo = sb.build().get('tspill');
+    geo.deleteAttribute('color');
+    const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(ts.variant === 'bane' ? 0x56c860 : 0xff8a3a).multiplyScalar(ts.variant === 'bane' ? 0.1 : indoor ? 0.22 : 0.12 + 0.1 * night), map: getBlobTexture(), blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, fog: true, polygonOffset: true, polygonOffsetFactor: -3 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.renderOrder = 4;
+    mesh.userData.ownMaterial = true;
+    group.add(mesh);
+  }
   if (spillQuads.length) {
     const sb = new GeoBuilder();
     for (const q of spillQuads) sb.quad('spill', q[0], q[1], q[2], q[3], [[0, 0], [1, 0], [1, 1], [0, 1]], { ao: 1 });
     const geo = sb.build().get('spill');
     geo.deleteAttribute('color');
-    const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff9a48).multiplyScalar(0.16 * night), map: getBlobTexture(), blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3 });
+    const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff9a48).multiplyScalar(0.06 + 0.12 * night), map: getBlobTexture(), blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3 });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.renderOrder = 4;
     mesh.userData.ownMaterial = true;
@@ -2410,6 +2516,42 @@ export function buildBlock(map, opts = {}) {
     mesh.name = key;
     mesh.renderOrder = 1;
     group.add(mesh);
+  }
+  // shadow-only core inside every roofed building: the shells are hollow, so a low sun would
+  // otherwise shine in at one opening and out of another and print bright rectangles on the
+  // street. Invisible (no colour/depth writes); it only blocks the sun in the shadow pass.
+  if (!indoor) {
+    const boxes = [];
+    for (const c of comps) {
+      if (c.ruined) continue;
+      for (const [cx, cy] of c.cells) {
+        const own = (dx, dy) => compAt(cx + dx, cy + dy) === c;
+        const x0 = cx * S + (own(-1, 0) ? 0 : T / 2 + 0.12);
+        const x1 = (cx + 1) * S - (own(1, 0) ? 0 : T / 2 + 0.12);
+        const z0 = cy * S + (own(0, -1) ? 0 : T / 2 + 0.12);
+        const z1 = (cy + 1) * S - (own(0, 1) ? 0 : T / 2 + 0.12);
+        const bx = new THREE.BoxGeometry(x1 - x0, c.H - 0.5, z1 - z0);
+        bx.translate((x0 + x1) / 2, 0.15 + (c.H - 0.5) / 2, (z0 + z1) / 2);
+        boxes.push(bx);
+      }
+    }
+    if (boxes.length) {
+      const pos = [];
+      for (const b of boxes) {
+        const ng = b.toNonIndexed();
+        pos.push(...ng.attributes.position.array);
+        ng.dispose();
+        b.dispose();
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      const core = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, side: THREE.DoubleSide }));
+      core.castShadow = true;
+      core.frustumCulled = false;
+      core.userData.ownMaterial = true;
+      core.name = 'shadow_core';
+      group.add(core);
+    }
   }
   // coarse occluder height field (for sun-shaft placement): walls, roofed buildings, and the
   // surrounding city beyond the block edge

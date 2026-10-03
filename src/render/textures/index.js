@@ -946,6 +946,24 @@ export function getRugTexture(variant = 0) {
     edge.addColorStop(1, 'rgba(20,12,6,0.35)');
     g.fillStyle = edge;
     g.fillRect(0, 0, w, h);
+    // vegetable dyes, decades of soot and boots: knock the saturation well down, and a few
+    // old ale stains
+    g.globalCompositeOperation = 'saturation';
+    g.fillStyle = 'rgba(128,128,128,0.45)';
+    g.fillRect(0, 0, w, h);
+    g.globalCompositeOperation = 'multiply';
+    for (let i = 0; i < 4; i++) {
+      const x = w * (0.15 + r() * 0.7);
+      const y = h * (0.15 + r() * 0.7);
+      const rad = 18 + r() * 40;
+      const gr = g.createRadialGradient(x, y, rad * 0.2, x, y, rad);
+      gr.addColorStop(0, 'rgba(150,120,90,0.5)');
+      gr.addColorStop(0.8, 'rgba(120,95,70,0.35)');
+      gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gr;
+      g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+    }
+    g.globalCompositeOperation = 'source-over';
   });
 }
 
@@ -1144,6 +1162,14 @@ export function getScorchTexture() {
     fade.addColorStop(0.82, 'rgba(0,0,0,0)');
     fade.addColorStop(1, 'rgba(0,0,0,1)');
     g.fillStyle = fade;
+    g.fillRect(0, 0, w, h);
+    // ...and the ends: the plume starts softly at the torch head and dies out at the top
+    const vf = g.createLinearGradient(0, 0, 0, h);
+    vf.addColorStop(0, 'rgba(0,0,0,1)');
+    vf.addColorStop(0.12, 'rgba(0,0,0,0)');
+    vf.addColorStop(0.84, 'rgba(0,0,0,0)');
+    vf.addColorStop(1, 'rgba(0,0,0,1)');
+    g.fillStyle = vf;
     g.fillRect(0, 0, w, h);
   }, { srgb: false });
 }

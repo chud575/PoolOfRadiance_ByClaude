@@ -87,7 +87,7 @@ export const TILESETS = {
     walls: ['basalt', 'basalt', 'basalt'],
     interiorFace: 'basalt',
     floors: { [CELL.STREET]: 'arch_basalt_floor', [CELL.INTERIOR]: 'arch_basalt_floor', [CELL.RUBBLE]: 'arch_basalt_floor', [CELL.WATER]: 'arch_water', [CELL.COURTYARD]: 'arch_basalt_floor' },
-    ceiling: 'arch_basalt',
+    ceiling: 'arch_basalt_vault',
     ceilH: 4.0,
     roofs: false,
     skyline: null,
@@ -130,7 +130,7 @@ export const RECIPE_MATERIALS = {
   int_panel: ['arch_wainscot', 'arch_beam_dark', 'arch_plaster_int'],
   int_stone: ['arch_stone_cold', 'arch_trim'],
   hewn: ['arch_hewn', 'arch_hewn_ceil', 'arch_cave_floor', 'prop_bone'],
-  basalt: ['arch_basalt', 'arch_basalt_floor', 'arch_relief', 'arch_trim', 'arch_plaster_int'],
+  basalt: ['arch_basalt', 'arch_basalt_vault', 'arch_basalt_floor', 'arch_relief', 'arch_trim', 'arch_plaster_int'],
 };
 
 /**

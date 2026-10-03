@@ -252,6 +252,34 @@ export function dressDungeon(map, block, opts = {}) {
     const rot = alongZ ? M4() : new THREE.Matrix4().makeRotationY(Math.PI / 2);
     g.geometry('prop_wood', cap, at(0, capY + 0.12).multiply(rot), { uv: 'world', tint: [0.36, 0.29, 0.23], ao: 0.6 });
     cap.dispose();
+    // knee braces: short split poles from each post up to the cap, pegged, so the set reads as
+    // carpentry that carries the roof
+    for (const side of [-1, 1]) {
+      const a = new THREE.Vector3(side * (half - 0.05), capY - 0.7, 0);
+      const b = new THREE.Vector3(side * (half - 0.62), capY - 0.02, 0);
+      const mid = a.clone().add(b).multiplyScalar(0.5);
+      const len = a.distanceTo(b);
+      const ang = Math.atan2(b.y - a.y, b.x - a.x);
+      const bm = at(mid.x, mid.y).multiply(alongZ ? M4() : new THREE.Matrix4().makeRotationY(-Math.PI / 2)).multiply(new THREE.Matrix4().makeRotationZ(ang));
+      const br = roughBlockGeometry(len, 0.11, 0.1, { bevel: 0.015, amp: 0.008, seed: seed * 3 + side, chip: 0.02 });
+      g.geometry('prop_wood', br, bm, { uv: 'world', tint: [0.38, 0.3, 0.24], ao: 0.7 });
+      br.dispose();
+    }
+    // a hemp rope hanging from the cap in a loose loop (lantern hook / haulage line)
+    if (hash(seed, 'rope') < 0.6) {
+      const u0 = (hash(seed, 'ru') - 0.5) * half;
+      const toW = (u, y, z) => (alongZ ? new THREE.Vector3(cx + u, y, cz + z) : new THREE.Vector3(cx + z, y, cz + u));
+      const drop = 0.9 + hash(seed, 'rd') * 0.6;
+      const pts = [];
+      for (let q = 0; q <= 8; q++) {
+        const t = q / 8;
+        const sag = Math.sin(t * Math.PI) * drop;
+        pts.push(toW(u0 + (t - 0.5) * 0.5, capY - sag, 0.12 + Math.sin(t * 9) * 0.01));
+      }
+      const tube = taperTube(pts, 0.016, 0.016, 5);
+      g.geometry('prop_burlap', tube, M4(), { uv: 'world', tint: [0.62, 0.52, 0.38], ao: 0.85 });
+      tube.dispose();
+    }
     // lagging boards wedged between the cap and the rock
     for (let k = 0; k < 3; k++) {
       const u = (k - 1) * 0.6 + (hash(seed, k, 'lg') - 0.5) * 0.2;
@@ -714,8 +742,18 @@ export function dressDungeon(map, block, opts = {}) {
     for (let k = 0; k < 3; k++) {
       const a = (k / 3) * Math.PI * 2 + seed;
       const lm = m.clone().multiply(new THREE.Matrix4().makeRotationY(a)).multiply(tr(0.16, 0.42, 0)).multiply(new THREE.Matrix4().makeRotationZ(0.22));
-      g.box('prop_iron', { matrix: lm, s: [0.035, 0.88, 0.035], chamfer: 0.008 });
+      g.box('prop_iron', { matrix: lm, s: [0.055, 0.9, 0.05], chamfer: 0.012 });
       g.box('prop_iron', { matrix: m.clone().multiply(new THREE.Matrix4().makeRotationY(a)).multiply(tr(0.26, 0.02, 0)), s: [0.09, 0.04, 0.06], chamfer: 0.012 });
+    }
+    // a forged ring bracing the legs at mid height, and a collar under the bowl
+    {
+      const br = new THREE.TorusGeometry(0.21, 0.016, 5, 18);
+      br.rotateX(Math.PI / 2);
+      g.geometry('prop_iron', br, m.clone().multiply(tr(0, 0.36, 0)), { uv: 'world' });
+      br.dispose();
+      const col = new THREE.CylinderGeometry(0.09, 0.13, 0.12, 12);
+      g.geometry('prop_iron', col, m.clone().multiply(tr(0, 0.8, 0)), { uv: 'world' });
+      col.dispose();
     }
     const bowl = new THREE.LatheGeometry([[0.02, 0], [0.12, 0.01], [0.24, 0.08], [0.3, 0.18], [0.31, 0.2], [0.28, 0.2], [0.21, 0.1], [0.0, 0.06]].map(([r, y]) => new THREE.Vector2(r, y)), 16);
     g.geometry('prop_iron', bowl, m.clone().multiply(tr(0, 0.82, 0)), { uv: 'world' });
@@ -878,6 +916,16 @@ export function dressDungeon(map, block, opts = {}) {
     g.box('arch_basalt', { matrix: at(0, 1.9, -1.25), s: [2.3, 3.8, 0.4], chamfer: 0.05 });
     g.box('arch_basalt', { matrix: at(0, 3.86, -1.25), s: [2.6, 0.18, 0.55], chamfer: 0.04, tint: [0.9, 0.85, 0.85] });
     blackHand(m.clone().multiply(tr(0, 2.5, -1.05)));
+    {
+      // a cold fill washing the apse wall behind the idol: the black gauntlet stands out in
+      // silhouette against it instead of sinking into the green murk
+      const rim = new THREE.PointLight(0x7090d8, 9, 5.5, 2);
+      rim.position.copy(new THREE.Vector3(0, 3.1, -1.7).applyMatrix4(m));
+      group.add(rim);
+      const rim2 = new THREE.PointLight(0x9ab0e8, 3.5, 4, 2);
+      rim2.position.copy(new THREE.Vector3(0.9, 3.6, -0.4).applyMatrix4(m));
+      group.add(rim2);
+    }
     // candles of oxblood wax along the back of the altar: varied heights, drips running down,
     // wax pooled at the foot, a melted cup at the top
     for (let k = 0; k < 7; k++) {

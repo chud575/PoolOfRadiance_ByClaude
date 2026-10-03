@@ -811,8 +811,12 @@ export function doorPlanks({ seed = 221, count = 5, base = [0.3, 0.2, 0.13] } = 
     const ring = Math.sin((gx * 9 + id * 7) * Math.PI * 2) * 0.5 + 0.5;
     const fine = valueNoise(gx * 120, v * 14, 1000, seed + 2);
     const pore = valueNoise(gx * 400, v * 60, 1000, seed + 3);
+    // late-wood lines: thin dark streaks that follow the (knot-deflected) grain, with flame
+    // figure where the ring pattern is cut obliquely
+    const flame = Math.sin((gx * 9 + id * 7 + Math.sin(v * 3 + id * 5) * 0.4) * Math.PI * 2 + v * 2.2);
+    const late = Math.pow(1 - Math.abs(Math.sin((gx * 23 + (g1 - 0.5) * 1.2 + id * 3) * Math.PI)), 6);
     let c = mul3(base, 0.7 + id * 0.4);
-    c = mul3(c, 0.78 + ring * 0.16 + fine * 0.14 + (pore - 0.5) * 0.08);
+    c = mul3(c, 0.74 + ring * 0.2 + (flame * 0.5 + 0.5) * 0.1 + fine * 0.16 + (pore - 0.5) * 0.1 - late * 0.22);
     // knots: dark core with a ring
     c = mix3(c, mul3(base, 0.6), kAmt * 0.8);
     // weathering: greyed silver near plank edges and bottom (splash zone)
@@ -829,7 +833,12 @@ export function doorPlanks({ seed = 221, count = 5, base = [0.3, 0.2, 0.13] } = 
     c = mul3(c, 1 - ck * 0.7);
     const gap = smooth(0.0, 0.03, Math.min(fu, 1 - fu));
     c = mul3(c, lerp(0.2, 1, gap));
-    const h = gap * (0.62 + ring * 0.05 + fine * 0.04 + pore * 0.01 - ck * 0.25 + kAmt * 0.04);
+    // hand wear: polished, paler band at latch height on the outer planks; scuffed kick zone low
+    const wearK = smooth(0.25, 0.5, fbm(u * 6, v * 5, { octaves: 2, period: 1000, seed: seed + 8 })) * (1 - smooth(0.06, 0.16, Math.abs(v - 0.42))) * smooth(0.55, 0.85, u);
+    const kick = (1 - smooth(0.0, 0.14, v)) * smooth(0.4, 0.7, valueNoise(u * 40, v * 9, 1000, seed + 9));
+    c = mix3(c, mul3(c, 1.35), wearK * 0.6);
+    c = mix3(c, mul3([0.42, 0.38, 0.33], 0.9 + fine * 0.2), kick * 0.5);
+    const h = gap * (0.62 + ring * 0.07 + fine * 0.05 + pore * 0.012 - late * 0.03 - ck * 0.25 + kAmt * 0.04 - kick * 0.02);
     const r = clamp01(0.72 + grey * 0.18 + pore * 0.06 - kAmt * 0.15);
     return { c, h, r };
   };
