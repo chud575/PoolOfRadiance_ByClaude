@@ -29,12 +29,12 @@ export const PORTRAIT_H = 375;
 const NP = HEAD_PARAMS.length;
 const DEFINES = HEAD_PARAMS.map((k, i) => `#define ${k} uP[${i}]`).join('\n');
 
-const VS = /* glsl */`
+export const VS = /* glsl */`
 varying vec2 vUv;
 void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }
 `;
 
-const RENDER_FS = /* glsl */`
+export const RENDER_FS = /* glsl */`
 precision highp float;
 layout(location = 0) out highp vec4 oColor;
 layout(location = 1) out highp vec4 oInfo;
@@ -208,7 +208,7 @@ function setup(ch, o) {
     elf: { LONG: 1.04, W: 0.94, CHEEK: 1.08, JAW: 0.92, CHIN: 0.92 },
     halfElf: { LONG: 1.015, W: 0.98 },
     // dwarves (women too): a broad, low head, a heavy jaw and brow, a broad strong nose
-    dwarf: { W: 1.17, NOSE: 1.14, BRIDGE: 1.4, TIP: 1.35, NWIDTH: 1.28, JAW: 1.3, CHIN: 1.18, BROW: 1.5, LONG: 0.93, CRAN: 0.9, CHEEK: 1.15, EYE: 0.9, EDEPTH: 1.35, EOPEN: 0.9 },
+    dwarf: { W: 1.15, NOSE: 1.06, BRIDGE: 1.2, TIP: 1.18, NWIDTH: 1.16, JAW: 1.25, CHIN: 1.12, BROW: 1.5, LONG: 0.94, CRAN: 0.92, CHEEK: 1.1, EYE: 0.95, EDEPTH: 1.2, EOPEN: 1.0 },
     // halflings: adults with round, ruddy faces — full cheeks, a short snub nose, bright eyes
     halfling: { W: 1.07, LONG: 0.95, CHEEK: 1.15, NOSE: 0.92, TIP: 1.05, EYE: 1.02, JAW: 0.96, CHIN: 0.95, CRAN: 0.96 },
     gnome: { NOSE: 1.3, TIP: 1.45, W: 1.04, EYE: 1.04, BROW: 1.15 },
@@ -218,13 +218,16 @@ function setup(ch, o) {
   // (faceParams softens a dwarf woman's face for the miniature; the painting restores the race:
   // a broad, square face, a heavy brow, a strong broad nose, a full chin)
   if (app.race === 'dwarf' && app.fem) {
-    const atLeast = (k, v) => { params[ix(k)] = Math.max(params[ix(k)], v); };
-    atLeast('W', 1.13); atLeast('JAW', 1.32); atLeast('CHIN', 1.18); atLeast('BROW', 2.0); atLeast('NOSE', 1.08);
-    atLeast('NWIDTH', 1.2); atLeast('BRIDGE', 1.15); atLeast('CHEEK', 1.12);
-    params[ix('LONG')] = Math.min(params[ix('LONG')], 0.95);
-    params[ix('LIPS')] *= 1.05; params[ix('AGE')] = Math.max(params[ix('AGE')], 0.18);
+    // (multiplied, not clamped: each template keeps its own skull, so six dwarf women are six women)
+    const mul = (k, v) => { params[ix(k)] *= v; };
+    mul('W', 1.03); mul('JAW', 1.06); mul('CHIN', 1.05); mul('BROW', 1.25); mul('NWIDTH', 1.04); mul('CHEEK', 1.03);
+    params[ix('LONG')] = Math.min(params[ix('LONG')], 0.98);
+    params[ix('LIPS')] *= 1.05; params[ix('AGE')] = Math.max(params[ix('AGE')], 0.12);
   }
   if (app.race === 'halfling') params[ix('HOOK')] -= 0.5;
+  // a painter opens the eyes a little and lets them catch the light: the likeness lives there
+  params[ix('EOPEN')] *= 1.1;
+  params[ix('EYE')] *= 1.14;
   u.uP.value.set(params);
   const torso = o.crop === 'torso';
   // A three-quarter turn (alternating sides by seed, as a painter varies a gallery of portraits).
@@ -232,7 +235,7 @@ function setup(ch, o) {
   // Each head template sits for the painter its own way: turned toward the light or away into
   // shadow, chin raised or lowered, the head cocked.
   const pose = POSE[app.head?.name + (app.fem ? 'F' : '')] ?? POSE[app.head?.name] ?? [-0.36, 0.03, 0];
-  const yaw = o.yaw ?? (torso ? pose[0] * 0.6 : pose[0] + (R() - 0.5) * 0.1);
+  const yaw = o.yaw ?? (torso ? pose[0] * 0.75 : pose[0] * 1.3 + (R() - 0.5) * 0.1);
   const pitch = o.pitch ?? (pose[1] + (R() - 0.5) * 0.04);
   const tilt = o.tilt ?? (pose[2] + (R() - 0.5) * 0.05);
   // The matrices map world → local (transpose of local → world rotation).
@@ -251,7 +254,7 @@ function setup(ch, o) {
   const fov = 14;
   const dist = viewH / (2 * Math.tan((fov * Math.PI) / 360));
   const target = new THREE.Vector3(0, o.targetY ?? (torso ? -0.24 : -0.082) - (dwarf ? 0.018 : 0), 0);
-  u.uCamPos.value.set(target.x + (o.camX ?? 0), target.y + 0.012, dist);
+  u.uCamPos.value.set(target.x + (o.camX ?? 0), target.y + (torso ? 0.05 : 0.075), dist);
   const fwd = target.clone().sub(u.uCamPos.value).normalize();
   const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
   const up = new THREE.Vector3().crossVectors(right, fwd);
@@ -374,7 +377,7 @@ function beginPortrait(renderer, ch, o) {
   const scale = o.scale ?? 1;
   const W = Math.max(24, Math.round(PORTRAIT_W * scale));
   const H = Math.max(30, Math.round(PORTRAIT_H * scale));
-  const ss = o.ss ?? (scale >= 0.6 ? 1.2 : scale >= 0.35 ? 1.1 : 1);
+  const ss = o.ss ?? 1;
   const job = { ch, o, scale, W, H, RW: Math.round(W * ss), RH: Math.round(H * ss), prev: saveState(renderer) };
   renderer.autoClear = false;
   setup(ch, o);
@@ -393,8 +396,8 @@ function applyFrame(job) {
   u.uRes.value.set(job.RW, job.RH);
   u.uMode.value = o.mode ?? 0;
   u.uDbg.value = o.dbg ?? 0;
-  u.uKeyDir.value.fromArray(o.key ?? [-0.74, 0.58, 0.34]);
-  u.uLightK.value.fromArray(o.lightK ?? [1.32, 0.42, 0.85, 0.36]);
+  u.uKeyDir.value.fromArray(o.key ?? [-0.8, 0.5, 0.34]);
+  u.uLightK.value.fromArray(o.lightK ?? [1.45, 0.27, 0.8, 0.3]);
   u.uLite.value = job.scale < 0.35 ? 1 : 0;
   u.uSpot.value.set(0.02, o.crop === 'torso' ? -0.2 : 0, 0, o.crop === 'torso' ? 0.14 : 0.028);
 }

@@ -1044,7 +1044,7 @@ export default class CreateScene extends Scene {
     // Frozen clock (screenshots): once the hall has settled it cannot change until the figure does;
     // present it only now and then instead of redrawing seconds-long software frames every tick.
     if (this.ctx.debug?.frozen) {
-      if ((this._fz ?? 0) >= 2 && !this._dirty3d && !this._retired?.length) {
+      if ((this._fz ?? 0) >= 1 && !this._dirty3d && !this._retired?.length) {
         this._idleN = (this._idleN ?? 0) + 1;
         if (this._idleN % 240 !== 0) return;
       }

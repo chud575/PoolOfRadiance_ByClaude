@@ -7,7 +7,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 export const CHROME = process.env.POR_CHROME || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
-export const CHROME_ARGS = ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--disable-gpu-sandbox'];
+// --disable-gpu-rasterization: the page's DOM is rastered on the CPU. SwiftShader GPU raster of a
+// UI-heavy 1600x900 page costs ~8 s of the single GPU thread per page, which queues behind (and
+// starves) the WebGL work of that page and the next; CPU raster of the same DOM is far cheaper.
+export const CHROME_ARGS = ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--disable-gpu-sandbox', '--disable-gpu-rasterization'];
 
 export async function launch() {
   return chromium.launch({ executablePath: CHROME, args: CHROME_ARGS, headless: true });

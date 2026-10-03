@@ -85,7 +85,20 @@ export default class CampScene extends Scene {
     }
     this.hour = game.clock.hour + game.clock.minute / 60;
     const fullPanel = ['view', 'items', 'magic'].includes(this.params.panel) && !this.params.sleep;
+    // A still of a full-screen panel (gallery/debug) never shows the campfire behind it: the set is
+    // built only when the panel closes, so the shot spends nothing on it.
+    if (this.ctx.debug?.frozen && fullPanel) { this._campPending = true; return; }
     this.camp = await buildCamp(s, { party: game.party, hour: this.hour, renderer: render.renderer, resting: !!this.params.sleep, deferParty: fullPanel });
+  }
+
+  /** Build the deferred campfire set (after a frozen full-panel still's panel closes). */
+  async _ensureCamp() {
+    if (!this._campPending) return;
+    this._campPending = false;
+    this.params = { ...this.params, panel: null };
+    const { render, game } = this.ctx;
+    this.camp = await buildCamp(this.scene3d, { party: game.party, hour: this.hour, renderer: render.renderer, resting: false });
+    this._settled = 0;
   }
 
   _buildUI() {
@@ -196,7 +209,7 @@ export default class CampScene extends Scene {
     this.view = openCharacterView(this.ctx, {
       index: i,
       tab,
-      onClose: () => { this.view = null; this.camp?.ensureParty?.(); this._refreshStatus(); },
+      onClose: () => { this.view = null; this.camp?.ensureParty?.(); void this._ensureCamp(); this._refreshStatus(); },
       onRest: () => { this.view?.close(); this.doRest(partyMemorizationTime(this.ctx.game.party)); },
     });
   }
