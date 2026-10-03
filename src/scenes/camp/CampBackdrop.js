@@ -138,7 +138,7 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
     }
     courtGeo.computeVertexNormals();
   }
-  const court = new THREE.Mesh(courtGeo, Mt(new THREE.MeshStandardMaterial({ map: gt.map, normalMap: gt.normalMap, roughnessMap: gt.roughnessMap, normalScale: new THREE.Vector2(1.2, 1.2) })));
+  const court = new THREE.Mesh(courtGeo, Mt(new THREE.MeshStandardMaterial({ map: gt.map, normalMap: gt.normalMap, roughnessMap: gt.roughnessMap, normalScale: new THREE.Vector2(1.0, 1.0) })));
   court.rotation.x = -Math.PI / 2;
   court.receiveShadow = true;
   root.add(court);
@@ -349,7 +349,12 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
     for (const sgn of [-1, 1]) {
       const g = G(new THREE.PlaneGeometry(2.0, 1.55, 10, 6));
       const p = g.attributes.position;
-      for (let k = 0; k < p.count; k++) p.setZ(k, 0.05 * Math.sin(p.getX(k) * 5) * (0.5 - p.getY(k) / 1.55));
+      // the canvas sags between the poles (deepest under the ridge's middle) and ripples at the hem
+      for (let k = 0; k < p.count; k++) {
+        const x = p.getX(k), y = p.getY(k);
+        const sag = 0.085 * (1 - (x / 1.0) ** 2) * (0.35 + y / 1.55);
+        p.setZ(k, 0.05 * Math.sin(x * 5) * (0.5 - y / 1.55) - sgn * sag);
+      }
       g.computeVertexNormals();
       const pl = new THREE.Mesh(g, canvasMat);
       pl.position.set(0, 0.62, sgn * 0.55);
@@ -362,6 +367,26 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
     pole.rotation.z = Math.PI / 2;
     pole.position.y = 1.18;
     tent.add(pole);
+    // guy ropes from the ridge ends to pegs in the earth, and an upright pole at each end
+    const ropeMat = Mt(new THREE.MeshStandardMaterial({ color: 0x8a7a60, roughness: 1 }));
+    const pegMat = Mt(new THREE.MeshStandardMaterial({ color: 0x4a3420, roughness: 0.9 }));
+    const rope = (a, b, r = 0.006, mat = ropeMat) => {
+      const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b);
+      const m = new THREE.Mesh(G(new THREE.CylinderGeometry(r, r, A.distanceTo(B), 5)), mat);
+      m.position.copy(A).add(B).multiplyScalar(0.5);
+      m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), B.clone().sub(A).normalize());
+      m.castShadow = true;
+      tent.add(m);
+    };
+    for (const sx of [-1, 1]) {
+      rope([sx * 1.12, 0, 0], [sx * 1.12, 1.2, 0], 0.028, woodMat);
+      for (const sz of [-1, 1]) {
+        rope([sx * 1.14, 1.18, 0], [sx * 1.85, 0.02, sz * 0.42]);
+        rope([sx * 1.85, -0.02, sz * 0.42], [sx * 1.83, 0.12, sz * 0.4], 0.012, pegMat);
+      }
+      // pegs along the hems
+      for (const k of [-0.7, 0, 0.7]) for (const sz of [-1, 1]) rope([k * sx, -0.02, sz * 1.08], [k * sx, 0.08, sz * 1.1], 0.01, pegMat);
+    }
     tent.position.set(3.7, 0, -3.6);
     tent.rotation.y = -0.5;
     root.add(tent);
@@ -385,8 +410,8 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
     for (let i = 0; i < 900; i++) {
       const a = hrand(i, 141) * Math.PI * 2;
       const r = 40 + hrand(i, 142) ** 0.7 * 80;
-      g.fillStyle = `rgba(${150 + hrand(i, 143) * 60},${145 + hrand(i, 143) * 55},${140 + hrand(i, 143) * 50},${0.08 + hrand(i, 144) * 0.2})`;
-      g.fillRect(128 + Math.cos(a) * r, 128 + Math.sin(a) * r, 1 + hrand(i, 145) * 2, 1 + hrand(i, 146) * 2);
+      g.fillStyle = `rgba(${110 + hrand(i, 143) * 50},${105 + hrand(i, 143) * 45},${100 + hrand(i, 143) * 40},${0.05 + hrand(i, 144) * 0.12})`;
+      g.fillRect(128 + Math.cos(a) * r, 128 + Math.sin(a) * r, 0.6 + hrand(i, 145), 0.6 + hrand(i, 146));
     }
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
@@ -442,8 +467,9 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
     const head = new THREE.Mesh(G(new THREE.ConeGeometry(0.03, 0.2, 4)), metal);
     head.position.y = 2.1;
     spear.add(head);
-    spear.position.set(2.3, 0, -2.35);
-    spear.rotation.set(-0.12, 0, -0.32);
+    // (leaning back against the woodpile, clear of the tent)
+    spear.position.set(2.15, 0, -2.2);
+    spear.rotation.set(-0.22, 0, 0.18);
     spear.traverse((o) => { o.castShadow = true; });
     root.add(spear);
     const sword = new THREE.Group();
@@ -482,10 +508,15 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
       g.beginPath(); g.ellipse(128 + Math.cos(a) * r, 128 + Math.sin(a) * r, rad, rad * (0.4 + rnd() * 0.6), rnd() * 3, 0, Math.PI * 2); g.fill();
     }
     // ash: pale grey drifts, heaviest just outside the stones, and a few kicked-out streaks
-    for (let k = 0; k < 260; k++) {
-      const a = rnd() * Math.PI * 2, r = 60 + Math.abs(rnd() + rnd() - 1) * 70, rad = 1 + rnd() * 5;
-      g.fillStyle = `rgba(${150 + rnd() * 40 | 0},${145 + rnd() * 35 | 0},${140 + rnd() * 30 | 0},${0.12 + rnd() * 0.3})`;
-      g.beginPath(); g.ellipse(128 + Math.cos(a) * r, 128 + Math.sin(a) * r, rad * 1.6, rad, a, 0, Math.PI * 2); g.fill();
+    // (a soft grey band and a fine grain of flecks: broad pale blotches read as light spots on the
+    // flags, not as ash)
+    const band = g.createRadialGradient(128, 128, 52, 128, 128, 112);
+    band.addColorStop(0, 'rgba(120,114,108,0)'); band.addColorStop(0.35, 'rgba(120,114,108,0.16)'); band.addColorStop(1, 'rgba(120,114,108,0)');
+    g.fillStyle = band; g.fillRect(0, 0, 256, 256);
+    for (let k = 0; k < 2600; k++) {
+      const a = rnd() * Math.PI * 2, r = 50 + Math.abs(rnd() + rnd() - 1) * 75, rad = 0.4 + rnd() * 0.9;
+      g.fillStyle = `rgba(${120 + rnd() * 40 | 0},${115 + rnd() * 35 | 0},${110 + rnd() * 30 | 0},${0.05 + rnd() * 0.14})`;
+      g.fillRect(128 + Math.cos(a) * r, 128 + Math.sin(a) * r, rad, rad);
     }
     for (let k = 0; k < 7; k++) {
       const a = rnd() * Math.PI * 2;

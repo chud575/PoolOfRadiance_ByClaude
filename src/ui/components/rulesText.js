@@ -81,7 +81,12 @@ export function abilityTip(key, a, classSpec = 'fighter') {
 export const STAT_TIPS = {
   thac0: (s) => ({
     title: `THAC0 ${s.thac0}`,
-    text: `"To Hit Armor Class 0": roll ${s.thac0} or more on a d20 to hit AC 0. Against AC 5 you need ${Math.max(2, s.thac0 - 5)}; against AC 10, ${Math.max(2, s.thac0 - 10)}. Lower is better. Your weapon and strength add ${sgn(s.hitBonus)}.`,
+    text: (() => {
+      const b = s.hitBonus ?? 0;
+      const need = (ac) => Math.max(2, Math.min(20, s.thac0 - ac - b));
+      const base = `"To Hit Armor Class 0": roll ${s.thac0} or more on a d20 to hit AC 0, one less for each point of AC above 0. Lower is better.`;
+      return b ? `${base} With your ${sgn(b)} from weapon and strength you need ${need(5)} vs AC 5 and ${need(10)} vs AC 10.` : `${base} You need ${need(5)} vs AC 5 and ${need(10)} vs AC 10.`;
+    })(),
   }),
   ac: (s) => ({
     title: `Armor Class ${s.ac}`,

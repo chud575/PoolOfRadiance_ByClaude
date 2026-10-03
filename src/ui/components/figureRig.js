@@ -310,7 +310,7 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
     boots: mat(L('#33241a'), { rough: 0.7, pattern: PATTERN.leather, edge: 0.5, wash: 0.6 }),
     steel: mat(L('#a9adb5'), { rough: 0.56, metal: 0.9, pattern: PATTERN.metal, edge: 0.35, wash: 0.5 }),
     darkSteel: mat(L('#666a72'), { rough: 0.62, metal: 0.85, pattern: PATTERN.metal, edge: 0.35, wash: 0.5 }),
-    mail: mat(L('#6e7279'), { rough: 0.8, metal: 0.72, pattern: PATTERN.mail, edge: 0.2, wash: 0.6 }),
+    mail: mat(L('#5a5e65'), { rough: 0.78, metal: 0.62, pattern: PATTERN.mail, edge: 0.25, wash: 0.75 }),
     scale: mat(L('#9a7c48'), { rough: 0.62, metal: 0.85, pattern: PATTERN.scale, edge: 0.3, wash: 0.65 }),
     // (satin, not mirror: a polished clasp catching the fire bloomed into an orange halo)
     gilt: mat(L('#c09a4c'), { rough: 0.55, metal: 1, pattern: PATTERN.metal, edge: 0.4 }),
@@ -757,15 +757,19 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
       for (const sg of [1, -1]) {
         // (held clear of the flared mail skirt, which otherwise pushed through it as a ragged hole)
         const c = at(J.pelvis, pR, [0, -0.13, sg * 0.19]);
-        sc.box(c, [0.125 * g, 0.2 * s, 0.01 * s], mMul(pR, mRotX(sg * -0.22)), 0.005 * s, { mat: M.cloth, g: GR.cloak, k: 0, disp: (x, y, z) => 0.003 * s * Math.sin(x * 90 + y * 8), amp: 0.004 * s });
+        const [f, bb] = clothPanel(c, mMul(pR, mRotX(sg * -0.22)), 0.125 * g, 0.2 * s, 0.009 * s, sg, s, sg * 1.7);
+        sc.custom(f, bb, { mat: M.cloth, g: GR.cloak, k: 0 });
       }
     }
     if (body === 'tabard') {
       // Surcoat panels front and back in the house colour, hanging to the knee and breaking the legs' line.
       for (const sg of [1, -1]) {
         // (stood clear of the mail shell: where the two met, the mail showed through as a ragged hole)
-        const c = at(J.pelvis, sR, [0, sitting ? 0.04 : -0.06, sg * 0.172]);
-        sc.box(c, [0.115 * g, (sitting ? 0.2 : 0.36) * s, 0.011 * s], mMul(sR, mRotX(sg * -0.07)), 0.006 * s, { mat: M.cloth, g: GR.cloak, k: 0 });
+        // seated, the front panel lies along the thighs (the house colour reads in the lap)
+        const lap = sitting && sg > 0;
+        const c = lap ? at(J.pelvis, sR, [0, 0.09, 0.2]) : at(J.pelvis, sR, [0, sitting ? 0.04 : -0.06, sg * 0.172]);
+        const [f, bb] = clothPanel(c, mMul(sR, mRotX(lap ? -1.36 : sg * -0.07)), 0.115 * g, (lap ? 0.19 : sitting ? 0.2 : 0.36) * s, 0.01 * s, sg, s, sg * 0.9);
+        sc.custom(f, bb, { mat: M.cloth, g: GR.cloak, k: 0 });
       }
       sc.ellipsoid(at(chestC, sR, [0, 0.02, 0.131]), [0.04 * s, 0.045 * s, 0.006 * s], sR, { mat: M.gilt, g: GR.belt });
     }
@@ -1059,6 +1063,32 @@ function robeSkirt(top, R, len, r0, r1, amp) {
   };
 }
 
+/**
+ * A hanging cloth panel (surcoat, tabard skirt) with thickness and drape: it wraps round the body
+ * at its edges, flares a little toward the hem, falls into soft vertical folds that deepen as it
+ * hangs, and ends in an uneven hem. Local frame R: x across, y up (top at +hh), z out of the body
+ * on side sg. Returns [sdf, bounds].
+ */
+function clothPanel(c, R, hw, hh, thick, sg, s, phase = 0) {
+  const R0 = R[0], R1 = R[1], R2 = R[2], R3 = R[3], R4 = R[4], R5 = R[5], R6 = R[6], R7 = R[7], R8 = R[8];
+  const f = (x, y, z) => {
+    const px = x - c[0], py = y - c[1], pz = z - c[2];
+    const lx = R0 * px + R1 * py + R2 * pz;
+    const ly = R3 * px + R4 * py + R5 * pz;
+    const lz = R6 * px + R7 * py + R8 * pz;
+    const t = Math.min(1, Math.max(0, (hh - ly) / (2 * hh)));
+    const u = lx / hw;
+    const wrap = -sg * 0.028 * s * u * u;
+    const fold = s * (0.0025 + 0.0085 * t) * Math.sin(u * Math.PI * 3.2 + phase + 0.6 * t) + s * 0.002 * t * Math.sin(u * 17 + phase * 2);
+    const hwT = hw * (1 + 0.14 * t);
+    const hem = 0.008 * s * Math.sin(lx / s * 47 + phase) + 0.005 * s * Math.sin(lx / s * 113);
+    const d = Math.max(Math.abs(lz - wrap - fold) - thick, Math.abs(lx) - hwT, ly - hh, -(ly + hh + hem));
+    return d * 0.85;
+  };
+  const r = Math.hypot(hw * 1.2, hh + 0.02 * s, 0.06 * s);
+  return [f, [c[0] - r, c[1] - r, c[2] - r, c[0] + r, c[1] + r, c[2] + r]];
+}
+
 /** A cloak hanging from the shoulders behind the body, open at the front, with folds. */
 function cloakFn(top, R, len, r0, flare, thick, sitting) {
   const X = [R[0], R[1], R[2]];
@@ -1074,7 +1104,8 @@ function cloakFn(top, R, len, r0, flare, thick, sitting) {
     const b = r0 * 0.62 + flare * 0.7 * t + (sitting ? t * t * 0.25 : 0);
     const cz = -0.015 - 0.03 * t - (sitting ? t * t * 0.2 : 0);
     const th = Math.atan2(lx, -(lz - cz));
-    const fold = 0.016 * t * Math.sin(th * 6.5) + 0.006 * t * Math.sin(th * 15 + 1);
+    // deep folds from the shoulders down (a cloak hangs in tubes, not as a plank)
+    const fold = (0.006 + 0.026 * t) * Math.sin(th * 8.5 + 0.8 * Math.sin(ly * 9)) + 0.007 * t * Math.sin(th * 19 + 1);
     const e = (Math.hypot(lx / a, (lz - cz) / b) - 1) * Math.min(a, b) - fold;
     let d = Math.abs(e) - thick;
     // Drape over the shoulder tops.

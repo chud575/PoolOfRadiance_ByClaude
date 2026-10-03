@@ -178,6 +178,7 @@ export default class CampScene extends Scene {
   }
 
   _onAction(action) {
+    if (this._alarm) return;
     if (this.busy) {
       if (action === 'cancel') this.interruptRest();
       return;
@@ -373,9 +374,7 @@ export default class CampScene extends Scene {
     if (delta !== 0 || b.demo != null) this._refreshClock();
     if (ambush) {
       b.interrupted = true;
-      this._finishRest();
-      this.ctx.ui.message('The watch cries out — something is in the camp!', 'warn');
-      this.ctx.scenes.goto('dialogue', { encounter: ambush.ref });
+      this._ambushed(ambush, b);
     }
   }
 
@@ -404,20 +403,52 @@ export default class CampScene extends Scene {
     if (vals?.[2] && b) vals[2].textContent = this._memoText();
   }
 
+  /**
+   * Wandering monsters find the camp: the rest card goes at once, the Gold Box alarm is posted
+   * across the screen, the camera draws back to the whole camp (never a snap to the bedrolls), and
+   * only then does the encounter begin.
+   */
+  _ambushed(ambush, b) {
+    b.panel.remove();
+    this._finishRest({ quiet: true });
+    this._alarm = true;
+    // A hard cut to the whole camp (the alarm is a jolt), never a slow pan across the waking party.
+    this._camK = 0;
+    this.topTitle && (this.topTitle.textContent = 'Alarm!');
+    this.bar?.el.classList.add('dim');
+    if (this.bar) this.bar.el.style.pointerEvents = 'none';
+    // the camp panel's REST / MAGIC / FIX are dead too: there is no resting now
+    for (const b of this.statusBody?.querySelectorAll('button') ?? []) b.disabled = true;
+    const banner = h('div.camp-alarm', [
+      h('div.t.por-gilt-text', ['Your rest is interrupted!']),
+      h('div.s', [`${this._sentry()?.name ?? 'The watch'} cries out after ${fmtMinutes(b.applied) || 'a moment'} — something is in the camp.`]),
+    ]);
+    this.ctx.ui.mount(banner);
+    this.ctx.ui.message(`Your rest is interrupted after ${fmtMinutes(b.applied) || 'a moment'}! The watch cries out.`, 'warn');
+    this.ctx.audio?.stinger?.('danger');
+    const go = () => {
+      if (this._gone) return;
+      banner.remove();
+      this.ctx.scenes.goto('dialogue', { encounter: ambush.ref });
+    };
+    // (long enough to read; &alarmhold=1 holds it for inspection)
+    setTimeout(go, this.ctx.debug?.raw?.alarmhold ? 6e5 : this.ctx.debug?.frozen ? 0 : 2400);
+  }
+
   interruptRest() {
-    if (!this.busy || this.busy.demo != null) return;
+    if (!this.busy || this.busy.demo != null || this._alarm) return;
     this.busy.interrupted = true;
     this._finishRest();
   }
 
-  _finishRest() {
+  _finishRest({ quiet = false } = {}) {
     const b = this.busy;
     if (!b) return;
     this.busy = null;
     this._restEndedAt = this.ctx.clock.time;
     const { game, ui } = this.ctx;
     const names = Object.fromEntries(game.party.map((c) => [c.id, c.name]));
-    ui.message(b.interrupted ? `Rest interrupted after ${fmtMinutes(b.applied) || 'a moment'}.` : `The party rests for ${fmtMinutes(b.applied)}.`, b.interrupted ? 'warn' : 'info');
+    if (!quiet) ui.message(b.interrupted ? `Rest interrupted after ${fmtMinutes(b.applied) || 'a moment'}.` : `The party rests for ${fmtMinutes(b.applied)}.`, b.interrupted ? 'warn' : 'info');
     for (const [id, n] of Object.entries(b.report.healed)) ui.message(`${names[id]} heals ${n} hp.`, 'system');
     for (const [id, ids] of Object.entries(b.report.memorized)) ui.message(`${names[id]} memorizes ${ids.length} spell${ids.length === 1 ? '' : 's'}.`, 'system');
     for (const id of b.report.died) ui.message(`${names[id]} succumbs to poison.`, 'warn');
@@ -599,15 +630,18 @@ export default class CampScene extends Scene {
     // Resting: the camera leans in over the bedrolls (eased; settled at once under a frozen clock).
     if (!this.ctx.debug?.raw?.campcam) {
       const want = this.busy ? 1 : 0;
-      this._camK = this._camK == null || dt === 0 ? want : this._camK + (want - this._camK) * Math.min(1, dt * 2.5);
+      // (an alarm draws the camera back to the whole camp briskly, before the encounter)
+      this._camK = this._camK == null || dt === 0 ? want : this._camK + (want - this._camK) * Math.min(1, dt * (this._alarm ? 4 : 2.5));
       const k = this._camK * this._camK * (3 - 2 * this._camK);
       // Resting: down at sleeping height beside the embers, so the sleepers lie in profile across the
       // view (head on the rolled cloak, shoulder, hip and knee under the wool) and the sentry stands
       // against the night beyond them.
       // (from the fire's side, across the bedrolls: the nearest sleeper's head on its pillow in the
       // foreground, the others beyond the embers, the sentry against the night)
-      this.camera.position.set(-2.3 * k, 1.75 - 0.85 * k, 5.2 - 3.3 * k);
-      this.camera.lookAt(0.45 * k, 0.95 - 0.72 * k, -0.6 - 1.35 * k);
+      // (framed so the fire, the sentry and the sleepers make a triangle above the resting card:
+      // high enough that the near bedroll is a corner of the picture, not a third of it)
+      this.camera.position.set(-1.35 * k, 1.75 - 0.42 * k, 5.2 - 2.45 * k);
+      this.camera.lookAt(-0.2 * k, 0.95 - 0.8 * k, -0.6 - 0.9 * k);
       // the camera low over the embers: bloom eased off so the fire keeps its flame shape
       if (this.post) { this.post.bloomStrength = 0.7 - 0.38 * k; this.post.bloomThreshold = 0.9 + 0.12 * k; }
     }
@@ -624,6 +658,7 @@ export default class CampScene extends Scene {
   }
 
   exit() {
+    this._gone = true;
     this.ctx.render.renderer.shadowMap.autoUpdate = true;
     this.view?.close();
     this.busy?.panel?.remove();

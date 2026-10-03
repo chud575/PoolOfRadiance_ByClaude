@@ -1,4 +1,4 @@
-import { portraitURL, portraitURLAsync, portraitKey, hasPortrait, portraitQuickURL } from './portraitPainter.js';
+import { portraitURL, portraitURLAsync, portraitKey, hasPortrait, anyPortrait } from './portraitPainter.js';
 import { resolveAppearance } from './lookData.js';
 
 /**
@@ -28,17 +28,8 @@ function pump() {
   pumping = true;
   const step = async () => {
     // First a rough pass for every waiting tile (a few ms each), then the oil paintings one by one.
-    const r = rough.shift();
-    if (r) {
-      if (r.img.isConnected && r.img.classList.contains('pc-pending')) {
-        try {
-          const u = portraitQuickURL(r.snap, r.crop);
-          if (u && r.img.classList.contains('pc-pending')) { r.img.src = u; r.img.classList.add('pc-rough'); }
-        } catch { /* keep the placeholder */ }
-      }
-      setTimeout(step, 0);
-      return;
-    }
+    // (The rough low-resolution tier is gone: the candle-lit silhouette holds until the oil is done.)
+    rough.length = 0;
     // Skip jobs whose <img> has left the page (the panel re-rendered).
     let job = queue.shift();
     while (job && !job.img.isConnected && job.age++ < 2) { queue.push(job); job = queue.shift(); }
@@ -70,10 +61,9 @@ export function placeholderStyle(ch) {
 
 const sketches = new Map();
 /**
- * An instant painted sketch of the sitter (Canvas 2D, a few ms): a dark studio wall warmed behind
- * the head, the shoulders in the character's cloth, the head and neck in its skin lit from the
- * left, the hair, beard, hood or helm blocked in as masses — a painting at its first lay-in.
- * Replaced by the rough render and then the finished oil.
+ * The stand-in while a portrait is painted (Canvas 2D, a few ms): an empty frame in a dark studio,
+ * a candle burning low at the edge, and the sitter only as a warm-rimmed silhouette — head, hair,
+ * helm or hood and shoulders as one shadow mass, no features. Never a blank mannequin face.
  * @returns {string|null}
  */
 export function sketchURL(ch, crop = 'head') {
@@ -81,64 +71,59 @@ export function sketchURL(ch, crop = 'head') {
   try { app = resolveAppearance(ch); } catch { return null; }
   const key = `${portraitKey(ch, 's', crop)}`;
   if (sketches.has(key)) return sketches.get(key);
-  const W = 60, H = 75;
+  const W = 120, H = 150;
   const c = document.createElement('canvas');
   c.width = W; c.height = H;
   const g = c.getContext('2d');
-  const bg = g.createRadialGradient(W * 0.62, H * 0.38, 2, W * 0.5, H * 0.5, W * 0.8);
-  bg.addColorStop(0, '#5a4630'); bg.addColorStop(0.55, '#2a2018'); bg.addColorStop(1, '#0e0b09');
+  // the wall, warmed by the candle at lower left
+  const bg = g.createRadialGradient(W * 0.2, H * 0.78, 2, W * 0.35, H * 0.6, W * 1.1);
+  bg.addColorStop(0, '#7a5328'); bg.addColorStop(0.28, '#3a2614'); bg.addColorStop(0.7, '#160e09'); bg.addColorStop(1, '#070504');
   g.fillStyle = bg; g.fillRect(0, 0, W, H);
+  // canvas weave
+  g.globalAlpha = 0.07;
+  for (let y = 0; y < H; y += 2) { g.fillStyle = y % 4 ? '#000' : '#b08050'; g.fillRect(0, y, W, 1); }
+  g.globalAlpha = 1;
   const torso = crop === 'torso';
   const k = torso ? 0.62 : 1;
-  const cx = W * 0.5, hy = torso ? H * 0.3 : H * 0.4, hr = W * 0.17 * k;
-  const lit = (x0, y0, r, hex, dark = 0.45) => {
-    const gr = g.createRadialGradient(x0 - r * 0.45, y0 - r * 0.35, r * 0.1, x0, y0, r * 1.25);
-    gr.addColorStop(0, hex); gr.addColorStop(1, shade(hex, dark));
-    return gr;
-  };
-  // shoulders and chest
-  const cloth = app.body === 'robe' || app.body === 'vestments' ? app.robeHex : app.clothHex;
-  g.fillStyle = lit(cx, H * (torso ? 0.75 : 0.98), W * 0.42, cloth, 0.35);
+  const cx = W * 0.54, hy = torso ? H * 0.3 : H * 0.4, hr = W * 0.17 * k;
+  const sil = '#0a0706';
+  g.fillStyle = sil;
+  // shoulders
   g.beginPath();
-  g.ellipse(cx, H * (torso ? 0.78 : 1.02), W * (torso ? 0.34 : 0.46), H * 0.3, 0, Math.PI, 0);
+  g.ellipse(cx, H * (torso ? 0.8 : 1.04), W * (torso ? 0.36 : 0.48), H * 0.3, 0, Math.PI, 0);
   g.fill();
-  // neck
-  g.fillStyle = shade(app.skinHex, 0.62);
-  g.fillRect(cx - hr * 0.42, hy + hr * 0.6, hr * 0.84, hr * 1.1);
-  // hair behind the head (long styles)
-  const long = ['long', 'wavy', 'braid'].includes(app.hair);
-  if (long && !app.helm && !app.hood) {
-    g.fillStyle = lit(cx, hy + hr * 0.5, hr * 1.4, app.hairHex, 0.4);
-    g.beginPath(); g.ellipse(cx, hy + hr * 0.55, hr * 1.18, hr * 1.7, 0, 0, Math.PI * 2); g.fill();
+  g.fillRect(cx - hr * 0.45, hy + hr * 0.5, hr * 0.9, hr * 1.4);
+  // head mass with its hair, helm or hood
+  g.beginPath();
+  if (app.hood) g.ellipse(cx, hy + hr * 0.1, hr * 1.35, hr * 1.55, 0, 0, Math.PI * 2);
+  else if (app.helm) g.ellipse(cx, hy - hr * 0.08, hr * 1.06, hr * 1.22, 0, 0, Math.PI * 2);
+  else g.ellipse(cx, hy, hr * 0.9, hr * 1.14, 0, 0, Math.PI * 2);
+  g.fill();
+  if (!app.hood && !app.helm && ['long', 'wavy', 'braid'].includes(app.hair)) {
+    g.beginPath(); g.ellipse(cx, hy + hr * 0.6, hr * 1.1, hr * 1.5, 0, 0, Math.PI * 2); g.fill();
   }
-  if (app.hood) {
-    g.fillStyle = lit(cx, hy, hr * 1.6, cloth, 0.3);
-    g.beginPath(); g.ellipse(cx, hy + hr * 0.15, hr * 1.42, hr * 1.62, 0, 0, Math.PI * 2); g.fill();
+  if (app.beard && !['none', 'stubble', 'moustache'].includes(app.beard)) {
+    g.beginPath(); g.ellipse(cx, hy + hr * 1.05, hr * 0.62, hr * (app.race === 'dwarf' || app.beard === 'long' ? 0.95 : 0.5), 0, 0, Math.PI * 2); g.fill();
   }
-  // the head
-  g.fillStyle = lit(cx, hy, hr, app.skinHex, 0.5);
-  g.beginPath(); g.ellipse(cx, hy, hr * 0.86, hr * 1.12, 0, 0, Math.PI * 2); g.fill();
-  // shadow side and the eye line
-  g.fillStyle = 'rgba(40,20,20,0.18)';
-  g.beginPath(); g.ellipse(cx + hr * 0.38, hy + hr * 0.1, hr * 0.42, hr * 1.0, 0, 0, Math.PI * 2); g.fill();
-  g.fillStyle = 'rgba(30,18,14,0.45)';
-  g.fillRect(cx - hr * 0.55, hy - hr * 0.12, hr * 0.38, hr * 0.12);
-  g.fillRect(cx + hr * 0.15, hy - hr * 0.12, hr * 0.38, hr * 0.12);
-  // hair cap, beard, helm
-  if (!app.hood && !app.helm && app.hair !== 'bald') {
-    g.fillStyle = lit(cx, hy - hr * 0.6, hr, app.hairHex, 0.45);
-    g.beginPath(); g.ellipse(cx, hy - hr * 0.48, hr * 0.95, hr * 0.72, 0, Math.PI * 1.02, Math.PI * 1.98); g.fill();
-    g.fillRect(cx - hr * 0.9, hy - hr * 0.55, hr * 1.8, hr * 0.22);
-  }
-  if (app.beard && app.beard !== 'none' && app.beard !== 'stubble') {
-    const len = app.beard === 'long' || app.race === 'dwarf' ? 1.3 : app.beard === 'moustache' ? 0.25 : 0.75;
-    g.fillStyle = lit(cx, hy + hr * 0.7, hr, app.hairHex, 0.5);
-    g.beginPath(); g.ellipse(cx, hy + hr * (0.55 + len * 0.3), hr * 0.72, hr * (0.25 + len * 0.45), 0, 0, Math.PI * 2); g.fill();
-  }
-  if (app.helm) {
-    g.fillStyle = lit(cx, hy - hr * 0.5, hr * 1.1, '#8a8e96', 0.35);
-    g.beginPath(); g.ellipse(cx, hy - hr * 0.35, hr * 1.0, hr * 0.85, 0, Math.PI, 0); g.fill();
-  }
+  // candle rim along the lit (left) edge of the silhouette
+  g.save();
+  g.globalCompositeOperation = 'source-atop';
+  const rim = g.createLinearGradient(cx - hr * 1.5, 0, cx - hr * 0.6, 0);
+  rim.addColorStop(0, 'rgba(255,170,80,0.55)'); rim.addColorStop(1, 'rgba(255,150,60,0)');
+  g.fillStyle = rim;
+  g.fillRect(0, 0, cx, H);
+  g.restore();
+  // the candle
+  const fx = W * 0.12, fy = H * 0.78;
+  g.fillStyle = '#d8c8a0'; g.fillRect(fx - 3, fy, 6, H - fy);
+  const glow = g.createRadialGradient(fx, fy - 5, 0, fx, fy - 5, 26);
+  glow.addColorStop(0, 'rgba(255,220,140,0.85)'); glow.addColorStop(0.25, 'rgba(255,160,60,0.35)'); glow.addColorStop(1, 'rgba(255,120,40,0)');
+  g.fillStyle = glow; g.beginPath(); g.arc(fx, fy - 5, 26, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#fff3c8'; g.beginPath(); g.ellipse(fx, fy - 6, 2.2, 5.5, 0, 0, Math.PI * 2); g.fill();
+  // vignette
+  const v = g.createRadialGradient(W * 0.5, H * 0.5, W * 0.3, W * 0.5, H * 0.5, W * 0.85);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.6)');
+  g.fillStyle = v; g.fillRect(0, 0, W, H);
   const u = c.toDataURL('image/png');
   if (sketches.size > 96) sketches.delete(sketches.keys().next().value);
   sketches.set(key, u);
@@ -164,10 +149,17 @@ export function portraitImg(ch, scale = 1, o = {}) {
     img.src = portraitURL(ch, scale, { crop });
     return img;
   }
+  // The same face already painted at another size: show it at once (the browser scales it), and
+  // repaint at this size only when the cached one is smaller than wanted.
+  const near = anyPortrait(ch, crop);
+  if (near && near.scale >= scale) {
+    img.src = near.url;
+    return img;
+  }
   img.classList.add('pc-pending');
   img.src = BLANK;
   try {
-    const sk = sketchURL(ch, crop);
+    const sk = near && near.scale >= scale * 0.6 ? near.url : sketchURL(ch, crop);
     if (sk) img.src = sk;
     else img.style.background = placeholderStyle(ch);
   } catch { /* plain pending tile */ }
@@ -184,6 +176,7 @@ export function portraitImg(ch, scale = 1, o = {}) {
     img.src = u;
     img.style.background = '';
     img.classList.remove('pc-pending', 'pc-rough');
+    img.classList.add('pc-reveal');
   } };
   if (o.priority) { queue.unshift(job); rough.unshift({ img, snap, crop }); } else { queue.push(job); rough.push({ img, snap, crop }); }
   pump();

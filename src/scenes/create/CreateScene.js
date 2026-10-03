@@ -1,3 +1,4 @@
+import { seedRoster, upsertRoster, dropMember, addMember, addable } from './rosterOps.js';
 import * as THREE from 'three';
 import { Scene } from '../../core/Scene.js';
 import { h, clear, Frame, CommandBar } from '../../ui/UI.js';
@@ -67,7 +68,8 @@ export default class CreateScene extends Scene {
     this.post = { bloomStrength: 0.5, bloomThreshold: 0.92, vignette: 0.62, exposure: 1.08 };
 
     this.newParty = [...this.ctx.game.party];
-    this.roster = this._loadRoster();
+    // Everyone already in the party is on the roster too, so DROP never loses a character.
+    this.roster = seedRoster(this._loadRoster(), this.newParty);
     this.hubSel = 0;
     this.resetDraft();
 
@@ -314,7 +316,7 @@ export default class CreateScene extends Scene {
     cam.updateProjectionMatrix();
   }
 
-  _updateFigure() {
+  _updateFigure(now = false) {
     const d0 = this.step === 'party' ? this.newParty[this.hubSel] : this.draft;
     if (!d0) return;
     // The miniature wears what the character has actually readied (the starting kit for a draft),
@@ -339,7 +341,7 @@ export default class CreateScene extends Scene {
       this.figureRoot.add(f);
     };
     // Interactive: let the panel repaint first, then sculpt the miniature on a later tick.
-    if (this.ctx.debug?.frozen || !this.figureRoot.children.length) build();
+    if (now || this.ctx.debug?.frozen || !this.figureRoot.children.length) build();
     else setTimeout(build, 40);
   }
 
@@ -442,7 +444,8 @@ export default class CreateScene extends Scene {
     this._renderBar();
     this.figureRoot.visible = step !== 'party' || this.newParty.length > 0;
     // The pedestal figure is re-sculpted for a new look: let the panel paint first (interactive runs).
-    if (this.ctx.debug?.frozen) this._updateFigure();
+    // On the party screen the plinth follows the selection at once (the same frame as the card).
+    if (this.ctx.debug?.frozen || step === 'party') this._updateFigure(step === 'party');
     else setTimeout(() => { if (!this._gone) this._updateFigure(); }, 40);
   }
 
@@ -534,10 +537,11 @@ export default class CreateScene extends Scene {
       }
       if (this.newParty.length >= 2) b.append(this._companyCheck());
       b.append(h('div', { style: { flex: '1' } }));
-      const R = this.roster;
-      b.append(h('div.pc-sect-h', [h('span', [R.length ? `Roster · ${R.length} kept` : 'Roster'])]));
-      if (R.length) b.append(h('div.cc-rosterstrip', R.slice(-8).map((c) => miniPortrait(c, { tip: `${c.name} — ${RACES[c.race]?.name ?? ''} ${classSpecName(c.classSpec)}. ADD brings them into the party.` }))));
-      b.append(h('p.pc-rest-note', { style: { fontSize: '0.8em' } }, [R.length ? CREATE_TEXT.roster : CREATE_TEXT.rosterEmpty]));
+      // The roster keeps everyone (the party included); the strip shows who is waiting to be ADDed.
+      const R = this.roster, wait = addable(this.newParty, R);
+      b.append(h('div.pc-sect-h', [h('span', [`Roster · ${R.length} kept${wait.length ? ` · ${wait.length} waiting` : ''}`])]));
+      if (wait.length) b.append(h('div.cc-rosterstrip', wait.slice(-6).map((c) => miniPortrait(c, { tip: `${c.name} — ${RACES[c.race]?.name ?? ''} ${classSpecName(c.classSpec)}. ADD brings them back.`, onclick: () => this.addFromRoster() }))));
+      b.append(h('p.pc-rest-note.cc-rosternote', [wait.length ? CREATE_TEXT.roster : R.length ? CREATE_TEXT.rosterAll : CREATE_TEXT.rosterEmpty]));
       return;
     }
     this.card.title.textContent = this.editing ? 'Modify' : 'New Adventurer';
@@ -931,7 +935,7 @@ export default class CreateScene extends Scene {
       const ch = settleKit(createCharacter({ rng: this.rng, name: d.name.trim(), race: d.race, classSpec: d.classSpec, alignment: d.alignment, gender: d.gender, abilities: d.abilities, items: kitFor(d.classSpec, d.race) }));
       ch.look = { ...defaultLook(d) };
       this.newParty.push(ch);
-      this.roster = [...this.roster.filter((r) => r.id !== ch.id), structuredClone(ch)];
+      this.roster = upsertRoster(this.roster, ch);
       this._saveRoster();
       this.hubSel = this.newParty.length - 1;
       this.ctx.ui.toast(`${ch.name} joins the party.`);
@@ -986,26 +990,29 @@ export default class CreateScene extends Scene {
   }
 
   async addFromRoster() {
-    const inParty = new Set(this.newParty.map((c) => c.id));
-    const avail = this.roster.filter((c) => !inParty.has(c.id));
+    const avail = addable(this.newParty, this.roster);
     if (!avail.length) return this.ctx.ui.toast('Everyone on the roster is already in the party.');
     const pick = await this.ctx.ui.dialog({
       title: 'Add Character', variant: 'blue', body: h('p', ['Who joins the party?']),
       buttons: [...avail.slice(-6).map((c) => ({ id: c.id, label: c.name })), { id: null, label: 'Cancel' }],
     });
-    const ch = avail.find((c) => c.id === pick);
-    if (!ch) return;
-    this.newParty.push(structuredClone(ch));
+    const r = addMember(this.newParty, this.roster, pick);
+    if (!r.added) return;
+    this.newParty = r.party;
     this.hubSel = this.newParty.length - 1;
+    this.ctx.ui.toast(`${r.added.name} rejoins the party.`);
     this.show('party');
   }
 
   dropSel() {
-    const ch = this.newParty[this.hubSel];
-    if (!ch) return;
-    this.newParty.splice(this.hubSel, 1);
-    this.hubSel = Math.max(0, Math.min(this.hubSel, this.newParty.length - 1));
-    this.ctx.ui.toast(`${ch.name} leaves the party (still on the roster).`);
+    const r = dropMember(this.newParty, this.roster, this.hubSel);
+    if (!r.dropped) return;
+    // Keep the edits made in this hall (MODIFY, readied kit) on the roster copy.
+    this.newParty = r.party;
+    this.roster = r.roster;
+    this._saveRoster();
+    this.hubSel = r.sel;
+    this.ctx.ui.toast(`${r.dropped.name} leaves the party (kept on the roster: ADD to rejoin).`);
     this.show('party');
   }
 
@@ -1055,7 +1062,7 @@ export default class CreateScene extends Scene {
     // are being painted, so the panels — and the portrait painter sharing the GPU — stay responsive.
     if (!this.ctx.debug?.frozen && this._lastWall != null) {
       const now = performance.now();
-      const gap = this._slow ? (portraitsPending() ? 6000 : this._dirty3d ? 0 : 2500) : 0;
+      const gap = this._slow ? (this._dirty3d ? 0 : portraitsPending() ? 6000 : 2500) : 0;
       if (gap && now - this._lastWall < gap) return;
     }
     const wall = performance.now();

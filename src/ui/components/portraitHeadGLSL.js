@@ -77,6 +77,14 @@ float MOUTHY() { return -0.065 * LOWF(); }
 float TIPY() { return -0.038 * NOSE * (0.92 + 0.08 * LONG) * (1.0 - 0.07 * FEM); }
 float TIPZ() { return 0.1115 + 0.01 * (NOSE - 1.0) - 0.0075 * FEM - 0.004 * HALF + 0.006 * GNOME; }
 float LIPZ() { return 0.0905 + 0.003 * PROT - 0.004 * FEM; }
+// The gaze of the eye on this side (in the mirrored q space). uGaze is either a direction or, when
+// longer than 1, a point in head space both eyes look at: they converge on one target.
+vec3 gazeQ(vec3 p) {
+  float sx = sign(p.x + 1e-5);
+  vec3 gp = uGaze;
+  if (dot(uGaze, uGaze) > 1.02) gp = normalize(uGaze - vec3(EX() * sx, 0.0, EZ()));
+  return normalize(vec3(gp.x * sx, gp.y, gp.z));
+}
 
 // Upper and lower lid lines (y, head-local) at a point beside the eye: an almond, the outer
 // corner a touch higher, the upper lid over the top of the iris.
@@ -163,7 +171,7 @@ float skin(vec3 p) {
   // cheek pads: the fat under the cheekbone and beside the nose, full on the young, halflings and
   // women, sinking on the lean and the old
   float buc = (0.92 - 0.4 * sat(HOLLOW) * (1.0 - 0.5 * fem)) * (1.0 + 0.22 * HALF + 0.14 * fem);
-  d = smin(d, sdEll(q - vec3(0.031 * w, -0.04 * lf, 0.045), vec3(0.021 * buc, 0.025, 0.022 * buc)), 0.026);
+  d = smin(d, sdEll(q - vec3(0.031 * w, -0.04 * lf, 0.042), vec3(0.02 * buc, 0.024, 0.0185 * buc)), 0.024);
   // ---- the jaw: the ramus down from the ear, the angle, the body of the mandible to the chin
   float jw = (0.046 * (0.86 + 0.14 * JAW) - 0.011 * fem * (1.0 - 0.55 * dwf)) * w;
   vec3 go = vec3(jw, -0.078 * lf, -0.012 - 0.003 * JDEPTH);
@@ -171,13 +179,14 @@ float skin(vec3 p) {
   vec3 me = vec3(0.015 * CHIN, -0.103 * lf, 0.064 - 0.005 * fem * (1.0 - dwf) + 0.004 * JDEPTH);
   float jaw = sdRC(q, vec3(0.058 * w, -0.022, -0.022), go, 0.014, rGo);
   jaw = smin(jaw, sdRC(q, go, me, rGo, 0.012 + 0.002 * CHIN), 0.012);
-  d = smin(d, jaw, 0.022 - 0.004 * man);
+  // (a tight blend: the mandible reads as a plane turning under the face, not a soft dough edge)
+  d = smin(d, jaw, 0.015 - 0.003 * man);
   // the masseter: the full muscle over the ramus between the cheekbone's arch and the jaw angle
   d = smin(d, sdEll(q - vec3(0.047 * w, -0.05 * lf, 0.004), vec3(0.014, 0.028 * lf, 0.026)), 0.02);
   // lower face: the soft fill between the jaw and the mouth (the cheek's lower half)
-  d = smin(d, sdEll(p - vec3(0.0, -0.068 * lf, 0.03 - 0.003 * fem), vec3((0.047 - 0.006 * fem * (1.0 - dwf)) * w, 0.042 * lf, 0.054)), 0.026);
+  d = smin(d, sdEll(p - vec3(0.0, -0.066 * lf, 0.022 - 0.002 * fem), vec3((0.043 - 0.005 * fem * (1.0 - 0.5 * dwf)) * w, 0.04 * lf, 0.052)), 0.022);
   // chin: the mental protuberance, square and cleft-able on men, small and round on women
-  vec3 chq = p - vec3(0.0, -0.099 * lf, 0.077 - 0.008 * fem * (1.0 - dwf) + 0.004 * JDEPTH);
+  vec3 chq = p - vec3(0.0, -0.099 * lf, 0.078 - 0.004 * fem * (1.0 - dwf) + 0.004 * JDEPTH);
   float chin = sdEll(chq, vec3((0.02 - 0.005 * fem * (1.0 - 0.6 * dwf)) * CHIN, 0.0165 - 0.002 * fem, 0.0155));
   chin = smin(chin, sdEll(vec3(abs(chq.x) - 0.008 * CHIN * man, chq.yz), vec3(0.012, 0.0135, 0.0135)), 0.01);
   d = smin(d, chin, 0.018);
@@ -247,7 +256,7 @@ float skin(vec3 p) {
     vec3 ec = vec3(ex, 0.0, ez);
     float eye = length(q - ec) - er;
     // the cornea's bulge in front of the iris
-    vec3 g = normalize(vec3(uGaze.x * sign(p.x + 1e-5), uGaze.y, uGaze.z));
+    vec3 g = gazeQ(p);
     eye = smin(eye, length(q - ec - g * 0.0052) - er * 0.62, 0.003);
     gEye = eye;
     vec2 ll = lidLines(q);

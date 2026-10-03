@@ -72,6 +72,7 @@ uniform float uDbg;
 uniform vec3 uKeyDir;
 uniform vec4 uLightK;
 uniform vec4 uSpot;
+uniform float uSide;
 varying vec2 vUv;
 ${GLSL_COMMON}
 ${GLSL_HEAD}
@@ -145,6 +146,7 @@ function passes() {
       uKeyDir: { value: new THREE.Vector3(-0.78, 0.58, 0.32) },
       uLightK: { value: new THREE.Vector4(2.7, 0.36, 1.5, 1) },
       uSpot: { value: new THREE.Vector4(0.02, 0, 0, 0.028) },
+      uSide: { value: 1 },
     },
   });
   const post = new THREE.ShaderMaterial({
@@ -208,7 +210,9 @@ function setup(ch, o) {
     elf: { LONG: 1.04, W: 0.94, CHEEK: 1.08, JAW: 0.92, CHIN: 0.92 },
     halfElf: { LONG: 1.015, W: 0.98 },
     // dwarves (women too): a broad, low head, a heavy jaw and brow, a broad strong nose
-    dwarf: { W: 1.15, NOSE: 1.06, BRIDGE: 1.2, TIP: 1.18, NWIDTH: 1.16, JAW: 1.25, CHIN: 1.12, BROW: 1.5, LONG: 0.94, CRAN: 0.92, CHEEK: 1.1, EYE: 0.95, EDEPTH: 1.2, EOPEN: 1.0 },
+    // (faceParams has already widened the dwarf skull: these are the painter's accents on top, not
+    // a second widening — doubled, the faces swelled into moons)
+    dwarf: { W: 1.02, NOSE: 1.02, BRIDGE: 1.1, TIP: 1.08, NWIDTH: 1.08, JAW: 1.04, CHIN: 1.04, BROW: 1.35, LONG: 0.98, CRAN: 0.94, CHEEK: 1.08, EYE: 0.96, EDEPTH: 1.2, EOPEN: 1.0 },
     // halflings: adults with round, ruddy faces — full cheeks, a short snub nose, bright eyes
     halfling: { W: 1.07, LONG: 0.95, CHEEK: 1.15, NOSE: 0.92, TIP: 1.05, EYE: 1.02, JAW: 0.96, CHIN: 0.95, CRAN: 0.96 },
     gnome: { NOSE: 1.3, TIP: 1.45, W: 1.04, EYE: 1.04, BROW: 1.15 },
@@ -218,11 +222,19 @@ function setup(ch, o) {
   // (faceParams softens a dwarf woman's face for the miniature; the painting restores the race:
   // a broad, square face, a heavy brow, a strong broad nose, a full chin)
   if (app.race === 'dwarf' && app.fem) {
-    // (multiplied, not clamped: each template keeps its own skull, so six dwarf women are six women)
+    // Broad-boned, not swollen: a strong brow and jaw, defined cheekbones over lean cheeks, a full
+    // chin, a straight strong nose; the face as long as a human woman's, only wider.
     const mul = (k, v) => { params[ix(k)] *= v; };
-    mul('W', 1.03); mul('JAW', 1.06); mul('CHIN', 1.05); mul('BROW', 1.25); mul('NWIDTH', 1.04); mul('CHEEK', 1.03);
-    params[ix('LONG')] = Math.min(params[ix('LONG')], 0.98);
-    params[ix('LIPS')] *= 1.05; params[ix('AGE')] = Math.max(params[ix('AGE')], 0.12);
+    params[ix('W')] = Math.min(params[ix('W')], 1.13);
+    params[ix('JAW')] = Math.min(Math.max(params[ix('JAW')], 1.05), 1.22);
+    params[ix('CHIN')] = Math.min(Math.max(params[ix('CHIN')], 0.98), 1.15);
+    mul('BROW', 1.2); mul('CHEEK', 1.12);
+    params[ix('HOLLOW')] = Math.max(params[ix('HOLLOW')], 0.35);
+    params[ix('LONG')] = Math.min(Math.max(params[ix('LONG')], 0.98), 1.04);
+    params[ix('NOSE')] = Math.min(Math.max(params[ix('NOSE')], 0.98), 1.12);
+    params[ix('LIPS')] *= 1.08; params[ix('AGE')] = Math.max(params[ix('AGE')], 0.12);
+    // a straight strong nose, not the men's hooked beak
+    params[ix('HOOK')] -= 0.3;
   }
   if (app.race === 'halfling') params[ix('HOOK')] -= 0.5;
   // a painter opens the eyes a little and lets them catch the light: the likeness lives there
@@ -240,6 +252,10 @@ function setup(ch, o) {
   const tilt = o.tilt ?? (pose[2] + (R() - 0.5) * 0.05);
   // The matrices map world → local (transpose of local → world rotation).
   const headM = rotY(yaw).multiply(rotX(pitch)).multiply(rotZ(tilt));
+  // Short lighting, as a portrait painter sets it: the key falls on the side of the face turned
+  // away from us, so the near cheek turns into shadow and the head is modelled, never flat-lit.
+  // (A head turned to our right takes its key from the right.)
+  u.uSide.value = yaw > 0.02 ? -1 : 1;
   u.uHeadR.value.copy(headM).transpose();
   // dwarves: broad, deep shoulders (the bust widened), the head sunk on a short thick neck
   const dwarf = app.race === 'dwarf';
@@ -262,10 +278,13 @@ function setup(ch, o) {
   u.uCamR.value.set(right.x, up.x, fwd.x, right.y, up.y, fwd.y, right.z, up.z, fwd.z);
   u.uFocal.value = 1 / Math.tan((fov * Math.PI) / 360);
   // The eyes find the viewer (most of the way): the camera direction in head space.
-  const toCam = u.uCamPos.value.clone().normalize();
-  const gz = toCam.applyMatrix3(u.uHeadR.value).lerp(new THREE.Vector3(0, 0, 1), 0.3).normalize();
-  gz.y = Math.max(gz.y, 0.03);
-  u.uGaze.value.copy(gz.normalize());
+  // Both eyes converge on one point: the camera (in head space), drawn a little toward straight
+  // ahead so the sitter looks past the painter's shoulder rather than into the lens.
+  const camL = u.uCamPos.value.clone().sub(u.uHeadC.value).applyMatrix3(u.uHeadR.value).divideScalar(hs);
+  const ahead = new THREE.Vector3(0, Math.max(camL.y, 0.05), camL.length());
+  const look = camL.lerp(ahead, 0.3);
+  look.y = Math.max(look.y, 0.05);
+  u.uGaze.value.copy(look);
   u.uSkin.value.copy(lin(app.skinHex));
   u.uHairC.value.copy(lin(app.hairHex));
   u.uEyeC.value.copy(lin(app.eyeHex));
@@ -397,7 +416,8 @@ function applyFrame(job) {
   u.uRes.value.set(job.RW, job.RH);
   u.uMode.value = o.mode ?? 0;
   u.uDbg.value = o.dbg ?? 0;
-  u.uKeyDir.value.fromArray(o.key ?? [-0.8, 0.5, 0.34]);
+  // (high enough that the chin casts its shadow down the neck and the nose a soft loop on the cheek)
+  u.uKeyDir.value.fromArray(o.key ?? [-0.74 * u.uSide.value, 0.68, 0.36]);
   u.uLightK.value.fromArray(o.lightK ?? [1.32, 0.28, 0.8, 0.3]);
   u.uLite.value = job.scale < 0.35 ? 1 : 0;
   u.uSpot.value.set(0.02, o.crop === 'torso' ? -0.2 : 0, 0, o.crop === 'torso' ? 0.14 : 0.028);

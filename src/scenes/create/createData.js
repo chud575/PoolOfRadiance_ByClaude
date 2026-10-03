@@ -2,8 +2,9 @@
 export const CREATE_TEXT = {
   hub: 'Phlan needs heroes. Gather up to six adventurers — create them here, or add companions from your roster — then set out for the ruined city.',
   emptyParty: 'No one has answered the call yet. Create a character to begin.',
-  roster: 'Every character you create is kept on the roster, so they can rejoin later parties.',
-  rosterEmpty: 'Empty for now: everyone you CREATE is kept here to rejoin a later party with ADD.',
+  roster: 'Dropped characters wait here. ADD brings one back.',
+  rosterAll: 'All kept characters are in the party. DROP sends one here.',
+  rosterEmpty: 'Everyone you CREATE is kept here for ADD.',
   race: 'Your blood decides your gifts and your limits. Humans may rise without bound; the elder races trade that for talents of their own and multiple classes.',
   raceShort: {
     human: 'Unlimited levels; may dual-class.',

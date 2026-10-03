@@ -143,6 +143,8 @@ function stoneGeometry(seed, sootDir) {
   const p = g.attributes.position;
   const col = [];
   const tone = 0.34 + hrand(seed, 3) * 0.16;
+  const nrm = [];
+  const arris = [];
   // a few cleavage planes give the lump flat, broken faces
   const planes = [];
   // (eight cuts, deep: an angular, split fieldstone, not a pebble)
@@ -154,27 +156,36 @@ function stoneGeometry(seed, sootDir) {
     let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
     const n = 1 + 0.08 * Math.sin(x * 3.1 + seed) * Math.cos(z * 2.7 + seed * 2) + 0.04 * Math.sin(y * 5 + x * 4 + seed) + 0.03 * Math.sign(Math.sin(x * 13 + z * 11 + y * 9 + seed)) * Math.abs(Math.sin(x * 7 + seed));
     x *= n; y *= n; z *= n;
-    for (const [nx, ny, nz, d] of planes) {
+    let cut = -1, depth = 0;
+    planes.forEach(([nx, ny, nz, d], pi) => {
       const s = x * nx + y * ny + z * nz;
-      if (s > d) { const k = s - d; x -= nx * k; y -= ny * k; z -= nz * k; }
-    }
+      if (s > d) { const k = s - d; x -= nx * k; y -= ny * k; z -= nz * k; if (k > depth) { depth = k; cut = pi; } }
+    });
     if (y < -0.25) y = -0.25 + (y + 0.25) * 0.3;
     p.setXYZ(i, x, y, z);
+    // split faces are flat planes with crisp arrises; the weathered rind stays rounded
+    if (cut >= 0 && depth > 0.015) nrm.push(planes[cut][0], planes[cut][1], planes[cut][2]);
+    else { const l = Math.hypot(x, y * 1.4, z) || 1; nrm.push(x / l, (y * 1.4) / l, z / l); }
+    arris.push(cut >= 0 && depth < 0.05 ? 1 - depth / 0.05 : 0);
     // soot: the face toward the fire and the top, streaked upward
     const toward = Math.max(0, x * sootDir[0] + z * sootDir[1]);
     const soot = Math.max(0, Math.min(1, toward * 1.1 + Math.max(0, y) * 0.5 - 0.15 + 0.2 * Math.sin(x * 9 + y * 14 + seed)));
     const lichen = Math.max(0, Math.sin(x * 4 + seed) * Math.cos(z * 5 + seed) - 0.55) * (1 - soot);
-    const k = tone * (1 - soot * 0.9) * (0.88 + 0.12 * Math.sin(x * 9 + z * 7));
+    // fresh breaks are paler; the arris of each break is chipped light
+    const fresh = arris[arris.length - 1] * 0.25;
+    const k = tone * (1 - soot * 0.9) * (0.88 + 0.12 * Math.sin(x * 9 + z * 7)) * (1 + fresh * (1 - soot));
     col.push(k * 1.02 - lichen * 0.05, k * 0.98 + lichen * 0.06, k * 0.9 - lichen * 0.08);
   }
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  g.computeVertexNormals();
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
   return g;
 }
 
 /**
  * @param {{G: Function, Mt: Function, night: number}} o
  */
+/** The ember bed's glaze (cached: the same texture for every camp). */
+let emberBedTex = null;
 export function buildCampfire({ G, Mt, night }) {
   const group = new THREE.Group();
   const q = new THREE.Quaternion();
@@ -200,14 +211,47 @@ export function buildCampfire({ G, Mt, night }) {
 
   // ---- the ash bed and its coals
   const coal = coalTextures();
-  const coalMat = Mt(new THREE.MeshStandardMaterial({ map: coal.map, emissiveMap: coal.emissive, emissive: 0xffffff, emissiveIntensity: 0.85, roughness: 1, transparent: true, depthWrite: false }));
+  const coalMat = Mt(new THREE.MeshStandardMaterial({ map: coal.map, emissiveMap: coal.emissive, emissive: 0xffffff, emissiveIntensity: 1.5, roughness: 1, transparent: true, depthWrite: false }));
   const bed = new THREE.Mesh(G(new THREE.CircleGeometry(0.52, 40)), coalMat);
   bed.rotation.x = -Math.PI / 2;
   bed.position.y = 0.012;
   bed.renderOrder = 1;
   group.add(bed);
+  // The embers under the logs: a bed of glowing ash and coals, brightest at the heart, broken into
+  // a crackle of hot seams and dark crusts (an additive glaze over the coal bed, breathing slowly).
+  const emberBed = (emberBedTex ??= (() => {
+    const W = 256;
+    const c = document.createElement('canvas');
+    c.width = c.height = W;
+    const g = c.getContext('2d');
+    const core = g.createRadialGradient(W / 2, W / 2, 4, W / 2, W / 2, W / 2);
+    core.addColorStop(0, 'rgba(255,190,90,1)'); core.addColorStop(0.3, 'rgba(255,110,30,0.85)'); core.addColorStop(0.62, 'rgba(160,40,8,0.4)'); core.addColorStop(1, 'rgba(60,10,0,0)');
+    g.fillStyle = core; g.fillRect(0, 0, W, W);
+    // dark crusts of ash over the coals, the hot seams between them showing through
+    g.globalCompositeOperation = 'destination-out';
+    for (let k = 0; k < 420; k++) {
+      const a = hrand(k, 301) * Math.PI * 2, r = Math.sqrt(hrand(k, 302)) * W * 0.46, rad = 2 + hrand(k, 303) * 9;
+      g.fillStyle = `rgba(0,0,0,${0.35 + hrand(k, 304) * 0.5})`;
+      g.beginPath(); g.ellipse(W / 2 + Math.cos(a) * r, W / 2 + Math.sin(a) * r, rad, rad * (0.5 + hrand(k, 305) * 0.5), hrand(k, 306) * 3, 0, Math.PI * 2); g.fill();
+    }
+    g.globalCompositeOperation = 'lighter';
+    for (let k = 0; k < 260; k++) {
+      const a = hrand(k, 311) * Math.PI * 2, r = Math.pow(hrand(k, 312), 0.7) * W * 0.4;
+      g.fillStyle = `rgba(255,${120 + hrand(k, 313) * 100 | 0},40,${0.25 + hrand(k, 314) * 0.5})`;
+      g.fillRect(W / 2 + Math.cos(a) * r, W / 2 + Math.sin(a) * r, 1 + hrand(k, 315) * 2, 1 + hrand(k, 316) * 2);
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  })());
+  const emberMat = Mt(new THREE.MeshBasicMaterial({ map: emberBed, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.9, toneMapped: false }));
+  const embersMesh = new THREE.Mesh(G(new THREE.CircleGeometry(0.4, 40)), emberMat);
+  embersMesh.rotation.x = -Math.PI / 2;
+  embersMesh.position.y = 0.016;
+  embersMesh.renderOrder = 2;
+  group.add(embersMesh);
   const char = charTextures();
-  const chunkMat = Mt(new THREE.MeshStandardMaterial({ color: 0x8a7a70, map: char.map, emissive: 0xffffff, emissiveMap: char.emissive, emissiveIntensity: 0.7, roughness: 0.95 }));
+  const chunkMat = Mt(new THREE.MeshStandardMaterial({ color: 0x8a7a70, map: char.map, emissive: 0xffffff, emissiveMap: char.emissive, emissiveIntensity: 1.25, roughness: 0.95 }));
   const chunkGeo = G(new THREE.IcosahedronGeometry(0.03, 1));
   {
     // split, blocky charcoal
@@ -370,8 +414,10 @@ export function buildCampfire({ G, Mt, night }) {
     for (const lg of teepee) lg.visible = !resting;
     for (const lg of collapsed) lg.visible = resting;
     logMat.emissiveIntensity = (resting ? 0.5 : 0.62) * (0.85 + 0.15 * Math.sin(time * 5.7 + 0.4));
-    coalMat.emissiveIntensity = (resting ? 0.8 : 1.0) * (0.9 + 0.1 * Math.sin(time * 2.3));
-    chunkMat.emissiveIntensity = (resting ? 0.6 : 0.85) * (0.85 + 0.15 * Math.sin(time * 6.1));
+    coalMat.emissiveIntensity = (resting ? 1.1 : 1.45) * (0.9 + 0.1 * Math.sin(time * 2.3));
+    chunkMat.emissiveIntensity = (resting ? 0.9 : 1.25) * (0.85 + 0.15 * Math.sin(time * 6.1));
+    // the ember bed breathes, slower than the flames
+    emberMat.opacity = (resting ? 0.8 : 0.62) * (0.85 + 0.15 * Math.sin(time * 1.7) * Math.sin(time * 0.63 + 1));
     // the tongues face the camera (turning about the vertical only) and dance on their own beats
     if (camera) camera.getWorldPosition(_v);
     tongues.forEach((c, i) => {

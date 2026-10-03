@@ -661,6 +661,23 @@ void main() {
     sss = 1.0;
     float lash = sat(1.0 - gLid / (0.0011 + 0.0007 * FEM)) * sat((pos.z - 0.06) / 0.01) * sat(1.0 - length(q.xy - ec.xy) / 0.02) * (1.0 - ASLEEP * 0.5);
     alb = mix(alb, vec3(0.03, 0.02, 0.018), lash * 0.9);
+    // A miniature painter's wash and highlight: on a small figure (a few pixels to a feature) the
+    // sockets, the shadow under the brow, the mouth line and the nostrils are glazed dark and the
+    // brow, nose ridge and cheekbones picked out light, so the face reads at arm's length.
+    float tiny = smoothstep(0.0009, 0.0036, fp);
+    if (tiny > 0.0) {
+      float sockW = exp(-pow(length((q.xy - vec2(EX(), EYEY + 0.004)) / vec2(0.019, 0.012)), 2.0)) * sat((pos.z - 0.05) / 0.02);
+      alb = mix(alb, alb * vec3(0.4, 0.3, 0.3), sockW * 0.7 * tiny);
+      float mYw = MOUTHY();
+      float mline = exp(-pow((pos.y - mYw) / 0.0026, 2.0)) * sat(1.0 - abs(pos.x) / (0.022 * MOUTH)) * sat((pos.z - 0.07) / 0.008);
+      alb = mix(alb, alb * vec3(0.32, 0.2, 0.2), mline * 0.85 * tiny);
+      float nost = exp(-pow(length((q.xy - vec2(0.007, TIPY() - 0.007)) / vec2(0.006, 0.004)), 2.0)) * sat((pos.z - 0.08) / 0.01);
+      alb = mix(alb, alb * 0.45, nost * 0.6 * tiny);
+      float hiF = exp(-pow(length((pos.xy - vec2(0.0, 0.05)) / vec2(0.03, 0.018)), 2.0)) * sat((pos.z - 0.05) / 0.02)
+        + exp(-pow(length((pos.xy - vec2(0.0, TIPY() + 0.014)) / vec2(0.005, 0.02)), 2.0)) * sat((pos.z - 0.08) / 0.01)
+        + exp(-pow(length((q.xy - vec2(0.042, -0.012)) / vec2(0.012, 0.008)), 2.0)) * 0.8;
+      alb = mix(alb, alb * 1.22 + vec3(0.025, 0.02, 0.015), sat(hiF) * 0.55 * tiny);
+    }
   } else if (mat < 2.5) {
     alb = eyeAlbedo(pos, ec, clearc);
     rough = 0.08;

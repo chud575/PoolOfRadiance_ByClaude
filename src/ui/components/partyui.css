@@ -691,3 +691,28 @@ img.pc-pending.pc-rough { filter: blur(0.5px) saturate(0.9); background: none; }
 .pc-schools .r { display: grid; grid-template-columns: 1.1em 1fr auto; align-items: center; gap: 0.4em; font-size: 0.78em; padding: 0.12em 0; color: var(--por-text); }
 .pc-schools .r i { width: 0.95em; height: 0.95em; border-radius: 50%; box-shadow: 0 0 0 1px #c9973e, 0 0 0 2px #140c04; }
 .pc-schools .r b { font-family: var(--font-num); font-weight: normal; color: var(--por-amber); }
+/* The finished oil painting fades up out of the candle-lit silhouette. */
+img.pc-pending { filter: none; }
+img.pc-reveal { animation: pc-reveal 0.45s ease-out both; }
+@keyframes pc-reveal { from { opacity: 0.25; filter: brightness(0.45) sepia(0.4); } to { opacity: 1; filter: none; } }
+/* The party card scrolls rather than clipping its last line at small viewports. */
+.cc-card > .por-frame-body { overflow: hidden auto; scrollbar-width: thin; }
+.cc-rosternote { font-size: max(11px, 0.8em); margin: 0 0 0.2em; line-height: 1.3; }
+/* The camp is attacked: Gold Box alarm across the screen while the camera draws back. */
+.camp-alarm { position: absolute; left: 50%; top: 38%; transform: translate(-50%, -50%); z-index: 30; pointer-events: none;
+  min-width: min(34em, 80vw); padding: 0.9em 2.2em 1em; text-align: center;
+  background: linear-gradient(180deg, rgba(60, 8, 6, 0.94), rgba(26, 4, 4, 0.94));
+  border: 2px solid #c9a24a; box-shadow: 0 0 0 1px #3a0a06, 0 0 0 4px rgba(201, 162, 74, 0.35), 0 12px 40px rgba(0, 0, 0, 0.7);
+  animation: camp-alarm-in 0.35s cubic-bezier(.2, 1.4, .4, 1) both; }
+.camp-alarm .t { font-family: var(--font-display); font-size: 2em; letter-spacing: 0.12em; text-transform: uppercase; }
+.camp-alarm .s { margin-top: 0.35em; color: #e8d7b0; font-style: italic; }
+@keyframes camp-alarm-in { from { opacity: 0; transform: translate(-50%, -50%) scale(1.25); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+/* A long spell list fades out at its foot (more below) instead of slicing a row mid-line. */
+.pc-spell-scroll:not(.pc-memo-list) { -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 2.2em), transparent); mask-image: linear-gradient(180deg, #000 calc(100% - 2.2em), transparent); padding-bottom: 1.6em; }
+.pc-grimoire .sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Readied kit in two columns: the sheet's middle column fits above the lore band. */
+.pc-readied { display: grid; grid-template-columns: 1fr 1fr; gap: 0.1em 0.8em; }
+.pc-sheet > .pc-col { overflow: hidden; }
+/* Empty pack slots recede: a faint stitched pocket, not a wall of dark squares. */
+.pc-tile.empty { background: rgba(10, 14, 30, 0.22); box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.3); border-color: rgba(216, 178, 90, 0.1); }
+.pc-tile.empty:nth-child(n + 13) { opacity: 0.6; }

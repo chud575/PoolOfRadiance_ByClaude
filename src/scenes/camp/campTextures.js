@@ -178,7 +178,7 @@ export function groundTextures() {
         r = 128 * k + sd.warm + 8; gg = 121 * k + sd.warm * 0.6 + 5; b = 110 * k;
         r = r * (1 - lich * 0.3) + lich * 40; gg = gg * (1 - lich * 0.2) + lich * 46; b = b * (1 - lich * 0.4) + lich * 22;
         h = 0.55 + 0.28 * Math.sqrt(bevel) - chip * 0.2 + (t - 0.5) * 0.07 - pit * 0.12 + sd.tx * lx * 4 + sd.ty * ly * 4 - sd.sink * 0.4;
-        ro = 196 + t * 40 + pit * 20;
+        ro = 214 + t * 34 + pit * 7;
         if (sd.crack >= 0) {
           const ca = Math.cos(sd.crack), sa = Math.sin(sd.crack);
           const along = lx * ca + ly * sa;

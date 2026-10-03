@@ -203,7 +203,7 @@ export function figureMaterial(faceTex, skinLin = null) {
   const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0 });
   m.userData.faceMap = { value: faceTex ?? blankFaceTexture() };
   m.userData.uSkin = { value: new THREE.Vector3(...(skinLin ?? [0.6, 0.4, 0.3])) };
-  m.customProgramCacheKey = () => 'por-mini-v5';
+  m.customProgramCacheKey = () => 'por-mini-v6';
   m.onBeforeCompile = (sh) => {
     sh.uniforms.faceMap = m.userData.faceMap;
     sh.uniforms.uSkin = m.userData.uSkin;
@@ -234,7 +234,8 @@ export function figureMaterial(faceTex, skinLin = null) {
       .replace('#include <aomap_fragment>', `#include <aomap_fragment>
         reflectedLight.indirectDiffuse *= vMat.w;
         reflectedLight.indirectSpecular *= mix(1.0, vMat.w, 0.85);
-        reflectedLight.directDiffuse *= mix(1.0, vMat.w, 0.35);`);
+        reflectedLight.directDiffuse *= mix(1.0, vMat.w, 0.35);`)
+      .replace('#include <dithering_fragment>', HIGHLIGHT_CAP);
   };
   return m;
 }
@@ -402,10 +403,28 @@ function handGeometry() {
   return handGeo;
 }
 
+/**
+ * A soft shoulder on a figure's lit colour, below the bloom threshold: polished steel and gilt
+ * catch the candles as highlights, never as glowing emitters (only flames bloom).
+ */
+const HIGHLIGHT_CAP = `
+  { vec3 kk = max(gl_FragColor.rgb - 0.55, 0.0); gl_FragColor.rgb = gl_FragColor.rgb - kk + kk / (1.0 + 3.0 * kk); }
+  #include <dithering_fragment>`;
+export function capHighlights(m) {
+  const prev = m.onBeforeCompile;
+  m.onBeforeCompile = (sh, r) => {
+    prev?.call(m, sh, r);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <dithering_fragment>', HIGHLIGHT_CAP);
+  };
+  const key = m.customProgramCacheKey?.bind(m);
+  m.customProgramCacheKey = () => `${key ? key() : ''}|hcap`;
+  return m;
+}
+
 function gearMats() {
-  const M = (o) => new THREE.MeshStandardMaterial(o);
+  const M = (o) => capHighlights(new THREE.MeshStandardMaterial(o));
   return {
-    glove: M({ color: 0x3a2618, roughness: 0.7 }),
+    glove: M({ color: 0x7a5434, roughness: 0.6 }),
     steel: M({ color: 0xc4c8d0, metalness: 1, roughness: 0.26 }),
     darkSteel: M({ color: 0x70737a, metalness: 1, roughness: 0.4 }),
     gilt: M({ color: 0xd6aa52, metalness: 1, roughness: 0.3 }),

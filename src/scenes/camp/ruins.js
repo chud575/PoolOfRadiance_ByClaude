@@ -265,7 +265,8 @@ export function buildRuins(root, { G, Mt, night, stoneMat, beamMat }) {
       x += bw + (hr(k, seed + 7) < 0.35 ? 0.6 + hr(k, seed + 10) * 2 : 0);
       k++;
     }
-    const m = new THREE.Mesh(G(mergeGeometries(geos)), Mt(layerMaterial(colHex, haze, 3.2 * scaleH, alpha)));
+    // (the mist pools deeper at the foot of the farther layers)
+    const m = new THREE.Mesh(G(mergeGeometries(geos)), Mt(layerMaterial(colHex, haze, (z < -50 ? 6.5 : z < -35 ? 4.6 : 3.2) * scaleH, alpha)));
     for (const gg of geos) gg.dispose();
     m.position.set(0, 0, z);
     m.renderOrder = -1;
@@ -298,7 +299,10 @@ export function buildRuins(root, { G, Mt, night, stoneMat, beamMat }) {
   ridge(-150, 62, 1.3, night ? 0x1c2546 : 0x8090a8, 0.75);
   ridge(-105, 38, 4.1, night ? 0x151c38 : 0x6c7c94, 0.7);
   ridge(-72, 21, 2.2, night ? 0x10162c : 0x5a687e, 0.65);
-  cityLayer(-40, night ? 0x0d1428 : 0x6a7890, 61, 1.25, 1);
-  cityLayer(-27, night ? 0x0a0f1e : 0x5a6474, 71, 0.85, 1);
+  // three layers of the burnt city stepping back into the mist: each farther one paler and
+  // hazier, so the night has depth instead of one flat blue cut-out
+  cityLayer(-56, night ? 0x1a2442 : 0x7a88a0, 53, 1.6, 1);
+  cityLayer(-40, night ? 0x111a33 : 0x6a7890, 61, 1.25, 1);
+  cityLayer(-27, night ? 0x070b16 : 0x5a6474, 71, 0.85, 1);
   return group;
 }

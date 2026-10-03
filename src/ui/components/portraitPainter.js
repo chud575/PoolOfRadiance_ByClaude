@@ -1537,6 +1537,23 @@ export function portraitKey(ch, scale = 1, crop = 'head') {
 export function hasPortrait(ch, scale = 1, crop = 'head') {
   return urlCache.has(portraitKey(ch, scale, crop));
 }
+/**
+ * Any portrait of this sitter already painted, at whatever size (the largest first), so a panel
+ * that wants a new size shows the face at once instead of a placeholder. null if none.
+ * @returns {{url: string, scale: number}|null}
+ */
+export function anyPortrait(ch, crop = 'head') {
+  const pre = `${appearanceKey(ch)}|`;
+  let best = null;
+  for (const [k, u] of urlCache) {
+    if (!k.startsWith(pre)) continue;
+    const [, sc, cr] = k.slice(pre.length - 1).split('|');
+    const n = Number(sc);
+    if (cr !== crop || !Number.isFinite(n)) continue;
+    if (!best || n > best.scale) best = { url: u, scale: n };
+  }
+  return best;
+}
 function remember(key, u, persist = true) {
   if (urlCache.size > 160) urlCache.delete(urlCache.keys().next().value);
   urlCache.set(key, u);

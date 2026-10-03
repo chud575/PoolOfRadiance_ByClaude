@@ -24,6 +24,14 @@ function shortClass(spec) {
   return parts.map((p) => AB[p] ?? p[0].toUpperCase()).join('/');
 }
 
+/** A list row's one-line effect: the first sentence of a long tip (the card and tooltip hold the rest). */
+function rowTip(sp) {
+  const t = sp?.tip ?? '';
+  if (t.length <= 64) return t;
+  const m = t.match(/^(.{20,}?[.;])\s/);
+  return m ? m[1].replace(/;$/, '.') : t;
+}
+
 export function castingClassesOf(ch) {
   return activeClasses(ch).filter((c) => CASTERS.includes(c) && (slotsFor(ch, c).some((n) => n > 0)));
 }
@@ -144,7 +152,7 @@ export class SpellPanel {
           onclick: () => { this.focus = id; if (!full) this.add(id); else { this.ctx.ui.toast(`No free level ${ROMAN[i + 1]} slots — remove a spell first.`); this.render(); } },
         }, [
           h('img.gl', { src: spellGlyphURL(id), alt: '' }),
-          h('span', [h('div.nm', [sp.name]), h('div.tg', [sp.tip ?? ''])]),
+          h('span', [h('div.nm', [sp.name]), h('div.tg', [rowTip(sp)])]),
           h('span.ct', [count ? `×${count}` : '']),
         ]));
       }
@@ -162,7 +170,7 @@ export class SpellPanel {
           const sp = getSpell(id);
           lists.push(h('div.pc-spell.locked', { tabindex: '0', dataset: { ...lore(spellTip(id, cls)), nav: '1' }, onmouseenter: () => this._swapCard(id, cls), onfocus: () => this._swapCard(id, cls) }, [
             h('img.gl', { src: spellGlyphURL(id, { dim: true }), alt: '' }),
-            h('span', [h('div.nm', [sp?.name ?? id]), h('div.tg', [sp?.tip ?? ''])]),
+            h('span', [h('div.nm', [sp?.name ?? id]), h('div.tg', [rowTip(sp)])]),
             h('span.ct', ['']),
           ]));
         }
@@ -316,7 +324,7 @@ export class SpellPanel {
     return h('div.pc-grimoire', [
       h('img', { src: c.toDataURL(), alt: '' }),
       h('div.cap', [arcane ? `Spell book · ${ch.spells?.book?.length ?? known} spells` : `Prayers · ${known} granted`]),
-      h('div.sub', [arcane ? `INT ${ch.abilities?.int ?? '?'}: learns to level ${int.maxSpellLevel ?? '—'}, ${int.knowChance ?? '—'}% to know` : `WIS ${ch.abilities?.wis ?? '?'}: bonus prayers for high wisdom`]),
+      h('div.sub', [arcane ? `INT ${ch.abilities?.int ?? '?'} · to level ${int.maxSpellLevel ?? '—'} · ${int.knowChance ?? '—'}% to know` : `WIS ${ch.abilities?.wis ?? '?'} · bonus prayers`]),
     ]);
   }
 
@@ -364,7 +372,7 @@ export class SpellPanel {
       return h(`div.pc-spell${this.focus === id ? '.sel' : ''}${prob ? '.dis' : ''}`, {
         dataset: lore(spellTip(id, cls)),
         onclick: () => { this.focus = id; this.render(); },
-      }, [h('img.gl', { src: spellGlyphURL(id, { dim: !!prob }), alt: '' }), h('span', [h('div.nm', [sp.name]), h('div.tg', [prob ?? sp.tip ?? ''])]), h('span.ct', [`×${mem.filter((x) => x === id).length}`])]);
+      }, [h('img.gl', { src: spellGlyphURL(id, { dim: !!prob }), alt: '' }), h('span', [h('div.nm', [sp.name]), h('div.tg', [prob ?? rowTip(sp)])]), h('span.ct', [`×${mem.filter((x) => x === id).length}`])]);
     });
     const left = h('div.pc-sect', { style: { display: 'flex', flexDirection: 'column', minHeight: '0' } }, [
       sub,

@@ -153,10 +153,15 @@ float hairField(vec3 p, float sk) {
     }
     if (uHair == 11) {
       // a dwarf woman's two plaits, heavy and long, in front of the shoulders
-      vec3 bp = vec3(abs(p.x), p.y, p.z) - vec3(0.078 * W, -0.04, 0.004);
+      vec3 aq = vec3(abs(p.x), p.y, p.z);
+      vec3 bp = aq - vec3(0.08 * W, -0.035, 0.0);
       bp.z -= 0.2 * bp.y;
       bp.x -= 0.06 * bp.y;
-      d = smin(d, plait(bp, 0.24, 0.02), 0.014);
+      d = smin(d, plait(bp, 0.23, 0.019), 0.014);
+      // each plait is gathered from the temple: a swept band of hair over the ear into its top,
+      // so the braids hang from the head and never float beside the cheek
+      float sweep = sdRC(aq, vec3(0.058 * W, 0.045, 0.034), vec3(0.08 * W, -0.03, 0.002), 0.013, 0.017) + clumps(p, 18.0, 0.0022);
+      d = smin(d, sweep, 0.016);
       d = smin(d, sdEll(p - vec3(0.0, -0.01, -0.07), vec3(0.068, 0.06, 0.05)) + clumps(p, 20.0, 0.002), 0.02);
     }
     if (uHair == 8) {
@@ -185,16 +190,20 @@ float beardMask(vec3 p) {
   float u = q.x / 0.033;
   float cy = tipY - 0.0135 - 0.014 * u * u;
   float th = 0.0058 * (1.0 - 0.7 * u * u) + 0.0012;
-  float mo = sat((th - abs(p.y - cy)) / 0.0018) * sat((1.0 - u) / 0.12) * sat((p.z - 0.068) / 0.01);
+  float mo = sat((th - abs(p.y - cy)) / 0.003) * sat((1.0 - u) / 0.2) * sat((p.z - 0.066) / 0.012);
   float m = uBeard >= 2 ? mo : 0.0;
   if (uBeard >= 3) {
     float chin = sat((mY - 0.009 - p.y) / 0.004);
-    float lipHole = sat((length(vec2(q.x / 0.0125, (p.y - mY + 0.0045) / 0.0052)) - 1.0) / 0.25);
+    float lipHole = sat((length(vec2(q.x / 0.0125, (p.y - mY + 0.0045) / 0.0052)) - 1.0) / 0.45);
     float region;
     if (uBeard == 3) region = chin * sat((0.025 - q.x) / 0.008) * sat((p.z - 0.04) / 0.02);
     else {
       float bTop = -0.006 - 0.5 * max(p.z, 0.0);
-      region = sat((bTop - p.y) / 0.006) * sat((p.y + 0.16) / 0.01) * lipHole * sat((p.z + 0.03) / 0.02);
+      // the cheek line feathers over a finger's width (sparse hairs thickening), never a cut edge
+      bTop += 0.003 * (vnoise2(vec2(p.x, p.z) * 260.0 + uSeed * 5.0) - 0.5);
+      // the lower border is a rounded U under the chin (never a square cut), shorter at the sides
+      float bBot = -0.165 + 0.075 * pow(sat(q.x / 0.06), 1.6) + 0.02 * sat(-p.z / 0.03);
+      region = smoothstep(0.0, 1.0, sat((bTop - p.y) / 0.014)) * smoothstep(0.0, 1.0, sat((p.y - bBot) / 0.02)) * lipHole * sat((p.z + 0.03) / 0.02);
     }
     m = max(m, region);
   }
@@ -205,8 +214,11 @@ float beardField(vec3 p, float sk) {
   if (uBeard < 2) return 1e3;
   float m = beardMask(p);
   float T = uBeard == 2 ? 0.0055 : uBeard == 3 ? 0.007 : 0.008 * (1.0 + 0.5 * (BLEN - 1.0));
-  float d = sk - T * m + 0.002 * (1.0 - m);
-  if (m > 0.0 && abs(d) < 0.012) d += fallClumps(p, 15.0, 0.005, 0.8) * m;
+  // the mass tapers to nothing at its border, so it grows out of the cheek and lip
+  // thin over the cheeks, full over the chin and jaw: the beard has a form, not a slab's thickness
+  float full = uBeard >= 4 ? 0.45 + 0.75 * sat((-p.y - 0.035) / 0.06) * sat(1.0 - abs(p.x) / 0.075) : 1.0;
+  float d = sk - T * full * m * m * (3.0 - 2.0 * m) + 0.002 * (1.0 - m);
+  if (m > 0.0 && abs(d) < 0.012) d += (fallClumps(p, 11.0, 0.0055, 1.5) + fallClumps(p * 1.7 + 0.3, 13.0, 0.002, 2.2)) * m;
   if (uBeard == 3) d = smin(d, sdRC(p, vec3(0.0, -0.11, 0.072), vec3(0.0, -0.15, 0.077), 0.016, 0.006) + fallClumps(p, 20.0, 0.0015, 0.3), 0.012);
   // the lower edge of a full beard breaks into tapering locks of different lengths (no flat curtain)
   if (uBeard >= 4 && p.y < -0.08 && p.z > 0.02 && abs(p.x) < 0.07) {
@@ -490,14 +502,17 @@ float gLipMask;
 vec3 skinAlbedo(vec3 p) {
   vec3 q = vec3(abs(p.x), p.y, p.z);
   float lumS = dot(uSkin, vec3(0.3, 0.59, 0.11));
-  vec3 base = mix(uSkin, vec3(lumS), 0.3) * 0.74;
+  // pale complexions are held down in value and kept saturated, so a fair face under the key
+  // still models in warm half-tones instead of burning out to a white mask
+  vec3 base = mix(uSkin, vec3(lumS), mix(0.3, 0.12, sat((lumS - 0.35) / 0.25))) * 0.74;
+  base *= clamp(0.4 / max(lumS, 1e-3), 0.7, 1.0);
   float dark = sat((0.25 - lumS) / 0.2);
   float ex = EX();
   float mY = MOUTHY();
   float tipY = TIPY();
-  vec3 ruddy = base * vec3(1.14, 0.8, 0.8);
-  vec3 warm = base * vec3(1.07, 1.02, 0.84);
-  vec3 cool = base * vec3(0.8, 0.88, 1.04);
+  vec3 ruddy = base * vec3(1.18, 0.76, 0.74);
+  vec3 warm = base * vec3(1.08, 1.0, 0.8);
+  vec3 cool = base * vec3(0.78, 0.86, 1.02);
   float cheek = gau2((q.xy - vec2(0.04 * W, -0.03)) / vec2(0.03, 0.026)) * sat((p.z - 0.03) / 0.03);
   float noseZ = gau2((p.xy - vec2(0.0, tipY + 0.002)) / vec2(0.011, 0.012)) * sat((p.z - 0.09) / 0.012);
   float earZ = sat((q.x - 0.062 * W) / 0.008) * sat((p.y + 0.05) / 0.02);
@@ -547,8 +562,15 @@ vec3 skinAlbedo(vec3 p) {
     c = mix(c, c * vec3(0.78, 0.68, 0.74), um * 0.55);
     c = mix(c, c * vec3(1.06, 1.03, 1.02), smoothstep(0.2, 0.7, lr) * 0.5);
     // the parting line and the corners
-    c = mix(c, base * vec3(0.4, 0.2, 0.2), lf3.z * 0.6 * sat((p.z - 0.07) / 0.008));
-    c = mix(c, base * vec3(0.5, 0.33, 0.32), gau2((vec2(q.x, p.y) - vec2(0.0204 * MOUTH, mY)) / vec2(0.0024, 0.0018)) * 0.45);
+    c = mix(c, base * vec3(0.26, 0.12, 0.12), lf3.z * 0.85 * sat((p.z - 0.07) / 0.008));
+    // the corners: a small dark pocket where the lips tuck into the cheek
+    c = mix(c, base * vec3(0.36, 0.22, 0.22), gau2((vec2(q.x, p.y) - vec2(0.0204 * MOUTH, mY - 0.0004)) / vec2(0.0032, 0.0022)) * 0.7);
+  }
+  // where a beard thins out at its border the skin shows through a stipple of hairs
+  if (uBeard >= 2 && FEM < 0.5) {
+    float bm = beardMask(p);
+    float hairs = smoothstep(0.45, 0.75, vnoise(p * vec3(2200.0, 900.0, 2200.0) + uSeed * 3.0));
+    c = mix(c, mix(c, uHairC * 0.75, 0.85), sat(bm * 1.6) * (0.25 + 0.6 * hairs));
   }
   // pores, mottling, freckles and age spots
   float pores = vnoise(p * 2600.0 + uSeed * 31.0);
@@ -612,18 +634,18 @@ vec3 eyeAlbedo(vec3 p, out float iris) {
   vec3 q = vec3(abs(p.x), p.y, p.z);
   vec3 ec = vec3(EX(), 0.0, EZ());
   vec3 v = normalize(q - ec);
-  vec3 g = normalize(vec3(uGaze.x * sign(p.x + 1e-5), uGaze.y, uGaze.z));
+  vec3 g = gazeQ(p);
   float ang = acos(clamp(dot(v, g), -1.0, 1.0));
   float ir = 0.6;
   float pr = 0.17 + 0.03 * h12(vec2(uSeed));
   iris = smoothstep(ir + 0.03, ir - 0.03, ang);
-  vec3 scl = vec3(0.68, 0.62, 0.56) * mix(vec3(1.0), vec3(0.95, 0.7, 0.66), smoothstep(0.8, 1.4, ang));
+  vec3 scl = vec3(0.56, 0.5, 0.45) * mix(vec3(1.0), vec3(0.95, 0.7, 0.66), smoothstep(0.8, 1.4, ang));
   vec3 bx = normalize(cross(g, vec3(0.0, 1.0, 0.0)));
   vec3 by = cross(bx, g);
   float a = atan(dot(v, by), dot(v, bx));
   float fib = 0.65 + 0.35 * vnoise(vec3(a * 14.0, ang * 30.0, 1.0)) + 0.15 * sin(a * 42.0);
   vec3 ec2 = mix(uEyeC, vec3(dot(uEyeC, vec3(0.33))), 0.25) * 1.1;
-  vec3 ic = mix(ec2 * 1.45 + vec3(0.04, 0.03, 0.0), ec2 * 0.8, smoothstep(pr, ir, ang)) * fib;
+  vec3 ic = mix(ec2 * 1.15 + vec3(0.03, 0.022, 0.0), ec2 * 0.62, smoothstep(pr, ir, ang)) * fib;
   ic = mix(ic, ec2 * 0.18, smoothstep(ir - 0.12, ir, ang));
   ic = mix(vec3(0.01), ic, smoothstep(pr - 0.02, pr + 0.02, ang));
   vec3 c = mix(scl, ic, iris);
@@ -705,7 +727,8 @@ void main() {
       float hh = h.x;
       float y = min(hh * hh / (2.0 * sph), hh * 0.98);
       float dd = sqrt(max(hh * hh - y * y, 0.0));
-      sres = min(sres, 7.0 * dd / max(0.0001, st - y));
+      // (a wide penumbra: the nose throws a soft form shadow, never a knife edge)
+      sres = min(sres, 4.2 * dd / max(0.0001, st - y));
       sph = hh;
       st += clamp(hh, 0.004, 0.05);
       sub++;
@@ -736,8 +759,8 @@ void main() {
   vec3 pb = bodyLocal(pw);
   vec3 v = -rd;
   // ---- lights (world): warm key high at the left, cool fill low right, moonlit rim behind right
-  vec3 Lf = normalize(vec3(0.75, -0.05, 0.65));
-  vec3 Lr = normalize(vec3(0.85, 0.35, -0.55));
+  vec3 Lf = normalize(vec3(0.75 * uSide, -0.05, 0.65));
+  vec3 Lr = normalize(vec3(0.85 * uSide, 0.35, -0.55));
   vec3 Ck = vec3(1.0, 0.92, 0.82) * uLightK.x;
   vec3 Cf = vec3(0.34, 0.37, 0.5) * uLightK.y;
   vec3 Cr = vec3(0.55, 0.72, 1.0) * uLightK.z;
@@ -785,7 +808,9 @@ void main() {
     float lowLash = exp(-pow((aq.y - ll.y + 0.0004) / 0.0006, 2.0)) * inEye * 0.4;
     alb = mix(alb, uHairC * 0.15 + vec3(0.012, 0.008, 0.008), sat(lash * 1.2 + lowLash) * 0.95);
     detail = 0.25 + 0.7 * smoothstep(1.0, 0.3, length((vec2(abs(ph.x), ph.y) - vec2(EX(), -0.002)) / vec2(0.022, 0.016)));
-    detail = max(detail, 0.6 * smoothstep(1.0, 0.4, length((ph.xy - vec2(0.0, MOUTHY())) / vec2(0.025, 0.01))));
+    detail = max(detail, 0.95 * smoothstep(1.0, 0.4, length((ph.xy - vec2(0.0, MOUTHY())) / vec2(0.026, 0.012))));
+    // the nose tip and wings keep their drawing too
+    detail = max(detail, 0.7 * smoothstep(1.0, 0.4, length((ph.xy - vec2(0.0, TIPY())) / vec2(0.016, 0.012))));
   } else if (mat < 2.5) {
     float iris;
     alb = eyeAlbedo(ph, iris);
@@ -940,13 +965,16 @@ void main() {
   }
   // ambient: a cool fill from the right, the sky above, warm light bounced up from the chest
   vec3 Cb = vec3(0.42, 0.26, 0.16) * 0.2 * uLightK.w;
-  vec3 amb = Cf * (0.5 + 0.5 * dot(n, Lf)) * ao + Csky * ao * (0.35 + 0.65 * sat(n.y * 0.5 + 0.5)) + Cb * ao * sat(-n.y * 0.6 + 0.3);
+  vec3 amb = Cf * sat(0.2 + 0.8 * dot(n, Lf)) * ao + Csky * ao * (0.25 + 0.75 * sat(n.y * 0.5 + 0.5)) + Cb * ao * sat(-n.y * 0.6 + 0.3);
+  // the shadow side of a face is a shadow: the fill only lifts it, so the head models in two
+  // masses (light and shade) as a painter blocks it, never an evenly lit mask
+  if (sss > 0.5) amb *= 0.62;
   // skin scatters the light it gets: its shadows stay warm-blooded, never the blue-grey of stone;
   // the core shadow takes less of the fill, and warm light bounced off the shoulder and collar
   // lifts the far side of the shadow (reflected light), never as bright as the half-tone
   if (sss > 0.5) {
     amb *= vec3(1.08, 1.0, 0.95);
-    vec3 Lb = normalize(vec3(0.55, -0.55, 0.45));
+    vec3 Lb = normalize(vec3(0.55 * uSide, -0.55, 0.45));
     amb += vec3(0.5, 0.32, 0.22) * 0.14 * uLightK.w * sat(dot(n, Lb) * 0.5 + 0.5) * (1.0 - litF) * ao;
   }
   vec3 diffuse = Ck * dif + amb;
@@ -982,7 +1010,11 @@ void main() {
     // a greyed, slightly cool passage between the warm light and the warm shadow
     float shade = sat(1.0 - dif.g * 1.6);
     float lumC = dot(col, vec3(0.3, 0.59, 0.11));
-    col = mix(col, vec3(lumC) * vec3(0.86, 0.93, 1.1), shade * 0.22);
+    // the lips keep their red in the shadow (a painter never lets the mouth go out in the shade:
+    // the whole mouth stays centred under the nose, not only its lit half)
+    float lipKeep = mat < 1.5 ? gLipMask : 0.0;
+    col = mix(col, vec3(lumC) * vec3(0.86, 0.93, 1.1), shade * 0.22 * (1.0 - lipKeep));
+    col += alb * vec3(0.16, 0.035, 0.035) * lipKeep * (1.0 - litF) * ao;
     col = mix(col, vec3(lumC) * vec3(0.93, 0.97, 1.04), halfT * 0.3);
   }
   // eye catch-light: the key's window and a soft reflection of the room

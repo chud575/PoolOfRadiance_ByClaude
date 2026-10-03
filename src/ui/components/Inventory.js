@@ -82,9 +82,8 @@ export function compareItem(ch, entry) {
     const b = cdef ? (cdef.acBonus ?? 1) + mag(cur, cdef) : 0;
     if (a !== b) bits.push({ text: `AC ${a > b ? '−' : '+'}${Math.abs(a - b)}`, good: a > b });
   }
-  const dw = (def.weight ?? 0) - (cdef?.weight ?? 0);
-  if (dw) bits.push({ text: `${dw > 0 ? '+' : '−'}${Math.abs(dw)} cn`, good: dw < 0 });
-  return { against: cdef ? itemName(cur) : 'nothing readied', bits };
+  // (Readying moves an item from pack to hand; the weight carried is unchanged, so no cn line.)
+  return { against: cdef ? itemName(cur) : 'nothing', bits };
 }
 /** Ammunition readied without a launcher that shoots it. */
 export function ammoProblem(ch) {
@@ -318,7 +317,7 @@ export class InventoryPanel {
       const prob = equipProblem(ch, e.id);
       const magic = isMagical(e) && e.identified !== false;
       const cmp = compareItem(ch, e);
-      const tip = `${itemName(e)}${itemStatLine(def, e) ? ` — ${itemStatLine(def, e)}` : ''}${cmp && cmp.bits.length ? `. vs ${cmp.against}: ${cmp.bits.map((b) => b.text).join(', ')}` : ''}`;
+      const tip = `${itemName(e)}${itemStatLine(def, e) ? ` — ${itemStatLine(def, e)}` : ''}${cmp && cmp.bits.length ? `. Replaces ${cmp.against}: ${cmp.bits.map((b) => b.text).join(', ')}` : ''}`;
       return h(`button.pc-tile.r-${itemRarity(e)}${i === this.sel ? '.sel' : ''}${e.equipped ? '.ready' : ''}${prob && slotOf(def) ? '.bad' : ''}`, {
         draggable: true,
         ondragstart: (ev) => { this.sel = i; ev.dataTransfer?.setData('text/plain', String(i)); },
@@ -362,11 +361,11 @@ export class InventoryPanel {
       ]));
       detail.push(h('div.pc-kv', [
         h('span.k', ['Usable']), h('span.v', { style: { color: prob && slot ? '#ff9a86' : 'var(--por-green)' } }, [slot ? (prob ? prob : 'yes') : def.type === 'potion' || def.type === 'scroll' || def.type === 'wand' ? 'use' : '—']),
-        ...(slot ? [h('span.k', ['In that slot']), h('span.v', { style: { fontSize: '0.86em' } }, [e.equipped ? 'this' : inSlot ? itemName(inSlot) : 'nothing'])] : []),
+        h('span.k', ['Weight']), h('span.v', [`${(def.weight ?? 0) * (e.qty ?? 1)} cn`]),
       ]));
       const cmp = compareItem(ch, e);
       detail.push(h('div.pc-compare', [
-        h('div.h', [cmp ? `Readying it, against ${cmp.against}` : e.equipped ? 'Readied now' : slot ? 'Readying it' : 'Carried']),
+        h('div.h', [cmp ? `Replaces: ${cmp.against}` : e.equipped ? 'Readied now' : slot ? `Replaces: ${inSlot ? itemName(inSlot) : 'nothing'}` : 'Carried']),
         cmp && cmp.bits.length ? h('div.b', cmp.bits.map((b) => h(`span.${b.good ? 'up' : 'down'}`, [b.good ? '▲ ' : '▼ ', b.text])))
           : h('div.b', [h('span', [cmp ? 'No difference' : e.equipped ? (itemStatLine(def, e) || 'Worn') : slot ? (itemStatLine(def, e) || 'Fills an empty slot') : 'Weight only'])]),
       ]));

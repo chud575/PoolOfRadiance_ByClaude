@@ -18,7 +18,7 @@ const h3 = (x, y, z, s) => hr(Math.round(x * 97) * 31 + Math.round(y * 89) * 17 
 
 let base = null;
 function unitBox() {
-  if (!base) base = new THREE.BoxGeometry(1, 1, 1, 2, 2, 2);
+  if (!base) base = new THREE.BoxGeometry(1, 1, 1, 4, 3, 3);
   return base;
 }
 
@@ -62,6 +62,10 @@ export function masonryGeometry(blocks) {
         // the top of a broken course loses more from its upper arrises
         const topK = ly > 0.4 ? 1 + dmg * 1.4 : 1;
         px -= (px / len) * amt * topK; py -= (py / len) * amt * topK; pz -= (pz / len) * amt * topK;
+        // weathered faces: the stone is worn into shallow hollows and pitted, more where damaged
+        const wx = lx * sx * 9 + seed, wy = ly * sy * 9, wz = lz * sz * 9;
+        const wear = (Math.sin(wx * 1.3 + wy * 0.7) * Math.sin(wy * 1.1 - wz * 0.9) * 0.5 + Math.sin(wx * 3.7 + wz * 2.9 + wy) * 0.25) * (0.006 + dmg * 0.012);
+        px += fx * wear; py += fy * wear; pz += fz * wear;
       }
       v.set(px, py, pz).applyMatrix4(m);
       pos[o * 3] = v.x; pos[o * 3 + 1] = v.y; pos[o * 3 + 2] = v.z;
