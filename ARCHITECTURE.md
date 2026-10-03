@@ -237,8 +237,27 @@ the spell — a group of one kind gets exactly the PHB number (two bugbears: 1d2
   to creatures in the area — only the creature it is cast upon saves (`castSpell`/`castInBattle` `centre`);
   Stinking Cloud lingers 1 round/level (battle.js `cloudExposure`: saves vs poison on entering or each round inside); Ray of Enfeeblement range 1 + L/4;
   Mirror Image 1d4 images, 3 rounds/level (1e PHB); Strength above 18 adds tenths (10% exceptional per point, PHB).
-* Deliberate simplifications: Shield's +1 to saves vs frontal attacks is not modelled (its AC 2 hurled / 3 device-propelled /
-  4 other is); thieves may be any alignment but LG (PoR creation rule); clerics may use slings (Gold Box);
+* **Concentration** (conditions.js): `isConcentrating(c)` → `'spiritualHammer' | 'chanting' | null`, `concentrationOf(c)`,
+  `breakConcentration(c, {only})` → ids removed (with every linked effect on others: Chant's +1/−1), `linkConcentration`.
+  Casting any spell or using a wand/scroll/potion (`castSpell` → `flags.concentrationBroken`) and any weapon attack
+  (`resolveAttack` → `concentrationBroken`) end it. **Spiritual Hammer**: `hammerTurn` at the cleric's turn start *is* the
+  cleric's action — it zeroes `attacksLeft` and `directingHammer(c)` blocks spells (`battleCastProblem`) and items
+  (`battleItemUse`) until `roundUpkeep` clears it; with nobody in reach the hammer waits and the cleric may act (ending it);
+  held/asleep/down ends it. **Chant**: PHB casting time 1 turn (`castingTime` 100; `castingDelay` clamps to the round, so it
+  takes hold at the round's end), lasts while the cleric chants: damage (`onDamaged`), moving off the square, silence or
+  incapacity (`roundUpkeep` → `effectEnd` events), attacking or casting end it. **UI/combat owner**: a "Release hammer /
+  stop chanting" command calls `breakConcentration(c.ref ?? c)`.
+* Saves: the DEX defensive adjustment applies both ways to dodgeable attacks (`dodge`: fireball, lightning bolt, **breath
+  weapons**, pits): DEX 3 −4 … DEX 18 +4. Monster saves (`combat.savingThrow`) go through `rollSave`, so element
+  (Resist Fire/Cold), source (Prot. from Good/Evil) and mental options apply to monsters too. Shield gives +1 to all saves
+  (PHB: vs frontal attacks; the grid has no facing for spells). Silence in battle: `castInBattle` takes `o.at` (the aim
+  square's occupant is the `centre`; empty square → nobody saves) or falls back to the first (nearest-the-aim) target.
+* Thief skills in armour (`classes.THIEF_ARMOR_ADJ`, UA): leather none; padded/studded PP −30, OL −10, F/RT −10, MS −20,
+  HS −20, HN −10, CW −30; elfin chain PP −20, OL −5, F/RT −5, MS −10, HS −10, HN −5, CW −20; anything heavier forbids them.
+  Wand of Magic Missiles (DMG): one 2-5 missile per charge (`ITEM_RULES.wandMagicMissile.casterLevel` 1); wands of fire
+  and lightning cast at 6th (6-die bolts). Combatant `range` is `deriveStats(ch).range` (rules `missileRange`: short bow 15)
+  — **UI owner**: show `missileRange(def)` in Inventory.js rather than the raw data `range`.
+* Deliberate simplifications: thieves may be any alignment but LG (PoR creation rule); clerics may use slings (Gold Box);
   halfling fighters reach 6th flat (PoR); magic armour moves at the PHB base rate (its benefit is half weight).
 * Memorization (camp.js): `knownSpells(ch, cls)`, `slotsFor`, `checkLoadout`, `prepareSpells(ch, cls, ids)`, `autoPrepare(ch)`,
   `spellsToMemorize`, `memorizationTime(ch)` (1e: 4/6/8 h rest + 15 min per spell level, net of banked study),
@@ -298,9 +317,10 @@ rounds, once per battle), `regenerationOf(c)` (`regenerate:N` from the 3rd round
 **Battle bridge** (battle.js — what the tactical CombatEngine calls): `fxView(c)` makes `c.fx` a live Proxy over the
 creature's rules effects (`fx.blessed` → rounds left, `fx.asleep = 5` adds the effect, `delete fx.held` removes it;
 `prot`/`mirror` alias `protEvil`/`mirrorImage`; other keys are scratch), `ableToAct`, `ableToCast`,
-`attacksThisTurn(c, round, target, {ranged, weapon})`, `castInBattle(rng, id, caster, targets, {level, fromItem})` →
+`attacksThisTurn(c, round, target, {ranged, weapon})`, `castInBattle(rng, id, caster, targets, {level, fromItem, at, centre})` →
 CastResult + scene `hits` `{id, dmg, heal, saved, killed, effect, bolts, text}`, `roundUpkeep(c)` → bleed/down/wake
-events, `hammerTurn` (Spiritual Hammer's later blows), `specialsOnHit`. The engine resolves every spell, attack count,
+events (+ concentration upkeep), `hammerTurn` (Spiritual Hammer's later blows; the cleric's action for the round),
+`directingHammer(c)`, `breakConcentration`/`isConcentrating`, `specialsOnHit`. The engine resolves every spell, attack count,
 condition and end-of-round tick through these; it uses the `'slay'` helpless rule (Gold Box sleep/hold).
 * `battleTargeting(id, caster, {level})` — **the** source of spell targeting (range, shape, size, maxTargets at the
   caster's level and class) in the engine's vocabulary; `logic/spells.js` only adds VFX/pick hints (`engine.tactics`).

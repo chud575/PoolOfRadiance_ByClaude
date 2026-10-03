@@ -47,7 +47,7 @@ describe('modifiers', () => {
     const m = effectMods(t);
     expect(m.hit).toBe(2);
     expect(m.dmg).toBe(1);
-    expect(m.save).toBe(1);
+    expect(m.save).toBe(2); // prayer +1, shield +1 (PHB)
     expect(m.acVsMissile).toBe(3);
     expect(m.acVsHurled).toBe(2);
     expect(m.acVsMelee).toBe(4);

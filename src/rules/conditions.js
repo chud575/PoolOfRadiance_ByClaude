@@ -70,7 +70,9 @@ export const CONDITIONS = {
   chant: { name: 'Chant', kind: 'buff', magical: true, mods: { hit: 1, dmg: 1, save: 1 }, desc: '+1 to hit, damage and saves.' },
   protEvil: { name: 'Prot. from Evil', kind: 'buff', magical: true, mods: { vsEvil: { ac: -2, save: 2 } }, desc: '-2 AC and +2 saves against evil creatures.' },
   protGood: { name: 'Prot. from Good', kind: 'buff', magical: true, mods: { vsGood: { ac: -2, save: 2 } }, desc: '-2 AC and +2 saves against good creatures.' },
-  shielded: { name: 'Shield', kind: 'buff', magical: true, mods: { acVsHurled: 2, acVsMissile: 3, acVsMelee: 4, immune: ['magicMissile'] }, desc: 'AC 2 vs hurled missiles, AC 3 vs arrows, bolts and sling stones, AC 4 vs all else; immune to magic missile.' },
+  shielded: { name: 'Shield', kind: 'buff', magical: true, mods: { acVsHurled: 2, acVsMissile: 3, acVsMelee: 4, immune: ['magicMissile'], save: 1 }, desc: 'AC 2 vs hurled missiles, AC 3 vs arrows, bolts and sling stones, AC 4 vs all else; +1 to saves; immune to magic missile.' },
+  // PHB Shield also gives +1 on saves vs frontal attacks; the grid has no
+  // facing for spells and breath, so it applies to every save.
   enlarged: { name: 'Enlarged', kind: 'buff', magical: true, mods: { dmg: 2 }, desc: 'Grown huge: heavier blows.' },
   strength: { name: 'Strength', kind: 'buff', magical: true, desc: 'Magically increased strength.' },
   giantStrength: { name: 'Giant Strength', kind: 'buff', magical: true, desc: 'Strength of a giant.' },
