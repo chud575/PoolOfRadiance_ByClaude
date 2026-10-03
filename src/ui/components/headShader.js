@@ -64,7 +64,7 @@ const SKULL = {
   Ranger: { cran: 0.98, slope: 0.35, edepth: 0.65, hollow: 0.5, jdepth: 0.25, prot: 0.0, hook: 0.4, nwidth: 0.95, smile: -0.06, lines: 0.2, eopen: 0.92, bthick: 1.05 },
   Priestess: { cran: 1.06, slope: 0.15, edepth: 0.5, hollow: 0.05, jdepth: -0.25, prot: -0.05, hook: -0.15, nwidth: 0.92, smile: 0.22, lines: 0.3, eopen: 0.98, bthick: 0.9 },
   Duelist: { cran: 0.96, slope: 0.3, edepth: 0.55, hollow: 0.55, jdepth: -0.1, prot: 0.12, hook: 0.7, nwidth: 0.86, smile: 0.18, lines: 0.1, eopen: 0.9, bthick: 0.95 },
-  Sorceress: { cran: 1.09, slope: 0.25, edepth: 0.75, hollow: 0.7, jdepth: -0.35, prot: 0.15, hook: 0.25, nwidth: 0.84, smile: 0.05, lines: 0.05, eopen: 1.06, bthick: 0.85 },
+  Sorceress: { cran: 1.09, slope: 0.25, edepth: 0.75, hollow: 0.55, jdepth: -0.2, prot: -0.1, hook: 0.1, nwidth: 0.84, smile: 0.05, lines: 0.05, eopen: 1.06, bthick: 0.85 },
   Shieldmaiden: { cran: 0.98, slope: 0.35, edepth: 0.55, hollow: 0.15, jdepth: 0.55, prot: 0.05, hook: 0.0, nwidth: 1.02, smile: -0.06, lines: 0.15, eopen: 0.95, bthick: 1.1 },
   Mercenary: { cran: 0.94, slope: 0.75, edepth: 0.95, hollow: 0.35, jdepth: 0.85, prot: 0.2, hook: -0.3, nwidth: 1.18, smile: -0.22, lines: 0.55, eopen: 0.85, bthick: 1.3 },
 };

@@ -500,7 +500,7 @@ vec3 skinAlbedo(vec3 p) {
     float cx = min(q.x / (0.021 * MOUTH), 1.3);
     float curve = SMILE * 0.0034 * cx * cx + SMIRK * 0.0028 * sat(p.x / 0.02) * cx - SCOWL * 0.0012 * cx * cx;
     vec3 lp = p - vec3(0.0, curve, 0.0);
-    float lipK = LIPS * (1.0 + 0.18 * FEM);
+    float lipK = LIPS * (1.0 + 0.07 * FEM);
     float lz = LIPZ();
     float ul = sdEll(lp - vec3(0.0, mY + 0.0043, lz - 0.0042), vec3(0.0192 * MOUTH, 0.0052 * lipK, 0.0078));
     float lo = sdEll(lp - vec3(0.0, mY - 0.0058, lz - 0.0058), vec3(0.0168 * MOUTH, 0.0062 * lipK, 0.0086));

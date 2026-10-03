@@ -76,7 +76,7 @@ float LOWF() { return LONG * (1.0 - 0.05 * FEM); }
 float MOUTHY() { return -0.0665 * LOWF(); }
 float TIPY() { return -0.0345 * NOSE * (0.92 + 0.08 * LONG) * (1.0 - 0.13 * FEM); }
 float TIPZ() { return 0.1115 + 0.01 * (NOSE - 1.0) - 0.0075 * FEM - 0.004 * HALF + 0.006 * GNOME; }
-float LIPZ() { return 0.0945 + 0.004 * PROT - 0.003 * FEM; }
+float LIPZ() { return 0.0938 + 0.003 * PROT - 0.0045 * FEM; }
 
 // Upper and lower lid lines (y, head-local) at a point beside the eye: an almond, the outer
 // corner a touch higher, the upper lid over the top of the iris.
@@ -149,7 +149,7 @@ float skin(vec3 p) {
   // ---- muzzle and lips
   float mY = MOUTHY();
   float mw = MOUTH;
-  float lipK = LIPS * (1.0 + 0.18 * fem);
+  float lipK = LIPS * (1.0 + 0.07 * fem);
   float lz = LIPZ();
   d = smin(d, sdEll(p - vec3(0.0, mY + 0.006, 0.066 + 0.003 * PROT - 0.003 * fem), vec3(0.03 * mw * (1.0 - 0.08 * fem), 0.028, 0.028)), 0.018);
   if (p.z > 0.07 && abs(p.y - mY) < 0.03) {

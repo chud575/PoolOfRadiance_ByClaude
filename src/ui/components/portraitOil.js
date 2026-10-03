@@ -181,7 +181,10 @@ export function oilPaint(color, info, w, h, o = {}) {
         if (reg === REG.eye && L.r > 1.5) continue;
         if (L.thr > 0) {
           const e = Math.abs(cur[i * 3] - ref[i * 3]) + Math.abs(cur[i * 3 + 1] - ref[i * 3 + 1]) + Math.abs(cur[i * 3 + 2] - ref[i * 3 + 2]);
-          const thr = L.thr * 3 * (reg === REG.skin ? 0.3 : reg === REG.bg ? 1.6 : 1);
+          // the last, finest brush leaves the painted planes of the skin alone except where the
+          // likeness needs it (eyes, mouth: high detail)
+          const finest = L.r < 1.5;
+          const thr = L.thr * 3 * (reg === REG.skin ? (finest ? 1.4 - det : 0.3) : reg === REG.bg ? 1.6 : 1);
           if (e < thr) continue;
         }
         strokes.push(i, R(), R());
@@ -216,6 +219,15 @@ export function oilPaint(color, info, w, h, o = {}) {
         else if (reg === REG.eye) { len = r * 1.2; wid = r * 0.8; }
         else if (reg === REG.metal) { len = r * (1.8 + r2 * 2.0); wid = r * (0.8 + r1 * 0.3); }
         else { len = r * (1.5 + r2 * 1.6); wid = r * (1.05 + r1 * 0.35); }
+      }
+      // value breaks: on the skin the mid brushes carry a mixed tone (the light, the half-tone, the
+      // shadow as distinct pigments), so the planes read as laid strokes, not a smooth gradient
+      if (reg === REG.skin && L.r >= 1.8 && detail[i] < 0.5) {
+        const lum = 0.3 * cr + 0.59 * cg + 0.11 * cb + 1;
+        const stepV = 255 / 13;
+        const qv = Math.round(lum / stepV + (r1 - 0.5) * 0.6) * stepV;
+        const k = 0.55 * (qv / lum) + 0.45;
+        cr *= k; cg *= k; cb *= k;
       }
       // pigment variation
       const jv = (r2 - 0.5) * (reg === REG.skin ? 11 : 14);

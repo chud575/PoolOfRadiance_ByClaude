@@ -59,7 +59,7 @@ export const HEADS = {
     { name: 'Ranger', hair: 'braid', beard: 'none', expr: 'stern', age: 0.15, face: { w: 0.94, jaw: 1.04, nose: 1.1, bridge: 1.1, cheek: 1.2, brow: 1.05, sp: 1.02, long: 1.04 } },
     { name: 'Priestess', hair: 'bun', beard: 'none', expr: 'kind', age: 0.3, face: { w: 1.07, chin: 0.86, eye: 1.02, lid: 0.45, cheek: 0.92, lips: 1.04, long: 0.93, nose: 0.92 } },
     { name: 'Duelist', hair: 'bob', beard: 'none', expr: 'smirk', face: { w: 0.9, long: 1.07, jaw: 0.84, nose: 1.1, eye: 0.94, mouth: 0.92, cheek: 1.24, sp: 0.95 } },
-    { name: 'Sorceress', hair: 'wavy', beard: 'none', expr: 'proud', face: { w: 0.92, long: 1.07, eye: 1.12, chin: 0.82, cheek: 1.3, nose: 0.95, lips: 1.2, lid: 0.3 } },
+    { name: 'Sorceress', hair: 'wavy', beard: 'none', expr: 'proud', face: { w: 0.94, long: 1.05, eye: 1.1, chin: 0.88, cheek: 1.22, nose: 0.9, lips: 1.08, lid: 0.3 } },
     { name: 'Shieldmaiden', hair: 'long', beard: 'none', helm: true, expr: 'stern', face: { jaw: 1.08, chin: 1.08, brow: 1.1, nose: 1.02 } },
     { name: 'Hooded', hair: 'hood', beard: 'none', expr: 'weary', face: { w: 0.95, lid: 0.5, cheek: 1.05, nose: 0.95 } },
     { name: 'Mercenary', hair: 'crop', beard: 'none', scar: true, expr: 'scowl', age: 0.35, face: { jaw: 1.16, brow: 1.4, w: 1.04, eye: 0.88, nose: 1.14, bridge: 1.25, lips: 0.82, chin: 1.1 } },

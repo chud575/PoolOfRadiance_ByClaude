@@ -202,7 +202,7 @@ function setup(ch, o) {
   // headParams exaggerates each template for the meshed miniatures; a painted bust reads the
   // differences at half strength, with the race's own cues restored on top.
   const ix = (k) => HEAD_PARAMS.indexOf(k);
-  for (const k of ['W', 'LONG', 'JAW', 'CHIN', 'CHEEK', 'NOSE', 'BRIDGE', 'TIP', 'EYE', 'SP', 'LIPS', 'MOUTH']) params[ix(k)] = 1 + (params[ix(k)] - 1) * 1.2;
+  for (const k of ['W', 'LONG', 'JAW', 'CHIN', 'CHEEK', 'NOSE', 'BRIDGE', 'TIP', 'EYE', 'SP', 'LIPS', 'MOUTH']) params[ix(k)] = 1 + (params[ix(k)] - 1) * 0.85;
   const RACE = {
     elf: { LONG: 1.04, W: 0.94, CHEEK: 1.08, JAW: 0.92, CHIN: 0.92 },
     halfElf: { LONG: 1.015, W: 0.98 },
