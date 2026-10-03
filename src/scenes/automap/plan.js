@@ -52,13 +52,74 @@ export function drawFloor(g, cells, { CX, CY, cs, seed = 1, kind = 'planks' }) {
   g.save();
   g.clip(regionPath(cells, CX, CY, cs));
   g.lineCap = 'round';
-  if (kind === 'planks') {
+  if (kind === 'slabs' || kind === 'plaza') {
+    // an architect's floor: a pale wash with only a sparse net of large slabs in
+    // light pen, so the walls carry the plan (a plaza's flags a touch firmer)
+    const plaza = kind === 'plaza';
+    g.fillStyle = plaza ? 'rgba(236,222,190,0.22)' : 'rgba(240,228,198,0.3)';
+    g.fillRect(x0, y0, x1 - x0, y1 - y0);
+    const horiz = r() < 0.5;
+    const [a0, a1, b0, b1] = horiz ? [x0, x1, y0, y1] : [y0, y1, x0, x1];
+    const course = cs * (plaza ? 0.62 : 0.5);
+    const joints = [];
+    const tints = [];
+    for (let b = b0; b < b1 - 0.5; ) {
+      const h = Math.min(b1 - b, course * (0.75 + r() * 0.5));
+      let a = a0 - r() * course;
+      while (a < a1) {
+        const w = course * (plaza ? 0.9 + r() * 0.9 : 0.8 + r() * 0.9);
+        joints.push([a + w, b, a + w, b + h]);
+        if (r() < (plaza ? 0.22 : 0.14)) tints.push([a, b, w, h, r()]);
+        a += w;
+      }
+      b += h;
+      if (b < b1 - 0.5) joints.push([a0, b, a1, b]);
+    }
+    const P = (u, v) => (horiz ? [u, v] : [v, u]);
+    for (const [a, b, w, h, t] of tints) {
+      const [px, py] = P(a + 0.8, b + 0.8);
+      const [qw, qh] = horiz ? [w - 1.6, h - 1.6] : [h - 1.6, w - 1.6];
+      g.fillStyle = t < 0.6 ? 'rgba(150,124,92,0.1)' : 'rgba(255,248,226,0.22)';
+      g.fillRect(px, py, qw, qh);
+    }
+    g.strokeStyle = plaza ? 'rgba(66,44,24,0.36)' : 'rgba(78,54,32,0.24)';
+    g.lineWidth = plaza ? 0.65 : 0.5;
+    g.beginPath();
+    for (const [ua, va, ub, vb] of joints) {
+      const [ax, ay] = P(ua, va);
+      const [bx, by] = P(ub, vb);
+      const L = Math.hypot(bx - ax, by - ay);
+      const n = Math.max(1, Math.round(L / (cs * 0.5)));
+      g.moveTo(ax, ay);
+      // a hand-ruled joint: it wavers a hair and now and then the pen lifts
+      for (let i = 1; i <= n; i++) {
+        const t = i / n;
+        const px = ax + (bx - ax) * t + (r() - 0.5) * 0.5;
+        const py = ay + (by - ay) * t + (r() - 0.5) * 0.5;
+        if (r() < 0.1) g.moveTo(px, py); else g.lineTo(px, py);
+      }
+    }
+    g.stroke();
+    // a few hairline cracks and chips
+    g.strokeStyle = 'rgba(66,44,24,0.3)';
+    g.lineWidth = 0.4;
+    g.beginPath();
+    for (let i = 0; i < (cells.length * (plaza ? 0.8 : 0.5)); i++) {
+      const px = x0 + r() * (x1 - x0);
+      const py = y0 + r() * (y1 - y0);
+      g.moveTo(px, py);
+      g.lineTo(px + (r() - 0.5) * cs * 0.18, py + (r() - 0.5) * cs * 0.18);
+    }
+    g.stroke();
+  } else if (kind === 'planks') {
     // boards run the long way of the room, butt joints staggered
     const horiz = x1 - x0 >= y1 - y0;
     const bw = cs * (0.15 + r() * 0.03);
     const [a0, a1, b0, b1] = horiz ? [x0, x1, y0, y1] : [y0, y1, x0, x1];
-    g.strokeStyle = 'rgba(70,40,18,0.34)';
-    g.lineWidth = 0.55;
+    g.fillStyle = 'rgba(172,128,80,0.1)';
+    g.fillRect(x0, y0, x1 - x0, y1 - y0);
+    g.strokeStyle = 'rgba(70,40,18,0.3)';
+    g.lineWidth = 0.5;
     g.beginPath();
     for (let b = b0 + bw; b < b1; b += bw) {
       if (horiz) { g.moveTo(a0, b); g.lineTo(a1, b); } else { g.moveTo(b, a0); g.lineTo(b, a1); }
@@ -74,8 +135,8 @@ export function drawFloor(g, cells, { CX, CY, cs, seed = 1, kind = 'planks' }) {
       }
     }
     g.stroke();
-    g.strokeStyle = 'rgba(70,40,18,0.18)';
-    g.lineWidth = 0.45;
+    g.strokeStyle = 'rgba(70,40,18,0.12)';
+    g.lineWidth = 0.4;
     g.beginPath();
     for (let b = b0; b < b1; b += bw) {
       for (let a = a0 + r() * cs * 0.3; a < a1; a += cs * (0.18 + r() * 0.3)) {

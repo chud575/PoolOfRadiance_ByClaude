@@ -69,10 +69,11 @@ function poly(g, pts) {
  * A coursed stone wall from (x0,y0) to (x1,y1), `width` thick.
  * courses: blocks across the thickness; tone: base stone colour.
  */
-export function stoneWall(g, x0, y0, x1, y1, { width = 8, seed = 1, courses = 1, tone = [156, 138, 112], faces = true, ragged = 0, faceW = null } = {}) {
+export function stoneWall(g, x0, y0, x1, y1, { width = 8, seed = 1, courses = 1, tone = [156, 138, 112], faces = true, ragged = 0, faceW = null, poche = false } = {}) {
   const f = frame(x0, y0, x1, y1);
   const r = prng(seed * 7 + 11);
   const hw = width / 2;
+  if (poche) return pocheWall(g, f, r, { width, seed, courses, ragged, faces, faceW });
   // which side is in shadow (light from the north-west): +1 if the +n face looks south/east
   const shadeDir = f.nx + f.ny > 0 ? 1 : -1;
   // mortar bed: the wall's footprint in dark ink-brown
@@ -121,10 +122,53 @@ export function stoneWall(g, x0, y0, x1, y1, { width = 8, seed = 1, courses = 1,
 }
 
 /**
+ * An architect's poché: the wall's cut drawn as a solid mass of dark ink
+ * between two heavy face lines, so every building reads as a dark shape at
+ * full-sheet zoom; the ashlar coursing shows only as faint paler joints when
+ * you lean in.
+ */
+function pocheWall(g, f, r, { width, seed, courses, ragged, faces, faceW }) {
+  const hw = width / 2;
+  const jag = () => (ragged ? (r() - 0.5) * width * ragged : 0);
+  const outline = [f.P(0 + jag(), -hw), f.P(f.len + jag(), -hw), f.P(f.len + jag(), hw), f.P(0 + jag(), hw)];
+  g.save();
+  poly(g, outline);
+  g.fillStyle = ragged ? 'rgba(66,46,30,0.95)' : 'rgba(44,28,16,0.97)';
+  g.fill();
+  g.clip();
+  // coursing: joints between the blocks, in a warm grey just lifted off the ink
+  g.strokeStyle = 'rgba(168,140,104,0.34)';
+  g.lineWidth = Math.max(0.3, width * 0.035);
+  g.beginPath();
+  for (let c = 0; c < courses; c++) {
+    const o0 = -hw + (c / courses) * width;
+    const o1 = -hw + ((c + 1) / courses) * width;
+    const cw = o1 - o0;
+    if (c > 0) { const [ax, ay] = f.P(-2, o0); const [bx, by] = f.P(f.len + 2, o0); g.moveTo(ax, ay); g.lineTo(bx, by); }
+    let t = c % 2 ? -cw * (0.4 + r() * 0.5) : -r() * cw * 0.6;
+    while (t < f.len) {
+      t += cw * (courses > 1 ? 1.3 + r() * 1.1 : 1 + r() * 0.8);
+      const [ax, ay] = f.P(t, o0 + cw * 0.12);
+      const [bx, by] = f.P(t, o1 - cw * 0.12);
+      g.moveTo(ax, ay); g.lineTo(bx, by);
+    }
+  }
+  g.stroke();
+  g.restore();
+  if (faces) {
+    const fw = faceW ?? Math.max(1.4, width * 0.16);
+    const shadeDir = f.nx + f.ny > 0 ? 1 : -1;
+    const e0 = width * (0.05 + r() * 0.2);
+    const e1 = width * (0.05 + r() * 0.2);
+    for (const s of [-1, 1]) face(g, f.P(-e0, s * hw), f.P(f.len + e1, s * hw), { seed: seed + s * 7, width: fw * (s === shadeDir ? 1.35 : 0.95), alpha: 0.98 });
+  }
+}
+
+/**
  * A timber-framed wall: oak posts at irregular centres, a sill line, braced
  * wattle-and-daub panels between (hatched infill).
  */
-export function timberWall(g, x0, y0, x1, y1, { width = 6, seed = 1, cs = 50 } = {}) {
+export function timberWall(g, x0, y0, x1, y1, { width = 6, seed = 1, cs = 50, heavy = false } = {}) {
   const f = frame(x0, y0, x1, y1);
   const r = prng(seed * 5 + 3);
   const hw = width / 2;
@@ -132,7 +176,7 @@ export function timberWall(g, x0, y0, x1, y1, { width = 6, seed = 1, cs = 50 } =
   const body = [f.P(0, -hw), f.P(f.len, -hw), f.P(f.len, hw), f.P(0, hw)];
   // daub: a pale lime-washed infill, mottled
   poly(g, body);
-  g.fillStyle = 'rgba(176,146,104,0.97)';
+  g.fillStyle = heavy ? 'rgba(104,74,48,0.98)' : 'rgba(176,146,104,0.97)';
   g.fill();
   g.save();
   poly(g, body);
@@ -183,7 +227,7 @@ export function timberWall(g, x0, y0, x1, y1, { width = 6, seed = 1, cs = 50 } =
     g.translate(cx, cy);
     g.rotate(Math.atan2(f.uy, f.ux) + (r() - 0.5) * 0.08);
     const v = r();
-    g.fillStyle = `rgba(${74 + v * 26 | 0},${50 + v * 16 | 0},${30 + v * 10 | 0},0.97)`;
+    g.fillStyle = heavy ? `rgba(${42 + v * 18 | 0},${27 + v * 10 | 0},${15 + v * 6 | 0},0.98)` : `rgba(${74 + v * 26 | 0},${50 + v * 16 | 0},${30 + v * 10 | 0},0.97)`;
     g.fillRect(-pl / 2, -ps / 2, pl, ps);
     // end grain: growth rings as a few arcs, and a radial check
     g.strokeStyle = 'rgba(200,160,110,0.3)';
@@ -236,7 +280,7 @@ export function timberWall(g, x0, y0, x1, y1, { width = 6, seed = 1, cs = 50 } =
     }
   }
   g.restore();
-  for (const s of [-1, 1]) face(g, f.P(-width * 0.2, s * hw), f.P(f.len + width * 0.2, s * hw), { seed: seed + s * 3, width: (f.nx + f.ny) * s > 0 ? 1.6 : 1.1, amp: 0.3 });
+  for (const s of [-1, 1]) face(g, f.P(-width * 0.2, s * hw), f.P(f.len + width * 0.2, s * hw), { seed: seed + s * 3, width: ((f.nx + f.ny) * s > 0 ? 1.6 : 1.1) * (heavy ? 1.35 : 1), amp: 0.3 });
 }
 
 /**

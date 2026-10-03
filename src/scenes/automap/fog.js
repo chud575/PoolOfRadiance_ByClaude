@@ -515,33 +515,17 @@ export function paintUnsurveyed(W, H, k, cover, area, { seed = 1 } = {}) {
     g.imageSmoothingEnabled = true;
     g.drawImage(mc, ax, ay, aw, ah);
   }
-  // soft graphite: broad, calm patches laid with the side of the lead
-  g.lineCap = 'round';
-  const dens = (x, y) => fbm(x / 280, y / 280, { period: 64, octaves: 3, seed: seed + 9 });
-  const patches = Math.round((aw * ah) / 420);
-  for (let p = 0; p < patches; p++) {
-    const cx = ax + r() * aw;
-    const cy = ay + r() * ah;
-    const d = dens(cx, cy);
-    if (r() > (d - 0.2) * 1.6) continue;
-    const R = 10 + r() * 18;
-    const a = 0.8 + (r() - 0.5) * 0.7 + (r() < 0.3 ? Math.PI / 2 : 0);
-    const ca = Math.cos(a);
-    const sa = Math.sin(a);
-    const gap = 2.4 + (1 - d) * 1.6 + r() * 0.6;
-    const press = 0.06 + d * 0.1;
-    for (let o = -R; o <= R; o += gap) {
-      const half = Math.sqrt(Math.max(0, R * R - o * o)) * (0.5 + r() * 0.5);
-      if (half < 2) continue;
-      const sx = cx - sa * o + ca * (r() - 0.5) * R * 0.3;
-      const sy = cy + ca * o + sa * (r() - 0.5) * R * 0.3;
-      g.strokeStyle = `rgba(78,62,46,${(press * (0.6 + r() * 0.6)).toFixed(3)})`;
-      g.lineWidth = 0.5 + r() * 0.4;
-      g.beginPath();
-      g.moveTo(sx - ca * half, sy - sa * half);
-      g.lineTo(sx + ca * half, sy + sa * half);
-      g.stroke();
+  // a regular, fine cross-hatch ruled with a sharp lead: one even 45-degree set and a
+  // lighter counter-set, so the unknown stays calm and legible at any zoom
+  g.lineCap = 'butt';
+  for (const [dir, gap, alpha] of [[1, 3.4, 0.2], [-1, 4.6, 0.11]]) {
+    g.strokeStyle = `rgba(70,56,42,${alpha})`;
+    g.lineWidth = 0.5;
+    g.beginPath();
+    for (let o = -ah; o < aw + ah; o += gap) {
+      if (dir > 0) { g.moveTo(ax + o, ay + ah); g.lineTo(ax + o + ah, ay); } else { g.moveTo(ax + o - ah, ay); g.lineTo(ax + o, ay + ah); }
     }
+    g.stroke();
   }
   for (let i = 0; i < (aw * ah) / 300; i++) {
     const x = ax + r() * aw;
@@ -638,11 +622,11 @@ export function paintFogEdge(W, H, k, edge, area, { seed = 1 } = {}) {
   g.scale(k, k);
   const [ax, ay, aw, ah] = area;
   const r = prng(seed + 13);
-  g.fillStyle = 'rgba(52,42,34,0.34)';
+  g.fillStyle = 'rgba(52,42,34,0.12)';
   g.fillRect(ax, ay, aw, ah);
   g.lineCap = 'round';
-  for (let o = -ah; o < aw; o += 1.15 + r() * 0.6) {
-    g.strokeStyle = `rgba(40,32,26,${(0.22 + r() * 0.28).toFixed(3)})`;
+  for (let o = -ah; o < aw; o += 1.7 + r() * 0.5) {
+    g.strokeStyle = `rgba(40,32,26,${(0.18 + r() * 0.18).toFixed(3)})`;
     g.lineWidth = 0.4 + r() * 0.35;
     g.beginPath();
     g.moveTo(ax + o, ay + ah);

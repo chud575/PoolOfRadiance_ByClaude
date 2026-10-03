@@ -437,15 +437,15 @@ export function inkStone(g, pts, { X, Y, ang = 0, rgb = [170, 158, 136], alpha =
  * (bareAt) left as beaten earth. kind: 'setts' | 'flags' (a plaza of large
  * squared flags).
  */
-export function cobbleRegion(g, cells, { CX, CY, cs, seed = 1, ink = '43,26,13', axisAt = null, wearAt = () => 0, bareAt = () => false, groundAt = null, kind = 'setts' }) {
+export function cobbleRegion(g, cells, { CX, CY, cs, seed = 1, ink = '43,26,13', axisAt = null, wearAt = () => 0, bareAt = () => false, groundAt = null, kind = 'setts', classAt = () => 'main' }) {
   const has = cellSet(cells);
   const rnd = prng(seed);
   let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
   for (const [x, y] of cells) { minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x + 1); maxY = Math.max(maxY, y + 1); }
   const regionAxis = maxX - minX >= maxY - minY ? 'h' : 'v';
   const axisOf = axisAt ?? (() => regionAxis);
-  const paved = (x, y) => (groundAt ? groundAt(x, y) : has(x, y)) && !bareAt(x, y);
-  const own = (x, y) => has(x, y) && !bareAt(x, y);
+  const paved = (x, y) => (groundAt ? groundAt(x, y) : has(x, y)) && !bareAt(x, y) && classAt(x, y) !== 'yard';
+  const own = (x, y) => has(x, y) && !bareAt(x, y) && classAt(x, y) !== 'yard';
   // distance (cells) to the nearest unpaved ground: the earth strip at the wall foot
   const edgeDist = (ux, uy) => {
     const cx = Math.floor(ux);
@@ -500,6 +500,9 @@ export function cobbleRegion(g, cells, { CX, CY, cs, seed = 1, ink = '43,26,13',
         const ix = Math.floor(x);
         const iy = Math.floor(y);
         if (!own(ix, iy) || axisOf(ix, iy) !== ax) continue;
+        // a lane keeps only a scatter of setts in its beaten earth
+        const lane = classAt(ix, iy) === 'lane';
+        if (lane && rnd() > 0.34 + 0.3 * fbm(x * 0.9, y * 0.9, { period: 64, octaves: 2, seed: seed + 77 })) continue;
         const d = edgeDist(x, y);
         // bare earth hugging the wall foot, the paving ragged at its margin
         const foot = d - 0.12 - rnd() * 0.14;
@@ -534,11 +537,59 @@ export function cobbleRegion(g, cells, { CX, CY, cs, seed = 1, ink = '43,26,13',
           X: X + (loose ? (rnd() - 0.5) * w * 0.12 : 0),
           Y: Y + (loose ? (rnd() - 0.5) * ch * 0.12 : 0),
           ang: ang + (loose ? (rnd() - 0.5) * 0.5 : 0),
-          rgb, alpha: 0.8, lw: flags ? 0.8 : 0.62, rnd, ink, bed: flags ? 0.16 : 0.2,
-          crack: flags ? 0.22 : 0.05, pits: flags ? 0.3 : 0.2, worn: wear > 0.25 ? 1 : 0, hatch: flags ? 0.48 : 0.42,
+          rgb, alpha: lane ? 0.6 : 0.78, lw: flags ? 0.8 : lane ? 0.5 : 0.58, rnd, ink, bed: flags ? 0.16 : lane ? 0.1 : 0.16,
+          crack: flags ? 0.22 : 0.05, pits: flags ? 0.3 : 0.2, worn: wear > 0.25 ? 1 : 0, hatch: flags ? 0.48 : lane ? 0.2 : 0.3,
         });
       }
       v += chu;
+    }
+  }
+  // yards: beaten dirt in stipple, a few pebbles and cart ruts, no paving at all
+  for (const [x, y] of cells) {
+    if (classAt(x, y) !== 'yard') continue;
+    g.fillStyle = 'rgba(150,114,72,0.1)';
+    g.fillRect(CX(x), CY(y), cs, cs);
+    for (let i = 0; i < 70; i++) {
+      const px = CX(x) + rnd() * cs;
+      const py = CY(y) + rnd() * cs;
+      const n = fbm((px / cs) * 1.6, (py / cs) * 1.6, { period: 64, octaves: 2, seed: seed + 5 });
+      if (rnd() > n * 1.3) continue;
+      g.fillStyle = `rgba(${ink},${(0.22 + rnd() * 0.3).toFixed(3)})`;
+      g.beginPath(); g.arc(px, py, 0.3 + rnd() * 0.45, 0, Math.PI * 2); g.fill();
+    }
+    for (let i = 0; i < 3; i++) {
+      const X = CX(x) + rnd() * cs;
+      const Y = CY(y) + rnd() * cs;
+      stone(g, X, Y, cs * (0.03 + rnd() * 0.03), rnd, 5, 0.75);
+      g.strokeStyle = `rgba(${ink},0.45)`;
+      g.lineWidth = 0.5;
+      g.stroke();
+    }
+  }
+  // the main street's kerbs: a line of long dressed stones set in from the wall
+  // foot, the strip behind them left as earth
+  {
+    const kerbIn = cs * 0.2;
+    for (const [x, y] of cells) {
+      if (classAt(x, y) !== 'main') continue;
+      for (const side of ['N', 'S', 'E', 'W']) {
+        const [dx, dy] = DV[side];
+        if (paved(x + dx, y + dy) || (groundAt && groundAt(x + dx, y + dy))) continue;
+        const horiz = side === 'N' || side === 'S';
+        const base = side === 'N' ? CY(y) + kerbIn : side === 'S' ? CY(y + 1) - kerbIn : side === 'W' ? CX(x) + kerbIn : CX(x + 1) - kerbIn;
+        let a = horiz ? CX(x) : CY(y);
+        const aEnd = a + cs;
+        // run the kerb into the corner where the street turns
+        while (a < aEnd - 1) {
+          const L = Math.min(aEnd - a, cs * (0.28 + rnd() * 0.22));
+          const w = cs * 0.075;
+          const cxk = horiz ? a + L / 2 : base;
+          const cyk = horiz ? base : a + L / 2;
+          const pts = irregularStone(rnd, (horiz ? L : w) / 2 - 0.5, (horiz ? w : L) / 2 - 0.5, { extra: [0, 1], jit: 0.05, bulge: 0.03, chamfer: 0.15 });
+          inkStone(g, pts, { X: cxk, Y: cyk, rgb: [206, 190, 158], alpha: 0.9, lw: 0.7, rnd, ink, bed: 0.12, crack: 0.05, pits: 0.1, hatch: 0.25 });
+          a += L;
+        }
+      }
     }
   }
   // puddle stains: a cool wash pooled in the low spots, darker at its rim

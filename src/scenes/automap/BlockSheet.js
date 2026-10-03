@@ -157,6 +157,7 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
   const mask = survey.clean;
   const fogCov = survey.cover;
   g.drawImage(paintUnsurveyed(W, H, k, fogCov, fogArea, { seed: seed + 21 }), 0, 0, W, H);
+  g.drawImage(paintFogEdge(W, H, k, survey.edge, fogArea, { seed: seed + 23 }), 0, 0, W, H);
   // buildings seen from the street but never entered: shut in pencil cross-hatching,
   // a closed graphite block with a darker rim inside its walls
   {
@@ -172,31 +173,63 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
       for (const [i, j] of rg.cells) path.rect(CX(i), CY(j), cs, cs);
       ug.save();
       ug.clip(path);
-      ug.fillStyle = 'rgba(92,72,52,0.12)';
+      // a clean reserve of paper inside the walls (the unknown ground's cross-hatch
+      // stops at them), then the building's own hatch
+      ug.fillStyle = 'rgb(226,208,170)';
+      ug.fill(path);
+      ug.fillStyle = 'rgba(112,96,78,0.2)';
       ug.fill(path);
       let x0 = 1e9; let y0 = 1e9; let x1 = -1e9; let y1 = -1e9;
       for (const [i, j] of rg.cells) { x0 = Math.min(x0, CX(i)); y0 = Math.min(y0, CY(j)); x1 = Math.max(x1, CX(i + 1)); y1 = Math.max(y1, CY(j + 1)); }
       const L = (x1 - x0) + (y1 - y0);
-      for (const dir of [1, -1]) {
-        for (let o = -L; o < L; o += 3.4 + ur() * 1.2) {
-          ug.strokeStyle = `rgba(62,46,32,${((dir > 0 ? 0.21 : 0.12) * (0.7 + ur() * 0.6)).toFixed(3)})`;
-          ug.lineWidth = 0.45 + ur() * 0.3;
-          ug.beginPath();
-          if (dir > 0) { ug.moveTo(x0 + o, y1); ug.lineTo(x0 + o + (y1 - y0), y0); } else { ug.moveTo(x0 + o, y0); ug.lineTo(x0 + o + (y1 - y0), y1); }
-          ug.stroke();
-        }
+      // one uniform 45-degree graphite hatch, ruled evenly with a sharp lead
+      ug.strokeStyle = 'rgba(54,40,28,0.52)';
+      ug.lineWidth = 0.75;
+      ug.beginPath();
+      for (let o = -L; o < L; o += 3.3) {
+        ug.moveTo(x0 + o, y1); ug.lineTo(x0 + o + (y1 - y0), y0);
       }
-      // a soft graphite rim pressed along the inside of the walls
-      ug.filter = `blur(${(cs * 0.06 * k).toFixed(1)}px)`;
-      ug.strokeStyle = 'rgba(54,40,28,0.36)';
-      ug.lineWidth = cs * 0.2;
-      ug.stroke(boundaryPath(rg.cells, CX, CY));
-      ug.filter = 'none';
+      ug.stroke();
+      // a hard inner edge line pressed just inside the walls
+      const inset = cs * 0.125 + 2.2;
+      ug.strokeStyle = 'rgba(48,36,26,0.62)';
+      ug.lineWidth = 0.9;
+      ug.beginPath();
+      for (const [i, j] of rg.cells) {
+        const has = (a2, b2) => rg.cells.some(([p2, q2]) => p2 === a2 && q2 === b2);
+        const X0 = CX(i) + (has(i - 1, j) ? 0 : inset);
+        const X1 = CX(i + 1) - (has(i + 1, j) ? 0 : inset);
+        const Y0 = CY(j) + (has(i, j - 1) ? 0 : inset);
+        const Y1 = CY(j + 1) - (has(i, j + 1) ? 0 : inset);
+        if (!has(i, j - 1)) { ug.moveTo(X0, Y0); ug.lineTo(X1, Y0); }
+        if (!has(i, j + 1)) { ug.moveTo(X0, Y1); ug.lineTo(X1, Y1); }
+        if (!has(i - 1, j)) { ug.moveTo(X0, Y0); ug.lineTo(X0, Y1); }
+        if (!has(i + 1, j)) { ug.moveTo(X1, Y0); ug.lineTo(X1, Y1); }
+      }
+      ug.stroke();
+      ug.restore();
+      // the walls' outer border, a slightly ragged hand-drawn pencil line
+      ug.save();
+      ug.strokeStyle = 'rgba(52,38,26,0.7)';
+      ug.lineWidth = 1.1;
+      ug.beginPath();
+      for (const [i, j] of rg.cells) {
+        const has = (a2, b2) => rg.cells.some(([p2, q2]) => p2 === a2 && q2 === b2);
+        const seg = (ax2, ay2, bx2, by2) => {
+          const n = 4;
+          ug.moveTo(ax2 + (ur() - 0.5) * 1.2, ay2 + (ur() - 0.5) * 1.2);
+          for (let q = 1; q <= n; q++) ug.lineTo(ax2 + ((bx2 - ax2) * q) / n + (ur() - 0.5) * 1.3, ay2 + ((by2 - ay2) * q) / n + (ur() - 0.5) * 1.3);
+        };
+        if (!has(i, j - 1)) seg(CX(i) - 1, CY(j), CX(i + 1) + 1, CY(j));
+        if (!has(i, j + 1)) seg(CX(i) - 1, CY(j + 1), CX(i + 1) + 1, CY(j + 1));
+        if (!has(i - 1, j)) seg(CX(i), CY(j) - 1, CX(i), CY(j + 1) + 1);
+        if (!has(i + 1, j)) seg(CX(i + 1), CY(j) - 1, CX(i + 1), CY(j + 1) + 1);
+      }
+      ug.stroke();
       ug.restore();
     }
     g.drawImage(ub, 0, 0, W, H);
   }
-  g.drawImage(paintFogEdge(W, H, k, survey.edge, fogArea, { seed: seed + 23 }), 0, 0, W, H);
   // ---------- pencil survey grid: only where the ground is still unsurveyed (the inked
   // plan stands on its own, no squares showing through the floors) ----------
   {
@@ -375,16 +408,49 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
         if (opens >= 3 && diag >= 2) w = Math.max(w, 0.42);
         return w;
       };
+      // the street hierarchy: a main street (long straight runs inside the walls) paved
+      // and kerbed, lanes left as earth with a scatter of setts, open yards as dirt
+      const street = (x, y) => map.inBounds(x, y) && !info.isRock(x, y) && map.getCell(x, y) === CELL.STREET;
+      const srun = (x, y, a, b) => {
+        let n = 1;
+        for (const dd of [a, b]) {
+          let cx = x; let cy = y;
+          for (let i = 0; i < 16 && map.getEdge(cx, cy, dd) === EDGE.OPEN && street(cx + DV2[dd][0], cy + DV2[dd][1]); i++) { cx += DV2[dd][0]; cy += DV2[dd][1]; n++; }
+        }
+        return n;
+      };
+      const rim = (x, y) => x === 0 || y === 0 || x === map.w - 1 || y === map.h - 1;
+      const isMain = (x, y) => street(x, y) && !rim(x, y) && Math.max(srun(x, y, 'E', 'W'), srun(x, y, 'N', 'S')) >= 10;
+      const cls = new Map();
+      const classAt = (x, y) => {
+        const key = y * map.w + x;
+        if (cls.has(key)) return cls.get(key);
+        let c = 'lane';
+        if (isMain(x, y)) c = 'main';
+        else if (!rim(x, y)) {
+          for (const [ox, oy] of [[0, 0], [-1, 0], [0, -1], [-1, -1]]) {
+            let ok = true;
+            for (const [i, j] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+              const qx = x + ox + i; const qy = y + oy + j;
+              if (!street(qx, qy) || isMain(qx, qy)) { ok = false; break; }
+              if (map.getEdge(qx, qy, i ? 'W' : 'E') !== EDGE.OPEN || map.getEdge(qx, qy, j ? 'N' : 'S') !== EDGE.OPEN) { ok = false; break; }
+            }
+            if (ok) { c = 'yard'; break; }
+          }
+        }
+        cls.set(key, c);
+        return c;
+      };
       for (const rg of reg.list) {
         if (rg.type !== CELL.STREET && rg.type !== CELL.COURTYARD) continue;
         if (!rg.cells.some(([x, y]) => seenCell(x, y))) continue;
         const plaza = rg.type === CELL.COURTYARD;
         if (plaza) {
           // a plaza is flagged like the halls round it: the same inked, broken-coursed slabs
-          drawFloor(d, rg.cells, { CX, CY, cs, seed: seed + rg.index * 23 + 5, kind: 'flags' });
+          drawFloor(d, rg.cells, { CX, CY, cs, seed: seed + rg.index * 23 + 5, kind: 'plaza' });
           continue;
         }
-        cobbleRegion(d, rg.cells, { CX, CY, cs, seed: seed + rg.index * 23 + 5, axisAt: plaza ? null : axisAt, wearAt, groundAt: ground, bareAt: plaza ? () => false : bareAt, kind: plaza ? 'flags' : 'setts' });
+        cobbleRegion(d, rg.cells, { CX, CY, cs, seed: seed + rg.index * 23 + 5, axisAt, wearAt, groundAt: ground, bareAt: () => false, classAt, kind: 'setts' });
       }
     }
     for (const rg of reg.list) {
@@ -395,8 +461,8 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
       const ruined = rg.style === 2 && !dungeon;
       // each building its own floor, so neighbours never read as one stamped texture
       const theme = themeOf(map.zoneAt(ax, ay));
-      const byTheme = { temple: 'flags', counting: 'flags', barracks: 'flags', library: 'planks', tavern: 'planks', store: 'earth' };
-      const kind = dungeon ? 'flags' : ruined ? 'broken' : byTheme[theme] ?? (rg.style === 1 ? (rs % 3 === 0 ? 'earth' : 'planks') : (rs % 2 ? 'planks' : 'flags'));
+      const byTheme = { temple: 'slabs', counting: 'slabs', barracks: 'slabs', library: 'planks', tavern: 'planks', store: 'earth' };
+      const kind = dungeon ? 'slabs' : ruined ? 'broken' : byTheme[theme] ?? (rg.style === 1 ? (rs % 3 === 0 ? 'earth' : 'planks') : 'slabs');
       drawFloor(d, rg.cells, { CX, CY, cs, seed: rs, kind });
       if (!dungeon) {
         wallShadow(d, rg.cells, { CX, CY, cs, seed: rs + 2, walled: P.walled });
@@ -412,8 +478,8 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
   }
 
   // ---------- walls: masonry, timber framing and the city wall, on their own ink layer ----------
-  const wallW = cs * 0.16;
-  const timberW = cs * 0.13;
+  const wallW = cs * 0.25;
+  const timberW = cs * 0.2;
   const cityW = cs * 0.32;
   const cityOff = cityW * 0.3; // the curtain stands a little inside the block's edge
   const { segs: cellSegs, effective } = collectEdges(map, info, seenCell, secrets);
@@ -433,8 +499,8 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
     if (border(q)) {
       const [ox, oy] = outward(q);
       cityWall(ig, ax - ox * cityOff, ay - oy * cityOff, bx - ox * cityOff, by - oy * cityOff, { width: cityW, seed: sd, out: [ox, oy] });
-    } else if (isTimber(q)) timberWall(ig, ax, ay, bx, by, { width: timberW, seed: sd, cs });
-    else stoneWall(ig, ax, ay, bx, by, { width: wallW, seed: sd, courses: 2, tone: dungeon ? [132, 124, 112] : [146, 128, 104], ragged: rag });
+    } else if (isTimber(q)) timberWall(ig, ax, ay, bx, by, { width: timberW, seed: sd, cs, heavy: true });
+    else stoneWall(ig, ax, ay, bx, by, { width: rag ? wallW * 0.8 : wallW, seed: sd, courses: 2, ragged: rag, poche: true });
   };
   const wallRects = [];
   // a cartographer's drop shadow: fine diagonal hatching cast on the ground south and east
@@ -526,7 +592,7 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
           const px = cmx + along[0] * gap * sgn;
           const py = cmy + along[1] * gap * sgn;
           const ps = ww * 1.6;
-          stoneWall(ig, px - along[0] * ps * 0.5, py - along[1] * ps * 0.5, px + along[0] * ps * 0.5, py + along[1] * ps * 0.5, { width: ps, seed: sd + sgn, courses: 1, tone: [168, 152, 126], faceW: 1.1 });
+          stoneWall(ig, px - along[0] * ps * 0.5, py - along[1] * ps * 0.5, px + along[0] * ps * 0.5, py + along[1] * ps * 0.5, { width: ps, seed: sd + sgn, courses: 1, poche: true, faceW: 1.3 });
         }
         ig.save();
         ig.strokeStyle = out ? INK.vermilion : INK.ink;
@@ -595,6 +661,7 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
 
   // ---------- markers ----------
   const markerSpots = [];
+  const markers = [];
   for (const ev of map.events) {
     if (!walkedCell(ev.x, ev.y)) continue;
     const mk2 = eventMarker(ev, !!spent[ev.id]);
@@ -604,21 +671,8 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
     const off = same.length > 1 ? (idx - (same.length - 1) / 2) * cs * 0.32 : 0;
     const mxp = CX(ev.x) + cs / 2 + off;
     const myp = CY(ev.y) + cs / 2;
-    // a cleared reserve under the glyph, as an engraver leaves it: a hard-edged
-    // disc of clean paper ringed by a thin double rule of ink
-    {
-      const kr = cs * 0.33;
-      g.save();
-      g.fillStyle = 'rgba(241,229,200,0.97)';
-      g.beginPath(); g.arc(mxp, myp, kr, 0, Math.PI * 2); g.fill();
-      g.strokeStyle = 'rgba(43,26,13,0.9)';
-      g.lineWidth = 0.9;
-      g.beginPath(); g.arc(mxp, myp, kr, 0, Math.PI * 2); g.stroke();
-      g.lineWidth = 0.45;
-      g.beginPath(); g.arc(mxp, myp, kr - 1.8, 0, Math.PI * 2); g.stroke();
-      g.restore();
-    }
-    drawMarker(g, mk2, mxp, myp, cs * (mk2 === 'battle' ? 0.46 : 0.4), { color: INK.ink, seed: ev.x * 31 + ev.y });
+    // inked live by the viewer at a fixed screen size (see AutomapScene)
+    markers.push({ kind: mk2, x: mxp, y: myp, seed: ev.x * 31 + ev.y });
     markerSpots.push([mxp - cs * 0.22, myp - cs * 0.22, cs * 0.44, cs * 0.44]);
   }
   // exits: arrows in the margin + destination names
@@ -861,7 +915,7 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
   g.restore();
 
   g.restore();
-  return { canvas, k, cs, info, seenCell, fog: fogCov, fogArea, wallRects, cellRect: (x, y) => [M + CX(x), M + CY(y), cs, cs], seed, labels, markerSpots, regions: reg, furniture };
+  return { canvas, k, cs, info, seenCell, fog: fogCov, fogArea, wallRects, cellRect: (x, y) => [M + CX(x), M + CY(y), cs, cs], seed, labels, markerSpots, markers, regions: reg, furniture };
 }
 
 /** Small legend swatch drawn in sheet units. */
@@ -870,14 +924,14 @@ export function drawKeySwatch(g, key, x, y, s) {
   g.save();
   g.strokeStyle = INK.ink;
   g.fillStyle = INK.ink;
-  const wall = (a, b) => stoneWall(g, x - h + a * s, y, x - h + b * s, y, { width: s * 0.2, seed: 3 + a * 7, faceW: 0.8 });
+  const wall = (a, b) => stoneWall(g, x - h + a * s, y, x - h + b * s, y, { width: s * 0.26, seed: 3 + a * 7, faceW: 1, poche: true });
   switch (key) {
     case 'wall': wall(0, 1); break;
     case 'city':
       cityWall(g, x - h, y + s * 0.08, x + h * 0.4, y + s * 0.08, { width: s * 0.34, seed: 5, out: [0, 1] });
       tower(g, x + h * 0.45, y + s * 0.08, s * 0.3, { seed: 2, out: [1, 1] });
       break;
-    case 'timber': timberWall(g, x - h, y, x + h, y, { width: s * 0.17, seed: 4, cs: s * 1.3 }); break;
+    case 'timber': timberWall(g, x - h, y, x + h, y, { width: s * 0.22, seed: 4, cs: s * 1.3, heavy: true }); break;
     case 'door':
       wall(0, 0.22); wall(0.78, 1);
       doorLeaf(g, x - s * 0.28, y, -Math.PI * 0.4, 0, s * 0.56, s * 0.1);
@@ -892,7 +946,7 @@ export function drawKeySwatch(g, key, x, y, s) {
       break;
     case 'arch': {
       wall(0, 0.18); wall(0.82, 1);
-      for (const sx of [-1, 1]) stoneWall(g, x + sx * s * 0.27 - s * 0.1, y, x + sx * s * 0.27 + s * 0.1, y, { width: s * 0.3, seed: 6 + sx, faceW: 0.8 });
+      for (const sx of [-1, 1]) stoneWall(g, x + sx * s * 0.27 - s * 0.1, y, x + sx * s * 0.27 + s * 0.1, y, { width: s * 0.34, seed: 6 + sx, faceW: 0.8, poche: true });
       g.setLineDash([2, 2]); g.lineWidth = 1;
       g.beginPath(); g.moveTo(x - s * 0.14, y); g.lineTo(x + s * 0.14, y); g.stroke();
       g.setLineDash([]);

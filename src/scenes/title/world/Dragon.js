@@ -2,18 +2,28 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 /**
- * The red dragon over the Moonsea: a real 3D silhouette (lofted body with a
- * readable head, horned skull, neck, chest, haunches and a whip tail ending in
- * a spade), and two articulated bat wings whose membranes glow with sunset
- * light where they're thin, crossed by dark arm and finger bones. A custom
- * shader adds a warm rim from the low sun and a cool sky fill on the back.
+ * The red dragon over the Moonsea. A modelled silhouette rather than an eel:
+ * a deep keeled chest and shoulder mass, an S-necked taper into a wedge skull
+ * with brow ridges, an open lower jaw, teeth and swept horns, a dorsal row of
+ * spines from crown to spade, tucked clawed forelegs and heavy hind legs with
+ * muscular thighs and four-toed taloned feet, and two bat wings with a thick
+ * arm, knuckled finger bones and a thumb claw.
+ *
+ * Shading (custom shader): crimson hide broken into Voronoi scales with dark
+ * crevices, ochre ventral plates on the belly, ivory horn/claw; a warm sun key,
+ * cool lilac sky fill and a cool sky rim on the upper silhouette so the
+ * dragon separates from the warm sky and town; membranes are deep red and
+ * glow orange-red where thin when the low sun shines through them (SSS).
  *
  * Flight is screen-anchored: each camera pose hands in a "lane" (NDC start/end
  * + depth start/end) inside the sky region it keeps free of UI, and the dragon
  * glides along it, receding toward the horizon, then fades into the haze —
  * so it can never cross the logo or a panel. update(t, camera, lane).
+ * After update, `mask` holds its NDC footprint (cx, cy, rx, ry) so ember
+ * emitters can keep out of its silhouette.
  *
  * Local frame: nose toward -X, up +Y, right wing toward +Z.
+ * aMem.x kinds: 0 hide, 1 membrane, 2 eye, 3 horn/claw/tooth, 4 wing bone.
  */
 
 // ---------------------------------------------------------------- shading
@@ -22,11 +32,15 @@ const VERT = /* glsl */ `
   uniform float uWing, uSide, uBend, uSweep;
   varying vec3 vN;
   varying vec3 vW;
+  varying vec3 vL;
+  varying vec3 vNL;
   varying vec2 vMem;
   const float WRIST = 7.2;
   void main() {
     vec3 p = position;
     vec3 n = normal;
+    vL = position;
+    vNL = normal;
     if (uWing > 0.5) {
       float z = p.z * uSide;
       float d = max(0.0, z - WRIST);
@@ -58,51 +72,104 @@ const FRAG = /* glsl */ `
   uniform vec3 uSky;
   uniform float uOpacity;
   uniform float uClassic;
+  uniform float uWing;
   varying vec3 vN;
   varying vec3 vW;
+  varying vec3 vL;
+  varying vec3 vNL;
   varying vec2 vMem;
+  vec3 hash3(vec3 p) {
+    p = vec3(dot(p, vec3(127.1, 311.7, 74.7)), dot(p, vec3(269.5, 183.3, 246.1)), dot(p, vec3(113.5, 271.9, 124.6)));
+    return fract(sin(p) * 43758.5453);
+  }
+  // F1/F2 cellular distance: the scale cells and their crevices
+  vec2 cells(vec3 x) {
+    vec3 i = floor(x), f = fract(x);
+    float f1 = 8.0, f2 = 8.0;
+    for (int a = -1; a <= 1; a++) for (int b = -1; b <= 1; b++) for (int c = -1; c <= 1; c++) {
+      vec3 g = vec3(float(a), float(b), float(c));
+      vec3 r = g + hash3(i + g) * 0.85 - f;
+      float d = dot(r, r);
+      if (d < f1) { f2 = f1; f1 = d; } else if (d < f2) f2 = d;
+    }
+    return vec2(sqrt(f1), sqrt(f2));
+  }
   void main() {
     vec3 N = normalize(vN);
     if (!gl_FrontFacing) N = -N;
     vec3 V = normalize(cameraPosition - vW);
     float ndv = dot(N, V);
-    float back = max(0.0, dot(-V, uSun));          // looking toward the sun: backlit
-    float sunN = max(0.0, dot(N, uSun));
-    vec3 col = vec3(0.030, 0.018, 0.026);           // dark red-black hide
-    col += uSky * (0.25 + 0.75 * max(N.y, 0.0)) * 0.035;  // cool sky on the back and upper wing
-    // rim on the silhouette edge that faces the sun (projected into the view
-    // plane), strongest when the dragon is backlit; a front-lit dragon only
-    // gets a thin warm edge so thin limbs don't glow all over
+    float kind = vMem.x;
+    float thin = vMem.y;
+    vec3 albedo;
+    float cav = 1.0;
+    float gloss = 0.25;
+    if (kind < 0.5) {
+      // hide: Voronoi scales, larger over the back, fine on the neck/limbs
+      vec2 c = cells(vL * vec3(3.4, 4.4, 4.4));
+      float edge = smoothstep(0.02, 0.16, c.y - c.x);
+      cav = mix(0.55, 1.0, edge) * (0.85 + 0.15 * (1.0 - c.x));
+      float back = smoothstep(0.1, 0.85, vNL.y);
+      vec3 hide = mix(vec3(0.3, 0.04, 0.028), vec3(0.11, 0.02, 0.022), back);
+      // ventral plates: transverse ochre bands on the belly and throat
+      float belly = smoothstep(-0.3, -0.72, vNL.y) * (uWing > 0.5 ? 0.0 : 1.0);
+      float plate = smoothstep(0.0, 0.14, abs(fract(vL.x * 1.7) - 0.5) * 2.0);
+      vec3 bellyC = vec3(0.46, 0.25, 0.1) * mix(0.45, 1.0, plate);
+      albedo = mix(hide * cav, bellyC, belly);
+      gloss = mix(0.35, 0.15, belly) * cav;
+    } else if (kind < 1.5) {
+      albedo = vec3(0.15, 0.018, 0.016);
+      gloss = 0.12;
+    } else if (kind < 2.5) {
+      albedo = vec3(0.0);
+    } else if (kind < 3.5) {
+      // horn / claw / tooth: dark root to ivory tip (thin = tip fraction)
+      albedo = mix(vec3(0.07, 0.05, 0.04), vec3(0.62, 0.55, 0.42), thin);
+      gloss = 0.6;
+    } else {
+      albedo = vec3(0.13, 0.03, 0.026);
+      gloss = 0.3;
+    }
+    // lighting: warm low-sun key (wrapped), cool sky dome, warm bounce from
+    // the burning city below, a faint camera-side fill so the red still reads
+    float ndl = dot(N, uSun);
+    float wrap = max(0.0, (ndl + 0.25) / 1.25);
+    vec3 sunC = uRim * 1.35;
+    vec3 lit = sunC * wrap
+      + uSky * (0.35 + 0.65 * max(N.y, 0.0)) * 0.5
+      + vec3(0.55, 0.22, 0.1) * max(0.0, -N.y) * 0.55
+      + vec3(0.42, 0.24, 0.2) * max(0.0, ndv) * 0.18;
+    vec3 col = albedo * lit;
+    vec3 H = normalize(uSun + V);
+    col += sunC * pow(max(dot(N, H), 0.0), 36.0) * gloss * 0.9 * step(0.0, ndl);
+    float fres = pow(1.0 - abs(ndv), 4.0);
+    if (kind > 0.5 && kind < 1.5) {
+      // membrane subsurface: the sun through thin skin, darker veins off the bones
+      float back = max(0.0, dot(-V, uSun));
+      float veinA = 1.0 - smoothstep(0.0, 0.07, abs(fract(thin * 4.0 + sin(vL.x * 0.9 + vL.z * 0.7) * 0.18) - 0.5));
+      float veinB = 1.0 - smoothstep(0.0, 0.05, abs(fract((vL.x * 0.55 - vL.z * 0.35) * 0.6) - 0.5));
+      float vein = max(veinA * 0.7, veinB * 0.4) * smoothstep(0.15, 0.5, thin);
+      float trans = thin * (0.18 + 1.5 * pow(back, 2.2));
+      vec3 glow = mix(vec3(0.42, 0.03, 0.015), vec3(0.95, 0.2, 0.04), thin * thin * back);
+      col += glow * trans * 0.42 * (1.0 - vein * 0.75);
+      fres *= 0.35;
+    }
+    // separation from the warm sky: a cool lilac rim on the upper silhouette,
+    // a thin hot edge only on lines that face the sun
     vec3 sp = uSun - V * dot(uSun, V);
     float spl = length(sp);
     float edgeSun = max(0.0, dot(N, sp / max(spl, 1e-4))) * spl;
-    float backK = 0.5 + 0.5 * dot(-V, uSun);
-    float rim = pow(1.0 - abs(ndv), 4.0);
-    // sunset rim: a hot edge on every silhouette line that faces the low sun
-    // (membranes seen edge-on would take the rim over their whole area and
-    // read as pale sails: they keep only a thin share of it)
-    float memK = (vMem.x > 0.5 && vMem.x < 1.5) ? 0.22 + 0.5 * pow(1.0 - vMem.y, 3.0) : 1.0;
-    col += uRim * rim * (edgeSun * 1.6 + back * back * 0.9 + 0.22) * backK * memK;
-    col += uRim * pow(sunN, 2.0) * 0.06;
-    if (vMem.x > 0.5 && vMem.x < 1.5) {
-      // membrane: the low sun shines through where it's thin, orange-red,
-      // with darker veins branching off the finger bones; bones and the
-      // scalloped trailing edge stay dark so the structure reads
-      float thin = vMem.y;
-      float trans = (0.22 + 1.1 * pow(back, 1.6)) * thin;
-      float veinA = 1.0 - smoothstep(0.0, 0.06, abs(fract(thin * 4.0 + sin(vW.x * 0.9 + vW.z * 0.7) * 0.18) - 0.5));
-      float veinB = 1.0 - smoothstep(0.0, 0.05, abs(fract((vW.x * 0.55 - vW.z * 0.35) * 0.6) - 0.5));
-      float vein = max(veinA * 0.7, veinB * 0.45) * smoothstep(0.15, 0.5, thin);
-      vec3 glow = mix(vec3(0.7, 0.12, 0.03), vec3(1.0, 0.34, 0.07), thin * thin) * trans;
-      col = col * (1.0 - 0.35 * thin) + glow * 0.3 * (1.0 - vein * 0.8);
-    }
-    if (vMem.x > 1.5) col = vec3(1.6, 0.62, 0.16);  // ember eyes
+    col += uSky * fres * (0.1 + 1.1 * smoothstep(-0.1, 0.8, N.y)) * 1.25;
+    col += uRim * fres * edgeSun * 0.9;
+    if (kind > 1.5 && kind < 2.5) col = vec3(1.9, 0.75, 0.18);  // ember eyes
     if (uClassic > 0.5) col = vec3(0.0);
     gl_FragColor = vec4(col, uOpacity);
   }
 `;
 
 // ---------------------------------------------------------------- geometry helpers
+const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+
 /** Indexed geometry from arrays, with aMem attribute and computed normals. */
 function geo(pos, idx, mem) {
   const g = new THREE.BufferGeometry();
@@ -124,27 +191,6 @@ function tag(g, kind = 0, thin = 0) {
   return g;
 }
 
-/** Tapered tube between two points. */
-function bone(a, b, r0, r1, seg = 6) {
-  const len = a.distanceTo(b);
-  const g = new THREE.CylinderGeometry(r1, r0, len, seg, 1, false);
-  g.translate(0, len / 2, 0);
-  const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
-  g.applyQuaternion(q);
-  g.translate(a.x, a.y, a.z);
-  return tag(g, 0, 0);
-}
-
-/** Cone (horn, spine, claw) from base point a toward tip b. */
-function spike(a, b, r, seg = 5) {
-  const len = a.distanceTo(b);
-  const g = new THREE.ConeGeometry(r, len, seg, 1);
-  g.translate(0, len / 2, 0);
-  g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize()));
-  g.translate(a.x, a.y, a.z);
-  return tag(g, 0, 0);
-}
-
 const lerpKeys = (k, s) => {
   for (let i = 1; i < k.length; i++) {
     if (s <= k[i][0]) {
@@ -156,39 +202,40 @@ const lerpKeys = (k, s) => {
   return k[k.length - 1][1];
 };
 
-// ---------------------------------------------------------------- body
-function buildBody() {
-  // spine from snout (s=0) to tail tip (s=1); neck arches up, tail droops and flicks
-  const spine = new THREE.CatmullRomCurve3(
-    [[-10.6, 1.9], [-9.2, 2.0], [-7.9, 1.75], [-6.4, 1.05], [-4.6, 0.35], [-2.2, 0.05], [0.8, -0.1], [3.4, 0.1], [6.2, 0.4], [9.0, 0.15], [11.8, -0.45], [14.6, -0.2]]
-      .map(([x, y]) => new THREE.Vector3(x, y, 0)),
-  );
-  // half-height and half-width profiles: long snout, skull, slim neck, deep chest, haunch, whip tail
-  const H = [[0, 0.1], [0.02, 0.26], [0.055, 0.42], [0.075, 0.36], [0.1, 0.3], [0.2, 0.38], [0.3, 0.66], [0.38, 0.74], [0.48, 0.6], [0.56, 0.5], [0.66, 0.3], [0.82, 0.13], [1, 0.03]];
-  const W = [[0, 0.08], [0.02, 0.2], [0.055, 0.36], [0.075, 0.3], [0.1, 0.26], [0.2, 0.32], [0.3, 0.6], [0.38, 0.66], [0.48, 0.54], [0.56, 0.5], [0.66, 0.26], [0.82, 0.11], [1, 0.03]];
-  const NS = 72;
-  const NR = 10;
+/**
+ * Loft a cross-section along a curve. prof(s) → {h, w}; shape(sa, ca, s) →
+ * [yk, xk] multipliers (keel, flat belly, wedge). Ends are closed with a fan.
+ * kindFn(s) → [kind, thin] per ring (horns fade root→tip).
+ */
+function loft(points, prof, { NS = 24, NR = 12, shape = null, ref = V3(0, 1, 0), kind = 0, kindFn = null, closeEnds = true } = {}) {
+  const curve = Array.isArray(points) ? new THREE.CatmullRomCurve3(points) : points;
   const pos = [];
   const idx = [];
   const mem = [];
-  const up = new THREE.Vector3(0, 1, 0);
+  let nUp = null;
   for (let i = 0; i <= NS; i++) {
     const s = i / NS;
-    const p = spine.getPointAt(s);
-    const t = spine.getTangentAt(s);
-    const nUp = up.clone().sub(t.clone().multiplyScalar(up.dot(t))).normalize();
+    const p = curve.getPointAt(s);
+    const t = curve.getTangentAt(s);
+    // parallel-transport-ish frame seeded from ref
+    if (!nUp) {
+      nUp = ref.clone().sub(t.clone().multiplyScalar(ref.dot(t)));
+      if (nUp.lengthSq() < 1e-4) nUp = V3(1, 0, 0).sub(t.clone().multiplyScalar(t.x));
+      nUp.normalize();
+    } else {
+      nUp.sub(t.clone().multiplyScalar(nUp.dot(t))).normalize();
+    }
     const side = new THREE.Vector3().crossVectors(t, nUp).normalize();
-    const hh = lerpKeys(H, s);
-    const ww = lerpKeys(W, s);
+    const { h, w } = prof(s);
+    const [kd, th] = kindFn ? kindFn(s) : [kind, 0];
     for (let j = 0; j < NR; j++) {
       const a = (j / NR) * Math.PI * 2;
       const ca = Math.cos(a);
       const sa = Math.sin(a);
-      // flatter belly, ridged back
-      const yk = sa > 0 ? 1 + 0.12 * Math.pow(sa, 8) : 0.85;
-      const v = p.clone().addScaledVector(nUp, sa * hh * yk).addScaledVector(side, ca * ww);
+      const [yk, xk] = shape ? shape(sa, ca, s) : [1, 1];
+      const v = p.clone().addScaledVector(nUp, sa * h * yk).addScaledVector(side, ca * w * xk);
       pos.push(v.x, v.y, v.z);
-      mem.push(0, 0);
+      mem.push(kd, th);
     }
   }
   for (let i = 0; i < NS; i++) {
@@ -200,56 +247,184 @@ function buildBody() {
       idx.push(a, c, b, b, c, d);
     }
   }
-  const parts = [geo(pos, idx, mem)];
+  if (closeEnds) {
+    for (const [ring, flip] of [[0, true], [NS, false]]) {
+      const p = curve.getPointAt(ring / NS);
+      const [kd, th] = kindFn ? kindFn(ring / NS) : [kind, 0];
+      pos.push(p.x, p.y, p.z);
+      mem.push(kd, th);
+      const c = pos.length / 3 - 1;
+      for (let j = 0; j < NR; j++) {
+        const a = ring * NR + j;
+        const b = ring * NR + ((j + 1) % NR);
+        if (flip) idx.push(c, a, b); else idx.push(c, b, a);
+      }
+    }
+  }
+  return geo(pos, idx, mem);
+}
+
+/** Tapered round tube through points (bones, toes, horns). */
+function tube(points, r0, r1, { NS = 8, NR = 7, kind = 0, tip = false, bulge = 0 } = {}) {
+  return loft(points, (s) => {
+    const r = (r0 + (r1 - r0) * s) * (1 + bulge * Math.sin(Math.PI * Math.min(1, s * 1.4)));
+    return { h: r, w: r };
+  }, { NS, NR, kind, kindFn: tip ? (s) => [3, Math.pow(s, 1.5)] : null });
+}
+
+/** Curved claw/horn: a tube tapering to a point, ivory at the tip. */
+function talon(a, dir, len, r, curl = V3(0, -1, 0), seg = 5) {
+  const d = dir.clone().normalize();
+  const p1 = a.clone().addScaledVector(d, len * 0.5).addScaledVector(curl, len * 0.08);
+  const p2 = a.clone().addScaledVector(d, len * 0.9).addScaledVector(curl, len * 0.35);
+  return tube([a, p1, p2], r, r * 0.05, { NS: 5, NR: seg, tip: true });
+}
+
+function ellipsoid(c, sx, sy, sz, kind = 0, rot = null) {
+  const g = new THREE.SphereGeometry(1, 10, 7);
+  g.scale(sx, sy, sz);
+  if (rot) g.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(rot));
+  g.translate(c.x, c.y, c.z);
+  return tag(g, kind, 0);
+}
+
+/** Flattened triangular dorsal spine plate. */
+function plate(base, hgt, len, lean = 0.45) {
+  const g = new THREE.ConeGeometry(len * 0.5, hgt, 4, 1);
+  g.scale(1, 1, 0.28);
+  g.translate(0, hgt / 2, 0);
+  g.rotateZ(-lean);
+  g.translate(base.x, base.y, base.z);
+  return tag(g, 3, 0.25);
+}
+
+// ---------------------------------------------------------------- body
+function buildBody() {
+  const parts = [];
+  // neck + trunk + tail: an S-neck from the back of the skull, deep chest,
+  // waist, haunch, long tapering tail with a lift at the end
+  const spine = new THREE.CatmullRomCurve3(
+    [[-9.0, 2.25], [-7.9, 2.35], [-6.7, 1.95], [-5.3, 1.15], [-3.7, 0.45], [-1.8, 0.1], [0.5, 0.0], [2.6, 0.05], [4.5, 0.12],
+      [6.9, 0.25], [9.6, 0.08], [12.5, -0.32], [15.2, -0.15], [17.6, 0.25]].map(([x, y]) => V3(x, y, 0)),
+  );
+  const H = [[0, 0.44], [0.06, 0.46], [0.13, 0.55], [0.2, 0.86], [0.27, 1.22], [0.33, 1.3], [0.4, 1.08], [0.46, 0.86], [0.52, 0.94], [0.58, 0.72], [0.68, 0.42], [0.8, 0.22], [0.92, 0.1], [1, 0.03]];
+  const W = [[0, 0.4], [0.06, 0.4], [0.13, 0.48], [0.2, 0.76], [0.27, 1.02], [0.33, 1.05], [0.4, 0.9], [0.46, 0.74], [0.52, 0.86], [0.58, 0.64], [0.68, 0.38], [0.8, 0.2], [0.92, 0.09], [1, 0.03]];
+  parts.push(loft(spine, (s) => ({ h: lerpKeys(H, s), w: lerpKeys(W, s) }), {
+    NS: 110,
+    NR: 18,
+    shape: (sa, ca, s) => {
+      // keeled chest and flat-ish belly, a ridged spine, slab-sided neck
+      const chest = Math.exp(-Math.pow((s - 0.31) / 0.08, 2));
+      const yk = sa > 0 ? 0.9 + 0.16 * Math.pow(sa, 12) : 0.88 + 0.22 * chest * Math.pow(-sa, 3);
+      const xk = 1 - 0.08 * Math.pow(Math.abs(sa), 2) * (1 - chest);
+      return [yk, xk];
+    },
+  }));
   const at = (s, upK = 0, sideK = 0) => {
     const p = spine.getPointAt(s);
-    return new THREE.Vector3(p.x, p.y + lerpKeys(H, s) * upK, lerpKeys(W, s) * sideK);
+    const t = spine.getTangentAt(s);
+    const n = V3(-t.y, t.x, 0).normalize();
+    return p.clone().addScaledVector(n, lerpKeys(H, s) * upK).add(V3(0, 0, lerpKeys(W, s) * sideK));
   };
-  const V = (x, y, z) => new THREE.Vector3(x, y, z);
-  // swept-back horns and cheek frills
+  // shoulder/pectoral mass where the wings root, and haunch muscle
   for (const z of [-1, 1]) {
-    const base = at(0.06, 0.7, 0.55 * z);
-    parts.push(spike(base, base.clone().add(V(2.1, 0.95, 0.35 * z)), 0.14));
-    const b2 = at(0.07, 0.1, 0.8 * z);
-    parts.push(spike(b2, b2.clone().add(V(1.2, -0.2, 0.45 * z)), 0.1));
+    parts.push(ellipsoid(at(0.3, 0.35, 0.62 * z), 1.35, 0.9, 0.55, 0, new THREE.Euler(0, 0, -0.35)));
+    parts.push(ellipsoid(at(0.53, -0.05, 0.6 * z), 0.95, 0.72, 0.42, 0, new THREE.Euler(0, 0, 0.25)));
   }
-  // lower jaw, slightly agape
-  const jaw0 = at(0.075, -0.6);
-  parts.push(bone(jaw0, jaw0.clone().add(V(-2.1, -0.38, 0)), 0.17, 0.06));
-  // dorsal spines from the skull to the tail
-  for (let i = 0; i < 16; i++) {
-    const s = 0.11 + i * 0.05;
-    const base = at(s, 0.9);
-    const hgt = (0.42 - i * 0.018) * (s > 0.28 && s < 0.6 ? 1.15 : 0.8);
-    parts.push(spike(base, base.clone().add(V(0.28, hgt, 0)), 0.1, 4));
-  }
-  // tail spade (flattened diamond)
-  const tip = spine.getPointAt(1);
-  const spade = new THREE.OctahedronGeometry(1, 0);
-  spade.scale(1.2, 0.14, 0.75);
-  spade.translate(tip.x + 0.4, tip.y, 0);
-  parts.push(tag(spade));
-  // legs tucked under for flight: forelegs folded up, hind legs trailing
+
+  // ---- head: wedge skull (flat crown, cheeks), snout, brow ridges, open jaw
+  const skull = new THREE.CatmullRomCurve3([V3(-8.6, 2.3, 0), V3(-9.4, 2.32, 0), V3(-10.5, 2.15, 0), V3(-11.6, 1.95, 0), V3(-12.5, 1.78, 0)]);
+  const SH = [[0, 0.5], [0.18, 0.56], [0.4, 0.4], [0.7, 0.3], [0.92, 0.24], [1, 0.1]];
+  const SW = [[0, 0.46], [0.18, 0.52], [0.4, 0.38], [0.7, 0.28], [0.92, 0.25], [1, 0.12]];
+  parts.push(loft(skull, (s) => ({ h: lerpKeys(SH, s), w: lerpKeys(SW, s) }), {
+    NS: 26,
+    NR: 16,
+    shape: (sa, ca) => {
+      // superellipse: squared-off wedge with a flat crown and flat jaw line
+      const yk = sa > 0 ? Math.pow(Math.abs(sa), -0.55) * 0.85 : Math.pow(Math.abs(sa), -0.35) * 0.55;
+      const xk = Math.pow(Math.abs(ca), -0.45);
+      return [Math.min(yk, 2.2), Math.min(xk, 2.2)];
+    },
+  }));
+  // lower jaw, agape ~14°
+  const jaw = new THREE.CatmullRomCurve3([V3(-8.9, 1.88, 0), V3(-9.8, 1.7, 0), V3(-11.0, 1.42, 0), V3(-12.0, 1.2, 0)]);
+  parts.push(loft(jaw, (s) => ({ h: 0.2 * (1 - 0.55 * s), w: 0.42 * (1 - 0.6 * s) + 0.04 }), {
+    NS: 12,
+    NR: 10,
+    shape: (sa) => [sa > 0 ? 0.6 : 1, 1],
+  }));
+  // teeth on both jaws
   for (const z of [-1, 1]) {
-    const sh = at(0.33, -0.55, 0.55 * z);
-    const el = sh.clone().add(V(0.5, -1.0, 0.15 * z));
-    const wr = el.clone().add(V(-0.9, -0.35, 0.05 * z));
-    parts.push(bone(sh, el, 0.24, 0.16), bone(el, wr, 0.15, 0.1));
-    for (let c = -1; c <= 1; c++) parts.push(spike(wr, wr.clone().add(V(-0.45, -0.18, c * 0.12)), 0.05, 3));
-    const hip = at(0.55, -0.4, 0.6 * z);
-    const kn = hip.clone().add(V(0.9, -1.1, 0.25 * z));
-    const an = kn.clone().add(V(1.6, -0.15, 0.05 * z));
-    parts.push(bone(hip, kn, 0.36, 0.22), bone(kn, an, 0.2, 0.12));
-    for (let c = -1; c <= 1; c++) parts.push(spike(an, an.clone().add(V(0.6, -0.15, c * 0.15)), 0.06, 3));
-    // ember eyes
-    const eye = new THREE.SphereGeometry(0.075, 6, 4);
-    const e = at(0.045, 0.35, 0.78 * z);
-    eye.translate(e.x, e.y, e.z);
+    for (let i = 0; i < 4; i++) {
+      const f = i / 3;
+      const top = V3(-10.0 - f * 2.2, 2.05 - f * 0.33, z * (0.3 - f * 0.14));
+      parts.push(talon(top, V3(0, -1, 0), 0.24 - f * 0.08, 0.045, V3(0.3, 0, 0), 4));
+      const bot = V3(-9.9 - f * 2.0, 1.72 - f * 0.48, z * (0.32 - f * 0.18));
+      parts.push(talon(bot, V3(0, 1, 0), 0.16, 0.035, V3(0.2, 0, 0), 4));
+    }
+    // brow ridge over the eye, cheek spur, nostril
+    parts.push(ellipsoid(V3(-9.75, 2.62, z * 0.4), 0.62, 0.16, 0.2, 0, new THREE.Euler(z * 0.25, 0, -0.12)));
+    parts.push(ellipsoid(V3(-12.15, 2.05, z * 0.2), 0.22, 0.1, 0.1));
+    parts.push(talon(V3(-9.0, 1.95, z * 0.45), V3(1, -0.15, z * 0.5), 0.9, 0.09));
+    // horns: a big swept pair from the crown and a smaller pair below
+    parts.push(tube([V3(-9.1, 2.6, z * 0.3), V3(-8.2, 3.05, z * 0.42), V3(-7.1, 3.25, z * 0.55), V3(-6.2, 3.05, z * 0.6)], 0.2, 0.015, { NS: 10, NR: 7, tip: true }));
+    parts.push(tube([V3(-8.9, 2.25, z * 0.42), V3(-8.2, 2.35, z * 0.62), V3(-7.5, 2.55, z * 0.72)], 0.12, 0.01, { NS: 6, NR: 6, tip: true }));
+    // eye
+    const eye = new THREE.SphereGeometry(0.09, 8, 6);
+    eye.translate(-9.85, 2.48, z * 0.44);
     parts.push(tag(eye, 2, 0));
   }
-  const g = mergeGeometries(parts.map((p) => (p.index ? p : p)), false);
+  // nose horn
+  parts.push(talon(V3(-11.9, 2.15, 0), V3(-0.3, 1, 0), 0.45, 0.08, V3(1, 0, 0)));
+
+  // ---- dorsal spine row: crown to tail, tallest over the shoulders
+  for (let s = 0.02; s < 0.95; s += 0.022) {
+    const base = at(s, 0.95);
+    const hk = s < 0.2 ? 0.32 : s < 0.5 ? 0.5 + 0.2 * Math.exp(-Math.pow((s - 0.32) / 0.08, 2)) : 0.45 * (1 - (s - 0.5) * 1.6);
+    const hgt = Math.max(0.12, hk * (s < 0.2 ? 1 : lerpKeys(H, s) * 0.85 + 0.3));
+    parts.push(plate(base, hgt, Math.max(0.16, hgt * 0.7), 0.5));
+  }
+  // tail spade: a flattened arrowhead
+  const tip = spine.getPointAt(1);
+  const spade = new THREE.ConeGeometry(0.8, 1.9, 4, 1);
+  spade.scale(1, 1, 0.18);
+  spade.rotateZ(-Math.PI / 2);
+  spade.rotateX(Math.PI / 2);
+  spade.translate(tip.x + 0.7, tip.y, 0);
+  parts.push(tag(spade, 0, 0));
+
+  // ---- forelegs tucked under the chest: upper arm, forearm, clawed hand
+  for (const z of [-1, 1]) {
+    const sh = at(0.3, -0.45, 0.7 * z);
+    const el = sh.clone().add(V3(0.75, -1.1, 0.22 * z));
+    const wr = el.clone().add(V3(-1.05, -0.45, 0.04 * z));
+    parts.push(tube([sh, sh.clone().lerp(el, 0.5).add(V3(0.1, 0, 0)), el], 0.42, 0.22, { bulge: 0.2 }));
+    parts.push(tube([el, wr], 0.22, 0.15));
+    for (let c = -1; c <= 1; c++) {
+      const k = wr.clone().add(V3(-0.32, -0.1, c * 0.13));
+      parts.push(tube([wr, k], 0.09, 0.07, { NS: 2, NR: 5 }));
+      parts.push(talon(k, V3(-0.6, -0.5, c * 0.15), 0.42, 0.065));
+    }
+    // ---- hind legs trailing: muscular thigh, shank, metatarsus, 4-toed taloned foot
+    const hip = at(0.53, -0.25, 0.72 * z);
+    const kn = hip.clone().add(V3(1.0, -1.25, 0.28 * z));
+    const an = kn.clone().add(V3(1.75, -0.3, -0.04 * z));
+    const ft = an.clone().add(V3(0.85, -0.15, 0));
+    parts.push(tube([hip, hip.clone().lerp(kn, 0.45).add(V3(0.18, 0.05, 0.1 * z)), kn], 0.6, 0.27, { NS: 10, NR: 10, bulge: 0.15 }));
+    parts.push(tube([kn, kn.clone().lerp(an, 0.4).add(V3(0, 0.12, 0)), an], 0.32, 0.17, { bulge: 0.2 }));
+    parts.push(tube([an, ft], 0.17, 0.14));
+    parts.push(ellipsoid(kn, 0.28, 0.25, 0.27));
+    for (let c = 0; c < 4; c++) {
+      const spread = (c - 1.5) * 0.17;
+      const dir = c === 3 ? V3(-0.6, 0.1, z * 0.6) : V3(1, -0.18, spread * z * 2);
+      const k1 = ft.clone().addScaledVector(dir.normalize(), c === 3 ? 0.3 : 0.48);
+      parts.push(tube([ft, k1], 0.1, 0.075, { NS: 2, NR: 5 }));
+      parts.push(talon(k1, c === 3 ? dir : V3(0.8, -0.55, spread * z), 0.55, 0.075));
+    }
+  }
+  const g = mergeGeometries(parts, false);
   parts.forEach((p) => p.dispose());
-  return { geometry: g, shoulder: at(0.335, 0.55, 0.5) };
+  return { geometry: g, shoulder: at(0.305, 0.62, 0.55) };
 }
 
 // ---------------------------------------------------------------- wing
@@ -259,7 +434,7 @@ function buildBody() {
  * between them carry a "thinness" (0 at a bone, 1 mid-panel) for the shader.
  */
 function buildWing() {
-  const P = (c, s, y = 0) => new THREE.Vector3(c, y, s);
+  const P = (c, s, y = 0) => V3(c, y, s);
   const S = P(-0.5, 0);
   const E = P(-1.7, 3.5, 0.25);
   const W = P(-0.9, 7.2, 0.35);
@@ -273,7 +448,6 @@ function buildWing() {
     mem.push(1, thin);
     return pos.length / 3 - 1;
   };
-  // a curved membrane sheet: billow downward (camber) between its bones
   const sheet = (rows, cols, at) => {
     const base = pos.length / 3;
     for (let r = 0; r <= rows; r++) for (let c = 0; c <= cols; c++) {
@@ -289,39 +463,49 @@ function buildWing() {
     }
   };
   const tri = (x) => Math.sin(Math.PI * Math.min(1, Math.max(0, x)));
-  // finger panels: fan from the wrist between consecutive fingers
   for (let f = 0; f < 3; f++) {
     const A = F[f];
     const B = F[f + 1];
-    sheet(8, 8, (r, a) => {
+    sheet(10, 10, (r, a) => {
       const edge = A.clone().lerp(B, a);
-      // scallop: the trailing edge pulls in toward the wrist between fingertips
       edge.lerp(W, 0.3 * tri(a));
       const v = W.clone().lerp(edge, r);
       const bd = Math.min(a, 1 - a) * 2;
-      v.y -= 0.35 * tri(a) * tri(r) * 1.2; // billow
+      v.y -= 0.42 * tri(a) * tri(r);
       const thin = Math.min(1, bd * 1.6) * Math.min(1, r * 3) * (1 - 0.35 * Math.pow(r, 6));
       return { v, thin };
     });
   }
-  // arm panel: leading arm S→E→W, trailing edge T→(scallop)→F4
   const arm = (u) => (u < 0.5 ? S.clone().lerp(E, u * 2) : E.clone().lerp(W, (u - 0.5) * 2));
   const trail = (u) => {
     const v = T.clone().lerp(F[3], u);
     const l = arm(u);
     return v.lerp(l, 0.22 * tri(u));
   };
-  sheet(10, 8, (u, w) => {
+  sheet(12, 10, (u, w) => {
     const v = arm(u).lerp(trail(u), w);
-    v.y -= 0.45 * tri(w) * tri(u);
+    v.y -= 0.5 * tri(w) * tri(u);
     const thin = Math.min(1, w * 3.2) * Math.min(1, (1 - u) * 6 + 0.15) * (1 - 0.3 * Math.pow(w, 6));
     return { v, thin };
   });
   const membrane = geo(pos, idx, mem);
-  // bones: humerus, forearm, fingers (taper to the tips), wrist claw
-  const parts = [membrane, bone(S, E, 0.34, 0.22), bone(E, W, 0.22, 0.15)];
-  for (const f of F) parts.push(bone(W, f, 0.12, 0.03, 5));
-  parts.push(spike(W, W.clone().add(new THREE.Vector3(-0.8, 0.25, 0.35)), 0.09, 4));
+  // bones: a thick muscled humerus and forearm, wrist knuckle, finger bones
+  // with knuckle joints that taper to the tips, and a hooked thumb claw
+  const B = (pts, r0, r1, o = {}) => {
+    const g = tube(pts, r0, r1, o);
+    const m = g.attributes.aMem;
+    for (let i = 0; i < m.count; i++) m.setX(i, 4);
+    return g;
+  };
+  const parts = [membrane, B([S, S.clone().lerp(E, 0.5).add(V3(0, 0.12, 0)), E], 0.5, 0.26, { NS: 8, NR: 9, bulge: 0.25 }), B([E, W], 0.26, 0.17, { NR: 8 })];
+  parts.push(ellipsoid(W, 0.3, 0.26, 0.3, 4));
+  parts.push(ellipsoid(E, 0.3, 0.28, 0.3, 4));
+  for (const f of F) {
+    const k = W.clone().lerp(f, 0.42);
+    parts.push(B([W, k], 0.14, 0.1, { NS: 4, NR: 6 }), B([k, f], 0.1, 0.025, { NS: 6, NR: 6 }));
+    parts.push(ellipsoid(k, 0.13, 0.12, 0.13, 4));
+  }
+  parts.push(talon(W.clone().add(V3(-0.1, 0.1, 0.1)), V3(-0.9, 0.3, 0.4), 0.85, 0.1, V3(0, -1, 0)));
   const g = mergeGeometries(parts, false);
   parts.forEach((p) => p.dispose());
   return g;
@@ -348,8 +532,8 @@ export function createDragon({ sunDir = new THREE.Vector3(-0.45, 0.014, -1).norm
   group.name = 'dragon';
   const shared = {
     uSun: { value: sunDir.clone().normalize() },
-    uRim: { value: new THREE.Color(1.0, 0.52, 0.24) },
-    uSky: { value: new THREE.Color(0.45, 0.42, 0.75) },
+    uRim: { value: new THREE.Color(1.0, 0.52, 0.26) },
+    uSky: { value: new THREE.Color(0.42, 0.44, 0.78) },
     uOpacity: { value: 1 },
     uClassic: { value: 0 },
   };
@@ -421,10 +605,16 @@ export function createDragon({ sunDir = new THREE.Vector3(-0.45, 0.014, -1).norm
   const za = new THREE.Vector3();
   const qBank = new THREE.Quaternion();
   const ax = new THREE.Vector3(1, 0, 0);
+  // footprint probes (local): nose, tail, belly, crown, wingtips, mid-wing
+  const probes = [V3(-12.5, 2, 0), V3(18, 0, 0), V3(5, -2.2, 0), V3(-6, 3.4, 0), V3(-0.5, 2.5, 15), V3(-0.5, 2.5, -15), V3(4, 1.6, 9), V3(4, 1.6, -9)];
+  const mask = new THREE.Vector4(0, 0, 0, 0);
+  const pr = new THREE.Vector3();
 
   return {
     group,
     uniforms: shared,
+    /** NDC footprint of the dragon (cx, cy, rx, ry); rx = 0 when hidden. */
+    mask,
     /** Classic 1988 mode: a pure black cut-out (EGA art had no rim light). */
     setClassic(on) {
       shared.uClassic.value = on ? 1 : 0;
@@ -435,6 +625,7 @@ export function createDragon({ sunDir = new THREE.Vector3(-0.45, 0.014, -1).norm
      * @param {null|{x:[number,number], y:[number,number], d:[number,number], period:number, phase?:number, duty?:number, scale?:number, bank?:number, time?:number}} lane
      */
     update(t, camera, lane) {
+      mask.set(0, 0, 0, 0);
       if (!lane || !camera) {
         group.visible = false;
         return;
@@ -457,8 +648,6 @@ export function createDragon({ sunDir = new THREE.Vector3(-0.45, 0.014, -1).norm
       for (const m of mats) m.uniforms.uOpacity.value = fade;
       const ps = pose(lt);
       const at = (q, out) => {
-        // screen travel decelerates while depth accelerates: the dragon glides
-        // across in profile, then banks away toward the horizon
         const e = 1 - Math.pow(1 - q, lane.xe ?? 1);
         const x = lane.x[0] + (lane.x[1] - lane.x[0]) * e;
         const y = lane.y[0] + (lane.y[1] - lane.y[0]) * e + Math.sin(lt * 0.5) * 0.012;
@@ -472,20 +661,17 @@ export function createDragon({ sunDir = new THREE.Vector3(-0.45, 0.014, -1).norm
       at(kk, p0);
       fwd.y *= 0.4;
       fwd.normalize();
-      // local -X is the nose
       xa.copy(fwd).negate();
       ya.copy(upW).addScaledVector(fwd, -upW.dot(fwd)).normalize();
       za.crossVectors(xa, ya);
       basis.makeBasis(xa, ya, za);
       group.quaternion.setFromRotationMatrix(basis);
-      // bank into the turn; pitch up a touch on the downstroke
       qBank.setFromAxisAngle(ax, (lane.bank ?? 0.18) + Math.sin(lt * 0.37) * 0.05);
       group.quaternion.multiply(qBank);
       group.rotateZ(-0.06 + ps.beat * 0.04);
       group.position.copy(p0);
       group.position.y += -ps.beat * 0.35 * (lane.scale ?? 1);
       group.scale.setScalar(lane.scale ?? 1);
-      // wings: rotation.x lifts +Z up for negative angles
       for (const w of wings) {
         const s = w.userData.side;
         w.rotation.x = -ps.arm * s;
@@ -493,6 +679,15 @@ export function createDragon({ sunDir = new THREE.Vector3(-0.45, 0.014, -1).norm
         w.userData.mat.uniforms.uBend.value = ps.hand;
         w.userData.mat.uniforms.uSweep.value = ps.sweep;
       }
+      // screen footprint for the ember mask
+      group.updateMatrixWorld(true);
+      let x0 = 9, x1 = -9, y0 = 9, y1 = -9;
+      for (const q of probes) {
+        pr.copy(q).applyMatrix4(group.matrixWorld).project(camera);
+        x0 = Math.min(x0, pr.x); x1 = Math.max(x1, pr.x);
+        y0 = Math.min(y0, pr.y); y1 = Math.max(y1, pr.y);
+      }
+      if (fade > 0.05) mask.set((x0 + x1) / 2, (y0 + y1) / 2, Math.max(0.01, (x1 - x0) / 2), Math.max(0.01, (y1 - y0) / 2));
     },
     dispose() {
       bodyGeo.dispose();

@@ -360,7 +360,16 @@ export class SettingsPanel {
     this.tab = id;
     if (!(keepFocus && sameTab)) this.focus = 0;
     if (!keepCapture) this.capture = null;
-    this.tabBtns.forEach((b) => b.classList.toggle('sel', b.dataset.tab === id));
+    // exactly one tab reads as selected: aria state + roving tabindex, and a
+    // stale focus ring left on a previously clicked tab moves to the new one
+    const prevFocusTab = typeof document !== 'undefined' && this.tabBtns.includes(document.activeElement);
+    this.tabBtns.forEach((b) => {
+      const on = b.dataset.tab === id;
+      b.classList.toggle('sel', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+      b.tabIndex = on ? 0 : -1;
+      if (on && prevFocusTab) b.focus?.({ preventScroll: true, focusVisible: false });
+    });
     const sec = this.sections.find((s) => s.id === id);
     clear(this.headEl).append(h('h2.por-set-title', [sec.label]), h('div.por-set-blurb', [sec.blurb ?? '']), h('div.por-rule'));
     clear(this.bodyEl);

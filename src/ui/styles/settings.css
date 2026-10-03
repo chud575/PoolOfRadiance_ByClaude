@@ -30,6 +30,9 @@ html[data-input='pad'] .por-set-tabs-head .por-keycap { display: none; }
 }
 .por-set-tab:not(.sel):hover { color: var(--por-text); background: none; text-shadow: 0 0 10px rgba(255, 220, 150, 0.25); }
 .por-set-tab:not(.sel):hover .por-set-icon { color: var(--por-gilt); }
+/* only the selected tab may carry a ring: a stale focus left on another tab never reads as a second selection */
+.por-set-tab:not(.sel):focus, .por-set-tab:not(.sel):focus-visible { box-shadow: none; outline: none; border-color: transparent; }
+.por-set-tab.sel:focus-visible { box-shadow: 0 0 16px rgba(245, 217, 139, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 0 0 2px rgba(255, 226, 150, 0.35); }
 .por-set-tab.sel {
   color: #fff6de; border-color: rgba(216, 178, 90, 0.7);
   background: linear-gradient(90deg, rgba(45, 82, 163, 0.85), rgba(20, 34, 80, 0.35));

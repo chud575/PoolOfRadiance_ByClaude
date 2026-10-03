@@ -445,7 +445,7 @@ export function createWorld({ deferred = false } = {}) {
       terrace.update(t, camera, SUN_DIR);
       dragon.update(t, camera, dragonOn ? dragonLane : null);
       if (chamber && this._interior) chamber.update(t);
-      for (const s of systems) s.update(t, px);
+      for (const s of systems) s.update(t, px, s === motes ? null : dragon.mask);
     },
     dispose() {
       this._disposed = true;

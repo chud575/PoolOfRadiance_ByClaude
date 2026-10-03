@@ -474,7 +474,8 @@ export default class AutomapScene extends Scene {
     const lines = [];
     const note = notesFor(game, m.id).find((n) => n.x === x && n.y === y);
     const here = this.isHome && game.location.x === x && game.location.y === y;
-    if (!this._seen(x, y)) {
+    if (!this._seen(x, y) && this.sheet.seenCell?.(x, y)) lines.push('Sighted from afar, not yet walked.');
+    else if (!this._seen(x, y)) {
       lines.push('Unexplored.');
       if (note) lines.push(`${PIN_KINDS[note.kind]?.label ?? 'Note'}: ${note.text || '(no text)'}`);
       lines.push('Right-click to pin a note.');
@@ -495,7 +496,7 @@ export default class AutomapScene extends Scene {
       if (EDGE_WORDS[e]) exits.push(`${EDGE_WORDS[e]} to the ${DIR_NAMES[d].toLowerCase()}`);
     }
     if (exits.length) lines.push(exits.join(', ').replace(/^./, (c) => c.toUpperCase()) + '.');
-    for (const ev of m.eventsAt(x, y)) {
+    for (const ev of this._seen(x, y) ? m.eventsAt(x, y) : []) {
       const mk = eventMarker(ev, !!game.spentEvents[ev.id]);
       if (mk) lines.push(MARKER_LABELS[mk] + (ev.type === 'sign' && ev.text ? `: ${ev.text.replace(/^[^"]*"?|"[^"]*$/g, '') || ev.text}` : ''));
     }
@@ -970,6 +971,18 @@ export default class AutomapScene extends Scene {
       }
       if (!any) this.fresh = null;
     }
+    // event markers: inked map symbols held at a fixed size on screen, knocked out of
+    // the paving by a soft halo of paper
+    for (const mk of this.sheet.markers ?? []) {
+      const px = (mk.kind === 'battle' ? 44 : 40) / s;
+      g.save();
+      g.shadowColor = 'rgba(244,232,204,0.95)';
+      g.shadowBlur = 5;
+      drawMarker(g, mk.kind, mk.x, mk.y, px, { color: INK.ink, accent: INK.vermilion, seed: mk.seed });
+      g.shadowBlur = 3;
+      drawMarker(g, mk.kind, mk.x, mk.y, px, { color: INK.ink, accent: INK.vermilion, seed: mk.seed });
+      g.restore();
+    }
     // party (view cone + arrow)
     if (this.isHome) {
       const { x, y, dir } = game.location;
@@ -980,9 +993,12 @@ export default class AutomapScene extends Scene {
       g.save();
       g.translate(cx, cy);
       g.rotate(a);
-      g.globalAlpha = breathe;
       g.globalCompositeOperation = 'multiply';
       const R = cs * 2.6;
+      // a solid vermilion wash in the sighting wedge, so the facing reads over any paving
+      g.fillStyle = 'rgba(214,72,40,0.17)';
+      g.beginPath(); g.moveTo(0, 0); g.arc(0, 0, R * 0.92 * 0.78, -Math.PI / 2 - 0.48, -Math.PI / 2 + 0.48); g.closePath(); g.fill();
+      g.globalAlpha = breathe;
       g.drawImage(partyConeCanvas(), -R, -R, R * 2, R * 2);
       g.restore();
       const frozen = this.ctx.clock.frozen;
@@ -1014,6 +1030,26 @@ export default class AutomapScene extends Scene {
         g.lineTo(cx + Math.cos(qa) * r1, cy + Math.sin(qa) * r1);
       }
       g.stroke();
+      // the Company: six pips round the roundel, one per adventurer (the fallen hollow)
+      {
+        const party = game.party ?? [];
+        const pr = ring + cs * tk * 0.26;
+        const dot = Math.max(cs * tk * 0.075, 2.6 / s);
+        for (let i = 0; i < 6; i++) {
+          const pa = a - Math.PI / 2 + Math.PI / 6 + (i * Math.PI) / 3;
+          const qx = cx + Math.cos(pa) * pr;
+          const qy = cy + Math.sin(pa) * pr;
+          const pc = party[i];
+          const down = pc && (pc.hp?.cur ?? 1) <= 0;
+          const empty = party.length && !pc;
+          g.beginPath(); g.arc(qx, qy, dot, 0, Math.PI * 2);
+          g.fillStyle = empty ? 'rgba(242,230,202,0.9)' : down ? 'rgba(242,230,202,0.95)' : i % 2 ? 'rgb(176,46,28)' : 'rgb(196,150,62)';
+          g.fill();
+          g.lineWidth = Math.max(0.6, 1 / s);
+          g.strokeStyle = 'rgba(43,26,13,0.95)';
+          g.stroke();
+        }
+      }
       g.restore();
       drawPartyArrow(g, cx, cy, cs * tk * (1.28 + pulse * 0.05), a, { glow: pulse });
     }
@@ -1023,12 +1059,9 @@ export default class AutomapScene extends Scene {
     for (const n of notes) {
       const fl = this.flash && this.flash.x === n.x && this.flash.y === n.y ? Math.max(0, 1 - (t - this.flash.t) / 1.2) : 0;
       const hov = this.hover && this.hover.x === n.x && this.hover.y === n.y;
-      const pk = Math.max(0.75, this.sv.zoom ** -0.45);
-      // inked onto the sheet (multiplied into the paper), not a sticker laid over it
-      g.save();
-      g.globalCompositeOperation = 'multiply';
-      drawPin(g, X(n.x) + cs * 0.72, Y(n.y) + cs * 0.3, cs * pk * (0.74 + (hov ? 0.08 : 0) + fl * 0.2), n.kind, { lift: hov ? cs * 0.04 : 0 });
-      g.restore();
+      // a wax seal pressed onto the sheet, held at a fixed size on screen
+      const ps = (34 / s) * (1 + (hov ? 0.1 : 0) + fl * 0.25);
+      drawPin(g, X(n.x) + cs * 0.7, Y(n.y) + cs * 0.32, ps, n.kind, { lift: hov ? 2 / s : 0 });
     }
   }
 
@@ -1146,6 +1179,23 @@ export default class AutomapScene extends Scene {
       g.letterSpacing = `${(caps * 0.16).toFixed(2)}px`;
       const { lines, bh } = best;
       placed.push(best.box);
+      if (!home) {
+        // a feature (a gate, a corner, a yard) is lettered smaller, in italic upper and
+        // lower case straight onto the sheet with a paper halo: no ribbon, so the
+        // buildings' banners keep the first rank
+        const fs = caps * 1.05;
+        g.save();
+        g.font = `italic ${fs.toFixed(2)}px ${SERIF}`;
+        g.letterSpacing = `${(fs * 0.04).toFixed(2)}px`;
+        g.lineJoin = 'round';
+        g.strokeStyle = 'rgba(240,226,192,0.92)';
+        g.lineWidth = fs * 0.32;
+        g.strokeText(z.name, best.cx, best.cy);
+        g.fillStyle = '#7a2412';
+        g.fillText(z.name, best.cx, best.cy);
+        g.restore();
+        continue;
+      }
       // lettered on a knocked-out slip of parchment, so no name ever sits on a busy floor
       {
         const lw = Math.max(...lines.map((l) => g.measureText(l).width));

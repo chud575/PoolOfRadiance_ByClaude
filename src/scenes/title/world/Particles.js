@@ -40,11 +40,14 @@ export function createParticles(o = {}) {
       uRes: { value: new THREE.Vector2(1600, 900) },
       uStreak: { value: o.streak ? 1 : 0 },
       uMaxPx: { value: 64 },
+      // NDC ellipse (cx, cy, rx, ry) to keep clear (the dragon's silhouette); rx = 0: off
+      uMask: { value: new THREE.Vector4(0, 0, 0, 0) },
     },
     vertexShader: /* glsl */ `
       attribute vec4 aSeed;
       uniform float uTime, uHeight, uSize, uSway, uDisc, uPx, uStreak, uMaxPx;
-      uniform vec3 uOrigin, uSpread, uWind; uniform vec2 uSpeed, uRes;
+      uniform vec3 uOrigin, uSpread, uWind; uniform vec2 uSpeed, uRes; uniform vec4 uMask;
+      varying float vMask;
       varying float vLife; varying float vFlick; varying vec2 vDir; varying float vStretch;
       vec3 at(float t, out float life) {
         float spd = mix(uSpeed.x, uSpeed.y, aSeed.w);
@@ -82,11 +85,17 @@ export function createParticles(o = {}) {
         vStretch = clamp(len / max(ps, 1.0), 0.0, 1.0);
         vDir = len > 1e-3 ? normalize(vec2(dpx.x, -dpx.y)) : vec2(1.0, 0.0);
         gl_PointSize = min(uMaxPx, ps * (1.0 + vStretch * 1.2));
+        vMask = 1.0;
+        if (uMask.z > 0.0) {
+          vec2 q = (gl_Position.xy / gl_Position.w - uMask.xy) / (uMask.zw * 1.15);
+          vMask = smoothstep(0.75, 1.15, length(q));
+        }
       }`,
     fragmentShader: /* glsl */ `
       uniform vec3 uColA, uColB; uniform float uIntensity;
-      varying float vLife; varying float vFlick; varying vec2 vDir; varying float vStretch;
+      varying float vLife; varying float vFlick; varying vec2 vDir; varying float vStretch; varying float vMask;
       void main() {
+        if (vMask < 0.01) discard;
         vec2 d = gl_PointCoord - 0.5;
         vec2 q = vec2(dot(d, vDir), dot(d, vec2(-vDir.y, vDir.x)));
         float across = max(0.28, 1.0 - 0.72 * vStretch);
@@ -94,7 +103,7 @@ export function createParticles(o = {}) {
         float core = exp(-r * r * 9.0) + exp(-r * r * 2.2) * 0.35;
         float fade = smoothstep(0.0, 0.08, vLife) * (1.0 - smoothstep(0.55, 1.0, vLife));
         vec3 c = mix(uColA, uColB, smoothstep(0.0, 0.8, vLife));
-        gl_FragColor = vec4(c * core * fade * vFlick * uIntensity * (1.0 + vStretch * 0.4), 1.0);
+        gl_FragColor = vec4(c * core * fade * vFlick * uIntensity * vMask * (1.0 + vStretch * 0.4), 1.0);
       }`,
   });
   const points = new THREE.Points(geo, mat);
@@ -103,7 +112,9 @@ export function createParticles(o = {}) {
   return {
     points,
     material: mat,
-    update(t, px = 1) {
+    update(t, px = 1, mask = null) {
+      if (mask) mat.uniforms.uMask.value.copy(mask);
+      else mat.uniforms.uMask.value.set(0, 0, 0, 0);
       mat.uniforms.uTime.value = t;
       mat.uniforms.uPx.value = px;
       if (typeof window !== 'undefined') mat.uniforms.uRes.value.set(window.innerWidth * px, window.innerHeight * px);
