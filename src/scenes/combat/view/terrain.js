@@ -297,7 +297,7 @@ export function buildDiorama(field, o = {}) {
         // A dark sunken rim where a slab is missing.
         float brkRim = wF * smoothstep(0.55, 0.585, brkN) * (1.0 - brk);
         // Ruin grime on the dressed floor: soot and damp blooms, darker toward the walls.
-        gc.rgb *= mix(1.0, 0.84, wF * smoothstep(0.42, 0.78, gFbm(vWPos.xz * 0.2 + 50.0)));
+        gc.rgb *= mix(1.0, 0.92, wF * smoothstep(0.42, 0.78, gFbm(vWPos.xz * 0.2 + 50.0)));
         gc.rgb *= 1.0 - brkRim * 0.18;
         float mac = gFbm(vWPos.xz * 0.07);
         gc.rgb *= 0.74 + 0.5 * mac;

@@ -785,7 +785,7 @@ export const SCULPT_DETAIL_GLSL = `
           // shingled along the body), each domed with a worn bright crown;
           // the crevices between them crusted with verdigris (teal, matte,
           // non-metal) and dark grime, so the metal reads as old cast bronze.
-          vec3 q = p * vec3(15.0, 17.0, 11.0);
+          vec3 q = p * vec3(23.0, 26.0, 17.0);
           vec2 c = cell3(q);
           float gap = c.y - c.x;
           float crown = 1.0 - smoothstep(0.0, 0.62, c.x);

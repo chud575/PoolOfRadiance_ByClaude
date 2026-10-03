@@ -20,6 +20,8 @@ import { mAlongY, mEuler } from '../../../ui/components/sdfSculpt.js';
  * palm-sized scales in the world) and the rig root is scaled by K.
  */
 const K = 2.75;
+/** The skull and jaw are sculpted at this multiple (a big, menacing head). */
+const HK = 1.38;
 
 const v = (x, y, z) => [x, y, z];
 const mirror = (p) => [-p[0], p[1], p[2]];
@@ -34,7 +36,7 @@ const JW = {
   neck2: v(0, 1.74, 1.08),
   neck3: v(0, 2.04, 1.02),
   head: v(0, 2.26, 1.1),
-  jaw: v(0, 2.2, 1.14),
+  jaw: v(0, 2.26 - 0.06 * 1.38, 1.1 + 0.04 * 1.38),
   tail1: v(0, 1.0, -0.64),
   tail2: v(0, 0.8, -1.1),
   tail3: v(0.08, 0.48, -1.46),
@@ -104,47 +106,59 @@ function dragonHide() {
   // ---- the skull: a long wedge, heavy brow ridges over deep sockets, cheek
   // plates at the jaw hinge, a broad flat snout with flared nostrils.
   const H = JW.head;
-  const hp = (x, y, z) => [H[0] + x, H[1] + y, H[2] + z];
-  ell('head', hp(0, 0.0, 0.03), v(0.13, 0.115, 0.16), { mat: 'bronze', k: 0.06 });
-  ell('head', hp(0, -0.01, 0.24), v(0.105, 0.075, 0.22), { mat: 'bronze', k: 0.07, R: R(0.1) });
-  ell('head', hp(0, -0.03, 0.44), v(0.085, 0.06, 0.1), { mat: 'bronze', k: 0.05 });
-  ell('head', hp(0, 0.05, 0.3), v(0.06, 0.035, 0.22), { mat: 'back', k: 0.05, R: R(0.18) });
+  const hp = (x, y, z) => [H[0] + x * HK, H[1] + y * HK, H[2] + z * HK];
+  const hell = (c, r, o) => ell('head', c, r.map((q) => q * HK), o);
+  const hcone = (a, b, ra, rb, o) => cone('head', a, b, ra * HK, rb * HK, o);
+  const hsph = (c, r, o) => B.sph('head', c, r * HK, o);
+  hell( hp(0, 0.0, 0.03), v(0.13, 0.115, 0.16), { mat: 'bronze', k: 0.06 });
+  hell( hp(0, -0.01, 0.24), v(0.105, 0.075, 0.22), { mat: 'bronze', k: 0.07, R: R(0.1) });
+  hell( hp(0, -0.03, 0.44), v(0.085, 0.06, 0.1), { mat: 'bronze', k: 0.05 });
+  hell( hp(0, 0.05, 0.3), v(0.06, 0.035, 0.22), { mat: 'back', k: 0.05, R: R(0.18) });
   for (const sx of [1, -1]) {
-    ell('head', hp(sx * 0.08, 0.075, 0.13), v(0.06, 0.032, 0.11), { mat: 'back', k: 0.03, R: R(0.25, sx * 0.25) });
-    ell('head', hp(sx * 0.1, -0.05, 0.02), v(0.055, 0.07, 0.08), { mat: 'bronze', k: 0.04 });
+    hell( hp(sx * 0.08, 0.075, 0.13), v(0.06, 0.032, 0.11), { mat: 'back', k: 0.03, R: R(0.25, sx * 0.25) });
+    hell( hp(sx * 0.1, -0.05, 0.02), v(0.055, 0.07, 0.08), { mat: 'bronze', k: 0.04 });
     // Eye sockets (the glowing eye sits in each, as rigid kit).
-    B.sph('head', hp(sx * 0.098, 0.03, 0.15), 0.03, { mat: 'horn', sub: true, k: 0.012 });
-    ell('head', hp(sx * 0.04, 0.0, 0.52), v(0.028, 0.022, 0.03), { mat: 'bronze', k: 0.02 });
-    B.sph('head', hp(sx * 0.04, 0.005, 0.545), 0.014, { mat: 'mouth', sub: true, k: 0.006 });
+    hsph( hp(sx * 0.098, 0.03, 0.15), 0.03, { mat: 'horn', sub: true, k: 0.012 });
+    hell( hp(sx * 0.04, 0.0, 0.52), v(0.028, 0.022, 0.03), { mat: 'bronze', k: 0.02 });
+    hsph( hp(sx * 0.04, 0.005, 0.545), 0.014, { mat: 'mouth', sub: true, k: 0.006 });
     // Swept horns: a great pair from the brow raking back, a lesser pair below.
-    cone('head', hp(sx * 0.07, 0.08, -0.02), hp(sx * 0.13, 0.2, -0.24), 0.036, 0.018, { mat: 'horn', k: 0.015 });
-    cone('head', hp(sx * 0.13, 0.2, -0.24), hp(sx * 0.17, 0.2, -0.42), 0.018, 0.004, { mat: 'horn', k: 0.008 });
-    cone('head', hp(sx * 0.12, -0.02, -0.03), hp(sx * 0.22, 0.0, -0.2), 0.025, 0.005, { mat: 'horn', k: 0.01 });
+    hcone( hp(sx * 0.07, 0.08, -0.02), hp(sx * 0.13, 0.2, -0.24), 0.036, 0.018, { mat: 'horn', k: 0.015 });
+    hcone( hp(sx * 0.13, 0.2, -0.24), hp(sx * 0.17, 0.2, -0.42), 0.018, 0.004, { mat: 'horn', k: 0.008 });
+    hcone( hp(sx * 0.12, -0.02, -0.03), hp(sx * 0.22, 0.0, -0.2), 0.025, 0.005, { mat: 'horn', k: 0.01 });
     // Frill: spines fanning back from the cheek with a webbed hide between.
     for (let k = 0; k < 4; k++) {
       const a = -0.3 + k * 0.32;
       const base = hp(sx * 0.11, -0.03 + k * 0.02, -0.04);
       const tip = hp(sx * (0.2 + k * 0.012), -0.08 + Math.sin(a) * 0.14 + 0.08, -0.16 - Math.cos(a) * 0.06);
-      cone('head', base, tip, 0.012, 0.003, { mat: 'horn', k: 0.008 });
+      hcone( base, tip, 0.012, 0.003, { mat: 'horn', k: 0.008 });
     }
-    ell('head', hp(sx * 0.17, 0.0, -0.1), v(0.012, 0.09, 0.07), { mat: 'frill', k: 0.03, R: R(0.1, sx * 0.5, 0) });
+    hell( hp(sx * 0.17, 0.0, -0.1), v(0.012, 0.09, 0.07), { mat: 'frill', k: 0.03, R: R(0.1, sx * 0.5, 0) });
   }
+  // Brow spikes over the sockets, a nasal horn, spined cheeks: a crowned skull.
+  for (const sx of [1, -1]) {
+    for (let k = 0; k < 3; k++) hcone(hp(sx * (0.07 + k * 0.025), 0.085 - k * 0.012, 0.12 - k * 0.06), hp(sx * (0.1 + k * 0.035), 0.15 - k * 0.01, 0.06 - k * 0.09), 0.016, 0.003, { mat: 'horn', k: 0.008 });
+    for (let k = 0; k < 2; k++) hcone(hp(sx * 0.12, -0.07 - k * 0.03, 0.06 - k * 0.06), hp(sx * 0.2, -0.1 - k * 0.04, -0.02 - k * 0.07), 0.014, 0.003, { mat: 'horn', k: 0.008 });
+  }
+  hcone(hp(0, 0.03, 0.43), hp(0, 0.1, 0.4), 0.02, 0.004, { mat: 'horn', k: 0.01 });
   // Upper teeth line / mouth cavity under the snout.
-  ell('head', hp(0, -0.075, 0.28), v(0.075, 0.025, 0.2), { mat: 'mouth', k: 0.02 });
+  hell( hp(0, -0.075, 0.28), v(0.075, 0.025, 0.2), { mat: 'mouth', k: 0.02 });
   // ---- the lower jaw, hinged and open.
   const J = JW.jaw;
-  const jp = (x, y, z) => [J[0] + x, J[1] + y, J[2] + z];
-  for (const sx of [1, -1]) cone('jaw', jp(sx * 0.085, -0.02, -0.02), jp(sx * 0.045, -0.16, 0.36), 0.04, 0.022, { mat: 'bronze', k: 0.035 });
-  ell('jaw', jp(0, -0.11, 0.18), v(0.06, 0.03, 0.18), { mat: 'belly', k: 0.04, R: R(-0.42) });
-  ell('jaw', jp(0, -0.09, 0.2), v(0.05, 0.02, 0.15), { mat: 'mouth', k: 0.02, R: R(-0.42) });
-  cone('jaw', jp(0, -0.1, -0.02), jp(0, -0.17, 0.14), 0.02, 0.006, { mat: 'horn', k: 0.01 });
+  const jp = (x, y, z) => [J[0] + x * HK, J[1] + y * HK, J[2] + z * HK];
+  const jell = (c, r, o) => ell('jaw', c, r.map((q) => q * HK), o);
+  const jcone = (a, b, ra, rb, o) => cone('jaw', a, b, ra * HK, rb * HK, o);
+  for (const sx of [1, -1]) jcone( jp(sx * 0.085, -0.02, -0.02), jp(sx * 0.045, -0.16, 0.36), 0.04, 0.022, { mat: 'bronze', k: 0.035 });
+  jell( jp(0, -0.11, 0.18), v(0.06, 0.03, 0.18), { mat: 'belly', k: 0.04, R: R(-0.42) });
+  jell( jp(0, -0.09, 0.2), v(0.05, 0.02, 0.15), { mat: 'mouth', k: 0.02, R: R(-0.42) });
+  jcone( jp(0, -0.1, -0.02), jp(0, -0.17, 0.14), 0.02, 0.006, { mat: 'horn', k: 0.01 });
 
   // ---- limbs. Forelegs: muscled upper arm, scaled forearm, broad hand.
   for (const [side, sx] of [['L', 1], ['R', -1]]) {
     const L = (k) => JW[k + side];
-    ell(`legF${side}`, lerp3(L('legF'), L('kneeF'), 0.35), v(0.17, 0.26, 0.19), { mat: 'bronze', k: 0.1 });
-    cone(`legF${side}`, L('legF'), L('kneeF'), 0.16, 0.1, { mat: 'bronze', k: 0.07 });
-    cone(`kneeF${side}`, L('kneeF'), L('footF'), 0.095, 0.065, { mat: 'bronze', k: 0.06 });
+    ell(`legF${side}`, lerp3(L('legF'), L('kneeF'), 0.35), v(0.2, 0.28, 0.22), { mat: 'bronze', k: 0.1 });
+    cone(`legF${side}`, L('legF'), L('kneeF'), 0.18, 0.12, { mat: 'bronze', k: 0.07 });
+    cone(`kneeF${side}`, L('kneeF'), L('footF'), 0.12, 0.08, { mat: 'bronze', k: 0.06 });
+    ell(`kneeF${side}`, lerp3(L('kneeF'), L('footF'), 0.3), v(0.11, 0.17, 0.11), { mat: 'bronze', k: 0.06 });
     ell(`kneeF${side}`, sub(L('kneeF'), [0, 0.02, 0.03]), v(0.08, 0.07, 0.07), { mat: 'back', k: 0.05 });
     ell(`footF${side}`, [L('footF')[0], 0.07, L('footF')[2] + 0.06], v(0.11, 0.06, 0.13), { mat: 'bronze', k: 0.05 });
     for (let t = 0; t < 4; t++) {
@@ -350,9 +364,9 @@ export function buildGreatDragon(sp) {
 
   // Eyes, set into the sockets under the brow.
   const H = JW.head;
-  const hl = (x, y, z) => [x, y, z]; // head-local offsets
+  const hl = (x, y, z) => [x * HK, y * HK, z * HK]; // head-local offsets (sculpted at HK)
   for (const sx of [1, -1]) {
-    const g = new THREE.SphereGeometry(0.022, 10, 8);
+    const g = new THREE.SphereGeometry(0.022 * HK, 10, 8);
     g.scale(1, 0.62, 1.15);
     R.part('head', g, eye, { p: hl(sx * 0.098, 0.03, 0.155) });
   }
@@ -360,21 +374,21 @@ export function buildGreatDragon(sp) {
   for (let k = 0; k < 7; k++) {
     for (const sx of [1, -1]) {
       const z = 0.12 + k * 0.055;
-      const up = new THREE.ConeGeometry(0.008 + (k === 1 ? 0.004 : 0), 0.035 + (k === 1 ? 0.02 : 0), 5);
+      const up = new THREE.ConeGeometry((0.008 + (k === 1 ? 0.004 : 0)) * HK, (0.035 + (k === 1 ? 0.02 : 0)) * HK, 5);
       up.rotateX(Math.PI);
       R.part('head', up, tooth, { p: hl(sx * (0.066 - k * 0.004), -0.085, z) });
       const J0 = sub(JW.jaw, H);
       void J0;
-      const lo = new THREE.ConeGeometry(0.007 + (k === 1 ? 0.004 : 0), 0.03 + (k === 1 ? 0.018 : 0), 5);
+      const lo = new THREE.ConeGeometry((0.007 + (k === 1 ? 0.004 : 0)) * HK, (0.03 + (k === 1 ? 0.018 : 0)) * HK, 5);
       const t = k / 7;
-      R.part('jaw', lo, tooth, { p: [sx * (0.08 - t * 0.035), -0.02 - t * 0.13 + 0.02, -0.0 + t * 0.34], r: [-0.4, 0, 0] });
+      R.part('jaw', lo, tooth, { p: [sx * (0.08 - t * 0.035) * HK, (-t * 0.13) * HK, t * 0.34 * HK], r: [-0.4, 0, 0] });
     }
   }
   // The fire in its throat, glowing between the open jaws.
   {
-    const g = new THREE.SphereGeometry(0.06, 12, 8);
+    const g = new THREE.SphereGeometry(0.06 * HK, 12, 8);
     g.scale(1, 0.55, 2.2);
-    R.part('jaw', g, fire, { p: [0, -0.06, 0.1], r: [-0.3, 0, 0] });
+    R.part('jaw', g, fire, { p: [0, -0.06 * HK, 0.1 * HK], r: [-0.3, 0, 0] });
   }
 
   // Wings: arm + fingers (bronze bone) and four membrane panels each.
@@ -418,7 +432,7 @@ export function buildGreatDragon(sp) {
     hasTail: true,
     eyesColor: sp.eyes,
     eyesBurn: true,
-    eyeAt: [0, 0.03, 0.16],
+    eyeAt: [0, 0.03 * HK, 0.16 * HK],
     flameSpots: [
       ['neck1', [0, 0.24, 0.06], 0.32], ['neck2', [0, 0.2, -0.02], 0.3], ['chest', [0, 0.5, 0.1], 0.42], ['chest', [0, 0.52, -0.08], 0.5],
       ['chest', [0, 0.49, -0.26], 0.55], ['chest', [0, 0.45, -0.44], 0.55], ['body', [0, 0.46, 0.12], 0.58], ['body', [0, 0.44, -0.06], 0.55],
