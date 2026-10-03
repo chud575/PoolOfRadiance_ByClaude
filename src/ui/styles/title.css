@@ -59,7 +59,7 @@
    point, crest at the head, so the menu sits on the skin instead of a void */
 .por-mm-banner {
   --pt: 3.2em;
-  position: absolute; left: 5.2vw; top: 5.4vh; bottom: 27.5vh; width: 28em; pointer-events: none !important;
+  position: absolute; left: 5.2vw; top: 5.4vh; bottom: 22vh; width: 30em; pointer-events: none !important;
   background: linear-gradient(90deg, #5e4418, #e6c477 12%, #fff1c0 22%, #a07a30 40%, #f0cf7c 60%, #7a5a22 82%, #d6b05a 92%, #4a3410);
   clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--pt)), 50% 100%, 0 calc(100% - var(--pt)));
   filter: drop-shadow(0 18px 40px rgba(0, 0, 0, 0.7));
@@ -70,16 +70,16 @@
   clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--pt) + 1px), 50% 100%, 0 calc(100% - var(--pt) + 1px));
   background:
     /* the fold over the rod: a shadowed lip, then raking light down the hide */
-    linear-gradient(180deg, rgba(0, 0, 0, 0.75), rgba(0, 0, 0, 0.2) 1.1em, transparent 2.4em),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.75), rgba(0, 0, 0, 0.15) 0.9em, rgba(255, 226, 160, 0.10) 1.4em, transparent 9em),
     radial-gradient(120% 40% at 50% 0%, rgba(110, 150, 255, 0.16), transparent 70%),
     radial-gradient(90% 60% at 30% 25%, rgba(150, 175, 255, 0.10), transparent 70%),
     linear-gradient(90deg, rgba(0, 0, 0, 0.55), transparent 14%, transparent 86%, rgba(0, 0, 0, 0.55)),
-    linear-gradient(180deg, rgba(10, 14, 34, 0.18), rgba(8, 10, 26, 0.42) 45%, rgba(5, 6, 16, 0.62)),
-    var(--tex-brocade, none),
-    var(--tex-leather, none),
+    /* the swallowtail and lower edges darkened by handling and weather */
+    radial-gradient(70% 22% at 50% 100%, rgba(0, 0, 0, 0.55), transparent 80%),
+    linear-gradient(180deg, rgba(255, 236, 190, 0.07), transparent 30%, rgba(5, 6, 16, 0.35)),
+    var(--tex-hide, none),
     #16205a;
-  background-size: auto, auto, auto, auto, auto, 2.6em 3.03em, 10em 10em, auto;
-  background-blend-mode: normal, normal, normal, normal, normal, soft-light, normal, normal;
+  background-size: auto, auto, auto, auto, auto, auto, 100% 100%, auto;
 }
 .por-mm-banner::after {
   /* material grain */
@@ -87,7 +87,7 @@
 }
 /* the brass rod the banner hangs from, with finials and two cords to the dark */
 .por-mm-rod {
-  position: absolute; left: calc(5.2vw - 1.6em); width: calc(28em + 3.2em); top: calc(5.4vh - 0.62em); height: 1.05em; pointer-events: none !important; z-index: 1;
+  position: absolute; left: calc(5.2vw - 1.6em); width: calc(30em + 3.2em); top: calc(5.4vh - 0.62em); height: 1.05em; pointer-events: none !important; z-index: 1;
   border-radius: 0.5em;
   background: linear-gradient(180deg, #fff3c8 0%, #e8c46a 22%, #9a7228 55%, #5a3e12 78%, #c9a050 100%);
   box-shadow: 0 0.35em 0.6em rgba(0, 0, 0, 0.7), inset 0 -1px 0 rgba(0, 0, 0, 0.5);
@@ -102,18 +102,24 @@
 .por-mm-rod::before { left: -1.2em; }
 .por-mm-rod::after { right: -1.2em; }
 .por-mm-cords {
-  position: absolute; left: calc(5.2vw + 2.2em); width: calc(28em - 4.4em); top: 0; height: 5.4vh; pointer-events: none !important;
+  position: absolute; left: calc(5.2vw + 2.2em); width: calc(30em - 4.4em); top: 0; height: 5.4vh; pointer-events: none !important;
   border-left: 2px solid #8a6a2a; border-right: 2px solid #8a6a2a; filter: drop-shadow(1px 0 1px rgba(0, 0, 0, 0.8));
   opacity: 0; transition: opacity 0.55s var(--ease);
 }
 .por-title[data-mode='menu'] .por-mm-rod { opacity: 1; transform: none; transition-delay: 0.05s; }
 .por-title[data-mode='menu'] .por-mm-cords { opacity: 0.9; }
 html[data-classic='1'] .por-mm-rod, html[data-classic='1'] .por-mm-cords { display: none; }
-.por-mm-banner-line {
-  position: absolute; inset: 0 0.9em calc(var(--pt) * 0.55); z-index: 1;
-  border-left: 1px solid rgba(216, 178, 90, 0.42); border-right: 1px solid rgba(216, 178, 90, 0.42);
-  box-shadow: -1px 0 0 rgba(0, 0, 0, 0.5), 1px 0 0 rgba(0, 0, 0, 0.5);
+.por-mm-banner-line { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; overflow: visible; }
+.por-mm-banner-line .tool-lo { stroke: rgba(0, 0, 0, 0.6); }
+.por-mm-banner-line .tool-hi { stroke: rgba(255, 232, 180, 0.16); }
+.por-mm-banner-line .tool-gilt { stroke: rgba(216, 178, 90, 0.55); }
+/* a gilt cord and tassel hanging from the swallowtail point */
+.por-mm-tassel {
+  position: absolute; left: calc(5.2vw + 15em); bottom: calc(22vh - 6.2em); width: 1.5em; height: 6.4em; margin-left: -0.75em; pointer-events: none !important;
+  opacity: 0; transition: opacity 0.55s var(--ease) 0.2s; filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.7));
 }
+.por-title[data-mode='menu'] .por-mm-tassel { opacity: 1; }
+html[data-classic='1'] .por-mm-tassel { display: none; }
 .por-mm-banner-crest {
   position: absolute; left: 50%; bottom: calc(var(--pt) * 0.42); width: 5.6em; height: 2.6em; transform: translateX(-50%); z-index: 1;
   background: var(--filigree-crest) center / contain no-repeat; opacity: 0.7;
@@ -183,8 +189,8 @@ html[data-classic='1'] .por-mm-banner { display: none; }
 .por-mm-list .por-menu-item.locked.hl { color: #e4dccb; opacity: 0.72; filter: none; }
 /* the lock's reason, set inline beside the row once it is focused */
 .por-menu-lockwhy {
-  display: inline-block; margin-left: 0.9em; font-family: var(--font-body); font-style: italic; font-weight: 400; text-transform: none;
-  font-size: 0.5em; letter-spacing: 0.04em; vertical-align: 0.25em; color: #e0b98a; opacity: 0; transform: translateX(-0.4em);
+  display: inline-block; position: absolute; white-space: nowrap; margin-left: 0.9em; font-family: var(--font-body); font-style: italic; font-weight: 400; text-transform: none;
+  font-size: 0.56em; letter-spacing: 0.04em; vertical-align: 0.25em; color: #f2cf96; text-shadow: 0 1px 2px #000; opacity: 0; transform: translateX(-0.4em);
   transition: opacity 0.18s var(--ease), transform 0.22s var(--ease);
 }
 .por-menu-item.hl .por-menu-lockwhy { opacity: 1; transform: none; }

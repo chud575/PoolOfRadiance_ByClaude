@@ -308,7 +308,8 @@ html[data-classic='1'] .por-set-seal-svg { display: none; }
 .por-set-help-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--por-gilt-lo) transparent; display: flex; flex-direction: column; gap: 0.5em; }
 .por-set-help-prev { flex: none; }
 .por-set-help-prev:empty { display: none; }
-.por-set-help:has(.por-set-help-prev:not(:empty)) .por-set-help-foot { display: none; }
+/* the help well's room goes to the option's detail; the 'changes apply at once' note lives in the Done button's tooltip */
+.por-set-help-foot { display: none; }
 /* text that runs past the well fades out under a soft edge (never sliced mid-line); it scrolls */
 .por-set-help-body.clip { -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 2.2em), transparent); mask-image: linear-gradient(180deg, #000 calc(100% - 2.2em), transparent); }
 .por-set-help-prev svg { display: block; width: 100%; height: auto; border-radius: 2px; box-shadow: 0 0 0 1px rgba(216, 178, 90, 0.35), 0 2px 5px rgba(0, 0, 0, 0.6); }

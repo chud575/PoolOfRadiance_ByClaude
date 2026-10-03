@@ -108,6 +108,54 @@ function leatherTexture(size, { seed = 23, base = [26, 36, 80], cells = 22 } = {
 }
 
 /**
+ * A whole banner hide (not a repeat): dyed leather with low-frequency mottling,
+ * a fine pebbled grain stretched along the skin, sparse pores, a few soft
+ * creases, the dye worn pale along both edges and darkened toward the
+ * swallowtail where hands and weather reach it. Sized to the banner's aspect.
+ */
+function hideTexture(w = 384, hh = 640, { seed = 61, base = [24, 32, 78] } = {}) {
+  if (typeof document === 'undefined') return '';
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = hh;
+  const x = c.getContext('2d');
+  const img = x.createImageData(w, hh);
+  const fbm = (u, v, s, oct, P = 4096) => {
+    let n = 0, a = 0.5, f = 1, t = 0;
+    for (let o = 0; o < oct; o++) { n += a * valueNoise(u * f, v * f, s + o, P); t += a; a *= 0.5; f *= 2; }
+    return n / t;
+  };
+  for (let py = 0; py < hh; py++) {
+    const v = py / hh;
+    for (let px = 0; px < w; px++) {
+      const u = px / w;
+      const mott = fbm(u * 3, v * 5, seed, 4) - 0.5;
+      const grain = valueNoise(px * 0.55, py * 0.22, seed + 20, 4096) - 0.5;
+      const fine = hash(px, py, seed + 3) - 0.5;
+      const pore = hash(px, py, seed + 7) > 0.985 ? -0.12 : 0;
+      // soft creases: warped low-frequency lines
+      const wv = fbm(u * 2, v * 2, seed + 40, 3);
+      const crease = Math.pow(1 - Math.abs(Math.sin((v * 9 + wv * 3.5 + u * 1.3) * Math.PI)), 18) * 0.12;
+      // edge wear: dye rubbed pale in blotches along the sides and the tail
+      const ed = Math.min(u, 1 - u) * 2;
+      const wearN = fbm(u * 9, v * 14, seed + 60, 3);
+      const wear = Math.max(0, (1 - ed * 6) * (wearN - 0.35) * 1.8) + Math.max(0, (v - 0.86) * 4 * (wearN - 0.45));
+      // darkened toward the swallowtail and lit from the rod down
+      const light = 1.12 - v * 0.32;
+      let k = (1 + mott * 0.26 + grain * 0.14 + fine * 0.06 + pore - crease) * light;
+      const o = (py * w + px) * 4;
+      const wr = Math.min(0.55, wear * 0.6);
+      img.data[o] = (base[0] * k) * (1 - wr) + 58 * wr * k;
+      img.data[o + 1] = (base[1] * k) * (1 - wr) + 60 * wr * k;
+      img.data[o + 2] = (base[2] * k) * (1 - wr) + 92 * wr * k;
+      img.data[o + 3] = 255;
+    }
+  }
+  x.putImageData(img, 0, 0);
+  return c.toDataURL('image/jpeg', 0.92);
+}
+
+/**
  * Blind-tooled leather repeat (the --tex-brocade layer): a fine diamond
  * lattice of double fillets with a small four-petal fleuron at every crossing,
  * pressed into the hide — each line is a dark impression with a faint lit lip
@@ -402,6 +450,7 @@ export function installSkin() {
     root.setProperty('--tex-parchment', `url(${vellumTexture(512)})`);
     root.setProperty('--tex-vellum-sheet', `url(${vellumSheet(640)})`);
     root.setProperty('--tex-leather', `url(${leatherTexture(256)})`);
+    root.setProperty('--tex-hide', `url(${hideTexture()})`);
     root.setProperty('--tex-grain', `url(${grainTexture(128)})`);
   } catch {
     /* canvas unavailable: CSS falls back to gradients */

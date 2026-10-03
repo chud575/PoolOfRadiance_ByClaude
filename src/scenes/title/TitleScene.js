@@ -130,8 +130,9 @@ export default class TitleScene extends Scene {
     ]);
     this.menuEl = h('section.por-title-menu', [
       h('i.por-mm-cords'),
-      h('div.por-mm-banner', [h('i.por-mm-banner-line'), h('i.por-mm-banner-gem'), h('i.por-mm-banner-crest')]),
+      h('div.por-mm-banner', [bannerTooling(), h('i.por-mm-banner-gem'), h('i.por-mm-banner-crest')]),
       h('i.por-mm-rod'),
+      bannerTassel(),
       h('div.por-mm', [
         h('div.por-mm-kicker', ['Phlan · Year of the Worm']),
         this.menu.el,
@@ -533,3 +534,45 @@ export default class TitleScene extends Scene {
     super.exit();
   }
 }
+
+/**
+ * Blind-tooled fillets pressed into the banner (a dark impression with a lit
+ * lower lip) following its outline and swallowtail, with a gilt line between
+ * them. Drawn in a stretched 100x100 box with non-scaling strokes.
+ */
+function bannerTooling() {
+  const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  s.setAttribute('viewBox', '0 0 100 100');
+  s.setAttribute('preserveAspectRatio', 'none');
+  s.setAttribute('aria-hidden', 'true');
+  s.classList.add('por-mm-banner-line');
+  const path = (i, iy) => `M${i} ${1.6 + iy} H${100 - i} V${92.2 - iy * 0.7} L50 ${99.4 - iy * 1.25} L${i} ${92.2 - iy * 0.7} Z`;
+  const line = (cls, d, w, dy = 0) => `<path class="${cls}" d="${d}" fill="none" stroke-width="${w}" vector-effect="non-scaling-stroke" transform="translate(0 ${dy})"/>`;
+  s.innerHTML = [
+    line('tool-hi', path(3.2, 1.4), 1, 0.18), line('tool-lo', path(3.2, 1.4), 1.2),
+    line('tool-gilt', path(4.6, 2.2), 0.9),
+    line('tool-hi', path(6.0, 3.0), 1, 0.18), line('tool-lo', path(6.0, 3.0), 1.2),
+  ].join('');
+  return s;
+}
+
+/** A gilt cord and tassel for the banner's point. */
+function bannerTassel() {
+  const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  s.setAttribute('viewBox', '0 0 24 100');
+  s.setAttribute('aria-hidden', 'true');
+  s.classList.add('por-mm-tassel');
+  const threads = Array.from({ length: 9 }, (_, i) => {
+    const x = 6 + i * 1.5;
+    return `<path d="M${x} 52 Q${x + (i - 4) * 0.4} 76 ${x + (i - 4) * 0.9} ${92 + (i % 3) * 2}" stroke="url(#tsg)" stroke-width="1.2" fill="none"/>`;
+  }).join('');
+  s.innerHTML = `<defs><linearGradient id="tsg" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#5e4418"/><stop offset=".45" stop-color="#f6dc8a"/><stop offset="1" stop-color="#6a4a14"/></linearGradient>
+    <radialGradient id="tsk" cx=".38" cy=".3" r=".75"><stop offset="0" stop-color="#fffbe2"/><stop offset=".35" stop-color="#e6c477"/><stop offset="1" stop-color="#4a3410"/></radialGradient></defs>
+    <path d="M12 0 C11 10 13 18 12 30" stroke="url(#tsg)" stroke-width="1.6" fill="none"/>
+    <circle cx="12" cy="34" r="4.2" fill="url(#tsk)"/>
+    <path d="M7.5 40 Q12 36 16.5 40 L17 52 H7 Z" fill="url(#tsk)"/>
+    <path d="M7 46 H17 M7 49 H17" stroke="#3a2608" stroke-width=".6"/>
+    ${threads}`;
+  return s;
+}
+

@@ -402,7 +402,7 @@ export class SettingsPanel {
       ]),
       h('div.por-set-actions', [
         h('button.por-btn', { type: 'button', onclick: () => this.resetSection() }, ['Restore defaults']),
-        h('button.por-btn.primary', { type: 'button', onclick: () => this.close() }, ['Done']),
+        h('button.por-btn.primary', { type: 'button', title: 'Changes apply at once and are kept between sessions.', onclick: () => this.close() }, ['Done']),
       ]),
     ]);
     this.moreEl = h('button.por-set-more', { type: 'button', onclick: () => this._pageDown() }, ['More below', h('span.por-set-more-arrow', ['▾'])]);

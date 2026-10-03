@@ -261,8 +261,8 @@ export function createTerrace({ seed = 7 } = {}) {
   // inner face dropping plumb into the water. Flat facets (the lathe runs only
   // a few segments per block) so each block reads as dressed ashlar, not a roll.
   const rimProfile = [
-    [5.0, -0.16], [4.99, 0.1], [4.94, 0.15], [4.58, 0.16], [4.53, 0.2], [4.49, 0.62], [4.45, 0.68], [4.38, 0.71],
-    [3.98, 0.71], [3.96, 0.64], [3.58, 0.64], [3.56, 0.71], [3.08, 0.71], [3.01, 0.66], [2.97, 0.6],
+    [5.0, -0.16], [4.99, 0.1], [4.94, 0.15], [4.58, 0.16], [4.53, 0.2], [4.5, 0.6], [4.485, 0.65], [4.46, 0.684], [4.42, 0.704], [4.37, 0.712],
+    [3.98, 0.71], [3.96, 0.64], [3.58, 0.64], [3.56, 0.71], [3.1, 0.712], [3.05, 0.704], [3.01, 0.68], [2.985, 0.645], [2.97, 0.6],
   ].map(([r, y]) => new THREE.Vector2(r, y));
   // the inner face below the arris: wet, dark and glossy, its own material
   const wetProfile = [[2.97, 0.6], [2.95, 0.3], [2.93, -0.7]].map(([r, y]) => new THREE.Vector2(r, y));
@@ -304,8 +304,9 @@ export function createTerrace({ seed = 7 } = {}) {
         for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 9 + b * 0.37, uv.getY(i) * 1.6 + b * 0.21);
         return g;
       };
-      // dry block: outer faces + coping, 4 flat facets per block
-      const g = build(rimProfile, 4);
+      // dry block: outer faces + coping, finely segmented so the curved
+      // outer face never shows lathe flats
+      const g = build(rimProfile, 14);
       const tone = 0.74 + 0.22 * R.next();
       const warm = R.next();
       const base = new THREE.Color(0xbdb4a2).lerp(new THREE.Color(0xa8a49c), warm).multiplyScalar(tone);
@@ -315,8 +316,14 @@ export function createTerrace({ seed = 7 } = {}) {
         const x = pp.getX(i), z = pp.getZ(i), y = pp.getY(i);
         const r = Math.hypot(x, z);
         let k = 1;
-        if (r < 3.06) k = 0.62; // the inner arris: splashed, damp
-        else if (r < 3.3 && y > 0.6) k = 0.82; // the coping darkens toward the water
+        // AO in the joints: block ends darken into the mortar
+        let ang = Math.atan2(x, z);
+        if (ang < a0 - 0.5) ang += Math.PI * 2;
+        const fb = (ang - a0) / (a1 - a0);
+        const dj = Math.min(fb, 1 - fb) * (a1 - a0) * r;
+        k *= 0.5 + 0.5 * THREE.MathUtils.smoothstep(dj, 0.0, 0.16);
+        if (r < 3.06) k *= 0.55; // the inner arris: splashed, damp
+        else if (r < 3.5 && y > 0.6) k *= 0.62 + 0.38 * THREE.MathUtils.smoothstep(r, 3.06, 3.5); // wet darkening toward the water
         else if (r > 3.55 && r < 3.99 && y < 0.7) k = 0.38; // the sunken rune channel: soot and shadow
         else if (r > 4.5 && y < 0.2) k = 0.6; // the tread's re-entrant corner
         if (y < 0.06 && r > 4.9) k *= 0.5; // grime where the plinth sinks into the flags
@@ -328,7 +335,7 @@ export function createTerrace({ seed = 7 } = {}) {
       }
       blocks.push(ni(g));
       // wet inner face of the same block
-      const w = build(wetProfile, 4);
+      const w = build(wetProfile, 14);
       tint(w, new THREE.Color(0x3a4440).multiplyScalar(0.9 + 0.2 * tone));
       wet.push(ni(w));
     }
@@ -803,12 +810,13 @@ export function createTerrace({ seed = 7 } = {}) {
 
   // ---- ruined colonnade, arch fragment, rubble ------------------------------------------
   const pieces = [];
-  const column = (x, z, h, { capital = true, lean = 0, broken = 0, seed = 1, ry = 0 } = {}) => {
+  const column = (x, z, h, { capital = true, lean = 0, broken = 0, seed = 1, ry = 0, color = 0xd6cdbd } = {}) => {
     const m = new THREE.Matrix4().compose(new THREE.Vector3(x, 0, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, ry, lean)), new THREE.Vector3(1, 1, 1));
-    for (const g of archColumn({ h: h + 1.6, r: 0.6, flutes: 20, capital, broken, seed, color: 0xd6cdbd })) pieces.push(g.applyMatrix4(m));
+    for (const g of archColumn({ h: h + 1.6, r: 0.6, flutes: 20, capital, broken, seed, color })) pieces.push(g.applyMatrix4(m));
   };
-  column(-13, -6, 7.4, { seed: 1 });
-  column(-9.2, -8.2, 7.4, { seed: 2 });
+  // the sunlit left pair is toned down a stop so it frames the logo instead of competing with it
+  column(-13, -6, 7.4, { seed: 1, color: 0x9c9284 });
+  column(-9.2, -8.2, 7.4, { seed: 2, color: 0xa39a8c });
   column(12.5, -6.6, 5.2, { capital: false, broken: 0.35, seed: 3 });
   column(16.5, -4, 8.6, { capital: false, broken: 0.25, seed: 4 });
   column(-17, 2, 3.4, { capital: false, broken: 0.5, seed: 5 });
@@ -816,7 +824,7 @@ export function createTerrace({ seed = 7 } = {}) {
   {
     const ang = Math.atan2(-8.2 + 6, -9.2 + 13);
     const m = new THREE.Matrix4().compose(new THREE.Vector3(-11.0, 9.02 + 0.02, -7.05), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -ang, 0.03)), new THREE.Vector3(1, 1, 1));
-    for (const g of entablature(6.8, { depth: 1.7, seed: 9, color: 0xc8bdaa, brokenEnd: 0.9 })) pieces.push(g.applyMatrix4(m));
+    for (const g of entablature(6.8, { depth: 1.7, seed: 9, color: 0x938a7c, brokenEnd: 0.9 })) pieces.push(g.applyMatrix4(m));
   }
   // fallen drums and rubble
   for (const [x, z, ry] of [[9, 3.5, 0.6], [14, 1, 1.9], [-11.5, 4, 2.4]]) {

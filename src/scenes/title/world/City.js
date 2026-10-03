@@ -196,7 +196,8 @@ export function createCity({ seed = 1988 } = {}) {
       R = saved;
     }
   };
-  const houseImpl = (x, z, w, d, h, ry, { ruined = false, burnt = false, lit = 0.3, base = GROUND, detail = true } = {}) => {
+  const houseImpl = (x, z, w, d, h, ry, { ruined = false, burnt = false, lit = 0.3, base = GROUND, detail = true, plaza = false } = {}) => {
+    if (plaza) detail = true;
     const col = R.pick(stoneCols);
     foot.push({ x, z, w, d, ry, ruined, burnt });
     const m = new THREE.Matrix4().makeRotationY(ry).setPosition(x, base, z);
@@ -375,7 +376,8 @@ export function createCity({ seed = 1988 } = {}) {
         }
       }
     }
-    const kind = burnt ? 0 : R.next();
+    const kind0 = burnt ? 0 : R.next();
+    const kind = plaza && !burnt ? kind0 * 0.6 : kind0; // plaza houses keep pitched roofs
     if (kind < 0.66 && burnt) {
       // burnt out: one roof slope fallen in, the charred rafters of the other
       // still standing against the sky
@@ -413,8 +415,34 @@ export function createCity({ seed = 1988 } = {}) {
       for (let k = 0; k < nR; k++) {
         if (R.chance(0.3)) continue;
         const rr = gableRoof(0.13, dR, rise, { o: o * R.range(0.2, 1), t: 0.15, ridge: false }).roof[1 - keep];
-        rr.translate(-w / 2 + 0.2 + (w - 0.4) * (k / (nR - 1)), 0, 0);
+        // uneven: rafters burnt through at different lengths, some cracked and
+        // dropped at an angle, spacing never regular
+        if (R.chance(0.3)) {
+          rr.translate(0, -rise, 0);
+          rr.rotateX((keep === 0 ? 1 : -1) * R.range(0.1, 0.35));
+          rr.rotateZ(R.range(-0.15, 0.15));
+          rr.translate(0, rise - R.range(0.1, 0.5), 0);
+        }
+        rr.translate(-w / 2 + 0.2 + (w - 0.4) * ((k + R.range(-0.35, 0.35)) / (nR - 1)), 0, 0);
         beams.push(tint(worldUV(rr.applyMatrix4(mm), 1.5), 0x1e1612));
+      }
+      if (detail && R.chance(0.28)) {
+        // a squatter's tarpaulin slung over part of the bare rafters: patched
+        // canvas sagging between them, roped down at the eaves
+        const tw = w * R.range(0.3, 0.55);
+        const tx = R.range(-w / 2 + tw / 2, w / 2 - tw / 2);
+        const L2 = Math.hypot(dR / 2 + 0.2, rise);
+        const tg = new THREE.PlaneGeometry(tw, L2, 6, 6);
+        const tp = tg.attributes.position;
+        for (let i = 0; i < tp.count; i++) {
+          const u = tp.getX(i) / tw + 0.5, v = tp.getY(i) / L2 + 0.5;
+          tp.setZ(i, -(Math.sin(u * Math.PI * 3) ** 2) * 0.12 - Math.sin(v * Math.PI) * 0.18);
+        }
+        tg.computeVertexNormals();
+        const sgn = keep === 0 ? 1 : -1; // the bare side
+        tg.rotateX(-Math.PI / 2 + sgn * Math.atan2(rise, dR / 2));
+        tg.translate(tx, rise / 2 + 0.05, sgn * (dR / 4 + 0.05));
+        fine.push(tint(worldUV(tg.applyMatrix4(mm), 1), R.pick([0x6a5e48, 0x5a5040, 0x6a4a34, 0x4e5446])));
       }
       // gable ends broken down: the apex has fallen, leaving a ragged stepped
       // top in the plaster and lath, one side often lower than the other
@@ -536,6 +564,46 @@ export function createCity({ seed = 1988 } = {}) {
         }
       }
     }
+    if (plaza) {
+      // the houses round the council plaza are seen side-on from it: framed,
+      // shuttered windows down both flanks on every floor, and a shop sign on
+      // a wrought bracket over the street door
+      const floors = Math.max(1, Math.floor(h / 2.6));
+      for (const sx of [-1, 1]) for (let f = 0; f < floors; f++) {
+        const wy = 1.4 + f * 2.6;
+        if (wy > h - 0.6) continue;
+        const nz = Math.max(1, Math.floor(d / 1.9));
+        for (let i = 0; i < nz; i++) {
+          const zz = -d / 2 + (d / nz) * (i + 0.5);
+          const wry = sx > 0 ? Math.PI / 2 : -Math.PI / 2;
+          addWin(m, sx * (w / 2 + 0.03), wy, zz, wry, 0.5, 0.8, R.chance(0.55) ? R.range(0.7, 1.3) : 0.05);
+          winFrame(m, sx * (w / 2 + 0.03), wy, zz, wry);
+        }
+      }
+      // street door with a plank leaf under a lintel
+      const dg = box(0.9, 1.9, 0.08, { x: w * 0.18, y: 0.9, z: d / 2 + 0.05 });
+      dg.applyMatrix4(m);
+      beams.push(tint(worldUV(dg, 1.2), 0x3a2618));
+      const lt = box(1.2, 0.18, 0.18, { x: w * 0.18, y: 2.8, z: d / 2 + 0.08 });
+      lt.applyMatrix4(m);
+      beams.push(tint(worldUV(lt, 1.2), 0x2a1c12));
+      for (const sx of [-1, 1]) {
+        const bx = sx * (w / 2 - 0.15);
+        const arm = box(0.07, 0.07, 1.15, { x: bx, y: 3.25, z: d / 2 + 0.55 });
+        arm.applyMatrix4(m);
+        iron.push(tint(ni(arm), 0x1a1614));
+        const stay = box(0.04, 0.04, 0.85, { x: bx, y: 2.95, z: d / 2 + 0.38, rx: 0.55 });
+        stay.applyMatrix4(m);
+        iron.push(tint(ni(stay), 0x1a1614));
+        const board = box(0.06, 0.62, 0.86, { x: bx, y: 2.55, z: d / 2 + 0.68 });
+        board.applyMatrix4(m);
+        beams.push(tint(worldUV(board, 1), R.pick([0x6a1c14, 0x1c3656, 0x2a4626, 0x5a3a1a])));
+        const emb = box(0.08, 0.3, 0.3, { x: bx, y: 2.72, z: d / 2 + 0.68 });
+        emb.applyMatrix4(m);
+        fine.push(tint(ni(emb), 0xd0a850));
+        if (R.chance(0.5)) break;
+      }
+    }
   };
 
   const flags = []; // pennants on the castle and gate towers (vertex-coloured cloth)
@@ -564,7 +632,7 @@ export function createCity({ seed = 1988 } = {}) {
         slits.push(tint(box(0.16, 1.05, 0.12, { x: x + Math.cos(a) * rr, y: sy, z: z + Math.sin(a) * rr, ry: -a + Math.PI / 2 }), 0x060406));
       }
     }
-    if (roof === 'cone') {
+    if (roof === 'cone' || roof === 'spire' || roof === 'charred') {
       if (hoard) {
         // timber hoarding: a boarded gallery cantilevered out on beams under the roof
         const hy = base + h - 1.9;
@@ -591,12 +659,49 @@ export function createCity({ seed = 1988 } = {}) {
         list.push(tint(worldUV(cylinder(r * 1.16, r * 1.12, 1.15, 18, { x, y: py, z }), 3.2), new THREE.Color(col).multiplyScalar(0.96)));
       }
       // eaves ring, conical roof (pitch varies tower to tower), lead finial
-      const pitch = R.range(1.9, 3.3);
-      const rr = r * (hoard ? 1.5 : R.range(1.2, 1.36));
+      // (variants draw the same random numbers so the layout stream never shifts)
+      const pitch = roof === 'spire' ? R.range(1.9, 3.3) * 0 + 4.6 : R.range(1.9, 3.3);
+      const rr0 = r * (hoard ? 1.5 : R.range(1.2, 1.36));
+      const rr = roof === 'spire' ? r * 1.08 : rr0;
       beams.push(tint(worldUV(cylinder(rr * 1.02, rr * 0.92, 0.3, 16, { x, y: base + h - 0.05, z }), 2), 0x3a2a1e));
-      slate.push(tint(worldUV(cone(rr, r * pitch, 16, { x, y: base + h + 0.2, z }), 2), R.pick(slateCols)));
+      const slateC = R.pick(slateCols);
+      if (roof === 'charred') {
+        // fire-gutted: a third of the cone burnt away, the charred rafters standing in the gap
+        const hgt = r * pitch;
+        const cg = new THREE.ConeGeometry(rr, hgt, 16, 1, true, 0.9, Math.PI * 2 * 0.64);
+        cg.translate(x, base + h + 0.2 + hgt / 2, z);
+        slate.push(sootify(tint(worldUV(ni(cg), 2), new THREE.Color(slateC).multiplyScalar(0.7)), base + h, base + h + hgt));
+        for (let k = 0; k < 6; k++) {
+          const a = 0.9 + Math.PI * 2 * 0.64 + (k + 0.5) * (Math.PI * 2 * 0.36) / 6;
+          const len = Math.hypot(rr, hgt) * (0.45 + 0.5 * Rw.next());
+          const ang = Math.atan2(rr, hgt);
+          const rg = new THREE.BoxGeometry(0.12, len, 0.12);
+          rg.translate(0, -len / 2, 0);
+          rg.rotateX(ang);
+          rg.rotateY(-a + Math.PI / 2);
+          rg.translate(x, base + h + 0.2 + hgt, z);
+          beams.push(tint(worldUV(rg, 1.5), 0x1a1210));
+        }
+      } else {
+        slate.push(tint(worldUV(cone(rr, r * pitch, 16, { x, y: base + h + 0.2, z }), 2), slateC));
+        if (roof === 'spire') {
+          // a tall needle spire with four gabled lucarnes round its foot
+          for (let k = 0; k < 4; k++) {
+            const a = (k / 4) * Math.PI * 2 + 0.4;
+            const lx = x + Math.cos(a) * rr * 0.62, lz = z + Math.sin(a) * rr * 0.62;
+            const lg = box(0.7, 0.8, 0.7, { x: lx, y: base + h + 0.6, z: lz, ry: -a });
+            fine.push(tint(worldUV(lg, 2), new THREE.Color(col).multiplyScalar(0.9)));
+            const lr = new THREE.ConeGeometry(0.62, 0.7, 4, 1);
+            lr.rotateY(Math.PI / 4 - a);
+            lr.translate(lx, base + h + 1.75, lz);
+            slate.push(tint(worldUV(ni(lr), 2), slateC));
+            slits.push(tint(box(0.26, 0.42, 0.1, { x: lx + Math.cos(a) * 0.36, y: base + h + 0.75, z: lz + Math.sin(a) * 0.36, ry: -a + Math.PI / 2 }), 0x060406));
+          }
+        }
+      }
       // a bellcast kick at the eaves
-      slate.push(tint(worldUV(cylinder(rr * 0.96, rr * 1.08, 0.45, 16, { x, y: base + h - 0.15, z, open: true }), 2), new THREE.Color(R.pick(slateCols)).multiplyScalar(0.85)));
+      const kickC = R.pick(slateCols);
+      if (roof !== 'charred') slate.push(tint(worldUV(cylinder(rr * 0.96, rr * 1.08, 0.45, 16, { x, y: base + h - 0.15, z, open: true }), 2), new THREE.Color(kickC).multiplyScalar(0.85)));
       const tipY = base + h + 0.2 + r * pitch;
       fine.push(tint(worldUV(cylinder(0.06, 0.1, r * 0.9, 6, { x, y: tipY - 0.1, z }), 1), 0x6a6050));
       fine.push(tint(ni(new THREE.SphereGeometry(0.16, 8, 6).translate(x, tipY + 0.25, z)), 0x8a7a50));
@@ -709,7 +814,8 @@ export function createCity({ seed = 1988 } = {}) {
       // timber framing and window joinery only where the camera ever gets close
       const near = (gz < 6 && Math.abs(x) < 120) || (x > 10 && x < 110 && gz < 12);
       // the streets right behind the terrace keep more hearths lit (the title skyline)
-      house(x, z, w, d, h, ry, { ruined, burnt: east && !ruined, lit: east ? 0 : gz < 5 && Math.abs(x) < 60 ? 0.85 : 0.5, detail: near });
+      const plaza = (x > -42 && x < 6 && z < -60 && z > -96) || (x > 6 && x < 15 && z < -48 && z > -80);
+      house(x, z, w, d, h, ry, { ruined: ruined && !plaza, burnt: east && !ruined && !plaza, lit: east ? 0 : gz < 5 && Math.abs(x) < 60 ? 0.85 : 0.5, detail: near, plaza });
       if (!ruined && R.chance(0.06)) tower(x + w * 0.6, z, R.range(1.4, 2.2), h + R.range(5, 10), { roof: east ? 'broken' : R.chance(0.5) ? 'cone' : 'flat', lit: east ? 0 : 1 });
       if (east && ruined && R.chance(0.22) && fires.length < 9) fires.push(new THREE.Vector3(x + R.range(-1, 1), GROUND + 0.5, z));
     }
@@ -921,7 +1027,7 @@ export function createCity({ seed = 1988 } = {}) {
       castle.push(tint(worldUV(cylinder(1.1, 1.1, 3.0, 12, { x: cx + bx2, y: ty, z: cz + bz2 }), 3.6), 0x9a8e7e));
       slate.push(tint(worldUV(cone(1.4, R.range(2.6, 3.4), 12, { x: cx + bx2, y: ty + 3.0, z: cz + bz2 }), 2), R.pick(slateCols)));
     }
-    for (const [dx, dz, roof, hh, extra] of [[-10, 8, 'cone', 19, { flag: true, hoard: true }], [10, 8, 'broken', 17.5, {}], [-10, -8, 'cone', 22, { flag: true }], [10, -8, 'flat', 20.5, { flag: true }]]) {
+    for (const [dx, dz, roof, hh, extra] of [[-10, 8, 'cone', 19, { flag: true, hoard: true }], [10, 8, 'broken', 17.5, {}], [-10, -8, 'spire', 22, { flag: true }], [10, -8, 'flat', 20.5, { flag: true }]]) {
       tower(cx + dx, cz + dz, dx < 0 && dz < 0 ? 2.7 : 2.4, hh, { roof, base, list: castle, ...extra });
     }
     {
@@ -945,7 +1051,7 @@ export function createCity({ seed = 1988 } = {}) {
     tower(cx - 18, cz + 14, 3.2, 13, { roof: 'flat', base: GROUND + 5, list: castle, flag: true });
     tower(cx + 18, cz + 14, 3.2, 11, { roof: 'broken', base: GROUND + 5, list: castle });
     // the gatehouse: twin half-drum towers flanking a dark arched passage in the curtain
-    for (const sx of [-1, 1]) tower(cx + sx * 3.4, cz + 15.2, 2.2, 13.5, { roof: 'cone', base: GROUND + 5, list: castle, flag: sx < 0 });
+    for (const sx of [-1, 1]) tower(cx + sx * 3.4, cz + 15.2, 2.2, 13.5, { roof: sx < 0 ? 'cone' : 'charred', base: GROUND + 5, list: castle, flag: sx < 0 });
     castle.push(tint(worldUV(box(5.0, 4.0, 2.4, { x: cx, y: GROUND + 5 + 9, z: cz + 15.2 }), 3.6), 0x928676));
     slits.push(tint(box(2.2, 3.8, 0.2, { x: cx, y: GROUND + 5, z: cz + 16.45 }), 0x080506));
     // a cobbled bailey inside the curtain, worn into grass at the margins
@@ -1040,6 +1146,39 @@ export function createCity({ seed = 1988 } = {}) {
       fine.push(tint(worldUV(box(1.12, 0.12, 0.42, { x: wx, y: wy - 0.97, z: wz + 0.16 }), 1), 0xbcb09a));
       fine.push(tint(worldUV(box(0.07, 1.7, 0.1, { x: wx, y: wy - 0.85, z: wz + 0.09 }), 1), 0xa89c86));
       fine.push(tint(worldUV(box(0.8, 0.07, 0.1, { x: wx, y: wy + 0.2, z: wz + 0.09 }), 1), 0xa89c86));
+    }
+    // weathering decals on the ashlar: rain-grime bleeding down from every sill
+    // and from under the cornice, and a damp, splashed band along the plinth
+    {
+      const c = document.createElement('canvas');
+      c.width = 64; c.height = 256;
+      const g = c.getContext('2d');
+      const Rg = prng(seed + 77);
+      for (let i = 0; i < 26; i++) {
+        const x = Rg.range(0, 64), w2 = Rg.range(1.5, 7), len = Rg.range(60, 256), a = Rg.range(0.3, 0.75);
+        const gr = g.createLinearGradient(0, 0, 0, len);
+        gr.addColorStop(0, `rgba(18,14,10,${a})`);
+        gr.addColorStop(1, 'rgba(18,14,10,0)');
+        g.fillStyle = gr;
+        g.fillRect(x, 0, w2, len);
+      }
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const gm = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, fog: true, polygonOffset: true, polygonOffsetFactor: -3, color: 0xffffff });
+      disposables.push(tex, gm);
+      const geos = [];
+      const decal = (x, y, z, w2, h2) => { const pg = new THREE.PlaneGeometry(w2, h2); pg.translate(x, y - h2 / 2, z); geos.push(pg); };
+      for (let f = 0; f < 2; f++) for (let i = 0; i < 8; i++) {
+        if (f === 0 && (i >= 2 && i <= 5)) continue;
+        decal(hx - 7.7 + i * 2.2, GROUND + 2.0 + f * 3.8 - 1.0, hz + hd / 2 + 0.035, 1.1, 1.9 + Rw.next() * 0.8);
+      }
+      for (let x = -hw / 2 + 0.6; x < hw / 2; x += 1.3 + Rw.next() * 0.8) decal(hx + x, GROUND + hh - 0.05, hz + hd / 2 + 0.035, 1.2 + Rw.next(), 1.6 + Rw.next() * 1.6);
+      for (let x = -hw / 2 + 0.4; x < hw / 2; x += 1.7) decal(hx + x, GROUND + 7.7, hz + hd / 2 + 0.035, 1.6, 1.1);
+      const gg = merge(geos);
+      disposables.push(gg);
+      const gmesh = new THREE.Mesh(gg, gm);
+      gmesh.renderOrder = 1;
+      group.add(gmesh);
     }
     // portico: steps, six fluted drum columns with capitals, entablature, pediment
     const pz = hz + hd / 2;
@@ -1164,14 +1303,14 @@ export function createCity({ seed = 1988 } = {}) {
     // camera), a dwarf and a lanky sellsword so the heights are never one row
     const toCam = -0.72; // facing back along the street toward the lens
     const folk = [
-      [-3.0, 5.6, Math.PI - 0.15, { gender: 'male', classSpec: 'fighter', look: { seed: 71, head: 1, body: 0, cloth: 2, hair: 3 } }, 1.06],
-      [-1.9, 6.1, Math.PI + 0.25, { gender: 'female', classSpec: 'cleric', look: { seed: 72, head: 4, body: 5, cloth: 1, hair: 4 } }, 0.94],
-      [-0.7, 6.0, -Math.PI / 2 + 0.3, { gender: 'male', classSpec: 'thief', look: { seed: 73, head: 3, body: 2, cloth: 4, hair: 0 } }, 1.0],
-      [0.5, 6.3, Math.PI / 2 + 0.5, { gender: 'male', classSpec: 'magicUser', look: { seed: 74, head: 6, body: 4, cloth: 6, hair: 8 } }, 0.98],
-      [1.9, 7.4, toCam + 0.35, { gender: 'female', classSpec: 'thief', look: { seed: 75, head: 5, body: 3, cloth: 3, hair: 2 } }, 0.92],
+      [-3.0, 5.6, Math.PI - 0.15, { gender: 'male', classSpec: 'fighter', look: { seed: 71, head: 6, body: 3, cloth: 2, hair: 3 } }, 1.06],
+      [-1.9, 6.1, Math.PI + 0.25, { gender: 'female', classSpec: 'cleric', look: { seed: 72, head: 4, body: 7, cloth: 1, hair: 4 } }, 0.94],
+      [-0.7, 6.0, -Math.PI / 2 + 0.3, { gender: 'male', classSpec: 'thief', look: { seed: 73, head: 6, body: 3, cloth: 4, hair: 0 } }, 1.0],
+      [0.5, 6.3, Math.PI / 2 + 0.5, { gender: 'male', classSpec: 'magicUser', look: { seed: 74, head: 7, body: 4, cloth: 6, hair: 8 } }, 0.98],
+      [1.9, 7.4, toCam + 0.35, { gender: 'female', classSpec: 'thief', look: { seed: 75, head: 6, body: 3, cloth: 3, hair: 2 } }, 0.92],
       [-4.4, 7.0, toCam - 0.1, { gender: 'male', classSpec: 'cleric', look: { seed: 76, head: 2, body: 7, cloth: 5, hair: 7 } }, 1.02],
-      [-2.4, 7.3, Math.PI - 0.6, { race: 'dwarf', gender: 'male', classSpec: 'fighter', look: { seed: 78, head: 2, body: 1, cloth: 7, hair: 5 } }, 1.0],
-      [3.1, 6.0, Math.PI + 0.6, { gender: 'male', classSpec: 'fighter', look: { seed: 79, head: 7, body: 6, cloth: 0, hair: 6 } }, 1.1],
+      [-1.15, 8.05, Math.PI - 0.9, { race: 'dwarf', gender: 'male', classSpec: 'fighter', look: { seed: 78, head: 2, body: 4, cloth: 7, hair: 5 } }, 1.0],
+      [3.1, 6.0, Math.PI + 0.6, { gender: 'male', classSpec: 'fighter', look: { seed: 79, head: 6, body: 2, cloth: 0, hair: 6 } }, 1.1],
     ];
     // built on demand (only the City Hall shot ever sees them)
     buildCrowd = () => {
@@ -1181,7 +1320,7 @@ export function createCity({ seed = 1988 } = {}) {
       folk.forEach(([fx, fz, ry, ch, sc], i) => {
         const f = buildMiniature({ race: 'human', ...ch }, { pose: 'stand', mod: mods[i] ?? undefined, base: false, gear: false, quality: 0.0108, faceSize: 256, noWeapon: true, noShield: true, rayHead: true, headGain: 0.75, fog: true });
         // backlit by the open doors: dim the front, a warm lit outline
-        matteFigure(f, { dim: 0.42, rim: 0x6a3410 });
+        matteFigure(f, { dim: 0.42, rim: 0x6a3410, folds: 1.2 });
         f.position.set(hx + fx, GROUND, pz + fz);
         f.rotation.y = ry;
         f.rotation.z = (i % 2 ? 1 : -1) * 0.03;
@@ -1449,7 +1588,7 @@ export function createCity({ seed = 1988 } = {}) {
   // the castle gets its own, brighter rim and a touch of warm self-light so it
   // separates from the town in the dusk haze
   const castleMat = addRimLight(texMat('hd2_ashlar', { emissive: 0x1a0c06 }), rimU, 2.2, { weather: 1.4, ground: -10, soot: 1.1, courses: 0.3 });
-  const hallMat = addRimLight(texMat('hd2_ashlar'), rimU, 1, { weather: 1.0 });
+  const hallMat = addRimLight(texMat('hd2_ashlar'), rimU, 1, { weather: 1.35, courses: 0.13, soot: 0.18, ground: GROUND });
   const plasterMat = addRimLight(texMat('hd2_plaster', { color: 0xd8ccbc }), rimU, 0.9, { weather: 0.65, soot: 0.3, flat: 0.8 });
   const rubbleMat = addRimLight(texMat('hd2_ruin'), rimU, 1, { weather: 0.8, soot: 0.6 });
   const groundMat = texMat('hd_mud');
@@ -1477,16 +1616,25 @@ export function createCity({ seed = 1988 } = {}) {
             vec4 M = texture2D(uGMask, vec2((w.x + 230.0) / 460.0, -w.y / 160.0));
             float n1 = vnoise(w * 0.33), n2 = vnoise(w * 1.6 + 3.0), n3 = vnoise(w * 6.5 + 9.0);
             float old = smoothstep(4.0, 14.0, w.x);
-            vec3 c = diffuseColor.rgb * (0.78 + 0.38 * n1) * (0.92 + 0.16 * n3);
+            float n0 = vnoise(w * 0.07 + 11.0);
+            vec3 c = diffuseColor.rgb * (0.78 + 0.38 * n1) * (0.92 + 0.16 * n3) * (0.72 + 0.56 * n0);
+            // broad tonal fields in the dead quarter: ochre dust, grey ash, dark loam
+            c = mix(c, c * vec3(1.18, 1.05, 0.82), smoothstep(0.55, 0.8, n0) * old * 0.6);
+            c = mix(c, c * vec3(0.72, 0.74, 0.78), smoothstep(0.45, 0.2, n0) * old * 0.5);
             // the old lanes: setts showing through drifts of ash and dust
             float street = smoothstep(0.3, 0.75, M.g);
-            float bare = street * smoothstep(0.35, 0.62, n2 * 0.7 + n1 * 0.5);
+            float bare = street * smoothstep(0.22, 0.5, n2 * 0.7 + n1 * 0.5);
             vec3 cob = texture2D(uCob, w / 2.6).rgb * vec3(0.92, 0.9, 0.88);
-            c = mix(c, c * 1.12 + vec3(0.035, 0.03, 0.022), street * 0.7 * old);
-            c = mix(c, cob, bare * old);
+            c = mix(c, c * 1.25 + vec3(0.05, 0.042, 0.03), street * 0.75 * old);
+            c = mix(c, cob * 1.1, bare * old);
+            // kerb lines: the lane edges read as a darker gutter
+            c *= 1.0 - 0.35 * smoothstep(0.2, 0.35, M.g) * (1.0 - smoothstep(0.35, 0.5, M.g)) * old;
             // rubble lots: grey stone chips and mortar dust
             float chips = M.a * smoothstep(0.42, 0.68, n3 + n2 * 0.25);
-            c = mix(c, vec3(0.34, 0.32, 0.3) * (0.55 + 0.9 * n3), chips * 0.8 * old);
+            c = mix(c, vec3(0.34, 0.32, 0.3) * (0.55 + 0.9 * n3), chips * 0.9 * old);
+            // broken brick and roof-tile litter in the lots
+            float tile = M.a * smoothstep(0.7, 0.8, vnoise(w * 4.0 + 21.0));
+            c = mix(c, vec3(0.32, 0.14, 0.09) * (0.7 + 0.6 * n3), tile * 0.75 * old);
             // weeds: along the wall feet, in the lots, never in the trodden lanes
             float foot = smoothstep(0.98, 0.7, M.r) * smoothstep(0.25, 0.55, M.r);
             float weeds = smoothstep(0.6, 0.8, n1 * 0.6 + n2 * 0.45 + foot * 0.4 + M.a * 0.25 - M.g * 0.7 - M.b * 0.45);
@@ -1524,7 +1672,12 @@ export function createCity({ seed = 1988 } = {}) {
         {
           // break the vertex colours up: tussocks, bare patches, stones in the turf
           float n1 = vnoise(vMW.xz * 0.6), n2 = vnoise(vMW.xz * 2.7 + 4.0), n3 = vnoise(vMW.xz * 9.0);
-          diffuseColor.rgb *= 0.72 + 0.4 * n1 + 0.22 * (n2 - 0.5);
+          diffuseColor.rgb *= 0.62 + 0.6 * n1 + 0.3 * (n2 - 0.5);
+          // tussock grass in clumps, bare slumped earth between, a scorched swathe
+          float tus = smoothstep(0.55, 0.75, n1 * 0.6 + n2 * 0.5);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.22, 0.08) * (0.7 + 0.6 * n3), tus * 0.55);
+          float sco = smoothstep(0.62, 0.8, vnoise(vMW.xz * 0.12 + 5.0));
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.05, 0.045, 0.04), sco * 0.6);
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.36, 0.34, 0.31) * (0.7 + 0.6 * n3), smoothstep(0.78, 0.86, n2 * 0.7 + n3 * 0.35) * 0.8);
         }`);
   };
@@ -1701,6 +1854,16 @@ export function createCity({ seed = 1988 } = {}) {
     group.add(pts);
     disposables.push(g, m);
   }
+  // the nearest fires throw real light: warm, flickering point lights that
+  // bloom on the shells and rubble round them (bounded range, no shadows)
+  const fireLights = [];
+  fires.slice(0, -1).slice(0, 4).forEach((p, i) => {
+    const L = new THREE.PointLight(0xff6a24, 60, 16, 1.8);
+    L.position.set(p.x, p.y + 1.6, p.z);
+    L.userData.seed = i * 2.3;
+    group.add(L);
+    fireLights.push(L);
+  });
   const smoke = createSmoke(fires.slice(0, -1), R);
   group.add(smoke.mesh);
   disposables.push(smoke.mesh.geometry, smoke.mesh.material);
@@ -1736,6 +1899,7 @@ export function createCity({ seed = 1988 } = {}) {
       smoke.mesh.visible = !on;
       hearthSmoke.mesh.visible = !on;
       for (const s of glows) s.visible = !on;
+      for (const L of fireLights) L.visible = !on;
       // 1988: the skyline is one flat mass of EGA blue with yellow windows
       for (const m of group.children) {
         if (!m.isMesh || !m.material) continue;
@@ -1754,6 +1918,7 @@ export function createCity({ seed = 1988 } = {}) {
       if (camera && sunDir) rimU.uSunView.value.copy(sunDir).transformDirection(camera.matrixWorldInverse);
       smoke.update(t);
       hearthSmoke.update(t);
+      for (const L of fireLights) L.intensity = 60 * (0.78 + 0.14 * Math.sin(t * 8.1 + L.userData.seed) + 0.08 * Math.sin(t * 19.7 + L.userData.seed * 2));
       cityTime.value = t;
       for (const s of glows) {
         const f = 0.85 + 0.1 * Math.sin(t * 7 + s.userData.seed) + 0.05 * Math.sin(t * 17.3 + s.userData.seed * 3);
@@ -1809,16 +1974,29 @@ function createSmoke(points, R, { per = 26, height = 38, drift = 26, size = 1, a
         gl_PointSize = clamp(size * uPx * 900.0 / -mv.z, 1.0, 320.0);
       }`,
     fragmentShader: /* glsl */ `
+      uniform float uTime;
       varying float vLife; varying float vSeed;
       ${NOISE}
       void main() {
+        // a lit volume, not a flat blur: billowing domain-warped density, a
+        // pseudo-normal over the puff lit by the low western sun (warm lit
+        // edge, cool shadowed core), and the fire's glow on the underside
         vec2 d = gl_PointCoord - 0.5;
         float r = length(d) * 2.0;
-        float n = fbm(gl_PointCoord * 3.0 + vSeed * 17.0);
-        float puff = smoothstep(1.0, 0.25, r + (n - 0.5) * 0.7);
-        float a = puff * smoothstep(0.0, 0.07, vLife) * (1.0 - smoothstep(0.35, 1.0, vLife)) * ${alpha.toFixed(3)};
-        vec3 col = mix(vec3(${dark.map((v) => v.toFixed(3)).join(', ')}), vec3(${light.map((v) => v.toFixed(3)).join(', ')}), n);
-        col += vec3(0.8, 0.28, 0.06) * (1.0 - smoothstep(0.0, 0.12, vLife)) * ${fire.toFixed(2)};
+        vec2 q = gl_PointCoord * 2.6 + vSeed * 17.0 + vec2(0.0, uTime * 0.06);
+        float n = fbm(q);
+        float n2 = fbm(q * 2.1 + n * 1.6 - vec2(uTime * 0.04, 0.0));
+        float dens = smoothstep(1.0, 0.18, r + (n - 0.5) * 0.8 + (n2 - 0.5) * 0.4);
+        vec3 N = normalize(vec3(d.x * 2.0 + (n2 - 0.5) * 0.9, -d.y * 2.0 + (n - 0.5) * 0.9, sqrt(max(0.0, 1.0 - r * r)) + 0.25));
+        vec3 Ls = normalize(vec3(-0.75, 0.45, 0.35));
+        float lit = clamp(dot(N, Ls) * 0.65 + 0.35, 0.0, 1.0);
+        vec3 dk = vec3(${dark.map((v) => v.toFixed(3)).join(', ')});
+        vec3 lt = vec3(${light.map((v) => v.toFixed(3)).join(', ')});
+        vec3 col = mix(dk, lt * 1.9, lit * (0.55 + 0.45 * n2));
+        col += vec3(0.42, 0.2, 0.12) * pow(clamp(dot(normalize(N.xy + 1e-4), normalize(Ls.xy)), 0.0, 1.0), 3.0) * smoothstep(0.35, 0.95, r) * (1.0 - vLife) * 0.6;
+        float under = clamp(-N.y * 0.6 + 0.4, 0.0, 1.0);
+        col += vec3(0.95, 0.34, 0.07) * (1.0 - smoothstep(0.0, 0.22, vLife)) * under * ${fire.toFixed(2)};
+        float a = dens * smoothstep(0.0, 0.07, vLife) * (1.0 - smoothstep(0.35, 1.0, vLife)) * ${alpha.toFixed(3)} * (0.75 + 0.5 * n2);
         gl_FragColor = vec4(col, a);
       }`,
   });

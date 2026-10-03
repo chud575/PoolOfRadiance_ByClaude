@@ -178,11 +178,11 @@ export class Credits {
       let x = rnd() * w, y = rnd() * hgt;
       if (edge < 0.4) x = rnd() < 0.5 ? rnd() * w * 0.16 : w - rnd() * w * 0.16;
       else if (edge < 0.8) y = rnd() < 0.5 ? rnd() * hgt * 0.18 : hgt - rnd() * hgt * 0.18;
-      const r = 1.5 + Math.pow(rnd(), 2) * 9;
+      const r = 1.2 + Math.pow(rnd(), 3) * 6;
       const gr = g.createRadialGradient(x, y, 0, x, y, r);
       gr.addColorStop(0, 'rgba(150,85,30,0.22)');
       gr.addColorStop(0.75, 'rgba(140,72,22,0.28)');
-      gr.addColorStop(0.9, 'rgba(110,55,15,0.36)');
+      gr.addColorStop(0.9, 'rgba(110,55,15,0.26)');
       gr.addColorStop(1, 'rgba(110,55,15,0)');
       g.fillStyle = gr;
       g.beginPath();

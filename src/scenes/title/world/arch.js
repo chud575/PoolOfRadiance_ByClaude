@@ -453,7 +453,7 @@ export function contactShadow(rx = 0.42, rz = 0.32, strength = 0.75) {
  * soft roughness (no plastic glints), skin keeps a warm wrap of light in its
  * shadows, and only true metals (metalness > 0.5) stay polished.
  */
-export function matteFigure(root, { detail = 0.45, dim = 1, rim = null } = {}) {
+export function matteFigure(root, { detail = 0.45, dim = 1, rim = null, folds = 0 } = {}) {
   root.traverse((o) => {
     if (!o.isMesh || !o.material || o.material.userData?.matted) return;
     const m = o.material;
@@ -467,8 +467,12 @@ export function matteFigure(root, { detail = 0.45, dim = 1, rim = null } = {}) {
       // distances: keep only a whisper of it
       if (sh.uniforms.uDetail) sh.uniforms.uDetail.value = detail;
       sh.uniforms.uRimC = { value: new THREE.Color(rim ?? 0x000000) };
+      sh.uniforms.uFolds = { value: folds };
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vFoldP;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvFoldP = position;');
       sh.fragmentShader = sh.fragmentShader
-        .replace('#include <common>', '#include <common>\nuniform vec3 uRimC;')
+        .replace('#include <common>', '#include <common>\nuniform vec3 uRimC;\nuniform float uFolds;\nvarying vec3 vFoldP;')
         // armour: never a mirror (no blown white plates): a satin floor on roughness
         .replace('roughnessFactor = clamp(vMat.y + miniR, 0.06, 1.0);', 'roughnessFactor = clamp(vMat.y + miniR, 0.06, 1.0);\nroughnessFactor = mix(max(roughnessFactor, 0.78), max(roughnessFactor, 0.46), step(0.5, vMat.z));')
         .replace('#include <aomap_fragment>', `#include <aomap_fragment>
@@ -476,6 +480,19 @@ export function matteFigure(root, { detail = 0.45, dim = 1, rim = null } = {}) {
           reflectedLight.directSpecular *= mix(1.0, 0.55, step(0.5, vMat.z));
           reflectedLight.directDiffuse *= ${dim.toFixed(2)};
           reflectedLight.indirectDiffuse *= ${dim.toFixed(2)};
+          if (uFolds > 0.0 && (abs(floor(vMat.x + 0.5) - 3.0) < 0.5 || abs(floor(vMat.x + 0.5) - 10.0) < 0.5)) {
+            // hanging cloth: long vertical folds round the figure, deeper and
+            // more broken toward the hem, with a lit crest and a dark trough
+            float ang = atan(vFoldP.z, vFoldP.x);
+            float y = vFoldP.y;
+            float ph = ang * 11.0 + sin(ang * 3.0 + y * 2.2) * 1.4 + sin(y * 7.0 + ang * 5.0) * 0.25;
+            float fo = sin(ph);
+            float hem = 1.0 - smoothstep(0.25, 1.15, y);
+            float k = (0.35 + 0.65 * hem) * uFolds;
+            float shade = 1.0 + fo * 0.32 * k - (1.0 - abs(fo)) * 0.0 + pow(max(-fo, 0.0), 3.0) * -0.25 * k;
+            reflectedLight.directDiffuse *= shade;
+            reflectedLight.indirectDiffuse *= mix(1.0, shade, 0.8);
+          }
           // skin: soft wrapped warmth in the shadow side (cheap sub-surface)
           if (floor(vMat.x + 0.5) > 8.5 && floor(vMat.x + 0.5) < 9.5) reflectedLight.indirectDiffuse += diffuseColor.rgb * vec3(0.06, 0.025, 0.015);`)
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
@@ -486,7 +503,7 @@ export function matteFigure(root, { detail = 0.45, dim = 1, rim = null } = {}) {
             totalEmissiveRadiance += uRimC * fr;
           }`);
     };
-    m.customProgramCacheKey = () => `${key}-matte-d${detail}-m${dim}-r${rim ?? 0}`;
+    m.customProgramCacheKey = () => `${key}-matte-d${detail}-m${dim}-r${rim ?? 0}-f${folds}`;
     m.userData.matted = true;
     m.needsUpdate = true;
   });
