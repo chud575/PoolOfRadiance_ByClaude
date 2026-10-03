@@ -27,7 +27,7 @@ const angLerp = (a, b, t) => {
  */
 export const RIM = { uRimColor: { value: new THREE.Color(0.18, 0.16, 0.14) }, uRimPower: { value: 3.0 }, uFacK: { value: 1.0 } };
 /** Per-faction back-light edge colours. */
-export const FACTION_RIM = { party: new THREE.Color(0.30, 0.26, 0.16), foe: new THREE.Color(0.34, 0.09, 0.04), undead: new THREE.Color(0.2, 0.36, 0.5) };
+export const FACTION_RIM = { party: new THREE.Color(0.30, 0.26, 0.16), foe: new THREE.Color(0.34, 0.09, 0.04), undead: new THREE.Color(0.26, 0.46, 0.66) };
 
 // Rigid kit material kind (from pbr()'s name) → surface-detail pattern id.
 const RIGID_PID = { cloth: 3, leather: 5, chain: 9, metal: 8, gold: 6, skin: 6, scales: 10, reptile: 1, fur: 2, bone: 4, wood: 6, hair: 2, plank: 6 };
@@ -114,7 +114,8 @@ export class Figure {
     if (o.faction && o.faction !== 'party') {
       const v = 0.8 + hashf(this.seed * 3.7) * 0.34;
       const lean = hashf(this.seed * 5.1) - 0.5;
-      this.tint = new THREE.Color(v * (1 + lean * 0.3), v * (1 + Math.abs(lean) * 0.06), v * (1 - lean * 0.34));
+      // The dead keep to ivory and grey (no warm hue drift on bone).
+      this.tint = o.faction === 'undead' ? new THREE.Color(v, v, v * 1.02) : new THREE.Color(v * (1 + lean * 0.3), v * (1 + Math.abs(lean) * 0.06), v * (1 - lean * 0.34));
     }
     // Per-figure material clones so hits can flash and the dead can dim.
     this.mats = [];

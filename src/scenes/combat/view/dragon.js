@@ -233,7 +233,7 @@ function wingTextures() {
       const w = y / S;
       const thin = Math.sin(u * Math.PI) ** 0.7 * (0.35 + 0.65 * w) * (1 - Math.max(0, w - 0.9) * 6);
       const k = Math.max(0, thin);
-      ge.fillStyle = `rgb(${Math.round(255 * k)},${Math.round(120 * k * k)},${Math.round(40 * k * k * k)})`;
+      ge.fillStyle = `rgb(${Math.round(255 * k)},${Math.round(175 * k)},${Math.round(90 * k * k)})`;
       ge.fillRect(x, y, 2, 2);
     }
   }
@@ -345,7 +345,7 @@ export function buildGreatDragon(sp) {
   const fire = new THREE.MeshStandardMaterial({ color: 0x200400, emissive: new THREE.Color(0xff6a18), emissiveIntensity: 3.2, roughness: 1 });
   fire.name = 'glow|dragonThroat';
   const wt = wingTextures();
-  const membrane = new THREE.MeshStandardMaterial({ map: wt.map, emissiveMap: wt.emissiveMap, emissive: new THREE.Color(0xffa850), emissiveIntensity: 0.5, roughness: 0.72, metalness: 0.05, side: THREE.DoubleSide });
+  const membrane = new THREE.MeshStandardMaterial({ map: wt.map, emissiveMap: wt.emissiveMap, emissive: new THREE.Color(0xffb870), emissiveIntensity: 0.32, roughness: 0.72, metalness: 0.05, side: THREE.DoubleSide });
   membrane.name = 'dragonWing';
 
   // Eyes, set into the sockets under the brow.

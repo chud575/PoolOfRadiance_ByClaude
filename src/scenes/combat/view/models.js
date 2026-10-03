@@ -123,7 +123,7 @@ export function makeFigureModel(c, index = 0) {
   const kit = {
     color: sp.cloth ?? 0x3a3024,
     weapon,
-    variant: hashStr(`${c.id}:v`),
+    variant: (nth * 0.34 + hashStr(`${c.monsterId}:v`) + hashStr(`${c.id}:v`) * 0.08) % 1,
     armor: sp.armor ?? (sp.body === 'bones' ? 'none' : 'loincloth'),
     shield,
     helm: sp.helms ? sp.helms[(nth * 3 + 1) % sp.helms.length] : sp.helmChance && hashStr(`${c.id}:h`) < sp.helmChance ? 'orcHelm' : null,
@@ -239,7 +239,7 @@ function buildBiped(o) {
     const J = {};
     const v = new THREE.Vector3();
     for (const b of R.boneList) J[b.name] = b.getWorldPosition(v).toArray();
-    const key = [sculpt, o.height, o.bulk, kit.armor, kit.tattered ? 1 : 0, o.tail ?? '', kit.cape ? 1 : 0].join('|');
+    const key = [sculpt, o.height, o.bulk, kit.armor, kit.tattered ? 1 : 0, o.tail ?? '', kit.cape ? 1 : 0, sculpt === 'orc' ? Math.floor((kit.variant ?? 0) * 3) : ''].join('|');
     const flesh = sculptedFlesh(key, {
       species: sculpt, J, s, w, hs: s * (o.headScale ?? 1), bw: Math.sqrt(w) * (o.limbK ?? 1), legW: (w > 1.15 ? w * 1.05 : Math.sqrt(w)) * (o.limbK ?? 1),
       belly: o.belly, tail: o.tail, digitigrade: o.digitigrade, thickNeck: o.thickNeck, claws: o.claws, kit,
@@ -252,9 +252,31 @@ function buildBiped(o) {
       const hs2 = s * (o.headScale ?? 1);
       const ivory = pbr('bone', 0xd8c89a);
       for (const sx of [1, -1]) {
-        R.part('head', cone(0.017 * hs2, 0.075 * hs2, 8), ivory, { p: [sx * 0.042 * hs2, 0.062 * hs2, 0.112 * hs2], r: [0.35, 0, sx * -0.38] });
-        R.part('head', sphere(0.016 * hs2, 8, 6), ivory, { p: [sx * 0.04 * hs2, 0.036 * hs2, 0.106 * hs2] });
+        R.part('head', cone(0.021 * hs2, 0.095 * hs2, 8), ivory, { p: [sx * 0.044 * hs2, 0.066 * hs2, 0.114 * hs2], r: [0.3, 0, sx * -0.4] });
+        R.part('head', sphere(0.019 * hs2, 8, 6), ivory, { p: [sx * 0.041 * hs2, 0.036 * hs2, 0.107 * hs2] });
       }
+      // Warband gear that breaks the silhouette: a shaggy hide mantle on the
+      // first cut, a war-belt of trophies and a hide kilt on all, a topknot
+      // or crest on some.
+      const vb = Math.floor((kit.variant ?? 0) * 3);
+      const furM = pbr('fur', [0x3a2a1c, 0x4a3a28, 0x2a221a][vb]);
+      if (vb === 0) {
+        R.part('chest', lathe([[0.2, 0.12], [0.22, 0.17], [0.16, 0.23], [0.08, 0.26]].map(([r, y]) => [r * s * o.bulk, y * s]), 14, { zs: 0.8 }), furM);
+        for (let k = 0; k < 9; k++) {
+          const a = (k / 9) * Math.PI * 2;
+          R.part('chest', cone(0.035 * s, 0.12 * s, 5), furM, { p: [Math.sin(a) * 0.19 * s * o.bulk, 0.1 * s, Math.cos(a) * 0.15 * s], r: [Math.PI + Math.cos(a) * 0.4, 0, -Math.sin(a) * 0.4] });
+        }
+      }
+      if (vb === 1) {
+        // Bare-chested: crossed baldrics with iron studs, and a crest of hair.
+        const lea = pbr('leather', 0x3a2414);
+        for (const sx of [1, -1]) R.part('chest', box(0.035 * s, 0.44 * s, 0.014 * s), lea, { p: [0, 0.09 * s, 0.13 * s * o.bulk], r: [0.05, 0, sx * 0.6] });
+        for (let k = 0; k < 5; k++) R.part('head', cone(0.02 * hs2, 0.12 * hs2, 5), pbr('hair', 0x0e0c0a), { p: [0, 0.2 * hs2 - k * 0.01 * hs2, 0.04 * hs2 - k * 0.045 * hs2], r: [-0.5 - k * 0.2, 0, 0] });
+      }
+      // War-belt with a skull buckle and hanging trophies.
+      R.part('hips', torus(0.17 * s * o.bulk, 0.026 * s, 6, 22), pbr('leather', 0x2e1c10), { p: [0, 0.05 * s, 0], r: [Math.PI / 2, 0, 0], s: [1, 0.78, 1] });
+      R.part('hips', sphere(0.036 * s, 8, 6), pbr('bone', 0xd8ccb0), { p: [0, 0.05 * s, 0.14 * s], s: [1, 1.1, 0.7] });
+      for (let k = 0; k < 3; k++) R.part('hips', cone(0.012 * s, 0.07 * s, 5), pbr('bone', 0xe0d4b8), { p: [(k - 1) * 0.06 * s + 0.1 * s, -0.02 * s, 0.11 * s], r: [Math.PI, 0, 0] });
     }
     sculptEyes = flesh;
     o.sculptEyesOut = flesh;

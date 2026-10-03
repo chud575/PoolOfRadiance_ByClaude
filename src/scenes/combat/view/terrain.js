@@ -250,16 +250,40 @@ export function buildDiorama(field, o = {}) {
         // same courses shifted a whole number of rows (seamless), so the
         // repeat never lines up.
         vec2 uv1 = vec2(vWPos.x, -vWPos.z) / 1.0;
+        // Patched paving: the street was relaid in irregular patches over the
+        // centuries — each patch (Voronoi cell, ~2.6 m) lays the same setts in
+        // its own direction and course offset with its own stone tone, and a
+        // dark joint of grit runs along every patch seam. Kills the tiling.
+        vec2 pvp = vWPos.xz * 0.38;
+        vec2 pvi = floor(pvp), pvf = fract(pvp);
+        float pmd = 8.0, pmd2 = 8.0; vec2 pmc = vec2(0.0);
+        for (int pj = -1; pj <= 1; pj++) for (int pi = -1; pi <= 1; pi++) {
+          vec2 pg = vec2(float(pi), float(pj));
+          vec2 po = vec2(gHash(pvi + pg), gHash(pvi + pg + 17.3)) * 0.85 + 0.075;
+          vec2 pr = pg + po - pvf; float pd = dot(pr, pr);
+          if (pd < pmd) { pmd2 = pmd; pmd = pd; pmc = pvi + pg; } else if (pd < pmd2) pmd2 = pd;
+        }
+        float pSeam = (sqrt(pmd2) - sqrt(pmd)) / 0.38 * 0.5;
+        float prk = floor(gHash(pmc + 5.1) * 4.0);
+        mat2 pR = prk < 1.0 ? mat2(1.0, 0.0, 0.0, 1.0) : prk < 2.0 ? mat2(0.0, 1.0, -1.0, 0.0) : prk < 3.0 ? mat2(-1.0, 0.0, 0.0, -1.0) : mat2(0.0, -1.0, 1.0, 0.0);
+        mat2 pRi = mat2(pR[0][0], pR[1][0], pR[0][1], pR[1][1]);
+        uv1 = pR * uv1 + vec2(gHash(pmc + 9.7), gHash(pmc + 2.3)) * 7.0;
+        float pTone = gHash(pmc + 3.3);
         vec2 uv2 = vec2(vWPos.x, -vWPos.z) / 3.2 + 0.37;
         vec2 uv3 = vec2(vWPos.x, -vWPos.z) / 2.7;
         vec4 gc = texture2D(map, uv1);
         // Per-stone contrast held down at tactics distance: pull each sett toward
         // the local mean so the field reads as one surface with big value shapes.
         gc.rgb = mix(texture2D(map, uv1, 4.0).rgb, gc.rgb, 0.5);
+        // Each patch its own stone: greyer granite, warmer sandstone, sooty.
+        gc.rgb *= mix(vec3(0.94, 0.96, 1.02), vec3(1.07, 1.0, 0.9), pTone) * (0.86 + 0.26 * gHash(pmc + 8.8));
+        // Grit-filled seam between patches (setts only).
+        float pJoint = 1.0 - smoothstep(0.02, 0.07, pSeam);
         if (wR > 0.001) gc = mix(gc, texture2D(map2, uv2), wR);
         if (wF > 0.001) gc = mix(gc, texture2D(map3, uv3), wF);
         // Worn boundary: grit, dirt and broken setts between the pavings.
         gc = mix(gc, texture2D(map2, uv2 * 1.3) * vec4(0.62, 0.56, 0.48, 1.0), smoothstep(0.25, 0.85, fEdge) * 0.75);
+        gc.rgb = mix(gc.rgb, vec3(0.16, 0.14, 0.12) * (0.8 + 0.4 * gn), pJoint * 0.7 * (1.0 - wF) * (1.0 - wR));
         float sH = texture2D(roughnessMap, uv1).r;
         // Ruin: on dressed flagstones, broken / missing slabs open onto grit and
         // rubble, meandering hairline cracks run across slabs, moss fills seams.
@@ -338,6 +362,7 @@ export function buildDiorama(field, o = {}) {
       `)
       .replace('#include <normal_fragment_maps>', `
         vec3 mapN = texture2D(normalMap, uv1).xyz * 2.0 - 1.0;
+        mapN.xy = pRi * mapN.xy;
         if (wR > 0.001) mapN = mix(mapN, texture2D(normal2, uv2).xyz * 2.0 - 1.0, wR);
         if (wF > 0.001) mapN = mix(mapN, texture2D(normal3, uv3).xyz * 2.0 - 1.0, wF);
         if (brk > 0.001) mapN = mix(mapN, texture2D(normal2, uv2 * 1.6 + 0.2).xyz * 2.0 - 1.0, brk);
@@ -366,7 +391,7 @@ export function buildDiorama(field, o = {}) {
         #include <opaque_fragment>
       `);
   };
-  groundMat.customProgramCacheKey = () => `combat-ground-v9-${night ? 1 : 0}`;
+  groundMat.customProgramCacheKey = () => `combat-ground-v10-${night ? 1 : 0}`;
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(SW * TILE, SH * TILE, 1, 1), groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(originX + (SW * TILE) / 2, 0, originZ + (SH * TILE) / 2);
@@ -1744,9 +1769,9 @@ export function buildDiorama(field, o = {}) {
             return pow(1.0 - clamp(c / 3.0, 0.0, 1.0), 5.0); }
           void main(){
             float d = length(vW.xz - uC) / uR;
-            float fall = smoothstep(2.1, 0.95, d) * smoothstep(0.8, 1.05, d);
+            float fall = smoothstep(1.55, 0.98, d) * smoothstep(0.85, 1.05, d);
             float c = caus(vW.xz * 0.9, uT * 0.7);
-            gl_FragColor = vec4(vec3(1.0, 0.8, 0.4) * (c * 0.5 + 0.03) * fall, 1.0);
+            gl_FragColor = vec4(vec3(1.0, 0.82, 0.45) * (c * 0.42 + 0.02) * fall, 1.0);
           }`,
       });
       disposables.push(cMat);

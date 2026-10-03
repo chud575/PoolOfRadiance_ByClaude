@@ -79,7 +79,7 @@ export const LOOKS = {
   // near-black along the spine, a pale ochre belly and bone-white horns.
   kobold: { skin: [0x8e3a1c, 'scales'], back: [0x2e120a, 'scales'], belly: [0xd09a5e, 'scales'], horn: 0xeee0b8, cloth: 0x4a3a28, head: 'kobold', jerkin: 0x9a6a38, boots: 0x3a2414 },
   goblin: { skin: [0x86963a, 'skin'], back: [0x5a6a26, 'skin'], belly: [0xa0aa60, 'skin'], horn: 0xd8c8a0, cloth: 0x4a3020, head: 'goblin', pants: 0x3a2a1a },
-  orc: { skin: [0x66624a, 'skin'], back: [0x34321f, 'skin'], belly: [0x8a8468, 'skin'], horn: 0xeadfc0, cloth: 0x3a2c1c, head: 'orc', pants: 0x3a2c1e, jerkin: 0x5a3a20, plate: 0x6a625a, hair: 0x0e0c0a },
+  orc: { skin: [0x5a6438, 'skin'], back: [0x2c3219, 'skin'], belly: [0x7a7c58, 'skin'], horn: 0xeadfc0, cloth: 0x3a2c1c, head: 'orc', pants: 0x3a2c1e, jerkin: 0x5a3a20, plate: 0x6a625a, hair: 0x0e0c0a },
   // Hobgoblins: dark rust-brown hide with an orange cast, a flat simian face,
   // bronze scale coats under a red-and-ochre legion tabard, leather boots.
   hobgoblin: { skin: [0x9a4a22, 'skin'], back: [0x5e2810, 'skin'], belly: [0xc0784a, 'skin'], horn: 0xeadcb8, cloth: 0x2a2a22, head: 'hobgoblin', pants: 0x2e1c12, mail: 0x6e5a3e, hair: 0x0e0a08, nose: 0x3a1a0e, tabard: 0x24261e, trim: 0xc89a3a, boots: 0x2a1a10 },
@@ -87,7 +87,7 @@ export const LOOKS = {
   bugbear: { skin: [0x7a5a30, 'fur'], back: [0x4a3418, 'fur'], belly: [0x9a7a50, 'fur'], horn: 0xd8c8a0, cloth: 0x3a2a1a, head: 'bugbear', hair: 0x2a1a0a, pants: 0x3a2a1a },
   lizardMan: { skin: [0x4a6a3a, 'scales'], back: [0x2e4a26, 'scales'], belly: [0xb0b07a, 'scales'], horn: 0xd8d0a0, cloth: 0x4a3a20, head: 'lizard' },
   // Old grave bone: yellowed and earth-stained, darker in the hollows, with rags.
-  skeleton: { skin: [0xbcae8c, 'bone'], back: [0x8a7c5e, 'bone'], belly: [0xcfc4a4, 'bone'], horn: 0xd8ceb0, head: 'skull', shirt: 0x34291e },
+  skeleton: { skin: [0xc2c0b6, 'bone'], back: [0x8a8a84, 'bone'], belly: [0xd4d2c8, 'bone'], horn: 0xd8ceb0, head: 'skull', shirt: 0x34291e },
   zombie: { skin: [0x7a8466, 'skin'], back: [0x5a6450, 'skin'], belly: [0x8a9070, 'skin'], horn: 0xd8d0b0, cloth: 0x3a3a30, head: 'zombie', pants: 0x2e2c26, shirt: 0x4a4438, hair: 0x2a2620 },
   ghoul: { skin: [0x9a9a88, 'skin'], back: [0x6a6a5c, 'skin'], belly: [0xa8a898, 'skin'], horn: 0xe0d8c0, cloth: 0x2a2a28, head: 'ghoul', pants: 0x2a2a28, hair: 0x1a1a18 },
   ogre: { skin: [0xa08a5a, 'skin'], back: [0x7a6a42, 'skin'], belly: [0xb09a6a, 'skin'], horn: 0xd8c8a0, cloth: 0x4a3a28, head: 'ogre', pants: 0x4a3a28, hair: 0x2a1e12 },
@@ -257,16 +257,20 @@ function fleshBody(B, o, look) {
     B.ell('hips', add(J.hips, [0, 0.0 * s, -0.005 * s]), [0.152 * w * s, 0.1 * s, 0.115 * s], C);
   };
   if (o.kit.armor === 'orcish') {
-    jerkin('leather', G.jerkin, 0.012 * s, J.neck[1] - 0.03 * s, J.hips[1] - 0.05 * s);
+    // Three cuts of warband gear (the sculpt is cached per cut): a hide jerkin
+    // with one pauldron; bare-chested under strapped pauldrons; a jerkin with a
+    // rusted breastplate strapped over it.
+    const vb = Math.floor((o.kit.variant ?? 0) * 3);
+    if (vb !== 1) jerkin('leather', G.jerkin, 0.012 * s, J.neck[1] - 0.03 * s, J.hips[1] - 0.05 * s);
     // A dented, rusty pauldron on the weapon shoulder (sculpted over the deltoid).
     for (const [side, sx] of [['R', -1], ['L', 1]]) {
-      if (side === 'L' && (o.kit.variant ?? 0) < 0.5) continue;
+      if (side === 'L' && vb === 0) continue;
       const sh = J[`upperArm${side}`];
       const P = { g: G.plate, k: 0.01 * s, mat: 'plate', clip: [[0, -1, 0, -(sh[1] - 0.07 * s)]], clipK: 0.006 * s };
       B.ell(`upperArm${side}`, add(sh, [sx * 0.015 * s, 0.0, 0]), [0.085 * s, 0.075 * s, 0.085 * s], { ...P, R: mEuler(0, 0, sx * 0.35) });
       B.ell(`upperArm${side}`, add(sh, [sx * 0.03 * s, -0.04 * s, 0]), [0.075 * s, 0.05 * s, 0.08 * s], { ...P, clip: [[0, -1, 0, -(sh[1] - 0.1 * s)]], R: mEuler(0, 0, sx * 0.5) });
     }
-    if ((o.kit.variant ?? 0) < 0.75 || true) jerkin('plate', G.plate, 0.03 * s, J.neck[1] - 0.05 * s, J.spine[1] + 0.02 * s, 0.03 * s);
+    if (vb === 2) jerkin('plate', G.plate, 0.03 * s, J.neck[1] - 0.05 * s, J.spine[1] + 0.02 * s, 0.03 * s);
   } else if (o.kit.armor === 'scale') {
     const scaleMat = sp === 'hobgoblin' ? 'scale' : 'mail';
     jerkin(scaleMat, G.jerkin, 0.014 * s, J.neck[1] - 0.025 * s, J.hips[1] - 0.12 * s);
@@ -738,7 +742,7 @@ export const SCULPT_DETAIL_GLSL = `
           dr = 0.04;
         } else if (pid < 4.5) {
           h = sn3(p * 50.0) * 0.6; float cr = smoothstep(0.02, 0.0, abs(sn3(p * 22.0) - 0.5)); h -= cr * 0.5;
-          alb = vec3(0.82 + sn3(p * 7.0) * 0.3 - cr * 0.3) * mix(vec3(1.0), vec3(0.92, 0.85, 0.7), smoothstep(0.3, 0.8, sn3(p * 4.0)));
+          alb = vec3(0.82 + sn3(p * 7.0) * 0.3 - cr * 0.3) * mix(vec3(1.0), vec3(0.95, 0.93, 0.88), smoothstep(0.3, 0.8, sn3(p * 4.0)));
         } else if (pid < 5.5) {
           // Leather: cut panels with dark stitched seams, scuffed lighter wear, grain.
           vec2 c = cell3(p * 9.0);

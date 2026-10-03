@@ -161,9 +161,12 @@ export class Overlay {
           }
           // Path and hover.
           if (s.b > 0.9) {
-            float e2 = 1.0 - smoothstep(0.0, 0.05, ed);
-            LAYER(vec3(1.0, 0.92, 0.65), 0.1);
-            LAYER(vec3(1.0, 0.92, 0.65) * 1.3, e2 * 0.5);
+            // Destination: gilt corner brackets and a faint warm wash (a
+            // placement mark painted on the stones, not a debug tile).
+            vec2 cq2 = min(f, 1.0 - f);
+            float brk2 = (1.0 - smoothstep(pxG * 0.8, pxG * 2.2, min(cq2.x, cq2.y) - 0.05)) * step(max(cq2.x, cq2.y), 0.2) * step(0.05 - pxG, min(cq2.x, cq2.y));
+            LAYER(vec3(1.0, 0.9, 0.62), 0.045);
+            LAYER(vec3(1.0, 0.86, 0.5) * 1.4, brk2 * 0.75);
           } else if (s.b > 0.5) {
             LAYER(vec3(1.0, 0.25, 0.2) * 0.7, 0.25);
           }
@@ -226,7 +229,7 @@ export class Overlay {
     this.path.frustumCulled = false;
     this.group.add(this.path);
     // Path end marker (a cone arrow).
-    this.arrow = new THREE.Mesh(new THREE.RingGeometry(0.3, 0.36, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xe8dcb8, transparent: true, opacity: 0.7, depthWrite: false }));
+    this.arrow = new THREE.Mesh(new THREE.RingGeometry(0.2, 0.235, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xf0d89a, transparent: true, opacity: 0.55, depthWrite: false }));
     this.arrow.renderOrder = 3;
     this.arrow.visible = false;
     this.group.add(this.arrow);

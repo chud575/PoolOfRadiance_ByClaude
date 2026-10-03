@@ -343,7 +343,7 @@ function gasVolume({ steps = 26 } = {}) {
     uniforms: {
       uCam: { value: new THREE.Vector3(0, 5, 5) }, uAge: { value: 0 }, uSeed: { value: 0 }, uFade: { value: 1 },
       uHalf: { value: new THREE.Vector3(3, 1, 3) }, uLightDir: { value: new THREE.Vector3(0.4, 0.85, 0.3).normalize() },
-      uKey: { value: new THREE.Color(1, 0.94, 0.8) }, uAmb: { value: new THREE.Color(0.33, 0.38, 0.44) }, uMaxA: { value: 0.8 },
+      uKey: { value: new THREE.Color(1, 0.94, 0.8) }, uAmb: { value: new THREE.Color(0.33, 0.38, 0.44) }, uMaxA: { value: 0.72 },
     },
     vertexShader: 'varying vec3 vO; void main(){ vO = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: `
@@ -404,7 +404,7 @@ function gasVolume({ steps = 26 } = {}) {
           float d = dens(q);
           if (d > 0.002) {
             float stepM = dt * length(rd * uHalf);
-            float a = 1.0 - exp(-d * 1.75 * stepM);
+            float a = 1.0 - exp(-d * 1.35 * stepM);
             // Self-shadow: two probes toward the key light.
             float s1 = dens(q + uLightDir * 0.32);
             float lit = exp(-s1 * 5.2);
@@ -838,6 +838,49 @@ function puff(color, seed) {
         float a = smoothstep(1.0, 0.2, r + (n - 0.5) * 0.8) * (0.55 + n2 * 0.6);
         vec3 c = uColor * (0.7 + n * 0.6);
         gl_FragColor = vec4(c, a * uA); }`,
+  });
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
+  m.renderOrder = 9;
+  m.frustumCulled = false;
+  return m;
+}
+
+/**
+ * A lit puff of gas: a camera-facing disc shaded as a soft sphere (crown lit
+ * from above-front, olive folds underneath), its rim eroded by churning noise;
+ * `core` adds the sickly yellow glow of the cloud's heart.
+ */
+function gasPuff(seed, core = 0) {
+  const mat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    uniforms: { uT: { value: 0 }, uA: { value: 0.45 }, uSeed: { value: seed }, uCore: { value: core }, uLight: { value: 1 }, uCool: { value: 0 } },
+    vertexShader: `varying vec2 vUv; void main(){ vUv = uv;
+      vec4 mv = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+      vec2 sc = vec2(length(modelMatrix[0].xyz), length(modelMatrix[1].xyz));
+      mv.xy += position.xy * sc; gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `${NOISE_GLSL}
+      varying vec2 vUv; uniform float uT, uA, uSeed, uCore, uLight, uCool;
+      void main(){
+        vec2 p = vUv * 2.0 - 1.0;
+        float n = fbm3(vec3(p * 1.6, uT * 0.18 + uSeed)) * 0.5 + 0.5;
+        float n2 = fbm3(vec3(p * 3.6 + 3.0, uT * 0.3 + uSeed * 2.0)) * 0.5 + 0.5;
+        // Lumpy silhouette: the disc is pushed out into cauliflower lobes.
+        float r = length(p) * (1.0 + (n - 0.5) * 0.8);
+        if (r > 1.0) discard;
+        vec3 N = normalize(vec3(p * 1.1, sqrt(max(0.0, 1.0 - r * r))));
+        vec3 L = normalize(vec3(-0.35, 0.82, 0.45));
+        float lit = clamp(dot(N, L) * 0.9 + 0.12 + (n2 - 0.5) * 0.45, 0.0, 1.0);
+        vec3 fold = vec3(0.035, 0.042, 0.01);
+        vec3 body = vec3(0.3, 0.34, 0.06);
+        vec3 crown = vec3(0.72, 0.74, 0.3);
+        vec3 c = mix(fold, body, smoothstep(0.0, 0.55, lit));
+        c = mix(c, crown, smoothstep(0.55, 1.0, lit));
+        c += vec3(0.4, 0.46, 0.05) * uCore * (1.0 - r) * (0.7 + 0.3 * n2);
+        c = mix(c * uLight, c * uLight * vec3(0.55, 0.65, 0.95), uCool);
+        float a = smoothstep(1.0, 0.62, r) * (0.62 + 0.55 * n2 * n) * uA;
+        gl_FragColor = vec4(c, a);
+      }`,
   });
   const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
   m.renderOrder = 9;
@@ -1580,16 +1623,34 @@ export class VFX {
    * 2×2 area, its tendrils spilling half a square past the template edge.
    */
   stinkingCloud(t, centre, size, id, seed = 1, { night = false } = {}) {
-    const v = gasVolume({ steps: 22 });
-    v.u.uSeed.value = seed * 3.7;
-    if (night) {
-      v.u.uKey.value.setRGB(0.28, 0.32, 0.45);
-      v.u.uAmb.value.setRGB(0.12, 0.14, 0.2);
+    // A heap of ~40 lit, noise-eroded puffs (no volume box, so no straight
+    // edge can ever show): big dark olive billows low down, smaller sunlit
+    // yellow-green lobes on top, a bilious glowing heart, slowly churning.
+    const lobes = [];
+    const Rc = size * 0.62;
+    for (let k = 0; k < 46; k++) {
+      const h1 = hashf(seed * 11.3 + k * 1.37);
+      const h2 = hashf(seed * 5.1 + k * 2.71);
+      const h3 = hashf(seed * 7.7 + k * 0.93);
+      const rr = Math.sqrt(h1) * Rc;
+      const core = Math.max(0, 1 - rr / (Rc * 0.55));
+      const pf = gasPuff(seed * 3.1 + k * 1.9, core * 0.9);
+      pf.userData = { a: h2 * Math.PI * 2, rr, y: 0.25 + h3 * 1.25 * (1 - (rr / Rc) * 0.45), sz: (0.95 + (1 - h3) * 1.05) * (1 - (rr / Rc) * 0.2), ph: h1 * 6.28, low: h3 };
+      pf.userData.a0 = 0.44 + h3 * 0.3;
+      pf.material.uniforms.uA.value = pf.userData.a0;
+      if (night) {
+        pf.material.uniforms.uLight.value = 0.45;
+        pf.material.uniforms.uCool.value = 0.6;
+      }
+      lobes.push(pf);
     }
-    // The march box is a good deal larger than the gas (the density fades to
-    // nothing well inside it), so no face of it can ever show.
-    const half = size * 0.5 + 2.1;
-    v.place(centre.x, centre.z, half, 1.5, half);
+    const v = {
+      obj: new THREE.Group(),
+      u: { uAge: { value: 0 }, uFade: { value: 1 } },
+      sync() {},
+      dispose() { for (const l of lobes) { l.geometry.dispose(); l.material.dispose(); } },
+    };
+    for (const l of lobes) v.obj.add(l);
     // Stray wisps curl off the edge and drift away on the air, thinning out.
     const puffs = [];
     for (let k = 0; k < 12; k++) {
@@ -1600,9 +1661,16 @@ export class VFX {
     }
     this.add(t, 999, () => ({ list: [v, ...puffs] }), (age, parts, ctx) => {
       const fade = clamp01(age / 1.2);
-      v.u.uAge.value = age;
-      v.u.uFade.value = fade;
-      v.sync(ctx.camera);
+      for (const l of lobes) {
+        const d = l.userData;
+        // Churn: the heap turns over slowly, lobes rising and swelling.
+        const a = d.a + age * 0.05 * (d.low > 0.5 ? 1 : -1);
+        const swell = 1 + 0.06 * Math.sin(age * 0.7 + d.ph);
+        l.position.set(centre.x + Math.cos(a) * d.rr, d.y + Math.sin(age * 0.5 + d.ph) * 0.08, centre.z + Math.sin(a) * d.rr);
+        l.scale.setScalar(d.sz * swell * (0.6 + 0.4 * fade));
+        l.material.uniforms.uT.value = age;
+        l.material.uniforms.uA.value = d.a0 * fade;
+      }
       for (const pf of puffs) {
         const cyc = ((age + pf.userData.ph) % 6) / 6;
         // Each wisp curls as it leaves: an outward spiral, rising and swelling.

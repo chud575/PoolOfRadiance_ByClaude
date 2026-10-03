@@ -154,7 +154,7 @@ export default class CombatScene extends Scene {
     // Soft camera-side fill so figures read against the ground (a classic tactics-cam trick).
     // At night the fill is the warm spill of the braziers and candles, so the
     // party keeps its local colour under the cold moon.
-    this.fill = new THREE.DirectionalLight(this.night ? 0xffc48a : 0xe8eeff, this.night ? 0.72 : 0.38);
+    this.fill = new THREE.DirectionalLight(this.night ? 0xd6c6b0 : 0xe8eeff, this.night ? 0.85 : 0.38);
     s.add(this.fill, this.fill.target);
     // Rim light from behind the fight: separates figures from the ground.
     this.rim = new THREE.DirectionalLight(this.night ? 0x8fb0ff : 0xffe8c8, this.night ? 0.9 : 0.8);
@@ -166,7 +166,11 @@ export default class CombatScene extends Scene {
     [...this.party, ...this.monsters].forEach((c, i) => models.set(c.id, makeFigureModel(c, c.side === 'party' ? this.party.indexOf(c) : i)));
     this.figures = new Map();
     [...this.party, ...this.monsters].forEach((c, i) => {
-      const fig = new Figure(models.get(c.id), { seed: i * 13.7 + 1, faction: c.side === 'party' ? 'party' : c.undead || /skeleton|zombie|ghoul|wight|ghast|spectre|wraith/i.test(c.monsterId ?? '') ? 'undead' : 'foe' });
+      const faction = c.side === 'party' ? 'party' : c.undead || /skeleton|zombie|ghoul|wight|ghast|spectre|wraith/i.test(c.monsterId ?? '') ? 'undead' : 'foe';
+      const fig = new Figure(models.get(c.id), { seed: i * 13.7 + 1, faction });
+      // By night the dead hold a faint cold pallor of moonlight (bone reads
+      // ivory-grey against the candle spill, never orange).
+      if (faction === 'undead' && this.night) for (const mm of fig.mats) if (mm.m.emissive) { mm.emissive.set(0x101c30); mm.m.emissive.copy(mm.emissive); }
       s.add(fig.root);
       this.figures.set(c.id, fig);
     });
@@ -583,7 +587,7 @@ export default class CombatScene extends Scene {
     const mat = new THREE.ShaderMaterial({
       side: THREE.BackSide,
       uniforms: this.indoor
-        ? { uTop: { value: new THREE.Color(0x060505) }, uHor: { value: new THREE.Color(0x22160c) }, uGround: { value: new THREE.Color(0x7a5418) }, uWarm: { value: 0.9 },
+        ? { uTop: { value: new THREE.Color(0x1c1610) }, uHor: { value: new THREE.Color(0x4a3018) }, uGround: { value: new THREE.Color(0x8a6020) }, uWarm: { value: 0.9 },
           uSun: { value: new THREE.Vector3(0.3, -0.5, 0.8).normalize() }, uSunCol: { value: new THREE.Color(0xffb850) } }
         : { uTop: { value: new THREE.Color(k.skyTop) }, uHor: { value: new THREE.Color(k.skyHorizon) }, uGround: { value: new THREE.Color(this.night ? 0x05060a : 0x2a2620) }, uWarm: { value: this.night ? 0.6 : 0.15 },
         uSun: { value: this.rig.sun.position.clone().sub(this.center).normalize() }, uSunCol: { value: new THREE.Color(this.night ? 0x5a6a90 : 0xffe2b0) } },
