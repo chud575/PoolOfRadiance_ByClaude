@@ -414,45 +414,6 @@ export const GLSL_SHADE = /* glsl */`
 #define DBG(b) (mod(floor(uDbg / float(b)), 2.0) > 0.5)
 #define ZERO (min(int(uRes.x), 0))
 float gCurv;
-// Normal from tetrahedral taps; the same taps give the surface curvature (gCurv: < 0 in creases —
-// nostrils, lid folds, mouth corners — and > 0 on ridges).
-vec3 calcNormal(vec3 p, float e) {
-  vec3 n = vec3(0.0);
-  float s = 0.0;
-  for (int i = ZERO; i < 4; i++) {
-    vec3 k = 0.5773 * (2.0 * vec3(float(((i + 3) >> 1) & 1), float((i >> 1) & 1), float(i & 1)) - 1.0);
-    float h = mapD(p + k * e);
-    n += k * h;
-    s += h;
-  }
-  gCurv = s / (4.0 * e);
-  return normalize(n);
-}
-float softShadow(vec3 ro, vec3 rd, float jit) {
-  float res = 1.0;
-  float t = 0.008 + 0.003 * jit;
-  float ph = 1e10;
-  for (int i = ZERO; i < 20; i++) {
-    float h = mapD(ro + rd * t);
-    float y = min(h * h / (2.0 * ph), h * 0.98);
-    float d = sqrt(max(h * h - y * y, 0.0));
-    res = min(res, 7.0 * d / max(0.0001, t - y));
-    ph = h;
-    t += clamp(h, 0.004, 0.05);
-    if (res < 0.004 || t > 0.3) break;
-  }
-  res = sat(res);
-  return res * res * (3.0 - 2.0 * res);
-}
-float calcAO(vec3 p, vec3 n) {
-  float occ = 0.0;
-  for (int i = ZERO; i < 2; i++) {
-    float h = i == 0 ? 0.006 : 0.022;
-    occ += (h - mapD(p + n * h)) * (i == 0 ? 1.0 : 0.6);
-  }
-  return sat(1.0 - occ * 9.0);
-}
-
 // The painter's complexion: the three zones of a face (a golden forehead, a red middle — cheeks,
 // nose and ears — and a cooler jaw and chin, blue-grey with a man's beard shadow), violet-brown
 // sockets, lips drawn from their own volumes, brows as hair, pores, freckles and age spots.
@@ -638,17 +599,58 @@ void main() {
   float disc = bq * bq - dot(oc, oc) + br * br;
   float t = 1e9;
   float mat = 0.0;
-  if (disc > 0.0) {
-    float t0 = -bq - sqrt(disc);
-    float t1 = -bq + sqrt(disc);
-    float tt = max(t0, 0.0);
-    int steps = uLite > 0.5 ? 90 : 160;
-    for (int i = ZERO; i < 200; i++) {
-      if (i >= steps) break;
-      vec2 h = map(ro + rd * tt);
-      if (h.x < 0.00004 * tt) { t = tt; mat = h.y; break; }
-      tt += h.x * 0.85;
-      if (tt > t1) break;
+  // One loop, one call of the scene's distance field: the march, then the four normal taps, the
+  // soft shadow toward the key and the two occlusion taps all reuse the same map() call site — a
+  // software GPU compiles the (large) field once instead of once per use.
+  vec3 Lk = normalize(uKeyDir);
+  vec3 pw = vec3(0.0), n = vec3(0.0, 0.0, 1.0), nAcc = vec3(0.0);
+  float sAcc = 0.0, cvRaw = 0.0;
+  float sh = 1.0, ao = 1.0;
+  float sres = 1.0, st = 0.0, sph = 1e10, occ = 0.0;
+  int phase = disc > 0.0 ? 0 : 9;
+  int sub = 0;
+  float t0 = -bq - sqrt(max(disc, 0.0));
+  float t1 = -bq + sqrt(max(disc, 0.0));
+  float tt = max(t0, 0.0);
+  int steps = uLite > 0.5 ? 90 : 160;
+  const float NE = 0.0007;
+  for (int i = ZERO; i < 240; i++) {
+    if (phase > 3) break;
+    vec3 k4 = 0.5773 * (2.0 * vec3(float(((sub + 3) >> 1) & 1), float((sub >> 1) & 1), float(sub & 1)) - 1.0);
+    vec3 q = phase == 0 ? ro + rd * tt
+      : phase == 1 ? pw + k4 * NE
+      : phase == 2 ? pw + n * 0.0012 + Lk * st
+      : pw + n * (sub == 0 ? 0.006 : 0.022);
+    vec2 h = map(q);
+    if (phase == 0) {
+      if (h.x < 0.00004 * tt) { t = tt; mat = h.y; pw = ro + rd * t; phase = 1; sub = 0; }
+      else { tt += h.x * 0.85; if (tt > t1 || i >= steps) phase = 9; }
+    } else if (phase == 1) {
+      nAcc += k4 * h.x; sAcc += h.x; sub++;
+      if (sub == 4) {
+        n = normalize(nAcc);
+        cvRaw = sAcc / (4.0 * NE);
+        phase = DBG(1) ? 3 : 2; sub = 0;
+        st = 0.008 + 0.003 * h12(gl_FragCoord.xy);
+      }
+    } else if (phase == 2) {
+      float hh = h.x;
+      float y = min(hh * hh / (2.0 * sph), hh * 0.98);
+      float dd = sqrt(max(hh * hh - y * y, 0.0));
+      sres = min(sres, 7.0 * dd / max(0.0001, st - y));
+      sph = hh;
+      st += clamp(hh, 0.004, 0.05);
+      sub++;
+      if (sres < 0.004 || st > 0.3 || sub >= 20) {
+        float r = sat(sres);
+        sh = r * r * (3.0 - 2.0 * r);
+        phase = DBG(2) ? 9 : 3; sub = 0;
+      }
+    } else {
+      float ah = sub == 0 ? 0.006 : 0.022;
+      occ += (ah - h.x) * (sub == 0 ? 1.0 : 0.6);
+      sub++;
+      if (sub == 2) { ao = sat(1.0 - occ * 9.0); phase = 9; }
     }
   }
   vec3 col;
@@ -659,24 +661,19 @@ void main() {
     oInfo = vec4(0.0, 0.5, 0.5, 0.0);
     return;
   }
-  vec3 pw = ro + rd * t;
   if (DBG(8)) { oColor = vec4(vec3(t - 1.5), 0.0); oInfo = vec4(0.0); return; }
-  vec3 n = calcNormal(pw, 0.0007);
-  float cvRaw = gCurv;
+  gCurv = cvRaw;
   vec3 n0 = n;
   vec3 ph = headLocal(pw);
   vec3 pb = bodyLocal(pw);
   vec3 v = -rd;
   // ---- lights (world): warm key high at the left, cool fill low right, moonlit rim behind right
-  vec3 Lk = normalize(uKeyDir);
   vec3 Lf = normalize(vec3(0.75, -0.05, 0.65));
   vec3 Lr = normalize(vec3(0.85, 0.35, -0.55));
   vec3 Ck = vec3(1.0, 0.92, 0.82) * uLightK.x;
   vec3 Cf = vec3(0.34, 0.37, 0.5) * uLightK.y;
   vec3 Cr = vec3(0.55, 0.72, 1.0) * uLightK.z;
   vec3 Csky = vec3(0.16, 0.17, 0.22) * uLightK.w;
-  float sh = DBG(1) ? 1.0 : softShadow(pw + n * 0.0012, Lk, h12(gl_FragCoord.xy));
-  float ao = DBG(2) ? 1.0 : calcAO(pw, n);
   if (uMode > 0.5) {
     // clay study: neutral albedo, same light
     if (DBG(16384)) { oColor = vec4((n * 0.5 + 0.5) * 0.4, 0.0); oInfo = vec4(0.0); return; }

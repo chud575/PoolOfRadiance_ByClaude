@@ -178,8 +178,8 @@ export function buildBedroll(ch, o = {}) {
   const bumps = bodyBumps(pose).map(([x, z, w, l, hgt]) => [x * Math.max(0.8, L), z * L, w * Math.max(0.75, L ** 0.5), l * L, 1.28 * hgt * Math.max(0.7, L ** 0.6)]);
   const bW = 0.9;
   const bL = (pose === 'back' ? 1.55 : 1.4) * L;
-  const NX = 34;
-  const NZ = 56;
+  const NX = 44;
+  const NZ = 72;
   const z0 = headZ + 0.16 * L; // blanket edge under the chin
   // One continuous body under the wool: the forms are blended with a smooth maximum, so the shoulder,
   // waist, hip and knee read as one figure rather than a row of separate humps.
@@ -227,7 +227,7 @@ export function buildBedroll(ch, o = {}) {
       const hang = Math.max(0, 1 - hgt / 0.12);
       // Irregular folds: a few broad drapes falling off the body plus small creases (no regular ribs).
       const fn = (u, v, sd) => Math.sin(u * 1.7 + Math.sin(v * 2.3 + sd) * 1.9 + sd) * Math.sin(v * 1.3 + Math.sin(u * 1.1 + sd * 2) * 1.4);
-      const fold = 0.016 * fn(x * 9, z * 6, seed) * hang + 0.006 * fn(x * 23 + 3, z * 17, seed + 5) * (0.5 + hang) + 0.0025 * fn(x * 60, z * 45, seed + 9);
+      const fold = 0.016 * fn(x * 9, z * 6, seed) * hang + 0.005 * fn(x * 21 + 3, z * 15, seed + 5) * (0.5 + hang);
       hgt = Math.max(0.004, hgt + fold * (0.4 + hang));
       // The hem tucks down to the mat at the sides and the foot; a turned-back edge at the chin.
       const ex = Math.abs(x) / (bW / 2);

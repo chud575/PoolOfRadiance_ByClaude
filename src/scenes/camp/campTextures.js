@@ -80,8 +80,11 @@ function tex(c, srgb, repeat = false) {
 
 let groundCache = null;
 /**
- * The clearing: SIZE metres square of flagstones centred on the hearth.
- * @returns {{map, normalMap, roughnessMap, size:number, missing:{x:number,z:number,w:number,d:number}[], slabs:object[]}}
+ * The clearing: SIZE metres square of flagstones centred on the hearth. Irregular flags of every
+ * size (a power diagram: big slabs among small infill stones), their edges worn and chipped, each
+ * slab tilted or sunk a little on its own, some cracked across; earth, moss and grass in the joints;
+ * whole flags gone to bare earth and weeds toward the dark edges; soot and ash round the hearth.
+ * @returns {{map, normalMap, roughnessMap, size:number, missing:{x:number,z:number,w:number,d:number}[]}}
  */
 export function groundTextures() {
   if (groundCache) return groundCache;
@@ -90,113 +93,127 @@ export function groundTextures() {
   const px = W / SIZE;
   const R = rng(4242);
   const n = valueNoise(7);
+  const n2 = valueNoise(19);
   const color = cv(W);
   const g = ctx2d(color);
   const hd = new Float32Array(W * W);
   const rough = new Uint8ClampedArray(W * W);
-  // Earth beneath everything.
   const img = g.createImageData(W, W);
   const d = img.data;
+  // Seeds on a jittered grid; each a flag with its own weight (size), tone, tilt and fate.
+  const CS = 0.5;
+  const GN = Math.ceil(SIZE / CS) + 2;
+  const seeds = [];
+  for (let gy = 0; gy < GN; gy++) {
+    for (let gx = 0; gx < GN; gx++) {
+      const sx = (gx - 1 + 0.15 + R() * 0.7) * CS, sy = (gy - 1 + 0.15 + R() * 0.7) * CS;
+      const cxm = sx - SIZE / 2, czm = sy - SIZE / 2;
+      const distC = Math.hypot(cxm, czm);
+      const big = R();
+      const gone = distC < 0.8 || (distC > 5 && R() < Math.min(0.7, (distC - 5) * 0.22)) || (distC > 1.6 && R() < 0.05);
+      seeds.push({
+        x: sx, y: sy,
+        w: big > 0.72 ? CS * (0.3 + R() * 0.12) : big < 0.25 ? 0 : CS * R() * 0.18,
+        tone: R(), warm: (R() - 0.5) * 22,
+        tx: (R() - 0.5) * 0.12, ty: (R() - 0.5) * 0.12,
+        sink: R() < 0.14 ? 0.15 + R() * 0.25 : 0,
+        crack: R() < 0.3 ? R() * Math.PI : -1,
+        gone, hearth: distC < 0.8, distC,
+        moss: R(),
+      });
+    }
+  }
+  const missing = [];
+  for (const sd of seeds) if (sd.gone && !sd.hearth) missing.push({ x: sd.x - SIZE / 2, z: sd.y - SIZE / 2, w: CS, d: CS });
   for (let y = 0; y < W; y++) {
     for (let x = 0; x < W; x++) {
-      const e = fbm(n, x / 18, y / 18, 5);
-      const i = (y * W + x) * 4;
-      d[i] = 44 + e * 40; d[i + 1] = 36 + e * 32; d[i + 2] = 26 + e * 22; d[i + 3] = 255;
-      hd[y * W + x] = 0.12 + e * 0.1;
-      rough[y * W + x] = 240;
-    }
-  }
-  // Flagstone courses: rows of irregular slabs, jittered, some missing or sunken.
-  const stones = [];
-  const missing = [];
-  let yy = 0;
-  while (yy < SIZE) {
-    const rowH = 0.45 + R() * 0.45;
-    let xx = -R() * 0.6;
-    while (xx < SIZE) {
-      const w = 0.5 + R() * 0.8;
-      const sx = xx + 0.03 + R() * 0.03, sy = yy + 0.03 + R() * 0.03;
-      const sw = w - 0.06 - R() * 0.03, sh = rowH - 0.06 - R() * 0.03;
-      const cxm = sx + sw / 2 - SIZE / 2, czm = sy + sh / 2 - SIZE / 2;
-      const distC = Math.hypot(cxm, czm);
-      // The far clearing breaks up; a ring right by the fire is bare hearth.
-      const gone = (distC > 5.2 && R() < Math.min(0.75, (distC - 5.2) * 0.3)) || (distC > 1.5 && R() < 0.07);
-      if (distC < 0.78) { xx += w; continue; }
-      if (gone) missing.push({ x: cxm, z: czm, w: sw, d: sh });
-      else stones.push({ x: sx, y: sy, w: sw, h: sh, rot: (R() - 0.5) * 0.05, tone: R(), sink: R() < 0.12 ? 0.25 + R() * 0.3 : 0, crack: R() < 0.32 });
-      xx += w;
-    }
-    yy += rowH;
-  }
-  for (const s of stones) {
-    const x0 = Math.floor(s.x * px), y0 = Math.floor(s.y * px), x1 = Math.ceil((s.x + s.w) * px), y1 = Math.ceil((s.y + s.h) * px);
-    const cxp = (x0 + x1) / 2, cyp = (y0 + y1) / 2;
-    const hw = (x1 - x0) / 2, hh = (y1 - y0) / 2;
-    const base = 0.55 + s.tone * 0.25;
-    const warm = (s.tone - 0.5) * 18;
-    const corner = Math.min(hw, hh) * 0.22;
-    for (let y = Math.max(0, y0); y < Math.min(W, y1); y++) {
-      for (let x = Math.max(0, x0); x < Math.min(W, x1); x++) {
-        // Rounded, slightly irregular edges.
-        const ex = Math.max(0, Math.abs(x - cxp) - (hw - corner)), ey = Math.max(0, Math.abs(y - cyp) - (hh - corner));
-        const edgeN = (n(x / 6, y / 6) - 0.5) * corner * 0.9;
-        const dd = Math.hypot(ex, ey) - corner + edgeN;
-        if (dd > 0) continue;
-        const bevel = Math.min(1, -dd / (corner * 0.9 + 1));
-        const t = fbm(n, x / 9 + s.tone * 50, y / 9, 4);
-        const pit = n(x / 2.2 + 99, y / 2.2) > 0.82 ? -0.15 : 0;
-        const i = (y * W + x) * 4;
-        const k = (base + (t - 0.5) * 0.35 + pit * 0.6) * (0.75 + 0.25 * bevel);
-        d[i] = Math.min(255, 128 * k + warm + 10); d[i + 1] = Math.min(255, 122 * k + warm * 0.6 + 6); d[i + 2] = Math.min(255, 112 * k);
-        hd[y * W + x] = 0.55 + 0.3 * bevel ** 0.5 + (t - 0.5) * 0.08 + pit * 0.5 - s.sink * 0.4;
-        rough[y * W + x] = 200 + t * 40;
-      }
-    }
-    if (s.crack) {
-      // A branching hairline crack across the slab.
-      let x = cxp + (R() - 0.5) * hw, y = y0 + 2;
-      let a = Math.PI / 2 + (R() - 0.5) * 0.8;
-      for (let k = 0; k < (y1 - y0) * 1.4; k++) {
-        a += (R() - 0.5) * 0.5;
-        x += Math.cos(a) * 1.2;
-        y += Math.sin(a) * 1.2;
-        if (y > y1 - 2 || x < x0 || x > x1) break;
-        for (let o = -1; o <= 1; o++) {
-          const X = Math.round(x + o * 0.5), Y = Math.round(y);
-          if (X < 0 || Y < 0 || X >= W || Y >= W) continue;
-          const i = (Y * W + X) * 4;
-          d[i] *= 0.45; d[i + 1] *= 0.45; d[i + 2] *= 0.45;
-          hd[Y * W + X] -= 0.25;
+      // a warped lookup: flag edges wander and chip instead of running ruler-straight
+      const warpA = (n(x / 14, y / 14) - 0.5) * 0.06 + (n2(x / 4, y / 4) - 0.5) * 0.012;
+      const warpB = (n(x / 14 + 31, y / 14 + 17) - 0.5) * 0.06 + (n2(x / 4 + 9, y / 4) - 0.5) * 0.012;
+      const wx = x / px + warpA, wy = y / px + warpB;
+      const gx = Math.floor(wx / CS) + 1, gy = Math.floor(wy / CS) + 1;
+      let b1 = 1e9, b2 = 1e9, i1 = 0, i2 = 0;
+      for (let oy = -1; oy <= 1; oy++) {
+        const yy = gy + oy;
+        if (yy < 0 || yy >= GN) continue;
+        for (let ox = -1; ox <= 1; ox++) {
+          const xx = gx + ox;
+          if (xx < 0 || xx >= GN) continue;
+          const k = yy * GN + xx;
+          const sd = seeds[k];
+          const pd = (wx - sd.x) ** 2 + (wy - sd.y) ** 2 - sd.w * sd.w;
+          if (pd < b1) { b2 = b1; i2 = i1; b1 = pd; i1 = k; } else if (pd < b2) { b2 = pd; i2 = k; }
         }
       }
+      const s1 = seeds[i1], s2 = seeds[i2];
+      const L = Math.hypot(s2.x - s1.x, s2.y - s1.y) || 1;
+      const edge = (b2 - b1) / (2 * L); // metres to the joint
+      const i = (y * W + x) * 4;
+      const e = fbm(n, x / 18, y / 18, 4);
+      const fine = n2(x / 2.5, y / 2.5);
+      const jw = 0.016 + 0.014 * n(x / 30 + 5, y / 30);
+      const rM = Math.hypot(x / px - SIZE / 2, y / px - SIZE / 2);
+      let r, gg, b, h, ro;
+      if (s1.gone || edge < jw) {
+        // earth, grit and moss in the joints and where flags are gone
+        const open = s1.gone ? 1 : 0;
+        const moss = Math.max(0, fbm(n2, x / 9, y / 9, 3) - 0.48) * 2.4 * (1 - Math.max(0, 1 - rM / 2.2)) * (0.4 + 0.6 * Math.max(s1.moss, s2.moss));
+        const pebble = fine > 0.8 ? 0.25 : 0;
+        r = 40 + e * 34 + pebble * 60; gg = 33 + e * 28 + pebble * 56; b = 24 + e * 20 + pebble * 50;
+        r = r * (1 - moss * 0.5) + moss * 34; gg = gg * (1 - moss * 0.35) + moss * 52; b = b * (1 - moss * 0.6) + moss * 18;
+        h = 0.14 + e * 0.1 + pebble * 0.15 - (1 - open) * 0.04;
+        ro = 245;
+      } else {
+        const sd = s1;
+        const lx = wx - sd.x, ly = wy - sd.y;
+        const bevel = Math.min(1, (edge - jw) / 0.035);
+        // chips bitten out of the arris
+        const chip = edge - jw < 0.03 && n2(x / 3.2 + 50, y / 3.2) > 0.72 ? 0.5 : 0;
+        const t = fbm(n, x / 7 + sd.tone * 40, y / 7, 4);
+        const pit = fine > 0.9 && n(x / 40 + 3, y / 40) > 0.5 ? 1 : 0;
+        let k = 0.5 + sd.tone * 0.3 + (t - 0.5) * 0.32 - pit * 0.1;
+        k *= 0.72 + 0.28 * Math.sqrt(bevel) - chip * 0.15;
+        // grime gathers toward the edges; lichen rosettes on the older flags
+        const lich = Math.max(0, n2(x / 11 + sd.tone * 20, y / 11) - 0.7) * 3 * (rM > 2 ? 1 : 0);
+        r = 128 * k + sd.warm + 8; gg = 121 * k + sd.warm * 0.6 + 5; b = 110 * k;
+        r = r * (1 - lich * 0.3) + lich * 40; gg = gg * (1 - lich * 0.2) + lich * 46; b = b * (1 - lich * 0.4) + lich * 22;
+        h = 0.55 + 0.28 * Math.sqrt(bevel) - chip * 0.2 + (t - 0.5) * 0.07 - pit * 0.12 + sd.tx * lx * 4 + sd.ty * ly * 4 - sd.sink * 0.4;
+        ro = 196 + t * 40 + pit * 20;
+        if (sd.crack >= 0) {
+          const ca = Math.cos(sd.crack), sa = Math.sin(sd.crack);
+          const along = lx * ca + ly * sa;
+          const across = -lx * sa + ly * ca + (n(along * 40 + sd.tone * 9, 3) - 0.5) * 0.05;
+          if (Math.abs(across) < 0.0045) { r *= 0.42; gg *= 0.42; b *= 0.42; h -= 0.22; }
+        }
+      }
+      // soot and ash round the hearth
+      if (rM < 2.4) {
+        const kk = Math.max(0, 1 - rM / 2.4) ** 1.6 * (0.75 + 0.25 * n(x / 7, y / 7));
+        const ash = rM < 0.9 ? (1 - rM / 0.9) * 0.6 * n(x / 3, y / 3) : 0;
+        r = r * (1 - kk * 0.8) + 90 * ash; gg = gg * (1 - kk * 0.82) + 86 * ash; b = b * (1 - kk * 0.84) + 80 * ash;
+      }
+      d[i] = r; d[i + 1] = gg; d[i + 2] = b; d[i + 3] = 255;
+      hd[y * W + x] = h;
+      rough[y * W + x] = ro;
     }
   }
-  // Grass and weeds in the joints and the broken ground, thicker toward the edges.
-  for (let k = 0; k < 160000; k++) {
+  // grass blades in the open earth and the joints, thicker toward the edges of the clearing
+  for (let k = 0; k < 140000; k++) {
     const x = Math.floor(R() * W), y = Math.floor(R() * W);
     const i = y * W + x;
-    if (hd[i] > 0.4) continue;
+    if (hd[i] > 0.36) continue;
     const r = Math.hypot(x / px - SIZE / 2, y / px - SIZE / 2);
-    if (r < 1.2 || R() > 0.35 + Math.min(0.6, r * 0.08)) continue;
-    const gcol = R() < 0.5 ? [58, 78, 34] : [84, 96, 44];
-    const len = 1 + Math.floor(R() * 4);
+    if (r < 1.3 || R() > 0.3 + Math.min(0.6, r * 0.08)) continue;
+    const gcol = R() < 0.5 ? [58, 76, 32] : [86, 94, 44];
+    const len = 1 + Math.floor(R() * 5);
+    const lean = (R() - 0.5) * 0.8;
     for (let j = 0; j < len; j++) {
-      const Y = y - j;
-      if (Y < 0) break;
-      const q = (Y * W + x) * 4;
-      d[q] = gcol[0] + R() * 20; d[q + 1] = gcol[1] + R() * 20; d[q + 2] = gcol[2];
-      hd[Y * W + x] += 0.08;
-    }
-  }
-  // Soot and ash around the hearth.
-  for (let y = 0; y < W; y++) {
-    for (let x = 0; x < W; x++) {
-      const r = Math.hypot(x / px - SIZE / 2, y / px - SIZE / 2);
-      if (r > 2.4) continue;
-      const k = Math.max(0, 1 - r / 2.4) ** 1.6 * (0.75 + 0.25 * n(x / 7, y / 7));
-      const i = (y * W + x) * 4;
-      const ash = r < 0.9 ? (1 - r / 0.9) * 0.6 * n(x / 3, y / 3) : 0;
-      d[i] = d[i] * (1 - k * 0.8) + 90 * ash; d[i + 1] = d[i + 1] * (1 - k * 0.82) + 86 * ash; d[i + 2] = d[i + 2] * (1 - k * 0.84) + 80 * ash;
+      const Y = y - j, X = Math.round(x + lean * j);
+      if (Y < 0 || X < 0 || X >= W) break;
+      const q = (Y * W + X) * 4;
+      const f = 0.8 + 0.4 * (j / len);
+      d[q] = (gcol[0] + R() * 20) * f; d[q + 1] = (gcol[1] + R() * 20) * f; d[q + 2] = gcol[2] * f;
+      hd[Y * W + X] += 0.06;
     }
   }
   g.putImageData(img, 0, 0);
@@ -248,11 +265,11 @@ export function emberTexture() {
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const along = x / W; // 0 = burning end
-      const heat = Math.max(0, 1 - along / 0.36) ** 1.6;
+      const heat = Math.max(0, 1 - along / 0.5) ** 1.4;
       // Alligator-skin char cracks.
       const c1 = Math.abs(fbm(n, x / 9, y / 9, 3) - 0.5);
       const c2 = Math.abs(fbm(n, x / 5 + 40, y / 5, 2) - 0.5);
-      const crack = Math.max(0, 1 - Math.min(c1, c2) * 14);
+      const crack = Math.max(0, 1 - Math.min(c1, c2) * 8);
       const glow = Math.min(1, crack * heat * 1.4 + heat * heat * 0.35 * n(x / 4, y / 4));
       const i = (y * W + x) * 4;
       img.data[i] = 255 * glow; img.data[i + 1] = 110 * glow * glow + 30 * glow; img.data[i + 2] = 20 * glow * glow * glow; img.data[i + 3] = 255;
@@ -371,4 +388,167 @@ export function stoneTextures() {
   rg.putImageData(ri, 0, 0);
   stoneCache = { map: tex(c, true, true), normalMap: tex(normalFromHeight(hd, W, W, 7), false, true), roughnessMap: tex(rc, false, true) };
   return stoneCache;
+}
+
+let charCache = null;
+/** Charcoal: black, blocky-checked char with glowing seams between the checks (map + emissive). */
+export function charTextures() {
+  if (charCache) return charCache;
+  const W = 128;
+  const n = valueNoise(313);
+  const c = cv(W), e = cv(W);
+  const gc = ctx2d(c), ge = ctx2d(e);
+  const ic = gc.createImageData(W, W), ie = ge.createImageData(W, W);
+  for (let y = 0; y < W; y++) {
+    for (let x = 0; x < W; x++) {
+      // alligator checks: a warped grid of blocks, the seams between them glowing
+      const wx = x / 11 + (fbm(n, x / 20, y / 20, 2) - 0.5) * 1.6;
+      const wy = y / 8 + (fbm(n, x / 20 + 9, y / 20, 2) - 0.5) * 1.6;
+      const fx = Math.abs(wx - Math.round(wx)), fy = Math.abs(wy - Math.round(wy));
+      const seam = Math.max(0, 1 - Math.min(fx, fy) * 9);
+      const hot = Math.max(0, fbm(n, x / 14 + 40, y / 14, 3) - 0.38) * 2.2;
+      const glow = Math.min(1, seam * hot * 1.6);
+      const k = 0.08 + 0.1 * fbm(n, x / 4, y / 4, 2) + (1 - seam) * 0.05;
+      const i = (y * W + x) * 4;
+      ic.data[i] = 255 * k + 18 * glow; ic.data[i + 1] = 245 * k; ic.data[i + 2] = 235 * k; ic.data[i + 3] = 255;
+      ie.data[i] = 255 * glow; ie.data[i + 1] = 90 * glow * glow + 20 * glow; ie.data[i + 2] = 8 * glow ** 3; ie.data[i + 3] = 255;
+    }
+  }
+  gc.putImageData(ic, 0, 0);
+  ge.putImageData(ie, 0, 0);
+  charCache = { map: tex(c, true, true), emissive: tex(e, true, true) };
+  return charCache;
+}
+
+/** Height + colour + roughness arrays → {map, normalMap, roughnessMap} (tiling). */
+function pbrSet(W, H, col, hd, rough, strength) {
+  const c = cv(W, H);
+  const g = ctx2d(c);
+  const img = g.createImageData(W, H);
+  img.data.set(col);
+  g.putImageData(img, 0, 0);
+  const rc = cv(W, H);
+  const rg = ctx2d(rc);
+  const ri = rg.createImageData(W, H);
+  for (let i = 0; i < W * H; i++) { ri.data[i * 4] = ri.data[i * 4 + 1] = ri.data[i * 4 + 2] = rough[i]; ri.data[i * 4 + 3] = 255; }
+  rg.putImageData(ri, 0, 0);
+  return { map: tex(c, true, true), normalMap: tex(normalFromHeight(hd, W, H, strength), false, true), roughnessMap: tex(rc, false, true) };
+}
+
+let ashlarCache = null;
+/**
+ * Dressed limestone without joints (each block is its own mesh): diagonal claw-tool striations,
+ * pitting, iron and water stains, a weathered crust (tiles; 1 repeat ≈ 1 m).
+ */
+export function ashlarTextures() {
+  if (ashlarCache) return ashlarCache;
+  const W = 512;
+  const n = valueNoise(523);
+  const R = rng(91);
+  const col = new Uint8ClampedArray(W * W * 4);
+  const hd = new Float32Array(W * W);
+  const rough = new Uint8ClampedArray(W * W);
+  const wrap = (f) => (x, y) => {
+    // seamless: blend four offset samples
+    const u = x / W, v = y / W;
+    return f(x, y) * (1 - u) * (1 - v) + f(x - W, y) * u * (1 - v) + f(x, y - W) * (1 - u) * v + f(x - W, y - W) * u * v;
+  };
+  const big = wrap((x, y) => fbm(n, x / 70 + 50, y / 70 + 50, 4));
+  const mid = wrap((x, y) => fbm(n, x / 16 + 9, y / 16 + 3, 3));
+  const strI = wrap((x, y) => n((x + y) / 2.2, (x - y) / 26));
+  for (let y = 0; y < W; y++) {
+    for (let x = 0; x < W; x++) {
+      const bg = big(x, y), md = mid(x, y);
+      const stria = strI(x, y);
+      const sp = R();
+      const pit = sp > 0.985 ? 1 : 0;
+      let k = 0.5 + (bg - 0.5) * 0.5 + (md - 0.5) * 0.22 + (stria - 0.5) * 0.08 - pit * 0.25 + (sp - 0.5) * 0.05;
+      const stain = Math.max(0, bg - 0.62) * 2.2;
+      const i = (y * W + x) * 4;
+      col[i] = Math.min(255, 170 * k + 78 + stain * 18);
+      col[i + 1] = Math.min(255, 162 * k + 72 + stain * 6);
+      col[i + 2] = Math.min(255, 146 * k + 62 - stain * 12);
+      col[i + 3] = 255;
+      hd[y * W + x] = bg * 0.4 + md * 0.3 + stria * 0.1 - pit * 0.25;
+      rough[y * W + x] = 205 + md * 40;
+    }
+  }
+  ashlarCache = pbrSet(W, W, col, hd, rough, 5);
+  return ashlarCache;
+}
+
+let earthCache = null;
+/** Trodden earth with grit, roots and thin grass (tiles; for the dark ground beyond the flags). */
+export function earthTextures() {
+  if (earthCache) return earthCache;
+  const W = 256;
+  const n = valueNoise(611);
+  const R = rng(17);
+  const col = new Uint8ClampedArray(W * W * 4);
+  const hd = new Float32Array(W * W);
+  const rough = new Uint8ClampedArray(W * W);
+  for (let y = 0; y < W; y++) {
+    for (let x = 0; x < W; x++) {
+      const e = (fbm(n, x / 20, y / 20, 4) + fbm(n, (x - W) / 20, y / 20, 4) * 0) ;
+      const grit = R();
+      const grass = Math.max(0, fbm(n, x / 9 + 70, y / 9, 3) - 0.55) * 2.5;
+      const i = (y * W + x) * 4;
+      const k = 0.7 + e * 0.5 + (grit > 0.95 ? 0.3 : 0);
+      col[i] = (38 * k) * (1 - grass * 0.4) + grass * 30; col[i + 1] = (31 * k) * (1 - grass * 0.2) + grass * 44; col[i + 2] = (23 * k) * (1 - grass * 0.5) + grass * 16; col[i + 3] = 255;
+      hd[y * W + x] = e * 0.6 + (grit > 0.95 ? 0.2 : 0) + grass * 0.1;
+      rough[y * W + x] = 240;
+    }
+  }
+  earthCache = pbrSet(W, W, col, hd, rough, 4);
+  return earthCache;
+}
+
+let clothCache = null;
+/** Coarse undyed canvas / burlap weave (tiles). */
+export function canvasTextures() {
+  if (clothCache) return clothCache;
+  const W = 128;
+  const n = valueNoise(733);
+  const col = new Uint8ClampedArray(W * W * 4);
+  const hd = new Float32Array(W * W);
+  const rough = new Uint8ClampedArray(W * W);
+  for (let y = 0; y < W; y++) {
+    for (let x = 0; x < W; x++) {
+      const wa = Math.sin((x / W) * Math.PI * 2 * 32) * 0.5 + 0.5;
+      const we = Math.sin((y / W) * Math.PI * 2 * 32) * 0.5 + 0.5;
+      const over = ((Math.floor(x / 4) + Math.floor(y / 4)) % 2) ? wa : we;
+      const s = n(x / 6, y / 6);
+      const i = (y * W + x) * 4;
+      const k = 0.62 + over * 0.3 + (s - 0.5) * 0.25;
+      col[i] = 168 * k; col[i + 1] = 148 * k; col[i + 2] = 112 * k; col[i + 3] = 255;
+      hd[y * W + x] = over * 0.8 + s * 0.2;
+      rough[y * W + x] = 250;
+    }
+  }
+  clothCache = pbrSet(W, W, col, hd, rough, 3);
+  return clothCache;
+}
+
+let woodCache = null;
+/** Weathered timber: grain along u, checks and a grey sun-bleached crust (tiles). */
+export function woodTextures() {
+  if (woodCache) return woodCache;
+  const W = 256;
+  const n = valueNoise(811);
+  const col = new Uint8ClampedArray(W * W * 4);
+  const hd = new Float32Array(W * W);
+  const rough = new Uint8ClampedArray(W * W);
+  for (let y = 0; y < W; y++) {
+    for (let x = 0; x < W; x++) {
+      const gr = Math.sin(y * 0.5 + fbm(n, x / 40, y / 8, 3) * 9) * 0.5 + 0.5;
+      const check = Math.max(0, 1 - Math.abs(fbm(n, x / 60 + 5, y / 3, 2) - 0.5) * 30) * (n(x / 30, y / 30) > 0.55 ? 1 : 0);
+      const i = (y * W + x) * 4;
+      const k = 0.55 + gr * 0.3 - check * 0.35;
+      col[i] = 108 * k + 14; col[i + 1] = 86 * k + 10; col[i + 2] = 64 * k + 8; col[i + 3] = 255;
+      hd[y * W + x] = gr * 0.5 - check * 0.5;
+      rough[y * W + x] = 210 + gr * 30;
+    }
+  }
+  woodCache = pbrSet(W, W, col, hd, rough, 4);
+  return woodCache;
 }

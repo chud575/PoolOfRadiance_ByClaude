@@ -9,11 +9,12 @@ import { rest, partyMemorizationTime, restUntilHealedMinutes, autoPrepare, MINUT
 import { castSpell, isMemorized } from '../../rules/spells.js';
 import { hasMap, getMap } from '../../data/maps/index.js';
 import { SAVE_SLOTS } from '../../core/SaveManager.js';
-import { buildCamp } from './CampBackdrop.js';
+import { buildCamp, prefetchCamp } from './CampBackdrop.js';
+import { precompilePortrait } from '../../ui/components/portraitGL.js';
 import { useRenderer } from '../../ui/components/Miniature.js';
 import { UINav } from '../../ui/components/uiNav.js';
 import { setPortraitSync, portraitsPending } from '../../ui/components/lazyPortrait.js';
-import { prepaintParty } from '../../ui/components/portraitPainter.js';
+import { prepaintParty, portraitURL } from '../../ui/components/portraitPainter.js';
 
 const CURES = ['cureSeriousWounds', 'cureLightWounds'];
 
@@ -27,17 +28,31 @@ export default class CampScene extends Scene {
     const { render, game } = this.ctx;
     useRenderer(render.renderer);
     setPortraitSync(!!this.ctx.debug?.frozen);
+    void prefetchCamp().catch(() => {});
+    // The portrait painter's shaders build in the driver while the set is made.
+    precompilePortrait(render.renderer);
     if (!this.ctx.debug?.frozen) prepaintParty(game.party);
     this.params = params;
     // Casters with no chosen spells get a sensible load-out (they can change it in MAGIC).
     for (const ch of game.party) if (castingClassesOf(ch).length && !Object.values(ch.spells?.prepared ?? {}).some((l) => l.length)) autoPrepare(ch);
 
     await this._build3d();
+    if (this.ctx.debug?.frozen && !params.panel) {
+      // Screenshots: paint the roster's faces now, then let the driver build the set's shaders.
+      for (const ch of game.party) try { portraitURL(ch, 0.28); } catch { /* placeholder */ }
+    }
+    const fullPanel = ['view', 'items', 'magic'].includes(params.panel) && !params.sleep;
+    if (!(this.ctx.debug?.frozen && fullPanel)) {
+      try { render.renderer.compile(this.scene3d, this.camera); } catch { /* compiled on first draw */ }
+    }
     this.post = { bloomStrength: 0.7, bloomThreshold: 0.9, vignette: 0.62, exposure: 1.0 };
     this._buildUI();
-    this.listen('input:action', ({ action }) => this._onAction(action));
-    this.listen('time:changed', () => this._refreshStatus());
-    this.listen('party:changed', () => this._refreshStatus());
+    this.listen('input:action', ({ action }) => { this._settled = 0; this._onAction(action); });
+    this.listen('time:changed', () => { this._settled = 0; this._refreshStatus(); });
+    this.listen('party:changed', () => { this._settled = 0; this._refreshStatus(); });
+    const wake = () => { this._settled = 0; };
+    window.addEventListener('pointerdown', wake, true);
+    this.own(() => window.removeEventListener('pointerdown', wake, true));
     this.ctx.audio?.playMusic?.('camp');
     this.ctx.ui.message('The party makes camp among the ruins. Sentries are posted.', 'lore');
     // Arrow keys / D-pad walk the camp panel and the command line.
@@ -503,6 +518,31 @@ export default class CampScene extends Scene {
    */
   render() {
     const t = this.ctx.clock.time;
+    // Frozen clock (screenshots): once settled the frame cannot change, so present it only now and
+    // then (a canvas that never presents can come back blank from a headless capture). On a
+    // software GPU one camp frame costs seconds; redrawing it every tick starves the capture.
+    if (this.ctx.debug?.frozen) {
+      const sm = this.ctx.render.renderer.shadowMap;
+      if ((this._settled ?? 0) >= 1) sm.autoUpdate = false;
+      else if (!sm.autoUpdate) sm.needsUpdate = true;
+      if ((this._settled ?? 0) >= 1 && !this._dirty) {
+        this._idleFrames = (this._idleFrames ?? 0) + 1;
+        if (this._idleFrames % 240 !== 0) return;
+      }
+      this._dirty = false;
+      // A full-screen VIEW hides the campfire entirely: draw only the night behind its margins.
+      if (this.view?.full) {
+        const r = this.ctx.render.renderer;
+        r.setRenderTarget(null);
+        r.setClearColor(0x05070d, 1);
+        r.clear();
+        this._settled = (this._settled ?? 0) + 1;
+        return;
+      }
+      super.render();
+      this._settled = (this._settled ?? 0) + 1;
+      return;
+    }
     if (this.view && this._lastRender != null && Math.abs(t - this._lastRender) < 0.5) return;
     if (!this.ctx.debug?.frozen && this._lastWall != null) {
       const now = performance.now();
@@ -529,15 +569,17 @@ export default class CampScene extends Scene {
 
   update(dt) {
     const t = this.ctx.clock.time;
-    this.camp?.update(t);
+    this.camp?.update(t, this.camera);
     // Resting: the camera leans in over the bedrolls (eased; settled at once under a frozen clock).
     if (!this.ctx.debug?.raw?.campcam) {
       const want = this.busy ? 1 : 0;
       this._camK = this._camK == null || dt === 0 ? want : this._camK + (want - this._camK) * Math.min(1, dt * 2.5);
       const k = this._camK * this._camK * (3 - 2 * this._camK);
-      // Low over the hearth, so the sleepers lie in profile (shoulder, hip and knee read under the wool).
-      this.camera.position.set(0.15 * k, 1.75 - 0.2 * k, 5.2 - 1.6 * k);
-      this.camera.lookAt(0, 0.95 - 0.62 * k, -0.6 - 0.95 * k);
+      // Resting: down at sleeping height beside the embers, so the sleepers lie in profile across the
+      // view (head on the rolled cloak, shoulder, hip and knee under the wool) and the sentry stands
+      // against the night beyond them.
+      this.camera.position.set(-1.05 * k, 1.75 - 0.95 * k, 5.2 - 2.55 * k);
+      this.camera.lookAt(0.25 * k, 0.95 - 0.62 * k, -0.6 - 1.4 * k);
     }
     const b = this.busy;
     if (b) {

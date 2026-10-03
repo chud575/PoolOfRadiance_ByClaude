@@ -1,13 +1,14 @@
 import * as THREE from 'three';
 import { createSkyDome } from '../../render/lighting.js';
-import { getMaterial, preloadMaterials } from '../../render/materials.js';
-import { getGlowTexture, getGrassTexture } from '../../render/textures/index.js';
+import { getGrassTexture } from '../../render/textures/index.js';
 import { CLOTH_COLORS, defaultLook } from '../../ui/components/lookData.js';
 import { buildMiniature, miniatureEnvironment } from '../../ui/components/Miniature.js';
 import { isAlive } from '../../rules/character.js';
 import { buildBedroll } from './bedroll.js';
 import { buildRuins } from './ruins.js';
-import { groundTextures, barkTextures, emberTexture, coalTextures, smokeTexture, blobTexture, stoneTextures } from './campTextures.js';
+import { groundTextures, barkTextures, blobTexture, earthTextures, woodTextures, canvasTextures } from './campTextures.js';
+import { masonryGeometry, masonryMaterial, wallBlocks } from './masonry.js';
+import { buildCampfire } from './campfire.js';
 
 /**
  * The encampment diorama: the party around a campfire on a broken flagstone
@@ -27,207 +28,8 @@ const hrand = (i, s = 0) => {
   return x - Math.floor(x);
 };
 
-// ------------------------------------------------------------------ fire shaders
-
-const FLAME_VERT = /* glsl */`
-varying vec2 vUv;
-void main() {
-  vUv = uv;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-}`;
-const FLAME_FRAG = /* glsl */`
-uniform float uTime;
-uniform float uSeed;
-uniform float uIntensity;
-uniform float uHeight;
-varying vec2 vUv;
-float h21(vec2 p) { p = fract(p * vec2(234.34, 435.345)); p += dot(p, p + 34.23); return fract(p.x * p.y); }
-float n2(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y); }
-float fbm(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { s += a * n2(p); p = p * 2.03 + 7.1; a *= 0.5; } return s; }
-void main() {
-  vec2 uv = vUv;
-  float t = uTime * 1.6 + uSeed * 10.0;
-  float y = uv.y / uHeight;
-  float n = fbm(vec2(uv.x * 3.2 + uSeed * 3.0, uv.y * 2.6 - t));
-  float n2v = fbm(vec2(uv.x * 6.0 - uSeed, uv.y * 5.0 - t * 1.7));
-  float sway = (n - 0.5) * 0.28 * y + sin(t * 0.7 + uSeed * 6.0) * 0.03 * y;
-  float dx = abs(uv.x - 0.5 + sway);
-  float w = 0.3 * pow(sin(3.14159 * clamp(y * 0.9 + 0.12, 0.0, 1.0)), 0.8) * (1.0 - y * 0.55) + 0.02;
-  float body = smoothstep(w, w * 0.25, dx);
-  float top = smoothstep(1.0, 0.45, y + (n2v - 0.5) * 0.5);
-  float base = smoothstep(0.0, 0.14, uv.y);
-  float f = clamp(body * top * base, 0.0, 1.0);
-  // Tongues break off near the tip.
-  f *= smoothstep(0.15, 0.55, n2v + (1.0 - y) * 0.6);
-  float core = f * f * smoothstep(0.75, 0.05, y);
-  vec3 col = mix(vec3(0.75, 0.13, 0.02), vec3(1.0, 0.42, 0.06), smoothstep(0.0, 0.6, f));
-  col = mix(col, vec3(1.0, 0.7, 0.26), core);
-  gl_FragColor = vec4(col * f * uIntensity, 1.0);
-}`;
-
-/**
- * Volumetric flame: the view ray is marched through a box around the fire; density is a set of
- * licking tongues (a tapering column per tongue, torn by rising 3D noise), emission follows a
- * blackbody ramp from deep red at the edges to gold at the core. Additive, so it reads as light.
- */
-const VOLFLAME_VERT = /* glsl */`
-varying vec3 vLocal;
-varying vec3 vCamLocal;
-void main() {
-  vLocal = position;
-  vCamLocal = (inverse(modelMatrix) * vec4(cameraPosition, 1.0)).xyz;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-}`;
-const VOLFLAME_FRAG = /* glsl */`
-uniform float uTime;
-uniform float uIntensity;
-uniform float uHeight;
-uniform vec3 uHalf;
-varying vec3 vLocal;
-varying vec3 vCamLocal;
-float h31(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
-float n3(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(mix(h31(i), h31(i + vec3(1, 0, 0)), f.x), mix(h31(i + vec3(0, 1, 0)), h31(i + vec3(1, 1, 0)), f.x), f.y),
-             mix(mix(h31(i + vec3(0, 0, 1)), h31(i + vec3(1, 0, 1)), f.x), mix(h31(i + vec3(0, 1, 1)), h31(i + vec3(1, 1, 1)), f.x), f.y), f.z); }
-float fbm(vec3 p) { return n3(p) * 0.55 + n3(p * 2.1 + 3.1) * 0.3 + n3(p * 4.3 + 7.7) * 0.15; }
-float density(vec3 p) {
-  float t = uTime;
-  float y = p.y / uHeight;                         // 0 at the embers, 1 at the tips
-  if (y < 0.0 || y > 1.0) return 0.0;
-  vec3 q = p + vec3(0.0, -t * 0.9, 0.0);
-  float n = fbm(q * vec3(5.0, 3.2, 5.0));
-  float n2 = fbm(q * vec3(11.0, 7.0, 11.0) + 5.0);
-  // Sway grows with height.
-  vec2 sway = vec2(sin(t * 1.3 + p.y * 4.0), cos(t * 1.1 + p.y * 3.3)) * 0.035 * y + (vec2(n, n2) - 0.5) * 0.12 * y;
-  vec2 xz = p.xz - sway;
-  // Three tongues round a core; each tapers to a point.
-  float d = 0.0;
-  for (int k = 0; k < 7; k++) {
-    float fk = float(k);
-    float a = fk * 2.39996 + 0.6;
-    vec2 c = k == 6 ? vec2(0.0) : vec2(cos(a), sin(a)) * (0.07 + 0.025 * mod(fk, 2.0));
-    float hk = k == 6 ? 1.0 : 0.55 + 0.07 * fk;
-    // each tongue flickers in height on its own beat
-    hk *= 0.85 + 0.15 * sin(t * (2.3 + fk * 0.7) + fk * 1.7);
-    float yk = y / hk;
-    if (yk > 1.0) continue;
-    float r = (k == 6 ? 0.21 : 0.13) * pow(1.0 - yk, 0.75) * smoothstep(0.0, 0.12, yk + 0.04);
-    d = max(d, smoothstep(r, r * 0.2, length(xz - c)) * (1.0 - smoothstep(0.5, 1.0, yk + (n2 - 0.5) * 0.6)));
-  }
-  // Torn by the noise, more so toward the tips (licks break off and vanish).
-  d *= smoothstep(0.25 + 0.5 * y, 0.7, n + (1.0 - y) * 0.32);
-  return d;
-}
-void main() {
-  vec3 ro = vCamLocal;
-  vec3 rd = normalize(vLocal - vCamLocal);
-  vec3 inv = 1.0 / rd;
-  vec3 t0 = (-uHalf - ro) * inv, t1 = (uHalf - ro) * inv;
-  vec3 lo = min(t0, t1), hi = max(t0, t1);
-  float ta = max(max(max(lo.x, lo.y), lo.z), 0.0), tb = min(min(hi.x, hi.y), hi.z);
-  if (tb <= ta) discard;
-  const int N = 28;
-  float dt = (tb - ta) / float(N);
-  float t = ta + dt * h31(vec3(gl_FragCoord.xy, 3.0));
-  vec3 acc = vec3(0.0);
-  for (int i = 0; i < N; i++) {
-    vec3 p = ro + rd * t + vec3(0.0, uHalf.y, 0.0);
-    float d = density(p);
-    if (d > 0.001) {
-      float y = p.y / uHeight;
-      float temp = d * (1.15 - y * 0.75);
-      vec3 c = mix(vec3(0.42, 0.04, 0.01), vec3(1.0, 0.3, 0.04), smoothstep(0.12, 0.55, temp));
-      c = mix(c, vec3(1.0, 0.58, 0.2), smoothstep(0.62, 1.0, temp));
-      acc += c * d * dt * 10.0;
-    }
-    t += dt;
-  }
-  gl_FragColor = vec4(acc * uIntensity, 1.0);
-}`;
-
-/** Heat shimmer: distorts the sky/ruins seen through the column above the fire. */
-const HAZE_FRAG = /* glsl */`
-uniform float uTime;
-uniform float uStrength;
-varying vec2 vUv;
-float h21(vec2 p) { p = fract(p * vec2(234.34, 435.345)); p += dot(p, p + 34.23); return fract(p.x * p.y); }
-float n2(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y); }
-void main() {
-  float m = smoothstep(0.5, 0.1, abs(vUv.x - 0.5)) * smoothstep(0.0, 0.25, vUv.y) * smoothstep(1.0, 0.5, vUv.y);
-  float n = n2(vec2(vUv.x * 9.0, vUv.y * 6.0 - uTime * 2.2)) - 0.5;
-  // A faint warm, rippling veil (additive) — reads as hot air over the flames.
-  gl_FragColor = vec4(vec3(1.0, 0.55, 0.2) * (0.5 + n) * m * uStrength, 1.0);
-}`;
-
 // ------------------------------------------------------------------ geometry helpers
 
-/** A round log: a bark cylinder with ridged bark, a slight crook and knots; charred toward the burning end. */
-function splitLogGeometry(len, r, seed) {
-  const g = new THREE.CylinderGeometry(r * 0.9, r, len, 16, 10, false);
-  const p = g.attributes.position;
-  const col = [];
-  const crook = (hrand(seed, 2) - 0.5) * 0.06;
-  for (let i = 0; i < p.count; i++) {
-    let x = p.getX(i), z = p.getZ(i);
-    const y = p.getY(i);
-    const rr = Math.hypot(x, z) || 1;
-    const a = Math.atan2(z, x);
-    // bark: long fissured ridges, knots, a gentle crook along the length
-    const ridge = 0.06 * Math.abs(Math.sin(a * 7 + Math.sin(y * 6 + seed) * 0.8)) + 0.03 * Math.sin(a * 17 + y * 3);
-    const knot = 0.18 * Math.exp(-(((a - seed) % 6.28) ** 2) * 4 - ((y - len * (hrand(seed, 3) - 0.5)) ** 2) * 60);
-    const burn = Math.max(0, Math.min(1, (-y / len + 0.5) * 1.9 + 0.12 * Math.sin(y * 23 + seed * 3 + a * 2)));
-    // charred wood shrinks and cracks
-    const k = 1 + ridge - 0.08 - burn * 0.08 + knot * (1 - burn);
-    x = (x / rr) * rr * k + crook * Math.sin((y / len + 0.5) * Math.PI) * len;
-    z = (z / rr) * rr * k;
-    p.setXYZ(i, x, y, z);
-    const base = [0.74, 0.68, 0.62];
-    const kk = (1 - burn * 0.92) * (0.85 + 0.15 * Math.sin(a * 7));
-    col.push(base[0] * kk, base[1] * kk, base[2] * kk);
-  }
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  g.computeVertexNormals();
-  return g;
-}
-
-/** A rounded fieldstone: a lumpy sphere, sooty on the side facing the fire. */
-function fieldstoneGeometry(seed, sooty) {
-  const g = new THREE.SphereGeometry(1, 20, 14);
-  const p = g.attributes.position;
-  const col = [];
-  const tone = 0.3 + hrand(seed, 3) * 0.14;
-  for (let i = 0; i < p.count; i++) {
-    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-    const n = 1 + 0.14 * Math.sin(x * 3.1 + seed) * Math.cos(z * 2.7 + seed * 2) + 0.07 * Math.sin(y * 5 + x * 4 + seed) + 0.035 * Math.sin(x * 11 + z * 9 + y * 7 + seed);
-    const flat = y < -0.2 ? 0.75 : 1;
-    p.setXYZ(i, x * n, y * n * flat, z * n);
-    const soot = sooty ? Math.max(0, Math.min(1, (y + 0.2) * 0.9 + Math.max(0, -z) * 0.7)) : 0;
-    const k = tone * (1 - soot * 0.78) * (0.92 + 0.08 * Math.sin(x * 9 + z * 7));
-    col.push(k * 1.02, k * 0.97, k * 0.9);
-  }
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  g.computeVertexNormals();
-  return g;
-}
-
-/** A wall run with a broken, jagged top; world-scaled UVs and AO colours for the arch_ shader. */
-function jaggedWall(w, h, depth, seed) {
-  const s = new THREE.Shape();
-  s.moveTo(0, 0);
-  s.lineTo(w, 0);
-  const steps = Math.max(4, Math.round(w * 1.6));
-  for (let i = steps; i >= 0; i--) {
-    const x = (i / steps) * w;
-    const edge = i === 0 || i === steps ? 0.55 : 1;
-    const top = h * (0.35 + 0.65 * hrand(i, seed)) * edge;
-    s.lineTo(x + (hrand(i, seed + 3) - 0.5) * 0.25, Math.max(0.3, top));
-  }
-  s.lineTo(0, 0);
-  const g = new THREE.ExtrudeGeometry(s, { depth, bevelEnabled: false, steps: 1 });
-  return archUV(g, (v) => 0.45 + 0.55 * Math.min(1, v.y / 1.6));
-}
 function archUV(g, aoFn) {
   g.computeVertexNormals();
   const p = g.attributes.position;
@@ -255,8 +57,12 @@ function archUV(g, aoFn) {
  * @param {THREE.Scene} scene
  * @param {{party: object[], hour: number, renderer?: THREE.WebGLRenderer, resting?: boolean}} o
  */
+/** The set's textures are all its own (no worker-made library sets to wait for). */
+export function prefetchCamp() {
+  return Promise.resolve();
+}
+
 export async function buildCamp(scene, { party, hour, renderer, resting = false, deferParty = false }) {
-  await preloadMaterials(['arch_stone', 'arch_ruin', 'arch_mud', 'prop_wood', 'prop_burlap']);
   const geos = [];
   const mats = [];
   const texs = [];
@@ -280,8 +86,15 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
   // ---- light: fire key, moon rim/fill, sky
   const hemi = new THREE.HemisphereLight(night ? 0x4458a0 : 0x9ab0d0, 0x0e0a08, night ? 0.62 : 0.9);
   scene.add(hemi);
+  // Skylight on the faces of the ruins toward the camp (cool, soft, no shadow): the walls read as
+  // stone in the moonlit night instead of black cut-outs.
+  const skyFill = new THREE.DirectionalLight(night ? 0x5a70b0 : 0xb0c0dc, night ? 0.55 : 0.4);
+  skyFill.position.set(3, 6, 10);
+  scene.add(skyFill, skyFill.target);
   const moon = new THREE.DirectionalLight(night ? 0x9ab4ff : 0xfff0d8, night ? 1.15 : 1.6);
-  moon.position.set(-5, 9, -9);
+  // The moon low on the left: it rakes across the faces of the ruins (every chipped arris and
+  // missing block reads) and rims the party's left shoulders.
+  moon.position.set(-10, 7.5, -1.5);
   moon.castShadow = true;
   moon.shadow.mapSize.set(1024, 1024);
   Object.assign(moon.shadow.camera, { left: -6, right: 6, top: 6, bottom: -6, near: 1, far: 30 });
@@ -331,40 +144,35 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
   root.add(court);
   const farGeo = G(new THREE.RingGeometry(gt.size * 0.49, 60, 64, 4));
   archUV(farGeo, null);
-  const far = new THREE.Mesh(farGeo, getMaterial('arch_mud'));
+  const et = earthTextures();
+  const far = new THREE.Mesh(farGeo, Mt(new THREE.MeshStandardMaterial({ vertexColors: true, map: et.map, normalMap: et.normalMap, roughness: 1 })));
   far.rotation.x = -Math.PI / 2;
   far.position.y = -0.01;
   far.receiveShadow = true;
   root.add(far);
 
-  // Rubble, tilted broken slabs and weeds.
-  const stoneMat = getMaterial('arch_stone');
-  const rubGeo = G(archUV(new THREE.DodecahedronGeometry(0.12, 0), null));
-  const rubble = new THREE.InstancedMesh(rubGeo, stoneMat, 70);
+  // Rubble and tilted broken flags.
+  const stoneMat = masonryMaterial(night);
   const m4 = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const e = new THREE.Euler();
-  for (let i = 0; i < 70; i++) {
-    const a = hrand(i, 11) * Math.PI * 2;
-    const r = 2.6 + hrand(i, 12) ** 0.7 * 6;
-    const s = 0.4 + hrand(i, 13) * 1.3;
-    q.setFromEuler(e.set(hrand(i, 14) * 3, hrand(i, 15) * 3, hrand(i, 16) * 3));
-    m4.compose(new THREE.Vector3(Math.cos(a) * r, 0.04 * s, Math.sin(a) * r - 0.8), q, new THREE.Vector3(s, s * 0.7, s));
-    rubble.setMatrixAt(i, m4);
-  }
-  rubble.castShadow = true;
-  rubble.receiveShadow = true;
-  root.add(rubble);
-  const slabGeo = G(archUV(new THREE.BoxGeometry(0.7, 0.07, 0.5), null));
-  for (let i = 0; i < 6; i++) {
-    const a = 0.6 + i * 1.05 + hrand(i, 21) * 0.5;
-    const r = 3.4 + hrand(i, 22) * 2.4;
-    const sl = new THREE.Mesh(slabGeo, stoneMat);
-    sl.position.set(Math.cos(a) * r, 0.05, Math.sin(a) * r - 0.6);
-    sl.rotation.set((hrand(i, 23) - 0.5) * 0.5, hrand(i, 24) * 3, (hrand(i, 25) - 0.5) * 0.35);
-    sl.castShadow = true;
-    sl.receiveShadow = true;
-    root.add(sl);
+  {
+    const loose = [];
+    for (let i = 0; i < 70; i++) {
+      const a = hrand(i, 11) * Math.PI * 2;
+      const r = 2.6 + hrand(i, 12) ** 0.7 * 6;
+      const sc = 0.4 + hrand(i, 13) * 1.3;
+      loose.push({ p: [Math.cos(a) * r, 0.05 * sc, Math.sin(a) * r - 0.8], s: [0.2 * sc, 0.13 * sc, 0.16 * sc], r: [hrand(i, 14) * 3, hrand(i, 15) * 3, hrand(i, 16) * 3], col: [0.7, 0.68, 0.64].map((c) => c * (0.8 + hrand(i, 17) * 0.3)), dmg: 1, moss: 0.7 });
+    }
+    for (let i = 0; i < 6; i++) {
+      const a = 0.6 + i * 1.05 + hrand(i, 21) * 0.5;
+      const r = 3.4 + hrand(i, 22) * 2.4;
+      loose.push({ p: [Math.cos(a) * r, 0.05, Math.sin(a) * r - 0.6], s: [0.7, 0.07, 0.5], r: [(hrand(i, 23) - 0.5) * 0.5, hrand(i, 24) * 3, (hrand(i, 25) - 0.5) * 0.35], col: [0.62, 0.6, 0.56], dmg: 0.8, moss: 0.9 });
+    }
+    const lm = new THREE.Mesh(G(masonryGeometry(loose)), stoneMat);
+    lm.castShadow = true;
+    lm.receiveShadow = true;
+    root.add(lm);
   }
   const grassMat = Mt(new THREE.MeshStandardMaterial({ map: getGrassTexture(), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 1, color: 0x8a9a70 }));
   const tuftGeo = G(new THREE.PlaneGeometry(0.42, 0.32));
@@ -385,74 +193,65 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
   root.add(tufts);
 
   // ---- ruins: varied silhouettes against the sky
-  const ruinMat = getMaterial('arch_ruin');
-  buildRuins(root, { G, Mt, night, stoneMat, beamMat: getMaterial('prop_wood') });
-  // A broken arch: two piers and the surviving voussoirs.
+  const wt = woodTextures();
+  const woodMat = Mt(new THREE.MeshStandardMaterial({ map: wt.map, normalMap: wt.normalMap, roughnessMap: wt.roughnessMap, roughness: 1, color: 0x8a7a6a }));
+  buildRuins(root, { G, Mt, night, stoneMat, beamMat: woodMat });
   {
-    const arch = new THREE.Group();
-    const pierGeo = G(archUV(new THREE.BoxGeometry(0.7, 3.1, 0.75), (v) => 0.5 + 0.5 * Math.min(1, (v.y + 1.55) / 1.5)));
+    const set = [];
+    // A broken arch: two coursed piers and the surviving voussoirs (three fallen to its foot).
+    const archF = new THREE.Matrix4().compose(new THREE.Vector3(1.2, 0, -8.6), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0.1, 0)), new THREE.Vector3(1, 1, 1));
     for (const x of [-1.5, 1.5]) {
-      const pier = new THREE.Mesh(pierGeo, stoneMat);
-      pier.position.set(x, 1.55, 0);
-      pier.castShadow = true;
-      pier.receiveShadow = true;
-      arch.add(pier);
-    }
-    const vGeo = G(archUV(new THREE.BoxGeometry(0.62, 0.36, 0.72), null));
-    const nV = 11;
-    for (let i = 0; i < nV; i++) {
-      if (i >= 6 && i <= 8) continue; // fallen
-      const a = Math.PI - (i + 0.5) / nV * Math.PI;
-      const v = new THREE.Mesh(vGeo, stoneMat);
-      v.position.set(Math.cos(a) * 1.5, 3.1 + Math.sin(a) * 1.5, 0);
-      v.rotation.z = a - Math.PI / 2;
-      v.castShadow = true;
-      arch.add(v);
-    }
-    arch.position.set(1.2, 0, -8.6);
-    arch.rotation.y = 0.1;
-    root.add(arch);
-    // Fallen voussoirs on the ground below.
-    for (let i = 0; i < 3; i++) {
-      const v = new THREE.Mesh(vGeo, stoneMat);
-      v.position.set(2.3 + i * 0.5, 0.18, -8.0 + i * 0.25);
-      v.rotation.set(hrand(i, 41) * 0.6, hrand(i, 42) * 3, hrand(i, 43) * 0.5);
-      v.castShadow = true;
-      root.add(v);
-    }
-  }
-  // A collapsed tower: a drum of stone with a ragged top and a dark window.
-  {
-    const tg = G(new THREE.CylinderGeometry(1.7, 1.9, 7, 24, 8, true));
-    const p = tg.attributes.position;
-    for (let i = 0; i < p.count; i++) {
-      const y = p.getY(i);
-      if (y > 1.5) {
-        const a = Math.atan2(p.getZ(i), p.getX(i));
-        const cut = 1.5 + 2.0 * (0.5 + 0.5 * Math.sin(a * 2 + 1)) + 1.0 * hrand(Math.round(a * 10), 7);
-        if (y > cut) p.setY(i, cut);
+      for (let c = 0; c < 9; c++) {
+        const t = 0.7 + hrand(c, x + 5) * 0.3;
+        set.push({ p: [x + (hrand(c, x + 9) - 0.5) * 0.03, c * 0.345 + 0.17, 0], s: [0.72 - (c % 2) * 0.05, 0.32, 0.76], r: [0, (hrand(c, x + 3) - 0.5) * 0.04, 0], col: [t * 1.02, t, t * 0.93], dmg: c === 8 ? 0.8 : 0.25, moss: 0.6, soot: x < 0 ? 0.5 : 0.1, frame: archF });
+        set.push({ p: [x, c * 0.345 + 0.17, 0], s: [0.73, 0.345, 0.66], mortar: true, frame: archF });
       }
     }
-    archUV(tg, (v) => 0.5 + 0.5 * Math.min(1, (v.y + 3.5) / 2));
-    const tower = new THREE.Mesh(tg, Mt(stoneMat.clone()));
-    tower.material.side = THREE.DoubleSide;
-    tower.position.set(-7.4, 3.5, -9.2);
-    tower.castShadow = true;
-    tower.receiveShadow = true;
-    root.add(tower);
-    const win = new THREE.Mesh(G(new THREE.PlaneGeometry(0.35, 0.9)), Mt(new THREE.MeshBasicMaterial({ color: 0x050608 })));
-    win.position.set(-6.4, 4.2, -7.75);
-    win.rotation.y = 0.55;
-    root.add(win);
-  }
-  // Column stumps.
-  const colGeo = G(archUV(new THREE.CylinderGeometry(0.3, 0.34, 1, 16), null));
-  for (const [x, z, hh] of [[4.2, -7.8, 2.6], [6.6, -7.2, 1.2], [-4.2, -8.6, 1.7]]) {
-    const c = new THREE.Mesh(colGeo, stoneMat);
-    c.scale.set(1, hh, 1);
-    c.position.set(x, hh / 2, z);
-    c.castShadow = true;
-    root.add(c);
+    const nV = 11;
+    for (let i = 0; i < nV; i++) {
+      if (i >= 6 && i <= 8) continue;
+      const a = Math.PI - (i + 0.5) / nV * Math.PI;
+      const t = 0.72 + hrand(i, 44) * 0.28;
+      set.push({ p: [Math.cos(a) * 1.5, 3.1 + Math.sin(a) * 1.5, 0], s: [0.6, 0.36, 0.72], r: [0, 0, a - Math.PI / 2], col: [t * 1.02, t, t * 0.93], dmg: i === 5 || i === 9 ? 0.9 : 0.35, moss: 0.8, frame: archF });
+    }
+    for (let i = 0; i < 3; i++) set.push({ p: [2.3 + i * 0.5, 0.18, -8.0 + i * 0.25], s: [0.6, 0.36, 0.72], r: [hrand(i, 41) * 0.6, hrand(i, 42) * 3, hrand(i, 43) * 0.5], col: [0.72, 0.7, 0.65], dmg: 1, moss: 0.9 });
+    // A collapsed tower: coursed rings of blocks with a ragged top and a dark window.
+    const tc = new THREE.Vector3(-7.4, 0, -9.2);
+    for (let c = 0; c < 20; c++) {
+      const r = 1.85 - c * 0.008;
+      const nB = 18;
+      for (let k = 0; k < nB; k++) {
+        const a = ((k + (c % 2) * 0.5) / nB) * Math.PI * 2;
+        const cut = 5 + 6 * (0.5 + 0.5 * Math.sin(a * 2 + 1)) + 3 * hrand(k, c * 0 + 7) + 2 * hrand(Math.round(a * 10), 9);
+        if (c > cut) continue;
+        // a window slot facing the camp
+        if (c >= 11 && c <= 13 && Math.abs(((a - 0.65 + Math.PI * 3) % (Math.PI * 2)) - Math.PI) < 0.2) continue;
+        const t = 0.66 + hrand(k + c * 31, 3) * 0.34;
+        set.push({ p: [tc.x + Math.cos(a) * r, c * 0.345 + 0.17, tc.z + Math.sin(a) * r], s: [0.66, 0.32, 0.6], r: [0, -a + Math.PI / 2, 0], col: [t * 1.02, t, t * 0.93], dmg: c >= cut - 1 ? 0.9 : 0.2, soot: 0.6, moss: 0.5 });
+        set.push({ p: [tc.x + Math.cos(a) * (r - 0.06), c * 0.345 + 0.17, tc.z + Math.sin(a) * (r - 0.06)], s: [0.66, 0.345, 0.5], r: [0, -a + Math.PI / 2, 0], mortar: true });
+      }
+    }
+    // Column stumps: stacked drums (squared off a little where they broke).
+    for (const [x, z, hh] of [[4.2, -7.8, 2.6], [6.6, -7.2, 1.2], [-4.2, -8.6, 1.7]]) {
+      const nd = Math.max(1, Math.round(hh / 0.5));
+      for (let k = 0; k < nd; k++) {
+        const t = 0.7 + hrand(k, x) * 0.3;
+        set.push({ p: [x, (k + 0.5) * (hh / nd), z], s: [0.62, hh / nd - 0.02, 0.62], r: [0, hrand(k, z) * 3, 0], col: [t * 1.02, t, t * 0.93], dmg: k === nd - 1 ? 1 : 0.5, moss: 0.7 });
+      }
+    }
+    // Foreground: a fallen drum, a broken stump of wall and two tumbled blocks framing the lower corners.
+    set.push({ p: [-1.75, 0.3, 3.25], s: [1.3, 0.62, 0.62], r: [0.05, 0.4, -0.12], col: [0.55, 0.53, 0.5], dmg: 1, moss: 0.9 });
+    {
+      const fgF = new THREE.Matrix4().compose(new THREE.Vector3(-2.9, 0, 1.9), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0.5, 0)), new THREE.Vector3(1, 1, 1));
+      const { blocks } = wallBlocks(0.95, 1.5, 0.7, 77, { soot: 0.4 });
+      for (const bk of blocks) set.push({ ...bk, frame: fgF });
+    }
+    set.push({ p: [1.85, 0.2, 3.3], s: [0.8, 0.45, 0.55], r: [0.08, -0.5, 0.14], col: [0.6, 0.58, 0.55], dmg: 1, moss: 0.8 });
+    set.push({ p: [2.15, 0.5, 3.05], s: [0.55, 0.38, 0.5], r: [-0.3, 0.3, 0.4], col: [0.64, 0.62, 0.58], dmg: 1, moss: 0.8 });
+    const mm = new THREE.Mesh(G(masonryGeometry(set)), stoneMat);
+    mm.castShadow = true;
+    mm.receiveShadow = true;
+    root.add(mm);
   }
   // ---- depth: ground mist lying between the court and the ruins (soft, layered, moonlit)
   {
@@ -487,22 +286,6 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
   // ---- foreground: dark masonry and a dead shrub framing the lower corners (silhouettes against the firelit court)
   {
     const fg = new THREE.Group();
-    const drum = new THREE.Mesh(G(archUV(new THREE.CylinderGeometry(0.42, 0.45, 1.3, 14, 3), (v) => 0.4 + 0.3 * Math.min(1, (v.y + 0.65) / 1.3))), ruinMat);
-    drum.rotation.set(0.05, 0.4, Math.PI / 2 - 0.12);
-    drum.position.set(-1.75, 0.3, 3.25);
-    fg.add(drum);
-    const stump = new THREE.Mesh(G(jaggedWall(0.9, 1.5, 0.7, 77)), ruinMat);
-    stump.position.set(-2.9, 0, 1.9);
-    stump.rotation.y = 0.5;
-    fg.add(stump);
-    const block = new THREE.Mesh(G(archUV(new THREE.BoxGeometry(0.8, 0.45, 0.55), null)), ruinMat);
-    block.position.set(1.85, 0.2, 3.3);
-    block.rotation.set(0.08, -0.5, 0.14);
-    fg.add(block);
-    const block2 = new THREE.Mesh(G(archUV(new THREE.BoxGeometry(0.55, 0.38, 0.5), null)), ruinMat);
-    block2.position.set(2.15, 0.5, 3.05);
-    block2.rotation.set(-0.3, 0.3, 0.4);
-    fg.add(block2);
     // A dead thorn shrub: forked twigs.
     const twigMat = Mt(new THREE.MeshStandardMaterial({ color: 0x241a12, roughness: 1 }));
     const twigGeo = G(new THREE.CylinderGeometry(0.006, 0.014, 1, 5));
@@ -528,149 +311,13 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
     root.add(fg);
   }
 
-  // ---- the hearth: fieldstones, ember bed, split-log teepee, flames, smoke, sparks
-  const hearth = new THREE.Group();
-  root.add(hearth);
-  const stn = stoneTextures();
-  const stoneVcMat = Mt(new THREE.MeshStandardMaterial({ vertexColors: true, map: stn.map, normalMap: stn.normalMap, normalScale: new THREE.Vector2(0.5, 0.5), roughnessMap: stn.roughnessMap, roughness: 1, color: 0xd0ccc6 }));
-  for (let i = 0; i < 11; i++) {
-    const a = (i / 11) * Math.PI * 2 + hrand(i, 71) * 0.2;
-    const s = 0.085 + hrand(i, 72) * 0.05;
-    const st = new THREE.Mesh(G(fieldstoneGeometry(i * 13 + 5, true)), stoneVcMat);
-    st.scale.set(s * (1.2 + hrand(i, 73) * 0.4), s * (0.75 + hrand(i, 74) * 0.3), s);
-    st.position.set(Math.cos(a) * 0.6, s * 0.5, Math.sin(a) * 0.6);
-    st.rotation.y = -a + Math.PI / 2;
-    st.castShadow = true;
-    st.receiveShadow = true;
-    hearth.add(st);
-  }
-  const coal = coalTextures();
+  // ---- the hearth: fieldstones, ember bed, split-log teepee, flame tongues, smoke, sparks
+  const fire = buildCampfire({ G, Mt, night });
+  root.add(fire.group);
   const bark = barkTextures();
-  const coalMat = Mt(new THREE.MeshStandardMaterial({ map: coal.map, emissiveMap: coal.emissive, emissive: 0xffffff, emissiveIntensity: 1.1, roughness: 1, transparent: true, depthWrite: false }));
-  const bed = new THREE.Mesh(G(new THREE.CircleGeometry(0.5, 40)), coalMat);
-  bed.rotation.x = -Math.PI / 2;
-  bed.position.y = 0.012;
-  hearth.add(bed);
-  const coalChunkMat = Mt(new THREE.MeshStandardMaterial({ color: 0x1a120e, map: bark.map, emissive: 0xff5a18, emissiveMap: coal.emissive, emissiveIntensity: 0.9, roughness: 0.95 }));
-  const chunkGeo = G(new THREE.IcosahedronGeometry(0.03, 2));
-  {
-    // Lumpy, split charcoal (no flat facets catching the light as hexagons).
-    const p = chunkGeo.attributes.position;
-    for (let i = 0; i < p.count; i++) {
-      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-      const k = 1 + 0.28 * Math.sin(x * 140 + z * 90) * Math.cos(y * 120) + 0.12 * Math.sin(z * 260 + x * 30);
-      p.setXYZ(i, x * k * 1.4, y * k * 0.6, z * k);
-    }
-    chunkGeo.computeVertexNormals();
-  }
-  const chunks = new THREE.InstancedMesh(chunkGeo, coalChunkMat, 44);
-  for (let i = 0; i < 44; i++) {
-    const a = hrand(i, 81) * Math.PI * 2;
-    const r = hrand(i, 82) ** 0.6 * 0.38;
-    q.setFromEuler(e.set(hrand(i, 83) * 3, hrand(i, 84) * 3, 0));
-    const s = 0.6 + hrand(i, 85) * 1.0;
-    m4.compose(new THREE.Vector3(Math.cos(a) * r, 0.02, Math.sin(a) * r), q, new THREE.Vector3(s, s * 0.7, s));
-    chunks.setMatrixAt(i, m4);
-  }
-  hearth.add(chunks);
-  const embers = emberTexture();
-  const logMat = Mt(new THREE.MeshStandardMaterial({ vertexColors: true, map: bark.map, normalMap: bark.normalMap, normalScale: new THREE.Vector2(2.2, 2.2), roughness: 0.92, emissive: 0xffffff, emissiveMap: embers, emissiveIntensity: 0.8 }));
   const barkMat = Mt(new THREE.MeshStandardMaterial({ color: 0xb09078, map: bark.map, normalMap: bark.normalMap, roughness: 0.9 }));
-  const logs = new THREE.Group();
-  const teepee = [];
-  const nLogs = 6;
-  for (let i = 0; i < nLogs; i++) {
-    const a = (i / nLogs) * Math.PI * 2 + 0.25;
-    const len = 0.78 + hrand(i, 91) * 0.16;
-    const lg = G(splitLogGeometry(len, 0.052 + hrand(i, 92) * 0.018, i * 7 + 3));
-    // UVs: bark runs along the log; the ember map's hot end (u = 0) at the bottom.
-    const uv = lg.attributes.uv;
-    // CylinderGeometry's uv.y is 0 at the bottom: the ember map's hot end (u = 0) sits in the fire.
-    for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getY(k), uv.getX(k) * 2);
-    const log = new THREE.Mesh(lg, logMat);
-    const foot = new THREE.Vector3(Math.cos(a) * 0.4, 0.04, Math.sin(a) * 0.4);
-    const tip = new THREE.Vector3(Math.cos(a + 0.4) * 0.05, 0.56 + hrand(i, 93) * 0.08, Math.sin(a + 0.4) * 0.05);
-    const dir = tip.clone().sub(foot);
-    log.position.copy(foot.clone().add(tip).multiplyScalar(0.5));
-    log.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
-    log.scale.y = foot.distanceTo(tip) / len;
-    log.castShadow = true;
-    log.receiveShadow = true;
-    logs.add(log);
-    teepee.push(log);
-  }
-  // Two burnt-down logs lying in the embers.
-  for (let i = 0; i < 2; i++) {
-    const lg = G(splitLogGeometry(0.6, 0.05, 40 + i));
-    const uv = lg.attributes.uv;
-    for (let k = 0; k < uv.count; k++) uv.setXY(k, Math.abs(uv.getY(k) - 0.5) * 0.9, uv.getX(k) * 2);
-    const log = new THREE.Mesh(lg, logMat);
-    log.rotation.set(0, i * 1.9 + 0.4, Math.PI / 2);
-    log.position.set(0.05 - i * 0.1, 0.05, i * 0.06);
-    log.castShadow = true;
-    logs.add(log);
-  }
-  // Burned-down logs fallen inward (seen while the party sleeps): radial, their charred ends in the coals.
-  const collapsed = [];
-  for (let i = 0; i < 5; i++) {
-    const a = (i / 5) * Math.PI * 2 + 0.7;
-    const lg = G(splitLogGeometry(0.5 + hrand(i, 95) * 0.12, 0.045 + hrand(i, 96) * 0.012, 60 + i));
-    const uv = lg.attributes.uv;
-    for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getY(k), uv.getX(k) * 2);
-    const log = new THREE.Mesh(lg, logMat);
-    const foot = new THREE.Vector3(Math.cos(a) * 0.44, 0.06, Math.sin(a) * 0.44);
-    const tip = new THREE.Vector3(Math.cos(a + 0.25) * 0.06, 0.035 + hrand(i, 97) * 0.03, Math.sin(a + 0.25) * 0.06);
-    const dir = tip.clone().sub(foot);
-    log.position.copy(foot.clone().add(tip).multiplyScalar(0.5));
-    log.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), dir.normalize());
-    log.castShadow = true;
-    log.visible = false;
-    logs.add(log);
-    collapsed.push(log);
-  }
-  hearth.add(logs);
-  // The flame: one ray-marched volume of licking tongues (no crossed cards).
-  const FH = 1.2;
-  const volMat = Mt(new THREE.ShaderMaterial({
-    uniforms: { uTime: { value: 0 }, uIntensity: { value: 1 }, uHeight: { value: FH }, uHalf: { value: new THREE.Vector3(0.4, FH / 2, 0.4) } },
-    vertexShader: VOLFLAME_VERT, fragmentShader: VOLFLAME_FRAG, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.BackSide, toneMapped: true,
-  }));
-  const vol = new THREE.Mesh(G(new THREE.BoxGeometry(0.8, FH, 0.8)), volMat);
-  vol.position.set(0, 0.06 + FH / 2, 0);
-  vol.renderOrder = 5;
-  vol.frustumCulled = false;
-  hearth.add(vol);
-  // Heat shimmer column above the flames.
-  const hazeMat = Mt(new THREE.ShaderMaterial({
-    uniforms: { uTime: { value: 0 }, uStrength: { value: 0.05 } },
-    vertexShader: FLAME_VERT, fragmentShader: HAZE_FRAG, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-  }));
-  const haze = new THREE.Mesh(G(new THREE.PlaneGeometry(0.9, 1.6)), hazeMat);
-  haze.position.y = 1.55;
-  hearth.add(haze);
-  // Smoke column.
-  const smokeTex = smokeTexture();
-  const smoke = [];
-  for (let i = 0; i < 18; i++) {
-    const m = Mt(new THREE.SpriteMaterial({ map: smokeTex, color: night ? 0x56545e : 0x9a9aa0, transparent: true, depthWrite: false, opacity: 0.2, rotation: hrand(i, 111) * 6 }));
-    const s = new THREE.Sprite(m);
-    hearth.add(s);
-    smoke.push(s);
-  }
-  // Sparks.
-  const NS = 56;
-  const sparkGeo = G(new THREE.BufferGeometry());
-  const sparkPos = new Float32Array(NS * 3);
-  sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPos, 3));
-  const sparkCol = new Float32Array(NS * 3);
-  sparkGeo.setAttribute('color', new THREE.BufferAttribute(sparkCol, 3));
-  const sparkMat = Mt(new THREE.PointsMaterial({ map: getGlowTexture(), color: 0xffb060, vertexColors: true, size: 0.045, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
-  const sparks = new THREE.Points(sparkGeo, sparkMat);
-  sparks.frustumCulled = false;
-  hearth.add(sparks);
 
   // ---- props: firewood stack, a lean-to, a cooking pot
-  const woodMat = getMaterial('prop_wood');
   const stackLog = G(new THREE.CylinderGeometry(0.075, 0.075, 0.85, 10));
   for (let k = 0; k < 7; k++) {
     const l = new THREE.Mesh(stackLog, barkMat);
@@ -684,7 +331,7 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
   }
   {
     const tent = new THREE.Group();
-    const canvasMat = Mt(new THREE.MeshStandardMaterial({ color: 0x8a7a5c, roughness: 1, side: THREE.DoubleSide, map: getMaterial('prop_burlap')?.map ?? null }));
+    const canvasMat = Mt(new THREE.MeshStandardMaterial({ color: 0x8a7a5c, roughness: 1, side: THREE.DoubleSide, map: canvasTextures().map }));
     for (const sgn of [-1, 1]) {
       const g = G(new THREE.PlaneGeometry(2.0, 1.55, 10, 6));
       const p = g.attributes.position;
@@ -827,12 +474,10 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
   const rolledGeo = G(new THREE.CylinderGeometry(0.11, 0.11, 0.62, 14));
   const matGeo = G(new THREE.BoxGeometry(0.78, 0.035, 1.95, 4, 1, 8));
   const packGeo = G(new THREE.LatheGeometry([[0.001, 0], [0.14, 0.01], [0.18, 0.11], [0.15, 0.24], [0.06, 0.3], [0.045, 0.34], [0.001, 0.34]].map(([x, y]) => new THREE.Vector2(x, y)), 12));
-  const packMat = Mt(new THREE.MeshStandardMaterial({ color: 0x5e4a34, roughness: 1, map: getMaterial('prop_burlap')?.map ?? null }));
-  const bootGeo = G(new THREE.CapsuleGeometry(0.045, 0.1, 4, 8));
-  const bootMat = Mt(new THREE.MeshStandardMaterial({ color: 0x2e2018, roughness: 0.6 }));
+  const packMat = Mt(new THREE.MeshStandardMaterial({ color: 0x5e4a34, roughness: 1, map: canvasTextures().map }));
   const bedMats = living.map((ch) => {
     const look = defaultLook(ch);
-    return Mt(new THREE.MeshStandardMaterial({ color: new THREE.Color(CLOTH_COLORS[(look.cloth + 3) % CLOTH_COLORS.length][1]).multiplyScalar(0.75), roughness: 1, map: getMaterial('prop_burlap')?.map ?? null }));
+    return Mt(new THREE.MeshStandardMaterial({ color: new THREE.Color(CLOTH_COLORS[(look.cloth + 3) % CLOTH_COLORS.length][1]).multiplyScalar(0.75), roughness: 1, map: canvasTextures().map }));
   });
   const blanketHex = (ch) => {
     const look = defaultLook(ch);
@@ -850,8 +495,8 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
       if (sentry) {
         // The watch: on the edge of the firelight, turned three-quarters to us, rim-lit by the moon.
         const m = buildMiniature(ch, { pose: 'guard', base: false, rayHead: true, headGain: 0.85, noWeapon: true });
-        m.position.set(-1.35, 0, -3.75);
-        m.rotation.y = 0.3;
+        m.position.set(-0.55, 0, -3.7);
+        m.rotation.y = 0.55;
         partyGroup.add(m);
         // His spear grounded at his side, both hands on the shaft, the head catching the fire.
         {
@@ -877,14 +522,17 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
           spear.traverse((o) => { o.castShadow = true; });
           m.add(spear);
         }
-        shadowBlob(partyGroup, -1.35, -3.75, 0.75, 0.75);
-        sentryRim.target.position.set(-1.35, 1.1, -3.75);
-        sentryFire.target.position.set(-1.35, 1.25, -3.75);
+        shadowBlob(partyGroup, -0.55, -3.7, 0.75, 0.75);
+        sentryRim.target.position.set(-0.55, 1.1, -3.7);
+        sentryFire.target.position.set(-0.55, 1.25, -3.7);
         minis.push(m);
         return;
       }
       // Sleepers lie in a fan behind and beside the fire, feet to the warmth.
-      const SLEEP = [[-1.75, -1.35, 0.92], [1.8, -1.3, -0.95], [-0.95, -2.45, 0.37], [1.05, -2.5, -0.4], [0.05, -3.25, 0.02]];
+      // Sleepers lie across the view behind the fire (seen in profile from the low resting camera):
+      // heads on their rolled cloaks toward the right, faces to the fire, feet to the left.
+      const H = -Math.PI / 2;
+      const SLEEP = [[-1.45, -1.05, H + 0.5], [1.35, -1.45, H - 0.55], [-0.55, -2.25, H + 0.15], [1.05, -2.75, H - 0.2], [-1.9, -2.75, H + 0.35]];
       const a = seats[seat % seats.length];
       const r = 1.5;
       const x = sleeping ? SLEEP[seat % SLEEP.length][0] : Math.cos(a) * r;
@@ -933,14 +581,6 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
         pack.rotation.set(0, 0.4, 1.3);
         pack.castShadow = true;
         spot.add(pack);
-        // Boots set by the foot of the bed.
-        for (const sg of [-1, 1]) {
-          const boot = new THREE.Mesh(bootGeo, bootMat);
-          boot.position.set(-0.5 + sg * 0.06, 0.05, 1.0 + sg * 0.03);
-          boot.rotation.y = 0.2 * sg;
-          boot.castShadow = true;
-          spot.add(boot);
-        }
         shadowBlob(spot, 0, 0, 1.05, 2.3);
         shadowBlob(spot, 0, -0.1, 0.8, 1.9);
         minis.push(m);
@@ -954,58 +594,24 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
   let placed = !deferParty;
   if (placed) placeParty(restingNow);
 
-  const update = (time) => {
+  let camRef = null;
+  const update = (time, camera) => {
+    if (camera) camRef = camera;
     // Fire: lively in the evening, burned down to embers while the party sleeps.
-    const fl = 0.84 + 0.1 * Math.sin(time * 9.1) + 0.06 * Math.sin(time * 23.7 + 1.3) + 0.05 * Math.sin(time * 4.3);
+    fire.update(time, restingNow, camRef);
+    const fl = fire.flicker();
     const burn = restingNow ? 0.5 : 1;
     fireLight.intensity = (night ? 14 : 9) * burn * fl;
     fireLight.color.setHex(restingNow ? 0xff7a34 : 0xffa25a);
     emberLight.intensity = (restingNow ? 1.1 : 0.6) * (0.9 + 0.1 * Math.sin(time * 3.1));
-    moon.intensity = night ? (restingNow ? 1.9 : 1.15) : 1.6;
+    moon.intensity = night ? (restingNow ? 2.2 : 1.9) : 1.6;
     backMoon.intensity = night ? (restingNow ? 1.5 : 1.1) : 0.5;
     hemi.intensity = night ? (restingNow ? 0.9 : 0.62) : 0.9;
+    skyFill.intensity = night ? (restingNow ? 0.8 : 0.75) : 0.4;
     sentryRim.intensity = restingNow ? 60 : 0;
     sentryFire.intensity = restingNow ? 26 * fl : 0;
-    coalMat.emissiveIntensity = (restingNow ? 1.6 : 1.1) * (0.9 + 0.1 * Math.sin(time * 2.3));
-    logMat.emissiveIntensity = (restingNow ? 1.1 : 0.8) * (0.85 + 0.15 * Math.sin(time * 5.7 + 0.4));
-    coalChunkMat.emissiveIntensity = (restingNow ? 0.75 : 0.55) * (0.85 + 0.15 * Math.sin(time * 6.1));
-    // Burned down for the night: the teepee has collapsed into the embers, a low flame licks the coals.
-    for (const lg of teepee) lg.visible = !restingNow;
-    for (const lg of collapsed) lg.visible = restingNow;
-    volMat.uniforms.uTime.value = time;
-    // Resting: the fire burns down to a low flicker over the embers.
-    volMat.uniforms.uIntensity.value = (restingNow ? 0.45 : 0.85) * (0.92 + 0.08 * Math.sin(time * 7.3));
-    volMat.uniforms.uHeight.value = FH * (restingNow ? 0.42 : 1) * (0.95 + 0.05 * Math.sin(time * 5.3));
-    hazeMat.uniforms.uTime.value = time;
-    hazeMat.uniforms.uStrength.value = restingNow ? 0.02 : 0.045;
     sky.userData.update?.(time);
     for (const m of minis) m.userData.update(time);
-    for (let i = 0; i < NS; i++) {
-      // a plume: sparks leave the flame tips, rise fast, drift downwind and wink out; few climb high
-      const sp = 0.35 + hrand(i, 1) * 0.45;
-      const ph = (time * sp + hrand(i, 2)) % 1;
-      const ang = hrand(i, 3) * Math.PI * 2 + ph * (2 + hrand(i, 4) * 3);
-      const rad = 0.06 + ph * ph * (0.12 + hrand(i, 5) * 0.22);
-      const hMax = restingNow ? 0.6 + hrand(i, 6) * 0.5 : 0.9 + hrand(i, 6) ** 2.2 * 2.6;
-      const y = 0.45 + (1 - (1 - ph) * (1 - ph)) * hMax;
-      sparkPos[i * 3] = Math.cos(ang) * rad + ph * ph * 0.45 + Math.sin(time * 1.3 + i) * 0.04 * ph;
-      sparkPos[i * 3 + 1] = y;
-      sparkPos[i * 3 + 2] = Math.sin(ang) * rad - ph * 0.12;
-      const f = Math.max(0, 1 - ph * 1.15) * (0.6 + 0.4 * Math.sin(time * 23 + i * 7));
-      sparkCol[i * 3] = f; sparkCol[i * 3 + 1] = f * (0.55 + 0.3 * (1 - ph)); sparkCol[i * 3 + 2] = f * 0.25;
-    }
-    sparkGeo.attributes.color.needsUpdate = true;
-    sparkGeo.attributes.position.needsUpdate = true;
-    sparkMat.opacity = restingNow ? 0.45 : 0.9;
-    smoke.forEach((s, i) => {
-      // a soft column leaning downwind, widening and thinning as it climbs, lit warm from below
-      const ph = (time * 0.06 + i / smoke.length) % 1;
-      s.position.set(Math.sin(time * 0.25 + i * 1.7) * 0.08 * (1 + ph * 3) + ph * ph * 1.1, 1.0 + ph * 4.6, -ph * 0.5);
-      s.scale.setScalar(0.35 + ph * 2.2);
-      s.material.opacity = (restingNow ? 0.32 : 0.26) * Math.sin(Math.min(1, ph * 1.4) * Math.PI) ** 0.8 * (night ? 1 : 0.6);
-      s.material.color.setRGB(0.36 + 0.2 * (1 - ph), 0.33 + 0.1 * (1 - ph), 0.36 - 0.02 * (1 - ph));
-      s.material.rotation = hrand(i, 111) * 6 + time * 0.05;
-    });
   };
   update(0);
   return {

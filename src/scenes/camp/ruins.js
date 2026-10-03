@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { masonryGeometry, masonryMaterial, wallBlocks } from './masonry.js';
 
 /**
  * Phlan's ruins round the encampment, built as masonry rather than cut-outs:
@@ -46,48 +48,34 @@ function ivyTexture() {
 }
 
 /**
- * Lay a broken wall of blocks along +x from the origin (local frame), w long, up to h high, d thick.
- * Returns block transforms + colours, the top profile (for ivy/rubble), and the rubble it shed.
+ * A distant silhouette layer: its own colour above, sinking into the valley haze below; a faint
+ * moonlit edge along the skyline and a soft stone/forest texture so it is not a flat cut-out.
  */
-function layWall(w, h, d, seed) {
-  const blocks = [];
-  const courseH = 0.34;
-  const courses = Math.ceil(h / courseH);
-  // Broken top: a profile of surviving course counts along the wall, ragged and stepping down.
-  const prof = (x) => {
-    const u = x / w;
-    const big = 0.62 + 0.38 * Math.sin(u * 2.4 + seed) * Math.sin(u * 1.3 + seed * 0.7 + 1.2);
-    const edge = Math.min(1, u * 5, (1 - u) * 3.5);
-    return Math.max(1, Math.round(courses * Math.max(0.3, big) * (0.6 + 0.4 * edge) + (hr(Math.floor(x * 2), seed) - 0.5) * 1.6));
-  };
-  for (let c = 0; c < courses; c++) {
-    let x = (c % 2) * 0.28 - 0.1 * hr(c, seed);
-    let i = 0;
-    while (x < w) {
-      const len = 0.42 + hr(c * 31 + i, seed + 1) * 0.42;
-      const cx = x + len / 2;
-      if (cx > 0 && cx < w && c < prof(cx)) {
-        // the top course of a broken stretch loses blocks at random; the rest sit slightly askew
-        const top = c === prof(cx) - 1;
-        if (!(top && hr(c * 7 + i, seed + 5) < 0.25)) {
-          for (let leaf = 0; leaf < 2; leaf++) {
-            const dz = (leaf - 0.5) * d * 0.5;
-            const tone = 0.62 + hr(c * 13 + i * 3 + leaf, seed + 2) * 0.38;
-            const damp = Math.max(0, 1 - c / 3) * 0.25;
-            blocks.push({
-              p: [cx + (hr(i, c + seed) - 0.5) * 0.03, c * courseH + courseH / 2 + (hr(i + 9, c) - 0.5) * 0.02, dz],
-              s: [len - 0.035, courseH - 0.03, d * 0.5 - 0.03],
-              r: [(hr(i, c + 3) - 0.5) * (top ? 0.12 : 0.03), (hr(i, c + 4) - 0.5) * (top ? 0.18 : 0.04), (hr(i, c + 5) - 0.5) * (top ? 0.1 : 0.02)],
-              col: [tone * (1 - damp) * 1.02, tone * (1 - damp * 0.7), tone * (1 - damp * 0.9) * 0.94],
-            });
-          }
+function layerMaterial(topHex, hazeHex, hazeH, alpha = 1, mountain = false) {
+  return new THREE.ShaderMaterial({
+    uniforms: { uTop: { value: new THREE.Color(topHex) }, uHaze: { value: new THREE.Color(hazeHex) }, uH: { value: hazeH }, uA: { value: alpha }, uM: { value: mountain ? 1 : 0 } },
+    vertexShader: `attribute float aTop; varying vec3 vW; varying vec2 vL; varying float vTop; void main() { vL = position.xy; vTop = aTop; vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: `uniform vec3 uTop; uniform vec3 uHaze; uniform float uH; uniform float uA; uniform float uM; varying vec3 vW; varying vec2 vL; varying float vTop;
+      float h21(vec2 p) { p = fract(p * vec2(234.34, 435.345)); p += dot(p, p + 34.23); return fract(p.x * p.y); }
+      float n2(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y); }
+      void main() {
+        float hz = 1.0 - smoothstep(0.0, uH, vL.y);
+        // gullies and scree on the mountains, coursing on the buildings
+        float tex = uM > 0.5 ? n2(vec2(vL.x * 0.35 + vL.y * 0.2, vL.y * 0.9)) * 0.6 + n2(vL * 1.7) * 0.4 : n2(vL * vec2(1.2, 3.0));
+        vec3 c = uTop * (0.82 + 0.3 * tex);
+        c = mix(c, uHaze, hz * 0.85);
+        // the moon catches the ridge line; gullies run down from it
+        if (uM > 0.5) {
+          float below = vTop - vL.y;
+          c += uTop * 0.9 * exp(-below * 2.2) * (0.6 + 0.4 * n2(vec2(vL.x * 0.8, 0.0)));
+          c *= 0.85 + 0.25 * smoothstep(0.3, 0.7, n2(vec2(vL.x * 0.6 + below * 0.15, below * 0.05)));
         }
-      }
-      x += len;
-      i++;
-    }
-  }
-  return { blocks, prof, courseH };
+        gl_FragColor = vec4(c, uA);
+        #include <colorspace_fragment>
+      }`,
+    transparent: alpha < 1,
+    depthWrite: true,
+  });
 }
 
 /**
@@ -109,7 +97,7 @@ export function buildRuins(root, { G, Mt, night, stoneMat, beamMat }) {
   const tmpE = new THREE.Euler();
   WALLS.forEach(([x, z, ry, w, hgt], wi) => {
     const d = 0.62;
-    const { blocks, prof, courseH } = layWall(w, hgt, d, wi * 5 + 1);
+    const { blocks, prof, courseH } = wallBlocks(w, hgt, d, wi * 5 + 1, { soot: wi % 2 ? 0.7 : 0.25, moss: 0.4 + (wi % 3) * 0.25 });
     const frame = new THREE.Matrix4().compose(
       new THREE.Vector3(x - Math.cos(ry) * w / 2, 0, z + Math.sin(ry) * w / 2),
       new THREE.Quaternion().setFromEuler(new THREE.Euler(0, ry, 0)),
@@ -131,7 +119,9 @@ export function buildRuins(root, { G, Mt, night, stoneMat, beamMat }) {
         p: [lx + (hr(k, wi + 26) - 0.5) * 0.4, s * 0.35 + heap, side * out],
         s: [s * (1 + hr(k, wi + 27)), s * 0.8, s * (0.8 + hr(k, wi + 28) * 0.6)],
         r: [hr(k, wi + 29) * 3, hr(k, wi + 30) * 3, hr(k, wi + 31) * 3],
-        col: [0.55 + hr(k, 2) * 0.3, 0.53 + hr(k, 2) * 0.28, 0.5 + hr(k, 2) * 0.26],
+        col: [0.62 + hr(k, 2) * 0.3, 0.6 + hr(k, 2) * 0.28, 0.56 + hr(k, 2) * 0.26],
+        dmg: 1,
+        moss: 0.8,
         frame,
       });
     }
@@ -158,22 +148,12 @@ export function buildRuins(root, { G, Mt, night, stoneMat, beamMat }) {
       }
     }
   });
-  // ---- blocks (instanced, bevelled so the arrises catch the moon)
-  const blockGeo = G(new RoundedBoxGeometry(1, 1, 1, 2, 0.06));
-  const blockMat = Mt(stoneMat.clone());
-  const inst = new THREE.InstancedMesh(blockGeo, blockMat, all.length + rubble.length);
+  // ---- blocks: one merged mesh of chipped, individually toned stones over their mortar beds
+  const masonry = new THREE.Mesh(G(masonryGeometry([...all, ...rubble])), masonryMaterial(night));
+  masonry.castShadow = true;
+  masonry.receiveShadow = true;
+  group.add(masonry);
   const col = new THREE.Color();
-  [...all, ...rubble].forEach((b, i) => {
-    tmpQ.setFromEuler(tmpE.set(b.r[0], b.r[1], b.r[2]));
-    tmpM.compose(new THREE.Vector3(...b.p), tmpQ, new THREE.Vector3(...b.s));
-    tmpM.premultiply(b.frame);
-    inst.setMatrixAt(i, tmpM);
-    col.setRGB(b.col[0], b.col[1], b.col[2]);
-    inst.setColorAt(i, col);
-  });
-  inst.castShadow = true;
-  inst.receiveShadow = true;
-  group.add(inst);
   // ---- ivy (instanced leaf cards)
   if (ivy.length) {
     const it = ivyTexture();
@@ -219,47 +199,105 @@ export function buildRuins(root, { G, Mt, night, stoneMat, beamMat }) {
   }
   // ---- the ruined city beyond: two layers of broken buildings in the fog
   const cityLayer = (z, colHex, seed, scaleH, alpha) => {
-    const shape = new THREE.Shape();
-    let x = -70;
-    shape.moveTo(x, -1);
+    // the burnt city: blocky gutted houses and towers with crisp verticals, empty window holes the
+    // night shows through, broken gables and crenels, alleys of mist between them
+    const geos = [];
+    let x = -72;
     let k = 0;
-    while (x < 70) {
-      const w = 1.8 + hr(k, seed) * 3.2;
-      const hh = (2.5 + hr(k, seed + 1) * 4.5) * scaleH;
+    while (x < 72) {
+      const w = (2.2 + hr(k, seed) * 3.4) * Math.max(0.8, scaleH);
       const kind = hr(k, seed + 2);
-      shape.lineTo(x, hh * (0.6 + 0.4 * hr(k, seed + 9)));
-      if (kind < 0.3) {
-        // a broken gable: one rake survives, the other bitten off
-        shape.lineTo(x + w * 0.1, hh);
-        shape.lineTo(x + w * 0.42, hh + 1.1 * scaleH);
-        shape.lineTo(x + w * 0.56, hh + 0.55 * scaleH);
-        shape.lineTo(x + w * 0.62, hh + 0.75 * scaleH);
-        shape.lineTo(x + w * 0.78, hh * 0.7);
-      } else if (kind < 0.5) {
-        // a gutted tower with a crenellated, broken top
-        const tw = Math.min(w, 2.2);
-        const th = hh + (3 + hr(k, seed + 3) * 4) * scaleH;
-        shape.lineTo(x + 0.2, th);
-        for (let m = 0; m < 3; m++) {
-          shape.lineTo(x + 0.2 + (m + 0.4) * tw / 3.4, th);
-          shape.lineTo(x + 0.2 + (m + 0.4) * tw / 3.4, th - 0.35 * scaleH);
-          shape.lineTo(x + 0.2 + (m + 0.9) * tw / 3.4, th - 0.35 * scaleH - (m === 2 ? 1.2 : 0));
-          shape.lineTo(x + 0.2 + (m + 0.9) * tw / 3.4, th - (m === 2 ? 1.2 : 0));
+      const tower = kind > 0.82;
+      const bw = tower ? Math.min(w, 2.4) : w;
+      const hh = (tower ? 7 + hr(k, seed + 3) * 5 : 3 + hr(k, seed + 1) * 4) * scaleH;
+      const sh = new THREE.Shape();
+      sh.moveTo(x, -1);
+      sh.lineTo(x + bw, -1);
+      if (tower) {
+        // crenellated top, one corner fallen
+        const nM = 4;
+        sh.lineTo(x + bw, hh - (hr(k, seed + 4) < 0.5 ? 1.6 * scaleH : 0));
+        for (let m = nM - 1; m >= 0; m--) {
+          const x0 = x + (m / nM) * bw, x1 = x + ((m + 0.55) / nM) * bw;
+          sh.lineTo(x1 + bw * 0.45 / nM, hh - 0.5 * scaleH);
+          sh.lineTo(x1, hh - 0.5 * scaleH);
+          sh.lineTo(x1, hh);
+          sh.lineTo(x0, hh);
         }
-        shape.lineTo(x + tw, hh * 0.8);
+      } else if (kind < 0.4) {
+        // a gable end with its roof burnt away: one rake survives, bitten off near the ridge
+        sh.lineTo(x + bw, hh);
+        sh.lineTo(x + bw * 0.62, hh + bw * 0.32);
+        sh.lineTo(x + bw * 0.55, hh + bw * 0.22);
+        sh.lineTo(x + bw * 0.42, hh + bw * 0.3);
+        sh.lineTo(x, hh);
       } else {
-        // a roofless hall: the wall top ragged, stepping down
-        const n = 4 + Math.floor(hr(k, seed + 4) * 4);
-        for (let m = 0; m <= n; m++) shape.lineTo(x + (m / n) * w, hh * (0.75 + 0.25 * hr(m + k * 9, seed + 5)) - (m === n ? hh * 0.3 : 0));
+        // a roofless shell: the wall top broken in steps
+        const n = 3 + Math.floor(hr(k, seed + 4) * 3);
+        sh.lineTo(x + bw, hh * (0.7 + 0.3 * hr(k, seed + 6)));
+        for (let m = n; m >= 0; m--) {
+          const xx = x + (m / n) * bw;
+          const yy = hh * (0.62 + 0.38 * hr(m + k * 9, seed + 5));
+          sh.lineTo(xx, yy);
+          if (m > 0) sh.lineTo(xx, hh * (0.62 + 0.38 * hr(m - 1 + k * 9, seed + 5)));
+        }
       }
-      x += w;
+      sh.lineTo(x, -1);
+      // window holes, two or three storeys of them, some blown out wider
+      const rows = Math.max(1, Math.floor((hh - 1.5 * scaleH) / (2.2 * scaleH)));
+      const cols = Math.max(1, Math.floor(bw / 1.3));
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (hr(k * 31 + r * 7 + c, seed + 8) < 0.35) continue;
+          const wx = x + (c + 0.5) * (bw / cols), wy = 1.4 * scaleH + r * 2.2 * scaleH;
+          const ww = 0.42 * scaleH * (hr(k + c, seed + 9) < 0.2 ? 1.8 : 1), wh = 0.95 * scaleH;
+          if (wy + wh > hh * 0.6) continue;
+          const hole = new THREE.Path();
+          hole.moveTo(wx - ww / 2, wy);
+          hole.lineTo(wx + ww / 2, wy);
+          hole.lineTo(wx + ww / 2, wy + wh * 0.8);
+          hole.quadraticCurveTo(wx, wy + wh * 1.1, wx - ww / 2, wy + wh * 0.8);
+          hole.lineTo(wx - ww / 2, wy);
+          sh.holes.push(hole);
+        }
+      }
+      geos.push(new THREE.ShapeGeometry(sh));
+      x += bw + (hr(k, seed + 7) < 0.35 ? 0.6 + hr(k, seed + 10) * 2 : 0);
       k++;
     }
-    shape.lineTo(70, -1);
-    const m = new THREE.Mesh(G(new THREE.ShapeGeometry(shape)), Mt(new THREE.MeshBasicMaterial({ color: colHex, fog: true, transparent: alpha < 1, opacity: alpha })));
+    const m = new THREE.Mesh(G(mergeGeometries(geos)), Mt(layerMaterial(colHex, haze, 3.2 * scaleH, alpha)));
+    for (const gg of geos) gg.dispose();
     m.position.set(0, 0, z);
+    m.renderOrder = -1;
     group.add(m);
   };
+  const haze = night ? 0x24304e : 0x8a98b0;
+  // mountains beyond the city: three ridges stepping back into the haze, each paler than the last
+  const ridge = (z, hgt, seed, top, k) => {
+    // a strip: ridge line above, valley below; each vertex knows the ridge height over it (aTop)
+    const pos = [], topA = [], idx = [];
+    const NX = 200;
+    for (let i = 0; i <= NX; i++) {
+      const x = -170 + (i / NX) * 340;
+      const u = x / 40;
+      const hh = Math.max(0.5, hgt * (0.45 + 0.55 * Math.abs(Math.sin(u * 0.9 + seed)) * (0.6 + 0.4 * Math.sin(u * 2.3 + seed * 2)))
+        + hgt * 0.18 * Math.sin(u * 5.1 + seed * 3) * Math.sin(u * 1.7) + hgt * 0.06 * Math.sin(u * 13 + seed) + hgt * 0.025 * Math.sin(u * 31 + seed * 5));
+      pos.push(x, hh, 0, x, -2, 0);
+      topA.push(hh, hh);
+      if (i < NX) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('aTop', new THREE.Float32BufferAttribute(topA, 1));
+    geo.setIndex(idx);
+    const m = new THREE.Mesh(G(geo), Mt(layerMaterial(top, haze, hgt * k, 1, true)));
+    m.position.set(0, -1, z);
+    m.renderOrder = -2;
+    group.add(m);
+  };
+  ridge(-150, 62, 1.3, night ? 0x1c2546 : 0x8090a8, 0.75);
+  ridge(-105, 38, 4.1, night ? 0x151c38 : 0x6c7c94, 0.7);
+  ridge(-72, 21, 2.2, night ? 0x10162c : 0x5a687e, 0.65);
   cityLayer(-40, night ? 0x0d1428 : 0x6a7890, 61, 1.25, 1);
   cityLayer(-27, night ? 0x0a0f1e : 0x5a6474, 71, 0.85, 1);
   return group;

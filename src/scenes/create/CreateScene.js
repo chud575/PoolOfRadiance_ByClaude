@@ -11,6 +11,7 @@ import { ABILITIES, ABILITY_NAMES, ABILITY_ABBR, formatStr } from '../../rules/a
 import { SAVE_SLOTS } from '../../core/SaveManager.js';
 import { createCharacter, unequipItem, deriveStats, applyRace, meetsClassMinimums, rollExceptionalStr, validateConcept } from '../../rules/character.js';
 import { portraitURL, HEADS, BODIES, RACE_SKINS, SKIN_TONES, HAIR_COLORS, EYE_COLORS, CLOTH_COLORS, defaultLook } from '../../ui/components/portraitPainter.js';
+import { precompilePortrait } from '../../ui/components/portraitGL.js';
 import { portraitEl, miniPortrait, abilityMods } from '../../ui/components/CharacterSheet.js';
 import { ammoProblem, ammoHint } from '../../ui/components/Inventory.js';
 import { openCharacterView } from '../../ui/components/CharacterView.js';
@@ -56,6 +57,8 @@ export default class CreateScene extends Scene {
     // Start the portrait painter (its own GL context in a worker, the shader compiled there) before
     // the hall claims the GPU, so the first portrait a player asks for does not wait on it.
     if (!this.ctx.debug?.frozen) prepaintParty(this.ctx.game.party);
+    // The painter's shaders build in the driver while the hall is made.
+    precompilePortrait(render.renderer);
     this.rng = this.ctx.rng;
     await this._build3d();
     this.post = { bloomStrength: 0.5, bloomThreshold: 0.92, vignette: 0.62, exposure: 1.08 };
@@ -972,6 +975,15 @@ export default class CreateScene extends Scene {
    */
   render() {
     const t = this.ctx.clock.time;
+    // Frozen clock (screenshots): once the hall has settled it cannot change until the figure does;
+    // present it only now and then instead of redrawing seconds-long software frames every tick.
+    if (this.ctx.debug?.frozen) {
+      if ((this._fz ?? 0) >= 2 && !this._dirty3d && !this._retired?.length) {
+        this._idleN = (this._idleN ?? 0) + 1;
+        if (this._idleN % 240 !== 0) return;
+      }
+      this._fz = this._dirty3d ? 0 : (this._fz ?? 0) + 1;
+    }
     if (this._viewOpen && this._lastRender != null && Math.abs(t - this._lastRender) < 0.5) return;
     // On a slow (software) GPU the hall is drawn a few times a second, and less while portraits
     // are being painted, so the panels — and the portrait painter sharing the GPU — stay responsive.

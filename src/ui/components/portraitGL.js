@@ -451,3 +451,35 @@ function toCanvas(rgba, w, h) {
   c.getContext('2d', { willReadFrequently: true }).putImageData(img, 0, 0);
   return c;
 }
+
+let precompiled = null;
+/**
+ * Issue the portrait painter's shader compiles without waiting for them (the driver builds them
+ * while the page does other work; the first portrait then starts at once).
+ * @param {THREE.WebGLRenderer} renderer
+ */
+export function precompilePortrait(renderer) {
+  if (!renderer || precompiled === renderer) return;
+  precompiled = renderer;
+  const p = passes();
+  const prev = p.quad.material;
+  const prevRT = renderer.getRenderTarget();
+  try {
+    for (const m of [p.render, p.post, p.info]) {
+      p.quad.material = m;
+      renderer.compile(p.scene, p.cam);
+    }
+    // A one-pixel draw of each pass, not waited for: a software driver builds its pipelines at the
+    // first draw, and this lets it do so while the page carries on with other work.
+    p.quad.material = p.render;
+    renderer.setRenderTarget(rtFor('warm', 1, 1, THREE.HalfFloatType, 2));
+    renderer.render(p.scene, p.cam);
+    p.post.uniforms.tSrc.value = rtFor('warm', 1, 1, THREE.HalfFloatType, 2).textures[0];
+    p.quad.material = p.post;
+    renderer.setRenderTarget(rtFor('warmOut', 1, 1, THREE.UnsignedByteType));
+    renderer.render(p.scene, p.cam);
+    renderer.getContext().flush();
+  } catch { /* compiled on first use instead */ }
+  renderer.setRenderTarget(prevRT);
+  p.quad.material = prev;
+}

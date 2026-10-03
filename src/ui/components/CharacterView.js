@@ -169,5 +169,5 @@ export function openCharacterView(ctx, o = {}) {
   renderHead();
   renderBody();
   ctx.ui.layers.modal.append(back);
-  return { close, el: back, setTab, get index() { return index; } };
+  return { close, el: back, setTab, full: true, get index() { return index; } };
 }

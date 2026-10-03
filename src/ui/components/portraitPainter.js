@@ -1554,7 +1554,10 @@ export function portraitURL(ch, scale = 1, o = {}) {
   if (!u) {
     // Every small size (thumbnails, picker tiles, shop heads) is cut from one painting at MASTER
     // scale: one face is painted once, not once per size.
-    if (scale < MASTER) u = downscaled(masterCanvas(ch, crop), scale);
+    // A thumbnail with no master painted yet is painted at its own size (a quarter of the GPU work).
+    const mk = portraitKey(ch, MASTER, crop);
+    if (scale <= 0.3 && !masters.has(mk) && !urlCache.has(mk)) u = paintPortrait(ch, { scale, crop }).toDataURL('image/png');
+    else if (scale < MASTER) u = downscaled(masterCanvas(ch, crop), scale);
     else u = paintPortrait(ch, { scale, crop }).toDataURL('image/png');
     remember(key, u);
   }
