@@ -147,7 +147,7 @@ export class IntroCinematic {
     // over the sea it crosses the frame in profile, high in the sky; on the final
     // crane it returns to the title card's lane once the camera has settled
     this.world?.setDragonLane?.(i === 0
-      ? { x: [0.92, -0.72], y: [0.36, 0.5], d: [95, 120], period: 10, duty: 0.82, time: lt + 0.2, scale: 1.2, bank: 0.55 }
+      ? { x: [0.92, -0.72], y: [0.36, 0.5], d: [95, 120], period: 10, duty: 0.82, time: lt + 0.2, scale: 1.2, bank: 0.55, haze: 0.3, hazeC: [0.12, 0.08, 0.15] }
       : i === SHOTS.length - 1 && lt > 45.5 ? { ...DRAGON.card, time: lt - 45.5 - DRAGON.card.phase } : null);
     this.world?.setLook?.(L);
 

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { buildLightSpill } from './LightSpill.js';
 import { CELL, EDGE } from '../../data/maps/MapGrid.js';
 import { getMaterial } from '../../render/materials.js';
 import { getBaneBannerTexture, getRunnerTexture, getBlobTexture, getSoftTexture, getAltarClothTexture, getAltarClothORM } from '../../render/textures/index.js';
@@ -50,8 +51,8 @@ export function dressDungeon(map, block, opts = {}) {
    */
   function rockSkin(f) {
     const H = f.H;
-    const nS = 22;
-    const nY = Math.max(10, Math.round(H * 5));
+    const nS = 34;
+    const nY = Math.max(14, Math.round(H * 8));
     const half = S / 2;
     const ops = f.openings;
     const vn = (x, y, sd) => {
@@ -78,7 +79,12 @@ export function dressDungeon(map, block, opts = {}) {
     };
     const rockN = (w, y) => {
       const n = vn(w * 1.1, y * 1.3, 'rk1') * 0.55 + vn(w * 2.9, y * 3.1, 'rk2') * 0.3 + vn(w * 7, y * 6.5, 'rk3') * 0.15;
-      return Math.max(0, n - 0.3) / 0.7; // flat floors between bulges
+      // layered fracture: tilted bedding planes step out as ledges (the lip proud, the face behind
+      // it slanting back up to the next one) — continuous relief, never flat panels between bulges
+      const b = (y + w * 0.17) * 2.3 + vn(w * 0.45, y * 0.45, 'rkb') * 1.3;
+      const fr = b - Math.floor(b);
+      const ledge = Math.pow(fr, 1.5) * 0.32 - (fr < 0.07 ? (0.07 - fr) * 3.2 : 0);
+      return Math.max(0, n * 0.95 - 0.12 + ledge);
     };
     const inOp = (s, y) => ops.some((o) => s > o.s0 && s < o.s1 && y > o.y0 && y < o.y1);
     const pos = [];
@@ -915,7 +921,18 @@ export function dressDungeon(map, block, opts = {}) {
     // the stele behind it: a tall slab carrying a great relief of the Black Hand
     g.box('arch_basalt', { matrix: at(0, 1.9, -1.25), s: [2.3, 3.8, 0.4], chamfer: 0.05 });
     g.box('arch_basalt', { matrix: at(0, 3.86, -1.25), s: [2.6, 0.18, 0.55], chamfer: 0.04, tint: [0.9, 0.85, 0.85] });
-    blackHand(m.clone().multiply(tr(0, 2.5, -1.05)));
+    blackHand(m.clone().multiply(tr(0, 2.5, -1.05)).multiply(new THREE.Matrix4().makeScale(1.15, 1.15, 1.15)));
+    {
+      // the idol lit as the hall's hero: a narrow pale key from high in front (speculars run
+      // along the plates and claws) and a green under-rim from the fire-bowls at its feet
+      const key = new THREE.SpotLight(0xe6f0e0, 30, 9, 0.32, 0.65, 2);
+      key.position.copy(new THREE.Vector3(0.6, 4.6, 1.9).applyMatrix4(m));
+      key.target.position.copy(new THREE.Vector3(0, 2.5, -1.05).applyMatrix4(m));
+      group.add(key, key.target);
+      const under = new THREE.PointLight(BANE_LIGHT, 6, 3.2, 2);
+      under.position.copy(new THREE.Vector3(0, 1.65, -0.55).applyMatrix4(m));
+      group.add(under);
+    }
     {
       // a cold fill washing the apse wall behind the idol: the black gauntlet stands out in
       // silhouette against it instead of sinking into the green murk
@@ -1080,6 +1097,9 @@ export function dressDungeon(map, block, opts = {}) {
   }
 
   // ---------------------------------------------------------------- assemble
+  function l0Color(l) {
+    return l.lightColor ?? 0xff9040;
+  }
   if (haloQuads.length) {
     const mat = new THREE.MeshBasicMaterial({ map: getSoftTexture(), color: new THREE.Color(BANE_LIGHT).multiplyScalar(0.12), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
     for (let i = 0; i < haloQuads.length; i += 3) {
@@ -1116,18 +1136,17 @@ export function dressDungeon(map, block, opts = {}) {
   // pools of fire-light on the floor around braziers (the pooled real-time lights can't reach them all)
   const glowPools = lamps.filter((l) => l.kind === 'brazier');
   if (glowPools.length) {
-    const mat = new THREE.MeshBasicMaterial({ map: getSoftTexture(), color: BANE_LIGHT, transparent: true, opacity: 0.14, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -3 });
-    const b = new GeoBuilder();
-    for (const l of glowPools) {
-      const r = 1.8;
-      b.quad('gp', new THREE.Vector3(l.pos.x - r, 0.02, l.pos.z + r), new THREE.Vector3(l.pos.x + r, 0.02, l.pos.z + r), new THREE.Vector3(l.pos.x + r, 0.02, l.pos.z - r), new THREE.Vector3(l.pos.x - r, 0.02, l.pos.z - r), [[0, 0], [1, 0], [1, 1], [0, 1]], { ao: 1 });
-    }
-    const geo = b.build().get('gp');
-    geo.deleteAttribute('color');
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.renderOrder = 4;
+    // each fire as a small area light on the paving round it (multiplies what is drawn there, so
+    // the pool follows the flags' own tone and relief instead of a flat additive disc)
+    const up = new THREE.Vector3(0, 1, 0);
+    const quads = glowPools.map((l) => {
+      const r = 2.6;
+      const P = (x, z) => new THREE.Vector3(l.pos.x + x, 0.02, l.pos.z + z);
+      return { q: [P(-r, -r), P(r, -r), P(r, r), P(-r, r)], origin: l.pos.clone().add(new THREE.Vector3(0, 0.35, 0)), dir: new THREE.Vector3(), n: up, k: 1 };
+    });
+    const mesh = buildLightSpill(quads, { color: l0Color(glowPools[0]), gain: 1.6 });
     group.add(mesh);
-    own.push(geo, mat);
+    own.push(mesh.geometry, mesh.material);
   }
   if (blobs.length) {
     const pos = [];

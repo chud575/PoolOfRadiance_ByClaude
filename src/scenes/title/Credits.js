@@ -144,14 +144,44 @@ export class Credits {
     const g = c.getContext('2d');
     let seed = 7741;
     const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-    g.fillStyle = '#efe0bd';
-    g.fillRect(0, 0, w, hgt);
+    // per-pixel skin: value noise in several octaves (broad clouding, the
+    // grain of the hide), anisotropic fibre streaks running along the leaf,
+    // and edges browned and foxed by a noise-broken distance-to-edge
+    const img = g.createImageData(w, hgt);
+    const d = img.data;
+    const hs = (i, j) => { const v = Math.sin(i * 127.1 + j * 311.7) * 43758.5453; return v - Math.floor(v); };
+    const vn = (x, y) => {
+      const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j;
+      const u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
+      return (hs(i, j) * (1 - u) + hs(i + 1, j) * u) * (1 - v) + (hs(i, j + 1) * (1 - u) + hs(i + 1, j + 1) * u) * v;
+    };
+    for (let y = 0; y < hgt; y++) {
+      for (let x = 0; x < w; x++) {
+        const cloud = vn(x / 140, y / 140) * 0.5 + vn(x / 60 + 7, y / 60) * 0.3 + vn(x / 24, y / 24 + 3) * 0.2;
+        const grain = vn(x / 3.1, y / 3.1) * 0.6 + vn(x / 1.4 + 9, y / 1.4) * 0.4;
+        const fib = vn(x / 22 + 31, y / 1.6) * 0.65 + vn(x / 9 + 5, y / 0.9 + 17) * 0.35;
+        const ex = Math.min(x, w - 1 - x), ey = Math.min(y, hgt - 1 - y);
+        const brk = (vn(x / 30 + 50, y / 30) - 0.5) * 26 + (vn(x / 8, y / 8 + 40) - 0.5) * 8;
+        const de = Math.min(ex * 1.15, ey) + brk;
+        const brown = Math.pow(Math.max(0, 1 - de / 70), 1.6);
+        const tide = Math.exp(-Math.pow((de - 26) / 5, 2)) * 0.5;
+        let k = 0.9 + (cloud - 0.5) * 0.16 + (grain - 0.5) * 0.06 + (fib - 0.5) * 0.08;
+        let r = 239 * k, gg = 224 * k, bb = 190 * k;
+        // warm cream lifts in the clouding's light patches, grey-green in its hollows
+        if (cloud < 0.42) { gg += (0.42 - cloud) * 12; bb += (0.42 - cloud) * 10; r -= (0.42 - cloud) * 14; }
+        const fx = brown * 0.42 + tide * 0.16;
+        r = r * (1 - fx) + 150 * fx; gg = gg * (1 - fx) + 96 * fx; bb = bb * (1 - fx) + 46 * fx;
+        const o = (y * w + x) * 4;
+        d[o] = r; d[o + 1] = gg; d[o + 2] = bb; d[o + 3] = 255;
+      }
+    }
+    g.putImageData(img, 0, 0);
     // mottling: broad soft clouds, light and dark
-    for (let i = 0; i < 70; i++) {
+    for (let i = 0; i < 40; i++) {
       const x = rnd() * w, y = rnd() * hgt, r = 30 + rnd() * 120;
       const dark = rnd() < 0.55;
       const gr = g.createRadialGradient(x, y, 0, x, y, r);
-      gr.addColorStop(0, dark ? 'rgba(170,120,60,0.07)' : 'rgba(255,250,230,0.12)');
+      gr.addColorStop(0, dark ? 'rgba(170,120,60,0.06)' : 'rgba(255,250,230,0.08)');
       gr.addColorStop(1, 'rgba(0,0,0,0)');
       g.fillStyle = gr;
       g.fillRect(x - r, y - r, r * 2, r * 2);
@@ -173,15 +203,15 @@ export class Credits {
       g.fillRect(rnd() * w, rnd() * hgt, 0.8 + rnd(), 0.8 + rnd());
     }
     // foxing: rust spots with a darker tide-ring, mostly near the edges and corners
-    for (let i = 0; i < 26; i++) {
+    for (let i = 0; i < 44; i++) {
       const edge = rnd();
       let x = rnd() * w, y = rnd() * hgt;
       if (edge < 0.4) x = rnd() < 0.5 ? rnd() * w * 0.16 : w - rnd() * w * 0.16;
       else if (edge < 0.8) y = rnd() < 0.5 ? rnd() * hgt * 0.18 : hgt - rnd() * hgt * 0.18;
       const r = 1.2 + Math.pow(rnd(), 3) * 6;
       const gr = g.createRadialGradient(x, y, 0, x, y, r);
-      gr.addColorStop(0, 'rgba(150,85,30,0.2)');
-      gr.addColorStop(0.6, 'rgba(140,72,22,0.14)');
+      gr.addColorStop(0, 'rgba(150,85,30,0.3)');
+      gr.addColorStop(0.6, 'rgba(140,72,22,0.2)');
       gr.addColorStop(1, 'rgba(110,55,15,0)');
       g.fillStyle = gr;
       g.beginPath();
@@ -199,6 +229,8 @@ export class Credits {
     g.lineWidth = 0.8;
     const mx = Math.round(w * 0.075), my = Math.round(hgt * 0.07);
     g.strokeRect(mx + 0.5, my + 0.5, w - mx * 2, hgt - my * 2);
+    g.strokeStyle = 'rgba(150,105,70,0.07)';
+    for (let y = my + 22; y < hgt - my; y += 22) { g.beginPath(); g.moveTo(mx, y + 0.5); g.lineTo(w - mx, y + 0.5); g.stroke(); }
     g.fillStyle = 'rgba(120,80,45,0.28)';
     for (let y = my; y < hgt - my; y += 14) { g.fillRect(mx * 0.55, y, 1.2, 1.2); g.fillRect(w - mx * 0.55, y, 1.2, 1.2); }
     // browned margin

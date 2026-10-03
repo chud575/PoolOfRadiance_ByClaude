@@ -30,6 +30,7 @@ export function dressRooms(map) {
   const lamps = [];
   const blobs = [];
   const zones = (map.zones ?? []).filter((z) => /common room|tavern|taproom|\binn\b|alehouse/i.test(z.name ?? ''));
+  let patrons = 0;
   for (const z of zones) commonRoom(z);
 
   function commonRoom(z) {
@@ -88,8 +89,8 @@ export function dressRooms(map) {
       }
     }
     for (let k = 0; k < 3; k++) cask(M(barA + 0.6 + k * 0.85, 0.42, wallC + sh * 0.42, Math.PI / 2), 0.78);
-    // (no innkeeper figure: the house's people are drawn by the dialogue scenes, not as a mannequin here)
-    void innkeeper;
+    // the innkeeper behind his counter, between the bar and the back shelf, facing the room
+    innkeeper(M(barA + len * 0.38, 0, barC - sh * 0.66, sh > 0 ? 0 : Math.PI));
     // trestle tables in the open cells (keep the hearth's approach and the bar clear)
     const cells = [];
     for (let j = 0; j < z.h; j++) {
@@ -172,7 +173,9 @@ export function dressRooms(map) {
       g.geometry('prop_cloth', bunch, hm.clone().multiply(tr(0, -0.18, 0)), { uv: 'world', tint: herbT });
       bunch.dispose();
     }
-    for (const [k, c] of cells.entries()) {
+    // (the table drawn up by the hearth first: it is where the regulars sit)
+    const order = [...cells.entries()].sort((a, b) => (b[1].near ? 1 : 0) - (a[1].near ? 1 : 0));
+    for (const [k, c] of order) {
       if (!c.near && hash(z.name, k, 'tbl') < 0.25) continue;
       // keep the stair's foot clear
       const ca = alongX ? c.x : c.z;
@@ -276,12 +279,19 @@ export function dressRooms(map) {
       g.box('prop_wood', { matrix: m.clone().multiply(tr(x, 0.72, 0)), s: [0.1, 0.06, 0.66], uv: 'along', tint: [0.55, 0.43, 0.32] });
     }
     g.box('prop_wood', { matrix: m.clone().multiply(tr(0, 0.3, 0)), s: [1.3, 0.06, 0.07], uv: 'along', tint: [0.55, 0.43, 0.32] });
-    // benches
+    // benches (and whoever is drinking at them)
+    const seated = [];
     for (const s of [-1, 1]) {
       if (hash(k, s, 'bench') < 0.2) continue;
       const bm = m.clone().multiply(tr(0, 0, s * 0.68)).multiply(rotY((hash(k, s, 'br') - 0.5) * 0.12));
       g.box('prop_wood', { matrix: bm.clone().multiply(tr(0, 0.45, 0)), s: [1.6, 0.06, 0.3], chamfer: 0.012, uv: 'along', tint: [0.66, 0.52, 0.4] });
       for (const x of [-0.65, 0.65]) g.box('prop_wood', { matrix: bm.clone().multiply(tr(x, 0.22, 0)), s: [0.06, 0.44, 0.26], uv: 'along', tint: [0.55, 0.43, 0.32] });
+      if (patrons < 3 && hash(k, s, 'pat') < 0.85) {
+        const px = (hash(k, s, 'ppx') - 0.5) * 0.7;
+        patron(bm.clone().multiply(tr(px, 0, 0)).multiply(rotY(s > 0 ? Math.PI : 0)), k * 3 + s + 7);
+        seated.push([px, s]);
+        patrons++;
+      }
     }
     // on the table
     const top = m.clone().multiply(tr(0, 0.815, 0));
@@ -297,8 +307,123 @@ export function dressRooms(map) {
       bread.dispose();
     }
     plate.dispose();
+    // a drinker's clutter before each seated patron: tankards bunched by the hand, a bowl of
+    // pottage with a spoon, crusts, and a dark spill soaking into the boards
+    for (const [px, s] of seated) {
+      const base = top.clone().multiply(tr(px, 0, s * 0.2));
+      for (let q = 0; q < 2 + (hash(k, s, 'tq') < 0.5 ? 1 : 0); q++) tankard(base.clone().multiply(tr(0.16 + q * 0.1, 0, (q % 2) * 0.09 - 0.03)), hash(k, s, q, 'tr') * 6);
+      const bowl = new THREE.LatheGeometry([[0, 0], [0.05, 0], [0.085, 0.03], [0.095, 0.06], [0.088, 0.062], [0.075, 0.035], [0, 0.03]].map(([r, y]) => new THREE.Vector2(r, y)), 12);
+      g.geometry('prop_wood', bowl, base.clone().multiply(tr(-0.12, 0.002, 0)), { uv: 'world', tint: [0.7, 0.52, 0.36] });
+      bowl.dispose();
+      const stew = new THREE.CircleGeometry(0.078, 12);
+      stew.rotateX(-Math.PI / 2);
+      g.geometry('prop_burlap', stew, base.clone().multiply(tr(-0.12, 0.05, 0)), { uv: 'world', tint: [0.62, 0.38, 0.18] });
+      stew.dispose();
+      g.box('prop_iron', { matrix: base.clone().multiply(tr(-0.05, 0.055, 0.02)).multiply(rotY(0.6)).multiply(new THREE.Matrix4().makeRotationZ(0.35)), s: [0.15, 0.008, 0.016] });
+      const spill = new THREE.CircleGeometry(0.07 + hash(k, s, 'sp') * 0.06, 10);
+      spill.rotateX(-Math.PI / 2);
+      spill.scale(1.5, 1, 1);
+      g.geometry('arch_beam_dark', spill, base.clone().multiply(tr(0.28, 0.002, -0.06)), { uv: 'world', tint: [0.3, 0.2, 0.12] });
+      spill.dispose();
+    }
+    if (seated.length) {
+      // a roast fowl on a board, shared
+      const fm = top.clone().multiply(tr(0.45, 0.012, 0));
+      g.box('prop_wood', { matrix: fm, s: [0.34, 0.025, 0.24], chamfer: 0.006, uv: 'along', tint: [0.75, 0.58, 0.42] });
+      const bird = new THREE.SphereGeometry(0.075, 10, 8);
+      bird.scale(1.3, 0.75, 1);
+      g.geometry('prop_burlap', bird, fm.clone().multiply(tr(0, 0.055, 0)), { uv: 'world', tint: [0.9, 0.52, 0.22] });
+      bird.dispose();
+      for (const sz of [-1, 1]) {
+        const leg = new THREE.CapsuleGeometry(0.022, 0.06, 3, 6);
+        leg.rotateZ(Math.PI / 2 - 0.4);
+        g.geometry('prop_burlap', leg, fm.clone().multiply(tr(0.09, 0.05, sz * 0.045)), { uv: 'world', tint: [0.85, 0.48, 0.2] });
+        leg.dispose();
+      }
+    }
     candle(top.clone().multiply(tr(0.1, 0, 0.02)));
     blobs.push({ x: c.x, z: c.z, r: 1.2, a: 0.45 });
+  }
+
+  /**
+   * A drinker seated on a bench, hunched over the table (origin: on the floor under the bench
+   * seat, facing +z toward the table): cloak or jerkin, hood up or a felt cap, forearms on the
+   * board, one hand round a tankard. Built from smooth lathe/capsule forms in muted wool.
+   */
+  function patron(m, seed) {
+    const cloth = (geo, mm, tint) => {
+      g.geometry('prop_cloth', geo, mm, { uv: 'world', tint });
+      geo.dispose();
+    };
+    const pal = [[0.36, 0.3, 0.26], [0.28, 0.32, 0.38], [0.42, 0.26, 0.2], [0.3, 0.34, 0.24], [0.46, 0.4, 0.3]];
+    const coat = pal[Math.floor(hash(seed, 'pc') * pal.length)];
+    const hood = true; // (hooded: a bowed, cowled drinker reads at a glance; a bare mannequin face does not)
+    const lean = 0.28 + hash(seed, 'pl') * 0.15;
+    const V = (x, y, z) => new THREE.Vector3(x, y, z);
+    // thighs along the bench toward the table, shins down, boots
+    for (const sx of [-1, 1]) {
+      const th = new THREE.CapsuleGeometry(0.075, 0.36, 4, 8);
+      th.rotateX(Math.PI / 2);
+      cloth(th, m.clone().multiply(tr(sx * 0.1, 0.52, 0.16)), [0.26, 0.22, 0.2]);
+      const sh = new THREE.CapsuleGeometry(0.06, 0.34, 4, 8);
+      cloth(sh, m.clone().multiply(tr(sx * 0.11, 0.27, 0.36)).multiply(new THREE.Matrix4().makeRotationX(-0.12)), [0.24, 0.2, 0.18]);
+      const boot = new THREE.BoxGeometry(0.11, 0.09, 0.22);
+      g.geometry('prop_wood', boot, m.clone().multiply(tr(sx * 0.11, 0.045, 0.42)), { uv: 'world', tint: [0.3, 0.22, 0.16] });
+      boot.dispose();
+    }
+    // torso: hips on the bench, hunched forward over the table
+    const tm = m.clone().multiply(tr(0, 0.5, 0)).multiply(new THREE.Matrix4().makeRotationX(lean));
+    const body = new THREE.LatheGeometry([[0, 0], [0.19, 0.02], [0.21, 0.14], [0.22, 0.32], [0.2, 0.5], [0.15, 0.6], [0.07, 0.64], [0, 0.65]].map(([r, y]) => new THREE.Vector2(r, y)), 14);
+    body.scale(1, 1, 0.75);
+    cloth(body, tm, coat);
+    // a cloak falling over the shoulders and down the back
+    const cl = new THREE.CylinderGeometry(0.2, 0.27, 0.62, 12, 2, true, Math.PI * 0.55, Math.PI * 0.9);
+    cl.scale(1, 1, 0.82);
+    cloth(cl, tm.clone().multiply(tr(0, 0.3, -0.02)), coat.map((v) => v * 0.8));
+    // arms resting on the board
+    const sJ = (sx) => new THREE.Vector3(sx * 0.2, 0.56, 0).applyMatrix4(tm);
+    const inv = new THREE.Matrix4().copy(m).invert();
+    for (const sx of [-1, 1]) {
+      const a = sJ(sx).applyMatrix4(inv);
+      const e = V(sx * 0.24, 0.84, 0.3);
+      const h = V(sx * 0.1, 0.84, 0.52);
+      for (const [p0, p1, r] of [[a, e, 0.065], [e, h, 0.055]]) {
+        const d = p1.clone().sub(p0);
+        const L = d.length();
+        const geo = new THREE.CapsuleGeometry(r, Math.max(0.01, L - r), 4, 8);
+        const q = new THREE.Quaternion().setFromUnitVectors(V(0, 1, 0), d.normalize());
+        cloth(geo, m.clone().multiply(new THREE.Matrix4().compose(p0.clone().add(p1).multiplyScalar(0.5), q, V(1, 1, 1))), coat.map((v) => v * 0.92));
+      }
+      const hand = new THREE.SphereGeometry(0.045, 8, 6);
+      hand.scale(1, 0.7, 1.25);
+      g.geometry('prop_skin', hand, m.clone().multiply(tr(sx * 0.08, 0.86, 0.57)), { uv: 'world' });
+      hand.dispose();
+    }
+    // head bowed toward the drink
+    const hp = new THREE.Vector3(0, 0.76, 0.04).applyMatrix4(tm).applyMatrix4(inv);
+    const hm = m.clone().multiply(tr(hp.x, hp.y, hp.z)).multiply(new THREE.Matrix4().makeRotationX(0.25));
+    const head = new THREE.SphereGeometry(0.1, 12, 10);
+    head.scale(0.92, 1.1, 1);
+    g.geometry('prop_skin', head, hm, { uv: 'world', tint: hash(seed, 'sk') < 0.5 ? [1, 1, 1] : [0.8, 0.7, 0.62] });
+    head.dispose();
+    if (hood) {
+      // hood up: a soft cowl round the head, shadowing the face
+      const hd = new THREE.SphereGeometry(0.135, 12, 10, Math.PI * 0.62, Math.PI * 1.76, 0, Math.PI * 0.72);
+      hd.scale(0.95, 1.12, 1.05);
+      cloth(hd, hm.clone().multiply(tr(0, 0.02, -0.01)), coat.map((v) => v * 0.85));
+    } else {
+      // a felt cap and a short beard
+      const cap = new THREE.SphereGeometry(0.118, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.46);
+      cap.scale(1, 1.05, 1.06);
+      cloth(cap, hm.clone().multiply(tr(0, 0.012, -0.006)), [0.34, 0.24, 0.16]);
+      // beard: jaw and chin only (front-lower part of a shell round the face)
+      const brd = new THREE.SphereGeometry(0.095, 12, 8, Math.PI / 2 - 1.15, 2.3, Math.PI * 0.6, Math.PI * 0.32);
+      brd.scale(0.98, 1.12, 1.02);
+      g.geometry('arch_beam_dark', brd, hm.clone().multiply(tr(0, -0.012, 0.008)), { uv: 'world', tint: hash(seed, 'bc') < 0.5 ? [0.5, 0.36, 0.24] : [0.75, 0.7, 0.62] });
+      brd.dispose();
+    }
+    const base = new THREE.Vector3(0, 0, 0.2).applyMatrix4(m);
+    blobs.push({ x: base.x, z: base.z, r: 0.45, a: 0.45 });
   }
 
   /** A burly innkeeper in a leather apron, one hand on the bar, the other with a rag. */
@@ -368,9 +493,9 @@ export function dressRooms(map) {
       g.box('arch_beam_dark', { matrix: hm.clone().multiply(tr(s * 0.04, 0.025, 0.1)), s: [0.025, 0.012, 0.01], tint: [0.12, 0.08, 0.06] });
       g.box('arch_beam_dark', { matrix: hm.clone().multiply(tr(s * 0.045, 0.05, 0.1)).multiply(new THREE.Matrix4().makeRotationZ(-s * 0.15)), s: [0.05, 0.015, 0.02], tint: [0.5, 0.42, 0.36] });
     }
-    const beard = new THREE.SphereGeometry(0.1, 10, 8, 0, Math.PI * 2, Math.PI * 0.45, Math.PI * 0.55);
-    beard.scale(1, 1.2, 0.9);
-    g.geometry('arch_beam_dark', beard, hm.clone().multiply(tr(0, -0.035, 0.035)), { uv: 'world', tint: [0.62, 0.52, 0.44] });
+    const beard = new THREE.SphereGeometry(0.11, 12, 8, Math.PI / 2 - 1.2, 2.4, Math.PI * 0.6, Math.PI * 0.36);
+    beard.scale(0.98, 1.2, 1.02);
+    g.geometry('arch_beam_dark', beard, hm.clone().multiply(tr(0, -0.015, 0.01)), { uv: 'world', tint: [0.62, 0.52, 0.44] });
     beard.dispose();
     const mous = new THREE.CapsuleGeometry(0.018, 0.09, 3, 6);
     mous.rotateZ(Math.PI / 2);

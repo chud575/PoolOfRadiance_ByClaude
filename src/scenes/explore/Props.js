@@ -4,7 +4,7 @@ import { toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.j
 import { CELL, EDGE } from '../../data/maps/MapGrid.js';
 import { getMaterial, getLampGlassMaterial, SURFACE_UNIFORMS, patchPuddleMaterial } from '../../render/materials.js';
 import { getStainTexture, getBannerTexture, getGrassTexture, getIvyClusterTexture, getCobwebTexture, getPuddleTexture, getSoftTexture, getRugTexture, getRugBumpTexture, getRugFringeTexture, getTapestryTexture, getNoticeTexture, getBlobTexture } from '../../render/textures/index.js';
-import { GeoBuilder, hash, roughBlockGeometry } from './GeoBuilder.js';
+import { GeoBuilder, hash, roughBlockGeometry, roughen } from './GeoBuilder.js';
 import { puddleChance } from './exploreRules.js';
 import { isTavernZone } from './RoomDressing.js';
 import { CELL_SIZE, WALL_T } from './BlockBuilder.js';
@@ -97,15 +97,36 @@ export function buildProps(map, block, opts = {}) {
     const bc = new THREE.Vector3().applyMatrix4(m);
     blob(bc.x, bc.z, 0.6, 0.6);
   };
-  /** Loose straw: separate stalks scattered every which way in a thin drift (never a stamped star). */
+  /**
+   * Straw litter as clumps: a low matted heap of chaff and dirt with stalks lying on and around
+   * it, mostly combed one way by passing feet (never single hairs scratched on the floor).
+   */
   const addStraw = (m, seed, n, tint) => {
+    if (n < 10) {
+      // (a few stray stalks on a street: no heap)
+      for (let q = 0; q < n; q++) {
+        const a = hash(seed, q, 'a') * Math.PI * 2;
+        const r = Math.sqrt(hash(seed, q, 'r')) * 0.25;
+        const mm = m.clone().multiply(new THREE.Matrix4().makeTranslation(Math.cos(a) * r, 0.004 + (q % 3) * 0.003, Math.sin(a) * r)).multiply(new THREE.Matrix4().makeRotationY(hash(seed, 'dir') * 3 + (hash(seed, q, 'y') - 0.5) * 1.2));
+        const t = 0.6 + hash(seed, q, 't') * 0.4;
+        g.box('prop_cloth', { matrix: mm, s: [0.08 + hash(seed, q, 'l') * 0.12, 0.006, 0.008], tint: [tint[0] * t * 0.6, tint[1] * t * 0.55, tint[2] * t * 0.5], ao: 0.8 });
+      }
+      return;
+    }
+    const heap = new THREE.SphereGeometry(1, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2);
+    roughen(heap, { amp: 0.25, seed: seed * 100, freq: 3 });
+    const hw = 0.12 + hash(seed, 'hw') * 0.1;
+    g.geometry('prop_cloth', heap, m.clone().multiply(new THREE.Matrix4().makeScale(hw, 0.045 + hash(seed, 'hh') * 0.04, hw * (0.6 + hash(seed, 'hd') * 0.5))), { uv: 'world', tint: [tint[0] * 0.42, tint[1] * 0.38, tint[2] * 0.32], ao: (p, nn) => (nn.y > 0.5 ? 0.8 : 0.45) });
+    heap.dispose();
+    const base = hash(seed, 'dir') * Math.PI;
     for (let q = 0; q < n; q++) {
       const a = hash(seed, q, 'a') * Math.PI * 2;
-      const r = Math.sqrt(hash(seed, q, 'r')) * 0.32;
-      const len = 0.1 + hash(seed, q, 'l') * 0.18;
+      const r = Math.sqrt(hash(seed, q, 'r')) * hw * 1.4;
+      const len = 0.08 + hash(seed, q, 'l') * 0.14;
       const t = 0.75 + hash(seed, q, 't') * 0.5;
-      const mm = m.clone().multiply(new THREE.Matrix4().makeTranslation(Math.cos(a) * r, 0.004 + (q % 3) * 0.003, Math.sin(a) * r)).multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(0, hash(seed, q, 'y') * 6.3, (hash(seed, q, 'z') - 0.5) * 0.15)));
-      g.box('prop_burlap', { matrix: mm, s: [len, 0.005, 0.007], tint: [tint[0] * t, tint[1] * t, tint[2] * t], ao: 0.85 });
+      const lift = r < hw ? 0.02 + 0.03 * (1 - r / hw) : 0.004;
+      const mm = m.clone().multiply(new THREE.Matrix4().makeTranslation(Math.cos(a) * r, lift + (q % 3) * 0.003, Math.sin(a) * r)).multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(0, base + (hash(seed, q, 'y') - 0.5) * 0.9, (hash(seed, q, 'z') - 0.5) * 0.25)));
+      g.box('prop_cloth', { matrix: mm, s: [len, 0.007, 0.009], tint: [tint[0] * t, tint[1] * t, tint[2] * t], ao: 0.8 });
     }
   };
   /** A clump of weeds: a few cards of varied size, tallest in the middle. */

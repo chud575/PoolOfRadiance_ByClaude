@@ -7,6 +7,8 @@ export function createWorldUniforms(sunDir) {
     uTime: { value: 0 },
     uSunDir: { value: sunDir.clone().normalize() },
     uClassic: { value: 0 },
+    // Old City aerial grade: split-tone the dusk (amber lights, teal shadows)
+    uSplit: { value: 0 },
   };
 }
 
@@ -28,8 +30,16 @@ export function createSky(U, { radius = 900, cloud = 1 } = {}) {
         gl_Position = vec4(p.xy, p.w * 0.99999, p.w);
       }`,
     fragmentShader: /* glsl */ `
-      uniform float uTime, uCloud, uClassic; uniform vec3 uSunDir; varying vec3 vDir;
+      uniform float uTime, uCloud, uClassic, uSplit; uniform vec3 uSunDir; varying vec3 vDir;
       ${DUSK_SKY}
+      // split-tone grade (Old City aerial): keep the luminance, swap the hue
+      // for amber in the light and teal in the dark, so no magenta wash
+      vec3 splitTone(vec3 c, float k) {
+        float L = dot(c, vec3(0.3, 0.59, 0.11));
+        float t = smoothstep(0.03, 0.3, L);
+        vec3 g = mix(vec3(0.62, 0.95, 1.08), vec3(1.25, 0.86, 0.55), t) * L;
+        return mix(c, g, k * 0.8);
+      }
       void main() {
         vec3 d = normalize(vDir);
         if (uClassic > 0.5) {
@@ -53,6 +63,7 @@ export function createSky(U, { radius = 900, cloud = 1 } = {}) {
         c += vec3(1.0, 0.5, 0.26) * fan * 0.28;
         // below the horizon (hidden by the sea, but keep it coherent)
         if (d.y < 0.0) c = mix(c, vec3(0.05, 0.03, 0.06), smoothstep(0.0, -0.05, d.y));
+        c = splitTone(c, uSplit);
         gl_FragColor = vec4(c, 1.0);
       }`,
   });
@@ -82,8 +93,14 @@ export function createSea(U, { level = -15, nearZ = -150, width = 6000, depth = 
         gl_Position = projectionMatrix * viewMatrix * w;
       }`,
     fragmentShader: /* glsl */ `
-      uniform float uTime, uClassic; uniform vec3 uSunDir; varying vec3 vWorld;
+      uniform float uTime, uClassic, uSplit; uniform vec3 uSunDir; varying vec3 vWorld;
       ${DUSK_SKY}
+      vec3 splitTone(vec3 c, float k) {
+        float L = dot(c, vec3(0.3, 0.59, 0.11));
+        float t = smoothstep(0.03, 0.3, L);
+        vec3 g = mix(vec3(0.62, 0.95, 1.08), vec3(1.25, 0.86, 0.55), t) * L;
+        return mix(c, g, k * 0.8);
+      }
       // long readable swells rolling in from the open Moonsea, a chop on top, and a
       // fine ripple that fades out with distance (so far water never turns to speckle)
       float uLod;
@@ -164,6 +181,7 @@ export function createSea(U, { level = -15, nearZ = -150, width = 6000, depth = 
           float sw = step(0.78, vnoise(p * vec2(0.05, 0.35) + vec2(uTime * 0.05, 0.0))) * (1.0 - smoothstep(150.0, 700.0, dist));
           c = mix(vec3(0.0), vec3(0.0, 0.0, 0.42), sw * 0.0); // black water: the blue skyline reads against it
         }
+        c = splitTone(c, uSplit * (1.0 - uClassic));
         gl_FragColor = vec4(c, 1.0);
       }`,
   });

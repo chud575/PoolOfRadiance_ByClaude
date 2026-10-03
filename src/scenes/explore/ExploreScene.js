@@ -118,7 +118,8 @@ export default class ExploreScene extends Scene {
     this._assignLights(true);
     this._updateHud();
     game.markExplored(this.map.id, this.pos.x, this.pos.y, this.map.w);
-    this.ctx.ui.message(`You stand in ${this.map.zoneAt(this.pos.x, this.pos.y)}.`, 'lore');
+    this._lastZone = this.map.zoneAt(this.pos.x, this.pos.y);
+    this.ctx.ui.message(`You stand in ${this._lastZone}.`, 'lore');
     this.ctx.audio.playMusic(this.map.kind === 'city' ? 'phlan_streets' : 'dungeon');
     this.ready = true;
   }
@@ -183,7 +184,7 @@ export default class ExploreScene extends Scene {
       }
       // low-sun haze kept thin enough that the mid-ground holds its contrast
       s.fog = new THREE.FogExp2(k.fog, k.fogDensity * (this.map.harbour ? 0.38 : 0.72) * (k.scatter > 0.8 && !night ? 0.78 : 1));
-      this._dirSpec = night ? 0.32 : 1;
+      this._dirSpec = night ? 0.32 : k.scatter > 0.8 ? 0.55 : 1; // (a low sun ahead glares white off the setts)
       setSurfaceAtmosphere({
         sunDir: k.trueSunDir.y > -0.05 ? k.trueSunDir : k.moonDir,
         sunColor: k.sunCol,
@@ -204,13 +205,13 @@ export default class ExploreScene extends Scene {
       // raised ambient floor so silhouettes always read, even far from a torch; underground it is a
       // cool counter-light (cold air, wet stone) against the warm torches — the warrens greener,
       // Bane's temple a dead grey-green over a blood-red floor bounce
-      const amb = { warrens: [0x5c7c88, 0x2a2218, 5.2], bane: [0x48566a, 0x340c0a, 5.4] }[ts.variant] ?? (dungeon ? [0x5a7cb0, 0x1c150e, 3.0] : this.hour > 6.5 && this.hour < 18.5 ? [0xb4c4de, 0xb07a4c, 2.35] : [0xeedcc8, 0x5a3e28, 1.45]); // interiors by day: cool sky fill from the windows, warm hearth/board bounce up onto the joists
+      const amb = { warrens: [0x5c7c88, 0x2a2218, 5.2], bane: [0x5a7a66, 0x3a1410, 7.2] }[ts.variant] ?? (dungeon ? [0x5a7cb0, 0x1c150e, 3.0] : this.hour > 6.5 && this.hour < 18.5 ? [0xb4c4de, 0xb07a4c, 2.35] : [0xeedcc8, 0x5a3e28, 1.45]); // interiors by day: cool sky fill from the windows, warm hearth/board bounce up onto the joists
       this.hemi = new THREE.HemisphereLight(amb[0], amb[1], amb[2]);
       s.add(this.hemi);
       if (dungeon) {
         // faint cold key from above-ahead: separates walls, floor and vault in value and hue
         // (strong enough to separate cool stone from the warm torch pools: two hues, not a sepia wash)
-        this.coolKey = new THREE.DirectionalLight(ts.variant === 'bane' ? 0x7f94b0 : ts.variant === 'warrens' ? 0x80a0b0 : 0x7096d0, ts.variant === 'warrens' ? 0.85 : ts.variant === 'bane' ? 0.55 : 0.95);
+        this.coolKey = new THREE.DirectionalLight(ts.variant === 'bane' ? 0x9ab4d4 : ts.variant === 'warrens' ? 0x80a0b0 : 0x7096d0, ts.variant === 'warrens' ? 0.85 : ts.variant === 'bane' ? 1.15 : 0.95);
         this.coolKey.position.set(0.3, 1, 0.6);
         this.camera.add(this.coolKey);
         this.camera.add(this.coolKey.target);
@@ -237,7 +238,7 @@ export default class ExploreScene extends Scene {
       // a plain dungeon gets thinner, cooler air so the corridor reads several bays deep
       s.fog = new THREE.FogExp2(ts.variant === 'warrens' ? 0x050d0e : ts.variant === 'bane' ? 0x050706 : dungeon ? 0x090c13 : 0x1a120c, dungeon ? (ts.variant ? 0.055 : 0.038) : 0.025);
       s.background = new THREE.Color(dungeon ? 0x020203 : 0x0a0604);
-      setSurfaceAtmosphere({ sunDir: new THREE.Vector3(0, 1, 0), sunColor: 0x000000, scatter: 0, heightFog: dungeon ? 0.35 : 0.08, heightFalloff: 0.8, grimeTint: ts.grime, mossTint: ts.moss, wet: dungeon ? 0.3 : 0, reflWall: dungeon ? 0x0c0b0a : 0, reflHorizon: dungeon ? 0x0a0a0a : 0, reflZenith: dungeon ? 0x050505 : 0 });
+      setSurfaceAtmosphere({ sunDir: new THREE.Vector3(0, 1, 0), sunColor: 0x000000, scatter: 0, heightFog: dungeon ? 0.35 : 0.08, heightFalloff: 0.8, grimeTint: ts.grime, mossTint: ts.moss, wet: dungeon ? (ts.variant === 'bane' ? 0.42 : ts.variant === 'warrens' ? 0.5 : 0.3) : 0, slick: ts.variant === 'bane' ? 0.7 : 0, reflWall: dungeon ? 0x0c0b0a : 0, reflHorizon: dungeon ? 0x0a0a0a : 0, reflZenith: dungeon ? 0x050505 : 0 });
     }
     // pooled torch lights (constant count → no shader recompiles)
     this.poolLights = [];
@@ -251,7 +252,7 @@ export default class ExploreScene extends Scene {
     }
     // party lantern: carried a little ahead and to the right, warm, ~5 m reach
     // outdoors it only pools on the nearest walls so the moonlight stays dominant
-    const lanternI = ts.outdoors ? this.night * 3.4 : ts.variant === 'bane' ? 7.5 : ts.id === 'dungeon' ? 11 : 2;
+    const lanternI = ts.outdoors ? this.night * 3.4 : ts.variant === 'bane' ? 3.2 : ts.id === 'dungeon' ? 11 : 2;
     this.lantern = new THREE.PointLight(0xffb468, lanternI, ts.outdoors ? 8 : 13, 2);
     this.lantern.position.set(0.45, -0.25, -0.15);
     this.lantern.userData.base = lanternI;
@@ -476,7 +477,8 @@ export default class ExploreScene extends Scene {
       }
       if (src.kind === 'brazier') {
         // a bed of fire across the bowl: a tall heart and lower tongues around it
-        const bk = src.big ? 1.25 : 1;
+        // (each fire its own size too: some bowls blaze, some are banked low)
+        const bk = (src.big ? 1.25 : 1) * (0.78 + ((Math.sin((src.seed + 3) * 91.17) * 43758.5453) % 1 + 1) % 1 * 0.5);
         // each fire its own shape: a varying number of tongues, one dominant or two leaning apart,
         // low licks round the rim (seeded per brazier — no two read alike)
         const hs = (k, t) => ((Math.sin((src.seed + 1) * 12.9898 + k * 78.233 + t * 37.719) * 43758.5453) % 1 + 1) % 1;
@@ -925,7 +927,11 @@ export default class ExploreScene extends Scene {
     const { game } = this.ctx;
     const { day, hour, minute } = game.clock;
     const facing = { N: 'North', E: 'East', S: 'South', W: 'West' }[this.pos.dir];
-    this.hud?.setLocation(this.map.zoneAt(this.pos.x, this.pos.y), `${this.pos.x},${this.pos.y} · facing ${facing} · Day ${day}, ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`);
+    const zone = this.map.zoneAt(this.pos.x, this.pos.y);
+    this.hud?.setLocation(zone, `${this.pos.x},${this.pos.y} · facing ${facing} · Day ${day}, ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`);
+    // crossing into another named area: the message line says so (never left naming the last one)
+    if (this._lastZone !== undefined && zone && zone !== this._lastZone) this.ctx.ui.message(`You enter ${zone}.`, 'lore');
+    if (zone) this._lastZone = zone;
   }
 
   // ---------------------------------------------------------------- frame

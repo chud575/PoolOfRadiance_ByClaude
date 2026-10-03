@@ -48,6 +48,13 @@ export function createTerrace({ seed = 7 } = {}) {
         varying vec3 vWP;
         uniform float uClassic;
         ${NOISE}
+        // standing rainwater: a soft field (0 dry .. 1 deep) over the hollows
+        float puddleField(vec2 w) {
+          float rr = length(w);
+          float pn = fbm(w * 0.45 + vec2(5.3, 1.7)) + 0.03 * vnoise(w * 2.1);
+          float zone = smoothstep(5.6, 7.2, rr) * (1.0 - smoothstep(11.0, 14.0, rr)) * smoothstep(-5.0, -2.0, w.y) * (1.0 - smoothstep(2.5, 5.5, w.y - 6.0));
+          return smoothstep(0.62, 0.72, pn) * zone * (1.0 - uClassic);
+        }
         void paving(vec2 w, out vec3 tc, out float wet, out float gap, out float joint, out float crack) {
           float setts = step(0.66, fbm(w * 0.05 + vec2(3.1, 8.4))) * (1.0 - step(length(w), 9.5));
           vec2 cs = setts > 0.5 ? vec2(0.5, 0.42) : vec2(2.1, 1.35);
@@ -132,29 +139,47 @@ export function createTerrace({ seed = 7 } = {}) {
         if (uClassic > 0.5) { pvWet = 0.0; }
         roughnessFactor = clamp(roughnessFactor - 0.08 * (1.0 - smoothstep(4.5, 7.5, length(vWP.xz))), 0.45, 1.0);
         roughnessFactor = mix(roughnessFactor, 0.2, pvWet * (1.0 - pvJoint) * (1.0 - pvGap));
-        roughnessFactor = mix(roughnessFactor, 1.0, max(pvGap, pvJoint * 0.7));`)
+        roughnessFactor = mix(roughnessFactor, 1.0, max(pvGap, pvJoint * 0.7));
+        {
+          // wet patches: roughness falls from the dry stone's ~0.9 through a damp
+          // halo to a mirror (0.05) where the water stands
+          float pf = puddleField(vWP.xz) * (1.0 - pvGap);
+          roughnessFactor = mix(roughnessFactor, 0.05, smoothstep(0.0, 0.75, pf));
+        }`)
       .replace('#include <opaque_fragment>', `
         {
-          // standing rainwater in the hollows of the pavement: a few shallow
-          // puddles that mirror the sunset sky (warm at the horizon, violet
-          // overhead) and the Pool's cyan glow, with a Fresnel ramp so they
-          // only flash at grazing angles and a soft wet rim round each one
+          // standing rainwater in the hollows of the pavement: the stone darkens
+          // in a damp halo (water soaked into the pores), and where it stands
+          // the surface becomes a mirror of what is above it: the dusk sky
+          // gradient (warm low toward the sun, violet overhead), the two brazier
+          // flames as true reflected glints, and only a faint cool cast from the
+          // Pool's glow. No additive tint: the reflection replaces the stone.
           vec2 w = vWP.xz;
           float rr = length(w);
-          float pn = fbm(w * 0.6 + vec2(5.3, 1.7)) + 0.1 * vnoise(w * 3.1);
-          float zone = smoothstep(5.6, 7.2, rr) * (1.0 - smoothstep(11.0, 14.0, rr)) * smoothstep(-5.0, -2.0, w.y) * (1.0 - smoothstep(2.5, 5.5, w.y - 6.0));
-          float pud = smoothstep(0.69, 0.71, pn) * zone * (1.0 - pvGap) * (1.0 - uClassic);
-          float rim = smoothstep(0.65, 0.69, pn) * zone * (1.0 - pud) * (1.0 - uClassic);
-          if (pud + rim > 0.001) {
+          float pf = puddleField(w) * (1.0 - pvGap);
+          float halo = smoothstep(0.0, 0.45, pf);
+          float pud = smoothstep(0.45, 0.85, pf);
+          if (halo > 0.001) {
+            outgoingLight *= 1.0 - 0.42 * halo; // the wet albedo halo
             vec3 V = normalize(vWP - cameraPosition);
-            vec3 Rv = reflect(V, normalize(vec3(0.015 * (vnoise(w * 9.0) - 0.5), 1.0, 0.015 * (vnoise(w * 9.0 + 3.0) - 0.5))));
+            vec2 rip = vec2(vnoise(w * 7.0) - 0.5, vnoise(w * 7.0 + 3.0) - 0.5) * 0.02;
+            vec3 Rv = reflect(V, normalize(vec3(rip.x, 1.0, rip.y)));
             float el = clamp(Rv.y, 0.0, 1.0);
             float toSun = pow(max(dot(normalize(Rv.xz), normalize(vec2(-0.45, -1.0))), 0.0), 3.0);
-            vec3 sky = mix(vec3(1.05, 0.5, 0.26) * (0.45 + 0.7 * toSun), vec3(0.09, 0.07, 0.17), smoothstep(0.01, 0.2, el));
-            sky += vec3(0.12, 0.55, 0.75) * 0.9 * exp(-max(rr - 3.0, 0.0) * 0.35);
-            float fres = 0.1 + 0.9 * pow(1.0 - clamp(-V.y, 0.0, 1.0), 4.0);
-            outgoingLight = mix(outgoingLight, outgoingLight * 0.18 + sky * fres, pud * 0.95);
-            outgoingLight *= 1.0 - rim * 0.3;
+            vec3 sky = mix(vec3(0.95, 0.46, 0.25) * (0.35 + 0.75 * toSun), vec3(0.16, 0.11, 0.24), smoothstep(0.0, 0.16, el));
+            sky = mix(sky, vec3(0.06, 0.05, 0.11), smoothstep(0.16, 0.6, el));
+            // the skyline occludes the lowest sky: a dark band of rooftops
+            sky = mix(vec3(0.05, 0.035, 0.04), sky, smoothstep(0.015, 0.05, el));
+            // brazier flames mirrored: tight warm glints plus a soft bloom
+            for (int i = 0; i < 2; i++) {
+              vec3 B = vec3(i == 0 ? -6.2 : 6.2, 1.55, -1.2);
+              vec3 Ld = normalize(B - vWP);
+              float c = max(dot(Rv, Ld), 0.0);
+              sky += vec3(1.6, 0.7, 0.22) * (pow(c, 900.0) * 3.0 + pow(c, 60.0) * 0.25);
+            }
+            sky += vec3(0.1, 0.4, 0.5) * 0.25 * exp(-max(rr - 3.0, 0.0) * 0.45);
+            float fres = 0.04 + 0.96 * pow(1.0 - clamp(-V.y, 0.0, 1.0), 5.0);
+            outgoingLight = mix(outgoingLight, outgoingLight * 0.1 + sky * mix(0.3, 1.0, fres), pud);
           }
         }
         #include <opaque_fragment>`)
@@ -294,10 +319,19 @@ export function createTerrace({ seed = 7 } = {}) {
   {
     const blocks = [];
     const wet = [];
-    const NB = 14;
+    const NB = 15;
     const JOINT = 0.012; // half-width of each mortar joint (radians)
+    // blocks of unequal length (quarried, not machined), laid so the front
+    // of the ring (toward the lens, under the prompt) is the middle of a block
+    // and never a joint
+    const lens = Array.from({ length: NB }, () => 0.72 + 0.56 * R.next());
+    const tot = lens.reduce((a, b) => a + b, 0);
+    const cuts = [];
+    let acc = -lens[0] / 2;
+    for (let b = 0; b <= NB; b++) { cuts.push((acc / tot) * Math.PI * 2); acc += lens[b] ?? 0; }
     for (let b = 0; b < NB; b++) {
-      const a0 = (b / NB) * Math.PI * 2 + JOINT, a1 = ((b + 1) / NB) * Math.PI * 2 - JOINT;
+      const a0 = cuts[b] + JOINT, a1 = cuts[b + 1] - JOINT;
+      const swell = (R.next() - 0.5) * 0.05; // each block's outer face proud or shy of its neighbours
       // each block settled a little differently: height, a slight tilt, its own tone
       const dy = (R.next() - 0.5) * 0.045;
       const tilt = (R.next() - 0.5) * 0.03;
@@ -308,7 +342,8 @@ export function createTerrace({ seed = 7 } = {}) {
         for (let i = 0; i < pp.count; i++) {
           const x = pp.getX(i), y = pp.getY(i), z = pp.getZ(i);
           let ang = Math.atan2(x, z);
-          if (ang < a0 - 0.5) ang += Math.PI * 2;
+          while (ang < a0 - 0.3) ang += Math.PI * 2;
+          while (ang > a1 + 0.3) ang -= Math.PI * 2;
           const f = (ang - a0) / (a1 - a0); // 0..1 along the block
           let ny = y;
           if (y > 0.1) ny += dy + tilt * (f - 0.5);
@@ -323,6 +358,7 @@ export function createTerrace({ seed = 7 } = {}) {
           const de = Math.min(f, 1 - f) * (a1 - a0) * r;
           if (y > 0.55 && de < 0.05) ny -= (0.05 - de) * 0.5;
           pp.setY(i, ny);
+          if (r > 4.3 && y > 0.12) { const k2 = (r + swell) / r; pp.setX(i, x * k2); pp.setZ(i, z * k2); }
         }
         g.computeVertexNormals();
         const uv = g.attributes.uv;
@@ -343,7 +379,8 @@ export function createTerrace({ seed = 7 } = {}) {
         let k = 1;
         // AO in the joints: block ends darken into the mortar
         let ang = Math.atan2(x, z);
-        if (ang < a0 - 0.5) ang += Math.PI * 2;
+        while (ang < a0 - 0.3) ang += Math.PI * 2;
+        while (ang > a1 + 0.3) ang -= Math.PI * 2;
         const fb = (ang - a0) / (a1 - a0);
         const dj = Math.min(fb, 1 - fb) * (a1 - a0) * r;
         k *= 0.5 + 0.5 * THREE.MathUtils.smoothstep(dj, 0.0, 0.16);
@@ -356,7 +393,13 @@ export function createTerrace({ seed = 7 } = {}) {
         const st = 0.86 + 0.14 * Math.sin(Math.atan2(x, z) * 71 + b * 3.1) * Math.sin(Math.atan2(x, z) * 23.0 + b);
         k *= st;
         const lich = b % 4 === 1 && r > 4.4 ? 1 : 0;
-        cc.setXYZ(i, cc.getX(i) * k * (lich ? 0.9 : 1), cc.getY(i) * k * (lich ? 1.02 : 1), cc.getZ(i) * k * (lich ? 0.78 : 1));
+        // moss creeping out of the joints on the outer face and the tread
+        const moss = (1 - THREE.MathUtils.smoothstep(dj, 0.0, 0.22)) * (r > 4.3 ? 1 : 0.35) * (0.55 + 0.45 * Math.sin(ang * 37 + b * 5.0));
+        let cr = cc.getX(i) * k * (lich ? 0.9 : 1), cg = cc.getY(i) * k * (lich ? 1.02 : 1), cb = cc.getZ(i) * k * (lich ? 0.78 : 1);
+        if (moss > 0) { cr = THREE.MathUtils.lerp(cr, 0.16, moss * 0.7); cg = THREE.MathUtils.lerp(cg, 0.22, moss * 0.7); cb = THREE.MathUtils.lerp(cb, 0.08, moss * 0.7); }
+        // dark, soaked band where the coping meets the water
+        if (r < 3.2) { const wb = 1 - THREE.MathUtils.smoothstep(r, 2.97, 3.2); cr *= 1 - 0.45 * wb; cg *= 1 - 0.4 * wb; cb *= 1 - 0.38 * wb; }
+        cc.setXYZ(i, cr, cg, cb);
       }
       blocks.push(ni(g));
       // wet inner face of the same block

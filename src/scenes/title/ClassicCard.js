@@ -34,7 +34,7 @@ const hash = (i, j = 0) => {
  * finger bones over a brown, sun-shot membrane with a scalloped trailing
  * edge) in two frames of wing beat (up / down).
  */
-const DRAGON_INK = { d: EGA.dgrey, l: EGA.lgrey, r: EGA.red, R: EGA.lred, y: EGA.yellow, b: EGA.brown };
+const DRAGON_INK = { d: EGA.red, r: EGA.red, R: EGA.lred, y: EGA.yellow, b: EGA.brown, m: EGA.brown, B: EGA.yellow, w: EGA.white };
 function dragonFrame(up) {
   const W2 = 64, H2 = 34;
   const g = Array.from({ length: H2 }, () => Array(W2).fill('.'));
@@ -69,17 +69,14 @@ function dragonFrame(up) {
     }
   };
   const hide = (_x, _y, k) => (k < -0.45 ? 'R' : k > 0.5 ? 'b' : 'r');
-  // tail: a long whip curling up behind, ending in a spade
-  sweep([40, 18], [52, 25], [60, 15], 4, 1, hide);
-  poly([[58, 15], [61, 11], [63, 15], [61, 17]], 'r');
-  put(61, 12, 'R');
-  // hind leg: a heavy thigh, shin raking back, light grey talons
-  sweep([37, 19], [40, 23], [42, 26], 4, 2, 'r');
-  line(41, 27, 45, 27, 'l');
-  put(45, 28, 'l'); put(43, 28, 'l');
-  // foreleg tucked under the chest
-  sweep([24, 20], [22, 24], [24, 26], 3, 2, 'r');
-  put(25, 27, 'l'); put(23, 27, 'l'); put(24, 27, 'l');
+  // tail: a long whip trailing straight back (gliding), ending in a spade
+  sweep([40, 18], [50, 21], [61, 19], 4, 1, hide);
+  poly([[59, 17], [63, 19], [59, 21], [60, 19]], 'R');
+  // hind leg stretched back along the tail, the foreleg folded to the chest
+  sweep([36, 20], [41, 22], [46, 22], 4, 2, 'r');
+  put(47, 22, 'R'); put(47, 23, 'R');
+  sweep([24, 20], [21, 22], [23, 23], 3, 2, 'r');
+  put(24, 23, 'R');
   // body: deep keeled chest tapering to the haunch; lit back, brown belly plates
   for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) {
     const fx = (x + 0.5 - 31) / 11.5;
@@ -87,27 +84,33 @@ function dragonFrame(up) {
     const ey = (y + 0.5 - 18.2) / ry;
     if (fx * fx + ey * ey <= 1) put(x, y, ey < -0.55 ? 'R' : ey > 0.42 ? 'b' : 'r');
   }
-  for (let x = 23; x <= 36; x += 3) put(x, 20 + (x > 31 ? 0 : 1), 'r'); // belly plate seams
   // neck: a strong curve rising from the deep chest to the head
-  sweep([25, 16], [18, 17], [13, 12.5], 5, 3, hide);
-  // head: a long wedge, brow ridge, open jaw with teeth, yellow eye, swept horns
-  poly([[1, 12.5], [5, 10.5], [10, 9.2], [14, 10.5], [14.5, 13], [9, 13.4], [3, 13.6]], (x, y) => (y < 11 ? 'R' : 'r'));
-  poly([[3, 15.4], [8, 14.4], [13, 14], [13.5, 15.5], [8, 16.4], [4, 16.6]], 'r');
-  put(2, 13, 'l'); put(4, 13, 'l'); put(6, 13, 'l'); put(4, 15, 'l'); put(6, 15, 'l');
-  put(1, 12, 'r'); // nostril flare
-  put(10, 10, 'y'); put(11, 10, 'y');
-  line(11, 9, 17, 6, 'l'); line(13, 10, 18, 8, 'l');
+  sweep([25, 16], [18, 16.5], [13, 12.5], 5, 3, hide);
+  // head: a long tapering snout under a lit brow, the skull swelling behind
+  // the eye, an open lower jaw (a clean black gape between) and two swept horns
+  poly([[0, 13], [4, 11.5], [8, 10.5], [10.5, 9.9], [13, 9.9], [15.5, 11.5], [15, 13.6], [9, 13.4], [3, 13.8]], (x, y) => (y < 11 ? 'R' : 'r'));
+  poly([[2, 15.2], [7, 14.6], [12, 14.4], [14, 15.4], [9, 16.4], [5, 16.2]], 'r');
+  line(14, 14, 15, 14, 'r');
+  put(0, 12, 'R'); // nostril
+  put(10, 11, 'y'); put(11, 11, 'y');
+  // horns: two dark-red blades swept back off the skull (no grey)
+  line(13, 9.5, 17, 7.5, 'R'); line(14, 10, 18, 8.5, 'r');
   // dorsal spines from the poll down the neck, back and tail
-  for (const [x, y] of [[14, 9], [16, 12], [19, 13], [23, 13], [26, 13], [29, 13], [32, 13], [35, 14], [38, 14], [42, 16], [46, 18]]) put(x, y, 'd');
+  for (const [x, y] of [[16, 12], [19, 12], [23, 13], [26, 13], [29, 13], [32, 13], [35, 14], [38, 14], [42, 16], [46, 17], [50, 18]]) {
+    // a spine only where it stands on the hide (never a loose pixel in the sky)
+    const yy = [y - 1, y, y + 1].find((q) => 'rRb'.includes(get(x, q + 1)) && get(x, q) === '.');
+    if (yy !== undefined) put(x, yy, 'd');
+  }
   // the near wing: shoulder, elbow, wrist and four finger bones; a brown
   // membrane between them with a scalloped trailing edge, drawn over the back
   const S = [27, 15];
   const E = up ? [22, 7] : [21, 23];
   const Wr = up ? [29, 1] : [26, 31];
-  const tips = up ? [[41, 0], [50, 3], [54, 9], [47, 13]] : [[35, 33], [44, 31], [50, 26], [46, 21]];
+  const tips = up ? [[41, 0], [50, 3], [55, 9], [47, 13]] : [[35, 33], [44, 31], [50, 26], [46, 21]];
   const root = up ? [38, 15] : [38, 20];
   const mem = [S, E, Wr, ...tips, root];
-  poly(mem, 'b');
+  const under = g.map((r) => r.slice());
+  poly(mem, 'm');
   // scallops: bite a soft arc out between each pair of fingertips
   const edge = [...tips, root];
   for (let i = 0; i < edge.length - 1; i++) {
@@ -119,13 +122,25 @@ function dragonFrame(up) {
     const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
     const cx = mx + nx * L * 0.62, cy = my + ny * L * 0.62;
     const r = L * 0.74;
-    for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) if (get(x, y) === 'b' && Math.hypot(x + 0.5 - cx, y + 0.5 - cy) < r) g[y][x] = '.';
+    for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) if (get(x, y) === 'm' && Math.hypot(x + 0.5 - cx, y + 0.5 - cy) < r) g[y][x] = under[y][x];
   }
-  // sun through the membrane: light red lit near the bones' roots
+  // the membrane never melts into the hide: where it meets visible body, a
+  // one-pixel black cut separates them
+  const cut = [];
+  for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) {
+    if (g[y][x] !== 'm') continue;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const c = get(x + dx, y + dy);
+      if (c === 'r' || c === 'R' || c === 'b' || c === 'd') { cut.push([x, y]); break; }
+    }
+  }
+  for (const [x, y] of cut) g[y][x] = '.';
+  // bright bones over the membrane: a thick lit leading edge, yellow knuckles
   line(S[0], S[1], E[0], E[1], 'R', 2);
-  line(E[0], E[1], Wr[0], Wr[1], 'R');
+  line(E[0], E[1], Wr[0], Wr[1], 'R', 2);
   for (const t of tips) line(Wr[0], Wr[1], t[0], t[1], 'R');
-  put(Wr[0] - 1, Wr[1] + (up ? 0 : -1), 'l'); // the wrist claw
+  put(E[0], E[1], 'B');
+  put(Wr[0], Wr[1], 'B');
   return g.map((r) => r.join(''));
 }
 const DRAGON_FRAMES = [dragonFrame(true), dragonFrame(false)];
@@ -169,7 +184,7 @@ export class ClassicCard {
   }
 
   /** 5x7 text; `bold` doubles each column (the 1988 title's chunky face). */
-  _text(str, cx, y, color, { sx = 1, sy = 1, bold = false, shadow = null } = {}) {
+  _text(str, cx, y, color, { sx = 1, sy = 1, bold = false, shadow = null, shadowOff = null } = {}) {
     // bold thickens each stroke by one EGA pixel (the 1988 title's weight),
     // never by a whole scaled column
     const adv = (GLYPH_W + 1) * sx + (bold ? 1 : 0);
@@ -189,7 +204,9 @@ export class ClassicCard {
         px += adv;
       }
     };
-    if (shadow) draw(sx, sy, shadow);
+    // the shadow sits one EGA pixel down-right (a dark-red bevel, never a
+    // misregistered second print)
+    if (shadow) draw(shadowOff ?? sx, shadowOff ?? sy, shadow);
     draw(0, 0, color);
   }
 
@@ -325,7 +342,7 @@ export class ClassicCard {
     }
     if (logo) {
       this._text('ADVANCED DUNGEONS & DRAGONS', 160, 12, EGA.lred);
-      this._text('POOL OF RADIANCE', 160, 26, EGA.yellow, { sx: 2, sy: 2, bold: true, shadow: EGA.red });
+      this._text('POOL OF RADIANCE', 160, 26, EGA.yellow, { sx: 2, sy: 2, bold: true, shadow: EGA.red, shadowOff: 1 });
       this._text('FORGOTTEN REALMS', 160, 47, EGA.lcyan);
       this._dragon(t);
     }

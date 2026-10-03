@@ -284,6 +284,22 @@ export function createChamber({ seed = 1337 } = {}) {
     floor.push(tint(ni(new THREE.CylinderGeometry(0.035, 0.04, hgt, 8).translate(x, y + hgt / 2, z)), 0xa89878, { aoBottom: y, aoTop: y + hgt, aoStrength: 0.3 }));
     flames.push({ pos: new THREE.Vector3(x, y + hgt, z).add(CHAMBER_ORIGIN), scale: 0.11 });
   };
+  // a log fire in the great hearth at the end of the hall: the focal axis of
+  // the room ends on it, and it backlights the First Councillor's chair
+  {
+    const hz = -D / 2 + 1.32;
+    for (const [lx2, ly, lr, rz2] of [[-0.6, 0.12, 0.11, 0.35], [0.6, 0.12, 0.1, -0.3], [0, 0.27, 0.09, 0.08], [-0.2, 0.1, 0.1, -0.15]]) {
+      const lg = new THREE.CylinderGeometry(lr, lr * 1.1, 1.5, 8).rotateZ(Math.PI / 2).rotateY(rz2).translate(lx2, ly + 0.62, hz);
+      stone.push(tint(ni(lg), 0x1a120c));
+    }
+    // fire-dogs either side of the logs
+    // a raised hearth-stone carrying the fire (so it shows over the board from the foot of the hall)
+    fine.push(tint(worldUV(box(3.2, 0.62, 1.1, { y: 0, z: hz - 0.05 }), 1), 0x6a5e50, { aoBottom: 0, aoTop: 0.62, aoStrength: 0.5 }));
+    for (const sx of [-1, 1]) gold.push(tint(ni(new THREE.BoxGeometry(0.06, 0.45, 0.06).translate(sx * 1.25, 0.84, hz + 0.25)), 0x1a1614));
+    for (const [fx, fy, fs] of [[-0.95, 0.2, 0.55], [-0.62, 0.26, 0.75], [-0.3, 0.3, 0.65], [0.05, 0.32, 0.8], [0.38, 0.28, 0.7], [0.7, 0.25, 0.75], [0.98, 0.2, 0.5]]) {
+      flames.push({ pos: new THREE.Vector3(fx, fy + 0.62, hz + 0.05).add(CHAMBER_ORIGIN), scale: fs * 1.15, hearth: true });
+    }
+  }
   // turned brass candelabra: a domed foot, knopped baluster stem, and five
   // S-curved arms ending in drip-pans and sockets round a taller centre light
   const candProf = [[0, 0], [0.16, 0], [0.17, 0.02], [0.13, 0.05], [0.07, 0.09], [0.04, 0.12], [0.06, 0.15], [0.035, 0.19], [0.03, 0.3], [0.055, 0.34], [0.03, 0.38], [0.028, 0.5], [0.05, 0.53], [0.06, 0.56], [0.0, 0.57]].map(([r, y]) => new THREE.Vector2(r, y));
@@ -347,12 +363,13 @@ export function createChamber({ seed = 1337 } = {}) {
     { gender: 'male', classSpec: 'magicUser', look: { seed: 14, head: 1, body: 4, cloth: 7, hair: 2 } },
     { gender: 'male', classSpec: 'magicUser', look: { seed: 21, head: 3, body: 4, cloth: 6, hair: 8 } },
     { gender: 'female', classSpec: 'magicUser', look: { seed: 22, head: 4, body: 4, cloth: 5, hair: 3 } },
-    { gender: 'male', classSpec: 'cleric', look: { seed: 23, head: 7, body: 7, cloth: 4, hair: 7 } },
+    { gender: 'male', classSpec: 'magicUser', look: { seed: 23, head: 7, body: 4, cloth: 5, hair: 7 } },
     { gender: 'male', classSpec: 'magicUser', look: { seed: 24, head: 6, body: 4, cloth: 2, hair: 1 } },
   ];
   // high-backed council chairs (carved oak, red leather back, gilt finials);
   // seated councillors turned toward the adventurers at the foot of the table
   const SEAT = 0.2; // the dais under the chairs lifts the seated figures
+  let chairNo = 0;
   const chair = (x, z, ry, tall = 1.55, w = 0.6) => {
     const csh = contactShadow(w * 0.95, 0.6, 0.9);
     csh.position.set(x, 0.035, z);
@@ -371,17 +388,74 @@ export function createChamber({ seed = 1337 } = {}) {
       const fin = new THREE.ConeGeometry(0.045, 0.14, 8).translate(sx * (w / 2 - 0.04), SEAT + 0.49 + tall, -0.27);
       wood.push(tint(worldUV(fin.applyMatrix4(m), 1), 0x5a3a22));
     }
-    put(box(w - 0.08, tall - 0.12, 0.05, { y: SEAT + 0.48, z: -0.27 }), cloth, 0x3a0d0b);
-    // buttoned leather: a carved oak frame round the back panel, brass studs in a grid
-    put(box(w - 0.06, 0.05, 0.07, { y: SEAT + 0.48, z: -0.255 }), wood, 0x4a3020);
+    // each chair its own: leather in oxblood, bottle green or dark tan, and a
+    // carved crest (arched, gabled or a triple-finial cresting)
+    const v = chairNo++;
+    const leather = [0x3a0d0b, 0x10241a, 0x2e1a0e, 0x3a0d0b, 0x1a1428][v % 5];
+    // buttoned (tufted) leather back: a pillowed panel whose diamonds swell
+    // between deep-set buttons, so the candlelight models every cushion
+    {
+      const bw = w - 0.12, bh = tall - 0.16;
+      const pg = new THREE.PlaneGeometry(bw, bh, 18, Math.round(18 * bh / bw));
+      const pp = pg.attributes.position;
+      const nx = 3, ny = Math.max(4, Math.round(bh / (bw / 3) * 1.15));
+      for (let i = 0; i < pp.count; i++) {
+        const u = pp.getX(i) / bw + 0.5, vv = pp.getY(i) / bh + 0.5;
+        const a = Math.abs(((u * nx + vv * ny) % 1 + 1) % 1 - 0.5), b2 = Math.abs(((u * nx - vv * ny) % 1 + 1) % 1 - 0.5);
+        const pill = Math.min(a, b2) * 2; // 0 at the creases, 1 mid-cushion
+        const edge = Math.min(u, 1 - u, vv, 1 - vv);
+        pp.setZ(i, 0.022 * Math.sqrt(pill) * Math.min(1, edge * 14));
+      }
+      pg.computeVertexNormals();
+      pg.translate(0, SEAT + 0.56 + bh / 2, -0.238);
+      put(pg, cloth, leather);
+      for (let iy = 0; iy <= ny; iy++) for (let ix = 0; ix <= nx; ix++) {
+        if ((ix + iy) % 2) continue;
+        const bx2 = -bw / 2 + (ix / nx) * bw, by2 = SEAT + 0.56 + (iy / ny) * bh;
+        if (ix === 0 || ix === nx || iy === 0 || iy === ny) continue;
+        const st = new THREE.SphereGeometry(0.012, 6, 4).translate(bx2, by2, -0.236);
+        gold.push(tint(ni(st.applyMatrix4(m)), 0x8a6a34));
+      }
+      put(box(w - 0.08, tall - 0.12, 0.03, { y: SEAT + 0.48, z: -0.275 }), wood, 0x2e1e12);
+    }
+    // carved oak frame round the back panel, brass nail heads along it
+    put(box(w - 0.06, 0.06, 0.07, { y: SEAT + 0.48, z: -0.255 }), wood, 0x4a3020);
     for (const sx of [-1, 1]) put(box(0.05, tall - 0.12, 0.07, { x: sx * (w / 2 - 0.07), y: SEAT + 0.48, z: -0.255 }), wood, 0x4a3020);
-    for (let iy = 0; iy < 4; iy++) for (let ix = 0; ix < 3; ix++) {
-      const st = new THREE.SphereGeometry(0.014, 6, 4).translate((ix - 1) * (w - 0.2) / 2.4, SEAT + 0.66 + iy * (tall - 0.4) / 3.2, -0.24);
+    for (let k = 0; k < 9; k++) for (const sx of [-1, 1]) {
+      const st = new THREE.SphereGeometry(0.01, 5, 3).translate(sx * (w / 2 - 0.115), SEAT + 0.6 + k * (tall - 0.3) / 8, -0.225);
       gold.push(tint(ni(st.applyMatrix4(m)), 0xc8a050));
     }
-    put(box(w + 0.04, 0.16, 0.1, { y: SEAT + 0.42 + tall - 0.1, z: -0.27 }), wood, 0x4a3020); // carved crest rail
-    const crest = new THREE.CircleGeometry(0.1, 16).translate(0, SEAT + 0.42 + tall + 0.08, -0.215);
-    wood.push(tint(worldUV(crest.applyMatrix4(m), 1), 0x6a4a28));
+    // the crest rail: a carved, moulded cresting cut to one of three profiles
+    {
+      const cw = w + 0.04, ch = 0.2 + (v % 3) * 0.06;
+      const sh = new THREE.Shape();
+      sh.moveTo(-cw / 2, 0);
+      sh.lineTo(cw / 2, 0);
+      if (v % 3 === 0) { // arched with scrolled shoulders
+        sh.lineTo(cw / 2, ch * 0.45);
+        sh.quadraticCurveTo(cw * 0.36, ch * 0.5, cw * 0.3, ch * 0.62);
+        sh.quadraticCurveTo(0, ch * 1.35, -cw * 0.3, ch * 0.62);
+        sh.quadraticCurveTo(-cw * 0.36, ch * 0.5, -cw / 2, ch * 0.45);
+      } else if (v % 3 === 1) { // gabled, with a stepped apex
+        sh.lineTo(cw / 2, ch * 0.4);
+        sh.lineTo(cw * 0.08, ch * 1.05); sh.lineTo(cw * 0.04, ch * 1.2); sh.lineTo(-cw * 0.04, ch * 1.2); sh.lineTo(-cw * 0.08, ch * 1.05);
+        sh.lineTo(-cw / 2, ch * 0.4);
+      } else { // a scalloped triple cresting
+        sh.lineTo(cw / 2, ch * 0.5);
+        for (let k = 2; k >= -2; k--) {
+          const x0 = (k / 5) * cw, x1 = ((k - 1) / 5) * cw;
+          sh.quadraticCurveTo((x0 + x1) / 2, ch * (k % 2 === 0 ? 1.25 : 0.95), x1 + (k === -2 ? 0 : 0), ch * 0.55);
+        }
+        sh.lineTo(-cw / 2, ch * 0.5);
+      }
+      sh.closePath();
+      const cg = new THREE.ExtrudeGeometry(sh, { depth: 0.07, bevelEnabled: true, bevelThickness: 0.012, bevelSize: 0.012, bevelSegments: 2, curveSegments: 8 });
+      cg.translate(0, SEAT + 0.42 + tall - 0.16, -0.305);
+      put(cg, wood, 0x4e3420);
+      // a carved boss (a rosette) on its face
+      const ros = new THREE.CylinderGeometry(0.05, 0.06, 0.03, 10).rotateX(Math.PI / 2).translate(0, SEAT + 0.42 + tall - 0.16 + ch * 0.55, -0.22);
+      wood.push(tint(worldUV(ros.applyMatrix4(m), 1), 0x6a4a28));
+    }
   };
   const seated = (ch, x, z, ry, q = 0.016, o = {}) => {
     chair(x, z, ry);
@@ -404,12 +478,12 @@ export function createChamber({ seed = 1337 } = {}) {
       chair(1.86, tz + dz + 0.1, -Math.PI / 2 + turn + 0.25);
       return;
     }
-    seated(council[i], -1.78, tz + dz, Math.PI / 2 - turn + (i % 2 ? 0.12 : -0.05), 0.016, { mod: L, lean: i % 2 ? 0.04 : -0.025, dim: 0.78 });
-    seated(council[i + 4], 1.78, tz + dz, -Math.PI / 2 + turn - (i % 2 ? 0.08 : -0.1), 0.016, { mod: Rm, lean: i % 2 ? -0.035 : 0.03, dim: 0.78 });
+    seated(council[i], -1.78, tz + dz, Math.PI / 2 - turn + (i % 2 ? 0.12 : -0.05), 0.016, { mod: L, lean: i % 2 ? 0.04 : -0.025, dim: 0.3, rim: 0x6a3212, folds: 1.3 });
+    seated(council[i + 4], 1.78, tz + dz, -Math.PI / 2 + turn - (i % 2 ? 0.08 : -0.1), 0.016, { mod: Rm, lean: i % 2 ? -0.035 : 0.03, dim: 0.3, rim: 0x6a3212, folds: 1.3 });
   });
   // the First Councillor in the great chair at the head of the table
   chair(0, tz - tl / 2 - 0.85, 0, 2.1, 0.78);
-  person({ gender: 'male', classSpec: 'cleric', look: { seed: 31, head: 2, body: 7, cloth: 0, hair: 7 } }, 0, tz - tl / 2 - 0.85, 0, 0.016, { pose: 'sit' }).position.y = SEAT;
+  person({ gender: 'male', classSpec: 'cleric', look: { seed: 31, head: 2, body: 7, cloth: 0, hair: 7 } }, 0, tz - tl / 2 - 0.85, 0, 0.016, { pose: 'sit', dim: 0.32, rim: 0x7a3a14, folds: 1.3 }).position.y = SEAT;
   // the clerk at his lectern beside the foot of the table, turned to the
   // adventurers, quill raised over the open ledger as he takes their names
   // (at the head of the board beside the First Councillor's great chair, so
@@ -440,7 +514,7 @@ export function createChamber({ seed = 1337 } = {}) {
     }
   }
   candle(lx + Math.cos(lry) * 0.42 + 0.05, 1.0, lz - Math.sin(lry) * 0.42 + 0.12, 0.14);
-  const clerk = person({ gender: 'male', classSpec: 'magicUser', look: { seed: 41, head: 6, body: 4, cloth: 5, hair: 1 } }, lx - Math.sin(lry) * 0.62, lz - Math.cos(lry) * 0.62, lry, 0.014, { dim: 0.5, rim: 0x7a3c12 });
+  const clerk = person({ gender: 'male', classSpec: 'magicUser', look: { seed: 41, head: 6, body: 4, cloth: 5, hair: 1 } }, lx - Math.sin(lry) * 0.62, lz - Math.cos(lry) * 0.62, lry, 0.014, { dim: 0.34, rim: 0x7a3c12 });
   {
     // his quill, raised mid-stroke in his right hand (the rig's right hand rests
     // forward of the hip in the standing pose): a feather card plus a dark nib
@@ -604,6 +678,37 @@ export function createChamber({ seed = 1337 } = {}) {
   add(glass, glassMat);
   const flameMesh = createFlameBatch(flames.map((f) => ({ pos: f.pos.clone().sub(CHAMBER_ORIGIN), scale: f.scale })));
   group.add(flameMesh);
+  // the firebox: an ember bed and the glow thrown up the sooted back and
+  // cheeks of the hearth (additive, breathing with the fire)
+  const fireGlowMat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    uniforms: { uT: { value: 0 } },
+    vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /* glsl */ `uniform float uT; varying vec2 vUv;
+      void main(){
+        vec2 d = (vUv - vec2(0.5, 0.05)) * vec2(1.6, 1.0);
+        float k = exp(-dot(d, d) * 3.5);
+        float fl = 0.85 + 0.15 * sin(uT * 7.0 + vUv.x * 5.0) * sin(uT * 3.1);
+        gl_FragColor = vec4(vec3(1.0, 0.42, 0.12) * k * 0.9 * fl, 1.0);
+      }`,
+  });
+  disposables.push(fireGlowMat);
+  {
+    const hz = -D / 2 + 1.03;
+    const bg = new THREE.PlaneGeometry(2.9, 1.5);
+    bg.translate(0, 1.37, hz);
+    disposables.push(bg);
+    const bm = new THREE.Mesh(bg, fireGlowMat);
+    bm.renderOrder = 2;
+    group.add(bm);
+    const eg = new THREE.PlaneGeometry(1.6, 0.7);
+    eg.rotateX(-Math.PI / 2);
+    eg.translate(0, 0.64, hz + 0.3);
+    disposables.push(eg);
+    const em = new THREE.Mesh(eg, fireGlowMat);
+    em.renderOrder = 2;
+    group.add(em);
+  }
   // candle halos: only a tight warm bead round each flame (the flame card itself
   // carries the shape), never a bloom ball
   const haloMat = new THREE.SpriteMaterial({ map: getGlowTexture(), color: 0xffa860, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false, opacity: 0.3 });
@@ -675,7 +780,7 @@ export function createChamber({ seed = 1337 } = {}) {
   // moonlight through the tall windows on both walls: cool shafts raking down
   // across the floor and the councillors' backs, against the warm candle core
   for (const sx of [-1, 1]) {
-    const moon = new THREE.SpotLight(0x8a9ae0, 55, 20, 0.6, 0.6, 1.2);
+    const moon = new THREE.SpotLight(0x8a9ae0, 30, 20, 0.6, 1.0, 1.2);
     moon.position.set(sx * (W / 2 + 1.5), 6.2, tz + 1.5);
     moon.target.position.set(-sx * 1.2, 0.6, tz - 0.5);
     group.add(moon, moon.target);
@@ -690,16 +795,14 @@ export function createChamber({ seed = 1337 } = {}) {
       fragmentShader: /* glsl */ `varying vec2 vUv;
         void main(){
           vec2 u = vUv;
-          // arched lancet: rectangle with a round head, split by a mullion and transom, leaded diamonds
-          float arch = step(length(vec2((u.x - 0.5) * 2.0, max(u.y - 0.78, 0.0) * 4.5)), 1.0);
-          float pane = arch * step(0.04, u.x) * step(u.x, 0.96) * step(0.03, u.y);
-          float mull = 1.0 - (1.0 - smoothstep(0.015, 0.03, abs(u.x - 0.5))) ;
-          float tran = smoothstep(0.012, 0.025, abs(u.y - 0.55));
-          vec2 dq = vec2(u.x * 6.0 + u.y * 9.0, u.x * 6.0 - u.y * 9.0);
-          float lead = smoothstep(0.0, 0.08, abs(fract(dq.x) - 0.5)) * smoothstep(0.0, 0.08, abs(fract(dq.y) - 0.5));
-          float soft = smoothstep(0.0, 0.12, u.x) * smoothstep(1.0, 0.88, u.x) * smoothstep(0.0, 0.1, u.y);
-          float k = pane * mull * tran * mix(0.55, 1.0, lead) * soft;
-          gl_FragColor = vec4(vec3(0.36, 0.46, 0.92) * k * 0.2, 1.0);
+          // a soft pool of moonlight on the stone: the window's shape only as a
+          // faint, blurred hint inside a broad falloff (never a hard bright quad)
+          vec2 c = (u - vec2(0.5, 0.45)) * vec2(2.0, 1.5);
+          float pool = exp(-dot(c, c) * 2.2);
+          float mull = 1.0 - 0.25 * (1.0 - smoothstep(0.0, 0.06, abs(u.x - 0.5)));
+          float tran = 1.0 - 0.2 * (1.0 - smoothstep(0.0, 0.05, abs(u.y - 0.55)));
+          float k = pool * mull * tran;
+          gl_FragColor = vec4(vec3(0.36, 0.46, 0.92) * k * 0.09, 1.0);
         }`,
     });
     const shaftMat = new THREE.ShaderMaterial({
@@ -717,7 +820,7 @@ export function createChamber({ seed = 1337 } = {}) {
     for (const sx of [-1, 1]) {
       for (const wz of [tz - 2.5, tz + 1.5, tz + 5.5]) {
         // the window sits high in the side wall; the moon is high on that side
-        const ck = new THREE.PlaneGeometry(1.25, 2.6);
+        const ck = new THREE.PlaneGeometry(2.2, 3.6);
         ck.rotateX(-Math.PI / 2);
         ck.rotateY(sx * 0.18);
         ck.translate(sx * (W / 2 - 3.3), 0.02, wz + 0.3);
@@ -740,8 +843,8 @@ export function createChamber({ seed = 1337 } = {}) {
       }
     }
   }
-  const hearth = new THREE.PointLight(0xff7a30, 10, 9, 1.6);
-  hearth.position.set(0, 0.8, -D / 2 + 1.4);
+  const hearth = new THREE.PointLight(0xff7a30, 10, 11, 1.5);
+  hearth.position.set(0, 1.4, -D / 2 + 1.6);
   group.add(hearth);
 
   return {
@@ -752,7 +855,8 @@ export function createChamber({ seed = 1337 } = {}) {
     update(t) {
       for (const s of halos) s.scale.setScalar(0.5 * (0.9 + 0.1 * Math.sin(t * 9 + s.userData.seed)));
       lights.forEach((L, i) => { L.intensity = L.userData.base * (0.92 + 0.08 * Math.sin(t * 7.3 + i * 2.1)); });
-      hearth.intensity = 10 * (0.85 + 0.15 * Math.sin(t * 5.1) * Math.sin(t * 2.3));
+      hearth.intensity = 26 * (0.85 + 0.15 * Math.sin(t * 5.1) * Math.sin(t * 2.3));
+      fireGlowMat.uniforms.uT.value = t;
     },
     dispose() {
       for (const d of disposables) d.dispose?.();

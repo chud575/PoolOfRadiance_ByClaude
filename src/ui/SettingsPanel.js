@@ -168,7 +168,7 @@ export function settingPreview(key, value) {
     const lv = ['low', 'medium', 'high', 'ultra'];
     const k = Math.max(0, lv.indexOf(value));
     const bars = lv.map((_, i) => `<rect x="${18 + i * 44}" y="${62 - (i + 1) * 12}" width="30" height="${(i + 1) * 12}" rx="2" fill="${i <= k ? 'url(#pvq)' : 'rgba(216,178,90,0.18)'}" stroke="rgba(216,178,90,0.5)"/>`).join('');
-    return h('div', [svg(`<defs><linearGradient id="pvq" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff2c4"/><stop offset="1" stop-color="#a87a2a"/></linearGradient></defs><rect width="200" height="76" fill="#0e1430"/>${bars}<text x="100" y="73" fill="#a99c80" font-size="8" text-anchor="middle" letter-spacing="2">FIDELITY · SPEED</text>`),
+    return h('div', [svg(`<defs><linearGradient id="pvq" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff2c4"/><stop offset="1" stop-color="#a87a2a"/></linearGradient></defs><rect width="200" height="76" fill="#0e1430"/>${bars}`),
       cap(lv.map((l, i) => [l, i === k]))]);
   }
   if (key === 'colorblind') {
@@ -405,7 +405,7 @@ export class SettingsPanel {
         h('span', [h('span.por-keycap', ['Esc']), padGlyph('B'), h('span.por-set-legend-lbl', ['Back'])]),
       ]),
       h('div.por-set-actions', [
-        h('button.por-btn', { type: 'button', onclick: () => this.resetSection() }, ['Restore defaults']),
+        h('button.por-btn', { type: 'button', title: 'Restores the options on this tab only.', onclick: () => this.resetSection() }, ['Restore tab defaults']),
         h('button.por-btn.primary', { type: 'button', title: 'Changes apply at once and are kept between sessions.', onclick: () => this.close() }, ['Done']),
       ]),
     ]);
@@ -483,10 +483,8 @@ export class SettingsPanel {
       const bottom = el.getBoundingClientRect().bottom - top0;
       if (bottom <= avail) fit = Math.max(fit, bottom);
     }
-    if (fit > 40) {
-      b.style.flex = 'none';
-      b.style.height = `${Math.ceil(fit + 3)}px`;
-    }
+    // (the list now fills the column and fades at its edges: no fixed height)
+    void fit;
     if (!this._fitObs && typeof ResizeObserver !== 'undefined') {
       this._fitObs = new ResizeObserver(() => {
         if (this._fitting) return;
@@ -748,11 +746,29 @@ export class SettingsPanel {
     this._updateHelp();
     this._updateScrollCue();
     const r = this.rowEls[this.focus];
-    if (r && this.bodyEl.scrollHeight > this.bodyEl.clientHeight) {
-      const top = r.offsetTop - this.bodyEl.offsetTop;
-      if (top < this.bodyEl.scrollTop) this.bodyEl.scrollTop = top - 8;
-      else if (top + r.offsetHeight > this.bodyEl.scrollTop + this.bodyEl.clientHeight) this.bodyEl.scrollTop = top + r.offsetHeight - this.bodyEl.clientHeight + 8;
-    }
+    this._revealRow(r);
+  }
+
+  /**
+   * Scroll the focused row wholly into view (label and control), clear of the
+   * top fade and of the bottom fade + "More below" pill; measured with client
+   * rects so stacked (Huge text) rows and any offsetParent are handled.
+   */
+  _revealRow(r) {
+    const b = this.bodyEl;
+    if (!r || !b || b.scrollHeight <= b.clientHeight + 1) return;
+    const em = parseFloat(getComputedStyle(b).fontSize) || 16;
+    const br = b.getBoundingClientRect(), rr = r.getBoundingClientRect();
+    // the ends of the list pin to the ends of the scroll (the closing note
+    // under the last row comes fully into view, nothing is left half-cut)
+    const i = this.rowEls.indexOf(r);
+    if (i === 0) { b.scrollTop = 0; this._updateScrollCue(); return; }
+    if (i === this.rowEls.length - 1) { b.scrollTop = b.scrollHeight; this._updateScrollCue(); if (typeof requestAnimationFrame !== 'undefined') requestAnimationFrame(() => { b.scrollTop = b.scrollHeight; this._updateScrollCue(); }); return; }
+    const padT = em * 1.5, padB = em * 3.6;
+    const top = rr.top - br.top, bot = rr.bottom - br.top;
+    if (top < padT) b.scrollTop = Math.max(0, b.scrollTop + top - padT);
+    else if (bot > b.clientHeight - padB) b.scrollTop = Math.min(b.scrollHeight - b.clientHeight, b.scrollTop + bot - (b.clientHeight - padB));
+    this._updateScrollCue();
   }
 
   _cycleTab(d) {

@@ -311,13 +311,13 @@ export function createWorld({ deferred = false } = {}) {
         // shadows sit in a cool blue fill (sky above, never one purple wash);
         // west faces take the warm sunset key
         hemi.intensity *= 0.62;
-        hemi.color.setHex(0x5a78d8);
-        hemi.groundColor.setHex(0x1a1210);
+        hemi.color.setHex(0x5a8ab8);
+        hemi.groundColor.setHex(0x1e140c);
         fill.intensity *= 0.5;
         fill.color.setHex(0x5a70c8);
         sun.intensity *= 0.55;
         castleKey.intensity = 0;
-        scene.fog.color.setHex(0x46507e);
+        scene.fog.color.setHex(0x4a5a6a);
         scene.fog.density = 0.0047;
         if (this._low) {
           // no shadow maps on 'low': a stronger sky/ground split and fill keep
@@ -382,6 +382,7 @@ export function createWorld({ deferred = false } = {}) {
       hall.visible = !inside && st.hall;
       const ck = !inside && !!st.cityKey && !this._classic;
       cityKey.visible = ck;
+      U.uSplit.value = ck ? 1 : 0;
       cityRim.visible = ck;
       mist.visible = ck;
       cityKey.castShadow = ck && !this._low;

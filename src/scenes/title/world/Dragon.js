@@ -72,6 +72,8 @@ const FRAG = /* glsl */ `
   uniform vec3 uSky;
   uniform float uOpacity;
   uniform float uClassic;
+  uniform vec3 uHazeC;
+  uniform float uHaze;
   uniform float uWing;
   varying vec3 vN;
   varying vec3 vW;
@@ -162,6 +164,9 @@ const FRAG = /* glsl */ `
     col += uSky * fres * (0.1 + 1.1 * smoothstep(-0.1, 0.8, N.y)) * 1.25;
     col += uRim * fres * edgeSun * 0.9;
     if (kind > 1.5 && kind < 2.5) col = vec3(1.9, 0.75, 0.18);  // ember eyes
+    // atmospheric perspective: far over the sea it sinks into the dusk air
+    // (sky-coloured fill lifts the shadows, the saturation drains)
+    col = mix(col, uHazeC * (0.75 + 0.35 * max(N.y, 0.0)), uHaze);
     if (uClassic > 0.5) col = vec3(0.0);
     gl_FragColor = vec4(col, uOpacity);
   }
@@ -369,10 +374,19 @@ function buildBody() {
     // horns: a big swept pair from the crown and a smaller pair below
     parts.push(tube([V3(-9.1, 2.6, z * 0.3), V3(-8.2, 3.05, z * 0.42), V3(-7.1, 3.25, z * 0.55), V3(-6.2, 3.05, z * 0.6)], 0.2, 0.015, { NS: 10, NR: 7, tip: true }));
     parts.push(tube([V3(-8.9, 2.25, z * 0.42), V3(-8.2, 2.35, z * 0.62), V3(-7.5, 2.55, z * 0.72)], 0.12, 0.01, { NS: 6, NR: 6, tip: true }));
-    // eye
-    const eye = new THREE.SphereGeometry(0.09, 8, 6);
-    eye.translate(-9.85, 2.48, z * 0.44);
+    // eye socket under a heavy brow: a sunk orbit with the glowing eye set
+    // deep in it, a jutting supraorbital shelf and a bony cheek ridge below
+    parts.push(ellipsoid(V3(-9.7, 2.74, z * 0.43), 0.7, 0.13, 0.22, 0, new THREE.Euler(z * 0.35, 0, -0.18)));
+    parts.push(ellipsoid(V3(-9.55, 2.18, z * 0.47), 0.72, 0.14, 0.13, 0, new THREE.Euler(0, 0, 0.12)));
+    const eye = new THREE.SphereGeometry(0.12, 10, 8);
+    eye.scale(1.3, 0.7, 0.8);
+    eye.translate(-9.9, 2.5, z * 0.47);
     parts.push(tag(eye, 2, 0));
+    // jaw-hinge muscle and a fan of cheek frills sweeping back off it
+    parts.push(ellipsoid(V3(-8.85, 1.98, z * 0.42), 0.42, 0.34, 0.22));
+    for (let k = 0; k < 4; k++) {
+      parts.push(talon(V3(-8.75 + k * 0.05, 2.18 - k * 0.17, z * 0.5), V3(1, 0.25 - k * 0.22, z * 0.75), 0.85 - k * 0.12, 0.075 - k * 0.008, V3(0, -0.4, 0), 5));
+    }
   }
   // nose horn
   parts.push(talon(V3(-11.9, 2.15, 0), V3(-0.3, 1, 0), 0.45, 0.08, V3(1, 0, 0)));
@@ -396,30 +410,34 @@ function buildBody() {
   // ---- forelegs tucked under the chest: upper arm, forearm, clawed hand
   for (const z of [-1, 1]) {
     const sh = at(0.3, -0.45, 0.7 * z);
-    const el = sh.clone().add(V3(0.75, -1.1, 0.22 * z));
-    const wr = el.clone().add(V3(-1.05, -0.45, 0.04 * z));
-    parts.push(tube([sh, sh.clone().lerp(el, 0.5).add(V3(0.1, 0, 0)), el], 0.42, 0.22, { bulge: 0.2 }));
-    parts.push(tube([el, wr], 0.22, 0.15));
+    // folded to the chest in the glide: the elbow drawn back and up against
+    // the flank, the forearm tucked forward under the breast, claws curled
+    const el = sh.clone().add(V3(0.95, -0.5, 0.2 * z));
+    const wr = el.clone().add(V3(-0.95, -0.12, -0.02 * z));
+    parts.push(tube([sh, sh.clone().lerp(el, 0.5).add(V3(0.05, -0.08, 0)), el], 0.4, 0.22, { bulge: 0.2 }));
+    parts.push(tube([el, wr], 0.21, 0.14));
     for (let c = -1; c <= 1; c++) {
-      const k = wr.clone().add(V3(-0.32, -0.1, c * 0.13));
-      parts.push(tube([wr, k], 0.09, 0.07, { NS: 2, NR: 5 }));
-      parts.push(talon(k, V3(-0.6, -0.5, c * 0.15), 0.42, 0.065));
+      const k = wr.clone().add(V3(-0.26, 0.04, c * 0.12));
+      parts.push(tube([wr, k], 0.085, 0.065, { NS: 2, NR: 5 }));
+      parts.push(talon(k, V3(-0.2, 0.6, c * 0.1), 0.34, 0.06, V3(1, 0, 0)));
     }
     // ---- hind legs trailing: muscular thigh, shank, metatarsus, 4-toed taloned foot
     const hip = at(0.53, -0.25, 0.72 * z);
-    const kn = hip.clone().add(V3(1.0, -1.25, 0.28 * z));
-    const an = kn.clone().add(V3(1.75, -0.3, -0.04 * z));
-    const ft = an.clone().add(V3(0.85, -0.15, 0));
-    parts.push(tube([hip, hip.clone().lerp(kn, 0.45).add(V3(0.18, 0.05, 0.1 * z)), kn], 0.6, 0.27, { NS: 10, NR: 10, bulge: 0.15 }));
-    parts.push(tube([kn, kn.clone().lerp(an, 0.4).add(V3(0, 0.12, 0)), an], 0.32, 0.17, { bulge: 0.2 }));
-    parts.push(tube([an, ft], 0.17, 0.14));
-    parts.push(ellipsoid(kn, 0.28, 0.25, 0.27));
+    // stretched back along the tail in the glide: thigh swept aft, shank and
+    // foot streamlined under the tail root, toes trailing with talons curled
+    const kn = hip.clone().add(V3(1.35, -0.55, 0.12 * z));
+    const an = kn.clone().add(V3(1.8, 0.12, -0.08 * z));
+    const ft = an.clone().add(V3(0.85, 0.05, -0.02 * z));
+    parts.push(tube([hip, hip.clone().lerp(kn, 0.45).add(V3(0.1, -0.08, 0.08 * z)), kn], 0.6, 0.28, { NS: 10, NR: 10, bulge: 0.15 }));
+    parts.push(tube([kn, kn.clone().lerp(an, 0.4).add(V3(0, -0.06, 0)), an], 0.3, 0.16, { bulge: 0.2 }));
+    parts.push(tube([an, ft], 0.16, 0.12));
+    parts.push(ellipsoid(kn, 0.3, 0.26, 0.27));
     for (let c = 0; c < 4; c++) {
-      const spread = (c - 1.5) * 0.17;
-      const dir = c === 3 ? V3(-0.6, 0.1, z * 0.6) : V3(1, -0.18, spread * z * 2);
-      const k1 = ft.clone().addScaledVector(dir.normalize(), c === 3 ? 0.3 : 0.48);
-      parts.push(tube([ft, k1], 0.1, 0.075, { NS: 2, NR: 5 }));
-      parts.push(talon(k1, c === 3 ? dir : V3(0.8, -0.55, spread * z), 0.55, 0.075));
+      const spread = (c - 1.5) * 0.14;
+      const dir = c === 3 ? V3(-0.5, -0.2, z * 0.5) : V3(1, -0.1, spread * z * 2);
+      const k1 = ft.clone().addScaledVector(dir.normalize(), c === 3 ? 0.28 : 0.45);
+      parts.push(tube([ft, k1], 0.09, 0.07, { NS: 2, NR: 5 }));
+      parts.push(talon(k1, c === 3 ? dir : V3(0.6, -0.7, spread * z), 0.42, 0.065, V3(-0.5, -1, 0)));
     }
   }
   const g = mergeGeometries(parts, false);
@@ -536,6 +554,8 @@ export function createDragon({ sunDir = new THREE.Vector3(-0.45, 0.014, -1).norm
     uSky: { value: new THREE.Color(0.42, 0.44, 0.78) },
     uOpacity: { value: 1 },
     uClassic: { value: 0 },
+    uHazeC: { value: new THREE.Color(0.5, 0.36, 0.46) },
+    uHaze: { value: 0 },
   };
   const makeMat = (wing, side) => new THREE.ShaderMaterial({
     vertexShader: VERT,
@@ -646,6 +666,8 @@ export function createDragon({ sunDir = new THREE.Vector3(-0.45, 0.014, -1).norm
       }
       group.visible = true;
       for (const m of mats) m.uniforms.uOpacity.value = fade;
+      shared.uHaze.value = lane.haze ?? 0;
+      if (lane.hazeC) shared.uHazeC.value.setRGB(...lane.hazeC);
       const ps = pose(lt);
       const at = (q, out) => {
         const e = 1 - Math.pow(1 - q, lane.xe ?? 1);

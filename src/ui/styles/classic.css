@@ -116,9 +116,10 @@ html[data-classic='1'] .por-btn.primary:hover { background: var(--ega-9) !import
 html[data-classic='1'] .por-toggle-track::before { display: none !important; }
 html[data-classic='1'] .por-toggle-knob { background-image: none !important; border: 0 !important; }
 /* footer: one clean line in the wide 5x7 face */
-html[data-classic='1'] .por-title-footer { font-size: 0.72em; grid-template-columns: auto 1fr auto; padding: 0 1.2em; gap: 1.5em; border-top: 2px solid var(--ega-9); }
+html[data-classic='1'] .por-title-footer { font-size: 0.98em; grid-template-columns: auto 1fr auto; padding: 0 1.2em; gap: 1.5em; border-top: 2px solid var(--ega-9); }
 html[data-classic='1'] .por-title-footer > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-html[data-classic='1'] .por-title-legend { justify-content: center; gap: 1.6em; font-size: 1.25em; color: var(--ega-15) !important; }
+html[data-classic='1'] .por-title-foot-l { color: var(--ega-11) !important; letter-spacing: 0.04em; }
+html[data-classic='1'] .por-title-legend { justify-content: center; gap: 1.6em; font-size: 1.05em; color: var(--ega-15) !important; }
 html[data-classic='1'] .por-title-legend .por-keycap { color: var(--ega-14) !important; }
 html[data-classic='1'] .por-title-legend .por-pad { display: none; }
 html[data-classic='1'] .por-title-foot-r { display: none; }

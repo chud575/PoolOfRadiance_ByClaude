@@ -840,7 +840,8 @@ export function buildBlock(map, opts = {}) {
       }
     },
     hewn(f) {
-      // rough-hewn rock: the face itself is flat (normal-mapped); lumps, roots and refuse come from the dressing pass
+      // rough-hewn rock: the face itself is flat (normal-mapped); the displaced rock skin, lumps,
+      // roots and refuse come from the dressing pass
       slab(f, 'arch_hewn', 0, f.H, 0, T / 2);
       spots.cave.push(f);
     },
@@ -1345,7 +1346,11 @@ export function buildBlock(map, opts = {}) {
       // the shutter: an oak slide in a groove at the back, drawn two-thirds across
       lg.box('arch_door', { c: [gx + gw * 0.2, gy, -th / 2 + 0.018], s: [gw * 0.68, gh + 0.02, 0.02], uv: 'local', uvRect: [0.4, 0.5, 0.48, 0.58], chamfer: 0.004, ao: 0.45 });
       lg.box('prop_iron', { c: [gx - gw * 0.1, gy, -th / 2 + 0.03], s: [0.02, 0.05, 0.02], chamfer: 0.006 }); // its knob
-      lg.box('arch_beam_dark', { c: [gx - gw * 0.2, gy, -th / 2 + 0.008], s: [gw * 0.5, gh, 0.012], uv: 'local', ao: 0.08 }); // dark beyond the gap
+      // the room beyond the gap: dim, warm bounce off a plastered wall — never a pure black hole
+      lg.box('arch_beam_dark', { c: [gx, gy, 0], s: [gw - 0.01, gh - 0.01, 0.008], uv: 'local', ao: 0.35, tint: [1.5, 1.2, 0.9] });
+      // the lattice repeated on the inner face (both faces of the leaf show forged bars)
+      for (const bx of [-0.075, 0.0, 0.075]) lg.box('prop_iron', { c: [gx + bx, gy, -zb], s: [0.018, gh, 0.016], chamfer: 0.004 });
+      for (const by of [-0.06, 0.06]) lg.box('prop_iron', { c: [gx, gy + by, -zb + 0.012], s: [gw, 0.018, 0.014], chamfer: 0.004 });
     }
     const ringGeo = new THREE.TorusGeometry(0.075, 0.013, 6, 14);
     for (const z of [th / 2 + 0.025, -th / 2 - 0.025]) {
@@ -1558,7 +1563,7 @@ export function buildBlock(map, opts = {}) {
         const soot = (u, v) => {
           const cx = Math.abs(u - 0.5) * 2;
           const plume = (1 - THREE.MathUtils.smoothstep(cx, 0.25 + v * 0.5, 0.55 + v * 0.6)) * (1 - v * 0.75);
-          return 1 - 0.72 * plume;
+          return 1 - 0.5 * plume;
         };
         for (let j = 0; j < NY; j++) {
           for (let i = 0; i < NX; i++) {
@@ -1922,8 +1927,17 @@ export function buildBlock(map, opts = {}) {
         continue;
       }
       const street = !indoor && cell === CELL.STREET;
-      const sub = street ? 8 : SUB;
-      const Y = (px, pz) => fy + (street ? crownAt(px, pz) : 0);
+      const sub = street ? 8 : key === 'arch_cave_floor' ? 8 : SUB;
+      // cave floors heave and dip (trodden hollows hold the seep water); never under the walls
+      const cave = key === 'arch_cave_floor';
+      const caveY = (px, pz) => {
+        const lx = px - x0;
+        const lz = pz - z0;
+        const edge = Math.min(lx, S - lx, lz, S - lz) / S;
+        const bump = Math.sin(px * 1.9 + Math.sin(pz * 1.3) * 1.5) * 0.035 + Math.sin(pz * 2.7 + px * 0.8) * 0.025 + (hash(Math.round(px * 1.33), Math.round(pz * 1.33), 'cv') - 0.5) * 0.03;
+        return bump * Math.min(1, edge * 6);
+      };
+      const Y = (px, pz) => fy + (street ? crownAt(px, pz) : cave ? caveY(px, pz) : 0);
       for (let j = 0; j < sub; j++) {
         if (cell === CELL.WATER && map.harbour) break; // the open sea plane runs under the quay
         for (let i = 0; i < sub; i++) {
@@ -2353,10 +2367,12 @@ export function buildBlock(map, opts = {}) {
             // slid onto the horizontal cornice (resting on it, fractured), the rest are on the ground
             for (let k = 0; k < 3; k++) {
               const bb = sb * spanB * (0.28 + k * 0.26 + hash(c.id, k, 'rbb') * 0.08);
-              const sz = [0.5 + hash(c.id, k, 'rsx') * 0.35, 0.22 + hash(c.id, k, 'rsy') * 0.1, 0.34];
+              // (each a different fragment: a long cornice piece, a squat broken half, a sliver; tilted
+              // where it slid, edges knocked off and one face fractured raw)
+              const sz = [[0.78, 0.26, 0.34], [0.36, 0.3, 0.3], [0.52, 0.17, 0.28]][k].map((v) => v * (0.85 + hash(c.id, k, 'rsv') * 0.3));
               const rp = P(aa, He + 0.12 + 0.17 + sz[1] * 0.4, bb).add(out(0.12 + hash(c.id, k, 'rso') * 0.1));
-              const rq = new THREE.Quaternion().setFromEuler(new THREE.Euler((hash(c.id, k, 'rrx') - 0.5) * 0.3, Math.atan2(outward.x, outward.z) + (hash(c.id, k, 'rry') - 0.5) * 0.5, (hash(c.id, k, 'rrz') - 0.5) * 0.5));
-              const rg = roughBlockGeometry(sz[0], sz[1], sz[2], { bevel: 0.03, amp: 0.02, seed: hash(c.id, k, 'rgs') * 100, chip: 0.06 });
+              const rq = new THREE.Quaternion().setFromEuler(new THREE.Euler((hash(c.id, k, 'rrx') - 0.5) * 0.6, Math.atan2(outward.x, outward.z) + (hash(c.id, k, 'rry') - 0.5) * 0.9, (hash(c.id, k, 'rrz') - 0.5) * 0.9));
+              const rg = roughBlockGeometry(sz[0], sz[1], sz[2], { bevel: 0.025, amp: 0.045, seed: hash(c.id, k, 'rgs') * 100, chip: 0.18 });
               g.geometry('arch_dressed', rg, new THREE.Matrix4().compose(rp, rq, new THREE.Vector3(1, 1, 1)), { uv: 'world', ao: 0.8 });
               rg.dispose();
             }

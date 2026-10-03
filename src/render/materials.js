@@ -408,10 +408,11 @@ function applySurfaceFX(mat, fx) {
         #if ${rock === '0.000' ? 0 : 1}
         {
           // each plate a facet at its own angle; the cracks fall back into shadow
-          vec3 tilt = (vFxPlate - 0.5) * 1.4;
+          // (gentle: strong per-plate tilts read as low-poly facets; the layering does the work)
+          vec3 tilt = (vFxPlate - 0.5) * 0.75;
           vec3 nW = normalize(normalize(vFxWorldNormal) + tilt);
           vec3 nV = normalize((viewMatrix * vec4(nW, 0.0)).xyz);
-          normal = normalize(mix(normal, nV, 0.8 * (1.0 - vFxCrack) * ${rock}));
+          normal = normalize(mix(normal, nV, 0.5 * (1.0 - vFxCrack) * ${rock}));
         }
         #endif
         #if ${grain === '0.000' ? 0 : 1}
