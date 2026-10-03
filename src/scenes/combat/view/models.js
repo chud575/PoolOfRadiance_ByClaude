@@ -43,6 +43,8 @@ const SPECIES = {
   buccaneer: { height: 1.0, bulk: 1.0, head: 'human', human: { hair: 0x2a1a10, bandana: 0x8a1a1a, beard: 'stubble' }, cloth: 0xc8b8a0, stripes: true, armor: 'vest', weapon: 'longSword', skinTone: 0xb07a5a },
   thug: { height: 1.0, bulk: 1.05, head: 'human', human: { hood: 0x3a3228, beard: 'stubble' }, cloth: 0x4a3a2a, armor: 'vest', weapon: 'club', skinTone: 0xc08a6a },
   giantSpider: { rig: 'spider', skin: ['fur', 0x2a2420], height: 0.7, eyes: 0xff2020 },
+  // The Flamed One, wearing the body of a great bronze dragon.
+  tyranthraxus: { rig: 'dragon', eyes: 0xffc030 },
 };
 
 // ------------------------------------------------------------------ kit
@@ -106,6 +108,7 @@ export function makeFigureModel(c, index = 0) {
   const seed = hashStr(c.id);
   if (sp.rig === 'quad') return buildRat(sp, seed);
   if (sp.rig === 'spider') return buildSpider(sp, seed);
+  if (sp.rig === 'dragon') return buildDragon(sp, seed);
   // Per-individual variation: gear, helm, stature.
   const pick = (arr, k) => arr[Math.floor(hashStr(`${c.id}:${k}`) * arr.length)];
   // Individuals are numbered from 1: the n-th of a species cycles the weapon list
@@ -1050,6 +1053,133 @@ function domeDisc(r, h, seg = 24, rings = 5) {
   g.computeVertexNormals();
   g.rotateX(Math.PI / 2);
   return g;
+}
+
+
+// ------------------------------------------------------------------ dragon
+/** Limb/tube from a to b (bone-local), radii r0 at a → r1 at b. */
+function tube(R, bone, a, b, r0, r1, mat, o = {}) {
+  const A = new THREE.Vector3(...a);
+  const B = new THREE.Vector3(...b);
+  const d = B.clone().sub(A);
+  const g = limb(r0, r1, d.length(), { seg: o.seg ?? 12, bulge: o.bulge ?? 1.06, zs: o.zs ?? 1 });
+  const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, -1, 0), d.normalize());
+  R.part(bone, g, mat, { p: a, r: new THREE.Euler().setFromQuaternion(q).toArray().slice(0, 3) });
+}
+
+/**
+ * Tyranthraxus in the body of a great bronze dragon: a heavy barrel body on
+ * four clawed legs, a long serpentine neck carrying a horned, frilled head,
+ * half-raised bat wings, a dorsal ridge of spines running to the tail tip.
+ * Quad rig names (so the quadruped clips drive it) plus neck, jaw and wings.
+ */
+function buildDragon(sp, seed) {
+  const R = new RigBuilder();
+  const s = 1.35;
+  const bronze = pbr('reptile', 0xa8783a).clone();
+  bronze.metalness = 0.55;
+  bronze.roughness = 0.4;
+  bronze.normalScale.set(0.8, 0.8);
+  bronze.name = 'dragonBronze';
+  const belly = pbr('reptile', 0xb88a48).clone();
+  belly.metalness = 0.25;
+  belly.name = 'dragonBelly';
+  const membrane = pbr('skin', 0x9a6234).clone();
+  membrane.side = THREE.DoubleSide;
+  membrane.roughness = 0.7;
+  // Thin hide glows through where the fire behind it shines.
+  membrane.emissive = new THREE.Color(0x3a1404);
+  membrane.emissiveIntensity = 1;
+  membrane.name = 'dragonWing';
+  const horn = pbr('bone', 0x4a3826);
+  const claw = pbr('bone', 0x221a12);
+  const eye = pbr('glow', 0, { emissive: sp.eyes, emissiveIntensity: 5 });
+  const mouth = pbr('glow', 0x200400, { emissive: 0xff5010, emissiveIntensity: 2.2 });
+  R.bone('body', null, 0, 1.0 * s, 0);
+  R.bone('chest', 'body', 0, 0.08 * s, 0.72 * s);
+  R.bone('neck1', 'chest', 0, 0.28 * s, 0.38 * s);
+  R.bone('neck2', 'neck1', 0, 0.38 * s, 0.24 * s);
+  R.bone('head', 'neck2', 0, 0.3 * s, 0.2 * s);
+  R.bone('jaw', 'head', 0, -0.07 * s, 0.02 * s);
+  R.bone('tail1', 'body', 0, -0.04 * s, -0.78 * s);
+  R.bone('tail2', 'tail1', 0, -0.12 * s, -0.8 * s);
+  R.bone('tail3', 'tail2', 0, -0.12 * s, -0.8 * s);
+  R.bone('wingL', 'chest', 0.3 * s, 0.34 * s, -0.12 * s);
+  R.bone('wingR', 'chest', -0.3 * s, 0.34 * s, -0.12 * s);
+  const legs = [['FL', 'chest', 0.4, 0.02, -0.22], ['FR', 'chest', -0.4, 0.02, -0.22], ['BL', 'body', 0.44, -0.34, -0.16], ['BR', 'body', -0.44, -0.34, -0.16]];
+  for (const [n, p, x, z, y] of legs) {
+    R.bone(`leg${n}`, p, x * s, y * s, z * s);
+    R.bone(`knee${n}`, `leg${n}`, 0, -0.46 * s, n[0] === 'F' ? 0.08 * s : -0.1 * s);
+  }
+  // Body: a deep barrel with a ridged pale belly.
+  R.part('body', sphere(0.56 * s, 24, 16), bronze, { p: [0, 0, -0.08 * s], s: [1, 0.86, 1.55] });
+  R.part('body', sphere(0.5 * s, 20, 12), belly, { p: [0, -0.2 * s, -0.02 * s], s: [0.86, 0.62, 1.45] });
+  for (let k = 0; k < 7; k++) R.part('body', torus(0.4 * s, 0.025 * s, 6, 24, Math.PI), belly, { p: [0, -0.22 * s, (-0.62 + k * 0.2) * s], r: [0, 0, Math.PI], s: [1.05, 0.8, 1] });
+  R.part('chest', sphere(0.5 * s, 22, 14), bronze, { s: [1, 0.98, 1.08] });
+  R.part('chest', sphere(0.44 * s, 18, 12), belly, { p: [0, -0.16 * s, 0.1 * s], s: [0.85, 0.75, 1] });
+  // Neck: overlapping segments thinning to the head, belly plates beneath.
+  tube(R, 'chest', [0, 0.08 * s, 0.2 * s], [0, 0.3 * s, 0.4 * s], 0.34 * s, 0.27 * s, bronze);
+  tube(R, 'neck1', [0, 0, 0], [0, 0.4 * s, 0.26 * s], 0.27 * s, 0.22 * s, bronze);
+  tube(R, 'neck2', [0, 0, 0], [0, 0.32 * s, 0.22 * s], 0.22 * s, 0.18 * s, bronze);
+  for (const [b, k] of [['neck1', 0], ['neck1', 1], ['neck2', 0], ['neck2', 1]]) R.part(b, sphere(0.16 * s, 12, 8), belly, { p: [0, (0.1 + k * 0.17) * s, (0.12 + k * 0.1) * s + 0.08 * s], s: [1, 0.6, 0.55] });
+  // Head: long wedge snout, heavy brow, swept horns, a fan frill of spines.
+  R.part('head', lathe([[0.001, -0.02], [0.1, 0.0], [0.15, 0.14], [0.17, 0.3], [0.15, 0.42], [0.001, 0.47]].map(([r, y]) => [r * s, y * s]), 16, { xs: 1.05, zs: 0.7 }), bronze, { p: [0, 0.02 * s, 0.5 * s], r: [-Math.PI / 2, 0, 0] });
+  R.part('head', sphere(0.19 * s, 18, 12), bronze, { p: [0, 0.03 * s, -0.02 * s], s: [1.05, 0.9, 1.2] });
+  for (const sx of [1, -1]) {
+    R.part('head', rbox(0.1 * s, 0.05 * s, 0.26 * s, 0.02 * s), bronze, { p: [sx * 0.09 * s, 0.13 * s, 0.14 * s], r: [0.15, sx * 0.12, 0] });
+    R.part('head', sphere(0.03 * s, 10, 8), eye, { p: [sx * 0.12 * s, 0.09 * s, 0.13 * s], s: [1, 0.6, 1.2] });
+    // Horns sweeping back from the brow, a second shorter pair below.
+    R.part('head', cone(0.05 * s, 0.55 * s, 8), horn, { p: [sx * 0.1 * s, 0.2 * s, -0.25 * s], r: [-2.15, 0, sx * 0.25] });
+    R.part('head', cone(0.035 * s, 0.32 * s, 8), horn, { p: [sx * 0.15 * s, 0.05 * s, -0.2 * s], r: [-2.0, 0, sx * 0.6] });
+    // Frill: a fan of spines behind the jaw hinge (bronze dragons' crest).
+    for (let k = 0; k < 4; k++) R.part('head', cone(0.025 * s, (0.26 - k * 0.04) * s, 6), horn, { p: [sx * 0.15 * s, (-0.02 - k * 0.04) * s, -0.12 * s], r: [-1.9 - k * 0.2, 0, sx * (0.9 + k * 0.12)] });
+    // Nostril ridges.
+    R.part('head', sphere(0.025 * s, 8, 6), bronze, { p: [sx * 0.05 * s, 0.08 * s, 0.46 * s] });
+  }
+  // Glowing maw (the fire in its throat) and fangs.
+  R.part('head', box(0.16 * s, 0.02 * s, 0.34 * s), mouth, { p: [0, -0.05 * s, 0.28 * s] });
+  for (let k = 0; k < 5; k++) for (const sx of [1, -1]) R.part('head', cone(0.012 * s, 0.06 * s, 5), horn, { p: [sx * 0.07 * s, -0.07 * s, (0.2 + k * 0.06) * s], r: [Math.PI, 0, 0] });
+  R.part('jaw', lathe([[0.001, 0.0], [0.11, 0.06], [0.12, 0.25], [0.06, 0.42], [0.001, 0.45]].map(([r, y]) => [r * s, y * s]), 14, { xs: 1, zs: 0.45 }), bronze, { p: [0, -0.02 * s, 0.03 * s], r: [-Math.PI / 2 + 0.18, 0, 0] });
+  R.part('jaw', box(0.03 * s, 0.03 * s, 0.25 * s), horn, { p: [0, -0.1 * s, 0.05 * s], r: [0.2, 0, 0] });
+  // Tail: tapering segments with a spade tip.
+  tube(R, 'body', [0, 0.02 * s, -0.7 * s], [0, -0.04 * s, -0.8 * s], 0.34 * s, 0.26 * s, bronze);
+  tube(R, 'tail1', [0, 0, 0], [0, -0.12 * s, -0.82 * s], 0.26 * s, 0.17 * s, bronze);
+  tube(R, 'tail2', [0, 0, 0], [0, -0.12 * s, -0.82 * s], 0.17 * s, 0.1 * s, bronze);
+  tube(R, 'tail3', [0, 0, 0], [0, -0.06 * s, -0.8 * s], 0.1 * s, 0.03 * s, bronze);
+  R.part('tail3', blade([[0, 0], [0.16, -0.12], [0, -0.38], [-0.16, -0.12]].map(([x, y]) => [x * s, y * s]), 0.02 * s), horn, { p: [0, -0.06 * s, -0.8 * s], r: [Math.PI / 2, 0, 0] });
+  // Dorsal ridge: spines down neck, back and tail.
+  const ridge = [['neck2', 0.24, 0.1, 0.12], ['neck2', 0.1, 0.05, 0.13], ['neck1', 0.3, 0.1, 0.15], ['neck1', 0.1, 0.0, 0.17], ['chest', 0.48, -0.05, 0.2], ['chest', 0.46, -0.3, 0.22], ['body', 0.47, 0.3, 0.24], ['body', 0.48, 0.0, 0.25], ['body', 0.46, -0.32, 0.23], ['body', 0.4, -0.62, 0.2], ['tail1', 0.2, -0.25, 0.17], ['tail1', 0.15, -0.55, 0.14], ['tail2', 0.12, -0.2, 0.12], ['tail2', 0.08, -0.5, 0.1], ['tail3', 0.05, -0.2, 0.07]];
+  for (const [b, y, z, h] of ridge) R.part(b, cone(0.045 * s, h * s * 1.4, 6), horn, { p: [0, y * s, z * s], r: [-0.55, 0, 0] });
+  // Legs: thick haunches, scaled shins, splayed clawed feet.
+  for (const [n] of legs) {
+    const front = n[0] === 'F';
+    R.part(`leg${n}`, limb((front ? 0.2 : 0.25) * s, 0.14 * s, 0.46 * s, { seg: 12 }), bronze);
+    R.part(`knee${n}`, limb(0.13 * s, 0.09 * s, 0.4 * s, { seg: 10 }), bronze);
+    R.part(`knee${n}`, rbox(0.2 * s, 0.07 * s, 0.24 * s, 0.03 * s), bronze, { p: [0, -0.46 * s, 0.07 * s] });
+    for (const cx of [-0.07, 0, 0.07]) R.part(`knee${n}`, cone(0.022 * s, 0.12 * s, 6), claw, { p: [cx * s, -0.48 * s, 0.22 * s], r: [Math.PI / 2 + 0.5, 0, 0] });
+  }
+  // Wings: a leading-edge arm with finger spars and a scalloped membrane,
+  // half-raised and swept back (the silhouette that says DRAGON from afar).
+  for (const [n, sx] of [['wingL', 1], ['wingR', -1]]) {
+    const span = 1.9 * s;
+    const pts = [[0, 0], [0.35, 0.55], [0.95, 0.95], [span / s * 0.95, 0.85], [1.55, 0.35], [1.25, 0.1], [1.15, -0.25], [0.8, -0.2], [0.65, -0.55], [0.3, -0.45], [0.1, -0.6]];
+    const shape = new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2(x * s * sx, y * s)));
+    const g = new THREE.ShapeGeometry(shape, 6);
+    // Shape in XY (x outward, y = leading edge forward), laid flat, rolled up
+    // at the tip and swept back: a half-raised wing.
+    const wingM = new THREE.Matrix4().makeRotationY(sx * 0.4).multiply(new THREE.Matrix4().makeRotationZ(sx * 0.62)).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2));
+    g.applyMatrix4(wingM);
+    R.part(n, g, membrane);
+    const tip = (x, y) => new THREE.Vector3(x * s * sx, y * s, 0).applyMatrix4(wingM);
+    const arm = tip(0.95, 0.95);
+    tube(R, n, [0, 0, 0], arm.toArray(), 0.07 * s, 0.045 * s, bronze, { seg: 8 });
+    tube(R, n, arm.toArray(), tip(1.8, 0.85).toArray(), 0.045 * s, 0.02 * s, bronze, { seg: 6 });
+    for (const [x, y] of [[1.55, 0.35], [1.15, -0.25], [0.65, -0.55]]) tube(R, n, arm.toArray(), tip(x, y).toArray(), 0.025 * s, 0.01 * s, bronze, { seg: 6 });
+    R.part(n, cone(0.03 * s, 0.14 * s, 6), claw, { p: arm.toArray(), r: [0, 0, sx * -0.6] });
+    void span;
+  }
+  const built = R.build();
+  return { ...built, rig: 'quad', dragon: true, height: 2.45 * s, radius: 1.0 * s, scale: s, hasTail: true, eyesColor: sp.eyes, eyesBurn: true, eyeAt: [0, 0.09 * s, 0.13 * s] };
 }
 
 // ------------------------------------------------------------------ quadrupeds

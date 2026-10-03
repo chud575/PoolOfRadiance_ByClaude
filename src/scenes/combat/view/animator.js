@@ -68,11 +68,11 @@ function addRim(mat, facRim = null, tint = null) {
         if (uBurn.x > 0.001) {
           // Char creeps in patches (sooty black blotches, not a uniform tint);
           // their ragged borders smoulder while the fire is fresh.
-          float bn = bN3(vBP * 13.0) * 0.6 + bN3(vBP * 31.0) * 0.4;
+          float bn = bN3(vBP * 6.5) * 0.65 + bN3(vBP * 23.0) * 0.35;
           float th = 1.0 - uBurn.x;
           burnMask = smoothstep(th - 0.08, th + 0.08, bn);
-          burnEdge = smoothstep(0.1, 0.0, abs(bn - th + 0.05)) * step(0.02, uBurn.x);
-          diffuseColor.rgb = mix(diffuseColor.rgb * (1.0 - uBurn.x * 0.35), vec3(0.025, 0.02, 0.018), burnMask * 0.92);
+          burnEdge = smoothstep(0.05, 0.0, abs(bn - th + 0.03)) * step(0.02, uBurn.x);
+          diffuseColor.rgb = mix(diffuseColor.rgb * (1.0 - uBurn.x * 0.55), vec3(0.018, 0.015, 0.013), burnMask * 0.95);
         }`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         { float rimF = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), uRimPower);
@@ -83,9 +83,9 @@ function addRim(mat, facRim = null, tint = null) {
           vec3 nV = normalize(normal);
           float facF = pow(1.0 - clamp(dot(nV, normalize(vViewPosition)), 0.0, 1.0), 2.4) * smoothstep(-0.5, 0.6, nV.y);
           totalEmissiveRadiance += uFacRim * facF * uFacK;
-          totalEmissiveRadiance += vec3(1.0, 0.32, 0.05) * burnEdge * uBurn.y * 2.2 + vec3(0.6, 0.12, 0.02) * burnMask * uBurn.y * 0.35; }`);
+          totalEmissiveRadiance += vec3(1.0, 0.3, 0.04) * burnEdge * uBurn.y * 1.6 + vec3(0.5, 0.08, 0.01) * burnMask * uBurn.y * 0.12; }`);
   };
-  mat.customProgramCacheKey = () => (sculpt ? 'fig-rim-sculpt-b' : pid >= 0 ? 'fig-rim-detail-b' : 'fig-rim-b');
+  mat.customProgramCacheKey = () => (sculpt ? 'fig-rim-sculpt-c' : pid >= 0 ? 'fig-rim-detail-c' : 'fig-rim-c');
 }
 
 const _FLASH = new THREE.Color(1, 0.82, 0.68);
@@ -329,7 +329,7 @@ export class Figure {
     const holy = this.death?.holy ? clamp01((t - this.death.t0) / 0.6) : 0;
     const bAge = this.burnT < -50 ? -1 : t - this.burnT;
     const burn = bAge < 0 ? 0 : Math.exp(-bAge * 2.4) * (0.75 + 0.25 * Math.sin(bAge * 37 + this.seed * 9));
-    const char = bAge < 0 ? 0 : Math.min(1, bAge * 6) * 0.62;
+    const char = bAge < 0 ? 0 : Math.min(1, bAge * 6) * 0.8;
     const smoulder = bAge < 0 ? 0 : Math.min(1, bAge * 10) * (0.25 + 0.75 * Math.exp(-bAge * 0.9)) * (0.8 + 0.2 * Math.sin(bAge * 23 + this.seed * 5));
     for (const mm of this.mats) {
       mm.m.userData.uBurn?.value.set(char, smoulder);
@@ -666,6 +666,29 @@ export class Figure {
       }
       P['body@'][1] += Math.abs(Math.sin(wph * 2)) * 0.02 * s;
       P.tail1[1] += Math.sin(wph * 2) * 0.3;
+    }
+    if (this.model.dragon) {
+      // The great wyrm breathes: a slow serpentine sway down the neck, the jaw
+      // working over the fire in its throat, wings flexing, tail curling.
+      set('neck1', -0.05 + Math.sin(it * 0.9) * 0.05, Math.sin(it * 0.7) * 0.12, 0);
+      set('neck2', 0.1 + Math.sin(it * 0.9 - 0.6) * 0.05, Math.sin(it * 0.7 - 0.5) * 0.1, 0);
+      P.head = [0.18 + Math.sin(it * 1.3) * 0.04, Math.sin(it * 0.7 - 1) * 0.12, 0];
+      set('jaw', 0.14 + 0.08 * Math.max(0, Math.sin(it * 0.8)), 0, 0);
+      set('wingL', 0, 0, 0.1 * Math.sin(it * 1.1));
+      set('wingR', 0, 0, -0.1 * Math.sin(it * 1.1));
+      for (const k of ['tail1', 'tail2', 'tail3']) P[k][1] *= 0.45;
+      P['body@'][1] = breathe * 0.02 * s;
+      const actD = this._act(t);
+      if (actD && !this.death && (actD.a.type === 'attack' || actD.a.type === 'bite')) {
+        const u = actD.u;
+        const rear = ease(clamp01(u / 0.35)) * (1 - easeIn(clamp01((u - 0.35) / 0.12)));
+        const strike = easeIn(clamp01((u - 0.35) / 0.12)) * (1 - ease(clamp01((u - 0.5) / 0.5)));
+        P.neck1[0] += -0.35 * rear + 0.45 * strike;
+        P.neck2[0] += -0.25 * rear + 0.3 * strike;
+        P.jaw[0] += 0.55 * rear + 0.2 * strike;
+        P.wingL[2] += 0.5 * rear;
+        P.wingR[2] -= 0.5 * rear;
+      }
     }
     const act = this._act(t);
     if (act && !this.death) {

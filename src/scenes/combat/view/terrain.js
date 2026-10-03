@@ -4,7 +4,7 @@ import { getGlowTexture } from '../../../render/textures/index.js';
 import { CELL, EDGE } from '../../../data/maps/MapGrid.js';
 import { SUB } from '../logic/battlefield.js';
 import { Batcher, worldBox, wallQuad } from './batch.js';
-import { pbr, settsSet } from './textures.js';
+import { pbr, settsSet, detailSet } from './textures.js';
 import { statueGeometry, statueMaterial } from './sculpted.js';
 import { fbm } from '../../../render/textures/noise.js';
 
@@ -39,7 +39,7 @@ function addMacro(mat, { scale = 0.18, amount = 0.45, grime = 0.35, key = 'macro
         // Per-patch hue drift (warm/cool stone, sun-bleached vs. sooty) and
         // brick-scale blotching so no two wall runs read as the same tile.
         diffuseColor.rgb *= mix(vec3(1.07, 0.99, 0.9), vec3(0.9, 0.96, 1.05), mNoise(vMWPos * 0.37 + 5.0));
-        diffuseColor.rgb *= 0.86 + 0.28 * mNoise(vMWPos * 3.3 + 1.7);
+        diffuseColor.rgb *= ${key === 'lime' ? '0.95 + 0.1' : '0.86 + 0.28'} * mNoise(vMWPos * 3.3 + 1.7);
         diffuseColor.rgb *= mix(${(1 - grime).toFixed(3)}, 1.0, smoothstep(0.0, 1.4, vMWPos.y));
         ${grime > 0 ? `// Rain streaks running down from sills and copings; moss creeping up the base.
         float stk = smoothstep(0.55, 0.9, mNoise(vec3(vMWPos.x * 2.3, vMWPos.y * 0.16, vMWPos.z * 2.3)));
@@ -54,6 +54,16 @@ function addMacro(mat, { scale = 0.18, amount = 0.45, grime = 0.35, key = 'macro
   };
   mat.customProgramCacheKey = () => `${key}-${scale}-${amount}-${grime}-v5`;
   return mat;
+}
+
+/** Half-timbered lime-render wall (combat's own set: soft render, no crack network). */
+let limeCached = null;
+function limeMat() {
+  if (limeCached) return limeCached;
+  const t = detailSet('lime');
+  limeCached = new THREE.MeshStandardMaterial({ map: t.map, normalMap: t.normalMap, roughnessMap: t.roughnessMap, color: 0xf0e8da, roughness: 1, metalness: 0, normalScale: new THREE.Vector2(1.1, 1.1) });
+  addMacro(limeCached, { key: 'lime', amount: 0.3, grime: 0.45, scale: 0.12 });
+  return limeCached;
 }
 
 /** Textured PBR material from the shared library set, tinted (own instance). */
@@ -257,7 +267,7 @@ export function buildDiorama(field, o = {}) {
         // A dark sunken rim where a slab is missing.
         float brkRim = wF * smoothstep(0.5, 0.545, brkN) * (1.0 - brk);
         // Ruin grime on the dressed floor: soot and damp blooms, darker toward the walls.
-        gc.rgb *= mix(1.0, 0.68, wF * smoothstep(0.42, 0.78, gFbm(vWPos.xz * 0.2 + 50.0)));
+        gc.rgb *= mix(1.0, 0.84, wF * smoothstep(0.42, 0.78, gFbm(vWPos.xz * 0.2 + 50.0)));
         gc.rgb *= 1.0 - brkRim * 0.45;
         float mac = gFbm(vWPos.xz * 0.07);
         gc.rgb *= 0.74 + 0.5 * mac;
@@ -301,8 +311,8 @@ export function buildDiorama(field, o = {}) {
         // would glint as a waffle under torchlight).
         float puddle = smoothstep(0.62, 0.8, wet) * smoothstep(sHh - 0.25, sHh + 0.05, pLevel);
         // Damp and standing water read as sheen, not as dark stains on the setts.
-        gc.rgb *= mix(1.0, 0.8, wet);
-        gc.rgb = mix(gc.rgb, gc.rgb * vec3(0.6, 0.63, 0.68), puddle);
+        gc.rgb *= mix(1.0, 0.86, wet);
+        gc.rgb = mix(gc.rgb, gc.rgb * vec3(0.72, 0.75, 0.8), puddle);
         // Grime gradient: soot and dirt darkening toward wall feet and gutters.
         gc.rgb *= mix(0.62, 1.0, smoothstep(0.55, 0.95, gAO));
         gc.rgb *= mix(0.35, 1.0, gAO);
@@ -339,15 +349,18 @@ export function buildDiorama(field, o = {}) {
         // Puddles mirror the sky (a Fresnel sheen; the lights' own highlights
         // come from the low roughness), with a soft ripple of the far rooftops.
         { float pf = pow(1.0 - clamp(dot(normalize(vNormal), normalize(vViewPosition)), 0.0, 1.0), 3.0);
-          vec3 skyR = ${night ? 'vec3(0.05, 0.07, 0.13)' : 'vec3(0.34, 0.4, 0.5)'} * (0.8 + 0.4 * gFbm(vWPos.xz * 0.6 + 40.0));
-          outgoingLight = mix(outgoingLight, outgoingLight * 0.6 + skyR * 0.8, puddle * (0.45 + 0.5 * pf)); }
+          vec3 skyR = ${night ? 'vec3(0.05, 0.07, 0.13)' : 'vec3(0.5, 0.56, 0.66)'} * (0.75 + 0.5 * gFbm(vWPos.xz * 0.6 + 40.0));
+          // A bright meniscus where the water meets the stones.
+          float pRim = smoothstep(0.2, 0.5, puddle) * (1.0 - smoothstep(0.6, 0.95, puddle));
+          outgoingLight = mix(outgoingLight, outgoingLight * 0.55 + skyR * 0.75, puddle * (0.55 + 0.4 * pf));
+          outgoingLight += skyR * pRim * 0.12; }
         // Puddle glints and fire-lit paving never blow out into bloom blobs.
         float gPk = max(outgoingLight.r, max(outgoingLight.g, outgoingLight.b));
         outgoingLight *= gPk > 0.5 ? (0.5 + (gPk - 0.5) / (1.0 + (gPk - 0.5) / 0.7)) / gPk : 1.0;
         #include <opaque_fragment>
       `);
   };
-  groundMat.customProgramCacheKey = () => `combat-ground-v8-${night ? 1 : 0}`;
+  groundMat.customProgramCacheKey = () => `combat-ground-v9-${night ? 1 : 0}`;
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(SW * TILE, SH * TILE, 1, 1), groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(originX + (SW * TILE) / 2, 0, originZ + (SH * TILE) / 2);
@@ -369,14 +382,14 @@ export function buildDiorama(field, o = {}) {
   }
 
   // ---------------------------------------------------------------- materials
-  const wallMats = [libMat('wall_stone', 0xd8d0c4), libMat('wall_timber', 0xdcd2bc, { ns: 0.75, grime: 0.5, amount: 0.75 }), libMat('wall_ruin', 0xc8beb0)];
+  const wallMats = [libMat('wall_stone', 0xd8d0c4), limeMat(), libMat('wall_ruin', 0xc8beb0)];
   const plinthMat = libMat('wall_stone', 0x8a8278);
   const capMat = libMat('wall_ruin', 0x6a6258);
   const linenMat = pbr('cloth', 0xd8ccb2);
   const rubbleMat = libMat('wall_ruin', 0x9a9082);
   const coreMat = libMat('floor_rubble', 0x7a6e60);
   const CUT_H = 0.62;
-  const interiorVeil = new THREE.MeshBasicMaterial({ color: 0x080605, transparent: true, opacity: 0.5, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 });
+  const interiorVeil = new THREE.MeshBasicMaterial({ color: 0x080605, transparent: true, opacity: 0.32, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 });
   disposables.push(interiorVeil);
   const gloomMat = (() => {
     const c = document.createElement('canvas');
@@ -675,7 +688,7 @@ export function buildDiorama(field, o = {}) {
     const fuv = floor.attributes.uv;
     for (let i = 0; i < fuv.count; i++) fuv.setXY(i, fuv.getX(i) * iw / 1.1, fuv.getY(i) * id / 1.1);
     // Cut-away: an interior floor and a furnished dollhouse inside the low walls.
-    house.cut.add(floor.clone(), ruined ? libMat('floor_rubble', 0x7a6c60) : pbr('plank', 0x6e6258), { p: [(hx0 + hx1) / 2, 0.02, (hz0 + hz1) / 2] }, { cast: false });
+    house.cut.add(floor.clone(), ruined ? libMat('floor_rubble', 0x7a6c60) : libMat('hd_flags', 0x9a9086), { p: [(hx0 + hx1) / 2, 0.02, (hz0 + hz1) / 2] }, { cast: false });
     // The unplayable interior recedes into shadow: one even dark veil over the
     // whole floor (it reads as the shade inside the walls, not a lit room).
     house.cut.add(new THREE.PlaneGeometry(iw - 0.5, id - 0.5).rotateX(-Math.PI / 2), interiorVeil, { p: [(hx0 + hx1) / 2, 0.04, (hz0 + hz1) / 2] }, { cast: false, receive: false });
@@ -692,6 +705,50 @@ export function buildDiorama(field, o = {}) {
       if (kind < 0.55) house.cut.add(rockGeo(hash(k, 24, seed), 0.08 + hash(k, 25, seed) * 0.14), rubbleMat, { p: [px, 0.03, pz] }, { cast: false });
       else if (kind < 0.85) house.cut.add(worldBox(0.6 + hash(k, 26, seed) * 0.7, 0.03, 0.14, 1), woodMat, { p: [px, 0.05, pz], r: [0, hash(k, 27, seed) * 3, (hash(k, 28, seed) - 0.5) * 0.15] }, { cast: false });
       else house.cut.add(worldBox(0.2, 0.2, 1.6 + hash(k, 29, seed), 1), darkWood, { p: [px, 0.12, pz], r: [0.1, hash(k, 30, seed) * 3, 0.12] });
+    }
+    // The fallen roof: rafters slumped from the wall heads onto the floor,
+    // heaps of broken tiles and plaster, a tie-beam across the room and the
+    // household's wreckage — the gutted shell reads as a ruin, not a void.
+    {
+      const alongX = iw >= id;
+      const nR = Math.max(2, Math.round((alongX ? iw : id) / 1.6));
+      for (let k = 0; k < nR; k++) {
+        if (hash(k, 41, seed * 13) < 0.3) continue;
+        const u = (k + 0.5) / nR;
+        const side = hash(k, 42, seed * 13) > 0.5 ? 1 : -1;
+        const len2 = Math.min(alongX ? id : iw, 3.2) * (0.7 + hash(k, 43, seed) * 0.3);
+        const tilt = 0.35 + hash(k, 44, seed) * 0.3;
+        const ax = alongX ? hx0 + 0.4 + u * (iw - 0.8) : (side > 0 ? hx0 + 0.3 : hx1 - 0.3) + side * Math.cos(tilt) * len2 * 0.5;
+        const az = alongX ? (side > 0 ? hz0 + 0.3 : hz1 - 0.3) + side * Math.cos(tilt) * len2 * 0.5 : hz0 + 0.4 + u * (id - 0.8);
+        const yaw2 = (alongX ? 0 : Math.PI / 2) + (hash(k, 45, seed) - 0.5) * 0.35;
+        const g = worldBox(0.16, 0.16, len2, 1);
+        g.rotateX(side * tilt * (alongX ? 1 : -1));
+        house.cut.add(g, darkWood, { p: [ax, Math.sin(tilt) * len2 * 0.5, az], r: [0, yaw2, 0] });
+      }
+      // Tile and plaster heaps where the roof came down.
+      for (let k = 0; k < Math.round(iw * id * 0.09) + 2; k++) {
+        const px = hx0 + 0.7 + hash(k, 51, seed * 41) * (iw - 1.4);
+        const pz = hz0 + 0.7 + hash(k, 52, seed * 41) * (id - 1.4);
+        const sz = 0.35 + hash(k, 53, seed) * 0.45;
+        house.cut.add(rockGeo(hash(k, 54, seed), sz), rubbleMat, { p: [px, -sz * 0.2, pz], s: [1.4, 0.7, 1.2] });
+        for (let j = 0; j < 3; j++) {
+          const a = hash(k * 7 + j, 55, seed) * Math.PI * 2;
+          const rr = sz * (0.25 + hash(k * 7 + j, 56, seed) * 0.6);
+          house.cut.add(worldBox(0.22, 0.02, 0.15, 1), rubbleMat, { p: [px + Math.cos(a) * rr, 0.06 + hash(j, k, 57) * sz * 0.35, pz + Math.sin(a) * rr], r: [(hash(j, k, 58) - 0.5) * 0.9, a, (hash(j, k, 59) - 0.5) * 0.9] }, { cast: false });
+        }
+      }
+      // A tie-beam fallen across the room, one end propped on rubble.
+      house.cut.add(worldBox(0.26, 0.26, Math.min(alongX ? iw : id, 4.5) * 0.85, 1), darkWood, { p: [(hx0 + hx1) / 2 + (hash(seed, 61, 1) - 0.5) * iw * 0.3, 0.3, (hz0 + hz1) / 2 + (hash(seed, 62, 1) - 0.5) * id * 0.3], r: [0.12, alongX ? Math.PI / 2 + 0.25 : 0.25, 0] });
+      // The household's wreckage: an overturned table and a barrel or two.
+      const tx = hx0 + 1.1 + hash(seed, 63, 2) * Math.max(0, iw - 2.2);
+      const tz = hz0 + 1.1 + hash(seed, 64, 2) * Math.max(0, id - 2.2);
+      house.cut.add(worldBox(1.4, 0.07, 0.8, 1), woodMat, { p: [tx, 0.42, tz], r: [Math.PI / 2 - 0.15, hash(seed, 65, 2) * 3, 0] });
+      for (const [dx, dz] of [[0.25, 0.5], [-0.3, 0.55]]) house.cut.add(turnedLeg(0.7, 0.05), darkWood, { p: [tx + dx, 0.05, tz + dz], r: [Math.PI / 2, 0, 0.2] }, { cast: false });
+      const bx = hx0 + 0.75 + hash(seed, 66, 3) * Math.max(0, iw - 1.5);
+      const bz = hz0 + 0.75 + hash(seed, 67, 3) * Math.max(0, id - 1.5);
+      house.cut.add(barrelGeo(), barrelMat, { p: [bx, 0, bz], s: 0.85 });
+      house.cut.add(barrelHoops(), ironMat, { p: [bx, 0, bz], s: 0.85 });
+      house.cut.add(barrelGeo().rotateZ(Math.PI / 2), barrelMat, { p: [bx + 0.7, 0.3, bz + 0.3], r: [0, 0.6, 0], s: 0.8 }, { cast: false });
     }
     if (!ruined) {
       const alongX = iw >= id;
@@ -1694,6 +1751,17 @@ export function buildDiorama(field, o = {}) {
       // reads as a stain on the paving from the tactics camera).
       g.fadeTarget = hides || fore ? 0 : 1;
       g.full.visible = !((hides || fore) && g.fade && g.fade.value < 0.04);
+      // A dissolved wall casts no shadow (the shadow pass ignores the dither,
+      // which left dark ghost silhouettes of invisible walls on the paving).
+      const cast = !(hides || fore);
+      if (g._cast !== cast) {
+        g._cast = cast;
+        g.full.traverse((o) => {
+          if (!o.isMesh) return;
+          if (o.userData.cs0 === undefined) o.userData.cs0 = o.castShadow;
+          o.castShadow = cast && o.userData.cs0;
+        });
+      }
       g.cut.visible = false;
     }
   }

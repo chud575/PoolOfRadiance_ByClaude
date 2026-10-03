@@ -26,6 +26,12 @@ export class CombatHud {
     this.card = Frame({ title: 'Combat', variant: 'blue', className: 'cb-card' });
     this.cardBody = this.card.body;
     this.log = new MessageLog(ctx.bus, { lines: 4, max: 80 });
+    // 'cue' messages are machine-readable hints for listeners (the music
+    // director), never shown in the log.
+    const push = this.log.push.bind(this.log);
+    this.log.push = (m) => {
+      if (m?.kind !== 'cue') push(m);
+    };
     this.logBox = h('div.cb-logbox', { dataset: { tip: 'Combat log — hover to expand' } }, [this.log.el]);
     this.cmds = h('div.por-commandbar.cb-cmds');
     this.prompt = h('div.cb-prompt');
@@ -350,7 +356,9 @@ export class CombatHud {
         return;
       }
     }
-    const kids = [h('span', [text])];
+    // One damage format everywhere: the number (with a CRIT badge on criticals),
+    // then the victim's name plate and an hp tick.
+    const kids = [h('span', o.badge ? [text, h('em', [o.badge])] : [text])];
     if (o.tag) {
       const hp = Math.max(0, Math.min(1, o.tag.hp ?? 1));
       const lost = Math.max(0, Math.min(1 - hp, o.tag.lost ?? 0));
@@ -370,9 +378,14 @@ export class CombatHud {
     this.setPrompt('');
   }
 
-  showBanner(text, sub, t, life = 1.6) {
+  showBanner(text, sub, t, life = 1.6, { turn = false } = {}) {
     this.banner.replaceChildren(text, sub ? h('small', [sub]) : '');
     this.banner.classList.toggle('big', life >= 2);
+    // Per-turn callouts hang from the initiative bar as a compact plate (never
+    // over the battlefield); round/victory/surprise banners stay centre stage.
+    this.banner.classList.toggle('turn', turn);
+    const home = turn ? this.timeline : this.root;
+    if (this.banner.parentNode !== home) home.append(this.banner);
     this.bannerT = { t0: t, life };
   }
 
@@ -430,7 +443,7 @@ export class CombatHud {
       const u = (t - this.bannerT.t0) / this.bannerT.life;
       const a = u < 0 ? 0 : u < 0.15 ? u / 0.15 : u > 0.75 ? Math.max(0, 1 - (u - 0.75) / 0.25) : 1;
       this.banner.style.opacity = String(a);
-      this.banner.style.transform = `translate(-50%, 0) scale(${0.96 + Math.min(1, u * 4) * 0.04})`;
+      this.banner.style.transform = this.banner.classList.contains('turn') ? `translate(-50%, ${(1 - Math.min(1, u * 5)) * -6}px)` : `translate(-50%, 0) scale(${0.96 + Math.min(1, u * 4) * 0.04})`;
       if (u > 1) this.bannerT = null;
     }
   }

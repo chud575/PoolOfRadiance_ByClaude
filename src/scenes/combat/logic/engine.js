@@ -278,7 +278,7 @@ export class CombatEngine {
     const kind = foes[0]?.name ?? 'the foe';
     const text = this.surprised === 'monster'
       ? `Surprise! The party falls upon ${foes.length > 1 ? 'the enemy' : kind} before they can react.`
-      : `Surprise! ${foes.length > 1 ? 'The enemy strike' : `${kind} strikes`} before the party can react.`;
+      : `Surprise! ${foes.length > 1 ? 'The enemies strike' : `${kind} strikes`} before the party can react.`;
     const ev = [{ type: 'surprise', side: this.surprised, rounds: this.surpriseRounds, text }];
     this._queued.push(...ev);
     return ev;

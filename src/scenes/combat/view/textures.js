@@ -130,10 +130,89 @@ const GEN = {
   },
 };
 
+/**
+ * Half-timbered wall: oak posts, rails and braces (same layout as the shared
+ * wall_timber set so the facades keep their rhythm) infilled with soft lime
+ * render — low-frequency mottling, grime soaking out along the timbers, rain
+ * streaks under the rails and a few spalls where the render has fallen away
+ * to show the woven wattle or brick beneath. No crack network.
+ */
+function limeRender() {
+  const posts = [0.02, 0.5, 0.98];
+  const rails = [[0.08, 0.04], [0.5, 0.03], [0.92, 0.04]];
+  return (u, v) => {
+    // Hand-hewn timbers wander a little.
+    const wob = (valueNoise(u * 3, v * 3, 3, 81) - 0.5) * 0.012;
+    let dPost = 9;
+    for (const p of posts) dPost = Math.min(dPost, Math.abs(u - p + wob) - 0.045);
+    let dRail = 9;
+    for (const [rv, w] of rails) dRail = Math.min(dRail, Math.abs(v - rv - wob * 0.6) - w);
+    const dDiag = v > 0.5 ? Math.abs((u % 0.5) * 2 - v) / 2.24 - 0.035 / 2.24 : 9;
+    const dBeam = Math.min(dPost, dRail, dDiag);
+    const grain = valueNoise(u * 5, v * 70, 70, 82) * 0.6 + valueNoise(u * 13, v * 160, 160, 83) * 0.4;
+    const n = fbm(u * 2.5, v * 2.5, { octaves: 4, period: 5, seed: 84 });
+    if (dBeam < 0) {
+      // Weathered oak: silvered on the faces, darker in the checks.
+      const along = dDiag < Math.min(dPost, dRail) ? (u + v) * 40 : dPost < dRail ? v * 60 : u * 60;
+      const check = smooth(0.82, 0.95, valueNoise(along * 0.4, (dPost < dRail ? u : v) * 300, 300, 85));
+      const edge = smooth(0, 0.012, -dBeam);
+      const g = (0.62 + grain * 0.32 + n * 0.12) * (1 - check * 0.5) * lerp(0.7, 1, edge);
+      return { c: [0.27 * g, 0.18 * g, 0.12 * g], h: 0.85 + grain * 0.06 - check * 0.1 - (1 - edge) * 0.1, r: 0.86 };
+    }
+    // Lime render: broad soft mottle, warm/cool drift, no hard detail.
+    const mott = fbm(u * 1.6 + 3.1, v * 1.6, { octaves: 3, period: 3.2, seed: 86 });
+    const fine = valueNoise(u * 26, v * 26, 26, 87);
+    let c = [0.83, 0.78, 0.67];
+    const warm = mott - 0.5;
+    c = [c[0] * (1 + warm * 0.1), c[1] * (1 + warm * 0.05), c[2] * (1 - warm * 0.06)];
+    let k = 0.9 + (n - 0.5) * 0.16 + (fine - 0.5) * 0.03;
+    // Grime soaking out of the timbers, heavier under the rails (water runs down).
+    const soak = Math.exp(-dBeam / 0.022) * 0.3 + Math.exp(-dBeam / 0.07) * 0.1;
+    let streak = 0;
+    for (const [rv, w] of rails) {
+      const below = rv - w - v;
+      if (below > 0 && below < 0.3) streak = Math.max(streak, Math.exp(-below / 0.11) * smooth(0.45, 0.8, valueNoise(u * 34, v * 1.5, 34, 88)));
+    }
+    k *= 1 - soak - streak * 0.22;
+    c = c.map((x, i) => x * k * (i === 2 ? 1 - soak * 0.3 : 1));
+    // Spalls: a few blotches where the render has fallen, showing wattle or brick.
+    const sp = fbm(u * 4.2 + 11, v * 4.2, { octaves: 3, period: 8.4, seed: 89 });
+    const spall = smooth(0.77, 0.79, sp) * smooth(0.02, 0.05, dBeam);
+    let h = 0.42 + (mott - 0.5) * 0.06 + (fine - 0.5) * 0.015;
+    if (spall > 0) {
+      const brick = hash2(Math.floor(u * 2), Math.floor(v * 2), 90) > 0.5;
+      let ic;
+      let ih;
+      if (brick) {
+        const row = Math.floor(v * 46);
+        const bu = u * 18 + (row % 2) * 0.5;
+        const mortar = Math.min(Math.abs(v * 46 - row - 0.5) > 0.38 ? 0 : 1, Math.abs(bu - Math.round(bu)) < 0.06 ? 0 : 1);
+        const id = hash2(Math.floor(bu), row, 91);
+        ic = mortar ? [0.42 + id * 0.12, 0.2 + id * 0.05, 0.13] : [0.3, 0.27, 0.22];
+        ih = mortar ? 0.3 : 0.22;
+      } else {
+        // Woven hazel wattle: horizontal rods over vertical staves.
+        const rod = Math.abs(Math.sin(v * 140)) ;
+        const stave = Math.abs(Math.sin(u * 30));
+        const w2 = Math.max(rod * 0.8, stave > 0.92 ? 1 : 0);
+        ic = [0.36 * (0.6 + w2 * 0.5), 0.27 * (0.6 + w2 * 0.5), 0.17 * (0.6 + w2 * 0.5)];
+        ih = 0.2 + w2 * 0.08;
+      }
+      // Shadowed, slightly raised broken lip of render around the hole.
+      const lip = smooth(0.765, 0.775, sp) * (1 - smooth(0.785, 0.81, sp));
+      c = [lerp(c[0], ic[0], spall), lerp(c[1], ic[1], spall), lerp(c[2], ic[2], spall)];
+      c = c.map((x) => x * (1 - lip * 0.25));
+      h = lerp(h, ih, spall) + lip * 0.04;
+    }
+    return { c, h, r: lerp(0.95, 0.88, spall) };
+  };
+}
+GEN.lime = () => limeRender();
+
 const texCache = new Map();
 
 /** @returns {{map:THREE.Texture, normalMap:THREE.Texture, roughnessMap:THREE.Texture}} */
-export function detailSet(name, size = ['chain', 'metal', 'roof', 'thatch', 'plank'].includes(name) ? 256 : 128) {
+export function detailSet(name, size = name === 'lime' ? 512 : ['chain', 'metal', 'roof', 'thatch', 'plank'].includes(name) ? 256 : 128) {
   if (texCache.has(name)) return texCache.get(name);
   const d = genData(size, GEN[name](), name === 'chain' ? 5 : 3);
   const mk = (arr, srgb) => {

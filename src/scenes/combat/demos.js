@@ -62,7 +62,7 @@ function kill(sc, c, t, from) {
   f.die(t, from.x, from.z);
   sc.overlay.teamRing(c.id, c.side).visible = false;
   f.blob.visible = false;
-  if (f.eyeGlow) f.eyeGlow.visible = false;
+  if (f.eyeGlow) { f.eyeGlow.visible = false; if (f.eyeGlow.userData.twin) f.eyeGlow.userData.twin.visible = f.eyeGlow.visible; }
 }
 
 /**
@@ -177,7 +177,11 @@ export const DEMOS = {
       const hand = f.bonePos('handR').clone();
       const R = 2.5 * TILE;
       sc.vfx.castGlow(launch - 0.7, () => f.bonePos('handR').clone(), 0xff8030, 0.85);
-      const det = sc.vfx.fireball(launch, hand, centre, R, 3.7);
+      const victims = () => foes.filter((m) => Math.hypot(m.x - best.x, m.y - best.y) <= 2.5).map((m) => {
+        const fm = sc.figures.get(m.id);
+        return { pos: fm.root.position, h: fm.model.height };
+      });
+      const det = sc.vfx.fireball(launch, hand, centre, R, 3.7, { victims });
       const detonate = launch + det.detonate;
       // Victims.
       const hitList = foes.filter((m) => Math.hypot(m.x - best.x, m.y - best.y) <= 2.5);
@@ -196,7 +200,7 @@ export const DEMOS = {
         const out = new THREE.Vector3(fm.pos.x - centre.x, 0, fm.pos.z - centre.z);
         if (out.lengthSq() < 0.01) out.set(0.3, 0, 0.6);
         out.normalize().multiplyScalar(R * 0.42).setY(0.5);
-        sc._say(fm, String(d), 'dmg', detonate + 0.3 + k * 0.11, { cls: 'fire', push: out, tag: { name: m.name, hp: Math.max(0, hp0 - d) / m.hp.max, lost: Math.min(hp0, d) / m.hp.max } });
+        sc._say(fm, String(d), 'dmg', detonate + 0.14 + k * 0.05, { cls: 'fire', push: out, tag: { name: m.name, hp: Math.max(0, hp0 - d) / m.hp.max, lost: Math.min(hp0, d) / m.hp.max } });
         // Results land with the blast, not before it.
         sc.at(detonate + 0.02, () => {
           m.hp.cur -= d;
@@ -230,7 +234,7 @@ export const DEMOS = {
     },
   },
 
-  /** Area spells for review: a stinking cloud over one knot of foes, sleep settling on others (t≈1.2). */
+  /** Area spell for review: a stinking cloud over one knot of foes, the victims retching (t≈1.3). */
   cloud: {
     async stage(sc) {
       const foes = sc.monsters;
@@ -250,16 +254,8 @@ export const DEMOS = {
           sc.vfx.retch(-2 + m.x * 0.37, () => sc._mouthPos(f), `sick-${m.id}`, m.x * 3 + m.y, () => f.yaw);
         }
       }
+      // (Sleep has its own review frame; mixing it in muddles both effects.)
       const cb = sq2w(b.x, b.y);
-      sc.vfx.sleepCloud(0, cb, 3 * TILE, 4.1);
-      for (const m of foes) {
-        if (Battlefield.dist(m.x, m.y, b.x, b.y) <= 1 && m !== a) {
-          m.fx.asleep = 3;
-          const f = sc.figures.get(m.id);
-          f.setState('asleep');
-          sc.vfx.sleepZ(0.6, () => sc._headPos(f), `z-${m.id}`, m.x + m.y);
-        }
-      }
       const mid = ca.clone().lerp(cb, 0.5);
       sc.cam.goalTarget.copy(mid);
       sc.cam.target.copy(mid);
@@ -376,7 +372,7 @@ export const DEMOS = {
       sc.vfx.hitSparks(impact, at, { crit: true, seed: 5, blood: true, dir: new THREE.Vector3(ff.pos.x - fh.pos.x, 0, ff.pos.z - fh.pos.z) });
       sc.vfx.swipe(impact - 0.06, fh.root.position.clone().setY(fh.model.height * 0.55), fh.yaw);
       sc.vfx.addShake(impact, 0.12, 0.3);
-      sc._say(ff, '9', 'crit', impact + 0.01);
+      sc._say(ff, '9', 'crit', impact + 0.01, { badge: 'CRIT', tag: { name: foe.name, hp: Math.max(0, foe.hp.cur - 9) / foe.hp.max, lost: Math.min(foe.hp.cur, 9) / foe.hp.max } });
       sc.at(impact, () => (foe.hp.cur = Math.max(1, foe.hp.cur - 3)));
       // Second pair mid-exchange.
       if (second && foe2) {

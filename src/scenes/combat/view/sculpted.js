@@ -75,7 +75,9 @@ const hashf = (n) => {
 // ------------------------------------------------------------------ species looks
 /** Colours / patterns per species (hide, accent, belly, horn, cloth). */
 export const LOOKS = {
-  kobold: { skin: [0x5c4232, 'scales'], back: [0x281c16, 'scales'], belly: [0xa89070, 'scales'], horn: 0xe2d2a8, cloth: 0x4a3a28, head: 'kobold', jerkin: 0x86643e, boots: 0x3a2414 },
+  // Rust-red scaled hide (saturated, so a warband pops off the grey setts),
+  // near-black along the spine, a pale ochre belly and bone-white horns.
+  kobold: { skin: [0x8e3a1c, 'scales'], back: [0x2e120a, 'scales'], belly: [0xd09a5e, 'scales'], horn: 0xeee0b8, cloth: 0x4a3a28, head: 'kobold', jerkin: 0x9a6a38, boots: 0x3a2414 },
   goblin: { skin: [0x86963a, 'skin'], back: [0x5a6a26, 'skin'], belly: [0xa0aa60, 'skin'], horn: 0xd8c8a0, cloth: 0x4a3020, head: 'goblin', pants: 0x3a2a1a },
   orc: { skin: [0x66624a, 'skin'], back: [0x34321f, 'skin'], belly: [0x8a8468, 'skin'], horn: 0xeadfc0, cloth: 0x3a2c1c, head: 'orc', pants: 0x3a2c1e, jerkin: 0x5a3a20, plate: 0x6a625a, hair: 0x0e0c0a },
   // Hobgoblins: dark rust-brown hide with an orange cast, a flat simian face,
@@ -84,7 +86,8 @@ export const LOOKS = {
   gnoll: { skin: [0xa88450, 'spots'], back: [0x6a5030, 'fur'], belly: [0xc8a878, 'fur'], horn: 0xe0d4b0, cloth: 0x3a2e22, head: 'gnoll', hair: 0x2a1a10, pants: 0x3a2e22 },
   bugbear: { skin: [0x7a5a30, 'fur'], back: [0x4a3418, 'fur'], belly: [0x9a7a50, 'fur'], horn: 0xd8c8a0, cloth: 0x3a2a1a, head: 'bugbear', hair: 0x2a1a0a, pants: 0x3a2a1a },
   lizardMan: { skin: [0x4a6a3a, 'scales'], back: [0x2e4a26, 'scales'], belly: [0xb0b07a, 'scales'], horn: 0xd8d0a0, cloth: 0x4a3a20, head: 'lizard' },
-  skeleton: { skin: [0xe4dcc6, 'bone'], back: [0xb4aa92, 'bone'], belly: [0xefe8d6, 'bone'], horn: 0xf4efe0, head: 'skull', shirt: 0x3a3028 },
+  // Old grave bone: yellowed and earth-stained, darker in the hollows, with rags.
+  skeleton: { skin: [0xbcae8c, 'bone'], back: [0x8a7c5e, 'bone'], belly: [0xcfc4a4, 'bone'], horn: 0xd8ceb0, head: 'skull', shirt: 0x34291e },
   zombie: { skin: [0x7a8466, 'skin'], back: [0x5a6450, 'skin'], belly: [0x8a9070, 'skin'], horn: 0xd8d0b0, cloth: 0x3a3a30, head: 'zombie', pants: 0x2e2c26, shirt: 0x4a4438, hair: 0x2a2620 },
   ghoul: { skin: [0x9a9a88, 'skin'], back: [0x6a6a5c, 'skin'], belly: [0xa8a898, 'skin'], horn: 0xe0d8c0, cloth: 0x2a2a28, head: 'ghoul', pants: 0x2a2a28, hair: 0x1a1a18 },
   ogre: { skin: [0xa08a5a, 'skin'], back: [0x7a6a42, 'skin'], belly: [0xb09a6a, 'skin'], horn: 0xd8c8a0, cloth: 0x4a3a28, head: 'ogre', pants: 0x4a3a28, hair: 0x2a1e12 },
@@ -504,6 +507,8 @@ const HEADS = {
     for (const sx of [1, -1]) B.ell('head', H(sx * 0.05, 0.075, 0.045), [0.018 * hs, 0.016 * hs, 0.03 * hs], T);
     B.ell('head', H(0, 0.118, 0.07), [0.07 * hs, 0.02 * hs, 0.03 * hs], T);
     for (const sx of [1, -1]) B.sph('head', H(sx * 0.032, 0.1, 0.08), 0.024 * hs, { g: G.torso, sub: true, k: 0.006 * hs });
+    // The sockets are dark hollows (grave dirt and shadow), not more bone.
+    for (const sx of [1, -1]) B.sph('head', H(sx * 0.032, 0.1, 0.066), 0.019 * hs, { g: G.hard, mat: 'dark', k: 0.003 * hs });
     B.cone('head', H(0, 0.075, 0.09), H(0, 0.06, 0.09), 0.012 * hs, 0.006 * hs, { g: G.torso, sub: true, k: 0.003 * hs });
     // Jaw (own layer → a crisp hinge line), teeth.
     B.box('head', H(0, 0.022, 0.05), [0.044 * hs, 0.014 * hs, 0.042 * hs], { g: G.hard, k: 0.006 * hs, rr: 0.012 * hs, mat: 'skin' });
@@ -555,8 +560,8 @@ function skeletonBody(B, o) {
   const longBone = (tag, a, b, g, r0 = R, r1 = R * 0.85) => {
     const L = { k: 0.01 * s, g, mat: 'skin' };
     // A touch heavier than anatomy so limbs read as bone, not wire, at tactics zoom.
-    r0 *= 1.3;
-    r1 *= 1.3;
+    r0 *= 1.05;
+    r1 *= 1.05;
     B.cone(tag, a, b, r0, r1, L);
     B.sph(tag, mid(a, b, 0.06), r0 * 1.45, L);
     B.sph(tag, mid(a, b, 0.94), r1 * 1.45, L);
@@ -578,8 +583,12 @@ function skeletonBody(B, o) {
     for (let k = 0; k < 4; k++) B.cone(`foot${side}`, add(ft, [(k - 1.5) * 0.018 * s, -0.045 * s, 0.07 * s]), add(ft, [(k - 1.5) * 0.02 * s, -0.05 * s, 0.12 * s]), 0.008 * s, 0.006 * s, { k: 0.004 * s, g: gL, mat: 'skin' });
     void sx;
   }
-  // Rotted rag of a loincloth / tabard scrap: hard layer.
+  // Rotted rags: a loincloth scrap, a torn tabard hanging off the ribs and a
+  // shroud remnant over one shoulder (hard layer).
   B.box('hips', add(J.hips, [0, -0.11 * s, 0.07 * s]), [0.06 * s, 0.1 * s, 0.006 * s], { g: G.hair, mat: 'shirt', rr: 0.004 * s, disp: (x, y) => Math.sin(x * 160 + y * 40) * 0.003 * s, amp: 0.003 * s });
+  B.box('hips', add(J.hips, [0.02 * s, -0.08 * s, -0.07 * s]), [0.07 * s, 0.09 * s, 0.006 * s], { g: G.hair, mat: 'shirt', rr: 0.004 * s, disp: (x, y) => Math.sin(x * 140 - y * 60) * 0.004 * s, amp: 0.004 * s });
+  B.box('chest', add(J.chest, [0.03 * s, 0.06 * s, 0.115 * s]), [0.07 * s, 0.13 * s, 0.006 * s], { g: G.hair, mat: 'shirt', rr: 0.004 * s, R: mEuler(-0.2, 0, 0.12), disp: (x, y) => Math.sin(x * 120 + y * 90) * 0.004 * s, amp: 0.004 * s });
+  B.box('chest', add(J.chest, [-0.09 * s, 0.2 * s, -0.01 * s]), [0.06 * s, 0.02 * s, 0.12 * s], { g: G.hair, mat: 'shirt', rr: 0.006 * s, R: mEuler(0, 0, -0.5), disp: (x, y, z) => Math.sin(z * 150 + x * 50) * 0.004 * s, amp: 0.004 * s });
   const H = (x, y, z) => add(J.head, [x * o.hs, y * o.hs, z * o.hs]);
   const e = HEADS.skull(B, H, o.hs, { G });
   return { names: Object.keys(J), eyes: e.eyes, eyeR: e.r };

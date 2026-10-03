@@ -81,7 +81,7 @@ export class Overlay {
           // Grid marks only where they help: inside the move range and around the
           // cursor / active unit, fading with distance (no printed lattice everywhere).
           float near = max(1.0 - smoothstep(1.2, 3.2, length(g - uFocus - 0.5)), 1.0 - smoothstep(0.8, 2.4, length(g - uFocus2 - 0.5)));
-          float gridVis = max(step(0.1, s.r) * 0.45, near) * walk * uShowGrid;
+          float gridVis = max(step(0.1, s.r) * 0.2, near) * walk * uShowGrid;
           float grid = (1.0 - smoothstep(0.0, 0.016, ed)) * gridVis;
           LAYER(mix(vec3(0.06, 0.05, 0.04), vec3(0.8, 0.75, 0.6), uNight), grid * mix(0.28, 0.07, uNight));
           vec2 cf = min(f, 1.0 - f);
@@ -94,11 +94,17 @@ export class Overlay {
             float de = 2.0;
             vec2 d[4]; d[0] = vec2(1,0); d[1] = vec2(-1,0); d[2] = vec2(0,1); d[3] = vec2(0,-1);
             float dist[4]; dist[0] = 1.0 - f.x; dist[1] = f.x; dist[2] = 1.0 - f.y; dist[3] = f.y;
+            float dX = 2.0, dY = 2.0;
             for (int k = 0; k < 4; k++) {
               // Free-standing obstacles (columns, crates) inside the range don't notch its outline.
               float nObs = step(0.2, I(c + d[k]).r) * step(I(c + d[k]).r, 0.5);
-              if (S(c + d[k]).r < 0.1 && nObs < 0.5) de = min(de, dist[k]);
+              if (S(c + d[k]).r < 0.1 && nObs < 0.5) { if (k < 2) dX = min(dX, dist[k]); else dY = min(dY, dist[k]); }
             }
+            // Convex corners are rounded (an inset rounded-rect distance), so the
+            // outline flows instead of stepping square by square.
+            const float RR = 0.22;
+            vec2 qc = max(vec2(RR) - vec2(dX, dY), 0.0);
+            de = (dX < RR && dY < RR) ? RR - length(qc) : min(dX, dY);
             for (int k = 0; k < 4; k++) {
               vec2 dd = vec2(k < 2 ? 1.0 : -1.0, (k == 0 || k == 2) ? 1.0 : -1.0);
               float nObs = step(0.2, I(c + dd).r) * step(I(c + dd).r, 0.5);
@@ -109,22 +115,22 @@ export class Overlay {
             float px = pxG;
             float shimmer = 0.5 + 0.5 * sin(uTime * 1.2 - (g.x * 0.8 + g.y * 0.55));
             vec3 rc = r > 0.9 ? uRangeColor : vec3(1.0, 0.8, 0.45);
-            float glowIn = exp(-de * 3.2);
             // Far edges of a big range recede (no lone bright fragments at the
             // frame's rim): the lip fades with distance from the mover.
-            float farK = uFocus2.x > -50.0 ? mix(1.0, 0.3, smoothstep(4.0, 9.0, length(g - uFocus2 - 0.5))) : 1.0;
-            // Feathered lip: a soft luminous seam, a few pixels wide, never a hard white line.
-            float lip = (1.0 - smoothstep(0.0, px * 5.0 + 0.02, de)) * farK;
-            glowIn *= mix(0.55, 1.0, farK);
-            // (Composited in linear HDR over dark paving: small alphas read strong.)
-            float nk = mix(1.0, 0.75, uNight);
-            LAYER(rc * 0.5, (0.01 + 0.006 * shimmer) * nk);
-            LAYER(rc * 0.8, glowIn * 0.11 * nk);
-            LAYER(rc * 1.0, lip * lip * 0.16 * nk);
+            float farK = uFocus2.x > -50.0 ? mix(1.0, 0.35, smoothstep(4.0, 9.0, length(g - uFocus2 - 0.5))) : 1.0;
+            // The setts stay readable: no lit fill, only a whisper of a cool
+            // tint (dark, so it tints rather than lightens), a narrow feathered
+            // glow hugging the boundary and a fine antialiased perimeter line.
+            float nk = mix(1.0, 0.8, uNight);
+            float line = 1.0 - smoothstep(px * 0.6, px * 2.2, abs(de - px * 2.0));
+            float feather = exp(-de * 11.0) * (1.0 - line);
+            LAYER(rc * 0.06, 0.06 * nk);
+            LAYER(rc * 0.55, feather * 0.07 * farK * nk);
+            LAYER(rc * (0.9 + 0.15 * shimmer), line * 0.34 * farK * nk);
             // Rough ground costs extra: darker, with a stipple.
             if (inf.g > 0.2 && inf.g < 0.5) {
               float st = step(0.82, fract(sin(dot(floor(g * 9.0), vec2(12.9898, 78.233))) * 43758.5453));
-              LAYER(vec3(0.02, 0.025, 0.04), 0.26 + st * 0.2);
+              LAYER(vec3(0.02, 0.025, 0.04), 0.1 + st * 0.12);
             }
           }
           // Threatened squares (moving out provokes): thin, desaturated diagonal
@@ -233,20 +239,20 @@ export class Overlay {
         void main(){
           float across = 1.0 - abs(vUv.y - 0.5) * 2.0;
           bool blocked = vT > uBlock;
-          // Core thread + a wide soft glow either side.
-          float core = smoothstep(0.62, 0.9, across);
-          float glow = across * across * 0.42;
-          // Chevrons streaming toward the target (clear shots only).
-          float f = fract(vT * uLen * 0.9 - uTime * 0.8);
-          float chev = (1.0 - smoothstep(0.0, 0.1, abs(f - 0.5 - (1.0 - across) * 0.35))) * smoothstep(0.15, 0.6, across);
-          vec3 gold = vec3(1.0, 0.74, 0.3);
-          vec3 red = vec3(1.0, 0.16, 0.1);
+          // A thin arcing trajectory of dashes flowing to the target (gilt while
+          // clear; past a block it turns red and the dashes slow and sparse out).
+          float core = smoothstep(0.35, 0.85, across);
+          float glow = across * across * 0.3;
+          float f = fract(vT * uLen / 0.32 - uTime * (blocked ? 0.3 : 1.1));
+          float dash = 1.0 - smoothstep(0.18, 0.3, abs(f - 0.5));
+          vec3 gold = vec3(1.0, 0.8, 0.42);
+          vec3 red = vec3(1.0, 0.2, 0.12);
           vec3 c = blocked ? red : gold;
-          float a = blocked ? (core * 0.75 + glow * 0.8) * (0.55 + 0.45 * step(0.5, fract(vT * uLen * 1.6))) : core * 0.8 + glow + chev * 0.55;
-          // A hot tick where the line is cut.
-          a += (1.0 - smoothstep(0.0, 0.05 / max(uLen, 1.0), abs(vT - uBlock))) * step(uBlock, 0.999) * 1.4 * across;
-          float fadeIn = smoothstep(0.0, 0.07, vT) * (1.0 - smoothstep(0.86, 0.99, vT) * 0.7);
-          gl_FragColor = vec4(c * a * fadeIn * 1.15, 1.0);
+          float a = (core * 0.95 + glow) * dash * (blocked ? 0.6 : 1.0);
+          // An occlusion tick where the line is cut.
+          a += (1.0 - smoothstep(0.0, 0.06 / max(uLen, 1.0), abs(vT - uBlock))) * step(uBlock, 0.999) * 1.6 * across;
+          float fadeIn = smoothstep(0.0, 0.06, vT) * (1.0 - smoothstep(0.9, 1.0, vT) * 0.6);
+          gl_FragColor = vec4(c * a * fadeIn * 1.2, 1.0);
         }`,
     });
     // Cover marker: a red-rimmed shield glyph where the sight line is broken.
@@ -476,7 +482,7 @@ export class Overlay {
   }
 
   /** Sight line from square a to square b, blocked at fraction tBlock (1 = clear). */
-  setRay(a, b, tBlock = 1, { arc = 0.35, h0 = 1.0, h1 = 0.95 } = {}) {
+  setRay(a, b, tBlock = 1, { arc = 1.1, h0 = 1.25, h1 = 1.0 } = {}) {
     if (!a || !b || (a.x === b.x && a.y === b.y)) {
       this.ray.visible = false;
       this.coverMark.visible = false;
@@ -488,7 +494,7 @@ export class Overlay {
     const dir = new THREE.Vector3().subVectors(B, A);
     const len = dir.length();
     dir.normalize();
-    const side = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(0.17);
+    const side = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(0.06);
     const n = 32;
     const pos = [];
     const uv = [];
@@ -497,7 +503,7 @@ export class Overlay {
     for (let i = 0; i <= n; i++) {
       const u = i / n;
       const p = A.clone().lerp(B, u);
-      p.y += Math.sin(u * Math.PI) * arc * Math.min(1, len / 6);
+      p.y += Math.sin(u * Math.PI) * arc * Math.min(1, len / 5);
       pos.push(p.x - side.x, p.y, p.z - side.z, p.x + side.x, p.y, p.z + side.z);
       uv.push(u, 0, u, 1);
       tt.push(u, u);
@@ -515,7 +521,7 @@ export class Overlay {
     this.ray.visible = true;
     if (tBlock < 0.999) {
       const pc = A.clone().lerp(B, tBlock);
-      pc.y += Math.sin(tBlock * Math.PI) * arc * Math.min(1, len / 6) + 0.35;
+      pc.y += Math.sin(tBlock * Math.PI) * arc * Math.min(1, len / 5) + 0.35;
       this.coverMark.position.copy(pc);
       this.coverMark.visible = true;
     } else this.coverMark.visible = false;
