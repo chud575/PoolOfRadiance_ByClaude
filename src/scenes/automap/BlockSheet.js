@@ -330,7 +330,7 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
       } else if (t === CELL.RUBBLE) {
         washRegion(w, rg.cells, { ...P, color: jit([150, 130, 104], 0.3, 0.15), alpha: 0.3, seed: rs, edge: 0.35, mottle: 0.5, gran: 0.5 });
       } else if (t === CELL.COURTYARD) {
-        washRegion(w, rg.cells, { ...P, color: [214, 184, 128], alpha: 0.21, seed: rs, edge: 0, mottle: 0.55, gran: 0.25, blooms: 0 });
+        washRegion(w, rg.cells, { ...P, color: [176, 184, 162], alpha: 0.26, seed: rs, edge: 0.15, mottle: 0.45, gran: 0.25, blooms: 0 });
       } else if (t === CELL.WATER) {
         washRegion(w, rg.cells, { ...P, color: jit([62, 112, 168], 0.2, 0.1), alpha: 0.5, seed: rs, edge: 0.55, mottle: 0.25, gran: 0.15, blooms: 2 });
       } else {
