@@ -115,6 +115,11 @@ export class Figure {
     this.s = model.scale ?? 1;
     this.seed = o.seed ?? 0;
     this.phase = hashf(this.seed) * 10;
+    this.faction = o.faction ?? null;
+    // Foes each hold their own stance (a warband, not a crowd sim): 0 ready,
+    // 1 crouched lunge, 2 braced behind the shield, 3 brandishing overhead,
+    // 4 bladed sideways stance with a cocked head.
+    this.stance = o.faction && o.faction !== 'party' ? Math.floor(hashf(this.seed * 7.3 + 2.1) * 5) : 0;
     // Each foe wears its own hide: a small palette jitter (hue lean + value)
     // so a warband reads as individuals, never as clones off one mould.
     if (o.faction && o.faction !== 'party') {
@@ -463,6 +468,41 @@ export class Figure {
       add('shinR', 0.6);
       add('footR', -0.25);
       P['hips@'][1] -= 0.06 * s;
+    }
+    // Per-foe stance variety (idle only; attacks and hits override below).
+    if (this.stance && !walking && !sleeping && !dead && !m.armsForward) {
+      const st = this.stance;
+      const ws = Math.sin(it * 0.8 + this.seed);
+      if (st === 1) {
+        add('spine', 0.22, 0.1, 0);
+        add('chest', 0.08, 0.05, 0);
+        add('head', -0.25, 0, 0);
+        add('thighL', -0.3); add('shinL', 0.45); add('thighR', -0.2); add('shinR', 0.4);
+        P['hips@'][1] -= 0.05 * s;
+        add('upperArmR', -0.35 + ws * 0.05, 0.1, -0.1);
+        add('foreArmR', 0.2);
+      } else if (st === 2) {
+        add('upperArmL', -0.3, -0.15, 0);
+        add('foreArmL', -0.1);
+        add('spine', 0.1, -0.15, 0);
+        add('thighL', -0.15, -0.1, 0.1); add('shinL', 0.2); add('thighR', 0.1, 0.1, -0.12);
+        add('upperArmR', 0.25, 0, 0.05);
+        add('foreArmR', 0.35);
+      } else if (st === 3) {
+        // Weapon brandished overhead, chest thrown out, jeering.
+        add('upperArmR', -1.6 + ws * 0.12, 0.2, -0.35);
+        add('foreArmR', 0.6);
+        add('chest', -0.12 + ws * 0.03, 0.12, 0);
+        add('head', -0.15, -0.2, 0.08);
+        add('upperArmL', 0.2, 0, 0.2);
+      } else if (st === 4) {
+        add('hips', 0, 0.45, 0);
+        add('spine', 0.04, -0.3, 0);
+        add('chest', 0, -0.15, 0);
+        add('neck', 0, 0.35, 0);
+        add('head', 0.05, 0.2, -0.18);
+        add('thighL', -0.1, 0.2, 0.15); add('thighR', 0.08, -0.2, -0.15);
+      }
     }
     // --- Walking cycle.
     if (walking) {

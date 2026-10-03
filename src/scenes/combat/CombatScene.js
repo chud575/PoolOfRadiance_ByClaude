@@ -157,7 +157,7 @@ export default class CombatScene extends Scene {
     // Soft camera-side fill so figures read against the ground (a classic tactics-cam trick).
     // At night the fill is the warm spill of the braziers and candles, so the
     // party keeps its local colour under the cold moon.
-    this.fill = new THREE.DirectionalLight(this.night ? 0xd6c6b0 : 0xe8eeff, this.night ? 0.85 : 0.38);
+    this.fill = new THREE.DirectionalLight(this.night ? 0xffcf9a : 0xe8eeff, this.night ? 1.25 : 0.38);
     s.add(this.fill, this.fill.target);
     // Rim light from behind the fight: separates figures from the ground.
     this.rim = new THREE.DirectionalLight(this.night ? 0x8fb0ff : 0xffe8c8, this.night ? 0.9 : 0.8);
@@ -327,8 +327,12 @@ export default class CombatScene extends Scene {
         if (this.engine.out(c)) continue;
         const f = this.figures.get(c.id);
         if (!f) continue;
-        v.copy(f.root.position).setY((f.model.height ?? 1.6) * 0.6).project(this.camera);
-        out.push({ x: (v.x * 0.5 + 0.5) * window.innerWidth, y: (-v.y * 0.5 + 0.5) * window.innerHeight });
+        v.copy(f.root.position).setY((f.model.height ?? 1.6) * 1.05).project(this.camera);
+        const x = (v.x * 0.5 + 0.5) * window.innerWidth;
+        const y0 = (-v.y * 0.5 + 0.5) * window.innerHeight;
+        v.copy(f.root.position).setY(0).project(this.camera);
+        const y1 = (-v.y * 0.5 + 0.5) * window.innerHeight;
+        out.push({ x, y: (y0 + y1) / 2, y0, y1, hw: Math.max(18, (y1 - y0) * 0.28) });
       }
       return out;
     };
@@ -638,8 +642,8 @@ export default class CombatScene extends Scene {
       }
     });
     for (const o of hidden) o.visible = false;
-    // The active hero's x-ray silhouette is a play aid, not part of its likeness.
-    const xr = (this._xrayFig?.xray ?? []).filter((m) => m.visible);
+    // X-ray silhouettes are a play aid, not part of a likeness.
+    const xr = [...this.figures.values()].flatMap((f) => f.xray ?? []).filter((m) => m.visible);
     for (const m of xr) {
       m.visible = false;
       hidden.push(m);
@@ -684,6 +688,9 @@ export default class CombatScene extends Scene {
       fig.root.visible = true;
       if (fig.eyeGlow) { fig.eyeGlow.visible = false; if (fig.eyeGlow.userData.twin) fig.eyeGlow.userData.twin.visible = fig.eyeGlow.visible; }
       const wasDead = fig.death;
+      // Likeness, not status: a retching / sleeping foe sits for its portrait upright.
+      const wasState = fig.state;
+      fig.state = 'idle';
       fig.death = null;
       fig.update(1.3);
       fig.root.updateMatrixWorld(true);
@@ -735,6 +742,7 @@ export default class CombatScene extends Scene {
       this.hud.portraits.set(c.id, pc);
       PORTRAITS.set(pk, pc);
       fig.death = wasDead;
+      fig.state = wasState;
       fig.root.visible = false;
       if (fig.eyeGlow) { fig.eyeGlow.visible = !wasDead; if (fig.eyeGlow.userData.twin) fig.eyeGlow.userData.twin.visible = fig.eyeGlow.visible; }
     }
@@ -2257,7 +2265,8 @@ export default class CombatScene extends Scene {
       for (let k = 0; k < 18; k++) {
         const a = this._projectGoal(top, cx, cz, dist);
         const b = this._projectGoal(foot, cx, cz, dist);
-        const wide = side.every((q) => Math.abs(this._projectGoal(q, cx, cz, dist).x) < 0.64);
+        // Wings and tail may run off the frame a little: the party must read too.
+        const wide = side.every((q) => Math.abs(this._projectGoal(q, cx, cz, dist).x) < 0.95);
         if (a.y <= yTop && b.y >= -0.78 && Math.abs(a.x) < 0.62 && Math.abs(b.x) < 0.62 && wide) break;
         dist *= 1.05;
         cx += (top.x - cx) * 0.08;
@@ -2565,7 +2574,8 @@ export default class CombatScene extends Scene {
       this.overlay.activeRing.visible = true;
       this.overlay.activeRing.position.set(af.root.position.x, 0.035, af.root.position.z);
       // A gilt marker bobbing over the active figure's head: findable in a crowd.
-      this.overlay.activeMarker.visible = act.side === 'party' && !this.busy;
+      // The ground ring + timeline highlight mark the actor (no floating gizmo).
+      this.overlay.activeMarker.visible = false;
       this.overlay.activeMarker.position.set(af.root.position.x, af.model.height * 1.05 + 0.42 + Math.sin(this.time * 3) * 0.05, af.root.position.z);
       this.overlay.setFocus(undefined, { x: act.x, y: act.y });
     } else {
@@ -2573,60 +2583,94 @@ export default class CombatScene extends Scene {
       this.overlay.activeMarker.visible = false;
       this.overlay.setFocus(undefined, null);
     }
-    // The active hero is never lost behind a wall or a bigger figure: where
-    // anything hides it, a soft gilt silhouette shows through (x-ray).
-    let xf = af && act.side === 'party' && !this.engine.out(act) && !this.done ? af : null;
-    if (xf) {
-      // Only when something actually stands between the lens and the hero.
-      const chest = xf.root.position.clone().setY((xf.model.height ?? 1.6) * 0.55);
-      let hidden = this.diorama.occluders(this.camera.position, [chest]) > 0;
-      if (!hidden) {
-        const ray = new THREE.Ray(this.camera.position.clone(), chest.clone().sub(this.camera.position).normalize());
-        const dMax = this.camera.position.distanceTo(chest);
-        const box = new THREE.Box3();
-        for (const o of this.engine.all) {
-          const f2 = this.figures.get(o.id);
-          if (!f2 || f2 === xf || this.engine.out(o)) continue;
-          const r = (f2.model.radius ?? 0.4) * 0.8;
-          box.min.set(f2.root.position.x - r, 0, f2.root.position.z - r);
-          box.max.set(f2.root.position.x + r, (f2.model.height ?? 1.6) * 0.95, f2.root.position.z + r);
-          const hit = ray.intersectBox(box, new THREE.Vector3());
-          if (hit && hit.distanceTo(this.camera.position) < dMax - 0.4) { hidden = true; break; }
-        }
-      }
-      if (!hidden) xf = null;
-    }
-    if (xf !== this._xrayFig) {
-      if (this._xrayFig?.xray) for (const m of this._xrayFig.xray) m.visible = false;
-      if (xf) {
-        if (!xf.xray) {
-          // Drawn 0.7 m nearer the lens with a "greater" depth test: it shows
-          // only where something well in front hides the hero (never the hero's
-          // own arms or shield over its body).
-          const mat = (this._xrayMat ??= (() => {
-            const m = new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.4, depthWrite: false, depthFunc: THREE.GreaterDepth, side: THREE.FrontSide, fog: false });
-            m.onBeforeCompile = (sh) => {
-              sh.vertexShader = sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\nmvPosition.z += 0.7; gl_Position = projectionMatrix * mvPosition;');
-            };
-            m.customProgramCacheKey = () => 'xray-v1';
-            return m;
-          })());
-          xf.xray = [];
-          for (const m of xf.model.meshes) {
-            if (!m.isSkinnedMesh) continue;
-            const x = new THREE.SkinnedMesh(m.geometry, mat);
-            x.bind(m.skeleton, m.bindMatrix);
-            x.frustumCulled = false;
-            x.renderOrder = 20;
-            x.userData.sharedGeometry = true;
-            m.parent.add(x);
-            xf.xray.push(x);
+    // X-ray: no unit is ever lost. Anyone standing behind a building shows a
+    // soft silhouette through it (gilt for the actor, blue for the party, red
+    // for foes); the active hero also shows through bigger figures; and units
+    // wrapped in a gas cloud get a rim outline drawn over the vapour.
+    const want = new Map();
+    if (!this.done) {
+      const cp = this.camera.position;
+      for (const c of this.engine.all) {
+        const f = this.figures.get(c.id);
+        if (!f || this.engine.out(c) || c.fled || !f.root.visible) continue;
+        const isAct = f === af;
+        const side = isAct && c.side === 'party' ? 'act' : c.charmed ? 'party' : c.side;
+        const hgt = f.model.height ?? 1.6;
+        const chest = f.root.position.clone().setY(hgt * 0.55);
+        const head = f.root.position.clone().setY(hgt * 0.9);
+        // Hidden when a building blocks both the chest and the head.
+        let hidden = this.diorama.occluders(cp, [chest], { visibleOnly: true }) > 0 && this.diorama.occluders(cp, [head], { visibleOnly: true }) > 0;
+        if (!hidden && isAct && c.side === 'party') {
+          const ray = new THREE.Ray(cp.clone(), chest.clone().sub(cp).normalize());
+          const dMax = cp.distanceTo(chest);
+          const box = new THREE.Box3();
+          for (const o of this.engine.all) {
+            const f2 = this.figures.get(o.id);
+            if (!f2 || f2 === f || this.engine.out(o)) continue;
+            const r = (f2.model.radius ?? 0.4) * 0.8;
+            box.min.set(f2.root.position.x - r, 0, f2.root.position.z - r);
+            box.max.set(f2.root.position.x + r, (f2.model.height ?? 1.6) * 0.95, f2.root.position.z + r);
+            const hit = ray.intersectBox(box, new THREE.Vector3());
+            if (hit && hit.distanceTo(cp) < dMax - 0.4) { hidden = true; break; }
           }
         }
-        for (const m of xf.xray) m.visible = true;
+        if (hidden) want.set(f, `occ|${side}`);
+        else if (this._sick?.has(c.id)) want.set(f, `gas|${side}`);
       }
-      this._xrayFig = xf;
     }
+    for (const f of this.figures.values()) {
+      const key = want.get(f) ?? null;
+      if ((f.xrayKey ?? null) === key) continue;
+      f.xrayKey = key;
+      if (key && !f.xray) {
+        f.xray = [];
+        for (const m of f.model.meshes) {
+          if (!m.isSkinnedMesh) continue;
+          const x = new THREE.SkinnedMesh(m.geometry, this._xrayMatFor(key));
+          x.bind(m.skeleton, m.bindMatrix);
+          x.frustumCulled = false;
+          x.renderOrder = 20;
+          x.userData.sharedGeometry = true;
+          m.parent.add(x);
+          f.xray.push(x);
+        }
+      }
+      for (const m of f.xray ?? []) {
+        m.visible = !!key;
+        if (key) m.material = this._xrayMatFor(key);
+      }
+    }
+  }
+
+  /**
+   * Silhouette materials. `occ`: drawn 0.7 m nearer the lens with a "greater"
+   * depth test, so it shows only where something well in front hides the unit
+   * (never its own arms or shield). `gas`: a fresnel rim over the vapour.
+   */
+  _xrayMatFor(key) {
+    this._xrayMats ??= new Map();
+    if (this._xrayMats.has(key)) return this._xrayMats.get(key);
+    const [mode, side] = key.split('|');
+    const col = { act: 0xffd27a, party: 0x8ab8ff, monster: 0xff8a66 }[side] ?? 0xff8a66;
+    const occ = mode === 'occ';
+    const m = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: occ ? 0.55 : 0.75, depthWrite: false, depthFunc: occ ? THREE.GreaterDepth : THREE.LessEqualDepth, side: THREE.FrontSide, fog: false });
+    m.onBeforeCompile = (sh) => {
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying float vRim;')
+        .replace('#include <project_vertex>', `#include <project_vertex>
+          mvPosition.z += ${occ ? '0.7' : '0.03'}; gl_Position = projectionMatrix * mvPosition;
+          #ifdef USE_SKINNING
+            vRim = 1.0 - abs(dot(normalize(transformedNormal), normalize(-mvPosition.xyz)));
+          #else
+            vRim = 0.5;
+          #endif`);
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying float vRim;')
+        .replace('vec4 diffuseColor = vec4( diffuse, opacity );', `vec4 diffuseColor = vec4( diffuse * (1.0 + vRim * 0.6), opacity * (${occ ? '0.35 + 0.65 * pow(vRim, 1.4)' : '0.04 + 0.96 * pow(vRim, 2.2)'}) );`);
+    };
+    m.customProgramCacheKey = () => `xray-v2-${mode}`;
+    this._xrayMats.set(key, m);
+    return m;
   }
 
   // =================================================================== frame

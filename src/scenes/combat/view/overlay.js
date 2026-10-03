@@ -122,11 +122,13 @@ export class Overlay {
             // tint (dark, so it tints rather than lightens), a narrow feathered
             // glow hugging the boundary and a fine antialiased perimeter line.
             float nk = mix(1.0, 0.8, uNight);
-            float line = 1.0 - smoothstep(px * 0.6, px * 2.2, abs(de - px * 2.0));
-            float feather = exp(-de * 11.0) * (1.0 - line);
-            LAYER(rc * 0.06, 0.06 * nk);
-            LAYER(rc * 0.55, feather * 0.07 * farK * nk);
-            LAYER(rc * (0.9 + 0.15 * shimmer), line * 0.34 * farK * nk);
+            // Crisp, thin glowing border (≈1.5 px core + a tight inner glow)
+            // over a barely-there cool tint: a tactical overlay, not a seam.
+            float line = 1.0 - smoothstep(px * 0.5, px * 1.4, abs(de - px * 1.6));
+            float glow = exp(-max(de - px * 1.6, 0.0) / max(px * 5.0, 0.012)) * (1.0 - line);
+            LAYER(rc * 0.35, 0.035 * nk);
+            LAYER(rc * 0.9, glow * 0.16 * farK * nk);
+            LAYER(rc * (1.1 + 0.12 * shimmer), line * 0.62 * farK * nk);
             // Rough ground costs extra: darker, with a stipple.
             if (inf.g > 0.2 && inf.g < 0.5) {
               float st = step(0.82, fract(sin(dot(floor(g * 9.0), vec2(12.9898, 78.233))) * 43758.5453));
@@ -420,6 +422,21 @@ export class Overlay {
         this.state[i * 4] = 255;
         if (threatened?.has(i)) this.state[i * 4 + 3] = 255;
       }
+    }
+    // The outline wraps the party as one field: the mover's own square and
+    // squares held by others inside the range (mostly surrounded) don't notch it.
+    if (flood) {
+      const inR = (x, y) => f.inBounds(x, y) && this.state[f.idx(x, y) * 4] > 0;
+      const add = [];
+      for (let y = 0; y < f.h; y++) {
+        for (let x = 0; x < f.w; x++) {
+          const i = f.idx(x, y);
+          if (this.state[i * 4] || f.block[i] === 1) continue;
+          const n = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => inR(x + dx, y + dy)).length;
+          if (flood.cost[i] === 0 || n >= 3) add.push(i);
+        }
+      }
+      for (const i of add) this.state[i * 4] = 250;
     }
     this.tState.needsUpdate = true;
   }

@@ -429,7 +429,7 @@ export const DEMOS = {
       sc.cam.goalPitch = sc.cam.pitch = 0.68;
       if (Number.isFinite(+sc.params.yaw) && sc.params.yaw !== undefined) sc.cam.goalYaw = sc.cam.yaw = +sc.params.yaw;
       else sc._chooseYaw({ around: [hero, foe] });
-      frameAround(sc, [hero, foe], 4.5, 10.5, 15);
+      frameAround(sc, [hero, foe], 5.5, 10.5, 16.5);
       sc._refresh(hero);
     },
   },

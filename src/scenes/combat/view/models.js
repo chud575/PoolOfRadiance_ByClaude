@@ -252,8 +252,8 @@ function buildBiped(o) {
       const hs2 = s * (o.headScale ?? 1);
       const ivory = pbr('bone', 0xd8c89a);
       for (const sx of [1, -1]) {
-        R.part('head', cone(0.021 * hs2, 0.095 * hs2, 8), ivory, { p: [sx * 0.044 * hs2, 0.066 * hs2, 0.114 * hs2], r: [0.3, 0, sx * -0.4] });
-        R.part('head', sphere(0.019 * hs2, 8, 6), ivory, { p: [sx * 0.041 * hs2, 0.036 * hs2, 0.107 * hs2] });
+        R.part('head', cone(0.028 * hs2, 0.13 * hs2, 8), ivory, { p: [sx * 0.046 * hs2, 0.078 * hs2, 0.116 * hs2], r: [0.3, 0, sx * -0.42] });
+        R.part('head', sphere(0.025 * hs2, 8, 6), ivory, { p: [sx * 0.042 * hs2, 0.036 * hs2, 0.108 * hs2] });
       }
       // Warband gear that breaks the silhouette: a shaggy hide mantle on the
       // first cut, a war-belt of trophies and a hide kilt on all, a topknot
@@ -520,6 +520,15 @@ function buildBiped(o) {
       }
     }
     if (kit.helm === 'hobHelm') {
+      // Legion standard on the back (sashimono): a lacquered pole with a red
+      // war banner bearing a black sigil — the hobgoblin's unmistakable
+      // silhouette among the orcs.
+      const poleM = pbr('wood', 0x2a1a10);
+      const banM = pbr('cloth', 0x9a1a12);
+      R.part('chest', cyl(0.012 * s, 0.012 * s, 0.95 * s, 6), poleM, { p: [0.03 * s, 0.42 * s, -0.16 * s], r: [-0.06, 0, -0.05] });
+      R.part('chest', cyl(0.008 * s, 0.008 * s, 0.26 * s, 5), poleM, { p: [0.03 * s + 0.12 * s, 0.86 * s, -0.19 * s], r: [0, 0, Math.PI / 2] });
+      R.part('chest', box(0.24 * s, 0.36 * s, 0.006 * s), banM, { p: [0.03 * s + 0.12 * s, 0.68 * s, -0.19 * s], r: [-0.06, 0, -0.04] });
+      R.part('chest', box(0.08 * s, 0.08 * s, 0.008 * s), pbr('cloth', 0x0a0a0a), { p: [0.03 * s + 0.12 * s, 0.7 * s, -0.186 * s], r: [-0.06, 0, Math.PI / 4] });
       // Hobgoblin legion helm: a dark-iron conical spangenhelm with brass bands,
       // a nasal, hinged cheek guards and a short red horsehair crest.
       const iron = pbr('metal', 0x3e3a36);

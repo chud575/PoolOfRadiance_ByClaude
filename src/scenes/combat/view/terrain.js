@@ -193,6 +193,50 @@ export function buildDiorama(field, o = {}) {
       sp[i + 3] = wet;
     }
   }
+  // Kennel: a central drain runs down the middle of every narrow street.
+  // Per square: free run to the nearest building on each side along the
+  // narrow axis; per texel the signed offset from the street's centre line
+  // (smoothly interpolable), so the shader can draw a crisp channel.
+  const drainSq = new Float32Array(SW * SH * 4);
+  {
+    const paved = (x, y) => { const k = kindAt(x, y); return k === 'street' || k === 'flag' || k === 'rubble'; };
+    const run = (x, y, dx, dy) => { let n = 0; while (n < 9 && paved(x + dx * (n + 1), y + dy * (n + 1))) n++; const k = kindAt(x + dx * (n + 1), y + dy * (n + 1)); return n < 9 && (k === 'house' || k === 'outside' || k === 'room') ? n : -1; };
+    for (let y = 0; y < SH; y++) {
+      for (let x = 0; x < SW; x++) {
+        const sx = x - margin;
+        const sy = y - margin;
+        if (kindAt(sx, sy) !== 'street') continue;
+        const l = run(sx, sy, -1, 0), r = run(sx, sy, 1, 0), u = run(sx, sy, 0, -1), d = run(sx, sy, 0, 1);
+        const wx = l >= 0 && r >= 0 ? l + r + 1 : 99;
+        const wz = u >= 0 && d >= 0 ? u + d + 1 : 99;
+        const i = (y * SW + x) * 4;
+        if (wx <= wz && wx >= 3 && wx <= 11) drainSq.set([1, l, r, 0], i);
+        else if (wz < wx && wz >= 3 && wz <= 11) drainSq.set([2, u, d, 0], i);
+      }
+    }
+  }
+  const dr = new Uint8Array(SW * RES * SH * RES * 4);
+  for (let ty = 0; ty < SH * RES; ty++) {
+    for (let tx = 0; tx < SW * RES; tx++) {
+      const x = Math.floor(tx / RES);
+      const y = Math.floor(ty / RES);
+      const lx = (tx + 0.5) / RES - x;
+      const ly = (ty + 0.5) / RES - y;
+      const i = (y * SW + x) * 4;
+      const o = (ty * SW * RES + tx) * 4;
+      const axis = drainSq[i];
+      if (!axis) { dr[o] = 128; continue; }
+      const off = axis === 1 ? ((drainSq[i + 1] + lx) - (drainSq[i + 2] + 1 - lx)) / 2 : ((drainSq[i + 1] + ly) - (drainSq[i + 2] + 1 - ly)) / 2;
+      dr[o] = Math.max(0, Math.min(255, Math.round(128 + off * 30)));
+      dr[o + 1] = 255;
+      dr[o + 2] = axis === 1 ? 255 : 0;
+    }
+  }
+  const drainTex = new THREE.DataTexture(dr, SW * RES, SH * RES, THREE.RGBAFormat);
+  drainTex.magFilter = THREE.LinearFilter;
+  drainTex.minFilter = THREE.LinearFilter;
+  drainTex.needsUpdate = true;
+  disposables.push(drainTex);
   const splat = new THREE.DataTexture(sp, SW * RES, SH * RES, THREE.RGBAFormat);
   splat.magFilter = THREE.LinearFilter;
   splat.minFilter = THREE.LinearFilter;
@@ -209,6 +253,7 @@ export function buildDiorama(field, o = {}) {
   groundMat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, {
       tSplat: { value: splat },
+      tDrain: { value: drainTex },
       tNoise: { value: noiseTexture() },
       uOrigin: { value: new THREE.Vector2(originX, originZ) },
       uSize: { value: new THREE.Vector2(SW * TILE, SH * TILE) },
@@ -221,7 +266,7 @@ export function buildDiorama(field, o = {}) {
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
         varying vec3 vWPos;
-        uniform sampler2D tSplat, map2, normal2, rough2, map3, normal3, rough3;
+        uniform sampler2D tSplat, tDrain, map2, normal2, rough2, map3, normal3, rough3;
         uniform vec2 uOrigin, uSize;
         float gHash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float gNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
@@ -267,7 +312,10 @@ export function buildDiorama(field, o = {}) {
         float prk = floor(gHash(pmc + 5.1) * 4.0);
         mat2 pR = prk < 1.0 ? mat2(1.0, 0.0, 0.0, 1.0) : prk < 2.0 ? mat2(0.0, 1.0, -1.0, 0.0) : prk < 3.0 ? mat2(-1.0, 0.0, 0.0, -1.0) : mat2(0.0, -1.0, 1.0, 0.0);
         mat2 pRi = mat2(pR[0][0], pR[1][0], pR[0][1], pR[1][1]);
-        uv1 = pR * uv1 + vec2(gHash(pmc + 9.7), gHash(pmc + 2.3)) * 7.0;
+        // Each relaying used its own stone: setts from fist-sized to big
+        // granite blocks (per-patch scale), so the street is never one grid.
+        float pScale = mix(0.72, 1.45, gHash(pmc + 6.6));
+        uv1 = pR * uv1 * pScale + vec2(gHash(pmc + 9.7), gHash(pmc + 2.3)) * 7.0;
         float pTone = gHash(pmc + 3.3);
         vec2 uv2 = vec2(vWPos.x, -vWPos.z) / 3.2 + 0.37;
         vec2 uv3 = vec2(vWPos.x, -vWPos.z) / 2.7;
@@ -333,6 +381,21 @@ export function buildDiorama(field, o = {}) {
         // Gutters: a damp, darker band along wall feet and kerbs (rain runs off the eaves).
         float gutter = smoothstep(0.9, 0.62, gAO) * (1.0 - wR) * smoothstep(0.25, 0.55, gFbm(vWPos.xz * 0.8 + 5.0) + (1.0 - gAO) * 0.5);
         wet = max(wet, gutter * 0.55);
+        // The kennel: a channel of long dressed stones down the street's
+        // centre, dished, dark with damp, a thread of standing water in it.
+        vec4 gD = texture2D(tDrain, gsp);
+        float dOff = abs((gD.r - 0.502) * 255.0 / 30.0) * 1.5; // metres from the centre line
+        float dOn = smoothstep(0.6, 0.95, gD.g) * (1.0 - wF) * (1.0 - wR);
+        float kennel = dOn * (1.0 - smoothstep(0.2, 0.25, dOff));
+        float kLip = dOn * (1.0 - smoothstep(0.03, 0.07, abs(dOff - 0.22)));
+        vec2 kUV = gD.b > 0.5 ? vec2(vWPos.x * 3.0, vWPos.z * 0.9) : vec2(vWPos.z * 3.0, vWPos.x * 0.9);
+        float kJoint = smoothstep(0.0, 0.04, abs(fract(kUV.y) - 0.5) - 0.46);
+        vec3 kStone = vec3(0.26, 0.25, 0.235) * (0.8 + 0.35 * gHash(floor(kUV.yy))) * (0.85 + 0.3 * gFbm(vWPos.xz * 2.3));
+        gc.rgb = mix(gc.rgb, kStone * (1.0 - kJoint * 0.5) * mix(1.0, 0.7, smoothstep(0.18, 0.0, dOff)), kennel);
+        gc.rgb *= 1.0 - kLip * 0.45;
+        // Damp (satin), never a sky-mirror stripe.
+        wet = max(wet, kennel * smoothstep(0.2, 0.05, dOff) * 0.3);
+        gc.rgb *= 1.0 - kennel * smoothstep(0.12, 0.0, dOff) * 0.35;
         // Water settles in the joints first, then floods whole patches:
         // standing puddles (dark, mirror-smooth) inside a damp margin.
         float pLevel = wet * 1.25 - 0.2;
@@ -391,7 +454,7 @@ export function buildDiorama(field, o = {}) {
         #include <opaque_fragment>
       `);
   };
-  groundMat.customProgramCacheKey = () => `combat-ground-v10-${night ? 1 : 0}`;
+  groundMat.customProgramCacheKey = () => `combat-ground-v13-${night ? 1 : 0}`;
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(SW * TILE, SH * TILE, 1, 1), groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(originX + (SW * TILE) / 2, 0, originZ + (SH * TILE) / 2);
@@ -519,8 +582,41 @@ export function buildDiorama(field, o = {}) {
   const ironMat = pbr('metal', 0x3a3a40);
   const barrelMat = pbr('plank', 0xc8a080);
   const crateMat = pbr('plank', 0xd8b890);
-  const glassLit = new THREE.MeshStandardMaterial({ color: 0x201008, emissive: 0xffa040, emissiveIntensity: night ? 1.5 : 0.25, roughness: 0.4 });
-  const glassDark = new THREE.MeshStandardMaterial({ color: 0x0a0c10, roughness: 0.15, metalness: 0.2 });
+  // Leaded diamond-pane casements (never black holes): sky-grey glass catching
+  // the light toward the top, a dim room and a curtain behind the lower panes;
+  // lit windows glow through the same lattice.
+  const leaded = (() => {
+    const c = document.createElement('canvas');
+    c.width = 64;
+    c.height = 96;
+    const g = c.getContext('2d');
+    const gr = g.createLinearGradient(0, 0, 0, 96);
+    gr.addColorStop(0, '#8a98a8');
+    gr.addColorStop(0.45, '#4a5462');
+    gr.addColorStop(0.55, '#3a3028');
+    gr.addColorStop(1, '#241a14');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, 64, 96);
+    for (let i = 0; i < 40; i++) {
+      g.fillStyle = `rgba(${hash(i, 1, 41) > 0.5 ? '255,255,255' : '0,0,0'},${0.05 + hash(i, 2, 41) * 0.08})`;
+      g.fillRect(Math.floor(hash(i, 3, 41) * 8) * 8, Math.floor(hash(i, 4, 41) * 8) * 12, 8, 12);
+    }
+    g.strokeStyle = '#141210';
+    g.lineWidth = 2;
+    for (let k = -8; k < 16; k++) {
+      g.beginPath(); g.moveTo(k * 10, 0); g.lineTo(k * 10 + 64, 96); g.stroke();
+      g.beginPath(); g.moveTo(k * 10 + 64, 0); g.lineTo(k * 10, 96); g.stroke();
+    }
+    g.lineWidth = 4;
+    g.strokeRect(0, 0, 64, 96);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  })();
+  const glassLit = new THREE.MeshStandardMaterial({ color: 0x402818, map: leaded, emissive: 0xffa040, emissiveMap: leaded, emissiveIntensity: night ? 2.2 : 0.45, roughness: 0.4 });
+  const glassDark = new THREE.MeshStandardMaterial({ color: 0xffffff, map: leaded, roughness: 0.22, metalness: 0.15 });
+  const archDark = new THREE.MeshStandardMaterial({ color: 0x0a0c10, roughness: 0.15, metalness: 0.2 });
+  disposables.push(leaded, archDark);
   disposables.push(glassLit, glassDark);
 
   // ---------------------------------------------------------------- room dressing
@@ -919,7 +1015,7 @@ export function buildDiorama(field, o = {}) {
           }
           // Doors.
           for (const d of doors) {
-            B.add(place(worldBox(1.15, 2.05, 0.08, 1.2), d.at, 1.03, 0.01), d.type === EDGE.ARCH ? glassDark : doorMat);
+            B.add(place(worldBox(1.15, 2.05, 0.08, 1.2), d.at, 1.03, 0.01), d.type === EDGE.ARCH ? archDark : doorMat);
             B.add(place(worldBox(1.45, 0.2, 0.2, 1), d.at, 2.15, 0.06), style === 1 ? darkWood : plinthMat);
             for (const sx of [-1, 1]) B.add(place(worldBox(0.16, 2.1, 0.18, 1), d.at + sx * 0.66, 1.05, 0.05), style === 1 ? darkWood : plinthMat);
             B.add(place(worldBox(1.5, 0.12, 0.5, 1), d.at, 0.06, 0.25), plinthMat);
@@ -1429,11 +1525,20 @@ export function buildDiorama(field, o = {}) {
     } else if (p.type === 'crate') {
       // Kept inside its square (rotation included) so no one standing next to it clips.
       // Rotated half-diagonal stays clear of a neighbouring house plinth.
-      const s = 0.72 + Math.min(r, 0.08) * 2;
-      const ry = ((r * 20) % 0.4) - 0.2;
-      batch.add(worldBox(s, s, s, 1.2), crateMat, { p: [x, s / 2, z], r: [0, ry, 0] });
-      batch.add(crateFrame(s), darkWood, { p: [x, s / 2, z], r: [0, ry, 0] });
-      if (r > 0.055) batch.add(worldBox(0.6, 0.6, 0.6, 1.2), crateMat, { p: [x + 0.1, s + 0.3, z], r: [0, r * 40, 0] });
+      // Nudged away from any building beside it (plinths and jetties overhang
+      // the square edge) so it never sinks into a facade.
+      const s = 0.62 + Math.min(r, 0.08) * 1.5;
+      const ry = ((r * 20) % 0.3) - 0.15;
+      let ox = 0;
+      let oz = 0;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = p.x + dx;
+        const ny = p.y + dy;
+        if (field.inBounds(nx, ny) && field.block[field.idx(nx, ny)] === 1) { ox -= dx * 0.16; oz -= dy * 0.16; }
+      }
+      batch.add(worldBox(s, s, s, 1.2), crateMat, { p: [x + ox, s / 2, z + oz], r: [0, ry, 0] });
+      batch.add(crateFrame(s), darkWood, { p: [x + ox, s / 2, z + oz], r: [0, ry, 0] });
+      if (r > 0.055) batch.add(worldBox(0.5, 0.5, 0.5, 1.2), crateMat, { p: [x + ox + 0.05, s + 0.25, z + oz], r: [0, r * 40, 0] });
     } else if (p.type === 'rubble') {
       for (let k = 0; k < 5; k++) batch.add(rockGeo(hash(p.x, p.y + k, 3), 0.25 + hash(p.x + k, p.y, 4) * 0.35), rockMat, { p: [x + (hash(k, p.x, 5) - 0.5) * 0.9, 0.05, z + (hash(k, p.y, 6) - 0.5) * 0.9] });
     } else if (p.type === 'column') {
@@ -1739,6 +1844,39 @@ export function buildDiorama(field, o = {}) {
       // A flat broken tile lying askew.
       batch.add(worldBox(0.34 + hash(k, 24, 513) * 0.2, 0.05, 0.26, 1.5), stoneT, { p: [cx + 0.3, 0.03, cz - 0.2], r: [0.06, hash(k, 25, 513) * 3, 0.08] }, { cast: false });
     }
+    // The restless dead's leavings: skulls, long bones and a ribcage or two,
+    // and tall funerary urns (some toppled, spilling ash) — sized to read as
+    // bones and urns from the tactics camera, always at square corners.
+    {
+      const boneM = pbr('bone', 0xd8ccae);
+      const urnM = new THREE.MeshStandardMaterial({ color: 0x9a5c3a, roughness: 0.72, metalness: 0 });
+      const ashM = new THREE.MeshStandardMaterial({ color: 0x5a5650, roughness: 1 });
+      const sockM = new THREE.MeshStandardMaterial({ color: 0x0a0806, roughness: 1 });
+      disposables.push(urnM, ashM, sockM);
+      const urnGeo = new THREE.LatheGeometry([[0.0, 0], [0.12, 0.01], [0.17, 0.12], [0.19, 0.25], [0.15, 0.4], [0.08, 0.48], [0.1, 0.54], [0.09, 0.56]].map(([x, y]) => new THREE.Vector2(x, y)), 14);
+      for (let k = 0; k < 7; k++) {
+        const cx = hx0 + TILE * (1 + Math.floor(hash(k, 31, 523) * (hw / TILE - 1)));
+        const cz = hz0 + TILE * (1 + Math.floor(hash(k, 32, 523) * (hd / TILE - 1)));
+        const yaw = hash(k, 33, 523) * Math.PI * 2;
+        if (k % 3 !== 2) {
+          // Remains: a skull, two or three long bones, a few ribs.
+          batch.add(new THREE.SphereGeometry(0.11, 14, 10).scale(0.92, 0.88, 1.12), boneM, { p: [cx, 0.09, cz], r: [0.25, yaw, 0.35] });
+          for (const sx of [-1, 1]) batch.add(new THREE.SphereGeometry(0.03, 8, 6), sockM, { p: [cx + Math.cos(yaw) * 0.04 * sx + Math.sin(yaw) * 0.09, 0.11, cz - Math.sin(yaw) * 0.04 * sx + Math.cos(yaw) * 0.09] }, { cast: false });
+          for (let l = 0; l < 3; l++) batch.add(new THREE.CylinderGeometry(0.035, 0.04, 0.46, 7), boneM, { p: [cx + Math.cos(yaw + l * 1.3) * 0.3, 0.04, cz + Math.sin(yaw + l * 1.3) * 0.3], r: [Math.PI / 2, yaw + l * 0.9, 0] });
+          for (let l = 0; l < 4; l++) batch.add(new THREE.TorusGeometry(0.16, 0.014, 4, 10, Math.PI * 0.9), boneM, { p: [cx - Math.sin(yaw) * 0.25 + Math.cos(yaw) * (l - 1.5) * 0.08, 0.05, cz - Math.cos(yaw) * 0.25 - Math.sin(yaw) * (l - 1.5) * 0.08], r: [-Math.PI / 2 + 0.3, yaw + Math.PI / 2, 0] }, { cast: false });
+        } else {
+          // A funerary urn: standing, or toppled with its ash spilt.
+          const toppled = hash(k, 34, 523) < 0.5;
+          if (toppled) {
+            batch.add(urnGeo, urnM, { p: [cx, 0.17, cz], r: [Math.PI / 2 - 0.15, yaw, 0] });
+            batch.add(new THREE.CircleGeometry(0.32, 12).rotateX(-Math.PI / 2), ashM, { p: [cx + Math.sin(yaw) * 0.6, 0.008, cz + Math.cos(yaw) * 0.6], s: [1, 1, 0.6] }, { cast: false });
+          } else {
+            batch.add(urnGeo, urnM, { p: [cx, 0, cz], r: [0, yaw, 0] });
+            batch.add(urnGeo, urnM, { p: [cx + 0.42, 0, cz + 0.18], r: [0, yaw + 1, 0], s: 0.75 });
+          }
+        }
+      }
+    }
     const waxM = new THREE.MeshStandardMaterial({ color: 0xe8dcc0, roughness: 0.35, metalness: 0 });
     disposables.push(waxM);
     for (const p of field.features.props ?? []) {
@@ -1792,7 +1930,8 @@ export function buildDiorama(field, o = {}) {
       const beams = new THREE.Group();
       const tilt = 0.32;
       // Narrow, dim shafts (they model the scene, they don't wash it out).
-      for (const [fx, fz, w, yaw] of [[0.32, 0.45, 0.4, 0.5], [0.66, 0.7, 0.3, 0.62], [0.45, 0.85, 0.26, 0.4]]) {
+      // One shaft through the broken vault plus Tyr's own beam: a motivated key, not stock set dressing.
+      for (const [fx, fz, w, yaw] of [[0.4, 0.55, 0.38, 0.5]]) {
         const bx = hx0 + hw * fx + 1.2 - Math.sin(yaw) * 1.3;
         const bz = hz0 + hd * fz - 1.0 - Math.cos(yaw) * 1.3;
         const g = new THREE.CylinderGeometry(w * 0.85, w, 9, 28, 1, true).translate(0, 4.5, 0);
@@ -1898,40 +2037,84 @@ export function buildDiorama(field, o = {}) {
       const pcx = (px0 + px1) / 2, pcz = (pz0 + pz1) / 2;
       const rad = Math.hypot(px1 - px0, pz1 - pz0) / 2;
       pool = { x: pcx, z: pcz, w: px1 - px0, d: pz1 - pz0, r: rad };
-      const uni = { uT: { value: 0 }, uC: { value: new THREE.Vector2(pcx, pcz) }, uR: { value: rad } };
+      const uni = { uT: { value: 0 }, uC: { value: new THREE.Vector2(pcx, pcz) }, uR: { value: rad }, uB: { value: new THREE.Vector4(px0 + 0.3, pz0 + 0.3, px1 - 0.3, pz1 - 0.3) } };
+      // The water is a window into a deep stepped basin: each pixel follows the
+      // refracted view ray down to the tiers / walls / floor below, which glow
+      // from a radiant heart at the bottom; the path through the water absorbs
+      // red (deep jade-teal), in-scatter adds the golden radiance, and the
+      // surface itself carries ripple glints and a Fresnel mirror of the vault.
       const waterMat = new THREE.ShaderMaterial({
         uniforms: uni,
         transparent: false,
         vertexShader: `varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
-        fragmentShader: `varying vec3 vW; uniform float uT; uniform vec2 uC; uniform float uR;
+        fragmentShader: `varying vec3 vW; uniform float uT; uniform vec2 uC; uniform float uR; uniform vec4 uB;
           float h2(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
           float n2(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(h2(i), h2(i+vec2(1,0)), f.x), mix(h2(i+vec2(0,1)), h2(i+vec2(1,1)), f.x), f.y); }
-          // Caustic web: |sum of crossing sine ridges| sharpened.
           float caus(vec2 p, float t){
             vec2 q = p; float c = 0.0;
             for (int i = 0; i < 3; i++) { float fi = float(i);
               q += vec2(sin(q.y * 1.3 + t * (0.6 + fi * 0.2) + fi), cos(q.x * 1.1 - t * (0.5 + fi * 0.15) + fi * 2.0)) * 0.55;
               c += abs(sin(q.x + q.y * 0.7 + fi * 1.7)); }
             return pow(1.0 - clamp(c / 3.0, 0.0, 1.0), 4.0); }
+          float hgt(vec2 p){ return n2(p * 1.7 + vec2(uT * 0.3, uT * 0.17)) * 0.6 + n2(p * 4.1 - vec2(uT * 0.4, -uT * 0.2)) * 0.4; }
           void main(){
             vec2 p = vW.xz;
-            float d = length(p - uC) / uR;
-            float c = caus(p * 0.9, uT * 0.8) * 0.6 + caus(p * 2.1 + 4.0, uT * 1.1) * 0.4;
-            float swell = n2(p * 0.5 + uT * 0.07) * 0.6 + n2(p * 1.4 - uT * 0.11) * 0.4;
-            vec3 deep = vec3(0.01, 0.09, 0.1);
-            vec3 teal = vec3(0.06, 0.42, 0.4);
-            vec3 gold = vec3(1.0, 0.74, 0.28);
-            vec3 core = vec3(1.0, 0.93, 0.7);
-            float glow = smoothstep(1.0, 0.05, d);
-            vec3 col = mix(deep, teal, smoothstep(0.0, 0.8, glow) * (0.6 + 0.4 * swell));
-            col = mix(col, gold * 0.7, smoothstep(0.35, 1.0, glow) * 0.8);
-            col += mix(vec3(0.5, 0.95, 0.85), gold * 1.3, glow) * c * (0.35 + glow * 0.9);
-            col = mix(col, core * 1.1, smoothstep(0.42, 0.0, d) * (0.4 + 0.35 * swell));
-            // Rim sheen: the surface darkens and mirrors the dark vault toward the edges.
+            // Ripple normal from a height field.
+            float e = 0.06;
+            float h0 = hgt(p);
+            vec3 N = normalize(vec3((h0 - hgt(p + vec2(e, 0.0))) * 0.5, 1.0, (h0 - hgt(p + vec2(0.0, e))) * 0.5));
             vec3 V = normalize(cameraPosition - vW);
-            float fr = pow(1.0 - clamp(V.y, 0.0, 1.0), 3.0);
-            col = mix(col, vec3(0.04, 0.08, 0.08), fr * 0.5 * (1.0 - glow));
-            gl_FragColor = vec4(col * 0.85, 1.0);
+            vec3 Rr = refract(-V, N, 0.75);
+            // Stepped basin: three tiers inward from the coping, then the floor.
+            vec2 bc = 0.5 * (uB.xy + uB.zw);
+            vec2 bh = 0.5 * (uB.zw - uB.xy);
+            float tHit = 99.0; vec3 hit = vW; float surfK = 0.0; float tier = 0.0;
+            for (int k = 0; k < 4; k++) {
+              float fk = float(k);
+              float inset = fk * 0.42;
+              float yb = -0.45 - fk * 0.45;
+              vec2 hb = max(bh - inset, vec2(0.2));
+              // Tread of tier k (a horizontal ring at depth yb, inside the
+              // previous wall, outside the next one).
+              float tf = (vW.y - yb) / max(-Rr.y, 1e-3);
+              vec3 q = vW + Rr * tf;
+              vec2 dq = abs(q.xz - bc);
+              vec2 hbn = max(bh - inset - 0.42, vec2(0.0));
+              bool inside = dq.x < hb.x && dq.y < hb.y;
+              bool ring = k == 3 || dq.x > hbn.x || dq.y > hbn.y;
+              if (inside && ring && tf < tHit) { tHit = tf; hit = q; surfK = 1.0; tier = fk; }
+              // Riser (vertical wall) of tier k.
+              vec2 rs = vec2(Rr.x >= 0.0 ? 1.0 : -1.0, Rr.z >= 0.0 ? 1.0 : -1.0);
+              vec2 tw = ((bc + rs * hb) - vW.xz) / (rs * max(abs(Rr.xz), vec2(1e-4)));
+              float twm = min(tw.x, tw.y);
+              vec3 qw = vW + Rr * twm;
+              float ytop = k == 0 ? vW.y : -0.45 - (fk - 1.0) * 0.45;
+              if (twm > 0.0 && qw.y < ytop && qw.y > yb && twm < tHit) { tHit = twm; hit = qw; surfK = 0.0; tier = fk; }
+            }
+            float pathL = min(tHit, 6.0);
+            float dc = length(hit.xz - uC) / uR;
+            // The basin's dressed stone: block joints, darker with each tier.
+            vec2 bj = surfK > 0.5 ? hit.xz * 1.6 : vec2((abs(Rr.x) > abs(Rr.z) ? hit.z : hit.x) * 1.6, hit.y * 3.0);
+            float joint = smoothstep(0.0, 0.06, min(abs(fract(bj.x) - 0.5), abs(fract(bj.y + floor(bj.x) * 0.5) - 0.5)) - 0.44);
+            vec3 stone = vec3(0.3, 0.28, 0.24) * (0.75 + 0.35 * h2(floor(bj))) * (1.0 - joint * 0.5);
+            // The radiant heart on the deepest floor: a carved sigil burning gold-white.
+            float heart = smoothstep(0.65, 0.0, dc);
+            float rings = (1.0 - smoothstep(0.0, 0.04, abs(fract(dc * 5.0 - uT * 0.15) - 0.5) - 0.42)) * smoothstep(0.7, 0.2, dc);
+            vec3 floorLight = vec3(1.0, 0.82, 0.45) * (0.25 + heart * 6.5 + rings * 2.0 * (tier > 2.5 ? 1.0 : 0.25));
+            vec3 under = stone * floorLight * (0.55 + 0.6 * caus(hit.xz * 1.3, uT * 0.9));
+            // Absorption through the water (red goes first → jade/teal) and
+            // golden in-scatter brightest over the heart.
+            vec3 absorb = exp(-pathL * vec3(1.3, 0.55, 0.62));
+            vec3 scatter = (1.0 - exp(-pathL * 0.6)) * mix(vec3(0.0, 0.12, 0.12), vec3(0.95, 0.72, 0.3), smoothstep(0.8, 0.0, length(vW.xz - uC) / uR));
+            vec3 col = under * absorb * 1.2 + scatter * 0.4;
+            // Surface: a Fresnel mirror of the dark vault, ripple glints, and
+            // a fine caustic shimmer riding the surface.
+            float fr = 0.03 + 0.97 * pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 5.0);
+            col = mix(col, vec3(0.02, 0.035, 0.04), fr * 0.85);
+            float glint = pow(max(dot(reflect(-V, N), normalize(vec3(0.0, 1.0, 0.0))), 0.0), 60.0);
+            col += vec3(1.0, 0.85, 0.55) * glint * 0.25;
+            col += vec3(1.0, 0.86, 0.5) * caus(p * 1.6 + 2.0, uT * 1.2) * 0.12 * smoothstep(1.0, 0.2, length(vW.xz - uC) / uR);
+            gl_FragColor = vec4(col, 1.0);
           }`,
       });
       disposables.push(waterMat);
@@ -1996,6 +2179,29 @@ export function buildDiorama(field, o = {}) {
       shaft.renderOrder = 6;
       group.add(shaft);
       disposables.push(shaft.geometry, shaft.material);
+      // Radiant mist rising off the water in slow, torn veils.
+      const mistMat = new THREE.ShaderMaterial({
+        uniforms: { uT: uni.uT, uC: uni.uC, uR: uni.uR, uH: { value: 0 } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+        vertexShader: `varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+        fragmentShader: `varying vec3 vW; uniform float uT, uR, uH; uniform vec2 uC;
+          float h2(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+          float n2(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(h2(i), h2(i+vec2(1,0)), f.x), mix(h2(i+vec2(0,1)), h2(i+vec2(1,1)), f.x), f.y); }
+          void main(){ float d = length(vW.xz - uC) / uR;
+            float m = n2(vW.xz * 0.7 + vec2(uT * 0.08, -uT * 0.05) + uH * 3.0) * 0.6 + n2(vW.xz * 1.9 - vec2(uT * 0.12, uT * 0.07)) * 0.4;
+            float a = smoothstep(0.5, 0.9, m) * smoothstep(1.05, 0.4, d) * (0.07 - uH * 0.018);
+            gl_FragColor = vec4(vec3(1.0, 0.86, 0.6) * a, 1.0); }`,
+      });
+      disposables.push(mistMat);
+      for (let k = 0; k < 3; k++) {
+        const mm = mistMat.clone();
+        mm.uniforms = { uT: uni.uT, uC: uni.uC, uR: uni.uR, uH: { value: k } };
+        disposables.push(mm);
+        const mist = new THREE.Mesh(new THREE.PlaneGeometry(rad * 2.4, rad * 2.4).rotateX(-Math.PI / 2), mm);
+        mist.position.set(pcx, 0.35 + k * 0.45, pcz);
+        mist.renderOrder = 7;
+        group.add(mist);
+        disposables.push(mist.geometry);
+      }
       const motes = loopingParticles({ count: 70, at: new THREE.Vector3(pcx, 0.3, pcz), spread: rad * 0.8, spreadY: 0.2, vel: [0, 0.45, 0], turb: 0.3, life: 6, size: 0.06, color: 0xffd890, additive: true, alpha: 0.8, seed: 77 });
       group.add(motes.obj);
       ambient.push(motes);
@@ -2173,7 +2379,9 @@ export function buildDiorama(field, o = {}) {
         let big = false;
         if (camera && !hides) {
           g.box.getCenter(_c);
-          big = screenCover(g.box, camera) > 0.12 && camPos.distanceTo(_c) < fightD - 1.5;
+          const cov = screenCover(g.box, camera);
+          const dc = camPos.distanceTo(_c);
+          big = cov > 0.12 && dc < fightD - 1.5;
         }
         const cut = hides || big || fore;
         g.full.visible = !cut;
@@ -2188,9 +2396,16 @@ export function buildDiorama(field, o = {}) {
         continue;
       }
       if (g.w?.low) {
-        // Low field walls simply drop to their knee-high cut-away course.
-        g.full.visible = !hides;
-        g.cut.visible = hides;
+        // Low field walls simply drop to their knee-high cut-away course —
+        // also when they merely run across the foreground between the lens
+        // and the fight (a flat band of masonry along the frame's bottom).
+        let near = false;
+        if (!hides && points.length) {
+          g.box.getCenter(_c);
+          near = camPos.distanceTo(_c) < fightD - 2.0 && g.box.max.y > 1.2;
+        }
+        g.full.visible = !(hides || near);
+        g.cut.visible = hides || near;
         continue;
       }
       // Loose props (high beams, tall columns) dissolve and then drop out
@@ -2264,10 +2479,12 @@ export function buildDiorama(field, o = {}) {
   }
 
   /** How many houses/walls would have to be cut away to see `points` from camPos. */
-  function occluders(camPos, points) {
+  function occluders(camPos, points, { visibleOnly = false } = {}) {
     let n = 0;
     for (const g of [...houseGroups, ...wallGroups]) {
       if (g.w?.city || g.w?.prop) continue;
+      // What is drawn right now: cut-away houses and dissolved walls hide nothing.
+      if (visibleOnly && (!g.full.visible || (g.fade && g.fade.value < 0.5) || g.w?.low)) continue;
       for (const p of points) {
         _ray.origin.copy(p);
         _ray.direction.subVectors(camPos, p).normalize();

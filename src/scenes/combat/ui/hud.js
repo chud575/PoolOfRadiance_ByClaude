@@ -70,8 +70,12 @@ export class CombatHud {
     const TINTS = ['#b8322a', '#c07a1a', '#7a3ab0', '#2a8a7a', '#9a9a2a', '#3a6ac0'];
     order.forEach((c) => {
       const down = this.shownOut(c, engine);
-      // The slain drop out of the order; fallen allies stay, marked with a skull.
-      if (down && c.side !== 'party') return;
+      // Foes slain this round stay (struck through, skull) until the round ends,
+      // so a blast's toll reads on the bar; then they drop out. Fallen allies stay.
+      if (down && c.side !== 'party') {
+        c._slainRound ??= Math.max(1, engine.round);
+        if (c._slainRound < Math.max(1, engine.round)) return;
+      }
       const hpNow = this.shownHp(c);
       const done = c._actedRound === engine.round && c.id !== activeId;
       if (lastSide && lastSide !== c.side && false) nodes.push(h('div.cb-sep'));
@@ -253,16 +257,18 @@ export class CombatHud {
     const sheetR = this.sheet?.el.getBoundingClientRect() ?? null;
     // Close spots only: the card stays attached to its target (a leader line
     // joins them), preferring the side that covers the fewest other figures.
-    const cands = [[40, -hh - 30], [-w - 40, -hh - 30], [56, -hh / 2], [-w - 56, -hh / 2], [40, 34], [-w - 40, 34], [90, -hh - 50], [-w - 90, -hh - 50]];
+    const cands = [[40, -hh - 30], [-w - 40, -hh - 30], [56, -hh / 2], [-w - 56, -hh / 2], [40, 34], [-w - 40, 34], [90, -hh - 50], [-w - 90, -hh - 50], [-w - 150, -hh / 2], [130, -hh / 2], [-w / 2, -hh - 110], [-w / 2, 90], [-w - 140, -hh - 90], [120, -hh - 100], [-w - 130, 60], [110, 70]];
     let best = null;
     cands.forEach(([dx, dy], i) => {
       const px = Math.max(10, Math.min(maxX, x + dx));
       const py = Math.max(minY, Math.min(maxY, y + dy));
       let cost = i * 0.12;
+      // Covering a figure (head to feet) is the worst thing a card can do.
       for (const p of pts) {
-        const ox = Math.max(0, Math.min(px + w + 10, p.x + 24) - Math.max(px - 10, p.x - 24));
-        const oy = Math.max(0, Math.min(py + hh + 10, p.y + 40) - Math.max(py - 10, p.y - 50));
-        if (ox > 0 && oy > 0) cost += 0.6 + (ox * oy) / 4000;
+        const hw = p.hw ?? 24;
+        const ox = Math.max(0, Math.min(px + w + 8, p.x + hw) - Math.max(px - 8, p.x - hw));
+        const oy = Math.max(0, Math.min(py + hh + 8, (p.y1 ?? p.y + 40) + 4) - Math.max(py - 8, (p.y0 ?? p.y - 50) - 6));
+        if (ox > 0 && oy > 0) cost += 3 + (ox * oy) / 1500;
       }
       // Never over the anchor itself, and never drift far from it.
       if (x > px - 20 && x < px + w + 20 && y > py - 20 && y < py + hh + 20) cost += 6;
@@ -418,6 +424,11 @@ export class CombatHud {
       f.stack = k;
       stackIdx.set(f.unit, k + 1);
     }
+    // Floaters stay inside the play area (clear of the timeline, the side
+    // panels and the command bar) and never pile onto one another.
+    const em = Math.max(12, Math.min(25.6, 16 * (hgt / 900)));
+    const safe = { x0: 18, x1: w - 19.5 * em - 14, y0: 6.9 * em, y1: hgt - 5.0 * em };
+    const placed = [];
     for (const f of this.floats) {
       const age = t - f.t0;
       if (age < 0) {
@@ -440,8 +451,18 @@ export class CombatHud {
         continue;
       }
       const lift = f.rise * (8 + 22 * (1 - Math.exp(-age * 4))) + (f.stack ?? 0) * 30;
-      const x = Math.max(24, Math.min(w - 24, (this._v.x * 0.5 + 0.5) * w + f.dx * 14 * Math.min(1, age * 3)));
-      const y = Math.max(24, Math.min(hgt - 24, (-this._v.y * 0.5 + 0.5) * hgt - lift));
+      const fw = (f._w ??= f.el.offsetWidth || 80);
+      const fh = (f._h ??= f.el.offsetHeight || 40);
+      let x = Math.max(safe.x0 + fw / 2, Math.min(safe.x1 - fw / 2, (this._v.x * 0.5 + 0.5) * w + f.dx * 14 * Math.min(1, age * 3)));
+      let y = Math.max(safe.y0 + fh, Math.min(safe.y1, (-this._v.y * 0.5 + 0.5) * hgt - lift));
+      // De-overlap: step up past any callout already placed this frame.
+      for (let k = 0; k < 6; k++) {
+        const hitR = placed.find((r) => Math.abs(r.x - x) < (r.w + fw) / 2 + 4 && y > r.y - r.h - 2 && y - fh < r.y + 2);
+        if (!hitR) break;
+        const up = hitR.y - hitR.h - 4;
+        y = up - fh >= safe.y0 ? up : hitR.y + fh + 4;
+      }
+      placed.push({ x, y, w: fw, h: fh });
       const pop = age < 0.1 ? 0.7 + (age / 0.1) * 0.5 : 1.2 - Math.min(0.2, (age - 0.1) * 1.6);
       f.el.style.transform = `translate(-50%, -100%) translate(${x}px, ${y}px) scale(${pop})`;
       f.el.style.opacity = String(u < 0.7 ? 1 : Math.max(0, 1 - (u - 0.7) / 0.3));
