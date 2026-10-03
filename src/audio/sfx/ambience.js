@@ -18,15 +18,16 @@ export const BEDS = {
   title: { layers: ['wind:0.5', 'surf:0.6'], events: { gull: 9, bellFar: 40 } },
   town: { layers: ['wind:0.3', 'walla:0.7', 'murmur:0.3', 'surf:0.2'], events: { gull: 9, dog: 22, hammer: 9, cart: 14, callFar: 11, hoof: 19, coinsFar: 13, laughFar: 17 }, night: { layers: ['wind:0.35', 'surf:0.25'], events: { owl: 20, dog: 40, cricket: 3 } } },
   ruins: { layers: ['wind:0.8', 'gusts:0.5'], events: { crow: 14, rubble: 22, creakFar: 16 }, night: { layers: ['wind:0.8', 'gusts:0.5'], events: { owl: 18, rubble: 30, cricket: 4, wolfFar: 60 } } },
-  dungeon: { layers: ['rumble:0.35', 'cave:0.5', 'seep:0.6'], events: { drip: 2.6, chain: 35, moanFar: 55, rubble: 40 } },
+  dungeon: { layers: ['rumble:0.3', 'cave:0.5', 'seep:0.6'], events: { drip: 2.6, chain: 35, moanFar: 55, rubble: 40 }, corr: 0.25 },
   crypt: { layers: ['wind:0.55', 'cave:0.2'], events: { crow: 18, bellFar: 45, moanFar: 40 }, night: { layers: ['wind:0.6'], events: { owl: 12, moanFar: 30, cricket: 4 } } },
   wilds: { layers: ['wind:0.55', 'leaves:0.5'], events: { bird: 3.5, crow: 30 }, night: { layers: ['wind:0.45', 'leaves:0.3'], events: { cricket: 1.5, owl: 15, wolfFar: 45 } } },
-  camp: { layers: ['fire:0.8', 'wind:0.25'], events: { crackle: 0.5, pop: 3, bird: 6 }, night: { layers: ['fire:0.8', 'wind:0.2'], events: { crackle: 0.5, pop: 3, cricket: 1.6, owl: 25 } } },
+  // The campfire is mostly flicker and hiss (the air above it), a little body — not a low hum.
+  camp: { layers: ['fire:0.8', 'air:0.5', 'wind:0.3'], events: { crackle: 0.5, pop: 3, bird: 6 }, night: { layers: ['fire:0.8', 'air:0.45', 'wind:0.25'], events: { crackle: 0.5, pop: 3, cricket: 1.6, owl: 25 } } },
   // Resting underground: the fire, the drip of the deep, a far rumble — no crickets, no owls.
-  camp_in: { layers: ['fire:0.75', 'cave:0.3', 'rumble:0.2', 'seep:0.3'], events: { crackle: 0.5, pop: 3, drip: 3.5, rubble: 45 } },
-  interior: { layers: ['room:0.2', 'roomtone:0.9', 'fire:0.18'], events: { creakFar: 12, footFar: 16, clink: 9, crackle: 2.5 } },
+  camp_in: { layers: ['fire:0.75', 'air:0.4', 'cave:0.35', 'rumble:0.08', 'seep:0.35'], events: { crackle: 0.5, pop: 3, drip: 3.5, rubble: 45 }, corr: 0.3 },
+  interior: { layers: ['room:0.06', 'roomtone:1.3', 'air:0.3', 'fire:0.18'], events: { creakFar: 12, footFar: 16, clink: 9, crackle: 2.5 }, corr: 0.3 },
   combat_out: { layers: ['wind:0.45', 'gusts:0.35', 'leaves:0.25'], events: { crow: 20, rubble: 30 } },
-  combat_in: { layers: ['rumble:0.3', 'cave:0.35', 'seep:0.5'], events: { drip: 6 } },
+  combat_in: { layers: ['rumble:0.25', 'cave:0.35', 'seep:0.5'], events: { drip: 6 }, corr: 0.25 },
   silence: { layers: [], events: {} },
 };
 
@@ -51,10 +52,16 @@ export class Ambience {
     this.level = o.gain ?? bedGain(env, !!(o.night && spec.night));
     this.out.gain.linearRampToValueAtTime(this.level, t + (o.fade ?? 2.5));
     this._fadeIn = [t, t + (o.fade ?? 2.5)];
-    this.out.connect(dest);
+    // 24 dB/oct high-pass at 38 Hz (4th-order Butterworth): no bed carries
+    // infrasound or sub rumble that a laptop can't play and a limiter would pump on.
+    const hpA = this._filter('highpass', 38, 0.54);
+    const hpB = this._filter('highpass', 38, 1.31);
+    this.out.connect(hpA).connect(hpB).connect(dest);
     this.send = ac.createGain();
     this.send.gain.value = 0.6;
-    this.out.connect(this.send).connect(send);
+    hpB.connect(this.send).connect(send);
+    // Indoor beds keep a centre: the two ears share part of the sound (L/R correlation ≈ corr).
+    this.corr = s.corr ?? spec.corr ?? 0;
     this.nodes = [];
     for (const l of s.layers) {
       const [name, lvl] = l.split(':');
@@ -108,7 +115,19 @@ export class Ambience {
    */
   _stereo(dest, chain) {
     const m = this.ac.createChannelMerger(2);
-    for (let ch = 0; ch < 2; ch++) chain(1 + this.rng.range(-0.09, 0.09)).connect(m, 0, ch);
+    const rho = this.corr ?? 0;
+    if (rho > 0) {
+      // L = √ρ·C + √(1−ρ)·Nₗ, R = √ρ·C + √(1−ρ)·Nᵣ  →  correlation ρ, same level.
+      const c = this.ac.createGain();
+      c.gain.value = Math.sqrt(rho);
+      chain(1).connect(c);
+      for (let ch = 0; ch < 2; ch++) {
+        const g = this.ac.createGain();
+        g.gain.value = Math.sqrt(1 - rho);
+        chain(1 + this.rng.range(-0.09, 0.09)).connect(g).connect(m, 0, ch);
+        c.connect(m, 0, ch);
+      }
+    } else for (let ch = 0; ch < 2; ch++) chain(1 + this.rng.range(-0.09, 0.09)).connect(m, 0, ch);
     m.connect(dest);
     return m;
   }
@@ -239,18 +258,35 @@ export class Ambience {
         return;
       }
       case 'fire': {
+        // Body (a soft low roar, kept small), the flicker of the flames (mids,
+        // breathing fast) and the hiss of sap and embers (highs).
         g.gain.value = 1;
         this._stereo(g, (j) => {
           const sum = ac.createGain();
           const g1 = ac.createGain();
-          g1.gain.value = 0.08 * lvl;
-          this._lfo(t, 0.6 * j, 0.03 * lvl, g1.gain);
-          this._noise(t, 'brown').connect(this._filter('lowpass', 260 * j, 0.6)).connect(g1).connect(sum);
+          g1.gain.value = 0.03 * lvl;
+          this._lfo(t, 0.6 * j, 0.012 * lvl, g1.gain);
+          this._noise(t, 'brown').connect(this._filter('bandpass', 190 * j, 0.7)).connect(g1).connect(sum);
           const g2 = ac.createGain();
-          g2.gain.value = 0.04 * lvl;
-          this._lfo(t, 1.7 * j, 0.03 * lvl, g2.gain);
-          this._noise(t, 'pink').connect(this._filter('bandpass', 900 * j, 0.8)).connect(g2).connect(sum);
+          g2.gain.value = 0.055 * lvl;
+          this._lfo(t, 1.7 * j, 0.035 * lvl, g2.gain);
+          this._noise(t, 'pink').connect(this._filter('bandpass', 1000 * j, 0.7)).connect(g2).connect(sum);
+          const g3 = ac.createGain();
+          g3.gain.value = 0.012 * lvl;
+          this._lfo(t, 2.9 * j, 0.009 * lvl, g3.gain);
+          this._noise(t, 'white').connect(this._filter('bandpass', 3400 * j, 0.9)).connect(g3).connect(sum);
           return sum;
+        });
+        return;
+      }
+      case 'air': {
+        // The air of the place itself: a soft 300 Hz–4 kHz hush, slowly breathing.
+        g.gain.value = 0.035 * lvl;
+        this._lfo(t, 0.05, 0.01 * lvl, g.gain);
+        this._stereo(g, (j) => {
+          const hs = this._filter('highshelf', 4500, 0.7);
+          hs.gain.value = -9;
+          return this._noise(t, 'pink').connect(this._filter('highpass', 300 * j, 0.6)).connect(hs);
         });
         return;
       }

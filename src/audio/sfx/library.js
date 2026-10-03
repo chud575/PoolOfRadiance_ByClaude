@@ -1,5 +1,6 @@
 import { kbq } from '../instruments/base.js';
-import { noiseBuffer, noiseOffset } from '../dsp/bank.js';
+import { noiseBuffer, noiseOffset, sample } from '../dsp/bank.js';
+import { AudioRng } from '../core/rng.js';
 
 /**
  * The procedural SFX library. Each entry is `(fx, t, opts) => void` where `fx`
@@ -208,6 +209,103 @@ function zap(fx, t, dur = 0.3, peak = 0.4) {
   fx.tone(t, { type: 'square', f: 1240, f1: 300, dur: dur, peak: peak * 0.06 });
 }
 
+// ------------------------------------------------------------------ throat texture
+/**
+ * The non-periodic part of a big creature's voice, rendered in JS (cached per
+ * take): throat rasp (band-passed noise gated by an irregular, spiky
+ * modulator — vocal-fold chaos), a subharmonic growl an octave under the
+ * voice whose period wanders cycle to cycle (period doubling), and saliva —
+ * sparse wet clicks and bubbles. Laid under the formant voice it turns a
+ * "synth vowel" into a throat.
+ */
+function throatData(sr, { dur, f0, rasp, sub, wet, seed }) {
+  const rng = new AudioRng(seed);
+  const N = Math.ceil(sr * (dur + 0.25));
+  const out = new Float32Array(N);
+  const rel = Math.floor(sr * 0.12);
+  const att = Math.floor(sr * 0.03);
+  const end = Math.floor(sr * dur);
+  const env = (i) => (i < att ? i / att : i < end ? 1 : Math.max(0, 1 - (i - end) / rel));
+  // Rasp: noise → two-pole band 350–1600 Hz, gated by a slow random spiky modulator.
+  let b1 = 0;
+  let b2 = 0;
+  let lp = 0;
+  let m = 0;
+  const kb = Math.exp((-2 * Math.PI * 1600) / sr);
+  const kh = Math.exp((-2 * Math.PI * 350) / sr);
+  const km = Math.exp((-2 * Math.PI * 38) / sr);
+  let hp = 0;
+  for (let i = 0; i < N; i++) {
+    const w = rng.next() * 2 - 1;
+    b1 = (1 - kb) * w + kb * b1;
+    b2 = (1 - kb) * b1 + kb * b2;
+    hp = (1 - kh) * b2 + kh * hp;
+    m = (1 - km) * (rng.next() * 2 - 1) + km * m;
+    lp = Math.max(0, m * 9);
+    out[i] += (b2 - hp) * lp * lp * rasp * env(i);
+  }
+  // Subharmonic growl: one pulse per two glottal periods, each period jittered (±12 %).
+  if (sub > 0) {
+    let i = Math.floor(rng.range(0, 0.01) * sr);
+    let y = 0;
+    const k = Math.exp((-2 * Math.PI * 320) / sr);
+    const buf = new Float32Array(N);
+    while (i < N) {
+      buf[i] += rng.range(0.6, 1);
+      i += Math.max(8, Math.floor((sr / (f0 / 2)) * (1 + rng.gauss(0.06))));
+    }
+    for (let j = 0; j < N; j++) {
+      y = (1 - k) * buf[j] + k * y;
+      out[j] += y * 6 * sub * env(j);
+    }
+  }
+  // Saliva: clicks (2.5–6 kHz, 1–3 ms) and small wet bubbles (damped chirps).
+  if (wet > 0) {
+    let t = rng.range(0, 0.05);
+    while (t < dur) {
+      const i0 = Math.floor(t * sr);
+      if (rng.chance(0.7)) {
+        const f = rng.range(2500, 6000);
+        const len = Math.floor(rng.range(0.001, 0.003) * sr);
+        const a = rng.range(0.3, 1) * wet;
+        for (let j = 0; j < len && i0 + j < N; j++) out[i0 + j] += Math.sin((2 * Math.PI * f * j) / sr) * a * (1 - j / len) * (rng.next() * 0.6 + 0.4);
+      } else {
+        const f = rng.range(280, 900);
+        const len = Math.floor(rng.range(0.012, 0.03) * sr);
+        const a = rng.range(0.2, 0.6) * wet;
+        let ph = 0;
+        for (let j = 0; j < len && i0 + j < N; j++) {
+          ph += (2 * Math.PI * f * (1 + (j / len) * 0.8)) / sr;
+          out[i0 + j] += Math.sin(ph) * a * Math.exp((-j / len) * 4);
+        }
+      }
+      t += -Math.log(1 - rng.next() * 0.98) / 26;
+    }
+  }
+  // Normalise to a fixed peak so `peak` means the same for every take.
+  let pk = 1e-6;
+  for (let i = 0; i < N; i++) pk = Math.max(pk, Math.abs(out[i]));
+  for (let i = 0; i < N; i++) out[i] /= pk;
+  return out;
+}
+
+/** Lay a throat texture (rasp, growl, saliva) under a big voice at `t`. */
+function throat(fx, t, { dur = 0.8, f0 = 90, peak = 0.12, rasp = 1, sub = 0.6, wet = 0.4, takes = 4 } = {}) {
+  const ac = fx.ac;
+  const take = Math.floor(fx.rng.next() * takes);
+  const q = (x) => Math.round(x * 20) / 20;
+  const key = `throat:${q(dur)}:${Math.round(f0 / 5) * 5}:${q(rasp)}:${q(sub)}:${q(wet)}:${take}`;
+  const buf = sample(ac, key, (sr) => throatData(sr, { dur: q(dur), f0: Math.round(f0 / 5) * 5, rasp, sub, wet, seed: 9001 + take * 7919 + Math.round(f0) }));
+  const src = ac.createBufferSource();
+  src.buffer = buf;
+  src.playbackRate.value = fx.pitch;
+  const g = ac.createGain();
+  g.gain.value = peak;
+  src.connect(g).connect(fx._dest({}));
+  src.start(t);
+  src.stop(t + buf.duration / fx.pitch + 0.05);
+}
+
 // ------------------------------------------------------------------ party voices
 /** [pitch scale, vocal-tract (formant) scale, roughness] by race. */
 const PARTY_VOICE = { human: [1, 1, 0.12], elf: [1.08, 1.05, 0.06], halfElf: [1.04, 1.03, 0.08], dwarf: [0.8, 0.88, 0.3], halfling: [1.35, 1.24, 0.08], gnome: [1.25, 1.18, 0.12], halfOrc: [0.88, 0.93, 0.38] };
@@ -241,6 +339,7 @@ const VOX = {
   orc: (fx, t, m) => {
     const d = m === 'die' ? 0.9 : m === 'hurt' ? 0.3 : 0.7;
     fx.voice(t, { dur: d, contour: m === 'die' ? [[0, 150], [0.2, 160], [1, 70]] : m === 'hurt' ? [[0, 170], [1, 130]] : [[0, 105], [0.25, 140], [1, 92]], vowels: ['a', 'o'], rough: 0.5, drive: 0.5, voices: 2, breath: 0.12, peak: 0.42 });
+    throat(fx, t, { dur: d, f0: m === 'attack' ? 110 : 150, peak: 0.1, rasp: 0.9, sub: m === 'attack' ? 0.5 : 0.2, wet: 0.35 });
   },
   gnoll: (fx, t, m) => {
     for (let i = 0; i < (m === 'die' ? 1 : 3); i++) fx.voice(t + i * 0.16, { dur: m === 'die' ? 0.7 : 0.12, contour: m === 'die' ? [[0, 420], [1, 160]] : [[0, 300], [0.5, 520], [1, 380]], vowels: ['i', 'a'], rough: 0.3, peak: 0.3, formant: 1.1 });
@@ -250,6 +349,7 @@ const VOX = {
       // A strained cry that breaks, a sobbing groan sinking away, then the great body falls.
       fx.voice(t, { dur: 0.45, a: 0.03, contour: [[0, 105], [0.4, 135], [1, 96]], vowels: ['a', 'a'], rough: 0.6, drive: 0.5, voices: 3, formant: 0.75, breath: 0.15, peak: 0.42 });
       fx.voice(t + 0.5, { dur: 1.3, a: 0.08, contour: [[0, 92], [0.5, 70], [1, 42]], vowels: ['o', 'u', 'u'], rough: 0.8, roughRate: 35, pulse: [6.5, 0.6, 3], voices: 2, formant: 0.7, breath: 0.3, peak: 0.34 });
+      throat(fx, t + 0.5, { dur: 1.3, f0: 70, peak: 0.12, rasp: 0.8, sub: 0.7, wet: 0.6 });
       thud(fx, t + 1.75, 0.6, 60);
       thud(fx, t + 1.95, 0.35, 55);
       fx.grains(t + 1.78, { count: 18, spread: 0.5, curve: 1.6, fLo: 900, fHi: 3500, peak: 0.08 });
@@ -257,28 +357,33 @@ const VOX = {
     }
     const d = m === 'hurt' ? 0.45 : 1.1;
     fx.voice(t, { dur: d, contour: m === 'hurt' ? [[0, 95], [1, 70]] : [[0, 68], [0.3, 88], [1, 55]], vowels: ['o', 'u'], rough: 0.7, drive: 0.7, voices: 3, formant: 0.72, breath: 0.1, peak: 0.45 });
+    throat(fx, t, { dur: d, f0: m === 'hurt' ? 85 : 70, peak: 0.16, rasp: 1, sub: 0.9, wet: 0.5 });
     fx.burst(t, { kind: 'brown', a: 0.1, hold: d * 0.5, dur: 0.4, peak: 0.3, filters: [{ type: 'lowpass', f: 220 }] });
   },
   troll: (fx, t, m) => {
     if (m === 'die') {
       fx.voice(t, { dur: 1.4, a: 0.02, contour: [[0, 140], [0.2, 160], [1, 55]], vowels: ['r', 'a', 'u'], rough: 0.95, roughRate: 28, drive: 0.4, voices: 2, formant: 0.85, breath: 0.25, peak: 0.36 });
+      throat(fx, t, { dur: 1.4, f0: 110, peak: 0.15, rasp: 0.9, sub: 0.6, wet: 1 });
       fx.grains(t + 0.3, { count: 26, spread: 1.0, fLo: 250, fHi: 900, q: 3, peak: 0.12, dLo: 0.02, dHi: 0.06 }); // gurgle
       thud(fx, t + 1.35, 0.55, 65);
       return;
     }
     // A wet, snarling gurgle.
     fx.voice(t, { dur: m === 'hurt' ? 0.35 : 0.8, contour: m === 'hurt' ? [[0, 180], [1, 130]] : [[0, 115], [0.4, 135], [1, 95]], vowels: ['r', 'a'], rough: 0.9, roughRate: 40, drive: 0.55, voices: 2, formant: 0.85, breath: 0.2, peak: 0.4 });
+    throat(fx, t, { dur: m === 'hurt' ? 0.35 : 0.8, f0: 115, peak: 0.17, rasp: 1, sub: 0.7, wet: 1 });
     fx.grains(t + 0.05, { count: 12, spread: 0.5, fLo: 250, fHi: 800, q: 3, peak: 0.08, dLo: 0.02, dHi: 0.05 });
   },
   giant: (fx, t, m) => {
     if (m === 'die') {
       fx.voice(t, { dur: 1.6, a: 0.05, contour: [[0, 110], [0.15, 125], [1, 50]], vowels: ['a', 'o', 'u'], rough: 0.4, drive: 0.3, voices: 3, formant: 0.78, breath: 0.25, peak: 0.42 });
+      throat(fx, t, { dur: 1.6, f0: 90, peak: 0.1, rasp: 0.7, sub: 0.5, wet: 0.4 });
       thud(fx, t + 1.5, 0.7, 50);
       thud(fx, t + 1.7, 0.4, 48);
       return;
     }
     // A huge, almost human bellow.
     fx.voice(t, { dur: m === 'hurt' ? 0.4 : 1.0, contour: m === 'hurt' ? [[0, 130], [1, 100]] : [[0, 82], [0.3, 108], [1, 75]], vowels: ['a', 'a', 'o'], rough: 0.35, drive: 0.4, voices: 3, formant: 0.8, breath: 0.15, peak: 0.45 });
+    throat(fx, t, { dur: m === 'hurt' ? 0.4 : 1.0, f0: 90, peak: 0.12, rasp: 0.8, sub: 0.6, wet: 0.3 });
   },
   skeleton: (fx, t, m) => {
     const n = m === 'die' ? 22 : 12;
@@ -376,6 +481,7 @@ const VOX = {
       return;
     }
     fx.voice(t, { dur: m === 'hurt' ? 0.8 : 2, contour: m === 'hurt' ? [[0, 110], [0.3, 140], [1, 80]] : [[0, 62], [0.3, 92], [1, 48]], vowels: ['a', 'o', 'u'], rough: 0.9, drive: 0.8, voices: 3, formant: 0.6, breath: 0.2, peak: 0.55 });
+    throat(fx, t, { dur: m === 'hurt' ? 0.8 : 2, f0: m === 'hurt' ? 110 : 70, peak: 0.2, rasp: 1, sub: 1, wet: 0.45 });
     if (m !== 'hurt') {
       // The breath behind the roar: a furnace draught.
       fx.burst(t + 0.1, { kind: 'pink', a: 0.2, hold: 1.2, dur: 0.6, peak: 0.25, filters: [{ type: 'lowpass', f: 1200 }] });
@@ -586,6 +692,13 @@ export const SFX = {
     whoosh(fx, t, { f0: 300, f1: 2200, dur: 0.45, peak: 0.3, q: 0.8 });
     explosion(fx, t + 0.38, 1);
     fx.burst(t + 0.4, { kind: 'pink', a: 0.1, hold: 0.4, dur: 1, peak: 0.22, filters: [{ type: 'lowpass', f: 900 }] });
+    // The roar of the fireball itself: a 200 Hz–2 kHz body that blooms for
+    // half a second after the boom (what small speakers hear), the flames
+    // fluttering through it, falling as the burst burns out.
+    for (const [pan, f, f1] of [[-0.35, 700, 420], [0.35, 950, 520]]) {
+      fx.burst(t + 0.43, { kind: 'pink', a: 0.22, hold: 0.35, dur: 0.75, peak: 0.36, pan, filters: [{ type: 'highpass', f: 200 }, { type: 'bandpass', f, f1, q: 0.55, dt: 1.2 }, { type: 'lowpass', f: 2200 }] });
+    }
+    fx.grains(t + 0.5, { count: 40, spread: 0.9, curve: 1.2, fLo: 300, fHi: 1400, q: 2, peak: 0.07, dLo: 0.01, dHi: 0.04 });
   },
   spell_cone: (fx, t) => {
     fx.burst(t, { kind: 'pink', a: 0.06, hold: 0.5, dur: 0.5, peak: 0.35, filters: [{ type: 'bandpass', f: 600, f1: 1500, q: 0.8, dt: 0.6 }] });

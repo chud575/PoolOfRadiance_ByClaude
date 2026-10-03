@@ -296,6 +296,8 @@ export class AudioEngine {
       this.fading.push(this.player);
       this.player = null;
     }
+    // A parley's standoff cue plays over the place, not instead of it: the bed ducks under it.
+    this.duckAmbience(state === 'encounter' ? 0.5 : 1, urgent ? 0.6 : 2);
     const song = SONGS[state];
     if (!song) return; // 'silence'
     // Each cue has its own acoustic: the tavern band plays in a dry taproom,
@@ -310,6 +312,7 @@ export class AudioEngine {
       fadeIn: urgent ? fade : Math.max(0.4, fade * 0.6),
       intensity: o.intensity ?? (state === 'combat' ? this.intensity : null) ?? song.intensity ?? 1,
     });
+    if (this.loadGuard?.degrade) this.player.setDegrade(this.loadGuard.degrade);
     this.player.tick(ac.currentTime + LOOKAHEAD);
   }
 
@@ -389,6 +392,17 @@ export class AudioEngine {
     this.amb = new Ambience(this.ctx, this.graph.ambBus, this.graph.envSend, bed, { night, fade, seed: this.rng.int(1, 1e9) });
   }
 
+  /** Duck the ambience bed to `level` (1 = full) over `seconds` (the bed keeps running underneath). */
+  duckAmbience(level = 1, seconds = 1.5) {
+    this.ambDuck = level;
+    const d = this.graph?.ambDuck?.gain;
+    if (!d) return;
+    const t = this.ctx.currentTime;
+    d.cancelScheduledValues(t);
+    d.setValueAtTime(d.value, t);
+    d.linearRampToValueAtTime(level, t + Math.max(0.05, seconds));
+  }
+
   /** Footstep surface, reverb room, music mood and ambience for a place. */
   setEnvironment(env) {
     Object.assign(this.env, env);
@@ -405,6 +419,7 @@ export class AudioEngine {
       this.loadGuard ??= new LoadGuard();
       const cap = this.loadGuard.update(performance.now() / 1000, now, ac.state === 'running');
       if (cap !== this._cap) setVoiceCap(ac, (this._cap = cap));
+      this.player?.setDegrade?.(this.loadGuard.degrade);
     }
     if (this._warmQ?.length) {
       const t0 = performance.now();
@@ -414,6 +429,7 @@ export class AudioEngine {
     for (const p of this.fading) p.tick?.(now + LOOKAHEAD);
     for (const s of this.stingers) s.tick(now + LOOKAHEAD);
     this.amb?.tick(now + LOOKAHEAD);
+    this.graph.reap?.(now);
     // Reap finished players.
     this.fading = this.fading.filter((p) => {
       if (p._disposeAt && now > p._disposeAt) {
@@ -437,6 +453,6 @@ export class AudioEngine {
 
   /** Debug snapshot for tools/devtools. */
   debugState() {
-    return { unlocked: !!this.ctx, state: this.state, track: this.currentTrack, intensity: this.intensity, section: this.player?.section ?? null, pass: this.player?.pass ?? null, stinger: this.lastStinger ?? null, env: { ...this.env }, ambience: this.ambState, ctx: this.ctx?.state, voiceCap: this._cap ?? null, overloads: this.loadGuard?.events ?? 0 };
+    return { unlocked: !!this.ctx, state: this.state, track: this.currentTrack, intensity: this.intensity, section: this.player?.section ?? null, pass: this.player?.pass ?? null, stinger: this.lastStinger ?? null, env: { ...this.env }, ambience: this.ambState, ambDuck: this.ambDuck ?? 1, ctx: this.ctx?.state, voiceCap: this._cap ?? null, overloads: this.loadGuard?.events ?? 0, underruns: this.ctx?.playbackStats?.underrunEvents ?? this.loadGuard?.events ?? 0, lag: Math.round((this.loadGuard?.lag ?? 0) * 1000) / 1000, degrade: this.loadGuard?.degrade ?? 0, stems: this.player?.stems ?? 0 };
   }
 }

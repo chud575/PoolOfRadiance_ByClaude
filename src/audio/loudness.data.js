@@ -2,278 +2,278 @@
 // Loudness calibration: gain per cue and the loudness it measured at that gain (see loudness.js).
 export const CAL = {
  "fp": {
-  "music": "1k26pzb",
-  "sfx": "14tv4bo",
-  "amb": "tpqrx7"
+  "music": "3s8356",
+  "sfx": "1aymqeh",
+  "amb": "1abwcu4"
  },
  "music": {
   "camp": {
-   "gain": 1.6152,
+   "gain": 1.5181,
    "lufs": -18,
    "target": -18,
-   "fp": "vpeyf7"
+   "fp": "mjhntn"
   },
   "combat": {
-   "gain": 0.8894,
-   "lufs": -16.4,
+   "gain": 0.9224,
+   "lufs": -16.5,
    "target": -16.5,
    "sections": {
-    "A": 0.1,
-    "C": 1.1,
-    "D": 1.5,
-    "A2": -1.2,
-    "B": -1.6
+    "A": -0.7,
+    "C": 1.7,
+    "D": 1.6,
+    "A2": -1.7,
+    "B": -0.9
    },
    "curve": [
     [
      0.2,
-     -17.2
+     -18.9
     ],
     [
      0.3,
-     -17
+     -18.5
     ],
     [
      0.45,
-     -15.7
+     -15.9
     ],
     [
      0.6,
-     -15.1
+     -14.7
     ],
     [
      0.75,
-     -11.2
+     -10
     ],
     [
      0.9,
-     -10
+     -9.1
     ],
     [
      1,
-     -10
+     -9.1
     ]
    ],
-   "fp": "144q3b8",
+   "fp": "1iagpnn",
    "check": {
-    "1": -14.4,
-    "0.3": -16.4,
+    "1": -12.3,
+    "0.3": -16.6,
     "0.5": -16.4,
-    "0.8": -15.1
+    "0.8": -13.7
    }
   },
   "crypt": {
-   "gain": 1.3951,
-   "lufs": -18.3,
+   "gain": 1.1892,
+   "lufs": -18.2,
    "target": -18,
    "sections": {
-    "v0": 1,
-    "v3": -1.6,
-    "v1": 2.7,
-    "v2": -2.2
+    "v0": 0.4,
+    "v3": -1.7,
+    "v1": 3.9,
+    "v2": -2.6
    },
-   "fp": "pj6oju"
+   "fp": "5mlrce"
   },
   "danger": {
-   "gain": 1.254,
-   "lufs": -16.2,
+   "gain": 1.2341,
+   "lufs": -16.1,
    "target": -16,
    "fp": "12wi6qa"
   },
   "defeat": {
-   "gain": 1.4956,
-   "lufs": -17.3,
-   "target": -17,
+   "gain": 0.9455,
+   "lufs": -19.5,
+   "target": -19.5,
    "fp": "a9tzxp"
   },
   "discovery": {
-   "gain": 1.1381,
-   "lufs": -17,
+   "gain": 1,
+   "lufs": -16.7,
    "target": -17,
    "fp": "sv4kn5"
   },
   "dungeon": {
-   "gain": 1.2728,
-   "lufs": -18.6,
+   "gain": 1.0616,
+   "lufs": -18.5,
    "target": -18.5,
    "sections": {
-    "v0": -2.2,
-    "v3": 3.9,
-    "v1": -2.1,
-    "v2": 0.4
+    "v0": -2.5,
+    "v3": 5,
+    "v1": -2.4,
+    "v2": -0.1
    },
-   "fp": "7njvqn"
+   "fp": "1gci6fw"
   },
   "encounter": {
-   "gain": 1.4862,
-   "lufs": -17.6,
+   "gain": 1.4597,
+   "lufs": -17.7,
    "target": -17.5,
    "sections": {
-    "standoff": -1,
-    "stalk": 1.8,
-    "heartbeat": -0.8
+    "standoff": -1.3,
+    "stalk": 1.7,
+    "heartbeat": -0.4
    },
    "fp": "145zhcm"
   },
   "fallen": {
-   "gain": 1.9634,
-   "lufs": -18.2,
+   "gain": 1.6836,
+   "lufs": -18.1,
    "target": -18,
    "fp": "2220ey"
   },
   "intro": {
-   "gain": 1.0936,
+   "gain": 0.9192,
    "lufs": -18.5,
    "target": -18.5,
-   "fp": "1j681eo"
+   "fp": "1ozp3fq"
   },
   "levelup": {
-   "gain": 1.1744,
-   "lufs": -16.1,
+   "gain": 1.1395,
+   "lufs": -16,
    "target": -16,
-   "fp": "xt89zx"
+   "fp": "7vhpal"
   },
   "quest": {
-   "gain": 1.3476,
+   "gain": 1.1957,
    "lufs": -17,
    "target": -17,
-   "fp": "1fh51sc"
+   "fp": "xo7b64"
   },
   "ruins": {
-   "gain": 1.2509,
-   "lufs": -18.1,
+   "gain": 1,
+   "lufs": -18.3,
    "target": -18,
    "sections": {
     "v0": -1.4,
-    "v3": 2.5,
-    "v1": -1.5,
-    "v2": 0.4
+    "v3": 2.6,
+    "v1": -1.6,
+    "v2": 0.3
    },
-   "fp": "1kvc2ot"
+   "fp": "12n1vky"
   },
   "tavern": {
-   "gain": 1.4816,
+   "gain": 1.3582,
    "lufs": -17.1,
    "target": -17,
    "sections": {
-    "set": -2.8,
-    "air": 2.8
+    "set": -2.2,
+    "air": 2.2
    },
-   "fp": "13frohk"
+   "fp": "nkqeu4"
   },
   "title": {
-   "gain": 0.9303,
-   "lufs": -17,
+   "gain": 0.8963,
+   "lufs": -16.9,
    "target": -17,
-   "fp": "ycuaiz"
+   "fp": "kbj1du"
   },
   "town": {
-   "gain": 1.7882,
+   "gain": 1.7372,
    "lufs": -17.1,
    "target": -17,
    "sections": {
-    "set": -2.1,
-    "air": 2.1
+    "set": -2,
+    "air": 2
    },
-   "fp": "qcmx18"
+   "fp": "n3b6x4"
   },
   "victory": {
-   "gain": 0.7569,
+   "gain": 0.7135,
    "lufs": -15.7,
    "target": -16,
-   "fp": "ht8i80"
+   "fp": "18cmts"
   },
   "wilds": {
-   "gain": 1.51,
+   "gain": 1.3694,
    "lufs": -18,
    "target": -18,
    "sections": {
-    "v0": -1.5,
-    "v3": -1.6,
-    "v1": -1.4,
-    "v2": 4.5
+    "v0": -1.8,
+    "v3": -2,
+    "v1": -1.5,
+    "v2": 5.4
    },
-   "fp": "jbert9"
+   "fp": "yfz8vl"
   }
  },
  "amb": {
   "camp": {
-   "gain": 3.9787,
+   "gain": 5.3455,
    "lufs": -27,
    "target": -27
   },
   "camp_in": {
-   "gain": 3.8047,
+   "gain": 4.6721,
    "lufs": -27,
    "target": -27
   },
   "camp_night": {
-   "gain": 3.9992,
+   "gain": 5.7354,
    "lufs": -27,
    "target": -27
   },
   "combat_in": {
-   "gain": 4.8944,
+   "gain": 4.8159,
    "lufs": -27,
    "target": -27
   },
   "combat_out": {
-   "gain": 5.7297,
+   "gain": 5.6957,
    "lufs": -27,
    "target": -27
   },
   "crypt": {
-   "gain": 4.0048,
+   "gain": 3.963,
    "lufs": -27,
    "target": -27
   },
   "crypt_night": {
-   "gain": 4.6403,
+   "gain": 4.5956,
    "lufs": -27,
    "target": -27
   },
   "dungeon": {
-   "gain": 3.776,
+   "gain": 3.543,
    "lufs": -27,
    "target": -27
   },
   "interior": {
-   "gain": 7.5633,
+   "gain": 9.2276,
    "lufs": -27,
    "target": -27
   },
   "ruins": {
-   "gain": 3.3162,
+   "gain": 3.2951,
    "lufs": -27,
    "target": -27
   },
   "ruins_night": {
-   "gain": 3.639,
+   "gain": 3.6086,
    "lufs": -27,
    "target": -27
   },
   "title": {
-   "gain": 2.8775,
+   "gain": 2.7067,
    "lufs": -27,
    "target": -27
   },
   "town": {
-   "gain": 5.2223,
+   "gain": 5.0926,
    "lufs": -27,
    "target": -27
   },
   "town_night": {
-   "gain": 5.3104,
+   "gain": 5.0967,
    "lufs": -27,
    "target": -27
   },
   "wilds": {
-   "gain": 4.2631,
+   "gain": 4.2426,
    "lufs": -27,
    "target": -27
   },
   "wilds_night": {
-   "gain": 4.7055,
+   "gain": 4.679,
    "lufs": -27,
    "target": -27
   }
@@ -556,10 +556,10 @@ export const CAL = {
    "peak": -6.8
   },
   "spell_fire": {
-   "gain": 0.5154,
-   "m": -14.2,
+   "gain": 0.5094,
+   "m": -14,
    "target": -14.5,
-   "peak": -2.6
+   "peak": -2.4
   },
   "spell_fizzle": {
    "gain": 6.0848,
@@ -688,10 +688,10 @@ export const CAL = {
    "peak": -11.2
   },
   "vox_dragon": {
-   "gain": 0.519,
+   "gain": 0.5158,
    "m": -14,
    "target": -14,
-   "peak": -6.7
+   "peak": -6.9
   },
   "vox_dragon_die": {
    "gain": 0.4683,
@@ -724,16 +724,16 @@ export const CAL = {
    "peak": -11.6
   },
   "vox_giant": {
-   "gain": 0.4013,
-   "m": -16.3,
+   "gain": 0.4009,
+   "m": -16.2,
    "target": -16.5,
-   "peak": -12.5
+   "peak": -11.8
   },
   "vox_giant_die": {
-   "gain": 0.3307,
+   "gain": 0.3305,
    "m": -16.5,
    "target": -16.5,
-   "peak": -9.6
+   "peak": -9.5
   },
   "vox_gnoll": {
    "gain": 1,
@@ -796,10 +796,10 @@ export const CAL = {
    "peak": -13.4
   },
   "vox_ogre": {
-   "gain": 0.4105,
+   "gain": 0.4121,
    "m": -16.3,
    "target": -16.5,
-   "peak": -11.9
+   "peak": -12.1
   },
   "vox_ogre_die": {
    "gain": 0.3919,
@@ -808,16 +808,16 @@ export const CAL = {
    "peak": -10.6
   },
   "vox_orc": {
-   "gain": 0.6486,
+   "gain": 0.6479,
    "m": -19.5,
    "target": -19.5,
-   "peak": -15.8
+   "peak": -15.4
   },
   "vox_orc_die": {
-   "gain": 0.6841,
+   "gain": 0.6825,
    "m": -18.5,
    "target": -18.5,
-   "peak": -15.3
+   "peak": -15.1
   },
   "vox_party": {
    "gain": 1.8696,
@@ -868,13 +868,13 @@ export const CAL = {
    "peak": -2
   },
   "vox_troll": {
-   "gain": 0.3866,
+   "gain": 0.3864,
    "m": -16.4,
    "target": -16.5,
-   "peak": -14.2
+   "peak": -12.6
   },
   "vox_troll_die": {
-   "gain": 0.3594,
+   "gain": 0.3593,
    "m": -16.3,
    "target": -16.5,
    "peak": -8.9

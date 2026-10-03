@@ -1,4 +1,4 @@
-import { chart, mel, pad, arp, riff, drums, shift, soften, counter } from '../compose.js';
+import { chart, mel, pad, arp, riff, drums, shift, soften, counter, bassline } from '../compose.js';
 
 /**
  * "The Pool of Radiance" — main title. D minor, heroic horn theme. Its
@@ -18,8 +18,9 @@ const B = 'F4:e G4:e A4:q~e C5:e Bb4:e A4:e | G4:h A4:t Bb4:t C5:t D5:q | E5:q. 
 // Descant over A2 (violins): long arching notes against the horn tune, a suspension at the cadence.
 const DESC = 'A5:h. G5:e F5:e | Bb5:h~e A5:e G5:e F5:e | F5:q. E5:e D5:q F5:q | E5:w';
 // Horn counterline under the climax (contrary motion to the trumpets).
-const CC = 'F4:h E4:q D4:q | C4:h F4:q E4:q | D4:q. E4:e E4:q C#4:q | D4:w';
-const C = 'D5:q. A4:e A4:q. F5:e | E5:e D5:e C5:e Bb4:e A4:h | Bb4:q. C5:e D5:q E5:q | D5:w';
+const CC = 'F4:h E4:q D4:q | C4:h F4:q E4:q | Eb4:q. F4:e G4:q C#4:q | D4:w';
+// The hook: bar 3 turns to the Neapolitan (Eb) and the line breaks through to G5, its highest note, over A7.
+const C = 'D5:q. A4:e A4:q. F5:e | E5:e D5:e C5:e Bb4:e A4:h | Bb4:q. Eb5:e G5:q. E5:e | D5:w';
 const OUT = 'A4:h. G4:e F4:e | F4:h D4:h | G4:h. F4:e E4:e | E4:w';
 
 export const TITLE_MOTIF = { A1, A2, B, C };
@@ -38,7 +39,9 @@ export default {
     brass: { preset: 'brass', pan: 0.3 },
     lowbrass: { preset: 'lowbrass', pan: 0.45 },
     violins: { preset: 'violins', pan: -0.6 },
-    strings: { preset: 'strings', pan: -0.05 },
+    strings: { preset: 'strings', pan: -0.25, gain: 0.85 },
+    violas: { preset: 'strings', pan: 0.15, gain: 0.8, voices: 5, bright: 0.45 },
+    horn2: { preset: 'horn', pan: -0.12, gain: 0.8 },
     celli: { preset: 'celli', pan: 0.45 },
     celli2: { preset: 'celli', pan: 0.35, gain: 0.8 },
     basses: { preset: 'basses', pan: 0.65 },
@@ -73,11 +76,15 @@ export default {
       ev.push({ inst: 'sus', t: 12.4, dur: 4, vel: 0.7 });
       t = 16;
     }
-    // ---- A section (8 bars).
-    const ca = chart('Dm | Bb | C | Dm | Dm | Gm | Bb | A', 4, t);
+    // ---- A section (8 bars). Bar 5 tips into G minor through its own dominant (D7/F#).
+    const ca = chart('Dm | Bb | C | Dm | Dm,D7/F# | Gm | Bb | A', 4, t);
     const soft = !first && pass % 2 === 1;
-    ev.push(...pad('basses', ca, { low: 'D2', count: 1, vel: 0.38 }));
-    ev.push(...pad('strings', ca, { low: 'A3', count: 3, vel: soft ? 0.3 : 0.34, cadence: true }));
+    // A walking bass, and the strings as written figures, not block chords:
+    // violas rock in broken-chord eighths, the 2nd violins sustain only the
+    // turning points.
+    ev.push(...bassline('basses', ca, { low: 'D2', vel: 0.4 }));
+    ev.push(...arp('violas', ca, { low: 'D3', pattern: [0, 2, 1, 2, 0, 2, 1, 2], step: 0.5, vel: soft ? 0.3 : 0.34, accent: 0.06, slur: true, opts: { dip: 0.3 } }));
+    ev.push(...pad('strings', ca.filter((c) => c.bar % 2 === 1), { low: 'A3', count: 2, vel: soft ? 0.24 : 0.28, cadence: true }));
     ev.push(...counter('celli', ca, { low: 'D3', vel: 0.32, key: 2 }));
     ev.push(...arp('harp', ca, { low: 'D3', pattern: [0, 1, 2, 3, 4, 3, 2, 1], step: 0.5, vel: soft ? 0.55 : 0.45 }));
     if (soft) {
@@ -88,6 +95,9 @@ export default {
     } else {
       ev.push(...mel('horn', A1, { at: t, vel: 0.72 }));
       ev.push(...mel('horn', A2, { at: t + 16, vel: 0.78 }));
+      // The second horn answers in thirds below on the closing bars of each phrase.
+      ev.push(...soften(mel('horn2', 'r:w | r:w | E4:e F4:e G4:e Bb4:e A4:q. G4:e | F4:h. r:q', { at: t }), 0.75));
+      ev.push(...soften(mel('horn2', 'r:w | r:w | D4:e E4:e F4:e A4:e G4:q. F4:e | E4:h C#4:h', { at: t + 16 }), 0.75));
       ev.push(...mel('violins', DESC, { at: t + 16, vel: 0.5 }));
       ev.push(...ca.filter((c) => c.bar % 2 === 0).map((c) => ({ inst: 'timpani', t: c.t, midi: c.ch.root === 2 ? 38 : 33, dur: 1, vel: 0.55 })));
       ev.push(...drums('taiko', 'X...............|X.......o.......', { bars: 8, at: t, vel: 0.4 }));
@@ -105,13 +115,17 @@ export default {
     ev.push({ inst: 'timpani', t: t + 12, midi: 36, dur: 4, vel: 0.6, roll: [0.2, 0.9] });
     ev.push({ inst: 'sus', t: t + 12.2, dur: 4, vel: 0.65 });
     t += 16;
-    // ---- C: climax (4 bars), everyone.
-    const cc = chart('Dm | C,F | Gm,A | Dm', 4, t);
+    // ---- C: climax (4 bars), everyone. Bar 3 is the hook: the Neapolitan (Eb) before A7.
+    const cc = chart('Dm | C,F | Eb/G,A7 | Dm', 4, t);
     ev.push({ inst: 'crash', t, dur: 2, vel: 0.85 });
     ev.push({ inst: 'timpani', t, midi: 38, dur: 1, vel: 1 });
-    ev.push(...pad('basses', cc, { low: 'D2', count: 1, vel: 0.7 }));
+    ev.push(...bassline('basses', cc, { low: 'D2', vel: 0.68 }));
     ev.push(...pad('lowbrass', cc, { low: 'D2', count: 2, vel: 0.6 }));
-    ev.push(...pad('strings', cc, { low: 'D4', count: 4, vel: 0.6, cadence: true }));
+    ev.push(...riff('violas', cc, 'R3R5R3R5', { low: 'D3', step: 0.5, vel: 0.5, opts: { art: 'spic' } }));
+    ev.push(...pad('strings', cc, { low: 'D4', count: 3, vel: 0.52, cadence: true }));
+    // Woodwinds double the trumpet tune an octave up (flute) and in unison (oboe).
+    ev.push(...mel('flute', C, { at: t, vel: 0.62, transpose: 12 }));
+    ev.push(...soften(mel('oboe', C, { at: t, vel: 0.6 }), 0.85));
     ev.push(...counter('celli2', cc, { low: 'D3', vel: 0.55, key: 2 }));
     ev.push(...pad('choir', cc, { low: 'D4', count: 3, vel: 0.65, cadence: true }));
     ev.push(...mel('brass', C, { at: t, vel: 0.85 }));

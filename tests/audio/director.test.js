@@ -283,9 +283,11 @@ describe('audio director', () => {
     scene.cam.yaw = Math.PI;
     bus.emit('combat:event', { ev: { type: 'attack', id: 'p1', target: 'm1', hit: true }, engine: eng });
     expect(d.remapSfx('hit', {}).find(([n]) => n === 'hit')[1].pan).toBeLessThan(-0.3);
-    // No camera, no guess: centred.
+    // Three tiles off centre is already well to the side (the field is wide, never hard-panned).
+    expect(Math.abs(d.remapSfx('hit', {}).find(([n]) => n === 'hit')[1].pan)).toBeLessThanOrEqual(0.8);
+    // No camera, no guess: centred — but still an explicit position.
     scene.cam = undefined;
     bus.emit('combat:event', { ev: { type: 'attack', id: 'p1', target: 'm1', hit: true }, engine: eng });
-    expect(d.remapSfx('hit', {}).find(([n]) => n === 'hit')[1].pan).toBeUndefined();
+    expect(d.remapSfx('hit', {}).find(([n]) => n === 'hit')[1].pan).toBe(0);
   });
 });

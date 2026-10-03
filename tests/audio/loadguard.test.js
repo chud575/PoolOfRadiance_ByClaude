@@ -19,11 +19,20 @@ describe('audio load guard', () => {
     step(4, 0.9); // rendering at 90 % of real time
     expect(g.cap).toBeLessThan(VOICE_CAP * 0.75);
     const low = g.cap;
-    step(60, 0.9);
+    step(6, 0.9);
     expect(g.cap).toBe(g.min); // never below the floor
+    expect(g.degrade).toBeLessThanOrEqual(1); // thinning first, structure only once the cap is spent
+    step(60, 0.9);
+    // At the floor and still behind: the score degrades structurally (L2, L1, then a stem).
+    expect(g.degrade).toBe(3);
+    expect(g.events).toBeGreaterThan(5);
+    expect(g.lag).toBeGreaterThan(1);
     step(10, 1);
-    expect(g.cap).toBe(g.min); // healthy for a while before it grows back
+    expect(g.degrade).toBe(3); // healthy for a while before it recovers
     step(60, 1);
+    expect(g.degrade).toBe(0); // structure first, one level per healthy stretch
+    expect(g.cap).toBe(g.min);
+    step(25, 1);
     expect(g.cap).toBeGreaterThan(g.min);
     step(200, 1);
     expect(g.cap).toBe(VOICE_CAP);

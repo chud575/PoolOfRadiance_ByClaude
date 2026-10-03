@@ -17,7 +17,7 @@ import { AudioRng, hashStr } from './core/rng.js';
 /** Integrated LUFS targets for music cues (adaptive cues measured at their `calIntensity`). */
 export const MUSIC_TARGETS = {
   title: -17, intro: -18.5, town: -17, tavern: -17, ruins: -18, dungeon: -18.5, crypt: -18, wilds: -18, camp: -18,
-  combat: -16.5, encounter: -17.5, victory: -16, defeat: -17,
+  combat: -16.5, encounter: -17.5, victory: -16, defeat: -19.5,
   levelup: -16, discovery: -17, danger: -16, quest: -17, fallen: -18,
 };
 
@@ -134,7 +134,7 @@ export function songFingerprint(song) {
  * the loudness test.
  */
 export const SOURCES = {
-  music: ['instruments/base.js', 'instruments/sustained.js', 'instruments/plucked.js', 'instruments/drums.js', 'instruments/index.js', 'dsp/synth.js', 'dsp/impulse.js', 'dsp/bank.js', 'music/Sequencer.js', 'graph.js'],
+  music: ['instruments/base.js', 'instruments/sustained.js', 'instruments/plucked.js', 'instruments/drums.js', 'instruments/index.js', 'dsp/synth.js', 'dsp/notesynth.js', 'dsp/spectra.js', 'dsp/impulse.js', 'dsp/bank.js', 'music/Sequencer.js', 'music/compose.js', 'graph.js'],
   sfx: ['sfx/library.js', 'sfx/toolkit.js', 'dsp/synth.js', 'dsp/impulse.js', 'dsp/bank.js', 'graph.js'],
   amb: ['sfx/ambience.js', 'sfx/library.js', 'sfx/toolkit.js', 'dsp/bank.js', 'dsp/impulse.js', 'graph.js'],
 };

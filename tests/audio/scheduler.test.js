@@ -121,4 +121,37 @@ describe('music scheduler', () => {
     expect(gap).toBeGreaterThanOrEqual(song.rest.length[0] - 1);
     expect(s[s.length - 1]).toBeGreaterThan(200);
   });
+
+  it('structural degradation (load guard) drops the desperate layer, then the mid layer, and comes back', () => {
+    const ac = mockContext();
+    const heard = [];
+    class Layered extends TrackPlayer {
+      _instrument(key, layer) {
+        const rec = () => heard.push({ t: ac.currentTime, layer });
+        return { play: rec, roll: rec, phrase: rec, chord: rec };
+      }
+      _queueWarm() {}
+      warmSome() {}
+    }
+    const p = new Layered(ac, SONGS.combat, { dest: node(), send: node(), at: 0.05, intensity: 1, rawGain: true });
+    const span = (from, to) => {
+      heard.length = 0;
+      for (let t = from; t <= to; t = Math.round((t + 0.05) * 1000) / 1000) {
+        ac.currentTime = t;
+        p.tick(t + LOOKAHEAD);
+      }
+      // Only what was scheduled after the change settled (the lookahead had already handed out the rest).
+      return new Set(heard.filter((h) => h.t > from + LOOKAHEAD).map((h) => h.layer));
+    };
+    p.setDegrade(1);
+    let got = span(0, 12);
+    expect(got.has(2)).toBe(false);
+    expect(got.has(1)).toBe(true);
+    p.setDegrade(2);
+    got = span(12.05, 24);
+    expect([...got]).toEqual([0]);
+    p.setDegrade(0);
+    got = span(24.05, 40);
+    expect(got.has(2)).toBe(true);
+  });
 });

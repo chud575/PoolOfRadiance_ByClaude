@@ -541,7 +541,10 @@ spell_turn spell_fizzle pass_through potion click hover focus confirm cancel err
 sparkle levelup vox_<family> vox_<family>_die` (families: kobold goblin orc gnoll ogre troll giant skeleton zombie ghost rat
 wolf spider frog lizard human dragon party; `VOICE_OF` maps monster ids; `vox_party`/`vox_party_die` take `{race, gender,
 mode: attack|hurt}` — the party's own voices; every voice is a glottal pulse source with jitter, shimmer, random-walk
-pitch, breath through the formants and subharmonic period doubling for growls). Unknown names are ignored with a console
+pitch, breath through the formants and subharmonic period doubling for growls; big creatures — orc, ogre, troll, giant,
+dragon — also get a cached throat texture under the formants: rasp gated by a spiky random modulator, a jittered
+subharmonic growl an octave down, saliva clicks and bubbles; the fireball has a 200 Hz–2 kHz roar that blooms for
+~0.6 s after the boom). Unknown names are ignored with a console
 warning (never a fallback click). Spell chords are transposed to the key of the score that is playing
 (`song.key`). Blades have six round-robin takes per material; footsteps are heel/roll/toe contact noise per surface,
 each surface calibrated on its own (`step_<surface>`). Blows, blasts and big voices get their own transient limiter.
@@ -551,8 +554,14 @@ the attacker's voice when a `combat:attack` / `combat:event` attack announced it
 until the next attack or round, so slow speeds and slow frames keep arrow hits and parries specific), otherwise a neutral `ready` rustle followed by the specific
 swing / incoming arrow the moment the attack's own log line lands (never a sound inferred from an older attack); `hit`
 becomes armour/bone/flesh + pain voices; a melee `miss` becomes a parry, shield block or dodge; `spell` becomes the cast
-spell's family. When the combat scene resolves attacks without animation (snap / QUICK on slow hardware) and requests no
-sound, the director voices each `combat:event` attack's blow itself, staggered 60–120 ms; simultaneous death cries are
+spell's family. When the combat scene resolves attacks without animation (snap / QUICK) and requests no sound, the
+director plays each `combat:event` attack as a whole exchange itself, staggered 0.2–0.3 s apart: the wind-up at the
+attacker (swing / bow, sometimes a battle cry — always the first time a monster family attacks), then the impact at the
+target (armour / bone / flesh, arrow thud, parry / shield / dodge) and, on 45 % of hits (always on crits and heavy
+blows, never two within 0.7 s), the victim's pain; when the lane backs up past ~0.9 s the extras give way to impacts.
+Every positioned combat sound carries an explicit `pan` (the combatant's offset from the fight's centre on the camera's
+right vector, ~3 tiles = well to one side, clamped ±0.8; 0 when there is no camera). `tests/audio/contract.test.js`
+replays a real QUICK fight's feed and asserts wind-ups, battle cries, pain and pans. Simultaneous death cries are
 staggered too (~0.3 s apart, at most ~1 s queued). World log lines (omens, secret doors, journal entries) sound once even when several scenes log them.
 Buttons get hover/click ticks globally (the generic click yields to a scene's own pitched click for the same press);
 keyboard/gamepad navigation ticks (`focus`) when DOM focus or a menu highlight (`aria-selected`) moves. The AudioContext starts on the first gesture; in debug/screenshot mode
@@ -574,43 +583,73 @@ crypt, `vault` dungeon, `hall` title/combat — crossfaded per cue, IRs cached; 
 cue swells by at full intensity, measured from `calIntensity`) and `rest {after:[s,s], length:[s,s]}` (exploration cues drop to ambience only for a
 while every few minutes).
 
-**Orchestra** (`instruments/sustained.js`): strings are 4–8 players per section (own intonation, drift, ±15–25 cent
-vibrato with a wandering rate and delayed onset, onset, seat, one of three instrument spectra; divisi chords split the
-section; narrow body modes turn vibrato into amplitude/timbre shimmer; a voice budget thins sections when > 150 players
-overlap (110) and big sections share a vibrato per desk; brass stabs use a lean fixed-tilt path and every brass note chain is mono, seated once per section) whose spectrum follows a bow-pressure envelope (two-pole brightness filter, bridge
-hill, rosin noise); brass are 3–4 players with a breath-pressure envelope that opens the filter and crossfades a clean
-path into a saturated one (dynamic spectral tilt) plus `art: 'rip' | 'fall' | 'flutter'`; the choir is two half-sections
-with jittered formant banks (one vocal tract per half, shared by every note of the instrument; all notes of a chord
-sing the same syllable, aspiration runs through the formants), every singer with their own vibrato (4.8–6.2 Hz, ±15–30 cents) and slow ±8 cent pitch
-scatter, vowels that change syllable by syllable (and drift in long notes) and consonant onsets. Woodwinds: flute,
+**Orchestra** (`instruments/sustained.js`): a string line is up to three players (own intonation, drift, ±15–25 cent
+vibrato, delayed onset, onset, one of three instrument spectra; stand partners share a vibrato) and a divisi chord two
+per tone, made into a full section by a per-instrument **section chorus** (two modulated mono delay taps seated either
+side of the section — `chorus`, `chorusPan`, `chorusWidth` in `instruments/base.js`; brass taps sit around the
+section's own seat, not the centre); a legato line's spectrum follows a bow-pressure envelope (two-pole brightness
+filter, bridge hill, rosin noise); narrow body modes turn vibrato into amplitude/timbre shimmer. **Chords are one
+gesture**: `TrackPlayer` hands a chord to `instrument.chord()` (strings, choir, brass) — one envelope, pressure filter
+chain and rosin / breath for the chord, players per tone. **Short notes are cached buffers**: spiccato strokes (four
+players across the seats) and short brass stabs are rendered once per pitch × velocity layer × three takes × length by
+`dsp/notesynth.js` (the same harmonic spectra — `dsp/spectra.js` feeds both the PeriodicWaves and the note renderer —
+swept two-pole lowpass, envelope, rosin / breath burst, tanh blare) and played as one buffer source + gain; ostinati no
+longer build a dozen nodes per stroke. Brass sustain with two players per tone and a breath-pressure envelope that opens
+the filter and crossfades a clean path into a saturated one (dynamic spectral tilt) plus `art: 'rip' | 'fall' |
+'flutter'`. **Legato** is a fast change, not portamento: pitch moves in 15–35 ms (brass/woodwinds re-articulate with a
+small dip); only string / choir leaps of a fourth or more slide (70–110 ms), at 25 % / 15 % probability or always with
+`opts.gliss`. The choir is two half-sections with jittered formant banks (one vocal tract per half, shared by every note
+of the instrument; all notes of a chord sing the same syllable, aspiration runs through the formants), one singer per
+tone per half (their own detune and vibrato depth) widened by the section chorus, vowels that change syllable by
+syllable (and drift in long notes) and consonant onsets. Woodwinds: flute,
 recorder, oboe (double-reed spectrum + fixed 1.1 k / 3 k formants), clarinet (odd-harmonic bore, woody body), bassoon,
 shawm. Pitch modulation (vibrato, drift, glides) and swept filters run at k-rate (`kosc`, `kbq` in
 `instruments/base.js`): per-block updates, inaudible at these rates, a large share of the audio thread saved.
 
 **Load guard** (`loadguard.js`): live only, `_tick` compares the AudioContext clock with the wall clock every 2 s; if
 audio rendered measurably slower than real time the section-player cap (`setVoiceCap`, default 110, floor 36) drops by
-30 % — strings, choir and brass thin out but every line keeps at least two players — and creeps back (+12 per 20 s
-healthy). `debugState()` reports `voiceCap` and `overloads`. Big one-shots (`WIDE` in `sfx/library.js`: blasts, thunder,
-the dragon) get a stereo early-reflection spread (Fx `wide`); ambience brown-noise layers are high-passed at 42 Hz
-(rumble you could not hear on a laptop no longer eats the bed's level).
+30 % — strings, choir and brass thin out but every line keeps sounding. At the floor, further lag degrades the score
+structurally (`TrackPlayer.setDegrade`): 1 drops the desperate layer, 2 the mid layer, 3 replaces the live orchestra
+from the next section on with a stem of that section bounced in the background (OfflineAudioContext at 22.05 kHz) —
+one buffer source. Healthy stretches (20 s) step back structure first, then the cap (+12). `debugState()` reports
+`voiceCap`, `overloads`, `underruns` (playbackStats when the browser has them, else lagging windows), `lag` (s lost),
+`degrade` and `stems`. The music reverbs that are faded out are disconnected once their crossfade ends (`graph.reap`).
+Budget: the full desperate battle (intensity 1.0, all layers) renders offline at about 0.35–0.4× real time on the
+SwiftShader VM and plays live with the cap at 110 (`audiorender --perf`). Big one-shots (`WIDE` in `sfx/library.js`:
+blasts, thunder, the dragon) get a stereo early-reflection spread (Fx `wide`). Every ambience bed is high-passed at
+38 Hz, 24 dB/oct (no infrasound); camp / interior beds are mostly air and flicker (200 Hz–4 kHz), not low hum; indoor
+beds (`corr` in BEDS: interior, camp_in, dungeon, combat_in) share part of the noise between the ears (L/R r ≈ 0.25–0.3)
+so they keep a centre. The location bed ducks to half (`duckAmbience`, graph `ambDuck`) under the parley `encounter`
+cue instead of stopping; the dialogue scene keeps the location's bed.
 
 **Music** (`music/`): songs are data — `build(pass, rng, state)` returns note events in quarters (`compose.js`: `chart`,
 `mel` (slurred + phrase-shaped dynamics), `pad` (voice-led: nearest inversion, common tones held, sus4→3 / V7 colour at
-cadences, slash-chord basses), `counter` (inner-voice counterlines), `arp`, `riff`, `drums`), plus optional `rit`
+cadences, slash-chord basses), `counter` (inner-voice counterlines), `bassline` (walking bass: root, then a passing note
+leading by step into the next root), `diatonic` (harmonise a line in thirds / sixths), `arp` (optionally slurred: one bow
+across a rocking figure), `riff`, `drums`), plus optional `rit`
 (ritardandi) and `coda()`. `TrackPlayer` schedules with lookahead, joins slurred notes into legato phrases
-(`Instrument.phrase`: one envelope, 40–80 ms glides, tongued re-articulation, brass scoop on phrase starts only), keeps
+(`Instrument.phrase`: one envelope, 15–35 ms legato changes with selective slides, tongued re-articulation, brass scoop on phrase starts only), keeps
 skipped long notes of silent layers so they join mid-note when intensity rises. Town/tavern alternate a 64-bar AABB jig set (two tunes, ornamented repeats) with a 32-bar slow air. Ruins, dungeon,
 crypt and wilds each have four genuinely different passes (seeded bag, never the same twice running). Combat has five 16-bar sections (theme,
 re-orchestrated theme, relative-major theme, percussion breakdown, G-minor development with the title motif in
 augmentation) chosen per pass, never repeating; encounter rotates three variants. The title's D–A–A + octave-leap motif
-recurs in combat, victory (major), camp and defeat.
+recurs in combat, victory (major), camp and defeat. Orchestration is written, not padded: the title's A section has a
+walking bass, violas rocking in slurred broken-chord eighths, the second horn answering in thirds; its A section tips
+into G minor through D7/F#, and the climax's hook is a Neapolitan (Eb/G) before A7 with the line breaking through to G5,
+flute and oboe doubling the trumpets. In combat the low brass walk the bass, violas chug off-beat eighths, the second
+horn harmonises the theme's second phrase in thirds, the countermelody sits in the violas (above the horns, no unisons)
+and B's strings are rocking figures instead of block chords. Battle mix: taiko and basses kept out of each other's
+60–80 Hz (taiko dipped at 72 Hz with more skin and stick, basses high-passed at 57 Hz), a low shelf under 115 Hz and
+horn/viola body (650 Hz) and presence (3 kHz) lifted: 2–4 kHz carries about −10 dB of the cue's energy, not −16.
 
 **Loudness** (`loudness.js`, `loudness.data.js`): every cue is measured offline (BS.1770 K-weighted LUFS) and calibrated
-to a target — exploration −18, town −17, combat −16.5 (at its typical intensity 0.45), stingers −16, ambience beds −27
+to a target — exploration −18, town −17, combat −16.5 (at its typical intensity 0.45), defeat −19.5 (a dirge lands
+well under the fight it follows), stingers −16, ambience beds −27
 integrated; SFX by momentary max per family (UI −27…−30, every footstep surface −26 ±1.5, blows −17.5, fireball −14.5).
 Multi-pass cues store a trim per section (`sections`: every variant normalised to the mean, applied at the pass seam).
 Adaptive cues (`calIntensity` + `lift`) store their raw loudness curve across intensity (`curve`): the player compensates
-so a 0.3 skirmish is as loud as a 0.45 fight and 1.0 adds only `lift` LU (combat 3.5); `check` records the verified
+so a 0.3 skirmish is as loud as a 0.45 fight and 1.0 adds `lift` dB (combat 5.5 nominal; the master glue compressor
+takes back about a third, so a desperate fight lands ~3.5 LU above an ordinary one); `check` records the verified
 result at 0.3/0.5/0.8/1. The master output has a ceiling trim after the limiter (sample peak ≤ about −2.5 dBFS). `tests/audio/loudness.test.js` fails
 when a cue is off target or its calibration is stale. After changing a theme or any synthesis code, re-run
 `node tools/audiorender.mjs --calibrate [--match music_]`.
@@ -622,9 +661,13 @@ Review renders: `node tools/audiorender.mjs [--match music_|--only sfx_door,...]
 cue's real tail. Cues: `music_*`, `sting_*`, `amb_*`, `sfx_*`, `sfx_step_<surface>`, `inst_<preset>` (incl. a legato run),
 `demo_combat_adaptive`, `demo_victory` (quantised win → coda → fanfare), `demo_crossfade` (town → ruins through the
 live `AudioEngine.music()` path, ticked from OfflineAudioContext.suspend points), `demo_stall` (1.2 s frozen main thread
-mid-battle), `demo_rest` (a rest window). Fails on NaN, silence or a single clipped sample. `--perf` plays title, town and
-a full-intensity battle (with blows and voices) in a realtime AudioContext and reports the audio-clock lag, the load
-guard's voice cap and whether the audio clock keeps up once the guard has adapted.
+mid-battle), `demo_rest` (a rest window). Music renders are ticked like the live scheduler (every 0.25 s of render time,
+`LOOKAHEAD` ahead), never scheduled up front — a cue scheduled whole puts every future note's nodes in the render graph
+from the first sample. Fails on NaN, silence or a single clipped sample; each line prints its CPU cost (`xN RT`), and a
+selection that includes `music_combat` also renders the full desperate battle (intensity 1.0) and fails above 0.5× real
+time (`--intensity X` renders adaptive cues at X). `--perf` plays title, town and a full-intensity battle (with blows and
+voices) in a realtime AudioContext and fails if the audio clock lags once settled, if the guard had to cut the cap below
+70 or degrade the score; it then forces the guard's last level and checks that the next section plays from a stem.
 
 ## Coding conventions
 

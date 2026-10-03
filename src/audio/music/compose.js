@@ -122,9 +122,10 @@ export function counter(inst, ch, { low = 'A3', vel = 0.4, scale = [0, 2, 3, 5, 
 
 /**
  * Arpeggio over each chord. `pattern` indexes chord tones upward (0 = root,
- * 3 = root +8va for triads…); `step` in quarters; `null` = rest.
+ * 3 = root +8va for triads…); `step` in quarters; `null` = rest. `slur`: one
+ * bow across the figure (sustained instruments play it as a legato phrase).
  */
-export function arp(inst, ch, { low = 'D3', pattern = [0, 1, 2, 3, 2, 1], step = 0.5, vel = 0.55, accent = 0.15, layer, opts, ring = 1 } = {}) {
+export function arp(inst, ch, { low = 'D3', pattern = [0, 1, 2, 3, 2, 1], step = 0.5, vel = 0.55, accent = 0.15, layer, opts, ring = 1, slur = false } = {}) {
   const lo = typeof low === 'string' ? midi(low) : low;
   const ev = [];
   for (const c of ch) {
@@ -133,7 +134,7 @@ export function arp(inst, ch, { low = 'D3', pattern = [0, 1, 2, 3, 2, 1], step =
     for (let i = 0; i < n; i++) {
       const p = pattern[i % pattern.length];
       if (p === null || p === undefined) continue;
-      ev.push({ inst, t: c.t + i * step, midi: tones[p], dur: step * ring, vel: vel + (i % pattern.length === 0 ? accent : 0), layer, opts });
+      ev.push({ inst, t: c.t + i * step, midi: tones[p], dur: step * ring, vel: vel + (i % pattern.length === 0 ? accent : 0), layer, opts, slur });
     }
   }
   return ev;
@@ -204,3 +205,80 @@ export const transpose = (ev, n) => ev.map((e) => ({ ...e, midi: Array.isArray(e
 
 /** Velocity scale. */
 export const soften = (ev, k) => ev.map((e) => ({ ...e, vel: (e.vel ?? 0.7) * k }));
+
+/**
+ * A walking bass under a chart instead of root whole-notes: the root on the
+ * downbeat, then (for slots of two beats or more) a passing note on the
+ * second half that leads by step into the next chord's root — through the
+ * scale, chromatically when the step is a whole tone away (so V → i gets its
+ * leading note), or the fifth when the harmony stays put.
+ * @param {object} [o] low (lowest root), vel, layer, opts, scale (pitch
+ *   classes relative to key), key, split (fraction of the slot for the root),
+ *   slur (one breath / bow across the line, each note tongued: far cheaper live)
+ */
+export function bassline(inst, ch, { low = 'D2', vel = 0.5, layer, opts, scale = [0, 2, 3, 5, 7, 8, 10], key = 2, split = 0.5, slur = false } = {}) {
+  const lo = typeof low === 'string' ? midi(low) : low;
+  const pcs = scale.map((x) => (x + key) % 12);
+  const ev = [];
+  // Roots voiced nearest the previous one (inside the register), so the line walks rather than leaps.
+  const roots = [];
+  ch.forEach((c, i) => {
+    let r = rootIn(c.ch, lo, c.ch.bass);
+    if (i) {
+      const p = roots[i - 1];
+      if (r - p > 6 && r - 12 >= lo - 3) r -= 12;
+      else if (p - r > 6 && r + 12 <= lo + 10) r += 12;
+    }
+    roots.push(r);
+  });
+  ch.forEach((c, i) => {
+    const r = roots[i];
+    const nxt = ch[i + 1];
+    if (c.len < 2 || !nxt) {
+      ev.push({ inst, t: c.t, midi: r, dur: c.len, vel, layer, opts, slur });
+      return;
+    }
+    const target = roots[i + 1];
+    let pass;
+    if (target === r) pass = r + 7 > lo + 12 ? r - 5 : r + 7;
+    else {
+      const dir = Math.sign(target - r);
+      // The step just before the target (scale step, or a semitone when the scale step is the target itself).
+      pass = target - dir;
+      if (!pcs.includes(((pass % 12) + 12) % 12) && Math.abs(target - r) > 2) pass = target - 2 * dir;
+      if (pass === r) pass = target - dir;
+    }
+    const h = c.len * split;
+    ev.push({ inst, t: c.t, midi: r, dur: h, vel, layer, opts, slur });
+    ev.push({ inst, t: c.t + h, midi: pass, dur: c.len - h, vel: vel * 0.9, layer, opts, slur });
+  });
+  return ev;
+}
+
+/**
+ * Harmonise a line diatonically: every note moved `steps` scale degrees
+ * (−2 = a third below, −5 = a sixth below) in the key's scale; notes outside
+ * the scale (a leading note) move by the same interval as their neighbour.
+ */
+export function diatonic(ev, steps, { key = 2, scale = [0, 2, 3, 5, 7, 8, 10] } = {}) {
+  const pcs = scale.map((x) => (x + key) % 12);
+  const move = (m) => {
+    const pc = ((m % 12) + 12) % 12;
+    let idx = pcs.indexOf(pc);
+    let off = 0;
+    if (idx < 0) {
+      idx = pcs.indexOf((pc + 11) % 12);
+      off = 1;
+    }
+    const oct = Math.floor((idx + steps) / pcs.length);
+    const j = (((idx + steps) % pcs.length) + pcs.length) % pcs.length;
+    const base = m - off - pc + (pcs[idx] > pc - off ? -12 : 0);
+    let out = base + pcs[j] + oct * 12 + (pcs[j] < pcs[idx] && steps > 0 ? 0 : 0);
+    // Keep the interval honest (a third below is 3–4 semitones under, never above).
+    const want = Math.round(steps * 1.75);
+    while (out - (m - off) > want + 6) out -= 12;
+    while (out - (m - off) < want - 6) out += 12;
+    return out + off;
+  };
+  return ev.map((e) => ({ ...e, midi: Array.isArray(e.midi) ? e.midi.map(move) : move(e.midi) }));
+}

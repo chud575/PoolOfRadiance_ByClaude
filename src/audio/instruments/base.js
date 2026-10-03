@@ -36,21 +36,28 @@ export class Instrument {
     // Ensemble chorus (sections): two slowly modulated short delays panned
     // apart — one oscillator-free way to turn 3 voices into a section.
     if (o.chorus) {
-      for (const [side, base, rate] of [[-0.75, 0.014, 0.31], [0.75, 0.021, 0.23]]) {
+      // Ensemble chorus (sections): two slowly modulated short delays seated
+      // either side of the section (chorusPan ± chorusWidth) — one
+      // oscillator-free way to turn two or three players into a section. The
+      // taps are mono, so a stereo section costs no more than a mono one.
+      const c = o.chorusPan ?? o.pan ?? 0;
+      const w = o.chorusWidth ?? 0.75;
+      for (const [side, base, rate] of [[-1, 0.014, 0.31], [1, 0.021, 0.23]]) {
         const d = ac.createDelay(0.05);
+        d.channelCount = 1;
+        d.channelCountMode = 'explicit';
         d.delayTime.value = base;
-        const l = ac.createOscillator();
-        l.frequency.value = rate;
+        // The chorus LFOs are shared by every section in the context (two always-running oscillators in all).
+        const l = chorusLfo(ac, rate * (o.chorusRate ?? 1));
         const lg = ac.createGain();
         lg.gain.value = 0.0025 * o.chorus;
         l.connect(lg).connect(d.delayTime);
-        l.start();
         const g = ac.createGain();
-        g.gain.value = 0.4;
+        g.gain.value = o.chorusLevel ?? 0.4;
         const p = ac.createStereoPanner();
-        p.pan.value = Math.max(-1, Math.min(1, (o.pan ?? 0) + side));
+        p.pan.value = Math.max(-1, Math.min(1, c + side * w));
         this.out.connect(d).connect(g).connect(p).connect(o.dest);
-        this._chorusLfos = [...(this._chorusLfos ?? []), l];
+        this._chorusTaps = [...(this._chorusTaps ?? []), lg];
       }
     }
     if (o.send) {
@@ -83,15 +90,31 @@ export class Instrument {
 
   /** Stop free-running modulators (call when the owning player is gone). */
   dispose() {
-    for (const l of this._chorusLfos ?? []) {
+    for (const g of this._chorusTaps ?? []) {
       try {
-        l.stop();
+        g.disconnect();
       } catch {
-        /* not started */
+        /* already gone */
       }
     }
-    this._chorusLfos = [];
+    this._chorusTaps = [];
   }
+}
+
+const lfoCache = new WeakMap();
+/** A free-running sine LFO at `rate` Hz shared by every instrument of the context. */
+function chorusLfo(ac, rate) {
+  let m = lfoCache.get(ac);
+  if (!m) lfoCache.set(ac, (m = new Map()));
+  const k = Math.round(rate * 1000);
+  let l = m.get(k);
+  if (!l) {
+    l = ac.createOscillator();
+    l.frequency.value = rate;
+    l.start();
+    m.set(k, l);
+  }
+  return l;
 }
 
 /**

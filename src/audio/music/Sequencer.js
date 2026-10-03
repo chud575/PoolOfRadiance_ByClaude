@@ -166,11 +166,13 @@ export class TrackPlayer {
         this.restAfter = this.rng.range(rest.after[0], rest.after[1]);
       }
     }
-    if (!r) {
-      const mp = this.musicPass ?? 0;
-      r = this.song.build(mp, this.rng.fork(mp + 1), this.state);
-      this.musicPass = mp + 1;
+    let stem = null;
+    if (!r && this._pre) {
+      // The pass built ahead for a stem (load guard level 3).
+      ({ r, stem } = this._pre);
+      this._pre = null;
     }
+    if (!r) r = this._buildNext();
     this.section = r.section ?? null;
     this._applyTrim();
     this.events = this._slurs(r.events.slice().sort((a, b) => a.t - b.t));
@@ -178,7 +180,77 @@ export class TrackPlayer {
     this.tailQ = r.tailQ ?? 0;
     this.rit = (r.rit ?? []).slice().sort((a, b) => a[0] - b[0]);
     this.cursor = 0;
-    this._queueWarm();
+    if (stem?.buffer && this.degrade >= 3) this._playStem(stem.buffer);
+    else this._queueWarm();
+    if (this.degrade >= 3) this._prepStem();
+  }
+
+  _buildNext() {
+    const mp = this.musicPass ?? 0;
+    const r = this.song.build(mp, this.rng.fork(mp + 1), this.state);
+    this.musicPass = mp + 1;
+    return r;
+  }
+
+  /**
+   * Structural degradation under load (the live engine's LoadGuard): 1 drops
+   * the desperate layer, 2 the mid layer too, 3 also replaces the live
+   * orchestra, from the next section on, with a stem of that section bounced
+   * offline at a low sample rate (one buffer source instead of hundreds of
+   * nodes). 0 restores everything.
+   */
+  setDegrade(level) {
+    level = Math.max(0, Math.min(3, level | 0));
+    if (level === (this.degrade ?? 0)) return;
+    this.degrade = level;
+    this.maxLayer = level >= 2 ? 0 : level >= 1 ? 1 : 2;
+    this._applyIntensity(this.ac.currentTime, 0.4);
+    if (level >= 3) this._prepStem();
+  }
+
+  /** Build the next pass now and bounce it to a stem in the background. */
+  _prepStem() {
+    if (this._pre || !this.song.loop || this.stopped || typeof OfflineAudioContext === 'undefined' || this.ac instanceof OfflineAudioContext) return;
+    const r = this._buildNext();
+    const stem = { buffer: null };
+    this._pre = { r, stem };
+    if (r.section === 'rest' || !r.events.length) return;
+    const sr = 22050;
+    const secs = ritSeconds(r.lengthQ, r.rit ?? [], this.spq) + (r.tailQ ?? 0) * this.spq + 2;
+    let oac;
+    try {
+      oac = new OfflineAudioContext(2, Math.ceil(secs * sr), sr);
+    } catch {
+      return;
+    }
+    const sink = oac.createGain();
+    const song = { ...this.song, loop: false, build: () => r };
+    const p = new TrackPlayer(oac, song, { dest: oac.destination, send: sink, at: 0, intensity: this.intensity, cal: this.cal, rawGain: true, gainOverride: 1 });
+    p.tick(LOOKAHEAD);
+    for (let i = 1; i * 0.5 < secs - 0.1; i++) {
+      oac.suspend(i * 0.5).then(() => {
+        p.tick(i * 0.5 + LOOKAHEAD);
+        oac.resume();
+      });
+    }
+    oac.startRendering().then((buf) => {
+      stem.buffer = buf;
+    }, () => {});
+  }
+
+  /** Play this pass from its bounced stem (dry to the cue's output, a share to its room). */
+  _playStem(buf) {
+    const ac = this.ac;
+    const src = ac.createBufferSource();
+    src.buffer = buf;
+    const wet = ac.createGain();
+    wet.gain.value = 0.4;
+    src.connect(this.out);
+    src.connect(wet).connect(this.sendOut);
+    const at = Math.max(ac.currentTime, this.passStart);
+    src.start(at, Math.max(0, ac.currentTime - this.passStart));
+    this.events = [];
+    this.stems = (this.stems ?? 0) + 1;
   }
 
   /** Section loudness trim at the start of the pass (rest windows keep the last one). */
@@ -246,6 +318,7 @@ export class TrackPlayer {
 
   /** Layer gains from intensity (0..1). */
   _layerGain(i, x) {
+    if (i > (this.maxLayer ?? 2)) return 0;
     const ss = (a, b) => {
       const k = Math.max(0, Math.min(1, (x - a) / (b - a)));
       return k * k * (3 - 2 * k);
@@ -405,6 +478,11 @@ export class TrackPlayer {
       return;
     }
     const notes = Array.isArray(e.midi) ? e.midi : [e.midi];
+    // Sections play a chord as one gesture (one envelope / filter chain, players per tone).
+    if (notes.length > 1 && ins.chord && !e.opts?.strum) {
+      ins.chord(t, notes, dur, vel, e.opts ?? {});
+      return;
+    }
     // Chords: each note gets its share of the section (divisi).
     const o = notes.length > 1 ? { ...(e.opts ?? {}), divisi: notes.length } : e.opts ?? {};
     notes.forEach((m, i) => {

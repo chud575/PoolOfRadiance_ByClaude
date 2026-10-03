@@ -63,9 +63,15 @@ describe('audio loudness calibration', () => {
     // An ordinary fight (0.3–0.5) is at least as loud as exploration (-18) and near the -16.5 target.
     for (const x of ['0.3', '0.5']) expect(Math.abs(chk[x] - MUSIC_TARGETS.combat), `combat @${x}: ${chk[x]}`).toBeLessThanOrEqual(1.5);
     expect(chk['0.8']).toBeGreaterThanOrEqual(chk['0.5'] - 0.5);
-    // Going from a skirmish to a desperate fight adds at most ~4 LU, never +8.
+    // Going from a skirmish to a desperate fight adds at most ~4 LU, never +8 —
+    // but audibly: desperation is louder, not only denser (≥ 2.8 LU).
     expect(chk['1'] - chk['0.5']).toBeLessThanOrEqual(4.5);
     expect(chk['1'] - chk['0.3']).toBeLessThanOrEqual(4.5);
+    expect(chk['1'] - chk['0.5'], 'intensity must be audible in loudness').toBeGreaterThanOrEqual(2.8);
+  });
+
+  it('lands the defeat dirge well under the battle it follows', () => {
+    expect(CAL.music.combat.lufs - CAL.music.defeat.lufs).toBeGreaterThanOrEqual(2);
   });
 
   it('normalises every section of the multi-pass cues', () => {

@@ -16,6 +16,12 @@
  *             AudioContext for 20 s each and report audio-thread load (renderCapacity / underruns,
  *             audio-clock lag vs wall clock, and the live load guard's voice cap). Fails if audio
  *             still lags real time once the guard has adapted (second 10 s).
+ *             Also fails if the orchestra had to be thinned (voice cap < 70) or degraded, and checks
+ *             that the guard's last resort (a pre-bounced stem of the next section) really plays.
+ * --intensity X  render adaptive music cues at intensity X (default: each cue's calIntensity)
+ * CPU gate: every render prints its cost (render ms per cue second, "x0.37 RT"); rendering
+ *             music_combat (any selection that includes it) also renders the full desperate battle
+ *             (intensity 1.0) and FAILS if that takes longer than 0.5× real time.
  * --list      print the cue names and exit       --out DIR  output directory (default audio_out)
  * --help      this text. Unknown flags are an error.
  * Prints peak / RMS (dBFS), integrated + momentary-max loudness (LUFS), the LRA-ish momentary
@@ -29,7 +35,7 @@ import { launch, CHROME, CHROME_ARGS } from './lib/browser.mjs';
 import { chromium } from 'playwright';
 
 const a = process.argv.slice(2);
-const FLAGS = { only: 1, match: 1, out: 1, port: 1, passes: 1, spectro: 0, bands: 0, list: 0, calibrate: 0, wiring: 0, perf: 0, help: 0 };
+const FLAGS = { only: 1, match: 1, out: 1, port: 1, passes: 1, intensity: 1, spectro: 0, bands: 0, list: 0, calibrate: 0, wiring: 0, perf: 0, help: 0 };
 {
   const usage = () => {
     const src = fs.readFileSync(new URL(import.meta.url), 'utf8');
@@ -66,6 +72,7 @@ const showBands = a.includes('--bands');
 const calibrate = a.includes('--calibrate');
 const passes = Number(opt('passes', 0)) || undefined;
 const port = opt('port', null);
+const intensity = opt('intensity', null) === null ? undefined : Number(opt('intensity', null));
 
 const srv = await ensureServer({ port: port ? Number(port) : undefined });
 if (a.includes('--wiring')) process.exit(await wiring());
@@ -83,9 +90,11 @@ async function render(name, o = {}) {
   return page.evaluate(
     async ({ name, o }) => {
       const m = await import('/src/audio/offline.js');
+      const t0 = performance.now();
       const buf = await m.renderCue(name, o);
+      const ms = performance.now() - t0;
       const stats = m.stats(buf, { full: o.full });
-      return { stats, wav: o.wav ? m.wavBase64(buf) : null, png: o.spectro ? m.spectrogramPng(buf) : null };
+      return { stats, ms, wav: o.wav ? m.wavBase64(buf) : null, png: o.spectro ? m.spectrogramPng(buf) : null };
     },
     { name, o },
   );
@@ -104,7 +113,7 @@ try {
     fs.mkdirSync(outDir, { recursive: true });
     for (const name of todo) {
       const t0 = Date.now();
-      const r = await render(name, { passes: name.startsWith('music_') ? passes : undefined, wav: true, spectro, full: showBands });
+      const r = await render(name, { passes: name.startsWith('music_') ? passes : undefined, intensity: name.startsWith('music_') ? intensity : undefined, wav: true, spectro, full: showBands });
       const suffix = passes && name.startsWith('music_') ? `_x${passes}` : '';
       fs.writeFileSync(path.join(outDir, `${name}${suffix}.wav`), Buffer.from(r.wav, 'base64'));
       if (r.png) fs.writeFileSync(path.join(outDir, `${name}${suffix}.png`), Buffer.from(r.png.split(',')[1], 'base64'));
@@ -112,8 +121,16 @@ try {
       // Mastering gate: not one clipped sample, no NaN, no silence.
       const bad = s.nan > 0 || s.peak < 0.003 || s.clip > 0;
       if (bad) failures++;
-      console.log(`${bad ? 'FAIL' : 'OK  '} ${name.padEnd(28)} ${s.seconds.toFixed(1).padStart(6)}s  peak ${db(s.peak).padStart(6)}  rms ${db(s.rms).padStart(6)}  LUFS ${f1(s.lufs).padStart(6)}  M ${f1(s.lufsM).padStart(6)}  S/M ${f1(s.width).padStart(6)}  r ${Number.isFinite(s.corr) ? s.corr.toFixed(2) : '-'}  spread ${f1(s.spread)}${s.clip ? `  clip ${s.clip}` : ''}${s.nan ? `  NaN ${s.nan}` : ''}  (${Date.now() - t0} ms)`);
+      console.log(`${bad ? 'FAIL' : 'OK  '} ${name.padEnd(28)} ${s.seconds.toFixed(1).padStart(6)}s  peak ${db(s.peak).padStart(6)}  rms ${db(s.rms).padStart(6)}  LUFS ${f1(s.lufs).padStart(6)}  M ${f1(s.lufsM).padStart(6)}  S/M ${f1(s.width).padStart(6)}  r ${Number.isFinite(s.corr) ? s.corr.toFixed(2) : '-'}  spread ${f1(s.spread)}${s.clip ? `  clip ${s.clip}` : ''}${s.nan ? `  NaN ${s.nan}` : ''}  (${Date.now() - t0} ms, x${(r.ms / 1000 / s.seconds).toFixed(2)} RT)`);
       if (showBands && s.bands) console.log('      ', Object.entries(s.bands).map(([k, v]) => `${k} ${v}`).join('  '));
+    }
+    // CPU budget: the desperate battle must render in at most half real time (the live audio thread's headroom).
+    if (todo.includes('music_combat')) {
+      const r = await render('music_combat', { intensity: 1, wav: false });
+      const x = r.ms / 1000 / r.stats.seconds;
+      const ok = x <= 0.5;
+      if (!ok) failures++;
+      console.log(`${ok ? 'OK  ' : 'FAIL'} cpu: music_combat @ intensity 1.0 renders at x${x.toFixed(2)} real time (budget x0.50)`);
     }
   }
 } finally {
@@ -166,7 +183,7 @@ async function perf() {
       if (bv) clearInterval(bv);
       const wall = (performance.now() - t0) / 1000;
       const ps = ac.playbackStats ? { underrunEvents: ac.playbackStats.underrunEvents, underrunDuration: ac.playbackStats.underrunDuration } : null;
-      const out = { wall, audio: ac.currentTime - ct0, loads, ps, late, cap: dbg.voiceCap, overloads: dbg.overloads };
+      const out = { wall, audio: ac.currentTime - ct0, loads, ps, late, cap: dbg.voiceCap, overloads: dbg.overloads, degrade: dbg.degrade, underruns: dbg.underruns };
       await ac.close();
       return out;
     }, { state, intensity, blows });
@@ -176,9 +193,38 @@ async function perf() {
     const lag = r.wall - r.audio;
     // Settled: once the load guard has adapted (second 10 s), audio must keep pace with real time.
     const lateLag = r.late.wall - r.late.audio;
-    const ok = (under === null || under < 0.01) && lateLag < 0.15;
+    // The orchestra must not have been thinned to keep up: cap ≥ 70 and no structural degradation.
+    const ok = (under === null || under < 0.01) && lateLag < 0.15 && (r.cap ?? 110) >= 70 && !r.degrade;
     if (!ok) bad++;
-    console.log(`${ok ? 'OK  ' : 'SLOW'} ${state.padEnd(8)} wall ${r.wall.toFixed(1)}s audio ${r.audio.toFixed(1)}s  load avg ${avg === null ? '-' : (avg * 100).toFixed(0) + '%'} peak ${peak === null ? '-' : (peak * 100).toFixed(0) + '%'} underrun ${under === null ? '-' : (under * 100).toFixed(1) + '%'}  lag ${lag.toFixed(2)}s (settled ${lateLag.toFixed(2)}s)  voice cap ${r.cap ?? '-'} (${r.overloads} cuts)${r.ps ? `  playbackStats ${JSON.stringify(r.ps)}` : ''}`);
+    console.log(`${ok ? 'OK  ' : 'SLOW'} ${state.padEnd(8)} wall ${r.wall.toFixed(1)}s audio ${r.audio.toFixed(1)}s  load avg ${avg === null ? '-' : (avg * 100).toFixed(0) + '%'} peak ${peak === null ? '-' : (peak * 100).toFixed(0) + '%'} underrun ${under === null ? '-' : (under * 100).toFixed(1) + '%'}  lag ${lag.toFixed(2)}s (settled ${lateLag.toFixed(2)}s)  voice cap ${r.cap ?? '-'} (${r.overloads} cuts, degrade ${r.degrade ?? 0})${r.ps ? `  playbackStats ${JSON.stringify(r.ps)}` : ''}`);
+  }
+  // Structural degradation works: forced to its last level, the battle plays the next section from a bounced stem.
+  {
+    const r = await pg.evaluate(async () => {
+      const { createGraph } = await import('/src/audio/graph.js');
+      const { AudioEngine } = await import('/src/audio/AudioEngine.js');
+      const { LoadGuard } = await import('/src/audio/loadguard.js');
+      const ac = new AudioContext({ latencyHint: 'interactive' });
+      await ac.resume();
+      const e = AudioEngine.offline(ac, createGraph(ac));
+      e.offlineMode = false;
+      e.loadGuard = new LoadGuard();
+      e.loadGuard.update = function () {
+        this.degrade = 3;
+        return this.cap;
+      };
+      e.music('combat', { intensity: 1 });
+      const iv = setInterval(() => e._tick(), 50);
+      const pass = e.player.secAt(e.player.lengthQ) + 3;
+      await new Promise((res) => setTimeout(res, pass * 1000));
+      const dbg = e.debugState();
+      clearInterval(iv);
+      await ac.close();
+      return dbg;
+    });
+    const ok = r.degrade === 3 && r.stems >= 1;
+    if (!ok) bad++;
+    console.log(`${ok ? 'OK  ' : 'FAIL'} degrade  level ${r.degrade}, stems played ${r.stems}, section ${r.section}`);
   }
   for (const e of errs) console.error('[error]', e);
   await b.close();
@@ -194,6 +240,8 @@ async function wiring() {
     ['scene=explore&map=phlan_slums&x=7&y=11&dir=N', 'ruins', 'ruins'],
     ['scene=explore&map=phlan_civilized&x=8&y=8&dir=N', 'town', 'town'],
     ['scene=combat&encounter=kobolds_1', 'combat', /^combat_/],
+    // A parley: the standoff cue over the location's bed, ducked (not silenced).
+    ['scene=dialogue&encounter=kobolds_1', 'encounter', /^[a-z_]+$/],
     ['scene=camp', 'camp', 'camp'],
   ];
   let bad = 0;
@@ -212,7 +260,7 @@ async function wiring() {
     }
     await pg.waitForTimeout(1500);
     const st = await pg.evaluate(() => window.__AUDIO?.debugState?.() ?? null);
-    const ok = st && st.state === music && (amb instanceof RegExp ? amb.test(st.ambience?.bed ?? '') : st.ambience?.bed === amb) && st.ctx === 'running' && !errs.length;
+    const ok = st && st.state === music && (amb instanceof RegExp ? amb.test(st.ambience?.bed ?? '') : st.ambience?.bed === amb) && st.ctx === 'running' && !errs.length && (music !== 'encounter' || st.ambDuck === 0.5);
     if (!ok) bad++;
     console.log(`${ok ? 'OK  ' : 'FAIL'} ${q.padEnd(52)} music ${String(st?.state).padEnd(9)} amb ${String(st?.ambience?.bed).padEnd(11)} ctx ${st?.ctx} intensity ${st?.intensity ?? '-'}${errs.length ? `  errors: ${errs.join(' | ')}` : ''}`);
     if (music === 'combat' && ok) {

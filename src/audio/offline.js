@@ -1,5 +1,5 @@
 import { createGraph } from './graph.js';
-import { TrackPlayer } from './music/Sequencer.js';
+import { TrackPlayer, LOOKAHEAD } from './music/Sequencer.js';
 import { SONGS, STINGERS } from './music/songs.js';
 import { SFX, LIMITED, WIDE } from './sfx/library.js';
 import { Fx } from './sfx/toolkit.js';
@@ -111,7 +111,7 @@ function cueSpec(name, o = {}) {
       setup(ac, g) {
         g.setMusicRoom(song.room ?? 'hall', 0, song.wet ?? 0.5);
         const p = new TrackPlayer(ac, song, { dest: g.musicIn, send: g.musicSend, at: 0.05, intensity: o.intensity ?? song.calIntensity, ...gainOpt });
-        for (let x = 1; x <= Math.ceil(secs); x++) p.tick(Math.min(secs, x));
+        playerTicks(ac, p, secs);
         if (song.loop) {
           // Fade the last 1.5 s so the file ends cleanly.
           g.musicIn.gain.setValueAtTime(1, secs - 1.6);
@@ -198,12 +198,11 @@ function cueSpec(name, o = {}) {
         // Intensity automation: calm → fight (14 s) → desperate (28 s) → winning (44 s).
         // Scheduled segment by segment, exactly as the live lookahead would.
         const marks = [[0, 0.05], [14, 0.5], [28, 1], [44, 0.35], [60, 0.35]];
-        for (let i = 0; i < marks.length - 1; i++) {
-          const [tt, x] = marks[i];
-          p.intensity = x;
-          p._applyIntensity(tt, i ? 0.6 : 0);
-          for (let k = tt + 1; k <= marks[i + 1][0]; k++) p.tick(k);
-        }
+        // Each change lands when the render reaches it (through the live setIntensity path).
+        playerTicks(ac, p, 60, (t) => {
+          const m = marks.find(([tt]) => tt > 0 && Math.abs(tt - t) < 1e-6);
+          if (m) p.setIntensity(m[1], 1.8);
+        });
         g.musicIn.gain.setValueAtTime(1, 58);
         g.musicIn.gain.linearRampToValueAtTime(0, 59.9);
       },
@@ -216,14 +215,15 @@ function cueSpec(name, o = {}) {
       room: 'street',
       setup(ac, g) {
         const p = new TrackPlayer(ac, SONGS.combat, { dest: g.musicIn, send: g.musicSend, at: 0.05, intensity: 0.6 });
-        for (let k = 1; k <= 9; k++) p.tick(k);
         const won = 9.3;
         const bar = 4 * p.spq;
         const at = 0.05 + Math.ceil((won - 0.05 + 0.12) / bar) * bar;
-        p.tick(at);
-        const coda = p.endWithCoda(at);
-        coda?.tick(at + 6);
-        new TrackPlayer(ac, STINGERS.victory, { dest: g.musicBus, send: g.musicSend, at: at + 0.03 }).tick(22);
+        playerTicks(ac, p, 22, (t) => {
+          if (Math.abs(t - 9.25) > 1e-6) return;
+          const coda = p.endWithCoda(at);
+          coda?.tick(at + 6);
+          new TrackPlayer(ac, STINGERS.victory, { dest: g.musicBus, send: g.musicSend, at: at + 0.03 }).tick(22);
+        });
       },
     };
   }
@@ -276,6 +276,26 @@ function cueSpec(name, o = {}) {
     };
   }
   throw new Error(`unknown cue ${name}`);
+}
+
+/**
+ * Tick a TrackPlayer as the live scheduler would: every 0.25 s of render time
+ * (OfflineAudioContext.suspend), scheduling LOOKAHEAD ahead. Scheduling a
+ * whole cue up front would put every future note's nodes in the render graph
+ * from the first sample — renders many times slower than the live engine,
+ * and unrepresentative of it. `at(t)` runs at each tick before scheduling.
+ */
+function playerTicks(ac, p, seconds, at = null) {
+  p.tick(Math.min(seconds, LOOKAHEAD));
+  const dt = 0.25;
+  for (let i = 1; i * dt < seconds - 0.05; i++) {
+    const t = i * dt;
+    ac.suspend(t).then(() => {
+      at?.(t);
+      p.tick(Math.min(seconds, t + LOOKAHEAD));
+      ac.resume();
+    });
+  }
 }
 
 /**

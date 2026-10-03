@@ -155,6 +155,33 @@ describe('combat log contract (real engine templates)', () => {
     expect(names.some((n) => /_die$/.test(n)), down).toBe(true);
   });
 
+  it('a QUICK battle (no animation, no scene sounds) still has wind-ups, battle cries and pain, all positioned', () => {
+    // QUICK resolves blows without animation: the scene requests no sound, the
+    // director voices each combat:event attack itself. Replay one real fight's
+    // structured feed exactly that way (a little audio time between events).
+    const { bus, d, calls, engine } = director();
+    bus.emit('party:changed', { party: buildParty('default', 1) });
+    bus.emit('scene:enter', { name: 'combat', params: {} });
+    d.attach({ game: null, scenes: { current: { cam: { yaw: 0.4 } } } });
+    const fight = fights(['orc', 'orc', 'kobold', 'skeleton'], 2);
+    for (const x of fight) {
+      bus.emit('combat:event', x);
+      engine.ctx.currentTime += x.ev.type === 'attack' ? 0.35 : 0.05;
+    }
+    bus.emit('combat:event', { ev: { type: 'round' }, engine: fight[0].engine });
+    const sfx = calls.filter((c) => c[0] === 'sfx');
+    const names = sfx.map((c) => c[1]);
+    const blows = fight.filter((x) => x.ev.type === 'attack').length;
+    expect(blows).toBeGreaterThan(20);
+    expect(names.filter((n) => n === 'swing' || n === 'bow').length, 'wind-ups').toBeGreaterThan(blows * 0.5);
+    expect(sfx.some((c) => /^vox_/.test(c[1]) && c[2]?.mode === 'hurt'), 'pain').toBe(true);
+    expect(sfx.some((c) => /^vox_(?!party)/.test(c[1]) && !/_die$/.test(c[1]) && c[2]?.mode !== 'hurt'), 'battle cry').toBe(true);
+    // Every blow, block, wind-up and voice carries an explicit stereo position, and it is used.
+    const placed = sfx.filter((c) => /^(hit|parry|shield|dodge|swing|bow|arrow_hit|arrow_in|bite|vox_)/.test(c[1]));
+    for (const c of placed) expect(typeof c[2]?.pan, `${c[1]} has a pan`).toBe('number');
+    expect(placed.some((c) => Math.abs(c[2].pan) > 0.2)).toBe(true);
+  });
+
   it('the structured feed drives the same sounds without any log text', () => {
     const { bus, d, calls } = director();
     bus.emit('party:changed', { party: buildParty('default', 1) });

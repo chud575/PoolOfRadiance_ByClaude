@@ -99,6 +99,7 @@ export class Director {
     this.pendingWind = null;
     this.deferred = null;
     this.lastVox = -10;
+    this.lastHurt = -10;
     this.voiced = new Set();
     this.downs = 0;
     this.foes = 0;
@@ -228,6 +229,11 @@ export class Director {
         break;
       case 'camp':
         this._campBed();
+        break;
+      case 'dialogue':
+        // Talk happens where you stand: the location's bed carries on (ducked under a standoff cue).
+        this.e.setEnvironment(env);
+        this.e.ambience(env.bed, { night: this.night });
         break;
       case 'shop':
       case 'create':
@@ -430,7 +436,7 @@ export class Director {
       case 'attack': {
         const a = by(ev.id);
         const d = by(ev.target);
-        this.hint = this._hintFrom({ attId: a?.monsterId ?? null, tgtId: d?.monsterId ?? null, tgtParty: d?.side === 'party', attParty: a?.side === 'party', attRef: a?.ref, tgtRef: d?.ref, ranged: !!ev.ranged, hit: !!ev.hit, crit: !!(ev.crit || ev.backstab), immune: !!ev.immune, bite: a?.monsterId === 'giantRat', attPan: this._panOf(a), tgtPan: this._panOf(d) }, 'event');
+        this.hint = this._hintFrom({ attId: a?.monsterId ?? null, tgtId: d?.monsterId ?? null, tgtParty: d?.side === 'party', attParty: a?.side === 'party', attRef: a?.ref, tgtRef: d?.ref, ranged: !!ev.ranged, hit: !!ev.hit, crit: !!(ev.crit || ev.backstab), dmg: ev.dmg ?? 0, immune: !!ev.immune, bite: a?.monsterId === 'giantRat', attPan: this._panOf(a), tgtPan: this._panOf(d) }, 'event');
         this.blowPending = this.hint;
         this._reassess();
         break;
@@ -468,10 +474,10 @@ export class Director {
   _partyDown(ref, dead, pan = 0) {
     const now = this.now;
     const member = this.party?.find((c) => c.name === ref?.name) ?? ref ?? {};
-    this.e.sfx('vox_party_die', { vol: 0.75, race: member.race, gender: member.gender, ...(pan ? { pan } : {}) });
+    this.e.sfx('vox_party_die', { vol: 0.75, race: member.race, gender: member.gender, pan });
     if (now - (this.lastThud ?? -10) > 0.3) {
       this.lastThud = now;
-      this.e.sfx('death', { delay: 0.3, ...(pan ? { pan } : {}) });
+      this.e.sfx('death', { delay: 0.3, pan });
     }
     this.downs++;
     if (dead || member.status === 'dead') this.e.stinger('fallen', { duck: 0.6 });
@@ -499,23 +505,63 @@ export class Director {
     return at - now;
   }
 
-  /** The blow of an attack that played without animation (snap/QUICK): hit or miss, staggered. */
+  /**
+   * The attack that played without animation (snap/QUICK) as a whole little
+   * exchange, staggered so a round resolved in one frame still reads blow by
+   * blow: the wind-up at the attacker (sword swing or bow twang, now and then
+   * a battle cry), then the impact at the target — armour / bone / flesh, an
+   * arrow thud, a parry, shield block or dodge — and, on a hit, sometimes the
+   * victim's pain. When the lane is backed up the extras give way to impacts.
+   */
   _snapBlow() {
     const h = this.blowPending;
     this.blowPending = null;
     if (!h || h.immune) return;
-    const delay = this._stagger('blow');
+    const delay = this._stagger('blow', [0.2, 0.3], 1.6);
     if (delay === null) return;
+    const busy = delay > 0.9;
     const vol = 0.75;
-    const pan = h.tgtPan || undefined;
+    const tp = h.tgtPan ?? 0;
+    const ap = h.attPan ?? 0;
+    const wind = h.ranged ? 0.2 : 0.13;
+    if (!busy) {
+      this._raw(h.ranged ? 'bow' : 'swing', { delay, vol: 0.8, pan: ap, heavy: !!(h.attId && /ogre|troll|giant|bugbear/i.test(h.attId)) });
+      const v = this._voice(h.attId);
+      if (v) this._raw(v[0], { ...v[1], delay: delay + 0.02, pan: ap });
+    }
+    const at = delay + (busy ? 0 : wind);
     if (h.hit) {
-      if (h.ranged) this._raw('arrow_hit', { delay, vol, pan });
-      this._raw('hit', { delay, vol, pan, material: h.ranged && h.material === 'armor' ? 'flesh' : h.material, crit: h.crit });
-    } else if (h.ranged) this._raw('arrow_in', { delay, vol: vol * 0.7, pan });
+      if (h.ranged) this._raw('arrow_hit', { delay: at, vol, pan: tp });
+      if (h.bite) this._raw('bite', { delay: at, vol, pan: tp });
+      this._raw('hit', { delay: at, vol, pan: tp, material: h.ranged && h.material === 'armor' ? 'flesh' : h.material, crit: h.crit });
+      const hurt = this._hurt(h, at + 0.08);
+      if (hurt) this._raw(hurt[0], { ...hurt[1], pan: tp });
+    } else if (h.ranged) this._raw('arrow_in', { delay: at, vol: vol * 0.7, pan: tp });
     else {
       const r = this.e.rng.next();
-      this._raw(BEASTS.test(h.tgtId ?? '') || r < 0.4 ? 'dodge' : r < 0.7 ? 'parry' : 'shield', { delay, vol: vol * 0.85, pan });
+      this._raw(BEASTS.test(h.tgtId ?? '') || r < 0.4 ? 'dodge' : r < 0.7 ? 'parry' : 'shield', { delay: at, vol: vol * 0.85, pan: tp });
     }
+  }
+
+  /**
+   * The victim's pain on a hit (monster family voice or the party member's
+   * own, by race and sex): 45 % of blows, never two within 0.7 s, always on a
+   * crit or a heavy blow.
+   */
+  _hurt(h, delay) {
+    const now = this.now;
+    if (now - this.lastHurt < 0.7) return null;
+    if (!(h.crit || (h.dmg ?? 0) >= 6 || this.e.rng.chance(0.45))) return null;
+    if (h.tgtId) {
+      this.lastHurt = now;
+      return [`vox_${voiceOf(h.tgtId)}`, { mode: 'hurt', vol: 0.7, delay }];
+    }
+    if (h.tgtParty) {
+      const who = this._member(h.tgtRef);
+      this.lastHurt = now;
+      return ['vox_party', { mode: 'hurt', vol: 0.65, delay, race: who?.race, gender: who?.gender }];
+    }
+    return null;
   }
 
   /** A foe is slain: its death cry (staggered when several fall at once) and a thud. */
@@ -528,12 +574,12 @@ export class Director {
       const delay = this._stagger('death', [0.22, 0.38], 1.0);
       if (delay !== null) {
         this.lastDeathVox = now;
-        this._raw(`vox_${voiceOf(id)}_die`, { vol: 0.85 * (delay > 0.3 ? 0.8 : 1), delay: delay + 0.03, ...(pan ? { pan } : {}) });
+        this._raw(`vox_${voiceOf(id)}_die`, { vol: 0.85 * (delay > 0.3 ? 0.8 : 1), delay: delay + 0.03, pan });
       }
     }
     if (now - (this.lastThud ?? -10) > 0.3) {
       this.lastThud = now;
-      this.e.sfx('death', { delay: 0.25, vol: fresh ? 1 : 0.6, ...(pan ? { pan } : {}) });
+      this.e.sfx('death', { delay: 0.25, vol: fresh ? 1 : 0.6, pan });
     }
     this._reassess();
   }
@@ -714,17 +760,18 @@ export class Director {
     const out = this._remap(name, opts);
     // Combat sounds come from where it happens on screen: the blow and the
     // victim's cry at the target, the wind-up and war cry at the attacker.
+    // Every combat sound carries a position (centre is a position too).
     const h = this.scene === 'combat' ? this.hint : null;
-    if (!out || !h || (!h.tgtPan && !h.attPan)) return out;
+    if (!out || !h) return out;
     return out.map(([n, o]) => {
       if (o?.pan !== undefined) return [n, o];
-      const pan = ATTACKER_SIDE.test(n) || (n.startsWith('vox_') && o?.mode !== 'hurt') ? h.attPan : TARGET_SIDE.test(n) || n.startsWith('vox_') ? h.tgtPan : 0;
-      return pan ? [n, { ...o, pan }] : [n, o];
+      const pan = ATTACKER_SIDE.test(n) || (n.startsWith('vox_') && o?.mode !== 'hurt') ? h.attPan : TARGET_SIDE.test(n) || n.startsWith('vox_') ? h.tgtPan : null;
+      return pan === null || pan === undefined ? [n, o] : [n, { ...o, pan }];
     });
   }
 
   /**
-   * Stereo position (-0.6…0.6) of a combatant as seen from the combat camera:
+   * Stereo position (-0.8…0.8) of a combatant as seen from the combat camera:
    * its grid offset from the fight's centre projected on the camera's right
    * vector. The camera yaw comes from the current scene (`audioListener()`
    * if it offers one, else its orbit camera's `cam.yaw`); without one, centre.
@@ -745,7 +792,8 @@ export class Director {
     const cy = all.reduce((a, o) => a + o.y, 0) / all.length;
     // Grid (x, y) is world (x, z); the camera's right vector is (cos yaw, 0, -sin yaw).
     const side = (c.x - cx) * Math.cos(yaw) - (c.y - cy) * Math.sin(yaw);
-    const p = Math.max(-0.6, Math.min(0.6, side / 5));
+    // About three tiles off centre is already well to one side; never hard-panned.
+    const p = Math.max(-0.8, Math.min(0.8, side / 3));
     return Math.abs(p) < 0.03 ? 0 : Math.round(p * 100) / 100;
   }
 
@@ -800,18 +848,9 @@ export class Director {
         if (hint.ranged) out.push(['arrow_hit', nudge({})]);
         if (hint.bite) out.push(['bite', nudge({})]);
         out.push(['hit', nudge({ material: hint.ranged && hint.material === 'armor' ? 'flesh' : hint.material, crit: hint.crit, ...opts })]);
-        if (now - this.lastVox > 0.8 && this.e.rng.chance(0.35)) {
-          const delay = 0.08 + (late ? 0.07 : 0);
-          if (hint.tgtId) {
-            this.lastVox = now;
-            out.push([`vox_${voiceOf(hint.tgtId)}`, { mode: 'hurt', vol: 0.7, delay }]);
-          } else if (hint.tgtParty) {
-            // The party's own pain: each character's voice by race and sex.
-            const who = this._member(hint.tgtRef);
-            this.lastVox = now;
-            out.push(['vox_party', { mode: 'hurt', vol: 0.65, delay, race: who?.race, gender: who?.gender }]);
-          }
-        }
+        // The victim's pain (the party's own voices by race and sex).
+        const hurt = this._hurt(hint, 0.08 + (late ? 0.07 : 0));
+        if (hurt) out.push(hurt);
         return out;
       }
       case 'spell': {

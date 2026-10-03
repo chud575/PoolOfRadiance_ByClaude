@@ -31,18 +31,39 @@ function variant(pass, rng, state, n) {
 /** Long exploration cues fall silent for a while every few minutes (see TrackPlayer). */
 const REST = { after: [130, 190], length: [45, 110] };
 
-/** Seeded sparse "glints": random notes from a scale, `perBar` on average. */
+/**
+ * Sparse "glints" — but composed: instead of random scale tones, seeded
+ * placements of a few short gestures drawn from the score's own material
+ * (the title's fifth-and-octave call, a falling sigh, a rising turn, a
+ * distant echo of the call), in degrees of `scale` (index 0 = the tonic of
+ * the set). Gestures never crowd: at most one per two bars at the densest,
+ * and a gesture is followed by space.
+ */
+const CELLS = [
+  [[0, 0, 1], [2, 1, 1], [2, 1.5, 2]], // the call: tonic, fifth, fifth (the title's D–A–A)
+  [[1, 0, 1.5], [0, 1.5, 2.5]], // a sigh: falling a step
+  [[0, 0, 0.5], [1, 0.5, 0.5], [2, 1, 2]], // a rising turn
+  [[2 + 1e-9, 0, 1], [0, 1, 0.5], [0, 1.5, 2.5]], // the call's answer, falling home
+  [[3, 0, 3]], // a single far bell / harmonic
+];
 function glints(inst, rng, { scale, low, bars, barQ = 4, perBar = 1, vel = 0.3, step = 0.5, layer, dur = 2 }) {
+  void step;
   const ev = [];
-  const slots = Math.round(barQ / step);
+  const deg = (d) => {
+    const k = Math.floor(d);
+    return midi(low) + scale[k % scale.length] + 12 * Math.floor(k / scale.length);
+  };
+  let quiet = 0;
   for (let b = 0; b < bars; b++) {
-    let n = 0;
-    for (let i = 0; i < slots; i++) if (rng.chance(perBar / slots)) {
-      const deg = rng.int(0, scale.length * 2 - 1);
-      const m = midi(low) + scale[deg % scale.length] + 12 * Math.floor(deg / scale.length);
-      ev.push({ inst, t: b * barQ + i * step, midi: m, dur, vel: vel * rng.range(0.6, 1.1), layer });
-      if (++n > perBar + 1) break;
+    if (quiet > 0) {
+      quiet--;
+      continue;
     }
+    if (!rng.chance(Math.min(0.5, perBar))) continue;
+    const cell = scale.length > 2 ? rng.pick(CELLS) : [[rng.int(0, scale.length - 1), 0, 2]];
+    const t0 = b * barQ + rng.pick([0, 1, 2]);
+    for (const [d, dt, len] of cell) ev.push({ inst, t: t0 + dt, midi: deg(d), dur: Math.max(len, dur * 0.6), vel: vel * rng.range(0.75, 1.05), layer });
+    quiet = 1 + rng.int(0, 2);
   }
   return ev;
 }

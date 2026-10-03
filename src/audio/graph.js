@@ -22,7 +22,7 @@ export const MUSIC_ROOM_SEED = 3;
  *                └► musicSend ─► music room A/B (crossfaded per cue) ─► musicDuck
  *   sfx ─► sfxIn ─► sfxBus(vol) ─────────────────────────────┤
  *       └► envSend ─► room convolver A/B (crossfaded) ─► sfxBus
- *   ambience ─► ambBus(vol) ─────────────────────────────────┤
+ *   ambience ─► ambBus(vol) ─► ambDuck ──────────────────────┤
  *   ui ─► uiBus(vol) ────────────────────────────────────────┤
  *                                       master(vol) ─► glue comp ─► limiter ─► out
  */
@@ -155,10 +155,18 @@ export function createGraph(ac, dest = ac.destination) {
   // Music reverb: two convolvers crossfaded when the cue (and its room) changes.
   const mrooms = [ac.createConvolver(), ac.createConvolver()];
   const mGain = [g(0.0001), g(0.0001)];
-  mrooms.forEach((c, i) => {
-    musicSend.connect(c);
-    c.connect(mGain[i]).connect(musicDuck);
-  });
+  // Only the convolver(s) in use are fed: the faded-out room is disconnected
+  // once its crossfade is over (reap), so it stops convolving silence.
+  const mFed = [false, false];
+  const feedM = (i, on) => {
+    if (mFed[i] === on) return;
+    mFed[i] = on;
+    if (on) musicSend.connect(mrooms[i]);
+    else musicSend.disconnect(mrooms[i]);
+  };
+  mrooms.forEach((c, i) => c.connect(mGain[i]).connect(musicDuck));
+  feedM(0, true);
+  let mIdle = null;
   let mActive = 0;
   let mCurrent = null;
   let mWet = 0.5;
@@ -180,10 +188,12 @@ export function createGraph(ac, dest = ac.destination) {
     mWet = wet;
     const next = first ? 0 : 1 - mActive;
     mrooms[next].buffer = cachedImpulse(ac, name, MUSIC_ROOM_SEED);
+    feedM(next, true);
     if (first) {
       mGain[0].gain.setValueAtTime(wet, t);
       return;
     }
+    mIdle = { i: mActive, at: t + fade + 0.1 };
     mGain[next].gain.cancelScheduledValues(t);
     mGain[next].gain.setValueAtTime(0.0001, t);
     mGain[next].gain.linearRampToValueAtTime(wet, t + fade);
@@ -200,10 +210,16 @@ export function createGraph(ac, dest = ac.destination) {
   const envSend = g(1);
   const rooms = [ac.createConvolver(), ac.createConvolver()];
   const roomGain = [g(0.5), g(0.0001)];
-  rooms.forEach((c, i) => {
-    envSend.connect(c);
-    c.connect(roomGain[i]).connect(sfxBus);
-  });
+  const fed = [false, false];
+  const feed = (i, on) => {
+    if (fed[i] === on) return;
+    fed[i] = on;
+    if (on) envSend.connect(rooms[i]);
+    else envSend.disconnect(rooms[i]);
+  };
+  rooms.forEach((c, i) => c.connect(roomGain[i]).connect(sfxBus));
+  feed(0, true);
+  let idle = null;
   let active = 0;
   let current = null;
   /** Crossfade the environmental reverb to another room preset. */
@@ -213,6 +229,8 @@ export function createGraph(ac, dest = ac.destination) {
     current = name;
     const next = first ? 0 : 1 - active;
     rooms[next].buffer = cachedImpulse(ac, name, 17 + name.length);
+    feed(next, true);
+    if (!first) idle = { i: active, at: t + 0.9 };
     if (first) {
       roomGain[0].gain.setValueAtTime(wet, t);
       return;
@@ -226,9 +244,23 @@ export function createGraph(ac, dest = ac.destination) {
     active = next;
   };
 
+  /** Stop feeding reverbs whose crossfade is over (call from the scheduler tick). */
+  const reap = (now = ac.currentTime) => {
+    if (mIdle && now > mIdle.at && mIdle.i !== mActive) {
+      feedM(mIdle.i, false);
+      mIdle = null;
+    }
+    if (idle && now > idle.at && idle.i !== active) {
+      feed(idle.i, false);
+      idle = null;
+    }
+  };
+
   const ambBus = g(0.6);
-  ambBus.connect(master);
+  // The location bed ducks (not stops) under a parley's standoff cue.
+  const ambDuck = g(1);
+  ambBus.connect(ambDuck).connect(master);
   const uiBus = g(0.7);
   uiBus.connect(master);
-  return { master, musicBus, musicDuck, musicIn, musicSend, sfxBus, sfxIn, envSend, ambBus, uiBus, setRoom, setMusicRoom, glue, limiter };
+  return { master, musicBus, musicDuck, musicIn, musicSend, sfxBus, sfxIn, envSend, ambBus, ambDuck, uiBus, setRoom, setMusicRoom, reap, glue, limiter };
 }
