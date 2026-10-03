@@ -68,9 +68,11 @@ export function paintFace(D, W = 600, H = 750) {
   const BR = matRot((D.yaw ?? -0.3) * 0.25, 0, 0);
   const rotOf = (grp) => (grp === 'body' ? BR : grp === 'neck' ? NR : HR);
   // body parts are hung from the neck base, which the head turns about
+  // the shoulders ride a little higher than the old rig had them: a shorter, stronger column of neck
+  const lift = (D.neckLift ?? 0.14) * U;
   const P = (p, grp = 'head') => {
     const q = ap(rotOf(grp), p);
-    return [cx + q[0] * U, cy + q[1] * U, q[2]];
+    return [cx + q[0] * U, cy + q[1] * U - (grp === 'head' ? 0 : lift), q[2]];
   };
   const L = norm3(D.key ?? [-0.5, -0.46, 0.74]); // key: high and to the left, ~40° off the view axis
   const aura = rgbOf(D.aura ?? '#ffcf8a');
@@ -261,7 +263,7 @@ export function paintFace(D, W = 600, H = 750) {
   g.putImageData(img, 0, 0);
   // the painterly pass: short strokes that follow the form, laid in the colour beneath
   // women's skin stays smooth (the strokes read as blemishes on a young face); men's takes the brush
-  if (!D.noBrush && !fem) brushOver(g, d, mask, Z, W, H, U, R, 0.8);
+  if (!D.noBrush) brushOver(g, d, mask, Z, W, H, U, R, fem ? 0.18 : 0.75);
 
   // ---------------------------------------------------------------- costume and features
   const ctx = { g, W, H, U, P, R, D, fem, age, skin, pal, cx, cy, HR, L, aura, F, N, M, w };
@@ -628,7 +630,7 @@ function paintEyes(ctx) {
   const iris = rgbOf(E.c);
   const skinDark = mixc(skin, [90, 40, 34], 0.6);
   for (const s of [-1, 1]) {
-    const sz = E.size * (fem ? 1.05 : 1);
+    const sz = E.size * (fem ? 1.12 : 1.07);
     const ball = [s * 0.34, 0.035, 0.6];
     const inner = [s * 0.19, 0.055, 0.84];
     const outer = [s * (0.5 + 0.02 * sz), 0.035 - E.tilt * 0.035, 0.7];

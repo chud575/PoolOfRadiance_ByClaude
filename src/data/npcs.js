@@ -26,7 +26,7 @@ export const NPCS = {
     look: { seed: 4101, head: 3, body: 4, hair: 8, cloth: 6, skin: 1, eyes: 4 }, aura: '#ffcf8a',
     desc: 'A stooped, ink-stained man with spectacles on a ribbon and a ledger never far from his hand.',
     figure: { age: 0.6, build: 0.86, hairStyle: 'tonsure', beard: 'none', hair: '#8a7c6a', jaw: 0.85, nose: 1.15, pose: 'clerk', outfit: { shirt: '#ece4d0', top: '#283450', topKind: 'robe', sleeves: 'bell', sash: '#18203a', collar: '#18203a', cuff: '#8a8274', spectacles: true } },
-    paint: { sex: 'm', age: 0.62, skin: '#e2b898', yaw: -0.3, beard: { style: 'none' }, gaze: [0.12, 0.02], face: { w: 0.86, jaw: 0.82, chin: 1.1, cheek: 1.2, hollow: 0.9, brow: 1.1, neck: 1.0 }, nose: { len: 1.08, w: 0.92, hook: 0.5 }, eyes: { c: '#5a6a72', size: 0.9, lid: 0.6 }, mouth: { w: 0.88, full: 0.7 }, brows: { c: '#8a7a6a', w: 0.85, arch: 0.6 }, hair: { style: 'tonsure', c: '#8a7c6a' }, spectacles: true, quill: true, costume: { kind: 'robe', a: '#283450', b: '#ece4d0', collar: '#18203a', ink: true }, bg: ['#4e3e2a', '#0c0806'] },
+    paint: { sex: 'm', age: 0.62, skin: '#e2b898', yaw: -0.3, beard: { style: 'none' }, gaze: [0.12, 0.02], face: { w: 0.96, jaw: 1.08, chin: 0.94, cheek: 1.1, hollow: 0.4, brow: 1.1, neck: 1.1 }, nose: { len: 1.08, w: 0.92, hook: 0.5 }, eyes: { c: '#5a6a72', size: 0.9, lid: 0.6 }, mouth: { w: 0.88, full: 0.7 }, brows: { c: '#8a7a6a', w: 0.85, arch: 0.6 }, hair: { style: 'tonsure', c: '#8a7c6a' }, spectacles: true, quill: true, costume: { kind: 'robe', a: '#283450', b: '#ece4d0', collar: '#18203a', ink: true }, bg: ['#4e3e2a', '#0c0806'] },
   },
   councilman: {
     id: 'councilman', name: 'Porphyrys Cadorna', title: 'First Councilman', race: 'human', gender: 'male',

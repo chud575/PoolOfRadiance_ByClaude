@@ -1160,18 +1160,18 @@ function templeSune(g, W, H, R, o, d) {
   godRays(g, { x: W * 0.36, y: H * 0.3, w: H * 0.3 }, { x: W * 0.42, y: H * 0.9, w: W * 0.32, h: H * 0.12 }, pal, { alpha: 0.18, seed: 42 });
   // the window's colours lie on the marble in a sheared pool (red, rose and gold quarries)
   {
-    const fy = H * 0.86;
+    const fy = H * 0.78;
     g.save();
     g.globalCompositeOperation = 'screen';
     const RR = rngOf(45);
     for (let i = 0; i < 38; i++) {
       const a = RR() * Math.PI * 2, rr = Math.sqrt(RR());
-      const px = W * 0.43 + Math.cos(a) * rr * W * 0.13 - (fy - H * 0.8) * 0.2;
+      const px = W * 0.24 + Math.cos(a) * rr * W * 0.13;
       const py = fy + Math.sin(a) * rr * H * 0.045;
       const col = pal[Math.floor(RR() * pal.length)];
       glowEllipse(g, px, py, W * (0.018 + RR() * 0.02), H * (0.008 + RR() * 0.01), col, 0.3, 'screen');
     }
-    glowEllipse(g, W * 0.43, fy, W * 0.16, H * 0.06, '#ff9aa8', 0.22, 'screen');
+    glowEllipse(g, W * 0.24, fy, W * 0.16, H * 0.06, '#ff9aa8', 0.22, 'screen');
     g.restore();
   }
   garland(g, W * 0.12, H * 0.08, W * 0.6, H * 0.08, H * 0.06, 43);

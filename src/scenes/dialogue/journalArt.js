@@ -109,12 +109,12 @@ function engrave(src, maskC, seed, opts = {}) {
       // the subject is shaded on its own range (a pale ghost still gets form-following hatching):
       // light planes stay open paper, the turning planes take one and two layers, the core shadow three
       t = 1 - Math.max(0, Math.min(1, (B[i] - slo) / Math.max(0.05, shi - slo)));
-      t = opts.bgDark ? 0.02 + Math.pow(t, 1.6) * 0.62 : 0.08 + Math.pow(t, 1.1) * 0.88;
+      t = opts.bgDark ? 0.04 + Math.pow(t, 1.25) * 0.8 : 0.08 + Math.pow(t, 1.1) * 0.88;
     } else {
       t = 1 - Math.max(0, Math.min(1, (B[i] - lo) / Math.max(0.05, hi - lo)));
       // background kept light and quiet (open paper, ruled tints) — or, behind a pale subject such
       // as a ghost, dark: the figure then reads as clean paper cut out of a cross-hatched night
-      t = opts.bgDark ? 0.5 + Math.pow(t, 0.9) * 0.45 : 0.08 + Math.pow(t, 1.4) * 0.74;
+      t = opts.bgDark ? 0.2 + Math.pow(t, 0.8) * 0.78 : 0.08 + Math.pow(t, 1.4) * 0.74;
     }
     // three value groups, as an engraver keys a plate: open paper, one ruled tint, crosshatch
     const sst = (a, b, v) => { const q = Math.max(0, Math.min(1, (v - a) / (b - a))); return q * q * (3 - 2 * q); };
