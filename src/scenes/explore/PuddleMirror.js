@@ -57,7 +57,7 @@ export class PuddleMirror {
     v.tgt.y = 2 * this.planeY - v.tgt.y;
     cam.up.set(0, 1, 0).applyMatrix4(v.rot).reflect(v.n);
     cam.lookAt(v.tgt);
-    cam.far = camera.far;
+    cam.far = Math.min(camera.far, 90); // (the far skyline barely shows in a puddle: skip it)
     cam.near = camera.near;
     cam.updateMatrixWorld();
     cam.projectionMatrix.copy(camera.projectionMatrix);

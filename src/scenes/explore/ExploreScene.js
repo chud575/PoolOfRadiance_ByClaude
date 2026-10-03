@@ -85,7 +85,7 @@ export default class ExploreScene extends Scene {
     this._setupEnvironment();
     // standing water mirrors the street (one half-res planar pass, only while the ground is wet)
     if (SURFACE_UNIFORMS.uFxWet.value > 0 && (ts.outdoors || ts.id === 'dungeon')) {
-      this.mirror = new PuddleMirror(0.5);
+      this.mirror = new PuddleMirror(0.4);
       this.own(() => {
         this.mirror?.dispose();
         this.mirror = null;
@@ -637,8 +637,13 @@ export default class ExploreScene extends Scene {
       if (this._idleFrames % 120 !== 0) return;
     }
     if (this.mirror) {
-      this.mirror.hidden = [this.wetRefl].filter(Boolean);
-      this.mirror.render(this.ctx.render.renderer, this.scene3d, this.camera);
+      // (in live play the mirror refreshes every other frame: a one-frame lag in a puddle is
+      // invisible, the halved cost is not)
+      this._mirrorTick = (this._mirrorTick ?? 0) + 1;
+      if (frozen || this._mirrorTick % 2 === 1) {
+        this.mirror.hidden = [this.wetRefl].filter(Boolean);
+        this.mirror.render(this.ctx.render.renderer, this.scene3d, this.camera);
+      }
     }
     if (this.godRays) this.godRays.enabled = true;
     super.render();
