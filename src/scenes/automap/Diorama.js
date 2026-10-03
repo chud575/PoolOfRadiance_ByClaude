@@ -1072,7 +1072,7 @@ export class Diorama {
     scene.add(key, key.target);
     // a cool rim from beyond the board (a window behind the desk): it outlines every
     // wall-top and the miniature against the warm paving
-    const rim = new THREE.DirectionalLight(0xa8c2ff, 1.1);
+    const rim = new THREE.DirectionalLight(0xc4d2f0, 0.8);
     rim.position.set(10, 7, -22);
     rim.target.position.set(8, 0, 8);
     scene.add(rim, rim.target);
@@ -1129,7 +1129,7 @@ export class Diorama {
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     tex.anisotropy = Math.min(8, this.ctx.render?.maxAnisotropy ?? 4);
     const mat = T(new THREE.MeshPhysicalMaterial({
-      map: tex, color: 0xcfc6b4, roughness: 0.96, metalness: 0, vertexColors: true, envMapIntensity: 0.2, side: THREE.DoubleSide,
+      map: tex, color: 0xbab3a6, roughness: 0.96, metalness: 0, vertexColors: true, envMapIntensity: 0.2, side: THREE.DoubleSide,
       sheen: 0.6, sheenRoughness: 0.7, sheenColor: new THREE.Color(0xfff0d8),
     }));
     const R = 14;
@@ -1164,7 +1164,7 @@ export class Diorama {
         }
         return inside ? d : -d;
       };
-      const top = wallH * 1.12;
+      const top = wallH * (rg.style === 1 ? 1.5 : 1.2);
       const minDim = Math.min(x1 - x0, z1 - z0);
       const sagMax = Math.min(top * 0.6, 0.14 + minDim * 0.08);
       // the cloth was thrown on from one corner: its long folds all run one way
@@ -1205,7 +1205,7 @@ export class Diorama {
           const tLin = (x * dx + z * dz) / lam * Math.PI * 2 + ph + (n1 - 0.5) * 2.2;
           const fold = (crest(tRad) * Math.min(1, rr0 / 0.7) * 0.65 + crest(tLin) * 0.45) * (0.3 + 0.7 * k);
           const fine = Math.sin((x * -dz + z * dx) * 9 + n1 * 5) * 0.12 * k;
-          y = top - sagMax * k + (fold * 0.085 + fine * 0.02) * (0.35 + k) + 0.012 * (1 - k);
+          y = top - sagMax * k + (fold * 0.11 + fine * 0.02) * (0.35 + k) + 0.012 * (1 - k);
           rel = fold * 0.8 - k * 0.5 + (1 - k) * 0.6;
         } else {
           const o = -sd;
@@ -1245,7 +1245,7 @@ export class Diorama {
       }
       for (let i = 0; i < p.count; i++) {
         const rv = relief[i];
-        const sh = Math.max(0.4, Math.min(1.08, 0.8 + rv * 0.3));
+        const sh = Math.max(0.36, Math.min(1.1, 0.8 + rv * 0.38));
         col.set([sh, sh * 0.98, sh * 0.95], i * 3);
       }
       geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
@@ -1398,7 +1398,7 @@ export class Diorama {
       const t = over ? Math.sin(fx * Math.PI) : Math.sin(fy * Math.PI);
       const slubW = hash2(cx, 7, 3) * 0.5 + hash2(cy, 11, 5) * 0.5;
       const stain = fbm(x / 64, y / 64, { period: 4, octaves: 4, seed: 902 });
-      const blot = Math.max(0, stain - 0.58) * 1.4;
+      const blot = Math.max(0, stain - 0.5) * 0.5;
       let v = 0.74 + t * 0.2 + (slubW - 0.5) * 0.1 + (hash2(x, y, 9) - 0.5) * 0.04;
       v *= 1 - blot * 0.3;
       const i = (y * S + x) * 4;

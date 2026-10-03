@@ -440,12 +440,13 @@ export function furnish(g, cells, { CX, CY, cs, seed = 1, map, theme = 'house', 
   // the temple's altar goes against the north wall if it can
   const order = [...free].sort((a, b) => a[1] - b[1] || a[0] - b[0]);
   const kit = ruined ? [['debris', 0], ...KIT[theme].slice(0, 2), ['debris', 0], KIT[theme][2]] : KIT[theme];
-  const budget = Math.min(kit.length, Math.max(1, Math.round(cells.length * (ruined ? 0.4 : 0.6))));
+  // a big hall is furnished in proportion: the kit is gone round again for large rooms
+  const budget = Math.min(kit.length * 2, Math.max(1, Math.round(cells.length * (ruined ? 0.4 : 0.55))));
   g.save();
   g.lineJoin = 'round';
   g.lineCap = 'round';
   for (let i = 0; i < budget; i++) {
-    const [sym, wall] = kit[i];
+    const [sym, wall] = kit[i % kit.length];
     let spot = null;
     const pool = sym === 'altar' ? order : [...free].sort(() => r() - 0.5);
     for (const [x, y] of pool) {

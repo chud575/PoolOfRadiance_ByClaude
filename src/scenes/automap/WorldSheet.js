@@ -314,7 +314,7 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
   // engraved swell: rows of broken wave strokes, parallel to the shore
   g.lineCap = 'round';
   for (let j = 0; j < 22; j++) {
-    const fade = Math.max(0.12, 1 - j / 22);
+    const fade = Math.max(0.32, 1 - j / 26);
     let x = -10 + r() * 30;
     while (x < W + 10) {
       const len = 16 + r() * 34;
@@ -878,8 +878,8 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
   g.rotate(Math.PI / 2);
   haloText(g, 'THORN ISLAND', 0, 0, { color: '#2c3518', halo: 'rgba(236,226,200,0.8)', width: 5 });
   g.restore();
-  drawShip(g, 520, 938, 88);
-  drawSerpent(g, 830, 978, 80);
+  drawShip(g, 520, 942, 106);
+  drawSerpent(g, 840, 984, 100);
   drawCompassRose(g, 1175, 860, 72);
   // scale of leagues
   g.save();
@@ -1652,7 +1652,7 @@ const DISTRICT_VIGNETTES = {
     const road = new Path2D(); road.moveTo(-6, 26); road.bezierCurveTo(-20, 8, 20, 0, 4, -20); road.lineTo(8, -20); road.bezierCurveTo(26, 0, -12, 8, 6, 26); road.closePath();
     ENG.shape(g, road, 'rgba(226,206,164,1)', 0.9);
     const r = prng(808);
-    for (const [tx, ty, ts] of [[-18, -16, 6.5], [20, -22, 5.6], [33, -8, 7], [-31, 4, 7.8], [27, 16, 7.4], [-38, 22, 6.4], [40, 26, 5.8]].sort((p, q) => p[1] - q[1])) tree(g, tx, ty, ts, r);
+    for (const [tx, ty, ts] of [[-20, -14, 9.5], [21, -22, 8.4], [34, -4, 10], [-33, 6, 11], [27, 18, 10.4], [-40, 24, 9], [42, 28, 8.4]].sort((p, q) => p[1] - q[1])) tree(g, tx, ty, ts, r);
     g.restore();
   },
   // Sokol keep: a lone tower on the rocks with a light in its window

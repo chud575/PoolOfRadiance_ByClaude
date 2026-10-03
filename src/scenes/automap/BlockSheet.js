@@ -179,7 +179,7 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
       const L = (x1 - x0) + (y1 - y0);
       for (const dir of [1, -1]) {
         for (let o = -L; o < L; o += 3.4 + ur() * 1.2) {
-          ug.strokeStyle = `rgba(62,46,32,${((dir > 0 ? 0.26 : 0.16) * (0.7 + ur() * 0.6)).toFixed(3)})`;
+          ug.strokeStyle = `rgba(62,46,32,${((dir > 0 ? 0.21 : 0.12) * (0.7 + ur() * 0.6)).toFixed(3)})`;
           ug.lineWidth = 0.45 + ur() * 0.3;
           ug.beginPath();
           if (dir > 0) { ug.moveTo(x0 + o, y1); ug.lineTo(x0 + o + (y1 - y0), y0); } else { ug.moveTo(x0 + o, y0); ug.lineTo(x0 + o + (y1 - y0), y1); }
@@ -188,7 +188,7 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
       }
       // a soft graphite rim pressed along the inside of the walls
       ug.filter = `blur(${(cs * 0.06 * k).toFixed(1)}px)`;
-      ug.strokeStyle = 'rgba(54,40,28,0.42)';
+      ug.strokeStyle = 'rgba(54,40,28,0.36)';
       ug.lineWidth = cs * 0.2;
       ug.stroke(boundaryPath(rg.cells, CX, CY));
       ug.filter = 'none';
@@ -379,6 +379,11 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
         if (rg.type !== CELL.STREET && rg.type !== CELL.COURTYARD) continue;
         if (!rg.cells.some(([x, y]) => seenCell(x, y))) continue;
         const plaza = rg.type === CELL.COURTYARD;
+        if (plaza) {
+          // a plaza is flagged like the halls round it: the same inked, broken-coursed slabs
+          drawFloor(d, rg.cells, { CX, CY, cs, seed: seed + rg.index * 23 + 5, kind: 'flags' });
+          continue;
+        }
         cobbleRegion(d, rg.cells, { CX, CY, cs, seed: seed + rg.index * 23 + 5, axisAt: plaza ? null : axisAt, wearAt, groundAt: ground, bareAt: plaza ? () => false : bareAt, kind: plaza ? 'flags' : 'setts' });
       }
     }
