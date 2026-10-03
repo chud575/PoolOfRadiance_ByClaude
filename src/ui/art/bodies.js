@@ -1,4 +1,4 @@
-import { Figure, mat, add, sub, scl, norm, cross, ap3, mul3, rotX, rotY, rotZ, euler, alignY, ik, mixc, shade, hex } from './sculpt.js';
+import { Figure, mat, add, sub, scl, norm, cross, dot, len, ap3, mul3, rotX, rotY, rotZ, euler, alignY, ik, mixc, shade, hex } from './sculpt.js';
 import { rngOf } from './paint.js';
 import { sculptHead, handShape } from './anatomy.js';
 
@@ -41,8 +41,8 @@ const eyeMat = (c) => mat('#000000', { emissive: c, ink: 0, rough: 0.2, spec: 0.
  * headR: head radius; build: girth; arm: arm length factor.
  */
 export const SPECIES = {
-  kobold: { head: 'kobold', skin: '#6e2e16', skin2: '#4a4440', skin3: '#7a5a3a', belly2: '#c0904a', pattern: 'scales', legs: 0.4, torso: 0.3, headR: 0.085, build: 0.8, digi: true, tail: 0.42, hunch: 0.22, cloth: ['#4a3a28', '#5a2a1a', '#3a3424', '#6a5a3a'], weapons: ['spear', 'spear', 'spear', 'shortsword', 'club', 'axe'], shield: 0.25, helm: 0.3, eyes: '#ffb020', claws: true },
-  koboldChief: { head: 'kobold', skin: '#6a5a4a', skin2: '#a89070', belly2: '#c8a878', pattern: 'scales', legs: 0.4, torso: 0.31, headR: 0.085, build: 0.92, digi: true, tail: 0.45, hunch: 0.18, cloth: ['#6a1e1a'], cape: '#5a1a14', weapons: ['longsword'], shield: 0, helm: 1, eyes: '#ffc030', claws: true, chief: true },
+  kobold: { head: 'kobold', skin: '#6e2e16', skin2: '#4a4440', skin3: '#7a5a3a', belly2: '#c0904a', pattern: 'scales', legs: 0.4, torso: 0.29, headR: 0.088, build: 0.82, digi: true, tail: 0.46, hunch: 0.32, cloth: ['#4a3a28', '#5a2a1a', '#3a3424', '#6a5a3a'], weapons: ['spear', 'spear', 'spear', 'shortsword', 'club', 'axe'], shield: 0.25, helm: 0.3, eyes: '#ffb020', claws: true },
+  koboldChief: { head: 'kobold', skin: '#6a5a4a', skin2: '#a89070', belly2: '#c8a878', pattern: 'scales', legs: 0.4, torso: 0.3, headR: 0.09, build: 0.95, digi: true, tail: 0.5, hunch: 0.24, cloth: ['#6a1e1a'], cape: '#5a1a14', weapons: ['longsword'], shield: 0, helm: 1, eyes: '#ffc030', claws: true, chief: true },
   goblin: { head: 'goblin', skin: '#7a8a3a', skin2: '#9aa04a', pattern: 'skin', legs: 0.42, torso: 0.3, headR: 0.09, build: 0.82, hunch: 0.15, cloth: ['#4a3020', '#3a3a28', '#5a2a1a'], weapons: ['shortsword', 'club', 'spear', 'axe'], shield: 0.35, helm: 0.3, eyes: '#ffe040' },
   orc: { head: 'orc', skin: '#5e6e44', skin2: '#4a5a34', pattern: 'skin', legs: 0.47, torso: 0.33, headR: 0.07, build: 1.18, hunch: 0.15, cloth: ['#3a2a1c', '#2a2218'], armor: 'scraps', weapons: ['axe', 'axe', 'mace', 'longsword', 'spear'], shield: 0.3, helm: 0.4, eyes: '#ff3a18' },
   orcLeader: { head: 'orc', skin: '#56663e', skin2: '#46562e', pattern: 'skin', legs: 0.47, torso: 0.34, headR: 0.07, build: 1.3, hunch: 0.1, cloth: ['#2a1a12'], armor: 'plate', cape: '#4a1010', weapons: ['greataxe'], shield: 0, helm: 1, eyes: '#ff3a18' },
@@ -271,7 +271,8 @@ function head(f, kind, sp, skinM, R, o = {}) {
       f.ell([0, 0.1, 0.95], [0.26, 0.13, 0.8], skinM, { ...g, R: rotX(0.08) });
       // lower jaw: hanging slightly open, or dropped wide in a snarl; dark mouth and tongue between
       const sn = o.snarl ?? 0;
-      f.cone([0, -0.4 - sn * 0.12, 0.2], [0, -0.6 - sn * 0.42, 1.5 - sn * 0.16], 0.3, 0.12, skinM, g);
+      f.cone([0, -0.4 - sn * 0.12, 0.2], [0, -0.6 - sn * 0.42, 1.5 - sn * 0.16], 0.36, 0.14, skinM, g);
+      for (const d of [-1, 1]) f.ell([d * 0.38, -0.36, 0.12], [0.2, 0.24, 0.3], skinM, g); // jaw muscle at the hinge
       f.cone([0, -0.3, 0.42], [0, -0.42 - sn * 0.22, 1.52 - sn * 0.08], 0.27 + sn * 0.05, 0.1 + sn * 0.05, M.mouth, { group: null, blend: 0 });
       f.cone([0, -0.42 - sn * 0.2, 0.6], [0, -0.48 - sn * 0.3, 1.25], 0.12, 0.07, mat('#8a2a2a', { rough: 0.5, spec: 0.3 }), { group: null, blend: 0 });
       // snarl: the lip curls back off the fangs
@@ -287,7 +288,7 @@ function head(f, kind, sp, skinM, R, o = {}) {
       for (const d of [-1, 1]) f.ell([d * 0.08, -0.06, 1.8], [0.045, 0.03, 0.04], M.dark, hard);
       // heavy brow ridges slanting down toward the snout: a scowl
       for (const d of [-1, 1]) {
-        f.ell([d * 0.36, 0.34, 0.58], [0.3, 0.12, 0.3], skinM, { ...g, R: rotZ(d * 0.38) });
+        f.ell([d * 0.36, 0.36, 0.6], [0.34, 0.16, 0.34], skinM, { ...g, R: rotZ(d * 0.42) });
         f.ell([d * 0.5, -0.12, 0.4], [0.18, 0.16, 0.28], skinM, g); // cheek scute
         // short horns curving back from the brow
         f.cone([d * 0.32, 0.58, 0.0], [d * 0.46, 0.92, -0.42], 0.17, 0.09, M.bone, hard);
@@ -530,7 +531,13 @@ export function humanoid(f, sp, pose, R, gear) {
         if (gear.bootM !== gear.metalM) f.cone(lerpP(knee, ankle, 0.32), lerpP(knee, ankle, 0.42), legR * 1.12, legR * 1.06, gear.bootM, { group: null });
       }
       footShape(f, ankle, [0, 0, 1], legR, gear, sp, d);
-      if (plate) kneeCop(f, knee, gear);
+      if (plate) {
+        kneeCop(f, knee, gear);
+        // separate greave and cuisse: hard-edged shells over the shin and thigh, a ridge down the greave
+        f.cone(lerpP(knee, ankle, 0.08), lerpP(knee, ankle, 0.94), legR * 1.08, legR * 0.82, gear.metalM, { group: null });
+        f.box(lerpP(knee, ankle, 0.45), [0.004, len(sub(ankle, knee)) * 0.4, 0.004], gear.trimM ?? gear.metalM, { group: null, R: alignY(sub(ankle, knee)), bevel: 0.002 });
+        f.cone(lerpP(hipJ, knee, 0.15), lerpP(hipJ, knee, 0.86), legR * 1.3, legR * 1.06, gear.metalM, { group: null });
+      }
     }
   }
   if (sp.tail) {
@@ -540,11 +547,18 @@ export function humanoid(f, sp, pose, R, gear) {
     const root = add(pelvis, ap3(HR, [0, -0.01, -0.05]));
     const pts = [root];
     const flick = pose.tail ?? 0.4;
+    const digiTail = sp.digi && sp.head === 'kobold';
     for (let i = 1; i <= 6; i++) {
       const t = i / 6;
-      pts.push(add(root, [Math.sin(t * 2.2 + flick) * L * 0.38 * t + t * L * 0.35 * (pose.tailSide ?? 1), -hipH * 0.85 * Math.min(1, t * 1.25) + Math.max(0, t - 0.8) * 0.12, -t * L * 0.55]));
+      if (digiTail) {
+        // a balancing tail: it leaves the hips backward, droops in a long curve and lifts at the
+        // tip, swinging to one side — the counterweight of a hunched, forward-leaning body
+        const side = (pose.tailSide ?? 1);
+        pts.push(add(root, [Math.sin(t * 1.9 + flick) * L * 0.16 * t + t * L * 0.22 * side, -hipH * 0.62 * Math.sin(Math.min(1, t * 1.3) * Math.PI * 0.5) + Math.max(0, t - 0.55) * hipH * 0.55, -t * L * 0.92]));
+      } else pts.push(add(root, [Math.sin(t * 2.2 + flick) * L * 0.38 * t + t * L * 0.35 * (pose.tailSide ?? 1), -hipH * 0.85 * Math.min(1, t * 1.25) + Math.max(0, t - 0.8) * 0.12, -t * L * 0.55]));
     }
-    for (let i = 0; i < 6; i++) f.cone(pts[i], pts[i + 1], legR * (1.1 - i * 0.16), legR * (0.95 - (i + 1) * 0.15) + 0.002, skinM, { blend: 0.02 });
+    const tr0 = digiTail ? 1.55 : 1.1;
+    for (let i = 0; i < 6; i++) f.cone(pts[i], pts[i + 1], legR * (tr0 - i * (digiTail ? 0.24 : 0.16)), legR * (tr0 - 0.15 - (i + 1) * (digiTail ? 0.22 : 0.15)) + 0.002, skinM, { blend: 0.02 });
     f.layer = prev;
   }
 
@@ -571,6 +585,22 @@ export function humanoid(f, sp, pose, R, gear) {
   } else {
     const belly = sp.belly ? 0.035 : 0;
     f.push(pelvis, TR, 1);
+    if (sp.head === 'kobold') {
+      // a hunched little reptile, not a man in a dog mask: narrow keeled chest over a round pot
+      // belly, sloping shoulders, one smooth pale belly plate (countershading), spines down the back
+      const tm = gear.torsoM ?? skinM;
+      const pb = 0.006 + belly * 0.4;
+      f.ell([0, 0.0, 0], [0.08 * b, 0.066, 0.066 * b], clothM, { group: 'body' });
+      f.ell([0, torso * 0.3, 0.018 * b + pb], [0.088 * b + pb * 0.3, 0.1, 0.078 * b + pb], tm, { group: 'body' });
+      f.ell([0, torso * 0.66, -0.006], [0.078 * b, 0.088, 0.058 * b], tm, { group: 'body' });
+      f.ell([0, torso * 0.86, -0.022], [0.072 * b, 0.042, 0.048 * b], tm, { group: 'body' });
+      f.ell([0, torso * 0.6, 0.044 * b], [0.022 * b, 0.075, 0.024], tm, { group: 'body', blend: 0.03 });
+      if (!gear.torsoM) {
+        const bellyM = mat(mixc(skinM.color ?? sp.skin, sp.belly2 ?? '#b08858', 0.38), { pattern: 'scales', scale: 0.01, rough: 0.65, spec: 0.18 });
+        f.ell([0, torso * 0.36, 0.06 * b + pb * 0.9], [0.058 * b, 0.11, 0.03], bellyM, { group: 'body', blend: 0.035 });
+        for (let i = 0; i < 6; i++) f.cone([0, torso * (0.2 + i * 0.13), -0.055 * b], [0, torso * (0.2 + i * 0.13) + 0.014, -0.08 * b], 0.012, 0.002, skinM, { group: null });
+      }
+    } else {
     f.ell([0, 0.0, 0], [0.085 * b, 0.07, 0.065 * b], clothM, { group: 'body' });
     f.ell([0, torso * 0.3, 0.008 + belly * 0.7], [0.08 * b + belly * 0.4, 0.09, 0.062 * b + belly], gear.torsoM ?? skinM, { group: 'body' });
     f.ell([0, torso * 0.62, 0], [0.105 * b, 0.09, 0.07 * b], gear.torsoM ?? skinM, { group: 'body' });
@@ -578,20 +608,27 @@ export function humanoid(f, sp, pose, R, gear) {
     f.ell([0, torso * 0.84, -0.012], [0.095 * b, 0.04, 0.05 * b], gear.torsoM ?? skinM, { group: 'body' });
     f.ell([0, torso * 0.66, 0.03 * b], [0.09 * b, 0.055, 0.045 * b], gear.torsoM ?? skinM, { group: 'body' });
     for (const d of [-1, 1]) f.ell([d * 0.07 * b, torso * 0.5, -0.01], [0.04 * b, 0.08, 0.05 * b], gear.torsoM ?? skinM, { group: 'body' });
-    if (sp.head === 'kobold' && !gear.torsoM) {
-      // pale ventral scutes down the chest and belly, a ridge of spines down the back
-      const bellyM = mat(mixc(skinM.color ?? sp.skin, '#b08858', 0.45), { pattern: 'leather', scale: 0.03, rough: 0.55, spec: 0.3 });
-      for (let i = 0; i < 6; i++) f.ell([0, torso * (0.12 + i * 0.13), 0.052 * b + Math.sin(i * 0.5) * 0.004], [0.045 * b - Math.abs(i - 3) * 0.003, 0.024, 0.022], bellyM, { group: 'body', blend: 0.015 });
-      for (let i = 0; i < 6; i++) f.cone([0, torso * (0.2 + i * 0.13), -0.055 * b], [0, torso * (0.2 + i * 0.13) + 0.014, -0.078 * b], 0.011, 0.002, skinM, { group: null });
     }
     // neck
     f.cone([0, torso * 0.85, -0.005], [0, torso + hr * 0.6, 0.01 + (sp.hunch ?? 0) * 0.08], 0.032 * b * (sp.head === 'ogre' ? 1.6 : 1), 0.028 * b * (sp.head === 'ogre' ? 1.5 : 1), skinM, { group: 'body' });
     // armour / clothing layers
     if (gear.armor === 'plate') {
       const pm = gear.metalM;
-      f.ell([0, torso * 0.6, 0.012], [0.112 * b, 0.105, 0.078 * b], pm, { group: null });
-      f.box([0, torso * 0.6, 0.085 * b], [0.004, 0.09, 0.004], gear.trimM ?? pm, { group: null, bevel: 0.003 });
-      for (let i = 0; i < 3; i++) f.ell([0, torso * (0.2 - i * 0.1), 0.01], [0.098 * b + i * 0.006, 0.026, 0.074 * b + i * 0.004], pm, { group: null });
+      // a breastplate with planes, not a balloon: a bevelled box fused to a keeled front, the
+      // central ridge catching the light; then overlapping fauld lames (each a hard-edged frustum
+      // stepping out over the one below) and two tassets over the thighs
+      f.box([0, torso * 0.6, 0.004], [0.104 * b, 0.1, 0.07 * b], pm, { group: 'breast', bevel: 0.045 });
+      f.ell([0, torso * 0.62, 0.03 * b], [0.09 * b, 0.092, 0.06 * b], pm, { group: 'breast', blend: 0.02 });
+      f.box([0, torso * 0.6, 0.087 * b], [0.004, 0.09, 0.005], gear.trimM ?? pm, { group: null, bevel: 0.003, R: rotX(-0.05) });
+      for (let i = 0; i < 4; i++) {
+        const y0 = torso * (0.29 - i * 0.085);
+        f.cone([0, y0, 0.006], [0, y0 - torso * 0.095, 0.008], (0.094 + i * 0.006) * b, (0.1 + i * 0.006) * b, pm, { group: null });
+        f.cone([0, y0 - torso * 0.09, 0.008], [0, y0 - torso * 0.097, 0.008], (0.1 + i * 0.006) * b, (0.102 + i * 0.006) * b, gear.trimM ?? pm, { group: null });
+      }
+      for (const d of [-1, 1]) {
+        f.box([d * 0.055 * b, -torso * 0.12, 0.05 * b], [0.04 * b, 0.05, 0.006], pm, { group: null, bevel: 0.006, R: mul3(rotZ(d * 0.12), rotX(0.18)) });
+        for (let k = 0; k < 3; k++) f.sphere([d * (0.035 + k * 0.02) * b, -torso * 0.12 + 0.045, 0.058 * b], 0.004, gear.trimM ?? M.bronze, { group: null });
+      }
       f.ell([0, torso * 0.95, 0], [0.06, 0.03, 0.055], pm, { group: null });
       // gorget lames, rivet rows along the breastplate's edges, a belt over the fauld
       for (let i = 0; i < 2; i++) f.ell([0, torso * (0.9 - i * 0.05), 0.004], [0.066 + i * 0.008, 0.012, 0.06 + i * 0.006], pm, { group: null });
@@ -632,7 +669,20 @@ export function humanoid(f, sp, pose, R, gear) {
     if (!robe) {
       f.ell([0, 0.025, 0.004], [0.09 * b, 0.018, 0.069 * b], gear.beltM ?? M.leather, { group: null });
       f.box([0, 0.026, 0.07 * b], [0.016, 0.014, 0.006], M.bronze, { group: null, bevel: 0.004 });
-      if (gear.loin) {
+      if (gear.hideKilt) {
+        // a ragged hide kilt: uneven strips of untanned skin all round the hips, open over the tail
+        const km = gear.hideKilt;
+        const n = 11;
+        for (let i = 0; i < n; i++) {
+          const a = -2.55 + (i / (n - 1)) * 5.1;
+          const ln = 0.075 + R() * 0.06 - (Math.abs(a) > 1.8 ? 0.02 : 0);
+          const top = [Math.sin(a) * 0.084 * b, 0.016, Math.cos(a) * 0.07 * b];
+          const out = [Math.sin(a) * 0.024, -ln, Math.cos(a) * 0.022];
+          const tan = [Math.cos(a), 0, -Math.sin(a)];
+          const shadeK = 0.82 + R() * 0.36;
+          f.ell(add(top, scl(out, 0.5)), [0.021 * b, ln * 0.52, 0.0045], i % 3 === 1 ? mat(shade(km.color ?? '#5a4630', shadeK * 0.8), { pattern: 'leather', scale: 0.02, rough: 0.95, spec: 0.04 }) : km, { group: null, R: alignY(out, tan), disp: { amp: 0.003, freq: 40 } });
+        }
+      } else if (gear.loin) {
         // a ragged hide flap front and back, narrowing to a frayed, uneven hem
         const lm = mat(shade(clothM.color ? '#4a3a26' : '#4a3a26', 0.9 + R() * 0.3), { pattern: 'leather', scale: 0.02, rough: 0.9, spec: 0.05 });
         for (const zs of [1, -1]) {
@@ -704,17 +754,39 @@ export function humanoid(f, sp, pose, R, gear) {
       f.ell(add(sh[d], ap3(TR, [d * 0.02, -0.01, 0])), [0.052 * b, 0.01, 0.054 * b], M.darkLeather, { group: null, R: mul3(TR, rotZ(d * -0.4)) });
     }
     if (gear.armor === 'plate' || gear.pauldrons) {
-      // a layered pauldron: a domed cop and three lames stepping down the arm, with a raised edge
-      f.ell(add(sh[d], ap3(TR, [d * 0.015, 0.018, 0])), [0.058 * b, 0.042 * b, 0.06 * b], gear.metalM, { group: null, R: mul3(TR, rotZ(d * -0.35)) });
-      for (let k = 1; k <= 3; k++) f.ell(add(sh[d], ap3(TR, [d * (0.02 + k * 0.008), 0.012 - k * 0.022, 0])), [(0.056 - k * 0.004) * b, 0.012, (0.058 - k * 0.003) * b], gear.metalM, { group: null, R: mul3(TR, rotZ(d * (-0.45 - k * 0.12))) });
-      f.ell(add(sh[d], ap3(TR, [d * 0.0, 0.052, 0.0])), [0.03 * b, 0.016, 0.05 * b], gear.trimM ?? gear.metalM, { group: null, R: mul3(TR, rotZ(d * -0.2)) });
+      // an angular pauldron: a faceted cop over the shoulder and three lames stepping down the arm,
+      // each a bevelled plate with a hard lower edge, a raised haute-piece standing up at the neck
+      const Rs = mul3(TR, rotZ(d * -0.42));
+      f.box(add(sh[d], ap3(TR, [d * 0.012, 0.016, 0])), [0.04 * b, 0.018 * b, 0.044 * b], gear.metalM, { group: null, bevel: 0.012, R: Rs });
+      for (let k = 1; k <= 3; k++) f.box(add(sh[d], ap3(TR, [d * (0.024 + k * 0.008), 0.004 - k * 0.018, 0])), [(0.036 - k * 0.003) * b, 0.007, (0.042 - k * 0.003) * b], gear.metalM, { group: null, bevel: 0.005, R: mul3(TR, rotZ(d * (-0.62 - k * 0.14))) });
+      f.box(add(sh[d], ap3(TR, [d * -0.01, 0.044, 0.0])), [0.005, 0.016, 0.038 * b], gear.trimM ?? gear.metalM, { group: null, bevel: 0.003, R: mul3(TR, rotZ(d * -0.15)) });
+      for (let k = 0; k < 3; k++) f.sphere(add(sh[d], ap3(TR, [d * 0.032, 0.026, (k - 1) * 0.024 * b])), 0.0036, gear.trimM ?? M.bronze, { group: null });
     }
     else if (!sk) f.sphere(sh[d], limb * 1.1, gear.shoulderM ?? gear.torsoM ?? skinM, { group: 'body', blend: 0.05 });
   }
   const hands = solveHandsCustom(sp, pose, { pelvis, chest, sh, TR, b, armL, gear });
-  for (const d of [-1, 1]) {
+  // the weapon hand first: a two-handed grip's second hand follows wherever the first one went
+  const order = hands[1]?.weapon && !hands[-1]?.weapon ? [1, -1] : [-1, 1];
+  for (const d of order) {
     const hnd = hands[d];
     const elbow = ik(sh[d], hnd.wrist, upper, fore, hnd.pole ?? ap3(TR, [d * 0.7, -0.35, -0.7]));
+    // hand socket: the hand (and whatever it holds) is parented to the end of the forearm. When the
+    // pose asks for more reach than the arm has, the grip comes to the hand, not the other way
+    // round — no weapon ever floats beside an empty fist.
+    const reach = add(elbow, scl(norm(sub(hnd.wrist, elbow)), fore));
+    const off = sub(reach, hnd.wrist);
+    if (len(off) > 1e-4) {
+      hnd.wrist = reach;
+      hnd.at = add(hnd.at, off);
+      const o2 = hands[-d];
+      if (hnd.weapon && o2?.twoHand) { o2.at = add(o2.at, off); o2.wrist = add(o2.wrist, off); }
+    }
+    // never let a blade run back through its own forearm: fold it out of the arm's line
+    if (hnd.weapon && hnd.kind === 'grip') {
+      const fa = norm(sub(elbow, hnd.wrist));
+      const k = dot(hnd.dir, fa);
+      if (k > 0.35) hnd.dir = norm(sub(hnd.dir, scl(fa, 2 * (k - 0.1))));
+    }
     limbSeg(f, sh[d], elbow, limb * 1.12, limb * 0.85, armM, sk, gear.sleeveM);
     limbSeg(f, elbow, hnd.wrist, limb * 0.88, limb * 0.66, gear.foreM ?? armM, sk);
     if (plate) {
@@ -742,6 +814,12 @@ export function humanoid(f, sp, pose, R, gear) {
     }
   }
 
+  // the castellan's death-wound, still open at the throat: a cold light that reads at scene scale
+  if (sp.ghost) {
+    const wound = add(neck, ap3(TR, [0.008, -0.004, 0.05 * b]));
+    f.glow(wound, 0.07, '#e8ffff', 0.95);
+    f.glow(wound, 0.025, '#ffffff', 1);
+  }
   // ---- head
   const hp = add(neck, ap3(TR, [0, hr * 0.95, hr * 0.25 + (sp.hunch ?? 0) * 0.05]));
   const headR = mul3(rotY(twist + (pose.headYaw ?? 0)), mul3(rotX(-(lean * 0.85) + (pose.headPitch ?? 0)), rotZ(pose.headTilt ?? 0)));
@@ -774,7 +852,22 @@ function monsterHelm(f, kind, gear) {
     const kob = kind === 'kobold';
     f.ell([0, kob ? 0.6 : 0.45, kob ? -0.22 : -0.1], kob ? [0.8, 0.46, 0.88] : [0.98, 0.62, 1.02], hm, hard);
     f.ell([0, kob ? 0.44 : 0.2, kob ? -0.22 : -0.1], kob ? [0.83, 0.07, 0.9] : [1.0, 0.1, 1.04], gear.trimM ?? M.leather, hard);
-    if (gear.helmSpike) f.cone([0, kob ? 1.0 : 0.95, -0.25], [0, kob ? 1.4 : 1.45, -0.35], 0.12, 0.02, hm, hard);
+    if (gear.helmSpike && !gear.helmHorns) f.cone([0, kob ? 1.0 : 0.95, -0.25], [0, kob ? 1.4 : 1.45, -0.35], 0.12, 0.02, hm, hard);
+    if (gear.helmHorns && kob) {
+      // the leader's helm: a riveted iron cap with a cheek guard and two great curling horns
+      for (const d of [-1, 1]) {
+        const a = [d * 0.6, 0.66, -0.12];
+        const b1 = [d * 1.12, 0.98, -0.28];
+        const b2 = [d * 1.38, 1.6, -0.55];
+        const b3 = [d * 1.16, 2.15, -0.86];
+        f.cone(a, b1, 0.24, 0.18, M.bone, hard);
+        f.cone(b1, b2, 0.18, 0.11, M.bone, hard);
+        f.cone(b2, b3, 0.11, 0.02, M.bone, hard);
+        for (let k = 0; k < 4; k++) f.sphere([0.62 * d * Math.cos(k * 0.35 - 0.5), 0.5, -0.22 + 0.86 * Math.sin(k * 0.35 - 0.5)], 0.045, gear.trimM ?? M.bronze, hard);
+        f.ell([d * 0.66, 0.1, 0.12], [0.1, 0.32, 0.24], hm, hard);
+      }
+      f.cone([0, 0.98, -0.1], [0, 1.12, -0.5], 0.08, 0.04, hm, hard);
+    }
   } else {
     f.ell([0, 0.42, -0.05], [1.02, 0.8, 1.04], hm, hard);
     f.ell([0, 0.18, -0.05], [1.04, 0.1, 1.06], gear.trimM ?? M.bronze, hard);
@@ -883,6 +976,14 @@ function solveHands(sp, pose, ctx) {
       const at = add(chest, T([0, -0.06, 0.2]));
       hands[R] = grip(R, add(at, [0, 0.02, 0]), dir, { weapon: wpn, pole: T([-0.8, -0.5, -0.2]) });
       hands[Lh] = grip(Lh, add(at, [0, 0.055, 0]), dir, { pole: T([0.8, -0.5, -0.2]) });
+      break;
+    }
+    case 'rest': {
+      // standing at rest on the sword: point planted before the feet, both gauntlets stacked on the grip
+      const dir = [0, -1, 0.0];
+      const at = add(pelvis, T([0.0, 0.12, 0.19]));
+      hands[R] = grip(R, at, dir, { weapon: wpn, pole: T([-0.8, -0.7, -0.1]) });
+      hands[Lh] = grip(Lh, add(at, [0, 0.036, 0]), dir, { pole: T([0.8, -0.7, -0.1]) });
       break;
     }
     case 'reach': {
@@ -1045,7 +1146,10 @@ export function buildCreature(id, seed = 1, o = {}) {
     else if (r < 0.58) gear.armor = 'scraps';
     gear.vestM = mat(R.pick(['#8a6a44', '#7a5a38', '#6e5a3e', '#5a4a3a']), { pattern: 'leather', scale: 0.03, rough: 0.75, spec: 0.12 });
     const rag = mat(R.pick(['#5e4c34', '#5a2016', '#3e3a2c', '#4a3420', '#2e3a30']), { pattern: 'cloth', scale: 0.016, rough: 0.97, spec: 0.02 });
-    if (R() < 0.6) { gear.skirtM = rag; gear.loin = false; gear.kilt = true; } else gear.clothM = rag;
+    // a ragged hide kilt on every one of them (no pouch-like flaps)
+    gear.hideKilt = mat(R.pick(['#6a5236', '#5e4a30', '#7a5e3c', '#4e3e2a']), { pattern: 'leather', scale: 0.025, rough: 0.95, spec: 0.04 });
+    gear.loin = false;
+    gear.clothM = rag;
     gear.bandolier = R() < 0.6;
     gear.bracerM = R() < 0.6 ? mat('#4a3424', { pattern: 'leather', scale: 0.02, rough: 0.8 }) : null;
     gear.pauldron = R() < 0.45 ? (R() < 0.5 ? -1 : 1) : 0;
@@ -1053,7 +1157,12 @@ export function buildCreature(id, seed = 1, o = {}) {
     // nearly all of them hang a string of finger bones at the throat; the leader goes hooded
     gear.necklace = gear.necklace || R() < 0.7;
     gear.beltM = mat(R.pick(['#3a2414', '#2e2014', '#4a3018']), { pattern: 'leather', scale: 0.02, rough: 0.8 });
-    if (o.leader) { gear.hood = mat(R.pick(['#5a2418', '#3e3424', '#4a1e16']), { pattern: 'cloth', scale: 0.014, rough: 0.97, spec: 0.02 }); gear.helmet = false; }
+    if (o.leader) {
+      // the leader: a horned iron helm, a ragged red cloak on its shoulders
+      gear.helmet = true; gear.helmHorns = true; gear.helmM = mat('#5a5650', { pattern: 'metal', metal: true, rough: 0.45, spec: 0.7, scale: 0.05 });
+      gear.trimM = M.bronze; gear.hood = null;
+      gear.cape = true; gear.capeM = mat(R.pick(['#6a1e16', '#5a1a12']), { pattern: 'cloth', scale: 0.016, rough: 0.95, spec: 0.03 });
+    }
   }
   if (sp.chief) gear.cape = true;
   // individual body mass within the pack: a pot-bellied one, a scrawny one, a hunchback

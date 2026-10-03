@@ -25,7 +25,7 @@ export const NPCS = {
     id: 'clerk', name: 'Auric Vellum', title: 'Clerk of the Council', race: 'human', gender: 'male',
     look: { seed: 4101, head: 3, body: 4, hair: 8, cloth: 6, skin: 1, eyes: 4 }, aura: '#ffcf8a',
     desc: 'A stooped, ink-stained man with spectacles on a ribbon and a ledger never far from his hand.',
-    figure: { age: 0.6, build: 0.86, hairStyle: 'tonsure', beard: 'none', hair: '#8a7c6a', jaw: 0.85, nose: 1.15, pose: 'clerk', outfit: { shirt: '#ece4d0', top: '#283450', topKind: 'robe', sleeves: 'bell', sash: '#18203a', collar: '#18203a', cuff: '#8a8274', spectacles: true } },
+    figure: { age: 0.6, build: 0.86, hairStyle: 'tonsure', beard: 'none', hair: '#8a7c6a', skin: '#d8ae92', jaw: 0.85, nose: 1.15, pose: 'clerk', outfit: { shirt: '#ece4d0', top: '#283450', topKind: 'robe', sleeves: 'bell', sash: '#18203a', collar: '#18203a', cuff: '#8a8274', spectacles: true } },
     paint: { sex: 'm', age: 0.62, skin: '#e2b898', yaw: -0.3, beard: { style: 'none' }, gaze: [0.12, 0.02], face: { w: 0.96, jaw: 1.08, chin: 0.94, cheek: 1.1, hollow: 0.4, brow: 1.1, neck: 1.1 }, nose: { len: 1.08, w: 0.92, hook: 0.5 }, eyes: { c: '#5a6a72', size: 0.9, lid: 0.6 }, mouth: { w: 0.88, full: 0.7 }, brows: { c: '#8a7a6a', w: 0.85, arch: 0.6 }, hair: { style: 'tonsure', c: '#8a7c6a' }, spectacles: true, quill: true, costume: { kind: 'robe', a: '#283450', b: '#ece4d0', collar: '#18203a', ink: true }, bg: ['#4e3e2a', '#0c0806'] },
   },
   councilman: {
@@ -42,7 +42,7 @@ export const NPCS = {
   priest_tyr: {
     id: 'priest_tyr', name: 'Brother Ohlo', title: 'High Priest of Tyr', race: 'human', gender: 'male',
     look: { seed: 5101, head: 7, body: 7, hair: 9, cloth: 1, skin: 1, eyes: 0 }, aura: '#bcd4ff',
-    figure: { age: 0.55, hairStyle: 'bald', beard: 'long', hair: '#e2ded6', pose: 'judge', outfit: { shirt: '#e0d8c8', top: '#e6e0d2', topKind: 'robe', sleeves: 'bell', stole: '#1d3574', symbol: 'scales', sash: '#1d3574', mantle: '#22346a', hood: '#56647c', mitre: '#8898b8' } },
+    figure: { age: 0.55, hairStyle: 'bald', beard: 'long', hair: '#e2ded6', skin: '#d4a488', pose: 'judge', outfit: { shirt: '#e0d8c8', top: '#e6e0d2', topKind: 'robe', sleeves: 'bell', stole: '#1d3574', symbol: 'scales', sash: '#1d3574', mantle: '#22346a', mitre: '#8898b8' } },
     paint: { sex: 'm', age: 0.66, skin: '#d8a888', yaw: 0.24, gaze: [-0.1, 0], face: { w: 1.0, jaw: 1.02, cheek: 1.05, brow: 1.2 }, nose: { len: 1.05, w: 1.05 }, eyes: { c: '#4a6a8a', lid: 0.5 }, brows: { c: '#e4e0d8', w: 1.3, arch: 0.2 }, hair: { style: 'none', c: '#d8d4cc' }, beard: { style: 'long', c: '#e6e2da' }, head: { kind: 'mitre', c: '#56647c', mitre: '#8898b8', trim: '#d8b050' }, costume: { kind: 'priest', a: '#e6e0d2', b: '#d8d0c0', collar: '#c8c0b0', stole: '#1d3574', symbol: 'scales', trim: '#d8b050' }, bg: ['#3a4660', '#06080e'] },
   },
   priestess_sune: {

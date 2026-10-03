@@ -1230,9 +1230,61 @@ function templeSune(g, W, H, R, o, d) {
   g.fillStyle = wash;
   g.fillRect(0, 0, W, H);
   g.restore();
+  // the rose window's light, laid over the wash so it reads: a sheared projection of its wheel of
+  // quarries across the marble (petal segments in red, rose and gold), and the same colours
+  // climbing the face of the altar
+  const projectRose = (ctx, cx, cy, rx, ry, shear, alpha, seed) => {
+    const tmp = makeCanvas(W, H);
+    const tg = tmp.getContext('2d');
+    const RR = rngOf(seed);
+    for (let ring = 0; ring < 3; ring++) {
+      const n = 8 + ring * 4;
+      for (let k = 0; k < n; k++) {
+        const a0 = (k / n) * Math.PI * 2 + ring * 0.2;
+        const a1 = ((k + 0.86) / n) * Math.PI * 2 + ring * 0.2;
+        const r0 = 0.18 + ring * 0.28;
+        const r1 = r0 + 0.24;
+        const pts = [[a0, r0], [a1, r0], [a1, r1], [a0, r1]].map(([a, r]) => {
+          const ex = Math.cos(a) * r * rx;
+          const ey = Math.sin(a) * r * ry;
+          return [cx + ex + ey * shear, cy + ey];
+        });
+        tg.fillStyle = pal[Math.floor(RR() * 3)];
+        tg.globalAlpha = 0.55 + RR() * 0.4;
+        poly(tg, pts);
+        tg.fill();
+      }
+    }
+    tg.globalAlpha = 0.9;
+    tg.fillStyle = '#ffe0a0';
+    tg.beginPath(); tg.ellipse(cx, cy, rx * 0.16, ry * 0.16, 0, 0, Math.PI * 2); tg.fill();
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    ctx.filter = 'blur(4px)';
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(tmp, 0, 0);
+    ctx.filter = 'blur(26px)';
+    ctx.globalAlpha = alpha * 0.8;
+    ctx.drawImage(tmp, 0, 0);
+    ctx.restore();
+  };
+  projectRose(g, W * 0.29, H * 0.79, W * 0.17, H * 0.075, 0.5, 0.75, 61);
+  godRays(g, { x: W * 0.36, y: H * 0.3, w: H * 0.26 }, { x: W * 0.3, y: H * 0.79, w: W * 0.3, h: H * 0.1 }, pal, { alpha: 0.2, seed: 62 });
   const al = altar3d({ stone: '#e8cac0', runner: '#a01e2c', emblemC: '#f0c870', candles: 6, seed: 51 });
   const ppu = H * 0.78;
   prop3d(fg, al.f, W * 0.4, H * 1.04, ppu, lr, { shadowW: 0.5 });
+  {
+    // the window's colours on the altar's face (tinting only the stone that is there)
+    fg.save();
+    fg.globalCompositeOperation = 'source-atop';
+    const gr = fg.createRadialGradient(W * 0.34, H * 0.9, 0, W * 0.34, H * 0.9, W * 0.16);
+    gr.addColorStop(0, 'rgba(255,120,150,0.42)');
+    gr.addColorStop(0.5, 'rgba(255,170,110,0.22)');
+    gr.addColorStop(1, 'rgba(255,120,150,0)');
+    fg.fillStyle = gr;
+    fg.fillRect(0, 0, W, H);
+    fg.restore();
+  }
   waxCandles(fg, al.tips, W * 0.4, H * 1.04, ppu, 0, { pool: '#ffb878' });
   for (const t of al.tips) { const [x, y] = proj(W * 0.4, H * 1.04, ppu, t); lights.push({ x, y, s: 5, kind: 'candle', color: '#ffc880', front: true }); }
   return { ...rm, lights, motes: { color: '#ffc0c8', count: 70, rise: 0.04 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.4, y: H * 0.92, h: H * 0.74, pose: 'priest', yaw: 0.15, vestments: '#a01e2c' } };
@@ -1392,7 +1444,7 @@ S.chapel = (g, W, H, R, o) => {
   pew(fg, W * 0.7, H * 1.02, W * 0.34, 1.9, { side: -1, seed: 4 });
   pew(g, W * 0.06, H * 0.84, W * 0.26, 1.2, { side: 1, seed: 5 });
   pew(g, W * 0.68, H * 0.86, W * 0.26, 1.25, { broken: 0.6, side: -1, seed: 6 });
-  return { ...rm, lights, motes: { color: '#aef4ff', count: 70, rise: 0.06 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.34, y: H * 0.985, h: H * 0.58, pose: 'vigil', yaw: 0.75, vigilYaw: 2.55, altar: [ax, ay] } };
+  return { ...rm, lights, motes: { color: '#aef4ff', count: 70, rise: 0.06 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.37, y: H * 0.96, h: H * 0.56, pose: 'vigil', yaw: 0.75, vigilYaw: 1.95, altar: [ax, ay] } };
 };
 
 // ================================================================== Hall of Training
@@ -1459,7 +1511,7 @@ S.training = (g, W, H, R, o) => {
     fg.restore();
     g.restore();
   }
-  return { ...rm, lights, motes: { color: '#fff0c8', count: 80, rise: 0.02 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.42, y: H * 1.04, h: H * 0.88, pose: 'trainer', yaw: 0.2 } };
+  return { ...rm, lights, motes: { color: '#fff0c8', count: 80, rise: 0.02 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.42, y: H * 1.02, h: H * 0.74, pose: 'trainer', yaw: 0.2 } };
 };
 
 /**
@@ -1530,6 +1582,34 @@ function yardView(g, x, y, w, h, i, R) {
       g.fillRect(cx - rr * 3, cy - rr * 2, rr * 6, rr * 3);
     }
   }
+  // New Phlan beyond the yard: steep roofs and a watch-tower with the Council's pennant
+  {
+    const ry = hz - h * 0.12;
+    for (let k = 0; k < 4; k++) {
+      const rx = x + w * (k / 4) + (R() - 0.5) * w * 0.05;
+      const rw = w * (0.22 + R() * 0.1);
+      const rh = h * (0.05 + R() * 0.05);
+      g.fillStyle = k % 2 ? '#8a6a5a' : '#7a5a4c';
+      poly(g, [[rx, ry], [rx + rw / 2, ry - rh], [rx + rw, ry]]);
+      g.fill();
+      g.fillStyle = 'rgba(255,240,220,0.18)';
+      poly(g, [[rx, ry], [rx + rw / 2, ry - rh], [rx + rw * 0.5, ry]]);
+      g.fill();
+    }
+    if (i === 2) {
+      const tx2 = x + w * 0.7;
+      g.fillStyle = '#a89878';
+      g.fillRect(tx2 - w * 0.05, ry - h * 0.2, w * 0.1, h * 0.2);
+      g.fillStyle = '#6a4a3a';
+      poly(g, [[tx2 - w * 0.065, ry - h * 0.2], [tx2, ry - h * 0.29], [tx2 + w * 0.065, ry - h * 0.2]]);
+      g.fill();
+      g.strokeStyle = '#3a2a1a'; g.lineWidth = 1.5;
+      g.beginPath(); g.moveTo(tx2, ry - h * 0.29); g.lineTo(tx2, ry - h * 0.36); g.stroke();
+      g.fillStyle = '#1d3574';
+      poly(g, [[tx2, ry - h * 0.36], [tx2 + w * 0.12, ry - h * 0.345], [tx2, ry - h * 0.325]]);
+      g.fill();
+    }
+  }
   // far yard wall with crenels, shaded stone
   const wy = hz - h * 0.12;
   g.fillStyle = linGrad(g, 0, wy, 0, hz, [[0, '#c8b898'], [1, '#9a8a6a']]);
@@ -1542,6 +1622,40 @@ function yardView(g, x, y, w, h, i, R) {
   g.fillRect(x, hz, w, y + h - hz);
   g.strokeStyle = 'rgba(120,90,50,0.25)';
   for (let k = 0; k < 6; k++) { g.beginPath(); g.moveTo(x, hz + (k + 1) * h * 0.05); g.lineTo(x + w, hz + (k + 1) * h * 0.06); g.stroke(); }
+  if (i !== 1) {
+    // wooden stands against the yard wall, a few onlookers watching the bouts
+    const sy = hz + h * 0.005;
+    for (let tier = 0; tier < 3; tier++) {
+      const ty = sy - tier * h * 0.035;
+      g.fillStyle = tier % 2 ? '#7a5a38' : '#8a6a44';
+      g.fillRect(x, ty - h * 0.008, w, h * 0.016);
+      g.fillStyle = 'rgba(40,24,10,0.45)';
+      g.fillRect(x, ty + h * 0.008, w, h * 0.004);
+      for (let k = 0; k < 7; k++) {
+        if (R() < 0.35) continue;
+        const px = x + w * (0.06 + k * 0.14 + (R() - 0.5) * 0.05);
+        const cc = ['#7a2a1e', '#2a3a6a', '#5a5a2a', '#6a4a2a', '#3a5a4a', '#8a7a5a'][Math.floor(R() * 6)];
+        g.fillStyle = cc;
+        g.beginPath(); g.ellipse(px, ty - h * 0.018, w * 0.028, h * 0.016, 0, 0, Math.PI * 2); g.fill();
+        g.fillStyle = ['#d8a888', '#c08a6a', '#a87050'][Math.floor(R() * 3)];
+        g.beginPath(); g.arc(px, ty - h * 0.04, w * 0.016, 0, Math.PI * 2); g.fill();
+      }
+    }
+  }
+  // a split-rail fence round the sparring ring
+  {
+    const fy = hz + h * 0.16;
+    g.fillStyle = '#5a4028';
+    for (let k = 0; k < 6; k++) {
+      const px = x + w * (0.05 + k * 0.19);
+      g.fillRect(px - w * 0.012, fy - h * 0.06, w * 0.024, h * 0.065);
+    }
+    g.fillStyle = '#7a5a38';
+    g.fillRect(x, fy - h * 0.05, w, h * 0.008);
+    g.fillRect(x, fy - h * 0.025, w, h * 0.007);
+    g.fillStyle = 'rgba(255,240,210,0.3)';
+    g.fillRect(x, fy - h * 0.05, w, h * 0.002);
+  }
   if (i === 1) {
     // a plane tree in the yard: trunk with branches, foliage built of lit clusters
     const tx = x + w * 0.62;
@@ -1619,9 +1733,13 @@ S.tavern = (g, W, H, R, o) => {
   archPath(g, hx - 58, hy - 92, 116, 92);
   g.fillStyle = '#120804';
   g.fill();
-  lights.push({ x: hx, y: hy - 16, s: 36, kind: 'flame', color: '#ff7a20' });
-  glow(g, hx, hy - 30, 560, '#ff7a20', 0.36);
-  glowEllipse(g, hx, hy + 70, 520, 120, '#ff8a30', 0.3);
+  lights.push({ x: hx, y: hy - 16, s: 46, kind: 'flame', color: '#ff7a20' });
+  lights.push({ x: hx - 22, y: hy - 8, s: 30, kind: 'flame', color: '#ff9a30' });
+  glow(g, hx, hy - 30, 640, '#ff7a20', 0.42);
+  glowEllipse(g, hx, hy + 80, 640, 150, '#ff8a30', 0.38);
+  // logs and a bed of embers in the hearth mouth
+  for (let i = 0; i < 4; i++) { g.fillStyle = i % 2 ? '#3a2010' : '#2a160a'; g.save(); g.translate(hx + (i - 1.5) * 16, hy - 10); g.rotate((i - 1.5) * 0.25); g.fillRect(-26, -5, 52, 10); g.restore(); }
+  glowEllipse(g, hx, hy - 8, 52, 12, '#ffb040', 0.7, 'screen');
   g.fillStyle = '#2a1a0e';
   g.fillRect(hx - 120, hy - 150, 240, 14);
   // the mantel: pewter plates, a jug and a hanging ham catch the firelight
@@ -1659,9 +1777,17 @@ S.tavern = (g, W, H, R, o) => {
   // the room the prose promises: an old sailor by the fire, a dwarf and a halfling at dice,
   // two off-duty watchmen arguing over the Slum Wall (o.cast picks who is in tonight)
   const cast = o.cast ?? ['dice', 'watch', 'sailor'];
-  const lrFire = rig({ key: [-0.85, 0.3, 0.45], keyC: '#ff9a40', keyI: 1.4, rimC: '#ffb060', rim: [0.6, 0.4, -0.6], amb: 0.3, sky: '#3a2a20', ground: '#2a160a' });
+  // the fire is the room's key: it falls off with distance, and the lanterns give a dim warm fill
+  // from the front so nobody is a black cut-out against the bar
+  const fireRig = (x) => {
+    const dx = Math.abs(x * W - hx) / W;
+    const k = Math.max(0.35, 1 - dx * 1.6);
+    return rig({ key: [x * W < hx ? 0.85 : -0.85, 0.28, 0.42], keyC: '#ff9038', keyI: 1.1 + 1.3 * k, rimC: '#ffb060', rim: [x * W < hx ? -0.6 : 0.6, 0.4, -0.6], rimI: 1.0, amb: 0.36, sky: '#4a3424', ground: '#3a1e0c', fill: { dir: [0.25, 0.45, 0.85], color: '#ffb878', i: 0.55 } });
+  };
+  const lrFire = fireRig(0.2);
   const person = (spec, x, y, hh, yaw, haze = 0) => {
     const short = spec.race === 'dwarf' || spec.race === 'halfling';
+    const lrFire = fireRig(x);
     const bn = buildNpc({ seed: spec.seed, race: spec.race ?? 'human', gender: spec.gender ?? 'male', age: spec.age ?? 0.2, build: spec.build ?? 1, skin: spec.skin ?? '#c58c62', hair: spec.hair ?? '#3a2416', hairStyle: spec.hairStyle ?? 'short', beard: spec.beard ?? 'none', eyeC: '#3a2a1a', pose: spec.pose, outfit: spec.outfit, belly: spec.belly });
     const r = renderFigure(bn.fig, { ppu: (H * hh * (short ? (spec.race === 'halfling' ? 0.62 : 0.76) : 1)) / bn.top, yaw, rig: lrFire, pitch: 0.12, ink: 0.7, haze, hazeColor: '#2a1a10', ss: 1.25 });
     if (!r) return;

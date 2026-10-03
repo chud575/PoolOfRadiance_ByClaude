@@ -241,11 +241,13 @@ export function buildNpc(spec) {
   const hands = {};
   for (const d of [-1, 1]) {
     const hp = P.hands(d);
-    const wrist = add(sh[d], T(hp.at));
+    let wrist = add(sh[d], T(hp.at));
     const dir = norm(T(hp.dir));
     const upper = 0.168 * (short ? 0.88 : 1);
     const fore = 0.152 * (short ? 0.88 : 1);
     const elbow = ik(sh[d], wrist, upper, fore, T(hp.pole ?? [d * 0.7, -0.35, -0.7]));
+    // hand socket: the hand and what it holds ride the end of the forearm, wherever IK could reach
+    wrist = add(elbow, scl(norm(sub(wrist, elbow)), fore));
     hands[d] = { wrist, dir, elbow };
     const sleeveTop = O.topKind === 'doublet' || O.topKind === 'chain' || robe ? topM : shirtM;
     const sg = { group: `arm${d}`, k: 0.025 };

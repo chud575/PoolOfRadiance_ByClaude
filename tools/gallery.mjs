@@ -56,6 +56,7 @@ export const GALLERY = [
   { name: 'dialogue_hostile', ref: 'dialogue', query: 'scene=dialogue&encounter=kobolds_1&beat=hostile&t=1&seed=1' },
   { name: 'dialogue_flee', ref: 'dialogue', query: 'scene=dialogue&encounter=kobolds_1&beat=flee&t=1&seed=1' },
   { name: 'dialogue_parley', ref: 'dialogue', query: 'scene=dialogue&encounter=kobolds_1&parley=1&t=1&seed=1' },
+  { name: 'figure_hands', ref: 'dialogue', query: 'scene=dialogue&view=figure&ids=koboldChief,trainer,smith&h=1100&crop=0.32&t=1&seed=1' },
   { name: 'travel_boat', ref: 'dialogue', query: 'scene=dialogue&script=go_civ_sokol&t=2&seed=1' },
   { name: 'cityhall', ref: 'dialogue', query: 'scene=dialogue&script=city_hall&node=commissions&flags=met_clerk,slums_cleared&quests=clear_slums:done,sokol_keep:active&t=2&seed=1' },
   { name: 'journal', ref: 'dialogue', query: 'scene=dialogue&view=journal&journal=1,2,3,4,5,6,7,8,13,21&entry=7&t=2&seed=1' },

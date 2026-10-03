@@ -316,7 +316,11 @@ function placeGroup(comp, g, W, H, groups, info, light, seed, mood = null) {
   // the second rank stands in the gaps of the first, so no spear runs into a neighbour's snout
   const back = [[0.365, 0.42, 0.66, 0.3], [0.645, 0.45, 0.66, 0.3], [0.15, 0.5, 0.7, 0.26], [0.85, 0.5, 0.7, 0.26]];
   const n = shown.length;
-  const slots = flee ? [[0.8, 0.16, 0.5, 0.45], [0.16, 0.24, 0.56, 0.38]] : n === 1 && shown[0] === 'tyranthraxus' ? [[0.5, 0.25, 0.6, 0]] : n === 1 && shown[0] === 'ghostKnight' ? [[0.5, 0.3, 0.82, 0]] : n === 1 ? [[0.5, 0.92, 1.05, 0]] : n === 2 ? [[0.4, 0.9, 1, 0], [0.62, 0.84, 0.95, 0.03]] : [...front, ...back].slice(0, n);
+  // a band of four or more is staged in depth like a painting: the leader centre-mid with a rim of
+  // light, two brutes close in the foreground (cropped by the frame), a rank in the middle of the
+  // street, one perched on a rubble heap against the sky, a straggler far back
+  const staged = [[0.5, 0.56, 0.92, 0.04], [0.17, 1.13, 1.28, 0], [0.84, 1.09, 1.22, 0], [0.33, 0.44, 0.76, 0.14], [0.67, 0.4, 0.74, 0.16], [0.9, 0.1, 0.6, 0.28, 'perch'], [0.43, 0.16, 0.58, 0.34]];
+  const slots = flee ? [[0.8, 0.16, 0.5, 0.45], [0.16, 0.24, 0.56, 0.38]] : n === 1 && shown[0] === 'tyranthraxus' ? [[0.5, 0.25, 0.6, 0]] : n === 1 && shown[0] === 'ghostKnight' ? [[0.5, 0.3, 0.82, 0]] : n === 1 ? [[0.5, 0.92, 1.05, 0]] : n === 2 ? [[0.4, 0.9, 1, 0], [0.62, 0.84, 0.95, 0.03]] : n >= 4 ? staged.slice(0, n) : [...front, ...back].slice(0, n);
   const items = shown.map((id, i) => ({ id, slot: slots[i], i }));
   items.sort((a, b) => a.slot[1] - b.slot[1]);
   let fogged = false;
@@ -339,12 +343,28 @@ function placeGroup(comp, g, W, H, groups, info, light, seed, mood = null) {
       fogged = true;
     }
     const x = W * (sx + (R() - 0.5) * 0.04);
-    const y = depth(t) + (R() - 0.5) * H * 0.015;
+    let y = depth(t) + (R() - 0.5) * H * 0.015;
     let hpx = human * sc * creatureScale(it.id) * (0.92 + R() * 0.16);
     hpx = Math.min(hpx, H * 0.95);
+    const perch = it.slot[4] === 'perch' && !hostile;
+    if (perch) {
+      // a heap of fallen masonry: the lookout stands on it, dark against the sky
+      const hh = H * 0.11;
+      rubbleHeap(g, x, y, hpx * 1.5, hh, R, light);
+      y -= hh * 0.82;
+    }
     const fseed = seed + it.i * 13 + (it.id.length << 3);
     if (isSculpted(it.id)) {
       const rig = rigAt(light, info, x, y - hpx * 0.6, W);
+      if (perch) {
+        // silhouette: the key falls away, the sky rims him
+        rig.key = { ...rig.key, i: rig.key.i * 0.35 };
+        rig.rim = { ...rig.rim, i: rig.rim.i * 1.7, color: '#b8a8ff' };
+        rig.amb = (rig.amb ?? 0.5) * 0.55;
+      } else if (it.i === 0 && n >= 4) {
+        // the leader: a rim of torchlight carves him out of the street
+        rig.rim = { ...rig.rim, i: rig.rim.i * 1.6, color: '#ffb070' };
+      }
       // turn toward the party: figures on the flanks face the centre, 3/4 on
       const toward = (0.5 - sx) * 1.6;
       const lead = it.i === 0 && n > 2;
@@ -364,6 +384,55 @@ function placeGroup(comp, g, W, H, groups, info, light, seed, mood = null) {
   }
   if (flee) droppedGear(g, W, H, floor, R);
   comp.addFog(H * 0.97, H * 0.12, hazeColor, 0.22, (seed + 3) % 13);
+}
+
+/** A heap of fallen masonry for a lookout to stand on (painted into the backdrop). */
+function rubbleHeap(g, x, y, w, h, R, light) {
+  const pts = [];
+  const n = 14;
+  for (let i = 0; i <= n; i++) {
+    const u = i / n;
+    const bump = Math.sin(u * Math.PI);
+    pts.push([x - w / 2 + u * w + (R() - 0.5) * w * 0.04, y - h * Math.pow(bump, 0.75) * (0.75 + R() * 0.4)]);
+  }
+  g.save();
+  contactShadow(g, x, y + 2, w * 0.62, h * 0.18, 0.6);
+  g.beginPath();
+  g.moveTo(x - w / 2 - w * 0.08, y + h * 0.05);
+  for (const [px, py] of pts) g.lineTo(px, py);
+  g.lineTo(x + w / 2 + w * 0.08, y + h * 0.05);
+  g.closePath();
+  const gr = g.createLinearGradient(0, y - h, 0, y);
+  const night = light === 'night' || light === 'dusk';
+  gr.addColorStop(0, night ? '#3a3448' : '#5a5048');
+  gr.addColorStop(1, night ? '#16121c' : '#2a2420');
+  g.fillStyle = gr;
+  g.fill();
+  g.clip();
+  // broken blocks and a snapped beam, lit along their tops
+  for (let i = 0; i < 16; i++) {
+    const bx = x - w / 2 + R() * w;
+    const by = y - R() * h * 0.9;
+    const bw = w * (0.06 + R() * 0.1);
+    const bh = bw * (0.4 + R() * 0.3);
+    g.save();
+    g.translate(bx, by);
+    g.rotate((R() - 0.5) * 0.6);
+    g.fillStyle = night ? `rgba(${70 + R() * 30},${62 + R() * 20},${80 + R() * 30},0.9)` : `rgba(${110 + R() * 40},${96 + R() * 30},${80 + R() * 20},0.9)`;
+    g.fillRect(-bw / 2, -bh / 2, bw, bh);
+    g.fillStyle = night ? 'rgba(170,160,220,0.25)' : 'rgba(255,230,190,0.25)';
+    g.fillRect(-bw / 2, -bh / 2, bw, bh * 0.22);
+    g.fillStyle = 'rgba(0,0,0,0.35)';
+    g.fillRect(-bw / 2, bh * 0.3, bw, bh * 0.2);
+    g.restore();
+  }
+  g.strokeStyle = '#2a1c12';
+  g.lineWidth = Math.max(2, w * 0.03);
+  g.beginPath();
+  g.moveTo(x - w * 0.42, y - h * 0.2);
+  g.lineTo(x + w * 0.1, y - h * 0.95);
+  g.stroke();
+  g.restore();
 }
 
 /** What a scattered war-band leaves behind: a dropped spear, a kicked-over pot, scuffed dust. */
@@ -580,9 +649,9 @@ export function npcActor(npc, o = {}) {
 
 const GHOST_POSES = {
   // kneeling in vigil before the altar, both hands on the pommel of the reversed sword
-  vigil: { kneel: 1, weaponPose: 'vigil', offPose: null, crouch: 0.42, lean: 0.12, twist: 0, headYaw: -0.1, headPitch: 0.32, headTilt: 0.05, stance: 0.07, sway: 0, hipTilt: 0 },
+  vigil: { kneel: 1, weaponPose: 'vigil', offPose: null, crouch: 0.42, lean: 0.1, twist: 0, headYaw: 0.0, headPitch: 0.36, headTilt: 0.04, stance: 0.07, sway: 0, hipTilt: 0 },
   // risen and turned to face the living, the sword still reversed before him
-  stand: { weaponPose: 'vigil', offPose: null, crouch: 0, lean: -0.02, twist: -0.25, headYaw: 0.05, headPitch: -0.05, headTilt: 0, stance: 0.07, sway: 0, hipTilt: 0.02 },
+  stand: { weaponPose: 'rest', offPose: null, crouch: 0, lean: -0.02, twist: -0.12, headYaw: 0.1, headPitch: -0.04, headTilt: 0, stance: 0.09, sway: 0, hipTilt: 0.02 },
   // roused to anger: the blade comes up
   wrath: { weaponPose: 'raised', offPose: 'point', crouch: 0.08, lean: 0.08, twist: -0.3, headYaw: 0.1, headPitch: -0.08, headTilt: 0, stance: 0.1, sway: 0, hipTilt: 0 },
 };
@@ -606,9 +675,11 @@ export function ghostActor(pose = 'vigil') {
       const h = pose === 'vigil' ? slot.h : slot.h * 1.42;
       const r = renderCreature('ghostKnight', h, { ...rig, key: { dir: [-0.3, 0.8, 0.5], color: '#e8fbff', i: 1.25 }, rim: { dir: [0.7, 0.4, -0.6], color: '#e0ffff', i: 1.4 }, sky: '#6aa8c0', ground: '#0a1a20', amb: 0.62 }, 7, { yaw, poseOverride: P, solid: true, ink: 0.9 });
       if (!r) return null;
-      const sp = spectral(flattenSprite(r), r.emit);
-      // risen, he stands where he knelt, clear of the altar and the east window
-      if (pose !== 'vigil') sp.dx = slot.altar ? slot.h * 0.06 : slot.h * 0.42;
+      // emit points are relative to the figure render; carry them onto the flattened sprite
+      const fl = flattenSprite(r);
+      const sp = spectral(fl, (r.emit ?? []).map((e) => ({ ...e, x: e.x + fl.ox - r.ox, y: e.y + fl.oy - r.oy })));
+      // risen, he stands before the altar, framed by its candle-glow and the east window
+      if (pose !== 'vigil') sp.dx = slot.altar ? (slot.altar[0] - slot.x) * 0.8 : slot.h * 0.42;
       return sp;
     },
   };
@@ -766,7 +837,7 @@ function spectral(f, emit = []) {
   g.filter = 'none';
   g.globalAlpha = 1;
   g.globalCompositeOperation = 'source-over';
-  return { canvas: out, ox: ox + pad, oy: oy + pad, emit: emit.map((e) => ({ ...e })), spectral: true };
+  return { canvas: out, ox: ox + pad, oy: oy + pad, emit: emit.map((e) => ({ ...e, x: e.x + pad, y: e.y + pad })), spectral: true };
 }
 
 // ------------------------------------------------------------------ NPC portraits

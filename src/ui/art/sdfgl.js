@@ -82,8 +82,9 @@ float smax(float a, float b, float k) { float h = max(k - abs(a - b), 0.0) / k; 
 float folds(vec3 r, vec3 ax, vec3 e1, vec3 e2, float L, vec4 d) {
   float u = clamp(dot(r, ax) / L, 0.0, 1.0);
   float ang = atan(dot(r, e2), dot(r, e1));
-  float wob = vnoise3(vec3(ang * 1.3, u * 2.5, d.w)) * 2.4;
-  float s = 0.5 + 0.5 * sin(ang * d.y + wob + u * d.z);
+  float wob = vnoise3(vec3(ang * 1.3, u * 2.5, d.w)) * 3.4;
+  // two families of folds (broad hanging pleats and finer drag creases) so no robe reads as fluting
+  float s = 0.5 + 0.5 * (0.72 * sin(ang * d.y + wob + u * d.z) + 0.28 * sin(ang * d.y * 2.3 + wob * 1.7 + u * 3.1));
   float ridge = 1.0 - (1.0 - s) * (1.0 - s);
   return d.x * (ridge - 0.5) * (0.25 + 0.75 * u);
 }
@@ -341,10 +342,21 @@ float pattern(int pat, float s, vec2 uv, vec3 tu, vec3 tv, vec3 wp, inout vec3 n
     float br = vnoise(vec2(u / (s * 4.0), v / (s * 0.08))); float dent = vnoise(vec2(u / (s * 1.2) + 11.0, v / (s * 1.2)));
     du = (dent - 0.5) * 0.25; dv = (br - 0.5) * 0.12; k = 0.82 + br * 0.18 - (dent > 0.78 ? 0.12 : 0.0);
     extra.y = max(0.0, fbm3(wp * 9.0 + 3.0) - 0.62) * 2.4;
-  } else if (pat == 6) { // mail
-    float row = floor(u / (s * 0.22)); float vv = v / (s * 0.22) + mod(row, 2.0) * 0.5;
-    float fu = u / (s * 0.22) - row - 0.5; float fv = vv - floor(vv) - 0.5; float r = length(vec2(fu, fv));
-    float ring = abs(r - 0.32) < 0.13 ? 1.0 : 0.0; du = ring * fu * 0.9; dv = ring * fv * 0.9; k = ring > 0.5 ? 1.08 : 0.45;
+  } else if (pat == 6) { // riveted mail: two offset grids of interlinked rings, each a small torus that catches the light
+    vec2 q = vec2(u, v) / (s * 0.2);
+    float best = 1e9; vec2 bf = vec2(0.0); vec2 bc = vec2(0.0);
+    for (int kk = 0; kk < 2; kk++) {
+      vec2 o = kk == 0 ? vec2(0.0) : vec2(0.5, 0.5);
+      vec2 cell = floor(q + o); vec2 fq = q + o - cell - 0.5;
+      fq.y *= 1.2;
+      float rr = length(fq);
+      float tube = abs(rr - 0.37);
+      if (tube < best) { best = tube; bf = fq / max(rr, 1e-3) * sign(rr - 0.37); bc = cell + o * 7.0; }
+    }
+    float ring = smoothstep(0.17, 0.07, best);
+    float prof = clamp(best / 0.15, 0.0, 1.0);
+    du = bf.x * prof * 1.1 * ring; dv = bf.y * prof * 1.1 * ring;
+    k = mix(0.5, 1.1, ring) * (0.88 + hash2i(bc) * 0.24);
   } else if (pat == 7) { // wood
     float gg = sin(v / (s * 0.1) + fbm(vec2(u / (s * 3.0), v / (s * 0.5))) * 6.0); k = 0.8 + gg * 0.12; dv = gg * 0.12;
   } else if (pat == 8) { // skin: pores, mottling, broad blotches of colour and value (no two square inches alike)
@@ -456,6 +468,15 @@ void main() {
     c = base * (dk * 0.55 * uKeyC + ambC * 0.8 + fillC) + spec * uKeyC * (0.4 + base) + mix(uGnd, uSky, hemi) * 0.25 * base * ao + rimT * uRimC * (0.5 + base);
   } else {
     spec *= 0.38; // matte: skin, cloth and leather keep only a soft sheen
+    if (sss > 0.3) {
+      // skin: blood under it wraps the red channel further round the terminator than the blue, and
+      // the sheen breaks up (oily brow and nose, dry cheeks) instead of one plastic highlight
+      vec3 w3 = sss * vec3(1.0, 0.55, 0.4);
+      vec3 dC = clamp((vec3(ndl) + w3) / (1.0 + w3), 0.0, 1.0) * sh;
+      dk = uKeyI * dot(dC, vec3(0.333));
+      base *= mix(vec3(1.0), dC / max(vec3(0.02), vec3(dot(dC, vec3(0.333)))), 0.35);
+      spec *= 0.45 + 0.9 * vnoise3(wp * 9.0);
+    }
     float term = sss > 0.3 ? max(0.0, 1.0 - abs(ndl) * 3.0) * 0.2 * sh : 0.0;
     vec3 scatter = vec3(1.25, 0.4, 0.22) * term;
     float trans = sss > 0.3 ? pow(max(0.0, dot(-n, uKey)), 2.0) * (1.0 - thick) * 0.5 : 0.0;
