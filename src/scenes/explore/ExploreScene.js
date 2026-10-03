@@ -161,12 +161,13 @@ export default class ExploreScene extends Scene {
       if (night) this.fill.position.set(-this.sunDir.x * 30, 45, -40);
       else this.fill.position.set(-this.sunDir.x * 50, 30, -this.sunDir.z * 50);
       s.add(this.fill);
-      s.fog = new THREE.FogExp2(k.fog, k.fogDensity * (this.map.harbour ? 0.38 : 0.72));
+      // low-sun haze kept thin enough that the mid-ground holds its contrast
+      s.fog = new THREE.FogExp2(k.fog, k.fogDensity * (this.map.harbour ? 0.38 : 0.72) * (k.scatter > 0.8 && !night ? 0.78 : 1));
       setSurfaceAtmosphere({
         sunDir: k.trueSunDir.y > -0.05 ? k.trueSunDir : k.moonDir,
         sunColor: k.sunCol,
         scatter: k.scatter * 0.55,
-        heightFog: 0.12 + k.night * 0.22 + (k.scatter > 0.8 ? 0.15 : 0),
+        heightFog: 0.1 + k.night * 0.22 + (k.scatter > 0.8 ? 0.03 : 0),
         heightFalloff: 0.45,
         grimeTint: ts.grime,
         mossTint: ts.moss,
@@ -297,7 +298,7 @@ export default class ExploreScene extends Scene {
     gr.color.set(this.keys.sunCol).lerp(new THREE.Color(0xfff2dc), 0.25);
     // low sun through haze: long bright fans; high sun: a faint veil
     const low = THREE.MathUtils.clamp(1 - (this.keys.trueSunDir.y - 0.1) / 0.5, 0, 1);
-    gr.strength = (0.4 + 7.6 * low) * (0.6 + 0.4 * this.keys.scatter);
+    gr.strength = (0.4 + 4.8 * low) * (0.6 + 0.4 * this.keys.scatter);
     gr.attach(comp);
     comp.insertPass(gr, 1);
     this.godRays = gr;
@@ -360,11 +361,13 @@ export default class ExploreScene extends Scene {
       const origins = [...(this.block?.chimneys ?? []), ...(this.skyline?.smoke ?? [])];
       add(createParticles('smoke', { origins, size: 1.1, color: night ? 0x1c2028 : 0xa8a6a2, intensity: night ? 0.5 : 0.32, seed: 13 }));
     }
-    if (ts.particles.includes('fog') && (night || this.keys.scatter > 0.8 || !ts.outdoors)) {
+    // (by day the haze is the shader height fog: big depth-tested sprites cut hard edges where
+    // they meet the paving; at night/indoors they are kept small and high enough not to clip)
+    if (ts.particles.includes('fog') && (night || !ts.outdoors)) {
       add(createParticles('mist', {
-        count: ts.outdoors ? 60 : 40,
-        box: [new THREE.Vector3(-4, 0.9, -4), new THREE.Vector3(W + 4, 2.0, H + 4)],
-        size: 4.5,
+        count: ts.outdoors ? 70 : 40,
+        box: [new THREE.Vector3(-4, 1.7, -4), new THREE.Vector3(W + 4, 2.5, H + 4)],
+        size: 2.4,
         color: ts.outdoors ? new THREE.Color(this.keys.fog).multiplyScalar(1.6).getHex() : 0x303640,
         intensity: ts.outdoors ? 0.08 : 0.1,
         seed: 14,

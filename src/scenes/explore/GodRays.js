@@ -89,15 +89,23 @@ export class GodRaysPass extends Pass {
       depthWrite: false,
     });
     this.compMat = new THREE.ShaderMaterial({
-      uniforms: { tRays: { value: null }, tDepth: { value: null }, uColor: { value: new THREE.Color() }, uStrength: { value: 0 } },
+      uniforms: { tRays: { value: null }, tDepth: { value: null }, uColor: { value: new THREE.Color() }, uStrength: { value: 0 }, uTexel: { value: new THREE.Vector2(1 / 400, 1 / 225) } },
       vertexShader: VERT,
       fragmentShader: /* glsl */ `
         uniform sampler2D tRays; uniform sampler2D tDepth; uniform vec3 uColor; uniform float uStrength;
         varying vec2 vUv;
+        uniform vec2 uTexel;
         void main(){
-          vec3 r = texture2D(tRays, vUv).rgb;
+          // upsample: a rotated 4-tap kernel jittered per pixel with interleaved-gradient noise
+          // (stable, blue-noise-like) — the quarter-res texels never show as blocks
+          float ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+          float a0 = ign * 6.2831853;
+          vec2 o1 = vec2(cos(a0), sin(a0)) * uTexel * 1.25;
+          vec2 o2 = vec2(-o1.y, o1.x);
+          vec4 t = (texture2D(tRays, vUv + o1) + texture2D(tRays, vUv - o1) + texture2D(tRays, vUv + o2) + texture2D(tRays, vUv - o2)) * 0.25;
+          vec3 r = t.rgb;
           // over open sky the sky itself is the light: the shafts show against what stands in front
-          float sky = texture2D(tRays, vUv).a;
+          float sky = t.a;
           // gentle shoulder: never a white-out, the shafts stay a veil
           vec3 l = uColor * r * uStrength * (1.0 - 0.75 * sky);
           gl_FragColor = vec4(l / (1.0 + l * 0.6), 1.0);
@@ -138,6 +146,7 @@ export class GodRaysPass extends Pass {
     this.rtA.setSize(qw, qh);
     this.rtB.setSize(qw, qh);
     this.maskMat.uniforms.uAspect.value = w / Math.max(1, h);
+    this.compMat.uniforms.uTexel.value.set(1 / qw, 1 / qh);
   }
 
   render(renderer, writeBuffer, readBuffer) {

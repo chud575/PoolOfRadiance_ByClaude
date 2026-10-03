@@ -28,13 +28,13 @@ const DEFS = {
   water_dark: { color: 0x0a1a24, roughness: 0.05, metalness: 0.2 },
 
   // ---- explore architecture (vertex AO colours required) ----
-  arch_stone: { tex: 'hd2_ashlar', texScale: 3, vc: true, fx: { macro: 0.32, grime: 0.55, moss: 0.35, streak: 0.55 } },
-  arch_stone_cold: { tex: 'hd2_ashlar_cold', texScale: 3, vc: true, fx: { macro: 0.3, grime: 0.6, moss: 0.5 } },
+  arch_stone: { tex: 'hd2_ashlar', texScale: 3, vc: true, fx: { macro: 0.32, grime: 0.55, moss: 0.35, streak: 0.55, vary: 1, patch: 1 } },
+  arch_stone_cold: { tex: 'hd2_ashlar_cold', texScale: 3, vc: true, fx: { macro: 0.3, grime: 0.6, moss: 0.5, vary: 1, patch: 1 } },
   arch_trim: { tex: 'hd2_quoin', texScale: 1.5, vc: true, color: 0xd8d0c4, fx: { macro: 0.2, grime: 0.4, moss: 0.5 } },
   arch_dressed: { tex: 'hd2_dressed', texScale: 1.5, vc: true, color: 0xe6ded2, fx: { macro: 0.2, grime: 0.45, moss: 0.4 } },
-  arch_ruin: { tex: 'hd2_ruin', texScale: 3, vc: true, fx: { macro: 0.35, grime: 0.7, moss: 0.9 } },
-  arch_plaster: { tex: 'hd2_plaster', texScale: 3.7, vc: true, fx: { macro: 0.4, grime: 0.85, moss: 0.15, streak: 0.22 } },
-  arch_plaster_int: { tex: 'hd2_plaster_int', texScale: 3, vc: true, fx: { macro: 0.32, grime: 0.6, streak: 0.25, soot: 1 } },
+  arch_ruin: { tex: 'hd2_ruin', texScale: 3, vc: true, fx: { macro: 0.35, grime: 0.7, moss: 0.9, vary: 0.8, patch: 1 } },
+  arch_plaster: { tex: 'hd2_plaster', texScale: 3.7, vc: true, fx: { macro: 0.4, grime: 0.85, moss: 0.15, streak: 0.22, patch: 0.8 } },
+  arch_plaster_int: { tex: 'hd2_plaster_int', texScale: 3, vc: true, fx: { macro: 0.32, grime: 0.6, streak: 0.25, soot: 1, patch: 0.9 } },
   arch_beam: { tex: 'hd_beam', texScale: 1.2, vc: true, fx: { macro: 0.18, grime: 0.2, moss: 0.2 } },
   arch_beam_dark: { tex: 'hd_beam_dark', texScale: 1.2, vc: true, fx: { macro: 0.12 } },
   arch_roof_slate: { tex: 'hd_roof_slate', texScale: 2, vc: true, fx: { macro: 0.3, moss: 0.25 } },
@@ -45,12 +45,12 @@ const DEFS = {
   arch_mud: { tex: 'hd_mud', texScale: 3, vc: true, fx: { macro: 0.3, floor: 1 } },
   arch_boards: { tex: 'hd_boards', texScale: 2, vc: true, fx: { macro: 0.15, floor: 1 } },
   arch_ceiling: { tex: 'hd2_ceiling', texScale: 3, vc: true, color: 0xffffff, fx: { macro: 0.1 } },
-  arch_dungeon: { tex: 'hd2_dungeon', texScale: 3, vc: true, fx: { macro: 0.34, grime: 0.6, moss: 0.4, streak: 1 } },
+  arch_dungeon: { tex: 'hd2_dungeon', texScale: 3, vc: true, fx: { macro: 0.34, grime: 0.6, moss: 0.4, streak: 1, vary: 1, patch: 1 } },
   arch_dungeon_floor: { tex: 'hd3_dungeon_floor', texScale: 3, vc: true, fx: { macro: 0.3, floor: 1 } },
-  arch_hewn: { tex: 'hd2_hewn', texScale: 3, vc: true, fx: { macro: 0.35, grime: 0.5, moss: 0.5 } },
+  arch_hewn: { tex: 'hd2_hewn', texScale: 3, vc: true, fx: { macro: 0.35, grime: 0.5, moss: 0.5, patch: 0.8 } },
   arch_hewn_ceil: { tex: 'hd2_hewn_ceil', texScale: 3, vc: true, roughness: 1, fx: { macro: 0.3 } },
   arch_cave_floor: { tex: 'hd2_cave_floor', texScale: 3, vc: true, fx: { macro: 0.35, floor: 1 } },
-  arch_basalt: { tex: 'hd2_basalt', texScale: 2.2, vc: true, fx: { macro: 0.22, grime: 0.3, streak: 0.8 } },
+  arch_basalt: { tex: 'hd2_basalt', texScale: 2.2, vc: true, fx: { macro: 0.22, grime: 0.3, streak: 0.8, vary: 0.6, patch: 0.6 } },
   arch_basalt_floor: { tex: 'hd2_basalt_floor', texScale: 3, vc: true, fx: { macro: 0.2, floor: 1 } },
   arch_relief: { tex: 'hd2_relief', texScale: 0, vc: true, fx: { macro: 0.1 } },
   arch_brick: { tex: 'hd_brick', texScale: 1, vc: true, fx: { macro: 0.3, grime: 0.5 } },
@@ -141,6 +141,8 @@ function applySurfaceFX(mat, fx) {
   const streak = (fx.streak ?? 0).toFixed(3);
   const fogCap = (fx.fogCap ?? 1).toFixed(3);
   const soot = (fx.soot ?? 0).toFixed(3);
+  const vary = (fx.vary ?? 0).toFixed(3);
+  const patch = (fx.patch ?? 0).toFixed(3);
   mat.onBeforeCompile = (shader) => {
     if (!SURFACE_UNIFORMS.uFxNoiseTex.value) SURFACE_UNIFORMS.uFxNoiseTex.value = getFxNoiseTexture();
     Object.assign(shader.uniforms, SURFACE_UNIFORMS);
@@ -173,6 +175,8 @@ function applySurfaceFX(mat, fx) {
         uniform vec3 uFxReflZenith; uniform vec3 uFxReflHorizon; uniform vec3 uFxReflWall;
         float vFxWet = 0.0;
         float vFxFloor = 0.0;
+        float vFxCav = 0.0;
+        float vFxCrown = 0.0;
         float vFxPud = 0.0;
         ${FX_NOISE}`,
       )
@@ -221,14 +225,59 @@ function applySurfaceFX(mat, fx) {
             diffuseColor.rgb *= 1.0 - crack * 0.4 * ${soot};
           }
           #endif
+          #if ${vary === '0.000' ? 0 : 1}
+          #ifdef USE_ROUGHNESSMAP
+          {
+            // per-stone variation that never tiles: the texture carries a stone id (B), a decal
+            // mask for its cracks/spalls (R) and height (A). Tone and decal visibility come from
+            // world-space noise looked up at an id-dependent offset — the same stone repeated
+            // 3 m along the wall gets a different tone and keeps or loses its scar.
+            vec4 fxS = texture2D(roughnessMap, vRoughnessMapUv);
+            float onStone = smoothstep(0.26, 0.36, fxS.a);
+            vec2 sp2 = (abs(up) > 0.6 ? wp.xz : vec2(wp.x + wp.z * 0.93, wp.y)) * (1.0 / 24.0);
+            float tA = texture2D(uFxNoiseTex, sp2 + fxS.b * vec2(7.31, 3.17)).a;
+            float tB = texture2D(uFxNoiseTex, sp2 * 1.7 + fxS.b * vec2(2.71, 5.93)).g;
+            float dF = (1.0 - smoothstep(16.0, 38.0, length(vViewPosition))) * onStone * ${vary};
+            diffuseColor.rgb *= 1.0 + ((tA - 0.5) * 0.9 + (tB - 0.5) * 0.35) * dF;
+            diffuseColor.rgb *= mix(vec3(1.0), vec3(1.06, 1.0, 0.9), clamp((tB - 0.5) * 2.5, -1.0, 1.0) * dF);
+            float gate = smoothstep(0.5, 0.58, texture2D(uFxNoiseTex, sp2 * 1.3 + fxS.b * vec2(4.13, 8.71)).a);
+            diffuseColor.rgb *= 1.0 - fxS.r * gate * 1.3;
+          }
+          #endif
+          #endif
+          #if ${patch === '0.000' ? 0 : 1}
+          {
+            // large-scale value macro: soot/grime blooms and pale lime-leached areas a few metres
+            // across, so a long wall reads as one aged surface rather than a tiled sheet
+            float pA = smoothstep(0.52, 0.7, mN + (nz.g - 0.5) * 0.5);
+            float pB = smoothstep(0.56, 0.7, nz.a + (nz.b - 0.5) * 0.25) * (1.0 - pA);
+            diffuseColor.rgb *= 1.0 - pA * 0.3 * ${patch} * vert;
+            diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.16, 1.13, 1.06) + vec3(0.015), pB * 0.55 * ${patch} * vert);
+            // soot drifting down from the wall head
+            float hiS = smoothstep(2.6, 5.5, wp.y) * smoothstep(0.45, 0.65, nz.a);
+            diffuseColor.rgb *= 1.0 - hiS * 0.22 * ${patch} * vert;
+          }
+          #endif
           float fl = ${floor};
           diffuseColor.rgb *= mix(1.0, 0.8 + nz.a * 0.4, fl);
+          #ifdef USE_ROUGHNESSMAP
+          if (fl > 0.0) {
+            // cavity from the height channel vs. its blurred neighbourhood (a coarse mip): joints
+            // and low spots hold the water, stone crowns stand dry
+            float hC = texture2D(roughnessMap, vRoughnessMapUv).a;
+            float hA = texture2D(roughnessMap, vRoughnessMapUv, 3.5).a;
+            vFxCav = smoothstep(0.0, 0.07, hA - hC);
+            vFxCrown = smoothstep(0.0, 0.05, hC - hA);
+            float wj = vFxCav * clamp(uFxWet * 2.0, 0.0, 1.0) * (0.35 + 0.65 * uFxSlick);
+            diffuseColor.rgb *= 1.0 - wj * 0.35;
+          }
+          #endif
           // standing water: broad, soft-edged pools in the low spots (metre-scale noise only — no
           // per-pixel speckle), a darker damp halo around each, the joints wet a little beyond
           float pudF = nz.r * 0.7 + nz.a * 0.3 + (nz.g - 0.5) * 0.08 + uFxSlick * 0.05;
           float wetAmt = clamp(uFxWet * 2.0, 0.0, 1.0) * fl;
-          vFxPud = smoothstep(0.64, 0.7, pudF) * wetAmt;
-          float halo = smoothstep(0.6, 0.66, pudF) * wetAmt;
+          vFxPud = smoothstep(0.665, 0.705, pudF) * wetAmt;
+          float halo = smoothstep(0.63, 0.67, pudF) * wetAmt;
           diffuseColor.rgb *= 1.0 - halo * 0.28 - vFxPud * 0.42;
           vFxFloor = fl;
         }`,
@@ -269,9 +318,12 @@ function applySurfaceFX(mat, fx) {
           // (never glossy where the normal map is busy: a low roughness on bumpy stone glitters)
           float wetK = clamp(uFxWet * 2.0, 0.0, 1.0);
           roughnessFactor = mix(roughnessFactor, max(roughnessFactor, 0.5), vFxWet * wetK);
-          roughnessFactor = mix(roughnessFactor, 0.06, smoothstep(0.45, 0.95, vFxPud)); // matte wet rim: no glint ribbon at the edge
-          // after rain the whole carriageway is slick: crowns glossy, joints still matte
-          roughnessFactor = mix(roughnessFactor, roughnessFactor * 0.5, vFxFloor * uFxSlick);
+          // after rain the water sits in the joints and hollows (soft sheen), the crowns stay dry
+          // and matte: no glossy high-frequency speckle on the stone faces
+          roughnessFactor = mix(roughnessFactor, 0.34, vFxCav * vFxFloor * wetK * (0.4 + 0.6 * uFxSlick));
+          roughnessFactor = mix(roughnessFactor, max(roughnessFactor, 0.78), vFxCrown * vFxFloor);
+          // puddles: a near-flat sheet with a slightly soft (rippled, dirty) mirror
+          roughnessFactor = mix(roughnessFactor, 0.14, smoothstep(0.45, 0.95, vFxPud));
         }`,
       )
       .replace(
@@ -308,7 +360,7 @@ function applySurfaceFX(mat, fx) {
         #endif`,
       );
   };
-  mat.customProgramCacheKey = () => `fx:${macro}:${grime}:${moss}:${floor}:${dust}:${grain}:${streak}:${fogCap}:${soot}`;
+  mat.customProgramCacheKey = () => `fx:${macro}:${grime}:${moss}:${floor}:${dust}:${grain}:${streak}:${fogCap}:${soot}:${vary}:${patch}`;
 }
 
 const cache = new Map();

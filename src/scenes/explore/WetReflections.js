@@ -68,23 +68,21 @@ export function buildWetReflections(sources, heightAt, o) {
         vec4 nz = texture2D(uNoise, p * (1.0 / 24.0));
         // puddles: same field as the SurfaceFX standing water (mirror), damp stone elsewhere (smear)
         float pudF = nz.r * 0.7 + nz.a * 0.3 + (nz.g - 0.5) * 0.08;
-        float pud = smoothstep(0.58, 0.68, pudF);
-        // ripples / sett crowns jitter the normal (finer and weaker in the puddles)
-        vec2 j1 = texture2D(uNoise, p * 0.45).gb - 0.5;
-        vec2 j2 = texture2D(uNoise, p * 1.7 + 0.31).gb - 0.5;
-        vec2 jit = mix(j1 * 0.16 + j2 * 0.1, j2 * 0.035, pud);
+        float pud = smoothstep(0.64, 0.7, pudF);
+        // the puddles are a calm, slightly dirty sheet (soft mirror with a long grazing streak);
+        // the damp stone between them only carries a broad, dim smear — no glittering speckle
+        vec2 j2 = texture2D(uNoise, p * 0.9 + 0.31).gb - 0.5;
+        vec2 jit = mix(j2 * 0.05, j2 * 0.012, pud);
         vec3 n = normalize(vec3(jit.x, 1.0, jit.y));
         vec3 I = normalize(vWp - cameraPosition);
         vec3 Rr = reflect(I, n);
         vec3 L = normalize(vLamp - vWp);
         float c = max(dot(Rr, L), 0.0);
-        float sharp = mix(220.0, 2400.0, pud);
-        float spec = pow(c, sharp) * mix(2.0, 9.0, pud) + pow(c, 30.0) * 0.12;
+        float spec = mix(pow(c, 24.0) * 0.22, pow(c, 700.0) * 5.0 + pow(c, 90.0) * 0.9, pud);
         // Fresnel: wet stone reflects most at grazing angles
         float fres = 0.04 + 0.96 * pow(1.0 - clamp(-I.y, 0.0, 1.0), 5.0);
-        float d = length(vWp.xz - vLamp.xz);
         float edge = 1.0 - smoothstep(uR * 0.6, uR * 0.98, max(abs(vWp.x - vLamp.x), abs(vWp.z - vLamp.z)));
-        float wet = 0.35 + 0.65 * pud;
+        float wet = 0.25 + 0.75 * pud;
         vec3 col = vCol * spec * fres * wet * edge * uGain;
         float fd = length(vWp - cameraPosition);
         float fog = exp(-uFogDensity * uFogDensity * fd * fd);
