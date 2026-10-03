@@ -79,8 +79,9 @@ describe('missile attacks keep the timed effects already on the archer', () => {
 
   it('the critic case: a cursed archer at long range is at the 5% floor, not 10%', () => {
     // THAC0 20 vs orc AC 6 → 14; long range -5 → 19 (10%); curse -4 → 23 → 20 on the 1e table (5%).
-    expect(chanceAt(archerWith(null), 9)).toBeCloseTo(0.1, 6);
-    expect(chanceAt(archerWith('bestowCurse'), 9)).toBeCloseTo(0.05, 6);
+    // Short bow at 1 square per PHB inch: long range is 11-15 squares.
+    expect(chanceAt(archerWith(null), 12)).toBeCloseTo(0.1, 6);
+    expect(chanceAt(archerWith('bestowCurse'), 12)).toBeCloseTo(0.05, 6);
   });
 
   it('an effect added after the combatant was built counts once, not twice', () => {
@@ -204,16 +205,16 @@ describe('thrown weapons are used up', () => {
 
   it('daggers, hand axes and spears have thrown ranges; a spare one is hurled, never the only one in hand', () => {
     for (const g of ['dagger', 'handAxe', 'spear', 'javelin']) expect(THROWN_RANGE[g]).toBeGreaterThan(0);
-    expect(throwableDef({ id: 'dagger', type: 'weapon', damage: '1d4' }).range).toBe(4);
+    expect(throwableDef({ id: 'dagger', type: 'weapon', damage: '1d4' }).range).toBe(3); // PHB 3" = 3 squares
     const lone = mk('human', 'fighter', { items: ['dagger'] });
     expect(missileProfile(lone)).toBeNull();
     const spare = mk('human', 'fighter', { items: ['longSword', 'dagger'] });
     const p = missileProfile(spare);
     expect(p.thrown).toBe(true);
-    expect(p.def.range).toBe(4);
+    expect(p.def.range).toBe(3);
     expect(p.consumes.id).toBe('dagger');
-    expect(rangeModifier(p.def, 4).band).toBe('long');
-    expect(rangeModifier(p.def, 5).inRange).toBe(false);
+    expect(rangeModifier(p.def, 3).band).toBe('long');
+    expect(rangeModifier(p.def, 4).inRange).toBe(false);
     const axes = mk('human', 'fighter', { items: ['handAxe'] });
     axes.inventory[0].qty = 2;
     expect(missileProfile(axes)?.def.id).toBe('handAxe');

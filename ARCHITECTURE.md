@@ -132,11 +132,16 @@ Durations are combat rounds (1 round = 1 minute; 1 turn = 10 rounds). Ranges/are
 **Equipment**: `addItem(ch, id, {equip, magic, spells, cursed})`, `equipItem`, `unequipItem`, `removeItem`, `canEquip`,
 `equipProblem` (reason string for the UI), `itemName(entry)` (honours identification and `entry.magic` overrides),
 `itemValue`, `itemWeight`, `carriedWeight`, `encumbranceCategory`. Inventory entries may carry `magic` (+N) so treasure
-can make "Long Sword +2" from `longSword`. Optional ItemDef fields the rules understand: `magic`, `magicVs`, `acBase`
+can make "Long Sword +2" from `longSword`. Optional ItemDef fields the rules understand: `magic`, `magicVs` (weapons:
+`{undead: 2}` = +2 more to hit *and* damage vs the undead — keys are tags (`undead`, `snake`, `person`…), families
+(`orc`, `giant`, `human`…) or `evil`/`good`/`lawful`/`chaotic`; best match counts, also an InventoryEntry field;
+`deriveStats().weaponMagicVs` → `combatant.magicVs`, read per target by `magicVsFor(a, d, {magicVs})` in `resolveAttack`/
+`hitChance`, and the extra plus counts against `magicToHit` immunity; creature.js `magicVsBonus(table, defender)`), `acBase`
 (bracers), `acBonus`, `saveBonus`, `setStr` (gauntlets of ogre power), `rateOfFire`, `cursed`, `classes`, `slot`,
 `casterLevel`; potion `effect` strings `heal:<dice>`, `giantStrength:<str>`, `speed`, `neutralize`, or a spell id.
 `ITEM_RULES` / `itemRulesOf(id)` layer DMG facts over the data (Wand of Paralyzation → its own cone, any creature, save vs
-wand; Gauntlets of Ogre Power C/F/T; Giant Strength and Heroism fighter-only; Necklace of Missiles beads 5/3/3 HD).
+wand; the offensive wands — Fire, Lightning, Paralyzation, Magic Missiles and PoR's Sleep — are magic-user only (DMG 'M',
+`classes: ['magicUser']`, enforced by `useItem` and `battleItemUse`); Gauntlets of Ogre Power C/F/T; Giant Strength and Heroism fighter-only; Necklace of Missiles beads 5/3/3 HD).
 Heroism (`heroismLevels`: +4/+3/+2/+1 levels at 0/1-3/4-6/7-9) grants fighter levels for THAC0, saves and attack rate plus
 that many d10 temporary hp. **Protection stacking (DMG)**: a ring of protection's AC does not add to magic armour (its save
 bonus does) and rings don't stack; a cloak of protection gives nothing over magic armour or non-leather armour; bracers
@@ -153,7 +158,9 @@ change class at the Training Hall — **shop owner**: list `dualClassChoices` th
 pick — ShopScene does. `drainLevel(ch, n)` (energy drain: the highest of *all* classes with a level — a dual-classed
 human's dormant old class too, `dual.level` follows — loses a level, its hit die, XP to the new level's midpoint; death
 only when every class is at 1st). A dormant dual class lends nothing: no sweeps, 3/2 attacks or exceptional STR
-(`activeClasses`) + `trimMemorized(ch)` (camp.js). Multiclass CON bonus: the fighter's
+(`activeClasses`) + `trimMemorized(ch)` (camp.js), and no turning (`turnLevel`). `highestLevel(ch)` deliberately still
+counts the dormant class (an F8 → MU1 is an 8th-level creature for Sleep's HD limit and level-keyed fallbacks — Gold Box
+ruling). Multiclass CON bonus: the fighter's
 +3/+4 applies to every class's die before dividing while fighter is one of the classes (Gold Box ruling); a dual-classed
 human's dice each use their own class's bonus (an MU turned fighter gains nothing retroactively). `tempHpOf(ch)` —
 temporary hit points (heroism) are part of `hp.max` while they last and leave with the effect.
@@ -203,7 +210,7 @@ walking; poison kills on the road).
   agrees).
 * `castProblem(caster, id, {context, ignoreMemory, cls})` → reason or null (memorized, silence/held, armour for arcane — elfin
   chain only for elves/half-elves — camp/combat usability).
-* `castSpell(rng, id, caster, targets, {consume, ignoreMemory, check, context, level, cls, fromItem, saveKey, noFailure})` → `{ok, reason,
+* `castSpell(rng, id, caster, targets, {consume, ignoreMemory, check, context, level, cls, fromItem, saveKey, noFailure, centre, strict1e})` → `{ok, reason,
   failed, level, results:[{target, affected, saved, save, resisted, immune, missed, damage, healed, applied, removed, down,
   charmed}], flags, log}`. `saveKey` overrides the save category (wands/staves/rods pass `'rsw'`, DMG). Memory is always checked unless `ignoreMemory: true` (or `check: false`) is passed explicitly.
   Clerics roll the PHB low-WIS spell failure (WIS 9: 20%…12: 5%; the slot is spent; items never fail; `noFailure` for
@@ -217,7 +224,17 @@ the spell — a group of one kind gets exactly the PHB number (two bugbears: 1d2
   −2%/level below), elf/half-elf sleep-charm resistance, undead immunity, shield vs magic missile, and returns terse Gold
   Box log lines. Utility spells report `flags` (`detectMagic`, `findTraps`, `unlock`, `readMagic`, `raiseDead`,
   `poisonCured`...). `hammerStrike(rng, cleric, target, magic)` is one Spiritual Hammer blow.
-* Verified values: Spiritual Hammer +1 per 6 levels or fraction (`ceil(L/6)`), range 1"/level (one square per level);
+* **Spell attack rolls** (touch spells — Shocking Grasp, Cause Wounds/Blindness/Disease, Bestow Curse — and every
+  Spiritual Hammer blow) go through combat.js **`spellAttack(rng, caster, target, {str, weaponMagic, weaponImmunity,
+  strict1e})`**, the same defender pipeline as `resolveAttack` (`liveMods(..., {defenderOnly:true})`): Mirror Image eats
+  hits (and loses an image), Blink's 50% miss and −2, Invisibility's −4 (touch spells and the hammer may swing at an
+  invisible foe; ranged single-target spells still cannot single one out), Prot. from Evil's −2 against an evil caster,
+  Shield, +4 vs helpless, nat 20/1 (QoL). The caster side is its own THAC0 + effect bonuses (+ STR for a touch); a
+  weapon's enchantment never applies. Results carry `missed`, `image`, `blinked`.
+* Verified values: Spiritual Hammer (PHB) hits with the cleric's own to-hit and does a war hammer's 1d4+1 (2-5) vs S/M,
+  1d4 vs L, **no magical plusses to hit or damage**; it counts as +1 per 6 levels or fraction (`ceil(L/6)`) *only* for
+  which creatures it can strike (`weaponImmunity`); range 1"/level (one square per level); Silence 15' Radius gives no save
+  to creatures in the area — only the creature it is cast upon saves (`castSpell`/`castInBattle` `centre`);
   Stinking Cloud lingers 1 round/level (battle.js `cloudExposure`: saves vs poison on entering or each round inside); Ray of Enfeeblement range 1 + L/4;
   Mirror Image 1d4 images, 3 rounds/level (1e PHB); Strength above 18 adds tenths (10% exceptional per point, PHB).
 * Deliberate simplifications: Shield's +1 to saves vs frontal attacks is not modelled (its AC 2 hurled / 3 device-propelled /
@@ -231,7 +248,9 @@ the spell — a group of one kind gets exactly the PHB number (two bugbears: 1d2
   level, optional chance to know). Model: `ch.spells.prepared[cls]` = chosen load-out, `ch.spells.memorized[cls]` = still
   in memory (casting removes), `ch.spells.study` = banked minutes.
 
-**Combat** (combat.js, co-owned): `combatantFromCharacter`, `combatantFromMonster`, `rollInitiative`, `canAct`, `resolveAttack(rng,
+**Combat** (combat.js, co-owned): `combatantFromCharacter`, `combatantFromMonster(rng, id, index, {id})` (ids are
+scoped to the battle's Rng — `m1_kobold`, `m2_kobold`… — never to session history; character ids likewise come from the
+creating Rng's own sequence, or `opts.id`), `rollInitiative`, `canAct`, `resolveAttack(rng,
 a, d, {mods, dmgMod, backstab, rear, ranged, helpless})` (the base AC is by direction — `defenderAc(a, d, {rear,
 ranged})`: rear and backstab strike `acRear` (no shield, no DEX; a monster's declared `shield`/`shieldAc` is ignored),
 missiles strike `acMissile`, or `acHurled` when the attack is thrown (`isHurledAttack`: the character's missileProfile,
@@ -244,7 +263,9 @@ source of truth for attack counts, computed live (3/2 fighters alternate 1,2; ha
 monsters, whose count is routines × attacks in the routine), `sweepAttacks(ch, target)` (fighters vs < 1 full HD incl.
 1-1 HD goblins, `belowOneHd`; the same creatures save as 0-level men and have THAC0 20 — one ruling), `onHitSpecials` (ghoul paralysis — elves immune; a ghast's touch paralyzes elves too (MM); a `paralyzeNoElf` tag marks
 other ghoul-like touches — poison, rat disease), `savingThrow`,
-`poison(rng, target, {mode:'deadly'|'damage', onset})`, `turnUndead(rng, level, type)` (unknown types: no effect),
+`poison(rng, target, {mode:'deadly'|'damage', onset})`, `turnUndead(rng, level, type)` (unknown types: no effect; take
+`level` from character.js **`turnLevel(c)`** — the cleric level only while cleric is in `activeClasses`, so a C4 → F1
+dual-class cannot turn; `canTurnUndead(c)`),
 `endOfRound(c)` (bleeding, poison onset, effect expiry), `endCombat(party)`, `rollSurprise(rng, {partyMod, monsterMod,
 party, scout})` (with `party`, elves/halflings in non-metal armour surprise 4 in 6 — explore.js `surpriseMods`), `moraleCheck`,
 `xpForVictory`, `autoResolve`. Rear/backstab: pass `{rear, backstab}` flags (never fold them into `mods`);
@@ -254,7 +275,11 @@ otherwise `familyOf(m)` must be in `PERSON_FAMILIES` (human, the demi-humans, ko
 man, troglodyte and the PHB's sprites; human bands like `bandit*`, `buccaneer*`, `*Priest` are family `human`). No id list.
 Class-based NPCs: `classAsOf(m)` (`classAs`/`saveAs` 'cleric5' or `{cls, level}`, else a `spells:clericN` tag → cleric of
 level max(N, HD)); `monsterBaseSaves(m)` / `monsterBaseThac0(m)` use that class table (Priest of Bane = cleric 5: ppdm 9,
-bw 15), else fighter-by-HD saves / the DMG monster matrix. Backstab multiplies the whole blow (weapon die + STR + magic) —
+bw 15), else fighter-by-HD saves / the DMG monster matrix. **0-level men** (`isZeroLevelMan(m)`: human family, no class,
+≤ 1 HD with no plus — bandits, buccaneers, thugs; `level0: true|false` overrides) fight at THAC0 20 (`ZERO_LEVEL_THAC0`,
+the PoR value) and save as level-0 men (ppdm 16, pp 17, rsw 18, bw 20, sp 19). `tests/data/monster-consistency.test.js`
+checks every data `thac0` against `monsterBaseThac0` of the def without it; open data mismatches (world owner) are listed
+there and the test fails both on a new mismatch and when a listed one is fixed. Backstab multiplies the whole blow (weapon die + STR + magic) —
 a deliberate Gold Box-style reading; the PHB is ambiguous.
 Monster tags enforced: `magicToHit:N` / `silverToHit` (`weaponImmunity(att, def)`; combatants carry `weaponMagic`,
 `weaponSilver`, `weaponEdged`; monsters strike as +1 at 4+1 HD … +4 at 10+4, `monsterHitPower`), `halfEdged`
@@ -318,8 +343,10 @@ condition and end-of-round tick through these; it uses the `'slay'` helpless rul
 **Missile fire** (character.js / items.js — wired into the combat engine's `rangedProfile` and range modifier):
 `missileProfile(ch)` → `{def, entry, hitBonus, dmgBonus, damage, damageLarge, range, bands, thrown, magic, launcherMagic,
 ammoMagic, ammo, ammoEntry, consumes, fxHit, fxDmg, rateOfFire}` | null — the equipped missile weapon, else one in the
-pack, else a spare throwable weapon (`throwableDef`/`THROWN_RANGE`: dagger, hand axe, spear 4 squares, javelin 8 — never
-the only one in hand). Launchers need ammo: the equipped stack, else the best-enchanted one (cursed −1 last). To hit =
+pack, else a spare throwable weapon (`throwableDef`/`THROWN_RANGE`: dagger, hand axe, spear 3 squares, javelin 6 — never
+the only one in hand). **One map scale**: `SQUARES_PER_INCH = 1` (1 square = 10' = 1 PHB inch at the indoor scale, the
+same scale spells use — Fireball 10 + L squares); `missileRange(def)` = PHB long range × that (dart 4, short bow 15,
+long/composite bow 21, light crossbow 18, heavy 24, sling 20); data `range` only for weapons outside `MISSILE_RANGES`. Launchers need ammo: the equipped stack, else the best-enchanted one (cursed −1 last). To hit =
 DEX missile + launcher magic + ammo magic + racial (`racialWeaponHit`: halfling bow/sling +3, elf bow and short/long sword
 +1) + STR to hit for thrown weapons (`isThrownWeapon`) + the timed effects already on the character (`fxHit`: bless,
 curse, blindness...). Damage = STR + enchantment for thrown weapons, the ammo's enchantment for arrows/bolts (DMG: a
@@ -328,8 +355,8 @@ entry one missile uses up — `useMissile(ch, profile)` decrements it (an emptie
 profile is null when nothing is left. The engine's ranged attacker takes the profile's `fxHit/fxDmg` as its snapshot so
 `liveMods` adds only later changes. `canBackstab(ch)` / `backstabMultiplierOf(ch)` (active thief class + thieving armour;
 0 for a dual-classed human whose thief career is dormant) drive the engine's backstab. `rangeModifier(def, squares)` → `{band, mod, inRange}`: PHB
-short/medium/long 0 / −2 / −5, with `missileRangeBands(def)` keeping the PHB proportions (`MISSILE_RANGES`) of the
-weapon's battle `range` (= long range).
+short/medium/long 0 / −2 / −5, with `missileRangeBands(def)` = the PHB bands (`MISSILE_RANGES`) at `SQUARES_PER_INCH`
+(short bow 5 / 10 / 15).
 
 **Exploration** (explore.js — for ExploreScene's LOCKED/SECRET edges, traps and encounters; **explore owner**: call
 these and spend the returned `minutes` with `game.advanceTime`):
@@ -338,7 +365,9 @@ these and spend the returned `minutes` with `game.advanceTime`):
   Order: Knock (the spell's `flags.unlock`, opens even wizard locks) → best thief's Open Locks (DEX, race, armour; PHB:
   once per lock per thief level, `door.failedBy`) → the strongest member forcing it (`openDoorsChance(str, pct,
   {locked})`: x in 6, the locked/barred figure only at 18/91+ and giant STR) or bending bars (`bendBarsChance`).
-* `detectTrap(rng, party, trap)` (Find Traps spell finds outright; thief F/RT; dwarves/gnomes 50% for stonework traps),
+* `detectTrap(rng, party, trap, {search, passive, strict1e})` (Find Traps spell finds outright; thief F/RT; dwarves/gnomes
+  50% for stonework traps). **QoL RULE** `PASSIVE_TRAP_DETECTION`: stepping onto an unsearched trap still gives the thief
+  and stone sense their roll (1e needs an active search; `passive:false` / `strict1e` plays it by the book),
   `findRemoveTraps(rng, ch, trap, {safe})` (F/RT %; HOUSE RULE, not PHB: failing by more than 20 springs it; `safe` = by the book).
 * `searchSecret(rng, party, {passive, concealed, sliding})` — `secretDoorChance(race, o)`: elves/half-elves 1 in 6
   passing, 2 in 6 searching (3 concealed); others 1 in 6 searching only; dwarves use their 66% for sliding walls;
@@ -346,8 +375,9 @@ these and spend the returned `minutes` with `game.advanceTime`):
 * `surpriseMods(party, {scout})` → `{monsterMod}` (−2 when the moving group / scout is all elves and halflings in non-metal
   armour) — fed into `rollSurprise({party})`.
 * Traps: `TRAPS` (poisonNeedle, dartVolley, pit, fallingBlock, scythingBlade, sleepGas, fireGlyph, alarm), `trapSpec(event)`
-  (an event `{type:'trap', trap:'pit', ...overrides}`), `springTrap(rng, party, trap)` → `{victims:[{ch, hit, saved, damage,
-  effect, status}], alarm, text}` (the trap's own THAC0 against AC, saves with DEX dodge and the racial bonus only vs
+  (an event `{type:'trap', trap:'pit', ...overrides}`), `springTrap(rng, party, trap, {victim, strict1e})` → `{victims:[{ch, hit, saved, damage,
+  effect, status}], alarm, text}` (a 'lead' trap strikes `victim` — the thief whose disarm fumble sprang it — else the
+  first able member; the trap's own THAC0 against AC with the same nat-20/nat-1 rule as weapons, saves with DEX dodge and the racial bonus only vs
   poison, damage through `applyDamage`), and **`resolveTrap(rng, party, trapState, {avoidable, search})`** — the whole Gold
   Box flow: detect (spell / thief / stone sense) → the best thief disarms (house rule: failing by more than 20 springs it) →
   else step around it (`avoidable`) or spring it; `found/removed/sprung` are written back on the state object so a one-shot

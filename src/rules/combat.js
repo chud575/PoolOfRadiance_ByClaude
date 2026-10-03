@@ -9,7 +9,10 @@ import {
   clearCombatEffects, tickPoison, tickEffects,
 } from './conditions.js';
 import { neededToHit } from './tohit.js';
-import { isEvil, isGood, effectHost, characterOf, racialCombatMods, belowOneHd, monsterOf, monsterBaseSaves, monsterBaseThac0 } from './creature.js';
+import {
+  isEvil, isGood, effectHost, characterOf, racialCombatMods, belowOneHd, monsterOf, monsterBaseSaves, monsterBaseThac0,
+  magicVsBonus,
+} from './creature.js';
 import { rateOfFire } from './items.js';
 import { rollSave } from './saves.js';
 import { surpriseMods } from './explore.js';
@@ -71,6 +74,7 @@ export function combatantFromCharacter(ch) {
     range: s.weapon?.range ?? 1,
     magicWeapon: s.weaponMagic > 0,
     weaponMagic: s.weaponMagic ?? 0,
+    magicVs: s.weaponMagicVs ?? null,
     weaponSilver: isSilverWeapon(s.weapon),
     weaponEdged: isEdgedWeapon(s.weapon),
     size: 'M',
@@ -91,14 +95,27 @@ export function combatantFromCharacter(ch) {
   };
 }
 
-let _mId = 0;
-/** Build a combatant for a monster id, rolling its HP. */
-export function combatantFromMonster(rng, monsterId, index = 0) {
+/**
+ * Monster combatant ids are scoped to the battle's Rng (a per-Rng sequence:
+ * m1_kobold, m2_kobold...), so they do not depend on how many monsters were
+ * built earlier in the session. `o.id` picks one explicitly.
+ */
+const MONSTER_SEQ = new WeakMap();
+function nextMonsterSeq(rng) {
+  const n = (MONSTER_SEQ.get(rng) ?? 0) + 1;
+  MONSTER_SEQ.set(rng, n);
+  return n;
+}
+/**
+ * Build a combatant for a monster id, rolling its HP.
+ * @param {{id?:string}} [o]
+ */
+export function combatantFromMonster(rng, monsterId, index = 0, o = {}) {
   const m = MONSTERS[monsterId];
   if (!m) throw new Error(`Unknown monster ${monsterId}`);
   const hp = m.hd < 1 ? rng.int(1, 4) : roll(rng, `${m.hd}d8`) + (m.hpBonus ?? 0);
   return {
-    id: `m${++_mId}_${monsterId}`,
+    id: o.id ?? `m${nextMonsterSeq(rng)}_${monsterId}`,
     side: 'monster',
     name: index ? `${m.name} ${index}` : m.name,
     thac0: monsterBaseThac0(m),
@@ -165,13 +182,14 @@ export function toHitNeeded(attacker, defender, mods = 0) {
  * combatants were built (bless, prayer, shield, invisibility, prot. from evil...).
  * @returns {{hit:number, dmg:number, ac:number, missChance:number, images:number, immune:Set<string>}}
  */
-export function liveMods(attacker, defender, { ranged = false, rear = false, hurled = null } = {}) {
+export function liveMods(attacker, defender, { ranged = false, rear = false, hurled = null, defenderOnly = false } = {}) {
   const thrown = ranged && (hurled ?? isHurledAttack(attacker));
   const aHost = effectHost(attacker);
   const dHost = effectHost(defender);
   const out = { hit: 0, dmg: 0, ac: 0, missChance: 0, images: 0, immune: new Set() };
-  // Attacker's own to-hit/damage adjustments.
-  if (characterOf(attacker) && attacker.snap) {
+  // Attacker's own to-hit/damage adjustments (skipped for spell attacks,
+  // which compute the caster's side themselves — see spellAttack).
+  if (defenderOnly) { /* defender side only */ } else if (characterOf(attacker) && attacker.snap) {
     // Only the part that came from effects since the combatant was built.
     const s = deriveStats(characterOf(attacker));
     const st = strengthTable(s.abilities.str, s.abilities.strPct);
@@ -187,7 +205,7 @@ export function liveMods(attacker, defender, { ranged = false, rear = false, hur
   }
   // Racial adjustments (dwarf/gnome vs giants, orcs, goblins...).
   const rac = racialCombatMods(attacker, defender);
-  out.hit += rac.hit;
+  if (!defenderOnly) out.hit += rac.hit;
   out.ac += rac.ac;
   // Defender.
   const dfx = effectMods(dHost);
@@ -338,6 +356,81 @@ export function weaponImmunity(attacker, defender, o = {}) {
 }
 
 /**
+ * Extra to-hit and damage from the attacker's weapon `magicVs` against this
+ * defender (Sword +1, +3 vs undead → +2 more against a skeleton). Read from
+ * `o.magicVs`, else the combatant's `magicVs` (combatantFromCharacter), else
+ * a bare Character's equipped weapon. 0 for monsters and plain weapons.
+ */
+export function magicVsFor(attacker, defender, o = {}) {
+  if (!attacker) return 0;
+  let table = o.magicVs ?? attacker.magicVs;
+  if (table === undefined && characterOf(attacker) === attacker) table = deriveStats(attacker).weaponMagicVs;
+  return magicVsBonus(table, defender);
+}
+
+/**
+ * A spell's attack roll — touch spells (Shocking Grasp, Cause Wounds, Cause
+ * Blindness/Disease, Bestow Curse) and each blow of a Spiritual Hammer —
+ * through the same defender pipeline as resolveAttack: the defender's live
+ * AC (Shield, Prot. from Evil -2 vs an evil caster, racial AC vs giants),
+ * Invisibility's and Blink's attacker penalties, Blink's 50% miss, Mirror
+ * Image (a hit strikes and dispels an image instead, 1 chance in images+1 of
+ * finding the real one), +4 against a helpless target, and the nat-20/nat-1
+ * QoL rule (`o.strict1e` disables it).
+ *
+ * The caster's side is its own THAC0 plus effect bonuses (bless, prayer,
+ * chant...); `o.str` adds the STR to-hit adjustment (a touch is a melee
+ * blow; the hammer is not wielded, so it gets none). Weapon enchantment is
+ * never added: PHB Spiritual Hammer "has no magical plusses whatsoever to
+ * hit"; its `o.weaponMagic` counts only for weapon immunity (+1 at L1-6,
+ * +2 at L7-12 strikes creatures hit only by such weapons) when
+ * `o.weaponImmunity` is set.
+ * @param {{str?:boolean, ranged?:boolean, weaponMagic?:number, weaponImmunity?:boolean, strict1e?:boolean, mods?:number}} [o]
+ * @returns {{hit:boolean, roll:number, needed:number, image?:boolean, blinked?:boolean, immune?:boolean,
+ *   weaponImmune?:string, crit?:boolean}}
+ */
+export function spellAttack(rng, caster, target, o = {}) {
+  const ch = characterOf(caster);
+  let thac0;
+  let hit = o.mods ?? 0;
+  if (ch) {
+    const s = deriveStats(ch);
+    thac0 = s.thac0;
+    hit += s.mods.hit;
+    if (o.str) hit += strengthTable(s.abilities.str, s.abilities.strPct).hit;
+  } else {
+    thac0 = caster.thac0 ?? monsterBaseThac0(monsterOf(caster));
+    hit += (caster.hitBonus ?? 0) + effectMods(effectHost(caster)).hit;
+  }
+  const lm = liveMods(caster, target, { ranged: !!o.ranged, defenderOnly: true });
+  const tch = characterOf(target);
+  const baseAc = target.ac ?? (tch ? deriveStats(tch).ac : monsterOf(target)?.ac ?? 10);
+  const helpless = isHelplessTarget(target);
+  const needed = neededToHit(thac0, baseAc + lm.ac, hit + lm.hit + (helpless ? 4 : 0));
+  if (lm.missChance && rng.int(1, 100) <= lm.missChance) return { hit: false, roll: 0, needed, blinked: true };
+  const r = rng.die(20);
+  let ok = r >= needed;
+  if (!o.strict1e) {
+    if (r === 20) ok = true;
+    if (r === 1) ok = false;
+  }
+  if (!ok) return { hit: false, roll: r, needed };
+  if (lm.images > 0) {
+    const e = getEffect(effectHost(target), 'mirrorImage');
+    if (e && rng.int(1, e.data.images + 1) > 1) {
+      e.data.images--;
+      if (e.data.images <= 0) e.rounds = 0;
+      return { hit: false, roll: r, needed, image: true };
+    }
+  }
+  if (o.weaponImmunity) {
+    const wi = weaponImmunity(caster, target, { weaponMagic: o.weaponMagic ?? 0, weaponSilver: false });
+    if (wi) return { hit: true, roll: r, needed, immune: true, weaponImmune: wi };
+  }
+  return { hit: true, roll: r, needed, crit: r === 20 };
+}
+
+/**
  * Resolve one attack. Natural 20 always hits, natural 1 always misses (modern QoL
  * house rule; set opts.strict1e to disable). Applies timed effects: bless/prayer,
  * shield, invisibility, blink (50% miss), mirror image (hits strike images),
@@ -349,7 +442,8 @@ export function weaponImmunity(attacker, defender, o = {}) {
  * half damage from edged weapons (halfEdged).
  * @param {{mods?:number, dmgMod?:number, backstab?:boolean, backstabMult?:number, rear?:boolean,
  *   attackIndex?:number, ranged?:boolean, magicWeapon?:boolean, weaponMagic?:number, weaponSilver?:boolean,
- *   weaponEdged?:boolean, strict1e?:boolean, helpless?:HelplessRule}} [opts]
+ *   weaponEdged?:boolean, strict1e?:boolean, helpless?:HelplessRule, magicVs?:Record<string,number>}} [opts]
+ *   `magicVs` overrides the attacker's weapon `magicVs` (a bow from the pack); see magicVsFor.
  * @returns {{roll:number, needed:number, hit:boolean, damage:number, killed:boolean, crit:boolean,
  *   image?:boolean, blinked?:boolean, immune?:boolean, weaponImmune?:string, auto?:boolean, coupDeGrace?:boolean,
  *   halved?:boolean}}
@@ -360,7 +454,16 @@ export function resolveAttack(rng, attacker, defender, opts = {}) {
   const helpless = isHelplessTarget(defender);
   const rule = opts.helpless ?? 'bonus';
   const autoHit = helpless && !ranged && (rule === 'auto' || rule === 'slay');
-  const mods = situationalHit(opts) + (helpless ? 4 : 0) + (opts.mods ?? 0) + lm.hit;
+  const mv = magicVsFor(attacker, defender, opts);
+  if (mv) {
+    lm.dmg += mv;
+    // The situational plus also counts against weapon immunity (a Mace +1,
+    // +3 vs undead strikes a +3-only horror). Monsters keep their HD power.
+    if (characterOf(attacker) || opts.weaponMagic != null || attacker.weaponMagic != null) {
+      opts = { ...opts, weaponMagic: (opts.weaponMagic ?? attacker.weaponMagic ?? 0) + mv };
+    }
+  }
+  const mods = situationalHit(opts) + (helpless ? 4 : 0) + (opts.mods ?? 0) + lm.hit + mv;
   const needed = autoHit ? 1 : neededToHit(attacker.thac0, defender.ac + lm.ac, (attacker.hitBonus ?? 0) + mods);
   onAttacked(effectHost(attacker));
   if (lm.missChance && rng.int(1, 100) <= lm.missChance) {
@@ -425,7 +528,8 @@ export function hitChance(attacker, defender, mods = 0, opts = {}) {
   let p;
   if (helpless && !ranged && (rule === 'auto' || rule === 'slay')) p = 1;
   else {
-    const needed = neededToHit(attacker.thac0, defender.ac + lm.ac, (attacker.hitBonus ?? 0) + mods + situationalHit(opts) + (helpless ? 4 : 0) + lm.hit);
+    const mv = magicVsFor(attacker, defender, opts);
+    const needed = neededToHit(attacker.thac0, defender.ac + lm.ac, (attacker.hitBonus ?? 0) + mods + situationalHit(opts) + (helpless ? 4 : 0) + lm.hit + mv);
     p = (21 - needed) / 20;
     p = opts.strict1e ? Math.max(0, Math.min(1, p)) : Math.max(0.05, Math.min(0.95, p));
   }

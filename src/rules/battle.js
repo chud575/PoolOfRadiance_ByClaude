@@ -137,7 +137,9 @@ const EFFECT_FLOAT = { asleep: 'asleep', held: 'held', nauseous: 'nauseous', cha
  * Item casts (`fromItem`) take the save category of the item battleItemUse()
  * last resolved for this caster ('rsw' for wands/staves/rods) unless
  * `o.saveKey` is passed. `o.cls` (alias `school`) is the memorized slot's class.
- * @param {{level?:number, fromItem?:boolean, school?:string, cls?:string, saveKey?:string}} [o]
+ * `o.centre` is the creature (or id) an area spell was aimed at — for
+ * Silence 15' Radius the only one allowed a save.
+ * @param {{level?:number, fromItem?:boolean, school?:string, cls?:string, saveKey?:string, centre?:object|string}} [o]
  */
 export function castInBattle(rng, spellId, caster, targets, o = {}) {
   // Conditions (silence, held...) and armour for arcane magic are always
@@ -150,7 +152,7 @@ export function castInBattle(rng, spellId, caster, targets, o = {}) {
     PENDING_ITEM.delete(ch);
   }
   const res = castSpell(rng, spellId, caster, targets, {
-    ignoreMemory: true, context: 'combat', level: o.level, fromItem: !!o.fromItem, cls: o.cls ?? o.school, saveKey,
+    ignoreMemory: true, context: 'combat', level: o.level, fromItem: !!o.fromItem, cls: o.cls ?? o.school, saveKey, centre: o.centre,
   });
   const hits = [];
   if (!res.ok) {
@@ -162,7 +164,7 @@ export function castInBattle(rng, spellId, caster, targets, o = {}) {
     const t = tr.target;
     const name = tr.name ?? nameOf(t);
     const h = { id: t.id };
-    if (tr.missed) h.text = `${nameOf(caster)} misses ${name}.`;
+    if (tr.missed) h.text = tr.image ? `An image of ${name} vanishes.` : tr.blinked ? `${name} blinks out of reach.` : `${nameOf(caster)} misses ${name}.`;
     else if (tr.immune) { h.effect = 'resist'; h.text = `${name} is unaffected.`; }
     else if (tr.resisted) { h.effect = 'resist'; h.text = `${name} resists the magic!`; }
     else if (tr.saved && s.save?.type === 'neg') { h.effect = 'resist'; h.saved = true; h.text = `${name} saves!`; }
@@ -337,7 +339,8 @@ export function hammerTurn(rng, caster, byId, pick) {
   if (!t) return null;
   e.data = { ...(e.data ?? {}), targetId: t.id };
   const h = hammerStrike(rng, caster, t, e.data?.magic ?? 1);
-  return { type: 'attack', id: caster.id, target: t.id, hit: h.hit, dmg: h.damage, roll: h.roll, needed: h.needed, killed: h.down, ranged: true, hammer: true, text: h.text };
+  return { type: 'attack', id: caster.id, target: t.id, hit: h.hit, dmg: h.damage, roll: h.roll, needed: h.needed, killed: h.down, ranged: true, hammer: true, text: h.text,
+    ...(h.image ? { image: true } : {}), ...(h.blinked ? { blinked: true } : {}), ...(h.immune ? { immune: true } : {}) };
 }
 
 /** Monster on-hit specials (paralysis, poison, disease) as tactical events. */

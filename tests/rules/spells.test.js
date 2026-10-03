@@ -330,14 +330,14 @@ describe('cleric blessings and curses', () => {
     const pm = cast(new Rng(1), 'protectionFromEvil', mage(2), [f]);
     expect(pm.ok).toBe(true);
   });
-  it('spiritual hammer attacks as a magic weapon', () => {
+  it('spiritual hammer: a war hammer\'s 2-5, no magical plusses (PHB)', () => {
     const rng = new Rng(21);
     let hits = 0;
     for (let i = 0; i < 40; i++) {
       const [k] = mons(rng, 'orc', 1);
       k.hp = { cur: 50, max: 50 };
       const r = cast(rng, 'spiritualHammer', priest(3), [k]).results[0];
-      if (!r.missed) { hits++; expect(r.damage).toBeGreaterThanOrEqual(3); expect(r.damage).toBeLessThanOrEqual(6); }
+      if (!r.missed) { hits++; expect(r.damage).toBeGreaterThanOrEqual(2); expect(r.damage).toBeLessThanOrEqual(5); }
     }
     expect(hits).toBeGreaterThan(10);
   });

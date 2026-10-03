@@ -32,12 +32,37 @@ export const ARMOR_MOVE = {
 export const RATE_OF_FIRE = { shortBow: 2, longBow: 2, compositeBow: 2, dart: 3, dagger: 2, lightCrossbow: 1, heavyCrossbow: 0.5, sling: 1, handAxe: 1, spear: 1, javelin: 1 };
 
 /**
- * Melee weapons that can also be hurled (PHB missile table), with their long
- * range in battle squares (the dart's 4.5" is its 6 squares, so roughly 4
- * squares to 3"). The world data lists daggers, hand axes and spears as melee
- * weapons; throwableDef() gives them their thrown profile.
+ * The one map scale for every range in the rules: 1 battle square = 10 feet
+ * = 1 PHB inch at the indoor/dungeon scale (DMG: indoors, ranges in inches
+ * are read as tens of feet). Spells already use it (Fireball 10" + 1"/level
+ * = 10 + L squares); missiles use it too, so a dagger reaches 3 squares, a
+ * dart 4 (4.5"), a javelin 6, a short bow 15, a long bow 21, a heavy
+ * crossbow 24 — no per-weapon compression.
  */
-export const THROWN_RANGE = Object.freeze({ dagger: 4, handAxe: 4, spear: 4, javelin: 8 });
+export const SQUARES_PER_INCH = 1;
+
+/**
+ * Melee weapons that can also be hurled (PHB missile table), with their long
+ * range in battle squares — derived from MISSILE_RANGES at SQUARES_PER_INCH
+ * (dagger, hand axe, spear 3"; javelin 6"). The world data lists daggers,
+ * hand axes and spears as melee weapons; throwableDef() gives them their
+ * thrown profile.
+ */
+export const THROWN_RANGE = Object.freeze({ dagger: 3, handAxe: 3, spear: 3, javelin: 6 });
+
+/**
+ * Long range of a missile weapon in battle squares: its PHB long range
+ * (MISSILE_RANGES by weapon group) × SQUARES_PER_INCH, rounded down. Data
+ * `range` is only used for weapons outside the PHB table (and for monsters'
+ * natural missiles, which are not ItemDefs). Null for non-missile weapons.
+ * @param {object} def ItemDef (or a throwableDef)
+ */
+export function missileRange(def) {
+  if (!def) return null;
+  const phb = MISSILE_RANGES[def.weaponGroup ?? def.id];
+  if (phb && (def.ranged || THROWN_RANGE[def.weaponGroup ?? def.id])) return Math.max(1, Math.floor(phb[2] * SQUARES_PER_INCH));
+  return def.ranged ? def.range ?? null : null;
+}
 
 /**
  * The missile form of a weapon: a true missile weapon (bow, sling, dart) as it
@@ -62,7 +87,13 @@ export function throwableDef(def) {
  * (DMG type I: one 5 HD and two 3 HD missiles).
  */
 export const ITEM_RULES = Object.freeze({
-  wandParalyzation: { effect: 'wandParalyzation' },
+  // DMG Table III.F: the offensive wands are magic-user items ('M').
+  // Sleep is Pool of Radiance's own wand and follows the same rule.
+  wandParalyzation: { effect: 'wandParalyzation', classes: ['magicUser'] },
+  wandFire: { classes: ['magicUser'] },
+  wandLightning: { classes: ['magicUser'] },
+  wandMagicMissile: { classes: ['magicUser'] },
+  wandSleep: { classes: ['magicUser'] },
   gauntletsOgrePower: { classes: ['cleric', 'fighter', 'thief'] },
   potionGiantStrength: { fighterOnly: true },
   potionHeroism: { effect: 'heroism', fighterOnly: true },
@@ -166,16 +197,20 @@ export const MISSILE_RANGES = Object.freeze({
 export const RANGE_MODS = Object.freeze({ short: 0, medium: -2, long: -5 });
 
 /**
- * Range bands of a missile weapon in battle squares. The weapon's `range` (its
- * maximum reach on the battle map) is long range, and short and medium keep the
- * PHB proportions: a short bow reaching 10 squares is short to 3, medium to 6
- * and long to 10.
+ * Range bands of a missile weapon in battle squares, at SQUARES_PER_INCH:
+ * PHB short / medium / long (a short bow: 5 / 10 / 15 squares; a dart
+ * 1.5 / 3 / 4). Weapons outside the PHB table use their data `range` as long
+ * range with the dagger's proportions.
  * @returns {{short:number, medium:number, long:number}}
  */
 export function missileRangeBands(def) {
-  const phb = MISSILE_RANGES[def?.weaponGroup ?? def?.id] ?? [1, 2, 3];
-  const long = def?.range ?? phb[2];
-  return { short: (long * phb[0]) / phb[2], medium: (long * phb[1]) / phb[2], long };
+  const phb = MISSILE_RANGES[def?.weaponGroup ?? def?.id];
+  if (phb) {
+    const long = missileRange({ ...def, ranged: true }) ?? phb[2];
+    return { short: phb[0] * SQUARES_PER_INCH, medium: phb[1] * SQUARES_PER_INCH, long };
+  }
+  const long = def?.range ?? 3;
+  return { short: long / 3, medium: (2 * long) / 3, long };
 }
 
 /**

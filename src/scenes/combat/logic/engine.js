@@ -4,7 +4,7 @@ import {
   isSilverWeapon, isEdgedWeapon, rollSurprise,
 } from '../../../rules/combat.js';
 import { regenerationOf, breathOf, isAfraid } from '../../../rules/specials.js';
-import { bandage as bandageCharacter, missileProfile, useMissile, canBackstab, backstabMultiplierOf } from '../../../rules/character.js';
+import { bandage as bandageCharacter, missileProfile, useMissile, canBackstab, backstabMultiplierOf, turnLevel } from '../../../rules/character.js';
 import { rangeModifier } from '../../../rules/items.js';
 import { effectMods, hasEffect } from '../../../rules/conditions.js';
 import { effectHost } from '../../../rules/creature.js';
@@ -843,7 +843,7 @@ export class CombatEngine {
 
   // ------------------------------------------------------------ turn undead
   canTurn(c) {
-    return c.side === 'party' && !!c.ref.levels?.cleric && !c.turnedThisCombat && this.enemiesOf(c).some((e) => e.ref?.special?.includes?.('undead'));
+    return c.side === 'party' && turnLevel(c) > 0 && !c.turnedThisCombat && this.enemiesOf(c).some((e) => e.ref?.special?.includes?.('undead'));
   }
 
   turn(c) {
@@ -851,7 +851,7 @@ export class CombatEngine {
     if (!undead.length) return [{ type: 'log', text: 'There are no undead to turn.', kind: 'warn' }];
     c.turnedThisCombat = true;
     const type = undead[0].ref.turnAs ?? undead[0].monsterId;
-    const r = turnUndead(this.rng, c.ref.levels.cleric, type);
+    const r = turnUndead(this.rng, turnLevel(c), type);
     const affected = undead.filter((u) => (u.ref.turnAs ?? u.monsterId) === type)
       .sort((a, b) => Battlefield.dist(c.x, c.y, a.x, a.y) - Battlefield.dist(c.x, c.y, b.x, b.y))
       .slice(0, r.count);

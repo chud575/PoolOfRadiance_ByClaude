@@ -9,11 +9,11 @@ import {
 } from './conditions.js';
 import {
   characterOf, monsterOf, tagsOf, isUndead, isPerson, hitDiceOf, nameOf, sideOf, effectHost,
-  damageCreature, healCreature, isAliveCreature, isDownCreature, acOf, attackOf, hasTag,
+  damageCreature, healCreature, isAliveCreature, isDownCreature, hasTag,
 } from './creature.js';
 import { rollSave } from './saves.js';
 import { RACES } from './races.js';
-import { neededToHit } from './tohit.js';
+import { spellAttack } from './combat.js';
 
 /**
  * The complete Pool of Radiance spell list (cleric 1-3, magic-user 1-3) plus
@@ -150,9 +150,11 @@ export const SPELL_RULES = {
   silence15: {
     name: "Silence 15' Radius", schools: { cleric: 2 }, usable: 'combat', castTime: 5, range: 12, target: 'area',
     area: { shape: 'radius', size: 1 }, hostile: true, duration: (L) => R(2 * L),
-    save: { key: 'sp', type: 'neg' },
+    // PHB: no save for those merely inside the sphere; only a creature the
+    // spell is cast upon (castSpell opts.centre) saves to negate.
+    save: { key: 'sp', type: 'neg', centreOnly: true },
     ops: [{ op: 'condition', id: 'silenced' }],
-    desc: 'Sound dies. Lips move, but no words come.', tip: 'Creatures in the area cannot cast spells. Save vs spell negates.',
+    desc: 'Sound dies. Lips move, but no words come.', tip: 'Creatures in the area cannot cast spells. No save, unless the spell is centred on a creature (that one saves vs spell).',
   },
   slowPoison: {
     name: 'Slow Poison', schools: { cleric: 2 }, usable: 'both', castTime: 1, range: 1, target: 'ally',
@@ -170,7 +172,7 @@ export const SPELL_RULES = {
     name: 'Spiritual Hammer', schools: { cleric: 2 }, usable: 'combat', castTime: 5, range: (L) => Math.max(1, L), target: 'enemy',
     area: { shape: 'single' }, hostile: true, duration: (L) => R(L),
     ops: [{ op: 'hammer' }],
-    desc: 'A hammer of pure force strikes at the cleric\'s command.', tip: 'Magical attack each round: 1d4+1 (1d4 vs large), +1 to hit and damage per 6 levels or fraction.',
+    desc: 'A hammer of pure force strikes at the cleric\'s command.', tip: 'Strikes each round with the cleric\'s to-hit: 1d4+1 (1d4 vs large). No plusses, but it hits creatures needing +1 weapons (+2 at 7th level).',
   },
   chant: {
     name: 'Chant', schools: { cleric: 2 }, usable: 'combat', castTime: 10, range: 0, target: 'party',
@@ -678,11 +680,20 @@ export function consumeMemorized(ch, id, cls) {
  * @property {string[]} log        terse Gold Box style lines
  */
 
-function touches(rng, caster, target) {
-  const { thac0, hitBonus } = attackOf(caster);
-  const needed = neededToHit(thac0, acOf(target), hitBonus);
-  const r = rng.die(20);
-  return r !== 1 && (r === 20 || r >= needed);
+/**
+ * A touch spell's attack roll: the caster's melee to-hit (THAC0, STR, bless...
+ * but never a weapon's enchantment) through the shared defender pipeline
+ * (combat.js spellAttack: Mirror Image, Blink, Invisibility, Prot. from Evil).
+ */
+function touches(rng, caster, target, o = {}) {
+  return spellAttack(rng, caster, target, { str: true, strict1e: o.strict1e });
+}
+
+/** Log line for a spell attack that did not land (blink, image, miss). */
+function missLine(a, who, name) {
+  if (a.blinked) return `${name} blinks away from ${who}.`;
+  if (a.image) return `${who} strikes an image of ${name}; it vanishes.`;
+  return `${who} misses ${name}.`;
 }
 
 function affectsTarget(s, caster, t) {
@@ -772,7 +783,11 @@ export const SLEEP_BANDS = [
  * rods saves vs Rod/Staff/Wand ('rsw', DMG); scrolls and potions keep the
  * spell's own.
  * @param {{level?:number, cls?:string, school?:string, consume?:boolean, check?:boolean, context?:'combat'|'camp',
- *   fromItem?:boolean, saveKey?:string, noFailure?:boolean, ignoreMemory?:boolean}} [opts]
+ *   fromItem?:boolean, saveKey?:string, noFailure?:boolean, ignoreMemory?:boolean, strict1e?:boolean,
+ *   centre?:object|string}} [opts]
+ * `opts.centre` (a creature or its id) is the creature an area spell was cast
+ * upon: for Silence 15' Radius only it gets a save. `opts.strict1e` drops the
+ * nat-20/nat-1 QoL rule from touch and hammer attack rolls.
  * @returns {CastResult}
  */
 export function castSpell(rng, id, caster, targets = [], opts = {}) {
@@ -847,7 +862,11 @@ export function castSpell(rng, id, caster, targets = [], opts = {}) {
     const host = effectHost(t);
     // Harmful magic allows saves/resistance for anyone caught in it (friend or foe).
     const hostile = !!s.hostile;
-    if (hostile && hasEffect(host, 'invisible') && s.area?.shape === 'single' && s.target === 'enemy') {
+    // An unseen creature cannot be singled out by a ranged single-target
+    // spell; touch spells and the Spiritual Hammer swing at its square
+    // instead (spellAttack applies Invisibility's -4).
+    const swings = s.ops.some((o) => o.op === 'touch' || o.op === 'hammer');
+    if (hostile && !swings && hasEffect(host, 'invisible') && s.area?.shape === 'single' && s.target === 'enemy') {
       tr.immune = true;
       res.log.push(`${tr.name} cannot be seen!`);
       continue;
@@ -873,7 +892,9 @@ export function castSpell(rng, id, caster, targets = [], opts = {}) {
       hpPool -= hp;
     }
     let saved = false;
-    if (s.save && hostile) {
+    const centre = opts.centre;
+    const centredHere = centre != null && (centre === t || (centre?.id ?? centre) === t.id);
+    if (s.save && hostile && (!s.save.centreOnly || centredHere)) {
       const sv = rollSave(rng, t, opts.saveKey ?? s.save.key, { bonus: holdPenalty, mental: s.mental, dodge: s.dodge, poison: !!s.save.poison && !opts.saveKey, element: s.element, source: caster });
       tr.save = { roll: sv.roll, target: sv.target, bonus: sv.bonus };
       tr.saved = saved = sv.saved;
@@ -885,7 +906,7 @@ export function castSpell(rng, id, caster, targets = [], opts = {}) {
     for (const op of s.ops) {
       if (op.side === 'allies' && sideOf(t) !== sideOf(caster)) continue;
       if (op.side === 'enemies' && sideOf(t) === sideOf(caster)) continue;
-      const stop = applyOp(rng, op, { s, caster, t, host, tr, L, school, duration, saved, res });
+      const stop = applyOp(rng, op, { s, caster, t, host, tr, L, school, duration, saved, res, strict1e: !!opts.strict1e });
       if (stop) break;
     }
   }
@@ -899,9 +920,12 @@ function applyOp(rng, op, ctx) {
   switch (op.op) {
     case 'touch': {
       if (sideOf(t) === sideOf(caster)) return false;
-      if (!touches(rng, caster, t)) {
+      const a = touches(rng, caster, t, { strict1e: ctx.strict1e });
+      if (!a.hit) {
         tr.missed = true;
-        res.log.push(`${nameOf(caster)} misses ${tr.name}.`);
+        if (a.image) tr.image = true;
+        if (a.blinked) tr.blinked = true;
+        res.log.push(missLine(a, nameOf(caster), tr.name));
         return true;
       }
       return false;
@@ -968,13 +992,17 @@ function applyOp(rng, op, ctx) {
       return false;
     }
     case 'hammer': {
-      // PHB: +1 per 6 levels or fraction thereof (1st-6th +1, 7th-12th +2).
+      // PHB: strikes as a +1 weapon per 6 levels or fraction (1st-6th +1,
+      // 7th-12th +2) *for which creatures it can hit only* — no plusses to
+      // hit or damage.
       const magic = Math.max(1, Math.ceil(L / 6));
       addEffect(effectHost(caster), 'spiritualHammer', { rounds: duration, source: s.id, level: L, data: { magic, damage: '1d4+1', damageLarge: '1d4', targetId: t.id } });
       const h = hammerStrike(rng, caster, t, magic);
       res.log.push(h.text);
-      if (!h.hit) {
-        tr.missed = true;
+      if (!h.hit || h.immune) {
+        tr.missed = !h.hit;
+        if (h.immune) tr.immune = true;
+        if (h.image) tr.image = true;
         return true;
       }
       tr.damage = h.damage;
@@ -1060,19 +1088,27 @@ function applyOp(rng, op, ctx) {
 
 /**
  * One blow of a Spiritual Hammer (the cast, and each later round the cleric
- * directs it): to-hit as the cleric with the hammer's +1 per 6 levels, 1d4+1
- * (1d4 vs large) + that bonus. Returns {hit, damage, down, roll, needed, text}.
+ * directs it). PHB: it hits as the cleric (own THAC0 and bless-type effects,
+ * no STR) "although it has no magical plusses whatsoever to hit", and does a
+ * war hammer's damage: 1d4+1 vs small/man-sized, 1d4 vs large. `magic`
+ * (+1 at L1-6, +2 at L7-12) only lets it strike creatures that need magic
+ * weapons. The blow goes through the shared defender pipeline (spellAttack):
+ * Mirror Image eats hits, Blink and Invisibility hinder, Prot. from Evil
+ * guards against an evil cleric.
+ * Returns {hit, damage, down, roll, needed, image?, blinked?, immune?, text}.
  */
-export function hammerStrike(rng, caster, t, magic = 1) {
-  const { thac0 } = attackOf(caster);
-  const needed = neededToHit(thac0, acOf(t), magic);
-  const r = rng.die(20);
+export function hammerStrike(rng, caster, t, magic = 1, o = {}) {
+  const a = spellAttack(rng, caster, t, { ranged: false, weaponMagic: magic, weaponImmunity: true, strict1e: o.strict1e });
+  const { roll: r, needed } = a;
   const name = nameOf(t);
-  if (r === 1 || (r !== 20 && r < needed)) return { hit: false, damage: 0, down: false, roll: r, needed, text: `The hammer misses ${name}.` };
-  const damage = roll(rng, sizeLarge(t) ? '1d4' : '1d4+1') + magic;
+  if (a.blinked) return { hit: false, damage: 0, down: false, roll: r, needed, blinked: true, text: `${name} blinks away from the hammer.` };
+  if (a.image) return { hit: false, damage: 0, down: false, roll: r, needed, image: true, text: `The hammer shatters an image of ${name}.` };
+  if (!a.hit) return { hit: false, damage: 0, down: false, roll: r, needed, text: `The hammer misses ${name}.` };
+  if (a.immune) return { hit: true, damage: 0, down: false, roll: r, needed, immune: true, text: `The hammer passes harmlessly through ${name}.` };
+  const damage = roll(rng, sizeLarge(t) ? '1d4' : '1d4+1');
   const wasDown = isDownCreature(t);
   const down = damageCreature(t, damage) && !wasDown;
-  return { hit: true, damage, down, roll: r, needed, text: `The hammer strikes ${name} for ${damage}.${down ? ` ${name} is slain!` : ''}` };
+  return { hit: true, damage, down, roll: r, needed, crit: !!a.crit, text: `The hammer strikes ${name} for ${damage}.${down ? ` ${name} is slain!` : ''}` };
 }
 
 /**

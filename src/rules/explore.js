@@ -150,17 +150,33 @@ export function tryOpenLock(rng, party, door = {}, o = {}) {
 }
 
 /**
+ * QoL RULE (Gold Box), not 1e: when the party merely steps onto (or opens)
+ * a trapped thing without searching, the best thief still gets a free
+ * Find/Remove Traps roll and dwarves/gnomes their stone sense. The PHB needs
+ * an active search (a turn spent) for both. Pass `{passive:false}` to
+ * detectTrap / resolveTrap / triggerMapTrap (or `strict1e: true`) to play it
+ * by the book: an unsearched trap is found only by a Find Traps spell.
+ */
+export const PASSIVE_TRAP_DETECTION = true;
+
+/**
  * Detect a trap before it is sprung: a Find Traps spell on anyone finds it
  * outright; otherwise the best thief's Find/Remove Traps roll, and dwarves
  * (and gnomes) sense traps built into stonework (`trap.stonework`: 50%).
+ * Without `o.search`, the thief and stone-sense rolls happen only under the
+ * PASSIVE_TRAP_DETECTION QoL rule (`o.passive`, default on; off with
+ * `o.strict1e`).
  * @param {{mod?:number, stonework?:boolean}} [trap]
+ * @param {{search?:boolean, passive?:boolean, strict1e?:boolean}} [o]
  * @returns {{found:boolean, by:object|null, method:'spell'|'thief'|'stonework'|null, rolls:object[]}}
  */
-export function detectTrap(rng, party, trap = {}) {
+export function detectTrap(rng, party, trap = {}, o = {}) {
   const members = ableMembers(party);
   const rolls = [];
   const caster = members.find((ch) => hasEffect(ch, 'findTraps'));
   if (caster) return { found: true, by: caster, method: 'spell', rolls };
+  const passive = o.passive ?? (o.strict1e ? false : PASSIVE_TRAP_DETECTION);
+  if (!o.search && !passive) return { found: false, by: null, method: null, rolls };
   const t = members
     .map((ch) => ({ ch, chance: Math.max(0, Math.min(99, (deriveStats(ch).thief?.ft ?? 0) + (trap.mod ?? 0))) }))
     .filter((x) => x.chance > 0)
@@ -448,10 +464,13 @@ const rollExpr = (rng, e) => roll(rng, e);
  * (the stout races' CON bonus only against poison; DEX helps dodge pits and
  * falling blocks), damage through applyDamage (so 0 hp is unconscious and
  * below that the victim is dying), and conditions on a failed save.
+ * `o.victim` is who set a 'lead' trap off (the thief who fumbled the
+ * disarm); `o.strict1e` drops the nat-20/nat-1 rule from the trap's attack.
+ * @param {{victim?:object, strict1e?:boolean}} [o]
  * @returns {{victims:{ch:object, hit:boolean, saved:boolean|null, damage:number, effect:string|null, status:string}[],
  *   alarm:boolean, text:string[]}}
  */
-export function springTrap(rng, party, trap) {
+export function springTrap(rng, party, trap, o = {}) {
   const t = trapSpec(trap);
   const members = ableMembers(party);
   const text = [t.text ?? `The ${t.name ?? 'trap'} is sprung!`];
@@ -460,13 +479,26 @@ export function springTrap(rng, party, trap) {
   else if (t.who === 'random') {
     const pool = [...members];
     for (let n = Math.max(1, rollExpr(rng, t.count ?? 1)); n > 0 && pool.length; n--) targets.push(pool.splice(rng.int(0, pool.length - 1), 1)[0]);
-  } else if (t.who !== 'none' && members[0]) targets = [members[0]];
+  } else if (t.who !== 'none') {
+    // 'lead': whoever set it off — the thief whose fumble sprang it
+    // (o.victim), else the first able member (the one stepping or opening).
+    const lead = o.victim && able(o.victim) ? o.victim : members[0];
+    if (lead) targets = [lead];
+  }
   const victims = [];
   for (const ch of targets) {
     const v = { ch, hit: true, saved: null, damage: 0, effect: null, status: ch.status };
     if (t.attack != null) {
+      // Same attack-roll rules as weapons: nat 20 hits, nat 1 misses (QoL;
+      // o.strict1e drops it).
       const need = neededToHit(t.attack, deriveStats(ch).ac, 0);
-      v.hit = rng.die(20) >= need;
+      const r = rng.die(20);
+      v.hit = r >= need;
+      if (!o.strict1e) {
+        if (r === 20) v.hit = true;
+        if (r === 1) v.hit = false;
+      }
+      v.roll = r;
     }
     if (v.hit && t.save) {
       v.saved = rollSave(rng, ch, t.save.key, { poison: !!t.save.poison, dodge: !!t.save.dodge, element: t.element }).saved;
@@ -506,7 +538,8 @@ export function springTrap(rng, party, trap) {
  * @param {import('./dice.js').Rng} rng
  * @param {object[]} party
  * @param {object|string} trap a TRAPS id or an event object `{trap:'pit', ...overrides}`
- * @param {{avoidable?:boolean, search?:boolean}} [o] search: the party is searching (a turn spent: always try to detect)
+ * @param {{avoidable?:boolean, search?:boolean, passive?:boolean, strict1e?:boolean}} [o] search: the party is
+ *   searching (a turn spent: always try to detect); passive / strict1e: see PASSIVE_TRAP_DETECTION
  * @returns {{detected:boolean, removed:boolean, sprung:boolean, avoided:boolean, by:object|null,
  *   victims:object[], alarm:boolean, minutes:number, text:string[]}}
  */
@@ -515,7 +548,8 @@ export function resolveTrap(rng, party, trap, o = {}) {
   const t = trapSpec(trap);
   const out = { detected: false, removed: false, sprung: false, avoided: false, by: null, victims: [], alarm: false, minutes: 0, text: [] };
   if (state.removed || (state.sprung && !t.resets)) return out;
-  const det = state.found ? { found: true, by: null, method: 'known' } : detectTrap(rng, party, t);
+  const det = state.found ? { found: true, by: null, method: 'known' } : detectTrap(rng, party, t, o);
+  let fumbler = null;
   if (o.search) out.minutes += 10;
   if (det.found) {
     out.detected = state.found = true;
@@ -540,6 +574,7 @@ export function resolveTrap(rng, party, trap, o = {}) {
         return out;
       }
       if (!r.sprung) return out; // known and still armed: try again, or leave it be
+      fumbler = thief.ch; // the fumble springs it on the thief at work
     } else {
       // Known but nobody can disarm it: step around it, or leave the chest or
       // door alone (the scene may still choose to springTrap deliberately).
@@ -548,7 +583,7 @@ export function resolveTrap(rng, party, trap, o = {}) {
       return out;
     }
   }
-  const sp = springTrap(rng, party, t);
+  const sp = springTrap(rng, party, t, { victim: fumbler, strict1e: o.strict1e });
   out.sprung = state.sprung = true;
   out.victims = sp.victims;
   out.alarm = sp.alarm;
@@ -575,14 +610,14 @@ export function mapTrapState(game, id) {
  * @param {import('./dice.js').Rng} rng
  * @param {{party:object[], flags?:object}} game
  * @param {{id:string, trap:string, avoidable?:boolean}} ev the map event (TRAPS id + overrides)
- * @param {{search?:boolean}} [o]
+ * @param {{search?:boolean, passive?:boolean, strict1e?:boolean}} [o]
  * @returns {ReturnType<typeof resolveTrap> & {state:object, lines:{text:string, tone:string}[], quiet:boolean}}
  */
 export function triggerMapTrap(rng, game, ev, o = {}) {
   const state = mapTrapState(game, ev.id);
   const { id, type, x, y, once, chance, facing, ...overrides } = ev; // eslint-disable-line no-unused-vars
   const spec = { ...overrides, trap: ev.trap, ...state };
-  const r = resolveTrap(rng, game.party ?? [], spec, { avoidable: !!ev.avoidable, search: !!o.search });
+  const r = resolveTrap(rng, game.party ?? [], spec, { avoidable: !!ev.avoidable, search: !!o.search, passive: o.passive, strict1e: o.strict1e });
   for (const k of ['found', 'removed', 'sprung']) if (spec[k]) state[k] = true;
   const quiet = !r.text.length;
   const tone = r.sprung ? 'warn' : r.removed ? 'loot' : 'system';

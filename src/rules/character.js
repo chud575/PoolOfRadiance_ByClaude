@@ -13,7 +13,7 @@ import {
 import { ITEMS } from '../data/items.js';
 import {
   itemMagic, itemWeight, coinWeight, encumbranceCategory, armorMoveLimit, rateOfFire, makeEntry, itemRulesOf,
-  isThrownWeapon, missileRangeBands, throwableDef,
+  isThrownWeapon, missileRangeBands, missileRange, throwableDef,
 } from './items.js';
 import { effectMods, onDamaged, addEffect, removeEffect, hasEffect } from './conditions.js';
 
@@ -56,8 +56,26 @@ import { effectMods, onDamaged, addEffect, removeEffect, hasEffect } from './con
  * @property {{seed:number, palette?:number, style?:string}} look   portrait/combat-icon parameters
  */
 
-let _idCounter = 0;
-const newId = (rng) => `c${(_idCounter++).toString(36)}${rng ? rng.int(0, 36 ** 5).toString(36) : ''}`;
+/**
+ * Character ids are scoped to the Rng that rolls the character, not to the
+ * session: a per-Rng sequence number plus one draw from it, so the same seed
+ * yields the same ids on a fresh load and after a long session. Without an
+ * Rng the id is a stable hash of the character's defining fields (pass
+ * `opts.id` to choose one).
+ */
+const ID_SEQ = new WeakMap();
+function strHash(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 16777619);
+  return (h >>> 0).toString(36);
+}
+const newId = (rng, o = {}) => {
+  if (o.id) return String(o.id);
+  if (!rng) return `c_${strHash(JSON.stringify([o.name, o.race, o.classSpec, o.gender, o.abilities, o.level]))}`;
+  const n = (ID_SEQ.get(rng) ?? 0) + 1;
+  ID_SEQ.set(rng, n);
+  return `c${n.toString(36)}${rng.int(0, 36 ** 5).toString(36)}`;
+};
 
 /**
  * Roll ability scores.
@@ -181,7 +199,7 @@ export function createCharacter(opts) {
   const abilities = opts.abilities ?? rollLegalAbilities(rng, race, classSpec, '4d6', gender);
   const level = opts.level ?? 1;
   const ch = {
-    id: newId(rng),
+    id: newId(rng, opts),
     name,
     race,
     classSpec,
@@ -438,7 +456,31 @@ export function activeClasses(ch) {
   return newLvl > ch.dual.level ? [ch.dual.from, ...now] : now;
 }
 
-/** Highest level among the character's classes (used for caster level fallbacks, UI). */
+/**
+ * Level at which the character turns undead: the cleric level, but only while
+ * the cleric class is active (activeClasses) — a human who dual-classed away
+ * from cleric cannot turn until the new class exceeds the old level (PHB).
+ * Paladins are not in Pool of Radiance. 0 = cannot turn. Accepts a Character
+ * or a Combatant (its `ref`).
+ */
+export function turnLevel(c) {
+  const ch = c?.classSpec ? c : c?.ref?.classSpec ? c.ref : null;
+  if (!ch || !activeClasses(ch).includes('cleric')) return 0;
+  return ch.levels?.cleric ?? 0;
+}
+
+/** Can the character turn undead now? (turnLevel > 0) */
+export function canTurnUndead(c) {
+  return turnLevel(c) > 0;
+}
+
+/**
+ * Highest level among the character's classes (used for caster level
+ * fallbacks, UI). It deliberately counts a dual-class's dormant old class
+ * too: an F8 → MU1 is still an 8th-level creature for Sleep's HD limit and
+ * level-keyed effects (Gold Box ruling; activeClasses gates what the old
+ * class can *do*: THAC0, saves, spells, turning, backstab).
+ */
 export function highestLevel(ch) {
   return Math.max(1, ...Object.values(ch.levels ?? {}));
 }
@@ -462,7 +504,7 @@ export function armorAllowsThieving(ch) {
  * All derived combat stats. Pure function of the character.
  * @returns {{thac0:number, ac:number, acRear:number, acMissile:number, saves:Record<string,number>, savePoison:number,
  *   hitBonus:number, dmgBonus:number, missileHit:number, weapon: import('../data/schema.js').ItemDef|null,
- *   weaponEntry: InventoryEntry|null, weaponMagic:number, ranged:boolean, range:number, damage:string,
+ *   weaponEntry: InventoryEntry|null, weaponMagic:number, weaponMagicVs:Record<string,number>|null, ranged:boolean, range:number, damage:string,
  *   damageLarge:string, attacks:number, move:number, baseMove:number, weight:number,
  *   encumbrance:{category:number, move:number, label:string, next:number}, spellSlots:Record<string,number[]>,
  *   canCastArcane:boolean, thief:Record<string,number>|null, backstab:number, levels:string, className:string,
@@ -611,8 +653,11 @@ export function deriveStats(ch) {
     weapon,
     weaponEntry,
     weaponMagic: ammoMagic ? Math.max(wMagic, ammoMagic) : wMagic,
+    // Situational enchantment ({undead: 2} → +2 more vs the undead); read per
+    // target by rules/combat magicVsFor(). Null when the weapon has none.
+    weaponMagicVs: weapon?.magicVs || weaponEntry?.magicVs ? { ...(weapon?.magicVs ?? {}), ...(weaponEntry?.magicVs ?? {}) } : null,
     ranged,
-    range: weapon?.range ?? 1,
+    range: ranged ? missileRange(weapon) ?? weapon.range ?? 1 : weapon?.range ?? 1,
     damage: weapon?.damage ?? '1d2',
     damageLarge: weapon?.damageLarge ?? '1d2',
     attacks,
@@ -715,7 +760,7 @@ export function missileProfile(ch) {
     dmgBonus: (thrown ? str.dmg + launcherMagic : ammoMagic) + fx.dmg,
     fxHit: fx.hit, fxDmg: fx.dmg,
     damage: def.damage, damageLarge: def.damageLarge ?? def.damage,
-    range: def.range ?? 8, bands: missileRangeBands(def), rateOfFire: rateOfFire(def) * fx.attackMult,
+    range: missileRange(def) ?? def.range ?? 8, bands: missileRangeBands(def), rateOfFire: rateOfFire(def) * fx.attackMult,
   };
 }
 

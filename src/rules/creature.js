@@ -109,19 +109,40 @@ export function monsterBaseThac0(m) {
   if (typeof m.thac0 === 'number') return m.thac0;
   const ca = classAsOf(m);
   if (ca) return thac0For(ca.cls, ca.level);
+  if (isZeroLevelMan(m)) return ZERO_LEVEL_THAC0;
   return monsterThac0(m.hd ?? 1, m.hpBonus ?? 0);
+}
+
+/** THAC0 of a 0-level man (bandit, buccaneer, thug) — the Gold Box value. */
+export const ZERO_LEVEL_THAC0 = 20;
+
+/**
+ * Is this monster a band member of 0-level men (MM "Men": bandits,
+ * buccaneers, thugs — "all are 0 level" except their leaders)? Human family
+ * (familyOf), no character class (classAsOf), at most 1 HD with no plus.
+ * An explicit MonsterDef `level0: true|false` wins. Such men fight at THAC0
+ * 20 (ZERO_LEVEL_THAC0, as Pool of Radiance shows them) and save as 0-level
+ * men (DMG: ppdm 16, pp 17, rsw 18, bw 20, sp 19), not as 1st-level fighters.
+ */
+export function isZeroLevelMan(c) {
+  const m = monsterOf(c);
+  if (!m) return false;
+  if (typeof m.level0 === 'boolean') return m.level0;
+  return !classAsOf(m) && familyOf(m) === 'human' && (m.hd ?? 1) <= 1 && !((m.hpBonus ?? 0) > 0);
 }
 
 /**
  * Base saving throws of a MonsterDef: its class table when it is a
- * class-based NPC (Priest of Bane = cleric 5: ppdm 9, bw 15), else a
- * fighter of its effective HD (DMG). An explicit `saves` object wins.
+ * class-based NPC (Priest of Bane = cleric 5: ppdm 9, bw 15), 0-level saves
+ * for 0-level men (isZeroLevelMan), else a fighter of its effective HD
+ * (DMG). An explicit `saves` object wins.
  */
 export function monsterBaseSaves(m) {
   if (!m) return monsterSaves(1, 0);
   if (m.saves) return { ...m.saves };
   const ca = classAsOf(m);
   if (ca) return savesFor(ca.cls, ca.level);
+  if (isZeroLevelMan(m)) return savesFor('fighter', 0);
   return monsterSaves(m.hd ?? 1, m.hpBonus ?? 0);
 }
 
@@ -174,6 +195,36 @@ export function belowOneHd(c) {
   const m = monsterOf(c);
   const hd = m?.hd ?? 1;
   return hd < 1 || (hd === 1 && (m?.hpBonus ?? 0) < 0);
+}
+
+/**
+ * Situational enchantment of a weapon against one defender (ItemDef or
+ * InventoryEntry `magicVs`, e.g. `{ undead: 2 }` on a Mace +1 → +3 vs the
+ * undead, `{ evil: 2 }`, `{ giant: 3 }`). A key matches when it is one of the
+ * defender's tags (tagsOf: 'undead', 'person', 'snake', specials...), its
+ * family (familyOf: 'orc', 'giant', 'human'...), or the alignment words
+ * 'evil' / 'good' / 'lawful' / 'chaotic'. The best matching entry counts
+ * (bonuses against overlapping families do not stack). Returns the EXTRA +N
+ * over the weapon's base `magic` (0 when nothing matches).
+ * @param {Record<string, number>|null|undefined} magicVs
+ */
+export function magicVsBonus(magicVs, defender) {
+  if (!magicVs || !defender) return 0;
+  let best = 0;
+  let tags = null;
+  for (const [k, v] of Object.entries(magicVs)) {
+    if (!(v > best)) continue;
+    let match = false;
+    if (k === 'evil') match = isEvil(defender);
+    else if (k === 'good') match = isGood(defender);
+    else if (k === 'lawful' || k === 'chaotic') match = alignmentOf(defender)[0] === (k === 'lawful' ? 'L' : 'C');
+    else {
+      tags ??= tagsOf(defender);
+      match = tags.includes(k) || familyOf(defender) === k;
+    }
+    if (match) best = v;
+  }
+  return best;
 }
 
 export function hasTag(c, tag) {
