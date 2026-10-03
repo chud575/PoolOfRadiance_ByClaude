@@ -124,7 +124,9 @@ export default class ExploreScene extends Scene {
       s.add(this.sky);
       const night = k.night > 0.5;
       // grade: warm key, cool sky fill — a clear sun-to-ambient ratio by day
-      const skyFill = night ? new THREE.Color(k.sky) : new THREE.Color(k.sky).lerp(new THREE.Color(0xd6dce6), 0.5);
+      // (low sun: the open sky overhead is still blue — cool shade against the warm key keeps
+      // stone, timber and plaster apart instead of one orange-brown wash)
+      const skyFill = night ? new THREE.Color(k.sky) : new THREE.Color(k.sky).lerp(new THREE.Color(k.scatter > 0.8 ? 0x8494c8 : 0xd6dce6), k.scatter > 0.8 ? 0.62 : 0.5);
       // sunlit paving bounces warm light up into the shade
       const bounce = night ? new THREE.Color(k.ground).multiplyScalar(1.2) : new THREE.Color(k.ground).lerp(new THREE.Color(0x9a8064), 0.75).lerp(new THREE.Color(k.sun), 0.15);
       this.hemi = new THREE.HemisphereLight(skyFill, bounce, k.hemi * (night ? 2.5 : 2.25));
@@ -320,7 +322,7 @@ export default class ExploreScene extends Scene {
   _postFor() {
     const ts = this.tileset;
     if (!ts.outdoors) {
-      if (ts.variant === 'bane') return { bloomStrength: 0.6, bloomThreshold: 0.72, bloomRadius: 0.55, exposure: 1.85, vignette: 0.5, saturation: 0.92, contrast: 1.08 };
+      if (ts.variant === 'bane') return { bloomStrength: 0.6, bloomThreshold: 0.72, bloomRadius: 0.55, exposure: 2.05, vignette: 0.5, saturation: 0.92, contrast: 1.08 };
       if (ts.variant === 'warrens') return { bloomStrength: 0.6, bloomThreshold: 0.7, bloomRadius: 0.55, exposure: 2.15, vignette: 0.48, saturation: 0.95, contrast: 1.06 };
       return ts.id === 'dungeon'
         ? { bloomStrength: 0.65, bloomThreshold: 0.7, bloomRadius: 0.55, exposure: 1.35, vignette: 0.5, saturation: 1.0, contrast: 1.06 }

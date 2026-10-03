@@ -597,6 +597,21 @@ function house(g, winLit, winDark, x, y0, z, w, d, h, rotX, ruined, id, night, c
       }
     }
   }
+  // an attic light in the gable that faces the block: above the street walls, these are the warm
+  // windows that give a night street its depth
+  if (night > 0.3 && hash(id, 'attic') < 0.6) {
+    const toCb = new THREE.Vector3(cx - x, 0, cz - z);
+    const sa = A.dot(toCb) > 0 ? 1 : -1;
+    const out = A.clone().multiplyScalar(sa);
+    const c0 = P(sa * (la - 0.28), top + rise * 0.18, 0).addScaledVector(out, 0.03);
+    const Tt = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), out).normalize();
+    const ww = 0.32 + hash(id, 'aw') * 0.2;
+    const hh = 0.55 + hash(id, 'ah') * 0.25;
+    const q0 = c0.clone().addScaledVector(Tt, -ww);
+    const q1 = c0.clone().addScaledVector(Tt, ww);
+    winLit.quad('win', q1, q0, q0.clone().setY(c0.y + hh), q1.clone().setY(c0.y + hh), [[0, 0], [1, 0], [1, 1], [0, 1]], { ao: 1 });
+    winLit.quad('win', q0, q1, q1.clone().setY(c0.y + hh), q0.clone().setY(c0.y + hh), [[0, 0], [1, 0], [1, 1], [0, 1]], { ao: 1 });
+  }
   if (hash(id, 'ch') < 0.45) {
     const p = P(la * 0.5, top + rise * 0.7, lb * 0.3);
     g.box('arch_brick', { c: [p.x, p.y + 0.6, p.z], s: [0.7, rise * 0.6 + 1.4, 0.7], ao: 0.8 });
@@ -622,7 +637,7 @@ function house(g, winLit, winDark, x, y0, z, w, d, h, rotX, ruined, id, night, c
         const P3 = P0.clone().setY(wy + 1.1);
         // by day every pane is glazing that reflects the sky (the ext window material); by night
         // some glow and the rest go dark
-        const lit = night <= 0.3 || hash(id, f, c, 'lit') < 0.6;
+        const lit = night <= 0.3 || hash(id, f, c, 'lit') < (f >= 1 ? 0.85 : 0.5);
         (lit ? winLit : winDark).quad('win', P1, P0, P3, P2, [[0, 0], [1, 0], [1, 1], [0, 1]], { ao: 1 });
         // frame, mullion and sill so windows read as joinery, not holes
         const fk = plaster ? 'arch_beam_dark' : 'arch_trim';

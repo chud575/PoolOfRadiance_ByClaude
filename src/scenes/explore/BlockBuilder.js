@@ -1990,7 +1990,7 @@ export function buildBlock(map, opts = {}) {
         // curved webs and turn the courses into a patchwork of tiles)
         const q4 = [P(u0, v0), P(u1, v0), P(u1, v1), P(u0, v1)];
         const vuv = q4.map((p) => [(p.x + (p.y - base) * 0.6 * Math.sign(p.x - x0 - hw)) / 2.2, (p.z + (p.y - base) * 0.6 * Math.sign(p.z - z0 - hw)) / 2.2]);
-        g.quad('arch_basalt_vault', q4[0], q4[1], q4[2], q4[3], vuv, { tint: [0.62, 0.62, 0.6], ao: (p) => 0.75 - 0.4 * THREE.MathUtils.smoothstep(p.y, base, ch - 0.1) });
+        g.quad('arch_basalt_vault', q4[0], q4[1], q4[2], q4[3], vuv, { tint: [0.8, 0.8, 0.78], ao: (p) => 0.8 - 0.35 * THREE.MathUtils.smoothstep(p.y, base, ch - 0.1) });
       }
     }
     // ribs: short chamfered segments following a curve
@@ -2002,7 +2002,7 @@ export function buildBlock(map, opts = {}) {
         const dir = b.clone().sub(a);
         const len = dir.length();
         const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), dir.normalize());
-        g.box('arch_basalt_vault', { matrix: new THREE.Matrix4().compose(mid, q, new THREE.Vector3(1, 1, 1)), s: [len + 0.03, d, w], chamfer: 0.03, tint: [0.85, 0.8, 0.82], ao: 0.85 });
+        g.box('arch_basalt_vault', { matrix: new THREE.Matrix4().compose(mid, q, new THREE.Vector3(1, 1, 1)), s: [len + 0.03, d, w], chamfer: 0.03, tint: [1.35, 1.3, 1.3], ao: 0.9 });
       }
     };
     const M = 16;
@@ -2337,7 +2337,12 @@ export function buildBlock(map, opts = {}) {
         if (rise > 2.2) {
           const vc = P(aa + sa * 0.02, He + rise * 0.45, 0);
           const mm = new THREE.Matrix4().compose(vc, new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), outward), new THREE.Vector3(1, 1, 1));
-          g.box('arch_beam_dark', { matrix: mm, s: [0.5, 0.7, 0.06], ao: 0.4 });
+          if (night > 0.3 && hash(c.id, sa, 'atl') < 0.75) {
+            // an attic light: someone is still up under the roof (warm glazing in a stone frame)
+            const pc = (u, v) => new THREE.Vector3(u, v, 0.035).applyMatrix4(mm);
+            panes.quad('win_ext', pc(-0.24, -0.34), pc(0.24, -0.34), pc(0.24, 0.34), pc(-0.24, 0.34), [[0, 0], [1, 0], [1, 1], [0, 1]], { ao: 1 });
+            for (const [cx2, cy2, sx2, sy2] of [[-0.28, 0, 0.08, 0.78], [0.28, 0, 0.08, 0.78], [0, 0.38, 0.64, 0.08], [0, 0, 0.04, 0.7], [0, 0.05, 0.5, 0.035]]) g.box('arch_beam_dark', { matrix: mm.clone().multiply(new THREE.Matrix4().makeTranslation(cx2, cy2, 0.04)), s: [sx2, sy2, 0.06], ao: 0.7 });
+          } else g.box('arch_beam_dark', { matrix: mm, s: [0.5, 0.7, 0.06], ao: 0.4 });
           g.box('arch_trim', { matrix: mm.clone().multiply(new THREE.Matrix4().makeTranslation(0, -0.4, 0.02)), s: [0.7, 0.1, 0.12], chamfer: 0.02 });
         }
       }

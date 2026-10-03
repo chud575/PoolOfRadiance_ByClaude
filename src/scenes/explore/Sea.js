@@ -56,11 +56,15 @@ export function createSea(o) {
         float dist = length(vWp - cameraPosition);
         // waves flatten with distance (sub-pixel ripples average out instead of shimmering)
         float fade = 1.0 / (1.0 + dist * 0.012);
-        vec3 N = normalize(vec3(slope.x * 0.3 * fade, 1.0, slope.y * 0.3 * fade));
+        // close to the quay the chop is resolved: steeper, finer ripples break the mirror up
+        float near = 1.0 - smoothstep(3.0, 22.0, dist);
+        vec3 n4 = texture2D(tNormal, p * 1.3 + vec2(uTime * 0.05, -uTime * 0.035)).xyz * 2.0 - 1.0;
+        slope += n4.xy * 0.45 * near;
+        vec3 N = normalize(vec3(slope.x * (0.3 * fade + 0.4 * near), 1.0, slope.y * (0.3 * fade + 0.4 * near)));
         vec3 I = normalize(vWp - cameraPosition);
         // mirror image, displaced by the wave slope (more up close, where waves are larger on screen)
         vec4 uvr = vUvR;
-        uvr.xy += slope * fade * uvr.w * 0.11;
+        uvr.xy += slope * (fade * 0.11 + near * 0.08) * uvr.w;
         vec3 refl = texture2DProj(tDiffuse, uvr).rgb;
         // analytic sky where the mirror render is empty
         vec3 R = reflect(I, N);

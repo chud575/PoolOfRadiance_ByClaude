@@ -72,7 +72,7 @@ const DEFS = {
   prop_stone: { tex: 'hd2_ashlar', fx: { macro: 0.25, moss: 0.5 } },
   prop_skin: { color: 0xc48a68, roughness: 0.62, vc: true, fx: {} },
   prop_cloth: { tex: 'hd_burlap', color: 0xffffff, vc: true, fx: { macro: 0.15 } },
-  prop_bone: { tex: 'hd_limestone', color: 0xf2e6cc, fx: { dust: 0.5 } },
+  prop_bone: { tex: 'hd_limestone', color: 0xc2b292, fx: { dust: 0.5, grime: 0.5 } },
   prop_limestone: { tex: 'hd_limestone', texScale: 1.5, vc: true, fx: { macro: 0.3, grime: 0.8, moss: 0.8, dust: 0.6 } },
 };
 
@@ -345,7 +345,7 @@ function applySurfaceFX(mat, fx) {
         if (vFxPud > 0.0) {
           // the water surface is flat: it fills the joints and hides the stones' relief
           vec3 fxUpV = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
-          normal = normalize(mix(normal, fxUpV, smoothstep(0.0, 0.3, vFxPud)));
+          normal = normalize(mix(normal, fxUpV, smoothstep(0.4, 0.9, vFxPud)));
         }
         #if ${rock === '0.000' ? 0 : 1}
         {
@@ -391,7 +391,7 @@ function applySurfaceFX(mat, fx) {
           roughnessFactor = mix(roughnessFactor, 0.36, vFxCav * vFxFloor * wetK * (0.4 + 0.6 * uFxSlick));
           roughnessFactor = mix(roughnessFactor, 0.22, vFxSeep);
           // puddles: a near-flat sheet with a slightly soft (rippled, dirty) mirror
-          roughnessFactor = mix(roughnessFactor, 0.14, smoothstep(0.45, 0.95, vFxPud));
+          roughnessFactor = mix(roughnessFactor, 0.28, smoothstep(0.4, 0.9, vFxPud));
         }`,
       )
       .replace(
@@ -410,7 +410,7 @@ function applySurfaceFX(mat, fx) {
           float skyK = smoothstep(roof - 0.1, roof + 0.1, fxR.y);
           vec3 skyC = mix(uFxReflHorizon, uFxReflZenith, smoothstep(roof, 0.9, fxR.y));
           vec3 rc = mix(uFxReflWall * (0.75 + 0.5 * texture2D(uFxNoiseTex, vec2(az * 2.0, fxR.y)).g), skyC, skyK);
-          gl_FragColor.rgb += rc * fres * smoothstep(0.15, 0.85, vFxPud);
+          gl_FragColor.rgb += rc * fres * smoothstep(0.4, 0.9, vFxPud);
         }
         #ifdef USE_FOG
         {
@@ -551,15 +551,16 @@ export function getWindowMaterial(side = 'ext') {
               room *= 1.0 - 0.35 * step(abs(hp.y - 0.78), 0.012) * step(abs(hp.x - 0.8), 0.3);
               room *= 1.0 - 0.3 * step(abs(hp.x - 0.15), 0.1) * step(abs(hp.y - 0.62), 0.12);
             } else if (t == tt.y) {
-              room = rd.y > 0.0 ? 0.2 * (0.45 + 0.55 * step(0.25, fract(hp.x * 2.5))) : 0.22 + 0.08 * step(0.5, fract(hp.z * 4.0));
+              room = rd.y > 0.0 ? 0.36 * (0.5 + 0.5 * step(0.25, fract(hp.x * 2.5))) : 0.4 + 0.1 * step(0.5, fract(hp.z * 4.0));
             } else {
-              room = 0.2 + 0.32 * (hp.z / D);
+              // side walls catch the lamp too: a window seen edge-on still glows warm, never a black slot
+              room = 0.45 + 0.45 * (hp.z / D);
             }
             // curtains drawn to either side, folds catching the lamp
             float cx = min(uv0.x, 1.0 - uv0.x);
             float curtain = 1.0 - smoothstep(0.12, 0.2, cx + 0.03 * sin(uv0.y * 9.0));
             float folds = 0.6 + 0.4 * sin(uv0.x * 90.0);
-            room = mix(room, 0.32 * folds, curtain);
+            room = mix(room, 0.5 * folds, curtain);
             // the frame's inner shadow on the glazing edges
             float edge = smoothstep(0.0, 0.06, min(cx, min(uv0.y, 1.0 - uv0.y)));
             room *= 0.45 + 0.55 * edge;
