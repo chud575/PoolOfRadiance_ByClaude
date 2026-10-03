@@ -18,7 +18,7 @@ import { Sculpt, meshSculpt, M_ID, mEuler } from '../../../ui/components/sdfScul
  * parts (rig.js), so per-individual gear costs nothing extra.
  */
 
-export const PAT = { skin: 0, scales: 1, fur: 2, cloth: 3, bone: 4, leather: 5, smooth: 6, spots: 7, metal: 8, mail: 9, scale: 10 };
+export const PAT = { skin: 0, scales: 1, fur: 2, cloth: 3, bone: 4, leather: 5, smooth: 6, spots: 7, metal: 8, mail: 9, scale: 10, dscale: 11, dplate: 12 };
 
 const lin = (hex) => {
   const c = new THREE.Color(hex);
@@ -27,7 +27,7 @@ const lin = (hex) => {
 
 const CACHE = new Map();
 
-class Builder {
+export class SculptBuilder {
   constructor() {
     this.sc = new Sculpt();
     this.tags = [];
@@ -103,7 +103,7 @@ export const LOOKS = {
 export function sculptedFlesh(key, o) {
   if (CACHE.has(key)) return CACHE.get(key);
   const look = LOOKS[o.species] ?? LOOKS.orc;
-  const B = new Builder();
+  const B = new SculptBuilder();
   B.mat('skin', look.skin[0], { pattern: look.skin[1], rough: look.skin[1] === 'scales' ? 0.5 : 0.7 })
     .mat('back', look.back[0], { pattern: look.back[1], rough: 0.6 })
     .mat('belly', look.belly[0], { pattern: look.belly[1], rough: 0.65, edge: 0.2 })
@@ -598,17 +598,24 @@ function skeletonBody(B, o) {
 function toGeometry(B, o, res) {
   const s = o.s;
   const cell = Math.max(0.0068, Math.min(0.0115, 0.0105 * s * (o.species === 'skeleton' ? 0.85 : 1)));
-  const m = meshSculpt(B.sc, { cell, ao: 0.012 * s });
+  return skinSculpt(B.sc, B.tags, res.names, { cell, ao: 0.012 * s, sigma: 0.022 * s });
+}
+
+/**
+ * Mesh a Sculpt and auto-skin every vertex to the bones whose primitives it
+ * lies on (soft-min blend across joints). `tags[i]` names the bone of prim i.
+ * Exported for bespoke creatures (the dragon) that build their own sculpt.
+ */
+export function skinSculpt(sc, tags, names, { cell = 0.01, ao = 0.012, sigma = 0.022 } = {}) {
+  const m = meshSculpt(sc, { cell, ao });
   const n = m.count;
-  const prims = B.sc.prims;
-  const names = res.names;
+  const prims = sc.prims;
   const bi = new Map(names.map((nm, i) => [nm, i]));
-  const tagIdx = prims.map((p, i) => (p.sub ? -1 : bi.get(B.tags[i]) ?? bi.get('chest') ?? 0));
+  const tagIdx = prims.map((p, i) => (p.sub ? -1 : bi.get(tags[i]) ?? bi.get('chest') ?? 0));
   const si = new Uint16Array(n * 4);
   const sw = new Float32Array(n * 4);
   const D = new Float64Array(prims.length);
   const acc = new Float64Array(names.length);
-  const sigma = 0.022 * s;
   for (let v = 0; v < n; v++) {
     const x = m.position[v * 3];
     const y = m.position[v * 3 + 1];
@@ -769,6 +776,34 @@ export const SCULPT_DETAIL_GLSL = `
           float rust = smoothstep(0.62, 0.8, sn3(p * 9.0)) * (1.0 - smoothstep(0.4, 0.9, p.y));
           alb = mix(vec3(0.55 + rv * 0.5) * (0.85 + 0.3 * sn3(vec3(row, 0.0, 0.0) + p * 3.0)), vec3(1.2, 0.75, 0.45), rust) * grime;
           dr = (1.0 - rv) * 0.25 + rust * 0.35 - 0.1; dm = -rust * 0.4;
+        } else if (pid > 10.5 && pid < 11.5) {
+          // Great-wyrm bronze: big overlapping keeled scales (Voronoi plates
+          // shingled along the body), each domed with a worn bright crown;
+          // the crevices between them crusted with verdigris (teal, matte,
+          // non-metal) and dark grime, so the metal reads as old cast bronze.
+          vec3 q = p * vec3(15.0, 17.0, 11.0);
+          vec2 c = cell3(q);
+          float gap = c.y - c.x;
+          float crown = 1.0 - smoothstep(0.0, 0.62, c.x);
+          float crev = 1.0 - smoothstep(0.02, 0.16, gap);
+          vec2 cf = cell3(p * 44.0);
+          float crevF = 1.0 - smoothstep(0.0, 0.1, cf.y - cf.x);
+          h = crown * 0.75 - crev * 0.6 + fine * (sn3(p * 120.0) * 0.2 - crevF * 0.3);
+          float verd = crev * (0.55 + 0.45 * smoothstep(0.35, 0.75, sn3(p * 6.0))) + smoothstep(0.62, 0.8, sn3(p * 4.0 + 9.0)) * 0.35 * (1.0 - crown);
+          verd = clamp(verd, 0.0, 1.0);
+          alb = vec3(0.78 + crown * 0.42) * (0.85 + 0.3 * big);
+          alb = mix(alb, vec3(0.42, 1.25, 1.35) * (0.7 + 0.3 * sn3(p * 13.0)), verd * 0.85);
+          alb *= 1.0 - crev * 0.25;
+          dr = -crown * 0.12 + verd * 0.5; dm = -verd * 0.75 - crev * 0.2;
+        } else if (pid > 11.5) {
+          // Ventral plates: broad transverse bands, polished where they rub, dark seams.
+          float band = fract(p.z * 9.0 + p.y * 3.5);
+          float seam = smoothstep(0.0, 0.08, band) * (1.0 - smoothstep(0.9, 1.0, band));
+          h = seam * (0.6 + 0.4 * sin(band * 3.1416)) + fine * sn3(p * 90.0) * 0.2;
+          alb = vec3(0.7 + 0.35 * seam) * (0.85 + 0.25 * big);
+          float verd = (1.0 - seam) * 0.8;
+          alb = mix(alb, vec3(0.5, 1.15, 1.2), verd * 0.6);
+          dr = (1.0 - seam) * 0.35 - 0.05; dm = -(1.0 - seam) * 0.5;
         } else {
           // Armour scales: overlapping rounded plates in staggered rows, bright rims.
           vec2 uv = vec2((p.x + p.z * 0.6) * 34.0, p.y * 30.0);
@@ -893,7 +928,7 @@ let _statue = null;
  */
 export function statueGeometry() {
   if (_statue) return _statue;
-  const B = new Builder();
+  const B = new SculptBuilder();
   B.mat('skin', 0x86817a, { pattern: 'smooth', rough: 0.9, edge: 0.3, wash: 1.0 })
     .mat('dark', 0x4a4640, { pattern: 'smooth', rough: 0.95, edge: 0.3, wash: 1.0 })
     .mat('moss', 0x5a6440, { pattern: 'smooth', rough: 1, edge: 0.2, wash: 1.0 });

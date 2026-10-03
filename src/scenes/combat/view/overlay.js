@@ -176,16 +176,21 @@ export class Overlay {
             vec2 q = f - 0.5;
             vec2 lq = vec2(dot(q, vec2(-outD.y, outD.x)), dot(q, outD));
             float wear = 0.65 + 0.35 * fract(sin(dot(floor(g * 14.0), vec2(12.9898, 78.233))) * 43758.5453);
-            float cpx = pxG;
-            float chevA = 0.0;
-            for (int k = 0; k < 2; k++) {
-              float off = -0.16 + float(k) * 0.2;
-              float dch = abs(lq.y - off + abs(lq.x) * 0.75) - 0.035;
-              chevA = max(chevA, (1.0 - smoothstep(0.0, cpx * 1.5, dch)) * step(abs(lq.x), 0.3));
-            }
-            float pulse = smoothstep(0.25, 0.0, abs(fract(uTime * 0.45) - (lq.y + 0.5)));
-            LAYER(vec3(0.92, 0.84, 0.62) * 0.75, chevA * 0.26 * wear);
-            LAYER(vec3(1.0, 0.86, 0.5) * 1.3, chevA * pulse * 0.3);
+            float cpx = pxG * 1.5;
+            // A way out: daylight spilling in across the rim square (brightest
+            // at the outer edge), and a painted waymark arrow — a slim shaft
+            // and a broad head, stencilled in worn ochre with a dark outline.
+            float spill = smoothstep(-0.5, 0.5, lq.y);
+            LAYER(vec3(1.0, 0.88, 0.62), spill * spill * 0.16);
+            float shaft = max(abs(lq.x) - 0.04, max(-0.24 - lq.y, lq.y - 0.1));
+            float head = max(abs(lq.x) - (0.33 - lq.y) * 0.9, max(0.06 - lq.y, lq.y - 0.33));
+            float arr = min(shaft, head);
+            float arrA = 1.0 - smoothstep(0.0, cpx, arr);
+            float ring = (1.0 - smoothstep(0.0, cpx, abs(arr - 0.022))) * (1.0 - arrA);
+            float scuff = 0.55 + 0.45 * fract(sin(dot(floor(g * 22.0), vec2(41.3, 17.9))) * 43758.5453);
+            float pulse = smoothstep(0.3, 0.0, abs(fract(uTime * 0.4) - (lq.y + 0.5)));
+            LAYER(vec3(0.05, 0.04, 0.03), ring * 0.35);
+            LAYER(vec3(0.95, 0.74, 0.36), arrA * (0.42 + pulse * 0.25) * wear * scuff);
           }
           gl_FragColor = vec4(col / max(a, 0.0001), a * uAlpha);
         }`,

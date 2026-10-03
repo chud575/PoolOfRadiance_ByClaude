@@ -4,6 +4,7 @@ import { pbr, heraldry } from './textures.js';
 import { ITEMS } from '../../../data/items.js';
 import { splitClasses } from '../../../rules/classes.js';
 import { sculptedFlesh, sculptMaterial, LOOKS } from './sculpted.js';
+import { buildGreatDragon } from './dragon.js';
 
 /**
  * Procedural 3D figures for tactical combat: the six party archetypes (kit read
@@ -108,7 +109,7 @@ export function makeFigureModel(c, index = 0) {
   const seed = hashStr(c.id);
   if (sp.rig === 'quad') return buildRat(sp, seed);
   if (sp.rig === 'spider') return buildSpider(sp, seed);
-  if (sp.rig === 'dragon') return buildDragon(sp, seed);
+  if (sp.rig === 'dragon') return buildGreatDragon(sp, seed);
   // Per-individual variation: gear, helm, stature.
   const pick = (arr, k) => arr[Math.floor(hashStr(`${c.id}:${k}`) * arr.length)];
   // Individuals are numbered from 1: the n-th of a species cycles the weapon list

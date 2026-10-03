@@ -3,6 +3,10 @@ import { h, clear, hotkeyLabel, Frame, MessageLog, Menu } from '../../../ui/UI.j
 import { deriveStats } from '../../../rules/character.js';
 import { ITEMS } from '../../../data/items.js';
 import { SAVE_NAMES } from '../../../rules/classes.js';
+import { RACES } from '../../../rules/races.js';
+
+/** 'lawfulGood' → 'Lawful Good', 'halfElf' → 'Half-Elf' style display words. */
+const words = (id) => String(id ?? '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (m) => m.toUpperCase()).replace(/ ([a-z])/g, (m, a) => ` ${a.toUpperCase()}`);
 import './combat.css';
 
 const FX_LABEL = {
@@ -92,6 +96,8 @@ export class CombatHud {
       nodes.push(tok);
     });
     this.timeline.replaceChildren(...nodes);
+    // The per-turn plate hangs from the timeline: rebuilding the bar must not drop it.
+    if (this.banner?.classList.contains('turn')) this.timeline.append(this.banner);
   }
 
   /** One persistent portrait canvas per combatant, drawn synchronously from the rendered source. */
@@ -244,6 +250,7 @@ export class CombatHud {
     // one that covers the fewest figures (screen points from the scene), so it
     // never sits on the group it describes.
     const pts = this.avoid?.() ?? [];
+    const sheetR = this.sheet?.el.getBoundingClientRect() ?? null;
     // Close spots only: the card stays attached to its target (a leader line
     // joins them), preferring the side that covers the fewest other figures.
     const cands = [[40, -hh - 30], [-w - 40, -hh - 30], [56, -hh / 2], [-w - 56, -hh / 2], [40, 34], [-w - 40, 34], [90, -hh - 50], [-w - 90, -hh - 50]];
@@ -259,9 +266,11 @@ export class CombatHud {
       }
       // Never over the anchor itself, and never drift far from it.
       if (x > px - 20 && x < px + w + 20 && y > py - 20 && y < py + hh + 20) cost += 6;
+      // Never over an open View sheet.
+      if (sheetR && px < sheetR.right + 8 && px + w > sheetR.left - 8 && py < sheetR.bottom + 8 && py + hh > sheetR.top - 8) cost += 12;
       const cxp = Math.max(px, Math.min(px + w, x));
       const cyp = Math.max(py, Math.min(py + hh, y));
-      cost += Math.hypot(cxp - x, cyp - y) / 60;
+      cost += Math.hypot(cxp - x, cyp - y) / 30;
       if (!best || cost < best.cost) best = { px, py, cost };
     });
     this.inspect.style.transform = `translate(${best.px}px, ${best.py}px)`;
@@ -312,7 +321,8 @@ export class CombatHud {
       const a = ch.abilities;
       body = [
         h('h3', [ch.name]),
-        h('div', [`${s.className}, level ${s.levels} — ${ch.race} ${ch.gender ?? ''}, ${ch.alignment ?? ''}`]),
+        h('div', [`${s.className}, level ${s.levels}`]),
+        h('div.who', [[RACES[ch.race]?.name ?? words(ch.race), words(ch.gender), words(ch.alignment)].filter(Boolean).join(' · ')]),
         h('div.grid', ['str', 'int', 'wis', 'dex', 'con', 'cha'].map((k) => h('div', [k.toUpperCase(), h('b', [k === 'str' && a.str === 18 && a.strPct ? `18/${String(a.strPct).padStart(2, '0')}` : String(a[k])])]))),
         h('div.grid', [h('div', ['HP', h('b', [`${ch.hp.cur}/${ch.hp.max}`])]), h('div', ['AC', h('b', [String(s.ac)])]), h('div', ['THAC0', h('b', [String(s.thac0)])])]),
         h('div', { style: { fontSize: '0.85em', margin: '0.4em 0' } }, Object.entries(s.saves).map(([k, v]) => h('div', { style: { display: 'flex', justifyContent: 'space-between' } }, [SAVE_NAMES[k], h('b', [String(v)])]))),

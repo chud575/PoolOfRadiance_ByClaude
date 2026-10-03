@@ -71,7 +71,7 @@ function addRim(mat, facRim = null, tint = null) {
           float bn = bN3(vBP * 6.5) * 0.65 + bN3(vBP * 23.0) * 0.35;
           float th = 1.0 - uBurn.x;
           burnMask = smoothstep(th - 0.08, th + 0.08, bn);
-          burnEdge = smoothstep(0.05, 0.0, abs(bn - th + 0.03)) * step(0.02, uBurn.x);
+          burnEdge = smoothstep(0.09, 0.0, abs(bn - th + 0.03)) * step(0.02, uBurn.x);
           diffuseColor.rgb = mix(diffuseColor.rgb * (1.0 - uBurn.x * 0.55), vec3(0.018, 0.015, 0.013), burnMask * 0.95);
         }`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
@@ -83,7 +83,8 @@ function addRim(mat, facRim = null, tint = null) {
           vec3 nV = normalize(normal);
           float facF = pow(1.0 - clamp(dot(nV, normalize(vViewPosition)), 0.0, 1.0), 2.4) * smoothstep(-0.5, 0.6, nV.y);
           totalEmissiveRadiance += uFacRim * facF * uFacK;
-          totalEmissiveRadiance += vec3(1.0, 0.3, 0.04) * burnEdge * uBurn.y * 1.6 + vec3(0.5, 0.08, 0.01) * burnMask * uBurn.y * 0.12; }`);
+          float emb = smoothstep(0.62, 0.9, bN3(vBP * 41.0)) * burnMask;
+          totalEmissiveRadiance += vec3(1.0, 0.36, 0.05) * burnEdge * uBurn.y * 2.8 + vec3(1.0, 0.25, 0.03) * emb * uBurn.y * 1.4 + vec3(0.5, 0.08, 0.01) * burnMask * uBurn.y * 0.18; }`);
   };
   mat.customProgramCacheKey = () => (sculpt ? 'fig-rim-sculpt-c' : pid >= 0 ? 'fig-rim-detail-c' : 'fig-rim-c');
 }
@@ -582,20 +583,44 @@ export class Figure {
         rootOff.y += Math.abs(Math.sin(u * Math.PI * 2)) * 0.08 * k;
       }
     }
+    // --- Startled (caught by surprise): recoiling, weight thrown back, arms
+    // flung up across the face, head turned, a nervous tremor.
+    if (this.state === 'startled' && !dead) {
+      const tr = Math.sin(it * 17 + this.seed) * 0.03;
+      add('spine', -0.22 + tr, 0.18);
+      add('chest', -0.16, 0.12);
+      add('neck', -0.1, -0.35);
+      add('head', -0.12 + tr, -0.25);
+      set('upperArmL', -1.45, 0, 0.55);
+      set('foreArmL', -1.5);
+      set('upperArmR', -0.9, 0, -0.5);
+      set('foreArmR', -1.25);
+      add('thighL', 0.35);
+      add('thighR', -0.3);
+      add('shinR', 0.4);
+      P['hips@'][1] -= 0.04 * s;
+      rootOff.z -= 0.08 * s;
+    }
     // --- Nauseous: doubled over, a hand to the belly, heaving in slow retches.
     if (this.state === 'sick' && !dead) {
+      // Retching and staggering: doubled right over, one hand clamped to the
+      // mouth, the other braced on a bent knee, the weight lurching sideways.
       const heave = Math.max(0, Math.sin(it * 2.2 + this.seed)) ** 3;
-      add('spine', 0.4 + heave * 0.35);
-      add('chest', 0.25 + heave * 0.2);
-      add('neck', 0.25 + heave * 0.3, Math.sin(it * 0.9) * 0.2);
-      add('head', 0.15 + heave * 0.25);
-      set('upperArmL', -0.75, 0, 0.25);
-      set('foreArmL', -1.5);
-      add('thighL', -0.2);
-      add('thighR', -0.2);
-      add('shinL', 0.3);
-      add('shinR', 0.3);
-      P['hips@'][1] -= 0.05 * s;
+      const lurch = Math.sin(it * 0.8 + this.seed * 2.1);
+      add('spine', 0.62 + heave * 0.35, 0, lurch * 0.12);
+      add('chest', 0.38 + heave * 0.22);
+      add('neck', 0.3 + heave * 0.35, Math.sin(it * 0.9) * 0.25);
+      add('head', 0.2 + heave * 0.3);
+      set('upperArmL', -1.35, 0, 0.35);
+      set('foreArmL', -1.9);
+      set('upperArmR', -0.55, 0, -0.3);
+      set('foreArmR', -0.4);
+      add('thighL', -0.45);
+      add('thighR', -0.25, 0, -0.12 + lurch * 0.08);
+      add('shinL', 0.65);
+      add('shinR', 0.35);
+      P['hips@'][1] -= 0.09 * s;
+      rootOff.x += lurch * 0.08 * s;
     }
     // --- Asleep / held.
     if (this.state === 'asleep' && !dead) {
@@ -676,6 +701,9 @@ export class Figure {
       set('jaw', 0.14 + 0.08 * Math.max(0, Math.sin(it * 0.8)), 0, 0);
       set('wingL', 0, 0, 0.1 * Math.sin(it * 1.1));
       set('wingR', 0, 0, -0.1 * Math.sin(it * 1.1));
+      // The sculpted wyrm's bind pose already stands it square: no quad crouch.
+      if (!walking) for (const n of ['FL', 'FR', 'BL', 'BR']) { set(`leg${n}`, 0); set(`knee${n}`, 0); }
+      set('neck3', -0.08 + Math.sin(it * 0.9 - 1.1) * 0.05, Math.sin(it * 0.7 - 0.9) * 0.08, 0);
       for (const k of ['tail1', 'tail2', 'tail3']) P[k][1] *= 0.45;
       P['body@'][1] = breathe * 0.02 * s;
       const actD = this._act(t);

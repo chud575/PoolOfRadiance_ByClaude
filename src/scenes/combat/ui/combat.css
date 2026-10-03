@@ -158,6 +158,9 @@
 .cb-float em { font-style: normal; font-size: 0.42em; letter-spacing: 0.14em; margin-left: 0.3em; vertical-align: 0.55em; color: #fff0b0; }
 .cb-float.miss { color: #c8c8d8; font-size: 1.1em; font-style: italic; letter-spacing: 0.12em; }
 .cb-float.heal { color: #8dffa0; font-size: 1.7em; }
+.cb-float.alarm { color: #ff5a3a; font-size: 2.1em; font-weight: 800; text-shadow: 0 0 2px #000, 0 2px 4px #000, 0 0 12px rgba(255, 60, 20, 0.7); }
+.cb-surprised::before { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background: radial-gradient(ellipse 72% 70% at 50% 52%, rgba(20, 40, 80, 0) 55%, rgba(18, 36, 78, 0.38) 82%, rgba(8, 16, 40, 0.62) 100%); }
 .cb-float.status { color: #d8c8ff; font-size: 1.05em; letter-spacing: 0.14em; text-transform: uppercase; }
 /* Death callout: the damage numbers' display face, small caps in a deep ember
    red with the same black stroke + glow, flanked by thin rules. */
@@ -190,7 +193,10 @@
 .cb-sheet h3 { margin: 0 0 0.2em; font-family: var(--font-display); letter-spacing: 0.1em; font-weight: 600; }
 .cb-sheet .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.2em 0.8em; margin: 0.5em 0; }
 .cb-sheet .grid div { display: flex; justify-content: space-between; border-bottom: 1px solid rgba(42, 29, 16, 0.2); }
-.cb-sheet .inv { font-size: 0.9em; line-height: 1.5; }
+.cb-sheet { max-height: calc(100vh - 12.5em); overflow-y: auto; }
+.cb-sheet .who { font-size: 0.9em; opacity: 0.85; margin-top: 0.1em; }
+.cb-sheet .inv { font-size: 0.9em; line-height: 1.45; display: grid; grid-template-columns: 1fr 1fr; column-gap: 0.8em; padding-bottom: 0.4em; }
+.cb-sheet .inv div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cb-sheet .inv .eq { color: #5a2a00; font-weight: 600; }
 
 /* ---------- Help / speed ---------- */

@@ -202,7 +202,12 @@ export class Battlefield {
     const party = this.partyCell;
     // Large reachable interiors are halls/temples: an aisle of columns, an altar and statue.
     const rooms = this.features.rooms;
-    if (rooms.length >= 6) {
+    // A chamber holding radiant water (the Pool) is its own set piece: no
+    // temple furniture, no household debris.
+    let pool = false;
+    if (this.map) for (let cy = 0; cy < this.cellsH && !pool; cy++) for (let cx = 0; cx < this.cellsW; cx++) if (this.map.getCell(this.cx0 + cx, this.cy0 + cy) === CELL.WATER) { pool = true; break; }
+    this.features.pool = pool;
+    if (rooms.length >= 6 && !pool) {
       const xs = rooms.map((r) => r.cx);
       const ys = rooms.map((r) => r.cy);
       const rx0 = Math.min(...xs) * SUB;
@@ -243,7 +248,7 @@ export class Battlefield {
         if (k === CELL.RUBBLE && r < 0.2) type = 'rubble';
         else if (nearSolid && r < 0.07) type = r < 0.035 ? 'barrel' : 'crate';
         else if (k === CELL.COURTYARD && r > 0.975) type = 'column';
-        else if (k === CELL.INTERIOR && r < 0.05) type = 'debris';
+        else if (k === CELL.INTERIOR && r < 0.05 && !pool) type = 'debris';
         if (type) {
           this.block[i] = 2;
           this.features.props.push({ x, y, type, r });

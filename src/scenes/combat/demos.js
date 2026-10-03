@@ -190,6 +190,8 @@ export const DEMOS = {
       hitList.forEach((m, k) => {
         const fm = sc.figures.get(m.id);
         const d = dmg[k % dmg.length];
+        // Two tough ones live through it, smouldering (they stay on the timeline).
+        if (k % 2 === 1) m.hp.cur = m.hp.max = d + 5;
         fm.play('hit', detonate + 0.02, 0.6, { power: 1.8 });
         fm.burn(detonate + 0.01);
         fm.knock(detonate + 0.01, fm.pos.x - centre.x, fm.pos.z - centre.z, 0.5);
@@ -199,7 +201,7 @@ export const DEMOS = {
         // Numbers wait for the bloom, then step out past the fire's rim one by one.
         const out = new THREE.Vector3(fm.pos.x - centre.x, 0, fm.pos.z - centre.z);
         if (out.lengthSq() < 0.01) out.set(0.3, 0, 0.6);
-        out.normalize().multiplyScalar(R * 0.42).setY(0.5);
+        out.normalize().multiplyScalar(R * 0.18).setY(0.35);
         sc._say(fm, String(d), 'dmg', detonate + 0.14 + k * 0.05, { cls: 'fire', push: out, tag: { name: m.name, hp: Math.max(0, hp0 - d) / m.hp.max, lost: Math.min(hp0, d) / m.hp.max } });
         // Results land with the blast, not before it.
         sc.at(detonate + 0.02, () => {
@@ -244,6 +246,7 @@ export const DEMOS = {
       const b = foes.slice().sort((p, q) => Battlefield.dist(q.x, q.y, a.x, a.y) - Battlefield.dist(p.x, p.y, a.x, a.y))[0];
       const ca = sq2w(a.x + 0.5, a.y + 0.5);
       sc.vfx.stinkingCloud(-4, ca, 2 * TILE, 'demo-cloud', 2.3, { night: sc.night });
+      sc._log(`${caster.name.toUpperCase()} CASTS STINKING CLOUD.`, 'combat');
       // Whoever stands in the vapour is retching (the status shows on the figure).
       for (const m of foes) {
         if (m.x >= a.x - 0 && m.x <= a.x + 1 && m.y >= a.y && m.y <= a.y + 1) {
@@ -254,6 +257,8 @@ export const DEMOS = {
           sc.vfx.retch(-2 + m.x * 0.37, () => sc._mouthPos(f), `sick-${m.id}`, m.x * 3 + m.y, () => f.yaw);
         }
       }
+      const sickN = (sc._sick?.size ?? 0);
+      if (sickN) sc._log(`${sickN === 1 ? 'A KOBOLD RETCHES' : `${sickN} KOBOLDS RETCH`}, HELPLESS IN THE STENCH.`, 'warn');
       // (Sleep has its own review frame; mixing it in muddles both effects.)
       const cb = sq2w(b.x, b.y);
       const mid = ca.clone().lerp(cb, 0.5);
@@ -267,6 +272,22 @@ export const DEMOS = {
       // Frame the affected area and the caster, every figure whole.
       frameAround(sc, [a, b, caster], 2.5, 10, 15);
       sc._refresh(caster);
+    },
+  },
+
+  /** The turn hand-off for review: the "your move" plate under the timeline, a Guard and a Delay callout on their owners (t≈0.5). */
+  banner: {
+    async stage(sc) {
+      const hero = sc.party.find((c) => c.ref.levels.fighter) ?? sc.party[0];
+      setActive(sc, hero);
+      sc._frameCombatants(true, hero);
+      sc.hud.showBanner(`${hero.name}`, 'Your move', -0.2, 1.9, { turn: true });
+      const g = sc.party.find((c) => c !== hero);
+      const d = sc.party.find((c) => c !== hero && c !== g);
+      if (g) { g.guarding = true; sc._say(sc.figures.get(g.id), 'Guard', 'status', 0.2, { life: 9 }); }
+      if (d) { d.delayed = true; sc._say(sc.figures.get(d.id), 'Delay', 'status', 0.25, { life: 9 }); }
+      sc._log(`${hero.name.toUpperCase()}'S TURN.`, 'combat');
+      sc._refresh(hero);
     },
   },
 

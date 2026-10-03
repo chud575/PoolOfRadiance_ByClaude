@@ -6,6 +6,7 @@ import * as TexLib from '../../render/textures/index.js';
 import { getGlowTexture } from '../../render/textures/index.js';
 import { getEncounter, ENCOUNTERS } from '../../data/encounters.js';
 import { getMap, hasMap } from '../../data/maps/index.js';
+import { CELL } from '../../data/maps/MapGrid.js';
 import { SPELLS } from '../../data/spells.js';
 import { ITEMS } from '../../data/items.js';
 import { roll } from '../../rules/dice.js';
@@ -108,7 +109,19 @@ export default class CombatScene extends Scene {
       this.rig.sun.shadow.radius = 2.2;
       s.fog = new THREE.FogExp2(keys.fog, 0.0085);
     }
-    s.add(createSkyDome({ hour }));
+    // Underground (dungeon maps): no sky. A dim cool wash from the shafts high
+    // above, near-black vault fog, and the scene's light comes from the flames
+    // and (in the Pool chamber) the radiant water itself.
+    this.indoor = loc.map?.kind === 'dungeon';
+    if (this.indoor) {
+      this.rig.sun.intensity = 0.55;
+      this.rig.sun.color.set(0x7088b0);
+      this.rig.hemi.intensity = 0.32;
+      this.rig.hemi.color.set(0x4a4038);
+      this.rig.hemi.groundColor?.set(0x2a1a0c);
+      s.fog = new THREE.FogExp2(0x070605, 0.02);
+      s.background = new THREE.Color(0x050404);
+    } else s.add(createSkyDome({ hour }));
     this._envMap(hour);
 
     // ------------------------------------------------ combatants
@@ -135,6 +148,9 @@ export default class CombatScene extends Scene {
       s.add(l);
       this.torchLights.push(l);
     }
+    // The Pool's own light (dark unless the battlefield holds radiant water).
+    this.poolLight = new THREE.PointLight(0xffc860, 0, 26, 1.3);
+    s.add(this.poolLight);
     // Soft camera-side fill so figures read against the ground (a classic tactics-cam trick).
     // At night the fill is the warm spill of the braziers and candles, so the
     // party keeps its local colour under the cold moon.
@@ -172,12 +188,12 @@ export default class CombatScene extends Scene {
       const l = this.torchLights[i];
       if (f.altar) {
         l.color.set(0xffb468); // candle pool on the altar
-        l.intensity = this.night ? 16 : 5;
+        l.intensity = this.night || this.indoor ? 16 : 5;
         l.distance = 9;
       } else {
         // Capped per light, with a gentler falloff: flames pool warm light on
         // the masonry instead of blowing a hot disc onto the nearest wall.
-        l.intensity = (this.night ? 13 : 4) * (f.brazier ? 1.25 : 1);
+        l.intensity = (this.night || this.indoor ? 13 : 4) * (f.brazier ? 1.25 : 1);
         l.distance = f.brazier ? 13 : 11;
         l.decay = 1.5;
       }
@@ -188,8 +204,22 @@ export default class CombatScene extends Scene {
       l.userData.base = l.intensity;
       f.light = l;
     });
+    if (this.diorama.pool) {
+      // The radiant water lights the chamber: a golden key from the basin and a
+      // gold rim on every figure that stands against it.
+      const pl = this.diorama.pool;
+      this.poolLight.position.set(pl.x, 1.6, pl.z);
+      this.poolLight.intensity = 34;
+      this.poolLight.userData.base = 34;
+      this.rim.color.set(0xffc070);
+      this.rim.intensity = 1.6;
+    }
+    if (this.indoor) {
+      this.fill.color.set(0xd8b890);
+      this.fill.intensity = 0.42;
+    }
     // Figure rim light: cool moonlit edge at night, warm sky edge by day.
-    RIM.uRimColor.value.set(this.night ? 0x6a88d0 : 0x8a7a64).multiplyScalar(this.night ? 1.7 : 0.55);
+    RIM.uRimColor.value.set(this.diorama.pool ? 0xffb860 : this.night ? 0x6a88d0 : 0x8a7a64).multiplyScalar(this.diorama.pool ? 0.9 : this.night ? 1.7 : 0.55);
 
     this._placeCombatants();
     this.engine = new CombatEngine({ rng, field: this.field, party: this.party, monsters: this.monsters });
@@ -262,12 +292,12 @@ export default class CombatScene extends Scene {
       l.userData.boss = fig;
       l.userData.home = null;
       l.color.set(0xff8a30);
-      l.intensity = l.userData.base = this.night ? 26 : 14;
+      l.intensity = l.userData.base = this.night ? 26 : this.indoor ? 8 : 14;
       l.distance = 14;
       l.decay = 1.5;
       const S = fig.model.scale ?? 1;
-      for (const [bone, p, size] of [['chest', [0, 0.5, -0.1], 0.42], ['body', [0, 0.48, -0.3], 0.5], ['tail1', [0, 0.2, -0.4], 0.3]]) {
-        const fl = makeFlame(size * S, this.bossFlames.length * 2.3 + 1);
+      for (const [bone, p, size] of fig.model.flameSpots ?? [['chest', [0, 0.5, -0.1], 0.42], ['body', [0, 0.48, -0.3], 0.5], ['tail1', [0, 0.2, -0.4], 0.3]]) {
+        const fl = makeFlame(size * S, this.bossFlames.length * 2.3 + 1, { glow: 0.45, glowA: 0.35 });
         fl.position.set(p[0] * S, p[1] * S, p[2] * S);
         fig.b[bone]?.add(fl);
         this.bossFlames.push(fl);
@@ -370,11 +400,13 @@ export default class CombatScene extends Scene {
 
     if (this.demo) {
       await this.demo.stage(this);
+      this._aimSun();
       this._refresh(this.demoActive ?? null);
       this.diorama.update(this.time);
       this._updateFigures();
       return;
     }
+    this._aimSun();
     performance.mark?.('combat:built');
     this.director = this._run();
     this.director.catch((e) => console.error('[combat] director failed', e));
@@ -382,9 +414,38 @@ export default class CombatScene extends Scene {
   }
 
   // =================================================================== setup helpers
+  /**
+   * Daylight is art-directed to the opening camera: a low warm sun from over
+   * the lens's left shoulder, so the faces we look at are lit, the fight
+   * stands in a sun pool and long shadows rake away from us across the paving.
+   */
+  _aimSun() {
+    if (this.night || this.indoor || !this.cam) return;
+    const sun = this.rig.sun;
+    const len = sun.position.distanceTo(this.center);
+    const el = 0.62;
+    // Pick, among bearings over either shoulder of the lens, the one that
+    // leaves the most combatants standing in sunlight (houses don't shade them).
+    const pts = (this.engine?.all ?? []).map((c) => sq2w(c.x, c.y).setY(1.0));
+    const at = (az) => new THREE.Vector3(this.center.x + Math.sin(az) * Math.cos(el) * len, Math.sin(el) * len, this.center.z + Math.cos(az) * Math.cos(el) * len);
+    let best = null;
+    for (const off of [-0.8, 0.8, -1.2, 1.2, -0.45, 0.45, -1.6, 1.6]) {
+      const az = this.cam.goalYaw + off;
+      let shaded = 0;
+      for (const p of pts) shaded += this.diorama.occluders(at(az), [p]) > 0 ? 1 : 0;
+      const score = shaded + Math.abs(off) * 0.15 + (off > 0 ? 0.05 : 0);
+      if (!best || score < best.score) best = { az, score };
+    }
+    sun.position.copy(at(best.az));
+    sun.target?.position.copy(this.center);
+    sun.target?.updateMatrixWorld();
+    if (this.hour < 10 || this.hour > 16) sun.color.lerp(new THREE.Color(0xffc080), 0.35);
+    sun.shadow.needsUpdate = true;
+  }
+
   _location(params) {
     const { game } = this.ctx;
-    let mapId = params.map ?? game.location?.map ?? 'phlan_slums';
+    let mapId = params.map ?? (this.encounter?.art?.setting === 'pool' && this.ctx.debug.active ? 'pool_pyramid' : null) ?? game.location?.map ?? 'phlan_slums';
     if (!hasMap(mapId)) mapId = 'phlan_slums';
     const map = getMap(mapId);
     let at = { x: game.location?.x ?? map.start.x, y: game.location?.y ?? map.start.y };
@@ -463,7 +524,26 @@ export default class CombatScene extends Scene {
       }
     }
     cands.sort((a, b) => b.score - a.score);
-    const anchor = cands[0] ?? { x: f.w - 2, y: 1 };
+    let anchor = cands[0] ?? { x: f.w - 2, y: 1 };
+    // A great wyrm rises from the Pool: it stands on the brink of the water,
+    // its bulk and tail over the basin, facing the party across open floor.
+    if (this.monsters.some((m) => m.monsterId === 'tyranthraxus') && this.mapObj) {
+      const wet = (x, y) => {
+        if (!f.inBounds(x, y)) return false;
+        const cl = f.cellOf(x, y);
+        return this.mapObj.getCell(cl.x, cl.y) === CELL.WATER;
+      };
+      let best = null;
+      for (const c of cands) {
+        let w = 0;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (wet(c.x + dx, c.y + dy)) w++;
+        if (!w) continue;
+        const d = Math.hypot(c.x - start[0], c.y - start[1]);
+        const sc = w * 0.6 - Math.abs(d - 5.5) - Math.abs(c.x - start[0]) * 0.25;
+        if (!best || sc > best.sc) best = { x: c.x, y: c.y, sc };
+      }
+      if (best) anchor = best;
+    }
     const monSq = bfs(anchor.x, anchor.y, this.monsters.length, notRim);
     this.monsters.forEach((c, i) => {
       [c.x, c.y] = monSq[i] ?? [f.w - 1, f.h - 1];
@@ -502,7 +582,10 @@ export default class CombatScene extends Scene {
     const es = new THREE.Scene();
     const mat = new THREE.ShaderMaterial({
       side: THREE.BackSide,
-      uniforms: { uTop: { value: new THREE.Color(k.skyTop) }, uHor: { value: new THREE.Color(k.skyHorizon) }, uGround: { value: new THREE.Color(this.night ? 0x05060a : 0x2a2620) }, uWarm: { value: this.night ? 0.6 : 0.15 },
+      uniforms: this.indoor
+        ? { uTop: { value: new THREE.Color(0x060505) }, uHor: { value: new THREE.Color(0x22160c) }, uGround: { value: new THREE.Color(0x7a5418) }, uWarm: { value: 0.9 },
+          uSun: { value: new THREE.Vector3(0.3, -0.5, 0.8).normalize() }, uSunCol: { value: new THREE.Color(0xffb850) } }
+        : { uTop: { value: new THREE.Color(k.skyTop) }, uHor: { value: new THREE.Color(k.skyHorizon) }, uGround: { value: new THREE.Color(this.night ? 0x05060a : 0x2a2620) }, uWarm: { value: this.night ? 0.6 : 0.15 },
         uSun: { value: this.rig.sun.position.clone().sub(this.center).normalize() }, uSunCol: { value: new THREE.Color(this.night ? 0x5a6a90 : 0xffe2b0) } },
       vertexShader: 'varying vec3 vD; void main(){ vD = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
       // Sky gradient plus a sun disc and a broken skyline of rooftops: metals
@@ -521,7 +604,7 @@ export default class CombatScene extends Scene {
     es.add(new THREE.Mesh(new THREE.SphereGeometry(10, 32, 16), mat));
     const env = pm.fromScene(es, 0.02, 0.1, 100, { size: 64 }).texture;
     this.scene3d.environment = env;
-    this.scene3d.environmentIntensity = this.night ? 0.5 : 0.9;
+    this.scene3d.environmentIntensity = this.indoor ? 0.8 : this.night ? 0.5 : 0.9;
     pm.dispose();
     mat.dispose();
     this.own(() => env.dispose());
@@ -547,6 +630,12 @@ export default class CombatScene extends Scene {
       }
     });
     for (const o of hidden) o.visible = false;
+    // The active hero's x-ray silhouette is a play aid, not part of its likeness.
+    const xr = (this._xrayFig?.xray ?? []).filter((m) => m.visible);
+    for (const m of xr) {
+      m.visible = false;
+      hidden.push(m);
+    }
     // Spell flashes must not wash out the portraits.
     const vfxLight = this.vfx.light.intensity;
     this.vfx.light.intensity = 0;
@@ -1243,7 +1332,11 @@ export default class CombatScene extends Scene {
       this.ctx.ui.message('No valid target in range or sight.', 'warn');
       return;
     }
-    list = list.sort((a, b) => Battlefield.dist(c.x, c.y, a.x, a.y) - Battlefield.dist(c.x, c.y, b.x, b.y));
+    const heal = this.mode === 'target' && /cure|heal/i.test(this.modeData.spell ?? '');
+    // Healing goes first to whoever is worst hurt (the fallen, then the lowest
+    // share of hit points); everything else to the nearest target.
+    const need = (o) => (o.hp ? o.hp.cur / Math.max(1, o.hp.max) : 1);
+    list = list.sort((a, b) => (heal ? need(a) - need(b) : 0) || Battlefield.dist(c.x, c.y, a.x, a.y) - Battlefield.dist(c.x, c.y, b.x, b.y));
     this.aimIdx = (((this.aimIdx ?? 0) + d) % list.length + list.length) % list.length;
     this.cursor = { x: list[this.aimIdx].x, y: list[this.aimIdx].y };
     this._hoverSquare(this.cursor);
@@ -1306,7 +1399,7 @@ export default class CombatScene extends Scene {
       return;
     }
     const occ = e.occupantAt(sq.x, sq.y) ?? e.occupantAt(sq.x, sq.y, { includeDown: true });
-    const pos = this.mouseClient ?? this._screenOf(sq);
+    const pos = { ...(this.mouseClient ?? this._screenOf(sq)) };
     const myTurn = c && this.turnDone && !this.busy;
     const content = [];
     let bad = false;
@@ -1322,11 +1415,13 @@ export default class CombatScene extends Scene {
           if (p && p.length && p[p.length - 1].cost <= c.mp) reachNote = `Move ${fmtMp(p[p.length - 1].cost)} and attack`;
           else bad = true;
         }
-        content.push(h('div.pct', [h('b', [`${Math.round(pv.chance * 100)}%`]), h('span', [`to hit · ${pv.dmg} dmg${pv.attacks > 1 ? ` ×${pv.attacks}` : ''}`])]));
-        if (c.side === 'party') content.push(h('div.wpn', [`${pv.ranged ? 'Missile' : 'Melee'} · ${pv.weapon}${pv.dice ? ` (${pv.dice})` : ''}`]));
-        content.push(h('div.bar', [h('i', { style: { width: `${pv.chance * 100}%` } })]));
-        if (pv.notes.length) content.push(h('div.note', [pv.notes.join(' · ')]));
-        if (!pv.ok) content.push(h('div', { class: reachNote ? 'note' : 'warn' }, [reachNote || pv.reason]));
+        if (pv.ok || reachNote) {
+          content.push(h('div.pct', [h('b', [`${Math.round(pv.chance * 100)}%`]), h('span', [`to hit · ${pv.dmg} dmg${pv.attacks > 1 ? ` ×${pv.attacks}` : ''}`])]));
+          if (c.side === 'party') content.push(h('div.wpn', [`${pv.ranged ? 'Missile' : 'Melee'} · ${pv.weapon}${pv.dice ? ` (${pv.dice})` : ''}`]));
+          content.push(h('div.bar', [h('i', { style: { width: `${pv.chance * 100}%` } })]));
+          if (pv.notes.length) content.push(h('div.note', [pv.notes.join(' · ')]));
+          if (reachNote) content.push(h('div.note', [reachNote]));
+        } else content.push(h('div.warn', [pv.reason]));
         this.overlay.targetRing.visible = true;
         this.overlay.targetRing.position.set(occ.x * TILE + TILE / 2, 0.04, occ.y * TILE + TILE / 2);
         if (this.mode === 'move' && reachNote) {
@@ -1373,6 +1468,7 @@ export default class CombatScene extends Scene {
         content.push(h('div.note', [`Catches ${foes.length} foe${foes.length === 1 ? '' : 's'}${foes.length ? `: ${foes.map((o) => o.name).slice(0, 4).join(', ')}${foes.length > 4 ? '…' : ''}` : ''}`]));
       }
       if (!can.ok) { content.push(h('div.warn', [can.reason])); bad = true; }
+      if (can.ok && occ && occ.hp && /cure|heal/i.test(spell) && occ.hp.cur >= occ.hp.max) content.push(h('div.warn', ['Unhurt — healing would be wasted']));
       if (can.ok && affected.some((o) => !e.hostileTo(c, o)) && tact.hostile && tact.shape !== 'single') content.push(h('div.warn', ['Allies are in the area!']));
       if (tact.target !== 'self' && tact.target !== 'direction') this.overlay.setRay({ x: c.x, y: c.y }, sq, this.field.losBlock(c.x, c.y, sq.x, sq.y), { arc: tact.vfx === 'fireball' || tact.vfx === 'missile' ? 1.3 : 0.9 });
       else this.overlay.setRay(null, null);
@@ -1390,6 +1486,14 @@ export default class CombatScene extends Scene {
     } else this.overlay.setRay(null, null);
     if (this.mode === 'aim' && myTurn && !occ) content.push(h('div.s', ['No target here']));
     this.overlay.setHover(sq, bad);
+    if (this.hud.sheet && !occ) content.length = 0;
+    // Aim / spell cards sit beside the target (its chest), not wherever the pointer is.
+    if ((this.mode === 'aim' || this.mode === 'target') && occ) {
+      const f = this.figures.get(occ.id);
+      const v = sq2w(sq.x, sq.y).setY((f?.model.height ?? 1.6) * 0.7).project(this.camera);
+      pos.x = (v.x * 0.5 + 0.5) * window.innerWidth;
+      pos.y = (-v.y * 0.5 + 0.5) * window.innerHeight;
+    }
     // Keyboard / scripted cursor: anchor the card to the square in the world.
     this.hud.showInspect(content.length ? content : null, pos.x, pos.y, this.mouseClient ? null : sq2w(sq.x, sq.y).setY(occ ? 1.2 : 0.3));
   }
@@ -1489,6 +1593,14 @@ export default class CombatScene extends Scene {
         this.ctx.audio.sfx('bump');
         return;
       }
+      // A heal on someone already whole is wasted: ask once (press again to cast anyway).
+      if (/cure|heal/i.test(spell) && occ && occ.hp && occ.hp.cur >= occ.hp.max && this._wasteOk !== `${occ.id}:${spell}`) {
+        this._wasteOk = `${occ.id}:${spell}`;
+        this.ctx.ui.message(`${occ.name} is unhurt — the spell would be wasted. Confirm again to cast anyway.`, 'warn');
+        this.ctx.audio.sfx('bump');
+        return;
+      }
+      this._wasteOk = null;
       const src = this.modeData.source;
       this._act(() => (src ? e.use(c, src.index, sq) : e.cast(c, spell, sq)));
       return;
@@ -1580,6 +1692,7 @@ export default class CombatScene extends Scene {
       this.ctx.bus.emit('combat:event', { ev, engine: e }); // structured feed for the audio director
       switch (ev.type) {
         case 'round':
+          if (this._surpriseOn && ev.round > (e.surpriseRounds ?? 0)) this._showSurprise(null);
           this._refresh(e.active());
           if (ev.round > 1) {
             this.hud.showBanner(`Round ${ev.round}`, null, this.time, 0.8);
@@ -1622,6 +1735,7 @@ export default class CombatScene extends Scene {
         case 'surprise':
           this._log(ev.text, ev.side === 'party' ? 'warn' : 'combat');
           this.hud.showBanner('Surprise!', ev.side === 'party' ? 'The party is caught off guard' : 'The foe is caught off guard', this.time, 1.6);
+          this._showSurprise(ev.side);
           if (!this.snap) await this.wait(1.0 / this.speed);
           break;
         case 'effect':
@@ -1741,12 +1855,41 @@ export default class CombatScene extends Scene {
     return { name: c.name, hp: Math.max(0, shown - dmg) / c.hp.max, lost: Math.min(Math.max(0, shown), dmg) / c.hp.max };
   }
 
+  /**
+   * The surprised side reels: startled recoil poses, a red "!" pinned over each
+   * head, and (when it is the party) a cold vignette closing in on the frame.
+   * `side` null clears it all.
+   */
+  _showSurprise(side) {
+    for (const f of this._surpriseTicks ?? []) {
+      f.el.remove();
+      const i = this.hud.floats.indexOf(f);
+      if (i >= 0) this.hud.floats.splice(i, 1);
+    }
+    this._surpriseTicks = [];
+    for (const fig of this._surpriseFigs ?? []) if (fig.state === 'startled') fig.setState('idle');
+    this._surpriseFigs = [];
+    this.hud.root.classList.toggle('cb-surprised', side === 'party');
+    this._surpriseOn = !!side;
+    if (!side) return;
+    for (const c of this.engine.all) {
+      if (c.side !== side || this.engine.out(c)) continue;
+      const fig = this.figures.get(c.id);
+      if (!fig) continue;
+      if (fig.state === 'idle') fig.setState('startled');
+      this._surpriseFigs.push(fig);
+      this.hud.float('!', 'alarm', null, this.time, { follow: () => this._headPos(fig).setY(this._headPos(fig).y + 0.1), unit: fig, life: 1e6, rise: 0.15 });
+      this._surpriseTicks.push(this.hud.floats[this.hud.floats.length - 1]);
+    }
+  }
+
   _say(fig, text, kind, t, o = {}) {
     if (!fig) return;
     // Action callouts (Guard, Delay, Asleep...) ride well above the speaker's
     // head so they never sit across the figures in the next rank.
-    const lift = kind === 'status' ? (fig.model.height ?? 1.6) * 0.5 : 0;
-    this.hud.float(text, kind, null, t, { follow: lift ? () => this._headPos(fig).setY(this._headPos(fig).y + lift) : () => this._headPos(fig), unit: fig, ...o });
+    // Status callouts sit just over the head and barely rise, pinned to their owner.
+    const lift = kind === 'status' ? 0.08 : 0;
+    this.hud.float(text, kind, null, t, { follow: lift ? () => this._headPos(fig).setY(this._headPos(fig).y + lift) : () => this._headPos(fig), unit: fig, ...(kind === 'status' ? { rise: 0.25 } : {}), ...o });
   }
 
   /** Just above the head bone (or the model top for rigs without one). */
@@ -2043,6 +2186,19 @@ export default class CombatScene extends Scene {
       const back = 3.6 / Math.tan(this.cam.goalPitch) / TILE;
       mark.push({ x: Math.round(st.x - Math.sin(this.cam.goalYaw) * back), y: Math.round(st.y - Math.cos(this.cam.goalYaw) * back) });
     }
+    // Towering foes (Tyranthraxus) are framed whole too: their footprint and
+    // the point their head projects to.
+    const tall = [];
+    if (st && mark.length) tall.push({ x: st.x * TILE + TILE / 2, z: st.y * TILE + TILE / 2, h: 4.1 });
+    for (const c of live) {
+      const fm = this.figures.get(c.id)?.model;
+      if (!fm || (fm.height ?? 0) < 3) continue;
+      for (const [dx, dy] of [[-2, -2], [2, -2], [-2, 2], [2, 2]]) mark.push({ x: c.x + dx, y: c.y + dy });
+      const back = (fm.height * 0.85) / Math.tan(this.cam.goalPitch) / TILE;
+      mark.push({ x: Math.round(c.x - Math.sin(this.cam.goalYaw) * back), y: Math.round(c.y - Math.cos(this.cam.goalYaw) * back) });
+      const p = sq2w(c.x, c.y);
+      tall.push({ x: p.x, z: p.z, h: fm.top ?? fm.height, r: fm.span ?? 0 });
+    }
     let fit = this._fitBox([...live, ...mark]);
     if (fit.need > MAX + 6.5) fit = this._fitBox(live);
     if (fit.need > MAX) fit = this._fitBox([act, ...near, ...allies]);
@@ -2056,20 +2212,26 @@ export default class CombatScene extends Scene {
       cz += (ap.z - cz) * k;
     }
     let dist = Math.max(MIN, Math.min(MAX + (mark.length ? 6.5 : 0), need));
-    if (mark.length) {
-      // Verify by projection that the statue's head clears the top HUD band
-      // (and its plinth the bottom one); ease back / slide toward it until whole.
-      const top = new THREE.Vector3(st.x * TILE + TILE / 2, 4.1, st.y * TILE + TILE / 2);
+    for (const tp of tall) {
+      // Verify by projection that the tall thing's head clears the top HUD band
+      // (its foot the bottom one, both clear of the side panels); ease back /
+      // slide toward it until whole.
+      const top = new THREE.Vector3(tp.x, tp.h, tp.z);
       const foot = top.clone().setY(0);
       const sa = this._safeArea();
       const yTop = 1 - (2 * 6.9 * 16 * (sa.H / 900)) / sa.H;
-      for (let k = 0; k < 10; k++) {
+      // Its breadth across the screen (wings, tail): points either side along the camera's right.
+      const rx = Math.cos(this.cam.goalYaw) * (tp.r ?? 0) * 0.7;
+      const rz = -Math.sin(this.cam.goalYaw) * (tp.r ?? 0) * 0.7;
+      const side = [new THREE.Vector3(tp.x + rx, tp.h * 0.5, tp.z + rz), new THREE.Vector3(tp.x - rx, tp.h * 0.5, tp.z - rz), new THREE.Vector3(tp.x + rx, 0, tp.z + rz), new THREE.Vector3(tp.x - rx, 0, tp.z - rz)];
+      for (let k = 0; k < 18; k++) {
         const a = this._projectGoal(top, cx, cz, dist);
         const b = this._projectGoal(foot, cx, cz, dist);
-        if (a.y <= yTop && b.y >= -0.78) break;
+        const wide = side.every((q) => Math.abs(this._projectGoal(q, cx, cz, dist).x) < 0.64);
+        if (a.y <= yTop && b.y >= -0.78 && Math.abs(a.x) < 0.62 && Math.abs(b.x) < 0.62 && wide) break;
         dist *= 1.05;
-        cx += (top.x - cx) * 0.06;
-        cz += (top.z - cz) * 0.06;
+        cx += (top.x - cx) * 0.08;
+        cz += (top.z - cz) * 0.08;
       }
     }
     this.fightCenter = new THREE.Vector3(cx, 0, cz);
@@ -2311,10 +2473,39 @@ export default class CombatScene extends Scene {
         }
       }
     }
+    // Footprint offsets: a figure standing right behind another (as the lens
+    // sees it) steps a little aside within its square, so no two read as one
+    // fused silhouette. Purely visual; eased, settled when the clock is frozen.
+    const yaw = this.cam?.yaw ?? 0;
+    const rx = Math.cos(yaw), rz = -Math.sin(yaw);
+    const fx = Math.sin(yaw), fz = Math.cos(yaw);
+    const stand = [];
+    for (const c of this.engine.all) {
+      const fig = this.figures.get(c.id);
+      if (!fig || fig.walk || fig.death || (fig.model.height ?? 0) > 3) continue;
+      stand.push(fig);
+    }
+    const dtN = this.frozen ? 1 : Math.min(1, (this._dtLast ?? 0.016) * 6);
+    for (const a of stand) {
+      let push = 0;
+      for (const b of stand) {
+        if (a === b) continue;
+        const dx = a.pos.x - b.pos.x, dz = a.pos.z - b.pos.z;
+        const lat = dx * rx + dz * rz;
+        const dep = -(dx * fx + dz * fz); // > 0: a stands behind b
+        if (dep < 0.3 || dep > 2.4 || Math.abs(lat) > 0.6) continue;
+        const sgn = Math.abs(lat) > 0.02 ? Math.sign(lat) : (a.seed > b.seed ? 1 : -1);
+        push += sgn * (0.6 - Math.abs(lat)) * (1 - (dep - 0.3) / 2.1) * 0.75;
+      }
+      push = Math.max(-0.38, Math.min(0.38, push));
+      a.nudgeCur ??= new THREE.Vector3();
+      a.nudgeCur.lerp(new THREE.Vector3(rx * push, 0, rz * push), dtN);
+    }
     for (const c of this.engine.all) {
       const fig = this.figures.get(c.id);
       if (!fig) continue;
       fig.update(t);
+      if (fig.nudgeCur && !fig.walk && !fig.death) fig.root.position.add(fig.nudgeCur);
       const p = fig.root.position;
       fig.blob.position.set(p.x, 0.018, p.z);
       fig.proxy.position.set(p.x, 0, p.z);
@@ -2338,11 +2529,66 @@ export default class CombatScene extends Scene {
       this.overlay.activeMarker.visible = false;
       this.overlay.setFocus(undefined, null);
     }
+    // The active hero is never lost behind a wall or a bigger figure: where
+    // anything hides it, a soft gilt silhouette shows through (x-ray).
+    let xf = af && act.side === 'party' && !this.engine.out(act) && !this.done ? af : null;
+    if (xf) {
+      // Only when something actually stands between the lens and the hero.
+      const chest = xf.root.position.clone().setY((xf.model.height ?? 1.6) * 0.55);
+      let hidden = this.diorama.occluders(this.camera.position, [chest]) > 0;
+      if (!hidden) {
+        const ray = new THREE.Ray(this.camera.position.clone(), chest.clone().sub(this.camera.position).normalize());
+        const dMax = this.camera.position.distanceTo(chest);
+        const box = new THREE.Box3();
+        for (const o of this.engine.all) {
+          const f2 = this.figures.get(o.id);
+          if (!f2 || f2 === xf || this.engine.out(o)) continue;
+          const r = (f2.model.radius ?? 0.4) * 0.8;
+          box.min.set(f2.root.position.x - r, 0, f2.root.position.z - r);
+          box.max.set(f2.root.position.x + r, (f2.model.height ?? 1.6) * 0.95, f2.root.position.z + r);
+          const hit = ray.intersectBox(box, new THREE.Vector3());
+          if (hit && hit.distanceTo(this.camera.position) < dMax - 0.4) { hidden = true; break; }
+        }
+      }
+      if (!hidden) xf = null;
+    }
+    if (xf !== this._xrayFig) {
+      if (this._xrayFig?.xray) for (const m of this._xrayFig.xray) m.visible = false;
+      if (xf) {
+        if (!xf.xray) {
+          // Drawn 0.7 m nearer the lens with a "greater" depth test: it shows
+          // only where something well in front hides the hero (never the hero's
+          // own arms or shield over its body).
+          const mat = (this._xrayMat ??= (() => {
+            const m = new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.4, depthWrite: false, depthFunc: THREE.GreaterDepth, side: THREE.FrontSide, fog: false });
+            m.onBeforeCompile = (sh) => {
+              sh.vertexShader = sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\nmvPosition.z += 0.7; gl_Position = projectionMatrix * mvPosition;');
+            };
+            m.customProgramCacheKey = () => 'xray-v1';
+            return m;
+          })());
+          xf.xray = [];
+          for (const m of xf.model.meshes) {
+            if (!m.isSkinnedMesh) continue;
+            const x = new THREE.SkinnedMesh(m.geometry, mat);
+            x.bind(m.skeleton, m.bindMatrix);
+            x.frustumCulled = false;
+            x.renderOrder = 20;
+            x.userData.sharedGeometry = true;
+            m.parent.add(x);
+            xf.xray.push(x);
+          }
+        }
+        for (const m of xf.xray) m.visible = true;
+      }
+      this._xrayFig = xf;
+    }
   }
 
   // =================================================================== frame
   update(dt) {
     this._frames = (this._frames ?? 0) + 1;
+    this._dtLast = dt;
     if (!this.frozen) {
       const wasSnap = this.snap;
       this._slowFrames = dt >= 0.099 ? Math.min(10, (this._slowFrames ?? 0) + 1) : Math.max(0, (this._slowFrames ?? 0) - 1);

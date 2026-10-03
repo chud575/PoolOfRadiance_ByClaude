@@ -250,9 +250,14 @@ function volumeFire({ steps = 24, smoke = false, gas = false } = {}) {
             float nU, cU;
             float dUp = field(p + vec3(0.04, 0.2, 0.02), nU, cU);
             float lit = exp(-max(dUp, 0.0) * 4.0);
-            vec3 sc = mix(vec3(0.008, 0.007, 0.007), vec3(0.2, 0.19, 0.18), lit * (0.35 + 0.65 * n));
-            sc += uSky * clamp(p.y * 1.2 + 0.1, 0.0, 1.0) * lit * 0.5;
-            sc += vec3(1.0, 0.3, 0.05) * uHeat * clamp(0.2 - p.y, 0.0, 1.0) * (1.0 - lit) * 1.2;
+            // Curling billows: crowns catch the sky (warm grey), folds sink to
+            // soot, and the whole underside glows from the fire boiling below
+            // it, the glow reaching up into the folds between the lobes.
+            float curl = smoothstep(0.35, 0.85, n);
+            vec3 sc = mix(vec3(0.012, 0.01, 0.009), vec3(0.3, 0.27, 0.24), lit * (0.25 + 0.75 * curl));
+            sc += uSky * clamp(p.y * 1.2 + 0.1, 0.0, 1.0) * lit * curl * 0.6;
+            float under = clamp(0.5 - p.y * 0.9, 0.0, 1.0);
+            sc += vec3(1.0, 0.34, 0.06) * uHeat * under * (0.35 + 0.65 * (1.0 - lit)) * (0.6 + 0.8 * (1.0 - curl)) * 1.9;
             col += T * a * sc;` : `
             float temp = uHeat * (0.24 + core * 1.25 + (n - 0.5) * 1.25) - uSmoke * (1.0 - core) * 1.05;
             // Soot is opaque and crisp; flame is a translucent emitter, the
@@ -371,7 +376,11 @@ function gasVolume({ steps = 26 } = {}) {
         float body = (n - 0.5 + reach * 0.3) * hf * reach;
         // Ground-hugging haze spilling a little past the billows.
         float haze = (1.0 - smoothstep(0.0, 0.4, q.y)) * (1.0 - smoothstep(0.55, 1.15, r)) * (0.45 + 0.55 * vn(q * 1.4 + vec3(a * 0.12, 0.0, uSeed))) * 0.2;
-        return clamp(max(body * 5.0, haze), 0.0, 1.0);
+        // Never touch the march volume's faces: the gas dies away well inside
+        // the box on every side and under its lid (no straight edges, ever).
+        float er = length(e) + (vn(vec3(q.xz * 0.9, uSeed + a * 0.06)) - 0.5) * 0.3;
+        float edge = (1.0 - smoothstep(0.5, 0.86, er)) * (1.0 - smoothstep(0.55, 0.95, max(abs(e.x), abs(e.y)))) * (1.0 - smoothstep(uHalf.y * 0.5, uHalf.y * 0.85, q.y + (vn(q * 1.3 + 4.0) - 0.5) * 0.5));
+        return clamp(max(body * 5.0, haze) * edge, 0.0, 1.0);
       }
       void main(){
         vec3 ro = uCam;
@@ -397,13 +406,12 @@ function gasVolume({ steps = 26 } = {}) {
             float stepM = dt * length(rd * uHalf);
             float a = 1.0 - exp(-d * 1.75 * stepM);
             // Self-shadow: two probes toward the key light.
-            float s1 = dens(q + uLightDir * 0.18);
-            float s2 = dens(q + uLightDir * 0.45);
-            float lit = exp(-(s1 * 3.4 + s2 * 2.8));
+            float s1 = dens(q + uLightDir * 0.32);
+            float lit = exp(-s1 * 5.2);
             float hgt = clamp(q.y / 1.5, 0.0, 1.0);
-            vec3 fold = vec3(0.018, 0.024, 0.008);
-            vec3 body = vec3(0.2, 0.23, 0.09);
-            vec3 crown = vec3(0.5, 0.52, 0.3);
+            vec3 fold = vec3(0.03, 0.035, 0.008);
+            vec3 body = vec3(0.24, 0.27, 0.05);
+            vec3 crown = vec3(0.62, 0.64, 0.22);
             vec3 alb = mix(fold, body, smoothstep(0.03, 0.5, lit));
             alb = mix(alb, crown, smoothstep(0.5, 1.0, lit) * (0.45 + 0.55 * hgt));
             // Dense dark folds pool at the base of the mass.
@@ -418,7 +426,8 @@ function gasVolume({ steps = 26 } = {}) {
             vec3 c = alb * (uKey * (0.18 + 1.15 * lit) + uAmb * (0.45 + 0.45 * hgt)) + uKey * lining * 0.16;
             // A faint sickly glow deep in the core, pulsing like breath.
             float coreK = (1.0 - smoothstep(0.0, 0.7, length(q.xz / uHalf.xz))) * (1.0 - smoothstep(0.2, 1.3, q.y)) * smoothstep(0.1, 0.5, d);
-            c += vec3(0.32, 0.42, 0.04) * coreK * (0.7 + 0.3 * sin(uAge * 1.7 + uSeed));
+            // The sickly yellow-green heart (bile), brightest deep in the mass.
+            c += vec3(0.42, 0.5, 0.05) * coreK * (0.75 + 0.25 * sin(uAge * 1.7 + uSeed));
             col += T * a * c;
             T *= 1.0 - a;
             if (T < 0.02) break;
@@ -791,10 +800,12 @@ function shockRing(hot) {
         float k = exp(-abs(d) * 120.0) * (0.55 + 0.45 * tear);
         gl_FragColor = vec4(vec3(1.0, 0.62, 0.28) * 1.6 * k * uA, 1.0);` : `
         // Dust: thickest just behind the edge, thinning inward in streaks.
-        float band = smoothstep(0.02, -0.01, d) * exp(min(d, 0.0) * 16.0);
+        float edgeN = (vn2(vec2(an * 9.0, uAge)) - 0.5) * 0.06;
+        float band = smoothstep(0.03, -0.02, d + edgeN) * exp(min(d + edgeN, 0.0) * 6.5);
         float streak = vn2(vec2(an * 22.0, r * 6.0 - uAge * 2.0));
-        float a = band * (0.35 + 0.65 * tear) * (0.6 + 0.4 * streak) * smoothstep(1.0, 0.9, r);
-        vec3 c = mix(vec3(0.3, 0.26, 0.22), vec3(0.55, 0.45, 0.35), streak);
+        float clump = vn2(p * 7.0 + uAge * 0.3);
+        float a = band * (0.3 + 0.7 * tear) * (0.45 + 0.55 * streak) * (0.6 + 0.6 * clump) * smoothstep(1.0, 0.9, r);
+        vec3 c = mix(vec3(0.26, 0.22, 0.18), vec3(0.52, 0.43, 0.33), streak * clump);
         gl_FragColor = vec4(c, a * uA);`}
       }`,
   });
@@ -1278,15 +1289,15 @@ export class VFX {
     this.add(T, 4.5, () => ({ list: [waveDust, waveHot, dust, groundFire, stem, cap, ball2, ball, shock, sparks, lateSparks, debris, flash, flashCore] }), (age, parts, ctx) => {
       const vl = vic();
       // Shockwave: fast at first, slowing as it spreads; dust lingers behind the edge.
-      const wr = R * (0.4 + 1.15 * (1 - Math.exp(-age * 3.2)));
+      const wr = R * (0.3 + 0.68 * (1 - Math.exp(-age * 5.5)));
       for (const w of [waveDust, waveHot]) {
         w.position.set(to.x, 0.04, to.z);
         w.scale.setScalar(wr * 2.3);
         w.material.uniforms.uR.value = 0.87;
         w.material.uniforms.uAge.value = age;
       }
-      waveDust.material.uniforms.uA.value = clamp01(age * 12) * clamp01(1 - age / 1.4) * 0.3;
-      waveHot.material.uniforms.uA.value = clamp01(age * 20) * Math.exp(-age * 3.5) * 1.4;
+      waveDust.material.uniforms.uA.value = clamp01(age * 12) * clamp01(1 - age / 1.6) * 0.62;
+      waveHot.material.uniforms.uA.value = clamp01(age * 20) * Math.exp(-age * 6) * 0.45;
       waveDust.visible = waveHot.visible = age < 1.4;
       // White-hot flash: 2-3 frames of glare, then gone.
       const fl = age < 0.03 ? age / 0.03 : Math.exp(-(age - 0.03) * 22);
@@ -1569,19 +1580,21 @@ export class VFX {
    * 2×2 area, its tendrils spilling half a square past the template edge.
    */
   stinkingCloud(t, centre, size, id, seed = 1, { night = false } = {}) {
-    const v = gasVolume({ steps: 32 });
+    const v = gasVolume({ steps: 22 });
     v.u.uSeed.value = seed * 3.7;
     if (night) {
       v.u.uKey.value.setRGB(0.28, 0.32, 0.45);
       v.u.uAmb.value.setRGB(0.12, 0.14, 0.2);
     }
-    const half = size * 0.5 + 1.3;
-    v.place(centre.x, centre.z, half, 1.15, half);
-    // Stray puffs break off the edge and drift away on the air, thinning out.
+    // The march box is a good deal larger than the gas (the density fades to
+    // nothing well inside it), so no face of it can ever show.
+    const half = size * 0.5 + 2.1;
+    v.place(centre.x, centre.z, half, 1.5, half);
+    // Stray wisps curl off the edge and drift away on the air, thinning out.
     const puffs = [];
-    for (let k = 0; k < 6; k++) {
-      const pf = puff(night ? 0x3a4430 : 0x6e7a38, seed * 7 + k * 3.1);
-      pf.userData.a0 = (k / 6) * Math.PI * 2 + hashf(seed + k) * 0.8;
+    for (let k = 0; k < 12; k++) {
+      const pf = puff(night ? 0x3a4430 : k % 3 ? 0x6e7a30 : 0x8a9a3a, seed * 7 + k * 3.1);
+      pf.userData.a0 = (k / 12) * Math.PI * 2 + hashf(seed + k) * 0.8;
       pf.userData.ph = hashf(seed * 3 + k) * 6;
       puffs.push(pf);
     }
@@ -1592,12 +1605,13 @@ export class VFX {
       v.sync(ctx.camera);
       for (const pf of puffs) {
         const cyc = ((age + pf.userData.ph) % 6) / 6;
-        const a0 = pf.userData.a0 + cyc * 0.4;
-        const rr = size * 0.45 + cyc * 1.6;
-        pf.position.set(centre.x + Math.cos(a0) * rr, 0.5 + cyc * 0.9, centre.z + Math.sin(a0) * rr);
-        pf.scale.setScalar(0.9 + cyc * 1.1);
+        // Each wisp curls as it leaves: an outward spiral, rising and swelling.
+        const a0 = pf.userData.a0 + cyc * 0.9;
+        const rr = size * 0.5 + cyc * 1.9;
+        pf.position.set(centre.x + Math.cos(a0) * rr, 0.35 + cyc * 1.0, centre.z + Math.sin(a0) * rr);
+        pf.scale.setScalar(0.7 + cyc * 1.3);
         pf.material.uniforms.uT.value = age;
-        pf.material.uniforms.uA.value = fade * Math.sin(cyc * Math.PI) * 0.32;
+        pf.material.uniforms.uA.value = fade * Math.sin(cyc * Math.PI) * 0.3;
       }
     }, { persistent: true, id });
   }
