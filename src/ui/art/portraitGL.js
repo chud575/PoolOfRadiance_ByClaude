@@ -198,13 +198,19 @@ float faceSkin(vec3 p) {
   vec3 a = vec3(abs(q.x), q.y, q.z);
   float d = sdEll(q - vec3(0.0, 0.27, -0.17), vec3(0.75, 0.97, 1.0));
   d = smin(d, sdEll(q - vec3(0.0, -0.3, 0.2), vec3(0.6, 0.84, 0.72)), 0.3);
+#if FEM
+  // a woman's jaw: narrower at the angle, the chin higher and finer (the lower third no longer than the middle)
+  d = smin(d, sdCap(a, vec3(0.49 * JAW, -0.36, -0.1), vec3(0.17 * (0.7 + 0.3 * JAW), -0.89, 0.47), 0.11 * JAW), 0.24);
+  d = smin(d, sdEll(q - vec3(0.0, -0.92, 0.58), vec3(0.19, 0.13, 0.15) * CHIN), 0.15);
+#else
   d = smin(d, sdCap(a, vec3(0.52 * JAW, -0.36, -0.1), vec3(0.19 * (0.7 + 0.3 * JAW), -0.95, 0.49), 0.12 * JAW), 0.24);
   d = smin(d, sdEll(q - vec3(0.0, -0.97, 0.56), vec3(0.22, 0.15, 0.16) * CHIN), 0.16);
+#endif
   d = smin(d, sdEll(a - vec3(0.45, -0.14, 0.5), vec3(0.18, 0.09, 0.15) * CHEEK), 0.16);
   d = smin(d, sdCap(a, vec3(0.44, -0.12, 0.5), vec3(0.64, -0.1, 0.02), 0.07), 0.12);
   d = smin(d, sdEll(a - vec3(0.28, 0.24, 0.76), vec3(0.26, 0.075 * BROW, 0.11)), 0.14);
 #if FEM
-  d = smin(d, sdEll(q - vec3(0.0, -0.66, 0.55), vec3(0.31, 0.26, 0.27)), 0.2);
+  d = smin(d, sdEll(q - vec3(0.0, -0.66, 0.52), vec3(0.31, 0.26, 0.27)), 0.2);
 #else
   d = smin(d, sdEll(q - vec3(0.0, -0.66, 0.6), vec3(0.32, 0.27, 0.29)), 0.2);
 #endif
@@ -231,14 +237,14 @@ float faceSkin(vec3 p) {
   d = smin(d, nose, 0.07);
   d = smax(d, -sdEll(aw - vec3(0.056 * NW, -0.49 * nl, 0.97 + 0.06 * (nl - 1.0)), vec3(0.033, 0.017, 0.042)), 0.02);
   // lips wrap round the muzzle; corners lift with the smile
-  vec3 m = q - vec3(0.0, -0.69, 0.0);
+  vec3 m = q - vec3(0.0, -0.69, FEM == 1 ? 0.05 : 0.02);
   m.y -= SMILE * 0.35 * m.x * m.x;
   m.z += 1.05 * m.x * m.x;
-  float ul = sdEll(m - vec3(0.0, 0.052, 0.905), vec3(0.215 * MW, 0.044 * FULL + 0.012, 0.066));
+  float ul = sdEll(m - vec3(0.0, 0.05, 0.885), vec3(0.2 * MW, 0.04 * FULL + 0.011, 0.055));
   ul = smax(ul, -sdEll(m - vec3(0.0, 0.112 * (0.8 + 0.2 * FULL), 0.99), vec3(0.03, 0.03, 0.06)), 0.02); // cupid's bow
-  float ll = sdEll(m - vec3(0.0, -0.058, 0.875), vec3(0.175 * MW, 0.052 * FULL + 0.014, 0.07));
-  d = smin(d, min(ul, ll), 0.035);
-  d = smax(d, -sdEll(m - vec3(0.0, -0.002, 0.95), vec3(0.205 * MW, 0.006, 0.1)), 0.012);
+  float ll = sdEll(m - vec3(0.0, -0.055, 0.855), vec3(0.165 * MW, 0.048 * FULL + 0.013, 0.058));
+  d = smin(d, min(ul, ll), 0.04);
+  d = smax(d, -sdEll(m - vec3(0.0, -0.002, 0.95), vec3(0.2 * MW, 0.009, 0.12)), 0.01);
   // philtrum, chin groove, nasolabial folds
   d += 0.007 * exp(-dot2((q - vec3(0.0, -0.575, 0.96)) / vec3(0.03, 0.045, 0.12)));
   d += 0.014 * exp(-dot2((q - vec3(0.0, -0.84, 0.84)) / vec3(0.15, 0.03, 0.2)));
@@ -733,10 +739,12 @@ void main() {
         alb *= mix(vec3(1.0), vec3(0.86, 0.78, 0.82), exp(-dot2((a - vec3(0.27, -0.13, 0.84)) / vec3(0.13, 0.05, 0.1))) * (0.4 + AGE * 0.5));
         alb *= 1.0 - AGE * 0.15 * smoothstep(0.62, 0.8, vnoise3(hp * 14.0));
         // lips
-        vec3 mm = q - vec3(0.0, -0.69, 0.0); mm.y -= SMILE * 0.35 * mm.x * mm.x; mm.z += 1.05 * mm.x * mm.x;
-        float lipD = min(length((mm - vec3(0.0, 0.05, 0.905)) / vec3(0.2 * MW, 0.05 * FULL + 0.016, 0.075)), length((mm - vec3(0.0, -0.058, 0.875)) / vec3(0.17 * MW, 0.058 * FULL + 0.018, 0.08)));
+        vec3 mm = q - vec3(0.0, -0.69, FEM == 1 ? 0.05 : 0.02); mm.y -= SMILE * 0.35 * mm.x * mm.x; mm.z += 1.05 * mm.x * mm.x;
+        float lipD = min(length((mm - vec3(0.0, 0.05, 0.885)) / vec3(0.19 * MW, 0.046 * FULL + 0.015, 0.07)), length((mm - vec3(0.0, -0.055, 0.855)) / vec3(0.16 * MW, 0.054 * FULL + 0.017, 0.075)));
         float lip = smoothstep(1.15, 0.92, lipD);
         alb = mix(alb, LIPC, lip);
+        // the line of the mouth: the darkest accent of the lower face, fading out past the corners
+        alb *= 1.0 - 0.72 * exp(-pow((mm.y + 0.004) / 0.011, 2.0)) * smoothstep(0.22 * MW, 0.1 * MW, abs(mm.x)) * step(0.6, mm.z);
         rough = mix(0.5, 0.3, lip);
         specK = 0.18 + 0.2 * lip;
         // oily T-zone: brow and nose take a brighter, tighter sheen

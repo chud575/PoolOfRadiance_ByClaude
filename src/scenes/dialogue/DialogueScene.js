@@ -493,7 +493,7 @@ export default class DialogueScene extends Scene {
       const n = typeof g.count === 'number' ? g.count : 4;
       hd += Math.max(0.5, m.hd + (m.hpBonus ?? 0) / 4) * n;
       const icon = h('div.dlg-enc-icon');
-      const fig = paintCreature(g.monster, 200, LIGHTS.torch, 7);
+      const fig = paintCreature(g.monster, 200, LIGHTS.torch, 7, { ss: 1 }); // a 96 px icon: no supersampling needed
       const c = h('canvas', { width: 96, height: 96 });
       const cg = c.getContext('2d');
       const big = ['giantRat', 'wolf', 'giantSpider', 'giantFrog', 'giantCentipede'].includes(g.monster);

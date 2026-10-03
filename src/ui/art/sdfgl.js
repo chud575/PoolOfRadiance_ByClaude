@@ -645,6 +645,14 @@ const hexc = (c) => {
   return [parseInt(s.slice(1, 3), 16) / 255, parseInt(s.slice(3, 5), 16) / 255, parseInt(s.slice(5, 7), 16) / 255];
 };
 
+/** The WebGL renderer string of the figure context, or null before it exists. */
+export function glRenderer() {
+  if (!GL) return null;
+  const { gl } = GL;
+  const ext = gl.getExtension('WEBGL_debug_renderer_info');
+  return String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+}
+
 /** Is the GPU path available? */
 export function sdfAvailable() { return !!init(); }
 

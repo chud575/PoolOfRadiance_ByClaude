@@ -7,7 +7,7 @@ import { buildPerson } from './bodies.js';
 import { buildNpc } from './people.js';
 import { renderFigure, mul3, rotX, rotY, ap3 } from './sculpt.js';
 import { paintPortraitDesign, paintFaceDecal, paintGhostKnight } from './facePaint.js';
-import { paintPortraitGL, warmPortraitGL } from './portraitGL.js';
+import { paintPortraitGL } from './portraitGL.js';
 
 /**
  * Illustrated panels for the dialogue / encounter / shop screens — the big
@@ -93,7 +93,6 @@ const perfLog = (label, t0) => { if (PERF) console.info(`[perf] ${label} ${Math.
 export { perfNow, perfLog };
 
 export function paintPanel(spec) {
-  warmPortraitGL();
   const T0 = perfNow();
   const W = spec.w ?? 1280;
   const H = spec.h ?? 640;
@@ -253,17 +252,35 @@ export class PanelComposer {
   /** Composite the panel at time t into g. */
   draw(g, t = 0) {
     const { W, H } = this;
+    let TT = perfNow();
+    const sync = (l) => { if (PERF) { g.getImageData(0, 0, 1, 1); perfLog(`draw ${l}`, TT); TT = perfNow(); } };
+    sync('pre');
     g.clearRect(0, 0, W, H);
     g.drawImage(this.bg, 0, 0);
+    sync('bg');
     for (const a of this.actors) this._sprite(g, a, t);
     if (this.fg) g.drawImage(this.fg, 0, 0);
+    sync('actors');
     for (const o of this.ops) {
-      if (o.kind === 'fog') fogBand(g, W, o.y, o.h, o.color, o.a, o.seed);
-      else this._sprite(g, o, t);
+      if (o.kind === 'fog') {
+        // the band is static: paint it once on its own canvas (its noise erodes only the fog, never
+        // the picture beneath) and keep a GPU copy, instead of uploading a noise pattern every frame
+        if (!o.cv) {
+          const hh = Math.ceil(o.h) + 2;
+          const c = makeCanvas(W, hh);
+          fogBand(c.getContext('2d'), W, hh / 2, o.h, o.color, o.a, o.seed);
+          o.cv = gpuCopy(c);
+        }
+        g.drawImage(o.cv, 0, Math.round(o.y - (Math.ceil(o.h) + 2) / 2));
+      } else this._sprite(g, o, t);
     }
+    sync('ops');
     grade(g, W, H, { shadow: this.tone[0], highlight: this.tone[1], amount: 0.4 });
+    sync('grade');
     vignette(g, W, H, 0.62);
+    sync('vignette');
     grain(g, W, H, 0.07, this.seed % 97);
+    sync('grain');
   }
 }
 
@@ -374,7 +391,8 @@ function placeGroup(comp, g, W, H, groups, info, light, seed, mood = null) {
       // fleeing: backs to us, bent into the run, heads turned to look back over a shoulder
       if (flee) yaw = Math.PI + (sx > 0.5 ? -0.55 : 0.55);
       const extra = flee ? { poseOverride: { weaponPose: 'low', offPose: 'fist', lean: 0.34, crouch: 0.18, twist: 0, headYaw: sx > 0.5 ? 0.7 : -0.7, headPitch: 0, headTilt: 0, stance: 0.12, footZ: [0.12, -0.14], sway: 0, hipTilt: 0 } } : calm ? { pose: 'low' } : {};
-      const r = renderCreature(it.id, hpx, rig, fseed, { yaw, haze, hazeColor, leader: lead && !calm, mood: calm || flee ? null : mood, ...extra });
+      // the back ranks are small on screen: less supersampling there (most of a war-band's trace time)
+      const r = renderCreature(it.id, hpx, rig, fseed, { yaw, haze, hazeColor, leader: lead && !calm, mood: calm || flee ? null : mood, ss: hpx < 280 ? 1.5 : 2, ...extra });
       if (!r) continue;
       if (!r.sp.ghost) castShadow(g, r, x, y, hpx, rig.key.dir, false);
       comp.addSprite({ r, x, y, ph: R() * 6.28, period: 2.8 + R() * 1.4, amp: 0.8 + R() * 0.5, haze, ghost: !!r.sp.ghost, sway: r.sp.tail ? 1.2 : 1 });

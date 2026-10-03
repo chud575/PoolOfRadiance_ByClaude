@@ -2,6 +2,7 @@
  * Painterly Canvas-2D toolkit for the illustrated encounter / shop panels.
  * Everything is deterministic for a given seed (no Math.random).
  */
+import { glRenderer } from './sdfgl.js';
 
 /** mulberry32 → () => [0,1) */
 export function rngOf(seed) {
@@ -62,13 +63,28 @@ export function mix(c1, c2, t) {
 
 // ------------------------------------------------------------------ canvases
 
+let softGL = null;
+/**
+ * A software GL (SwiftShader, llvmpipe) emulates the "GPU" canvas on the CPU and compiles a
+ * pipeline for every new 2D operation — tens of seconds for a panel's first composite. There the
+ * per-frame layers stay in plain CPU raster, which is far faster. Unknown (no figure context yet)
+ * counts as software; a real GPU keeps its accelerated layers.
+ */
+function softwareGL() {
+  if (softGL !== null) return softGL;
+  const r = glRenderer();
+  if (r == null) return true;
+  softGL = /swiftshader|llvmpipe|softpipe|software/i.test(r);
+  return softGL;
+}
+
 export function makeCanvas(w, h, { gpu = false } = {}) {
   const c = document.createElement('canvas');
   c.width = Math.max(1, Math.round(w));
   c.height = Math.max(1, Math.round(h));
   // the painters read pixels back constantly (relief shading, engraving, masks): keep their canvases
   // in CPU memory, or every getImageData stalls on a GPU readback (crippling under SwiftShader)
-  if (!gpu) c.getContext('2d', { willReadFrequently: true });
+  if (!gpu || softwareGL()) c.getContext('2d', { willReadFrequently: true });
   return c;
 }
 

@@ -1151,9 +1151,9 @@ function lightFigure(c, h, L, ghostly = false) {
  * Paint one creature. light = {key, rim, rimA?}.
  * @returns {{canvas:HTMLCanvasElement, ox:number, oy:number}}
  */
-export function paintCreature(id, h, light, seed = 1) {
+export function paintCreature(id, h, light, seed = 1, o = {}) {
   if (isSculpted(id)) {
-    const r = renderCreature(id, h, lightRig(light ?? {}), seed, { yaw: 0.25 });
+    const r = renderCreature(id, h, lightRig(light ?? {}), seed, { yaw: 0.25, ...(o.ss ? { ss: o.ss } : {}) });
     return flattenSprite(r);
   }
   const sp = SPECIES[id] ?? SPECIES.orc;

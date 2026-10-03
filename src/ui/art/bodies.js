@@ -651,7 +651,9 @@ export function humanoid(f, sp, pose, R, gear) {
       f.ell([0, torso * 0.32, 0.005], [0.093 * b, torso * 0.25, 0.07 * b], vm, { group: 'vest', blend: 0.07 });
       for (let i = 0; i < 4; i++) f.sphere([0.014, torso * (0.22 + i * 0.13), 0.072 * b], 0.005, M.bronze, { group: null });
       if (gear.armor === 'scraps') {
-        f.ell([-0.05 * b, torso * 0.62, 0.05], [0.06, 0.06, 0.03], gear.metalM, { group: null, R: rotZ(0.4) });
+        // a dented, scavenged breastplate fragment: a bevelled slab strapped across the chest, not a cup
+        f.box([-0.025 * b, torso * 0.6, 0.064 * b], [0.07 * b, 0.05, 0.01], gear.metalM, { group: null, R: mul3(rotZ(0.22), rotX(-0.12)), bevel: 0.008, disp: { amp: 0.003, freq: 22 } });
+        for (const k of [-1, 1]) f.sphere([(-0.025 + k * 0.055) * b, torso * 0.6 + k * 0.012, 0.075 * b], 0.004, M.bronze, { group: null });
         f.cone([-0.1 * b, torso * 0.9, 0.03], [0.09 * b, torso * 0.25, 0.075], 0.012, 0.012, M.leather, { group: null });
       }
     } else if (gear.armor === 'fur') {
