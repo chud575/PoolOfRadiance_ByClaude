@@ -531,19 +531,24 @@ export function buildDiorama(field, o = {}) {
   // a trodden rug — all low and hugging the walls (never on a square's
   // centre, so nothing hides a figure or blocks a move), plus a soft gloom
   // creeping in from every wall foot.
-  if (!hall) {
+  const crypt = !!field.features.pool;
+  if (!hall || crypt) {
     const roomSet = new Set((field.features.rooms ?? []).map((r) => `${r.mx},${r.my}`));
     const sackMat = pbr('cloth', 0x9a8a6a);
     const strawMat = new THREE.MeshStandardMaterial({ color: 0xb89a58, roughness: 0.95, side: THREE.DoubleSide });
     const potMat = new THREE.MeshStandardMaterial({ color: 0x9a5a3a, roughness: 0.7 });
     disposables.push(strawMat, potMat);
     const strawBlade = new THREE.PlaneGeometry(0.34, 0.03).rotateX(-Math.PI / 2);
+    const boneMat = pbr('bone', 0xc8bc9e);
+    const drumMat = libMat('wall_stone', 0xa49a8a);
+    const waxMat = new THREE.MeshStandardMaterial({ color: 0xd8ccb0, roughness: 0.6, emissive: 0x2a1404, emissiveIntensity: 0.4 });
+    disposables.push(waxMat);
     for (const r of field.features.rooms ?? []) {
       const x0 = cw(r.mx);
       const z0 = ch(r.my);
       const H = (k, salt) => hash(r.mx * 7 + k, r.my * 13 + salt, 977);
       // Which sides are walls (the neighbour cell is not part of the room).
-      const walls = [[-1, 0], [1, 0], [0, -1], [0, 1]].filter(([dx, dy]) => !roomSet.has(`${r.mx + dx},${r.my + dy}`));
+      const walls = [[-1, 0], [1, 0], [0, -1], [0, 1]].filter(([dx, dy]) => !roomSet.has(`${r.mx + dx},${r.my + dy}`) && cellType(r.mx + dx, r.my + dy) !== CELL.WATER);
       // Gloom gradient at each wall foot.
       for (const [dx, dy] of walls) {
         const rot = dx === -1 ? Math.PI / 2 : dx === 1 ? -Math.PI / 2 : dy === -1 ? 0 : Math.PI;
@@ -575,6 +580,22 @@ export function buildDiorama(field, o = {}) {
           const pz = dy ? z0 + (dy > 0 ? CELLM - off : off) : z0 + 0.35 + u * (CELLM - 0.7);
           const yaw = H(k + wi * 5, 43) * Math.PI * 2;
           const kind = H(k + wi * 5, 44);
+          if (crypt) {
+            // The Pool's chamber: the bones of those who came before, toppled
+            // column drums, cracked urns, guttered candle stubs.
+            if (kind < 0.4) {
+              batch.add(new THREE.SphereGeometry(0.09, 10, 8).scale(1, 0.9, 1.15), boneMat, { p: [px, 0.08, pz], r: [0.3, yaw, 0.4] });
+              for (let l = 0; l < 4; l++) batch.add(new THREE.CylinderGeometry(0.018, 0.022, 0.32 + H(l, 56 + k) * 0.12, 5), boneMat, { p: [px + (H(l, 57 + k) - 0.5) * 0.45, 0.025, pz + (H(l, 58 + k) - 0.5) * 0.45], r: [Math.PI / 2, H(l, 59 + k) * 3, 0] }, { cast: false });
+            } else if (kind < 0.62) {
+              batch.add(columnGeo(0.42, true, r.mx * 5 + k), drumMat, { p: [px, 0.24, pz], r: [Math.PI / 2, yaw, 0], s: 0.6 });
+            } else if (kind < 0.8) {
+              batch.add(new THREE.CylinderGeometry(0.12, 0.17, 0.36, 10, 1, true), potMat, { p: [px, 0.18, pz], r: [0, yaw, 0.08] });
+              for (let l = 0; l < 4; l++) batch.add(worldBox(0.08, 0.015, 0.06, 1), potMat, { p: [px + (H(l, 45 + k) - 0.5) * 0.5, 0.01, pz + (H(l, 46 + k) - 0.5) * 0.5], r: [0, H(l, 47) * 3, 0] }, { cast: false });
+            } else {
+              for (let l = 0; l < 3; l++) batch.add(new THREE.CylinderGeometry(0.025, 0.03, 0.05 + H(l, 60 + k) * 0.1, 6), waxMat, { p: [px + (l - 1) * 0.09, 0.05, pz + (H(l, 61) - 0.5) * 0.1] }, { cast: false });
+            }
+            continue;
+          }
           if (kind < 0.2) {
             // Grain sack, slumped.
             batch.add(softSlab(0.42, 0.3, 0.3), sackMat, { p: [px, 0.15, pz], r: [0, yaw, 0.15] });
@@ -601,6 +622,28 @@ export function buildDiorama(field, o = {}) {
           for (let l = 0; l < 6; l++) batch.add(strawBlade, strawMat, { p: [px + (H(l, 53 + k) - 0.5) * 0.5, 0.012 + l * 0.002, pz + (H(l, 54 + k) - 0.5) * 0.5], r: [0, H(l, 55 + k) * 3.14, 0] }, { cast: false });
         }
       });
+      if (crypt) {
+        // Out on the open floor: small litter only at the corners where four
+        // squares meet (never under a figure) — a scatter of bones, a fallen
+        // stone, a guttered candle.
+        for (let q = 0; q < 4; q++) {
+          if (H(q, 120) > 0.5) continue;
+          const px = x0 + TILE * (q % 2 ? 1 : 0) + (q % 2 ? 0 : 0.02);
+          const pz = z0 + TILE * (q > 1 ? 1 : 0);
+          if (q === 0 && (walls.some(([dx]) => dx === -1) || walls.some(([, dy]) => dy === -1))) continue;
+          const kind = H(q, 123);
+          if (kind < 0.55) {
+            for (let l = 0; l < 5; l++) batch.add(new THREE.CylinderGeometry(0.026, 0.032, 0.4 + H(l, 131 + q) * 0.15, 6), boneMat, { p: [px + (H(l, 124 + q) - 0.5) * 0.5, 0.03, pz + (H(l, 125 + q) - 0.5) * 0.5], r: [Math.PI / 2, H(l, 126 + q) * 3, 0] }, { cast: false });
+            if (kind < 0.35) batch.add(new THREE.SphereGeometry(0.11, 12, 9).scale(0.9, 0.85, 1.1), boneMat, { p: [px + 0.12, 0.09, pz - 0.08], r: [0.4, H(q, 132) * 6, 0.5] });
+          } else {
+            for (let l = 0; l < 6; l++) {
+              const rr = 0.08 + H(l, 127 + q) * 0.16;
+              batch.add(rockGeo(H(l, 128 + q) * 80, rr), l % 2 ? heapMat : drumMat, { p: [px + (H(l, 129 + q) - 0.5) * 0.55, rr * 0.3, pz + (H(l, 130 + q) - 0.5) * 0.55] }, { cast: l < 2 });
+            }
+          }
+        }
+        continue;
+      }
       // A roof beam come down along one wall, with laths, in some rooms.
       if (walls.length && H(0, 60) < 0.55) {
         const [dx, dy] = walls[Math.floor(H(0, 61) * walls.length)];
@@ -1180,7 +1223,13 @@ export function buildDiorama(field, o = {}) {
     const nRooms = (house.r[2] - house.r[0] + 1) * (house.r[3] - house.r[1] + 1);
     const base = ['bed', 'table', 'barrels', 'chest', 'shelf', 'crates'];
     const pieces = [];
-    for (let k = 0; k < Math.min(18, 3 + nRooms * 3); k++) pieces.push(base[Math.floor(hash(k, 5, seed * 333) * base.length)]);
+    // One table per house at most (several identical laid tables read as a copy-paste).
+    let tables = 0;
+    for (let k = 0; k < Math.min(18, 3 + nRooms * 3); k++) {
+      let kind = base[Math.floor(hash(k, 5, seed * 333) * base.length)];
+      if (kind === 'table' && tables++ >= 1) kind = ['barrels', 'chest', 'crates', 'shelf'][k % 4];
+      pieces.push(kind);
+    }
     let tries = 0;
     for (const kind of pieces) {
       for (let k = 0; k < 12 && tries < 200; k++, tries++) {
@@ -1253,7 +1302,7 @@ export function buildDiorama(field, o = {}) {
     // Rugs in some rooms.
     for (let mx = rx0; mx <= rx1; mx++) {
       for (let my = ry0; my <= ry1; my++) {
-        if (hash(mx, my, seed * 71) > 0.55) continue;
+        if (hash(mx, my, seed * 71) > 0.3) continue;
         const rug = new THREE.PlaneGeometry(2.2, 1.5).rotateX(-Math.PI / 2);
         B.add(rug, rugMaterial(Math.floor(hash(mx, my, 3) * 3)), { p: [cw(mx) + CELLM / 2, 0.04, ch(my) + CELLM / 2], r: [0, hash(mx, my, 9) > 0.5 ? Math.PI / 2 : 0, 0] }, { cast: false });
       }
