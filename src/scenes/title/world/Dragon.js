@@ -93,8 +93,8 @@ const FRAG = /* glsl */ `
       float veinA = 1.0 - smoothstep(0.0, 0.06, abs(fract(thin * 4.0 + sin(vW.x * 0.9 + vW.z * 0.7) * 0.18) - 0.5));
       float veinB = 1.0 - smoothstep(0.0, 0.05, abs(fract((vW.x * 0.55 - vW.z * 0.35) * 0.6) - 0.5));
       float vein = max(veinA * 0.7, veinB * 0.45) * smoothstep(0.15, 0.5, thin);
-      vec3 glow = mix(vec3(0.85, 0.2, 0.05), vec3(1.0, 0.46, 0.12), thin * thin) * trans;
-      col = col * (1.0 - 0.35 * thin) + glow * 0.34 * (1.0 - vein * 0.8);
+      vec3 glow = mix(vec3(0.7, 0.12, 0.03), vec3(1.0, 0.34, 0.07), thin * thin) * trans;
+      col = col * (1.0 - 0.35 * thin) + glow * 0.3 * (1.0 - vein * 0.8);
     }
     if (vMem.x > 1.5) col = vec3(1.6, 0.62, 0.16);  // ember eyes
     if (uClassic > 0.5) col = vec3(0.0);

@@ -7,6 +7,6 @@ export const DRAGON = {
   // the card's hero pass: in from the right over the Moonsea, low across the
   // bright sunset band between the lettering and the rooftops (backlit, its
   // membranes glowing), large and whole in frame, receding as it crosses
-  card: { x: [1.18, -0.25], y: [-0.02, 0.1], d: [105, 150], xe: 1, de: 1.4, period: 26, duty: 0.72, phase: 2.42, scale: 2.5, bank: -0.22 },
-  menu: { x: [1.18, 0.25], y: [-0.04, 0.06], d: [105, 150], xe: 1, de: 1.4, period: 26, duty: 0.72, phase: 2.42, scale: 2.3, bank: -0.25 },
+  card: { x: [1.18, -0.25], y: [-0.03, 0.08], d: [44, 66], xe: 1, de: 1.4, period: 26, duty: 0.72, phase: 2.42, scale: 1.05, bank: -0.22 },
+  menu: { x: [1.15, -0.05], y: [-0.02, 0.08], d: [44, 66], xe: 1, de: 1.4, period: 26, duty: 0.72, phase: 2.42, scale: 0.95, bank: -0.25 },
 };

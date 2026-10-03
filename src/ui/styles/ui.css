@@ -271,7 +271,12 @@ html, body {
 .por-cmd:active:not(:disabled) { transform: translateY(1px); }
 .por-cmd:disabled { opacity: 0.34; cursor: default; }
 /* Gold Box hotkey capital on the command line: the saturated EGA yellow, a touch larger */
-.por-cmd .por-hk { color: #ffdd4a; font-weight: 700; text-shadow: 0 0 10px rgba(255, 210, 60, 0.5), 0 1px 2px rgba(0, 0, 0, 0.95); }
+.por-cmd .por-hk {
+  /* Gold Box command line: white words, the hotkey letter alone in yellow */
+  color: #ffe94a; font-weight: 700; text-shadow: 0 0 10px rgba(255, 214, 60, 0.6), 0 1px 2px rgba(0, 0, 0, 0.95);
+  background: linear-gradient(90deg, transparent 10%, rgba(255, 220, 90, 0.8) 10%, rgba(255, 220, 90, 0.8) 90%, transparent 90%) left bottom / 100% 1.5px no-repeat;
+}
+.por-cmd:not(:disabled) { color: #e4e0d6; }
 .por-cmd .por-hk-cap { font-size: 1.12em; line-height: 1; }
 .por-cmd-word { white-space: nowrap; }
 .por-cmd-key {

@@ -995,6 +995,17 @@ export function createCity({ seed = 1988 } = {}) {
     fine.push(tint(worldUV(box(hw + 0.4, 0.9, hd + 0.4, { x: hx, y: GROUND, z: hz }), 2), 0x9a8c78));
     fine.push(tint(worldUV(box(hw + 0.3, 0.25, hd + 0.3, { x: hx, y: GROUND + 4.3, z: hz }), 2), 0xbcae98));
     fine.push(tint(worldUV(box(hw + 0.8, 0.7, hd + 0.8, { x: hx, y: GROUND + hh, z: hz }), 2), 0xc0b29c));
+    // a modillion cornice under the eaves: scrolled brackets on a dentil course,
+    // each casting its own little shadow, so the roof line reads as carved stone
+    for (let k = 0, n = Math.round(hw / 0.75); k <= n; k++) {
+      const mx = hx - hw / 2 + (hw * k) / n;
+      for (const sz of [1, -1]) {
+        fine.push(tint(worldUV(box(0.22, 0.26, 0.42, { x: mx, y: GROUND + hh - 0.3, z: hz + sz * (hd / 2 + 0.2) }), 1), 0xc8bca6));
+        fine.push(tint(worldUV(box(0.12, 0.14, 0.14, { x: mx + 0.375, y: GROUND + hh - 0.42, z: hz + sz * (hd / 2 + 0.06) }), 1), 0xb8ac96));
+      }
+    }
+    // base grime: rain-splash soot and damp creeping up the plinth
+    fine.push(tint(worldUV(box(hw + 0.46, 0.5, hd + 0.46, { x: hx, y: GROUND, z: hz }), 1.4), 0x5a5244, { aoBottom: GROUND, aoTop: GROUND + 0.5, aoStrength: 0.55 }));
     // quoins: long-and-short dressed blocks up every corner, standing proud of the
     // walling; a second string course at the upper sill line; a moulded plinth cap
     for (const [qx, qz] of [[-1, 1], [1, 1], [-1, -1], [1, -1]]) {
