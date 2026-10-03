@@ -169,10 +169,12 @@ export class Ambience {
         // Moonsea waves lapping the harbour: lowpassed noise swelling every ~7 s, each ear its own stretch of shore.
         g.gain.value = 0.18 * lvl;
         this._lfo(t, 0.14, 0.15 * lvl, g.gain);
+        // The wash and fizz of the water (150 Hz–3 kHz), not a sub rumble: pink noise
+        // piles equal energy into every octave down to 20 Hz, so the low octaves are cut.
         this._stereo(g, (j) => {
-          const lp = this._filter('lowpass', 700 * j, 0.5);
-          this._lfo(t, 0.09 * j, 380, lp.frequency);
-          return this._noise(t, 'pink').connect(lp);
+          const lp = this._filter('lowpass', 900 * j, 0.5);
+          this._lfo(t, 0.09 * j, 450, lp.frequency);
+          return this._noise(t, 'pink').connect(this._filter('highpass', 130 * j, 0.6)).connect(this._filter('highpass', 95 * j, 0.6)).connect(lp);
         });
         return;
       }

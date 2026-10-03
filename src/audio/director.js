@@ -449,10 +449,10 @@ export class Director {
         break;
       }
       case 'cast':
-        this.spellHint = { at: now, family: spellFamily(String(ev.spell ?? '').replace(/([a-z])([A-Z])/g, '$1 $2')), n: /missile/i.test(ev.spell ?? '') ? 3 : undefined, src: 'event' };
+        this.spellHint = { at: now, family: spellFamily(String(ev.spell ?? '').replace(/([a-z])([A-Z])/g, '$1 $2')), n: /missile/i.test(ev.spell ?? '') ? 3 : undefined, src: 'event', pan: this._panOf(by(ev.id)) };
         break;
       case 'turnUndead':
-        this.spellHint = { at: now, family: 'spell_turn', src: 'event' };
+        this.spellHint = { at: now, family: 'spell_turn', src: 'event', pan: this._panOf(by(ev.id)) };
         break;
       case 'flee':
         if (by(ev.id)?.side === 'monster') this.foesDown++;
@@ -857,8 +857,11 @@ export class Director {
         const sh = this.spellHint && now - this.spellHint.at < 2 ? this.spellHint : null;
         if (!sh) return [['spell', opts]];
         this.spellHint = null;
-        if (sh.family === 'spell') return [['spell', opts]];
-        return [['spell', { ...opts, vol: 0.55 }], [sh.family, { ...opts, n: sh.n, delay: 0.45 }]];
+        // The incantation at the caster; the spell's own sound leans from there towards the field.
+        const at = opts?.pan ?? sh.pan;
+        const cast = at === undefined ? opts : { ...opts, pan: at };
+        if (sh.family === 'spell') return [['spell', cast]];
+        return [['spell', { ...cast, vol: 0.55 }], [sh.family, { ...opts, n: sh.n, delay: 0.45, ...(at === undefined ? {} : { pan: Math.round(at * 50) / 100 }) }]];
       }
       default:
         return [[name, opts]];

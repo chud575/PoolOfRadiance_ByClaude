@@ -12,7 +12,8 @@
  *              brings each cue to its target (see src/audio/loudness.js). Merges with existing data.
  * --wiring     load gallery scenes with ?audio=1 (unmuted debug mode, autoplay allowed) and check
  *              that each one drives the expected music state / ambience (scene → music wiring).
- * --perf      play title, town and the battle cue (intensity 1, with blows and voices) in a realtime
+ * --perf      play title, town, the battle cue (intensity 1, with blows and voices) and a won battle
+ *             (coda + victory fanfare over the fading orchestra) in a realtime
  *             AudioContext for 20 s each and report audio-thread load (renderCapacity / underruns,
  *             audio-clock lag vs wall clock, and the live load guard's voice cap). Fails if audio
  *             still lags real time once the guard has adapted (second 10 s).
@@ -148,8 +149,10 @@ async function perf() {
   pg.on('pageerror', (e) => errs.push(e.message));
   await pg.goto(`${srv.base}src/audio/offline.js`, { waitUntil: 'load' });
   let bad = 0;
-  for (const [state, intensity, blows] of [['title', 1, false], ['town', 1, false], ['combat', 1, true]]) {
-    const r = await pg.evaluate(async ({ state, intensity, blows }) => {
+  // 'victory': the full battle, won at 9 s — the coda, the fanfare and the death cries land on top of
+  // the fading orchestra inside the settled window (the stinger is ticked like the score, never scheduled whole).
+  for (const [state, intensity, blows, win] of [['title', 1, false], ['town', 1, false], ['combat', 1, true], ['combat', 1, true, true]]) {
+    const r = await pg.evaluate(async ({ state, intensity, blows, win }) => {
       const { createGraph } = await import('/src/audio/graph.js');
       const { AudioEngine } = await import('/src/audio/AudioEngine.js');
       const ac = new AudioContext({ latencyHint: 'interactive' });
@@ -173,6 +176,12 @@ async function perf() {
         if (k % 4 === 0) e._sfx('vox_orc', {});
         if (k % 7 === 0) e._sfx('spell_fire', {});
       }, 400) : null;
+      if (win) setTimeout(() => {
+        clearInterval(bv);
+        e._sfx('vox_orc_die', {});
+        e._sfx('death', {});
+        e.endCombatWith('victory');
+      }, 9000);
       await new Promise((res) => setTimeout(res, 10000));
       const w1 = performance.now();
       const a1 = ac.currentTime;
@@ -186,7 +195,7 @@ async function perf() {
       const out = { wall, audio: ac.currentTime - ct0, loads, ps, late, cap: dbg.voiceCap, overloads: dbg.overloads, degrade: dbg.degrade, underruns: dbg.underruns };
       await ac.close();
       return out;
-    }, { state, intensity, blows });
+    }, { state, intensity, blows, win });
     const avg = r.loads.length ? r.loads.reduce((x, l) => x + l[0], 0) / r.loads.length : null;
     const peak = r.loads.length ? Math.max(...r.loads.map((l) => l[1])) : null;
     const under = r.loads.length ? Math.max(...r.loads.map((l) => l[2])) : null;
@@ -196,7 +205,7 @@ async function perf() {
     // The orchestra must not have been thinned to keep up: cap ≥ 70 and no structural degradation.
     const ok = (under === null || under < 0.01) && lateLag < 0.15 && (r.cap ?? 110) >= 70 && !r.degrade;
     if (!ok) bad++;
-    console.log(`${ok ? 'OK  ' : 'SLOW'} ${state.padEnd(8)} wall ${r.wall.toFixed(1)}s audio ${r.audio.toFixed(1)}s  load avg ${avg === null ? '-' : (avg * 100).toFixed(0) + '%'} peak ${peak === null ? '-' : (peak * 100).toFixed(0) + '%'} underrun ${under === null ? '-' : (under * 100).toFixed(1) + '%'}  lag ${lag.toFixed(2)}s (settled ${lateLag.toFixed(2)}s)  voice cap ${r.cap ?? '-'} (${r.overloads} cuts, degrade ${r.degrade ?? 0})${r.ps ? `  playbackStats ${JSON.stringify(r.ps)}` : ''}`);
+    console.log(`${ok ? 'OK  ' : 'SLOW'} ${(win ? 'victory' : state).padEnd(8)} wall ${r.wall.toFixed(1)}s audio ${r.audio.toFixed(1)}s  load avg ${avg === null ? '-' : (avg * 100).toFixed(0) + '%'} peak ${peak === null ? '-' : (peak * 100).toFixed(0) + '%'} underrun ${under === null ? '-' : (under * 100).toFixed(1) + '%'}  lag ${lag.toFixed(2)}s (settled ${lateLag.toFixed(2)}s)  voice cap ${r.cap ?? '-'} (${r.overloads} cuts, degrade ${r.degrade ?? 0})${r.ps ? `  playbackStats ${JSON.stringify(r.ps)}` : ''}`);
   }
   // Structural degradation works: forced to its last level, the battle plays the next section from a bounced stem.
   {

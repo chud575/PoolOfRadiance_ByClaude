@@ -580,7 +580,8 @@ director plays each `combat:event` attack as a whole exchange itself, staggered 
 attacker (swing / bow, sometimes a battle cry — always the first time a monster family attacks), then the impact at the
 target (armour / bone / flesh, arrow thud, parry / shield / dodge) and, on 45 % of hits (always on crits and heavy
 blows, never two within 0.7 s), the victim's pain; when the lane backs up past ~0.9 s the extras give way to impacts.
-Every positioned combat sound carries an explicit `pan` (the combatant's offset from the fight's centre on the camera's
+Spells are cast from the caster's position (the incantation at the caster, the spell's own sound halfway to
+centre). Every positioned combat sound carries an explicit `pan` (the combatant's offset from the fight's centre on the camera's
 right vector, ~3 tiles = well to one side, clamped ±0.8; 0 when there is no camera). `tests/audio/contract.test.js`
 replays a real QUICK fight's feed and asserts wind-ups, battle cries, pain and pans. Simultaneous death cries are
 staggered too (~0.3 s apart, at most ~1 s queued). World log lines (omens, secret doors, journal entries) sound once even when several scenes log them.
@@ -629,12 +630,17 @@ shawm. Pitch modulation (vibrato, drift, glides) and swept filters run at k-rate
 
 **Load guard** (`loadguard.js`): live only, `_tick` compares the AudioContext clock with the wall clock every 2 s; if
 audio rendered measurably slower than real time the section-player cap (`setVoiceCap`, default 110, floor 36) drops by
-30 % — strings, choir and brass thin out but every line keeps sounding. At the floor, further lag degrades the score
+30 % — strings, choir and brass thin out but every line keeps sounding. A single lagging window is only a
+suspicion (a page load or GC pause the audio clock catches up from, counted as a `glitch`); the guard acts on the
+second lagging window in a row, or at once when one window loses more than 0.3 s. At the floor, further lag degrades the score
 structurally (`TrackPlayer.setDegrade`): 1 drops the desperate layer, 2 the mid layer, 3 replaces the live orchestra
 from the next section on with a stem of that section bounced in the background (OfflineAudioContext at 22.05 kHz) —
 one buffer source. Healthy stretches (20 s) step back structure first, then the cap (+12). `debugState()` reports
 `voiceCap`, `overloads`, `underruns` (playbackStats when the browser has them, else lagging windows), `lag` (s lost),
-`degrade` and `stems`. The music reverbs that are faded out are disconnected once their crossfade ends (`graph.reap`).
+`glitches`, `degrade`, `stems` and `dropped` (notes the scheduler dropped after a main-thread stall). Stingers and the
+battle coda are ticked with the lookahead like the score (`TrackPlayer.plannedEnd()` gives the duck its length) —
+a fanfare scheduled whole put all of its notes' nodes in the render graph at once, on top of the fading battle
+cue, which was what stalled the audio thread at the end of every won fight. The music reverbs that are faded out are disconnected once their crossfade ends (`graph.reap`).
 Budget: the full desperate battle (intensity 1.0, all layers) renders offline at about 0.35–0.4× real time on the
 SwiftShader VM and plays live with the cap at 110 (`audiorender --perf`). Big one-shots (`WIDE` in `sfx/library.js`:
 blasts, thunder, the dragon) get a stereo early-reflection spread (Fx `wide`). Every ambience bed is high-passed at
@@ -661,7 +667,9 @@ flute and oboe doubling the trumpets. In combat the low brass walk the bass, vio
 horn harmonises the theme's second phrase in thirds, the countermelody sits in the violas (above the horns, no unisons)
 and B's strings are rocking figures instead of block chords. Battle mix: taiko and basses kept out of each other's
 60–80 Hz (taiko dipped at 72 Hz with more skin and stick, basses high-passed at 57 Hz), a low shelf under 115 Hz and
-horn/viola body (650 Hz) and presence (3 kHz) lifted: 2–4 kHz carries about −10 dB of the cue's energy, not −16.
+horn/viola body (650 Hz) and presence (3 kHz) lifted: 2–4 kHz carries about −10 dB of the cue's energy, not −16. The parley cue gets the same treatment (taiko dipped
+at 72 Hz, D2 pedal high-passed, low shelf): its 60–80 Hz band went from −4 to −10 dB of the cue's energy. Harbour surf
+is the wash of the water (high-passed at ~130 Hz), so the title and town beds carry no sub weight.
 
 **Loudness** (`loudness.js`, `loudness.data.js`): every cue is measured offline (BS.1770 K-weighted LUFS) and calibrated
 to a target — exploration −18, town −17, combat −16.5 (at its typical intensity 0.45), defeat −19.5 (a dirge lands
@@ -680,14 +688,14 @@ Review renders: `node tools/audiorender.mjs [--match music_|--only sfx_door,...]
 `--passes N` renders N passes of each loop so later passes and loop seams can be reviewed. `--help` lists the flags
 (unknown flags are an error); stats include L/R correlation and the momentary-loudness spread (p10–p90). SFX windows are trimmed to each
 cue's real tail. Cues: `music_*`, `sting_*`, `amb_*`, `sfx_*`, `sfx_step_<surface>`, `inst_<preset>` (incl. a legato run),
-`demo_combat_adaptive`, `demo_victory` (quantised win → coda → fanfare), `demo_crossfade` (town → ruins through the
+`demo_combat_adaptive`, `demo_victory` (quantised win → coda → fanfare, through the live `endCombatWith` path), `demo_crossfade` (town → ruins through the
 live `AudioEngine.music()` path, ticked from OfflineAudioContext.suspend points), `demo_stall` (1.2 s frozen main thread
 mid-battle), `demo_rest` (a rest window). Music renders are ticked like the live scheduler (every 0.25 s of render time,
 `LOOKAHEAD` ahead), never scheduled up front — a cue scheduled whole puts every future note's nodes in the render graph
 from the first sample. Fails on NaN, silence or a single clipped sample; each line prints its CPU cost (`xN RT`), and a
 selection that includes `music_combat` also renders the full desperate battle (intensity 1.0) and fails above 0.5× real
-time (`--intensity X` renders adaptive cues at X). `--perf` plays title, town and a full-intensity battle (with blows and
-voices) in a realtime AudioContext and fails if the audio clock lags once settled, if the guard had to cut the cap below
+time (`--intensity X` renders adaptive cues at X). `--perf` plays title, town, a full-intensity battle (with blows and
+voices) and a battle won mid-way (coda + fanfare over the fading orchestra) in a realtime AudioContext and fails if the audio clock lags once settled, if the guard had to cut the cap below
 70 or degrade the score; it then forces the guard's last level and checks that the next section plays from a stem.
 
 ## Coding conventions

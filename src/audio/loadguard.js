@@ -12,11 +12,18 @@ import { VOICE_CAP } from './instruments/base.js';
  *      mid layer (L1), 3 swaps the live orchestra for a pre-bounced stem of
  *      the coming section rendered at a low sample rate (TrackPlayer.setDegrade);
  *   so the audio thread never keeps underrunning.
+ * A single lagging window is only a suspicion (a page load or a GC pause that
+ * the audio clock catches up from); the guard acts on the second one in a row,
+ * or at once when a window loses more than `burst` seconds.
  * After a healthy stretch it steps back: first the structure (one level per
  * `recover` seconds), then the cap (+12 per `recover` seconds).
  */
 export class LoadGuard {
-  constructor({ window = 2, min = 36, max = VOICE_CAP, recover = 20, maxDegrade = 3 } = {}) {
+  constructor({ window = 2, min = 36, max = VOICE_CAP, recover = 20, maxDegrade = 3, burst = 0.3 } = {}) {
+    this.burst = burst;
+    this.suspect = false;
+    /** Lagging windows that did not repeat (one-off stalls, not sustained load). */
+    this.glitches = 0;
     this.window = window;
     this.min = min;
     this.max = max;
@@ -55,12 +62,20 @@ export class LoadGuard {
     if (dw > this.window * 4) return this.cap;
     const ratio = da / dw;
     if (ratio < 0.975) {
-      this.events++;
-      this.lag += Math.max(0, dw - da);
+      const lost = Math.max(0, dw - da);
+      this.lag += lost;
       this.good = 0;
+      if (!this.suspect && lost < this.burst) {
+        this.suspect = 'new';
+        return this.cap;
+      }
+      this.suspect = 'confirmed';
+      this.events++;
       if (this.cap > this.min) this.cap = Math.max(this.min, Math.round(this.cap * 0.7));
       else if (this.degrade < this.maxDegrade) this.degrade++;
     } else if (ratio > 0.993) {
+      if (this.suspect === 'new') this.glitches++;
+      this.suspect = false;
       this.good += dw;
       if (this.good >= this.recover) {
         this.good = 0;

@@ -209,20 +209,17 @@ function cueSpec(name, o = {}) {
     };
   }
   if (name === 'demo_victory') {
-    // The fight is won 9.3 s in: combat plays on to the next downbeat, ends on its coda, the fanfare lands there.
+    // The fight is won 9 s in, through the live engine (AudioEngine.endCombatWith): combat plays on to
+    // the next downbeat, ends on its coda, the fanfare lands there — ticked with the lookahead like
+    // the live scheduler (the fanfare is never scheduled whole on top of the coda).
     return {
       seconds: 22,
       room: 'street',
       setup(ac, g) {
-        const p = new TrackPlayer(ac, SONGS.combat, { dest: g.musicIn, send: g.musicSend, at: 0.05, intensity: 0.6 });
-        const won = 9.3;
-        const bar = 4 * p.spq;
-        const at = 0.05 + Math.ceil((won - 0.05 + 0.12) / bar) * bar;
-        playerTicks(ac, p, 22, (t) => {
-          if (Math.abs(t - 9.25) > 1e-6) return;
-          const coda = p.endWithCoda(at);
-          coda?.tick(at + 6);
-          new TrackPlayer(ac, STINGERS.victory, { dest: g.musicBus, send: g.musicSend, at: at + 0.03 }).tick(22);
+        const e = AudioEngine.offline(ac, g);
+        e.music('combat', { intensity: 0.6, delay: 0 });
+        liveTicks(ac, e, 22, (t) => {
+          if (t === 9) e.endCombatWith('victory');
         });
       },
     };

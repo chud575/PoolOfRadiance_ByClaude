@@ -16,7 +16,7 @@ describe('audio load guard', () => {
     };
     step(4, 1);
     expect(g.cap).toBe(VOICE_CAP);
-    step(4, 0.9); // rendering at 90 % of real time
+    step(5, 0.9); // rendering at 90 % of real time (the second lagging window confirms it)
     expect(g.cap).toBeLessThan(VOICE_CAP * 0.75);
     const low = g.cap;
     step(6, 0.9);
@@ -58,5 +58,18 @@ describe('audio load guard', () => {
     expect(got[1]).toBe(4);
     expect(got[2]).toBe(2); // never below the minimum: every line keeps sounding
     expect(got[3]).toBe(2);
+  });
+});
+
+describe('audio load guard transients', () => {
+  it('a one-off stall the clock catches up from is a glitch, not overload; a big loss acts at once', () => {
+    const g = new LoadGuard();
+    g.update(0, 0, true);
+    g.update(2, 1.85, true); // one window 0.15 s behind
+    g.update(4, 4.0, true); // caught up
+    expect(g.cap).toBe(VOICE_CAP);
+    expect(g.glitches).toBe(1);
+    g.update(6, 5.5, true); // 0.5 s lost in one window
+    expect(g.cap).toBeLessThan(VOICE_CAP);
   });
 });

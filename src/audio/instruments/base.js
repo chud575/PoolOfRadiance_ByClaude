@@ -47,6 +47,12 @@ export class Instrument {
         d.channelCount = 1;
         d.channelCountMode = 'explicit';
         d.delayTime.value = base;
+        // Block-rate modulation: a 0.2–0.3 Hz sweep of a few ms needs no per-sample interpolation.
+        try {
+          d.delayTime.automationRate = 'k-rate';
+        } catch {
+          /* a-rate only */
+        }
         // The chorus LFOs are shared by every section in the context (two always-running oscillators in all).
         const l = chorusLfo(ac, rate * (o.chorusRate ?? 1));
         const lg = ac.createGain();

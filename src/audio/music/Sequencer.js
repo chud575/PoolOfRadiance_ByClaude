@@ -492,6 +492,12 @@ export class TrackPlayer {
     });
   }
 
+  /** AudioContext time a one-shot cue ends (its last pass plus tail), known before it is all scheduled. */
+  plannedEnd() {
+    if (this.endTime !== undefined) return this.endTime;
+    return this.passStart + this.secAt(this.lengthQ) + (this.tailQ ?? 0) * this.spq;
+  }
+
   /** Seconds until the next bar line (for quantised transitions); `min` skips bar lines closer than that. */
   untilNextBar(min = 0) {
     const bar = (this.song.barQ ?? 4) * this.spq;
@@ -513,7 +519,7 @@ export class TrackPlayer {
     if (!evs.length) return null;
     const song = { ...this.song, id: `${this.song.id}:coda`, loop: false, gain: this.gain, build: () => ({ lengthQ: 4, tailQ: 2, events: evs.map((e) => ({ ...e, layer: 0, exact: true })) }) };
     const p = new this.constructor(this.ac, song, { dest: this.dest, send: this.send, at });
-    p.tick(at + 8);
+    p.tick(Math.min(at + 8, this.ac.currentTime + LOOKAHEAD));
     return p;
   }
 

@@ -2,9 +2,9 @@
 // Loudness calibration: gain per cue and the loudness it measured at that gain (see loudness.js).
 export const CAL = {
  "fp": {
-  "music": "3s8356",
+  "music": "1i3d99i",
   "sfx": "1aymqeh",
-  "amb": "1abwcu4"
+  "amb": "1t1ldyz"
  },
  "music": {
   "camp": {
@@ -75,13 +75,13 @@ export const CAL = {
    "fp": "5mlrce"
   },
   "danger": {
-   "gain": 1.2341,
+   "gain": 1.2338,
    "lufs": -16.1,
    "target": -16,
    "fp": "12wi6qa"
   },
   "defeat": {
-   "gain": 0.9455,
+   "gain": 0.9454,
    "lufs": -19.5,
    "target": -19.5,
    "fp": "a9tzxp"
@@ -93,7 +93,7 @@ export const CAL = {
    "fp": "sv4kn5"
   },
   "dungeon": {
-   "gain": 1.0616,
+   "gain": 1.0615,
    "lufs": -18.5,
    "target": -18.5,
    "sections": {
@@ -105,15 +105,15 @@ export const CAL = {
    "fp": "1gci6fw"
   },
   "encounter": {
-   "gain": 1.4597,
+   "gain": 1.5012,
    "lufs": -17.7,
    "target": -17.5,
    "sections": {
-    "standoff": -1.3,
-    "stalk": 1.7,
-    "heartbeat": -0.4
+    "standoff": -1,
+    "stalk": 2,
+    "heartbeat": -1
    },
-   "fp": "145zhcm"
+   "fp": "bkboi4"
   },
   "fallen": {
    "gain": 1.6836,
@@ -122,19 +122,19 @@ export const CAL = {
    "fp": "2220ey"
   },
   "intro": {
-   "gain": 0.9192,
+   "gain": 0.9193,
    "lufs": -18.5,
    "target": -18.5,
    "fp": "1ozp3fq"
   },
   "levelup": {
-   "gain": 1.1395,
+   "gain": 1.139,
    "lufs": -16,
    "target": -16,
    "fp": "7vhpal"
   },
   "quest": {
-   "gain": 1.1957,
+   "gain": 1.1959,
    "lufs": -17,
    "target": -17,
    "fp": "xo7b64"
@@ -253,17 +253,17 @@ export const CAL = {
    "target": -27
   },
   "title": {
-   "gain": 2.7067,
+   "gain": 2.5934,
    "lufs": -27,
    "target": -27
   },
   "town": {
-   "gain": 5.0926,
+   "gain": 5.0076,
    "lufs": -27,
    "target": -27
   },
   "town_night": {
-   "gain": 5.0967,
+   "gain": 4.953,
    "lufs": -27,
    "target": -27
   },

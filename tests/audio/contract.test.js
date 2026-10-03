@@ -182,6 +182,24 @@ describe('combat log contract (real engine templates)', () => {
     expect(placed.some((c) => Math.abs(c[2].pan) > 0.2)).toBe(true);
   });
 
+  it('a spell is cast from where the caster stands', () => {
+    const { bus, d, engine } = director();
+    bus.emit('party:changed', { party: buildParty('default', 1) });
+    bus.emit('scene:enter', { name: 'combat', params: {} });
+    d.attach({ game: null, scenes: { current: { cam: { yaw: 0 } } } });
+    const att = attacks[0];
+    const all = att.engine.all.filter((o) => typeof o.x === 'number');
+    const cx = all.reduce((a, o) => a + o.x, 0) / all.length;
+    const caster = all.reduce((a, o) => (Math.abs(o.x - cx) > Math.abs(a.x - cx) ? o : a), all[0]);
+    bus.emit('combat:event', { ev: { type: 'cast', id: caster.id, spell: 'magicMissile' }, engine: att.engine });
+    engine.ctx.currentTime += 0.1;
+    const out = d.remapSfx('spell', {});
+    expect(out.length).toBe(2);
+    expect(typeof out[0][1].pan).toBe('number');
+    expect(Math.sign(out[0][1].pan)).toBe(Math.sign(caster.x - cx));
+    expect(Math.abs(out[1][1].pan)).toBeLessThanOrEqual(Math.abs(out[0][1].pan));
+  });
+
   it('the structured feed drives the same sounds without any log text', () => {
     const { bus, d, calls } = director();
     bus.emit('party:changed', { party: buildParty('default', 1) });

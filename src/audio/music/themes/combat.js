@@ -289,12 +289,14 @@ export const encounter = {
   key: 2,
   room: 'hall',
   wet: 0.55,
-  eq: [{ type: 'peaking', f: 3000, q: 0.6, g: 5.5 }, { type: 'highshelf', f: 7000, g: 3.5 }],
+  // The standoff is low and quiet, but not a 70 Hz hum: the taiko and the D2 pedal are kept out of
+  // each other's way and the tremolo celli / horn calls carry the tension in the mids.
+  eq: [{ type: 'lowshelf', f: 110, g: -4.5 }, { type: 'peaking', f: 600, q: 0.7, g: 2.5 }, { type: 'peaking', f: 3000, q: 0.6, g: 5.5 }, { type: 'highshelf', f: 7000, g: 3.5 }],
   instruments: {
     celli: { preset: 'celli', pan: 0.45 },
     violins: { preset: 'violins', pan: -0.55 },
-    basses: { preset: 'basses', pan: 0.6, eq: [{ type: 'highpass', f: 40, q: 0.6 }] },
-    taiko: { preset: 'taiko', gain: 0.8, pan: -0.15, eq: [{ type: 'highpass', f: 45, q: 0.6 }] },
+    basses: { preset: 'basses', pan: 0.6, eq: [{ type: 'highpass', f: 52, q: 0.7 }] },
+    taiko: { preset: 'taiko', gain: 0.8, pan: -0.15, eq: [{ type: 'highpass', f: 50, q: 0.6 }, { type: 'peaking', f: 72, q: 1.3, g: -5 }, { type: 'peaking', f: 420, q: 1, g: 3 }, { type: 'peaking', f: 2400, q: 1, g: 2.5 }] },
     horn: { preset: 'horn', pan: -0.4, reverb: 0.7 },
     lowbrass: { preset: 'lowbrass', pan: 0.15 },
     harmonics: { preset: 'harmonics', pan: 0.45 },

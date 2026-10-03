@@ -345,9 +345,13 @@ export class AudioEngine {
     const t = at ?? ac.currentTime;
     if (stopMusic) this.stopMusic(0.5);
     const p = new TrackPlayer(ac, song, { dest: this.graph.musicBus, send: this.graph.musicSend, at: t + 0.03 });
-    p.tick(t + 60);
+    // Ticked with the lookahead like the score (_tick), never scheduled whole:
+    // a fanfare scheduled up front puts every one of its notes' nodes in the
+    // render graph at once, on top of the battle cue's coda — the moment the
+    // audio thread used to fall behind.
+    p.tick(Math.max(ac.currentTime, t) + LOOKAHEAD);
     this.stingers.push(p);
-    const len = (p.endTime ?? t + 4) - t;
+    const len = p.plannedEnd() - t;
     const d = this.graph.musicDuck.gain;
     d.cancelScheduledValues(t);
     d.setValueAtTime(at ? 1 : d.value, t);
@@ -453,6 +457,6 @@ export class AudioEngine {
 
   /** Debug snapshot for tools/devtools. */
   debugState() {
-    return { unlocked: !!this.ctx, state: this.state, track: this.currentTrack, intensity: this.intensity, section: this.player?.section ?? null, pass: this.player?.pass ?? null, stinger: this.lastStinger ?? null, env: { ...this.env }, ambience: this.ambState, ambDuck: this.ambDuck ?? 1, ctx: this.ctx?.state, voiceCap: this._cap ?? null, overloads: this.loadGuard?.events ?? 0, underruns: this.ctx?.playbackStats?.underrunEvents ?? this.loadGuard?.events ?? 0, lag: Math.round((this.loadGuard?.lag ?? 0) * 1000) / 1000, degrade: this.loadGuard?.degrade ?? 0, stems: this.player?.stems ?? 0 };
+    return { unlocked: !!this.ctx, state: this.state, track: this.currentTrack, intensity: this.intensity, section: this.player?.section ?? null, pass: this.player?.pass ?? null, stinger: this.lastStinger ?? null, env: { ...this.env }, ambience: this.ambState, ambDuck: this.ambDuck ?? 1, ctx: this.ctx?.state, voiceCap: this._cap ?? null, overloads: this.loadGuard?.events ?? 0, underruns: this.ctx?.playbackStats?.underrunEvents ?? this.loadGuard?.events ?? 0, lag: Math.round((this.loadGuard?.lag ?? 0) * 1000) / 1000, degrade: this.loadGuard?.degrade ?? 0, glitches: this.loadGuard?.glitches ?? 0, stems: this.player?.stems ?? 0, dropped: this.player?.dropped ?? 0 };
   }
 }
