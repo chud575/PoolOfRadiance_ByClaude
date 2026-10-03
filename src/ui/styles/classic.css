@@ -135,7 +135,7 @@ html[data-classic='1'] .por-credits-shadow { filter: none; }
    legend, and the help footer note drops out to make room */
 html[data-classic='1'] .por-settings :is(.por-set-name, .por-set-desc, .por-set-help-name, .por-set-help-text, .por-set-help-cap, .por-set-blurb, .por-set-note-text, .por-bind-label, .por-set-tab) { line-height: 1.4 !important; }
 html[data-classic='1'] .por-set-tabs { min-height: 0; overflow: hidden; }
-html[data-classic='1'] .por-set-help { min-height: 0; flex: 0 1 auto; overflow: hidden; gap: 0.35em; padding: 0.6em 0.7em; border: 2px solid var(--ega-9) !important; background: #000 !important; box-shadow: none !important; }
+html[data-classic='1'] .por-set-help { min-height: 0; flex: 1 1 auto; overflow: hidden; gap: 0.35em; padding: 0.6em 0.7em; border: 2px solid var(--ega-9) !important; background: #000 !important; box-shadow: none !important; }
 html[data-classic='1'] .por-set-help-name { font-size: 0.86em; }
 html[data-classic='1'] .por-set-help-text {
   min-height: 0; font-size: 0.8em; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 7; overflow: hidden;
