@@ -410,6 +410,29 @@ export class Diorama {
     for (const [bx, bz] of [[px0, pz0], [px0 + pw, pz0], [px0, pz0 + ph], [px0 + pw, pz0 + ph]]) {
       this.bounds.push(new THREE.Vector3(bx, 0, bz), new THREE.Vector3(bx, 1.4, bz));
     }
+    // the opening view frames the ground the company has surveyed (padded, never
+    // tighter than a 9-square window), so the explored board fills the frame
+    {
+      let fx0 = Infinity; let fz0 = Infinity; let fx1 = -Infinity; let fz1 = -Infinity;
+      for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) {
+        if (!seenCell(x, y)) continue;
+        fx0 = Math.min(fx0, x); fz0 = Math.min(fz0, y); fx1 = Math.max(fx1, x + 1); fz1 = Math.max(fz1, y + 1);
+      }
+      if (party) { fx0 = Math.min(fx0, party.x); fz0 = Math.min(fz0, party.y); fx1 = Math.max(fx1, party.x + 1); fz1 = Math.max(fz1, party.y + 1); }
+      if (Number.isFinite(fx0)) {
+        const grow = (a, b, lo, hi) => {
+          const m = 9 - (b - a);
+          if (m > 0) { a -= m / 2; b += m / 2; }
+          return [Math.max(lo, a - 0.7), Math.min(hi, b + 0.7)];
+        };
+        [fx0, fx1] = grow(fx0, fx1, -0.9, map.w + 0.9);
+        [fz0, fz1] = grow(fz0, fz1, -0.9, map.h + 0.9);
+        this.focusBounds = [];
+        for (const [bx, bz] of [[fx0, fz0], [fx1, fz0], [fx0, fz1], [fx1, fz1]]) {
+          this.focusBounds.push(new THREE.Vector3(bx, 0, bz), new THREE.Vector3(bx, 0.6, bz));
+        }
+      } else this.focusBounds = null;
+    }
 
     // ---------- materials ----------
     const set = (name) => getTextureSet(name);
@@ -1164,8 +1187,8 @@ export class Diorama {
     tex.anisotropy = Math.min(8, this.ctx.render?.maxAnisotropy ?? 4);
     // a cool, unbleached grey-green linen: a different value and hue from the warm paper
     const mat = T(new THREE.MeshPhysicalMaterial({
-      map: tex, color: 0xb9bcae, roughness: 0.74, metalness: 0, vertexColors: true, envMapIntensity: 0.35, side: THREE.DoubleSide,
-      sheen: 1, sheenRoughness: 0.42, sheenColor: new THREE.Color(0xf4f6ee), specularIntensity: 0.6,
+      map: tex, color: 0xa8a090, roughness: 0.92, metalness: 0, vertexColors: true, envMapIntensity: 0.2, side: THREE.DoubleSide,
+      sheen: 0.6, sheenRoughness: 0.7, sheenColor: new THREE.Color(0xd8d2c4), specularIntensity: 0.25,
     }));
     const R = 14;
     for (const rg of list) {
@@ -1201,7 +1224,7 @@ export class Diorama {
       };
       const top = wallH * (rg.style === 1 ? 1.5 : 1.2);
       const minDim = Math.min(x1 - x0, z1 - z0);
-      const sagMax = Math.min(top * 0.6, 0.14 + minDim * 0.08);
+      const sagMax = Math.min(top * 0.82, 0.22 + minDim * 0.12);
       // the cloth was thrown on from one corner: its long folds all run one way
       const th = rnd() * Math.PI;
       const dx = Math.cos(th);
@@ -1210,6 +1233,8 @@ export class Diorama {
       const nF = 3 + Math.floor(rnd() * 3);
       const lam = span / nF;
       const ph = rnd() * 10;
+      // the corners do not pull equally: one or two carry the weight of the cloth
+      const cw = [0, 1, 2, 3].map(() => 0.35 + rnd() * 0.95);
       const crest = (t) => { const v = Math.sin(t); return Math.sign(v) * Math.abs(v) ** 0.6; };
       const hide = new Uint8Array(p.count);
       const relief = new Float32Array(p.count);
@@ -1235,21 +1260,21 @@ export class Diorama {
           const ccx = (x0 + x1) / 2;
           const ccz = (z0 + z1) / 2;
           let ridge = 0;
-          for (const [qx, qz] of [[x0, z0], [x1, z0], [x0, z1], [x1, z1]]) {
+          for (const [qx, qz, qw] of [[x0, z0, cw[0]], [x1, z0, cw[1]], [x0, z1, cw[2]], [x1, z1, cw[3]]]) {
             const vx = ccx - qx;
             const vz = ccz - qz;
             const L = Math.hypot(vx, vz) || 1;
             const t = Math.max(0, Math.min(1, ((x - qx) * vx + (z - qz) * vz) / (L * L)));
             const dl = Math.abs((x - qx) * vz - (z - qz) * vx) / L;
-            const w = 0.09 + t * 0.22;
-            ridge += Math.exp(-((dl / w) ** 2)) * Math.sin(Math.PI * Math.min(1, t * 1.15)) ;
+            const w = 0.06 + t * 0.17;
+            ridge += qw * Math.exp(-((dl / w) ** 2)) * Math.sin(Math.PI * Math.min(1, t * 1.15));
           }
           // one long slack fold across the middle, where the cloth was pulled over
           const tLin = (x * dx + z * dz) / Math.max(0.8, span * 0.5) * Math.PI * 2 + ph;
           const swag = Math.sin(tLin) * (0.35 + 0.3 * n1);
-          const fold = ridge * 0.9 + swag * 0.35;
+          const fold = ridge * 0.85 + swag * 0.6;
           const catenary = Math.cosh(Math.min(3, sd * 1.4)) - 1;
-          y = Math.max(top * 0.4, top - sagMax * k * 1.6 + fold * 0.26 * k + 0.012 * (1 - k) - catenary * 0.002);
+          y = Math.max(top * 0.14, top - sagMax * k * 1.25 + fold * 0.34 * k * (0.5 + sagMax / top) + 0.012 * (1 - k) - catenary * 0.002);
           rel = fold * 0.9 - k * 0.45 + (1 - k) * 0.6;
         } else {
           const o = -sd;
@@ -1292,7 +1317,7 @@ export class Diorama {
       }
       for (let i = 0; i < p.count; i++) {
         const rv = relief[i];
-        const sh = Math.max(0.42, Math.min(1.16, 0.84 + rv * 0.36));
+        const sh = Math.max(0.34, Math.min(1.12, 0.8 + rv * 0.42));
         col.set([sh, sh, sh], i * 3);
       }
       geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
@@ -1448,23 +1473,44 @@ export class Diorama {
    * shimmered into checks and diamonds when the camera leaned in).
    */
   _linenCanvas() {
+    // a coarse, hand-loomed shroud at miniature scale: a visible over-under plain weave
+    // (16 px threads), slubbed runs, and charcoal-grey staining soaked into the cloth
     const S = 256;
+    const P = 16;
     const c = makeCanvas(S);
     const g = c.getContext('2d');
     const img = g.createImageData(S, S);
     for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
-      // slubs: threads a little thicker or paler for a run, both directions
-      const sx = hash2(Math.floor(x / 2), 7, 3);
-      const sy = hash2(Math.floor(y / 2), 11, 5);
+      const cx = Math.floor(x / P);
+      const cy = Math.floor(y / P);
+      const fx = (x % P) / P;
+      const fy = (y % P) / P;
+      // which thread lies on top at this crossing
+      const warpTop = ((cx + cy) & 1) === 0;
+      // a thread is a rounded cylinder across its width, dark in the gaps between
+      const warpProf = Math.sin(fx * Math.PI) ** 0.7;
+      const weftProf = Math.sin(fy * Math.PI) ** 0.7;
+      // along its length the top thread dips under at the ends of the float
+      const warpDip = Math.sin(fy * Math.PI) ** 0.35;
+      const weftDip = Math.sin(fx * Math.PI) ** 0.35;
+      let w = warpTop ? 0.74 + 0.26 * warpProf * warpDip : 0.74 + 0.26 * weftProf * weftDip;
+      const gap = Math.min(warpProf, weftProf);
+      w *= 0.86 + 0.14 * Math.min(1, gap * 3);
+      // slubs: whole threads a little thicker or paler for a run
+      const slub = warpTop ? hash2(cx, Math.floor(cy / 5), 3) : hash2(Math.floor(cx / 5), cy, 5);
       const runX = fbm(x / 6, y / 64, { period: 32, octaves: 2, seed: 77 });
       const runY = fbm(x / 64, y / 6, { period: 32, octaves: 2, seed: 79 });
       const cloud = fbm(x / 48, y / 48, { period: 4, octaves: 3, seed: 902 });
-      let v = 0.9 + (sx - 0.5) * 0.025 + (sy - 0.5) * 0.025 + (runX - 0.5) * 0.06 + (runY - 0.5) * 0.06 + (cloud - 0.5) * 0.08;
-      v += (hash2(x, y, 9) - 0.5) * 0.02;
+      const stain = fbm(x / 72 + 3, y / 72, { period: 4, octaves: 4, seed: 913 });
+      let v = w * (0.92 + (slub - 0.5) * 0.12 + (runX - 0.5) * 0.08 + (runY - 0.5) * 0.08 + (cloud - 0.5) * 0.12);
+      // charcoal rubbed into the cloth in drifts
+      const ch = Math.max(0, Math.min(1, (stain - 0.5) * 3.2));
+      v *= 1 - ch * 0.32;
+      v += (hash2(x, y, 9) - 0.5) * 0.03;
       const i = (y * S + x) * 4;
-      img.data[i] = Math.min(255, v * 226);
-      img.data[i + 1] = Math.min(255, v * 230);
-      img.data[i + 2] = Math.min(255, v * 214);
+      img.data[i] = Math.max(0, Math.min(255, v * (232 - ch * 18)));
+      img.data[i + 1] = Math.max(0, Math.min(255, v * (224 - ch * 14)));
+      img.data[i + 2] = Math.max(0, Math.min(255, v * (200 - ch * 4)));
       img.data[i + 3] = 255;
     }
     g.putImageData(img, 0, 0);
@@ -2103,7 +2149,7 @@ export class Diorama {
     // the opening view frames what has been explored (the board filling the frame);
     // the whole sheet stays the dolly's far limit
     // (the board with its cartouche, compass and key, all clear of the side panel)
-    const foc = whole;
+    const foc = this.focusBounds ? this._fitPoints(this.focusBounds, 0.94, this.target) : whole;
     this.fitDist = foc.dist;
     this._fitted = true;
     this.fitTarget = foc.target;

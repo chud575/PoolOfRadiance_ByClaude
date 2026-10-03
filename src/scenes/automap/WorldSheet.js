@@ -1040,13 +1040,14 @@ function drawMiniBlock(g, b, m, { seen, secrets, known, here, k }) {
   const clean = makeCanvas(L, L);
   {
     const cg = clean.getContext('2d');
-    cg.fillStyle = 'rgba(244,234,206,0.72)';
+    cg.fillStyle = 'rgba(244,234,206,0.45)';
     cg.fillRect(0, 0, L, L);
     cg.globalCompositeOperation = 'destination-in';
     cg.drawImage(mask, 0, 0);
   }
   // washes
   const wash = makeCanvas(L, L);
+  let fullPlan = null;
   {
     const w = wash.getContext('2d');
     w.scale(k, k);
@@ -1081,6 +1082,10 @@ function drawMiniBlock(g, b, m, { seen, secrets, known, here, k }) {
     // roofs last, so each casts its shadow over the street paving
     for (const [rg, rr, color] of later) engravedRoof(w, rg.cells, CX, CY, cs, rr, color);
     w.setTransform(1, 0, 0, 1, 0, 0);
+    // the whole district engraved from the council's plan, kept before the mask cuts it
+    // to the surveyed squares: drawn in sepia under the graphite where not yet walked
+    fullPlan = makeCanvas(L, L);
+    fullPlan.getContext('2d').drawImage(wash, 0, 0);
     w.globalCompositeOperation = 'destination-in';
     w.drawImage(mask, 0, 0);
   }
@@ -1104,7 +1109,7 @@ function drawMiniBlock(g, b, m, { seen, secrets, known, here, k }) {
     g.fillStyle = 'rgba(244,230,196,0.9)';
     g.fill(ward);
     g.restore();
-    g.fillStyle = 'rgba(250,242,220,0.55)';
+    g.fillStyle = 'rgba(250,242,220,0.3)';
     g.fill(ward);
     g.clip(ward);
   }
@@ -1119,9 +1124,21 @@ function drawMiniBlock(g, b, m, { seen, secrets, known, here, k }) {
   // is laid on a clean vellum patch so it leads the eye
   // (the island keep is engraved as buildings instead: see below)
   if (m.id !== 'sokol_keep') {
-    g.globalAlpha = 0.7;
-    g.drawImage(lay, 0, 0, s, s);
-    g.globalAlpha = 1;
+    if (fullPlan) {
+      // the unwalked remainder: the same engraved roofs and paving, drained to a sepia
+      // proof under a graphite tone, so a surveyed ward reads finished, its walked
+      // squares coloured in
+      g.save();
+      g.filter = 'grayscale(1) sepia(0.6) contrast(1.35)';
+      g.globalAlpha = 0.95;
+      g.globalCompositeOperation = 'multiply';
+      g.drawImage(fullPlan, 0, 0, s, s);
+      g.restore();
+    } else {
+      g.globalAlpha = 0.7;
+      g.drawImage(lay, 0, 0, s, s);
+      g.globalAlpha = 1;
+    }
   }
   g.drawImage(clean, 0, 0, s, s);
   g.globalCompositeOperation = 'multiply';

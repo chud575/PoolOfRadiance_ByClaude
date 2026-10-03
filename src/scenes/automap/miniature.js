@@ -426,14 +426,14 @@ export function buildPartyMiniature(T, { pennant }) {
     { cloak: 0x2e4a2a, coat: 0x3a2a1a, crest: 0x000000, helm: false, shield: false, pole: 'none' },
     { cloak: 0x6a4a2a, coat: 0x5a6a2a, crest: 0x000000, helm: false, shield: true, pole: 'spear', beard: 0xb86a2a, field: '#2e4a2a' },
   ];
-  const SPOTS = [[0, -0.1], [-0.155, -0.035], [0.155, -0.035], [-0.09, 0.12], [0.09, 0.12], [0, 0.03]];
+  const SPOTS = [[0, -0.135], [-0.17, -0.05], [0.17, -0.05], [-0.105, 0.135], [0.105, 0.135], [0, 0.03]];
   let flag = null;
   let flagGeo = null;
   KIT.forEach((v, i) => {
     const f = figure(v);
     const [x, z] = SPOTS[i];
     f.fig.position.set(x, 0.054, z);
-    f.fig.scale.setScalar(i === 0 ? 0.74 : 0.66 * (i === 5 ? 0.86 : 1));
+    f.fig.scale.setScalar(i === 0 ? 0.92 : 0.84 * (i === 5 ? 0.86 : 1));
     f.fig.rotation.y = (i === 0 ? 0 : (r() - 0.5) * 0.5);
     root.add(f.fig);
     if (f.flag) { flag = f.flag; flagGeo = f.flagGeo; }

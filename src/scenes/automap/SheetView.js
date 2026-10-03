@@ -275,10 +275,11 @@ export class SheetView {
       g.fillStyle = rake;
       g.fillRect(0, 0, W, H);
       const gr = g.createRadialGradient(lx, ly, R * 0.06, lx, ly, R);
-      gr.addColorStop(0, 'rgba(255,206,130,0.1)');
-      gr.addColorStop(0.28, 'rgba(255,206,130,0.0)');
-      gr.addColorStop(0.62, 'rgba(40,18,4,0.12)');
-      gr.addColorStop(1, 'rgba(24,10,2,0.42)');
+      gr.addColorStop(0, 'rgba(255,214,140,0.16)');
+      gr.addColorStop(0.24, 'rgba(255,206,130,0.03)');
+      gr.addColorStop(0.4, 'rgba(60,30,8,0.0)');
+      gr.addColorStop(0.66, 'rgba(40,18,4,0.16)');
+      gr.addColorStop(1, 'rgba(24,10,2,0.5)');
       g.fillStyle = gr;
       g.fillRect(0, 0, W, H);
     }
