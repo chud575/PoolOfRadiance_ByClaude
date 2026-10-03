@@ -70,7 +70,7 @@ mat2 rot2(float a) { float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }
 /** Feature anchors + the skin field. Expects the parameter #defines and GLSL_COMMON. */
 export const GLSL_HEAD = /* glsl */`
 float EX() { return 0.0316 * SP * (0.93 + 0.07 * W); }
-float ER() { return 0.0121 * (0.95 + 0.05 * EYE); }
+float ER() { return 0.0124 * (0.95 + 0.05 * EYE); }
 float EZ() { return 0.0638 - 0.0022 * EDEPTH; }
 float LOWF() { return LONG * (1.0 - 0.05 * FEM); }
 float MOUTHY() { return -0.0665 * LOWF(); }
@@ -87,7 +87,7 @@ vec2 lidLines(vec3 q) {
   float edx = (q.x - ex + 0.0012) / (0.0148 * sqrt(EYE));
   float alm = max(0.0, 1.0 - edx * edx);
   // the upper lid peaks inward of centre, the lower lid lowest outward of centre
-  float up = (0.0047 * open + 0.0007 * FEM) * pow(alm, 0.85) * (1.0 + 0.12 * edx) - 0.0009 + sl * (q.x - ex) * 4.0;
+  float up = (0.0051 * open + 0.0007 * FEM) * pow(alm, 0.85) * (1.0 + 0.12 * edx) - 0.0009 + sl * (q.x - ex) * 4.0;
   if (ASLEEP > 0.5) up = -0.0035;
   float lo = -0.0047 * EOPEN * pow(alm, 0.75) * (1.0 - 0.1 * edx) - 0.0008 + sl * (q.x - ex) * 2.0;
   return vec2(up, lo);
@@ -239,7 +239,7 @@ float skin(vec3 p) {
     d = smin(d, ear, 0.006);
   }
   // ---- neck with the sterno-mastoid cords and (men) the larynx; dwarves are bull-necked
-  float nr = mix(0.054, 0.044, fem) * (1.0 + 0.1 * HALF) * (1.0 + 0.16 * sat(BLEN - 1.0) / 0.3);
+  float nr = mix(0.054, 0.044, fem) * (1.0 + 0.1 * HALF) * (1.0 + 0.4 * sat(BLEN - 1.0) / 0.3) * (1.0 + 0.12 * fem * sat(BLEN - 1.0) / 0.3);
   vec3 np = p - vec3(0.0, 0.0, -0.028);
   np.x *= 0.95;
   float neck = sdRC(np, vec3(0.0, -0.06, 0.0), vec3(0.0, -0.2, 0.004), nr, nr * 1.12);

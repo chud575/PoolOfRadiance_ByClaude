@@ -136,7 +136,7 @@ export function oilPaint(color, info, w, h, o = {}) {
     const kw = kuwahara(ref, w, h, kr);
     for (let i = 0; i < N; i++) {
       const keep = Math.min(1, detail[i] * 1.1 + (region[i] === REG.eye ? 1 : 0));
-      const t = (region[i] === REG.bg ? 0.4 : region[i] === REG.metal ? 0.45 : region[i] === REG.hair ? 0.6 : 0.85) * (1 - keep);
+      const t = (region[i] === REG.bg ? 0.4 : region[i] === REG.metal ? 0.45 : region[i] === REG.hair ? 0.4 : region[i] === REG.skin ? 0.3 : 0.7) * (1 - keep);
       for (let c = 0; c < 3; c++) ref[i * 3 + c] += (kw[i * 3 + c] - ref[i * 3 + c]) * t;
     }
   }
@@ -181,7 +181,7 @@ export function oilPaint(color, info, w, h, o = {}) {
         if (reg === REG.eye && L.r > 1.5) continue;
         if (L.thr > 0) {
           const e = Math.abs(cur[i * 3] - ref[i * 3]) + Math.abs(cur[i * 3 + 1] - ref[i * 3 + 1]) + Math.abs(cur[i * 3 + 2] - ref[i * 3 + 2]);
-          const thr = L.thr * 3 * (reg === REG.skin ? 0.5 : reg === REG.bg ? 1.6 : 1);
+          const thr = L.thr * 3 * (reg === REG.skin ? 0.3 : reg === REG.bg ? 1.6 : 1);
           if (e < thr) continue;
         }
         strokes.push(i, R(), R());
@@ -212,13 +212,15 @@ export function oilPaint(color, info, w, h, o = {}) {
         const ca = Math.cos(jit), sa = Math.sin(jit);
         [dx, dy] = [dx * ca - dy * sa, dx * sa + dy * ca];
         if (reg === REG.hair) { len = r * (3.2 + r2 * 3.5); wid = r * (0.55 + r1 * 0.3); }
-        else if (reg === REG.skin) { len = r * (1.4 + r2 * 1.2); wid = r * (0.9 + r1 * 0.3); }
+        else if (reg === REG.skin) { len = r * (1.8 + r2 * 1.8); wid = r * (0.75 + r1 * 0.35); }
         else if (reg === REG.eye) { len = r * 1.2; wid = r * 0.8; }
         else if (reg === REG.metal) { len = r * (1.8 + r2 * 2.0); wid = r * (0.8 + r1 * 0.3); }
         else { len = r * (1.5 + r2 * 1.6); wid = r * (1.05 + r1 * 0.35); }
       }
       // pigment variation
-      const jv = (r2 - 0.5) * (reg === REG.skin ? 6 : 12);
+      const jv = (r2 - 0.5) * (reg === REG.skin ? 11 : 14);
+      // warm/cool pigment shifts in the skin (a painter mixes each stroke a little differently)
+      if (reg === REG.skin) { const hs = (r1 - 0.5) * 9; cr += hs; cb -= hs * 0.8; }
       cr += jv; cg += jv * 0.85; cb += jv * 0.7;
       g.strokeStyle = `rgba(${cr | 0},${cg | 0},${cb | 0},${L.a})`;
       g.lineWidth = wid;

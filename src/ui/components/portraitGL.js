@@ -202,17 +202,19 @@ function setup(ch, o) {
   // headParams exaggerates each template for the meshed miniatures; a painted bust reads the
   // differences at half strength, with the race's own cues restored on top.
   const ix = (k) => HEAD_PARAMS.indexOf(k);
-  for (const k of ['W', 'LONG', 'JAW', 'CHIN', 'CHEEK', 'NOSE', 'BRIDGE', 'TIP', 'EYE', 'SP', 'LIPS', 'MOUTH']) params[ix(k)] = 1 + (params[ix(k)] - 1) * 0.5;
+  for (const k of ['W', 'LONG', 'JAW', 'CHIN', 'CHEEK', 'NOSE', 'BRIDGE', 'TIP', 'EYE', 'SP', 'LIPS', 'MOUTH']) params[ix(k)] = 1 + (params[ix(k)] - 1) * 0.9;
   const RACE = {
     elf: { LONG: 1.04, W: 0.94, CHEEK: 1.08, JAW: 0.92, CHIN: 0.92 },
     halfElf: { LONG: 1.015, W: 0.98 },
     // dwarves (women too): a broad, low head, a heavy jaw and brow, a broad strong nose
-    dwarf: { W: 1.15, NOSE: 1.12, BRIDGE: 1.35, TIP: 1.3, NWIDTH: 1.22, JAW: 1.25, CHIN: 1.15, BROW: 1.4, LONG: 0.92, CRAN: 0.9, CHEEK: 1.12, EYE: 0.95, EDEPTH: 1.3 },
+    dwarf: { W: 1.17, NOSE: 1.14, BRIDGE: 1.4, TIP: 1.35, NWIDTH: 1.28, JAW: 1.3, CHIN: 1.18, BROW: 1.5, LONG: 0.93, CRAN: 0.9, CHEEK: 1.15, EYE: 0.9, EDEPTH: 1.35, EOPEN: 0.9 },
     // halflings: adults with round, ruddy faces — full cheeks, a short snub nose, bright eyes
     halfling: { W: 1.07, LONG: 0.95, CHEEK: 1.15, NOSE: 0.92, TIP: 1.05, EYE: 1.02, JAW: 0.96, CHIN: 0.95, CRAN: 0.96 },
     gnome: { NOSE: 1.3, TIP: 1.45, W: 1.04, EYE: 1.04, BROW: 1.15 },
   }[app.race] ?? {};
   for (const [k, v] of Object.entries(RACE)) params[ix(k)] *= v;
+  // dwarf women are dwarves first: the heavy brow and jaw the female template would soften stay
+  if (app.race === 'dwarf' && app.fem) { params[ix('BROW')] *= 1.25; params[ix('JAW')] *= 1.08; params[ix('LIPS')] *= 1.05; params[ix('AGE')] = Math.max(params[ix('AGE')], 0.15); }
   if (app.race === 'halfling') params[ix('HOOK')] -= 0.5;
   u.uP.value.set(params);
   const torso = o.crop === 'torso';
@@ -227,15 +229,19 @@ function setup(ch, o) {
   // The matrices map world → local (transpose of local → world rotation).
   const headM = rotY(yaw).multiply(rotX(pitch)).multiply(rotZ(tilt));
   u.uHeadR.value.copy(headM).transpose();
-  u.uBodyR.value.copy(rotY(yaw * 0.45 + side)).transpose();
+  // dwarves: broad, deep shoulders (the bust widened), the head sunk on a short thick neck
+  const dwarf = app.race === 'dwarf';
+  const bodyM = rotY(yaw * 0.45 + side).transpose();
+  if (dwarf) bodyM.premultiply(new THREE.Matrix3().set(1 / 1.16, 0, 0, 0, 1 / 1.04, 0, 0, 0, 1 / 1.1));
+  u.uBodyR.value.copy(bodyM);
   const hs = RACE_SCALE[app.race] ?? 1;
   u.uHeadScale.value = hs;
-  u.uHeadC.value.set(0, 0, 0);
+  u.uHeadC.value.set(0, dwarf ? -0.024 : 0, 0);
   // Camera: a long lens (no distortion), eye level a touch below the eyes.
   const viewH = o.viewH ?? (torso ? 0.74 : 0.41);
   const fov = 14;
   const dist = viewH / (2 * Math.tan((fov * Math.PI) / 360));
-  const target = new THREE.Vector3(0, o.targetY ?? (torso ? -0.24 : -0.082), 0);
+  const target = new THREE.Vector3(0, o.targetY ?? (torso ? -0.24 : -0.082) - (dwarf ? 0.018 : 0), 0);
   u.uCamPos.value.set(target.x + (o.camX ?? 0), target.y + 0.012, dist);
   const fwd = target.clone().sub(u.uCamPos.value).normalize();
   const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
@@ -257,10 +263,14 @@ function setup(ch, o) {
   // Racial hair culture: dwarf women wear two heavy plaits, dwarf men a forked, ringed beard;
   // halflings a crop of curls.
   let hairId = HAIR_ID[app.hair] ?? 1;
-  if (app.race === 'dwarf' && app.fem && !app.hood && app.hair !== 'bald') hairId = 11;
+  // dwarf women plait long hair in two heavy braids; the other cuts keep their own shape
+  if (app.race === 'dwarf' && app.fem && !app.hood && app.hair === 'long') hairId = 11;
   if (app.race === 'halfling' && !app.hood && app.hair !== 'bald') hairId = 10;
   u.uHair.value = hairId;
-  u.uBeard.value = app.race === 'dwarf' && !app.fem ? 6 : BEARD_ID[app.beard] ?? 0;
+  // every dwarf man is bearded, each in his own fashion: a short dense spade, a long fall, or the
+  // broad mass worked into two ringed plaits
+  const DWARF_BEARD = { none: 4, stubble: 4, moustache: 4, goatee: 5, full: 6, long: 5 };
+  u.uBeard.value = app.race === 'dwarf' && !app.fem ? DWARF_BEARD[app.beard] ?? 6 : BEARD_ID[app.beard] ?? 0;
   u.uHelm.value = app.helm ? 1 : 0;
   u.uHood.value = app.hood ? 1 : 0;
   u.uBody.value = BODY_ID[app.body] ?? 0;
@@ -370,8 +380,8 @@ function applyFrame(job) {
   u.uRes.value.set(job.RW, job.RH);
   u.uMode.value = o.mode ?? 0;
   u.uDbg.value = o.dbg ?? 0;
-  u.uKeyDir.value.fromArray(o.key ?? [-0.62, 0.6, 0.5]);
-  u.uLightK.value.fromArray(o.lightK ?? [1.75, 0.17, 1.3, 0.36]);
+  u.uKeyDir.value.fromArray(o.key ?? [-0.82, 0.5, 0.28]);
+  u.uLightK.value.fromArray(o.lightK ?? [1.5, 0.62, 0.8, 0.4]);
   u.uLite.value = job.scale < 0.35 ? 1 : 0;
   u.uSpot.value.set(0.02, o.crop === 'torso' ? -0.2 : 0, 0, o.crop === 'torso' ? 0.14 : 0.028);
 }

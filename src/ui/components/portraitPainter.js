@@ -1611,6 +1611,27 @@ async function fromLarger(ch, scale, crop) {
   return c.toDataURL('image/png');
 }
 
+const quick = new Map();
+/**
+ * A rough first pass of a portrait (a small, unpainted render, ~40 px wide): shown at once while
+ * the oil painting is made, so a picker never sits on blank tiles. Cheap even on a software GPU
+ * once the painter's shader is built. Returns null if no WebGL.
+ * @returns {string|null}
+ */
+export function portraitQuickURL(ch, crop = 'head') {
+  const key = portraitKey(ch, 'q', crop);
+  if (quick.has(key)) return quick.get(key);
+  const off = offscreen();
+  if (!off) return null;
+  let u = null;
+  try {
+    u = renderPortraitWith(off.renderer, ch, { scale: 0.15, crop, raw: true, ss: 1 }).toDataURL('image/png');
+  } catch { return null; }
+  if (quick.size > 64) quick.delete(quick.keys().next().value);
+  quick.set(key, u);
+  return u;
+}
+
 const pending = new Map();
 /**
  * portraitURL without long main-thread stalls: memory, then a larger copy scaled down, then the

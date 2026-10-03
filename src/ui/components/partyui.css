@@ -646,3 +646,5 @@ img.pc-pending { filter: saturate(0.7) brightness(0.9); }
 .cc-abrow .mods { color: #b9b3a2; font-style: normal; }
 .cc-hubslot .cl { font-size: max(11px, 0.78em); }
 .cc-hubslot .nm { font-size: max(12px, 0.95em); }
+/* The rough first pass of a portrait (a small unpainted render) while its oil painting is made. */
+img.pc-pending.pc-rough { filter: blur(0.7px) saturate(0.85) brightness(0.95); background: none; }
