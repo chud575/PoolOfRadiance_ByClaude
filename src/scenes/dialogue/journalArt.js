@@ -12,7 +12,7 @@ import { rngOf, makeCanvas } from '../../ui/art/paint.js';
 // subject of each entry's plate
 const PLATES = {
   1: { setting: 'docks', light: 'dusk' }, 2: { setting: 'docks', light: 'day' }, 3: { setting: 'cityhall', actor: 'clerk' }, 4: { setting: 'cityhall', actor: 'clerk' },
-  5: { setting: 'slums', monsters: [{ id: 'kobold', count: 3 }] }, 6: { setting: 'keep', light: 'night' }, 7: { setting: 'chapel', actor: 'ferran', light: 'ghost', pose: 'vigil' },
+  5: { setting: 'slums', monsters: [{ id: 'kobold', count: 3 }] }, 6: { setting: 'keep', light: 'night' }, 7: { setting: 'chapel', actor: 'ferran', light: 'ghost', pose: 'vigil', bgDark: true },
   8: { setting: 'well_head' }, 9: { setting: 'plaza', light: 'day' }, 10: { setting: 'library', actor: 'sage' }, 11: { setting: 'library' }, 12: { setting: 'textile' },
   13: { setting: 'temple_bane', actor: 'bane_priest' }, 14: { setting: 'graveyard', monsters: [{ id: 'skeleton', count: 3 }] }, 15: { setting: 'castle', monsters: [{ id: 'hillGiant', count: 1 }] },
   16: { setting: 'gate', monsters: [{ id: 'orc', count: 3 }] }, 17: { setting: 'temple_bane' }, 18: { setting: 'pool', monsters: [{ id: 'tyranthraxus', count: 1 }] }, 19: { setting: 'wilds' },
@@ -46,7 +46,7 @@ export function engravedPlate(n) {
   const cx = sn ? sx / sn : PW / 2;
   const x0 = Math.round(Math.max(0, Math.min(PW - W, cx - W / 2)));
   const crop = (src) => { const c = makeCanvas(W, H); c.getContext('2d').drawImage(src, -x0, 0); return c; };
-  const url = engrave(crop(wide), crop(wmask), n).toDataURL('image/png');
+  const url = engrave(crop(wide), crop(wmask), n, spec).toDataURL('image/png');
   plateCache.set(n, url);
   return url;
 }
@@ -61,7 +61,7 @@ export function engravedPlate(n) {
  * they read against a quieter background. An oval vignette keeps the work
  * inside the plate mark.
  */
-function engrave(src, maskC, seed) {
+function engrave(src, maskC, seed, opts = {}) {
   const W = src.width;
   const H = src.height;
   const d = src.getContext('2d').getImageData(0, 0, W, H).data;
@@ -109,16 +109,19 @@ function engrave(src, maskC, seed) {
       // the subject is shaded on its own range (a pale ghost still gets form-following hatching):
       // light planes stay open paper, the turning planes take one and two layers, the core shadow three
       t = 1 - Math.max(0, Math.min(1, (B[i] - slo) / Math.max(0.05, shi - slo)));
-      t = 0.08 + Math.pow(t, 1.1) * 0.88;
+      t = opts.bgDark ? 0.02 + Math.pow(t, 1.6) * 0.62 : 0.08 + Math.pow(t, 1.1) * 0.88;
     } else {
       t = 1 - Math.max(0, Math.min(1, (B[i] - lo) / Math.max(0.05, hi - lo)));
-      t = 0.08 + Math.pow(t, 1.4) * 0.74; // background kept light and quiet: open paper, ruled tints, the subject carries the plate
+      // background kept light and quiet (open paper, ruled tints) — or, behind a pale subject such
+      // as a ghost, dark: the figure then reads as clean paper cut out of a cross-hatched night
+      t = opts.bgDark ? 0.5 + Math.pow(t, 0.9) * 0.45 : 0.08 + Math.pow(t, 1.4) * 0.74;
     }
-    // oval vignette wholly inside the plate mark
-    const vx = (x - W / 2) / (W * 0.48);
-    const vy = (y - H / 2) / (H * 0.46);
-    const v = vx ** 4 + vy ** 4 + Math.sin(x * 0.07 + seed) * Math.cos(y * 0.09) * 0.03;
-    tone[i] = t * Math.max(0, Math.min(1, (1 - v) * 3.2));
+    // three value groups, as an engraver keys a plate: open paper, one ruled tint, crosshatch
+    const sst = (a, b, v) => { const q = Math.max(0, Math.min(1, (v - a) / (b - a))); return q * q * (3 - 2 * q); };
+    t = 0.04 + 0.38 * sst(0.26, 0.32, t) + 0.46 * sst(0.6, 0.66, t);
+    // the work stops crisply at the inner rule of the plate mark
+    const m = 15;
+    tone[i] = x < m || y < m || x >= W - m || y >= H - m ? 0 : t;
   }
   // structure tensor → stroke direction along the forms
   const gx = new Float32Array(N); const gy = new Float32Array(N);
@@ -198,7 +201,7 @@ function engrave(src, maskC, seed) {
   for (let i = 0; i < 9000; i++) {
     const x = R() * W; const y = R() * H;
     const t = at(tone, x, y);
-    if (t < 0.8 || R() > (t - 0.8) * 4) continue;
+    if (t < 0.9 || R() > (t - 0.9) * 4) continue;
     og.fillStyle = ink(0.8);
     og.fillRect(x, y, 1.1, 1.1);
   }
@@ -207,9 +210,7 @@ function engrave(src, maskC, seed) {
   const o = img.data;
   for (let y = 2; y < H - 2; y++) for (let x = 2; x < W - 2; x++) {
     const i = y * W + x;
-    const vx = (x - W / 2) / (W * 0.48);
-    const vy = (y - H / 2) / (H * 0.46);
-    const fade = Math.max(0, Math.min(1, (1 - (vx ** 4 + vy ** 4)) * 3));
+    const fade = x < 15 || y < 15 || x >= W - 15 || y >= H - 15 ? 0 : 1;
     if (fade <= 0) continue;
     const e = Math.hypot(gx[i], gy[i]) * 0.25 * fade;
     // silhouette: the mask's edge sampled two pixels out, so the line is 2-3 px, the heaviest on the plate
@@ -228,11 +229,11 @@ function engrave(src, maskC, seed) {
   }
   og.putImageData(img, 0, 0);
   // plate mark: a double ruled border pressed into the paper
-  og.strokeStyle = 'rgba(38,24,14,0.55)';
-  og.lineWidth = 1.5;
-  og.strokeRect(4, 4, W - 8, H - 8);
-  og.lineWidth = 0.8;
-  og.strokeRect(9, 9, W - 18, H - 18);
+  og.strokeStyle = 'rgba(38,24,14,0.92)';
+  og.lineWidth = 2.2;
+  og.strokeRect(6, 6, W - 12, H - 12);
+  og.lineWidth = 1;
+  og.strokeRect(14.5, 14.5, W - 29, H - 29);
   return out;
 }
 

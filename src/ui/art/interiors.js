@@ -98,16 +98,18 @@ function paintWax(g, bx, by, tx, ty, w, R, pool) {
   const hh = by - ty;
   const o = { pool };
   // the light it throws on the surface beneath
-  glowEllipse(g, bx, by + 1, w * 5, w * 1.3, o.pool ?? '#ffb860', 0.32, 'screen');
+  glowEllipse(g, bx, by + 1, w * 7, w * 1.7, o.pool ?? '#ffb860', 0.4, 'screen');
+  glowEllipse(g, bx, by + 1, w * 2.6, w * 0.7, '#fff0c8', 0.3, 'screen');
   g.save();
   // body: warm ivory, rounded by the light from its own flame and the room
   const bg = g.createLinearGradient(bx - w / 2, 0, bx + w / 2, 0);
   bg.addColorStop(0, '#d8c49c'); bg.addColorStop(0.3, '#fff2d6'); bg.addColorStop(0.65, '#ead6ae'); bg.addColorStop(1, '#8a7452');
   g.fillStyle = bg;
   g.beginPath();
-  g.moveTo(bx - w / 2, by); g.lineTo(tx - w / 2, ty + w * 0.15);
-  g.quadraticCurveTo(tx, ty - w * 0.2, tx + w / 2, ty + w * 0.15);
-  g.lineTo(bx + w / 2, by); g.closePath(); g.fill();
+  // tapered: a church candle narrows a little toward its burning end
+  g.moveTo(bx - w * 0.55, by); g.lineTo(tx - w * 0.42, ty + w * 0.15);
+  g.quadraticCurveTo(tx, ty - w * 0.16, tx + w * 0.42, ty + w * 0.15);
+  g.lineTo(bx + w * 0.55, by); g.closePath(); g.fill();
   // the flame lights the wax from inside near the top: warm, translucent
   const tg = g.createLinearGradient(0, ty, 0, ty + Math.min(hh, w * 3.5));
   tg.addColorStop(0, 'rgba(255,190,90,0.75)'); tg.addColorStop(1, 'rgba(255,190,90,0)');
@@ -599,26 +601,49 @@ function roseWindow(g, cx, cy, r, palette, seed = 1) {
 /** Hanging garland of roses along a curve. */
 function garland(g, x0, y0, x1, y1, sag, seed = 1) {
   const R = rngOf(seed);
-  for (let i = 0; i <= 40; i++) {
-    const t = i / 40;
-    const x = lerp(x0, x1, t);
-    const y = lerp(y0, y1, t) + Math.sin(t * Math.PI) * sag;
-    g.fillStyle = rgba('#1e3a18', 0.95, 0.8 + R() * 0.5);
-    g.beginPath();
-    g.ellipse(x + (R() - 0.5) * 8, y + (R() - 0.5) * 6, 6, 3, R() * 3, 0, Math.PI * 2);
-    g.fill();
-    if (i % 2 === 0) {
-      const rx = x + (R() - 0.5) * 6;
-      const ry = y + (R() - 0.5) * 5;
-      const gr = g.createRadialGradient(rx - 1.5, ry - 1.5, 0.5, rx, ry, 5.5);
-      gr.addColorStop(0, '#ff6a7a');
-      gr.addColorStop(0.5, '#b0141e');
-      gr.addColorStop(1, '#4a0408');
+  const at = (t) => [lerp(x0, x1, t), lerp(y0, y1, t) + Math.sin(t * Math.PI) * sag];
+  // the cord, then pointed serrated leaves along it, then the roses in clusters of three
+  g.strokeStyle = 'rgba(40,30,14,0.8)';
+  g.lineWidth = 1.5;
+  g.beginPath();
+  for (let i = 0; i <= 30; i++) { const [x, y] = at(i / 30); if (i) g.lineTo(x, y); else g.moveTo(x, y); }
+  g.stroke();
+  const leaf = (x, y, a, l) => {
+    g.save(); g.translate(x, y); g.rotate(a);
+    const lg = g.createLinearGradient(0, -l * 0.3, 0, l * 0.3);
+    lg.addColorStop(0, '#4a7a34'); lg.addColorStop(1, '#16300f');
+    g.fillStyle = lg;
+    g.beginPath(); g.moveTo(0, 0); g.quadraticCurveTo(l * 0.5, -l * 0.38, l, 0); g.quadraticCurveTo(l * 0.5, l * 0.38, 0, 0); g.fill();
+    g.strokeStyle = 'rgba(160,200,120,0.35)'; g.lineWidth = 0.7;
+    g.beginPath(); g.moveTo(l * 0.1, 0); g.lineTo(l * 0.9, 0); g.stroke();
+    g.restore();
+  };
+  for (let i = 0; i <= 46; i++) {
+    const [x, y] = at(i / 46);
+    leaf(x, y, (R() - 0.5) * 2.4 + (R() < 0.5 ? Math.PI : 0), 7 + R() * 5);
+  }
+  // a rose: a dark cup, petals spiralling in toward a tight bud, a lit rim on each petal
+  const rose = (x, y, r) => {
+    g.fillStyle = '#3a0408';
+    g.beginPath(); g.arc(x, y + r * 0.1, r, 0, Math.PI * 2); g.fill();
+    for (let k = 0; k < 7; k++) {
+      const a = k * 2.4 + R();
+      const rr = r * (1 - k * 0.11);
+      const px = x + Math.cos(a) * r * 0.18 * (1 - k / 7), py = y + Math.sin(a) * r * 0.14 * (1 - k / 7);
+      const gr = g.createRadialGradient(px - rr * 0.3, py - rr * 0.4, rr * 0.1, px, py, rr);
+      gr.addColorStop(0, k > 4 ? '#ff8a94' : '#e8384a'); gr.addColorStop(0.7, '#a8101e'); gr.addColorStop(1, '#4a0408');
       g.fillStyle = gr;
-      g.beginPath();
-      g.arc(rx, ry, 5 + R() * 2, 0, Math.PI * 2);
-      g.fill();
+      g.beginPath(); g.arc(px, py, rr, a, a + Math.PI * 1.3); g.closePath(); g.fill();
+      g.strokeStyle = 'rgba(255,170,170,0.45)'; g.lineWidth = Math.max(0.6, r * 0.08);
+      g.beginPath(); g.arc(px, py, rr * 0.92, a + 0.2, a + Math.PI * 1.1); g.stroke();
     }
+    g.fillStyle = '#5a0610';
+    g.beginPath(); g.arc(x + r * 0.05, y, r * 0.18, 0, Math.PI * 2); g.fill();
+  };
+  for (let i = 1; i < 9; i++) {
+    const [x, y] = at(i / 9 + (R() - 0.5) * 0.02);
+    const r = 5 + R() * 2;
+    for (const [dx, dy, k] of [[-r * 1.1, r * 0.3, 0.8], [r * 1.05, r * 0.4, 0.75], [0, 0, 1]]) rose(x + dx, y + dy, r * k);
   }
 }
 
@@ -701,14 +726,46 @@ S.cityhall = (g, W, H, R, o) => {
   P.banner(g, tx, H * 0.07, W * 0.14, H * 0.44, '#5a1a14', { emblem: 'scales', trim: '#d8b25a', seed: 4 });
   P.banner(g, W * 0.5, H * 0.12, W * 0.04, H * 0.26, '#1d3574', { emblem: 'crown', tatter: 0.15, seed: 5 });
   // pigeonholes of rolled deeds on the back wall right
-  g.fillStyle = '#20140a';
-  g.fillRect(W * 0.4, H * 0.42, W * 0.09, H * 0.2);
-  for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) {
-    const cx = W * 0.407 + i * W * 0.021;
-    const cy = H * 0.437 + j * H * 0.047;
-    g.fillStyle = '#0a0604';
-    g.fillRect(cx, cy, W * 0.018, H * 0.04);
-    if (R() < 0.8) { g.fillStyle = rgba('#e8dcbc', 1, 0.7 + R() * 0.3); g.beginPath(); g.arc(cx + W * 0.009, cy + H * 0.022, W * 0.006, 0, Math.PI * 2); g.fill(); }
+  {
+    // an oak cabinet: a moulded cornice, stiles, and niches each holding a few rolled deeds seen
+    // end-on (paper spirals, wooden end caps, a ribbon or a wax seal hanging from some)
+    const x0 = W * 0.395, y0 = H * 0.41, cw = W * 0.1, ch = H * 0.22;
+    g.fillStyle = linGrad(g, x0, 0, x0 + cw, 0, [[0, '#4a301a'], [0.5, '#5e3e22'], [1, '#2e1c0e']]);
+    g.fillRect(x0 - 4, y0 - 6, cw + 8, ch + 10);
+    g.fillStyle = linGrad(g, 0, y0 - 12, 0, y0, [[0, '#7a5430'], [1, '#2a180a']]);
+    g.fillRect(x0 - 8, y0 - 12, cw + 16, 7);
+    const nx = 4, ny = 4, gap = 3;
+    const cwid = (cw - gap * (nx + 1)) / nx, chgt = (ch - gap * (ny + 1)) / ny;
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+      const cx = x0 + gap + i * (cwid + gap), cy = y0 + gap + j * (chgt + gap);
+      g.fillStyle = '#0c0703';
+      g.fillRect(cx, cy, cwid, chgt);
+      g.fillStyle = 'rgba(0,0,0,0.5)';
+      g.fillRect(cx, cy, cwid, chgt * 0.25);
+      const n = 1 + Math.floor(R() * 3.2);
+      for (let k = 0; k < n; k++) {
+        const r = Math.min(cwid, chgt) * (0.2 + R() * 0.07);
+        const sx = cx + cwid * (0.28 + (k % 2) * 0.42) + (R() - 0.5) * 2;
+        const sy = cy + chgt - r - 1 - (k > 1 ? r * 1.6 : 0);
+        // paper roll end: cream with a dark spiral; some carry a turned wooden end cap
+        const cap = R() < 0.45;
+        const rg = g.createRadialGradient(sx - r * 0.3, sy - r * 0.3, r * 0.1, sx, sy, r);
+        rg.addColorStop(0, cap ? '#a8784a' : '#f4e8c8'); rg.addColorStop(1, cap ? '#4a2c14' : '#a89068');
+        g.fillStyle = rg;
+        g.beginPath(); g.arc(sx, sy, r, 0, Math.PI * 2); g.fill();
+        g.strokeStyle = cap ? 'rgba(30,16,6,0.7)' : 'rgba(110,84,50,0.75)';
+        g.lineWidth = Math.max(0.5, r * 0.12);
+        g.beginPath();
+        if (cap) { g.arc(sx, sy, r * 0.55, 0, Math.PI * 2); }
+        else for (let a = 0; a < Math.PI * 5; a += 0.3) { const rr = r * 0.85 * (a / (Math.PI * 5)); const px = sx + Math.cos(a) * rr, py = sy + Math.sin(a) * rr; if (a === 0) g.moveTo(px, py); else g.lineTo(px, py); }
+        g.stroke();
+        if (R() < 0.3) { g.fillStyle = R() < 0.5 ? '#9a1a14' : '#1d3574'; g.fillRect(sx - r * 0.15, sy + r * 0.6, r * 0.3, r * 1.6); }
+        if (R() < 0.2) { g.fillStyle = '#b02018'; g.beginPath(); g.arc(sx + r * 0.4, sy + r * 1.3, r * 0.4, 0, Math.PI * 2); g.fill(); }
+      }
+      // the niche's lit lower lip
+      g.fillStyle = 'rgba(255,210,150,0.18)';
+      g.fillRect(cx, cy + chgt - 1, cwid, 1);
+    }
   }
   // right wall: ledgers to the ceiling, built along the wall in true perspective
   wallBookcase(g, [[rm.bx1, rm.by0], [W, -H * 0.05], [W, H * 1.05], [rm.bx1, rm.by1]], 0.12, 0.8, 0.1, 0.8, R);
@@ -910,8 +967,17 @@ function templeTyr(g, W, H, R, o, d) {
     const x = cx + Math.sin(a) * W * 0.4;
     const near = 1 - Math.cos(a);
     const by = floorY + near * H * 0.16;
-    marbleColumn(g, x, -10, by, 30 + near * 50, { base: '#c4c6c8', seed: Math.round(a * 10) + 20 });
-    contactShadow(g, x, by, 40 + near * 40, 8, 0.5);
+    const cw = 34 + near * 56;
+    const top = H * 0.06 - near * H * 0.05;
+    marbleColumn(g, x, top, by, cw, { base: '#c4c6c8', seed: Math.round(a * 10) + 20 });
+    // the architrave block the capital carries, running out of frame
+    g.fillStyle = linGrad(g, x - cw, 0, x + cw, 0, [[0, '#4a4a50'], [0.35, '#a8a8ac'], [1, '#3a3a40']]);
+    g.fillRect(x - cw * 0.85, top - H * 0.08, cw * 1.7, H * 0.08);
+    g.fillStyle = 'rgba(10,10,14,0.5)';
+    g.fillRect(x - cw * 0.85, top - H * 0.012, cw * 1.7, H * 0.012);
+    // ambient occlusion where shaft meets floor, and the plinth's shadow on the marble
+    contactShadow(g, x, by, cw * 1.1, 9 + near * 6, 0.6);
+    glowEllipse(g, x + cw * 0.5, by + 4, cw * 1.4, 10 + near * 8, '#000000', 0.25, 'source-over');
   }
   // the oculus beam
   lightShaft(g, cx, -10, W * 0.12, cx, H * 0.95, W * 0.3, '#fff4d8', 0.42);
@@ -961,10 +1027,10 @@ function marbleColumn(g, x, yTop, yBot, w, { base = '#c4c6c8', seed = 1 } = {}) 
     if (fw < 1.2) continue;
     const lit = 1 - (u0 + u1) / 2;
     const fg = g.createLinearGradient(x0, 0, x1, 0);
-    fg.addColorStop(0, `rgba(20,16,12,${0.28 + (1 - lit) * 0.2})`);
-    fg.addColorStop(0.45, 'rgba(20,16,12,0.06)');
-    fg.addColorStop(0.85, `rgba(255,250,236,${0.12 + lit * 0.18})`);
-    fg.addColorStop(1, 'rgba(20,16,12,0.2)');
+    fg.addColorStop(0, `rgba(20,16,12,${0.42 + (1 - lit) * 0.25})`);
+    fg.addColorStop(0.4, 'rgba(20,16,12,0.1)');
+    fg.addColorStop(0.82, `rgba(255,250,236,${0.2 + lit * 0.28})`);
+    fg.addColorStop(1, 'rgba(20,16,12,0.35)');
     g.fillStyle = fg;
     g.fillRect(x0 + 0.5, top, fw - 1, bot - top);
     // the channel's rounded ends
@@ -1092,6 +1158,22 @@ function templeSune(g, W, H, R, o, d) {
   }
   roseWindow(g, W * 0.36, H * 0.27, H * 0.19, pal, 41);
   godRays(g, { x: W * 0.36, y: H * 0.3, w: H * 0.3 }, { x: W * 0.42, y: H * 0.9, w: W * 0.32, h: H * 0.12 }, pal, { alpha: 0.18, seed: 42 });
+  // the window's colours lie on the marble in a sheared pool (red, rose and gold quarries)
+  {
+    const fy = H * 0.86;
+    g.save();
+    g.globalCompositeOperation = 'screen';
+    const RR = rngOf(45);
+    for (let i = 0; i < 38; i++) {
+      const a = RR() * Math.PI * 2, rr = Math.sqrt(RR());
+      const px = W * 0.43 + Math.cos(a) * rr * W * 0.13 - (fy - H * 0.8) * 0.2;
+      const py = fy + Math.sin(a) * rr * H * 0.045;
+      const col = pal[Math.floor(RR() * pal.length)];
+      glowEllipse(g, px, py, W * (0.018 + RR() * 0.02), H * (0.008 + RR() * 0.01), col, 0.3, 'screen');
+    }
+    glowEllipse(g, W * 0.43, fy, W * 0.16, H * 0.06, '#ff9aa8', 0.22, 'screen');
+    g.restore();
+  }
   garland(g, W * 0.12, H * 0.08, W * 0.6, H * 0.08, H * 0.06, 43);
   garland(g, W * 0.64, H * 0.12, W * 0.98, H * -0.02, H * 0.05, 44);
   const lr = rig({ key: [-0.3, 0.5, 0.8], keyC: '#ffb890', keyI: 1.3, rimC: '#ff9aa8', amb: 0.45, sky: '#7a3a44', ground: '#3a1414' });
@@ -1310,7 +1392,7 @@ S.chapel = (g, W, H, R, o) => {
   pew(fg, W * 0.7, H * 1.02, W * 0.34, 1.9, { side: -1, seed: 4 });
   pew(g, W * 0.06, H * 0.84, W * 0.26, 1.2, { side: 1, seed: 5 });
   pew(g, W * 0.68, H * 0.86, W * 0.26, 1.25, { broken: 0.6, side: -1, seed: 6 });
-  return { ...rm, lights, motes: { color: '#aef4ff', count: 70, rise: 0.06 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.43, y: H * 0.95, h: H * 0.6, pose: 'vigil', yaw: 0.75, vigilYaw: 2.55 } };
+  return { ...rm, lights, motes: { color: '#aef4ff', count: 70, rise: 0.06 }, floorY: rm.by1, fgUsed: true, actorSlot: { x: W * 0.34, y: H * 0.985, h: H * 0.58, pose: 'vigil', yaw: 0.75, vigilYaw: 2.55, altar: [ax, ay] } };
 };
 
 // ================================================================== Hall of Training
@@ -1597,8 +1679,9 @@ S.tavern = (g, W, H, R, o) => {
   if (cast.includes('watch')) {
     // two watchmen in the Watch's blue tabards, toe to toe
     const tab = (seed, top) => ({ seed, outfit: { shirt: '#4a4a5a', top, topKind: 'tabard', symbol: 'tower', sleeves: 'long', trousers: '#2a2a30', boots: '#1a1410', belt: '#2a1a0e' } });
-    person({ ...tab(41, '#1d3574'), hair: '#5a3a1e', beard: 'moustache', pose: 'argue' }, 0.375, 0.745, 0.44, 0.95, 0.12);
-    person({ ...tab(43, '#22407e'), age: 0.5, hair: '#2a1a10', beard: 'full', build: 1.1, belly: true, pose: 'folded' }, 0.452, 0.75, 0.45, -0.85, 0.12);
+    // a stride apart: one jabs a finger and leans in, the other rocks back with his palms up
+    person({ ...tab(41, '#1d3574'), hair: '#5a3a1e', beard: 'moustache', pose: 'argue' }, 0.352, 0.745, 0.44, 1.0, 0.12);
+    person({ ...tab(43, '#22407e'), age: 0.5, hair: '#2a1a10', beard: 'full', build: 1.1, belly: true, pose: 'rebuff' }, 0.478, 0.752, 0.45, -0.95, 0.12);
   }
   if (cast.includes('sailors')) {
     person({ seed: 51, age: 0.5, skin: '#a87050', hair: '#1a1210', beard: 'full', pose: 'folded', outfit: { shirt: '#b8ac94', top: '#2a3040', topKind: 'jerkin', sleeves: 'rolled', trousers: '#2a2a30', boots: '#1a1410' } }, 0.12, 0.84, 0.5, 0.7);

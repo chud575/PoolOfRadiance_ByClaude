@@ -63,6 +63,17 @@ export function rigAt(light, info, x, y, W) {
     const d = Math.abs(l.x - x) + Math.abs(l.y - y) * 0.5;
     if (d < best) { best = d; rimDir = [Math.sign(l.x - x || 1) * 0.85, 0.35 + Math.max(0, (y - l.y) / W) * 0.6, -0.6]; rimC = l.color ?? L.rim; }
   }
+  if ((light === 'dusk' || light === 'night') && best < Infinity) {
+    // in the streets after dark the lamps are the key: warm light from the nearest torch's side and
+    // in front, a cool moon rim from behind on the other side, a low cold ambient between
+    const side = Math.sign(rimDir[0]) || 1;
+    return {
+      key: { dir: [side * 0.62, 0.42, 0.66], color: rimC, i: R.keyI * 1.2 },
+      rim: { dir: [-side * 0.78, 0.45, -0.6], color: '#9ab8ff', i: 1.55 },
+      fill: { dir: [-side * 0.5, 0.8, 0.3], color: '#6a78b0', i: 0.22 },
+      sky: '#2e3050', ground: R.ground, amb: R.amb * 0.62,
+    };
+  }
   return {
     key: { dir: R.key, color: L.key, i: R.keyI * 1.12 },
     rim: { dir: rimDir, color: rimC, i: (0.6 + (L.rimA ?? 0.5) * 1.3) * 1.3 },
@@ -132,8 +143,28 @@ export class PanelComposer {
     this.actors.push({ r, x: slot.x, y: slot.y, ph: 1.3, amp: 0.7, ghost: !!actor.ghost && !r.spectral, hover: !!actor.ghost, sway: 0.4 });
     if (actor.ghost) {
       // the ghost is a cold point light: it spills onto the floor and the altar around him
-      glowEllipse(g, slot.x, slot.y - slot.h * 0.02, slot.h * 0.5, slot.h * 0.09, '#7ae8ff', 0.3, 'screen');
-      glow(g, slot.x, slot.y - slot.h * 0.55, slot.h * 0.9, '#5ad8f0', 0.16, 'screen');
+      glowEllipse(g, slot.x, slot.y - slot.h * 0.02, slot.h * 0.75, slot.h * 0.12, '#7ae8ff', 0.42, 'screen');
+      glowEllipse(g, slot.x, slot.y - slot.h * 0.02, slot.h * 0.3, slot.h * 0.05, '#c8fbff', 0.35, 'screen');
+      glow(g, slot.x, slot.y - slot.h * 0.55, slot.h * 1.1, '#5ad8f0', 0.2, 'screen');
+      // his light falls on the altar he kneels to: the near face of the stone goes cold
+      if (slot.altar) {
+        const [ax, ay] = slot.altar;
+        glowEllipse(g, ax - slot.h * 0.12, ay - slot.h * 0.2, slot.h * 0.32, slot.h * 0.26, '#7ae8ff', 0.3, 'screen');
+        glowEllipse(g, (ax + slot.x) / 2, ay + slot.h * 0.02, slot.h * 0.55, slot.h * 0.08, '#8ff0ff', 0.25, 'screen');
+      }
+      // and on the pews in front of him (lit only where the wood is)
+      if (this.fg) {
+        const fgc = this.fg.getContext('2d');
+        fgc.save();
+        fgc.globalCompositeOperation = 'source-atop';
+        const gr = fgc.createRadialGradient(slot.x, slot.y - slot.h * 0.3, 0, slot.x, slot.y - slot.h * 0.3, slot.h * 0.95);
+        gr.addColorStop(0, 'rgba(110,225,255,0.4)');
+        gr.addColorStop(0.5, 'rgba(80,190,230,0.14)');
+        gr.addColorStop(1, 'rgba(80,190,230,0)');
+        fgc.fillStyle = gr;
+        fgc.fillRect(0, 0, this.W, this.H);
+        fgc.restore();
+      }
       this.info.lights.push({ x: slot.x, y: slot.y - slot.h * 0.6, s: slot.h * 0.18, kind: 'ghost', color: '#8ff0ff' });
     }
   }
@@ -563,7 +594,8 @@ export function ghostActor(pose = 'vigil') {
       const r = renderCreature('ghostKnight', h, { ...rig, key: { dir: [-0.3, 0.8, 0.5], color: '#e8fbff', i: 1.25 }, rim: { dir: [0.7, 0.4, -0.6], color: '#e0ffff', i: 1.4 }, sky: '#6aa8c0', ground: '#0a1a20', amb: 0.62 }, 7, { yaw, poseOverride: P, solid: true, ink: 0.9 });
       if (!r) return null;
       const sp = spectral(flattenSprite(r), r.emit);
-      if (pose !== 'vigil') sp.dx = slot.h * 0.42;
+      // risen, he stands where he knelt, clear of the altar and the east window
+      if (pose !== 'vigil') sp.dx = slot.altar ? slot.h * 0.06 : slot.h * 0.42;
       return sp;
     },
   };
@@ -595,6 +627,11 @@ function spectral(f, emit = []) {
   g.globalAlpha = 1;
   // 2. the knight's own light and shade mapped into cold cyan: lit plates hold, shadowed ones go
   //    glassy; everything thins toward the floor
+  // the core map: the silhouette blurred wide (1 deep inside the torso, falling off to the limbs)
+  const coreC = mask(Math.max(6, Math.round(src.height * 0.06)));
+  const coreD = coreC.getContext('2d').getImageData(0, 0, W, H).data;
+  const coreA = new Uint8ClampedArray(W * H);
+  for (let i = 0; i < W * H; i++) coreA[i] = Math.min(255, coreD[i * 4 + 3] * 1.35);
   const body = makeCanvas(W, H);
   const bg = body.getContext('2d');
   bg.filter = 'blur(0.6px)';
@@ -614,12 +651,17 @@ function spectral(f, emit = []) {
     const [t1, c1] = stops[k];
     const u = Math.max(0, Math.min(1, (l - t0) / (t1 - t0)));
     const y = Math.floor(i / 4 / W);
+    const x = (i / 4) % W;
     const fy = (y - pad) / Math.max(1, oy);
-    const fade = Math.min(1, Math.max(0.05, (1 - fy) * 3.0 + 0.05));
+    // the hem dissolves: a noisy threshold eats the lowest fifth of him
+    const nz = Math.sin(x * 0.21 + y * 0.07) * 0.5 + Math.sin(x * 0.053 - y * 0.19) * 0.5;
+    const fade = Math.min(1, Math.max(0.03, (1 - fy) * 3.4 + 0.05 + nz * 0.18));
+    // dense at the core, glassy at the extremities
+    const core = coreA[y * W + x] / 255;
     d[i] = (c0[0] + (c1[0] - c0[0]) * u) * a;
     d[i + 1] = (c0[1] + (c1[1] - c0[1]) * u) * a;
     d[i + 2] = (c0[2] + (c1[2] - c0[2]) * u) * a;
-    d[i + 3] = 255 * a * (0.16 + l * l * 0.56) * fade;
+    d[i + 3] = 255 * a * (0.12 + l * l * 0.56) * fade * (0.42 + 0.58 * core * core);
   }
   bg.putImageData(img, 0, 0);
   g.drawImage(body, 0, 0);
@@ -679,6 +721,20 @@ function spectral(f, emit = []) {
     wg.strokeStyle = gr;
     wg.lineWidth = 2 + R() * sw * 0.025;
     wg.beginPath(); wg.moveTo(x0, y0); wg.bezierCurveTo(c1[0], c1[1], c2[0], c2[1], e[0], e[1]); wg.stroke();
+  }
+  // a trail of ectoplasm lying along the floor behind him, thinning as it drifts away
+  for (let k = 0; k < 26; k++) {
+    const t = k / 25;
+    const mx = W / 2 + (t - 0.35) * sw * 0.95 + Math.sin(k * 2.3) * sw * 0.05;
+    const my = oy + pad - sh * 0.015 - Math.sin(k * 1.7) * sh * 0.012;
+    const rr = sw * (0.16 - t * 0.08) * (0.8 + ((k * 37) % 10) / 25);
+    const gr = wg.createRadialGradient(mx, my, 0, mx, my, rr);
+    gr.addColorStop(0, `rgba(160,236,255,${(0.22 * (1 - t * 0.7)).toFixed(3)})`);
+    gr.addColorStop(1, 'rgba(160,236,255,0)');
+    wg.fillStyle = gr;
+    wg.save(); wg.translate(mx, my); wg.scale(1, 0.32); wg.translate(-mx, -my);
+    wg.fillRect(mx - rr, my - rr, rr * 2, rr * 2);
+    wg.restore();
   }
   // a pooled mist where he meets the floor
   const fl = wg.createRadialGradient(W / 2, oy + pad, 0, W / 2, oy + pad, sw * 0.6);
@@ -983,8 +1039,9 @@ export class PanelOverlay {
         glow(g, L.x, L.y - L.s * 0.6, L.s * 9 * fl, L.color, 0.16 * fl);
         flame(g, L.x, L.y, L.s, ph, L.color);
       } else if (L.kind === 'candle') {
-        glow(g, L.x, L.y, L.s * 10 * fl, L.color, 0.12 * fl);
-        flame(g, L.x, L.y + L.s * 0.6, L.s * 0.9, ph * 1.3, L.color);
+        glow(g, L.x, L.y, L.s * 12 * fl, L.color, 0.13 * fl);
+        glow(g, L.x, L.y - L.s * 0.6, L.s * 3.2, '#fff0c0', 0.3 * fl);
+        flame(g, L.x, L.y + L.s * 0.5, L.s * 1.45, ph * 1.3, L.color);
       } else if (L.kind === 'glow' || L.kind === 'ghost' || L.kind === 'ward') {
         const p = 0.75 + Math.sin(ph * 1.6) * 0.25;
         glow(g, L.x, L.y, L.s * (L.kind === 'ward' ? 3 : 4), L.color, 0.18 * p);

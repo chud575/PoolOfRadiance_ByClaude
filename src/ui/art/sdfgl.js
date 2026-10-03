@@ -410,10 +410,20 @@ void main() {
     vec2 uv; vec3 tu; vec3 tv;
     surfaceUV(best, p, n, uv, tu, tv);
     vec3 np = n;
+    // scaled hides are countershaded: a dark dorsal hide of big plates over the back and the tops of
+    // the limbs, a pale belly of fine scales underneath (tint2 is the belly colour for scales)
+    float ventral = 0.0;
+    if (pat == 1) {
+      vec3 nf = normalize(uVT * nb);
+      ventral = max(smoothstep(0.66, 0.97, nf.z - abs(nf.x) * 0.25), smoothstep(0.3, 0.85, -nf.y));
+      pscale *= mix(1.45, 0.75, ventral);
+    }
     float k = pattern(pat, pscale, uv, tu, tv, wp, np, extra);
     n = normalize(nb * 0.45 + np * 0.55);
     base *= k;
-    if (extra.z > 0.0 && m3.r + m3.g + m3.b > 0.0) base = mix(base, m3.rgb * k, extra.z);
+    if (pat == 1 && m3.r + m3.g + m3.b > 0.0) {
+      base = mix(base * mix(0.82, 1.0, extra.z), m3.rgb * k, ventral * 0.85);
+    } else if (extra.z > 0.0 && m3.r + m3.g + m3.b > 0.0) base = mix(base, m3.rgb * k, extra.z);
     if (extra.x < -0.5) base = mix(base, base * vec3(1.12, 0.84, 0.8), (-extra.x - 1.0) * 0.55); // ruddy flush on skin
   }
   // broad value drift over every non-metal surface: worn, sun-faded, dirty patches

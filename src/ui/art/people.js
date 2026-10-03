@@ -34,10 +34,13 @@ const POSES = {
   bless: { lean: -0.03, headPitch: -0.06, hands: (d) => ({ at: [d * 0.12, -0.12, 0.2], dir: [d * 0.5, 0.7, 0.5], curl: 0.15, spread: 0.7, pole: [d * 0.8, -0.8, -0.2] }) },
   welcome: { lean: 0.02, twist: 0.1, headYaw: -0.1, hands: (d) => d < 0 ? { at: [-0.05, -0.13, 0.22], dir: [-0.6, 0.35, 0.7], curl: 0.2, spread: 0.6, pole: [-1, -0.5, -0.2] } : { at: [0.03, -0.3, 0.04], dir: [0.1, -1, 0.15], curl: 0.45, pole: [1, -0.2, -0.6] } },
   clerk: { lean: 0.16, headPitch: 0.22, headYaw: -0.05, hands: (d) => d < 0 ? { at: [0.07, -0.24, 0.24], dir: [0.2, -0.2, 1], grip: true, weapon: 'quill', pole: [-1, -0.4, -0.2] } : { at: [-0.06, -0.25, 0.24], dir: [-0.3, 0, 1], curl: 0.3, pole: [1, -0.4, -0.2] } },
-  smith: { lean: 0.1, twist: -0.22, headYaw: 0.35, headPitch: 0.15, hands: (d) => d < 0 ? { at: [-0.06, 0.15, 0.02], dir: [0.5, 0.45, -0.5], grip: true, weapon: 'hammer', pole: [-0.8, -0.2, -0.3] } : { at: [-0.05, -0.2, 0.25], dir: [-0.3, 0, 1], grip: true, weapon: 'tongs', pole: [1, -0.4, -0.2] } },
+  smith: { lean: 0.1, twist: -0.22, headYaw: 0.35, headPitch: 0.15, hands: (d) => d < 0 ? { at: [-0.06, 0.15, 0.02], dir: [0.5, 0.45, -0.5], grip: true, weapon: 'hammer', pole: [-0.8, -0.2, -0.3] } : { at: [-0.05, -0.13, 0.27], dir: [-0.3, 0.12, 1], grip: true, weapon: 'tongs', pole: [1, -0.4, -0.2] } },
   barkeep: { lean: 0.08, twist: 0.15, headYaw: -0.2, headTilt: 0.06, hands: (d) => d < 0 ? { at: [0.05, -0.2, 0.2], dir: [0, 1, 0.1], grip: true, weapon: 'tankard', pole: [-1, -0.5, -0.2] } : { at: [-0.06, -0.22, 0.22], dir: [-0.5, 0.2, 1], curl: 0.6, spread: 0.3, rag: true, pole: [1, -0.5, -0.2] } },
-  // both hands stacked on the pommel of a longsword whose point rests on the floor before him
-  trainer: { lean: -0.03, headPitch: -0.04, headYaw: 0.1, hands: (d) => ({ at: [-d * 0.1, d < 0 ? -0.29 : -0.25, 0.2], dir: [0, -1, 0.04], grip: true, weapon: d < 0 ? 'longsword' : null, pole: [d, -0.3, -0.5] }) },
+  // the weaponsmaster at ease: weight on his right leg, the longsword's flat resting on his right
+  // shoulder, the left fist on his hip
+  trainer: { lean: -0.04, twist: -0.12, weight: -1, headYaw: 0.28, headPitch: -0.06, hands: (d) => d < 0 ? { at: [0.075, 0.0, 0.11], dir: [0.18, 0.62, -0.76], grip: true, weapon: 'longsword', pole: [-1, -0.7, -0.1] } : { at: [-0.012, -0.255, 0.03], dir: [-0.55, -0.35, 0.35], curl: 0.85, pole: [1, 0.1, -0.5] } },
+  // the old guard pose: both hands stacked on the pommel of a sword whose point rests on the floor
+  pommel: { lean: -0.03, headPitch: -0.04, headYaw: 0.1, hands: (d) => ({ at: [-d * 0.1, d < 0 ? -0.29 : -0.25, 0.2], dir: [0, -1, 0.04], grip: true, weapon: d < 0 ? 'longsword' : null, pole: [d, -0.3, -0.5] }) },
   // the clerk raises the ledger to read from it, quill poised
   ledger: { lean: 0.05, headPitch: 0.16, headYaw: -0.08, hands: (d) => d > 0 ? { at: [-0.05, -0.13, 0.25], dir: [-0.15, 0.25, 1], grip: true, weapon: 'ledger', pole: [1, -0.6, -0.2] } : { at: [0.06, -0.15, 0.24], dir: [0.3, 0.6, 0.6], grip: true, weapon: 'quill', pole: [-1, -0.5, -0.2] } },
   // Tyr's priest: the right hand raised in judgement, the left holding a small balance by its ring
@@ -49,7 +52,9 @@ const POSES = {
   // leaning over a table, knuckles down — the dice game
   lean: { lean: 0.3, headPitch: 0.25, hands: (d) => ({ at: [-d * 0.01, -0.2, 0.26], dir: [0, -0.5, 1], curl: 0.7, pole: [d, -0.3, -0.5] }) },
   // a watchman jabbing a finger mid-argument
-  argue: { lean: 0.06, twist: 0.12, headPitch: -0.02, hands: (d) => d < 0 ? { at: [0.03, 0.02, 0.3], dir: [0.15, 0.2, 1], curl: 0.15, pole: [-1, -0.4, -0.2] } : { at: [0.025, -0.3, 0.05], dir: [0.1, -1, 0.15], curl: 0.45, pole: [1, -0.2, -0.6] } },
+  argue: { lean: 0.12, twist: 0.16, weight: -1, headPitch: 0.02, hands: (d) => d < 0 ? { at: [0.03, 0.02, 0.3], dir: [0.15, 0.2, 1], curl: 0.15, pole: [-1, -0.4, -0.2] } : { at: [0.025, -0.3, 0.05], dir: [0.1, -1, 0.15], curl: 0.45, pole: [1, -0.2, -0.6] } },
+  // leaning back from an argument, palms up: "And who's to pay for it?"
+  rebuff: { lean: -0.09, twist: -0.14, weight: 1, headPitch: -0.08, headTilt: -0.08, hands: (d) => ({ at: [-d * 0.0, -0.08, 0.2], dir: [-d * 0.5, 0.75, 0.45], curl: 0.15, spread: 0.7, pole: [d, -0.6, -0.2] }) },
   // arms folded across the chest
   folded: { lean: -0.03, headPitch: -0.03, hands: (d) => ({ at: [-d * 0.15, -0.14, 0.1], dir: [-d, 0.15, 0.1], curl: 0.55, pole: [d, -0.9, 0.1] }) },
   point: { lean: 0.04, twist: 0.12, hands: (d) => d < 0 ? { at: [0.02, 0.0, 0.3], dir: [0.1, 0.1, 1], curl: 0.15, pole: [-1, -0.3, -0.2] } : { at: [0.03, -0.3, 0.04], dir: [0.1, -1, 0.15], curl: 0.45, pole: [1, -0.2, -0.6] } },
@@ -89,9 +94,11 @@ export function buildNpc(spec) {
   const hr = short ? 0.084 : 0.075;
   const lean = (P.lean ?? 0) + age * 0.12 + (spec.hunch ?? 0);
   const twist = P.twist ?? 0;
-  const TR = mul3(rotY(twist), rotX(lean));
+  // contrapposto: weight on one leg shifts the pelvis over it and tilts the shoulders against it
+  const wgt = sit ? 0 : P.weight ?? 0;
+  const TR = mul3(rotY(twist), mul3(rotX(lean), rotZ(wgt * 0.035)));
   const T = (v) => ap3(TR, v);
-  const pelvis = [0, hipH + 0.02, 0];
+  const pelvis = [wgt * 0.022, hipH + 0.02 - Math.abs(wgt) * 0.006, 0];
   const up = T([0, 1, 0]);
   const waist = add(pelvis, scl(up, 0.1));
   const chest = add(pelvis, scl(up, torso * 0.64));
@@ -105,7 +112,10 @@ export function buildNpc(spec) {
   const stance = 0.065 * b;
   for (const d of [-1, 1]) {
     // seated: feet planted forward of the stool, shins near vertical
-    const foot = sit ? [d * stance * 1.2, 0, 0.2 + (d < 0 ? 0.02 : -0.01)] : [d * stance, 0, d < 0 ? 0.02 : -0.02];
+    // the standing leg plants under the pelvis; the free leg steps out and forward, knee eased
+    const free = wgt && d !== Math.sign(wgt);
+    const foot = sit ? [d * stance * 1.2, 0, 0.2 + (d < 0 ? 0.02 : -0.01)]
+      : wgt ? (free ? [d * stance * 1.7, 0, 0.07] : [d * stance * 0.45 + wgt * 0.01, 0, -0.01]) : [d * stance, 0, d < 0 ? 0.02 : -0.02];
     const hip = add(pelvis, [d * 0.058 * b, -0.03, 0]);
     const ankle = add(foot, [0, 0.045, -0.015]);
     const knee = ik(hip, ankle, (legH - 0.03) * 0.52, (legH - 0.03) * 0.5, sit ? [d * 0.05, 1, 0.6] : [d * 0.1, 0, 1]);
@@ -239,10 +249,11 @@ export function buildNpc(spec) {
     hands[d] = { wrist, dir, elbow };
     const sleeveTop = O.topKind === 'doublet' || O.topKind === 'chain' || robe ? topM : shirtM;
     const sg = { group: `arm${d}`, k: 0.025 };
-    f.sphere(sh[d], 0.043 * b, sleeveTop, { group: 'torso', k: 0.05 });
+    f.sphere(sh[d], 0.039 * b, sleeveTop, { group: 'torso', k: 0.05 });
     const sleeves = O.sleeves ?? (robe ? 'bell' : 'long');
-    if (sleeves === 'puffed') f.ell(lerp3(sh[d], elbow, 0.35), [0.058 * b, 0.075, 0.056 * b], sleeveTop, { ...sg, R: alignY(sub(elbow, sh[d])) });
-    f.cone(sh[d], elbow, 0.042 * b, 0.036 * b, sleeveTop, sg);
+    if (sleeves === 'puffed') f.ell(lerp3(sh[d], elbow, 0.35), [0.052 * b, 0.07, 0.05 * b], sleeveTop, { ...sg, R: alignY(sub(elbow, sh[d])) });
+    // a fitted sleeve: the cloth follows the arm with long drape folds, never a padded tube
+    f.cone(sh[d], elbow, 0.037 * b, 0.031 * b, sleeveTop, { ...sg, disp: { amp: 0.0028, freq: 9, twist: 0.4 } });
     if (sleeves === 'bell') {
       // wide sleeve: flares from the elbow and hangs below the wrist
       // gravity: on a raised or forward arm the wide cuff drapes down off the
@@ -253,21 +264,22 @@ export function buildNpc(spec) {
       // the bell: a flared cone with a few long folds (shallow, so the rim stays a clean edge)
       const ax = norm(sub(hang, elbow));
       const mouth = lerp3(elbow, hang, 1.0);
-      const rM = 0.054 * b;
-      f.cone(elbow, mouth, 0.038 * b, rM, sleeveTop, { ...sg, disp: { amp: 0.0035, freq: 7, twist: 0.6 } });
+      const rM = 0.046 * b;
+      f.cone(elbow, mouth, 0.032 * b, rM, sleeveTop, { ...sg, disp: { amp: 0.005, freq: 9, twist: 0.8 } });
       // the mouth of the sleeve: a hollow behind a thin rim (a flat-bottomed cut along the axis, not a
       // scooped ellipsoid whose folds read as black notches), lined in the undershirt colour, with
       // the shirt cuff and the wrist coming out of it
       f.carve('cone', add(mouth, scl(ax, 0.03)), add(mouth, scl(ax, -0.012)), rM * 0.8, { group: `arm${d}`, k: 0.006, rb: rM * 0.78 });
-      f.ell(add(mouth, scl(ax, -0.009)), [rM * 0.8, 0.005, rM * 0.8], cloth(shade(O.lining ?? O.shirt ?? '#d8ccb0', 0.5)), { group: `lining${d}`, k: 0.004, R: alignY(ax) });
+      // the lining catches light at the opening (never a black void)
+      f.ell(add(mouth, scl(ax, -0.004)), [rM * 0.82, 0.005, rM * 0.82], cloth(shade(O.lining ?? O.shirt ?? '#d8ccb0', 0.92), { sss: 0.5 }), { group: `lining${d}`, k: 0.004, R: alignY(ax) });
       f.cone(lerp3(elbow, wrist, 0.55), lerp3(elbow, wrist, 0.92), 0.03, 0.028, cloth(O.cuff ?? O.shirt ?? '#d8ccb0'), { group: `cuff${d}`, k: 0.008 });
       f.cone(lerp3(elbow, wrist, 0.85), wrist, 0.025, 0.022, skinM, { group: `wrist${d}`, k: 0.01 });
     } else if (sleeves === 'rolled') {
       f.cone(lerp3(elbow, wrist, 0.12), wrist, 0.034 * b, 0.024 * b, skinM, { group: `forearm${d}`, k: 0.02 });
       f.ell(lerp3(elbow, wrist, 0.3), [0.036 * b, 0.05, 0.034 * b], skinM, { group: `forearm${d}`, k: 0.02, R: alignY(sub(wrist, elbow)) });
-      f.cone(lerp3(elbow, wrist, -0.05), lerp3(elbow, wrist, 0.14), 0.046 * b, 0.045 * b, sleeveTop, { group: `cuff${d}`, k: 0.012 });
+      f.cone(lerp3(elbow, wrist, -0.05), lerp3(elbow, wrist, 0.14), 0.04 * b, 0.039 * b, sleeveTop, { group: `cuff${d}`, k: 0.012, disp: { amp: 0.003, freq: 14 } });
     } else {
-      f.cone(elbow, wrist, 0.039 * b, 0.03 * b, O.topKind === 'chain' ? shirtM : sleeveTop, sg);
+      f.cone(elbow, wrist, 0.033 * b, 0.027 * b, O.topKind === 'chain' ? shirtM : sleeveTop, { ...sg, disp: { amp: 0.0022, freq: 10, twist: 0.3 } });
       f.cone(lerp3(elbow, wrist, 0.86), lerp3(elbow, wrist, 1.02), 0.034 * b, 0.034 * b, O.cuff ? cloth(O.cuff) : sleeveTop, { group: `cuff${d}`, k: 0.008 });
     }
     // hand

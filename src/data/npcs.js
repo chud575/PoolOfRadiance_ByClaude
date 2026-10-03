@@ -26,7 +26,7 @@ export const NPCS = {
     look: { seed: 4101, head: 3, body: 4, hair: 8, cloth: 6, skin: 1, eyes: 4 }, aura: '#ffcf8a',
     desc: 'A stooped, ink-stained man with spectacles on a ribbon and a ledger never far from his hand.',
     figure: { age: 0.6, build: 0.86, hairStyle: 'tonsure', beard: 'none', hair: '#8a7c6a', jaw: 0.85, nose: 1.15, pose: 'clerk', outfit: { shirt: '#ece4d0', top: '#283450', topKind: 'robe', sleeves: 'bell', sash: '#18203a', collar: '#18203a', cuff: '#8a8274', spectacles: true } },
-    paint: { sex: 'm', age: 0.62, skin: '#e2b898', yaw: -0.3, beard: { style: 'none' }, gaze: [0.12, 0.02], face: { w: 0.86, jaw: 0.82, chin: 1.1, cheek: 1.2, hollow: 0.9, brow: 1.1, neck: 0.78 }, nose: { len: 1.18, w: 0.88, hook: 1 }, eyes: { c: '#5a6a72', size: 0.9, lid: 0.6 }, mouth: { w: 0.88, full: 0.7 }, brows: { c: '#8a7a6a', w: 0.85, arch: 0.6 }, hair: { style: 'tonsure', c: '#8a7c6a' }, spectacles: true, quill: true, costume: { kind: 'robe', a: '#283450', b: '#ece4d0', collar: '#18203a', ink: true }, bg: ['#4e3e2a', '#0c0806'] },
+    paint: { sex: 'm', age: 0.62, skin: '#e2b898', yaw: -0.3, beard: { style: 'none' }, gaze: [0.12, 0.02], face: { w: 0.86, jaw: 0.82, chin: 1.1, cheek: 1.2, hollow: 0.9, brow: 1.1, neck: 1.0 }, nose: { len: 1.08, w: 0.92, hook: 0.5 }, eyes: { c: '#5a6a72', size: 0.9, lid: 0.6 }, mouth: { w: 0.88, full: 0.7 }, brows: { c: '#8a7a6a', w: 0.85, arch: 0.6 }, hair: { style: 'tonsure', c: '#8a7c6a' }, spectacles: true, quill: true, costume: { kind: 'robe', a: '#283450', b: '#ece4d0', collar: '#18203a', ink: true }, bg: ['#4e3e2a', '#0c0806'] },
   },
   councilman: {
     id: 'councilman', name: 'Porphyrys Cadorna', title: 'First Councilman', race: 'human', gender: 'male',
@@ -49,7 +49,7 @@ export const NPCS = {
     id: 'priestess_sune', name: 'Mother Ilsabet', title: 'Priestess of Sune', race: 'halfElf', gender: 'female',
     look: { seed: 5203, head: 4, body: 7, hair: 3, cloth: 0, skin: 1, eyes: 5 }, aura: '#ff9aa8',
     figure: { hairStyle: 'wavy', hair: '#9a3418', skin: '#eab896', portraitZoom: 3.5, portraitYaw: 0.2, smile: 0.8, lipC: '#c0404c', jaw: 0.72, nose: 0.85, pose: 'welcome', outfit: { shirt: '#f0d8c8', top: '#9a1e2e', topKind: 'bodice', sleeves: 'long', cuff: '#e8b050', skirt: '#b4243a', sash: '#e8b050', symbol: 'sune', mantle: '#6a0e1a' } },
-    paint: { sex: 'f', age: 0.12, skin: '#f0c6a6', yaw: 0.2, pitch: 0.03, roll: -0.05, gaze: [-0.12, 0.0], face: { w: 0.9, jaw: 0.84, chin: 0.94, cheek: 1.18, hollow: 0.2, neck: 0.8 }, nose: { len: 0.9, w: 0.8, tip: 0.88 }, eyes: { c: '#3a7a5a', size: 1.06, tilt: 0.7 }, mouth: { w: 0.94, full: 1.3, smile: 0.32, c: '#c43a4a' }, brows: { c: '#7a2a14', w: 0.75, arch: 1 }, hair: { style: 'wavy', c: '#9a3418' }, key: [-0.42, -0.5, 0.76], costume: { kind: 'gown', a: '#9a1e2e', b: '#f6ece2', trim: '#e8b050' }, bg: ['#6e3440', '#120608'] },
+    paint: { sex: 'f', age: 0.12, skin: '#f0c6a6', yaw: 0.2, pitch: 0.03, roll: -0.05, gaze: [-0.12, 0.0], face: { w: 0.9, jaw: 0.84, chin: 0.94, cheek: 1.18, hollow: 0.2, neck: 1.0 }, nose: { len: 0.9, w: 0.8, tip: 0.88 }, eyes: { c: '#3a7a5a', size: 1.06, tilt: 0.7 }, mouth: { w: 0.94, full: 1.3, smile: 0.32, c: '#c43a4a' }, brows: { c: '#7a2a14', w: 0.75, arch: 1 }, hair: { style: 'wavy', c: '#9a3418' }, key: [-0.42, -0.5, 0.76], costume: { kind: 'gown', a: '#9a1e2e', b: '#f6ece2', trim: '#e8b050' }, bg: ['#6e3440', '#120608'] },
   },
   priest_tempus: {
     id: 'priest_tempus', name: 'Warpriest Harkon', title: 'Voice of Tempus', race: 'human', gender: 'male',
@@ -60,8 +60,8 @@ export const NPCS = {
   smith: {
     id: 'smith', name: 'Roland', title: 'Master Armourer', race: 'human', gender: 'male',
     look: { seed: 6101, head: 1, body: 3, hair: 2, cloth: 4, skin: 4, eyes: 2 }, aura: '#ff9a50',
-    figure: { hairStyle: 'short', beard: 'full', build: 1.15, pose: 'smith', outfit: { shirt: '#8a7a5e', sleeves: 'rolled', apron: '#4a2e1a', trousers: '#3a3024', boots: '#24180e' } },
-    paint: { sex: 'm', age: 0.42, skin: '#c88a64', yaw: 0.3, gaze: [-0.12, 0.02], face: { w: 1.1, jaw: 1.18, cheek: 1.05, brow: 1.3, neck: 1.35 }, nose: { len: 1.0, w: 1.2 }, eyes: { c: '#4a3a2a', size: 0.92 }, brows: { c: '#3a2414', w: 1.3 }, hair: { style: 'short', c: '#4a2c18' }, beard: { style: 'full', c: '#5a3420' }, costume: { kind: 'smith', a: '#8a7a5e', b: '#d8ccb0', apron: '#4a2e1a' }, bg: ['#6a3a1a', '#0e0604'], build: 1.15 },
+    figure: { hairStyle: 'short', beard: 'full', build: 1.15, pose: 'smith', outfit: { shirt: '#4e5a6a', sleeves: 'rolled', apron: '#4a2e1a', trousers: '#3a3024', boots: '#24180e' } },
+    paint: { sex: 'm', age: 0.42, skin: '#c88a64', yaw: 0.3, gaze: [-0.12, 0.02], face: { w: 1.1, jaw: 1.18, cheek: 1.05, brow: 1.3, neck: 1.35 }, nose: { len: 1.0, w: 1.2 }, eyes: { c: '#4a3a2a', size: 0.92 }, brows: { c: '#3a2414', w: 1.3 }, hair: { style: 'short', c: '#4a2c18' }, beard: { style: 'full', c: '#5a3420' }, costume: { kind: 'smith', a: '#4e5a6a', b: '#d8ccb0', apron: '#4a2e1a' }, bg: ['#6a3a1a', '#0e0604'], build: 1.15 },
   },
   provisioner: {
     id: 'provisioner', name: 'Wilhelmina Tuck', title: 'Provisioner', race: 'halfling', gender: 'female',
@@ -87,8 +87,8 @@ export const NPCS = {
   trainer: {
     id: 'trainer', name: 'Garrick Ironhand', title: 'Weaponsmaster', race: 'human', gender: 'male',
     look: { seed: 8101, head: 3, body: 1, hair: 8, cloth: 0, skin: 3, eyes: 3 }, aura: '#ffb070',
-    figure: { age: 0.45, hairStyle: 'topknot', beard: 'braided', hair: '#b8b0a4', jaw: 1.25, nose: 1.2, build: 1.24, pose: 'trainer', outfit: { shirt: '#6a2a1e', top: '#8a8c94', topKind: 'chain', skirtMail: true, skirtLen: 'knee', sleeves: 'long', trousers: '#2e261c', boots: '#2a1c10', belt: '#3a2616', mantle: '#5a1e16' } },
-    paint: { sex: 'm', age: 0.52, skin: '#c48e6c', yaw: -0.36, gaze: [0.14, -0.02], face: { w: 1.14, jaw: 1.32, chin: 1.05, cheek: 1.12, hollow: 0.3, brow: 1.6, neck: 1.3 }, nose: { len: 0.96, w: 1.3, broken: 1 }, eyes: { c: '#5a4a3a', size: 0.84, lid: 0.75 }, brows: { c: '#7a7068', w: 1.45, arch: -0.3 }, hair: { style: 'topknot', c: '#b0a89c' }, beard: { style: 'braided', c: '#c4bcb0' }, scar: true, costume: { kind: 'mail', b: '#5a3a22', cloak: '#6a1e16', clasp: true }, bg: ['#4a3a2a', '#0a0806'], build: 1.22 },
+    figure: { age: 0.45, hairStyle: 'short', beard: 'braided', hair: '#8a8278', jaw: 1.25, nose: 1.2, build: 1.24, pose: 'trainer', outfit: { shirt: '#6a2a1e', top: '#8a8c94', topKind: 'chain', skirtMail: true, skirtLen: 'knee', sleeves: 'long', trousers: '#2e261c', boots: '#2a1c10', belt: '#3a2616', mantle: '#5a1e16' } },
+    paint: { sex: 'm', age: 0.52, skin: '#c48e6c', yaw: -0.36, gaze: [0.14, -0.02], face: { w: 1.14, jaw: 1.32, chin: 1.05, cheek: 1.12, hollow: 0.3, brow: 1.6, neck: 1.3 }, nose: { len: 0.96, w: 1.3, broken: 1 }, eyes: { c: '#5a4a3a', size: 0.84, lid: 0.75 }, brows: { c: '#7a7068', w: 1.45, arch: -0.3 }, hair: { style: 'short', c: '#8a8278' }, beard: { style: 'braided', c: '#a8a096' }, scar: true, costume: { kind: 'mail', b: '#5a3a22', cloak: '#6a1e16', clasp: true }, bg: ['#4a3a2a', '#0a0806'], build: 1.22 },
   },
   sage: {
     id: 'sage', name: 'Ione the Grey', title: 'Mage of the Library', race: 'elf', gender: 'female',

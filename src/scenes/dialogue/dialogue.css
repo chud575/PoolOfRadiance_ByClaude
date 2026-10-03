@@ -363,3 +363,14 @@
 .jr-item.blank { opacity: 0.38; cursor: default; pointer-events: none; }
 .jr-item.blank .tt { font-style: italic; letter-spacing: 0.3em; }
 .jr-item.blank .tt small { letter-spacing: 0.04em; }
+
+/* encounter intro: the odds as a veteran would weigh them, one tile per command */
+.dlg-body:has(.dlg-odds) .dlg-prose { flex: 0 1 auto; min-height: 3.2em; }
+.dlg-odds { display: grid; grid-template-columns: repeat(var(--n, 4), 1fr); gap: 0.6em; margin: 0.5em 0 0.2em; padding-top: 0.5em; border-top: 1px solid rgba(90, 60, 20, 0.22); position: relative; }
+.dlg-odds-h { grid-column: 1 / -1; margin: -0.2em 0 -0.25em; font-family: var(--font-display); font-size: 0.6em; letter-spacing: 0.24em; text-transform: uppercase; color: #8a5a2a; }
+.dlg-odd { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 0.7em; align-items: baseline; padding: 0.35em 0.75em 0.4em; border-radius: 3px; background: linear-gradient(180deg, rgba(120, 80, 30, 0.1), rgba(120, 80, 30, 0.035)); box-shadow: inset 0 0 0 1px rgba(110, 70, 25, 0.25); }
+.dlg-odd .k { grid-column: 1 / -1; font-family: var(--font-display); font-size: 0.6em; letter-spacing: 0.22em; text-transform: uppercase; color: #6a1e10; }
+.dlg-odd b { font-family: var(--font-num, var(--font-display)); font-weight: normal; font-size: 1.15em; color: #2a1a0a; font-variant-numeric: lining-nums tabular-nums; line-height: 1.2; white-space: nowrap; }
+.dlg-odd small { font-style: italic; color: #5a4028; font-size: 0.8em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dlg-odd.good b { color: #2e5a1a; }
+.dlg-odd.bad b { color: #8a1a10; }

@@ -599,6 +599,7 @@ export default class DialogueScene extends Scene {
     this._sideEncounter(enc);
     if (parley) return this.parleyMenu();
     this._setText([enc.intro ?? `You encounter ${enc.name}.`], { see: youSee(enc) });
+    this.chipRow.append(this._oddsStrip(enc));
     const labels = { combat: ['Combat', 'C'], wait: ['Wait', 'W'], flee: ['Flee', 'F'], parley: ['Parlay', 'P'] };
     const notes = {
       combat: 'Draw steel. The fight moves to the battle map.',
@@ -607,6 +608,29 @@ export default class DialogueScene extends Scene {
       parley: 'Speak first. Choose your manner with care.',
     };
     this._setChoices((enc.options ?? ['combat', 'flee']).map((o) => ({ label: labels[o][0], key: labels[o][1], tip: notes[o], isLeave: false, run: () => this.encounterChoice(o) })));
+  }
+
+  /** The odds as a veteran would weigh them: one tile per command the encounter offers. */
+  _oddsStrip(enc) {
+    const opts = enc.options ?? ['combat', 'flee'];
+    const theirs = enc.groups.reduce((t, g) => t + (typeof g.count === 'number' ? g.count : 4), 0);
+    const ours = living(this.ctx.game).length;
+    const morale = Math.min(...enc.groups.map((g) => MONSTERS[g.monster].morale ?? 50));
+    const waitPct = Math.max(10, 70 - morale);
+    const manners = ['haughty', 'sly', 'nice', 'meek', 'abusive'];
+    const spare = manners.filter((a) => (enc.parley?.[a] ?? 'fight').split(':')[0] !== 'fight').length;
+    const mood = morale < 40 ? 'skittish' : morale < 60 ? 'wary' : morale < 75 ? 'bold' : 'fearless';
+    const tile = (k, big, small, tip, tone = '') => h(`div.dlg-odd${tone ? `.${tone}` : ''}`, { dataset: { tip } }, [h('span.k', [k]), h('b', [big]), h('small', [small])]);
+    const T = {
+      combat: tile('Combat', `${theirs} to ${ours}`, `${mood} foes`, `${theirs} foes against your ${ours} standing. Their morale reads ${mood}.`, theirs > ours * 1.5 ? 'bad' : ''),
+      wait: tile('Wait', `${waitPct}%`, 'they lose interest', `Hold your ground: about ${waitPct} in 100 that they slink away; otherwise they attack.`),
+      flee: tile('Flee', '60%', 'you slip away', 'About 60 in 100 that the party gets clear; otherwise they run you down.'),
+      parley: tile('Parlay', spare ? `${spare} of 5` : 'none', spare ? 'manners may spare blood' : 'they want blood', spare ? `Of the five manners (HAUGHTY, SLY, NICE, MEEK, ABUSIVE), ${spare} might end this without a fight. Which is for you to judge.` : 'No words will turn this band aside.', spare ? 'good' : 'bad'),
+    };
+    const tiles = opts.map((o) => T[o]).filter(Boolean);
+    const el = h('div.dlg-odds', [h('span.dlg-odds-h', ['Weighing the odds']), ...tiles]);
+    el.style.setProperty('--n', String(tiles.length));
+    return el;
   }
 
   _zoneName() {

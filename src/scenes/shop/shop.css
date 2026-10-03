@@ -33,7 +33,8 @@
 .shp-stat { padding: 0.45em 0.6em; border: 1px solid rgba(216, 178, 90, 0.28); border-radius: 3px; background: rgba(0, 0, 0, 0.25); }
 .shp-stat .l { display: block; font-family: var(--font-display); font-size: 0.66em; letter-spacing: 0.2em; text-transform: uppercase; color: var(--por-gilt); }
 .shp-stat .v { font-family: var(--font-num); font-size: 1.12em; color: var(--por-text); font-variant-numeric: tabular-nums; }
-.shp-stat .v .d { font-size: 0.8em; margin-left: 0.35em; }
+.shp-stat .v .d { display: inline-block; vertical-align: 0.12em; font-size: 0.72em; margin-left: 0.5em; padding: 0.05em 0.45em 0.1em; border-radius: 2em; background: rgba(0, 0, 0, 0.35); box-shadow: inset 0 0 0 1px currentColor; }
+.shp-stat .v .d em { font-family: var(--font-body); font-style: italic; font-size: 0.92em; opacity: 0.9; }
 .shp-stat .v .d.up { color: var(--por-green); }
 .shp-stat .v .d.dn { color: var(--por-blood); }
 .shp-users { grid-column: 1 / -1; display: flex; gap: 0.5em; align-items: center; margin-top: 0.5em; flex-wrap: wrap; }
@@ -170,7 +171,8 @@
 .shp-burden { padding: 0.45em 0.6em 0.5em; border: 1px solid rgba(216, 178, 90, 0.28); border-radius: 3px; background: rgba(0, 0, 0, 0.25); }
 .shp-burden .l { display: block; font-family: var(--font-display); font-size: 0.66em; letter-spacing: 0.2em; text-transform: uppercase; color: var(--por-gilt); }
 .shp-burden .v { font-family: var(--font-num); font-size: 1.12em; color: var(--por-text); font-variant-numeric: tabular-nums; }
-.shp-burden .v small { font-family: var(--font-body); font-size: 0.72em; color: var(--por-text-dim); font-style: italic; }
+.shp-burden .v small { font-family: var(--font-body); font-size: 0.72em; color: var(--por-text-dim); font-style: italic; margin-left: 0.5em; }
+.shp-burden .w { float: right; margin-top: 0.35em; font-size: 0.74em; color: var(--por-text-dim); font-variant-numeric: tabular-nums; }
 .shp-burden .d { font-size: 0.8em; margin-left: 0.35em; }
 .shp-burden .d.dn { color: var(--por-blood); } .shp-burden .d.up { color: var(--por-green); }
 .shp-burden .track { position: relative; height: 0.42em; margin-top: 0.3em; border-radius: 2px; background: rgba(0, 0, 0, 0.55); }
@@ -207,8 +209,8 @@
 .shp-book-note { padding-top: 0.5em; border-top: 1px solid rgba(216, 178, 90, 0.18); font-style: italic; color: var(--por-text-dim); font-size: 0.9em; }
 
 /* ---------- tavern: who is in the room ---------- */
-.shp-patrons { display: flex; flex-direction: column; gap: 0.45em; }
-.shp-patron { display: grid; grid-template-columns: 2.2em 1fr auto; gap: 0.8em; align-items: center; padding: 0.45em 0.6em 0.45em 0.4em; border-radius: 3px; background: linear-gradient(90deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015)); border: 1px solid rgba(216, 178, 90, 0.16); }
+.shp-patrons { display: flex; flex-direction: column; gap: 0.35em; }
+.shp-patron { display: grid; grid-template-columns: 2.2em 1fr auto; gap: 0.8em; align-items: center; padding: 0.32em 0.6em 0.32em 0.4em; border-radius: 3px; background: linear-gradient(90deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015)); border: 1px solid rgba(216, 178, 90, 0.16); }
 .shp-patron .ic { width: 2.2em; height: 2.2em; border-radius: 50%; display: grid; place-items: center; color: #1b1206; background: var(--gilt-grad); box-shadow: 0 0 0 1px #000; }
 .shp-patron .t { font-family: var(--font-display); letter-spacing: 0.06em; color: var(--por-text); font-size: 0.95em; }
 .shp-patron .t small { display: block; font-family: var(--font-body); letter-spacing: 0; font-style: italic; color: var(--por-text-dim); font-size: 0.86em; }
@@ -242,8 +244,33 @@
 .shp-detail .shp-user { width: 2.3em; height: 2.8em; }
 
 /* the tavern card: patrons on top, the house rules chalked on a slate at its foot */
-.shp-detail:has(.shp-patrons) { grid-template-rows: 1fr; }
+.shp-detail:has(.shp-patrons) { grid-template-rows: 1fr; padding: 0.9em 1.5em 1.9em 1.5em !important; }
 .shp-patrons { height: 100%; }
-.shp-rules { margin-top: auto; padding: 0.6em 0.9em 0.5em; border-radius: 3px; background: linear-gradient(180deg, #1c1e22, #121316); box-shadow: inset 0 0 0 1px rgba(216, 178, 90, 0.25), inset 0 0 18px rgba(0, 0, 0, 0.8); }
+.shp-rules { margin-top: auto; padding: 0.5em 1em 0.5em 1.1em; border-radius: 3px; background: linear-gradient(180deg, #1c1e22, #121316); box-shadow: inset 0 0 0 1px rgba(216, 178, 90, 0.25), inset 0 0 18px rgba(0, 0, 0, 0.8); }
 .shp-rules b { display: block; font-family: var(--font-display); font-size: 0.66em; letter-spacing: 0.22em; text-transform: uppercase; color: var(--por-gilt); margin-bottom: 0.25em; }
-.shp-rules ol { margin: 0; padding-left: 1.3em; color: #e6e2d8; font-style: italic; font-size: 0.86em; line-height: 1.4; text-shadow: 0 0 1px rgba(255, 255, 255, 0.4); }
+.shp-rules ol { margin: 0; padding-left: 1.3em; color: #e6e2d8; font-style: italic; font-size: 0.84em; line-height: 1.32; text-shadow: 0 0 1px rgba(255, 255, 255, 0.4); }
+
+/* training: disabled buttons pass hover to their wrapper (which carries the tooltip) */
+.shp-tipwrap { display: inline-block; }
+.shp-tipwrap .por-btn[disabled] { pointer-events: none; }
+/* the trainer's terms, posted at the foot of the board */
+.shp-terms { margin-top: auto; padding: 0.75em 1.1em 0.7em; border-radius: 3px; background: linear-gradient(180deg, rgba(12, 18, 40, 0.55), rgba(6, 10, 24, 0.7)); box-shadow: inset 0 0 0 1px rgba(216, 178, 90, 0.28), inset 0 0 24px rgba(0, 0, 0, 0.5); }
+.shp-terms-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 0.35em; }
+.shp-terms-head b { font-family: var(--font-display); letter-spacing: 0.2em; text-transform: uppercase; font-size: 0.78em; color: var(--por-gilt-hi); }
+.shp-terms-head small { font-style: italic; color: var(--por-text-dim); font-size: 0.78em; }
+.shp-terms ol { margin: 0; padding-left: 1.3em; color: var(--por-text); font-size: 0.86em; line-height: 1.45; }
+.shp-terms ol li::marker { color: var(--por-gilt); font-family: var(--font-display); }
+.shp-terms ol b { color: var(--por-amber); font-weight: normal; }
+.shp-caps { display: flex; flex-wrap: wrap; gap: 0.5em; align-items: center; margin-top: 0.55em; padding-top: 0.5em; border-top: 1px solid rgba(216, 178, 90, 0.18); font-size: 0.82em; }
+.shp-caps .l { font-family: var(--font-display); letter-spacing: 0.18em; text-transform: uppercase; font-size: 0.8em; color: var(--por-gilt); margin-right: 0.3em; }
+.shp-caps .cap { padding: 0.15em 0.6em; border-radius: 2em; border: 1px solid rgba(216, 178, 90, 0.3); color: var(--por-text-dim); font-variant-numeric: tabular-nums; }
+.shp-caps .cap b { color: var(--por-text); font-weight: normal; }
+/* temple: the service the priest counsels for the selected member */
+.shp-row.rec { border-color: var(--por-gilt-hi) !important; background: linear-gradient(90deg, rgba(245, 217, 139, 0.16), rgba(245, 217, 139, 0.03)) !important; box-shadow: 0 0 14px rgba(245, 217, 139, 0.2), inset 3px 0 0 var(--por-gilt-hi); }
+.shp-rec { display: inline-block; margin-left: 0.7em; padding: 0.08em 0.55em 0.12em; border-radius: 2em; font-family: var(--font-body); font-style: italic; font-size: 0.74em; letter-spacing: 0.02em; color: #1b1206; background: var(--gilt-grad); vertical-align: 0.15em; }
+/* six trainees and the posted terms share the board: compact rows */
+.shp-rows:has(.shp-terms) { gap: 0.32em; }
+.shp-rows:has(.shp-terms) .shp-train { padding-top: 0.28em; padding-bottom: 0.28em; }
+.shp-rows:has(.shp-terms) .shp-train img { height: 3.15em; width: 2.6em; }
+.shp-rows:has(.shp-terms) .shp-train .t { font-size: 0.98em; }
+.shp-terms ol { font-size: 0.8em; line-height: 1.38; }

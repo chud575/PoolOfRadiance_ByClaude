@@ -72,7 +72,7 @@ export function paintFace(D, W = 600, H = 750) {
     const q = ap(rotOf(grp), p);
     return [cx + q[0] * U, cy + q[1] * U, q[2]];
   };
-  const L = norm3(D.key ?? [-0.62, -0.58, 0.55]); // key: high and to the left, in front
+  const L = norm3(D.key ?? [-0.5, -0.46, 0.74]); // key: high and to the left, ~40° off the view axis
   const aura = rgbOf(D.aura ?? '#ffcf8a');
   const keyC = rgbOf(D.light ?? '#ffe6c8');
 
@@ -86,14 +86,15 @@ export function paintFace(D, W = 600, H = 750) {
   const w = F.w;
   const jw = F.jaw;
   // skull, face (one long mask narrowing to the jaw), forehead
-  E('head', 'skin', [0, -0.36, -0.12], [0.98 * w, 1.0, 1.06]);
+  // proportions: the eyes (y ≈ 0.03) sit on the midline between the crown and the chin
+  E('head', 'skin', [0, -0.3, -0.12], [0.98 * w, 0.93, 1.06]);
   E('head', 'skin', [0, 0.05, 0.22], [0.8 * w, 0.92, 0.78]);
-  E('head', 'skin', [0, -0.5, 0.28], [0.78 * w, 0.56, 0.72]);
+  E('head', 'skin', [0, -0.46, 0.28], [0.78 * w, 0.52, 0.72]);
   // the jaw: the face mask is tapered toward the chin (see taper), a chin ball at its point
-  E('head', 'skin', [0, 0.5, 0.12], [0.8 * w, 0.62, 0.7]);
+  E('head', 'skin', [0, 0.48, 0.2], [0.78 * w, 0.6, 0.72]);
   E('head', 'skin', [0, 0.96 * F.chin, 0.56], [0.27 * jw * (fem ? 0.8 : 1), 0.2, 0.28]);
   // the muzzle round the mouth, brow ridge, eyeballs under the lids
-  E('head', 'skin', [0, 0.64, 0.64], [0.34, 0.28, 0.3]);
+  E('head', 'skin', [0, 0.64, 0.58], [0.31, 0.27, 0.3]);
   E('head', 'skin', [0, -0.22, 0.68], [0.6, (fem ? 0.08 : 0.12) * F.brow, 0.17]);
   for (const s of [-1, 1]) E('head', 'skin', [s * 0.34, 0.03, 0.6], [0.17, 0.13, 0.13]);
   // nose: bridge, tip, wings (a broken nose kinks off the line)
@@ -111,7 +112,9 @@ export function paintFace(D, W = 600, H = 750) {
   // ears
   for (const s of [-1, 1]) E('head', 'ear', [s * 0.95 * w, 0.1, -0.12], [0.1, 0.28, 0.2], [0, s * 0.5, s * 0.1]);
   // neck and body (a bull neck is nearly as wide as the jaw); the shoulders sit close under the jaw
-  E('neck', 'skin', [0, 1.15, -0.36], [0.47 * F.neck * (fem ? 0.9 : 1), 0.62, 0.44 * F.neck], [-0.12, 0, 0]);
+  const nk = Math.max(1, F.neck);
+  E('neck', 'skin', [0, 1.15, -0.32], [0.5 * nk * (fem ? 0.92 : 1), 0.64, 0.46 * nk], [-0.12, 0, 0]);
+  for (const s of [-1, 1]) E('neck', 'skin', [s * 0.24 * nk, 1.22, 0.02], [0.13 * nk, 0.5, 0.15], [-0.35, 0, s * 0.42]);
   // the base of the neck spreads into the trapezius and the top of the chest (hidden by the costume
   // wherever it is not open at the throat)
   for (const s of [-1, 1]) E('neck', 'skin', [s * 0.5, 1.52, -0.45], [0.5, 0.17, 0.32], [0, 0, s * 0.42]);
@@ -127,7 +130,21 @@ export function paintFace(D, W = 600, H = 750) {
   const taper = (y) => 1 - jawK * (fem ? 0.85 : 1) * sstep(0.15, 0.85, y) - (fem ? 0.1 : 0.1) * sstep(0.7, 1.2, y) * (1 / jw);
   paintBodyShape({ g, U, P, R, D, fem, W, H, cx });
   const relief = buildRelief(prims, W, H, P, rotOf, U, { cx, cy, taper });
-  const { Z, MAT, mask } = relief;
+  const { Z, MAT, mask, HEAD } = relief;
+  // the throat sits in the jaw's shadow: occlusion falling off below the head's lower outline
+  const NAO = new Float32Array(W * H);
+  {
+    const fall = U * 0.3;
+    for (let x = 0; x < W; x++) {
+      let bottom = -1;
+      for (let y = 0; y < H; y++) {
+        const i = y * W + x;
+        if (!mask[i]) continue;
+        if (HEAD[i]) bottom = y;
+        else if (bottom >= 0) NAO[i] = Math.exp(-(y - bottom) / fall);
+      }
+    }
+  }
 
   // dents: sockets, temples, cheek hollows, the groove under the lower lip, the philtrum
   const dent = (p, sx, sy, amp, grp = 'head') => {
@@ -147,12 +164,15 @@ export function paintFace(D, W = 600, H = 750) {
   blurField(Z, mask, W, H, Math.max(1, Math.round(U * 0.02)));
   // the big forms: a broadly blurred copy decides light or shadow, so small bumps never break the planes
   const ZB = maskedBlur(Z, mask, W, H, Math.round(U * 0.09));
+  // cast shadows: march each pixel toward the key over the height field (the nose on the cheek,
+  // the jaw on the throat, the brow into the sockets), with a soft penumbra
+  const SH = castShadows(Z, mask, W, H, U, L);
 
   // ---------------------------------------------------------------- paint the light
   const img = g.getImageData(0, 0, W, H);
   const d = img.data;
   const pal = {
-    skin: { base: skin, light: mixc(mixc(skin, [255, 236, 214], 0.28), keyC, 0.12), shade: fem ? mixc(mulc(skin, 0.66), [120, 66, 84], 0.3) : mixc(mulc(skin, 0.45), [70, 40, 58], 0.35), turn: mixc(mulc(skin, 0.78), [200, 72, 60], 0.38), warm: [214, 92, 82] },
+    skin: { base: skin, light: mixc(mixc(skin, [255, 236, 214], 0.28), keyC, 0.12), shade: fem ? mixc(mulc(skin, 0.62), [128, 60, 56], 0.3) : mixc(mulc(skin, 0.5), [92, 44, 40], 0.32), turn: mixc(mulc(skin, 0.82), [212, 84, 62], 0.4), warm: [214, 92, 82] },
     lip: { base: mixc(skin, rgbOf(M.c ?? (fem ? '#b84852' : '#a86458')), fem ? 0.75 : 0.42) },
     ear: { base: mixc(skin, [220, 110, 96], 0.2) },
   };
@@ -170,7 +190,8 @@ export function paintFace(D, W = 600, H = 750) {
   const rim = norm3([0.75, -0.25, -0.35]);
   const H3 = norm3([L[0], L[1], L[2] + 1]);
   const px = 2 / U;
-  const soft = D.soft ?? (fem ? 0.13 : 0.065);
+  const soft = D.soft ?? (fem ? 0.16 : 0.1);
+  const LF = norm3([0.55, -0.1, 0.83]);
   for (let y = 1; y < H - 1; y++) {
     for (let x = 1; x < W - 1; x++) {
       const i = y * W + x;
@@ -186,13 +207,18 @@ export function paintFace(D, W = 600, H = 750) {
       const lamB = (-bx * L[0] - by * L[1] + L[2]) * bl;
       const m = MAT[i];
       const pp = m === 1 ? pal.lip : m === 2 ? pal.ear : m === 3 ? pal.cloth : pal.skin;
-      // value families: shadow | turn | halftone | light | highlight, with a crisp terminator
-      const lit = sstep(0.16 - soft, 0.16 + soft, lamB * 0.75 + lam * 0.25);
-      const up = sstep(0.4, 0.85, lamB * 0.5 + lam * 0.5);
+      // value families: shadow | turn | halftone | light | highlight, over a soft wrapped key (no
+      // knife-edge terminator: skin scatters light past the turn, so the shadow edge glows warm)
+      const lk = lamB * 0.62 + lam * 0.38;
+      const lit = sstep(0.02 - soft, 0.3 + soft, lk) * (1 - SH[i] * (m === 3 ? 0.6 : 0.82)) * (1 - NAO[i] * 0.7);
+      const up = sstep(0.42, 0.9, lamB * 0.45 + lam * 0.55) * (1 - SH[i]) * (1 - NAO[i] * 0.85);
       let col = mixc(pp.shade, pp.base, lit);
-      col = mixc(col, pp.light, up * 0.85);
-      const turn = Math.max(0, 1 - Math.abs(lamB * 0.75 + lam * 0.25 - 0.15) / 0.1) * (m === 3 ? 0.3 : 1);
-      col = mixc(col, pp.turn, turn * 0.55);
+      col = mixc(col, pp.light, up * 0.8);
+      // a cool-neutral fill from the front right lifts the shadow side to ~35% of the key
+      const fl = Math.max(0, nx * LF[0] + ny * LF[1] + nz * LF[2]);
+      col = mixc(col, pp.base, fl * (1 - lit) * 0.42);
+      const turn = Math.exp(-(((lk - 0.12) / 0.16) ** 2)) * (m === 3 ? 0.25 : 1);
+      col = mixc(col, pp.turn, turn * 0.42);
       // bounce light into the shadows from below (the costume and the chest)
       const bounce = Math.max(0, nx * 0.3 + ny * 0.75 + nz * 0.2) * (1 - lit);
       col = mixc(col, mixc(pp.base, clothA, 0.4), bounce * (fem ? 0.45 : 0.28));
@@ -208,6 +234,9 @@ export function paintFace(D, W = 600, H = 750) {
         const sp = Math.pow(Math.max(0, hd), m === 1 ? 26 : 36) * (m === 1 ? 0.55 : 0.32 + (scalpZ && y < scalpZ[1] + U * 0.4 ? 0.3 : 0));
         col = mixc(col, [255, 246, 232], sp);
       }
+      if (D.debug === 'n') col = [(nx + 1) * 127, (ny + 1) * 127, nz * 255];
+      else if (D.debug === 'nb') col = [(bx * bl * -1 + 1) * 127, (by * bl * -1 + 1) * 127, bl * 255];
+      else if (D.debug === 'sh') col = [255 * (1 - SH[i]), 255 * (1 - SH[i]), 255];
       // rim of the aura from behind on the right
       const rk = Math.pow(Math.max(0, 1 - nz), 2.4) * Math.max(0, nx * rim[0] + ny * rim[1] + 0.3);
       col = mixc(col, mixc(aura, [255, 255, 255], 0.2), clamp(rk * 0.75));
@@ -272,10 +301,12 @@ function norm3(v) { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / 
 function buildRelief(prims, W, H, P, rotOf, U, warp = null) {
   const Z = new Float32Array(W * H).fill(-1e9);
   const S = new Float32Array(W * H);
+  const S2 = new Float32Array(W * H); // the neck and body: unioned among themselves, then hard-max'd with the head
   const BEST = new Float32Array(W * H).fill(-1e9);
   const MAT = new Uint8Array(W * H);
   const cov = new Float32Array(W * H);
   const K = 0.1; // smooth-union radius, head units
+  const KH = 0.15; // the head's own forms melt together more broadly (no crease where the mask meets the jaw)
   const matId = { skin: 0, lip: 1, ear: 2, cloth: 3 };
   for (const p of prims) {
     const RM = rotOf(p.grp);
@@ -312,18 +343,73 @@ function buildRelief(prims, W, H, P, rotOf, U, warp = null) {
         // coverage: antialias the silhouette from the chord length
         const edge = Math.min(1, Math.sqrt(disc) / (2 * a) * U * 0.9 * tk);
         if (edge > cov[i]) cov[i] = Math.max(cov[i], edge);
-        S[i] += Math.exp(Math.min(40, z / K));
+        if (p.grp === 'head') S[i] += Math.exp(Math.min(40, z / KH));
+        else S2[i] += Math.exp(Math.min(40, z / K));
         if (z > BEST[i]) { BEST[i] = z; MAT[i] = id; }
       }
     }
   }
   const mask = new Uint8Array(W * H);
+  const HEAD = new Uint8Array(W * H);
   for (let i = 0; i < W * H; i++) {
-    if (S[i] > 0) { Z[i] = K * Math.log(S[i]); mask[i] = Math.round(255 * Math.min(1, cov[i])); }
+    const zh = S[i] > 0 ? KH * Math.log(S[i]) : -1e9;
+    const zn = S2[i] > 0 ? K * Math.log(S2[i]) : -1e9;
+    if (S[i] > 0 || S2[i] > 0) {
+      // a soft max over a narrow band keeps the seam antialiased without a melted ridge
+      const kk = 0.025;
+      const hi = Math.max(zh, zn);
+      Z[i] = hi + kk * Math.log(Math.exp((zh - hi) / kk) + Math.exp((zn - hi) / kk));
+      HEAD[i] = zh >= zn ? 1 : 0;
+      mask[i] = 255;
+    }
+  }
+  // antialias only the outer silhouette (a per-primitive chord coverage let the background show
+  // through inside the face wherever every primitive happened to be thin)
+  const AA = new Uint8Array(mask);
+  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+    const i = y * W + x;
+    if (!AA[i]) continue;
+    let n = 0;
+    for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) n += AA[i + oy * W + ox] ? 1 : 0;
+    if (n < 9) mask[i] = Math.round(255 * Math.max(Math.min(1, cov[i]), (n + 1) / 10));
   }
   // fill outside with the nearest-ish depth so gradients at the rim stay sane
-  for (let i = 0; i < W * H; i++) if (!S[i]) Z[i] = -3;
-  return { Z, MAT, mask };
+  for (let i = 0; i < W * H; i++) if (!S[i] && !S2[i]) Z[i] = -3;
+  return { Z, MAT, mask, HEAD };
+}
+
+function castShadows(Z, mask, W, H, U, L) {
+  const SH = new Float32Array(W * H);
+  const lxy = Math.hypot(L[0], L[1]) || 1e-3;
+  const dx = L[0] / lxy, dy = L[1] / lxy;
+  const rise = (L[2] / lxy) / U; // head units of height gained per pixel travelled toward the light
+  const step = Math.max(1.5, U * 0.012);
+  const maxD = U * 0.75;
+  const bias = 0.012;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      if (!mask[i]) continue;
+      const z0 = Z[i];
+      let occ = 0;
+      for (let t = step; t < maxD; t += step) {
+        const sx = Math.round(x + dx * t), sy = Math.round(y + dy * t);
+        if (sx < 0 || sy < 0 || sx >= W || sy >= H) break;
+        const j = sy * W + sx;
+        if (!mask[j]) continue;
+        const over = Z[j] - (z0 + t * rise + bias);
+        if (over > 0) {
+          // penumbra widens with distance from the occluder
+          const o = Math.min(1, over / (0.05 + t / U * 0.3));
+          if (o > occ) { occ = o; if (occ >= 1) break; }
+        }
+      }
+      SH[i] = occ;
+    }
+  }
+  // soften the shadow edge a little more
+  blurField(SH, mask, W, H, Math.max(1, Math.round(U * 0.035)));
+  return SH;
 }
 
 function gauss(Z, mask, W, H, gx, gy, sx, sy, amp) {
@@ -1807,103 +1893,145 @@ export function paintGhostKnight(W = 600, H = 750, o = {}) {
     g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke();
   }
   softDot(g, cx, cy - U * 0.2, U * 2.2, [120, 230, 250], 0.2);
-  // the cape behind the shoulders
-  const capeL = spline([P([-1.6, 1.7, -0.6], 'body'), P([-2.3, 2.6, -0.6], 'body'), P([-2.5, 4.2, -0.5], 'body')], 6);
-  const capeR = spline([P([1.6, 1.7, -0.6], 'body'), P([2.3, 2.6, -0.6], 'body'), P([2.5, 4.2, -0.5], 'body')], 6);
-  g.save();
-  g.beginPath(); g.moveTo(capeL[0][0], capeL[0][1]); for (const q of capeL) g.lineTo(q[0], q[1]);
-  for (let k = capeR.length - 1; k >= 0; k--) g.lineTo(capeR[k][0], capeR[k][1]); g.closePath();
-  const cg = g.createLinearGradient(0, cy, 0, H);
-  cg.addColorStop(0, 'rgba(60,140,160,0.45)'); cg.addColorStop(1, 'rgba(20,60,80,0.1)');
-  g.fillStyle = cg; g.fill();
-  g.restore();
-  // relief
-  const prims = [];
-  const E = (grp, cc, rr, rot = null) => prims.push({ grp, mat: 'skin', c: cc, r: rr, rot });
-  // a bascinet: a tall skull rising to a point at the back, a hounskull visor drawn out into a snout
-  E('head', [0, -0.42, -0.08], [0.9, 1.08, 0.98]);
-  E('head', [0, -0.98, -0.4], [0.52, 0.62, 0.52], [0.6, 0, 0]);
-  E('head', [0, 0.1, 0.2], [0.86, 0.9, 0.88]);
-  E('head', [0, 0.16, 0.82], [0.34, 0.46, 0.62], [-0.15, 0, 0]);
-  // the shoulders: lames of plate stepping down each arm, a flat breastplate with a keel
-  for (const s of [-1, 1]) for (let k = 0; k < 3; k++) E('body', [s * (1.2 + k * 0.22), 1.62 + k * 0.26, -0.25], [0.7 - k * 0.08, 0.2, 0.5], [0, 0, s * (0.25 + k * 0.12)]);
-  E('head', [0, 1.0, -0.12], [0.58, 0.42, 0.56]); // the gorget under the aventail
-  E('body', [0, 2.42, -0.25], [1.5, 0.95, 0.4]);
-  for (const s of [-1, 1]) E('body', [s * 0.55, 2.3, -0.05], [0.62, 0.55, 0.3]);
-  E('body', [0, 2.45, 0.1], [0.14, 0.85, 0.16]);
-  const { Z, mask } = buildRelief(prims, W, H, P, rotOf, U);
-  const dent = (p, sx, sy, amp, grp = 'head') => { const q = P(p, grp); gauss(Z, mask, W, H, q[0], q[1], sx * U, sy * U, -amp); };
-  dent([0, -0.02, 0.95], 0.75, 0.05, 0.16); // the sight
-  for (let i = 0; i < 4; i++) for (const s of [-1, 1]) dent([s * (0.16 + i * 0.08), 0.42 + i * 0.03, 0.95 - i * 0.06], 0.025, 0.025, 0.06); // breaths
-  for (let i = 0; i < 4; i++) dent([0, 2.05 + i * 0.32, 0.7], 1.4, 0.03, 0.05, 'body'); // the lames of the breastplate
-  dent([-0.18, 1.32, 0.62], 0.16, 0.05, 0.08, 'body'); // the old wound at the throat
-  blurField(Z, mask, W, H, 2);
-  const img = g.getImageData(0, 0, W, H);
-  const d = img.data;
-  const L = norm3([-0.5, -0.65, 0.58]);
-  const H3 = norm3([L[0], L[1], L[2] + 1]);
-  const stops = [[0, [4, 22, 34]], [0.3, [20, 80, 104]], [0.58, [86, 184, 210]], [0.82, [184, 244, 255]], [1, [244, 255, 255]]];
-  const ramp = (l) => { let k = 1; while (k < stops.length - 1 && stops[k][0] < l) k++; const [t0, c0] = stops[k - 1]; const [t1, c1] = stops[k]; return mixc(c0, c1, clamp((l - t0) / (t1 - t0))); };
-  const px = 2 / U;
-  for (let y = 1; y < H - 1; y++) {
-    const fade = clamp((H * 0.98 - y) / (H * 0.35)); // he thins toward the bottom of the frame
-    for (let x = 1; x < W - 1; x++) {
-      const i = y * W + x;
-      if (!mask[i]) continue;
-      const zx = (Z[i + 1] - Z[i - 1]) / px, zy = (Z[i + W] - Z[i - W]) / px;
-      const il = 1 / Math.hypot(zx, zy, 1);
-      const nx = -zx * il, ny = -zy * il, nz = il;
-      const lam = Math.max(0, nx * L[0] + ny * L[1] + nz * L[2]);
-      const sp = Math.pow(Math.max(0, nx * H3[0] + ny * H3[1] + nz * H3[2]), 30);
-      const fres = Math.pow(1 - nz, 2.2);
-      let l = 0.08 + sstep(0.15, 0.3, lam) * 0.3 + sstep(0.6, 0.9, lam) * 0.16 + sp * 0.3 + fres * 0.42;
-      l = clamp(l);
-      const col = ramp(l);
-      const a = (mask[i] / 255) * (0.16 + l * 0.6) * fade;
-      const o4 = i * 4;
-      d[o4] = d[o4] * (1 - a) + col[0] * a;
-      d[o4 + 1] = d[o4 + 1] * (1 - a) + col[1] * a;
-      d[o4 + 2] = d[o4 + 2] * (1 - a) + col[2] * a;
-    }
+  // ---------------------------------------------------------------- the knight, drawn plate by plate
+  // (a designed illustration: crisp plate edges read as armour where blended ellipsoids read as toys)
+  const k = W / 600;
+  const X = (v) => v * k, Y = (v) => v * k + (H - 750 * k) * 0.5;
+  const fig = makeCanvas(W, H);
+  const f = fig.getContext('2d');
+  const path = (pts, close = true) => { f.beginPath(); f.moveTo(X(pts[0][0]), Y(pts[0][1])); for (let i = 1; i < pts.length; i++) { const q = pts[i]; if (q.length === 4) f.quadraticCurveTo(X(q[0]), Y(q[1]), X(q[2]), Y(q[3])); else if (q.length === 6) f.bezierCurveTo(X(q[0]), Y(q[1]), X(q[2]), Y(q[3]), X(q[4]), Y(q[5])); else f.lineTo(X(q[0]), Y(q[1])); } if (close) f.closePath(); };
+  const C = { deep: [6, 34, 48], dark: [14, 64, 84], mid: [44, 138, 168], lite: [140, 226, 248], hot: [226, 255, 255] };
+  // a plate: glassy fill shaded from its lit edge (x0,y0) to its far edge, a bright rim on the lit
+  // side, a thin cold edge all round
+  const plate = (pts, [x0, y0, x1, y1], { a = 0.62, hi = 0.85, lo = 0.12, rim = 0.75 } = {}) => {
+    path(pts);
+    const gr = f.createLinearGradient(X(x0), Y(y0), X(x1), Y(y1));
+    gr.addColorStop(0, css(mixc(C.lite, C.hot, 0.2), a * hi));
+    gr.addColorStop(0.18, css(C.mid, a * 0.9));
+    gr.addColorStop(0.55, css(C.dark, a * 0.75));
+    gr.addColorStop(0.85, css(C.deep, a * 0.6));
+    gr.addColorStop(1, css(C.mid, a * (0.6 + lo)));
+    f.fillStyle = gr;
+    f.fill();
+    f.save();
+    f.clip();
+    // the lit edge: a soft bright band just inside the outline nearest the light
+    f.lineWidth = X(10);
+    f.strokeStyle = css(C.lite, 0.18 * rim);
+    f.filter = `blur(${X(3).toFixed(1)}px)`;
+    f.stroke();
+    f.filter = 'none';
+    f.restore();
+    f.lineWidth = Math.max(1, X(1.6));
+    f.strokeStyle = css(C.hot, 0.55 * rim);
+    f.stroke();
+  };
+  const line = (pts, wpx, col, a) => { path(pts, false); f.lineWidth = X(wpx); f.strokeStyle = css(col, a); f.lineCap = 'round'; f.stroke(); };
+  // the cape: a heavy fall of cloth behind the shoulders, its folds catching the cold light
+  path([[150, 420], [60, 520, 40, 760], [560, 760], [540, 520, 450, 420]]);
+  const cg = f.createLinearGradient(0, Y(420), 0, Y(760));
+  cg.addColorStop(0, css(C.dark, 0.55)); cg.addColorStop(1, css(C.deep, 0.15));
+  f.fillStyle = cg; f.fill();
+  for (const [x0, x1] of [[110, 70], [170, 150], [440, 470], [500, 535]]) line([[x0, 470], [x0 - 10, 600, x1, 760]], 6, C.lite, 0.12);
+  // upper arms under the pauldrons (vambrace tubes, mostly lost in mist below)
+  plate([[78, 560], [70, 700, 84, 760], [178, 760], [176, 640, 172, 560]], [80, 560, 176, 600], { a: 0.4 });
+  plate([[432, 556], [440, 650, 436, 760], [520, 760], [530, 680, 518, 556]], [432, 556, 520, 600], { a: 0.34 });
+  // breastplate: two planes meeting at the keel, the near (left) one in the light
+  plate([[192, 452], [236, 470, 296, 474], [292, 600, 282, 760], [150, 760], [142, 600, 168, 500]], [190, 470, 290, 700], { a: 0.66 });
+  plate([[296, 474], [356, 470, 410, 452], [438, 500, 446, 600], [450, 760], [282, 760], [292, 600, 296, 474]], [420, 470, 300, 700], { a: 0.54, hi: 0.4 });
+  line([[296, 476], [294, 600, 282, 760]], 3, C.hot, 0.7); // the keel
+  line([[300, 480], [298, 600, 288, 760]], 8, C.lite, 0.14);
+  // the faulds: lames across the belly
+  for (const yy of [690, 724]) line([[150, yy], [290, yy + 14, 450, yy - 4]], 2, C.lite, 0.4);
+  // gorget: three lames stepping down from the throat
+  for (let i = 2; i >= 0; i--) {
+    const t = 368 + i * 26, w0 = 92 + i * 22;
+    plate([[300 - w0 - 6, t + 8], [300, t - 12, 300 + w0, t + 4], [300 + w0 + 4, t + 30], [300, t + 16, 300 - w0 - 8, t + 34]], [300 - w0, t, 300 + w0, t + 30], { a: 0.62, rim: 0.9 });
   }
-  g.putImageData(img, 0, 0);
-  // the aventail: a curtain of mail from the helm's rim over the throat and shoulders
+  // pauldrons: a domed cop over three lames that step down the arm (far one smaller, darker)
+  const pauldron = (sgn, cx0, cy0, sc, dim) => {
+    const P2 = (pts) => pts.map((q) => q.map((v, j) => (j % 2 === 0 ? cx0 + sgn * v * sc : cy0 + v * sc)));
+    for (let i = 3; i >= 1; i--) {
+      const yy = 40 + i * 30, xx = 14 + i * 12;
+      plate(P2([[-62 + xx * 0.2, yy - 4 + i * 6], [-10 + xx, yy - 46, 100 + xx, yy - 4 + i * 8], [104 + xx, yy + 26 + i * 8], [0 + xx, yy - 14, -58 + xx * 0.2, yy + 26 + i * 6]]), [cx0, cy0 + (yy - 30) * sc, cx0 + sgn * 40 * sc, cy0 + (yy + 20) * sc], { a: 0.6 * dim, rim: dim });
+    }
+    plate(P2([[-74, 40], [-70, -40, 20, -52], [92, -40, 118, 30], [112, 64], [30, 40, -40, 56, -74, 40]]), [cx0 - sgn * 40 * sc, cy0 - 50 * sc, cx0 + sgn * 100 * sc, cy0 + 60 * sc], { a: 0.66 * dim, rim: dim });
+    // a rolled edge and rivets
+    line(P2([[-66, 30], [0, 20, 100, 46]]), 3, C.hot, 0.5 * dim);
+    for (let i = 0; i < 4; i++) { const q = P2([[-40 + i * 40, 24 + i * 6]])[0]; softDot(f, X(q[0]), Y(q[1]), X(6), C.hot, 0.8 * dim); }
+  };
+  pauldron(1, 470, 438, 0.86, 0.8);
+  pauldron(-1, 132, 446, 1.0, 1.0);
+  // ---------------------------------------------------------------- the helm (an armet, turned three-quarters to our left)
+  // skull and comb
+  plate([[214, 214], [210, 120, 312, 96], [418, 104, 426, 230], [420, 300, 392, 352], [326, 360], [250, 340]], [230, 110, 420, 330], { a: 0.66 });
+  line([[322, 98], [270, 110, 236, 170], [220, 200]], 3, C.hot, 0.65); // the comb's crest
+  line([[330, 100], [278, 116, 246, 176]], 9, C.lite, 0.14);
+  // bevor: the plate over the chin and throat, its upper edge a hard lit line
+  plate([[208, 296], [214, 352, 270, 380], [340, 390, 394, 350], [400, 300], [340, 316, 260, 316]], [212, 300, 396, 380], { a: 0.7, rim: 1 });
+  line([[208, 298], [262, 318, 340, 318], [400, 300]], 2.4, C.hot, 0.8);
+  // the visor: a sharp prow standing off the face, pivoting on a rivet at the temple
+  plate([[388, 238], [330, 196, 248, 200], [196, 214], [168, 254], [196, 296], [266, 312, 336, 300], [392, 276]], [200, 205, 380, 300], { a: 0.74, rim: 1 });
+  line([[196, 214], [168, 254], [196, 296]], 2.6, C.hot, 0.85); // the prow's ridge
+  line([[388, 238], [330, 198, 248, 202], [196, 216]], 2, C.hot, 0.6);
+  // the sight: a dark slot split by a bar; behind it a face, faint, but there
+  path([[192, 236], [250, 226, 330, 230], [378, 240], [378, 252], [330, 244, 250, 240], [190, 250]]);
+  f.fillStyle = 'rgba(0,6,12,0.95)'; f.fill();
+  f.save(); f.clip();
+  for (const ex of [238, 302]) {
+    softDot(f, X(ex), Y(242), X(26), [120, 228, 255], 0.6);
+    f.fillStyle = 'rgba(214,252,255,0.95)'; f.beginPath(); f.ellipse(X(ex), Y(242), X(11), X(4.2), -0.05, 0, Math.PI * 2); f.fill();
+    f.fillStyle = 'rgba(8,46,60,0.95)'; f.beginPath(); f.arc(X(ex - 2), Y(242), X(3.6), 0, Math.PI * 2); f.fill();
+    f.fillStyle = '#fff'; f.beginPath(); f.arc(X(ex - 3.5), Y(240.5), X(1.3), 0, Math.PI * 2); f.fill();
+  }
+  softDot(f, X(272), Y(246), X(10), [150, 230, 250], 0.4); // the bridge of a nose
+  f.restore();
+  line([[270, 228], [272, 250]], 2.2, C.lite, 0.55); // the bar
+  // the breaths: a punched grid on the visor's cheek, each a pit with a lit lower lip
+  for (let r = 0; r < 3; r++) for (let c2 = 0; c2 < 5; c2++) {
+    const x0 = 214 + c2 * 15 + r * 3, y0 = 266 + r * 11;
+    f.fillStyle = 'rgba(0,8,14,0.9)'; f.beginPath(); f.ellipse(X(x0), Y(y0), X(3.4), X(2.8), 0, 0, Math.PI * 2); f.fill();
+    f.fillStyle = 'rgba(200,250,255,0.45)'; f.beginPath(); f.ellipse(X(x0), Y(y0 + 2.6), X(3.2), X(1), 0, 0, Math.PI * 2); f.fill();
+  }
+  // the visor pivot and the rivets round the bevor
+  softDot(f, X(384), Y(256), X(14), C.lite, 0.5); softDot(f, X(384), Y(256), X(5), C.hot, 1);
+  for (let i = 0; i < 6; i++) { const t = i / 5; softDot(f, X(226 + t * 160), Y(338 + Math.sin(t * Math.PI) * 30), X(4), C.hot, 0.8); }
+  // ---------------------------------------------------------------- the wound that killed him
   {
-    const top = [[-0.86, 0.55], [-0.5, 0.95], [0, 1.05], [0.5, 0.95], [0.86, 0.55]].map(([x, y]) => P([x, y, 0.2]));
-    const bot = [[-1.25, 1.55], [-0.6, 1.75], [0, 1.82], [0.6, 1.75], [1.25, 1.55]].map(([x, y]) => P([x, y, 0.3], 'body'));
-    const tl = spline(top, 6), bl = spline(bot, 6);
-    g.save();
-    g.beginPath(); g.moveTo(tl[0][0], tl[0][1]); for (const q of tl) g.lineTo(q[0], q[1]); for (let k = bl.length - 1; k >= 0; k--) g.lineTo(bl[k][0], bl[k][1]); g.closePath();
-    g.fillStyle = 'rgba(24,80,100,0.5)'; g.fill();
-    g.clip();
-    const rr = U * 0.05;
-    const yMax = Math.max(...bl.map((q) => q[1])); const xMin = Math.min(...bl.map((q) => q[0])); const xMax = Math.max(...bl.map((q) => q[0]));
-    for (let y = Math.min(...tl.map((q) => q[1])) - rr; y < yMax + rr; y += rr * 1.05) for (let x = xMin - rr; x < xMax + rr; x += rr * 1.2) {
-      const xx = x + ((Math.round(y / rr) % 2) ? rr * 0.6 : 0);
-      const lit = clamp(0.7 - (xx - cx) / (U * 2.2) * 0.6 + (R() - 0.5) * 0.3);
-      g.strokeStyle = `rgba(${Math.round(60 + lit * 170)},${Math.round(150 + lit * 100)},${Math.round(170 + lit * 85)},${0.25 + lit * 0.4})`;
-      g.lineWidth = rr * 0.3;
-      g.beginPath(); g.arc(xx, y, rr * 0.48, Math.PI * 0.95, Math.PI * 2.05); g.stroke();
+    const pts = [[244, 384], [280, 396], [316, 404], [350, 398]];
+    f.save();
+    f.globalCompositeOperation = 'lighter';
+    f.filter = `blur(${X(16).toFixed(1)}px)`;
+    line([pts[0], [pts[1][0], pts[1][1], pts[2][0], pts[2][1]], pts[3]], 44, [120, 240, 255], 0.85);
+    f.filter = `blur(${X(4).toFixed(1)}px)`;
+    line([pts[0], [pts[1][0], pts[1][1], pts[2][0], pts[2][1]], pts[3]], 12, [210, 255, 255], 1);
+    f.filter = 'none';
+    f.restore();
+    path([[244, 384], [290, 392, 316, 400], [350, 398], [312, 404, 280, 401]]);
+    f.fillStyle = 'rgba(0,10,16,0.6)'; f.fill();
+    f.save(); f.globalCompositeOperation = 'lighter';
+    line([[250, 386], [292, 396, 344, 398]], 2, [236, 255, 255], 1);
+    const RR = rngOf(5);
+    for (let i = 0; i < 6; i++) {
+      const x0 = 258 + i * 16, y0 = 394 + Math.sin(i) * 3, len = 22 + RR() * 46;
+      const gr = f.createLinearGradient(X(x0), Y(y0), X(x0), Y(y0 + len));
+      gr.addColorStop(0, 'rgba(190,255,255,0.8)'); gr.addColorStop(1, 'rgba(190,255,255,0)');
+      f.strokeStyle = gr; f.lineWidth = X(2 + RR() * 2.4);
+      f.beginPath(); f.moveTo(X(x0), Y(y0)); f.lineTo(X(x0 + (RR() - 0.5) * 6), Y(y0 + len)); f.stroke();
     }
-    g.restore();
+    f.restore();
   }
-  // the sight: a hollow dark slot, and in it two cold points of light
-  const s0 = P([-0.62, -0.02, 0.88]), s1 = P([0.62, -0.02, 0.88]);
-  const sl = spline([s0, P([-0.3, 0.0, 1.0]), P([0, 0.02, 1.08]), P([0.3, 0.0, 1.0]), s1], 6);
-  g.save();
-  g.fillStyle = 'rgba(0,6,10,0.92)';
-  ribbon(g, sl, (t) => U * 0.075 * (0.5 + Math.sin(Math.PI * t) * 0.6));
-  g.fill();
-  g.restore();
-  for (const s of [-1, 1]) {
-    const e = P([s * 0.26, 0.0, 1.0]);
-    softDot(g, e[0], e[1], U * 0.34, [150, 240, 255], 0.4);
-    softDot(g, e[0], e[1], U * 0.1, [220, 255, 255], 0.95);
-    g.fillStyle = '#ffffff'; g.beginPath(); g.ellipse(e[0], e[1], U * 0.035, U * 0.022, 0, 0, Math.PI * 2); g.fill();
-  }
-  // rivets and the crest of the skull catch light
-  for (let k = 0; k < 9; k++) { const q = P([-0.8 + k * 0.2, 0.62 + Math.abs(k - 4) * 0.015, 0.62 - Math.abs(k - 4) * 0.09]); softDot(g, q[0], q[1], U * 0.03, [220, 255, 255], 0.7); }
-  strokeLine(g, spline([P([0, -1.3, -0.1]), P([0, -0.95, 0.55]), P([0, -0.4, 0.9])], 8), U * 0.025, 'rgba(220,255,255,0.45)', 1);
+  // he thins toward the bottom of the frame: dense at the helm and heart, mist at the hem
+  f.globalCompositeOperation = 'destination-in';
+  const fadeG = f.createLinearGradient(0, Y(420), 0, Y(760));
+  fadeG.addColorStop(0, 'rgba(0,0,0,1)'); fadeG.addColorStop(1, 'rgba(0,0,0,0.25)');
+  f.fillStyle = fadeG; f.fillRect(0, 0, W, H);
+  f.globalCompositeOperation = 'source-over';
+  g.drawImage(fig, 0, 0);
+  // the alpha of the figure is the mask for the mist and the rim below
+  const fa = f.getImageData(0, 0, W, H).data;
+  const mask = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) mask[i] = Math.min(255, fa[i * 4 + 3] * 2);
   // inner mist and wisps streaming upward off the outline
   const mist = makeCanvas(W, H);
   const mg = mist.getContext('2d');

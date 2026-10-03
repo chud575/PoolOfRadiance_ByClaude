@@ -423,7 +423,7 @@ function pattern(m, u, v, tu, tv, wp, out) {
       const rnd = hash2(row, col);
       k = (0.9 + rnd * 0.14) * (1 - edge * 0.2) * (0.82 + fbm(u / (s * 9), v / (s * 9), 2) * 0.36);
       out.edge = edge;
-      if (m.tint2) out.t2 = Math.max(0, Math.min(1, (rnd - 0.55) * 2.5));
+      if (m.tint2) out.t2 = Math.max(0, Math.min(0.5, (rnd - 0.8) * 2.5)); // (tint2 is the pale belly on the GPU path)
       break;
     }
     case 'fur': {

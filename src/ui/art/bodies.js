@@ -41,8 +41,8 @@ const eyeMat = (c) => mat('#000000', { emissive: c, ink: 0, rough: 0.2, spec: 0.
  * headR: head radius; build: girth; arm: arm length factor.
  */
 export const SPECIES = {
-  kobold: { head: 'kobold', skin: '#6a3420', skin2: '#4a4440', skin3: '#7a5a3a', pattern: 'scales', legs: 0.4, torso: 0.3, headR: 0.085, build: 0.8, digi: true, tail: 0.42, hunch: 0.22, cloth: ['#4a3a28', '#5a2a1a', '#3a3424', '#6a5a3a'], weapons: ['spear', 'spear', 'spear', 'shortsword', 'club', 'axe'], shield: 0.25, helm: 0.3, eyes: '#ffb020', claws: true },
-  koboldChief: { head: 'kobold', skin: '#7a6a5a', skin2: '#a89070', pattern: 'scales', legs: 0.4, torso: 0.31, headR: 0.085, build: 0.92, digi: true, tail: 0.45, hunch: 0.18, cloth: ['#6a1e1a'], cape: '#5a1a14', weapons: ['longsword'], shield: 0, helm: 1, eyes: '#ffc030', claws: true, chief: true },
+  kobold: { head: 'kobold', skin: '#6e2e16', skin2: '#4a4440', skin3: '#7a5a3a', belly2: '#c0904a', pattern: 'scales', legs: 0.4, torso: 0.3, headR: 0.085, build: 0.8, digi: true, tail: 0.42, hunch: 0.22, cloth: ['#4a3a28', '#5a2a1a', '#3a3424', '#6a5a3a'], weapons: ['spear', 'spear', 'spear', 'shortsword', 'club', 'axe'], shield: 0.25, helm: 0.3, eyes: '#ffb020', claws: true },
+  koboldChief: { head: 'kobold', skin: '#6a5a4a', skin2: '#a89070', belly2: '#c8a878', pattern: 'scales', legs: 0.4, torso: 0.31, headR: 0.085, build: 0.92, digi: true, tail: 0.45, hunch: 0.18, cloth: ['#6a1e1a'], cape: '#5a1a14', weapons: ['longsword'], shield: 0, helm: 1, eyes: '#ffc030', claws: true, chief: true },
   goblin: { head: 'goblin', skin: '#7a8a3a', skin2: '#9aa04a', pattern: 'skin', legs: 0.42, torso: 0.3, headR: 0.09, build: 0.82, hunch: 0.15, cloth: ['#4a3020', '#3a3a28', '#5a2a1a'], weapons: ['shortsword', 'club', 'spear', 'axe'], shield: 0.35, helm: 0.3, eyes: '#ffe040' },
   orc: { head: 'orc', skin: '#5e6e44', skin2: '#4a5a34', pattern: 'skin', legs: 0.47, torso: 0.33, headR: 0.07, build: 1.18, hunch: 0.15, cloth: ['#3a2a1c', '#2a2218'], armor: 'scraps', weapons: ['axe', 'axe', 'mace', 'longsword', 'spear'], shield: 0.3, helm: 0.4, eyes: '#ff3a18' },
   orcLeader: { head: 'orc', skin: '#56663e', skin2: '#46562e', pattern: 'skin', legs: 0.47, torso: 0.34, headR: 0.07, build: 1.3, hunch: 0.1, cloth: ['#2a1a12'], armor: 'plate', cape: '#4a1010', weapons: ['greataxe'], shield: 0, helm: 1, eyes: '#ff3a18' },
@@ -50,7 +50,7 @@ export const SPECIES = {
   hobgoblinChief: { head: 'hobgoblin', skin: '#a04a22', skin2: '#b05a2a', pattern: 'skin', legs: 0.48, torso: 0.34, headR: 0.07, build: 1.2, cloth: ['#1a1612'], armor: 'plate', cape: '#1a1612', weapons: ['longsword'], shield: 1, helm: 1, eyes: '#ffa020' },
   gnoll: { head: 'gnoll', skin: '#9a7a4a', skin2: '#6a5030', pattern: 'fur', legs: 0.46, torso: 0.34, headR: 0.075, build: 1.15, digi: true, hunch: 0.25, cloth: ['#3a2e22'], armor: 'scraps', weapons: ['flail', 'spear', 'axe'], shield: 0.2, eyes: '#ffd040' },
   bugbear: { head: 'bugbear', skin: '#7a5a30', skin2: '#5a4020', pattern: 'fur', legs: 0.46, torso: 0.35, headR: 0.075, build: 1.35, hunch: 0.18, cloth: ['#3a2a1a'], armor: 'scraps', weapons: ['mace', 'club'], shield: 0, eyes: '#ffc040' },
-  lizardMan: { head: 'lizard', skin: '#4a6a3a', skin2: '#8a9a5a', pattern: 'scales', legs: 0.46, torso: 0.33, headR: 0.07, build: 1.05, tail: 0.55, hunch: 0.1, cloth: ['#4a3a20'], weapons: ['spear', 'club'], shield: 0.6, eyes: '#ffe040' },
+  lizardMan: { head: 'lizard', skin: '#4a6a3a', skin2: '#8a9a5a', belly2: '#b8b878', pattern: 'scales', legs: 0.46, torso: 0.33, headR: 0.07, build: 1.05, tail: 0.55, hunch: 0.1, cloth: ['#4a3a20'], weapons: ['spear', 'club'], shield: 0.6, eyes: '#ffe040' },
   thug: { head: 'human', skin: '#c08a6a', legs: 0.5, torso: 0.32, headR: 0.064, build: 1.05, cloth: ['#4a3a2a', '#3a3a40', '#5a4a30'], armor: 'vest', hood: 0.6, weapons: ['club', 'club', 'dagger'], shield: 0, human: true },
   bandit: { head: 'human', skin: '#b07a5a', legs: 0.5, torso: 0.32, headR: 0.064, build: 1.0, cloth: ['#5a4a30', '#3a3020'], armor: 'vest', hood: 0.8, weapons: ['shortsword', 'longsword', 'spear'], shield: 0.2, human: true },
   buccaneer: { head: 'human', skin: '#b07a5a', legs: 0.5, torso: 0.32, headR: 0.064, build: 1.0, cloth: ['#c8b8a0', '#a8a090'], armor: 'vest', bandana: ['#8a1a1a', '#1a3a6a', '#2a2a2a'], weapons: ['shortsword', 'dagger'], shield: 0, human: true },
@@ -647,7 +647,8 @@ export function humanoid(f, sp, pose, R, gear) {
     }
     if (gear.necklace) for (let i = 0; i < 7; i++) {
       const a = -0.9 + i * 0.3;
-      f.cone([Math.sin(a) * 0.05, torso * 0.86 - Math.cos(a) * 0.035, 0.05], [Math.sin(a) * 0.052, torso * 0.86 - Math.cos(a) * 0.035 - 0.014, 0.056], 0.0042, 0.0015, M.bone, { group: null });
+      f.cone([Math.sin(a) * 0.05 * b, torso * 0.86 - Math.cos(a) * 0.035, 0.05 * b], [Math.sin(a) * 0.053 * b, torso * 0.86 - Math.cos(a) * 0.035 - 0.022, 0.058 * b], 0.0058, 0.0018, M.bone, { group: null });
+      if (i < 6) f.cone([Math.sin(a) * 0.05 * b, torso * 0.86 - Math.cos(a) * 0.035, 0.05 * b], [Math.sin(a + 0.3) * 0.05 * b, torso * 0.86 - Math.cos(a + 0.3) * 0.035, 0.05 * b], 0.0016, 0.0016, M.darkLeather, { group: null });
     }
     f.pop();
     if (gear.skirtM && !robe) {
@@ -748,6 +749,14 @@ export function humanoid(f, sp, pose, R, gear) {
   const prevG = f.group;
   head(f, sp.head, sp, skinM, R, { ...(gear.headOpts ?? {}), snarl: pose.snarl ?? 0 });
   if (gear.helmet && sp.head !== 'human') monsterHelm(f, sp.head, gear);
+  if (gear.hood && sp.head === 'kobold') {
+    // a ragged cowl over the skull and down the nape, the snout and eyes left out in the air
+    const hd = { group: 'hood', blend: 0.02 };
+    f.ell([0, 0.55, -0.35], [0.95, 0.72, 0.95], gear.hood, hd);
+    f.ell([0, 0.2, -0.75], [0.85, 0.75, 0.55], gear.hood, hd);
+    f.ell([0, 0.62, 0.15], [0.86, 0.42, 0.55], gear.hood, { ...hd, R: rotX(-0.35) });
+    for (let i = 0; i < 5; i++) { const a = -1.0 + i * 0.5; f.cone([Math.sin(a) * 0.8, -0.15, -0.55 + Math.cos(a) * 0.2], [Math.sin(a) * 1.05, -0.95 - (i % 2) * 0.15, -0.6 + Math.cos(a) * 0.25], 0.18, 0.06, gear.hood, hd); }
+  }
   f.group = prevG;
   f.pop();
   return { hp, hands, feet, chest, pelvis };
@@ -931,7 +940,7 @@ export function buildCreature(id, seed = 1, o = {}) {
   if (sp.skin3 && R() < 0.35) base = mixc(base, sp.skin3, 0.5 + R() * 0.3);
   const skinC = shade(base, 1 + tint);
   // scales sized to read at panel scale (a kobold ~120 px tall still shows scale rows), matte hide
-  const skinM = mat(skinC, { pattern: sp.pattern ?? 'skin', scale: sp.pattern === 'scales' ? 0.016 : sp.pattern === 'fur' ? 0.012 : 0.02, rough: sp.pattern === 'scales' ? 0.7 : 0.8, spec: sp.pattern === 'scales' ? 0.16 : 0.08, sss: sp.skeletal ? 0.2 : 0.4, tint2: sp.pattern === 'scales' ? shade(sp.skin2 ?? sp.skin, 0.8) : null });
+  const skinM = mat(skinC, { pattern: sp.pattern ?? 'skin', scale: sp.pattern === 'scales' ? 0.016 : sp.pattern === 'fur' ? 0.012 : 0.02, rough: sp.pattern === 'scales' ? 0.7 : 0.8, spec: sp.pattern === 'scales' ? 0.16 : 0.08, sss: sp.skeletal ? 0.2 : 0.4, tint2: sp.pattern === 'scales' ? (sp.belly2 ?? shade(sp.skin2 ?? sp.skin, 0.8)) : null });
   const clothC = R.pick(sp.cloth ?? ['#4a3a28']);
   const clothM = mat(shade(clothC, 0.9 + R() * 0.25), { pattern: 'cloth', scale: 0.018, spec: 0.05, rough: 0.9 });
   const weaponK = o.weapon !== undefined ? o.weapon : R.pick(sp.weapons ?? [null]);
@@ -1041,6 +1050,10 @@ export function buildCreature(id, seed = 1, o = {}) {
     gear.bracerM = R() < 0.6 ? mat('#4a3424', { pattern: 'leather', scale: 0.02, rough: 0.8 }) : null;
     gear.pauldron = R() < 0.45 ? (R() < 0.5 ? -1 : 1) : 0;
     gear.helmet = gear.helmet || R() < 0.3;
+    // nearly all of them hang a string of finger bones at the throat; the leader goes hooded
+    gear.necklace = gear.necklace || R() < 0.7;
+    gear.beltM = mat(R.pick(['#3a2414', '#2e2014', '#4a3018']), { pattern: 'leather', scale: 0.02, rough: 0.8 });
+    if (o.leader) { gear.hood = mat(R.pick(['#5a2418', '#3e3424', '#4a1e16']), { pattern: 'cloth', scale: 0.014, rough: 0.97, spec: 0.02 }); gear.helmet = false; }
   }
   if (sp.chief) gear.cape = true;
   // individual body mass within the pack: a pot-bellied one, a scrawny one, a hunchback

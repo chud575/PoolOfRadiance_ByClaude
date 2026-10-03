@@ -363,23 +363,70 @@ function facade(g, W, H, sky, R, o) {
         poly(g, [pt(u0 + 0.004, vv0 + 0.02), pt(u1 - 0.004, vv0 + 0.02), pt(u1 - 0.004, vv1), pt(u0 + 0.004, vv1)]);
         g.fill();
       } else {
+        const size = Math.abs(wq[1][0] - wq[0][0]);
         if (lit) {
           const c = pt((u0 + u1) / 2, (vv0 + vv1) / 2);
-          const size = Math.abs(wq[1][0] - wq[0][0]);
+          // a room behind the glass: the lamp low and warm, the ceiling and a drawn curtain in shadow
+          g.save();
+          poly(g, wq);
+          g.clip();
+          const top = pt((u0 + u1) / 2, vv0)[1], bot = pt((u0 + u1) / 2, vv1)[1];
+          g.fillStyle = linGrad(g, 0, top, 0, bot, [[0, '#6a3a18'], [0.45, '#d8823a'], [1, '#ffcf7a']]);
+          poly(g, wq); g.fill();
+          const cs = R() < 0.5 ? 0 : 1;
+          poly(g, [pt(cs ? u1 : u0, vv0), pt(lerp(u0, u1, cs ? 0.72 : 0.28), vv0), pt(lerp(u0, u1, cs ? 0.8 : 0.2), vv1), pt(cs ? u1 : u0, vv1)]);
+          g.fillStyle = 'rgba(60,20,12,0.75)'; g.fill();
+          g.restore();
           glow(g, c[0], c[1], size * 2.4 + 6, '#ff9a40', 0.35);
           lights?.push({ x: c[0], y: c[1], s: size, kind: 'glow', color: '#ffa050' });
         }
-        // mullion + frame
+        // the reveal: the wall is thick, so the frame sits back in shadow on its top and outer side
+        g.fillStyle = 'rgba(8,5,3,0.7)';
+        poly(g, [pt(u0, vv0), pt(u1, vv0), pt(u1, vv0 + 0.025), pt(u0, vv0 + 0.025)]); g.fill();
+        poly(g, side > 0 ? [pt(u0, vv0), pt(u0 + (u1 - u0) * 0.12, vv0), pt(u0 + (u1 - u0) * 0.12, vv1), pt(u0, vv1)] : [pt(u1 - (u1 - u0) * 0.12, vv0), pt(u1, vv0), pt(u1, vv1), pt(u1 - (u1 - u0) * 0.12, vv1)]);
+        g.fill();
+        // leaded quarries: a diamond lattice in the glass
+        if (size > 14) {
+          g.save();
+          poly(g, wq); g.clip();
+          g.strokeStyle = lit ? 'rgba(60,30,12,0.65)' : 'rgba(70,80,96,0.35)';
+          g.lineWidth = Math.max(0.6, size * 0.018);
+          const nq = 5;
+          for (let k = -nq; k <= nq; k++) {
+            g.beginPath(); g.moveTo(...pt(u0 + (u1 - u0) * (k / nq), vv0)); g.lineTo(...pt(u0 + (u1 - u0) * (k / nq + 1), vv1)); g.stroke();
+            g.beginPath(); g.moveTo(...pt(u0 + (u1 - u0) * (k / nq + 1), vv0)); g.lineTo(...pt(u0 + (u1 - u0) * (k / nq), vv1)); g.stroke();
+          }
+          g.restore();
+        }
+        // mullion + transom + a stout frame
         g.strokeStyle = 'rgba(20,12,6,0.95)';
-        g.lineWidth = Math.max(1, Math.abs(wq[1][0] - wq[0][0]) * 0.12);
+        g.lineWidth = Math.max(1, size * 0.1);
         g.beginPath();
         g.moveTo(...pt((u0 + u1) / 2, vv0));
         g.lineTo(...pt((u0 + u1) / 2, vv1));
-        g.moveTo(...pt(u0, (vv0 + vv1) / 2));
-        g.lineTo(...pt(u1, (vv0 + vv1) / 2));
+        g.moveTo(...pt(u0, vv0 + (vv1 - vv0) * 0.38));
+        g.lineTo(...pt(u1, vv0 + (vv1 - vv0) * 0.38));
         g.stroke();
+        g.lineWidth = Math.max(1.5, size * 0.16);
         poly(g, wq);
         g.stroke();
+        // the frame's lit edge
+        g.strokeStyle = lit ? 'rgba(255,200,140,0.35)' : 'rgba(170,160,150,0.18)';
+        g.lineWidth = Math.max(0.8, size * 0.03);
+        g.beginPath(); g.moveTo(...pt(u0, vv1)); g.lineTo(...pt(u1, vv1)); g.stroke();
+        // a shutter hung open beside some windows: boards and a strap hinge
+        if (size > 12 && R() < 0.45) {
+          const sw2 = (u1 - u0) * 0.48;
+          const su0 = side > 0 ? u1 + 0.004 : u0 - 0.004 - sw2;
+          const sq = [pt(su0, vv0 - 0.01), pt(su0 + sw2, vv0 - 0.01), pt(su0 + sw2, vv1 + 0.01), pt(su0, vv1 + 0.01)];
+          poly(g, sq);
+          g.fillStyle = R() < 0.5 ? 'rgba(62,44,28,0.96)' : 'rgba(46,52,44,0.96)';
+          g.fill();
+          g.strokeStyle = 'rgba(16,10,6,0.8)';
+          g.lineWidth = Math.max(0.6, size * 0.02);
+          for (let k = 1; k < 3; k++) { g.beginPath(); g.moveTo(...pt(su0 + sw2 * k / 3, vv0 - 0.01)); g.lineTo(...pt(su0 + sw2 * k / 3, vv1 + 0.01)); g.stroke(); }
+          for (const hv of [0.25, 0.75]) { g.beginPath(); g.moveTo(...pt(su0, lerp(vv0, vv1, hv))); g.lineTo(...pt(su0 + sw2 * 0.8, lerp(vv0, vv1, hv))); g.lineWidth = Math.max(0.8, size * 0.035); g.strokeStyle = 'rgba(30,26,24,0.9)'; g.stroke(); }
+        }
         // sill
         poly(g, [pt(u0 - 0.01, vv1), pt(u1 + 0.01, vv1), pt(u1 + 0.01, vv1 + 0.02), pt(u0 - 0.01, vv1 + 0.02)]);
         g.fillStyle = 'rgba(160,140,110,0.6)';
