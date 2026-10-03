@@ -213,9 +213,9 @@ export class Diorama {
     this.scene = null;
     this.camera = new THREE.PerspectiveCamera(30, 16 / 9, 0.1, 300);
     this.own = [];
-    this.az = -0.26;
+    this.az = -0.16;
     // a lower three-quarter view: the walls stand up as miniatures
-    this.el = 0.68;
+    this.el = 0.74;
     this.dist = 30;
     this.fitDist = 30;
     this.zoomLevel = 1;
@@ -1164,7 +1164,7 @@ export class Diorama {
     tex.anisotropy = Math.min(8, this.ctx.render?.maxAnisotropy ?? 4);
     // a cool, unbleached grey-green linen: a different value and hue from the warm paper
     const mat = T(new THREE.MeshPhysicalMaterial({
-      map: tex, color: 0xd0d1c4, roughness: 0.78, metalness: 0, vertexColors: true, envMapIntensity: 0.35, side: THREE.DoubleSide,
+      map: tex, color: 0xb9bcae, roughness: 0.74, metalness: 0, vertexColors: true, envMapIntensity: 0.35, side: THREE.DoubleSide,
       sheen: 1, sheenRoughness: 0.42, sheenColor: new THREE.Color(0xf4f6ee), specularIntensity: 0.6,
     }));
     const R = 14;
@@ -1249,7 +1249,7 @@ export class Diorama {
           const swag = Math.sin(tLin) * (0.35 + 0.3 * n1);
           const fold = ridge * 0.9 + swag * 0.35;
           const catenary = Math.cosh(Math.min(3, sd * 1.4)) - 1;
-          y = Math.max(top * 0.42, top - sagMax * k * 1.5 + fold * 0.17 * k + 0.012 * (1 - k) - catenary * 0.002);
+          y = Math.max(top * 0.4, top - sagMax * k * 1.6 + fold * 0.26 * k + 0.012 * (1 - k) - catenary * 0.002);
           rel = fold * 0.9 - k * 0.45 + (1 - k) * 0.6;
         } else {
           const o = -sd;

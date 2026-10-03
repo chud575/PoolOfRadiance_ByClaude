@@ -301,11 +301,15 @@ export function buildWorldSheet({ k = 2, seenFn, secretsFn, known, here }) {
   }
   g.save();
   g.clip(sea);
-  // sea wash: deeper toward the bottom, mottled
+  // the sea stops at the sheet's ruled border: a clean strip of paper below it
+  g.beginPath();
+  g.rect(15, 15, W - 30, H - 30);
+  g.clip();
+  // sea wash: a little deeper offshore, mottled (never a dark vignette at the border)
   const sg = g.createLinearGradient(0, 770, 0, H);
   sg.addColorStop(0, 'rgba(150,190,180,0.3)');
-  sg.addColorStop(0.25, 'rgba(96,146,164,0.42)');
-  sg.addColorStop(1, 'rgba(40,78,124,0.72)');
+  sg.addColorStop(0.3, 'rgba(100,148,166,0.4)');
+  sg.addColorStop(1, 'rgba(76,116,150,0.5)');
   g.globalCompositeOperation = 'multiply';
   g.fillStyle = sg;
   g.fillRect(0, 700, W, 400);

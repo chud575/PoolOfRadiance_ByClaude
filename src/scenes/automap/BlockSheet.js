@@ -648,9 +648,10 @@ export function buildBlockSheet(map, { k = 2, seen, secrets, spent, inkWalls = t
         if (!near) continue;
         const px = CX(x) - out[0] * cityOff;
         const py = CY(y) - out[1] * cityOff;
-        const R = cityW * 1.12;
-        // a corner tower faces both ways
+        // a corner tower faces both ways, and stands bigger; the curtain's towers vary
         const corner = (x <= 0 || x >= map.w) && (y <= 0 || y >= map.h);
+        const hv = Math.abs(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1;
+        const R = cityW * (corner ? 1.34 : 0.92 + hv * 0.32);
         const o2 = corner ? [x <= 0 ? -1 : 1, y <= 0 ? -1 : 1] : out;
         tower(ig, px, py, R, { seed: (x * 17 + y * 31) | 0, out: o2 });
         wallRects.push([px - R, py - R, R * 2, R * 2]);

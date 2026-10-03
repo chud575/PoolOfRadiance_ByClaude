@@ -634,8 +634,9 @@ export default class AutomapScene extends Scene {
       h('div.am-stats', [
         here ? h('div.am-stat', [h('span', ['Position']), h('b', [`${loc.x}, ${loc.y} · ${DIR_NAMES[loc.dir]}`])]) : null,
         h('div.am-stat', [h('span', ['Time']), h('b', [`Day ${day}, ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`])]),
-        h('div.am-stat', [h('span', ['Surveyed']), h('b', [`${pct}%`])]),
-        h('div.am-bar', { dataset: { tip: `${st.seen} of ${st.total} squares explored` } }, [h('i', { style: { width: `${pct}%` } })]),
+        h('div.am-stat', [h('span', ['Walked']), h('b', [`${pct}%`])]),
+        h('div.am-bar', { dataset: { tip: `${st.seen} of ${st.total} squares walked by the Company` } }, [h('i', { style: { width: `${pct}%` } })]),
+        m.id === 'phlan_civilized' && !this.reveal ? h('div.am-stat', [h('span', ['Plan']), h('b', ['the council\'s survey'])]) : null,
         h('div.am-stat', [h('span', ['Secret doors found']), h('b', [String(secrets)])]),
       ]),
       h('div.am-sec', ['Notes']),
