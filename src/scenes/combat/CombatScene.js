@@ -26,6 +26,9 @@ import { VFX } from './view/vfx.js';
 import { CombatHud, describeHealth, fmtMp } from './ui/hud.js';
 import { DEMOS } from './demos.js';
 
+/** Camera pan keys → [screen x, screen y] (y = toward the viewer). */
+const CAM_PAN_KEYS = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0], Numpad8: [0, -1], Numpad2: [0, 1], Numpad4: [-1, 0], Numpad6: [1, 0] };
+
 /** Portrait cache (data URLs) shared by every fight this session. */
 const PORTRAITS = new Map();
 const SPEEDS = [[0.6, 'Slow'], [1, 'Normal'], [1.6, 'Fast'], [2.4, 'Faster'], [4, 'Fastest']];
@@ -1197,13 +1200,24 @@ export default class CombatScene extends Scene {
     };
     const onCtx = (e) => e.preventDefault();
     const onKey = (e) => this._key(e);
+    // Held camera-pan keys (Shift+arrows / Shift+numpad), applied smoothly in _updateCamera.
+    this._camPan = new Set();
+    const onKeyUp = (e) => {
+      if (e.key === 'Shift') this._camPan.clear();
+      else this._camPan.delete(e.code);
+    };
+    const onBlur = () => this._camPan.clear();
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerdown', onDown);
     window.addEventListener('pointerup', onUp);
     window.addEventListener('wheel', onWheel, { passive: true });
     window.addEventListener('contextmenu', onCtx);
     window.addEventListener('keydown', onKey);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
     this.own(() => {
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerdown', onDown);
       window.removeEventListener('pointerup', onUp);
@@ -1255,6 +1269,10 @@ export default class CombatScene extends Scene {
     const k = e.key;
     const code = e.code;
     // Camera keys always work.
+    // Shift+arrows (or Shift+numpad 8/2/4/6) pan the camera while held; plain arrows still move.
+    if (e.shiftKey && CAM_PAN_KEYS[code]) { e.preventDefault(); this._camPan.add(code); this.cam.userPanned = true; return; }
+    if (k === '[' || k === '{') { this.cam.goalPitch = Math.min(1.35, this.cam.goalPitch + 0.08); return; }
+    if (k === ']' || k === '}') { this.cam.goalPitch = Math.max(0.5, this.cam.goalPitch - 0.08); return; }
     if (k === ',' || k === '<') { this.cam.goalYaw += Math.PI / 8; return; }
     if (k === '.' || k === '>') { this.cam.goalYaw -= Math.PI / 8; return; }
     if (k === '+' || k === '=') { this.cam.goalDist = Math.max(this.cam.minDist, this.cam.goalDist * 0.88); return; }
@@ -2379,6 +2397,20 @@ export default class CombatScene extends Scene {
   _updateCamera(dt, snap = false) {
     const cam = this.cam;
     const a = snap || this.frozen ? 1 : 1 - Math.exp(-dt * 4);
+    if (this._camPan?.size && dt > 0) {
+      let px = 0;
+      let pz = 0;
+      for (const c of this._camPan) {
+        px += CAM_PAN_KEYS[c][0];
+        pz += CAM_PAN_KEYS[c][1];
+      }
+      if (px || pz) {
+        const step = (cam.dist * 0.9 * Math.min(dt, 0.1)) / Math.hypot(px, pz);
+        const fwd = new THREE.Vector3(Math.sin(cam.yaw), 0, Math.cos(cam.yaw));
+        const right = new THREE.Vector3(fwd.z, 0, -fwd.x);
+        cam.goalTarget.addScaledVector(right, px * step).addScaledVector(fwd, pz * step);
+      }
+    }
     cam.yaw += (cam.goalYaw - cam.yaw) * a;
     cam.pitch += (cam.goalPitch - cam.pitch) * a;
     cam.dist += (cam.goalDist - cam.dist) * a;

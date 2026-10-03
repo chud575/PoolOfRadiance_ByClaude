@@ -43,7 +43,7 @@ export class CombatHud {
     // A thin gilt leader from the card to the figure it describes.
     this.lead = h('div.cb-lead');
     this.banner = h('div.cb-banner');
-    this.help = h('div.cb-help', { html: '<kbd>RMB</kbd> orbit &nbsp;<kbd>MMB</kbd> pan &nbsp;<kbd>Wheel</kbd> zoom<br><kbd>,</kbd> <kbd>.</kbd> rotate &nbsp;<kbd>Tab</kbd> target &nbsp;<kbd>Esc</kbd> back' });
+    this.help = h('div.cb-help', { html: '<kbd>RMB</kbd> orbit &nbsp;<kbd>MMB</kbd> pan &nbsp;<kbd>Wheel</kbd> zoom<br><kbd>Shift</kbd>+<kbd>&larr;&uarr;&rarr;&darr;</kbd> pan &nbsp;<kbd>,</kbd> <kbd>.</kbd> rotate &nbsp;<kbd>[</kbd> <kbd>]</kbd> tilt &nbsp;<kbd>+</kbd> <kbd>&minus;</kbd> zoom<br><kbd>Home</kbd> recentre &nbsp;<kbd>Tab</kbd> target &nbsp;<kbd>Esc</kbd> back' });
     this.speedEl = h('div.cb-speed');
     this.loc = h('div.cb-loc', [h('div.name.por-gilt-text', [o.location ?? 'Phlan']), h('div.sub', [o.sub ?? ''])]);
     this.rosterFrame = Frame({ title: 'Party', variant: 'blue', className: 'cb-roster' });
