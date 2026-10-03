@@ -42,8 +42,8 @@ export const NPCS = {
   priest_tyr: {
     id: 'priest_tyr', name: 'Brother Ohlo', title: 'High Priest of Tyr', race: 'human', gender: 'male',
     look: { seed: 5101, head: 7, body: 7, hair: 9, cloth: 1, skin: 1, eyes: 0 }, aura: '#bcd4ff',
-    figure: { age: 0.55, hairStyle: 'bald', beard: 'long', hair: '#e2ded6', skin: '#d4a488', pose: 'judge', outfit: { shirt: '#e0d8c8', top: '#e6e0d2', topKind: 'robe', sleeves: 'bell', stole: '#1d3574', symbol: 'scales', sash: '#1d3574', mantle: '#22346a', mitre: '#8898b8' } },
-    paint: { sex: 'm', age: 0.66, skin: '#d8a888', yaw: 0.24, gaze: [-0.1, 0], face: { w: 1.0, jaw: 1.02, cheek: 1.05, brow: 1.2 }, nose: { len: 1.05, w: 1.05 }, eyes: { c: '#4a6a8a', lid: 0.5 }, brows: { c: '#e4e0d8', w: 1.3, arch: 0.2 }, hair: { style: 'none', c: '#d8d4cc' }, beard: { style: 'long', c: '#e6e2da' }, head: { kind: 'mitre', c: '#56647c', mitre: '#8898b8', trim: '#d8b050' }, costume: { kind: 'priest', a: '#e6e0d2', b: '#d8d0c0', collar: '#c8c0b0', stole: '#1d3574', symbol: 'scales', trim: '#d8b050' }, bg: ['#3a4660', '#06080e'] },
+    figure: { age: 0.55, hairStyle: 'bald', beard: 'long', hair: '#e2ded6', skin: '#d4a488', pose: 'judge', outfit: { shirt: '#e0d8c8', top: '#2c3c6c', topKind: 'robe', sleeves: 'bell', stole: '#e4dcc8', symbol: 'scales', sash: '#c8a850', mantle: '#1a2448', mitre: '#e4e0d4' } },
+    paint: { sex: 'm', age: 0.66, skin: '#d8a888', yaw: 0.24, gaze: [-0.1, 0], face: { w: 1.0, jaw: 1.02, cheek: 1.05, brow: 1.2 }, nose: { len: 1.05, w: 1.05 }, eyes: { c: '#4a6a8a', lid: 0.5 }, brows: { c: '#e4e0d8', w: 1.3, arch: 0.2 }, hair: { style: 'none', c: '#d8d4cc' }, beard: { style: 'long', c: '#e6e2da' }, head: { kind: 'mitre', c: '#56647c', mitre: '#e4e0d4', trim: '#d8b050' }, costume: { kind: 'priest', a: '#2c3c6c', b: '#d8d0c0', collar: '#e4dcc8', stole: '#e4dcc8', symbol: 'scales', trim: '#d8b050' }, bg: ['#5a5040', '#0c0806'] },
   },
   priestess_sune: {
     id: 'priestess_sune', name: 'Mother Ilsabet', title: 'Priestess of Sune', race: 'halfElf', gender: 'female',

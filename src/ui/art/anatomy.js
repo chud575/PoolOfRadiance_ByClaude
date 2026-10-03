@@ -194,7 +194,6 @@ function headwear(f, skinM, o) {
     f.ell([0, 0.55, -0.1], [0.97, 0.1, 1.03], gm, { group: null });
     f.box([0, 1.1, 0.62], [0.08, 0.5, 0.04], gm, { group: null, bevel: 0.02, R: rotX(-0.45) });
     for (const d of [-1, 1]) f.box([d * 0.3, -0.6, -0.86], [0.08, 0.5, 0.02], mm, { group: null, bevel: 0.01 });
-    if (!o.hood) return;
   }
   if (o.hood) {
     const hm = mat(o.hood, { pattern: 'cloth', scale: 0.015, rough: 0.95, spec: 0.03 });
@@ -227,7 +226,9 @@ function headwear(f, skinM, o) {
     }
     return;
   }
-  if (o.bandana) {
+  if (o.mitre) {
+    // under the mitre no hair shows, but the beard does
+  } else if (o.bandana) {
     const bm = mat(o.bandana, { pattern: 'cloth', scale: 0.01 });
     f.ell([0, 0.36, -0.08], [0.92, 0.8, 1.0], bm, { group: 'band', k: 0.1 });
     f.cone([-0.55, 0.3, -0.8], [-0.72, -0.35, -1.0], 0.13, 0.05, bm, { group: 'band', k: 0.08 });

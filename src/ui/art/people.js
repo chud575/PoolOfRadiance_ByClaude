@@ -273,7 +273,7 @@ export function buildNpc(spec) {
       // the shirt cuff and the wrist coming out of it
       f.carve('cone', add(mouth, scl(ax, 0.03)), add(mouth, scl(ax, -0.012)), rM * 0.8, { group: `arm${d}`, k: 0.006, rb: rM * 0.78 });
       // the lining catches light at the opening (never a black void)
-      f.ell(add(mouth, scl(ax, -0.004)), [rM * 0.82, 0.005, rM * 0.82], cloth(shade(O.lining ?? O.shirt ?? '#d8ccb0', 0.92), { sss: 0.5 }), { group: `lining${d}`, k: 0.004, R: alignY(ax) });
+      f.ell(add(mouth, scl(ax, -0.004)), [rM * 0.82, 0.005, rM * 0.82], cloth(shade(O.lining ?? O.shirt ?? '#d8ccb0', 0.92), { sss: 0.5, emissive: shade(O.lining ?? O.shirt ?? '#d8ccb0', 0.32) }), { group: `lining${d}`, k: 0.004, R: alignY(ax) });
       f.cone(lerp3(elbow, wrist, 0.55), lerp3(elbow, wrist, 0.92), 0.03, 0.028, cloth(O.cuff ?? O.shirt ?? '#d8ccb0'), { group: `cuff${d}`, k: 0.008 });
       f.cone(lerp3(elbow, wrist, 0.85), wrist, 0.025, 0.022, skinM, { group: `wrist${d}`, k: 0.01 });
     } else if (sleeves === 'rolled') {
