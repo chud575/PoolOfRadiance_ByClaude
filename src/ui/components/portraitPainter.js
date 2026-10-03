@@ -1552,10 +1552,37 @@ export function portraitURL(ch, scale = 1, o = {}) {
   const key = portraitKey(ch, scale, crop);
   let u = urlCache.get(key);
   if (!u) {
-    u = paintPortrait(ch, { scale, crop }).toDataURL('image/png');
+    // Every small size (thumbnails, picker tiles, shop heads) is cut from one painting at MASTER
+    // scale: one face is painted once, not once per size.
+    if (scale < MASTER) u = downscaled(masterCanvas(ch, crop), scale);
+    else u = paintPortrait(ch, { scale, crop }).toDataURL('image/png');
     remember(key, u);
   }
   return u;
+}
+
+const MASTER = 0.5;
+const masters = new Map();
+/** The master-scale painting of a face (painted once, kept as a canvas for further cuts). */
+function masterCanvas(ch, crop) {
+  const key = portraitKey(ch, MASTER, crop);
+  let c = masters.get(key);
+  if (!c) {
+    c = paintPortrait(ch, { scale: MASTER, crop });
+    if (masters.size > 48) masters.delete(masters.keys().next().value);
+    masters.set(key, c);
+    remember(key, c.toDataURL('image/png'));
+  }
+  return c;
+}
+function downscaled(src, scale) {
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(PORTRAIT_W * scale));
+  c.height = Math.max(1, Math.round(PORTRAIT_H * scale));
+  const g = c.getContext('2d');
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(src, 0, 0, c.width, c.height);
+  return c.toDataURL('image/png');
 }
 
 /** A larger painting of the same face already in memory, scaled down (no GPU work at all). */
@@ -1600,11 +1627,34 @@ export function portraitURLAsync(ch, scale = 1, o = {}) {
     // Painted in bands across ticks (the ray-marched pass yields to the game's own frames between
     // them): no single long stall, even on a software GPU.
     let c = null;
-    try { c = await banded(ch, { scale, crop }); } catch (err) { console.warn('portrait', err); }
+    const ps = scale < MASTER ? MASTER : scale;
+    try { c = await banded(ch, { scale: ps, crop }); } catch (err) { console.warn('portrait', err); }
+    if (c && ps !== scale) {
+      const mk = portraitKey(ch, MASTER, crop);
+      if (masters.size > 48) masters.delete(masters.keys().next().value);
+      masters.set(mk, c);
+      remember(mk, c.toDataURL('image/png'));
+      const u = downscaled(c, scale);
+      remember(key, u);
+      return u;
+    }
     const u = (c ?? paintPortrait2D(ch, { scale, crop })).toDataURL('image/png');
     remember(key, u);
     return u;
   })().finally(() => pending.delete(key));
   pending.set(key, p);
   return p;
+}
+
+/**
+ * Pre-paint a party's faces in the background (master scale, from which every thumbnail is cut),
+ * so the roster, the camp and the sheets open on finished portraits. Painted one at a time in
+ * bands behind the warm-up; cached in memory and IndexedDB.
+ * @param {object[]} party
+ */
+export function prepaintParty(party) {
+  warmPortraitPainter();
+  for (const m of party ?? []) {
+    try { void portraitURLAsync(m, MASTER).catch(() => {}); } catch { /* ignore */ }
+  }
 }

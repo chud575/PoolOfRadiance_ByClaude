@@ -6,6 +6,7 @@ import { CLOTH_COLORS, defaultLook } from '../../ui/components/lookData.js';
 import { buildMiniature, miniatureEnvironment } from '../../ui/components/Miniature.js';
 import { isAlive } from '../../rules/character.js';
 import { buildBedroll } from './bedroll.js';
+import { buildRuins } from './ruins.js';
 import { groundTextures, barkTextures, emberTexture, coalTextures, smokeTexture, blobTexture, stoneTextures } from './campTextures.js';
 
 /**
@@ -162,36 +163,29 @@ void main() {
 
 // ------------------------------------------------------------------ geometry helpers
 
-/** A split log: a bark cylinder with one flat, pale split face. */
+/** A round log: a bark cylinder with ridged bark, a slight crook and knots; charred toward the burning end. */
 function splitLogGeometry(len, r, seed) {
-  const g = new THREE.CylinderGeometry(r * 0.92, r, len, 12, 6, false);
+  const g = new THREE.CylinderGeometry(r * 0.9, r, len, 16, 10, false);
   const p = g.attributes.position;
   const col = [];
-  const splitA = hrand(seed, 1) * Math.PI * 2;
-  const sx = Math.cos(splitA), sz = Math.sin(splitA);
+  const crook = (hrand(seed, 2) - 0.5) * 0.06;
   for (let i = 0; i < p.count; i++) {
     let x = p.getX(i), z = p.getZ(i);
     const y = p.getY(i);
     const rr = Math.hypot(x, z) || 1;
-    const along = x * sx + z * sz;
-    let split = 0;
-    if (along > r * 0.35) {
-      // Flatten onto the split plane.
-      const over = along - r * 0.35;
-      x -= sx * over;
-      z -= sz * over;
-      split = 1;
-    }
-    const knot = 0.012 * Math.sin(y * 9 + seed) * (1 - split);
-    x += (x / rr) * knot;
-    z += (z / rr) * knot;
+    const a = Math.atan2(z, x);
+    // bark: long fissured ridges, knots, a gentle crook along the length
+    const ridge = 0.06 * Math.abs(Math.sin(a * 7 + Math.sin(y * 6 + seed) * 0.8)) + 0.03 * Math.sin(a * 17 + y * 3);
+    const knot = 0.18 * Math.exp(-(((a - seed) % 6.28) ** 2) * 4 - ((y - len * (hrand(seed, 3) - 0.5)) ** 2) * 60);
+    const burn = Math.max(0, Math.min(1, (-y / len + 0.5) * 1.9 + 0.12 * Math.sin(y * 23 + seed * 3 + a * 2)));
+    // charred wood shrinks and cracks
+    const k = 1 + ridge - 0.08 - burn * 0.08 + knot * (1 - burn);
+    x = (x / rr) * rr * k + crook * Math.sin((y / len + 0.5) * Math.PI) * len;
+    z = (z / rr) * rr * k;
     p.setXYZ(i, x, y, z);
-    // Charred toward the burning end (−y), pale split wood, bark elsewhere.
-    // Char climbs the log unevenly (licked by the flames), the split face scorched too.
-    const burn = Math.max(0, Math.min(1, (-y / len + 0.5) * 1.9 + 0.12 * Math.sin(y * 23 + seed * 3 + Math.atan2(z, x) * 2)));
-    const base = split ? [0.42, 0.32, 0.22] : [0.78, 0.74, 0.7];
-    const k = 1 - burn * 0.9;
-    col.push(base[0] * k, base[1] * k, base[2] * k);
+    const base = [0.74, 0.68, 0.62];
+    const kk = (1 - burn * 0.92) * (0.85 + 0.15 * Math.sin(a * 7));
+    col.push(base[0] * kk, base[1] * kk, base[2] * kk);
   }
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   g.computeVertexNormals();
@@ -392,17 +386,7 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
 
   // ---- ruins: varied silhouettes against the sky
   const ruinMat = getMaterial('arch_ruin');
-  const walls = [
-    [-6.2, -4.6, 0.45, 4.4, 3.4], [-1.8, -7.6, 0.06, 4.2, 2.6], [5.4, -5.6, -0.55, 3.6, 2.4], [8.2, -1.6, -1.25, 3.0, 1.8], [-8.6, -0.4, 1.3, 3.2, 2.2],
-  ];
-  walls.forEach(([x, z, ry, w, hgt], i) => {
-    const m = new THREE.Mesh(G(jaggedWall(w, hgt, 0.55, i * 5 + 1)), ruinMat);
-    m.position.set(x - Math.cos(ry) * w / 2, 0, z + Math.sin(ry) * w / 2);
-    m.rotation.y = ry;
-    m.castShadow = true;
-    m.receiveShadow = true;
-    root.add(m);
-  });
+  buildRuins(root, { G, Mt, night, stoneMat, beamMat: getMaterial('prop_wood') });
   // A broken arch: two piers and the surviving voussoirs.
   {
     const arch = new THREE.Group();
@@ -470,41 +454,6 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
     c.castShadow = true;
     root.add(c);
   }
-  // Phlan's skyline beyond, fading into the fog: roofs, towers and a few lit windows.
-  {
-    const sil = new THREE.Shape();
-    sil.moveTo(-60, 0);
-    let x = -60;
-    let k = 0;
-    const spans = [];
-    while (x < 60) {
-      const w = 2 + hrand(k, 51) * 4;
-      const hh = 3 + hrand(k, 52) * 5 + (hrand(k, 53) > 0.88 ? 6 + hrand(k, 54) * 6 : 0);
-      spans.push([x, w, hh]);
-      sil.lineTo(x, hh);
-      if (hrand(k, 55) > 0.5) sil.lineTo(x + w / 2, hh + 1.6 + hrand(k, 56) * 1.5);
-      sil.lineTo(x + w, hh);
-      x += w;
-      k++;
-    }
-    sil.lineTo(60, 0);
-    const sg = G(new THREE.ShapeGeometry(sil));
-    const skyline = new THREE.Mesh(sg, Mt(new THREE.MeshBasicMaterial({ color: night ? 0x111a30 : 0x6a7890, fog: true })));
-    skyline.position.set(0, 0, -34);
-    root.add(skyline);
-    if (night && false) {
-      const winMat = Mt(new THREE.MeshBasicMaterial({ color: 0xffb060, fog: true }));
-      const wg = G(new THREE.PlaneGeometry(0.35, 0.5));
-      for (let i = 0; i < 18; i++) {
-        const [bx, bw, bh] = spans[Math.floor(hrand(i, 61) * spans.length)];
-        if (bh < 3.5) continue;
-        const w = new THREE.Mesh(wg, winMat);
-        w.position.set(bx + bw * (0.25 + hrand(i, 63) * 0.5), 1.2 + hrand(i, 62) * (bh - 2.4), -33.8);
-        root.add(w);
-      }
-    }
-  }
-
   // ---- depth: ground mist lying between the court and the ruins (soft, layered, moonlit)
   {
     const c = document.createElement('canvas');
@@ -525,7 +474,7 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
     const mt = new THREE.CanvasTexture(c);
     mt.colorSpace = THREE.SRGBColorSpace;
     texs.push(mt);
-    const MIST = [[-7.5, 22, 2.6, 0.07], [-10.5, 28, 3.4, 0.1], [-14, 36, 4.4, 0.13], [-19, 48, 5.6, 0.16]];
+    const MIST = [[-7.5, 22, 2.6, 0.07], [-10.5, 28, 3.4, 0.1], [-14, 36, 4.4, 0.13], [-19, 48, 5.6, 0.16], [-24, 64, 8, 0.2], [-33, 90, 10, 0.24]];
     for (const [z, w, hgt, op] of MIST) {
       const mm = Mt(new THREE.MeshBasicMaterial({ map: mt, transparent: true, depthWrite: false, opacity: op * (night ? 1 : 0.6), color: night ? 0x8090c0 : 0xc0c8d8, fog: false }));
       const m = new THREE.Mesh(G(new THREE.PlaneGeometry(w, hgt)), mm);
@@ -702,18 +651,20 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
   // Smoke column.
   const smokeTex = smokeTexture();
   const smoke = [];
-  for (let i = 0; i < 12; i++) {
-    const m = Mt(new THREE.SpriteMaterial({ map: smokeTex, color: night ? 0x484650 : 0x9a9aa0, transparent: true, depthWrite: false, opacity: 0.2, rotation: hrand(i, 111) * 6 }));
+  for (let i = 0; i < 18; i++) {
+    const m = Mt(new THREE.SpriteMaterial({ map: smokeTex, color: night ? 0x56545e : 0x9a9aa0, transparent: true, depthWrite: false, opacity: 0.2, rotation: hrand(i, 111) * 6 }));
     const s = new THREE.Sprite(m);
     hearth.add(s);
     smoke.push(s);
   }
   // Sparks.
-  const NS = 70;
+  const NS = 56;
   const sparkGeo = G(new THREE.BufferGeometry());
   const sparkPos = new Float32Array(NS * 3);
   sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPos, 3));
-  const sparkMat = Mt(new THREE.PointsMaterial({ map: getGlowTexture(), color: 0xffa050, size: 0.05, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+  const sparkCol = new Float32Array(NS * 3);
+  sparkGeo.setAttribute('color', new THREE.BufferAttribute(sparkCol, 3));
+  const sparkMat = Mt(new THREE.PointsMaterial({ map: getGlowTexture(), color: 0xffb060, vertexColors: true, size: 0.045, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
   const sparks = new THREE.Points(sparkGeo, sparkMat);
   sparks.frustumCulled = false;
   hearth.add(sparks);
@@ -898,10 +849,34 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
       const sentry = i === sentryIdx && living.length > 2 && sleeping;
       if (sentry) {
         // The watch: on the edge of the firelight, turned three-quarters to us, rim-lit by the moon.
-        const m = buildMiniature(ch, { pose: 'guard', base: false, rayHead: true, headGain: 0.85 });
+        const m = buildMiniature(ch, { pose: 'guard', base: false, rayHead: true, headGain: 0.85, noWeapon: true });
         m.position.set(-1.35, 0, -3.75);
         m.rotation.y = 0.3;
         partyGroup.add(m);
+        // His spear grounded at his side, both hands on the shaft, the head catching the fire.
+        {
+          const hR = m.userData.frames?.hands?.R;
+          const hand = hR ? new THREE.Vector3(...hR.c) : new THREE.Vector3(-0.2, 1.0, 0.25);
+          const foot = new THREE.Vector3(hand.x - 0.04, 0, hand.z + 0.08);
+          const dir = hand.clone().sub(foot).normalize();
+          const len = 2.05;
+          const spear = new THREE.Group();
+          const shaft = new THREE.Mesh(G(new THREE.CylinderGeometry(0.014, 0.017, len, 8)), woodMat);
+          shaft.position.y = len / 2;
+          spear.add(shaft);
+          const tipMat = Mt(new THREE.MeshStandardMaterial({ color: 0x8a8a90, metalness: 1, roughness: 0.42 }));
+          const tip = new THREE.Mesh(G(new THREE.ConeGeometry(0.03, 0.24, 4)), tipMat);
+          tip.position.y = len + 0.1;
+          tip.scale.z = 0.35;
+          spear.add(tip);
+          const socket = new THREE.Mesh(G(new THREE.CylinderGeometry(0.02, 0.018, 0.08, 8)), tipMat);
+          socket.position.y = len - 0.02;
+          spear.add(socket);
+          spear.position.copy(foot);
+          spear.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+          spear.traverse((o) => { o.castShadow = true; });
+          m.add(spear);
+        }
         shadowBlob(partyGroup, -1.35, -3.75, 0.75, 0.75);
         sentryRim.target.position.set(-1.35, 1.1, -3.75);
         sentryFire.target.position.set(-1.35, 1.25, -3.75);
@@ -909,7 +884,7 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
         return;
       }
       // Sleepers lie in a fan behind and beside the fire, feet to the warmth.
-      const SLEEP = [[-1.2, -1.05, Math.PI / 2], [1.2, -1.1, -Math.PI / 2], [-1.05, -2.2, Math.PI / 2 + 0.12], [1.1, -2.25, -Math.PI / 2 - 0.1], [0.15, -3.1, Math.PI / 2]];
+      const SLEEP = [[-1.75, -1.35, 0.92], [1.8, -1.3, -0.95], [-0.95, -2.45, 0.37], [1.05, -2.5, -0.4], [0.05, -3.25, 0.02]];
       const a = seats[seat % seats.length];
       const r = 1.5;
       const x = sleeping ? SLEEP[seat % SLEEP.length][0] : Math.cos(a) * r;
@@ -966,7 +941,8 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
           boot.castShadow = true;
           spot.add(boot);
         }
-        shadowBlob(spot, 0, 0, 1.0, 2.2);
+        shadowBlob(spot, 0, 0, 1.05, 2.3);
+        shadowBlob(spot, 0, -0.1, 0.8, 1.9);
         minis.push(m);
       }
     });
@@ -1005,22 +981,29 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
     sky.userData.update?.(time);
     for (const m of minis) m.userData.update(time);
     for (let i = 0; i < NS; i++) {
-      const sp = 0.22 + hrand(i, 1) * 0.35;
+      // a plume: sparks leave the flame tips, rise fast, drift downwind and wink out; few climb high
+      const sp = 0.35 + hrand(i, 1) * 0.45;
       const ph = (time * sp + hrand(i, 2)) % 1;
-      const ang = hrand(i, 3) * Math.PI * 2 + time * (0.6 + hrand(i, 4));
-      const rad = 0.05 + ph * (0.25 + hrand(i, 5) * 0.4);
-      const hMax = restingNow ? 0.8 : 1.8 + hrand(i, 6) * 1.6;
-      sparkPos[i * 3] = Math.cos(ang) * rad + ph * 0.25;
-      sparkPos[i * 3 + 1] = 0.3 + ph * hMax;
-      sparkPos[i * 3 + 2] = Math.sin(ang) * rad;
+      const ang = hrand(i, 3) * Math.PI * 2 + ph * (2 + hrand(i, 4) * 3);
+      const rad = 0.06 + ph * ph * (0.12 + hrand(i, 5) * 0.22);
+      const hMax = restingNow ? 0.6 + hrand(i, 6) * 0.5 : 0.9 + hrand(i, 6) ** 2.2 * 2.6;
+      const y = 0.45 + (1 - (1 - ph) * (1 - ph)) * hMax;
+      sparkPos[i * 3] = Math.cos(ang) * rad + ph * ph * 0.45 + Math.sin(time * 1.3 + i) * 0.04 * ph;
+      sparkPos[i * 3 + 1] = y;
+      sparkPos[i * 3 + 2] = Math.sin(ang) * rad - ph * 0.12;
+      const f = Math.max(0, 1 - ph * 1.15) * (0.6 + 0.4 * Math.sin(time * 23 + i * 7));
+      sparkCol[i * 3] = f; sparkCol[i * 3 + 1] = f * (0.55 + 0.3 * (1 - ph)); sparkCol[i * 3 + 2] = f * 0.25;
     }
+    sparkGeo.attributes.color.needsUpdate = true;
     sparkGeo.attributes.position.needsUpdate = true;
     sparkMat.opacity = restingNow ? 0.45 : 0.9;
     smoke.forEach((s, i) => {
-      const ph = (time * 0.07 + i / smoke.length) % 1;
-      s.position.set(Math.sin(time * 0.25 + i) * 0.12 + ph * 0.7, 0.9 + ph * 4.2, -ph * 0.4);
-      s.scale.setScalar(0.4 + ph * 2.4);
-      s.material.opacity = (restingNow ? 0.3 : 0.2) * Math.sin(ph * Math.PI) * (night ? 1 : 0.6);
+      // a soft column leaning downwind, widening and thinning as it climbs, lit warm from below
+      const ph = (time * 0.06 + i / smoke.length) % 1;
+      s.position.set(Math.sin(time * 0.25 + i * 1.7) * 0.08 * (1 + ph * 3) + ph * ph * 1.1, 1.0 + ph * 4.6, -ph * 0.5);
+      s.scale.setScalar(0.35 + ph * 2.2);
+      s.material.opacity = (restingNow ? 0.32 : 0.26) * Math.sin(Math.min(1, ph * 1.4) * Math.PI) ** 0.8 * (night ? 1 : 0.6);
+      s.material.color.setRGB(0.36 + 0.2 * (1 - ph), 0.33 + 0.1 * (1 - ph), 0.36 - 0.02 * (1 - ph));
       s.material.rotation = hrand(i, 111) * 6 + time * 0.05;
     });
   };

@@ -632,3 +632,17 @@ img.pc-pending { filter: saturate(0.7) brightness(0.9); }
 .cc-likeness > .pc-sect-h { margin-top: 0.45em !important; }
 .pc-hkbtn .pc-hk { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
 .pc-hkbtn:disabled .pc-hk { color: inherit; text-shadow: none; }
+
+/* ---- legibility floor: nothing in the party UI drops under 11px (720p and smaller) ---- */
+.pc-big .l { white-space: nowrap; letter-spacing: 0.12em; font-size: max(11px, 0.62em); }
+.pc-slot .lab { font-size: max(10px, 0.5em); }
+.pc-chip { font-size: max(11px, 0.78em); }
+.pc-spell .tg, .pc-rrow .cl, .pc-rrow .ac, .pc-item .rd, .pc-cls .x, .pc-caster .cl { font-size: max(11px, 0.74em); }
+.pc-coin .l, .pc-items-head { font-size: max(11px, 0.6em); }
+.cc-step, .pc-lvl-h, .cc-row > .k, .pc-kv > .k { font-size: max(11px, 0.76em); }
+.cc-opt .d, .cc-abrow .mods, .pc-ab .mods, .pc-detail-card .s { font-size: max(11px, 0.8em); }
+.cc-card-sub, .pc-rest-note, .cc-lead { font-size: max(11px, 0.88em); }
+.pc-subtabs .pc-tab, .cc-methods .pc-tab { font-size: max(11px, 0.72em); }
+.cc-abrow .mods { color: #b9b3a2; font-style: normal; }
+.cc-hubslot .cl { font-size: max(11px, 0.78em); }
+.cc-hubslot .nm { font-size: max(12px, 0.95em); }

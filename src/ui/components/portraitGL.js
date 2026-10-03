@@ -179,6 +179,13 @@ const lin = (hex) => {
   const v = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
   return new THREE.Vector3(...v.map((x) => (x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4)));
 };
+/** [yaw, pitch, tilt] per head template (F: the women's templates of the same name). */
+const POSE = {
+  Soldier: [-0.32, 0.0, 0.02], Wanderer: [0.36, 0.06, -0.06], Noble: [-0.5, -0.07, 0.03], Veteran: [-0.2, 0.07, 0.0],
+  Guardsman: [-0.28, 0.0, -0.02], Rogue: [0.24, 0.03, 0.09], Hooded: [-0.42, 0.09, 0.02], Sage: [0.3, 0.03, -0.05],
+  Maiden: [-0.38, -0.02, 0.07], Ranger: [-0.46, 0.0, -0.03], Priestess: [0.22, 0.05, 0.05], Duelist: [-0.14, 0.0, 0.09],
+  Sorceress: [0.44, -0.06, -0.04], Shieldmaiden: [-0.3, -0.02, 0.0], HoodedF: [0.38, 0.08, 0.03], Mercenary: [-0.22, 0.04, -0.03],
+};
 const RACE_SCALE = { human: 1, elf: 0.97, halfElf: 0.99, dwarf: 1.04, gnome: 0.95, halfling: 0.93 };
 
 function rotY(a) { const c = Math.cos(a), s = Math.sin(a); return new THREE.Matrix3().set(c, 0, s, 0, 1, 0, -s, 0, c); }
@@ -199,11 +206,11 @@ function setup(ch, o) {
   const RACE = {
     elf: { LONG: 1.04, W: 0.94, CHEEK: 1.08, JAW: 0.92, CHIN: 0.92 },
     halfElf: { LONG: 1.015, W: 0.98 },
-    // dwarves (women too): broad face, heavy brow, broad strong nose
-    dwarf: { W: 1.09, NOSE: 1.1, BRIDGE: 1.25, TIP: 1.2, NWIDTH: 1.12, JAW: 1.08, BROW: 1.2, LONG: 0.97 },
-    // halflings: round face, apple cheeks, button nose, large eyes
-    halfling: { W: 1.1, LONG: 0.9, CHEEK: 1.1, NOSE: 0.86, TIP: 0.95, EYE: 1.12, JAW: 0.9, CHIN: 0.88 },
-    gnome: { NOSE: 1.3, TIP: 1.4, W: 1.04, EYE: 1.06 },
+    // dwarves (women too): a broad, low head, a heavy jaw and brow, a broad strong nose
+    dwarf: { W: 1.15, NOSE: 1.12, BRIDGE: 1.35, TIP: 1.3, NWIDTH: 1.22, JAW: 1.25, CHIN: 1.15, BROW: 1.4, LONG: 0.92, CRAN: 0.9, CHEEK: 1.12, EYE: 0.95, EDEPTH: 1.3 },
+    // halflings: adults with round, ruddy faces — full cheeks, a short snub nose, bright eyes
+    halfling: { W: 1.07, LONG: 0.95, CHEEK: 1.15, NOSE: 0.92, TIP: 1.05, EYE: 1.02, JAW: 0.96, CHIN: 0.95, CRAN: 0.96 },
+    gnome: { NOSE: 1.3, TIP: 1.45, W: 1.04, EYE: 1.04, BROW: 1.15 },
   }[app.race] ?? {};
   for (const [k, v] of Object.entries(RACE)) params[ix(k)] *= v;
   if (app.race === 'halfling') params[ix('HOOK')] -= 0.5;
@@ -211,9 +218,12 @@ function setup(ch, o) {
   const torso = o.crop === 'torso';
   // A three-quarter turn (alternating sides by seed, as a painter varies a gallery of portraits).
   const side = o.side ?? (app.look.seed % 2 ? 1 : -1) * 0;
-  const yaw = o.yaw ?? (torso ? -0.22 : -0.36 + (R() - 0.5) * 0.12);
-  const pitch = o.pitch ?? (0.03 + (R() - 0.5) * 0.06);
-  const tilt = o.tilt ?? ((R() - 0.5) * 0.08);
+  // Each head template sits for the painter its own way: turned toward the light or away into
+  // shadow, chin raised or lowered, the head cocked.
+  const pose = POSE[app.head?.name + (app.fem ? 'F' : '')] ?? POSE[app.head?.name] ?? [-0.36, 0.03, 0];
+  const yaw = o.yaw ?? (torso ? pose[0] * 0.6 : pose[0] + (R() - 0.5) * 0.1);
+  const pitch = o.pitch ?? (pose[1] + (R() - 0.5) * 0.04);
+  const tilt = o.tilt ?? (pose[2] + (R() - 0.5) * 0.05);
   // The matrices map world → local (transpose of local → world rotation).
   const headM = rotY(yaw).multiply(rotX(pitch)).multiply(rotZ(tilt));
   u.uHeadR.value.copy(headM).transpose();
@@ -222,10 +232,10 @@ function setup(ch, o) {
   u.uHeadScale.value = hs;
   u.uHeadC.value.set(0, 0, 0);
   // Camera: a long lens (no distortion), eye level a touch below the eyes.
-  const viewH = o.viewH ?? (torso ? 0.74 : 0.46);
+  const viewH = o.viewH ?? (torso ? 0.74 : 0.41);
   const fov = 14;
   const dist = viewH / (2 * Math.tan((fov * Math.PI) / 360));
-  const target = new THREE.Vector3(0, o.targetY ?? (torso ? -0.24 : -0.098), 0);
+  const target = new THREE.Vector3(0, o.targetY ?? (torso ? -0.24 : -0.082), 0);
   u.uCamPos.value.set(target.x + (o.camX ?? 0), target.y + 0.012, dist);
   const fwd = target.clone().sub(u.uCamPos.value).normalize();
   const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
@@ -235,7 +245,8 @@ function setup(ch, o) {
   // The eyes find the viewer (most of the way): the camera direction in head space.
   const toCam = u.uCamPos.value.clone().normalize();
   const gz = toCam.applyMatrix3(u.uHeadR.value).lerp(new THREE.Vector3(0, 0, 1), 0.3).normalize();
-  u.uGaze.value.copy(gz);
+  gz.y = Math.max(gz.y, 0.03);
+  u.uGaze.value.copy(gz.normalize());
   u.uSkin.value.copy(lin(app.skinHex));
   u.uHairC.value.copy(lin(app.hairHex));
   u.uEyeC.value.copy(lin(app.eyeHex));
@@ -243,8 +254,13 @@ function setup(ch, o) {
   const robed = app.body === 'robe' || app.body === 'vestments';
   u.uCloth.value.copy(muted(lin(robed ? app.robeHex : app.clothHex), 0.28, 0.85));
   u.uTrim.value.copy(muted(lin(app.trimHex), 0.25, 0.9));
-  u.uHair.value = HAIR_ID[app.hair] ?? 1;
-  u.uBeard.value = BEARD_ID[app.beard] ?? 0;
+  // Racial hair culture: dwarf women wear two heavy plaits, dwarf men a forked, ringed beard;
+  // halflings a crop of curls.
+  let hairId = HAIR_ID[app.hair] ?? 1;
+  if (app.race === 'dwarf' && app.fem && !app.hood && app.hair !== 'bald') hairId = 11;
+  if (app.race === 'halfling' && !app.hood && app.hair !== 'bald') hairId = 10;
+  u.uHair.value = hairId;
+  u.uBeard.value = app.race === 'dwarf' && !app.fem ? 6 : BEARD_ID[app.beard] ?? 0;
   u.uHelm.value = app.helm ? 1 : 0;
   u.uHood.value = app.hood ? 1 : 0;
   u.uBody.value = BODY_ID[app.body] ?? 0;
@@ -336,7 +352,7 @@ function beginPortrait(renderer, ch, o) {
   const scale = o.scale ?? 1;
   const W = Math.max(24, Math.round(PORTRAIT_W * scale));
   const H = Math.max(30, Math.round(PORTRAIT_H * scale));
-  const ss = o.ss ?? (scale >= 0.6 ? 1.5 : scale >= 0.35 ? 1.25 : 1);
+  const ss = o.ss ?? (scale >= 0.6 ? 1.2 : scale >= 0.35 ? 1.1 : 1);
   const job = { ch, o, scale, W, H, RW: Math.round(W * ss), RH: Math.round(H * ss), prev: saveState(renderer) };
   renderer.autoClear = false;
   setup(ch, o);
@@ -355,7 +371,7 @@ function applyFrame(job) {
   u.uMode.value = o.mode ?? 0;
   u.uDbg.value = o.dbg ?? 0;
   u.uKeyDir.value.fromArray(o.key ?? [-0.62, 0.6, 0.5]);
-  u.uLightK.value.fromArray(o.lightK ?? [3.0, 0.26, 1.8, 0.75]);
+  u.uLightK.value.fromArray(o.lightK ?? [1.75, 0.17, 1.3, 0.36]);
   u.uLite.value = job.scale < 0.35 ? 1 : 0;
   u.uSpot.value.set(0.02, o.crop === 'torso' ? -0.2 : 0, 0, o.crop === 'torso' ? 0.14 : 0.028);
 }

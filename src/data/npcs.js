@@ -88,7 +88,7 @@ export const NPCS = {
     id: 'trainer', name: 'Garrick Ironhand', title: 'Weaponsmaster', race: 'human', gender: 'male',
     look: { seed: 8101, head: 3, body: 1, hair: 8, cloth: 0, skin: 3, eyes: 3 }, aura: '#ffb070',
     figure: { age: 0.45, hairStyle: 'topknot', beard: 'braided', hair: '#b8b0a4', jaw: 1.25, nose: 1.2, build: 1.24, pose: 'trainer', outfit: { shirt: '#6a2a1e', top: '#8a8c94', topKind: 'chain', skirtMail: true, skirtLen: 'knee', sleeves: 'long', trousers: '#2e261c', boots: '#2a1c10', belt: '#3a2616', mantle: '#5a1e16' } },
-    paint: { sex: 'm', age: 0.52, skin: '#c48e6c', yaw: -0.36, gaze: [0.14, -0.02], face: { w: 1.14, jaw: 1.32, chin: 1.05, cheek: 1.12, hollow: 0.3, brow: 1.6, neck: 1.6 }, nose: { len: 0.96, w: 1.3, broken: 1 }, eyes: { c: '#5a4a3a', size: 0.84, lid: 0.75 }, brows: { c: '#7a7068', w: 1.45, arch: -0.3 }, hair: { style: 'topknot', c: '#b0a89c' }, beard: { style: 'braided', c: '#c4bcb0' }, scar: true, costume: { kind: 'mail', b: '#5a3a22', cloak: '#6a1e16', clasp: true }, bg: ['#4a3a2a', '#0a0806'], build: 1.22 },
+    paint: { sex: 'm', age: 0.52, skin: '#c48e6c', yaw: -0.36, gaze: [0.14, -0.02], face: { w: 1.14, jaw: 1.32, chin: 1.05, cheek: 1.12, hollow: 0.3, brow: 1.6, neck: 1.3 }, nose: { len: 0.96, w: 1.3, broken: 1 }, eyes: { c: '#5a4a3a', size: 0.84, lid: 0.75 }, brows: { c: '#7a7068', w: 1.45, arch: -0.3 }, hair: { style: 'topknot', c: '#b0a89c' }, beard: { style: 'braided', c: '#c4bcb0' }, scar: true, costume: { kind: 'mail', b: '#5a3a22', cloak: '#6a1e16', clasp: true }, bg: ['#4a3a2a', '#0a0806'], build: 1.22 },
   },
   sage: {
     id: 'sage', name: 'Ione the Grey', title: 'Mage of the Library', race: 'elf', gender: 'female',

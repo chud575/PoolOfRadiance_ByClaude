@@ -132,7 +132,7 @@ export function buildBedroll(ch, o = {}) {
   // ---- the mat: a padded wool roll unrolled, rounded edges, slightly wider at the shoulders.
   const matLen = 1.95 * Math.max(0.72, L);
   const matW = 0.78;
-  const matGeo = D(new THREE.BoxGeometry(matW, 0.05, matLen, 10, 2, 24));
+  const matGeo = D(new THREE.BoxGeometry(matW, 0.03, matLen, 10, 2, 24));
   {
     const p = matGeo.attributes.position;
     for (let i = 0; i < p.count; i++) {
@@ -140,7 +140,7 @@ export function buildBedroll(ch, o = {}) {
       const ex = Math.abs(x) / (matW / 2);
       const ez = Math.abs(z) / (matLen / 2);
       const round = Math.max(0, Math.max(ex, ez) - 0.86) / 0.14;
-      p.setY(i, y > 0 ? y - round * round * 0.04 + 0.006 * Math.sin(z * 9 + x * 4) : y);
+      p.setY(i, y > 0 ? y - round * round * 0.026 + 0.004 * Math.sin(z * 9 + x * 4) : y - round * 0.01);
       p.setX(i, x * (1 + 0.05 * Math.cos(z * 1.4)));
     }
     matGeo.computeVertexNormals();
@@ -148,20 +148,20 @@ export function buildBedroll(ch, o = {}) {
   const matCol = new THREE.Color(o.mat ?? '#4a3a2a');
   const matMat = D(new THREE.MeshStandardMaterial({ color: matCol, roughness: 1, map: woolTexture(`#${matCol.getHexString()}`) }));
   const mat = new THREE.Mesh(matGeo, matMat);
-  mat.position.y = 0.025;
+  mat.position.y = 0.012;
   mat.receiveShadow = true;
   mat.castShadow = true;
   root.add(mat);
-  const top = 0.05;
+  const top = 0.03;
 
   // ---- the pillow: a rolled cloak at the head end.
   const headZ = -matLen / 2 + 0.2;
-  const rollGeo = D(new THREE.CylinderGeometry(0.075, 0.08, 0.5, 18, 1));
+  const rollGeo = D(new THREE.CylinderGeometry(0.095, 0.1, 0.5, 18, 1));
   const cloakCol = new THREE.Color(app.clothHex).multiplyScalar(0.8);
   const cloakMat = D(new THREE.MeshStandardMaterial({ color: cloakCol, roughness: 0.95, map: woolTexture(`#${cloakCol.getHexString()}`) }));
   const roll = new THREE.Mesh(rollGeo, cloakMat);
   roll.rotation.z = Math.PI / 2;
-  roll.position.set(0, top + 0.07, headZ - 0.04);
+  roll.position.set(0, top + 0.085, headZ - 0.04);
   roll.castShadow = true;
   roll.receiveShadow = true;
   root.add(roll);
@@ -170,12 +170,12 @@ export function buildBedroll(ch, o = {}) {
   for (const sg of [-1, 1]) {
     const e = new THREE.Mesh(endGeo, cloakMat);
     e.rotation.y = Math.PI / 2;
-    e.position.set(sg * 0.25, top + 0.07, headZ - 0.04);
+    e.position.set(sg * 0.25, top + 0.085, headZ - 0.04);
     root.add(e);
   }
 
   // ---- the blanket: a cloth grid draped over the body bumps.
-  const bumps = bodyBumps(pose).map(([x, z, w, l, hgt]) => [x * Math.max(0.8, L), z * L, w * Math.max(0.75, L ** 0.5), l * L, hgt * Math.max(0.7, L ** 0.6)]);
+  const bumps = bodyBumps(pose).map(([x, z, w, l, hgt]) => [x * Math.max(0.8, L), z * L, w * Math.max(0.75, L ** 0.5), l * L, 1.28 * hgt * Math.max(0.7, L ** 0.6)]);
   const bW = 0.9;
   const bL = (pose === 'back' ? 1.55 : 1.4) * L;
   const NX = 34;
@@ -197,7 +197,7 @@ export function buildBedroll(ch, o = {}) {
   for (let j = 0; j <= NZ; j++) for (let i = 0; i <= NX; i++) grid[j * (NX + 1) + i] = bodyH(gx(i), gz(j));
   // Drape: cloth spans from each high point down a limited slope (a distance-field dilation).
   const cell = bW / NX;
-  const slope = 0.85 * cell;
+  const slope = 1.15 * cell;
   for (let pass = 0; pass < 30; pass++) {
     for (let j = 0; j <= NZ; j++) {
       for (let i = 0; i <= NX; i++) {
@@ -315,7 +315,7 @@ export function buildBedroll(ch, o = {}) {
     const x = new THREE.Vector3().crossVectors(y, z).normalize();
     z.crossVectors(x, y).normalize();
     R = [x, y, z];
-    hc = new THREE.Vector3(0.0, top + 0.07 + 0.075 * hs, headZ + 0.09);
+    hc = new THREE.Vector3(0.0, top + 0.095 + 0.075 * hs, headZ + 0.07);
   } else {
     // On the side: the cheek on the pillow, face toward +x, crown toward −z.
     const y = new THREE.Vector3(0.05, 0.12, -1).normalize();
@@ -323,7 +323,7 @@ export function buildBedroll(ch, o = {}) {
     const x = new THREE.Vector3().crossVectors(y, z).normalize();
     z.crossVectors(x, y).normalize();
     R = [x, y, z];
-    hc = new THREE.Vector3(-0.01, top + 0.1 + 0.07 * hs, headZ + 0.08);
+    hc = new THREE.Vector3(-0.01, top + 0.125 + 0.07 * hs, headZ + 0.06);
   }
   const hm = createHead(app, { c: [hc.x, hc.y, hc.z], R: [R[0].x, R[0].y, R[0].z, R[1].x, R[1].y, R[1].z, R[2].x, R[2].y, R[2].z], hs }, { asleep: true, ambient: [0.02, 0.025, 0.04], gain: 0.75, fog: true });
   head.add(hm);

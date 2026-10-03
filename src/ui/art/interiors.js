@@ -865,7 +865,7 @@ function templeTyr(g, W, H, R, o, d) {
   masonry(g, 0, H * 0.06, W, floorY - H * 0.06, { base: '#aeb0b0', course: 44, blockW: 96, seed: 211, mortar: 'rgba(30,32,40,0.45)', light: 'rgba(230,240,255,0.18)' });
   texture(g, 0, H * 0.06, W, floorY - H * 0.06, { alpha: 0.22, cells: 6, seed: 214 });
   // an inscription band in gilt capitals, and the carved, gilded balance of Tyr above the altar
-  const iy = H * 0.455;
+  const iy = H * 0.09; // high on the apse wall, above the priest's mitre
   g.fillStyle = 'rgba(16,20,34,0.8)';
   g.fillRect(0, iy, W, H * 0.045);
   g.fillStyle = 'rgba(216,178,90,0.45)';

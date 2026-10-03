@@ -118,21 +118,20 @@ void miniPattern(float pid, out float h, out float alb, out float rmod) {
   h = 0.0; alb = 1.0; rmod = 0.0;
   vec3 p = vObj;
   if (pid < 0.5) return;
-  if (pid < 1.5) { // mail rings
-    vec2 uv = triUV(p, vObjN) * 105.0;
+  if (pid < 1.5) { // mail rings: interlinked rings at true scale; far away an even, glinting grain
+    vec2 uv = triUV(p, vObjN) * 150.0;
     uv.x += 0.5 * mod(floor(uv.y), 2.0);
     vec2 f = fract(uv) - 0.5;
     float r = length(f * vec2(1.0, 1.25));
     float ring = smoothstep(0.14, 0.24, r) * smoothstep(0.52, 0.36, r);
-    float fd = aaFade(105.0);
-    // Far LOD: rows of rings blur into fine horizontal courses, with rust/oil patches and a
-    // broken, sparkling roughness (never smooth grey plastic).
-    float fd2 = aaFade(26.0);
-    float course = 0.5 + 0.5 * sin(triUV(p, vObjN).y * 26.0 * 6.2832);
+    float fd = aaFade(150.0);
+    // Far LOD: no courses or bands (they read as quilting) — a dense isotropic grain of dark gaps
+    // and bright ring tops, with rust/oil patches and a broken, sparkling roughness.
     float wear = vn3(p * 22.0);
+    float grain = vn3(p * 420.0);
     float spark = vn3(p * 310.0);
-    float farAlb = (0.5 + 0.38 * wear) * mix(1.0, 0.75 + 0.5 * course, fd2) * (0.9 + 0.2 * spark);
-    h = ring * 0.0011 * fd + (course - 0.5) * 0.0005 * fd2 * (1.0 - fd);
+    float farAlb = (0.5 + 0.38 * wear) * (0.82 + 0.36 * grain) * (0.9 + 0.2 * spark);
+    h = ring * 0.0009 * fd + (grain - 0.5) * 0.00025 * (1.0 - fd);
     alb = mix(farAlb, mix(0.45, 1.18, ring), fd);
     rmod = mix(0.12 + (spark - 0.5) * 0.45 + (0.5 - wear) * 0.2, (1.0 - ring) * 0.25, fd);
   } else if (pid < 2.5) { // scales
@@ -200,7 +199,7 @@ export function figureMaterial(faceTex, skinLin = null) {
   const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0 });
   m.userData.faceMap = { value: faceTex ?? blankFaceTexture() };
   m.userData.uSkin = { value: new THREE.Vector3(...(skinLin ?? [0.6, 0.4, 0.3])) };
-  m.customProgramCacheKey = () => 'por-mini-v4';
+  m.customProgramCacheKey = () => 'por-mini-v5';
   m.onBeforeCompile = (sh) => {
     sh.uniforms.faceMap = m.userData.faceMap;
     sh.uniforms.uSkin = m.userData.uSkin;

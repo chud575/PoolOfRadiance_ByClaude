@@ -856,6 +856,11 @@ export default class DialogueScene extends Scene {
         list.append(h(`div.jr-item${n === sel ? '.on' : ''}${unread.has(n) ? '.unread' : ''}`, { onclick: () => { sel = n; unread.delete(n); render(); } }, [h('span.num', [String(n)]), h('span.tt', [e.title, e.where ? h('small', [e.where]) : null])]));
       }
       if (!found.length) list.append(h('div.jr-empty', ['The pages are blank. Your story in Phlan has yet to begin.']));
+      // a short journal leaves the rest of its leaves ruled and waiting: the next unwritten entries
+      if (found.length && found.length < 8) {
+        const all = (Array.isArray(JOURNAL) ? JOURNAL.map((e) => e.n) : Object.keys(JOURNAL).map(Number)).filter((n) => Number.isFinite(n) && !found.includes(n)).sort((a, b) => a - b);
+        for (const n of all.slice(0, 8 - found.length)) list.append(h('div.jr-item.blank', [h('span.num', [String(n)]), h('span.tt', ['· · ·', h('small', ['not yet written'])])]));
+      }
       // the foot of the page: where the party stands, and the commissions in hand
       const inHand = QUEST_LIST.filter((q) => ['active', 'done'].includes(questStatus(game.flags, q.id)));
       const loc = game.location;

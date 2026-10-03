@@ -358,3 +358,8 @@
 
 /* the plate fills the page's lower band */
 .jr-plate img { max-height: 19em; object-fit: contain; }
+
+/* ruled, unwritten leaves */
+.jr-item.blank { opacity: 0.38; cursor: default; pointer-events: none; }
+.jr-item.blank .tt { font-style: italic; letter-spacing: 0.3em; }
+.jr-item.blank .tt small { letter-spacing: 0.04em; }

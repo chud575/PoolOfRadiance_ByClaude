@@ -139,7 +139,7 @@ export function paintFace(D, W = 600, H = 750) {
     dent([s * 0.34, -0.02, 0.8], 0.22, 0.17, 0.09);
     dent([s * 0.76 * w, -0.32, 0.4], 0.16, 0.22, 0.05);
     dent([s * 0.5 * w, 0.5, 0.55], 0.16, 0.22, 0.06 * (F.hollow + 0.25));
-    dent([s * 0.25, 0.58, 0.8], 0.06, 0.16, 0.025 + age * 0.03); // nasolabial
+    dent([s * 0.25, 0.58, 0.8], 0.06, 0.16, (fem && age < 0.3 ? 0.008 : 0.025) + age * 0.03); // nasolabial
   }
   dent([0, 0.92, 0.9], 0.18, 0.05, 0.035);
   dent([0, 0.6, 1.0], 0.03, 0.06, 0.02);
@@ -195,7 +195,7 @@ export function paintFace(D, W = 600, H = 750) {
       col = mixc(col, pp.turn, turn * 0.55);
       // bounce light into the shadows from below (the costume and the chest)
       const bounce = Math.max(0, nx * 0.3 + ny * 0.75 + nz * 0.2) * (1 - lit);
-      col = mixc(col, mixc(pp.base, clothA, 0.4), bounce * 0.28);
+      col = mixc(col, mixc(pp.base, clothA, 0.4), bounce * (fem ? 0.45 : 0.28));
       if (m !== 3) {
         // blood: cheeks, nose, ears; the shaved jaw goes cool; a shaved scalp takes a bluish sheen
         let wz = 0;
@@ -219,18 +219,20 @@ export function paintFace(D, W = 600, H = 750) {
     }
   }
   // cavities: wherever the surface sits below its blurred self (sockets, nostrils, mouth corners, under the jaw)
-  cavity(d, Z, mask, W, H, Math.round(U * 0.07), 0.38);
+  if (!D.noCav) cavity(d, Z, mask, W, H, Math.round(U * 0.07), fem ? 0.22 : 0.38);
   // skin mottling
   const nr = rngOf((D.seed ?? 7) + 3);
   for (let k = 0; k < W * H * 0.008; k++) {
     const x = Math.floor(nr() * W); const y = Math.floor(nr() * H); const i = y * W + x;
     if (!mask[i] || MAT[i] === 3) continue;
-    const o = i * 4; const v = (nr() - 0.5) * (fem ? 5 : 9);
+    if (fem) continue;
+    const o = i * 4; const v = (nr() - 0.5) * 9;
     d[o] += v; d[o + 1] += v * 0.8; d[o + 2] += v * 0.7;
   }
   g.putImageData(img, 0, 0);
   // the painterly pass: short strokes that follow the form, laid in the colour beneath
-  brushOver(g, d, mask, Z, W, H, U, R);
+  // women's skin stays smooth (the strokes read as blemishes on a young face); men's takes the brush
+  if (!D.noBrush && !fem) brushOver(g, d, mask, Z, W, H, U, R, 0.8);
 
   // ---------------------------------------------------------------- costume and features
   const ctx = { g, W, H, U, P, R, D, fem, age, skin, pal, cx, cy, HR, L, aura, F, N, M, w };
@@ -382,7 +384,7 @@ function cavity(d, Z, mask, W, H, r, k) {
 }
 
 /** Re-lay the paint in short strokes along the form (perpendicular to the depth gradient). */
-function brushOver(g, d, mask, Z, W, H, U, R) {
+function brushOver(g, d, mask, Z, W, H, U, R, k = 1) {
   g.save();
   g.lineCap = 'round';
   const n = Math.round(W * H * 0.012);
@@ -399,9 +401,14 @@ function brushOver(g, d, mask, Z, W, H, U, R) {
     const l = Math.hypot(ax, ay);
     if (l < 1e-6) { ax = 1; ay = 0.3; } else { ax /= l; ay /= l; }
     const o = i * 4;
-    const len = U * (0.06 + R() * 0.1);
+    const len = U * (0.05 + R() * 0.07);
+    // never bridge a change of value: both ends must sit in the same tone as the middle
+    const lum = (k2) => d[k2] * 0.3 + d[k2 + 1] * 0.59 + d[k2 + 2] * 0.11;
+    const ex = (sgn) => ((Math.round(y + sgn * ay * len * 0.5)) * W + Math.round(x + sgn * ax * len * 0.5)) * 4;
+    const e0 = ex(-1), e1 = ex(1);
+    if (e0 < 0 || e1 >= d.length || Math.abs(lum(e0) - lum(o)) > 14 || Math.abs(lum(e1) - lum(o)) > 14) continue;
     const j = (R() - 0.5) * 10;
-    g.strokeStyle = `rgba(${Math.round(d[o] + j)},${Math.round(d[o + 1] + j * 0.7)},${Math.round(d[o + 2] + j * 0.5)},${0.28 + R() * 0.3})`;
+    g.strokeStyle = `rgba(${Math.round(d[o] + j)},${Math.round(d[o + 1] + j * 0.7)},${Math.round(d[o + 2] + j * 0.5)},${(0.22 + R() * 0.26) * k})`;
     g.lineWidth = U * (0.025 + R() * 0.035);
     g.beginPath();
     g.moveTo(x - ax * len * 0.5, y - ay * len * 0.5);
@@ -876,6 +883,14 @@ function hairMass(ctx, hp, locks, o = {}) {
     mg.fill();
   }
   if (o.extra) o.extra(mg);
+  // soften the silhouette a touch (overlapping ribbons leave a stepped edge)
+  {
+    const [sc2, sg2] = mk();
+    sg2.filter = `blur(${Math.max(1, U * 0.012).toFixed(1)}px)`;
+    sg2.drawImage(mc, 0, 0);
+    mg.clearRect(0, 0, W, H);
+    mg.drawImage(sc2, 0, 0);
+  }
   const [hc, hg] = mk();
   const b0 = o.box ?? [W * 0.2, H * 0.1, W * 0.8, H * 0.8];
   const gr = hg.createLinearGradient(b0[0], b0[1], b0[2], b0[3]);
@@ -890,15 +905,20 @@ function hairMass(ctx, hp, locks, o = {}) {
   hg.globalCompositeOperation = 'source-over';
   // soft occlusion where the mass meets the skin (a thin dark halo inside the silhouette)
   g.drawImage(hc, 0, 0);
-  // wisps off the outline
-  for (let k = 0; k < (o.wisps ?? 30); k++) {
+  // a few fine strays leaving the outline, curving with their lock (never straight scratches)
+  for (let k = 0; k < (o.wisps ?? 30) * 0.5; k++) {
     const L0 = locks[Math.floor(R() * locks.length)];
-    const { line } = lockGeom(ctx, L0.pts, L0.w0, L0.w1, L0);
-    const i = Math.floor(R() * (line.length - 3));
-    const p = line[i]; const q = line[i + 2];
+    const { line, wf } = lockGeom(ctx, L0.pts, L0.w0, L0.w1, L0);
+    const i = Math.floor(R() * (line.length - 6));
     const side = R() < 0.5 ? -1 : 1;
-    const dx = q[0] - p[0], dy = q[1] - p[1];
-    strokeLine(g, [p, [p[0] + dx * 2 + side * dy * 0.8 + (R() - 0.5) * U * 0.1, p[1] + dy * 2 - side * dx * 0.8]], Math.max(0.6, U * 0.005), css(R() < 0.5 ? hp.light : hp.base), 0.45);
+    const pts = [];
+    for (let j = 0; j < 6; j++) {
+      const p = line[i + j]; const q = line[Math.min(line.length - 1, i + j + 1)];
+      let tx = q[0] - p[0], ty = q[1] - p[1]; const l = Math.hypot(tx, ty) || 1; tx /= l; ty /= l;
+      const off = wf((i + j) / (line.length - 1)) * (0.62 + j * 0.06) * side;
+      pts.push([p[0] - ty * off, p[1] + tx * off]);
+    }
+    strokeLine(g, pts, Math.max(0.5, U * 0.004), css(R() < 0.5 ? hp.light : hp.base), 0.4);
   }
 }
 
@@ -945,7 +965,7 @@ function lock(ctx, pts3, w0, w1, hp, o = {}) {
     sideR.push([line[i][0] + nx * wv * away, line[i][1] + ny * wv * away]);
     sideL.push([line[i][0] - nx * wv * away, line[i][1] - ny * wv * away]);
   }
-  strokeLine(g, sideR, wf(0.3) * 0.5, css(hp.dark), 0.55);
+  strokeLine(g, sideR, wf(0.3) * 0.5, css(hp.dark), o.edgeless ? 0.25 : 0.55);
   strokeLine(g, sideL, wf(0.3) * 0.3, css(mixc(base, hp.light, 0.6)), 0.4);
   // strands
   const ns = o.strands ?? 7;
@@ -971,13 +991,19 @@ function lock(ctx, pts3, w0, w1, hp, o = {}) {
       const q = line[i + 1], pp = line[i - 1];
       let tx = q[0] - pp[0], ty = q[1] - pp[1]; const l = Math.hypot(tx, ty) || 1; tx /= l; ty /= l;
       const wv = wf(t);
-      const cxp = line[i][0] - (-ty) * wv * 0.12, cyp = line[i][1] - tx * wv * 0.12;
-      g.strokeStyle = css(hp.hi, sheen * (1 - Math.abs(c) / 0.35) * (Math.sin(phase) > 0 ? 1 : 0.55));
-      g.lineWidth = Math.max(1, wv * 0.22);
+      // a soft sheen that runs along the lock over the crest of the wave
+      const off = (Math.sin(phase) > 0 ? -0.18 : 0.18) * wv;
+      const cxp = line[i][0] + ty * off, cyp = line[i][1] - tx * off;
+      const sl = wv * 0.9;
+      const gr = g.createLinearGradient(cxp - tx * sl, cyp - ty * sl, cxp + tx * sl, cyp + ty * sl);
+      const a = sheen * 0.7 * (1 - Math.abs(c) / 0.35) * (Math.sin(phase) > 0 ? 1 : 0.5);
+      gr.addColorStop(0, css(hp.hi, 0)); gr.addColorStop(0.5, css(hp.hi, a)); gr.addColorStop(1, css(hp.hi, 0));
+      g.strokeStyle = gr;
+      g.lineWidth = Math.max(1, wv * 0.3);
       g.lineCap = 'round';
       g.beginPath();
-      g.moveTo(cxp - tx * wv * 0.5 + ty * wv * 0.3, cyp - ty * wv * 0.5 - tx * wv * 0.3);
-      g.lineTo(cxp + tx * wv * 0.5 - ty * wv * 0.3, cyp + ty * wv * 0.5 + tx * wv * 0.3);
+      g.moveTo(cxp - tx * sl, cyp - ty * sl);
+      g.lineTo(cxp + tx * sl, cyp + ty * sl);
       g.stroke();
     }
   } else {
@@ -985,7 +1011,7 @@ function lock(ctx, pts3, w0, w1, hp, o = {}) {
     strokeLine(g, sideL.slice(s0, s1), wf(0.3) * 0.25, css(hp.hi), sheen * 0.8);
   }
   g.restore();
-  if (o.edge !== false) {
+  if (o.edge !== false && !o.edgeless) {
     g.save();
     ribbon(g, line, wf);
     g.strokeStyle = css(hp.dark, 0.3);
@@ -1097,7 +1123,7 @@ function paintHair(ctx, layer) {
       const cheek = [s * (0.93 + u * 0.16), 0.15 + u * 0.1, 0.45 - u * 0.6];
       const shoulder = [s * (1.04 + u * 0.22), 0.95, 0.4 - u * 0.5];
       const end = [s * (1.0 + u * 0.3 + (k % 2) * 0.08), 1.75 + (k % 3) * 0.18, 0.45 - u * 0.4];
-      locks.push({ pts: [start, over, temple, cheek, shoulder, end], w0: 0.26 - u * 0.05, w1: 0.13, wave: 0.06, freq: 2.4, ph: k * 0.9 + (s > 0 ? 1.4 : 0), strands: 14, taper: 1.1, value: 0.78 + ((k * 7) % 5) * 0.1, sheen: 0.65 });
+      locks.push({ pts: [start, over, temple, cheek, shoulder, end], w0: 0.26 - u * 0.05, w1: 0.03, wave: 0.06, freq: 2.4, ph: k * 0.9 + (s > 0 ? 1.4 : 0), strands: 14, taper: 2.4, value: 0.78 + ((k * 7) % 5) * 0.1, sheen: 0.65 });
     }
     for (const s of [-1, 1]) locks.push({ pts: [[s * 0.86, 0.1, 0.55], [s * 0.98, 0.7, 0.6], [s * 0.92, 1.4, 0.75], [s * 1.0, 2.0, 0.85], [s * 0.94, 2.45, 0.9]], w0: 0.2, w1: 0.04, wave: 0.07, freq: 2.4, ph: s * 2, strands: 8, value: 1.12, sheen: 0.65 });
     const tl = ctx.P([-1.3, -1.3, 0]); const br = ctx.P([1.3, 2.4, 0]);
@@ -1106,20 +1132,15 @@ function paintHair(ctx, layer) {
     return;
   }
   if (st === 'bun') {
-    // drawn back from the face: a centre parting, the sides smoothed back over the ears into the bun
-    const locks = [];
-    for (const s of [-1, 1]) for (let k = 0; k < 5; k++) {
-      const u = k / 4;
-      locks.push({ pts: [sk(ctx, s * 0.04, -1, 0.35 - u * 0.2, 1.06), sk(ctx, s * (0.45 + u * 0.15), -0.8, 0.6 - u * 0.5, 1.08), sk(ctx, s * (0.85), -0.3 + u * 0.1, 0.35 - u * 0.6, 1.08), sk(ctx, s * 0.5, -0.4, -0.85, 1.1)], w0: 0.28, w1: 0.2, wave: 0.02, freq: 1.5, ph: k, strands: 12, value: 0.85 + (k % 3) * 0.1, sheen: 0.5 });
-    }
-    hairMass(ctx, hp, locks, { wisps: 14, extra: (mg) => capShape(ctx, mg, { part: 0, vol: 1.07 }) });
-    for (const s of [-1, 1]) lock(ctx, [[s * 0.74, -0.45, 0.55], [s * 0.86, -0.05, 0.56], [s * 0.82, 0.32, 0.6]], 0.04, 0.01, hp, { strands: 2, edge: false, value: 1.1 });
+    // drawn back from the face: a centre parting, the hair combed smooth over the skull to the bun
+    capMass(ctx, hp, { part: 0, strands: 200, vol: 1.06, peak: 0.04 });
+    for (const s of [-1, 1]) lock(ctx, [[s * 0.74, -0.45, 0.55], [s * 0.86, -0.05, 0.56], [s * 0.82, 0.32, 0.6]], 0.035, 0.01, hp, { strands: 2, edge: false, value: 1.1 });
     return;
   }
   if (st === 'short') {
     // cropped hair in clumps radiating from the crown, tousled forelocks breaking the hairline
     const locks = [];
-    const n = 18;
+    const n = 26;
     const order = [];
     for (let k = 0; k < n; k++) order.push(k);
     // draw the far side first
@@ -1132,7 +1153,7 @@ function paintHair(ctx, layer) {
       // locks round the back of the skull are hidden by the head (and would paint across the face)
       if (ap(ctx.HR, [fx, 0, fz])[2] < -0.15) continue;
       const endY = lerp(0.0, -0.74, front);
-      locks.push({ pts: [sk(ctx, fx * 0.15, -1, fz * 0.15 + 0.05, 1.08), sk(ctx, fx * 0.6, -0.75, fz * 0.6, 1.12), sk(ctx, fx * 0.95, endY + 0.25, fz * 0.95, 1.08), sk(ctx, fx * 0.98, endY, fz * 0.98 + front * 0.1, 1.02)], w0: 0.3, w1: 0.14, wave: 0.02, freq: 1.2, ph: k, strands: 9, value: 0.8 + ((k * 5) % 4) * 0.1, sheen: 0.45, taper: 1 });
+      locks.push({ pts: [sk(ctx, fx * 0.15, -1, fz * 0.15 + 0.05, 1.08), sk(ctx, fx * 0.6, -0.75, fz * 0.6, 1.12), sk(ctx, fx * 0.95, endY + 0.25, fz * 0.95, 1.08), sk(ctx, fx * 0.98, endY, fz * 0.98 + front * 0.1, 1.02)], w0: 0.2, w1: 0.06, wave: 0.02, freq: 1.2, ph: k, strands: 6, value: 0.85 + ((k * 5) % 4) * 0.07, sheen: 0.35, taper: 1.6, edgeless: true });
     }
     hairMass(ctx, hp, locks, { wisps: 26, extra: (mg) => capShape(ctx, mg, { part: 0.1, peak: 0.06, vol: 1.06 }) });
     return;
@@ -1140,11 +1161,11 @@ function paintHair(ctx, layer) {
   if (st === 'tonsure' || st === 'fringeRing') {
     // the crown shaved; a ring of cropped, fluffy hair round the sides and back, above the ears
     const locks = [];
-    for (const s of [-1, 1]) for (let k = 0; k < 9; k++) {
-      const u = k / 8;
+    for (const s of [-1, 1]) for (let k = 0; k < 13; k++) {
+      const u = k / 12;
       const fx = s * Math.cos(u * 1.4 - 0.25), fz = Math.sin(u * 1.4 - 0.25) * -1 + 0.35;
       if (ap(ctx.HR, [fx, 0, fz])[2] < -0.45) continue;
-      locks.push({ pts: [sk(ctx, fx, -0.62, fz, 1.05), sk(ctx, fx * 1.02, -0.36, fz, 1.1), sk(ctx, fx, -0.1, fz, 1.06)], w0: 0.2, w1: 0.15, wave: 0.02, freq: 1.5, ph: k, strands: 6, value: 0.82 + (k % 3) * 0.12, sheen: 0.3, taper: 1 });
+      locks.push({ pts: [sk(ctx, fx, -0.6, fz, 1.03), sk(ctx, fx * 1.01, -0.36, fz, 1.06), sk(ctx, fx, -0.12, fz, 1.03)], w0: 0.15, w1: 0.08, edgeless: true, wave: 0.02, freq: 1.5, ph: k, strands: 6, value: 0.82 + (k % 3) * 0.12, sheen: 0.3, taper: 1 });
     }
     hairMass(ctx, hp, locks, { wisps: 40 });
     // a wisp of forelock left at the front of the tonsure
@@ -1154,13 +1175,23 @@ function paintHair(ctx, layer) {
   if (st === 'topknot') {
     // the scalp shaved (the stubble shadow is in the relief); the knot sits on the crown, bound
     // with a leather cord, and a plaited tail falls behind
-    const knot = [sk(ctx, 0.02, -1, -0.1, 1.02), [0.02, -1.62, -0.3], [0.03, -1.74, -0.36]];
-    hairMass(ctx, hp, [
-      { pts: knot, w0: 0.34, w1: 0.3, strands: 12, sheen: 0.5 },
-      { pts: [[0.03, -1.72, -0.36], [0.22, -1.88, -0.5], [0.42, -1.66, -0.7], [0.52, -1.2, -0.85], [0.56, -0.7, -0.9]], w0: 0.2, w1: 0.08, wave: 0.03, freq: 3, strands: 8, sheen: 0.45 },
-    ], { wisps: 8 });
+    // the knot: a tight coil of hair on the crown (the plaited tail falls behind, see paintHairBack)
+    const { g: kg, P: kP, U: kU } = ctx;
+    const kc = kP([0.04, -1.56, -0.32]);
+    kg.save();
+    const kgr = kg.createRadialGradient(kc[0] - kU * 0.08, kc[1] - kU * 0.1, kU * 0.02, kc[0], kc[1], kU * 0.24);
+    kgr.addColorStop(0, css(hp.light)); kgr.addColorStop(0.55, css(hp.base)); kgr.addColorStop(1, css(hp.dark));
+    kg.fillStyle = kgr;
+    kg.beginPath(); kg.ellipse(kc[0], kc[1], kU * 0.22, kU * 0.19, -0.2, 0, Math.PI * 2); kg.fill();
+    kg.strokeStyle = css(hp.dark, 0.55); kg.lineWidth = Math.max(0.8, kU * 0.01);
+    for (let k = 0; k < 7; k++) { kg.beginPath(); kg.ellipse(kc[0], kc[1], kU * (0.05 + k * 0.025), kU * (0.04 + k * 0.022), -0.2 + k * 0.5, 0.3, 2.4); kg.stroke(); }
+    kg.strokeStyle = css(hp.hi, 0.5); kg.lineWidth = Math.max(0.8, kU * 0.012);
+    kg.beginPath(); kg.ellipse(kc[0] - kU * 0.04, kc[1] - kU * 0.05, kU * 0.12, kU * 0.08, -0.4, 3.6, 4.6); kg.stroke();
+    // hair gathered up off the scalp into the knot
+    for (let k = 0; k < 14; k++) { const a = (k / 13 - 0.5) * 1.6; const b0 = kP([Math.sin(a) * 0.32, -1.3, Math.cos(a) * 0.1 - 0.18]); strokeLine(kg, [b0, [kc[0] + (b0[0] - kc[0]) * 0.2, kc[1] + kU * 0.12]], Math.max(0.7, kU * 0.012), css(k % 2 ? hp.base : hp.light), 0.7); }
+    kg.restore();
     const { g, P, U } = ctx;
-    const band = P([0.02, -1.42, -0.25]);
+    const band = P([0.03, -1.4, -0.25]);
     g.save();
     const bg = g.createLinearGradient(band[0] - U * 0.18, 0, band[0] + U * 0.18, 0);
     bg.addColorStop(0, '#6a3a1e'); bg.addColorStop(1, '#2a140a');
@@ -1191,13 +1222,18 @@ function paintHairBack(ctx) {
     const locks = [];
     for (let k = 0; k < 14; k++) {
       const s = k % 2 ? 1 : -1; const u = (k >> 1) / 6;
-      locks.push({ pts: [[s * (0.3 + u * 0.6), -1.25 + u * 0.3, -0.3], [s * (0.95 + u * 0.3), -0.4, -0.45], [s * (1.18 + u * 0.22), 0.6, -0.45], [s * (1.25 + u * 0.15 + Math.sin(k) * 0.06), 1.5, -0.35], [s * (1.15 + u * 0.25), 2.3 + (k % 3) * 0.15, -0.25]], w0: 0.34, w1: 0.1, wave: 0.07, freq: 2.2, ph: k * 1.1, strands: 8, taper: 1.2, value: 0.55 + (k % 4) * 0.08, sheen: 0.3 });
+      locks.push({ pts: [[s * (0.3 + u * 0.6), -1.25 + u * 0.3, -0.3], [s * (0.95 + u * 0.3), -0.4, -0.45], [s * (1.18 + u * 0.22), 0.6, -0.45], [s * (1.25 + u * 0.15 + Math.sin(k) * 0.06), 1.5, -0.35], [s * (1.15 + u * 0.25), 2.3 + (k % 3) * 0.15, -0.25]], w0: 0.34, w1: 0.03, wave: 0.07, freq: 2.2, ph: k * 1.1, strands: 8, taper: 2.2, value: 0.55 + (k % 4) * 0.08, sheen: 0.3 });
     }
     const tl = P([-1.4, -1.3, 0]); const br = P([1.4, 2.4, 0]);
     hairMass(ctx, { ...hp, light: hp.base, hi: mixc(hp.base, hp.light, 0.6) }, locks, { box: [tl[0], tl[1], br[0], br[1]], wisps: 16 });
   }
+  if (st === 'topknot') {
+    hairMass({ ...ctx, w: D.face?.w ?? 1 }, { ...hp, base: mulc(hp.base, 0.85) }, [
+      { pts: [[0.05, -1.62, -0.4], [0.32, -1.72, -0.65], [0.55, -1.35, -0.85], [0.66, -0.8, -0.95], [0.7, -0.2, -0.95], [0.72, 0.4, -0.9]], w0: 0.2, w1: 0.05, wave: 0.03, freq: 6, strands: 10, sheen: 0.4, taper: 1.6 },
+    ], { wisps: 6 });
+  }
   if (st === 'bun') {
-    const b = P([0.25, -0.95, -0.85]);
+    const b = P([0.12, -1.28, -0.55]);
     g.save();
     const gr = g.createRadialGradient(b[0] - U * 0.1, b[1] - U * 0.1, U * 0.05, b[0], b[1], U * 0.5);
     gr.addColorStop(0, css(hp.light)); gr.addColorStop(0.6, css(hp.base)); gr.addColorStop(1, css(hp.dark));
@@ -1245,6 +1281,16 @@ function paintBeard(ctx) {
       wisps: 30,
       extra: (mg) => { const l = spline([...outline, outline[0]].map((q) => P(q)), 6); mg.beginPath(); mg.moveTo(l[0][0], l[0][1]); for (const q of l) mg.lineTo(q[0], q[1]); mg.closePath(); mg.fill(); },
     });
+    // break the cheek line: short hairs growing down and out across the beard's upper edge
+    const edge = spline([[-0.86, 0.1, 0.05], [-0.56, 0.4, 0.6], [-0.3, 0.6, 0.84]].map((q) => P(q)), 10).concat(spline([[0.3, 0.6, 0.84], [0.56, 0.4, 0.6], [0.86, 0.1, 0.05]].map((q) => P(q)), 10));
+    for (let k = 0; k < 220; k++) {
+      const e = edge[Math.floor(R() * edge.length)];
+      const sgn = e[0] < P([0, 0, 1])[0] ? -1 : 1;
+      const l = U * (0.03 + R() * 0.05);
+      const ex = e[0] + sgn * l * (0.2 + R() * 0.3) + (R() - 0.5) * U * 0.02;
+      const ey = e[1] + l;
+      strokeLine(g, [[e[0] + (R() - 0.5) * U * 0.02, e[1] - l * 0.5], [ex, ey]], Math.max(0.6, U * 0.007), css(R() < 0.5 ? hp.base : hp.dark), 0.55);
+    }
     paintMoustache(ctx, hp, false);
     // the lower lip shows through the beard
     const lp = P([0, 0.83, 0.93]);
@@ -1649,10 +1695,18 @@ function paintCostume(ctx) {
     g.beginPath(); g.moveTo(area[0][0], area[0][1]); for (const p of area) g.lineTo(p[0], p[1]); g.closePath();
     g.fillStyle = css(mulc(tb, 1.05)); g.fill();
     g.restore();
+    // Tempus's sign: a sword wreathed in flame, borne slantwise
     const sw = body([0, 3.1, 0.6]);
-    g.save(); g.strokeStyle = '#e0e0e8'; g.lineWidth = U * 0.06; g.lineCap = 'round';
-    g.beginPath(); g.moveTo(sw[0], sw[1] - U * 0.45); g.lineTo(sw[0], sw[1] + U * 0.4); g.stroke();
-    g.strokeStyle = '#d8b050'; g.beginPath(); g.moveTo(sw[0] - U * 0.22, sw[1] - U * 0.22); g.lineTo(sw[0] + U * 0.22, sw[1] - U * 0.22); g.stroke();
+    g.save(); g.translate(sw[0], sw[1]); g.rotate(0.55);
+    const fl = g.createLinearGradient(0, -U * 0.6, 0, U * 0.2);
+    fl.addColorStop(0, 'rgba(255,220,120,0.9)'); fl.addColorStop(1, 'rgba(230,90,20,0.2)');
+    g.fillStyle = fl;
+    g.beginPath(); g.moveTo(0, -U * 0.62); g.quadraticCurveTo(U * 0.16, -U * 0.25, U * 0.08, U * 0.15); g.quadraticCurveTo(0, -U * 0.05, -U * 0.08, U * 0.15); g.quadraticCurveTo(-U * 0.16, -U * 0.25, 0, -U * 0.62); g.fill();
+    g.strokeStyle = '#e8e8f0'; g.lineWidth = U * 0.045; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(0, -U * 0.5); g.lineTo(0, U * 0.3); g.stroke();
+    g.strokeStyle = '#c89a3a'; g.lineWidth = U * 0.05;
+    g.beginPath(); g.moveTo(-U * 0.14, U * 0.18); g.lineTo(U * 0.14, U * 0.18); g.stroke();
+    g.beginPath(); g.moveTo(0, U * 0.2); g.lineTo(0, U * 0.38); g.stroke();
     g.restore();
   } else {
     const v = spline([body([-0.42, 1.9, 0.38]), body([0, 2.3, 0.6]), body([0.42, 1.9, 0.38])], 6);

@@ -64,6 +64,48 @@ function blur3(src, w, h, r) {
 const REG = { bg: 0, skin: 1, eye: 2, hair: 3, cloth: 4, metal: 5 };
 
 /**
+ * Kuwahara filter: each pixel takes the mean of the least varied of the four quadrants around it,
+ * so smooth rendered gradients settle into flat painted planes with crisp edges between them.
+ * Uses summed-area tables (O(1) per quadrant).
+ */
+function kuwahara(src, w, h, r) {
+  const W1 = w + 1;
+  const S = [new Float64Array(W1 * (h + 1)), new Float64Array(W1 * (h + 1)), new Float64Array(W1 * (h + 1))];
+  const L2 = new Float64Array(W1 * (h + 1));
+  for (let y = 0; y < h; y++) {
+    let a0 = 0, a1 = 0, a2 = 0, al = 0;
+    for (let x = 0; x < w; x++) {
+      const k = (y * w + x) * 3;
+      const r0 = src[k], g0 = src[k + 1], b0 = src[k + 2];
+      a0 += r0; a1 += g0; a2 += b0;
+      const l = 0.3 * r0 + 0.59 * g0 + 0.11 * b0;
+      al += l * l;
+      const o = (y + 1) * W1 + x + 1, u = y * W1 + x + 1;
+      S[0][o] = S[0][u] + a0; S[1][o] = S[1][u] + a1; S[2][o] = S[2][u] + a2; L2[o] = L2[u] + al;
+    }
+  }
+  const box = (T, x0, y0, x1, y1) => T[y1 * W1 + x1] - T[y0 * W1 + x1] - T[y1 * W1 + x0] + T[y0 * W1 + x0];
+  const out = new Float32Array(w * h * 3);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let best = Infinity, br = 0, bg = 0, bb = 0;
+      for (let q = 0; q < 4; q++) {
+        const x0 = Math.max(0, q & 1 ? x : x - r), x1 = Math.min(w, (q & 1 ? x + r : x) + 1);
+        const y0 = Math.max(0, q & 2 ? y : y - r), y1 = Math.min(h, (q & 2 ? y + r : y) + 1);
+        const n = (x1 - x0) * (y1 - y0);
+        const mr = box(S[0], x0, y0, x1, y1) / n, mg = box(S[1], x0, y0, x1, y1) / n, mb = box(S[2], x0, y0, x1, y1) / n;
+        const ml = 0.3 * mr + 0.59 * mg + 0.11 * mb;
+        const v = box(L2, x0, y0, x1, y1) / n - ml * ml;
+        if (v < best) { best = v; br = mr; bg = mg; bb = mb; }
+      }
+      const k = (y * w + x) * 3;
+      out[k] = br; out[k + 1] = bg; out[k + 2] = bb;
+    }
+  }
+  return out;
+}
+
+/**
  * @param {Uint8ClampedArray|Uint8Array} color  RGBA, alpha = detail (0..255)
  * @param {Uint8ClampedArray|Uint8Array} info   RGBA: r region code, g/b stroke direction, a key light
  * @param {number} w
@@ -88,9 +130,21 @@ export function oilPaint(color, info, w, h, o = {}) {
     const m = Math.hypot(dx, dy) || 1;
     dirX[i] = dx / m; dirY[i] = dy / m;
   }
+  // Settle the render into painted planes (Kuwahara), keeping the eyes and mouth as rendered.
+  {
+    const kr = Math.max(2, Math.round(3.2 * k));
+    const kw = kuwahara(ref, w, h, kr);
+    for (let i = 0; i < N; i++) {
+      const keep = Math.min(1, detail[i] * 1.1 + (region[i] === REG.eye ? 1 : 0));
+      const t = (region[i] === REG.bg ? 0.4 : region[i] === REG.metal ? 0.45 : region[i] === REG.hair ? 0.6 : 0.85) * (1 - keep);
+      for (let c = 0; c < 3; c++) ref[i * 3 + c] += (kw[i * 3 + c] - ref[i * 3 + c]) * t;
+    }
+  }
   // Backdrop strokes: cross-laid sweeps whose direction wanders over the canvas.
   const bgDir = (x, y) => {
-    const a = 0.75 + Math.sin(x * 0.019 / k + y * 0.011 / k) * 0.9 + Math.cos(y * 0.023 / k - x * 0.007 / k) * 0.6;
+    // broad diagonal sweeps, laid one way then across (never a swirl)
+    const cross = Math.sin(x * 0.013 / k + 1.7) * Math.sin(y * 0.017 / k + 0.4) > 0.15 ? 1.15 : 0;
+    const a = 0.7 + cross + Math.sin(x * 0.011 / k + y * 0.007 / k) * 0.25;
     return [Math.cos(a), Math.sin(a)];
   };
   const canvas = makeCanvas(w, h);
@@ -185,6 +239,33 @@ export function oilPaint(color, info, w, h, o = {}) {
           const q = (qy * w + qx) * 3;
           cur[q] += (cr - cur[q]) * L.a; cur[q + 1] += (cg - cur[q + 1]) * L.a; cur[q + 2] += (cb - cur[q + 2]) * L.a;
         }
+      }
+    }
+  }
+  // Flyaway hairs: a few fine strands lifting off the silhouette of the hair into the backdrop.
+  {
+    g.lineCap = 'round';
+    for (let y = 2; y < h - 2; y += 1) {
+      for (let x = 2; x < w - 2; x += 1) {
+        const i = y * w + x;
+        if (region[i] !== REG.hair) continue;
+        let out = -1;
+        if (region[i - 2] === REG.bg) out = 0; else if (region[i + 2] === REG.bg) out = 1; else if (region[i - 2 * w] === REG.bg) out = 2;
+        if (out < 0 || R() > 0.07) continue;
+        const ox = out === 0 ? -1 : out === 1 ? 1 : 0, oy = out === 2 ? -1 : 0;
+        let dx = dirX[i], dy = dirY[i];
+        if (dx * ox + dy * oy < 0) { dx = -dx; dy = -dy; }
+        dx = dx * 0.6 + ox * 0.5; dy = dy * 0.6 + oy * 0.5 - 0.1;
+        const m = Math.hypot(dx, dy) || 1; dx /= m; dy /= m;
+        const len = (5 + R() * 10) * k;
+        const bend = (R() - 0.5) * len * 0.6;
+        const c0 = ref[i * 3], c1 = ref[i * 3 + 1], c2 = ref[i * 3 + 2];
+        g.strokeStyle = `rgba(${Math.min(255, c0 * 1.15 + 8) | 0},${Math.min(255, c1 * 1.15 + 6) | 0},${Math.min(255, c2 * 1.1 + 4) | 0},${0.35 + R() * 0.3})`;
+        g.lineWidth = Math.max(0.5, 0.65 * k);
+        g.beginPath();
+        g.moveTo(x - dx * 2, y - dy * 2);
+        g.quadraticCurveTo(x + dx * len * 0.5 - dy * bend, y + dy * len * 0.5 + dx * bend, x + dx * len, y + dy * len + bend * 0.3);
+        g.stroke();
       }
     }
   }

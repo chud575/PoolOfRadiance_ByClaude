@@ -240,3 +240,10 @@
 .shp-detail .desc { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; }
 .shp-detail .shp-users { margin-top: 0.35em; }
 .shp-detail .shp-user { width: 2.3em; height: 2.8em; }
+
+/* the tavern card: patrons on top, the house rules chalked on a slate at its foot */
+.shp-detail:has(.shp-patrons) { grid-template-rows: 1fr; }
+.shp-patrons { height: 100%; }
+.shp-rules { margin-top: auto; padding: 0.6em 0.9em 0.5em; border-radius: 3px; background: linear-gradient(180deg, #1c1e22, #121316); box-shadow: inset 0 0 0 1px rgba(216, 178, 90, 0.25), inset 0 0 18px rgba(0, 0, 0, 0.8); }
+.shp-rules b { display: block; font-family: var(--font-display); font-size: 0.66em; letter-spacing: 0.22em; text-transform: uppercase; color: var(--por-gilt); margin-bottom: 0.25em; }
+.shp-rules ol { margin: 0; padding-left: 1.3em; color: #e6e2d8; font-style: italic; font-size: 0.86em; line-height: 1.4; text-shadow: 0 0 1px rgba(255, 255, 255, 0.4); }

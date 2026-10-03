@@ -101,19 +101,23 @@ const POSES = {
     shieldN: [0.38, 0.04, 1],
   }),
   display: (B) => ({
-    pelvis: [0, B.hipY - 0.008 * B.H, 0], pelvisRot: [0, -0.05, 0.02], torso: [0.02, 0.06, -0.02], head: [-0.02, 0.04, 0.02],
-    feet: { R: [-0.12, 0, 0.0], L: [0.12, 0, 0.06] }, footYaw: { R: -0.3, L: 0.28 }, kneePole: [0, 0.2, 1],
+    // contrapposto: the weight on the right leg (under the body), the hip dropped on the free side,
+    // the shoulders counter-tilted, the free left leg out and relaxed
+    pelvis: [-0.03, B.hipY - 0.014 * B.H, 0], pelvisRot: [0, -0.12, 0.075], torso: [0.02, 0.12, -0.11], head: [-0.03, 0.02, 0.07],
+    feet: { R: [-0.07, 0, -0.01], L: [0.17, 0, 0.1] }, footYaw: { R: -0.2, L: 0.45 }, kneePole: [0, 0.2, 1],
     hands: { R: { from: 'shoulderR', d: [-0.1, -0.36, 0.17] }, L: { from: 'chest', d: [0.2, -0.2, 0.24] } },
     elbowPole: { R: [-1, -0.6, -0.4], L: [1, -0.5, -0.4] },
     grip: { R: [-0.35, 0.86, 0.36], L: [0.05, 1, 0.05] },
     shieldN: [0.45, 0.04, 1],
   }),
   guard: (B) => ({
-    pelvis: [0, B.hipY - 0.006 * B.H, 0], pelvisRot: [0, 0.1, -0.02], torso: [0.0, -0.08, 0.02], head: [0.04, -0.3, 0],
-    feet: { R: [-0.13, 0, 0.02], L: [0.13, 0, 0.0] }, footYaw: { R: -0.3, L: 0.3 }, kneePole: [0, 0.2, 1],
-    hands: { R: { from: 'shoulderR', d: [-0.1, -0.3, 0.16] }, L: { from: 'hipL', d: [0.1, 0.06, 0.1] } },
-    elbowPole: { R: [-1, -0.5, -0.6], L: [1, 0, -0.4] },
-    grip: { R: [0, 1, 0.06], L: [0, 1, 0.2] },
+    // the small hours: weight slumped onto one leg, shoulders rounded, head sunk, both hands on a
+    // grounded spear shaft
+    pelvis: [0.02, B.hipY - 0.02 * B.H, 0], pelvisRot: [0.06, 0.1, -0.07], torso: [0.2, -0.06, 0.08], head: [0.28, -0.25, 0.04],
+    feet: { R: [-0.15, 0, 0.06], L: [0.09, 0, -0.04] }, footYaw: { R: -0.45, L: 0.2 }, kneePole: [0, 0.2, 1],
+    hands: { R: { from: 'shoulderR', d: [-0.02, -0.24, 0.24] }, L: { from: 'shoulderR', d: [0.06, -0.12, 0.27] } },
+    elbowPole: { R: [-1, -0.6, -0.2], L: [1, -0.6, 0.2] },
+    grip: { R: [0.05, 1, 0.12], L: [0.05, 1, 0.12] },
     shieldN: [1, 0.05, 0.35],
   }),
   sit: (B) => ({
@@ -677,6 +681,15 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
     A(chestC, [(app.fem ? 0.138 : 0.158) * g + grow, 0.15 * s, (app.fem ? 0.098 : 0.108) * g + grow], sR, m, o);
     if (app.fem && (mailBody || scaleBody || plate)) for (const sg of [-1, 1]) A(at(chestC, sR, [sg * 0.05, -0.025, 0.055]), [0.055 * g + grow, 0.05 * s + grow, 0.045 * g + grow], sR, m, { k: 0.07 * s, ...o });
     A(at(J.neck, sR, [0, -0.04, -0.01]), [B.sh * 0.92 + grow, 0.055 * s + grow, 0.085 * g + grow], sR, m, { k: 0.04 * s, ...o });
+    // One long form from the hips to the chest bridges the masses, so a broad body reads as a
+    // single cuirass or jerkin (never a stack of rolls).
+    A(vlerp(J.pelvis, J.neck, 0.42), [0.142 * g * Math.max(1, hipW * 0.95) + grow, 0.3 * s, 0.1 * g + grow], sR, m, { ...o, k: 0.05 * s });
+  };
+  // A belt at the waist with a buckle: it breaks the long line of a hauberk or jerkin.
+  const belt = () => {
+    const c = at(J.pelvis, pR, [0, 0.07, -0.004]);
+    sc.ellipsoid(c, [0.158 * g * hipW + 0.016 * s, 0.022 * s, 0.114 * g + 0.016 * s], pR, { mat: M.darkLeather, g: GR.belt, k: 0, clip: [planeAlong(pR, [0, 1, 0], at(c, pR, [0, 0.016 * s, 0])), planeAlong(pR, [0, -1, 0], at(c, pR, [0, -0.016 * s, 0]))] });
+    sc.box(at(c, pR, [0, 0, 0.114 * g / Math.max(0.5, s) * s + 0.016 * s]), [0.02 * s, 0.018 * s, 0.006 * s], pR, 0.003 * s, { mat: M.gilt, g: GR.belt, k: 0 });
   };
   const sleeves = (m, grow, toFore = 0) => {
     for (const k of ['L', 'R']) {
@@ -719,6 +732,7 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
     torsoShell(m, 0.012 * s);
     sleeves(m, 0.011 * s, 0.35);
     splitSkirt(m, (scaleBody ? 0.36 : 0.42) * s);
+    belt();
     if (body === 'chain' && !sitting) {
       // A short surcoat skirt in the house colour over the mail, open at the sides: it hangs over the
       // thighs and breaks the line of the legs.
@@ -797,6 +811,7 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
     sleeves(M.cloth, 0.004 * s, 0.7);
     splitSkirt(M.cloth, 0.3 * s);
     skirt(M.leather, 0.13 * s, app.race === 'dwarf' || app.fem ? 0.012 : 0.03, { k: 0.01 * s });
+    belt();
     for (const k of ['L', 'R']) {
       const sg = k === 'L' ? 1 : -1;
       const { sh, el, wr } = arms[k];
@@ -975,7 +990,7 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
       const mid = vlerp(el, wr, 0.62);
       const fwdA = vnorm(vsub(wr, el));
       const upv = vnorm(vsub([0, 1, 0], vscale(n, n[1])));
-      frames.shield = { pos: vadd(mid, vscale(n, 0.066 * g + 0.02 * s)), n, up: vnorm(vlerp(upv, vsub(fwdA, vscale(n, vdot(fwdA, n))), 0.15)), scale: Math.max(0.7, s * 0.95 + 0.05) };
+      frames.shield = { pos: vadd(vlerp(el, wr, 0.5), vscale(n, 0.092 * g + 0.03 * s)), n, up: vnorm(vlerp(upv, vsub(fwdA, vscale(n, vdot(fwdA, n))), 0.15)), scale: Math.max(0.7, s * 0.95 + 0.05) };
     }
   }
   frames.scale = s;

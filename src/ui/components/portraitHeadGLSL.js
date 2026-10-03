@@ -74,9 +74,9 @@ float ER() { return 0.0121 * (0.95 + 0.05 * EYE); }
 float EZ() { return 0.0638 - 0.0022 * EDEPTH; }
 float LOWF() { return LONG * (1.0 - 0.05 * FEM); }
 float MOUTHY() { return -0.0665 * LOWF(); }
-float TIPY() { return -0.0365 * NOSE * (0.92 + 0.08 * LONG) * (1.0 - 0.09 * FEM); }
-float TIPZ() { return 0.1145 + 0.01 * (NOSE - 1.0) - 0.0045 * FEM - 0.004 * HALF + 0.006 * GNOME; }
-float LIPZ() { return 0.0962 + 0.004 * PROT - 0.0015 * FEM; }
+float TIPY() { return -0.0345 * NOSE * (0.92 + 0.08 * LONG) * (1.0 - 0.13 * FEM); }
+float TIPZ() { return 0.1115 + 0.01 * (NOSE - 1.0) - 0.0075 * FEM - 0.004 * HALF + 0.006 * GNOME; }
+float LIPZ() { return 0.0945 + 0.004 * PROT - 0.003 * FEM; }
 
 // Upper and lower lid lines (y, head-local) at a point beside the eye: an almond, the outer
 // corner a touch higher, the upper lid over the top of the iris.
@@ -107,42 +107,53 @@ float gau2(vec2 u) { return exp(-dot(u, u)); }
 // only in hair.
 float skin(vec3 p) {
   vec3 q = vec3(abs(p.x), p.y, p.z);
-  float w = W;
+  float w = W * (1.0 - 0.03 * FEM);
   float fem = FEM;
   float lf = LOWF();
   // ---- cranium: an egg, flatter at the sides, the back of the skull full
-  vec3 c = p - vec3(0.0, 0.025 + 0.004 * (CRAN - 1.0), -0.014);
-  float d = sdEll(c, vec3(0.073 * w, 0.088 * CRAN, 0.1));
-  d = smax(d, q.x - (0.069 * w + 0.005 * sat((0.02 - p.z) / 0.08)), 0.03);
-  // ---- the brow bar over the eyes (heavy on men, dwarves and the old)
+  vec3 c = p - vec3(0.0, 0.022 + 0.004 * (CRAN - 1.0), -0.011);
+  float d = sdEll(c, vec3(0.0715 * w, 0.085 * CRAN, 0.097));
+  d = smax(d, q.x - (0.0685 * w + 0.005 * sat((0.02 - p.z) / 0.08)), 0.03);
+  // ---- the brow bar over the eyes (heavy on men, dwarves and the old), with the glabella and the
+  // outer orbital rims running down to the cheekbones
   float browK = BROW * (1.0 - 0.65 * fem);
-  d = smin(d, sdEll(p - vec3(0.0, 0.0165, 0.066 + 0.0012 * browK), vec3(0.053 * w, 0.0125, 0.02 + 0.0016 * browK)), 0.018);
-  // ---- face mass and cheekbones with the zygomatic arches
-  d = smin(d, sdEll(p - vec3(0.0, -0.032 * lf, 0.026), vec3(0.0635 * w, 0.066 * lf, 0.06)), 0.026);
+  d = smin(d, sdEll(p - vec3(0.0, 0.0165, 0.066 + 0.0012 * browK), vec3(0.052 * w, 0.0122, 0.02 + 0.0018 * browK)), 0.014);
+  d = smin(d, sdCap(q, vec3(0.05 * w, 0.012, 0.06), vec3(0.054 * w, -0.008, 0.056), 0.0075), 0.012);
+  // ---- the maxilla: a keel behind the nose and mouth (the cheeks are built on it, not a balloon)
+  d = smin(d, sdEll(p - vec3(0.0, -0.03 * lf, 0.032), vec3(0.047 * w, 0.054 * lf, 0.052)), 0.02);
+  // ---- cheekbones: a front plane facing forward and up, the arch running back to the ear
   float ckz = 0.9 + 0.15 * CHEEK;
-  d = smin(d, sdEll(q - vec3(0.0465 * w, -0.0135 - 0.002 * fem, 0.049), vec3(0.023, 0.0155, 0.023 * ckz) * (1.0 + 0.12 * HALF)), 0.018);
-  d = smin(d, sdCap(q, vec3(0.05 * w, -0.012, 0.044), vec3(0.067 * w, -0.01, 0.0), 0.0085), 0.016);
-  // ---- the mandible: ramus, angle, body and chin; a fill between jaw and mouth
-  float jw = (0.047 * (0.86 + 0.14 * JAW) - 0.0048 * fem) * w;
+  vec3 cq = q - vec3(0.048 * w, -0.0135 - 0.002 * fem, 0.0445);
+  cq.xy = rot2(0.35) * cq.xy;
+  d = smin(d, sdEll(cq, vec3(0.023, 0.0135, 0.0155 * ckz) * (1.0 + 0.08 * HALF)), 0.024);
+  d = smin(d, sdCap(q, vec3(0.055 * w, -0.013, 0.04), vec3(0.067 * w, -0.012, 0.0), 0.0078), 0.014);
+  // the buccal plane under the cheekbone, full on the young, halflings and women, hollow on the lean
+  float buc = (1.0 - 0.45 * sat(HOLLOW)) * (1.0 + 0.25 * HALF + 0.1 * fem);
+  d = smin(d, sdEll(q - vec3(0.038 * w, -0.048 * lf, 0.036), vec3(0.02 * buc, 0.028, 0.03 * buc)), 0.022);
+  // ---- the mandible: ramus, angle, body and chin
+  float jw = (0.05 * (0.86 + 0.14 * JAW) - 0.0075 * fem) * w;
   vec3 go = vec3(jw, -0.079 * lf, -0.01 - 0.003 * JDEPTH);
-  float rGo = 0.011 + 0.003 * (JAW - 1.0) - 0.002 * fem;
-  vec3 me = vec3(0.016 * CHIN, -0.105 * lf, 0.064 + 0.004 * JDEPTH);
-  d = smin(d, sdRC(q, vec3(0.058 * w, -0.02, -0.022), go, 0.012, rGo), 0.02);
-  d = smin(d, sdRC(q, go, me, rGo, 0.012 + 0.002 * CHIN), 0.022);
-  d = smin(d, sdEll(p - vec3(0.0, -0.1 * lf, 0.0785 + 0.004 * JDEPTH), vec3((0.022 - 0.003 * fem) * CHIN, 0.0168, 0.0168)), 0.016);
-  d = smin(d, sdEll(p - vec3(0.0, -0.066 * lf, 0.032), vec3(0.054 * w, 0.044 * lf, 0.06)), 0.022);
-  // fat pads (halflings, the young), hollows under the cheekbones (lean and old faces)
-  d -= (0.001 + 0.0035 * HALF + 0.001 * fem) * gau2(vec2(q.x - 0.036 * w, p.y + 0.034 * lf) / vec2(0.02, 0.02)) * sat((p.z - 0.03) / 0.03);
-  d += 0.0028 * HOLLOW * gau2(vec2(q.x - 0.05 * w, p.y + 0.046 * lf) / vec2(0.011, 0.015)) * sat((p.z - 0.02) / 0.03);
-  d += 0.0018 * gau2(vec2(q.x - 0.062 * w, p.y - 0.036) / vec2(0.01, 0.017)) * sat((p.z - 0.02) / 0.02);
+  float rGo = 0.0105 + 0.003 * (JAW - 1.0) - 0.0032 * fem;
+  vec3 me = vec3(0.016 * CHIN, -0.106 * lf, 0.066 + 0.004 * JDEPTH);
+  d = smin(d, sdRC(q, vec3(0.06 * w, -0.02, -0.022), go, 0.013, rGo), 0.016);
+  d = smin(d, sdRC(q, go, me, rGo, 0.0115 + 0.002 * CHIN), 0.016);
+  // chin: the mental protuberance, square on men
+  vec3 chq = p - vec3(0.0, -0.1 * lf, 0.08 + 0.004 * JDEPTH);
+  float chin = sdEll(chq, vec3((0.021 - 0.005 * fem) * CHIN, 0.0165 - 0.002 * fem, 0.0155));
+  chin = smin(chin, sdEll(vec3(abs(chq.x) - 0.009 * CHIN * (1.0 - fem), chq.yz), vec3(0.012, 0.014, 0.014)), 0.008);
+  d = smin(d, chin, 0.014);
+  // the fill of the lower face between the jaw and the mouth
+  d = smin(d, sdEll(p - vec3(0.0, -0.068 * lf, 0.03), vec3(0.046 * w, 0.042 * lf, 0.056)), 0.02);
+  // temples a little hollow
+  d += 0.0016 * gau2(vec2(q.x - 0.062 * w, p.y - 0.034) / vec2(0.01, 0.017)) * sat((p.z - 0.02) / 0.02);
   // ---- muzzle and lips
   float mY = MOUTHY();
   float mw = MOUTH;
-  float lipK = LIPS * (1.0 + 0.3 * fem);
+  float lipK = LIPS * (1.0 + 0.18 * fem);
   float lz = LIPZ();
-  d = smin(d, sdEll(p - vec3(0.0, mY + 0.006, 0.068 + 0.003 * PROT), vec3(0.03 * mw, 0.028, 0.028)), 0.018);
+  d = smin(d, sdEll(p - vec3(0.0, mY + 0.006, 0.066 + 0.003 * PROT - 0.003 * fem), vec3(0.03 * mw * (1.0 - 0.08 * fem), 0.028, 0.028)), 0.018);
   if (p.z > 0.07 && abs(p.y - mY) < 0.03) {
-    float cx = q.x / (0.021 * mw);
+    float cx = min(q.x / (0.021 * mw), 1.3);
     float curve = SMILE * 0.0034 * cx * cx + SMIRK * 0.0028 * sat(p.x / 0.02) * cx - SCOWL * 0.0012 * cx * cx;
     vec3 lp = p - vec3(0.0, curve, 0.0);
     float ul = sdEll(lp - vec3(0.0, mY + 0.0043, lz - 0.0042), vec3(0.0192 * mw, 0.0052 * lipK, 0.0078));
@@ -152,9 +163,10 @@ float skin(vec3 p) {
     vec3 sp = lp - vec3(0.0, mY, lz - 0.004);
     float sx = abs(sp.x) / (0.0188 * mw);
     float slit = length(vec2(max(abs(sp.x) - 0.0188 * mw, 0.0), sp.y)) - 0.0007 * sat(1.2 - sx * sx);
+    slit = max(slit, abs(sp.x) - 0.0195 * mw);
     d = smax(d, -max(slit, abs(sp.z) - 0.0105), 0.0016);
     // the fold under the lower lip
-    d = smax(d, -sdEll(p - vec3(0.0, mY - 0.0175, lz + 0.0005), vec3(0.0135, 0.0032, 0.0055)), 0.006);
+    d = smax(d, -sdCap(p, vec3(-0.0095, mY - 0.0175, lz - 0.001), vec3(0.0095, mY - 0.0175, lz - 0.001), 0.0034), 0.006);
   }
   // nasolabial fold: a soft ridge of the cheek beside the muzzle, deeper with age (a gaussian of the
   // squared distance to a line just outside the fold, so the field stays smooth)
@@ -174,10 +186,10 @@ float skin(vec3 p) {
     vec3 nN = vec3(0.0, 0.0065, 0.0838 - 0.002 * EDEPTH);
     vec3 nT = vec3(0.0, tipY + 0.0068, tipZ - 0.0068);
     vec3 nM = mix(nN, nT, 0.5) + vec3(0.0, 0.0, 0.0028 * HOOK);
-    float br = 0.0058 * BRIDGE;
+    float br = 0.0058 * BRIDGE * (1.0 - 0.18 * fem);
     float nb = smin(sdRC(p, nN, nM, br * 0.95, br * 1.08), sdRC(p, nM, nT, br * 1.08, 0.0075 * TIP), 0.004);
-    nb = smin(nb, sdEll(p - vec3(0.0, tipY, tipZ - 0.0086), vec3(0.0102 * TIP, 0.0088, 0.0088)), 0.006);
-    nb = smin(nb, sdEll(q - vec3(0.0128 * NWIDTH, tipY - 0.0042, tipZ - 0.0195), vec3(0.0078, 0.0066, 0.008)), 0.0045);
+    nb = smin(nb, sdEll(p - vec3(0.0, tipY, tipZ - 0.0086), vec3(0.0102 * TIP * (1.0 - 0.14 * fem), 0.0088 * (1.0 - 0.1 * fem), 0.0088)), 0.006);
+    nb = smin(nb, sdEll(q - vec3(0.0128 * NWIDTH * (1.0 - 0.12 * fem), tipY - 0.0042, tipZ - 0.0195), vec3(0.0078, 0.0066, 0.008) * (1.0 - 0.12 * fem)), 0.0045);
     // columella and the base
     nb = smin(nb, sdCap(p, vec3(0.0, tipY - 0.006, tipZ - 0.01), vec3(0.0, tipY - 0.009, tipZ - 0.021), 0.0032), 0.004);
     d = smin(d, nb, 0.0085);
@@ -189,7 +201,7 @@ float skin(vec3 p) {
   float ex = EX();
   float ez = EZ();
   if (p.z > 0.035 && length(q - vec3(ex, 0.0, ez)) < 0.04) {
-    d = smax(d, -sdEll(q - vec3(ex + 0.001, 0.0025, ez + 0.0165), vec3(0.0182, 0.0128, 0.0125)), 0.009 + 0.002 * EDEPTH);
+    d = smax(d, -sdEll(q - vec3(ex + 0.001, 0.003, ez + 0.0155), vec3(0.0172, 0.0122, 0.0112)), 0.011 + 0.002 * EDEPTH);
     float er = ER();
     vec3 ec = vec3(ex, 0.0, ez);
     float eye = length(q - ec) - er;
@@ -198,16 +210,19 @@ float skin(vec3 p) {
     eye = smin(eye, length(q - ec - g * 0.0052) - er * 0.62, 0.003);
     gEye = eye;
     vec2 ll = lidLines(q);
-    float up = length(q - ec) - (er + 0.0015);
+    float up = length(q - ec) - (er + 0.0025);
     up = smax(up, ll.x - q.y, 0.0009);
-    float lo = length(q - ec) - (er + 0.0011);
+    float lo = length(q - ec) - (er + 0.0017);
     lo = smax(lo, q.y - ll.y, 0.0011);
     gLid = abs(q.y - ll.x);
     float lidZone = sdEll(q - ec - vec3(-0.0006, 0.0, 0.004), vec3(0.0178 * sqrt(EYE), 0.0135, 0.0148));
     d = smin(d, smax(min(up, lo), lidZone, 0.002), 0.0045);
-    // the upper-lid fold
+    // the fleshy fold of the upper lid under the brow, and the upper-lid crease
+    float fold = sdEll(q - ec - vec3(0.0005, 0.0095 - 0.0016 * LID, 0.0088), vec3(0.0152 * sqrt(EYE), 0.0042, 0.0046));
+    fold = smax(fold, ll.x + 0.0022 - q.y, 0.0012);
+    d = smin(d, fold, 0.003);
     float fy = 0.0108 - 0.0032 * LID + 0.0006 * FEM;
-    d = smax(d, -sdCap(q, ec + vec3(-0.0115, fy, 0.0072), ec + vec3(0.0118, fy - 0.0012, 0.0036), 0.00075), 0.0028);
+    d = smax(d, -sdCap(q, ec + vec3(-0.0115, fy, 0.0075), ec + vec3(0.0118, fy - 0.0012, 0.0038), 0.001), 0.0026);
     d = min(d, eye);
   }
   // ---- ears: helix rim, concha bowl, lobe; elves get the long point

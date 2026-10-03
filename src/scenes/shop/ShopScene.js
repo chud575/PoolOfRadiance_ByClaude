@@ -541,6 +541,10 @@ export default class ShopScene extends Scene {
       ]));
     }
     if (!list.children.length) return this._detailParty(add);
+    // the house rules chalked over the bar fill the foot of the card
+    if (this.shop.houseRules?.length) {
+      list.append(h('div.shp-rules', [h('b', ['Chalked over the bar']), h('ol', this.shop.houseRules.map((r) => h('li', [r])))]));
+    }
     add(list);
   }
 

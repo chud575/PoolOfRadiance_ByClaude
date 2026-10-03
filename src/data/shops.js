@@ -114,6 +114,8 @@ export const SHOPS = {
     // the people the picture shows (setting cast: dice, watch, sailor), each worth a listen
     cast: ['dice', 'watch', 'sailor'],
     fare: [['Ale', '1 cp'], ['Stew', '2 cp'], ['Black bread', '1 cp'], ['Wine', '1 sp'], ['A bed', '5 sp']],
+    // the house rules chalked over the bar (the foot of the 'Tonight in the room' card)
+    houseRules: ['No blades drawn under this roof.', 'Kobold ears are paid for at the Watch-house, not here.', 'The bed by the chimney is Old Tam\'s. Leave it.'],
     patrons: [
       { icon: '⚄', who: 'Brannoc & Tibbet', what: 'A dwarf losing at dice to a halfling', line: '"Sixes. Again." The dwarf glares at the halfling, who smiles like a cat in a dairy. "Luck of the small folk," says Tibbet. "Same luck that kept us out of the Slums when the kobolds came up the old sewers. They come and go by the drains, you know. Like rats with spears."' },
       { icon: '⚔', who: 'Two watchmen of the Slum Wall', what: 'Off duty, and arguing about it', line: '"Hold the wall and let the Council hire swords to clear the blocks," says the older. "Hired swords like them?" says the younger, nodding at you. "The Council pays in gold and journal-ink. Ask the Clerk — he has a list as long as your arm."' },

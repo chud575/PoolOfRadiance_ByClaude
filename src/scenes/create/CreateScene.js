@@ -12,10 +12,11 @@ import { SAVE_SLOTS } from '../../core/SaveManager.js';
 import { createCharacter, unequipItem, deriveStats, applyRace, meetsClassMinimums, rollExceptionalStr, validateConcept } from '../../rules/character.js';
 import { portraitURL, HEADS, BODIES, RACE_SKINS, SKIN_TONES, HAIR_COLORS, EYE_COLORS, CLOTH_COLORS, defaultLook } from '../../ui/components/portraitPainter.js';
 import { portraitEl, miniPortrait, abilityMods } from '../../ui/components/CharacterSheet.js';
+import { ammoProblem, ammoHint } from '../../ui/components/Inventory.js';
 import { openCharacterView } from '../../ui/components/CharacterView.js';
 import { STAT_TIPS, ALIGNMENT_TEXT, levelLimitText, abilityTip } from '../../ui/components/rulesText.js';
 import { buildMiniature, miniatureEnvironment, useRenderer } from '../../ui/components/Miniature.js';
-import { warmPortraitPainter } from '../../ui/components/portraitPainter.js';
+import { prepaintParty } from '../../ui/components/portraitPainter.js';
 import { UINav } from '../../ui/components/uiNav.js';
 import { portraitImg, setPortraitSync, portraitsPending } from '../../ui/components/lazyPortrait.js';
 import { bodyShowsArmor } from '../../ui/components/lookData.js';
@@ -54,7 +55,7 @@ export default class CreateScene extends Scene {
     setPortraitSync(!!this.ctx.debug?.frozen);
     // Start the portrait painter (its own GL context in a worker, the shader compiled there) before
     // the hall claims the GPU, so the first portrait a player asks for does not wait on it.
-    if (!this.ctx.debug?.frozen) warmPortraitPainter();
+    if (!this.ctx.debug?.frozen) prepaintParty(this.ctx.game.party);
     this.rng = this.ctx.rng;
     await this._build3d();
     this.post = { bloomStrength: 0.5, bloomThreshold: 0.92, vignette: 0.62, exposure: 1.08 };
@@ -510,6 +511,9 @@ export default class CreateScene extends Scene {
         b.append(h('div.pc-sect-h', [h('span', ['Readied'])]), h('div.cc-kit', kit.map((e) => h('div.cc-kit-row', { dataset: { tip: ITEMS[e.id].desc ?? itemName(e) } }, [
           h('img', { src: itemIconURL(iconFor(ITEMS[e.id]), { magic: !!(e.magic || ITEMS[e.id].magic) }), alt: '' }), h('span', [itemName(e)]),
         ]))));
+        const aw = ammoProblem(ch), ah = !aw && ammoHint(ch);
+        if (aw) b.append(h('div.pc-warn', { dataset: { tip: 'Arrows need a bow and quarrels a crossbow readied in the weapon hand; otherwise they cannot be fired. VIEW → ITEMS to ready the launcher.' } }, ['⚠ ', aw]));
+        else if (ah) b.append(h('div.pc-note', { dataset: { tip: 'The arrows sit readied in the quiver, but the bow is not in hand: READY it (VIEW → ITEMS) when you want to shoot — it takes both hands, so the shield is slung.' } }, ['➶ ', ah]));
       } else {
         b.append(h('p.cc-lead', { style: { textAlign: 'center', marginTop: '2em' } }, [CREATE_TEXT.emptyParty]));
       }
@@ -707,7 +711,7 @@ export default class CreateScene extends Scene {
       const pr = CLASSES[cs[0]].primeReq[0];
       notes.push(a[pr] >= 16 ? `Prime requisite ${pr.toUpperCase()} ${a[pr]}: +10% experience.` : `A prime requisite (${pr.toUpperCase()}) of 16+ would grant +10% experience.`);
     } else notes.push('Multi-class characters earn no prime requisite bonus.');
-    if (cs.includes('fighter')) notes.push(a.str === 18 ? `Exceptional strength 18/${a.strPct === 100 ? '00' : String(a.strPct).padStart(2, '0')}.` : 'Fighters with 18 strength roll exceptional strength (18/01–18/00).');
+    if (cs.includes('fighter')) notes.push(a.str === 18 ? `Exceptional strength 18/${a.strPct === 100 ? '00' : String(a.strPct).padStart(2, '0')}.` : 'Fighters with 18 STR roll exceptional strength.');
     return h('div.pc-sect', { style: { marginTop: '0.8em' } }, [
       h('div.pc-sect-h', [h('span', ['Requirements'])]),
       ...lines,
@@ -802,7 +806,7 @@ export default class CreateScene extends Scene {
     const thieves = P.filter((c) => has(c, 'thief')).length;
     const hp = P.reduce((t, c) => t + c.hp.max, 0);
     const gold = P.reduce((t, c) => t + (c.gold ?? 0), 0);
-    const bestAC = P.length ? Math.min(...P.map((c) => deriveStats(c).ac)) : '—';
+    const avgAC = P.length ? (P.reduce((t, c) => t + deriveStats(c).ac, 0) / P.length).toFixed(1).replace(/\.0$/, '') : '—';
     const al = {};
     for (const c of P) al[c.alignment] = (al[c.alignment] ?? 0) + 1;
     const tile = (n, l, tip) => h('div.pc-big', { dataset: { tip } }, [h('span.n', [String(n)]), h('span.l', [l])]);
@@ -815,12 +819,12 @@ export default class CreateScene extends Scene {
     return h('div.pc-sect.cc-summary', [
       h('div.pc-sect-h', [h('span', ['The Company'])]),
       h('div.cc-sumtiles', [
-        tile(front, 'Fighters', 'Characters with the fighter class: the front line.'),
-        tile(divine, 'Clerics', 'Divine casters: healing and protection.'),
-        tile(arcane, 'Mages', 'Magic-users, the arcane casters: Sleep, Magic Missile and worse.'),
-        tile(thieves, 'Thieves', 'Locks, traps and backstabs.'),
-        tile(hp, 'HP', 'The party\'s combined hit points.'),
-        tile(bestAC, 'Best AC', 'Lower is better.'),
+        tile(front, front === 1 ? 'Fighter' : 'Fighters', 'Characters with the fighter class: the front line.'),
+        tile(divine, divine === 1 ? 'Cleric' : 'Clerics', 'Divine casters: healing and protection.'),
+        tile(arcane, arcane === 1 ? 'Mage' : 'Mages', 'Magic-users, the arcane casters: Sleep, Magic Missile and worse.'),
+        tile(thieves, thieves === 1 ? 'Thief' : 'Thieves', 'Locks, traps and backstabs.'),
+        tile(hp, 'Total HP', 'The party\'s combined hit points.'),
+        tile(avgAC, 'Avg AC', 'Average armour class of the company (lower is better).'),
         tile(gold.toLocaleString('en-US'), 'Gold', 'Pooled starting gold for arms and armour.'),
       ]),
       h('div.cc-sumline', [
