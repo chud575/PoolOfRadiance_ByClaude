@@ -75,14 +75,15 @@ const hashf = (n) => {
 // ------------------------------------------------------------------ species looks
 /** Colours / patterns per species (hide, accent, belly, horn, cloth). */
 export const LOOKS = {
-  // Rust-red scaled hide (saturated, so a warband pops off the grey setts),
+  // Iteration 4: dun olive-ochre scaled hide (red is reserved for the active
+  // hero, the board's one standout colour),
   // near-black along the spine, a pale ochre belly and bone-white horns.
-  kobold: { skin: [0x8e3a1c, 'scales'], back: [0x2e120a, 'scales'], belly: [0xd09a5e, 'scales'], horn: 0xeee0b8, cloth: 0x4a3a28, head: 'kobold', jerkin: 0x9a6a38, boots: 0x3a2414 },
+  kobold: { skin: [0x76643a, 'scales'], back: [0x2a2614, 'scales'], belly: [0xb8a06a, 'scales'], horn: 0xeee0b8, cloth: 0x4a3a28, head: 'kobold', jerkin: 0x9a6a38, boots: 0x3a2414 },
   goblin: { skin: [0x86963a, 'skin'], back: [0x5a6a26, 'skin'], belly: [0xa0aa60, 'skin'], horn: 0xd8c8a0, cloth: 0x4a3020, head: 'goblin', pants: 0x3a2a1a },
   orc: { skin: [0x5a6438, 'skin'], back: [0x2c3219, 'skin'], belly: [0x7a7c58, 'skin'], horn: 0xeadfc0, cloth: 0x3a2c1c, head: 'orc', pants: 0x3a2c1e, jerkin: 0x5a3a20, plate: 0x6a625a, hair: 0x0e0c0a },
   // Hobgoblins: dark rust-brown hide with an orange cast, a flat simian face,
   // bronze scale coats under a red-and-ochre legion tabard, leather boots.
-  hobgoblin: { skin: [0x9a4a22, 'skin'], back: [0x5e2810, 'skin'], belly: [0xc0784a, 'skin'], horn: 0xeadcb8, cloth: 0x2a2a22, head: 'hobgoblin', pants: 0x2e1c12, mail: 0x6e5a3e, hair: 0x0e0a08, nose: 0x3a1a0e, tabard: 0x24261e, trim: 0xc89a3a, boots: 0x2a1a10 },
+  hobgoblin: { skin: [0x86663c, 'skin'], back: [0x4a3820, 'skin'], belly: [0xb08e62, 'skin'], horn: 0xeadcb8, cloth: 0x2a2a22, head: 'hobgoblin', pants: 0x2e1c12, mail: 0x6e5a3e, hair: 0x0e0a08, nose: 0x3a1a0e, tabard: 0x24261e, trim: 0xc89a3a, boots: 0x2a1a10 },
   gnoll: { skin: [0xa88450, 'spots'], back: [0x6a5030, 'fur'], belly: [0xc8a878, 'fur'], horn: 0xe0d4b0, cloth: 0x3a2e22, head: 'gnoll', hair: 0x2a1a10, pants: 0x3a2e22 },
   bugbear: { skin: [0x7a5a30, 'fur'], back: [0x4a3418, 'fur'], belly: [0x9a7a50, 'fur'], horn: 0xd8c8a0, cloth: 0x3a2a1a, head: 'bugbear', hair: 0x2a1a0a, pants: 0x3a2a1a },
   lizardMan: { skin: [0x4a6a3a, 'scales'], back: [0x2e4a26, 'scales'], belly: [0xb0b07a, 'scales'], horn: 0xd8d0a0, cloth: 0x4a3a20, head: 'lizard' },
@@ -118,7 +119,7 @@ export function sculptedFlesh(key, o) {
     .mat('mail', look.mail ?? 0x8a8070, { pattern: 'mail', rough: 0.45, metal: 0.7, edge: 0.6, wash: 0.8 })
     .mat('plate', look.plate ?? 0x6a4a34, { pattern: 'metal', rough: 0.78, metal: 0.4, edge: 0.9, wash: 0.9 })
     .mat('nose', look.nose ?? look.back[0], { pattern: 'skin', rough: 0.5 })
-    .mat('tabard', look.tabard ?? 0x5a1e18, { pattern: 'cloth', rough: 0.9, edge: 0.5, wash: 0.85 })
+    .mat('tabard', look.tabard ?? 0x3a3a26, { pattern: 'cloth', rough: 0.9, edge: 0.5, wash: 0.85 })
     .mat('trim', look.trim ?? 0xa08030, { pattern: 'cloth', rough: 0.8, edge: 0.4, wash: 0.7 })
     .mat('boots', look.boots ?? 0x2a1a10, { pattern: 'leather', rough: 0.65, edge: 0.7, wash: 0.85 })
     .mat('scale', look.mail ?? 0x6e5a3e, { pattern: 'scale', rough: 0.5, metal: 0.65, edge: 0.8, wash: 0.85 });
@@ -706,6 +707,7 @@ export const SCULPT_DETAIL_GLSL = `
       // at tactics zoom, and the FINE band (pores, weave, rings) blended in by
       // 'fine' only where a texel is smaller than a pixel.
       // Out: h (bump height), alb (rgb albedo multiplier), dr (roughness offset), dm (metal offset).
+      float sdFw; // object-space metres per pixel, set by the caller
       void sculptDetail(float pid, vec3 p, float fine, out float h, out vec3 alb, out float dr, out float dm) {
         h = 0.0; alb = vec3(1.0); dr = 0.0; dm = 0.0;
         float big = sn3(p * 9.0) * 0.65 + sn3(p * 3.0) * 0.35;
@@ -768,18 +770,26 @@ export const SCULPT_DETAIL_GLSL = `
           alb = mix(vec3(0.8 + sn3(p * 6.0) * 0.35), vec3(1.5, 0.82, 0.46) * (0.75 + 0.3 * rn), rust) * (1.0 - pit * 0.25);
           dr = rust * 0.4 + pit * 0.1 - 0.05; dm = -rust * 0.55;
         } else if (pid < 9.5) {
-          // Mail: staggered ring rows (glinting high/low per row), with rust in the hem.
-          vec3 q = p * vec3(70.0, 46.0, 70.0);
+          // Mail (iteration 4): fine riveted rings (about 7 mm rows, not a
+          // knit), each a bright steel crown with a near-black wash in the
+          // gaps; the pattern resolves only where a ring spans a few pixels and
+          // otherwise settles to worn, washed steel (no moire at board zoom).
+          vec3 q = p * vec3(150.0, 140.0, 150.0);
           float row = floor(q.y);
-          float ring = abs(fract(q.x + q.z + row * 0.5) - 0.5) * 2.0;
-          float rv = 0.5 + 0.5 * sin(q.y * 6.2832);
-          h = rv * 0.5 + (1.0 - ring) * 0.3;
-          vec3 qf = p * 140.0;
-          float rf = length(fract(vec2(qf.x + floor(qf.y) * 0.5, qf.y)) - 0.5);
-          h = mix(h, smoothstep(0.45, 0.25, rf) * 0.8, fine * 0.6);
+          float u = fract(q.x + q.z + row * 0.5) - 0.5;
+          float v = fract(q.y) - 0.5;
+          float rr = length(vec2(u, v * 1.15));
+          float link = smoothstep(0.5, 0.3, rr) * smoothstep(0.08, 0.2, rr);
+          float rv = smoothstep(0.5, 0.0, rr);
+          float ringVis = 1.0 - smoothstep(0.0025, 0.006, sdFw);
           float rust = smoothstep(0.62, 0.8, sn3(p * 9.0)) * (1.0 - smoothstep(0.4, 0.9, p.y));
-          alb = mix(vec3(0.55 + rv * 0.5) * (0.85 + 0.3 * sn3(vec3(row, 0.0, 0.0) + p * 3.0)), vec3(1.2, 0.75, 0.45), rust) * grime;
-          dr = (1.0 - rv) * 0.25 + rust * 0.35 - 0.1; dm = -rust * 0.4;
+          float washM = 0.55 + 0.45 * sn3(p * 11.0);
+          vec3 ringA = vec3(0.32 + link * 0.95 + rv * 0.15);
+          vec3 flatA = vec3(0.62 + 0.3 * washM) * (0.85 + 0.25 * big);
+          alb = mix(flatA, ringA, ringVis);
+          alb = mix(alb, vec3(1.2, 0.75, 0.45) * 0.8, rust) * grime;
+          h = mix(0.0, link * 0.7, ringVis);
+          dr = mix(0.05 - washM * 0.1, (1.0 - link) * 0.35 - 0.12, ringVis) + rust * 0.35; dm = -rust * 0.4 - (1.0 - link) * 0.3 * ringVis;
         } else if (pid > 10.5 && pid < 11.5) {
           // Great-wyrm bronze: big overlapping keeled scales (Voronoi plates
           // shingled along the body), each domed with a worn bright crown;
@@ -844,6 +854,7 @@ ${SCULPT_DETAIL_GLSL}
       float fw = length(fwidth(vObj));
       float sculptFine = 1.0 - smoothstep(0.004, 0.012, fw);
       sculptMid = 1.0 - smoothstep(0.03, 0.08, fw);
+      sdFw = fw;
       sculptDetail(floor(vMat.x + 0.5), vObj, sculptFine, sculptH, sculptAlb, sculptDR, sculptDM);
       sculptAlb = mix(vec3(0.8 + 0.4 * sn3(vObj * 4.0)), sculptAlb, sculptMid);
       diffuseColor.rgb *= sculptAlb;`)
@@ -870,7 +881,8 @@ export function patchRigidShader(sh, pid) {
       ${SCULPT_DETAIL_GLSL}
       float rgH; vec3 rgAlb; float rgDR; float rgDM; float rgMid;`)
     .replace('#include <color_fragment>', `#include <color_fragment>
-      rgMid = (1.0 - smoothstep(0.03, 0.08, length(fwidth(vObjR)))) * 0.8;
+      sdFw = length(fwidth(vObjR));
+      rgMid = (1.0 - smoothstep(0.03, 0.08, sdFw)) * 0.8;
       sculptDetail(uPid, vObjR, 0.0, rgH, rgAlb, rgDR, rgDM);
       diffuseColor.rgb *= mix(vec3(1.0), rgAlb, rgMid);`)
     .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = clamp(roughnessFactor + rgDR * rgMid, 0.06, 1.0);')

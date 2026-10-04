@@ -57,12 +57,13 @@ function addRim(mat, facRim = null, tint = null) {
     sh.uniforms.uTint = uTint;
     sh.uniforms.uSat = uSat;
     sh.uniforms.uStand = uStand;
+    sh.uniforms.uCloth = { value: pid === 3 ? 1 : 0 };
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vBP;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvBP = position;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        uniform vec3 uRimColor, uFacRim, uTint; uniform float uRimPower, uFacK, uSat, uStand; uniform vec2 uBurn; varying vec3 vBP;
+        uniform vec3 uRimColor, uFacRim, uTint; uniform float uRimPower, uFacK, uSat, uStand, uCloth; uniform vec2 uBurn; varying vec3 vBP;
         float bH3(vec3 p){ p = fract(p * 0.3183099 + vec3(0.1, 0.71, 0.37)); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
         float bN3(vec3 x){ vec3 i = floor(x); vec3 f = fract(x); f = f * f * (3.0 - 2.0 * f);
           return mix(mix(mix(bH3(i), bH3(i + vec3(1,0,0)), f.x), mix(bH3(i + vec3(0,1,0)), bH3(i + vec3(1,1,0)), f.x), f.y),
@@ -97,7 +98,7 @@ function addRim(mat, facRim = null, tint = null) {
           float pFade = 1.0 - smoothstep(0.07, 0.16, pxM);
           vec3 wN = normalize((vec4(nonPerturbedNormal, 0.0) * viewMatrix).xyz);
           float wash = max(smoothstep(-3.0, -18.0, kC) * pFade, smoothstep(-0.05, -0.75, wN.y) * 0.75);
-          float dry = smoothstep(5.0, 22.0, kC) * (1.0 - smoothstep(60.0, 80.0, kC)) * pFade * (0.5 + 0.5 * smoothstep(-0.3, 0.7, wN.y));
+          float dry = smoothstep(4.0, 18.0, kC) * (1.0 - smoothstep(60.0, 80.0, kC)) * pFade * (0.5 + 0.5 * smoothstep(-0.3, 0.7, wN.y));
           dry = max(dry, smoothstep(0.55, 0.97, wN.y) * 0.45);
           // Feet sit in the base's shade: no drybrush on boots (it read as
           // white blobs), a dark wash pooling toward the ground instead.
@@ -105,17 +106,23 @@ function addRim(mat, facRim = null, tint = null) {
           float foot = 1.0 - smoothstep(0.05, 0.2, wY);
           dry *= 1.0 - foot;
           wash = max(wash, foot * 0.55);
-          diffuseColor.rgb *= 1.0 - 0.66 * wash;
+          diffuseColor.rgb *= 1.0 - 0.84 * wash; // iteration 4: a near-black wash in the creases
           // Matte, desaturated hand paint (one standout: the active figure, via uSat).
           float pl = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11));
           diffuseColor.rgb = mix(vec3(pl), diffuseColor.rgb, uSat);
           // Reskin 8: the active figure is the reference's red mini: its paint
           // glazed a strong crimson (value kept, lifted a little), so one
           // unit always stands out of the grey-green board.
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.74, 0.12, 0.07) * (0.3 + pl * 1.7), uStand * 0.48);
+          // Iteration 4: no full-body glaze (it turned the hero into one
+          // terracotta hue). Only the cloth (cloak, tabard, robe, skirt) is
+          // repainted heraldic red; mail, flesh, leather and the shield keep
+          // their own paint, and a red-gold rim does the rest.
+          // (uCloth is a uniform, not baked text: rigid kit materials share one program.)
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.66, 0.06, 0.04) * (0.62 + pl * 1.1), uStand * uCloth * 0.9);
+          ${sculpt ? '{ float pidS = floor(vMat.x + 0.5); if (abs(pidS - 3.0) < 0.5) diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.66, 0.06, 0.04) * (0.62 + pl * 1.1), uStand * 0.9); }' : ''}
           // Drybrush: the raised edges are picked out a few shades paler in
           // the figure's own colour (a highlight layer, catching the key).
-          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 1.75 + vec3(0.05), dry * 0.55);
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 1.9 + vec3(0.08), dry * 0.75);
           // Paint worn off the raised edges onto the pewter beneath.
           float worn = dry * 0.32;
           vec3 pewter = vec3(0.26, 0.25, 0.235);
@@ -134,6 +141,14 @@ function addRim(mat, facRim = null, tint = null) {
           vec3 nV = normalize(normal);
           float facF = pow(1.0 - clamp(dot(nV, normalize(vViewPosition)), 0.0, 1.0), 2.4) * smoothstep(-0.5, 0.6, nV.y);
           totalEmissiveRadiance += uFacRim * facF * uFacK;
+          // Iteration 4: a thin cool sky edge on every mini's upper silhouette
+          // (the moonlit rim at night, a pale skylight by day), so dark paint
+          // never melts into the flags.
+          float edgeF = pow(1.0 - clamp(dot(nV, normalize(vViewPosition)), 0.0, 1.0), 3.2) * smoothstep(-0.2, 0.8, nV.y);
+          // The standout's own edge: a thin hot red-gold rim right on the
+          // silhouette (not a glow over the paint).
+          totalEmissiveRadiance += vec3(0.85, 0.3, 0.07) * pow(1.0 - clamp(dot(nV, normalize(vViewPosition)), 0.0, 1.0), 4.5) * uStand;
+          totalEmissiveRadiance += vec3(0.09, 0.11, 0.14) * edgeF * (0.4 + 0.6 * diffuseColor.rgb / max(0.05, max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b))));
           // Charred, not gilded: sparse ember cracks deep in the soot (two
           // octaves so they never tile), a thin smouldering seam where the
           // char meets the kit, and an ember rim on the silhouette so a
@@ -209,7 +224,7 @@ export class Figure {
 
   /** Paint saturation: muted earth tones by default, full colour on the standout (active) figure. */
   setStandout(on) {
-    const v = on ? 1.12 : 0.72;
+    const v = on ? 1.0 : 0.72;
     if (this._sat === v) return;
     this._sat = v;
     for (const mm of this.mats) {

@@ -21,17 +21,17 @@ const hashStr = (s) => {
 };
 
 // Party colours echo the 1988 icon colours (blue, red, green, magenta, yellow, cyan), deepened.
-const PARTY_COLORS = [0x3a4e78, 0x8a3428, 0x3e5a36, 0x5c4064, 0x98783a, 0x36646a];
+const PARTY_COLORS = [0x3a4e78, 0x7a5a3a, 0x3e5a36, 0x5c4064, 0x98783a, 0x36646a];
 const SKIN = { human: 0xd29a7c, elf: 0xe6bea0, halfElf: 0xdcae8e, dwarf: 0xc48a68, halfling: 0xd8a282, gnome: 0xcf9a78, halfOrc: 0x9aa070 };
 const HAIR = [0x2a1a10, 0x5a3418, 0x8a5a2a, 0xb88a4a, 0xd8c08a, 0x7a2a14, 0x1a1a1a, 0x9a9a9a];
 
 // ------------------------------------------------------------------ species
 const SPECIES = {
   human: { height: 1.0, bulk: 1.0, head: 'human' },
-  kobold: { height: 0.74, bulk: 0.86, limbK: 1.08, head: 'kobold', headScale: 1.62, skin: ['reptile', 0x6a3e2a], shieldChance: 0.45, tail: 'long', legs: 'digitigrade', hunch: 0.5, thickNeck: true, cloth: 0x4a3a28, armor: 'harness', weapon: 'spear', weapons: ['spear', 'club', 'sling', 'spear', 'shortSword', 'club', 'sling'], helms: [null, 'kCap', 'kSkull', 'kBand'], stature: 0.26, shields: ['round', 'hide'], eyes: 0xffc040 },
+  kobold: { height: 0.74, bulk: 0.86, limbK: 1.08, head: 'kobold', headScale: 1.62, skin: ['reptile', 0x6a5a34], shieldChance: 0.45, tail: 'long', legs: 'digitigrade', hunch: 0.5, thickNeck: true, cloth: 0x4a3a28, armor: 'harness', weapon: 'spear', weapons: ['spear', 'club', 'sling', 'spear', 'shortSword', 'club', 'sling'], helms: [null, 'kCap', 'kSkull', 'kBand'], stature: 0.26, shields: ['round', 'hide'], eyes: 0xffc040 },
   goblin: { height: 0.66, bulk: 0.95, limbK: 1.2, head: 'goblin', skin: ['skin', 0x8a9a3a], hunch: 0.15, cloth: 0x4a3020, weapon: 'shortSword', eyes: 0xffe060 },
   orc: { height: 1.04, bulk: 1.34, headScale: 0.9, head: 'orc', skin: ['skin', 0x74864c], hunch: 0.42, cloth: 0x2e2418, armor: 'orcish', weapon: 'battleAxe', weapons: ['battleAxe', 'battleAxe', 'spear', 'morningStar', 'club'], helmChance: 0.55, eyes: 0xff4020 },
-  hobgoblin: { height: 1.08, bulk: 1.12, head: 'hobgoblin', skin: ['skin', 0x9a4a22], cloth: 0x2a2a22, armor: 'scale', weapon: 'glaive', weapons: ['glaive', 'glaive', 'glaive', 'longSword'], shield: null, shieldWith: { longSword: 'round' }, helms: ['hobHelm'], eyes: 0xffa020 },
+  hobgoblin: { height: 1.08, bulk: 1.12, head: 'hobgoblin', skin: ['skin', 0x86663c], cloth: 0x2a2a22, armor: 'scale', weapon: 'glaive', weapons: ['glaive', 'glaive', 'glaive', 'longSword'], shield: null, shieldWith: { longSword: 'round' }, helms: ['hobHelm'], eyes: 0xffa020 },
   gnoll: { height: 1.2, bulk: 1.15, limbK: 1.1, head: 'gnoll', skin: ['fur', 0x9a7a4a], hunch: 0.3, legs: 'digitigrade', cloth: 0x3a2e22, armor: 'scraps', weapon: 'flail', eyes: 0xffd040 },
   giantRat: { rig: 'quad', skin: ['fur', 0x4a3a30], height: 0.55, eyes: 0xff3020 },
   skeleton: { undead: true, height: 1.0, bulk: 0.95, headScale: 1.22, head: 'skull', body: 'bones', skin: ['bone', 0xeadbb4], weapon: 'shortSword', shield: 'round', eyes: 0x60d0ff },
@@ -553,7 +553,7 @@ function buildBiped(o) {
       // war banner bearing a black sigil — the hobgoblin's unmistakable
       // silhouette among the orcs.
       const poleM = pbr('wood', 0x2a1a10);
-      const banM = pbr('cloth', 0x9a1a12);
+      const banM = pbr('cloth', 0x8a6a22); // ochre (red is the hero's standout)
       R.part('chest', cyl(0.012 * s, 0.012 * s, 0.95 * s, 6), poleM, { p: [0.03 * s, 0.42 * s, -0.16 * s], r: [-0.06, 0, -0.05] });
       R.part('chest', cyl(0.008 * s, 0.008 * s, 0.26 * s, 5), poleM, { p: [0.03 * s + 0.12 * s, 0.86 * s, -0.19 * s], r: [0, 0, Math.PI / 2] });
       R.part('chest', box(0.24 * s, 0.36 * s, 0.006 * s), banM, { p: [0.03 * s + 0.12 * s, 0.68 * s, -0.19 * s], r: [-0.06, 0, -0.04] });

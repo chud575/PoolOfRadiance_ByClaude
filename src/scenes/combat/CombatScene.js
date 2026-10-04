@@ -260,9 +260,12 @@ export default class CombatScene extends Scene {
         // the masonry instead of blowing a hot disc onto the nearest wall.
         // Iteration 4: a visible falloff (decay 2, shorter reach), so warm
         // pools end and the stone between them drops to cold near-black.
-        l.intensity = (this.night || this.indoor ? 30 : 26) * (f.brazier ? 1.3 : 1);
-        l.distance = f.brazier ? 11 : 9;
-        l.decay = 2;
+        // Iteration 4: tighter still by day, so most of the board stays cool
+        // grey and only the stones near a flame warm up.
+        const dark = this.night || this.indoor;
+        l.intensity = (dark ? 30 : 24) * (f.brazier ? 1.3 : 1);
+        l.distance = f.brazier ? (dark ? 10 : 7.5) : dark ? 8.5 : 6.5;
+        l.decay = dark ? 2 : 2.2;
       }
       l.position.set(f.x, f.y, f.z);
       // Wall torches: the light sits out from the wall, not in the bracket.
@@ -2295,7 +2298,7 @@ export default class CombatScene extends Scene {
     if (!near.length && foes[0]) near.push(foes[0]);
     const allies = live.filter((o) => o !== act && o.side === act.side && d(o, act) <= 2.5);
     // Reskin 2: tighter, so the minis are larger in frame (as in the reference).
-    const MIN = 8.5;
+    const MIN = 7;
     // Keep the whole fight in view when it fits (a stable tactical camera);
     // otherwise frame the actor, its likely targets and its neighbours.
     const MAX = all ? 18.5 : 16;
@@ -2386,7 +2389,8 @@ export default class CombatScene extends Scene {
   _refineFrame(set, cx, cz, dist, MIN, MAX, tighten = true) {
     const sa = this._safeArea();
     const em = Math.max(12, Math.min(25.6, 16 * (sa.H / 900)));
-    const box = { x0: -0.97, x1: 1 - (2 * 25.4 * em) / sa.W, y0: -1 + (2 * 6.6 * em) / sa.H, y1: 1 - (2 * 7.0 * em) / sa.H };
+    // Iteration 4: a tighter stage (minis larger, the fight filling the field).
+    const box = { x0: -0.985, x1: 1 - (2 * 25.0 * em) / sa.W, y0: -1 + (2 * 4.2 * em) / sa.H, y1: 1 - (2 * 5.6 * em) / sa.H };
     const yaw = this.cam.goalYaw;
     const rx = Math.cos(yaw);
     const rz = -Math.sin(yaw);
@@ -2423,7 +2427,7 @@ export default class CombatScene extends Scene {
       cx += rx * wx - Math.sin(yaw) * wy;
       cz += rz * wx - Math.cos(yaw) * wy;
       // Zoom so the figures fill ~88% of the stage.
-      let k = Math.max((x1 - x0) / (box.x1 - box.x0), (y1 - y0) / (box.y1 - box.y0)) / 0.88;
+      let k = Math.max((x1 - x0) / (box.x1 - box.x0), (y1 - y0) / (box.y1 - box.y0)) / 0.97;
       if (!tighten) k = Math.max(1, k);
       dist = Math.max(MIN * 0.8, Math.min(MAX, dist * Math.min(1.3, Math.max(0.8, k))));
     }
@@ -2967,7 +2971,11 @@ export default class CombatScene extends Scene {
             c *= mix(1.0, 0.38, smoothstep(uSubj + 0.4, uSubj + 3.2, z));
             // Clip to the free band: behind the stat card and the party table the view is held dark.
             float yb = 1.0 - vUv.y;
-            c *= mix(0.22, 1.0, smoothstep(uBand.x - 0.05, uBand.x + 0.04, yb) * (1.0 - smoothstep(uBand.y - 0.03, uBand.y + 0.05, yb)));
+            // Iteration 4: outside the band the image is clamped to a deep shadow
+            // (a bright flame, light shaft or glint behind the card can never
+            // punch through as a grey bar, however hot it is in HDR).
+            float inBand = smoothstep(uBand.x - 0.05, uBand.x + 0.04, yb) * (1.0 - smoothstep(uBand.y - 0.03, uBand.y + 0.05, yb));
+            c = mix(min(c * 0.22, vec3(0.035)), c, inBand);
             vec2 q = vUv - 0.5; c *= 1.0 - smoothstep(0.18, 0.62, dot(q, q) * 2.2) * 0.75; c *= 1.12;
             gl_FragColor = vec4(c, 1.0);
             #include <tonemapping_fragment>
@@ -3014,7 +3022,10 @@ export default class CombatScene extends Scene {
       const tanH = Math.tan(THREE.MathUtils.degToRad(15));
       // Reskin 8: the figure (base to crown, raised weapon) fills about two
       // thirds of the band; no empty floor below it.
-      const dist = Math.max(1.3, (hgt * 1.12 * rect.h) / (2 * tanH * bandH * 0.92));
+      // Iteration 4: closer still: crown to mid-thigh (about 70 % of the
+      // figure) fills the band, so the painted face and helm read.
+      const span = hgt * 0.74;
+      const dist = Math.max(0.9, (span * rect.h) / (2 * tanH * bandH * 0.94));
       const el = 0.14;
       // The shield arm's side: the lens never looks at the figure through its shield.
       // (The left arm, which carries the shield, sits on the figure's +x side:
@@ -3023,33 +3034,22 @@ export default class CombatScene extends Scene {
       // Pick the bearing that shows the face, stays on the board camera's
       // side and has no other figure or wall between the lens and the subject.
       const reach = dist * Math.cos(el);
-      const others = [];
-      for (const o of this.engine.all) {
-        if (o === act || this.engine.out(o)) continue;
-        const of = this.figures.get(o.id);
-        if (of?.root.visible) others.push(of.root.position);
-      }
-      let az = mainAz;
+      // Iteration 4: a true three-quarter front bearing, 30-40 degrees off the
+      // face, on the side that keeps the shield out of the face (the weapon
+      // side when a shield is carried, else the board camera's side). Other
+      // figures are hidden in the close-up, so only walls can veto a bearing.
+      let az = face;
       let best = -1e9;
-      for (let k = -11; k <= 11; k++) {
-        const a = mainAz + k * 0.28;
-        // Three-quarter from the weapon side (the shield arm faces away from the lens).
-        // Reskin 8: the bearing is set by the hero's own facing (a 3/4 front
-        // view), the board camera only breaking ties.
-        let sc = Math.cos(a - (face - 0.5)) * 2.6 + Math.cos(a - mainAz) * 0.25;
-        if (shieldAz !== null) sc -= Math.max(0, Math.cos(a - shieldAz)) * 2.4;
+      for (const off of [0.6, -0.6, 0.5, -0.5, 0.72, -0.72, 0.36, -0.36, 0.95, -0.95]) {
+        const a = face + off;
+        let sc = -Math.abs(Math.abs(off) - 0.6) * 1.5;
+        if (shieldAz !== null) sc -= Math.max(0, Math.cos(a - shieldAz)) * 1.2;
+        else sc += Math.cos(a - mainAz) * 0.3;
         const ex = p.x + Math.sin(a) * reach;
         const ez = p.z + Math.cos(a) * reach;
-        for (const q of others) {
-          const vx = ex - p.x;
-          const vz = ez - p.z;
-          const tq = Math.max(0, Math.min(1, ((q.x - p.x) * vx + (q.z - p.z) * vz) / (vx * vx + vz * vz)));
-          const dd = Math.hypot(p.x + vx * tq - q.x, p.z + vz * tq - q.z);
-          if (dd < 0.95 && tq > 0.03) sc -= 0.6 * (1 - dd / 0.95);
-        }
         const cx = Math.floor(ex / TILE);
         const cz = Math.floor(ez / TILE);
-        if (!this.field.inBounds(cx, cz) || !this.field.los(act.x, act.y, cx, cz)) sc -= 1.6;
+        if (!this.field.inBounds(cx, cz) || !this.field.los(act.x, act.y, cx, cz)) sc -= 3;
         if (sc > best) {
           best = sc;
           az = a;
@@ -3057,7 +3057,7 @@ export default class CombatScene extends Scene {
       }
       const camDist = dist;
       this._closeDbg = { az, face, mainAz, best };
-      const look = new THREE.Vector3(p.x, hgt * 0.5, p.z);
+      const look = new THREE.Vector3(p.x, hgt * 0.62, p.z);
       cam.position.set(look.x + Math.sin(az) * Math.cos(el) * camDist, look.y + Math.sin(el) * camDist, look.z + Math.cos(az) * Math.cos(el) * camDist);
       cam.aspect = W / H;
       // The look point lands in the middle of the free band, not the window's centre.
