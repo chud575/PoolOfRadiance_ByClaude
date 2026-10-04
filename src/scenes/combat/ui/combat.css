@@ -360,7 +360,7 @@
 :root:not([data-classic='1']) .cb-roster .por-roster-row .bar { opacity: 0.45; }
 
 /* Location plate, speed, prompt. */
-:root:not([data-classic='1']) .cb-loc .name { font-size: 1.25em; letter-spacing: 0.05em; line-height: 1.1; max-width: 12.5em; }
+:root:not([data-classic='1']) .cb-loc .name { font-size: 1em; letter-spacing: 0.02em; line-height: 1.15; white-space: nowrap; }
 :root:not([data-classic='1']) .cb-loc .sub { font-family: var(--gb-font); text-transform: uppercase; letter-spacing: 0.06em; color: #a39a86; }
 :root:not([data-classic='1']) .cb-speed { font-size: 0.72em; }
 :root:not([data-classic='1']) .cb-speed b { color: inherit; font-weight: 400; }

@@ -110,6 +110,14 @@ function addRim(mat, facRim = null, tint = null) {
           // Matte, desaturated hand paint (one standout: the active figure, via uSat).
           float pl = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11));
           diffuseColor.rgb = mix(vec3(pl), diffuseColor.rgb, uSat);
+          // Reskin 10 (the owner's reference): the ranks read as one cast of
+          // warm bronze-pewter miniatures under a thin glaze of paint (local
+          // colour kept as a tint), with a soft metal sheen in the key; the
+          // active hero alone is fully painted.
+          { vec3 bronze = vec3(0.82, 0.60, 0.38) * min(pl * 1.8 + 0.04, 0.7);
+            float bz = 0.6 * (1.0 - uStand);
+            diffuseColor.rgb = mix(diffuseColor.rgb, bronze, bz);
+            roughnessFactor = mix(roughnessFactor, 0.55, bz); }
           // Reskin 8: the active figure is the reference's red mini: its paint
           // glazed a strong crimson (value kept, lifted a little), so one
           // unit always stands out of the grey-green board.
