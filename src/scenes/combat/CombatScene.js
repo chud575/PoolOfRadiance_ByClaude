@@ -101,10 +101,13 @@ export default class CombatScene extends Scene {
       // Low key: a thin cold moon (shape, not fill); the flames do the lighting.
       // Iteration 4: night is clearly darker than day: a thin moon key and a
       // near-black blue sky wash; the braziers are the only real light.
-      this.rig.sun.intensity = 0.22;
-      this.rig.sun.color.set(0x7a90c8);
-      this.rig.hemi.intensity = 0.07;
-      this.rig.hemi.color.set(0x28324c);
+      // Night fix: at 0.22 / 0.07 the moon and sky left every lit surface
+      // near-black, so the unlit ground mist made the paving read brighter
+      // than the figures (black silhouettes with only their emissive rims).
+      this.rig.sun.intensity = 0.7;
+      this.rig.sun.color.set(0x8a9ccc);
+      this.rig.hemi.intensity = 0.3;
+      this.rig.hemi.color.set(0x3a4666);
       this.rig.hemi.groundColor?.set(0x06080c);
       s.fog = new THREE.FogExp2(0x030509, 0.026);
     } else {
@@ -170,7 +173,10 @@ export default class CombatScene extends Scene {
     // At night the fill is the warm spill of the braziers and candles, so the
     // party keeps its local colour under the cold moon.
     // Iteration 4: a cold, weak fill in both cases (warmth only from the flames).
-    this.fill = new THREE.DirectionalLight(this.night ? 0x7a86a0 : 0x8a9ca4, this.night ? 0.2 : 0.16);
+    // Hybrid: it rakes in low from the lens side (see _updateCamera), so it
+    // models the figures' fronts while barely touching the paving; by night it
+    // is the warm spill of the braziers, so the party keeps its local colour.
+    this.fill = new THREE.DirectionalLight(this.night ? 0xffc890 : 0xd8d0c0, this.night ? 0.85 : 0.75);
     s.add(this.fill, this.fill.target);
     // Rim light from behind the fight: separates figures from the ground.
     // By night a warm brazier rim (not a cold moon edge), so the party keeps colour.
@@ -239,7 +245,7 @@ export default class CombatScene extends Scene {
     }
     if (this.indoor) {
       this.fill.color.set(0xd8b890);
-      this.fill.intensity = 0.22;
+      this.fill.intensity = 0.6;
     }
     // Figure rim light: cool moonlit edge at night, warm sky edge by day.
     RIM.uRimColor.value.set(this.diorama.pool ? 0xffb860 : this.night ? 0x7a8498 : 0x7a88a4).multiplyScalar(this.diorama.pool ? 0.9 : this.night ? 0.7 : 0.6);
@@ -396,7 +402,7 @@ export default class CombatScene extends Scene {
       }
     }
     // Low-key grade: desaturated stone, deep vignette, flames as the only true whites.
-    this.post = { bloomStrength: this.night ? 0.6 : 0.45, bloomThreshold: this.night ? 0.82 : 0.86, bloomRadius: 0.55, vignette: this.night ? 0.62 : 0.56, exposure: this.night ? 0.92 : 1.0, contrast: this.night ? 1.14 : 1.12, saturation: this.night ? 0.8 : 0.78 };
+    this.post = { bloomStrength: this.night ? 0.6 : 0.45, bloomThreshold: this.night ? 0.82 : 0.86, bloomRadius: 0.55, vignette: this.night ? 0.62 : 0.56, exposure: this.night ? 1.0 : 1.0, contrast: this.night ? 1.14 : 1.12, saturation: this.night ? 0.8 : 0.78 };
     this._updateCamera(0, true);
 
     // ------------------------------------------------ input
@@ -635,7 +641,7 @@ export default class CombatScene extends Scene {
     es.add(new THREE.Mesh(new THREE.SphereGeometry(10, 32, 16), mat));
     const env = pm.fromScene(es, 0.02, 0.1, 100, { size: 64 }).texture;
     this.scene3d.environment = env;
-    this.scene3d.environmentIntensity = this.indoor ? 0.5 : this.night ? 0.1 : 0.22;
+    this.scene3d.environmentIntensity = this.indoor ? 0.5 : this.night ? 0.25 : 0.22;
     pm.dispose();
     mat.dispose();
     this.own(() => env.dispose());
@@ -2818,8 +2824,15 @@ export default class CombatScene extends Scene {
     const rr = this.ctx.render;
     const pixNow = (rr.height * rr.renderer.getPixelRatio()) / (2 * Math.tan((this.camera.fov * Math.PI) / 360));
     this.diorama.update(t, pixNow);
-    this.fill.position.copy(this.camera.position);
-    this.fill.target.position.copy(this.cam.target);
+    {
+      // Low (≈20°) lens-side fill: lights vertical figure fronts, not the floor.
+      const t = this.cam.target;
+      const dx = this.camera.position.x - t.x;
+      const dz = this.camera.position.z - t.z;
+      const l = Math.hypot(dx, dz) || 1;
+      this.fill.position.set(t.x + (dx / l) * 10, t.y + 3.6, t.z + (dz / l) * 10);
+      this.fill.target.position.copy(t);
+    }
     this.rim.position.set(this.cam.target.x * 2 - this.camera.position.x, this.camera.position.y * 0.6, this.cam.target.z * 2 - this.camera.position.z);
     this.rim.target.position.copy(this.cam.target);
     for (const fl of this.bossFlames ?? []) fl.userData.update?.(t);

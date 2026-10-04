@@ -2656,7 +2656,7 @@ export function buildDiorama(field, o = {}) {
         void main(){ float a = texture2D(tNoise, vW.xz * 0.015 + vec2(uT * 0.004, uT * 0.002)).r;
           float b = texture2D(tNoise, vW.xz * 0.04 - vec2(uT * 0.006, 0.0)).r;
           float m = smoothstep(0.35, 0.8, a * 0.7 + b * 0.5);
-          gl_FragColor = vec4(vec3(0.3, 0.36, 0.52), m * 0.16); }`,
+          gl_FragColor = vec4(vec3(0.3, 0.36, 0.52), m * 0.07); }`,
     }));
     mist.position.set(originX + (SW * TILE) / 2, 0.35, originZ + (SH * TILE) / 2);
     mist.renderOrder = 4;
