@@ -783,7 +783,9 @@ Biggest remaining gaps (ordered):
 5. **Architecture and ground surfacing** in combat: flat pale capstones, purple cobble with moiré.
 6. **Quick Start and Begin Adventure drop the party in the Slums**, not at the New Phlan docks/City Hall as in the
    1988 game; the commission is optional. A deliberate shortcut for the demo.
-7. **Combat framing** leaves large empty floor; the CAST/USE menu covers the fight.
+7. **Combat framing** leaves large empty floor; the CAST/USE menu covers the fight; the red heraldic shield reads as
+   a 'B' (shared-heraldry owner).
+   Small UI nit seen in play: the pause menu can show two lit rows (keyboard focus on Resume plus a mouse-hover row).
 8. Content beyond the first few blocks is thin (many blocks have placeholder encounters); exits to unbuilt maps
    print "not yet built".
 9. Audio loudness calibration must be re-run (`node tools/audiorender.mjs --calibrate`) whenever music synthesis
