@@ -539,3 +539,151 @@ export function settsSet(size = 512) {
   texCache.set('setts', set);
   return set;
 }
+
+/**
+ * Worn dungeon flagstones for the combat floor (the reference's big cool-grey
+ * slabs): one tile = 3 m, 4 courses of irregular dressed slabs (~0.4-0.9 m),
+ * each sitting slightly tilted, with its own tone, chipped arrises, a crack or
+ * two, pitting and grime packed into wide joints. Roughness map: height in .r,
+ * roughness in .g (same contract as settsSet).
+ * @returns {{map:THREE.Texture, normalMap:THREE.Texture, roughnessMap:THREE.Texture}}
+ */
+export function flagsSet(size = 1024) {
+  if (texCache.has('flags')) return texCache.get('flags');
+  const ROWS = 4;
+  // Course heights summing to 1 (tileable in v).
+  const rh = [];
+  let hs = 0;
+  for (let r = 0; r < ROWS; r++) { const x = 0.7 + hash2(r, 1, 151) * 0.6; rh.push(x); hs += x; }
+  const rowStart = [];
+  let acc0 = 0;
+  for (let r = 0; r < ROWS; r++) { rh[r] /= hs; rowStart.push(acc0); acc0 += rh[r]; }
+  const rows = [];
+  for (let r = 0; r < ROWS; r++) {
+    const n = 3 + Math.floor(hash2(r, 3, 152) * 3);
+    const w = [];
+    let sum = 0;
+    for (let i = 0; i < n; i++) { const x = 0.6 + hash2(r, i, 153) * 0.9; w.push(x); sum += x; }
+    let acc = 0;
+    rows.push({ edges: w.map((x) => (acc += x / sum) - x / sum), widths: w.map((x) => x / sum), off: hash2(r, 9, 154) });
+  }
+  const N = size * size;
+  const height = new Float32Array(N);
+  const color = new Uint8Array(N * 4);
+  const rough = new Uint8Array(N * 4);
+  const normal = new Uint8Array(N * 4);
+  const TILEM = 3; // metres per tile
+  for (let y = 0; y < size; y++) {
+    const v = y / size;
+    for (let x = 0; x < size; x++) {
+      const u0 = x / size;
+      // Joint wander so courses are hand-laid, not ruled.
+      const wob = (fbm(u0 * 6, v * 6, { octaves: 2, period: 6, seed: 155 }) - 0.5) * 0.02;
+      const vw = (v + wob + 1) % 1;
+      let r = ROWS - 1;
+      for (let i = 0; i < ROWS; i++) if (vw < rowStart[i] + rh[i]) { r = i; break; }
+      const row = rows[r];
+      const fv = (vw - rowStart[r]) / rh[r];
+      const u = (u0 + row.off + wob * 0.7 + 2) % 1;
+      let k = row.edges.length - 1;
+      for (let i = 0; i < row.edges.length; i++) if (u < row.edges[i] + row.widths[i]) { k = i; break; }
+      const fu = (u - row.edges[k]) / row.widths[k];
+      // Stone-local coordinates in metres.
+      const sw = row.widths[k] * TILEM;
+      const sh = rh[r] * TILEM;
+      const px = (fu - 0.5) * sw;
+      const py = (fv - 0.5) * sh;
+      const id = r * 16 + k;
+      const hx = sw * 0.5 - 0.012;
+      const hy = sh * 0.5 - 0.012;
+      const rad = 0.02 + hash2(id, 1, 160) * 0.04;
+      const qx = Math.abs(px) - hx + rad;
+      const qy = Math.abs(py) - hy + rad;
+      const outside = Math.hypot(Math.max(qx, 0), Math.max(qy, 0));
+      const inside = Math.min(Math.max(qx, qy), 0);
+      const n1 = fbm(u0 * 48, v * 48, { octaves: 3, period: 48, seed: 161 });
+      const n2 = fbm(u0 * 12, v * 12, { octaves: 3, period: 12, seed: 162 });
+      // Chipped arrises: big bites near corners, small nicks along edges.
+      const corner = qx > -0.12 && qy > -0.12 ? 1 : 0;
+      const sd = outside + inside - rad + (n1 - 0.5) * 0.03 + (n2 - 0.5) * 0.025 * (1 + corner * 2);
+      const stone = smooth(0.006, -0.008, sd);
+      // Slight bevel to the arris, worn rounder on some slabs.
+      const bev = clamp01(-sd / (0.025 + hash2(id, 2, 163) * 0.03));
+      // Each slab sits a little off-level.
+      const tx = (hash2(id, 3, 164) - 0.5) * 0.06;
+      const ty = (hash2(id, 4, 165) - 0.5) * 0.06;
+      // Cracks: a meandering fissure across ~40% of slabs.
+      let crack = 0;
+      if (hash2(id, 5, 166) < 0.42) {
+        const a = hash2(id, 6, 167) * Math.PI;
+        const cx = (hash2(id, 7, 168) - 0.5) * sw * 0.5;
+        const cy = (hash2(id, 8, 169) - 0.5) * sh * 0.5;
+        const d = (px - cx) * Math.sin(a) - (py - cy) * Math.cos(a) + (n2 - 0.5) * 0.18 + (n1 - 0.5) * 0.03;
+        crack = 1 - smooth(0.002, 0.007, Math.abs(d));
+      }
+      // Pitting / spall.
+      const pit = smooth(0.66, 0.74, fbm(u0 * 30, v * 30, { octaves: 2, period: 30, seed: 170 }));
+      const h = stone * (0.6 + 0.4 * Math.sqrt(bev) + px * tx + py * ty + (n1 - 0.5) * 0.05 - crack * 0.35 - pit * 0.08);
+      // Albedo: cool grey limestone/granite, per-slab tone and drift; darker in
+      // the bevel (grime), lighter on foot-worn crowns.
+      const tone = hash2(id, 9, 171);
+      const warm = hash2(id, 10, 172);
+      let g0 = 0.13 + tone * 0.2 + (n2 - 0.5) * 0.09 + (n1 - 0.5) * 0.05;
+      if (hash2(id, 11, 173) > 0.88) g0 *= 0.68;
+      g0 *= 0.7 + 0.3 * bev;
+      g0 *= 1 - crack * 0.6 - pit * 0.25;
+      const sr = g0 * (0.95 + warm * 0.09);
+      const sg = g0 * (0.98 + warm * 0.03);
+      const sb = g0 * (1.05 - warm * 0.08);
+      const grit = fbm(u0 * 96, v * 96, { octaves: 2, period: 96, seed: 174 });
+      const jr = 0.035 + grit * 0.03;
+      const jg = 0.033 + grit * 0.028;
+      const jb = 0.028 + grit * 0.022;
+      const cr = jr * (1 - stone) + sr * stone;
+      const cg = jg * (1 - stone) + sg * stone;
+      const cb = jb * (1 - stone) + sb * stone;
+      const i = y * size + x;
+      height[i] = h;
+      const o = i * 4;
+      color[o] = Math.min(255, Math.max(0, Math.pow(cr, 1 / 2.2) * 255));
+      color[o + 1] = Math.min(255, Math.max(0, Math.pow(cg, 1 / 2.2) * 255));
+      color[o + 2] = Math.min(255, Math.max(0, Math.pow(cb, 1 / 2.2) * 255));
+      color[o + 3] = 255;
+      const ro = stone * (0.78 + n1 * 0.18 - (tone > 0.85 ? 0.15 : 0)) + (1 - stone) * 0.98;
+      rough[o] = Math.min(255, Math.max(0, h * 255));
+      rough[o + 1] = Math.min(255, ro * 255);
+      rough[o + 2] = rough[o];
+      rough[o + 3] = 255;
+    }
+  }
+  const Hh = (x, y) => height[((y + size) % size) * size + ((x + size) % size)];
+  const ns = 4.0;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = (Hh(x + 1, y - 1) + 2 * Hh(x + 1, y) + Hh(x + 1, y + 1)) - (Hh(x - 1, y - 1) + 2 * Hh(x - 1, y) + Hh(x - 1, y + 1));
+      const dy = (Hh(x - 1, y + 1) + 2 * Hh(x, y + 1) + Hh(x + 1, y + 1)) - (Hh(x - 1, y - 1) + 2 * Hh(x, y - 1) + Hh(x + 1, y - 1));
+      const nx = -dx * ns;
+      const ny = -dy * ns;
+      const l = Math.hypot(nx, ny, 1);
+      const o = (y * size + x) * 4;
+      normal[o] = ((nx / l) * 0.5 + 0.5) * 255;
+      normal[o + 1] = ((ny / l) * 0.5 + 0.5) * 255;
+      normal[o + 2] = ((1 / l) * 0.5 + 0.5) * 255;
+      normal[o + 3] = 255;
+    }
+  }
+  const mk = (arr, srgb) => {
+    const t = new THREE.DataTexture(arr, size, size, THREE.RGBAFormat, THREE.UnsignedByteType);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+    t.anisotropy = 8;
+    t.generateMipmaps = true;
+    t.minFilter = THREE.LinearMipmapLinearFilter;
+    t.magFilter = THREE.LinearFilter;
+    t.needsUpdate = true;
+    return t;
+  };
+  const set = { map: mk(color, true), normalMap: mk(normal, false), roughnessMap: mk(rough, false) };
+  texCache.set('flags', set);
+  return set;
+}

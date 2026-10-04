@@ -4,7 +4,7 @@ import { getGlowTexture } from '../../../render/textures/index.js';
 import { CELL, EDGE } from '../../../data/maps/MapGrid.js';
 import { SUB } from '../logic/battlefield.js';
 import { Batcher, worldBox, wallQuad } from './batch.js';
-import { pbr, settsSet, detailSet } from './textures.js';
+import { pbr, flagsSet, detailSet } from './textures.js';
 import { statueGeometry, statueMaterial } from './sculpted.js';
 import { fbm } from '../../../render/textures/noise.js';
 import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js';
@@ -245,10 +245,12 @@ export function buildDiorama(field, o = {}) {
   disposables.push(splat);
   // Street: small granite setts (~11 cm); temple / courtyard: dressed rectangular
   // flagstones; rubble: packed dirt and grit. Each its own albedo/normal/roughness set.
-  const cob = settsSet();
+  // The reference's big cool-grey dungeon flags (3 m tile of 0.4-0.9 m slabs).
+  const cob = flagsSet();
   const rub = getTextureSet('floor_rubble');
-  const flg = getTextureSet('hd_flags');
-  const groundMat = new THREE.MeshStandardMaterial({ map: cob.map, normalMap: cob.normalMap, roughnessMap: cob.roughnessMap, roughness: 1, metalness: 0, normalScale: new THREE.Vector2(0.8, 0.8) });
+  // Halls and courtyards: the same big flags (laid on their own offset).
+  const flg = cob;
+  const groundMat = new THREE.MeshStandardMaterial({ map: cob.map, normalMap: cob.normalMap, roughnessMap: cob.roughnessMap, roughness: 1, metalness: 0, normalScale: new THREE.Vector2(1.0, 1.0) });
   const originX = -margin * TILE;
   const originZ = -margin * TILE;
   groundMat.onBeforeCompile = (sh) => {
@@ -295,7 +297,7 @@ export function buildDiorama(field, o = {}) {
         // Setts: 1 m tiles of ~11 cm stones; neighbouring patches use the
         // same courses shifted a whole number of rows (seamless), so the
         // repeat never lines up.
-        vec2 uv1 = vec2(vWPos.x, -vWPos.z) / 1.0;
+        vec2 uv1 = vec2(vWPos.x, -vWPos.z) / 3.0;
         // Patched paving: the street was relaid in irregular patches over the
         // centuries — each patch (Voronoi cell, ~2.6 m) lays the same setts in
         // its own direction and course offset with its own stone tone, and a
@@ -315,19 +317,21 @@ export function buildDiorama(field, o = {}) {
         mat2 pRi = mat2(pR[0][0], pR[1][0], pR[0][1], pR[1][1]);
         // Each relaying used its own stone: setts from fist-sized to big
         // granite blocks (per-patch scale), so the street is never one grid.
-        float pScale = mix(0.72, 1.45, gHash(pmc + 6.6));
-        uv1 = pR * uv1 * pScale + vec2(gHash(pmc + 9.7), gHash(pmc + 2.3)) * 7.0;
+        // (Flagstones: one continuous laying, no relaid patches; the 3 m
+        // tile shifts by whole courses per 9 m block so it never lines up.)
+        pR = mat2(1.0, 0.0, 0.0, 1.0);
+        uv1 += vec2(floor(gHash(floor(vWPos.xz / 9.0) + 1.3) * 5.0) * 0.37, 0.0);
         float pTone = gHash(pmc + 3.3);
         vec2 uv2 = vec2(vWPos.x, -vWPos.z) / 3.2 + 0.37;
-        vec2 uv3 = vec2(vWPos.x, -vWPos.z) / 2.7;
+        vec2 uv3 = vec2(vWPos.x, -vWPos.z) / 3.4 + vec2(0.31, 0.57);
         vec4 gc = texture2D(map, uv1);
         // Per-stone contrast held down at tactics distance: pull each sett toward
         // the local mean so the field reads as one surface with big value shapes.
-        gc.rgb = mix(texture2D(map, uv1, 4.0).rgb, gc.rgb, 0.5);
+        gc.rgb = mix(texture2D(map, uv1, 4.0).rgb, gc.rgb, 0.85);
         // Each patch its own stone: greyer granite, warmer sandstone, sooty.
-        gc.rgb *= mix(vec3(0.94, 0.96, 1.02), vec3(1.07, 1.0, 0.9), pTone) * (0.86 + 0.26 * gHash(pmc + 8.8));
+        gc.rgb *= mix(vec3(0.96, 0.98, 1.02), vec3(1.04, 1.0, 0.95), pTone) * (0.92 + 0.16 * gHash(pmc + 8.8));
         // Grit-filled seam between patches (setts only).
-        float pJoint = 1.0 - smoothstep(0.02, 0.07, pSeam);
+        float pJoint = 0.0;
         if (wR > 0.001) gc = mix(gc, texture2D(map2, uv2), wR);
         if (wF > 0.001) gc = mix(gc, texture2D(map3, uv3), wF);
         // Worn boundary: grit, dirt and broken setts between the pavings.
@@ -386,7 +390,7 @@ export function buildDiorama(field, o = {}) {
         // centre, dished, dark with damp, a thread of standing water in it.
         vec4 gD = texture2D(tDrain, gsp);
         float dOff = abs((gD.r - 0.502) * 255.0 / 30.0) * 1.5; // metres from the centre line
-        float dOn = smoothstep(0.6, 0.95, gD.g) * (1.0 - wF) * (1.0 - wR);
+        float dOn = 0.0; // no kennel on the flagged floor
         float kennel = dOn * (1.0 - smoothstep(0.2, 0.25, dOff));
         float kLip = dOn * (1.0 - smoothstep(0.03, 0.07, abs(dOff - 0.22)));
         vec2 kUV = gD.b > 0.5 ? vec2(vWPos.x * 3.0, vWPos.z * 0.9) : vec2(vWPos.z * 3.0, vWPos.x * 0.9);
@@ -413,7 +417,7 @@ export function buildDiorama(field, o = {}) {
         // Low-key stone: cool, desaturated grey-green setts and flags (warm
         // colour only where the braziers light them, never in the albedo).
         { float gL = dot(gc.rgb, vec3(0.3, 0.59, 0.11));
-          gc.rgb = mix(vec3(gL), gc.rgb, ${night ? '0.25' : '0.18'}) * ${night ? 'vec3(0.84, 0.92, 0.92)' : 'vec3(0.82, 0.92, 0.88)'}; }
+          gc.rgb = mix(vec3(gL), gc.rgb, ${night ? '0.3' : '0.35'}) * ${night ? 'vec3(0.94, 0.98, 0.98)' : 'vec3(1.0, 1.04, 1.06)'}; }
         diffuseColor *= gc;
       `)
       .replace('#include <roughnessmap_fragment>', `
@@ -459,7 +463,7 @@ export function buildDiorama(field, o = {}) {
         #include <opaque_fragment>
       `);
   };
-  groundMat.customProgramCacheKey = () => `combat-ground-v15-${night ? 1 : 0}`;
+  groundMat.customProgramCacheKey = () => `combat-ground-v16-${night ? 1 : 0}`;
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(SW * TILE, SH * TILE, 1, 1), groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(originX + (SW * TILE) / 2, 0, originZ + (SH * TILE) / 2);
