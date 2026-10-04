@@ -552,7 +552,10 @@ export function renderFigure(fig, o = {}) {
   if (o.minY != null) y0 = Math.max(y0, o.minY);
   if (o.minX != null) x0 = Math.max(x0, o.minX);
   if (o.maxX != null) x1 = Math.min(x1, o.maxX);
-  const pad = 4 * ss;
+  // Whole pixels: a fractional supersample (ss) made W/H fractional, and the CPU path
+  // (used where WebGL can't run the figure shader, e.g. Safari's 16 KB uniform blocks)
+  // then indexed its typed arrays with non-integers and read undefined.
+  const pad = Math.ceil(4 * ss);
   const W = Math.ceil((x1 - x0) * P) + pad * 2;
   const H = Math.ceil((y1 - y0) * P) + pad * 2;
   const offX = -x0 * P + pad;
