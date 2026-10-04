@@ -61,8 +61,35 @@ function addRim(mat, facRim = null, tint = null) {
         float bN3(vec3 x){ vec3 i = floor(x); vec3 f = fract(x); f = f * f * (3.0 - 2.0 * f);
           return mix(mix(mix(bH3(i), bH3(i + vec3(1,0,0)), f.x), mix(bH3(i + vec3(0,1,0)), bH3(i + vec3(1,1,0)), f.x), f.y),
                      mix(mix(bH3(i + vec3(0,0,1)), bH3(i + vec3(1,0,1)), f.x), mix(bH3(i + vec3(0,1,1)), bH3(i + vec3(1,1,1)), f.x), f.y), f.z); }
-        float burnMask, burnEdge;`)
+        float burnMask, burnEdge, miniEdge, miniChip;`)
       .replace('#include <color_fragment>', `#include <color_fragment>
+        // Painted 28 mm miniature: matte, slightly knocked-back paint over a
+        // pewter casting. Signed surface curvature (screen-space normal change
+        // per metre) drives a dark wash in the recesses and a drybrushed edge
+        // highlight on every raised ridge; the hardest edges are worn through
+        // to bare metal in small chips.
+        miniEdge = 0.0; miniChip = 0.0;
+        {
+          float lumP = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
+          diffuseColor.rgb = mix(vec3(lumP), diffuseColor.rgb, 0.8);
+          #ifndef FLAT_SHADED
+          vec3 mP = -vViewPosition;
+          vec3 dpx = dFdx(mP), dpy = dFdy(mP);
+          vec3 mN = normalize(vNormal);
+          float kx = dot(dFdx(mN), dpx) / max(dot(dpx, dpx), 1e-9);
+          float ky = dot(dFdy(mN), dpy) / max(dot(dpy, dpy), 1e-9);
+          float kc = clamp((kx + ky) * 0.5, -80.0, 80.0);
+          float recess = smoothstep(-3.0, -26.0, kc);
+          miniEdge = smoothstep(6.0, 34.0, kc);
+          // Overhead drybrush: upward-facing planes catch a little more pigment.
+          float up = smoothstep(0.2, 0.95, dot(mN, normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz)));
+          diffuseColor.rgb *= 1.0 - 0.5 * recess;
+          diffuseColor.rgb = mix(diffuseColor.rgb, min(vec3(1.0), diffuseColor.rgb * 1.55 + 0.05), clamp(miniEdge * 0.6 + up * 0.12, 0.0, 0.75));
+          float chipN = bN3(vBP * 46.0);
+          miniChip = smoothstep(0.55, 0.8, miniEdge * (0.55 + chipN));
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.5, 0.49, 0.47), miniChip * 0.7);
+          #endif
+        }
         ${sculpt ? `{ float pidT = floor(vMat.x + 0.5); if (pidT < 2.5 || abs(pidT - 7.0) < 0.5 || abs(pidT - 4.0) < 0.5) diffuseColor.rgb *= uTint; }` : ''}
         burnMask = 0.0; burnEdge = 0.0;
         if (uBurn.x > 0.001) {
@@ -74,6 +101,12 @@ function addRim(mat, facRim = null, tint = null) {
           burnEdge = smoothstep(0.09, 0.0, abs(bn - th + 0.03)) * step(0.02, uBurn.x);
           diffuseColor.rgb = mix(diffuseColor.rgb * (1.0 - uBurn.x * 0.55), vec3(0.018, 0.015, 0.013), burnMask * 0.95);
         }`)
+      .replace('#include <lights_physical_fragment>', `
+        // Matte acrylic over the casting: dull paint, satin worn metal.
+        metalnessFactor = mix(metalnessFactor, 0.85, miniChip * 0.7);
+        roughnessFactor = metalnessFactor > 0.5 ? clamp(roughnessFactor, 0.36, 0.62) : max(roughnessFactor, 0.78);
+        roughnessFactor = mix(roughnessFactor, 0.42, miniChip * 0.7);
+        #include <lights_physical_fragment>`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         { float rimF = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), uRimPower);
           totalEmissiveRadiance += uRimColor * rimF * (0.6 + 0.4 * diffuseColor.rgb / max(0.001, max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b))));
@@ -92,7 +125,7 @@ function addRim(mat, facRim = null, tint = null) {
           float rimE = pow(1.0 - clamp(dot(nV, normalize(vViewPosition)), 0.0, 1.0), 3.0);
           totalEmissiveRadiance += vec3(1.0, 0.34, 0.05) * burnEdge * uBurn.y * 1.5 + vec3(1.0, 0.22, 0.02) * emb * uBurn.y * 0.9 + vec3(1.0, 0.42, 0.08) * rimE * uBurn.y * 0.9; }`);
   };
-  mat.customProgramCacheKey = () => (sculpt ? 'fig-rim-sculpt-c' : pid >= 0 ? 'fig-rim-detail-c' : 'fig-rim-c');
+  mat.customProgramCacheKey = () => (sculpt ? 'fig-mini-sculpt-a' : pid >= 0 ? 'fig-mini-detail-a' : 'fig-mini-a');
 }
 
 const _FLASH = new THREE.Color(1, 0.82, 0.68);

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Scene } from '../../core/Scene.js';
 import { h } from '../../ui/UI.js';
+import { makeMiniBase, disposeMiniBase } from './view/minibase.js';
 import { createOutdoorRig, createSkyDome, timeOfDayKeys } from '../../render/lighting.js';
 import * as TexLib from '../../render/textures/index.js';
 import { getGlowTexture } from '../../render/textures/index.js';
@@ -96,21 +97,27 @@ export default class CombatScene extends Scene {
     this.rig.sun.shadow.camera.updateProjectionMatrix();
     const keys = timeOfDayKeys(hour);
     if (this.night) {
-      this.rig.sun.intensity = 1.5;
-      this.rig.sun.color.set(0x9cb0e4);
-      this.rig.hemi.intensity = 0.75;
-      this.rig.hemi.color.set(0x525c80);
-      s.fog = new THREE.FogExp2(0x0a1124, 0.016);
+      // Low key: a thin cold moon (shape, not fill); the flames do the lighting.
+      this.rig.sun.intensity = 0.85;
+      this.rig.sun.color.set(0x8a9cc8);
+      this.rig.hemi.intensity = 0.34;
+      this.rig.hemi.color.set(0x3a4260);
+      this.rig.hemi.groundColor?.set(0x140e0a);
+      s.fog = new THREE.FogExp2(0x06080e, 0.02);
     } else {
       // A warm key with real shape: a stronger, sunnier sun throwing crisp,
       // soft-edged shadows across the street, and a cooler, lower sky fill so
       // the shade side reads blue against the lit setts (warm/cool split).
-      this.rig.sun.intensity *= 1.4;
-      this.rig.sun.color.lerp(new THREE.Color(0xffcf96), 0.45);
-      this.rig.hemi.intensity *= 1.2;
-      this.rig.hemi.color.lerp(new THREE.Color(0x9ab4dc), 0.35);
+      // Painted-miniature low key: even by day the street is a dim, smoky
+      // diorama under a low overcast sun: a warm raking key with deep shade
+      // and a weak, desaturated sky fill; torch and brazier pools stay visible.
+      this.rig.sun.intensity *= 0.62;
+      this.rig.sun.color.lerp(new THREE.Color(0xffc488), 0.55);
+      this.rig.hemi.intensity *= 0.42;
+      this.rig.hemi.color.lerp(new THREE.Color(0x6a7486), 0.6);
+      this.rig.hemi.groundColor?.lerp(new THREE.Color(0x1a140e), 0.6);
       this.rig.sun.shadow.radius = 2.2;
-      s.fog = new THREE.FogExp2(keys.fog, 0.0085);
+      s.fog = new THREE.FogExp2(new THREE.Color(keys.fog).multiplyScalar(0.35), 0.012);
     }
     // Underground (dungeon maps): no sky. A dim cool wash from the shafts high
     // above, near-black vault fog, and the scene's light comes from the flames
@@ -157,7 +164,7 @@ export default class CombatScene extends Scene {
     // Soft camera-side fill so figures read against the ground (a classic tactics-cam trick).
     // At night the fill is the warm spill of the braziers and candles, so the
     // party keeps its local colour under the cold moon.
-    this.fill = new THREE.DirectionalLight(this.night ? 0xffcf9a : 0xe8eeff, this.night ? 1.25 : 0.38);
+    this.fill = new THREE.DirectionalLight(this.night ? 0xffcf9a : 0xe8dcc8, this.night ? 0.42 : 0.16);
     s.add(this.fill, this.fill.target);
     // Rim light from behind the fight: separates figures from the ground.
     this.rim = new THREE.DirectionalLight(this.night ? 0x8fb0ff : 0xffe8c8, this.night ? 0.9 : 0.8);
@@ -195,13 +202,13 @@ export default class CombatScene extends Scene {
       const l = this.torchLights[i];
       if (f.altar) {
         l.color.set(0xffb468); // candle pool on the altar
-        l.intensity = this.night || this.indoor ? 16 : 5;
+        l.intensity = this.night || this.indoor ? 20 : 12;
         l.distance = 9;
       } else {
         // Capped per light, with a gentler falloff: flames pool warm light on
         // the masonry instead of blowing a hot disc onto the nearest wall.
-        l.intensity = (this.night || this.indoor ? 13 : 4) * (f.brazier ? 1.25 : 1);
-        l.distance = f.brazier ? 13 : 11;
+        l.intensity = (this.night || this.indoor ? 19 : 11) * (f.brazier ? 1.25 : 1);
+        l.distance = f.brazier ? 15 : 12;
         l.decay = 1.5;
       }
       l.position.set(f.x, f.y, f.z);
@@ -223,7 +230,7 @@ export default class CombatScene extends Scene {
     }
     if (this.indoor) {
       this.fill.color.set(0xd8b890);
-      this.fill.intensity = 0.42;
+      this.fill.intensity = 0.22;
     }
     // Figure rim light: cool moonlit edge at night, warm sky edge by day.
     RIM.uRimColor.value.set(this.diorama.pool ? 0xffb860 : this.night ? 0x6a88d0 : 0x8a7a64).multiplyScalar(this.diorama.pool ? 0.9 : this.night ? 1.7 : 0.55);
@@ -282,6 +289,19 @@ export default class CombatScene extends Scene {
       blob.add(core);
       s.add(blob);
       fig.blob = blob;
+      // Painted-miniature base: a flocked round slab the figure stands on
+      // (hidden with the contact shadow when the figure falls or flees).
+      if (!model.dragon) {
+        const br = model.radius > 0.6 ? model.radius * 0.85 : Math.min(0.46, Math.max(0.3, model.radius * 1.2));
+        const base = makeMiniBase(br);
+        base.scale.multiplyScalar(1 / blob.scale.x);
+        base.scale.y = (0.45 * (br > 0.5 ? 1.2 : 1)) / blob.scale.x;
+        base.position.y = -0.016 / blob.scale.x;
+        blob.add(base);
+        fig.baseH = 0.045 * (br > 0.5 ? 1.2 : 1) - 0.004;
+        model.root.position.y += fig.baseH;
+        fig.baseY = model.root.position.y;
+      }
       // Invisible pick proxy.
       const proxy = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, Math.max(0.8, model.height), 8).translate(0, Math.max(0.8, model.height) / 2, 0), new THREE.MeshBasicMaterial({ visible: false }));
       proxy.userData.id = c.id;
@@ -369,15 +389,16 @@ export default class CombatScene extends Scene {
       const gu = this.ctx.render.passes?.grade?.uniforms;
       if (gu?.uShadowTint && gu.uHighlightTint) {
         const prev = [gu.uShadowTint.value, gu.uHighlightTint.value];
-        gu.uShadowTint.value = this.night ? [0.0, 0.02, 0.07] : [0.0, 0.022, 0.06];
-        gu.uHighlightTint.value = this.night ? [0.05, 0.025, 0.0] : [0.075, 0.04, -0.012];
+        gu.uShadowTint.value = this.night ? [0.0, 0.012, 0.04] : [0.004, 0.012, 0.03];
+        gu.uHighlightTint.value = this.night ? [0.06, 0.03, -0.004] : [0.07, 0.036, -0.014];
         this.own(() => {
           gu.uShadowTint.value = prev[0];
           gu.uHighlightTint.value = prev[1];
         });
       }
     }
-    this.post = { bloomStrength: this.night ? 0.55 : 0.38, bloomThreshold: this.night ? 0.84 : 0.9, bloomRadius: 0.55, vignette: this.night ? 0.5 : 0.36, exposure: this.night ? 1.12 : 1.0, contrast: this.night ? 1.06 : 1.1, saturation: this.night ? 0.98 : 1.06 };
+    // Low-key grade: desaturated stone, deep vignette, flames as the only true whites.
+    this.post = { bloomStrength: this.night ? 0.6 : 0.45, bloomThreshold: this.night ? 0.82 : 0.86, bloomRadius: 0.55, vignette: this.night ? 0.62 : 0.56, exposure: this.night ? 1.1 : 1.0, contrast: this.night ? 1.1 : 1.12, saturation: this.night ? 0.82 : 0.8 };
     this._updateCamera(0, true);
 
     // ------------------------------------------------ input
@@ -616,7 +637,7 @@ export default class CombatScene extends Scene {
     es.add(new THREE.Mesh(new THREE.SphereGeometry(10, 32, 16), mat));
     const env = pm.fromScene(es, 0.02, 0.1, 100, { size: 64 }).texture;
     this.scene3d.environment = env;
-    this.scene3d.environmentIntensity = this.indoor ? 0.8 : this.night ? 0.5 : 0.9;
+    this.scene3d.environmentIntensity = this.indoor ? 0.5 : this.night ? 0.3 : 0.45;
     pm.dispose();
     mat.dispose();
     this.own(() => env.dispose());
@@ -2561,6 +2582,8 @@ export default class CombatScene extends Scene {
       if (fig.nudgeCur && !fig.walk && !fig.death) fig.root.position.add(fig.nudgeCur);
       const p = fig.root.position;
       fig.blob.position.set(p.x, 0.018, p.z);
+      // Off its base (fallen or fled), the figure lies on the paving itself.
+      if (fig.baseH) fig.model.root.position.y = fig.blob.visible ? fig.baseY : fig.baseY - fig.baseH;
       fig.proxy.position.set(p.x, 0, p.z);
       const ring = this.overlay.teamRing(c.id, c.charmed ? 'party' : c.side);
       ring.position.set(p.x, 0.03, p.z);
@@ -2877,6 +2900,7 @@ export default class CombatScene extends Scene {
     this.overlay?.dispose();
     this.diorama?.dispose();
     this._blobGeo?.dispose();
+    disposeMiniBase();
     this._blobMat?.dispose();
     this._blobCoreMat?.dispose();
     this._preRT?.dispose();
