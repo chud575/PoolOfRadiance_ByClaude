@@ -268,8 +268,17 @@ export default class DialogueScene extends Scene {
     // story beats re-pose the figures: spec.pose for the person spoken to, spec.mood for a war-band
     const actor = npc ? (npc.kind === 'ghost' ? ghostActor(spec.pose) : npcActor(npc, spec.pose ? { poseOverride: spec.pose } : {})) : null;
     // bake the speaker's portrait before the panel: its GL work is quick on an idle GPU
-    if (npc) framedPortraitURL(npc);
-    const { canvas, info, composer } = paintPanel({ ...spec, actor, w: 1280, h: 600 });
+    // The painter leans on WebGL2 and Canvas 2D features that vary by browser; if it
+    // fails, fall back to a plain backdrop so the encounter's text and choices still show.
+    let painted;
+    try {
+      if (npc) framedPortraitURL(npc);
+      painted = paintPanel({ ...spec, actor, w: 1280, h: 600 });
+    } catch (e) {
+      console.error('[dialogue] scene art failed; using a plain backdrop', e);
+      painted = fallbackPanel(1280, 600);
+    }
+    const { canvas, info, composer } = painted;
     this.composer = composer;
     canvas.className = 'dlg-art-cur';
     const prev = this.artView.querySelector('.dlg-art-cur');
@@ -277,13 +286,31 @@ export default class DialogueScene extends Scene {
     if (prev) prev.className = 'dlg-art-prev';
     const fx = h('canvas.dlg-art-fx', { width: 1280, height: 600 });
     this.artView.append(canvas, fx);
-    this.overlay = new PanelOverlay(fx, info, 3, composer);
+    try {
+      this.overlay = new PanelOverlay(fx, info, 3, composer);
+    } catch (e) {
+      console.error('[dialogue] scene art overlay failed', e);
+      this.overlay = null;
+      this.composer = null;
+    }
     this.artCanvas = canvas;
     this.fade = { t0: this.ctx.clock.time, el: canvas, prev };
     // ambient background
     const bg = this.bgCanvas.getContext('2d');
     bg.drawImage(canvas, 0, 0, this.bgCanvas.width, this.bgCanvas.height);
     this._settleArt();
+  }
+
+  /** Draw the animated art layers; a browser that cannot run them keeps the still image. */
+  _drawArt(t) {
+    try {
+      this.composer?.draw(this.artCanvas.getContext('2d'), t);
+      this.overlay?.draw(t);
+    } catch (e) {
+      console.error('[dialogue] scene art animation failed; keeping the still image', e);
+      this.composer = null;
+      this.overlay = null;
+    }
   }
 
   _settleArt() {
@@ -293,8 +320,7 @@ export default class DialogueScene extends Scene {
       this.fade.prev?.remove();
       this.fade = null;
     }
-    this.composer?.draw(this.artCanvas.getContext('2d'), this.ctx.clock.time);
-    this.overlay?.draw(this.ctx.clock.time);
+    this._drawArt(this.ctx.clock.time);
   }
 
   _setSpeaker(npcId) {
@@ -307,7 +333,11 @@ export default class DialogueScene extends Scene {
     this.portrait.classList.toggle('ghost', npc?.kind === 'ghost');
     if (npc) {
       // an <img> (not a live canvas) keeps the text box on one raster layer
-      this.portrait.append(h('img', { src: framedPortraitURL(npc), alt: npc.name, }));
+      try {
+        this.portrait.append(h('img', { src: framedPortraitURL(npc), alt: npc.name, }));
+      } catch (e) {
+        console.error('[dialogue] speaker portrait failed', e);
+      }
       this.speaker.append(npc.name, npc.title ? h('small', [npc.title]) : null);
     }
     this.speaker.style.display = npc ? '' : 'none';
@@ -516,12 +546,16 @@ export default class DialogueScene extends Scene {
       const n = typeof g.count === 'number' ? g.count : 4;
       hd += Math.max(0.5, m.hd + (m.hpBonus ?? 0) / 4) * n;
       const icon = h('div.dlg-enc-icon');
-      const fig = paintCreature(g.monster, 200, LIGHTS.torch, 7, { ss: 1 }); // a 96 px icon: no supersampling needed
       const c = h('canvas', { width: 96, height: 96 });
-      const cg = c.getContext('2d');
-      const big = ['giantRat', 'wolf', 'giantSpider', 'giantFrog', 'giantCentipede'].includes(g.monster);
-      const s = big ? 0.42 : 0.9;
-      cg.drawImage(fig.canvas, 48 - fig.ox * s, (big ? 88 : 140) - fig.oy * s, fig.canvas.width * s, fig.canvas.height * s);
+      try {
+        const fig = paintCreature(g.monster, 200, LIGHTS.torch, 7, { ss: 1 }); // a 96 px icon: no supersampling needed
+        const cg = c.getContext('2d');
+        const big = ['giantRat', 'wolf', 'giantSpider', 'giantFrog', 'giantCentipede'].includes(g.monster);
+        const s = big ? 0.42 : 0.9;
+        cg.drawImage(fig.canvas, 48 - fig.ox * s, (big ? 88 : 140) - fig.oy * s, fig.canvas.width * s, fig.canvas.height * s);
+      } catch (e) {
+        console.error('[dialogue] creature icon failed', e);
+      }
       icon.append(c);
       list.append(h('div.dlg-enc-row', { dataset: { tip: m.desc ?? m.name } }, [icon, h('div.dlg-enc-name', [n === 1 ? m.name : m.plural, h('small', [sizeWord(m)])]), h('div.dlg-enc-count', [String(n)])]));
     }
@@ -1027,8 +1061,7 @@ export default class DialogueScene extends Scene {
       this.artCanvas.style.transform = `scale(${s.toFixed(4)}) translateX(${tx.toFixed(2)}%)`;
     }
     if (this.overlay && (dt > 0 || !this._drawnFrozen)) {
-      this.composer?.draw(this.artCanvas.getContext('2d'), t);
-      this.overlay.draw(t);
+      this._drawArt(t);
       this._drawnFrozen = dt === 0;
     }
   }
@@ -1142,4 +1175,24 @@ function installVictoryHook(ctx) {
       ctx.game.notifyPartyChanged();
     } else if (p.eventId) delete ctx.game.spentEvents[p.eventId];
   });
+}
+
+/** A plain dusk backdrop for browsers where the scene painter fails. */
+function fallbackPanel(w, h) {
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const g = canvas.getContext('2d');
+  const sky = g.createLinearGradient(0, 0, 0, h);
+  sky.addColorStop(0, '#1a1f33');
+  sky.addColorStop(0.62, '#3a2e2a');
+  sky.addColorStop(1, '#120e0c');
+  g.fillStyle = sky;
+  g.fillRect(0, 0, w, h);
+  const glow = g.createRadialGradient(w * 0.5, h * 0.7, 10, w * 0.5, h * 0.7, w * 0.55);
+  glow.addColorStop(0, 'rgba(255,170,90,0.28)');
+  glow.addColorStop(1, 'rgba(255,170,90,0)');
+  g.fillStyle = glow;
+  g.fillRect(0, 0, w, h);
+  return { canvas, info: {}, composer: null };
 }
