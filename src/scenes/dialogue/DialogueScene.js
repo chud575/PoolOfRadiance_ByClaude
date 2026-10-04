@@ -277,7 +277,12 @@ export default class DialogueScene extends Scene {
     } catch (e) {
       console.error('[dialogue] scene art failed; using a plain backdrop', e);
       // Surface the cause in the Chronicle too, where a player can read and report it.
-      try { this.ctx.ui.message(`Scene art unavailable: ${String(e?.message ?? e).slice(0, 160)}`, 'system'); } catch { /* no log yet */ }
+      try {
+        const msg = String(e?.message ?? e);
+        for (let i = 0; i < msg.length && i < 240; i += 60) this.ctx.ui.message(`${i ? '… ' : 'Scene art unavailable: '}${msg.slice(i, i + 60)}`, 'system');
+        const at = String(e?.stack ?? '').split('\n').find((l) => /\.js/.test(l));
+        if (at) this.ctx.ui.message(`at ${at.replace(/^.*\//, '').slice(0, 80)}`, 'system');
+      } catch { /* no log yet */ }
       painted = fallbackPanel(1280, 600, e);
     }
     const { canvas, info, composer } = painted;
