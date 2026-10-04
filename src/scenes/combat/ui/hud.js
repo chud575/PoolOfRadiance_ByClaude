@@ -227,6 +227,8 @@ export class CombatHud {
   /** Name the close-up window's subject. */
   setCloseup(name) {
     if (this.closeupName.textContent !== (name ?? '')) this.closeupName.textContent = name ?? '';
+    // No subject (between turns, victory, classic skin): the frame steps back.
+    this.closeup.classList.toggle('idle', !name);
   }
 
   /** The close-up's inner viewport in CSS pixels (null when hidden). */
