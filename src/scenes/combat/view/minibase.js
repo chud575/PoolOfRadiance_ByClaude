@@ -18,12 +18,12 @@ function flockTexture() {
   const c = document.createElement('canvas');
   c.width = c.height = N;
   const g = c.getContext('2d');
-  g.fillStyle = '#3a2e20';
+  g.fillStyle = '#5c4b34';
   g.fillRect(0, 0, N, N);
   let k = 1;
   // Grit and sand.
   for (let i = 0; i < 1400; i++, k++) {
-    const v = 40 + hash(k) * 50;
+    const v = 60 + hash(k) * 60;
     g.fillStyle = `rgb(${v + 14 | 0},${v + 6 | 0},${v - 6 | 0})`;
     g.fillRect(hash(k + 0.3) * N, hash(k + 0.7) * N, 1 + hash(k + 0.9) * 1.5, 1 + hash(k + 0.1) * 1.5);
   }
@@ -37,7 +37,7 @@ function flockTexture() {
       const a = hash(k * 3 + j) * Math.PI * 2;
       const d = Math.sqrt(hash(k * 5 + j)) * r;
       const l = 0.75 + hash(k * 7 + j) * 0.5;
-      g.fillStyle = straw ? `rgb(${(118 * l) | 0},${(102 * l) | 0},${(58 * l) | 0})` : `rgb(${(70 * l) | 0},${(80 * l) | 0},${(40 * l) | 0})`;
+      g.fillStyle = straw ? `rgb(${(118 * l) | 0},${(102 * l) | 0},${(58 * l) | 0})` : `rgb(${(96 * l) | 0},${(104 * l) | 0},${(54 * l) | 0})`;
       g.fillRect(x + Math.cos(a) * d, y + Math.sin(a) * d, 1.5, 1.5);
     }
   }
@@ -69,7 +69,7 @@ export function makeMiniBase(r = 0.4) {
     _geo.translate(0, 0.05, 0);
   }
   if (!_mats) {
-    const rim = new THREE.MeshStandardMaterial({ color: 0x1a1612, roughness: 0.9, metalness: 0 });
+    const rim = new THREE.MeshStandardMaterial({ color: 0x2a231b, roughness: 0.9, metalness: 0 });
     const top = new THREE.MeshStandardMaterial({ map: flockTexture(), roughness: 1, metalness: 0 });
     _mats = [rim, top, rim];
   }

@@ -61,8 +61,8 @@ let limeCached = null;
 function limeMat() {
   if (limeCached) return limeCached;
   const t = detailSet('lime');
-  limeCached = new THREE.MeshStandardMaterial({ map: t.map, normalMap: t.normalMap, roughnessMap: t.roughnessMap, color: 0xf0e8da, roughness: 1, metalness: 0, normalScale: new THREE.Vector2(1.1, 1.1) });
-  addMacro(limeCached, { key: 'lime', amount: 0.3, grime: 0.45, scale: 0.12 });
+  limeCached = new THREE.MeshStandardMaterial({ map: t.map, normalMap: t.normalMap, roughnessMap: t.roughnessMap, color: 0x948a7a, roughness: 1, metalness: 0, normalScale: new THREE.Vector2(1.1, 1.1) });
+  addMacro(limeCached, { key: 'lime', amount: 0.45, grime: 0.65, scale: 0.12 });
   return limeCached;
 }
 
@@ -476,9 +476,11 @@ export function buildDiorama(field, o = {}) {
   }
 
   // ---------------------------------------------------------------- materials
-  const wallMats = [libMat('wall_stone', 0xd8d0c4), limeMat(), libMat('wall_ruin', 0xc8beb0)];
-  const plinthMat = libMat('wall_stone', 0x8a8278);
-  const capMat = libMat('wall_ruin', 0x6a6258);
+  // Grim fortified palette: dark weathered masonry, smoke-stained render and
+  // heavy capstones (painted-diorama low key, never a bright toy town).
+  const wallMats = [libMat('wall_stone', 0x9a948c), limeMat(), libMat('wall_ruin', 0x8c857c)];
+  const plinthMat = libMat('wall_stone', 0x625c56);
+  const capMat = libMat('wall_stone', 0x7e7a74, { ns: 1.2 });
   const linenMat = pbr('cloth', 0xd8ccb2);
   const rubbleMat = libMat('wall_ruin', 0x9a9082);
   // Interior rubble: pale broken plaster and masonry (no moss bloom: in a
@@ -488,7 +490,7 @@ export function buildDiorama(field, o = {}) {
   const ruinWeedMat = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.85, metalness: 0 });
   const leafMat = new THREE.MeshStandardMaterial({ color: 0x4a6a2a, roughness: 0.8, metalness: 0, flatShading: true });
   disposables.push(ruinWeedMat, leafMat);
-  const CUT_H = 0.62;
+  const CUT_H = 0.78;
   const interiorVeil = new THREE.MeshBasicMaterial({ color: 0x080605, transparent: true, opacity: 0.07, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 });
   disposables.push(interiorVeil);
   const gloomMat = (() => {
@@ -958,9 +960,10 @@ export function buildDiorama(field, o = {}) {
         if (variant === 'cut') {
           // A short, cleanly capped wall base: the house drops to its footprint
           // (no tall jagged shell, no dollhouse) so the eye stays on the fight.
-          B.add(place(runBox(len + 0.004, hh, 0.34, 0), len / 2, hh / 2, -0.17), wallMat);
-          B.add(place(worldBox(len + 0.1, 0.08, 0.46, 1), len / 2, hh + 0.04, -0.17), capMat);
-          B.add(place(worldBox(len + 0.02, 0.025, 0.3, 1), len / 2, hh + 0.09, -0.17), coreMat, { cast: false });
+          // Thick masonry with a broad, overhanging capstone course.
+          B.add(place(runBox(len + 0.004, hh, 0.6, 0), len / 2, hh / 2, -0.3), wallMat);
+          B.add(place(worldBox(len + 0.04, 0.06, 0.7, 1), len / 2, hh + 0.03, -0.3), plinthMat);
+          B.add(place(worldBox(len + 0.16, 0.15, 0.84, 1), len / 2, hh + 0.135, -0.3), capMat);
           if (style === 1) for (const at of [0.07, len - 0.07]) B.add(place(worldBox(0.2, hh + 0.16, 0.22, 1), at, (hh + 0.16) / 2, -0.11), darkWood);
         } else if (ruined) {
           // Jagged broken wall top.
@@ -1431,9 +1434,13 @@ export function buildDiorama(field, o = {}) {
           const sl = (b - a) / n;
           const base = variant === 'cut' ? 0.95 : ruined ? 1.3 : 2.8;
           const hh = ruined ? base * (0.5 + hash(e.cx * 7 + k, e.cy * 3 + (horiz ? 1 : 0), 17) * 0.8) : base;
-          const g = worldBox(horiz ? sl + 0.01 : 0.42, hh, horiz ? 0.42 : sl + 0.01, 2.5);
+          // Thick fortified walls under broad capstones.
+          const g = worldBox(horiz ? sl + 0.01 : 0.66, hh, horiz ? 0.66 : sl + 0.01, 2.5);
           B.add(g, mat, { p: [horiz ? ox + sa + sl / 2 : ox, hh / 2, horiz ? oz : oz + sa + sl / 2] });
-          if (!ruined || variant === 'cut') B.add(worldBox(horiz ? sl + 0.02 : 0.5, 0.08, horiz ? 0.5 : sl + 0.02, 2.5), capMat, { p: [horiz ? ox + sa + sl / 2 : ox, hh + 0.04, horiz ? oz : oz + sa + sl / 2] });
+          if (!ruined || variant === 'cut') {
+            B.add(worldBox(horiz ? sl + 0.02 : 0.76, 0.06, horiz ? 0.76 : sl + 0.02, 2.5), plinthMat, { p: [horiz ? ox + sa + sl / 2 : ox, hh + 0.03, horiz ? oz : oz + sa + sl / 2] });
+            B.add(worldBox(horiz ? sl - 0.015 : 0.9, 0.16, horiz ? 0.9 : sl - 0.015, 2.5), capMat, { p: [horiz ? ox + sa + sl / 2 : ox, hh + 0.14, horiz ? oz : oz + sa + sl / 2] });
+          }
         }
       }
       if (gap && e.type === EDGE.ARCH && variant === 'full') {
@@ -1467,7 +1474,7 @@ export function buildDiorama(field, o = {}) {
 
   // ---------------------------------------------------------------- city wall beyond the map border
   if (map) {
-    const wallMat = libMat('wall_stone', 0xb8b0a4);
+    const wallMat = libMat('wall_stone', 0x7a746c);
     const borderCells = [];
     for (let my = cellY0; my < cellY0 + cellsH; my++) {
       for (let mx = cellX0; mx < cellX0 + cellsW; mx++) {
