@@ -238,14 +238,14 @@ function armourStand3d(seed = 1, { plate = true } = {}) {
   const f = new Figure();
   const R = rngOf(seed);
   const wood = M.darkWood;
-  const steel = mat('#a8acb4', { pattern: 'metal', metal: true, rough: 0.28, spec: 1, scale: 0.05 });
-  const mail = mat('#7a7c84', { pattern: 'mail', metal: true, scale: 0.05, rough: 0.45, spec: 0.7 });
+  const steel = mat('#c4c8d0', { pattern: 'metal', metal: true, rough: 0.22, spec: 1, scale: 0.05 });
+  const mail = mat('#8a8c94', { pattern: 'mail', metal: true, scale: 0.05, rough: 0.45, spec: 0.7 });
   // feet and post
   for (const a of [0, Math.PI / 2]) f.box([0, 0.018, 0], [0.13, 0.016, 0.022], wood, { group: null, bevel: 0.008, R: rotY(a + 0.3) });
   f.cone([0, 0.02, 0], [0, 0.86, 0], 0.016, 0.014, wood, { group: null });
   f.cone([-0.15, 0.7, 0], [0.15, 0.7, 0], 0.014, 0.014, wood, { group: null });
   // mail skirt and hauberk under the plate
-  f.cone([0, 0.62, 0], [0, 0.4, 0.004], 0.1, 0.12, mail, { group: 'mail', k: 0.02, disp: { amp: 0.004, freq: 16, twist: 1 } });
+  f.cone([0, 0.5, 0], [0, 0.36, 0.004], 0.09, 0.115, mail, { group: 'mail', k: 0.02, disp: { amp: 0.004, freq: 16, twist: 1 } });
   if (plate) {
     // breastplate: a ridged, waisted shell with a rolled neck edge, then fauld lames
     f.ell([0, 0.62, 0.012], [0.112, 0.105, 0.078], steel, { group: 'plate', k: 0.03 });
@@ -255,7 +255,9 @@ function armourStand3d(seed = 1, { plate = true } = {}) {
     for (let i = 0; i < 3; i++) f.ell([0, 0.49 - i * 0.03, 0.01 + i * 0.002], [0.106 + i * 0.006, 0.017, 0.078 + i * 0.004], steel, { group: null });
     for (const d of [-1, 1]) {
       // pauldrons: three overlapping lames over the bar's ends
-      for (let i = 0; i < 3; i++) f.ell([d * (0.13 + i * 0.008), 0.705 - i * 0.026, 0], [0.058 - i * 0.004, 0.026, 0.06 - i * 0.004], steel, { group: null, R: rotZ(d * (0.35 + i * 0.1)) });
+      // a shaped cop over the bar's end and two thin lames under it, each with a hard edge
+      f.ell([d * 0.128, 0.708, 0], [0.06, 0.022, 0.062], steel, { group: null, R: rotZ(d * 0.38) });
+      for (let i = 1; i < 3; i++) f.cone([d * (0.13 + i * 0.012), 0.7 - i * 0.022, 0], [d * (0.138 + i * 0.012), 0.684 - i * 0.022, 0], 0.052 - i * 0.004, 0.056 - i * 0.004, steel, { group: null });
       for (let k = 0; k < 4; k++) f.sphere([d * 0.06, 0.66 - k * 0.04, 0.083], 0.0045, mat('#c8a050', { metal: true }), { group: null }); // rivets
     }
   } else {
