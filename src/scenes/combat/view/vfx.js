@@ -1066,7 +1066,7 @@ export class VFX {
     scene.add(this.group);
     this.effects = [];
     // One pooled point light for spell flashes (constant light count → no shader recompiles).
-    this.light = light ?? new THREE.PointLight(0xffa040, 0, 26, 2);
+    this.light = light ?? new THREE.PointLight(0xffa040, 0, 13, 2);
     scene.add(this.light);
     this.lightOwner = null;
     this.ctx = { pix: 600, camera: null };
@@ -1459,9 +1459,9 @@ export class VFX {
         w.material.uniforms.uR.value = 0.87;
         w.material.uniforms.uAge.value = age;
       }
-      waveDust.material.uniforms.uA.value = clamp01(age * 12) * clamp01(1 - age / 1.6) * 0.9;
+      waveDust.material.uniforms.uA.value = clamp01(age * 12) * clamp01(1 - age / 0.8) * 0.3;
       waveHot.material.uniforms.uA.value = clamp01(age * 20) * Math.exp(-age * 3.2) * 0.55;
-      waveDust.visible = waveHot.visible = age < 1.4;
+      waveDust.visible = waveHot.visible = age < 0.8;
       // White-hot flash: 2-3 frames of glare, then gone.
       const fl = age < 0.03 ? age / 0.03 : Math.exp(-(age - 0.03) * 22);
       flash.position.set(to.x, to.y + 0.3, to.z);
@@ -1473,17 +1473,17 @@ export class VFX {
       // ringed by a wide soft orange falloff (both additive).
       heart.position.set(to.x, to.y + 0.35 + (age * 0.55 + age * age * 0.3) * 0.6, to.z);
       heart.material.opacity = clamp01(age * 14) * Math.exp(-age * 1.5) * 0.85;
-      heart.scale.setScalar(R * (0.45 + 0.25 * (1 - Math.exp(-age * 8))));
+      heart.scale.setScalar(R * (0.32 + 0.16 * (1 - Math.exp(-age * 8))));
       halo.position.copy(heart.position);
-      halo.material.opacity = clamp01(age * 10) * Math.exp(-age * 1.1) * 0.5;
-      halo.scale.setScalar(R * (1.2 + 0.5 * (1 - Math.exp(-age * 6))));
+      halo.material.opacity = clamp01(age * 10) * Math.exp(-age * 1.6) * 0.26;
+      halo.scale.setScalar(R * (0.9 + 0.3 * (1 - Math.exp(-age * 6))));
       heart.visible = halo.visible = age < 3;
       const ease = 1 - Math.exp(-age * 8);
       const cam = ctx?.camera;
       const rise = age * 0.55 + age * age * 0.3;
       // Main fireball: snaps out in ~0.25 s, hot heart cooling through orange to
       // soot at the rim, then tears open and fades while it rises.
-      const Rb = R * 0.6;
+      const Rb = R * 0.5;
       ball.obj.position.set(to.x, to.y + rise, to.z);
       ball.obj.scale.set(Rb, Rb * 0.92, Rb);
       ball.u.uAge.value = age;
@@ -1556,7 +1556,7 @@ export class VFX {
       // A 2-3 frame warm flash (walls and figures flare amber), then a strong
       // sustained orange key from the burning volume, falling off over 3-4
       // squares: the flagstones and the nearest facade glow with the burn.
-      const li = age < 0.03 ? 150 * (age / 0.03) : 90 * Math.exp(-(age - 0.03) * 16) + 330 * Math.exp(-age * 0.9) * clamp01(age * 20) + 40 * Math.max(0, 1 - age / 3.5);
+      const li = age < 0.03 ? 150 * (age / 0.03) : 90 * Math.exp(-(age - 0.03) * 16) + 190 * Math.exp(-age * 1.2) * clamp01(age * 20) + 25 * Math.max(0, 1 - age / 3.5);
       // Only a whisper of exposure kick: the core stays a hot white-yellow, the
       // frame never washes out.
       const expo = age < 0.03 ? 0.12 * (age / 0.03) : 0.12 * Math.exp(-(age - 0.03) * 18);
@@ -1573,7 +1573,7 @@ export class VFX {
       scorch.material.opacity = clamp01(age * 5) * 0.82;
       glowScar.position.set(to.x, 0.03, to.z);
       glowScar.scale.setScalar(R * 0.8);
-      glowScar.material.opacity = clamp01(age * 6) * (0.18 + 0.5 * Math.exp(-age * 0.9));
+      glowScar.material.opacity = clamp01(age * 6) * (0.08 + 0.3 * Math.exp(-age * 1.4));
     }, { persistent: true, id: `scorch-${seed}` });
     this.addShake(T, 0.35, 0.6);
     return { flight, detonate: flight };

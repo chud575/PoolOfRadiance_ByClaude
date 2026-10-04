@@ -621,7 +621,21 @@ export class Figure {
     // Party: a dynamic, class-driven combat pose (wide braced stance, torso
     // twist, weapon cocked or levelled, shield forward), as cast on a
     // lunging 28 mm miniature. Idle only: actions and walking take over.
-    if (this.faction === 'party' && !walking && !sleeping && !dead && !this.action && !m.armsForward) this._heroPose(add, set, P, it, s, w, hasShield);
+    if (this.faction === 'party' && !walking && !sleeping && !dead && !this.action && !m.armsForward) {
+      this._heroPose(add, set, P, it, s, w, hasShield);
+      // Cast-miniature footing: feet about shoulder width apart, knees over the
+      // toes (no compass-splayed, sideways knees); robes fall straight to the base.
+      const robe = m.kit?.armor === 'robe';
+      const k = robe ? 0.25 : 0.55;
+      for (const nm of ['thighL', 'thighR', 'shinL', 'shinR', 'footL', 'footR']) {
+        const r = P[nm];
+        if (!r) continue;
+        r[0] *= nm.startsWith('thigh') || nm.startsWith('shin') ? (robe ? 0.35 : 0.8) : 0.6;
+        r[1] *= 0.25;
+        r[2] = Math.max(-0.07, Math.min(0.07, r[2] * k));
+      }
+      if (robe) P['hips@'][1] = Math.max(P['hips@'][1], -0.02 * s);
+    }
     // --- Walking cycle.
     if (walking) {
       const sw = Math.sin(wph);

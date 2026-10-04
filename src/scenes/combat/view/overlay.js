@@ -37,7 +37,7 @@ export class Overlay {
       tInfo: { value: this.tInfo },
       uGrid: { value: new THREE.Vector2(w, h) },
       uTime: { value: 0 },
-      uRangeColor: { value: new THREE.Color(0x9cc6ee) },
+      uRangeColor: { value: new THREE.Color(0xb8ac90) },
       uTemplateColor: { value: new THREE.Color(0xff6a2a) },
       uShowGrid: { value: 1 },
       uAlpha: { value: 1 },
@@ -124,11 +124,12 @@ export class Overlay {
             float nk = mix(1.0, 0.8, uNight);
             // Crisp, thin glowing border (≈1.5 px core + a tight inner glow)
             // over a barely-there cool tint: a tactical overlay, not a seam.
-            float line = 1.0 - smoothstep(px * 0.5, px * 1.4, abs(de - px * 1.6));
-            float glow = exp(-max(de - px * 1.6, 0.0) / max(px * 5.0, 0.012)) * (1.0 - line);
-            LAYER(rc * 0.35, 0.035 * nk);
-            LAYER(rc * 0.9, glow * 0.16 * farK * nk);
-            LAYER(rc * (1.1 + 0.12 * shimmer), line * 0.62 * farK * nk);
+            // Thin and dark: a muted painted line that never outshines the figures.
+            float line = 1.0 - smoothstep(px * 0.35, px * 1.0, abs(de - px * 1.4));
+            float glow = exp(-max(de - px * 1.4, 0.0) / max(px * 4.0, 0.01)) * (1.0 - line);
+            LAYER(rc * 0.3, 0.03 * nk);
+            LAYER(rc * 0.55, glow * 0.1 * farK * nk);
+            LAYER(rc * (0.55 + 0.06 * shimmer), line * 0.42 * farK * nk);
             // Rough ground costs extra: darker, with a stipple.
             if (inf.g > 0.2 && inf.g < 0.5) {
               float st = step(0.82, fract(sin(dot(floor(g * 9.0), vec2(12.9898, 78.233))) * 43758.5453));

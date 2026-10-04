@@ -487,7 +487,7 @@ export function buildDiorama(field, o = {}) {
   // Grim fortified palette: cold, dark ashlar (kept darker than the playfield).
   const wallMats = [libMat('hd2_ashlar_cold', 0x5e6468), libMat('hd2_ashlar_cold', 0x565c60), libMat('wall_ruin', 0x4c5256)];
   const plinthMat = libMat('hd2_ashlar_cold', 0x464c50);
-  const capMat = libMat('floor_rubble', 0xc8c4b8, { ns: 0.9 });
+  const capMat = libMat('hd_flags', 0xc8c4b8, { ns: 0.9 });
   const linenMat = pbr('cloth', 0xd8ccb2);
   const rubbleMat = libMat('wall_ruin', 0x9a9082);
   // Interior rubble: pale broken plaster and masonry (no moss bloom: in a
@@ -808,7 +808,7 @@ export function buildDiorama(field, o = {}) {
   const parAshlar2 = libMat('wall_ruin', 0x5a6064, { grime: 0.4, amount: 0.5 });
   const parMortar = new THREE.MeshStandardMaterial({ color: 0x0c0d0e, roughness: 1, metalness: 0 });
   disposables.push(parMortar);
-  const parCope = libMat('floor_rubble', 0xe0dcd0, { grime: 0.1, amount: 0.3, ns: 0.8 });
+  const parCope = libMat('hd_flags', 0xd4d0c6, { grime: 0.1, amount: 0.3, ns: 0.8 });
   function parapet(horiz, off, m0, m1, seed, o = {}) {
     const PH = o.h ?? PAR_H;
     const PT = PAR_T;
@@ -1698,7 +1698,7 @@ export function buildDiorama(field, o = {}) {
     } else if (p.type === 'column') {
       // Fluted columns: some still carry their capital, others snapped off with
       // drums tumbled at the foot.
-      const colMat = libMat('wall_stone', 0xd8d0c0);
+      const colMat = libMat('hd_flags', 0xd8d6d0, { ns: 0.6 });
       const hallCol = !!field.features.hall;
       const broken = hallCol ? hash(p.x, p.y, 401) < 0.45 : true;
       const hh = broken ? 1.0 + hash(p.x, p.y, 402) * 1.3 : 3.7;
@@ -1720,7 +1720,7 @@ export function buildDiorama(field, o = {}) {
       }
     } else if (p.type === 'fallen') {
       // A toppled column lying across the square: drums in a broken row + capital.
-      const colMat = libMat('wall_stone', 0xd0c8b8);
+      const colMat = libMat('hd_flags', 0xd0cec8, { ns: 0.6 });
       const a = 0.4 + hash(p.x, p.y, 420) * 0.5;
       for (let k = 0; k < 3; k++) {
         const d = (k - 1) * 0.62;

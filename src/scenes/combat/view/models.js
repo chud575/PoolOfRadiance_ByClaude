@@ -28,13 +28,13 @@ const HAIR = [0x2a1a10, 0x5a3418, 0x8a5a2a, 0xb88a4a, 0xd8c08a, 0x7a2a14, 0x1a1a
 // ------------------------------------------------------------------ species
 const SPECIES = {
   human: { height: 1.0, bulk: 1.0, head: 'human' },
-  kobold: { height: 0.74, bulk: 1.0, limbK: 1.3, head: 'kobold', headScale: 1.62, skin: ['reptile', 0x6a3e2a], shieldChance: 0.45, tail: 'long', legs: 'digitigrade', hunch: 0.5, thickNeck: true, cloth: 0x4a3a28, armor: 'harness', weapon: 'spear', weapons: ['spear', 'club', 'sling', 'spear', 'shortSword', 'club', 'sling'], helms: [null, 'kCap', 'kSkull', 'kBand'], stature: 0.26, shields: ['round', 'hide'], eyes: 0xffc040 },
+  kobold: { height: 0.74, bulk: 1.18, limbK: 1.55, head: 'kobold', headScale: 1.62, skin: ['reptile', 0x6a3e2a], shieldChance: 0.45, tail: 'long', legs: 'digitigrade', hunch: 0.5, thickNeck: true, cloth: 0x4a3a28, armor: 'harness', weapon: 'spear', weapons: ['spear', 'club', 'sling', 'spear', 'shortSword', 'club', 'sling'], helms: [null, 'kCap', 'kSkull', 'kBand'], stature: 0.26, shields: ['round', 'hide'], eyes: 0xffc040 },
   goblin: { height: 0.66, bulk: 0.95, limbK: 1.2, head: 'goblin', skin: ['skin', 0x8a9a3a], hunch: 0.15, cloth: 0x4a3020, weapon: 'shortSword', eyes: 0xffe060 },
   orc: { height: 1.04, bulk: 1.34, headScale: 1.08, head: 'orc', skin: ['skin', 0x74864c], hunch: 0.42, cloth: 0x2e2418, armor: 'orcish', weapon: 'battleAxe', weapons: ['battleAxe', 'battleAxe', 'spear', 'morningStar', 'club'], helmChance: 0.55, eyes: 0xff4020 },
   hobgoblin: { height: 1.08, bulk: 1.12, head: 'hobgoblin', skin: ['skin', 0x9a4a22], cloth: 0x2a2a22, armor: 'scale', weapon: 'glaive', weapons: ['glaive', 'glaive', 'glaive', 'longSword'], shield: null, shieldWith: { longSword: 'round' }, helms: ['hobHelm'], eyes: 0xffa020 },
   gnoll: { height: 1.2, bulk: 1.15, limbK: 1.1, head: 'gnoll', skin: ['fur', 0x9a7a4a], hunch: 0.3, legs: 'digitigrade', cloth: 0x3a2e22, armor: 'scraps', weapon: 'flail', eyes: 0xffd040 },
   giantRat: { rig: 'quad', skin: ['fur', 0x4a3a30], height: 0.55, eyes: 0xff3020 },
-  skeleton: { undead: true, height: 1.0, bulk: 1.12, limbK: 1.3, headScale: 1.3, head: 'skull', body: 'bones', skin: ['bone', 0xeadbb4], weapon: 'shortSword', shield: 'round', eyes: 0x60d0ff },
+  skeleton: { undead: true, height: 1.0, bulk: 1.22, limbK: 1.7, headScale: 1.3, head: 'skull', body: 'bones', skin: ['bone', 0xeadbb4], weapon: 'shortSword', shield: 'round', eyes: 0x60d0ff },
   zombie: { undead: true, height: 1.0, bulk: 1.0, head: 'zombie', skin: ['skin', 0x7a8a6a], cloth: 0x3a3a30, tattered: true, hunch: 0.25, weapon: null, eyes: 0xc0ff60, armsForward: true },
   ghoul: { undead: true, height: 0.98, bulk: 0.9, head: 'zombie', skin: ['skin', 0x9a9a8a], cloth: 0x2a2a28, tattered: true, hunch: 0.35, weapon: null, eyes: 0xff4040 },
   bugbear: { height: 1.3, bulk: 1.3, head: 'gnoll', skin: ['fur', 0x7a5a30], hunch: 0.2, cloth: 0x3a2a1a, armor: 'scraps', weapon: 'morningStar', eyes: 0xffc040 },
@@ -99,6 +99,7 @@ export function makeFigureModel(c, index = 0) {
       legRatio: body.legRatio ?? 1,
       headScale: body.headScale ?? 1,
       head: 'human',
+      sculpt: 'human',
       skin: ['skin', SKIN[ch.race] ?? SKIN.human],
       kit,
       eyes: null,
@@ -239,8 +240,16 @@ function buildBiped(o) {
     const J = {};
     const v = new THREE.Vector3();
     for (const b of R.boneList) J[b.name] = b.getWorldPosition(v).toArray();
-    const key = [sculpt, o.height, o.bulk, kit.armor, kit.tattered ? 1 : 0, o.tail ?? '', kit.cape ? 1 : 0, sculpt === 'orc' ? Math.floor((kit.variant ?? 0) * 3) : ''].join('|');
+    const human = sculpt === 'human';
+    const key = [sculpt, o.height, o.bulk, kit.armor, kit.tattered ? 1 : 0, o.tail ?? '', kit.cape ? 1 : 0, sculpt === 'orc' ? Math.floor((kit.variant ?? 0) * 3) : '', human ? `${o.skin[1]}:${kit.color}:${o.legRatio}:${o.headScale}` : ''].join('|');
+    // Heroes: their own skin and kit colours (shirt in the party colour, dark
+    // breeches, brown boots, steel mail).
+    const look = human ? {
+      skin: [o.skin[1], 'skin'], back: [o.skin[1], 'skin'], belly: [o.skin[1], 'skin'], horn: 0xd8c8a0, head: 'none',
+      pants: 0x2e261e, shirt: new THREE.Color(kit.color).multiplyScalar(0.8).getHex(), boots: 0x4a3020, mail: 0x8a8c90, cloth: 0x2e261e,
+    } : undefined;
     const flesh = sculptedFlesh(key, {
+      look,
       species: sculpt, J, s, w, hs: s * (o.headScale ?? 1), bw: Math.sqrt(w) * (o.limbK ?? 1), legW: (w > 1.15 ? w * 1.05 : Math.sqrt(w)) * (o.limbK ?? 1),
       belly: o.belly, tail: o.tail, digitigrade: o.digitigrade, thickNeck: o.thickNeck, claws: o.claws, kit,
     });
@@ -274,9 +283,9 @@ function buildBiped(o) {
         for (let k = 0; k < 5; k++) R.part('head', cone(0.02 * hs2, 0.12 * hs2, 5), pbr('hair', 0x0e0c0a), { p: [0, 0.2 * hs2 - k * 0.01 * hs2, 0.04 * hs2 - k * 0.045 * hs2], r: [-0.5 - k * 0.2, 0, 0] });
       }
       // War-belt with a skull buckle and hanging trophies.
-      R.part('hips', torus(0.17 * s * o.bulk, 0.026 * s, 6, 22), pbr('leather', 0x2e1c10), { p: [0, 0.05 * s, 0], r: [Math.PI / 2, 0, 0], s: [1, 0.78, 1] });
+      R.part('hips', torus(0.17 * s * o.bulk, 0.03 * s, 6, 22), pbr('leather', 0x1a120c), { p: [0, 0.05 * s, 0], r: [Math.PI / 2, 0, 0], s: [1, 0.78, 1] });
       R.part('hips', sphere(0.036 * s, 8, 6), pbr('bone', 0xd8ccb0), { p: [0, 0.05 * s, 0.14 * s], s: [1, 1.1, 0.7] });
-      for (let k = 0; k < 3; k++) R.part('hips', cone(0.012 * s, 0.07 * s, 5), pbr('bone', 0xe0d4b8), { p: [(k - 1) * 0.06 * s + 0.1 * s, -0.02 * s, 0.11 * s], r: [Math.PI, 0, 0] });
+      if (false) for (let k = 0; k < 3; k++) R.part('hips', cone(0.012 * s, 0.07 * s, 5), pbr('bone', 0xe0d4b8), { p: [(k - 1) * 0.06 * s + 0.1 * s, -0.02 * s, 0.11 * s], r: [Math.PI, 0, 0] });
     }
     sculptEyes = flesh;
     o.sculptEyesOut = flesh;
@@ -389,9 +398,7 @@ function buildBiped(o) {
         R.part(`upperArm${side}`, sphere(0.085 * s * bw, 10, 6, { thetaLength: Math.PI * 0.5 }), darkLeather, { p: [sx * 0.01 * s, 0.01 * s, 0], s: [1.1, 0.8, 1.1] });
       }
       R.part(`foreArm${side}`, cyl(0.054 * s * bw, 0.046 * s * bw, 0.14 * s, 9), darkLeather, { p: [0, -armF + 0.09 * s, 0] });
-      for (let k = 0; k < 2; k++) R.part(`foreArm${side}`, torus(0.053 * s * bw, 0.006 * s, 4, 12), leather, { p: [0, -armF + (0.05 + k * 0.08) * s, 0], r: [Math.PI / 2, 0, 0] });
       R.part(`shin${side}`, cyl(0.06 * s, 0.05 * s, 0.24 * s, 9), darkLeather, { p: [0, -shinL * 0.55, 0] });
-      for (let k = 0; k < 3; k++) R.part(`shin${side}`, torus(0.058 * s, 0.006 * s, 4, 12), leather, { p: [0, -shinL * 0.35 - k * 0.07 * s, 0], r: [Math.PI / 2 + 0.15, 0, 0] });
     }
     if (kit.armor === 'leather') {
       R.part(`upperArm${side}`, sphere(0.078 * s, 12, 8, { thetaLength: Math.PI * 0.5 }), leather, { p: [sx * 0.01 * s, 0, 0], s: [1, 0.8, 1] });
@@ -451,8 +458,8 @@ function buildBiped(o) {
       }
       for (const sx of [1, -1]) R.part('chest', box(0.03 * s, 0.38 * s, 0.012 * s), leather, { p: [0, 0.08 * s, 0.145 * s], r: [0, 0, sx * 0.55] });
       R.part('chest', box(0.03 * s, 0.38 * s, 0.012 * s), leather, { p: [0, 0.08 * s, -0.135 * s], r: [0, 0, 0.55] });
-      R.part('hips', torus(0.168 * s * w, 0.024 * s, 6, 22), darkLeather, { p: [0, 0.04 * s, 0], r: [Math.PI / 2, 0, 0], s: [1, 0.76, 1] });
-      R.part('hips', sphere(0.034 * s, 8, 6), pbr('bone', 0xd8ccb0), { p: [0, 0.04 * s, 0.135 * s], s: [1, 1.1, 0.7] });
+      if (!sculpt) R.part('hips', torus(0.168 * s * w, 0.024 * s, 6, 22), darkLeather, { p: [0, 0.04 * s, 0], r: [Math.PI / 2, 0, 0], s: [1, 0.76, 1] });
+      if (!sculpt) R.part('hips', sphere(0.034 * s, 8, 6), pbr('bone', 0xd8ccb0), { p: [0, 0.04 * s, 0.135 * s], s: [1, 1.1, 0.7] });
       for (let k = 0; k < 6; k++) {
         const a = (k / 6) * Math.PI * 2 + 0.3;
         R.part('hips', box(0.075 * s, (0.2 + (k % 2) * 0.05) * s, 0.012 * s), k % 3 ? darkLeather : rust, { p: [Math.sin(a) * 0.17 * s * w, -0.1 * s, Math.cos(a) * 0.125 * s], r: [Math.cos(a) * 0.15, a, 0] });
@@ -495,7 +502,7 @@ function buildBiped(o) {
   }
 
   // Head -----------------------------------------------------------------
-  if (!sculpt) buildHead(R, o, s, skinMat);
+  if (!sculpt || sculpt === 'human') buildHead(R, o, s, skinMat);
   else {
     // Eyes (glowing for monsters) set into the sculpted sockets; helmets as kit.
     const hs = s * (o.headScale ?? 1);

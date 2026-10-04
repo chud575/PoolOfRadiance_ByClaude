@@ -2246,7 +2246,8 @@ export default class CombatScene extends Scene {
     // A temple's statue is the hero prop: when it stands near the fight it is
     // framed with the combatants (whole, not sliced by the screen edge).
     const st = (this.field.features?.props ?? []).find((p) => p.type === 'statue');
-    const mark = st && live.some((c) => Battlefield.dist(c.x, c.y, st.x, st.y) <= 6) ? [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([dx, dy]) => ({ x: st.x + dx, y: st.y + dy })) : [];
+    // (Iteration 3: frame the fight, not the statue — it may sit at the edge.)
+    const mark = st && this.params.framestatue && live.some((c) => Battlefield.dist(c.x, c.y, st.x, st.y) <= 6) ? [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([dx, dy]) => ({ x: st.x + dx, y: st.y + dy })) : [];
     if (mark.length) {
       // The figure itself rises well above its plinth: on screen its head sits
       // "behind" the base by about height / tan(pitch), so frame that point too.
@@ -2930,12 +2931,9 @@ export default class CombatScene extends Scene {
       const dist = 1.5 + hgt * 1.55;
       const el = 0.3;
       // The shield arm's side: the lens never looks at the figure through its shield.
-      let shieldAz = null;
-      if (fig.model.kit?.shield && fig.b?.handL) {
-        const hp = fig.bonePos('handL', new THREE.Vector3());
-        if (Math.hypot(hp.x - p.x, hp.z - p.z) > 0.02) shieldAz = Math.atan2(hp.x - p.x, hp.z - p.z);
-        else shieldAz = face + Math.PI / 2;
-      }
+      // (The left arm, which carries the shield, sits on the figure's +x side:
+      // bearing face + π/2 in this (sin, cos) convention; the weapon arm is at face − π/2.)
+      const shieldAz = fig.model.kit?.shield ? face + Math.PI / 2 : null;
       // Pick the bearing that shows the face, stays on the board camera's
       // side and has no other figure or wall between the lens and the subject.
       const reach = dist * Math.cos(el);
@@ -2947,10 +2945,10 @@ export default class CombatScene extends Scene {
       }
       let az = mainAz;
       let best = -1e9;
-      for (let k = -8; k <= 8; k++) {
+      for (let k = -11; k <= 11; k++) {
         const a = mainAz + k * 0.28;
         // Three-quarter from the weapon side (the shield arm faces away from the lens).
-        let sc = Math.cos(a - (face + 0.6)) * 1.1 + Math.cos(a - mainAz) * 0.5;
+        let sc = Math.cos(a - (face - 0.6)) * 1.1 + Math.cos(a - mainAz) * 0.5;
         if (shieldAz !== null) sc -= Math.max(0, Math.cos(a - shieldAz)) * 2.2;
         const ex = p.x + Math.sin(a) * reach;
         const ez = p.z + Math.cos(a) * reach;
