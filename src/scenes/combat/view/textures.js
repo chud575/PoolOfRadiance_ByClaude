@@ -687,3 +687,111 @@ export function flagsSet(size = 1024) {
   texCache.set('flags', set);
   return set;
 }
+
+/** Tileable Worley noise with separate x/y periods (cell coords scaled by caller). */
+function worley2(x, y, px, py, seed) {
+  const xi = Math.floor(x), yi = Math.floor(y);
+  let f1 = 9, f2 = 9, id = 0;
+  for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
+    const cx = xi + i, cy = yi + j;
+    const wx = ((cx % px) + px) % px, wy = ((cy % py) + py) % py;
+    const ox = cx + 0.15 + hash2(wx, wy, seed) * 0.7;
+    const oy = cy + 0.15 + hash2(wx, wy, seed + 17) * 0.7;
+    const d = Math.hypot((ox - x) * 1.25, oy - y);
+    if (d < f1) { f2 = f1; f1 = d; id = hash2(wx, wy, seed + 5); } else if (d < f2) f2 = d;
+  }
+  return { f1, f2, id };
+}
+
+/**
+ * Rough fieldstone / random-rubble masonry for the combat walls (the
+ * reference's thick grey-brown stone runs): rounded, irregular stones of
+ * mixed size bedded in deep, grimy mortar with moss in the joints. Tile is
+ * world-scaled by the caller (worldBox texScale ~2.5 m => stones ~15-30 cm).
+ * @returns {{map:THREE.Texture, normalMap:THREE.Texture, roughnessMap:THREE.Texture}}
+ */
+export function fieldstoneSet(size = 1024) {
+  if (texCache.has('fieldstone')) return texCache.get('fieldstone');
+  const N = size * size;
+  const height = new Float32Array(N);
+  const color = new Uint8Array(N * 4);
+  const rough = new Uint8Array(N * 4);
+  const normal = new Uint8Array(N * 4);
+  for (let y = 0; y < size; y++) {
+    const v = y / size;
+    for (let x = 0; x < size; x++) {
+      const u = x / size;
+      // Domain-warped so stones are lumpy, not Voronoi-crisp; a second,
+      // stones are irregular in size and outline.
+      const wx = (fbm(u * 8, v * 8, { octaves: 2, period: 8, seed: 201 }) - 0.5) * 0.35;
+      const wy = (fbm(u * 8, v * 8, { octaves: 2, period: 8, seed: 202 }) - 0.5) * 0.35;
+      // Stones a little wider than tall (8 x 11 lattice, tileable on both axes).
+      const a = worley2(u * 8 + wx, v * 11 + wy, 8, 11, 203);
+      const e = a.f2 - a.f1;
+      const n1 = fbm(u * 64, v * 64, { octaves: 3, period: 64, seed: 205 });
+      const ed = e + (n1 - 0.5) * 0.12;
+      const stone = smooth(0.05, 0.13, ed);
+      const dome = clamp01(ed / 0.55);
+      const h = stone * (0.45 + 0.55 * Math.sqrt(dome)) + (n1 - 0.5) * 0.1 * stone;
+      const tone = a.id;
+      const warm = hash2(Math.floor(tone * 1e6), 1, 206);
+      let g0 = 0.13 + tone * 0.17 + (n1 - 0.5) * 0.06;
+      if (hash2(Math.floor(tone * 1e6), 2, 207) > 0.85) g0 *= 0.7;
+      g0 *= 0.65 + 0.35 * Math.sqrt(dome);
+      const sr = g0 * (1.0 + warm * 0.16);
+      const sg = g0 * (0.98 + warm * 0.06);
+      const sb = g0 * (0.98 - warm * 0.12);
+      const grit = fbm(u * 128, v * 128, { octaves: 2, period: 128, seed: 208 });
+      const moss = smooth(0.52, 0.7, fbm(u * 6, v * 6, { octaves: 3, period: 6, seed: 209 }));
+      let jr = 0.045 + grit * 0.03, jg = 0.042 + grit * 0.028, jb = 0.034 + grit * 0.02;
+      jr = jr * (1 - moss * 0.6) + 0.05 * moss * 0.6;
+      jg = jg * (1 - moss * 0.6) + 0.07 * moss * 0.6;
+      jb = jb * (1 - moss * 0.6) + 0.025 * moss * 0.6;
+      const cr = jr * (1 - stone) + sr * stone;
+      const cg = jg * (1 - stone) + sg * stone;
+      const cb = jb * (1 - stone) + sb * stone;
+      const i = y * size + x;
+      height[i] = h;
+      const o = i * 4;
+      color[o] = Math.min(255, Math.max(0, Math.pow(cr, 1 / 2.2) * 255));
+      color[o + 1] = Math.min(255, Math.max(0, Math.pow(cg, 1 / 2.2) * 255));
+      color[o + 2] = Math.min(255, Math.max(0, Math.pow(cb, 1 / 2.2) * 255));
+      color[o + 3] = 255;
+      const ro = stone * (0.8 + n1 * 0.15) + (1 - stone);
+      rough[o] = Math.min(255, h * 255);
+      rough[o + 1] = Math.min(255, ro * 255);
+      rough[o + 2] = rough[o];
+      rough[o + 3] = 255;
+    }
+  }
+  const Hh = (x, y) => height[((y + size) % size) * size + ((x + size) % size)];
+  const ns = 6.0;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = (Hh(x + 1, y - 1) + 2 * Hh(x + 1, y) + Hh(x + 1, y + 1)) - (Hh(x - 1, y - 1) + 2 * Hh(x - 1, y) + Hh(x - 1, y + 1));
+      const dy = (Hh(x - 1, y + 1) + 2 * Hh(x, y + 1) + Hh(x + 1, y + 1)) - (Hh(x - 1, y - 1) + 2 * Hh(x, y - 1) + Hh(x + 1, y - 1));
+      const nx = -dx * ns;
+      const ny = -dy * ns;
+      const l = Math.hypot(nx, ny, 1);
+      const o = (y * size + x) * 4;
+      normal[o] = ((nx / l) * 0.5 + 0.5) * 255;
+      normal[o + 1] = ((ny / l) * 0.5 + 0.5) * 255;
+      normal[o + 2] = ((1 / l) * 0.5 + 0.5) * 255;
+      normal[o + 3] = 255;
+    }
+  }
+  const mk = (arr, srgb) => {
+    const t = new THREE.DataTexture(arr, size, size, THREE.RGBAFormat, THREE.UnsignedByteType);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+    t.anisotropy = 8;
+    t.generateMipmaps = true;
+    t.minFilter = THREE.LinearMipmapLinearFilter;
+    t.magFilter = THREE.LinearFilter;
+    t.needsUpdate = true;
+    return t;
+  };
+  const set = { map: mk(color, true), normalMap: mk(normal, false), roughnessMap: mk(rough, false) };
+  texCache.set('fieldstone', set);
+  return set;
+}

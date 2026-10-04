@@ -4,7 +4,7 @@ import { getGlowTexture } from '../../../render/textures/index.js';
 import { CELL, EDGE } from '../../../data/maps/MapGrid.js';
 import { SUB } from '../logic/battlefield.js';
 import { Batcher, worldBox, wallQuad } from './batch.js';
-import { pbr, flagsSet, detailSet } from './textures.js';
+import { pbr, flagsSet, fieldstoneSet, detailSet } from './textures.js';
 import { statueGeometry, statueMaterial } from './sculpted.js';
 import { fbm } from '../../../render/textures/noise.js';
 import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js';
@@ -75,6 +75,17 @@ function libMat(set, color = 0xffffff, o = {}) {
   const t = getTextureSet(set);
   const m = new THREE.MeshStandardMaterial({ map: t.map, normalMap: t.normalMap, roughnessMap: t.roughnessMap, color, roughness: o.rough ?? 1, metalness: 0, normalScale: new THREE.Vector2(o.ns ?? 1.7, o.ns ?? 1.7) });
   addMacro(m, { key: o.grime ? 'libw' : 'lib', amount: o.amount ?? 0.55, grime: o.grime ?? 0.35 });
+  libCache.set(key, m);
+  return m;
+}
+
+/** Rough fieldstone masonry (the reference's wall faces), tinted, cached. */
+function fieldMat(color) {
+  const key = `field|${color}`;
+  if (libCache.has(key)) return libCache.get(key);
+  const t = fieldstoneSet();
+  const m = new THREE.MeshStandardMaterial({ map: t.map, normalMap: t.normalMap, roughnessMap: t.roughnessMap, color, roughness: 1, metalness: 0, normalScale: new THREE.Vector2(1.6, 1.6) });
+  addMacro(m, { key: 'field', amount: 0.5, grime: 0.45 });
   libCache.set(key, m);
   return m;
 }
@@ -490,9 +501,32 @@ export function buildDiorama(field, o = {}) {
   // Grim fortified masonry everywhere (the lime-and-timber town is gone):
   // dark ashlar for houses and town walls, darker rubble for the ruins.
   // Grim fortified palette: cold, dark ashlar (kept darker than the playfield).
-  const wallMats = [libMat('hd2_ashlar_cold', 0x5e6468), libMat('hd2_ashlar_cold', 0x565c60), libMat('wall_ruin', 0x4c5256)];
+  // Reference look: rough grey-brown fieldstone faces under heavy, chipped,
+  // grimy capstones (dressed stone, mid grey: the brightest masonry value).
+  const wallMats = [fieldMat(0xe0dcd2), fieldMat(0xd2cec4), fieldMat(0xb4b0a8)];
   const plinthMat = libMat('hd2_ashlar_cold', 0x464c50);
-  const capMat = libMat('hd_flags', 0xc8c4b8, { ns: 0.9 });
+  const capMat = (() => {
+    // Dressed-stone relief (normal/roughness) on a cool mid grey; macro
+    // blotching and grime do the weathering (no warm albedo map).
+    const t = getTextureSet('hd2_dressed');
+    const m = new THREE.MeshStandardMaterial({ normalMap: t.normalMap, roughnessMap: t.roughnessMap, color: 0x8a8c8a, roughness: 1, metalness: 0, normalScale: new THREE.Vector2(1.4, 1.4) });
+    addMacro(m, { key: 'cap', amount: 0.7, grime: 0.15, scale: 0.4 });
+    disposables.push(m);
+    return m;
+  })();
+  /**
+   * A course of separate heavy capstones (chamfered, chipped, slightly
+   * uneven) along local X from 0 to len, centred at (lx, ly, lz) via `put`.
+   */
+  const capCourse = (B, put, len, h, d, seed) => {
+    const n = Math.max(1, Math.round(len / 0.8));
+    for (let k = 0; k < n; k++) {
+      const sl = len / n;
+      const g = chamferBox(sl - 0.025, h * (0.94 + hash(k, seed, 5) * 0.12), d * (0.97 + hash(k, seed, 6) * 0.06), 0.05, seed * 31 + k, 0.03, 1.4);
+      put(g, -len / 2 + sl * (k + 0.5), (hash(k, seed, 7) - 0.5) * 0.02);
+      B.add(g, capMat);
+    }
+  };
   const linenMat = pbr('cloth', 0xd8ccb2);
   const rubbleMat = libMat('wall_ruin', 0x9a9082);
   // Interior rubble: pale broken plaster and masonry (no moss bloom: in a
@@ -809,10 +843,6 @@ export function buildDiorama(field, o = {}) {
   // little proud, under broad pale overhanging capstone slabs.
   const PAR_H = 1.05;
   const PAR_T = 0.72;
-  const parAshlar = libMat('wall_ruin', 0x6a7074, { grime: 0.4, amount: 0.5 });
-  const parAshlar2 = libMat('wall_ruin', 0x5a6064, { grime: 0.4, amount: 0.5 });
-  const parMortar = new THREE.MeshStandardMaterial({ color: 0x0c0d0e, roughness: 1, metalness: 0 });
-  disposables.push(parMortar);
   // Iteration 4: dressed stone reads from the geometry (chamfered blocks, deep
   // joints); the surface is plain weathered stone (macro blotching, grime, moss
   // at the foot), never a brick texture inside each block.
@@ -825,9 +855,6 @@ export function buildDiorama(field, o = {}) {
     return m;
   };
   const parBlk = [plainStone(0x5c6264, 'ashA'), plainStone(0x686c6c, 'ashB'), plainStone(0x50585a, 'ashC')];
-  const parAshlar3 = parBlk[2];
-  const parCope = plainStone(0xb8bab4, 'cope', 0.1);
-  const parCopeDark = plainStone(0x6c7070, 'copeD', 0.2);
   function parapet(horiz, off, m0, m1, seed, o = {}) {
     const PH = o.h ?? PAR_H;
     const PT = PAR_T;
@@ -839,49 +866,32 @@ export function buildDiorama(field, o = {}) {
     // course), blocks of very different lengths with chamfered, worn arrises,
     // set slightly proud or sunk, in a few cold grey stones; dark recessed joints.
     const blk = (u, y, w, h, d, mat, sd) => {
-      const g = chamferBox(horiz ? w : d, h, horiz ? d : w, 0.045, sd, 0.014);
+      const g = chamferBox(horiz ? w : d, h, horiz ? d : w, 0.05, sd, mat === capMat ? 0.03 : 0.014, 1.4);
       batch.add(g, mat, { p: [horiz ? u : off, y, horiz ? off : u] }, { cast: true });
     };
-    at((m0 + m1) / 2, PH / 2, m1 - m0 - 0.02, PH, PT - 0.08, parMortar);
-    const courseH = [0.42, 0.36, 0.22];
-    const sum = courseH.reduce((a, b) => a + b, 0);
-    let y0 = 0;
-    for (let c = 0; c < courseH.length; c++) {
-      const chh = (courseH[c] / sum) * PH;
-      let u = m0 - hash(seed, c, 47) * 0.5;
-      let k = 0;
-      while (u < m1 - 0.05) {
-        const hv = hash(Math.round(u * 13) + seed * 101, c * 7 + k, 41);
-        const bl = c === 2 ? 0.4 + hv * 0.55 : 0.55 + hv * 0.95;
-        const ua = Math.max(m0, u);
-        const ub = Math.min(m1, u + bl);
-        if (ub - ua > 0.1) {
-          const proud = (hash(k, c + seed, 48) - 0.4) * 0.03 + (c === 0 ? 0.05 : 0);
-          const tone = hash(k * 3 + c, seed, 49);
-          blk((ua + ub) / 2, y0 + chh / 2, ub - ua - 0.03, chh - 0.03, PT - 0.03 + proud * 2, parBlk[Math.min(2, Math.floor(tone * 3))], seed * 17 + c * 5 + k);
-        }
-        u += bl;
-        k++;
-      }
-      y0 += chh;
-    }
-    // A continuous, broad pale capstone: long slabs butted tight, overhanging
-    // both faces, sat on a thinner drip course (a visible step and shadow line).
-    at((m0 + m1) / 2, PH + 0.04, m1 - m0 + 0.06, 0.08, PT + 0.1, parCopeDark, false);
-    let u = m0 - 0.12;
+    // Reskin: a thick run of rough fieldstone (random rubble bedded in grimy
+    // mortar, moss at the foot), very slightly battered, under a course of
+    // heavy, chipped, grimy capstones that overhang both faces.
+    const fm = wallMats[Math.floor(hash(seed, 3, 44) * 2)];
+    at((m0 + m1) / 2, PH / 2, m1 - m0, PH, PT, fm);
+    at((m0 + m1) / 2, 0.11, m1 - m0 + 0.04, 0.22, PT + 0.06, wallMats[2]);
+    let u = m0 - 0.1;
     let k = 0;
-    while (u < m1 + 0.1) {
+    while (u < m1 + 0.08) {
       const hv = hash(k, Math.round(off * 10) + seed, 43);
-      const bl = 1.2 + hv * 0.7;
-      const ub = Math.min(m1 + 0.12, u + bl);
-      blk((u + ub) / 2, PH + 0.08 + 0.11, ub - u - 0.012, 0.22, PT + 0.32, parCope, seed * 13 + k + 500);
+      const bl = 0.7 + hv * 0.5;
+      const ub = Math.min(m1 + 0.1, u + bl);
+      if (ub - u > 0.12) {
+        const ch2 = 0.24 + (hash(k, seed, 45) - 0.5) * 0.04;
+        blk((u + ub) / 2, PH + ch2 / 2 - 0.01, ub - u - 0.03, ch2, PT + 0.22 + (hash(k, seed, 46) - 0.5) * 0.05, capMat, seed * 13 + k + 500);
+      }
       u += bl;
       k++;
     }
     for (const [pu, isEnd] of [[m0, o.pierA], [m1, o.pierB]]) {
       if (!isEnd) continue;
-      blk(pu, (PH + 0.45) / 2, 0.9, PH + 0.45, PT + 0.2, parBlk[1], seed + 900);
-      blk(pu, PH + 0.45 + 0.11, 1.1, 0.22, PT + 0.4, parCope, seed + 901);
+      blk(pu, (PH + 0.45) / 2, 0.9, PH + 0.45, PT + 0.2, wallMats[1], seed + 900);
+      blk(pu, PH + 0.45 + 0.13, 1.1, 0.26, PT + 0.4, capMat, seed + 901);
     }
   }
   /**
@@ -1095,7 +1105,7 @@ export function buildDiorama(field, o = {}) {
           // Thick masonry with a broad, overhanging capstone course.
           B.add(place(runBox(len + 0.004, hh, 0.6, 0), len / 2, hh / 2, -0.3), wallMat);
           B.add(place(worldBox(len + 0.04, 0.06, 0.7, 1), len / 2, hh + 0.03, -0.3), plinthMat);
-          B.add(place(worldBox(len + 0.16, 0.15, 0.84, 1), len / 2, hh + 0.135, -0.3), capMat);
+          capCourse(B, (g, dx, dy) => place(g, len / 2 + dx, hh + 0.17 + dy, -0.3), len + 0.16, 0.22, 0.86, Math.floor(seed * 997) + f.d.charCodeAt(0));
           if (style === 1) for (const at of [0.07, len - 0.07]) B.add(place(worldBox(0.2, hh + 0.16, 0.22, 1), at, (hh + 0.16) / 2, -0.11), darkWood);
         } else if (ruined) {
           // Jagged broken wall top.
@@ -1110,7 +1120,7 @@ export function buildDiorama(field, o = {}) {
           // Fortified parapet: a thick crenel-less breastwork round the roof
           // under a broad, overhanging flat capstone course.
           B.add(place(worldBox(len + 0.3, 0.6, 0.5, 2.5), len / 2, hh + 0.3, -0.1), wallMat);
-          B.add(place(worldBox(len + 0.46, 0.17, 0.76, 1), len / 2, hh + 0.685, -0.1), capMat);
+          capCourse(B, (g, dx, dy) => place(g, len / 2 + dx, hh + 0.7 + dy, -0.1), len + 0.46, 0.22, 0.78, Math.floor(seed * 991) + f.d.charCodeAt(0));
         }
         // Plinth.
         B.add(place(worldBox(len + 0.1, 0.45, 0.1, 2.5), len / 2, 0.225, 0.03), plinthMat);
@@ -1590,7 +1600,8 @@ export function buildDiorama(field, o = {}) {
           B.add(g, mat, { p: [horiz ? ox + sa + sl / 2 : ox, hh / 2, horiz ? oz : oz + sa + sl / 2] });
           if (!ruined || variant === 'cut') {
             B.add(worldBox(horiz ? sl + 0.02 : 0.76, 0.06, horiz ? 0.76 : sl + 0.02, 2.5), plinthMat, { p: [horiz ? ox + sa + sl / 2 : ox, hh + 0.03, horiz ? oz : oz + sa + sl / 2] });
-            B.add(worldBox(horiz ? sl - 0.015 : 0.9, 0.16, horiz ? 0.9 : sl - 0.015, 2.5), capMat, { p: [horiz ? ox + sa + sl / 2 : ox, hh + 0.14, horiz ? oz : oz + sa + sl / 2] });
+            const cg = chamferBox(horiz ? sl - 0.025 : 0.92, 0.24 * (0.94 + hash(k, e.cx * 5 + e.cy, 5) * 0.12), horiz ? 0.92 : sl - 0.025, 0.05, e.cx * 131 + e.cy * 17 + k, 0.03, 1.4);
+            B.add(cg, capMat, { p: [horiz ? ox + sa + sl / 2 : ox, hh + 0.18, horiz ? oz : oz + sa + sl / 2] });
           }
         }
       }
