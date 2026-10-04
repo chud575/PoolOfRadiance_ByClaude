@@ -276,6 +276,8 @@ export default class DialogueScene extends Scene {
       painted = paintPanel({ ...spec, actor, w: 1280, h: 600 });
     } catch (e) {
       console.error('[dialogue] scene art failed; using a plain backdrop', e);
+      // Surface the cause in the Chronicle too, where a player can read and report it.
+      try { this.ctx.ui.message(`Scene art unavailable: ${String(e?.message ?? e).slice(0, 160)}`, 'system'); } catch { /* no log yet */ }
       painted = fallbackPanel(1280, 600, e);
     }
     const { canvas, info, composer } = painted;

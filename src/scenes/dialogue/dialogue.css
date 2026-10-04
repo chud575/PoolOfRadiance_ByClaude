@@ -386,3 +386,23 @@
 .dlg-odds.stances .dlg-odd { align-content: start; row-gap: 0.1em; }
 .dlg-odds.stances .dlg-odd b { font-size: 0.95em; white-space: nowrap; line-height: 1.2; }
 .dlg-odds.stances .dlg-odd small { white-space: nowrap; overflow: visible; line-height: 1.2; font-size: 0.76em; display: block; letter-spacing: -0.005em; }
+
+/* Classic 1988 mode: the text box is black, not parchment, so the ink switches to the EGA palette. */
+html[data-classic='1'] .dlg-prose { color: #ffffff; text-shadow: none; }
+html[data-classic='1'] .dlg-prose .dlg-see { color: #aaaaaa; }
+html[data-classic='1'] .dlg-prose .dlg-see b { color: #ffff55; }
+html[data-classic='1'] .dlg-prose .dlg-more { color: #ffff55; }
+html[data-classic='1'] .dlg-cap { color: #ff5555; text-shadow: none; }
+html[data-classic='1'] .dlg-speaker { color: #55ffff; }
+html[data-classic='1'] .dlg-speaker small { color: #aaaaaa; }
+html[data-classic='1'] .dlg-speaker::after { background: #5555ff; }
+html[data-classic='1'] .dlg-odds { border-top-color: #5555ff; }
+html[data-classic='1'] .dlg-odds-h { color: #55ffff; }
+html[data-classic='1'] .dlg-odd { background: none; box-shadow: inset 0 0 0 1px #5555ff; border-radius: 0; }
+html[data-classic='1'] .dlg-odd .k { color: #55ffff; }
+html[data-classic='1'] .dlg-odd .k::first-letter { color: #ffff55; }
+html[data-classic='1'] .dlg-odd b { color: #ffffff; }
+html[data-classic='1'] .dlg-odd small { color: #aaaaaa; }
+html[data-classic='1'] .dlg-odd.good b { color: #55ff55; }
+html[data-classic='1'] .dlg-odd.bad b { color: #ff5555; }
+html[data-classic='1'] .dlg-odd[data-choice]:hover { box-shadow: inset 0 0 0 1px #ffff55; background: none; }
