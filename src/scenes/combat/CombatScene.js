@@ -123,9 +123,9 @@ export default class CombatScene extends Scene {
       // Hybrid: a touch more key and sky so the restored figures keep their colour.
       this.rig.sun.intensity *= 0.45;
       // Reskin 2: neutral cool key and sky (no lilac lift in the shade).
-      this.rig.sun.color.set(0xb0b4b4);
+      this.rig.sun.color.set(0xa6b2ae);
       this.rig.hemi.intensity *= 0.3;
-      this.rig.hemi.color.set(0x5c6466);
+      this.rig.hemi.color.set(0x56645f);
       this.rig.hemi.groundColor?.set(0x0c0b0a);
       this.rig.sun.shadow.radius = 2.2;
       s.fog = new THREE.FogExp2(new THREE.Color(0x1a1e26), 0.014);
@@ -179,7 +179,7 @@ export default class CombatScene extends Scene {
     // Hybrid: it rakes in low from the lens side (see _updateCamera), so it
     // models the figures' fronts while barely touching the paving; by night it
     // is the warm spill of the braziers, so the party keeps its local colour.
-    this.fill = new THREE.DirectionalLight(this.night ? 0xffc890 : 0xe0d4c0, this.night ? 0.85 : 1.15);
+    this.fill = new THREE.DirectionalLight(this.night ? 0xffc890 : 0xe0d4c0, this.night ? 1.1 : 1.15);
     s.add(this.fill, this.fill.target);
     // Rim light from behind the fight: separates figures from the ground.
     // By night a warm brazier rim (not a cold moon edge), so the party keeps colour.
@@ -431,7 +431,7 @@ export default class CombatScene extends Scene {
       const gu = this.ctx.render.passes?.grade?.uniforms;
       if (gu?.uShadowTint && gu.uHighlightTint) {
         const prev = [gu.uShadowTint.value, gu.uHighlightTint.value];
-        gu.uShadowTint.value = this.night ? [-0.006, 0.0, 0.008] : [-0.004, 0.0, 0.006];
+        gu.uShadowTint.value = this.night ? [-0.01, 0.002, 0.008] : [-0.012, 0.003, 0.004];
         gu.uHighlightTint.value = this.night ? [0.04, 0.02, -0.004] : [0.03, 0.016, -0.006];
         this.own(() => {
           gu.uShadowTint.value = prev[0];
@@ -2948,16 +2948,26 @@ export default class CombatScene extends Scene {
     const H = Math.max(8, Math.round(rect.h * dpr));
     if (!this._closeRT) {
       this._closeRT = new THREE.WebGLRenderTarget(W, H, { type: THREE.HalfFloatType, samples: 4 });
+      // Reskin 8: the depth buffer drives a falloff behind the subject (the
+      // backdrop masonry sinks into shadow and never competes with the figure).
+      this._closeRT.depthTexture = new THREE.DepthTexture(W, H);
       this._closeCam = new THREE.PerspectiveCamera(30, W / H, 0.2, 120);
       this._closeQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
-        uniforms: { tMap: { value: this._closeRT.texture } },
+        uniforms: { tMap: { value: this._closeRT.texture }, tDepth: { value: this._closeRT.depthTexture }, uNF: { value: new THREE.Vector2(0.2, 120) }, uSubj: { value: 4 }, uBand: { value: new THREE.Vector2(1, 0) } },
         depthTest: false,
         depthWrite: false,
         toneMapped: true,
         vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
         // Same low-key grade as the board: knocked-back saturation and a deep vignette.
-        fragmentShader: `uniform sampler2D tMap; varying vec2 vUv;
+        fragmentShader: `uniform sampler2D tMap; uniform sampler2D tDepth; uniform vec2 uNF; uniform float uSubj; uniform vec2 uBand; varying vec2 vUv;
           void main(){ vec3 c = texture2D(tMap, vUv).rgb; float l = dot(c, vec3(0.299, 0.587, 0.114)); c = mix(vec3(l), c, 0.8);
+            // Backdrop falloff: everything well behind the subject drops into shadow.
+            float zb = texture2D(tDepth, vUv).r * 2.0 - 1.0;
+            float z = 2.0 * uNF.x * uNF.y / (uNF.y + uNF.x - zb * (uNF.y - uNF.x));
+            c *= mix(1.0, 0.38, smoothstep(uSubj + 0.4, uSubj + 3.2, z));
+            // Clip to the free band: behind the stat card and the party table the view is held dark.
+            float yb = 1.0 - vUv.y;
+            c *= mix(0.22, 1.0, smoothstep(uBand.x - 0.05, uBand.x + 0.04, yb) * (1.0 - smoothstep(uBand.y - 0.03, uBand.y + 0.05, yb)));
             vec2 q = vUv - 0.5; c *= 1.0 - smoothstep(0.18, 0.62, dot(q, q) * 2.2) * 0.75; c *= 1.12;
             gl_FragColor = vec4(c, 1.0);
             #include <tonemapping_fragment>
@@ -2978,6 +2988,8 @@ export default class CombatScene extends Scene {
     let due = this._closeId !== act.id || !(Math.abs(this.time - (this._closeT ?? -9)) < 0.18) || (this._closeN ?? 0) < 3;
     if (rt.width !== W || rt.height !== H) {
       rt.setSize(W, H);
+      rt.depthTexture.image.width = W;
+      rt.depthTexture.image.height = H;
       due = true;
     }
     if (due) {
@@ -3000,7 +3012,9 @@ export default class CombatScene extends Scene {
       const bandBot = rect.bandBottom ?? rect.h;
       const bandH = Math.max(rect.h * 0.3, bandBot - bandTop);
       const tanH = Math.tan(THREE.MathUtils.degToRad(15));
-      const dist = Math.max(1.4, (hgt * 1.12 * rect.h) / (2 * tanH * bandH * 0.86));
+      // Reskin 8: the figure (base to crown, raised weapon) fills about two
+      // thirds of the band; no empty floor below it.
+      const dist = Math.max(1.3, (hgt * 1.12 * rect.h) / (2 * tanH * bandH * 0.92));
       const el = 0.14;
       // The shield arm's side: the lens never looks at the figure through its shield.
       // (The left arm, which carries the shield, sits on the figure's +x side:
@@ -3020,8 +3034,10 @@ export default class CombatScene extends Scene {
       for (let k = -11; k <= 11; k++) {
         const a = mainAz + k * 0.28;
         // Three-quarter from the weapon side (the shield arm faces away from the lens).
-        let sc = Math.cos(a - (face - 0.6)) * 1.1 + Math.cos(a - mainAz) * 0.5;
-        if (shieldAz !== null) sc -= Math.max(0, Math.cos(a - shieldAz)) * 4.5;
+        // Reskin 8: the bearing is set by the hero's own facing (a 3/4 front
+        // view), the board camera only breaking ties.
+        let sc = Math.cos(a - (face - 0.5)) * 2.6 + Math.cos(a - mainAz) * 0.25;
+        if (shieldAz !== null) sc -= Math.max(0, Math.cos(a - shieldAz)) * 2.4;
         const ex = p.x + Math.sin(a) * reach;
         const ez = p.z + Math.cos(a) * reach;
         for (const q of others) {
@@ -3029,7 +3045,7 @@ export default class CombatScene extends Scene {
           const vz = ez - p.z;
           const tq = Math.max(0, Math.min(1, ((q.x - p.x) * vx + (q.z - p.z) * vz) / (vx * vx + vz * vz)));
           const dd = Math.hypot(p.x + vx * tq - q.x, p.z + vz * tq - q.z);
-          if (dd < 0.95 && tq > 0.03) sc -= 3.5 * (1 - dd / 0.95);
+          if (dd < 0.95 && tq > 0.03) sc -= 0.6 * (1 - dd / 0.95);
         }
         const cx = Math.floor(ex / TILE);
         const cz = Math.floor(ez / TILE);
@@ -3040,6 +3056,7 @@ export default class CombatScene extends Scene {
         }
       }
       const camDist = dist;
+      this._closeDbg = { az, face, mainAz, best };
       const look = new THREE.Vector3(p.x, hgt * 0.5, p.z);
       cam.position.set(look.x + Math.sin(az) * Math.cos(el) * camDist, look.y + Math.sin(el) * camDist, look.z + Math.cos(az) * Math.cos(el) * camDist);
       cam.aspect = W / H;
@@ -3048,7 +3065,7 @@ export default class CombatScene extends Scene {
       cam.setViewOffset(W, H, 0, Math.round(H / 2 - yc), W, H);
       // Iteration 4: nothing between the lens and the hero's near side is drawn
       // (a hidden bystander's blood or sparks never splash across the panel).
-      cam.near = Math.max(0.2, camDist * 0.5);
+      cam.near = Math.max(0.2, camDist * 0.55);
       cam.updateProjectionMatrix();
       cam.lookAt(look);
       const ovVis = this.overlay.group.visible;
@@ -3060,22 +3077,15 @@ export default class CombatScene extends Scene {
       const motes = this.diorama?.group?.userData?.closeupHide ?? [];
       const motesVis = motes.map((o) => o.visible);
       for (const o of motes) o.visible = false;
-      // Bystanders standing between the lens and the hero step out of the
-      // shot (the hero panel shows the figure in its surroundings, unobstructed).
       const hiddenFigs = [];
       {
-        const cx = cam.position.x - p.x;
-        const cz = cam.position.z - p.z;
-        const L2 = cx * cx + cz * cz;
         for (const o of this.engine.all) {
           if (o === act) continue;
           const of = this.figures.get(o.id);
           if (!of?.root.visible) continue;
-          const q = of.root.position;
-          const tq = ((q.x - p.x) * cx + (q.z - p.z) * cz) / L2;
-          if (tq <= 0.12) continue;
-          const dd = Math.hypot(p.x + cx * tq - q.x, p.z + cz * tq - q.z);
-          if (dd < 0.75 + tq * 0.5) {
+          // Reskin 8: the hero stands alone in the panel (no crowd crop):
+          // every other figure steps out of the close-up.
+          {
             of.root.visible = false;
             of._blobWas = of.blob?.visible;
             if (of.blob) of.blob.visible = false;
@@ -3105,6 +3115,12 @@ export default class CombatScene extends Scene {
       r.clear();
       r.render(this.scene3d, cam);
       r.setRenderTarget(prevRT);
+      {
+        const u = this._closeQuad.material.uniforms;
+        u.uNF.value.set(cam.near, cam.far);
+        u.uSubj.value = camDist;
+        u.uBand.value.set(bandTop / rect.h, bandBot / rect.h);
+      }
       r.shadowMap.autoUpdate = autoSh;
       this.fill.position.copy(fillPos);
       this.fill.target.position.copy(fillTgt);

@@ -749,24 +749,28 @@ export function fieldstoneSet(size = 1024) {
       const u = x / size;
       // Domain-warped so stones are lumpy, not Voronoi-crisp; a second,
       // stones are irregular in size and outline.
-      const wx = (fbm(u * 8, v * 8, { octaves: 2, period: 8, seed: 201 }) - 0.5) * 0.35;
-      const wy = (fbm(u * 8, v * 8, { octaves: 2, period: 8, seed: 202 }) - 0.5) * 0.35;
-      // Stones a little wider than tall (8 x 11 lattice, tileable on both axes).
-      const a = worley2(u * 8 + wx, v * 11 + wy, 8, 11, 203);
+      const wx = (fbm(u * 8, v * 8, { octaves: 3, period: 8, seed: 201 }) - 0.5) * 0.55;
+      const wy = (fbm(u * 8, v * 8, { octaves: 3, period: 8, seed: 202 }) - 0.5) * 0.4;
+      // Reskin 8: flat, irregular bedded stones, clearly wider than tall
+      // (7 x 13 lattice, tileable), not rounded "potatoes".
+      const a = worley2(u * 7 + wx, v * 13 + wy, 7, 13, 203);
       const e = a.f2 - a.f1;
       const n1 = fbm(u * 64, v * 64, { octaves: 3, period: 64, seed: 205 });
       const ed = e + (n1 - 0.5) * 0.12;
       const stone = smooth(0.05, 0.13, ed);
       const dome = clamp01(ed / 0.55);
-      const h = stone * (0.45 + 0.55 * Math.sqrt(dome)) + (n1 - 0.5) * 0.1 * stone;
+      // Split, flat faces with a quick arris (no domes) and rough pitting.
+      const facet = fbm(u * 22, v * 22, { octaves: 2, period: 22, seed: 210 });
+      const h = stone * (0.62 + 0.18 * Math.min(1, dome * 3) + (facet - 0.5) * 0.22) + (n1 - 0.5) * 0.14 * stone;
       const tone = a.id;
       const warm = hash2(Math.floor(tone * 1e6), 1, 206);
       let g0 = 0.13 + tone * 0.17 + (n1 - 0.5) * 0.06;
       if (hash2(Math.floor(tone * 1e6), 2, 207) > 0.85) g0 *= 0.7;
-      g0 *= 0.65 + 0.35 * Math.sqrt(dome);
-      const sr = g0 * (1.0 + warm * 0.16);
-      const sg = g0 * (0.98 + warm * 0.06);
-      const sb = g0 * (0.98 - warm * 0.12);
+      g0 *= (0.72 + 0.28 * Math.min(1, dome * 3)) * (0.85 + 0.3 * facet);
+      // Cool grey stone (a few faintly warm), as on the battlefield's flags.
+      const sr = g0 * (0.97 + warm * 0.07);
+      const sg = g0 * (1.0 + warm * 0.02);
+      const sb = g0 * (1.0 - warm * 0.05);
       const grit = fbm(u * 128, v * 128, { octaves: 2, period: 128, seed: 208 });
       const moss = smooth(0.52, 0.7, fbm(u * 6, v * 6, { octaves: 3, period: 6, seed: 209 }));
       let jr = 0.045 + grit * 0.03, jg = 0.042 + grit * 0.028, jb = 0.034 + grit * 0.02;

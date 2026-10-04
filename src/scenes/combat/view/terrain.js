@@ -46,14 +46,24 @@ function addMacro(mat, { scale = 0.18, amount = 0.45, grime = 0.35, key = 'macro
         float stk = smoothstep(0.55, 0.9, mNoise(vec3(vMWPos.x * 2.3, vMWPos.y * 0.16, vMWPos.z * 2.3)));
         diffuseColor.rgb *= 1.0 - stk * 0.3 * smoothstep(0.4, 2.0, vMWPos.y);
         float baseMoss = (1.0 - smoothstep(0.05, 0.75, vMWPos.y)) * smoothstep(0.4, 0.7, mNoise(vMWPos * 1.7));
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.16, 0.19, 0.09), baseMoss * 0.6);` : ''}`)
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.16, 0.19, 0.09), baseMoss * 0.6);` : ''}
+        ${key === 'cap' ? `// Reskin 8: capstones are grimy and weathered: sooty dirt blooms,
+        // pitted dark speckle, lichen and moss caught on the tops and chips.
+        float cDirt = smoothstep(0.42, 0.78, mNoise(vMWPos * 1.9 + 9.0));
+        diffuseColor.rgb *= 1.0 - cDirt * 0.5;
+        float cPit = smoothstep(0.62, 0.7, mNoise(vMWPos * 14.0 + 3.0));
+        diffuseColor.rgb *= 1.0 - cPit * 0.45;
+        float cMoss = smoothstep(0.58, 0.8, mNoise(vMWPos * 3.1 + 21.0));
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.14, 0.17, 0.08), cMoss * 0.55);
+        float cLich = smoothstep(0.7, 0.78, mNoise(vMWPos * 7.0 + 40.0));
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.38, 0.4, 0.32), cLich * 0.35);` : ''}`)
       .replace('#include <opaque_fragment>', `
         // Torch-lit masonry rolls off softly instead of blowing out to a flat blob.
         float mPk = max(outgoingLight.r, max(outgoingLight.g, outgoingLight.b));
         outgoingLight *= mPk > 0.45 ? (0.45 + (mPk - 0.45) / (1.0 + (mPk - 0.45) / 0.45)) / mPk : 1.0;
         #include <opaque_fragment>`);
   };
-  mat.customProgramCacheKey = () => `${key}-${scale}-${amount}-${grime}-v5`;
+  mat.customProgramCacheKey = () => `${key}-${scale}-${amount}-${grime}-v6`;
   return mat;
 }
 
@@ -394,6 +404,10 @@ export function buildDiorama(field, o = {}) {
         float leaf = step(0.8, gHash(lc)) * smoothstep(0.25, 0.6, drift + dirtP * 0.3);
         gc.rgb = mix(gc.rgb, mix(vec3(0.42, 0.24, 0.1), vec3(0.5, 0.42, 0.2), gHash(lc + 3.1)) * 0.8, leaf * 0.7);
         gc.rgb = mix(gc.rgb, gc.rgb * vec3(0.95, 0.9, 0.82), smoothstep(0.55, 0.8, gFbm(vWPos.xz * 0.21 + 3.0)) * 0.6);
+        // Reskin 8: the reference's cool grey-green stone. Warmth belongs to
+        // the torch pools only, so the albedo is pulled to a desaturated,
+        // faintly green-grey with broad slab-to-slab value variation kept.
+        { float gl = dot(gc.rgb, vec3(0.3, 0.55, 0.15)); gc.rgb = mix(vec3(gl), gc.rgb, 0.35) * vec3(0.93, 1.0, 0.99); }
         // Gutters: a damp, darker band along wall feet and kerbs (rain runs off the eaves).
         float gutter = smoothstep(0.9, 0.62, gAO) * (1.0 - wR) * smoothstep(0.25, 0.55, gFbm(vWPos.xz * 0.8 + 5.0) + (1.0 - gAO) * 0.5);
         wet = max(wet, gutter * 0.55);
@@ -913,19 +927,33 @@ export function buildDiorama(field, o = {}) {
     parapet(true, bz, ax - PAR_T / 2, bx + PAR_T / 2, sd + 1, { h: hh });
     parapet(false, ax, az + PAR_T / 2, bz - PAR_T / 2, sd + 2, { h: hh });
     parapet(false, bx, az + PAR_T / 2, bz - PAR_T / 2, sd + 3, { h: hh });
-    // Earth and rubble fill.
-    // Reskin 2: a lit bed of rubble and grit (it read as a black void with
-    // floating blocks), the tumbled ashlar half sunk into it.
-    const FH = Math.max(0.6, hh - 0.1);
-    batch.add(worldBox(bx - ax - PAR_T + 0.02, FH, bz - az - PAR_T + 0.02, 2), yardFill ??= libMat('floor_rubble', 0xb8ac98), { p: [(ax + bx) / 2, FH / 2, (az + bz) / 2] }, { cast: false });
-    const nR = Math.round(((bx - ax) * (bz - az)) / 1.6);
+    // Reskin 8: the yard is open to its own flagged floor, a step down and in
+    // shadow, so the rough fieldstone faces drop below the capstones (as in
+    // the reference) and the broken masonry lies tumbled at the wall feet in
+    // the walls' own stone (no flat fill plane, no pebble-dot texture).
+    const FH = 0.05;
+    batch.add(worldBox(bx - ax - PAR_T + 0.04, FH, bz - az - PAR_T + 0.04, 2), yardFill ??= libMat('hd_flags', 0x6c7270, { grime: 0.45, amount: 0.5, ns: 1.4 }), { p: [(ax + bx) / 2, FH / 2, (az + bz) / 2] }, { cast: false });
+    const ix0 = ax + PAR_T / 2, ix1 = bx - PAR_T / 2, iz0 = az + PAR_T / 2, iz1 = bz - PAR_T / 2;
+    const per = 2 * (ix1 - ix0 + iz1 - iz0);
+    const nR = Math.round(per / 0.55);
     for (let k = 0; k < nR; k++) {
-      const px = ax + PAR_T / 2 + 0.3 + hash(k, sd, 61) * (bx - ax - PAR_T - 0.6);
-      const pz = az + PAR_T / 2 + 0.3 + hash(sd, k, 62) * (bz - az - PAR_T - 0.6);
-      // Angular broken ashlar, tumbled and half sunk (no blobby rocks).
-      const rr = 0.2 + hash(k, k + sd, 63) * 0.3;
-      const g = chamferBox(rr * (1.4 + hash(k, 1, sd) * 1.2), rr * 0.8, rr * (0.9 + hash(k, 2, sd) * 0.6), 0.03, sd * 7 + k, rr * 0.18);
-      batch.add(g, parBlk[k % 3], { p: [px, FH + rr * 0.05, pz], r: [(hash(k, 66, sd) - 0.5) * 0.7, hash(k, 65, sd) * 6, (hash(k, 67, sd) - 0.5) * 0.7] }, { cast: true });
+      // Spill along the wall feet (mostly), a few pieces out on the floor.
+      let t = hash(k, sd, 61) * per;
+      let px, pz;
+      const inset = 0.15 + Math.pow(hash(sd, k, 62), 2.2) * 1.4;
+      if (t < ix1 - ix0) { px = ix0 + t; pz = iz0 + inset; }
+      else if ((t -= ix1 - ix0) < iz1 - iz0) { px = ix1 - inset; pz = iz0 + t; }
+      else if ((t -= iz1 - iz0) < ix1 - ix0) { px = ix1 - t; pz = iz1 - inset; }
+      else { t -= ix1 - ix0; px = ix0 + inset; pz = iz1 - t; }
+      px = Math.min(ix1 - 0.15, Math.max(ix0 + 0.15, px));
+      pz = Math.min(iz1 - 0.15, Math.max(iz0 + 0.15, pz));
+      const rr = 0.12 + hash(k, k + sd, 63) * 0.26 * (1.4 - inset * 0.5);
+      const fallenCap = hash(k, 68, sd) < 0.18;
+      const g = fallenCap
+        ? chippedStone(rr * 3.2, rr * 0.9, rr * 2.2, sd * 7 + k)
+        : chippedStone(rr * (1.2 + hash(k, 1, sd) * 1.0), rr * (0.6 + hash(k, 3, sd) * 0.5), rr * (0.9 + hash(k, 2, sd) * 0.6), sd * 11 + k);
+      const mat = fallenCap ? capMat : k % 4 === 0 ? wallMats[2] : parBlk[k % 3];
+      batch.add(g, mat, { p: [px, FH + rr * 0.22, pz], r: [(hash(k, 66, sd) - 0.5) * 0.9, hash(k, 65, sd) * 6, (hash(k, 67, sd) - 0.5) * 0.9] }, { cast: k % 3 === 0 });
     }
   }
   if (dungeon) buildVaults();
@@ -1759,6 +1787,9 @@ export function buildDiorama(field, o = {}) {
       CB.add(columnGeo(hh, broken, p.x * 7 + p.y), colMat, { p: [x, 0.42, z] });
       CB.add(worldBox(0.98, 0.26, 0.98, 1), plinthMat, { p: [x, 0.13, z] });
       CB.add(new THREE.CylinderGeometry(0.46, 0.5, 0.16, 20), colMat, { p: [x, 0.34, z] });
+      // Attic base mouldings: two tori and a scotia between plinth and shaft.
+      CB.add(new THREE.TorusGeometry(0.39, 0.06, 6, 24).rotateX(Math.PI / 2), colMat, { p: [x, 0.47, z] }, { cast: false });
+      CB.add(new THREE.TorusGeometry(0.35, 0.04, 6, 24).rotateX(Math.PI / 2), colMat, { p: [x, 0.58, z] }, { cast: false });
       if (!broken) {
         CB.add(new THREE.CylinderGeometry(0.5, 0.36, 0.22, 20), colMat, { p: [x, 0.42 + hh + 0.11, z] });
         CB.add(worldBox(1.05, 0.2, 1.05, 1), plinthMat, { p: [x, 0.42 + hh + 0.32, z] });
@@ -3087,7 +3118,9 @@ function heraldryTex(field, gilt) {
 
 /** Fluted column shaft (base at y=0); a broken one gets a jagged, sheared top. */
 function columnGeo(h, broken, seed) {
-  const g = new THREE.CylinderGeometry(0.31, 0.35, h, 24, Math.max(2, Math.round(h * 3)), false);
+  // Reskin 8: built of drums (sunk joints every ~0.55 m, each drum a touch
+  // off true), with chipped arrises and pitting, never a plain cylinder.
+  const g = new THREE.CylinderGeometry(0.31, 0.35, h, 24, Math.max(4, Math.round(h * 16)), false);
   g.translate(0, h / 2, 0);
   const pos = g.attributes.position;
   for (let i = 0; i < pos.count; i++) {
@@ -3101,7 +3134,14 @@ function columnGeo(h, broken, seed) {
       continue;
     }
     const a = Math.atan2(z, x);
-    const k = 1 - Math.max(0, Math.cos(a * 12)) * 0.06;
+    const DR = 0.55;
+    const di = Math.floor(y / DR);
+    const dj = Math.abs(y - Math.round(y / DR) * DR);
+    const groove = y > 0.05 && y < h - 0.05 ? (1 - Math.min(1, dj / 0.035)) * 0.07 : 0;
+    const off = (hash(di, seed, 7) - 0.5) * 0.03;
+    const chipN = Math.sin(a * 5 + di * 2.7 + seed) * Math.sin(a * 11 + y * 9.0 + seed * 1.7);
+    const chip = Math.max(0, chipN - 0.55) * 0.22 * (dj < 0.09 ? 1.6 : 0.6);
+    const k = (1 - Math.max(0, Math.cos(a * 12)) * 0.06) * (1 - groove - chip + off * Math.cos(a - di));
     let ny = y;
     // A conchoidal, sheared break: smooth undulation round the rim plus a slant.
     if (broken && y > h - 0.01) ny = h - 0.12 - (Math.sin(a * 3 + seed * 5.1) * 0.08 + Math.sin(a * 7 + seed * 2.3) * 0.04) - Math.cos(a + seed) * 0.16;
@@ -3174,10 +3214,11 @@ function chippedStone(w, h, d, seed = 0, texScale = 1.4) {
     const X = (sx * w) / 2, Y = (sy * h) / 2, Z = (sz * d) / 2;
     const top = sy > 0 ? tilt * sx + twist * sz : 0;
     // Most corners lose a small chip; one in four is broken well back.
-    const big = r() < 0.27;
-    const cx = Math.min(w * 0.3, (big ? 0.07 + r() * 0.12 : 0.012 + r() * 0.04));
-    const cy = Math.min(h * 0.45, (big ? 0.05 + r() * 0.08 : 0.01 + r() * 0.03));
-    const cz = Math.min(d * 0.3, (big ? 0.06 + r() * 0.1 : 0.012 + r() * 0.04));
+    // Reskin 8: heavier damage (most corners chipped, nearly half broken back).
+    const big = r() < 0.45;
+    const cx = Math.min(w * 0.34, (big ? 0.1 + r() * 0.18 : 0.02 + r() * 0.05));
+    const cy = Math.min(h * 0.55, (big ? 0.07 + r() * 0.11 : 0.015 + r() * 0.04));
+    const cz = Math.min(d * 0.34, (big ? 0.08 + r() * 0.15 : 0.02 + r() * 0.05));
     pts.push(new THREE.Vector3(X - sx * cx, Y + top, Z - sz * (cz * 0.3)));
     pts.push(new THREE.Vector3(X - sx * (cx * 0.3), Y + top, Z - sz * cz));
     pts.push(new THREE.Vector3(X, Y - sy * cy + top * 0.5, Z - sz * cz * 0.5));
@@ -3188,7 +3229,7 @@ function chippedStone(w, h, d, seed = 0, texScale = 1.4) {
   for (let i = 1; i < n; i++) {
     const x = -w / 2 + (w * i) / n;
     for (const sz of [-1, 1]) {
-      const bite = r() < 0.35 ? 0.03 + r() * 0.06 : 0.004 + r() * 0.01;
+      const bite = r() < 0.5 ? 0.04 + r() * 0.09 : 0.006 + r() * 0.014;
       const top = tilt * (x / (w / 2)) + twist * sz;
       pts.push(new THREE.Vector3(x + (r() - 0.5) * 0.05, h / 2 + top - bite * 0.7, sz * (d / 2 - bite)));
       pts.push(new THREE.Vector3(x, h / 2 + top - r() * 0.012, sz * (d / 2 - bite * 2.2)));

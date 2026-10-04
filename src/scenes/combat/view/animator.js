@@ -42,6 +42,8 @@ function addRim(mat, facRim = null, tint = null) {
   mat.userData.uBurn = uBurn;
   const uSat = { value: 0.72 };
   mat.userData.uSat = uSat;
+  const uStand = { value: 0 };
+  mat.userData.uStand = uStand;
   const sculpt = !!mat.userData?.sculpt;
   const pid = sculpt ? -1 : RIGID_PID[String(mat.name ?? '').split('|')[0]] ?? -1;
   mat.onBeforeCompile = (sh) => {
@@ -54,12 +56,13 @@ function addRim(mat, facRim = null, tint = null) {
     sh.uniforms.uBurn = uBurn;
     sh.uniforms.uTint = uTint;
     sh.uniforms.uSat = uSat;
+    sh.uniforms.uStand = uStand;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vBP;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvBP = position;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        uniform vec3 uRimColor, uFacRim, uTint; uniform float uRimPower, uFacK, uSat; uniform vec2 uBurn; varying vec3 vBP;
+        uniform vec3 uRimColor, uFacRim, uTint; uniform float uRimPower, uFacK, uSat, uStand; uniform vec2 uBurn; varying vec3 vBP;
         float bH3(vec3 p){ p = fract(p * 0.3183099 + vec3(0.1, 0.71, 0.37)); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
         float bN3(vec3 x){ vec3 i = floor(x); vec3 f = fract(x); f = f * f * (3.0 - 2.0 * f);
           return mix(mix(mix(bH3(i), bH3(i + vec3(1,0,0)), f.x), mix(bH3(i + vec3(0,1,0)), bH3(i + vec3(1,1,0)), f.x), f.y),
@@ -95,24 +98,34 @@ function addRim(mat, facRim = null, tint = null) {
           vec3 wN = normalize((vec4(nonPerturbedNormal, 0.0) * viewMatrix).xyz);
           float wash = max(smoothstep(-3.0, -18.0, kC) * pFade, smoothstep(-0.05, -0.75, wN.y) * 0.75);
           float dry = smoothstep(5.0, 22.0, kC) * (1.0 - smoothstep(60.0, 80.0, kC)) * pFade * (0.5 + 0.5 * smoothstep(-0.3, 0.7, wN.y));
-          dry = max(dry, smoothstep(0.6, 0.97, wN.y) * 0.3);
+          dry = max(dry, smoothstep(0.55, 0.97, wN.y) * 0.45);
           // Feet sit in the base's shade: no drybrush on boots (it read as
           // white blobs), a dark wash pooling toward the ground instead.
           float wY = cameraPosition.y + (vec4(-vViewPosition, 0.0) * viewMatrix).y;
           float foot = 1.0 - smoothstep(0.05, 0.2, wY);
           dry *= 1.0 - foot;
           wash = max(wash, foot * 0.55);
-          diffuseColor.rgb *= 1.0 - 0.6 * wash;
+          diffuseColor.rgb *= 1.0 - 0.66 * wash;
           // Matte, desaturated hand paint (one standout: the active figure, via uSat).
           float pl = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11));
           diffuseColor.rgb = mix(vec3(pl), diffuseColor.rgb, uSat);
+          // Reskin 8: the active figure is the reference's red mini: its paint
+          // glazed a strong crimson (value kept, lifted a little), so one
+          // unit always stands out of the grey-green board.
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.74, 0.12, 0.07) * (0.3 + pl * 1.7), uStand * 0.48);
+          // Drybrush: the raised edges are picked out a few shades paler in
+          // the figure's own colour (a highlight layer, catching the key).
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 1.75 + vec3(0.05), dry * 0.55);
           // Paint worn off the raised edges onto the pewter beneath.
-          float worn = dry * 0.4;
+          float worn = dry * 0.32;
           vec3 pewter = vec3(0.26, 0.25, 0.235);
           diffuseColor.rgb = mix(diffuseColor.rgb, max(diffuseColor.rgb * 1.3, pewter), worn);
           metalnessFactor = mix(metalnessFactor, 0.45, worn);
           roughnessFactor = mix(max(roughnessFactor, 0.62), 0.5, worn);
-          diffuseColor.rgb = min(diffuseColor.rgb, vec3(0.9)); }
+          diffuseColor.rgb = min(diffuseColor.rgb, vec3(0.9));
+          // A faint self-light on the drybrushed edges in the paint's own hue
+          // (never white), so the highlights still read in deep shade at night.
+          totalEmissiveRadiance += diffuseColor.rgb * dry * 0.07; }
         { float rimF = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), uRimPower);
           totalEmissiveRadiance += uRimColor * rimF * (0.6 + 0.4 * diffuseColor.rgb / max(0.001, max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b))));
           // Faction rim: a thin coloured back-light edge (ember on foes, cold steel
@@ -171,6 +184,9 @@ export class Figure {
     for (const m of model.meshes) {
       m.material = m.material.clone();
       addRim(m.material, FACTION_RIM[o.faction] ?? null, this.tint);
+      // Reskin 8: the party's paint is a step lighter so its minis separate
+      // from the dark flags (the foes keep their darker hides).
+      if (o.faction === 'party' && m.material.color) m.material.color.multiplyScalar(1.2);
       this.mats.push({ m: m.material, emissive: m.material.emissive?.clone() ?? new THREE.Color(0), ei: m.material.emissiveIntensity ?? 1, color: m.material.color.clone() });
     }
     this.pos = new THREE.Vector3();
@@ -196,7 +212,10 @@ export class Figure {
     const v = on ? 1.12 : 0.72;
     if (this._sat === v) return;
     this._sat = v;
-    for (const mm of this.mats) if (mm.m.userData.uSat) mm.m.userData.uSat.value = v;
+    for (const mm of this.mats) {
+      if (mm.m.userData.uSat) mm.m.userData.uSat.value = v;
+      if (mm.m.userData.uStand) mm.m.userData.uStand.value = on ? 1 : 0;
+    }
   }
 
   /** Targeting highlight: the faction edge flares bright (k = 0..1). */
