@@ -7,9 +7,9 @@ import { Frame } from './Frame.js';
  * Keyboard: Enter = primary, Escape = cancel, ←/→ or Tab move between
  * buttons (focus ring). Buttons show a hotkey letter if `key` is given.
  */
-export function showDialog(ui, { title = '', body = '', buttons = [{ id: 'ok', label: 'OK', primary: true }], variant = 'parchment' } = {}) {
+export function showDialog(ui, { title = '', body = '', buttons = [{ id: 'ok', label: 'OK', primary: true }], variant = 'parchment', className = '' } = {}) {
   return new Promise((resolve) => {
-    const frame = Frame({ title, variant, className: 'por-dialog' });
+    const frame = Frame({ title, variant, className: `por-dialog ${className}`.trim() });
     const content = typeof body === 'string' ? h('p', [body]) : body;
     const row = h('div.por-dialog-buttons');
     const prevFocus = document.activeElement;

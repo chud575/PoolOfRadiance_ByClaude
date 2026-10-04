@@ -1,4 +1,5 @@
 import { ITEMS } from '../../data/items.js';
+import { heraldryOf } from './heraldry.js';
 
 /**
  * The single source of truth for how a character looks: palettes, the eight
@@ -257,6 +258,8 @@ export function resolveAppearance(ch, o = {}) {
     cleric: has('cleric'),
     thief: has('thief'),
     seed: look.seed,
+    // One coat of arms for every painted shield of this character (sheet, miniature, item icon).
+    heraldry: heraldryOf(ch, CLOTH_COLORS[look.cloth % CLOTH_COLORS.length][1]),
   };
 }
 
@@ -279,4 +282,9 @@ export function appearanceKey(ch, o = {}) {
   const a = resolveAppearance(ch, o);
   const l = a.look;
   return [a.race, a.gender, l.seed, l.head, l.body, l.skin, l.hair, l.eyes, l.cloth, a.body, a.helm ? 1 : 0, a.weapon, a.shield, a.cloak ? 1 : 0].join('|');
+}
+
+/** The character's coat of arms (null if the appearance cannot be resolved). */
+export function armsOf(ch) {
+  try { return resolveAppearance(ch).heraldry; } catch { return null; }
 }

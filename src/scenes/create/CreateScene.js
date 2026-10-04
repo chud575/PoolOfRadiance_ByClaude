@@ -609,7 +609,7 @@ export default class CreateScene extends Scene {
                 this.show('race');
               },
             }, [
-              portraitImg({ race: r, gender: d.gender, classSpec: 'fighter', look }, 0.3),
+              portraitImg({ race: r, gender: d.gender, classSpec: 'fighter', look }, 0.3, { slot: `cc-race-${r}` }),
               h('div', [h('div.t', [RACES[r].name]), h('div.d', [CREATE_TEXT.raceShort[r]])]),
             ]);
           })),
@@ -749,7 +749,7 @@ export default class CreateScene extends Scene {
     const look = (d.look = defaultLook(d));
     b.append(h('div.cc-title', ['Choose a Likeness']), h('p.cc-lead', [CREATE_TEXT.portrait]));
     const thumbs = (list, key, mk, cls = '', crop = 'head') => h(`div.cc-thumbs${cls}`, list.map((it, i) => h(`button.cc-thumb${look[key] === i ? '.sel' : ''}`, { onclick: () => { d.look = { ...look, [key]: i }; this.show('portrait'); }, dataset: { tip: it.name } }, [
-      h('div.im', [portraitImg(mk(i), crop === 'head' ? 0.46 : 0.34, { crop })]), h('span', [it.name]),
+      h('div.im', [portraitImg(mk(i), crop === 'head' ? 0.46 : 0.34, { crop, slot: `cc-${key}-${i}` })]), h('span', [it.name]),
     ])));
     // Each swatch is named (in its tooltip and beside the row for the chosen one): 'Auburn', 'Hazel'.
     const sw = (colors, key, names) => h('div.cc-sw', colors.map((c, i) => h(`button${look[key] === i ? '.sel' : ''}`, { style: { background: c }, 'aria-label': names[i], dataset: { tip: names[i] }, onclick: () => { d.look = { ...look, [key]: i }; this.show('portrait'); } })));

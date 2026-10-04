@@ -17,11 +17,10 @@ export function setPortraitSync(v) {
 }
 
 const queue = [];
-const rough = [];
 let pumping = false;
 /** True while portraits are still being painted (scenes ease off their own GPU work meanwhile). */
 export function portraitsPending() {
-  return pumping || queue.length > 0 || rough.length > 0;
+  return pumping || queue.length > 0;
 }
 function pump() {
   if (pumping) return;
@@ -29,14 +28,16 @@ function pump() {
   const step = async () => {
     // First a rough pass for every waiting tile (a few ms each), then the oil paintings one by one.
     // (The rough low-resolution tier is gone: the candle-lit silhouette holds until the oil is done.)
-    rough.length = 0;
     // Skip jobs whose <img> has left the page (the panel re-rendered).
     let job = queue.shift();
-    while (job && !job.img.isConnected && job.age++ < 2) { queue.push(job); job = queue.shift(); }
+    // Drop jobs whose <img> has left the page (the panel re-rendered); a just-built panel may not be
+    // attached yet, so a job gets two more turns before it is dropped.
+    let guard = queue.length + 1;
+    while (job && !job.img.isConnected && guard-- > 0) { if (job.age++ < 2) queue.push(job); job = queue.shift(); }
     if (job && job.img.isConnected) {
       try { await job.run(); } catch { /* leave the placeholder */ }
     }
-    if (queue.length || rough.length) setTimeout(step, 30);
+    if (queue.length) setTimeout(step, 30);
     else pumping = false;
   };
   setTimeout(step, 0);
@@ -135,9 +136,28 @@ function shade(hex, k) {
 }
 
 /**
+ * The last finished painting shown in each portrait slot (a slot is a sitter, or a named picker
+ * tile): while a new face is painted the slot keeps showing its last good image, never a
+ * placeholder. Creation's head picker passes its own slot per tile; everything else is keyed by
+ * the sitter, so switching members in VIEW or opening REST shows the face at once (a smaller
+ * copy, scaled) until the full-size painting lands.
+ */
+const lastGood = new Map();
+function slotOf(ch, crop, o) {
+  if (o.slot) return `${o.slot}|${crop}`;
+  return `${ch.id || ch.name || 'draft'}|${crop}`;
+}
+function keep(slot, url) {
+  if (!url || url === BLANK) return;
+  if (lastGood.size > 120) lastGood.delete(lastGood.keys().next().value);
+  lastGood.delete(slot);
+  lastGood.set(slot, url);
+}
+
+/**
  * @param {object} ch
  * @param {number} scale
- * @param {{crop?: 'head'|'torso', alt?: string, priority?: boolean}} [o]
+ * @param {{crop?: 'head'|'torso', alt?: string, priority?: boolean, slot?: string}} [o]
  * @returns {HTMLImageElement}
  */
 export function portraitImg(ch, scale = 1, o = {}) {
@@ -145,8 +165,10 @@ export function portraitImg(ch, scale = 1, o = {}) {
   img.alt = o.alt ?? '';
   img.draggable = false;
   const crop = o.crop ?? 'head';
+  const slot = slotOf(ch, crop, o);
   if (sync || hasPortrait(ch, scale, crop)) {
     img.src = portraitURL(ch, scale, { crop });
+    keep(slot, img.src);
     return img;
   }
   // The same face already painted at another size: show it at once (the browser scales it), and
@@ -154,31 +176,39 @@ export function portraitImg(ch, scale = 1, o = {}) {
   const near = anyPortrait(ch, crop);
   if (near && near.scale >= scale) {
     img.src = near.url;
+    keep(slot, near.url);
     return img;
   }
   img.classList.add('pc-pending');
   img.src = BLANK;
   try {
-    const sk = near && near.scale >= scale * 0.6 ? near.url : sketchURL(ch, crop);
+    // Prefer the same face at a smaller size, then this slot's last finished painting (the previous
+    // head in a picker, the sitter's thumbnail), and only then the candle-lit sketch.
+    const prev = lastGood.get(slot);
+    const sk = near ? near.url : prev ?? sketchURL(ch, crop);
     if (sk) img.src = sk;
     else img.style.background = placeholderStyle(ch);
+    if (near || prev) img.classList.add('pc-stale');
   } catch { /* plain pending tile */ }
   const snap = { ...ch, look: ch.look ? { ...ch.look } : ch.look };
-  void portraitKey;
   const job = { img, age: 0, retries: 0, run: async () => {
     // Painted in bands across ticks: no single long stall even on a software GPU. A failed
-    // painting (null) keeps the sketch or rough tier showing and is queued again a little later.
+    // painting (null) keeps what is showing and is queued again a little later.
     const u = await portraitURLAsync(snap, scale, { crop });
     if (!u) {
       if (job.retries++ < 3 && img.isConnected) setTimeout(() => { queue.push(job); pump(); }, 1500);
       return;
     }
     img.src = u;
+    keep(slot, u);
     img.style.background = '';
-    img.classList.remove('pc-pending', 'pc-rough');
+    img.classList.remove('pc-pending', 'pc-rough', 'pc-stale');
     img.classList.add('pc-reveal');
   } };
-  if (o.priority) { queue.unshift(job); rough.unshift({ img, snap, crop }); } else { queue.push(job); rough.push({ img, snap, crop }); }
+  if (o.priority) {
+    // The hero portrait goes ahead of every waiting thumbnail (and of jobs whose tile has gone).
+    queue.unshift(job);
+  } else queue.push(job);
   pump();
   return img;
 }

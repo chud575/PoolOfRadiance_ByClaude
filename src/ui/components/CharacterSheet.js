@@ -10,6 +10,7 @@ import { itemName } from '../../rules/items.js';
 import { spellLevel } from '../../rules/spells.js';
 import { ITEMS } from '../../data/items.js';
 import { itemIconURL, iconFor } from './itemIcons.js';
+import { armsOf } from './lookData.js';
 import { portraitImg } from './lazyPortrait.js';
 import { abilityTip, STAT_TIPS } from './rulesText.js';
 import { miniatureSnapshot, useRenderer } from './Miniature.js';
@@ -210,7 +211,7 @@ export function renderSheet(ch) {
   const gear = ch.inventory.filter((e) => e.equipped && ITEMS[e.id]);
   const ammoWarn = ammoProblem(ch);
   const kit = sect('Readied', [...(gear.length ? [h('div.pc-readied', gear.map((e) => h('div', { style: { display: 'flex', alignItems: 'center', gap: '0.5em', padding: '0.12em 0', minWidth: '0' }, dataset: lore({ title: itemName(e), text: `Readied ${ITEMS[e.id].type}. Open ITEMS to change equipment.` }) }, [
-    h('img', { src: itemIconURL(iconFor(ITEMS[e.id])), alt: '', style: { width: '1.9em', height: '1.9em' } }),
+    h('img', { src: itemIconURL(iconFor(ITEMS[e.id]), { heraldry: armsOf(ch) }), alt: '', style: { width: '1.9em', height: '1.9em' } }),
     h('span', { style: { color: 'var(--por-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, [itemName(e), (e.qty ?? 1) > 1 ? ` ×${e.qty}` : '']),
   ])))] : [h('div.pc-rest-note', ['Nothing readied.'])]), ammoHint(ch) ? h('div.pc-note', { dataset: lore({ title: 'Ammunition', text: 'Arrows sit readied in the quiver; READY the bow (it takes both hands, so the shield is slung) when you want to shoot.' }) }, [ammoHint(ch)]) : null, ammoWarn ? h('div.pc-warn', { dataset: lore({ title: 'Ammunition', text: 'Arrows need a bow and quarrels a crossbow readied in the weapon hand; otherwise they cannot be fired.' }) }, ['⚠ ', ammoWarn]) : null].filter(Boolean));
   const langs = sect('Languages', [h('div', race.languages.map((l) => h('span.pc-chip', [l])))]);
@@ -233,7 +234,7 @@ export function renderSheet(ch) {
   const packSect = sect('Pack', [
     // the pack as a grid of its own: every loose item as a labelled tile, the burden bar beneath
     h('div.pc-packgrid', [
-      ...pack.slice(0, 8).map((e) => h('span.pc-packi', { dataset: lore({ title: itemName(e), text: 'Carried in the pack. Open ITEMS to ready, use, trade or drop it.' }) }, [h('img', { src: itemIconURL(iconFor(ITEMS[e.id])), alt: '' }), (e.qty ?? 1) > 1 ? h('b', [String(e.qty)]) : null, h('i', [itemName(e)])])),
+      ...pack.slice(0, 8).map((e) => h('span.pc-packi', { dataset: lore({ title: itemName(e), text: 'Carried in the pack. Open ITEMS to ready, use, trade or drop it.' }) }, [h('img', { src: itemIconURL(iconFor(ITEMS[e.id]), { heraldry: armsOf(ch) }), alt: '' }), (e.qty ?? 1) > 1 ? h('b', [String(e.qty)]) : null, h('i', [itemName(e)])])),
       ...Array.from({ length: Math.max(0, 4 - pack.length) }, () => h('span.pc-packi.empty')),
     ]),
     h('div.pc-rest-note', { style: { marginTop: '0.35em' } }, [(() => {

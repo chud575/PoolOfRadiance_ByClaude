@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { paintDevice } from './heraldry.js';
 import { materialCanvases, makeCanvas } from '../../render/textures/canvas.js';
 import { fbm, valueNoise, clamp01, smooth } from '../../render/textures/noise.js';
 
@@ -163,22 +164,36 @@ export function baseSet() {
 }
 
 /**
- * Heraldic device painted on a shield face: field in the cloth colour, a
- * gilt rim and a charge (sunburst for clerics, lion-ish chevron otherwise).
- * @param {string} field css colour
- * @param {'cleric'|'fighter'|'thief'} kind
+ * Heraldic device painted on a shield face: the character's arms (heraldry.js, the same device the
+ * VIEW sheet and the shield item icon carry), worn enamel and a soft centre highlight.
+ * @param {ReturnType<import('./heraldry.js').heraldryOf>} her
+ * @param {'round'|'heater'} kind
  */
-export function shieldFaceTexture(field, kind) {
-  const key = `shield:${field}:${kind}`;
+export function shieldFaceTexture(her, kind) {
+  const key = `shield:${her.key}:${kind}`;
   if (cache.has(key)) return cache.get(key);
   const S = 256;
   const c = makeCanvas(S, S);
   const g = c.getContext('2d');
-  g.fillStyle = field;
+  g.fillStyle = her.field;
   g.fillRect(0, 0, S, S);
+  g.save();
+  if (kind === 'round') {
+    const k = S / 118;
+    g.translate((S - 100 * k) / 2, (S - 120 * k) / 2 + 4 * k);
+    g.scale(k, k);
+  } else {
+    // The heater mesh's UVs: the outer outline (8..92, 6..112 in the device box) spans u 0.048..0.952
+    // and v 0.035..0.965.
+    const sx = (S * 0.904) / 84, sy = (S * 0.93) / 106;
+    g.translate(S * 0.048 - 8 * sx, S * 0.035 - 6 * sy);
+    g.scale(sx, sy);
+  }
+  paintDevice(g, her, { clip: null, stroke: '#3a2008' });
+  g.restore();
   // Painted wear and a soft centre highlight.
   const rg = g.createRadialGradient(S * 0.4, S * 0.35, 10, S * 0.5, S * 0.5, S * 0.7);
-  rg.addColorStop(0, 'rgba(255,255,255,0.18)');
+  rg.addColorStop(0, 'rgba(255,255,255,0.16)');
   rg.addColorStop(1, 'rgba(0,0,0,0.35)');
   g.fillStyle = rg;
   g.fillRect(0, 0, S, S);
@@ -188,48 +203,10 @@ export function shieldFaceTexture(field, kind) {
     g.fillStyle = `rgba(${i % 2 ? '0,0,0' : '255,240,220'},0.05)`;
     g.fillRect(x, y, 2 + (i % 5), 1 + (i % 3));
   }
-  g.fillStyle = '#d9b45c';
-  g.strokeStyle = '#6a4a18';
-  g.lineWidth = 3;
-  const cx = S / 2;
-  const cy = S / 2;
-  if (kind === 'cleric') {
-    g.beginPath();
-    for (let i = 0; i < 24; i++) {
-      const a = (i / 24) * Math.PI * 2;
-      const r = i % 2 ? 34 : 78;
-      g.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
-    }
-    g.closePath();
-    g.fill();
-    g.stroke();
-    g.beginPath();
-    g.arc(cx, cy, 26, 0, Math.PI * 2);
-    g.fillStyle = field;
-    g.fill();
-    g.stroke();
-  } else {
-    // Chevron with three bezants.
-    g.beginPath();
-    g.moveTo(20, 170);
-    g.lineTo(cx, 80);
-    g.lineTo(S - 20, 170);
-    g.lineTo(S - 20, 210);
-    g.lineTo(cx, 120);
-    g.lineTo(20, 210);
-    g.closePath();
-    g.fill();
-    g.stroke();
-    for (const [x, y] of [[70, 60], [S - 70, 60], [cx, 196]]) {
-      g.beginPath();
-      g.arc(x, y, 17, 0, Math.PI * 2);
-      g.fill();
-      g.stroke();
-    }
-  }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 4;
+  t.userData = { device: her.key };
   cache.set(key, t);
   return t;
 }

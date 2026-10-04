@@ -113,9 +113,22 @@ html[data-freeze='1'] .pc-view.pc-iron.tab-sheet .pc-lore { transition: none; }
     drop-shadow(0 3px 3px rgba(0, 0, 0, 0.85));
 }
 .gb-steel .gb-copper { filter: none; }
-.gb-steel { background-image: linear-gradient(180deg, #ffffff 0%, #cfd8e0 22%, #8796a4 46%, #3a4550 52%, #6c7c8a 66%, #b4c2ce 86%, #e2e8ee 100%); }
-.gb-copper { background-image: linear-gradient(180deg, #fff0dc 0%, #f6b47c 22%, #c06a34 46%, #5e2408 52%, #a24e20 66%, #e08a50 86%, #ffc08c 100%); }
-.gb-blue { background-image: linear-gradient(180deg, #f0faff 0%, #a8d6f2 22%, #4a8cbc 46%, #10344e 52%, #3a78a8 66%, #8cc4ea 86%, #c6e8ff 100%); }
+/* Chiselled metal: a cold steel-blue on the labels, hot copper on the values; each letter carries a
+   bright upper facet, a hard dark horizon (the chisel's ridge), a reflected lower facet, a thin
+   specular streak across the run and a dark engraved edge. */
+.gb-steel, .gb-copper, .gb-blue { -webkit-text-stroke: 0.6px rgba(12, 8, 4, 0.75); background-size: 100% 100%, 100% 100%; background-repeat: no-repeat; }
+.gb-steel { background-image:
+  linear-gradient(104deg, transparent 0 38%, rgba(240, 250, 255, 0.0) 40%, rgba(240, 250, 255, 0.75) 44%, rgba(240, 250, 255, 0) 49%, transparent 100%),
+  linear-gradient(180deg, #f4fbff 0%, #c4d6e6 18%, #7d97b0 40%, #24384c 50%, #142230 53%, #4c6a86 64%, #9ab8d2 84%, #dceaf6 100%); }
+.gb-copper { background-image:
+  linear-gradient(104deg, transparent 0 38%, rgba(255, 244, 220, 0) 40%, rgba(255, 244, 220, 0.7) 44%, rgba(255, 244, 220, 0) 49%, transparent 100%),
+  linear-gradient(180deg, #fff2d8 0%, #ffbe7a 16%, #e8783a 38%, #6a2206 50%, #3e1202 53%, #b04a18 64%, #f08a48 84%, #ffcf98 100%); }
+.gb-blue { background-image:
+  linear-gradient(104deg, transparent 0 38%, rgba(235, 248, 255, 0) 40%, rgba(235, 248, 255, 0.7) 44%, rgba(235, 248, 255, 0) 49%, transparent 100%),
+  linear-gradient(180deg, #f0faff 0%, #a8d6f2 18%, #4a8cbc 40%, #0e3048 50%, #08202f 53%, #3a78a8 64%, #8cc4ea 84%, #c6e8ff 100%); }
+.gb-name { background-image:
+  linear-gradient(104deg, transparent 0 30%, rgba(240, 250, 255, 0.75) 36%, transparent 44%),
+  linear-gradient(180deg, #f4fbff 0%, #c4d6e6 18%, #7d97b0 40%, #24384c 50%, #142230 53%, #4c6a86 64%, #9ab8d2 84%, #dceaf6 100%); }
 .gb-name { font-size: 2.7em; letter-spacing: 0.05em; }
 .gb-line { font-size: 1.5em; letter-spacing: 0.04em; }
 .gb-abbr, .gb-num { font-size: 1.62em; }
@@ -146,7 +159,7 @@ html[data-freeze='1'] .pc-view.pc-iron.tab-sheet .pc-lore { transition: none; }
 .gb-ornate::after {
   /* the inner bevel's cast shadow falling onto the painting from the light */
   inset: 0; border-radius: 0; z-index: 1;
-  box-shadow: inset 0 0 0 1px #000, inset 7px 9px 12px rgba(0, 0, 0, 0.82), inset -2px -2px 6px rgba(0, 0, 0, 0.5), inset 0 0 34px rgba(0, 0, 0, 0.4);
+  box-shadow: inset 0 0 0 1px #000, inset 0 0 0 3px #17120c, inset 0 0 0 4px rgba(190, 140, 80, 0.32), inset 0 0 0 6px #0a0806, inset 12px 16px 20px rgba(0, 0, 0, 0.88), inset -3px -3px 8px rgba(0, 0, 0, 0.55), inset 0 0 44px rgba(0, 0, 0, 0.45);
 }
 .gb-ornate > .gb-boss, .gb-ornate > .gb-crest { display: none; }
 .cc-card .gb-ornate.cc-ornate { border-width: 26px; border-image-width: 26px; }
@@ -158,11 +171,45 @@ html[data-freeze='1'] .pc-view.pc-iron.tab-sheet .pc-lore { transition: none; }
 .gb-right > .gb-ornate { flex: 1 1 auto; min-height: 0; display: flex; }
 .gb-right > .gb-ornate .pc-portrait { width: 100%; height: 100%; aspect-ratio: auto; }
 .gb-right > .gb-ornate .pc-portrait img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 30%; }
-.gb-mid { grid-template-columns: auto auto 1fr; gap: 0 2.4em; }
+.gb-mid { grid-template-columns: auto 1fr; gap: 0 2.4em; }
 .gb-purse { justify-self: start; align-self: start; padding-top: 0.1em; }
 .gb-crest-shield { width: 12.5em; filter: drop-shadow(0 10px 14px rgba(0, 0, 0, 0.8)); }
 .gb-top { position: relative; }
-.gb-crestwrap { margin: 0.6em 3.5em -13em 0; position: relative; z-index: 1; }
+.gb-crestwrap {
+  margin: 0.2em 1.5em -15.5em 0; position: relative; z-index: 1;
+  display: grid; grid-template-columns: auto auto; grid-template-areas: 'shield sig' 'purse purse'; align-items: center; justify-items: center; gap: 0.2em 0.6em;
+}
+.gb-crestwrap > .gb-crest-shield { grid-area: shield; width: 11.5em; }
+.gb-crestwrap > .gb-purse { grid-area: purse; justify-self: center; padding: 0; margin-top: -0.2em; }
+.gb-sigils { grid-area: sig; display: flex; flex-direction: column; gap: 0.5em; align-self: center; }
+.gb-sigil { width: 3.9em; height: 3.9em; display: block; filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.8)); outline: none; }
+.gb-sigil:hover, .gb-sigil:focus-visible, .gb-sigil.lore-hl { filter: drop-shadow(0 0 6px rgba(240, 170, 100, 0.6)) brightness(1.15); }
+/* the combat block: three columns set close to the centre (no gutter pushing ENCUMBRANCE to the edge) */
+.gb-combat { grid-template-columns: auto auto auto; justify-content: start; gap: 0 3.4em; }
+.gb-cc.r { align-items: stretch; }
+/* the finer print in the sheet's own serif metal, not a dashboard */
+.gb-fine { font-family: 'DejaVu Serif', 'PoR Book', serif; }
+.gb-fh {
+  font-family: 'DejaVu Serif', 'PoR Book', serif; font-weight: 700; font-size: 0.86em; letter-spacing: 0.1em;
+  background-image: linear-gradient(180deg, #fff0dc 0%, #f6b47c 22%, #c06a34 46%, #5e2408 52%, #a24e20 66%, #e08a50 86%, #ffc08c 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 1px 0 #000) drop-shadow(0 2px 2px rgba(0, 0, 0, 0.8));
+}
+.gb-fine.warn .gb-fh { background-image: linear-gradient(180deg, #ffd0c0 0%, #f06050 30%, #a01a10 50%, #5a0806 54%, #d0402c 76%, #ff9078 100%); }
+.gb-f { font-size: 0.98em; line-height: 1.34; }
+.gb-f > span {
+  font-family: 'DejaVu Serif', 'PoR Book', serif; font-weight: 700; font-size: 0.8em; letter-spacing: 0.06em; text-transform: uppercase;
+  background-image: linear-gradient(180deg, #f4fbff 0%, #b4c8da 40%, #4c6680 52%, #8aa8c2 70%, #d0e0ee 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 1px 0 #000);
+}
+.gb-f > b {
+  font-family: 'DejaVu Serif', 'PoR Book', serif; font-weight: 700;
+  background-image: linear-gradient(180deg, #fff2d8 0%, #ffbe7a 22%, #e8783a 46%, #6a2206 52%, #b04a18 66%, #f08a48 86%, #ffcf98 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 1px 0 #000);
+}
+.gb-f > b.gb-pips { background: none; filter: none; }
 
 /* ---------- character creation on iron ---------- */
 .cc-iron .cc-opt, .cc-iron .cc-ab, .cc-iron .cc-hubslot, .cc-iron .cc-abrow .adj button, .pc-iron .pc-order-row .b button, .pc-iron .pc-chip {

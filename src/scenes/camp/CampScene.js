@@ -217,7 +217,7 @@ export default class CampScene extends Scene {
   }
 
   _modal(title, content, { width = '34em' } = {}) {
-    const f = Frame({ title, variant: 'blue', className: 'por-dialog' });
+    const f = Frame({ title, variant: 'blue', className: 'por-dialog pc-iron' });
     f.el.style.maxWidth = width;
     f.el.style.width = width;
     let nav = null;
@@ -255,7 +255,7 @@ export default class CampScene extends Scene {
               // the note above says saving is off in debug/screenshot runs; the slots agree
               if (debug?.nosave) { ui.toast(`Not saved: saving is off in debug/screenshot mode (slot ${slot} untouched)`); return; }
               if (r && this.ctx.settings.get('confirmDangerous') !== false) {
-                const ok = await ui.dialog({ title: 'Overwrite?', variant: 'blue', body: `Replace the game in slot ${slot}?`, buttons: [{ id: 'y', label: 'Overwrite', primary: true }, { id: null, label: 'Cancel' }] });
+                const ok = await ui.dialog({ title: 'Overwrite?', variant: 'blue', className: 'pc-iron', body: `Replace the game in slot ${slot}?`, buttons: [{ id: 'y', label: 'Overwrite', primary: true }, { id: null, label: 'Cancel' }] });
                 if (ok !== 'y') return;
               }
               const done = saves.save(slot, game);
@@ -490,7 +490,7 @@ export default class CampScene extends Scene {
           h('button', {
             disabled: game.party.length < 2,
             onclick: async () => {
-              const ok = await this.ctx.ui.dialog({ title: 'Drop', variant: 'blue', body: `${c.name} leaves the party for good?`, buttons: [{ id: 'y', label: 'Drop', primary: true }, { id: null, label: 'Cancel' }] });
+              const ok = await this.ctx.ui.dialog({ title: 'Drop', variant: 'blue', className: 'pc-iron', body: `${c.name} leaves the party for good?`, buttons: [{ id: 'y', label: 'Drop', primary: true }, { id: null, label: 'Cancel' }] });
               if (ok !== 'y') return;
               game.party.splice(game.party.indexOf(c), 1);
               game.activeIndex = Math.min(game.activeIndex, game.party.length - 1);
@@ -559,7 +559,7 @@ export default class CampScene extends Scene {
     if (this.busy || this._exiting) return;
     // Breaking camp is one keypress away (Esc): ask first.
     this._exiting = true;
-    const ok = await this.ctx.ui.dialog({ title: 'Break Camp', variant: 'blue', body: 'Pack up and move on?', buttons: [{ id: 'y', label: 'Break camp', primary: true }, { id: null, label: 'Stay' }] });
+    const ok = await this.ctx.ui.dialog({ title: 'Break Camp', variant: 'blue', className: 'pc-iron', body: 'Pack up and move on?', buttons: [{ id: 'y', label: 'Break camp', primary: true }, { id: null, label: 'Stay' }] });
     this._exiting = false;
     if (ok === 'y') this.ctx.scenes.goto('explore', {});
   }

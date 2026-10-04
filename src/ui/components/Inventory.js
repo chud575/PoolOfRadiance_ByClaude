@@ -9,6 +9,7 @@ import { itemName, itemValue, itemWeight, isMagical } from '../../rules/items.js
 import { useItem } from '../../rules/magicItems.js';
 import { strengthTable } from '../../rules/abilities.js';
 import { itemIconURL, iconFor } from './itemIcons.js';
+import { armsOf } from './lookData.js';
 import { lore, miniPortrait } from './CharacterSheet.js';
 import { itemLore } from './itemLore.js';
 import './ironSkin.js';
@@ -284,7 +285,7 @@ export class InventoryPanel {
         h(`div.pc-slot${e ? '.full' : ''}${magic ? '.magic' : ''}${e && i === this.sel ? '.sel' : ''}${e ? `.r-${itemRarity(e)}` : ''}`, {
           tabindex: '0', dataset: { ...lore(e ? { title: itemName(e), text: `${label} slot. ${itemStatLine(def, e)}` } : { title: `${label} slot`, text: 'Nothing readied here. Select an item and choose READY.' }), nav: '1' },
           onclick: () => { if (e) { this.sel = i; this.render(); } },
-        }, [h('img', { src: e ? itemIconURL(iconFor(def), { magic }) : itemIconURL(ghost, { ghost: true }), alt: '' })]),
+        }, [h('img', { src: e ? itemIconURL(iconFor(def), { magic, heraldry: armsOf(ch) }) : itemIconURL(ghost, { ghost: true }), alt: '' })]),
         h('span.lab', [label]),
       ]);
     };
@@ -326,7 +327,7 @@ export class InventoryPanel {
         ondblclick: () => { this.sel = i; this.ready(); },
         dataset: { tip },
       }, [
-        h('span.ic', [h('img', { src: itemIconURL(iconFor(def), { magic }), alt: '' })]),
+        h('span.ic', [h('img', { src: itemIconURL(iconFor(def), { magic, heraldry: armsOf(ch) }), alt: '' })]),
         (e.qty ?? 1) > 1 ? h('span.qty', [`×${e.qty}`]) : null,
         e.equipped ? h('span.rd', ['Ready']) : null,
         h('span.nm', [itemName(e)]),
@@ -415,7 +416,7 @@ export class InventoryPanel {
     const magic = isMagical(e) && e.identified !== false;
     const stat = itemStatLine(def, e);
     return h(`div.pc-itemlore.r-${itemRarity(e)}`, [
-      h('div.plate', [h('img', { src: itemIconURL(iconFor(def), { magic }), alt: '' })]),
+      h('div.plate', [h('img', { src: itemIconURL(iconFor(def), { magic, heraldry: armsOf(ch) }), alt: '' })]),
       h('div.txt', [
         h('div.t', [itemName(e)]),
         h('div.s', [`${TYPE_NAMES[def.type] ?? def.type} · ${itemWeight(e)} cn · ${itemValue(e)} gp${e.equipped ? ' · readied' : ''}`]),

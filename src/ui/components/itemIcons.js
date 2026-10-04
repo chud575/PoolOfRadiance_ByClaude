@@ -8,6 +8,8 @@
  */
 
 const S = 64;
+import { paintDevice } from './heraldry.js';
+
 const cache = new Map();
 
 function steel(g, x0, y0, x1, y1, tone = 1) {
@@ -298,7 +300,7 @@ const DRAW = {
     g.strokeStyle = 'rgba(255,255,255,0.35)';
     g.stroke();
   },
-  shield(g) {
+  shield(g, her) {
     g.translate(32, 32);
     const shape = () => {
       g.beginPath();
@@ -306,24 +308,38 @@ const DRAW = {
       g.quadraticCurveTo(18, 18, 0, 28); g.quadraticCurveTo(-18, 18, -20, -4);
       g.closePath();
     };
-    // Painted planks under heraldry: azure, a chevron or, worn at the edges.
-    shape();
-    const sg = g.createLinearGradient(-20, -24, 20, 28);
-    sg.addColorStop(0, '#4a6cc0'); sg.addColorStop(0.55, '#24387a'); sg.addColorStop(1, '#0e1636');
-    g.fillStyle = sg;
-    g.fill();
-    g.save();
-    shape();
-    g.clip();
-    g.strokeStyle = 'rgba(8,12,30,0.45)';
-    g.lineWidth = 0.6;
-    for (let x = -14; x < 20; x += 7) { g.beginPath(); g.moveTo(x, -26); g.lineTo(x + 0.6, 30); g.stroke(); }
-    g.beginPath(); g.moveTo(-22, 12); g.lineTo(0, -6); g.lineTo(22, 12); g.lineTo(22, 20); g.lineTo(0, 2); g.lineTo(-22, 20); g.closePath();
-    g.fillStyle = gold(g, -20, -6, 20, 20);
-    g.fill();
-    g.strokeStyle = 'rgba(40,24,6,0.6)';
-    g.lineWidth = 0.6;
-    g.stroke();
+    if (her) {
+      // The bearer's own arms (heraldry.js): the same device as the sheet crest and the miniature.
+      g.save();
+      shape();
+      g.clip();
+      g.translate(-20 - 8 * (40 / 84), -27 - 6 * (55 / 106));
+      g.scale(40 / 84, 55 / 106);
+      paintDevice(g, her, { clip: null, stroke: 'rgba(40,24,6,0.7)' });
+      g.restore();
+      g.save();
+      shape();
+      g.clip();
+    } else {
+      // Painted planks under heraldry: azure, a chevron or, worn at the edges.
+      shape();
+      const sg = g.createLinearGradient(-20, -24, 20, 28);
+      sg.addColorStop(0, '#4a6cc0'); sg.addColorStop(0.55, '#24387a'); sg.addColorStop(1, '#0e1636');
+      g.fillStyle = sg;
+      g.fill();
+      g.save();
+      shape();
+      g.clip();
+      g.strokeStyle = 'rgba(8,12,30,0.45)';
+      g.lineWidth = 0.6;
+      for (let x = -14; x < 20; x += 7) { g.beginPath(); g.moveTo(x, -26); g.lineTo(x + 0.6, 30); g.stroke(); }
+      g.beginPath(); g.moveTo(-22, 12); g.lineTo(0, -6); g.lineTo(22, 12); g.lineTo(22, 20); g.lineTo(0, 2); g.lineTo(-22, 20); g.closePath();
+      g.fillStyle = gold(g, -20, -6, 20, 20);
+      g.fill();
+      g.strokeStyle = 'rgba(40,24,6,0.6)';
+      g.lineWidth = 0.6;
+      g.stroke();
+    }
     // Wear: scuffs showing the wood.
     g.strokeStyle = 'rgba(190,150,100,0.45)';
     g.lineWidth = 0.7;
@@ -348,7 +364,8 @@ const DRAW = {
       g.fillStyle = rg;
       g.fill();
     }
-    // Boss.
+    // Boss (a plain shield only: it would cover the bearer's charge).
+    if (her) return;
     g.beginPath(); g.arc(0, -1, 5.5, 0, Math.PI * 2);
     const bg = g.createRadialGradient(-2, -3, 0.5, 0, -1, 5.5);
     bg.addColorStop(0, '#fffbe6'); bg.addColorStop(0.4, '#c9a24c'); bg.addColorStop(1, '#5a3c10');
@@ -720,7 +737,8 @@ function finishIcon(c) {
 
 export function itemIconURL(icon, o = {}) {
   const id = DRAW[icon] ? icon : 'bag';
-  const key = `${id}|${o.magic ? 1 : 0}|${o.ghost ? 1 : 0}`;
+  const her = id === 'shield' && o.heraldry && !o.ghost ? o.heraldry : null;
+  const key = `${id}|${o.magic ? 1 : 0}|${o.ghost ? 1 : 0}|${her ? her.key : ''}`;
   let u = cache.get(key);
   if (u) return u;
   const R = 2; // drawn at 128 px: crisp in the big detail medallion as well as in the tiles
@@ -741,7 +759,7 @@ export function itemIconURL(icon, o = {}) {
   obj.height = S * R;
   const og = obj.getContext('2d');
   og.scale(R, R);
-  DRAW[id](og);
+  DRAW[id](og, her);
   if (!o.ghost) {
     try { finishIcon(obj); } catch { /* plain vector icon */ }
   }

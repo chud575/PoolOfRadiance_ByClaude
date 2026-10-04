@@ -334,9 +334,10 @@ function weaponMesh(kind, mats, scale = 1) {
   return outer;
 }
 
-function shieldMesh(kind, clothHex, mats, scale = 1) {
+function shieldMesh(kind, her, mats, scale = 1) {
   const g = new THREE.Group();
-  const faceTex = TX.shieldFaceTexture(clothHex, kind === 'round' ? 'cleric' : 'fighter');
+  g.userData.device = her.key;
+  const faceTex = TX.shieldFaceTexture(her, kind === 'round' ? 'round' : 'heater');
   const faceMat = new THREE.MeshStandardMaterial({ map: faceTex, roughness: 0.55, metalness: 0.05 });
   mats.extra.push(faceMat);
   const add = (geo, mat) => {
@@ -564,7 +565,7 @@ export function buildMiniature(ch, opt = {}) {
     fig.add(w);
   }
   if (fr.shield && !opt.noShield) {
-    const sh = shieldMesh(app.shield, app.clothHex, gm, (fr.shield.scale ?? 1) * wscale);
+    const sh = shieldMesh(app.shield, app.heraldry, gm, (fr.shield.scale ?? 1) * wscale);
     const z = new THREE.Vector3(...fr.shield.n).normalize();
     const y = new THREE.Vector3(...fr.shield.up);
     y.sub(z.clone().multiplyScalar(y.dot(z))).normalize();
@@ -575,7 +576,7 @@ export function buildMiniature(ch, opt = {}) {
   } else if (pose === 'sit' && app.shield && opt.gear && !opt.noShield) {
     // Seated at camp the shield is set down, propped against the seat at the sitter's side, so the
     // figure by the fire still carries its colours (the same device it bears on the board).
-    const sh = shieldMesh(app.shield, app.clothHex, gm, wscale * 0.95);
+    const sh = shieldMesh(app.shield, app.heraldry, gm, wscale * 0.95);
     const pz = fr.joints?.pelvis?.[2] ?? 0;
     const z = new THREE.Vector3(-0.55, 0.32, 0.78).normalize();
     const y = new THREE.Vector3(0.12, 1, -0.3);
