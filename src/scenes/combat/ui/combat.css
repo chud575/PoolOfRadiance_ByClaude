@@ -305,3 +305,79 @@
 
 /* Iteration 4: under an open menu only its own command is lit (no ghosted focus/hover box on MOVE). */
 .cb-menu-open .cb-cmds .por-cmd:not(.active) { background: none !important; box-shadow: none !important; outline: none !important; border-color: transparent !important; }
+
+/* ---------- Reskin 10: the reference's lettering ----------
+   The 1988 face (PoR 5x7, generated at runtime) in pale stippled stone,
+   uppercase, straight on the dark panel: NAME / HITPOINTS / AC / WEAPON, the
+   location plate, roster and the command line all speak in it. Text paints
+   the --gb-grain tile through its glyphs (background-clip), with a hard drop
+   shadow from a filter (text-shadow would paint over a clipped background). */
+:root:not([data-classic='1']) .cb-hud {
+  --gb-font: 'PoR 5x7', 'Courier New', monospace;
+  --gb-ink: #ffffff;
+}
+:root:not([data-classic='1']) :is(.cb-card .nm, .cb-card .gbl, .cb-card .mv .lbl, .cb-card .mv .big, .cb-loc .name, .cb-cmds .por-cmd > span, .cb-cmds .por-cmd .por-hk, .cb-prompt, .cb-speed, .cb-round) {
+  font-family: var(--gb-font); font-weight: 400; text-transform: uppercase; letter-spacing: 0.06em;
+  color: transparent; text-shadow: none; -webkit-text-stroke: 0;
+  background-image: linear-gradient(var(--gb-ink), var(--gb-ink)), var(--gb-grain);
+  background-blend-mode: multiply; background-size: auto, 64px 64px;
+  -webkit-background-clip: text; background-clip: text;
+}
+:root:not([data-classic='1']) :is(.cb-card .nm, .cb-card .gbl, .cb-card .mv, .cb-loc .name, .cb-cmds .por-cmd, .cb-prompt, .cb-speed) {
+  filter: drop-shadow(2px 2px 0 rgba(0, 0, 0, 0.92)) drop-shadow(0 0 3px rgba(0, 0, 0, 0.6));
+}
+/* Card: big name, a stack of terse facts, generous leading as in the reference. */
+:root:not([data-classic='1']) .cb-card .nm { font-size: 2.25em; line-height: 1.1; letter-spacing: 0.08em; margin-bottom: 0.05em; }
+:root:not([data-classic='1']) .cb-card.monster .nm { --gb-ink: #ffc8b8; }
+:root:not([data-classic='1']) .cb-card .cls { font-family: var(--gb-font); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.85em; color: #9a917e; margin: 0 0 0.55em; text-shadow: 1px 1px 0 #000; }
+:root:not([data-classic='1']) .cb-card .row.gbl {
+  display: flex; align-items: baseline; justify-content: flex-start; gap: 0.6em; border: 0; padding: 0.1em 0;
+  font-size: 1.6em; line-height: 1.25;
+}
+:root:not([data-classic='1']) .cb-card .row.gbl b { margin: 0; font-family: inherit; font-weight: 400; color: inherit; }
+:root:not([data-classic='1']) .cb-card .row.gbl small { font-size: 0.62em; margin-left: -0.45em; }
+:root:not([data-classic='1']) .cb-card .row.gbl .sp { flex: 1; max-width: 2.2em; }
+:root:not([data-classic='1']) .cb-card .row.gbl.wpn .sp { max-width: none; }
+:root:not([data-classic='1']) .cb-card .hp { height: 3px; margin: 0.05em 0 0.3em; width: 62%; background: rgba(0, 0, 0, 0.55); border: 0; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7); }
+:root:not([data-classic='1']) .cb-card .hp i { background: linear-gradient(90deg, #6f8a5a, #b7c49a); }
+:root:not([data-classic='1']) .cb-card.monster .hp i { background: linear-gradient(90deg, #8a3a2a, #c87a5a); }
+:root:not([data-classic='1']) .cb-card .mv { display: flex; align-items: center; justify-content: flex-start; gap: 0.6em; margin-top: 0.25em; }
+:root:not([data-classic='1']) .cb-card .mv .lbl { font-size: 1.6em; letter-spacing: 0.06em; }
+:root:not([data-classic='1']) .cb-card .mv .big { font-size: 1.6em; line-height: 1.25; }
+:root:not([data-classic='1']) .cb-card .mv .cb-pips { flex: 1; margin: 0 0 0 0.4em; max-width: 12em; }
+:root:not([data-classic='1']) .cb-card .cb-pips i { height: 4px; background: rgba(200, 192, 170, 0.85); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6); }
+:root:not([data-classic='1']) .cb-card .cb-pips i.used { background: rgba(255, 255, 255, 0.1); }
+:root:not([data-classic='1']) .cb-card .cb-pips i.half { background: linear-gradient(90deg, rgba(200, 192, 170, 0.85) 50%, rgba(255, 255, 255, 0.1) 50%); }
+:root:not([data-classic='1']) .cb-card .cb-chip, :root:not([data-classic='1']) .cb-card .auto { font-family: var(--gb-font); text-transform: uppercase; letter-spacing: 0.06em; }
+/* The panel ground: darker and quieter, so the lettering sits on the scene as in the reference. */
+:root:not([data-classic='1']) .cb-card.por-frame { background: linear-gradient(180deg, rgba(4, 3, 2, 0.82) 0%, rgba(4, 3, 2, 0.6) 70%, rgba(4, 3, 2, 0)); padding-top: 0.9em; }
+
+/* Roster: the same face, Gold Box green for the fit, the table rules gone. */
+:root:not([data-classic='1']) .cb-roster .por-roster { font-family: var(--gb-font); text-transform: uppercase; font-size: 1.12em; letter-spacing: 0.04em; }
+:root:not([data-classic='1']) .cb-roster .por-roster-head { font-family: var(--gb-font); font-weight: 400; color: #9a917e; letter-spacing: 0.1em; border-bottom-color: rgba(150, 140, 120, 0.25); }
+:root:not([data-classic='1']) .cb-roster .por-roster-row { text-shadow: 1px 1px 0 #000; }
+:root:not([data-classic='1']) .cb-roster .por-roster-row :is(.ac, .hp) { font-family: var(--gb-font); }
+:root:not([data-classic='1']) .cb-roster .por-roster-row .bar { opacity: 0.45; }
+
+/* Location plate, speed, prompt. */
+:root:not([data-classic='1']) .cb-loc .name { font-size: 1.35em; letter-spacing: 0.1em; }
+:root:not([data-classic='1']) .cb-loc .sub { font-family: var(--gb-font); text-transform: uppercase; letter-spacing: 0.06em; color: #a39a86; }
+:root:not([data-classic='1']) .cb-speed { font-size: 0.85em; }
+:root:not([data-classic='1']) .cb-speed b { color: inherit; font-weight: 400; }
+:root:not([data-classic='1']) .cb-prompt { font-size: 0.95em; letter-spacing: 0.1em; --gb-ink: #f2e6c4; }
+:root:not([data-classic='1']) .cb-logbox { font-family: var(--gb-font); text-transform: uppercase; letter-spacing: 0.03em; font-size: 0.86em; }
+
+/* Command line: big stippled words on iron-black, hotkey letter in worn gold. */
+:root:not([data-classic='1']) .cb-cmds.por-commandbar { background: linear-gradient(180deg, #0b0907, #040302); border-top: 0; box-shadow: none; gap: 0.15em; }
+:root:not([data-classic='1']) .cb-cmds.por-commandbar::before { display: none; }
+:root:not([data-classic='1']) .cb-cmds .por-cmd { font-size: 1.32em; letter-spacing: 0.05em; padding: 0.22em 0.55em 0.18em; --gb-ink: #f4f1ea; }
+:root:not([data-classic='1']) .cb-cmds .por-cmd .por-hk { --gb-ink: #ffd65a; font-size: 1em; font-weight: 400; background-size: auto, 64px 64px; background-position: 0 0; }
+:root:not([data-classic='1']) .cb-cmds .por-cmd::after { display: none; }
+:root:not([data-classic='1']) .cb-cmds .por-cmd:disabled { opacity: 1; --gb-ink: #5e5a52; }
+:root:not([data-classic='1']) .cb-cmds .por-cmd:disabled .por-hk { --gb-ink: #75684a; }
+:root:not([data-classic='1']) .cb-cmds .por-cmd:hover:not(:disabled), :root:not([data-classic='1']) .cb-cmds .por-cmd:focus-visible { background-color: transparent; border-color: transparent; box-shadow: none; --gb-ink: #ffffff; }
+/* Active command: the Gold Box inverse bar, a dull brass plate behind dark stippled letters. */
+:root:not([data-classic='1']) .cb-cmds .por-cmd { font-family: var(--gb-font); text-transform: uppercase; }
+:root:not([data-classic='1']) .cb-cmds .por-cmd.active { --gb-ink: #2a1c0a; border-color: #000;
+  background: linear-gradient(180deg, #e9cf86, #b48c3c 55%, #8e6a28); box-shadow: 0 0 0 1px #000, inset 0 1px 0 rgba(255, 245, 200, 0.6); }
+:root:not([data-classic='1']) .cb-cmds .por-cmd.active .por-hk { --gb-ink: #4a1e04; }

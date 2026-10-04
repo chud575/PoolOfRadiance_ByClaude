@@ -8,6 +8,7 @@ import { RACES } from '../../../rules/races.js';
 /** 'lawfulGood' → 'Lawful Good', 'halfElf' → 'Half-Elf' style display words. */
 const words = (id) => String(id ?? '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (m) => m.toUpperCase()).replace(/ ([a-z])/g, (m, a) => ` ${a.toUpperCase()}`);
 import { ropeVars } from './rope.js';
+import { registerBitmapFont } from '../../../ui/styles/bitmapFontFace.js';
 import './combat.css';
 
 const FX_LABEL = {
@@ -25,6 +26,8 @@ const FX_LABEL = {
 export class CombatHud {
   constructor(ctx, o = {}) {
     this.ctx = ctx;
+    // The reference's chunky stippled lettering is the classic 5x7 face.
+    registerBitmapFont();
     this.root = h('div.cb-hud');
     this.floatLayer = h('div.cb-float-layer');
     this.timeline = h('div.cb-timeline');
@@ -171,15 +174,16 @@ export class CombatHud {
       const left = c.mp - i;
       pips.push(h('i', { class: left >= 1 ? '' : left > 0 ? 'half' : 'used' }));
     }
+    // Gold Box hero panel: the 5x7 face in stippled stone, one fact per line
+    // (NAME / HITPOINTS / AC / WEAPON), as the 1988 right-hand column read.
     body.append(...[
       h('div.nm', [c.name]),
       h('div.cls', [isParty ? `${s.className} · Level ${s.levels}` : `${c.ref?.name ?? 'Monster'} · ${hdText(c)}`]),
-      h('div.row', ['Hit Points', h('b', [isParty ? `${hpNow} / ${c.hp.max}` : describeHealth({ hp: { cur: hpNow, max: c.hp.max } })])]),
+      h('div.row.gbl', [h('span', ['Hitpoints']), h('b', [isParty ? `${hpNow}` : describeHealth({ hp: { cur: hpNow, max: c.hp.max } })]), isParty ? h('small', [`/${c.hp.max}`]) : null]),
       h('div.hp', [h('i', { style: { width: `${pct * 100}%` } })]),
-      h('div.pair', [h('div.row', ['Armor Class', h('b', [String(c.ac)])]), h('div.row', ['THAC0', h('b', [String(c.thac0)])])]),
-      h('div.pair', [h('div.row', ['Weapon', h('b', [engine.weaponName(c)])]), h('div.row', ['Damage', h('b', [c.attacks.join(' / ')])])]),
-      h('div.mv', [h('span.lbl', ['Moves Left']), h('span.big', [fmtMp(c.mp)])]),
-      h('div.cb-pips', pips),
+      h('div.row.gbl', [h('span', ['AC']), h('b', [String(c.ac)]), h('span.sp'), h('span', ['THAC0']), h('b', [String(c.thac0)])]),
+      h('div.row.gbl.wpn', [h('span', [engine.weaponName(c)]), h('span.sp'), h('b', [c.attacks.join(' / ')])]),
+      h('div.mv', [h('span.lbl', ['Moves']), h('span.big', [fmtMp(c.mp)]), h('div.cb-pips', pips)]),
       chips.length ? h('div.cb-chips', chips) : null,
       isParty && c.quick ? h('div.auto', ['Under computer control']) : null,
     ].filter(Boolean));

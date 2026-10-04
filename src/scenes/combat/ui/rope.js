@@ -196,7 +196,48 @@ export function ropeVars(T) {
     '--rope-h': `url(${hz.toDataURL()})`,
     '--rope-v': `url(${vt.toDataURL()})`,
     '--rope-plate': `url(${pl.toDataURL()})`,
+    '--gb-grain': `url(${grainTile().toDataURL()})`,
   };
   cache.set(T, vars);
   return vars;
+}
+
+let grain = null;
+/**
+ * The reference's stippled lettering: a 64 px tile of pale weathered stone,
+ * speckled with dark pits (a fixed hash, so every frame and run is identical).
+ * Clipped to the 5x7 text it gives the chunky, dithered Gold Box face.
+ */
+function grainTile() {
+  if (grain) return grain;
+  const N = 64;
+  const c = canvas(N, N);
+  const g = c.getContext('2d');
+  const img = g.createImageData(N, N);
+  const hash = (x, y, s) => {
+    let h = (x * 374761393 + y * 668265263 + s * 982451653) | 0;
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+  };
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      // soft value noise (8 px cells, wrapped) for the stone's mottling
+      const cx = x / 8, cy = y / 8, ix = Math.floor(cx), iy = Math.floor(cy), fx = cx - ix, fy = cy - iy;
+      const v = (a, b) => hash(((a % 8) + 8) % 8, ((b % 8) + 8) % 8, 7);
+      const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+      const m = (v(ix, iy) * (1 - sx) + v(ix + 1, iy) * sx) * (1 - sy) + (v(ix, iy + 1) * (1 - sx) + v(ix + 1, iy + 1) * sx) * sy;
+      const r = hash(x, y, 1);
+      let l = 196 + m * 40;
+      if (r < 0.2) l *= 0.5 + hash(x, y, 2) * 0.18; // dark pits
+      else if (r > 0.93) l = Math.min(255, l + 22); // bright flecks
+      const i = (y * N + x) * 4;
+      img.data[i] = l * 0.99;
+      img.data[i + 1] = l * 0.985;
+      img.data[i + 2] = l * 0.95;
+      img.data[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  grain = c;
+  return c;
 }
