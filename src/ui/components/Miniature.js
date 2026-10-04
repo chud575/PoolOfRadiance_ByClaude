@@ -640,7 +640,8 @@ export function buildMiniature(ch, opt = {}) {
         M4.compose(V.set(x, 0.085, z), Q, S.set(sc, sc * (0.7 + rnd() * 0.8), sc));
         tufts.setMatrixAt(i, M4);
         const t = rnd();
-        tufts.setColorAt(i, C.setRGB(0.07 + t * 0.1, 0.1 + t * 0.07, 0.035 + t * 0.015));
+        // olive-brown static grass, low in chroma: under the torch it must read as turf, not straw
+        tufts.setColorAt(i, C.setRGB(0.038 + t * 0.04, 0.046 + t * 0.036, 0.024 + t * 0.014));
       }
       for (let i = 0; i < NP; i++) {
         const a = rnd() * Math.PI * 2, d = (0.3 + rnd() * 0.65) * (r - 0.04);
@@ -653,6 +654,16 @@ export function buildMiniature(ch, opt = {}) {
       pebs.castShadow = true;
       pebs.receiveShadow = true;
       root.add(tufts, pebs);
+      // a darker band of earth round the edge of the groundwork, as a painter rims a base
+      const earthG = new THREE.TorusGeometry(r - 0.008, 0.011, 6, 96);
+      const earthM = new THREE.MeshStandardMaterial({ color: 0x1c140c, roughness: 1 });
+      disposables.push(earthG, earthM);
+      const earth = new THREE.Mesh(earthG, earthM);
+      earth.rotation.x = Math.PI / 2;
+      earth.position.y = 0.0855;
+      earth.scale.z = 0.45;
+      earth.receiveShadow = true;
+      root.add(earth);
     }
     const ringG = new THREE.TorusGeometry(r + 0.036, 0.006, 6, 96);
     disposables.push(ringG);

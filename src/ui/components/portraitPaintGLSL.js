@@ -1135,6 +1135,9 @@ void main() {
   float L = lum(col);
   col = mix(col, col * vec3(1.04, 1.0, 0.94), sat(L * 1.5));
   col = mix(col, col * vec3(0.94, 0.98, 1.06), sat(1.0 - L * 3.0) * 0.6);
+  // a soft shoulder on the top lights: a sheen on a white beard or a bald crown never blows out
+  float Lh = lum(col);
+  if (Lh > 0.68) col *= (0.68 + (1.0 - exp(-(Lh - 0.68) * 3.2)) * 0.17) / Lh;
   // low key, as the board is lit: the half-tones and darks pressed down (the lights untouched)
   col *= mix(0.7, 1.0, smoothstep(0.08, 0.55, L));
   // vignette
