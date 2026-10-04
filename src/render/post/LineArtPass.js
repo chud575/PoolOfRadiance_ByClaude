@@ -372,7 +372,7 @@ const EDGE_FRAG = /* glsl */ `
     int pc = int(prev.g * 255.0 + 0.5);
     bool wasLine = uStill > 0.5 && pc >= 1 && pc <= 4;
     float creaseT = uCrease * (wasLine ? 0.8 : 1.0);
-    float best = 0.0; float bw = 0.0; int bink = 0; int bcls = 0; float bz = 0.0; ivec2 bp = ivec2(0); int bid = 0; float bw0 = 1.0;
+    bool bfix = false; float best = 0.0; float bw = 0.0; int bink = 0; int bcls = 0; float bz = 0.0; ivec2 bp = ivec2(0); int bid = 0; float bw0 = 1.0;
     bool allSky = true;
     int glowN = 0, glowInk = 0, nS = 0;
     for (int j = 0; j < 4; j++) {
@@ -400,10 +400,15 @@ const EDGE_FRAG = /* glsl */ `
         for (int i = 0; i < 4; i++) {
           ivec2 a = i == 0 ? ivec2(1, 0) : i == 1 ? ivec2(-1, 0) : i == 2 ? ivec2(0, 1) : ivec2(0, -1);
           ivec2 q = p + a;
-          if (idOf(G(q)) == id0) continue;
+          vec4 gq = G(q);
+          int iq = idOf(gq);
+          if (iq == id0) continue;
           if (D(q) >= 0.99999) { s = 3.0; break; }
           float wq = W(q);
           if (!nearer(w0, wq)) continue;
+          // touching pieces of one ink (a rubble heap, a stack of blocks)
+          // read as one mass: no outline between them
+          if (iq != 0 && (flOf(gq) & 15) == ink && abs(wq - w0) < 0.025 * abs(w0)) continue;
           float e = abs(W(p - a) + wq - 2.0 * w0) * scale;
           if (e > uIdCrease) { s = 3.0; break; }
         }
@@ -420,7 +425,18 @@ const EDGE_FRAG = /* glsl */ `
       // their creases are weak, and they carry no albedo joints at all
       bool floorS = false;
       if (id0 == 0 && (cls == 3 || (s == 0.0 && det >= 3 && z < uLumDist))) floorS = nrm(p).y > 0.72;
-      if (cls == 3 && floorS) cls = 1;
+      // a crease where a floor meets a wall/step/plinth takes the ink of the
+      // upright face (one line, one ink), else it is a weak floor line
+      bool fixInk = false;
+      if (cls == 3 && floorS) {
+        cls = 1;
+        for (int i = 0; i < 8; i++) {
+          ivec2 a = (i & 3) == 0 ? ivec2(1, 0) : (i & 3) == 1 ? ivec2(-1, 0) : (i & 3) == 2 ? ivec2(0, 1) : ivec2(0, -1);
+          ivec2 q = p + a * (1 + (i >> 2));
+          if (D(q) >= 0.99999 || nrm(q).y > 0.6) continue;
+          ink = flOf(G(q)) & 15; cls = 3; fixInk = true; break;
+        }
+      }
       // 3. bold albedo lines on large near surfaces, in the dark ink
       if (s == 0.0 && det >= 3 && z < uLumDist && !floorS) {
         if (lumEdge(p, w0) > uLum) { s = 0.5; cls = 2; }
@@ -428,13 +444,13 @@ const EDGE_FRAG = /* glsl */ `
       if (s == 0.0 && uGrid.y > 0.5 && id0 == 0 && gridLine(p, w0)) { s = 0.25; cls = 2; ink = 8; }
       float nearness = uOrtho > 0.5 ? -w0 : w0;
       if (s > 0.0 && (best == 0.0 || cls > bcls || (cls == bcls && nearness > bw))) {
-        best = s; bw = nearness; bink = ink; bcls = cls; bz = z; bp = p; bid = id0; bw0 = w0;
+        best = s; bw = nearness; bink = ink; bcls = cls; bfix = fixInk; bz = z; bp = p; bid = id0; bw0 = w0;
       }
     }
     int outInk = 0; int outCls = 0;
     if (best > 0.0) {
       float f = fogF(bz);
-      int k = bid == 0 && bink != 8 && bcls != 4 ? inkMode(bp, bw0) : bink;
+      int k = bid == 0 && bink != 8 && bcls != 4 && !bfix ? inkMode(bp, bw0) : bink;
       if (bcls == 2 || f > uFogDark) k = DARK[k];
       if (f < uFogDrop && k != 0) { outInk = k; outCls = bcls; }
     }
@@ -520,6 +536,11 @@ const CLEAN_FRAG = /* glsl */ `
         if (T(lp - a).y != c.y) drop = true;
       }
       if (drop) c = ivec2(0, 0);
+    } else if (c.y == 5) {
+      // lone sparks and motes (a fill pixel with < 2 fill neighbours) go
+      int nf = 0;
+      for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) if (T(lp + ivec2(x, y)).y == 5) nf++;
+      if (nf < 3) c = ivec2(0, 0);
     }
     gl_FragColor = enc(c.x, c.y);
   }
@@ -914,9 +935,9 @@ export class LineArtPass {
     let sBest = 0;
     for (let i = 1; i < 16; i++) {
       if (votes[i] > best) ((best = votes[i]), (ink = i));
-      if (satVotes[i] > sBest) ((sBest = satVotes[i]), (sInk = i));
+      if (i >= 9 && i <= 14 && satVotes[i] > sBest) ((sBest = satVotes[i]), (sInk = i));
     }
-    if (sInk && sBest > 0.18 * total) ink = sInk;
+    if (sInk >= 9 && sInk <= 14 && sBest > 0.18 * total) ink = sInk;
     if (total === 0) ink = 7;
     // id 0 = "large surface"; spread ids so neighbours never collide
     const id = (this._nextId = (this._nextId * 40503 + 1) & 0xffff) || 1;
