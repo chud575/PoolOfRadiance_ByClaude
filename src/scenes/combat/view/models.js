@@ -97,7 +97,8 @@ export function makeFigureModel(c, index = 0) {
       height: body.height * (kit.female ? 0.95 : 1),
       bulk: body.bulk * (kit.female ? 0.9 : 1),
       legRatio: body.legRatio ?? 1,
-      headScale: body.headScale ?? 1,
+      // Reskin 8: heroic 28 mm proportions (a slightly bigger head and helm).
+      headScale: (body.headScale ?? 1) * 1.1,
       head: 'human',
       skin: ['skin', SKIN[ch.race] ?? SKIN.human],
       kit,
@@ -325,7 +326,9 @@ function buildBiped(o) {
     // Deltoid: rounds the shoulder into the arm.
     R.part(`upperArm${side}`, sphere(0.066 * s * bw, 12, 10), armMat, { p: [sx * 0.008 * s, -0.012 * s, 0], s: [1, 1.1, 1] });
     R.part(`upperArm${side}`, limb(0.055 * s * bw, 0.045 * s * bw, armU), armMat);
-    R.part(`foreArm${side}`, limb(0.046 * s * bw, 0.036 * s * bw, armF), kit.armor === 'robe' ? clothMat : o.claws || kit.armor === 'loincloth' || kit.armor === 'scraps' || kit.armor === 'orcish' || kit.armor === 'harness' || kit.armor === 'none' ? skinMat : kit.armor === 'chain' || kit.armor === 'plate' ? armMat : skinMat);
+    // Reskin 8: a tapered forearm (thick at the elbow, slim wrist), not a tube.
+    const heroArm = kit.race !== 'monster';
+    R.part(`foreArm${side}`, limb((heroArm ? 0.054 : 0.046) * s * bw, (heroArm ? 0.03 : 0.036) * s * bw, armF, heroArm ? { bulge: 1.16 } : undefined), kit.armor === 'robe' ? clothMat : o.claws || kit.armor === 'loincloth' || kit.armor === 'scraps' || kit.armor === 'orcish' || kit.armor === 'harness' || kit.armor === 'none' ? skinMat : kit.armor === 'chain' || kit.armor === 'plate' ? armMat : skinMat);
     // Hand: palm + thumb; claws for beasts.
     if (kit.race !== 'monster') {
       // A gripping hand, not a mitten: a narrow palm, a row of knuckles and
@@ -346,6 +349,8 @@ function buildBiped(o) {
       } else if (kit.armor !== 'robe') {
         R.part(`foreArm${side}`, cyl(0.043 * s * bw, 0.038 * s * bw, 0.1 * s, 10), darkLeather, { p: [0, -armF + 0.06 * s, 0] });
       }
+      // Reskin 8: a gauntlet block: a flared cuff over the wrist (sculpted bulk at the hand).
+      if (kit.armor !== 'robe') R.part(`hand${side}`, cyl(0.058 * s * bw, 0.04 * s * bw, 0.06 * s, 10), armoured ? darkMetal : darkLeather, { p: [0, 0.0, 0] });
     } else {
       R.part(`hand${side}`, rbox(0.075 * s * bw, 0.095 * s, 0.05 * s, 0.018 * s), skinMat, { p: [0, -0.05 * s, 0.005 * s] });
       R.part(`hand${side}`, limb(0.014 * s, 0.012 * s, 0.045 * s, { seg: 6 }), skinMat, { p: [sx * -0.03 * s, -0.03 * s, 0.025 * s], r: [0.6, 0, sx * 0.4] });
@@ -361,8 +366,17 @@ function buildBiped(o) {
       R.part(`foot${side}`, rbox(0.08 * s, 0.05 * s, 0.2 * s, 0.02 * s), skinMat, { p: [0, -0.03 * s, 0.06 * s] });
       for (let k = 0; k < 3; k++) R.part(`foot${side}`, cone(0.012 * s, 0.05 * s, 5), pbr('bone', 0x2a2018), { p: [(k - 1) * 0.025 * s, -0.04 * s, 0.17 * s], r: [Math.PI / 2, 0, 0] });
     } else {
-      R.part(`foot${side}`, rbox(0.1 * s * bw, 0.08 * s, 0.24 * s, 0.03 * s), kit.race === 'monster' && kit.armor !== 'vest' ? skinMat : darkLeather, { p: [0, -0.035 * s, 0.05 * s] });
+      const hero = kit.race !== 'monster';
+      // Reskin 8: a chunky boot block (toe cap, heel) for the heroes.
+      R.part(`foot${side}`, rbox((hero ? 0.118 : 0.1) * s * bw, (hero ? 0.095 : 0.08) * s, (hero ? 0.27 : 0.24) * s, 0.032 * s), kit.race === 'monster' && kit.armor !== 'vest' ? skinMat : darkLeather, { p: [0, -0.035 * s, 0.055 * s] });
+      if (hero) R.part(`foot${side}`, rbox(0.1 * s * bw, 0.035 * s, 0.07 * s, 0.012 * s), darkLeather, { p: [0, -0.06 * s, -0.06 * s] });
       if (kit.race !== 'monster' || kit.armor === 'vest') R.part(`shin${side}`, cyl(0.06 * s, 0.055 * s, 0.14 * s, 12), darkLeather, { p: [0, -shinL + 0.08 * s, 0] });
+      if (hero && kit.armor !== 'robe') {
+        // Calf muscle and a tall boot shaft with a flared, turned-down cuff.
+        R.part(`shin${side}`, sphere(0.058 * s * lw, 10, 8), legMat === skinMat ? skinMat : darkLeather, { p: [0, -shinL * 0.3, -0.018 * s], s: [1, 1.7, 1.05] });
+        R.part(`shin${side}`, cyl(0.075 * s, 0.062 * s, 0.24 * s, 12), darkLeather, { p: [0, -shinL + 0.15 * s, 0] });
+        R.part(`shin${side}`, cyl(0.088 * s, 0.075 * s, 0.06 * s, 12), leather, { p: [0, -shinL + 0.28 * s, 0] });
+      }
     }
     } // !sculpt
     if (kit.armor === 'plate') {
@@ -426,11 +440,20 @@ function buildBiped(o) {
       for (let k = 0; k < 4; k++) R.part('chest', box(0.18 * s * w, 0.012 * s, 0.01 * s), darkLeather, { p: [0, 0.01 * s + k * 0.05 * s, 0.13 * s] });
       R.part('hips', lathe([[0.22, -0.2], [0.18, -0.06], [0.16, 0.02]].map(([r, y]) => [r * s, y * s]), 16, { xs: w, zs: 0.72 }), clothMat);
     } else if (kit.armor === 'robe') {
-      R.part('hips', lathe([[0.3, -0.92 * legR], [0.26, -0.6 * legR], [0.2, -0.25], [0.165, 0.02]].map(([r, y]) => [r * s, y * s]), 20, { xs: w, zs: 0.78 }), clothMat);
-      R.part('hips', lathe([[0.305, -0.93 * legR], [0.3, -0.9 * legR], [0.265, -0.6 * legR]].map(([r, y]) => [r * s, y * s]), 20, { xs: w, zs: 0.78 }), gold);
+      R.part('hips', lathe([[0.35, -0.92 * legR], [0.27, -0.6 * legR], [0.2, -0.25], [0.165, 0.02]].map(([r, y]) => [r * s, y * s]), 20, { xs: w, zs: 0.78 }), clothMat);
+      R.part('hips', lathe([[0.355, -0.93 * legR], [0.35, -0.9 * legR], [0.3, -0.72 * legR]].map(([r, y]) => [r * s, y * s]), 20, { xs: w, zs: 0.78 }), gold);
       R.part('chest', lathe([[0.1, 0.18], [0.14, 0.2], [0.11, 0.25]].map(([r, y]) => [r * s, y * s]), 16, { zs: 0.8 }), darkCloth);
       // Wide sleeves.
-      for (const side of ['L', 'R']) R.part(`foreArm${side}`, lathe([[0.085, -0.22], [0.06, -0.08], [0.05, 0]].map(([r, y]) => [r * s, y * s]), 12), clothMat);
+      for (const side of ['L', 'R']) R.part(`foreArm${side}`, lathe([[0.095, -0.24], [0.085, -0.2], [0.06, -0.08], [0.05, 0]].map(([r, y]) => [r * s, y * s]), 12), clothMat);
+      // Reskin 8: layered robe: deep vertical folds down the skirt, flaring to
+      // a heavy hem, an over-robe to mid-thigh and a hood rolled at the neck.
+      for (let k = 0; k < 10; k++) {
+        const a = (k / 10) * Math.PI * 2 + 0.2;
+        const rr = 0.262 * s;
+        R.part('hips', cone(0.05 * s, 0.66 * s * legR, 6), k % 2 ? clothMat : darkCloth, { p: [Math.sin(a) * rr * w, -0.58 * s * legR, Math.cos(a) * rr * 0.78], r: [Math.cos(a) * 0.17, 0, -Math.sin(a) * 0.17 * w], s: [1, 1, 0.55] });
+      }
+      R.part('hips', lathe([[0.25, -0.42], [0.2, -0.18], [0.17, 0.03]].map(([r, y]) => [r * s, y * s]), 18, { xs: w, zs: 0.8 }), darkCloth);
+      R.part('chest', torus(0.11 * s, 0.035 * s, 6, 16), clothMat, { p: [0, 0.235 * s, -0.01 * s], r: [Math.PI / 2, 0, 0], s: [1.15, 0.9, 1] });
     } else if (kit.armor === 'tunic') {
       R.part('hips', lathe([[0.22, -0.26], [0.18, -0.1], [0.16, 0.02]].map(([r, y]) => [r * s, y * s]), 16, { xs: w, zs: 0.74 }), clothMat);
       torsoShell(clothMat, 1.03);
@@ -491,6 +514,12 @@ function buildBiped(o) {
       R.part('hips', torus(0.165 * s * w, 0.02 * s, 6, 24), darkLeather, { p: [0, 0.04 * s, 0], r: [Math.PI / 2, 0, 0], s: [1, 0.76, 1] });
       R.part('hips', rbox(0.05 * s, 0.045 * s, 0.02 * s, 0.006 * s), gold, { p: [0, 0.04 * s, 0.13 * s] });
       R.part('hips', rbox(0.07 * s, 0.08 * s, 0.05 * s, 0.015 * s), leather, { p: [0.14 * s * w, -0.02 * s, 0.06 * s], r: [0, 0.6, 0] });
+      if (kit.race !== 'monster') {
+        // Reskin 8: belt bulk: a second pouch, a purse and a dagger at the back.
+        R.part('hips', rbox(0.06 * s, 0.075 * s, 0.045 * s, 0.014 * s), darkLeather, { p: [-0.15 * s * w, -0.02 * s, 0.04 * s], r: [0, -0.8, 0] });
+        R.part('hips', sphere(0.03 * s, 8, 6), leather, { p: [-0.09 * s * w, -0.04 * s, 0.12 * s], s: [1, 1.3, 0.8] });
+        R.part('hips', rbox(0.03 * s, 0.16 * s, 0.03 * s, 0.008 * s), darkLeather, { p: [0.06 * s, -0.04 * s, -0.14 * s], r: [0, 0, 0.5] });
+      }
     }
   }
 
