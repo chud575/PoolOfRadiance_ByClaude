@@ -767,10 +767,12 @@ function snapshotStage() {
   if (stage && stage.env === o.env) return stage;
   const scene = new THREE.Scene();
   scene.environment = o.env;
-  scene.environmentIntensity = 0.75;
-  scene.add(new THREE.HemisphereLight(0x5a6aa0, 0x100c08, 0.35));
-  const key = new THREE.SpotLight(0xfff0dc, 70, 14, 0.42, 0.55, 1.4);
-  key.position.set(1.7, 4.2, 3.2);
+  // Low key, as on the board: a warm torch high to one side models the figure, the room's
+  // reflected light is dim, a cool rim picks out the silhouette.
+  scene.environmentIntensity = 0.38;
+  scene.add(new THREE.HemisphereLight(0x5a6aa0, 0x100c08, 0.18));
+  const key = new THREE.SpotLight(0xffd2a0, 78, 14, 0.42, 0.55, 1.4);
+  key.position.set(2.6, 3.9, 2.2);
   key.target.position.set(0, 0.9, 0);
   key.castShadow = true;
   key.shadow.mapSize.set(1024, 1024);
