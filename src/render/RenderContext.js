@@ -138,6 +138,28 @@ export class RenderContext {
     this.composer.render(this.clock?.dt ?? 0);
   }
 
+  /**
+   * Draw a secondary 3D view (e.g. a close-up portrait window) straight into a
+   * rectangle of the canvas, as classic line art. Only meaningful in classic
+   * 'lines' mode: modern scenes keep their own render-target path.
+   * @param {THREE.Scene} scene
+   * @param {THREE.Camera} camera
+   * @param {{x:number,y:number,w:number,h:number}} rect CSS px, relative to the canvas's top-left
+   * @returns {boolean} false when not in classic line mode (nothing drawn)
+   */
+  renderInset(scene, camera, rect) {
+    if (!this.classic || this.post.classicStyle === 'ega') return false;
+    const pr = this.renderer.getPixelRatio();
+    const buf = this.renderer.getDrawingBufferSize(new THREE.Vector2());
+    const w = Math.max(8, Math.round(rect.w * pr));
+    const h = Math.max(8, Math.round(rect.h * pr));
+    const x = Math.round(rect.x * pr);
+    const y = buf.y - Math.round(rect.y * pr) - h;
+    this.lineArtInset ??= new LineArtPass();
+    this.lineArtInset.render(this.renderer, scene, camera, this.clock?.dt ?? 0, { x, y, w, h });
+    return true;
+  }
+
   /** Render with no scene (DOM-only screens). */
   clear(color = this.post.clearColor) {
     this.renderer.setRenderTarget(null);
