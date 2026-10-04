@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
  * End-to-end vertical-slice smoke test (headless):
- * title → Quick Start → walk east into the kobold ambush → dialogue → COMBAT →
- * QUICK auto-resolve → victory → back to explore → row to Sokol Keep by keyboard. Fails on any page error.
+ * title → Quick Start → path-find (BFS over the live map) to the nearest unspent combat encounter →
+ * dialogue → COMBAT → QUICK auto-resolve → victory → back to explore → row to Sokol Keep by keyboard.
+ * Fails on any page error.
  *   node tools/smoke.mjs [--shots] [--port N]   (--shots saves shots/smoke_*.png at each step)
  */
 import { ensureServer } from './lib/server.mjs';
@@ -20,6 +21,46 @@ const sceneName = () => page.evaluate(() => window.__GAME?.scenes.currentName);
 const waitScene = (name, timeout = 60000) =>
   page.waitForFunction((n) => window.__GAME?.scenes.currentName === n && !window.__GAME.scenes.transitioning, name, { timeout, polling: 100 });
 const shot = async (n) => saveShots && page.screenshot({ path: `shots/smoke_${n}.png` });
+
+/** Shortest path (list of compass dirs) from the party to the nearest unspent fixed combat encounter. */
+const planRoute = () => page.evaluate(() => {
+  const g = window.__GAME;
+  const sc = g.scenes.current;
+  const map = sc.map;
+  const spent = g.game.spentEvents ?? {};
+  const live = (e) => e.type === 'encounter' && !(e.once && spent[e.id]) && !e.chance;
+  const isGoal = (e) => live(e) && e.once && !String(e.ref).startsWith('ev_');
+  const found = sc._foundSecrets?.();
+  const start = `${sc.pos.x},${sc.pos.y}`;
+  const prev = new Map([[start, null]]);
+  const q = [[sc.pos.x, sc.pos.y]];
+  while (q.length) {
+    const [x, y] = q.shift();
+    const evs = map.eventsAt(x, y);
+    if (`${x},${y}` !== start && evs.some(isGoal)) {
+      const dirs = [];
+      for (let k = `${x},${y}`; prev.get(k); k = prev.get(k).from) dirs.unshift(prev.get(k).dir);
+      return { goal: { x, y, ref: evs.find(isGoal).ref }, dirs };
+    }
+    if (`${x},${y}` !== start && evs.some(live)) continue; // never walk through another scripted encounter
+    for (const dir of ['N', 'E', 'S', 'W']) {
+      const r = map.tryMove(x, y, dir, { foundSecrets: found });
+      if (!r.ok || r.leaves) continue;
+      const k = `${r.nx},${r.ny}`;
+      if (prev.has(k)) continue;
+      prev.set(k, { from: `${x},${y}`, dir });
+      q.push([r.nx, r.ny]);
+    }
+  }
+  return null;
+});
+
+const ORDER = ['N', 'E', 'S', 'W'];
+const idle = () => page.waitForFunction(() => {
+  const s = window.__GAME.scenes;
+  return s.currentName !== 'explore' || (!s.current?.tween && !s.transitioning);
+}, null, { timeout: 90000, polling: 100 });
+
 let ok = false;
 try {
   await page.goto(`${srv.base}?seed=7`, { waitUntil: 'load' });
@@ -29,13 +70,26 @@ try {
   await waitScene('explore');
   await page.waitForTimeout(500);
   await shot('2_explore');
-  // Start (1,14) facing E; kobolds wait at (5,14): four steps east.
-  for (let i = 0; i < 4 && (await sceneName()) === 'explore'; i++) {
+  const route = await planRoute();
+  if (!route) throw new Error('no reachable combat encounter on the start map');
+  console.log('walking to', route.goal, 'via', route.dirs.join(''));
+  for (const dir of route.dirs) {
+    if ((await sceneName()) !== 'explore') break; // a wandering monster got there first: fine
+    let facing = await page.evaluate(() => window.__GAME.scenes.current.pos.dir);
+    while (facing !== dir) {
+      const cw = (ORDER.indexOf(dir) - ORDER.indexOf(facing) + 4) % 4;
+      await page.keyboard.press(cw === 3 ? 'ArrowLeft' : 'ArrowRight');
+      await idle();
+      if ((await sceneName()) !== 'explore') break;
+      facing = await page.evaluate(() => window.__GAME.scenes.current.pos.dir);
+    }
+    if ((await sceneName()) !== 'explore') break;
     await page.keyboard.press('ArrowUp');
-    await page.waitForFunction(() => !window.__GAME.scenes.current?.tween, null, { timeout: 90000 });
-    await page.waitForTimeout(100);
+    await idle();
+    await page.waitForTimeout(80);
   }
   await waitScene('dialogue');
+  await page.waitForTimeout(400);
   await shot('3_dialogue');
   await page.keyboard.press('c'); // COMBAT
   await waitScene('combat');
