@@ -1276,7 +1276,7 @@ export class VFX {
       list: [
         particleBurst({ at: { x: at.x, y: 0.06, z: at.z }, count: Math.round(46 * k), spread: 0.35 * k, flatY: true,
           velocity: (i, r) => { const a = r(4) * Math.PI * 2; const sp = (1.2 + r(5) * 1.6) * k; return [Math.cos(a) * sp, 0.25 + r(6) * 0.6, Math.sin(a) * sp]; },
-          life: 0.85, size: 0.13 * k, grow: 1.6, drag: 4.5, gravity: 0.6, colors: tone, additive: false, intensity: night ? 0.7 : 1.05, soft: 0.85, seed, fadeIn: 0.04, floor: 0.02 }),
+          life: 0.85, size: 0.1 * k, grow: 1.4, drag: 4.5, gravity: 0.6, colors: tone, additive: false, intensity: night ? 0.4 : 0.45, soft: 0.95, seed, fadeIn: 0.04, floor: 0.02, alpha: 0.45 }),
         particleBurst({ at: { x: at.x, y: 0.08, z: at.z }, count: Math.round(22 * k), spread: 0.25, hemi: true, speed: 2.4, up: 0.9, life: 0.55, size: 0.025, drag: 1.5, gravity: 9, colors: [0x6a5e50, 0x4a4238, 0x2a2420], additive: false, intensity: 1, soft: 0.25, seed: seed + 3, floor: 0.015 }),
       ],
     }));

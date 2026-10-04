@@ -48,7 +48,9 @@
 .cb-sep { width: 1px; align-self: stretch; background: rgba(216, 178, 90, 0.35); margin: 0 0.25em; }
 
 /* ---------- Active combatant card (the Gold Box right-hand panel) ---------- */
-.cb-card { position: absolute; right: 1.2em; top: 1.1em; width: 17em; }
+.cb-card { position: absolute; right: 1.2em; top: 1.1em; width: 22.5em; }
+.cb-card .pair { display: grid; grid-template-columns: 1fr 1fr; column-gap: 1.1em; }
+.cb-card .row b { margin-left: 0.5em; white-space: nowrap; }
 .cb-card .nm { font-family: var(--font-display); font-size: 1.2em; letter-spacing: 0.08em; color: var(--por-green); text-transform: uppercase; }
 .cb-card.monster .nm { color: #ff9a86; }
 .cb-card .cls { color: var(--por-text-dim); font-size: 0.85em; margin-bottom: 0.5em; }
@@ -69,7 +71,8 @@
 .cb-chip.bad { border-color: rgba(255, 110, 90, 0.7); color: #ffb0a0; }
 .cb-chip.good { border-color: rgba(120, 230, 140, 0.7); color: #b8ffc0; }
 .cb-card .auto { color: var(--por-cyan); font-size: 0.8em; letter-spacing: 0.1em; font-family: var(--font-display); }
-.cb-roster { position: absolute; right: 1.2em; width: 17em; }
+.cb-roster { position: absolute; right: 1.2em; width: 22.5em; }
+.cb-roster .por-roster-row { padding-top: 0.12em; padding-bottom: 0.12em; }
 .cb-roster .por-roster-row.auto .n::after { content: ' ⚙'; color: var(--por-cyan); font-size: 0.8em; }
 
 /* ---------- Bottom: log (bottom-left corner, collapsible) + command line ---------- */
@@ -201,7 +204,7 @@
 
 /* ---------- Help / speed ---------- */
 .cb-help {
-  position: absolute; right: 1.2em; bottom: 4.1em; text-align: right; font-size: max(12.5px, 0.8em); color: #d6cdb8; line-height: 1.65; pointer-events: none;
+  position: absolute; right: 1.2em; bottom: 4.1em; text-align: right; font-size: max(12.5px, 0.8em); color: #d6cdb8; line-height: 1.5; pointer-events: none;
   padding: 0.3em 0.7em 0.35em 1.6em; text-shadow: 0 1px 2px #000;
   background: linear-gradient(270deg, rgba(5, 8, 20, 0.8), rgba(5, 8, 20, 0.62) 75%, rgba(5, 8, 20, 0));
 }
@@ -216,25 +219,58 @@
 .cb-loc .name { font-family: var(--font-display); letter-spacing: 0.18em; text-transform: uppercase; font-size: 1.1em; }
 .cb-loc .sub { color: var(--por-text-dim); font-size: 0.85em; text-shadow: 0 1px 2px #000; }
 
-/* Active-character close-up: braided-rope / blackened-iron frame over a live render of the active figure. */
+/* Active-character close-up: a heavy braided-rope frame bound in blackened
+   iron, with riveted iron corner bosses, over a live render of the active figure. */
 .cb-closeup {
   position: absolute; box-sizing: border-box; display: none;
-  border: 7px solid #2a2219;
-  border-image: repeating-linear-gradient(135deg, #1c160f 0 2px, #6e5c44 2px 4px, #a48c68 4px 5px, #3a2e20 5px 8px) 7;
-  box-shadow: 0 0 0 1px #000, 0 6px 18px rgba(0, 0, 0, 0.7), inset 0 0 28px 6px rgba(0, 0, 0, 0.82), inset 0 0 0 1px rgba(0, 0, 0, 0.9);
+  border: 12px solid #2a2219;
+  border-image: repeating-linear-gradient(135deg, #140f09 0 2px, #4e3f2c 2px 4px, #8c7656 4px 6px, #bfa47c 6px 7px, #5a4830 7px 9px, #20180f 9px 12px) 12;
+  box-shadow: 0 0 0 2px #0b0907, 0 0 0 4px #3a3632, 0 0 0 5px #0b0907, 0 8px 22px rgba(0, 0, 0, 0.8),
+    inset 0 0 0 2px #0b0907, inset 0 0 0 3px #4a4540, inset 0 0 34px 8px rgba(0, 0, 0, 0.85);
 }
 .cb-closeup .stud {
-  position: absolute; width: 13px; height: 13px; border-radius: 2px;
-  background: radial-gradient(circle at 35% 30%, #e8d8a8, #9a7c44 45%, #3a2a12 85%);
-  box-shadow: 0 0 0 1px #000, 0 1px 3px rgba(0, 0, 0, 0.8);
+  position: absolute; width: 22px; height: 22px; border-radius: 4px;
+  background: radial-gradient(circle at 50% 50%, #c8c0b0 0 2px, #5a5650 3px, transparent 4px),
+    radial-gradient(circle at 35% 30%, #9a948a, #4e4a44 45%, #1c1a18 85%);
+  box-shadow: 0 0 0 1px #000, 0 2px 4px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
-.cb-closeup .stud.tl { left: -10px; top: -10px; }
-.cb-closeup .stud.tr { right: -10px; top: -10px; }
-.cb-closeup .stud.bl { left: -10px; bottom: -10px; }
-.cb-closeup .stud.br { right: -10px; bottom: -10px; }
+.cb-closeup .stud.tl { left: -17px; top: -17px; }
+.cb-closeup .stud.tr { right: -17px; top: -17px; }
+.cb-closeup .stud.bl { left: -17px; bottom: -17px; }
+.cb-closeup .stud.br { right: -17px; bottom: -17px; }
 .cb-closeup-name {
   position: absolute; left: 0; right: 0; bottom: 0.25em; text-align: center;
-  font-family: var(--font-display); font-size: 0.78em; letter-spacing: 0.18em; text-transform: uppercase;
-  color: #e9d9a8; text-shadow: 0 1px 2px #000, 0 0 6px #000;
+  font-family: var(--font-display); font-size: 0.85em; letter-spacing: 0.22em; text-transform: uppercase;
+  color: #e4d6b4; text-shadow: 0 1px 2px #000, 0 0 6px #000;
 }
 .cb-closeup.idle { visibility: hidden; }
+
+/* ---------- Iron, rope and leather skin for the combat panels ---------- */
+.cb-card.por-frame, .cb-roster.por-frame {
+  background:
+    radial-gradient(130% 60% at 50% -8%, rgba(255, 196, 120, 0.08), transparent 62%),
+    radial-gradient(ellipse 72% 66% at 50% 46%, transparent 50%, rgba(0, 0, 0, 0.5) 100%),
+    repeating-linear-gradient(90deg, rgba(255, 230, 190, 0.018) 0 1px, transparent 1px 3px),
+    linear-gradient(180deg, #2a2119 0%, #17120d 100%);
+  border-image: repeating-linear-gradient(135deg, #140f09 0 2px, #4e3f2c 2px 4px, #8c7656 4px 5px, #3a2e20 5px 7px) 5;
+  box-shadow: 0 0 0 1px #050403, 0 0 0 3px #2c2a28, 0 0 0 4px #6a655e, 0 0 0 5px #1a1816, 0 18px 44px rgba(0, 0, 0, 0.7),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.7), inset 0 0 50px rgba(0, 0, 0, 0.5);
+}
+.cb-card.por-frame::before, .cb-roster.por-frame::before { border-color: rgba(150, 140, 125, 0.22); }
+.cb-card > .por-corner, .cb-roster > .por-corner {
+  --cs: 16px; width: 16px !important; height: 16px !important;
+  background: radial-gradient(circle at 50% 50%, #c8c0b0 0 1.5px, #5a5650 2.5px, transparent 3.5px), radial-gradient(circle at 35% 30%, #9a948a, #4e4a44 45%, #1c1a18 85%);
+  border-radius: 3px; box-shadow: 0 0 0 1px #000, 0 2px 3px rgba(0, 0, 0, 0.8); filter: none; transform: none !important;
+  top: auto; left: auto; right: auto; bottom: auto;
+}
+.cb-card > .por-corner.tl, .cb-roster > .por-corner.tl { top: -9px; left: -9px; }
+.cb-card > .por-corner.tr, .cb-roster > .por-corner.tr { top: -9px; right: -9px; }
+.cb-card > .por-corner.bl, .cb-roster > .por-corner.bl { bottom: -9px; left: -9px; }
+.cb-card > .por-corner.br, .cb-roster > .por-corner.br { bottom: -9px; right: -9px; }
+.cb-card > .por-frame-title, .cb-roster > .por-frame-title {
+  color: #e8dcc0; background: linear-gradient(180deg, #6a655e, #3a3632 55%, #24211e); text-shadow: 0 1px 1px #000;
+}
+.cb-card .row { border-bottom-color: rgba(150, 130, 100, 0.16); }
+.cb-card .mv .lbl { color: #c8a870; }
+.cb-pips i { background: rgba(214, 170, 96, 0.9); box-shadow: 0 0 5px rgba(214, 160, 70, 0.45); }
+.cb-pips i.half { background: linear-gradient(90deg, rgba(214, 170, 96, 0.9) 50%, rgba(255, 255, 255, 0.12) 50%); }

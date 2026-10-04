@@ -100,7 +100,7 @@ export default class CombatScene extends Scene {
     const keys = timeOfDayKeys(hour);
     if (this.night) {
       // Low key: a thin cold moon (shape, not fill); the flames do the lighting.
-      this.rig.sun.intensity = 0.85;
+      this.rig.sun.intensity = 0.5;
       this.rig.sun.color.set(0x8a9cc8);
       this.rig.hemi.intensity = 0.34;
       this.rig.hemi.color.set(0x3a4260);
@@ -113,9 +113,9 @@ export default class CombatScene extends Scene {
       // Painted-miniature low key: even by day the street is a dim, smoky
       // diorama under a low overcast sun: a warm raking key with deep shade
       // and a weak, desaturated sky fill; torch and brazier pools stay visible.
-      this.rig.sun.intensity *= 0.62;
+      this.rig.sun.intensity *= 0.5;
       this.rig.sun.color.lerp(new THREE.Color(0xffc488), 0.55);
-      this.rig.hemi.intensity *= 0.42;
+      this.rig.hemi.intensity *= 0.34;
       this.rig.hemi.color.lerp(new THREE.Color(0x6a7486), 0.6);
       this.rig.hemi.groundColor?.lerp(new THREE.Color(0x1a140e), 0.6);
       this.rig.sun.shadow.radius = 2.2;
@@ -166,10 +166,11 @@ export default class CombatScene extends Scene {
     // Soft camera-side fill so figures read against the ground (a classic tactics-cam trick).
     // At night the fill is the warm spill of the braziers and candles, so the
     // party keeps its local colour under the cold moon.
-    this.fill = new THREE.DirectionalLight(this.night ? 0xffcf9a : 0xe8dcc8, this.night ? 0.42 : 0.16);
+    this.fill = new THREE.DirectionalLight(this.night ? 0xffb878 : 0xe8dcc8, this.night ? 0.6 : 0.16);
     s.add(this.fill, this.fill.target);
     // Rim light from behind the fight: separates figures from the ground.
-    this.rim = new THREE.DirectionalLight(this.night ? 0x8fb0ff : 0xffe8c8, this.night ? 0.9 : 0.8);
+    // By night a warm brazier rim (not a cold moon edge), so the party keeps colour.
+    this.rim = new THREE.DirectionalLight(this.night ? 0xffa860 : 0xffe8c8, this.night ? 0.8 : 0.8);
     s.add(this.rim, this.rim.target);
     this.vfx = new VFX(s);
 
@@ -209,7 +210,7 @@ export default class CombatScene extends Scene {
       } else {
         // Capped per light, with a gentler falloff: flames pool warm light on
         // the masonry instead of blowing a hot disc onto the nearest wall.
-        l.intensity = (this.night || this.indoor ? 19 : 11) * (f.brazier ? 1.25 : 1);
+        l.intensity = (this.night || this.indoor ? 19 : 14) * (f.brazier ? 1.3 : 1);
         l.distance = f.brazier ? 15 : 12;
         l.decay = 1.5;
       }
@@ -2300,7 +2301,7 @@ export default class CombatScene extends Scene {
         cz += (top.z - cz) * 0.08;
       }
     }
-    if (!tall.length) ({ cx, cz, dist } = this._refineFrame(fitSet, cx, cz, dist, MIN, MAX + (mark.length ? 6.5 : 0)));
+    if (!tall.length) ({ cx, cz, dist } = this._refineFrame(fitSet, cx, cz, dist, MIN, MAX + (mark.length ? 6.5 : 0), fitSet.length >= live.length));
     this.fightCenter = new THREE.Vector3(cx, 0, cz);
     if (soft) {
       // Small corrections while walking: drift, don't lurch.
@@ -2318,10 +2319,10 @@ export default class CombatScene extends Scene {
    * inside the clear stage (below the timeline, above the log and command
    * bar, left of the side panels), centred, and filling it without dead space.
    */
-  _refineFrame(set, cx, cz, dist, MIN, MAX) {
+  _refineFrame(set, cx, cz, dist, MIN, MAX, tighten = true) {
     const sa = this._safeArea();
     const em = Math.max(12, Math.min(25.6, 16 * (sa.H / 900)));
-    const box = { x0: -0.97, x1: 1 - (2 * 19.9 * em) / sa.W, y0: -1 + (2 * 6.6 * em) / sa.H, y1: 1 - (2 * 7.0 * em) / sa.H };
+    const box = { x0: -0.97, x1: 1 - (2 * 25.4 * em) / sa.W, y0: -1 + (2 * 6.6 * em) / sa.H, y1: 1 - (2 * 7.0 * em) / sa.H };
     const yaw = this.cam.goalYaw;
     const rx = Math.cos(yaw);
     const rz = -Math.sin(yaw);
@@ -2347,12 +2348,19 @@ export default class CombatScene extends Scene {
       const halfH = dist * Math.tan(fov / 2);
       const dxN = (x0 + x1) / 2 - (box.x0 + box.x1) / 2;
       const dyN = (y0 + y1) / 2 - (box.y0 + box.y1) / 2;
+      // A partial frame (actor + nearest foes) only fixes crops: the rest of
+      // the fight stays where the bounding-box framing put it.
+      if (!tighten) {
+        const over = x0 < box.x0 || x1 > box.x1 || y0 < box.y0 || y1 > box.y1;
+        if (!over) break;
+      }
       const wx = dxN * halfH * this.camera.aspect;
       const wy = (dyN * halfH) / Math.max(0.35, Math.sin(pitch));
       cx += rx * wx - Math.sin(yaw) * wy;
       cz += rz * wx - Math.cos(yaw) * wy;
       // Zoom so the figures fill ~88% of the stage.
-      const k = Math.max((x1 - x0) / (box.x1 - box.x0), (y1 - y0) / (box.y1 - box.y0)) / 0.88;
+      let k = Math.max((x1 - x0) / (box.x1 - box.x0), (y1 - y0) / (box.y1 - box.y0)) / 0.88;
+      if (!tighten) k = Math.max(1, k);
       dist = Math.max(MIN * 0.8, Math.min(MAX, dist * Math.min(1.3, Math.max(0.8, k))));
     }
     return { cx, cz, dist };
@@ -2473,7 +2481,7 @@ export default class CombatScene extends Scene {
     const W = window.innerWidth;
     const H = window.innerHeight;
     const em = Math.max(12, Math.min(25.6, 16 * (H / 900)));
-    const right = 19.5 * em;
+    const right = 25 * em;
     const top = 6.6 * em;
     const bottom = 4.6 * em;
     return { w: (W - right) / W, h: (H - top - bottom) / H, ox: right / 2, oy: (bottom - top) / 2, W, H };
@@ -2909,8 +2917,9 @@ export default class CombatScene extends Scene {
       // toward the figure's face, lower and closer: a three-quarter hero view.
       const mainAz = Math.atan2(this.camera.position.x - p.x, this.camera.position.z - p.z);
       const face = fig.currentYaw?.(this.time) ?? fig.yaw;
-      const dist = 1.1 + hgt * 1.65;
-      const el = 0.46;
+      // Waist-up: close in on the upper body, the surroundings behind it.
+      const dist = 0.75 + hgt * 1.05;
+      const el = 0.36;
       // Pick the bearing that shows the face, stays on the board camera's
       // side and has no other figure or wall between the lens and the subject.
       const reach = dist * Math.cos(el);
@@ -2924,7 +2933,8 @@ export default class CombatScene extends Scene {
       let best = -1e9;
       for (let k = -8; k <= 8; k++) {
         const a = mainAz + k * 0.28;
-        let sc = Math.cos(a - face) * 1.1 + Math.cos(a - mainAz) * 0.7;
+        // Three-quarter from the weapon side (the shield arm faces away from the lens).
+        let sc = Math.cos(a - (face - 0.6)) * 1.1 + Math.cos(a - mainAz) * 0.5;
         const ex = p.x + Math.sin(a) * reach;
         const ez = p.z + Math.cos(a) * reach;
         for (const q of others) {
@@ -2932,7 +2942,7 @@ export default class CombatScene extends Scene {
           const vz = ez - p.z;
           const tq = Math.max(0, Math.min(1, ((q.x - p.x) * vx + (q.z - p.z) * vz) / (vx * vx + vz * vz)));
           const dd = Math.hypot(p.x + vx * tq - q.x, p.z + vz * tq - q.z);
-          if (dd < 0.7 && tq > 0.08) sc -= 2.2 * (1 - dd / 0.7);
+          if (dd < 0.95 && tq > 0.03) sc -= 3.5 * (1 - dd / 0.95);
         }
         const cx = Math.floor(ex / TILE);
         const cz = Math.floor(ez / TILE);
@@ -2942,7 +2952,7 @@ export default class CombatScene extends Scene {
           az = a;
         }
       }
-      const look = new THREE.Vector3(p.x, hgt * 0.55, p.z);
+      const look = new THREE.Vector3(p.x, hgt * 0.66, p.z);
       cam.position.set(look.x + Math.sin(az) * Math.cos(el) * dist, look.y + Math.sin(el) * dist, look.z + Math.cos(az) * Math.cos(el) * dist);
       cam.aspect = W / H;
       cam.updateProjectionMatrix();

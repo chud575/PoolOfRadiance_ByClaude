@@ -77,9 +77,12 @@ function frameAround(sc, core, radius, minD, maxD) {
   // Lean the centre toward the core pair (the clash reads in the middle).
   const cx = fit.cx * 0.6 + core0.cx * 0.4;
   const cz = fit.cz * 0.6 + core0.cz * 0.4;
-  sc.cam.goalTarget.set(cx, 0, cz);
+  let dist = Math.max(minD, Math.min(maxD, fit.need + Math.hypot(cx - fit.cx, cz - fit.cz) * 1.2));
+  // Projection check: nobody cropped by the frame edge or under the log / command bar.
+  const r = sc._refineFrame(set.length ? set : core, cx, cz, dist, minD / 0.8, maxD, true);
+  sc.cam.goalTarget.set(r.cx, 0, r.cz);
   sc.cam.target.copy(sc.cam.goalTarget);
-  sc.cam.goalDist = sc.cam.dist = Math.max(minD, Math.min(maxD, fit.need + Math.hypot(cx - fit.cx, cz - fit.cz) * 1.2));
+  sc.cam.goalDist = sc.cam.dist = r.dist;
 }
 
 export const DEMOS = {
@@ -232,6 +235,14 @@ export const DEMOS = {
       if (Number.isFinite(+sc.params.yaw) && sc.params.yaw !== undefined) sc.cam.goalYaw = +sc.params.yaw;
       else sc._chooseYaw({ around: [caster, best] });
       sc.cam.yaw = sc.cam.goalYaw;
+      {
+        // Keep the party and the blast's victims clear of the log and panels.
+        const keep = [...sc.party.filter((c) => !sc.engine.out(c)), ...hitList];
+        const r = sc._refineFrame(keep, mid.x, mid.z, sc.cam.goalDist, 12.5, 24, false);
+        sc.cam.goalTarget.set(r.cx, 0, r.cz);
+        sc.cam.target.copy(sc.cam.goalTarget);
+        sc.cam.goalDist = sc.cam.dist = r.dist;
+      }
       sc._refresh(caster);
     },
   },

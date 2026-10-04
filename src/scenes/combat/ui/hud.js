@@ -166,10 +166,8 @@ export class CombatHud {
       h('div.cls', [isParty ? `${s.className} · Level ${s.levels}` : `${c.ref?.name ?? 'Monster'} · ${hdText(c)}`]),
       h('div.row', ['Hit Points', h('b', [isParty ? `${hpNow} / ${c.hp.max}` : describeHealth({ hp: { cur: hpNow, max: c.hp.max } })])]),
       h('div.hp', [h('i', { style: { width: `${pct * 100}%` } })]),
-      h('div.row', ['Armor Class', h('b', [String(c.ac)])]),
-      h('div.row', ['THAC0', h('b', [String(c.thac0)])]),
-      h('div.row', ['Weapon', h('b', [engine.weaponName(c)])]),
-      h('div.row', ['Damage', h('b', [c.attacks.join(' / ')])]),
+      h('div.pair', [h('div.row', ['Armor Class', h('b', [String(c.ac)])]), h('div.row', ['THAC0', h('b', [String(c.thac0)])])]),
+      h('div.pair', [h('div.row', ['Weapon', h('b', [engine.weaponName(c)])]), h('div.row', ['Damage', h('b', [c.attacks.join(' / ')])])]),
       h('div.mv', [h('span.lbl', ['Moves Left']), h('span.big', [fmtMp(c.mp)])]),
       h('div.cb-pips', pips),
       chips.length ? h('div.cb-chips', chips) : null,
@@ -237,7 +235,7 @@ export class CombatHud {
     if (this._closeRect) return this._closeRect;
     const r = this.closeup.getBoundingClientRect();
     if (r.width < 40 || r.height < 40) return null;
-    const b = 7;
+    const b = 12;
     this._closeRect = { x: r.left + b, y: r.top + b, w: r.width - 2 * b, h: r.height - 2 * b };
     return this._closeRect;
   }

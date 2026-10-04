@@ -1701,14 +1701,15 @@ export function buildDiorama(field, o = {}) {
         const nearWall = field.wallE[i] || field.wallS[i] || (x > 0 && field.wallE[field.idx(x - 1, y)]) || (y > 0 && field.wallS[field.idx(x, y - 1)]);
         if (!nearBlock && !nearWall) continue;
         const d = Math.hypot(x - pcx, y - pcy);
-        cands.push({ x, y, score: -Math.abs(d - 5) + hash(x, y, 71) * 1.5 });
+        // Close beside the party's square: the engagement fights in its pool.
+        cands.push({ x, y, score: -Math.abs(d - 3) + hash(x, y, 71) * 1.2 });
       }
     }
     cands.sort((a, b) => b.score - a.score);
     const placed = [];
     for (const c of cands) {
-      if (placed.length >= (night ? 2 : 1)) break;
-      if (placed.some((p) => Math.hypot(p.x - c.x, p.y - c.y) < 7)) continue;
+      if (placed.length >= 2) break;
+      if (placed.some((p) => Math.hypot(p.x - c.x, p.y - c.y) < 5)) continue;
       placed.push(c);
       const { x, y } = c;
       field.block[field.idx(x, y)] = 2;
@@ -1927,7 +1928,7 @@ export function buildDiorama(field, o = {}) {
             float n2 = texture2D(tNoise, vec2(vW.z * 0.23 - uT * 0.01, vW.y * 0.17 + vW.x * 0.05)).r;
             float h = smoothstep(0.0, 0.12, vUv.y) * smoothstep(1.0, 0.55, vUv.y);
             float a = core * h * (0.45 + n * 0.55) * (0.75 + n2 * 0.5);
-            gl_FragColor = vec4(vec3(0.55, 0.66, 1.0) * 0.19 * uK * a, 1.0); }`,
+            gl_FragColor = vec4(vec3(0.55, 0.66, 1.0) * 0.095 * uK * a, 1.0); }`,
       });
       disposables.push(beamMat);
       // Where each shaft lands: a soft, slightly stretched pool of moonlight.
@@ -1938,7 +1939,7 @@ export function buildDiorama(field, o = {}) {
         fragmentShader: `varying vec2 vUv; varying vec3 vW; uniform sampler2D tNoise;
           void main(){ float r = length(vUv * 2.0 - 1.0); float k = smoothstep(1.0, 0.25, r);
             float n = texture2D(tNoise, vW.xz * 0.35).r;
-            gl_FragColor = vec4(vec3(0.5, 0.6, 0.95) * 0.16 * k * k * (0.7 + 0.6 * n), 1.0); }`,
+            gl_FragColor = vec4(vec3(0.5, 0.6, 0.95) * 0.08 * k * k * (0.7 + 0.6 * n), 1.0); }`,
       });
       disposables.push(poolMat);
       const beams = new THREE.Group();
@@ -2901,11 +2902,16 @@ function columnGeo(h, broken, seed) {
     const y = pos.getY(i);
     const z = pos.getZ(i);
     const r = Math.hypot(x, z);
-    if (r < 0.05) continue;
+    if (r < 0.05) {
+      // The break's centre sits in the middle of the fracture, not on a spike.
+      if (broken && y > h - 0.01) pos.setY(i, h - 0.26);
+      continue;
+    }
     const a = Math.atan2(z, x);
     const k = 1 - Math.max(0, Math.cos(a * 12)) * 0.06;
     let ny = y;
-    if (broken && y > h - 0.01) ny = h - 0.05 - hash(Math.round(a * 4), seed, 431) * 0.35 - Math.max(0, Math.cos(a + seed)) * 0.25;
+    // A conchoidal, sheared break: smooth undulation round the rim plus a slant.
+    if (broken && y > h - 0.01) ny = h - 0.12 - (Math.sin(a * 3 + seed * 5.1) * 0.08 + Math.sin(a * 7 + seed * 2.3) * 0.04) - Math.cos(a + seed) * 0.16;
     pos.setXYZ(i, x * k, ny, z * k);
   }
   g.computeVertexNormals();
