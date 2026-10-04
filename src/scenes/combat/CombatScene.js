@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { Scene } from '../../core/Scene.js';
 import { h } from '../../ui/UI.js';
-import { makeMiniBase, disposeMiniBase } from './view/minibase.js';
 import { createOutdoorRig, createSkyDome, timeOfDayKeys } from '../../render/lighting.js';
 import * as TexLib from '../../render/textures/index.js';
 import { getGlowTexture } from '../../render/textures/index.js';
@@ -299,20 +298,8 @@ export default class CombatScene extends Scene {
       blob.add(core);
       s.add(blob);
       fig.blob = blob;
-      // Painted-miniature base: a flocked round slab the figure stands on
-      // (hidden with the contact shadow when the figure falls or flees).
-      if (!model.dragon) {
-        const br = model.radius > 0.6 ? model.radius * 0.85 : Math.min(0.46, Math.max(0.3, model.radius * 1.2));
-        const base = makeMiniBase(br);
-        base.scale.multiplyScalar(1 / blob.scale.x);
-        base.scale.y = (0.45 * (br > 0.5 ? 1.2 : 1)) / blob.scale.x;
-        base.position.y = -0.016 / blob.scale.x;
-        blob.add(base);
-        fig.baseR = br;
-        fig.baseH = 0.045 * (br > 0.5 ? 1.2 : 1) - 0.004;
-        model.root.position.y += fig.baseH;
-        fig.baseY = model.root.position.y;
-      }
+      // (Figures stand straight on the paving, as cast before the painted-
+      // miniature restyle: no flocked slab under them.)
       // Invisible pick proxy.
       const proxy = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, Math.max(0.8, model.height), 8).translate(0, Math.max(0.8, model.height) / 2, 0), new THREE.MeshBasicMaterial({ visible: false }));
       proxy.userData.id = c.id;
@@ -2666,8 +2653,6 @@ export default class CombatScene extends Scene {
       if (fig.nudgeCur && !fig.walk && !fig.death) fig.root.position.add(fig.nudgeCur);
       const p = fig.root.position;
       fig.blob.position.set(p.x, 0.018, p.z);
-      // Off its base (fallen or fled), the figure lies on the paving itself.
-      if (fig.baseH) fig.model.root.position.y = fig.blob.visible ? fig.baseY : fig.baseY - fig.baseH;
       fig.proxy.position.set(p.x, 0, p.z);
       const ring = this.overlay.teamRing(c.id, c.charmed ? 'party' : c.side);
       ring.position.set(p.x, 0.03, p.z);
@@ -2675,15 +2660,13 @@ export default class CombatScene extends Scene {
       // hovered / targeted figure keeps one (the actor has the active ring).
       ring.visible = !this.done && !this.engine.out(c) && fig.root.visible && (this.hoverTimeline === c.id || this.hoverId === c.id);
       const hl = this.hoverTimeline === c.id;
-      // Sized to hug the flocked base's rim (line radius = 0.86 × 0.62 m).
-      ring.scale.setScalar(((fig.baseR ?? 0.5) + 0.035) / 0.533 * (hl ? 1.15 : 1));
+      ring.scale.setScalar(hl ? 1.25 : 1);
     }
     const act = this.engine.active() ?? this.demoActive;
     const af = act && this.figures.get(act.id);
     if (af && !this.engine.out(act) && !this.done) {
       this.overlay.activeRing.visible = true;
       this.overlay.activeRing.position.set(af.root.position.x, 0.035, af.root.position.z);
-      this.overlay.activeScale = ((af.baseR ?? 0.5) + 0.06) / 0.615;
       // A gilt marker bobbing over the active figure's head: findable in a crowd.
       // The ground ring + timeline highlight mark the actor (no floating gizmo).
       this.overlay.activeMarker.visible = false;
@@ -3165,7 +3148,6 @@ export default class CombatScene extends Scene {
     this.overlay?.dispose();
     this.diorama?.dispose();
     this._blobGeo?.dispose();
-    disposeMiniBase();
     this._blobMat?.dispose();
     this._blobCoreMat?.dispose();
     this._preRT?.dispose();

@@ -27,7 +27,7 @@ const angLerp = (a, b, t) => {
  */
 export const RIM = { uRimColor: { value: new THREE.Color(0.18, 0.16, 0.14) }, uRimPower: { value: 3.0 }, uFacK: { value: 1.0 } };
 /** Per-faction back-light edge colours. */
-export const FACTION_RIM = { party: new THREE.Color(0.30, 0.26, 0.16), foe: new THREE.Color(0.34, 0.09, 0.04), undead: new THREE.Color(0.17, 0.17, 0.15) };
+export const FACTION_RIM = { party: new THREE.Color(0.30, 0.26, 0.16), foe: new THREE.Color(0.34, 0.09, 0.04), undead: new THREE.Color(0.17, 0.17, 0.15) }; // matte bone: no cold blue edge
 
 // Rigid kit material kind (from pbr()'s name) → surface-detail pattern id.
 const RIGID_PID = { cloth: 3, leather: 5, chain: 9, metal: 8, gold: 6, skin: 6, scales: 10, reptile: 1, fur: 2, bone: 4, wood: 6, hair: 2, plank: 6 };
@@ -61,40 +61,8 @@ function addRim(mat, facRim = null, tint = null) {
         float bN3(vec3 x){ vec3 i = floor(x); vec3 f = fract(x); f = f * f * (3.0 - 2.0 * f);
           return mix(mix(mix(bH3(i), bH3(i + vec3(1,0,0)), f.x), mix(bH3(i + vec3(0,1,0)), bH3(i + vec3(1,1,0)), f.x), f.y),
                      mix(mix(bH3(i + vec3(0,0,1)), bH3(i + vec3(1,0,1)), f.x), mix(bH3(i + vec3(0,1,1)), bH3(i + vec3(1,1,1)), f.x), f.y), f.z); }
-        float burnMask, burnEdge, miniEdge, miniChip;`)
+        float burnMask, burnEdge;`)
       .replace('#include <color_fragment>', `#include <color_fragment>
-        // Painted 28 mm miniature: matte, slightly knocked-back paint over a
-        // pewter casting. Signed surface curvature (screen-space normal change
-        // per metre) drives a dark wash in the recesses and a drybrushed edge
-        // highlight on every raised ridge; the hardest edges are worn through
-        // to bare metal in small chips.
-        miniEdge = 0.0; miniChip = 0.0;
-        {
-          float lumP = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
-          diffuseColor.rgb = mix(vec3(lumP), diffuseColor.rgb, 0.95);
-          #ifndef FLAT_SHADED
-          vec3 mP = -vViewPosition;
-          vec3 dpx = dFdx(mP), dpy = dFdy(mP);
-          vec3 mN = normalize(vNormal);
-          float kx = dot(dFdx(mN), dpx) / max(dot(dpx, dpx), 1e-9);
-          float ky = dot(dFdy(mN), dpy) / max(dot(dpy, dpy), 1e-9);
-          float kc = clamp((kx + ky) * 0.5, -80.0, 80.0);
-          float recess = smoothstep(-2.0, -18.0, kc);
-          // Drybrushed edges: raised ridges (curvature) plus the silhouette
-          // rims (fresnel, upper side), so the casting reads at board zoom.
-          float upV = dot(mN, normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz));
-          float fresE = pow(1.0 - clamp(dot(mN, normalize(vViewPosition)), 0.0, 1.0), 3.5) * smoothstep(-0.3, 0.5, upV);
-          miniEdge = clamp(smoothstep(4.0, 22.0, kc) + fresE * 0.7, 0.0, 1.0);
-          // Overhead drybrush: upward-facing planes catch a little more pigment.
-          float up = smoothstep(0.2, 0.95, upV);
-          diffuseColor.rgb *= 1.0 - 0.72 * recess;
-          vec3 dryC = mix(min(vec3(1.0), diffuseColor.rgb * 1.9 + 0.1), vec3(0.9, 0.86, 0.78), 0.35);
-          diffuseColor.rgb = mix(diffuseColor.rgb, dryC, clamp(miniEdge * 0.85 + up * 0.15, 0.0, 0.88));
-          float chipN = bN3(vBP * 46.0);
-          miniChip = smoothstep(0.55, 0.8, miniEdge * (0.55 + chipN));
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.5, 0.49, 0.47), miniChip * 0.7);
-          #endif
-        }
         ${sculpt ? `{ float pidT = floor(vMat.x + 0.5); if (pidT < 2.5 || abs(pidT - 7.0) < 0.5 || abs(pidT - 4.0) < 0.5) diffuseColor.rgb *= uTint; }` : ''}
         burnMask = 0.0; burnEdge = 0.0;
         if (uBurn.x > 0.001) {
@@ -106,24 +74,8 @@ function addRim(mat, facRim = null, tint = null) {
           burnEdge = smoothstep(0.09, 0.0, abs(bn - th + 0.03)) * step(0.02, uBurn.x);
           diffuseColor.rgb = mix(diffuseColor.rgb * (1.0 - uBurn.x * 0.55), vec3(0.018, 0.015, 0.013), burnMask * 0.95);
         }`)
-      .replace('#include <lights_physical_fragment>', `
-        // Matte acrylic over the casting: dull paint, satin worn metal.
-        metalnessFactor = mix(metalnessFactor, 0.85, miniChip * 0.7);
-        roughnessFactor = metalnessFactor > 0.5 ? clamp(roughnessFactor, 0.32, 0.55) : max(roughnessFactor, 0.84);
-        roughnessFactor = mix(roughnessFactor, 0.42, miniChip * 0.7);
-        #include <lights_physical_fragment>`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-        { float nvM = clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0);
-          // Painted highlights are pigment, not light: a little of the drybrush
-          // reads even in deep shadow. Bare metal gets a cool sheen on its rims.
-          totalEmissiveRadiance += diffuseColor.rgb * miniEdge * 0.09;
-          // Iteration 4: polished pewter/bronze edges. Every raised ridge and the
-          // upper silhouette of bare or painted metal catch a bright, neutral
-          // drybrushed highlight (in the metal's own hue), over dark recesses.
-          { float mtl = smoothstep(0.35, 0.8, metalnessFactor);
-            vec3 mHi = mix(vec3(0.82, 0.8, 0.74), diffuseColor.rgb * 2.2 + 0.18, 0.4);
-            totalEmissiveRadiance += mHi * mtl * (miniEdge * 0.3 + pow(1.0 - nvM, 2.0) * 0.05); }
-          float rimF = pow(1.0 - nvM, uRimPower);
+        { float rimF = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), uRimPower);
           totalEmissiveRadiance += uRimColor * rimF * (0.6 + 0.4 * diffuseColor.rgb / max(0.001, max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b))));
           // Faction rim: a thin coloured back-light edge (ember on foes, cold steel
           // on undead, warm gilt on the party) kept to the upper silhouette so it
@@ -140,7 +92,7 @@ function addRim(mat, facRim = null, tint = null) {
           float rimE = pow(1.0 - clamp(dot(nV, normalize(vViewPosition)), 0.0, 1.0), 3.0);
           totalEmissiveRadiance += vec3(1.0, 0.34, 0.05) * burnEdge * uBurn.y * 1.5 + vec3(1.0, 0.22, 0.02) * emb * uBurn.y * 0.9 + vec3(1.0, 0.42, 0.08) * rimE * uBurn.y * 0.9; }`);
   };
-  mat.customProgramCacheKey = () => (sculpt ? 'fig-mini-sculpt-c' : pid >= 0 ? 'fig-mini-detail-c' : 'fig-mini-c');
+  mat.customProgramCacheKey = () => (sculpt ? 'fig-rim-sculpt-c' : pid >= 0 ? 'fig-rim-detail-c' : 'fig-rim-c');
 }
 
 const _FLASH = new THREE.Color(1, 0.82, 0.68);
@@ -167,10 +119,7 @@ export class Figure {
     // Foes each hold their own stance (a warband, not a crowd sim): 0 ready,
     // 1 crouched lunge, 2 braced behind the shield, 3 brandishing overhead,
     // 4 bladed sideways stance with a cocked head.
-    // Every foe holds an aggressive stance (no upright "ready" mannequins);
-    // the party strike class poses (see _heroPose), varied per seed.
-    this.stance = o.faction && o.faction !== 'party' ? 1 + Math.floor(hashf(this.seed * 7.3 + 2.1) * 4) : 0;
-    this.heroVar = hashf(this.seed * 4.7 + 0.3);
+    this.stance = o.faction && o.faction !== 'party' ? Math.floor(hashf(this.seed * 7.3 + 2.1) * 5) : 0;
     // Each foe wears its own hide: a small palette jitter (hue lean + value)
     // so a warband reads as individuals, never as clones off one mould.
     if (o.faction && o.faction !== 'party') {
@@ -421,71 +370,6 @@ export class Figure {
     return { a, u };
   }
 
-  _heroPose(add, set, P, it, s, w, hasShield) {
-    const m = this.model;
-    const kit = m.kit ?? {};
-    const v = this.heroVar ?? 0.5;
-    const sway = Math.sin(it * 0.9) * 0.04;
-    const lowCrouch = (k) => {
-      P['hips@'][1] -= k * s;
-      add('thighL', -0.5 * k / 0.06, 0, 0.2); add('shinL', 0.55 * k / 0.06); add('footL', 0.0);
-      add('thighR', 0.25, 0, -0.22); add('shinR', 0.45 * k / 0.06); add('footR', 0.1);
-    };
-    if (kit.mage && (w === 'staff' || w === 'fists')) {
-      // Spell-casting: staff planted forward, off hand thrust out palm first.
-      lowCrouch(0.035);
-      add('spine', 0.1, -0.2, 0);
-      add('chest', 0.05, -0.1, 0);
-      add('neck', 0, 0.25, 0);
-      set('upperArmR', -0.75, 0.1, -0.15);
-      set('foreArmR', -0.9);
-      set('upperArmL', -1.45 + sway, 0.35, 0.35);
-      set('foreArmL', -0.35);
-      set('handL', -0.9, 0, 0.2);
-      return;
-    }
-    if (kit.thief || w === 'dagger' || w === 'shortSword') {
-      // Knife-fighter's crouch: low, bladed, blade forward and the off hand out.
-      lowCrouch(0.07);
-      add('spine', 0.3, 0.35, 0);
-      add('chest', 0.05, 0.1, 0);
-      add('neck', -0.2, -0.4, 0);
-      add('head', -0.1, 0, 0);
-      set('upperArmR', -1.0 + sway, 0.45, -0.15);
-      set('foreArmR', -0.85);
-      set('handR', 0.3, 0, 0);
-      if (!hasShield) {
-        set('upperArmL', -0.9, -0.3, 0.55);
-        set('foreArmL', -1.0);
-      }
-      return;
-    }
-    // Melee: fighters and clerics. Weapon cocked high over the shoulder (or
-    // raised overhead by clerics / two-handers), shield driven forward.
-    lowCrouch(0.055);
-    const overhead = kit.cleric || w === 'greatSword' || v > 0.6;
-    add('spine', 0.08, overhead ? 0.15 : 0.4, 0);
-    add('chest', -0.06, overhead ? 0.05 : 0.18, 0);
-    add('neck', 0, overhead ? -0.15 : -0.45, 0);
-    if (overhead) {
-      set('upperArmR', -2.55 + sway, 0.25, -0.45);
-      set('foreArmR', -0.55);
-      set('handR', 0.55, 0, 0);
-    } else {
-      set('upperArmR', -1.9 + sway, 0.65, -0.7);
-      set('foreArmR', -1.45);
-      set('handR', 0.5, 0, 0.25);
-    }
-    if (hasShield) {
-      set('upperArmL', -1.05, -0.45, 0.2);
-      set('foreArmL', -1.15);
-      set('handL', 0, -0.35, 0.1);
-    } else {
-      set('upperArmL', -0.7, -0.2, 0.5);
-      set('foreArmL', -0.9);
-    }
-  }
-
   _biped(P, t, it, walking, wph, rootOff) {
     const s = this.s;
     const m = this.model;
@@ -589,9 +473,6 @@ export class Figure {
     if (this.stance && !walking && !sleeping && !dead && !m.armsForward) {
       const st = this.stance;
       const ws = Math.sin(it * 0.8 + this.seed);
-      // Every foe: a wide, braced stance (feet apart, knees bent).
-      add('thighL', -0.22, 0.05, 0.16); add('shinL', 0.25); add('thighR', 0.18, -0.05, -0.16); add('shinR', 0.2);
-      P['hips@'][1] -= 0.03 * s;
       if (st === 1) {
         add('spine', 0.22, 0.1, 0);
         add('chest', 0.08, 0.05, 0);
@@ -622,24 +503,6 @@ export class Figure {
         add('head', 0.05, 0.2, -0.18);
         add('thighL', -0.1, 0.2, 0.15); add('thighR', 0.08, -0.2, -0.15);
       }
-    }
-    // Party: a dynamic, class-driven combat pose (wide braced stance, torso
-    // twist, weapon cocked or levelled, shield forward), as cast on a
-    // lunging 28 mm miniature. Idle only: actions and walking take over.
-    if (this.faction === 'party' && !walking && !sleeping && !dead && !this.action && !m.armsForward) {
-      this._heroPose(add, set, P, it, s, w, hasShield);
-      // Cast-miniature footing: feet about shoulder width apart, knees over the
-      // toes (no compass-splayed, sideways knees); robes fall straight to the base.
-      const robe = m.kit?.armor === 'robe';
-      const k = robe ? 0.25 : 0.55;
-      for (const nm of ['thighL', 'thighR', 'shinL', 'shinR', 'footL', 'footR']) {
-        const r = P[nm];
-        if (!r) continue;
-        r[0] *= nm.startsWith('thigh') || nm.startsWith('shin') ? (robe ? 0.35 : 0.8) : 0.6;
-        r[1] *= 0.25;
-        r[2] = Math.max(-0.07, Math.min(0.07, r[2] * k));
-      }
-      if (robe) P['hips@'][1] = Math.max(P['hips@'][1], -0.02 * s);
     }
     // --- Walking cycle.
     if (walking) {

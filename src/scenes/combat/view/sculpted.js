@@ -77,7 +77,7 @@ const hashf = (n) => {
 export const LOOKS = {
   // Rust-red scaled hide (saturated, so a warband pops off the grey setts),
   // near-black along the spine, a pale ochre belly and bone-white horns.
-  kobold: { skin: [0x6e4a2c, 'scales'], back: [0x2a1a10, 'scales'], belly: [0xa2845a, 'scales'], horn: 0xd8ccaa, cloth: 0x4a3a28, head: 'kobold', jerkin: 0x9a6a38, boots: 0x3a2414 },
+  kobold: { skin: [0x8e3a1c, 'scales'], back: [0x2e120a, 'scales'], belly: [0xd09a5e, 'scales'], horn: 0xeee0b8, cloth: 0x4a3a28, head: 'kobold', jerkin: 0x9a6a38, boots: 0x3a2414 },
   goblin: { skin: [0x86963a, 'skin'], back: [0x5a6a26, 'skin'], belly: [0xa0aa60, 'skin'], horn: 0xd8c8a0, cloth: 0x4a3020, head: 'goblin', pants: 0x3a2a1a },
   orc: { skin: [0x5a6438, 'skin'], back: [0x2c3219, 'skin'], belly: [0x7a7c58, 'skin'], horn: 0xeadfc0, cloth: 0x3a2c1c, head: 'orc', pants: 0x3a2c1e, jerkin: 0x5a3a20, plate: 0x6a625a, hair: 0x0e0c0a },
   // Hobgoblins: dark rust-brown hide with an orange cast, a flat simian face,
@@ -87,7 +87,7 @@ export const LOOKS = {
   bugbear: { skin: [0x7a5a30, 'fur'], back: [0x4a3418, 'fur'], belly: [0x9a7a50, 'fur'], horn: 0xd8c8a0, cloth: 0x3a2a1a, head: 'bugbear', hair: 0x2a1a0a, pants: 0x3a2a1a },
   lizardMan: { skin: [0x4a6a3a, 'scales'], back: [0x2e4a26, 'scales'], belly: [0xb0b07a, 'scales'], horn: 0xd8d0a0, cloth: 0x4a3a20, head: 'lizard' },
   // Old grave bone: yellowed and earth-stained, darker in the hollows, with rags.
-  skeleton: { skin: [0x857a64, 'bone'], back: [0x4e463a, 'bone'], belly: [0x948a72, 'bone'], horn: 0xb8ac90, head: 'skull', shirt: 0x2c241a },
+  skeleton: { skin: [0x9c9078, 'bone'], back: [0x5e5546, 'bone'], belly: [0xaea288, 'bone'], horn: 0xb8ac90, head: 'skull', shirt: 0x2c241a },
   zombie: { skin: [0x7a8466, 'skin'], back: [0x5a6450, 'skin'], belly: [0x8a9070, 'skin'], horn: 0xd8d0b0, cloth: 0x3a3a30, head: 'zombie', pants: 0x2e2c26, shirt: 0x4a4438, hair: 0x2a2620 },
   ghoul: { skin: [0x9a9a88, 'skin'], back: [0x6a6a5c, 'skin'], belly: [0xa8a898, 'skin'], horn: 0xe0d8c0, cloth: 0x2a2a28, head: 'ghoul', pants: 0x2a2a28, hair: 0x1a1a18 },
   ogre: { skin: [0xa08a5a, 'skin'], back: [0x7a6a42, 'skin'], belly: [0xb09a6a, 'skin'], horn: 0xd8c8a0, cloth: 0x4a3a28, head: 'ogre', pants: 0x4a3a28, hair: 0x2a1e12 },
@@ -102,9 +102,9 @@ export const LOOKS = {
  */
 export function sculptedFlesh(key, o) {
   if (CACHE.has(key)) return CACHE.get(key);
-  const look = o.look ?? LOOKS[o.species] ?? LOOKS.orc;
+  const look = LOOKS[o.species] ?? LOOKS.orc;
   const B = new SculptBuilder();
-  B.mat('skin', look.skin[0], { pattern: look.skin[1], rough: look.skin[1] === 'scales' ? 0.62 : look.skin[1] === 'bone' ? 0.95 : 0.78 })
+  B.mat('skin', look.skin[0], { pattern: look.skin[1], rough: look.skin[1] === 'scales' ? 0.5 : 0.7 })
     .mat('back', look.back[0], { pattern: look.back[1], rough: 0.6 })
     .mat('belly', look.belly[0], { pattern: look.belly[1], rough: 0.65, edge: 0.2 })
     .mat('horn', look.horn, { pattern: 'smooth', rough: 0.55, edge: 0.25, wash: 0.9 })
@@ -201,16 +201,7 @@ function fleshBody(B, o, look) {
       }
     }
     // Sleeves (mail shirts, shirts): grown upper-arm, clipped at the elbow.
-    if (sp === 'human') {
-      // Party heroes: full sleeves to the wrist (shirt, padded or mail sleeves),
-      // one continuous cast with the torso — no ring joints at the elbow.
-      const sm = o.kit.armor === 'chain' || o.kit.armor === 'plate' || o.kit.armor === 'scale' ? 'mail' : 'shirt';
-      const SL = { g: side === 'L' ? G.sleeveL : G.sleeveR, k: 0.03 * s, grow: 0.013 * s, mat: sm };
-      B.cone(`upperArm${side}`, add(ua, [0, 0.01 * s, 0]), fa, 0.062 * bw * s, 0.05 * bw * s, SL);
-      B.cone(`foreArm${side}`, fa, add(ha, [0, 0.03 * s, 0]), 0.052 * bw * s, 0.042 * bw * s, SL);
-      // Chunky leather cuff / gauntlet flare at the wrist.
-      B.cone(`foreArm${side}`, add(ha, [0, 0.07 * s, 0]), add(ha, [0, 0.0, 0]), 0.046 * bw * s, 0.054 * bw * s, { ...SL, mat: 'boots', grow: 0.016 * s });
-    } else if (o.kit.armor === 'scale' || o.kit.tattered) {
+    if (o.kit.armor === 'scale' || o.kit.tattered) {
       const cut = mid(ua, fa, o.kit.armor === 'scale' ? 0.55 : 0.75)[1];
       B.cone(`upperArm${side}`, add(ua, [0, 0.01 * s, 0]), fa, 0.06 * bw * s, 0.05 * bw * s, { g: side === 'L' ? G.sleeveL : G.sleeveR, k: 0.02 * s, grow: 0.01 * s, mat: o.kit.armor === 'scale' ? (sp === 'hobgoblin' ? 'scale' : 'mail') : 'shirt', clip: [[0, -1, 0, -cut]] });
     }
@@ -317,26 +308,6 @@ function fleshBody(B, o, look) {
   } else if (o.kit.armor === 'scraps') {
     jerkin('leather', G.jerkin, 0.012 * s, J.chest[1] + 0.2 * s, J.chest[1] + 0.02 * s);
   }
-  if (sp === 'human') {
-    // A shirt / gambeson under whatever is strapped on, and heavy turned-down
-    // boots: heroic 28 mm proportions (big hands, big boots).
-    const body = o.kit.armor === 'chain' || o.kit.armor === 'plate' || o.kit.armor === 'scale' ? 'mail' : 'shirt';
-    jerkin(body, G.jerkin, 0.013 * s, J.neck[1] - 0.025 * s, J.hips[1] - 0.06 * s);
-    // Skirt of the tunic / hauberk overlapping the thighs (one cast with the legs).
-    if (o.kit.armor !== 'robe') {
-      const SK = { g: G.plate, k: 0.04 * s, grow: 0.02 * s, mat: body === 'mail' ? 'mail' : 'shirt', clip: [[0, -1, 0, -(J.hips[1] - 0.3 * s)]], clipK: 0.01 * s };
-      for (const sd of ['L', 'R']) B.cone(`thigh${sd}`, add(J[`thigh${sd}`], [0, 0.05 * s, 0]), mid(J[`thigh${sd}`], J[`shin${sd}`], 0.7), 0.1 * lw * s, 0.085 * lw * s, SK);
-      B.ell('hips', add(J.hips, [0, -0.06 * s, -0.005 * s]), [0.17 * w * s, 0.13 * s, 0.13 * s], SK);
-    }
-    for (const side of ['L', 'R']) {
-      const sh = J[`shin${side}`];
-      const ft = J[`foot${side}`];
-      const BT = { g: side === 'L' ? G.pantsL : G.pantsR, k: 0.025 * s, grow: 0.016 * s, mat: 'boots' };
-      B.cone(`shin${side}`, add(sh, [0, -0.07 * s, 0]), add(ft, [0, 0.0, 0]), 0.064 * lw * s, 0.05 * lw * s, BT);
-      B.ell(`foot${side}`, add(ft, [0, -0.042 * s, 0.055 * s]), [0.06 * s, 0.045 * s, 0.13 * s], BT);
-      B.cone(`shin${side}`, add(sh, [0, -0.04 * s, 0]), add(sh, [0, -0.09 * s, 0]), 0.072 * lw * s, 0.07 * lw * s, { ...BT, grow: 0.02 * s });
-    }
-  }
   // ---- tail (one smooth mass with the pelvis)
   if (o.tail) {
     const tk = o.tail === 'long' ? 1.45 : 1;
@@ -365,10 +336,6 @@ function fleshBody(B, o, look) {
 
 // ------------------------------------------------------------------ heads (head-joint local, units of head scale)
 const HEADS = {
-  // Party heroes keep their rigid painted head (face, hair, helm: models.js).
-  none() {
-    return { eyes: null, r: 0 };
-  },
   kobold(B, H, hs, { K, G }) {
     const T = { k: K, g: G.torso };
     // Big round skull, heavy cheeks, a long blunt dog-lizard snout.
@@ -420,17 +387,15 @@ const HEADS = {
     B.ell('head', H(0, 0.06, 0.04), [0.086 * hs, 0.052 * hs, 0.07 * hs], T);
     B.box('head', H(0, 0.032, 0.075), [0.062 * hs, 0.028 * hs, 0.036 * hs], { ...T, rr: 0.022 * hs, R: mEuler(-0.15, 0, 0) });
     // Heavy, knotted brow shelf that shadows the eyes.
-    B.ell('head', H(0, 0.13, 0.088), [0.108 * hs, 0.036 * hs, 0.046 * hs], { ...T, k: 0.018 * hs, mat: 'back' });
+    B.ell('head', H(0, 0.126, 0.084), [0.1 * hs, 0.03 * hs, 0.04 * hs], { ...T, k: 0.018 * hs, mat: 'back' });
     for (const sx of [1, -1]) B.ell('head', H(sx * 0.042, 0.13, 0.1), [0.036 * hs, 0.02 * hs, 0.026 * hs], { ...T, k: 0.012 * hs, mat: 'back', R: mEuler(0, 0, sx * -0.25) });
     for (const sx of [1, -1]) B.ell('head', H(sx * 0.05, 0.094, 0.075), [0.032 * hs, 0.022 * hs, 0.026 * hs], { ...T, k: 0.014 * hs });
-    // Iteration 4: a broad, upturned pig snout that reads at board zoom.
-    B.ell('head', H(0, 0.086, 0.122), [0.042 * hs, 0.032 * hs, 0.034 * hs], { ...T, k: 0.014 * hs, mat: 'back' });
+    B.ell('head', H(0, 0.09, 0.112), [0.028 * hs, 0.024 * hs, 0.024 * hs], { ...T, k: 0.012 * hs });
     for (const sx of [1, -1]) {
-      B.sph('head', H(sx * 0.016, 0.08, 0.152), 0.011 * hs, { g: G.torso, sub: true, k: 0.004 * hs });
+      B.sph('head', H(sx * 0.012, 0.078, 0.13), 0.007 * hs, { g: G.torso, sub: true, k: 0.003 * hs });
       B.sph('head', H(sx * 0.04, 0.108, 0.092), 0.019 * hs, { g: G.torso, sub: true, k: 0.008 * hs });
       // Swept-back pointed ears.
-      // Iteration 4: big batwing ears flaring out sideways (the orc silhouette).
-      B.ell('head', H(sx * 0.13, 0.118, -0.02), [0.016 * hs, 0.05 * hs, 0.085 * hs], { ...T, k: 0.012 * hs, R: mEuler(-0.45, sx * 0.85, sx * -0.35) });
+      B.ell('head', H(sx * 0.098, 0.108, -0.015), [0.013 * hs, 0.032 * hs, 0.06 * hs], { ...T, k: 0.012 * hs, R: mEuler(-0.55, sx * 0.35, 0) });
       // (Tusks are rigid kit parts — too fine for the sculpt grid; see models.js.)
     }
     B.box('head', H(0, 0.052, 0.108), [0.046 * hs, 0.004 * hs, 0.02 * hs], { g: G.torso, sub: true, k: 0.003 * hs });
