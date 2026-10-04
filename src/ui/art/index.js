@@ -401,7 +401,7 @@ function placeGroup(comp, g, W, H, groups, info, light, seed, mood = null) {
       const amb = ambush ? { mood: ambush.hostile ? 'hostile' : null, poseOverride: { ...ambush.pose, ...(ambush.mirror ? { headYaw: (sx > 0.5 ? 1 : -1) * ambush.pose.headYaw } : {}) } } : null;
       const extra = flee ? { poseOverride: { weaponPose: 'low', offPose: 'fist', lean: 0.34, crouch: 0.18, twist: 0, headYaw: sx > 0.5 ? 0.7 : -0.7, headPitch: 0, headTilt: 0, stance: 0.12, footZ: [0.12, -0.14], sway: 0, hipTilt: 0 } } : calm ? { pose: 'low' } : amb ?? {};
       // the back ranks are small on screen: less supersampling there (most of a war-band's trace time)
-      const r = renderCreature(it.id, hpx, rig, fseed, { yaw, haze, hazeColor, leader: lead && !calm, mood: calm || flee ? null : mood, ss: softwareGL() ? (hpx < 280 ? 1.25 : 1.5) : (hpx < 280 ? 1.5 : 2), ...extra });
+      const r = renderCreature(it.id, hpx, rig, fseed, { yaw, haze, hazeColor, leader: lead && !calm, mood: calm || flee ? null : mood, ss: softwareGL() ? (hpx < 280 ? 1.1 : hpx < 420 ? 1.25 : 1.05) : (hpx < 280 ? 1.5 : 2), ...extra });
       if (r && !r.sp.ghost) contactShadow(g, x, y + 2, hpx * 0.2, hpx * 0.035, 0.55);
       if (!r) continue;
       if (!r.sp.ghost) castShadow(g, r, x, y, hpx, rig.key.dir, false);
