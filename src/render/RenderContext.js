@@ -129,7 +129,7 @@ export class RenderContext {
     if (this.classic && this.post.classicStyle !== 'ega') {
       this.lineArt ??= new LineArtPass();
       const src = opts?.lines ?? { scene, camera };
-      this.lineArt.render(this.renderer, src.scene, src.camera);
+      this.lineArt.render(this.renderer, src.scene, src.camera, this.clock?.dt ?? 0);
       return;
     }
     this.passes.render.scene = scene;

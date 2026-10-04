@@ -83,6 +83,8 @@ const EDGE_FRAG = /* glsl */ `
   uniform sampler2D tDepth;
   uniform sampler2D tKey;
   uniform sampler2D tFx;
+  uniform sampler2D tPrev;
+  uniform float uStill, uHyst;
   uniform float uFx, uFxAbs;
   uniform float uBalance, uSat, uGlow, uGlowAbs;
   uniform ivec2 uHi;
@@ -143,15 +145,24 @@ const EDGE_FRAG = /* glsl */ `
   // light on one material can't flip a line between neighbouring EGA hues:
   // reds, one warm bin (yellow lit / brown in shade), greens, cyans, blues,
   // magentas; low chroma = white / light grey / dark grey by light level.
-  vec3 ink(vec3 c, float lit) {
+  // mg returns how far the decision sits from its nearest threshold (0 = on
+  // the fence), for the temporal hysteresis in main().
+  vec3 ink(vec3 c, float lit, out float mg) {
     float mx = max(max(c.r, c.g), c.b);
     float mn = min(min(c.r, c.g), c.b);
     float sat = mx > 1e-5 ? (mx - mn) / mx : 0.0;
-    if (sat < uSat) return PAL[lit > 1.6 ? 15 : (lit > 0.4 ? 7 : 8)];
+    mg = abs(sat - uSat) / uSat;
+    if (sat < uSat) {
+      mg = min(mg, min(abs(lit - 1.6) / 1.6, abs(lit - 0.4) / 0.4));
+      return PAL[lit > 1.6 ? 15 : (lit > 0.4 ? 7 : 8)];
+    }
     float d = mx - mn;
     float h = mx == c.r ? mod((c.g - c.b) / d, 6.0) : mx == c.g ? (c.b - c.r) / d + 2.0 : (c.r - c.g) / d + 4.0;
     h *= 60.0; // degrees
     bool dark = lit < 0.4;
+    mg = min(mg, abs(lit - 0.4) / 0.4);
+    float hb = min(min(min(abs(h - 14.0), abs(h - 72.0)), min(abs(h - 160.0), abs(h - 200.0))), min(min(abs(h - 265.0), abs(h - 335.0)), h + 360.0 - 335.0));
+    mg = min(mg, hb / 20.0);
     if (h < 14.0 || h >= 335.0) return PAL[dark ? 4 : 12];   // red
     if (h < 72.0) return PAL[dark ? 6 : 14];                  // warm: yellow / brown
     if (h < 160.0) return PAL[dark ? 2 : 10];                 // green
@@ -159,11 +170,19 @@ const EDGE_FRAG = /* glsl */ `
     if (h < 265.0) return PAL[dark ? 1 : 9];                  // blue
     return PAL[dark ? 5 : 13];                                // magenta
   }
+  vec3 ink(vec3 c, float lit) { float mg; return ink(c, lit, mg); }
 
   void main() {
     ivec2 lp = ivec2(gl_FragCoord.xy);
     vec4 key = texelFetch(tKey, ivec2(0), 0);
     float best = 0.0; ivec2 bp = lp * uSS; float bw = 0.0;
+    // temporal hysteresis (camera still, clock running): a pixel that was a
+    // line stays one until it clearly isn't, and keeps its ink while the new
+    // decision sits on a threshold, so flickering torchlight, swaying props
+    // and sub-threshold creases can't make single pixels blink
+    vec4 prev = texelFetch(tPrev, lp, 0);
+    bool wasLine = uStill > 0.5 && prev.a > 0.75;
+    float creaseT = uCrease * (wasLine ? 0.8 : 1.0);
     bool allSky = true;
     for (int j = 0; j < 4; j++) {
       if (j >= uSS * uSS) break;
@@ -175,7 +194,7 @@ const EDGE_FRAG = /* glsl */ `
       // perspective: divide by w0 * pixel angle; ortho: by pixel world size
       float scale = uOrtho > 0.5 ? 1.0 / uPix : 1.0 / (w0 * uPix);
       float m = max(crease(p, ivec2(1, 0), w0, scale), crease(p, ivec2(0, 1), w0, scale));
-      float s = m > uCrease ? m : 0.0;
+      float s = m > creaseT ? m : 0.0;
       if (s == 0.0 && d0 < 0.99999 && z < uLumDist) {
         float le = lumEdge(p);
         if (le > uLum) s = 0.5 + le * 0.01;
@@ -187,6 +206,7 @@ const EDGE_FRAG = /* glsl */ `
       }
     }
     vec3 outc = vec3(0.0);
+    float isLine = 0.0;
     if (best > 0.0) {
       // ink from the surface around the edge pixel (same depth layer only), so
       // one line doesn't flicker between hues pixel by pixel
@@ -203,7 +223,10 @@ const EDGE_FRAG = /* glsl */ `
       c /= mix(vec3(1.0), max(wb, vec3(0.05)), uBalance);
       float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
       float lit = lum / max(key.r, 1e-4) * uDim;
-      outc = ink(c, lit);
+      float mg;
+      outc = ink(c, lit, mg);
+      if (wasLine && mg < uHyst) outc = prev.rgb;
+      isLine = 1.0;
     } else if (!allSky && uGlow > 0.0) {
       // light sources: every sample of the cell far above the exposure key
       float gmin = 1e9; vec3 gc = vec3(0.0);
@@ -231,7 +254,7 @@ const EDGE_FRAG = /* glsl */ `
       // open sky: flat EGA blue by day, black by night
       outc = (key.g > uSky && key.b > -0.05) ? PAL[1] : PAL[0];
     }
-    gl_FragColor = vec4(outc, 1.0);
+    gl_FragColor = vec4(outc, isLine > 0.5 ? 1.0 : 0.5);
   }
 `;
 
@@ -258,7 +281,8 @@ export class LineArtPass {
       glow: 8.0, // light sources (flames, lit windows) brighter than this x key...
       fx: 3.0, // effects brighter than this x key (and fxAbs) are drawn solid; 0 = off
       fxAbs: 0.2,
-      glowAbs: 1.5, // ...and than this linear HDR luminance fill solid
+      glowAbs: 1.5,
+      hyst: 0.25, // ink decisions within this margin of a threshold keep last frame's ink (camera still) // ...and than this linear HDR luminance fill solid
     };
     this.depth = new THREE.DepthTexture(4, 4, THREE.FloatType);
     this.depth.minFilter = this.depth.magFilter = THREE.NearestFilter;
@@ -285,8 +309,16 @@ export class LineArtPass {
     this._fx = [];
     this._solid = [];
     this.key = new THREE.WebGLRenderTarget(2, 1, { type: THREE.HalfFloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false });
-    this.lines = new THREE.WebGLRenderTarget(4, 4, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false, generateMipmaps: false });
-    this.lines.texture.colorSpace = THREE.NoColorSpace;
+    const mkLines = () => {
+      const t = new THREE.WebGLRenderTarget(4, 4, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false, generateMipmaps: false });
+      t.texture.colorSpace = THREE.NoColorSpace;
+      return t;
+    };
+    this._lines = [mkLines(), mkLines()];
+    this._li = 0;
+    this.lines = this._lines[0];
+    this._lastView = new THREE.Matrix4();
+    this._lastProj = new THREE.Matrix4();
 
     const quad = (frag, uniforms) => {
       const m = new THREE.ShaderMaterial({ uniforms, vertexShader: FS_VERT, fragmentShader: frag, depthTest: false, depthWrite: false, toneMapped: false });
@@ -303,6 +335,9 @@ export class LineArtPass {
       tDepth: { value: this.depth },
       tKey: { value: this.key.texture },
       tFx: { value: this.fx.texture },
+      tPrev: { value: null },
+      uStill: { value: 0 },
+      uHyst: { value: 0.25 },
       uFx: { value: 3 },
       uFxAbs: { value: 0.2 },
       uHi: { value: new THREE.Vector2(4, 4) },
@@ -323,7 +358,7 @@ export class LineArtPass {
       uSky: { value: 0 },
       uDim: { value: 1 },
     });
-    this.blitQ = quad(BLIT_FRAG, { tLines: { value: this.lines.texture } });
+    this.blitQ = quad(BLIT_FRAG, { tLines: { value: null } });
     this._size = new THREE.Vector2();
     this._lw = 0;
     this._lh = 0;
@@ -341,7 +376,8 @@ export class LineArtPass {
       this._ss = ss;
       this.hi.setSize(lw * ss, lh * ss);
       this.fx.setSize(lw * ss, lh * ss);
-      this.lines.setSize(lw, lh);
+      for (const t of this._lines) t.setSize(lw, lh);
+      this._resized = true;
     }
     this.scale = scale;
   }
@@ -350,8 +386,9 @@ export class LineArtPass {
    * @param {THREE.WebGLRenderer} renderer
    * @param {THREE.Scene} scene
    * @param {THREE.Camera} camera
+   * @param {number} [dt] frame delta; 0 (frozen clock) disables the temporal hysteresis
    */
-  render(renderer, scene, camera) {
+  render(renderer, scene, camera, dt = 0) {
     const buf = renderer.getDrawingBufferSize(this._size);
     this._layout(buf.x, buf.y);
     const prevTarget = renderer.getRenderTarget();
@@ -415,8 +452,16 @@ export class LineArtPass {
     u.uLumDist.value = p.lumDist;
     u.uSky.value = p.sky;
     u.uDim.value = p.dim;
+    const still = this._still(camera, dt);
+    const prev = this._lines[this._li];
+    this._li ^= 1;
+    this.lines = this._lines[this._li];
+    u.tPrev.value = prev.texture;
+    u.uStill.value = still ? 1 : 0;
+    u.uHyst.value = p.hyst;
     renderer.setRenderTarget(this.lines);
     renderer.render(this.edgeQ.s, this.cam);
+    this.blitQ.m.uniforms.tLines.value = this.lines.texture;
 
     // 4. nearest-neighbour upscale to the canvas
     renderer.setRenderTarget(null);
@@ -424,6 +469,16 @@ export class LineArtPass {
 
     renderer.setRenderTarget(prevTarget);
     renderer.autoClear = prevAutoClear;
+  }
+
+  /** Camera unchanged since last frame (and the clock running, and no resize)? */
+  _still(camera, dt) {
+    camera.updateMatrixWorld();
+    const same = !this._resized && this._lastView.equals(camera.matrixWorld) && this._lastProj.equals(camera.projectionMatrix);
+    this._lastView.copy(camera.matrixWorld);
+    this._lastProj.copy(camera.projectionMatrix);
+    this._resized = false;
+    return same && dt > 0;
   }
 
   /** Sort the visible renderables into solid (writes depth) and effects (transparent, no depth write). */
@@ -444,7 +499,7 @@ export class LineArtPass {
     this.hi.dispose();
     this.depth.dispose();
     this.key.dispose();
-    this.lines.dispose();
+    for (const t of this._lines) t.dispose();
     for (const q of [this.keyQ, this.edgeQ, this.blitQ]) q.m.dispose();
   }
 }
