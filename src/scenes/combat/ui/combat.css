@@ -253,7 +253,7 @@
 
 /* Key help on demand: a small tab, the full block on ? or click. */
 .cb-helptab {
-  position: absolute; left: calc(var(--rope-t) + 0.55em); top: calc(var(--rope-t) + 4.1em); z-index: 2; cursor: pointer;
+  position: absolute; left: calc(var(--rope-t) + 0.55em); top: calc(var(--rope-t) + 7.6em); z-index: 2; cursor: pointer;
   font-family: var(--font-num); font-size: max(11px, 0.7em); color: #b8ad96; padding: 0.1em 0.5em; letter-spacing: 0.06em;
   background: rgba(8, 7, 6, 0.6); border: 1px solid rgba(160, 140, 110, 0.35); border-radius: 2px; text-shadow: 0 1px 2px #000;
 }
@@ -289,8 +289,8 @@
 /* Battlefield chrome sits inside the rope, centred over the battlefield pane. */
 .cb-timeline { left: calc((100% - var(--col)) / 2 + 4em); top: calc(var(--rope-t) + 0.2em); z-index: 2; max-width: calc(100% - var(--col) - 16em); font-size: 0.82em; padding: 0.35em 0.6em 0.4em; }
 .cb-loc { left: calc(var(--rope-t) + 0.3em); top: calc(var(--rope-t) + 0.2em); z-index: 2; }
-.cb-speed { left: calc(var(--rope-t) + 0.7em); top: calc(var(--rope-t) + 3.4em); z-index: 2; }
-.cb-help { left: calc(var(--rope-t) + 0.4em); top: calc(var(--rope-t) + 5.8em); z-index: 2; }
+.cb-speed { left: calc(var(--rope-t) + 0.8em); top: calc(var(--rope-t) + 5.4em); z-index: 2; }
+.cb-help { left: calc(var(--rope-t) + 0.4em); top: calc(var(--rope-t) + 10em); z-index: 2; }
 .cb-logbox { left: calc(var(--rope-t) + 0.5em); bottom: calc(var(--cmdh) + var(--rope-t) * 0.7 + 0.3em); z-index: 2; }
 .cb-prompt { left: calc((100% - var(--col)) / 2); bottom: calc(var(--cmdh) + var(--rope-t) * 0.7 + 0.3em); z-index: 2; }
 .cb-menu { left: calc((100% - var(--col)) / 2); z-index: 3; }

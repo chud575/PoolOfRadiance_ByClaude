@@ -550,22 +550,35 @@ export function settsSet(size = 512) {
  */
 export function flagsSet(size = 1024) {
   if (texCache.has('flags')) return texCache.get('flags');
-  const ROWS = 4;
-  // Course heights summing to 1 (tileable in v).
-  const rh = [];
-  let hs = 0;
-  for (let r = 0; r < ROWS; r++) { const x = 0.7 + hash2(r, 1, 151) * 0.6; rh.push(x); hs += x; }
-  const rowStart = [];
-  let acc0 = 0;
-  for (let r = 0; r < ROWS; r++) { rh[r] /= hs; rowStart.push(acc0); acc0 += rh[r]; }
-  const rows = [];
-  for (let r = 0; r < ROWS; r++) {
-    const n = 3 + Math.floor(hash2(r, 3, 152) * 3);
-    const w = [];
-    let sum = 0;
-    for (let i = 0; i < n; i++) { const x = 0.6 + hash2(r, i, 153) * 0.9; w.push(x); sum += x; }
-    let acc = 0;
-    rows.push({ edges: w.map((x) => (acc += x / sum) - x / sum), widths: w.map((x) => x / sum), off: hash2(r, 9, 154) });
+  // Reskin 2: no coursing. The 3 m tile is a 12 x 12 lattice (25 cm cells)
+  // packed toroidally with slabs of 2-4 x 2-4 cells (a few 1-cell fillers and
+  // long 5-cell stones), so joints stagger in both directions and never run
+  // as continuous courses; some slabs lose a corner on a diagonal (polygons).
+  const G = 12;
+  const owner = new Int32Array(G * G).fill(-1);
+  const slabs = [];
+  let sk = 0;
+  const free = (x, y, w, h) => {
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) if (owner[((y + j) % G) * G + ((x + i) % G)] >= 0) return false;
+    return true;
+  };
+  for (let y = 0; y < G; y++) {
+    for (let x = 0; x < G; x++) {
+      if (owner[y * G + x] >= 0) continue;
+      let w = 2 + Math.floor(hash2(x, y, 151 + sk) * 3);
+      let h = 2 + Math.floor(hash2(y, x, 152 + sk) * 3);
+      if (hash2(x, y, 153) > 0.86) w = 5;
+      sk++;
+      while (w > 1 || h > 1) {
+        if (free(x, y, w, h)) break;
+        if (w >= h && w > 1) w--;
+        else h--;
+      }
+      const id = slabs.length;
+      for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) owner[((y + j) % G) * G + ((x + i) % G)] = id;
+      const cut = hash2(id, 21, 158);
+      slabs.push({ x, y, w, h, cut: cut < 0.3 ? Math.floor(cut / 0.075) : -1, cutAmt: 0.18 + hash2(id, 22, 159) * 0.3 });
+    }
   }
   const N = size * size;
   const height = new Float32Array(N);
@@ -573,39 +586,46 @@ export function flagsSet(size = 1024) {
   const rough = new Uint8Array(N * 4);
   const normal = new Uint8Array(N * 4);
   const TILEM = 3; // metres per tile
+  const CM = TILEM / G;
   for (let y = 0; y < size; y++) {
     const v = y / size;
     for (let x = 0; x < size; x++) {
       const u0 = x / size;
-      // Joint wander so courses are hand-laid, not ruled.
-      const wob = (fbm(u0 * 6, v * 6, { octaves: 2, period: 6, seed: 155 }) - 0.5) * 0.02;
-      const vw = (v + wob + 1) % 1;
-      let r = ROWS - 1;
-      for (let i = 0; i < ROWS; i++) if (vw < rowStart[i] + rh[i]) { r = i; break; }
-      const row = rows[r];
-      const fv = (vw - rowStart[r]) / rh[r];
-      const u = (u0 + row.off + wob * 0.7 + 2) % 1;
-      let k = row.edges.length - 1;
-      for (let i = 0; i < row.edges.length; i++) if (u < row.edges[i] + row.widths[i]) { k = i; break; }
-      const fu = (u - row.edges[k]) / row.widths[k];
-      // Stone-local coordinates in metres.
-      const sw = row.widths[k] * TILEM;
-      const sh = rh[r] * TILEM;
-      const px = (fu - 0.5) * sw;
-      const py = (fv - 0.5) * sh;
-      const id = r * 16 + k;
-      const hx = sw * 0.5 - 0.012;
-      const hy = sh * 0.5 - 0.012;
+      // Joint wander so the slabs are hand-laid, not ruled.
+      const wu = (fbm(u0 * 6, v * 6, { octaves: 2, period: 6, seed: 155 }) - 0.5) * 0.016;
+      const wv = (fbm(u0 * 6 + 3.1, v * 6, { octaves: 2, period: 6, seed: 156 }) - 0.5) * 0.016;
+      const gu = (((u0 + wu) % 1) + 1) % 1 * G;
+      const gv = (((v + wv) % 1) + 1) % 1 * G;
+      const id = owner[Math.floor(gv) * G + Math.floor(gu)];
+      const sl = slabs[id];
+      // Slab-local coordinates in metres (wrap-aware).
+      let lx = gu - sl.x;
+      if (lx < 0) lx += G;
+      let ly = gv - sl.y;
+      if (ly < 0) ly += G;
+      const sw = sl.w * CM;
+      const sh = sl.h * CM;
+      const px = lx * CM - sw / 2;
+      const py = ly * CM - sh / 2;
+      const hx = sw * 0.5 - 0.014;
+      const hy = sh * 0.5 - 0.014;
       const rad = 0.02 + hash2(id, 1, 160) * 0.04;
       const qx = Math.abs(px) - hx + rad;
       const qy = Math.abs(py) - hy + rad;
       const outside = Math.hypot(Math.max(qx, 0), Math.max(qy, 0));
-      const inside = Math.min(Math.max(qx, qy), 0);
+      let inside = Math.min(Math.max(qx, qy), 0);
+      let sdCut = -9;
+      if (sl.cut >= 0) {
+        // A corner broken off on a diagonal: the slab becomes a polygon.
+        const sx = sl.cut & 1 ? 1 : -1;
+        const sy = sl.cut & 2 ? 1 : -1;
+        sdCut = ((px * sx - hx) + (py * sy - hy)) * 0.7071 + Math.min(sw, sh) * sl.cutAmt;
+      }
       const n1 = fbm(u0 * 48, v * 48, { octaves: 3, period: 48, seed: 161 });
       const n2 = fbm(u0 * 12, v * 12, { octaves: 3, period: 12, seed: 162 });
       // Chipped arrises: big bites near corners, small nicks along edges.
       const corner = qx > -0.12 && qy > -0.12 ? 1 : 0;
-      const sd = outside + inside - rad + (n1 - 0.5) * 0.03 + (n2 - 0.5) * 0.025 * (1 + corner * 2);
+      const sd = Math.max(outside + inside - rad, sdCut) + (n1 - 0.5) * 0.03 + (n2 - 0.5) * 0.025 * (1 + corner * 2);
       const stone = smooth(0.006, -0.008, sd);
       // Slight bevel to the arris, worn rounder on some slabs.
       const bev = clamp01(-sd / (0.025 + hash2(id, 2, 163) * 0.03));
@@ -614,31 +634,37 @@ export function flagsSet(size = 1024) {
       const ty = (hash2(id, 4, 165) - 0.5) * 0.06;
       // Cracks: a meandering fissure across ~40% of slabs.
       let crack = 0;
-      if (hash2(id, 5, 166) < 0.42) {
+      if (hash2(id, 5, 166) < 0.5) {
         const a = hash2(id, 6, 167) * Math.PI;
         const cx = (hash2(id, 7, 168) - 0.5) * sw * 0.5;
         const cy = (hash2(id, 8, 169) - 0.5) * sh * 0.5;
         const d = (px - cx) * Math.sin(a) - (py - cy) * Math.cos(a) + (n2 - 0.5) * 0.18 + (n1 - 0.5) * 0.03;
-        crack = 1 - smooth(0.002, 0.007, Math.abs(d));
+        crack = 1 - smooth(0.004, 0.013, Math.abs(d));
+        // A short branch off the main fissure.
+        const d2 = (px - cx) * Math.cos(a + 0.6) + (py - cy) * Math.sin(a + 0.6) + (n1 - 0.5) * 0.05;
+        const along = (px - cx) * Math.cos(a) + (py - cy) * Math.sin(a);
+        if (Math.abs(along) < Math.min(sw, sh) * 0.25) crack = Math.max(crack, (1 - smooth(0.003, 0.009, Math.abs(d2))) * 0.8);
       }
       // Pitting / spall.
-      const pit = smooth(0.66, 0.74, fbm(u0 * 30, v * 30, { octaves: 2, period: 30, seed: 170 }));
+      const pit = smooth(0.7, 0.76, fbm(u0 * 30, v * 30, { octaves: 2, period: 30, seed: 170 })) * 0.6;
       const h = stone * (0.6 + 0.4 * Math.sqrt(bev) + px * tx + py * ty + (n1 - 0.5) * 0.05 - crack * 0.35 - pit * 0.08);
       // Albedo: cool grey limestone/granite, per-slab tone and drift; darker in
       // the bevel (grime), lighter on foot-worn crowns.
       const tone = hash2(id, 9, 171);
       const warm = hash2(id, 10, 172);
-      let g0 = 0.13 + tone * 0.2 + (n2 - 0.5) * 0.09 + (n1 - 0.5) * 0.05;
-      if (hash2(id, 11, 173) > 0.88) g0 *= 0.68;
+      let g0 = 0.1 + tone * 0.26 + (n2 - 0.5) * 0.09 + (n1 - 0.5) * 0.05;
+      if (hash2(id, 11, 173) > 0.85) g0 *= 0.62;
+      // Grime creeping in from the joints over the slab's margin.
+      g0 *= 0.78 + 0.22 * clamp01(-sd / 0.09);
       g0 *= 0.7 + 0.3 * bev;
       g0 *= 1 - crack * 0.6 - pit * 0.25;
-      const sr = g0 * (0.95 + warm * 0.09);
-      const sg = g0 * (0.98 + warm * 0.03);
-      const sb = g0 * (1.05 - warm * 0.08);
+      const sr = g0 * (0.97 + warm * 0.08);
+      const sg = g0 * (0.99 + warm * 0.03);
+      const sb = g0 * (1.02 - warm * 0.08);
       const grit = fbm(u0 * 96, v * 96, { octaves: 2, period: 96, seed: 174 });
-      const jr = 0.035 + grit * 0.03;
-      const jg = 0.033 + grit * 0.028;
-      const jb = 0.028 + grit * 0.022;
+      const jr = 0.022 + grit * 0.02;
+      const jg = 0.021 + grit * 0.019;
+      const jb = 0.018 + grit * 0.015;
       const cr = jr * (1 - stone) + sr * stone;
       const cg = jg * (1 - stone) + sg * stone;
       const cb = jb * (1 - stone) + sb * stone;

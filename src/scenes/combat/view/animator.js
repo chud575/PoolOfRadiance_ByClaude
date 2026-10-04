@@ -40,6 +40,8 @@ function addRim(mat, facRim = null, tint = null) {
   mat.userData.facBase = uFac.value.clone();
   const uBurn = { value: new THREE.Vector2(0, 0) };
   mat.userData.uBurn = uBurn;
+  const uSat = { value: 0.72 };
+  mat.userData.uSat = uSat;
   const sculpt = !!mat.userData?.sculpt;
   const pid = sculpt ? -1 : RIGID_PID[String(mat.name ?? '').split('|')[0]] ?? -1;
   mat.onBeforeCompile = (sh) => {
@@ -51,12 +53,13 @@ function addRim(mat, facRim = null, tint = null) {
     sh.uniforms.uFacK = RIM.uFacK;
     sh.uniforms.uBurn = uBurn;
     sh.uniforms.uTint = uTint;
+    sh.uniforms.uSat = uSat;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vBP;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvBP = position;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        uniform vec3 uRimColor, uFacRim, uTint; uniform float uRimPower, uFacK; uniform vec2 uBurn; varying vec3 vBP;
+        uniform vec3 uRimColor, uFacRim, uTint; uniform float uRimPower, uFacK, uSat; uniform vec2 uBurn; varying vec3 vBP;
         float bH3(vec3 p){ p = fract(p * 0.3183099 + vec3(0.1, 0.71, 0.37)); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
         float bN3(vec3 x){ vec3 i = floor(x); vec3 f = fract(x); f = f * f * (3.0 - 2.0 * f);
           return mix(mix(mix(bH3(i), bH3(i + vec3(1,0,0)), f.x), mix(bH3(i + vec3(0,1,0)), bH3(i + vec3(1,1,0)), f.x), f.y),
@@ -84,12 +87,26 @@ function addRim(mat, facRim = null, tint = null) {
           vec3 dnx = dFdx(nonPerturbedNormal), dny = dFdy(nonPerturbedNormal);
           float kC = 0.5 * (dot(dnx, dpx) / max(dot(dpx, dpx), 1e-9) + dot(dny, dpy) / max(dot(dpy, dpy), 1e-9));
           kC = clamp(kC, -80.0, 80.0);
-          float pxM = length(dpx) + length(dpy); // metres per pixel: fade where features alias
-          float pFade = 1.0 - smoothstep(0.035, 0.07, pxM);
-          float wash = smoothstep(-6.0, -30.0, kC) * pFade;
-          float dry = smoothstep(10.0, 40.0, kC) * pFade * (0.55 + 0.45 * smoothstep(-0.3, 0.7, nonPerturbedNormal.y));
-          diffuseColor.rgb *= 1.0 - 0.55 * wash;
-          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 1.55 + vec3(0.05, 0.045, 0.04), 0.6 * dry); }
+          float pxM = length(dpx) + length(dpy); // metres per pixel
+          // Reskin 2: the wash and drybrush hold at game zoom (only the very
+          // finest features fade); a world-up term adds the painter's
+          // top-down drybrush and the dark wash under every overhang.
+          float pFade = 1.0 - smoothstep(0.07, 0.16, pxM);
+          vec3 wN = normalize((vec4(nonPerturbedNormal, 0.0) * viewMatrix).xyz);
+          float wash = max(smoothstep(-3.0, -18.0, kC) * pFade, smoothstep(-0.05, -0.75, wN.y) * 0.75);
+          float dry = smoothstep(5.0, 22.0, kC) * (1.0 - smoothstep(60.0, 80.0, kC)) * pFade * (0.5 + 0.5 * smoothstep(-0.3, 0.7, wN.y));
+          dry = max(dry, smoothstep(0.6, 0.97, wN.y) * 0.3);
+          diffuseColor.rgb *= 1.0 - 0.6 * wash;
+          // Matte, desaturated hand paint (one standout: the active figure, via uSat).
+          float pl = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11));
+          diffuseColor.rgb = mix(vec3(pl), diffuseColor.rgb, uSat);
+          // Paint worn off the raised edges onto the pewter beneath.
+          float worn = dry * 0.4;
+          vec3 pewter = vec3(0.26, 0.25, 0.235);
+          diffuseColor.rgb = mix(diffuseColor.rgb, max(diffuseColor.rgb * 1.3, pewter), worn);
+          metalnessFactor = mix(metalnessFactor, 0.45, worn);
+          roughnessFactor = mix(max(roughnessFactor, 0.62), 0.5, worn);
+          diffuseColor.rgb = min(diffuseColor.rgb, vec3(0.9)); }
         { float rimF = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), uRimPower);
           totalEmissiveRadiance += uRimColor * rimF * (0.6 + 0.4 * diffuseColor.rgb / max(0.001, max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b))));
           // Faction rim: a thin coloured back-light edge (ember on foes, cold steel
@@ -166,6 +183,14 @@ export class Figure {
     this.guard = false;
     this.rest = {};
     for (const [k, bone] of Object.entries(this.b)) this.rest[k] = bone.position.clone();
+  }
+
+  /** Paint saturation: muted earth tones by default, full colour on the standout (active) figure. */
+  setStandout(on) {
+    const v = on ? 1.12 : 0.72;
+    if (this._sat === v) return;
+    this._sat = v;
+    for (const mm of this.mats) if (mm.m.userData.uSat) mm.m.userData.uSat.value = v;
   }
 
   /** Targeting highlight: the faction edge flares bright (k = 0..1). */
@@ -483,6 +508,40 @@ export class Figure {
       add('shinR', 0.6);
       add('footR', -0.25);
       P['hips@'][1] -= 0.06 * s;
+    }
+    // Reskin 2: combat-ready idles (the reference has every mini mid-action):
+    // a wide, knee-bent stance with the hips bladed and the chest turned back
+    // to the foe, the weapon raised or cocked, the shield held forward.
+    if (!walking && !sleeping && !dead && !m.armsForward && !this.guard && (this.stance === 0 || this.stance === 2)) {
+      const ws = Math.sin(it * 0.9 + this.seed * 1.7);
+      const alt = hashf(this.seed * 11.3) > 0.5;
+      add('hips', 0, 0.28, 0);
+      add('spine', 0.06, -0.14, 0);
+      add('chest', 0.04, -0.12 + ws * 0.03, 0);
+      add('neck', 0, 0.2, 0);
+      add('thighL', -0.22, 0.05, 0.12); add('shinL', 0.38);
+      add('thighR', -0.08, -0.05, -0.14); add('shinR', 0.28);
+      P['hips@'][1] -= 0.05 * s;
+      if (w === 'staff' || w === 'spear') {
+        if (w === 'spear') { set('upperArmR', -0.55, 0.15, -0.3); set('foreArmR', -1.35); set('handR', 0.2, 0, 0); }
+        else { set('upperArmR', -0.75, 0.1, -0.3); set('foreArmR', -1.05); }
+      } else if (w === 'bow' || w === 'fists' || !w) {
+        set('upperArmR', -0.9, 0.1, -0.3); set('foreArmR', -1.5);
+      } else if (alt) {
+        // Blade raised high beside the head, ready to cut down.
+        set('upperArmR', -2.2 + ws * 0.06, 0.25, -0.55); set('foreArmR', -0.7); set('handR', -0.35, 0, 0.1);
+      } else {
+        // Cocked back at the shoulder for a forehand swing.
+        set('upperArmR', -1.15 + ws * 0.05, 0.6, -0.75); set('foreArmR', -1.55); set('handR', 0.2, 0, 0.35);
+      }
+      if (hasShield) {
+        set('upperArmL', -0.95, -0.25, 0.3); set('foreArmL', -1.2); set('handL', 0, -0.4, 0.1);
+      } else if (m.kit?.mage) {
+        // Off hand thrust out, mid-gesture.
+        set('upperArmL', -1.35 + ws * 0.05, -0.2, 0.35); set('foreArmL', -0.45); set('handL', -0.3, 0, 0.2);
+      } else {
+        set('upperArmL', -0.75, -0.1, 0.4); set('foreArmL', -1.0);
+      }
     }
     // Per-foe stance variety (idle only; attacks and hits override below).
     if (this.stance && !walking && !sleeping && !dead && !m.armsForward) {

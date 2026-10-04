@@ -21,7 +21,7 @@ const hashStr = (s) => {
 };
 
 // Party colours echo the 1988 icon colours (blue, red, green, magenta, yellow, cyan), deepened.
-const PARTY_COLORS = [0x2c4f9e, 0x9a2a24, 0x2f6b3a, 0x6d3a7e, 0xb08a2a, 0x2a7a82];
+const PARTY_COLORS = [0x3a4e78, 0x8a3428, 0x3e5a36, 0x5c4064, 0x98783a, 0x36646a];
 const SKIN = { human: 0xd29a7c, elf: 0xe6bea0, halfElf: 0xdcae8e, dwarf: 0xc48a68, halfling: 0xd8a282, gnome: 0xcf9a78, halfOrc: 0x9aa070 };
 const HAIR = [0x2a1a10, 0x5a3418, 0x8a5a2a, 0xb88a4a, 0xd8c08a, 0x7a2a14, 0x1a1a1a, 0x9a9a9a];
 
@@ -681,7 +681,7 @@ function buildHead(R, o, s, skinMat) {
   const kit = o.kit;
   const hy = 0.1 * hs;
   const eyeMat = o.eyes != null ? pbr('glow', 0x000000, { emissive: o.eyes, emissiveIntensity: 3.2 }) : pbr('eye', 0x1a120c);
-  const white = pbr('eye', 0xe8e0d0);
+  const white = pbr('eye', 0xd4c8b6);
   const hairMat = pbr('hair', kit.hair ?? 0x2a1a10);
   const metal = pbr('metal', 0xb0b4bc);
   switch (o.head) {
@@ -697,9 +697,10 @@ function buildHead(R, o, s, skinMat) {
       R.part('head', blade([[-0.012, 0], [0.012, 0], [0.004, 0.052], [-0.004, 0.052]].map(([x, y]) => [x * hs, y * hs]), 0.024 * hs, 0.006 * hs), skinMat, { p: [0, hy + 0.02 * hs, 0.086 * hs], r: [Math.PI + 0.35, 0, 0] });
       R.part('head', sphere(0.013 * hs, 8, 6), skinMat, { p: [0, hy - 0.026 * hs, 0.1 * hs] });
       for (const sx of [1, -1]) {
-        R.part('head', sphere(0.016 * hs, 10, 8), white, { p: [sx * 0.034 * hs, hy + 0.008 * hs, 0.074 * hs] });
-        R.part('head', sphere(0.0085 * hs, 8, 6), eyeMat, { p: [sx * 0.034 * hs, hy + 0.008 * hs, 0.087 * hs] });
-        R.part('head', box(0.036 * hs, 0.009 * hs, 0.014 * hs), hairMat, { p: [sx * 0.035 * hs, hy + 0.03 * hs, 0.085 * hs], r: [0.2, sx * -0.2, sx * -0.14] });
+        // Reskin 2: small painted eyes (no dark goggle band at panel scale).
+        R.part('head', sphere(0.0115 * hs, 10, 8), white, { p: [sx * 0.033 * hs, hy + 0.006 * hs, 0.08 * hs], s: [1.15, 0.75, 0.7] });
+        R.part('head', sphere(0.0058 * hs, 8, 6), eyeMat, { p: [sx * 0.033 * hs, hy + 0.006 * hs, 0.0885 * hs] });
+        R.part('head', box(0.03 * hs, 0.0055 * hs, 0.01 * hs), hairMat, { p: [sx * 0.035 * hs, hy + 0.028 * hs, 0.088 * hs], r: [0.2, sx * -0.2, sx * -0.14] });
         const elfEar = kit.race === 'elf' || kit.race === 'halfElf';
         R.part('head', elfEar ? cone(0.018 * hs, 0.09 * hs, 5) : sphere(0.022 * hs, 8, 6), skinMat, elfEar
           ? { p: [sx * 0.1 * hs, hy + 0.03 * hs, -0.01 * hs], r: [-0.4, 0, sx * -1.1] }

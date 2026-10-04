@@ -338,7 +338,7 @@ export function buildDiorama(field, o = {}) {
         vec4 gc = texture2D(map, uv1);
         // Per-stone contrast held down at tactics distance: pull each sett toward
         // the local mean so the field reads as one surface with big value shapes.
-        gc.rgb = mix(texture2D(map, uv1, 4.0).rgb, gc.rgb, 0.85);
+        gc.rgb = mix(texture2D(map, uv1, 4.0).rgb, gc.rgb, 0.97);
         // Each patch its own stone: greyer granite, warmer sandstone, sooty.
         gc.rgb *= mix(vec3(0.96, 0.98, 1.02), vec3(1.04, 1.0, 0.95), pTone) * (0.92 + 0.16 * gHash(pmc + 8.8));
         // Grit-filled seam between patches (setts only).
@@ -509,8 +509,9 @@ export function buildDiorama(field, o = {}) {
     // Dressed-stone relief (normal/roughness) on a cool mid grey; macro
     // blotching and grime do the weathering (no warm albedo map).
     const t = getTextureSet('hd2_dressed');
-    const m = new THREE.MeshStandardMaterial({ normalMap: t.normalMap, roughnessMap: t.roughnessMap, color: 0x8a8c8a, roughness: 1, metalness: 0, normalScale: new THREE.Vector2(1.4, 1.4) });
-    addMacro(m, { key: 'cap', amount: 0.7, grime: 0.15, scale: 0.4 });
+    // Reskin 2: darker, cooler and grimier (it must never glow above the paving).
+    const m = new THREE.MeshStandardMaterial({ normalMap: t.normalMap, roughnessMap: t.roughnessMap, color: 0x5a5e60, roughness: 1, metalness: 0, normalScale: new THREE.Vector2(1.9, 1.9) });
+    addMacro(m, { key: 'cap', amount: 0.95, grime: 0.42, scale: 0.55 });
     disposables.push(m);
     return m;
   })();
@@ -522,7 +523,7 @@ export function buildDiorama(field, o = {}) {
     const n = Math.max(1, Math.round(len / 0.8));
     for (let k = 0; k < n; k++) {
       const sl = len / n;
-      const g = chamferBox(sl - 0.025, h * (0.94 + hash(k, seed, 5) * 0.12), d * (0.97 + hash(k, seed, 6) * 0.06), 0.05, seed * 31 + k, 0.03, 1.4);
+      const g = chippedStone(sl - 0.03, h * (0.9 + hash(k, seed, 5) * 0.2), d * (0.95 + hash(k, seed, 6) * 0.08), seed * 31 + k);
       put(g, -len / 2 + sl * (k + 0.5), (hash(k, seed, 7) - 0.5) * 0.02);
       B.add(g, capMat);
     }
@@ -841,8 +842,8 @@ export function buildDiorama(field, o = {}) {
   // Thick fortified parapet run along x (horiz) or z at `off`, from m0 to m1 metres:
   // a dark mortar core, three staggered ashlar courses of uneven blocks, each a
   // little proud, under broad pale overhanging capstone slabs.
-  const PAR_H = 1.05;
-  const PAR_T = 0.72;
+  const PAR_H = 1.3;
+  const PAR_T = 0.9;
   // Iteration 4: dressed stone reads from the geometry (chamfered blocks, deep
   // joints); the surface is plain weathered stone (macro blotching, grime, moss
   // at the foot), never a brick texture inside each block.
@@ -866,7 +867,7 @@ export function buildDiorama(field, o = {}) {
     // course), blocks of very different lengths with chamfered, worn arrises,
     // set slightly proud or sunk, in a few cold grey stones; dark recessed joints.
     const blk = (u, y, w, h, d, mat, sd) => {
-      const g = chamferBox(horiz ? w : d, h, horiz ? d : w, 0.05, sd, mat === capMat ? 0.03 : 0.014, 1.4);
+      const g = mat === capMat ? (horiz ? chippedStone(w, h, d, sd) : chippedStone(w, h, d, sd).rotateY(Math.PI / 2)) : chamferBox(horiz ? w : d, h, horiz ? d : w, 0.05, sd, 0.014, 1.4);
       batch.add(g, mat, { p: [horiz ? u : off, y, horiz ? off : u] }, { cast: true });
     };
     // Reskin: a thick run of rough fieldstone (random rubble bedded in grimy
@@ -912,9 +913,9 @@ export function buildDiorama(field, o = {}) {
     parapet(false, ax, az + PAR_T / 2, bz - PAR_T / 2, sd + 2, { h: hh });
     parapet(false, bx, az + PAR_T / 2, bz - PAR_T / 2, sd + 3, { h: hh });
     // Earth and rubble fill.
-    const earth = new THREE.MeshStandardMaterial({ color: 0x1c1a17, roughness: 1, metalness: 0 });
-    disposables.push(earth);
-    batch.add(worldBox(bx - ax - PAR_T + 0.02, 0.6, bz - az - PAR_T + 0.02, 2), earth, { p: [(ax + bx) / 2, 0.3, (az + bz) / 2] }, { cast: false });
+    // Reskin 2: a lit bed of rubble and grit (it read as a black void with
+    // floating blocks), the tumbled ashlar half sunk into it.
+    batch.add(worldBox(bx - ax - PAR_T + 0.02, 0.6, bz - az - PAR_T + 0.02, 2), coreMat, { p: [(ax + bx) / 2, 0.3, (az + bz) / 2] }, { cast: false });
     const nR = Math.round(((bx - ax) * (bz - az)) / 1.6);
     for (let k = 0; k < nR; k++) {
       const px = ax + PAR_T / 2 + 0.3 + hash(k, sd, 61) * (bx - ax - PAR_T - 0.6);
@@ -922,7 +923,7 @@ export function buildDiorama(field, o = {}) {
       // Angular broken ashlar, tumbled and half sunk (no blobby rocks).
       const rr = 0.2 + hash(k, k + sd, 63) * 0.3;
       const g = chamferBox(rr * (1.4 + hash(k, 1, sd) * 1.2), rr * 0.8, rr * (0.9 + hash(k, 2, sd) * 0.6), 0.03, sd * 7 + k, rr * 0.18);
-      batch.add(g, parBlk[k % 3], { p: [px, 0.6 + rr * 0.15, pz], r: [(hash(k, 66, sd) - 0.5) * 0.7, hash(k, 65, sd) * 6, (hash(k, 67, sd) - 0.5) * 0.7] }, { cast: k < 4 });
+      batch.add(g, parBlk[k % 3], { p: [px, 0.6 + rr * 0.05, pz], r: [(hash(k, 66, sd) - 0.5) * 0.7, hash(k, 65, sd) * 6, (hash(k, 67, sd) - 0.5) * 0.7] }, { cast: k < 4 });
     }
   }
   if (dungeon) buildVaults();
@@ -1600,7 +1601,8 @@ export function buildDiorama(field, o = {}) {
           B.add(g, mat, { p: [horiz ? ox + sa + sl / 2 : ox, hh / 2, horiz ? oz : oz + sa + sl / 2] });
           if (!ruined || variant === 'cut') {
             B.add(worldBox(horiz ? sl + 0.02 : 0.76, 0.06, horiz ? 0.76 : sl + 0.02, 2.5), plinthMat, { p: [horiz ? ox + sa + sl / 2 : ox, hh + 0.03, horiz ? oz : oz + sa + sl / 2] });
-            const cg = chamferBox(horiz ? sl - 0.025 : 0.92, 0.24 * (0.94 + hash(k, e.cx * 5 + e.cy, 5) * 0.12), horiz ? 0.92 : sl - 0.025, 0.05, e.cx * 131 + e.cy * 17 + k, 0.03, 1.4);
+            const cg = chippedStone(sl - 0.03, 0.26 * (0.9 + hash(k, e.cx * 5 + e.cy, 5) * 0.2), 0.94, e.cx * 131 + e.cy * 17 + k);
+            if (!horiz) cg.rotateY(Math.PI / 2);
             B.add(cg, capMat, { p: [horiz ? ox + sa + sl / 2 : ox, hh + 0.18, horiz ? oz : oz + sa + sl / 2] });
           }
         }
@@ -2659,6 +2661,8 @@ export function buildDiorama(field, o = {}) {
     const d = loopingParticles({ count: 90, at: new THREE.Vector3(W / 2, 1.6, H / 2), spread: Math.max(W, H) * 0.5, spreadY: 1.4, vel: [0.08, 0.05, 0.04], turb: 0.25, life: 9, size: 0.035, color: night ? 0x9ab0ff : 0xfff0d0, additive: true, alpha: night ? 0.5 : 0.35, seed: 7 });
     group.add(d.obj);
     ambient.push(d);
+    // The hero close-up leaves the motes out (at that range they read as snow).
+    (group.userData.closeupHide ??= []).push(d.obj);
   }
   // Low ground mist at night.
   if (night) {
@@ -3151,6 +3155,59 @@ function drape(w, d, fall) {
  * irregular corners (convex hull), world-scaled planar UVs per face.
  * `wear` jitters the corner points (broken blocks use a large value).
  */
+/**
+ * Reskin 2: a heavy, broken capstone. A convex hull of a box whose eight
+ * corners are knocked off by very different amounts (a few broken right back),
+ * whose top is not level (a slight twist and sag), with extra spall points
+ * along the arrises, so it reads as chipped, irregular dressed stone rather
+ * than a bevelled pillow.
+ */
+function chippedStone(w, h, d, seed = 0, texScale = 1.4) {
+  const pts = [];
+  let k = 0;
+  const r = () => hash(seed, k++, 173);
+  const tilt = (r() - 0.5) * 0.05;
+  const twist = (r() - 0.5) * 0.04;
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) {
+    const X = (sx * w) / 2, Y = (sy * h) / 2, Z = (sz * d) / 2;
+    const top = sy > 0 ? tilt * sx + twist * sz : 0;
+    // Most corners lose a small chip; one in four is broken well back.
+    const big = r() < 0.27;
+    const cx = Math.min(w * 0.3, (big ? 0.07 + r() * 0.12 : 0.012 + r() * 0.04));
+    const cy = Math.min(h * 0.45, (big ? 0.05 + r() * 0.08 : 0.01 + r() * 0.03));
+    const cz = Math.min(d * 0.3, (big ? 0.06 + r() * 0.1 : 0.012 + r() * 0.04));
+    pts.push(new THREE.Vector3(X - sx * cx, Y + top, Z - sz * (cz * 0.3)));
+    pts.push(new THREE.Vector3(X - sx * (cx * 0.3), Y + top, Z - sz * cz));
+    pts.push(new THREE.Vector3(X, Y - sy * cy + top * 0.5, Z - sz * cz * 0.5));
+    pts.push(new THREE.Vector3(X - sx * cx * 0.5, Y - sy * cy + top * 0.5, Z));
+  }
+  // Spalls along the long top arrises: points pulled in and down at random.
+  const n = Math.max(2, Math.round(w / 0.18));
+  for (let i = 1; i < n; i++) {
+    const x = -w / 2 + (w * i) / n;
+    for (const sz of [-1, 1]) {
+      const bite = r() < 0.35 ? 0.03 + r() * 0.06 : 0.004 + r() * 0.01;
+      const top = tilt * (x / (w / 2)) + twist * sz;
+      pts.push(new THREE.Vector3(x + (r() - 0.5) * 0.05, h / 2 + top - bite * 0.7, sz * (d / 2 - bite)));
+      pts.push(new THREE.Vector3(x, h / 2 + top - r() * 0.012, sz * (d / 2 - bite * 2.2)));
+      pts.push(new THREE.Vector3(x, -h / 2 + 0.01 + r() * 0.01, sz * (d / 2 - r() * 0.01)));
+    }
+  }
+  const g = new ConvexGeometry(pts);
+  const pos = g.attributes.position;
+  const nor = g.attributes.normal;
+  const uv = new Float32Array(pos.count * 2);
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i) + w / 2, y = pos.getY(i) + h / 2, z = pos.getZ(i) + d / 2;
+    const nx = Math.abs(nor.getX(i)), ny = Math.abs(nor.getY(i)), nz = Math.abs(nor.getZ(i));
+    if (ny >= nx && ny >= nz) { uv[i * 2] = x / texScale; uv[i * 2 + 1] = z / texScale; }
+    else if (nx >= nz) { uv[i * 2] = z / texScale; uv[i * 2 + 1] = y / texScale; }
+    else { uv[i * 2] = x / texScale; uv[i * 2 + 1] = y / texScale; }
+  }
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  return g;
+}
+
 function chamferBox(w, h, d, c = 0.035, seed = 0, wear = 0.012, texScale = 2.2) {
   const pts = [];
   const cw2 = Math.min(c, w * 0.3);

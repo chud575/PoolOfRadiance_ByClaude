@@ -105,10 +105,11 @@ export default class CombatScene extends Scene {
       // near-black, so the unlit ground mist made the paving read brighter
       // than the figures (black silhouettes with only their emissive rims).
       this.rig.sun.intensity = 0.7;
-      this.rig.sun.color.set(0x8a9ccc);
-      this.rig.hemi.intensity = 0.3;
-      this.rig.hemi.color.set(0x3a4666);
-      this.rig.hemi.groundColor?.set(0x06080c);
+      // Reskin 2: no violet in the moon or sky wash (neutral cool grey-blue).
+      this.rig.sun.color.set(0x8c9cac);
+      this.rig.hemi.intensity = 0.26;
+      this.rig.hemi.color.set(0x343e46);
+      this.rig.hemi.groundColor?.set(0x060708);
       s.fog = new THREE.FogExp2(0x030509, 0.026);
     } else {
       // A warm key with real shape: a stronger, sunnier sun throwing crisp,
@@ -121,10 +122,11 @@ export default class CombatScene extends Scene {
       // pools are the only warm, bright areas on the board.
       // Hybrid: a touch more key and sky so the restored figures keep their colour.
       this.rig.sun.intensity *= 0.45;
-      this.rig.sun.color.set(0x9aa8c0);
-      this.rig.hemi.intensity *= 0.35;
-      this.rig.hemi.color.set(0x5e6c74);
-      this.rig.hemi.groundColor?.set(0x101414);
+      // Reskin 2: neutral cool key and sky (no lilac lift in the shade).
+      this.rig.sun.color.set(0xb0b4b4);
+      this.rig.hemi.intensity *= 0.3;
+      this.rig.hemi.color.set(0x5c6466);
+      this.rig.hemi.groundColor?.set(0x0c0b0a);
       this.rig.sun.shadow.radius = 2.2;
       s.fog = new THREE.FogExp2(new THREE.Color(0x1a1e26), 0.014);
     }
@@ -195,6 +197,41 @@ export default class CombatScene extends Scene {
       // By night the dead hold a faint cold pallor of moonlight (bone reads
       // ivory-grey against the candle spill, never orange).
       if (faction === 'undead' && this.night) for (const mm of fig.mats) if (mm.m.emissive) { mm.emissive.set(0x04070c); mm.m.emissive.copy(mm.emissive); }
+      // Reskin 2: every figure stands on a small, textured round base (a
+      // painted miniature's slotta), sunk a hair so the feet stay planted.
+      const fr = fig.model.radius ?? 0.3;
+      if ((fig.model.height ?? 1) < 3) {
+        const br = Math.min(0.36, Math.max(0.2, fr * 0.85));
+        const base = new THREE.Mesh(this._baseGeo ??= new THREE.CylinderGeometry(0.94, 1, 0.034, 28, 1), this._baseMat ??= (() => {
+          // A grainy, textured slate top (small seeded canvas; no assets).
+          const c = document.createElement('canvas');
+          c.width = c.height = 64;
+          const g = c.getContext('2d');
+          let sd = 9;
+          const rnd = () => ((sd = (sd * 16807) % 2147483647) / 2147483647);
+          g.fillStyle = '#8a847a';
+          g.fillRect(0, 0, 64, 64);
+          for (let i = 0; i < 420; i++) {
+            const v = 90 + rnd() * 80;
+            g.fillStyle = `rgb(${v}, ${v * 0.95}, ${v * 0.88})`;
+            g.fillRect(rnd() * 64, rnd() * 64, 1 + rnd() * 2.5, 1 + rnd() * 2.5);
+          }
+          const tx = new THREE.CanvasTexture(c);
+          tx.colorSpace = THREE.SRGBColorSpace;
+          const m = new THREE.MeshStandardMaterial({ map: tx, color: 0xa49c90, roughness: 0.9, metalness: 0.05 });
+          this.own(() => {
+            m.dispose();
+            tx.dispose();
+          });
+          return m;
+        })());
+        base.scale.set(br, 1, br);
+        base.position.y = 0.012;
+        base.receiveShadow = true;
+        base.castShadow = false;
+        fig.root.add(base);
+        fig.base = base;
+      }
       s.add(fig.root);
       this.figures.set(c.id, fig);
     });
@@ -394,7 +431,7 @@ export default class CombatScene extends Scene {
       const gu = this.ctx.render.passes?.grade?.uniforms;
       if (gu?.uShadowTint && gu.uHighlightTint) {
         const prev = [gu.uShadowTint.value, gu.uHighlightTint.value];
-        gu.uShadowTint.value = this.night ? [-0.004, 0.004, 0.03] : [-0.004, 0.008, 0.026];
+        gu.uShadowTint.value = this.night ? [-0.006, 0.0, 0.008] : [-0.004, 0.0, 0.006];
         gu.uHighlightTint.value = this.night ? [0.04, 0.02, -0.004] : [0.03, 0.016, -0.006];
         this.own(() => {
           gu.uShadowTint.value = prev[0];
@@ -617,13 +654,20 @@ export default class CombatScene extends Scene {
     const r = this.ctx.render.renderer;
     const pm = new THREE.PMREMGenerator(r);
     const k = timeOfDayKeys(hour);
+    // Reskin 2: the sky the metals and stone reflect is a near-neutral cool
+    // grey (no lilac or violet cast creeping into the shade).
+    const neutral = (hex) => {
+      const c = new THREE.Color(hex);
+      const l = c.r * 0.3 + c.g * 0.55 + c.b * 0.15;
+      return c.lerp(new THREE.Color(l * 0.97, l, l * 1.04), 0.8);
+    };
     const es = new THREE.Scene();
     const mat = new THREE.ShaderMaterial({
       side: THREE.BackSide,
       uniforms: this.indoor
         ? { uTop: { value: new THREE.Color(0x1c1610) }, uHor: { value: new THREE.Color(0x4a3018) }, uGround: { value: new THREE.Color(0x8a6020) }, uWarm: { value: 0.9 },
           uSun: { value: new THREE.Vector3(0.3, -0.5, 0.8).normalize() }, uSunCol: { value: new THREE.Color(0xffb850) } }
-        : { uTop: { value: new THREE.Color(k.skyTop) }, uHor: { value: new THREE.Color(k.skyHorizon) }, uGround: { value: new THREE.Color(this.night ? 0x030408 : 0x1c2022) }, uWarm: { value: this.night ? 0.08 : 0.03 },
+        : { uTop: { value: neutral(k.skyTop) }, uHor: { value: neutral(k.skyHorizon) }, uGround: { value: new THREE.Color(this.night ? 0x030408 : 0x1c2022) }, uWarm: { value: this.night ? 0.08 : 0.03 },
         uSun: { value: this.rig.sun.position.clone().sub(this.center).normalize() }, uSunCol: { value: new THREE.Color(this.night ? 0x5a6a90 : 0xffe2b0) } },
       vertexShader: 'varying vec3 vD; void main(){ vD = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
       // Sky gradient plus a sun disc and a broken skyline of rooftops: metals
@@ -2815,6 +2859,11 @@ export default class CombatScene extends Scene {
     if (!this.frozen) this.time += realDt * scale;
     else this.time = this.ctx.clock.time;
     const t = this.time;
+    // Reskin 2: muted hand-painted figures; the active one is the standout colour.
+    {
+      const act = this.engine?.active?.() ?? this.demoActive;
+      for (const [id, f] of this.figures ?? []) f.setStandout?.(!!act && id === act.id);
+    }
     this._runTimed();
     // Resolve waits.
     if (this._waits.length) {
@@ -3007,6 +3056,9 @@ export default class CombatScene extends Scene {
       // out of the hero portrait; their lights still colour the scene.
       const fxVis = this.vfx.group.visible;
       this.vfx.group.visible = false;
+      const motes = this.diorama?.group?.userData?.closeupHide ?? [];
+      const motesVis = motes.map((o) => o.visible);
+      for (const o of motes) o.visible = false;
       // Bystanders standing between the lens and the hero step out of the
       // shot (the hero panel shows the figure in its surroundings, unobstructed).
       const hiddenFigs = [];
@@ -3060,6 +3112,7 @@ export default class CombatScene extends Scene {
       this.fill.color.copy(fillC);
       this.overlay.group.visible = ovVis;
       this.vfx.group.visible = fxVis;
+      motes.forEach((o, i) => (o.visible = motesVis[i]));
       for (const of of hiddenFigs) {
         of.root.visible = true;
         if (of.blob) of.blob.visible = !!of._blobWas;
