@@ -6,7 +6,7 @@
  * Every IndexedDB call is guarded: private windows and blocked storage simply fall back to memory.
  */
 
-export const PORTRAIT_ART_VERSION = 'v14';
+export const PORTRAIT_ART_VERSION = 'v15';
 const DB = 'por-portraits';
 const STORE = 'p';
 let dbp = null;

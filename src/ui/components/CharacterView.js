@@ -3,7 +3,8 @@ import { h, clear } from '../dom.js';
 import { Frame } from './Frame.js';
 import { RACES } from '../../rules/races.js';
 import { classSpecName } from '../../rules/classes.js';
-import { renderSheet, miniPortrait, useRenderer } from './CharacterSheet.js';
+import { miniPortrait, useRenderer } from './CharacterSheet.js';
+import { renderGoldBoxSheet } from './goldSheet.js';
 import { InventoryPanel } from './Inventory.js';
 import { SpellPanel } from './SpellPanel.js';
 import { STAT_TIPS } from './rulesText.js';
@@ -27,7 +28,7 @@ export function openCharacterView(ctx, o = {}) {
   let index = Math.max(0, Math.min(ctx.game.party.length - 1, o.index ?? ctx.game.activeIndex ?? 0));
   let tab = o.tab ?? 'sheet';
   let panel = null;
-  const frame = Frame({ variant: 'blue', className: 'pc-view' });
+  const frame = Frame({ variant: 'blue', className: 'pc-view pc-iron' });
   const back = h('div.pc-view-back', [frame.el]);
   const head = h('div.pc-view-head');
   const body = h('div.pc-view-body');
@@ -44,7 +45,7 @@ export function openCharacterView(ctx, o = {}) {
     if (tab === 'sheet') {
       const t = STAT_TIPS.thac0(deriveStats(ch));
       setLore(t.title, t.text);
-      body.querySelector('.pc-big:nth-child(3)')?.classList.add('lore-hl');
+      body.querySelector('[data-k="thac0"]')?.classList.add('lore-hl');
     } else {
       const hl = body.querySelector('.pc-item.sel, .pc-spell.sel, .pc-spell:not(.dis)');
       const d = hl?.dataset.lore ?? hl?.closest('[data-lore]')?.dataset.lore;
@@ -88,7 +89,7 @@ export function openCharacterView(ctx, o = {}) {
     if (!ch) return;
     if (tab === 'sheet') {
       panel = null;
-      body.append(renderSheet(ch));
+      body.append(renderGoldBoxSheet(ch));
     } else if (tab === 'items') {
       panel = new InventoryPanel(ctx, () => ctx.game.party[index], { onChange: () => renderHead() });
       body.append(panel.el);

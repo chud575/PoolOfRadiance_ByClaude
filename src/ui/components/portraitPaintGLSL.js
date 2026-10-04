@@ -670,8 +670,9 @@ vec3 backdrop(vec2 uv) {
   float halo = exp(-dot((uv - vec2(0.64, 0.62)) * vec2(1.4, 1.0), (uv - vec2(0.64, 0.62)) * vec2(1.4, 1.0)) * 5.0);
   vec3 col = mix(uBgA, uBgB, sat(halo * 1.1 + (big - 0.5) * 0.5 + (s1 - 0.5) * 0.35));
   col *= 0.75 + 0.35 * s1 + 0.12 * (s2 - 0.5);
-  col *= 1.0 - 0.55 * sat(length(c * vec2(1.0, 0.8)) * 1.3 - 0.25);
-  return col * 0.9;
+  // low-key: the backdrop falls away to near-black at the edges, as the board's dark between torches
+  col *= 1.0 - 0.72 * sat(length(c * vec2(1.0, 0.8)) * 1.35 - 0.2);
+  return col * 0.78;
 }
 
 // ------------------------------------------------------------------ main
@@ -761,7 +762,7 @@ void main() {
   // ---- lights (world): warm key high at the left, cool fill low right, moonlit rim behind right
   vec3 Lf = normalize(vec3(0.75 * uSide, -0.05, 0.65));
   vec3 Lr = normalize(vec3(0.85 * uSide, 0.35, -0.55));
-  vec3 Ck = vec3(1.0, 0.92, 0.82) * uLightK.x;
+  vec3 Ck = vec3(1.0, 0.86, 0.68) * uLightK.x; // torchlight, as on the board
   vec3 Cf = vec3(0.34, 0.37, 0.5) * uLightK.y;
   vec3 Cr = vec3(0.55, 0.72, 1.0) * uLightK.z;
   vec3 Csky = vec3(0.16, 0.17, 0.22) * uLightK.w;

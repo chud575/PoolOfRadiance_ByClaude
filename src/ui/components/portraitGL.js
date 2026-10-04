@@ -317,7 +317,8 @@ function setup(ch, o) {
   u.uCleric.value = app.cleric ? 1 : 0;
   u.uSeed.value = (app.seed % 1000) / 1000;
   // Backdrop: a cool and a warm earth, picked to sit against the cloth colour.
-  const bgs = [['#2a3442', '#6a5236'], ['#1f2a2e', '#5c4a30'], ['#33302c', '#7a5a38'], ['#272a38', '#5e4632'], ['#2c2a26', '#6e5a3c']];
+  // (low-key: a dark slate falling to a torchlit umber glow behind the head)
+  const bgs = [['#161b24', '#5a3e24'], ['#12191c', '#52391f'], ['#1c1a1c', '#5e4026'], ['#151824', '#543a22'], ['#1a1816', '#5a4226']];
   const bg = bgs[Math.floor(R() * bgs.length)];
   u.uBgA.value.copy(lin(bg[0]));
   u.uBgB.value.copy(lin(bg[1]));
@@ -424,7 +425,7 @@ function applyFrame(job) {
   u.uDbg.value = o.dbg ?? 0;
   // (high enough that the chin casts its shadow down the neck and the nose a soft loop on the cheek)
   u.uKeyDir.value.fromArray(o.key ?? [-0.74 * u.uSide.value, 0.68, 0.36]);
-  u.uLightK.value.fromArray(o.lightK ?? [1.32, 0.28, 0.8, 0.3]);
+  u.uLightK.value.fromArray(o.lightK ?? [1.42, 0.2, 0.78, 0.22]);
   u.uLite.value = job.scale < 0.35 ? 1 : 0;
   u.uSpot.value.set(0.02, o.crop === 'torso' ? -0.2 : 0, 0, o.crop === 'torso' ? 0.14 : 0.028);
 }

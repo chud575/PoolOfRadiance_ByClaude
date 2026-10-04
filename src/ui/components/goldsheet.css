@@ -1,0 +1,168 @@
+/* Gold Box VIEW sheet in metal letters on dark iron, with the ornate portrait frame.
+   (goldSheet.js; the iron variant of the character view frame is set by CharacterView.) */
+
+/* ---------- the character view's dark iron skin ---------- */
+.pc-view.pc-iron {
+  background:
+    radial-gradient(70% 55% at 30% 35%, rgba(70, 86, 110, 0.13), transparent 70%),
+    radial-gradient(60% 50% at 80% 30%, rgba(160, 110, 60, 0.08), transparent 70%),
+    radial-gradient(ellipse 80% 75% at 50% 48%, transparent 50%, rgba(0, 0, 0, 0.6) 100%),
+    var(--tex-leather, none),
+    linear-gradient(180deg, #14171c 0%, #0c0e12 60%, #08090c 100%);
+  background-size: auto, auto, auto, 9em 9em, auto;
+  background-blend-mode: normal, normal, normal, soft-light, normal;
+  /* a twisted rope of dark bronze for the band */
+  border: 7px solid transparent;
+  border-image: repeating-linear-gradient(45deg, #2a1e10 0 3px, #8a6838 3px 5px, #d3ad6c 5px 6px, #5a4020 6px 8px, #1a1209 8px 10px) 7;
+  box-shadow:
+    0 0 0 1px #000,
+    0 0 0 3px #17120c,
+    0 0 0 4px #6a5230,
+    0 0 0 5px #2a1e10,
+    0 22px 60px rgba(0, 0, 0, 0.75),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.8),
+    inset 0 0 0 2px rgba(170, 130, 70, 0.22),
+    inset 0 0 80px rgba(0, 0, 0, 0.55);
+}
+.pc-view.pc-iron::before { border-color: rgba(150, 118, 70, 0.22); inset: 8px; }
+.pc-view.pc-iron > .por-corner { filter: saturate(0.55) brightness(0.72) contrast(1.15); }
+
+/* ---------- metal lettering ---------- */
+.gb-steel, .gb-copper, .gb-blue {
+  font-family: var(--font-display); font-weight: 700; text-transform: uppercase;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.95)) drop-shadow(0 2px 2px rgba(0, 0, 0, 0.7));
+}
+.gb-steel { background-image: linear-gradient(180deg, #f2f6fa 0%, #b8c6d4 30%, #6c7f92 50%, #3e4c5a 54%, #9cb0c2 74%, #d6e0ea 100%); }
+.gb-copper { background-image: linear-gradient(180deg, #ffe4c2 0%, #f0a066 28%, #b25a26 50%, #6e2c0e 54%, #d0743a 76%, #f6b47a 100%); }
+.gb-blue { background-image: linear-gradient(180deg, #e2f4ff 0%, #8ccaf4 30%, #2f7cb8 50%, #134268 54%, #4e9ad2 76%, #a6dcff 100%); }
+/* nested metal spans inherit the clip from their own background, not the parent's */
+.gb-steel .gb-copper { filter: none; }
+
+/* ---------- layout ---------- */
+.gb-sheet { display: grid; grid-template-columns: minmax(0, 1fr) 23em; gap: 1.6em; flex: 1; min-height: 0; padding: 0.2em 0.4em 0 0.6em; font-size: 1em; }
+.gb-left { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.gb-top { display: flex; justify-content: space-between; align-items: flex-start; }
+.gb-name { font-size: 2.5em; letter-spacing: 0.08em; line-height: 1.05; margin-bottom: 0.18em; }
+.gb-name { background-image: linear-gradient(180deg, #e6f6ff 0%, #9cd2f2 30%, #3f88bc 50%, #1a4c74 54%, #5aa6d8 76%, #bde6ff 100%); }
+.gb-line { font-size: 1.42em; letter-spacing: 0.07em; line-height: 1.18; }
+.gb-gap { display: inline-block; width: 1.4em; }
+.gb-crestwrap { padding: 0.2em 1em 0 0; }
+.gb-crest-shield { width: 6.2em; display: block; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.7)); }
+
+.gb-mid { display: grid; grid-template-columns: auto 1fr; gap: 0 3em; margin-top: 0.7em; align-items: start; }
+.gb-abil { display: grid; grid-template-columns: auto auto 1fr; gap: 0.02em 0; }
+.gb-ab { display: contents; }
+.gb-ab > * { padding: 0.04em 0; }
+.gb-abbr { font-size: 1.5em; letter-spacing: 0.06em; width: 3.2em; }
+.gb-num { font-size: 1.5em; letter-spacing: 0.04em; min-width: 3.4em; text-align: left; font-variant-numeric: tabular-nums; }
+.gb-mod { align-self: center; font-family: var(--font-body); font-style: italic; font-size: 0.86em; color: rgba(180, 168, 150, 0.62); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-left: 0.4em; }
+.gb-ab:hover > *, .gb-ab:focus > *, .gb-ab.lore-hl > * { filter: brightness(1.35) drop-shadow(0 1px 0 #000); }
+.gb-purse { justify-self: end; padding-top: 0.2em; }
+
+.gb-pair { display: inline-flex; align-items: baseline; gap: 0.8em; white-space: nowrap; outline: none; }
+.gb-pair .gb-l, .gb-pair .gb-v { font-size: 1.5em; letter-spacing: 0.06em; }
+.gb-pair.big .gb-l, .gb-pair.big .gb-v { font-size: 1.75em; }
+.gb-pair.low .gb-v { background-image: linear-gradient(180deg, #ffd0c0 0%, #f06050 30%, #a01a10 50%, #5a0806 54%, #d0402c 76%, #ff9078 100%); }
+.gb-sheet .lore-hl { background: none !important; box-shadow: none; }
+.gb-pair:hover, .gb-pair:focus-visible, .gb-pair.lore-hl, .gb-f:hover, .gb-f.lore-hl, .gb-f:focus-visible { filter: brightness(1.3); }
+
+.gb-rule { height: 2px; margin: 0.75em 0; background: linear-gradient(90deg, transparent, rgba(190, 150, 90, 0.75) 8%, rgba(110, 84, 46, 0.6) 70%, transparent); box-shadow: 0 1px 0 rgba(0, 0, 0, 0.8); }
+.gb-rule.thin { height: 1px; opacity: 0.55; margin: 0.6em 0 0.5em; }
+.gb-rule.foot { margin: auto 0 0.4em; opacity: 0.8; }
+.gb-lvrow { display: grid; grid-template-columns: 1fr 1fr; align-items: baseline; }
+.gb-combat { display: grid; grid-template-columns: auto auto 1fr; gap: 0 3.2em; margin-top: 0.5em; }
+.gb-cc { display: flex; flex-direction: column; gap: 0.08em; }
+.gb-cc .gb-pair { justify-content: space-between; }
+.gb-cc .gb-pair .gb-v { min-width: 2.2em; }
+.gb-cc.r { align-items: flex-end; }
+.gb-cc.r .gb-pair .gb-v { text-align: right; }
+
+/* ---------- the fine print: engraved plates in small type ---------- */
+.gb-fines { display: flex; gap: 0.8em; min-height: 0; overflow: hidden; }
+.gb-fine { flex: 1 1 0; min-width: 0; padding: 0.4em 0.7em 0.45em; border-radius: 2px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(0, 0, 0, 0.25));
+  box-shadow: inset 0 0 0 1px rgba(150, 118, 70, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 1px 0 rgba(0, 0, 0, 0.6); }
+.gb-fine.wide { flex: 1.6 1 0; }
+.gb-fine.warn .gb-fh { color: #e48a6a; }
+.gb-fh { font-family: var(--font-display); font-size: 0.7em; letter-spacing: 0.22em; text-transform: uppercase; color: #b8925a; margin-bottom: 0.25em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gb-fkv { display: grid; grid-template-columns: 1fr; gap: 0.02em 1em; }
+.gb-fkv.two { grid-template-columns: 1fr 1fr; }
+.gb-f { display: flex; justify-content: space-between; gap: 0.6em; font-size: 0.86em; line-height: 1.32; outline: none; }
+.gb-f > span { color: rgba(176, 190, 204, 0.72); font-family: var(--font-display); letter-spacing: 0.06em; text-transform: uppercase; font-size: 0.86em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gb-f > b { color: #e3a26a; font-family: var(--font-num); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gb-pips { display: inline-flex; gap: 0.25em; align-items: center; }
+.gb-pips i { width: 0.55em; height: 0.55em; transform: rotate(45deg); border: 1px solid #b8925a; background: rgba(0, 0, 0, 0.4); }
+.gb-pips i.on { background: radial-gradient(circle at 35% 35%, #bfe6ff, #3a86c4 60%, #123a5c); border-color: #9cd2f2; }
+
+.gb-status { display: flex; align-items: baseline; gap: 1em; }
+.gb-status .gb-pair .gb-l, .gb-status .gb-pair .gb-v { font-size: 1.6em; }
+.gb-status .gb-pair.bad .gb-v { background-image: linear-gradient(180deg, #ffd0c0 0%, #f06050 30%, #a01a10 50%, #5a0806 54%, #d0402c 76%, #ff9078 100%); }
+.gb-chip { font-size: 0.78em; padding: 0.1em 0.6em; border-radius: 1em; color: #e8c8a0; box-shadow: inset 0 0 0 1px rgba(190, 150, 90, 0.5); }
+
+/* ---------- right column: ornate portrait, kit badges, the miniature's medallion ---------- */
+.gb-right { position: relative; display: flex; flex-direction: column; align-items: stretch; min-height: 0; gap: 0.8em; }
+.gb-rfoot { display: flex; align-items: center; gap: 0.6em; }
+.gb-badges { flex: 1; display: flex; justify-content: space-between; padding: 0 0.2em; }
+.gb-badge {
+  width: 3em; height: 3.5em; display: grid; place-items: center; outline: none;
+  clip-path: polygon(0 0, 100% 0, 100% 62%, 50% 100%, 0 62%);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), transparent 40%),
+    radial-gradient(circle at 50% 35%, #2a3240, #10141a 75%);
+  box-shadow: inset 0 0 0 2px #7a5c32, inset 0 0 0 3px #1a1209, inset 0 0 0 4px rgba(210, 170, 100, 0.35);
+  position: relative;
+}
+.gb-badge::after { content: ''; position: absolute; inset: 0; clip-path: inherit; box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.8); pointer-events: none; }
+.gb-badge img { width: 2.3em; height: 2.3em; margin-top: -0.5em; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.8)); }
+.gb-badge.empty { opacity: 0.45; }
+.gb-badge:hover, .gb-badge:focus-visible, .gb-badge.lore-hl { box-shadow: inset 0 0 0 2px #d8b26a, inset 0 0 0 3px #1a1209, inset 0 0 0 4px rgba(255, 220, 150, 0.5); }
+.gb-medal {
+  position: relative; flex: none; width: 5.6em; height: 5.6em; margin: 0 0.3em 0 0.4em; border-radius: 50%; overflow: hidden; z-index: 3;
+  background: radial-gradient(circle at 50% 40%, #3a2c1e, #0c0a08 75%);
+  box-shadow: 0 0 0 2px #120c06, 0 0 0 4px #8a6838, 0 0 0 5px #d3ad6c, 0 0 0 7px #2a1e10, 0 8px 18px rgba(0, 0, 0, 0.8), inset 0 0 14px rgba(0, 0, 0, 0.9);
+}
+.gb-medal img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 30%; display: block; transform: scale(1.25); transform-origin: 50% 20%; }
+
+.gb-ornate { position: relative; padding: 1.05em; border-radius: 3px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.07), transparent 40%, rgba(0, 0, 0, 0.35)),
+    radial-gradient(circle at 30% 20%, #2b2620, #121010 70%);
+  box-shadow: 0 0 0 1px #000, 0 14px 34px rgba(0, 0, 0, 0.8), inset 0 0 0 1px rgba(255, 230, 180, 0.12);
+}
+/* twisted rope band */
+.gb-ornate::before { content: ''; position: absolute; inset: 0.28em; padding: 0.32em; border-radius: 2px; pointer-events: none;
+  background: repeating-linear-gradient(-45deg, #1e150b 0 2px, #6e5230 2px 4px, #e0bc7c 4px 5px, #8a6838 5px 6px, #2a1e10 6px 8px);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+  filter: drop-shadow(0 0 1px #000);
+}
+/* bronze bevel round the canvas */
+.gb-ornate::after { content: ''; position: absolute; inset: 0.82em; border-radius: 1px; pointer-events: none;
+  box-shadow: 0 0 0 1px #000, 0 0 0 3px #9a7840, 0 0 0 4px #f0d498, 0 0 0 5px #5a4020, 0 0 0 6px #000; }
+.gb-ornate .pc-portrait { border: 0; box-shadow: none; border-radius: 0; }
+.gb-ornate .pc-portrait::after { box-shadow: inset 0 0 26px rgba(0, 0, 0, 0.8), inset 0 0 4px rgba(0, 0, 0, 0.9); }
+.gb-boss { position: absolute; width: 2.1em; height: 2.1em; border-radius: 50%; z-index: 2; pointer-events: none;
+  background: radial-gradient(circle at 36% 30%, #fff0c8 0%, #d8b06a 16%, #8a6430 38%, #3a2812 62%, #0c0804 74%, #6a5028 78%, #1a1209 88%);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.8); }
+.gb-boss.tl, .gb-boss.tr { background:
+  radial-gradient(circle at 42% 38%, #e8f6ff 0 6%, #5aa0d8 18%, #143a60 34%, transparent 36%),
+  radial-gradient(circle at 36% 30%, #fff0c8 0%, #d8b06a 16%, #8a6430 38%, #3a2812 62%, #0c0804 74%, #6a5028 78%, #1a1209 88%); }
+.gb-boss.tl { left: -0.5em; top: -0.5em; }
+.gb-boss.tr { right: -0.5em; top: -0.5em; }
+.gb-boss.bl { left: -0.5em; bottom: -0.5em; }
+.gb-boss.br { right: -0.5em; bottom: -0.5em; }
+.gb-crest { position: absolute; left: 50%; top: -0.55em; width: 1.4em; height: 1.4em; transform: translateX(-50%) rotate(45deg); z-index: 2; pointer-events: none;
+  background: linear-gradient(135deg, #fff0c8, #b08440 40%, #4a3414 80%); box-shadow: 0 0 0 1px #000, 0 2px 4px rgba(0, 0, 0, 0.8); }
+
+/* the view's lore strip on iron: a bronze-edged slate instead of parchment */
+.pc-view.pc-iron .pc-lore { background: linear-gradient(180deg, rgba(30, 30, 34, 0.92), rgba(14, 14, 18, 0.95)); color: #cfc2ae; box-shadow: inset 0 0 0 1px rgba(170, 130, 70, 0.4), 0 2px 8px rgba(0, 0, 0, 0.6); }
+.pc-view.pc-iron .pc-lore b { color: #e3a26a; }
+
+/* the ITEMS and MAGIC cards on iron: blackened slate rather than Gold Box blue */
+.pc-view.pc-iron .pc-sect {
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(200, 160, 100, 0.06), transparent 60%),
+    linear-gradient(170deg, rgba(26, 28, 34, 0.94), rgba(10, 11, 14, 0.97));
+  border-color: rgba(170, 130, 70, 0.38);
+}
+.pc-view.pc-iron .pc-sect-h > span { background: linear-gradient(180deg, #3a2a1a, #1e150c); border-color: rgba(190, 150, 90, 0.5); }
