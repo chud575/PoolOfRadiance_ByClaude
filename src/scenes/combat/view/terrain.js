@@ -412,7 +412,7 @@ export function buildDiorama(field, o = {}) {
         // Low-key stone: cool, desaturated grey-green setts and flags (warm
         // colour only where the braziers light them, never in the albedo).
         { float gL = dot(gc.rgb, vec3(0.3, 0.59, 0.11));
-          gc.rgb = mix(vec3(gL), gc.rgb, ${night ? '0.55' : '0.22'}) * ${night ? 'vec3(0.96, 0.98, 1.0)' : 'vec3(0.86, 0.94, 0.98)'}; }
+          gc.rgb = mix(vec3(gL), gc.rgb, ${night ? '0.25' : '0.18'}) * ${night ? 'vec3(0.84, 0.92, 0.92)' : 'vec3(0.82, 0.92, 0.88)'}; }
         diffuseColor *= gc;
       `)
       .replace('#include <roughnessmap_fragment>', `
@@ -458,7 +458,7 @@ export function buildDiorama(field, o = {}) {
         #include <opaque_fragment>
       `);
   };
-  groundMat.customProgramCacheKey = () => `combat-ground-v14-${night ? 1 : 0}`;
+  groundMat.customProgramCacheKey = () => `combat-ground-v15-${night ? 1 : 0}`;
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(SW * TILE, SH * TILE, 1, 1), groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(originX + (SW * TILE) / 2, 0, originZ + (SH * TILE) / 2);

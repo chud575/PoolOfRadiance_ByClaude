@@ -100,12 +100,14 @@ export default class CombatScene extends Scene {
     const keys = timeOfDayKeys(hour);
     if (this.night) {
       // Low key: a thin cold moon (shape, not fill); the flames do the lighting.
-      this.rig.sun.intensity = 0.5;
-      this.rig.sun.color.set(0x8a9cc8);
-      this.rig.hemi.intensity = 0.34;
-      this.rig.hemi.color.set(0x3a4260);
-      this.rig.hemi.groundColor?.set(0x140e0a);
-      s.fog = new THREE.FogExp2(0x06080e, 0.02);
+      // Iteration 4: night is clearly darker than day: a thin moon key and a
+      // near-black blue sky wash; the braziers are the only real light.
+      this.rig.sun.intensity = 0.22;
+      this.rig.sun.color.set(0x7a90c8);
+      this.rig.hemi.intensity = 0.07;
+      this.rig.hemi.color.set(0x28324c);
+      this.rig.hemi.groundColor?.set(0x06080c);
+      s.fog = new THREE.FogExp2(0x030509, 0.026);
     } else {
       // A warm key with real shape: a stronger, sunnier sun throwing crisp,
       // soft-edged shadows across the street, and a cooler, lower sky fill so
@@ -118,8 +120,8 @@ export default class CombatScene extends Scene {
       this.rig.sun.intensity *= 0.3;
       this.rig.sun.color.set(0x9aa8c0);
       this.rig.hemi.intensity *= 0.2;
-      this.rig.hemi.color.set(0x5a6678);
-      this.rig.hemi.groundColor?.set(0x121416);
+      this.rig.hemi.color.set(0x5e6c74);
+      this.rig.hemi.groundColor?.set(0x101414);
       this.rig.sun.shadow.radius = 2.2;
       s.fog = new THREE.FogExp2(new THREE.Color(0x1a1e26), 0.014);
     }
@@ -168,11 +170,12 @@ export default class CombatScene extends Scene {
     // Soft camera-side fill so figures read against the ground (a classic tactics-cam trick).
     // At night the fill is the warm spill of the braziers and candles, so the
     // party keeps its local colour under the cold moon.
-    this.fill = new THREE.DirectionalLight(this.night ? 0xffb878 : 0x8a98b0, this.night ? 0.6 : 0.14);
+    // Iteration 4: a cold, weak fill in both cases (warmth only from the flames).
+    this.fill = new THREE.DirectionalLight(this.night ? 0x7a86a0 : 0x8a9ca4, this.night ? 0.2 : 0.16);
     s.add(this.fill, this.fill.target);
     // Rim light from behind the fight: separates figures from the ground.
     // By night a warm brazier rim (not a cold moon edge), so the party keeps colour.
-    this.rim = new THREE.DirectionalLight(this.night ? 0xffa860 : 0xb8c4d8, this.night ? 0.8 : 0.55);
+    this.rim = new THREE.DirectionalLight(this.night ? 0x8aa0cc : 0xb8c4d8, this.night ? 0.75 : 0.6);
     s.add(this.rim, this.rim.target);
     this.vfx = new VFX(s);
 
@@ -185,7 +188,7 @@ export default class CombatScene extends Scene {
       const fig = new Figure(models.get(c.id), { seed: i * 13.7 + 1, faction });
       // By night the dead hold a faint cold pallor of moonlight (bone reads
       // ivory-grey against the candle spill, never orange).
-      if (faction === 'undead' && this.night) for (const mm of fig.mats) if (mm.m.emissive) { mm.emissive.set(0x101c30); mm.m.emissive.copy(mm.emissive); }
+      if (faction === 'undead' && this.night) for (const mm of fig.mats) if (mm.m.emissive) { mm.emissive.set(0x04070c); mm.m.emissive.copy(mm.emissive); }
       s.add(fig.root);
       this.figures.set(c.id, fig);
     });
@@ -212,9 +215,11 @@ export default class CombatScene extends Scene {
       } else {
         // Capped per light, with a gentler falloff: flames pool warm light on
         // the masonry instead of blowing a hot disc onto the nearest wall.
-        l.intensity = (this.night || this.indoor ? 19 : 18) * (f.brazier ? 1.3 : 1);
-        l.distance = f.brazier ? 15 : 12;
-        l.decay = 1.5;
+        // Iteration 4: a visible falloff (decay 2, shorter reach), so warm
+        // pools end and the stone between them drops to cold near-black.
+        l.intensity = (this.night || this.indoor ? 30 : 26) * (f.brazier ? 1.3 : 1);
+        l.distance = f.brazier ? 11 : 9;
+        l.decay = 2;
       }
       l.position.set(f.x, f.y, f.z);
       // Wall torches: the light sits out from the wall, not in the bracket.
@@ -238,7 +243,7 @@ export default class CombatScene extends Scene {
       this.fill.intensity = 0.22;
     }
     // Figure rim light: cool moonlit edge at night, warm sky edge by day.
-    RIM.uRimColor.value.set(this.diorama.pool ? 0xffb860 : this.night ? 0x6a88d0 : 0x7a88a4).multiplyScalar(this.diorama.pool ? 0.9 : this.night ? 1.7 : 0.6);
+    RIM.uRimColor.value.set(this.diorama.pool ? 0xffb860 : this.night ? 0x7a8498 : 0x7a88a4).multiplyScalar(this.diorama.pool ? 0.9 : this.night ? 0.7 : 0.6);
 
     this._placeCombatants();
     this.engine = new CombatEngine({ rng, field: this.field, party: this.party, monsters: this.monsters });
@@ -395,8 +400,8 @@ export default class CombatScene extends Scene {
       const gu = this.ctx.render.passes?.grade?.uniforms;
       if (gu?.uShadowTint && gu.uHighlightTint) {
         const prev = [gu.uShadowTint.value, gu.uHighlightTint.value];
-        gu.uShadowTint.value = this.night ? [0.0, 0.012, 0.04] : [0.004, 0.012, 0.03];
-        gu.uHighlightTint.value = this.night ? [0.06, 0.03, -0.004] : [0.07, 0.036, -0.014];
+        gu.uShadowTint.value = this.night ? [-0.004, 0.004, 0.03] : [-0.004, 0.008, 0.026];
+        gu.uHighlightTint.value = this.night ? [0.04, 0.02, -0.004] : [0.03, 0.016, -0.006];
         this.own(() => {
           gu.uShadowTint.value = prev[0];
           gu.uHighlightTint.value = prev[1];
@@ -404,7 +409,7 @@ export default class CombatScene extends Scene {
       }
     }
     // Low-key grade: desaturated stone, deep vignette, flames as the only true whites.
-    this.post = { bloomStrength: this.night ? 0.6 : 0.45, bloomThreshold: this.night ? 0.82 : 0.86, bloomRadius: 0.55, vignette: this.night ? 0.62 : 0.56, exposure: this.night ? 1.1 : 1.0, contrast: this.night ? 1.1 : 1.12, saturation: this.night ? 0.82 : 0.8 };
+    this.post = { bloomStrength: this.night ? 0.6 : 0.45, bloomThreshold: this.night ? 0.82 : 0.86, bloomRadius: 0.55, vignette: this.night ? 0.62 : 0.56, exposure: this.night ? 0.92 : 1.0, contrast: this.night ? 1.14 : 1.12, saturation: this.night ? 0.8 : 0.78 };
     this._updateCamera(0, true);
 
     // ------------------------------------------------ input
@@ -478,7 +483,7 @@ export default class CombatScene extends Scene {
     sun.position.copy(at(best.az));
     sun.target?.position.copy(this.center);
     sun.target?.updateMatrixWorld();
-    if (this.hour < 10 || this.hour > 16) sun.color.lerp(new THREE.Color(0xffc080), 0.35);
+    // (Iteration 4: the overcast key stays cold at every hour; warmth is the flames' alone.)
     sun.shadow.needsUpdate = true;
   }
 
@@ -624,7 +629,7 @@ export default class CombatScene extends Scene {
       uniforms: this.indoor
         ? { uTop: { value: new THREE.Color(0x1c1610) }, uHor: { value: new THREE.Color(0x4a3018) }, uGround: { value: new THREE.Color(0x8a6020) }, uWarm: { value: 0.9 },
           uSun: { value: new THREE.Vector3(0.3, -0.5, 0.8).normalize() }, uSunCol: { value: new THREE.Color(0xffb850) } }
-        : { uTop: { value: new THREE.Color(k.skyTop) }, uHor: { value: new THREE.Color(k.skyHorizon) }, uGround: { value: new THREE.Color(this.night ? 0x05060a : 0x2a2620) }, uWarm: { value: this.night ? 0.6 : 0.15 },
+        : { uTop: { value: new THREE.Color(k.skyTop) }, uHor: { value: new THREE.Color(k.skyHorizon) }, uGround: { value: new THREE.Color(this.night ? 0x030408 : 0x1c2022) }, uWarm: { value: this.night ? 0.08 : 0.03 },
         uSun: { value: this.rig.sun.position.clone().sub(this.center).normalize() }, uSunCol: { value: new THREE.Color(this.night ? 0x5a6a90 : 0xffe2b0) } },
       vertexShader: 'varying vec3 vD; void main(){ vD = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
       // Sky gradient plus a sun disc and a broken skyline of rooftops: metals
@@ -643,7 +648,7 @@ export default class CombatScene extends Scene {
     es.add(new THREE.Mesh(new THREE.SphereGeometry(10, 32, 16), mat));
     const env = pm.fromScene(es, 0.02, 0.1, 100, { size: 64 }).texture;
     this.scene3d.environment = env;
-    this.scene3d.environmentIntensity = this.indoor ? 0.5 : this.night ? 0.3 : 0.22;
+    this.scene3d.environmentIntensity = this.indoor ? 0.5 : this.night ? 0.1 : 0.22;
     pm.dispose();
     mat.dispose();
     this.own(() => env.dispose());
@@ -2655,7 +2660,9 @@ export default class CombatScene extends Scene {
       fig.proxy.position.set(p.x, 0, p.z);
       const ring = this.overlay.teamRing(c.id, c.charmed ? 'party' : c.side);
       ring.position.set(p.x, 0.03, p.z);
-      ring.visible = !this.done && !this.engine.out(c) && fig.root.visible;
+      // Iteration 4: no team ring on every base (they read as UI); only the
+      // hovered / targeted figure keeps one (the actor has the active ring).
+      ring.visible = !this.done && !this.engine.out(c) && fig.root.visible && (this.hoverTimeline === c.id || this.hoverId === c.id);
       const hl = this.hoverTimeline === c.id;
       // Sized to hug the flocked base's rim (line radius = 0.86 × 0.62 m).
       ring.scale.setScalar(((fig.baseR ?? 0.5) + 0.035) / 0.533 * (hl ? 1.15 : 1));

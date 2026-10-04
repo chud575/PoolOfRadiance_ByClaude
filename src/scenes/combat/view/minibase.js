@@ -64,14 +64,45 @@ function flockTexture() {
 /** A base mesh of radius r (metres), its top at y = h. */
 export function makeMiniBase(r = 0.4) {
   if (!_geo) {
-    // Unit base: slight bevel (top narrower), 4.5 cm tall at unit radius.
-    _geo = new THREE.CylinderGeometry(0.93, 1, 0.1, 32, 1, false);
-    _geo.translate(0, 0.05, 0);
+    // Unit base: a straight painted skirt rising to a rounded bevel and a
+    // chamfered lip (catches a light edge at board zoom), the flocked top
+    // inset just inside it. Group 0 = painted rim, group 1 = flock.
+    const prof = [[1.0, 0], [1.0, 0.055], [0.992, 0.072], [0.975, 0.086], [0.95, 0.096], [0.93, 0.1], [0.915, 0.1]].map(([x, y]) => new THREE.Vector2(x, y));
+    const rim = new THREE.LatheGeometry(prof, 40).toNonIndexed();
+    const top = new THREE.CircleGeometry(0.916, 40).rotateX(-Math.PI / 2).translate(0, 0.1, 0).toNonIndexed();
+    rim.deleteAttribute('uv');
+    top.deleteAttribute('uv');
+    // Planar top UVs for the flock.
+    const tp = top.attributes.position;
+    const uv = new Float32Array(tp.count * 2);
+    for (let i = 0; i < tp.count; i++) {
+      uv[i * 2] = tp.getX(i) * 0.5 + 0.5;
+      uv[i * 2 + 1] = tp.getZ(i) * 0.5 + 0.5;
+    }
+    top.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    rim.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(rim.attributes.position.count * 2), 2));
+    const pos = new Float32Array((rim.attributes.position.count + tp.count) * 3);
+    const nor = new Float32Array(pos.length);
+    const uvs = new Float32Array((rim.attributes.position.count + tp.count) * 2);
+    pos.set(rim.attributes.position.array, 0);
+    pos.set(tp.array, rim.attributes.position.array.length);
+    nor.set(rim.attributes.normal.array, 0);
+    nor.set(top.attributes.normal.array, rim.attributes.normal.array.length);
+    uvs.set(rim.attributes.uv.array, 0);
+    uvs.set(uv, rim.attributes.uv.array.length);
+    _geo = new THREE.BufferGeometry();
+    _geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    _geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    _geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    _geo.addGroup(0, rim.attributes.position.count, 0);
+    _geo.addGroup(rim.attributes.position.count, tp.count, 1);
+    rim.dispose();
+    top.dispose();
   }
   if (!_mats) {
-    const rim = new THREE.MeshStandardMaterial({ color: 0x2a231b, roughness: 0.9, metalness: 0 });
+    const rim = new THREE.MeshStandardMaterial({ color: 0x3a3229, roughness: 0.62, metalness: 0 });
     const top = new THREE.MeshStandardMaterial({ map: flockTexture(), roughness: 1, metalness: 0 });
-    _mats = [rim, top, rim];
+    _mats = [rim, top];
   }
   const m = new THREE.Mesh(_geo, _mats);
   m.scale.set(r, 0.45, r);

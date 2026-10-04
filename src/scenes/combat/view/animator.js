@@ -27,7 +27,7 @@ const angLerp = (a, b, t) => {
  */
 export const RIM = { uRimColor: { value: new THREE.Color(0.18, 0.16, 0.14) }, uRimPower: { value: 3.0 }, uFacK: { value: 1.0 } };
 /** Per-faction back-light edge colours. */
-export const FACTION_RIM = { party: new THREE.Color(0.30, 0.26, 0.16), foe: new THREE.Color(0.34, 0.09, 0.04), undead: new THREE.Color(0.26, 0.46, 0.66) };
+export const FACTION_RIM = { party: new THREE.Color(0.30, 0.26, 0.16), foe: new THREE.Color(0.34, 0.09, 0.04), undead: new THREE.Color(0.17, 0.17, 0.15) };
 
 // Rigid kit material kind (from pbr()'s name) → surface-detail pattern id.
 const RIGID_PID = { cloth: 3, leather: 5, chain: 9, metal: 8, gold: 6, skin: 6, scales: 10, reptile: 1, fur: 2, bone: 4, wood: 6, hair: 2, plank: 6 };
@@ -71,7 +71,7 @@ function addRim(mat, facRim = null, tint = null) {
         miniEdge = 0.0; miniChip = 0.0;
         {
           float lumP = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
-          diffuseColor.rgb = mix(vec3(lumP), diffuseColor.rgb, 0.8);
+          diffuseColor.rgb = mix(vec3(lumP), diffuseColor.rgb, 0.95);
           #ifndef FLAT_SHADED
           vec3 mP = -vViewPosition;
           vec3 dpx = dFdx(mP), dpy = dFdy(mP);
@@ -109,15 +109,20 @@ function addRim(mat, facRim = null, tint = null) {
       .replace('#include <lights_physical_fragment>', `
         // Matte acrylic over the casting: dull paint, satin worn metal.
         metalnessFactor = mix(metalnessFactor, 0.85, miniChip * 0.7);
-        roughnessFactor = metalnessFactor > 0.5 ? clamp(roughnessFactor, 0.36, 0.62) : max(roughnessFactor, 0.78);
+        roughnessFactor = metalnessFactor > 0.5 ? clamp(roughnessFactor, 0.32, 0.55) : max(roughnessFactor, 0.84);
         roughnessFactor = mix(roughnessFactor, 0.42, miniChip * 0.7);
         #include <lights_physical_fragment>`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         { float nvM = clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0);
           // Painted highlights are pigment, not light: a little of the drybrush
           // reads even in deep shadow. Bare metal gets a cool sheen on its rims.
-          totalEmissiveRadiance += diffuseColor.rgb * miniEdge * 0.07;
-          totalEmissiveRadiance += vec3(0.32, 0.38, 0.46) * pow(1.0 - nvM, 2.0) * smoothstep(0.5, 0.9, metalnessFactor) * 0.35;
+          totalEmissiveRadiance += diffuseColor.rgb * miniEdge * 0.09;
+          // Iteration 4: polished pewter/bronze edges. Every raised ridge and the
+          // upper silhouette of bare or painted metal catch a bright, neutral
+          // drybrushed highlight (in the metal's own hue), over dark recesses.
+          { float mtl = smoothstep(0.35, 0.8, metalnessFactor);
+            vec3 mHi = mix(vec3(0.82, 0.8, 0.74), diffuseColor.rgb * 2.2 + 0.18, 0.4);
+            totalEmissiveRadiance += mHi * mtl * (miniEdge * 0.3 + pow(1.0 - nvM, 2.0) * 0.05); }
           float rimF = pow(1.0 - nvM, uRimPower);
           totalEmissiveRadiance += uRimColor * rimF * (0.6 + 0.4 * diffuseColor.rgb / max(0.001, max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b))));
           // Faction rim: a thin coloured back-light edge (ember on foes, cold steel
@@ -135,7 +140,7 @@ function addRim(mat, facRim = null, tint = null) {
           float rimE = pow(1.0 - clamp(dot(nV, normalize(vViewPosition)), 0.0, 1.0), 3.0);
           totalEmissiveRadiance += vec3(1.0, 0.34, 0.05) * burnEdge * uBurn.y * 1.5 + vec3(1.0, 0.22, 0.02) * emb * uBurn.y * 0.9 + vec3(1.0, 0.42, 0.08) * rimE * uBurn.y * 0.9; }`);
   };
-  mat.customProgramCacheKey = () => (sculpt ? 'fig-mini-sculpt-b' : pid >= 0 ? 'fig-mini-detail-b' : 'fig-mini-b');
+  mat.customProgramCacheKey = () => (sculpt ? 'fig-mini-sculpt-c' : pid >= 0 ? 'fig-mini-detail-c' : 'fig-mini-c');
 }
 
 const _FLASH = new THREE.Color(1, 0.82, 0.68);
