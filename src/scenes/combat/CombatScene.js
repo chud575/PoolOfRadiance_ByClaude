@@ -2949,7 +2949,7 @@ export default class CombatScene extends Scene {
         const a = mainAz + k * 0.28;
         // Three-quarter from the weapon side (the shield arm faces away from the lens).
         let sc = Math.cos(a - (face - 0.6)) * 1.1 + Math.cos(a - mainAz) * 0.5;
-        if (shieldAz !== null) sc -= Math.max(0, Math.cos(a - shieldAz)) * 2.2;
+        if (shieldAz !== null) sc -= Math.max(0, Math.cos(a - shieldAz)) * 4.5;
         const ex = p.x + Math.sin(a) * reach;
         const ez = p.z + Math.cos(a) * reach;
         for (const q of others) {
@@ -2967,13 +2967,37 @@ export default class CombatScene extends Scene {
           az = a;
         }
       }
+      const camDist = dist;
       const look = new THREE.Vector3(p.x, hgt * 0.55, p.z);
-      cam.position.set(look.x + Math.sin(az) * Math.cos(el) * dist, look.y + Math.sin(el) * dist, look.z + Math.cos(az) * Math.cos(el) * dist);
+      cam.position.set(look.x + Math.sin(az) * Math.cos(el) * camDist, look.y + Math.sin(el) * camDist, look.z + Math.cos(az) * Math.cos(el) * camDist);
       cam.aspect = W / H;
       cam.updateProjectionMatrix();
       cam.lookAt(look);
       const ovVis = this.overlay.group.visible;
       this.overlay.group.visible = false;
+      // Bystanders standing between the lens and the hero step out of the
+      // shot (the hero panel shows the figure in its surroundings, unobstructed).
+      const hiddenFigs = [];
+      {
+        const cx = cam.position.x - p.x;
+        const cz = cam.position.z - p.z;
+        const L2 = cx * cx + cz * cz;
+        for (const o of this.engine.all) {
+          if (o === act) continue;
+          const of = this.figures.get(o.id);
+          if (!of?.root.visible) continue;
+          const q = of.root.position;
+          const tq = ((q.x - p.x) * cx + (q.z - p.z) * cz) / L2;
+          if (tq <= 0.12) continue;
+          const dd = Math.hypot(p.x + cx * tq - q.x, p.z + cz * tq - q.z);
+          if (dd < 0.75 + tq * 0.5) {
+            of.root.visible = false;
+            of._blobWas = of.blob?.visible;
+            if (of.blob) of.blob.visible = false;
+            hiddenFigs.push(of);
+          }
+        }
+      }
       const autoSh = r.shadowMap.autoUpdate;
       r.shadowMap.autoUpdate = false;
       const prevRT = r.getRenderTarget();
@@ -2983,6 +3007,10 @@ export default class CombatScene extends Scene {
       r.setRenderTarget(prevRT);
       r.shadowMap.autoUpdate = autoSh;
       this.overlay.group.visible = ovVis;
+      for (const of of hiddenFigs) {
+        of.root.visible = true;
+        if (of.blob) of.blob.visible = !!of._blobWas;
+      }
     }
     // Blit into the frame's window (CSS px, origin bottom-left for GL).
     const cv = r.domElement.getBoundingClientRect();

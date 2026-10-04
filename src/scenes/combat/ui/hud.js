@@ -351,9 +351,15 @@ export class CombatHud {
     f.el.addEventListener('keydown', onKey);
     this.root.append(f.el);
     this.menu = { f, menu };
+    // The open menu owns the command line: its command lights up (not MOVE),
+    // and the board's hover card steps back under it.
+    const id = String(title).toLowerCase();
+    for (const b of this.cmds.children) b.classList.toggle('active', b.dataset.cmd === id);
+    this.root.classList.add('cb-menu-open');
   }
 
   closeMenu() {
+    this.root.classList.remove('cb-menu-open');
     if (!this.menu) return;
     this.menu.f.el.remove();
     this.menu = null;

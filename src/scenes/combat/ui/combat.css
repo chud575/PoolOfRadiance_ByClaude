@@ -246,7 +246,7 @@
 .cb-closeup.idle { visibility: hidden; }
 
 /* ---------- Iron, rope and leather skin for the combat panels ---------- */
-.cb-card.por-frame, .cb-roster.por-frame {
+.cb-card.por-frame, .cb-roster.por-frame, .cb-menu.por-frame {
   background:
     radial-gradient(130% 60% at 50% -8%, rgba(255, 196, 120, 0.08), transparent 62%),
     radial-gradient(ellipse 72% 66% at 50% 46%, transparent 50%, rgba(0, 0, 0, 0.5) 100%),
@@ -256,21 +256,27 @@
   box-shadow: 0 0 0 1px #050403, 0 0 0 3px #2c2a28, 0 0 0 4px #6a655e, 0 0 0 5px #1a1816, 0 18px 44px rgba(0, 0, 0, 0.7),
     inset 0 0 0 1px rgba(0, 0, 0, 0.7), inset 0 0 50px rgba(0, 0, 0, 0.5);
 }
-.cb-card.por-frame::before, .cb-roster.por-frame::before { border-color: rgba(150, 140, 125, 0.22); }
-.cb-card > .por-corner, .cb-roster > .por-corner {
+.cb-card.por-frame::before, .cb-roster.por-frame::before, .cb-menu.por-frame::before { border-color: rgba(150, 140, 125, 0.22); }
+.cb-card > .por-corner, .cb-roster > .por-corner, .cb-menu > .por-corner {
   --cs: 16px; width: 16px !important; height: 16px !important;
   background: radial-gradient(circle at 50% 50%, #c8c0b0 0 1.5px, #5a5650 2.5px, transparent 3.5px), radial-gradient(circle at 35% 30%, #9a948a, #4e4a44 45%, #1c1a18 85%);
   border-radius: 3px; box-shadow: 0 0 0 1px #000, 0 2px 3px rgba(0, 0, 0, 0.8); filter: none; transform: none !important;
   top: auto; left: auto; right: auto; bottom: auto;
 }
-.cb-card > .por-corner.tl, .cb-roster > .por-corner.tl { top: -9px; left: -9px; }
-.cb-card > .por-corner.tr, .cb-roster > .por-corner.tr { top: -9px; right: -9px; }
-.cb-card > .por-corner.bl, .cb-roster > .por-corner.bl { bottom: -9px; left: -9px; }
-.cb-card > .por-corner.br, .cb-roster > .por-corner.br { bottom: -9px; right: -9px; }
-.cb-card > .por-frame-title, .cb-roster > .por-frame-title {
+.cb-card > .por-corner.tl, .cb-roster > .por-corner.tl, .cb-menu > .por-corner.tl { top: -9px; left: -9px; }
+.cb-card > .por-corner.tr, .cb-roster > .por-corner.tr, .cb-menu > .por-corner.tr { top: -9px; right: -9px; }
+.cb-card > .por-corner.bl, .cb-roster > .por-corner.bl, .cb-menu > .por-corner.bl { bottom: -9px; left: -9px; }
+.cb-card > .por-corner.br, .cb-roster > .por-corner.br, .cb-menu > .por-corner.br { bottom: -9px; right: -9px; }
+.cb-card > .por-frame-title, .cb-roster > .por-frame-title, .cb-menu > .por-frame-title {
   color: #e8dcc0; background: linear-gradient(180deg, #6a655e, #3a3632 55%, #24211e); text-shadow: 0 1px 1px #000;
 }
 .cb-card .row { border-bottom-color: rgba(150, 130, 100, 0.16); }
 .cb-card .mv .lbl { color: #c8a870; }
 .cb-pips i { background: rgba(214, 170, 96, 0.9); box-shadow: 0 0 5px rgba(214, 160, 70, 0.45); }
 .cb-pips i.half { background: linear-gradient(90deg, rgba(214, 170, 96, 0.9) 50%, rgba(255, 255, 255, 0.12) 50%); }
+
+/* Spell / item menus in the same iron, rope and leather skin. */
+.cb-menu .por-menu-item { color: #e4d8bc; border-bottom: 1px solid rgba(150, 130, 100, 0.14); }
+.cb-menu .por-menu-item.hl, .cb-menu .por-menu-item:hover { background: linear-gradient(90deg, rgba(120, 84, 40, 0.55), rgba(70, 50, 28, 0.25)); color: #fff2d0; box-shadow: inset 2px 0 0 #c8a870; }
+.cb-menu .lvl { color: #c8a870; }
+.cb-menu-open .cb-inspect, .cb-menu-open .cb-lead { display: none !important; }
