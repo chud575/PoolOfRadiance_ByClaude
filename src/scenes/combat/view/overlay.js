@@ -158,8 +158,9 @@ export class Overlay {
             // Valid target squares (enemies in reach): quiet corner brackets —
             // the current target gets the bright reticle on top.
             vec2 cq = min(f, 1.0 - f);
-            float br = (1.0 - smoothstep(pxG * 1.0, pxG * 2.6, min(cq.x, cq.y) - 0.06)) * step(max(cq.x, cq.y), 0.24) * step(0.06 - pxG, min(cq.x, cq.y));
-            LAYER(vec3(1.0, 0.45, 0.3) * 1.1, br * 0.55);
+            float br = (1.0 - smoothstep(pxG * 1.0, pxG * 2.6, min(cq.x, cq.y) - 0.06)) * step(max(cq.x, cq.y), 0.15) * step(0.06 - pxG, min(cq.x, cq.y));
+            // Iteration 4: small, dim ticks (they no longer litter the floor).
+            LAYER(vec3(0.85, 0.42, 0.3), br * 0.3);
             LAYER(vec3(1.0, 0.3, 0.2) * 0.5, 0.05);
           }
           // Path and hover.

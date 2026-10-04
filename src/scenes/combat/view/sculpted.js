@@ -420,15 +420,17 @@ const HEADS = {
     B.ell('head', H(0, 0.06, 0.04), [0.086 * hs, 0.052 * hs, 0.07 * hs], T);
     B.box('head', H(0, 0.032, 0.075), [0.062 * hs, 0.028 * hs, 0.036 * hs], { ...T, rr: 0.022 * hs, R: mEuler(-0.15, 0, 0) });
     // Heavy, knotted brow shelf that shadows the eyes.
-    B.ell('head', H(0, 0.126, 0.084), [0.1 * hs, 0.03 * hs, 0.04 * hs], { ...T, k: 0.018 * hs, mat: 'back' });
+    B.ell('head', H(0, 0.13, 0.088), [0.108 * hs, 0.036 * hs, 0.046 * hs], { ...T, k: 0.018 * hs, mat: 'back' });
     for (const sx of [1, -1]) B.ell('head', H(sx * 0.042, 0.13, 0.1), [0.036 * hs, 0.02 * hs, 0.026 * hs], { ...T, k: 0.012 * hs, mat: 'back', R: mEuler(0, 0, sx * -0.25) });
     for (const sx of [1, -1]) B.ell('head', H(sx * 0.05, 0.094, 0.075), [0.032 * hs, 0.022 * hs, 0.026 * hs], { ...T, k: 0.014 * hs });
-    B.ell('head', H(0, 0.09, 0.112), [0.028 * hs, 0.024 * hs, 0.024 * hs], { ...T, k: 0.012 * hs });
+    // Iteration 4: a broad, upturned pig snout that reads at board zoom.
+    B.ell('head', H(0, 0.086, 0.122), [0.042 * hs, 0.032 * hs, 0.034 * hs], { ...T, k: 0.014 * hs, mat: 'back' });
     for (const sx of [1, -1]) {
-      B.sph('head', H(sx * 0.012, 0.078, 0.13), 0.007 * hs, { g: G.torso, sub: true, k: 0.003 * hs });
+      B.sph('head', H(sx * 0.016, 0.08, 0.152), 0.011 * hs, { g: G.torso, sub: true, k: 0.004 * hs });
       B.sph('head', H(sx * 0.04, 0.108, 0.092), 0.019 * hs, { g: G.torso, sub: true, k: 0.008 * hs });
       // Swept-back pointed ears.
-      B.ell('head', H(sx * 0.098, 0.108, -0.015), [0.013 * hs, 0.032 * hs, 0.06 * hs], { ...T, k: 0.012 * hs, R: mEuler(-0.55, sx * 0.35, 0) });
+      // Iteration 4: big batwing ears flaring out sideways (the orc silhouette).
+      B.ell('head', H(sx * 0.13, 0.118, -0.02), [0.016 * hs, 0.05 * hs, 0.085 * hs], { ...T, k: 0.012 * hs, R: mEuler(-0.45, sx * 0.85, sx * -0.35) });
       // (Tusks are rigid kit parts — too fine for the sculpt grid; see models.js.)
     }
     B.box('head', H(0, 0.052, 0.108), [0.046 * hs, 0.004 * hs, 0.02 * hs], { g: G.torso, sub: true, k: 0.003 * hs });
