@@ -20,7 +20,10 @@ export class Instrument {
     this.out = ac.createGain();
     this.out.gain.value = o.gain ?? 1;
     let node = this.input;
-    for (const e of o.eq ?? []) {
+    // `mud`: dB cut of the 250–450 Hz box where pads (oo/mm choirs, celli,
+    // drones) pile up in a slow cue — an open voicing above C4 needs room there.
+    const eqs = o.mud ? [{ type: 'peaking', f: 340, q: 0.9, g: -o.mud }, ...(o.eq ?? [])] : o.eq ?? [];
+    for (const e of eqs) {
       const f = ac.createBiquadFilter();
       f.type = e.type;
       f.frequency.value = e.f;

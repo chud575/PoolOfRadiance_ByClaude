@@ -6,6 +6,21 @@ import { glottal } from '../dsp/synth.js';
  * Tiny synthesis toolkit for one-shot sound effects. Every helper schedules
  * nodes at absolute AudioContext time `t` and lets them free themselves.
  */
+const softCurves = new Map();
+/** y = L·tanh(x / L): unity gain for small signals, a smooth ceiling at L. */
+function softCurve(L) {
+  let c = softCurves.get(L);
+  if (c) return c;
+  const N = 2048;
+  c = new Float32Array(N);
+  for (let i = 0; i < N; i++) {
+    const x = ((i / (N - 1)) * 2 - 1) * 1.5;
+    c[i] = L * Math.tanh(x / L);
+  }
+  softCurves.set(L, c);
+  return c;
+}
+
 export class Fx {
   /**
    * @param {BaseAudioContext} ac
@@ -22,6 +37,17 @@ export class Fx {
     this.out.gain.value = o.vol ?? 1;
     const p = ac.createStereoPanner();
     p.pan.value = o.pan ?? 0;
+    let head = this.out;
+    if (o.soft) {
+      // Footsteps: the hard-sole heel tick is a 1–2 ms spike ~30 dB over the
+      // step's loudness. A gentle saturating curve (unity below ~-14 dBFS,
+      // ceiling o.soft) rounds that spike off without touching the body.
+      const ws = ac.createWaveShaper();
+      ws.curve = softCurve(o.soft);
+      ws.oversample = '2x';
+      this.out.connect(ws);
+      head = ws;
+    }
     if (o.limit) {
       // Transient safety for blows and blasts: a fast peak limiter on this
       // sound alone, so its 0.5 ms edge click never reaches 0 dBFS and the
@@ -33,8 +59,8 @@ export class Fx {
       lim.ratio.value = 20;
       lim.attack.value = 0.0005;
       lim.release.value = 0.08;
-      this.out.connect(lim).connect(p).connect(out);
-    } else this.out.connect(p).connect(out);
+      head.connect(lim).connect(p).connect(out);
+    } else head.connect(p).connect(out);
     if (o.wide) {
       // Big events (blasts, thunder, a dragon's roar) fill the space instead of
       // sitting on one point: two short, darkened early reflections thrown hard

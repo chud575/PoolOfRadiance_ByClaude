@@ -19,10 +19,12 @@
  *             still lags real time once the guard has adapted (second 10 s).
  *             Also fails if the orchestra had to be thinned (voice cap < 70) or degraded, and checks
  *             that the guard's last resort (a pre-bounced stem of the next section) really plays.
+ *             Also freezes the main thread 4 × 2 s during a full battle and fails if more than 12
+ *             notes are dropped (the starvation guard must stretch the scheduling window).
  * --intensity X  render adaptive music cues at intensity X (default: each cue's calIntensity)
  * CPU gate: every render prints its cost (render ms per cue second, "x0.37 RT"); rendering
  *             music_combat (any selection that includes it) also renders the full desperate battle
- *             (intensity 1.0) and FAILS if that takes longer than 0.5× real time.
+ *             (intensity 1.0) and FAILS if that takes longer than 0.4× real time (best of 3 runs).
  * --list      print the cue names and exit       --out DIR  output directory (default audio_out)
  * --help      this text. Unknown flags are an error.
  * Prints peak / RMS (dBFS), integrated + momentary-max loudness (LUFS), the LRA-ish momentary
@@ -125,13 +127,21 @@ try {
       console.log(`${bad ? 'FAIL' : 'OK  '} ${name.padEnd(28)} ${s.seconds.toFixed(1).padStart(6)}s  peak ${db(s.peak).padStart(6)}  rms ${db(s.rms).padStart(6)}  LUFS ${f1(s.lufs).padStart(6)}  M ${f1(s.lufsM).padStart(6)}  S/M ${f1(s.width).padStart(6)}  r ${Number.isFinite(s.corr) ? s.corr.toFixed(2) : '-'}  spread ${f1(s.spread)}${s.clip ? `  clip ${s.clip}` : ''}${s.nan ? `  NaN ${s.nan}` : ''}  (${Date.now() - t0} ms, x${(r.ms / 1000 / s.seconds).toFixed(2)} RT)`);
       if (showBands && s.bands) console.log('      ', Object.entries(s.bands).map(([k, v]) => `${k} ${v}`).join('  '));
     }
-    // CPU budget: the desperate battle must render in at most half real time (the live audio thread's headroom).
+    // CPU budget: the desperate battle must render in at most 0.4× real time —
+    // headroom for the SFX, ambience and concurrent load on the live audio
+    // thread. Best of three renders, so another process's burst on a shared
+    // machine is not mistaken for the cue's own cost.
     if (todo.includes('music_combat')) {
-      const r = await render('music_combat', { intensity: 1, wav: false });
-      const x = r.ms / 1000 / r.stats.seconds;
-      const ok = x <= 0.5;
+      const xs = [];
+      for (let i = 0; i < 3; i++) {
+        const r = await render('music_combat', { intensity: 1, wav: false });
+        xs.push(r.ms / 1000 / r.stats.seconds);
+        if (xs.at(-1) <= 0.36) break;
+      }
+      const x = Math.min(...xs);
+      const ok = x <= 0.4;
       if (!ok) failures++;
-      console.log(`${ok ? 'OK  ' : 'FAIL'} cpu: music_combat @ intensity 1.0 renders at x${x.toFixed(2)} real time (budget x0.50)`);
+      console.log(`${ok ? 'OK  ' : 'FAIL'} cpu: music_combat @ intensity 1.0 renders at x${x.toFixed(2)} real time (budget x0.40; runs ${xs.map((v) => v.toFixed(2)).join(', ')})`);
     }
   }
 } finally {
@@ -192,7 +202,7 @@ async function perf() {
       if (bv) clearInterval(bv);
       const wall = (performance.now() - t0) / 1000;
       const ps = ac.playbackStats ? { underrunEvents: ac.playbackStats.underrunEvents, underrunDuration: ac.playbackStats.underrunDuration } : null;
-      const out = { wall, audio: ac.currentTime - ct0, loads, ps, late, cap: dbg.voiceCap, overloads: dbg.overloads, degrade: dbg.degrade, underruns: dbg.underruns };
+      const out = { wall, audio: ac.currentTime - ct0, loads, ps, late, cap: dbg.voiceCap, overloads: dbg.overloads, degrade: dbg.degrade, underruns: dbg.underruns, bounced: dbg.bouncedPlays };
       await ac.close();
       return out;
     }, { state, intensity, blows, win });
@@ -205,7 +215,41 @@ async function perf() {
     // The orchestra must not have been thinned to keep up: cap ≥ 70 and no structural degradation.
     const ok = (under === null || under < 0.01) && lateLag < 0.15 && (r.cap ?? 110) >= 70 && !r.degrade;
     if (!ok) bad++;
-    console.log(`${ok ? 'OK  ' : 'SLOW'} ${(win ? 'victory' : state).padEnd(8)} wall ${r.wall.toFixed(1)}s audio ${r.audio.toFixed(1)}s  load avg ${avg === null ? '-' : (avg * 100).toFixed(0) + '%'} peak ${peak === null ? '-' : (peak * 100).toFixed(0) + '%'} underrun ${under === null ? '-' : (under * 100).toFixed(1) + '%'}  lag ${lag.toFixed(2)}s (settled ${lateLag.toFixed(2)}s)  voice cap ${r.cap ?? '-'} (${r.overloads} cuts, degrade ${r.degrade ?? 0})${r.ps ? `  playbackStats ${JSON.stringify(r.ps)}` : ''}`);
+    console.log(`${ok ? 'OK  ' : 'SLOW'} ${(win ? 'victory' : state).padEnd(8)} wall ${r.wall.toFixed(1)}s audio ${r.audio.toFixed(1)}s  load avg ${avg === null ? '-' : (avg * 100).toFixed(0) + '%'} peak ${peak === null ? '-' : (peak * 100).toFixed(0) + '%'} underrun ${under === null ? '-' : (under * 100).toFixed(1) + '%'}  lag ${lag.toFixed(2)}s (settled ${lateLag.toFixed(2)}s)  voice cap ${r.cap ?? '-'} (${r.overloads} cuts, degrade ${r.degrade ?? 0})${win ? `  fanfare ${r.bounced ? 'bounced' : 'live'}` : ''}${r.ps ? `  playbackStats ${JSON.stringify(r.ps)}` : ''}`);
+  }
+  // Main-thread starvation: the battle at full intensity while the main thread
+  // freezes for 2 s every 5 s (shader compiles, GC on a weak machine). The
+  // starvation guard must stretch the lookahead after the first hitch, so the
+  // score keeps (almost) every note.
+  {
+    const r = await pg.evaluate(async () => {
+      const { createGraph } = await import('/src/audio/graph.js');
+      const { AudioEngine } = await import('/src/audio/AudioEngine.js');
+      const ac = new AudioContext({ latencyHint: 'interactive' });
+      await ac.resume();
+      const e = AudioEngine.offline(ac, createGraph(ac));
+      e.offlineMode = false;
+      e.music('combat', { intensity: 1 });
+      const iv = setInterval(() => e._tick(), 50);
+      const freeze = (ms) => {
+        const t = performance.now();
+        while (performance.now() - t < ms) {
+          /* the main thread is busy */
+        }
+      };
+      for (let i = 0; i < 4; i++) {
+        await new Promise((res) => setTimeout(res, 3000));
+        freeze(2000);
+      }
+      await new Promise((res) => setTimeout(res, 2000));
+      const dbg = e.debugState();
+      clearInterval(iv);
+      await ac.close();
+      return dbg;
+    });
+    const ok = r.dropped <= 12 && r.stalls >= 3;
+    if (!ok) bad++;
+    console.log(`${ok ? 'OK  ' : 'FAIL'} stalls   4 × 2 s main-thread freezes: ${r.stalls} stalls seen, lookahead ${r.lookahead} s, ${r.dropped} notes dropped (max 12)`);
   }
   // Structural degradation works: forced to its last level, the battle plays the next section from a bounced stem.
   {

@@ -376,7 +376,9 @@ export class Director {
     this.combatOver = true;
     if (winner === 'party') {
       // The battle cue ends on the next downbeat with a final hit; the fanfare starts there.
-      if (this.e.endCombatWith) this.e.endCombatWith('victory');
+      // Blows and cries still queued from a QUICK round are heard first.
+      const after = Math.min(2, this.backlog());
+      if (this.e.endCombatWith) this.e.endCombatWith('victory', { after });
       else this.e.stinger('victory', { stopMusic: true });
     } else if (winner === 'monster') this.e.music('defeat', { fade: 0.3 });
   }
@@ -436,7 +438,7 @@ export class Director {
       case 'attack': {
         const a = by(ev.id);
         const d = by(ev.target);
-        this.hint = this._hintFrom({ attId: a?.monsterId ?? null, tgtId: d?.monsterId ?? null, tgtParty: d?.side === 'party', attParty: a?.side === 'party', attRef: a?.ref, tgtRef: d?.ref, ranged: !!ev.ranged, hit: !!ev.hit, crit: !!(ev.crit || ev.backstab), dmg: ev.dmg ?? 0, immune: !!ev.immune, bite: a?.monsterId === 'giantRat', attPan: this._panOf(a), tgtPan: this._panOf(d) }, 'event');
+        this.hint = this._hintFrom({ attId: a?.monsterId ?? null, tgtId: d?.monsterId ?? null, tgtKey: ev.target, tgtParty: d?.side === 'party', attParty: a?.side === 'party', attRef: a?.ref, tgtRef: d?.ref, ranged: !!ev.ranged, hit: !!ev.hit, crit: !!(ev.crit || ev.backstab), dmg: ev.dmg ?? 0, killed: !!(ev.killed && ev.hit), immune: !!ev.immune, bite: a?.monsterId === 'giantRat', attPan: this._panOf(a), tgtPan: this._panOf(d) }, 'event');
         this.blowPending = this.hint;
         this._reassess();
         break;
@@ -444,8 +446,8 @@ export class Director {
       case 'down': {
         const c = by(ev.id);
         const pan = this._panOf(c);
-        if (c?.side === 'party') this._partyDown(c.ref ?? c, ev.status === 'dead', pan);
-        else this._foeDown(c?.monsterId ?? monsterIdOf(c?.name), pan);
+        if (c?.side === 'party') this._partyDown(c.ref ?? c, ev.status === 'dead', pan, ev.id);
+        else this._foeDown(c?.monsterId ?? monsterIdOf(c?.name), pan, ev.id);
         break;
       }
       case 'cast':
@@ -471,13 +473,15 @@ export class Director {
   }
 
   /** A party member falls: their own voice (race, sex), the body, the music answers. */
-  _partyDown(ref, dead, pan = 0) {
+  _partyDown(ref, dead, pan = 0, key) {
     const now = this.now;
     const member = this.party?.find((c) => c.name === ref?.name) ?? ref ?? {};
-    this.e.sfx('vox_party_die', { vol: 0.75, race: member.race, gender: member.gender, pan });
+    // Never before the blow that felled them (QUICK queues blows up to 1.6 s ahead).
+    const delay = this._deathSlot(key, 1.0) ?? this._afterImpact(key);
+    this._raw('vox_party_die', { vol: 0.75, race: member.race, gender: member.gender, pan, delay });
     if (now - (this.lastThud ?? -10) > 0.3) {
       this.lastThud = now;
-      this.e.sfx('death', { delay: 0.3, pan });
+      this._raw('death', { delay: delay + 0.3, pan });
     }
     this.downs++;
     if (dead || member.status === 'dead') this.e.stinger('fallen', { duck: 0.6 });
@@ -503,6 +507,44 @@ export class Director {
     if (at - now > max) return null;
     this._lanes[lane] = at + this.e.rng.range(gap[0], gap[1]);
     return at - now;
+  }
+
+  /** Delay (from now) at which a victim's last blow has landed, plus a breath; 0 when none is queued. */
+  _afterImpact(key) {
+    const t = key !== undefined ? this._impacts?.get(key) : undefined;
+    return t === undefined ? 0 : Math.max(0, t + 0.08 - this.now);
+  }
+
+  /** Remember when a blow on `key` is heard (absolute audio time). */
+  _markImpact(key, delay) {
+    if (key === undefined || key === null) return;
+    this._impacts ??= new Map();
+    this._impacts.set(key, this.now + delay);
+    if (this._impacts.size > 64) this._impacts.delete(this._impacts.keys().next().value);
+  }
+
+  /**
+   * A slot on the death lane no earlier than the victim's killing blow: cries
+   * of several falls stay 0.22–0.38 s apart, and the lane's backlog limit
+   * counts from the impact, not from now. Null when the lane is too full.
+   */
+  _deathSlot(key, max = 1.0) {
+    const now = this.now;
+    const min = this._afterImpact(key);
+    this._lanes ??= {};
+    const at = Math.max(now + min, this._lanes.death ?? 0);
+    if (at - now - min > max) return null;
+    this._lanes.death = at + this.e.rng.range(0.22, 0.38);
+    return at - now;
+  }
+
+  /** Delay until every queued QUICK blow and death cry has sounded. */
+  backlog() {
+    const now = this.now;
+    let t = 0;
+    for (const v of Object.values(this._lanes ?? {})) t = Math.max(t, v - now);
+    for (const v of this._impacts?.values() ?? []) t = Math.max(t, v - now);
+    return Math.max(0, t);
   }
 
   /**
@@ -534,6 +576,7 @@ export class Director {
       if (h.ranged) this._raw('arrow_hit', { delay: at, vol, pan: tp });
       if (h.bite) this._raw('bite', { delay: at, vol, pan: tp });
       this._raw('hit', { delay: at, vol, pan: tp, material: h.ranged && h.material === 'armor' ? 'flesh' : h.material, crit: h.crit });
+      this._markImpact(h.tgtKey, at);
       const hurt = this._hurt(h, at + 0.08);
       if (hurt) this._raw(hurt[0], { ...hurt[1], pan: tp });
     } else if (h.ranged) this._raw('arrow_in', { delay: at, vol: vol * 0.7, pan: tp });
@@ -550,6 +593,8 @@ export class Director {
    */
   _hurt(h, delay) {
     const now = this.now;
+    // The blow that kills is answered by the death cry, not a yelp after it.
+    if (h.killed) return null;
     if (now - this.lastHurt < 0.7) return null;
     if (!(h.crit || (h.dmg ?? 0) >= 6 || this.e.rng.chance(0.45))) return null;
     if (h.tgtId) {
@@ -565,21 +610,24 @@ export class Director {
   }
 
   /** A foe is slain: its death cry (staggered when several fall at once) and a thud. */
-  _foeDown(id, pan = 0) {
+  _foeDown(id, pan = 0, key) {
     const now = this.now;
     const fresh = now - (this.lastDeathVox ?? -10) > 0.6;
+    let at = this._afterImpact(key);
     if (id) {
       this.foesDown++;
-      // Up to ~1 s of queued cries, each a beat after the last, quieter as they pile up.
-      const delay = this._stagger('death', [0.22, 0.38], 1.0);
+      // Up to ~1 s of queued cries, each a beat after the last (and never
+      // before the killing blow), quieter as they pile up.
+      const delay = this._deathSlot(key, 1.0);
       if (delay !== null) {
         this.lastDeathVox = now;
-        this._raw(`vox_${voiceOf(id)}_die`, { vol: 0.85 * (delay > 0.3 ? 0.8 : 1), delay: delay + 0.03, pan });
+        at = delay;
+        this._raw(`vox_${voiceOf(id)}_die`, { vol: 0.85 * (delay - this._afterImpact(key) > 0.3 ? 0.8 : 1), delay: delay + 0.03, pan });
       }
     }
     if (now - (this.lastThud ?? -10) > 0.3) {
       this.lastThud = now;
-      this.e.sfx('death', { delay: 0.25, vol: fresh ? 1 : 0.6, pan });
+      this._raw('death', { delay: at + 0.25, vol: fresh ? 1 : 0.6, pan });
     }
     this._reassess();
   }
@@ -848,6 +896,7 @@ export class Director {
         if (hint.ranged) out.push(['arrow_hit', nudge({})]);
         if (hint.bite) out.push(['bite', nudge({})]);
         out.push(['hit', nudge({ material: hint.ranged && hint.material === 'armor' ? 'flesh' : hint.material, crit: hint.crit, ...opts })]);
+        this._markImpact(hint.tgtKey, (opts?.delay ?? 0) + (late ? (late.ranged ? 0.12 : 0.07) : 0));
         // The victim's pain (the party's own voices by race and sex).
         const hurt = this._hurt(hint, 0.08 + (late ? 0.07 : 0));
         if (hurt) out.push(hurt);

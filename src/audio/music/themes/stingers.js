@@ -12,12 +12,14 @@ export const victory = {
     brass: { preset: 'brass', pan: 0.3 },
     horn: { preset: 'horn', pan: -0.3 },
     lowbrass: { preset: 'lowbrass', pan: 0.45 },
-    strings: { preset: 'strings', pan: 0.05 },
-    violins: { preset: 'violins', pan: -0.6 },
-    celli: { preset: 'celli', pan: 0.45 },
-    basses: { preset: 'basses', pan: 0.65 },
+    // Desks thinned for the fermata (everyone sustains at once): the section
+    // chorus and the hall keep the size, at about two thirds of the cost.
+    strings: { preset: 'strings', pan: 0.05, voices: 4 },
+    violins: { preset: 'violins', pan: -0.6, voices: 5 },
+    celli: { preset: 'celli', pan: 0.45, voices: 4 },
+    basses: { preset: 'basses', pan: 0.65, voices: 3 },
     harp: { preset: 'harp', pan: -0.65 },
-    choir: { preset: 'choir' },
+    choir: { preset: 'choir', voices: 5 },
     timpani: { preset: 'timpani', pan: 0.15 },
     crash: { preset: 'crash', pan: 0.5 },
     glock: { preset: 'glock', pan: 0.45 },
@@ -29,7 +31,7 @@ export const victory = {
     // fermata: everyone sustains, the release is written (long, staggered)
     // and the hall rings on after it — no hard stop.
     const ch = chart('D | A | D,Bm | G,A | D | D', 4);
-    const rel = { release: 2.4 };
+    const rel = { release: 2 };
     ev.push(...mel('brass', 'D4:q.! A4:e A4:q. D5:e | C#5:e. B4:s A4:e. B4:s C#5:q E5:q | D5:h. A4:e D5:e | F#5:h E5:q. D5:e | D5:w~w', { vel: 0.85, opts: rel }));
     ev.push(...mel('horn', 'A3:q. F#4:e F#4:q. A4:e | A4:e. G4:s E4:e. G4:s A4:q C#5:q | A4:h. F#4:e A4:e | B4:h C#5:q. A4:e | A4:w~w', { vel: 0.7, opts: rel }));
     ev.push(...pad('lowbrass', ch, { low: 'D2', count: 2, vel: 0.58, opts: rel }));
@@ -37,7 +39,7 @@ export const victory = {
     ev.push(...pad('basses', ch, { low: 'D2', count: 1, vel: 0.55, opts: { release: 2.8 } }));
     ev.push(...mel('celli', 'D3:h A3:h | A2:h E3:h | D3:h B2:h | G2:h A2:h | D3:w~w', { vel: 0.5, opts: rel }));
     ev.push(...mel('violins', 'r:w | r:w | F#5:h. A5:e B5:e | D6:h C#6:q. A5:e | A5:w~w', { vel: 0.55, opts: { release: 3 } }));
-    ev.push(...pad('choir', chart('D,Bm | G,A | D | D', 4, 8), { low: 'F#3', count: 4, vel: 0.58, opts: { release: 3 } }));
+    ev.push(...pad('choir', chart('D,Bm | G,A | D | D', 4, 8), { low: 'A3', count: 3, vel: 0.62, opts: { release: 2.4 } }));
     ev.push(...arp('harp', chart('D', 2, 6), { low: 'D4', pattern: [0, 1, 2, 3, 4, 5, 6, 7], step: 0.25, vel: 0.5 }));
     ev.push(...arp('harp', chart('D', 4, 16), { low: 'D3', pattern: [0, 1, 2, 3, 4, 5, 6, 7, null, null, null, null, null, null, null, null], step: 0.25, vel: 0.45, ring: 6 }));
     ev.push({ inst: 'timpani', t: 0, midi: 38, dur: 1, vel: 0.9 });

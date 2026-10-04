@@ -1,7 +1,7 @@
 import { createGraph } from './graph.js';
-import { TrackPlayer, LOOKAHEAD } from './music/Sequencer.js';
+import { TrackPlayer, LOOKAHEAD, ritSeconds } from './music/Sequencer.js';
 import { SONGS, STINGERS } from './music/songs.js';
-import { SFX, LIMITED, WIDE } from './sfx/library.js';
+import { SFX, LIMITED, WIDE, SOFT } from './sfx/library.js';
 import { Fx } from './sfx/toolkit.js';
 import { Ambience } from './sfx/ambience.js';
 import { AudioRng } from './core/rng.js';
@@ -9,7 +9,7 @@ import { Director } from './director.js';
 import { sfxGain } from './loudness.js';
 import { createInstrument } from './instruments/index.js';
 import { setVoiceCap } from './instruments/base.js';
-import { LoadGuard } from './loadguard.js';
+import { LoadGuard, StarveGuard } from './loadguard.js';
 
 /**
  * Scheduler clock in a Worker: its timer is neither throttled in background
@@ -17,6 +17,9 @@ import { LoadGuard } from './loadguard.js';
  * thread's own timer queue. Ticks still run on the main thread; the long
  * LOOKAHEAD covers stalls there.
  */
+/** Bounced one-shot cues, per sample rate: `${sr}|${name}` → {data: Float32Array[4], len} (null while rendering). */
+const BOUNCED = new Map();
+
 const CLOCK_SRC = 'let id=0;onmessage=(e)=>{clearInterval(id);if(e.data>0)id=setInterval(()=>postMessage(0),e.data);};';
 function startClock(fn, ms) {
   try {
@@ -125,6 +128,8 @@ export class AudioEngine {
     this._attach(this.ctx, createGraph(this.ctx));
     this._stopClock = startClock(() => this._tick(), 50);
     this._prewarm();
+    // Bounce the victory fanfare once the title has settled (see _bounce).
+    this._bounceAt = this.ctx.currentTime + 8;
     // Replay intent recorded before the gesture.
     if (this.currentTrack) {
       const id = this.currentTrack;
@@ -251,7 +256,7 @@ export class AudioEngine {
     const ui = opts.bus === 'ui';
     const out = ui ? this.graph.uiBus : this.graph.sfxIn;
     const pitch = (opts.pitch ?? 1) * (ui ? 1 : 1 + this.rng.range(-0.03, 0.03));
-    const fx = new Fx(ac, out, this.rng, { pitch, vol: (opts.vol ?? 1) * sfxGain(name === 'step' ? `step_${opts.surface ?? this.env.surface ?? 'cobble'}` : name), pan: opts.pan ?? 0, send: ui ? undefined : this.graph.envSend, sendLevel: opts.reverb ?? 0.3, limit: LIMITED.test(name), wide: WIDE.test(name) && !opts.bus ? 1 : 0 });
+    const fx = new Fx(ac, out, this.rng, { pitch, vol: (opts.vol ?? 1) * sfxGain(name === 'step' ? `step_${opts.surface ?? this.env.surface ?? 'cobble'}` : name), pan: opts.pan ?? 0, send: ui ? undefined : this.graph.envSend, sendLevel: opts.reverb ?? 0.3, limit: LIMITED.test(name), soft: SOFT.test(name) ? 0.3 : 0, wide: WIDE.test(name) && !opts.bus ? 1 : 0 });
     try {
       // Spell chords sound in the key of the score that is playing.
       fn(fx, now + 0.005 + (opts.delay ?? 0), { surface: this.env.surface, key: this.key ?? 2, ...opts });
@@ -275,6 +280,8 @@ export class AudioEngine {
    */
   music(state, o = {}) {
     if (o.intensity !== undefined) this.intensity = o.intensity;
+    // A fight began before the fanfare was bounced: bounce it now, while the battle is young.
+    if ((state === 'combat' || state === 'encounter') && this.ctx && !this.offlineMode && !BOUNCED.has(`${this.ctx.sampleRate}|victory`)) this._bounceAt = Math.min(this._bounceAt ?? Infinity, this.ctx.currentTime + 1);
     if (state === this.state && !o.restart && this.player && !this.player.stopped && !this.player.done) {
       if (o.intensity !== undefined) this.player.setIntensity(o.intensity, 1.5);
       return;
@@ -344,14 +351,18 @@ export class AudioEngine {
     const ac = this.ctx;
     const t = at ?? ac.currentTime;
     if (stopMusic) this.stopMusic(0.5);
-    const p = new TrackPlayer(ac, song, { dest: this.graph.musicBus, send: this.graph.musicSend, at: t + 0.03 });
-    // Ticked with the lookahead like the score (_tick), never scheduled whole:
-    // a fanfare scheduled up front puts every one of its notes' nodes in the
-    // render graph at once, on top of the battle cue's coda — the moment the
-    // audio thread used to fall behind.
-    p.tick(Math.max(ac.currentTime, t) + LOOKAHEAD);
-    this.stingers.push(p);
-    const len = p.plannedEnd() - t;
+    // The fanfare pre-bounced at idle plays as one buffer source.
+    let len = this.offlineMode ? null : this._playBounced(name, Math.max(ac.currentTime, t + 0.03));
+    if (len === null) {
+      const p = new TrackPlayer(ac, song, { dest: this.graph.musicBus, send: this.graph.musicSend, at: t + 0.03 });
+      // Ticked with the lookahead like the score (_tick), never scheduled whole:
+      // a fanfare scheduled up front puts every one of its notes' nodes in the
+      // render graph at once, on top of the battle cue's coda — the moment the
+      // audio thread used to fall behind.
+      p.tick(Math.max(ac.currentTime, t) + (this.lookahead ?? LOOKAHEAD));
+      this.stingers.push(p);
+      len = p.plannedEnd() - t;
+    } else len += 0.03;
     const d = this.graph.musicDuck.gain;
     d.cancelScheduledValues(t);
     d.setValueAtTime(at ? 1 : d.value, t);
@@ -365,14 +376,15 @@ export class AudioEngine {
    * coda (a final hit on layer 0), and the stinger's fanfare starts on that
    * same downbeat.
    */
-  endCombatWith(name = 'victory') {
+  endCombatWith(name = 'victory', { after = 0 } = {}) {
     this.lastStinger = name;
     if (!this.ctx || !this.player || this.player.stopped || !this.player.song.coda) {
-      this.stinger(name, { stopMusic: true });
+      this.stinger(name, { stopMusic: true, at: this.ctx ? this.ctx.currentTime + after : undefined });
       return;
     }
     const ac = this.ctx;
-    const at = ac.currentTime + this.player.untilNextBar(0.12);
+    // `after`: blows still queued from a QUICK round land before the coda.
+    const at = ac.currentTime + this.player.untilNextBar(Math.max(0.12, after));
     const coda = this.player.endWithCoda(at);
     if (coda) this.stingers.push(coda);
     this.fading.push(this.player);
@@ -429,34 +441,142 @@ export class AudioEngine {
       const t0 = performance.now();
       while (this._warmQ.length && performance.now() - t0 < 5) this._warmQ.shift()();
     }
-    this.player?.tick(now + LOOKAHEAD);
-    for (const p of this.fading) p.tick?.(now + LOOKAHEAD);
-    for (const s of this.stingers) s.tick(now + LOOKAHEAD);
-    this.amb?.tick(now + LOOKAHEAD);
+    // Main-thread starvation (live only): stalls or dropped notes stretch the
+    // scheduling window, and persistent drops switch the cue to bounced stems.
+    let la = LOOKAHEAD;
+    if (!this.offlineMode) {
+      this.starve ??= new StarveGuard({ base: LOOKAHEAD });
+      la = this.starve.update(performance.now() / 1000, this.droppedTotal());
+      this.player?.setDegrade?.(Math.max(this.loadGuard.degrade, this.starve.degrade));
+      // Idle-time bounce of the victory fanfare (see _bounce).
+      if (this._bounceAt !== undefined && now >= this._bounceAt && !this.loadGuard.suspect && !this.starve.level) {
+        this._bounceAt = undefined;
+        this._bounce('victory');
+      }
+    }
+    this.lookahead = la;
+    this.player?.tick(now + la);
+    for (const p of this.fading) p.tick?.(now + la);
+    for (const s of this.stingers) s.tick(now + la);
+    this.amb?.tick(now + la);
     this.graph.reap?.(now);
-    // Reap finished players.
+    // Reap finished players (their dropped notes stay counted).
+    const reap = (p) => {
+      this._droppedBase = (this._droppedBase ?? 0) + (p.dropped ?? 0);
+      p.dispose();
+    };
     this.fading = this.fading.filter((p) => {
       if (p._disposeAt && now > p._disposeAt) {
-        p.dispose();
+        reap(p);
         return false;
       }
       return true;
     });
     this.stingers = this.stingers.filter((p) => {
       if (p.done && now > (p.endTime ?? 0) + 4) {
-        p.dispose();
+        reap(p);
         return false;
       }
       return true;
     });
     if (this.player?.done && now > (this.player.endTime ?? 0) + 4) {
-      this.player.dispose();
+      reap(this.player);
       this.player = null;
     }
   }
 
+  /** Notes dropped by the scheduler since the context started (all players, finished ones included). */
+  droppedTotal() {
+    let n = this._droppedBase ?? 0;
+    for (const p of [this.player, ...this.fading, ...this.stingers]) n += p?.dropped ?? 0;
+    return n;
+  }
+
+  /**
+   * Pre-bounce a deterministic one-shot cue (the victory fanfare) into a
+   * buffer at idle, in an OfflineAudioContext at the live sample rate: its dry
+   * mix and its room send rendered side by side (four channels), so playing
+   * it back through the live music bus and reverb is identical to playing it
+   * note by note — at the cost of one buffer source instead of a full
+   * orchestra's worth of voices on the audio thread when the battle is won.
+   * Cached per sample rate for the whole session.
+   */
+  _bounce(name) {
+    const ac = this.ctx;
+    const song = STINGERS[name];
+    if (!ac || !song || typeof OfflineAudioContext === 'undefined') return;
+    const key = `${ac.sampleRate}|${name}`;
+    if (BOUNCED.has(key)) return;
+    BOUNCED.set(key, null);
+    const sr = ac.sampleRate;
+    const r = song.build(0, new AudioRng(1), {});
+    const spq = 60 / song.bpm;
+    const planned = ritSeconds(r.lengthQ, r.rit ?? [], spq) + (r.tailQ ?? 0) * spq;
+    const len = planned + 0.6;
+    let oac;
+    try {
+      oac = new OfflineAudioContext(4, Math.ceil(len * sr), sr);
+    } catch {
+      BOUNCED.delete(key);
+      return;
+    }
+    oac.destination.channelInterpretation = 'discrete';
+    const dry = oac.createGain();
+    const send = oac.createGain();
+    const merge = oac.createChannelMerger(4);
+    merge.channelInterpretation = 'discrete';
+    for (const [node, ch] of [[dry, 0], [send, 2]]) {
+      const sp = oac.createChannelSplitter(2);
+      node.connect(sp);
+      sp.connect(merge, 0, ch);
+      sp.connect(merge, 1, ch + 1);
+    }
+    merge.connect(oac.destination);
+    const p = new TrackPlayer(oac, song, { dest: dry, send, at: 0 });
+    p.tick(LOOKAHEAD);
+    for (let i = 1; i * 0.5 < len - 0.1; i++) {
+      oac.suspend(i * 0.5).then(() => {
+        p.tick(i * 0.5 + LOOKAHEAD);
+        oac.resume();
+      });
+    }
+    oac.startRendering().then(
+      (buf) => BOUNCED.set(key, { data: [0, 1, 2, 3].map((c) => buf.getChannelData(c).slice()), len: planned }),
+      () => BOUNCED.delete(key),
+    );
+  }
+
+  /** Play a bounced cue at `t` (dry → music bus, send → music room). Returns its length, or null when not bounced. */
+  _playBounced(name, t) {
+    const ac = this.ctx;
+    const b = BOUNCED.get(`${ac.sampleRate}|${name}`);
+    if (!b) return null;
+    this._bouncedBufs ??= new Map();
+    let buf = this._bouncedBufs.get(name);
+    if (!buf) {
+      buf = ac.createBuffer(4, b.data[0].length, ac.sampleRate);
+      b.data.forEach((d, c) => buf.copyToChannel(d, c));
+      this._bouncedBufs.set(name, buf);
+    }
+    const src = ac.createBufferSource();
+    src.buffer = buf;
+    src.channelInterpretation = 'discrete';
+    const sp = ac.createChannelSplitter(4);
+    src.connect(sp);
+    for (const [dest, ch] of [[this.graph.musicBus, 0], [this.graph.musicSend, 2]]) {
+      const m = ac.createChannelMerger(2);
+      sp.connect(m, ch, 0);
+      sp.connect(m, ch + 1, 1);
+      m.connect(dest);
+    }
+    src.start(t);
+    src.onended = () => src.disconnect();
+    this.bouncedPlays = (this.bouncedPlays ?? 0) + 1;
+    return b.len;
+  }
+
   /** Debug snapshot for tools/devtools. */
   debugState() {
-    return { unlocked: !!this.ctx, state: this.state, track: this.currentTrack, intensity: this.intensity, section: this.player?.section ?? null, pass: this.player?.pass ?? null, stinger: this.lastStinger ?? null, env: { ...this.env }, ambience: this.ambState, ambDuck: this.ambDuck ?? 1, ctx: this.ctx?.state, voiceCap: this._cap ?? null, overloads: this.loadGuard?.events ?? 0, underruns: this.ctx?.playbackStats?.underrunEvents ?? this.loadGuard?.events ?? 0, lag: Math.round((this.loadGuard?.lag ?? 0) * 1000) / 1000, degrade: this.loadGuard?.degrade ?? 0, glitches: this.loadGuard?.glitches ?? 0, stems: this.player?.stems ?? 0, dropped: this.player?.dropped ?? 0 };
+    return { unlocked: !!this.ctx, state: this.state, track: this.currentTrack, intensity: this.intensity, section: this.player?.section ?? null, pass: this.player?.pass ?? null, stinger: this.lastStinger ?? null, env: { ...this.env }, ambience: this.ambState, ambDuck: this.ambDuck ?? 1, ctx: this.ctx?.state, voiceCap: this._cap ?? null, overloads: this.loadGuard?.events ?? 0, underruns: this.ctx?.playbackStats?.underrunEvents ?? this.loadGuard?.events ?? 0, lag: Math.round((this.loadGuard?.lag ?? 0) * 1000) / 1000, degrade: this.loadGuard?.degrade ?? 0, glitches: this.loadGuard?.glitches ?? 0, stems: this.player?.stems ?? 0, dropped: this.droppedTotal(), lookahead: this.lookahead ?? LOOKAHEAD, stalls: this.starve?.stalls ?? 0, starve: this.starve?.level ?? 0, bounced: [...BOUNCED].filter(([, v]) => v).map(([k]) => k.split('|')[1]), bouncedPlays: this.bouncedPlays ?? 0 };
   }
 }

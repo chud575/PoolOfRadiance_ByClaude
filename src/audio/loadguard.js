@@ -86,3 +86,74 @@ export class LoadGuard {
     return this.cap;
   }
 }
+
+/**
+ * Main-thread starvation guard. The score is handed to the audio thread
+ * `lookahead` seconds ahead by ticks on the main thread; when the main thread
+ * stalls (shader compiles, GC, a slow frame on a weak GPU) for longer than
+ * that, notes reach the scheduler late and are dropped while the audio thread
+ * itself is idle. The guard watches for stalls (a gap of more than `gap`
+ * seconds between ticks) and for drops (more than `drops` notes within
+ * `window` seconds):
+ *   level 1 — the lookahead stretches to `max` seconds (a 2–3 s hitch no
+ *             longer reaches the speakers);
+ *   level 2 — drops continue even so: the cue plays from pre-bounced section
+ *             stems (one buffer source, nothing to schedule) until it recovers.
+ * After `recover` seconds without a stall or a drop it steps back one level.
+ */
+export class StarveGuard {
+  constructor({ base = 1.8, max = 4, window = 2, drops = 8, gap = 0.6, recover = 20 } = {}) {
+    Object.assign(this, { base, max, window, drops, gap, recover });
+    this.level = 0;
+    this.last = null;
+    this.hist = [];
+    this.calm = 0;
+    /** Stalls seen (ticks more than `gap` apart). */
+    this.stalls = 0;
+  }
+
+  get lookahead() {
+    return this.level >= 1 ? this.max : this.base;
+  }
+
+  /** Stem degradation the guard asks for (TrackPlayer.setDegrade level). */
+  get degrade() {
+    return this.level >= 2 ? 3 : 0;
+  }
+
+  /**
+   * @param {number} wall    wall-clock seconds of this tick
+   * @param {number} dropped notes dropped so far (monotonic total)
+   */
+  update(wall, dropped) {
+    const prev = this.last;
+    this.last = wall;
+    if (prev === null) {
+      this.hist.push([wall, dropped]);
+      return this.lookahead;
+    }
+    const dt = wall - prev;
+    // A gap of many seconds is a suspended context / sleeping laptop, not jank.
+    const stall = dt > this.gap && dt < 15;
+    this.hist.push([wall, dropped]);
+    while (this.hist.length > 1 && this.hist[0][0] < wall - this.window) this.hist.shift();
+    const burst = dropped - this.hist[0][1] > this.drops;
+    if (stall) this.stalls++;
+    if (burst) {
+      // Dropping although the window is already stretched: fall back to stems.
+      this.level = Math.min(2, this.level + 1);
+      this.calm = 0;
+      this.hist = [[wall, dropped]];
+    } else if (stall) {
+      this.level = Math.max(1, this.level);
+      this.calm = 0;
+    } else {
+      this.calm += Math.max(0, dt);
+      if (this.calm >= this.recover && this.level > 0) {
+        this.level--;
+        this.calm = 0;
+      }
+    }
+    return this.lookahead;
+  }
+}

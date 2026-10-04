@@ -635,12 +635,18 @@ export class Choir extends Instrument {
  * flutter (flutter-tongue). Breath noise and tongue chiff on every note.
  */
 const WIND = {
-  flute: { wave: 'flute', a: 0.07, r: 0.18, breath: 0.12, chiff: 0.25, vib: [5.1, 0.006, 0.25], lp: 7, scoop: 0, dip: 0.3 },
-  recorder: { wave: 'flute', a: 0.03, r: 0.08, breath: 0.07, chiff: 0.45, vib: [5.6, 0.0025, 0.3], lp: 9, scoop: 0, tri: 0.25, dip: 0.45 },
+  // Flutes: `jet` is the air-jet turbulence across the embouchure (noise
+  // band-passed 2–8 kHz riding the breath envelope, ~30 dB under the tone);
+  // the chiff is the tongue's puff at each attack.
+  flute: { wave: 'flute', a: 0.07, r: 0.18, breath: 0.12, chiff: 0.42, jet: 0.05, vib: [5.1, 0.006, 0.25], lp: 7, scoop: 0, dip: 0.3 },
+  recorder: { wave: 'flute', a: 0.03, r: 0.08, breath: 0.07, chiff: 0.65, jet: 0.035, vib: [5.6, 0.0025, 0.3], lp: 9, scoop: 0, tri: 0.25, dip: 0.45 },
   horn: { wave: 'horn', a: 0.05, r: 0.25, breath: 0.03, chiff: 0.1, vib: [4.8, 0.0018, 0.35], lp: 2.2, lpVel: 7, scoop: -28, voices: 4, dip: 0.3, blare: 0.7 },
   brass: { wave: 'horn', a: 0.035, r: 0.2, breath: 0.03, chiff: 0.12, vib: [5, 0.0012, 0.4], lp: 2.8, lpVel: 11, scoop: -30, voices: 3, dip: 0.35, blare: 1 },
-  lowbrass: { wave: 'horn', a: 0.06, r: 0.3, breath: 0.025, chiff: 0.08, vib: [4.5, 0.001, 0.5], lp: 2.6, lpVel: 8, scoop: -18, voices: 3, dip: 0.3, blare: 0.85 },
-  bassoon: { wave: 'reed', a: 0.05, r: 0.15, breath: 0.03, chiff: 0.1, vib: [5, 0.003, 0.3], lp: 5, scoop: -10, dip: 0.3 },
+  lowbrass: { wave: 'horn', a: 0.06, r: 0.3, breath: 0.03, chiff: 0.1, vib: [4.5, 0.001, 0.5], lp: 3.2, lpVel: 10, scoop: -18, voices: 3, dip: 0.3, blare: 0.85 },
+  // Bassoon: the reed's spectrum left open (no pitch-tracking lowpass) and
+  // shaped by the bore's fixed formants (≈500 Hz, 1150 Hz and a 2–3.5 kHz
+  // reed buzz) — the same colour on every note, as on the instrument.
+  bassoon: { wave: 'reed', a: 0.05, r: 0.15, breath: 0.035, chiff: 0.14, vib: [5, 0.003, 0.3], lp: 30, scoop: -10, dip: 0.3, res: 'bassoon' },
   // Orchestral reeds. Oboe: nasal double reed with a 1.1 k / 3 k formant pair and a quick, singing vibrato.
   oboe: { wave: 'oboe', a: 0.035, r: 0.12, breath: 0.035, chiff: 0.2, vib: [5.3, 0.0042, 0.3], lp: 14, lpVel: 8, scoop: -8, dip: 0.35 },
   // Clarinet: hollow chalumeau, almost no vibrato, breath a touch louder, soft tongue.
@@ -667,7 +673,8 @@ export class Wind extends Instrument {
       // Clarinet: woody low register body, register-key 'throat' dip, soft top.
       clarinet: [{ type: 'peaking', f: 420, q: 1.4, g: 3 }, { type: 'peaking', f: 1500, q: 1.8, g: 2.5 }, { type: 'peaking', f: 2600, q: 3, g: -2.5 }, { type: 'highshelf', f: 6000, g: -7 }],
     };
-    const eq = RES[p.wave] ?? (p.wave === 'horn' ? [{ type: 'peaking', f: 600, q: 0.8, g: 1.5 }, { type: 'peaking', f: 1400, q: 1.2, g: 1 }, { type: 'highshelf', f: 7000, g: -4 }] : p.wave === 'flute' ? [{ type: 'highshelf', f: 8000, g: -6 }] : [{ type: 'peaking', f: 1200, q: 1.2, g: 3 }, { type: 'highshelf', f: 6000, g: -6 }]);
+    RES.bassoon = [{ type: 'highpass', f: 55, q: 0.7 }, { type: 'peaking', f: 500, q: 1.3, g: 7 }, { type: 'peaking', f: 1150, q: 1.6, g: 6 }, { type: 'peaking', f: 2800, q: 0.8, g: 4 }, { type: 'peaking', f: 220, q: 1, g: -3 }, { type: 'highshelf', f: 6500, g: -8 }];
+    const eq = RES[p.res ?? p.wave] ?? (p.wave === 'horn' ? [{ type: 'peaking', f: 600, q: 0.8, g: 1.5 }, { type: 'peaking', f: 1400, q: 1.2, g: 1 }, { type: 'highshelf', f: 7000, g: -4 }] : p.wave === 'flute' ? [{ type: 'highshelf', f: 8000, g: -6 }] : [{ type: 'peaking', f: 1200, q: 1.2, g: 3 }, { type: 'highshelf', f: 6000, g: -6 }]);
     const brass = p.wave === 'horn';
     // Brass: a mono section chain seated once, its ensemble chorus seated
     // either side of the section's own place on the stage (not the centre).
@@ -804,7 +811,7 @@ export class Wind extends Instrument {
       g.connect(this.voicePan(opts.pan));
     }
     // Two players per note: the section chorus supplies the rest of the desk.
-    const wantV = Math.min(2, p.voices ?? 1);
+    const wantV = Math.min(2, this.o.voices ?? p.voices ?? 1);
     const voices = wantV > 1 ? Math.max(1, Math.round(voiceBudget(ac, n0.t, last.t + last.dur + rel, wantV * T, T) / T)) : wantV;
     const fp = [];
     const vibOk = total > p.vib[2] + 0.1;
@@ -859,6 +866,24 @@ export class Wind extends Instrument {
       o.connect(tg).connect(head);
       o.start(n0.t);
       nodes.push(o);
+    }
+    if (p.jet && !isBrass) {
+      // Air-jet turbulence: broadband hiss in the 2–8 kHz band, under the
+      // phrase's own amplitude envelope (it breathes with the tone).
+      const jn = ac.createBufferSource();
+      jn.buffer = noiseBuffer(ac, 'white');
+      const jb = kbq(ac);
+      jb.type = 'bandpass';
+      jb.frequency.value = Math.max(3800, Math.min(6500, f * 4));
+      jb.Q.value = 0.55;
+      const jh = kbq(ac);
+      jh.type = 'highpass';
+      jh.frequency.value = 1800;
+      const jg = ac.createGain();
+      jg.gain.value = p.jet * (0.7 + 0.6 * vel);
+      jn.connect(jb).connect(jh).connect(jg).connect(g);
+      jn.start(n0.t, noiseOffset(rng, total + 1));
+      nodes.push(jn);
     }
     // Breath noise (tuned band) + tongue chiff on every articulation.
     const n = ac.createBufferSource();
@@ -1047,38 +1072,185 @@ export class Drone extends Instrument {
   }
 }
 
-/** Additive bells: church bell, hand bell, glockenspiel, celesta. */
+/**
+ * Struck idiophones, rendered once per pitch × velocity layer × take into a
+ * cached buffer (one buffer source per strike):
+ *   church  — minor-third bell: hum, prime, tierce, quint, nominal, deciem,
+ *             superquint, octave nominal and double-octave nominal, every
+ *             strong partial a detuned pair 0.5–2 Hz apart (the warble of a
+ *             real bell), a cloud of short inharmonic high modes and the
+ *             clapper's strike (bandpassed noise + an FM clang).
+ *   hand    — English handbell: fundamental + twelfth, inharmonic shimmer, leather clapper tick.
+ *   glock   — steel bar: 1, 2.76, 5.4, 8.9 (free-free bar modes) + a hard mallet tick.
+ *   celesta — struck plate over a wooden resonator box: felt hammer thump and soundboard body.
+ * Partials: [ratio to the played pitch, amplitude, decay seconds (≈ to -26 dB), beat Hz (0 = single)].
+ */
 const BELLS = {
-  church: { partials: [[0.5, 1, 4], [1, 0.8, 3], [1.19, 0.6, 2.4], [1.5, 0.4, 2], [2, 0.5, 1.6], [2.5, 0.25, 1.2], [2.66, 0.2, 1.1], [3.01, 0.15, 0.9], [4.1, 0.1, 0.6]], hum: true },
-  hand: { partials: [[1, 1, 1.6], [2.76, 0.35, 0.7], [5.4, 0.15, 0.35], [8.93, 0.06, 0.2]] },
-  glock: { partials: [[1, 1, 1.1], [2.756, 0.45, 0.4], [5.404, 0.2, 0.18]] },
-  celesta: { partials: [[1, 1, 1.2], [4, 0.18, 0.3], [2, 0.12, 0.6]] },
+  church: {
+    partials: [[0.5, 0.9, 7, 0.6], [1, 0.8, 5, 1.1], [1.2, 0.55, 3.6, 1.6], [1.5, 0.3, 2.6, 0.9], [2, 0.75, 3, 1.3], [2.5, 0.28, 1.8, 0.7], [2.67, 0.22, 1.6, 1.8], [3.01, 0.32, 1.5, 1.2], [4.02, 0.24, 1.1, 1.5], [5.33, 0.12, 0.8, 1.9], [6.03, 0.11, 0.7, 0], [8.05, 0.09, 0.55, 1.4]],
+    cloud: { n: 26, lo: 9, hi: 48, amp: 0.07, dec: 0.45 },
+    strike: { f: 3400, q: 0.9, len: 0.004, amp: 0.55, clang: 2.9 },
+    hi: 3.6,
+  },
+  hand: {
+    partials: [[1, 1, 2.2, 0.7], [3.0, 0.38, 1.3, 1.2], [4.95, 0.12, 0.5, 0], [6.9, 0.09, 0.35, 0], [9.2, 0.05, 0.22, 0]],
+    cloud: { n: 8, lo: 11, hi: 22, amp: 0.035, dec: 0.18 },
+    strike: { f: 4200, q: 1.1, len: 0.003, amp: 0.35, clang: 0 },
+    hi: 2.4,
+  },
+  glock: {
+    partials: [[1, 1, 1.3, 0], [2.756, 0.42, 0.45, 0], [5.404, 0.22, 0.2, 0], [8.933, 0.11, 0.1, 0]],
+    cloud: null,
+    strike: { f: 6200, q: 0.8, len: 0.0025, amp: 0.6, clang: 0 },
+    hi: 1.6,
+  },
+  celesta: {
+    partials: [[1, 1, 1.4, 0], [2.0, 0.1, 0.5, 0], [3.98, 0.2, 0.32, 0], [6.9, 0.05, 0.12, 0]],
+    cloud: null,
+    strike: { f: 2600, q: 0.6, len: 0.006, amp: 0.25, clang: 0 },
+    thump: { f: 230, q: 3, len: 0.045, amp: 0.4 },
+    hi: 1.2,
+  },
 };
+
+/** Two-pole resonant bandpass, in place. */
+function bandpassIn(x, sr, f, q) {
+  const w = (2 * Math.PI * Math.min(f, sr * 0.45)) / sr;
+  const al = Math.sin(w) / (2 * q);
+  const b0 = al / (1 + al);
+  const a1 = (-2 * Math.cos(w)) / (1 + al);
+  const a2 = (1 - al) / (1 + al);
+  let x1 = 0;
+  let x2 = 0;
+  let y1 = 0;
+  let y2 = 0;
+  for (let i = 0; i < x.length; i++) {
+    const v = x[i];
+    const y = b0 * v - b0 * x2 - a1 * y1 - a2 * y2;
+    x2 = x1;
+    x1 = v;
+    y2 = y1;
+    y1 = y;
+    x[i] = y;
+  }
+}
+
+/** One strike of a bell preset (mono Float32Array). */
+export function bellData(sr, b, f, vel, scale, seed) {
+  const rng = new AudioRng(seed);
+  const parts = [];
+  for (const [ratio, amp, dec, beat] of b.partials) parts.push({ fr: f * ratio, amp, dec, beat });
+  if (b.cloud) {
+    const c = b.cloud;
+    for (let i = 0; i < c.n; i++) {
+      const r = c.lo * Math.pow(c.hi / c.lo, (i + rng.range(0.1, 0.9)) / c.n);
+      parts.push({ fr: f * r, amp: c.amp * Math.pow(c.lo / r, 0.55) * rng.range(0.5, 1.3), dec: c.dec * Math.pow(c.lo / r, 0.5) * rng.range(0.7, 1.3), beat: 0 });
+    }
+  }
+  // Harder strikes ring the upper modes more (brightness rises with force).
+  const bright = 0.45 + 0.75 * vel;
+  const lvl = 0.12 + 0.2 * vel;
+  let longest = 0.3;
+  for (const p of parts) if (p.fr < 17000) longest = Math.max(longest, p.dec);
+  const N = Math.ceil(sr * (longest * scale * 2.4 + 0.08));
+  const out = new Float32Array(N);
+  const atk = Math.max(1, Math.round(sr * 0.0012));
+  for (const p of parts) {
+    if (p.fr > 17000) continue;
+    const hiW = p.fr > f * 1.6 ? Math.pow(bright, Math.min(3, Math.log2(p.fr / f))) : 1;
+    // Bright modes fall off quickly near the top of the audio band.
+    const a = lvl * p.amp * hiW * (p.fr > 9000 ? 0.6 : 1);
+    const tau = (p.dec * scale) / 3;
+    const len = Math.min(N, Math.ceil(sr * tau * 8));
+    const k = Math.exp(-1 / (sr * tau));
+    const pair = p.beat > 0 ? [[p.fr - p.beat / 2, 0.55], [p.fr + p.beat / 2, 0.45]] : [[p.fr, 1]];
+    for (const [fr, w] of pair) {
+      // Recursive oscillator (rotating phasor): one multiply-add pair per sample.
+      const th = (2 * Math.PI * fr) / sr;
+      const cr = Math.cos(th);
+      const ci = Math.sin(th);
+      const ph = rng.range(0, Math.PI * 2);
+      let re = Math.cos(ph);
+      let im = Math.sin(ph);
+      let e = a * w;
+      for (let i = 0; i < len; i++) {
+        const nr = re * cr - im * ci;
+        im = re * ci + im * cr;
+        re = nr;
+        out[i] += im * e * (i < atk ? i / atk : 1);
+        e *= k;
+      }
+    }
+  }
+  // The strike: a few ms of bandpassed noise (clapper / mallet on metal) …
+  const st = b.strike;
+  if (st) {
+    const L = Math.ceil(sr * (st.len * 6 + 0.01));
+    const nz = new Float32Array(L);
+    for (let i = 0; i < L; i++) nz[i] = (rng.next() * 2 - 1) * Math.exp(-i / (sr * st.len));
+    bandpassIn(nz, sr, st.f * rng.range(0.9, 1.1), st.q);
+    const g = st.amp * lvl * (0.4 + 0.9 * vel) * 2.2;
+    for (let i = 0; i < L && i < N; i++) out[i] += nz[i] * g;
+    // … and the clang: a short FM burst between the nominal's upper partials.
+    if (st.clang) {
+      const fc = f * st.clang * 2;
+      const L2 = Math.min(N, Math.ceil(sr * 0.06));
+      for (let i = 0; i < L2; i++) {
+        const t = i / sr;
+        const env = Math.exp(-t / 0.012);
+        out[i] += Math.sin(2 * Math.PI * fc * t + 2.4 * env * Math.sin(2 * Math.PI * fc * 1.41 * t)) * env * lvl * 0.35 * vel;
+      }
+    }
+  }
+  // Celesta: the felt hammer's thump through the wooden resonator box.
+  if (b.thump) {
+    const th = b.thump;
+    const L = Math.ceil(sr * (th.len * 5));
+    const nz = new Float32Array(L);
+    for (let i = 0; i < L; i++) nz[i] = (rng.next() * 2 - 1) * Math.exp(-i / (sr * th.len * 0.4));
+    bandpassIn(nz, sr, th.f, th.q);
+    bandpassIn(nz, sr, th.f * 2.3, 1.5);
+    const g = th.amp * lvl * 6;
+    for (let i = 0; i < L && i < N; i++) out[i] += nz[i] * g;
+  }
+  // Fade the tail to true silence.
+  const fl = Math.min(N, Math.ceil(sr * 0.05));
+  for (let i = 0; i < fl; i++) out[N - 1 - i] *= i / fl;
+  return out;
+}
+
+const BVEL = [0.3, 0.5, 0.7, 0.9];
 
 export class Bell extends Instrument {
   constructor(ac, o) {
     super(ac, o);
-    this.b = BELLS[o.preset ?? 'hand'];
+    this.preset = o.preset ?? 'hand';
+    this.b = BELLS[this.preset];
+    this.rr = 0;
+  }
+
+  _buf(m, vb, take, scale) {
+    return sample(this.ac, `bell:${this.preset}:${m}:${vb}:${take}:${scale}`, (sr) => bellData(sr, this.b, mtof(m), BVEL[vb], scale, m * 7919 + vb * 131 + take * 17 + Math.round(scale * 100)));
   }
 
   play(t, m, dur, vel = 0.6, opts = {}) {
     const ac = this.ac;
-    const f = mtof(m);
-    const dest = this.voicePan(opts.pan);
-    const scale = opts.decay ?? 1;
-    for (const [ratio, amp, dec] of this.b.partials) {
-      const fr = f * ratio;
-      if (fr > 16000) continue;
-      const o = kosc(ac);
-      o.frequency.value = fr * cents(this.rng.range(-3, 3));
-      const g = ac.createGain();
-      const pk = amp * (0.12 + 0.2 * vel);
-      g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(pk, t + 0.002);
-      g.gain.setTargetAtTime(0, t + 0.002, dec * scale / 3);
-      o.connect(g).connect(dest);
-      o.start(t);
-      o.stop(t + dec * scale * 2.4 + 0.05);
-    }
+    const vb = Math.max(0, Math.min(3, Math.round((vel - 0.3) / 0.2)));
+    const scale = Math.round((opts.decay ?? 1) * 4) / 4;
+    this.rr = (this.rr + 1) % 2;
+    const buf = this._buf(m, vb, this.rr, scale);
+    const src = ac.createBufferSource();
+    src.buffer = buf;
+    const g = ac.createGain();
+    g.gain.value = (0.12 + 0.2 * vel) / (0.12 + 0.2 * BVEL[vb]);
+    src.connect(g).connect(this.voicePan(opts.pan));
+    src.start(t);
+    src.stop(t + buf.duration);
+  }
+
+  /** Pre-render the strikes a cue will need. */
+  warm(m, vel = 0.6) {
+    const vb = Math.max(0, Math.min(3, Math.round((vel - 0.3) / 0.2)));
+    return [0, 1].map((take) => () => this._buf(m, vb, take, 1));
   }
 }

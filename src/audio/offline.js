@@ -1,7 +1,7 @@
 import { createGraph } from './graph.js';
 import { TrackPlayer, LOOKAHEAD } from './music/Sequencer.js';
 import { SONGS, STINGERS } from './music/songs.js';
-import { SFX, LIMITED, WIDE } from './sfx/library.js';
+import { SFX, LIMITED, WIDE, SOFT } from './sfx/library.js';
 import { Fx } from './sfx/toolkit.js';
 import { Ambience, BEDS } from './sfx/ambience.js';
 import { AudioRng } from './core/rng.js';
@@ -143,7 +143,7 @@ function cueSpec(name, o = {}) {
       room: surface === 'wood' ? 'room' : surface === 'stone' ? 'dungeon' : 'street',
       setup(ac, g) {
         const rng = new AudioRng(5);
-        for (let i = 0; i < 6; i++) SFX.step(new Fx(ac, g.sfxIn, rng, { send: g.envSend, sendLevel: 0.3, vol }), 0.1 + i * 0.62, { surface });
+        for (let i = 0; i < 6; i++) SFX.step(new Fx(ac, g.sfxIn, rng, { send: g.envSend, sendLevel: 0.3, vol, soft: 0.3 }), 0.1 + i * 0.62, { surface });
       },
     };
   }
@@ -158,7 +158,7 @@ function cueSpec(name, o = {}) {
       trim: true,
       room: 'dungeon',
       setup(ac, g) {
-        const fx = new Fx(ac, UI_SFX.test(id) ? g.uiBus : g.sfxIn, new AudioRng(7), { send: g.envSend, sendLevel: 0.25, vol, limit: LIMITED.test(id), wide: WIDE.test(id) ? 1 : 0 });
+        const fx = new Fx(ac, UI_SFX.test(id) ? g.uiBus : g.sfxIn, new AudioRng(7), { send: g.envSend, sendLevel: 0.25, vol, limit: LIMITED.test(id), soft: SOFT.test(id) ? 0.3 : 0, wide: WIDE.test(id) ? 1 : 0 });
         fn(fx, 0.08, { surface: 'stone' });
       },
     };

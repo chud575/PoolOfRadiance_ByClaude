@@ -16,7 +16,9 @@ const A2 = 'D4:q. A4:e A4:q. E5:e | D5:e. C5:s Bb4:e A4:e G4:q D4:q | F4:e G4:e 
 // The bridge breaks the dotted cell: a syncopated lift, a triplet turn, a long run into the climax.
 const B = 'F4:e G4:e A4:q~e C5:e Bb4:e A4:e | G4:h A4:t Bb4:t C5:t D5:q | E5:q. D5:e C5:q Bb4:e C5:e | E5:h E5:t F5:t E5:t D5:e C5:e';
 // Descant over A2 (violins): long arching notes against the horn tune, a suspension at the cadence.
-const DESC = 'A5:h. G5:e F5:e | Bb5:h~e A5:e G5:e F5:e | F5:q. E5:e D5:q F5:q | E5:w';
+// Bar 1 sits over Dm → D7/F#: its last eighth is the leading tone F#, which
+// resolves up to G as the harmony lands on Gm (no F♮ against the F# bass).
+const DESC = 'A5:h. G5:e F#5:e | G5:q Bb5:q~e A5:e G5:e F5:e | F5:q. E5:e D5:q F5:q | E5:w';
 // Horn counterline under the climax (contrary motion to the trumpets).
 const CC = 'F4:h E4:q D4:q | C4:h F4:q E4:q | Eb4:q. F4:e G4:q C#4:q | D4:w';
 // The hook: bar 3 turns to the Neapolitan (Eb) and the line breaks through to G5, its highest note, over A7.
@@ -159,6 +161,8 @@ export const intro = {
   key: 2,
   room: 'hall',
   wet: 0.6,
+  // Clear the pads' low-mid box; lift the reeds' and harp's presence.
+  eq: [{ type: 'peaking', f: 360, q: 0.8, g: -3 }, { type: 'peaking', f: 3000, q: 0.7, g: 3 }],
   instruments: {
     harp: { preset: 'harp', pan: -0.4 },
     flute: { preset: 'flute', pan: 0.25 },
@@ -181,7 +185,7 @@ export const intro = {
     ev.push(...mel(lead, A1, { vel: 0.5, transpose: lead === 'horn' ? -12 : 0 }));
     ev.push(...mel(lead === 'oboe' ? 'clarinet' : 'flute', A2, { at: 16, vel: 0.55, transpose: lead === 'oboe' ? -12 : 0 }));
     const cb = chart('F | Gm | F,Bb | C | Dm | C,F | Gm,A | Dm', 4, 32);
-    ev.push(...pad('choir', cb, { low: 'A3', count: 3, vel: 0.35 }));
+    ev.push(...pad('choir', cb, { low: 'C4', count: 3, vel: 0.35 }));
     ev.push(...pad('celli', cb, { low: 'D3', count: 2, vel: 0.3 }));
     ev.push(...pad('basses', cb, { low: 'D2', count: 1, vel: 0.35 }));
     ev.push(...arp('harp', cb, { low: 'F3', pattern: [0, 1, 2, 3, 2, 1], step: 2 / 3, vel: 0.4, ring: 2 }));

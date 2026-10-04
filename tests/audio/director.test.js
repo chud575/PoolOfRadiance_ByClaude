@@ -254,6 +254,47 @@ describe('audio director', () => {
       for (let i = 1; i < delays.length; i++) expect(delays[i] - delays[i - 1]).toBeGreaterThanOrEqual(0.059);
     });
 
+    it('QUICK: every death cry lands after the blow that killed (and no pain yelp after it)', () => {
+      const { bus, calls } = setup();
+      bus.emit('scene:enter', { name: 'combat', params: {} });
+      const eng = fakeEngine();
+      eng.all.push({ id: 6, side: 'party', name: 'Ilyra', ref: { name: 'Ilyra' }, hp: { cur: 5, max: 5 } });
+      calls.length = 0;
+      // A whole QUICK round resolved in one frame: four blows queue up, three kill.
+      const feed = [
+        { type: 'attack', id: 1, target: 2, hit: true, dmg: 3 },
+        { type: 'attack', id: 1, target: 3, hit: true, dmg: 7, killed: true },
+        { type: 'down', id: 3 },
+        { type: 'attack', id: 4, target: 6, hit: true, dmg: 9, killed: true },
+        { type: 'down', id: 6, status: 'dead' },
+        { type: 'attack', id: 1, target: 2, hit: true, dmg: 4, crit: true, killed: true },
+        { type: 'down', id: 2 },
+        { type: 'attack', id: 1, target: 5, hit: false },
+        { type: 'attack', id: 1, target: 4, hit: true, dmg: 6, killed: true },
+        { type: 'down', id: 4 },
+      ];
+      const marks = [];
+      for (const ev of feed) {
+        if (ev.type === 'down') marks.push([calls.length, ev.id]);
+        bus.emit('combat:event', { ev, engine: eng });
+      }
+      const at = (c) => c[2]?.delay ?? 0;
+      for (const [i, id] of marks) {
+        // The killing blow on this victim is the last hit voiced before its down.
+        const hit = calls.slice(0, i).filter((c) => c[0] === 'sfx' && c[1] === 'hit').at(-1);
+        const after = calls.slice(i);
+        const die = after.find((c) => c[0] === 'sfx' && /^vox_.*_die$/.test(c[1]));
+        expect(hit, `blow on ${id}`).toBeTruthy();
+        expect(die, `death cry of ${id}`).toBeTruthy();
+        expect(at(die)).toBeGreaterThan(at(hit) + 0.05);
+        const thud = after.find((c) => c[0] === 'sfx' && c[1] === 'death');
+        if (thud) expect(at(thud)).toBeGreaterThan(at(die));
+      }
+      // A killing blow never draws a pain voice from its victim.
+      const party = calls.filter((c) => c[0] === 'sfx' && c[1] === 'vox_party' && c[2]?.mode === 'hurt');
+      expect(party.length).toBe(0);
+    });
+
     it('staggers simultaneous death cries instead of stacking them', () => {
       const { bus, calls } = setup();
       bus.emit('scene:enter', { name: 'combat', params: {} });

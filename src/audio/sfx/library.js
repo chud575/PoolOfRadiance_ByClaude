@@ -11,6 +11,8 @@ import { AudioRng } from '../core/rng.js';
 /** One-shots with sharp transients that get their own peak limiter (Fx `limit`). */
 export const LIMITED = /^(hit|hit_armor|hit_bone|crit|shield|parry|block|bite|claw|arrow_hit|death|spell_shock|spell_fire|spell_lightning|spell_cone|spell_turn|trap|door|door_close|door_locked|chest|vox_(dragon|ogre|troll|giant)(_die)?)$/;
 /** Large events that get a stereo spread (Fx `wide`): blasts, storms, collapses, the biggest roars. */
+/** Transient-heavy, quiet sounds that get a soft clip on their own output (heel ticks). */
+export const SOFT = /^(step|step_\w+|footstep|walk|turn|bump)$/;
 export const WIDE = /^(spell_fire|spell_lightning|spell_cone|spell_cloud|spell_turn|spell_holy|trap|levelup|vox_(dragon|giant)(_die)?)$/;
 
 // ------------------------------------------------------------------ footsteps
@@ -120,10 +122,10 @@ const knock = (fx, t, f = 300, peak = 0.3, pan) => {
   fx.burst(t, { dur: 0.02, peak: peak * 0.6, filters: [{ type: 'bandpass', f: f * 4, q: 1 }], pan });
 };
 /** A heavy body meeting the floor: low noise weight + a dull modal thump of the boards/flags. */
-const thud = (fx, t, peak = 0.5, f = 85) => {
-  fx.burst(t, { kind: 'brown', a: 0.003, dur: 0.22, peak: peak * 1.1, filters: [{ type: 'lowpass', f: f * 4, f1: f * 2 }, { type: 'highpass', f: 40 }] });
+const thud = (fx, t, peak = 0.5, f = 85, hp = 40) => {
+  fx.burst(t, { kind: 'brown', a: 0.003, dur: 0.22, peak: peak * 1.1, filters: [{ type: 'lowpass', f: f * 4, f1: f * 2 }, { type: 'highpass', f: hp }] });
   fx.modes(t, { f: f * 1.6, ratios: [1, 1.7, 2.6], decays: [0.12, 0.07, 0.04], amps: [1, 0.5, 0.25], peak: peak * 0.35 });
-  fx.burst(t, { dur: 0.12, peak: peak * 0.6, filters: [{ type: 'lowpass', f: 380 }] });
+  fx.burst(t, { dur: 0.12, peak: peak * 0.6, filters: [{ type: 'lowpass', f: 380 }, { type: 'highpass', f: hp }] });
 };
 
 /**
@@ -191,16 +193,21 @@ function chord(fx, t, freqs, { dur = 1.2, peak = 0.08, vowel = 'a', a = 0.3, k =
 }
 
 function explosion(fx, t, size = 1) {
-  fx.tone(t, { f: 70, f1: 28, dur: 0.9 * size, peak: 0.75 });
-  fx.burst(t, { kind: 'brown', dur: 1.3 * size, peak: 0.7, filters: [{ type: 'lowpass', f: 700, f1: 140, dt: 1 }] });
-  fx.burst(t, { kind: 'pink', dur: 0.5, peak: 0.35, filters: [{ type: 'lowpass', f: 3000, f1: 400 }] });
+  // The boom is felt in 80–250 Hz (the drop of a 95 Hz kick to 55), its sub
+  // trimmed so small speakers keep the punch; the blast's crack and roar on top.
+  fx.tone(t, { f: 105, f1: 52, dur: 0.6 * size, peak: 0.42, filters: [{ type: 'highpass', f: 45 }] });
+  fx.burst(t, { kind: 'brown', dur: 1.2 * size, peak: 0.7, filters: [{ type: 'highpass', f: 75 }, { type: 'lowpass', f: 900, f1: 220, dt: 1 }] });
+  fx.burst(t, { a: 0.001, dur: 0.06, peak: 0.35, filters: [{ type: 'bandpass', f: 1800, q: 0.7 }] });
+  fx.burst(t, { kind: 'pink', dur: 0.5, peak: 0.42, filters: [{ type: 'highpass', f: 70 }, { type: 'lowpass', f: 3500, f1: 500 }] });
   fx.grains(t + 0.05, { count: Math.round(40 * size), spread: 1.6 * size, curve: 1.6, fLo: 1200, fHi: 6000, peak: 0.12, dHi: 0.012 });
 }
 
 function thunder(fx, t, peak = 0.6) {
-  fx.burst(t, { kind: 'brown', a: 0.04, dur: 2.2, peak, filters: [{ type: 'lowpass', f: 500, f1: 70, dt: 2 }] });
-  fx.tone(t, { f: 48, f1: 35, dur: 1.6, peak: peak * 0.6 });
-  fx.burst(t + 0.4, { kind: 'brown', a: 0.3, dur: 1.4, peak: peak * 0.5, filters: [{ type: 'lowpass', f: 250 }] });
+  // Rolling thunder: noise only (no sine sub), high-passed at 40 Hz; its
+  // weight sits in the 80–400 Hz rumble that speakers can actually play.
+  fx.burst(t, { kind: 'brown', a: 0.04, dur: 2.2, peak, filters: [{ type: 'highpass', f: 40 }, { type: 'lowpass', f: 700, f1: 110, dt: 2 }] });
+  fx.burst(t + 0.02, { kind: 'pink', a: 0.01, dur: 0.5, peak: peak * 0.35, filters: [{ type: 'highpass', f: 40 }, { type: 'lowpass', f: 1600, f1: 300, dt: 0.5 }] });
+  fx.burst(t + 0.4, { kind: 'brown', a: 0.3, dur: 1.4, peak: peak * 0.5, filters: [{ type: 'highpass', f: 40 }, { type: 'lowpass', f: 320 }] });
 }
 
 function zap(fx, t, dur = 0.3, peak = 0.4) {
@@ -437,7 +444,8 @@ const VOX = {
       }
       fx.grains(t + 0.1, { count: 14, spread: 0.8, curve: 1.8, fLo: 600, fHi: 1800, q: 4, peak: 0.12 });
       fx.burst(t + 0.05, { kind: 'pink', a: 0.08, hold: 0.25, dur: 0.6, peak: 0.12, filters: [{ type: 'bandpass', f: 1800, f1: 500, q: 1.5, dt: 0.9 }] });
-      thud(fx, tt + 0.05, 0.25, 70);
+      // The body drops: a light carapace knock, nothing below ~60 Hz (a chitter has no infrasound).
+      thud(fx, tt + 0.05, 0.22, 110, 70);
       return;
     }
     fx.burst(t, { a: 0.05, hold: 0.3, dur: 0.2, peak: 0.14, filters: [{ type: 'highpass', f: 3000 }] });
@@ -558,8 +566,11 @@ export const SFX = {
   splash: (fx, t) => foot(fx, t, 'water', 1.4),
   omen: (fx, t) => {
     // Something stirs: a low swell, a breath of wind, a far-off growl.
-    fx.tone(t, { type: 'sawtooth', f: 55, a: 0.8, dur: 0.9, peak: 0.08, filters: [{ type: 'lowpass', f: 300 }] });
-    fx.tone(t, { type: 'sawtooth', f: 58.3, a: 0.8, dur: 0.9, peak: 0.06, filters: [{ type: 'lowpass', f: 300 }] });
+    // The swell lives an octave up (110 Hz, its beating neighbour a semitone
+    // sharp) so it reads on small speakers; only a breath of the 55 Hz root.
+    fx.tone(t, { type: 'sawtooth', f: 110, a: 0.8, dur: 0.9, peak: 0.07, filters: [{ type: 'highpass', f: 80 }, { type: 'lowpass', f: 700 }] });
+    fx.tone(t, { type: 'sawtooth', f: 116.5, a: 0.8, dur: 0.9, peak: 0.05, filters: [{ type: 'highpass', f: 80 }, { type: 'lowpass', f: 700 }] });
+    fx.tone(t, { f: 55, a: 0.8, dur: 0.9, peak: 0.025 });
     fx.burst(t, { kind: 'pink', a: 0.9, curve: 'lin', dur: 0.6, peak: 0.12, filters: [{ type: 'bandpass', f: 500, f1: 1400, q: 1.5, dt: 1.2 }] });
     fx.voice(t + 0.6, { whisper: true, dur: 0.8, vowels: ['u', 'a'], peak: 0.08, qScale: 1.5 });
   },
@@ -615,10 +626,15 @@ export const SFX = {
   },
   /** Critical: the blow lands with real weight — a heavy body thump, crunch and a bright "shing". */
   crit: (fx, t) => {
-    fx.modes(t, { f: 72, ratios: [1, 1.58, 2.3], decays: [0.3, 0.16, 0.08], amps: [1, 0.45, 0.2], peak: 0.45 });
-    fx.burst(t, { kind: 'brown', dur: 0.35, peak: 0.45, filters: [{ type: 'lowpass', f: 260 }] });
-    fx.grains(t + 0.005, { count: 8, spread: 0.06, fLo: 500, fHi: 1600, q: 2, peak: 0.22, dLo: 0.01, dHi: 0.03 });
-    fx.modes(t + 0.01, { f: 3300, ratios: [1, 1.41, 2.03], decays: [0.25, 0.15, 0.1], amps: [1, 0.5, 0.3], peak: 0.035 });
+    // The weight lives in a 100–200 Hz body (what laptop and TV speakers can
+    // still play), not a sub thump; then a real crunch — bone and mail
+    // giving way in the 1–4 kHz band — and the blade's bright 'shing'.
+    fx.modes(t, { f: 128, ratios: [1, 1.47, 2.12], decays: [0.22, 0.13, 0.07], amps: [1, 0.5, 0.25], peak: 0.32 });
+    fx.burst(t, { kind: 'brown', dur: 0.28, peak: 0.38, filters: [{ type: 'highpass', f: 95 }, { type: 'lowpass', f: 520, f1: 260 }] });
+    fx.burst(t + 0.002, { a: 0.001, dur: 0.05, peak: 0.42, filters: [{ type: 'bandpass', f: 2300, q: 0.9 }] });
+    fx.grains(t + 0.004, { count: 16, spread: 0.11, curve: 1.6, fLo: 1000, fHi: 4000, q: 1.6, peak: 0.42, dLo: 0.006, dHi: 0.022 });
+    fx.grains(t + 0.01, { count: 7, spread: 0.07, fLo: 450, fHi: 1200, q: 2, peak: 0.25, dLo: 0.01, dHi: 0.03 });
+    fx.modes(t + 0.012, { f: 3300, ratios: [1, 1.41, 2.03], decays: [0.3, 0.18, 0.12], amps: [1, 0.5, 0.3], peak: 0.06 });
   },
   /** A bite: teeth clack, flesh tears, the wound gives. */
   bite: (fx, t) => {
@@ -691,7 +707,7 @@ export const SFX = {
   spell_fire: (fx, t) => {
     whoosh(fx, t, { f0: 300, f1: 2200, dur: 0.45, peak: 0.3, q: 0.8 });
     explosion(fx, t + 0.38, 1);
-    fx.burst(t + 0.4, { kind: 'pink', a: 0.1, hold: 0.4, dur: 1, peak: 0.22, filters: [{ type: 'lowpass', f: 900 }] });
+    fx.burst(t + 0.4, { kind: 'pink', a: 0.1, hold: 0.4, dur: 1, peak: 0.22, filters: [{ type: 'highpass', f: 80 }, { type: 'lowpass', f: 900 }] });
     // The roar of the fireball itself: a 200 Hz–2 kHz body that blooms for
     // half a second after the boom (what small speakers hear), the flames
     // fluttering through it, falling as the burst burns out.
@@ -706,9 +722,14 @@ export const SFX = {
     fx.tone(t, { f: 80, hold: 0.4, dur: 0.4, peak: 0.2 });
   },
   spell_lightning: (fx, t) => {
+    // Charge, the stroke itself (a white-hot crack and a tearing, branching
+    // sizzle as loud as the thunder behind it), then the roll.
     fx.tone(t, { type: 'sawtooth', f: 90, f1: 400, a: 0.25, dur: 0.1, peak: 0.06, filters: [{ type: 'highpass', f: 600 }] });
-    zap(fx, t + 0.25, 0.32, 0.45);
-    thunder(fx, t + 0.4, 0.65);
+    fx.burst(t + 0.25, { a: 0.0005, dur: 0.012, peak: 0.75, filters: [{ type: 'highpass', f: 1200 }] });
+    fx.burst(t + 0.252, { a: 0.001, dur: 0.09, peak: 0.5, filters: [{ type: 'bandpass', f: 3200, f1: 1400, q: 0.8, dt: 0.1 }] });
+    zap(fx, t + 0.25, 0.4, 0.85);
+    fx.grains(t + 0.27, { count: 40, spread: 0.35, curve: 1.8, fLo: 2500, fHi: 9000, q: 1.2, peak: 0.45, dLo: 0.002, dHi: 0.006 });
+    thunder(fx, t + 0.42, 0.42);
   },
   spell_shock: (fx, t) => zap(fx, t, 0.18, 0.7),
   /** Magic missiles: arcane bolts — a resonant zing sweeping down, a sparking whoosh, a soft impact pop. */

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { LoadGuard } from '../../src/audio/loadguard.js';
+import { LoadGuard, StarveGuard } from '../../src/audio/loadguard.js';
 import { voiceBudget, setVoiceCap, voiceCap, VOICE_CAP } from '../../src/audio/instruments/base.js';
 
 describe('audio load guard', () => {
@@ -71,5 +71,40 @@ describe('audio load guard transients', () => {
     expect(g.glitches).toBe(1);
     g.update(6, 5.5, true); // 0.5 s lost in one window
     expect(g.cap).toBeLessThan(VOICE_CAP);
+  });
+
+  it('stretches the scheduling window on main-thread stalls, falls back to stems if notes still drop, then recovers', () => {
+    const g = new StarveGuard({ base: 1.8, max: 4 });
+    let wall = 0;
+    let dropped = 0;
+    const run = (secs, dt = 0.05, perTick = 0) => {
+      for (let i = 0; i < secs / dt; i++) {
+        wall += dt;
+        dropped += perTick;
+        g.update(wall, dropped);
+      }
+    };
+    run(5);
+    expect(g.lookahead).toBe(1.8);
+    expect(g.degrade).toBe(0);
+    // One 2 s freeze of the main thread: the next tick comes 2 s late.
+    wall += 2;
+    g.update(wall, dropped);
+    expect(g.stalls).toBe(1);
+    expect(g.lookahead).toBe(4);
+    expect(g.degrade).toBe(0);
+    // Notes keep dropping even with the long window: play stems.
+    run(1, 0.05, 1);
+    expect(g.degrade).toBe(3);
+    // A calm stretch steps back one level at a time.
+    run(21);
+    expect(g.degrade).toBe(0);
+    expect(g.lookahead).toBe(4);
+    run(21);
+    expect(g.lookahead).toBe(1.8);
+    // A suspended context (a minute without ticks) is not a stall.
+    wall += 60;
+    g.update(wall, dropped);
+    expect(g.lookahead).toBe(1.8);
   });
 });
