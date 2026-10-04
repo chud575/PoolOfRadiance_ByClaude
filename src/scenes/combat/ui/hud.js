@@ -54,8 +54,11 @@ export class CombatHud {
     // frame itself is see-through, the canvas shows beneath it.
     this.closeupName = h('div.cb-closeup-name');
     this.closeup = h('div.cb-closeup.pe-none', [h('i.stud.tl'), h('i.stud.tr'), h('i.stud.bl'), h('i.stud.br'), this.closeupName]);
+    // The battlefield's own braided-rope and iron frame (the reference's
+    // bordered window), sat just above the Gold Box command line.
+    this.fieldFrame = h('div.cb-fieldframe.pe-none', [h('i.stud.tl'), h('i.stud.tr'), h('i.stud.bl'), h('i.stud.br')]);
     const bottom = (this.bottomEl = h('div.cb-bottom', [this.cmds]));
-    this.root.append(this.floatLayer, this.speedEl, this.loc, this.timeline, this.closeup, this.card.el, this.rosterFrame.el, this.logBox, this.prompt, bottom, this.help, this.banner, this.lead, this.inspect);
+    this.root.append(this.fieldFrame, this.floatLayer, this.speedEl, this.loc, this.timeline, this.closeup, this.card.el, this.rosterFrame.el, this.logBox, this.prompt, bottom, this.help, this.banner, this.lead, this.inspect);
     ctx.ui.mount(this.root);
     this.floats = [];
     this.banners = [];
