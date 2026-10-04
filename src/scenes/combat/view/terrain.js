@@ -478,9 +478,11 @@ export function buildDiorama(field, o = {}) {
   // ---------------------------------------------------------------- materials
   // Grim fortified palette: dark weathered masonry, smoke-stained render and
   // heavy capstones (painted-diorama low key, never a bright toy town).
-  const wallMats = [libMat('wall_stone', 0x9a948c), limeMat(), libMat('wall_ruin', 0x8c857c)];
+  // Grim fortified masonry everywhere (the lime-and-timber town is gone):
+  // dark ashlar for houses and town walls, darker rubble for the ruins.
+  const wallMats = [libMat('wall_stone', 0x6e6860), libMat('wall_stone', 0x645e56), libMat('wall_ruin', 0x6c655c)];
   const plinthMat = libMat('wall_stone', 0x625c56);
-  const capMat = libMat('wall_stone', 0x7e7a74, { ns: 1.2 });
+  const capMat = libMat('wall_stone', 0x8a857c, { ns: 1.2 });
   const linenMat = pbr('cloth', 0xd8ccb2);
   const rubbleMat = libMat('wall_ruin', 0x9a9082);
   // Interior rubble: pale broken plaster and masonry (no moss bloom: in a
@@ -908,7 +910,8 @@ export function buildDiorama(field, o = {}) {
 
   function makeHouse(r) {
     const [x0, y0, x1, y1] = r;
-    const style = houseStyle(r);
+    // Half-timbered houses (style 1) are rebuilt in stone for combat.
+    const style = houseStyle(r) === 1 ? 0 : houseStyle(r);
     const ruined = style === 2;
     const hx0 = cw(x0) + 0.12;
     const hz0 = ch(y0) + 0.12;
@@ -975,6 +978,10 @@ export function buildDiorama(field, o = {}) {
           }
         } else {
           B.add(place(wallQuad(len, hh, 2.6), 0, 0, 0), wallMat);
+          // Fortified parapet: a thick crenel-less breastwork round the roof
+          // under a broad, overhanging flat capstone course.
+          B.add(place(worldBox(len + 0.3, 0.6, 0.5, 2.5), len / 2, hh + 0.3, -0.1), wallMat);
+          B.add(place(worldBox(len + 0.46, 0.17, 0.76, 1), len / 2, hh + 0.685, -0.1), capMat);
         }
         // Plinth.
         B.add(place(worldBox(len + 0.1, 0.45, 0.1, 2.5), len / 2, 0.225, 0.03), plinthMat);

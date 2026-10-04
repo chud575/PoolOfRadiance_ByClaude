@@ -300,6 +300,7 @@ export default class CombatScene extends Scene {
         base.scale.y = (0.45 * (br > 0.5 ? 1.2 : 1)) / blob.scale.x;
         base.position.y = -0.016 / blob.scale.x;
         blob.add(base);
+        fig.baseR = br;
         fig.baseH = 0.045 * (br > 0.5 ? 1.2 : 1) - 0.004;
         model.root.position.y += fig.baseH;
         fig.baseY = model.root.position.y;
@@ -2262,11 +2263,12 @@ export default class CombatScene extends Scene {
       const p = sq2w(c.x, c.y);
       tall.push({ x: p.x, z: p.z, h: fm.top ?? fm.height, r: fm.span ?? 0 });
     }
-    let fit = this._fitBox([...live, ...mark]);
-    if (fit.need > MAX + 6.5) fit = this._fitBox(live);
-    if (fit.need > MAX) fit = this._fitBox([act, ...near, ...allies]);
+    let fitSet = [...live, ...mark];
+    let fit = this._fitBox(fitSet);
+    if (fit.need > MAX + 6.5) fit = this._fitBox((fitSet = live));
+    if (fit.need > MAX) fit = this._fitBox((fitSet = [act, ...near, ...allies]));
     // Too spread out: keep the actor and its nearest foe (and its neighbours) only.
-    if (fit.need > MAX && near.length > 1) fit = this._fitBox([act, near[0], ...allies.filter((o) => d(o, act) <= 1.5)]);
+    if (fit.need > MAX && near.length > 1) fit = this._fitBox((fitSet = [act, near[0], ...allies.filter((o) => d(o, act) <= 1.5)]));
     let { cx, cz, need } = fit;
     const ap = sq2w(act.x, act.y);
     if (need > MAX && !(mark.length && need <= MAX + 6.5)) {
@@ -2298,6 +2300,7 @@ export default class CombatScene extends Scene {
         cz += (top.z - cz) * 0.08;
       }
     }
+    if (!tall.length) ({ cx, cz, dist } = this._refineFrame(fitSet, cx, cz, dist, MIN, MAX + (mark.length ? 6.5 : 0)));
     this.fightCenter = new THREE.Vector3(cx, 0, cz);
     if (soft) {
       // Small corrections while walking: drift, don't lurch.
@@ -2308,6 +2311,51 @@ export default class CombatScene extends Scene {
       this.cam.target.copy(this.cam.goalTarget);
       this.cam.dist = dist;
     }
+  }
+
+  /**
+   * Projection-checked framing: every framed figure (base to head) lands
+   * inside the clear stage (below the timeline, above the log and command
+   * bar, left of the side panels), centred, and filling it without dead space.
+   */
+  _refineFrame(set, cx, cz, dist, MIN, MAX) {
+    const sa = this._safeArea();
+    const em = Math.max(12, Math.min(25.6, 16 * (sa.H / 900)));
+    const box = { x0: -0.97, x1: 1 - (2 * 19.9 * em) / sa.W, y0: -1 + (2 * 6.6 * em) / sa.H, y1: 1 - (2 * 7.0 * em) / sa.H };
+    const yaw = this.cam.goalYaw;
+    const rx = Math.cos(yaw);
+    const rz = -Math.sin(yaw);
+    const pts = [];
+    for (const c of set) {
+      const p = sq2w(c.x, c.y);
+      const h = c.id ? Math.min(2.4, (this.figures.get(c.id)?.model.height ?? 1.2) + 0.15) : 0;
+      for (const sx of [-0.5, 0.5]) {
+        pts.push(new THREE.Vector3(p.x + rx * sx, 0, p.z + rz * sx));
+        if (h) pts.push(new THREE.Vector3(p.x + rx * sx * 0.7, h, p.z + rz * sx * 0.7));
+      }
+    }
+    if (!pts.length) return { cx, cz, dist };
+    const fov = (this.camera.fov * Math.PI) / 180;
+    const pitch = this.cam.goalPitch;
+    for (let it = 0; it < 6; it++) {
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (const q of pts) {
+        const n = this._projectGoal(q, cx, cz, dist);
+        x0 = Math.min(x0, n.x); x1 = Math.max(x1, n.x); y0 = Math.min(y0, n.y); y1 = Math.max(y1, n.y);
+      }
+      // Re-centre (screen offset → ground shift along the camera's right / forward).
+      const halfH = dist * Math.tan(fov / 2);
+      const dxN = (x0 + x1) / 2 - (box.x0 + box.x1) / 2;
+      const dyN = (y0 + y1) / 2 - (box.y0 + box.y1) / 2;
+      const wx = dxN * halfH * this.camera.aspect;
+      const wy = (dyN * halfH) / Math.max(0.35, Math.sin(pitch));
+      cx += rx * wx - Math.sin(yaw) * wy;
+      cz += rz * wx - Math.cos(yaw) * wy;
+      // Zoom so the figures fill ~88% of the stage.
+      const k = Math.max((x1 - x0) / (box.x1 - box.x0), (y1 - y0) / (box.y1 - box.y0)) / 0.88;
+      dist = Math.max(MIN * 0.8, Math.min(MAX, dist * Math.min(1.3, Math.max(0.8, k))));
+    }
+    return { cx, cz, dist };
   }
 
   /** NDC of a world point as seen from the goal camera aimed at (cx, cz) from `dist`. */
@@ -2593,13 +2641,15 @@ export default class CombatScene extends Scene {
       ring.position.set(p.x, 0.03, p.z);
       ring.visible = !this.done && !this.engine.out(c) && fig.root.visible;
       const hl = this.hoverTimeline === c.id;
-      ring.scale.setScalar(hl ? 1.25 : 1);
+      // Sized to hug the flocked base's rim (line radius = 0.86 × 0.62 m).
+      ring.scale.setScalar(((fig.baseR ?? 0.5) + 0.035) / 0.533 * (hl ? 1.15 : 1));
     }
     const act = this.engine.active() ?? this.demoActive;
     const af = act && this.figures.get(act.id);
     if (af && !this.engine.out(act) && !this.done) {
       this.overlay.activeRing.visible = true;
       this.overlay.activeRing.position.set(af.root.position.x, 0.035, af.root.position.z);
+      this.overlay.activeScale = ((af.baseR ?? 0.5) + 0.06) / 0.615;
       // A gilt marker bobbing over the active figure's head: findable in a crowd.
       // The ground ring + timeline highlight mark the actor (no floating gizmo).
       this.overlay.activeMarker.visible = false;

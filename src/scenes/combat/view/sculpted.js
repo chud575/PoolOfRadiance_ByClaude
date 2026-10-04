@@ -77,7 +77,7 @@ const hashf = (n) => {
 export const LOOKS = {
   // Rust-red scaled hide (saturated, so a warband pops off the grey setts),
   // near-black along the spine, a pale ochre belly and bone-white horns.
-  kobold: { skin: [0x8e3a1c, 'scales'], back: [0x2e120a, 'scales'], belly: [0xd09a5e, 'scales'], horn: 0xeee0b8, cloth: 0x4a3a28, head: 'kobold', jerkin: 0x9a6a38, boots: 0x3a2414 },
+  kobold: { skin: [0x6e4a2c, 'scales'], back: [0x2a1a10, 'scales'], belly: [0xa2845a, 'scales'], horn: 0xd8ccaa, cloth: 0x4a3a28, head: 'kobold', jerkin: 0x9a6a38, boots: 0x3a2414 },
   goblin: { skin: [0x86963a, 'skin'], back: [0x5a6a26, 'skin'], belly: [0xa0aa60, 'skin'], horn: 0xd8c8a0, cloth: 0x4a3020, head: 'goblin', pants: 0x3a2a1a },
   orc: { skin: [0x5a6438, 'skin'], back: [0x2c3219, 'skin'], belly: [0x7a7c58, 'skin'], horn: 0xeadfc0, cloth: 0x3a2c1c, head: 'orc', pants: 0x3a2c1e, jerkin: 0x5a3a20, plate: 0x6a625a, hair: 0x0e0c0a },
   // Hobgoblins: dark rust-brown hide with an orange cast, a flat simian face,

@@ -79,12 +79,17 @@ function addRim(mat, facRim = null, tint = null) {
           float kx = dot(dFdx(mN), dpx) / max(dot(dpx, dpx), 1e-9);
           float ky = dot(dFdy(mN), dpy) / max(dot(dpy, dpy), 1e-9);
           float kc = clamp((kx + ky) * 0.5, -80.0, 80.0);
-          float recess = smoothstep(-3.0, -26.0, kc);
-          miniEdge = smoothstep(6.0, 34.0, kc);
+          float recess = smoothstep(-2.0, -18.0, kc);
+          // Drybrushed edges: raised ridges (curvature) plus the silhouette
+          // rims (fresnel, upper side), so the casting reads at board zoom.
+          float upV = dot(mN, normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz));
+          float fresE = pow(1.0 - clamp(dot(mN, normalize(vViewPosition)), 0.0, 1.0), 3.5) * smoothstep(-0.3, 0.5, upV);
+          miniEdge = clamp(smoothstep(4.0, 22.0, kc) + fresE * 0.7, 0.0, 1.0);
           // Overhead drybrush: upward-facing planes catch a little more pigment.
-          float up = smoothstep(0.2, 0.95, dot(mN, normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz)));
-          diffuseColor.rgb *= 1.0 - 0.5 * recess;
-          diffuseColor.rgb = mix(diffuseColor.rgb, min(vec3(1.0), diffuseColor.rgb * 1.55 + 0.05), clamp(miniEdge * 0.6 + up * 0.12, 0.0, 0.75));
+          float up = smoothstep(0.2, 0.95, upV);
+          diffuseColor.rgb *= 1.0 - 0.72 * recess;
+          vec3 dryC = mix(min(vec3(1.0), diffuseColor.rgb * 1.9 + 0.1), vec3(0.9, 0.86, 0.78), 0.35);
+          diffuseColor.rgb = mix(diffuseColor.rgb, dryC, clamp(miniEdge * 0.85 + up * 0.15, 0.0, 0.88));
           float chipN = bN3(vBP * 46.0);
           miniChip = smoothstep(0.55, 0.8, miniEdge * (0.55 + chipN));
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.5, 0.49, 0.47), miniChip * 0.7);
@@ -108,7 +113,12 @@ function addRim(mat, facRim = null, tint = null) {
         roughnessFactor = mix(roughnessFactor, 0.42, miniChip * 0.7);
         #include <lights_physical_fragment>`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-        { float rimF = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), uRimPower);
+        { float nvM = clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0);
+          // Painted highlights are pigment, not light: a little of the drybrush
+          // reads even in deep shadow. Bare metal gets a cool sheen on its rims.
+          totalEmissiveRadiance += diffuseColor.rgb * miniEdge * 0.07;
+          totalEmissiveRadiance += vec3(0.32, 0.38, 0.46) * pow(1.0 - nvM, 2.0) * smoothstep(0.5, 0.9, metalnessFactor) * 0.35;
+          float rimF = pow(1.0 - nvM, uRimPower);
           totalEmissiveRadiance += uRimColor * rimF * (0.6 + 0.4 * diffuseColor.rgb / max(0.001, max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b))));
           // Faction rim: a thin coloured back-light edge (ember on foes, cold steel
           // on undead, warm gilt on the party) kept to the upper silhouette so it
@@ -125,7 +135,7 @@ function addRim(mat, facRim = null, tint = null) {
           float rimE = pow(1.0 - clamp(dot(nV, normalize(vViewPosition)), 0.0, 1.0), 3.0);
           totalEmissiveRadiance += vec3(1.0, 0.34, 0.05) * burnEdge * uBurn.y * 1.5 + vec3(1.0, 0.22, 0.02) * emb * uBurn.y * 0.9 + vec3(1.0, 0.42, 0.08) * rimE * uBurn.y * 0.9; }`);
   };
-  mat.customProgramCacheKey = () => (sculpt ? 'fig-mini-sculpt-a' : pid >= 0 ? 'fig-mini-detail-a' : 'fig-mini-a');
+  mat.customProgramCacheKey = () => (sculpt ? 'fig-mini-sculpt-b' : pid >= 0 ? 'fig-mini-detail-b' : 'fig-mini-b');
 }
 
 const _FLASH = new THREE.Color(1, 0.82, 0.68);
@@ -152,7 +162,10 @@ export class Figure {
     // Foes each hold their own stance (a warband, not a crowd sim): 0 ready,
     // 1 crouched lunge, 2 braced behind the shield, 3 brandishing overhead,
     // 4 bladed sideways stance with a cocked head.
-    this.stance = o.faction && o.faction !== 'party' ? Math.floor(hashf(this.seed * 7.3 + 2.1) * 5) : 0;
+    // Every foe holds an aggressive stance (no upright "ready" mannequins);
+    // the party strike class poses (see _heroPose), varied per seed.
+    this.stance = o.faction && o.faction !== 'party' ? 1 + Math.floor(hashf(this.seed * 7.3 + 2.1) * 4) : 0;
+    this.heroVar = hashf(this.seed * 4.7 + 0.3);
     // Each foe wears its own hide: a small palette jitter (hue lean + value)
     // so a warband reads as individuals, never as clones off one mould.
     if (o.faction && o.faction !== 'party') {
@@ -403,6 +416,71 @@ export class Figure {
     return { a, u };
   }
 
+  _heroPose(add, set, P, it, s, w, hasShield) {
+    const m = this.model;
+    const kit = m.kit ?? {};
+    const v = this.heroVar ?? 0.5;
+    const sway = Math.sin(it * 0.9) * 0.04;
+    const lowCrouch = (k) => {
+      P['hips@'][1] -= k * s;
+      add('thighL', -0.5 * k / 0.06, 0, 0.2); add('shinL', 0.55 * k / 0.06); add('footL', 0.0);
+      add('thighR', 0.25, 0, -0.22); add('shinR', 0.45 * k / 0.06); add('footR', 0.1);
+    };
+    if (kit.mage && (w === 'staff' || w === 'fists')) {
+      // Spell-casting: staff planted forward, off hand thrust out palm first.
+      lowCrouch(0.035);
+      add('spine', 0.1, -0.2, 0);
+      add('chest', 0.05, -0.1, 0);
+      add('neck', 0, 0.25, 0);
+      set('upperArmR', -0.75, 0.1, -0.15);
+      set('foreArmR', -0.9);
+      set('upperArmL', -1.45 + sway, 0.35, 0.35);
+      set('foreArmL', -0.35);
+      set('handL', -0.9, 0, 0.2);
+      return;
+    }
+    if (kit.thief || w === 'dagger' || w === 'shortSword') {
+      // Knife-fighter's crouch: low, bladed, blade forward and the off hand out.
+      lowCrouch(0.07);
+      add('spine', 0.3, 0.35, 0);
+      add('chest', 0.05, 0.1, 0);
+      add('neck', -0.2, -0.4, 0);
+      add('head', -0.1, 0, 0);
+      set('upperArmR', -1.0 + sway, 0.45, -0.15);
+      set('foreArmR', -0.85);
+      set('handR', 0.3, 0, 0);
+      if (!hasShield) {
+        set('upperArmL', -0.9, -0.3, 0.55);
+        set('foreArmL', -1.0);
+      }
+      return;
+    }
+    // Melee: fighters and clerics. Weapon cocked high over the shoulder (or
+    // raised overhead by clerics / two-handers), shield driven forward.
+    lowCrouch(0.055);
+    const overhead = kit.cleric || w === 'greatSword' || v > 0.6;
+    add('spine', 0.08, overhead ? 0.15 : 0.4, 0);
+    add('chest', -0.06, overhead ? 0.05 : 0.18, 0);
+    add('neck', 0, overhead ? -0.15 : -0.45, 0);
+    if (overhead) {
+      set('upperArmR', -2.55 + sway, 0.25, -0.45);
+      set('foreArmR', -0.55);
+      set('handR', 0.55, 0, 0);
+    } else {
+      set('upperArmR', -1.9 + sway, 0.65, -0.7);
+      set('foreArmR', -1.45);
+      set('handR', 0.5, 0, 0.25);
+    }
+    if (hasShield) {
+      set('upperArmL', -1.05, -0.45, 0.2);
+      set('foreArmL', -1.15);
+      set('handL', 0, -0.35, 0.1);
+    } else {
+      set('upperArmL', -0.7, -0.2, 0.5);
+      set('foreArmL', -0.9);
+    }
+  }
+
   _biped(P, t, it, walking, wph, rootOff) {
     const s = this.s;
     const m = this.model;
@@ -506,6 +584,9 @@ export class Figure {
     if (this.stance && !walking && !sleeping && !dead && !m.armsForward) {
       const st = this.stance;
       const ws = Math.sin(it * 0.8 + this.seed);
+      // Every foe: a wide, braced stance (feet apart, knees bent).
+      add('thighL', -0.22, 0.05, 0.16); add('shinL', 0.25); add('thighR', 0.18, -0.05, -0.16); add('shinR', 0.2);
+      P['hips@'][1] -= 0.03 * s;
       if (st === 1) {
         add('spine', 0.22, 0.1, 0);
         add('chest', 0.08, 0.05, 0);
@@ -537,6 +618,10 @@ export class Figure {
         add('thighL', -0.1, 0.2, 0.15); add('thighR', 0.08, -0.2, -0.15);
       }
     }
+    // Party: a dynamic, class-driven combat pose (wide braced stance, torso
+    // twist, weapon cocked or levelled, shield forward), as cast on a
+    // lunging 28 mm miniature. Idle only: actions and walking take over.
+    if (this.faction === 'party' && !walking && !sleeping && !dead && !this.action && !m.armsForward) this._heroPose(add, set, P, it, s, w, hasShield);
     // --- Walking cycle.
     if (walking) {
       const sw = Math.sin(wph);

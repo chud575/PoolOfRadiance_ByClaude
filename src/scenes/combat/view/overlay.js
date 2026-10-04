@@ -291,12 +291,12 @@ export class Overlay {
           float ring = smoothstep(uW, 0.0, abs(r - 0.82));
           float ang = atan(p.y, p.x);
           float seg = 0.65 + 0.35 * step(0.0, sin(ang * 8.0 + uTime * 2.0 * uSpin));
-          float glow = smoothstep(1.0, 0.6, r) * smoothstep(0.3, 0.9, r) * 0.25;
+          float glow = smoothstep(0.95, 0.82, r) * step(0.82, r) * 0.12;
           float a = ring * seg + glow;
           gl_FragColor = vec4(uColor * (1.3 + ring), a);
         }`,
     });
-    this.activeRing = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5).rotateX(-Math.PI / 2), this.ringMat(0xffd36b, 0.09));
+    this.activeRing = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5).rotateX(-Math.PI / 2), this.ringMat(0xd8b26a, 0.035));
     this.activeRing.renderOrder = 4;
     this.group.add(this.activeRing);
     // Active-unit marker: a small faceted gilt diamond floating over the head.
@@ -370,14 +370,15 @@ export class Overlay {
           vec2 p = vUv * 2.0 - 1.0;
           float r = length(p);
           float px = fwidth(r);
-          float line = 1.0 - smoothstep(0.0, px * 1.6 + 0.012, abs(r - 0.86));
-          float inner = smoothstep(0.45, 0.86, r) * (1.0 - smoothstep(0.86, 0.87, r));
-          float outer = (1.0 - smoothstep(0.86, 0.98, r)) * step(0.86, r);
-          float a = line * 0.85 + inner * inner * 0.22 + outer * 0.18;
-          gl_FragColor = vec4(uColor * (0.8 + line * 0.5), a * uA);
+          // A thin painted line hugging the base rim (the base itself hides
+          // the inner half), with only a breath of glow outside it.
+          float line = 1.0 - smoothstep(0.0, px * 1.2 + 0.006, abs(r - 0.86));
+          float outer = (1.0 - smoothstep(0.86, 0.94, r)) * step(0.86, r);
+          float a = line * 0.8 + outer * 0.1;
+          gl_FragColor = vec4(uColor * (0.75 + line * 0.25), a * uA);
         }`,
     });
-    this.teamMat = { party: teamShader(0x6aa8ff, 0.6), monster: teamShader(0xff6a54, 0.55) };
+    this.teamMat = { party: teamShader(0x8296b4, 0.5), monster: teamShader(0xa8705e, 0.45) };
     this.teamGeo = new THREE.PlaneGeometry(1.24, 1.24).rotateX(-Math.PI / 2);
   }
 
@@ -565,7 +566,7 @@ export class Overlay {
 
   update(t) {
     this.uniforms.uTime.value = t;
-    const k = 1 + Math.sin(t * 4) * 0.04;
+    const k = (1 + Math.sin(t * 4) * 0.025) * (this.activeScale ?? 1);
     this.activeRing.scale.setScalar(k);
     this.activeMarker.rotation.y = t * 1.6;
     this.arrow.scale.setScalar(1 + Math.sin(t * 5) * 0.08);

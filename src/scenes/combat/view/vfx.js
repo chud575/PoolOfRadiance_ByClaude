@@ -146,7 +146,7 @@ const NOISE_GLSL = `
  * uHeat, uErode (tears holes as it burns out), uSmoke (cools edges to soot),
  * uFade, uAge, uCam (camera in object space), uFloor.
  */
-function volumeFire({ steps = 24, smoke = false, gas = false } = {}) {
+function volumeFire({ steps = 24, smoke = false, gas = false, glow = 0 } = {}) {
   const mat = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
@@ -365,8 +365,16 @@ function volumeFire({ steps = 24, smoke = false, gas = false } = {}) {
           eS *= mix(0.2, 1.1, crease);
           vec3 sootS = vec3(0.012, 0.009, 0.008) + uSky * max(Nn.y, 0.0) * 0.35 * crease + vec3(0.6, 0.16, 0.03) * clamp(uHeat, 0.0, 1.0) * 0.12 * (1.0 - facing);
           vec3 cS = mix(sootS, eS, smoothstep(0.1, 0.3, tS));
-          col = mix(col, cS * (1.0 - T), 0.8);`}
+          col = mix(col, cS * (1.0 - T), ${glow ? '0.3' : '0.8'});`}
         }` : ''}
+        ${glow ? `
+        // Emissive explosion: the flame is light, not a solid. Soot is dropped
+        // to a faint smoky veil and the coverage is cut, so the result adds
+        // onto the scene (white-yellow heart, orange falloff, soft margins)
+        // and the victims inside stay visible through the burn.
+        float lumC = max(col.r, max(col.g, col.b));
+        A *= ${glow.toFixed(2)} * (0.35 + 0.65 * smoothstep(0.05, 0.6, lumC));
+        col *= 1.25;` : ''}
         gl_FragColor = vec4(col * uFade, A);
       }`,
   });
@@ -1395,8 +1403,8 @@ export class VFX {
     // One ray-marched fire volume (core → flame tongues → soot) plus a smaller
     // offset one for an asymmetric silhouette, and two smoke volumes that roll
     // up out of the crown into a dark cap as the fire burns out.
-    const ball = volumeFire({ steps: 40 });
-    const ball2 = volumeFire({ steps: 22 });
+    const ball = volumeFire({ steps: 40, glow: 0.4 });
+    const ball2 = volumeFire({ steps: 22, glow: 0.35 });
     const cap = volumeFire({ steps: 18, smoke: true });
     const stem = volumeFire({ steps: 14, smoke: true });
     ball.u.uSeed.value = seed * 3.1;
@@ -1439,7 +1447,9 @@ export class VFX {
     // shell, never a screen-wide wash: the light does the rest.
     const flash = glowSprite(0xff9a40, R * 1.15, 0);
     const flashCore = glowSprite(0xfff4e0, R * 0.42, 0);
-    this.add(T, 6.0, () => ({ list: [waveDust, waveHot, dust, stem, cap, ball2, ball, shock, sparks, lateSparks, debris, flash, flashCore] }), (age, parts, ctx) => {
+    const heart = glowSprite(0xfff0b8, R * 0.5, 0);
+    const halo = glowSprite(0xff7a20, R * 1.4, 0);
+    this.add(T, 6.0, () => ({ list: [waveDust, waveHot, dust, stem, cap, ball2, ball, halo, heart, shock, sparks, lateSparks, debris, flash, flashCore] }), (age, parts, ctx) => {
       const vl = vic();
       // Shockwave: fast at first, slowing as it spreads; dust lingers behind the edge.
       const wr = R * (0.3 + 0.75 * (1 - Math.exp(-age * 4.2)));
@@ -1459,12 +1469,21 @@ export class VFX {
       flash.visible = flashCore.visible = age < 0.25;
       flashCore.position.set(to.x, to.y + 0.2, to.z);
       flashCore.material.opacity = Math.min(0.6, fl * 0.9);
+      // Incandescent heart: a white-yellow core held through the burn,
+      // ringed by a wide soft orange falloff (both additive).
+      heart.position.set(to.x, to.y + 0.35 + (age * 0.55 + age * age * 0.3) * 0.6, to.z);
+      heart.material.opacity = clamp01(age * 14) * Math.exp(-age * 1.5) * 0.85;
+      heart.scale.setScalar(R * (0.45 + 0.25 * (1 - Math.exp(-age * 8))));
+      halo.position.copy(heart.position);
+      halo.material.opacity = clamp01(age * 10) * Math.exp(-age * 1.1) * 0.5;
+      halo.scale.setScalar(R * (1.2 + 0.5 * (1 - Math.exp(-age * 6))));
+      heart.visible = halo.visible = age < 3;
       const ease = 1 - Math.exp(-age * 8);
       const cam = ctx?.camera;
       const rise = age * 0.55 + age * age * 0.3;
       // Main fireball: snaps out in ~0.25 s, hot heart cooling through orange to
       // soot at the rim, then tears open and fades while it rises.
-      const Rb = R * 0.7;
+      const Rb = R * 0.6;
       ball.obj.position.set(to.x, to.y + rise, to.z);
       ball.obj.scale.set(Rb, Rb * 0.92, Rb);
       ball.u.uAge.value = age;
@@ -1475,7 +1494,7 @@ export class VFX {
       ball.u.uErode.value = Math.max(0, age - 1.0) * 0.18;
       ball.u.uFade.value = clamp01((2.3 - age) / 1.3);
       ball.obj.visible = age < 2.3;
-      ball.u.uCrisp.value = 24;
+      ball.u.uCrisp.value = 6;
       ball.sync(cam, 0.02, vl);
       const R2 = R * 0.46;
       const e2 = 1 - Math.exp(-(age - 0.03) * 8);
@@ -1488,7 +1507,7 @@ export class VFX {
       ball2.u.uErode.value = Math.max(0, age - 0.9) * 0.2;
       ball2.u.uFade.value = clamp01((1.9 - age) / 1.1);
       ball2.obj.visible = age > 0.03 && age < 1.9;
-      ball2.u.uCrisp.value = 20;
+      ball2.u.uCrisp.value = 6;
       ball2.sync(cam, 0.02, vl);
       // Smoke: a dark mushrooming cap boils up out of the crown almost at
       // once (sooty, near-black folds against the orange), a stem beneath it.
