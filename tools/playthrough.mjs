@@ -25,7 +25,7 @@ const sceneName = () => page.evaluate(() => window.__GAME?.scenes.currentName);
 const waitScene = (name, timeout = 90000) =>
   page.waitForFunction((n) => window.__GAME?.scenes.currentName === n && !window.__GAME.scenes.transitioning, name, { timeout, polling: 100 });
 let shotN = 0;
-const shot = async (n) => saveShots && page.screenshot({ path: `shots/play_${String(++shotN).padStart(2, '0')}_${n}.png` });
+const shot = async (n) => saveShots && page.screenshot({ path: `shots/play_${String(++shotN).padStart(2, '0')}_${n}.png`, timeout: 120000 }).catch((e) => log('(screenshot skipped:', e.message.split('\n')[0], ')'));
 const loc = () => page.evaluate(() => ({ ...window.__GAME.game.location }));
 const used = new Set();
 
@@ -124,7 +124,8 @@ const combatState = () => page.evaluate(() => {
   const s = window.__GAME.scenes;
   const sc = s.current;
   if (s.currentName !== 'combat') return { over: true, scene: s.currentName };
-  if (document.querySelector('.por-dialog')) return { over: true, dialog: true };
+  if (sc.done) return { over: true, done: true };
+  if (document.querySelector('.por-pause-item')) return { over: true, pause: true };
   const c = sc.cur;
   const ready = !!c && c.side === 'party' && !sc.busy && sc.turnDone && !sc.quickAll;
   if (!ready) return { ready: false };
@@ -160,7 +161,7 @@ async function combatTurn(st) {
       log(`  ${st.name}: AIM (${n} targets)`);
       return;
     }
-    await page.keyboard.press('Escape'); // back to move mode
+    if ((await page.evaluate(() => window.__GAME.scenes.current.mode)) !== 'move') await page.keyboard.press('m'); // back to move mode
     await page.waitForTimeout(200);
   }
   if (st.cmds.move && st.foe && st.foe.d > 1) {
@@ -242,9 +243,14 @@ try {
 
   // ------------------------------------------------------------ tactical combat by hand
   let turns = 0;
-  for (let guard = 0; guard < 400; guard++) {
+  const fightDeadline = Date.now() + 20 * 60000;
+  for (;;) {
+    if (Date.now() > fightDeadline) throw new Error('the fight did not finish in 20 minutes');
     const st = await combatState();
-    if (st.over) break;
+    if (st.over) {
+      if (st.pause) throw new Error('the pause menu opened mid-combat');
+      break;
+    }
     if (!st.ready) { await page.waitForTimeout(250); continue; }
     if (turns === 6) await shot('combat_mid');
     if (turns >= 14 || (used.has('move') && used.has('aim') && used.has('cast') && turns >= 8)) {
