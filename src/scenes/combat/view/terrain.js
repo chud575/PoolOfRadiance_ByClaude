@@ -900,6 +900,7 @@ export function buildDiorama(field, o = {}) {
    * fortified footing walls still stand (low, so they never hide a figure),
    * enclosing a mound of rubble and dark earth. Still solid for the rules.
    */
+  let yardFill = null;
   function makeYard(r) {
     const [x0, y0, x1, y1] = r;
     const ax = cw(x0) + PAR_T / 2 + 0.05;
@@ -915,7 +916,8 @@ export function buildDiorama(field, o = {}) {
     // Earth and rubble fill.
     // Reskin 2: a lit bed of rubble and grit (it read as a black void with
     // floating blocks), the tumbled ashlar half sunk into it.
-    batch.add(worldBox(bx - ax - PAR_T + 0.02, 0.6, bz - az - PAR_T + 0.02, 2), coreMat, { p: [(ax + bx) / 2, 0.3, (az + bz) / 2] }, { cast: false });
+    const FH = Math.max(0.6, hh - 0.1);
+    batch.add(worldBox(bx - ax - PAR_T + 0.02, FH, bz - az - PAR_T + 0.02, 2), yardFill ??= libMat('floor_rubble', 0xb8ac98), { p: [(ax + bx) / 2, FH / 2, (az + bz) / 2] }, { cast: false });
     const nR = Math.round(((bx - ax) * (bz - az)) / 1.6);
     for (let k = 0; k < nR; k++) {
       const px = ax + PAR_T / 2 + 0.3 + hash(k, sd, 61) * (bx - ax - PAR_T - 0.6);
@@ -923,7 +925,7 @@ export function buildDiorama(field, o = {}) {
       // Angular broken ashlar, tumbled and half sunk (no blobby rocks).
       const rr = 0.2 + hash(k, k + sd, 63) * 0.3;
       const g = chamferBox(rr * (1.4 + hash(k, 1, sd) * 1.2), rr * 0.8, rr * (0.9 + hash(k, 2, sd) * 0.6), 0.03, sd * 7 + k, rr * 0.18);
-      batch.add(g, parBlk[k % 3], { p: [px, 0.6 + rr * 0.05, pz], r: [(hash(k, 66, sd) - 0.5) * 0.7, hash(k, 65, sd) * 6, (hash(k, 67, sd) - 0.5) * 0.7] }, { cast: k < 4 });
+      batch.add(g, parBlk[k % 3], { p: [px, FH + rr * 0.05, pz], r: [(hash(k, 66, sd) - 0.5) * 0.7, hash(k, 65, sd) * 6, (hash(k, 67, sd) - 0.5) * 0.7] }, { cast: true });
     }
   }
   if (dungeon) buildVaults();

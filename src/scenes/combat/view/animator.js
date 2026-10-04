@@ -96,6 +96,12 @@ function addRim(mat, facRim = null, tint = null) {
           float wash = max(smoothstep(-3.0, -18.0, kC) * pFade, smoothstep(-0.05, -0.75, wN.y) * 0.75);
           float dry = smoothstep(5.0, 22.0, kC) * (1.0 - smoothstep(60.0, 80.0, kC)) * pFade * (0.5 + 0.5 * smoothstep(-0.3, 0.7, wN.y));
           dry = max(dry, smoothstep(0.6, 0.97, wN.y) * 0.3);
+          // Feet sit in the base's shade: no drybrush on boots (it read as
+          // white blobs), a dark wash pooling toward the ground instead.
+          float wY = cameraPosition.y + (vec4(-vViewPosition, 0.0) * viewMatrix).y;
+          float foot = 1.0 - smoothstep(0.05, 0.2, wY);
+          dry *= 1.0 - foot;
+          wash = max(wash, foot * 0.55);
           diffuseColor.rgb *= 1.0 - 0.6 * wash;
           // Matte, desaturated hand paint (one standout: the active figure, via uSat).
           float pl = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11));
@@ -529,7 +535,7 @@ export class Figure {
         set('upperArmR', -0.9, 0.1, -0.3); set('foreArmR', -1.5);
       } else if (alt) {
         // Blade raised high beside the head, ready to cut down.
-        set('upperArmR', -2.2 + ws * 0.06, 0.25, -0.55); set('foreArmR', -0.7); set('handR', -0.35, 0, 0.1);
+        set('upperArmR', -2.1 + ws * 0.06, 0.3, -0.9); set('foreArmR', -0.45); set('handR', -0.35, 0, 0.1);
       } else {
         // Cocked back at the shoulder for a forehand swing.
         set('upperArmR', -1.15 + ws * 0.05, 0.6, -0.75); set('foreArmR', -1.55); set('handR', 0.2, 0, 0.35);

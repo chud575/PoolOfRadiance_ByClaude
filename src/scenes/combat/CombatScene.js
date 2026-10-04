@@ -2294,10 +2294,11 @@ export default class CombatScene extends Scene {
     const near = foes.filter((f) => d(f, act) <= 7).slice(0, 3);
     if (!near.length && foes[0]) near.push(foes[0]);
     const allies = live.filter((o) => o !== act && o.side === act.side && d(o, act) <= 2.5);
-    const MIN = 9.5;
+    // Reskin 2: tighter, so the minis are larger in frame (as in the reference).
+    const MIN = 8.5;
     // Keep the whole fight in view when it fits (a stable tactical camera);
     // otherwise frame the actor, its likely targets and its neighbours.
-    const MAX = all ? 21.5 : 18.5;
+    const MAX = all ? 18.5 : 16;
     // A temple's statue is the hero prop: when it stands near the fight it is
     // framed with the combatants (whole, not sliced by the screen edge).
     const st = (this.field.features?.props ?? []).find((p) => p.type === 'statue');
