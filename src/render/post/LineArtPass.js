@@ -82,7 +82,7 @@ const EDGE_FRAG = /* glsl */ `
   uniform sampler2D tColor;
   uniform sampler2D tDepth;
   uniform sampler2D tKey;
-  uniform float uBalance;
+  uniform float uBalance, uSat;
   uniform ivec2 uHi;
   uniform float uNear, uFar, uOrtho, uPix;
   uniform float uCurve, uCrease, uJump, uLum, uLumDist, uSky, uDim;
@@ -132,7 +132,7 @@ const EDGE_FRAG = /* glsl */ `
     float mn = min(min(c.r, c.g), c.b);
     float sat = mx > 1e-5 ? (mx - mn) / mx : 0.0;
     int idx;
-    if (sat < 0.28) {
+    if (sat < uSat) {
       idx = lit > 1.5 ? 15 : (lit > 0.45 ? 7 : 8);
     } else {
       vec3 n = c / mx;
@@ -180,7 +180,17 @@ const EDGE_FRAG = /* glsl */ `
     }
     vec3 outc = vec3(0.0);
     if (best > 0.0) {
-      vec3 c = C(bp);
+      // ink from the surface around the edge pixel (same depth layer only), so
+      // one line doesn't flicker between hues pixel by pixel
+      float w0 = W(bp);
+      vec3 c = vec3(0.0); float cn = 0.0;
+      for (int k = 0; k < 9; k++) {
+        ivec2 q = bp + ivec2(k % 3 - 1, k / 3 - 1);
+        float wq = W(q);
+        float tol = uOrtho > 0.5 ? 0.02 * max(abs(w0), 1.0) : 0.03 * w0;
+        if (abs(wq - w0) < tol) { c += C(q); cn += 1.0; }
+      }
+      c /= max(cn, 1.0);
       vec3 wb = texelFetch(tKey, ivec2(1, 0), 0).rgb;
       c /= mix(vec3(1.0), max(wb, vec3(0.05)), uBalance);
       float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
@@ -205,7 +215,8 @@ export class LineArtPass {
     this.params = {
       crease: 0.55,
       curve: 1.0, // how strongly smooth curvature is rejected
-      balance: 0.85, // grey-world white balance before the hue match // min change of surface slope (tan units) for a crease line
+      balance: 0.85,
+      sat: 0.4, // below this (after balance) a surface inks in white/greys // grey-world white balance before the hue match // min change of surface slope (tan units) for a crease line
       jump: 6.0, // second difference above this = silhouette
       lum: 1.9, // log2 luminance step for an albedo line (~3.7x)
       lumDist: 9.0, // albedo lines only nearer than this (m)
@@ -248,6 +259,7 @@ export class LineArtPass {
       uCrease: { value: 0 },
       uCurve: { value: 1 },
       uBalance: { value: 0.85 },
+      uSat: { value: 0.4 },
       uJump: { value: 0 },
       uLum: { value: 0 },
       uLumDist: { value: 0 },
@@ -310,6 +322,7 @@ export class LineArtPass {
     u.uCrease.value = p.crease;
     u.uCurve.value = p.curve;
     u.uBalance.value = p.balance;
+    u.uSat.value = p.sat;
     u.uJump.value = p.jump;
     u.uLum.value = p.lum;
     u.uLumDist.value = p.lumDist;

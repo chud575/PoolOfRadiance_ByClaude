@@ -20,7 +20,7 @@ await Promise.all(names.split(',').map(async (n) => {
       const s = G.scenes.current;
       if (s.diorama) s.render(); else R.render(s.scene3d, s.camera);
     }, variants[i]);
-    await page.screenshot({ path: `${out}/${n}_${i}.png` });
+    await page.screenshot({ path: `${out}/${n}_${i}.png`, timeout: 180000 });
   }
   console.log('done', n, await page.evaluate(() => window.__ERRORS));
   await page.close();
