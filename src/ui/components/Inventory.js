@@ -289,7 +289,7 @@ export class InventoryPanel {
       ]);
     };
     // The character's own miniature, dressed in what is readied; painted silhouette as a fallback.
-    const snapUrl = miniatureSnapshot(ch, { w: 300, h: 640 });
+    const snapUrl = miniatureSnapshot(ch, { w: 320, h: 640 });
     let fig;
     if (snapUrl) fig = h('img.pc-doll-mini', { src: snapUrl, alt: '', draggable: false });
     else {

@@ -175,3 +175,10 @@ html[data-freeze='1'] .pc-view.pc-iron.tab-sheet .pc-lore { transition: none; }
 .cc-iron .cc-thumb.sel { border-color: var(--ir-copper-hi); box-shadow: 0 0 0 1px #000, 0 0 12px rgba(240, 160, 90, 0.5); }
 .cc-iron .cc-thumb.sel span { color: var(--ir-copper-hi); }
 .camp-rest-bar > i { background: linear-gradient(90deg, #6e3a18, #d0844a 70%, #ffd2a0) !important; box-shadow: 0 0 10px rgba(240, 150, 80, 0.5) !important; }
+
+/* camp roster: larger, readable portraits (lifted out of the low-key paint for the small size) */
+.pc-iron .pc-rrow { grid-template-columns: 3.7em 1fr auto; padding: 0.25em 0.4em; }
+.pc-iron .pc-rrow .pc-mini { width: 3.7em; height: 3.7em; border-color: #8a6234; box-shadow: 0 0 0 1px #000, 0 0 0 2px #3a2a18, inset 0 0 6px rgba(0, 0, 0, 0.6); }
+.pc-iron .pc-rrow .pc-mini img { filter: brightness(1.45) contrast(1.08) saturate(1.05); object-position: 50% 28%; transform: scale(1.18); transform-origin: 50% 30%; }
+.pc-iron .pc-rrow.active { background: linear-gradient(90deg, rgba(200, 122, 66, 0.28), rgba(200, 122, 66, 0.02)); box-shadow: inset 2px 0 0 var(--ir-copper-hi); }
+.pc-iron .pc-bar > i { background: linear-gradient(90deg, #3a6a2a, #8ac46a); }

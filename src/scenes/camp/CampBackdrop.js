@@ -80,6 +80,28 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
   }
   const sky = createSkyDome({ hour, cloud: 0.3 });
   scene.add(sky);
+  // Camp grade (awake): the fire is the key; the night falls to a dark, desaturated umber-grey rather
+  // than a saturated blue wash. Resting keeps the cold moonlit grade. Base sky colours kept to restore.
+  const mistMats = [];
+  const skyU = sky.material.uniforms ?? {};
+  const skyBase = Object.fromEntries(['uTop', 'uHorizon', 'uGround', 'uCloudLit', 'uCloudShade'].filter((k) => skyU[k]).map((k) => [k, skyU[k].value.clone()]));
+  const gradeCol = (c, base, sat, mul) => {
+    const l = base.r * 0.3 + base.g * 0.55 + base.b * 0.15;
+    c.setRGB((l + (base.r - l) * sat) * mul, (l + (base.g - l) * sat) * mul, (l + (base.b - l) * sat) * mul);
+  };
+  let gradedFor = null;
+  const applyGrade = (resting) => {
+    if (!night || gradedFor === resting) return;
+    gradedFor = resting;
+    for (const [k, b] of Object.entries(skyBase)) gradeCol(skyU[k].value, b, resting ? 1 : 0.22, resting ? 1 : 0.55);
+    scene.fog.color.setHex(resting ? 0x0a1022 : 0x0a090a);
+    for (const m of mistMats) m.color.setHex(resting ? 0x8090c0 : 0x3c3a3a);
+    hemi.color.setHex(resting ? 0x4458a0 : 0x34343a);
+    skyFill.color.setHex(resting ? 0x5a70b0 : 0x4a4c54);
+    moon.color.setHex(resting ? 0x9ab4ff : 0x9aa0ae);
+    backMoon.color.setHex(resting ? 0x86a2ff : 0x8a92a4);
+    if (env) scene.environmentIntensity = resting ? 0.3 : 0.2;
+  };
   const fogCol = night ? 0x0a1022 : 0x5a6a80;
   scene.fog = new THREE.FogExp2(fogCol, night ? 0.034 : 0.018);
 
@@ -290,6 +312,7 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
     const MIST = [[-7.5, 22, 2.6, 0.07], [-10.5, 28, 3.4, 0.1], [-14, 36, 4.4, 0.13], [-19, 48, 5.6, 0.16], [-24, 64, 8, 0.2], [-33, 90, 10, 0.24]];
     for (const [z, w, hgt, op] of MIST) {
       const mm = Mt(new THREE.MeshBasicMaterial({ map: mt, transparent: true, depthWrite: false, opacity: op * (night ? 1 : 0.6), color: night ? 0x8090c0 : 0xc0c8d8, fog: false }));
+      mistMats.push(mm);
       const m = new THREE.Mesh(G(new THREE.PlaneGeometry(w, hgt)), mm);
       m.position.set(0, hgt * 0.42, z);
       m.renderOrder = 2;
@@ -734,14 +757,15 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
     fire.update(time, restingNow, camRef);
     const fl = fire.flicker();
     const burn = restingNow ? 0.5 : 1;
-    fireLight.intensity = (night ? 16 : 9) * burn * fl;
+    applyGrade(restingNow);
+    fireLight.intensity = (night ? (restingNow ? 16 : 24) : 9) * burn * fl;
     fireLight.color.setHex(restingNow ? 0xff7a34 : 0xffa25a);
     emberLight.intensity = (restingNow ? 1.1 : 0.6) * (0.9 + 0.1 * Math.sin(time * 3.1));
-    moon.intensity = night ? (restingNow ? 2.2 : 1.35) : 1.6;
-    backMoon.intensity = night ? (restingNow ? 1.5 : 1.1) : 0.5;
+    moon.intensity = night ? (restingNow ? 2.2 : 0.6) : 1.6;
+    backMoon.intensity = night ? (restingNow ? 1.5 : 0.75) : 0.5;
     // (low key while the party talks: the fire is the light, the night a dim cool wash)
-    hemi.intensity = night ? (restingNow ? 0.9 : 0.38) : 0.9;
-    skyFill.intensity = night ? (restingNow ? 0.8 : 0.42) : 0.4;
+    hemi.intensity = night ? (restingNow ? 0.9 : 0.26) : 0.9;
+    skyFill.intensity = night ? (restingNow ? 0.8 : 0.3) : 0.4;
     sentryRim.intensity = restingNow ? 60 : 0;
     sentryFire.intensity = restingNow ? 26 * fl : 0;
     sky.userData.update?.(time);

@@ -554,9 +554,9 @@ vec3 skinAlbedo(vec3 p) {
     float ur = sat(lf3.x / (0.0018 * lipK)), lr = sat(lf3.y / (0.0022 * lipK));
     float lm = sat(smoothstep(0.05, 0.5, ur) + smoothstep(0.05, 0.5, lr)) * sat((p.z - 0.07) / 0.01);
     gLipMask = lm;
-    vec3 lipC = mix(base * vec3(0.95, 0.56, 0.56), base * vec3(1.0, 0.46, 0.5), FEM * 0.85);
+    vec3 lipC = mix(base * vec3(0.9, 0.68, 0.64), base * vec3(0.98, 0.56, 0.56), FEM * 0.85);
     lipC = mix(lipC, base * vec3(0.82, 0.58, 0.58), dark * 0.5);
-    c = mix(c, lipC, lm * (0.7 + 0.2 * FEM));
+    c = mix(c, lipC, lm * (0.5 + 0.25 * FEM));
     // the upper lip a deeper, cooler red (it turns from the light); the lower lip fuller, lighter
     float um = smoothstep(0.05, 0.5, ur) * (1.0 - smoothstep(0.2, 0.6, lr));
     c = mix(c, c * vec3(0.78, 0.68, 0.74), um * 0.55);
@@ -764,7 +764,7 @@ void main() {
   vec3 Lr = normalize(vec3(0.85 * uSide, 0.35, -0.55));
   vec3 Ck = vec3(1.0, 0.86, 0.68) * uLightK.x; // torchlight, as on the board
   vec3 Cf = vec3(0.34, 0.37, 0.5) * uLightK.y;
-  vec3 Cr = vec3(0.55, 0.72, 1.0) * uLightK.z;
+  vec3 Cr = vec3(1.0, 0.7, 0.42) * uLightK.z * 1.7; // a warm back-rim (a second torch behind): the head stands off the dark ground
   vec3 Csky = vec3(0.16, 0.17, 0.22) * uLightK.w;
   if (uMode > 0.5) {
     // clay study: neutral albedo, same light
@@ -1015,7 +1015,7 @@ void main() {
     // the whole mouth stays centred under the nose, not only its lit half)
     float lipKeep = mat < 1.5 ? gLipMask : 0.0;
     col = mix(col, vec3(lumC) * vec3(0.86, 0.93, 1.1), shade * 0.22 * (1.0 - lipKeep));
-    col += alb * vec3(0.16, 0.035, 0.035) * lipKeep * (1.0 - litF) * ao;
+    col += alb * vec3(0.05, 0.014, 0.012) * lipKeep * (1.0 - litF) * ao;
     col = mix(col, vec3(lumC) * vec3(0.93, 0.97, 1.04), halfT * 0.3);
   }
   // eye catch-light: the key's window and a soft reflection of the room

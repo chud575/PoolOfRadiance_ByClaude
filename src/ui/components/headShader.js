@@ -953,7 +953,7 @@ export function createHead(app, frame, o = {}) {
     uHood: { value: app.hood ? 1 : 0 },
     uScar: { value: app.scar ? 1 : 0 },
     uSkin: { value: desat(lin(app.skinHex), 0.3) },
-    uHairC: { value: desat(lin(app.hairHex), 0.22).multiplyScalar(0.8) },
+    uHairC: { value: desat(lin(app.hairHex), 0.08).multiplyScalar(1.05) }, // (the portrait's own hair colour: one figure)
     uEyeC: { value: lin(app.eyeHex) },
     uCloth: { value: lin(app.clothHex) },
     uAmb: { value: new THREE.Vector3(...(o.ambient ?? [0.05, 0.05, 0.06])) },

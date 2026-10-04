@@ -272,7 +272,7 @@ export function buildRuins(root, { G, Mt, night, stoneMat, beamMat }) {
     m.renderOrder = -1;
     group.add(m);
   };
-  const haze = night ? 0x24304e : 0x8a98b0;
+  const haze = night ? 0x16161a : 0x8a98b0;
   // mountains beyond the city: three ridges stepping back into the haze, each paler than the last
   const ridge = (z, hgt, seed, top, k) => {
     // a strip: ridge line above, valley below; each vertex knows the ridge height over it (aTop)
@@ -296,13 +296,13 @@ export function buildRuins(root, { G, Mt, night, stoneMat, beamMat }) {
     m.renderOrder = -2;
     group.add(m);
   };
-  ridge(-150, 62, 1.3, night ? 0x1c2546 : 0x8090a8, 0.75);
-  ridge(-105, 38, 4.1, night ? 0x151c38 : 0x6c7c94, 0.7);
-  ridge(-72, 21, 2.2, night ? 0x10162c : 0x5a687e, 0.65);
+  ridge(-150, 62, 1.3, night ? 0x141418 : 0x8090a8, 0.75);
+  ridge(-105, 38, 4.1, night ? 0x101013 : 0x6c7c94, 0.7);
+  ridge(-72, 21, 2.2, night ? 0x0c0c0e : 0x5a687e, 0.65);
   // three layers of the burnt city stepping back into the mist: each farther one paler and
   // hazier, so the night has depth instead of one flat blue cut-out
-  cityLayer(-56, night ? 0x1a2442 : 0x7a88a0, 53, 1.6, 1);
-  cityLayer(-40, night ? 0x111a33 : 0x6a7890, 61, 1.25, 1);
-  cityLayer(-27, night ? 0x070b16 : 0x5a6474, 71, 0.85, 1);
+  cityLayer(-56, night ? 0x121215 : 0x7a88a0, 53, 1.6, 1);
+  cityLayer(-40, night ? 0x0c0c0f : 0x6a7890, 61, 1.25, 1);
+  cityLayer(-27, night ? 0x060607 : 0x5a6474, 71, 0.85, 1);
   return group;
 }

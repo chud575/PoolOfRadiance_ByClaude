@@ -201,7 +201,7 @@ function crestShield(ch) {
   let metal = '#d8b06a';
   try { const ap = resolveAppearance(ch); field = ap.clothHex ?? field; } catch { /* default field */ }
   const classes = splitClasses(ch.classSpec);
-  const ck = ch.race === 'dwarf' && classes[0] === 'fighter' ? 'dwarf' : ch.race === 'elf' && classes.length > 1 ? 'elf' : (CHARGES[classes[0]] ? classes[0] : 'fighter');
+  const ck = ch.race === 'dwarf' && classes[0] === 'fighter' ? 'dwarf' : ch.race === 'elf' && classes.length > 1 ? 'elf' : (CHARGES[classes[classes.length - 1]] ? classes[classes.length - 1] : 'fighter');
   let hsh = 0;
   for (const c of String(ch.name ?? '')) hsh = (hsh * 31 + c.charCodeAt(0)) >>> 0;
   const ord = ORDINARIES[hsh % ORDINARIES.length];

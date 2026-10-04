@@ -203,7 +203,7 @@ export function figureMaterial(faceTex, skinLin = null) {
   const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0 });
   m.userData.faceMap = { value: faceTex ?? blankFaceTexture() };
   m.userData.uSkin = { value: new THREE.Vector3(...(skinLin ?? [0.6, 0.4, 0.3])) };
-  m.customProgramCacheKey = () => 'por-mini-v7';
+  m.customProgramCacheKey = () => 'por-mini-v8';
   m.onBeforeCompile = (sh) => {
     sh.uniforms.faceMap = m.userData.faceMap;
     sh.uniforms.uSkin = m.userData.uSkin;
@@ -225,7 +225,11 @@ export function figureMaterial(faceTex, skinLin = null) {
         float miniH; float miniAlb; float miniR;
         miniPattern(pid, miniH, miniAlb, miniR);
         diffuseColor.rgb *= mix(miniAlb, 1.0, faceW);`)
-      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = clamp(vMat.y + miniR, mix(0.5, 0.06, vMat.z), 1.0);')
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>\nroughnessFactor = clamp(vMat.y + miniR, mix(0.5, 0.06, vMat.z), 1.0);
+// pewter breakup: rubbed and tarnished patches on the metal so its sheen is broken, not plastic
+float pwN = fract(sin(dot(floor(vObj * 140.0), vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+float pwM = fract(sin(dot(floor(vObj * 23.0), vec3(39.34, 11.13, 83.71))) * 24634.6345);
+roughnessFactor = mix(roughnessFactor, clamp(roughnessFactor * (0.6 + 0.5 * pwN + 0.45 * pwM), 0.08, 1.0), vMat.z);`)
       .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = vMat.z;')
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         normal = miniPerturb(-vViewPosition, normal, vec2(dFdx(miniH), dFdy(miniH)) * uDetail, faceDirection);
@@ -235,11 +239,13 @@ export function figureMaterial(faceTex, skinLin = null) {
           // turns away from the eye; metal parts keep their own sheen. The painted face is left alone.
           vec3 wN = normalize((vec4(normal, 0.0) * viewMatrix).xyz);
           float zen = smoothstep(-0.25, 0.95, wN.y);
-          float wash = mix(0.58, 1.0, smoothstep(0.3, 0.95, vMat.w));
-          float edge = pow(1.0 - abs(dot(normal, normalize(vViewPosition))), 3.0) * smoothstep(-0.1, 0.6, wN.y);
+          float wash = mix(0.34, 1.0, smoothstep(0.38, 0.97, vMat.w));
+          float edge = pow(1.0 - abs(dot(normal, normalize(vViewPosition))), 2.2) * smoothstep(-0.2, 0.55, wN.y);
           float pm = (1.0 - faceW) * (1.0 - 0.7 * vMat.z);
-          diffuseColor.rgb *= mix(1.0, wash * mix(0.84, 1.16, zen), pm);
-          diffuseColor.rgb += (diffuseColor.rgb * 0.9 + 0.025) * edge * 0.55 * pm;
+          diffuseColor.rgb *= mix(1.0, wash * mix(0.72, 1.24, zen), pm);
+          diffuseColor.rgb += (diffuseColor.rgb * 1.1 + 0.035) * edge * 0.95 * pm;
+          // worn metal: the drybrushed edge catches on armour too (pewter showing through the paint)
+          diffuseColor.rgb += vec3(0.05, 0.048, 0.044) * edge * vMat.z * (1.0 - faceW);
         }`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         // Skin: a touch of subsurface warmth in the shadows.
@@ -566,6 +572,18 @@ export function buildMiniature(ch, opt = {}) {
     sh.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
     sh.position.set(...fr.shield.pos);
     fig.add(sh);
+  } else if (pose === 'sit' && app.shield && opt.gear && !opt.noShield) {
+    // Seated at camp the shield is set down, propped against the seat at the sitter's side, so the
+    // figure by the fire still carries its colours (the same device it bears on the board).
+    const sh = shieldMesh(app.shield, app.clothHex, gm, wscale * 0.95);
+    const pz = fr.joints?.pelvis?.[2] ?? 0;
+    const z = new THREE.Vector3(-0.55, 0.32, 0.78).normalize();
+    const y = new THREE.Vector3(0.12, 1, -0.3);
+    y.sub(z.clone().multiplyScalar(y.dot(z))).normalize();
+    const x = new THREE.Vector3().crossVectors(y, z);
+    sh.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
+    sh.position.set(-0.5 * fr.scale, 0.27 * wscale, pz + 0.12);
+    fig.add(sh);
   }
 
   // Base: a bevelled round base with a painted earth-and-grass top and a gilt rim.
@@ -590,6 +608,51 @@ export function buildMiniature(ch, opt = {}) {
     t.position.y = 0.0855;
     t.receiveShadow = true;
     root.add(t);
+    // Static-grass flock over the painted earth: clumps of fine olive and straw tufts with a few
+    // grey pebbles, as on a finished wargame base (the top's own camo reads as earth beneath).
+    top.color.setHex(0x8a8070);
+    {
+      const tuftG = new THREE.ConeGeometry(0.0075, 0.04, 4, 1);
+      tuftG.translate(0, 0.02, 0);
+      const pebG = new THREE.DodecahedronGeometry(0.012, 0);
+      disposables.push(tuftG, pebG);
+      const tuftM = new THREE.MeshStandardMaterial({ roughness: 1, vertexColors: false });
+      const pebM = new THREE.MeshStandardMaterial({ color: 0x55524c, roughness: 0.9 });
+      disposables.push(tuftM, pebM);
+      const N = 260, NP = 9;
+      const tufts = new THREE.InstancedMesh(tuftG, tuftM, N);
+      const pebs = new THREE.InstancedMesh(pebG, pebM, NP);
+      let sd = (app.seed ?? 7) * 9301 + 49297;
+      const rnd = () => ((sd = (sd * 9301 + 49297) % 233280) / 233280);
+      const M4 = new THREE.Matrix4(), Q = new THREE.Quaternion(), E = new THREE.Euler(), V = new THREE.Vector3(), S = new THREE.Vector3();
+      const C = new THREE.Color();
+      const clumps = Array.from({ length: 11 }, () => { const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd()) * (r - 0.05); return [Math.cos(a) * d, Math.sin(a) * d]; });
+      for (let i = 0; i < N; i++) {
+        const [cx, cz] = clumps[i % clumps.length];
+        const a = rnd() * Math.PI * 2, d = rnd() * rnd() * 0.07;
+        let x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d;
+        const rr = Math.hypot(x, z);
+        if (rr > r - 0.012) { x *= (r - 0.012) / rr; z *= (r - 0.012) / rr; }
+        E.set((rnd() - 0.5) * 0.9, rnd() * 6.28, (rnd() - 0.5) * 0.9);
+        Q.setFromEuler(E);
+        const sc = 0.55 + rnd() * 0.9;
+        M4.compose(V.set(x, 0.085, z), Q, S.set(sc, sc * (0.7 + rnd() * 0.8), sc));
+        tufts.setMatrixAt(i, M4);
+        const t = rnd();
+        tufts.setColorAt(i, C.setRGB(0.07 + t * 0.1, 0.1 + t * 0.07, 0.035 + t * 0.015));
+      }
+      for (let i = 0; i < NP; i++) {
+        const a = rnd() * Math.PI * 2, d = (0.3 + rnd() * 0.65) * (r - 0.04);
+        Q.setFromEuler(E.set(rnd() * 3, rnd() * 3, rnd() * 3));
+        const sc = 0.6 + rnd() * 1.1;
+        M4.compose(V.set(Math.cos(a) * d, 0.086, Math.sin(a) * d), Q, S.set(sc, sc * 0.6, sc));
+        pebs.setMatrixAt(i, M4);
+      }
+      tufts.receiveShadow = true;
+      pebs.castShadow = true;
+      pebs.receiveShadow = true;
+      root.add(tufts, pebs);
+    }
     const ringG = new THREE.TorusGeometry(r + 0.036, 0.006, 6, 96);
     disposables.push(ringG);
     const ring = new THREE.Mesh(ringG, gm.gilt);
@@ -831,13 +894,13 @@ export function miniatureSnapshot(ch, o = {}) {
     if (!st) return null;
     const { renderer } = offscreen();
     const cam = st.camera;
-    const m = buildMiniature(ch, { pose: 'display', base: true, quality: 'snap', rayHead: true, headGain: 0.85, headAmbient: [0.04, 0.04, 0.05], headVariant: 'snap' });
+    const m = buildMiniature(ch, { pose: 'display', base: true, quality: 'snap', rayHead: true, headGain: o.tight ? 0.8 : 0.62, headAmbient: [0.04, 0.04, 0.05], headVariant: 'snap' });
     const H = m.userData.height;
     cam.aspect = w / h;
     cam.fov = 24;
     // Frame the whole figure with its weapon (the sword is held out to the side).
     // (tight: the figure fills the frame, the plinth's rim at the bottom edge — the sheet's icon)
-    const dist = (H * (o.tight ? 0.98 : 1.12)) / (2 * Math.tan((cam.fov * Math.PI) / 360));
+    const dist = (H * (o.tight ? 0.98 : 1.24)) / (2 * Math.tan((cam.fov * Math.PI) / 360));
     cam.position.set(0, H * (o.tight ? 0.66 : 0.62), dist);
     cam.lookAt(0, H * (o.tight ? 0.5 : 0.54), 0);
     cam.updateProjectionMatrix();

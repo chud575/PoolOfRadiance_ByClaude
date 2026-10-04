@@ -214,7 +214,7 @@ function setup(ch, o) {
     // a second widening — doubled, the faces swelled into moons)
     dwarf: { W: 1.02, NOSE: 1.02, BRIDGE: 1.1, TIP: 1.08, NWIDTH: 1.08, JAW: 1.04, CHIN: 1.04, BROW: 1.35, LONG: 0.98, CRAN: 0.94, CHEEK: 1.08, EYE: 0.96, EDEPTH: 1.2, EOPEN: 1.0 },
     // halflings: adults with round, ruddy faces — full cheeks, a short snub nose, bright eyes
-    halfling: { W: 1.07, LONG: 0.95, CHEEK: 1.15, NOSE: 0.92, TIP: 1.05, EYE: 1.02, JAW: 0.96, CHIN: 0.95, CRAN: 0.96 },
+    halfling: { W: 1.12, LONG: 0.88, CHEEK: 1.3, NOSE: 0.84, TIP: 1.12, EYE: 1.1, JAW: 0.9, CHIN: 0.88, CRAN: 1.04 },
     gnome: { NOSE: 1.3, TIP: 1.45, W: 1.04, EYE: 1.04, BROW: 1.15 },
   }[app.race] ?? {};
   for (const [k, v] of Object.entries(RACE)) params[ix(k)] *= v;

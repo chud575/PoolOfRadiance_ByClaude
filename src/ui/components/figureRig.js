@@ -310,7 +310,7 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
     boots: mat(L('#33241a'), { rough: 0.7, pattern: PATTERN.leather, edge: 0.5, wash: 0.6 }),
     steel: mat(L('#a9adb5'), { rough: 0.56, metal: 0.9, pattern: PATTERN.metal, edge: 0.35, wash: 0.5 }),
     darkSteel: mat(L('#666a72'), { rough: 0.62, metal: 0.85, pattern: PATTERN.metal, edge: 0.35, wash: 0.5 }),
-    mail: mat(L('#5a5e65'), { rough: 0.78, metal: 0.62, pattern: PATTERN.mail, edge: 0.25, wash: 0.75 }),
+    mail: mat(L('#6e737b'), { rough: 0.7, metal: 0.72, pattern: PATTERN.mail, edge: 0.25, wash: 0.75 }),
     scale: mat(L('#9a7c48'), { rough: 0.62, metal: 0.85, pattern: PATTERN.scale, edge: 0.3, wash: 0.65 }),
     // (satin, not mirror: a polished clasp catching the fire bloomed into an orange halo)
     gilt: mat(L('#c09a4c'), { rough: 0.55, metal: 1, pattern: PATTERN.metal, edge: 0.4 }),
