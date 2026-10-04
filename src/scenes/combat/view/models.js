@@ -762,9 +762,10 @@ function buildHead(R, o, s, skinMat) {
         R.part('neck', lathe([[0.16, -0.02], [0.12, 0.05], [0.08, 0.1]].map(([r, y]) => [r * s, y * s]), 14, { zs: 0.8 }), pbr('cloth', h.hood));
       } else if (kit.thief) {
         // Halfling hood over curls.
-        R.part('head', sphere(0.12 * hs, 16, 12, { thetaLength: Math.PI * 0.6 }), pbr('cloth', 0x5a4a2a), { p: [0, hy + 0.01 * hs, -0.02 * hs], r: [-0.35, 0, 0], s: [1, 1.1, 1.12] });
+        // Iteration 4: thrown back off the brow (the face reads in the close-up).
+        R.part('head', sphere(0.12 * hs, 16, 12, { thetaLength: Math.PI * 0.55 }), pbr('cloth', 0x5a4a2a), { p: [0, hy + 0.012 * hs, -0.04 * hs], r: [-0.75, 0, 0], s: [1.02, 1.08, 1.1] });
         R.part('neck', lathe([[0.15, -0.02], [0.11, 0.05], [0.07, 0.1]].map(([r, y]) => [r * s, y * s]), 14, { zs: 0.8 }), pbr('cloth', 0x5a4a2a));
-        for (let k = 0; k < 4; k++) R.part('head', sphere(0.025 * hs, 6, 5), hairMat, { p: [(k - 1.5) * 0.04 * hs, hy + 0.06 * hs, 0.085 * hs] });
+        for (let k = 0; k < 5; k++) R.part('head', sphere(0.024 * hs, 6, 5), hairMat, { p: [(k - 2) * 0.034 * hs, hy + 0.085 * hs - Math.abs(k - 2) * 0.012 * hs, 0.06 * hs - Math.abs(k - 2) * 0.012 * hs] });
       } else if (kit.cleric) {
         // Tonsure: fringe of hair.
         R.part('head', torus(0.095 * hs, 0.022 * hs, 6, 20), hairMat, { p: [0, hy + 0.035 * hs, -0.008 * hs], r: [Math.PI / 2 + 0.15, 0, 0] });
