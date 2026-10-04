@@ -499,7 +499,10 @@ bool boxHit(vec3 ro, vec3 rd, out float t0, out float t1) {
 // Painted complexion: warm brow, ruddy cheeks/nose/ears, cool jaw (beard shadow), dark sockets.
 vec3 skinAlbedo(vec3 p, vec3 n) {
   vec3 q = vec3(abs(p.x), p.y, p.z);
-  vec3 base = uSkin;
+  // a painted miniature's flesh: a little deeper and richer than the swatch, so the lit planes
+  // keep their colour under the candles instead of burning to a pale mask
+  float lum0 = dot(uSkin, vec3(0.3, 0.59, 0.11));
+  vec3 base = max(mix(vec3(lum0), uSkin, 1.18), vec3(0.0)) * 0.8;
   float ex = EX();
   float lum = dot(base, vec3(0.3, 0.59, 0.11));
   // Zones are tinted relative to the base tone so dark complexions keep their hue.
@@ -516,7 +519,8 @@ vec3 skinAlbedo(vec3 p, vec3 n) {
   c = mix(c, warm, brow * 0.85);
   c = mix(c, ruddy, sat(cheek * (0.72 + 0.2 * FEM) + noseZ * 0.65 + earZ * 0.75));
   float muzzle = exp(-pow(length((p.xy - vec2(0.0, MOUTHY())) / vec2(0.03, 0.02)), 2.0)) * sat((p.z - 0.06) / 0.02) * (1.0 - FEM);
-  c = mix(c, cool, sat(jaw * (uBeard == 1 ? 0.8 : 0.55) + muzzle * 0.35 + sat((-0.075 - p.y) / 0.03) * 0.25));
+  // (a restrained beard shadow: a grey-blue jaw reads as a pale mask on a small figure)
+  c = mix(c, cool, sat(jaw * (uBeard == 1 ? 0.45 : 0.3) + muzzle * 0.2 + sat((-0.075 - p.y) / 0.03) * 0.15));
   if (uBeard == 1) c *= 1.0 - jaw * 0.18 * (0.6 + 0.4 * vnoise(p * 900.0));
   // Sockets: a violet-brown glaze; lids slightly pinker.
   float sock = exp(-pow(length((q.xy - vec2(ex, EYEY + 0.004)) / vec2(0.02, 0.013)), 2.0)) * sat((p.z - 0.05) / 0.02);
@@ -884,7 +888,10 @@ void main() {
   if (metal > 0.5) col += alb * amb * 0.6 * ao * (0.6 + 0.4 * nv.y);
   // A miniature's paint never glows: keep its brightest highlight under the bloom threshold (copper
   // hair under a candle used to wear a halo of fire).
-  col = min(col * uGain, vec3(0.7));
+  // a soft shoulder under the bloom threshold (a hard clamp burnt every lit plane of the face to
+  // the same pale value: the mask look)
+  col *= uGain;
+  { vec3 kk = max(col - 0.38, 0.0); col = col - kk + kk / (1.0 + 2.6 * kk); }
   gl_FragColor = vec4(col, 1.0);
 #ifdef USE_FOG
   float fd = length(pv);

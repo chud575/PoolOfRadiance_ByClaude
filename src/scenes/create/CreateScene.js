@@ -277,7 +277,9 @@ export default class CreateScene extends Scene {
     s.add(trim);
     // Key spot from above, torches on the wall, cool rim from behind.
     const spot = new THREE.SpotLight(0xfff0dc, 15, 14, 0.36, 0.6, 1.4);
-    spot.position.set(1.4, 6.2, 3.0);
+    // (high and well to the side, as a sculptor lights a figure: the face turns from light into
+    // shade instead of being flattened by a light from the front)
+    spot.position.set(3.3, 5.8, 1.9);
     spot.target.position.set(0, 1, 0);
     spot.castShadow = true;
     spot.shadow.mapSize.set(1024, 1024);
@@ -335,7 +337,7 @@ export default class CreateScene extends Scene {
         (this._retired ??= []).push(c);
       }
       this._retireAt = (this._frameNo ?? 0) + 2;
-      const f = buildMiniature({ ...d, look: { ...d.look } }, { pose: 'stand', rayHead: true, headGain: 0.9 });
+      const f = buildMiniature({ ...d, look: { ...d.look } }, { pose: 'stand', rayHead: true, headGain: 0.74 });
       this._dirty3d = true;
       f.scale.setScalar(1.42);
       this.figureRoot.add(f);
