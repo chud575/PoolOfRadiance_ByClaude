@@ -1,5 +1,5 @@
 import {
-  rngOf, rgba, mix, glow, glowEllipse, lightShaft, texture, masonry, planks, poly, linGrad, lerp, archPath, gothicPath, contactShadow, makeCanvas, fog, quadPt,
+  rngOf, rgba, mix, glow, glowEllipse, lightShaft, texture, masonry, planks, poly, linGrad, lerp, archPath, gothicPath, contactShadow, makeCanvas, fog, quadPt, softwareGL, weather,
 } from './paint.js';
 import * as P from './props.js';
 import { S, roomScene, persp } from './settings.js';
@@ -31,7 +31,7 @@ const rig = (o = {}) => ({
 
 /** Render a 3D prop figure standing at (x, y) (its origin) with a contact shadow. */
 function prop3d(g, fig, x, y, ppu, lr, o = {}) {
-  const r = renderFigure(fig, { ppu, yaw: o.yaw ?? 0, pitch: o.pitch ?? 0.16, rig: lr, ink: o.ink ?? 0.55, ss: o.ss ?? 2, haze: o.haze ?? 0, hazeColor: o.hazeColor });
+  const r = renderFigure(fig, { ppu, yaw: o.yaw ?? 0, pitch: o.pitch ?? 0.16, rig: lr, ink: o.ink ?? 0.55, ss: o.ss ?? (softwareGL() ? 1.4 : 2), haze: o.haze ?? 0, hazeColor: o.hazeColor });
   if (!r) return null;
   if (o.shadow !== false) contactShadow(g, x + (o.shadowDx ?? 0), y + 2, (o.shadowW ?? 0.3) * ppu, (o.shadowW ?? 0.3) * ppu * 0.16, o.shadowA ?? 0.6);
   g.drawImage(r.canvas, x - r.ox, y - r.oy);
@@ -713,7 +713,7 @@ function pew(g, x, y, w, s, { broken = 0, side = 1, seed = 1 } = {}) {
 
 S.cityhall = (g, W, H, R, o) => {
   const fg = o.fg ?? g;
-  const rm = roomScene(g, W, H, R, { wall: '#7a6450', wallKind: 'plaster', wainscot: '#3a2616', floor: 'marble', floorColor: '#5e4c3a', by0: 0.04, by1: 0.66, bx0: 0.12, bx1: 0.7, ceiling: '#120c08' });
+  const rm = roomScene(g, W, H, R, { wall: '#7a6450', wallKind: 'plaster', wainscot: '#3a2616', floor: 'marble', floorColor: '#5e4c3a', by0: 0.04, by1: 0.66, bx0: 0.12, bx1: 0.7, ceiling: '#120c08', spall: 0.3 });
   const lights = [];
   // tall west windows in late light; shafts slant across the chamber toward the desk
   for (const [x, i] of [[0.17, 0], [0.3, 1]]) {
@@ -774,7 +774,38 @@ S.cityhall = (g, W, H, R, o) => {
   g.transform(1, -0.25, 0, 1, 0, 0);
   P.noticeBoard(g, W * 0.02, H * 0.42, W * 0.08, H * 0.22, 5);
   g.restore();
+  // a painted map of the old city in a gilt frame, and the council's second banner
+  {
+    const mx = W * 0.2, my = H * 0.1, mw = W * 0.09, mh = H * 0.1;
+    g.fillStyle = linGrad(g, mx, my, mx + mw, my + mh, [[0, '#e0c070'], [0.5, '#7a5a20'], [1, '#c8a050']]);
+    g.fillRect(mx - 4, my - 4, mw + 8, mh + 8);
+    g.fillStyle = '#c8b48a';
+    g.fillRect(mx, my, mw, mh);
+    texture(g, mx, my, mw, mh, { alpha: 0.4, mode: 'multiply', cells: 5, seed: 31 });
+    g.strokeStyle = 'rgba(60,40,20,0.7)'; g.lineWidth = 1;
+    g.beginPath(); // the shore of the Moonsea and the city wall
+    g.moveTo(mx, my + mh * 0.7); g.bezierCurveTo(mx + mw * 0.3, my + mh * 0.55, mx + mw * 0.6, my + mh * 0.85, mx + mw, my + mh * 0.6);
+    g.moveTo(mx + mw * 0.2, my + mh * 0.6); g.lineTo(mx + mw * 0.25, my + mh * 0.2); g.lineTo(mx + mw * 0.75, my + mh * 0.15); g.lineTo(mx + mw * 0.8, my + mh * 0.55);
+    g.stroke();
+    g.fillStyle = 'rgba(70,90,120,0.35)';
+    g.beginPath(); g.moveTo(mx, my + mh * 0.7); g.bezierCurveTo(mx + mw * 0.3, my + mh * 0.55, mx + mw * 0.6, my + mh * 0.85, mx + mw, my + mh * 0.6); g.lineTo(mx + mw, my + mh); g.lineTo(mx, my + mh); g.fill();
+  }
+  P.banner(g, W * 0.62, H * 0.12, W * 0.04, H * 0.26, '#5a1a14', { emblem: 'scales', tatter: 0.1, seed: 6 });
   chandelier(g, W * 0.36, H * 0.2, W * 0.06, lights);
+  // the petitioners' bench under the windows, and those waiting their turn at the desk: a widow
+  // with a basket and a carter with his hat in his hands, a merchant come to argue his tariff
+  const plr = rig({ key: [-0.8, 0.5, 0.35], keyC: '#ffd8a0', keyI: 1.25, rimC: '#ffb060', rim: [0.7, 0.4, -0.6], amb: 0.42, sky: '#4a3a30', ground: '#2a1c10' });
+  pew(g, W * 0.13, H * 0.8, W * 0.2, 1, { side: 1, seed: 7 });
+  const petitioner = (spec, x, y, hh, yaw) => {
+    const bn = buildNpc({ eyeC: '#3a2a1a', age: 0.3, build: 1, ...spec });
+    const r = renderFigure(bn.fig, { ppu: (H * hh) / bn.top, yaw, rig: plr, pitch: 0.12, ink: 0.7, haze: 0.18, hazeColor: '#3a2a1c', ss: 1.25 });
+    if (!r) return;
+    contactShadow(g, W * x, H * y, H * hh * 0.16, H * hh * 0.03, 0.5);
+    g.drawImage(r.canvas, W * x - r.ox, H * y - r.oy);
+  };
+  petitioner({ seed: 31, gender: 'female', age: 0.6, skin: '#d8a888', hair: '#8a8278', hairStyle: 'bun', pose: 'sit', outfit: { shirt: '#c8bca4', top: '#3a3a4a', topKind: 'bodice', skirt: '#4a3a2a', apron: '#b8ac90', sleeves: 'long' } }, 0.2, 0.795, 0.27, 0.55);
+  petitioner({ seed: 32, gender: 'male', skin: '#b88060', hair: '#3a2416', beard: 'stubble', pose: 'sit', outfit: { shirt: '#8a7a5a', top: '#4a3a24', topKind: 'jerkin', trousers: '#3a3a40', boots: '#2a1c10', sleeves: 'rolled' } }, 0.28, 0.8, 0.27, 0.7);
+  petitioner({ seed: 33, gender: 'male', age: 0.5, skin: '#d4a080', hair: '#2a1a10', beard: 'moustache', belly: true, pose: 'clasped', outfit: { shirt: '#d8ccb0', top: '#5a3a1e', topKind: 'doublet', sleeves: 'puffed', trousers: '#2a1e14', boots: '#1e140c', mantle: '#3a2414' } }, 0.52, 0.86, 0.34, 1.05);
   // dais under the desk
   g.fillStyle = linGrad(g, 0, H * 0.8, 0, H * 0.86, [[0, '#7a6450'], [0.2, '#4a3a2a'], [1, '#1a120a']]);
   poly(g, [[W * 0.24, H * 0.8], [W * 0.8, H * 0.8], [W * 0.86, H * 0.88], [W * 0.18, H * 0.88]]);
@@ -796,7 +827,7 @@ S.cityhall = (g, W, H, R, o) => {
 
 S.smithy = (g, W, H, R, o) => {
   const fg = o.fg ?? g;
-  const rm = roomScene(g, W, H, R, { wall: '#4a4038', wallKind: 'stone', floor: 'dirt', floorColor: '#3a3028', bx0: 0.3, bx1: 0.94, by0: 0.1, by1: 0.66 });
+  const rm = roomScene(g, W, H, R, { wall: '#4a4038', wallKind: 'stone', floor: 'dirt', floorColor: '#3a3028', bx0: 0.3, bx1: 0.94, by0: 0.1, by1: 0.66, damp: 0.35, soot: [{ x: W * 0.4, y: H * 0.66 - 120, r: 150, a: 0.85 }, { x: W * 0.75, y: H * 0.2, r: 160, a: 0.35 }] });
   const lights = [];
   // the forge, in the back-left corner: brick body, glowing mouth, sooty hood
   const fx = W * 0.4;
@@ -919,7 +950,7 @@ function templeTyr(g, W, H, R, o, d) {
   g.closePath();
   g.clip();
   // big dressed blocks of cold pale limestone — a hall of judgment, not a brick shed
-  masonry(g, 0, H * 0.06, W, floorY - H * 0.06, { base: '#aeb0b0', course: 44, blockW: 96, seed: 211, mortar: 'rgba(30,32,40,0.45)', light: 'rgba(230,240,255,0.18)' });
+  masonry(g, 0, H * 0.06, W, floorY - H * 0.06, { base: '#aeb0b0', course: 44, blockW: 96, seed: 211, mortar: 'rgba(30,32,40,0.45)', light: 'rgba(230,240,255,0.18)', damp: 0.25 });
   texture(g, 0, H * 0.06, W, floorY - H * 0.06, { alpha: 0.22, cells: 6, seed: 214 });
   // an inscription band in gilt capitals, and the carved, gilded balance of Tyr above the altar
   const iy = H * 0.09; // high on the apse wall, above the priest's mitre
@@ -1119,7 +1150,7 @@ function carvedBalance(g, cx, cy, s) {
 /** Sune: a candlelit boudoir-chapel of rose marble and gilt, the great rose window, her mirror. */
 function templeSune(g, W, H, R, o, d) {
   const fg = o.fg ?? g;
-  const rm = roomScene(g, W, H, R, { wall: '#b88c84', wallKind: 'plaster', floor: 'marble', floorColor: '#7a5450', by0: 0.04, by1: 0.66, bx0: 0.1, bx1: 0.64, beams: false, ceiling: '#2a1418' });
+  const rm = roomScene(g, W, H, R, { wall: '#b88c84', wallKind: 'plaster', floor: 'marble', floorColor: '#7a5450', by0: 0.04, by1: 0.66, bx0: 0.1, bx1: 0.64, beams: false, ceiling: '#2a1418', spall: 0, damp: 0.25 });
   const lights = [];
   const pal = ['#c01e34', '#ff8aa0', '#ffd890', '#7a1430', '#f8f0e0'];
   // rose marble panelling in gilt mouldings over the plaster: veins, inset panels, pilasters
@@ -1384,7 +1415,7 @@ S.temple = (g, W, H, R, o) => {
 // ================================================================== Sokol Keep chapel (ruined, haunted)
 
 S.chapel = (g, W, H, R, o) => {
-  const rm = roomScene(g, W, H, R, { wall: '#4e4e56', wallKind: 'stone', floor: 'flags', floorColor: '#34343a', by0: 0.13, by1: 0.62, bx0: 0.31, bx1: 0.69, beams: false, ceiling: '#06070c', vault: { stone: '#3e3e48', hole: [0.62, 0.45, 0.14] } });
+  const rm = roomScene(g, W, H, R, { wall: '#4e4e56', wallKind: 'stone', floor: 'flags', floorColor: '#34343a', by0: 0.13, by1: 0.62, bx0: 0.31, bx1: 0.69, beams: false, damp: 0.85, moss: 0.9, ceiling: '#06070c', vault: { stone: '#3e3e48', hole: [0.62, 0.45, 0.14] } });
   const lights = [];
   const fg = o.fg ?? g;
   // the east lancet: Saint Ferran's vigil — a designed window, not a mosaic
@@ -1719,7 +1750,7 @@ function yardView(g, x, y, w, h, i, R) {
 
 S.tavern = (g, W, H, R, o) => {
   const fg = o.fg ?? g;
-  const rm = roomScene(g, W, H, R, { wall: '#6a4e34', wallKind: 'plaster', wainscot: '#3a2414', floor: 'boards', floorColor: '#3e2a18', bx0: 0.06, bx1: 0.56, by0: 0.12, by1: 0.64 });
+  const rm = roomScene(g, W, H, R, { wall: '#6a4e34', wallKind: 'plaster', wainscot: '#3a2414', floor: 'boards', floorColor: '#3e2a18', bx0: 0.06, bx1: 0.56, by0: 0.12, by1: 0.64, soot: [{ x: W * 0.25, y: H * 0.64 - 150, r: 120, a: 0.7 }, { x: W * 0.18, y: H * 0.16, r: 60, a: 0.4 }, { x: W * 0.45, y: H * 0.16, r: 60, a: 0.4 }] });
   const lights = [];
   // hearth on the back wall
   const hx = W * 0.25;

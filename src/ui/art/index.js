@@ -1,9 +1,9 @@
-import { makeCanvas, gpuCopy, vignette, grade, grain, rgba, glow, glowEllipse, flame, rngOf, hashStr, fog as fogBand, clamp01, contactShadow } from './paint.js';
+import { makeCanvas, gpuCopy, vignette, grade, grain, rgba, glow, glowEllipse, flame, rngOf, hashStr, fog as fogBand, clamp01, contactShadow, softwareGL } from './paint.js';
 import { paintSetting } from './settings.js';
 import './interiors.js';
 import { placeCreature, creatureScale, paintCreature, dragonHead, hasCreature, isSculpted, renderCreature, flattenSprite } from './creatures.js';
 import { paintPortrait, defaultLook, SKIN_TONES, RACE_SKINS, HAIR_COLORS, CLOTH_COLORS, EYE_COLORS, HEADS, BODIES } from '../components/portraitPainter.js';
-import { buildPerson } from './bodies.js';
+import { buildPerson, buildCreature } from './bodies.js';
 import { buildNpc } from './people.js';
 import { renderFigure, mul3, rotX, rotY, ap3 } from './sculpt.js';
 import { paintPortraitDesign, paintFaceDecal, paintGhostKnight } from './facePaint.js';
@@ -29,11 +29,14 @@ export const LIGHTS = {
   gold: { key: '#ffd060', rim: '#fff0a0', rimA: 0.6 },
   ghost: { key: '#9ff4ff', rim: '#c8fbff', rimA: 0.6 },
   ward: { key: '#a8c8ff', rim: '#c8d8ff', rimA: 0.55 },
+  // a temple's high window: near-white daylight from above, candles only as a warm rim — vestments
+  // keep the colours they have in the priest's portrait (white stays white, blue stays blue)
+  sanctum: { key: '#fff1de', rim: '#ffd8a0', rimA: 0.5 },
 };
 
 const DEFAULT_LIGHT = {
   slums: 'dusk', alley: 'night', street_day: 'day', plaza: 'day', gate: 'dusk', keep: 'night', graveyard: 'night', wilds: 'dusk', docks: 'dusk',
-  well_head: 'dusk', ruined_temple: 'day', tenement: 'dim', tavern: 'torch', temple: 'torch', chapel: 'ghost', cityhall: 'torch', smithy: 'fire',
+  well_head: 'dusk', ruined_temple: 'day', tenement: 'dim', tavern: 'torch', temple: 'sanctum', chapel: 'ghost', cityhall: 'sanctum', smithy: 'fire',
   shop: 'torch', curio: 'torch', training: 'day', library: 'dim', textile: 'dim', crypt: 'torch', castle: 'torch', temple_bane: 'green', well: 'dim', pool: 'gold',
 };
 
@@ -49,6 +52,7 @@ const RIGS = {
   gold: { key: [0.2, 0.3, 0.9], keyI: 1.3, amb: 0.5, sky: '#6a4a20', ground: '#2a1a08' },
   ghost: { key: [0.1, 0.8, 0.5], keyI: 1.1, amb: 0.45, sky: '#2a4a5a', ground: '#0e1418' },
   ward: { key: [-0.4, 0.6, 0.7], keyI: 1.1, amb: 0.45, sky: '#2a3a6a', ground: '#101420' },
+  sanctum: { key: [-0.35, 0.75, 0.55], keyI: 1.18, amb: 0.5, sky: '#565a6e', ground: '#2a2018' },
 };
 
 /** Light rig for a figure standing at (x, y) of the panel. */
@@ -140,7 +144,7 @@ export class PanelComposer {
     this.fg = null;
     const tone = {
       day: ['#2a3450', '#ffe0b0'], dusk: ['#1a1840', '#ffb080'], night: ['#0a1030', '#ffb070'], torch: ['#1a1020', '#ffb060'], fire: ['#1a0a10', '#ff9a40'],
-      dim: ['#141828', '#e0c090'], green: ['#051a0a', '#9aff9a'], gold: ['#2a1a05', '#ffe090'], ghost: ['#0a1a2a', '#c0f0ff'], ward: ['#0a1030', '#c0d8ff'],
+      dim: ['#141828', '#e0c090'], green: ['#051a0a', '#9aff9a'], gold: ['#2a1a05', '#ffe090'], ghost: ['#0a1a2a', '#c0f0ff'], ward: ['#0a1030', '#c0d8ff'], sanctum: ['#141826', '#fff0d8'],
     }[light] ?? ['#1a2440', '#ffcc88'];
     this.tone = tone;
   }
@@ -390,9 +394,15 @@ function placeGroup(comp, g, W, H, groups, info, light, seed, mood = null) {
       let yaw = lead ? (jit < 0 ? -0.22 : 0.22) : Math.max(-0.95, Math.min(0.95, toward + jit + (Math.abs(toward) < 0.2 ? (R() < 0.5 ? -0.45 : 0.45) : 0)));
       // fleeing: backs to us, bent into the run, heads turned to look back over a shoulder
       if (flee) yaw = Math.PI + (sx > 0.5 ? -0.55 : 0.55);
-      const extra = flee ? { poseOverride: { weaponPose: 'low', offPose: 'fist', lean: 0.34, crouch: 0.18, twist: 0, headYaw: sx > 0.5 ? 0.7 : -0.7, headPitch: 0, headTilt: 0, stance: 0.12, footZ: [0.12, -0.14], sway: 0, hipTilt: 0 } } : calm ? { pose: 'low' } : {};
+      // an ambush, staged: the leader yaps an order with its jaw open, the two in front crouch
+      // with weapons thrust at the party, one in the second rank flinches back from the light,
+      // the rest come on low; the lookout on the rubble crouches to watch
+      const ambush = !mood && n >= 4 && /^kobold|^goblin/.test(it.id) ? AMBUSH[it.i] : null;
+      const amb = ambush ? { mood: ambush.hostile ? 'hostile' : null, poseOverride: { ...ambush.pose, ...(ambush.mirror ? { headYaw: (sx > 0.5 ? 1 : -1) * ambush.pose.headYaw } : {}) } } : null;
+      const extra = flee ? { poseOverride: { weaponPose: 'low', offPose: 'fist', lean: 0.34, crouch: 0.18, twist: 0, headYaw: sx > 0.5 ? 0.7 : -0.7, headPitch: 0, headTilt: 0, stance: 0.12, footZ: [0.12, -0.14], sway: 0, hipTilt: 0 } } : calm ? { pose: 'low' } : amb ?? {};
       // the back ranks are small on screen: less supersampling there (most of a war-band's trace time)
-      const r = renderCreature(it.id, hpx, rig, fseed, { yaw, haze, hazeColor, leader: lead && !calm, mood: calm || flee ? null : mood, ss: hpx < 280 ? 1.5 : 2, ...extra });
+      const r = renderCreature(it.id, hpx, rig, fseed, { yaw, haze, hazeColor, leader: lead && !calm, mood: calm || flee ? null : mood, ss: softwareGL() ? (hpx < 280 ? 1.25 : 1.5) : (hpx < 280 ? 1.5 : 2), ...extra });
+      if (r && !r.sp.ghost) contactShadow(g, x, y + 2, hpx * 0.2, hpx * 0.035, 0.55);
       if (!r) continue;
       if (!r.sp.ghost) castShadow(g, r, x, y, hpx, rig.key.dir, false);
       comp.addSprite({ r, x, y, ph: R() * 6.28, period: 2.8 + R() * 1.4, amp: 0.8 + R() * 0.5, haze, ghost: !!r.sp.ghost, sway: r.sp.tail ? 1.2 : 1 });
@@ -404,6 +414,17 @@ function placeGroup(comp, g, W, H, groups, info, light, seed, mood = null) {
   if (flee) droppedGear(g, W, H, floor, R);
   comp.addFog(H * 0.97, H * 0.12, hazeColor, 0.22, (seed + 3) % 13);
 }
+
+/** Per-slot ambush staging for a war-band of four or more (index = staged slot). */
+const AMBUSH = [
+  { pose: { snarl: 1, headPitch: -0.24, crouch: 0.3, lean: 0.14, stance: 0.11, footZ: [0.1, -0.1] } },
+  { hostile: true, pose: { crouch: 0.48, lean: 0.3, stance: 0.13, footZ: [0.14, -0.12], snarl: 0.85, headPitch: -0.12 } },
+  { hostile: true, pose: { crouch: 0.44, lean: 0.26, stance: 0.12, footZ: [-0.12, 0.13], snarl: 0.8, headPitch: -0.1 } },
+  { mirror: true, pose: { weaponPose: 'guard', offPose: 'claw', crouch: 0.34, lean: -0.16, twist: 0.32, headYaw: 0.85, headPitch: 0.22, headTilt: 0.18, stance: 0.1, footZ: [-0.12, 0.06], snarl: 0.55 } },
+  { hostile: true, pose: { crouch: 0.4, lean: 0.22, stance: 0.12, footZ: [0.1, -0.1], snarl: 0.6 } },
+  { pose: { crouch: 0.36, lean: 0.2, headPitch: 0.06, stance: 0.1, footZ: [0.06, -0.06] } },
+  null,
+];
 
 /** A heap of fallen masonry for a lookout to stand on (painted into the backdrop). */
 function rubbleHeap(g, x, y, w, h, R, light) {
@@ -545,7 +566,27 @@ export function portraitDesign(npc) {
     bg: ['#4e3e2a', '#0c0806'],
     dark: npc.kind === 'hooded' ? 0.45 : 0,
   };
-  return npc.paint ? { ...base, seed: base.seed, ...npc.paint } : base;
+  if (!npc.paint) return base;
+  // a designed portrait keeps its face, but its palette comes from the one costume record the scene
+  // figure is dressed from: hair, beard, skin, robe, collar, stole and mitre can never disagree
+  const D = { ...base, seed: base.seed, ...npc.paint };
+  if (npc.figure) {
+    const hairC = F.hair ?? D.hair?.c;
+    if (F.skin) D.skin = F.skin;
+    if (D.hair && hairC) D.hair = { ...D.hair, c: hairC };
+    if (D.beard && D.beard.style !== 'none' && hairC) D.beard = { ...D.beard, c: F.beardC ?? hairC, style: F.beard ?? D.beard.style };
+    if (D.costume) {
+      D.costume = { ...D.costume };
+      if (O.top && D.costume.kind !== 'mail' && D.costume.kind !== 'smith') D.costume.a = O.top;
+      if (O.shirt && D.costume.b) D.costume.b = O.shirt;
+      if (O.collar && D.costume.collar) D.costume.collar = O.collar;
+      if (O.stole && D.costume.stole) D.costume.stole = O.stole;
+      if (O.mantle && D.costume.cloak) D.costume.cloak = O.mantle;
+      if (O.apron && D.costume.apron) D.costume.apron = O.apron;
+    }
+    if (D.head?.kind === 'mitre' && O.mitre) D.head = { ...D.head, mitre: O.mitre };
+  }
+  return D;
 }
 
 /**
@@ -640,7 +681,7 @@ export function npcActor(npc, o = {}) {
         const pose = generic ? F.pose ?? generic : slot.pose ?? o.pose ?? F.pose ?? 'idle';
         const bn = buildNpc(npcFigureSpec(npc, o.poseOverride ?? pose));
         // cropped at the floor: a floor-length hem's rounded cap never shows below the feet
-        const r = renderFigure(bn.fig, { ppu: slot.h / bn.top * (ch.race === 'dwarf' || ch.race === 'halfling' || ch.race === 'gnome' ? 0.8 : 1), yaw: slot.yaw ?? 0, rig, pitch: slot.pitch ?? 0.1, ink: 0.7, minY: -0.03 });
+        const r = renderFigure(bn.fig, { ppu: slot.h / bn.top * (ch.race === 'dwarf' || ch.race === 'halfling' || ch.race === 'gnome' ? 0.8 : 1), yaw: slot.yaw ?? 0, rig, pitch: slot.pitch ?? 0.1, ink: 0.7, minY: -0.03, ...(slot.ss ? { ss: slot.ss } : {}) });
         if (r && bn.head && npc.kind !== 'hooded' && !o.noDecal) faceDecal(npc, r, bn.head, { yaw: slot.yaw ?? 0, pitch: slot.pitch ?? 0.1 });
         return r;
       }
@@ -668,9 +709,10 @@ export function npcActor(npc, o = {}) {
 
 const GHOST_POSES = {
   // kneeling in vigil before the altar, both hands on the pommel of the reversed sword
-  vigil: { kneel: 1, weaponPose: 'vigil', offPose: null, crouch: 0.42, lean: 0.1, twist: 0, headYaw: 0.0, headPitch: 0.36, headTilt: 0.04, stance: 0.07, sway: 0, hipTilt: 0 },
+  // (the head turns a little out of the body's line, so the hounskull's beak shows in profile)
+  vigil: { kneel: 1, weaponPose: 'vigil', offPose: null, crouch: 0.42, lean: 0.1, twist: 0, headYaw: -0.62, headPitch: 0.3, headTilt: 0.04, stance: 0.07, sway: 0, hipTilt: 0 },
   // risen and turned to face the living, the sword still reversed before him
-  stand: { weaponPose: 'rest', offPose: null, crouch: 0, lean: -0.02, twist: -0.12, headYaw: 0.1, headPitch: -0.04, headTilt: 0, stance: 0.09, sway: 0, hipTilt: 0.02 },
+  stand: { weaponPose: 'rest', offPose: null, crouch: 0, lean: -0.02, twist: -0.12, headYaw: -0.42, headPitch: -0.04, headTilt: 0, stance: 0.09, sway: 0, hipTilt: 0.02 },
   // roused to anger: the blade comes up
   wrath: { weaponPose: 'raised', offPose: 'point', crouch: 0.08, lean: 0.08, twist: -0.3, headYaw: 0.1, headPitch: -0.08, headTilt: 0, stance: 0.1, sway: 0, hipTilt: 0 },
 };
@@ -692,7 +734,8 @@ export function ghostActor(pose = 'vigil') {
       // aside from the east window, turned three-quarters toward the living
       const yaw = pose === 'vigil' ? slot.vigilYaw ?? 2.55 : -0.55;
       const h = pose === 'vigil' ? slot.h : slot.h * 1.42;
-      const r = renderCreature('ghostKnight', h, { ...rig, key: { dir: [-0.3, 0.8, 0.5], color: '#e8fbff', i: 1.25 }, rim: { dir: [0.7, 0.4, -0.6], color: '#e0ffff', i: 1.4 }, sky: '#6aa8c0', ground: '#0a1a20', amb: 0.62 }, 7, { yaw, poseOverride: P, solid: true, ink: 0.9 });
+      // (the spectral wash softens everything: 1.4x supersampling is plenty, and halves the trace)
+      const r = renderCreature('ghostKnight', h, { ...rig, key: { dir: [-0.3, 0.8, 0.5], color: '#e8fbff', i: 1.25 }, rim: { dir: [0.7, 0.4, -0.6], color: '#e0ffff', i: 1.4 }, sky: '#6aa8c0', ground: '#0a1a20', amb: 0.62 }, 7, { yaw, poseOverride: P, solid: true, ink: 0.9, ss: 1.4 });
       if (!r) return null;
       // emit points are relative to the figure render; carry them onto the flattened sprite
       const fl = flattenSprite(r);
@@ -938,8 +981,11 @@ function paintNpcPortraitIn(npc, scale) {
     if (npc.kind === 'hooded') ch.look = { ...ch.look, head: 6 };
     if (npc.kind === 'ghost') {
       // raymarched armet and plate (the same field as the living portraits), then washed spectral
-      const gl = paintPortraitGL(FERRAN_DESIGN, W, H, { race: 'human', aura: '#8ff0ff' });
-      c = gl ? spectralPortrait(gl) : npc.paintGhost !== false ? (() => { const big = paintGhostKnight(W * 2, H * 2); const cc = makeCanvas(W, H); cc.getContext('2d').drawImage(big, 0, 0, W, H); return cc; })() : ghostBust(W, H);
+      // the very knight of the chapel (hounskull, plate and all) at bust scale, washed spectral;
+      // the raymarched armet remains the fallback
+      const fb = ferranBust(W, H);
+      const gl = fb ? null : paintPortraitGL(FERRAN_DESIGN, W, H, { race: 'human', aura: '#8ff0ff' });
+      c = fb ?? (gl ? spectralPortrait(gl) : null) ?? (npc.paintGhost !== false ? (() => { const big = paintGhostKnight(W * 2, H * 2); const cc = makeCanvas(W, H); cc.getContext('2d').drawImage(big, 0, 0, W, H); return cc; })() : ghostBust(W, H));
     } else c = paintPortrait(ch, { scale });
     if (npc.kind === 'ghost') {
       // the same spectral knight that kneels in the chapel, helm and all
@@ -951,6 +997,53 @@ function paintNpcPortraitIn(npc, scale) {
     }
   }
   return c;
+}
+
+/**
+ * Ferran's portrait from his scene figure: head and shoulders turned three-quarters so the
+ * hounskull's beak stands in profile, rim-lit hard from behind so every plate edge burns, then
+ * gradient-mapped night -> cyan -> white (the eye slit and the visor's point are the brightest
+ * things in the frame), bloomed, and dissolving into mist below the gorget.
+ */
+function ferranBust(W0, H0) {
+  let W = W0; let H = H0;
+  const b = buildCreature('ghostKnight', 7, { poseOverride: { ...GHOST_POSES.stand, headYaw: -0.4, headPitch: 0.1, twist: 0.05, weaponPose: 'rest' } });
+  if (!b) return null;
+  // traced at 3/4 of the frame and enlarged (the wash and bloom hide the upscale; the knight's
+  // dense plate costs seconds per megapixel under a software GPU)
+  const k = 0.72;
+  const hpx = H * 2.45 * k;
+  const ppu = hpx / b.fig.top;
+  W *= k; H *= k;
+  const rig = { key: { dir: [-0.45, 0.65, 0.55], color: '#d8f6ff', i: 1.05 }, rim: { dir: [0.85, 0.3, -0.45], color: '#ffffff', i: 2.2 }, fill: { dir: [-0.8, -0.2, -0.3], color: '#7ad8f0', i: 0.5 }, sky: '#3a7488', ground: '#06121a', amb: 0.36 };
+  // traced only inside the frame (the portrait shows at ~130 css px: no supersampling needed)
+  const r = renderFigure(b.fig, { ppu, yaw: -0.7, rig, pitch: 0.05, ink: 0.4, ss: 1, minY: b.fig.top - (H * 1.02) / ppu, minX: -(W * 0.56) / ppu, maxX: (W * 0.48) / ppu });
+  if (!r) return null;
+  W /= k; H /= k;
+  const c = makeCanvas(W, H);
+  const g = c.getContext('2d');
+  const bg = g.createRadialGradient(W * 0.48, H * 0.34, 6, W * 0.5, H * 0.5, H * 0.8);
+  bg.addColorStop(0, '#1e3c46');
+  bg.addColorStop(0.55, '#08161c');
+  bg.addColorStop(1, '#010305');
+  g.fillStyle = bg;
+  g.fillRect(0, 0, W, H);
+  const x = W * 0.54 - r.ox / k;
+  const y = H * 0.11 - (r.oy - b.fig.top * ppu) / k;
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(r.canvas, x, y, r.canvas.width / k, r.canvas.height / k);
+  const out = ghostly(c);
+  const og = out.getContext('2d');
+  // the eyes and the wound burn over the wash
+  for (const e of r.emit ?? []) glow(og, x + e.x / k, y + e.y / k, (e.r / k) * 1.4, e.color, Math.min(1, e.a * 1.1));
+  // the lower edge dissolves: a cold mist over the breastplate's foot
+  const mist = og.createLinearGradient(0, H * 0.7, 0, H);
+  mist.addColorStop(0, 'rgba(6,20,26,0)');
+  mist.addColorStop(1, 'rgba(6,20,26,0.75)');
+  og.fillStyle = mist;
+  og.fillRect(0, 0, W, H);
+  vignette(og, W, H, 0.45);
+  return out;
 }
 
 /** Ferran in his armet: a bust design for the raymarched portrait painter. */

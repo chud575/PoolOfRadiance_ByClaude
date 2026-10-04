@@ -331,3 +331,25 @@
 .shp-list.with-compare .shp-item .n { font-size: 0.9em; }
 .shp-list.with-compare .shp-item .s { font-size: 0.72em; }
 .shp-list.with-compare .shp-item .p { font-size: 0.92em; }
+
+/* ---------- no dead bands: panels fill their frames ---------- */
+/* the keeper's note sits on the portrait's baseline, the speech above it */
+.por-frame.shp-keeper > .por-frame-body { display: flex; flex-direction: column; min-height: 100%; }
+.shp-keeper { display: flex; flex-direction: column; }
+.shp-keeper .note { margin-top: auto; }
+.shp-keeper .say { margin-bottom: 0.45em; }
+/* the try-it-on table takes the rest of the shelf, its rows spread evenly */
+.shp-list.with-compare { grid-template-rows: repeat(var(--item-rows, 4), auto) minmax(min-content, 1fr); }
+.shp-list.with-compare .shp-compare { display: flex; flex-direction: column; align-self: stretch; }
+.shp-list.with-compare .shp-compare table { flex: 1 1 auto; height: 100%; }
+/* the afflicted fill their card: one row per pair, stretched to its foot */
+.shp-detail:has(.shp-company) { grid-template-rows: 1fr; align-content: stretch; }
+.shp-detail .shp-company { height: 100%; grid-auto-rows: 1fr; align-content: stretch; }
+.shp-detail .shp-company .shp-mate { align-content: center; padding-top: 0.5em; padding-bottom: 0.6em; }
+.shp-detail .shp-company .shp-mate img { height: 3.3em; width: 2.7em; }
+/* the training roster grows to meet the posted terms */
+.shp-rows:has(.shp-terms) .shp-train { flex: 1 0 auto; align-content: center; }
+.shp-rows:has(.shp-terms) .shp-terms { margin-top: 0.3em; }
+/* the tavern slate keeps a margin above the gilt */
+.shp-detail:has(.shp-patrons) { padding-bottom: 2.3em !important; }
+.shp-rules ol { line-height: 1.26; }

@@ -28,6 +28,10 @@ import { paintPanel, framedPortraitURL, PanelOverlay, npcActor } from '../../ui/
  * that compares against what the selected character has equipped, who-can-use
  * portraits, per-character purses with POOL / SHARE.
  */
+/** Party thumbnails (about 45x55 css px) are painted at a quarter of a master portrait's pixels:
+ *  sharp at 2x, and six of them no longer hold the scene for 15 s under a software GPU. */
+const THUMB = 0.26;
+
 const FILTERS = {
   all: () => true,
   weapons: (d) => d.type === 'weapon' && !d.ranged,
@@ -183,7 +187,7 @@ export default class ShopScene extends Scene {
       this.partyEl.append(h(`div.shp-member${i === game.activeIndex ? '.sel' : ''}${ch.status === 'dead' ? '.dead' : ''}${st ? `.${st}` : ''}`, {
         onclick: () => { game.activeIndex = i; game.notifyPartyChanged(); },
         dataset: { tip: `${ch.name} — ${ch.hp.cur}/${ch.hp.max} hp, ${ch.gold} gp` },
-      }, [h('img', { src: portraitURL(ch, 0.4), alt: '' }), h('span.nm', [shortName(ch.name)]), h('span.gp', [`${ch.gold} gp`]), h('i.hpbar', [h('i', { style: { width: `${pct * 100}%` } })])]));
+      }, [h('img', { src: portraitURL(ch, THUMB), alt: '' }), h('span.nm', [shortName(ch.name)]), h('span.gp', [`${ch.gold} gp`]), h('i.hpbar', [h('i', { style: { width: `${pct * 100}%` } })])]));
     });
   }
 
@@ -283,6 +287,7 @@ export default class ShopScene extends Scene {
       const rows = this.filter === 'armour' ? items.filter((x) => ITEMS[x.id].type === 'armor') : items;
       if (rows.length) {
         this.listEl.classList.add('with-compare');
+        this.listEl.style.setProperty('--item-rows', String(Math.ceil(items.length / 3)));
         this.listEl.append(this._compareTable(rows, ch));
       }
     }
@@ -396,7 +401,7 @@ export default class ShopScene extends Scene {
     const users = h('div.shp-users', [h('span.l', ['Usable by'])]);
     for (const m of this.ctx.game.party) {
       const ok = !['weapon', 'armor', 'shield', 'helm'].includes(d.type) || canEquip(m, id);
-      users.append(h(`div.shp-user.${ok ? 'yes' : 'no'}`, { dataset: { tip: ok ? `${m.name} can use it` : `${m.name}: ${equipProblem(m, id) ?? 'cannot use'}` } }, [h('img', { src: portraitURL(m, 0.4), alt: '' })]));
+      users.append(h(`div.shp-user.${ok ? 'yes' : 'no'}`, { dataset: { tip: ok ? `${m.name} can use it` : `${m.name}: ${equipProblem(m, id) ?? 'cannot use'}` } }, [h('img', { src: portraitURL(m, THUMB), alt: '' })]));
     }
     add(users);
   }
@@ -412,7 +417,7 @@ export default class ShopScene extends Scene {
         onclick: () => { this.ctx.game.activeIndex = i; this.ctx.game.notifyPartyChanged(); },
         dataset: { tip: `${m.name}: ${m.hp.cur} / ${m.hp.max} hp${m.conditions?.length ? ` · ${m.conditions.join(', ')}` : ''}` },
       }, [
-        h('img', { src: portraitURL(m, 0.4), alt: '' }),
+        h('img', { src: portraitURL(m, THUMB), alt: '' }),
         h('span.t', [m.name]),
         h('span.st', { style: { color: col } }, [st]),
         h('span.hp', [`${Math.max(0, m.hp.cur)}/${m.hp.max}`]),
@@ -484,7 +489,7 @@ export default class ShopScene extends Scene {
       }
       this.listEl.append(h(`div.shp-row${applies ? '' : '.off'}${rec === id ? '.rec' : ''}`, { dataset: { tip: rec === id ? `Counselled for ${ch.name} (${Math.max(0, ch.hp.cur)} / ${ch.hp.max} hp${ch.status && ch.status !== 'ok' ? `, ${ch.status}` : ''})` : '' } }, [
         h(`span.ic${tone ? `.${tone}` : ''}`, [icon]),
-        h('span.t', [s.name, rec === id ? h('span.shp-rec', [`Counselled for ${shortName(ch.name)}`]) : null, needers.length ? h('span.shp-need', needers.map((m) => h('img', { src: portraitURL(m, 0.4), alt: '', dataset: { tip: `${m.name} needs this` } }))) : null]),
+        h('span.t', [s.name, rec === id ? h('span.shp-rec', [`Counselled for ${shortName(ch.name)}`]) : null, needers.length ? h('span.shp-need', needers.map((m) => h('img', { src: portraitURL(m, THUMB), alt: '', dataset: { tip: `${m.name} needs this` } }))) : null]),
         h('span.d', [SERVICE_DESC[id] ?? '']),
         h('span.c', [`${cost.toLocaleString('en-US')} gp`]),
         this._requestButton(id, cost, applies, ch, partyGold),
@@ -577,7 +582,7 @@ export default class ShopScene extends Scene {
           : `Next level at ${open[0].hi.toLocaleString('en-US')} xp`;
       const need = open.map((p) => `${CLASSES[p.c].name} ${m.levels[p.c] + 1} at ${p.hi.toLocaleString('en-US')} xp (${(m.xp[p.c] ?? 0).toLocaleString('en-US')} now, ${p.togo.toLocaleString('en-US')} to go)`).join('; ');
       this.listEl.append(h(`div.shp-row.shp-train${i === this.ctx.game.activeIndex ? '.sel' : ''}${ready.length ? '.ready' : ''}`, { onclick: () => { this.ctx.game.activeIndex = i; this.ctx.game.notifyPartyChanged(); } }, [
-        h('img', { src: portraitURL(m, 0.4), alt: '' }),
+        h('img', { src: portraitURL(m, THUMB), alt: '' }),
         h('span.t', [m.name]),
         h('span.d', [classes.map((c) => `${CLASSES[c].name} ${m.levels[c]}${ready.includes(c) ? ` → ${m.levels[c] + 1}` : ''}`).join(' / ')]),
         h('div.shp-xp', { dataset: { tip: need ? `${m.name}: ${need}` : '' } }, [h(`span.lbl${ready.length ? '.ready' : ''}`, [lbl]), h('div.bar', [h('i', { style: { width: `${pct * 100}%` } })])]),
@@ -720,7 +725,7 @@ export default class ShopScene extends Scene {
     const classes = splitClasses(m.classSpec);
     const card = h('div.shp-book', { style: { gridColumn: '1 / -1' } });
     const L = this.levelUp?.who === m ? this.levelUp : null;
-    card.append(h('div.shp-book-head', [h('img', { src: portraitURL(m, 0.4), alt: '' }), h('div', [h('b', [m.name]), h('small', [`${m.race === 'halfElf' ? 'Half-elf' : m.race[0].toUpperCase() + m.race.slice(1)} · ${classes.map((c) => CLASSES[c].name).join(' / ')}`])]),
+    card.append(h('div.shp-book-head', [h('img', { src: portraitURL(m, THUMB), alt: '' }), h('div', [h('b', [m.name]), h('small', [`${m.race === 'halfElf' ? 'Half-elf' : m.race[0].toUpperCase() + m.race.slice(1)} · ${classes.map((c) => CLASSES[c].name).join(' / ')}`])]),
       L ? h('div.shp-book-up', [h('b', ['Level gained']), h('span', [L.now]), h('span', [`HP +${L.hp} → ${L.hpMax}`]), h('span', ['THAC0 ', h('em', [String(L.thac0)])])]) : null]));
     for (const c of classes) {
       const lvl = m.levels[c];

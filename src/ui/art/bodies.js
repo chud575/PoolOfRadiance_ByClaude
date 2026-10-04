@@ -626,8 +626,13 @@ export function humanoid(f, sp, pose, R, gear) {
         f.cone([0, y0 - torso * 0.09, 0.008], [0, y0 - torso * 0.097, 0.008], (0.1 + i * 0.006) * b, (0.102 + i * 0.006) * b, gear.trimM ?? pm, { group: null });
       }
       for (const d of [-1, 1]) {
-        f.box([d * 0.055 * b, -torso * 0.12, 0.05 * b], [0.04 * b, 0.05, 0.006], pm, { group: null, bevel: 0.006, R: mul3(rotZ(d * 0.12), rotX(0.18)) });
-        for (let k = 0; k < 3; k++) f.sphere([d * (0.035 + k * 0.02) * b, -torso * 0.12 + 0.045, 0.058 * b], 0.004, gear.trimM ?? M.bronze, { group: null });
+        // tassets: three overlapping lames hung from the fauld over each thigh, each lower one
+        // tucked under the one above, flaring out with the leg (hard edges the light can trace)
+        for (let k = 0; k < 3; k++) {
+          f.box([d * (0.058 + k * 0.004) * b, -torso * (0.05 + k * 0.105), (0.054 + k * 0.007) * b], [(0.047 + k * 0.002) * b, 0.03, 0.006], pm, { group: null, bevel: 0.006, R: mul3(rotZ(d * (0.1 + k * 0.04)), rotX(0.16 + k * 0.06)) });
+          f.box([d * (0.058 + k * 0.004) * b, -torso * (0.05 + k * 0.105) - 0.027, (0.06 + k * 0.007) * b], [(0.047 + k * 0.002) * b, 0.0035, 0.004], gear.trimM ?? pm, { group: null, bevel: 0.002, R: mul3(rotZ(d * (0.1 + k * 0.04)), rotX(0.16 + k * 0.06)) });
+        }
+        for (let k = 0; k < 3; k++) f.sphere([d * (0.035 + k * 0.02) * b, -torso * 0.05 + 0.024, 0.06 * b], 0.004, gear.trimM ?? M.bronze, { group: null });
       }
       f.ell([0, torso * 0.95, 0], [0.06, 0.03, 0.055], pm, { group: null });
       // gorget lames, rivet rows along the breastplate's edges, a belt over the fauld
@@ -759,8 +764,16 @@ export function humanoid(f, sp, pose, R, gear) {
       // an angular pauldron: a faceted cop over the shoulder and three lames stepping down the arm,
       // each a bevelled plate with a hard lower edge, a raised haute-piece standing up at the neck
       const Rs = mul3(TR, rotZ(d * -0.42));
-      f.box(add(sh[d], ap3(TR, [d * 0.012, 0.016, 0])), [0.04 * b, 0.018 * b, 0.044 * b], gear.metalM, { group: null, bevel: 0.012, R: Rs });
-      for (let k = 1; k <= 3; k++) f.box(add(sh[d], ap3(TR, [d * (0.024 + k * 0.008), 0.004 - k * 0.018, 0])), [(0.036 - k * 0.003) * b, 0.007, (0.042 - k * 0.003) * b], gear.metalM, { group: null, bevel: 0.005, R: mul3(TR, rotZ(d * (-0.62 - k * 0.14))) });
+      // the cop: a shaped dome over the point of the shoulder (not a slab), then three lames that
+      // wrap the top of the arm like bands, each flaring to a hard lower lip over the next
+      f.ell(add(sh[d], ap3(TR, [d * 0.014, 0.014, 0])), [0.05 * b, 0.03 * b, 0.054 * b], gear.metalM, { group: null, R: Rs });
+      f.ell(add(sh[d], ap3(TR, [d * 0.016, 0.006, 0])), [0.053 * b, 0.006, 0.057 * b], gear.trimM ?? gear.metalM, { group: null, R: Rs });
+      const armAx = ap3(Rs, [0, -1, 0]);
+      for (let k = 0; k < 3; k++) {
+        const a = add(sh[d], add(scl(armAx, 0.008 + k * 0.019), ap3(TR, [d * 0.01, 0, 0])));
+        const e = add(a, scl(armAx, 0.022));
+        f.cone(a, e, (0.047 - k * 0.003) * b, (0.052 - k * 0.003) * b, gear.metalM, { group: null });
+      }
       f.box(add(sh[d], ap3(TR, [d * -0.01, 0.044, 0.0])), [0.005, 0.016, 0.038 * b], gear.trimM ?? gear.metalM, { group: null, bevel: 0.003, R: mul3(TR, rotZ(d * -0.15)) });
       for (let k = 0; k < 3; k++) f.sphere(add(sh[d], ap3(TR, [d * 0.032, 0.026, (k - 1) * 0.024 * b])), 0.0036, gear.trimM ?? M.bronze, { group: null });
     }
@@ -795,8 +808,11 @@ export function humanoid(f, sp, pose, R, gear) {
       f.sphere(elbow, limb * 1.05, gear.metalM, { group: null });
       // couter fan and a vambrace edge, so the arm reads as articulated plate rather than a tube
       f.ell(add(elbow, ap3(TR, [d * 0.018, 0, -0.012])), [limb * 0.4, limb * 1.25, limb * 1.2], gear.metalM, { group: null, R: alignY(sub(hnd.wrist, sh[d])) });
-      for (const t of [0.12, 0.5]) f.cone(lerpP(sh[d], elbow, t), lerpP(sh[d], elbow, t + 0.05), limb * 1.2, limb * 1.18, gear.metalM, { group: null });
-      f.cone(lerpP(elbow, hnd.wrist, 0.2), hnd.wrist, limb * 1.0, limb * 0.85, gear.metalM, { group: null });
+      // rerebrace lames stepping down the upper arm, a vambrace tube with a flared cuff and a
+      // gauntlet cuff over the wrist: every edge a hard lip the rim light can trace
+      for (const t of [0.3, 0.52, 0.72]) f.cone(lerpP(sh[d], elbow, t), lerpP(sh[d], elbow, t + 0.16), limb * 1.12, limb * 1.2, gear.metalM, { group: null });
+      f.cone(lerpP(elbow, hnd.wrist, 0.2), lerpP(elbow, hnd.wrist, 0.82), limb * 1.0, limb * 0.86, gear.metalM, { group: null });
+      f.cone(lerpP(elbow, hnd.wrist, 0.8), lerpP(elbow, hnd.wrist, 1.02), limb * 0.95, limb * 1.12, gear.metalM, { group: null });
     }
     if (gear.bracerM && !plate && !sk) f.cone(lerpP(elbow, hnd.wrist, 0.45), lerpP(elbow, hnd.wrist, 0.95), limb * 0.95, limb * 0.78, gear.bracerM, { group: null });
     const hs = 0.95 * b * (sk ? 0.7 : 1) * (sp.head === 'kobold' ? 1.05 : 1);
@@ -818,9 +834,9 @@ export function humanoid(f, sp, pose, R, gear) {
 
   // the castellan's death-wound, still open at the throat: a cold light that reads at scene scale
   if (sp.ghost) {
-    const wound = add(neck, ap3(TR, [0.008, -0.004, 0.05 * b]));
-    f.glow(wound, 0.034, '#e8ffff', 0.8);
-    f.glow(wound, 0.012, '#ffffff', 1);
+    const wound = add(neck, ap3(TR, [0.026 * b, -0.012, 0.042 * b]));
+    f.glow(wound, 0.018, '#bff8ff', 0.55);
+    f.glow(wound, 0.006, '#ffffff', 0.8);
   }
   // ---- head
   const hp = add(neck, ap3(TR, [0, hr * 0.95, hr * 0.25 + (sp.hunch ?? 0) * 0.05]));
@@ -902,6 +918,14 @@ function footShape(f, ankle, dir, r, gear, sp, d) {
   const toe = add(ankle, [d * 0.008, -0.03, 0.08]);
   f.cone(ankle, toe, r * 0.65, r * 0.5, fm, { group: sp.skeletal ? 'body' : null, blend: 0.01 });
   f.ell(add(lerpP(ankle, toe, 0.6), [0, -0.012, 0]), [r * 0.62, r * 0.38, r * 1.15], fm, { group: null });
+  if (gear.armor === 'plate' && fm === gear.metalM) {
+    // sabatons: overlapping lames down the instep to a pointed toe cap
+    for (let k = 0; k < 3; k++) {
+      const a = lerpP(ankle, toe, 0.05 + k * 0.24);
+      f.cone(a, lerpP(ankle, toe, 0.22 + k * 0.24), r * (0.7 - k * 0.06), r * (0.74 - k * 0.06), fm, { group: null });
+    }
+    f.cone(lerpP(ankle, toe, 0.75), add(toe, [0, -0.008, 0.03]), r * 0.5, r * 0.12, fm, { group: null });
+  }
 }
 
 /**
@@ -1043,7 +1067,9 @@ export function buildCreature(id, seed = 1, o = {}) {
   if (sp.skin3 && R() < 0.35) base = mixc(base, sp.skin3, 0.5 + R() * 0.3);
   const skinC = shade(base, 1 + tint);
   // scales sized to read at panel scale (a kobold ~120 px tall still shows scale rows), matte hide
-  const skinM = mat(skinC, { pattern: sp.pattern ?? 'skin', scale: sp.pattern === 'scales' ? 0.016 : sp.pattern === 'fur' ? 0.012 : 0.02, rough: sp.pattern === 'scales' ? 0.7 : 0.8, spec: sp.pattern === 'scales' ? 0.16 : 0.08, sss: sp.skeletal ? 0.2 : 0.4, tint2: sp.pattern === 'scales' ? (sp.belly2 ?? shade(sp.skin2 ?? sp.skin, 0.8)) : null });
+  // each hide its own: some dusty and dry (matte), some oily, scale size varying with age
+  const dry = R();
+  const skinM = mat(skinC, { pattern: sp.pattern ?? 'skin', scale: sp.pattern === 'scales' ? 0.014 + R() * 0.005 : sp.pattern === 'fur' ? 0.012 : 0.02, rough: sp.pattern === 'scales' ? 0.6 + dry * 0.32 : 0.8, spec: sp.pattern === 'scales' ? 0.2 - dry * 0.15 : 0.08, sss: sp.skeletal ? 0.2 : 0.4, tint2: sp.pattern === 'scales' ? (sp.belly2 ?? shade(sp.skin2 ?? sp.skin, 0.8)) : null });
   const clothC = R.pick(sp.cloth ?? ['#4a3a28']);
   const clothM = mat(shade(clothC, 0.9 + R() * 0.25), { pattern: 'cloth', scale: 0.018, spec: 0.05, rough: 0.9 });
   const weaponK = o.weapon !== undefined ? o.weapon : R.pick(sp.weapons ?? [null]);
@@ -1087,7 +1113,7 @@ export function buildCreature(id, seed = 1, o = {}) {
     if (sp.gauntlet) gear.gloveM = mat('#1a1a1a', { metal: true, rough: 0.4, spec: 0.6 });
     if (sp.ghost) {
       gear.legM = metalM; gear.armM = metalM; gear.foreM = metalM; gear.torsoM = metalM; gear.bootM = metalM; gear.gloveM = metalM;
-      gear.headOpts = { helm: true, visor: true, helmM: metalM, trimM: M.bronze, crest: '#5a8a98' };
+      gear.headOpts = { helm: true, visor: true, helmM: metalM, trimM: M.bronze };
     }
   } else if (sp.armor === 'plate') {
     gear.legM = metalM; gear.armM = skinM; gear.bootM = metalM; gear.torsoM = skinM;

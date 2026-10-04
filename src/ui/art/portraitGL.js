@@ -188,7 +188,7 @@ float lids(vec3 a, float d) {
   d = smin(d, lower, 0.03);
   // the crease of the upper lid and the soft bag under the eye
   vec3 cr = e - nu * (R * 0.95) - vec3(0.0, 0.0, R * 0.25);
-  d += 0.011 * exp(-dot2(cr / vec3(0.17, 0.028, 0.12)));
+  d += (FEM == 1 ? 0.016 : 0.011) * exp(-dot2(cr / vec3(0.17, 0.026, 0.12)));
   d += (0.004 + AGE * 0.01) * exp(-dot2((e - vec3(0.0, -R * 1.25, R * 0.55)) / vec3(0.12, 0.03, 0.1)));
   return d;
 }
@@ -206,11 +206,12 @@ float faceSkin(vec3 p) {
   d = smin(d, sdCap(a, vec3(0.52 * JAW, -0.36, -0.1), vec3(0.19 * (0.7 + 0.3 * JAW), -0.95, 0.49), 0.12 * JAW), 0.24);
   d = smin(d, sdEll(q - vec3(0.0, -0.97, 0.56), vec3(0.22, 0.15, 0.16) * CHIN), 0.16);
 #endif
-  d = smin(d, sdEll(a - vec3(0.45, -0.14, 0.5), vec3(0.18, 0.09, 0.15) * CHEEK), 0.16);
+  d = smin(d, sdEll(a - vec3(0.45, FEM == 1 ? -0.09 : -0.14, 0.5), vec3(0.18, 0.09, 0.15) * CHEEK), 0.16);
   d = smin(d, sdCap(a, vec3(0.44, -0.12, 0.5), vec3(0.64, -0.1, 0.02), 0.07), 0.12);
   d = smin(d, sdEll(a - vec3(0.28, 0.24, 0.76), vec3(0.26, 0.075 * BROW, 0.11)), 0.14);
 #if FEM
-  d = smin(d, sdEll(q - vec3(0.0, -0.66, 0.52), vec3(0.31, 0.26, 0.27)), 0.2);
+  // the muzzle carries the lips forward with it (lips proud of a receding muzzle read as a pout)
+  d = smin(d, sdEll(q - vec3(0.0, -0.66, 0.575), vec3(0.3, 0.26, 0.28)), 0.2);
 #else
   d = smin(d, sdEll(q - vec3(0.0, -0.66, 0.6), vec3(0.32, 0.27, 0.29)), 0.2);
 #endif
@@ -237,16 +238,16 @@ float faceSkin(vec3 p) {
   d = smin(d, nose, 0.07);
   d = smax(d, -sdEll(aw - vec3(0.056 * NW, -0.49 * nl, 0.97 + 0.06 * (nl - 1.0)), vec3(0.033, 0.017, 0.042)), 0.02);
   // lips wrap round the muzzle; corners lift with the smile
-  vec3 m = q - vec3(0.0, -0.69, FEM == 1 ? 0.05 : 0.02);
+  vec3 m = q - vec3(0.0, FEM == 1 ? -0.625 : -0.69, FEM == 1 ? -0.005 : 0.02); // a woman's mouth a third of the way from nose to chin
   m.y -= SMILE * 0.35 * m.x * m.x;
   m.z += 1.05 * m.x * m.x;
-  float ul = sdEll(m - vec3(0.0, 0.05, 0.885), vec3(0.2 * MW, 0.04 * FULL + 0.011, 0.055));
+  float ul = sdEll(m - vec3(0.0, 0.05, 0.885), vec3(0.2 * MW, 0.04 * FULL + 0.011, FEM == 1 ? 0.046 : 0.055));
   ul = smax(ul, -sdEll(m - vec3(0.0, 0.112 * (0.8 + 0.2 * FULL), 0.99), vec3(0.03, 0.03, 0.06)), 0.02); // cupid's bow
-  float ll = sdEll(m - vec3(0.0, -0.055, 0.855), vec3(0.165 * MW, 0.048 * FULL + 0.013, 0.058));
+  float ll = sdEll(m - vec3(0.0, -0.055, 0.855), vec3(0.165 * MW, 0.048 * FULL + 0.013, FEM == 1 ? 0.05 : 0.058));
   d = smin(d, min(ul, ll), 0.04);
   d = smax(d, -sdEll(m - vec3(0.0, -0.002, 0.95), vec3(0.2 * MW, 0.009, 0.12)), 0.01);
   // philtrum, chin groove, nasolabial folds
-  d += 0.007 * exp(-dot2((q - vec3(0.0, -0.575, 0.96)) / vec3(0.03, 0.045, 0.12)));
+  d += 0.007 * exp(-dot2((q - vec3(0.0, FEM == 1 ? -0.53 : -0.575, 0.96)) / vec3(0.03, FEM == 1 ? 0.035 : 0.045, 0.12)));
   d += 0.014 * exp(-dot2((q - vec3(0.0, -0.84, 0.84)) / vec3(0.15, 0.03, 0.2)));
   vec3 nlA = vec3(0.16, -0.41, 0.92); vec3 nlB = vec3(0.285, -0.78, 0.79);
   float nlf = sdCap(a, nlA, nlB, 0.0);
@@ -739,7 +740,7 @@ void main() {
         alb *= mix(vec3(1.0), vec3(0.86, 0.78, 0.82), exp(-dot2((a - vec3(0.27, -0.13, 0.84)) / vec3(0.13, 0.05, 0.1))) * (0.4 + AGE * 0.5));
         alb *= 1.0 - AGE * 0.15 * smoothstep(0.62, 0.8, vnoise3(hp * 14.0));
         // lips
-        vec3 mm = q - vec3(0.0, -0.69, FEM == 1 ? 0.05 : 0.02); mm.y -= SMILE * 0.35 * mm.x * mm.x; mm.z += 1.05 * mm.x * mm.x;
+        vec3 mm = q - vec3(0.0, FEM == 1 ? -0.625 : -0.69, FEM == 1 ? -0.005 : 0.02); mm.y -= SMILE * 0.35 * mm.x * mm.x; mm.z += 1.05 * mm.x * mm.x;
         float lipD = min(length((mm - vec3(0.0, 0.05, 0.885)) / vec3(0.19 * MW, 0.046 * FULL + 0.015, 0.07)), length((mm - vec3(0.0, -0.055, 0.855)) / vec3(0.16 * MW, 0.054 * FULL + 0.017, 0.075)));
         float lip = smoothstep(1.15, 0.92, lipD);
         alb = mix(alb, LIPC, lip);
@@ -1027,7 +1028,7 @@ void main() {
     for (int k = 0; k < 4; k++) {
       ivec2 dir = ivec2((k & 1) == 1 ? 1 : -1, (k & 2) == 2 ? 1 : -1);
       vec3 s = vec3(0.0); float l1 = 0.0; float l2 = 0.0; float cnt = 0.0;
-      for (int y = 0; y <= 4; y++) for (int x = 0; x <= 4; x++) {
+      for (int y = 0; y <= 3; y++) for (int x = 0; x <= 3; x++) {
         vec4 cc = T(q + dir * ivec2(x, y));
         if (cc.a <= 0.0) continue;
         float l = dot(cc.rgb, vec3(0.3, 0.59, 0.11));
@@ -1037,7 +1038,8 @@ void main() {
       float mu = l1 / cnt; float va = l2 / cnt - mu * mu;
       if (va < best) { best = va; bc = s / cnt; }
     }
-    c = mix(c, bc, 0.8);
+    // (laid in, not faceted: the planes are softened so a cheek turns rather than steps)
+    c = mix(c, bc, 0.55);
     // brush strokes that follow the form: noise smeared along the isophotes (line integral)
     float lx = dot(T(q + ivec2(2, 0)).rgb - T(q - ivec2(2, 0)).rgb, vec3(0.33));
     float ly = dot(T(q + ivec2(0, 2)).rgb - T(q - ivec2(0, 2)).rgb, vec3(0.33));

@@ -271,8 +271,9 @@
   text-shadow: 0 1px 0 rgba(255, 230, 170, 0.8), 0 0 1px #3a0a04;
 }
 .dlg-cap[data-q]::before {
-  content: attr(data-q); position: absolute; right: 100%; top: -0.02em; margin-right: 0.04em;
-  font-size: 0.85em; line-height: 1; color: #7a1e12; opacity: 0.9;
+  /* the opening quote is part of the initial: a small raised mark set tight against the letter */
+  content: attr(data-q); display: inline-block; vertical-align: top; margin: 0.02em 0.015em 0 -0.08em;
+  font-size: 0.5em; line-height: 1; color: #7a1e12;
 }
 .jr-entry-text .dlg-cap { font-size: 4.4em; margin-right: 0.08em; }
 .jr-entry-text { padding-left: 0.8em; }
@@ -382,5 +383,6 @@
 .dlg-odd.manner b { font-family: var(--font-body); font-style: normal; font-size: 1.02em; white-space: normal; line-height: 1.2; }
 .dlg-odd.manner small { white-space: normal; line-height: 1.25; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .dlg-odds.stances .dlg-odd { grid-template-columns: 1fr; }
-.dlg-odds.stances .dlg-odd b { font-size: 0.95em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.dlg-odds.stances .dlg-odd small { -webkit-line-clamp: 1; }
+.dlg-odds.stances .dlg-odd { align-content: start; row-gap: 0.1em; }
+.dlg-odds.stances .dlg-odd b { font-size: 0.95em; white-space: nowrap; line-height: 1.2; }
+.dlg-odds.stances .dlg-odd small { white-space: nowrap; overflow: visible; line-height: 1.2; font-size: 0.76em; display: block; letter-spacing: -0.005em; }

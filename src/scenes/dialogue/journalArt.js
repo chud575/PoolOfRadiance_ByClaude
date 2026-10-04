@@ -347,11 +347,13 @@ export function pageTexture(side) {
 // ------------------------------------------------------------------ hand-composed plates
 
 /**
- * Plate VII, drawn rather than traced: the ghost of Ferran Martinez kneeling in vigil before the
- * broken altar of Sokol's chapel. Built as an engraver works: each mass is a path, hatched in its
- * own direction (wall courses ruled level, the cloak cut along its folds, the helm in arcs round its
- * dome), in three keyed values (open paper, one ruled tint, crosshatch), then contoured. The ghost
- * is left as clean paper in a halo of open lines, cut out of a crosshatched night.
+ * Plate VII, cut as a line engraving in the manner of a Doré or Dürer plate rather than ruled as
+ * a technical drawing: every line is a burin stroke that swells in shadow and tapers to nothing
+ * in the light (so tone is made by line weight, and the brightest planes are open paper); the
+ * hatching follows each form — courses along the ashlar, arcs round the vault, orthogonals
+ * running to the vanishing point across a foreshortened floor of flags, bracelet strokes round
+ * the knight's limbs and curves laid along each plate of his harness; his ghost-light opens the
+ * wall's tint round him with no ruled rings.
  */
 function drawnVigilPlate(W = 720, H = 340) {
   const S = 2;
@@ -359,229 +361,361 @@ function drawnVigilPlate(W = 720, H = 340) {
   const g = c.getContext('2d');
   g.scale(S, S);
   const R = rngOf(707);
-  const INK = (a) => `rgba(38,24,14,${a})`;
-  g.lineCap = 'round';
-  g.lineJoin = 'round';
-  const poly = (pts) => { const p = new Path2D(); p.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) p.lineTo(pts[i][0], pts[i][1]); p.closePath(); return p; };
-  // parallel burin lines across a clip path; wobble keeps them hand-cut, swell with weight
-  const hatch = (path, ang, sp, w, a = 0.85, bbox = [0, 0, W, H]) => {
-    g.save();
-    g.clip(path);
-    g.strokeStyle = INK(a);
+  const INK = (a = 1) => `rgba(36,22,12,${a})`;
+  const PAPER = '#f3e7c6';
+  const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+  const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+  const dist = (x0, y0, x1, y1) => Math.hypot(x1 - x0, y1 - y0);
+  // Catmull-Rom resample of a guide polyline
+  const smooth = (pts, step = 2.5) => {
+    if (pts.length < 2) return pts;
+    const out = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[Math.max(0, i - 1)]; const p1 = pts[i]; const p2 = pts[i + 1]; const p3 = pts[Math.min(pts.length - 1, i + 2)];
+      const n = Math.max(2, Math.ceil(dist(p1[0], p1[1], p2[0], p2[1]) / step));
+      for (let k = 0; k < n; k++) {
+        const t = k / n; const t2 = t * t; const t3 = t2 * t;
+        const f = (a, b, cc, d) => 0.5 * (2 * b + (-a + cc) * t + (2 * a - 5 * b + 4 * cc - d) * t2 + (-a + 3 * b - 3 * cc + d) * t3);
+        out.push([f(p0[0], p1[0], p2[0], p3[0]), f(p0[1], p1[1], p2[1], p3[1])]);
+      }
+    }
+    out.push(pts[pts.length - 1]);
+    return out;
+  };
+  // a burin stroke: a ribbon whose width follows the tone under it, swelling mid-stroke and
+  // tapering at both ends; where the tone falls to light the line breaks off into the paper
+  const burin = (pts, w, tone = () => 1, a = 0.94) => {
+    const P = smooth(pts);
+    const n = P.length;
+    if (n < 2) return;
+    const ws = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const t = i / (n - 1);
+      const taper = Math.min(1, t / 0.18, (1 - t) / 0.18);
+      ws[i] = w * Math.pow(Math.max(0, taper), 0.7) * (0.8 + 0.3 * Math.sin(Math.PI * t)) * clamp(tone(P[i][0], P[i][1]), 0, 1.6);
+    }
+    g.fillStyle = INK(a);
+    let i = 0;
+    while (i < n) {
+      while (i < n && ws[i] < 0.09) i++;
+      const s0 = i;
+      while (i < n && ws[i] >= 0.09) i++;
+      if (i - s0 < 2) continue;
+      const L = []; const Rr = [];
+      for (let k = s0; k < i; k++) {
+        const pa = P[Math.max(s0, k - 1)]; const pb = P[Math.min(i - 1, k + 1)];
+        let nx = -(pb[1] - pa[1]); let ny = pb[0] - pa[0];
+        const l = Math.hypot(nx, ny) || 1; nx /= l; ny /= l;
+        const hw = ws[k] / 2;
+        L.push([P[k][0] + nx * hw, P[k][1] + ny * hw]);
+        Rr.push([P[k][0] - nx * hw, P[k][1] - ny * hw]);
+      }
+      g.beginPath();
+      g.moveTo(L[0][0], L[0][1]);
+      for (const q of L) g.lineTo(q[0], q[1]);
+      for (let k = Rr.length - 1; k >= 0; k--) g.lineTo(Rr[k][0], Rr[k][1]);
+      g.closePath();
+      g.fill();
+    }
+  };
+  const clipped = (path, fn) => { g.save(); g.clip(path); fn(); g.restore(); };
+  const fillPaper = (path, col = PAPER) => { g.save(); g.fillStyle = col; g.fill(path); g.restore(); };
+  const P2 = (pts, close = true) => { const p = new Path2D(); p.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) p.lineTo(pts[i][0], pts[i][1]); if (close) p.closePath(); return p; };
+  // straight hatching with a hand's wobble, at angle, every sp px, inside bbox
+  const lines = (bbox, ang, sp, w, tone, a = 0.9) => {
     const [x0, y0, x1, y1] = bbox;
     const cx = (x0 + x1) / 2; const cy = (y0 + y1) / 2;
-    const L = Math.hypot(x1 - x0, y1 - y0) / 2 + 4;
+    const Lh = Math.hypot(x1 - x0, y1 - y0) / 2 + 6;
     const dx = Math.cos(ang); const dy = Math.sin(ang);
-    for (let o = -L; o <= L; o += sp) {
-      g.lineWidth = w * (0.8 + R() * 0.4);
-      g.beginPath();
-      const px = cx - dy * o; const py = cy + dx * o;
-      const n = 8;
-      for (let k = 0; k <= n; k++) {
-        const t = -L + (2 * L * k) / n;
-        const wob = (R() - 0.5) * 0.5;
-        const x = px + dx * t - dy * wob; const y = py + dy * t + dx * wob;
-        if (k) g.lineTo(x, y); else g.moveTo(x, y);
+    for (let o = -Lh; o <= Lh; o += sp * (0.85 + R() * 0.3)) {
+      const pts = [];
+      for (let k = 0; k <= 10; k++) {
+        const t = -Lh + (2 * Lh * k) / 10; const wob = (R() - 0.5) * 0.6;
+        pts.push([cx - dy * o + dx * t - dy * wob, cy + dx * o + dy * t + dx * wob]);
       }
-      g.stroke();
+      burin(pts, w, tone, a);
     }
-    g.restore();
   };
-  // arcs round a centre (domes, the halo)
-  const arcs = (path, cx, cy, r0, r1, sp, w, a0 = 0, a1 = Math.PI * 2, al = 0.85) => {
-    g.save();
-    g.clip(path);
-    g.strokeStyle = INK(al);
-    for (let r = r0; r <= r1; r += sp) { g.lineWidth = w; g.beginPath(); g.arc(cx, cy, r, a0, a1); g.stroke(); }
-    g.restore();
-  };
-  // curved strokes from a list of guide curves: each guide is [[x,y]...]; strokes are spaced along a normal
-  const folds = (path, guides, count, spread, w, al = 0.85) => {
-    g.save();
-    g.clip(path);
-    g.strokeStyle = INK(al);
-    for (const gd of guides) {
-      for (let k = 0; k < count; k++) {
-        const off = (k - (count - 1) / 2) * spread;
-        g.lineWidth = w * (0.7 + 0.6 * (1 - Math.abs(off) / (spread * count)));
-        g.beginPath();
-        gd.forEach(([x, y], i) => { const xx = x + off; if (i) g.lineTo(xx, y + Math.abs(off) * 0.15); else g.moveTo(xx, y); });
-        g.stroke();
-      }
+  // hatching that follows a guide curve: offset copies spaced along its normal
+  const along = (guide, count, sp, w, tone, a = 0.9, lift = 0) => {
+    const G = smooth(guide, 6);
+    for (let k = 0; k < count; k++) {
+      const off = (k - (count - 1) / 2) * sp;
+      const pts = G.map((q, i) => {
+        const pa = G[Math.max(0, i - 1)]; const pb = G[Math.min(G.length - 1, i + 1)];
+        let nx = -(pb[1] - pa[1]); let ny = pb[0] - pa[0]; const l = Math.hypot(nx, ny) || 1; nx /= l; ny /= l;
+        return [q[0] + nx * off, q[1] + ny * off + Math.abs(off) * lift];
+      });
+      burin(pts, w, tone, a);
     }
-    g.restore();
   };
-  const line = (pts, w, a = 0.92) => { g.strokeStyle = INK(a); g.lineWidth = w; g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.stroke(); };
-  const contour = (path, w, a = 0.95) => { g.strokeStyle = INK(a); g.lineWidth = w; g.stroke(path); };
+  // bracelet strokes round a limb from a to b (arcs across it, bowed toward the viewer)
+  const bracelets = (a, b, ra, rb, count, w, tone, bow = 0.35, alpha = 0.9) => {
+    const ax = b[0] - a[0]; const ay = b[1] - a[1]; const Lr = Math.hypot(ax, ay) || 1;
+    const ux = ax / Lr; const uy = ay / Lr; const nx = -uy; const ny = ux;
+    for (let k = 0; k < count; k++) {
+      const t = (k + 0.5) / count; const r = ra + (rb - ra) * t;
+      const cx = a[0] + ax * t; const cy = a[1] + ay * t;
+      const pts = [];
+      for (let j = 0; j <= 8; j++) { const s2 = -1 + j / 4; pts.push([cx + nx * r * s2 + ux * r * bow * (1 - s2 * s2), cy + ny * r * s2 + uy * r * bow * (1 - s2 * s2)]); }
+      burin(pts, w, tone, alpha);
+    }
+  };
 
   // paper
-  g.fillStyle = '#f3e7c6';
+  g.fillStyle = PAPER;
   g.fillRect(0, 0, W, H);
-  const all = poly([[15, 15], [W - 15, 15], [W - 15, H - 15], [15, H - 15]]);
-  const floorY = 268;
-
-  // ---- the wall: ashlar courses ruled level (one tint), the joints cut short
-  const wall = poly([[15, 15], [W - 15, 15], [W - 15, floorY], [15, floorY]]);
-  hatch(wall, 0, 3.1, 0.55, 0.7);
-  g.strokeStyle = INK(0.75);
-  for (let y = 15, row = 0; y < floorY; y += 21, row++) {
-    line([[15, y], [W - 15, y]], 1.0, 0.7);
-    for (let x = 15 + (row % 2) * 26 + R() * 6; x < W - 15; x += 46 + R() * 10) line([[x, y], [x, Math.min(floorY, y + 21)]], 0.9, 0.7);
-  }
-  // ---- the vault in shadow: crosshatch along the top and in the far corners
-  const gloomL = poly([[15, 15], [175, 15], [120, floorY], [15, floorY]]);
-  const gloomR = poly([[W - 15, 15], [W - 170, 15], [W - 110, floorY], [W - 15, floorY]]);
-  const gloomT = poly([[15, 15], [W - 15, 15], [W - 15, 52], [15, 60]]);
-  for (const p of [gloomL, gloomR, gloomT]) { hatch(p, 0.8, 3.2, 0.65, 0.82); hatch(p, -0.75, 3.8, 0.6, 0.78); }
-  const deepL = poly([[15, 15], [90, 15], [55, floorY], [15, floorY]]);
-  const deepR = poly([[W - 15, 15], [W - 85, 15], [W - 50, floorY], [W - 15, floorY]]);
-  for (const p of [deepL, deepR]) hatch(p, Math.PI / 2, 3, 0.6, 0.8);
-
-  // ---- the lancet window behind the altar: open paper, its leading drawn fine; light falls from it
+  const floorY = 266;
   const wx = 452; const wtop = 44; const wbot = 172; const ww = 40;
+  const kx = 258; const ky = 196; // the ghost's light centre
+  const glowAt = (x, y) => sstep(0.1, 1, dist(x, y, kx, ky - 20) / 175); // 0 at the ghost .. 1 away
+  const winAt = (x, y) => sstep(0.15, 1, dist(x, y, wx, 110) / 190);
+
+  // ---- the wall: ashlar courses ruled along each block (the burin follows the stone), each
+  // block its own tone, the joints cut short and firm; the tint opens round the ghost and the window
+  const wallP = P2([[15, 15], [W - 15, 15], [W - 15, floorY], [15, floorY]]);
+  // keyed in three values like a real plate: open paper round the ghost and the window, a light
+  // tint across the wall, heavy line under the vault and into the far corners
+  const wallTone = (x, y) => {
+    const vault = sstep(110, 15, y) * 0.9;
+    const corner = sstep(230, 15, Math.min(x - 15, W - 15 - x)) * 1.0;
+    const g0 = glowAt(x, y); const w0 = winAt(x, y);
+    return clamp((0.2 + vault + corner) * (g0 * g0 * g0) * (0.05 + 0.95 * w0 * w0), 0, 1.5);
+  };
+  clipped(wallP, () => {
+    for (let y = 15, row = 0; y < floorY; row++) {
+      const ch = 19 + R() * 5;
+      let x = 15 - (row % 2) * 22 - R() * 12;
+      while (x < W - 15) {
+        const bw = 34 + R() * 26;
+        const k = 0.75 + R() * 0.5; // the block's own value
+        for (let j = 1; j <= 3; j++) {
+          const yy = y + (ch * j) / 4 + (R() - 0.5) * 0.8;
+          burin([[x + 2, yy], [x + bw * 0.5, yy + (R() - 0.5) * 0.8], [x + bw - 2, yy]], 0.95, (px, py) => wallTone(px, py) * k * (j === 3 ? 1.25 : 0.9), 0.85);
+        }
+        // the joint and the bed under the block: short firm cuts, dark under the arris
+        burin([[x + bw, y + 1], [x + bw, y + ch - 1]], 1.2, (px, py) => 0.12 + wallTone(px, py) * 0.9, 0.9);
+        x += bw;
+      }
+      burin([[15, y + ch], [W * 0.5, y + ch + (R() - 0.5)], [W - 15, y + ch]], 1.1, (px, py) => 0.1 + wallTone(px, py) * 0.85, 0.9);
+      y += ch;
+    }
+  });
+  // the vault overhead: arcs swinging from pier to pier, laid closer and heavier into the crown's shadow
+  const vaultP = P2([[15, 15], [W - 15, 15], [W - 15, 70], [W * 0.5, 40], [15, 70]]);
+  clipped(vaultP, () => {
+    for (let k = 0; k < 16; k++) {
+      const y0 = 14 + k * 4.2;
+      burin([[10, y0 + 46], [W * 0.25, y0 + 12], [W * 0.5, y0], [W * 0.75, y0 + 12], [W - 10, y0 + 46]], 1.6, (x) => 1.05 - k * 0.04 + sstep(W * 0.5, 15, Math.min(x, W - x)) * 0.4, 0.92);
+    }
+  });
+
+  // ---- the lancet: open paper with its leading; the splayed reveal hatched along its own arch
   const lancet = new Path2D();
   lancet.moveTo(wx - ww, wbot); lancet.lineTo(wx - ww, wtop + 48);
   lancet.quadraticCurveTo(wx - ww, wtop, wx, wtop - 6); lancet.quadraticCurveTo(wx + ww, wtop, wx + ww, wtop + 48);
   lancet.lineTo(wx + ww, wbot); lancet.closePath();
-  // the splay of the window: a deep reveal, cross-hatched
   const reveal = new Path2D();
-  reveal.moveTo(wx - ww - 14, wbot + 8); reveal.lineTo(wx - ww - 14, wtop + 46);
-  reveal.quadraticCurveTo(wx - ww - 14, wtop - 14, wx, wtop - 22); reveal.quadraticCurveTo(wx + ww + 14, wtop - 14, wx + ww + 14, wtop + 46);
-  reveal.lineTo(wx + ww + 14, wbot + 8); reveal.closePath();
-  g.save(); g.fillStyle = '#f3e7c6'; g.fill(reveal); g.restore();
-  hatch(reveal, Math.PI / 2, 3, 0.6, 0.8); hatch(reveal, 0.4, 4, 0.5, 0.7);
-  g.save(); g.fillStyle = '#f6ecd0'; g.fill(lancet); g.restore();
-  contour(reveal, 1.4);
-  contour(lancet, 1.6);
-  // tracery: mullion, transom, a quatrefoil in the head, quarries
-  line([[wx, wtop + 30], [wx, wbot]], 1.4);
-  line([[wx - ww, 118], [wx + ww, 118]], 1.0);
-  g.save(); g.clip(lancet);
-  g.strokeStyle = INK(0.35); g.lineWidth = 0.6;
-  for (let k = -12; k < 12; k++) { g.beginPath(); g.moveTo(wx + k * 9, wtop); g.lineTo(wx + k * 9 + 80, wbot); g.stroke(); g.beginPath(); g.moveTo(wx + k * 9, wtop); g.lineTo(wx + k * 9 - 80, wbot); g.stroke(); }
-  g.restore();
-  g.strokeStyle = INK(0.9); g.lineWidth = 1.2;
+  reveal.moveTo(wx - ww - 15, wbot + 8); reveal.lineTo(wx - ww - 15, wtop + 46);
+  reveal.quadraticCurveTo(wx - ww - 15, wtop - 15, wx, wtop - 24); reveal.quadraticCurveTo(wx + ww + 15, wtop - 15, wx + ww + 15, wtop + 46);
+  reveal.lineTo(wx + ww + 15, wbot + 8); reveal.closePath();
+  fillPaper(reveal);
+  clipped(reveal, () => {
+    const archG = (o) => [[wx - ww - o, wbot + 10], [wx - ww - o, wtop + 46], [wx - ww * 0.7 - o, wtop + 8 - o * 0.3], [wx, wtop - 6 - o], [wx + ww * 0.7 + o, wtop + 8 - o * 0.3], [wx + ww + o, wtop + 46], [wx + ww + o, wbot + 10]];
+    for (let o = 1; o < 16; o += 2.6) burin(archG(o), 1.3, (x) => (x < wx ? 1.1 : 0.55), 0.9);
+  });
+  fillPaper(lancet, '#f8efd6');
+  burin([[wx - ww - 15, wbot + 8], [wx - ww - 15, wtop + 46]], 1.6, () => 1);
+  g.strokeStyle = INK(0.92); g.lineWidth = 1.5; g.stroke(lancet);
+  burin([[wx, wtop + 30], [wx, wbot]], 1.6, () => 1);
+  burin([[wx - ww, 118], [wx + ww, 118]], 1.2, () => 1);
+  clipped(lancet, () => {
+    for (let k = -12; k < 12; k++) {
+      burin([[wx + k * 9, wtop], [wx + k * 9 + 80, wbot]], 0.6, () => 0.8, 0.5);
+      burin([[wx + k * 9, wtop], [wx + k * 9 - 80, wbot]], 0.6, () => 0.8, 0.5);
+    }
+  });
+  g.strokeStyle = INK(0.9); g.lineWidth = 1.1;
   for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2; g.beginPath(); g.arc(wx + Math.cos(a) * 7, wtop + 22 + Math.sin(a) * 7, 7, 0, Math.PI * 2); g.stroke(); }
-  // the beam of light falling to the floor: the wall's tint is scraped away in a wedge
-  const beam = new Path2D(); beam.ellipse(wx - 90, floorY + 26, 150, 22, 0, 0, Math.PI * 2);
 
-  // ---- the floor: flagstones in perspective, a light tint
-  const floor = poly([[15, floorY], [W - 15, floorY], [W - 15, H - 15], [15, H - 15]]);
-  hatch(floor, 0.06, 4.2, 0.5, 0.55);
-  const vp = [wx - 20, 120];
-  for (let k = -9; k <= 11; k++) { const fx = vp[0] + k * 70; line([[vp[0] + (fx - vp[0]) * ((floorY - vp[1]) / (H - vp[1])), floorY], [fx, H - 15]], 0.8, 0.55); }
-  for (const fy of [282, 300, 322]) line([[15, fy], [W - 15, fy]], 0.8, 0.55);
-  g.save(); g.globalAlpha = 0.7; g.fillStyle = '#f6ecd0'; g.fill(beam); g.restore();
+  // ---- the floor: flags foreshortened to a vanishing point under the window, the orthogonals
+  // cut toward it, the transversals closing up with distance; the window's light lies in a wedge
+  const vp = [wx - 30, 112];
+  const floorP = P2([[15, floorY], [W - 15, floorY], [W - 15, H - 15], [15, H - 15]]);
+  const yAt = (z) => vp[1] + (floorY - vp[1]) / z; // z = 1 at the back wall
+  const beamAt = (x, y) => { const dx = (x - (wx - 70)) / 170; const dy = (y - (floorY + 30)) / 34; return clamp(1 - Math.sqrt(dx * dx + dy * dy)); };
+  const floorTone = (x, y) => clamp((0.55 + sstep(floorY, H - 15, y) * 0.5 + sstep(220, 15, Math.min(x - 15, W - 15 - x)) * 0.45) * (1 - beamAt(x, y) * 0.85) * (0.3 + 0.7 * glowAt(x, y + 40)), 0, 1.4);
+  clipped(floorP, () => {
+    // fine orthogonal hatching inside each flag (the tint), then the joints
+    for (let k = -60; k <= 60; k++) {
+      const fx = vp[0] + k * 9;
+      const top = [vp[0] + (fx - vp[0]) * ((floorY - vp[1]) / (H + 40 - vp[1])), floorY];
+      burin([top, [fx, H + 40]], 0.7, floorTone, 0.75);
+    }
+    for (let k = -9; k <= 11; k++) {
+      const fx = vp[0] + k * 74;
+      burin([[vp[0] + (fx - vp[0]) * ((floorY - vp[1]) / (H + 40 - vp[1])), floorY], [fx, H + 40]], 1.3, (x, y) => 0.6 + floorTone(x, y) * 0.5, 0.9);
+    }
+    for (let z = 0.94; z > 0.15; z *= 0.84) {
+      const y = yAt(1 / z) ;
+      if (y > H - 14) break;
+      burin([[15, y], [W * 0.5, y + (R() - 0.5)], [W - 15, y]], 0.8 + (y - floorY) * 0.02, (x, yy) => 0.55 + floorTone(x, yy) * 0.5, 0.88);
+    }
+  });
 
-  // ---- the altar: a slab on a block, the front in a vertical tint, the shadowed end crosshatched
+  // ---- the altar: a slab on a block, the lit front cut in long verticals that thin toward the
+  // light, the shadowed end crosshatched along its planes; a cloth with folds; candles
   const ax0 = 372; const ax1 = 540; const aTop = 196;
-  const slab = poly([[ax0 - 8, aTop], [ax1 + 10, aTop], [ax1 + 4, aTop - 9], [ax0 - 2, aTop - 9]]);
-  const front = poly([[ax0, aTop], [ax1, aTop], [ax1, floorY + 4], [ax0, floorY + 4]]);
-  const side = poly([[ax0, aTop], [ax0 - 16, aTop - 6], [ax0 - 16, floorY - 2], [ax0, floorY + 4]]);
-  hatch(front, Math.PI / 2, 3.2, 0.7, 0.8);
-  hatch(side, Math.PI / 2, 2.6, 0.8, 0.85); hatch(side, 0.6, 3, 0.7, 0.85);
-  hatch(slab, 0.1, 3.5, 0.5, 0.5);
-  // the altar cloth, its edge scalloped; the broken corner of the slab
-  const cloth = poly([[ax0 + 44, aTop], [ax1 - 44, aTop], [ax1 - 44, aTop + 44], [ax0 + 44, aTop + 44]]);
-  g.save(); g.fillStyle = '#f3e7c6'; g.fill(cloth); g.restore();
-  hatch(cloth, Math.PI / 2, 5, 0.5, 0.55);
-  contour(cloth, 1.2);
-  // Tyr's scales on the cloth
+  const slab = P2([[ax0 - 8, aTop], [ax1 + 10, aTop], [ax1 + 4, aTop - 9], [ax0 - 2, aTop - 9]]);
+  const front = P2([[ax0, aTop], [ax1, aTop], [ax1, floorY + 4], [ax0, floorY + 4]]);
+  const side = P2([[ax0, aTop], [ax0 - 16, aTop - 6], [ax0 - 16, floorY - 2], [ax0, floorY + 4]]);
+  for (const p of [slab, front, side]) fillPaper(p);
+  clipped(front, () => { for (let x = ax0 + 2; x < ax1; x += 3.1) burin([[x, aTop + 2], [x + (R() - 0.5), floorY + 4]], 1.05, (px, py) => 0.35 + (1 - (px - ax0) / (ax1 - ax0)) * 0.5 + sstep(aTop, floorY, py) * 0.4, 0.88); });
+  clipped(side, () => {
+    for (let y = aTop - 10; y < floorY + 6; y += 2.8) burin([[ax0 - 17, y - 3], [ax0 + 1, y + 2]], 1.2, () => 1.1);
+    for (let x = ax0 - 16; x < ax0; x += 3) burin([[x, aTop - 8], [x, floorY + 4]], 0.9, () => 1);
+  });
+  clipped(slab, () => { for (let y = aTop - 8; y < aTop; y += 2.4) burin([[ax0 - 8, y], [ax1 + 10, y]], 0.8, (x) => 0.3 + (1 - (x - ax0) / (ax1 - ax0)) * 0.5, 0.8); });
+  const cloth = P2([[ax0 + 44, aTop], [ax1 - 44, aTop], [ax1 - 42, aTop + 46], [ax0 + 46, aTop + 46]]);
+  fillPaper(cloth);
+  clipped(cloth, () => {
+    for (let k = 0; k < 9; k++) {
+      const x = ax0 + 50 + k * 8.5;
+      burin([[x, aTop], [x + Math.sin(k) * 2, aTop + 24], [x + Math.cos(k) * 2.5, aTop + 48]], k % 3 === 0 ? 1.4 : 0.8, () => 0.9);
+    }
+  });
+  g.strokeStyle = INK(0.92); g.lineWidth = 1.2; g.stroke(cloth);
   const sx = (ax0 + ax1) / 2; const sy = aTop + 20;
-  line([[sx, sy - 12], [sx, sy + 12]], 1.2); line([[sx - 14, sy - 8], [sx + 14, sy - 8]], 1.2);
-  for (const d of [-1, 1]) { line([[sx + d * 14, sy - 8], [sx + d * 10, sy + 2]], 0.7); line([[sx + d * 14, sy - 8], [sx + d * 18, sy + 2]], 0.7); line([[sx + d * 8, sy + 2], [sx + d * 20, sy + 2]], 1.0); }
-  contour(front, 1.5); contour(side, 1.5); contour(slab, 1.4);
-  line([[ax1 - 18, aTop - 9], [ax1 - 6, aTop - 2], [ax1 + 10, aTop]], 1.2); // a crack where the slab broke
-  line([[ax1 - 30, aTop + 2], [ax1 - 34, aTop + 30], [ax1 - 28, aTop + 52]], 0.9);
-  // candles with flames: tapered sticks, drips, haloes of open paper
+  burin([[sx, sy - 12], [sx, sy + 12]], 1.4, () => 1); burin([[sx - 14, sy - 8], [sx + 14, sy - 8]], 1.4, () => 1);
+  for (const d of [-1, 1]) { burin([[sx + d * 14, sy - 8], [sx + d * 10, sy + 2]], 0.8, () => 1); burin([[sx + d * 14, sy - 8], [sx + d * 18, sy + 2]], 0.8, () => 1); burin([[sx + d * 7, sy + 2], [sx + d * 14, sy + 5], [sx + d * 21, sy + 2]], 1.1, () => 1); }
+  for (const p of [front, side, slab]) { g.strokeStyle = INK(0.95); g.lineWidth = 1.4; g.stroke(p); }
+  burin([[ax1 - 18, aTop - 9], [ax1 - 6, aTop - 2], [ax1 + 10, aTop]], 1.4, () => 1);
+  burin([[ax1 - 30, aTop + 2], [ax1 - 34, aTop + 30], [ax1 - 28, aTop + 52]], 1.1, () => 1);
   for (const cxp of [ax0 + 16, ax0 + 30, ax1 - 30, ax1 - 14]) {
     const hgt = 22 + ((cxp * 7) % 9);
     const top = aTop - 9 - hgt;
-    const stick = poly([[cxp - 3.2, aTop - 9], [cxp + 3.2, aTop - 9], [cxp + 2.4, top], [cxp - 2.4, top]]);
-    g.save(); g.fillStyle = '#f6ecd0'; g.fill(stick); g.restore();
-    hatch(stick, Math.PI / 2, 1.8, 0.5, 0.6, [cxp - 1, top, cxp + 4, aTop]);
-    contour(stick, 0.9);
-    line([[cxp - 2.4, top + 3], [cxp - 3, top + 9]], 0.8);
-    const fl = new Path2D(); fl.moveTo(cxp, top - 13); fl.quadraticCurveTo(cxp + 4.5, top - 4, cxp, top - 1); fl.quadraticCurveTo(cxp - 4.5, top - 4, cxp, top - 13);
-    g.save(); g.fillStyle = '#fbf4dc'; g.beginPath(); g.arc(cxp, top - 6, 11, 0, Math.PI * 2); g.fill(); g.restore();
-    contour(fl, 0.9);
-    line([[cxp, top], [cxp, top - 4]], 1.0);
+    const stick = P2([[cxp - 3.2, aTop - 9], [cxp + 3.2, aTop - 9], [cxp + 2.4, top], [cxp - 2.4, top]]);
+    g.save(); g.fillStyle = '#fbf4dc'; g.beginPath(); g.arc(cxp, top - 6, 13, 0, Math.PI * 2); g.fill(); g.restore();
+    fillPaper(stick, '#f8efd6');
+    clipped(stick, () => { for (let x = cxp + 0.5; x < cxp + 3.5; x += 1.4) burin([[x, top], [x, aTop - 9]], 0.6, () => 0.9); });
+    g.strokeStyle = INK(0.9); g.lineWidth = 0.9; g.stroke(stick);
+    burin([[cxp - 2.4, top + 3], [cxp - 3.2, top + 10]], 1.0, () => 1);
+    burin([[cxp, top - 14], [cxp + 3.5, top - 6], [cxp, top - 1]], 1.0, () => 1, 0.9);
+    burin([[cxp, top - 14], [cxp - 3.5, top - 6], [cxp, top - 1]], 1.0, () => 1, 0.9);
+    burin([[cxp, top], [cxp, top - 4]], 1.2, () => 1);
   }
 
-  // ---- pews in the foreground: near-black, crosshatched to the plate's darkest
-  const pewL = poly([[15, 236], [118, 230], [124, H - 15], [15, H - 15]]);
-  const pewR = poly([[W - 15, 226], [W - 120, 232], [W - 128, H - 15], [W - 15, H - 15]]);
-  for (const p of [pewL, pewR]) { hatch(p, 0.7, 2.6, 0.8, 0.9); hatch(p, -0.8, 2.8, 0.75, 0.9); hatch(p, Math.PI / 2, 3.4, 0.6, 0.85); contour(p, 1.6); }
-  line([[15, 250], [120, 244]], 1.6); line([[W - 15, 240], [W - 122, 246]], 1.6);
-  for (const x of [40, 80]) line([[x, 236 - (x - 15) * 0.06], [x + 2, H - 15]], 1.2);
-
-  // ---- the knight: the halo first — the wall's tint lifted round him (open, sparse lines)
-  const kx = 256;
-  const halo = new Path2D(); halo.ellipse(kx + 8, 200, 92, 110, 0, 0, Math.PI * 2);
-  g.save(); g.clip(halo);
-  const hg = g.createRadialGradient(kx + 8, 200, 20, kx + 8, 200, 110);
-  hg.addColorStop(0, 'rgba(246,236,208,1)'); hg.addColorStop(0.6, 'rgba(246,236,208,0.85)'); hg.addColorStop(1, 'rgba(246,236,208,0)');
-  g.fillStyle = hg; g.fillRect(0, 0, W, H);
-  g.restore();
-  arcs(halo, kx + 8, 200, 70, 110, 5, 0.5, 0, Math.PI * 2, 0.35);
-
-  // the figure, kneeling in profile toward the altar, sword reversed before him
-  const cloak = poly([[244, 120], [228, 132], [208, 186], [182, 238], [160, floorY + 2], [252, floorY + 2], [246, 232], [238, 186]]);
-  const backLeg = poly([[232, 206], [250, 208], [232, 260], [214, floorY], [176, floorY + 1], [176, floorY - 9], [214, 254]]);
-  const thigh = poly([[244, 202], [298, 206], [306, 220], [252, 226]]);
-  const shin = poly([[292, 210], [308, 216], [310, floorY - 6], [318, floorY], [290, floorY + 1], [294, floorY - 6]]);
-  const torso = poly([[232, 214], [228, 170], [236, 136], [268, 132], [282, 150], [280, 186], [264, 214]]);
-  const pauld = new Path2D(); pauld.ellipse(262, 146, 15, 12, -0.3, 0, Math.PI * 2);
-  const arm = poly([[258, 152], [272, 150], [284, 184], [312, 176], [316, 188], [282, 198], [270, 196]]);
-  const helm = new Path2D();
-  helm.moveTo(242, 120); helm.bezierCurveTo(238, 90, 262, 80, 276, 92); helm.quadraticCurveTo(286, 104, 296, 118);
-  helm.lineTo(282, 128); helm.quadraticCurveTo(268, 136, 250, 132); helm.closePath();
-  const gorget = poly([[246, 128], [278, 126], [282, 138], [244, 140]]);
-  const sword = poly([[318.5, 186], [322.5, 186], [323, floorY - 2], [320.5, floorY + 3], [318, floorY - 2]]);
-  const guard = poly([[304, 184], [338, 182], [338, 187], [304, 189]]);
-  const grip = poly([[318, 168], [323, 168], [323, 183], [318, 183]]);
-  const knight = [cloak, backLeg, thigh, shin, torso, arm, pauld, helm, gorget];
-  // ghost: open paper; form only in the turning planes, cut along the form
-  for (const p of knight) { g.save(); g.fillStyle = '#f8efd4'; g.fill(p); g.restore(); }
-  // the wall seen faintly through the cloak's hem
-  g.save(); g.clip(cloak); for (let y = 15; y < floorY; y += 21) line([[150, y], [260, y]], 0.5, 0.25); g.restore();
-  folds(cloak, [[[236, 132], [222, 180], [200, 232], [184, floorY]], [[240, 150], [232, 200], [222, 240], [214, floorY]]], 4, 3.2, 0.6, 0.6);
-  hatch(backLeg, 1.2, 3, 0.55, 0.6);
-  arcs(helm, 270, 112, 4, 30, 3.4, 0.55, Math.PI * 0.55, Math.PI * 1.25, 0.65);
-  folds(torso, [[[236, 140], [232, 176], [238, 212]]], 3, 3, 0.55, 0.55);
-  hatch(shin, 1.62, 3, 0.5, 0.5);
-  hatch(thigh, 0.1, 3.4, 0.45, 0.45, [244, 202, 306, 226]);
-  arcs(pauld, 262, 150, 4, 16, 3.5, 0.5, Math.PI * 0.2, Math.PI * 0.9, 0.6);
-  // lames on the pauldron and the tasset, a breath-grid and the sight on the helm
-  for (let k = 0; k < 3; k++) line([[252, 150 + k * 5], [274, 146 + k * 5]], 0.7, 0.75);
-  line([[262, 108], [294, 116]], 1.6); // the sight
-  for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) { g.fillStyle = INK(0.85); g.beginPath(); g.arc(276 + i * 5, 121 + j * 4.5, 0.9, 0, Math.PI * 2); g.fill(); }
-  line([[242, 100], [270, 84]], 0.8, 0.7); // the comb
-  for (const p of knight) contour(p, 1.5, 0.92);
-  // the sword (steel, drawn firmer), crossguard and pommel under the hands
-  g.save(); g.fillStyle = '#f8efd4'; g.fill(sword); g.fill(guard); g.restore();
-  hatch(sword, Math.PI / 2, 2, 0.4, 0.5, [317, 186, 324, floorY]);
-  contour(sword, 1.2); contour(guard, 1.2); contour(grip, 1.1);
-  g.fillStyle = '#f8efd4'; g.beginPath(); g.arc(320.5, 165, 4.5, 0, Math.PI * 2); g.fill(); g.strokeStyle = INK(0.9); g.lineWidth = 1.2; g.stroke();
-  // the hands closed on the pommel
-  const hands = new Path2D(); hands.ellipse(318, 176, 7, 6, 0.3, 0, Math.PI * 2);
-  g.save(); g.fillStyle = '#f8efd4'; g.fill(hands); g.restore(); contour(hands, 1.2);
-  // the wound at the throat: a short, firm cut with rays of open lines
-  line([[262, 136], [276, 134]], 1.6);
-  for (let k = 0; k < 5; k++) { const a = -2.6 + k * 0.5; line([[269 + Math.cos(a) * 6, 135 + Math.sin(a) * 6], [269 + Math.cos(a) * 12, 135 + Math.sin(a) * 12]], 0.5, 0.6); }
-  // mist curling from the hem along the floor
-  for (let k = 0; k < 5; k++) {
-    const y = floorY - 4 + k * 4;
-    g.strokeStyle = INK(0.5); g.lineWidth = 0.7; g.beginPath();
-    g.moveTo(150 - k * 10, y); g.bezierCurveTo(180, y - 6, 210, y + 4, 250 + k * 8, y - 2); g.stroke();
+  // ---- foreground pews, almost black: planks cut toward the vanishing point, crossed, grained
+  const pewEnd = (sgn) => {
+    const X = (x) => (sgn > 0 ? x : W - x);
+    const p = new Path2D();
+    p.moveTo(X(15), H - 15); p.lineTo(X(15), 236);
+    p.bezierCurveTo(X(40), 214, X(70), 212, X(96), 222); // the scrolled top of the end board
+    p.quadraticCurveTo(X(112), 226, X(120), 218);
+    p.quadraticCurveTo(X(132), 214, X(128), 232);
+    p.lineTo(X(132), H - 15); p.closePath();
+    return p;
+  };
+  const pewL = pewEnd(1);
+  const pewR = pewEnd(-1);
+  for (const [p, sgn] of [[pewL, 1], [pewR, -1]]) {
+    fillPaper(p);
+    clipped(p, () => {
+      for (let y = 220; y < H; y += 2.6) burin([[sgn > 0 ? 10 : W - 10, y], [sgn > 0 ? 140 : W - 140, y - 7 + (R() - 0.5) * 1.5]], 1.25, () => 1.15);
+      for (let x = 0; x < 150; x += 3.2) { const X = sgn > 0 ? 15 + x : W - 15 - x; burin([[X, 215], [X + sgn * 2, H]], 0.9, () => 0.9); }
+      for (let k = 0; k < 5; k++) { const y = 246 + k * 16; burin([[sgn > 0 ? 18 : W - 18, y], [sgn > 0 ? 70 : W - 70, y - 5 + Math.sin(k) * 3], [sgn > 0 ? 124 : W - 124, y - 8]], 0.7, () => 0.6, 0.6); }
+    });
+    g.strokeStyle = INK(0.96); g.lineWidth = 1.6; g.stroke(p);
+    burin([[sgn > 0 ? 22 : W - 22, 246], [sgn > 0 ? 70 : W - 70, 232], [sgn > 0 ? 118 : W - 118, 236]], 2.0, () => 1); // the carved panel's moulding
+    burin([[sgn > 0 ? 24 : W - 24, 250], [sgn > 0 ? 26 : W - 26, H - 22]], 1.4, () => 1);
+    burin([[sgn > 0 ? 116 : W - 116, 240], [sgn > 0 ? 120 : W - 120, H - 22]], 1.4, () => 1);
   }
-  // a cast shadow of the kneeling figure on the flags (thin ruled tint)
-  const cast = poly([[170, floorY + 2], [318, floorY + 2], [300, floorY + 12], [160, floorY + 10]]);
-  hatch(cast, 0.05, 2.2, 0.55, 0.7);
+
+  // ---- the knight, kneeling in profile toward the altar: a hounskull with its beak and eye
+  // slit, a cuirass and back-plate, overlapping lames at the shoulder and hip, cuisse, poleyn,
+  // greave and sabaton on the kneeling leg; the cloak falls behind. Ghost-light: he is mostly
+  // open paper, cut only on his shadowed side and along his plates' edges
+  const B = (pts) => {
+    const p = new Path2D(); p.moveTo(pts[0][0], pts[0][1]);
+    let i = 1;
+    for (; i + 2 < pts.length; i += 3) p.bezierCurveTo(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], pts[i + 2][0], pts[i + 2][1]);
+    for (; i < pts.length; i++) p.lineTo(pts[i][0], pts[i][1]);
+    p.closePath(); return p;
+  };
+  const shadeL = (x, y) => clamp(0.15 + sstep(290, 228, x) * 1.15 + sstep(150, 250, y) * 0.25, 0, 1.4); // light from the window, right
+  const cloak = B([[246, 128], [226, 150], [214, 200], [196, 236], [186, 252], [172, 262], [158, floorY + 2], [190, floorY + 4], [232, floorY + 4], [252, floorY + 2], [246, 220], [244, 180], [246, 128]]);
+  const back = B([[234, 140], [226, 160], [226, 190], [234, 214], [250, 222], [272, 220], [280, 206], [286, 180], [284, 152], [270, 132], [250, 132], [234, 140]]);
+  const helm = B([[244, 124], [236, 104], [246, 82], [270, 84], [282, 88], [290, 100], [292, 108], [304, 112], [314, 118], [318, 121], [304, 124], [290, 126], [280, 132], [266, 136], [252, 134], [244, 124]]);
+  const pauld = B([[248, 140], [252, 128], [282, 126], [290, 146], [292, 156], [280, 166], [264, 164], [252, 160], [246, 152], [248, 140]]);
+  const arm = B([[270, 160], [282, 170], [290, 182], [300, 178], [310, 176], [318, 184], [316, 192], [300, 196], [286, 198], [272, 192], [264, 176], [270, 160]]);
+  const thigh = B([[250, 210], [270, 206], [296, 206], [306, 214], [310, 224], [290, 228], [270, 228], [254, 226], [248, 218], [250, 210]]);
+  const shin = B([[294, 214], [306, 214], [310, 230], [310, 246], [312, floorY - 8], [320, floorY - 4], [322, floorY], [304, floorY + 2], [292, floorY], [296, floorY - 8], [294, 240], [294, 214]]);
+  const backLeg = B([[232, 208], [246, 214], [242, 236], [228, 254], [216, floorY - 2], [200, floorY], [178, floorY + 1], [178, floorY - 8], [198, floorY - 10], [214, 248], [222, 230], [232, 208]]);
+  const parts = [cloak, backLeg, back, thigh, shin, arm, pauld, helm];
+  for (const p of parts) fillPaper(p, '#f8efd6');
+  // the cloak: long tapered folds, heavier in the hollows away from the light
+  clipped(cloak, () => {
+    for (let k = 0; k < 9; k++) {
+      const x0 = 242 - k * 3.2; const bend = k * 4.2;
+      burin([[x0, 134 + k * 2], [x0 - 10 - bend * 0.4, 190], [x0 - 22 - bend, 236], [x0 - 34 - bend * 1.2, floorY + 4]], k % 3 === 1 ? 1.6 : 0.9, (x, y) => shadeL(x, y) * (0.6 + sstep(150, 250, y) * 0.5), 0.9);
+    }
+  });
+  // the back-plate: curves laid along its swell, closing into the shadow at the spine
+  clipped(back, () => { along([[236, 142], [228, 176], [236, 212]], 9, 3.2, 1.0, (x, y) => shadeL(x, y) * 1.1, 0.9); });
+  // the helm: strokes following the skull's curve back from the brow, the beak cut along its keel
+  clipped(helm, () => {
+    for (let k = 0; k < 8; k++) burin([[242 + k * 1.5, 126 - k * 2], [240 + k * 2, 100 - k], [258 + k * 2, 86 + k * 2.2], [282 - k, 92 + k * 2.8]], 1.0, (x, y) => shadeL(x, y) * 1.15, 0.9);
+    for (let k = 0; k < 5; k++) burin([[290, 113 + k * 2.4], [304, 117 + k * 1.6], [316, 121]], 0.8, () => 0.7, 0.85);
+  });
+  // the shoulder: three lames, each a curved plate with its own lit edge and a shade under it
+  clipped(pauld, () => {
+    for (let k = 0; k < 4; k++) {
+      const y0 = 136 + k * 7.5;
+      burin([[248, y0 + 6], [262, y0 - 2], [282, y0 - 1], [292, y0 + 6]], 1.6, (x) => 0.6 + sstep(290, 250, x) * 0.6, 0.95);
+      along([[250, y0 + 9], [264, y0 + 2], [282, y0 + 3], [290, y0 + 9]], 2, 1.6, 0.8, (x) => shadeL(x, 150), 0.8);
+    }
+  });
+  // the arm and the gauntlets on the pommel; the limbs carry bracelet strokes round their forms
+  clipped(arm, () => { bracelets([270, 166], [292, 192], 9, 9, 7, 0.9, (x) => shadeL(x, 180) * 1.05, 0.5); bracelets([290, 190], [314, 184], 7, 6, 6, 0.8, (x) => shadeL(x, 180), -0.4); });
+  clipped(thigh, () => { bracelets([252, 216], [306, 218], 10, 9, 12, 1.0, (x, y) => shadeL(x, y) * 1.1, 0.4); });
+  clipped(shin, () => { bracelets([302, 216], [308, floorY - 6], 8, 6, 12, 0.9, (x, y) => shadeL(x - 20, y) * 1.1, 0.35); });
+  clipped(backLeg, () => { lines([170, 200, 250, floorY + 2], 1.15, 3, 1.0, (x, y) => 0.9 + sstep(200, 260, y) * 0.3); });
+  // plate edges: firm contour, heavier on the shadow side, with lame lines across the limbs
+  for (const p of parts) { g.strokeStyle = INK(0.95); g.lineWidth = 1.4; g.stroke(p); }
+  burin([[262, 108], [282, 110], [298, 116]], 2.2, () => 1); // the eye slit
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 2; j++) { g.fillStyle = INK(0.9); g.beginPath(); g.arc(292 + i * 4.5, 120 + j * 3.5 - i * 0.6, 0.9, 0, Math.PI * 2); g.fill(); }
+  burin([[246, 90], [262, 80], [278, 84]], 1.6, () => 1); // the comb
+  burin([[248, 132], [264, 136], [280, 133]], 1.8, () => 1); // the gorget's edge
+  for (const t of [0.33, 0.66]) burin([[250 + t * 4, 210 + t * 4], [302 + t * 4, 210 + t * 6]], 1.0, () => 1);
+  burin([[292, 230], [304, 226], [312, 232]], 1.6, () => 1); // the poleyn
+  g.save(); g.fillStyle = '#f8efd6'; g.beginPath(); g.ellipse(304, 228, 7, 6, 0.2, 0, Math.PI * 2); g.fill(); g.restore();
+  g.strokeStyle = INK(0.95); g.lineWidth = 1.3; g.beginPath(); g.ellipse(304, 228, 7, 6, 0.2, 0, Math.PI * 2); g.stroke();
+  for (const t of [0.35, 0.6, 0.85]) burin([[296 + t * 4, floorY - 2 - t * 6], [316 + t * 2, floorY - t * 4]], 1.1, () => 1); // sabaton lames
+  // the reversed sword before him, its pommel under the hands
+  const sword = P2([[319, 186], [323, 186], [323.5, floorY - 2], [321, floorY + 4], [318.5, floorY - 2]]);
+  const guard = P2([[304, 184], [338, 182], [338, 187], [304, 189]]);
+  fillPaper(sword, '#f8efd6'); fillPaper(guard, '#f8efd6');
+  burin([[321, 188], [321, floorY]], 0.7, () => 0.8);
+  g.strokeStyle = INK(0.95); g.lineWidth = 1.2; g.stroke(sword); g.stroke(guard);
+  g.save(); g.fillStyle = '#f8efd6'; g.beginPath(); g.arc(321, 166, 4.5, 0, Math.PI * 2); g.fill(); g.restore();
+  g.lineWidth = 1.2; g.beginPath(); g.arc(321, 166, 4.5, 0, Math.PI * 2); g.stroke();
+  g.save(); g.fillStyle = '#f8efd6'; g.beginPath(); g.ellipse(318, 177, 7.5, 6, 0.3, 0, Math.PI * 2); g.fill(); g.restore();
+  g.beginPath(); g.ellipse(318, 177, 7.5, 6, 0.3, 0, Math.PI * 2); g.stroke();
+  for (let k = 0; k < 3; k++) burin([[312 + k * 3.5, 173], [313 + k * 3.5, 181]], 0.8, () => 1);
+  // the wound at the throat: a short firm cut, and his light raying from it in fine tapered strokes
+  burin([[264, 137], [278, 135]], 2, () => 1);
+  for (let k = 0; k < 7; k++) { const a = -2.9 + k * 0.42; burin([[271 + Math.cos(a) * 6, 136 + Math.sin(a) * 6], [271 + Math.cos(a) * 15, 136 + Math.sin(a) * 15]], 0.6, () => 0.9, 0.7); }
+  // mist curling from the hem along the flags
+  for (let k = 0; k < 6; k++) {
+    const y = floorY - 6 + k * 4;
+    burin([[140 - k * 12, y], [180, y - 6], [215, y + 4], [256 + k * 9, y - 2]], 1.0, (x) => 0.4 + 0.5 * Math.sin((x - 130) / 140 * Math.PI), 0.7);
+  }
+  // his shadow on the flags, cut in the floor's own orthogonals
+  const cast = P2([[172, floorY + 3], [320, floorY + 3], [304, floorY + 13], [162, floorY + 11]]);
+  clipped(cast, () => { for (let x = 150; x < 330; x += 2.2) burin([[x, floorY + 2], [x - 6, floorY + 14]], 1.0, () => 1); });
 
   // ---- the plate mark
   g.strokeStyle = INK(0.92); g.lineWidth = 2.2; g.strokeRect(6, 6, W - 12, H - 12);
   g.lineWidth = 1; g.strokeRect(14.5, 14.5, W - 29, H - 29);
-  void all;
   return c;
 }

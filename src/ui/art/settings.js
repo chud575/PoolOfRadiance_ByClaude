@@ -1,5 +1,5 @@
 import {
-  rngOf, rgba, mix, glow, glowEllipse, lightShaft, fog, texture, masonry, planks, poly, linGrad, quadPt, lerp, archPath, gothicPath, contactShadow,
+  rngOf, rgba, mix, glow, glowEllipse, lightShaft, fog, texture, masonry, planks, poly, linGrad, quadPt, lerp, archPath, gothicPath, contactShadow, plaster, weather,
 } from './paint.js';
 import * as P from './props.js';
 
@@ -173,10 +173,15 @@ function ground(g, W, H, sky, R, { horizon, kind = 'cobble', color = null }) {
         const x0 = vpx + u0 * W * (0.1 + spread * 2.2);
         const x1 = vpx + u1 * W * (0.1 + spread * 2.2);
         if (x1 < -20 || x0 > W + 20) continue;
-        const k = 0.7 + R() * 0.5;
-        g.fillStyle = rgba(base, 1, k * (0.8 + spread * 0.5));
+        // setts of mixed stone: value, warmth and wear vary stone to stone, a few sunk or lifted
+        const k = 0.66 + R() * 0.6;
+        const hue = R();
+        const tint = hue < 0.18 ? '#7a6a58' : hue < 0.32 ? '#4a5058' : hue < 0.4 ? '#6a5a4a' : null;
+        const sc = tint ? mix(base, tint, 0.35) : base;
+        g.fillStyle = rgba(sc, 1, k * (0.8 + spread * 0.5));
+        const jx = (R() - 0.5) * (x1 - x0) * 0.12;
         g.beginPath();
-        g.roundRect(x0 + 1, y0 + 0.8, x1 - x0 - 2, rh - 1.6, Math.min(rh, x1 - x0) * 0.35);
+        g.roundRect(x0 + 1 + jx, y0 + 0.8 + (R() - 0.5) * rh * 0.12, x1 - x0 - 2 - Math.abs(jx), rh - 1.6, Math.min(rh, x1 - x0) * (0.25 + R() * 0.2));
         g.fill();
         if (rh > 4) {
           g.fillStyle = 'rgba(255,230,190,0.08)';
@@ -202,6 +207,34 @@ function ground(g, W, H, sky, R, { horizon, kind = 'cobble', color = null }) {
     }
   }
   texture(g, 0, horizon, W, H - horizon, { alpha: 0.35, mode: 'multiply', cells: 6, octaves: 4, seed: R.int(1, 99) });
+  if (kind === 'cobble' || kind === 'flags') {
+    // grime packed along the kerbs, and rain standing in the hollows: dark pools that hold a
+    // smear of the sky and a lit rim on their far edge
+    for (const sx of [0, 1]) {
+      g.fillStyle = linGrad(g, sx ? W : 0, 0, sx ? W * 0.72 : W * 0.28, 0, [[0, 'rgba(12,10,8,0.45)'], [1, 'rgba(12,10,8,0)']]);
+      g.fillRect(sx ? W * 0.72 : 0, horizon, W * 0.28, H - horizon);
+    }
+    for (let i = 0; i < 7; i++) {
+      const t = 0.25 + R() * 0.7;
+      const py = horizon + (H - horizon) * t * t;
+      const px = W * (0.18 + R() * 0.64);
+      const pw = W * (0.03 + R() * 0.06) * (0.4 + t);
+      const ph = pw * (0.12 + t * 0.1);
+      g.save();
+      g.translate(px, py);
+      g.scale(1, ph / pw);
+      const pg = g.createRadialGradient(0, 0, 0, 0, 0, pw);
+      pg.addColorStop(0, rgba(mix(sky.top ?? sky.fog, '#05060a', 0.35), 0.75));
+      pg.addColorStop(0.8, rgba(mix(sky.fog, '#05060a', 0.5), 0.55));
+      pg.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = pg;
+      g.beginPath(); g.arc(0, 0, pw, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = rgba(sky.hor ?? '#ffcf9a', 0.2);
+      g.lineWidth = 2 * (pw / ph) * 0.4;
+      g.beginPath(); g.arc(0, 0, pw * 0.82, Math.PI * 1.1, Math.PI * 1.9); g.stroke();
+      g.restore();
+    }
+  }
   // distance haze on the ground
   g.fillStyle = linGrad(g, 0, horizon, 0, horizon + (H - horizon) * 0.35, [[0, rgba(sky.fog, 0.7)], [1, rgba(sky.fog, 0)]]);
   g.fillRect(0, horizon, W, (H - horizon) * 0.35);
@@ -507,13 +540,11 @@ export function roomScene(g, W, H, R, o) {
   const wall = o.wall ?? '#6a5a48';
   const lights = [];
   // back wall
-  if (o.wallKind === 'stone') masonry(g, bx0, by0, bx1 - bx0, by1 - by0, { base: wall, course: 20, blockW: 44, seed: R.int(1, 99) });
+  const wx = { damp: o.damp ?? 0.55, moss: o.moss ?? 0, soot: o.soot ?? null, spall: o.spall ?? 1 };
+  if (o.wallKind === 'stone') masonry(g, bx0, by0, bx1 - bx0, by1 - by0, { base: wall, course: 20, blockW: 44, seed: R.int(1, 99), ...wx });
   else if (o.wallKind === 'wood') planks(g, bx0, by0, bx1 - bx0, by1 - by0, { base: wall, width: 22, seed: R.int(1, 99) });
   else {
-    g.fillStyle = wall;
-    g.fillRect(bx0, by0, bx1 - bx0, by1 - by0);
-    texture(g, bx0, by0, bx1 - bx0, by1 - by0, { alpha: 0.5, cells: 8, seed: R.int(1, 99) });
-    texture(g, bx0, by0, bx1 - bx0, by1 - by0, { alpha: 0.3, mode: 'multiply', cells: 4, seed: R.int(1, 99) });
+    plaster(g, bx0, by0, bx1 - bx0, by1 - by0, { base: wall, seed: R.int(1, 99), ...wx, damp: o.wainscot ? 0 : wx.damp });
     if (o.wainscot) {
       planks(g, bx0, by1 - (by1 - by0) * 0.32, bx1 - bx0, (by1 - by0) * 0.32, { base: o.wainscot, width: 18, seed: 5 });
       g.fillStyle = 'rgba(20,12,6,0.9)';
@@ -530,13 +561,9 @@ export function roomScene(g, W, H, R, o) {
     g.save();
     poly(g, q);
     g.clip();
-    if (o.wallKind === 'stone') masonry(g, si ? bx1 : 0, 0, si ? W - bx1 : bx0, H, { base: wall, course: 34, blockW: 30, seed: R.int(1, 99) });
+    if (o.wallKind === 'stone') masonry(g, si ? bx1 : 0, 0, si ? W - bx1 : bx0, H, { base: wall, course: 34, blockW: 30, seed: R.int(1, 99), damp: wx.damp, moss: wx.moss * 1.4 });
     else if (o.wallKind === 'wood') planks(g, si ? bx1 : 0, 0, si ? W - bx1 : bx0, H, { base: wall, width: 36, vertical: false, seed: R.int(1, 99) });
-    else {
-      g.fillStyle = wall;
-      g.fillRect(si ? bx1 : 0, 0, si ? W - bx1 : bx0, H);
-      texture(g, si ? bx1 : 0, 0, si ? W - bx1 : bx0, H, { alpha: 0.5, cells: 8, seed: R.int(1, 99) });
-    }
+    else plaster(g, si ? bx1 : 0, 0, si ? W - bx1 : bx0, H, { base: wall, seed: R.int(1, 99), damp: wx.damp, spall: wx.spall * 0.6 });
     // perspective course lines
     g.strokeStyle = 'rgba(0,0,0,0.25)';
     g.lineWidth = 1.2;
@@ -718,6 +745,40 @@ function vaultCeiling(g, W, H, R, bx0, bx1, by0, o) {
 /** Setting painters by id (interiors.js installs the service interiors). */
 export const S = {};
 
+/** A handcart overturned in the street: bed on its side, one wheel up, a shaft in the air. */
+function brokenCart(g, x, y, s, R) {
+  contactShadow(g, x, y + s * 0.05, s * 1.3, s * 0.18, 0.6);
+  g.save();
+  g.translate(x, y);
+  // the bed, tipped on its long side: planked, darker underneath
+  g.fillStyle = linGrad(g, 0, -s, 0, 0, [[0, '#5a3e24'], [1, '#2a1a0e']]);
+  poly(g, [[-s * 1.1, 0], [-s * 0.95, -s * 0.62], [s * 0.6, -s * 0.7], [s * 0.7, -s * 0.05]]);
+  g.fill();
+  g.strokeStyle = 'rgba(16,8,4,0.8)'; g.lineWidth = 1.5;
+  for (let i = 1; i < 4; i++) { const t = i / 4; g.beginPath(); g.moveTo(-s * 1.1 + s * 0.15 * t, -s * 0.62 * t); g.lineTo(s * 0.7 - s * 0.1 * t, -s * 0.05 - s * 0.65 * t); g.stroke(); }
+  g.fillStyle = 'rgba(255,210,150,0.14)';
+  poly(g, [[-s * 0.95, -s * 0.62], [s * 0.6, -s * 0.7], [s * 0.6, -s * 0.66], [-s * 0.95, -s * 0.58]]);
+  g.fill();
+  // the shaft, pointing up out of the wreck
+  g.strokeStyle = '#3a2614'; g.lineWidth = s * 0.07; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(s * 0.5, -s * 0.4); g.lineTo(s * 1.25, -s * 1.15); g.stroke();
+  // the upper wheel, spoked, in the air; the lower one half buried in the bed's shadow
+  for (const [wx, wy, wr] of [[-s * 0.25, -s * 0.85, s * 0.42], [-s * 0.45, -s * 0.1, s * 0.3]]) {
+    g.strokeStyle = '#2a1a0c'; g.lineWidth = s * 0.06;
+    g.beginPath(); g.ellipse(wx, wy, wr * 0.45, wr, 0.15, 0, Math.PI * 2); g.stroke();
+    g.lineWidth = s * 0.025;
+    for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2; g.beginPath(); g.moveTo(wx, wy); g.lineTo(wx + Math.cos(a) * wr * 0.45, wy + Math.sin(a) * wr); g.stroke(); }
+    g.fillStyle = '#4a3a2a'; g.beginPath(); g.arc(wx, wy, s * 0.05, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(255,210,150,0.18)'; g.lineWidth = 1.5;
+    g.beginPath(); g.ellipse(wx, wy, wr * 0.45, wr, 0.15, Math.PI * 1.1, Math.PI * 1.7); g.stroke();
+  }
+  // a pot spilled beside it
+  g.fillStyle = linGrad(g, s * 0.8, -s * 0.2, s * 1.1, 0, [[0, '#8a5a3a'], [1, '#3a2014']]);
+  g.beginPath(); g.ellipse(s * 0.95, -s * 0.1, s * 0.16, s * 0.11, 0.4, 0, Math.PI * 2); g.fill();
+  g.restore();
+  void R;
+}
+
 S.slums = (g, W, H, R, o) => {
   const sc = streetScene(g, W, H, R, { ...o, light: o.light ?? 'dusk', ruined: 0.55, back: (g2, W2, H2, sky, R2, { horizon, lights }) => {
     // the far end of the street: gabled houses gutted by fire, a broken tower behind
@@ -737,8 +798,23 @@ S.slums = (g, W, H, R, o) => {
       const x1 = x0 + W2 * hw;
       const top = horizon - H2 * hh;
       g2.fillStyle = rgba(col);
-      poly(g2, [[x0, horizon + 6], [x0, top], [x0 + (x1 - x0) * 0.3, top - H2 * 0.05], [x0 + (x1 - x0) * 0.45, top - H2 * 0.02], [x0 + (x1 - x0) * 0.55, top - H2 * 0.07], [x1, top], [x1, horizon + 6]]);
+      const hp = [[x0, horizon + 6], [x0, top], [x0 + (x1 - x0) * 0.3, top - H2 * 0.05], [x0 + (x1 - x0) * 0.45, top - H2 * 0.02], [x0 + (x1 - x0) * 0.55, top - H2 * 0.07], [x1, top], [x1, horizon + 6]];
+      poly(g2, hp);
       g2.fill();
+      // not a value card: weathered courses and render, a sky-lit edge on the gable, darker below
+      g2.save();
+      poly(g2, hp);
+      g2.clip();
+      texture(g2, x0, top - H2 * 0.08, x1 - x0, horizon - top + H2 * 0.1, { alpha: 0.5, mode: 'overlay', cells: 10, seed: Math.round(hx * 100) });
+      g2.strokeStyle = rgba(dark, 0.25);
+      g2.lineWidth = 1;
+      for (let yy = top + 4; yy < horizon; yy += 5) { g2.beginPath(); g2.moveTo(x0, yy + (R2() - 0.5)); g2.lineTo(x1, yy + (R2() - 0.5)); g2.stroke(); }
+      g2.fillStyle = linGrad(g2, 0, top, 0, horizon, [[0, 'rgba(0,0,0,0)'], [1, rgba(dark, 0.45)]]);
+      g2.fillRect(x0, top - H2 * 0.08, x1 - x0, horizon - top + H2 * 0.1);
+      g2.restore();
+      g2.strokeStyle = rgba(sky.hor, 0.35);
+      g2.lineWidth = 1.2;
+      g2.beginPath(); g2.moveTo(x0, top); g2.lineTo(x0 + (x1 - x0) * 0.3, top - H2 * 0.05); g2.stroke();
       // exposed rafters
       g2.strokeStyle = rgba(dark, 0.9);
       g2.lineWidth = 2;
@@ -798,6 +874,33 @@ S.slums = (g, W, H, R, o) => {
   g.restore();
   P.rubble(g, W * 0.2, H * 0.93, 70, { seed: 3 });
   P.rubble(g, W * 0.83, H * 0.86, 55, { seed: 4 });
+  // the street midground is not an empty stage: fallen stones, a split plank, a cart on its side
+  // with one wheel in the air, a cast-off pot — each sitting in its own contact shadow
+  P.rubble(g, W * 0.4, H * 0.72, 30, { seed: 6 });
+  P.rubble(g, W * 0.66, H * 0.7, 26, { seed: 7 });
+  brokenCart(g, W * 0.75, H * 0.73, H * 0.12, R);
+  for (let i = 0; i < 22; i++) {
+    const t = 0.15 + R() * 0.8;
+    const y = H * 0.62 + H * 0.38 * t * t;
+    const x = W * (0.12 + R() * 0.76);
+    const s = (3 + R() * 7) * (0.5 + t * 1.6);
+    contactShadow(g, x, y + s * 0.3, s * 1.1, s * 0.35, 0.5);
+    g.fillStyle = rgba(mix('#6a6058', sc.sky.fog, 0.4 * (1 - t)), 1, 0.7 + R() * 0.5);
+    g.beginPath(); g.ellipse(x, y, s, s * 0.55, R() * 0.6, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(255,220,180,0.12)';
+    g.beginPath(); g.ellipse(x - s * 0.2, y - s * 0.2, s * 0.6, s * 0.22, 0, 0, Math.PI * 2); g.fill();
+  }
+  {
+    // a split plank across the gutter
+    const x = W * 0.3, y = H * 0.8;
+    contactShadow(g, x, y + 6, W * 0.05, 6, 0.5);
+    g.save(); g.translate(x, y); g.rotate(0.22);
+    g.fillStyle = linGrad(g, 0, -6, 0, 6, [[0, '#6a4a2a'], [1, '#2a1a0c']]);
+    g.fillRect(-W * 0.05, -5, W * 0.1, 10);
+    g.strokeStyle = 'rgba(20,10,4,0.7)'; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(-W * 0.05, 0); g.lineTo(W * 0.02, 1); g.lineTo(W * 0.05, -3); g.stroke();
+    g.restore();
+  }
   P.barrel(g, W * 0.9, H * 0.97, 90, 2);
   P.crate(g, W * 0.1, H * 0.99, 70, 5);
   fog(g, W, H * 0.68, H * 0.25, sc.sky.fog, 0.45, 5);

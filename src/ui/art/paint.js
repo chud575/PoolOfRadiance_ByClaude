@@ -70,7 +70,7 @@ let softGL = null;
  * per-frame layers stay in plain CPU raster, which is far faster. Unknown (no figure context yet)
  * counts as software; a real GPU keeps its accelerated layers.
  */
-function softwareGL() {
+export function softwareGL() {
   if (softGL !== null) return softGL;
   const r = glRenderer();
   if (r == null) return true;
@@ -329,33 +329,177 @@ export function gothicPath(g, x, y, w, h) {
  * Masonry: courses of blocks with per-block tone, bevel light on top edges,
  * dark mortar and grime. Clip to your shape before calling.
  */
-export function masonry(g, x, y, w, h, { base = '#6a6258', course = 22, blockW = 48, jitter = 0.18, seed = 1, mortar = 'rgba(20,16,12,0.65)', light = 'rgba(255,230,190,0.16)', ruined = 0 } = {}) {
+export function masonry(g, x, y, w, h, { base = '#6a6258', course = 22, blockW = 48, jitter = 0.18, seed = 1, mortar = 'rgba(20,16,12,0.65)', light = 'rgba(255,230,190,0.16)', ruined = 0, damp = 0.55, moss = 0, soot = null } = {}) {
   const r = rngOf(seed);
   const [br, bg, bb] = hexRgb(base);
   g.save();
   g.fillStyle = mortar;
   g.fillRect(x, y, w, h);
+  // no wallpaper: course heights wander, a few stones are re-cut long or short, odd blocks are
+  // a different quarry's stone (warmer, greyer, darker), corners are chipped, faces dished
   let row = 0;
-  for (let cy = y; cy < y + h; cy += course, row++) {
-    const ch = Math.min(course, y + h - cy);
-    let cx = x - (row % 2 ? blockW * 0.5 : 0) - r() * blockW * 0.3;
+  for (let cy = y; cy < y + h; row++) {
+    const chRow = course * (0.82 + r() * 0.36) * (r() < 0.12 ? 0.65 : 1);
+    const ch = Math.min(chRow, y + h - cy);
+    let cx = x - (row % 2 ? blockW * 0.5 : 0) - r() * blockW * 0.4;
     while (cx < x + w) {
-      const bw = blockW * (0.7 + r() * 0.6);
+      const bw = blockW * (r() < 0.15 ? 1.5 + r() * 0.5 : 0.55 + r() * 0.7);
       if (ruined && r() < ruined) { cx += bw; continue; }
-      const k = 1 + (r() - 0.5) * 2 * jitter;
-      const warm = (r() - 0.5) * 14;
-      g.fillStyle = `rgb(${Math.round(br * k + warm)},${Math.round(bg * k)},${Math.round(bb * k - warm * 0.5)})`;
-      g.fillRect(cx + 1.2, cy + 1.2, bw - 2.4, ch - 2.4);
+      let k = 1 + (r() - 0.5) * 2 * jitter;
+      const odd = r();
+      let warm = (r() - 0.5) * 16;
+      if (odd < 0.08) k *= 0.72; else if (odd < 0.15) { k *= 1.16; warm -= 6; } else if (odd < 0.22) warm += 14;
+      const grey = odd > 0.92 ? 0.3 : 0;
+      const cr = br * k + warm; const cg = bg * k; const cb = bb * k - warm * 0.5;
+      const m = (cr + cg + cb) / 3;
+      g.fillStyle = `rgb(${Math.round(cr + (m - cr) * grey)},${Math.round(cg + (m - cg) * grey)},${Math.round(cb + (m - cb) * grey)})`;
+      const ins = 1 + r() * 0.8;
+      g.beginPath();
+      g.roundRect(cx + ins, cy + ins, bw - ins * 2, ch - ins * 2, Math.min(ch * 0.3, 1 + r() * 4));
+      g.fill();
+      // a dished face: lit along the top arris, shadowed under the bottom one, darker toward one end
       g.fillStyle = light;
-      g.fillRect(cx + 1.2, cy + 1.2, bw - 2.4, Math.max(1, ch * 0.12));
-      g.fillStyle = 'rgba(0,0,0,0.22)';
-      g.fillRect(cx + 1.2, cy + ch * 0.78, bw - 2.4, ch * 0.2);
+      g.fillRect(cx + ins, cy + ins, bw - ins * 2, Math.max(1, ch * 0.12));
+      g.fillStyle = 'rgba(0,0,0,0.24)';
+      g.fillRect(cx + ins, cy + ch * 0.76, bw - ins * 2, ch * 0.22);
+      if (r() < 0.5) {
+        const gr = g.createLinearGradient(cx, 0, cx + bw, 0);
+        const dl = r() < 0.5;
+        gr.addColorStop(0, `rgba(0,0,0,${dl ? 0.14 : 0})`);
+        gr.addColorStop(1, `rgba(0,0,0,${dl ? 0 : 0.14})`);
+        g.fillStyle = gr;
+        g.fillRect(cx + ins, cy + ins, bw - ins * 2, ch - ins * 2);
+      }
+      // a chipped corner now and then
+      if (r() < 0.12) {
+        g.fillStyle = mortar;
+        const cs = Math.min(ch, bw) * (0.15 + r() * 0.2);
+        const left = r() < 0.5; const top = r() < 0.5;
+        const px = left ? cx + ins : cx + bw - ins; const py = top ? cy + ins : cy + ch - ins;
+        g.beginPath(); g.moveTo(px, py); g.lineTo(px + (left ? cs : -cs), py); g.lineTo(px, py + (top ? cs : -cs)); g.closePath(); g.fill();
+      }
       cx += bw;
     }
+    cy += chRow;
   }
   g.restore();
   texture(g, x, y, w, h, { alpha: 0.35, mode: 'overlay', cells: 16, seed: seed + 3 });
   texture(g, x, y, w, h, { alpha: 0.25, mode: 'multiply', cells: 4, octaves: 3, seed: seed + 7 });
+  weather(g, x, y, w, h, { damp, moss, soot, seed });
+}
+
+/**
+ * Weathering over a wall: rising damp darkening the lowest courses (with a tide line), green
+ * moss in the joints near the floor, and soot plumes above fires and lamps.
+ * soot: [{x, y, r, a}] (y = the flame; the soot climbs above it).
+ */
+export function weather(g, x, y, w, h, { damp = 0.5, moss = 0, soot = null, seed = 1 } = {}) {
+  const r = rngOf(seed + 101);
+  g.save();
+  if (damp > 0) {
+    const top = y + h * (1 - 0.3 * damp);
+    const gr = g.createLinearGradient(0, top, 0, y + h);
+    gr.addColorStop(0, 'rgba(10,14,10,0)');
+    gr.addColorStop(0.35, `rgba(14,18,12,${0.22 * damp})`);
+    gr.addColorStop(1, `rgba(8,12,8,${0.5 * damp})`);
+    g.fillStyle = gr;
+    g.fillRect(x, top, w, y + h - top);
+    // an irregular tide line of salts where the damp stops
+    g.strokeStyle = `rgba(220,214,190,${0.07 * damp})`;
+    g.lineWidth = 2;
+    g.beginPath();
+    for (let px = x; px <= x + w; px += 12) g.lineTo(px, top + h * 0.03 * damp + Math.sin(px * 0.03 + seed) * 5 + (r() - 0.5) * 4);
+    g.stroke();
+  }
+  if (moss > 0) {
+    for (let i = 0; i < 60 * moss * (w / 600); i++) {
+      const mx = x + r() * w;
+      const my = y + h * (0.55 + Math.pow(r(), 0.5) * 0.45);
+      const mr = 6 + r() * 26;
+      const gr = g.createRadialGradient(mx, my, 0, mx, my, mr);
+      gr.addColorStop(0, `rgba(${60 + r() * 30},${86 + r() * 30},${36 + r() * 16},${0.35 * moss})`);
+      gr.addColorStop(1, 'rgba(50,70,30,0)');
+      g.fillStyle = gr;
+      g.fillRect(mx - mr, my - mr, mr * 2, mr * 2);
+    }
+  }
+  for (const sp of soot ?? []) {
+    // a plume, widest and darkest just above the flame, thinning as it climbs the wall
+    const a = sp.a ?? 0.6;
+    for (let i = 0; i < 6; i++) {
+      const t = i / 5;
+      const cy = sp.y - sp.r * (0.3 + t * 2.2);
+      const rr = sp.r * (0.7 + t * 0.9);
+      const gr = g.createRadialGradient(sp.x, cy, 0, sp.x, cy, rr);
+      gr.addColorStop(0, `rgba(12,8,6,${a * (0.45 - t * 0.28)})`);
+      gr.addColorStop(1, 'rgba(12,8,6,0)');
+      g.fillStyle = gr;
+      g.fillRect(sp.x - rr, cy - rr, rr * 2, rr * 2);
+    }
+  }
+  g.restore();
+}
+
+/**
+ * Lime plaster that has lived: broad uneven trowel patches of value, water stains running down
+ * from the ceiling, hairline cracks, and a few spalled holes where the rubble wall shows through.
+ */
+export function plaster(g, x, y, w, h, { base = '#6a5a48', seed = 1, damp = 0.5, soot = null, moss = 0, spall = 1 } = {}) {
+  const r = rngOf(seed + 17);
+  g.save();
+  g.fillStyle = base;
+  g.fillRect(x, y, w, h);
+  texture(g, x, y, w, h, { alpha: 0.45, cells: 8, seed: seed + 1 });
+  texture(g, x, y, w, h, { alpha: 0.3, mode: 'multiply', cells: 4, seed: seed + 2 });
+  g.beginPath(); g.rect(x, y, w, h); g.clip();
+  // trowel patches: soft lighter and darker islands of lime
+  for (let i = 0; i < 26 * (w * h) / (500 * 300); i++) {
+    const px = x + r() * w; const py = y + r() * h; const pr = 30 + r() * 90;
+    const light = r() < 0.55;
+    const gr = g.createRadialGradient(px, py, 0, px, py, pr);
+    gr.addColorStop(0, light ? 'rgba(255,240,215,0.09)' : 'rgba(30,20,10,0.12)');
+    gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gr;
+    g.fillRect(px - pr, py - pr * 0.7, pr * 2, pr * 1.4);
+  }
+  // water stains streaking down from the top
+  for (let i = 0; i < Math.max(2, w / 160); i++) {
+    const sx = x + r() * w; const sw = 10 + r() * 34; const sl = h * (0.25 + r() * 0.5);
+    const gr = g.createLinearGradient(0, y, 0, y + sl);
+    gr.addColorStop(0, 'rgba(40,28,14,0.22)');
+    gr.addColorStop(1, 'rgba(40,28,14,0)');
+    g.fillStyle = gr;
+    g.beginPath();
+    g.moveTo(sx - sw / 2, y); g.lineTo(sx + sw / 2, y);
+    g.quadraticCurveTo(sx + sw * 0.3, y + sl * 0.6, sx + (r() - 0.5) * sw, y + sl);
+    g.quadraticCurveTo(sx - sw * 0.3, y + sl * 0.6, sx - sw / 2, y);
+    g.fill();
+  }
+  // hairline cracks: short branching random walks
+  g.strokeStyle = 'rgba(20,12,6,0.4)';
+  g.lineWidth = 0.9;
+  for (let i = 0; i < Math.max(3, w / 120); i++) {
+    let cx = x + r() * w; let cy = y + r() * h; let a = r() * Math.PI * 2;
+    g.beginPath(); g.moveTo(cx, cy);
+    for (let k = 0; k < 9; k++) { a += (r() - 0.5) * 1.1; cx += Math.cos(a) * (6 + r() * 12); cy += Math.sin(a) * (6 + r() * 12); g.lineTo(cx, cy); }
+    g.stroke();
+  }
+  // spalled patches: the plaster has fallen and the rubble stone behind it shows, its edge lit
+  for (let i = 0; i < spall * Math.max(1, Math.round(w / 260)); i++) {
+    const px = x + w * (0.1 + r() * 0.8); const py = y + h * (0.2 + r() * 0.65);
+    const pw = 26 + r() * 50; const ph = 16 + r() * 30;
+    const pts = [];
+    for (let k = 0; k < 9; k++) { const t = (k / 9) * Math.PI * 2; const rr = 0.7 + r() * 0.45; pts.push([px + Math.cos(t) * pw * rr, py + Math.sin(t) * ph * rr]); }
+    g.save();
+    poly(g, pts); g.clip();
+    masonry(g, px - pw * 1.3, py - ph * 1.3, pw * 2.6, ph * 2.6, { base: '#5a4c40', course: 9, blockW: 18, seed: seed + i * 7, damp: 0 });
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(px - pw * 1.3, py - ph * 1.3, pw * 2.6, ph * 2.6);
+    g.restore();
+    g.strokeStyle = 'rgba(255,236,200,0.22)'; g.lineWidth = 1.5;
+    poly(g, pts); g.stroke();
+  }
+  g.restore();
+  weather(g, x, y, w, h, { damp, soot, moss, seed });
 }
 
 /** Wooden planks (vertical or horizontal). */

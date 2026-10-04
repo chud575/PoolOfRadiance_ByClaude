@@ -36,9 +36,9 @@ const POSES = {
   clerk: { lean: 0.16, headPitch: 0.22, headYaw: -0.05, hands: (d) => d < 0 ? { at: [0.07, -0.24, 0.24], dir: [0.2, -0.2, 1], grip: true, weapon: 'quill', pole: [-1, -0.4, -0.2] } : { at: [-0.06, -0.25, 0.24], dir: [-0.3, 0, 1], curl: 0.3, pole: [1, -0.4, -0.2] } },
   smith: { lean: 0.1, twist: -0.22, headYaw: 0.35, headPitch: 0.15, hands: (d) => d < 0 ? { at: [-0.06, 0.15, 0.02], dir: [0.5, 0.45, -0.5], grip: true, weapon: 'hammer', pole: [-0.8, -0.2, -0.3] } : { at: [-0.05, -0.13, 0.27], dir: [-0.3, 0.12, 1], grip: true, weapon: 'tongs', pole: [1, -0.4, -0.2] } },
   barkeep: { lean: 0.08, twist: 0.15, headYaw: -0.2, headTilt: 0.06, hands: (d) => d < 0 ? { at: [0.05, -0.2, 0.2], dir: [0, 1, 0.1], grip: true, weapon: 'tankard', pole: [-1, -0.5, -0.2] } : { at: [-0.06, -0.22, 0.22], dir: [-0.5, 0.2, 1], curl: 0.6, spread: 0.3, rag: true, pole: [1, -0.5, -0.2] } },
-  // the weaponsmaster at ease: weight on his right leg, the longsword's flat resting on his right
-  // shoulder, the left fist on his hip
-  trainer: { lean: -0.04, twist: -0.12, weight: -1, headYaw: 0.28, headPitch: -0.06, hands: (d) => d < 0 ? { at: [0.075, 0.0, 0.11], dir: [0.18, 0.62, -0.76], grip: true, weapon: 'longsword', pole: [-1, -0.7, -0.1] } : { at: [-0.012, -0.255, 0.03], dir: [-0.55, -0.35, 0.35], curl: 0.85, pole: [1, 0.1, -0.5] } },
+  // the weaponsmaster at ease: weight on his right leg, the right hand resting on the pommel of a
+  // longsword planted point-down beside him (clear of his head), the left fist on his hip
+  trainer: { lean: -0.04, twist: -0.12, weight: -1, headYaw: 0.28, headPitch: -0.06, hands: (d) => d < 0 ? { at: [0.02, -0.29, 0.19], dir: [0.12, -1, 0.06], grip: true, weapon: 'longsword', pole: [-1, -0.3, -0.5] } : { at: [-0.012, -0.255, 0.03], dir: [-0.55, -0.35, 0.35], curl: 0.85, pole: [1, 0.1, -0.5] } },
   // the old guard pose: both hands stacked on the pommel of a sword whose point rests on the floor
   pommel: { lean: -0.03, headPitch: -0.04, headYaw: 0.1, hands: (d) => ({ at: [-d * 0.1, d < 0 ? -0.29 : -0.25, 0.2], dir: [0, -1, 0.04], grip: true, weapon: d < 0 ? 'longsword' : null, pole: [d, -0.3, -0.5] }) },
   // the clerk raises the ledger to read from it, quill poised
@@ -76,7 +76,7 @@ export function buildNpc(spec) {
   const skinM = mat(spec.skin ?? '#d9a77a', { pattern: 'skin', scale: 0.018, sss: 0.5, rough: 0.82, spec: 0.08 });
   const shirtM = cloth(O.shirt ?? '#d8ccb0');
   const robe = O.topKind === 'robe';
-  const topM = O.topKind === 'chain' ? mat('#8a8c94', { pattern: 'mail', metal: true, scale: 0.05, rough: 0.45, spec: 0.7 })
+  const topM = O.topKind === 'chain' ? mat(O.top ?? '#8a8c94', { pattern: 'mail', metal: true, scale: 0.05, rough: 0.62, spec: 0.42 })
     : O.top ? (O.topKind === 'jerkin' ? leather(O.top) : cloth(O.top, { scale: 0.012 })) : shirtM;
   const skirtM = O.skirtMail ? topM : O.skirt ? cloth(O.skirt) : robe ? topM : null;
   const trouserM = cloth(O.trousers ?? shade(O.shirt ?? '#6a5234', 0.55));
@@ -95,10 +95,11 @@ export function buildNpc(spec) {
   const lean = (P.lean ?? 0) + age * 0.12 + (spec.hunch ?? 0);
   const twist = P.twist ?? 0;
   // contrapposto: weight on one leg shifts the pelvis over it and tilts the shoulders against it
-  const wgt = sit ? 0 : P.weight ?? 0;
-  const TR = mul3(rotY(twist), mul3(rotX(lean), rotZ(wgt * 0.035)));
+  // nobody stands to attention: a pose without its own weight shift rests on one leg or the other
+  const wgt = sit ? 0 : P.weight ?? (P.crouch ? 0 : (R() < 0.5 ? -0.75 : 0.75));
+  const TR = mul3(rotY(twist), mul3(rotX(lean), rotZ(wgt * 0.05)));
   const T = (v) => ap3(TR, v);
-  const pelvis = [wgt * 0.022, hipH + 0.02 - Math.abs(wgt) * 0.006, 0];
+  const pelvis = [wgt * 0.03, hipH + 0.02 - Math.abs(wgt) * 0.008, 0];
   const up = T([0, 1, 0]);
   const waist = add(pelvis, scl(up, 0.1));
   const chest = add(pelvis, scl(up, torso * 0.64));
@@ -147,12 +148,13 @@ export function buildNpc(spec) {
   const neckM = O.top && !robe ? shirtM : topM;
   f.ell([0, torso * 0.94, 0.004], [0.05, 0.016, 0.038], neckM, { group: 'collar', k: 0.01 });
   if (O.collar) f.ell([0, torso * 0.96, -0.004], [0.07, 0.026, 0.06], cloth(O.collar), { group: 'collar2', k: 0.01 });
-  if (O.topKind === 'bodice') {
+  if (O.topKind === 'bodice' && O.lace !== 'none') {
     // laced bodice: cross lacing over the front, a low chemise neckline
-    for (let i = 0; i < 4; i++) {
-      const y = torso * (0.35 + i * 0.12);
-      f.cone([-0.016, y, 0.074 * b], [0.016, y + 0.04, 0.072 * b], 0.0028, 0.0028, mat('#3a2418', { rough: 0.85 }), { group: null });
-      f.cone([0.016, y, 0.074 * b], [-0.016, y + 0.04, 0.072 * b], 0.0028, 0.0028, mat('#3a2418', { rough: 0.85 }), { group: null });
+    const laceM = O.lace ? mat(O.lace, { rough: 0.5, spec: 0.4 }) : mat(shade(O.top ?? '#3a2418', 0.45), { rough: 0.85 });
+    for (let i = 0; i < 6; i++) {
+      const y = torso * (0.3 + i * 0.085);
+      f.cone([-0.012, y, 0.073 * b], [0.012, y + 0.026, 0.072 * b], 0.0016, 0.0016, laceM, { group: null });
+      f.cone([0.012, y, 0.073 * b], [-0.012, y + 0.026, 0.072 * b], 0.0016, 0.0016, laceM, { group: null });
     }
     f.ell([0, torso * 0.9, 0.012], [0.074, 0.02, 0.042], shirtM, { group: 'chemise', k: 0.02 });
   }
@@ -229,7 +231,7 @@ export function buildNpc(spec) {
   if (O.mantle) {
     const mm = cloth(O.mantle, { scale: 0.016 });
     const top = add(chest, T([0, 0.07, -0.075 * b]));
-    f.ell(add(chest, T([0, 0.075, -0.02])), [0.14 * b, 0.05, 0.085 * b], mm, { group: 'mantle', k: 0.03 });
+    f.ell(add(chest, T([0, 0.07, -0.022])), [0.128 * b, 0.032, 0.08 * b], mm, { group: 'mantle', k: 0.03, disp: { amp: 0.004, freq: 18 } });
     for (let i = 0; i < 4; i++) {
       const a = -0.75 + i * 0.5;
       const tx = Math.sin(a) * 0.16 * b;
@@ -281,8 +283,17 @@ export function buildNpc(spec) {
       f.ell(lerp3(elbow, wrist, 0.3), [0.036 * b, 0.05, 0.034 * b], skinM, { group: `forearm${d}`, k: 0.02, R: alignY(sub(wrist, elbow)) });
       f.cone(lerp3(elbow, wrist, -0.05), lerp3(elbow, wrist, 0.14), 0.04 * b, 0.039 * b, sleeveTop, { group: `cuff${d}`, k: 0.012, disp: { amp: 0.003, freq: 14 } });
     } else {
-      f.cone(elbow, wrist, 0.033 * b, 0.027 * b, O.topKind === 'chain' ? shirtM : sleeveTop, { ...sg, disp: { amp: 0.0022, freq: 10, twist: 0.3 } });
-      f.cone(lerp3(elbow, wrist, 0.86), lerp3(elbow, wrist, 1.02), 0.034 * b, 0.034 * b, O.cuff ? cloth(O.cuff) : sleeveTop, { group: `cuff${d}`, k: 0.008 });
+      const slM = O.topKind === 'chain' ? shirtM : sleeveTop;
+      if (O.topKind !== 'chain') {
+        // a sleeve has air in it: fuller over the upper arm, bunched at the elbow, gathered at the cuff
+        f.ell(lerp3(sh[d], elbow, 0.5), [0.043 * b, 0.085, 0.041 * b], slM, { ...sg, R: alignY(sub(elbow, sh[d])), disp: { amp: 0.004, freq: 30 } });
+        f.ell(lerp3(elbow, wrist, 0.45), [0.038 * b, 0.075, 0.036 * b], slM, { ...sg, R: alignY(sub(wrist, elbow)), disp: { amp: 0.0035, freq: 32 } });
+        f.sphere(elbow, 0.036 * b, slM, sg);
+      }
+      f.cone(elbow, wrist, 0.033 * b, 0.027 * b, slM, { ...sg, disp: { amp: 0.0022, freq: 10, twist: 0.3 } });
+      // a mail shirt ends in leather: a cuffed glove gauntlet, never a ball of rings over the hand
+      const cuffM = O.cuff ? cloth(O.cuff) : O.topKind === 'chain' ? leather(O.glove ?? '#4a3020') : sleeveTop;
+      f.cone(lerp3(elbow, wrist, 0.82), lerp3(elbow, wrist, 1.0), O.topKind === 'chain' ? 0.036 * b : 0.034 * b, O.topKind === 'chain' ? 0.03 * b : 0.034 * b, cuffM, { group: `cuff${d}`, k: 0.008 });
     }
     // hand
     const palm = add(wrist, scl(dir, 0.03));

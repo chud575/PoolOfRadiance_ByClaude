@@ -67,7 +67,7 @@ export default class DialogueScene extends Scene {
       this.root.append(grid);
       return;
     }
-    if (['bestiary', 'settings', 'figure', 'panel'].includes(params.view)) {
+    if (['bestiary', 'settings', 'figure', 'panel', 'cast'].includes(params.view)) {
       this._debugSheet(params.view, params);
       return;
     }
@@ -115,6 +115,29 @@ export default class DialogueScene extends Scene {
       canvas.style.width = '100%';
       grid.style.gridTemplateColumns = '1fr';
       grid.append(canvas);
+    } else if (view === 'cast') {
+      // continuity strip (debug): each named NPC's scene figure beside its conversation portrait,
+      // both dressed from the one record in data/npcs.js, under the light of the NPC's own setting
+      const ids = String(p.ids ?? 'priest_tyr,trainer,clerk,priestess_sune').split(',');
+      grid.style.gridTemplateColumns = `repeat(${ids.length}, 1fr)`;
+      grid.style.background = 'radial-gradient(ellipse at 50% 30%, #2a2430, #0c0a0e)';
+      const lightOf = { priest_tyr: 'sanctum', priestess_sune: 'sanctum', clerk: 'sanctum', smith: 'fire', trainer: 'day', barkeep: 'torch' };
+      for (const id of ids) {
+        const npc = NPCS[id];
+        if (!npc) continue;
+        const FH = Number(p.h ?? 420);
+        const c = h('canvas', { width: Math.round(FH * 0.6), height: Math.round(FH * 1.16), style: { width: '100%', display: 'block' } });
+        const g = c.getContext('2d');
+        const cx = c.width / 2; const fy = FH * 1.11;
+        g.fillStyle = 'rgba(0,0,0,0.35)';
+        g.beginPath(); g.ellipse(cx, fy + 2, FH * 0.17, FH * 0.02, 0, 0, Math.PI * 2); g.fill();
+        const r = npcActor(npc).render({ h: FH, yaw: 0.2, ss: 1.25 }, lightRig(LIGHTS[lightOf[id] ?? 'torch']));
+        if (r) g.drawImage(r.canvas, cx - r.ox, fy - r.oy);
+        c.style.width = '56%';
+        grid.append(h('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px', color: '#e8dcc0', font: '600 15px serif', letterSpacing: '0.12em', textTransform: 'uppercase' } }, [
+          h('div', { style: { display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: '4px', width: '100%' } }, [c, h('img', { src: framedPortraitURL(npc), alt: '', style: { width: '42%', display: 'block' } })]), npc.name,
+        ]));
+      }
     } else if (view === 'figure') {
       // one or more large figures (debug): ids, seeds, h, yaw
       const ids = String(p.ids ?? 'kobold').split(',');
@@ -744,8 +767,9 @@ export default class DialogueScene extends Scene {
     const tiles = choices.map((c) => {
       const k = String(c.label).toLowerCase();
       const tip = c.tip ?? STANCE_TIPS[k] ?? '';
-      const [head, ...rest] = tip.split('. ');
-      return h('div.dlg-odd.manner', { dataset: { choice: c.label, tip } }, [h('span.k', [c.label]), h('b', [head.replace(/\.$/, '')]), h('small', [rest.join('. ') || ' '])]);
+      // a tile carries a terse head and note (whole on one line each); the tooltip has the full sentence
+      const [head, note] = c.tip ? [c.tip.split('. ')[0].replace(/\.$/, ''), c.tip.split('. ').slice(1).join('. ')] : STANCE_TILE[k] ?? [tip, ''];
+      return h('div.dlg-odd.manner', { dataset: { choice: c.label, tip } }, [h('span.k', [c.label]), h('b', [head]), h('small', [note || ' '])]);
     });
     const el = h('div.dlg-odds.stances', [h('span.dlg-odds-h', ['Your manner — point or press its letter']), ...tiles]);
     el.style.setProperty('--n', String(tiles.length));
@@ -1064,6 +1088,15 @@ const STANCE_TIPS = {
   meek: 'Humble and yielding. Invites demands.',
   abusive: 'Threats and insults. Rarely wise.',
   flee: 'Back away while you still can.',
+};
+/** The same, cut to a tile: [head, note]. */
+const STANCE_TILE = {
+  haughty: ['Proud, commanding', 'Cows the weak, riles the strong'],
+  sly: ['Cunning, flattering', 'Works on the greedy'],
+  nice: ['Friendly and open', 'Works on the reasonable'],
+  meek: ['Humble, yielding', 'Invites demands'],
+  abusive: ['Threats and insults', 'Rarely wise'],
+  flee: ['Back away', 'While you still can'],
 };
 
 function sizeWord(m) {

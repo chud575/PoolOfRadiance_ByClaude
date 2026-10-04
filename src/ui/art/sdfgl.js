@@ -86,7 +86,10 @@ float folds(vec3 r, vec3 ax, vec3 e1, vec3 e2, float L, vec4 d) {
   // two families of folds (broad hanging pleats and finer drag creases) so no robe reads as fluting
   float s = 0.5 + 0.5 * (0.72 * sin(ang * d.y + wob + u * d.z) + 0.28 * sin(ang * d.y * 2.3 + wob * 1.7 + u * 3.1));
   float ridge = 1.0 - (1.0 - s) * (1.0 - s);
-  return d.x * (ridge - 0.5) * (0.25 + 0.75 * u);
+  // uneven pleats: some folds run deep, some lie nearly flat, and the depth wanders down the fall
+  // (a uniform flute reads as a satin column)
+  float amp = 0.35 + 1.25 * vnoise3(vec3(ang * 0.85 + 3.0, u * 1.4, d.w + 5.0));
+  return d.x * amp * (ridge - 0.5) * (0.25 + 0.75 * u);
 }
 
 float primD(int i, vec3 p, vec4 h) {
@@ -331,10 +334,15 @@ float pattern(int pat, float s, vec2 uv, vec3 tu, vec3 tv, vec3 wp, inout vec3 n
     dv = (n1 - 0.5) * 0.9 + (n2 - 0.5) * 0.5; du = (vnoise(vec2(u, v) / (s * 0.5)) - 0.5) * 0.3;
     k = 0.68 + n1 * 0.4 + n2 * 0.14;
   } else if (pat == 3) { // cloth weave + soft creases (big folds are geometry)
+    // hanging creases along the fall, and drag creases that cross them on the diagonal (where the
+    // cloth bunches at a joint or a belt); each crease shades its own valley, so no tube is satin
     float fold = sin(v / (s * 1.4) + fbm(vec2(u, v) / (s * 6.0)) * 5.0);
+    float drag = sin((u * 0.8 + v * 0.55) / (s * 0.9) + fbm(vec2(v, u) / (s * 4.0)) * 4.0);
+    float dragM = smoothstep(0.45, 0.8, fbm(vec2(u, v) / (s * 9.0) + 3.0));
     float weave = sin(u / (s * 0.06)) * sin(v / (s * 0.06)) * 0.05;
-    dv = fold * 0.12 + weave; du = (vnoise(vec2(u, v) / (s * 3.0)) - 0.5) * 0.2;
-    k = 0.88 + fold * 0.04 + fbm(vec2(u, v) / (s * 2.0)) * 0.16;
+    dv = fold * 0.2 + weave + drag * dragM * 0.12; du = (vnoise(vec2(u, v) / (s * 3.0)) - 0.5) * 0.2 + drag * dragM * 0.16;
+    float valley = (1.0 - (fold * 0.5 + 0.5)) * 0.55 + (1.0 - (drag * 0.5 + 0.5)) * dragM * 0.45;
+    k = 0.96 - valley * 0.2 + fbm(vec2(u, v) / (s * 2.0)) * 0.12 + (fbm(vec2(u, v) / (s * 14.0) + 7.0) - 0.5) * 0.14;
   } else if (pat == 4) { // leather
     float nn = fbm(vec2(u, v) / (s * 1.5)); float w = vnoise(vec2(u / (s * 0.25), v / (s * 0.9)));
     du = (nn - 0.5) * 0.35; dv = (w - 0.5) * 0.25; k = 0.74 + nn * 0.36;

@@ -53,8 +53,17 @@ function sculptHeadIn(f, skinM, o) {
   }
   f.ell([0, -0.78, 0.56], [0.2 * jaw, 0.13, 0.16], skinM, S);
   // the warm cheeks (blood under the skin colours the cheek, nose tip and ears, not the forehead)
-  const blushM = mat(mixc(skinM.color, '#c8505a', fem ? 0.15 : 0.09), { pattern: 'skin', scale: skinM.scale, sss: 0.6, rough: 0.78, spec: 0.08 });
+  const blushM = mat(mixc(skinM.color, '#c8505a', fem ? 0.2 : 0.15), { pattern: 'skin', scale: skinM.scale, sss: 0.6, rough: 0.8, spec: 0.06 });
   for (const d of [-1, 1]) f.ell([d * 0.4, -0.22, 0.56], [fem ? 0.24 : 0.2, fem ? 0.2 : 0.16, 0.22], blushM, { group: 'head', k: 0.3 });
+  // colour zones of a living face: a cooler, shadowed band in the eye sockets under the brow, a
+  // ruddy nose tip and ears, a faint blue-grey of beard shadow on a shaven man's jaw
+  const socketM = mat(mixc(skinM.color, '#6a4a58', 0.3), { pattern: 'skin', scale: skinM.scale, sss: 0.45, rough: 0.85, spec: 0.04 });
+  for (const d of [-1, 1]) f.ell([d * 0.3, 0.1, 0.6], [0.17, 0.09, 0.14], socketM, { group: 'head', k: 0.06 }); // sunk under the skin: a tint, never a bulge
+  const ruddyM = mat(mixc(skinM.color, '#c04848', fem ? 0.14 : 0.22), { pattern: 'skin', scale: skinM.scale, sss: 0.65, rough: 0.7, spec: 0.12 });
+  if (!fem && !['full', 'long', 'braided'].includes(o.beard)) {
+    const shadowM = mat(mixc(skinM.color, '#5a6070', 0.16), { pattern: 'skin', scale: skinM.scale, sss: 0.4, rough: 0.9, spec: 0.04 });
+    f.ell([0, -0.64, 0.38], [0.42 * jaw, 0.2, 0.3], shadowM, { group: 'head', k: 0.03 });
+  }
   f.ell([0, -0.48, 0.64], [0.32, 0.25, 0.26], skinM, soft);
   // age: nasolabial folds and hollow temples (only where no beard hides them)
   if (age > 0.35 && !['full', 'long'].includes(o.beard)) {
@@ -63,7 +72,7 @@ function sculptHeadIn(f, skinM, o) {
   // nose: bridge, tip, alae, nostrils
   const nw = (o.nose ?? 1) * (fem ? 0.84 : 1);
   f.cone([0, 0.12, 0.84], [0, -0.22, 1.0], 0.06 * nw, 0.085 * nw, skinM, fine);
-  f.sphere([0, -0.24, 0.99], 0.095 * nw, skinM, fine);
+  f.sphere([0, -0.24, 0.99], 0.095 * nw, ruddyM, fine);
   for (const d of [-1, 1]) {
     f.ell([d * 0.11 * nw, -0.3, 0.9], [0.075, 0.062, 0.07], skinM, fine);
     f.carve('ell', [d * 0.06, -0.355, 0.95], [0.035, 0.02, 0.04], null, { k: 0.02 });
@@ -147,7 +156,7 @@ function sculptHeadIn(f, skinM, o) {
   if (sm > 0) for (const d of [-1, 1]) f.ell([d * 0.2, -0.47, 0.8], [0.06, 0.05, 0.06], skinM, { group: 'head', k: 0.06 }); // cheeks lift
   // ears
   for (const d of [-1, 1]) {
-    f.ell([d * 0.84, -0.04, -0.06], [0.1, 0.24, 0.15], skinM, { group: 'head', k: 0.06, R: rotY(d * 0.35) });
+    f.ell([d * 0.84, -0.04, -0.06], [0.1, 0.24, 0.15], ruddyM, { group: 'head', k: 0.06, R: rotY(d * 0.35) });
     f.carve('ell', [d * 0.92, -0.04, -0.03], [0.05, 0.13, 0.08], null, { k: 0.04 });
   }
   headwear(f, skinM, o);
@@ -216,13 +225,24 @@ function headwear(f, skinM, o) {
     f.ell([0, 0.3, -0.06], [1.02, 0.1, 1.08], o.trimM ?? mat('#a07838', { metal: true, rough: 0.3, spec: 0.9 }), { group: null });
     if (o.crest) f.ell([0, 1.02, -0.15], [0.12, 0.5, 0.9], mat(o.crest, { pattern: 'fur', scale: 0.01 }), { group: null });
     if (o.visor) {
-      // a closed bascinet face: a hollow, dark sight with two cold points of light inside it
+      // a hounskull bascinet: the visor drawn out into a pointed beak with a keel down its middle,
+      // a dark eye slit across its root with two cold points of light burning inside it, and a
+      // raised comb over the skull — a knight's silhouette that reads at sixty pixels tall
       f.ell([0, -0.14, 0.2], [0.93, 0.98, 0.98], hm, { group: 'visor', k: 0.05 });
-      f.cone([0, -0.1, 0.9], [0, -0.75, 1.02], 0.14, 0.05, hm, { group: 'visor', k: 0.05 }); // the snout ridge
-      f.carve('box', [0, 0.05, 1.06], [0.62, 0.05, 0.32], null, { group: 'visor', k: 0.02, R: rotZ(0) });
-      f.ell([0, 0.05, 0.86], [0.6, 0.06, 0.14], mat('#020406', { rough: 1, spec: 0, ink: 0 }), { group: null });
-      for (const d of [-1, 1]) f.sphere([d * 0.25, 0.05, 0.94], 0.045, mat('#e8ffff', { emissive: '#d8ffff', ink: 0 }), { group: null, shadow: false });
-      for (let i = 0; i < 4; i++) for (const d of [-1, 1]) f.sphere([d * (0.18 + i * 0.07), -0.42 - i * 0.02, 1.0 - i * 0.05], 0.02, mat('#020406', { rough: 1, ink: 0 }), { group: null }); // breaths
+      f.cone([0, -0.12, 0.45], [0, -0.44, 1.78], 0.8, 0.06, hm, { group: 'visor', k: 0.06 }); // the beak
+      f.box([0, -0.27, 1.12], [0.035, 0.36, 0.6], hm, { group: 'visor', k: 0.03, bevel: 0.03, R: rotX(-0.26) }); // its keel
+      f.carve('box', [0, 0.1, 1.0], [0.66, 0.055, 0.42], null, { group: 'visor', k: 0.015 });
+      f.ell([0, 0.1, 0.72], [0.6, 0.065, 0.16], mat('#010203', { rough: 1, spec: 0, ink: 0 }), { group: null });
+      for (const d of [-1, 1]) {
+        f.sphere([d * 0.24, 0.1, 0.94], 0.075, mat('#ffffff', { emissive: '#ffffff', ink: 0 }), { group: null, shadow: false });
+        f.glow([d * 0.24, 0.1, 1.05], 0.5, '#e8ffff', 1);
+        f.glow([d * 0.24, 0.1, 1.05], 0.16, '#ffffff', 1);
+      }
+      // breaths: two rows of dark slots down the beak's flank
+      for (let i = 0; i < 4; i++) for (const d of [-1, 1]) f.sphere([d * (0.2 + i * 0.05), -0.36 - i * 0.03, 1.18 - i * 0.1], 0.026, mat('#020406', { rough: 1, ink: 0 }), { group: null });
+      // the comb along the crown, and a pivot rivet at each temple
+      f.box([0, 1.0, -0.08], [0.05, 0.14, 0.72], hm, { group: 'helm', k: 0.04, bevel: 0.04 });
+      for (const d of [-1, 1]) f.sphere([d * 0.98, 0.1, 0.2], 0.07, o.trimM ?? hm, { group: null });
     }
     return;
   }
@@ -335,22 +355,37 @@ function headwear(f, skinM, o) {
  * push(at, alignY(dir, [side,0,0]), s). Units: figure units at s = 1.
  * o: {grip, curl (0 open .. 1 closed), spread, claws, clawM, nails}
  */
+/** Skin a little flushed: knuckles and finger joints carry more blood than the back of the hand. */
+const knuckleCache = new Map();
+function knuckleMat(m) {
+  if (!m.color || m.metal) return m;
+  const key = m.color.join(',');
+  if (!knuckleCache.has(key)) {
+    const c = m.color;
+    knuckleCache.set(key, { ...m, color: [c[0] * 1.04, c[1] * 0.86, c[2] * 0.84] });
+  }
+  return knuckleCache.get(key);
+}
+
 export function handShape(f, m, side, o = {}) {
   const g = { group: 'hand', k: 0.006 };
   const claws = o.claws ? (o.clawM ?? mat('#d8ccae', { pattern: 'bone', scale: 0.01 })) : null;
   if (o.grip) {
     // palm behind the shaft, four fingers wrapping it one by one, thumb over the top
     f.box([side * -0.004, 0.004, -0.017], [0.02, 0.028, 0.009], m, { ...g, bevel: 0.008 });
+    const knM = knuckleMat(m);
     for (let i = 0; i < 4; i++) {
       const y = 0.021 - i * 0.0135;
-      const r = 0.0064 - (i === 3 ? 0.0012 : 0);
+      const r = 0.0058 - (i === 3 ? 0.0011 : 0);
       const p0 = [side * 0.016, y, -0.014];
       const p1 = [side * 0.019, y, 0.008];
       const p2 = [side * 0.004, y - 0.001, 0.021];
       const p3 = [side * -0.011, y - 0.002, 0.014];
-      f.cone(p0, p1, r * 1.1, r, m, g);
-      f.cone(p1, p2, r, r * 0.95, m, g);
-      f.cone(p2, p3, r * 0.95, r * 0.85, m, g);
+      // each finger its own volume (a crease between neighbours, never a mitten), knuckles flushed
+      const fg = { group: `${g.group}F${i}`, k: 0.004 };
+      f.cone(p0, p1, r * 1.1, r, m, fg);
+      f.cone(p1, p2, r, r * 0.95, knM, fg);
+      f.cone(p2, p3, r * 0.95, r * 0.85, m, fg);
       if (claws) f.cone(p3, add(p3, [side * -0.006, -0.003, -0.008]), 0.0035, 0.001, claws, { group: null });
     }
     f.cone([side * -0.018, 0.012, -0.012], [side * -0.016, 0.03, 0.006], 0.0085, 0.007, m, g);
@@ -361,20 +396,24 @@ export function handShape(f, m, side, o = {}) {
   const spread = o.spread ?? 0.4;
   f.box([0, 0.004, 0], [0.021, 0.026, 0.0085], m, { ...g, bevel: 0.0075 });
   const lens = [[0.024, 0.016, 0.012], [0.027, 0.018, 0.013], [0.025, 0.017, 0.012], [0.02, 0.013, 0.01]];
+  const knM = knuckleMat(m);
   for (let i = 0; i < 4; i++) {
-    const x = (1.5 - i) * 0.0105 * -side;
-    const a = (i - 1.5) * 0.12 * spread * -side;
+    // fingers set apart (radius under half their spacing) and fanned a little even at rest, each its
+    // own volume: four digits and a thumb read at panel size, not a paddle
+    const x = (1.5 - i) * 0.0112 * -side;
+    const a = (i - 1.5) * (0.06 + 0.14 * spread) * -side;
     let p = [x, 0.028, 0.001];
     let dir = [Math.sin(a), Math.cos(a), 0];
-    let r = 0.0058 - (i === 3 ? 0.0009 : 0);
+    let r = 0.005 - (i === 3 ? 0.0008 : 0);
     const c = curl * (0.8 + i * 0.12);
+    const fg = { group: `handF${i}`, k: 0.004 };
     for (let s = 0; s < 3; s++) {
       // each knuckle bends the finger toward the palm (+z)
       const ang = c * (s === 0 ? 0.55 : 0.75);
       const cy = Math.cos(ang); const sy = Math.sin(ang);
       dir = [dir[0], dir[1] * cy - dir[2] * sy, dir[1] * sy + dir[2] * cy];
       const q = add(p, scl(dir, lens[i][s]));
-      f.cone(p, q, r, r * 0.9, m, g);
+      f.cone(p, q, r, r * 0.9, s === 0 ? knM : m, fg);
       p = q;
       r *= 0.88;
     }
@@ -385,7 +424,7 @@ export function handShape(f, m, side, o = {}) {
   const t1 = add(t0, [side * 0.014, 0.018, 0.012 + curl * 0.006]);
   const t2 = add(t1, [side * (0.004 - curl * 0.012), 0.016, 0.008 + curl * 0.01]);
   f.cone(t0, t1, 0.0085, 0.0068, m, g);
-  f.cone(t1, t2, 0.0068, 0.0055, m, g);
+  f.cone(t1, t2, 0.0064, 0.005, m, { group: 'handT', k: 0.004 });
   if (claws) f.cone(t2, add(t2, [0, 0.01, 0.006]), 0.0035, 0.0008, claws, { group: null });
 }
 
