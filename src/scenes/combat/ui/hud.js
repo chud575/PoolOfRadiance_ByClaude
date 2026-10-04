@@ -54,7 +54,7 @@ export class CombatHud {
     // frame itself is see-through, the canvas shows beneath it.
     this.closeupName = h('div.cb-closeup-name');
     this.closeup = h('div.cb-closeup.pe-none', [h('i.stud.tl'), h('i.stud.tr'), h('i.stud.bl'), h('i.stud.br'), this.closeupName]);
-    const bottom = h('div.cb-bottom', [this.cmds]);
+    const bottom = (this.bottomEl = h('div.cb-bottom', [this.cmds]));
     this.root.append(this.floatLayer, this.speedEl, this.loc, this.timeline, this.closeup, this.card.el, this.rosterFrame.el, this.logBox, this.prompt, bottom, this.help, this.banner, this.lead, this.inspect);
     ctx.ui.mount(this.root);
     this.floats = [];
@@ -209,14 +209,18 @@ export class CombatHud {
   _layoutCloseup() {
     const rootR = this.root.getBoundingClientRect();
     const rr = this.rosterFrame.el.getBoundingClientRect();
-    const hr = this.help.getBoundingClientRect();
-    const top = rr.bottom - rootR.top + 16;
-    const bottom = (hr.height ? hr.top : rootR.bottom - 60) - rootR.top - 12;
+    // The key help lives top-left, so the close-up takes the whole lower right
+    // column down to the command bar, and reaches left over the board's margin
+    // (a big hero panel, as in the painted-miniature target).
+    const br = this.bottomEl?.getBoundingClientRect();
+    const top = rr.bottom - rootR.top + 18;
+    const bottom = (br?.height ? br.top : rootR.bottom - 60) - rootR.top - 16;
     const hgt = bottom - top;
+    const wide = Math.min(rr.width * 1.32, rr.right - rootR.left - 24);
     const st = this.closeup.style;
     st.top = `${top}px`;
-    st.left = `${rr.left - rootR.left}px`;
-    st.width = `${rr.width}px`;
+    st.left = `${rr.right - rootR.left - wide}px`;
+    st.width = `${wide}px`;
     st.height = `${Math.max(0, hgt)}px`;
     st.display = hgt >= 96 && rr.width > 0 ? 'block' : 'none';
     this._closeRect = null;

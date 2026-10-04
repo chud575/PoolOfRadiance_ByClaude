@@ -204,9 +204,9 @@
 
 /* ---------- Help / speed ---------- */
 .cb-help {
-  position: absolute; right: 1.2em; bottom: 4.1em; text-align: right; font-size: max(12.5px, 0.8em); color: #d6cdb8; line-height: 1.5; pointer-events: none;
-  padding: 0.3em 0.7em 0.35em 1.6em; text-shadow: 0 1px 2px #000;
-  background: linear-gradient(270deg, rgba(5, 8, 20, 0.8), rgba(5, 8, 20, 0.62) 75%, rgba(5, 8, 20, 0));
+  position: absolute; left: 0.9em; top: 8.4em; text-align: left; font-size: max(11.5px, 0.72em); color: #c8bfaa; line-height: 1.5; pointer-events: none;
+  padding: 0.3em 1.6em 0.35em 0.6em; text-shadow: 0 1px 2px #000; opacity: 0.85;
+  background: linear-gradient(90deg, rgba(8, 7, 6, 0.78), rgba(8, 7, 6, 0.55) 75%, rgba(8, 7, 6, 0));
 }
 .cb-help kbd { font-family: var(--font-num); color: #ffd98a; background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(216, 178, 90, 0.55); border-radius: 2px; padding: 0 0.32em; font-size: 0.95em; }
 .cb-speed { position: absolute; left: 1.15em; top: 6.9em; font-family: var(--font-display); font-size: 0.72em; letter-spacing: 0.18em; color: var(--por-gilt); text-transform: uppercase; text-shadow: 0 1px 2px #000; }

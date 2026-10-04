@@ -60,7 +60,7 @@ export default class CombatScene extends Scene {
 
     performance.mark?.('combat:enter');
     // Shared procedural textures generate in parallel workers while we build.
-    const texReady = Promise.resolve(TexLib.preloadTextureSets?.(['hd_cobble', 'floor_rubble', 'hd_flags', 'wall_stone', 'wall_ruin', 'door_wood'])).catch(() => {});
+    const texReady = Promise.resolve(TexLib.preloadTextureSets?.(['hd_cobble', 'floor_rubble', 'hd_flags', 'wall_stone', 'wall_ruin', 'door_wood', 'hd2_ashlar_cold'])).catch(() => {});
 
     // ------------------------------------------------ where are we?
     const loc = this._location(params);
@@ -113,13 +113,15 @@ export default class CombatScene extends Scene {
       // Painted-miniature low key: even by day the street is a dim, smoky
       // diorama under a low overcast sun: a warm raking key with deep shade
       // and a weak, desaturated sky fill; torch and brazier pools stay visible.
-      this.rig.sun.intensity *= 0.5;
-      this.rig.sun.color.lerp(new THREE.Color(0xffc488), 0.55);
-      this.rig.hemi.intensity *= 0.34;
-      this.rig.hemi.color.lerp(new THREE.Color(0x6a7486), 0.6);
-      this.rig.hemi.groundColor?.lerp(new THREE.Color(0x1a140e), 0.6);
+      // Iteration 3: a cold, dark overcast key (blue-grey) so the braziers'
+      // pools are the only warm, bright areas on the board.
+      this.rig.sun.intensity *= 0.3;
+      this.rig.sun.color.set(0x9aa8c0);
+      this.rig.hemi.intensity *= 0.2;
+      this.rig.hemi.color.set(0x5a6678);
+      this.rig.hemi.groundColor?.set(0x121416);
       this.rig.sun.shadow.radius = 2.2;
-      s.fog = new THREE.FogExp2(new THREE.Color(keys.fog).multiplyScalar(0.35), 0.012);
+      s.fog = new THREE.FogExp2(new THREE.Color(0x1a1e26), 0.014);
     }
     // Underground (dungeon maps): no sky. A dim cool wash from the shafts high
     // above, near-black vault fog, and the scene's light comes from the flames
@@ -166,11 +168,11 @@ export default class CombatScene extends Scene {
     // Soft camera-side fill so figures read against the ground (a classic tactics-cam trick).
     // At night the fill is the warm spill of the braziers and candles, so the
     // party keeps its local colour under the cold moon.
-    this.fill = new THREE.DirectionalLight(this.night ? 0xffb878 : 0xe8dcc8, this.night ? 0.6 : 0.16);
+    this.fill = new THREE.DirectionalLight(this.night ? 0xffb878 : 0x8a98b0, this.night ? 0.6 : 0.14);
     s.add(this.fill, this.fill.target);
     // Rim light from behind the fight: separates figures from the ground.
     // By night a warm brazier rim (not a cold moon edge), so the party keeps colour.
-    this.rim = new THREE.DirectionalLight(this.night ? 0xffa860 : 0xffe8c8, this.night ? 0.8 : 0.8);
+    this.rim = new THREE.DirectionalLight(this.night ? 0xffa860 : 0xb8c4d8, this.night ? 0.8 : 0.55);
     s.add(this.rim, this.rim.target);
     this.vfx = new VFX(s);
 
@@ -210,7 +212,7 @@ export default class CombatScene extends Scene {
       } else {
         // Capped per light, with a gentler falloff: flames pool warm light on
         // the masonry instead of blowing a hot disc onto the nearest wall.
-        l.intensity = (this.night || this.indoor ? 19 : 14) * (f.brazier ? 1.3 : 1);
+        l.intensity = (this.night || this.indoor ? 19 : 18) * (f.brazier ? 1.3 : 1);
         l.distance = f.brazier ? 15 : 12;
         l.decay = 1.5;
       }
@@ -236,7 +238,7 @@ export default class CombatScene extends Scene {
       this.fill.intensity = 0.22;
     }
     // Figure rim light: cool moonlit edge at night, warm sky edge by day.
-    RIM.uRimColor.value.set(this.diorama.pool ? 0xffb860 : this.night ? 0x6a88d0 : 0x8a7a64).multiplyScalar(this.diorama.pool ? 0.9 : this.night ? 1.7 : 0.55);
+    RIM.uRimColor.value.set(this.diorama.pool ? 0xffb860 : this.night ? 0x6a88d0 : 0x7a88a4).multiplyScalar(this.diorama.pool ? 0.9 : this.night ? 1.7 : 0.6);
 
     this._placeCombatants();
     this.engine = new CombatEngine({ rng, field: this.field, party: this.party, monsters: this.monsters });
@@ -641,7 +643,7 @@ export default class CombatScene extends Scene {
     es.add(new THREE.Mesh(new THREE.SphereGeometry(10, 32, 16), mat));
     const env = pm.fromScene(es, 0.02, 0.1, 100, { size: 64 }).texture;
     this.scene3d.environment = env;
-    this.scene3d.environmentIntensity = this.indoor ? 0.5 : this.night ? 0.3 : 0.45;
+    this.scene3d.environmentIntensity = this.indoor ? 0.5 : this.night ? 0.3 : 0.22;
     pm.dispose();
     mat.dispose();
     this.own(() => env.dispose());
@@ -2486,7 +2488,7 @@ export default class CombatScene extends Scene {
     const W = window.innerWidth;
     const H = window.innerHeight;
     const em = Math.max(12, Math.min(25.6, 16 * (H / 900)));
-    const right = 25 * em;
+    const right = 31 * em; // the card column plus the wide hero close-up
     const top = 6.6 * em;
     const bottom = 4.6 * em;
     return { w: (W - right) / W, h: (H - top - bottom) / H, ox: right / 2, oy: (bottom - top) / 2, W, H };
@@ -2923,8 +2925,17 @@ export default class CombatScene extends Scene {
       const mainAz = Math.atan2(this.camera.position.x - p.x, this.camera.position.z - p.z);
       const face = fig.currentYaw?.(this.time) ?? fig.yaw;
       // Waist-up: close in on the upper body, the surroundings behind it.
-      const dist = 0.75 + hgt * 1.05;
-      const el = 0.36;
+      // Pulled back to the whole figure in its surroundings (pool light,
+      // masonry behind), from a low angle that shows the architecture.
+      const dist = 1.5 + hgt * 1.55;
+      const el = 0.3;
+      // The shield arm's side: the lens never looks at the figure through its shield.
+      let shieldAz = null;
+      if (fig.model.kit?.shield && fig.b?.handL) {
+        const hp = fig.bonePos('handL', new THREE.Vector3());
+        if (Math.hypot(hp.x - p.x, hp.z - p.z) > 0.02) shieldAz = Math.atan2(hp.x - p.x, hp.z - p.z);
+        else shieldAz = face + Math.PI / 2;
+      }
       // Pick the bearing that shows the face, stays on the board camera's
       // side and has no other figure or wall between the lens and the subject.
       const reach = dist * Math.cos(el);
@@ -2940,6 +2951,7 @@ export default class CombatScene extends Scene {
         const a = mainAz + k * 0.28;
         // Three-quarter from the weapon side (the shield arm faces away from the lens).
         let sc = Math.cos(a - (face + 0.6)) * 1.1 + Math.cos(a - mainAz) * 0.5;
+        if (shieldAz !== null) sc -= Math.max(0, Math.cos(a - shieldAz)) * 2.2;
         const ex = p.x + Math.sin(a) * reach;
         const ez = p.z + Math.cos(a) * reach;
         for (const q of others) {
@@ -2957,7 +2969,7 @@ export default class CombatScene extends Scene {
           az = a;
         }
       }
-      const look = new THREE.Vector3(p.x, hgt * 0.66, p.z);
+      const look = new THREE.Vector3(p.x, hgt * 0.55, p.z);
       cam.position.set(look.x + Math.sin(az) * Math.cos(el) * dist, look.y + Math.sin(el) * dist, look.z + Math.cos(az) * Math.cos(el) * dist);
       cam.aspect = W / H;
       cam.updateProjectionMatrix();

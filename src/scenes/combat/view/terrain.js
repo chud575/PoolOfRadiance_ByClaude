@@ -409,6 +409,10 @@ export function buildDiorama(field, o = {}) {
         // Grime gradient: soot and dirt darkening toward wall feet and gutters.
         gc.rgb *= mix(0.62, 1.0, smoothstep(0.55, 0.95, gAO));
         gc.rgb *= mix(0.35, 1.0, gAO);
+        // Low-key stone: cool, desaturated grey-green setts and flags (warm
+        // colour only where the braziers light them, never in the albedo).
+        { float gL = dot(gc.rgb, vec3(0.3, 0.59, 0.11));
+          gc.rgb = mix(vec3(gL), gc.rgb, ${night ? '0.55' : '0.22'}) * ${night ? 'vec3(0.96, 0.98, 1.0)' : 'vec3(0.86, 0.94, 0.98)'}; }
         diffuseColor *= gc;
       `)
       .replace('#include <roughnessmap_fragment>', `
@@ -454,7 +458,7 @@ export function buildDiorama(field, o = {}) {
         #include <opaque_fragment>
       `);
   };
-  groundMat.customProgramCacheKey = () => `combat-ground-v13-${night ? 1 : 0}`;
+  groundMat.customProgramCacheKey = () => `combat-ground-v14-${night ? 1 : 0}`;
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(SW * TILE, SH * TILE, 1, 1), groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(originX + (SW * TILE) / 2, 0, originZ + (SH * TILE) / 2);
@@ -480,9 +484,10 @@ export function buildDiorama(field, o = {}) {
   // heavy capstones (painted-diorama low key, never a bright toy town).
   // Grim fortified masonry everywhere (the lime-and-timber town is gone):
   // dark ashlar for houses and town walls, darker rubble for the ruins.
-  const wallMats = [libMat('wall_stone', 0x6e6860), libMat('wall_stone', 0x645e56), libMat('wall_ruin', 0x6c655c)];
-  const plinthMat = libMat('wall_stone', 0x625c56);
-  const capMat = libMat('wall_stone', 0x8a857c, { ns: 1.2 });
+  // Grim fortified palette: cold, dark ashlar (kept darker than the playfield).
+  const wallMats = [libMat('hd2_ashlar_cold', 0x5e6468), libMat('hd2_ashlar_cold', 0x565c60), libMat('wall_ruin', 0x4c5256)];
+  const plinthMat = libMat('hd2_ashlar_cold', 0x464c50);
+  const capMat = libMat('floor_rubble', 0xc8c4b8, { ns: 0.9 });
   const linenMat = pbr('cloth', 0xd8ccb2);
   const rubbleMat = libMat('wall_ruin', 0x9a9082);
   // Interior rubble: pale broken plaster and masonry (no moss bloom: in a
@@ -794,6 +799,86 @@ export function buildDiorama(field, o = {}) {
       comps.push(cells);
     }
   }
+  // Thick fortified parapet run along x (horiz) or z at `off`, from m0 to m1 metres:
+  // a dark mortar core, three staggered ashlar courses of uneven blocks, each a
+  // little proud, under broad pale overhanging capstone slabs.
+  const PAR_H = 1.05;
+  const PAR_T = 0.72;
+  const parAshlar = libMat('wall_ruin', 0x6a7074, { grime: 0.4, amount: 0.5 });
+  const parAshlar2 = libMat('wall_ruin', 0x5a6064, { grime: 0.4, amount: 0.5 });
+  const parMortar = new THREE.MeshStandardMaterial({ color: 0x0c0d0e, roughness: 1, metalness: 0 });
+  disposables.push(parMortar);
+  const parCope = libMat('floor_rubble', 0xe0dcd0, { grime: 0.1, amount: 0.3, ns: 0.8 });
+  function parapet(horiz, off, m0, m1, seed, o = {}) {
+    const PH = o.h ?? PAR_H;
+    const PT = PAR_T;
+    const at = (u, y, w, h, d, mat, cast = true) => {
+      batch.add(worldBox(horiz ? w : d, h, horiz ? d : w, 2.2), mat, { p: [horiz ? u : off, y, horiz ? off : u] }, { cast });
+    };
+    at((m0 + m1) / 2, PH / 2, m1 - m0 - 0.02, PH, PT - 0.06, parMortar);
+    const courses = 3;
+    const ch2 = PH / courses;
+    for (let c = 0; c < courses; c++) {
+      let u = m0 - (c % 2 ? 0.3 : 0);
+      let k = 0;
+      while (u < m1 - 0.05) {
+        const hv = hash(Math.round(u * 13) + seed * 101, c * 7 + k, 41);
+        const bl = 0.55 + hv * 0.5;
+        const ua = Math.max(m0, u);
+        const ub = Math.min(m1, u + bl);
+        if (ub - ua > 0.08) {
+          const inset = 0.012 + hv * 0.02;
+          at((ua + ub) / 2, c * ch2 + ch2 / 2, ub - ua - 0.05, ch2 - 0.05, PT - inset * 2 + (c === 0 ? 0.06 : 0), hv > 0.5 ? parAshlar : parAshlar2);
+        }
+        u += bl;
+        k++;
+      }
+    }
+    let u = m0 - 0.06;
+    let k = 0;
+    while (u < m1 + 0.05) {
+      const hv = hash(k, Math.round(off * 10) + seed, 43);
+      const bl = 0.9 + hv * 0.5;
+      const ub = Math.min(m1 + 0.06, u + bl);
+      at((u + ub) / 2, PH + 0.1, ub - u - 0.03, 0.2, PT + 0.24, parCope);
+      u += bl;
+      k++;
+    }
+    for (const [pu, isEnd] of [[m0, o.pierA], [m1, o.pierB]]) {
+      if (!isEnd) continue;
+      at(pu, (PH + 0.45) / 2, 0.9, PH + 0.45, PT + 0.2, parAshlar);
+      at(pu, PH + 0.45 + 0.1, 1.06, 0.2, PT + 0.36, parCope);
+    }
+  }
+  /**
+   * A razed building inside the fight window: only its thick, capstoned
+   * fortified footing walls still stand (low, so they never hide a figure),
+   * enclosing a mound of rubble and dark earth. Still solid for the rules.
+   */
+  function makeYard(r) {
+    const [x0, y0, x1, y1] = r;
+    const ax = cw(x0) + PAR_T / 2 + 0.05;
+    const bx = cw(x1) + CELLM - PAR_T / 2 - 0.05;
+    const az = ch(y0) + PAR_T / 2 + 0.05;
+    const bz = ch(y1) + CELLM - PAR_T / 2 - 0.05;
+    const sd = x0 * 31 + y0 * 7;
+    const hh = PAR_H + 0.15;
+    parapet(true, az, ax - PAR_T / 2, bx + PAR_T / 2, sd, { h: hh });
+    parapet(true, bz, ax - PAR_T / 2, bx + PAR_T / 2, sd + 1, { h: hh });
+    parapet(false, ax, az + PAR_T / 2, bz - PAR_T / 2, sd + 2, { h: hh });
+    parapet(false, bx, az + PAR_T / 2, bz - PAR_T / 2, sd + 3, { h: hh });
+    // Earth and rubble fill.
+    const earth = new THREE.MeshStandardMaterial({ color: 0x1c1a17, roughness: 1, metalness: 0 });
+    disposables.push(earth);
+    batch.add(worldBox(bx - ax - PAR_T + 0.02, 0.6, bz - az - PAR_T + 0.02, 2), earth, { p: [(ax + bx) / 2, 0.3, (az + bz) / 2] }, { cast: false });
+    const nR = Math.round(((bx - ax) * (bz - az)) / 1.6);
+    for (let k = 0; k < nR; k++) {
+      const px = ax + PAR_T / 2 + 0.3 + hash(k, sd, 61) * (bx - ax - PAR_T - 0.6);
+      const pz = az + PAR_T / 2 + 0.3 + hash(sd, k, 62) * (bz - az - PAR_T - 0.6);
+      const rr = 0.18 + hash(k, k + sd, 63) * 0.35;
+      batch.add(rockGeo(hash(k, sd, 64) * 99, rr), k % 3 ? parAshlar2 : parAshlar, { p: [px, 0.6 + rr * 0.2, pz], r: [0, hash(k, 65, sd) * 6, 0] }, { cast: k < 4 });
+    }
+  }
   if (dungeon) buildVaults();
   for (const cells of dungeon ? [] : comps) {
     const xs = cells.map((c) => c[0]);
@@ -804,7 +889,15 @@ export function buildDiorama(field, o = {}) {
     const y1 = Math.max(...ys);
     const filled = cells.length === (x1 - x0 + 1) * (y1 - y0 + 1);
     const rects = filled ? [[x0, y0, x1, y1]] : cells.map(([x, y]) => [x, y, x, y]);
-    for (const r of rects) houses.push(makeHouse(r));
+    for (const r of rects) {
+      // Buildings standing (mostly) inside the fight window are razed to their
+      // fortified footings: the board reads as a walled ruin, nothing tall
+      // hides the fight, and the capstoned walls run across every shot.
+      let inside = 0;
+      for (let y = r[1]; y <= r[3]; y++) for (let x = r[0]; x <= r[2]; x++) if (inWin(x, y)) inside++;
+      if (inside * 2 > (r[2] - r[0] + 1) * (r[3] - r[1] + 1)) makeYard(r);
+      else houses.push(makeHouse(r));
+    }
   }
 
   /**
@@ -1538,6 +1631,38 @@ export function buildDiorama(field, o = {}) {
         }
       }
       edgeWalls.push(wall);
+    }
+  }
+
+  // ---------------------------------------------------------------- fortified parapet
+  // The fight is held inside a thick, low fortified parapet: chunky ashlar
+  // courses with deep dark mortar under a broad pale capstone, running just
+  // outside the board along every open rim (where the street runs on), with a
+  // gate gap in each long run. It stands off the board (never on a square), so
+  // movement, sight and fleeing are unchanged; low enough not to hide figures.
+  if (!dungeon) {
+    const runs = [];
+    const side = (bit, len, sq) => {
+      let a = -1;
+      for (let k = 0; k <= len; k++) {
+        const on = k < len && (field.exitMask[sq(k)] & bit) && !field.block[sq(k)];
+        if (on && a < 0) a = k;
+        if (!on && a >= 0) { runs.push({ bit, a, b: k }); a = -1; }
+      }
+    };
+    side(1, field.w, (k) => field.idx(k, 0));
+    side(4, field.w, (k) => field.idx(k, field.h - 1));
+    side(8, field.h, (k) => field.idx(0, k));
+    side(2, field.h, (k) => field.idx(field.w - 1, k));
+    for (const r of runs) {
+      const horiz = r.bit === 1 || r.bit === 4;
+      const off = r.bit === 1 ? -PAR_T / 2 - 0.04 : r.bit === 4 ? field.h * TILE + PAR_T / 2 + 0.04 : r.bit === 8 ? -PAR_T / 2 - 0.04 : field.w * TILE + PAR_T / 2 + 0.04;
+      const n = r.b - r.a;
+      const segs = n >= 7 ? [[r.a, r.a + Math.floor(n / 2) - 1], [r.a + Math.floor(n / 2) + 2, r.b]] : [[r.a, r.b]];
+      for (const [sa, sb] of segs) {
+        if (sb - sa < 1) continue;
+        parapet(horiz, off, sa * TILE - (sa === r.a ? PAR_T : 0), sb * TILE + (sb === r.b ? PAR_T : 0), r.bit, { pierA: sa !== r.a, pierB: sb !== r.b });
+      }
     }
   }
 
