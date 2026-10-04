@@ -98,59 +98,63 @@ const EDGE_FRAG = /* glsl */ `
   vec3 C(ivec2 p) { return texelFetch(tColor, clamp(p, ivec2(0), uHi - 1), 0).rgb; }
   float viewZ(float w) { return uOrtho > 0.5 ? w : 1.0 / w; }
 
-  // normalised crease measure along one axis. A crease (slope change packed
-  // into one pixel) gives e2/2 == e1; a smooth curve gives e2/2 == 2 e1, so the
-  // difference is subtracted: rounded limbs, domes and barrels don't fill in.
+  // Normalised crease measure along one axis, from five depth taps. e(k) is
+  // the second difference at p+k. A crease concentrates its whole slope change
+  // in one or two adjacent e's; a smooth curve spreads it evenly, so the
+  // spill into the 5-px window beyond the peak pair is subtracted (rounded
+  // limbs, domes, barrels and rolling cobbles don't fill in). Only the local
+  // maximum is kept, so every crease is exactly one pixel wide.
   float crease(ivec2 p, ivec2 a, float w0, float scale) {
-    float e1 = (W(p - a) + W(p + a) - 2.0 * w0) * scale;
+    float wm1 = W(p - a), wp1 = W(p + a);
+    float e0 = (wm1 + wp1 - 2.0 * w0) * scale;
     // jump: silhouettes; ink only the nearer (convex) side
-    if (e1 < -uJump) return 9.0;
-    if (e1 > uJump) return 0.0;
-    float e2 = (W(p - 2 * a) + W(p + 2 * a) - 2.0 * w0) * scale * 0.5;
-    if (sign(e1) != sign(e2)) return 0.0;
-    float a1 = abs(e1), a2 = abs(e2);
-    return min(a1, a2) - uCurve * max(0.0, a2 - a1);
+    if (e0 < -uJump) return 9.0;
+    if (e0 > uJump) return 0.0;
+    float em = (W(p - 2 * a) + w0 - 2.0 * wm1) * scale;
+    float ep = (w0 + W(p + 2 * a) - 2.0 * wp1) * scale;
+    float sg = sign(e0);
+    float a0 = e0 * sg, am = max(em * sg, 0.0), ap = max(ep * sg, 0.0);
+    if (am > a0 || ap >= a0) return 0.0;
+    float pk = a0 + max(am, ap);
+    float tot = a0 + am + ap;
+    return pk - uCurve * (tot - pk);
   }
 
-  float lumEdge(ivec2 p, vec3 c0) {
-    float l0 = log2(dot(c0, vec3(0.2126, 0.7152, 0.0722)) + 0.004);
+  float L2(ivec2 p) { return log2(dot(C(p), vec3(0.2126, 0.7152, 0.0722)) + 0.004); }
+  // A bold albedo line: a clean luminance STEP (flat on the bright side,
+  // still dark two pixels on), inked on the bright side. Speckle, glints and
+  // ramps all fail one of the three tests.
+  float lumEdge(ivec2 p) {
+    float l0 = L2(p);
     float best = 0.0;
-    for (int i = 0; i < 2; i++) {
-      ivec2 a = i == 0 ? ivec2(1, 0) : ivec2(0, 1);
-      float l1 = log2(dot(C(p + a), vec3(0.2126, 0.7152, 0.0722)) + 0.004);
-      float lm = log2(dot(C(p - a), vec3(0.2126, 0.7152, 0.0722)) + 0.004);
-      // ink the brighter side of a strong step, and only a step (not a ramp)
-      float s = max(l0 - l1, l0 - lm);
-      float r = max(abs(l1 - l0), abs(lm - l0));
-      best = max(best, min(s, r));
+    for (int i = 0; i < 4; i++) {
+      ivec2 a = i == 0 ? ivec2(1, 0) : i == 1 ? ivec2(-1, 0) : i == 2 ? ivec2(0, 1) : ivec2(0, -1);
+      float fl = abs(L2(p - a) - l0);
+      float s1 = l0 - L2(p + a), s2 = l0 - L2(p + 2 * a);
+      if (fl < 0.6) best = max(best, min(s1, s2) - fl);
     }
     return best;
   }
 
+  // Ink by hue ANGLE in wide bins (not nearest-colour), so mixed fire/moon
+  // light on one material can't flip a line between neighbouring EGA hues:
+  // reds, one warm bin (yellow lit / brown in shade), greens, cyans, blues,
+  // magentas; low chroma = white / light grey / dark grey by light level.
   vec3 ink(vec3 c, float lit) {
     float mx = max(max(c.r, c.g), c.b);
     float mn = min(min(c.r, c.g), c.b);
     float sat = mx > 1e-5 ? (mx - mn) / mx : 0.0;
-    int idx;
-    if (sat < uSat) {
-      idx = lit > 1.5 ? 15 : (lit > 0.45 ? 7 : 8);
-    } else {
-      vec3 n = c / mx;
-      // candidates: bright hues + brown; matched on normalised chroma
-      int cand[7] = int[7](12, 14, 10, 11, 9, 13, 6);
-      float best = 1e9; idx = 7;
-      for (int i = 0; i < 7; i++) {
-        vec3 p = PAL[cand[i]]; p /= max(max(p.r, p.g), p.b);
-        vec3 d = n - p;
-        float e = dot(d * d, vec3(1.0, 1.25, 0.9));
-        if (e < best) { best = e; idx = cand[i]; }
-      }
-      // in shadow / distance: the dark half of the palette
-      if (lit < 0.45) {
-        idx = idx == 12 ? 4 : idx == 14 ? 6 : idx == 10 ? 2 : idx == 11 ? 3 : idx == 9 ? 1 : idx == 13 ? 5 : idx == 6 ? 4 : 8;
-      }
-    }
-    return PAL[idx];
+    if (sat < uSat) return PAL[lit > 1.6 ? 15 : (lit > 0.4 ? 7 : 8)];
+    float d = mx - mn;
+    float h = mx == c.r ? mod((c.g - c.b) / d, 6.0) : mx == c.g ? (c.b - c.r) / d + 2.0 : (c.r - c.g) / d + 4.0;
+    h *= 60.0; // degrees
+    bool dark = lit < 0.4;
+    if (h < 14.0 || h >= 335.0) return PAL[dark ? 4 : 12];   // red
+    if (h < 72.0) return PAL[dark ? 6 : 14];                  // warm: yellow / brown
+    if (h < 160.0) return PAL[dark ? 2 : 10];                 // green
+    if (h < 200.0) return PAL[dark ? 3 : 11];                 // cyan
+    if (h < 265.0) return PAL[dark ? 1 : 9];                  // blue
+    return PAL[dark ? 5 : 13];                                // magenta
   }
 
   void main() {
@@ -169,7 +173,7 @@ const EDGE_FRAG = /* glsl */ `
       float m = max(crease(p, ivec2(1, 0), w0, scale), crease(p, ivec2(0, 1), w0, scale));
       float s = m > uCrease ? m : 0.0;
       if (s == 0.0 && d0 < 0.99999 && z < uLumDist) {
-        float le = lumEdge(p, C(p));
+        float le = lumEdge(p);
         if (le > uLum) s = 0.5 + le * 0.01;
       }
       // prefer the nearest of competing edge pixels
@@ -185,9 +189,9 @@ const EDGE_FRAG = /* glsl */ `
       float w0 = W(bp);
       vec3 c = vec3(0.0); float cn = 0.0;
       for (int k = 0; k < 9; k++) {
-        ivec2 q = bp + ivec2(k % 3 - 1, k / 3 - 1);
+        ivec2 q = bp + 2 * ivec2(k % 3 - 1, k / 3 - 1);
         float wq = W(q);
-        float tol = uOrtho > 0.5 ? 0.02 * max(abs(w0), 1.0) : 0.03 * w0;
+        float tol = uOrtho > 0.5 ? 0.02 * max(abs(w0), 1.0) : 0.04 * w0;
         if (abs(wq - w0) < tol) { c += C(q); cn += 1.0; }
       }
       c /= max(cn, 1.0);
@@ -214,12 +218,12 @@ export class LineArtPass {
   constructor() {
     this.params = {
       crease: 0.55,
-      curve: 1.0, // how strongly smooth curvature is rejected
+      curve: 2.0, // how strongly smooth curvature is rejected
       balance: 0.85,
-      sat: 0.4, // below this (after balance) a surface inks in white/greys // grey-world white balance before the hue match // min change of surface slope (tan units) for a crease line
+      sat: 0.32, // below this (after balance) a surface inks in white/greys // grey-world white balance before the hue match // min change of surface slope (tan units) for a crease line
       jump: 6.0, // second difference above this = silhouette
-      lum: 1.9, // log2 luminance step for an albedo line (~3.7x)
-      lumDist: 9.0, // albedo lines only nearer than this (m)
+      lum: 3.0, // log2 luminance step for an albedo line (~3.7x)
+      lumDist: 7.0, // albedo lines only nearer than this (m)
       sky: 0.06, // linear sky luminance above which open sky is EGA blue
       dim: 1.0,
     };
