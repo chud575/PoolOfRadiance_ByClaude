@@ -121,11 +121,14 @@ export default class CombatScene extends Scene {
       // Iteration 3: a cold, dark overcast key (blue-grey) so the braziers'
       // pools are the only warm, bright areas on the board.
       // Hybrid: a touch more key and sky so the restored figures keep their colour.
-      this.rig.sun.intensity *= 0.45;
+      // Reskin 10 (the owner's reference): a pale, even overcast over the
+      // board, so flagstones read mid-grey, capstones catch a cool sheen and
+      // every miniature is modelled; the flames add warmth without owning it.
+      this.rig.sun.intensity *= 0.8;
       // Reskin 2: neutral cool key and sky (no lilac lift in the shade).
-      this.rig.sun.color.set(0xa6b2ae);
-      this.rig.hemi.intensity *= 0.3;
-      this.rig.hemi.color.set(0x56645f);
+      this.rig.sun.color.set(0xb4bdb6);
+      this.rig.hemi.intensity *= 0.55;
+      this.rig.hemi.color.set(0x76827c);
       this.rig.hemi.groundColor?.set(0x0c0b0a);
       this.rig.sun.shadow.radius = 2.2;
       s.fog = new THREE.FogExp2(new THREE.Color(0x1a1e26), 0.014);
@@ -263,7 +266,7 @@ export default class CombatScene extends Scene {
         // Iteration 4: tighter still by day, so most of the board stays cool
         // grey and only the stones near a flame warm up.
         const dark = this.night || this.indoor;
-        l.intensity = (dark ? 30 : 24) * (f.brazier ? 1.3 : 1);
+        l.intensity = (dark ? 30 : 15) * (f.brazier ? 1.3 : 1);
         l.distance = f.brazier ? (dark ? 10 : 7.5) : dark ? 8.5 : 6.5;
         l.decay = dark ? 2 : 2.2;
       }
@@ -443,7 +446,7 @@ export default class CombatScene extends Scene {
       }
     }
     // Low-key grade: desaturated stone, deep vignette, flames as the only true whites.
-    this.post = { bloomStrength: this.night ? 0.6 : 0.45, bloomThreshold: this.night ? 0.82 : 0.86, bloomRadius: 0.55, vignette: this.night ? 0.62 : 0.56, exposure: this.night ? 1.0 : 1.0, contrast: this.night ? 1.14 : 1.12, saturation: this.night ? 0.8 : 0.78 };
+    this.post = { bloomStrength: this.night ? 0.6 : 0.45, bloomThreshold: this.night ? 0.82 : 0.86, bloomRadius: 0.55, vignette: this.night ? 0.62 : 0.38, exposure: this.night ? 1.0 : 1.12, contrast: this.night ? 1.14 : 1.1, saturation: this.night ? 0.8 : 0.76 };
     this._updateCamera(0, true);
 
     // ------------------------------------------------ input

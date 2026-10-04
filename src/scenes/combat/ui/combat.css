@@ -360,12 +360,12 @@
 :root:not([data-classic='1']) .cb-roster .por-roster-row .bar { opacity: 0.45; }
 
 /* Location plate, speed, prompt. */
-:root:not([data-classic='1']) .cb-loc .name { font-size: 1.35em; letter-spacing: 0.1em; }
+:root:not([data-classic='1']) .cb-loc .name { font-size: 1.25em; letter-spacing: 0.05em; line-height: 1.1; max-width: 12.5em; }
 :root:not([data-classic='1']) .cb-loc .sub { font-family: var(--gb-font); text-transform: uppercase; letter-spacing: 0.06em; color: #a39a86; }
-:root:not([data-classic='1']) .cb-speed { font-size: 0.85em; }
+:root:not([data-classic='1']) .cb-speed { font-size: 0.72em; }
 :root:not([data-classic='1']) .cb-speed b { color: inherit; font-weight: 400; }
 :root:not([data-classic='1']) .cb-prompt { font-size: 0.95em; letter-spacing: 0.1em; --gb-ink: #f2e6c4; }
-:root:not([data-classic='1']) .cb-logbox { font-family: var(--gb-font); text-transform: uppercase; letter-spacing: 0.03em; font-size: 0.86em; }
+:root:not([data-classic='1']) .cb-logbox { font-family: var(--gb-font); text-transform: uppercase; letter-spacing: 0.02em; font-size: 0.78em; width: min(34em, 30vw); }
 
 /* Command line: big stippled words on iron-black, hotkey letter in worn gold. */
 :root:not([data-classic='1']) .cb-cmds.por-commandbar { background: linear-gradient(180deg, #0b0907, #040302); border-top: 0; box-shadow: none; gap: 0.15em; }
