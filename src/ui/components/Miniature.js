@@ -203,7 +203,7 @@ export function figureMaterial(faceTex, skinLin = null) {
   const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0 });
   m.userData.faceMap = { value: faceTex ?? blankFaceTexture() };
   m.userData.uSkin = { value: new THREE.Vector3(...(skinLin ?? [0.6, 0.4, 0.3])) };
-  m.customProgramCacheKey = () => 'por-mini-v6';
+  m.customProgramCacheKey = () => 'por-mini-v7';
   m.onBeforeCompile = (sh) => {
     sh.uniforms.faceMap = m.userData.faceMap;
     sh.uniforms.uSkin = m.userData.uSkin;
@@ -225,9 +225,22 @@ export function figureMaterial(faceTex, skinLin = null) {
         float miniH; float miniAlb; float miniR;
         miniPattern(pid, miniH, miniAlb, miniR);
         diffuseColor.rgb *= mix(miniAlb, 1.0, faceW);`)
-      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = clamp(vMat.y + miniR, 0.06, 1.0);')
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = clamp(vMat.y + miniR, mix(0.5, 0.06, vMat.z), 1.0);')
       .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = vMat.z;')
-      .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = miniPerturb(-vViewPosition, normal, vec2(dFdx(miniH), dFdy(miniH)) * uDetail, faceDirection);')
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+        normal = miniPerturb(-vViewPosition, normal, vec2(dFdx(miniH), dFdy(miniH)) * uDetail, faceDirection);
+        {
+          // Painted-miniature finish (as a wargamer paints a 28 mm figure): a dark wash pooled in the
+          // recesses, a zenithal highlight on every up-facing plane, a drybrushed edge where the form
+          // turns away from the eye; metal parts keep their own sheen. The painted face is left alone.
+          vec3 wN = normalize((vec4(normal, 0.0) * viewMatrix).xyz);
+          float zen = smoothstep(-0.25, 0.95, wN.y);
+          float wash = mix(0.58, 1.0, smoothstep(0.3, 0.95, vMat.w));
+          float edge = pow(1.0 - abs(dot(normal, normalize(vViewPosition))), 3.0) * smoothstep(-0.1, 0.6, wN.y);
+          float pm = (1.0 - faceW) * (1.0 - 0.7 * vMat.z);
+          diffuseColor.rgb *= mix(1.0, wash * mix(0.84, 1.16, zen), pm);
+          diffuseColor.rgb += (diffuseColor.rgb * 0.9 + 0.025) * edge * 0.55 * pm;
+        }`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         // Skin: a touch of subsurface warmth in the shadows.
         if (pid > 8.5 && pid < 9.5) totalEmissiveRadiance += diffuseColor.rgb * vec3(0.05, 0.012, 0.006) * vMat.w;`)

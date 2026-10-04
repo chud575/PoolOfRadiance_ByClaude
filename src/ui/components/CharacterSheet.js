@@ -1,4 +1,5 @@
 import './partyui.css';
+import './goldsheet.css';
 import { h } from '../dom.js';
 import { deriveStats, statusLabel, maxLevel, armorAllowsThieving } from '../../rules/character.js';
 import { ABILITIES, ABILITY_ABBR, formatStr, strengthTable, dexterityMods, constitutionTable, intelligenceTable, wisdomSaveAdj, charismaTable } from '../../rules/abilities.js';

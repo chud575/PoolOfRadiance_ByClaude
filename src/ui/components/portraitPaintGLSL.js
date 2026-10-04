@@ -1078,9 +1078,11 @@ void main() {
   float L = lum(col);
   col = mix(col, col * vec3(1.04, 1.0, 0.94), sat(L * 1.5));
   col = mix(col, col * vec3(0.94, 0.98, 1.06), sat(1.0 - L * 3.0) * 0.6);
+  // low key, as the board is lit: the half-tones and darks pressed down (the lights untouched)
+  col *= mix(0.7, 1.0, smoothstep(0.08, 0.55, L));
   // vignette
   vec2 c = vUv - vec2(0.5, 0.52);
-  col *= 1.0 - 0.32 * sat(dot(c, c) * 2.4);
+  col *= 1.0 - 0.5 * sat(dot(c, c) * 2.6);
   gl_FragColor = vec4(col, detail);
 }
 `;

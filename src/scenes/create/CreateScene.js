@@ -16,6 +16,7 @@ import { precompilePortrait } from '../../ui/components/portraitGL.js';
 import { portraitEl, miniPortrait, abilityMods } from '../../ui/components/CharacterSheet.js';
 import { ammoProblem, ammoHint } from '../../ui/components/Inventory.js';
 import { openCharacterView } from '../../ui/components/CharacterView.js';
+import { ornatePortrait } from '../../ui/components/goldSheet.js';
 import { STAT_TIPS, ALIGNMENT_TEXT, levelLimitText, abilityTip } from '../../ui/components/rulesText.js';
 import { buildMiniature, miniatureEnvironment, useRenderer } from '../../ui/components/Miniature.js';
 import { prepaintParty } from '../../ui/components/portraitPainter.js';
@@ -547,7 +548,7 @@ export default class CreateScene extends Scene {
       return;
     }
     this.card.title.textContent = this.editing ? 'Modify' : 'New Adventurer';
-    b.append(portraitEl(d));
+    b.append(ornatePortrait(d, { scale: 1, className: 'cc-ornate' }));
     b.append(h('div.cc-card-name.por-gilt-text', [d.name || 'Nameless']));
     b.append(h('div.cc-card-sub', [
       h('div', [h('b', [`${RACES[d.race].name} ${d.gender === 'female' ? 'Female' : 'Male'}`])]),

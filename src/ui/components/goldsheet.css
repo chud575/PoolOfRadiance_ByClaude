@@ -166,3 +166,11 @@
   border-color: rgba(170, 130, 70, 0.38);
 }
 .pc-view.pc-iron .pc-sect-h > span { background: linear-gradient(180deg, #3a2a1a, #1e150c); border-color: rgba(190, 150, 90, 0.5); }
+
+/* the creation card's portrait in the same ornate frame */
+.cc-card .gb-ornate.cc-ornate { width: 80%; margin: 0.5em auto 0.2em; font-size: 0.86em; }
+.cc-card .gb-ornate.cc-ornate .pc-portrait { width: 100%; margin: 0; }
+
+/* roster heads: dark bronze bezels, the selected one lit */
+.pc-mini { border: 1px solid #6a5230; box-shadow: 0 0 0 1px #000, 0 0 0 2px #2a1e10, inset 0 0 8px rgba(0, 0, 0, 0.7); }
+.pc-mini.sel { border-color: #e0bc7c; box-shadow: 0 0 0 1px #000, 0 0 0 2px #8a6838, 0 0 10px rgba(240, 190, 110, 0.5); }
