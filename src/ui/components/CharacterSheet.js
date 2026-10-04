@@ -29,7 +29,7 @@ const ORD = (n) => `${n}${n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !=
 export function portraitEl(ch, o = {}) {
   const st = ch.status === 'dead' ? '.dead' : ch.status && ch.status !== 'ok' ? '.down' : '';
   // Painted lazily (placeholder first, the hero portrait ahead of any thumbnails) so a click never stalls on the GPU.
-  return h(`div.pc-portrait${st}`, { class: o.className ?? '' }, [portraitImg(ch, o.scale ?? 1, { alt: ch.name ?? 'portrait', priority: o.priority !== false })]);
+  return h(`div.pc-portrait${st}`, { class: o.className ?? '' }, [portraitImg(ch, o.scale ?? 1, { alt: ch.name ?? 'portrait', priority: o.priority !== false, crop: o.crop })]);
 }
 
 /** Small portrait (roster strips). */

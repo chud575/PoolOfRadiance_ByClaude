@@ -33,7 +33,7 @@ const sgn = (n) => (n > 0 ? `+${n}` : String(n));
 export function ornatePortrait(ch, o = {}) {
   return h(`div.gb-ornate${o.className ? `.${o.className}` : ''}`, [
     h('i.gb-boss.tl'), h('i.gb-boss.tr'), h('i.gb-boss.bl'), h('i.gb-boss.br'), h('i.gb-crest'),
-    portraitEl(ch, { scale: o.scale ?? 1.25, priority: true }),
+    portraitEl(ch, { scale: o.scale ?? 1.25, priority: true, crop: o.crop ?? 'bust' }),
   ]);
 }
 

@@ -273,11 +273,13 @@ function setup(ch, o) {
   // (sunk deep between the shoulders on a short bull neck)
   u.uHeadC.value.set(0, dwarf ? -0.048 : 0, 0);
   // Camera: a long lens (no distortion), eye level a touch below the eyes.
-  const viewH = o.viewH ?? (torso ? 0.74 : 0.41);
+  // 'bust': the sheet's 3/4 bust (head, shoulders and kit: pauldrons, baldric, collar)
+  const bust = o.crop === 'bust';
+  const viewH = o.viewH ?? (torso ? 0.74 : bust ? 0.58 : 0.41);
   const fov = 14;
   const dist = viewH / (2 * Math.tan((fov * Math.PI) / 360));
-  const target = new THREE.Vector3(0, o.targetY ?? (torso ? -0.24 : -0.082) - (dwarf ? 0.036 : 0), 0);
-  u.uCamPos.value.set(target.x + (o.camX ?? 0), target.y + (torso ? 0.05 : 0.075), dist);
+  const target = new THREE.Vector3(0, o.targetY ?? (torso ? -0.24 : bust ? -0.155 : -0.082) - (dwarf ? 0.036 : 0), 0);
+  u.uCamPos.value.set(target.x + (o.camX ?? 0), target.y + (torso ? 0.05 : bust ? 0.07 : 0.075), dist);
   const fwd = target.clone().sub(u.uCamPos.value).normalize();
   const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
   const up = new THREE.Vector3().crossVectors(right, fwd);
@@ -329,7 +331,7 @@ function setup(ch, o) {
  * Paint a portrait with a given WebGL renderer (the page's offscreen renderer, or a worker's).
  * @param {THREE.WebGLRenderer} renderer
  * @param {object} ch  character or draft ({race, gender, classSpec, look, inventory?})
- * @param {{scale?: number, crop?: 'head'|'torso', mode?: number, yaw?: number, raw?: boolean}} [o]
+ * @param {{scale?: number, crop?: 'head'|'torso'|'bust', mode?: number, yaw?: number, raw?: boolean}} [o]
  * @returns {HTMLCanvasElement|OffscreenCanvas}
  */
 export function renderPortraitWith(renderer, ch, o = {}) {

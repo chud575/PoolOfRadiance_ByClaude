@@ -289,7 +289,7 @@ float skin(vec3 p) {
     d = smin(d, ear, 0.006);
   }
   // ---- neck with the sterno-mastoid cords and (men) the larynx; dwarves are bull-necked
-  float nr = mix(0.054, 0.047, fem) * (1.0 + 0.1 * HALF) * (1.0 + 0.4 * sat(BLEN - 1.0) / 0.3) * (1.0 + 0.1 * fem * sat(BLEN - 1.0) / 0.3);
+  float nr = mix(0.049, 0.043, fem) * (1.0 - 0.08 * HALF) * (1.0 + 0.22 * sat(BLEN - 1.0) / 0.3) * (1.0 + 0.1 * fem * sat(BLEN - 1.0) / 0.3);
   vec3 np = p - vec3(0.0, 0.0, -0.028);
   np.x *= 0.95;
   float neck = sdRC(np, vec3(0.0, -0.06, 0.0), vec3(0.0, -0.2, 0.004), nr, nr * 1.12);

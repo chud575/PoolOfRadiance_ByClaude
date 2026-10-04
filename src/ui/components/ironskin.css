@@ -229,3 +229,15 @@ html[data-freeze='1'] .pc-view.pc-iron.tab-sheet .pc-lore { transition: none; }
 .pc-iron .pc-rrow .pc-mini img { filter: brightness(1.45) contrast(1.08) saturate(1.05); object-position: 50% 28%; transform: scale(1.18); transform-origin: 50% 30%; }
 .pc-iron .pc-rrow.active { background: linear-gradient(90deg, rgba(200, 122, 66, 0.28), rgba(200, 122, 66, 0.02)); box-shadow: inset 2px 0 0 var(--ir-copper-hi); }
 .pc-iron .pc-bar > i { background: linear-gradient(90deg, #3a6a2a, #8ac46a); }
+
+/* ---------- camp dialogs (rest, save) on iron: leather rows with copper accents, no navy ---------- */
+.pc-iron .camp-slot {
+  background: linear-gradient(180deg, rgba(58, 52, 46, 0.55), rgba(12, 11, 10, 0.88));
+  border-color: rgba(150, 104, 60, 0.4);
+  box-shadow: inset 0 1px 0 rgba(255, 220, 170, 0.06), 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+.pc-iron .camp-slot:hover, .pc-iron .camp-slot:focus-visible, .pc-iron .camp-slot.focus {
+  background: linear-gradient(180deg, rgba(150, 84, 38, 0.6), rgba(50, 26, 10, 0.9)); border-color: var(--ir-copper-hi);
+}
+.pc-iron .camp-slot .id { color: var(--ir-copper-hi); }
+.pc-iron .camp-slot .dt { color: #e8a46a; }

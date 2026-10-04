@@ -412,6 +412,32 @@ float bodyField(vec3 b, out float part) {
       if (stole < d) { d = stole; part = 1.0; }
     }
   }
+  // the kit over the garment: shoulder lames (steel on mail, boiled leather on a jerkin) and a
+  // sword baldric from the left shoulder to the right hip with an iron buckle on the chest
+  if (uBody == 1 || uBody == 5 || uBody == 3) {
+    float sw2 = mix(0.172, 0.152, FEM) * (1.0 + 0.12 * step(0.5, BLEN - 1.0));
+    float pa = 1e3;
+    for (int i = 0; i < 2; i++) {
+      float fi = float(i);
+      vec3 c = vec3(sw2 + 0.014 + 0.004 * fi, -0.232 - 0.034 * fi, -0.008);
+      float s = abs(sdEll(q - c, vec3(0.066 - 0.004 * fi, 0.054, 0.066))) - 0.0045;
+      s = max(s, -(q.y - c.y + 0.03 - 0.004 * fi));
+      s = max(s, -(q.x - sw2 + 0.04));
+      pa = min(pa, s);
+    }
+    if (pa < d) { d = pa; part = uBody == 3 ? 8.0 : 3.0; }
+    vec2 s0 = vec2(0.11, -0.2), s1 = vec2(-0.12, -0.56);
+    vec2 sd = normalize(s1 - s0);
+    vec2 sn = vec2(-sd.y, sd.x);
+    float strap = max(t - 0.017, abs(dot(b.xy - s0, sn)) - 0.014);
+    strap = max(strap, -b.z + 0.01);
+    if (strap < d) { d = strap; part = 8.0; }
+    vec3 bk = b - vec3(s0 + sd * 0.15, 0.0);
+    bk.z = b.z - 0.112;
+    float buckle = max(abs(max(abs(bk.x), abs(bk.y)) - 0.013) - 0.0032, abs(bk.z + 0.002) - 0.0045);
+    buckle = max(buckle, t - 0.024);
+    if (buckle < d) { d = buckle; part = 3.0; }
+  }
   // the cloak: over the shoulders and back, clasped at the collarbone
   if (uCloak == 1 && uBody != 4 && uBody != 7) {
     float a = atan(b.x, -b.z);
@@ -419,9 +445,11 @@ float bodyField(vec3 b, out float part) {
     float ck = t - 0.026 + fold;
     ck = max(ck, b.z - 0.02 - 0.8 * max(0.0, -(b.y + 0.24)) - 0.12 * sat((q.x - 0.1) / 0.06));
     ck = max(ck, -(t - 0.012));
-    float clasp = max(length(b - vec3(-0.062, -0.2, 0.07)) - 0.017, abs(dot(b - vec3(-0.062, -0.2, 0.07), normalize(vec3(-0.3, 0.35, 0.89)))) - 0.005);
+    vec3 cq = b - vec3(-0.07, -0.205, 0.068);
+    float cn = dot(cq, normalize(vec3(-0.3, 0.35, 0.89)));
+    float clasp = length(vec2(length(cq - cn * normalize(vec3(-0.3, 0.35, 0.89))) - 0.011, cn)) - 0.0035;
     if (ck < d) { d = ck; part = 2.0; }
-    if (clasp < d) { d = clasp; part = 4.0; }
+    if (clasp < d) { d = clasp; part = 3.0; }
   }
   // a holy symbol for clerics
   if (uCleric == 1) {
@@ -670,9 +698,32 @@ vec3 backdrop(vec2 uv) {
   float halo = exp(-dot((uv - vec2(0.64, 0.62)) * vec2(1.4, 1.0), (uv - vec2(0.64, 0.62)) * vec2(1.4, 1.0)) * 5.0);
   vec3 col = mix(uBgA, uBgB, sat(halo * 1.1 + (big - 0.5) * 0.5 + (s1 - 0.5) * 0.35));
   col *= 0.75 + 0.35 * s1 + 0.12 * (s2 - 0.5);
+  // an interior out of focus behind the sitter: a dark stone pier and an arch on the cool side, a
+  // warm practical (a lamp in a niche) glowing on the key side with a few soft bokeh discs, and a
+  // cool moonlit fill pool falling across the far wall
+  float pier = smoothstep(0.06, 0.0, abs(uv.x - 0.83 - 0.02 * sin(uSeed * 5.0)) - 0.07);
+  float archY = 0.78 + 0.1 * sqrt(max(0.0, 1.0 - pow((uv.x - 0.5) / 0.42, 2.0)));
+  float arch = smoothstep(0.05, -0.02, abs(uv.y - archY) - 0.025) * step(0.12, uv.x) * step(uv.x, 0.88);
+  col *= 1.0 - 0.32 * pier - 0.18 * arch;
+  vec2 lp = vec2(uSide > 0.0 ? 0.8 : 0.2, 0.74);
+  vec2 ld = (uv - lp) * vec2(uRes.x / uRes.y, 1.0);
+  float lamp = exp(-dot(ld, ld) * 26.0);
+  vec3 warm = vec3(1.0, 0.58, 0.26);
+  col += warm * (lamp * 0.55 + exp(-dot(ld, ld) * 6.0) * 0.12);
+  for (int i = 0; i < 5; i++) {
+    float fi = float(i);
+    vec2 bp = lp + vec2(sin(fi * 2.4 + uSeed * 3.0) * 0.13, cos(fi * 1.7 + uSeed) * 0.1 - 0.02);
+    vec2 bd = (uv - bp) * vec2(uRes.x / uRes.y, 1.0);
+    float r = 0.025 + 0.012 * fract(fi * 0.618 + uSeed);
+    float disc = smoothstep(r, r * 0.8, length(bd));
+    col += warm * disc * (0.05 + 0.04 * fract(fi * 0.37 + uSeed * 2.0));
+  }
+  vec2 fp = vec2(uSide > 0.0 ? 0.16 : 0.84, 0.5);
+  float fill = exp(-dot((uv - fp) * vec2(1.6, 0.9), (uv - fp) * vec2(1.6, 0.9)) * 7.0);
+  col = mix(col, col * vec3(0.7, 0.82, 1.05) + vec3(0.03, 0.045, 0.07), fill * 0.7);
   // low-key: the backdrop falls away to near-black at the edges, as the board's dark between torches
-  col *= 1.0 - 0.72 * sat(length(c * vec2(1.0, 0.8)) * 1.35 - 0.2);
-  return col * 0.78;
+  col *= 1.0 - 0.66 * sat(length(c * vec2(1.0, 0.8)) * 1.35 - 0.25);
+  return col * 0.82;
 }
 
 // ------------------------------------------------------------------ main
@@ -875,6 +926,12 @@ void main() {
       alb = vec3(0.2, 0.15, 0.1) * (0.5 + 0.7 * vnoise(pb * vec3(300.0, 120.0, 300.0)));
       rough = 0.9;
       aniso = 0.4;
+    } else if (part > 7.5) {
+      // oiled leather: dark brown, worn paler on the edges, a soft sheen
+      float wear = fbm3(pb * vec3(80.0, 30.0, 80.0));
+      alb = vec3(0.2, 0.12, 0.07) * (0.75 + 0.5 * wear);
+      rough = 0.5 + 0.25 * wear;
+      specK = 0.06;
     } else if (part > 5.5) {
       alb = uCloth * 0.5;
       rough = 0.85;
