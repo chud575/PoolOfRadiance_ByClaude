@@ -985,6 +985,21 @@ export function buildDiorama(field, o = {}) {
         }
         // Plinth.
         B.add(place(worldBox(len + 0.1, 0.45, 0.1, 2.5), len / 2, 0.225, 0.03), plinthMat);
+        if (variant === 'full') {
+          // Fortified footing: a thick battered stone base wall under a broad
+          // flat capstone course, broken only at the doors (reads at street
+          // level in every fight, like the target's capstoned wall runs).
+          const cuts = doors.map((d) => [d.at - 0.85, d.at + 0.85]).sort((a, b) => a[0] - b[0]);
+          let a0 = -0.1;
+          for (const [c0, c1] of [...cuts, [len + 0.1, len + 0.1]]) {
+            const sl = c0 - a0;
+            if (sl > 0.3) {
+              B.add(place(worldBox(sl, 0.7, 0.42, 2.5), a0 + sl / 2, 0.35, 0.13), wallMat);
+              B.add(place(worldBox(sl + 0.04, 0.13, 0.56, 1), a0 + sl / 2, 0.765, 0.15), capMat);
+            }
+            a0 = Math.max(a0, c1);
+          }
+        }
         if (variant === 'full' && !ruined) {
           // Corner quoins (alternating dressed blocks) / timber posts.
           if (style === 1) B.add(place(worldBox(0.26, hh, 0.26, 2.5), 0, hh / 2, -0.06), darkWood);

@@ -2301,7 +2301,12 @@ export default class CombatScene extends Scene {
         cz += (top.z - cz) * 0.08;
       }
     }
-    if (!tall.length) ({ cx, cz, dist } = this._refineFrame(fitSet, cx, cz, dist, MIN, MAX + (mark.length ? 6.5 : 0), fitSet.length >= live.length));
+    if (!tall.length) {
+      // When the whole fight fits, frame all of it tightly (no dead floor);
+      // otherwise only fix crops of the partial (actor-centred) frame.
+      const whole = fitSet.length >= live.length || this._fitBox(live).need <= MAX * 1.12;
+      ({ cx, cz, dist } = this._refineFrame(whole ? [...live, ...mark] : fitSet, cx, cz, dist, MIN, MAX + (mark.length ? 6.5 : 0), whole));
+    }
     this.fightCenter = new THREE.Vector3(cx, 0, cz);
     if (soft) {
       // Small corrections while walking: drift, don't lurch.
