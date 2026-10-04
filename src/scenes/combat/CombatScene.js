@@ -2855,11 +2855,39 @@ export default class CombatScene extends Scene {
       // toward the figure's face, lower and closer: a three-quarter hero view.
       const mainAz = Math.atan2(this.camera.position.x - p.x, this.camera.position.z - p.z);
       const face = fig.currentYaw?.(this.time) ?? fig.yaw;
-      let d = ((face - mainAz + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
-      d = Math.max(-1.9, Math.min(1.9, d)) * 0.85;
-      const az = mainAz + d + 0.3;
       const dist = 1.1 + hgt * 1.65;
       const el = 0.46;
+      // Pick the bearing that shows the face, stays on the board camera's
+      // side and has no other figure or wall between the lens and the subject.
+      const reach = dist * Math.cos(el);
+      const others = [];
+      for (const o of this.engine.all) {
+        if (o === act || this.engine.out(o)) continue;
+        const of = this.figures.get(o.id);
+        if (of?.root.visible) others.push(of.root.position);
+      }
+      let az = mainAz;
+      let best = -1e9;
+      for (let k = -8; k <= 8; k++) {
+        const a = mainAz + k * 0.28;
+        let sc = Math.cos(a - face) * 1.1 + Math.cos(a - mainAz) * 0.7;
+        const ex = p.x + Math.sin(a) * reach;
+        const ez = p.z + Math.cos(a) * reach;
+        for (const q of others) {
+          const vx = ex - p.x;
+          const vz = ez - p.z;
+          const tq = Math.max(0, Math.min(1, ((q.x - p.x) * vx + (q.z - p.z) * vz) / (vx * vx + vz * vz)));
+          const dd = Math.hypot(p.x + vx * tq - q.x, p.z + vz * tq - q.z);
+          if (dd < 0.7 && tq > 0.08) sc -= 2.2 * (1 - dd / 0.7);
+        }
+        const cx = Math.floor(ex / TILE);
+        const cz = Math.floor(ez / TILE);
+        if (!this.field.inBounds(cx, cz) || !this.field.los(act.x, act.y, cx, cz)) sc -= 1.6;
+        if (sc > best) {
+          best = sc;
+          az = a;
+        }
+      }
       const look = new THREE.Vector3(p.x, hgt * 0.55, p.z);
       cam.position.set(look.x + Math.sin(az) * Math.cos(el) * dist, look.y + Math.sin(el) * dist, look.z + Math.cos(az) * Math.cos(el) * dist);
       cam.aspect = W / H;
