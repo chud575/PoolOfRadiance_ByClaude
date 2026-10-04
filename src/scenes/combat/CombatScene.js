@@ -3026,7 +3026,7 @@ export default class CombatScene extends Scene {
       // figure) fills the band, so the painted face and helm read.
       const span = hgt * 0.74;
       const dist = Math.max(0.9, (span * rect.h) / (2 * tanH * bandH * 0.94));
-      const el = 0.14;
+      const el = 0.24; // iteration 4: a little above eye level, over the raised weapon arm onto the face
       // The shield arm's side: the lens never looks at the figure through its shield.
       // (The left arm, which carries the shield, sits on the figure's +x side:
       // bearing face + π/2 in this (sin, cos) convention; the weapon arm is at face − π/2.)
@@ -3042,7 +3042,7 @@ export default class CombatScene extends Scene {
       let best = -1e9;
       for (const off of [0.6, -0.6, 0.5, -0.5, 0.72, -0.72, 0.36, -0.36, 0.95, -0.95]) {
         const a = face + off;
-        let sc = -Math.abs(Math.abs(off) - 0.6) * 1.5;
+        let sc = -Math.abs(Math.abs(off) - 0.5) * 1.5;
         if (shieldAz !== null) sc -= Math.max(0, Math.cos(a - shieldAz)) * 1.2;
         else sc += Math.cos(a - mainAz) * 0.3;
         const ex = p.x + Math.sin(a) * reach;

@@ -97,7 +97,7 @@ function addRim(mat, facRim = null, tint = null) {
           // top-down drybrush and the dark wash under every overhang.
           float pFade = 1.0 - smoothstep(0.07, 0.16, pxM);
           vec3 wN = normalize((vec4(nonPerturbedNormal, 0.0) * viewMatrix).xyz);
-          float wash = max(smoothstep(-3.0, -18.0, kC) * pFade, smoothstep(-0.05, -0.75, wN.y) * 0.75);
+          float wash = max(smoothstep(-3.0, -18.0, kC) * pFade, smoothstep(-0.15, -0.8, wN.y) * 0.5);
           float dry = smoothstep(4.0, 18.0, kC) * (1.0 - smoothstep(60.0, 80.0, kC)) * pFade * (0.5 + 0.5 * smoothstep(-0.3, 0.7, wN.y));
           dry = max(dry, smoothstep(0.55, 0.97, wN.y) * 0.45);
           // Feet sit in the base's shade: no drybrush on boots (it read as

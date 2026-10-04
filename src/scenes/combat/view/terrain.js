@@ -50,7 +50,7 @@ function addMacro(mat, { scale = 0.18, amount = 0.45, grime = 0.35, key = 'macro
         ${key === 'cap' ? `// Reskin 8: capstones are grimy and weathered: sooty dirt blooms,
         // pitted dark speckle, lichen and moss caught on the tops and chips.
         float cDirt = smoothstep(0.42, 0.78, mNoise(vMWPos * 1.9 + 9.0));
-        diffuseColor.rgb *= 1.0 - cDirt * 0.5;
+        diffuseColor.rgb *= 1.0 - cDirt * 0.32;
         float cPit = smoothstep(0.62, 0.7, mNoise(vMWPos * 14.0 + 3.0));
         diffuseColor.rgb *= 1.0 - cPit * 0.45;
         float cMoss = smoothstep(0.58, 0.8, mNoise(vMWPos * 3.1 + 21.0));
@@ -524,7 +524,7 @@ export function buildDiorama(field, o = {}) {
     // blotching and grime do the weathering (no warm albedo map).
     const t = getTextureSet('hd2_dressed');
     // Reskin 2: darker, cooler and grimier (it must never glow above the paving).
-    const m = new THREE.MeshStandardMaterial({ normalMap: t.normalMap, roughnessMap: t.roughnessMap, color: 0x5a5e60, roughness: 1, metalness: 0, normalScale: new THREE.Vector2(1.9, 1.9) });
+    const m = new THREE.MeshStandardMaterial({ normalMap: t.normalMap, roughnessMap: t.roughnessMap, color: 0x8c8e8a, roughness: 1, metalness: 0, normalScale: new THREE.Vector2(1.9, 1.9) }); // iteration 4: the lit coping is the palest masonry (as in the reference)
     addMacro(m, { key: 'cap', amount: 0.95, grime: 0.42, scale: 0.55 });
     disposables.push(m);
     return m;
@@ -537,7 +537,7 @@ export function buildDiorama(field, o = {}) {
     const n = Math.max(1, Math.round(len / 0.8));
     for (let k = 0; k < n; k++) {
       const sl = len / n;
-      const g = chippedStone(sl - 0.03, h * (0.9 + hash(k, seed, 5) * 0.2), d * (0.95 + hash(k, seed, 6) * 0.08), seed * 31 + k);
+      const g = chippedStone(sl - 0.008, h * (0.95 + hash(k, seed, 5) * 0.1), d * (0.97 + hash(k, seed, 6) * 0.04), seed * 31 + k, 1.4, CAP_DMG);
       put(g, -len / 2 + sl * (k + 0.5), (hash(k, seed, 7) - 0.5) * 0.02);
       B.add(g, capMat);
     }
@@ -881,7 +881,7 @@ export function buildDiorama(field, o = {}) {
     // course), blocks of very different lengths with chamfered, worn arrises,
     // set slightly proud or sunk, in a few cold grey stones; dark recessed joints.
     const blk = (u, y, w, h, d, mat, sd) => {
-      const g = mat === capMat ? (horiz ? chippedStone(w, h, d, sd) : chippedStone(w, h, d, sd).rotateY(Math.PI / 2)) : chamferBox(horiz ? w : d, h, horiz ? d : w, 0.05, sd, 0.014, 1.4);
+      const g = mat === capMat ? (horiz ? chippedStone(w, h, d, sd, 1.4, CAP_DMG) : chippedStone(w, h, d, sd, 1.4, CAP_DMG).rotateY(Math.PI / 2)) : chamferBox(horiz ? w : d, h, horiz ? d : w, 0.05, sd, 0.014, 1.4);
       batch.add(g, mat, { p: [horiz ? u : off, y, horiz ? off : u] }, { cast: true });
     };
     // Reskin: a thick run of rough fieldstone (random rubble bedded in grimy
@@ -889,6 +889,10 @@ export function buildDiorama(field, o = {}) {
     // heavy, chipped, grimy capstones that overhang both faces.
     const fm = wallMats[Math.floor(hash(seed, 3, 44) * 2)];
     at((m0 + m1) / 2, PH / 2, m1 - m0, PH, PT, fm);
+    // Iteration 4: a continuous coping bed just under the cap course, so the
+    // joints between capstones read as tight mortar lines on one coped wall
+    // top, never as gaps between separate blocks.
+    at((m0 + m1) / 2, PH + 0.08, m1 - m0 + 0.16, 0.16, PT + 0.16, capMat);
     at((m0 + m1) / 2, 0.11, m1 - m0 + 0.04, 0.22, PT + 0.06, wallMats[2]);
     let u = m0 - 0.1;
     let k = 0;
@@ -898,7 +902,7 @@ export function buildDiorama(field, o = {}) {
       const ub = Math.min(m1 + 0.1, u + bl);
       if (ub - u > 0.12) {
         const ch2 = 0.24 + (hash(k, seed, 45) - 0.5) * 0.04;
-        blk((u + ub) / 2, PH + ch2 / 2 - 0.01, ub - u - 0.03, ch2, PT + 0.22 + (hash(k, seed, 46) - 0.5) * 0.05, capMat, seed * 13 + k + 500);
+        blk((u + ub) / 2, PH + ch2 / 2 - 0.01, ub - u - 0.008, ch2, PT + 0.22 + (hash(k, seed, 46) - 0.5) * 0.02, capMat, seed * 13 + k + 500);
       }
       u += bl;
       k++;
@@ -1631,7 +1635,7 @@ export function buildDiorama(field, o = {}) {
           B.add(g, mat, { p: [horiz ? ox + sa + sl / 2 : ox, hh / 2, horiz ? oz : oz + sa + sl / 2] });
           if (!ruined || variant === 'cut') {
             B.add(worldBox(horiz ? sl + 0.02 : 0.76, 0.06, horiz ? 0.76 : sl + 0.02, 2.5), plinthMat, { p: [horiz ? ox + sa + sl / 2 : ox, hh + 0.03, horiz ? oz : oz + sa + sl / 2] });
-            const cg = chippedStone(sl - 0.03, 0.26 * (0.9 + hash(k, e.cx * 5 + e.cy, 5) * 0.2), 0.94, e.cx * 131 + e.cy * 17 + k);
+            const cg = chippedStone(sl - 0.008, 0.26 * (0.95 + hash(k, e.cx * 5 + e.cy, 5) * 0.1), 0.94, e.cx * 131 + e.cy * 17 + k, 1.4, CAP_DMG);
             if (!horiz) cg.rotateY(Math.PI / 2);
             B.add(cg, capMat, { p: [horiz ? ox + sa + sl / 2 : ox, hh + 0.18, horiz ? oz : oz + sa + sl / 2] });
           }
@@ -3204,7 +3208,7 @@ function drape(w, d, fall) {
  * along the arrises, so it reads as chipped, irregular dressed stone rather
  * than a bevelled pillow.
  */
-function chippedStone(w, h, d, seed = 0, texScale = 1.4) {
+function chippedStone(w, h, d, seed = 0, texScale = 1.4, dmg = 1) {
   const pts = [];
   let k = 0;
   const r = () => hash(seed, k++, 173);
@@ -3215,10 +3219,10 @@ function chippedStone(w, h, d, seed = 0, texScale = 1.4) {
     const top = sy > 0 ? tilt * sx + twist * sz : 0;
     // Most corners lose a small chip; one in four is broken well back.
     // Reskin 8: heavier damage (most corners chipped, nearly half broken back).
-    const big = r() < 0.45;
-    const cx = Math.min(w * 0.34, (big ? 0.1 + r() * 0.18 : 0.02 + r() * 0.05));
-    const cy = Math.min(h * 0.55, (big ? 0.07 + r() * 0.11 : 0.015 + r() * 0.04));
-    const cz = Math.min(d * 0.34, (big ? 0.08 + r() * 0.15 : 0.02 + r() * 0.05));
+    const big = r() < 0.45 * dmg;
+    const cx = Math.min(w * 0.34, (big ? 0.1 + r() * 0.18 : 0.02 + r() * 0.05) * (0.5 + 0.5 * dmg));
+    const cy = Math.min(h * 0.55, (big ? 0.07 + r() * 0.11 : 0.015 + r() * 0.04) * (0.5 + 0.5 * dmg));
+    const cz = Math.min(d * 0.34, (big ? 0.08 + r() * 0.15 : 0.02 + r() * 0.05) * (0.5 + 0.5 * dmg));
     pts.push(new THREE.Vector3(X - sx * cx, Y + top, Z - sz * (cz * 0.3)));
     pts.push(new THREE.Vector3(X - sx * (cx * 0.3), Y + top, Z - sz * cz));
     pts.push(new THREE.Vector3(X, Y - sy * cy + top * 0.5, Z - sz * cz * 0.5));
@@ -3229,7 +3233,7 @@ function chippedStone(w, h, d, seed = 0, texScale = 1.4) {
   for (let i = 1; i < n; i++) {
     const x = -w / 2 + (w * i) / n;
     for (const sz of [-1, 1]) {
-      const bite = r() < 0.5 ? 0.04 + r() * 0.09 : 0.006 + r() * 0.014;
+      const bite = (r() < 0.5 * dmg ? 0.04 + r() * 0.09 : 0.006 + r() * 0.014) * (0.6 + 0.4 * dmg);
       const top = tilt * (x / (w / 2)) + twist * sz;
       pts.push(new THREE.Vector3(x + (r() - 0.5) * 0.05, h / 2 + top - bite * 0.7, sz * (d / 2 - bite)));
       pts.push(new THREE.Vector3(x, h / 2 + top - r() * 0.012, sz * (d / 2 - bite * 2.2)));
@@ -3250,6 +3254,9 @@ function chippedStone(w, h, d, seed = 0, texScale = 1.4) {
   g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   return g;
 }
+
+/** Iteration 4: capstones are worn and chipped, not broken back (one continuous coped top). */
+const CAP_DMG = 0.35;
 
 function chamferBox(w, h, d, c = 0.035, seed = 0, wear = 0.012, texScale = 2.2) {
   const pts = [];

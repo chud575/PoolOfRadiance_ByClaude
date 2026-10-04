@@ -784,11 +784,11 @@ export const SCULPT_DETAIL_GLSL = `
           float ringVis = 1.0 - smoothstep(0.0025, 0.006, sdFw);
           float rust = smoothstep(0.62, 0.8, sn3(p * 9.0)) * (1.0 - smoothstep(0.4, 0.9, p.y));
           float washM = 0.55 + 0.45 * sn3(p * 11.0);
-          vec3 ringA = vec3(0.32 + link * 0.95 + rv * 0.15);
+          vec3 ringA = vec3(0.3 + link * 0.6 + rv * 0.1);
           vec3 flatA = vec3(0.62 + 0.3 * washM) * (0.85 + 0.25 * big);
           alb = mix(flatA, ringA, ringVis);
           alb = mix(alb, vec3(1.2, 0.75, 0.45) * 0.8, rust) * grime;
-          h = mix(0.0, link * 0.7, ringVis);
+          h = mix(0.0, link * 0.4, ringVis);
           dr = mix(0.05 - washM * 0.1, (1.0 - link) * 0.35 - 0.12, ringVis) + rust * 0.35; dm = -rust * 0.4 - (1.0 - link) * 0.3 * ringVis;
         } else if (pid > 10.5 && pid < 11.5) {
           // Great-wyrm bronze: big overlapping keeled scales (Voronoi plates
