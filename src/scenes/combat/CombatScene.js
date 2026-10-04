@@ -26,6 +26,7 @@ import { Overlay } from './view/overlay.js';
 import { VFX } from './view/vfx.js';
 import { CombatHud, describeHealth, fmtMp } from './ui/hud.js';
 import { DEMOS } from './demos.js';
+import { installPauseMenu, openPauseMenu } from '../../ui/PauseMenu.js';
 
 /** Camera pan keys → [screen x, screen y] (y = toward the viewer). */
 const CAM_PAN_KEYS = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0], Numpad8: [0, -1], Numpad2: [0, 1], Numpad4: [-1, 0], Numpad6: [1, 0] };
@@ -49,6 +50,7 @@ export default class CombatScene extends Scene {
   async enter(params = {}) {
     const { render, rng, game, clock, settings } = this.ctx;
     this.params = params;
+    installPauseMenu(this.ctx); // F10 pause menu (Esc opens it when there is nothing to cancel)
     this.time = clock.time;
     this.frozen = clock.frozen;
     this.encounter = getEncounter(params.encounter ?? 'kobolds_1');
@@ -1282,7 +1284,7 @@ export default class CombatScene extends Scene {
       const dirs = { forward: [0, -1], back: [0, 1], turnLeft: [-1, 0], turnRight: [1, 0] };
       if (dirs[action]) this._dirInput(...dirs[action]);
       else if (action === 'confirm') this._confirm();
-      else if (action === 'cancel') this._cancel();
+      else if (action === 'cancel') { if (!this._cancel()) openPauseMenu(this.ctx); }
       else if (action === 'strafeLeft' || action === 'strafeRight') this._cycleTarget(action === 'strafeRight' ? 1 : -1);
       else if (action === 'look') this._cmdQuick(false);
     });
@@ -1334,7 +1336,7 @@ export default class CombatScene extends Scene {
       return;
     }
     if (k === 'Enter' || k === ' ') { e.preventDefault(); this._confirm(); return; }
-    if (k === 'Escape' || k === 'Backspace') { this._cancel(); return; }
+    if (k === 'Escape' || k === 'Backspace') { if (!this._cancel() && k === 'Escape') openPauseMenu(this.ctx); return; }
     if (k === 'Tab') { e.preventDefault(); this._cycleTarget(e.shiftKey ? -1 : 1); return; }
     if (!upper || this.busy || !this.turnDone) return;
     const cmd = this._cmdList?.find((c) => c.key === upper && !c.disabled);
@@ -1400,16 +1402,18 @@ export default class CombatScene extends Scene {
     else if (this.mode === 'move' && this.hoverSq) this._activateSquare(this.hoverSq);
   }
 
+  /** @returns {boolean} true if something was cancelled (otherwise Esc opens the pause menu) */
   _cancel() {
     if (this.hud.sheet) {
       this.hud.hideSheet();
-      return;
+      return true;
     }
     if (this.quickAll) {
       this._cmdQuick(false);
-      return;
+      return true;
     }
-    if (this.mode !== 'move' && this.turnDone && !this.busy) this._enterMode('move');
+    if (this.mode !== 'move' && this.turnDone && !this.busy) { this._enterMode('move'); return true; }
+    return false;
   }
 
   _pick() {

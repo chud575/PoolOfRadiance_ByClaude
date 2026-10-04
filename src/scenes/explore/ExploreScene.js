@@ -7,6 +7,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { preloadMaterials, setWindowGlow, getLampGlassMaterial, getWindowMaterial, getMaterial, SURFACE_UNIFORMS } from '../../render/materials.js';
 import { preloadTextureSets } from '../../render/textures/index.js';
 import { createStandardHud } from '../../ui/StandardHud.js';
+import { installPauseMenu, openPauseMenu } from '../../ui/PauseMenu.js';
 import { buildBlock, disposeBlock, cellCenter, EYE_H, CELL_SIZE } from './BlockBuilder.js';
 import { buildProps, buildLightShafts, PROP_UNIFORMS } from './Props.js';
 import { buildSkyline } from './Skyline.js';
@@ -109,6 +110,8 @@ export default class ExploreScene extends Scene {
     this.own(() => this.hud.dispose());
     this.listen('input:action', (e) => {
       this._unsettle();
+      // Esc / pad B with nothing else open: the pause menu
+      if (e.action === 'cancel' && e.code !== 'Backspace' && this.ctx.scenes.current === this && !this.leaving) return void openPauseMenu(this.ctx);
       this._onAction(e.action);
     });
     this.listen('settings:changed', () => this._unsettle());
@@ -122,6 +125,7 @@ export default class ExploreScene extends Scene {
     this.ctx.ui.message(`You stand in ${this._lastZone}.`, 'lore');
     this.ctx.audio.playMusic(this.map.kind === 'city' ? 'phlan_streets' : 'dungeon');
     this.ready = true;
+    installPauseMenu(this.ctx, params); // F10 anywhere in game; ?pause=1 opens it
   }
 
   // ---------------------------------------------------------------- lighting

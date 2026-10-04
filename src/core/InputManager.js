@@ -30,6 +30,7 @@ export const DEFAULT_BINDINGS = Object.freeze({
   quicksave: ['F5'],
   quickload: ['F9'],
   toggleClassic: ['F2'],
+  pause: ['F10'],
   debug: ['Backquote'],
 });
 
@@ -53,6 +54,12 @@ export class InputManager {
     this._padPrev = new Set();
     this.mouse = { x: 0, y: 0, nx: 0, ny: 0, buttons: 0, clicked: false, wheel: 0 };
     this.enabled = true;
+    /**
+     * Modal action sink (e.g. the pause menu): while set, every action is passed
+     * to this function INSTEAD of being emitted on the bus, so scenes underneath
+     * never see it. @type {null|((e:{action:string, code:string, event:any})=>void)}
+     */
+    this.capture = null;
     this._onKeyDown = this._onKeyDown.bind(this);
     this._onKeyUp = this._onKeyUp.bind(this);
     this._onMouse = this._onMouse.bind(this);
@@ -104,7 +111,7 @@ export class InputManager {
 
   _onKeyDown(e) {
     if (!this.enabled || this._isTyping(e)) return;
-    if (e.code === 'Tab' || e.code === 'Space' || e.code.startsWith('Arrow') || e.code === 'F5' || e.code === 'F9' || e.code === 'F2') e.preventDefault();
+    if (e.code === 'Tab' || e.code === 'Space' || e.code.startsWith('Arrow') || e.code === 'F5' || e.code === 'F9' || e.code === 'F2' || e.code === 'F10') e.preventDefault();
     if (!this._downCodes.has(e.code)) {
       this._pressedCodes.add(e.code);
       this._emitActions(e.code, e);
@@ -133,7 +140,7 @@ export class InputManager {
   _emitActions(code, event) {
     const actions = this._codeToActions.get(code);
     if (!actions) return;
-    for (const action of actions) this.bus.emit('input:action', { action, code, event });
+    for (const action of actions) this._send({ action, code, event });
   }
 
   /** Poll gamepads; call once per frame before scene update. */
@@ -178,7 +185,12 @@ export class InputManager {
   trigger(action) {
     const code = this.bindings[action]?.[0] ?? `virtual:${action}`;
     this._pressedCodes.add(code);
-    this.bus.emit('input:action', { action, code, event: null });
+    this._send({ action, code, event: null });
+  }
+
+  _send(payload) {
+    if (this.capture) this.capture(payload);
+    else this.bus.emit('input:action', payload);
   }
 
   /** Clear per-frame edge state; call at END of each frame. */

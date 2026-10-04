@@ -20,6 +20,7 @@ export const GALLERY = [
   { name: 'create_party_720', query: 'scene=create&party=default&t=2&seed=1', w: 1280, h: 720 },
   { name: 'create_dwarf', query: 'scene=create&step=portrait&race=dwarf&gender=female&cls=fighter/thief&t=2&seed=1' },
   { name: 'explore', query: 'scene=explore&map=phlan_slums&x=7&y=11&dir=N&hour=10&t=2&seed=1' },
+  { name: 'pause', query: 'scene=explore&map=phlan_slums&x=7&y=11&dir=N&hour=10&pause=1&t=2&seed=1' },
   { name: 'explore_door', query: 'scene=explore&map=phlan_slums&x=8&y=11&dir=S&hour=10&t=2&seed=1' },
   { name: 'explore_night', query: 'scene=explore&map=phlan_slums&x=1&y=14&dir=E&hour=22&t=2&seed=1' },
   { name: 'explore_dusk', query: 'scene=explore&map=phlan_slums&x=4&y=5&dir=E&hour=18.2&t=2&seed=1' },

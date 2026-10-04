@@ -17,6 +17,8 @@ export class SceneManager {
     /** @type {{name:string, scene:import('./Scene.js').Scene}[]} */
     this.stack = [];
     this.transitioning = false;
+    /** While true (pause menu open) scenes are rendered but not updated. */
+    this.paused = false;
     this._queue = Promise.resolve();
   }
 
@@ -94,7 +96,7 @@ export class SceneManager {
   }
 
   update(dt) {
-    if (this.transitioning) return;
+    if (this.transitioning || this.paused) return;
     this.current?.update(dt);
   }
 
