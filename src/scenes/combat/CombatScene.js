@@ -2788,10 +2788,114 @@ export default class CombatScene extends Scene {
     if (this.frozen && (this._renders ?? 0) >= 3 && this._frames > 3) return;
     this._renders = (this._renders ?? 0) + 1;
     super.render();
+    this._renderCloseup();
+  }
+
+  /**
+   * The active character's close-up: the live scene (same lights, same
+   * moment) re-rendered from a low three-quarter camera near the figure into
+   * a small HDR target, then tone-mapped into the framed HUD window. The
+   * target refreshes a few times a second (every frame it is only blitted).
+   */
+  _renderCloseup() {
+    const rect = this.hud?.closeupRect?.();
+    const act = this.engine?.active?.() ?? this.demoActive;
+    const fig = act && !this.engine.out(act) ? this.figures.get(act.id) : null;
+    if (!rect || !fig || this.done || this.ctx.render.classic) {
+      this.hud?.setCloseup?.('');
+      return;
+    }
+    this.hud.setCloseup(act.name);
+    const r = this.ctx.render.renderer;
+    const dpr = r.getPixelRatio();
+    const W = Math.max(8, Math.round(rect.w * dpr));
+    const H = Math.max(8, Math.round(rect.h * dpr));
+    if (!this._closeRT) {
+      this._closeRT = new THREE.WebGLRenderTarget(W, H, { type: THREE.HalfFloatType, samples: 4 });
+      this._closeCam = new THREE.PerspectiveCamera(30, W / H, 0.2, 120);
+      this._closeQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+        uniforms: { tMap: { value: this._closeRT.texture } },
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: true,
+        vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+        // Same low-key grade as the board: knocked-back saturation and a deep vignette.
+        fragmentShader: `uniform sampler2D tMap; varying vec2 vUv;
+          void main(){ vec3 c = texture2D(tMap, vUv).rgb; float l = dot(c, vec3(0.299, 0.587, 0.114)); c = mix(vec3(l), c, 0.8);
+            vec2 q = vUv - 0.5; c *= 1.0 - smoothstep(0.18, 0.62, dot(q, q) * 2.2) * 0.75; c *= 1.12;
+            gl_FragColor = vec4(c, 1.0);
+            #include <tonemapping_fragment>
+            #include <colorspace_fragment>
+          }`,
+      }));
+      this._closeQuad.frustumCulled = false;
+      this._closeScene = new THREE.Scene();
+      this._closeScene.add(this._closeQuad);
+      this._closeOrtho = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+      this.own(() => {
+        this._closeRT.dispose();
+        this._closeQuad.geometry.dispose();
+        this._closeQuad.material.dispose();
+      });
+    }
+    const rt = this._closeRT;
+    let due = this._closeId !== act.id || !(Math.abs(this.time - (this._closeT ?? -9)) < 0.18) || (this._closeN ?? 0) < 3;
+    if (rt.width !== W || rt.height !== H) {
+      rt.setSize(W, H);
+      due = true;
+    }
+    if (due) {
+      this._closeId = act.id;
+      this._closeT = this.time;
+      this._closeN = (this._closeN ?? 0) + 1;
+      const cam = this._closeCam;
+      const hgt = Math.max(0.6, fig.model.height ?? 1.6);
+      const p = fig.root.position;
+      // From the board camera's side (the side the cut-aways open to), turned
+      // toward the figure's face, lower and closer: a three-quarter hero view.
+      const mainAz = Math.atan2(this.camera.position.x - p.x, this.camera.position.z - p.z);
+      const face = fig.currentYaw?.(this.time) ?? fig.yaw;
+      let d = ((face - mainAz + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+      d = Math.max(-1.9, Math.min(1.9, d)) * 0.85;
+      const az = mainAz + d + 0.3;
+      const dist = 1.1 + hgt * 1.65;
+      const el = 0.46;
+      const look = new THREE.Vector3(p.x, hgt * 0.55, p.z);
+      cam.position.set(look.x + Math.sin(az) * Math.cos(el) * dist, look.y + Math.sin(el) * dist, look.z + Math.cos(az) * Math.cos(el) * dist);
+      cam.aspect = W / H;
+      cam.updateProjectionMatrix();
+      cam.lookAt(look);
+      const ovVis = this.overlay.group.visible;
+      this.overlay.group.visible = false;
+      const autoSh = r.shadowMap.autoUpdate;
+      r.shadowMap.autoUpdate = false;
+      const prevRT = r.getRenderTarget();
+      r.setRenderTarget(rt);
+      r.clear();
+      r.render(this.scene3d, cam);
+      r.setRenderTarget(prevRT);
+      r.shadowMap.autoUpdate = autoSh;
+      this.overlay.group.visible = ovVis;
+    }
+    // Blit into the frame's window (CSS px, origin bottom-left for GL).
+    const cv = r.domElement.getBoundingClientRect();
+    const x = rect.x - cv.left;
+    const y = cv.height - (rect.y - cv.top) - rect.h;
+    const prevAuto = r.autoClear;
+    r.autoClear = false;
+    r.setRenderTarget(null);
+    r.setViewport(x, y, rect.w, rect.h);
+    r.setScissor(x, y, rect.w, rect.h);
+    r.setScissorTest(true);
+    r.render(this._closeScene, this._closeOrtho);
+    r.setScissorTest(false);
+    r.setViewport(0, 0, cv.width, cv.height);
+    r.autoClear = prevAuto;
   }
 
   onResize() {
     this._renders = 0;
+    this.hud?._layoutCloseup?.();
     this.camera.aspect = this.ctx.render.aspect;
     this._applyViewOffset();
     this.camera.updateProjectionMatrix();

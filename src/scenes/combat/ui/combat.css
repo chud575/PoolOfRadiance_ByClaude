@@ -215,3 +215,25 @@
 }
 .cb-loc .name { font-family: var(--font-display); letter-spacing: 0.18em; text-transform: uppercase; font-size: 1.1em; }
 .cb-loc .sub { color: var(--por-text-dim); font-size: 0.85em; text-shadow: 0 1px 2px #000; }
+
+/* Active-character close-up: braided-rope / blackened-iron frame over a live render of the active figure. */
+.cb-closeup {
+  position: absolute; box-sizing: border-box; display: none;
+  border: 7px solid #2a2219;
+  border-image: repeating-linear-gradient(135deg, #1c160f 0 2px, #6e5c44 2px 4px, #a48c68 4px 5px, #3a2e20 5px 8px) 7;
+  box-shadow: 0 0 0 1px #000, 0 6px 18px rgba(0, 0, 0, 0.7), inset 0 0 28px 6px rgba(0, 0, 0, 0.82), inset 0 0 0 1px rgba(0, 0, 0, 0.9);
+}
+.cb-closeup .stud {
+  position: absolute; width: 13px; height: 13px; border-radius: 2px;
+  background: radial-gradient(circle at 35% 30%, #e8d8a8, #9a7c44 45%, #3a2a12 85%);
+  box-shadow: 0 0 0 1px #000, 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+.cb-closeup .stud.tl { left: -10px; top: -10px; }
+.cb-closeup .stud.tr { right: -10px; top: -10px; }
+.cb-closeup .stud.bl { left: -10px; bottom: -10px; }
+.cb-closeup .stud.br { right: -10px; bottom: -10px; }
+.cb-closeup-name {
+  position: absolute; left: 0; right: 0; bottom: 0.25em; text-align: center;
+  font-family: var(--font-display); font-size: 0.78em; letter-spacing: 0.18em; text-transform: uppercase;
+  color: #e9d9a8; text-shadow: 0 1px 2px #000, 0 0 6px #000;
+}

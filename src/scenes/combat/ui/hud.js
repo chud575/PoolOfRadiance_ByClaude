@@ -49,8 +49,13 @@ export class CombatHud {
     this.rosterFrame = Frame({ title: 'Party', variant: 'blue', className: 'cb-roster' });
     this.roster = h('div.por-roster');
     this.rosterFrame.body.append(this.roster);
+    // Active-character close-up: a rope-and-iron framed window the scene
+    // renders the active figure into (see CombatScene._renderCloseup); the
+    // frame itself is see-through, the canvas shows beneath it.
+    this.closeupName = h('div.cb-closeup-name');
+    this.closeup = h('div.cb-closeup.pe-none', [h('i.stud.tl'), h('i.stud.tr'), h('i.stud.bl'), h('i.stud.br'), this.closeupName]);
     const bottom = h('div.cb-bottom', [this.cmds]);
-    this.root.append(this.floatLayer, this.speedEl, this.loc, this.timeline, this.card.el, this.rosterFrame.el, this.logBox, this.prompt, bottom, this.help, this.banner, this.lead, this.inspect);
+    this.root.append(this.floatLayer, this.speedEl, this.loc, this.timeline, this.closeup, this.card.el, this.rosterFrame.el, this.logBox, this.prompt, bottom, this.help, this.banner, this.lead, this.inspect);
     ctx.ui.mount(this.root);
     this.floats = [];
     this.banners = [];
@@ -199,6 +204,40 @@ export class CombatHud {
     const r = this.card.el.getBoundingClientRect();
     const rootR = this.root.getBoundingClientRect();
     this.rosterFrame.el.style.top = `${r.bottom - rootR.top + 22}px`;
+    this._layoutCloseup();
+  }
+
+  /** Fit the close-up window between the roster and the key help (hidden if there is no room). */
+  _layoutCloseup() {
+    const rootR = this.root.getBoundingClientRect();
+    const rr = this.rosterFrame.el.getBoundingClientRect();
+    const hr = this.help.getBoundingClientRect();
+    const top = rr.bottom - rootR.top + 16;
+    const bottom = (hr.height ? hr.top : rootR.bottom - 60) - rootR.top - 12;
+    const hgt = bottom - top;
+    const st = this.closeup.style;
+    st.top = `${top}px`;
+    st.left = `${rr.left - rootR.left}px`;
+    st.width = `${rr.width}px`;
+    st.height = `${Math.max(0, hgt)}px`;
+    st.display = hgt >= 96 && rr.width > 0 ? 'block' : 'none';
+    this._closeRect = null;
+  }
+
+  /** Name the close-up window's subject. */
+  setCloseup(name) {
+    if (this.closeupName.textContent !== (name ?? '')) this.closeupName.textContent = name ?? '';
+  }
+
+  /** The close-up's inner viewport in CSS pixels (null when hidden). */
+  closeupRect() {
+    if (this.closeup.style.display === 'none' || !this.closeup.isConnected) return null;
+    if (this._closeRect) return this._closeRect;
+    const r = this.closeup.getBoundingClientRect();
+    if (r.width < 40 || r.height < 40) return null;
+    const b = 7;
+    this._closeRect = { x: r.left + b, y: r.top + b, w: r.width - 2 * b, h: r.height - 2 * b };
+    return this._closeRect;
   }
 
   // ---------------------------------------------------------------- commands
