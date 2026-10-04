@@ -7,6 +7,7 @@ import { Batcher, worldBox, wallQuad } from './batch.js';
 import { pbr, settsSet, detailSet } from './textures.js';
 import { statueGeometry, statueMaterial } from './sculpted.js';
 import { fbm } from '../../../render/textures/noise.js';
+import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js';
 
 export const TILE = 1.5;
 const CELLM = TILE * SUB;
@@ -808,46 +809,75 @@ export function buildDiorama(field, o = {}) {
   const parAshlar2 = libMat('wall_ruin', 0x5a6064, { grime: 0.4, amount: 0.5 });
   const parMortar = new THREE.MeshStandardMaterial({ color: 0x0c0d0e, roughness: 1, metalness: 0 });
   disposables.push(parMortar);
-  const parCope = libMat('hd_flags', 0xd4d0c6, { grime: 0.1, amount: 0.3, ns: 0.8 });
+  // Iteration 4: dressed stone reads from the geometry (chamfered blocks, deep
+  // joints); the surface is plain weathered stone (macro blotching, grime, moss
+  // at the foot), never a brick texture inside each block.
+  const plainStone = (color, key, grime = 0.3) => {
+    key = 'ash';
+    grime = 0.3;
+    const m = new THREE.MeshStandardMaterial({ color, roughness: 0.92, metalness: 0 });
+    addMacro(m, { key, amount: 0.6, grime, scale: 0.45 });
+    disposables.push(m);
+    return m;
+  };
+  const parBlk = [plainStone(0x5c6264, 'ashA'), plainStone(0x686c6c, 'ashB'), plainStone(0x50585a, 'ashC')];
+  const parAshlar3 = parBlk[2];
+  const parCope = plainStone(0xb8bab4, 'cope', 0.1);
+  const parCopeDark = plainStone(0x6c7070, 'copeD', 0.2);
   function parapet(horiz, off, m0, m1, seed, o = {}) {
     const PH = o.h ?? PAR_H;
     const PT = PAR_T;
     const at = (u, y, w, h, d, mat, cast = true) => {
       batch.add(worldBox(horiz ? w : d, h, horiz ? d : w, 2.2), mat, { p: [horiz ? u : off, y, horiz ? off : u] }, { cast });
     };
-    at((m0 + m1) / 2, PH / 2, m1 - m0 - 0.02, PH, PT - 0.06, parMortar);
-    const courses = 3;
-    const ch2 = PH / courses;
-    for (let c = 0; c < courses; c++) {
-      let u = m0 - (c % 2 ? 0.3 : 0);
+    // Iteration 4: heavy dressed ashlar, not toy bricks. Courses of unequal
+    // height (a deep plinth course, a tall middle course, a thin levelling
+    // course), blocks of very different lengths with chamfered, worn arrises,
+    // set slightly proud or sunk, in a few cold grey stones; dark recessed joints.
+    const blk = (u, y, w, h, d, mat, sd) => {
+      const g = chamferBox(horiz ? w : d, h, horiz ? d : w, 0.045, sd, 0.014);
+      batch.add(g, mat, { p: [horiz ? u : off, y, horiz ? off : u] }, { cast: true });
+    };
+    at((m0 + m1) / 2, PH / 2, m1 - m0 - 0.02, PH, PT - 0.08, parMortar);
+    const courseH = [0.42, 0.36, 0.22];
+    const sum = courseH.reduce((a, b) => a + b, 0);
+    let y0 = 0;
+    for (let c = 0; c < courseH.length; c++) {
+      const chh = (courseH[c] / sum) * PH;
+      let u = m0 - hash(seed, c, 47) * 0.5;
       let k = 0;
       while (u < m1 - 0.05) {
         const hv = hash(Math.round(u * 13) + seed * 101, c * 7 + k, 41);
-        const bl = 0.55 + hv * 0.5;
+        const bl = c === 2 ? 0.4 + hv * 0.55 : 0.55 + hv * 0.95;
         const ua = Math.max(m0, u);
         const ub = Math.min(m1, u + bl);
-        if (ub - ua > 0.08) {
-          const inset = 0.012 + hv * 0.02;
-          at((ua + ub) / 2, c * ch2 + ch2 / 2, ub - ua - 0.05, ch2 - 0.05, PT - inset * 2 + (c === 0 ? 0.06 : 0), hv > 0.5 ? parAshlar : parAshlar2);
+        if (ub - ua > 0.1) {
+          const proud = (hash(k, c + seed, 48) - 0.4) * 0.03 + (c === 0 ? 0.05 : 0);
+          const tone = hash(k * 3 + c, seed, 49);
+          blk((ua + ub) / 2, y0 + chh / 2, ub - ua - 0.03, chh - 0.03, PT - 0.03 + proud * 2, parBlk[Math.min(2, Math.floor(tone * 3))], seed * 17 + c * 5 + k);
         }
         u += bl;
         k++;
       }
+      y0 += chh;
     }
-    let u = m0 - 0.06;
+    // A continuous, broad pale capstone: long slabs butted tight, overhanging
+    // both faces, sat on a thinner drip course (a visible step and shadow line).
+    at((m0 + m1) / 2, PH + 0.04, m1 - m0 + 0.06, 0.08, PT + 0.1, parCopeDark, false);
+    let u = m0 - 0.12;
     let k = 0;
-    while (u < m1 + 0.05) {
+    while (u < m1 + 0.1) {
       const hv = hash(k, Math.round(off * 10) + seed, 43);
-      const bl = 0.9 + hv * 0.5;
-      const ub = Math.min(m1 + 0.06, u + bl);
-      at((u + ub) / 2, PH + 0.1, ub - u - 0.03, 0.2, PT + 0.24, parCope);
+      const bl = 1.2 + hv * 0.7;
+      const ub = Math.min(m1 + 0.12, u + bl);
+      blk((u + ub) / 2, PH + 0.08 + 0.11, ub - u - 0.012, 0.22, PT + 0.32, parCope, seed * 13 + k + 500);
       u += bl;
       k++;
     }
     for (const [pu, isEnd] of [[m0, o.pierA], [m1, o.pierB]]) {
       if (!isEnd) continue;
-      at(pu, (PH + 0.45) / 2, 0.9, PH + 0.45, PT + 0.2, parAshlar);
-      at(pu, PH + 0.45 + 0.1, 1.06, 0.2, PT + 0.36, parCope);
+      blk(pu, (PH + 0.45) / 2, 0.9, PH + 0.45, PT + 0.2, parBlk[1], seed + 900);
+      blk(pu, PH + 0.45 + 0.11, 1.1, 0.22, PT + 0.4, parCope, seed + 901);
     }
   }
   /**
@@ -875,8 +905,10 @@ export function buildDiorama(field, o = {}) {
     for (let k = 0; k < nR; k++) {
       const px = ax + PAR_T / 2 + 0.3 + hash(k, sd, 61) * (bx - ax - PAR_T - 0.6);
       const pz = az + PAR_T / 2 + 0.3 + hash(sd, k, 62) * (bz - az - PAR_T - 0.6);
-      const rr = 0.18 + hash(k, k + sd, 63) * 0.35;
-      batch.add(rockGeo(hash(k, sd, 64) * 99, rr), k % 3 ? parAshlar2 : parAshlar, { p: [px, 0.6 + rr * 0.2, pz], r: [0, hash(k, 65, sd) * 6, 0] }, { cast: k < 4 });
+      // Angular broken ashlar, tumbled and half sunk (no blobby rocks).
+      const rr = 0.2 + hash(k, k + sd, 63) * 0.3;
+      const g = chamferBox(rr * (1.4 + hash(k, 1, sd) * 1.2), rr * 0.8, rr * (0.9 + hash(k, 2, sd) * 0.6), 0.03, sd * 7 + k, rr * 0.18);
+      batch.add(g, parBlk[k % 3], { p: [px, 0.6 + rr * 0.15, pz], r: [(hash(k, 66, sd) - 0.5) * 0.7, hash(k, 65, sd) * 6, (hash(k, 67, sd) - 0.5) * 0.7] }, { cast: k < 4 });
     }
   }
   if (dungeon) buildVaults();
@@ -1698,7 +1730,7 @@ export function buildDiorama(field, o = {}) {
     } else if (p.type === 'column') {
       // Fluted columns: some still carry their capital, others snapped off with
       // drums tumbled at the foot.
-      const colMat = libMat('hd_flags', 0xd8d6d0, { ns: 0.6 });
+      const colMat = libMat('hd2_ashlar_cold', 0xdfe2e0, { ns: 0.6 });
       const hallCol = !!field.features.hall;
       const broken = hallCol ? hash(p.x, p.y, 401) < 0.45 : true;
       const hh = broken ? 1.0 + hash(p.x, p.y, 402) * 1.3 : 3.7;
@@ -1720,7 +1752,7 @@ export function buildDiorama(field, o = {}) {
       }
     } else if (p.type === 'fallen') {
       // A toppled column lying across the square: drums in a broken row + capital.
-      const colMat = libMat('hd_flags', 0xd0cec8, { ns: 0.6 });
+      const colMat = libMat('hd2_ashlar_cold', 0xd6dad8, { ns: 0.6 });
       const a = 0.4 + hash(p.x, p.y, 420) * 0.5;
       for (let k = 0; k < 3; k++) {
         const d = (k - 1) * 0.62;
@@ -3096,6 +3128,39 @@ function drape(w, d, fall) {
     pos.setXYZ(i, x - Math.sign(x) * ox * 0.85, -o * 0.95 + wr, z - Math.sign(z) * oz * 0.85);
   }
   g.computeVertexNormals();
+  return g;
+}
+
+/**
+ * A dressed ashlar block: a box with chamfered (worn) edges and slightly
+ * irregular corners (convex hull), world-scaled planar UVs per face.
+ * `wear` jitters the corner points (broken blocks use a large value).
+ */
+function chamferBox(w, h, d, c = 0.035, seed = 0, wear = 0.012, texScale = 2.2) {
+  const pts = [];
+  const cw2 = Math.min(c, w * 0.3);
+  const ch2 = Math.min(c, h * 0.3);
+  const cd2 = Math.min(c, d * 0.3);
+  let k = 0;
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) {
+    const j = () => (hash(seed, k++, 91) - 0.5) * 2 * wear;
+    const X = sx * w / 2, Y = sy * h / 2, Z = sz * d / 2;
+    pts.push(new THREE.Vector3(X - sx * cw2 + j(), Y + j() * 0.5, Z - sz * cd2 + j()));
+    pts.push(new THREE.Vector3(X + j() * 0.5, Y - sy * ch2 + j(), Z - sz * cd2 + j()));
+    pts.push(new THREE.Vector3(X - sx * cw2 + j(), Y - sy * ch2 + j(), Z + j() * 0.5));
+  }
+  const g = new ConvexGeometry(pts);
+  const pos = g.attributes.position;
+  const nor = g.attributes.normal;
+  const uv = new Float32Array(pos.count * 2);
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i) + w / 2, y = pos.getY(i) + h / 2, z = pos.getZ(i) + d / 2;
+    const nx = Math.abs(nor.getX(i)), ny = Math.abs(nor.getY(i)), nz = Math.abs(nor.getZ(i));
+    if (ny >= nx && ny >= nz) { uv[i * 2] = x / texScale; uv[i * 2 + 1] = z / texScale; }
+    else if (nx >= nz) { uv[i * 2] = z / texScale; uv[i * 2 + 1] = y / texScale; }
+    else { uv[i * 2] = x / texScale; uv[i * 2 + 1] = y / texScale; }
+  }
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   return g;
 }
 
