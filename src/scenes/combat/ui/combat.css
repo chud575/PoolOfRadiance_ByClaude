@@ -280,3 +280,6 @@
 .cb-menu .por-menu-item.hl, .cb-menu .por-menu-item:hover { background: linear-gradient(90deg, rgba(120, 84, 40, 0.55), rgba(70, 50, 28, 0.25)); color: #fff2d0; box-shadow: inset 2px 0 0 #c8a870; }
 .cb-menu .lvl { color: #c8a870; }
 .cb-menu-open .cb-inspect, .cb-menu-open .cb-lead { display: none !important; }
+
+/* Iteration 4: under an open menu only its own command is lit (no ghosted focus/hover box on MOVE). */
+.cb-menu-open .cb-cmds .por-cmd:not(.active) { background: none !important; box-shadow: none !important; outline: none !important; border-color: transparent !important; }

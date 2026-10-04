@@ -447,7 +447,7 @@ export function buildDiorama(field, o = {}) {
         // Puddles mirror the sky (a Fresnel sheen; the lights' own highlights
         // come from the low roughness), with a soft ripple of the far rooftops.
         { float pf = pow(1.0 - clamp(dot(normalize(vNormal), normalize(vViewPosition)), 0.0, 1.0), 3.0);
-          vec3 skyR = ${night ? 'vec3(0.05, 0.07, 0.13)' : 'vec3(0.5, 0.56, 0.66)'} * (0.75 + 0.5 * gFbm(vWPos.xz * 0.6 + 40.0));
+          vec3 skyR = ${night ? 'vec3(0.03, 0.04, 0.07)' : 'vec3(0.13, 0.15, 0.17)'} * (0.75 + 0.5 * gFbm(vWPos.xz * 0.6 + 40.0));
           // A bright meniscus where the water meets the stones.
           float pRim = smoothstep(0.2, 0.5, puddle) * (1.0 - smoothstep(0.6, 0.95, puddle));
           outgoingLight = mix(outgoingLight, outgoingLight * 0.55 + skyR * 0.75, puddle * (0.55 + 0.4 * pf));

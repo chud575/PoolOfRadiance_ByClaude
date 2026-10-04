@@ -224,7 +224,7 @@ export const DEMOS = {
       });
       sc.overlay.setTemplate([]);
       // Camera: frame caster and blast, slightly closer.
-      const mid = sq2w(caster.x + (best.x - caster.x) * 0.63, caster.y + (best.y - caster.y) * 0.63);
+      const mid = sq2w(caster.x + (best.x - caster.x) * 0.52, caster.y + (best.y - caster.y) * 0.52);
       sc.cam.goalTarget.copy(mid);
       sc.cam.target.copy(mid);
       const span = Math.hypot(caster.x - best.x, caster.y - best.y) * TILE;

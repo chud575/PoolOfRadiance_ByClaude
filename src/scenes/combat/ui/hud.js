@@ -356,6 +356,8 @@ export class CombatHud {
     const id = String(title).toLowerCase();
     for (const b of this.cmds.children) b.classList.toggle('active', b.dataset.cmd === id);
     this.root.classList.add('cb-menu-open');
+    // No stale move/attack hint under an open menu.
+    this.setPrompt(`${title}: pick one (number key or click), Esc to cancel`);
   }
 
   closeMenu() {
@@ -478,6 +480,9 @@ export class CombatHud {
     const em = Math.max(12, Math.min(25.6, 16 * (hgt / 900)));
     const safe = { x0: 18, x1: w - 19.5 * em - 14, y0: 6.9 * em, y1: hgt - 5.0 * em };
     const placed = [];
+    // The key-help block (top left) is a no-go zone too: callouts that would
+    // land on it drop below it (or step right of it).
+    const hb = this.help && this.help.offsetParent && this.help.style.display !== 'none' ? { r: this.help.offsetLeft + this.help.offsetWidth + 8, b: this.help.offsetTop + this.help.offsetHeight + 6 } : null;
     for (const f of this.floats) {
       const age = t - f.t0;
       if (age < 0) {
@@ -504,6 +509,10 @@ export class CombatHud {
       const fh = (f._h ??= f.el.offsetHeight || 40);
       let x = Math.max(safe.x0 + fw / 2, Math.min(safe.x1 - fw / 2, (this._v.x * 0.5 + 0.5) * w + f.dx * 14 * Math.min(1, age * 3)));
       let y = Math.max(safe.y0 + fh, Math.min(safe.y1, (-this._v.y * 0.5 + 0.5) * hgt - lift));
+      if (hb && x - fw / 2 < hb.r && y - fh < hb.b) {
+        if (hb.b + fh <= safe.y1) y = hb.b + fh;
+        else x = hb.r + fw / 2;
+      }
       // De-overlap: step up past any callout already placed this frame.
       for (let k = 0; k < 6; k++) {
         const hitR = placed.find((r) => Math.abs(r.x - x) < (r.w + fw) / 2 + 4 && y > r.y - r.h - 2 && y - fh < r.y + 2);

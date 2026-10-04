@@ -1311,7 +1311,18 @@ export default class CombatScene extends Scene {
     const code = e.code;
     // Camera keys always work.
     // Shift+arrows (or Shift+numpad 8/2/4/6) pan the camera while held; plain arrows still move.
-    if (e.shiftKey && CAM_PAN_KEYS[code]) { e.preventDefault(); this._camPan.add(code); this.cam.userPanned = true; return; }
+    if (e.shiftKey && CAM_PAN_KEYS[code]) {
+      e.preventDefault();
+      // A single tap steps the view a tile; holding keeps gliding (see _updateCamera).
+      if (!e.repeat && !this._camPan.has(code)) {
+        const fwd = new THREE.Vector3(Math.sin(this.cam.yaw), 0, Math.cos(this.cam.yaw));
+        const right = new THREE.Vector3(fwd.z, 0, -fwd.x);
+        this.cam.goalTarget.addScaledVector(right, CAM_PAN_KEYS[code][0] * TILE * 1.5).addScaledVector(fwd, CAM_PAN_KEYS[code][1] * TILE * 1.5);
+      }
+      this._camPan.add(code);
+      this.cam.userPanned = true;
+      return;
+    }
     if (k === '[' || k === '{') { this.cam.goalPitch = Math.min(1.35, this.cam.goalPitch + 0.08); return; }
     if (k === ']' || k === '}') { this.cam.goalPitch = Math.max(0.5, this.cam.goalPitch - 0.08); return; }
     if (k === ',' || k === '<') { this.cam.goalYaw += Math.PI / 8; return; }
@@ -2978,10 +2989,17 @@ export default class CombatScene extends Scene {
       const look = new THREE.Vector3(p.x, hgt * 0.55, p.z);
       cam.position.set(look.x + Math.sin(az) * Math.cos(el) * camDist, look.y + Math.sin(el) * camDist, look.z + Math.cos(az) * Math.cos(el) * camDist);
       cam.aspect = W / H;
+      // Iteration 4: nothing between the lens and the hero's near side is drawn
+      // (a hidden bystander's blood or sparks never splash across the panel).
+      cam.near = Math.max(0.2, camDist * 0.5);
       cam.updateProjectionMatrix();
       cam.lookAt(look);
       const ovVis = this.overlay.group.visible;
       this.overlay.group.visible = false;
+      // Iteration 4: transient VFX (sparks, blood, smoke from bystanders) stay
+      // out of the hero portrait; their lights still colour the scene.
+      const fxVis = this.vfx.group.visible;
+      this.vfx.group.visible = false;
       // Bystanders standing between the lens and the hero step out of the
       // shot (the hero panel shows the figure in its surroundings, unobstructed).
       const hiddenFigs = [];
@@ -3014,6 +3032,7 @@ export default class CombatScene extends Scene {
       r.setRenderTarget(prevRT);
       r.shadowMap.autoUpdate = autoSh;
       this.overlay.group.visible = ovVis;
+      this.vfx.group.visible = fxVis;
       for (const of of hiddenFigs) {
         of.root.visible = true;
         if (of.blob) of.blob.visible = !!of._blobWas;
