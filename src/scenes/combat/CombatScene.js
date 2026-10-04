@@ -2944,8 +2944,14 @@ export default class CombatScene extends Scene {
       // Waist-up: close in on the upper body, the surroundings behind it.
       // Pulled back to the whole figure in its surroundings (pool light,
       // masonry behind), from a low angle that shows the architecture.
-      const dist = 1.5 + hgt * 1.55;
-      const el = 0.3;
+      // Reskin 2: a true three-quarter front view from chest height, the
+      // figure (base to crown) filling the free band between card and table.
+      const bandTop = rect.bandTop ?? 0;
+      const bandBot = rect.bandBottom ?? rect.h;
+      const bandH = Math.max(rect.h * 0.3, bandBot - bandTop);
+      const tanH = Math.tan(THREE.MathUtils.degToRad(15));
+      const dist = Math.max(1.4, (hgt * 1.12 * rect.h) / (2 * tanH * bandH * 0.86));
+      const el = 0.14;
       // The shield arm's side: the lens never looks at the figure through its shield.
       // (The left arm, which carries the shield, sits on the figure's +x side:
       // bearing face + π/2 in this (sin, cos) convention; the weapon arm is at face − π/2.)
@@ -2984,9 +2990,12 @@ export default class CombatScene extends Scene {
         }
       }
       const camDist = dist;
-      const look = new THREE.Vector3(p.x, hgt * 0.55, p.z);
+      const look = new THREE.Vector3(p.x, hgt * 0.5, p.z);
       cam.position.set(look.x + Math.sin(az) * Math.cos(el) * camDist, look.y + Math.sin(el) * camDist, look.z + Math.cos(az) * Math.cos(el) * camDist);
       cam.aspect = W / H;
+      // The look point lands in the middle of the free band, not the window's centre.
+      const yc = (bandTop + bandH / 2) * dpr;
+      cam.setViewOffset(W, H, 0, Math.round(H / 2 - yc), W, H);
       // Iteration 4: nothing between the lens and the hero's near side is drawn
       // (a hidden bystander's blood or sparks never splash across the panel).
       cam.near = Math.max(0.2, camDist * 0.5);
@@ -3023,12 +3032,32 @@ export default class CombatScene extends Scene {
       }
       const autoSh = r.shadowMap.autoUpdate;
       r.shadowMap.autoUpdate = false;
+      // Studio light for the hero shot from the rig's own lens-side fill (no new
+      // light, so no shader recompiles): a warm torch key raking in from the
+      // weapon side and above, so the figure reads as a lit miniature.
+      const fillPos = this.fill.position.clone();
+      const fillTgt = this.fill.target.position.clone();
+      const fillI = this.fill.intensity;
+      const fillC = this.fill.color.clone();
+      {
+        const ka = az - 0.95;
+        this.fill.target.position.copy(look);
+        this.fill.position.set(look.x + Math.sin(ka) * 6, look.y + 4.2, look.z + Math.cos(ka) * 6);
+        this.fill.intensity = this.night ? 1.7 : 1.9;
+        this.fill.color.set(0xffc690);
+        this.fill.target.updateMatrixWorld();
+      }
       const prevRT = r.getRenderTarget();
       r.setRenderTarget(rt);
       r.clear();
       r.render(this.scene3d, cam);
       r.setRenderTarget(prevRT);
       r.shadowMap.autoUpdate = autoSh;
+      this.fill.position.copy(fillPos);
+      this.fill.target.position.copy(fillTgt);
+      this.fill.target.updateMatrixWorld();
+      this.fill.intensity = fillI;
+      this.fill.color.copy(fillC);
       this.overlay.group.visible = ovVis;
       this.vfx.group.visible = fxVis;
       for (const of of hiddenFigs) {
