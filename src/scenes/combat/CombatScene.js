@@ -119,9 +119,10 @@ export default class CombatScene extends Scene {
       // and a weak, desaturated sky fill; torch and brazier pools stay visible.
       // Iteration 3: a cold, dark overcast key (blue-grey) so the braziers'
       // pools are the only warm, bright areas on the board.
-      this.rig.sun.intensity *= 0.3;
+      // Hybrid: a touch more key and sky so the restored figures keep their colour.
+      this.rig.sun.intensity *= 0.45;
       this.rig.sun.color.set(0x9aa8c0);
-      this.rig.hemi.intensity *= 0.2;
+      this.rig.hemi.intensity *= 0.35;
       this.rig.hemi.color.set(0x5e6c74);
       this.rig.hemi.groundColor?.set(0x101414);
       this.rig.sun.shadow.radius = 2.2;
@@ -176,7 +177,7 @@ export default class CombatScene extends Scene {
     // Hybrid: it rakes in low from the lens side (see _updateCamera), so it
     // models the figures' fronts while barely touching the paving; by night it
     // is the warm spill of the braziers, so the party keeps its local colour.
-    this.fill = new THREE.DirectionalLight(this.night ? 0xffc890 : 0xd8d0c0, this.night ? 0.85 : 0.75);
+    this.fill = new THREE.DirectionalLight(this.night ? 0xffc890 : 0xe0d4c0, this.night ? 0.85 : 1.15);
     s.add(this.fill, this.fill.target);
     // Rim light from behind the fight: separates figures from the ground.
     // By night a warm brazier rim (not a cold moon edge), so the party keeps colour.
