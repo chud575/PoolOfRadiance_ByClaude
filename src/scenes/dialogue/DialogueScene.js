@@ -276,7 +276,7 @@ export default class DialogueScene extends Scene {
       painted = paintPanel({ ...spec, actor, w: 1280, h: 600 });
     } catch (e) {
       console.error('[dialogue] scene art failed; using a plain backdrop', e);
-      painted = fallbackPanel(1280, 600);
+      painted = fallbackPanel(1280, 600, e);
     }
     const { canvas, info, composer } = painted;
     this.composer = composer;
@@ -1178,7 +1178,7 @@ function installVictoryHook(ctx) {
 }
 
 /** A plain dusk backdrop for browsers where the scene painter fails. */
-function fallbackPanel(w, h) {
+function fallbackPanel(w, h, err) {
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
@@ -1194,5 +1194,12 @@ function fallbackPanel(w, h) {
   glow.addColorStop(1, 'rgba(255,170,90,0)');
   g.fillStyle = glow;
   g.fillRect(0, 0, w, h);
+  if (err) {
+    // A small diagnostic line, so a screenshot from an affected browser says what failed.
+    const line = String(err?.stack ?? err).split('\n').slice(0, 2).join(' @ ').replace(/https?:\/\/[^\s)]*\//g, '');
+    g.font = '15px monospace';
+    g.fillStyle = 'rgba(255,230,200,0.55)';
+    g.fillText(`Scene art unavailable: ${line}`.slice(0, 150), 18, h - 18);
+  }
   return { canvas, info: {}, composer: null };
 }
