@@ -75,6 +75,21 @@ function addRim(mat, facRim = null, tint = null) {
           diffuseColor.rgb = mix(diffuseColor.rgb * (1.0 - uBurn.x * 0.55), vec3(0.018, 0.015, 0.013), burnMask * 0.95);
         }`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        // Painted-miniature treatment (the reference's tabletop figures): a dark
+        // wash pooled in the recesses and a pale drybrush catching the raised
+        // edges, from screen-space curvature of the unperturbed normal (1/m,
+        // + convex). Kept modest so silhouettes and colours stay readable.
+        { vec3 pP = -vViewPosition;
+          vec3 dpx = dFdx(pP), dpy = dFdy(pP);
+          vec3 dnx = dFdx(nonPerturbedNormal), dny = dFdy(nonPerturbedNormal);
+          float kC = 0.5 * (dot(dnx, dpx) / max(dot(dpx, dpx), 1e-9) + dot(dny, dpy) / max(dot(dpy, dpy), 1e-9));
+          kC = clamp(kC, -80.0, 80.0);
+          float pxM = length(dpx) + length(dpy); // metres per pixel: fade where features alias
+          float pFade = 1.0 - smoothstep(0.035, 0.07, pxM);
+          float wash = smoothstep(-6.0, -30.0, kC) * pFade;
+          float dry = smoothstep(10.0, 40.0, kC) * pFade * (0.55 + 0.45 * smoothstep(-0.3, 0.7, nonPerturbedNormal.y));
+          diffuseColor.rgb *= 1.0 - 0.45 * wash;
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 1.55 + vec3(0.05, 0.045, 0.04), 0.5 * dry); }
         { float rimF = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), uRimPower);
           totalEmissiveRadiance += uRimColor * rimF * (0.6 + 0.4 * diffuseColor.rgb / max(0.001, max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b))));
           // Faction rim: a thin coloured back-light edge (ember on foes, cold steel
@@ -92,7 +107,7 @@ function addRim(mat, facRim = null, tint = null) {
           float rimE = pow(1.0 - clamp(dot(nV, normalize(vViewPosition)), 0.0, 1.0), 3.0);
           totalEmissiveRadiance += vec3(1.0, 0.34, 0.05) * burnEdge * uBurn.y * 1.5 + vec3(1.0, 0.22, 0.02) * emb * uBurn.y * 0.9 + vec3(1.0, 0.42, 0.08) * rimE * uBurn.y * 0.9; }`);
   };
-  mat.customProgramCacheKey = () => (sculpt ? 'fig-rim-sculpt-c' : pid >= 0 ? 'fig-rim-detail-c' : 'fig-rim-c');
+  mat.customProgramCacheKey = () => (sculpt ? 'fig-rim-sculpt-p' : pid >= 0 ? 'fig-rim-detail-p' : 'fig-rim-p');
 }
 
 const _FLASH = new THREE.Color(1, 0.82, 0.68);
