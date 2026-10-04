@@ -1,7 +1,7 @@
 import './styles/pause.css';
 import { h } from './dom.js';
 import { Frame } from './components/Frame.js';
-import { SettingsPanel, keyLabel, padGlyph } from './SettingsPanel.js';
+import { SettingsPanel, keyLabel, padGlyph, arrowSvg } from './SettingsPanel.js';
 import { SAVE_SLOTS } from '../core/SaveManager.js';
 import { hasMap, getMap } from '../data/maps/index.js';
 
@@ -62,6 +62,24 @@ export function openPauseMenu(ctx, { page = 'root', force = false } = {}) {
   current = new PauseMenu(ctx, page);
   return current;
 }
+
+/** A keycap; arrow keys use the shared drawn arrow glyphs (the display face has no arrows). */
+const cap = (k) => {
+  if (/^[↑↓←→]+$/.test(k)) return h('span.por-keycap.por-pause-arrows', [...k].map((a) => arrowSvg(a)));
+  return h('span.por-keycap', [k]);
+};
+
+/** 'phlan_slums (1,14)' → 'The Slums (1,14)' for the slot list. */
+const mapName = (where) => {
+  const m = /^(\w+) (\(.*\))$/.exec(where ?? '');
+  if (!m) return where;
+  try {
+    if (hasMap(m[1])) return `${getMap(m[1]).name ?? m[1]} ${m[2]}`;
+  } catch {
+    /* keep the id */
+  }
+  return `${m[1].replace(/_/g, ' ')} ${m[2]}`;
+};
 
 const fmtWhen = (iso) => {
   const d = iso ? new Date(iso) : null;
@@ -216,7 +234,7 @@ export class PauseMenu {
       }, [
         h('span.por-load-slot', [slot === 'auto' ? 'Auto' : slot]),
         rec
-          ? h('span.por-load-info', [h('span.por-load-who', [who || 'Saved game']), h('span.por-load-where', [[where, time].filter(Boolean).join(' · ')])])
+          ? h('span.por-load-info', [h('span.por-load-who', [who || 'Saved game']), h('span.por-load-where', [[mapName(where), time].filter(Boolean).join(' · ')])])
           : h('span.por-load-info', [h('span.por-load-who.muted', [saving ? '— empty: save here —' : '— empty —'])]),
         h('span.por-load-when', [fmtWhen(rec?.savedAt)]),
       ]);
@@ -251,7 +269,7 @@ export class PauseMenu {
     const col = (title, rows, pad) => h('section.por-pause-col', [
       h('h3.por-pause-colhead', [title]),
       h('dl.por-pause-keys', rows.flatMap(([keys, label]) => [
-        h('dt', keys.length ? keys.map((k) => (pad ? padGlyph(k) : h('span.por-keycap', [k]))) : [h('span.por-muted', ['—'])]),
+        h('dt', keys.length ? keys.map((k) => (pad ? padGlyph(k) : cap(k))) : [h('span.por-muted', ['—'])]),
         h('dd', [label]),
       ])),
     ]);
@@ -438,7 +456,7 @@ export class PauseMenu {
   }
 
   _legendInline(entries) {
-    return h('span.por-pause-legend-in', entries.map(([keys, label]) => h('span.por-pause-legend-item', [...keys.map((k) => h('span.por-keycap', [k])), h('span', [label])])));
+    return h('span.por-pause-legend-in', entries.map(([keys, label]) => h('span.por-pause-legend-item', [...keys.map(cap), h('span', [label])])));
   }
 
   /** @param {boolean} [leaving] true when a scene change follows (no resume sound) */

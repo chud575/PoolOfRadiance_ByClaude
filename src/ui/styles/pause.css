@@ -5,8 +5,11 @@
     radial-gradient(ellipse 60% 70% at 50% 48%, rgba(4, 7, 22, 0.42), rgba(0, 0, 4, 0.86) 100%);
   backdrop-filter: saturate(0.55) brightness(0.8);
 }
+/* no entrance keyframes: on a starved compositor (software GL) a keyframe can sit at its
+   opacity-0 start for seconds, and a pause menu must appear the instant it is asked for */
+.por-pause-backdrop { animation: none; }
 .por-pause-backdrop.still, .por-pause-backdrop.still * { animation: none !important; transition: none !important; }
-.por-pause { animation: por-pop 0.26s var(--ease); max-height: 92vh; display: flex; }
+.por-pause { max-height: 92vh; display: flex; }
 .por-pause-frame { width: 30em; max-width: 92vw; padding: 2em 2.2em 1.4em; display: flex; flex-direction: column; }
 .por-pause[data-page='save'] .por-pause-frame, .por-pause[data-page='load'] .por-pause-frame { width: 44em; }
 .por-pause[data-page='controls'] .por-pause-frame { width: 64em; padding: 2em 2.2em 1.3em; }
@@ -73,3 +76,5 @@
   .por-pause-crest { width: 3.2em; height: 3.2em; }
   .por-pause-item { padding-top: 0.4em; padding-bottom: 0.4em; }
 }
+.por-pause-arrows { gap: 0.12em; }
+.por-pause-arrows .por-arrow { width: 1em; height: 1em; display: block; }
