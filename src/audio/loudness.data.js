@@ -2,19 +2,19 @@
 // Loudness calibration: gain per cue and the loudness it measured at that gain (see loudness.js).
 export const CAL = {
  "fp": {
-  "music": "1i3d99i",
-  "sfx": "1aymqeh",
-  "amb": "1t1ldyz"
+  "music": "1rf4pvc",
+  "sfx": "9kju1p",
+  "amb": "hutyqt"
  },
  "music": {
   "camp": {
-   "gain": 1.5181,
+   "gain": 1.518,
    "lufs": -18,
    "target": -18,
-   "fp": "mjhntn"
+   "fp": "15pxq6v"
   },
   "combat": {
-   "gain": 0.9224,
+   "gain": 0.933,
    "lufs": -16.5,
    "target": -16.5,
    "sections": {
@@ -31,19 +31,19 @@ export const CAL = {
     ],
     [
      0.3,
-     -18.5
+     -18.6
     ],
     [
      0.45,
-     -15.9
+     -16
     ],
     [
      0.6,
-     -14.7
+     -14.8
     ],
     [
      0.75,
-     -10
+     -9.9
     ],
     [
      0.9,
@@ -54,102 +54,102 @@ export const CAL = {
      -9.1
     ]
    ],
-   "fp": "1iagpnn",
+   "fp": "1kdtouk",
    "check": {
-    "1": -12.3,
+    "1": -12.2,
     "0.3": -16.6,
     "0.5": -16.4,
-    "0.8": -13.7
+    "0.8": -13.5
    }
   },
   "crypt": {
-   "gain": 1.1892,
-   "lufs": -18.2,
+   "gain": 2.2887,
+   "lufs": -18.1,
    "target": -18,
    "sections": {
-    "v0": 0.4,
-    "v3": -1.7,
-    "v1": 3.9,
-    "v2": -2.6
+    "v0": 1.2,
+    "v3": -2.1,
+    "v1": 3.1,
+    "v2": -2.3
    },
-   "fp": "5mlrce"
+   "fp": "j2l8s6"
   },
   "danger": {
-   "gain": 1.2338,
-   "lufs": -16.1,
+   "gain": 1.2418,
+   "lufs": -16.2,
    "target": -16,
    "fp": "12wi6qa"
   },
   "defeat": {
-   "gain": 0.9454,
+   "gain": 1.0541,
    "lufs": -19.5,
    "target": -19.5,
    "fp": "a9tzxp"
   },
   "discovery": {
-   "gain": 1,
-   "lufs": -16.7,
+   "gain": 0.9508,
+   "lufs": -17,
    "target": -17,
    "fp": "sv4kn5"
   },
   "dungeon": {
-   "gain": 1.0615,
-   "lufs": -18.5,
+   "gain": 1.4386,
+   "lufs": -18.7,
    "target": -18.5,
    "sections": {
     "v0": -2.5,
-    "v3": 5,
-    "v1": -2.4,
-    "v2": -0.1
+    "v3": 3,
+    "v1": -2.5,
+    "v2": 2
    },
-   "fp": "1gci6fw"
+   "fp": "u3sdkg"
   },
   "encounter": {
-   "gain": 1.5012,
+   "gain": 1.5245,
    "lufs": -17.7,
    "target": -17.5,
    "sections": {
-    "standoff": -1,
+    "standoff": -0.9,
     "stalk": 2,
-    "heartbeat": -1
+    "heartbeat": -1.1
    },
    "fp": "bkboi4"
   },
   "fallen": {
-   "gain": 1.6836,
-   "lufs": -18.1,
+   "gain": 2.2674,
+   "lufs": -18.2,
    "target": -18,
    "fp": "2220ey"
   },
   "intro": {
-   "gain": 0.9193,
+   "gain": 1.1012,
    "lufs": -18.5,
    "target": -18.5,
-   "fp": "1ozp3fq"
+   "fp": "icddfq"
   },
   "levelup": {
-   "gain": 1.139,
+   "gain": 1.1293,
    "lufs": -16,
    "target": -16,
    "fp": "7vhpal"
   },
   "quest": {
-   "gain": 1.1959,
+   "gain": 1.251,
    "lufs": -17,
    "target": -17,
    "fp": "xo7b64"
   },
   "ruins": {
-   "gain": 1,
-   "lufs": -18.3,
+   "gain": 1.5762,
+   "lufs": -18.2,
    "target": -18,
    "sections": {
-    "v0": -1.4,
-    "v3": 2.6,
-    "v1": -1.6,
-    "v2": 0.3
+    "v0": -1.2,
+    "v3": 3.3,
+    "v1": -1.7,
+    "v2": -0.3
    },
-   "fp": "12n1vky"
+   "fp": "1nd6qpq"
   },
   "tavern": {
    "gain": 1.3582,
@@ -162,10 +162,10 @@ export const CAL = {
    "fp": "nkqeu4"
   },
   "title": {
-   "gain": 0.8963,
+   "gain": 0.9088,
    "lufs": -16.9,
    "target": -17,
-   "fp": "kbj1du"
+   "fp": "gt0nih"
   },
   "town": {
    "gain": 1.7372,
@@ -178,42 +178,42 @@ export const CAL = {
    "fp": "n3b6x4"
   },
   "victory": {
-   "gain": 0.7135,
-   "lufs": -15.7,
+   "gain": 0.6472,
+   "lufs": -16,
    "target": -16,
-   "fp": "18cmts"
+   "fp": "1ys8g5e"
   },
   "wilds": {
-   "gain": 1.3694,
+   "gain": 1.3876,
    "lufs": -18,
    "target": -18,
    "sections": {
     "v0": -1.8,
     "v3": -2,
     "v1": -1.5,
-    "v2": 5.4
+    "v2": 5.3
    },
    "fp": "yfz8vl"
   }
  },
  "amb": {
   "camp": {
-   "gain": 5.3455,
+   "gain": 5.2729,
    "lufs": -27,
    "target": -27
   },
   "camp_in": {
-   "gain": 4.6721,
+   "gain": 4.6784,
    "lufs": -27,
    "target": -27
   },
   "camp_night": {
-   "gain": 5.7354,
+   "gain": 5.1449,
    "lufs": -27,
    "target": -27
   },
   "combat_in": {
-   "gain": 4.8159,
+   "gain": 5.0251,
    "lufs": -27,
    "target": -27
   },
@@ -233,12 +233,12 @@ export const CAL = {
    "target": -27
   },
   "dungeon": {
-   "gain": 3.543,
+   "gain": 3.6489,
    "lufs": -27,
    "target": -27
   },
   "interior": {
-   "gain": 9.2276,
+   "gain": 9.4005,
    "lufs": -27,
    "target": -27
   },
@@ -310,10 +310,10 @@ export const CAL = {
    "peak": -6.8
   },
   "bump": {
-   "gain": 3.3202,
-   "m": -23.1,
+   "gain": 3.4748,
+   "m": -23.5,
    "target": -23,
-   "peak": -7.7
+   "peak": -14.4
   },
   "cancel": {
    "gain": 3.3868,
@@ -358,16 +358,16 @@ export const CAL = {
    "peak": -13.3
   },
   "crit": {
-   "gain": 1.7096,
-   "m": -15.4,
+   "gain": 2.0042,
+   "m": -15.7,
    "target": -15,
-   "peak": -3.4
+   "peak": -2.8
   },
   "death": {
-   "gain": 1.4778,
+   "gain": 1.4674,
    "m": -20.1,
    "target": -20,
-   "peak": -6
+   "peak": -6.3
   },
   "dodge": {
    "gain": 3.057,
@@ -376,13 +376,13 @@ export const CAL = {
    "peak": -9.6
   },
   "door": {
-   "gain": 1.2177,
-   "m": -21.3,
+   "gain": 1.2102,
+   "m": -21.4,
    "target": -21,
    "peak": -3.1
   },
   "door_close": {
-   "gain": 0.9328,
+   "gain": 0.9312,
    "m": -20.8,
    "target": -21,
    "peak": -3.1
@@ -397,7 +397,7 @@ export const CAL = {
    "gain": 1.3301,
    "m": -21,
    "target": -21,
-   "peak": -10.4
+   "peak": -10.6
   },
   "equip": {
    "gain": 4.6678,
@@ -418,10 +418,10 @@ export const CAL = {
    "peak": -10.4
   },
   "footstep": {
-   "gain": 8.5825,
-   "m": -26.1,
+   "gain": 8.9946,
+   "m": -26.4,
    "target": -26,
-   "peak": -2.9
+   "peak": -11.3
   },
   "heal": {
    "gain": 1.1863,
@@ -472,10 +472,10 @@ export const CAL = {
    "peak": -9.4
   },
   "omen": {
-   "gain": 4.1375,
+   "gain": 3.4009,
    "m": -21,
    "target": -21,
-   "peak": -11.5
+   "peak": -8.6
   },
   "open": {
    "gain": 7.0156,
@@ -556,10 +556,10 @@ export const CAL = {
    "peak": -6.8
   },
   "spell_fire": {
-   "gain": 0.5094,
-   "m": -14,
+   "gain": 0.6428,
+   "m": -14.3,
    "target": -14.5,
-   "peak": -2.4
+   "peak": -3.3
   },
   "spell_fizzle": {
    "gain": 6.0848,
@@ -580,10 +580,10 @@ export const CAL = {
    "peak": -10.7
   },
   "spell_lightning": {
-   "gain": 0.9508,
-   "m": -14.4,
+   "gain": 1.1254,
+   "m": -14.9,
    "target": -14.5,
-   "peak": -3.2
+   "peak": -2.7
   },
   "spell_mind": {
    "gain": 2.2988,
@@ -628,46 +628,46 @@ export const CAL = {
    "peak": -8.6
   },
   "step_cobble": {
-   "gain": 2.9025,
-   "m": -26,
+   "gain": 2.1945,
+   "m": -26.1,
    "target": -26,
-   "peak": -5.3
+   "peak": -11.1
   },
   "step_dirt": {
-   "gain": 6.318,
-   "m": -26,
+   "gain": 4.7301,
+   "m": -26.2,
    "target": -26,
-   "peak": -6.7
+   "peak": -11.3
   },
   "step_grass": {
-   "gain": 3.4693,
-   "m": -26,
+   "gain": 2.3292,
+   "m": -26.2,
    "target": -26,
-   "peak": -11.6
+   "peak": -13.7
   },
   "step_gravel": {
-   "gain": 3.7856,
-   "m": -26,
+   "gain": 2.5605,
+   "m": -26.4,
    "target": -26,
-   "peak": -6.9
+   "peak": -11.5
   },
   "step_stone": {
-   "gain": 6.7169,
-   "m": -26,
+   "gain": 5.1244,
+   "m": -26.2,
    "target": -26,
-   "peak": -4.9
+   "peak": -10.8
   },
   "step_water": {
-   "gain": 2.2336,
-   "m": -26,
+   "gain": 1.5137,
+   "m": -26.1,
    "target": -26,
-   "peak": -12.7
+   "peak": -14.3
   },
   "step_wood": {
-   "gain": 1.4115,
-   "m": -26,
+   "gain": 1,
+   "m": -26.2,
    "target": -26,
-   "peak": -9.1
+   "peak": -12.2
   },
   "swing": {
    "gain": 2.453,
@@ -682,10 +682,10 @@ export const CAL = {
    "peak": -6
   },
   "turn": {
-   "gain": 10.9409,
+   "gain": 7.6096,
    "m": -29,
    "target": -29,
-   "peak": -11.2
+   "peak": -13.6
   },
   "vox_dragon": {
    "gain": 0.5158,
@@ -697,7 +697,7 @@ export const CAL = {
    "gain": 0.4683,
    "m": -13.8,
    "target": -14,
-   "peak": -6.2
+   "peak": -7.7
   },
   "vox_frog": {
    "gain": 1.4087,
@@ -733,7 +733,7 @@ export const CAL = {
    "gain": 0.3305,
    "m": -16.5,
    "target": -16.5,
-   "peak": -9.5
+   "peak": -9.6
   },
   "vox_gnoll": {
    "gain": 1,
@@ -862,10 +862,10 @@ export const CAL = {
    "peak": -14.1
   },
   "vox_spider_die": {
-   "gain": 10.8818,
-   "m": -19.9,
+   "gain": 9.0816,
+   "m": -19.3,
    "target": -18.5,
-   "peak": -2
+   "peak": -2.2
   },
   "vox_troll": {
    "gain": 0.3864,
@@ -877,7 +877,7 @@ export const CAL = {
    "gain": 0.3593,
    "m": -16.3,
    "target": -16.5,
-   "peak": -8.9
+   "peak": -10.3
   },
   "vox_wolf": {
    "gain": 0.575,
@@ -904,10 +904,10 @@ export const CAL = {
    "peak": -9.7
   },
   "walk": {
-   "gain": 6.573,
+   "gain": 5.5402,
    "m": -26.1,
    "target": -26,
-   "peak": -2.9
+   "peak": -10.1
   }
  }
 };

@@ -734,6 +734,9 @@ export default class ExploreScene extends Scene {
     let res = this.map.tryMove(this.pos.x, this.pos.y, dir, { foundSecrets: this._foundSecrets() });
     // Rules: a locked door yields to a thief's picks, a strong shoulder or Knock, and stays open after.
     if (!res.ok && res.reason === 'locked' && this._openLocked(dir)) res = { ...res, ok: true, reason: undefined };
+    // Walking into a way out (an edge arch, the pier's end) asks the travel question even when the party
+    // only turned to face it after arriving — the prompt is an event keyed to this square and facing.
+    if ((!res.ok || res.leaves) && this._travelPrompt(dir)) return;
     if (!res.ok) {
       if (res.reason === 'locked') { /* _openLocked reported the attempt */ }
       else if (res.reason === 'edge') this.ctx.ui.message('The way is barred.', 'warn');
@@ -759,6 +762,15 @@ export default class ExploreScene extends Scene {
     this.pos.x = res.nx;
     this.pos.y = res.ny;
     void keepFacing;
+  }
+
+  /** Fire this square's travel prompt (a `go_*` encounter event) for a move toward `dir`, if there is one. */
+  _travelPrompt(dir) {
+    const ev = this.map.eventsAt(this.pos.x, this.pos.y).find((e) => e.type === 'encounter' && e.facing === dir && String(e.ref).startsWith('go_'));
+    if (!ev || this.leaving) return false;
+    this.leaving = true;
+    this.ctx.scenes.goto('dialogue', { encounter: ev.ref });
+    return true;
   }
 
   _arrive() {

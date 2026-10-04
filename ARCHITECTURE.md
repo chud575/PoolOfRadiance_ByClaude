@@ -16,7 +16,8 @@ npm test             # vitest: rules engine + data validation
 npm run shot -- --url "scene=explore&x=7&y=11&dir=N&t=2" --out shots/x.png
 node tools/shotall.mjs      # homage gallery      → shots/<name>.png
 node tools/refshot.mjs      # 1988 EGA reference  → reference/<name>.png
-node tools/smoke.mjs        # end-to-end vertical slice (title→explore→combat→explore)
+node tools/smoke.mjs        # end-to-end smoke (title→Quick Start→BFS to first fight→QUICK→explore→row to Sokol Keep) [--port N]
+node tools/playthrough.mjs  # full slice by hand: town→City Hall→Slums→fight (MOVE/AIM/CAST)→camp rest→automap→save/load [--port N --shots --skip-town]
 node tools/determinism.mjs  # shoots every gallery URL twice, pixel-compares (must be identical)
 ```
 
@@ -745,11 +746,46 @@ premium modern release, i.e.:
    recognisable.
 7. **Zero errors** in console; deterministic under `seed` + `t`.
 
-## Known gaps (foundation v0.1)
+## Pause menu
 
-* Combat: only QUICK/FLEE work; MOVE/AIM/CAST etc. are disabled placeholders; figures are primitives.
-* Explore: one block (`phlan_slums`), exits to unbuilt maps, no roofs/skyline beyond block walls, no props.
-* Spells: full rules engine (castSpell, memorization, rest), used by camp and by tactical combat (via rules/battle.js).
-* Shops: buy only; temple/training services not implemented.
-* UI: no inventory/character sheet screens; settings/options UI minimal; no rebinding UI (API exists).
-* Reference renderer is from memory of the EGA original — close in layout/palette, not pixel-exact.
+`src/ui/PauseMenu.js` (pure DOM, modal layer): Resume · Save Game · Load Game · Settings · Controls · Quit to Main Menu.
+`installPauseMenu(ctx, params)` is called on every in-game scene enter (explore, combat, automap, camp, shop, dialogue);
+the `pause` action (F10, gamepad Start) toggles it, and scenes call `openPauseMenu(ctx)` on Esc when they have nothing
+else to cancel. While open, `ctx.scenes.paused` stops scene updates (scenes still render), `ctx.clock.timeScale = 0`,
+and `ctx.input.capture` routes actions to the menu. Saving is refused in battle (`Not in battle`). Slots `A`..`J` plus
+`auto` (SaveManager); loading calls `game.loadJSON` and `scenes.goto('explore')`. Debug: `&pause=1|save|load|controls|quit`
+opens a page for gallery shots. Saves are disabled whenever `?scene=` is present (debug mode) or `&nosave=1`.
+
+## Art direction
+
+`docs/art/ART_DIRECTION.md` plus the owner's concept images `docs/art/combat_target.png` and
+`docs/art/charsheet_target.png` (mood and treatment, not layout). In short: low-key motivated lighting (torch and
+brazier pools, deep shadow, no flat fill; night/dungeon the default mood); combat figures read as 28 mm painted pewter
+miniatures on flocked bases (matte paint, edge highlights, dark recesses); heavy fortified-ruin architecture; an
+active-character close-up panel lit by the same scene; the Gold Box command line and roster in an iron/rope/leather
+skin; painted portraits that are the face of the same figure that fights on the board.
+
+## Known gaps (integration pass, demo 3)
+
+Wired end to end and exercised by `tools/playthrough.mjs`: title → main menu → Quick Start (or the creation
+flow) → Slums → Slum Gate travel → New Phlan → City Hall (Clerk dialogue, commissions) → back to the Slums →
+encounter dialogue → tactical combat (MOVE, AIM, CAST, QUICK) → victory/spoils → camp (rest, memorize) → automap →
+pause-menu save and load. Edge exits now prompt when the party walks into them even if it only turned to face the
+way out after arriving (`ExploreScene._travelPrompt`).
+
+Biggest remaining gaps (ordered):
+1. **Combat figure art** (see the combat critique): night lighting leaves figures as black silhouettes; mannequin
+   tube limbs and blank heads; pale orc rope belts; kobolds vanish on the floor; fireball reads as beige dust.
+2. **Portraits** still need the face rebuild (eyes with lids/catchlights, nostrils, lips, hair strands, native
+   resolution) and the big VIEW frame shows the keyhole placeholder for several seconds in live play.
+3. **Miniature/camp faces** are blank; camp figures read as grey jumpsuits; heraldry hue drifts under tone mapping.
+4. **Combat close-up panel** grade does not match the board; stray sphere/mote artifacts; can frame a hero from behind.
+5. **Architecture and ground surfacing** in combat: flat pale capstones, purple cobble with moiré.
+6. **Quick Start and Begin Adventure drop the party in the Slums**, not at the New Phlan docks/City Hall as in the
+   1988 game; the commission is optional. A deliberate shortcut for the demo.
+7. **Combat framing** leaves large empty floor; the CAST/USE menu covers the fight.
+8. Content beyond the first few blocks is thin (many blocks have placeholder encounters); exits to unbuilt maps
+   print "not yet built".
+9. Audio loudness calibration must be re-run (`node tools/audiorender.mjs --calibrate`) whenever music synthesis
+   changes, or `tests/audio/loudness.test.js` fails.
+10. Reference renderer is from memory of the EGA original — close in layout/palette, not pixel-exact.
