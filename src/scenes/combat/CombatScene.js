@@ -2939,7 +2939,7 @@ export default class CombatScene extends Scene {
       for (let k = -8; k <= 8; k++) {
         const a = mainAz + k * 0.28;
         // Three-quarter from the weapon side (the shield arm faces away from the lens).
-        let sc = Math.cos(a - (face - 0.6)) * 1.1 + Math.cos(a - mainAz) * 0.5;
+        let sc = Math.cos(a - (face + 0.6)) * 1.1 + Math.cos(a - mainAz) * 0.5;
         const ex = p.x + Math.sin(a) * reach;
         const ez = p.z + Math.cos(a) * reach;
         for (const q of others) {
