@@ -184,9 +184,10 @@ function altar3d({ w = 0.42, d = 0.16, h = 0.36, stone = '#a8a092', runner = nul
 function anvil3d() {
   const f = new Figure();
   const oak = mat('#4a3420', { pattern: 'wood', scale: 0.03, rough: 0.85 });
-  f.cone([0, 0, 0], [0, 0.17, 0], 0.11, 0.1, oak, { group: null });
-  f.ell([0, 0.17, 0], [0.1, 0.01, 0.1], mat('#7a5a38', { pattern: 'wood', scale: 0.01 }), { group: null });
-  for (const y of [0.04, 0.13]) f.ell([0, y, 0], [0.113, 0.008, 0.113], M.iron, { group: null });
+  // a squat elm stump, roots splayed into the floor, its top sawn flat (no hoops: it is no barrel)
+  f.cone([0, 0, 0], [0, 0.17, 0], 0.115, 0.095, oak, { group: 'stump', k: 0.03, disp: { amp: 0.006, freq: 11, twist: 2.5 } });
+  for (let i = 0; i < 5; i++) { const a = i * 1.3 + 0.4; f.cone([Math.cos(a) * 0.08, 0.05, Math.sin(a) * 0.08], [Math.cos(a) * 0.15, 0.004, Math.sin(a) * 0.15], 0.035, 0.012, oak, { group: 'stump', k: 0.03 }); }
+  f.ell([0, 0.17, 0], [0.094, 0.008, 0.094], mat('#8a6a44', { pattern: 'wood', scale: 0.006 }), { group: null });
   const ir = mat('#4a4c52', { pattern: 'metal', metal: true, rough: 0.45, spec: 0.7, scale: 0.04 });
   f.box([0, 0.19, 0], [0.09, 0.016, 0.06], ir, { group: null, bevel: 0.008 });
   f.box([0, 0.22, 0], [0.05, 0.022, 0.035], ir, { group: null, bevel: 0.01 });
@@ -866,10 +867,27 @@ S.smithy = (g, W, H, R, o) => {
   g.restore();
   g.fillStyle = '#2a221c';
   g.fillRect(fx - 128, fy - 156, 256, 10);
-  // bellows beside the forge
-  g.fillStyle = linGrad(g, fx - 200, 0, fx - 120, 0, [[0, '#4a2e18'], [1, '#1a0e06']]);
-  poly(g, [[fx - 205, fy - 40], [fx - 125, fy - 62], [fx - 125, fy - 30], [fx - 205, fy - 10]]);
-  g.fill();
+  // the great bellows beside the forge on a trestle: two boards with pleated leather between
+  // them, a brass nozzle into the hearth, and the lever arm overhead
+  {
+    const bx = fx - 205; const by = fy - 44;
+    g.fillStyle = '#1e140c';
+    for (const lx of [bx + 10, bx + 66]) g.fillRect(lx, by + 18, 7, fy - by - 18); // trestle legs
+    g.fillRect(bx, by + 16, 84, 6);
+    contactShadow(g, bx + 42, fy + 2, 60, 6, 0.5);
+    g.fillStyle = linGrad(g, 0, by - 22, 0, by + 16, [[0, '#6a4428'], [1, '#2a180c']]);
+    poly(g, [[bx, by - 4], [bx + 80, by - 16], [bx + 84, by - 10], [bx + 4, by + 2]]); g.fill(); // upper board
+    g.fillStyle = linGrad(g, 0, by, 0, by + 16, [[0, '#4a2e18'], [1, '#1a0e06']]);
+    poly(g, [[bx + 2, by + 4], [bx + 84, by - 4], [bx + 86, by + 12], [bx + 2, by + 16]]); g.fill(); // leather
+    g.strokeStyle = 'rgba(10,6,2,0.8)'; g.lineWidth = 1.2;
+    for (let k = 1; k < 5; k++) { g.beginPath(); g.moveTo(bx + 2 + k * 16, by + 4 - k * 1.6); g.lineTo(bx + 2 + k * 16, by + 16); g.stroke(); }
+    g.fillStyle = linGrad(g, bx + 84, 0, bx + 110, 0, [[0, '#c89a50'], [1, '#6a4a20']]);
+    poly(g, [[bx + 84, by - 2], [bx + 112, by + 2], [bx + 112, by + 6], [bx + 84, by + 10]]); g.fill(); // nozzle
+    g.strokeStyle = '#2a1a0c'; g.lineWidth = 4; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(bx + 6, by - 6); g.lineTo(bx - 10, by - 60); g.stroke(); // lever
+    g.strokeStyle = 'rgba(255,150,70,0.35)'; g.lineWidth = 1.2;
+    g.beginPath(); g.moveTo(bx + 80, by - 16); g.lineTo(bx + 84, by - 10); g.stroke();
+  }
   // back wall: racks of finished blades, shields and hanging tools
   P.weaponRack(g, W * 0.6, H * 0.2, W * 0.2, H * 0.34, 7);
   for (const [x, c] of [[0.85, '#5a1a14'], [0.9, '#1d3574']]) {

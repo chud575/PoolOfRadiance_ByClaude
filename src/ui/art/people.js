@@ -129,7 +129,8 @@ export function buildNpc(spec) {
       f.cone(lerp3(knee, ankle, 0.3), ankle, 0.041 * b, 0.031 * b, bootM, { group: `boot${d}`, k: 0.01 });
       f.cone(lerp3(knee, ankle, 0.26), lerp3(knee, ankle, 0.36), 0.045 * b, 0.043 * b, bootM, { group: `boot${d}`, k: 0.01 });
     }
-    // shoe
+    // shoe (under a floor-length hem nothing shows: a round toe peeping out read as a ball)
+    if (longSkirt) continue;
     const toe = add(ankle, [d * 0.006, -0.03, 0.085]);
     f.cone(ankle, toe, 0.028 * b, 0.022 * b, bootM, { group: `boot${d}`, k: 0.012 });
     f.ell(add(lerp3(ankle, toe, 0.62), [0, -0.012, 0]), [0.027 * b, 0.016, 0.05], bootM, { group: `boot${d}`, k: 0.012 });
@@ -175,7 +176,10 @@ export function buildNpc(spec) {
     const hemY = floor ? 0.015 : hipH - 0.19;
     const rTop = (fem ? 0.084 : 0.09) * b;
     const rBot = (floor ? 0.165 : 0.11) * b;
-    f.cone(top, [0, hemY + (floor ? 0.03 : 0), 0.004], rTop, rBot, skirtM, { group: 'skirt', k: 0.02, disp: { amp: floor ? 0.013 : 0.008, freq: floor ? 15 : 11, twist: 1.6 } });
+    // fewer, deeper and less regular pleats than a fluted column; the cloth breaks on the floor
+    // in a wider pooled hem
+    f.cone(top, [0, hemY + (floor ? 0.03 : 0), 0.004], rTop, rBot, skirtM, { group: 'skirt', k: 0.02, disp: { amp: floor ? 0.017 : 0.009, freq: floor ? 10 : 9, twist: 2.4 } });
+    if (floor) f.cone([0, 0.07, 0.006], [0, 0.012, 0.01], rBot * 1.02, rBot * 1.12, skirtM, { group: 'skirt', k: 0.03, disp: { amp: 0.012, freq: 13, twist: 3 } });
     // a floor-length hem breaks on the floor and is cut flat there (a round cone's cap reads as a bowling pin)
     if (floor) f.carve('box', [0, -0.25, 0], [0.5, 0.25, 0.5], null, { group: 'skirt', k: 0.006 });
     f.ell(add(waist, T([0, -0.035, 0])), [rTop * 1.04, 0.05, rTop * 0.82], skirtM, { group: 'skirt', k: 0.03 });

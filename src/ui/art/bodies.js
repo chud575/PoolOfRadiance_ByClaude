@@ -536,7 +536,8 @@ export function humanoid(f, sp, pose, R, gear) {
         // separate greave and cuisse: hard-edged shells over the shin and thigh, a ridge down the greave
         f.cone(lerpP(knee, ankle, 0.08), lerpP(knee, ankle, 0.94), legR * 1.08, legR * 0.82, gear.metalM, { group: null });
         f.box(lerpP(knee, ankle, 0.45), [0.004, len(sub(ankle, knee)) * 0.4, 0.004], gear.trimM ?? gear.metalM, { group: null, R: alignY(sub(ankle, knee)), bevel: 0.002 });
-        f.cone(lerpP(hipJ, knee, 0.15), lerpP(hipJ, knee, 0.86), legR * 1.3, legR * 1.06, gear.metalM, { group: null });
+        f.cone(lerpP(hipJ, knee, 0.15), lerpP(hipJ, knee, 0.82), legR * 1.24, legR * 1.02, gear.metalM, { group: null });
+        for (const t of [0.6, 0.74]) f.cone(lerpP(hipJ, knee, t), lerpP(hipJ, knee, t + 0.1), legR * 1.06, legR * 1.12, gear.metalM, { group: null });
       }
     }
   }
@@ -859,7 +860,12 @@ export function humanoid(f, sp, pose, R, gear) {
 }
 
 function kneeCop(f, knee, gear) {
-  f.sphere(add(knee, [0, 0, 0.012]), 0.03, gear.metalM, { group: null });
+  // a poleyn: a domed cop over the knee with a fan-shaped wing on the outside, and a lame above
+  // and below it, so the leg articulates instead of reading as a trouser tube
+  f.ell(add(knee, [0, 0, 0.014]), [0.032, 0.034, 0.026], gear.metalM, { group: null });
+  for (const d of [-1, 1]) f.ell(add(knee, [d * 0.03, 0, 0.002]), [0.008, 0.03, 0.026], gear.metalM, { group: null });
+  f.cone(add(knee, [0, 0.04, 0.008]), add(knee, [0, 0.026, 0.01]), 0.036, 0.04, gear.metalM, { group: null });
+  f.cone(add(knee, [0, -0.026, 0.01]), add(knee, [0, -0.04, 0.008]), 0.04, 0.036, gear.metalM, { group: null });
 }
 
 function monsterHelm(f, kind, gear) {

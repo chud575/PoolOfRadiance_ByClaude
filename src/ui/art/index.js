@@ -1,4 +1,4 @@
-import { makeCanvas, gpuCopy, vignette, grade, grain, rgba, glow, glowEllipse, flame, rngOf, hashStr, fog as fogBand, clamp01, contactShadow, softwareGL } from './paint.js';
+import { makeCanvas, gpuCopy, vignette, grade, grain, rgba, glow, glowEllipse, flame, fire, rngOf, hashStr, fog as fogBand, clamp01, contactShadow, softwareGL } from './paint.js';
 import { paintSetting } from './settings.js';
 import './interiors.js';
 import { placeCreature, creatureScale, paintCreature, dragonHead, hasCreature, isSculpted, renderCreature, flattenSprite } from './creatures.js';
@@ -1306,7 +1306,9 @@ export class PanelOverlay {
       const fl = 0.82 + Math.sin(ph * 7.3) * 0.08 + Math.sin(ph * 17.1 + 1) * 0.06 + Math.sin(ph * 3.1) * 0.04;
       if (L.kind === 'flame') {
         glow(g, L.x, L.y - L.s * 0.6, L.s * 9 * fl, L.color, 0.16 * fl);
-        flame(g, L.x, L.y, L.s, ph, L.color);
+        // a hearth or forge burns as a cluster of tongues; a torch keeps its single flame
+        if (L.s >= 18) fire(g, L.x, L.y, L.s * 0.62, ph, L.color);
+        else flame(g, L.x, L.y, L.s, ph, L.color);
       } else if (L.kind === 'candle') {
         glow(g, L.x, L.y, L.s * 12 * fl, L.color, 0.13 * fl);
         glow(g, L.x, L.y - L.s * 0.6, L.s * 3.2, '#fff0c0', 0.3 * fl);

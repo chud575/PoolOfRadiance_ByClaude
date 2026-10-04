@@ -473,7 +473,9 @@ void main() {
   float dk = uKeyI * diff;
   vec3 c;
   if (metal) {
-    c = base * (dk * 0.55 * uKeyC + ambC * 0.8 + fillC) + spec * uKeyC * (0.4 + base) + mix(uGnd, uSky, hemi) * 0.25 * base * ao + rimT * uRimC * (0.5 + base);
+    // polished steel mirrors the room: a broad environment term (warm floor below, sky above) so
+    // armour in a dark interior reads as bright metal, not a black lump
+    c = base * (dk * 0.7 * uKeyC + ambC * 1.0 + fillC) + spec * uKeyC * (0.4 + base) + mix(uGnd, uSky, hemi) * 0.5 * base * ao + rimT * uRimC * (0.6 + base);
   } else {
     spec *= 0.38; // matte: skin, cloth and leather keep only a soft sheen
     if (sss > 0.3) {

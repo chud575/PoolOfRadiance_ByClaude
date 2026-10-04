@@ -547,6 +547,59 @@ export function contactShadow(g, x, y, rx, ry, alpha = 0.55) {
   g.restore();
 }
 
+/**
+ * A hearth or forge fire: a bed of embers and a cluster of licking tongues, each its own height,
+ * lean and flicker, shaded from a white-hot root through yellow to a red, transparent tip, with
+ * sparks lifting off. Deterministic for a time t (a frozen clock draws one settled frame).
+ */
+export function fire(g, x, y, s, t = 0, color = '#ff8a2a') {
+  g.save();
+  g.globalCompositeOperation = 'lighter';
+  // the glowing bed
+  const bed = g.createRadialGradient(x, y, 0, x, y, s * 1.3);
+  bed.addColorStop(0, 'rgba(255,220,140,0.9)');
+  bed.addColorStop(0.4, 'rgba(255,120,30,0.5)');
+  bed.addColorStop(1, 'rgba(160,30,0,0)');
+  g.fillStyle = bed;
+  g.save(); g.translate(x, y); g.scale(1, 0.3); g.translate(-x, -y);
+  g.beginPath(); g.arc(x, y, s * 1.3, 0, Math.PI * 2); g.fill();
+  g.restore();
+  const tongues = 9;
+  for (let pass = 0; pass < 3; pass++) {
+    const k = [1, 0.66, 0.36][pass];
+    const cols = [[color, 0.55], ['#ffc040', 0.6], ['#fff4c8', 0.75]][pass];
+    for (let i = 0; i < tongues; i++) {
+      const u = (i + 0.5) / tongues - 0.5;
+      const ph = t * (2.1 + (i % 4) * 0.37) + i * 1.93;
+      const hgt = s * (1.0 + 0.9 * (1 - Math.abs(u) * 1.7)) * (0.75 + 0.25 * Math.sin(ph * 3.1) + 0.12 * Math.sin(ph * 7.7)) * k;
+      if (hgt <= 0) continue;
+      const bx = x + u * s * 1.5 * (0.6 + k * 0.4);
+      const wdt = s * (0.32 + 0.12 * Math.sin(i * 2.7)) * (0.5 + k * 0.5);
+      const lean = Math.sin(ph * 1.7) * s * 0.18 + u * s * 0.25;
+      const gr = g.createLinearGradient(0, y, 0, y - hgt);
+      gr.addColorStop(0, rgba(cols[0], cols[1]));
+      gr.addColorStop(0.55, rgba(cols[0], cols[1] * 0.6));
+      gr.addColorStop(1, rgba(cols[0], 0));
+      g.fillStyle = gr;
+      g.beginPath();
+      g.moveTo(bx - wdt, y);
+      g.bezierCurveTo(bx - wdt * 1.1, y - hgt * 0.45, bx + lean * 0.5 - wdt * 0.4, y - hgt * 0.75, bx + lean, y - hgt);
+      g.bezierCurveTo(bx + lean * 0.5 + wdt * 0.4, y - hgt * 0.7, bx + wdt * 1.1, y - hgt * 0.4, bx + wdt, y);
+      g.closePath();
+      g.fill();
+    }
+  }
+  // sparks lifting off the fire
+  for (let i = 0; i < 10; i++) {
+    const life = ((t * (0.35 + (i % 3) * 0.12) + i * 0.137) % 1 + 1) % 1;
+    const sx = x + Math.sin(i * 4.1 + t * 0.9) * s * 0.6 + Math.sin(life * 6 + i) * s * 0.2;
+    const sy = y - s * (0.6 + life * 3.2);
+    g.fillStyle = `rgba(255,${180 - life * 80},${80 - life * 60},${0.9 * (1 - life)})`;
+    g.beginPath(); g.arc(sx, sy, 0.8 + (1 - life) * 1.2, 0, Math.PI * 2); g.fill();
+  }
+  g.restore();
+}
+
 /** Flame shape (teardrop) with hot core, drawn additively. phase animates. */
 export function flame(g, x, y, s, phase = 0, color = '#ff9a3a') {
   const f = 1 + Math.sin(phase * 9.1) * 0.08 + Math.sin(phase * 23.7) * 0.05;
