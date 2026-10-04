@@ -88,8 +88,8 @@ function addRim(mat, facRim = null, tint = null) {
           float pFade = 1.0 - smoothstep(0.035, 0.07, pxM);
           float wash = smoothstep(-6.0, -30.0, kC) * pFade;
           float dry = smoothstep(10.0, 40.0, kC) * pFade * (0.55 + 0.45 * smoothstep(-0.3, 0.7, nonPerturbedNormal.y));
-          diffuseColor.rgb *= 1.0 - 0.45 * wash;
-          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 1.55 + vec3(0.05, 0.045, 0.04), 0.5 * dry); }
+          diffuseColor.rgb *= 1.0 - 0.55 * wash;
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 1.55 + vec3(0.05, 0.045, 0.04), 0.6 * dry); }
         { float rimF = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), uRimPower);
           totalEmissiveRadiance += uRimColor * rimF * (0.6 + 0.4 * diffuseColor.rgb / max(0.001, max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b))));
           // Faction rim: a thin coloured back-light edge (ember on foes, cold steel
