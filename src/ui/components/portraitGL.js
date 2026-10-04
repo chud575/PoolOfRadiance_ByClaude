@@ -238,8 +238,14 @@ function setup(ch, o) {
   }
   if (app.race === 'halfling') params[ix('HOOK')] -= 0.5;
   // a painter opens the eyes a little and lets them catch the light: the likeness lives there
-  params[ix('EOPEN')] *= 1.1;
-  params[ix('EYE')] *= 1.14;
+  params[ix('EOPEN')] *= 1.2;
+  params[ix('EYE')] *= 1.18;
+  // ...and draws the nose a little shorter and the mouth a little fuller than the sculptor would:
+  // at a hand's breadth a long carrot nose and a thin mouth read as a doll's face
+  params[ix('NOSE')] = 1 + (params[ix('NOSE')] - 1) * 0.8 - 0.06;
+  params[ix('TIP')] *= 0.94;
+  params[ix('LIPS')] *= 1.1;
+  params[ix('MOUTH')] *= 1.04;
   u.uP.value.set(params);
   const torso = o.crop === 'torso';
   // A three-quarter turn (alternating sides by seed, as a painter varies a gallery of portraits).

@@ -26,8 +26,8 @@ const RACE_BODY = {
   elf: { H: 1.68, head: 0.222, leg: 0.52, torso: 0.29, sh: 0.158, hip: 0.083, girth: 0.82, arm: 0.345 },
   halfElf: { H: 1.74, head: 0.228, leg: 0.51, torso: 0.29, sh: 0.17, hip: 0.087, girth: 0.92, arm: 0.34 },
   dwarf: { H: 1.32, head: 0.238, leg: 0.37, torso: 0.335, sh: 0.225, hip: 0.104, girth: 1.26, arm: 0.37 },
-  gnome: { H: 1.04, head: 0.218, leg: 0.39, torso: 0.31, sh: 0.142, hip: 0.086, girth: 1.02, arm: 0.34 },
-  halfling: { H: 0.98, head: 0.208, leg: 0.41, torso: 0.3, sh: 0.135, hip: 0.086, girth: 0.98, arm: 0.34 },
+  gnome: { H: 1.04, head: 0.19, leg: 0.39, torso: 0.31, sh: 0.142, hip: 0.086, girth: 1.02, arm: 0.34 },
+  halfling: { H: 0.98, head: 0.178, leg: 0.41, torso: 0.3, sh: 0.135, hip: 0.086, girth: 0.98, arm: 0.34 },
 };
 
 /** Race face shape (multiplies the head template's own face values). */
@@ -891,8 +891,9 @@ export function buildFigure(app, poseName = 'stand', opt = {}) {
       const kw = vlen(vsub(legs.L.kn, legs.R.kn)) * 0.5 + 0.075 * g;
       // broad, irregular drapes (a few deep folds that wander), not a row of corrugations
       const fold = (x, y, z) => 0.007 * s * Math.sin(x * 34 + Math.sin(y * 9 + z * 6) * 2.4 + z * 13) + 0.0025 * s * Math.sin(z * 57 + y * 14 + x * 9);
-      AC(hipMid, kneeMid, 0.17 * g * hipW, kw, m, { k: 0.05 * s, disp: fold, amp: 0.008 * s });
-      AC(kneeMid, vadd(ankleMid, [0, -0.03 * s, 0.02 * s]), kw * 0.92, kw * 1.02, m, { k: 0.06 * s, disp: fold, amp: 0.008 * s });
+      // (the cloth lies close over the thighs, so knees and lap read: a seated figure, not a sack)
+      AC(hipMid, kneeMid, 0.145 * g * hipW, kw * 0.88, m, { k: 0.04 * s, disp: fold, amp: 0.008 * s });
+      AC(kneeMid, vadd(ankleMid, [0, -0.03 * s, 0.02 * s]), kw * 0.8, kw * 0.98, m, { k: 0.05 * s, disp: fold, amp: 0.008 * s });
       for (const k of ['L', 'R']) AC(legs[k].kn, vadd(legs[k].an, [0, -0.025 * s, 0]), 0.08 * g, 0.105 * g, m, { k: 0.06 * s, disp: fold, amp: 0.008 * s });
     } else {
       const top = at(J.pelvis, pR, [0, 0.03, -0.005]);
