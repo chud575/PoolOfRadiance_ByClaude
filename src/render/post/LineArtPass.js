@@ -82,8 +82,9 @@ const EDGE_FRAG = /* glsl */ `
   uniform sampler2D tColor;
   uniform sampler2D tDepth;
   uniform sampler2D tKey;
-  uniform float uBalance, uSat;
+  uniform float uBalance, uSat, uGlow, uGlowAbs;
   uniform ivec2 uHi;
+  uniform int uSS;
   uniform float uNear, uFar, uOrtho, uPix;
   uniform float uCurve, uCrease, uJump, uLum, uLumDist, uSky, uDim;
   varying vec2 vUv;
@@ -160,10 +161,11 @@ const EDGE_FRAG = /* glsl */ `
   void main() {
     ivec2 lp = ivec2(gl_FragCoord.xy);
     vec4 key = texelFetch(tKey, ivec2(0), 0);
-    float best = 0.0; ivec2 bp = lp * 2; float bw = 0.0;
+    float best = 0.0; ivec2 bp = lp * uSS; float bw = 0.0;
     bool allSky = true;
     for (int j = 0; j < 4; j++) {
-      ivec2 p = lp * 2 + ivec2(j & 1, j >> 1);
+      if (j >= uSS * uSS) break;
+      ivec2 p = lp * uSS + ivec2(j & 1, j >> 1);
       float w0 = W(p);
       float d0 = texelFetch(tDepth, clamp(p, ivec2(0), uHi - 1), 0).r;
       if (d0 < 0.99999) allSky = false;
@@ -200,7 +202,18 @@ const EDGE_FRAG = /* glsl */ `
       float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
       float lit = lum / max(key.r, 1e-4) * uDim;
       outc = ink(c, lit);
-    } else if (allSky) {
+    } else if (!allSky && uGlow > 0.0) {
+      // light sources: every sample of the cell far above the exposure key
+      float gmin = 1e9; vec3 gc = vec3(0.0);
+      for (int j = 0; j < 4; j++) {
+        if (j >= uSS * uSS) break;
+        vec3 c = C(lp * uSS + ivec2(j & 1, j >> 1));
+        gmin = min(gmin, dot(c, vec3(0.2126, 0.7152, 0.0722)));
+        gc += c;
+      }
+      if (gmin > max(key.r * uGlow, uGlowAbs)) outc = ink(gc, 9.0);
+    }
+    if (best == 0.0 && allSky) {
       // open sky: flat EGA blue by day, black by night
       outc = (key.g > uSky && key.b > -0.05) ? PAL[1] : PAL[0];
     }
@@ -217,15 +230,19 @@ const BLIT_FRAG = /* glsl */ `
 export class LineArtPass {
   constructor() {
     this.params = {
+      ss: 2, // high-res samples per logical pixel axis (1 or 2)
+      rows: 216, // target logical rows (integer upscale picks the nearest)
       crease: 0.55,
       curve: 2.0, // how strongly smooth curvature is rejected
       balance: 0.85,
       sat: 0.32, // below this (after balance) a surface inks in white/greys // grey-world white balance before the hue match // min change of surface slope (tan units) for a crease line
-      jump: 6.0, // second difference above this = silhouette
+      jump: 15.0, // second difference above this = silhouette
       lum: 3.0, // log2 luminance step for an albedo line (~3.7x)
       lumDist: 7.0, // albedo lines only nearer than this (m)
       sky: 0.06, // linear sky luminance above which open sky is EGA blue
       dim: 1.0,
+      glow: 8.0, // light sources (flames, lit windows) brighter than this x key...
+      glowAbs: 1.5, // ...and than this linear HDR luminance fill solid
     };
     this.depth = new THREE.DepthTexture(4, 4, THREE.FloatType);
     this.depth.minFilter = this.depth.magFilter = THREE.NearestFilter;
@@ -256,6 +273,7 @@ export class LineArtPass {
       tDepth: { value: this.depth },
       tKey: { value: this.key.texture },
       uHi: { value: new THREE.Vector2(4, 4) },
+      uSS: { value: 2 },
       uNear: { value: 0.1 },
       uFar: { value: 100 },
       uOrtho: { value: 0 },
@@ -264,6 +282,8 @@ export class LineArtPass {
       uCurve: { value: 1 },
       uBalance: { value: 0.85 },
       uSat: { value: 0.4 },
+      uGlow: { value: 8 },
+      uGlowAbs: { value: 1.5 },
       uJump: { value: 0 },
       uLum: { value: 0 },
       uLumDist: { value: 0 },
@@ -278,13 +298,15 @@ export class LineArtPass {
 
   /** Logical 1988 grid for a drawing buffer of w x h px: integer scale, ~216 rows. */
   _layout(w, h) {
-    const scale = Math.max(1, Math.round(h / 216));
+    const scale = Math.max(1, Math.round(h / this.params.rows));
     const lw = Math.ceil(w / scale);
     const lh = Math.ceil(h / scale);
-    if (lw !== this._lw || lh !== this._lh) {
+    const ss = this.params.ss >= 2 ? 2 : 1;
+    if (lw !== this._lw || lh !== this._lh || ss !== this._ss) {
       this._lw = lw;
       this._lh = lh;
-      this.hi.setSize(lw * 2, lh * 2);
+      this._ss = ss;
+      this.hi.setSize(lw * ss, lh * ss);
       this.lines.setSize(lw, lh);
     }
     this.scale = scale;
@@ -314,8 +336,9 @@ export class LineArtPass {
     // 3. edges at the logical grid
     const u = this.edgeQ.m.uniforms;
     const p = this.params;
-    const hiH = this.lh2 = this._lh * 2;
-    u.uHi.value.set(this._lw * 2, hiH);
+    const hiH = this._lh * this._ss;
+    u.uHi.value.set(this._lw * this._ss, hiH);
+    u.uSS.value = this._ss;
     u.uNear.value = camera.near;
     u.uFar.value = camera.far;
     const ortho = !!camera.isOrthographicCamera;
@@ -327,6 +350,8 @@ export class LineArtPass {
     u.uCurve.value = p.curve;
     u.uBalance.value = p.balance;
     u.uSat.value = p.sat;
+    u.uGlow.value = p.glow;
+    u.uGlowAbs.value = p.glowAbs;
     u.uJump.value = p.jump;
     u.uLum.value = p.lum;
     u.uLumDist.value = p.lumDist;
