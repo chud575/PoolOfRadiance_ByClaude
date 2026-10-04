@@ -420,7 +420,22 @@ export class PauseMenu {
   }
 
   _onKey(e) {
-    if (this.sub || !this.backdrop.isConnected) return; // the Settings panel handles its own keys
+    if (!this.backdrop.isConnected) return;
+    // a held key's auto-repeat must not undo the press that opened the menu (or a page)
+    if (e.repeat && !this.sub?.capture && ['Escape', 'Backspace', 'F10', 'Enter', 'NumpadEnter', 'Space'].includes(e.code)) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      return;
+    }
+    if (this.sub) {
+      // the Settings panel handles its own keys; F10 still resumes (unless it is capturing a rebind)
+      if (e.code === 'F10' && !this.sub.capture) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        this.close();
+      }
+      return;
+    }
     e.stopPropagation(); // nothing reaches the scene below
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     let handled = true;
