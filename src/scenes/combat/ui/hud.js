@@ -7,6 +7,7 @@ import { RACES } from '../../../rules/races.js';
 
 /** 'lawfulGood' → 'Lawful Good', 'halfElf' → 'Half-Elf' style display words. */
 const words = (id) => String(id ?? '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (m) => m.toUpperCase()).replace(/ ([a-z])/g, (m, a) => ` ${a.toUpperCase()}`);
+import { ropeVars } from './rope.js';
 import './combat.css';
 
 const FX_LABEL = {
@@ -49,17 +50,23 @@ export class CombatHud {
     this.rosterFrame = Frame({ title: 'Party', variant: 'blue', className: 'cb-roster' });
     this.roster = h('div.por-roster');
     this.rosterFrame.body.append(this.roster);
-    // Active-character close-up: a rope-and-iron framed window the scene
-    // renders the active figure into (see CombatScene._renderCloseup); the
-    // frame itself is see-through, the canvas shows beneath it.
+    // Active-character close-up: a window the scene renders the active figure
+    // into (see CombatScene._renderCloseup); it fills the right-hand column of
+    // the rope frame, the stat card and party table laid over its top and foot.
     this.closeupName = h('div.cb-closeup-name');
-    this.closeup = h('div.cb-closeup.pe-none', [h('i.stud.tl'), h('i.stud.tr'), h('i.stud.bl'), h('i.stud.br'), this.closeupName]);
-    // The battlefield's own braided-rope and iron frame (the reference's
-    // bordered window), sat just above the Gold Box command line.
-    this.fieldFrame = h('div.cb-fieldframe.pe-none', [h('i.stud.tl'), h('i.stud.tr'), h('i.stud.bl'), h('i.stud.br')]);
+    this.closeup = h('div.cb-closeup.pe-none', [this.closeupName]);
+    // ONE frame system (the reference's rope-bound window): a thick braided
+    // rope round the screen above the command line, a rope divider between
+    // battlefield and hero column, riveted bronze plates where they meet.
+    this.fieldFrame = h('div.cb-ropeframe.pe-none', [
+      h('i.e.t'), h('i.e.b'), h('i.e.l'), h('i.e.r'), h('i.e.m'),
+      h('i.p.tl'), h('i.p.tr'), h('i.p.bl'), h('i.p.br'), h('i.p.mt'), h('i.p.mb'),
+    ]);
+    this.helpTab = h('div.cb-helptab', { dataset: { tip: 'Keys (press ? to toggle)' }, onclick: () => this.toggleHelp() }, ['? Keys']);
     const bottom = (this.bottomEl = h('div.cb-bottom', [this.cmds]));
-    this.root.append(this.fieldFrame, this.floatLayer, this.speedEl, this.loc, this.timeline, this.closeup, this.card.el, this.rosterFrame.el, this.logBox, this.prompt, bottom, this.help, this.banner, this.lead, this.inspect);
+    this.root.append(this.closeup, this.fieldFrame, this.floatLayer, this.helpTab, this.speedEl, this.loc, this.timeline, this.card.el, this.rosterFrame.el, this.logBox, this.prompt, bottom, this.help, this.banner, this.lead, this.inspect);
     ctx.ui.mount(this.root);
+    this._applyRope();
     this.floats = [];
     this.banners = [];
     this.portraits = new Map();
@@ -201,32 +208,42 @@ export class CombatHud {
       }, [h('span.n', [c.name]), h('span.ac', [String(c.ac)]), h('span.hp', [c.fled ? '—' : String(hpNow)]), h('span.bar', [h('i', { style: { width: `${pct * 100}%` } })])]));
     }
     this.roster.replaceChildren(...rows);
-    // Keep the roster below the card.
-    const r = this.card.el.getBoundingClientRect();
-    const rootR = this.root.getBoundingClientRect();
-    this.rosterFrame.el.style.top = `${r.bottom - rootR.top + 22}px`;
     this._layoutCloseup();
   }
 
-  /** Fit the close-up window between the roster and the key help (hidden if there is no room). */
+  /** Rope thickness from the HUD's type size (about 22 px at 1600 x 900). */
+  _applyRope() {
+    const em = parseFloat(getComputedStyle(this.root).fontSize) || 16;
+    const T = Math.round(em * 1.3);
+    if (this._ropeT === T) return;
+    this._ropeT = T;
+    for (const [k, v] of Object.entries(ropeVars(T))) this.root.style.setProperty(k, v);
+  }
+
+  toggleHelp(on = !this.root.classList.contains('cb-help-on')) {
+    this.root.classList.toggle('cb-help-on', on);
+  }
+
+  /** The hero column: the close-up fills it between the ropes; its subject is framed in the band between card and party table. */
   _layoutCloseup() {
-    const rootR = this.root.getBoundingClientRect();
-    const rr = this.rosterFrame.el.getBoundingClientRect();
-    // The key help lives top-left, so the close-up takes the whole lower right
-    // column down to the command bar, and reaches left over the board's margin
-    // (a big hero panel, as in the painted-miniature target).
-    const br = this.bottomEl?.getBoundingClientRect();
-    const top = rr.bottom - rootR.top + 18;
-    const bottom = (br?.height ? br.top : rootR.bottom - 60) - rootR.top - 16;
-    const hgt = bottom - top;
-    const wide = Math.min(rr.width * 1.32, rr.right - rootR.left - 24);
-    const st = this.closeup.style;
-    st.top = `${top}px`;
-    st.left = `${rr.right - rootR.left - wide}px`;
-    st.width = `${wide}px`;
-    st.height = `${Math.max(0, hgt)}px`;
-    st.display = hgt >= 96 && rr.width > 0 ? 'block' : 'none';
+    this._applyRope();
     this._closeRect = null;
+    const rootR = this.root.getBoundingClientRect();
+    const fr = this.fieldFrame.getBoundingClientRect();
+    const T = this._ropeT ?? 20;
+    const col = parseFloat(getComputedStyle(this.root).getPropertyValue('--col')) || 0;
+    const colPx = col * (parseFloat(getComputedStyle(this.root).fontSize) || 16);
+    const st = this.closeup.style;
+    const left = rootR.width - colPx + T / 2;
+    st.left = `${left}px`;
+    st.top = `${T * 0.5}px`;
+    st.width = `${Math.max(0, colPx - T)}px`;
+    st.height = `${Math.max(0, fr.bottom - rootR.top - T)}px`;
+    st.display = colPx > 120 && fr.height > 200 ? 'block' : 'none';
+    const cr = this.card.el.getBoundingClientRect();
+    const rr = this.rosterFrame.el.getBoundingClientRect();
+    const top = T * 0.5;
+    this._band = { top: Math.max(0, cr.bottom - rootR.top - top), bottom: Math.max(0, (rr.height ? rr.top : fr.bottom) - rootR.top - top) };
   }
 
   /** Name the close-up window's subject. */
@@ -242,8 +259,9 @@ export class CombatHud {
     if (this._closeRect) return this._closeRect;
     const r = this.closeup.getBoundingClientRect();
     if (r.width < 40 || r.height < 40) return null;
-    const b = 12;
-    this._closeRect = { x: r.left + b, y: r.top + b, w: r.width - 2 * b, h: r.height - 2 * b };
+    const b = (this._ropeT ?? 20) * 0.35;
+    const band = this._band ?? { top: 0, bottom: r.height };
+    this._closeRect = { x: r.left + b, y: r.top + b, w: r.width - 2 * b, h: r.height - 2 * b, bandTop: Math.max(0, band.top - b), bandBottom: Math.min(r.height - 2 * b, band.bottom - b) };
     return this._closeRect;
   }
 

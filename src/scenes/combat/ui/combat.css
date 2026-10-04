@@ -219,80 +219,86 @@
 .cb-loc .name { font-family: var(--font-display); letter-spacing: 0.18em; text-transform: uppercase; font-size: 1.1em; }
 .cb-loc .sub { color: var(--por-text-dim); font-size: 0.85em; text-shadow: 0 1px 2px #000; }
 
-/* Active-character close-up: a heavy braided-rope frame bound in blackened
-   iron, with riveted iron corner bosses, over a live render of the active figure. */
-.cb-closeup {
-  position: absolute; box-sizing: border-box; display: none;
-  border: 12px solid #2a2219;
-  border-image: repeating-linear-gradient(135deg, #140f09 0 2px, #4e3f2c 2px 4px, #8c7656 4px 6px, #bfa47c 6px 7px, #5a4830 7px 9px, #20180f 9px 12px) 12;
-  box-shadow: 0 0 0 2px #0b0907, 0 0 0 4px #3a3632, 0 0 0 5px #0b0907, 0 8px 22px rgba(0, 0, 0, 0.8),
-    inset 0 0 0 2px #0b0907, inset 0 0 0 3px #4a4540, inset 0 0 34px 8px rgba(0, 0, 0, 0.85);
-}
-.cb-closeup .stud {
-  position: absolute; width: 22px; height: 22px; border-radius: 4px;
-  background: radial-gradient(circle at 50% 50%, #c8c0b0 0 2px, #5a5650 3px, transparent 4px),
-    radial-gradient(circle at 35% 30%, #9a948a, #4e4a44 45%, #1c1a18 85%);
-  box-shadow: 0 0 0 1px #000, 0 2px 4px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.25);
-}
-.cb-closeup .stud.tl { left: -17px; top: -17px; }
-.cb-closeup .stud.tr { right: -17px; top: -17px; }
-.cb-closeup .stud.bl { left: -17px; bottom: -17px; }
-.cb-closeup .stud.br { right: -17px; bottom: -17px; }
+/* ---------- ONE frame system: braided rope and bronze plates ----------
+   The rope tiles and plates are drawn procedurally (rope.js) and handed in as
+   --rope-h / --rope-v / --rope-plate. The frame wraps the screen above the
+   command line; a rope divider splits battlefield from the hero column. */
+.cb-hud { --col: 36em; --cmdh: 2.85em; --rope-t: 22px; --rope-p: 18px; --rope-d: 42px; }
+.cb-ropeframe { position: absolute; left: 0; right: 0; top: 0; bottom: var(--cmdh); z-index: 1; }
+.cb-ropeframe .e { position: absolute; filter: drop-shadow(0 3px 2px rgba(0, 0, 0, 0.85)); }
+.cb-ropeframe .e.t, .cb-ropeframe .e.b { left: 0; right: 0; height: var(--rope-t); background: var(--rope-h) repeat-x; background-size: var(--rope-p) var(--rope-t); }
+.cb-ropeframe .e.t { top: 0; }
+.cb-ropeframe .e.b { bottom: calc(var(--rope-t) * -0.5); }
+.cb-ropeframe .e.l, .cb-ropeframe .e.r, .cb-ropeframe .e.m { top: 0; bottom: calc(var(--rope-t) * -0.5); width: var(--rope-t); background: var(--rope-v) repeat-y; background-size: var(--rope-t) var(--rope-p); }
+.cb-ropeframe .e.l { left: 0; }
+.cb-ropeframe .e.r { right: 0; }
+.cb-ropeframe .e.m { right: calc(var(--col) - var(--rope-t) / 2); }
+.cb-ropeframe .p { position: absolute; width: var(--rope-d); height: var(--rope-d); background: var(--rope-plate) center / 100% 100% no-repeat; }
+.cb-ropeframe .p.tl, .cb-ropeframe .p.bl { left: calc(var(--rope-t) / 2 - var(--rope-d) / 2); }
+.cb-ropeframe .p.tr, .cb-ropeframe .p.br { right: calc(var(--rope-t) / 2 - var(--rope-d) / 2); }
+.cb-ropeframe .p.mt, .cb-ropeframe .p.mb { right: calc(var(--col) - var(--rope-d) / 2); }
+.cb-ropeframe .p.tl, .cb-ropeframe .p.tr, .cb-ropeframe .p.mt { top: calc(var(--rope-t) / 2 - var(--rope-d) / 2); }
+.cb-ropeframe .p.bl, .cb-ropeframe .p.br, .cb-ropeframe .p.mb { bottom: calc(0px - var(--rope-d) / 2); }
+/* Dark backing outside the battlefield window so the rope sits on iron-black. */
+.cb-ropeframe::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: var(--cmdh); background: linear-gradient(180deg, #0b0907, #050403); z-index: -1; }
+
+/* Active-character close-up: fills the hero column inside the ropes. */
+.cb-closeup { position: absolute; box-sizing: border-box; display: none; box-shadow: inset 0 0 40px 10px rgba(0, 0, 0, 0.7); }
 .cb-closeup-name {
-  position: absolute; left: 0; right: 0; bottom: 0.25em; text-align: center;
+  position: absolute; left: 0; right: 0; bottom: calc(var(--rope-t) * 0.5 + 0.3em); text-align: center; display: none;
   font-family: var(--font-display); font-size: 0.85em; letter-spacing: 0.22em; text-transform: uppercase;
   color: #e4d6b4; text-shadow: 0 1px 2px #000, 0 0 6px #000;
 }
-.cb-closeup.idle { visibility: hidden; }
+.cb-closeup.idle { box-shadow: inset 0 0 0 9999px #0a0807; }
 
-/* Battlefield frame: braided rope bound in blackened iron round the whole
-   view, its lower edge riding on the command line (as in the reference). */
-.cb-fieldframe {
-  position: absolute; left: 0; right: 0; top: 0; bottom: 2.85em; box-sizing: border-box;
-  border: 10px solid #2a2219;
-  border-image: repeating-linear-gradient(135deg, #140f09 0 2px, #4e3f2c 2px 4px, #8c7656 4px 6px, #bfa47c 6px 7px, #5a4830 7px 9px, #20180f 9px 12px) 10;
-  box-shadow: inset 0 0 0 2px #0b0907, inset 0 0 0 3px #3a3632, inset 0 0 0 4px #0b0907, inset 0 0 60px 10px rgba(0, 0, 0, 0.55);
+/* Key help on demand: a small tab, the full block on ? or click. */
+.cb-helptab {
+  position: absolute; left: calc(var(--rope-t) + 0.55em); top: calc(var(--rope-t) + 4.1em); z-index: 2; cursor: pointer;
+  font-family: var(--font-num); font-size: max(11px, 0.7em); color: #b8ad96; padding: 0.1em 0.5em; letter-spacing: 0.06em;
+  background: rgba(8, 7, 6, 0.6); border: 1px solid rgba(160, 140, 110, 0.35); border-radius: 2px; text-shadow: 0 1px 2px #000;
 }
-.cb-fieldframe .stud {
-  position: absolute; width: 20px; height: 20px; border-radius: 4px;
-  background: radial-gradient(circle at 50% 50%, #c8c0b0 0 2px, #5a5650 3px, transparent 4px),
-    radial-gradient(circle at 35% 30%, #9a948a, #4e4a44 45%, #1c1a18 85%);
-  box-shadow: 0 0 0 1px #000, 0 2px 4px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.25);
-}
-.cb-fieldframe .stud.tl { left: -10px; top: -10px; }
-.cb-fieldframe .stud.tr { right: -10px; top: -10px; }
-.cb-fieldframe .stud.bl { left: -10px; bottom: -15px; }
-.cb-fieldframe .stud.br { right: -10px; bottom: -15px; }
+.cb-helptab:hover { color: #ffd98a; }
+.cb-hud:not(.cb-help-on) .cb-help { display: none; }
 
-/* ---------- Iron, rope and leather skin for the combat panels ---------- */
-.cb-card.por-frame, .cb-roster.por-frame, .cb-menu.por-frame {
-  background:
-    radial-gradient(130% 60% at 50% -8%, rgba(255, 196, 120, 0.08), transparent 62%),
-    radial-gradient(ellipse 72% 66% at 50% 46%, transparent 50%, rgba(0, 0, 0, 0.5) 100%),
-    repeating-linear-gradient(90deg, rgba(255, 230, 190, 0.018) 0 1px, transparent 1px 3px),
-    linear-gradient(180deg, #2a2119 0%, #17120d 100%);
-  border-image: repeating-linear-gradient(135deg, #140f09 0 2px, #4e3f2c 2px 4px, #8c7656 4px 5px, #3a2e20 5px 7px) 5;
-  box-shadow: 0 0 0 1px #050403, 0 0 0 3px #2c2a28, 0 0 0 4px #6a655e, 0 0 0 5px #1a1816, 0 18px 44px rgba(0, 0, 0, 0.7),
-    inset 0 0 0 1px rgba(0, 0, 0, 0.7), inset 0 0 50px rgba(0, 0, 0, 0.5);
+/* Panels inside the hero column: no borders of their own (the rope is the
+   frame), dark smoky grounds laid over the live close-up. */
+.cb-card.por-frame, .cb-roster.por-frame {
+  right: calc(var(--rope-t) * 0.75); width: calc(var(--col) - var(--rope-t) * 1.5); box-sizing: border-box;
+  border: none; border-image: none; box-shadow: none; padding-left: 1.4em; padding-right: 1.4em;
 }
-.cb-card.por-frame::before, .cb-roster.por-frame::before, .cb-menu.por-frame::before { border-color: rgba(150, 140, 125, 0.22); }
-.cb-card > .por-corner, .cb-roster > .por-corner, .cb-menu > .por-corner {
-  --cs: 16px; width: 16px !important; height: 16px !important;
-  background: radial-gradient(circle at 50% 50%, #c8c0b0 0 1.5px, #5a5650 2.5px, transparent 3.5px), radial-gradient(circle at 35% 30%, #9a948a, #4e4a44 45%, #1c1a18 85%);
-  border-radius: 3px; box-shadow: 0 0 0 1px #000, 0 2px 3px rgba(0, 0, 0, 0.8); filter: none; transform: none !important;
-  top: auto; left: auto; right: auto; bottom: auto;
+.cb-card.por-frame { top: calc(var(--rope-t) * 0.75); background: linear-gradient(180deg, rgba(6, 5, 4, 0.9) 0%, rgba(6, 5, 4, 0.78) 72%, rgba(6, 5, 4, 0)); padding-bottom: 1.6em; }
+.cb-roster.por-frame { top: auto; bottom: calc(var(--cmdh) + var(--rope-t) * 0.25); background: linear-gradient(0deg, rgba(6, 5, 4, 0.9) 0%, rgba(6, 5, 4, 0.8) 75%, rgba(6, 5, 4, 0)); padding-top: 1.4em; }
+.cb-card.por-frame::before, .cb-roster.por-frame::before { display: none; }
+.cb-card > .por-corner, .cb-roster > .por-corner { display: none !important; }
+.cb-card > .por-frame-title, .cb-roster > .por-frame-title {
+  position: static; transform: none; display: inline-block; margin: 0 0 0.35em; padding: 0; background: none; box-shadow: none; border: none;
+  color: #a89a7c; font-size: 0.72em; letter-spacing: 0.24em; text-shadow: 0 1px 2px #000;
 }
-.cb-card > .por-corner.tl, .cb-roster > .por-corner.tl, .cb-menu > .por-corner.tl { top: -9px; left: -9px; }
-.cb-card > .por-corner.tr, .cb-roster > .por-corner.tr, .cb-menu > .por-corner.tr { top: -9px; right: -9px; }
-.cb-card > .por-corner.bl, .cb-roster > .por-corner.bl, .cb-menu > .por-corner.bl { bottom: -9px; left: -9px; }
-.cb-card > .por-corner.br, .cb-roster > .por-corner.br, .cb-menu > .por-corner.br { bottom: -9px; right: -9px; }
-.cb-card > .por-frame-title, .cb-roster > .por-frame-title, .cb-menu > .por-frame-title {
-  color: #e8dcc0; background: linear-gradient(180deg, #6a655e, #3a3632 55%, #24211e); text-shadow: 0 1px 1px #000;
-}
+.cb-card .nm { font-size: 1.55em; color: #e8dcc0; text-shadow: 0 2px 3px #000; }
 .cb-card .row { border-bottom-color: rgba(150, 130, 100, 0.16); }
 .cb-card .mv .lbl { color: #c8a870; }
 .cb-pips i { background: rgba(214, 170, 96, 0.9); box-shadow: 0 0 5px rgba(214, 160, 70, 0.45); }
 .cb-pips i.half { background: linear-gradient(90deg, rgba(214, 170, 96, 0.9) 50%, rgba(255, 255, 255, 0.12) 50%); }
+
+/* Menus: a dark leather panel with a single iron line (no rope stripe of their own). */
+.cb-menu.por-frame {
+  background: linear-gradient(180deg, #221b14 0%, #120e0a 100%); border-image: none; border: 1px solid #4a4540;
+  box-shadow: 0 0 0 1px #050403, 0 18px 44px rgba(0, 0, 0, 0.7), inset 0 0 40px rgba(0, 0, 0, 0.5);
+}
+.cb-menu.por-frame::before { border-color: rgba(150, 140, 125, 0.18); }
+.cb-menu > .por-corner { display: none !important; }
+.cb-menu > .por-frame-title { color: #e8dcc0; background: linear-gradient(180deg, #4a4540, #24211e); text-shadow: 0 1px 1px #000; }
+
+/* Battlefield chrome sits inside the rope, centred over the battlefield pane. */
+.cb-timeline { left: calc((100% - var(--col)) / 2); top: calc(var(--rope-t) + 0.2em); z-index: 2; max-width: calc(100% - var(--col) - 4em); }
+.cb-loc { left: calc(var(--rope-t) + 0.3em); top: calc(var(--rope-t) + 0.2em); z-index: 2; }
+.cb-speed { left: calc(var(--rope-t) + 0.7em); top: calc(var(--rope-t) + 3.4em); z-index: 2; }
+.cb-help { left: calc(var(--rope-t) + 0.4em); top: calc(var(--rope-t) + 5.8em); z-index: 2; }
+.cb-logbox { left: calc(var(--rope-t) + 0.5em); bottom: calc(var(--cmdh) + var(--rope-t) * 0.7 + 0.3em); z-index: 2; }
+.cb-prompt { left: calc((100% - var(--col)) / 2); bottom: calc(var(--cmdh) + var(--rope-t) * 0.7 + 0.3em); z-index: 2; }
+.cb-menu { left: calc((100% - var(--col)) / 2); z-index: 3; }
+.cb-card, .cb-roster { z-index: 2; }
+.cb-bottom { z-index: 2; }
 
 /* Spell / item menus in the same iron, rope and leather skin. */
 .cb-menu .por-menu-item { color: #e4d8bc; border-bottom: 1px solid rgba(150, 130, 100, 0.14); }

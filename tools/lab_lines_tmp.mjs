@@ -7,7 +7,7 @@ const variants = JSON.parse(variantsJson);
 const srv = await ensureServer({ port: 5350 });
 const browser = await launch();
 await Promise.all(names.split(',').map(async (n) => {
-  const g = GALLERY.find((x) => x.name === n);
+  const g = GALLERY.find((x) => x.name === n) ?? { query: GALLERY.find((x) => x.name === n.replace(/_c$/, ''))?.query + '&classic=1' };
   const page = await browser.newPage({ viewport: { width: 1600, height: 900 }, deviceScaleFactor: 1 });
   page.on('pageerror', (e) => console.log('PAGEERR', n, e.message));
   page.on('console', (m) => { if (m.type() === 'error') console.log('CONSOLE', n, m.text()); });
@@ -18,7 +18,7 @@ await Promise.all(names.split(',').map(async (n) => {
       const G = window.__GAME; const R = G.render;
       R.lineArt && Object.assign(R.lineArt.params, v);
       const s = G.scenes.current;
-      if (s.diorama) s.render(); else R.render(s.scene3d, s.camera);
+      if (s.scene3d && s.camera) R.render(s.scene3d, s.camera); else s.render();
     }, variants[i]);
     await page.screenshot({ path: `${out}/${n}_${i}.png`, timeout: 180000 });
   }

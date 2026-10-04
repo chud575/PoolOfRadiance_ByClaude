@@ -66,7 +66,9 @@ src/data/                  content tables (plain JS objects; see schema.js typed
 src/render/                shared rendering
   RenderContext.js         WebGLRenderer (ACES, sRGB, shadows) + EffectComposer pipeline
   post/GradeShader.js      vignette, grade, grain
-  post/ClassicShader.js    "1988 mode": 320x200 pixelation + EGA palette dither + scanlines (F2 / ?classic=1)
+  post/LineArtPass.js      "1988 mode" (F2 / ?classic=1) for 3D views: depth-crease + silhouette line art in EGA inks
+                           on black at ~216 logical rows; effects (rings, grid, flames, VFX) as solid EGA shapes
+  post/ClassicShader.js    "1988 mode" EGA posterise + dither, only for scenes with post.classicStyle = 'ega' (title card)
   textures/                procedural texture library (noise, canvas → map/normal/roughness)
   materials.js             getMaterial(key) cache; wall/floor material tables
   lighting.js              outdoor rig by hour, sky dome, flickering torches
