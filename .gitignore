@@ -13,3 +13,4 @@ audio_out/
 .critic_*
 .*_review*.mjs
 /.*.mjs
+tools/*_tmp.mjs

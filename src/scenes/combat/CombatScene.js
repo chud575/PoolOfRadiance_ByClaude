@@ -1324,6 +1324,7 @@ export default class CombatScene extends Scene {
     if (k === '+' || k === '=') { this.cam.goalDist = Math.max(this.cam.minDist, this.cam.goalDist * 0.88); return; }
     if (k === '-' || k === '_') { this.cam.goalDist = Math.min(this.cam.maxDist, this.cam.goalDist * 1.12); return; }
     if (k === 'Home' && !code.startsWith('Numpad')) { this.cam.userPanned = false; this._focus(this.engine.active()); return; }
+    if (k === '?' || k === 'F1') { e.preventDefault(); this.hud.toggleHelp?.(); return; }
     if (this.hud.menu) {
       if (k === 'Escape') {
         this.hud.closeMenu();
@@ -2499,8 +2500,8 @@ export default class CombatScene extends Scene {
     const W = window.innerWidth;
     const H = window.innerHeight;
     const em = Math.max(12, Math.min(25.6, 16 * (H / 900)));
-    const right = 31 * em; // the card column plus the wide hero close-up
-    const top = 6.6 * em;
+    const right = 36 * em; // the rope-framed hero column (close-up, card, party)
+    const top = 5.4 * em;
     const bottom = 4.6 * em;
     return { w: (W - right) / W, h: (H - top - bottom) / H, ox: right / 2, oy: (bottom - top) / 2, W, H };
   }
