@@ -214,7 +214,7 @@ export class CombatHud {
   /** Rope thickness from the HUD's type size (about 22 px at 1600 x 900). */
   _applyRope() {
     const em = parseFloat(getComputedStyle(this.root).fontSize) || 16;
-    const T = Math.round(em * 1.3);
+    const T = Math.round(em * 1.45);
     if (this._ropeT === T) return;
     this._ropeT = T;
     for (const [k, v] of Object.entries(ropeVars(T))) this.root.style.setProperty(k, v);

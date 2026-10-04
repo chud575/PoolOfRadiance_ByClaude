@@ -270,10 +270,7 @@
 .cb-roster.por-frame { top: auto; bottom: calc(var(--cmdh) + var(--rope-t) * 0.25); background: linear-gradient(0deg, rgba(6, 5, 4, 0.9) 0%, rgba(6, 5, 4, 0.8) 75%, rgba(6, 5, 4, 0)); padding-top: 1.4em; }
 .cb-card.por-frame::before, .cb-roster.por-frame::before { display: none; }
 .cb-card > .por-corner, .cb-roster > .por-corner { display: none !important; }
-.cb-card > .por-frame-title, .cb-roster > .por-frame-title {
-  position: static; transform: none; display: inline-block; margin: 0 0 0.35em; padding: 0; background: none; box-shadow: none; border: none;
-  color: #a89a7c; font-size: 0.72em; letter-spacing: 0.24em; text-shadow: 0 1px 2px #000;
-}
+.cb-card > .por-frame-title, .cb-roster > .por-frame-title { display: none; }
 .cb-card .nm { font-size: 1.55em; color: #e8dcc0; text-shadow: 0 2px 3px #000; }
 .cb-card .row { border-bottom-color: rgba(150, 130, 100, 0.16); }
 .cb-card .mv .lbl { color: #c8a870; }
@@ -290,7 +287,7 @@
 .cb-menu > .por-frame-title { color: #e8dcc0; background: linear-gradient(180deg, #4a4540, #24211e); text-shadow: 0 1px 1px #000; }
 
 /* Battlefield chrome sits inside the rope, centred over the battlefield pane. */
-.cb-timeline { left: calc((100% - var(--col)) / 2); top: calc(var(--rope-t) + 0.2em); z-index: 2; max-width: calc(100% - var(--col) - 4em); }
+.cb-timeline { left: calc((100% - var(--col)) / 2 + 4em); top: calc(var(--rope-t) + 0.2em); z-index: 2; max-width: calc(100% - var(--col) - 16em); font-size: 0.82em; padding: 0.35em 0.6em 0.4em; }
 .cb-loc { left: calc(var(--rope-t) + 0.3em); top: calc(var(--rope-t) + 0.2em); z-index: 2; }
 .cb-speed { left: calc(var(--rope-t) + 0.7em); top: calc(var(--rope-t) + 3.4em); z-index: 2; }
 .cb-help { left: calc(var(--rope-t) + 0.4em); top: calc(var(--rope-t) + 5.8em); z-index: 2; }

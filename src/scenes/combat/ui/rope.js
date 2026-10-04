@@ -15,7 +15,7 @@ function canvas(w, h) {
 
 /** One seamless horizontal repeat of a thick, twisted three-ply rope. */
 function ropeTile(T, S) {
-  const P = Math.round(T * 0.82);
+  const P = Math.round(T * 1.0);
   const c = canvas(P * S, T * S);
   const g = c.getContext('2d');
   g.scale(S, S);
@@ -26,22 +26,22 @@ function ropeTile(T, S) {
     const cx = k * P + P / 2;
     g.save();
     g.translate(cx, cy);
-    g.rotate(-0.92);
-    const rx = T * 0.66;
-    const ry = P * 0.6;
+    g.rotate(-0.8);
+    const rx = T * 0.7;
+    const ry = P * 0.5;
     // Core shadow under the lobe (the groove).
     g.fillStyle = 'rgba(6, 4, 2, 0.85)';
     g.beginPath();
     g.ellipse(0.9, 1.2, rx, ry, 0, 0, Math.PI * 2);
     g.fill();
     const gr = g.createLinearGradient(0, -ry, 0, ry);
-    gr.addColorStop(0, '#19120b');
-    gr.addColorStop(0.18, '#3e3224');
-    gr.addColorStop(0.4, '#857155');
-    gr.addColorStop(0.52, '#c4ae86');
-    gr.addColorStop(0.62, '#8e795a');
-    gr.addColorStop(0.84, '#3a2e20');
-    gr.addColorStop(1, '#120c07');
+    gr.addColorStop(0, '#120d08');
+    gr.addColorStop(0.2, '#30271c');
+    gr.addColorStop(0.42, '#6e5d46');
+    gr.addColorStop(0.53, '#a8936e');
+    gr.addColorStop(0.63, '#76644a');
+    gr.addColorStop(0.85, '#2c2318');
+    gr.addColorStop(1, '#0c0805');
     g.fillStyle = gr;
     g.beginPath();
     g.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
