@@ -381,3 +381,11 @@
 :root:not([data-classic='1']) .cb-cmds .por-cmd.active { --gb-ink: #2a1c0a; border-color: #000;
   background: linear-gradient(180deg, #e9cf86, #b48c3c 55%, #8e6a28); box-shadow: 0 0 0 1px #000, inset 0 1px 0 rgba(255, 245, 200, 0.6); }
 :root:not([data-classic='1']) .cb-cmds .por-cmd.active .por-hk { --gb-ink: #4a1e04; }
+/* Card line layout in both skins (classic keeps its own EGA paint). */
+.cb-card .row.gbl { justify-content: flex-start; gap: 0.6em; }
+.cb-card .row.gbl b { margin-left: 0; }
+.cb-card .row.gbl .sp { flex: 1; max-width: 2.2em; }
+.cb-card .row.gbl.wpn .sp { max-width: none; }
+.cb-card .row.gbl small { margin-left: -0.45em; }
+.cb-card .mv { justify-content: flex-start; gap: 0.6em; align-items: center; }
+.cb-card .mv .cb-pips { flex: 1; max-width: 12em; margin: 0 0 0 0.4em; }
