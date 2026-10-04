@@ -1,8 +1,8 @@
 /* Gold Box VIEW sheet in metal letters on dark iron, with the ornate portrait frame.
    (goldSheet.js; the iron variant of the character view frame is set by CharacterView.) */
 
-/* ---------- the character view's dark iron skin ---------- */
-.pc-view.pc-iron {
+/* ---------- dark iron skin (character view, camp panels) ---------- */
+.por-frame.pc-iron {
   background:
     radial-gradient(70% 55% at 30% 35%, rgba(70, 86, 110, 0.13), transparent 70%),
     radial-gradient(60% 50% at 80% 30%, rgba(160, 110, 60, 0.08), transparent 70%),
@@ -24,8 +24,8 @@
     inset 0 0 0 2px rgba(170, 130, 70, 0.22),
     inset 0 0 80px rgba(0, 0, 0, 0.55);
 }
-.pc-view.pc-iron::before { border-color: rgba(150, 118, 70, 0.22); inset: 8px; }
-.pc-view.pc-iron > .por-corner { filter: saturate(0.55) brightness(0.72) contrast(1.15); }
+.por-frame.pc-iron::before { border-color: rgba(150, 118, 70, 0.22); inset: 8px; }
+.por-frame.pc-iron > .por-corner { filter: saturate(0.55) brightness(0.72) contrast(1.15); }
 
 /* ---------- metal lettering ---------- */
 .gb-steel, .gb-copper, .gb-blue {
@@ -174,3 +174,6 @@
 /* roster heads: dark bronze bezels, the selected one lit */
 .pc-mini { border: 1px solid #6a5230; box-shadow: 0 0 0 1px #000, 0 0 0 2px #2a1e10, inset 0 0 8px rgba(0, 0, 0, 0.7); }
 .pc-mini.sel { border-color: #e0bc7c; box-shadow: 0 0 0 1px #000, 0 0 0 2px #8a6838, 0 0 10px rgba(240, 190, 110, 0.5); }
+
+.por-frame.pc-iron:not(.pc-view) { border-width: 6px; }
+.por-frame.pc-iron > .por-frame-title { filter: saturate(0.7) brightness(0.9); }

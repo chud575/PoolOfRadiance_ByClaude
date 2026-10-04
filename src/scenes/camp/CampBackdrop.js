@@ -734,13 +734,14 @@ export async function buildCamp(scene, { party, hour, renderer, resting = false,
     fire.update(time, restingNow, camRef);
     const fl = fire.flicker();
     const burn = restingNow ? 0.5 : 1;
-    fireLight.intensity = (night ? 14 : 9) * burn * fl;
+    fireLight.intensity = (night ? 16 : 9) * burn * fl;
     fireLight.color.setHex(restingNow ? 0xff7a34 : 0xffa25a);
     emberLight.intensity = (restingNow ? 1.1 : 0.6) * (0.9 + 0.1 * Math.sin(time * 3.1));
-    moon.intensity = night ? (restingNow ? 2.2 : 1.9) : 1.6;
+    moon.intensity = night ? (restingNow ? 2.2 : 1.35) : 1.6;
     backMoon.intensity = night ? (restingNow ? 1.5 : 1.1) : 0.5;
-    hemi.intensity = night ? (restingNow ? 0.9 : 0.62) : 0.9;
-    skyFill.intensity = night ? (restingNow ? 0.8 : 0.75) : 0.4;
+    // (low key while the party talks: the fire is the light, the night a dim cool wash)
+    hemi.intensity = night ? (restingNow ? 0.9 : 0.38) : 0.9;
+    skyFill.intensity = night ? (restingNow ? 0.8 : 0.42) : 0.4;
     sentryRim.intensity = restingNow ? 60 : 0;
     sentryFire.intensity = restingNow ? 26 * fl : 0;
     sky.userData.update?.(time);

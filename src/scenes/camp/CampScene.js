@@ -110,13 +110,13 @@ export default class CampScene extends Scene {
 
     // Left: camp status.
     this.statusBody = h('div');
-    const sf = Frame({ title: 'Camp', variant: 'blue', children: [this.statusBody] });
+    const sf = Frame({ title: 'Camp', variant: 'blue', className: 'pc-iron', children: [this.statusBody] });
     sf.el.classList.add('camp-menu');
     this.ctx.ui.mount(sf.el);
 
     // Right: party.
     this.roster = new PartyRoster(this.ctx, { portraits: true, onOpen: (i) => this.openView('sheet', i) });
-    const rf = Frame({ title: 'Party', children: [this.roster.el] });
+    const rf = Frame({ title: 'Party', className: 'pc-iron', children: [this.roster.el] });
     rf.el.classList.add('camp-party');
     this.ctx.ui.mount(rf.el);
 
