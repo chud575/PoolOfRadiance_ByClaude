@@ -51,7 +51,7 @@ const KEY_FRAG = /* glsl */ `
   uniform sampler2D tDepth;
   varying vec2 vUv;
   void main() {
-    float lsum = 0.0, ln = 0.0, sn = 0.0;
+    float lsum = 0.0, ln = 0.0, sn = 0.0, msum = 0.0;
     vec3 sky = vec3(0.0), mean = vec3(0.0);
     for (int y = 0; y < 8; y++) for (int x = 0; x < 8; x++) {
       vec2 uv = (vec2(float(x), float(y)) + 0.5) / 8.0;
@@ -61,11 +61,11 @@ const KEY_FRAG = /* glsl */ `
       else {
         float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
         lsum += log(max(l, 1e-4)); ln += 1.0;
-        mean += c / max(l, 1e-3) * min(l * 50.0, 1.0); // chromaticity, ignoring near-black
+        mean += c; msum += l; // luminance-weighted: the lit surfaces define the illuminant
       }
     }
     if (gl_FragCoord.x > 1.0) {
-      mean = ln > 0.0 ? mean / ln : vec3(1.0);
+      mean = msum > 1e-4 ? mean / msum : vec3(1.0);
       float ml = dot(mean, vec3(0.2126, 0.7152, 0.0722));
       gl_FragColor = vec4(ml > 1e-3 ? mean / ml : vec3(1.0), 1.0);
       return;
@@ -82,6 +82,8 @@ const EDGE_FRAG = /* glsl */ `
   uniform sampler2D tColor;
   uniform sampler2D tDepth;
   uniform sampler2D tKey;
+  uniform sampler2D tFx;
+  uniform float uFx, uFxAbs;
   uniform float uBalance, uSat, uGlow, uGlowAbs;
   uniform ivec2 uHi;
   uniform int uSS;
@@ -213,6 +215,18 @@ const EDGE_FRAG = /* glsl */ `
       }
       if (gmin > max(key.r * uGlow, uGlowAbs)) outc = ink(gc, 9.0);
     }
+    // effects: solid EGA shapes wherever they're bright (rings, grid, fire)
+    {
+      // needs half the cell covered, so lone sparks/embers don't speckle
+      vec3 fc = vec3(0.0); float fn = 0.0;
+      float ft = max(key.r * uFx, uFxAbs);
+      for (int j = 0; j < 4; j++) {
+        if (j >= uSS * uSS) break;
+        vec3 c = texelFetch(tFx, clamp(lp * uSS + ivec2(j & 1, j >> 1), ivec2(0), uHi - 1), 0).rgb;
+        if (dot(c, vec3(0.2126, 0.7152, 0.0722)) > ft) { fc += c; fn += 1.0; }
+      }
+      if (uFx > 0.0 && fn >= float(uSS * uSS) * 0.5) { outc = ink(fc, 9.0); best = 1.0; }
+    }
     if (best == 0.0 && allSky) {
       // open sky: flat EGA blue by day, black by night
       outc = (key.g > uSky && key.b > -0.05) ? PAL[1] : PAL[0];
@@ -242,6 +256,8 @@ export class LineArtPass {
       sky: 0.06, // linear sky luminance above which open sky is EGA blue
       dim: 1.0,
       glow: 8.0, // light sources (flames, lit windows) brighter than this x key...
+      fx: 3.0, // effects brighter than this x key (and fxAbs) are drawn solid; 0 = off
+      fxAbs: 0.2,
       glowAbs: 1.5, // ...and than this linear HDR luminance fill solid
     };
     this.depth = new THREE.DepthTexture(4, 4, THREE.FloatType);
@@ -254,6 +270,20 @@ export class LineArtPass {
       depthTexture: this.depth,
       samples: 0,
     });
+    // transparent, non-depth-writing effects (move grid, selection rings, spell
+    // VFX, flames) rendered alone over black, depth-tested against the scene
+    // (shares the depth texture), so they can be drawn as solid EGA shapes and
+    // never perturb the line inks or the exposure key
+    this.fx = new THREE.WebGLRenderTarget(4, 4, {
+      type: THREE.HalfFloatType,
+      minFilter: THREE.NearestFilter,
+      magFilter: THREE.NearestFilter,
+      depthBuffer: true,
+      depthTexture: this.depth,
+      samples: 0,
+    });
+    this._fx = [];
+    this._solid = [];
     this.key = new THREE.WebGLRenderTarget(2, 1, { type: THREE.HalfFloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false });
     this.lines = new THREE.WebGLRenderTarget(4, 4, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false, generateMipmaps: false });
     this.lines.texture.colorSpace = THREE.NoColorSpace;
@@ -272,6 +302,9 @@ export class LineArtPass {
       tColor: { value: this.hi.texture },
       tDepth: { value: this.depth },
       tKey: { value: this.key.texture },
+      tFx: { value: this.fx.texture },
+      uFx: { value: 3 },
+      uFxAbs: { value: 0.2 },
       uHi: { value: new THREE.Vector2(4, 4) },
       uSS: { value: 2 },
       uNear: { value: 0.1 },
@@ -307,6 +340,7 @@ export class LineArtPass {
       this._lh = lh;
       this._ss = ss;
       this.hi.setSize(lw * ss, lh * ss);
+      this.fx.setSize(lw * ss, lh * ss);
       this.lines.setSize(lw, lh);
     }
     this.scale = scale;
@@ -324,10 +358,32 @@ export class LineArtPass {
     const prevAutoClear = renderer.autoClear;
     renderer.autoClear = true;
 
-    // 1. the scene, small, with depth
+    // 1. the solid scene, small, with depth (effects hidden)
+    this._split(scene);
+    for (const o of this._fx) o.visible = false;
     renderer.setRenderTarget(this.hi);
     renderer.clear(true, true, true);
     renderer.render(scene, camera);
+    for (const o of this._fx) o.visible = true;
+
+    // 1b. effects only, over black, depth-tested against the solid scene
+    const bg = scene.background;
+    scene.background = null;
+    for (const o of this._solid) o.visible = false;
+    renderer.setRenderTarget(this.fx);
+    const cc = renderer.getClearColor(this._cc ??= new THREE.Color());
+    const ca = renderer.getClearAlpha();
+    renderer.setClearColor(0x000000, 1);
+    renderer.clear(true, false, false);
+    renderer.autoClear = false;
+    const sm = renderer.shadowMap.autoUpdate;
+    renderer.shadowMap.autoUpdate = false; // the solid pass already drew them
+    if (this._fx.length) renderer.render(scene, camera);
+    renderer.shadowMap.autoUpdate = sm;
+    renderer.autoClear = true;
+    renderer.setClearColor(cc, ca);
+    for (const o of this._solid) o.visible = true;
+    scene.background = bg;
 
     // 2. exposure key + sky
     renderer.setRenderTarget(this.key);
@@ -351,6 +407,8 @@ export class LineArtPass {
     u.uBalance.value = p.balance;
     u.uSat.value = p.sat;
     u.uGlow.value = p.glow;
+    u.uFx.value = p.fx;
+    u.uFxAbs.value = p.fxAbs;
     u.uGlowAbs.value = p.glowAbs;
     u.uJump.value = p.jump;
     u.uLum.value = p.lum;
@@ -368,7 +426,21 @@ export class LineArtPass {
     renderer.autoClear = prevAutoClear;
   }
 
+  /** Sort the visible renderables into solid (writes depth) and effects (transparent, no depth write). */
+  _split(scene) {
+    const fx = (this._fx.length = 0, this._fx);
+    const solid = (this._solid.length = 0, this._solid);
+    const isFx = (m) => m && m.transparent && m.depthWrite === false && m.colorWrite !== false;
+    scene.traverseVisible((o) => {
+      if (!(o.isMesh || o.isPoints || o.isLine || o.isSprite)) return;
+      const m = o.material;
+      if (Array.isArray(m) ? m.every(isFx) : isFx(m)) fx.push(o);
+      else solid.push(o);
+    });
+  }
+
   dispose() {
+    this.fx.dispose();
     this.hi.dispose();
     this.depth.dispose();
     this.key.dispose();
