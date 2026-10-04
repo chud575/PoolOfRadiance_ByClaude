@@ -16,6 +16,7 @@ import { UINav } from '../../ui/components/uiNav.js';
 import { setPortraitSync, portraitsPending } from '../../ui/components/lazyPortrait.js';
 import { prepaintParty, portraitURL } from '../../ui/components/portraitPainter.js';
 import { restAmbush } from '../../data/wandering.js';
+import '../../ui/components/ironSkin.js';
 
 const CURES = ['cureSeriousWounds', 'cureLightWounds'];
 

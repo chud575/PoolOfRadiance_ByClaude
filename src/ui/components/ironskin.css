@@ -1,0 +1,177 @@
+/* The party screens' dark skin: charcoal leather, blackened iron, twisted rope, copper accents.
+   Band images come from ironSkin.js (--iron-band, --bronze-band). Loaded after partyui.css and
+   goldsheet.css, so it wins on equal specificity. */
+
+:root {
+  --ir-char: #121110;
+  --ir-char-hi: #1d1b19;
+  --ir-iron: #3a3632;
+  --ir-iron-hi: #6e665c;
+  --ir-copper: #c87a42;
+  --ir-copper-hi: #f0b27a;
+  --ir-copper-lo: #6e3a18;
+  --ir-leather: #2a1d14;
+  --ir-text: #d8ccb8;
+  --ir-dim: #9a8e7c;
+}
+
+/* ---------- the outer frame: a heavy blackened iron band with a rope run and corner studs ---------- */
+.por-frame.pc-iron {
+  border: 26px solid #0c0b0a;
+  border-image: var(--iron-band) 40 / 26px round;
+  border-radius: 0;
+  background:
+    radial-gradient(70% 60% at 22% 18%, rgba(255, 190, 120, 0.07), transparent 70%),
+    radial-gradient(ellipse 85% 80% at 50% 48%, transparent 45%, rgba(0, 0, 0, 0.62) 100%),
+    var(--tex-leather, none),
+    linear-gradient(180deg, #171513 0%, #100f0e 60%, #0a0909 100%);
+  background-size: auto, auto, 9em 9em, auto;
+  background-blend-mode: normal, normal, soft-light, normal;
+  box-shadow: 0 0 0 1px #000, 0 26px 70px rgba(0, 0, 0, 0.8), inset 0 0 0 1px rgba(0, 0, 0, 0.9), inset 0 6px 18px rgba(0, 0, 0, 0.7), inset 0 0 90px rgba(0, 0, 0, 0.55);
+}
+.por-frame.pc-iron:not(.pc-view) { border-width: 20px; border-image-width: 20px; }
+.por-frame.pc-iron::before { inset: 3px; border: 1px solid rgba(200, 122, 66, 0.16); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6); }
+.por-frame.pc-iron > .por-corner { display: none; }
+.por-frame.pc-iron > .por-frame-title {
+  top: -1.55em; font-size: 0.92em;
+  background: linear-gradient(180deg, #4a4540 0%, #24211e 45%, #141210 100%);
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.9));
+  box-shadow: inset 0 1px 0 rgba(255, 220, 170, 0.25);
+}
+.por-frame.pc-iron > .por-frame-title::before { border-color: rgba(200, 122, 66, 0.45); }
+/* the plate's lettering: copper on iron */
+.por-frame.pc-iron > .por-frame-title { color: #e8a46a; text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.9), 0 1px 0 rgba(255, 210, 160, 0.15); }
+
+/* ---------- buttons, tabs and tiles in iron and copper (no Gold Box blue) ---------- */
+.pc-iron .por-btn, .pc-iron .pc-tab, .pc-iron .pc-close, .cc-iron .por-btn {
+  color: #e2c9a6;
+  background: linear-gradient(180deg, #3c3733 0%, #262320 48%, #1a1816 52%, #121110 100%);
+  border: 1px solid #5a4632;
+  box-shadow: inset 0 1px 0 rgba(255, 220, 170, 0.18), inset 0 -1px 0 rgba(0, 0, 0, 0.6), 0 0 0 1px #000, 0 2px 5px rgba(0, 0, 0, 0.6);
+  text-shadow: 0 -1px 0 #000;
+}
+.pc-iron .por-btn:hover:not(:disabled), .pc-iron .pc-tab:hover, .cc-iron .por-btn:hover:not(:disabled) { border-color: var(--ir-copper); color: #fff2de; box-shadow: inset 0 1px 0 rgba(255, 220, 170, 0.25), 0 0 0 1px #000, 0 0 12px rgba(220, 130, 60, 0.3); }
+.pc-iron .por-btn.primary, .pc-iron .pc-tab.sel, .cc-iron .por-btn.primary {
+  color: #1c0e04; text-shadow: 0 1px 0 rgba(255, 220, 180, 0.45);
+  background: linear-gradient(180deg, #f6c08a 0%, #d0844a 40%, #9a5426 55%, #c27440 80%, #e8a46a 100%);
+  border-color: #2a1406;
+}
+.pc-iron .pc-tab.sel .por-hk-badge { background: #1c0e04; color: #f0b27a; border-color: #1c0e04; }
+.pc-iron .pc-tile {
+  border-color: var(--rar, rgba(140, 100, 60, 0.4));
+  background: radial-gradient(circle at 50% 30%, rgba(90, 80, 70, 0.32), rgba(10, 9, 8, 0.94));
+}
+.pc-iron .pc-tile.r-common { border-color: rgba(140, 100, 60, 0.45); }
+.pc-iron .pc-tile:hover { background: radial-gradient(circle at 50% 30%, rgba(150, 100, 60, 0.35), rgba(10, 9, 8, 0.94)); }
+.pc-iron .pc-tile.empty { background: rgba(0, 0, 0, 0.28); border-color: rgba(140, 100, 60, 0.12); }
+.pc-iron .pc-slot, .pc-iron .pc-packi, .pc-iron .pc-big, .pc-iron .pc-tradee, .pc-iron .pc-purse-c {
+  background: radial-gradient(circle at 50% 30%, rgba(80, 72, 64, 0.3), rgba(10, 9, 8, 0.9)) !important;
+}
+.pc-iron .pc-item.sel, .pc-iron .pc-caster.sel, .pc-iron .pc-spell.sel { background: linear-gradient(90deg, rgba(160, 90, 40, 0.5), rgba(40, 24, 12, 0.2)); }
+.pc-iron .pc-bar.enc > i { background: linear-gradient(90deg, #6e3a18, #e8a46a); }
+.pc-iron .pc-sect-h > span, .pc-iron .pc-sect-h { color: #e8a46a; }
+
+/* the item and spell cards: toned vellum under lamp-black, never the brightest thing on screen */
+.pc-iron .pc-itemlore, .pc-iron .pc-spellcard {
+  background:
+    radial-gradient(ellipse at 18% 20%, rgba(255, 200, 140, 0.1), transparent 60%),
+    linear-gradient(180deg, #2a241e, #1a1612);
+  color: #cbbda6; border: 1px solid #5a4632;
+  box-shadow: inset 0 0 0 1px #000, inset 0 0 24px rgba(0, 0, 0, 0.6), 0 3px 10px rgba(0, 0, 0, 0.6);
+}
+.pc-iron .pc-itemlore .t, .pc-iron .pc-spellcard .t { color: #f0b27a; }
+.pc-iron .pc-itemlore .s, .pc-iron .pc-spellcard .s { color: #a08a6c; }
+.pc-iron .pc-itemlore .r, .pc-iron .pc-spellcard .kv { color: #cbbda6; }
+.pc-iron .pc-spellcard .kv b { color: #e8a46a; }
+.pc-iron .pc-itemlore .plate {
+  background: radial-gradient(circle at 42% 36%, #5a4a3a, #2a221a 55%, #0e0b08) !important;
+  box-shadow: inset 0 0 0 2px #6e5232, inset 0 0 0 3px #000, inset 0 0 18px rgba(0, 0, 0, 0.8), 0 3px 8px rgba(0, 0, 0, 0.7) !important;
+}
+.pc-iron .pc-itemlore .plate img { filter: drop-shadow(2px 4px 4px rgba(0, 0, 0, 0.7)); }
+.pc-iron .pc-itemlore.empty { color: #8a7a64; }
+
+/* the lore strip: blackened slate */
+.pc-view.pc-iron .pc-lore { color: #d4c6ae; }
+.pc-view.pc-iron .pc-lore::before { color: var(--ir-copper); }
+
+/* the sheet: the lore strip floats in only while something is pointed at */
+.pc-view.pc-iron.tab-sheet > .por-frame-body { position: relative; }
+.pc-view.pc-iron.tab-sheet .pc-lore {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 5; margin: 0;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.pc-view.pc-iron.tab-sheet .pc-lore.idle { opacity: 0; transform: translateY(0.4em); pointer-events: none; }
+html[data-freeze='1'] .pc-view.pc-iron.tab-sheet .pc-lore { transition: none; }
+
+/* ---------- metal lettering: embossed plates (outline, bright top lip, dark lower bevel, cast shadow) ---------- */
+.gb-steel, .gb-copper, .gb-blue {
+  font-family: 'DejaVu Serif', 'PoR Book', var(--font-display); font-weight: 700; font-stretch: condensed;
+  filter:
+    drop-shadow(0 -1px 0 rgba(255, 236, 205, 0.55))
+    drop-shadow(0 1px 0 rgba(30, 14, 4, 1))
+    drop-shadow(1px 0 0 #000) drop-shadow(-1px 0 0 #000) drop-shadow(0 1.5px 0 #000)
+    drop-shadow(0 3px 3px rgba(0, 0, 0, 0.85));
+}
+.gb-steel .gb-copper { filter: none; }
+.gb-steel { background-image: linear-gradient(180deg, #ffffff 0%, #cfd8e0 22%, #8796a4 46%, #3a4550 52%, #6c7c8a 66%, #b4c2ce 86%, #e2e8ee 100%); }
+.gb-copper { background-image: linear-gradient(180deg, #fff0dc 0%, #f6b47c 22%, #c06a34 46%, #5e2408 52%, #a24e20 66%, #e08a50 86%, #ffc08c 100%); }
+.gb-blue { background-image: linear-gradient(180deg, #f0faff 0%, #a8d6f2 22%, #4a8cbc 46%, #10344e 52%, #3a78a8 66%, #8cc4ea 86%, #c6e8ff 100%); }
+.gb-name { font-size: 2.7em; letter-spacing: 0.05em; }
+.gb-line { font-size: 1.5em; letter-spacing: 0.04em; }
+.gb-abbr, .gb-num { font-size: 1.62em; }
+.gb-pair .gb-l, .gb-pair .gb-v { font-size: 1.6em; letter-spacing: 0.04em; }
+.gb-pair.big .gb-l, .gb-pair.big .gb-v { font-size: 1.85em; }
+.gb-status .gb-pair .gb-l, .gb-status .gb-pair .gb-v { font-size: 1.7em; }
+.gb-mod { font-size: 0.95em; color: rgba(222, 200, 170, 0.86); font-style: italic; text-shadow: 0 1px 1px #000; }
+.gb-fh { color: #e8a46a; font-size: 0.74em; }
+.gb-f > span { color: rgba(206, 196, 180, 0.86); }
+.gb-f > b { color: #f0b27a; }
+.gb-fine {
+  background: linear-gradient(180deg, rgba(60, 54, 48, 0.28), rgba(0, 0, 0, 0.35));
+  box-shadow: inset 0 0 0 1px rgba(160, 110, 60, 0.3), inset 0 1px 0 rgba(255, 220, 170, 0.06), 0 0 0 1px #000, 0 2px 4px rgba(0, 0, 0, 0.6);
+}
+
+/* ---------- the portrait's frame: heavy cast dark bronze, rope, bosses, an inner bevel shadowing the canvas ---------- */
+.gb-ornate {
+  padding: 0; border: 34px solid #1a120a; border-image: var(--bronze-band) 48 / 34px round; border-radius: 0;
+  background: #0c0907;
+  box-shadow: 0 0 0 1px #000, 0 18px 40px rgba(0, 0, 0, 0.85), 0 4px 10px rgba(0, 0, 0, 0.7);
+}
+.gb-ornate::before {
+  /* the warm key glancing off the frame's upper-left run */
+  inset: -34px; padding: 34px; border-radius: 0; filter: none;
+  background: radial-gradient(70% 60% at 0% 0%, rgba(255, 200, 130, 0.38), rgba(255, 170, 90, 0.08) 45%, transparent 70%);
+  mix-blend-mode: screen;
+}
+.gb-ornate::after {
+  /* the inner bevel's cast shadow falling onto the painting from the light */
+  inset: 0; border-radius: 0; z-index: 1;
+  box-shadow: inset 0 0 0 1px #000, inset 7px 9px 12px rgba(0, 0, 0, 0.82), inset -2px -2px 6px rgba(0, 0, 0, 0.5), inset 0 0 34px rgba(0, 0, 0, 0.4);
+}
+.gb-ornate > .gb-boss, .gb-ornate > .gb-crest { display: none; }
+.cc-card .gb-ornate.cc-ornate { border-width: 26px; border-image-width: 26px; }
+.cc-card .gb-ornate.cc-ornate::before { inset: -26px; padding: 26px; }
+
+/* ---------- sheet composition: tall portrait, gold beside the stats, a big painted shield ---------- */
+.gb-sheet { grid-template-columns: minmax(0, 1fr) 27em; gap: 1.4em; }
+.gb-right { gap: 0.6em; }
+.gb-right > .gb-ornate { flex: 1 1 auto; min-height: 0; display: flex; }
+.gb-right > .gb-ornate .pc-portrait { width: 100%; height: 100%; aspect-ratio: auto; }
+.gb-right > .gb-ornate .pc-portrait img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 30%; }
+.gb-mid { grid-template-columns: auto auto 1fr; gap: 0 2.4em; }
+.gb-purse { justify-self: start; align-self: start; padding-top: 0.1em; }
+.gb-crest-shield { width: 12.5em; filter: drop-shadow(0 10px 14px rgba(0, 0, 0, 0.8)); }
+.gb-top { position: relative; }
+.gb-crestwrap { margin: 0.6em 3.5em -13em 0; position: relative; z-index: 1; }
+
+/* ---------- character creation on iron ---------- */
+.cc-iron .cc-opt, .cc-iron .cc-ab, .cc-iron .cc-hubslot, .cc-iron .cc-abrow .adj button, .pc-iron .pc-order-row .b button, .pc-iron .pc-chip {
+  background: linear-gradient(180deg, rgba(58, 52, 46, 0.55), rgba(12, 11, 10, 0.85));
+  border-color: rgba(150, 104, 60, 0.4);
+}
+.cc-iron .cc-opt.sel { background: linear-gradient(180deg, rgba(150, 84, 38, 0.7), rgba(50, 26, 10, 0.9)); border-color: var(--ir-copper-hi); box-shadow: 0 0 0 1px #000, 0 0 14px rgba(230, 140, 70, 0.3), inset 0 1px 0 rgba(255, 220, 170, 0.2); }
+.cc-iron .cc-thumb { border-color: rgba(150, 104, 60, 0.45); }
+.cc-iron .cc-thumb span { background: rgba(10, 8, 6, 0.92); border-top-color: rgba(150, 104, 60, 0.35); }
+.cc-iron .cc-thumb.sel { border-color: var(--ir-copper-hi); box-shadow: 0 0 0 1px #000, 0 0 12px rgba(240, 160, 90, 0.5); }
+.cc-iron .cc-thumb.sel span { color: var(--ir-copper-hi); }
+.camp-rest-bar > i { background: linear-gradient(90deg, #6e3a18, #d0844a 70%, #ffd2a0) !important; box-shadow: 0 0 10px rgba(240, 150, 80, 0.5) !important; }

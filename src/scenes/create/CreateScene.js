@@ -28,6 +28,7 @@ import { itemName } from '../../rules/items.js';
 import { itemIconURL, iconFor } from '../../ui/components/itemIcons.js';
 import { createFlame } from '../../render/lighting.js';
 import { CREATE_TEXT, NAMES, kitFor } from './createData.js';
+import '../../ui/components/ironSkin.js';
 
 /** Names of the eye colours (lookData EYE_COLORS, in order). */
 const EYE_NAMES = ['Blue', 'Green', 'Brown', 'Hazel', 'Grey', 'Sky', 'Amber'];
@@ -76,8 +77,8 @@ export default class CreateScene extends Scene {
 
     // Layout: steps bar, main panel, character card, command line.
     this.stepsEl = h('div.cc-steps');
-    this.main = Frame({ title: 'Create Character', variant: 'blue', className: 'cc-main' });
-    this.card = Frame({ title: 'Adventurer', variant: 'dark', className: 'cc-card' });
+    this.main = Frame({ title: 'Create Character', variant: 'blue', className: 'cc-main pc-iron cc-iron' });
+    this.card = Frame({ title: 'Adventurer', variant: 'dark', className: 'cc-card pc-iron cc-iron' });
     this.bar = new CommandBar([]);
     this.ctx.ui.mount(this.stepsEl);
     this.ctx.ui.mount(this.main.el);

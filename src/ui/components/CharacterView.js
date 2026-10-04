@@ -10,6 +10,7 @@ import { SpellPanel } from './SpellPanel.js';
 import { STAT_TIPS } from './rulesText.js';
 import { deriveStats } from '../../rules/character.js';
 import { UINav } from './uiNav.js';
+import './ironSkin.js';
 
 const TABS = [['sheet', 'Sheet', 'V'], ['items', 'Items', 'I'], ['spells', 'Magic', 'M']];
 
@@ -37,15 +38,17 @@ export function openCharacterView(ctx, o = {}) {
 
   const setLore = (title, text) => {
     clear(loreBox);
+    loreBox.classList.remove('idle');
     loreBox.append(h('b', [title]), text);
   };
   const defaultLore = () => {
     const ch = ctx.game.party[index];
     if (!ch) return;
     if (tab === 'sheet') {
+      // The sheet keeps its full height for the figures; the lore floats in while one is pointed at.
       const t = STAT_TIPS.thac0(deriveStats(ch));
       setLore(t.title, t.text);
-      body.querySelector('[data-k="thac0"]')?.classList.add('lore-hl');
+      loreBox.classList.add('idle');
     } else {
       const hl = body.querySelector('.pc-item.sel, .pc-spell.sel, .pc-spell:not(.dis)');
       const d = hl?.dataset.lore ?? hl?.closest('[data-lore]')?.dataset.lore;
@@ -72,8 +75,10 @@ export function openCharacterView(ctx, o = {}) {
     setLore(title, text);
   });
 
+  body.addEventListener('mouseleave', () => { if (tab === 'sheet') loreBox.classList.add('idle'); });
   const renderHead = () => {
     clear(head);
+    frame.el.classList.toggle('tab-sheet', tab === 'sheet');
     const ch = ctx.game.party[index];
     head.append(
       h('div.pc-tabs', TABS.map(([id, label, key]) => h(`button.pc-tab${id === tab ? '.sel' : ''}`, { onclick: () => setTab(id) }, [label, h('span.por-hk-badge', [key])]))),

@@ -1,4 +1,5 @@
 import './goldsheet.css';
+import './ironSkin.js';
 import { h } from '../dom.js';
 import { deriveStats, statusLabel, maxLevel, armorAllowsThieving } from '../../rules/character.js';
 import { ABILITIES, ABILITY_ABBR, formatStr } from '../../rules/abilities.js';
@@ -174,10 +175,59 @@ export function renderGoldBoxSheet(ch) {
   return sheet;
 }
 
-/** The heraldic shield the miniature carries (its cloth and trim), as the sheet's crest. */
+/**
+ * The heraldic shield the miniature carries, as the sheet's crest: a heater shield of hammered
+ * metal, its field enamelled in the figure's cloth colour, an ordinary picked from the name and a
+ * charge from the class (tower, sun, star, key) or race (dwarf hammer, elf leaf), hand-painted:
+ * gritty enamel, worn edges, a bevelled rim under the same warm key as the portrait.
+ */
+const CHARGES = {
+  fighter: "<path d='M38 44 h24 v6 h-3 v26 h3 v6 h-24 v-6 h3 v-26 h-3 Z M38 44 v-6 h5 v4 h4 v-4 h6 v4 h4 v-4 h5 v6 Z'/>",
+  cleric: "<circle cx='50' cy='60' r='9'/><path d='M50 38 l3 10 h-6 Z M50 82 l3 -10 h-6 Z M28 60 l10 3 v-6 Z M72 60 l-10 3 v-6 Z M35 45 l9 6 -4 4 Z M65 45 l-9 6 4 4 Z M35 75 l9 -6 -4 -4 Z M65 75 l-9 -6 4 -4 Z'/>",
+  'magic-user': "<path d='M50 38 L55 54 L72 54 L58 64 L63 80 L50 70 L37 80 L42 64 L28 54 L45 54 Z'/>",
+  thief: "<path d='M44 40 a9 9 0 1 1 12 0 v34 h6 v5 h-6 v4 h4 v5 h-4 v3 h-12 Z M47 34 a4 4 0 1 0 6 0 a4 4 0 1 0 -6 0' fill-rule='evenodd'/>",
+  dwarf: "<path d='M33 42 h34 v14 h-34 Z M47 56 h6 v30 h-6 Z'/>",
+  elf: "<path d='M50 36 C66 46 68 68 50 86 C32 68 34 46 50 36 Z M49 44 h2 v40 h-2 Z' fill-rule='evenodd'/>",
+};
+const ORDINARIES = [
+  (f, m) => `<path d='M18 48 L50 30 L82 48 L82 58 L50 40 L18 58 Z' fill='${m}'/>`, // chevron (inverted, chief)
+  (f, m) => `<path d='M18 25 h64 v14 h-64 Z' fill='${m}'/>`, // chief
+  (f, m) => `<path d='M18 30 L32 25 L82 82 L76 92 Z' fill='${m}' opacity='.95'/>`, // bend
+  (f, m) => `<path d='M18 25 h32 v76 Q30 90 22 66 L18 25 Z' fill='${m}' opacity='.9'/>`, // per pale
+  (f, m) => `<path d='M18 82 h64 v4 Q76 96 50 104 Q24 96 18 86 Z' fill='${m}'/>`, // base
+];
 function crestShield(ch) {
-  let a = '#1f3f7a';
-  try { a = resolveAppearance(ch).clothHex ?? a; } catch { /* default field */ }
-  const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 120'><defs><linearGradient id='m' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='#f6dca0'/><stop offset='.35' stop-color='#9a7036'/><stop offset='.6' stop-color='#e0b46a'/><stop offset='1' stop-color='#4a3014'/></linearGradient><radialGradient id='f' cx='.4' cy='.3' r='.8'><stop offset='0' stop-color='${a}' stop-opacity='1'/><stop offset='1' stop-color='#05070c'/></radialGradient></defs><path d='M50 4 L94 16 L90 62 Q84 96 50 116 Q16 96 10 62 L6 16 Z' fill='#120c06'/><path d='M50 9 L89 20 L85 62 Q80 91 50 109 Q20 91 15 62 L11 20 Z' fill='url(#m)'/><path d='M50 16 L82 25 L78 61 Q74 85 50 101 Q26 85 22 61 L18 25 Z' fill='url(#f)'/><path d='M22 30 L50 58 L78 30 L78 44 L50 72 L22 44 Z' fill='url(#m)' opacity='.9'/><path d='M50 16 L82 25 L78 61 Q74 85 50 101' fill='none' stroke='#000' stroke-opacity='.35' stroke-width='2'/></svg>`;
+  let field = '#6a1a14';
+  let metal = '#d8b06a';
+  try { const ap = resolveAppearance(ch); field = ap.clothHex ?? field; } catch { /* default field */ }
+  const classes = splitClasses(ch.classSpec);
+  const ck = ch.race === 'dwarf' && classes[0] === 'fighter' ? 'dwarf' : ch.race === 'elf' && classes.length > 1 ? 'elf' : (CHARGES[classes[0]] ? classes[0] : 'fighter');
+  let hsh = 0;
+  for (const c of String(ch.name ?? '')) hsh = (hsh * 31 + c.charCodeAt(0)) >>> 0;
+  const ord = ORDINARIES[hsh % ORDINARIES.length];
+  if (hsh % 3 === 0) metal = '#d6dade';
+  const SH = "M50 6 L92 14 Q94 52 86 70 Q76 96 50 112 Q24 96 14 70 Q6 52 8 14 Z";
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 120'><defs>
+<linearGradient id='rim' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='#ffe2b0'/><stop offset='.18' stop-color='#b07a40'/><stop offset='.45' stop-color='#5a3a1c'/><stop offset='.7' stop-color='#8a5e30'/><stop offset='1' stop-color='#1e1208'/></linearGradient>
+<radialGradient id='lit' cx='.28' cy='.2' r='.95'><stop offset='0' stop-color='#ffd8a0' stop-opacity='.45'/><stop offset='.4' stop-color='#ffb070' stop-opacity='.08'/><stop offset='1' stop-color='#000' stop-opacity='.7'/></radialGradient>
+<linearGradient id='mt' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='#fff4dc'/><stop offset='.3' stop-color='${metal}'/><stop offset='.55' stop-color='#4a3214'/><stop offset='.62' stop-color='${metal}'/><stop offset='1' stop-color='#fff0d0'/></linearGradient>
+<filter id='grit' x='0' y='0' width='1' height='1'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' seed='${hsh % 97}'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -1.6 1.15'/><feComposite in2='SourceGraphic' operator='in'/></filter>
+<filter id='dent' x='-5%' y='-5%' width='110%' height='110%'><feTurbulence type='fractalNoise' baseFrequency='.045' numOctaves='2' seed='${hsh % 53}' result='n'/><feDisplacementMap in='SourceGraphic' in2='n' scale='2.2'/></filter>
+<filter id='emb'><feGaussianBlur in='SourceAlpha' stdDeviation='.7' result='b'/><feOffset in='b' dx='.9' dy='1.3' result='o'/><feComposite in='SourceGraphic' in2='o' operator='over'/></filter>
+<clipPath id='cp'><path d='M50 15 L84 21 Q86 52 79 67 Q71 88 50 101 Q29 88 21 67 Q14 52 16 21 Z'/></clipPath>
+</defs>
+<path d='${SH}' fill='#000' transform='translate(1.5 2.5)' opacity='.6'/>
+<path d='${SH}' fill='url(#rim)'/>
+<path d='${SH}' fill='none' stroke='#000' stroke-width='1.2'/>
+<path d='M50 10 L88 17 Q90 52 82 69' fill='none' stroke='#fff0d0' stroke-opacity='.55' stroke-width='1'/>
+<g clip-path='url(#cp)' filter='url(#dent)'>
+<rect x='0' y='0' width='100' height='120' fill='${field}'/>
+<rect x='0' y='0' width='100' height='120' fill='#000' opacity='.18' filter='url(#grit)'/>
+<g filter='url(#emb)'>${ord(field, 'url(#mt)')}<g fill='url(#mt)' stroke='#2a1808' stroke-width='.8'>${CHARGES[ck]}</g></g>
+<rect x='0' y='0' width='100' height='120' fill='url(#lit)'/>
+</g>
+<path d='M50 15 L84 21 Q86 52 79 67 Q71 88 50 101 Q29 88 21 67 Q14 52 16 21 Z' fill='none' stroke='#000' stroke-opacity='.7' stroke-width='1.6'/>
+<circle cx='16' cy='18' r='2.6' fill='url(#rim)' stroke='#000' stroke-width='.5'/><circle cx='84' cy='18' r='2.6' fill='url(#rim)' stroke='#000' stroke-width='.5'/><circle cx='50' cy='106' r='2.6' fill='url(#rim)' stroke='#000' stroke-width='.5'/>
+</svg>`;
   return h('img.gb-crest-shield', { src: `data:image/svg+xml,${encodeURIComponent(svg)}`, alt: '', draggable: false });
 }

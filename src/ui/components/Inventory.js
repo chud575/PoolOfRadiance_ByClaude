@@ -11,6 +11,7 @@ import { strengthTable } from '../../rules/abilities.js';
 import { itemIconURL, iconFor } from './itemIcons.js';
 import { lore, miniPortrait } from './CharacterSheet.js';
 import { itemLore } from './itemLore.js';
+import './ironSkin.js';
 
 const miniPortraitImg = (c) => miniPortrait(c);
 
