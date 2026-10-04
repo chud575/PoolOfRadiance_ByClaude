@@ -45,8 +45,12 @@ const PAL_GLSL = `const vec3 PAL[16] = vec3[16](${PAL_RGB.map((p) => `vec3(${p.m
 const DARK = [0, 1, 2, 3, 4, 5, 6, 8, 8, 1, 2, 3, 4, 5, 6, 7];
 const DARK_GLSL = `const int DARK[16] = int[16](${DARK.join(', ')});`;
 
-// Ink thresholds, shared by the GLSL and the CPU vote (sRGB-ish chroma)
-const INK = { sat: 0.3, white: 0.42, grey: 0.06, dark: 0.018 };
+// Ink thresholds, shared by the GLSL and the CPU vote (sRGB-ish chroma).
+// Warm low-chroma albedos (stone, plaster, sand, bone) read as greys/white, as
+// in the 1988 screens; only clearly coloured surfaces take a hue, so a scene
+// spreads over grey/white stone, brown timber, red tile, yellow trim, cyan
+// glass and water, green leaf and blue cloth instead of collapsing to ochre.
+const INK = { sat: 0.3, warmSat: 0.46, coolSat: 0.14, woodSat: 0.24, white: 0.3, grey: 0.035, dark: 0.02, wood: 0.14, red: 22 };
 
 /** GLSL: EGA ink index for a linear mean albedo. */
 const INK_GLSL = /* glsl */ `
@@ -56,13 +60,17 @@ const INK_GLSL = /* glsl */ `
     float mx = max(max(c.r, c.g), c.b);
     float mn = min(min(c.r, c.g), c.b);
     float sat = mx > 1e-4 ? (mx - mn) / mx : 0.0;
-    if (sat < ${INK.sat.toFixed(3)}) return l > ${INK.white.toFixed(3)} ? 15 : (l > ${INK.grey.toFixed(3)} ? 7 : 8);
-    float d = mx - mn;
+    float d = max(mx - mn, 1e-5);
     float h = mx == c.r ? mod((c.g - c.b) / d, 6.0) : mx == c.g ? (c.b - c.r) / d + 2.0 : (c.r - c.g) / d + 4.0;
     h *= 60.0;
+    bool warm = h >= ${INK.red.toFixed(1)} && h < 70.0;
+    bool cool = h >= 170.0 && h < 262.0;
+    // dark timber and wood stay brown even when only faintly coloured
+    if (warm && h < 46.0 && l < ${INK.grey.toFixed(3)} && sat > ${INK.woodSat.toFixed(3)}) return 6;
+    if (cool ? sat < ${INK.coolSat.toFixed(3)} : (sat < ${INK.sat.toFixed(3)} || (warm && sat < ${INK.warmSat.toFixed(3)}))) return l > ${INK.white.toFixed(3)} ? 15 : (l > ${INK.grey.toFixed(3)} ? 7 : 8);
     bool dk = l < ${INK.dark.toFixed(3)};
-    if (h < 16.0 || h >= 330.0) return dk ? 4 : 12;
-    if (h < 28.0) return 6;
+    if (h < ${INK.red.toFixed(1)} || h >= 330.0) return dk ? 4 : 12;
+    if (h < 46.0) return l < ${INK.wood.toFixed(3)} ? 6 : 14;
     if (h < 70.0) return dk ? 6 : 14;
     if (h < 160.0) return dk ? 2 : 10;
     if (h < 200.0) return dk ? 3 : 11;
@@ -78,13 +86,16 @@ function egaInkJS(r, g, b) {
   const mx = Math.max(...c);
   const mn = Math.min(...c);
   const sat = mx > 1e-4 ? (mx - mn) / mx : 0;
-  if (sat < INK.sat) return [l > INK.white ? 15 : l > INK.grey ? 7 : 8, false];
-  const d = mx - mn;
+  const d = Math.max(mx - mn, 1e-5);
   let h = mx === c[0] ? (((c[1] - c[2]) / d) % 6 + 6) % 6 : mx === c[1] ? (c[2] - c[0]) / d + 2 : (c[0] - c[1]) / d + 4;
   h *= 60;
+  const warm = h >= INK.red && h < 70;
+  const cool = h >= 170 && h < 262;
+  if (warm && h < 46 && l < INK.grey && sat > INK.woodSat) return [6, true];
+  if (cool ? sat < INK.coolSat : sat < INK.sat || (warm && sat < INK.warmSat)) return [l > INK.white ? 15 : l > INK.grey ? 7 : 8, false];
   const dk = l < INK.dark;
-  if (h < 16 || h >= 330) return [dk ? 4 : 12, true];
-  if (h < 28) return [6, true];
+  if (h < INK.red || h >= 330) return [dk ? 4 : 12, true];
+  if (h < 46) return [l < INK.wood ? 6 : 14, true];
   if (h < 70) return [dk ? 6 : 14, true];
   if (h < 160) return [dk ? 2 : 10, true];
   if (h < 200) return [dk ? 3 : 11, true];
@@ -196,7 +207,8 @@ const EDGE_FRAG = /* glsl */ `
   uniform int uSS;
   uniform float uNear, uFar, uOrtho, uPix;
   uniform float uCurve, uCrease, uIdCrease, uJump, uLum, uLumDist;
-  uniform vec3 uSky;
+  uniform int uSkyInk, uFlank, uHalo;
+  uniform float uFlameFill, uBold;
   uniform vec3 uFog; // x: exp2 density, y: linear near, z: linear far (0 = none)
   uniform float uFogDark, uFogDrop, uDebug;
   uniform mat4 uInvProj, uCamWorld;
@@ -224,22 +236,56 @@ const EDGE_FRAG = /* glsl */ `
   // in one or two adjacent e's; a smooth curve spreads it evenly, so the
   // spill beyond the peak pair is subtracted (rounded limbs, domes, barrels
   // don't fill in). Only the local maximum is kept: every crease is 1 px.
-  float crease(ivec2 p, ivec2 a, float w0, float scale) {
+  float crease(ivec2 p, ivec2 a, float w0, float scale, int flank) {
     float wm1 = W(p - a), wp1 = W(p + a);
     float e0 = (wm1 + wp1 - 2.0 * w0) * scale;
     if (uOrtho > 0.5) e0 = -e0;
     // jump: silhouettes; ink only the nearer (convex) side
     if (e0 < -uJump) return 9.0;
     if (e0 > uJump) return 0.0;
-    float em = (W(p - 2 * a) + w0 - 2.0 * wm1) * scale;
-    float ep = (w0 + W(p + 2 * a) - 2.0 * wp1) * scale;
+    float wm2 = W(p - 2 * a), wp2 = W(p + 2 * a);
+    float em = (wm2 + w0 - 2.0 * wm1) * scale;
+    float ep = (w0 + wp2 - 2.0 * wp1) * scale;
     if (uOrtho > 0.5) { em = -em; ep = -ep; }
     float sg = sign(e0);
     float a0 = e0 * sg, am = max(em * sg, 0.0), ap = max(ep * sg, 0.0);
     if (am > a0 || ap >= a0) return 0.0;
     float pk = a0 + max(am, ap);
     float tot = a0 + am + ap;
-    return pk - uCurve * (tot - pk);
+    float r = pk - uCurve * (tot - pk);
+    if (r <= uCrease * 0.7 || r > uCrease * uBold) return r;
+    // planar support: a bold crease has FLAT surface on both sides for
+    // 'flank' px. Faceted rubble, chipped capstones and sculpt folds turn
+    // every few px and fail; wall corners, jambs, beams and steps pass.
+    float lim = 0.34 * a0;
+    float qa = wp1, qb = wp2, na = wm1, nb = wm2;
+    for (int k = 2; k < 8; k++) {
+      if (k > flank) break;
+      float qc = W(p + (k + 1) * a), nc = W(p - (k + 1) * a);
+      if (abs((qa + qc - 2.0 * qb) * scale) > lim || abs((na + nc - 2.0 * nb) * scale) > lim) return 0.0;
+      qa = qb; qb = qc; na = nb; nb = nc;
+    }
+    return r;
+  }
+
+  // On the FAR side of a silhouette (within uHalo px): another surface juts
+  // out in front of this one. Lines here are suppressed, which leaves a
+  // one-pixel black gap round every nearer outline: overlapping figures
+  // separate, and the nearer one hides the lines of what is behind it.
+  bool behindEdge(ivec2 p, float w0, float scale) {
+    for (int i = 0; i < 4; i++) {
+      ivec2 a = i == 0 ? ivec2(1, 0) : i == 1 ? ivec2(-1, 0) : i == 2 ? ivec2(0, 1) : ivec2(0, -1);
+      float g = w0 - W(p - a);
+      for (int k = 1; k < 4; k++) {
+        if (k > uHalo) break;
+        ivec2 q = p + k * a;
+        if (D(q) >= 0.99999) break;
+        float d = (W(q) - (w0 + float(k) * g)) * scale;
+        if (uOrtho > 0.5) d = -d;
+        if (d > uJump) return true;
+      }
+    }
+    return false;
   }
 
   float L2(ivec2 p) { float r = G(p).r; return log2(r * r + 0.01); }
@@ -317,12 +363,16 @@ const EDGE_FRAG = /* glsl */ `
     return 0.0;
   }
 
+  // Output (RGBA8, logical grid): R = EGA ink index, G = line class:
+  //   0 none, 1 weak (floors, tiny objects), 2 dark (albedo joints, grid),
+  //   3 crease, 4 outline/silhouette, 5 flat fill (effects, glows).
   void main() {
     ivec2 lp = ivec2(gl_FragCoord.xy);
     vec4 prev = texelFetch(tPrev, lp, 0);
-    bool wasLine = uStill > 0.5 && prev.a > 0.9;
+    int pc = int(prev.g * 255.0 + 0.5);
+    bool wasLine = uStill > 0.5 && pc >= 1 && pc <= 4;
     float creaseT = uCrease * (wasLine ? 0.8 : 1.0);
-    float best = 0.0; float bw = 0.0; int bink = 0; bool bdark = false; float bz = 0.0; ivec2 bp = ivec2(0); int bid = 0; float bw0 = 1.0;
+    float best = 0.0; float bw = 0.0; int bink = 0; int bcls = 0; float bz = 0.0; ivec2 bp = ivec2(0); int bid = 0; float bw0 = 1.0;
     bool allSky = true;
     int glowN = 0, glowInk = 0, nS = 0;
     for (int j = 0; j < 4; j++) {
@@ -337,11 +387,13 @@ const EDGE_FRAG = /* glsl */ `
       int fl = flOf(g0);
       int ink = fl & 15;
       int det = id0 == 0 ? 3 : (fl >> 4) & 3;
+      bool tiny = id0 != 0 && ((fl >> 7) & 1) == 1;
       if (((fl >> 6) & 1) == 1) { glowN++; glowInk = ink; }
       float w0 = W(p);
       float z = viewZ(w0);
       float scale = uOrtho > 0.5 ? 1.0 / uPix : 1.0 / (w0 * uPix);
-      float s = 0.0; bool dark = false;
+      if (behindEdge(p, w0, scale)) continue;
+      float s = 0.0; int cls = 0;
       // 1. object outlines: the id changes and the surface really breaks
       //    (coplanar neighbours with different ids don't line)
       if (id0 != 0) {
@@ -355,90 +407,205 @@ const EDGE_FRAG = /* glsl */ `
           float e = abs(W(p - a) + wq - 2.0 * w0) * scale;
           if (e > uIdCrease) { s = 3.0; break; }
         }
+        if (s > 0.0) cls = tiny ? 1 : 4;
       }
       // 2. depth silhouettes and creases, by detail level
       if (s == 0.0 && det >= 1) {
-        float m = max(crease(p, ivec2(1, 0), w0, scale), crease(p, ivec2(0, 1), w0, scale));
-        if (m >= 9.0) s = 2.0;
-        else if (det >= 2 && m > creaseT && realCrease(p)) s = m;
+        int fk = id0 == 0 ? uFlank : max(uFlank - 1, 1);
+        float m = max(crease(p, ivec2(1, 0), w0, scale, fk), crease(p, ivec2(0, 1), w0, scale, fk));
+        if (m >= 9.0) { s = 2.0; cls = tiny ? 1 : 4; }
+        else if (det >= 2 && m > creaseT && realCrease(p)) { s = m; cls = 3; }
       }
+      // floors (level ground seen from above): only silhouettes are strong;
+      // their creases are weak, and they carry no albedo joints at all
+      bool floorS = false;
+      if (id0 == 0 && (cls == 3 || (s == 0.0 && det >= 3 && z < uLumDist))) floorS = nrm(p).y > 0.72;
+      if (cls == 3 && floorS) cls = 1;
       // 3. bold albedo lines on large near surfaces, in the dark ink
-      if (s == 0.0 && det >= 3 && z < uLumDist) {
-        if (lumEdge(p, w0) > uLum) { s = 0.5; dark = true; }
+      if (s == 0.0 && det >= 3 && z < uLumDist && !floorS) {
+        if (lumEdge(p, w0) > uLum) { s = 0.5; cls = 2; }
       }
-      if (s == 0.0 && uGrid.y > 0.5 && id0 == 0 && gridLine(p, w0)) { s = 0.25; dark = true; ink = 8; }
+      if (s == 0.0 && uGrid.y > 0.5 && id0 == 0 && gridLine(p, w0)) { s = 0.25; cls = 2; ink = 8; }
       float nearness = uOrtho > 0.5 ? -w0 : w0;
-      if (s > 0.0 && (best == 0.0 || nearness > bw || (dark == false && bdark))) {
-        best = s; bw = nearness; bink = ink; bdark = dark; bz = z; bp = p; bid = id0; bw0 = w0;
+      if (s > 0.0 && (best == 0.0 || cls > bcls || (cls == bcls && nearness > bw))) {
+        best = s; bw = nearness; bink = ink; bcls = cls; bz = z; bp = p; bid = id0; bw0 = w0;
       }
     }
-    vec3 outc = vec3(0.0);
-    float tag = 0.5;
+    int outInk = 0; int outCls = 0;
     if (best > 0.0) {
       float f = fogF(bz);
-      int k = bid == 0 && bink != 8 ? inkMode(bp, bw0) : bink;
-      if (bdark || f > uFogDark) k = DARK[k];
-      if (f < uFogDrop && k != 0) { outc = PAL[k]; tag = 1.0; }
+      int k = bid == 0 && bink != 8 && bcls != 4 ? inkMode(bp, bw0) : bink;
+      if (bcls == 2 || f > uFogDark) k = DARK[k];
+      if (f < uFogDrop && k != 0) { outInk = k; outCls = bcls; }
     }
-    if (tag < 0.9 && glowN * 2 >= nS && glowN > 0) { outc = PAL[glowInk]; tag = 0.95; }
-    // effects: flat EGA shapes; flames get a yellow core and a red rim
+    if (outCls == 0 && glowN * 2 >= nS && glowN > 0) { outInk = glowInk; outCls = 5; }
+    // effects: flames are flat EGA shapes (yellow core, red rim); everything
+    // else (move paths, rings, spell marks) is drawn as a 1 px EGA outline
     vec4 mk = texelFetch(tMask, lp, 0);
     if (mk.r > 0.5) {
       int k = int(mk.b * 255.0 + 0.5);
       bool warm = k == 12 || k == 14 || k == 4 || k == 6;
-      if (warm) {
-        float area = 0.0; bool rim = false;
-        for (int y = -2; y <= 2; y++) for (int x = -2; x <= 2; x++) {
-          float m = texelFetch(tMask, clamp(lp + ivec2(x, y), ivec2(0), uLo - 1), 0).r;
-          area += m;
-          if (abs(x) + abs(y) == 1 && m < 0.5) rim = true;
-        }
-        k = area > 11.0 ? (rim ? 12 : 14) : 14;
+      float area = 0.0; bool rim = false;
+      for (int y = -2; y <= 2; y++) for (int x = -2; x <= 2; x++) {
+        float m = texelFetch(tMask, clamp(lp + ivec2(x, y), ivec2(0), uLo - 1), 0).r;
+        area += m;
+        if (abs(x) + abs(y) == 1 && m < 0.5) rim = true;
       }
-      outc = PAL[k]; tag = 0.95;
+      if (warm && uFlameFill > 0.5) {
+        outInk = area > 11.0 ? (rim ? 12 : 14) : 14; outCls = 5;
+      } else if (rim || area < 12.0) {
+        outInk = k; outCls = 5;
+      }
     }
-    if (tag < 0.9 && allSky) outc = uSky;
+    if (outCls == 0 && allSky) outInk = uSkyInk;
     if (uDebug > 0.5 && !allSky) {
       vec4 g = G(lp * uSS);
       int f = flOf(g);
-      int id = idOf(g);
-      outc = uDebug < 1.5 ? PAL[f & 15] * (0.5 + 0.5 * float(best > 0.0)) : uDebug < 2.5 ? vec3(fract(float(id) * 0.13), fract(float(id) * 0.071), fract(float(id) * 0.031)) : vec3(float((f >> 4) & 3) / 3.0, float((f >> 6) & 1), g.r);
-      tag = 0.95;
+      outInk = uDebug < 1.5 ? (f & 15) : uDebug < 2.5 ? 1 + (idOf(g) % 15) : ((f >> 4) & 3) * 4 + 3;
+      outCls = 5;
     }
-    gl_FragColor = vec4(outc, tag);
+    gl_FragColor = vec4(float(outInk) / 255.0, float(outCls) / 255.0, 0.0, 1.0);
   }
 `;
 
-/** Drop isolated specks: a line pixel with at most 3 others within 3 px. */
+// ---- logical-grid clean-up passes. Texel: R = ink index, G = line class.
+const CLS_GLSL = /* glsl */ `
+  uniform sampler2D tIn;
+  uniform ivec2 uLo;
+  ivec2 T(ivec2 p) {
+    vec4 c = texelFetch(tIn, clamp(p, ivec2(0), uLo - 1), 0);
+    return ivec2(int(c.r * 255.0 + 0.5), int(c.g * 255.0 + 0.5));
+  }
+  // a thinnable line pixel (fills are left alone)
+  bool L(ivec2 p) { int c = T(p).y; return c >= 1 && c <= 4; }
+  vec4 enc(int ink, int cls) { return vec4(float(ink) / 255.0, float(cls) / 255.0, 0.0, 1.0); }
+`;
+
+/**
+ * 1. Specks and doubled lines.
+ *  - a line pixel with fewer than uMin others within 3 px goes (uMinWeak for
+ *    weak floor / tiny-object lines, so the open ground stays black);
+ *  - solid masses of line (all 8 neighbours set) keep only their outline;
+ *  - a lesser line running ALONGSIDE a greater one (a crease or albedo joint
+ *    one pixel inside an outline) goes, so outlines stay one pixel wide and
+ *    joints never cut into them; a lesser line meeting a greater one end-on
+ *    (a T junction) stays.
+ */
 const CLEAN_FRAG = /* glsl */ `
   precision highp float;
-  uniform sampler2D tRaw;
-  uniform ivec2 uLo;
-  uniform int uMin;
+  ${CLS_GLSL}
+  uniform int uMin, uMinWeak;
   void main() {
     ivec2 lp = ivec2(gl_FragCoord.xy);
-    vec4 c = texelFetch(tRaw, lp, 0);
-    if (c.a > 0.75) {
-      int n = 0, n8 = 0;
+    ivec2 c = T(lp);
+    if (c.y >= 1 && c.y <= 4) {
+      int n = 0, n8 = 0, strong = 0;
       for (int y = -3; y <= 3; y++) for (int x = -3; x <= 3; x++) {
         if (x == 0 && y == 0) continue;
-        if (texelFetch(tRaw, clamp(lp + ivec2(x, y), ivec2(0), uLo - 1), 0).a > 0.75) {
+        int k = T(lp + ivec2(x, y)).y;
+        if (k >= 1 && k <= 4) {
           n++;
+          if (k >= 3) strong++;
           if (abs(x) <= 1 && abs(y) <= 1) n8++;
         }
       }
-      // specks go; solid masses of line (faceted rocks, rubble) keep only
-      // their outline. Effects and glow fills (a < 0.98) stay solid.
-      if (n < uMin || (n8 == 8 && c.a > 0.98)) c = vec4(0.0, 0.0, 0.0, 0.5);
+      bool drop = n < (c.y == 1 ? uMinWeak : uMin) || n8 == 8;
+      if (c.y == 1 && strong * 2 < n && n < uMinWeak + 6) drop = true;
+      for (int i = 0; i < 4 && !drop; i++) {
+        ivec2 a = i == 0 ? ivec2(1, 0) : i == 1 ? ivec2(-1, 0) : i == 2 ? ivec2(0, 1) : ivec2(0, -1);
+        int h = T(lp + a).y;
+        if (h <= c.y || h > 4) continue;
+        if (c.y <= 2) { drop = true; break; }
+        // a crease beside an outline: keep it only if it runs away from it
+        if (T(lp - a).y != c.y) drop = true;
+      }
+      if (drop) c = ivec2(0, 0);
     }
-    gl_FragColor = vec4(c.rgb, 1.0);
+    gl_FragColor = enc(c.x, c.y);
+  }
+`;
+
+/** 2. Zhang-Suen thinning sub-iteration (uStep 0/1): every line one logical pixel wide. */
+const THIN_FRAG = /* glsl */ `
+  precision highp float;
+  ${CLS_GLSL}
+  uniform int uStep;
+  void main() {
+    ivec2 lp = ivec2(gl_FragCoord.xy);
+    ivec2 c = T(lp);
+    if (c.y >= 1 && c.y <= 4) {
+      // P2..P9 clockwise from north (GL y is up)
+      bool p[8];
+      p[0] = L(lp + ivec2(0, 1)); p[1] = L(lp + ivec2(1, 1)); p[2] = L(lp + ivec2(1, 0)); p[3] = L(lp + ivec2(1, -1));
+      p[4] = L(lp + ivec2(0, -1)); p[5] = L(lp + ivec2(-1, -1)); p[6] = L(lp + ivec2(-1, 0)); p[7] = L(lp + ivec2(-1, 1));
+      int b = 0, t = 0;
+      for (int i = 0; i < 8; i++) {
+        if (p[i]) b++;
+        if (!p[i] && p[(i + 1) & 7]) t++;
+      }
+      bool del = b >= 2 && b <= 6 && t == 1;
+      if (uStep == 0) del = del && !(p[0] && p[2] && p[4]) && !(p[2] && p[4] && p[6]);
+      else del = del && !(p[0] && p[2] && p[6]) && !(p[0] && p[4] && p[6]);
+      if (del) c = ivec2(0, 0);
+    }
+    gl_FragColor = enc(c.x, c.y);
+  }
+`;
+
+/**
+ * 3. Continuity and one ink per line.
+ *  - a one-pixel gap in a straight run (line on both sides along one
+ *    direction, continuing beyond, nothing across) is bridged;
+ *  - a line pixel whose ink is a small minority among the line pixels round
+ *    it takes the majority ink, so a long edge never dashes between two inks.
+ */
+const BRIDGE_FRAG = /* glsl */ `
+  precision highp float;
+  ${CLS_GLSL}
+  ${PAL_GLSL}
+  void main() {
+    ivec2 lp = ivec2(gl_FragCoord.xy);
+    ivec2 c = T(lp);
+    if (c.y == 0) {
+      bool any4 = L(lp + ivec2(1, 0)) || L(lp + ivec2(-1, 0)) || L(lp + ivec2(0, 1)) || L(lp + ivec2(0, -1));
+      for (int i = 0; i < 4; i++) {
+        ivec2 d = i == 0 ? ivec2(1, 0) : i == 1 ? ivec2(0, 1) : i == 2 ? ivec2(1, 1) : ivec2(1, -1);
+        ivec2 e = ivec2(-d.y, d.x);
+        if (i >= 2 && any4) continue;
+        if (!L(lp + d) || !L(lp - d) || L(lp + e) || L(lp - e)) continue;
+        bool fa = L(lp + 2 * d) || L(lp + 2 * d + e) || L(lp + 2 * d - e);
+        bool fb = L(lp - 2 * d) || L(lp - 2 * d + e) || L(lp - 2 * d - e);
+        if (!fa || !fb) continue;
+        ivec2 A = T(lp + d), B = T(lp - d);
+        c = A.y >= B.y ? A : B;
+        break;
+      }
+    }
+    if (c.y >= 1 && c.y <= 4) {
+      int cnt[16];
+      for (int i = 0; i < 16; i++) cnt[i] = 0;
+      int tot = 0;
+      for (int y = -4; y <= 4; y++) for (int x = -4; x <= 4; x++) {
+        ivec2 q = T(lp + ivec2(x, y));
+        if (q.y >= 1 && q.y <= 4 && (q.y == 2) == (c.y == 2)) { cnt[q.x & 15]++; tot++; }
+      }
+      int mk = c.x, mc = 0;
+      for (int i = 1; i < 16; i++) if (cnt[i] > mc) { mc = cnt[i]; mk = i; }
+      if (mk != c.x && cnt[c.x & 15] * 4 < tot && mc * 2 > tot) c.x = mk;
+    }
+    gl_FragColor = enc(c.x, c.y);
   }
 `;
 
 const BLIT_FRAG = /* glsl */ `
+  precision highp float;
   uniform sampler2D tLines;
   varying vec2 vUv;
-  void main() { gl_FragColor = vec4(texture2D(tLines, vUv).rgb, 1.0); }
+  ${PAL_GLSL}
+  void main() {
+    int k = int(texture2D(tLines, vUv).r * 255.0 + 0.5);
+    gl_FragColor = vec4(PAL[k & 15], 1.0);
+  }
 `;
 
 const _box = new THREE.Box3();
@@ -484,9 +651,15 @@ export class LineArtPass {
       fxT: 0.22, // effects brighter than this (linear) are drawn as shapes
       fogDark: 0.55,
       fogDrop: 0.88,
-      minSpeck: 4,
+      minSpeck: 4, // a line pixel needs this many others within 3 px...
+      minWeak: 9, // ...or this many for weak lines (floors, tiny objects)
+      flank: 3, // px of flat surface a crease needs on both sides (hi-res; small objects one less)
+      bold: 2.5, // creases stronger than bold x crease skip the flat-flank test
+      halo: 1, // logical px of black kept round every nearer silhouette
+      thin: 2, // thinning iterations
+      tiny: 12, // objects under this many logical px tall draw weak outlines only
       angle: 28, // min world-space turn (deg) of a crease line
-      grid: 1.5, // battle-square size (m) drawn on level ground in tactical views; 0 = off // a line pixel needs this many others within 3 px
+      grid: 1.5, // battle-square size (m) drawn on level ground in tactical views; 0 = off
     };
     this.depth = new THREE.DepthTexture(4, 4, THREE.FloatType);
     this.depth.minFilter = this.depth.magFilter = THREE.NearestFilter;
@@ -506,10 +679,10 @@ export class LineArtPass {
     this.ink = rt8(true);
     this.fx = rt8(true); // shares the ink pass's depth
     this.mask = rt8(false);
-    this.clean = rt8(false);
+    this._pp = [rt8(false), rt8(false)];
     this._raw = [rt8(false), rt8(false)];
     this._li = 0;
-    this.lines = this.clean;
+    this.lines = this._pp[1];
     this._lastView = new THREE.Matrix4();
     this._lastProj = new THREE.Matrix4();
 
@@ -556,7 +729,11 @@ export class LineArtPass {
       uJump: { value: 0 },
       uLum: { value: 0 },
       uLumDist: { value: 0 },
-      uSky: { value: new THREE.Vector3() },
+      uSkyInk: { value: 0 },
+      uFlank: { value: 3 },
+      uHalo: { value: 2 },
+      uFlameFill: { value: 1 },
+      uBold: { value: 4 },
       uFog: { value: new THREE.Vector3() },
       uFogDark: { value: 0.55 },
       uFogDrop: { value: 0.88 },
@@ -566,8 +743,11 @@ export class LineArtPass {
       uGrid: { value: new THREE.Vector2(1.5, 0) },
       uAngle: { value: 0.5 },
     });
-    this.cleanQ = quad(CLEAN_FRAG, { tRaw: { value: null }, uLo: { value: new THREE.Vector2(4, 4) }, uMin: { value: 4 } });
-    this.blitQ = quad(BLIT_FRAG, { tLines: { value: this.clean.texture } });
+    const lo = () => ({ tIn: { value: null }, uLo: { value: new THREE.Vector2(4, 4) } });
+    this.cleanQ = quad(CLEAN_FRAG, { ...lo(), uMin: { value: 4 }, uMinWeak: { value: 8 } });
+    this.thinQ = quad(THIN_FRAG, { ...lo(), uStep: { value: 0 } });
+    this.bridgeQ = quad(BRIDGE_FRAG, lo());
+    this.blitQ = quad(BLIT_FRAG, { tLines: { value: null } });
     this._buf = new THREE.Vector2();
     this._vp = new THREE.Vector4();
     this._lw = 0;
@@ -587,7 +767,7 @@ export class LineArtPass {
       this.ink.setSize(lw * ss, lh * ss);
       this.fx.setSize(lw * ss, lh * ss);
       this.mask.setSize(lw, lh);
-      this.clean.setSize(lw, lh);
+      for (const t of this._pp) t.setSize(lw, lh);
       for (const t of this._raw) t.setSize(lw, lh);
       this._resized = true;
     }
@@ -639,9 +819,10 @@ export class LineArtPass {
     const info = this._info.get(obj);
     const ri = info?.root ? this._rootInfo.get(info.root) : null;
     const id = ri ? ri.id : 0;
-    const det = ri ? this._detail.get(info.root) ?? 0 : 3;
-    u.uOut.value.set((id & 255) / 255, ((id >> 8) & 255) / 255, ri ? ri.ink : -1);
-    u.uFlags.value = (det << 4) | (this._isGlow(m) ? 64 : 0);
+    const dv = ri ? this._detail.get(info.root) ?? 0 : 3;
+    const det = dv & 3;
+    u.uOut.value.set((id & 255) / 255, ((id >> 8) & 255) / 255, ri ? ri.curInk ?? ri.ink : -1);
+    u.uFlags.value = (det << 4) | (this._isGlow(m) ? 64 : 0) | (dv & 4 ? 128 : 0);
     mat.uniformsNeedUpdate = true;
   }
 
@@ -686,7 +867,9 @@ export class LineArtPass {
 
   _makeRoot(root) {
     const votes = new Float32Array(16);
+    const satVotes = new Float32Array(16);
     let total = 0;
+    const stand = [];
     root.traverse((m) => {
       if (!m.isMesh || !m.visible) return;
       const mats = Array.isArray(m.material) ? m.material : [m.material];
@@ -701,6 +884,8 @@ export class LineArtPass {
       const vcs = this._vertexSamples(g);
       for (const mat of mats) {
         if (!mat || isFxMat(mat)) continue;
+        const us = mat.userData?.uStand;
+        if (us && typeof us.value === 'number' && !stand.includes(us)) stand.push(us);
         colorOf(mat, _c);
         let r0 = _c.r, g0 = _c.g, b0 = _c.b;
         const tex = texOf(mat);
@@ -714,22 +899,31 @@ export class LineArtPass {
         const wEach = area / mats.length / samples.length;
         for (const vc of samples) {
           const [ink, sat] = egaInkJS(r0 * vc[0], g0 * vc[1], b0 * vc[2]);
-          const w = wEach * (sat ? 2.5 : 1);
-          votes[ink] += w;
-          total += w;
+          votes[ink] += wEach;
+          if (sat) satVotes[ink] += wEach;
+          total += wEach;
         }
       }
     });
+    // the ink of the largest clearly COLOURED region if it covers a fair share
+    // of the object (a red robe keeps the figure red even over grey mail and
+    // flesh), otherwise the majority ink
     let ink = 7;
     let best = -1;
-    for (let i = 1; i < 16; i++) if (votes[i] > best) ((best = votes[i]), (ink = i));
+    let sInk = 0;
+    let sBest = 0;
+    for (let i = 1; i < 16; i++) {
+      if (votes[i] > best) ((best = votes[i]), (ink = i));
+      if (satVotes[i] > sBest) ((sBest = satVotes[i]), (sInk = i));
+    }
+    if (sInk && sBest > 0.18 * total) ink = sInk;
     if (total === 0) ink = 7;
     // id 0 = "large surface"; spread ids so neighbours never collide
     const id = (this._nextId = (this._nextId * 40503 + 1) & 0xffff) || 1;
     _box.setFromObject(root);
     const center = _box.getCenter(new THREE.Vector3());
     root.worldToLocal(center);
-    return { id, ink, size: this._sizeOf(root), center };
+    return { id, ink, curInk: ink, stand: stand.length ? stand : null, size: this._sizeOf(root), center };
   }
 
   /** Up to ~256 vertex colours of a geometry (null without a colour attribute). */
@@ -830,7 +1024,10 @@ export class LineArtPass {
       _v.copy(ri.center).applyMatrix4(root.matrixWorld).applyMatrix4(camera.matrixWorldInverse);
       const z = Math.max(0.05, -_v.z);
       const px = ortho ? (ri.size / viewH) * lh : (ri.size / (2 * z * tanH)) * lh;
-      this._detail.set(root, px > p.detail2 ? 2 : px > p.detail1 ? 1 : 0);
+      this._detail.set(root, (px > p.detail2 ? 2 : px > p.detail1 ? 1 : 0) | (px < p.tiny ? 4 : 0));
+      // a figure repainted at run time (the active combatant's standout
+      // cloth, material.userData.uStand) takes that colour's ink while it lasts
+      ri.curInk = ri.stand?.some((u) => u.value > 0.5) ? 12 : ri.ink;
     }
   }
 
@@ -843,8 +1040,8 @@ export class LineArtPass {
       });
       this._skyCache.set(scene, dome);
     }
-    if (dome && dome.visible && dome.userData.keys.night < 0.5) return PAL_RGB[1];
-    return PAL_RGB[0];
+    if (dome && dome.visible && dome.userData.keys.night < 0.5) return 1;
+    return 0;
   }
 
   /**
@@ -963,7 +1160,10 @@ export class LineArtPass {
     else if (f?.isFog) u.uFog.value.set(0, f.near, f.far);
     else u.uFog.value.set(0, 0, 0);
     const sky = this._skyColor(scene);
-    u.uSky.value.set(sky[0], sky[1], sky[2]);
+    u.uSkyInk.value = sky;
+    u.uFlank.value = p.flank;
+    u.uBold.value = p.bold;
+    u.uHalo.value = p.halo * this._ss;
     const still = this._still(camera, dt);
     const prev = this._raw[this._li];
     this._li ^= 1;
@@ -973,12 +1173,33 @@ export class LineArtPass {
     renderer.setRenderTarget(raw);
     renderer.render(this.edgeQ.s, this.cam);
 
-    // 4. speck filter, then nearest-neighbour upscale to the canvas
-    this.cleanQ.m.uniforms.tRaw.value = raw.texture;
-    this.cleanQ.m.uniforms.uLo.value.set(this._lw, this._lh);
-    this.cleanQ.m.uniforms.uMin.value = p.minSpeck;
-    renderer.setRenderTarget(this.clean);
-    renderer.render(this.cleanQ.s, this.cam);
+    // 4. logical-grid clean-up: specks and doubled lines, thinning to one
+    //    pixel, gap bridging and one ink per line; then a nearest-neighbour
+    //    upscale to the canvas
+    const pp = this._pp;
+    let src = raw;
+    let k = 0;
+    const step = (q, extra) => {
+      const uu = q.m.uniforms;
+      uu.tIn.value = src.texture;
+      uu.uLo.value.set(this._lw, this._lh);
+      if (extra) extra(uu);
+      renderer.setRenderTarget(pp[k]);
+      renderer.render(q.s, this.cam);
+      src = pp[k];
+      k ^= 1;
+    };
+    step(this.cleanQ, (uu) => {
+      uu.uMin.value = p.minSpeck;
+      uu.uMinWeak.value = p.minWeak;
+    });
+    for (let i = 0; i < p.thin; i++) {
+      step(this.thinQ, (uu) => (uu.uStep.value = 0));
+      step(this.thinQ, (uu) => (uu.uStep.value = 1));
+    }
+    step(this.bridgeQ);
+    this.lines = src;
+    this.blitQ.m.uniforms.tLines.value = src.texture;
 
     renderer.setRenderTarget(null);
     if (viewport) {
@@ -1011,9 +1232,9 @@ export class LineArtPass {
   }
 
   dispose() {
-    for (const t of [this.ink, this.fx, this.mask, this.clean, ...this._raw]) t.dispose();
+    for (const t of [this.ink, this.fx, this.mask, ...this._pp, ...this._raw]) t.dispose();
     this.depth.dispose();
-    for (const q of [this.maskQ, this.edgeQ, this.cleanQ, this.blitQ]) q.m.dispose();
+    for (const q of [this.maskQ, this.edgeQ, this.cleanQ, this.thinQ, this.bridgeQ, this.blitQ]) q.m.dispose();
     for (const m of this._variants.values()) m.dispose();
   }
 }
