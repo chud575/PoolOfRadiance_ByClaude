@@ -8,6 +8,7 @@ import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
 import { FXAAPass } from 'three/examples/jsm/postprocessing/FXAAPass.js';
 import { GradeShader } from './post/GradeShader.js';
 import { ClassicShader } from './post/ClassicShader.js';
+import { LineArtPass } from './post/LineArtPass.js';
 
 /** Default post settings; scenes override a subset via `scene.post = {...}`. */
 export const DEFAULT_POST = Object.freeze({
@@ -21,11 +22,17 @@ export const DEFAULT_POST = Object.freeze({
   contrast: 1.04,
   grain: 0.02,
   clearColor: 0x05070f,
+  // Classic 1988 mode look for this scene's 3D: 'lines' (edge-detected EGA line
+  // art on black, the default) or 'ega' (the whole frame posterised to EGA, for
+  // scenes authored in flat EGA fills such as the title card).
+  classicStyle: 'lines',
 });
 
 /**
  * Shared WebGL renderer + post-processing pipeline:
  *   RenderPass → UnrealBloom → OutputPass (ACES tone map + sRGB) → Grade → AA (SMAA|FXAA) → Classic
+ * In classic mode with post.classicStyle 'lines' the composer is bypassed and
+ * post/LineArtPass.js draws the scene as EGA line art on black instead.
  * One instance for the whole app (ctx.render). Scenes call ctx.render.render(scene, camera).
  */
 export class RenderContext {
@@ -108,12 +115,23 @@ export class RenderContext {
     this.passes.bloom.enabled = !!this.post.bloom && (this.settings?.get('bloom') ?? true) && !this.classic;
     this.passes.smaa.enabled = aa === 'smaa' && !this.classic;
     this.passes.fxaa.enabled = aa === 'fxaa' && !this.classic;
-    this.passes.classic.enabled = this.classic;
+    this.passes.classic.enabled = this.classic; // 'ega' style only; 'lines' bypasses the composer
     this.passes.grade.enabled = !this.classic;
   }
 
-  /** Render a scene through the full post pipeline. */
-  render(scene, camera) {
+  /**
+   * Render a scene through the full post pipeline.
+   * @param {{lines?: {scene: THREE.Scene, camera: THREE.Camera}}} [opts] `lines`: when the
+   *   frame is a screen-space composite (e.g. a DOF quad), the 3D scene the classic
+   *   line-art pass should draw instead.
+   */
+  render(scene, camera, opts) {
+    if (this.classic && this.post.classicStyle !== 'ega') {
+      this.lineArt ??= new LineArtPass();
+      const src = opts?.lines ?? { scene, camera };
+      this.lineArt.render(this.renderer, src.scene, src.camera);
+      return;
+    }
     this.passes.render.scene = scene;
     this.passes.render.camera = camera;
     this.passes.grade.uniforms.uTime.value = this.clock?.time ?? 0;

@@ -69,7 +69,7 @@ export default class TitleScene extends Scene {
     this.logo = createLogo();
     this.camera.add(this.logo.mesh);
     this.scene3d.add(this.camera);
-    this.post = { bloomStrength: 0.55, bloomRadius: 0.45, bloomThreshold: 0.92, exposure: 1.0, vignette: 0.5 };
+    this.post = { bloomStrength: 0.55, bloomRadius: 0.45, bloomThreshold: 0.92, exposure: 1.0, vignette: 0.5, classicStyle: 'ega' };
 
     this.cam = { p: new THREE.Vector3(...POSES.card.p), l: new THREE.Vector3(...POSES.card.l) };
     this.camTween = null;

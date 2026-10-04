@@ -2463,7 +2463,7 @@ export class Diorama {
     u.uMax.value = 5.5 * pr;
     u.tSigns.value = hasSigns ? this.rtS.texture : null;
     u.uSigns.value = hasSigns ? 1 : 0;
-    rc.render(this.dofScene, this.dofCam);
+    rc.render(this.dofScene, this.dofCam, { lines: { scene: this.scene, camera: this.camera } });
   }
 
   cellAt(sx, sy) {
