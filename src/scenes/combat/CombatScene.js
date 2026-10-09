@@ -3023,8 +3023,11 @@ export default class CombatScene extends Scene {
       // masonry behind), from a low angle that shows the architecture.
       // Reskin 2: a true three-quarter front view from chest height, the
       // figure (base to crown) filling the free band between card and table.
-      const bandTop = rect.bandTop ?? 0;
-      const bandBot = rect.bandBottom ?? rect.h;
+      // A degenerate band (panels laid out elsewhere) frames the whole window
+      // instead of clamping it all to shadow.
+      const bandOk = (rect.bandBottom ?? rect.h) - (rect.bandTop ?? 0) > rect.h * 0.2;
+      const bandTop = bandOk ? (rect.bandTop ?? 0) : 0;
+      const bandBot = bandOk ? (rect.bandBottom ?? rect.h) : rect.h;
       const bandH = Math.max(rect.h * 0.3, bandBot - bandTop);
       const tanH = Math.tan(THREE.MathUtils.degToRad(15));
       // Reskin 8: the figure (base to crown, raised weapon) fills about two

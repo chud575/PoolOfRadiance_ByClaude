@@ -261,9 +261,12 @@
 .cb-hud:not(.cb-help-on) .cb-help { display: none; }
 
 /* Panels inside the hero column: no borders of their own (the rope is the
-   frame), dark smoky grounds laid over the live close-up. */
+   frame), dark smoky grounds laid over the live close-up. Position is restated
+   here: .por-frame (ui.css) sets position: relative at the same specificity as
+   .cb-card, so a build that loads ui.css after this sheet would drop both
+   panels into the page flow at the top left. */
 .cb-card.por-frame, .cb-roster.por-frame {
-  right: calc(var(--rope-t) * 0.75); width: calc(var(--col) - var(--rope-t) * 1.5); box-sizing: border-box;
+  position: absolute; right: calc(var(--rope-t) * 0.75); width: calc(var(--col) - var(--rope-t) * 1.5); box-sizing: border-box;
   border: none; border-image: none; box-shadow: none; padding-left: 1.4em; padding-right: 1.4em;
 }
 .cb-card.por-frame { top: calc(var(--rope-t) * 0.75); background: linear-gradient(180deg, rgba(6, 5, 4, 0.9) 0%, rgba(6, 5, 4, 0.78) 72%, rgba(6, 5, 4, 0)); padding-bottom: 1.6em; }
