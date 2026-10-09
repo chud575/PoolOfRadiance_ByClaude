@@ -2944,12 +2944,15 @@ export default class CombatScene extends Scene {
     const rect = this.hud?.closeupRect?.();
     const act = this.engine?.active?.() ?? this.demoActive;
     const fig = act && !this.engine.out(act) ? this.figures.get(act.id) : null;
-    if (!rect || !fig || this.done || this.ctx.render.classic) {
+    if (!rect || !fig || this.done) {
       this.hud?.setCloseup?.('');
       return;
     }
     this.hud.setCloseup(act.name);
     const r = this.ctx.render.renderer;
+    // Classic 1988 mode: the hero is drawn every frame as EGA line art straight
+    // into the window (no HDR target, no grade: that would muddy the inks).
+    const classic = !!this.ctx.render.classic;
     const dpr = r.getPixelRatio();
     const W = Math.max(8, Math.round(rect.w * dpr));
     const H = Math.max(8, Math.round(rect.h * dpr));
@@ -2996,13 +2999,14 @@ export default class CombatScene extends Scene {
       });
     }
     const rt = this._closeRT;
-    let due = this._closeId !== act.id || !(Math.abs(this.time - (this._closeT ?? -9)) < 0.18) || (this._closeN ?? 0) < 3;
+    let due = classic || this._closeClassic !== classic || this._closeId !== act.id || !(Math.abs(this.time - (this._closeT ?? -9)) < 0.18) || (this._closeN ?? 0) < 3;
     if (rt.width !== W || rt.height !== H) {
       rt.setSize(W, H);
       rt.depthTexture.image.width = W;
       rt.depthTexture.image.height = H;
       due = true;
     }
+    this._closeClassic = classic;
     if (due) {
       this._closeId = act.id;
       this._closeT = this.time;
@@ -3113,11 +3117,16 @@ export default class CombatScene extends Scene {
         this.fill.color.set(0xffc690);
         this.fill.target.updateMatrixWorld();
       }
-      const prevRT = r.getRenderTarget();
-      r.setRenderTarget(rt);
-      r.clear();
-      r.render(this.scene3d, cam);
-      r.setRenderTarget(prevRT);
+      if (classic) {
+        const cv = r.domElement.getBoundingClientRect();
+        this.ctx.render.renderInset(this.scene3d, cam, { x: rect.x - cv.left, y: rect.y - cv.top, w: rect.w, h: rect.h });
+      } else {
+        const prevRT = r.getRenderTarget();
+        r.setRenderTarget(rt);
+        r.clear();
+        r.render(this.scene3d, cam);
+        r.setRenderTarget(prevRT);
+      }
       {
         const u = this._closeQuad.material.uniforms;
         u.uNF.value.set(cam.near, cam.far);
@@ -3138,6 +3147,9 @@ export default class CombatScene extends Scene {
         if (of.blob) of.blob.visible = !!of._blobWas;
       }
     }
+    // The line-art inset is already in the window; otherwise the classic HDR
+    // target was never filled, so nothing is blitted.
+    if (classic) return;
     // Blit into the frame's window (CSS px, origin bottom-left for GL).
     const cv = r.domElement.getBoundingClientRect();
     const x = rect.x - cv.left;
