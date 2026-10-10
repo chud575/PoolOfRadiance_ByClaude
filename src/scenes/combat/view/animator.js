@@ -350,8 +350,9 @@ export class Figure {
     let bob = 0;
     let yaw = this.currentYaw(t);
     // Walking translation.
-    let walking = 0;
-    let walkPhase = 0;
+    const walking = 0;
+    const walkPhase = 0;
+    let lift = 0;
     if (this.walk) {
       const w = this.walk;
       if (t >= w.t1) {
@@ -362,13 +363,16 @@ export class Figure {
         yaw = last.yaw;
         this.walk = null;
       } else if (t >= w.t0) {
+        // A chess-piece move, not a walk: each square is one discrete slide
+        // (eased, with a small lift and set-down, then a beat at rest before the
+        // next square). No stepping legs: the figure keeps its idle stance.
         const seg = w.segs.find((sg) => t < sg.t1) ?? w.segs[w.segs.length - 1];
-        const u = clamp01((t - seg.t0) / (seg.t1 - seg.t0));
+        const r = clamp01((t - seg.t0) / (seg.t1 - seg.t0));
+        const u = ease(clamp01(r / 0.78));
         this.pos.set(lerp(seg.a.x, seg.b.x, u), 0, lerp(seg.a.z, seg.b.z, u));
-        yaw = angLerp(this.currentYaw(t), seg.yaw, clamp01((t - seg.t0) / 0.12));
+        lift = Math.sin(Math.PI * clamp01(r / 0.78)) * 0.14 * this.s;
+        yaw = angLerp(this.currentYaw(t), seg.yaw, clamp01((t - seg.t0) / 0.1));
         this.yawFrom = this.yawTo = seg.yaw;
-        walking = 1;
-        walkPhase = ((t - w.t0) / (seg.t1 - seg.t0)) * Math.PI;
       }
     }
     const idleT = t + this.phase;
@@ -388,6 +392,7 @@ export class Figure {
 
     // Root transform (with death topple).
     this.root.position.copy(this.pos);
+    this.root.position.y += lift;
     {
       const ka = t - this.knockT;
       if (ka >= 0 && ka < 1.4) {

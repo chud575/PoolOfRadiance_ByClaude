@@ -28,6 +28,46 @@ import { DEMOS } from './demos.js';
 import { installPauseMenu, openPauseMenu } from '../../ui/PauseMenu.js';
 
 /** Camera pan keys → [screen x, screen y] (y = toward the viewer). */
+/**
+ * Combat uses a fixed-angle orthographic camera (a tabletop seen from one high
+ * three-quarter bearing, walls running diagonally). It keeps the perspective
+ * camera's interface: `fov`/`aspect` plus a `viewDist` that plays the old
+ * camera distance, so the view's height is viewDist * tan(fov / 2). All the
+ * framing, zoom and pixel-size maths written for the perspective camera
+ * therefore still hold.
+ */
+class FixedOrthoCamera extends THREE.OrthographicCamera {
+  constructor(fov = 34, aspect = 1, near = 0.3, far = 400) {
+    super(-1, 1, 1, -1, near, far);
+    this.fov = fov;
+    this.aspect = aspect;
+    this.viewDist = 20;
+    this.updateProjectionMatrix();
+  }
+
+  updateProjectionMatrix() {
+    if (this.fov !== undefined) {
+      const top = this.viewDist * Math.tan((this.fov * Math.PI) / 360);
+      this.top = top;
+      this.bottom = -top;
+      this.right = top * this.aspect;
+      this.left = -this.right;
+    }
+    super.updateProjectionMatrix();
+  }
+
+  copy(source, recursive) {
+    super.copy(source, recursive);
+    this.fov = source.fov;
+    this.aspect = source.aspect;
+    this.viewDist = source.viewDist;
+    return this;
+  }
+}
+/** The one camera bearing (yaw) and elevation (pitch) combat is seen from. */
+const FIXED_YAW = Math.PI / 4;
+const FIXED_PITCH = 0.96;
+
 const CAM_PAN_KEYS = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0], Numpad8: [0, -1], Numpad2: [0, 1], Numpad4: [-1, 0], Numpad6: [1, 0] };
 
 /** Portrait cache (data URLs) shared by every fight this session. */
@@ -71,7 +111,7 @@ export default class CombatScene extends Scene {
 
     // ------------------------------------------------ scene & lighting
     const s = (this.scene3d = new THREE.Scene());
-    this.camera = new THREE.PerspectiveCamera(34, render.aspect, 0.3, 400);
+    this.camera = new FixedOrthoCamera(34, render.aspect, 0.3, 400);
     this._applyViewOffset();
     const W = this.field.w * TILE;
     const H = this.field.h * TILE;
@@ -416,18 +456,14 @@ export default class CombatScene extends Scene {
     this._frames = 0;
 
     // ------------------------------------------------ camera
-    this.cam = { yaw: 0.32, pitch: 0.74, dist: Math.max(W * 0.95, H * 1.35) + 4, target: this.center.clone(), goalTarget: this.center.clone(), goalYaw: 0.32, goalDist: 0, goalPitch: 0.74 };
+    this.cam = { yaw: FIXED_YAW, pitch: FIXED_PITCH, dist: Math.max(W * 0.95, H * 1.35) + 4, target: this.center.clone(), goalTarget: this.center.clone(), goalYaw: FIXED_YAW, goalDist: 0, goalPitch: FIXED_PITCH };
     this.cam.maxDist = this.cam.dist * 1.2;
     this.cam.minDist = 8;
     this._frameCombatants(true, null, false, true);
     if (!this.demo) {
-      this._chooseYaw();
-
-      // Debug/screenshot overrides: &yaw= &pitch= (radians), &dist= (metres).
+      // The camera angle is fixed (no bearing search, no yaw/pitch overrides).
+      // Debug/screenshot override: &dist= (metres) sets the zoom.
       const num = (k) => (params[k] !== undefined && Number.isFinite(+params[k]) ? +params[k] : null);
-      if (num('yaw') !== null) this.cam.yaw = this.cam.goalYaw = num('yaw');
-      if (num('pitch') !== null) this.cam.pitch = this.cam.goalPitch = num('pitch');
-      this._frameCombatants(true, null, false, true);
       if (num('dist') !== null) this.cam.dist = this.cam.goalDist = num('dist');
     }
     // Bloom only on true emitters: a high threshold and a capped strength so lit
@@ -1244,10 +1280,8 @@ export default class CombatScene extends Scene {
         drag.x = e.clientX;
         drag.y = e.clientY;
         drag.moved += Math.abs(dx) + Math.abs(dy);
-        if (drag.button === 2) {
-          this.cam.goalYaw -= dx * 0.006;
-          this.cam.goalPitch = Math.max(0.5, Math.min(1.35, this.cam.goalPitch + dy * 0.004));
-        } else if (drag.button === 1) {
+        if (drag.button === 2 || drag.button === 1) {
+          // Fixed camera angle: right or middle drag pans the board.
           const k = this.cam.dist * 0.0016;
           const fwd = new THREE.Vector3(Math.sin(this.cam.yaw), 0, Math.cos(this.cam.yaw));
           const right = new THREE.Vector3(fwd.z, 0, -fwd.x);
@@ -1367,10 +1401,6 @@ export default class CombatScene extends Scene {
       this.cam.userPanned = true;
       return;
     }
-    if (k === '[' || k === '{') { this.cam.goalPitch = Math.min(1.35, this.cam.goalPitch + 0.08); return; }
-    if (k === ']' || k === '}') { this.cam.goalPitch = Math.max(0.5, this.cam.goalPitch - 0.08); return; }
-    if (k === ',' || k === '<') { this.cam.goalYaw += Math.PI / 8; return; }
-    if (k === '.' || k === '>') { this.cam.goalYaw -= Math.PI / 8; return; }
     if (k === '+' || k === '=') { this.cam.goalDist = Math.max(this.cam.minDist, this.cam.goalDist * 0.88); return; }
     if (k === '-' || k === '_') { this.cam.goalDist = Math.min(this.cam.maxDist, this.cam.goalDist * 1.12); return; }
     if (k === 'Home' && !code.startsWith('Numpad')) { this.cam.userPanned = false; this._focus(this.engine.active()); return; }
@@ -2445,6 +2475,8 @@ export default class CombatScene extends Scene {
     const pitch = this.cam.goalPitch;
     c.position.set(cx + Math.sin(yaw) * Math.cos(pitch) * dist, Math.sin(pitch) * dist, cz + Math.cos(yaw) * Math.cos(pitch) * dist);
     c.lookAt(cx, 0.6, cz);
+    c.viewDist = dist;
+    c.updateProjectionMatrix();
     c.updateMatrixWorld(true);
     return p.clone().project(c);
   }
@@ -2580,8 +2612,8 @@ export default class CombatScene extends Scene {
         cam.goalTarget.addScaledVector(right, px * step).addScaledVector(fwd, pz * step);
       }
     }
-    cam.yaw += (cam.goalYaw - cam.yaw) * a;
-    cam.pitch += (cam.goalPitch - cam.pitch) * a;
+    cam.yaw = cam.goalYaw = FIXED_YAW;
+    cam.pitch = cam.goalPitch = FIXED_PITCH;
     cam.dist += (cam.goalDist - cam.dist) * a;
     cam.target.lerp(cam.goalTarget, a);
     const t = cam.target;
@@ -2590,6 +2622,8 @@ export default class CombatScene extends Scene {
     const sh = this.vfx.shakeOffset(this.time);
     this.camera.position.add(sh);
     this.camera.lookAt(t.x + sh.x * 0.5, t.y + 0.6, t.z + sh.z * 0.5);
+    this.camera.viewDist = cam.dist;
+    this.camera.updateProjectionMatrix();
     this._occlusion();
   }
 
