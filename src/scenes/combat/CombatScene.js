@@ -66,7 +66,8 @@ class FixedOrthoCamera extends THREE.OrthographicCamera {
 }
 /** The one camera bearing (yaw) and elevation (pitch) combat is seen from. */
 const FIXED_YAW = Math.PI / 4;
-const FIXED_PITCH = 0.96;
+// True isometric elevation (arctan 1/√2 ≈ 35.3°), as in classic isometric RTS games.
+const FIXED_PITCH = Math.atan(Math.SQRT1_2);
 
 const CAM_PAN_KEYS = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0], Numpad8: [0, -1], Numpad2: [0, 1], Numpad4: [-1, 0], Numpad6: [1, 0] };
 
@@ -1319,10 +1320,10 @@ export default class CombatScene extends Scene {
     };
     const onCtx = (e) => e.preventDefault();
     const onKey = (e) => this._key(e);
-    // Held camera-pan keys (Shift+arrows / Shift+numpad), applied smoothly in _updateCamera.
+    // Held camera-pan keys (arrows / Shift+numpad), applied smoothly in _updateCamera.
     this._camPan = new Set();
     const onKeyUp = (e) => {
-      if (e.key === 'Shift') this._camPan.clear();
+      if (e.key === 'Shift') { for (const c of this._camPan) if (c.startsWith('Numpad')) this._camPan.delete(c); }
       else this._camPan.delete(e.code);
     };
     const onBlur = () => this._camPan.clear();
@@ -1388,8 +1389,8 @@ export default class CombatScene extends Scene {
     const k = e.key;
     const code = e.code;
     // Camera keys always work.
-    // Shift+arrows (or Shift+numpad 8/2/4/6) pan the camera while held; plain arrows still move.
-    if (e.shiftKey && CAM_PAN_KEYS[code]) {
+    // Arrow keys (or Shift+numpad 8/2/4/6) pan the camera while held; the numpad moves.
+    if (CAM_PAN_KEYS[code] && (code.startsWith('Arrow') || e.shiftKey)) {
       e.preventDefault();
       // A single tap steps the view a tile; holding keeps gliding (see _updateCamera).
       if (!e.repeat && !this._camPan.has(code)) {
@@ -1423,7 +1424,7 @@ export default class CombatScene extends Scene {
     if (upper === 'V') { this._cmdView(); return; }
     // Numpad / arrows.
     const numpad = { Numpad8: [0, -1], Numpad2: [0, 1], Numpad4: [-1, 0], Numpad6: [1, 0], Numpad7: [-1, -1], Numpad9: [1, -1], Numpad1: [-1, 1], Numpad3: [1, 1] };
-    const arrows = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0], Home: [-1, -1], PageUp: [1, -1], End: [-1, 1], PageDown: [1, 1] };
+    const arrows = { PageUp: [1, -1], End: [-1, 1], PageDown: [1, 1] };
     const d = numpad[code] ?? arrows[k];
     if (d) {
       e.preventDefault();
