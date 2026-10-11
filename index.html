@@ -58,5 +58,11 @@
     })();
   </script>
   <script type="module" src="/src/main.js"></script>
+  <script>
+    // Hosts that wrap this page can leave the main stylesheet in <body>, after the scene
+    // stylesheets Vite appends to <head>, so it would win every equal-specificity tie. Move
+    // it into <head> before any scene loads (module scripts run after this).
+    document.querySelectorAll('link[rel="stylesheet"]').forEach(function (l) { document.head.appendChild(l); });
+  </script>
 </body>
 </html>
