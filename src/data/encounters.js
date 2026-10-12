@@ -34,7 +34,7 @@ export const ENCOUNTERS = {
     options: STD,
     terrain: 'slums_street',
     treasure: { gold: '2d10' },
-    art: { setting: 'slums', light: 'dusk' },
+    art: { setting: 'slums', light: 'dusk', video: 'kobold_patrol' },
     parley: { haughty: 'flee', sly: 'fight', nice: 'fight', meek: 'fight', abusive: 'fight' },
     parleyText: { flee: 'The kobolds exchange uneasy yelps — and scatter into the rubble.' },
   },

@@ -15,6 +15,12 @@ import { paintPanel, paintNpcPortrait, framedPortraitURL, PanelOverlay, LIGHTS, 
 import { paintCreature, CREATURE_IDS, renderCreature, lightRig, flattenSprite } from '../../ui/art/creatures.js';
 import { SETTING_IDS } from '../../ui/art/settings.js';
 import { engravedPlate, pageTexture } from './journalArt.js';
+
+/** Hand-made encounter films (art.video in data/encounters.js), shown over the painted panel. */
+const ENCOUNTER_VIDEOS = Object.fromEntries(
+  Object.entries(import.meta.glob('../../assets/encounters/*.mp4', { eager: true, query: '?url', import: 'default' }))
+    .map(([path, url]) => [path.replace(/^.*\/|\.mp4$/g, ''), url]),
+);
 import { apply, test, check, payRewards, spendGold, partyGold, living, addJournal, journalList } from './effects.js';
 
 /**
@@ -301,11 +307,32 @@ export default class DialogueScene extends Scene {
       this.composer = null;
     }
     this.artCanvas = canvas;
+    this._showVideo(spec.video);
     this.fade = { t0: this.ctx.clock.time, el: canvas, prev };
     // ambient background
     const bg = this.bgCanvas.getContext('2d');
     bg.drawImage(canvas, 0, 0, this.bgCanvas.width, this.bgCanvas.height);
     this._settleArt();
+  }
+
+  /**
+   * Lay an encounter's film over the painted panel (looping, silent). The painting stays
+   * underneath as the poster and the fallback if the browser cannot play the file.
+   */
+  _showVideo(id) {
+    const src = id && ENCOUNTER_VIDEOS[id];
+    const cur = this.artView.querySelector('.dlg-art-video');
+    // the same film carries on through the encounter's story beats (hostile, flee...)
+    if (cur && src && cur.dataset.id === id) return this.artView.append(cur);
+    cur?.remove();
+    if (!src) return;
+    const frozen = this.ctx.clock.frozen;
+    const v = h('video.dlg-art-video', { src, dataset: { id }, muted: true, loop: true, playsInline: true, autoplay: !frozen, preload: 'auto' });
+    v.muted = true;
+    v.setAttribute('playsinline', '');
+    v.addEventListener('error', () => v.remove());
+    this.artView.append(v);
+    if (!frozen) v.play?.()?.catch(() => {});
   }
 
   /** Draw the animated art layers; a browser that cannot run them keeps the still image. */
@@ -679,7 +706,7 @@ export default class DialogueScene extends Scene {
       this.ctx.ui.message(`${enc.name}: ${enc.groups.map((gr) => `${gr.count} ${MONSTERS[gr.monster][gr.count === 1 ? 'name' : 'plural']}`).join(', ')}.`, 'combat');
     }
     const art = enc.art ?? {};
-    this.encSpec = { setting: art.setting ?? 'slums', light: art.light, monsters: enc.groups.map((g) => ({ id: g.monster, count: typeof g.count === 'number' ? g.count : 4 })) };
+    this.encSpec = { setting: art.setting ?? 'slums', light: art.light, video: art.video, monsters: enc.groups.map((g) => ({ id: g.monster, count: typeof g.count === 'number' ? g.count : 4 })) };
     await this._showArt(this.encSpec, enc.name, this._zoneName());
     this._setSpeaker(null);
     this._sideEncounter(enc);
