@@ -6,7 +6,9 @@ import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 
-export const CHROME = process.env.POR_CHROME || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+// The container's Chromium build varies: take the env override, else the first known path that exists.
+const CANDIDATES = ['/opt/pw-browsers/chromium-1194/chrome-linux/chrome', '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome', '/opt/pw-browsers/chromium'];
+export const CHROME = process.env.POR_CHROME || CANDIDATES.find((p) => { try { return fs.statSync(p).isFile(); } catch { return false; } }) || CANDIDATES[0];
 // --disable-gpu-rasterization: the page's DOM is rastered on the CPU. SwiftShader GPU raster of a
 // UI-heavy 1600x900 page costs ~8 s of the single GPU thread per page, which queues behind (and
 // starves) the WebGL work of that page and the next; CPU raster of the same DOM is far cheaper.

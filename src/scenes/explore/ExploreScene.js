@@ -25,6 +25,7 @@ import { edgeKey, isDoorOpened, openLockedDoor, searchSquare, triggerMapTrap } f
 import { headBobEnabled, inferHarbour } from './exploreRules.js';
 import { SHOPS } from '../../data/shops.js';
 import { rollWandering } from '../../data/wandering.js';
+import { ClassicView } from './ClassicView.js';
 
 const STEP_TIME = 0.34;
 const TURN_TIME = 0.24;
@@ -36,7 +37,8 @@ const clamp01 = (t) => Math.min(1, Math.max(0, t));
 
 /**
  * First-person grid exploration (Gold Box style movement: one cell per step,
- * 90° turns) rendered as a full 3D scene with smooth interpolation.
+ * 90° turns) rendered as a full 3D scene with smooth interpolation. In classic 1988 mode
+ * there is no 3D: each square and facing shows a flat EGA picture and moves are instant.
  *
  * enter params: {map?, x?, y?, dir?, hour?, tileset?}  (defaults: game.location)
  * Owned by the explore-renderer workstream.
@@ -62,6 +64,57 @@ export default class ExploreScene extends Scene {
     this.night = ts.outdoors ? this.keys.night : 1; // torch-lit state
     this.skyNight = this.keys.night; // what the windows show
 
+    // Classic 1988 mode draws no 3D: a flat EGA picture per square and facing (ClassicView.js).
+    this.classic = !!render.classic;
+    if (this.classic) {
+      this.view = new ClassicView(this.ctx);
+      this.own(() => this.view.dispose());
+    } else await this._build3D();
+
+    this.hud = createStandardHud(this.ctx, {
+      commands: [
+        { id: 'area', label: 'Area', key: this.ctx.input.label('area'), action: 'area', tip: 'Overhead map', onSelect: () => this.cmdArea() },
+        { id: 'cast', label: 'Cast', key: this.ctx.input.label('cast'), action: 'cast', tip: 'Cast a spell', onSelect: () => this.cmdCast() },
+        { id: 'view', label: 'View', key: this.ctx.input.label('view'), action: 'view', tip: 'View character', onSelect: () => this.cmdView() },
+        { id: 'encamp', label: 'Encamp', key: this.ctx.input.label('encamp'), action: 'encamp', tip: 'Make camp: rest, save, memorize', onSelect: () => this.cmdEncamp() },
+        { id: 'search', label: 'Search', key: this.ctx.input.label('search'), action: 'search', tip: 'Search for secret doors', onSelect: () => this.cmdSearch() },
+        { id: 'look', label: 'Look', key: this.ctx.input.label('look'), action: 'look', tip: 'Examine what lies ahead', onSelect: () => this.cmdLook() },
+      ],
+    });
+    this.own(() => this.hud.dispose());
+    this.listen('input:action', (e) => {
+      this._unsettle();
+      // Esc / pad B with nothing else open: the pause menu
+      if (e.action === 'cancel' && e.code !== 'Backspace' && this.ctx.scenes.current === this && !this.leaving) return void openPauseMenu(this.ctx);
+      this._onAction(e.action);
+    });
+    this.listen('settings:changed', ({ key }) => {
+      this._unsettle();
+      // F2 / the settings toggle: rebuild this square in the other mode (main.js flips render.classic
+      // just after the setting, so look once it has)
+      if (key === 'classicMode') setTimeout(() => {
+        if (this.ctx.scenes.current !== this || this.leaving || !!this.ctx.render.classic === this.classic) return;
+        this.leaving = true;
+        this.ctx.scenes.goto('explore', { map: this.map.id, x: this.pos.x, y: this.pos.y, dir: this.pos.dir });
+      }, 0);
+    });
+
+    this.tween = null;
+    this._placeCamera(this.pos.x, this.pos.y, DIR_YAW[this.pos.dir], 0, 0);
+    this._assignLights(true);
+    this._updateHud();
+    game.markExplored(this.map.id, this.pos.x, this.pos.y, this.map.w);
+    this._lastZone = this.map.zoneAt(this.pos.x, this.pos.y);
+    this.ctx.ui.message(`You stand in ${this._lastZone}.`, 'lore');
+    this.ctx.audio.playMusic(this.map.kind === 'city' ? 'phlan_streets' : 'dungeon');
+    this.ready = true;
+    installPauseMenu(this.ctx, params); // F10 anywhere in game; ?pause=1 opens it
+  }
+
+  /** The modern view: the block, lights, sky, particles and post-processing. */
+  async _build3D() {
+    const { render } = this.ctx;
+    const ts = this.tileset;
     // textures in parallel workers before building anything
     await Promise.all([preloadMaterials(tilesetMaterials(ts)), ts.outdoors ? preloadTextureSets(['hd_water']) : null]);
 
@@ -96,36 +149,6 @@ export default class ExploreScene extends Scene {
     this._setupGodRays();
     this.post = this._postFor();
     this._baseExposure = this.post.exposure ?? 1;
-
-    this.hud = createStandardHud(this.ctx, {
-      commands: [
-        { id: 'area', label: 'Area', key: this.ctx.input.label('area'), action: 'area', tip: 'Overhead map', onSelect: () => this.cmdArea() },
-        { id: 'cast', label: 'Cast', key: this.ctx.input.label('cast'), action: 'cast', tip: 'Cast a spell', onSelect: () => this.cmdCast() },
-        { id: 'view', label: 'View', key: this.ctx.input.label('view'), action: 'view', tip: 'View character', onSelect: () => this.cmdView() },
-        { id: 'encamp', label: 'Encamp', key: this.ctx.input.label('encamp'), action: 'encamp', tip: 'Make camp: rest, save, memorize', onSelect: () => this.cmdEncamp() },
-        { id: 'search', label: 'Search', key: this.ctx.input.label('search'), action: 'search', tip: 'Search for secret doors', onSelect: () => this.cmdSearch() },
-        { id: 'look', label: 'Look', key: this.ctx.input.label('look'), action: 'look', tip: 'Examine what lies ahead', onSelect: () => this.cmdLook() },
-      ],
-    });
-    this.own(() => this.hud.dispose());
-    this.listen('input:action', (e) => {
-      this._unsettle();
-      // Esc / pad B with nothing else open: the pause menu
-      if (e.action === 'cancel' && e.code !== 'Backspace' && this.ctx.scenes.current === this && !this.leaving) return void openPauseMenu(this.ctx);
-      this._onAction(e.action);
-    });
-    this.listen('settings:changed', () => this._unsettle());
-
-    this.tween = null;
-    this._placeCamera(this.pos.x, this.pos.y, DIR_YAW[this.pos.dir], 0, 0);
-    this._assignLights(true);
-    this._updateHud();
-    game.markExplored(this.map.id, this.pos.x, this.pos.y, this.map.w);
-    this._lastZone = this.map.zoneAt(this.pos.x, this.pos.y);
-    this.ctx.ui.message(`You stand in ${this._lastZone}.`, 'lore');
-    this.ctx.audio.playMusic(this.map.kind === 'city' ? 'phlan_streets' : 'dungeon');
-    this.ready = true;
-    installPauseMenu(this.ctx, params); // F10 anywhere in game; ?pause=1 opens it
   }
 
   // ---------------------------------------------------------------- lighting
@@ -584,6 +607,7 @@ export default class ExploreScene extends Scene {
 
   /** Point the pooled lights at the nearest lit sources (fading new ones in). */
   _assignLights(snap = false) {
+    if (this.classic) return;
     const here = this.camera.position;
     const fwd = new THREE.Vector3(-Math.sin(this.camera.rotation.y), 0, -Math.cos(this.camera.rotation.y));
     const lit = this.sources.filter((s) => s.lit);
@@ -632,6 +656,7 @@ export default class ExploreScene extends Scene {
    * scene has settled, so stop re-rendering it (saves power; keeps capture fast).
    */
   render() {
+    if (this.classic) return this.ctx.render.clear(0x000000);
     const frozen = this.ctx.clock.frozen;
     // settled + frozen: the frame cannot change, so skip most re-renders — but re-present it now and
     // then (identical pixels): a WebGL canvas that has not presented for a long while can come back
@@ -661,18 +686,26 @@ export default class ExploreScene extends Scene {
 
   resume() {
     this._unsettle();
+    this.hud.roster.refresh();
+    if (this.classic) return;
     this.camera.aspect = this.ctx.render.aspect;
     this.camera.updateProjectionMatrix();
-    this.hud.roster.refresh();
   }
 
   onResize() {
     this._unsettle();
+    if (this.classic) return;
     this.camera.aspect = this.ctx.render.aspect;
     this.camera.updateProjectionMatrix();
   }
 
   _placeCamera(x, y, yaw, bob, roll = 0) {
+    if (this.classic) {
+      // 1988: no camera, the picture for this square and facing
+      this.view.show(this.map.id, x, y, this.pos.dir);
+      this.hud?.compass.set(yaw);
+      return;
+    }
     const c = cellCenter(x, y);
     // stand slightly behind cell centre so the facing wall frames nicely
     this.camera.position.set(c.x + Math.sin(yaw) * 0.55, EYE_H + bob, c.z + Math.cos(yaw) * 0.55);
@@ -725,6 +758,12 @@ export default class ExploreScene extends Scene {
     const to = from + (Math.PI / 2) * quarterTurns;
     this.pos.dir = newDir;
     this.ctx.game.setLocation({ dir: newDir });
+    if (this.classic) {
+      // 1988: turns are instant, a new picture in place of the old
+      this._placeCamera(this.pos.x, this.pos.y, DIR_YAW[newDir]);
+      this._updateHud();
+      return;
+    }
     this.tween = { kind: 'turn', t: 0, dur: (TURN_TIME * (quarterTurns === 2 ? 1.5 : 1)) / this._speed(), fromYaw: from, toYaw: to, x0: this.pos.x, y0: this.pos.y, x1: this.pos.x, y1: this.pos.y };
     this._updateHud();
   }
@@ -741,11 +780,21 @@ export default class ExploreScene extends Scene {
       if (res.reason === 'locked') { /* _openLocked reported the attempt */ }
       else if (res.reason === 'edge') this.ctx.ui.message('The way is barred.', 'warn');
       this.ctx.audio.sfx('bump');
+      if (this.classic) return;
       this.tween = { kind: 'bump', t: 0, dur: 0.24, dir, fromYaw: DIR_YAW[this.pos.dir], toYaw: DIR_YAW[this.pos.dir], x0: this.pos.x, y0: this.pos.y, x1: this.pos.x, y1: this.pos.y };
       return;
     }
     if (res.leaves) {
       this.ctx.ui.message(`The path leads to ${res.exit.to.replace(/_/g, ' ')} — not yet built.`, 'system');
+      return;
+    }
+    if (this.classic) {
+      // 1988: one square per keypress, no animation between squares
+      this.ctx.audio.sfx(this.map.getEdge(this.pos.x, this.pos.y, dir) === EDGE.OPEN ? 'step' : 'door');
+      this.pos.x = res.nx;
+      this.pos.y = res.ny;
+      this._placeCamera(this.pos.x, this.pos.y, DIR_YAW[this.pos.dir]);
+      this._arrive();
       return;
     }
     const door = this.block.doors.get(`${this.pos.x},${this.pos.y},${dir}`) ?? this.block.doors.get(`${res.nx},${res.ny},${OPPOSITE[dir]}`);
@@ -900,6 +949,7 @@ export default class ExploreScene extends Scene {
       list.push(`${this.map.id}:${x},${y},${d}`, `${this.map.id}:${x + dx},${y + dy},${OPPOSITE[d]}`);
     }
     ui.message(`${found[0].by?.name ?? 'Someone'}'s keen elven eyes spot a hidden door.`, 'loot');
+    if (this.classic) return;
     this._buildBlock();
     this._buildShafts();
     this._assignLights(true);
@@ -921,6 +971,7 @@ export default class ExploreScene extends Scene {
     if (found) {
       const by = hits[0].by;
       ui.message(by && game.party.length > 1 ? `${by.name} discovers a hidden door!` : 'You discover a hidden door!', 'loot');
+      if (this.classic) return;
       this._buildBlock();
       this._buildShafts();
       this._assignLights(true);
@@ -957,7 +1008,7 @@ export default class ExploreScene extends Scene {
 
   // ---------------------------------------------------------------- frame
   update(dt) {
-    if (!this.ready) return;
+    if (!this.ready || this.classic) return;
     const time = this.ctx.clock.time;
     const frozen = this.ctx.clock.frozen;
     // frozen and settled: the world cannot change (time stands still), so skip the per-frame work
