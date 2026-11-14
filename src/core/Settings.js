@@ -7,6 +7,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   bloom: true,
   antialias: 'smaa', // 'smaa' | 'fxaa' | 'none'
   pixelRatioCap: 2,
+  vrQuality: 'auto', // in a headset: 'auto' (lighter on a Quest 2) | 'full' | 'quest2' (lighter) — render/XR.js
   masterVolume: 0.8,
   musicVolume: 0.6,
   sfxVolume: 0.8,

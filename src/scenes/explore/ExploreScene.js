@@ -680,7 +680,7 @@ export default class ExploreScene extends Scene {
       this._idleFrames = (this._idleFrames ?? 0) + 1;
       if (this._idleFrames % 120 !== 0) return;
     }
-    if (this.mirror) {
+    if (this.mirror && !this.ctx.render.xr?.lite) { // (the lighter VR path skips the puddle mirror)
       // (in live play the mirror refreshes every other frame: a one-frame lag in a puddle is
       // invisible, the halved cost is not)
       this._mirrorTick = (this._mirrorTick ?? 0) + 1;

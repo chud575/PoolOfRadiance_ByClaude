@@ -329,6 +329,7 @@ export class SettingsPanel {
           { key: 'bloom', label: 'Bloom', desc: 'Glow around torches, spells and the Pool itself.', help: 'Bright light bleeds softly into the dark. Off is crisper and a little faster.', type: 'toggle' },
           { key: 'antialias', label: 'Anti-aliasing', desc: 'SMAA is sharper; FXAA is cheaper.', help: 'Smooths stair-stepped edges on roofs, spears and lettering.', type: 'choice', options: [['none', 'Off'], ['fxaa', 'FXAA'], ['smaa', 'SMAA']] },
           { key: 'pixelRatioCap', label: 'Render resolution', desc: 'Pixel density on high-DPI screens.', help: 'Only matters on high-DPI screens. Lower it first if the frame rate stutters; the interface stays sharp either way.', type: 'choice', options: [[1, '100%'], [1.5, '150%'], [2, '200%']] },
+          { key: 'vrQuality', label: 'VR quality', desc: 'How much is drawn in a headset. Applies the next time you enter VR.', help: 'Quest 2 draws fewer pixels, softens the edge of view, redraws shadows less often and drops puddle reflections. Auto picks it on a Quest 2.', type: 'choice', options: [['auto', 'Auto'], ['full', 'Full'], ['quest2', 'Quest 2']] },
           { key: 'cameraBob', label: 'Camera motion', desc: 'Gentle head-bob and sway while walking.', help: 'Turn off if movement in first person makes you queasy. Reduce motion in Accessibility also stills it.', type: 'toggle' },
         ],
       },

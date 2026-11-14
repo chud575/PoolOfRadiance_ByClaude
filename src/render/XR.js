@@ -14,6 +14,10 @@ import * as THREE from 'three';
  * flat, so the session ends when the game leaves 3D exploration; the page is then usable as a
  * normal window inside the headset, and ENTER VR goes back in.
  *
+ * Quality (setting `vrQuality`): 'quest2' — or 'auto' on a Quest 2 — is the lighter path: 70% of the
+ * headset's resolution, strongest foveation, the shadow map redrawn every eighth frame instead of every frame, and
+ * (state.lite, read by ExploreScene) no puddle-mirror pass.
+ *
  * Controls (either hand): stick forward/back = step, stick left/right = turn, trigger = step,
  * A/X = look (or OK on a dialog), B/Y = search.
  */
@@ -30,7 +34,7 @@ export function attachXR(ctx, loop) {
   const xrApi = navigator.xr;
   if (!xrApi?.isSessionSupported) return;
   const renderer = ctx.render.renderer;
-  const state = { presenting: false, session: null, frameTarget: null, draw };
+  const state = { presenting: false, lite: false, session: null, frameTarget: null, draw };
   ctx.render.xr = state;
 
   const rig = new THREE.Group();
@@ -56,9 +60,18 @@ export function attachXR(ctx, loop) {
     if (state.session) return void state.session.end();
     if (!usable()) return void ctx.ui.toast('VR works in the 3D exploration view. Start or load a game first (F2 leaves 1988 mode).');
     try {
+      const q = ctx.settings.get('vrQuality') ?? 'auto';
+      state.lite = q === 'quest2' || (q === 'auto' && /Quest 2/i.test(navigator.userAgent));
       const session = await xrApi.requestSession('immersive-vr', { optionalFeatures: ['local-floor'] });
       renderer.xr.setReferenceSpaceType('local-floor');
+      renderer.xr.setFramebufferScaleFactor(state.lite ? 0.7 : 1); // must be set before the session starts
       await renderer.xr.setSession(session);
+      renderer.xr.setFoveation(state.lite ? 1 : 0.5);
+      if (state.lite) {
+        // shadows are redrawn every eighth frame (beforeFrame) instead of every frame
+        renderer.shadowMap.autoUpdate = false;
+        renderer.shadowMap.needsUpdate = true;
+      }
       state.session = session;
       state.presenting = true;
       button.textContent = 'Exit VR';
@@ -75,6 +88,8 @@ export function attachXR(ctx, loop) {
     state.session = null;
     state.presenting = false;
     state.frameTarget = null;
+    state.lite = false;
+    renderer.shadowMap.autoUpdate = true;
     renderer.xr.enabled = false;
     rig.removeFromParent();
     button.textContent = 'Enter VR';
@@ -90,6 +105,8 @@ export function attachXR(ctx, loop) {
     // the scene's off-screen passes will leave some other target bound
     state.frameTarget = renderer.getRenderTarget();
     if (!usable() && !ctx.scenes.transitioning) return void state.session?.end(); // a flat screen came up
+    // the shadow frustum follows the party, so the lighter path still refreshes it, just not every frame
+    if (state.lite && (state.frame = (state.frame ?? 0) + 1) % 8 === 0) renderer.shadowMap.needsUpdate = true;
     pollControllers();
     panel.tick();
   }
