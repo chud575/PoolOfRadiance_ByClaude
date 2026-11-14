@@ -326,7 +326,7 @@ export default class TitleScene extends Scene {
     else if (id === 'quick') {
       game.setParty(buildParty('default', rng.int(1, 1e6)));
       this._leave();
-      scenes.goto('explore', { map: 'phlan_slums', x: 1, y: 14, dir: 'E' });
+      scenes.goto('explore', { map: 'phlan_civilized', x: 0, y: 0, dir: 'E' });
     } else if (id === 'continue' && this.latestSave) this._loadSlot(this.latestSave.slot);
     else if (id === 'load' || id === 'settings' || id === 'credits') this.setMode(id);
   }

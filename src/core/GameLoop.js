@@ -29,6 +29,18 @@ export class GameLoop {
     cancelAnimationFrame(this._raf);
   }
 
+  /**
+   * Take frames from a WebGLRenderer's animation loop instead of the window's (a VR session only
+   * ticks through the renderer). `before` runs at the start of each such frame. null = back to rAF.
+   */
+  setDriver(renderer, before) {
+    cancelAnimationFrame(this._raf);
+    this._driver?.setAnimationLoop(null);
+    this._driver = renderer ?? null;
+    if (renderer) renderer.setAnimationLoop((now) => { before?.(); this._step(now); });
+    else if (this.running) this._raf = requestAnimationFrame(this._step);
+  }
+
   /** Resolve after `n` fully rendered frames. */
   afterFrames(n = 1) {
     return new Promise((resolve) => this._frameCallbacks.push({ n, resolve }));
@@ -53,6 +65,6 @@ export class GameLoop {
         return true;
       });
     }
-    this._raf = requestAnimationFrame(this._step);
+    if (!this._driver) this._raf = requestAnimationFrame(this._step);
   }
 }

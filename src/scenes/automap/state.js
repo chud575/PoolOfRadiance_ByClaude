@@ -79,7 +79,7 @@ function markAll(game, map, cells) {
 export function applyDemoExploration(game, mapId) {
   const loc = game.location;
   const plan = [
-    ['phlan_civilized', 15, 14, 40],
+    ['phlan_civilized', 0, 4, 40],
     ['phlan_slums', 0, 14, 0],
     ['podol_plaza', 0, 9, 9],
     ['kutos_well', 13, 15, 7],

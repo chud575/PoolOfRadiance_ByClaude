@@ -291,7 +291,7 @@ async function wiring() {
   const cases = [
     ['scene=title', 'title', 'title'],
     ['scene=explore&map=phlan_slums&x=7&y=11&dir=N', 'ruins', 'ruins'],
-    ['scene=explore&map=phlan_civilized&x=8&y=8&dir=N', 'town', 'town'],
+    ['scene=explore&map=phlan_civilized&x=7&y=8&dir=N', 'town', 'town'],
     ['scene=combat&encounter=kobolds_1', 'combat', /^combat_/],
     // A parley: the standoff cue over the location's bed, ducked (not silenced).
     ['scene=dialogue&encounter=kobolds_1', 'encounter', /^[a-z_]+$/],

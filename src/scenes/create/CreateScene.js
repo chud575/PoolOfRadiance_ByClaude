@@ -1039,7 +1039,7 @@ export default class CreateScene extends Scene {
   begin() {
     if (!this.newParty.length) return;
     this.ctx.game.setParty(this.newParty);
-    this.ctx.scenes.goto('explore', { map: 'phlan_slums', x: 1, y: 14, dir: 'E' });
+    this.ctx.scenes.goto('explore', { map: 'phlan_civilized', x: 0, y: 0, dir: 'E' });
   }
 
   onResize() {

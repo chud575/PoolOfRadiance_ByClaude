@@ -20,13 +20,15 @@ export const viewKey = (map, x, y, dir) => `${map}_${x}_${y}_${dir}`.toLowerCase
 export const viewUrl = (map, x, y, dir) => VIEWS.get(viewKey(map, x, y, dir)) ?? null;
 
 export class ClassicView {
-  constructor(ctx) {
+  /** @param {HTMLElement} [parent] the window to fill (the 1988 screen's picture window); else the UI scene layer */
+  constructor(ctx, parent) {
     this.img = h('img.por-cv-img', { alt: '', draggable: false });
     this.img.style.visibility = 'hidden';
     this.stamp = h('div.por-cv-stamp', ['NO IMAGE']);
     this.label = h('div.por-cv-key');
     this.el = h('div.por-cv', [h('div.por-cv-frame', [this.img, this.stamp, this.label])]);
-    ctx.ui.mount(this.el);
+    if (parent) parent.append(this.el);
+    else ctx.ui.mount(this.el);
     this.key = null;
   }
 

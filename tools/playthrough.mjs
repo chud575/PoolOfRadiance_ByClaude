@@ -203,17 +203,11 @@ try {
   await page.keyboard.press('q');
   await waitScene('explore');
   log('quick start at', JSON.stringify(await loc()));
-  await shot('slums');
+  await shot('start');
 
-  // ------------------------------------------------------------ Slums → New Phlan → City Hall
+  // ------------------------------------------------------------ New Phlan (the game opens here) → City Hall
   if (!skipTown) {
-  await walk({ x: 0, y: 14 }, 'W');
-  await waitScene('dialogue');
-  await shot('gate');
-  await choose(/Enter New Phlan/i);
-  await waitScene('explore');
-  log('in', JSON.stringify(await loc()));
-  await walk({ x: 11, y: 4 });
+  await walk({ x: 4, y: 4 });
   await page.waitForFunction(() => ['shop', 'dialogue'].includes(window.__GAME.scenes.currentName) && !window.__GAME.scenes.transitioning, null, { timeout: 90000 });
   await waitScene('dialogue');
   await page.waitForTimeout(800);
@@ -227,11 +221,16 @@ try {
   log('left City Hall at', JSON.stringify(await loc()));
 
   // ------------------------------------------------------------ back to the Slums → first encounter
-  await walk({ x: 15, y: 14 }, 'E');
+  await walk({ x: 0, y: 4 }, 'W');
   await waitScene('dialogue');
   await choose(/Pass the gate/i);
   await waitScene('explore');
   log('in', JSON.stringify(await loc()));
+  } else {
+    await walk({ x: 0, y: 4 }, 'W');
+    await waitScene('dialogue');
+    await choose(/Pass the gate/i);
+    await waitScene('explore');
   }
   await walk({ encounter: true });
   await waitScene('dialogue');

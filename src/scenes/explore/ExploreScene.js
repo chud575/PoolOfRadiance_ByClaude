@@ -26,6 +26,8 @@ import { headBobEnabled, inferHarbour } from './exploreRules.js';
 import { SHOPS } from '../../data/shops.js';
 import { rollWandering } from '../../data/wandering.js';
 import { ClassicView } from './ClassicView.js';
+import { createClassicHud } from './ClassicHud.js';
+import { JOURNAL } from '../../data/journal.js';
 
 const STEP_TIME = 0.34;
 const TURN_TIME = 0.24;
@@ -67,11 +69,24 @@ export default class ExploreScene extends Scene {
     // Classic 1988 mode draws no 3D: a flat EGA picture per square and facing (ClassicView.js).
     this.classic = !!render.classic;
     if (this.classic) {
-      this.view = new ClassicView(this.ctx);
+      // the 1988 screen: a wood-framed board with six picture buttons (ClassicHud.js). Area, View and
+      // Search keep their keys.
+      this.hud = createClassicHud(this.ctx, {
+        onOpen: () => this.cmdView(),
+        commands: [
+          { id: 'move', label: 'Move', tip: 'Step forward', onSelect: () => this._onAction('forward') },
+          { id: 'look', label: 'Look', tip: 'Examine what lies ahead', onSelect: () => this.cmdLook() },
+          { id: 'talk', label: 'Talk', tip: 'Speak to whoever is here', onSelect: () => this.cmdTalk() },
+          { id: 'camp', label: 'Camp', tip: 'Make camp: rest, save, memorize', onSelect: () => this.cmdEncamp() },
+          { id: 'magic', label: 'Magic', tip: 'Cast a spell', onSelect: () => this.cmdCast() },
+          { id: 'journal', label: 'Journal', tip: 'Read the journal entries found so far', onSelect: () => this.cmdJournal() },
+        ],
+      });
+      this.view = new ClassicView(this.ctx, this.hud.viewEl);
       this.own(() => this.view.dispose());
     } else await this._build3D();
 
-    this.hud = createStandardHud(this.ctx, {
+    this.hud ??= createStandardHud(this.ctx, {
       commands: [
         { id: 'area', label: 'Area', key: this.ctx.input.label('area'), action: 'area', tip: 'Overhead map', onSelect: () => this.cmdArea() },
         { id: 'cast', label: 'Cast', key: this.ctx.input.label('cast'), action: 'cast', tip: 'Cast a spell', onSelect: () => this.cmdCast() },
@@ -915,6 +930,21 @@ export default class ExploreScene extends Scene {
       title: ch.name,
       variant: 'blue',
       body: `${s.className} (level ${s.levels}) — AC ${s.ac}, THAC0 ${s.thac0}, HP ${ch.hp.cur}/${ch.hp.max}. STR ${a.str}${a.strPct ? `/${a.strPct}` : ''} INT ${a.int} WIS ${a.wis} DEX ${a.dex} CON ${a.con} CHA ${a.cha}. Weapon: ${s.weapon?.name ?? 'none'} (${s.damage}).`,
+    });
+  }
+
+  /** 1988 screen TALK: nobody stands about in the streets; people are met through doors and events. */
+  cmdTalk() {
+    this.ctx.ui.message('There is no one here to talk to.', 'system');
+  }
+
+  /** 1988 screen JOURNAL: the entries the party has been sent to so far. */
+  cmdJournal() {
+    const found = new Set(this.ctx.game.flags.journal ?? []);
+    const entries = JOURNAL.filter((e) => found.has(e.n));
+    this.ctx.ui.dialog({
+      title: 'Journal',
+      body: entries.length ? entries.map((e) => `Entry ${e.n}: ${e.title}. ${e.text.join(' ')}`).join('\n\n') : 'The journal is empty. Entries are added as the party is sent to them.',
     });
   }
 

@@ -116,6 +116,8 @@ export class RenderContext {
 
   /** Render a scene through the full post pipeline. */
   render(scene, camera) {
+    // in a headset: straight to the VR display, no post pipeline (render/XR.js)
+    if (this.xr?.presenting) return this.xr.draw(scene, camera);
     this.passes.render.scene = scene;
     this.passes.render.camera = camera;
     this.passes.grade.uniforms.uTime.value = this.clock?.time ?? 0;
@@ -130,6 +132,7 @@ export class RenderContext {
   }
 
   setSize(w, h) {
+    if (this.xr?.presenting) return; // the headset owns the drawing buffer's size
     this.width = w;
     this.height = h;
     this.renderer.setSize(w, h, false);

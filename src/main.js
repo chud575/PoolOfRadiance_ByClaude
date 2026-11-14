@@ -11,6 +11,9 @@ import { attachTimeSync } from './rules/camp.js';
 import { attachRulesSettings } from './rules/classes.js';
 import { parseDebugParams, sceneParamsFromRaw } from './core/debug.js';
 import { RenderContext } from './render/RenderContext.js';
+import { attachXR } from './render/XR.js';
+import { attachFullscreen } from './ui/Fullscreen.js';
+import { attachTouchControls } from './ui/TouchControls.js';
 import { UI } from './ui/UI.js';
 import { AudioEngine } from './audio/AudioEngine.js';
 import { Rng } from './rules/dice.js';
@@ -82,6 +85,9 @@ async function boot() {
     ctx.scenes.resize(window.innerWidth, window.innerHeight);
   });
 
+  attachTouchControls(ctx); // touch devices: on-screen step/turn pad and a menu button while exploring
+  attachFullscreen(ctx); // touch devices: a full-screen button, or how to install on an iPhone
+  attachXR(ctx, loop); // "Enter VR" for 3D exploration, where the browser has a headset
   loop.start();
   const sceneName = debug.scene ?? 'title';
   await ctx.scenes.goto(sceneName, sceneParamsFromRaw(debug.raw));

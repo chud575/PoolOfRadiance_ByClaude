@@ -1,0 +1,14 @@
+{
+  "name": "Pool of Radiance — Homage",
+  "short_name": "Pool of Radiance",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#05060f",
+  "theme_color": "#0a0e22",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}

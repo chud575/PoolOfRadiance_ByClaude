@@ -6,6 +6,7 @@ reference/*
 !reference/.gitkeep
 *.log
 .vite/
+.cert/
 .DS_Store
 scratch_*/
 audio_out/

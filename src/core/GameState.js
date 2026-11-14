@@ -13,7 +13,7 @@ export class GameState {
     this.party = [];
     /** Index of the selected party member (roster highlight). */
     this.activeIndex = 0;
-    this.location = { map: 'phlan_slums', x: 1, y: 14, dir: 'N' };
+    this.location = { map: 'phlan_civilized', x: 0, y: 0, dir: 'E' };
     /** Minutes since game start. Game starts at 08:00 day 1. */
     this.minutes = 8 * 60;
     /** Generic story/quest flags. */

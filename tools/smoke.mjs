@@ -70,6 +70,10 @@ try {
   await waitScene('explore');
   await page.waitForTimeout(500);
   await shot('2_explore');
+  // the game opens in New Phlan (no fights there): carry on from the Slums gate
+  await page.evaluate(() => window.__GAME.scenes.goto('explore', { map: 'phlan_slums', x: 1, y: 14, dir: 'E' }));
+  await page.waitForTimeout(1500);
+  await waitScene('explore');
   const route = await planRoute();
   if (!route) throw new Error('no reachable combat encounter on the start map');
   console.log('walking to', route.goal, 'via', route.dirs.join(''));

@@ -1,0 +1,89 @@
+/* 1988-mode exploration screen (ClassicHud.js): a wood-framed 4:3 board. Sizes are in em off the
+   board's own height, so the whole screen scales as one picture. */
+.por-ch { position: absolute; inset: 0; background: #000; display: flex; align-items: center; justify-content: center; pointer-events: auto; isolation: isolate; }
+/* the largest 4:3 board that fits: full height on a wide screen, full width on a tall one (a phone held upright) */
+.por-ch-screen { height: min(100%, 75vw); aspect-ratio: 4 / 3; flex: none; container-type: size; }
+.por-ch-in {
+  --wood: #9c5522; --wood-hi: #c97a36; --wood-lo: #5c2c0e; --panel: #24130b; --gold: #e2b23c; --cream: #f3e4b4;
+  position: relative; width: 100%; height: 100%; box-sizing: border-box; font-size: 2.6cqh; padding: 1.5em 1.2em 1.3em;
+  display: grid; grid-template-rows: 54fr 13fr 19fr; gap: 1.1em;
+  font-family: 'PoR 5x7', 'Courier New', monospace; color: var(--cream);
+  background:
+    repeating-linear-gradient(3deg, rgba(0, 0, 0, 0) 0 0.5em, rgba(60, 24, 4, 0.28) 0.5em 0.58em, rgba(0, 0, 0, 0) 0.58em 1.3em, rgba(255, 190, 110, 0.1) 1.3em 1.4em),
+    linear-gradient(180deg, var(--wood-hi), var(--wood) 30%, var(--wood-lo));
+  box-shadow: inset 0 0 0 0.22em #2a1206, inset 0 0 0 0.42em var(--wood-hi), inset 0 0 0 0.56em #2a1206;
+}
+.por-ch-in * { box-sizing: border-box; }
+
+/* brass-capped studs in the corners of the board and of each panel */
+.por-ch-stud {
+  position: absolute; width: 1.15em; height: 1.15em; z-index: 2; pointer-events: none;
+  background: linear-gradient(135deg, #d98a44, #8a4718); box-shadow: inset 0 0 0 0.12em #2a1206, inset 0 0 0 0.3em #c2742f, inset 0 0 0 0.42em #6a3310;
+}
+.por-ch-in > .por-ch-stud:nth-of-type(1), .por-ch-panel > .por-ch-stud:nth-of-type(1) { left: -0.35em; top: -0.35em; }
+.por-ch-in > .por-ch-stud:nth-of-type(2), .por-ch-panel > .por-ch-stud:nth-of-type(2) { right: -0.35em; top: -0.35em; }
+.por-ch-in > .por-ch-stud:nth-of-type(3), .por-ch-panel > .por-ch-stud:nth-of-type(3) { left: -0.35em; bottom: -0.35em; }
+.por-ch-in > .por-ch-stud:nth-of-type(4), .por-ch-panel > .por-ch-stud:nth-of-type(4) { right: -0.35em; bottom: -0.35em; }
+.por-ch-in > .por-ch-stud:nth-of-type(1), .por-ch-in > .por-ch-stud:nth-of-type(2) { top: 0.1em; }
+.por-ch-in > .por-ch-stud:nth-of-type(3), .por-ch-in > .por-ch-stud:nth-of-type(4) { bottom: 0.1em; }
+.por-ch-in > .por-ch-stud:nth-of-type(odd) { left: 0.1em; }
+.por-ch-in > .por-ch-stud:nth-of-type(even) { right: 0.1em; }
+
+.por-ch-title { position: absolute; left: 0; right: 0; top: 0; height: 1.5em; display: flex; justify-content: center; z-index: 3; }
+.por-ch-title span {
+  display: flex; align-items: center; padding: 0 2.6em; font-size: 0.95em; color: var(--gold); text-transform: uppercase; white-space: nowrap;
+  background: #3a160c; border: 0.14em solid var(--gold); outline: 0.14em solid #2a1206;
+}
+.por-ch-title span::before, .por-ch-title span::after { content: '\2726'; margin: 0 0.9em; }
+
+.por-ch-top { display: grid; grid-template-columns: 1fr 1fr; gap: 1.1em; min-height: 0; }
+.por-ch-left { display: grid; grid-template-rows: 1fr auto; gap: 0.7em; min-height: 0; min-width: 0; }
+.por-ch-panel { position: relative; min-height: 0; min-width: 0; background: var(--panel); border: 0.14em solid #2a1206; outline: 0.2em solid var(--wood-hi); box-shadow: 0 0 0 0.34em #2a1206; }
+.por-ch-viewwrap { background: #000; }
+.por-ch-view { position: absolute; inset: 0; overflow: hidden; }
+
+.por-ch-loc {
+  position: relative; height: 2.9em; display: flex; align-items: center; padding: 0 3.6em 0 1.6em; text-transform: uppercase;
+  background: var(--panel); border: 0.14em solid var(--gold); outline: 0.14em solid #2a1206;
+}
+.por-ch-locname { font-size: 1.3em; white-space: nowrap; overflow: hidden; }
+.por-ch-compass {
+  position: absolute; right: 0.5em; top: 50%; width: 3.3em; height: 3.3em; margin-top: -1.65em; display: flex; flex-direction: column; align-items: center;
+  background: radial-gradient(circle, #150b06 0 62%, var(--gold) 63% 68%, #2a1206 69%); clip-path: circle(50%);
+}
+.por-ch-compass-dir { font-size: 0.9em; line-height: 1; margin-top: 0.35em; color: var(--gold); }
+.por-ch-star {
+  width: 1.6em; height: 1.6em; margin-top: -0.1em; background: var(--gold);
+  clip-path: polygon(50% 0, 58% 42%, 100% 50%, 58% 58%, 50% 100%, 42% 58%, 0 50%, 42% 42%);
+}
+
+.por-ch-right { display: flex; flex-direction: column; padding: 0.5em 0.6em 0.3em; }
+.por-ch-roster { flex: 1; min-height: 0; display: flex; flex-direction: column; font-size: 1.08em; }
+.por-ch-rhead, .por-ch-row { display: grid; grid-template-columns: 2.5em 1fr 2em 4.6em; align-items: center; column-gap: 0.5em; text-transform: uppercase; white-space: nowrap; }
+.por-ch-rhead { height: 1.8em; border-bottom: 0.1em solid var(--gold); margin-bottom: 0.15em; }
+.por-ch-row { flex: 1; min-height: 0; max-height: 2.9em; cursor: pointer; border: 0.1em solid transparent; }
+.por-ch-row .n, .por-ch-rhead .n { overflow: hidden; padding-left: 0.3em; }
+.por-ch-row .ac, .por-ch-rhead .ac, .por-ch-row .hp, .por-ch-rhead .hp { text-align: right; }
+.por-ch-row .hp, .por-ch-rhead .hp { padding-right: 0.3em; }
+.por-ch-row .face { height: 100%; aspect-ratio: 1; max-height: 2.5em; border: 0.1em solid var(--gold); background: #3a2414; overflow: hidden; display: block; }
+.por-ch-row .face img { width: 100%; height: 100%; object-fit: cover; display: block; image-rendering: pixelated; }
+.por-ch-row.active { background: #27475a; border-color: var(--gold); }
+.por-ch-row.low .hp { color: #ff6a55; }
+.por-ch-row:hover .n { color: #fff; }
+.por-ch-clock { height: 1.9em; display: flex; align-items: center; justify-content: flex-end; padding-right: 0.3em; border-top: 0.1em solid var(--gold); text-transform: uppercase; white-space: pre; font-size: 1.2em; }
+
+.por-ch-msg { min-height: 0; background: #1b0f0a; border: 0.14em solid var(--gold); outline: 0.14em solid #2a1206; padding: 0.45em 1em; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-start; }
+.por-ch-msg .por-log { --lines: 2; height: auto; max-height: 100%; overflow: hidden; font-size: 1.25em; padding: 0; background: none; }
+.por-ch-msg .por-log-line { color: #5fe6e6 !important; opacity: 1 !important; line-height: 1.5; animation: none; }
+.por-ch-msg .por-log-line::before { content: none !important; }
+.por-ch-msg .por-log--warn { color: #ff8a7a !important; }
+
+.por-ch-buttons { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0.7em; min-height: 0; }
+.por-ch-btn {
+  min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: space-evenly; padding: 0.3em 0.2em 0.25em; cursor: pointer;
+  font: inherit; font-size: 1.15em; color: var(--cream); text-transform: uppercase;
+  background: var(--panel); border: 0.14em solid var(--gold); outline: 0.2em solid #6a3310; box-shadow: 0 0 0 0.34em #2a1206;
+}
+.por-ch-btn:hover, .por-ch-btn:focus-visible { background: #3a2012; color: #fff; }
+.por-ch-btn:active { background: #27475a; }
+.por-ch-icon { height: 62%; aspect-ratio: 44 / 34; image-rendering: pixelated; }
