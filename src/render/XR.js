@@ -15,8 +15,8 @@ import * as THREE from 'three';
  * normal window inside the headset, and ENTER VR goes back in.
  *
  * Quality (setting `vrQuality`): 'quest2' — or 'auto' on a Quest 2 — is the lighter path: 70% of the
- * headset's resolution, strongest foveation, the shadow map redrawn every eighth frame instead of every frame, and
- * (state.lite, read by ExploreScene) no puddle-mirror pass.
+ * headset's resolution, strongest foveation, no shadows, no fill or rim lights beside the sun, and
+ * (state.lite, read by ExploreScene) one torch light instead of three and no puddle-mirror pass.
  *
  * Controls (either hand): stick forward/back = step, stick left/right = turn, trigger = step,
  * A/X = look (or OK on a dialog), B/Y = search.
@@ -67,11 +67,6 @@ export function attachXR(ctx, loop) {
       renderer.xr.setFramebufferScaleFactor(state.lite ? 0.7 : 1); // must be set before the session starts
       await renderer.xr.setSession(session);
       renderer.xr.setFoveation(state.lite ? 1 : 0.5);
-      if (state.lite) {
-        // shadows are redrawn every eighth frame (beforeFrame) instead of every frame
-        renderer.shadowMap.autoUpdate = false;
-        renderer.shadowMap.needsUpdate = true;
-      }
       state.session = session;
       state.presenting = true;
       button.textContent = 'Exit VR';
@@ -89,7 +84,7 @@ export function attachXR(ctx, loop) {
     state.presenting = false;
     state.frameTarget = null;
     state.lite = false;
-    renderer.shadowMap.autoUpdate = true;
+    relight();
     renderer.xr.enabled = false;
     rig.removeFromParent();
     button.textContent = 'Enter VR';
@@ -105,10 +100,31 @@ export function attachXR(ctx, loop) {
     // the scene's off-screen passes will leave some other target bound
     state.frameTarget = renderer.getRenderTarget();
     if (!usable() && !ctx.scenes.transitioning) return void state.session?.end(); // a flat screen came up
-    // the shadow frustum follows the party, so the lighter path still refreshes it, just not every frame
-    if (state.lite && (state.frame = (state.frame ?? 0) + 1) % 8 === 0) renderer.shadowMap.needsUpdate = true;
     pollControllers();
     panel.tick();
+  }
+
+  // ---------------------------------------------------------------- the lighter path's lighting
+  // Done once per scene (a change in the set of lights recompiles the materials, which is a
+  // visible pause), and put back when the session ends, since the same scene goes on flat.
+  const changed = []; // [object, property, value before]
+  const set = (o, k, v) => { changed.push([o, k, o[k]]); o[k] = v; };
+  function relight() {
+    for (const [o, k, v] of changed.splice(0)) o[k] = v;
+  }
+  function lighten(scene) {
+    relight();
+    const suns = [];
+    const others = [];
+    scene.traverse((o) => {
+      if (!o.isLight) return;
+      if (o.castShadow) {
+        if (o.isDirectionalLight && o.intensity > 0) suns.push(o);
+        set(o, 'castShadow', false);
+      } else if (o.isDirectionalLight) others.push(o);
+    });
+    // with a sun in the sky the fill and rim lights are a refinement; without one they are the light
+    if (suns.length) for (const o of others) set(o, 'visible', false);
   }
 
   // ---------------------------------------------------------------- controllers
@@ -160,7 +176,10 @@ export function attachXR(ctx, loop) {
   // ---------------------------------------------------------------- the headset draw
   /** Called by RenderContext.render in place of the post pipeline while presenting. */
   function draw(scene, camera) {
-    if (rig.parent !== scene) scene.add(rig);
+    if (rig.parent !== scene) {
+      scene.add(rig);
+      if (state.lite) lighten(scene);
+    }
     rig.position.set(camera.position.x, camera.position.y - EYE, camera.position.z);
     rig.rotation.set(0, camera.rotation.y, 0); // scene cameras here are yaw-first (YXZ)
     rig.updateMatrixWorld(true);

@@ -632,11 +632,18 @@ export default class ExploreScene extends Scene {
       const inFront = d.normalize().dot(fwd);
       return dist - inFront * 2.5 - (s.kind === 'hearth' ? 6 : s.kind === 'brazier' ? 3 : 0);
     };
-    const best = lit.sort((a, b) => score(a) - score(b)).slice(0, POOL_LIGHTS);
+    // the lighter VR path keeps one torch light: every extra light is paid for on every pixel
+    const lite = !!this.ctx.render.xr?.lite;
+    const pool = lite ? this.poolLights.slice(0, 1) : this.poolLights;
+    this.poolLights.forEach((l, i) => {
+      l.visible = !lite || i === 0;
+      if (!l.visible) { l.userData.src = null; l.intensity = 0; }
+    });
+    const best = lit.sort((a, b) => score(a) - score(b)).slice(0, pool.length);
     // keep lights that already track a chosen source
     const free = [];
     const taken = new Set();
-    for (const l of this.poolLights) {
+    for (const l of pool) {
       if (l.userData.src && best.includes(l.userData.src)) taken.add(l.userData.src);
       else free.push(l);
     }
